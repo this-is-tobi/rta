@@ -1,0 +1,54 @@
+# What a laptop cannot check for you.
+#
+# The suite reads the machine it runs on — data directories, config
+# directories, $PATH, /etc — and a bug in that isolation looks exactly like a
+# passing test until somebody else's machine is different. That has already
+# happened once here: tests picked up a developer's own age key and only went
+# red on the day that key existed. CI is the second machine.
+#
+# `make hard` rather than `go test`: no cached results, no ordering luck, no
+# data races. All three have caught something real.
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l ./builtin ./cmd ./internal ./pkg)
+          if [ -n "$unformatted" ]; then
+            echo "::error::gofmt needed:"; echo "$unformatted"; exit 1
+          fi
+
+      - name: vet
+        run: go vet ./...
+
+      - name: build
+        run: go build ./...
+
+      # -count=1 -race -shuffle=on
+      - name: test
+        run: make hard
+
+      - name: coverage
+        run: make coverage

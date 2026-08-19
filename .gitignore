@@ -1,0 +1,12 @@
+# Binaries
+/rta
+/dist/
+/bin/
+
+# Test artifacts
+coverage.out
+*.test
+
+# Editor / OS
+.DS_Store
+.idea/
