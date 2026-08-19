@@ -1,0 +1,1230 @@
+[
+  {
+    "name": "audit_deps",
+    "description": "Check declared dependencies against the OSV vulnerability database\n\nReads what a project already declares — go.mod, any of the four JavaScript lockfiles (npm, pnpm, yarn, bun), uv.lock, poetry.lock, Pipfile.lock, requirements.txt, Cargo.lock, composer.lock, Gemfile.lock, or a CycloneDX/SPDX SBOM sitting beside them — and asks osv.dev once about every pinned dependency, reporting which are named in an advisory. Nothing is resolved, built or crawled: a lockfile is a list a package manager already committed, and reading it is not scanning. The batch endpoint answers with advisory identifiers, not severities or fixed versions, so a hit points at osv-scanner, trivy or grype for the depth this deliberately does not have. Components whose ecosystem OSV does not recognise are counted and named rather than dropped. --offline inventories without asking anything. --recursive walks a monorepo, skipping node_modules, vendor and build output, which is what a polyglot repository needs: one lockfile per service and no single file that knows about the others. Cites A03:2025 Software Supply Chain Failures and CWE-1395.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "default": false,
+          "description": "return the full detailed view instead of the compact summary",
+          "type": "boolean"
+        },
+        "offline": {
+          "description": "inventory the dependencies without querying osv.dev",
+          "type": "boolean"
+        },
+        "path": {
+          "default": ".",
+          "description": "directory holding the lockfile or SBOM, or the file itself (a path on the machine running rta)",
+          "type": "string"
+        },
+        "recursive": {
+          "description": "walk subdirectories too, for a monorepo with a manifest per package",
+          "type": "boolean"
+        },
+        "timeout": {
+          "default": 30,
+          "description": "query timeout in seconds",
+          "maximum": 300,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "audit_mail",
+    "description": "Audit a domain's email authentication: SPF, DKIM, DMARC, MTA-STS\n\nAnswers \"can somebody send mail as this domain\" from the records the domain publishes: SPF (present, singular, how it ends, and how close it is to RFC 7208's ten-lookup limit past which it silently stops applying), DMARC (policy, rollout percentage, whether anything reports back), DKIM for a given selector, MTA-STS and TLS-RPT for the server-to-server hop, and MX — including RFC 7505's null MX, which is a hardening measure rather than an omission. Every finding cites an OWASP Top 10:2025 category and a MITRE CWE. With --detail: one section per area plus the cited references with lookup URLs. Read-only, a handful of lookups of names derived from the domain by rule — nothing is enumerated, which is why DKIM needs its selector handed to it.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "default": false,
+          "description": "return the full detailed view instead of the compact summary",
+          "type": "boolean"
+        },
+        "domain": {
+          "description": "domain to audit",
+          "type": "string"
+        },
+        "selector": {
+          "description": "DKIM selector to check (the s= tag of a DKIM-Signature)",
+          "type": "string"
+        },
+        "timeout": {
+          "default": 15,
+          "description": "lookup timeout in seconds",
+          "maximum": 300,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "domain"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "audit_web",
+    "description": "Audit a web host: TLS, certificate, headers, cookies, exposure\n\nOne HTTPS request, graded: TLS version and cipher, certificate validity, expiry and signature algorithm, the security headers a host should send (HSTS, CSP — checked for weak directives like unsafe-inline, not just presence — X-Frame-Options/frame-ancestors, cross-origin isolation headers), CORS behavior (probed with an Origin no real browser would send, to catch blind reflection), cookie flags, and the version/stack details a host should not leak. Every finding cites an OWASP Top 10:2025 category and a MITRE CWE, so a result traces back to a named control rather than an opinion. With --detail: one section per area plus the cited references with lookup URLs. Read-only — it only inspects the response the host volunteers, plus the one Origin header the CORS probe adds.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "default": false,
+          "description": "return the full detailed view instead of the compact summary",
+          "type": "boolean"
+        },
+        "host": {
+          "description": "host or URL to audit",
+          "type": "string"
+        },
+        "timeout": {
+          "default": 15,
+          "description": "request timeout in seconds",
+          "maximum": 300,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "host"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "cert_chain",
+    "description": "Show the certificate chain presented by a host\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "target": {
+          "description": "host[:port] to connect to, or a path to a PEM file",
+          "type": "string"
+        },
+        "timeout": {
+          "default": 10,
+          "description": "connect timeout in seconds",
+          "maximum": 120,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "cert_expiry",
+    "description": "Check certificate expiry for one or more hosts\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "targets": {
+          "description": "hosts to check (host[:port])",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "timeout": {
+          "default": 10,
+          "description": "connect timeout in seconds",
+          "maximum": 120,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "warn-days": {
+          "default": 30,
+          "description": "flag certificates expiring within this many days",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "targets"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "cert_inspect",
+    "description": "Show certificate details for a host or PEM file\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "target": {
+          "description": "host[:port] to connect to, or a path to a PEM file",
+          "type": "string"
+        },
+        "timeout": {
+          "default": 10,
+          "description": "connect timeout in seconds",
+          "maximum": 120,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "cert_tls",
+    "description": "Report the negotiated TLS version and cipher for a host\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "target": {
+          "description": "host[:port] to connect to, or a path to a PEM file",
+          "type": "string"
+        },
+        "timeout": {
+          "default": 10,
+          "description": "connect timeout in seconds",
+          "maximum": 120,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "codec_b64",
+    "description": "Base64 encode or decode a value\n\nDecoding accepts standard, URL-safe, and unpadded variants without being told which — the caller already has the encoded value, so being forgiving about which base64 dialect produced it costs nothing.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "decode": {
+          "description": "decode instead of encode",
+          "type": "boolean"
+        },
+        "url": {
+          "description": "use the URL-safe alphabet when encoding",
+          "type": "boolean"
+        },
+        "value": {
+          "description": "the text to transform",
+          "type": "string"
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "codec_hex",
+    "description": "Hex encode or decode a value\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "decode": {
+          "description": "decode instead of encode",
+          "type": "boolean"
+        },
+        "value": {
+          "description": "the text to transform",
+          "type": "string"
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "codec_jwt",
+    "description": "Decode a JWT's header and claims for inspection\n\nUnverified by default and clearly labeled as such: this is for reading a token while debugging, not for authenticating one. No signature check is performed — anyone can hand you a token with any claims at all.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "token": {
+          "description": "the JWT to decode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "token"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "codec_url",
+    "description": "URL-escape or unescape a value\n\nQuery-component escaping (spaces become +), the form almost everyone means by \"URL encode this\" — the value for a query string or form body.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "decode": {
+          "description": "decode instead of encode",
+          "type": "boolean"
+        },
+        "value": {
+          "description": "the text to transform",
+          "type": "string"
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "fs_hash",
+    "description": "Checksum a file, and compare it against an expected value\n\nHashes a file and, given --expect, says plainly whether it matches — which is the actual task, and the one comparing two hex strings by eye is bad at. The comparison is case-insensitive and tolerates the \"sha256:\" prefix and the surrounding whitespace that come with a pasted checksum. It is not a signature check: it says a file is the one somebody described, not that the description came from anybody in particular.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "algo": {
+          "default": "sha256",
+          "description": "hash algorithm",
+          "enum": [
+            "sha256",
+            "sha512",
+            "sha1",
+            "md5"
+          ],
+          "type": "string"
+        },
+        "expect": {
+          "description": "checksum to compare against",
+          "type": "string"
+        },
+        "path": {
+          "description": "file to hash (a path on the machine running rta)",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "fs_tree",
+    "description": "Show a directory as a tree, with sizes\n\nThe shape of a directory, a few levels at a time, with each entry's size beside it. Entries are ordered directories first and then by name, the order a person reads a listing in. Truncated branches say how many entries they are hiding rather than trailing off, so the tree never claims a directory is smaller than it is.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "all": {
+          "description": "include hidden entries",
+          "type": "boolean"
+        },
+        "depth": {
+          "default": 2,
+          "description": "how many levels to show",
+          "maximum": 12,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "limit": {
+          "default": 12,
+          "description": "entries to show per directory",
+          "maximum": 500,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "path": {
+          "default": ".",
+          "description": "directory to show (a path on the machine running rta)",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "fs_usage",
+    "description": "Show what is using space under a path, biggest first\n\nTotals every entry under a path and ranks them, which is the question `du -sh * | sort -h | tail` is always asked to answer. Directories are summed recursively; the share column is of the scanned total, not of the disk, so it adds up to what you are looking at. Hidden entries are included — they are usually the answer. With --detail: the ranking, the largest individual files found anywhere beneath, and what was skipped. Follows no symlinks and crosses no filesystem boundary, so a scan cannot loop or wander onto a network mount.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "depth": {
+          "default": 0,
+          "description": "how deep to descend when totalling (0 = no limit)",
+          "type": "integer"
+        },
+        "detail": {
+          "default": false,
+          "description": "return the full detailed view instead of the compact summary",
+          "type": "boolean"
+        },
+        "limit": {
+          "default": 20,
+          "description": "how many entries to rank",
+          "maximum": 1000,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "path": {
+          "default": ".",
+          "description": "directory to measure (a path on the machine running rta)",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "gen_overview",
+    "description": "A sampler of the shapes worth generating, ready to use\n\nGenerates one of each common shape side by side — passwords, encryption key material, URL-safe and TOTP tokens, UUIDs — labelled with what it is for, the entropy it actually carries and the command that reproduces it, so picking the right shape does not require remembering the flags first. With --detail: every preset, plus why a \"32-character key\" is not a 32-byte one. Every value is real and freshly generated; nothing is an example.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "default": false,
+          "description": "return the full detailed view instead of the compact summary",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "gen_password",
+    "description": "Generate a cryptographically random password\n\ncrypto/rand only, with unbiased alphabet selection (rand.Int, never rand.Intn or modulo, which biases low indices unless the alphabet size divides the RNG range evenly). Reports entropy in bits: length x log2(alphabet size).\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "default": 1,
+          "description": "how many to generate",
+          "type": "integer"
+        },
+        "exclude-ambiguous": {
+          "description": "drop look-alike characters: 0O1lI",
+          "type": "boolean"
+        },
+        "length": {
+          "default": 20,
+          "description": "characters",
+          "maximum": 4096,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "no-digits": {
+          "description": "exclude digits",
+          "type": "boolean"
+        },
+        "no-lower": {
+          "description": "exclude lowercase letters",
+          "type": "boolean"
+        },
+        "no-upper": {
+          "description": "exclude uppercase letters",
+          "type": "boolean"
+        },
+        "symbols": {
+          "description": "include symbols: !@#$%^\u0026*()-_=+[]{}\u003c\u003e?",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "gen_token",
+    "description": "Generate random bytes, formatted as hex/base64/base32\n\ncrypto/rand bytes, formatted with --encoding. base32 at the right length is already a TOTP secret (RFC 4648/6238) — there is no separate gen.totp.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "encoding": {
+          "default": "hex",
+          "description": "output encoding",
+          "enum": [
+            "hex",
+            "base64",
+            "base64url",
+            "base32"
+          ],
+          "type": "string"
+        },
+        "length": {
+          "default": 32,
+          "description": "bytes of entropy",
+          "maximum": 4096,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "gen_uuid",
+    "description": "Generate a UUID: v4 random (default) or v7 time-ordered\n\nv1/v3/v5/v6 are deliberately not offered: v1 leaks the generating machine's MAC address and a timestamp, v3/v5 hash a namespace+name instead of generating anything (a different operation), and v6 is superseded by v7 for the same time-ordering goal, per RFC 9562's own recommendation.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "default": 1,
+          "description": "how many to generate",
+          "type": "integer"
+        },
+        "version": {
+          "default": "4",
+          "description": "UUID version",
+          "enum": [
+            "4",
+            "7"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "grant_list",
+    "description": "List what AI agents are currently allowed to do\n\nReadable without unlocking anything, so the question stays answerable in a hurry. Expired grants are dropped on read. With --detail: what is currently allowed, then everything an agent can reach with no grant at all, and everything that would need one — because \"what did I allow\" is only half of \"what can it do\".\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "default": false,
+          "description": "return the full detailed view instead of the compact summary",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "http_get",
+    "description": "GET a URL and show status, timing and body\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "basic": {
+          "description": "basic auth as user:password",
+          "type": "string"
+        },
+        "bearer": {
+          "description": "bearer token (Authorization: Bearer ...)",
+          "type": "string"
+        },
+        "header": {
+          "description": "request header, repeatable: -H 'Key: Value'",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "timeout": {
+          "default": 30,
+          "description": "request timeout in seconds",
+          "maximum": 600,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "url": {
+          "description": "request URL",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "http_head",
+    "description": "HEAD a URL and show status, timing and headers\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "basic": {
+          "description": "basic auth as user:password",
+          "type": "string"
+        },
+        "bearer": {
+          "description": "bearer token (Authorization: Bearer ...)",
+          "type": "string"
+        },
+        "header": {
+          "description": "request header, repeatable: -H 'Key: Value'",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "timeout": {
+          "default": 30,
+          "description": "request timeout in seconds",
+          "maximum": 600,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "url": {
+          "description": "request URL",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "kv_list",
+    "description": "List stored keys (names and metadata only, never values)\n\nNever returns a value or a preview of one — only key names, what kind of thing each is, its size, its description and when it changed. With --detail: the source filename of anything stored from disk.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "default": false,
+          "description": "return the full detailed view instead of the compact summary",
+          "type": "boolean"
+        },
+        "kind": {
+          "description": "only entries of this kind",
+          "enum": [
+            "string",
+            "json",
+            "certificate",
+            "private-key",
+            "public-key",
+            "ssh-key",
+            "file"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "kv_recipients",
+    "description": "List the public keys that can decrypt the store\n\nAnswers \"who can read this?\" without unlocking anything — recipients are public keys, so the list is plaintext by design. An empty list means the store is passphrase-encrypted.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    }
+  },
+  {
+    "name": "kv_show",
+    "description": "Show everything about one entry except its value\n\nThe detail page for a stored key: what kind of thing it is, what it is for, how big it is, where it came from and when it changed. Deliberately not the value — that is `kv get`, which is a write for exactly that reason. This stays Read because everything on it is metadata you can safely put on a screen.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "description": "key to describe",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "kv_status",
+    "description": "Where the store is and what can open it\n\nEverything about the store that can be known without unlocking it: whether it exists, how big it is, when it last changed, whether it is locked with a passphrase or to keys, and whether a key is available in this environment. With --detail it also lists who can open the store and what is in it — names, kinds and sizes, never a value or a preview of one — when a key is already at hand; when none is, it says so instead of asking, so the compact answer never turns into a passphrase prompt nobody expected.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "default": false,
+          "description": "return the full detailed view instead of the compact summary",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "net_dns",
+    "description": "Resolve DNS records for a name, or a name for an address\n\n--type auto (the default) asks the question you usually mean: A, AAAA and CNAME for a name, PTR for an address. --server sends the query to a specific resolver instead of the system one, which is how you tell \"the record is wrong\" apart from \"my resolver is stale\". With --detail: the query, the resolver that answered, and how long it took.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "default": false,
+          "description": "return the full detailed view instead of the compact summary",
+          "type": "boolean"
+        },
+        "name": {
+          "description": "name or IP address to resolve",
+          "type": "string"
+        },
+        "server": {
+          "description": "resolver to query, e.g. 1.1.1.1 or 9.9.9.9:53 (default: the system resolver)",
+          "type": "string"
+        },
+        "timeout": {
+          "default": 5,
+          "description": "query timeout in seconds",
+          "maximum": 120,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "type": {
+          "default": "auto",
+          "description": "which record type to ask for",
+          "enum": [
+            "auto",
+            "A",
+            "AAAA",
+            "CNAME",
+            "MX",
+            "NS",
+            "TXT",
+            "PTR",
+            "SRV"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "net_hosts_list",
+    "description": "List hosts-file entries, including disabled ones\n\nOne row per hostname, since a hostname is what you look up, disable and remove. Entries commented out by `net hosts toggle` are shown as disabled rather than hidden as comments.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "description": "operate on this file instead of the system one (a container's, a chroot's) (a path on the machine running rta)",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "net_info",
+    "description": "Local network overview: interfaces, DNS, proxy, throughput\n\nReports local facts only — it never calls external services, so no public-IP lookup. Proxy credentials are masked. Throughput is sampled over 500ms. With --detail: every interface with MAC, MTU, flags and addresses, per-interface traffic counters, the full resolver list and proxy environment.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "default": false,
+          "description": "return the full detailed view instead of the compact summary",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "net_ping",
+    "description": "Ping a host and report latency statistics\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "default": 4,
+          "description": "number of probes",
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "graph": {
+          "description": "plot per-probe latency instead of summary stats",
+          "type": "boolean"
+        },
+        "host": {
+          "description": "host to ping",
+          "type": "string"
+        },
+        "timeout": {
+          "default": 10,
+          "description": "overall timeout in seconds",
+          "maximum": 300,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "host"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "net_port",
+    "description": "TCP connect-scan ports on a host\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "description": "host to scan",
+          "type": "string"
+        },
+        "ports": {
+          "default": "22,80,443",
+          "description": "comma-separated ports and ranges, e.g. 22,80,8000-8010",
+          "type": "string"
+        },
+        "timeout": {
+          "default": 2,
+          "description": "per-port timeout in seconds",
+          "maximum": 60,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "host"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "net_probe",
+    "description": "Open a TCP connection and report what answers\n\nWhat telnet \u003chost\u003e \u003cport\u003e is really used for: prove the port accepts a connection, time the handshake, and show the banner the service volunteers. --tls completes a TLS handshake first and reports the negotiated version and cipher. It only ever listens; to speak first — the protocols that expect the client to open — use `net send`, which is a write and gated as one.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "description": "host to connect to",
+          "type": "string"
+        },
+        "port": {
+          "description": "port to connect to",
+          "maximum": 65535,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "timeout": {
+          "default": 5,
+          "description": "connect timeout in seconds",
+          "maximum": 120,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "tls": {
+          "description": "complete a TLS handshake after connecting",
+          "type": "boolean"
+        },
+        "wait": {
+          "default": 2,
+          "description": "seconds to wait for the service to say something",
+          "maximum": 120,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "host",
+        "port"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "net_resolver_list",
+    "description": "Show the system resolver, and who controls it\n\nresolv.conf is the file people most often edit to no effect: on most modern systems it is generated and replaced. This leads with who owns it, because that decides whether anything else in it is worth changing.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "description": "operate on this file instead of the system one (a container's, a chroot's) (a path on the machine running rta)",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "net_trace",
+    "description": "Trace the route to a host, hop by hop\n\nICMP echo probes with a rising TTL: each hop that expires one reports itself. Answers the question ping cannot — not just \"is it reachable\" but \"where does it stop\". Silent hops show as *; that is a router declining to reply, not necessarily a fault.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "description": "host to trace",
+          "type": "string"
+        },
+        "max-hops": {
+          "default": 30,
+          "description": "stop after this many hops",
+          "maximum": 64,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "probes": {
+          "default": 3,
+          "description": "probes per hop",
+          "maximum": 10,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "resolve": {
+          "default": true,
+          "description": "reverse-resolve hop addresses to names",
+          "type": "boolean"
+        },
+        "timeout": {
+          "default": 2,
+          "description": "per-probe timeout in seconds",
+          "maximum": 60,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "host"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "note_list",
+    "description": "List notes\n\nWith --detail: adds creation date and a preview of each note's body.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "default": false,
+          "description": "return the full detailed view instead of the compact summary",
+          "type": "boolean"
+        },
+        "tag": {
+          "description": "only notes with any of these tags",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "note_search",
+    "description": "Search notes by title, body or tag\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "query": {
+          "description": "search terms",
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "note_show",
+    "description": "Show one note: metadata, content, references\n\nMetadata (tags, size, age) stays separate from the markdown content, which is rendered richly on human surfaces. Cross-references (\"#12\" in a body) resolve both ways.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "note id",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "note_tags",
+    "description": "List tags in use and how many notes carry each\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    }
+  },
+  {
+    "name": "sys_cpu",
+    "description": "Show CPU model, core count and current usage\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "cores": {
+          "description": "per-core usage as a bar chart",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "sys_disk",
+    "description": "Show disk usage per mounted filesystem\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "all": {
+          "description": "include pseudo, duplicate and zero-size filesystems",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "sys_host",
+    "description": "Show host info: OS, kernel, uptime, addresses\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    }
+  },
+  {
+    "name": "sys_load",
+    "description": "Show load averages, normalized per core\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    }
+  },
+  {
+    "name": "sys_mem",
+    "description": "Show memory and swap usage\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    }
+  },
+  {
+    "name": "sys_overview",
+    "description": "One-screen host health: cpu, memory, load, disk, uptime\n\nA dense one-line-per-subsystem summary. With --detail (and on any full-page surface) it expands into a full report: identity, per-core usage, memory and swap breakdown, every filesystem, sensors and top processes. Lines a platform cannot provide are omitted rather than failing the view.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "default": false,
+          "description": "return the full detailed view instead of the compact summary",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "sys_ps",
+    "description": "List top processes by CPU or memory\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "limit": {
+          "default": 15,
+          "description": "maximum processes to list",
+          "maximum": 1000,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "sort": {
+          "default": "cpu",
+          "description": "sort by",
+          "enum": [
+            "cpu",
+            "mem"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "sys_temp",
+    "description": "Show sensor temperatures\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    }
+  },
+  {
+    "name": "todo_list",
+    "description": "List tasks\n\nShows top-level tasks by default; pass --parent to list one task's sub-tasks. With --detail: adds creation date and a body preview.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "all": {
+          "description": "include completed tasks",
+          "type": "boolean"
+        },
+        "detail": {
+          "default": false,
+          "description": "return the full detailed view instead of the compact summary",
+          "type": "boolean"
+        },
+        "parent": {
+          "default": 0,
+          "description": "list sub-tasks of this task id instead of top-level tasks",
+          "type": "integer"
+        },
+        "tag": {
+          "description": "only tasks with any of these tags",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "todo_search",
+    "description": "Search tasks by title, body or tag\n\nSearches every task regardless of parent/child, done or open.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "query": {
+          "description": "search terms",
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "todo_show",
+    "description": "Show one task: metadata, description, sub-tasks, references\n\nA composed page rather than one blob: structured metadata (status, due, tags, parent, progress) stays separate from the markdown description, so both stay readable and machine callers can read a due date without parsing prose. Sub-tasks and cross-references (\"#12\" in a body, resolved both ways) follow.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "task id",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "todo_tags",
+    "description": "List tags in use and how many tasks carry each\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    }
+  }
+]

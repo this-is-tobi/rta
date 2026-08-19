@@ -1,0 +1,1933 @@
+[
+  {
+    "name": "audit_deps",
+    "description": "Check declared dependencies against the OSV vulnerability database\n\nReads what a project already declares — go.mod, any of the four JavaScript lockfiles (npm, pnpm, yarn, bun), uv.lock, poetry.lock, Pipfile.lock, requirements.txt, Cargo.lock, composer.lock, Gemfile.lock, or a CycloneDX/SPDX SBOM sitting beside them — and asks osv.dev once about every pinned dependency, reporting which are named in an advisory. Nothing is resolved, built or crawled: a lockfile is a list a package manager already committed, and reading it is not scanning. The batch endpoint answers with advisory identifiers, not severities or fixed versions, so a hit points at osv-scanner, trivy or grype for the depth this deliberately does not have. Components whose ecosystem OSV does not recognise are counted and named rather than dropped. --offline inventories without asking anything. --recursive walks a monorepo, skipping node_modules, vendor and build output, which is what a polyglot repository needs: one lockfile per service and no single file that knows about the others. Cites A03:2025 Software Supply Chain Failures and CWE-1395.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "default": false,
+          "description": "return the full detailed view instead of the compact summary",
+          "type": "boolean"
+        },
+        "offline": {
+          "description": "inventory the dependencies without querying osv.dev",
+          "type": "boolean"
+        },
+        "path": {
+          "default": ".",
+          "description": "directory holding the lockfile or SBOM, or the file itself (a path on the machine running rta)",
+          "type": "string"
+        },
+        "recursive": {
+          "description": "walk subdirectories too, for a monorepo with a manifest per package",
+          "type": "boolean"
+        },
+        "timeout": {
+          "default": 30,
+          "description": "query timeout in seconds",
+          "maximum": 300,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "audit_mail",
+    "description": "Audit a domain's email authentication: SPF, DKIM, DMARC, MTA-STS\n\nAnswers \"can somebody send mail as this domain\" from the records the domain publishes: SPF (present, singular, how it ends, and how close it is to RFC 7208's ten-lookup limit past which it silently stops applying), DMARC (policy, rollout percentage, whether anything reports back), DKIM for a given selector, MTA-STS and TLS-RPT for the server-to-server hop, and MX — including RFC 7505's null MX, which is a hardening measure rather than an omission. Every finding cites an OWASP Top 10:2025 category and a MITRE CWE. With --detail: one section per area plus the cited references with lookup URLs. Read-only, a handful of lookups of names derived from the domain by rule — nothing is enumerated, which is why DKIM needs its selector handed to it.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "default": false,
+          "description": "return the full detailed view instead of the compact summary",
+          "type": "boolean"
+        },
+        "domain": {
+          "description": "domain to audit",
+          "type": "string"
+        },
+        "selector": {
+          "description": "DKIM selector to check (the s= tag of a DKIM-Signature)",
+          "type": "string"
+        },
+        "timeout": {
+          "default": 15,
+          "description": "lookup timeout in seconds",
+          "maximum": 300,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "domain"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "audit_web",
+    "description": "Audit a web host: TLS, certificate, headers, cookies, exposure\n\nOne HTTPS request, graded: TLS version and cipher, certificate validity, expiry and signature algorithm, the security headers a host should send (HSTS, CSP — checked for weak directives like unsafe-inline, not just presence — X-Frame-Options/frame-ancestors, cross-origin isolation headers), CORS behavior (probed with an Origin no real browser would send, to catch blind reflection), cookie flags, and the version/stack details a host should not leak. Every finding cites an OWASP Top 10:2025 category and a MITRE CWE, so a result traces back to a named control rather than an opinion. With --detail: one section per area plus the cited references with lookup URLs. Read-only — it only inspects the response the host volunteers, plus the one Origin header the CORS probe adds.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "default": false,
+          "description": "return the full detailed view instead of the compact summary",
+          "type": "boolean"
+        },
+        "host": {
+          "description": "host or URL to audit",
+          "type": "string"
+        },
+        "timeout": {
+          "default": 15,
+          "description": "request timeout in seconds",
+          "maximum": 300,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "host"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "cert_chain",
+    "description": "Show the certificate chain presented by a host\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "target": {
+          "description": "host[:port] to connect to, or a path to a PEM file",
+          "type": "string"
+        },
+        "timeout": {
+          "default": 10,
+          "description": "connect timeout in seconds",
+          "maximum": 120,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "cert_expiry",
+    "description": "Check certificate expiry for one or more hosts\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "targets": {
+          "description": "hosts to check (host[:port])",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "timeout": {
+          "default": 10,
+          "description": "connect timeout in seconds",
+          "maximum": 120,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "warn-days": {
+          "default": 30,
+          "description": "flag certificates expiring within this many days",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "targets"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "cert_inspect",
+    "description": "Show certificate details for a host or PEM file\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "target": {
+          "description": "host[:port] to connect to, or a path to a PEM file",
+          "type": "string"
+        },
+        "timeout": {
+          "default": 10,
+          "description": "connect timeout in seconds",
+          "maximum": 120,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "cert_tls",
+    "description": "Report the negotiated TLS version and cipher for a host\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "target": {
+          "description": "host[:port] to connect to, or a path to a PEM file",
+          "type": "string"
+        },
+        "timeout": {
+          "default": 10,
+          "description": "connect timeout in seconds",
+          "maximum": 120,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "codec_b64",
+    "description": "Base64 encode or decode a value\n\nDecoding accepts standard, URL-safe, and unpadded variants without being told which — the caller already has the encoded value, so being forgiving about which base64 dialect produced it costs nothing.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "decode": {
+          "description": "decode instead of encode",
+          "type": "boolean"
+        },
+        "url": {
+          "description": "use the URL-safe alphabet when encoding",
+          "type": "boolean"
+        },
+        "value": {
+          "description": "the text to transform",
+          "type": "string"
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "codec_hex",
+    "description": "Hex encode or decode a value\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "decode": {
+          "description": "decode instead of encode",
+          "type": "boolean"
+        },
+        "value": {
+          "description": "the text to transform",
+          "type": "string"
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "codec_jwt",
+    "description": "Decode a JWT's header and claims for inspection\n\nUnverified by default and clearly labeled as such: this is for reading a token while debugging, not for authenticating one. No signature check is performed — anyone can hand you a token with any claims at all.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "token": {
+          "description": "the JWT to decode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "token"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "codec_url",
+    "description": "URL-escape or unescape a value\n\nQuery-component escaping (spaces become +), the form almost everyone means by \"URL encode this\" — the value for a query string or form body.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "decode": {
+          "description": "decode instead of encode",
+          "type": "boolean"
+        },
+        "value": {
+          "description": "the text to transform",
+          "type": "string"
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "fs_hash",
+    "description": "Checksum a file, and compare it against an expected value\n\nHashes a file and, given --expect, says plainly whether it matches — which is the actual task, and the one comparing two hex strings by eye is bad at. The comparison is case-insensitive and tolerates the \"sha256:\" prefix and the surrounding whitespace that come with a pasted checksum. It is not a signature check: it says a file is the one somebody described, not that the description came from anybody in particular.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "algo": {
+          "default": "sha256",
+          "description": "hash algorithm",
+          "enum": [
+            "sha256",
+            "sha512",
+            "sha1",
+            "md5"
+          ],
+          "type": "string"
+        },
+        "expect": {
+          "description": "checksum to compare against",
+          "type": "string"
+        },
+        "path": {
+          "description": "file to hash (a path on the machine running rta)",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "fs_tree",
+    "description": "Show a directory as a tree, with sizes\n\nThe shape of a directory, a few levels at a time, with each entry's size beside it. Entries are ordered directories first and then by name, the order a person reads a listing in. Truncated branches say how many entries they are hiding rather than trailing off, so the tree never claims a directory is smaller than it is.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "all": {
+          "description": "include hidden entries",
+          "type": "boolean"
+        },
+        "depth": {
+          "default": 2,
+          "description": "how many levels to show",
+          "maximum": 12,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "limit": {
+          "default": 12,
+          "description": "entries to show per directory",
+          "maximum": 500,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "path": {
+          "default": ".",
+          "description": "directory to show (a path on the machine running rta)",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "fs_usage",
+    "description": "Show what is using space under a path, biggest first\n\nTotals every entry under a path and ranks them, which is the question `du -sh * | sort -h | tail` is always asked to answer. Directories are summed recursively; the share column is of the scanned total, not of the disk, so it adds up to what you are looking at. Hidden entries are included — they are usually the answer. With --detail: the ranking, the largest individual files found anywhere beneath, and what was skipped. Follows no symlinks and crosses no filesystem boundary, so a scan cannot loop or wander onto a network mount.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "depth": {
+          "default": 0,
+          "description": "how deep to descend when totalling (0 = no limit)",
+          "type": "integer"
+        },
+        "detail": {
+          "default": false,
+          "description": "return the full detailed view instead of the compact summary",
+          "type": "boolean"
+        },
+        "limit": {
+          "default": 20,
+          "description": "how many entries to rank",
+          "maximum": 1000,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "path": {
+          "default": ".",
+          "description": "directory to measure (a path on the machine running rta)",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "gen_overview",
+    "description": "A sampler of the shapes worth generating, ready to use\n\nGenerates one of each common shape side by side — passwords, encryption key material, URL-safe and TOTP tokens, UUIDs — labelled with what it is for, the entropy it actually carries and the command that reproduces it, so picking the right shape does not require remembering the flags first. With --detail: every preset, plus why a \"32-character key\" is not a 32-byte one. Every value is real and freshly generated; nothing is an example.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "default": false,
+          "description": "return the full detailed view instead of the compact summary",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "gen_password",
+    "description": "Generate a cryptographically random password\n\ncrypto/rand only, with unbiased alphabet selection (rand.Int, never rand.Intn or modulo, which biases low indices unless the alphabet size divides the RNG range evenly). Reports entropy in bits: length x log2(alphabet size).\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "default": 1,
+          "description": "how many to generate",
+          "type": "integer"
+        },
+        "exclude-ambiguous": {
+          "description": "drop look-alike characters: 0O1lI",
+          "type": "boolean"
+        },
+        "length": {
+          "default": 20,
+          "description": "characters",
+          "maximum": 4096,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "no-digits": {
+          "description": "exclude digits",
+          "type": "boolean"
+        },
+        "no-lower": {
+          "description": "exclude lowercase letters",
+          "type": "boolean"
+        },
+        "no-upper": {
+          "description": "exclude uppercase letters",
+          "type": "boolean"
+        },
+        "symbols": {
+          "description": "include symbols: !@#$%^\u0026*()-_=+[]{}\u003c\u003e?",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "gen_token",
+    "description": "Generate random bytes, formatted as hex/base64/base32\n\ncrypto/rand bytes, formatted with --encoding. base32 at the right length is already a TOTP secret (RFC 4648/6238) — there is no separate gen.totp.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "encoding": {
+          "default": "hex",
+          "description": "output encoding",
+          "enum": [
+            "hex",
+            "base64",
+            "base64url",
+            "base32"
+          ],
+          "type": "string"
+        },
+        "length": {
+          "default": 32,
+          "description": "bytes of entropy",
+          "maximum": 4096,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "gen_uuid",
+    "description": "Generate a UUID: v4 random (default) or v7 time-ordered\n\nv1/v3/v5/v6 are deliberately not offered: v1 leaks the generating machine's MAC address and a timestamp, v3/v5 hash a namespace+name instead of generating anything (a different operation), and v6 is superseded by v7 for the same time-ordering goal, per RFC 9562's own recommendation.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "default": 1,
+          "description": "how many to generate",
+          "type": "integer"
+        },
+        "version": {
+          "default": "4",
+          "description": "UUID version",
+          "enum": [
+            "4",
+            "7"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "grant_allow",
+    "description": "Allow AI agents to use one capability, temporarily\n\nGrants expire (15m by default, 24h maximum) and can only be issued by a person at a terminal — an agent that could grant itself access would be no gate at all. The target is a capability ID (kv.get) or a plugin name (kv), which covers all of it. A second argument narrows the grant to one record: `rta grant allow kv.get db-password` allows that key and no other. --max-uses expires the grant after that many successful calls, on top of --ttl, whichever comes first — `--max-uses 1` for a value that should be read exactly once.\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
+    "destructive_hint": false,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "max-uses": {
+          "description": "expire after this many successful calls (0 = unlimited)",
+          "type": "integer"
+        },
+        "note": {
+          "description": "why — shown by grant list",
+          "type": "string"
+        },
+        "scope": {
+          "description": "narrow it to one record: a key, a task id, a hostname",
+          "type": "string"
+        },
+        "target": {
+          "description": "capability to allow, e.g. kv.get — or a plugin name for all of it",
+          "type": "string"
+        },
+        "ttl": {
+          "default": "15m",
+          "description": "how long it lasts: 30s, 15m, 2h",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "grant_list",
+    "description": "List what AI agents are currently allowed to do\n\nReadable without unlocking anything, so the question stays answerable in a hurry. Expired grants are dropped on read. With --detail: what is currently allowed, then everything an agent can reach with no grant at all, and everything that would need one — because \"what did I allow\" is only half of \"what can it do\".\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "default": false,
+          "description": "return the full detailed view instead of the compact summary",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "grant_revoke",
+    "description": "Take an agent's access back\n\nCan only be run by a person at a terminal, the same as grant.allow and for the same reason: consent state belongs to whoever is deciding it, not to whoever is currently being granted or denied.\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
+    "destructive_hint": false,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "all": {
+          "description": "revoke every grant",
+          "type": "boolean"
+        },
+        "scope": {
+          "description": "only the grant for this record",
+          "type": "string"
+        },
+        "target": {
+          "description": "capability or plugin to revoke",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "http_delete",
+    "description": "DELETE a URL\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
+    "destructive_hint": false,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "basic": {
+          "description": "basic auth as user:password",
+          "type": "string"
+        },
+        "bearer": {
+          "description": "bearer token (Authorization: Bearer ...)",
+          "type": "string"
+        },
+        "header": {
+          "description": "request header, repeatable: -H 'Key: Value'",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "timeout": {
+          "default": 30,
+          "description": "request timeout in seconds",
+          "maximum": 600,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "url": {
+          "description": "request URL",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "http_get",
+    "description": "GET a URL and show status, timing and body\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "basic": {
+          "description": "basic auth as user:password",
+          "type": "string"
+        },
+        "bearer": {
+          "description": "bearer token (Authorization: Bearer ...)",
+          "type": "string"
+        },
+        "header": {
+          "description": "request header, repeatable: -H 'Key: Value'",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "timeout": {
+          "default": 30,
+          "description": "request timeout in seconds",
+          "maximum": 600,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "url": {
+          "description": "request URL",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "http_head",
+    "description": "HEAD a URL and show status, timing and headers\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "basic": {
+          "description": "basic auth as user:password",
+          "type": "string"
+        },
+        "bearer": {
+          "description": "bearer token (Authorization: Bearer ...)",
+          "type": "string"
+        },
+        "header": {
+          "description": "request header, repeatable: -H 'Key: Value'",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "timeout": {
+          "default": 30,
+          "description": "request timeout in seconds",
+          "maximum": 600,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "url": {
+          "description": "request URL",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "http_post",
+    "description": "POST to a URL with an optional body\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
+    "destructive_hint": false,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "basic": {
+          "description": "basic auth as user:password",
+          "type": "string"
+        },
+        "bearer": {
+          "description": "bearer token (Authorization: Bearer ...)",
+          "type": "string"
+        },
+        "data": {
+          "description": "request body (use @file to read from a file, - for stdin)",
+          "type": "string"
+        },
+        "header": {
+          "description": "request header, repeatable: -H 'Key: Value'",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "timeout": {
+          "default": 30,
+          "description": "request timeout in seconds",
+          "maximum": 600,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "url": {
+          "description": "request URL",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "http_put",
+    "description": "PUT to a URL with an optional body\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
+    "destructive_hint": false,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "basic": {
+          "description": "basic auth as user:password",
+          "type": "string"
+        },
+        "bearer": {
+          "description": "bearer token (Authorization: Bearer ...)",
+          "type": "string"
+        },
+        "data": {
+          "description": "request body (use @file to read from a file, - for stdin)",
+          "type": "string"
+        },
+        "header": {
+          "description": "request header, repeatable: -H 'Key: Value'",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "timeout": {
+          "default": 30,
+          "description": "request timeout in seconds",
+          "maximum": 600,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "url": {
+          "description": "request URL",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "kv_env",
+    "description": "Print stored values as shell exports\n\nFor `eval \"$(rta kv env db-password)\"` — loads secrets into a shell session without ever writing them to a file. Key names become environment names (db-password → DB_PASSWORD). --format dotenv writes .env syntax instead. Same grant requirement as kv.get: this reveals values. Naming no key means every key, which is a wider ask and needs a grant for kv.env itself rather than one per key.\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"key\"). You cannot issue one yourself — ask the operator to run `rta grant allow kv.env`.",
+    "destructive_hint": false,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "format": {
+          "default": "export",
+          "description": "shell exports, or .env syntax",
+          "enum": [
+            "export",
+            "dotenv"
+          ],
+          "type": "string"
+        },
+        "key": {
+          "description": "keys to export (default: all)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "prefix": {
+          "description": "prepend this to every variable name, e.g. APP_",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "kv_get",
+    "description": "Reveal a stored value\n\nClassified as a write because revealing a secret is the sensitive act. An MCP agent therefore needs --allow-write, and on top of that a per-key grant issued by a person (`rta grant allow kv.get \u003ckey\u003e --ttl 15m`). --out writes the value to a file with 0600 instead of printing it, which is how a certificate or key goes back to disk without passing through your scrollback — a person only, since a grant authorizes revealing a value, not choosing where on this machine it gets written. An MCP caller always gets the value back in the response.\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"key\"). You cannot issue one yourself — ask the operator to run `rta grant allow kv.get`.",
+    "destructive_hint": false,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "description": "key to reveal",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "kv_init",
+    "description": "Set up how the store is encrypted\n\nChooses the lock once, so nothing has to be repeated afterwards. --generate makes a dedicated age key for this store and uses it: no passphrase to type, no flags to remember, and — unlike your SSH login key — a key whose loss costs you this store and nothing else. --identity locks it to a key you already have (age or SSH). --recipient adds other readers.\n\nA passphrase store needs no init: that is what you get by default.\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
+    "destructive_hint": false,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "generate": {
+          "description": "create a dedicated age key for this store and lock it to that",
+          "type": "boolean"
+        },
+        "recipient": {
+          "description": "also let this age/SSH public key read the store, repeatable",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "kv_list",
+    "description": "List stored keys (names and metadata only, never values)\n\nNever returns a value or a preview of one — only key names, what kind of thing each is, its size, its description and when it changed. With --detail: the source filename of anything stored from disk.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "default": false,
+          "description": "return the full detailed view instead of the compact summary",
+          "type": "boolean"
+        },
+        "kind": {
+          "description": "only entries of this kind",
+          "enum": [
+            "string",
+            "json",
+            "certificate",
+            "private-key",
+            "public-key",
+            "ssh-key",
+            "file"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "kv_recipients",
+    "description": "List the public keys that can decrypt the store\n\nAnswers \"who can read this?\" without unlocking anything — recipients are public keys, so the list is plaintext by design. An empty list means the store is passphrase-encrypted.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    }
+  },
+  {
+    "name": "kv_rekey",
+    "description": "Change which keys can open the store\n\nThe store is decrypted and written back under a new set of keys, so this is the one command that changes who can read what you already stored.\n\nAdding is the default: `--generate` makes a dedicated age key and leaves the existing readers alone, which is how a store locked to your SSH key gains a key that needs no passphrase — after which both open it and the new one is found without a flag. `--only` makes the set exclusive instead: `--generate --only` switches the lock from one key to the other, and naming the readers you keep is how a reader is removed.\n\n--identity never changes the set: it says which private key is here, which is what opens the store and the only way to prove a key is yours — a public key on its own shows nothing of the sort.\n\nTwo things are refused rather than confirmed. Reading comes first, so a store you cannot open is a store you cannot re-key. And a key you hold has to survive the change: handing the store to somebody else and locking yourself out of it in the same keystroke is not a thing to be sure about.\n\nOld copies of the file stay readable by the old keys — re-keying changes the lock, it does not reach into backups.\n\nSafety: destructive. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability. You cannot issue one yourself — ask the operator to run `rta grant allow kv.rekey`.",
+    "destructive_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "generate": {
+          "description": "create a dedicated age key for this store and add it",
+          "type": "boolean"
+        },
+        "only": {
+          "description": "lock it to exactly these keys, dropping every other reader",
+          "type": "boolean"
+        },
+        "recipient": {
+          "description": "also let this key read the store: an age/SSH public key, or a path to one — including a private key, whose public half is all that is read; repeatable",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "kv_rm",
+    "description": "Remove a stored key permanently\n\nSafety: destructive. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"key\"). You cannot issue one yourself — ask the operator to run `rta grant allow kv.rm`.",
+    "destructive_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "description": "key to remove",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "kv_set",
+    "description": "Set (or overwrite) a stored value\n\nThe value comes from the argument or from --file. The kind (certificate, private key, json, file, string) is detected from the content unless --kind says otherwise. Writing an entry never changes who can read the store: that is `kv rekey`, which is destructive for the reason this is not.\n\nSetting a key that already exists replaces the secret in it, and nothing keeps the old one — no history, no backup, no undo. That is the same loss as `kv rm`, which an agent may only reach with --allow-destructive and a per-key grant, so this asks a person the same question rather than a cheaper one for the same damage. CLI and TUI are unaffected: grants gate MCP calls, and at a terminal the person is already there.\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"key\"). You cannot issue one yourself — ask the operator to run `rta grant allow kv.set`.",
+    "destructive_hint": false,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "description": "what this is for — shown by kv list",
+          "type": "string"
+        },
+        "key": {
+          "description": "key to set",
+          "type": "string"
+        },
+        "kind": {
+          "description": "override the kind detected from the content",
+          "enum": [
+            "string",
+            "json",
+            "certificate",
+            "private-key",
+            "public-key",
+            "ssh-key",
+            "file"
+          ],
+          "type": "string"
+        },
+        "value": {
+          "description": "value to store",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "kv_show",
+    "description": "Show everything about one entry except its value\n\nThe detail page for a stored key: what kind of thing it is, what it is for, how big it is, where it came from and when it changed. Deliberately not the value — that is `kv get`, which is a write for exactly that reason. This stays Read because everything on it is metadata you can safely put on a screen.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "description": "key to describe",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "kv_status",
+    "description": "Where the store is and what can open it\n\nEverything about the store that can be known without unlocking it: whether it exists, how big it is, when it last changed, whether it is locked with a passphrase or to keys, and whether a key is available in this environment. With --detail it also lists who can open the store and what is in it — names, kinds and sizes, never a value or a preview of one — when a key is already at hand; when none is, it says so instead of asking, so the compact answer never turns into a passphrase prompt nobody expected.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "default": false,
+          "description": "return the full detailed view instead of the compact summary",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "net_dns",
+    "description": "Resolve DNS records for a name, or a name for an address\n\n--type auto (the default) asks the question you usually mean: A, AAAA and CNAME for a name, PTR for an address. --server sends the query to a specific resolver instead of the system one, which is how you tell \"the record is wrong\" apart from \"my resolver is stale\". With --detail: the query, the resolver that answered, and how long it took.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "default": false,
+          "description": "return the full detailed view instead of the compact summary",
+          "type": "boolean"
+        },
+        "name": {
+          "description": "name or IP address to resolve",
+          "type": "string"
+        },
+        "server": {
+          "description": "resolver to query, e.g. 1.1.1.1 or 9.9.9.9:53 (default: the system resolver)",
+          "type": "string"
+        },
+        "timeout": {
+          "default": 5,
+          "description": "query timeout in seconds",
+          "maximum": 120,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "type": {
+          "default": "auto",
+          "description": "which record type to ask for",
+          "enum": [
+            "auto",
+            "A",
+            "AAAA",
+            "CNAME",
+            "MX",
+            "NS",
+            "TXT",
+            "PTR",
+            "SRV"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "net_hosts_add",
+    "description": "Point a hostname at an address in the hosts file\n\nAdding \"127.0.0.1 api.example.com\" is a thirty-second job that takes two minutes by hand. A name resolves to one address, so this takes the name away from any other active entry rather than leaving two that race. Everything else in the file — comments, ordering, spacing — survives untouched, and the previous version is saved before the write.\n\nClassified destructive rather than write: this rewrites a root-owned file that governs name resolution for every process on the machine, and a wrong entry silently reroutes traffic instead of failing. Over MCP that means a per-capability allowlist, not just --allow-write.\n\nSafety: destructive. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"hostname\"). You cannot issue one yourself — ask the operator to run `rta grant allow net.hosts.add`.",
+    "destructive_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "hostname": {
+          "description": "hostnames to map",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "ip": {
+          "description": "address to point at",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ip",
+        "hostname"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "net_hosts_list",
+    "description": "List hosts-file entries, including disabled ones\n\nOne row per hostname, since a hostname is what you look up, disable and remove. Entries commented out by `net hosts toggle` are shown as disabled rather than hidden as comments.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "description": "operate on this file instead of the system one (a container's, a chroot's) (a path on the machine running rta)",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "net_hosts_rm",
+    "description": "Remove hostnames from the hosts file\n\nRemoves the names, and the line only if nothing is left on it. `net hosts toggle` parks an entry instead, which is usually what you want.\n\nSafety: destructive. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"hostname\"). You cannot issue one yourself — ask the operator to run `rta grant allow net.hosts.rm`.",
+    "destructive_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "hostname": {
+          "description": "hostnames to remove",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "hostname"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "net_hosts_toggle",
+    "description": "Enable or disable a hosts-file entry without deleting it\n\nThe part everyone forgets is taking the entry out again, so entries can be parked instead: a disabled entry stays in the file, commented, and comes back with the same command. Same blast radius as add, same classification.\n\nSafety: destructive. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"hostname\"). You cannot issue one yourself — ask the operator to run `rta grant allow net.hosts.toggle`.",
+    "destructive_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "hostname": {
+          "description": "hostname to toggle",
+          "type": "string"
+        }
+      },
+      "required": [
+        "hostname"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "net_info",
+    "description": "Local network overview: interfaces, DNS, proxy, throughput\n\nReports local facts only — it never calls external services, so no public-IP lookup. Proxy credentials are masked. Throughput is sampled over 500ms. With --detail: every interface with MAC, MTU, flags and addresses, per-interface traffic counters, the full resolver list and proxy environment.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "default": false,
+          "description": "return the full detailed view instead of the compact summary",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "net_ping",
+    "description": "Ping a host and report latency statistics\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "default": 4,
+          "description": "number of probes",
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "graph": {
+          "description": "plot per-probe latency instead of summary stats",
+          "type": "boolean"
+        },
+        "host": {
+          "description": "host to ping",
+          "type": "string"
+        },
+        "timeout": {
+          "default": 10,
+          "description": "overall timeout in seconds",
+          "maximum": 300,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "host"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "net_port",
+    "description": "TCP connect-scan ports on a host\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "description": "host to scan",
+          "type": "string"
+        },
+        "ports": {
+          "default": "22,80,443",
+          "description": "comma-separated ports and ranges, e.g. 22,80,8000-8010",
+          "type": "string"
+        },
+        "timeout": {
+          "default": 2,
+          "description": "per-port timeout in seconds",
+          "maximum": 60,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "host"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "net_probe",
+    "description": "Open a TCP connection and report what answers\n\nWhat telnet \u003chost\u003e \u003cport\u003e is really used for: prove the port accepts a connection, time the handshake, and show the banner the service volunteers. --tls completes a TLS handshake first and reports the negotiated version and cipher. It only ever listens; to speak first — the protocols that expect the client to open — use `net send`, which is a write and gated as one.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "description": "host to connect to",
+          "type": "string"
+        },
+        "port": {
+          "description": "port to connect to",
+          "maximum": 65535,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "timeout": {
+          "default": 5,
+          "description": "connect timeout in seconds",
+          "maximum": 120,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "tls": {
+          "description": "complete a TLS handshake after connecting",
+          "type": "boolean"
+        },
+        "wait": {
+          "default": 2,
+          "description": "seconds to wait for the service to say something",
+          "maximum": 120,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "host",
+        "port"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "net_resolver_list",
+    "description": "Show the system resolver, and who controls it\n\nresolv.conf is the file people most often edit to no effect: on most modern systems it is generated and replaced. This leads with who owns it, because that decides whether anything else in it is worth changing.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "description": "operate on this file instead of the system one (a container's, a chroot's) (a path on the machine running rta)",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "net_resolver_set",
+    "description": "Set the system nameservers\n\nReplaces the nameserver lines, leaving search domains, options and comments where they are, after saving the previous version. Refuses when the file is generated by something else — silently editing a generated file is worse than refusing, since the change works and then vanishes with nothing to point at. --force overrides that, with the warning repeated in the result.\n\nSafety: destructive. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"server\"). You cannot issue one yourself — ask the operator to run `rta grant allow net.resolver.set`.",
+    "destructive_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "force": {
+          "description": "write even when the file is machine-generated",
+          "type": "boolean"
+        },
+        "server": {
+          "description": "nameserver addresses, in failover order",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "server"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "net_send",
+    "description": "Send bytes to a TCP port and report what comes back\n\nOpens a TCP connection, writes what you give it, and shows the reply — how you poke a protocol that expects the client to speak first (SMTP, Redis, HTTP/1.0). \\r\\n and \\n in --data are interpreted. --tls speaks it over TLS. This is a write: what arrives is executed by whatever is listening, so it needs an explicit grant before an AI agent can use it. `net probe` is the read-only half — connect, handshake, listen — and needs no grant.\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"host\"). You cannot issue one yourself — ask the operator to run `rta grant allow net.send`.",
+    "destructive_hint": false,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "description": "bytes to send, e.g. \"GET / HTTP/1.0\\r\\n\\r\\n\"",
+          "type": "string"
+        },
+        "host": {
+          "description": "host to connect to",
+          "type": "string"
+        },
+        "port": {
+          "description": "port to connect to",
+          "maximum": 65535,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "timeout": {
+          "default": 5,
+          "description": "connect timeout in seconds",
+          "maximum": 120,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "tls": {
+          "description": "complete a TLS handshake before sending",
+          "type": "boolean"
+        },
+        "wait": {
+          "default": 2,
+          "description": "seconds to wait for a reply",
+          "maximum": 120,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "host",
+        "port",
+        "data"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "net_trace",
+    "description": "Trace the route to a host, hop by hop\n\nICMP echo probes with a rising TTL: each hop that expires one reports itself. Answers the question ping cannot — not just \"is it reachable\" but \"where does it stop\". Silent hops show as *; that is a router declining to reply, not necessarily a fault.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "description": "host to trace",
+          "type": "string"
+        },
+        "max-hops": {
+          "default": 30,
+          "description": "stop after this many hops",
+          "maximum": 64,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "probes": {
+          "default": 3,
+          "description": "probes per hop",
+          "maximum": 10,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "resolve": {
+          "default": true,
+          "description": "reverse-resolve hop addresses to names",
+          "type": "boolean"
+        },
+        "timeout": {
+          "default": 2,
+          "description": "per-probe timeout in seconds",
+          "maximum": 60,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "host"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "note_add",
+    "description": "Add a note\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
+    "destructive_hint": false,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "body": {
+          "description": "note content, markdown supported",
+          "type": "string"
+        },
+        "tag": {
+          "description": "tags, repeatable (--tag recipe --tag italian)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "title": {
+          "description": "note title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "title"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "note_edit",
+    "description": "Edit a note's title, body or tags\n\nEmpty fields keep their current value. --tag - clears all tags.\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
+    "destructive_hint": false,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "body": {
+          "description": "new body, markdown supported (empty keeps the current one)",
+          "type": "string"
+        },
+        "id": {
+          "description": "note id",
+          "type": "integer"
+        },
+        "tag": {
+          "description": "tags, repeatable (--tag recipe --tag italian)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "title": {
+          "description": "new title (empty keeps the current one)",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "note_list",
+    "description": "List notes\n\nWith --detail: adds creation date and a preview of each note's body.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "default": false,
+          "description": "return the full detailed view instead of the compact summary",
+          "type": "boolean"
+        },
+        "tag": {
+          "description": "only notes with any of these tags",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "note_rm",
+    "description": "Remove a note permanently\n\nSafety: destructive. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"id\"). You cannot issue one yourself — ask the operator to run `rta grant allow note.rm`.",
+    "destructive_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "note id",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "note_search",
+    "description": "Search notes by title, body or tag\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "query": {
+          "description": "search terms",
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "note_show",
+    "description": "Show one note: metadata, content, references\n\nMetadata (tags, size, age) stays separate from the markdown content, which is rendered richly on human surfaces. Cross-references (\"#12\" in a body) resolve both ways.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "note id",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "note_tags",
+    "description": "List tags in use and how many notes carry each\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    }
+  },
+  {
+    "name": "sys_cpu",
+    "description": "Show CPU model, core count and current usage\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "cores": {
+          "description": "per-core usage as a bar chart",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "sys_disk",
+    "description": "Show disk usage per mounted filesystem\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "all": {
+          "description": "include pseudo, duplicate and zero-size filesystems",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "sys_host",
+    "description": "Show host info: OS, kernel, uptime, addresses\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    }
+  },
+  {
+    "name": "sys_load",
+    "description": "Show load averages, normalized per core\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    }
+  },
+  {
+    "name": "sys_mem",
+    "description": "Show memory and swap usage\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    }
+  },
+  {
+    "name": "sys_overview",
+    "description": "One-screen host health: cpu, memory, load, disk, uptime\n\nA dense one-line-per-subsystem summary. With --detail (and on any full-page surface) it expands into a full report: identity, per-core usage, memory and swap breakdown, every filesystem, sensors and top processes. Lines a platform cannot provide are omitted rather than failing the view.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "default": false,
+          "description": "return the full detailed view instead of the compact summary",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "sys_ps",
+    "description": "List top processes by CPU or memory\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "limit": {
+          "default": 15,
+          "description": "maximum processes to list",
+          "maximum": 1000,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "sort": {
+          "default": "cpu",
+          "description": "sort by",
+          "enum": [
+            "cpu",
+            "mem"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "sys_temp",
+    "description": "Show sensor temperatures\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    }
+  },
+  {
+    "name": "todo_add",
+    "description": "Add a task\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
+    "destructive_hint": false,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "body": {
+          "description": "longer description, markdown supported",
+          "type": "string"
+        },
+        "due": {
+          "description": "due date: today, tomorrow, a weekday, or 2006-01-02",
+          "type": "string"
+        },
+        "parent": {
+          "description": "make this a sub-task of the given task id",
+          "type": "integer"
+        },
+        "tag": {
+          "description": "tags, repeatable (--tag backend --tag urgent)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "title": {
+          "description": "task title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "title"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "todo_done",
+    "description": "Mark a task as done\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
+    "destructive_hint": false,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "task id",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "todo_edit",
+    "description": "Edit a task's title, body, tags or due date\n\nEmpty fields keep their current value. --tag - clears all tags; --due none clears the due date.\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
+    "destructive_hint": false,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "body": {
+          "description": "new body, markdown supported (empty keeps the current one)",
+          "type": "string"
+        },
+        "due": {
+          "description": "due date: today, tomorrow, a weekday, or 2006-01-02",
+          "type": "string"
+        },
+        "id": {
+          "description": "task id",
+          "type": "integer"
+        },
+        "parent": {
+          "default": -1,
+          "description": "re-parent to this task id (0 makes it top-level)",
+          "type": "integer"
+        },
+        "tag": {
+          "description": "tags, repeatable (--tag backend --tag urgent)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "title": {
+          "description": "new title (empty keeps the current one)",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "todo_list",
+    "description": "List tasks\n\nShows top-level tasks by default; pass --parent to list one task's sub-tasks. With --detail: adds creation date and a body preview.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "all": {
+          "description": "include completed tasks",
+          "type": "boolean"
+        },
+        "detail": {
+          "default": false,
+          "description": "return the full detailed view instead of the compact summary",
+          "type": "boolean"
+        },
+        "parent": {
+          "default": 0,
+          "description": "list sub-tasks of this task id instead of top-level tasks",
+          "type": "integer"
+        },
+        "tag": {
+          "description": "only tasks with any of these tags",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "todo_reopen",
+    "description": "Un-complete a task\n\nThe undo for `todo done`. Marking the wrong task complete is a one-keystroke mistake, and a list you cannot take something back out of is a list people stop trusting. Completing an already-open task is a no-op, not an error.\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
+    "destructive_hint": false,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "task id",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "todo_rm",
+    "description": "Remove a task permanently\n\nSub-tasks are re-parented to the removed task's parent, never deleted silently.\n\nSafety: destructive. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"id\"). You cannot issue one yourself — ask the operator to run `rta grant allow todo.rm`.",
+    "destructive_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "task id",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "todo_search",
+    "description": "Search tasks by title, body or tag\n\nSearches every task regardless of parent/child, done or open.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "query": {
+          "description": "search terms",
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "todo_show",
+    "description": "Show one task: metadata, description, sub-tasks, references\n\nA composed page rather than one blob: structured metadata (status, due, tags, parent, progress) stays separate from the markdown description, so both stay readable and machine callers can read a due date without parsing prose. Sub-tasks and cross-references (\"#12\" in a body, resolved both ways) follow.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "task id",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "todo_tags",
+    "description": "List tags in use and how many tasks carry each\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    }
+  }
+]
