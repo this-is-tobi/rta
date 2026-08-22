@@ -162,10 +162,10 @@ func detailedOverview(ctx context.Context, req plugin.Request) (view.View, error
 		return nil, err
 	}
 	p := plugin.NewPage(ctx, req)
-	p.Put("passwords", passwords)
-	p.Put("keys & tokens", keys)
-	p.Put("about key length", view.Text{Body: keyNote()})
-	p.Put("uuids", uuids)
+	p.PutAs("passwords", "passwords", passwords)
+	p.PutAs("keys", "keys & tokens", keys)
+	p.PutAs("key-length", "about key length", view.Text{Body: keyNote()})
+	p.PutAs("uuids", "uuids", uuids)
 	return p.View(), nil
 }
 

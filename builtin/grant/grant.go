@@ -174,7 +174,7 @@ func runAllow(_ context.Context, req plugin.Request, catalog func() []plugin.Cap
 	// it was supposedly just allowed to make, and is refused anyway.
 	if !targetExists(catalog, target) {
 		return nil, view.Errorf("grant.unknowntarget", "%q does not name a registered capability or plugin", target).
-			WithHint("rta explain lists capability IDs, rta plugins lists plugin names — check for a typo")
+			WithHint("rta explain lists capability IDs, rta plugin list lists plugin names — check for a typo")
 	}
 	ttl, asked, verr := parseTTL(req.String("ttl"), target)
 	if verr != nil {
@@ -289,9 +289,9 @@ func runList(ctx context.Context, req plugin.Request, catalog func() []plugin.Ca
 	// a list maintained by hand goes stale exactly when a capability is
 	// added, which is the moment somebody most wants to read it.
 	p := plugin.NewPage(ctx, req)
-	p.Put("granted", held)
+	p.PutAs("granted", "granted", held)
 	for _, tier := range reachTiers {
-		p.Put(tier.title, reachTable(catalog(), tier.holds))
+		p.PutAs(tier.id, tier.title, reachTable(catalog(), tier.holds))
 	}
 	return p.View(), nil
 }
@@ -303,16 +303,20 @@ func runList(ctx context.Context, req plugin.Request, catalog func() []plugin.Ca
 // quarter-hour. Folding them into one "not granted" bucket would read as if
 // a write were as freely reachable as a read.
 var reachTiers = []struct {
-	title string
-	holds func(plugin.Capability) bool
+	// id is what a script or an agent addresses the section by; title is
+	// what a person reads. One string doing both jobs made every wording
+	// improvement a silent break for whoever had scripted the old one —
+	// see view.Section.
+	id, title string
+	holds     func(plugin.Capability) bool
 }{
-	{"reachable by default", func(c plugin.Capability) bool {
+	{"default", "reachable by default", func(c plugin.Capability) bool {
 		return !core.Required(c) && c.Safety == plugin.Read
 	}},
-	{"needs --allow-write on the server", func(c plugin.Capability) bool {
+	{"allow-write", "needs --allow-write on the server", func(c plugin.Capability) bool {
 		return !core.Required(c) && c.Safety != plugin.Read
 	}},
-	{"needs a grant a person issues", core.Required},
+	{"grant", "needs a grant a person issues", core.Required},
 }
 
 // reachTable lists the capabilities in one tier.
@@ -344,8 +348,20 @@ func heldTable() (view.View, *view.Error) {
 		return nil, verr
 	}
 	if len(grants) == 0 {
-		return view.Text{Body: "No active grants — AI agents can only read.\n" +
-			"Allow one with: rta grant allow <capability> --ttl 15m"}, nil
+		body := "No active grants — AI agents can only read.\n" +
+			"Allow one with: rta grant allow <capability> --ttl 15m"
+		// An empty list is the ordinary answer and a dropped file is not, so
+		// the difference has to be visible here: this is the one screen where
+		// somebody looking for a grant they issued will come looking for it.
+		if core.Legacy() {
+			body = "No active grants — AI agents can only read.\n\n" +
+				"Grants are now sealed against tampering, and " + core.Path() + " predates\n" +
+				"the seal, so nothing in it is honoured. Any grant it held is gone; re-issue\n" +
+				"what you still need. Removing the file clears this notice:\n" +
+				"  rm " + core.Path() + "\n\n" +
+				"Allow one with: rta grant allow <capability> --ttl 15m"
+		}
+		return view.Text{Body: body}, nil
 	}
 	t := view.Table{Columns: []view.Column{
 		{Name: "Capability"},

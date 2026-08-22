@@ -1,7 +1,7 @@
 [
   {
     "name": "audit_deps",
-    "description": "Check declared dependencies against the OSV vulnerability database\n\nReads what a project already declares — go.mod, any of the four JavaScript lockfiles (npm, pnpm, yarn, bun), uv.lock, poetry.lock, Pipfile.lock, requirements.txt, Cargo.lock, composer.lock, Gemfile.lock, or a CycloneDX/SPDX SBOM sitting beside them — and asks osv.dev once about every pinned dependency, reporting which are named in an advisory. Nothing is resolved, built or crawled: a lockfile is a list a package manager already committed, and reading it is not scanning. The batch endpoint answers with advisory identifiers, not severities or fixed versions, so a hit points at osv-scanner, trivy or grype for the depth this deliberately does not have. Components whose ecosystem OSV does not recognise are counted and named rather than dropped. --offline inventories without asking anything. --recursive walks a monorepo, skipping node_modules, vendor and build output, which is what a polyglot repository needs: one lockfile per service and no single file that knows about the others. Cites A03:2025 Software Supply Chain Failures and CWE-1395.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nCheck declared dependencies against the OSV vulnerability database\n\nReads what a project already declares — go.mod, any of the four JavaScript lockfiles (npm, pnpm, yarn, bun), uv.lock, poetry.lock, Pipfile.lock, requirements.txt, Cargo.lock, composer.lock, Gemfile.lock, or a CycloneDX/SPDX SBOM sitting beside them — and asks osv.dev once about every pinned dependency, reporting which are named in an advisory. Nothing is resolved, built or crawled: a lockfile is a list a package manager already committed, and reading it is not scanning. The batch endpoint answers with advisory identifiers, not severities or fixed versions, so a hit points at osv-scanner, trivy or grype for the depth this deliberately does not have. Components whose ecosystem OSV does not recognise are counted and named rather than dropped. --offline inventories without asking anything. --recursive walks a monorepo, skipping node_modules, vendor and build output, which is what a polyglot repository needs: one lockfile per service and no single file that knows about the others. Cites A03:2025 Software Supply Chain Failures and CWE-1395.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -38,7 +38,7 @@
   },
   {
     "name": "audit_mail",
-    "description": "Audit a domain's email authentication: SPF, DKIM, DMARC, MTA-STS\n\nAnswers \"can somebody send mail as this domain\" from the records the domain publishes: SPF (present, singular, how it ends, and how close it is to RFC 7208's ten-lookup limit past which it silently stops applying), DMARC (policy, rollout percentage, whether anything reports back), DKIM for a given selector, MTA-STS and TLS-RPT for the server-to-server hop, and MX — including RFC 7505's null MX, which is a hardening measure rather than an omission. Every finding cites an OWASP Top 10:2025 category and a MITRE CWE. With --detail: one section per area plus the cited references with lookup URLs. Read-only, a handful of lookups of names derived from the domain by rule — nothing is enumerated, which is why DKIM needs its selector handed to it.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nAudit a domain's email authentication: SPF, DKIM, DMARC, MTA-STS\n\nAnswers \"can somebody send mail as this domain\" from the records the domain publishes: SPF (present, singular, how it ends, and how close it is to RFC 7208's ten-lookup limit past which it silently stops applying), DMARC (policy, rollout percentage, whether anything reports back), DKIM for a given selector, MTA-STS and TLS-RPT for the server-to-server hop, and MX — including RFC 7505's null MX, which is a hardening measure rather than an omission. Every finding cites an OWASP Top 10:2025 category and a MITRE CWE. With --detail: one section per area plus the cited references with lookup URLs. Read-only, a handful of lookups of names derived from the domain by rule — nothing is enumerated, which is why DKIM needs its selector handed to it.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -73,7 +73,7 @@
   },
   {
     "name": "audit_web",
-    "description": "Audit a web host: TLS, certificate, headers, cookies, exposure\n\nOne HTTPS request, graded: TLS version and cipher, certificate validity, expiry and signature algorithm, the security headers a host should send (HSTS, CSP — checked for weak directives like unsafe-inline, not just presence — X-Frame-Options/frame-ancestors, cross-origin isolation headers), CORS behavior (probed with an Origin no real browser would send, to catch blind reflection), cookie flags, and the version/stack details a host should not leak. Every finding cites an OWASP Top 10:2025 category and a MITRE CWE, so a result traces back to a named control rather than an opinion. With --detail: one section per area plus the cited references with lookup URLs. Read-only — it only inspects the response the host volunteers, plus the one Origin header the CORS probe adds.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nAudit a web host: TLS, certificate, headers, cookies, exposure\n\nOne HTTPS request, graded: TLS version and cipher, certificate validity, expiry and signature algorithm, the security headers a host should send (HSTS, CSP — checked for weak directives like unsafe-inline, not just presence — X-Frame-Options/frame-ancestors, cross-origin isolation headers), CORS behavior (probed with an Origin no real browser would send, to catch blind reflection), cookie flags, and the version/stack details a host should not leak. Every finding cites an OWASP Top 10:2025 category and a MITRE CWE, so a result traces back to a named control rather than an opinion. With --detail: one section per area plus the cited references with lookup URLs. Read-only — it only inspects the response the host volunteers, plus the one Origin header the CORS probe adds.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -104,14 +104,14 @@
   },
   {
     "name": "cert_chain",
-    "description": "Show the certificate chain presented by a host\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nShow the certificate chain presented by a host\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
       "additionalProperties": false,
       "properties": {
         "target": {
-          "description": "host[:port] to connect to, or a path to a PEM file",
+          "description": "host[:port] to connect to, or a path to a PEM file (a path on the machine running rta)",
           "type": "string"
         },
         "timeout": {
@@ -130,7 +130,7 @@
   },
   {
     "name": "cert_expiry",
-    "description": "Check certificate expiry for one or more hosts\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nCheck certificate expiry for one or more hosts\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -164,14 +164,14 @@
   },
   {
     "name": "cert_inspect",
-    "description": "Show certificate details for a host or PEM file\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nShow certificate details for a host or PEM file\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
       "additionalProperties": false,
       "properties": {
         "target": {
-          "description": "host[:port] to connect to, or a path to a PEM file",
+          "description": "host[:port] to connect to, or a path to a PEM file (a path on the machine running rta)",
           "type": "string"
         },
         "timeout": {
@@ -190,14 +190,14 @@
   },
   {
     "name": "cert_tls",
-    "description": "Report the negotiated TLS version and cipher for a host\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nReport the negotiated TLS version and cipher for a host\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
       "additionalProperties": false,
       "properties": {
         "target": {
-          "description": "host[:port] to connect to, or a path to a PEM file",
+          "description": "host[:port] to connect to, or a path to a PEM file (a path on the machine running rta)",
           "type": "string"
         },
         "timeout": {
@@ -216,7 +216,7 @@
   },
   {
     "name": "codec_b64",
-    "description": "Base64 encode or decode a value\n\nDecoding accepts standard, URL-safe, and unpadded variants without being told which — the caller already has the encoded value, so being forgiving about which base64 dialect produced it costs nothing.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nBase64 encode or decode a value\n\nDecoding accepts standard, URL-safe, and unpadded variants without being told which — the caller already has the encoded value, so being forgiving about which base64 dialect produced it costs nothing.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "input_schema": {
       "additionalProperties": false,
@@ -242,7 +242,7 @@
   },
   {
     "name": "codec_hex",
-    "description": "Hex encode or decode a value\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nHex encode or decode a value\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "input_schema": {
       "additionalProperties": false,
@@ -264,7 +264,7 @@
   },
   {
     "name": "codec_jwt",
-    "description": "Decode a JWT's header and claims for inspection\n\nUnverified by default and clearly labeled as such: this is for reading a token while debugging, not for authenticating one. No signature check is performed — anyone can hand you a token with any claims at all.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nDecode a JWT's header and claims for inspection\n\nUnverified by default and clearly labeled as such: this is for reading a token while debugging, not for authenticating one. No signature check is performed — anyone can hand you a token with any claims at all.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "input_schema": {
       "additionalProperties": false,
@@ -282,7 +282,7 @@
   },
   {
     "name": "codec_url",
-    "description": "URL-escape or unescape a value\n\nQuery-component escaping (spaces become +), the form almost everyone means by \"URL encode this\" — the value for a query string or form body.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nURL-escape or unescape a value\n\nQuery-component escaping (spaces become +), the form almost everyone means by \"URL encode this\" — the value for a query string or form body.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "input_schema": {
       "additionalProperties": false,
@@ -303,8 +303,24 @@
     }
   },
   {
+    "name": "debug_ansi",
+    "description": "── the text below is written by the plugin, not by rta ──\nBreak down the ANSI escape sequences in a string, byte by byte\n\nWalks the input the way a terminal would, one printable run or control/escape sequence at a time, and names what each one does — SGR colors and attributes, cursor movement, screen/line erase, and the OSC sequences most worth knowing about on sight: window title, hyperlink target, and the system clipboard write (decoded, not left as base64). Never prints a raw control byte back at the terminal it is running in — the whole point is seeing what a sequence does without it happening.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "input": {
+          "description": "text containing escape sequences; reads piped stdin when omitted",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
     "name": "fs_hash",
-    "description": "Checksum a file, and compare it against an expected value\n\nHashes a file and, given --expect, says plainly whether it matches — which is the actual task, and the one comparing two hex strings by eye is bad at. The comparison is case-insensitive and tolerates the \"sha256:\" prefix and the surrounding whitespace that come with a pasted checksum. It is not a signature check: it says a file is the one somebody described, not that the description came from anybody in particular.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nChecksum a file, and compare it against an expected value\n\nHashes a file and, given --expect, says plainly whether it matches — which is the actual task, and the one comparing two hex strings by eye is bad at. The comparison is case-insensitive and tolerates the \"sha256:\" prefix and the surrounding whitespace that come with a pasted checksum. It is not a signature check: it says a file is the one somebody described, not that the description came from anybody in particular.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -338,7 +354,7 @@
   },
   {
     "name": "fs_tree",
-    "description": "Show a directory as a tree, with sizes\n\nThe shape of a directory, a few levels at a time, with each entry's size beside it. Entries are ordered directories first and then by name, the order a person reads a listing in. Truncated branches say how many entries they are hiding rather than trailing off, so the tree never claims a directory is smaller than it is.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nShow a directory as a tree, with sizes\n\nThe shape of a directory, a few levels at a time, with each entry's size beside it. Entries are ordered directories first and then by name, the order a person reads a listing in. Truncated branches say how many entries they are hiding rather than trailing off, so the tree never claims a directory is smaller than it is. With --detail: what the walk covered, the tree, and everything it left out — depth, per-directory limit, hidden entries, mount points and unreadable directories gathered in one place instead of scattered through the branches they happened in.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -354,6 +370,11 @@
           "maximum": 12,
           "minimum": 1,
           "type": "integer"
+        },
+        "detail": {
+          "default": false,
+          "description": "return the full detailed view instead of the compact summary",
+          "type": "boolean"
         },
         "limit": {
           "default": 12,
@@ -373,7 +394,7 @@
   },
   {
     "name": "fs_usage",
-    "description": "Show what is using space under a path, biggest first\n\nTotals every entry under a path and ranks them, which is the question `du -sh * | sort -h | tail` is always asked to answer. Directories are summed recursively; the share column is of the scanned total, not of the disk, so it adds up to what you are looking at. Hidden entries are included — they are usually the answer. With --detail: the ranking, the largest individual files found anywhere beneath, and what was skipped. Follows no symlinks and crosses no filesystem boundary, so a scan cannot loop or wander onto a network mount.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nShow what is using space under a path, biggest first\n\nTotals every entry under a path and ranks them, which is the question `du -sh * | sort -h | tail` is always asked to answer. Directories are summed recursively; the share column is of the scanned total, not of the disk, so it adds up to what you are looking at. Hidden entries are included — they are usually the answer. With --detail: the ranking, the largest individual files found anywhere beneath, and what was skipped. Follows no symlinks and crosses no filesystem boundary, so a scan cannot loop or wander onto a network mount.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -407,7 +428,7 @@
   },
   {
     "name": "gen_overview",
-    "description": "A sampler of the shapes worth generating, ready to use\n\nGenerates one of each common shape side by side — passwords, encryption key material, URL-safe and TOTP tokens, UUIDs — labelled with what it is for, the entropy it actually carries and the command that reproduces it, so picking the right shape does not require remembering the flags first. With --detail: every preset, plus why a \"32-character key\" is not a 32-byte one. Every value is real and freshly generated; nothing is an example.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nA sampler of the shapes worth generating, ready to use\n\nGenerates one of each common shape side by side — passwords, encryption key material, URL-safe and TOTP tokens, UUIDs — labelled with what it is for, the entropy it actually carries and the command that reproduces it, so picking the right shape does not require remembering the flags first. With --detail: every preset, plus why a \"32-character key\" is not a 32-byte one. Every value is real and freshly generated; nothing is an example.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "input_schema": {
       "additionalProperties": false,
@@ -423,7 +444,7 @@
   },
   {
     "name": "gen_password",
-    "description": "Generate a cryptographically random password\n\ncrypto/rand only, with unbiased alphabet selection (rand.Int, never rand.Intn or modulo, which biases low indices unless the alphabet size divides the RNG range evenly). Reports entropy in bits: length x log2(alphabet size).\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nGenerate a cryptographically random password\n\ncrypto/rand only, with unbiased alphabet selection (rand.Int, never rand.Intn or modulo, which biases low indices unless the alphabet size divides the RNG range evenly). Reports entropy in bits: length x log2(alphabet size).\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "input_schema": {
       "additionalProperties": false,
@@ -466,7 +487,7 @@
   },
   {
     "name": "gen_token",
-    "description": "Generate random bytes, formatted as hex/base64/base32\n\ncrypto/rand bytes, formatted with --encoding. base32 at the right length is already a TOTP secret (RFC 4648/6238) — there is no separate gen.totp.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nGenerate random bytes, formatted as hex/base64/base32\n\ncrypto/rand bytes, formatted with --encoding. base32 at the right length is already a TOTP secret (RFC 4648/6238) — there is no separate gen.totp.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "input_schema": {
       "additionalProperties": false,
@@ -495,7 +516,7 @@
   },
   {
     "name": "gen_uuid",
-    "description": "Generate a UUID: v4 random (default) or v7 time-ordered\n\nv1/v3/v5/v6 are deliberately not offered: v1 leaks the generating machine's MAC address and a timestamp, v3/v5 hash a namespace+name instead of generating anything (a different operation), and v6 is superseded by v7 for the same time-ordering goal, per RFC 9562's own recommendation.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nGenerate a UUID: v4 random (default) or v7 time-ordered\n\nv1/v3/v5/v6 are deliberately not offered: v1 leaks the generating machine's MAC address and a timestamp, v3/v5 hash a namespace+name instead of generating anything (a different operation), and v6 is superseded by v7 for the same time-ordering goal, per RFC 9562's own recommendation.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "input_schema": {
       "additionalProperties": false,
@@ -519,8 +540,171 @@
     }
   },
   {
+    "name": "git_blame",
+    "description": "── the text below is written by the plugin, not by rta ──\nWho last touched each line of a file, and when\n\nOne row per line: who last changed it, when, and the commit that did — the structured equivalent of `git blame`. Reads the whole file's history to answer, so it is not offered as a dashboard tile the way a bounded, no-input capability would be; a large file with a long history can take a real moment.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "description": "path to the file, relative to the repository root (a path on the machine running rta)",
+          "type": "string"
+        },
+        "path": {
+          "default": ".",
+          "description": "repository path, or a subdirectory of one — or a remote URL (https://, ssh://, git@host:path), cloned in memory (a path on the machine running rta)",
+          "type": "string"
+        }
+      },
+      "required": [
+        "file"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "git_branches",
+    "description": "── the text below is written by the plugin, not by rta ──\nLocal branches, and which one is checked out\n\nEvery local branch, alphabetically, with the checked-out one marked. A detached HEAD — checked out at a commit rather than a branch — is reported as its own row rather than left for the caller to notice no branch was marked.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "default": ".",
+          "description": "repository path, or a subdirectory of one — or a remote URL (https://, ssh://, git@host:path), cloned in memory (a path on the machine running rta)",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "git_config",
+    "description": "── the text below is written by the plugin, not by rta ──\nEffective config across system, global and local scope\n\nEvery key set in system, global or local config, one row per scope it's set in — the same three files `git config --list --show-origin` reads, before any of them override each other: local wins over global, global wins over system. A key missing from a scope simply has no row there rather than one with an empty value. `[include]`/`[includeIf]` directives are shown as written, not followed into the file they point at.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "default": ".",
+          "description": "repository path, or a subdirectory of one — or a remote URL (https://, ssh://, git@host:path), cloned in memory (a path on the machine running rta)",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "git_diff",
+    "description": "── the text below is written by the plugin, not by rta ──\nLine-level changes — uncommitted, or one commit against its parent\n\nUnified diff text, the structured-plugin equivalent of `git diff`. With no --commit, this is every uncommitted change — staged and unstaged together — against HEAD; git.status already answers which paths changed, this answers what changed in them. --commit diffs that one commit against its own parent instead, the equivalent of `git show \u003ccommit\u003e`'s patch half. Diffing two arbitrary commits against each other is deliberately not offered in this first cut — the two cases above cover what an agent inspecting a repository's current state actually needs, and a revision-range comparison is a distinct enough question to design on its own rather than bolt on.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "commit": {
+          "description": "diff this commit against its own parent, instead of the working tree against HEAD",
+          "type": "string"
+        },
+        "path": {
+          "default": ".",
+          "description": "repository path, or a subdirectory of one — or a remote URL (https://, ssh://, git@host:path), cloned in memory (a path on the machine running rta)",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "git_hooks",
+    "description": "── the text below is written by the plugin, not by rta ──\nWhat's in the hooks directory, and which of it git would actually run\n\nEvery entry in the repository's hooks directory, judged by the same rule git itself uses to decide whether one fires on commit, push and the rest: named exactly (a `.sample` suffix never runs) and executable. A hook is an arbitrary script that runs on this machine, so this reports what would actually execute, not merely what a directory listing shows.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "default": ".",
+          "description": "repository path, or a subdirectory of one — or a remote URL (https://, ssh://, git@host:path), cloned in memory (a path on the machine running rta)",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "git_log",
+    "description": "── the text below is written by the plugin, not by rta ──\nRecent commit history\n\nThe most recent commits reaching HEAD, newest first — hash, author, date and the message's own first line, each a table row rather than text to parse. --file narrows it to commits that touched one path, the structured equivalent of `git log -- \u003cpath\u003e`.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "description": "limit to commits that touched this path (a path on the machine running rta)",
+          "type": "string"
+        },
+        "limit": {
+          "default": 20,
+          "description": "how many of the most recent commits to show",
+          "maximum": 500,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "path": {
+          "default": ".",
+          "description": "repository path, or a subdirectory of one — or a remote URL (https://, ssh://, git@host:path), cloned in memory (a path on the machine running rta)",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "git_overview",
+    "description": "── the text below is written by the plugin, not by rta ──\nBranch, working-tree state and the latest commit, at a glance\n\nA one-line answer to \"what state is this repository in\": which branch is checked out (or that HEAD is detached), whether the working tree is clean, and the latest commit. With --detail (and on any full-page surface) it expands into the same status, log and branches views their own capabilities return — one shape, not a second implementation of each.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "default": false,
+          "description": "return the full detailed view instead of the compact summary",
+          "type": "boolean"
+        },
+        "path": {
+          "default": ".",
+          "description": "repository path, or a subdirectory of one — or a remote URL (https://, ssh://, git@host:path), cloned in memory (a path on the machine running rta)",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "git_status",
+    "description": "── the text below is written by the plugin, not by rta ──\nWhat has changed in the working tree, staged and unstaged\n\nThe structured equivalent of `git status --porcelain`: every path with a staged change, an unstaged change, or neither yet — added, tracked at all — one row per path, both halves shown side by side rather than requiring the two-column code to be decoded by eye.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "default": ".",
+          "description": "repository path, or a subdirectory of one — or a remote URL (https://, ssh://, git@host:path), cloned in memory (a path on the machine running rta)",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
     "name": "grant_list",
-    "description": "List what AI agents are currently allowed to do\n\nReadable without unlocking anything, so the question stays answerable in a hurry. Expired grants are dropped on read. With --detail: what is currently allowed, then everything an agent can reach with no grant at all, and everything that would need one — because \"what did I allow\" is only half of \"what can it do\".\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nList what AI agents are currently allowed to do\n\nReadable without unlocking anything, so the question stays answerable in a hurry. Expired grants are dropped on read. With --detail: what is currently allowed, then everything an agent can reach with no grant at all, and everything that would need one — because \"what did I allow\" is only half of \"what can it do\".\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -537,7 +721,7 @@
   },
   {
     "name": "http_get",
-    "description": "GET a URL and show status, timing and body\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nGET a URL and show status, timing and body\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"url\"). You cannot issue one yourself — ask the operator to run `rta grant allow http.get`.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -578,7 +762,7 @@
   },
   {
     "name": "http_head",
-    "description": "HEAD a URL and show status, timing and headers\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nHEAD a URL and show status, timing and headers\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"url\"). You cannot issue one yourself — ask the operator to run `rta grant allow http.head`.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -618,8 +802,19 @@
     }
   },
   {
+    "name": "keys_list",
+    "description": "── the text below is written by the plugin, not by rta ──\nList the SSH private keys in ~/.ssh, and whether each can be backed up\n\nReads only public data: a key's .pub sibling for its type, fingerprint and comment, and whether the private key itself is passphrase-protected — the same check `rta doctor` uses, which parses far enough to see a key is locked without ever supplying a passphrase. Never decrypts anything. Backup-eligible means ed25519: `keys.backup` has nothing to encode as words for an RSA or ECDSA key, which carries no single seed.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    }
+  },
+  {
     "name": "kv_list",
-    "description": "List stored keys (names and metadata only, never values)\n\nNever returns a value or a preview of one — only key names, what kind of thing each is, its size, its description and when it changed. With --detail: the source filename of anything stored from disk.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nList stored keys (names and metadata only, never values)\n\nNever returns a value or a preview of one — only key names, what kind of thing each is, its size, its description and when it changed. With --detail: the source filename of anything stored from disk.\n\n--match is the \"which one was it called?\" filter: a substring of the name or the description, case-insensitive, so `kv list --match aws` finds `prod-deploy-key` when the description is the only place the word AWS appears.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -642,6 +837,10 @@
             "file"
           ],
           "type": "string"
+        },
+        "match": {
+          "description": "only keys whose name or description contains this (case-insensitive)",
+          "type": "string"
         }
       },
       "type": "object"
@@ -649,7 +848,7 @@
   },
   {
     "name": "kv_recipients",
-    "description": "List the public keys that can decrypt the store\n\nAnswers \"who can read this?\" without unlocking anything — recipients are public keys, so the list is plaintext by design. An empty list means the store is passphrase-encrypted.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nList the public keys that can decrypt the store\n\nAnswers \"who can read this?\" without unlocking anything — recipients are public keys, so the list is plaintext by design. An empty list means the store is passphrase-encrypted.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -660,7 +859,7 @@
   },
   {
     "name": "kv_show",
-    "description": "Show everything about one entry except its value\n\nThe detail page for a stored key: what kind of thing it is, what it is for, how big it is, where it came from and when it changed. Deliberately not the value — that is `kv get`, which is a write for exactly that reason. This stays Read because everything on it is metadata you can safely put on a screen.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nShow everything about one entry except its value\n\nThe detail page for a stored key: what kind of thing it is, what it is for, how big it is, where it came from and when it changed. Deliberately not the value — that is `kv get` (prints it) or `kv copy` (does not), both writes for exactly that reason. This stays Read because everything on it is metadata you can safely put on a screen.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -679,7 +878,7 @@
   },
   {
     "name": "kv_status",
-    "description": "Where the store is and what can open it\n\nEverything about the store that can be known without unlocking it: whether it exists, how big it is, when it last changed, whether it is locked with a passphrase or to keys, and whether a key is available in this environment. With --detail it also lists who can open the store and what is in it — names, kinds and sizes, never a value or a preview of one — when a key is already at hand; when none is, it says so instead of asking, so the compact answer never turns into a passphrase prompt nobody expected.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nWhere the store is and what can open it\n\nEverything about the store that can be known without unlocking it: whether it exists, how big it is, when it last changed, whether it is locked with a passphrase or to keys, and whether a key is available in this environment. With --detail it also lists who can open the store and what is in it — names, kinds and sizes, never a value or a preview of one — when a key is already at hand; when none is, it says so instead of asking, so the compact answer never turns into a passphrase prompt nobody expected.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -696,7 +895,7 @@
   },
   {
     "name": "net_dns",
-    "description": "Resolve DNS records for a name, or a name for an address\n\n--type auto (the default) asks the question you usually mean: A, AAAA and CNAME for a name, PTR for an address. --server sends the query to a specific resolver instead of the system one, which is how you tell \"the record is wrong\" apart from \"my resolver is stale\". With --detail: the query, the resolver that answered, and how long it took.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nResolve DNS records for a name, or a name for an address\n\n--type auto (the default) asks the question you usually mean: A, AAAA and CNAME for a name, PTR for an address. --server sends the query to a specific resolver instead of the system one, which is how you tell \"the record is wrong\" apart from \"my resolver is stale\". With --detail: the query, the resolver that answered, and how long it took.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -747,7 +946,7 @@
   },
   {
     "name": "net_hosts_list",
-    "description": "List hosts-file entries, including disabled ones\n\nOne row per hostname, since a hostname is what you look up, disable and remove. Entries commented out by `net hosts toggle` are shown as disabled rather than hidden as comments.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nList hosts-file entries, including disabled ones\n\nOne row per hostname, since a hostname is what you look up, disable and remove. Entries commented out by `net hosts toggle` are shown as disabled rather than hidden as comments.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -763,7 +962,7 @@
   },
   {
     "name": "net_info",
-    "description": "Local network overview: interfaces, DNS, proxy, throughput\n\nReports local facts only — it never calls external services, so no public-IP lookup. Proxy credentials are masked. Throughput is sampled over 500ms. With --detail: every interface with MAC, MTU, flags and addresses, per-interface traffic counters, the full resolver list and proxy environment.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nLocal network overview: interfaces, DNS, proxy, throughput\n\nReports local facts only — it never calls external services, so no public-IP lookup. Proxy credentials are masked. Throughput is sampled over 500ms. With --detail: every interface with MAC, MTU, flags and addresses, per-interface traffic counters, the full resolver list and proxy environment.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -780,7 +979,7 @@
   },
   {
     "name": "net_ping",
-    "description": "Ping a host and report latency statistics\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nPing a host and report latency statistics\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -817,7 +1016,7 @@
   },
   {
     "name": "net_port",
-    "description": "TCP connect-scan ports on a host\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nTCP connect-scan ports on a host\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -848,7 +1047,7 @@
   },
   {
     "name": "net_probe",
-    "description": "Open a TCP connection and report what answers\n\nWhat telnet \u003chost\u003e \u003cport\u003e is really used for: prove the port accepts a connection, time the handshake, and show the banner the service volunteers. --tls completes a TLS handshake first and reports the negotiated version and cipher. It only ever listens; to speak first — the protocols that expect the client to open — use `net send`, which is a write and gated as one.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nOpen a TCP connection and report what answers\n\nWhat telnet \u003chost\u003e \u003cport\u003e is really used for: prove the port accepts a connection, time the handshake, and show the banner the service volunteers. --tls completes a TLS handshake first and reports the negotiated version and cipher. It only ever listens; to speak first — the protocols that expect the client to open — use `net send`, which is a write and gated as one.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -892,7 +1091,7 @@
   },
   {
     "name": "net_resolver_list",
-    "description": "Show the system resolver, and who controls it\n\nresolv.conf is the file people most often edit to no effect: on most modern systems it is generated and replaced. This leads with who owns it, because that decides whether anything else in it is worth changing.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nShow the system resolver, and who controls it\n\nresolv.conf is the file people most often edit to no effect: on most modern systems it is generated and replaced. This leads with who owns it, because that decides whether anything else in it is worth changing.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -908,7 +1107,7 @@
   },
   {
     "name": "net_trace",
-    "description": "Trace the route to a host, hop by hop\n\nICMP echo probes with a rising TTL: each hop that expires one reports itself. Answers the question ping cannot — not just \"is it reachable\" but \"where does it stop\". Silent hops show as *; that is a router declining to reply, not necessarily a fault.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nTrace the route to a host, hop by hop\n\nICMP echo probes with a rising TTL: each hop that expires one reports itself. Answers the question ping cannot — not just \"is it reachable\" but \"where does it stop\". Silent hops show as *; that is a router declining to reply, not necessarily a fault.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -953,7 +1152,7 @@
   },
   {
     "name": "note_list",
-    "description": "List notes\n\nWith --detail: adds creation date and a preview of each note's body.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nList notes\n\nWith --detail: adds creation date and a preview of each note's body.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -977,7 +1176,7 @@
   },
   {
     "name": "note_search",
-    "description": "Search notes by title, body or tag\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nSearch notes by title, body or tag\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -996,7 +1195,7 @@
   },
   {
     "name": "note_show",
-    "description": "Show one note: metadata, content, references\n\nMetadata (tags, size, age) stays separate from the markdown content, which is rendered richly on human surfaces. Cross-references (\"#12\" in a body) resolve both ways.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nShow one note: metadata, content, references\n\nMetadata (tags, size, age) stays separate from the markdown content, which is rendered richly on human surfaces. Cross-references (\"#12\" in a body) resolve both ways.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -1015,7 +1214,7 @@
   },
   {
     "name": "note_tags",
-    "description": "List tags in use and how many notes carry each\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nList tags in use and how many notes carry each\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -1026,7 +1225,7 @@
   },
   {
     "name": "sys_cpu",
-    "description": "Show CPU model, core count and current usage\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nShow CPU model, core count and current usage\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -1042,7 +1241,7 @@
   },
   {
     "name": "sys_disk",
-    "description": "Show disk usage per mounted filesystem\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nShow disk usage per mounted filesystem\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -1058,7 +1257,7 @@
   },
   {
     "name": "sys_host",
-    "description": "Show host info: OS, kernel, uptime, addresses\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nShow host info: OS, kernel, uptime, addresses\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -1069,7 +1268,7 @@
   },
   {
     "name": "sys_load",
-    "description": "Show load averages, normalized per core\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nShow load averages, normalized per core\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -1080,7 +1279,7 @@
   },
   {
     "name": "sys_mem",
-    "description": "Show memory and swap usage\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nShow memory and swap usage\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -1091,7 +1290,7 @@
   },
   {
     "name": "sys_overview",
-    "description": "One-screen host health: cpu, memory, load, disk, uptime\n\nA dense one-line-per-subsystem summary. With --detail (and on any full-page surface) it expands into a full report: identity, per-core usage, memory and swap breakdown, every filesystem, sensors and top processes. Lines a platform cannot provide are omitted rather than failing the view.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nOne-screen host health: cpu, memory, load, disk, uptime\n\nA dense one-line-per-subsystem summary. With --detail (and on any full-page surface) it expands into a full report: identity, per-core usage, memory and swap breakdown, every filesystem, sensors and top processes. Lines a platform cannot provide are omitted rather than failing the view.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -1108,7 +1307,7 @@
   },
   {
     "name": "sys_ps",
-    "description": "List top processes by CPU or memory\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nList top processes by CPU or memory\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -1136,7 +1335,7 @@
   },
   {
     "name": "sys_temp",
-    "description": "Show sensor temperatures\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nShow sensor temperatures\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -1147,7 +1346,7 @@
   },
   {
     "name": "todo_list",
-    "description": "List tasks\n\nShows top-level tasks by default; pass --parent to list one task's sub-tasks. With --detail: adds creation date and a body preview.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nList tasks\n\nShows top-level tasks by default; pass --parent to list one task's sub-tasks. With --detail: adds creation date and a body preview.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -1180,7 +1379,7 @@
   },
   {
     "name": "todo_search",
-    "description": "Search tasks by title, body or tag\n\nSearches every task regardless of parent/child, done or open.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nSearch tasks by title, body or tag\n\nSearches every task regardless of parent/child, done or open.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -1199,7 +1398,7 @@
   },
   {
     "name": "todo_show",
-    "description": "Show one task: metadata, description, sub-tasks, references\n\nA composed page rather than one blob: structured metadata (status, due, tags, parent, progress) stays separate from the markdown description, so both stay readable and machine callers can read a due date without parsing prose. Sub-tasks and cross-references (\"#12\" in a body, resolved both ways) follow.\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nShow one task: metadata, description, sub-tasks, references\n\nA composed page rather than one blob: structured metadata (status, due, tags, parent, progress) stays separate from the markdown description, so both stay readable and machine callers can read a due date without parsing prose. Sub-tasks and cross-references (\"#12\" in a body, resolved both ways) follow.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -1218,7 +1417,7 @@
   },
   {
     "name": "todo_tags",
-    "description": "List tags in use and how many tasks carry each\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nList tags in use and how many tasks carry each\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {

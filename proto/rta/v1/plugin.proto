@@ -1,0 +1,262 @@
+syntax = "proto3";
+
+package rta.v1;
+
+import "rta/v1/view.proto";
+
+option go_package = "github.com/this-is-tobi/rule-them-all/proto/rta/v1;rtav1";
+
+// Value is one request value or declared bound.
+//
+// The Go contract carries these as `any`, which a wire format cannot. A
+// oneof is used rather than google.protobuf.Value because Field.Type is a
+// closed set of eight (ADR 0011) that maps onto exactly these five shapes,
+// and because Value would round-trip every integer through a double: a port
+// or a timeout survives that, a byte count above 2^53 does not, and a
+// contract that is lossless for the values people happen to have tried is
+// not a contract.
+//
+// An unset oneof means "not given", which is distinct from a zero value and
+// is why this is not five optional scalars. `--limit 0` and no --limit at
+// all are different questions.
+message Value {
+  oneof kind {
+    // Carries String, Text, Path and Secret alike: all four are strings on
+    // the wire and differ only in how a host presents and protects them.
+    string string_value = 1;
+    int64 int_value = 2;
+    double float_value = 3;
+    bool bool_value = 4;
+    StringList string_list_value = 5;
+  }
+}
+
+message StringList {
+  repeated string values = 1;
+}
+
+// Safety is blast radius, not permission. It says what a capability does to
+// the world, which is what lets a host decide whether to confirm, whether to
+// expose it to an agent, and whether a grant is implied.
+enum Safety {
+  SAFETY_UNSPECIFIED = 0;
+  SAFETY_READ = 1;
+  SAFETY_WRITE = 2;
+  SAFETY_DESTRUCTIVE = 3;
+}
+
+// FieldType is closed and mandatory. A host switches on it to build a flag,
+// a form field and a JSON Schema property, so an unrecognised value is not a
+// tidiness problem: SECRET is what makes a value masked and PATH is what
+// makes it completable, and neither can be inferred from a name.
+enum FieldType {
+  FIELD_TYPE_UNSPECIFIED = 0;
+  FIELD_TYPE_STRING = 1;
+  FIELD_TYPE_INT = 2;
+  FIELD_TYPE_BOOL = 3;
+  FIELD_TYPE_FLOAT = 4;
+  FIELD_TYPE_STRING_SLICE = 5;
+  // Multi-line text: a body, a note, a certificate.
+  FIELD_TYPE_TEXT = 6;
+  // A filesystem path. Completable, and the one type that tells a host which
+  // inputs name files.
+  FIELD_TYPE_PATH = 7;
+  // A credential. Masked while typing and never echoed back.
+  FIELD_TYPE_SECRET = 8;
+}
+
+// Surface is the renderer a request arrived through.
+//
+// It is on the wire because trust decisions need it — a capability whose
+// blast radius is "an agent reads your secret" may require that a human
+// authorized it first. It is not there for handlers to branch on to change
+// *what* they do: one handler serving every surface is the point of the
+// model, and a plugin that renders differently per surface has reimplemented
+// the thing the host exists to do.
+enum Surface {
+  SURFACE_UNSPECIFIED = 0;
+  SURFACE_CLI = 1;
+  SURFACE_TUI = 2;
+  SURFACE_MCP = 3;
+  SURFACE_COMPLETION = 4;
+}
+
+// Field declares one capability input.
+message Field {
+  string name = 1;
+  FieldType type = 2;
+  string help = 3;
+  Value default = 4;
+  bool required = 5;
+  // Rendered as a CLI positional argument instead of a flag.
+  bool positional = 6;
+  // An input the host resolves from its own environment and never accepts
+  // from a remote caller: the passphrase that unlocks a store, not the
+  // payload going into it. Omitted from MCP tool schemas and stripped from
+  // incoming MCP arguments — an agent must never be invited to supply,
+  // invent, or repeat back a credential.
+  bool local = 7;
+  // Every value this input accepts. Becomes a picker, a completion and a
+  // schema enum rather than a sentence in the help text.
+  repeated string options = 8;
+  // Bounds on a numeric input, enforced by the host rather than by each
+  // handler remembering to. Unset means unbounded in that direction. A bound
+  // the host cannot apply is rejected at load: one that is declared and
+  // silently ignored is worse than none, because the author stops checking.
+  Value min = 9;
+  Value max = 10;
+  // Whether the plugin implements Suggest for this input. The values
+  // themselves are fetched on demand and only for human surfaces — the list
+  // is information in its own right, since the names of somebody's secrets
+  // are worth something without their values.
+  bool has_suggest = 11;
+  // A dotted config key this input may be filled from when the caller
+  // supplied none, so an operator states a connection once instead of
+  // retyping it. Empty means never, which is every input today.
+  //
+  // The key names a value inside the plugin's OWN section of the operator's
+  // config, and the host decides which section that is from the artifact it
+  // launched — not from anything the plugin says about itself. Refused on a
+  // Secret input: this carries no credential.
+  string config = 12;
+  // Lets a local input also be resolved from this plugin's own environment
+  // (RTA_<NAMESPACE>_<FIELD>) when nothing else supplied a value — a
+  // passphrase or the key that unlocks one, handed to an unattended host
+  // process the way any other credential reaches one. Ignored when local is
+  // false.
+  //
+  // Off by default even on a local input: a field that only chooses a
+  // destination on this machine (where to write a revealed value) must
+  // never be filled from an ambient variable on a caller's behalf, only a
+  // field that actually authenticates should be.
+  bool env_fallback = 13;
+}
+
+// Capability is the atom of the system: one operation, one stable ID.
+message Capability {
+  // Two or three lowercase dot-separated segments, first of which is the
+  // plugin's namespace. Stable forever; input schemas evolve additively.
+  string id = 1;
+  // One line. Rendered in lists and published as an MCP tool's short
+  // description, so it has nowhere to put a second line.
+  string summary = 2;
+  string description = 3;
+  Safety safety = 4;
+  bool idempotent = 5;
+  repeated Field inputs = 6;
+  // The narrowest column, in terminal cells, this capability's compact view
+  // stays useful in. 0 means it shrinks gracefully. A property of the
+  // content, not a layout instruction: a host with a grid honours it, a host
+  // without one ignores it.
+  int32 min_width = 7;
+  // This capability has a richer full-page view, and the host sets the
+  // "detail" request value when it owns the whole screen.
+  bool detailed = 8;
+  // Keep this capability off the automatic dashboard however cheap it looks.
+  // The dashboard runs everything that is Read and needs no input, every few
+  // seconds, unasked — which is wrong for anything that reaches off the box
+  // or does unbounded local work. Safety cannot express it: the question is
+  // not whether the caller may run it but whether the host may run it
+  // without being asked.
+  bool no_preview = 9;
+  // A remote caller may invoke this only with a grant a person issued.
+  // Destructive capabilities imply it, so this is for the ones the safety
+  // class understates: a capability that mutates nothing and leaks.
+  bool needs_grant = 10;
+  // Names the input identifying the record this acts on, which is what lets
+  // a grant narrow to one record instead of the whole capability. Must name
+  // a declared input.
+  string scope = 11;
+  // Whether the plugin implements Prefill, which lets interactive surfaces
+  // edit in place rather than making somebody type blind.
+  bool has_prefill = 12;
+}
+
+// Plugin is a unit of distribution and a namespace.
+message Plugin {
+  // The namespace: the first segment of every capability ID.
+  string name = 1;
+  string summary = 2;
+  string version = 3;
+  repeated Capability capabilities = 4;
+}
+
+message DescribeRequest {}
+
+message DescribeResponse {
+  Plugin plugin = 1;
+}
+
+// CallRequest is one capability invocation.
+message CallRequest {
+  string capability_id = 1;
+  // Resolved values, keyed by field name. The host resolves defaults, applies
+  // bounds and rejects undeclared names before this is sent, so a plugin
+  // receives values it declared and nothing else.
+  map<string, Value> values = 2;
+  // Report what would happen and change nothing. Mandatory for every write
+  // and destructive capability, and it means it: a dry run that performs the
+  // operation and then reports what "would" happen is worse than no dry run,
+  // because it reports it afterwards.
+  bool dry_run = 3;
+  // A human explicitly confirmed a destructive operation.
+  bool yes = 4;
+  Surface surface = 5;
+}
+
+message CallResponse {
+  // Exactly one of these. An error is a value here rather than a gRPC status
+  // because it carries a stable code and an actionable hint that a status
+  // cannot: "the transport worked and the operation failed" is an ordinary
+  // outcome, not a wire fault.
+  oneof result {
+    View view = 1;
+    Error error = 2;
+  }
+}
+
+// PrefillRequest asks for the current values of a record's editable fields,
+// given the inputs that identify it.
+message PrefillRequest {
+  string capability_id = 1;
+  map<string, Value> values = 2;
+}
+
+message PrefillResponse {
+  map<string, Value> values = 1;
+  Error error = 2;
+}
+
+// SuggestRequest asks what values exist right now for one input.
+message SuggestRequest {
+  string capability_id = 1;
+  string field = 2;
+  // What earlier inputs have already been answered, so a suggestion can
+  // depend on them — the tags on this task, not every tag.
+  map<string, Value> values = 3;
+}
+
+message SuggestResponse {
+  // An entry may carry a tab-separated description, which shell completion
+  // shows and other surfaces strip.
+  repeated string values = 1;
+}
+
+// Plugin is what a plugin process serves.
+//
+// Four calls and no lifecycle methods: the host owns process lifetime, and a
+// plugin that needed to know how long it would live would be a plugin holding
+// state the host cannot see.
+service PluginService {
+  // What this plugin is and what it can do. Called once per process.
+  rpc Describe(DescribeRequest) returns (DescribeResponse);
+  // Run one capability. Cancellation of the context propagates; a plugin
+  // that ignores it gets its process killed, because the user's terminal
+  // always comes back.
+  rpc Call(CallRequest) returns (CallResponse);
+  // Current values for editing in place. Only called for capabilities whose
+  // declaration says has_prefill.
+  rpc Prefill(PrefillRequest) returns (PrefillResponse);
+  // Values that exist right now for one input. Human surfaces only.
+  rpc Suggest(SuggestRequest) returns (SuggestResponse);
+}

@@ -21,6 +21,22 @@ import (
 // maxBody bounds how much of a response body we buffer and show.
 const maxBody = 1 << 20 // 1 MiB
 
+// client never follows a redirect on its own. A grant covers exactly the URL
+// named (Scope: "url"), checked once by the MCP bridge before Run runs at
+// all — if this request then silently followed a 3xx wherever it pointed,
+// an authorized call for one destination could actually reach any other
+// with no second grant check involved (the concrete case: an authorized
+// public status endpoint that 302s to a cloud metadata service). Returning
+// ErrUseLastResponse hands back the redirect response itself — status,
+// headers, its Location — so whoever asked can see exactly where it would
+// have gone and, if that's fine, ask for it explicitly as its own,
+// separately grant-checked call.
+var client = &stdhttp.Client{
+	CheckRedirect: func(*stdhttp.Request, []*stdhttp.Request) error {
+		return stdhttp.ErrUseLastResponse
+	},
+}
+
 // Plugin returns the http plugin declaration.
 func Plugin() plugin.Plugin {
 	common := []plugin.Field{
@@ -33,41 +49,78 @@ func Plugin() plugin.Plugin {
 	}
 	withBody := append([]plugin.Field{}, common...)
 	withBody = append(withBody, plugin.Field{
-		Name: "data", Type: plugin.String, Help: "request body (use @file to read from a file, - for stdin)",
+		// The help used to promise "@file to read from a file, - for stdin".
+		// Neither was ever implemented, so a body of "@secrets.env" was sent
+		// literally — and a declaration is published verbatim as an MCP tool
+		// description, which makes an unimplemented promise an instruction a
+		// model follows.
+		Name: "data", Type: plugin.Text, Help: "request body, sent as given",
 	})
 	return plugin.Plugin{
 		Name:    "http",
 		Summary: "REST client: request endpoints, inspect responses",
 		Capabilities: []plugin.Capability{
+			// GET and HEAD read: they mutate nothing, and the safety class is
+			// right. They still need a grant, which is the same correction
+			// net.send took (D18, ADR 0009) on strictly weaker grounds.
+			//
+			// Fetching a URL is bidirectional. Outbound it is arbitrary egress
+			// to a host of the caller's choosing, with the caller's bytes in
+			// the path, the query and the headers — which is a general channel
+			// out of a machine whose other tools reach an age identity, and it
+			// is what an injected agent needs to report what it found. Inbound
+			// the response body arrives in the model's context, so anything
+			// the fetched host wants to say is read as tool output: a
+			// compromised plugin has only to deliver one line, and everything
+			// after it is fetched fresh, which is the whole of static analysis
+			// of the shipped artifact defeated.
+			//
+			// Scoped to the URL, so a person can allow one destination for
+			// fifteen minutes rather than the internet indefinitely. It costs
+			// CLI and TUI nothing: grants are enforced only in the MCP bridge
+			// (§4.7.11), because a person at a terminal is never gated.
 			{
 				ID: "http.get", Summary: "GET a URL and show status, timing and body",
 				Safety: plugin.Read, Idempotent: true,
+				NeedsGrant: true, Scope: "url",
 				Inputs: common,
 				Run:    runMethod(stdhttp.MethodGet),
 			},
 			{
 				ID: "http.head", Summary: "HEAD a URL and show status, timing and headers",
 				Safety: plugin.Read, Idempotent: true,
+				NeedsGrant: true, Scope: "url",
 				Inputs: common,
 				Run:    runMethod(stdhttp.MethodHead),
 			},
+			// POST/PUT/DELETE mutate remote state: write class, confirmed on
+			// production profiles once those exist.
+			//
+			// They need the grant for every reason GET does and one more: a
+			// body. Leaving them ungated while GET is gated would have been
+			// backwards — --allow-write is one switch for the whole registry,
+			// so an operator who turned it on for `todo add` would have handed
+			// an agent an unlimited, unlogged POST to anywhere, which is a
+			// larger egress channel than the one two capabilities above are
+			// gated for.
 			{
-				// POST/PUT/DELETE mutate remote state: write class, confirmed
-				// on production profiles once those exist.
 				ID: "http.post", Summary: "POST to a URL with an optional body",
-				Safety: plugin.Write,
+				Safety:     plugin.Write,
+				NeedsGrant: true, Scope: "url",
 				Inputs: withBody,
 				Run:    runMethod(stdhttp.MethodPost),
 			},
 			{
 				ID: "http.put", Summary: "PUT to a URL with an optional body",
 				Safety: plugin.Write, Idempotent: true,
+				NeedsGrant: true, Scope: "url",
 				Inputs: withBody,
 				Run:    runMethod(stdhttp.MethodPut),
 			},
 			{
 				ID: "http.delete", Summary: "DELETE a URL",
 				Safety: plugin.Write, Idempotent: true,
+				NeedsGrant: true, Scope: "url",
 				Inputs: common,
 				Run:    runMethod(stdhttp.MethodDelete),
 			},
@@ -132,7 +185,7 @@ func doRequest(ctx context.Context, method string, req plugin.Request) (view.Vie
 	}
 	httpReq = httpReq.WithContext(httptrace.WithClientTrace(httpReq.Context(), trace))
 
-	resp, err := stdhttp.DefaultClient.Do(httpReq)
+	resp, err := client.Do(httpReq)
 	if err != nil {
 		return nil, view.Errorf("http.request.failed", "%s %s: %v", method, url, err).
 			WithHint("check the URL is reachable; use --timeout to extend the deadline")
@@ -147,6 +200,11 @@ func doRequest(ctx context.Context, method string, req plugin.Request) (view.Vie
 	pairs := []view.Pair{
 		{Key: "status", Value: resp.Status},
 		{Key: "time", Value: total.Round(time.Millisecond).String()},
+	}
+	if loc := resp.Header.Get("Location"); loc != "" {
+		// Not followed — see client's comment. Shown explicitly so a
+		// redirect is never silently invisible to whoever asked.
+		pairs = append(pairs, view.Pair{Key: "location (not followed)", Value: loc})
 	}
 	if !dnsDone.IsZero() && !connectDone.IsZero() && !firstByte.IsZero() {
 		pairs = append(pairs, view.Pair{Key: "timing", Value: fmt.Sprintf(

@@ -13,7 +13,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/this-is-tobi/rule-them-all/internal/mcp"
+	"github.com/this-is-tobi/rule-them-all/internal/pathguard"
 	"github.com/this-is-tobi/rule-them-all/internal/registry"
+	"github.com/this-is-tobi/rule-them-all/internal/stdio"
 )
 
 // newMCPCommand wires the MCP surface: serve (stdio) and install helpers.
@@ -21,6 +23,7 @@ func newMCPCommand(reg *registry.Registry, version string) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "mcp",
 		Short: "Expose capabilities to AI agents over the Model Context Protocol",
+		RunE:  groupRunE,
 	}
 	root.AddCommand(newMCPServeCommand(reg, version))
 	root.AddCommand(newMCPInstallCommand())
@@ -29,8 +32,9 @@ func newMCPCommand(reg *registry.Registry, version string) *cobra.Command {
 
 func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 	var (
-		allowWrite       bool
+		allowWrite       []string
 		allowDestructive []string
+		roots            []string
 	)
 	cmd := &cobra.Command{
 		Use:   "serve",
@@ -38,16 +42,61 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 		Long: "Serve every registered capability as an MCP tool on stdio.\n\n" +
 			"Safety gate: only read capabilities are exposed by default.\n" +
 			"Use --allow-write for write capabilities, and --allow-destructive\n" +
-			"with explicit capability IDs for destructive ones.",
+			"with explicit capability IDs for destructive ones.\n\n" +
+			"Path gate: every path argument must be under a root, including a\n" +
+			"capability's own declared default. The default root is the directory\n" +
+			"the server was started in; widen it with --root, which is repeatable.\n" +
+			"The gate governs path arguments only: a capability that opens a fixed\n" +
+			"file of its own — `net hosts list` and /etc/hosts — is unaffected,\n" +
+			"because that path is never an argument for anyone to send.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			server := mcp.NewServer(reg, version, mcp.Options{
+			if len(roots) == 0 {
+				// The directory the operator started the server in. It is what
+				// an MCP client passes as cwd, so it is the project the agent
+				// was pointed at — and choosing it by default means the gate
+				// is on for everybody rather than for whoever read the flag.
+				wd, err := os.Getwd()
+				if err != nil {
+					return fmt.Errorf("resolving the default root: %w", err)
+				}
+				roots = []string{wd}
+			}
+			guard, err := pathguard.New(roots...)
+			if err != nil {
+				return err
+			}
+			opts := mcp.Options{
 				AllowWrite:       allowWrite,
 				AllowDestructive: allowDestructive,
-			})
+				Origin:           reg.Origin,
+				Config:           pluginConfig.For,
+				Paths:            guard,
+			}
+			server := mcp.NewServer(reg, version, opts)
 			// Logs must go to stderr: stdout is the protocol channel.
 			fmt.Fprintln(cmd.ErrOrStderr(), "rta mcp server listening on stdio")
-			err := server.Run(cmd.Context(), &sdk.StdioTransport{})
+			// Said out loud rather than left to be discovered from a refusal:
+			// an operator who needs a wider root should learn it here, not
+			// from an agent reporting that a file it can see does not exist.
+			fmt.Fprintf(cmd.ErrOrStderr(), "path arguments confined to: %s\n",
+				strings.Join(guard.Roots(), ", "))
+			// An allowlist entry that authorizes nothing is indistinguishable
+			// from one the operator chose not to write: the capability is
+			// simply absent, and the agent reports only that the tool does not
+			// exist. Said here because the operator is present here, and is
+			// the only one who can act on it.
+			for _, p := range opts.Problems(reg) {
+				fmt.Fprintln(cmd.ErrOrStderr(), "rta:", p)
+			}
+			// fd 0 here is the agent's request stream. main() has already
+			// taken it away from anything this process launches — it had to,
+			// since plugins are spawned during startup, long before this runs
+			// — so what is left to do is ask for it back.
+			err = server.Run(cmd.Context(), &sdk.IOTransport{
+				Reader: stdio.Real(),
+				Writer: stdio.Writer(cmd.OutOrStdout()),
+			})
 			// Client hang-up and ctrl-c are clean shutdowns, not failures.
 			// The SDK does not expose a sentinel for the session-closing error
 			// (it wraps EOF in a plain fmt error), hence the string match.
@@ -58,9 +107,13 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 			return err
 		},
 	}
-	cmd.Flags().BoolVar(&allowWrite, "allow-write", false, "expose write capabilities")
+	cmd.Flags().StringSliceVar(&allowWrite, "allow-write", nil,
+		"plugins whose write capabilities are exposed (repeatable, e.g. todo)")
 	cmd.Flags().StringSliceVar(&allowDestructive, "allow-destructive", nil,
-		"capability IDs allowed despite being destructive (e.g. pg.table.drop)")
+		"destructive capabilities to allow; external plugins must be pinned "+
+			"to their digest (e.g. todo.rm, hello.wipe@5dae737f8845)")
+	cmd.Flags().StringSliceVar(&roots, "root", nil,
+		"directory a caller may name in a path argument (repeatable; default: the working directory)")
 	return cmd
 }
 

@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/this-is-tobi/rule-them-all/internal/atomicfile"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
 
@@ -129,11 +130,16 @@ func backupUnstamped() {
 	if err != nil {
 		return // no store yet, or unreadable — either way there is nothing to keep
 	}
+	// Published, not written: this is the only copy of a store about to be
+	// rewritten in a format the old code cannot read, so "kept once, whole"
+	// is the entire requirement. Publish gives both — it refuses to overwrite
+	// an existing backup, which is what the Stat guard here used to ask for
+	// and could not deliver (two writes racing the same check both passed
+	// it), and a failure leaves no file rather than a short one. A short one
+	// was the worse outcome by far: it looks like a backup to the guard, so
+	// it permanently prevented a real one from ever being taken.
 	backup := path + ".pre-v" + strconv.Itoa(storeVersion) + ".bak"
-	if _, err := os.Stat(backup); err == nil {
-		return // already kept
-	}
-	_ = os.WriteFile(backup, data, 0o600)
+	_, _ = atomicfile.Publish(backup, data, 0o600)
 }
 
 // stamped reports whether the store on disk already declares its format, so

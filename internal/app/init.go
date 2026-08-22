@@ -23,7 +23,15 @@ func newInitCommand(reg *registry.Registry) *cobra.Command {
 			if !isTTY() {
 				return fmt.Errorf("rta init is interactive and needs a terminal")
 			}
-			current, err := config.Load()
+			// LoadFile, not Load. config.LoadFile says why in as many
+			// words — "anything that reads the config in order to write it
+			// back must start here: Load would fold this session's RTA_* into
+			// the value, and saving that would bake one shell's environment
+			// into the file for every future run" — and this was the one
+			// writer that did not. `RTA_OUTPUT=json rta init` offered json as
+			// the current setting and wrote it, permanently, from a variable
+			// the operator had exported for one command.
+			current, err := config.LoadFile()
 			if err != nil {
 				// A broken file should not block re-initializing it.
 				fmt.Fprintln(cmd.ErrOrStderr(), "warning:", err)
@@ -71,25 +79,48 @@ func newInitCommand(reg *registry.Registry) *cobra.Command {
 				return nil
 			}
 
-			var cfg config.Config
-			if output != "pretty" {
-				cfg.Output = output
-			}
-			if len(selectedTiles) > 0 {
-				cfg.Dashboard.Tiles = tilesFor(selectedTiles)
-			} else {
-				// Automatic dashboard: carry over any arrangement made from
-				// inside the app, which is where hiding and reordering live.
-				cfg.Dashboard.Hidden = current.Dashboard.Hidden
-				cfg.Dashboard.Order = current.Dashboard.Order
-			}
-			if err := config.Write(cfg); err != nil {
+			if err := config.Write(initConfig(current, output, selectedTiles)); err != nil {
 				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "✓ wrote %s — run `rta` to see your dashboard\n", config.Path())
 			return nil
 		},
 	}
+}
+
+// initConfig folds the wizard's answers into the config as it stands on disk.
+//
+// Into it, not over it. This built a fresh config.Config and wrote that, so
+// `rta init` — "Create or update the rta config file interactively" — deleted
+// the entire `plugins:` block every time it ran. ADR 0016 added that block
+// and nothing brought this along, which is the failure mode of writing back a
+// value assembled from scratch: it is not that somebody made a mistake, it is
+// that the next field added to config.Config is dropped too, silently, by a
+// command whose own summary promises the opposite.
+//
+// internal/render/tui/arrange.go had it right from the start and says why:
+// "the dashboard is one part of the file, and moving a tile must not rewrite
+// anything else". Two writers, one discipline, held in one of them.
+//
+// What this owns is Output and Dashboard. Everything else is carried, and
+// TestInitKeepsEveryPartOfTheFileItDoesNotOwn refuses to compile past a field
+// nobody has classified.
+func initConfig(current config.Config, output string, tiles []string) config.Config {
+	next := current
+	// "pretty" is the default, so writing it would pin a value that is
+	// already what happens when the key is absent.
+	next.Output = ""
+	if output != "pretty" {
+		next.Output = output
+	}
+	if len(tiles) > 0 {
+		next.Dashboard.Tiles = tilesFor(tiles)
+	} else {
+		// Automatic dashboard: drop any fixed set, and keep the arrangement
+		// made from inside the app, which is where hiding and reordering live.
+		next.Dashboard.Tiles = nil
+	}
+	return next
 }
 
 // tileOptions lists dashboard-eligible capabilities: read-only, no required

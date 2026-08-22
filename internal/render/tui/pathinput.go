@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/this-is-tobi/rule-them-all/internal/textclean"
 )
 
 // Completing a path in a form.
@@ -36,7 +38,11 @@ const maxPathSuggestions = 200
 func pathSuggestions(typed string, declared []string) []string {
 	out := make([]string, 0, len(declared)+16)
 	seen := map[string]bool{}
+	// Filenames are somebody else's data: a directory entry can be named
+	// anything the filesystem accepts, escape sequences included, and these
+	// are drawn straight into the completion list.
 	add := func(s string) {
+		s = textclean.Terminal(s)
 		if s != "" && !seen[s] {
 			seen[s] = true
 			out = append(out, s)

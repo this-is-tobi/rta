@@ -389,18 +389,20 @@ func TestAuditDetailIsASectionedPage(t *testing.T) {
 	}))
 	defer srv.Close()
 
+	// Addressed by id rather than by heading: the heading is presentation
+	// and free to be reworded, which is what view.Section's two fields are for.
 	got := map[string]bool{}
 	for _, s := range detailSections(t, srv).Items {
-		got[s.Title] = true
+		got[s.Key()] = true
 	}
-	for _, want := range []string{"summary", grpTransport, grpHeaders, grpCookies, grpExposure, "references"} {
+	for _, want := range []string{"summary", grpTransport.id, grpHeaders.id, grpCookies.id, grpExposure.id, "references"} {
 		if !got[want] {
 			t.Errorf("detail page is missing the %q section: have %v", want, got)
 		}
 	}
 	// Nothing set a CORS header, so that section has no subject at all — an
 	// empty heading would read as a check that failed to run.
-	if got[grpCORS] {
+	if got[grpCORS.id] {
 		t.Error("cross-origin section rendered with no CORS findings")
 	}
 }
@@ -411,7 +413,7 @@ func TestReferenceTableIsDeduplicatedAndLinkable(t *testing.T) {
 	srv := tlsServer(t, nil)
 	var refs view.Table
 	for _, s := range detailSections(t, srv).Items {
-		if s.Title == "references" {
+		if s.Key() == "references" {
 			refs = s.View.(view.Table)
 		}
 	}

@@ -165,26 +165,92 @@ func TestNoBuiltinTileReachesOffTheMachineUnasked(t *testing.T) {
 	}
 }
 
-// gen.overview is named explicitly in preferredTile: real secrets
-// refreshing on the dashboard unprompted was raised and accepted, on the
-// same "H hides it" basis every other tile's visibility rests on — this
-// pins that decision in place rather than letting a future change to the
-// generic auto-pick heuristic silently decide it by accident again, which
-// is exactly how gen.password ended up there the first time.
-func TestGenGetsItsNamedPreferredTile(t *testing.T) {
+// The convention: a namespace's own overview is what the dashboard shows,
+// whatever order the capabilities happen to be declared in.
+//
+// This is the rule that makes a third-party plugin's tile a choice instead of
+// an accident. Before it, the tile was the first previewable capability in
+// the list, and the only way to say otherwise was to be a built-in named in
+// preferredTile — so a plugin whose debug dump sorted first showed the debug
+// dump on the landing screen and had no way to say otherwise.
+func TestAPluginsOverviewTakesTheTileOverDeclarationOrder(t *testing.T) {
 	reg := registry.New()
-	err := reg.Register(plugin.Plugin{
-		Name: "gen", Summary: "generates things", Capabilities: []plugin.Capability{
+	err := reg.RegisterFrom(plugin.Plugin{
+		Name: "acme", Summary: "a third-party plugin", Capabilities: []plugin.Capability{
 			{
-				ID: "gen.password", Summary: "not the preferred one", Safety: plugin.Read,
+				ID: "acme.debug-dump", Summary: "declared first, and nobody's idea of a glance",
+				Safety: plugin.Read,
 				Run: func(context.Context, plugin.Request) (view.View, error) {
-					return view.Text{Body: "hunter2"}, nil
+					return view.Text{Body: "goroutine 1 [running]"}, nil
 				},
 			},
 			{
-				ID: "gen.overview", Summary: "a sampler", Safety: plugin.Read,
+				ID: "acme.overview", Summary: "what acme looks like at a glance", Safety: plugin.Read,
 				Run: func(context.Context, plugin.Request) (view.View, error) {
-					return view.Text{Body: "abc123"}, nil
+					return view.Text{Body: "all good"}, nil
+				},
+			},
+		},
+	}, registry.Origin{Path: "/usr/local/bin/rta-plugin-acme", Digest: "sha256:acme"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := tileIDs(buildTiles(reg, config.Dashboard{}))
+	if len(ids) != 1 || ids[0] != "acme.overview" {
+		t.Fatalf("tiles = %v, want exactly [acme.overview]", ids)
+	}
+}
+
+// The convention does not override the capability's own refusal. NoPreview
+// means running it unprompted has a cost the dashboard has no business
+// paying, and a naming convention is not consent — otherwise calling an
+// expensive scan `overview` would put it on a five-second timer.
+func TestAnOverviewThatDeclinesPreviewDoesNotTakeTheTile(t *testing.T) {
+	reg := registry.New()
+	err := reg.RegisterFrom(plugin.Plugin{
+		Name: "acme", Summary: "a third-party plugin", Capabilities: []plugin.Capability{
+			{
+				ID: "acme.overview", Summary: "an expensive glance", Safety: plugin.Read,
+				NoPreview: true,
+				Run: func(context.Context, plugin.Request) (view.View, error) {
+					return view.Text{Body: "scanned the world"}, nil
+				},
+			},
+			{
+				ID: "acme.list", Summary: "cheap and previewable", Safety: plugin.Read,
+				Run: func(context.Context, plugin.Request) (view.View, error) {
+					return view.Text{Body: "a, b, c"}, nil
+				},
+			},
+		},
+	}, registry.Origin{Path: "/usr/local/bin/rta-plugin-acme", Digest: "sha256:acme"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := tileIDs(buildTiles(reg, config.Dashboard{}))
+	if len(ids) != 1 || ids[0] != "acme.list" {
+		t.Fatalf("tiles = %v, want exactly [acme.list] — an overview that declines preview is still declining", ids)
+	}
+}
+
+// An explicit pin outranks the convention, which is the only reason the map
+// still exists: kv.status is the kv tile precisely because the capability
+// that *would* be called an overview is the one that cannot run unattended.
+func TestAnExplicitPreferredTileBeatsTheOverviewConvention(t *testing.T) {
+	reg := registry.New()
+	err := reg.Register(plugin.Plugin{
+		Name: "kv", Summary: "a secret store", Capabilities: []plugin.Capability{
+			{
+				ID: "kv.overview", Summary: "declared first, and would win on the convention alone",
+				Safety: plugin.Read,
+				Run: func(context.Context, plugin.Request) (view.View, error) {
+					return view.Text{Body: "every secret you have"}, nil
+				},
+			},
+			{
+				ID: "kv.status", Summary: "where the store is and what can open it", Safety: plugin.Read,
+				Run: func(context.Context, plugin.Request) (view.View, error) {
+					return view.Text{Body: "locked"}, nil
 				},
 			},
 		},
@@ -193,8 +259,47 @@ func TestGenGetsItsNamedPreferredTile(t *testing.T) {
 		t.Fatal(err)
 	}
 	ids := tileIDs(buildTiles(reg, config.Dashboard{}))
-	if len(ids) != 1 || ids[0] != "gen.overview" {
-		t.Fatalf("tiles = %v, want exactly [gen.overview]", ids)
+	if len(ids) != 1 || ids[0] != "kv.status" {
+		t.Fatalf("tiles = %v, want exactly [kv.status] — the pin must outrank the convention", ids)
+	}
+}
+
+// The shipped dashboard, pinned as a whole.
+//
+// This replaces the preferredTile entries that used to name todo.list,
+// note.list, net.info, fs.tree, sys.overview and gen.overview: five of the
+// seven were restating what the rules already resolve to, which made the map
+// look like the mechanism when it was only ever the exception list. Asserting
+// the outcome instead covers every plugin by the same rules a third-party one
+// gets, and catches the two things the map never could — a plugin that
+// silently stopped having a tile, and a new one that silently gained one.
+//
+// gen.overview is the entry worth reading twice: it puts fresh, real, usable
+// secrets on a five-second timer, which was raised explicitly and accepted
+// (the reasoning is on the capability, in builtin/gen). That it now arrives
+// by convention rather than by being named in a map is not that decision
+// loosening — this test is where it is pinned, and gen.password taking the
+// tile back fails it by name.
+func TestTheShippedDashboardIsTheOneWeThinkItIs(t *testing.T) {
+	reg, err := all.Registry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"todo.list",
+		"note.list",
+		"sys.overview",
+		"net.info",
+		"kv.status",
+		"grant.list",
+		// Unranked by pluginOrder, so alphabetical after the ranked six.
+		"fs.tree",
+		"gen.overview",
+		"git.overview",
+	}
+	got := tileIDs(buildTiles(reg, config.Dashboard{}))
+	if !slices.Equal(got, want) {
+		t.Errorf("dashboard tiles:\n got %v\nwant %v", got, want)
 	}
 }
 
@@ -231,10 +336,18 @@ func TestEveryPreferredTileNamesACapabilityThatExists(t *testing.T) {
 	}
 }
 
-// A tile refreshes on a timer with nobody watching for a prompt, so its
-// capability must be answerable from nothing but its defaults. One that
-// needs an argument would render the same "missing input" error forever.
-func TestEveryPreferredTileRunsWithoutBeingAskedAnything(t *testing.T) {
+// A pin that is not previewable does not fail loudly — pluginTile skips it
+// and falls through to the convention — so the dashboard would quietly show
+// something nobody chose while the map still claimed otherwise. That is the
+// exact failure the map exists to prevent, so it is worth a test of its own:
+// a pin must be a pin.
+//
+// The three reasons a capability is not previewable are all fatal here. A
+// tile refreshes on a timer with nobody watching, so it must not mutate
+// (Read), must be answerable from its defaults alone — one that needs an
+// argument renders the same "missing input" error forever — and must not have
+// declared NoPreview, which the pin has no standing to overrule.
+func TestEveryPreferredTileIsActuallyUsableAsATile(t *testing.T) {
 	reg, err := all.Registry()
 	if err != nil {
 		t.Fatal(err)
@@ -244,11 +357,16 @@ func TestEveryPreferredTileRunsWithoutBeingAskedAnything(t *testing.T) {
 		if !ok {
 			continue // reported by the test above
 		}
-		if c.Safety != plugin.Read {
-			t.Errorf("%s backs the %s tile but is not Read — a tile must not mutate on a timer", id, name)
+		if previewable(c) {
+			continue
 		}
-		if formNeeded(c) {
+		switch {
+		case c.Safety != plugin.Read:
+			t.Errorf("%s backs the %s tile but is %s — a tile must not mutate on a timer", id, name, c.Safety)
+		case formNeeded(c):
 			t.Errorf("%s backs the %s tile but needs an input with no default", id, name)
+		default:
+			t.Errorf("%s backs the %s tile but declares NoPreview — the pin is silently ignored", id, name)
 		}
 	}
 }
@@ -285,7 +403,7 @@ func heightRegistry(t *testing.T) *registry.Registry {
 // A row whose only tile has one line of content shrinks well below the old
 // fixed tileHeight — the whole point of the change.
 func TestAShortTileShrinksItsRow(t *testing.T) {
-	m := New(heightRegistry(t), config.Dashboard{Tiles: []config.Tile{{ID: "short.info"}}})
+	m := New(heightRegistry(t), config.Dashboard{Tiles: []config.Tile{{ID: "short.info"}}}, nil)
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
 	sm := sized.(Model)
 	sm.tiles[1].view = view.Text{Body: "one line"}
@@ -298,7 +416,7 @@ func TestAShortTileShrinksItsRow(t *testing.T) {
 // A tile whose content genuinely overflows still gets the full tileHeight —
 // nothing that used to fit (or truncate the same way) regresses.
 func TestATallTileKeepsTheOldMaxHeight(t *testing.T) {
-	m := New(heightRegistry(t), config.Dashboard{Tiles: []config.Tile{{ID: "tall.info"}}})
+	m := New(heightRegistry(t), config.Dashboard{Tiles: []config.Tile{{ID: "tall.info"}}}, nil)
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
 	sm := sized.(Model)
 	// rowHeights reads each tile's already-fetched content; a bare
@@ -314,7 +432,7 @@ func TestATallTileKeepsTheOldMaxHeight(t *testing.T) {
 // Two tiles sharing a row must render at the same height even when their
 // natural content length differs wildly — the taller one sets the row.
 func TestTilesSharingARowMatchTheTallestOne(t *testing.T) {
-	m := New(heightRegistry(t), config.Dashboard{Tiles: []config.Tile{{ID: "short.info"}, {ID: "tall.info"}}})
+	m := New(heightRegistry(t), config.Dashboard{Tiles: []config.Tile{{ID: "short.info"}, {ID: "tall.info"}}}, nil)
 	// Wide enough for a 2-column grid (>= 80).
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
 	sm := sized.(Model)
@@ -337,7 +455,7 @@ func TestTilesSharingARowMatchTheTallestOne(t *testing.T) {
 // dividing by one constant — the riskiest part of making rows responsive,
 // and otherwise uncovered: nothing else in this package drives tileAt.
 func TestTileAtWalksVariableRowHeights(t *testing.T) {
-	m := New(heightRegistry(t), config.Dashboard{Tiles: []config.Tile{{ID: "short.info"}, {ID: "tall.info"}}})
+	m := New(heightRegistry(t), config.Dashboard{Tiles: []config.Tile{{ID: "short.info"}, {ID: "tall.info"}}}, nil)
 	// 60 cols -> 1 column grid, so short.info and tall.info land in separate
 	// rows (heights 6 and 11) rather than sharing one.
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 60, Height: 30})
@@ -369,7 +487,7 @@ func TestTileAtWalksVariableRowHeights(t *testing.T) {
 
 // …but it stays reachable: off the dashboard must not mean out of the app.
 func TestPluginWithNoTileIsStillSearchable(t *testing.T) {
-	m := New(multiRegistry(t), config.Dashboard{})
+	m := New(multiRegistry(t), config.Dashboard{}, nil)
 	m.query = "zeta"
 	if got := m.searchResults(); len(got) != 2 {
 		t.Errorf("search found %d zeta capabilities, want the plugin's two", len(got))
@@ -414,7 +532,7 @@ func TestArrangeIgnoresUnknownIDs(t *testing.T) {
 func dashboardModel(t *testing.T) Model {
 	t.Helper()
 	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
-	m := New(multiRegistry(t), config.Dashboard{})
+	m := New(multiRegistry(t), config.Dashboard{}, nil)
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
 	return sized.(Model)
 }
@@ -535,7 +653,7 @@ func TestUnwritableConfigDegradesToThisSession(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "readonly"), nil, 0o400); err != nil {
 		t.Fatal(err)
 	}
-	m := New(multiRegistry(t), config.Dashboard{})
+	m := New(multiRegistry(t), config.Dashboard{}, nil)
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
 	sm := sized.(Model)
 	sm.selected = 1
@@ -574,7 +692,7 @@ func searchRegistry(t *testing.T) *registry.Registry {
 // a query that matches eight and silently reports three is a lie you cannot
 // see, and the capability you wanted looks like it does not exist.
 func TestSearchKeepsEveryMatch(t *testing.T) {
-	m := New(searchRegistry(t), config.Dashboard{})
+	m := New(searchRegistry(t), config.Dashboard{}, nil)
 	m.query = "many"
 	if got := len(m.searchResults()); got != 8 {
 		t.Fatalf("searchResults = %d, want every match", got)
@@ -587,7 +705,7 @@ func TestSearchKeepsEveryMatch(t *testing.T) {
 
 // Moving down past the third match scrolls the window instead of stopping.
 func TestSearchWindowFollowsTheSelection(t *testing.T) {
-	m := New(searchRegistry(t), config.Dashboard{})
+	m := New(searchRegistry(t), config.Dashboard{}, nil)
 	m.query = "many"
 	results := m.searchResults()
 
@@ -607,7 +725,7 @@ func TestSearchWindowFollowsTheSelection(t *testing.T) {
 
 // A short result list must not be padded or scrolled.
 func TestSearchWindowLeavesShortListsAlone(t *testing.T) {
-	m := New(searchRegistry(t), config.Dashboard{})
+	m := New(searchRegistry(t), config.Dashboard{}, nil)
 	m.query = "many.one"
 	window, first := m.searchWindow(m.searchResults())
 	if len(window) != 1 || first != 0 {
@@ -617,7 +735,7 @@ func TestSearchWindowLeavesShortListsAlone(t *testing.T) {
 
 // Keys must be able to reach every match, not only the visible three.
 func TestSearchKeysReachTheWholeList(t *testing.T) {
-	m := New(searchRegistry(t), config.Dashboard{})
+	m := New(searchRegistry(t), config.Dashboard{}, nil)
 	m.query = "many"
 	m.searchEditing = true
 
@@ -770,7 +888,7 @@ func TestCatalogueGroupsByPlugin(t *testing.T) {
 // A header is a label, not a destination: landing on one leaves enter doing
 // nothing.
 func TestCursorNeverRestsOnAHeader(t *testing.T) {
-	m := New(multiRegistry(t), config.Dashboard{})
+	m := New(multiRegistry(t), config.Dashboard{}, nil)
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
 	sm := sized.(Model)
 	sm.mode = modeBrowse
@@ -990,7 +1108,7 @@ func wideRowModel(t *testing.T) Model {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m := New(reg, config.Dashboard{})
+	m := New(reg, config.Dashboard{}, nil)
 	um, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 44})
 	m = um.(Model)
 	for i := range m.tiles {
@@ -1052,5 +1170,317 @@ func TestConfiguredTilesRefuseAnythingThatWrites(t *testing.T) {
 	only := tileIDs(buildTiles(reg, config.Dashboard{Tiles: []config.Tile{{ID: "demo.rm"}}}))
 	if !slices.Contains(only, "demo.look") {
 		t.Errorf("no tiles at all after refusing the configured one: %v", only)
+	}
+}
+
+// A tile is a compact preview, and opening one gives it the whole screen.
+// A tile capability that is not Detailed therefore expands into precisely
+// what the tile already showed — the pane is bigger and says nothing more,
+// which reads as a dead end rather than as a deliberate omission.
+//
+// fs is why this test exists. Its tile is fs.tree, because fs.usage is a
+// recursive scan carrying NoPreview; but Detailed lived on fs.usage, so fs
+// was the one plugin on the dashboard whose tile opened into itself. Nobody
+// noticed because every other tile capability happened to have it, and
+// "happened to" is what a structural test converts into a rule.
+//
+// A future tile with genuinely nothing more to show is a legitimate answer.
+// It just has to be written down here rather than discovered by opening it.
+func TestEveryBuiltinTileHasAFullScreenView(t *testing.T) {
+	reg, err := all.Registry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Capabilities whose compact view is already the whole answer. Empty on
+	// purpose: add an entry with the reason, do not delete the test.
+	sameAtAnySize := map[string]string{}
+
+	for _, ti := range buildTiles(reg, config.Dashboard{}) {
+		if ti.search {
+			continue
+		}
+		if why, ok := sameAtAnySize[ti.cap.ID]; ok {
+			if ti.cap.Detailed {
+				t.Errorf("%s is listed as having no fuller view (%s) but declares Detailed", ti.cap.ID, why)
+			}
+			continue
+		}
+		if !ti.cap.Detailed {
+			t.Errorf("%s is a dashboard tile but is not Detailed, so opening it shows the tile again; "+
+				"give it a detail page or record here why it has none", ti.cap.ID)
+		}
+	}
+}
+
+// The inventory must say where a plugin came from.
+//
+// plugin.Plugin carries a name, a summary and its capabilities and nothing
+// about its origin, so before external plugins existed there was nothing to
+// say — and once they existed, `kv` and a binary somebody dropped on $PATH
+// rendered as the same kind of thing, on the one screen whose whole job is
+// "what do I actually have". Every security property in pluginhost binds a
+// plugin to its artifact (ADR 0015); this is where a person sees that binding
+// without running doctor.
+func TestThePluginPaneDistinguishesBuiltInFromExternal(t *testing.T) {
+	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
+	run := func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "x"}, nil }
+	mk := func(ns string) plugin.Plugin {
+		return plugin.Plugin{Name: ns, Summary: ns + " summary", Capabilities: []plugin.Capability{
+			{ID: ns + ".info", Summary: "info", Safety: plugin.Read, Idempotent: true, Run: run},
+		}}
+	}
+	reg := registry.New()
+	if err := reg.Register(mk("home")); err != nil {
+		t.Fatal(err)
+	}
+	// Registered with an origin, which is the only way a plugin becomes
+	// external now — there is no side map to inject.
+	away := registry.Origin{Path: "/somewhere/rta-plugin-away", Digest: strings.Repeat("ab", 32)}
+	if err := reg.RegisterFrom(mk("away"), away); err != nil {
+		t.Fatal(err)
+	}
+
+	m := New(reg, config.Dashboard{}, nil)
+	m.plugins = pluginRows(reg, m.dash)
+	m.width, m.height = 200, 60
+
+	var ext, builtin pluginRow
+	for _, row := range m.plugins {
+		switch row.plugin.Name {
+		case "away":
+			ext = row
+		case "home":
+			builtin = row
+		}
+	}
+	if !ext.external() {
+		t.Fatal("the plugin registered with an origin does not report as external")
+	}
+	if builtin.external() {
+		t.Fatal("a plugin registered without one reports as external")
+	}
+
+	extDetail, builtinDetail := pluginDetail(ext), pluginDetail(builtin)
+	if !strings.Contains(extDetail, away.Path) {
+		t.Errorf("the external plugin's line does not say where it came from: %s", extDetail)
+	}
+	if !strings.Contains(extDetail, away.Short()) {
+		t.Errorf("the external plugin's line does not carry its digest: %s", extDetail)
+	}
+	if !strings.Contains(builtinDetail, "built in") {
+		t.Errorf("a built-in is not named as one: %s", builtinDetail)
+	}
+	if strings.Contains(builtinDetail, "$PATH") {
+		t.Errorf("a built-in claims to come from $PATH: %s", builtinDetail)
+	}
+
+	if out := m.pluginsView(); !strings.Contains(out, "built in") {
+		t.Error("the rendered pane never says a plugin is built in")
+	}
+}
+
+// Reach is the other half: "this is third-party code" and "this can destroy
+// things" are the two facts wanted in one glance, and neither is much use
+// alone. It is the worst class the plugin holds, which is the same rule
+// `rta plugin list` uses for its own column.
+func TestThePluginPaneShowsWhatEachPluginCanDo(t *testing.T) {
+	// The real catalogue, because it is the only registry that holds all
+	// three safety classes — multiRegistry is Read throughout, so asserting
+	// against it would have proved the pane renders one word.
+	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
+	reg, err := all.Registry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := New(reg, config.Dashboard{}, nil)
+	m.plugins = pluginRows(reg, m.dash)
+	m.width, m.height = 200, 60
+
+	for _, row := range m.plugins {
+		want := plugin.Read
+		for _, c := range row.plugin.Capabilities {
+			if c.Safety == plugin.Write && want == plugin.Read {
+				want = plugin.Write
+			}
+			if c.Safety == plugin.Destructive {
+				want = plugin.Destructive
+			}
+		}
+		if got := row.reach(); got != want {
+			t.Errorf("%s reach = %q, want %q", row.plugin.Name, got, want)
+		}
+	}
+
+	out := m.pluginsView()
+	// The catalogue holds all three classes, so all three words must appear.
+	for _, want := range []string{"read", "write", "destructive"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the pane never renders reach %q", want)
+		}
+	}
+}
+
+// The selected plugin must be on screen.
+//
+// The pane clipped instead of scrolling, so at 80x24 — the default terminal
+// size since forever — the twelfth plugin was invisible while `j` still
+// selected it and `space` still toggled its tile. Acting on a row you cannot
+// see reads as the app being broken rather than as the pane being short.
+func TestThePluginPaneScrollsToTheSelection(t *testing.T) {
+	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
+	reg, err := all.Registry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := New(reg, config.Dashboard{}, nil)
+	m.plugins = pluginRows(reg, m.dash)
+	sized, _ := m.Update(tea.WindowSizeMsg{Width: 96, Height: 24})
+	m = sized.(Model)
+	m.mode = modePlugins
+
+	if len(m.plugins) < 8 {
+		t.Fatalf("only %d plugins: this test needs more than fit on one screen", len(m.plugins))
+	}
+	if fits := m.visiblePlugins(m.pluginBodyHeight()); fits >= len(m.plugins) {
+		t.Skipf("all %d plugins fit in %d rows, nothing to scroll", len(m.plugins), fits)
+	}
+
+	// Walk down through every plugin the way a user does, and require the
+	// selected one to be rendered at each step.
+	for i := range m.plugins {
+		m.pluginSel = i
+		m.clampPluginScroll(m.pluginBodyHeight())
+		name := strings.ToUpper(m.plugins[i].plugin.Name)
+		if out := m.pluginsView(); !strings.Contains(out, " "+name+" ") {
+			t.Fatalf("plugin %d (%s) is selected but not on screen:\n%s", i, name, out)
+		}
+	}
+	// And back up again, since scrolling down and scrolling up are different
+	// arithmetic and only one of them was ever exercised by hand.
+	for i := len(m.plugins) - 1; i >= 0; i-- {
+		m.pluginSel = i
+		m.clampPluginScroll(m.pluginBodyHeight())
+		name := strings.ToUpper(m.plugins[i].plugin.Name)
+		if out := m.pluginsView(); !strings.Contains(out, " "+name+" ") {
+			t.Fatalf("plugin %d (%s) is selected but not on screen scrolling up:\n%s", i, name, out)
+		}
+	}
+}
+
+// When there is more than fits, the pane says so rather than implying the
+// list ends where the panel does.
+func TestThePluginPaneSaysWhenThereIsMore(t *testing.T) {
+	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
+	reg, err := all.Registry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := New(reg, config.Dashboard{}, nil)
+	m.plugins = pluginRows(reg, m.dash)
+	sized, _ := m.Update(tea.WindowSizeMsg{Width: 96, Height: 24})
+	m = sized.(Model)
+
+	total := len(m.plugins)
+	if m.visiblePlugins(m.pluginBodyHeight()) >= total {
+		t.Skip("everything fits at this size")
+	}
+	if out := m.pluginsView(); !strings.Contains(out, fmt.Sprintf("of %d", total)) {
+		t.Errorf("the pane does not say how many plugins there are in total:\n%s", out)
+	}
+
+	// Tall enough for everything: the count reads as a count, not a range.
+	tall, _ := m.Update(tea.WindowSizeMsg{Width: 96, Height: 200})
+	m = tall.(Model)
+	if out := m.pluginsView(); !strings.Contains(out, fmt.Sprintf("%d installed", total)) {
+		t.Errorf("with room for everything the pane should simply count:\n%s", out)
+	}
+}
+
+// A refresh result must land on the tile it came from, whatever moved.
+//
+// Every tile refreshes at once and the grid can be reordered with `[`/`]` or a
+// tile hidden with `H` while results are in flight. Addressed by index, a
+// result arriving after a reorder painted one capability's output under
+// another's title — the worst failure available to a screen whose whole job
+// is to be glanced at, because it is wrong and looks right.
+func TestATileResultLandsOnItsOwnTileAfterAReorder(t *testing.T) {
+	m := dashboardModel(t)
+	if len(m.tiles) < 3 {
+		t.Fatalf("only %d tiles", len(m.tiles))
+	}
+	// Find two capability tiles (skip the static search tile at 0).
+	var a, b int = -1, -1
+	for i, tl := range m.tiles {
+		if tl.cap.ID == "" {
+			continue
+		}
+		if a < 0 {
+			a = i
+		} else if b < 0 {
+			b = i
+			break
+		}
+	}
+	if a < 0 || b < 0 {
+		t.Fatal("need two capability tiles")
+	}
+	idA, idB := m.tiles[a].cap.ID, m.tiles[b].cap.ID
+
+	// A refresh for A starts while A is at index a, then the grid is
+	// rearranged so A and B swap places.
+	inFlight := tileMsg{id: idA, idx: a, v: view.Text{Body: "RESULT-FOR-A"}}
+	m.tiles[a], m.tiles[b] = m.tiles[b], m.tiles[a]
+
+	updated, _ := m.Update(inFlight)
+	m = updated.(Model)
+
+	for _, tl := range m.tiles {
+		body, _ := tl.view.(view.Text)
+		switch tl.cap.ID {
+		case idA:
+			if body.Body != "RESULT-FOR-A" {
+				t.Errorf("%s did not receive its own result, got %q", idA, body.Body)
+			}
+		case idB:
+			if body.Body == "RESULT-FOR-A" {
+				t.Errorf("%s was painted with %s's result", idB, idA)
+			}
+		}
+	}
+}
+
+// A result for a tile that has since been hidden is dropped, not misapplied.
+func TestATileResultForARemovedTileIsDropped(t *testing.T) {
+	m := dashboardModel(t)
+	var id string
+	for _, tl := range m.tiles {
+		if tl.cap.ID != "" {
+			id = tl.cap.ID
+			break
+		}
+	}
+	if id == "" {
+		t.Fatal("no capability tile")
+	}
+	// Drop every tile carrying that capability, as `H` does.
+	kept := m.tiles[:0]
+	for _, tl := range m.tiles {
+		if tl.cap.ID != id {
+			kept = append(kept, tl)
+		}
+	}
+	m.tiles = kept
+	before := len(m.tiles)
+
+	updated, _ := m.Update(tileMsg{id: id, idx: 0, v: view.Text{Body: "STALE"}})
+	m = updated.(Model)
+
+	if len(m.tiles) != before {
+		t.Errorf("tiles = %d, want %d", len(m.tiles), before)
+	}
+	for _, tl := range m.tiles {
+		if body, _ := tl.view.(view.Text); body.Body == "STALE" {
+			t.Errorf("a result for a hidden tile was painted onto %s", tl.cap.ID)
+		}
 	}
 }

@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
@@ -46,16 +47,32 @@ func NewPage(ctx context.Context, base Request) *Page {
 // Add runs a sibling handler and appends its view as a titled section,
 // skipping it if the handler fails or returns nothing. values overlay the
 // page's inherited inputs.
-func (p *Page) Add(title string, run Handler, values map[string]any) *Page {
-	return p.AddAs("", title, run, values)
+func (p *Page) Add(title string, run Handler, safety Safety, values map[string]any) *Page {
+	return p.AddAs("", title, run, safety, values)
 }
 
 // AddAs is Add with an explicit stable section id, for a section a script or
 // an agent addresses by name. See view.Section for why the title cannot serve
 // as that handle.
-func (p *Page) AddAs(id, title string, run Handler, values map[string]any) *Page {
+//
+// safety must be Read, and this panics otherwise. A Page's embedded calls
+// run direct: grant.Reserve and every other check the MCP bridge applies
+// wrap the one Capability an MCP call named, not a handler a sibling
+// capability calls internally, so nothing here could gate a Write or
+// Destructive section even if it wanted to. Requiring the caller to state
+// the safety class, checked immediately rather than trusted, is what turns
+// "nothing currently composes anything ungated" into "nothing ever can" —
+// found by review (PROJECT.md D74): every embedded call in the registry
+// today happens to be Read, but nothing stopped a future one from not
+// being, and the gap would have been invisible until it was exploited.
+func (p *Page) AddAs(id, title string, run Handler, safety Safety, values map[string]any) *Page {
 	if run == nil {
 		return p
+	}
+	if safety != Read {
+		panic(fmt.Sprintf("plugin: Page.AddAs(%q): embedding a %s handler bypasses grant enforcement — "+
+			"Page composes a call directly, with none of the checks the MCP bridge applies to a named "+
+			"capability, so only Read handlers may be embedded", id, safety))
 	}
 	v, err := run(p.ctx, p.section(values))
 	if err != nil {
@@ -99,7 +116,15 @@ func (p *Page) Warn(e *view.Error) *Page {
 // Run executes a sibling handler with the page's inherited inputs without
 // appending anything, for the cases where the caller wants to decide what a
 // failure should look like rather than have the section dropped.
-func (p *Page) Run(run Handler, values map[string]any) (view.View, error) {
+//
+// safety must be Read, checked the same way and for the same reason as
+// AddAs.
+func (p *Page) Run(run Handler, safety Safety, values map[string]any) (view.View, error) {
+	if safety != Read {
+		panic(fmt.Sprintf("plugin: Page.Run: embedding a %s handler bypasses grant enforcement — "+
+			"Page composes a call directly, with none of the checks the MCP bridge applies to a named "+
+			"capability, so only Read handlers may be embedded", safety))
+	}
 	return run(p.ctx, p.section(values))
 }
 

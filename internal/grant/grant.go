@@ -22,14 +22,19 @@
 package grant
 
 import (
+	"crypto/hmac"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/this-is-tobi/rule-them-all/internal/atomicfile"
+	"github.com/this-is-tobi/rule-them-all/internal/filelock"
 	"github.com/this-is-tobi/rule-them-all/internal/paths"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
@@ -71,7 +76,15 @@ type Grant struct {
 // Active reports whether the grant still stands at now: its TTL has not
 // passed, and — if it names a use limit — it has not been spent.
 func (g Grant) Active(now time.Time) bool {
-	return now.Before(g.Expires) && (g.MaxUses == 0 || g.Uses < g.MaxUses)
+	// MaxTTL is applied here and not only where a grant is issued. Checking it
+	// at issue alone means the cap lives in the CLI and the file is trusted to
+	// have been written by it — so a grant claiming to expire in 2099 was
+	// honoured for seventy years by a rule that reads "a day is already
+	// generous". Enforcing it on the way out makes the cap a property of what
+	// a grant can *do* rather than of how one is asked for, which is the only
+	// version that survives the file being written by something else.
+	return now.Before(g.Expires) && now.Before(g.Issued.Add(MaxTTL)) &&
+		(g.MaxUses == 0 || g.Uses < g.MaxUses)
 }
 
 // covers reports whether this grant authorizes a call of capID on scope.
@@ -153,12 +166,36 @@ func loadAll() ([]Grant, *view.Error) {
 	if err != nil {
 		return nil, view.Errorf("core.grant.unreadable", "reading %s: %v", Path(), err)
 	}
-	var all []Grant
-	if err := json.Unmarshal(data, &all); err != nil {
+	if legacy(data) {
+		// A grant file from before the seal. Every grant in it is dropped and
+		// nothing is refused — see seal.go for why that is neither honouring
+		// it nor erroring on it.
+		return nil, nil
+	}
+	var doc sealed
+	if err := json.Unmarshal(data, &doc); err != nil {
 		return nil, view.Errorf("core.grant.corrupt", "parsing %s: %v", Path(), err).
 			WithHint("delete the file to clear every grant")
 	}
-	return all, nil
+	key, verr := sealKey(false)
+	if verr != nil {
+		return nil, verr
+	}
+	// Refused loudly rather than treated as no grants. Falling back to empty
+	// would be safe for authorization and wrong for the operator: a tampered
+	// file would look exactly like "you have not issued any", so the one
+	// moment worth noticing would present as the ordinary case.
+	canon, err := canonical(doc.Grants)
+	if err != nil {
+		return nil, view.Errorf("core.grant.corrupt", "re-encoding %s: %v", Path(), err)
+	}
+	if !hmac.Equal([]byte(doc.Seal), []byte(seal(key, canon))) {
+		return nil, view.Errorf("core.grant.forged",
+			"%s does not match its seal — it was written by something other than rta", Path()).
+			WithHint("no grant is honoured until this is resolved; `rm " + Path() +
+				"` clears every grant, and any that were legitimate can be re-issued")
+	}
+	return doc.Grants, nil
 }
 
 // Save replaces the grant file.
@@ -174,27 +211,22 @@ func Save(grants []Grant) *view.Error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return view.Errorf("core.grant.write", "creating %s: %v", dir, err)
 	}
-	data, err := json.MarshalIndent(grants, "", "  ")
+	canon, err := canonical(grants)
 	if err != nil {
 		return view.Errorf("core.grant.write", "encoding grants: %v", err)
 	}
-	tmp, err := os.CreateTemp(dir, ".grants-*.tmp")
+	key, verr := sealKey(true)
+	if verr != nil {
+		return verr
+	}
+	data, err := json.MarshalIndent(sealed{Seal: seal(key, canon), Grants: grants}, "", "  ")
 	if err != nil {
-		return view.Errorf("core.grant.write", "writing %s: %v", Path(), err)
+		return view.Errorf("core.grant.write", "encoding grants: %v", err)
 	}
-	defer os.Remove(tmp.Name()) // no-op once the rename below succeeds
-	_, writeErr := tmp.Write(data)
-	closeErr := tmp.Close()
-	if writeErr != nil {
-		return view.Errorf("core.grant.write", "writing %s: %v", Path(), writeErr)
-	}
-	if closeErr != nil {
-		return view.Errorf("core.grant.write", "writing %s: %v", Path(), closeErr)
-	}
-	if err := os.Chmod(tmp.Name(), 0o600); err != nil {
-		return view.Errorf("core.grant.write", "writing %s: %v", Path(), err)
-	}
-	if err := os.Rename(tmp.Name(), Path()); err != nil {
+	// 0600 enforced, not requested: this file is what an agent's authority
+	// is read from, so it must not become readable — or writable — because
+	// of a permissive umask.
+	if err := atomicfile.Write(Path(), data, 0o600); err != nil {
 		return view.Errorf("core.grant.write", "writing %s: %v", Path(), err)
 	}
 	return nil
@@ -258,36 +290,66 @@ func Required(c plugin.Capability) bool {
 // scopes reads the records a call names, from the input the capability
 // declared as its scope. A capability with no scope, or a call that names no
 // record, yields one empty scope: the call is about the capability itself.
+//
+// Deduplicated, not just collected: a record named twice in one call (a
+// StringSlice-typed scope repeating a value, by mistake or on purpose) used
+// to make spend() walk that scope twice in the same call, incrementing
+// MaxUses' Uses counter once per occurrence rather than once per record —
+// letting a --max-uses 1 grant authorize itself twice within a single call
+// that named the same key two ways. Found by review (PROJECT.md D74) and
+// reproduced directly against Reserve.
 func scopes(c plugin.Capability, values map[string]any) []string {
 	if c.Scope == "" {
 		return []string{""}
 	}
 	var out []string
-	switch v := values[c.Scope].(type) {
-	case string:
-		if s := strings.TrimSpace(v); s != "" {
+	seen := map[string]bool{}
+	add := func(s string) {
+		if s = strings.TrimSpace(s); s != "" && !seen[s] {
+			seen[s] = true
 			out = append(out, s)
 		}
+	}
+	switch v := values[c.Scope].(type) {
+	case string:
+		add(v)
 	case []string:
 		for _, s := range v {
-			if s = strings.TrimSpace(s); s != "" {
-				out = append(out, s)
-			}
+			add(s)
 		}
 	case []any:
 		for _, raw := range v {
-			if s, ok := raw.(string); ok && strings.TrimSpace(s) != "" {
-				out = append(out, strings.TrimSpace(s))
+			if s, ok := raw.(string); ok {
+				add(s)
 			}
 		}
 	case nil:
 	default:
-		out = append(out, fmt.Sprint(v))
+		add(numericScope(v))
 	}
 	if len(out) == 0 {
 		return []string{""}
 	}
 	return out
+}
+
+// numericScope renders a non-string scope value (an Int-typed Scope field,
+// e.g. todo.rm's id) the way an operator would type it, not the way Go's
+// %v verb does — fmt.Sprint(float64(1000000)) is "1e+06", which a grant
+// issued for the operator-typed string "1000000" (rta grant allow todo.rm
+// 1000000) would never match. An MCP call's JSON number always decodes to
+// float64 before it reaches here (internal/mcp/bridge.go calls Reserve on
+// the raw decoded values, before plugin.Resolve's numeric coercion), so this
+// is the boundary that has to normalise it. A whole-number float is printed
+// as a plain integer; anything with a fractional part falls back to %v,
+// since no Field.Type this package scopes against is ever a genuine Float.
+// Found by review (PROJECT.md D74), which demonstrated the mismatch
+// directly rather than only asserting it existed.
+func numericScope(v any) string {
+	if f, ok := v.(float64); ok && f == math.Trunc(f) {
+		return strconv.FormatInt(int64(f), 10)
+	}
+	return fmt.Sprint(v)
 }
 
 // Check gates one call. It is the whole enforcement: the MCP bridge calls it
@@ -306,22 +368,53 @@ func Check(c plugin.Capability, values map[string]any) *view.Error {
 	return checkAgainst(c, values, grants)
 }
 
-// checkAgainst is Check against a set of grants already in hand, so that the
-// authorization decision can be made under the same lock that spends the use.
-func checkAgainst(c plugin.Capability, values map[string]any, grants []Grant) *view.Error {
-	var missing []string
+// allocate walks the scopes a call names and, for each, greedily picks the
+// first grant that covers it and can still afford one more use in this same
+// call — a grant already spoken for elsewhere in the call, right up to its
+// MaxUses, no longer counts as covering a further scope, so allocation falls
+// through to the next grant that does cover it. It returns, per grant index
+// touched, how many additional uses this call would spend, and the scopes
+// nothing with budget left covers.
+//
+// checkAgainst and spend used to walk scopes independently — checkAgainst
+// asking only "does anything cover this", spend incrementing whatever it
+// found with no memory of what earlier scopes in the same call had already
+// claimed. A single MaxUses:1 grant with no Scope (or a Scope wide enough to
+// cover several records) covered every scope a multi-record call like
+// `kv.env key=[a,b,c]` named, so checkAgainst approved the whole call and
+// spend then walked the same grant three times in the one Save it made — a
+// grant issued to reveal one secret once revealing three, with the budget it
+// was capped at blown past in a call that never touched the lock twice.
+// Sharing one walk and one tally is what keeps the authorization decision
+// and the spend decision looking at the same arithmetic.
+func allocate(c plugin.Capability, values map[string]any, grants []Grant) (tally map[int]int, missing []string) {
+	tally = map[int]int{}
 	for _, scope := range scopes(c, values) {
 		covered := false
-		for _, g := range grants {
-			if g.covers(c.ID, scope) {
-				covered = true
-				break
+		for i, g := range grants {
+			if !g.covers(c.ID, scope) {
+				continue
 			}
+			if g.MaxUses > 0 && g.Uses+tally[i] >= g.MaxUses {
+				continue // this grant's budget is spoken for by this same call; try another
+			}
+			if g.MaxUses > 0 {
+				tally[i]++
+			}
+			covered = true
+			break
 		}
 		if !covered {
 			missing = append(missing, scope)
 		}
 	}
+	return tally, missing
+}
+
+// checkAgainst is Check against a set of grants already in hand, so that the
+// authorization decision can be made under the same lock that spends the use.
+func checkAgainst(c plugin.Capability, values map[string]any, grants []Grant) *view.Error {
+	_, missing := allocate(c, values, grants)
 	if len(missing) == 0 {
 		return nil
 	}
@@ -378,8 +471,18 @@ func Reserve(c plugin.Capability, values map[string]any) (release func(), verr *
 		return nil, verr
 	}
 	if !anyLimited(grants) {
-		// Nothing to spend, so the check needs no lock and no refund.
-		return func() {}, Check(c, values)
+		// Checked against this same snapshot — checkAgainst, not Check, which
+		// would Load again. A second, independent read here reopened exactly
+		// the window this function exists to close: a MaxUses grant created
+		// in the gap between the two reads would be invisible to the
+		// snapshot that decided nothing needed spending, yet visible (and
+		// authorizing) to a fresh reload, so the call would run on a grant
+		// that never recorded the use — "read this once" delivering the
+		// secret for free. One read, reused for both the spend decision and
+		// the authorization decision, makes that impossible: whatever this
+		// call is authorized against is exactly what it already knows has
+		// nothing to spend.
+		return func() {}, checkAgainst(c, values, grants)
 	}
 
 	unlock, verr := acquireLock()
@@ -445,19 +548,22 @@ func refund(c plugin.Capability, values map[string]any) *view.Error {
 	return Save(keep)
 }
 
-// spend increments the covering grant for every record the call named.
+// spend increments the covering grant for every record the call named, using
+// the same allocate() a preceding checkAgainst already approved — so a grant
+// that authorized every scope in the call also has, by construction, the
+// budget left to be spent for every one of them.
 func spend(c plugin.Capability, values map[string]any, grants []Grant) ([]Grant, bool) {
-	changed := false
-	for _, scope := range scopes(c, values) {
-		for i := range grants {
-			if grants[i].MaxUses > 0 && grants[i].covers(c.ID, scope) {
-				grants[i].Uses++
-				changed = true
-				break // one grant per named record, the same granularity Check uses
-			}
-		}
+	tally, missing := allocate(c, values, grants)
+	if len(missing) > 0 {
+		// Reserve calls checkAgainst before spend and would already have
+		// refused the call; a scope allocate can't cover here shouldn't
+		// silently spend the ones it can.
+		return grants, false
 	}
-	return grants, changed
+	for i, n := range tally {
+		grants[i].Uses += n
+	}
+	return grants, len(tally) > 0
 }
 
 // Consume spends one use, per record the call named, from whichever grant
@@ -537,32 +643,27 @@ const (
 // to a concurrent Reserve. Writes go through Mutate, Reserve or refund, and
 // all three hold this.
 //
-// The lock is a sentinel file created with O_EXCL, not flock(2): O_EXCL's
-// atomicity is identical on every platform rta ships for (Linux, macOS,
-// Windows), where POSIX file locking is not.
+// The lock is a sentinel file, not flock(2): creating a name that cannot
+// already exist behaves identically on every platform rta ships for (Linux,
+// macOS, Windows), where POSIX file locking does not.
+//
+// **The lock is held by identity, not by name.** Every operation on the
+// sentinel used to be by path — release removed whatever was there, and a
+// waiter that judged the lock stale removed whatever was there — and a name
+// is not the file you looked at. Two waiters both finding a crashed holder's
+// lock both removed it and both created their own, so both held it; a holder
+// whose lock had been broken as stale removed its successor's on the way out.
+// Either way two processes are inside a read-modify-write the lock exists to
+// serialize, which puts back exactly the lost revocation described above. So
+// the sentinel now carries a token, acquiring it is a Publish that reports
+// whose token won, releasing it is a no-op unless the token is still ours,
+// and breaking a stale one moves the file first and confirms by identity that
+// it moved the one it judged.
 func acquireLock() (release func(), verr *view.Error) {
-	dir := paths.Data()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return nil, view.Errorf("core.grant.lock", "creating %s: %v", dir, err)
+	path := filepath.Join(paths.Data(), lockFile)
+	release, err := filelock.Acquire(path, lockStale, lockRetry, lockTimeout)
+	if err != nil {
+		return nil, view.Errorf("core.grant.lock", "acquiring the grant file lock: %v", err)
 	}
-	path := filepath.Join(dir, lockFile)
-	deadline := time.Now().Add(lockTimeout)
-	for {
-		f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
-		if err == nil {
-			_ = f.Close()
-			return func() { _ = os.Remove(path) }, nil
-		}
-		if !os.IsExist(err) {
-			return nil, view.Errorf("core.grant.lock", "acquiring the grant file lock: %v", err)
-		}
-		if info, statErr := os.Stat(path); statErr == nil && time.Since(info.ModTime()) > lockStale {
-			_ = os.Remove(path) // a prior holder crashed without releasing it
-			continue
-		}
-		if time.Now().After(deadline) {
-			return nil, view.Errorf("core.grant.lock", "timed out waiting for another call to finish updating grants")
-		}
-		time.Sleep(lockRetry)
-	}
+	return release, nil
 }

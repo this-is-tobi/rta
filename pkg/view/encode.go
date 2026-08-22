@@ -39,10 +39,20 @@ func TypeOf(v View) string {
 // views stay discriminated all the way down and agents can switch on "type"
 // at any depth.
 func (s Section) MarshalJSON() ([]byte, error) {
+	// The id is emitted, and it is the field that matters to a machine: Title
+	// is prose meant for a person and free to change, while ID is the stable
+	// handle a script or an agent addresses a section by — which is why
+	// plugin.Page assigns one and cli.go's renderer comments say the id
+	// exists so a script can name a section. Dropping it here meant no
+	// machine consumer could, on any surface that encodes.
+	//
+	// Omitted when empty rather than emitted blank, since a section built by
+	// hand need not have one and `"id":""` is not an identifier.
 	return json.Marshal(struct {
+		ID    string   `json:"id,omitempty"`
 		Title string   `json:"title"`
 		View  Envelope `json:"view"`
-	}{Title: s.Title, View: Envelope{View: s.View}})
+	}{ID: s.ID, Title: s.Title, View: Envelope{View: s.View}})
 }
 
 // MarshalJSON flattens the view body next to the type discriminator.

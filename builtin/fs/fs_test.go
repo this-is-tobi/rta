@@ -400,3 +400,152 @@ func asViewError(err error, target **view.Error) bool {
 	}
 	return false
 }
+
+// fs.tree is the fs dashboard tile (fs.usage carries NoPreview), so this is
+// the page opening that tile lands on. Before it existed, fs was the only
+// plugin whose tile expanded into exactly what the tile already showed.
+func TestTreeDetailIsAComposedPage(t *testing.T) {
+	files := map[string]int{}
+	for _, n := range []string{"a", "b", "c", "d", "e"} {
+		files["many/"+n] = 1
+	}
+	files[".hidden"] = 1
+	files["deep/down/far.txt"] = 1
+	// Four visible entries at the root against --limit 2, so the trim is real
+	// rather than assumed: the first version of this test counted two and
+	// truncated nothing.
+	files["loose1.txt"] = 1
+	files["loose2.txt"] = 1
+	root := fixture(t, files)
+
+	v := run(t, runTree, map[string]any{"path": root, "depth": 1, "limit": 2, "detail": true})
+	page, ok := v.(view.Sections)
+	if !ok {
+		t.Fatalf("detail returned %T, want view.Sections", v)
+	}
+	keys := map[string]view.View{}
+	for _, s := range page.Items {
+		keys[s.Key()] = s.View
+	}
+	// Addressed by section id, which is what Section.Key() returns when one
+	// is set — the stable handle, kebab-case like every other identifier in
+	// rta, as opposed to the title, which is prose and free to change.
+	for _, want := range []string{"summary", "tree", "not-shown"} {
+		if _, ok := keys[want]; !ok {
+			t.Errorf("no %q section: %v", want, page.Items)
+		}
+	}
+	if _, ok := keys["tree"].(view.Tree); !ok {
+		t.Errorf("the tree section holds %T, not the tree", keys["tree"])
+	}
+
+	// The point of the section: every bound in one place. Scattered through
+	// the branches they happened in, these are what a reader has to find and
+	// recognise before concluding the tree is complete — and the markers for
+	// depth, --limit and dotfiles look nothing alike.
+	missing, ok := keys["not-shown"].(view.KeyValue)
+	if !ok {
+		t.Fatalf("not-shown holds %T, want KeyValue", keys["not-shown"])
+	}
+	got := map[string]string{}
+	for _, p := range missing.Pairs {
+		got[p.Key] = p.Value
+	}
+	for _, want := range []string{"below --depth", "past --limit", "hidden"} {
+		if got[want] == "" {
+			t.Errorf("no %q entry: %v", want, got)
+		}
+	}
+	// depth 1 stops at both directories; limit 2 trims the third entry.
+	if !strings.Contains(got["below --depth"], "2 directories") {
+		t.Errorf("below --depth = %q, want both stopped directories counted", got["below --depth"])
+	}
+	if !strings.Contains(got["hidden"], "1 dotfile") {
+		t.Errorf("hidden = %q, want the one dotfile counted", got["hidden"])
+	}
+}
+
+// "complete" and "this build forgot to count" must not render identically.
+func TestTreeDetailSaysSoWhenNothingIsHidden(t *testing.T) {
+	root := fixture(t, map[string]int{"a.txt": 1, "sub/b.txt": 1})
+	page := run(t, runTree, map[string]any{
+		"path": root, "depth": 5, "limit": 100, "detail": true,
+	}).(view.Sections)
+	for _, s := range page.Items {
+		if s.Key() != "not-shown" {
+			continue
+		}
+		txt, ok := s.View.(view.Text)
+		if !ok {
+			t.Fatalf("not shown holds %T, want a Text saying the tree is complete", s.View)
+		}
+		if !strings.Contains(txt.Body, "Nothing") {
+			t.Errorf("not shown = %q", txt.Body)
+		}
+		return
+	}
+	t.Error("a complete tree omitted the section entirely, which reads as an unfinished page")
+}
+
+// The tree's detail page answers the other half of the question.
+//
+// Every other detail page in the catalogue is composed from what sibling
+// capabilities already return (plugin.Page), and this one was not: it showed
+// the walk it had just done and stopped. The reason recorded in the code was
+// that fs.usage is a recursive scan carrying NoPreview — which conflated two
+// different things. NoPreview means do not run me *unprompted*, because the
+// dashboard refreshes on a timer. A detail page is the opposite case:
+// somebody pressed enter.
+//
+// The objection underneath it was real and is answered by passing the bound
+// rather than dropping the section, which is what this test pins: the
+// composed scan gets this request's own --depth, so it walks the same shape
+// the tree just walked instead of starting an unbounded scan from a keypress.
+func TestTreeDetailComposesUsageWithinTheSameBound(t *testing.T) {
+	root := t.TempDir()
+	// deep/ sits below --depth 1, so an unbounded scan would count it and a
+	// correctly bounded one would not.
+	deep := filepath.Join(root, "shallow", "deep")
+	if err := os.MkdirAll(deep, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "top.bin"), make([]byte, 4096), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(deep, "buried.bin"), make([]byte, 1<<20), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	v := run(t, runTree, map[string]any{"path": root, "depth": 1, "limit": 12, "detail": true})
+	secs, ok := v.(view.Sections)
+	if !ok {
+		t.Fatalf("detail view is %T, not sections", v)
+	}
+	var largest view.View
+	ids := make([]string, 0, len(secs.Items))
+	for _, s := range secs.Items {
+		ids = append(ids, s.ID)
+		if s.ID == "largest" {
+			largest = s.View
+		}
+	}
+	if largest == nil {
+		t.Fatalf("no `largest` section: the page is %v", ids)
+	}
+	tbl, ok := largest.(view.Table)
+	if !ok {
+		t.Fatalf("largest section is %T, want a table", largest)
+	}
+	if len(tbl.Rows) == 0 {
+		t.Fatal("the largest-entries section is empty")
+	}
+
+	// Bounded: at --depth 1 the scan must not have descended into shallow/
+	// to find the 1 MiB file, so shallow/ is reported at the size of what
+	// the bound let it see rather than at 1 MiB.
+	for _, row := range tbl.Rows {
+		if strings.HasPrefix(row[0], "shallow") && strings.Contains(row[1], "MiB") {
+			t.Errorf("the composed scan ignored --depth: %v", row)
+		}
+	}
+}

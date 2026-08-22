@@ -11,7 +11,7 @@ import (
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
 
-// newPluginsCommand implements `rta plugins`: what is installed.
+// newPluginListCommand implements `rta plugin list`: what is installed.
 //
 // `rta explain` lists every capability across every plugin, which answers a
 // different question — scrolling a capability list to work out which plugins
@@ -19,10 +19,20 @@ import (
 // counts them and stops.
 // This is the inventory: one line per plugin, what it is for, how much it
 // offers, and what it can do to your machine.
-func newPluginsCommand(reg *registry.Registry, opts *globalOpts) *cobra.Command {
+//
+// It was `rta plugins` until it moved here, and the move is the app applying
+// its own rule to itself. Every listing in rta is `<namespace> list` —
+// grant.list, kv.list, note.list, todo.list, net.hosts.list — and sdktest
+// warns a plugin author who invents a verb outside that vocabulary. A
+// top-level bare plural was the one place rta did not follow the convention
+// it enforces on everybody else, and it sat one letter from `rta plugin` in
+// the command list, which is the kind of pair a person reads twice and still
+// gets wrong.
+func newPluginListCommand(reg *registry.Registry, opts *globalOpts) *cobra.Command {
 	return &cobra.Command{
-		Use:   "plugins",
-		Short: "List installed plugins and what each one offers",
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List installed plugins and what each one offers",
 		Long: "One line per plugin: its purpose, how many capabilities it has, and\n" +
 			"whether any of them write or destroy.\n\n" +
 			"Use `rta explain` for the capabilities themselves, and the TUI's `p`\n" +

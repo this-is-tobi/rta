@@ -62,11 +62,19 @@ func Plugin() plugin.Plugin {
 				Summary:    "Show a directory as a tree, with sizes",
 				Safety:     plugin.Read,
 				Idempotent: true,
+				// fs.tree is the fs tile (fs.usage is NoPreview), so this is
+				// the page the dashboard opens into. Without it fs was the
+				// one plugin whose tile expanded to exactly what the tile
+				// already showed.
+				Detailed: true,
 				Description: "The shape of a directory, a few levels at a time, with each entry's " +
 					"size beside it. Entries are ordered directories first and then by name, the " +
 					"order a person reads a listing in. Truncated branches say how many entries they " +
 					"are hiding rather than trailing off, so the tree never claims a directory is " +
-					"smaller than it is.",
+					"smaller than it is. With --detail: what the walk covered, the tree, and " +
+					"everything it left out — depth, per-directory limit, hidden entries, mount " +
+					"points and unreadable directories gathered in one place instead of scattered " +
+					"through the branches they happened in.",
 				Inputs: []plugin.Field{
 					pathField("directory to show"),
 					{Name: "depth", Type: plugin.Int, Default: 2, Min: 1, Max: 12, Help: "how many levels to show"},

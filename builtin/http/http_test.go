@@ -76,6 +76,42 @@ func TestGetJSON(t *testing.T) {
 	}
 }
 
+// A grant covers exactly the URL named (Scope: "url"), checked once by the
+// MCP bridge before Run ever executes. Following a redirect automatically
+// would let a call authorized for one destination actually reach whatever a
+// 3xx response pointed at instead — no second grant check involved, and
+// with no way for the operator who issued the grant to have known. This
+// pins the fix: the redirect target's handler must never run, and its
+// Location must be visible instead of silently chased.
+func TestRedirectsAreNeverFollowedAutomatically(t *testing.T) {
+	var forbiddenWasHit bool
+	forbidden := httptest.NewServer(stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+		forbiddenWasHit = true
+		w.Write([]byte("secret metadata"))
+	}))
+	defer forbidden.Close()
+
+	redirector := httptest.NewServer(stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+		stdhttp.Redirect(w, r, forbidden.URL, stdhttp.StatusFound)
+	}))
+	defer redirector.Close()
+
+	v, err := doRequest(context.Background(), "GET", req(map[string]any{"url": redirector.URL}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if forbiddenWasHit {
+		t.Fatal("the redirect target was actually requested — a grant scoped to the redirector's URL was defeated")
+	}
+	pairs := pairsOf(t, v)
+	if !strings.HasPrefix(pairs["status"], "302") {
+		t.Errorf("status = %q, want the redirect response itself (302), not whatever it points at", pairs["status"])
+	}
+	if pairs["location (not followed)"] != forbidden.URL {
+		t.Errorf("location (not followed) = %q, want %q", pairs["location (not followed)"], forbidden.URL)
+	}
+}
+
 func TestAuthAndHeaders(t *testing.T) {
 	var gotAuth, gotCustom string
 	srv := httptest.NewServer(stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, r *stdhttp.Request) {

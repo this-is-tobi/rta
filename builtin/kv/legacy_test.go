@@ -1,8 +1,15 @@
 package kv
 
 import (
+	"bytes"
+	"context"
+	"os"
 	"strings"
 	"testing"
+
+	"filippo.io/age"
+
+	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
 
 // The stamp sits in the same JSON document as the values, so a stamped store
@@ -59,5 +66,66 @@ func TestNeedsBackupOnlyOnTheUpgradeWrite(t *testing.T) {
 	}
 	if needsBackup(storeVersion) {
 		t.Error("a store already in the current format needs no backup")
+	}
+}
+
+// A coverage test for a real gap review found (PROJECT.md D74):
+// backupUnstamped's own doc comment calls the copy it makes "the one
+// failure this package must not have" — a secrets store that quietly
+// destroys a secret — and yet no test had ever placed a real, on-disk,
+// unstamped store at storePath() and confirmed an upgrading write actually
+// produces the backup, byte for byte. Every existing legacy test only
+// decodes in-memory byte slices; every existing rekey/set test starts from
+// a store that does not exist on disk yet, so backupUnstamped always took
+// its early "no store yet" return.
+func TestAnUpgradingWriteBacksUpTheOriginalCiphertextFirst(t *testing.T) {
+	setup(t)
+	t.Setenv(passphraseEnv, "hunter2")
+
+	// A real, on-disk, unstamped (pre-v2) store: current entry shape, but
+	// with no "version" field, exactly what decodeStore treats as needing a
+	// backup before the next write replaces it.
+	original := []byte(`{"entries":{"k":{"value":"dg==","created":"2026-01-01T00:00:00Z","updated":"2026-01-01T00:00:00Z"}}}`)
+	r, err := age.NewScryptRecipient("hunter2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.SetWorkFactor(scryptWorkFactor)
+	var buf bytes.Buffer
+	w, err := age.Encrypt(&buf, r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Write(original); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	ciphertext := buf.Bytes()
+	if err := os.WriteFile(storePath(), ciphertext, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := runSet(context.Background(), cliReq(map[string]any{"key": "other", "value": "x"})); err != nil {
+		t.Fatalf("upgrading write: %v", err)
+	}
+
+	backup := storePath() + ".pre-v2.bak"
+	got, err := os.ReadFile(backup)
+	if err != nil {
+		t.Fatalf("no backup was written: %v", err)
+	}
+	if !bytes.Equal(got, ciphertext) {
+		t.Error("the backup does not match the original ciphertext byte for byte")
+	}
+
+	// And the upgrade itself must not have lost the pre-existing entry.
+	v, err := runGet(context.Background(), cliReq(map[string]any{"key": "k"}))
+	if err != nil {
+		t.Fatalf("the pre-existing entry did not survive the upgrade: %v", err)
+	}
+	if v.(view.Text).Body != "v" {
+		t.Errorf("got %v", v)
 	}
 }

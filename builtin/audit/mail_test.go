@@ -305,7 +305,7 @@ func TestFailedLookupsAreNotGradedAsFindings(t *testing.T) {
 // Every finding has to land in a section the detail page renders, or it is
 // computed, counted in the tally, and then silently dropped from the page.
 func TestEveryMailFindingLandsInADeclaredGroup(t *testing.T) {
-	declared := map[string]bool{}
+	declared := map[group]bool{}
 	for _, g := range mailGroupOrder {
 		declared[g] = true
 	}
@@ -375,20 +375,22 @@ func TestMailDetailIsASectionedPage(t *testing.T) {
 	if !ok {
 		t.Fatal("the detail view is not a sectioned page")
 	}
-	titles := make([]string, 0, len(page.Items))
+	// By id, not by heading: the heading is presentation and free to be
+	// reworded, which is the whole reason view.Section carries both.
+	ids := make([]string, 0, len(page.Items))
 	for _, item := range page.Items {
-		titles = append(titles, item.Title)
+		ids = append(ids, item.Key())
 	}
-	for _, want := range []string{"summary", grpSenderAuth, grpRouting, "references"} {
-		if !contains(titles, want) {
-			t.Errorf("the page has no %q section; got %v", want, titles)
+	for _, want := range []string{"summary", grpSenderAuth.id, grpRouting.id, "references"} {
+		if !contains(ids, want) {
+			t.Errorf("the page has no %q section; got %v", want, ids)
 		}
 	}
 	// An empty group gets no heading: a section with nothing under it reads
 	// as a check that failed to run rather than one with no subject.
-	if contains(titles, grpMailTLS) {
+	if contains(ids, grpMailTLS.id) {
 		for _, item := range page.Items {
-			if item.Title == grpMailTLS {
+			if item.Key() == grpMailTLS.id {
 				if tbl, ok := item.View.(view.Table); ok && len(tbl.Rows) == 0 {
 					t.Error("an empty group was given a heading")
 				}

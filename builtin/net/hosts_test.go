@@ -587,3 +587,40 @@ func TestFormatHostLineNeverPromotesACommentToAHostname(t *testing.T) {
 		}
 	}
 }
+
+// Needing root to edit /etc/hosts is the expected case, not a mistake, so
+// "permission denied" has to arrive as the sentence that says to use sudo.
+//
+// The hint is one errors.Is away from being lost: the write goes through
+// internal/atomicfile, which wraps, and os.IsPermission — which reads as the
+// obvious choice and is what this used before the write moved — only unwraps
+// the error types the os package defines itself. A wrapped EACCES sails past
+// it and the caller gets the generic message on the one path they always
+// take.
+func TestAPermissionFailureStillSaysToUseSudo(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root: nothing is permission-denied")
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "hosts")
+	if err := os.WriteFile(path, []byte("127.0.0.1 localhost\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Readable and traversable, so the Stat succeeds, but nothing new can be
+	// created in it — which is where the write actually fails.
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+
+	verr := writeLines(path, []string{"127.0.0.1 localhost", "10.0.0.1 example.test"})
+	if verr == nil {
+		t.Fatal("writing into an unwritable directory reported success")
+	}
+	if verr.Code != "net.sysfile.permission" {
+		t.Fatalf("code = %q, want net.sysfile.permission (message: %s)", verr.Code, verr.Message)
+	}
+	if !strings.Contains(verr.Hint, "sudo") {
+		t.Errorf("hint = %q, want it to name sudo", verr.Hint)
+	}
+}

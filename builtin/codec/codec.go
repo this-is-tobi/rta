@@ -145,9 +145,9 @@ func runJWT(_ context.Context, req plugin.Request) (view.View, error) {
 		return nil, view.Errorf("codec.jwt.invalid", "decoding claims: %v", err)
 	}
 	return view.Sections{Items: []view.Section{
-		{Title: "header", View: keyValueOf(header)},
-		{Title: "claims", View: keyValueOf(claims)},
-		{Title: "verification", View: view.Text{
+		{ID: "header", Title: "header", View: keyValueOf(header)},
+		{ID: "claims", Title: "claims", View: keyValueOf(claims)},
+		{ID: "verification", Title: "verification", View: view.Text{
 			Body: "NOT VERIFIED — the signature was not checked. This is a debugging view of what the " +
 				"token claims, not proof of who issued it.",
 		}},

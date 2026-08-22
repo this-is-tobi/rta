@@ -367,8 +367,8 @@ func runTags(_ context.Context, _ plugin.Request) (view.View, error) {
 // to re-parse prose to find a due date.
 func showSections(s itemstore.Store, it itemstore.Item) view.Sections {
 	sec := view.Sections{Items: []view.Section{
-		{Title: "task", View: metaPairs(s, it)},
-		{Title: "description", View: descriptionView(it)},
+		{ID: "task", Title: "task", View: metaPairs(s, it)},
+		{ID: "description", Title: "description", View: descriptionView(it)},
 	}}
 	if children := itemstore.Children(s, it.ID); len(children) > 0 {
 		t := view.Table{Columns: []view.Column{
@@ -380,10 +380,10 @@ func showSections(s itemstore.Store, it itemstore.Item) view.Sections {
 			t.Rows = append(t.Rows, []string{strconv.Itoa(c.ID), statusOf(c), c.Title})
 		}
 		t.Total = len(t.Rows)
-		sec.Items = append(sec.Items, view.Section{Title: "sub-tasks", View: t})
+		sec.Items = append(sec.Items, view.Section{ID: "sub-tasks", Title: "sub-tasks", View: t})
 	}
 	if refs := crossRefs(s, it); len(refs.Rows) > 0 {
-		sec.Items = append(sec.Items, view.Section{Title: "references", View: refs})
+		sec.Items = append(sec.Items, view.Section{ID: "references", Title: "references", View: refs})
 	}
 	return sec
 }

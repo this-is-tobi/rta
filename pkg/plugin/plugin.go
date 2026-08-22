@@ -74,18 +74,77 @@ type Field struct {
 	Default    any
 	Required   bool
 	Positional bool // rendered as a CLI positional argument instead of a flag
-	// Local marks an input the host resolves from its own environment and
-	// never accepts from a remote caller: the passphrase that unlocks a
-	// store, not the payload going into it.
+	// Local marks an input a remote caller may never supply: the passphrase
+	// that unlocks a store, the path a revealed secret gets written to, the
+	// address of the server a call is aimed at — not the payload going into
+	// or out of it.
 	//
 	// Local fields are omitted from MCP tool schemas and stripped from
-	// incoming MCP arguments. An agent must never be invited to supply,
-	// invent, or repeat back a credential — one that reaches a model's
-	// context has already leaked, whatever happens next. The operator
-	// supplies it to the server instead (an environment variable set when
-	// launching `rta mcp serve`). CLI and TUI offer Local fields normally:
-	// there is a person there, and it is their credential.
+	// incoming MCP arguments, unconditionally. An agent must never be
+	// invited to supply, invent, or repeat back a credential — one that
+	// reaches a model's context has already leaked, whatever happens next —
+	// and must never choose a destination for a value a grant only
+	// authorized revealing, not redirecting. CLI and TUI offer Local fields
+	// normally: there is a person there, and it is their machine.
+	//
+	// **A destination is a destination whether or not it is on this
+	// machine**, and reading that narrowly was a live credential-redirect
+	// hole (PROJECT.md D94). A service plugin declares the connection it
+	// talks to — host, port, user, database, endpoint, region, address,
+	// namespace — as ordinary inputs so config can fill them. Ordinary also
+	// meant published in the MCP tool schema and accepted from a caller, and
+	// plugin.Resolve applies caller values last, above config and above the
+	// host's own environment. So an agent could name any server it liked and
+	// the host would fill the operator's RTA_<NS>_PASSWORD in beside it —
+	// pointing a real credential at a machine the agent chose. Marking those
+	// inputs Local closes it with no contract change: config still fills
+	// them, a person still passes them, and the one surface that must not
+	// choose them no longer can.
 	Local bool
+	// EnvFallback lets a Local field also be resolved from this plugin's own
+	// environment (RTA_<NAMESPACE>_<FIELD>) when nothing else supplied a
+	// value — the passphrase or identity that unlocks a store, handed to an
+	// unattended `rta mcp serve` the same way any other credential reaches a
+	// long-running process. Ignored on a non-Local field.
+	//
+	// Off by default, and that default is the fix for a real bug (PROJECT.md
+	// D74): every Local field used to get this for free, which is right for
+	// a credential and wrong for a field that only chooses a destination —
+	// kv.get's own --out is Local specifically so a grant on kv.get cannot
+	// be read as "and write the value wherever you like", and an ambient
+	// RTA_KV_OUT in the server's environment defeated that the same way an
+	// explicit MCP argument would have, just more quietly. A field that only
+	// picks a destination — where to write, which file to edit — should
+	// require an explicit person at a terminal every time; a field that
+	// authenticates should not have to be retyped on every call an operator
+	// makes from the same shell. That distinction is a property of what the
+	// field means, not of its FieldType, so it has to be declared rather
+	// than inferred: kv.get's --out and kv.init's --identity are the same
+	// FieldType (Path) and want opposite answers.
+	EnvFallback bool
+	// Config names a dotted key in the operator's configuration that this
+	// input may be filled from when the caller supplied none, so somebody
+	// states a connection once instead of retyping it on every invocation.
+	//
+	// Precedence is what the caller passed, then config, then Default. Your
+	// handler reads req.String("host") either way and cannot tell which
+	// happened, which is the point: a config-backed input is an ordinary
+	// input, not a second way for a plugin to reach into the host.
+	//
+	// The key names a value inside your OWN section of that configuration.
+	// Which section is yours is decided by the host from the artifact it
+	// launched, not from the namespace you declare — a binary early on $PATH
+	// can declare any namespace it likes, and an operator's stated values
+	// must not be handed to whoever won that race (see internal/pluginconf).
+	//
+	// Refused on a Secret input. This path carries no credential: it is a
+	// plaintext file, it is read on every invocation with nobody watching,
+	// and a Secret filled from it would be published in an MCP tool schema
+	// as a default. Declare Local instead and let the host resolve it from
+	// its own environment, the way builtin/kv does. Also refused on a
+	// Positional, because CLI positional arity is computed from Required and
+	// a config-satisfied positional changes what "two arguments" means.
+	Config string
 	// Options enumerates every value this input accepts.
 	//
 	// Declared once, it becomes a real affordance on all four surfaces
@@ -211,6 +270,22 @@ func (r Request) With(values map[string]any) Request {
 	}
 	r.values = merged
 	return r
+}
+
+// Values returns every resolved input, as a copy.
+//
+// The typed accessors below are what a handler wants: they name one input and
+// coerce it. This is for the one caller that cannot name them — the plugin
+// host, which has to put the whole request on a wire without knowing what any
+// of it means. A copy rather than the map itself, for the same reason With
+// returns a new Request: a handler must not be able to reshape a request its
+// caller is still holding, and neither must a transport.
+func (r Request) Values() map[string]any {
+	out := make(map[string]any, len(r.values))
+	for k, v := range r.values {
+		out[k] = v
+	}
+	return out
 }
 
 func (r Request) String(name string) string {
@@ -361,14 +436,36 @@ type Plugin struct {
 }
 
 var (
-	idRe      = regexp.MustCompile(`^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*){1,2}$`)
-	nameRe    = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
-	fieldRe   = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
-	safetySet = map[Safety]bool{Read: true, Write: true, Destructive: true}
+	idRe    = regexp.MustCompile(`^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*){1,2}$`)
+	nameRe  = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
+	fieldRe = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
+	// A dotted path of the same segments, so a plugin can nest its own
+	// settings. Closed deliberately: no leading dot, no empty segment, no
+	// "..", nothing that could be read as a filesystem path by whatever
+	// looks at it next.
+	configKeyRe = regexp.MustCompile(`^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)*$`)
+	safetySet   = map[Safety]bool{Read: true, Write: true, Destructive: true}
+	// safeties is safetySet in the order harm increases, which is the order
+	// anything listing them should use.
+	safeties = []Safety{Read, Write, Destructive}
 	// fieldTypes is the closed set an input may declare, in the order the
 	// rejection message lists them.
 	fieldTypes = []FieldType{String, Int, Bool, Float, StringSlice, Text, Path, Secret}
 )
+
+// FieldTypes returns every type an input may declare, in the order the
+// rejection message lists them.
+//
+// The set is closed and the zero value is not a member (ADR 0011), so anything
+// that maps a declaration onto another representation — a wire enum, a JSON
+// Schema, a form widget, a code generator — has a finite set to cover and a
+// way to find out when it grows. Exported for exactly that: the alternative is
+// every such mapping restating the list from memory, which is how one of them
+// ends up missing Secret and rendering a credential as a plain string field.
+func FieldTypes() []FieldType { return slices.Clone(fieldTypes) }
+
+// Safeties returns every safety class, in the order harm increases.
+func Safeties() []Safety { return slices.Clone(safeties) }
 
 // fieldTypeList renders the accepted types for an error message, so a rejected
 // plugin is told what to write instead of what not to.
@@ -386,8 +483,19 @@ func (p Plugin) Validate() error {
 	if !nameRe.MatchString(p.Name) {
 		return fmt.Errorf("plugin name %q: must be lowercase [a-z0-9-]", p.Name)
 	}
+	if why, reserved := reservedNamespaces[p.Name]; reserved {
+		return fmt.Errorf("plugin name %q is reserved by the host (%s); pick another namespace",
+			p.Name, why)
+	}
 	if len(p.Capabilities) == 0 {
 		return fmt.Errorf("plugin %q declares no capabilities", p.Name)
+	}
+	// Name is already constrained to [a-z0-9-] by nameRe; the prose is not.
+	if err := checkLine(fmt.Sprintf("plugin %q summary", p.Name), p.Summary, maxSummary); err != nil {
+		return err
+	}
+	if err := checkLine(fmt.Sprintf("plugin %q version", p.Name), p.Version, maxOption); err != nil {
+		return err
 	}
 	seen := map[string]bool{}
 	for _, c := range p.Capabilities {
@@ -412,6 +520,12 @@ func (c Capability) validate(ns string) error {
 	if c.Summary == "" {
 		return fmt.Errorf("capability %q: summary is required", c.ID)
 	}
+	if err := checkLine(fmt.Sprintf("capability %q: summary", c.ID), c.Summary, maxSummary); err != nil {
+		return err
+	}
+	if err := checkText(fmt.Sprintf("capability %q: description", c.ID), c.Description, maxDescription); err != nil {
+		return err
+	}
 	if !safetySet[c.Safety] {
 		return fmt.Errorf("capability %q: invalid safety %q", c.ID, c.Safety)
 	}
@@ -419,12 +533,51 @@ func (c Capability) validate(ns string) error {
 		return fmt.Errorf("capability %q: nil handler", c.ID)
 	}
 	scoped := c.Scope == ""
+	seenInputs := map[string]bool{}
 	for _, f := range c.Inputs {
 		if !fieldRe.MatchString(f.Name) {
 			return fmt.Errorf("capability %q: field name %q must be lowercase [a-z0-9-]", c.ID, f.Name)
 		}
-		if reservedInputs[f.Name] {
-			return fmt.Errorf("capability %q: input %q is reserved by the host", c.ID, f.Name)
+		// Two fields sharing a name is not a harmless typo: declareFlags
+		// registers one pflag.Flag per input in declaration order, and the
+		// second AddFlag for the same name panics the whole process at
+		// startup — not just for the capability that declared it, since
+		// every registered plugin's flags are built into one command tree
+		// before any command runs. The same duplicate-check Plugin.Validate
+		// already does one level up, for capability IDs.
+		if seenInputs[f.Name] {
+			return fmt.Errorf("capability %q declares input %q twice", c.ID, f.Name)
+		}
+		seenInputs[f.Name] = true
+		if why, reserved := reservedInputs[f.Name]; reserved {
+			return fmt.Errorf("capability %q: input %q is reserved by the host (%s); rename it",
+				c.ID, f.Name, why)
+		}
+		if f.Config != "" {
+			if !configKeyRe.MatchString(f.Config) {
+				return fmt.Errorf("capability %q: input %q has config key %q; want dot-separated lowercase segments",
+					c.ID, f.Name, f.Config)
+			}
+			// Refused rather than quietly ignored, and the message names the
+			// alternative, because an author who reaches for this is trying
+			// to solve a real problem and needs to be pointed at the path
+			// that already solves it.
+			if f.Type == Secret {
+				return fmt.Errorf("capability %q: input %q is a Secret and cannot be filled from config; "+
+					"config is a plaintext file read on every invocation and a Secret default is published "+
+					"in the MCP tool schema — declare Local: true and let the host resolve it from its own "+
+					"environment instead", c.ID, f.Name)
+			}
+			if f.Positional {
+				return fmt.Errorf("capability %q: input %q is positional and cannot be filled from config; "+
+					"CLI argument arity is computed from Required, so a config-satisfied positional changes "+
+					"what an argument count means", c.ID, f.Name)
+			}
+		}
+		if f.EnvFallback && !f.Local {
+			return fmt.Errorf("capability %q: input %q declares EnvFallback without Local; "+
+				"EnvFallback only changes how a Local field resolves, and a non-Local field is already "+
+				"reachable from a caller directly", c.ID, f.Name)
 		}
 		// Every surface switches on Field.Type with a default branch meaning
 		// "string", so a type nothing recognises is caught nowhere downstream.
@@ -452,6 +605,37 @@ func (c Capability) validate(ns string) error {
 			return fmt.Errorf("capability %q: input %q has unknown type %q, want one of %s",
 				c.ID, f.Name, f.Type, fieldTypeList())
 		}
+		if err := checkText(fmt.Sprintf("capability %q: input %q help", c.ID, f.Name), f.Help, maxHelp); err != nil {
+			return err
+		}
+		if err := checkBounds(c.ID, f); err != nil {
+			return err
+		}
+		for _, o := range f.Options {
+			// Options are published as an MCP enum and drawn as a select, so
+			// they are as much displayed text as Help is.
+			if err := checkLine(fmt.Sprintf("capability %q: input %q option %q", c.ID, f.Name, o), o, maxOption); err != nil {
+				return err
+			}
+		}
+		// A Default is printed in `--help`, seeded into every form, and
+		// published in the MCP tool schema, so it is displayed text wherever
+		// it came from. Both shapes are checked: only the string case was,
+		// and a StringSlice input's []string default went to models verbatim
+		// — the one declared-text hole left in a function whose whole job is
+		// that there are none (ADR 0013).
+		switch d := f.Default.(type) {
+		case string:
+			if err := checkLine(fmt.Sprintf("capability %q: input %q default", c.ID, f.Name), d, maxHelp); err != nil {
+				return err
+			}
+		case []string:
+			for i, e := range d {
+				if err := checkLine(fmt.Sprintf("capability %q: input %q default[%d]", c.ID, f.Name, i), e, maxHelp); err != nil {
+					return err
+				}
+			}
+		}
 		if f.Name == c.Scope {
 			scoped = true
 		}
@@ -464,16 +648,144 @@ func (c Capability) validate(ns string) error {
 	return nil
 }
 
-// reservedInputs are names the host injects into a request itself, so a
-// capability may not also declare them.
+// checkBounds rejects a Min/Max the host will never enforce.
 //
-// "detail" is set by every surface that owns the whole screen and cleared by
-// Page for embedded sections. Without this check a plugin declaring an input
-// called detail — an entirely natural name for "include per-item detail" —
-// passed Validate and then panicked pflag with "flag redefined: detail" while
-// the command tree was built, which kills every rta invocation including the
-// doctor that would have diagnosed it.
-var reservedInputs = map[string]bool{"detail": true}
+// The field exists because "remember to clamp" is not a rule a third-party
+// author can be expected to follow — `net ping --timeout 0` reached
+// time.NewTicker(0) inside a library goroutine and took the process down, and
+// over MCP that is one schema-valid call from an unprivileged agent killing
+// `rta mcp serve` for every tool attached to it. A bound that is declared and
+// silently not applied is worse than no bound at all: the author believes the
+// input is clamped and stops checking, and nothing anywhere says otherwise.
+//
+// Three ways to declare one that does nothing, all of them quiet:
+//
+//   - A non-numeric value. Resolve reads Min through toInt/toFloat, which
+//     return not-ok for a string, so `Min: "1"` means "no minimum" — and the
+//     MCP bridge publishes it as the JSON Schema "minimum" keyword regardless,
+//     where a string is not a legal value, so the tool schema every connected
+//     agent reads is malformed as well.
+//   - A bound on a type Resolve does not clamp. Only Int and Float are
+//     clamped, so a Min on a string is a promise nothing made.
+//   - Min above Max. Clamping applies Min and then Max, so an inverted pair
+//     does not error; it pins every value, including valid ones, to Max.
+//
+// All three were conformance-suite findings, which meant a plugin could fail
+// `sdktest` and still register and run. They belong here instead: this is the
+// gate every surface goes through, and the suite reports what this returns.
+func checkBounds(id string, f Field) error {
+	if f.Min == nil && f.Max == nil {
+		return nil
+	}
+	if f.Type != Int && f.Type != Float {
+		return fmt.Errorf("capability %q: input %q is %s and declares Min/Max, which apply only to %s and %s",
+			id, f.Name, f.Type, Int, Float)
+	}
+	lo, loOK := toFloat(f.Min)
+	hi, hiOK := toFloat(f.Max)
+	if f.Min != nil && !loOK {
+		return fmt.Errorf("capability %q: input %q has a non-numeric Min (%#v), which is not a bound the host can apply",
+			id, f.Name, f.Min)
+	}
+	if f.Max != nil && !hiOK {
+		return fmt.Errorf("capability %q: input %q has a non-numeric Max (%#v), which is not a bound the host can apply",
+			id, f.Name, f.Max)
+	}
+	if loOK && hiOK && lo > hi {
+		return fmt.Errorf("capability %q: input %q has Min %v above Max %v, so every value clamps to Max",
+			id, f.Name, f.Min, f.Max)
+	}
+	return nil
+}
+
+// reservedInputs are names the host owns on a capability's command line, so a
+// capability may not also declare them. Each carries why, because a rule with
+// no stated reason is one nobody can check and nobody dares extend.
+//
+// The failure mode is silence, not a collision. cobra resolves a subcommand's
+// own flag before an inherited one, so an input named "dry-run" does not
+// conflict with the root's persistent --dry-run: it quietly *becomes* it, and
+// the host's copy is never set. `rta acme wipe --yes --dry-run` against such a
+// plugin exits 0, reports success, and performs the wipe — the operator asked
+// for a preview and the one flag that promised nothing would happen is the
+// flag that stopped working.
+//
+// This map cannot derive the CLI's flag set: it lives in the SDK, which knows
+// nothing about cobra or internal/app. So it is the *contract* — the host
+// declares what it reserves, and internal/app is tested to stay inside it by
+// TestTheCLIReservesEveryNameItOwns. That test is the only thing keeping the
+// two in step, which is exactly why this map had one entry while the CLI had
+// grown five more names.
+//
+// Single letters are deliberately absent: an input named "o" registers the
+// long flag --o, and pflag keeps long names and shorthands in separate
+// namespaces, so -o still reaches --output. Verified, not assumed —
+// over-reserving would refuse legitimate names for a collision that does not
+// happen.
+var reservedInputs = map[string]string{
+	"detail": "the host sets it on any surface that owns the whole screen, and Page clears it for embedded sections",
+	"dry-run": "the host's promise that a write or destructive capability changed nothing; " +
+		"an input of this name makes that promise unkeepable",
+	"yes":      "the host's record that a human confirmed a destructive operation",
+	"output":   "chooses the renderer, so shadowing it means a caller cannot ask for JSON",
+	"no-color": "disables styling, which is what makes rta's output safe to pipe",
+	"help":     "cobra's; shadowing it makes `rta <ns> <cap> --help` unreachable",
+}
+
+// ReservedInputs lists the names the host owns, sorted.
+//
+// Exported so the CLI can be tested against it rather than expected to
+// remember it: the flag set and this list live in different packages and
+// neither derives from the other, so nothing but a test can hold them
+// together.
+func ReservedInputs() []string {
+	out := make([]string, 0, len(reservedInputs))
+	for name := range reservedInputs {
+		out = append(out, name)
+	}
+	slices.Sort(out)
+	return out
+}
+
+// reservedNamespaces are rta's own top-level commands, so a plugin may not
+// take one as its namespace.
+//
+// The same defect as reservedInputs, one level up, and it fails the same way:
+// a namespace becomes a top-level command, so a plugin called "doctor"
+// *replaces* `rta doctor` — which then prints the plugin's usage and exits 0,
+// having run none of the checks an operator ran it for. The check most likely
+// to reveal a hostile plugin is the one a hostile plugin can switch off, and
+// nothing anywhere says it happened.
+//
+// RegisterFrom already refuses a namespace another *plugin* holds, which is
+// why sys and kv cannot be taken. rta's own commands are not plugins and were
+// protected by nothing.
+//
+// "help" and "completion" are cobra's rather than rta's; they are reserved
+// for the same reason and kept in the same list, because the operator does
+// not care whose command it is, only that it stopped working.
+var reservedNamespaces = map[string]string{
+	"completion": "generates the shell completion script",
+	"doctor":     "diagnoses the installation, plugins included — the one command that must not be maskable",
+	"explain":    "prints what a capability takes and what it is allowed to do",
+	"help":       "cobra's help command",
+	"init":       "writes a starter configuration",
+	"mcp":        "serves and installs the MCP server",
+	"plugin":     "lists, installs and scaffolds plugins",
+}
+
+// ReservedNamespaces lists the names rta's own commands hold, sorted. Exported
+// for the same reason as ReservedInputs: the command tree lives in
+// internal/app and this list lives here, so only a test can hold them
+// together — TestTheCLIReservesEveryTopLevelCommandItOwns.
+func ReservedNamespaces() []string {
+	out := make([]string, 0, len(reservedNamespaces))
+	for name := range reservedNamespaces {
+		out = append(out, name)
+	}
+	slices.Sort(out)
+	return out
+}
 
 // Words returns the ID split into command segments, e.g. ["pg","table","list"].
 func (c Capability) Words() []string { return strings.Split(c.ID, ".") }

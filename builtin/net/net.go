@@ -17,7 +17,7 @@ import (
 	probing "github.com/prometheus-community/pro-bing"
 	gnet "github.com/shirou/gopsutil/v4/net"
 
-	"github.com/this-is-tobi/rule-them-all/internal/format"
+	"github.com/this-is-tobi/rule-them-all/pkg/format"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
@@ -451,14 +451,14 @@ func runDNS(ctx context.Context, req plugin.Request) (view.View, error) {
 		return t, nil
 	}
 	return view.Sections{Items: []view.Section{
-		{Title: "query", View: view.KeyValue{Pairs: []view.Pair{
+		{ID: "query", Title: "query", View: view.KeyValue{Pairs: []view.Pair{
 			{Key: "name", Value: name},
 			{Key: "type", Value: strings.Join(types, ", ")},
 			{Key: "resolver", Value: label},
 			{Key: "elapsed", Value: elapsed.Round(time.Millisecond).String()},
 			{Key: "records", Value: strconv.Itoa(len(t.Rows))},
 		}}},
-		{Title: "answers", View: t},
+		{ID: "answers", Title: "answers", View: t},
 	}}, nil
 }
 
@@ -707,16 +707,16 @@ func detailedInfo(ctx context.Context, req plugin.Request) (view.View, error) {
 		return nil, err
 	}
 	p := plugin.NewPage(ctx, req)
-	p.Put("summary", view.KeyValue{Pairs: append(ifacePairs(),
+	p.PutAs("summary", "summary", view.KeyValue{Pairs: append(ifacePairs(),
 		view.Pair{Key: "dns", Value: dnsServers()},
 		view.Pair{Key: "proxy", Value: proxySummary()},
 		view.Pair{Key: "throughput", Value: throughput(ctx)},
 	)})
-	p.Put("interfaces", tree)
+	p.PutAs("interfaces", "interfaces", tree)
 	// The hosts file is local network truth: worth a section when non-empty.
-	if v, err := p.Run(runHostsList, nil); err == nil {
+	if v, err := p.Run(runHostsList, plugin.Read, nil); err == nil {
 		if t, ok := v.(view.Table); ok && len(t.Rows) > 0 {
-			p.Put("hosts file", t)
+			p.PutAs("hosts", "hosts file", t)
 		}
 	}
 	return p.View(), nil

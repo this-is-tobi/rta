@@ -8,11 +8,16 @@
 package config
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 
 	"github.com/goccy/go-yaml"
+	"github.com/goccy/go-yaml/ast"
+	"github.com/goccy/go-yaml/parser"
 
+	"github.com/this-is-tobi/rule-them-all/internal/atomicfile"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
 
@@ -58,6 +63,27 @@ type Config struct {
 	// Output is the default --output format when the flag is not given.
 	Output    string    `yaml:"output,omitempty" json:"output,omitempty"`
 	Dashboard Dashboard `yaml:"dashboard,omitempty" json:"dashboard,omitempty"`
+	// Plugins holds each plugin's own settings, so an operator states a
+	// connection once instead of retyping it on every invocation.
+	//
+	// The key is not a namespace. It is a namespace for a built-in and
+	// `<namespace>@<digest>` for anything on $PATH, because a plugin's
+	// namespace is something the plugin declares about itself and $PATH order
+	// decides who gets to declare it first. internal/pluginconf carries the
+	// whole argument and does the matching; this is untyped here because what
+	// a key means is decided by the capability that declared it, and rta must
+	// not need to know a plugin's schema in order to hand it its own file.
+	Plugins map[string]map[string]any `yaml:"plugins,omitempty" json:"plugins,omitempty"`
+	// Theme overrides the built-in palette. Keys are the names
+	// internal/render/theme.Fields lists ("primary", "good", "label", …),
+	// each a "#rrggbb" string.
+	//
+	// Untyped for the same reason Plugins is: what a key means and whether a
+	// value is valid is internal/render/theme.Apply's decision, not this
+	// package's, and config stays the leaf package it already was — loaded
+	// before anything has decided whether this run even has a renderer to
+	// color, and read by `rta mcp serve` too, which colors nothing at all.
+	Theme map[string]string `yaml:"theme,omitempty" json:"theme,omitempty"`
 }
 
 // Path returns the config file location. RTA_CONFIG overrides it (tests,
@@ -86,12 +112,76 @@ func LoadFile() (Config, error) {
 	case err != nil:
 		return cfg, view.Errorf("config.unreadable", "reading %s: %v", Path(), err)
 	default:
+		if err := refuseAnchors(data); err != nil {
+			return cfg, view.Errorf("config.invalid", "parsing %s: %v", Path(), err).
+				WithHint("fix the file or re-create it with `rta init`")
+		}
 		if err := yaml.Unmarshal(data, &cfg); err != nil {
 			return cfg, view.Errorf("config.invalid", "parsing %s: %v", Path(), err).
 				WithHint("fix the file or re-create it with `rta init`")
 		}
 	}
 	return cfg, nil
+}
+
+// refuseAnchors rejects a config that uses a YAML anchor or alias
+// (&name / *name) before yaml.Unmarshal ever gets to decode it.
+//
+// Config has no legitimate use for either: it is a flat, known set of
+// fields (Output, Dashboard, Plugins, Theme), none of which benefit from
+// YAML's own value-reuse syntax. What they enable instead is a "billion
+// laughs" bomb — a handful of nested anchor/alias pairs, each fanning out
+// 10x into the next, expands a few hundred bytes of syntactically valid
+// YAML into 10^9+ decoded values, exhausting memory. And LoadFile runs at
+// the start of essentially every rta command, including read-only ones, so
+// simply having such a file at the config path (RTA_CONFIG, or the default
+// path — both routinely shared between operators and machines) denies
+// service on every subsequent invocation, not just once.
+//
+// Rather than pick a "safe" nesting depth or alias count a cleverer bomb
+// could still clear, this refuses the syntax outright — checked by parsing
+// alone, never decoding: goccy's parser builds a graph proportional to the
+// bytes on disk (an AliasNode holds the name it references, not a
+// dereferenced copy of the anchor's subtree), so walking that graph costs
+// exactly what parsing it already did, before anything is substituted.
+func refuseAnchors(data []byte) error {
+	file, err := parser.ParseBytes(data, 0)
+	if err != nil {
+		// yaml.Unmarshal will hit and report the identical parse failure
+		// with its own message; this just isn't it.
+		return nil
+	}
+	v := &anchorVisitor{}
+	for _, doc := range file.Docs {
+		ast.Walk(v, doc)
+		if v.found {
+			// The matched node is deliberately not echoed into the message:
+			// an AnchorNode's own String() walks the value it anchors, and
+			// while that is bounded by what is actually written in the
+			// file (never a dereferenced, expanded copy), there is no
+			// reason to stringify attacker-controlled YAML into an error
+			// message when naming the rule is enough.
+			return errAnchorsNotSupported
+		}
+	}
+	return nil
+}
+
+var errAnchorsNotSupported = errors.New(
+	"uses a YAML anchor or alias (&name / *name), which this file does not support")
+
+type anchorVisitor struct{ found bool }
+
+func (v *anchorVisitor) Visit(n ast.Node) ast.Visitor {
+	if v.found {
+		return nil
+	}
+	switch n.(type) {
+	case *ast.AnchorNode, *ast.AliasNode:
+		v.found = true
+		return nil
+	}
+	return v
 }
 
 // Load reads the config file and applies env overrides. Precedence:
@@ -108,7 +198,10 @@ func Load() (Config, error) {
 	return cfg, nil
 }
 
-// Write persists cfg to Path(), creating parent directories.
+// Write persists cfg to Path(), creating parent directories. Atomically:
+// the dashboard saves the arrangement on every tile move, so this is the
+// file rta rewrites most often and the one a torn write would cost the
+// user a `config.invalid` on every subsequent run.
 func Write(cfg Config) error {
 	path := Path()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -120,7 +213,14 @@ func Write(cfg Config) error {
 	}
 	header := "# rta configuration — created by `rta init`.\n" +
 		"# Everything here is optional: rta works with no config at all.\n"
-	if err := os.WriteFile(path, append([]byte(header), data...), 0o644); err != nil {
+	// A rewrite must not change a file's permissions, so an existing config
+	// keeps whatever mode it has; a new one gets the mode rta has always
+	// asked for.
+	perm := fs.FileMode(0o644)
+	if info, err := os.Stat(path); err == nil {
+		perm = info.Mode().Perm()
+	}
+	if err := atomicfile.Write(path, append([]byte(header), data...), perm); err != nil {
 		return view.Errorf("config.write", "writing %s: %v", path, err)
 	}
 	return nil

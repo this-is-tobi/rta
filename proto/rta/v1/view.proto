@@ -1,0 +1,171 @@
+syntax = "proto3";
+
+// Package rta.v1 is the wire form of the capability contract: what a plugin
+// declares, what a host asks it to do, and what comes back.
+//
+// It mirrors pkg/view and pkg/plugin deliberately and not accidentally. The
+// Go types are the contract an in-process built-in implements, and this is
+// the same contract for a subprocess — P6 says a built-in and a plugin
+// implement the same interface, so a difference between these two files and
+// those packages is a bug in one of them, never a design.
+//
+// Freeze rules for v1, in force from the moment the first third-party plugin
+// exists:
+//
+//   - Field numbers are assigned once. A removed field is `reserved`, never
+//     reused, and never renumbered.
+//   - Enum values are appended. The zero value of every enum is
+//     *_UNSPECIFIED and means "the sender did not say", which is an error at
+//     the receiving end rather than a default — the same decision Field.Type
+//     made in Go, for the same reason (ADR 0011).
+//   - New optional fields may be added. Anything that changes the meaning of
+//     an existing one is v2.
+package rta.v1;
+
+option go_package = "github.com/this-is-tobi/rule-them-all/proto/rta/v1;rtav1";
+
+// Error is the first-class error contract. Renderers show Message and Hint;
+// an agent branches on Code.
+message Error {
+  // Stable and namespaced, e.g. "pg.conn.refused". Never rewritten by the
+  // host: it is what scripts and agents branch on.
+  string code = 1;
+  string message = 2;
+  string hint = 3;
+  bool retryable = 4;
+}
+
+// Text is free-form text, optionally markdown for the host to render.
+message Text {
+  string body = 1;
+  bool markdown = 2;
+}
+
+// Pair is one labelled value.
+message Pair {
+  string key = 1;
+  string value = 2;
+}
+
+// KeyValue is a flat set of labelled values.
+message KeyValue {
+  repeated Pair pairs = 1;
+  // Keys whose values every renderer must mask. Names rather than indices,
+  // so reordering cannot move the protection to the wrong entry.
+  repeated string redacted = 2;
+}
+
+// ColumnKind is a semantic hint for formatting and alignment. It never
+// prescribes styling: how a percentage is drawn belongs to the host.
+enum ColumnKind {
+  // Unspecified means plain text, and is the common case: a column with
+  // nothing special about it. This is the one enum here whose zero value is
+  // meaningful rather than an omission, and it matches the Go contract
+  // exactly, where KindText is the empty string.
+  COLUMN_KIND_UNSPECIFIED = 0;
+  COLUMN_KIND_NUMBER = 1;
+  COLUMN_KIND_BYTES = 2;
+  COLUMN_KIND_PERCENT = 3;
+  COLUMN_KIND_DURATION = 4;
+  COLUMN_KIND_TIMESTAMP = 5;
+  COLUMN_KIND_STATUS = 6;
+}
+
+message Column {
+  string name = 1;
+  ColumnKind kind = 2;
+}
+
+// Cursor carries contract-level pagination state.
+message Cursor {
+  string next = 1;
+}
+
+// Row exists because proto3 has no repeated-of-repeated. It is not a concept
+// in the Go contract and hosts should not surface it as one.
+message Row {
+  repeated string cells = 1;
+}
+
+// Table is tabular data with pre-formatted cells.
+message Table {
+  repeated Column columns = 1;
+  repeated Row rows = 2;
+  // How many rows exist overall, >= len(rows) when paginated. Zero means
+  // "not paginated", not "no rows".
+  int32 total = 3;
+  Cursor page = 4;
+  // Column names whose cells every renderer must mask.
+  repeated string redacted = 5;
+}
+
+enum ChartKind {
+  CHART_KIND_UNSPECIFIED = 0;
+  // Each series is a sequence of points.
+  CHART_KIND_LINE = 1;
+  // Each series is one labelled value.
+  CHART_KIND_BAR = 2;
+}
+
+message Series {
+  string name = 1;
+  repeated double points = 2;
+}
+
+message Chart {
+  ChartKind kind = 1;
+  repeated Series series = 2;
+  // Annotates values, e.g. "ms" or "%".
+  string unit = 3;
+  // When > 0, fixes the top of the scale so two renders of the same metric
+  // can be compared. It belongs to the chart and not to each series, because
+  // the series share one axis — see pkg/view for what the per-series version
+  // silently got wrong.
+  double max = 4;
+}
+
+message Node {
+  string label = 1;
+  string detail = 2;
+  repeated Node children = 3;
+}
+
+message Tree {
+  repeated Node roots = 1;
+}
+
+// Section is one titled part of a composite view.
+message Section {
+  // Stable identifier a script or an agent addresses the section by.
+  // Optional; the host falls back to title. It exists so that rewording a
+  // heading is UX work rather than a silent breaking change.
+  string id = 1;
+  string title = 2;
+  View view = 3;
+}
+
+// Sections is a composite page.
+message Sections {
+  repeated Section items = 1;
+  // What the page could not produce. A partial page must say it is partial:
+  // a dropped section leaves no trace, so a degraded page and a whole one
+  // are otherwise indistinguishable.
+  repeated Error warnings = 2;
+}
+
+// View is the closed union of result types a capability can return.
+//
+// An unset oneof is legal and means "nothing to show" — a handler returning
+// no view, or a Section carrying a title and nothing under it. Every renderer
+// skips it rather than treating it as an error.
+message View {
+  oneof kind {
+    Text text = 1;
+    KeyValue key_value = 2;
+    Table table = 3;
+    Tree tree = 4;
+    Chart chart = 5;
+    Sections sections = 6;
+    Error error = 7;
+  }
+}

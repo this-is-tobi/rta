@@ -20,7 +20,7 @@ import (
 	"github.com/shirou/gopsutil/v4/process"
 	"github.com/shirou/gopsutil/v4/sensors"
 
-	"github.com/this-is-tobi/rule-them-all/internal/format"
+	"github.com/this-is-tobi/rule-them-all/pkg/format"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
@@ -161,13 +161,17 @@ func runOverview(ctx context.Context, req plugin.Request) (view.View, error) {
 // simply absent — a partial report beats a failed one.
 func detailedOverview(ctx context.Context, req plugin.Request) (view.View, error) {
 	p := plugin.NewPage(ctx, req)
-	p.Add("host", runHost, nil)
-	p.Add("cpu", runCPU, map[string]any{"cores": true}) // per-core bar chart
-	p.Add("memory", runMem, nil)
-	p.Add("load", runLoad, nil)
-	p.Add("storage", runDisk, nil)
-	p.Add("sensors", runTemp, nil)
-	p.Add("top processes", runPS, map[string]any{"limit": detailTopN, "sort": "cpu"})
+	// The id is the capability the section came from, not a slug of its
+	// heading: a reader of `sys overview --detail` in JSON can line the
+	// "storage" section up with `rta sys disk` and get the same shape, and
+	// the heading stays free to be reworded. See view.Section.
+	p.AddAs("host", "host", runHost, plugin.Read, nil)
+	p.AddAs("cpu", "cpu", runCPU, plugin.Read, map[string]any{"cores": true}) // per-core bar chart
+	p.AddAs("mem", "memory", runMem, plugin.Read, nil)
+	p.AddAs("load", "load", runLoad, plugin.Read, nil)
+	p.AddAs("disk", "storage", runDisk, plugin.Read, nil)
+	p.AddAs("temp", "sensors", runTemp, plugin.Read, nil)
+	p.AddAs("ps", "top processes", runPS, plugin.Read, map[string]any{"limit": detailTopN, "sort": "cpu"})
 
 	if p.Empty() {
 		return nil, view.Errorf("sys.overview.unavailable", "no host telemetry readable on this platform")

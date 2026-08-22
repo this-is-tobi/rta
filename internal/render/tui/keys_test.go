@@ -11,6 +11,8 @@ import (
 	"github.com/this-is-tobi/rule-them-all/builtin/all"
 	"github.com/this-is-tobi/rule-them-all/internal/config"
 	"github.com/this-is-tobi/rule-them-all/internal/registry"
+	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
+	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
 
 var ansiSeq = regexp.MustCompile("\x1b\\[[0-9;]*m")
@@ -23,7 +25,7 @@ func realModel(t *testing.T, w, h int) (Model, *registry.Registry) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m := New(reg, config.Dashboard{})
+	m := New(reg, config.Dashboard{}, nil)
 	um, _ := m.Update(tea.WindowSizeMsg{Width: w, Height: h})
 	return um.(Model), reg
 }
@@ -244,6 +246,31 @@ func TestEscapeGoesBackFromEveryScreenThatHasABack(t *testing.T) {
 	}
 	if back := press(t, browse, "esc"); back.mode != modeDashboard {
 		t.Errorf("esc from the catalogue went to %v, want the dashboard", back.mode)
+	}
+	th := press(t, base, "t")
+	if th.mode != modeTheme {
+		t.Fatalf("t did not open the theme editor: %v", th.mode)
+	}
+	if back := press(t, th, "esc"); back.mode != modeDashboard {
+		t.Errorf("esc from the theme editor went to %v, want the dashboard", back.mode)
+	}
+
+	// The copy picker returns to the result it was opened from, not the
+	// dashboard — unlike the screens above, it is reached from modeResult,
+	// never from base directly.
+	withResult, _ := base.Update(resultMsg{
+		cap: plugin.Capability{ID: "gen.password", Safety: plugin.Read},
+		view: view.Table{
+			Columns: []view.Column{{Name: "Password"}},
+			Rows:    [][]string{{"a"}, {"b"}},
+		},
+	})
+	pick := press(t, withResult.(Model), "c")
+	if pick.mode != modeCopyPick {
+		t.Fatalf("c did not open the copy picker: %v", pick.mode)
+	}
+	if back := press(t, pick, "esc"); back.mode != modeResult {
+		t.Errorf("esc from the copy picker went to %v, want the result it was opened from", back.mode)
 	}
 }
 

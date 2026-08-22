@@ -555,10 +555,13 @@ func TestRevokingOneTargetKeepsTheSpentGrantAnotherCallCanStillRefund(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	var stored []core.Grant
-	if err := json.Unmarshal(data, &stored); err != nil {
+	var doc struct {
+		Grants []core.Grant `json:"grants"`
+	}
+	if err := json.Unmarshal(data, &doc); err != nil {
 		t.Fatal(err)
 	}
+	stored := doc.Grants
 	if len(stored) != 1 || stored[0].Target != "todo.rm" || stored[0].Uses != 1 {
 		t.Fatalf("revoking kv.get left the file as %+v", stored)
 	}

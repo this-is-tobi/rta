@@ -1,13 +1,16 @@
 package net
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/this-is-tobi/rule-them-all/builtin/internal/itemstore"
+	"github.com/this-is-tobi/rule-them-all/internal/atomicfile"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
 
@@ -135,10 +138,8 @@ func firstErr(a, b error) error {
 }
 
 // writeLines replaces a configuration file atomically, keeping its mode.
-//
-// The temporary file is created beside the target so the rename stays within
-// one filesystem — a copy across /tmp would not be atomic, and a torn
-// /etc/hosts is a machine that cannot resolve its own name.
+// Atomically because a torn /etc/hosts is a machine that cannot resolve its
+// own name; see internal/atomicfile for how.
 func writeLines(path string, lines []string) *view.Error {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -146,24 +147,10 @@ func writeLines(path string, lines []string) *view.Error {
 	}
 	body := strings.Join(lines, "\n") + "\n"
 
-	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+"-rta-*")
-	if err != nil {
-		return permissionError(path, err)
-	}
-	defer os.Remove(tmp.Name())
-	if _, err := tmp.Write([]byte(body)); err != nil {
-		tmp.Close()
-		return view.Errorf("net.sysfile.write", "writing %s: %v", path, err)
-	}
-	if err := tmp.Close(); err != nil {
-		return view.Errorf("net.sysfile.write", "closing %s: %v", path, err)
-	}
-	// Keep the original permissions: CreateTemp makes a 0600 file, and a
-	// 0600 /etc/hosts breaks name resolution for every non-root process.
-	if err := os.Chmod(tmp.Name(), info.Mode().Perm()); err != nil {
-		return view.Errorf("net.sysfile.write", "setting permissions on %s: %v", path, err)
-	}
-	if err := os.Rename(tmp.Name(), path); err != nil {
+	// Keep the original permissions rather than the 0600 a fresh file would
+	// get: a 0600 /etc/hosts breaks name resolution for every non-root
+	// process, which is a worse outage than the edit was a fix.
+	if err := atomicfile.Write(path, []byte(body), info.Mode().Perm()); err != nil {
 		return permissionError(path, err)
 	}
 	return nil
@@ -171,8 +158,13 @@ func writeLines(path string, lines []string) *view.Error {
 
 // permissionError turns "permission denied" into the sentence that actually
 // helps, since needing root here is the expected case and not a mistake.
+//
+// errors.Is rather than os.IsPermission: the write goes through atomicfile,
+// which wraps, and os.IsPermission only unwraps the handful of error types
+// the os package defines itself. It looked equivalent and would have quietly
+// dropped the one hint the caller needs, on the one path they always take.
 func permissionError(path string, err error) *view.Error {
-	if os.IsPermission(err) {
+	if errors.Is(err, fs.ErrPermission) {
 		return view.Errorf("net.sysfile.permission", "cannot write %s: permission denied", path).
 			WithHint("run the same command with sudo — editing " + path + " needs root")
 	}

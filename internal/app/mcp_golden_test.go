@@ -129,13 +129,23 @@ func TestGoldenFullSurface(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var destructive []string
+	// Every namespace and every destructive ID, spelled out. --allow-write is
+	// a list of plugins rather than one boolean, so "the whole surface" is
+	// now something a test has to enumerate — which is the point of the
+	// change: there is no longer a single value that means "and everything
+	// installed later, too".
+	var destructive, namespaces []string
 	for _, c := range reg.Capabilities() {
 		if c.Safety == "destructive" {
 			destructive = append(destructive, c.ID)
 		}
 	}
-	golden(t, "mcp-surface-all.json", surface(t, mcp.Options{AllowWrite: true, AllowDestructive: destructive}))
+	for _, p := range reg.Plugins() {
+		namespaces = append(namespaces, p.Name)
+	}
+	golden(t, "mcp-surface-all.json", surface(t, mcp.Options{
+		AllowWrite: namespaces, AllowDestructive: destructive,
+	}))
 }
 
 // The safety gate is the load-bearing part: nothing that can write or destroy

@@ -54,6 +54,19 @@ func Plugin() plugin.Plugin {
 			{
 				ID:      "gen.overview",
 				Summary: "A sampler of the shapes worth generating, ready to use",
+				// Being called `overview` is what makes this gen's dashboard
+				// tile, so the decision lives here rather than in a map inside
+				// the TUI: the tile refreshes on a timer with fresh, real,
+				// usable secrets on it, and the shoulder-surf and screen-share
+				// risk that carries was raised explicitly and accepted — on the
+				// same "H hides it" basis every other tile's visibility rests
+				// on, and the same basis kv.status and grant.list already show
+				// state some viewers would rather not have on a projector. It
+				// is the overview and not gen.password because the question at
+				// a glance is "which shape do I need" — a password, an actual
+				// 32-byte key, a UUID — and a column of passwords cannot answer
+				// it.
+				//
 				// Wide enough for a 44-character base64 key and its label.
 				// Everything here is a real value somebody is meant to read
 				// and copy, and a value that wrapped or got an ellipsis is

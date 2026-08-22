@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +18,33 @@ import (
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
+
+// TestMain forces a real $TERM before any test builds a Program.
+//
+// charmbracelet/ultraviolet's TerminalRenderer picks its capabilities from
+// $TERM (xtermCaps, terminal_renderer.go): an unrecognized or empty value
+// gets zero capabilities, including capICH, which routes every line insert
+// through its IRM fallback (ansi.SetModeInsertReplace) instead of the direct
+// ansi.InsertCharacter it uses everywhere else. That fallback path is where
+// PROJECT.md D77 traced a real output-corruption bug (a footer line cut off
+// mid-word around a stray "insert mode" toggle) — reproduced by unsetting
+// $TERM, and gone the instant a real terminal type was forced, so this is
+// not a bug in anything this package renders (confirmed independently:
+// resultView's own returned string is correct byte-for-byte in every case)
+// and not something a real user can hit — every actual terminal exports
+// $TERM, and none of the ones this app is meant to run in leave it unset.
+// It is, unpinned, a real source of environment-dependent flakiness in this
+// package's own test suite: any sandbox or CI runner that starts a process
+// with $TERM empty (this one did) would see the exact same false failure,
+// on a test that has nothing to do with terminal capability negotiation.
+// Forcing a realistic value once, for the whole test binary, makes every
+// test in this package describe what happens in a real terminal — which is
+// the only terminal this package is meant to run in — rather than whatever
+// the ambient environment's $TERM happened to be.
+func TestMain(m *testing.M) {
+	os.Setenv("TERM", "xterm-256color")
+	os.Exit(m.Run())
+}
 
 func testRegistry(t *testing.T) *registry.Registry {
 	t.Helper()
@@ -71,7 +99,7 @@ func newTest(t *testing.T) *teatest.TestModel {
 // newDashboard starts the shell on its landing dashboard.
 func newDashboard(t *testing.T) *teatest.TestModel {
 	t.Helper()
-	return teatest.NewTestModel(t, New(testRegistry(t), config.Dashboard{}), teatest.WithInitialTermSize(100, 40))
+	return teatest.NewTestModel(t, New(testRegistry(t), config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
 }
 
 // waitFor blocks until one frame contains every wanted string. teatest's
@@ -293,7 +321,7 @@ func TestRerunTriggersExecution(t *testing.T) {
 			return view.Text{Body: "X"}, nil
 		},
 	}
-	m := New(testRegistry(t), config.Dashboard{})
+	m := New(testRegistry(t), config.Dashboard{}, nil)
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	withResult, _ := sized.(Model).Update(resultMsg{cap: c, view: view.Text{Body: "X"}})
 
@@ -391,7 +419,7 @@ func todoRegistry(t *testing.T) *registry.Registry {
 // model level: it must open the add form with the dashboard as origin, and
 // esc must land back on the dashboard.
 func TestDashboardTileActionsOpenForm(t *testing.T) {
-	m := New(todoRegistry(t), config.Dashboard{Tiles: []config.Tile{{ID: "todo.list"}}})
+	m := New(todoRegistry(t), config.Dashboard{Tiles: []config.Tile{{ID: "todo.list"}}}, nil)
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
 	// Tile 0 is search; tile 1 is todo.list with actions attached.
 	sel, _ := sized.(Model).Update(tea.KeyPressMsg{Code: tea.KeyRight})
@@ -414,7 +442,7 @@ func TestDashboardTileActionsOpenForm(t *testing.T) {
 // TestDashboardActionKeysDoNotFireOnOtherTiles: the search tile has no
 // actions, so `a` is inert there.
 func TestDashboardActionKeysDoNotFireOnOtherTiles(t *testing.T) {
-	m := New(todoRegistry(t), config.Dashboard{Tiles: []config.Tile{{ID: "todo.list"}}})
+	m := New(todoRegistry(t), config.Dashboard{Tiles: []config.Tile{{ID: "todo.list"}}}, nil)
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
 	same, _ := sized.(Model).Update(tea.KeyPressMsg{Code: 'a', Text: "a"}) // selection on search tile
 	if same.(Model).mode != modeDashboard {
@@ -427,7 +455,7 @@ func TestDashboardActionKeysDoNotFireOnOtherTiles(t *testing.T) {
 func TestDashboardScrollFollowsSelection(t *testing.T) {
 	reg := todoRegistry(t)
 	tiles := []config.Tile{{ID: "todo.list"}, {ID: "todo.list"}, {ID: "todo.list"}, {ID: "todo.list"}, {ID: "todo.list"}}
-	m := New(reg, config.Dashboard{Tiles: tiles})
+	m := New(reg, config.Dashboard{Tiles: tiles}, nil)
 	// 60 cols -> 1 column grid. todo.list's content here is one line ("ok"),
 	// so each row shrinks to tileMinHeight; height 15 -> one visible tile row
 	// at that floor (avail 7, one 6-row band fits and a second does not).
@@ -487,7 +515,7 @@ func TestPrefillTwoStageForm(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tm := teatest.NewTestModel(t, New(reg, config.Dashboard{}), teatest.WithInitialTermSize(100, 40))
+	tm := teatest.NewTestModel(t, New(reg, config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
 	tm.Send(tea.KeyPressMsg{Code: 'b', Text: "b"})
 	waitFor(t, tm, "rec.edit")
 	// Sorted: demo.boom, demo.hello, demo.needy, rec.edit.
@@ -565,7 +593,7 @@ func listRegistry(t *testing.T, doneLog *[]int) *registry.Registry {
 // listResult drives the model to an interactive todo.list result.
 func listResult(t *testing.T, reg *registry.Registry) Model {
 	t.Helper()
-	m := New(reg, config.Dashboard{Tiles: []config.Tile{{ID: "todo.list"}}})
+	m := New(reg, config.Dashboard{Tiles: []config.Tile{{ID: "todo.list"}}}, nil)
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
 	c, _ := reg.Capability("todo.list")
 	v, err := c.Run(context.Background(), plugin.NewRequest(nil, false, false))
@@ -771,7 +799,7 @@ func TestDetailPageRemoveReturnsToTheList(t *testing.T) {
 func TestEmptyListStillOffersAdd(t *testing.T) {
 	var doneLog []int
 	reg := listRegistry(t, &doneLog)
-	m := New(reg, config.Dashboard{Tiles: []config.Tile{{ID: "todo.list"}}})
+	m := New(reg, config.Dashboard{Tiles: []config.Tile{{ID: "todo.list"}}}, nil)
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
 	c, _ := reg.Capability("todo.list")
 	empty, _ := sized.(Model).Update(resultMsg{cap: c, view: view.Text{Body: "Nothing to do"}})
@@ -825,13 +853,13 @@ func TestTilePreviewIsCompactDetailIsFull(t *testing.T) {
 	reg := detailRegistry(t)
 	tiles := buildTiles(reg, config.Dashboard{Tiles: []config.Tile{{ID: "deep.thing"}}})
 	// Tile 1 is the capability (0 is the search bar); its refresh is compact.
-	msg := tileCmd(1, tiles[1])().(tileMsg)
+	msg := tileCmd(1, tiles[1], nil)().(tileMsg)
 	if body := msg.v.(view.Text).Body; body != "COMPACT" {
 		t.Errorf("tile preview = %q, want COMPACT", body)
 	}
 
 	// Opening the tile runs the same capability for the whole screen.
-	m := New(reg, config.Dashboard{Tiles: []config.Tile{{ID: "deep.thing"}}})
+	m := New(reg, config.Dashboard{Tiles: []config.Tile{{ID: "deep.thing"}}}, nil)
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
 	sel, _ := sized.(Model).Update(tea.KeyPressMsg{Code: tea.KeyDown}) // -> tile 1
 	opened, cmd := sel.(Model).Update(tea.KeyPressMsg{Code: tea.KeyEnter})
@@ -928,7 +956,7 @@ func lines(s string) int { return len(strings.Split(strings.TrimRight(s, "\n"), 
 // a height the last fields — including the destructive confirmation, the one
 // nobody may miss — are simply painted off the terminal.
 func TestFormFitsTheTerminal(t *testing.T) {
-	m := New(testRegistry(t), config.Dashboard{})
+	m := New(testRegistry(t), config.Dashboard{}, nil)
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 18})
 	opened, _ := sized.(Model).open(wordy())
 	om := opened.(Model)
@@ -943,7 +971,7 @@ func TestFormFitsTheTerminal(t *testing.T) {
 // …and it follows a resize, rather than keeping the height of a window that
 // no longer exists.
 func TestFormRefitsOnResize(t *testing.T) {
-	m := New(testRegistry(t), config.Dashboard{})
+	m := New(testRegistry(t), config.Dashboard{}, nil)
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
 	opened, _ := sized.(Model).open(wordy())
 
@@ -955,7 +983,7 @@ func TestFormRefitsOnResize(t *testing.T) {
 
 // The result pane is a viewport, so long output scrolls rather than spilling.
 func TestLongResultFitsTheTerminal(t *testing.T) {
-	m := New(testRegistry(t), config.Dashboard{})
+	m := New(testRegistry(t), config.Dashboard{}, nil)
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 20})
 	long := view.Text{Body: strings.Repeat("a line of output\n", 200)}
 	withResult, _ := sized.(Model).Update(resultMsg{
@@ -969,7 +997,7 @@ func TestLongResultFitsTheTerminal(t *testing.T) {
 // The wheel scrolls the pane under it: people try it before they look for a
 // key, and a pane that ignores it reads as stuck.
 func TestWheelScrollsTheResult(t *testing.T) {
-	m := New(testRegistry(t), config.Dashboard{})
+	m := New(testRegistry(t), config.Dashboard{}, nil)
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 20})
 	long := view.Text{Body: strings.Repeat("a line of output\n", 200)}
 	withResult, _ := sized.(Model).Update(resultMsg{
@@ -1043,7 +1071,7 @@ func TestRowActionOnAnOptionalPositional(t *testing.T) {
 			return view.Text{Body: "revoked"}, nil
 		},
 	}
-	m := New(testRegistry(t), config.Dashboard{})
+	m := New(testRegistry(t), config.Dashboard{}, nil)
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
 	sm := sized.(Model)
 	sm.row = 1
@@ -1073,7 +1101,7 @@ func TestRowActionOnAnOptionalPositional(t *testing.T) {
 // chain's. Ten trips through browse and back used to leave ten live timers,
 // each firing every tile on every 5-second tick.
 func TestStaleTickChainsAreDropped(t *testing.T) {
-	m := New(testRegistry(t), config.Dashboard{})
+	m := New(testRegistry(t), config.Dashboard{}, nil)
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
 	sm := sized.(Model)
 	sm.origin = modeDashboard
@@ -1133,7 +1161,7 @@ func TestRowActionSuppliesAStringSliceScopeAsOneRecord(t *testing.T) {
 			return view.Text{Body: strings.Join(req.StringSlice("hostname"), ",")}, nil
 		},
 	}
-	m := New(testRegistry(t), config.Dashboard{})
+	m := New(testRegistry(t), config.Dashboard{}, nil)
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
 	sm := sized.(Model)
 	sm.row = 0
@@ -1199,7 +1227,7 @@ func TestEscapeAbandonsARunningCapability(t *testing.T) {
 			return nil, ctx.Err()
 		},
 	}
-	m := New(testRegistry(t), config.Dashboard{})
+	m := New(testRegistry(t), config.Dashboard{}, nil)
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	started, _ := sized.(Model).open(slow)
 	sm := started.(Model)
@@ -1235,7 +1263,7 @@ func TestCancellingARunReleasesTheHandler(t *testing.T) {
 		},
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	cmd := runCmd(ctx, 1, slow, nil, false)
+	cmd := runCmd(ctx, 1, slow, nil, false, nil)
 
 	done := make(chan tea.Msg, 1)
 	go func() { done <- cmd() }()
@@ -1263,7 +1291,7 @@ func TestToggleReRunsTheViewWithTheFlagFlipped(t *testing.T) {
 			return view.Table{Columns: []view.Column{{Name: "ID"}}, Rows: [][]string{{"1"}}}, nil
 		},
 	}
-	m := New(testRegistry(t), config.Dashboard{})
+	m := New(testRegistry(t), config.Dashboard{}, nil)
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	sm := sized.(Model)
 	sm.trail = []runRef{{cap: list, values: map[string]any{}}}
@@ -1306,7 +1334,7 @@ func TestToggleReRunsTheViewWithTheFlagFlipped(t *testing.T) {
 // which is a question about state.
 func browsing(t *testing.T) Model {
 	t.Helper()
-	m := New(testRegistry(t), config.Dashboard{})
+	m := New(testRegistry(t), config.Dashboard{}, nil)
 	um, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	m = um.(Model)
 	m.mode = modeBrowse
@@ -1492,7 +1520,7 @@ func TestExplicitDetailPreferenceReachesTheHandler(t *testing.T) {
 	}
 	ran := func(values map[string]any) string {
 		var got string
-		collect(t, runCmd(context.Background(), 0, c, values, false), func(msg tea.Msg) {
+		collect(t, runCmd(context.Background(), 0, c, values, false, nil), func(msg tea.Msg) {
 			if r, ok := msg.(resultMsg); ok {
 				got = r.view.(view.Text).Body
 			}
@@ -1526,7 +1554,7 @@ func TestDetailToggleTurnsTheDetailPageOff(t *testing.T) {
 			return view.Text{Body: "keys"}, nil
 		},
 	}
-	m := New(testRegistry(t), config.Dashboard{})
+	m := New(testRegistry(t), config.Dashboard{}, nil)
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	sm := sized.(Model)
 	sm.trail = []runRef{{cap: list, values: map[string]any{}}}
@@ -1571,7 +1599,7 @@ func TestPartialPageShowsWhatItCouldNotProduce(t *testing.T) {
 			Code: "sys.mem.denied", Message: "memory stats need root", Hint: "run with sudo",
 		}},
 	}
-	m := New(testRegistry(t), config.Dashboard{})
+	m := New(testRegistry(t), config.Dashboard{}, nil)
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
 	shown, _ := sized.(Model).Update(resultMsg{cap: c, view: page})
 	pane := shown.(Model).viewport.View()
@@ -1615,7 +1643,7 @@ func TestPartialPageShowsWhatItCouldNotProduce(t *testing.T) {
 func TestCompletePageSaysNothingAboutWarnings(t *testing.T) {
 	c := plugin.Capability{ID: "sys.overview", Summary: "overview", Safety: plugin.Read}
 	page := view.Sections{Items: []view.Section{{Title: "host", View: view.Text{Body: "laptop"}}}}
-	m := New(testRegistry(t), config.Dashboard{})
+	m := New(testRegistry(t), config.Dashboard{}, nil)
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
 	shown, _ := sized.(Model).Update(resultMsg{cap: c, view: page})
 	pane := shown.(Model).viewport.View()
@@ -1643,7 +1671,7 @@ func TestPluralNounPicksTheNounForm(t *testing.T) {
 // them. "A pane that ignores it reads as stuck" is the comment above the
 // handler; this was the pane.
 func TestTheWheelScrollsTheCatalogue(t *testing.T) {
-	m := New(testRegistry(t), config.Dashboard{})
+	m := New(testRegistry(t), config.Dashboard{}, nil)
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	mm := sized.(Model)
 	mm.mode = modeBrowse
@@ -1672,7 +1700,7 @@ func TestTheWheelScrollsTheCatalogue(t *testing.T) {
 // anywhere said a second page existed, which is what makes a catalogue that
 // moves perfectly well read as one that is stuck.
 func TestTheCatalogueSaysWhichPageYouAreOn(t *testing.T) {
-	m := New(testRegistry(t), config.Dashboard{})
+	m := New(testRegistry(t), config.Dashboard{}, nil)
 	// Tall enough for everything: no pages, so no page counter to read.
 	tall, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 200})
 	if got := tall.(Model).catalogueCount(); strings.Contains(got, "page") {
@@ -1687,5 +1715,264 @@ func TestTheCatalogueSaysWhichPageYouAreOn(t *testing.T) {
 	}
 	if got := sm.catalogueCount(); !strings.Contains(got, "page 1/") {
 		t.Errorf("a paginated catalogue must say so: %q", got)
+	}
+}
+
+// TestEditingInputsKeepsAnExplicitDetailPreference: `D` turns detail off, then
+// `e` changes a filter — the run that follows must still be compact.
+//
+// `detail` is a reserved input and so is never a form field. The form rebuilds
+// the value map from its own bindings, which dropped it, and runCmd's
+// "detailed unless somebody said otherwise" default then put it straight back:
+// the toggle worked from every path except through the form, which is the one
+// path that looks most like it should preserve what came before.
+func TestEditingInputsKeepsAnExplicitDetailPreference(t *testing.T) {
+	reg := registry.New()
+	err := reg.Register(plugin.Plugin{
+		Name: "kv", Summary: "secrets",
+		Capabilities: []plugin.Capability{
+			{ID: "kv.list", Summary: "list", Safety: plugin.Read, Idempotent: true, Detailed: true,
+				Inputs: []plugin.Field{{Name: "match", Type: plugin.String, Help: "filter"}},
+				Run: func(_ context.Context, req plugin.Request) (view.View, error) {
+					return view.Text{Body: fmt.Sprintf("detail=%t", req.Bool("detail"))}, nil
+				}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, _ := reg.Capability("kv.list")
+
+	m := New(reg, config.Dashboard{}, nil)
+	sized, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	sm := sized.(Model)
+	// Seeded rather than navigated to: the trail is what makes a pane the top
+	// of its own view, and kv.list has no row actions here to build one.
+	sm.trail = []runRef{{cap: c, values: map[string]any{}}}
+	sm.current, sm.lastValues = c, map[string]any{}
+	shown, _ := sm.Update(resultMsg{cap: c, view: view.Text{Body: "detail=true"}})
+
+	// D turns it off. This half already worked.
+	off, _ := shown.(Model).Update(tea.KeyPressMsg{Code: 'D', Text: "D"})
+	om := off.(Model)
+	if on, given := om.lastValues["detail"].(bool); !given || on {
+		t.Fatalf("D: lastValues[detail] = %v, want an explicit false", om.lastValues["detail"])
+	}
+
+	// Back to a result, then edit the inputs.
+	om.trail = []runRef{{cap: c, values: om.lastValues}}
+	again, _ := om.Update(resultMsg{cap: c, view: view.Text{Body: "detail=false"}})
+	edited, _ := again.(Model).Update(tea.KeyPressMsg{Code: 'e', Text: "e"})
+	em := edited.(Model)
+	if em.mode != modeForm {
+		t.Fatalf("e: mode = %v, want a form", em.mode)
+	}
+	// values() is verbatim what completing the form assigns to lastValues, so
+	// asserting on it asserts the run without driving huh to completion.
+	got := em.form.values()
+	if on, given := got["detail"].(bool); !given || on {
+		t.Fatalf("the form dropped an explicit detail preference: values = %v", got)
+	}
+}
+
+// A capability opened fresh starts from its own defaults. unasked exists to
+// keep one run's toggles, not to leak them into the next capability — a
+// detail preference set on kv.list must not arrive pre-set on todo.add.
+func TestOpeningAFreshCapabilityCarriesNothing(t *testing.T) {
+	var doneLog []int
+	reg := listRegistry(t, &doneLog)
+	c, _ := reg.Capability("todo.add")
+
+	m := New(reg, config.Dashboard{Tiles: []config.Tile{{ID: "todo.list"}}}, nil)
+	sized, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	sm := sized.(Model)
+	sm.lastValues = map[string]any{"detail": false, "stale": "from the last run"}
+
+	opened, _ := sm.open(c)
+	om := opened.(Model)
+	if om.mode != modeForm {
+		t.Fatalf("open: mode = %v, want a form", om.mode)
+	}
+	if len(om.form.base) != 0 {
+		t.Fatalf("a fresh capability inherited %v from the previous run", om.form.base)
+	}
+}
+
+// The TUI draws strings that never pass through cli.Render, and the claim in
+// §4.7.13 that the renderers neutralise "every view string" was true of the
+// renderer and false of the surface. cli.Render sanitises its own local copy;
+// everything the TUI draws around that copy was raw.
+//
+// Reproduced before this was fixed: a Sections item title carrying an OSC 8
+// hyperlink went to the terminal verbatim, immediately after rta's own prefix,
+// in rta's own colour, inside rta's panel border — a live link whose visible
+// text and target were both attacker-chosen.
+//
+// The property is asserted against rta rather than against bubbletea. What
+// currently keeps OSC 52 off the tty from here is that ultraviolet's cell
+// renderer drops it, which is undocumented, untested by us, and one dependency
+// bump from restoring the clipboard hijack sanitize.go was written for.
+func TestNothingTheTUIDrawsCarriesAnEscape(t *testing.T) {
+	const evil = "safe\x1b]8;;mailto:pay@evil.example\x07LOOKS-FINE\x1b]8;;\x07\rOVERWRITE"
+	reg := registry.New()
+	err := reg.Register(plugin.Plugin{
+		Name: "todo", Summary: "tasks",
+		Capabilities: []plugin.Capability{
+			{ID: "todo.list", Summary: "list", Safety: plugin.Read, Idempotent: true,
+				Run: func(context.Context, plugin.Request) (view.View, error) {
+					return view.Sections{
+						// A title beside a table, which is the composed detail
+						// page every plugin.Page builds.
+						Items: []view.Section{{Title: evil, View: view.Table{
+							Columns: []view.Column{{Name: evil}},
+							Rows:    [][]string{{evil}},
+						}}},
+						Warnings: []view.Error{{Code: "x.partial", Message: evil, Hint: evil}},
+					}, nil
+				}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, _ := reg.Capability("todo.list")
+	v, _ := c.Run(context.Background(), plugin.NewRequest(nil, false, false))
+
+	m := New(reg, config.Dashboard{}, nil)
+	sized, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	sm := sized.(Model)
+	sm.trail = []runRef{{cap: c, values: map[string]any{}}}
+	sm.current = c
+	shown, _ := sm.Update(resultMsg{cap: c, view: v})
+	rm := shown.(Model)
+
+	// Styled output legitimately contains rta's own SGR sequences (ESC [ … m)
+	// from lipgloss, so the assertion names what rta never emits: OSC (ESC ]),
+	// which is the hyperlink, title and clipboard family; BEL, which
+	// terminates them; and a bare CR, which redraws the line already drawn.
+	for what, got := range map[string]string{
+		"the result pane": rm.resultView(),
+		"the meta line":   rm.resultMeta(),
+	} {
+		for label, seq := range map[string]string{
+			"an OSC introducer": "\x1b]",
+			"a BEL":             "\a",
+			"a carriage return": "\r",
+		} {
+			if strings.Contains(got, seq) {
+				t.Errorf("%s carries %s: %q", what, label, got)
+			}
+		}
+		if strings.Contains(got, "mailto:pay@evil.example") {
+			t.Errorf("%s carries the attacker's link target", what)
+		}
+		// And the readable part of the value survives: a control that also
+		// loses the answer is not a control anybody keeps.
+		if !strings.Contains(got, "LOOKS-FINE") {
+			t.Errorf("%s dropped the value along with the escape: %q", what, got)
+		}
+	}
+
+	// And the value a row action would act on must be the value on screen.
+	// It used to come from the raw view while the cell came from the
+	// sanitised copy, so the identity shown and the identity used were
+	// different strings by construction.
+	if tbl, ok := rm.result.view.(view.Sections).Items[0].View.(view.Table); ok {
+		if strings.ContainsAny(tbl.Rows[0][0], "\x1b\a\r") {
+			t.Errorf("the stored row still holds the raw value: %q", tbl.Rows[0][0])
+		}
+	}
+}
+
+// Suggest runs at form time and returns whatever exists right now — tags,
+// hostnames, keys somebody else wrote. It never passes through Validate,
+// which only ever sees the declaration.
+func TestSuggestionsAreCleaned(t *testing.T) {
+	f := plugin.Field{
+		Name: "tag", Type: plugin.String, Help: "tag",
+		Suggest: func(context.Context, plugin.Request) []string {
+			return []string{"ok\x1b]0;PWNED\x07", "fine"}
+		},
+	}
+	got := candidateValues(f, context.Background(), plugin.NewRequest(nil, false, false))
+	for _, v := range got {
+		if strings.ContainsAny(v, "\x1b\a\r") {
+			t.Errorf("a suggestion carries a control sequence: %q", v)
+		}
+	}
+	if len(got) != 2 {
+		t.Errorf("suggestions were dropped rather than cleaned: %v", got)
+	}
+}
+
+// The dashboard path, which the test above does not reach. A tile runs a
+// capability on a refresh timer and stores what comes back; the result pane
+// is a different message with a different handler, and cleaning one said
+// nothing about the other.
+//
+// It was already safe, and safe only because cli.Render — the single reader
+// of a tile's view — sanitises its own local copy. That is the arrangement
+// that produced the runAction defect ADR 0013 records, where the cell on
+// screen came from the sanitised copy while the row's identity came from the
+// raw one. This asserts the model's own state instead, so a second reader
+// added later inherits a clean string rather than a latent bug.
+func TestNothingADashboardTileStoresCarriesAnEscape(t *testing.T) {
+	const evil = "safe\x1b]52;c;cGF5QGV2aWwuZXhhbXBsZQ==\x07shown\rOVERWRITE"
+	reg := registry.New()
+	err := reg.Register(plugin.Plugin{
+		Name: "demo", Summary: "demo",
+		Capabilities: []plugin.Capability{
+			{ID: "demo.status", Summary: "status", Safety: plugin.Read, Idempotent: true,
+				Run: func(context.Context, plugin.Request) (view.View, error) {
+					return view.KeyValue{Pairs: []view.Pair{{Key: evil, Value: evil}}}, nil
+				}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	m := New(reg, config.Dashboard{}, nil)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m = updated.(Model)
+
+	// Deliver the tile result the way refreshTiles would.
+	idx := -1
+	for i, ti := range m.tiles {
+		if !ti.search && ti.cap.ID == "demo.status" {
+			idx = i
+		}
+	}
+	if idx < 0 {
+		t.Fatalf("demo.status got no tile: %v", tileIDs(m.tiles))
+	}
+	v, runErr := m.tiles[idx].cap.Run(context.Background(), plugin.NewRequest(nil, false, false))
+	if runErr != nil {
+		t.Fatal(runErr)
+	}
+	updated, _ = m.Update(tileMsg{idx: idx, v: v})
+	m = updated.(Model)
+
+	stored, ok := m.tiles[idx].view.(view.KeyValue)
+	if !ok {
+		t.Fatalf("tile view is %T", m.tiles[idx].view)
+	}
+	// Names what rta never emits, rather than any ESC: lipgloss styling is
+	// legitimately full of SGR, so asserting "no escapes at all" would fail on
+	// rta's own colour.
+	for what, seq := range map[string]string{
+		"an OSC introducer": "\x1b]",
+		"a BEL":             "\x07",
+		"a bare CR":         "\r",
+	} {
+		for _, p := range stored.Pairs {
+			if strings.Contains(p.Key, seq) || strings.Contains(p.Value, seq) {
+				t.Errorf("a tile stored %s: %q / %q", what, p.Key, p.Value)
+			}
+		}
+	}
+	// And the visible text survives, or the cleaner is just deleting data.
+	if !strings.Contains(stored.Pairs[0].Value, "shown") {
+		t.Errorf("the cleaner dropped the value with the escape: %q", stored.Pairs[0].Value)
 	}
 }

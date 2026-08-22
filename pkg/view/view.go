@@ -36,8 +36,15 @@ type KeyValue struct {
 	Redacted []string `json:"redacted,omitempty"`
 }
 
-// ColumnKind is a semantic hint for how a column's cells should be
-// formatted/aligned. It never prescribes styling.
+// ColumnKind is a semantic hint about what a column holds. It selects
+// alignment, and for KindStatus the status vocabulary a renderer styles by.
+//
+// It never formats a cell. A view carries pre-formatted strings, so a column
+// declaring KindBytes still receives whatever its producer put there —
+// `1392640` if that is what the producer wrote. pkg/format is the shared
+// vocabulary for writing it as `1.3 MiB` instead, and it is the producer's
+// job to call it. The first version of this comment said "formatted/aligned",
+// which read as a promise the renderer does not keep.
 type ColumnKind string
 
 const (

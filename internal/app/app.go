@@ -7,6 +7,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/this-is-tobi/rule-them-all/builtin/all"
 	"github.com/this-is-tobi/rule-them-all/internal/config"
+	"github.com/this-is-tobi/rule-them-all/internal/pluginhost"
 	"github.com/this-is-tobi/rule-them-all/internal/registry"
 	"github.com/this-is-tobi/rule-them-all/internal/render/cli"
 	"github.com/this-is-tobi/rule-them-all/internal/render/tui"
@@ -41,12 +43,99 @@ func ExitCode(err error) int {
 	return 2
 }
 
+// RenderTopLevelError writes a failure the way a success would have been
+// written: in the format the caller asked for. It reports whether it handled
+// the error, so the caller can fall back to cobra's own usage styling for the
+// ones that are not rta's to format.
+//
+// The bug it fixes is narrow and bad. main printed an unrendered view.Error
+// with fmt.Fprintf, ignoring --output entirely, so `rta plugin dev -o json`
+// answered success with JSON and failure with prose — and a script parsing the
+// first has nothing to do with the second. cli.RenderError's own doc records
+// this being fixed once already, for -o yaml, inside the renderer; this is the
+// same fault at the one call site that did not go through it.
+//
+// The options are read back off the root's parsed flags rather than kept in a
+// package variable. That is not only less state: the flag carries the config
+// file's default too, so what this reads is exactly what the command that
+// failed would have rendered with.
+func RenderTopLevelError(w io.Writer, root *cobra.Command, err error) bool {
+	if err == nil {
+		return true
+	}
+	// Already on the terminal — printing it again is how one problem reads as
+	// two, in two slightly different layouts.
+	if _, ok := err.(RenderedError); ok {
+		return true
+	}
+	ve, ok := err.(*view.Error)
+	if !ok {
+		return false
+	}
+	return cli.RenderError(w, ve, topLevelRenderOptions(root)) == nil
+}
+
+// topLevelRenderOptions rebuilds what a command would have rendered with.
+func topLevelRenderOptions(root *cobra.Command) cli.Options {
+	flag := func(name string) string {
+		if root == nil {
+			return ""
+		}
+		if f := root.PersistentFlags().Lookup(name); f != nil {
+			return f.Value.String()
+		}
+		return ""
+	}
+	// An unparseable --output has already failed the command that used it;
+	// falling back to pretty here means the error still reaches the terminal
+	// rather than disappearing into a second failure.
+	format, ferr := cli.ParseFormat(flag("output"))
+	if ferr != nil {
+		format = cli.Pretty
+	}
+	return cli.Options{
+		Format:  format,
+		NoColor: flag("no-color") == "true" || !isTTY(),
+		Width:   termWidth(),
+	}
+}
+
 // CodeConfirmRequired is returned when a destructive capability runs without
 // confirmation. Interactive confirmation (huh) lands in M1; until then --yes
 // is the only way through.
 const CodeConfirmRequired = "core.confirm.required"
 
+// RenderedError marks a *view.Error that has already been printed, so the
+// top-level handler suppresses it instead of printing it twice.
+//
+// It replaces a rule that could not hold: the handler used to suppress *every*
+// *view.Error on the assumption that runCapability was the only thing
+// producing one. It was not — `rta plugin dev` returns view.Errors of its own,
+// and every one of them vanished, so a failed build exited 1 with no output at
+// all. Marking the rendered ones inverts the default: a new command that
+// returns a view.Error gets it printed, which is the behaviour worth having by
+// default because the failure mode is loud rather than silent.
+type RenderedError struct{ Err *view.Error }
+
+// Rendered marks err as already printed.
+func Rendered(err *view.Error) error {
+	if err == nil {
+		return nil
+	}
+	return RenderedError{err}
+}
+
+func (e RenderedError) Error() string { return e.Err.Error() }
+func (e RenderedError) Unwrap() error { return e.Err }
+
+// asViewError unwraps to the view.Error inside err, through the Rendered
+// marker if there is one — so the exit-code contract does not depend on
+// whether a command happened to print its own error first.
 func asViewError(err error, target **view.Error) bool {
+	if r, ok := err.(RenderedError); ok {
+		*target = r.Err
+		return true
+	}
 	ve, ok := err.(*view.Error)
 	if ok {
 		*target = ve
@@ -59,11 +148,45 @@ func asViewError(err error, target **view.Error) bool {
 // cycle away from asking what is in it.
 func NewRegistry() (*registry.Registry, error) { return all.Registry() }
 
+// LoadPlugins adds every SDK plugin found on $PATH to reg and returns the
+// host that owns their processes, plus whatever went wrong.
+//
+// Problems are returned rather than raised. A third-party plugin that fails
+// to launch, or whose namespace collides with a built-in, must not stop rta
+// from starting: a tool where any installed plugin can brick the binary is a
+// tool people stop installing plugins for. The caller prints them to stderr
+// and carries on with what did load.
+//
+// The returned host must be closed when the process exits, or plugin
+// subprocesses outlive the rta that started them.
+func LoadPlugins(ctx context.Context, reg *registry.Registry, stderr io.Writer) (*pluginhost.Host, []error) {
+	h := pluginhost.New(stderr)
+	return h, h.LoadInto(ctx, reg)
+}
+
 type globalOpts struct {
 	output  string
 	noColor bool
 	yes     bool
 	dryRun  bool
+}
+
+// groupRunE is what a command that only groups other commands does with its
+// arguments: nothing shows help, anything else is a usage error.
+//
+// Shared rather than repeated because the two hand-written groups did neither.
+// Cobra's default for a parent with no Run is to print help and return nil, so
+// `rta mcp serv` — one letter off `serve` — wrote help to stdout and exited 0.
+// A human sees something that looks like an answer; a script sees success and
+// an empty result, which is the version that survives into a pipeline. Every
+// namespace built from the registry already got this right, which is exactly
+// why it was invisible: fourteen commands behaved one way and two behaved
+// another, and the two were the ones nobody types twice.
+func groupRunE(cmd *cobra.Command, args []string) error {
+	if len(args) == 0 {
+		return cmd.Help()
+	}
+	return fmt.Errorf("unknown command %q for %q", args[0], cmd.CommandPath())
 }
 
 // NewRoot builds the root cobra command over the given registry.
@@ -91,7 +214,7 @@ func NewRoot(reg *registry.Registry, version string) *cobra.Command {
 			if cfgErr != nil {
 				return cfgErr
 			}
-			return tui.Run(cmd.Context(), reg, cfg.Dashboard)
+			return tui.Run(cmd.Context(), reg, cfg.Dashboard, pluginConfig.For)
 		},
 	}
 	pf := root.PersistentFlags()
@@ -106,13 +229,7 @@ func NewRoot(reg *registry.Registry, version string) *cobra.Command {
 		nsCmd := &cobra.Command{
 			Use:   p.Name,
 			Short: p.Summary,
-			// Bare namespace shows help; unknown subcommands are usage errors.
-			RunE: func(cmd *cobra.Command, args []string) error {
-				if len(args) == 0 {
-					return cmd.Help()
-				}
-				return fmt.Errorf("unknown command %q for %q", args[0], cmd.CommandPath())
-			},
+			RunE:  groupRunE,
 		}
 		nsCmds[p.Name] = nsCmd
 		root.AddCommand(nsCmd)
@@ -122,7 +239,7 @@ func NewRoot(reg *registry.Registry, version string) *cobra.Command {
 	}
 	root.AddCommand(newMCPCommand(reg, version))
 	root.AddCommand(newExplainCommand(reg, opts))
-	root.AddCommand(newPluginsCommand(reg, opts))
+	root.AddCommand(newPluginCommand(reg, version, opts))
 	root.AddCommand(newDoctorCommand(reg, opts))
 	root.AddCommand(newInitCommand(reg))
 	return root
@@ -171,8 +288,58 @@ func attach(parent *cobra.Command, c plugin.Capability, opts *globalOpts) {
 	if c.Detailed && cmd.Flags().Lookup("detail") == nil {
 		cmd.Flags().Bool("detail", false, "show the full detailed view")
 	}
+	cmd.SetFlagErrorFunc(positionalFlagError(c, positionals))
 	declareCompletion(cmd, c, positionals)
 	parent.AddCommand(cmd)
+}
+
+// positionalFlagError improves the one flag mistake a declaration makes
+// likely.
+//
+// An input declared Positional becomes an argument rather than a flag, so
+// `rta hello greet --name you` gets pflag's "unknown flag: --name". That is
+// accurate and no help at all to somebody looking straight at `input:name` in
+// `rta explain` — the input exists, it is spelled the way they typed it, and
+// nothing says why the flag does not. The declaration already knows which
+// inputs are positional, so the error can say which one and show the form
+// that works.
+//
+// The wording leads with a word rather than the input name on purpose: fang
+// sentence-cases a plain error before printing it, so a message starting with
+// an identifier renders it capitalised — "name" became "Name", which is a
+// different field as far as the reader is concerned.
+//
+// It stays a plain error rather than becoming a view.Error, because a usage
+// mistake exits 2 and ExitCode maps every view.Error to 1. The renderer boxes
+// plain errors the same way, so nothing is lost by it.
+func positionalFlagError(c plugin.Capability, positionals []plugin.Field) func(*cobra.Command, error) error {
+	return func(_ *cobra.Command, err error) error {
+		name, ok := unknownFlagName(err)
+		if !ok {
+			return err
+		}
+		for _, f := range positionals {
+			if f.Name == name {
+				return fmt.Errorf("this capability takes %q as an argument, not a flag — %s", f.Name, cliForm(c))
+			}
+		}
+		return err
+	}
+}
+
+// unknownFlagName pulls the flag out of pflag's unknown-flag error. Matching
+// on the message is unpleasant and is the only option pflag offers: it
+// formats this one with fmt.Errorf and exports no typed error to check for.
+func unknownFlagName(err error) (string, bool) {
+	const prefix = "unknown flag: --"
+	if err == nil {
+		return "", false
+	}
+	_, after, found := strings.Cut(err.Error(), prefix)
+	if !found || after == "" {
+		return "", false
+	}
+	return after, true
 }
 
 // completionTimeout bounds a suggestion lookup. Completion runs while
@@ -240,10 +407,19 @@ func candidates(cmd *cobra.Command, c plugin.Capability, f plugin.Field, args []
 	// that refuses to answer until the command is valid is a completion
 	// nobody sees.
 	values, _ := collectValues(cmd, c, args)
+	// Resolved, not raw. Field.Suggest is documented to receive "what the
+	// caller has supplied so far, which is what lets a suggestion depend on
+	// an earlier answer", and that was true here only by accident: cobra
+	// baked every declared default into its flag set and collectValues read
+	// them all back. Gating on Changed() made that accident stop working, so
+	// a suggestion that reads a sibling would have started seeing nothing —
+	// for every plugin, not only the ones that adopt config.
+	//
 	// SurfaceCompletion, not SurfaceCLI: this is a keystroke with nobody
 	// waiting to answer anything, and a Suggest that would have prompted must
 	// be able to tell the difference.
-	req := plugin.NewRequest(values, false, false).WithSurface(plugin.SurfaceCompletion)
+	req := plugin.NewRequest(
+		plugin.Resolve(c, values, PluginConfig(c)), false, false).WithSurface(plugin.SurfaceCompletion)
 
 	// A path keeps file completion alongside whatever was declared: zsh offers
 	// the suggestions first and falls back to the filesystem when none of them
@@ -266,7 +442,11 @@ func findOrCreate(parent *cobra.Command, name string) *cobra.Command {
 			return sub
 		}
 	}
-	cmd := &cobra.Command{Use: name, Short: name + " operations"}
+	// Nested nouns are groups too — `rta net hosts` holds net.hosts.list and
+	// its siblings — so they get the same rule as every other group. Missed
+	// on the first pass, which left `rta net hosts bogus` printing help and
+	// exiting 0 one level below where that had just been fixed.
+	cmd := &cobra.Command{Use: name, Short: name + " operations", RunE: groupRunE}
 	parent.AddCommand(cmd)
 	return cmd
 }
@@ -311,10 +491,37 @@ func declareFlags(cmd *cobra.Command, c plugin.Capability) {
 			def, _ := f.Default.(string)
 			cmd.Flags().String(f.Name, def, usage)
 		}
-		if f.Required {
+		// A required input that config can fill is not required on the
+		// command line: cobra enforces MarkFlagRequired during parsing, which
+		// is before anything has looked at the operator's file, so marking it
+		// would make `plugins.pg@abc.host` unusable for the one input it
+		// exists to supply. rta checks the resolved value instead, in run(),
+		// where config has already been applied — so the message can say
+		// which of the two ways to supply it were tried.
+		if f.Required && f.Config == "" {
 			_ = cmd.MarkFlagRequired(f.Name)
 		}
 	}
+}
+
+// requireResolved reports a required input that nothing supplied — neither
+// the caller nor the operator's configuration.
+//
+// Only for inputs that declare a config key: every other required input is
+// still cobra's to enforce, at parse time, where the error arrives with the
+// usage text beside it.
+func requireResolved(c plugin.Capability, values map[string]any) *view.Error {
+	for _, f := range c.Inputs {
+		if !f.Required || f.Config == "" {
+			continue
+		}
+		if v, ok := values[f.Name]; ok && v != "" && v != nil {
+			continue
+		}
+		return view.Errorf("core.input.missing", "%s needs --%s", c.ID, f.Name).
+			WithHint(fmt.Sprintf("pass --%s, or set %s in your rta config", f.Name, f.Config))
+	}
+	return nil
 }
 
 // flagUsage renders a field's help for `--help`, appending its closed set.
@@ -360,18 +567,37 @@ func runCapability(ctx context.Context, cmd *cobra.Command, c plugin.Capability,
 		// returning this one unrendered made `rta todo rm 1` exit 3 in
 		// silence — the right code, and not one word about how to proceed.
 		_ = cli.RenderError(cmd.ErrOrStderr(), verr, renderOpts)
-		return verr
+		return Rendered(verr)
 	}
 
 	values, err := collectValues(cmd, c, args)
 	if err != nil {
 		return err
 	}
-	v, runErr := c.Run(ctx, plugin.NewRequest(plugin.Resolve(c, values), opts.dryRun, opts.yes).WithSurface(plugin.SurfaceCLI))
+	resolved := plugin.Resolve(c, values, PluginConfig(c))
+	// The required check for config-backed inputs, which cobra no longer
+	// makes because making it would have run before config was consulted.
+	// Named here rather than left as a handler's zero value: an input that is
+	// required and empty is the one case where "you can also put this in your
+	// config" is the sentence somebody needs.
+	if verr := requireResolved(c, resolved); verr != nil {
+		_ = cli.RenderError(cmd.ErrOrStderr(), verr, renderOpts)
+		return Rendered(verr)
+	}
+	v, runErr := c.Run(ctx, plugin.NewRequest(
+		resolved, opts.dryRun, opts.yes).WithSurface(plugin.SurfaceCLI))
 	if runErr != nil {
 		ve := view.AsError(runErr, c.ID+".failed")
+		// A failure is the one moment an unhonoured config section explains
+		// something, so it is said here and nowhere else — see
+		// ConfigNotApplied. On the Hint rather than beside it, because Hint is
+		// the field every output format already carries, and a note printed
+		// only in pretty output is a note an agent never sees.
+		if note := ConfigNotApplied(c); note != "" {
+			ve = ve.WithHint(strings.TrimSpace(ve.Hint + " · " + note))
+		}
 		_ = cli.RenderError(cmd.ErrOrStderr(), ve, renderOpts)
-		return ve
+		return Rendered(ve)
 	}
 	if v == nil {
 		return nil
@@ -398,6 +624,17 @@ func collectValues(cmd *cobra.Command, c plugin.Capability, args []string) (map[
 			} else if f.Default != nil {
 				values[f.Name] = f.Default
 			}
+			continue
+		}
+		// Only what the caller actually typed. cobra bakes every declared
+		// default into its flag set, so reading them all back unconditionally
+		// meant a flag nobody passed still arrived as a supplied value —
+		// which config could never beat, and which made "the caller supplied
+		// none" impossible to express on this surface. Changed() rather than
+		// comparing against the zero value, because `--shout=false` is a
+		// caller supplying false and is indistinguishable from the default by
+		// value alone.
+		if !cmd.Flags().Changed(f.Name) {
 			continue
 		}
 		switch f.Type {
@@ -433,7 +670,9 @@ func collectValues(cmd *cobra.Command, c plugin.Capability, args []string) (map[
 			values[f.Name] = v
 		}
 	}
-	// The detail flag is a rendering depth, not a declared input.
+	// The detail flag is a rendering depth, not a declared input, and no
+	// config key can reach it — so it is read unconditionally and its absence
+	// means false, which is what every renderer already assumes.
 	if c.Detailed {
 		if v, err := cmd.Flags().GetBool("detail"); err == nil {
 			values["detail"] = v

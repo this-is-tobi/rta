@@ -13,8 +13,9 @@
 //
 // # On safety classes
 //
-// kv.get, kv.env, kv.set and kv.init are Write; kv.list, kv.show,
-// kv.recipients and kv.status are Read; kv.rm and kv.rekey are Destructive.
+// kv.get, kv.copy, kv.edit, kv.env, kv.set, kv.rename and kv.init are Write;
+// kv.list, kv.show, kv.recipients and kv.status are Read; kv.rm and kv.rekey
+// are Destructive.
 //
 // Classifying kv.get as Write is deliberate and is the one place the safety
 // model is read as "blast radius" rather than "does it mutate". It has no
@@ -25,6 +26,13 @@
 // makes it per-key and time-boxed. kv.list stays Read because it is genuinely safe:
 // it returns names, kinds, sizes and descriptions, never a value nor a
 // preview of one.
+//
+// kv.copy and kv.edit are the same act reached by another route — a value on
+// the clipboard, or in an editor's buffer, has been revealed — so they carry
+// kv.get's classification exactly rather than a cheaper one earned by not
+// printing anything. Both also refuse the surfaces they cannot honestly
+// serve: the clipboard and the terminal belong to whoever is sitting at the
+// machine, which over MCP is nobody.
 //
 // kv.set stays Write and takes a grant on top, which is that argument run
 // backwards: overwriting a key destroys the secret that was in it exactly as
@@ -52,7 +60,10 @@ import (
 	"golang.org/x/term"
 
 	"github.com/this-is-tobi/rule-them-all/builtin/internal/itemstore"
-	"github.com/this-is-tobi/rule-them-all/internal/format"
+	"github.com/this-is-tobi/rule-them-all/internal/atomicfile"
+	"github.com/this-is-tobi/rule-them-all/internal/filelock"
+	"github.com/this-is-tobi/rule-them-all/internal/stdio"
+	"github.com/this-is-tobi/rule-them-all/pkg/format"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
@@ -71,11 +82,11 @@ const (
 // question to put in front of a model.
 var (
 	passphraseField = plugin.Field{
-		Name: "passphrase", Type: plugin.Secret, Local: true,
+		Name: "passphrase", Type: plugin.Secret, Local: true, EnvFallback: true,
 		Help: fmt.Sprintf("store passphrase (or set %s — preferred, keeps it out of shell history)", passphraseEnv),
 	}
 	identityField = plugin.Field{
-		Name: "identity", Type: plugin.Path, Local: true,
+		Name: "identity", Type: plugin.Path, Local: true, EnvFallback: true,
 		Help: fmt.Sprintf("private key to unlock with, e.g. ~/.ssh/id_ed25519 (or set %s)", identityEnv),
 		// The keys this machine has, offered before the filesystem is walked
 		// for them: one of these is nearly always the answer.
@@ -100,23 +111,34 @@ func Plugin() plugin.Plugin {
 				Detailed: true,
 				Description: "Never returns a value or a preview of one — only key names, what kind of " +
 					"thing each is, its size, its description and when it changed. With --detail: " +
-					"the source filename of anything stored from disk.",
+					"the source filename of anything stored from disk.\n\n" +
+					"--match is the \"which one was it called?\" filter: a substring of the name or " +
+					"the description, case-insensitive, so `kv list --match aws` finds " +
+					"`prod-deploy-key` when the description is the only place the word AWS appears.",
 				Inputs: unlockFields([]plugin.Field{
 					{Name: "kind", Type: plugin.String, Options: kinds,
 						Help: "only entries of this kind"},
+					{Name: "match", Type: plugin.String,
+						Help: "only keys whose name or description contains this (case-insensitive)"},
 				}...),
 				Run: runList,
 			},
 			{
 				ID: "kv.get", Summary: "Reveal a stored value", Safety: plugin.Write, Idempotent: true,
 				NeedsGrant: true, Scope: "key",
-				Description: "Classified as a write because revealing a secret is the sensitive act. " +
-					"An MCP agent therefore needs --allow-write, and on top of that a per-key grant " +
-					"issued by a person (`rta grant allow kv.get <key> --ttl 15m`). --out writes the " +
-					"value to a file with 0600 instead of printing it, which is how a certificate or " +
-					"key goes back to disk without passing through your scrollback — a person only, " +
-					"since a grant authorizes revealing a value, not choosing where on this machine " +
-					"it gets written. An MCP caller always gets the value back in the response.",
+				Description: "Writes the value to stdout with no quoting and no framing, so " +
+					"`rta kv get gh-token | gh auth login --with-token` is a pipe and not a " +
+					"transformation. The pretty renderer terminates the line, so a value stored " +
+					"without a trailing newline gains one on the way out; for the byte-exact copy " +
+					"use --out, which writes the stored bytes to a file with 0600 instead, and is " +
+					"how a certificate or key goes back to disk without passing through your " +
+					"scrollback. To use a secret without seeing it at all, `kv copy` puts it on the " +
+					"clipboard and prints nothing.\n\n" +
+					"Classified as a write because revealing a secret is the sensitive act. An MCP " +
+					"agent therefore needs --allow-write, and on top of that a per-key grant issued " +
+					"by a person (`rta grant allow kv.get <key> --ttl 15m`). --out is a person's flag " +
+					"only, since a grant authorizes revealing a value, not choosing where on this " +
+					"machine it gets written; an MCP caller always gets the value back in the response.",
 				Inputs: unlockFields([]plugin.Field{
 					{Name: "key", Type: plugin.String, Positional: true, Required: true, Help: "key to reveal",
 						Suggest: suggestKeys},
@@ -134,6 +156,30 @@ func Plugin() plugin.Plugin {
 						Help: "write the value to this file (0600) instead of printing it"},
 				}...),
 				Run: runGet,
+			},
+			{
+				ID: "kv.copy", Summary: "Copy a value to the clipboard without displaying it",
+				Safety: plugin.Write, Idempotent: true,
+				NeedsGrant: true, Scope: "key",
+				Description: "The value goes to this machine's clipboard and nowhere else: not to the " +
+					"screen, not into scrollback, not into shell history — because getting a secret " +
+					"somewhere is nearly always a paste rather than a read, and the reading is the " +
+					"part that leaves a copy behind.\n\n" +
+					"Classified with `kv get`, not below it: a value on the clipboard has been " +
+					"revealed, and every process running as you can read it. Printing nothing buys " +
+					"a smaller audience, not a different act.\n\n" +
+					"Refused over MCP however the grants read. The clipboard is not a return value — " +
+					"it is a shared channel on somebody else's desk that the caller cannot read back, " +
+					"so an agent gains nothing here it could not get from `kv get`, while gaining the " +
+					"ability to silently replace the address you copied a moment ago.\n\n" +
+					"Nothing clears the clipboard afterwards, and this says so rather than pretending " +
+					"otherwise: a command that has printed its answer and exited cannot come back in " +
+					"45 seconds to undo it.",
+				Inputs: unlockFields([]plugin.Field{
+					{Name: "key", Type: plugin.String, Positional: true, Required: true, Help: "key to copy",
+						Suggest: suggestKeys},
+				}...),
+				Run: runCopy,
 			},
 			{
 				ID: "kv.env", Summary: "Print stored values as shell exports", Safety: plugin.Write, Idempotent: true,
@@ -187,8 +233,56 @@ func Plugin() plugin.Plugin {
 				Run: runSet,
 			},
 			{
+				ID: "kv.edit", Summary: "Open a stored value in $EDITOR and re-encrypt it on save",
+				Safety: plugin.Write, NeedsGrant: true, Scope: "key",
+				Description: "For changing a secret you have to look at while you change it: one line " +
+					"of a kubeconfig, one field of a JSON credential, a certificate chain gaining an " +
+					"intermediate. `kv set` can do all of that too, and puts the entire new value in " +
+					"your shell history on the way — which is the exact leak this store exists to " +
+					"close.\n\n" +
+					"The plaintext is written to a file mode 0600 inside a directory mode 0700 " +
+					"(/dev/shm where there is one, so it never reaches a disk at all), and the whole " +
+					"directory is removed afterwards — including the swap and backup files editors " +
+					"leave beside what they are editing.\n\n" +
+					"$VISUAL, then $EDITOR, then vi. An editor that returns before you have saved " +
+					"loses the edit, so a windowed one needs its wait flag: EDITOR='code --wait'.\n\n" +
+					"Refused anywhere there is no terminal to hand over — an editor is a person at a " +
+					"keyboard, which over MCP is nobody. Binary values are refused too: a DER " +
+					"certificate opened in a text editor comes back mangled, so those take the " +
+					"`kv get --out` / `kv set --file` round trip that preserves bytes.",
+				Inputs: unlockFields([]plugin.Field{
+					{Name: "key", Type: plugin.String, Positional: true, Required: true, Help: "key to edit",
+						Suggest: suggestKeys},
+				}...),
+				Run: runEdit,
+			},
+			{
+				ID: "kv.rename", Summary: "Rename a key, keeping its value and its history",
+				Safety: plugin.Write, NeedsGrant: true, Scope: "key",
+				Description: "Renaming used to mean `kv get` piped into `kv set` and then `kv rm`: two " +
+					"grants for an operation that reveals nothing, and the secret itself sitting in " +
+					"shell history at the join. This moves the entry inside the store — the value is " +
+					"never decrypted into anything but memory, and its description, kind, source and " +
+					"timestamps travel with it.\n\n" +
+					"A name that is already taken is refused rather than overwritten: renaming onto " +
+					"an existing key would destroy the secret in it, which is `kv rm`'s question and " +
+					"is asked with `kv rm`'s answer.",
+				Inputs: unlockFields([]plugin.Field{
+					{Name: "key", Type: plugin.String, Positional: true, Required: true, Help: "key to rename",
+						Suggest: suggestKeys},
+					{Name: "new-name", Type: plugin.String, Positional: true, Required: true, Help: "what to call it instead"},
+				}...),
+				Run: runRename,
+			},
+			{
 				ID: "kv.rm", Summary: "Remove a stored key permanently", Safety: plugin.Destructive,
 				Scope: "key",
+				Description: "The entry and its value are gone when this returns. There is no history, " +
+					"no backup and no undo — a store keeps one version of each secret, which is the " +
+					"whole reason overwriting one with `kv set` asks the same question this does.\n\n" +
+					"Who can open the store does not change: removing the last entry leaves an empty " +
+					"store locked to the same keys, not an unlocked one. To rename rather than " +
+					"replace, `kv rename` moves an entry without its value ever leaving memory.",
 				Inputs: unlockFields([]plugin.Field{
 					{Name: "key", Type: plugin.String, Positional: true, Required: true, Help: "key to remove",
 						Suggest: suggestKeys},
@@ -200,8 +294,9 @@ func Plugin() plugin.Plugin {
 				Safety: plugin.Read, Idempotent: true,
 				Description: "The detail page for a stored key: what kind of thing it is, what it is " +
 					"for, how big it is, where it came from and when it changed. Deliberately not the " +
-					"value — that is `kv get`, which is a write for exactly that reason. This stays " +
-					"Read because everything on it is metadata you can safely put on a screen.",
+					"value — that is `kv get` (prints it) or `kv copy` (does not), both writes for " +
+					"exactly that reason. This stays Read because everything on it is metadata you " +
+					"can safely put on a screen.",
 				Inputs: unlockFields([]plugin.Field{
 					{Name: "key", Type: plugin.String, Positional: true, Required: true, Help: "key to describe",
 						Suggest: suggestKeys},
@@ -228,7 +323,19 @@ func Plugin() plugin.Plugin {
 				Inputs: unlockFields([]plugin.Field{
 					{Name: "generate", Type: plugin.Bool,
 						Help: "create a dedicated age key for this store and lock it to that"},
-					{Name: "recipient", Type: plugin.StringSlice,
+					// Local, exactly as kv.set's `file` is and for the same
+					// recorded reason: parseRecipient accepts a *path* and
+					// reads it, so this input reaches the filesystem — and
+					// the path gate only hooks Field.Path, which a
+					// StringSlice can never be. An agent supplying
+					// ["~/.zshrc"] got the file's first meaningful line back
+					// in the parse error, plus a classifier for every other
+					// outcome (holds no public key / is a private key /
+					// permission denied / is a directory). Key management is
+					// not a thing to put in front of a model at all, which is
+					// the shorter reason and the one that would have avoided
+					// this without anybody noticing the path.
+					{Name: "recipient", Type: plugin.StringSlice, Local: true,
 						Help: "also let this age/SSH public key read the store, repeatable"},
 				}...),
 				Run: runInit,
@@ -255,7 +362,15 @@ func Plugin() plugin.Plugin {
 				Inputs: unlockFields([]plugin.Field{
 					{Name: "generate", Type: plugin.Bool,
 						Help: "create a dedicated age key for this store and add it"},
-					{Name: "recipient", Type: plugin.StringSlice,
+					// Local, matching kv.init and kv.set. ADR 0014 recorded
+					// this as a known gap on the grounds that Destructive
+					// already forces a grant — true, and a grant is a
+					// capability-level TTL window rather than a decision per
+					// recipient, so it authorises the act and not the file
+					// this reads. No kv capability takes a recipient from a
+					// remote caller now, which is a rule rather than three
+					// separate judgements.
+					{Name: "recipient", Type: plugin.StringSlice, Local: true,
 						Help: "also let this key read the store: an age/SSH public key, or a path to one — " +
 							"including a private key, whose public half is all that is read; repeatable"},
 					{Name: "only", Type: plugin.Bool,
@@ -327,6 +442,35 @@ type store struct {
 
 func storePath() string { return filepath.Join(itemstore.DataDir(), storeFile) }
 
+// lockStore serializes kv's own read-modify-write writes (set, rename,
+// remove, rekey) across processes and goroutines, the same way
+// internal/grant locks grants.json — via the same internal/filelock
+// mechanism grant's own lock was extracted into.
+//
+// Every one of those writes decrypts the whole store, mutates one thing in
+// memory, and re-encrypts and writes the whole thing back, with nothing
+// between the load and the save stopping a second writer from doing the
+// same and one of them losing its change with no error on either side. The
+// MCP bridge dispatches every tools/call in its own goroutine, so two calls
+// each doing their own load..save is the ordinary case for an agent
+// pipelining requests, not an exotic one — "the window is only
+// milliseconds" is not a defense against that.
+//
+// kv.edit is deliberately not wrapped in this: it holds an external editor
+// open for as long as somebody is looking at it, and serializing every
+// other write behind that would be a worse regression than the race it
+// already narrows for itself by re-reading right before its own save (see
+// edit.go) — though that final re-read-and-save step does take this lock
+// too, closing the residual window that re-read alone left.
+func lockStore() (release func(), verr *view.Error) {
+	path := filepath.Join(itemstore.DataDir(), "kv.lock")
+	release, err := filelock.Acquire(path, filelock.DefaultStale, filelock.DefaultRetry, filelock.DefaultTimeout)
+	if err != nil {
+		return nil, view.Errorf("kv.store.lock", "acquiring the store lock: %v", err)
+	}
+	return release, nil
+}
+
 // detectKind reads the value well enough to label it. It looks only at
 // structure, never at content: nothing here is logged or shown.
 func detectKind(value, filename string) string {
@@ -363,7 +507,7 @@ var promptPassphrase = func() (string, error) {
 	fmt.Fprint(os.Stderr, "Passphrase: ")
 	// The prompt goes to stderr, never stdout: `eval "$(rta kv env x)"` must
 	// not eval it, and a redirected `kv get > file` must not contain it.
-	secret, err := term.ReadPassword(int(os.Stdin.Fd()))
+	secret, err := term.ReadPassword(int(stdio.Real().Fd()))
 	fmt.Fprintln(os.Stderr)
 	return string(secret), err
 }
@@ -373,7 +517,7 @@ var promptPassphrase = func() (string, error) {
 // overridable in tests.
 var promptKeyPassphrase = func(path string) (string, error) {
 	fmt.Fprintf(os.Stderr, "Passphrase for %s: ", path)
-	secret, err := term.ReadPassword(int(os.Stdin.Fd()))
+	secret, err := term.ReadPassword(int(stdio.Real().Fd()))
 	fmt.Fprintln(os.Stderr)
 	return string(secret), err
 }
@@ -382,7 +526,11 @@ var promptKeyPassphrase = func(path string) (string, error) {
 // Only a CLI request can: MCP has no terminal at the other end, and the TUI
 // owns the screen (it asks with a masked form field instead).
 var canPrompt = func(req plugin.Request) bool {
-	return req.Surface() == plugin.SurfaceCLI && term.IsTerminal(int(os.Stdin.Fd()))
+	// stdio.Real, not os.Stdin: after main takes fd 0 away from the children
+	// os.Stdin is /dev/null, which is not a terminal — so this would answer
+	// "no person here" on every CLI run and the passphrase prompt would never
+	// appear.
+	return req.Surface() == plugin.SurfaceCLI && term.IsTerminal(int(stdio.Real().Fd()))
 }
 
 // prompted caches what the terminal prompt returned. A single command often
@@ -506,7 +654,20 @@ func saveTo(s store, recipients []age.Recipient, specs []string) *view.Error {
 	// failed write would leave a recipients file describing a store that
 	// nothing can open.
 	if specs != nil {
-		return saveRecipients(specs)
+		if verr := saveRecipients(specs); verr != nil {
+			// The two writes are not atomic together, only each on its own —
+			// so a failure here is not "nothing happened": the ciphertext
+			// above already committed to the new recipient set, and only the
+			// plaintext record of it failed to update. `rta kv recipients`
+			// itself does not detect this (it reads the plaintext file, not
+			// the ciphertext's own embedded record), so the hint has to say
+			// so explicitly rather than leave an operator trusting a stale
+			// answer to "who can decrypt this". Found by review (PROJECT.md
+			// D74).
+			return verr.WithHint("the store WAS re-encrypted to the new key set; only recording that " +
+				"failed — `rta kv recipients` may now be stale until the next successful write. " +
+				"Retry, or `rta kv rekey --only --recipient <the set it should be>` to reconcile")
+		}
 	}
 	return nil
 }
@@ -516,23 +677,11 @@ func writeAtomic(data []byte) *view.Error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return view.Errorf("kv.store.mkdir", "creating %s: %v", dir, err)
 	}
-	tmp, err := os.CreateTemp(dir, storeFile+"-*")
-	if err != nil {
+	// 0600, applied before the file exists under its real name: the
+	// ciphertext is age-encrypted, but a store nobody else can open is still
+	// a store nobody else needs to copy.
+	if err := atomicfile.Write(storePath(), data, 0o600); err != nil {
 		return view.Errorf("kv.store.write", "writing store: %v", err)
-	}
-	defer os.Remove(tmp.Name())
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return view.Errorf("kv.store.write", "writing store: %v", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return view.Errorf("kv.store.write", "closing store: %v", err)
-	}
-	if err := os.Chmod(tmp.Name(), 0o600); err != nil {
-		return view.Errorf("kv.store.write", "securing store: %v", err)
-	}
-	if err := os.Rename(tmp.Name(), storePath()); err != nil {
-		return view.Errorf("kv.store.write", "replacing store: %v", err)
 	}
 	return nil
 }
@@ -540,6 +689,40 @@ func writeAtomic(data []byte) *view.Error {
 func notFound(key string) *view.Error {
 	return view.Errorf("kv.notfound", "no key %q", key).
 		WithHint("run `rta kv list` to see every key")
+}
+
+// emptyList says why the list is empty, which is a different sentence for an
+// empty store and for a filter that matched nothing. Answering both with
+// "no keys stored yet" sent people off to re-add a secret that was there all
+// along, one `--kind json` away.
+func emptyList(stored int, kind, match string) string {
+	if stored == 0 {
+		return "No keys stored yet — add one with: rta kv set <key> <value>"
+	}
+	var narrowed []string
+	if kind != "" {
+		narrowed = append(narrowed, "of kind "+kind)
+	}
+	if match != "" {
+		narrowed = append(narrowed, fmt.Sprintf("matching %q", match))
+	}
+	return fmt.Sprintf("No key %s. The store holds %s — `rta kv list` shows every one.",
+		strings.Join(narrowed, " "), plural(stored, "key"))
+}
+
+// plural counts a noun, matching builtin/audit's helper of the same name.
+// "locked to 2 key(s)" is the shape of message that gets written once and
+// read every day, and a store whose status line cannot count is not the
+// thing to look careless about.
+func plural(n int, noun string) string {
+	if n == 1 {
+		return "1 " + noun
+	}
+	if len(noun) > 1 && strings.HasSuffix(noun, "y") &&
+		!strings.ContainsRune("aeiou", rune(noun[len(noun)-2])) {
+		return fmt.Sprintf("%d %sies", n, noun[:len(noun)-1])
+	}
+	return fmt.Sprintf("%d %ss", n, noun)
 }
 
 // runList never touches a value: only key names, kinds, sizes, descriptions
@@ -550,6 +733,11 @@ func runList(_ context.Context, req plugin.Request) (view.View, error) {
 		return nil, verr
 	}
 	kindFilter := strings.TrimSpace(req.String("kind"))
+	// Matched against the description as well as the name, because the name
+	// is the half you have forgotten: "which one was the deploy key for the
+	// staging cluster" is answerable from what you wrote down at the time
+	// and not from `prod-deploy-key`.
+	match := strings.ToLower(strings.TrimSpace(req.String("match")))
 	detail := req.Bool("detail")
 
 	names := make([]string, 0, len(s.Entries))
@@ -557,14 +745,15 @@ func runList(_ context.Context, req plugin.Request) (view.View, error) {
 		if kindFilter != "" && e.Kind != kindFilter {
 			continue
 		}
+		if match != "" && !strings.Contains(strings.ToLower(k), match) &&
+			!strings.Contains(strings.ToLower(e.Description), match) {
+			continue
+		}
 		names = append(names, k)
 	}
 	sort.Strings(names)
 	if len(names) == 0 {
-		if kindFilter != "" {
-			return view.Text{Body: fmt.Sprintf("No %s entries — `rta kv list` shows every kind.", kindFilter)}, nil
-		}
-		return view.Text{Body: "No keys stored yet — add one with: rta kv set <key> <value>"}, nil
+		return view.Text{Body: emptyList(len(s.Entries), kindFilter, req.String("match"))}, nil
 	}
 
 	cols := []view.Column{
@@ -617,6 +806,10 @@ func runShow(_ context.Context, req plugin.Request) (view.View, error) {
 	pairs = append(pairs,
 		view.Pair{Key: "updated", Value: itemstore.Age(e.Updated)},
 		view.Pair{Key: "created", Value: itemstore.Age(e.Created)},
+		// Both ways out, with the one that shows nothing first: the page
+		// you are on exists because you did not want the value on screen,
+		// and offering only `kv get` from it was an odd thing to end on.
+		view.Pair{Key: "copy", Value: "rta kv copy " + key},
 		view.Pair{Key: "reveal", Value: "rta kv get " + key},
 	)
 	return view.KeyValue{Pairs: pairs}, nil
@@ -661,34 +854,29 @@ func writeOut(path string, data []byte) *view.Error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return view.Errorf("kv.out.unwritable", "creating %s: %v", dir, err)
 	}
-	tmp, err := os.CreateTemp(dir, filepath.Base(path)+"-*")
-	if err != nil {
+	if err := atomicfile.Write(path, data, 0o600); err != nil {
 		return view.Errorf("kv.out.unwritable", "writing %s: %v", path, err)
-	}
-	defer os.Remove(tmp.Name())
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return view.Errorf("kv.out.unwritable", "writing %s: %v", path, err)
-	}
-	if err := tmp.Close(); err != nil {
-		return view.Errorf("kv.out.unwritable", "closing %s: %v", path, err)
-	}
-	if err := os.Chmod(tmp.Name(), 0o600); err != nil {
-		return view.Errorf("kv.out.unwritable", "securing %s: %v", path, err)
-	}
-	if err := os.Rename(tmp.Name(), path); err != nil {
-		return view.Errorf("kv.out.unwritable", "replacing %s: %v", path, err)
 	}
 	return nil
 }
 
-// envName turns a key into an environment variable name: db-password
-// becomes DB_PASSWORD. A leading digit gets a guard underscore, since a
-// shell will not accept a name starting with one.
+// envName turns a prefix and a key into an environment variable name:
+// prefix "APP_", key "db-password" becomes APP_DB_PASSWORD. A leading digit
+// gets a guard underscore, since a shell will not accept a name starting
+// with one.
+//
+// Both halves go through the identical character whitelist. Key alone used
+// to be filtered while prefix was written verbatim — found by review
+// (PROJECT.md D74): a prefix containing a newline broke `kv env`'s output
+// into extra lines, one of which could be a live command substitution,
+// directly against the eval "$(rta kv env …)" usage this capability's own
+// Description recommends. Filtering the whole name together, rather than
+// filtering prefix and key separately and concatenating the results, is
+// what keeps a boundary-straddling injection (a prefix ending mid-escape)
+// from reopening the same hole a piece at a time.
 func envName(prefix, key string) string {
 	var sb strings.Builder
-	sb.WriteString(prefix)
-	for _, r := range strings.ToUpper(key) {
+	for _, r := range strings.ToUpper(prefix + key) {
 		switch {
 		case r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '_':
 			sb.WriteRune(r)
@@ -795,6 +983,11 @@ func runSet(_ context.Context, req plugin.Request) (view.View, error) {
 		return view.Text{Body: fmt.Sprintf("would set %q (%s, %s)", key, kind, format.Bytes(uint64(len(value))))}, nil
 	}
 
+	unlock, verr := lockStore()
+	if verr != nil {
+		return nil, verr
+	}
+	defer unlock()
 	s, verr := load(req)
 	if verr != nil {
 		return nil, verr
@@ -829,10 +1022,74 @@ func runSet(_ context.Context, req plugin.Request) (view.View, error) {
 	return view.Text{Body: msg}, nil
 }
 
+// runRename moves an entry to another name inside the store.
+//
+// Nothing about the secret changes, and that is the point: the value is never
+// decrypted into anything but this process's memory, so unlike the get-set-rm
+// dance it replaces, no part of it reaches a shell's history or another
+// command's argv.
+//
+// The timestamps travel unchanged, including Updated. A name is not a
+// rotation, and `kv list`'s Updated column is the one place you can see that
+// a token has been sitting there for fourteen months — a rename that reset it
+// would quietly answer "yesterday" to the only question that column exists
+// to answer.
+func runRename(_ context.Context, req plugin.Request) (view.View, error) {
+	from := strings.TrimSpace(req.String("key"))
+	to := strings.TrimSpace(req.String("new-name"))
+	if from == "" || to == "" {
+		return nil, view.Errorf("kv.rename.noname", "rename needs a key and a new name").
+			WithHint("rta kv rename <key> <new-name>")
+	}
+	if from == to {
+		return nil, view.Errorf("kv.rename.samename", "%q is already its name", from)
+	}
+	if verr := refuseSilentIdentity(req); verr != nil {
+		return nil, verr
+	}
+	unlock, verr := lockStore()
+	if verr != nil {
+		return nil, verr
+	}
+	defer unlock()
+	s, verr := load(req)
+	if verr != nil {
+		return nil, verr
+	}
+	e, ok := s.Entries[from]
+	if !ok {
+		return nil, notFound(from)
+	}
+	// Refused, never confirmed. The overwrite would destroy the secret under
+	// the target name with no history and no undo, which is exactly what
+	// kv.rm is Destructive for — and a grant scoped to the key being renamed
+	// says nothing at all about the one being clobbered.
+	if _, taken := s.Entries[to]; taken {
+		return nil, view.Errorf("kv.rename.taken", "%q already exists", to).
+			WithHint("renaming onto it would destroy the secret it holds — remove that first: rta kv rm " + to)
+	}
+	if req.DryRun {
+		return view.Text{Body: fmt.Sprintf("would rename %q to %q (%s, %s)",
+			from, to, e.Kind, format.Bytes(uint64(len(e.Value))))}, nil
+	}
+	delete(s.Entries, from)
+	s.Entries[to] = e
+	if verr := save(req, s); verr != nil {
+		return nil, verr
+	}
+	return view.Text{Body: fmt.Sprintf("renamed %q to %q — anything still asking for %q will not find it",
+		from, to, from)}, nil
+}
+
 func runRemove(_ context.Context, req plugin.Request) (view.View, error) {
 	if verr := refuseSilentIdentity(req); verr != nil {
 		return nil, verr
 	}
+	unlock, verr := lockStore()
+	if verr != nil {
+		return nil, verr
+	}
+	defer unlock()
 	s, verr := load(req)
 	if verr != nil {
 		return nil, verr
@@ -935,6 +1192,11 @@ func runRekey(_ context.Context, req plugin.Request) (view.View, error) {
 				"or --recipient ~/.ssh/id_ed25519 (one you already have)")
 	}
 
+	unlock, verr := lockStore()
+	if verr != nil {
+		return nil, verr
+	}
+	defer unlock()
 	// Read it first, with whatever opens it today. Generating a key changes
 	// what `--identity`-less commands resolve to, so the order matters: a
 	// store you cannot open is a store you cannot re-key, and finding that
@@ -1020,30 +1282,30 @@ func dropped(want, stored []string) []string {
 }
 
 func rekeyPreview(generate, only bool, want, stored []string) string {
-	body := fmt.Sprintf("would re-encrypt the store to %d key(s)", len(want)+boolToInt(generate))
+	body := "would re-encrypt the store to " + plural(len(want)+boolToInt(generate), "key")
 	if generate {
 		body += "\ngenerating a key at " + defaultIdentity()
 	}
 	if only {
 		if gone := dropped(want, stored); len(gone) > 0 && !generate {
-			body += fmt.Sprintf("\ndropping %d reader(s) — they could no longer open it", len(gone))
+			body += "\ndropping " + plural(len(gone), "reader") + " — they could no longer open it"
 		} else if len(stored) > 0 && generate {
-			body += fmt.Sprintf("\ndropping %d reader(s) — only the new key would open it", len(stored))
+			body += "\ndropping " + plural(len(stored), "reader") + " — only the new key would open it"
 		}
 	}
 	return body
 }
 
 func rekeySummary(generated string, want, stored []string) string {
-	body := fmt.Sprintf("%d key(s) can open the store — `rta kv recipients` lists them", len(want))
+	body := plural(len(want), "key") + " can open the store — `rta kv recipients` lists them"
 	if generated != "" {
 		body += "\n\ngenerated a key at " + generated + " (mode 0600)\n" +
 			"back it up: losing it loses every secret it is the only key to\n" +
 			"it is found automatically, so nothing needs a flag"
 	}
 	if gone := dropped(want, stored); len(gone) > 0 {
-		body += fmt.Sprintf("\n\ndropped %d reader(s): they cannot open the store from now on.\n"+
-			"copies made before now are unaffected — re-keying changes the lock, not the backups.", len(gone))
+		body += "\n\ndropped " + plural(len(gone), "reader") + ": they cannot open the store from now on.\n" +
+			"copies made before now are unaffected — re-keying changes the lock, not the backups."
 	}
 	return body
 }
@@ -1082,7 +1344,8 @@ func runStatus(ctx context.Context, req plugin.Request) (view.View, error) {
 		return nil, verr
 	}
 	if mode == modeKeys {
-		pairs = append(pairs, view.Pair{Key: "locked to", Value: fmt.Sprintf("%d key(s) — see `rta kv recipients`", len(specs))})
+		pairs = append(pairs, view.Pair{Key: "locked to",
+			Value: plural(len(specs), "key") + " — see `rta kv recipients`"})
 	} else {
 		pairs = append(pairs, view.Pair{Key: "locked with", Value: "a passphrase"})
 	}
@@ -1114,18 +1377,18 @@ func runStatus(ctx context.Context, req plugin.Request) (view.View, error) {
 // blocks on a passphrase is not a status page.
 func detailedStatus(ctx context.Context, req plugin.Request, summary view.KeyValue, mode keyMode) view.View {
 	p := plugin.NewPage(ctx, req)
-	p.Put("store", summary)
+	p.PutAs("store", "store", summary)
 	if mode == modeKeys {
-		p.Add("recipients", runRecipients, nil)
+		p.AddAs("recipients", "recipients", runRecipients, plugin.Read, nil)
 	}
-	v, err := p.Run(runList, nil)
+	v, err := p.Run(runList, plugin.Read, nil)
 	if err != nil {
 		ve := view.AsError(err, "kv.status.locked")
-		p.Put("keys", view.Text{Body: "Locked — the inventory needs the store open, and nothing here " +
+		p.PutAs("keys", "keys", view.Text{Body: "Locked — the inventory needs the store open, and nothing here " +
 			"can open it without asking.\n\n" + ve.Message + "\n\nRun `rta kv list` once a key is at hand."})
 		return p.View()
 	}
-	p.Put("keys", v)
+	p.PutAs("keys", "keys", v)
 	return p.View()
 }
 
@@ -1255,7 +1518,27 @@ func Unlockable() (bool, string) {
 		// environment can use: nobody is there to type its passphrase, so the
 		// honest answer is no — unless the passphrase was inherited too.
 		usable := func(p string) bool { return !lockedKey(p) || os.Getenv(passphraseEnv) != "" }
+		// A set identityEnv wins unconditionally here, the same way
+		// identityPath resolves it for a real decrypt — it is never a
+		// fallback-if-usable check, so an existence guard cannot fall
+		// through to defaultIdentity() either; a real kv.get with the same
+		// environment would fail outright on a bad path, not quietly try
+		// another key.
+		//
+		// The guard itself: lockedKey treats a file it cannot read —
+		// missing, permission-denied, a stale path — as "not locked", since
+		// its own job is only to distinguish locked from unlocked among
+		// files that exist. Without it, a stale or typo'd RTA_KV_IDENTITY
+		// read as "usable", which is what `rta doctor` uses this for —
+		// telling an operator whether an MCP agent's inherited environment
+		// can decrypt the store unattended — even though a real kv.get
+		// against the same environment would fail with
+		// kv.identity.unreadable. Found by review (PROJECT.md D74); mirrors
+		// the guard LockedIdentity, two functions below, already had.
 		if p := os.Getenv(identityEnv); p != "" {
+			if !fileExists(expandHome(p)) {
+				return false, identityEnv
+			}
 			return usable(p), identityEnv
 		}
 		if p := defaultIdentity(); fileExists(p) {

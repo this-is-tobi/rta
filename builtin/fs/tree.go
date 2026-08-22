@@ -51,7 +51,11 @@ func runTree(ctx context.Context, req plugin.Request) (view.View, error) {
 		Detail:   path,
 		Children: children,
 	}
-	return view.Tree{Roots: []view.Node{root}}, nil
+	tree := view.Tree{Roots: []view.Node{root}}
+	if req.Bool("detail") {
+		return treeDetail(ctx, req, path, tree, b), nil
+	}
+	return tree, nil
 }
 
 type treeBuilder struct {
@@ -59,6 +63,22 @@ type treeBuilder struct {
 	limit    int
 	hidden   bool
 	device   uint64
+	stats    treeStats
+}
+
+// treeStats is what the walk learned on its way past. The compact tree says
+// each of these in the branch it happened in — "3 more", "12 hidden (--all)"
+// — which is the right place to read it while looking at that branch and the
+// wrong place to answer "am I looking at the whole directory". A person who
+// asks for the detail page is asking the second question.
+type treeStats struct {
+	dirs, files, links int
+	hidden             int // skipped for being dotfiles
+	truncated          int // cut by --limit
+	notDescended       int // directories at --depth
+	beyond             int // entries inside those
+	unreadable         int
+	otherFS            int
 }
 
 func (b *treeBuilder) sameDevice(info os.FileInfo) bool {
@@ -81,6 +101,7 @@ func (b *treeBuilder) children(ctx context.Context, dir string, depth int) []vie
 	}
 	items, err := os.ReadDir(dir)
 	if err != nil {
+		b.stats.unreadable++
 		return []view.Node{{Label: "…", Detail: "unreadable: " + reason(err)}}
 	}
 
@@ -92,6 +113,7 @@ func (b *treeBuilder) children(ctx context.Context, dir string, depth int) []vie
 		kept = append(kept, item)
 	}
 	hiddenCount := len(items) - len(kept)
+	b.stats.hidden += hiddenCount
 
 	// Directories first, then by name: the order a person reads a listing in,
 	// and the order every file browser has used for thirty years.
@@ -108,6 +130,7 @@ func (b *treeBuilder) children(ctx context.Context, dir string, depth int) []vie
 	if b.limit > 0 && len(shown) > b.limit {
 		truncated = len(shown) - b.limit
 		shown = shown[:b.limit]
+		b.stats.truncated += truncated
 	}
 
 	nodes := make([]view.Node, 0, len(shown)+2)
@@ -115,25 +138,31 @@ func (b *treeBuilder) children(ctx context.Context, dir string, depth int) []vie
 		full := filepath.Join(dir, item.Name())
 		info, err := os.Lstat(full)
 		if err != nil {
+			b.stats.unreadable++
 			nodes = append(nodes, view.Node{Label: item.Name(), Detail: "unreadable"})
 			continue
 		}
 		switch {
 		case info.Mode()&os.ModeSymlink != 0:
+			b.stats.links++
 			target, err := os.Readlink(full)
 			if err != nil {
 				target = "?"
 			}
 			nodes = append(nodes, view.Node{Label: item.Name(), Detail: "→ " + target})
 		case info.IsDir():
+			b.stats.dirs++
 			node := view.Node{Label: item.Name() + "/"}
 			switch {
 			case !b.sameDevice(info):
+				b.stats.otherFS++
 				node.Detail = "another filesystem"
 			case depth >= b.maxDepth:
 				// Not descending is not the same as being empty, and the
 				// difference is the whole reason to say how many are down there.
 				if n := countEntries(full, b.hidden); n > 0 {
+					b.stats.notDescended++
+					b.stats.beyond += n
 					node.Detail = fmt.Sprintf("%d entries", n)
 				}
 			default:
@@ -141,6 +170,7 @@ func (b *treeBuilder) children(ctx context.Context, dir string, depth int) []vie
 			}
 			nodes = append(nodes, node)
 		default:
+			b.stats.files++
 			nodes = append(nodes, view.Node{Label: item.Name(), Detail: humanBytes(info.Size())})
 		}
 	}
@@ -290,4 +320,129 @@ func (c *ctxReader) Read(p []byte) (int, error) {
 		return 0, err
 	}
 	return c.r.Read(p)
+}
+
+// treeDetail is fs.tree with the whole screen: the same tree, plus the two
+// things a bounded walk owes the person reading it.
+//
+// The first is what the tree is a sample of. Every other plugin's dashboard
+// tile expands into a composed page and this one did not, which left fs as
+// the only tile where opening it full-screen showed exactly what the tile
+// already showed.
+//
+// The second is what is missing, gathered into one place. The compact tree
+// already says "3 more" and "12 hidden (--all)" in the branch each applies
+// to, and that is the right place to read it while looking at that branch.
+// It is the wrong place to answer "is this the whole directory", because
+// answering that means finding every one of those markers first — and the
+// markers for depth, permissions and filesystem boundaries look nothing
+// alike. A reader who does not find them concludes the tree is complete,
+// which is the one conclusion a bounded walk must never invite.
+//
+// It composes fs.usage, which an earlier version of this comment argued
+// against, and the argument was wrong in a specific way worth recording: it
+// treated NoPreview as "never run this from anywhere". NoPreview means do not
+// run me *unprompted* — the dashboard refreshes on a timer, and a recursive
+// scan every cycle is a real cost nobody asked for. A detail page is the
+// opposite case. Somebody pressed enter.
+//
+// The objection underneath it was sound, and is answered by passing the bound
+// rather than by dropping the section: fs.usage descends until maxDepth, so
+// handing it this request's own --depth makes its walk the same shape as the
+// walk that just happened. What would have been wrong is composing it
+// unbounded.
+//
+// The rest comes from the walk that already happened, so the page costs one
+// extra scan of a subtree already visited, not a scan of the world.
+func treeDetail(ctx context.Context, req plugin.Request, path string, tree view.Tree, b *treeBuilder) view.View {
+	s := b.stats
+
+	shown := fmt.Sprintf("%d directories · %d files", s.dirs, s.files)
+	if s.links > 0 {
+		shown += fmt.Sprintf(" · %d symlinks", s.links)
+	}
+	limit := "all entries"
+	if b.limit > 0 {
+		limit = fmt.Sprintf("up to %d entries", b.limit)
+	}
+	summary := []view.Pair{
+		{Key: "path", Value: path},
+		{Key: "showing", Value: shown},
+		{Key: "bounded by", Value: fmt.Sprintf("%s, %s per directory", levels(b.maxDepth), limit)},
+	}
+
+	var missing []view.Pair
+	if s.beyond > 0 {
+		missing = append(missing, view.Pair{
+			Key: "below --depth",
+			Value: fmt.Sprintf("%d entries in %d directories the walk stopped at",
+				s.beyond, s.notDescended),
+		})
+	}
+	if s.truncated > 0 {
+		missing = append(missing, view.Pair{
+			Key:   "past --limit",
+			Value: fmt.Sprintf("%d entries trimmed from the directories that hold more", s.truncated),
+		})
+	}
+	if s.hidden > 0 {
+		noun := "dotfiles"
+		if s.hidden == 1 {
+			noun = "dotfile"
+		}
+		missing = append(missing, view.Pair{
+			Key:   "hidden",
+			Value: fmt.Sprintf("%d %s — pass --all to include them", s.hidden, noun),
+		})
+	}
+	if s.otherFS > 0 {
+		missing = append(missing, view.Pair{
+			Key: "another filesystem",
+			Value: fmt.Sprintf("%d mount points, not crossed — so a scan cannot wander onto a network mount",
+				s.otherFS),
+		})
+	}
+	if s.unreadable > 0 {
+		missing = append(missing, view.Pair{
+			Key:   "unreadable",
+			Value: fmt.Sprintf("%d entries this user cannot read", s.unreadable),
+		})
+	}
+
+	// PutAs rather than Put throughout: Put leaves the section id empty, and
+	// the id is the handle a script or an agent addresses a section by now
+	// that it is emitted in JSON. The title is prose and free to change; an
+	// id derived from it would not be stable, which is why Page makes this
+	// opt-in rather than deriving one.
+	p := plugin.NewPage(ctx, req)
+	p.PutAs("summary", "summary", view.KeyValue{Pairs: summary})
+	p.PutAs("tree", "tree", tree)
+	if len(missing) == 0 {
+		// Stated rather than left to an absent heading: "complete" and "this
+		// build forgot to count" render identically as nothing at all.
+		p.PutAs("not-shown", "not shown", view.Text{Body: "Nothing — this is every entry under " + path + "."})
+	} else {
+		p.PutAs("not-shown", "not shown", view.KeyValue{Pairs: missing})
+	}
+	// Bounded to this request's own depth, so the section answers "what is
+	// using the space in what I am looking at" rather than starting an
+	// unbounded scan from a keypress. Its own limit, because usage ranks
+	// biggest-first and a tree's per-directory entry cap means something else.
+	p.AddAs("largest", "largest entries", runUsage, plugin.Read, map[string]any{
+		"path":  path,
+		"depth": req.Int("depth"),
+		"limit": detailUsageTop,
+	})
+	return p.View()
+}
+
+// detailUsageTop bounds the biggest-entries section: enough to show where the
+// space went, short enough that the tree above it stays on the page.
+const detailUsageTop = 10
+
+func levels(n int) string {
+	if n == 1 {
+		return "1 level"
+	}
+	return fmt.Sprintf("%d levels", n)
 }

@@ -1,0 +1,94 @@
+# The cluster ADR 0018's live tests run against.
+#
+#   kind create cluster --name rta-lab
+#   kubectl --context kind-rta-lab apply -f docs/examples/kube-lab.yaml
+#   kubectl --context kind-rta-lab -n databases rollout status deploy/postgres
+#
+# A PostgreSQL, the Secret holding its credentials, and a ServiceAccount that
+# may port-forward and may not read secrets — which is what makes the
+# "different permission" hint in tunnel.secretFailed a claim about a cluster
+# rather than about a string.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: databases
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-creds
+  namespace: databases
+stringData:
+  username: appuser
+  password: "s3cr3t-from-k8s"
+  database: app
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: databases
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: postgres}
+  template:
+    metadata:
+      labels: {app: postgres}
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16
+          env:
+            - {name: POSTGRES_USER, valueFrom: {secretKeyRef: {name: postgres-creds, key: username}}}
+            - {name: POSTGRES_PASSWORD, valueFrom: {secretKeyRef: {name: postgres-creds, key: password}}}
+            - {name: POSTGRES_DB, valueFrom: {secretKeyRef: {name: postgres-creds, key: database}}}
+            - {name: PGDATA, value: /var/lib/postgresql/data/pgdata}
+          ports: [{containerPort: 5432}]
+          volumeMounts: [{name: data, mountPath: /var/lib/postgresql/data}]
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: databases
+spec:
+  selector: {app: postgres}
+  ports: [{port: 5432, targetPort: 5432}]
+---
+# The forward-only identity. Create a context for it with:
+#
+#   kubectl -n databases create token forwarder --duration=1h
+#
+# then `kubectl config set-credentials`/`set-context` against that token, and
+# point RTA_TEST_KUBE_DENIED at the result.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: forwarder
+  namespace: databases
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: forward-only
+  namespace: databases
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "services"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods/portforward"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: forward-only
+  namespace: databases
+subjects:
+  - {kind: ServiceAccount, name: forwarder, namespace: databases}
+roleRef: {kind: Role, name: forward-only, apiGroup: rbac.authorization.k8s.io}

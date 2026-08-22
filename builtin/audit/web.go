@@ -32,15 +32,15 @@ const hstsPreloadMinAge = 31536000 // 1 year
 
 // Groups order the detail page and name its sections. A check belongs to
 // exactly one, decided where the check is written rather than inferred.
-const (
-	grpTransport = "transport & tls"
-	grpHeaders   = "security headers"
-	grpCORS      = "cross-origin"
-	grpCookies   = "cookies"
-	grpExposure  = "information exposure"
+var (
+	grpTransport = group{"transport", "transport & tls"}
+	grpHeaders   = group{"headers", "security headers"}
+	grpCORS      = group{"cors", "cross-origin"}
+	grpCookies   = group{"cookies", "cookies"}
+	grpExposure  = group{"exposure", "information exposure"}
 )
 
-var groupOrder = []string{grpTransport, grpHeaders, grpCORS, grpCookies, grpExposure}
+var groupOrder = []group{grpTransport, grpHeaders, grpCORS, grpCookies, grpExposure}
 
 // runWeb performs a single HTTPS request and grades what the host reveals.
 // One round trip yields the response headers, the negotiated TLS state and
