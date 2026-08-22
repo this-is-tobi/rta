@@ -59,9 +59,43 @@ var (
 	bindMove   = binding{display: "[ ]", keys: []string{"[", "]", "<", ">"}, label: "move", rank: rankExtra}
 	bindHide   = binding{display: "H", keys: []string{"H"}, label: "hide", rank: rankExtra}
 	bindPlugin = binding{display: "p", keys: []string{"p"}, label: "plugins", rank: rankExtra}
-	bindBrowse = binding{display: "b", keys: []string{"b", ":"}, label: "browse", rank: rankExtra}
-	bindSearch = binding{display: "/", keys: []string{"/"}, label: "search", rank: rankExtra}
-	bindToggle = binding{display: "space", keys: []string{" ", "space", "x"}, label: "show/hide", rank: rankPrimary}
+	bindTheme  = binding{display: "t", keys: []string{"t"}, label: "theme", rank: rankExtra}
+	bindConfig = binding{display: "c", keys: []string{"c"}, label: "configure", rank: rankAction}
+	// shift+enter accepts whatever is currently bound across every
+	// remaining field, exactly as pressing enter on each in turn would —
+	// the shortcut for a form where the defaults are already fine and the
+	// rest is not worth tabbing through. Every huh field type answers to
+	// plain "enter" for its own Next/Submit key (charm.land/huh/v2's
+	// default keymap), and bubbletea v2 requests basic key disambiguation
+	// from the terminal by default — the doc for tea.KeyboardEnhancements
+	// names "shift+enter" as one of the keys this makes reachable with no
+	// further setup. Where the terminal does not support it, this key
+	// simply never arrives — plain enter, field by field, still works
+	// exactly as it does today.
+	//
+	// alt+enter is a deliberate second way in, not a display alias — VS
+	// Code's integrated terminal needs its own setting for real
+	// shift+enter disambiguation (terminal.integrated.enableKittyKeyboard-
+	// Protocol), and even with that on, a shift+enter keybinding installed
+	// by Claude Code's own /terminal-setup (workbench.action.terminal.
+	// sendSequence, sending literal ESC+CR) claims the key first regardless
+	// — a real, reported conflict (PROJECT.md D76). ESC immediately
+	// followed by one more byte is the older, universal "meta sends
+	// escape" convention every terminal already speaks with zero protocol
+	// negotiation, and github.com/charmbracelet/ultraviolet (bubbletea's
+	// own input decoder) already parses that shape as alt+<key> — ESC+CR
+	// decodes to alt+enter (`KeyEnter = rune(ansi.CR)`, decoder.go's
+	// two-byte ESC-prefix case), a real, distinct key event, not two. That
+	// is also exactly what "Option as Meta" produces on a terminal a
+	// person enables it on by hand. Recognizing it here means the fallback
+	// this feature already had — plain enter, field by field — has one
+	// more terminal that needs no setup at all on rta's side, at the cost
+	// of nothing: no plain "enter" ever carries ModAlt, so this can never
+	// fire from an ordinary keypress.
+	bindFastSubmit = binding{display: "⇧enter", keys: []string{"shift+enter", "alt+enter"}, label: "submit", rank: rankExtra}
+	bindBrowse     = binding{display: "b", keys: []string{"b", ":"}, label: "browse", rank: rankExtra}
+	bindSearch     = binding{display: "/", keys: []string{"/"}, label: "search", rank: rankExtra}
+	bindToggle     = binding{display: "space", keys: []string{" ", "space", "x"}, label: "show/hide", rank: rankPrimary}
 
 	// One notation for moving a cursor, everywhere. The dashboard is a grid
 	// and the others are columns, but "the arrow keys move the thing you are

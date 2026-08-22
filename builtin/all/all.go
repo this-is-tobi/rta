@@ -12,10 +12,13 @@ import (
 	"github.com/this-is-tobi/rule-them-all/builtin/audit"
 	"github.com/this-is-tobi/rule-them-all/builtin/cert"
 	"github.com/this-is-tobi/rule-them-all/builtin/codec"
+	rtadebug "github.com/this-is-tobi/rule-them-all/builtin/debug"
 	rtafs "github.com/this-is-tobi/rule-them-all/builtin/fs"
 	"github.com/this-is-tobi/rule-them-all/builtin/gen"
+	rtagit "github.com/this-is-tobi/rule-them-all/builtin/git"
 	"github.com/this-is-tobi/rule-them-all/builtin/grant"
 	rtahttp "github.com/this-is-tobi/rule-them-all/builtin/http"
+	"github.com/this-is-tobi/rule-them-all/builtin/keys"
 	"github.com/this-is-tobi/rule-them-all/builtin/kv"
 	rtanet "github.com/this-is-tobi/rule-them-all/builtin/net"
 	"github.com/this-is-tobi/rule-them-all/builtin/note"
@@ -35,11 +38,14 @@ func Registry() (*registry.Registry, error) {
 		rtahttp.Plugin(),
 		audit.Plugin(),
 		rtafs.Plugin(),
+		rtagit.Plugin(),
 		todo.Plugin(),
 		note.Plugin(),
 		kv.Plugin(),
 		gen.Plugin(),
 		codec.Plugin(),
+		rtadebug.Plugin(),
+		keys.Plugin(),
 		// grant is about the others: it is handed the catalogue so what can
 		// be granted is derived from what is registered, never listed twice.
 		grant.Plugin(reg.Capabilities),

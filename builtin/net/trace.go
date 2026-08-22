@@ -298,7 +298,7 @@ func runTrace(ctx context.Context, req plugin.Request) (view.View, error) {
 			Value: fmt.Sprintf("stopped after %d hops without reaching the target", len(hops))})
 	}
 	return view.Sections{Items: []view.Section{
-		{Title: "trace", View: summary},
-		{Title: "route", View: t},
+		{ID: "trace", Title: "trace", View: summary},
+		{ID: "route", Title: "route", View: t},
 	}}, nil
 }

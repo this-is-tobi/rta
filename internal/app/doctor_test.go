@@ -10,6 +10,7 @@ import (
 
 	"github.com/this-is-tobi/rule-them-all/builtin/kv"
 	"github.com/this-is-tobi/rule-them-all/internal/grant"
+	"github.com/this-is-tobi/rule-them-all/internal/render/theme"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
@@ -101,7 +102,7 @@ func check(t *testing.T, rows map[string][2]string, name, wantStatus string, wan
 func TestDoctorReportsAHealthyEmptyMachine(t *testing.T) {
 	isolate(t)
 	rows := report(t)
-	check(t, rows, "built-ins", "ok", "capabilities")
+	check(t, rows, "capabilities", "ok", "capabilities")
 	check(t, rows, "config", "info", "zero-config")
 	check(t, rows, "agent grants", "ok", "none active")
 	check(t, rows, "kv store", "ok", "none yet")
@@ -157,4 +158,29 @@ func TestDoctorSurvivesACorruptGrantsFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	check(t, report(t), "agent grants", "error", "")
+}
+
+// The theme row is SetThemeProblems' own reason to exist: theme.Apply
+// already fell back to the built-in for a bad field before this is ever
+// reached, so the row is not "did the color apply" — it always does — it is
+// "why is the color on screen not the one written down", which nothing else
+// says.
+func TestDoctorReportsAThemeProblem(t *testing.T) {
+	isolate(t)
+	t.Cleanup(func() { SetThemeProblems(nil) })
+	SetThemeProblems([]theme.Problem{{
+		Field: "primary", Reason: `"not-a-color" is not a color`, Hint: "the form is #rrggbb",
+	}})
+	check(t, report(t), "theme", "warn", "primary")
+}
+
+// And nothing configured earns no row at all — the same quiet default every
+// other doctor check gives a healthy machine.
+func TestDoctorSaysNothingAboutThemeWhenNothingWasOverridden(t *testing.T) {
+	isolate(t)
+	t.Cleanup(func() { SetThemeProblems(nil) })
+	SetThemeProblems(nil)
+	if rows := report(t); rows["theme"] != [2]string{} {
+		t.Errorf("theme row = %v, want none", rows["theme"])
+	}
 }

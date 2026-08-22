@@ -298,11 +298,11 @@ func showSections(s itemstore.Store, it itemstore.Item) view.Sections {
 		body = view.Text{Body: fmt.Sprintf("This note is empty — write it with: rta note edit %d --body \"...\"", it.ID)}
 	}
 	sec := view.Sections{Items: []view.Section{
-		{Title: "note", View: kv},
-		{Title: "content", View: body},
+		{ID: "note", Title: "note", View: kv},
+		{ID: "content", Title: "content", View: body},
 	}}
 	if refs := crossRefs(s, it); len(refs.Rows) > 0 {
-		sec.Items = append(sec.Items, view.Section{Title: "references", View: refs})
+		sec.Items = append(sec.Items, view.Section{ID: "references", Title: "references", View: refs})
 	}
 	return sec
 }

@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"github.com/this-is-tobi/rule-them-all/internal/config"
 	"sort"
 	"strings"
 
@@ -46,9 +47,12 @@ func newExplainCommand(reg *registry.Registry, opts *globalOpts) *cobra.Command 
 			if !ok {
 				ve := capabilityNotFound(reg, args[0])
 				_ = cli.RenderError(cmd.ErrOrStderr(), ve, renderOpts)
-				return ve
+				// Marked, because it has just been printed. Returning it bare
+				// made `rta explain <typo>` print the same error twice, in two
+				// slightly different layouts — this one, then main's.
+				return Rendered(ve)
 			}
-			return cli.Render(cmd.OutOrStdout(), cardView(c), renderOpts)
+			return cli.Render(cmd.OutOrStdout(), cardView(reg, c), renderOpts)
 		},
 	}
 }
@@ -66,7 +70,7 @@ func catalogView(reg *registry.Registry) view.View {
 	return t
 }
 
-func cardView(c plugin.Capability) view.View {
+func cardView(reg *registry.Registry, c plugin.Capability) view.View {
 	pairs := []view.Pair{
 		{Key: "id", Value: c.ID},
 		{Key: "summary", Value: c.Summary},
@@ -74,6 +78,17 @@ func cardView(c plugin.Capability) view.View {
 		{Key: "idempotent", Value: fmt.Sprintf("%t", c.Idempotent)},
 		{Key: "cli", Value: cliForm(c)},
 		{Key: "mcp-tool", Value: mcp.ToolName(c.ID)},
+	}
+	// What it takes for an agent to reach this at all, before any grant: the
+	// operator's flag, spelled out. An external plugin's destructive
+	// capability is pinned to that binary's digest, and a control whose
+	// correct invocation has to be computed from a hash is a control people
+	// turn off — so it is printed rather than described.
+	if flag := mcpOptionsForExplain(reg).AllowFlag(c); flag != "" {
+		pairs = append(pairs, view.Pair{
+			Key:   "mcp exposure",
+			Value: "off by default — `rta mcp serve " + flag + "`",
+		})
 	}
 	if grant.Required(c) {
 		// The safety class alone no longer says what an agent may do, so the
@@ -104,11 +119,52 @@ func cardView(c plugin.Capability) view.View {
 			// Worth stating plainly: this input exists here and not over MCP,
 			// which is otherwise a surprising asymmetry to discover by hand.
 			detail += ", local (never offered to MCP callers)"
+			// The variable name too — but only for the inputs that actually
+			// read one. A Local input is the way a plugin gets a credential and
+			// "how do I give this thing its password" must be answerable from
+			// the page describing it rather than from somebody's README. The
+			// name, never the value.
+			//
+			// Gated on EnvFallback because Resolve is (resolve.go's env loop,
+			// D74): Local alone means "no remote caller may supply this", and
+			// says nothing about where it comes from. Printing the variable for
+			// every Local input was true while the two were the same set, and
+			// D94 made them different — marking eleven connection inputs across
+			// pg, s3 and vault Local without making them EnvFallback, on
+			// purpose, because a field that merely chooses a destination must
+			// not be fillable from an ambient variable. So `rta explain
+			// pg.status` began telling operators that --host comes from
+			// $RTA_PG_HOST, which nothing reads. A page that documents a
+			// credential channel that does not exist is worse than one that
+			// omits it: it is the page somebody consults when the connection is
+			// already failing.
+			if f.EnvFallback {
+				detail += ", from $" + plugin.LocalEnvVar(c.ID, f.Name)
+			}
+		}
+		if f.Config != "" {
+			// The key, and where to write it — never the value. What an
+			// operator has configured is theirs; this answers "why did that
+			// host appear?" and "where do I change it?", which are the two
+			// questions, and neither of them needs the value echoed onto a
+			// terminal that may be shared.
+			detail += ", from config " + configSection(reg, c) + "." + f.Config
 		}
 		if f.Help != "" {
 			detail += " — " + f.Help
 		}
 		pairs = append(pairs, view.Pair{Key: "input:" + f.Name, Value: detail})
+	}
+	// Where that block goes, once, rather than on every line that names it.
+	// This card already answers "why did that host appear?" and "what do I
+	// write?"; without the path it does not answer "into which file", and an
+	// operator had to run `rta doctor` for the third of the three questions.
+	// Only when something here can actually read a file.
+	for _, f := range c.Inputs {
+		if f.Config != "" {
+			pairs = append(pairs, view.Pair{Key: "config file", Value: config.Path()})
+			break
+		}
 	}
 	if c.Detailed {
 		// The card is the third surface that has to agree about --detail. The
@@ -188,4 +244,34 @@ func similarity(a, b string) int {
 		}
 	}
 	return score
+}
+
+// configSection names the config block this capability's plugin reads,
+// spelled the way an operator has to write it: bare for a built-in, and
+// pinned to the artifact for anything found on $PATH — the same grammar
+// --allow-destructive uses, and the same reason (ADR 0015).
+func configSection(reg *registry.Registry, c plugin.Capability) string {
+	words := c.Words()
+	if len(words) == 0 {
+		return "plugins"
+	}
+	ns := words[0]
+	if o, ok := reg.Origin(ns); ok && o.External() {
+		return "plugins." + ns + "@" + o.Short()
+	}
+	return "plugins." + ns
+}
+
+// mcpOptionsForExplain is the gate as it would be configured right now, used
+// only to ask it what flag a capability needs. One helper rather than two
+// literals, so `rta explain` and `rta plugin dev` cannot disagree about what
+// it takes to reach the same capability.
+//
+// It takes the registry because the gate reads provenance from it. That is
+// also why this stopped being callable from anywhere: what flag a capability
+// needs depends on where the capability came from, and a helper that could
+// answer without being told which catalogue it was talking about was
+// answering from a package-level variable.
+func mcpOptionsForExplain(reg *registry.Registry) mcp.Options {
+	return mcp.Options{Origin: reg.Origin}
 }

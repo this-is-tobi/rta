@@ -9,10 +9,25 @@ import (
 	"github.com/this-is-tobi/rule-them-all/internal/render/theme"
 )
 
+// panelHead is what goes in a panel's top border.
+//
+// Plain text, not styled strings, and that is the point. Every caller used to
+// render its own title, and every caller independently reached for theme.Key
+// or theme.Title — the same Primary the content inside the panel uses for its
+// keys — so a tile announced itself in exactly the colour of its own contents.
+// A convention that four places have to remember is a convention that gets
+// broken by the fifth; panel decides now, and there is nowhere left to decide
+// it differently.
+type panelHead struct {
+	Title string // the pane's name, in theme.PanelTitle
+	Note  string // muted, beside the title: a summary
+	Right string // muted, right-aligned in the top border: a cost, a count
+}
+
 // panel draws a bordered pane with its title embedded in the top border —
 // the shared visual grammar of dashboard tiles and the result pane:
 //
-//	╭─ title ──────────────── right ─╮
+//	╭─ title  note ────────── right ─╮
 //	│ body                           │
 //	╰────────────────────────────────╯
 //
@@ -21,7 +36,7 @@ import (
 // can rely on every panel being width × height cells. height > 0 fixes the
 // total height by padding or clipping body lines; 0 means natural height.
 // focus switches the border to the primary accent.
-func panel(title, right, body string, width, height int, focus bool) string {
+func panel(h panelHead, body string, width, height int, focus bool) string {
 	if width < 10 {
 		return body // degenerate terminal: give the content back unframed
 	}
@@ -34,11 +49,15 @@ func panel(title, right, body string, width, height int, focus bool) string {
 	// Top border: "╭─ " title " " ─fill─ " right " "─╮" — the fixed chrome is
 	// 6 cells. Drop right when it would starve the title, then truncate.
 	rightSeg := ""
-	if right != "" {
-		rightSeg = " " + right + " "
+	if h.Right != "" {
+		rightSeg = " " + theme.Subtle.Render(h.Right) + " "
 	}
 	if rightSeg != "" && width-lipgloss.Width(rightSeg)-7 < 8 {
 		rightSeg = ""
+	}
+	title := theme.PanelTitle.Render(h.Title)
+	if h.Note != "" {
+		title += theme.Subtle.Render("  " + h.Note)
 	}
 	title = ansi.Truncate(title, width-lipgloss.Width(rightSeg)-7, "…")
 	fill := width - lipgloss.Width(title) - lipgloss.Width(rightSeg) - 6

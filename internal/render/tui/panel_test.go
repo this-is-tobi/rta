@@ -1,11 +1,13 @@
 package tui
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
 	"charm.land/lipgloss/v2"
 
+	"github.com/this-is-tobi/rule-them-all/internal/render/theme"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
@@ -44,17 +46,19 @@ func TestPanelExactGeometry(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := panel(tt.title, tt.right, tt.body, tt.width, tt.height, false)
+			p := panel(panelHead{Title: tt.title, Right: tt.right}, tt.body, tt.width, tt.height, false)
 			assertExact(t, p, tt.width, tt.height)
 		})
 	}
 }
 
 func TestPanelEmbedsTitleAndRight(t *testing.T) {
-	p := panel("sys.mem", "12ms", "body", 50, 5, false)
+	p := panel(panelHead{Title: "sys.mem", Note: "memory in use", Right: "12ms"}, "body", 60, 5, false)
 	first := strings.Split(p, "\n")[0]
-	if !strings.Contains(first, "sys.mem") || !strings.Contains(first, "12ms") {
-		t.Errorf("top border missing title/right: %q", first)
+	for _, want := range []string{"sys.mem", "memory in use", "12ms"} {
+		if !strings.Contains(first, want) {
+			t.Errorf("top border missing %q: %q", want, first)
+		}
 	}
 }
 
@@ -75,5 +79,67 @@ func TestTilesOnSameRowAreUniform(t *testing.T) {
 	for _, ti := range []tile{overflowing, tiny} {
 		p := renderTile(ti, w, tileHeight, false)
 		assertExact(t, p, w, tileHeight)
+	}
+}
+
+// fgBefore returns the foreground colour a rendered string paints text with,
+// as the "38;2;r;g;b" a terminal actually receives.
+//
+// The colour and not the SGR sequence, because the first version of this
+// compared sequences and could not fail: the title carries a reset left over
+// from the border segment before it and the body key does not, so two
+// identical oranges compared unequal, and painting the title with the content
+// colour still passed. A bold style and a plain one carry the same colour
+// under different prefixes for the same reason.
+func fgBefore(t *testing.T, rendered, text string) string {
+	t.Helper()
+	m := regexp.MustCompile(`\x1b\[([0-9;]*)m` + regexp.QuoteMeta(text)).FindStringSubmatch(rendered)
+	if m == nil {
+		t.Fatalf("%q is not styled anywhere in %q", text, rendered)
+	}
+	fg := regexp.MustCompile(`38;2;\d+;\d+;\d+`).FindString(m[1])
+	if fg == "" {
+		t.Fatalf("%q is painted no colour at all (SGR %q)", text, m[1])
+	}
+	return fg
+}
+
+// A tile drew its own name in the same Primary its contents use for their
+// keys, so `sys.mem` in the border and `used` in the body were the identical
+// orange and the eye had nothing to separate the pane from what was in it.
+//
+// The fix is not a nicer colour, it is that panel() paints its own title:
+// four call sites each rendered their own, and each independently reached for
+// the content colour. Reverting either half — the Label colour or panel
+// owning the title — fails here.
+func TestAPanelTitleIsNotTheColourOfItsContents(t *testing.T) {
+	p := renderTile(tile{
+		cap:  plugin.Capability{ID: "sys.mem"},
+		view: view.KeyValue{Pairs: []view.Pair{{Key: "used", Value: "4.2 GB"}}},
+	}, 40, 6, false)
+
+	title, key := fgBefore(t, p, "sys.mem"), fgBefore(t, p, "used")
+	if title == key {
+		t.Errorf("the tile name and its contents are both %q", title)
+	}
+}
+
+// The one thing the colour must not do is impersonate a status. Tile bodies
+// are full of Good/Warn/Bad, and a title that reads as one of them would be
+// worse than a title that reads as a key.
+func TestAPanelTitleIsNotTheColourOfAnyStatus(t *testing.T) {
+	p := renderTile(tile{
+		cap:  plugin.Capability{ID: "sys.mem"},
+		view: view.KeyValue{Pairs: []view.Pair{{Key: "used", Value: "4.2 GB"}}},
+	}, 40, 6, false)
+	title := fgBefore(t, p, "sys.mem")
+
+	for name, style := range map[string]lipgloss.Style{
+		"Good": theme.GoodText, "Warn": theme.WarnText, "Bad": theme.BadText,
+		"Accent": theme.AccentTxt, "Muted": theme.Subtle, "Faint": theme.Faded,
+	} {
+		if title == fgBefore(t, style.Render("x"), "x") {
+			t.Errorf("the panel title is %s, which a tile body already uses", name)
+		}
 	}
 }

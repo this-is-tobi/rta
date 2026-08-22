@@ -27,6 +27,12 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # buf breaking compares against main, which a depth-1 checkout does
+          # not have. The compatibility gate is the reason this job exists at
+          # all for the proto, so it must not silently degrade to "no base to
+          # compare with".
+          fetch-depth: 0
 
       - uses: actions/setup-go@v5
         with:
@@ -52,3 +58,21 @@ jobs:
 
       - name: coverage
         run: make coverage
+
+      # proto/v1 is frozen: a plugin compiled against it must keep working.
+      # Nothing enforced that. `proto-check` existed, `make ci` did not call
+      # it, and the pipeline called neither — so renumbering a field passed
+      # gofmt, vet, build and the whole race suite, and was caught by no gate
+      # anywhere. Runs on one OS: it reads .proto files, not the machine.
+      - name: proto
+        if: matrix.os == 'ubuntu-latest'
+        run: make proto-lint proto-check
+
+      # Every module under plugins/ has its own go.mod, so nothing above this
+      # line compiles any of them. The first external plugin landed outside CI
+      # for exactly that reason — and it is the one build that would notice a
+      # change to pkg/plugin or pkg/sdk breaking a plugin author, which is the
+      # whole reason it lives in this repo. Runs on both operating systems:
+      # unlike proto, a plugin is a binary and the sandbox differs per OS.
+      - name: plugins
+        run: make plugins

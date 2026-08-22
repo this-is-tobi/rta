@@ -30,6 +30,8 @@ import (
 	"github.com/this-is-tobi/rule-them-all/internal/registry"
 	"github.com/this-is-tobi/rule-them-all/internal/render/cli"
 	"github.com/this-is-tobi/rule-them-all/internal/render/theme"
+	"github.com/this-is-tobi/rule-them-all/internal/stdio"
+	"github.com/this-is-tobi/rule-them-all/internal/textclean"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
@@ -46,6 +48,8 @@ const (
 	modeRunning
 	modeResult
 	modePlugins
+	modeTheme
+	modeCopyPick
 )
 
 // capItem adapts a capability to the bubbles list.
@@ -75,14 +79,20 @@ type runRef struct {
 
 // Model is the TUI shell.
 type Model struct {
-	reg  *registry.Registry
-	list list.Model
+	reg *registry.Registry
+	// pluginCfg answers what the operator stated for a namespace, already
+	// matched to the artifact by internal/pluginconf. nil means nothing is
+	// configured, which is the ordinary state.
+	pluginCfg func(namespace string) map[string]any
+	list      list.Model
 	// cols carries the catalogue column widths, measured once so the
 	// header above the list and the rows inside it agree.
 	cols       capDelegate
 	viewport   viewport.Model
 	spinner    spinner.Model
 	form       *capForm
+	themeForm  *themeForm
+	copyPick   *copyPickForm
 	tiles      []tile
 	dash       config.Dashboard // the arrangement, edited in place and saved
 	selected   int              // selected dashboard tile
@@ -106,6 +116,10 @@ type Model struct {
 	// Plugins pane: the inventory, and where a hidden tile comes back from.
 	plugins   []pluginRow
 	pluginSel int
+	// pluginScroll is the first plugin drawn. The pane used to clip instead
+	// of scroll, so at 80x24 the last plugin was invisible while `j` still
+	// selected it.
+	pluginScroll int
 
 	// In-flight run: its cancel func and the sequence number that tells its
 	// result apart from one the user has already walked away from.
@@ -135,7 +149,19 @@ type Model struct {
 
 // New builds the shell over a registry. dash configures the dashboard; its
 // zero value is the automatic one-tile-per-plugin arrangement.
-func New(reg *registry.Registry, dash config.Dashboard) Model {
+// New builds the shell. pluginCfg answers what the operator stated for a
+// namespace, already matched to the artifact by internal/pluginconf; nil is a
+// decision the caller has to type, which is the point.
+//
+// A parameter rather than a setter, for the reason ADR 0016 gives for
+// plugin.Resolve's third argument: Run used to take this and New could not,
+// so the value had nowhere to go and was dropped on the floor. Every surface
+// that reads it — the form seed, the run, the dashboard refresh — then saw
+// nil, and the operator's configuration reached the CLI and no part of the
+// TUI. A constructor that can still be called the old way is the same defect
+// waiting to be reintroduced.
+func New(reg *registry.Registry, dash config.Dashboard,
+	pluginCfg func(namespace string) map[string]any) Model {
 	items := catalogueItems(reg)
 	cols := newCapDelegate(items)
 	l := list.New(items, cols, 0, 0)
@@ -164,14 +190,15 @@ func New(reg *registry.Registry, dash config.Dashboard) Model {
 		spinner.WithStyle(lipgloss.NewStyle().Foreground(theme.Primary)),
 	)
 	return Model{
-		reg:      reg,
-		list:     l,
-		cols:     cols,
-		viewport: viewport.New(),
-		spinner:  sp,
-		tiles:    buildTiles(reg, dash),
-		dash:     dash,
-		mode:     modeDashboard,
+		reg:       reg,
+		pluginCfg: pluginCfg,
+		list:      l,
+		cols:      cols,
+		viewport:  viewport.New(),
+		spinner:   sp,
+		tiles:     buildTiles(reg, dash),
+		dash:      dash,
+		mode:      modeDashboard,
 		searchInfo: fmt.Sprintf("%d plugins · %d capabilities — press / to search",
 			len(reg.Plugins()), len(reg.Capabilities())),
 	}
@@ -182,17 +209,48 @@ func New(reg *registry.Registry, dash config.Dashboard) Model {
 // as a list that is resisting.
 const wheelStep = 3
 
-func (m Model) Init() tea.Cmd { return refreshTiles(m.tiles, m.tickGen) }
+func (m Model) Init() tea.Cmd { return refreshTiles(m.tiles, m.tickGen, m.pluginCfg) }
+
+// formSeed is what a form opens showing: declared defaults, the operator's
+// configuration over them, and whatever the caller already had on top.
+//
+// plugin.Resolve rather than a second precedence rule written out here — it
+// is the same three-layer question every surface asks, and two implementations
+// of it would disagree on the day one of them was corrected. Seeding rather
+// than substituting at submit time is also the better screen: an operator who
+// stated a host sees db.internal in the box and can edit it, instead of an
+// empty box that silently fills in with something else.
+func (m Model) formSeed(c plugin.Capability, defaults map[string]any) map[string]any {
+	cfg := m.configFor(c)
+	if cfg == nil {
+		return defaults
+	}
+	return plugin.Resolve(c, defaults, cfg)
+}
+
+// configFor is the operator's stated values for the plugin a capability
+// belongs to, by namespace off the ID — which the registry guarantees is the
+// plugin that declared it.
+func (m Model) configFor(c plugin.Capability) map[string]any {
+	if m.pluginCfg == nil {
+		return nil
+	}
+	words := c.Words()
+	if len(words) == 0 {
+		return nil
+	}
+	return m.pluginCfg(words[0])
+}
 
 // runCmd executes a capability off the update loop. yes reflects an explicit
 // in-TUI confirmation for destructive capabilities. The result pane owns the
 // whole screen, so detail-capable capabilities are asked for their full view
 // unless somebody asked for the other one.
-func runCmd(ctx context.Context, seq int, c plugin.Capability, values map[string]any, yes bool) tea.Cmd {
+func runCmd(ctx context.Context, seq int, c plugin.Capability, values map[string]any, yes bool, cfg map[string]any) tea.Cmd {
 	return func() tea.Msg {
 		// Resolve rather than "fill defaults only when nothing was given":
 		// a caller who supplies one value must not lose the other defaults.
-		values = plugin.Resolve(c, values)
+		values = plugin.Resolve(c, values, cfg)
 		// A default, not an override. Forcing detail on unconditionally made
 		// the D toggle on kv.list dead: toggleView set detail=false, this put
 		// it back to true one line later, and the handler only ever saw true.
@@ -234,7 +292,7 @@ func (m *Model) startRun(c plugin.Capability, values map[string]any, yes bool) t
 	m.cancelRun = cancel
 	m.runSeq++
 	m.mode = modeRunning
-	return tea.Batch(m.spinner.Tick, runCmd(ctx, m.runSeq, c, values, yes))
+	return tea.Batch(m.spinner.Tick, runCmd(ctx, m.runSeq, c, values, yes, m.configFor(c)))
 }
 
 // isTop reports whether c is the actionable view the trail points at.
@@ -417,6 +475,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// A form open across a resize has to be re-fitted too, or it keeps the
 		// height of a window that no longer exists.
 		m.fitForm()
+		m.fitThemeForm()
+		m.fitCopyPick()
 		return m, nil
 
 	case tea.MouseWheelMsg:
@@ -465,6 +525,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case tea.MouseWheelDown:
 				m.pluginSel = min(m.pluginSel+1, max(len(m.plugins)-1, 0))
 			}
+			m.clampPluginScroll(m.pluginBodyHeight())
 			return m, nil
 		}
 		return m, nil
@@ -478,9 +539,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tileMsg:
-		if msg.idx < len(m.tiles) {
-			m.tiles[msg.idx].view = msg.v
-			m.tiles[msg.idx].err = msg.err
+		if idx := m.tileIndexFor(msg); idx >= 0 {
+			// Cleaned on arrival, for the same reason resultMsg is: what the
+			// model stores and what the screen shows must be one string.
+			//
+			// Nothing today reads a tile's view except cli.Render, which
+			// sanitises its own local copy — so this was already safe, and
+			// safe only because no second reader exists. That is exactly the
+			// arrangement that produced the runAction bug, where the cell on
+			// screen came from the sanitised copy and the row's identity came
+			// from the raw one. A tile is a view with a dashboard action
+			// attached; the second reader is a matter of time.
+			m.tiles[idx].view = view.MapStrings(msg.v, textclean.Terminal)
+			m.tiles[idx].err = view.MapErrorStrings(msg.err, textclean.Terminal)
 		}
 		return m, nil
 
@@ -501,7 +572,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// grow with every trip through browse and back.
 		if m.mode == modeDashboard && msg.gen == m.tickGen {
 			m.tickGen++
-			return m, refreshTiles(m.tiles, m.tickGen)
+			return m, refreshTiles(m.tiles, m.tickGen, m.pluginCfg)
 		}
 		return m, nil
 
@@ -511,6 +582,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.seq != 0 && msg.seq != m.runSeq {
 			return m, nil
 		}
+		// Cleaned once, at the top, rather than at each place a string is
+		// drawn — and above every branch below, because the flash path returns
+		// early and would otherwise draw a raw one-liner.
+		//
+		// cli.Render sanitises its own local copy, so everything the TUI draws
+		// *around* that copy was raw: resultMeta prepends Sections item titles
+		// in rta's own styling, and a title carrying an OSC 8 hyperlink went to
+		// the terminal verbatim — a live link with attacker-chosen text and
+		// target, inside rta's panel border, in rta's voice.
+		//
+		// Worse than a display bug: runAction takes a row's identity from
+		// m.result.view while the cell on screen came from the sanitised copy,
+		// so what was shown and what was acted on were different strings by
+		// construction. Cleaning at ingress makes them the same string instead
+		// of making two readers agree, which is the version that stays true
+		// when a third is added.
+		msg.view = view.MapStrings(msg.view, textclean.Terminal)
+		msg.err = view.MapErrorStrings(msg.err, textclean.Terminal)
 		// A mutating action finished cleanly: flash its outcome and return
 		// to the view it was launched from, reloaded. If it destroyed that
 		// view's subject (removing the very task whose page we were on),
@@ -578,14 +667,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// What is installed, and what it puts on the dashboard —
 				// including the way back for anything H took off.
 				m.plugins = pluginRows(m.reg, m.dash)
-				m.pluginSel = 0
+				m.pluginSel, m.pluginScroll = 0, 0
 				m.mode = modePlugins
 				return m, nil
+			case "t":
+				return m.startThemeForm()
 			case "[", "<":
 				m.flash = m.moveSelected(-1)
 				return m, nil
 			case "]", ">":
 				m.flash = m.moveSelected(1)
+				return m, nil
+			case "c":
+				// A tile's own copySpecs value, straight off its current
+				// preview — the same "c" a result already open answers to
+				// (below), reached here without opening the tile first.
+				if m.selected > 0 && m.selected < len(m.tiles) {
+					t := m.tiles[m.selected]
+					if spec, ok := copySpecs[t.cap.ID]; ok {
+						return m.copyOrPick(spec, t.cap, t.view, modeDashboard)
+					}
+				}
 				return m, nil
 			default:
 				// Selected-tile actions: one key opens a sibling capability
@@ -604,12 +706,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "esc", "p":
 				m.mode = modeDashboard
 				m.tickGen++
-				return m, refreshTiles(m.tiles, m.tickGen)
+				return m, refreshTiles(m.tiles, m.tickGen, m.pluginCfg)
 			case "up", "k":
 				m.pluginSel = max(m.pluginSel-1, 0)
+				m.clampPluginScroll(m.pluginBodyHeight())
 				return m, nil
 			case "down", "j":
 				m.pluginSel = min(m.pluginSel+1, len(m.plugins)-1)
+				m.clampPluginScroll(m.pluginBodyHeight())
 				return m, nil
 			case " ", "space", "x", "enter":
 				if msg.String() != "enter" {
@@ -628,7 +732,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.clampScroll()
 				}
 				m.tickGen++
-				return m, refreshTiles(m.tiles, m.tickGen)
+				return m, refreshTiles(m.tiles, m.tickGen, m.pluginCfg)
+			case "c":
+				if m.pluginSel < len(m.plugins) {
+					return m.startConfigForm(m.plugins[m.pluginSel])
+				}
+				return m, nil
 			}
 			return m, nil
 		case modeBrowse:
@@ -644,7 +753,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.list.FilterState() == list.Unfiltered {
 					m.mode = modeDashboard
 					m.tickGen++
-					return m, refreshTiles(m.tiles, m.tickGen)
+					return m, refreshTiles(m.tiles, m.tickGen, m.pluginCfg)
 				}
 			case "enter":
 				if item, ok := m.list.SelectedItem().(capItem); ok {
@@ -658,6 +767,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m.closeForm()
 			case "ctrl+c":
 				return m, tea.Quit
+			case "shift+enter", "alt+enter":
+				return m.fastSubmitForm()
+			}
+		case modeTheme:
+			switch msg.String() {
+			case "esc":
+				m.themeForm = nil
+				m.mode = modeDashboard
+				return m, nil
+			case "ctrl+c":
+				return m, tea.Quit
+			case "shift+enter", "alt+enter":
+				return m.fastSubmitThemeForm()
+			}
+		case modeCopyPick:
+			switch msg.String() {
+			case "esc":
+				return m.closeCopyPick()
+			case "ctrl+c":
+				return m, tea.Quit
+			case "shift+enter", "alt+enter":
+				return m.fastSubmitCopyPick()
 			}
 		case modeResult:
 			// An actionable view: rows navigable when there are rows, and
@@ -707,9 +838,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, m.startRun(m.current, m.lastValues, m.lastYes)
 				}
 			case "e":
-				// Edit inputs and run again.
+				// Edit inputs and run again, keeping the view toggles the
+				// form has no field for.
 				if m.current.Run != nil && hasInputs(m.current) {
-					return m.startForm(m.current)
+					return m.startForm(m.current, unasked(m.current, m.lastValues))
 				}
 			case "y":
 				if m.result.view != nil {
@@ -724,6 +856,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.flash = "copied as JSON"
 						return m, tea.SetClipboard(string(raw))
 					}
+				}
+			case "c":
+				// Unlike "y", this is not available everywhere — only a
+				// capability named in copySpecs, with a result shaped the way
+				// it declares, has a value to copy at all.
+				if spec, ok := copySpecs[m.current.ID]; ok {
+					return m.copyOrPick(spec, m.current, m.result.view, modeResult)
 				}
 			case "ctrl+c":
 				return m, tea.Quit
@@ -761,6 +900,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.settleCursor(m.list.Index() >= before)
 	case modeForm:
 		return m.updateForm(msg)
+	case modeTheme:
+		return m.updateThemeForm(msg)
+	case modeCopyPick:
+		return m.updateCopyPick(msg)
 	case modeResult:
 		m.viewport, cmd = m.viewport.Update(msg)
 	}
@@ -804,7 +947,7 @@ func (m Model) closeToOrigin() (tea.Model, tea.Cmd) {
 	m.mode = m.origin
 	if m.origin == modeDashboard {
 		m.tickGen++
-		return m, refreshTiles(m.tiles, m.tickGen)
+		return m, refreshTiles(m.tiles, m.tickGen, m.pluginCfg)
 	}
 	return m, nil
 }
@@ -925,7 +1068,7 @@ func (m Model) open(c plugin.Capability) (tea.Model, tea.Cmd) {
 	m.row = 0
 	m.refreshPending = false
 	if hasInputs(c) || c.Safety == plugin.Destructive {
-		return m.startForm(c)
+		return m.startForm(c, nil)
 	}
 	m.lastValues, m.lastYes = nil, false
 	return m, m.startRun(c, nil, false)
@@ -1027,8 +1170,7 @@ func (m Model) startFormWith(c plugin.Capability, base map[string]any) (tea.Mode
 		defaults = d
 	}
 	m.current = c
-	m.form = newCapForm(c, fieldsAfter(c, base), defaults, true, base)
-	m.form.base = base
+	m.form = newCapForm(c, fieldsAfter(c, base), m.formSeed(c, defaults), true, base)
 	m.fitForm()
 	m.mode = modeForm
 	return m, m.form.form.Init()
@@ -1064,22 +1206,58 @@ func prefill(c plugin.Capability, base map[string]any) (map[string]any, error) {
 	return c.Prefill(ctx, plugin.NewRequest(base, false, false).WithSurface(plugin.SurfaceTUI))
 }
 
+// unasked returns the request values no field of c can carry back — the
+// reserved inputs, which every surface sets by some means other than asking.
+// "detail" is the only one today; the rule is written against the property
+// rather than the name, because a second reserved input would otherwise
+// reintroduce the same bug silently.
+func unasked(c plugin.Capability, values map[string]any) map[string]any {
+	if len(values) == 0 {
+		return nil
+	}
+	declared := make(map[string]bool, len(c.Inputs))
+	for _, f := range c.Inputs {
+		declared[f.Name] = true
+	}
+	var out map[string]any
+	for k, v := range values {
+		if declared[k] {
+			continue
+		}
+		if out == nil {
+			out = map[string]any{}
+		}
+		out[k] = v
+	}
+	return out
+}
+
 // startForm opens the input form. Prefill-capable capabilities stage it:
 // identity fields first, then the remaining fields seeded with the record's
 // current values — editing in place, not typing blind.
-func (m Model) startForm(c plugin.Capability) (tea.Model, tea.Cmd) {
+//
+// carry holds request values the form will not ask about and must not drop.
+// A form rebuilds the value map from its own bindings, so editing inputs with
+// `e` rebuilt it without them: pressing `D` to turn detail off and then `e` to
+// change a filter came back detailed, because runCmd's "detailed unless
+// somebody said otherwise" default saw nothing and put it back. Only the `e`
+// path carries anything — opening a fresh capability starts from its own
+// defaults rather than inheriting a toggle from whatever ran last.
+func (m Model) startForm(c plugin.Capability, carry map[string]any) (tea.Model, tea.Cmd) {
 	keys, rest := keyFields(c)
 	switch {
 	case c.Prefill != nil && len(keys) > 0 && len(rest) > 0:
-		m.form = newCapForm(c, keys, nil, false, nil)
+		// Stage one's values become stage two's base, so carrying here is
+		// enough for both.
+		m.form = newCapForm(c, keys, m.formSeed(c, nil), false, carry)
 	case c.Prefill != nil && len(keys) == 0:
 		defaults, err := prefill(c, nil)
 		if err != nil {
 			return m.formError(c, err)
 		}
-		m.form = newCapForm(c, c.Inputs, defaults, true, nil)
+		m.form = newCapForm(c, c.Inputs, m.formSeed(c, defaults), true, carry)
 	default:
-		m.form = newCapForm(c, c.Inputs, nil, true, nil)
+		m.form = newCapForm(c, c.Inputs, m.formSeed(c, nil), true, carry)
 	}
 	m.fitForm()
 	m.mode = modeForm
@@ -1131,25 +1309,40 @@ func (m Model) updateForm(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if f, ok := model.(*huh.Form); ok {
 		m.form.form = f
 	}
+	return m.afterFormUpdate(cmd)
+}
+
+// afterFormUpdate dispatches on the form's state after it was driven
+// forward by one message — a real keypress from updateForm, or several
+// synthetic ones from fastSubmitForm. Split out so both land on the same
+// completion logic rather than the fast path needing its own copy of it.
+func (m Model) afterFormUpdate(cmd tea.Cmd) (tea.Model, tea.Cmd) {
 	switch m.form.form.State {
 	case huh.StateCompleted:
+		if m.form.configTarget != "" {
+			return m.saveConfigForm()
+		}
 		if !m.form.final {
 			// Identity collected: fetch current values and open the edit
-			// stage seeded with them.
+			// stage seeded with them. A fast-submitted first stage stops
+			// here rather than driving the second stage too — its fields
+			// are not on screen yet to have current values worth accepting.
 			base := m.form.values()
 			defaults, err := prefill(m.current, base)
 			if err != nil {
 				return m.formError(m.current, err)
 			}
 			_, rest := keyFields(m.current)
-			m.form = newCapForm(m.current, rest, defaults, true, base)
-			m.form.base = base
+			m.form = newCapForm(m.current, rest, m.formSeed(m.current, defaults), true, base)
 			m.fitForm()
 			return m, m.form.form.Init()
 		}
 		if !m.form.confirmed() {
 			// Destructive run declined: back to where we came from, nothing
-			// happened.
+			// happened. Fast-submitting a destructive form lands here too,
+			// not on the run below — a Confirm field's own default is the
+			// negative, so racing through it without touching it declines,
+			// the same as leaving it alone and pressing enter would.
 			m.flash = ""
 			return m.closeForm()
 		}
@@ -1161,6 +1354,16 @@ func (m Model) updateForm(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.closeForm()
 	}
 	return m, cmd
+}
+
+// fastSubmitForm accepts whatever is currently bound across every
+// remaining field, exactly as pressing enter on each in turn would.
+func (m Model) fastSubmitForm() (tea.Model, tea.Cmd) {
+	if m.form == nil {
+		return m, nil
+	}
+	m.form.form = advanceFormBySyntheticEnter(m.form.form)
+	return m.afterFormUpdate(nil)
 }
 
 func (m Model) View() tea.View {
@@ -1181,6 +1384,10 @@ func (m Model) View() tea.View {
 		v = tea.NewView(body)
 	case modePlugins:
 		v = tea.NewView(m.pluginsView())
+	case modeTheme:
+		v = tea.NewView(m.themeView())
+	case modeCopyPick:
+		v = tea.NewView(m.copyPickView())
 	case modeResult:
 		v = tea.NewView(m.resultView())
 		v.MouseMode = tea.MouseModeCellMotion // wheel scrolls long output
@@ -1197,7 +1404,7 @@ func (m Model) View() tea.View {
 
 // capTitle renders a capability identity for a panel top border, with the
 // same safety glyphs the browse list uses.
-func capTitle(c plugin.Capability) string {
+func capHead(c plugin.Capability) panelHead {
 	id := c.ID
 	switch c.Safety {
 	case plugin.Write:
@@ -1205,7 +1412,7 @@ func capTitle(c plugin.Capability) string {
 	case plugin.Destructive:
 		id += " ⚠"
 	}
-	return theme.Title.Render(id) + theme.Subtle.Render("  "+c.Summary)
+	return panelHead{Title: id, Note: c.Summary}
 }
 
 // formView frames the input form in an accent panel.
@@ -1213,20 +1420,21 @@ func (m Model) formView() string {
 	if m.form == nil {
 		return ""
 	}
-	footer := fitHintBar(m.width, footerMaxLines, labelled(bindOpen, "next"), labelled(bindBack, "cancel"))
+	footer := fitHintBar(m.width, footerMaxLines,
+		labelled(bindOpen, "next"), item(bindFastSubmit), labelled(bindBack, "cancel"))
 	// The panel takes the whole screen minus the footer, so the frame is a
 	// guarantee and not an estimate: huh scrolls its fields inside it, and
 	// nothing can render past the last row whatever the field mix turns out
 	// to cost.
-	return panel(capTitle(m.current), "", "\n"+m.form.form.View(), m.width, m.height-lipgloss.Height(footer), true) + "\n" + footer
+	return panel(capHead(m.current), "\n"+m.form.form.View(), m.width, m.height-lipgloss.Height(footer), true) + "\n" + footer
 }
 
 // resultView frames the result in a titled panel: identity in the top
 // border, cost on the right, contextual keys below.
 func (m Model) resultView() string {
-	right := ""
+	head := capHead(m.current)
 	if m.result.elapsed > 0 {
-		right = theme.Subtle.Render(m.result.elapsed.Round(time.Millisecond).String())
+		head.Right = m.result.elapsed.Round(time.Millisecond).String()
 	}
 
 	// Footer: only the keys that apply right now. Actionable views lead with
@@ -1264,16 +1472,23 @@ func (m Model) resultView() string {
 	if m.result.view != nil {
 		keys = append(keys, item(bindCopy))
 	}
+	if hint, ok := copyHint(m.current.ID, m.result.view); ok {
+		keys = append(keys, hint)
+	}
 	keys = append(keys, item(bindBack), item(bindQuit))
 	footer := fitHintBar(m.width, footerMaxLines, keys...)
 	if m.flash != "" {
 		footer += theme.GoodText.Render("  ✓ " + m.flash)
 	}
-	return panel(capTitle(m.current), right, m.viewport.View(), m.width, m.height-lipgloss.Height(footer), false) + "\n" + footer
+	return panel(head, m.viewport.View(), m.width, m.height-lipgloss.Height(footer), false) + "\n" + footer
 }
 
 // Run starts the TUI program.
-func Run(ctx context.Context, reg *registry.Registry, dash config.Dashboard) error {
-	_, err := tea.NewProgram(New(reg, dash), tea.WithContext(ctx)).Run()
+func Run(ctx context.Context, reg *registry.Registry, dash config.Dashboard, pluginCfg func(namespace string) map[string]any) error {
+	// Explicit input: main() has pointed os.Stdin at /dev/null so that no
+	// plugin inherits the user's keyboard, and bubbletea's default is
+	// os.Stdin — without this the TUI would open and answer no key at all.
+	_, err := tea.NewProgram(New(reg, dash, pluginCfg),
+		tea.WithContext(ctx), tea.WithInput(stdio.Real())).Run()
 	return err
 }

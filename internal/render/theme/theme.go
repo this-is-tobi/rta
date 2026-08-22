@@ -4,48 +4,248 @@
 // recede and content pop — two distinct grays: Faint for chrome (borders,
 // fills) and Muted for secondary text. No other renderer defines colors.
 //
+// One counterweight to the warm identity: Label, for the name of a pane. It
+// exists because a panel title and the keys inside that panel were both
+// Primary, so a tile announced itself in exactly the colour of its own
+// contents and the eye had nothing to separate them by.
+//
 // Colors are truecolor and degrade automatically: bubbletea v2 downsamples
 // TUI output to the terminal's profile, and the CLI wraps stdout/stderr in a
 // colorprofile writer. On 256-color terminals every shade has a near match.
+//
+// The palette is operator-overridable through Apply, called once at startup
+// with whatever config.Config.Theme holds. Every var below stays exactly what
+// it was: a package a renderer reads without knowing whether the value under
+// it is the built-in or something an operator wrote down.
 package theme
 
 import (
+	"fmt"
+	"image/color"
+	"regexp"
+	"sort"
 	"strings"
 
 	"charm.land/lipgloss/v2"
 )
 
-// Palette.
-var (
-	Primary = lipgloss.Color("#D97757") // clay orange — identity, keys, selection
-	Accent  = lipgloss.Color("#F0A868") // amber — sparing highlights (filter matches)
-	Muted   = lipgloss.Color("#8B8B96") // secondary text
-	Faint   = lipgloss.Color("#4A4A56") // structure: borders, chart fills
-	Good    = lipgloss.Color("#3ED598")
-	Warn    = lipgloss.Color("#FFC24B")
-	Bad     = lipgloss.Color("#FF6B7A")
-	Inverse = lipgloss.Color("#FFFFFF")
-	Ink     = lipgloss.Color("#1A1A22")
+// Built-in palette, as hex — the one place each value is written down.
+// lipgloss.Color(s string) color.Color is a constructor, not a defined type
+// over string, so the var block below cannot itself hold a color and answer
+// "what hex was that" later; Apply and Current both need the string form, so
+// it is named here and the color is built from it, once.
+const (
+	primaryHex = "#D97757" // clay orange — identity, keys, selection
+	accentHex  = "#F0A868" // amber — sparing highlights (filter matches)
+	mutedHex   = "#8B8B96" // secondary text
+	faintHex   = "#4A4A56" // structure: borders, chart fills
+	// labelHex is Label's color, chosen against four constraints rather than
+	// by eye: hue 212° against Primary's 15°, near enough opposite that a
+	// title can never read as content; calibrated to Primary's exact relative
+	// luminance (0.286 both), so it sits beside the orange as a peer instead
+	// of shouting over it or fading under it, and keeps Primary's 3.12
+	// contrast on a light terminal — the 3.0 floor for bold text, which every
+	// brighter candidate fell through; only 30% saturated, so it stays
+	// subordinate to the content it names; and 57° from Good, the nearest
+	// status hue, since tile bodies are full of coloured statuses and a title
+	// that reads as one is worse than a title that reads as a key.
+	labelHex   = "#7794B6" // slate blue — pane names
+	goodHex    = "#3ED598"
+	warnHex    = "#FFC24B"
+	badHex     = "#FF6B7A"
+	inverseHex = "#FFFFFF"
+	inkHex     = "#1A1A22"
 )
 
-// Shared styles.
+// Palette.
 var (
-	Key       = lipgloss.NewStyle().Foreground(Primary).Bold(true)
-	Header    = lipgloss.NewStyle().Foreground(Primary).Bold(true)
-	Border    = lipgloss.NewStyle().Foreground(Faint)
-	Subtle    = lipgloss.NewStyle().Foreground(Muted)
-	Faded     = lipgloss.NewStyle().Foreground(Faint)
-	Title     = lipgloss.NewStyle().Foreground(Primary).Bold(true)
-	AccentTxt = lipgloss.NewStyle().Foreground(Accent)
-	GoodText  = lipgloss.NewStyle().Foreground(Good)
-	WarnText  = lipgloss.NewStyle().Foreground(Warn)
-	BadText   = lipgloss.NewStyle().Foreground(Bad)
-	ErrBadge  = lipgloss.NewStyle().Foreground(Inverse).Background(Bad).Bold(true).Padding(0, 1)
-	HintBadge = lipgloss.NewStyle().Foreground(Ink).Background(Warn).Bold(true).Padding(0, 1)
+	Primary = lipgloss.Color(primaryHex)
+	Accent  = lipgloss.Color(accentHex)
+	Muted   = lipgloss.Color(mutedHex)
+	Faint   = lipgloss.Color(faintHex)
+	Label   = lipgloss.Color(labelHex)
+	Good    = lipgloss.Color(goodHex)
+	Warn    = lipgloss.Color(warnHex)
+	Bad     = lipgloss.Color(badHex)
+	Inverse = lipgloss.Color(inverseHex)
+	Ink     = lipgloss.Color(inkHex)
 )
+
+// Shared styles, built once at package init and again by rebuildStyles
+// whenever Apply changes the palette underneath them.
+//
+// Declared at their zero value rather than derived inline, because a var
+// initializer runs exactly once — before main, before config is loaded — and
+// an operator override needs the same derivation to run again afterwards.
+// One function is the whole difference between "computed at startup" and
+// "computed from whatever the palette holds right now"; two copies of the
+// seven lines below, one inline and one in rebuildStyles, would have been the
+// usual way for an override to reach nine of the thirteen styles and miss
+// PanelTitle, because nothing would have forced the two to agree.
+var (
+	Key        lipgloss.Style
+	Header     lipgloss.Style
+	Border     lipgloss.Style
+	Subtle     lipgloss.Style
+	Faded      lipgloss.Style
+	Title      lipgloss.Style
+	PanelTitle lipgloss.Style
+	AccentTxt  lipgloss.Style
+	GoodText   lipgloss.Style
+	WarnText   lipgloss.Style
+	BadText    lipgloss.Style
+	ErrBadge   lipgloss.Style
+	HintBadge  lipgloss.Style
+)
+
+// rebuildStyles derives every shared style from the palette's current
+// values. The one place that derivation is written, so init and Apply cannot
+// disagree about what a style means.
+func rebuildStyles() {
+	Key = lipgloss.NewStyle().Foreground(Primary).Bold(true)
+	Header = lipgloss.NewStyle().Foreground(Primary).Bold(true)
+	Border = lipgloss.NewStyle().Foreground(Faint)
+	Subtle = lipgloss.NewStyle().Foreground(Muted)
+	Faded = lipgloss.NewStyle().Foreground(Faint)
+	Title = lipgloss.NewStyle().Foreground(Primary).Bold(true)
+	// PanelTitle is the name in a panel's top border. Applied by panel()
+	// itself, never by its callers — see internal/render/tui/panel.go.
+	PanelTitle = lipgloss.NewStyle().Foreground(Label).Bold(true)
+	AccentTxt = lipgloss.NewStyle().Foreground(Accent)
+	GoodText = lipgloss.NewStyle().Foreground(Good)
+	WarnText = lipgloss.NewStyle().Foreground(Warn)
+	BadText = lipgloss.NewStyle().Foreground(Bad)
+	ErrBadge = lipgloss.NewStyle().Foreground(Inverse).Background(Bad).Bold(true).Padding(0, 1)
+	HintBadge = lipgloss.NewStyle().Foreground(Ink).Background(Warn).Bold(true).Padding(0, 1)
+}
 
 // Plain is the zero style, used to switch styling off wholesale.
 var Plain = lipgloss.NewStyle()
+
+// entry is one overridable palette slot: the var it controls, the hex it
+// resets to when an operator does not override it, and the hex it currently
+// holds — tracked separately from the var itself because lipgloss.Color's
+// return type carries no way to ask a color what hex built it.
+type entry struct {
+	ptr     *color.Color
+	builtin string
+	hex     string
+}
+
+// set writes v to both the palette var and the entry's own record, so the
+// two can never show two different answers to "what is primary right now".
+func (e *entry) set(v string) {
+	*e.ptr = lipgloss.Color(v)
+	e.hex = v
+}
+
+// fields maps a config key to the palette var it controls.
+var fields = map[string]*entry{
+	"primary": {ptr: &Primary, builtin: primaryHex},
+	"accent":  {ptr: &Accent, builtin: accentHex},
+	"muted":   {ptr: &Muted, builtin: mutedHex},
+	"faint":   {ptr: &Faint, builtin: faintHex},
+	"label":   {ptr: &Label, builtin: labelHex},
+	"good":    {ptr: &Good, builtin: goodHex},
+	"warn":    {ptr: &Warn, builtin: warnHex},
+	"bad":     {ptr: &Bad, builtin: badHex},
+	"inverse": {ptr: &Inverse, builtin: inverseHex},
+	"ink":     {ptr: &Ink, builtin: inkHex},
+}
+
+func init() {
+	for _, e := range fields {
+		e.hex = e.builtin
+	}
+	rebuildStyles()
+}
+
+// Fields lists the config keys Apply understands, sorted.
+func Fields() []string {
+	out := make([]string, 0, len(fields))
+	for k := range fields {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// HexColor is the one shape Apply accepts: truecolor, the same as every
+// built-in value above. Named colors and ANSI codes are not offered — one
+// format that always degrades correctly (package doc, above) is worth more
+// than a second one that sometimes needs a terminal profile to interpret.
+//
+// Exported so a config editor validates a color exactly the rule Apply
+// enforces — a second regexp typed out beside this one is a second place a
+// hex pattern could be fixed and the other forgotten.
+var HexColor = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
+
+// Problem is one stated override Apply could not honour, and why. Shaped
+// like internal/pluginconf.Problem on purpose — same question, "what did the
+// operator write that this could not use" — without theme importing
+// pluginconf or being imported by it: nothing about color needs to know
+// about plugins, and nothing about plugins needs to know about color.
+type Problem struct {
+	Field, Reason, Hint string
+}
+
+func (p Problem) String() string {
+	if p.Hint == "" {
+		return fmt.Sprintf("theme.%s: %s", p.Field, p.Reason)
+	}
+	return fmt.Sprintf("theme.%s: %s (%s)", p.Field, p.Reason, p.Hint)
+}
+
+// Apply sets the palette from overrides, keyed the way Fields lists them,
+// each a "#rrggbb" string. Call once, at startup, before anything renders —
+// and safe to call again: every field resets to its built-in first, so a
+// second call with a different (or empty) map is a fresh decision rather
+// than one layered on the last.
+//
+// An unknown key or a malformed value is reported, not fatal: the field it
+// named keeps its built-in color and every other field is unaffected, the
+// same "one bad entry costs its own line, not the page" rule
+// internal/pluginconf.Resolve already applies to plugin sections.
+func Apply(overrides map[string]string) []Problem {
+	for _, e := range fields {
+		e.set(e.builtin)
+	}
+
+	var problems []Problem
+	names := make([]string, 0, len(overrides))
+	for k := range overrides {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+	for _, k := range names {
+		v := overrides[k]
+		e, known := fields[k]
+		switch {
+		case !known:
+			problems = append(problems, Problem{Field: k,
+				Reason: "not a color this rta understands",
+				Hint:   "one of: " + strings.Join(Fields(), ", ")})
+		case !HexColor.MatchString(v):
+			problems = append(problems, Problem{Field: k,
+				Reason: fmt.Sprintf("%q is not a color", v),
+				Hint:   "the form is #rrggbb, e.g. #D97757"})
+		default:
+			e.set(v)
+		}
+	}
+	rebuildStyles()
+	return problems
+}
+
+// Current returns every field's live value, hex-formatted — what a config
+// editor seeds its form with, and what Apply's own tests reset against.
+func Current() map[string]string {
+	out := make(map[string]string, len(fields))
+	for k, e := range fields {
+		out[k] = e.hex
+	}
+	return out
+}
 
 // StatusKind classifies a status string for semantic coloring.
 type StatusKind int

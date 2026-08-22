@@ -1,0 +1,164 @@
+package main
+
+import (
+	"errors"
+	"net"
+	"net/url"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/minio/minio-go/v7"
+
+	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
+	"github.com/this-is-tobi/rule-them-all/pkg/sdk/sdktest"
+)
+
+// sdktest is the definition of "a correct plugin" — no exemption for s3
+// (P6). Needs no live endpoint: a declaration is checkable before anything
+// connects.
+func TestConformance(t *testing.T) { sdktest.Check(t, Plugin()) }
+
+// req builds a resolved request the way the host would, against the named
+// capability's own declared inputs (connFields included, via cap) — so
+// these test the values a handler actually sees, matching plugins/vault's
+// own req helper.
+func req(t *testing.T, capID string, values map[string]any) plugin.Request {
+	t.Helper()
+	for _, c := range Plugin().Capabilities {
+		if c.ID == capID {
+			return plugin.NewRequest(plugin.Resolve(c, values, nil), false, false)
+		}
+	}
+	t.Fatalf("no capability %q", capID)
+	return plugin.Request{}
+}
+
+// Every classified failure has to say what to do next — the same bar
+// plugins/pg and plugins/vault's own classify hold themselves to, against
+// S3's error shapes.
+func TestEveryClassifiedFailureNamesTheNextStep(t *testing.T) {
+	r := req(t, "s3.overview", map[string]any{"endpoint": "s3.internal:9000"})
+	cases := []struct {
+		name string
+		err  error
+		code string
+	}{
+		{"no such bucket", minio.ErrorResponse{Code: minio.NoSuchBucket, BucketName: "b"}, "s3.bucket.notfound"},
+		{"no such key", minio.ErrorResponse{Code: minio.NoSuchKey, BucketName: "b", Key: "k"}, "s3.object.notfound"},
+		{"no such policy", minio.ErrorResponse{Code: minio.NoSuchBucketPolicy, BucketName: "b"}, "s3.policy.notfound"},
+		{"denied", minio.ErrorResponse{Code: minio.AccessDenied, Message: "nope"}, "s3.denied"},
+		{"bad key id", minio.ErrorResponse{Code: minio.InvalidAccessKeyID}, "s3.auth.failed"},
+		{"bad signature", minio.ErrorResponse{Code: minio.SignatureDoesNotMatch}, "s3.auth.failed"},
+		{"bucket exists", minio.ErrorResponse{Code: minio.BucketAlreadyExists, BucketName: "b"}, "s3.bucket.exists"},
+		{"other s3 error", minio.ErrorResponse{Code: "SomeOtherCode", Message: "m"}, "s3.request.failed"},
+		{"refused", &net.OpError{Op: "dial", Err: errors.New("connection refused")}, "s3.conn.refused"},
+		{"unknown host", &net.DNSError{Err: "no such host", Name: "s3.internal"}, "s3.host.unknown"},
+		{"timed out", &url.Error{Op: "Get", URL: "http://x", Err: timeoutError{}}, "s3.conn.timeout"},
+		{"anything else", errors.New("something unexpected"), "s3.conn.failed"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			verr := classify(tc.err, r)
+			if verr.Code != tc.code {
+				t.Errorf("code = %q, want %q", verr.Code, tc.code)
+			}
+			if verr.Hint == "" {
+				t.Error("no hint")
+			}
+			if verr.Message == "" {
+				t.Error("no message")
+			}
+		})
+	}
+}
+
+// timeoutError satisfies net.Error's Timeout() so *url.Error.Timeout()
+// (which asks its wrapped error) reports true, the same shape a real
+// deadline exceeded error from the underlying transport has.
+type timeoutError struct{}
+
+func (timeoutError) Error() string   { return "timeout" }
+func (timeoutError) Timeout() bool   { return true }
+func (timeoutError) Temporary() bool { return true }
+
+// Every capability that reaches an S3 endpoint reaches off the box, so cap
+// must have forced NoPreview on all of them — the same property
+// plugins/pg's and plugins/vault's own conformance tests pin, since it is
+// what keeps the automatic dashboard from deciding, on its own, that a live
+// endpoint is worth polling.
+func TestEveryCapabilityIsNoPreview(t *testing.T) {
+	for _, c := range Plugin().Capabilities {
+		if !c.NoPreview {
+			t.Errorf("%s: NoPreview = false, want true — every capability here reaches off the box", c.ID)
+		}
+	}
+}
+
+// The capabilities PROJECT.md §7 designed as revealing content, granting
+// access or overwriting/destroying it must actually declare NeedsGrant — a
+// design note is not an enforcement mechanism, the struct field is.
+func TestWriteAndDestructiveCapabilitiesNeedAGrant(t *testing.T) {
+	want := map[string]bool{
+		"s3.overview":       false,
+		"s3.bucket.list":    false,
+		"s3.policy.get":     false,
+		"s3.object.list":    false,
+		"s3.object.show":    false,
+		"s3.object.get":     true,
+		"s3.object.set":     true,
+		"s3.object.copy":    true,
+		"s3.object.rename":  true,
+		"s3.object.rm":      false, // Destructive already implies a grant
+		"s3.object.presign": true,
+	}
+	seen := map[string]bool{}
+	for _, c := range Plugin().Capabilities {
+		seen[c.ID] = true
+		wantGrant, ok := want[c.ID]
+		if !ok {
+			t.Errorf("%s: not accounted for in this test's table", c.ID)
+			continue
+		}
+		if c.NeedsGrant != wantGrant {
+			t.Errorf("%s: NeedsGrant = %v, want %v", c.ID, c.NeedsGrant, wantGrant)
+		}
+		if c.ID == "s3.object.rm" && c.Safety != plugin.Destructive {
+			t.Errorf("s3.object.rm: Safety = %s, want Destructive", c.Safety)
+		}
+	}
+	for id := range want {
+		if !seen[id] {
+			t.Errorf("%s: declared in this test's table but not in Plugin()", id)
+		}
+	}
+}
+
+func TestDestinationDefaultsTheBucketToTheSource(t *testing.T) {
+	r := req(t, "s3.object.copy", map[string]any{"bucket": "src", "key": "k", "dest-key": "k2"})
+	bucket, key := destination(r)
+	if bucket != "src" || key != "k2" {
+		t.Errorf("destination = (%q, %q), want (src, k2)", bucket, key)
+	}
+}
+
+func TestDestinationHonorsAnExplicitDestBucket(t *testing.T) {
+	r := req(t, "s3.object.copy", map[string]any{"bucket": "src", "key": "k", "dest-bucket": "dst", "dest-key": "k2"})
+	bucket, key := destination(r)
+	if bucket != "dst" || key != "k2" {
+		t.Errorf("destination = (%q, %q), want (dst, k2)", bucket, key)
+	}
+}
+
+func TestExpandHomeResolvesATildePath(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("no home directory in this environment")
+	}
+	if got := expandHome("~/x"); got != filepath.Join(home, "x") {
+		t.Errorf("expandHome(~/x) = %q, want %q", got, filepath.Join(home, "x"))
+	}
+	if got := expandHome("/already/absolute"); got != "/already/absolute" {
+		t.Errorf("expandHome left an absolute path alone incorrectly: %q", got)
+	}
+}

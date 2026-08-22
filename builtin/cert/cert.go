@@ -38,8 +38,16 @@ const expiryConcurrency = 16
 
 // Plugin returns the cert plugin declaration.
 func Plugin() plugin.Plugin {
+	// Path rather than String, because the input may name a file and the type
+	// is what says so. loadCerts stats the target and reads it as PEM when it
+	// exists, which made this a file existence oracle over MCP: the type is
+	// the hook the host confines path arguments by (internal/pathguard), so a
+	// field that can be a path and does not say Path is a field nothing
+	// guards. A host:port still works — it resolves under the root like any
+	// relative value — and file completion is an improvement for the PEM case
+	// rather than a cost.
 	targetField := plugin.Field{
-		Name: "target", Type: plugin.String, Positional: true, Required: true,
+		Name: "target", Type: plugin.Path, Positional: true, Required: true,
 		Help: "host[:port] to connect to, or a path to a PEM file",
 	}
 	timeoutField := plugin.Field{
@@ -105,12 +113,22 @@ func dialTimeout(req plugin.Request) time.Duration {
 	return time.Duration(secs) * time.Second
 }
 
-// leafCerts fetches the peer chain from a live host or parses a PEM file.
+// loadCerts fetches the peer chain from a live host or parses a PEM file.
+//
+// The file branch is for the capabilities that declare a Path input and are
+// therefore confined at the MCP boundary (ADR 0014). Anything whose target is
+// a host must call dialCerts instead — see expiryRow.
 func loadCerts(ctx context.Context, target string, timeout time.Duration) ([]*x509.Certificate, *tls.ConnectionState, error) {
 	if _, err := os.Stat(target); err == nil {
 		certs, err := readPEM(target)
 		return certs, nil, err
 	}
+	return dialCerts(ctx, target, timeout)
+}
+
+// dialCerts fetches the peer chain from a live host, and never touches the
+// filesystem.
+func dialCerts(ctx context.Context, target string, timeout time.Duration) ([]*x509.Certificate, *tls.ConnectionState, error) {
 	addr := target
 	if !strings.Contains(addr, ":") {
 		addr += ":443"
@@ -284,7 +302,19 @@ func runExpiry(ctx context.Context, req plugin.Request) (view.View, error) {
 // expiryRow grades one target. An unreachable host is a row saying so rather
 // than an error that throws away the thirty-nine hosts that did answer.
 func expiryRow(ctx context.Context, target string, warnDays int, timeout time.Duration) []string {
-	certs, _, err := loadCerts(ctx, target, timeout)
+	// dialCerts, not loadCerts. Sharing loadCerts gave this capability a
+	// file-reading branch its own Help never claimed ("hosts to check
+	// (host[:port])") — and `targets` is a StringSlice, which the MCP path
+	// gate cannot hook because it only looks at Field.Path. So over MCP, with
+	// no flag and no grant, cert.expiry answered "does this path exist, is it
+	// PEM, is it readable, is it a directory" for anywhere on the machine
+	// while its sibling cert.inspect was refused for the same string.
+	//
+	// Removing the branch rather than retyping the field: there is no path
+	// type for a slice today, the Help already describes a host, and a
+	// capability whose declared inputs cannot express what it does is the
+	// thing that made this invisible.
+	certs, _, err := dialCerts(ctx, target, timeout)
 	if err != nil {
 		return []string{target, "-", "-", "ERROR: " + view.AsError(err, "cert.load").Message}
 	}

@@ -30,10 +30,10 @@ func TestPageDropsSectionsThatCannotAnswer(t *testing.T) {
 	silent := func(context.Context, plugin.Request) (view.View, error) { return nil, nil }
 
 	p := plugin.NewPage(t.Context(), plugin.NewRequest(nil, false, false))
-	p.Add("host", text("host"), nil)
-	p.Add("sensors", broken, nil)
-	p.Add("quiet", silent, nil)
-	p.Add("load", text("load"), nil)
+	p.Add("host", text("host"), plugin.Read, nil)
+	p.Add("sensors", broken, plugin.Read, nil)
+	p.Add("quiet", silent, plugin.Read, nil)
+	p.Add("load", text("load"), plugin.Read, nil)
 
 	got := titles(p.View())
 	if len(got) != 2 || got[0] != "host" || got[1] != "load" {
@@ -51,7 +51,7 @@ func TestPageSectionsInheritTheCallersInputs(t *testing.T) {
 		return view.Text{Body: seen}, nil
 	}
 	base := plugin.NewRequest(map[string]any{"identity": "~/.ssh/id_ed25519"}, false, false)
-	plugin.NewPage(t.Context(), base).Add("keys", echo, nil)
+	plugin.NewPage(t.Context(), base).Add("keys", echo, plugin.Read, nil)
 
 	if seen != "~/.ssh/id_ed25519" {
 		t.Fatalf("section did not inherit the page's inputs: %q", seen)
@@ -68,7 +68,7 @@ func TestPageClearsDetailForTheSectionsItEmbeds(t *testing.T) {
 		return view.Text{Body: "x"}, nil
 	}
 	base := plugin.NewRequest(map[string]any{"detail": true}, false, false)
-	plugin.NewPage(t.Context(), base).Add("part", echo, nil)
+	plugin.NewPage(t.Context(), base).Add("part", echo, plugin.Read, nil)
 
 	if detail {
 		t.Fatal("detail leaked into an embedded section")
@@ -82,7 +82,7 @@ func TestPageSectionValuesOverrideInheritedOnes(t *testing.T) {
 		return view.Text{Body: got}, nil
 	}
 	base := plugin.NewRequest(map[string]any{"kind": "note"}, false, false)
-	plugin.NewPage(t.Context(), base).Add("keys", echo, map[string]any{"kind": "cert"})
+	plugin.NewPage(t.Context(), base).Add("keys", echo, plugin.Read, map[string]any{"kind": "cert"})
 
 	if got != "cert" {
 		t.Fatalf("kind = %q, want the section's own value", got)
@@ -114,6 +114,32 @@ func TestWithKeepsTheSurfaceAndFlags(t *testing.T) {
 		t.Fatalf("derived lost invocation context: surface=%q dry=%v yes=%v",
 			derived.Surface(), derived.DryRun, derived.Yes)
 	}
+}
+
+// A regression test for a real architectural gap review found (PROJECT.md
+// D74): Page composes a handler directly, with none of the checks the MCP
+// bridge applies to a capability an MCP call actually names — no grant, no
+// --allow-write/--allow-destructive gate. Nothing in the registry embeds a
+// Write or Destructive handler today, but nothing prevented a future one
+// from doing so either, and the gap would have been invisible until
+// exploited. AddAs/Add/Run now require the caller to state the safety
+// class and panic rather than silently embed anything but Read.
+func TestPageRefusesToEmbedAnythingButRead(t *testing.T) {
+	write := func(context.Context, plugin.Request) (view.View, error) { return view.Text{}, nil }
+	p := plugin.NewPage(t.Context(), plugin.NewRequest(nil, false, false))
+
+	assertPanics := func(name string, f func()) {
+		t.Helper()
+		defer func() {
+			if recover() == nil {
+				t.Errorf("%s: did not panic embedding a non-Read handler", name)
+			}
+		}()
+		f()
+	}
+	assertPanics("Add", func() { p.Add("x", write, plugin.Write, nil) })
+	assertPanics("AddAs", func() { p.AddAs("x", "x", write, plugin.Destructive, nil) })
+	assertPanics("Run", func() { _, _ = p.Run(write, plugin.Write, nil) })
 }
 
 func TestPagePutIgnoresNilViews(t *testing.T) {

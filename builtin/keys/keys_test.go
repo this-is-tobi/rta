@@ -1,0 +1,1032 @@
+package keys
+
+import (
+	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"golang.org/x/crypto/ssh"
+
+	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
+	"github.com/this-is-tobi/rule-them-all/pkg/view"
+)
+
+func req(values map[string]any) plugin.Request {
+	return plugin.NewRequest(values, false, false)
+}
+
+func TestPluginIsValid(t *testing.T) {
+	if err := Plugin().Validate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// writeEd25519Keypair writes an ed25519 keypair in the format ssh-keygen
+// would, optionally passphrase-protected. Mirrors builtin/kv's
+// writeSSHKeypair test helper.
+func writeEd25519Keypair(t *testing.T, dir, name, passphrase string) (private, public string) {
+	t.Helper()
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var block *pem.Block
+	if passphrase == "" {
+		block, err = ssh.MarshalPrivateKey(priv, "")
+	} else {
+		block, err = ssh.MarshalPrivateKeyWithPassphrase(priv, "", []byte(passphrase))
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	private = filepath.Join(dir, name)
+	if err := os.WriteFile(private, pem.EncodeToMemory(block), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sshPub, err := ssh.NewPublicKey(pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	public = private + ".pub"
+	line := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(sshPub))) + " " + name + "@test\n"
+	if err := os.WriteFile(public, []byte(line), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return private, public
+}
+
+func writeRSAKeypair(t *testing.T, dir, name, passphrase string) (private string) {
+	t.Helper()
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var block *pem.Block
+	if passphrase == "" {
+		block, err = ssh.MarshalPrivateKey(priv, "")
+	} else {
+		block, err = ssh.MarshalPrivateKeyWithPassphrase(priv, "", []byte(passphrase))
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	private = filepath.Join(dir, name)
+	if err := os.WriteFile(private, pem.EncodeToMemory(block), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return private
+}
+
+func errCode(err error) string {
+	verr := view.AsError(err, "keys.test")
+	return verr.Code
+}
+
+// --- keys.backup / keys.restore: the round trip ------------------------
+
+// The whole point: what keys.restore writes is bit-for-bit the key
+// keys.backup read, provable by comparing fingerprints rather than trusting
+// the library's own say-so.
+func TestBackupRestoreRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	private, _ := writeEd25519Keypair(t, dir, "id_ed25519", "")
+
+	v, err := runBackup(context.Background(), req(map[string]any{"key": private}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sections := v.(view.Sections)
+	backupPairs := sections.Items[0].View.(view.KeyValue).Pairs
+	var words, originalFP string
+	for _, p := range backupPairs {
+		switch p.Key {
+		case "Words":
+			words = p.Value
+		case "Fingerprint":
+			originalFP = p.Value
+		}
+	}
+	if strings.Count(words, " ") != 23 {
+		t.Fatalf("got %d words, want 24: %q", strings.Count(words, " ")+1, words)
+	}
+
+	out := filepath.Join(dir, "restored")
+	rv, err := runRestore(context.Background(), req(map[string]any{"out": out, "words": words}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	restoredPairs := rv.(view.KeyValue).Pairs
+	var restoredFP string
+	for _, p := range restoredPairs {
+		if p.Key == "Fingerprint" {
+			restoredFP = p.Value
+		}
+	}
+	if restoredFP != originalFP {
+		t.Errorf("restored fingerprint %q != original %q", restoredFP, originalFP)
+	}
+
+	info, err := os.Stat(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf("private key mode = %v, want 0600", info.Mode().Perm())
+	}
+	pubInfo, err := os.Stat(out + ".pub")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pubInfo.Mode().Perm() != 0o644 {
+		t.Errorf("public key mode = %v, want 0644", pubInfo.Mode().Perm())
+	}
+
+	// Round-trips all the way: the restored private key file itself parses
+	// to the same fingerprint, not just the string this package printed.
+	data, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := ssh.ParseRawPrivateKey(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	priv, err := asEd25519(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fp, err := fingerprint(priv.Public())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fp != originalFP {
+		t.Errorf("fingerprint of the file on disk %q != original %q", fp, originalFP)
+	}
+}
+
+// The key material round-trips exactly (proven above by fingerprint); the
+// PEM file on disk does not. Found live, against the real rta binary and
+// real ssh-keygen, before it shipped as a "bit-for-bit" claim in this
+// capability's own Description (PROJECT.md D72) — OpenSSH's private-key
+// container writes a random per-encode nonce (the "checkint" pair)
+// alongside the key material, which differs on every encode regardless of
+// input. Pinning both halves of this — same fingerprint, different bytes —
+// so a future change cannot silently make either claim false without a
+// test noticing.
+func TestRestoredKeyMaterialIsIdenticalButThePemBytesAreNot(t *testing.T) {
+	dir := t.TempDir()
+	original, _ := writeEd25519Keypair(t, dir, "id_ed25519", "")
+	originalBytes, err := os.ReadFile(original)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	v, err := runBackup(context.Background(), req(map[string]any{"key": original}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	words := ""
+	for _, p := range v.(view.Sections).Items[0].View.(view.KeyValue).Pairs {
+		if p.Key == "Words" {
+			words = p.Value
+		}
+	}
+
+	out := filepath.Join(dir, "restored")
+	if _, err := runRestore(context.Background(), req(map[string]any{"out": out, "words": words})); err != nil {
+		t.Fatal(err)
+	}
+	restoredBytes, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if strings.TrimSpace(string(originalBytes)) == strings.TrimSpace(string(restoredBytes)) {
+		t.Error("original and restored PEM bytes are identical — if OpenSSH's marshaling stopped writing a " +
+			"random nonce, the Description's own 'not byte-identical' claim would now be false")
+	}
+
+	origRaw, err := ssh.ParseRawPrivateKey(originalBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	origPriv, err := asEd25519(origRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restoredRaw, err := ssh.ParseRawPrivateKey(restoredBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restoredPriv, err := asEd25519(restoredRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !origPriv.Equal(restoredPriv) {
+		t.Error("original and restored key material differ — the words did not encode the same key")
+	}
+}
+
+func TestBackupCarriesTheCommentForward(t *testing.T) {
+	dir := t.TempDir()
+	private, _ := writeEd25519Keypair(t, dir, "id_ed25519", "")
+
+	v, err := runBackup(context.Background(), req(map[string]any{"key": private}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pairs := v.(view.Sections).Items[0].View.(view.KeyValue).Pairs
+	var comment string
+	for _, p := range pairs {
+		if p.Key == "Comment" {
+			comment = p.Value
+		}
+	}
+	if !strings.Contains(comment, "id_ed25519@test") {
+		t.Errorf("comment pair = %q, want it to mention id_ed25519@test", comment)
+	}
+}
+
+func TestRestoreAppliesAGivenComment(t *testing.T) {
+	dir := t.TempDir()
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	words, err := toMnemonic(priv.Seed())
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(dir, "restored")
+	if _, err := runRestore(context.Background(), req(map[string]any{
+		"out": out, "words": words, "comment": "me@laptop",
+	})); err != nil {
+		t.Fatal(err)
+	}
+	pub, err := os.ReadFile(out + ".pub")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(strings.TrimSpace(string(pub)), "me@laptop") {
+		t.Errorf(".pub = %q, want it to end with the comment", pub)
+	}
+}
+
+func TestRestoreAppliesAPassphraseToTheWrittenKey(t *testing.T) {
+	dir := t.TempDir()
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	words, err := toMnemonic(priv.Seed())
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(dir, "restored")
+	if _, err := runRestore(context.Background(), req(map[string]any{
+		"out": out, "words": words, "new-passphrase": "s3cret",
+	})); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ssh.ParseRawPrivateKey(data); !isLocked(err) {
+		t.Fatalf("expected the written key to be passphrase-protected, parse error = %v", err)
+	}
+	raw, err := ssh.ParseRawPrivateKeyWithPassphrase(data, []byte("s3cret"))
+	if err != nil {
+		t.Fatalf("could not unlock with the passphrase it was restored with: %v", err)
+	}
+	restored, err := asEd25519(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !restored.Equal(priv) {
+		t.Errorf("restored key does not match the original")
+	}
+}
+
+// A regression test for a real bug review caught (PROJECT.md D73):
+// keys.backup's --passphrase and keys.restore's --new-passphrase are
+// different secrets — one unlocks the key being read, the other locks the
+// key being written — and used to share a field name, so both resolved
+// from the identical RTA_KEYS_PASSPHRASE environment variable
+// (plugin.LocalEnvVar namespaces by plugin, not by field). An operator who
+// exported it once to script a backup would silently get an encrypted
+// restore later, in the same shell, despite never asking for one and
+// despite the field's own Help text promising "omit for none". Renaming
+// the restore field to new-passphrase gives it a distinct env var; this
+// test drives the real resolution path (plugin.Resolve, not the req()
+// helper, which bypasses Local/env entirely) to prove the two no longer
+// collide.
+func TestRestorePassphraseDoesNotCollideWithBackupsEnvVar(t *testing.T) {
+	t.Setenv(plugin.LocalEnvVar("keys.backup", "passphrase"), "leaked-from-a-backup-earlier")
+
+	dir := t.TempDir()
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	words, err := toMnemonic(priv.Seed())
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(dir, "restored")
+
+	restoreCap := Plugin().Capabilities[2]
+	if restoreCap.ID != "keys.restore" {
+		t.Fatalf("Capabilities[2] = %q, want keys.restore (test index is stale)", restoreCap.ID)
+	}
+	resolved := plugin.Resolve(restoreCap, map[string]any{"out": out, "words": words}, nil)
+	if got := resolved["new-passphrase"]; got != nil && got != "" {
+		t.Fatalf("new-passphrase resolved to %q from the backup capability's env var — collision is back", got)
+	}
+
+	if _, err := runRestore(context.Background(), plugin.NewRequest(resolved, false, false)); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ssh.ParseRawPrivateKey(data); err != nil {
+		t.Errorf("restored key is passphrase-protected (parse error %v) — RTA_KEYS_PASSPHRASE leaked into the restore", err)
+	}
+}
+
+// --- keys.backup: passphrase resolution ---------------------------------
+
+func TestBackupOfALockedKeyWithTheRightPassphraseSupplied(t *testing.T) {
+	dir := t.TempDir()
+	private, _ := writeEd25519Keypair(t, dir, "id_ed25519", "hunter2")
+
+	_, err := runBackup(context.Background(), req(map[string]any{"key": private, "passphrase": "hunter2"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBackupOfALockedKeyWithNoPassphraseAndNoPromptRefuses(t *testing.T) {
+	dir := t.TempDir()
+	private, _ := writeEd25519Keypair(t, dir, "id_ed25519", "hunter2")
+
+	// SurfaceMCP both refuses the whole capability *and* cannot prompt; use
+	// SurfaceUnknown (a direct call, as tests make) which is allowed through
+	// refuseMCP but still cannot reach a terminal from a test binary.
+	_, err := runBackup(context.Background(), req(map[string]any{"key": private}))
+	if errCode(err) != "keys.key.locked" {
+		t.Errorf("code = %q, want keys.key.locked", errCode(err))
+	}
+}
+
+func TestBackupPromptsForALockedKeysPassphraseWhenAPersonCouldAnswer(t *testing.T) {
+	dir := t.TempDir()
+	private, _ := writeEd25519Keypair(t, dir, "id_ed25519", "hunter2")
+
+	old := canPrompt
+	canPrompt = func(plugin.Request) bool { return true }
+	t.Cleanup(func() { canPrompt = old })
+	oldPrompt := promptKeyPassphrase
+	promptKeyPassphrase = func(string) (string, error) { return "hunter2", nil }
+	t.Cleanup(func() { promptKeyPassphrase = oldPrompt })
+
+	_, err := runBackup(context.Background(), req(map[string]any{"key": private}))
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBackupGivesUpAfterRepeatedWrongPassphrases(t *testing.T) {
+	dir := t.TempDir()
+	private, _ := writeEd25519Keypair(t, dir, "id_ed25519", "hunter2")
+
+	old := canPrompt
+	canPrompt = func(plugin.Request) bool { return true }
+	t.Cleanup(func() { canPrompt = old })
+	tries := 0
+	oldPrompt := promptKeyPassphrase
+	promptKeyPassphrase = func(string) (string, error) { tries++; return "wrong", nil }
+	t.Cleanup(func() { promptKeyPassphrase = oldPrompt })
+
+	_, err := runBackup(context.Background(), req(map[string]any{"key": private}))
+	if errCode(err) != "keys.key.locked" {
+		t.Errorf("code = %q, want keys.key.locked", errCode(err))
+	}
+	if tries != keyPassphraseTries {
+		t.Errorf("prompted %d times, want %d", tries, keyPassphraseTries)
+	}
+}
+
+// --- keys.backup: unsupported keys and bad paths ------------------------
+
+func TestBackupRejectsAnRSAKeyByName(t *testing.T) {
+	dir := t.TempDir()
+	private := writeRSAKeypair(t, dir, "id_rsa", "")
+
+	_, err := runBackup(context.Background(), req(map[string]any{"key": private}))
+	if errCode(err) != "keys.backup.unsupported" {
+		t.Errorf("code = %q, want keys.backup.unsupported", errCode(err))
+	}
+}
+
+func TestBackupOfAMissingFileErrorsClearly(t *testing.T) {
+	_, err := runBackup(context.Background(), req(map[string]any{"key": "/no/such/key"}))
+	if errCode(err) != "keys.backup.unreadable" {
+		t.Errorf("code = %q, want keys.backup.unreadable", errCode(err))
+	}
+}
+
+// --- keys.restore: refuses to clobber ------------------------------------
+
+func TestRestoreRefusesToOverwriteAnExistingPrivateKey(t *testing.T) {
+	dir := t.TempDir()
+	out := filepath.Join(dir, "existing")
+	if err := os.WriteFile(out, []byte("already here"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	words := freshWords(t)
+
+	_, err := runRestore(context.Background(), req(map[string]any{"out": out, "words": words}))
+	if errCode(err) != "keys.restore.exists" {
+		t.Errorf("code = %q, want keys.restore.exists", errCode(err))
+	}
+	if data, _ := os.ReadFile(out); string(data) != "already here" {
+		t.Errorf("existing file was modified: %q", data)
+	}
+}
+
+func TestRestoreRefusesToOverwriteAnExistingPublicKey(t *testing.T) {
+	dir := t.TempDir()
+	out := filepath.Join(dir, "fresh")
+	if err := os.WriteFile(out+".pub", []byte("already here"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	words := freshWords(t)
+
+	_, err := runRestore(context.Background(), req(map[string]any{"out": out, "words": words}))
+	if errCode(err) != "keys.restore.exists" {
+		t.Errorf("code = %q, want keys.restore.exists", errCode(err))
+	}
+	if _, err := os.Stat(out); err == nil {
+		t.Errorf("private key was written even though its .pub sibling already existed")
+	}
+}
+
+// --- keys.restore: malformed words ----------------------------------------
+
+func TestRestoreRejectsAWordCountThatIsNotA32ByteSeed(t *testing.T) {
+	// A genuine, checksum-valid 12-word BIP39 phrase — grammatically legal,
+	// but 128 bits of entropy where an ed25519 seed needs 256.
+	entropy := make([]byte, 16)
+	words, err := toMnemonic(entropy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	_, err = runRestore(context.Background(), req(map[string]any{
+		"out": filepath.Join(dir, "out"), "words": words,
+	}))
+	if errCode(err) != "keys.restore.words" {
+		t.Errorf("code = %q, want keys.restore.words", errCode(err))
+	}
+}
+
+func TestRestoreRejectsAWordWithABrokenChecksum(t *testing.T) {
+	words := freshWords(t)
+	fields := strings.Fields(words)
+	// "abandon" is BIP39 word index 0 — swapping the last word for it is
+	// still every word in the list, so this exercises the checksum branch
+	// specifically rather than the "unknown word" branch.
+	fields[len(fields)-1] = "abandon"
+	broken := strings.Join(fields, " ")
+
+	dir := t.TempDir()
+	_, err := runRestore(context.Background(), req(map[string]any{
+		"out": filepath.Join(dir, "out"), "words": broken,
+	}))
+	if errCode(err) != "keys.restore.words" {
+		t.Errorf("code = %q, want keys.restore.words", errCode(err))
+	}
+}
+
+func TestRestoreDryRunWritesNothing(t *testing.T) {
+	dir := t.TempDir()
+	out := filepath.Join(dir, "out")
+	words := freshWords(t)
+
+	values := map[string]any{"out": out, "words": words}
+	v, err := runRestore(context.Background(), plugin.NewRequest(values, true, false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := v.(view.Text); !ok {
+		t.Errorf("dry-run view = %T, want view.Text", v)
+	}
+	if _, err := os.Stat(out); err == nil {
+		t.Errorf("dry-run wrote %s", out)
+	}
+}
+
+// --- resolveWords -----------------------------------------------------
+
+func TestResolveWordsPrefersTheExplicitFlag(t *testing.T) {
+	got, verr := resolveWords(req(map[string]any{"words": "explicit words here"}))
+	if verr != nil {
+		t.Fatal(verr)
+	}
+	if got != "explicit words here" {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestResolveWordsOnANonCliSurfaceWithNothingSuppliedErrorsRatherThanBlocking(t *testing.T) {
+	// Mirrors builtin/debug's equivalent test: proves readPipedWords short-
+	// circuits on surface before ever touching stdio.Real()/term.IsTerminal.
+	r := req(map[string]any{}).WithSurface(plugin.SurfaceMCP)
+	_, verr := resolveWords(r)
+	if verr == nil || verr.Code != "keys.restore.nowords" {
+		t.Errorf("code = %v, want keys.restore.nowords", verr)
+	}
+}
+
+func TestReadPipedWordsNeverTouchesStdinOnANonCliSurface(t *testing.T) {
+	got, verr := readPipedWords(req(map[string]any{}).WithSurface(plugin.SurfaceMCP))
+	if verr != nil || got != "" {
+		t.Errorf("got %q, %v; want \"\", nil", got, verr)
+	}
+}
+
+// --- MCP refusal -----------------------------------------------------------
+
+func TestBackupRefusesSurfaceMCP(t *testing.T) {
+	r := req(map[string]any{"key": "irrelevant"}).WithSurface(plugin.SurfaceMCP)
+	_, err := runBackup(context.Background(), r)
+	if errCode(err) != "keys.human" {
+		t.Errorf("code = %q, want keys.human", errCode(err))
+	}
+}
+
+func TestRestoreRefusesSurfaceMCP(t *testing.T) {
+	r := req(map[string]any{"out": "irrelevant", "words": "irrelevant"}).WithSurface(plugin.SurfaceMCP)
+	_, err := runRestore(context.Background(), r)
+	if errCode(err) != "keys.human" {
+		t.Errorf("code = %q, want keys.human", errCode(err))
+	}
+}
+
+// --- keys.list --------------------------------------------------------
+
+func TestListWithNoSSHDirectory(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	v, err := runList(context.Background(), req(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text, ok := v.(view.Text)
+	if !ok || !strings.Contains(text.Body, "No ~/.ssh directory found") {
+		t.Errorf("got %#v", v)
+	}
+}
+
+func TestListReportsAnEd25519KeyAsBackupEligible(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	sshDir := filepath.Join(home, ".ssh")
+	if err := os.MkdirAll(sshDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeEd25519Keypair(t, sshDir, "id_ed25519", "")
+
+	v, err := runList(context.Background(), req(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	table := v.(view.Table)
+	if table.Total != 1 {
+		t.Fatalf("got %d rows, want 1: %+v", table.Total, table.Rows)
+	}
+	row := table.Rows[0]
+	if row[1] != "ssh-ed25519" || row[2] != "no" || row[3] != "yes" || row[4] == "-" {
+		t.Errorf("got %v", row)
+	}
+}
+
+func TestListReportsAnRSAKeyAsNotEligible(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	sshDir := filepath.Join(home, ".ssh")
+	if err := os.MkdirAll(sshDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeRSAKeypair(t, sshDir, "id_rsa", "")
+
+	v, err := runList(context.Background(), req(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := v.(view.Table).Rows[0]
+	if row[1] != "ssh-rsa" || row[3] != "no" {
+		t.Errorf("got %v", row)
+	}
+}
+
+// Even with no .pub sibling, the type and fingerprint are still knowable
+// without decrypting anything: the OpenSSH container a locked key is
+// stored in carries its own public key in cleartext
+// (ssh.PassphraseMissingError.PublicKey), and probeKey uses exactly that.
+// Found by review (PROJECT.md D73) — the original version of this test
+// asserted "unknown" as the correct answer, on a premise (verified false by
+// the review) that no public data was available here at all.
+func TestListReportsALockedKeyAsLockedButStillIdentifiesItFromTheContainersOwnPublicKey(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	sshDir := filepath.Join(home, ".ssh")
+	if err := os.MkdirAll(sshDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	private, pub := writeEd25519Keypair(t, sshDir, "id_ed25519", "hunter2")
+	if err := os.Remove(pub); err != nil {
+		t.Fatal(err)
+	}
+	_ = private
+
+	v, err := runList(context.Background(), req(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := v.(view.Table).Rows[0]
+	if row[2] != "yes" {
+		t.Errorf("locked column = %q, want yes", row[2])
+	}
+	if row[1] != "ssh-ed25519" {
+		t.Errorf("type = %q, want ssh-ed25519 (recoverable from the container's own embedded public key, no .pub needed)", row[1])
+	}
+	if row[3] != "yes" {
+		t.Errorf("backup-eligible = %q, want yes", row[3])
+	}
+	if row[4] == "-" {
+		t.Errorf("fingerprint = %q, want a real fingerprint", row[4])
+	}
+}
+
+func TestListSkipsPubFilesAndNonKeyEntries(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	sshDir := filepath.Join(home, ".ssh")
+	if err := os.MkdirAll(sshDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeEd25519Keypair(t, sshDir, "id_ed25519", "")
+	if err := os.WriteFile(filepath.Join(sshDir, "config"), []byte("Host *\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sshDir, "known_hosts"), []byte(""), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	v, err := runList(context.Background(), req(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	table := v.(view.Table)
+	if table.Total != 1 {
+		t.Errorf("got %d rows, want 1 (config/known_hosts must be skipped): %+v", table.Total, table.Rows)
+	}
+}
+
+// --- mnemonic.go --------------------------------------------------------
+
+func TestToMnemonicProducesTwentyFourWordsForAFullSeed(t *testing.T) {
+	seed := make([]byte, ed25519.SeedSize)
+	words, err := toMnemonic(seed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := len(strings.Fields(words)); n != 24 {
+		t.Errorf("got %d words, want 24", n)
+	}
+}
+
+func TestFromMnemonicRoundTripsWithToMnemonic(t *testing.T) {
+	seed := make([]byte, ed25519.SeedSize)
+	if _, err := rand.Read(seed); err != nil {
+		t.Fatal(err)
+	}
+	words, err := toMnemonic(seed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := fromMnemonic(words)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(seed) {
+		t.Errorf("round trip did not preserve the seed")
+	}
+}
+
+func TestFromMnemonicRejectsGarbage(t *testing.T) {
+	if _, err := fromMnemonic("not a real mnemonic phrase at all"); err == nil {
+		t.Error("expected an error")
+	}
+}
+
+// --- sshkey.go: small helpers --------------------------------------------
+
+func TestExpandHomeExpandsATildePath(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if got := expandHome("~/id_ed25519"); got != filepath.Join(home, "id_ed25519") {
+		t.Errorf("got %q", got)
+	}
+	if got := expandHome("/already/absolute"); got != "/already/absolute" {
+		t.Errorf("got %q, want it unchanged", got)
+	}
+}
+
+func TestFingerprintMatchesForTheSameKeyEveryTime(t *testing.T) {
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := fingerprint(priv.Public())
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := fingerprint(priv.Public())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a != b || !strings.HasPrefix(a, "SHA256:") {
+		t.Errorf("got %q and %q", a, b)
+	}
+}
+
+func TestPubCommentReadsTheThirdField(t *testing.T) {
+	dir := t.TempDir()
+	private, _ := writeEd25519Keypair(t, dir, "id_ed25519", "")
+	if got := pubComment(private); got != "id_ed25519@test" {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestPubCommentIsEmptyWithNoSibling(t *testing.T) {
+	if got := pubComment("/no/such/key"); got != "" {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestSuggestPrivateKeysListsIdFilesOnly(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	sshDir := filepath.Join(home, ".ssh")
+	if err := os.MkdirAll(sshDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeEd25519Keypair(t, sshDir, "id_ed25519", "")
+	if err := os.WriteFile(filepath.Join(sshDir, "config"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got := suggestPrivateKeys(context.Background(), req(nil))
+	if len(got) != 1 || !strings.HasSuffix(got[0], "id_ed25519") {
+		t.Errorf("got %v", got)
+	}
+}
+
+// freshWords makes a valid 24-word backup phrase for a throwaway ed25519
+// key, for tests that need well-formed words but do not care whose key they
+// encode.
+func freshWords(t *testing.T) string {
+	t.Helper()
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	words, err := toMnemonic(priv.Seed())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return words
+}
+
+// --- gaps a review pass found (PROJECT.md D73) --------------------------
+
+// The interactive word prompt (keys.restore's analogue of keys.backup's
+// promptKeyPassphrase, tested above) had no test at all before this one —
+// review found it via coverage profiling, not by reading the test names.
+func TestResolveWordsPromptsAtATerminalWhenNothingElseIsSupplied(t *testing.T) {
+	old := canPrompt
+	canPrompt = func(plugin.Request) bool { return true }
+	t.Cleanup(func() { canPrompt = old })
+	want := freshWords(t)
+	oldPrompt := promptWords
+	promptWords = func() (string, error) { return want, nil }
+	t.Cleanup(func() { promptWords = oldPrompt })
+
+	got, verr := resolveWords(req(nil))
+	if verr != nil {
+		t.Fatal(verr)
+	}
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestResolveWordsTreatsAnExplicitEmptyStringTheSameAsOmitted(t *testing.T) {
+	r := req(map[string]any{"words": ""}).WithSurface(plugin.SurfaceMCP)
+	_, verr := resolveWords(r)
+	if verr == nil || verr.Code != "keys.restore.nowords" {
+		t.Errorf("code = %v, want keys.restore.nowords (same as omitting the flag)", verr)
+	}
+}
+
+// unlockKey used to prompt for a locked key's real passphrase before ever
+// checking whether the algorithm was even eligible — wasting a person's
+// passphrase entry on a key that was always going to be rejected as
+// unsupported. Verifies the fix by counting prompts, not just the outcome.
+func TestBackupOfALockedRSAKeyNeverPromptsBeforeRejectingTheType(t *testing.T) {
+	dir := t.TempDir()
+	private := writeRSAKeypair(t, dir, "id_rsa", "hunter2")
+
+	old := canPrompt
+	canPrompt = func(plugin.Request) bool { return true }
+	t.Cleanup(func() { canPrompt = old })
+	tries := 0
+	oldPrompt := promptKeyPassphrase
+	promptKeyPassphrase = func(string) (string, error) { tries++; return "hunter2", nil }
+	t.Cleanup(func() { promptKeyPassphrase = oldPrompt })
+
+	_, err := runBackup(context.Background(), req(map[string]any{"key": private}))
+	if errCode(err) != "keys.backup.unsupported" {
+		t.Errorf("code = %q, want keys.backup.unsupported", errCode(err))
+	}
+	if tries != 0 {
+		t.Errorf("prompted %d times for an RSA key's passphrase, want 0 — the type was knowable without it", tries)
+	}
+}
+
+func TestBackupOfAnUnparseableFileErrorsAsInvalidRatherThanLocked(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "not_a_key")
+	if err := os.WriteFile(path, []byte("this is not an SSH key\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := runBackup(context.Background(), req(map[string]any{"key": path}))
+	if errCode(err) != "keys.key.invalid" {
+		t.Errorf("code = %q, want keys.key.invalid", errCode(err))
+	}
+}
+
+func TestListReportsAnUnparseableKeyFileAsUnknownRatherThanCrashing(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	sshDir := filepath.Join(home, ".ssh")
+	if err := os.MkdirAll(sshDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sshDir, "id_garbage"), []byte("not a key"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	v, err := runList(context.Background(), req(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := v.(view.Table).Rows[0]
+	if row[1] != "unknown" || row[2] != "no" || row[3] != "unknown" || row[4] != "-" {
+		t.Errorf("got %v", row)
+	}
+}
+
+// A corrupt .pub sibling used to leave a perfectly good, unencrypted
+// private key reported as unknown, because the fallback to reading the
+// private key itself only ran when .pub was entirely absent. describeKey
+// now falls back whenever the .pub does not yield an answer, corrupt or
+// missing alike.
+func TestListFallsBackToThePrivateKeyWhenThePubSiblingIsCorrupt(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	sshDir := filepath.Join(home, ".ssh")
+	if err := os.MkdirAll(sshDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	private, pub := writeEd25519Keypair(t, sshDir, "id_ed25519", "")
+	if err := os.WriteFile(pub, []byte("not a valid authorized_keys line\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_ = private
+
+	v, err := runList(context.Background(), req(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := v.(view.Table).Rows[0]
+	if row[1] != "ssh-ed25519" || row[3] != "yes" || row[4] == "-" {
+		t.Errorf("got %v, want the private key's real type/eligibility/fingerprint despite the corrupt .pub", row)
+	}
+}
+
+// asEd25519 has two branches: *ed25519.PrivateKey (OpenSSH-format keys,
+// exercised everywhere else in this file) and ed25519.PrivateKey, the value
+// shape only a PKCS8 "PRIVATE KEY" block produces. Untested before this —
+// review found the gap by noting every fixture in this file only ever
+// produces the OpenSSH format.
+func TestAsEd25519HandlesThePkcs8ValueTypeBranch(t *testing.T) {
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := x509.MarshalPKCS8PrivateKey(priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := ssh.ParseRawPrivateKey(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := raw.(ed25519.PrivateKey); !ok {
+		t.Fatalf("ssh.ParseRawPrivateKey returned %T for a PKCS8 block, want the value type ed25519.PrivateKey — test assumption is stale", raw)
+	}
+	got, err := asEd25519(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Equal(priv) {
+		t.Errorf("asEd25519 did not preserve the key through the value-type branch")
+	}
+}
+
+func TestRestoreWithAMissingParentDirectoryErrorsCleanly(t *testing.T) {
+	dir := t.TempDir()
+	out := filepath.Join(dir, "does-not-exist", "restored")
+	words := freshWords(t)
+
+	_, err := runRestore(context.Background(), req(map[string]any{"out": out, "words": words}))
+	if errCode(err) != "keys.restore.write" {
+		t.Errorf("code = %q, want keys.restore.write", errCode(err))
+	}
+}
+
+// publishRestoredKey's own bytes.Equal re-checks — its defence against a
+// race the caller's fileExists pre-checks might lose — were never called
+// with a real collision in place. These call it directly, bypassing
+// runRestore's guard, the only way to reach them deliberately.
+func TestPublishRestoredKeyDetectsAPrivateKeyCollision(t *testing.T) {
+	dir := t.TempDir()
+	out := filepath.Join(dir, "out")
+	if err := os.WriteFile(out, []byte("something else got here first"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, verr := publishRestoredKey(out, priv, nil, "")
+	if verr == nil || verr.Code != "keys.restore.exists" {
+		t.Errorf("code = %v, want keys.restore.exists", verr)
+	}
+	data, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "something else got here first" {
+		t.Errorf("the pre-existing file was overwritten")
+	}
+}
+
+func TestPublishRestoredKeyDetectsAPubCollisionAfterThePrivateKeyIsAlreadyWritten(t *testing.T) {
+	dir := t.TempDir()
+	out := filepath.Join(dir, "out")
+	if err := os.WriteFile(out+".pub", []byte("something else got here first"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, verr := publishRestoredKey(out, priv, nil, "")
+	if verr == nil || verr.Code != "keys.restore.exists" {
+		t.Fatalf("code = %v, want keys.restore.exists", verr)
+	}
+	// The whole point of the fix: the message names both files, since the
+	// private key really is already on disk by this point and "restore
+	// again" alone cannot produce a matching pair.
+	if !strings.Contains(verr.Hint, out) || !strings.Contains(verr.Hint, out+".pub") {
+		t.Errorf("hint = %q, want it to name both %s and %s", verr.Hint, out, out+".pub")
+	}
+	if _, err := os.Stat(out); err != nil {
+		t.Errorf("private key was not written despite succeeding before the .pub collision: %v", err)
+	}
+}

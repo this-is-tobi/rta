@@ -69,7 +69,16 @@ type capAction struct {
 // which opens the tile), row actions inside result tables, and the actions
 // on a record's own page — so a note is as editable as a task, wherever you
 // happen to be looking at it. Keys must not collide with navigation
-// (hjkl/arrows, tab, b, :, /, q) or result keys (r, y).
+// (hjkl/arrows, tab, b, :, /, q) or result keys (r, y, c) — "c" here means
+// this table's own row-action copy (kv.list/kv.show → kv.copy); it is also
+// the key copyvalue.go's copySpecs uses for a capability with no sibling
+// action to copy through, checked both on a result already open
+// (resultView) and directly against a tile's own preview (dashFooter,
+// tui.go's modeDashboard "c" case). A capability must not appear in both
+// tables, or whichever one this loop or that case reaches first shadows
+// the other's hint silently — today that would require a capability that
+// both backs a tile (its own "overview") and declares a capActionSpecs "c"
+// entry for itself, which none currently does.
 var capActionSpecs = map[string][]struct {
 	key, label, id string
 	src            actionSource
@@ -114,10 +123,24 @@ var capActionSpecs = map[string][]struct {
 	// by name, which is the point at which you meant to. Enter opens the
 	// entry's metadata instead, which is everything about it that is safe to
 	// put on a screen.
+	//
+	// `c` is not that decision quietly reversed. A copy puts nothing on the
+	// screen, so it leaves none of what a reveal leaves — no scrollback, no
+	// screen share, no photograph of somebody's monitor, no asciinema
+	// recording — and the next thing anybody copies undoes it, while a
+	// revealed secret stays revealed for as long as the buffer lives. It is
+	// also not one keystroke: the passphrase and identity are inputs like any
+	// other, so every kv action opens the unlock form on the way.
+	//
+	// kv.edit is absent for the opposite reason to the missing reveal: it
+	// hands the terminal to $EDITOR, and the terminal is what this program
+	// is drawing on.
 	"kv.list": {
 		{"enter", "show", "kv.show", srcRow},
+		{"c", "copy", "kv.copy", srcRow},
 		{"a", "add", "kv.set", srcNone},
 		{"e", "set", "kv.set", srcRow},
+		{"m", "rename", "kv.rename", srcRow},
 		{"x", "remove", "kv.rm", srcRow},
 	},
 	// The kv tile is `kv status`, which is about the store rather than any
@@ -128,7 +151,9 @@ var capActionSpecs = map[string][]struct {
 		{"a", "add", "kv.set", srcNone},
 	},
 	"kv.show": {
+		{"c", "copy", "kv.copy", srcSelf},
 		{"e", "set", "kv.set", srcSelf},
+		{"m", "rename", "kv.rename", srcSelf},
 		{"x", "remove", "kv.rm", srcSelf},
 		{"a", "add", "kv.set", srcNone},
 	},
@@ -215,41 +240,30 @@ const (
 // lands on the dashboard without anyone editing this list.
 var pluginOrder = []string{"todo", "note", "sys", "net", "kv", "grant"}
 
-// preferredTile names the capability that best represents a plugin at a
-// glance, where the obvious pick is not simply the first one.
+// preferredTile overrides the tile convention for a plugin whose best glance
+// is not the one the convention lands on.
 //
-// kv is the interesting entry: `kv list` would be the intuitive choice, but
-// it needs the store's passphrase, so on a machine with a store it would
-// spend every refresh cycle rendering the same error. `kv status` needs
+// The convention is pluginTile's, and it is open to every plugin equally: a
+// namespace's own `overview` capability takes the tile, and failing that the
+// first capability that can be previewed at all. `overview` is the word the
+// shared vocabulary already uses for exactly this — `dashboard`, `stats` and
+// `summary` all normalise to it (pkg/sdk/sdktest) — so an author who wants to
+// choose their tile chooses it by naming a capability, not by hoping this map
+// learns about them.
+//
+// What is left here is the one built-in that disagrees with the convention,
+// and an entry owes a reason.
+//
+// kv is that entry. `kv list` would be the intuitive glance and is declared
+// first, but it needs the store's passphrase, so on a machine with a store it
+// would spend every refresh cycle rendering the same error. `kv status` needs
 // nothing — it reads the file's metadata, never its contents — and answers
 // the question you actually have at a glance: is the store there, and can
-// this shell open it.
-//
-// gen is a deliberate choice, not the accident an earlier pass here made it:
-// the tile refreshes on a timer with fresh, real, usable secrets — the
-// shoulder-surf/screen-share risk is real and was raised explicitly — but
-// every tile here is one keystroke away from H (hide) or the plugin pane,
-// and that's judged sufficient for a tile people opted into having on the
-// dashboard by installing rta at all, the same way kv.status or grant.list
-// already show state some viewers would rather not have visible. Naming it
-// here, not leaving it to fall out of the generic Read-and-no-required-input
-// scan below, keeps that a decision on record rather than a side effect of
-// whichever capability happens to be first in gen's list. gen.overview
-// rather than gen.password because the question at a glance is "which shape
-// do I need" — a password, an actual 32-byte key, a UUID — and one column of
-// passwords cannot answer it.
+// this shell open it. It is deliberately not spelled `kv.overview`: an
+// overview of a secret store reads as a summary *of the secrets*, and the
+// whole point of this one is that it never looks at them.
 var preferredTile = map[string]string{
-	// fs.usage is a recursive scan and declines to be previewed; naming the
-	// tile here makes that a decision rather than a fall-through.
-	"fs":   "fs.tree",
-	"todo": "todo.list",
-	"note": "note.list",
-	// One grouped system tile instead of a sparse cpu/mem/load trio; the
-	// individual capabilities remain a search away.
-	"sys": "sys.overview",
-	"net": "net.info",
-	"kv":  "kv.status",
-	"gen": "gen.overview",
+	"kv": "kv.status",
 }
 
 // autoTiles builds one tile per plugin that has something to show, so nothing
@@ -283,6 +297,21 @@ func autoTiles(reg *registry.Registry) []tile {
 // pluginTile picks how one plugin shows itself, and reports whether it can
 // show anything at all.
 //
+// Three rules, in order: what preferredTile pins, the plugin's own
+// `<namespace>.overview`, then the first capability that can be previewed.
+//
+// The middle rule is the one a third-party author can reach. Before it, a
+// plugin's tile was whichever previewable capability happened to be declared
+// first — so a plugin with a debug dump at the top of its list showed the
+// debug dump, and the only way to say otherwise was to be a built-in and get
+// named in a map inside rta. `overview` costs no new API to opt into and
+// means, in the vocabulary sdktest already enforces, exactly what the tile is
+// for.
+//
+// Every rule goes through previewable, including the pinned one: an override
+// is a choice between tiles, never a way to put a capability on a refresh
+// timer that said it did not want to be there.
+//
 // A dashboard is a place you glance at, so a tile has to answer a question
 // nobody had to ask first. cert needs a hostname and http needs a URL: there
 // is no useful default, and a tile with no live data to show is either the
@@ -292,18 +321,50 @@ func autoTiles(reg *registry.Registry) []tile {
 // hostname in mind.
 func pluginTile(reg *registry.Registry, p plugin.Plugin) (tile, bool) {
 	if id, ok := preferredTile[p.Name]; ok {
-		if c, ok := reg.Capability(id); ok && !c.NoPreview {
+		if c, ok := reg.Capability(id); ok && previewable(c) {
 			return tile{cap: c}, true
 		}
 	}
+	// The namespace's own overview. Not any capability ending in the word:
+	// `net.hosts.overview` would be an overview of the hosts file, which is a
+	// section of the plugin rather than the plugin.
+	if c, ok := reg.Capability(p.Name + ".overview"); ok && previewable(c) {
+		return tile{cap: c}, true
+	}
 	for _, c := range p.Capabilities {
-		// NoPreview is the capability saying that running it has a cost the
-		// dashboard has no business paying on its own — see plugin.Capability.
-		if c.Safety == plugin.Read && !formNeeded(c) && !c.NoPreview {
+		if previewable(c) {
 			return tile{cap: c}, true
 		}
 	}
 	return tile{}, false
+}
+
+// TileFor reports which capability the dashboard would show for a plugin, and
+// whether it would show one at all.
+//
+// Exported for `rta plugin dev`, which exists to tell an author what rta
+// believes about their plugin rather than what their source reads like. Which
+// capability lands on the landing screen is exactly that shape of fact: it is
+// a consequence of safety classes, defaults, NoPreview and declaration order,
+// none of which is visible from any one place in the source.
+func TileFor(reg *registry.Registry, p plugin.Plugin) (string, bool) {
+	t, ok := pluginTile(reg, p)
+	if !ok {
+		return "", false
+	}
+	return t.cap.ID, true
+}
+
+// previewable reports whether the dashboard may run a capability on its own:
+// on load, then again every few seconds, with nobody watching.
+//
+// Read because a timer must not mutate anything. No required input without a
+// default, because there is no one to ask and the tile would render the same
+// "missing input" error forever. Not NoPreview, because that is the
+// capability saying that running it has a cost the dashboard has no business
+// paying unprompted — see plugin.Capability.
+func previewable(c plugin.Capability) bool {
+	return c.Safety == plugin.Read && !formNeeded(c) && !c.NoPreview
 }
 
 // arrange applies the user's adjustments to the automatic set: drop what
@@ -388,7 +449,18 @@ func formNeeded(c plugin.Capability) bool {
 }
 
 // tileMsg carries one refreshed tile's view back into the update loop.
+//
+// id names the capability the result belongs to, and the consumer matches on
+// it rather than on idx. A dashboard refresh is in flight for every tile at
+// once and `[`/`]` reorder the grid while it is, so an index taken when the
+// run started names a different tile by the time the answer arrives — and the
+// result is one capability's output painted under another's title, which is
+// the worst possible failure for a screen whose whole job is to be glanced at.
+//
+// idx survives for the static search tile, which has no capability and is
+// never actually re-run.
 type tileMsg struct {
+	id  string
 	idx int
 	v   view.View
 	err *view.Error
@@ -400,33 +472,37 @@ type tickMsg struct{ gen int }
 
 // tileCmd runs one tile's capability off the update loop. Rendering happens
 // at paint time so tiles adapt to the current width for free.
-func tileCmd(idx int, t tile) tea.Cmd {
+func tileCmd(idx int, t tile, cfg map[string]any) tea.Cmd {
 	return func() tea.Msg {
 		if t.search || t.cap.Run == nil {
 			// Static tiles keep their content.
-			return tileMsg{idx: idx, v: t.view}
+			return tileMsg{id: t.cap.ID, idx: idx, v: t.view}
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
 		defer cancel()
 		v, err := t.cap.Run(ctx, plugin.NewRequest(
-			plugin.Resolve(t.cap, t.values), false, false).WithSurface(plugin.SurfaceTUI))
+			plugin.Resolve(t.cap, t.values, cfg), false, false).WithSurface(plugin.SurfaceTUI))
 		if err != nil {
-			return tileMsg{idx: idx, err: view.AsError(err, t.cap.ID+".failed")}
+			return tileMsg{id: t.cap.ID, idx: idx, err: view.AsError(err, t.cap.ID+".failed")}
 		}
-		return tileMsg{idx: idx, v: v}
+		return tileMsg{id: t.cap.ID, idx: idx, v: v}
 	}
 }
 
 // refreshTiles fires every capability tile at once; static tiles keep their
 // content. gen is this refresh chain's identity, stamped onto the tick it
 // arms so a later chain can tell an earlier one's firing apart from its own.
-func refreshTiles(tiles []tile, gen int) tea.Cmd {
+func refreshTiles(tiles []tile, gen int, pluginCfg func(string) map[string]any) tea.Cmd {
 	cmds := make([]tea.Cmd, 0, len(tiles)+1)
 	for i, t := range tiles {
 		if t.search {
 			continue
 		}
-		cmds = append(cmds, tileCmd(i, t))
+		var cfg map[string]any
+		if words := t.cap.Words(); pluginCfg != nil && len(words) > 0 {
+			cfg = pluginCfg(words[0])
+		}
+		cmds = append(cmds, tileCmd(i, t, cfg))
 	}
 	cmds = append(cmds, tea.Tick(tileRefreshInterval, func(time.Time) tea.Msg { return tickMsg{gen: gen} }))
 	return tea.Batch(cmds...)
@@ -801,7 +877,7 @@ func renderTile(t tile, width, height int, selected bool) string {
 		lines = lines[:max(preview-1, 0)]
 		lines = append(lines, theme.Subtle.Render("… enter for details"))
 	}
-	return panel(theme.Key.Render(t.cap.ID), "", strings.Join(lines, "\n"), width, height, selected)
+	return panel(panelHead{Title: t.cap.ID}, strings.Join(lines, "\n"), width, height, selected)
 }
 
 // searchResults filters the registry live: prefix matches on the ID lead,
@@ -885,16 +961,17 @@ func (m Model) renderSearchTile(width int, selected bool) string {
 		lines = append(lines, theme.Subtle.Render("  no matches"))
 	}
 
-	right := theme.Subtle.Render("press /")
+	right := "press /"
 	if m.searchEditing {
-		right = theme.Subtle.Render("↑↓ pick · enter run · esc clear")
+		right = "↑↓ pick · enter run · esc clear"
 	}
 	// The count is the honest part: it says three of eleven, so a match that
 	// is not on screen is a known thing rather than a missing one.
 	if n := len(results); n > searchMatches {
-		right = theme.Subtle.Render(fmt.Sprintf("%d/%d · ", min(m.searchSel, n-1)+1, n)) + right
+		right = fmt.Sprintf("%d/%d · ", min(m.searchSel, n-1)+1, n) + right
 	}
-	return panel(theme.Key.Render("⌕ search"), right, strings.Join(lines, "\n"), width, searchTileHeight, selected)
+	return panel(panelHead{Title: "⌕ search", Right: right},
+		strings.Join(lines, "\n"), width, searchTileHeight, selected)
 }
 
 // dashFooter builds the dashboard hint bar: the selected tile's own actions
@@ -907,16 +984,20 @@ func (m Model) renderSearchTile(width int, selected bool) string {
 func (m Model) dashFooter() string {
 	items := []hintItem{}
 	if m.selected > 0 && m.selected < len(m.tiles) {
-		for _, a := range m.tiles[m.selected].actions {
+		t := m.tiles[m.selected]
+		for _, a := range t.actions {
 			if a.key == "enter" {
 				continue // enter opens the tile itself
 			}
 			items = append(items, action(a.key, a.label))
 		}
+		if hint, ok := copyHint(t.cap.ID, t.view); ok {
+			items = append(items, hint)
+		}
 	}
 	items = append(items,
 		item(bindSelect), labelled(bindOpen, "details"),
-		item(bindMove), item(bindHide), item(bindPlugin),
+		item(bindMove), item(bindHide), item(bindPlugin), item(bindTheme),
 		item(bindBrowse), item(bindSearch), item(bindQuit),
 	)
 	return fitHintBar(m.width, footerMaxLines, items...)
@@ -967,4 +1048,27 @@ func (m Model) dashboardView() string {
 		header += theme.Subtle.Render("  ↓ more")
 	}
 	return header + "\n" + search + "\n" + strings.Join(rendered[first:last], "\n") + "\n" + footer
+}
+
+// tileIndexFor locates the tile a refresh result belongs to, or -1.
+//
+// By capability, not by position. Every tile refreshes concurrently and the
+// grid can be reordered with `[`/`]` or a tile hidden with `H` while results
+// are in flight, so the index a run started with is not the index its answer
+// comes back to. -1 for a tile that is no longer on the dashboard: the result
+// is simply dropped, which is right — nothing is asking for it any more.
+func (m Model) tileIndexFor(msg tileMsg) int {
+	if msg.id != "" {
+		for i, t := range m.tiles {
+			if t.cap.ID == msg.id {
+				return i
+			}
+		}
+		return -1
+	}
+	// The static search tile carries no capability.
+	if msg.idx >= 0 && msg.idx < len(m.tiles) {
+		return msg.idx
+	}
+	return -1
 }

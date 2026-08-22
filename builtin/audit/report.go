@@ -35,8 +35,15 @@ const (
 // notions of what a row contains — the compact view used to build []string
 // rows directly, which meant the summary had to read a status back out of
 // row[1] and any column added ahead of it silently broke the tally.
+// group is one area of a report: a stable id that a script or an agent
+// addresses the section by, and a heading a person reads. It was a single
+// prose string doing both jobs, so rewording a heading silently renamed the
+// key everything else addressed it by — the exact tension view.Section
+// exists to resolve, met here by the audit that most wants stable output.
+type group struct{ id, title string }
+
 type finding struct {
-	group  string
+	group  group
 	check  string
 	status string
 	detail string
@@ -48,8 +55,8 @@ type report struct {
 	findings []finding
 }
 
-func (r *report) add(group, check, status, detail string, ref reference) {
-	r.findings = append(r.findings, finding{group: group, check: check, status: status, detail: detail, ref: ref})
+func (r *report) add(g group, check, status, detail string, ref reference) {
+	r.findings = append(r.findings, finding{group: g, check: check, status: status, detail: detail, ref: ref})
 }
 
 // worst returns the report's overall grade and a tally to explain it.
@@ -96,10 +103,10 @@ func (r *report) table(summary bool) view.Table {
 
 // only narrows a report to one group, so a section renders through exactly
 // the same table builder the compact view uses.
-func (r *report) only(group string) *report {
+func (r *report) only(g group) *report {
 	out := &report{}
 	for _, f := range r.findings {
-		if f.group == group {
+		if f.group == g {
 			out.findings = append(out.findings, f)
 		}
 	}
@@ -124,18 +131,18 @@ func (r *report) grade() []view.Pair {
 //
 // order names the groups and fixes their sequence. It is per-audit because
 // the areas differ, but the assembly does not.
-func detailPage(ctx context.Context, req plugin.Request, r *report, order []string, summary view.View) view.View {
+func detailPage(ctx context.Context, req plugin.Request, r *report, order []group, summary view.View) view.View {
 	p := plugin.NewPage(ctx, req)
-	p.Put("summary", summary)
+	p.PutAs("summary", "summary", summary)
 	for _, g := range order {
 		// A group with nothing to say (no cookies were set, no CORS headers
 		// came back) gets no heading: an empty section reads as a check that
 		// failed to run rather than one that had no subject.
 		if sub := r.only(g); len(sub.findings) > 0 {
-			p.Put(g, sub.table(false))
+			p.PutAs(g.id, g.title, sub.table(false))
 		}
 	}
-	p.Put("references", referenceTable(r.findings))
+	p.PutAs("references", "references", referenceTable(r.findings))
 	return p.View()
 }
 

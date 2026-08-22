@@ -1,0 +1,44 @@
+Rule Them All (rta)
+Copyright the rta authors.
+
+This product is licensed under the Apache License, Version 2.0. See LICENSE.
+
+================================================================================
+Third-party components under other licenses
+================================================================================
+
+github.com/hashicorp/go-plugin
+    Mozilla Public License 2.0 (MPL-2.0)
+    https://github.com/hashicorp/go-plugin/blob/main/LICENSE
+
+    rta uses go-plugin as the transport for its plugin tier: rta launches
+    plugin processes and speaks gRPC to them across a process boundary.
+
+    MPL-2.0 is a file-level copyleft. It reaches the files it covers and not
+    the software that links them, so rta's own source remains Apache-2.0.
+    The obligation it does create is that modifications *to go-plugin's own
+    files* must be published under MPL-2.0.
+
+    rta does not modify go-plugin. It is consumed as an unmodified upstream
+    module dependency at a pinned version (see go.mod), and it is not
+    vendored, patched or forked. Should that ever change, the modified files
+    must be published under MPL-2.0 and this notice updated to say where.
+
+github.com/hashicorp/go-hclog
+    Mozilla Public License 2.0 (MPL-2.0)
+    https://github.com/hashicorp/go-hclog/blob/main/LICENSE
+
+    A direct dependency of go-plugin, and used directly by rta to give the
+    plugin host an explicit logger rather than go-plugin's default, which
+    writes plugin-controlled bytes to the host's terminal unquoted. Same
+    terms and same position as above: unmodified, not vendored.
+
+github.com/hashicorp/yamux
+    Mozilla Public License 2.0 (MPL-2.0)
+    Pulled in by go-plugin for connection multiplexing. Unmodified.
+
+--------------------------------------------------------------------------------
+
+The remaining dependencies are permissively licensed (MIT, BSD-3-Clause,
+Apache-2.0). `go-licenses` or `go mod download -json` over go.mod enumerates
+the full set for any release.

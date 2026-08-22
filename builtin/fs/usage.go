@@ -234,8 +234,8 @@ func usageDetail(ctx context.Context, req plugin.Request, path string,
 	}
 
 	p := plugin.NewPage(ctx, req)
-	p.Put("summary", view.KeyValue{Pairs: summary})
-	p.Put("biggest entries", usageTable(entries, total, req.Int("limit")))
+	p.PutAs("summary", "summary", view.KeyValue{Pairs: summary})
+	p.PutAs("entries", "biggest entries", usageTable(entries, total, req.Int("limit")))
 
 	if len(s.largest) > 0 {
 		lt := view.Table{Columns: []view.Column{{Name: "File"}, {Name: "Size", Kind: view.KindBytes}}}
@@ -247,7 +247,7 @@ func usageDetail(ctx context.Context, req plugin.Request, path string,
 			lt.Rows = append(lt.Rows, []string{rel, humanBytes(f.size)})
 		}
 		lt.Total = len(lt.Rows)
-		p.Put("largest files anywhere beneath", lt)
+		p.PutAs("largest-files", "largest files anywhere beneath", lt)
 	}
 	return p.View()
 }

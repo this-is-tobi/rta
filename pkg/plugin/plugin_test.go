@@ -48,6 +48,14 @@ func TestValidateFailures(t *testing.T) {
 		{"bad field", func(p *Plugin) {
 			p.Capabilities[0].Inputs = []Field{{Name: "BadName", Type: String}}
 		}, "field name"},
+		// A real bug an audit found (PROJECT.md D87): two inputs sharing a
+		// name used to validate cleanly, and declareFlags then registered
+		// one pflag.Flag per input in declaration order — the second
+		// AddFlag for the same name panics the whole process at startup,
+		// for every command, not just the capability that declared it.
+		{"dup field name", func(p *Plugin) {
+			p.Capabilities[0].Inputs = []Field{{Name: "target", Type: String}, {Name: "target", Type: Int}}
+		}, "twice"},
 		{"unknown field type", func(p *Plugin) {
 			p.Capabilities[0].Inputs = []Field{{Name: "port", Type: "integer"}}
 		}, "unknown type"},
@@ -278,5 +286,131 @@ func TestAnInputMustDeclareItsType(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), string(Secret)) {
 		t.Errorf("the rejection should name the accepted types: %v", err)
+	}
+}
+
+// A declared bound the host will never apply is worse than no bound: the
+// author believes the input is clamped and stops checking it, and nothing
+// anywhere says otherwise. All three forms are quiet — Resolve reads Min
+// through toFloat and simply gets not-ok, clamping applies Min then Max so an
+// inverted pair pins every value rather than erroring, and Resolve clamps no
+// type but Int and Float.
+func TestABoundTheHostCannotApplyIsRejected(t *testing.T) {
+	tests := []struct {
+		name    string
+		field   Field
+		wantSub string
+	}{
+		{"string min", Field{Name: "n", Type: Int, Min: "1"}, "non-numeric Min"},
+		{"string max", Field{Name: "n", Type: Int, Max: "10"}, "non-numeric Max"},
+		{"bool min", Field{Name: "n", Type: Float, Min: true}, "non-numeric Min"},
+		{"inverted", Field{Name: "n", Type: Int, Min: 100, Max: 10}, "clamps to Max"},
+		{"bound on a string", Field{Name: "n", Type: String, Max: 10}, "apply only to"},
+		{"bound on a bool", Field{Name: "n", Type: Bool, Min: 0}, "apply only to"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := validPlugin()
+			p.Capabilities[0].Inputs = []Field{tt.field}
+			err := p.Validate()
+			if err == nil {
+				t.Fatalf("%+v was accepted", tt.field)
+			}
+			if !strings.Contains(err.Error(), tt.wantSub) {
+				t.Errorf("want an error mentioning %q, got %v", tt.wantSub, err)
+			}
+		})
+	}
+}
+
+// The rule must not cost the bounds people actually write. Every numeric Go
+// type Resolve reads is accepted, a single-sided bound is accepted, and equal
+// bounds are a legal way to pin a value to one number.
+func TestOrdinaryBoundsAreAccepted(t *testing.T) {
+	fields := []Field{
+		{Name: "n", Type: Int, Min: 1, Max: 65535},
+		{Name: "n", Type: Int, Min: int64(1)},
+		{Name: "n", Type: Float, Max: 1.0},
+		{Name: "n", Type: Float, Min: 0.0, Max: 100.0},
+		{Name: "n", Type: Int, Min: 5, Max: 5},
+		{Name: "n", Type: String, Help: "no bounds at all"},
+	}
+	for _, f := range fields {
+		p := validPlugin()
+		p.Capabilities[0].Inputs = []Field{f}
+		if err := p.Validate(); err != nil {
+			t.Errorf("%+v was rejected: %v", f, err)
+		}
+	}
+}
+
+// Config on a Secret is refused, and the message names the alternative.
+//
+// Six problems close on this one rule. A config file is plaintext, read on
+// every invocation with nobody watching; a Secret's default is published
+// verbatim in the MCP tool schema; the TUI would draw an empty password box
+// over a value that is already known; and for kv specifically the passphrase
+// is resolved by machinery that needs a TTY and a person, which argument
+// resolution has neither. Local is the path that already works.
+func TestConfigIsRefusedOnASecretInput(t *testing.T) {
+	err := Plugin{
+		Name: "pg", Summary: "postgres", Capabilities: []Capability{{
+			ID: "pg.query", Summary: "query", Safety: Read,
+			Run:    func(context.Context, Request) (view.View, error) { return nil, nil },
+			Inputs: []Field{{Name: "password", Type: Secret, Help: "p", Config: "password"}},
+		}},
+	}.Validate()
+	if err == nil {
+		t.Fatal("a Secret input was allowed to be filled from config")
+	}
+	if !strings.Contains(err.Error(), "Local") {
+		t.Errorf("error = %v, want it to name the alternative", err)
+	}
+}
+
+// CLI positional arity is computed from Required, so an input that config
+// might or might not have satisfied changes what an argument count means.
+func TestConfigIsRefusedOnAPositionalInput(t *testing.T) {
+	err := Plugin{
+		Name: "pg", Summary: "postgres", Capabilities: []Capability{{
+			ID: "pg.query", Summary: "query", Safety: Read,
+			Run:    func(context.Context, Request) (view.View, error) { return nil, nil },
+			Inputs: []Field{{Name: "sql", Type: String, Help: "s", Positional: true, Config: "sql"}},
+		}},
+	}.Validate()
+	if err == nil {
+		t.Fatal("a positional input was allowed to be filled from config")
+	}
+}
+
+// The key grammar is closed: no leading dot, no empty segment, nothing that
+// could be read as a filesystem path by whatever looks at it next.
+func TestTheConfigKeyGrammarIsClosed(t *testing.T) {
+	for _, key := range []string{".host", "host.", "a..b", "../../etc/passwd", "Host", "host name", "/host", ""} {
+		if key == "" {
+			continue // empty means "never", which is every input today
+		}
+		err := Plugin{
+			Name: "pg", Summary: "postgres", Capabilities: []Capability{{
+				ID: "pg.query", Summary: "query", Safety: Read,
+				Run:    func(context.Context, Request) (view.View, error) { return nil, nil },
+				Inputs: []Field{{Name: "host", Type: String, Help: "h", Config: key}},
+			}},
+		}.Validate()
+		if err == nil {
+			t.Errorf("config key %q was accepted", key)
+		}
+	}
+	for _, key := range []string{"host", "tls.mode", "a.b.c", "pool-size"} {
+		err := Plugin{
+			Name: "pg", Summary: "postgres", Capabilities: []Capability{{
+				ID: "pg.query", Summary: "query", Safety: Read,
+				Run:    func(context.Context, Request) (view.View, error) { return nil, nil },
+				Inputs: []Field{{Name: "host", Type: String, Help: "h", Config: key}},
+			}},
+		}.Validate()
+		if err != nil {
+			t.Errorf("config key %q was refused: %v", key, err)
+		}
 	}
 }

@@ -26,12 +26,12 @@ import (
 // up because it is where breaches are actually coming from.
 
 // Groups order the detail page and name its sections.
-const (
-	grpVulnerable = "known vulnerabilities"
-	grpInventory  = "inventory"
+var (
+	grpVulnerable = group{"vulnerabilities", "known vulnerabilities"}
+	grpInventory  = group{"inventory", "inventory"}
 )
 
-var depsGroupOrder = []string{grpVulnerable, grpInventory}
+var depsGroupOrder = []group{grpVulnerable, grpInventory}
 
 func runDeps(ctx context.Context, req plugin.Request) (view.View, error) {
 	path := strings.TrimSpace(req.String("path"))

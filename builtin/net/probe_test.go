@@ -5,6 +5,7 @@ import (
 	stdnet "net"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -173,5 +174,169 @@ func TestProbeClosedPortIsCoded(t *testing.T) {
 	ve := view.AsError(err, "x")
 	if ve.Code != "net.probe.unreachable" || ve.Hint == "" {
 		t.Errorf("want net.probe.unreachable with hint, got %+v", ve)
+	}
+}
+
+// A regression test for a real bug review found (PROJECT.md D89): the TLS
+// handshake was never bounded by the documented timeout field — only the
+// TCP dial was — so a peer that accepts the connection and then never sends
+// a single TLS record hung HandshakeContext forever. No grant is needed for
+// this: net.probe is classified Read.
+func TestProbeTLSHandshakeRespectsTimeout(t *testing.T) {
+	ln, err := stdnet.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		// Accept the TCP connection and say nothing at all — never a single
+		// TLS record — for far longer than the probe's own --timeout, so
+		// only a bounded handshake context can end this.
+		time.Sleep(5 * time.Second)
+	}()
+	port := ln.Addr().(*stdnet.TCPAddr).Port
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := runProbe(context.Background(), req(map[string]any{
+			"host": "127.0.0.1", "port": port, "timeout": 1, "wait": 1, "tls": true,
+		}))
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		ve := view.AsError(err, "x")
+		if ve == nil || ve.Code != "net.probe.tls" {
+			t.Fatalf("want net.probe.tls, got %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("probe did not return within 3s — the TLS handshake was not bounded by --timeout")
+	}
+}
+
+// A regression test for a real bug review found (PROJECT.md D90): every
+// read after the first got a fresh 200ms deadline no matter how long the
+// call had already run, so a peer trickling one byte at a time — fully
+// within its control, since host/port are caller-supplied — could hold the
+// call open for up to 4096 reads * 200ms, about 13.6 minutes, regardless of
+// what --wait actually asked for.
+func TestProbeBannerReadRespectsWaitAgainstATricklingPeer(t *testing.T) {
+	ln, err := stdnet.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	stop := make(chan struct{})
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		// One byte every 50ms — well inside each fresh drainWait window
+		// before this fix — for far longer than --wait allows.
+		for i := 0; ; i++ {
+			select {
+			case <-stop:
+				return
+			case <-time.After(50 * time.Millisecond):
+			}
+			if _, err := conn.Write([]byte{'x'}); err != nil {
+				return
+			}
+		}
+	}()
+	defer close(stop)
+	port := ln.Addr().(*stdnet.TCPAddr).Port
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := runProbe(context.Background(), req(map[string]any{
+			"host": "127.0.0.1", "port": port, "timeout": 2, "wait": 1,
+		}))
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("probe did not return within 3s against a 1s --wait — a trickling peer held it open")
+	}
+}
+
+// A dry run must not reach the network. net.send shipped without the branch,
+// so `rta net send --dry-run` opened the connection, wrote the bytes, and
+// then reported what "would" happen — the exact mistake http.post made once
+// already (PROJECT.md §4.7), on the capability whose own declaration calls it
+// a remote write primitive strictly more capable than http.post.
+//
+// The listener accepts and records; a dry run that touches it at all fails.
+func TestSendDryRunNeverReachesTheNetwork(t *testing.T) {
+	ln, err := stdnet.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+
+	var mu sync.Mutex
+	connected := 0
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			mu.Lock()
+			connected++
+			mu.Unlock()
+			conn.Close()
+		}
+	}()
+
+	host, portStr, _ := stdnet.SplitHostPort(ln.Addr().String())
+	port, _ := strconv.Atoi(portStr)
+	values := map[string]any{
+		"host": host, "port": port, "data": `FLUSHALL\r\n`, "timeout": 2, "wait": 1,
+	}
+	v, err := runSend(t.Context(), plugin.NewRequest(values, true, true))
+	if err != nil {
+		t.Fatalf("dry run failed: %v", err)
+	}
+
+	mu.Lock()
+	got := connected
+	mu.Unlock()
+	if got != 0 {
+		t.Errorf("--dry-run opened %d connection(s); the payload was delivered", got)
+	}
+
+	kv, ok := v.(view.KeyValue)
+	if !ok {
+		t.Fatalf("dry run returned %T, want a KeyValue report", v)
+	}
+	var target, payload string
+	for _, p := range kv.Pairs {
+		switch p.Key {
+		case "target":
+			target = p.Value
+		case "payload":
+			payload = p.Value
+		}
+	}
+	if target != ln.Addr().String() {
+		t.Errorf("dry run named %q, not the address it would have dialled (%s)", target, ln.Addr())
+	}
+	// The escapes are interpreted in the report, because interpreting them is
+	// the half people get wrong and a preview showing the literal backslash
+	// would hide exactly that.
+	if !strings.Contains(payload, `\r\n`) || strings.Contains(payload, `\\r`) {
+		t.Errorf("payload %q should show the interpreted bytes, quoted", payload)
 	}
 }

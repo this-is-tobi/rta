@@ -1,0 +1,17 @@
+# Generation is driven by `go run <pkg>@<version>`, so the only tool anybody
+# needs is the Go toolchain they already have — no protoc, no buf install, no
+# registry account. buf itself compiles .proto in pure Go, which is why this
+# works at all.
+#
+# Versions are pinned here rather than floating: generated code that changes
+# because somebody's toolchain moved is a diff nobody authored.
+version: v2
+managed:
+  enabled: false
+plugins:
+  - local: ["go", "run", "google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.5"]
+    out: .
+    opt: paths=source_relative
+  - local: ["go", "run", "google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1"]
+    out: .
+    opt: paths=source_relative

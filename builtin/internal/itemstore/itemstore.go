@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/this-is-tobi/rule-them-all/internal/atomicfile"
 	"github.com/this-is-tobi/rule-them-all/internal/paths"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
@@ -109,7 +110,8 @@ func Load(file, ns string) (Store, error) {
 	return s, nil
 }
 
-// Save writes the store atomically: tmp file + rename.
+// Save writes the store atomically, so a crash mid-write cannot leave a
+// half-written task list behind. 0600: it is one user's notes.
 func Save(file, ns string, s Store) error {
 	dir := dataDir()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -119,20 +121,8 @@ func Save(file, ns string, s Store) error {
 	if err != nil {
 		return view.Errorf(ns+".store.encode", "encoding store: %v", err)
 	}
-	tmp, err := os.CreateTemp(dir, file+"-*")
-	if err != nil {
+	if err := atomicfile.Write(filepath.Join(dir, file), data, 0o600); err != nil {
 		return view.Errorf(ns+".store.write", "writing store: %v", err)
-	}
-	defer os.Remove(tmp.Name())
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return view.Errorf(ns+".store.write", "writing store: %v", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return view.Errorf(ns+".store.write", "closing store: %v", err)
-	}
-	if err := os.Rename(tmp.Name(), filepath.Join(dir, file)); err != nil {
-		return view.Errorf(ns+".store.write", "replacing store: %v", err)
 	}
 	return nil
 }

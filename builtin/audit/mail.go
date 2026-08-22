@@ -27,13 +27,13 @@ import (
 // which is also the reason DKIM needs a selector handed to it (see below).
 
 // Groups order the detail page and name its sections.
-const (
-	grpSenderAuth = "sender authentication"
-	grpMailTLS    = "transport security"
-	grpRouting    = "routing"
+var (
+	grpSenderAuth = group{"sender-auth", "sender authentication"}
+	grpMailTLS    = group{"transport", "transport security"}
+	grpRouting    = group{"routing", "routing"}
 )
 
-var mailGroupOrder = []string{grpSenderAuth, grpMailTLS, grpRouting}
+var mailGroupOrder = []group{grpSenderAuth, grpMailTLS, grpRouting}
 
 // spfLookupLimit is RFC 7208 §4.6.4's cap on DNS-querying mechanisms in one
 // SPF evaluation. Past it, evaluation returns permerror and the policy stops

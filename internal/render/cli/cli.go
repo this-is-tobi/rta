@@ -85,6 +85,10 @@ type Options struct {
 
 // Render writes v to w in the requested format.
 func Render(w io.Writer, v view.View, opts Options) error {
+	// json is the one byte-exact channel; see sanitize.
+	if opts.Format != JSON {
+		v = sanitize(v)
+	}
 	switch opts.Format {
 	case JSON:
 		enc := json.NewEncoder(w)
@@ -596,6 +600,9 @@ func prettyBars(w io.Writer, c view.Chart, st styles) error {
 // nothing. It falls through to the styled block, which at least says so in
 // prose.
 func RenderError(w io.Writer, e *view.Error, opts Options) error {
+	if opts.Format != JSON {
+		e = cleanPtr(e)
+	}
 	switch opts.Format {
 	case Markdown:
 		return markdownError(w, e)

@@ -1,14 +1,17 @@
 package grant
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/this-is-tobi/rule-them-all/internal/paths"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
@@ -25,6 +28,13 @@ func issue(t *testing.T, g Grant) {
 	grants, verr := Load()
 	if verr != nil {
 		t.Fatalf("load: %v", verr)
+	}
+	// Both stamps, because both are set by the only thing that issues a grant
+	// for real (builtin/grant's runAllow). Issued in particular: Active caps
+	// a grant at Issued+MaxTTL, so a fixture that leaves it zero is a grant
+	// that expired in the year 1 and tests a rule nobody wrote.
+	if g.Issued.IsZero() {
+		g.Issued = time.Now()
 	}
 	if g.Expires.IsZero() {
 		g.Expires = time.Now().Add(DefaultTTL)
@@ -179,12 +189,25 @@ func TestGrantFileHoldsNoSecret(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var got []Grant
-	if err := json.Unmarshal(data, &got); err != nil {
+	// A seal envelope, still plain readable JSON: §4.7.11's promise is that
+	// "what can the agent do right now?" is answerable without unlocking
+	// anything, so the file is authenticated and not encrypted.
+	var doc struct {
+		Seal   string  `json:"seal"`
+		Grants []Grant `json:"grants"`
+	}
+	if err := json.Unmarshal(data, &doc); err != nil {
 		t.Fatalf("grants are not plain JSON: %v", err)
 	}
+	if doc.Seal == "" {
+		t.Error("the file carries no seal, so anything that can write here can author it")
+	}
+	got := doc.Grants
 	if got[0].Target != "kv.get" || got[0].Scope != "db-password" {
 		t.Errorf("round trip = %+v", got[0])
+	}
+	if !strings.Contains(string(data), "db-password") {
+		t.Error("the scope is not readable in the file; it must stay answerable in a hurry")
 	}
 	if filepath.Base(Path()) != "grants.json" {
 		t.Errorf("path = %s", Path())
@@ -234,6 +257,146 @@ func TestMaxUsesGrantStopsAuthorizingOnceSpent(t *testing.T) {
 	}
 }
 
+// A regression test for a real bug review caught (PROJECT.md D74): a call
+// naming the same record twice in a StringSlice-typed scope (kv.env's
+// --key, repeatable) used to spend the covering grant once per occurrence
+// rather than once per call, so a single authorized call could burn through
+// a multi-use budget meant for that many separate calls.
+func TestARepeatedScopeInOneCallSpendsOnlyOnce(t *testing.T) {
+	setup(t)
+	issue(t, Grant{Target: "kv.env", Scope: "db-password", MaxUses: 2})
+	c := plugin.Capability{
+		ID: "kv.env", Summary: "kv.env", Safety: plugin.Write, Scope: "key", NeedsGrant: true,
+		Inputs: []plugin.Field{{Name: "key", Type: plugin.StringSlice}},
+		Run:    func(context.Context, plugin.Request) (view.View, error) { return view.Text{}, nil },
+	}
+	values := map[string]any{"key": []string{"db-password", "db-password"}}
+
+	if verr := Check(c, values); verr != nil {
+		t.Fatalf("first call: %v", verr)
+	}
+	if verr := Consume(c, values); verr != nil {
+		t.Fatalf("first call consume: %v", verr)
+	}
+
+	grants, verr := Load()
+	if verr != nil {
+		t.Fatal(verr)
+	}
+	if grants[0].Uses != 1 {
+		t.Fatalf("Uses = %d after one call naming the same key twice, want 1", grants[0].Uses)
+	}
+
+	// The budget was for two calls; one call with a duplicated name must not
+	// have spent both.
+	if verr := Check(c, map[string]any{"key": []string{"db-password"}}); verr != nil {
+		t.Errorf("a second, independent call was refused — the first call over-spent: %v", verr)
+	}
+}
+
+// A regression test for a real bug review caught (PROJECT.md D83): unlike
+// TestARepeatedScopeInOneCallSpendsOnlyOnce above (the same record named
+// twice), this is *distinct* records named in one call — kv.env's --key is
+// repeatable, so `kv env --key a --key b --key c` against a --max-uses 1
+// grant with no Scope (so it covers every key) named three different
+// records in one call. checkAgainst approved all three independently (each
+// one individually "covered" by the same grant), then spend incremented
+// that single grant three times in the one Save the call made — Uses went
+// 0->3 against a budget of 1, and the call itself was never refused: a
+// grant documented as "reveal this secret exactly once" revealed three.
+func TestDistinctRecordsInOneCallCannotExceedAGrantsBudget(t *testing.T) {
+	setup(t)
+	issue(t, Grant{Target: "kv.env", MaxUses: 1}) // no Scope: covers every key
+	c := plugin.Capability{
+		ID: "kv.env", Summary: "kv.env", Safety: plugin.Write, Scope: "key", NeedsGrant: true,
+		Inputs: []plugin.Field{{Name: "key", Type: plugin.StringSlice}},
+		Run:    func(context.Context, plugin.Request) (view.View, error) { return view.Text{}, nil },
+	}
+	values := map[string]any{"key": []string{"a", "b", "c"}}
+
+	release, verr := Reserve(c, values)
+	if verr == nil {
+		release()
+		t.Fatal("a call naming three records was authorized against a one-use grant")
+	}
+
+	grants, loadErr := loadAll()
+	if loadErr != nil {
+		t.Fatal(loadErr)
+	}
+	if len(grants) != 1 || grants[0].Uses != 0 {
+		t.Fatalf("a refused call still spent uses: %+v", grants)
+	}
+
+	// The budget was real, just too small for three at once: a call naming
+	// exactly as many records as the grant can afford must still succeed.
+	// Fresh store, so the exhausted-for-this-call (but still Active, since
+	// Uses < MaxUses) grant above can't be picked up as a second covering
+	// grant and muddy the count.
+	setup(t)
+	issue(t, Grant{Target: "kv.env", MaxUses: 3})
+	_, verr = Reserve(c, values)
+	if verr != nil {
+		t.Fatalf("a call naming exactly as many records as the budget allows was refused: %v", verr)
+	}
+	// No release(): that closure is only for a call that goes on to fail —
+	// calling it here would refund the very use just asserted as spent.
+	grants, loadErr = loadAll()
+	if loadErr != nil {
+		t.Fatal(loadErr)
+	}
+	if len(grants) != 1 || grants[0].Uses != 3 {
+		t.Fatalf("Uses = %+v after three distinct records against a three-use budget, want one grant with Uses=3", grants)
+	}
+}
+
+// A regression test for a real bug review demonstrated directly
+// (PROJECT.md D74): fmt.Sprint(float64(1000000)) is "1e+06", not
+// "1000000" — an ordinary six-digit Int-typed Scope value (todo.rm's id,
+// for instance) delivered over MCP as a JSON number would never match a
+// grant an operator issued for the same id typed as a plain string.
+func TestIntScopedGrantMatchesTheOperatorTypedNumber(t *testing.T) {
+	setup(t)
+	issue(t, Grant{Target: "todo.rm", Scope: "1000000"})
+	c := plugin.Capability{
+		ID: "todo.rm", Summary: "todo.rm", Safety: plugin.Destructive, Scope: "id",
+		Inputs: []plugin.Field{{Name: "id", Type: plugin.Int, Required: true}},
+		Run:    func(context.Context, plugin.Request) (view.View, error) { return view.Text{}, nil },
+	}
+	// An MCP call's JSON number decodes to float64 before Reserve/Check ever
+	// see it — this is that shape, not the CLI's already-typed int.
+	if verr := Check(c, map[string]any{"id": float64(1000000)}); verr != nil {
+		t.Errorf("a grant for id 1000000 did not cover the same id as a JSON number: %v", verr)
+	}
+}
+
+// A coverage test for a real gap review found (PROJECT.md D74): Reserve is,
+// by its own doc comment, the whole gate a use-limited grant passes
+// through, and its Load()/acquireLock()/Save() failure branches — the
+// difference between failing closed and silently authorizing an
+// unauthorized call — had no test forcing any of them to actually fail.
+// This drives the one that is cheapest to reach honestly: a corrupt grant
+// file discovered mid-Reserve, on its fast-path Load(). Reserve must refuse
+// the call rather than treat an unreadable grant store as "nothing to
+// check".
+func TestReserveFailsClosedWhenTheGrantFileIsUnreadable(t *testing.T) {
+	setup(t)
+	issue(t, Grant{Target: "kv.get", Scope: "k", MaxUses: 1})
+	c := declare("kv.get", plugin.Write, "key", true)
+
+	if err := os.WriteFile(Path(), []byte(`{"seal":`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	release, verr := Reserve(c, map[string]any{"key": "k"})
+	if verr == nil {
+		if release != nil {
+			release()
+		}
+		t.Fatal("Reserve authorized a call while the grant file could not be read")
+	}
+}
+
 // A call that never happened must not cost a use — Consume is only ever
 // called by the bridge after Run succeeds, but this pins the contract for
 // anyone calling it directly: consuming a scope the grant does not cover is
@@ -280,6 +443,88 @@ func TestConcurrentConsumeDoesNotOverspendAOneTimeGrant(t *testing.T) {
 	// surviving row would mean Uses < MaxUses despite 2x uses worth of calls.
 	if len(grants) != 0 {
 		t.Errorf("grant survived %d consumes against a %d-use limit: %+v", uses*2, uses, grants)
+	}
+}
+
+// Reserve's fast path decides "nothing to spend" from one unlocked Load, then
+// (before the fix this guards) asked Check for an authorization decision —
+// which took its own, independent, unlocked Load. A MaxUses grant created in
+// the gap between those two reads was invisible to the first (so the fast
+// path never touched the lock or spent anything) and visible to the second
+// (so the call was authorized anyway): a one-time grant delivered for free,
+// reproduced and left open in PROJECT.md D74.
+//
+// The real gap is a handful of microseconds, too narrow to land reliably by
+// launching two goroutines and hoping. This widens it without touching what
+// is being raced: Load's own cost (read, unseal, parse, filter, sort) scales
+// with how many grants are in the file, so padding the file with thousands of
+// unrelated ones stretches the gap between Reserve's own Load and a
+// hypothetical second one from microseconds to low milliseconds — comfortably
+// past ordinary goroutine start jitter — while every grant that actually
+// matters to the assertion is unaffected by how many others sit beside it.
+func TestReserveFastPathIsNotFooledByAGrantThatArrivesMidCheck(t *testing.T) {
+	setup(t)
+
+	const noise = 4000
+	future := time.Now().Add(time.Hour)
+	padding := make([]Grant, noise)
+	for i := range padding {
+		padding[i] = Grant{Target: fmt.Sprintf("noise.cap%d", i), Issued: time.Now(), Expires: future}
+	}
+
+	c := declare("kv.get", plugin.Write, "key", true)
+	values := map[string]any{"key": "k"}
+
+	const trials = 150
+	for trial := range trials {
+		if verr := Save(padding); verr != nil {
+			t.Fatalf("trial %d: seed: %v", trial, verr)
+		}
+
+		done := make(chan struct {
+			release func()
+			verr    *view.Error
+		}, 1)
+		go func() {
+			release, verr := Reserve(c, values)
+			done <- struct {
+				release func()
+				verr    *view.Error
+			}{release, verr}
+		}()
+
+		// No synchronization with the goroutine above on purpose — the point
+		// is to land this write near Reserve's own Load without knowing
+		// exactly when that happens, the same way a real concurrent grant
+		// and a real concurrent call would race with no coordination between
+		// them either.
+		contested := append(append([]Grant{}, padding...), Grant{
+			Target: "kv.get", Scope: "k", MaxUses: 1, Issued: time.Now(), Expires: future,
+		})
+		if verr := Save(contested); verr != nil {
+			t.Fatalf("trial %d: inject: %v", trial, verr)
+		}
+
+		result := <-done
+		if result.release != nil {
+			result.release()
+		}
+
+		if result.verr == nil {
+			// Authorized — the only thing in the file that could ever cover
+			// this call is the one-use grant just injected, so it must show
+			// the spend. Uses still 0 means the call ran for free.
+			after, lverr := loadAll()
+			if lverr != nil {
+				t.Fatalf("trial %d: reload: %v", trial, lverr)
+			}
+			for _, g := range after {
+				if g.Target == "kv.get" && g.Scope == "k" && g.Uses != 1 {
+					t.Fatalf("trial %d: authorized against a MaxUses=1 grant without spending it (Uses=%d)",
+						trial, g.Uses)
+				}
+			}
+		}
 	}
 }
 
@@ -386,3 +631,40 @@ func TestMutateStoresNothingWhenTheMutatorDeclines(t *testing.T) {
 		t.Errorf("a declined mutation wrote anyway: %+v", grants)
 	}
 }
+
+// Releasing removes our lock, not whichever lock happens to be at that path.
+//
+// A holder whose lock was broken as stale has already been replaced. Removing
+// by name on the way out deletes the successor's lock and leaves it inside a
+// critical section it believes it has to itself — which is the lost
+// revocation this lock was written to prevent, reached by a different route.
+func TestReleasingDoesNotRemoveSomebodyElsesLock(t *testing.T) {
+	setup(t)
+	release, verr := acquireLock()
+	if verr != nil {
+		t.Fatal(verr)
+	}
+	path := filepath.Join(paths.Data(), lockFile)
+
+	// What a stale break followed by a fresh acquire leaves behind: the same
+	// path, somebody else's token.
+	successor := []byte("99999 deadbeefdeadbeefdeadbeefdeadbeef\n")
+	if err := os.WriteFile(path, successor, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	release()
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("the successor's lock was deleted by a release that no longer owned it: %v", err)
+	}
+	if !bytes.Equal(got, successor) {
+		t.Errorf("lock file holds %q, want the successor's token", got)
+	}
+}
+
+// breakStale itself — the deterministic "did it break the right lock"
+// tests — moved to internal/filelock/filelock_test.go along with the
+// mechanism; this package only exercises it indirectly, through
+// acquireLock and TestStaleLockIsReclaimed above.

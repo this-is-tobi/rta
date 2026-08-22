@@ -461,7 +461,7 @@ func TestDepsOfflineDoesNotClaimAnAllClear(t *testing.T) {
 }
 
 func TestEveryDepsFindingLandsInADeclaredGroup(t *testing.T) {
-	declared := map[string]bool{}
+	declared := map[group]bool{}
 	for _, g := range depsGroupOrder {
 		declared[g] = true
 	}
