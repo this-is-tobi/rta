@@ -32,8 +32,10 @@ import (
 // credentials (D74).
 func connFields() []plugin.Field {
 	return []plugin.Field{
+		// One input holding a whole URL, which is the url role — the third
+		// shape, and the other reason the roles are shapes rather than names.
 		{Name: "address", Type: plugin.String, Default: "http://127.0.0.1:8200", Config: "address",
-			Local: true, Help: "Vault server address"},
+			Local: true, Endpoint: plugin.EndpointURL, Help: "Vault server address"},
 		{Name: "namespace", Type: plugin.String, Default: "", Config: "namespace",
 			Local: true, Help: "Vault Enterprise namespace — empty for OSS or the root namespace"},
 		{Name: "token", Type: plugin.Secret, Local: true, EnvFallback: true,

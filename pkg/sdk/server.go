@@ -140,7 +140,8 @@ func (s *server) Suggest(ctx context.Context, req *rtav1.SuggestRequest) (resp *
 		if f.Name != req.GetField() || f.Suggest == nil {
 			continue
 		}
-		pr := plugin.NewRequest(wire.ValuesFromProto(req.GetValues()), false, false)
+		pr := plugin.NewRequest(wire.ValuesFromProto(req.GetValues()), false, false).
+			WithSurface(wire.SurfaceFromProto(req.GetSurface()))
 		return &rtav1.SuggestResponse{Values: f.Suggest(ctx, pr)}, nil
 	}
 	return &rtav1.SuggestResponse{}, nil

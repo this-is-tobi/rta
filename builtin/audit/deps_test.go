@@ -399,7 +399,8 @@ func TestDepsGradesAffectedPackages(t *testing.T) {
 	vulns := map[string][]string{comps[1].key(): {"GHSA-zzz", "GHSA-aaa"}}
 
 	r := &report{}
-	gradeDeps(r, comps, comps, nil, nil, []string{"go.mod"}, vulns, false)
+	gradeDeps(r, inventory{all: comps, queryable: comps, manifests: []string{"go.mod"},
+		structure: newGraph()}, vulns, false)
 
 	f := mustFind(t, r, "example.com/bad")
 	if f.status != stFail {
@@ -409,8 +410,13 @@ func TestDepsGradesAffectedPackages(t *testing.T) {
 	if !strings.Contains(f.detail, "GHSA-aaa, GHSA-zzz") {
 		t.Errorf("advisory list not sorted: %q", f.detail)
 	}
-	if !strings.Contains(f.detail, "https://osv.dev/vulnerability/") {
-		t.Errorf("the finding should be followable: %q", f.detail)
+	// Followable through a field of its own. The URL used to be the tail of
+	// detail, which is the half clip() cuts.
+	if f.link != "https://osv.dev/vulnerability/GHSA-aaa" {
+		t.Errorf("the finding should be followable: link %q", f.link)
+	}
+	if strings.Contains(f.detail, "http") {
+		t.Errorf("a URL inside clippable prose does not survive: %q", f.detail)
 	}
 	if _, ok := find(r, "example.com/clean"); ok {
 		t.Error("a package with no advisories got a finding of its own")
@@ -427,9 +433,11 @@ func TestDepsSaysWhatItCouldNotCheck(t *testing.T) {
 	unknown := []component{{name: "mystery", version: "1.0"}}
 
 	r := &report{}
-	gradeDeps(r, append(known, unknown...), known, unknown,
-		[]unreadableManifest{{path: "weird.json", reason: "invalid character"}},
-		[]string{"go.mod", "weird.json"}, nil, false)
+	gradeDeps(r, inventory{
+		all: append(known, unknown...), queryable: known, unknown: unknown,
+		unreadable: []unreadableManifest{{path: "weird.json", reason: "invalid character"}},
+		manifests:  []string{"go.mod", "weird.json"}, structure: newGraph(),
+	}, nil, false)
 
 	// Silent partial coverage is the failure mode that matters: a report that
 	// looks complete and is not.
@@ -446,7 +454,8 @@ func TestDepsSaysWhatItCouldNotCheck(t *testing.T) {
 func TestDepsOfflineDoesNotClaimAnAllClear(t *testing.T) {
 	comps := []component{{ecosystem: "Go", name: "a", version: "v1"}}
 	r := &report{}
-	gradeDeps(r, comps, comps, nil, nil, []string{"go.mod"}, nil, true)
+	gradeDeps(r, inventory{all: comps, queryable: comps, manifests: []string{"go.mod"},
+		structure: newGraph()}, nil, true)
 
 	f := mustFind(t, r, "advisories")
 	if f.status != stInfo {
@@ -468,9 +477,11 @@ func TestEveryDepsFindingLandsInADeclaredGroup(t *testing.T) {
 	comps := []component{{ecosystem: "Go", name: "a", version: "v1"}, {name: "b", version: "2"}}
 	for _, offline := range []bool{true, false} {
 		r := &report{}
-		gradeDeps(r, comps, comps[:1], comps[1:],
-			[]unreadableManifest{{path: "x.json", reason: "unexpected end of JSON input"}},
-			[]string{"go.mod"}, map[string][]string{comps[0].key(): {"GHSA-1"}}, offline)
+		gradeDeps(r, inventory{
+			all: comps, queryable: comps[:1], unknown: comps[1:],
+			unreadable: []unreadableManifest{{path: "x.json", reason: "unexpected end of JSON input"}},
+			manifests:  []string{"go.mod"}, structure: newGraph(),
+		}, map[string][]string{comps[0].key(): {"GHSA-1"}}, offline)
 		for _, f := range r.findings {
 			if !declared[f.group] {
 				t.Errorf("finding %q is in group %q, which the detail page never renders", f.check, f.group)

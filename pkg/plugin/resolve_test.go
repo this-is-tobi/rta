@@ -28,7 +28,7 @@ func numeric() Capability {
 // could not tell from real ones — while the same capability run from a shell
 // worked, because cobra bakes defaults into the flag set.
 func TestResolveKeepsDefaultsWhenSomeValuesAreGiven(t *testing.T) {
-	got := Resolve(numeric(), map[string]any{"limit": 5}, nil)
+	got := Resolve(numeric(), Inputs{Caller: map[string]any{"limit": 5}})
 	if got["limit"] != 5 {
 		t.Errorf("the given value was lost: %v", got["limit"])
 	}
@@ -47,7 +47,7 @@ func TestResolveKeepsDefaultsWhenSomeValuesAreGiven(t *testing.T) {
 
 func TestResolveDoesNotMutateItsInput(t *testing.T) {
 	in := map[string]any{"limit": 5}
-	Resolve(numeric(), in, nil)
+	Resolve(numeric(), Inputs{Caller: in})
 	if len(in) != 1 {
 		t.Errorf("Resolve wrote back into the caller's map: %v", in)
 	}
@@ -63,14 +63,14 @@ func TestResolveNormalisesEveryShapeAnIntegerArrivesIn(t *testing.T) {
 		uint(5), uint8(5), uint16(5), uint32(5), uint64(5),
 		float32(5), float64(5), json.Number("5"),
 	} {
-		req := NewRequest(Resolve(numeric(), map[string]any{"limit": v}, nil), false, false)
+		req := NewRequest(Resolve(numeric(), Inputs{Caller: map[string]any{"limit": v}}), false, false)
 		if got := req.Int("limit"); got != 5 {
 			t.Errorf("%T(%v) resolved to %d, want 5", v, v, got)
 		}
 	}
 	// And a value that is not a number at all is left alone rather than
 	// replaced with a confident zero.
-	got := Resolve(numeric(), map[string]any{"limit": "not a number"}, nil)
+	got := Resolve(numeric(), Inputs{Caller: map[string]any{"limit": "not a number"}})
 	if got["limit"] != "not a number" {
 		t.Errorf("a non-numeric value was rewritten: %v", got["limit"])
 	}
@@ -87,20 +87,20 @@ func TestResolveClampsToDeclaredBounds(t *testing.T) {
 		{0, 1}, {-5, 1}, {1, 1}, {150, 150}, {300, 300}, {9000, 300},
 	}
 	for _, tc := range cases {
-		req := NewRequest(Resolve(numeric(), map[string]any{"timeout": tc.in}, nil), false, false)
+		req := NewRequest(Resolve(numeric(), Inputs{Caller: map[string]any{"timeout": tc.in}}), false, false)
 		if got := req.Int("timeout"); got != tc.want {
 			t.Errorf("timeout %v resolved to %d, want %d", tc.in, got, tc.want)
 		}
 	}
 	// Floats too, and a bound of 0 is a real bound rather than "unset".
 	for in, want := range map[float64]float64{-1: 0, 0: 0, 0.25: 0.25, 2: 1} {
-		req := NewRequest(Resolve(numeric(), map[string]any{"ratio": in}, nil), false, false)
+		req := NewRequest(Resolve(numeric(), Inputs{Caller: map[string]any{"ratio": in}}), false, false)
 		if got := req.Float("ratio"); got != want {
 			t.Errorf("ratio %v resolved to %v, want %v", in, got, want)
 		}
 	}
 	// An unbounded field is not clamped into existence.
-	req := NewRequest(Resolve(numeric(), map[string]any{"limit": -3}, nil), false, false)
+	req := NewRequest(Resolve(numeric(), Inputs{Caller: map[string]any{"limit": -3}}), false, false)
 	if got := req.Int("limit"); got != -3 {
 		t.Errorf("an unbounded field was clamped to %d", got)
 	}
@@ -109,7 +109,7 @@ func TestResolveClampsToDeclaredBounds(t *testing.T) {
 // Undeclared values pass through: the MCP bridge and Page both overlay keys
 // the capability never declared, and Resolve is not the place to police that.
 func TestResolveLeavesUndeclaredValuesAlone(t *testing.T) {
-	got := Resolve(numeric(), map[string]any{"detail": true, "surprise": uint64(7)}, nil)
+	got := Resolve(numeric(), Inputs{Caller: map[string]any{"detail": true, "surprise": uint64(7)}})
 	if got["detail"] != true {
 		t.Errorf("detail was dropped: %v", got["detail"])
 	}
@@ -169,7 +169,7 @@ func TestConfigBeatsADefaultAndLosesToTheCaller(t *testing.T) {
 		"port": uint64(6543), // what goccy-yaml hands back for a plain integer
 		"tls":  map[string]any{"mode": "require"},
 	}
-	got := Resolve(configurable(), map[string]any{"host": "typed.example"}, cfg)
+	got := Resolve(configurable(), Inputs{Caller: map[string]any{"host": "typed.example"}, Config: cfg})
 
 	if got["host"] != "typed.example" {
 		t.Errorf("host = %v, want the caller's value to win", got["host"])
@@ -190,7 +190,7 @@ func TestConfigBeatsADefaultAndLosesToTheCaller(t *testing.T) {
 // the process runs, printable by `rta explain` — rather than a property of
 // whatever happens to be in a file.
 func TestConfigCannotFillAnInputThatDeclaredNoKey(t *testing.T) {
-	got := Resolve(configurable(), nil, map[string]any{"sql": "DROP TABLE users"})
+	got := Resolve(configurable(), Inputs{Config: map[string]any{"sql": "DROP TABLE users"}})
 	if v, ok := got["sql"]; ok {
 		t.Errorf("sql = %v, but the input declares no config key", v)
 	}
@@ -199,9 +199,9 @@ func TestConfigCannotFillAnInputThatDeclaredNoKey(t *testing.T) {
 // A nested block is a namespace, not a value. Handing a map to Request.String
 // would stringify a Go map into somebody's connection string.
 func TestANestedBlockIsNotItselfAValue(t *testing.T) {
-	got := Resolve(configurable(), nil, map[string]any{
+	got := Resolve(configurable(), Inputs{Config: map[string]any{
 		"host": map[string]any{"primary": "a", "replica": "b"},
-	})
+	}})
 	if v, ok := got["host"]; ok {
 		t.Errorf("host = %#v, want a block to be skipped rather than stringified", v)
 	}
@@ -215,7 +215,7 @@ func TestAConfigValueIsStillClamped(t *testing.T) {
 		Run:    func(context.Context, Request) (view.View, error) { return nil, nil },
 		Inputs: []Field{{Name: "limit", Type: Int, Help: "l", Default: 10, Min: 1, Max: 100, Config: "limit"}},
 	}
-	if got := Resolve(c, nil, map[string]any{"limit": 5000})["limit"]; got != 100 {
+	if got := Resolve(c, Inputs{Config: map[string]any{"limit": 5000}})["limit"]; got != 100 {
 		t.Errorf("limit = %v, want it clamped to the declared Max", got)
 	}
 }
@@ -223,7 +223,7 @@ func TestAConfigValueIsStillClamped(t *testing.T) {
 // nil config is every surface that has none and the whole world before this
 // existed. Nothing changes.
 func TestNilConfigResolvesExactlyAsBefore(t *testing.T) {
-	got := Resolve(configurable(), map[string]any{"sql": "SELECT 1"}, nil)
+	got := Resolve(configurable(), Inputs{Caller: map[string]any{"sql": "SELECT 1"}})
 	if got["port"] != 5432 || got["mode"] != "prefer" || got["sql"] != "SELECT 1" {
 		t.Errorf("resolved %v, want declared defaults plus the caller's value", got)
 	}

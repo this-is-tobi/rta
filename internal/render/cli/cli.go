@@ -35,6 +35,21 @@ const (
 	Markdown Format = "md"
 )
 
+// Formats is every value --output accepts, with what each is for.
+//
+// Beside ParseFormat rather than written out at the flag, so the list somebody
+// is offered and the list that is accepted are the same list. Tab-separated
+// descriptions, the convention Field.Suggest uses.
+func Formats() []string {
+	return []string{
+		string(Pretty) + "\tstyled for a terminal",
+		string(JSON) + "\tfor jq and scripts",
+		string(YAML) + "\tfor a config file or a diff",
+		string(CSV) + "\ttables only, for a spreadsheet",
+		string(Markdown) + "\tfor a ticket or a pull request",
+	}
+}
+
 // ParseFormat validates a --output value.
 func ParseFormat(s string) (Format, error) {
 	switch Format(s) {
@@ -288,12 +303,10 @@ func prettyMarkdown(w io.Writer, body string, st styles) error {
 func prettyKeyValue(w io.Writer, kv view.KeyValue, st styles) error {
 	width := 0
 	for _, p := range kv.Pairs {
-		if len(p.Key) > width {
-			width = len(p.Key)
-		}
+		width = max(width, lipgloss.Width(p.Key))
 	}
 	for _, p := range kv.Pairs {
-		key := st.key.Render(fmt.Sprintf("%-*s", width, p.Key))
+		key := st.key.Render(pad(p.Key, width))
 		val := p.Value
 		if st.color && theme.ClassifyStatus(val) != theme.StatusNeutral {
 			val = theme.StatusStyle(val).Render(val)
@@ -319,9 +332,69 @@ func prettyTable(w io.Writer, t view.Table, st styles, highlight int) error {
 			statusCol[i] = true
 		}
 	}
+	// Exactly one cell per declared column, which is a redaction rule and not
+	// a layout one.
+	//
+	// view.Redact masks by column name and says so in its own comment: "a cell
+	// with no column cannot be named, so it cannot be masked". This renderer
+	// drew those cells anyway, in a nameless extra column — so a table whose
+	// rows outran their headers put the one value redaction exists to hide on
+	// the screen, beside the dots covering its named neighbour. The markdown
+	// renderer already drops them (markdown.go's writeMarkdownGrid), so the
+	// two disagreed about the same data, which is the shape of a rule that
+	// lives in one renderer instead of in the view.
+	//
+	// Ahead of the layout decision below, so the record layout inherits it: the
+	// rule is about what may be drawn, not about how it is arranged.
+	rows := make([][]string, len(t.Rows))
+	for i, row := range t.Rows {
+		cells := make([]string, len(t.Columns))
+		copy(cells, row)
+		rows[i] = cells
+	}
+
+	// A grid needs room to be a grid, and below that room it is the wrong
+	// shape for the same data. Five columns in sixty cells gave each one ten,
+	// so an audit finding read "advisories : GHSA- qw6h-vgh9- j6wx" down a
+	// ten-cell gutter — every value present, none of them legible, and the
+	// borders spending a sixth of the line saying where the gutters were.
+	// Records use the whole width for one field at a time, which is what a
+	// narrow terminal has to give.
+	if !fitsAsGrid(t, headers, st) {
+		return prettyRecords(w, t, headers, rows, st, recordStyle{
+			highlight: highlight, status: statusCol,
+		})
+	}
+
 	// Where the slack goes when there is room to spare. Computed once, from
 	// the same headers and rows lipgloss is about to measure.
 	grown := grownColumns(t, headers, st)
+
+	// A hyphen is not a place to break a line, inside a table cell either.
+	//
+	// wrap() has shielded them since `rta explain` broke `--endpoint` in half,
+	// but a lipgloss table does its own wrapping and never goes through it — so
+	// a grid narrow enough to wrap a cell was still producing "GHSA-qw6h-vgh9-"
+	// / "j6wx" and "https://osv.dev/vulnerability/" / "GHSA-29mw-wpgm-hmr9",
+	// which are an advisory ID and a URL that cannot be copied off the screen.
+	// The same substitution answers it: U+2011 is one cell wide, so every width
+	// lipgloss measures is the width the real string has, and the restore
+	// happens on the finished render.
+	//
+	// The status lookup below deliberately reads the *unshielded* rows: it
+	// classifies a cell by its text, and a vocabulary that ever grows a
+	// hyphenated word would silently stop matching.
+	display := make([][]string, len(rows))
+	for i, row := range rows {
+		display[i] = make([]string, len(row))
+		for j, cell := range row {
+			display[i][j] = shieldHyphens(cell)
+		}
+	}
+	shieldedHeaders := make([]string, len(headers))
+	for i, h := range headers {
+		shieldedHeaders[i] = shieldHyphens(h)
+	}
 
 	// Tables are rebuilt per attempt: lipgloss tables memoize layout, so a
 	// width change on a rendered instance is unreliable.
@@ -329,8 +402,8 @@ func prettyTable(w io.Writer, t view.Table, st styles, highlight int) error {
 		tbl := table.New().
 			Border(lipgloss.RoundedBorder()).
 			BorderStyle(st.border).
-			Headers(headers...).
-			Rows(t.Rows...).
+			Headers(shieldedHeaders...).
+			Rows(display...).
 			StyleFunc(func(row, col int) lipgloss.Style {
 				s := lipgloss.NewStyle().Padding(0, 1)
 				// A column told its width keeps it: lipgloss reads that as
@@ -338,15 +411,20 @@ func prettyTable(w io.Writer, t view.Table, st styles, highlight int) error {
 				if w, ok := grown[col]; ok && width == 0 {
 					s = s.Width(w)
 				}
-				if row == table.HeaderRow {
-					return s.Inherit(st.header)
-				}
+				// Before the header short-circuit, so a numeric column's
+				// heading sits over its own digits. It used to return first,
+				// which left "BYTES" flush left above a column of
+				// right-aligned numbers — the one place a heading has a
+				// column to line up with, and it did not.
 				if rightAlign[col] {
 					s = s.Align(lipgloss.Right)
 				}
+				if row == table.HeaderRow {
+					return s.Inherit(st.header)
+				}
 				// Semantic hint, not decoration: color state where it matters.
-				if st.color && statusCol[col] && row >= 0 && row < len(t.Rows) && col < len(t.Rows[row]) {
-					s = s.Inherit(theme.StatusStyle(t.Rows[row][col]))
+				if st.color && statusCol[col] && row >= 0 && row < len(rows) && col < len(rows[row]) {
+					s = s.Inherit(theme.StatusStyle(rows[row][col]))
 				}
 				// Row selection in interactive hosts: a quiet background band.
 				if st.color && highlight > 0 && row == highlight-1 {
@@ -367,7 +445,7 @@ func prettyTable(w io.Writer, t view.Table, st styles, highlight int) error {
 	for w := st.width; st.width > 0 && w >= 20 && lipgloss.Width(rendered) > st.width; w -= 2 {
 		rendered = build(w)
 	}
-	if _, err := fmt.Fprintln(w, rendered); err != nil {
+	if _, err := fmt.Fprintln(w, restoreHyphens(rendered)); err != nil {
 		return err
 	}
 	if t.Total > len(t.Rows) {
@@ -558,15 +636,13 @@ func prettyBars(w io.Writer, c view.Chart, st styles) error {
 		if c.Max <= 0 && len(s.Points) > 0 && s.Points[0] > scale {
 			scale = s.Points[0]
 		}
-		if len(s.Name) > nameWidth {
-			nameWidth = len(s.Name)
-		}
+		nameWidth = max(nameWidth, lipgloss.Width(s.Name))
 	}
 	if scale <= 0 {
 		scale = 1
 	}
 	// Label + two gaps + value ("100.0%") share the row with the bar.
-	width := plotWidth(st, barWidth, nameWidth+len(c.Unit)+10)
+	width := plotWidth(st, barWidth, nameWidth+lipgloss.Width(c.Unit)+10)
 	for _, s := range c.Series {
 		v := 0.0
 		if len(s.Points) > 0 {
@@ -576,7 +652,7 @@ func prettyBars(w io.Writer, c view.Chart, st styles) error {
 		filled = min(max(filled, 0), width)
 		bar := st.key.Render(strings.Repeat("█", filled)) +
 			st.faint.Render(strings.Repeat("░", width-filled))
-		label := fmt.Sprintf("%-*s", nameWidth, s.Name)
+		label := pad(s.Name, nameWidth)
 		value := fmt.Sprintf("%.1f%s", v, c.Unit)
 		if _, err := fmt.Fprintf(w, "%s  %s  %s\n", st.muted.Render(label), bar, value); err != nil {
 			return err
@@ -625,16 +701,40 @@ func RenderError(w io.Writer, e *view.Error, opts Options) error {
 	st := newStyles(opts.NoColor)
 	st.width = opts.Width
 	w = profiled(w, opts)
-	head := st.errBadge.Render("ERROR") + " " + st.muted.Render(e.Code) + " "
-	if _, err := fmt.Fprintln(w, wrap(head+e.Message, st.width, strings.Repeat(" ", 6))); err != nil {
+	// The hanging indent is measured, not counted out by hand. Both badges
+	// carry Padding(0, 1) when there is colour and nothing when there is not
+	// (theme.ErrBadge, theme.HintBadge), so a hardcoded 6 was right in a pipe
+	// and two cells short on a terminal — which is the half nobody diffs.
+	badge := st.errBadge.Render("ERROR") + " "
+	head := badge + st.muted.Render(e.Code) + " "
+	if _, err := fmt.Fprintln(w, wrap(head+e.Message, st.width, indent(badge))); err != nil {
 		return err
 	}
 	if e.Hint != "" {
-		if _, err := fmt.Fprintln(w, wrap(st.hintBadge.Render("HINT")+" "+e.Hint, st.width, strings.Repeat(" ", 5))); err != nil {
+		hint := st.hintBadge.Render("HINT") + " "
+		if _, err := fmt.Fprintln(w, wrap(hint+e.Hint, st.width, indent(hint))); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// indent is a run of spaces as wide as s renders.
+func indent(s string) string { return strings.Repeat(" ", lipgloss.Width(s)) }
+
+// pad right-fills s to width display cells.
+//
+// Deliberately not fmt's "%-*s", which was what these columns used and is two
+// wrong units at once: the width they were measured with is len(), which
+// counts bytes, and fmt pads strings by *runes*. The three agree only for
+// ASCII, so a key column stayed straight until somebody's data had an accent
+// in it — and a bar chart's series lost the shared baseline that is the only
+// thing a bar chart is for.
+func pad(s string, width int) string {
+	if n := lipgloss.Width(s); n < width {
+		return s + strings.Repeat(" ", width-n)
+	}
+	return s
 }
 
 // minWrap is the narrowest content column worth wrapping to; below it every
@@ -656,10 +756,23 @@ func wrap(s string, width int, cont string) string {
 	// The floor keeps a wide key column (or a deep tree) from shrinking the
 	// text to a three-cell gutter where every break lands mid-word.
 	budget := max(minWrap, width-lipgloss.Width(cont))
-	// ansi.Wrap breaks on word boundaries and falls back to a hard break for
-	// a single token longer than the budget (a 64-char key, a long URL), so
+	// Word boundaries first, then a hard break for the single token that is
+	// longer than the budget on its own (a 64-char key, a long URL), so
 	// nothing can escape the width.
-	lines := strings.Split(ansi.Wrap(s, budget, ""), "\n")
+	//
+	// **Hyphens are not word boundaries here**, which is why this is two calls
+	// and a substitution rather than one call to ansi.Wrap. x/ansi treats "-"
+	// as a breakpoint always — right for prose, wrong for everything this
+	// renderer actually shows. `rta explain s3.object.get` wrapped its own
+	// command line as "[--" / "endpoint <string>]", which is a line nobody can
+	// copy and a flag that reads as two things; `proj1-staging` and
+	// `--allow-destructive` break the same way wherever they land near the
+	// margin. Every hyphen in this tool is inside an identifier somebody may
+	// be about to paste.
+	lines := hardBreakOverlong(ansi.Wordwrap(shieldHyphens(s), budget, ""), budget)
+	for i, line := range lines {
+		lines[i] = restoreHyphens(line)
+	}
 	for i, line := range lines {
 		// ansi.Wrap keeps the space it broke on; left in, it shows up as a
 		// selection artifact and as noise in a diff.
@@ -669,6 +782,38 @@ func wrap(s string, width int, cont string) string {
 		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+// shieldHyphens hides "-" from x/ansi's always-on hyphen breakpoint, and
+// restoreHyphens puts it back.
+//
+// U+2011 NON-BREAKING HYPHEN is the stand-in: one cell wide, so every width
+// the wrapper computes is the width the real string has. A blanket
+// substitution is safe because nothing this renderer emits carries a hyphen
+// inside an escape sequence — SGR is digits, semicolons and a letter, and
+// sanitize.go has already removed OSC (the one escape that could hold a URL)
+// before anything reaches here.
+const nonBreakingHyphen = "‑"
+
+func shieldHyphens(s string) string { return strings.ReplaceAll(s, "-", nonBreakingHyphen) }
+func restoreHyphens(s string) string {
+	return strings.ReplaceAll(s, nonBreakingHyphen, "-")
+}
+
+// hardBreakOverlong splits only the lines a word wrap could not fit — a single
+// token longer than the whole budget. Everything else is left exactly as the
+// word wrap produced it.
+func hardBreakOverlong(wrapped string, budget int) []string {
+	lines := strings.Split(wrapped, "\n")
+	out := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if ansi.StringWidth(line) <= budget {
+			out = append(out, line)
+			continue
+		}
+		out = append(out, strings.Split(ansi.Hardwrap(line, budget, false), "\n")...)
+	}
+	return out
 }
 
 // styles resolves the theme for one render call; color=false collapses

@@ -74,6 +74,18 @@ type Config struct {
 	// a key means is decided by the capability that declared it, and rta must
 	// not need to know a plugin's schema in order to hand it its own file.
 	Plugins map[string]map[string]any `yaml:"plugins,omitempty" json:"plugins,omitempty"`
+	// Profiles are named connections an operator switches between with
+	// --profile and issues agent grants against, keyed by profile name.
+	//
+	// Top level, and deliberately NOT under Plugins. The TUI's plugin-config
+	// form writes a namespace's section back wholesale, so a profiles block
+	// living inside one would be deleted the first time somebody edited that
+	// plugin's config — and the deletion fails *open* for a connection: pg
+	// falls back to its declared localhost:5432 while a credential still
+	// resolves, so "connect to prod" silently becomes "connect to whatever is
+	// on localhost, with the prod password". The placement is a security
+	// constraint rather than tidiness.
+	Profiles map[string]Profile `yaml:"profiles,omitempty" json:"profiles,omitempty"`
 	// Theme overrides the built-in palette. Keys are the names
 	// internal/render/theme.Fields lists ("primary", "good", "label", …),
 	// each a "#rrggbb" string.
@@ -119,6 +131,38 @@ func LoadFile() (Config, error) {
 		if err := yaml.Unmarshal(data, &cfg); err != nil {
 			return cfg, view.Errorf("config.invalid", "parsing %s: %v", Path(), err).
 				WithHint("fix the file or re-create it with `rta init`")
+		}
+	}
+	// Stamped here, once, rather than asked at each point of use: a profile
+	// that came from the working-directory fallback carries trusted=false for
+	// the rest of its life, and nothing downstream has to remember to check
+	// where the file was. The field is unexported so the answer can only come
+	// from this line — a config file cannot declare itself trustworthy.
+	if len(cfg.Profiles) > 0 {
+		trusted := trustedPath()
+		// Read back the raw profiles block to find keys no field claimed.
+		// goccy drops an unrecognised key without a word, and a profile is
+		// where that costs the most: `plguin: pg` is one keystroke from a
+		// working profile and otherwise indistinguishable from one.
+		var raw struct {
+			Profiles map[string]map[string]any `yaml:"profiles"`
+		}
+		_ = yaml.Unmarshal(data, &raw)
+		for name, p := range cfg.Profiles {
+			p.trusted = trusted
+			p.unknown = unclaimed(raw.Profiles[name], profileKeys)
+			// One level down, where a migration lands: the single-plugin shape
+			// put `set:` and `secrets:` directly under the profile, and those
+			// same words are legal under a plugin entry. Reading both levels is
+			// what tells "you have not migrated this yet" apart from "you
+			// misspelled a key inside pg".
+			nested, _ := raw.Profiles[name]["plugins"].(map[string]any)
+			for key, conn := range p.Plugins {
+				fields, _ := nested[key].(map[string]any)
+				conn.unknown = unclaimed(fields, connectionKeys)
+				p.Plugins[key] = conn
+			}
+			cfg.Profiles[name] = p
 		}
 	}
 	return cfg, nil

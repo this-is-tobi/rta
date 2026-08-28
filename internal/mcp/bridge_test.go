@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -465,7 +466,7 @@ func TestDetailedCapabilitiesPublishDetail(t *testing.T) {
 	if !ok {
 		t.Fatal("missing test capability")
 	}
-	props := InputSchema(c)["properties"].(map[string]any)
+	props := InputSchema(c, nil)["properties"].(map[string]any)
 	detail, ok := props["detail"].(map[string]any)
 	if !ok {
 		t.Fatalf("a Detailed capability publishes no detail property: %v", props)
@@ -475,7 +476,7 @@ func TestDetailedCapabilitiesPublishDetail(t *testing.T) {
 	}
 
 	plain, _ := testRegistry(t).Capability("demo.item.list")
-	if _, published := InputSchema(plain)["properties"].(map[string]any)["detail"]; published {
+	if _, published := InputSchema(plain, nil)["properties"].(map[string]any)["detail"]; published {
 		t.Error("a capability with no detail view published one anyway")
 	}
 }
@@ -590,7 +591,7 @@ func TestLocalFieldsAreNotOfferedToAgents(t *testing.T) {
 	if !ok {
 		t.Fatal("missing test capability")
 	}
-	props := InputSchema(c)["properties"].(map[string]any)
+	props := InputSchema(c, nil)["properties"].(map[string]any)
 	if _, offered := props["passphrase"]; offered {
 		t.Error("a Local credential was advertised in the tool schema")
 	}
@@ -607,7 +608,7 @@ func TestPathFieldsSayWhoseFilesystem(t *testing.T) {
 		Inputs: []plugin.Field{{Name: "out", Type: plugin.Path, Help: "where to write it"}},
 		Run:    func(context.Context, plugin.Request) (view.View, error) { return view.Text{}, nil },
 	}
-	prop := InputSchema(c)["properties"].(map[string]any)["out"].(map[string]any)
+	prop := InputSchema(c, nil)["properties"].(map[string]any)["out"].(map[string]any)
 	if prop["type"] != "string" {
 		t.Errorf("type = %v, want string", prop["type"])
 	}
@@ -929,7 +930,7 @@ func TestPluginProseIsFramedAndRtaKeepsTheLastWord(t *testing.T) {
 		Inputs: []plugin.Field{{Name: "key", Type: plugin.String, Help: "which"}},
 		Run:    func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "x"}, nil },
 	}
-	desc := toolDef(c).Description
+	desc := toolDef(c, Options{}).Description
 
 	open := strings.Index(desc, plugin.AuthoredOpen)
 	closed := strings.Index(desc, plugin.AuthoredClose)
@@ -983,7 +984,7 @@ func TestTheToolTitleIsHostDerived(t *testing.T) {
 		Safety: plugin.Read,
 		Run:    func(context.Context, plugin.Request) (view.View, error) { return nil, nil },
 	}
-	got := toolDef(c).Annotations.Title
+	got := toolDef(c, Options{}).Annotations.Title
 	if strings.Contains(got, c.Summary) {
 		t.Errorf("the title carries plugin prose: %q", got)
 	}
@@ -1521,7 +1522,15 @@ func TestNoRemoteInputSmellsLikeAPathWithoutBeingOne(t *testing.T) {
 	// Words that mean "somewhere on this disk" in this catalogue's own help
 	// text. A hit is not proof; it is a demand for one of three answers:
 	// declare it Path, declare it Local, or stop reading files.
-	smells := []string{"file", "path", "directory"}
+	//
+	// Matched on whole words. Substring matching read "profile" as "file" and
+	// demanded that `rta grant allow --profile` be declared Path — an input
+	// whose value is a name in the operator's config and never touches the
+	// disk, for which all three of this test's answers are wrong. A heuristic
+	// over English text has to respect English word boundaries or its false
+	// positives are unanswerable, and an unanswerable test is one somebody
+	// eventually deletes.
+	smells := regexp.MustCompile(`\b(files?|paths?|director(y|ies))\b`)
 	// Only the types that can hold one. Without this the help text carries
 	// the heuristic on its own and it is useless: "entries to show per
 	// directory" on an int, "write even when the file is machine-generated"
@@ -1540,11 +1549,8 @@ func TestNoRemoteInputSmellsLikeAPathWithoutBeingOne(t *testing.T) {
 				continue
 			}
 			hay := strings.ToLower(f.Name + " " + f.Help)
-			for _, w := range smells {
-				if strings.Contains(hay, w) {
-					suspect = append(suspect, c.ID+"."+f.Name+" ("+string(f.Type)+"): "+f.Help)
-					break
-				}
+			if smells.MatchString(hay) {
+				suspect = append(suspect, c.ID+"."+f.Name+" ("+string(f.Type)+"): "+f.Help)
 			}
 		}
 	}
@@ -1697,4 +1703,78 @@ func TestAStalePinReportsTheInstalledDigest(t *testing.T) {
 	if len(problems) != 1 || !strings.Contains(problems[0], "@1a2b3c4d5e6f") {
 		t.Fatalf("problems = %v, want one naming the installed short digest", problems)
 	}
+}
+
+// `rta mcp serve` is the one surface where nobody sees the startup line.
+//
+// It is written to stderr, which under an MCP client is a pipe the client
+// owns and nobody reads; the TUI covers it with an alternate screen; and the
+// agent on the other end can only report that a tool does not exist. So a
+// plugin installed specifically so an agent could use it goes missing with
+// both parties silent, and the operator's only route to the fact is running a
+// different command in a different terminal.
+//
+// Problems is the channel that already exists for exactly this shape — an
+// operator is present at the command that starts the server, and is the only
+// one who can act on it.
+func TestRefusedArtifactsAreReportedAtServerStartup(t *testing.T) {
+	reg := testRegistry(t)
+
+	t.Run("reported even when no flag mentions them", func(t *testing.T) {
+		o := Options{Untrusted: []string{"weather"}, Origin: builtInOrigin("demo")}
+		problems := o.Problems(reg)
+		if len(problems) != 1 {
+			t.Fatalf("problems = %v, want exactly one", problems)
+		}
+		for _, want := range []string{"weather", "installed and was not run", "rta plugin trust weather"} {
+			if !strings.Contains(problems[0], want) {
+				t.Errorf("problem = %q, want it to mention %q", problems[0], want)
+			}
+		}
+	})
+
+	// An allowlist entry naming one is a consequence of the same fact, and it
+	// used to state the opposite of it: "no plugin named %q is installed", for
+	// a plugin rta can see, has hashed, and is deliberately declining to run —
+	// with the digest the operator pinned appearing, correctly, in the same
+	// sentence.
+	t.Run("an allowlist entry names the real cause", func(t *testing.T) {
+		for _, tc := range []struct {
+			name string
+			opts Options
+		}{
+			{"--allow-write", Options{AllowWrite: []string{"weather"},
+				Untrusted: []string{"weather"}, Origin: builtInOrigin("demo")}},
+			{"--allow-destructive", Options{AllowDestructive: []string{"weather.wipe@abcd1234"},
+				Untrusted: []string{"weather"}, Origin: builtInOrigin("demo")}},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				problems := tc.opts.Problems(reg)
+				if len(problems) != 2 {
+					t.Fatalf("problems = %v, want the artifact and the entry", problems)
+				}
+				entry := problems[1]
+				if strings.Contains(entry, "is installed") && !strings.Contains(entry, "and has not been run") {
+					t.Errorf("entry says the plugin is not installed: %q", entry)
+				}
+				if !strings.Contains(entry, "has not been run") {
+					t.Errorf("entry = %q, want it to name the real cause", entry)
+				}
+			})
+		}
+	})
+
+	// A namespace that really is absent keeps the older sentence: the whole
+	// point is that there are two causes.
+	t.Run("a genuinely absent plugin is unchanged", func(t *testing.T) {
+		o := Options{AllowWrite: []string{"nope"}, Untrusted: []string{"weather"},
+			Origin: builtInOrigin("demo")}
+		problems := o.Problems(reg)
+		if len(problems) != 2 {
+			t.Fatalf("problems = %v, want the artifact and the entry", problems)
+		}
+		if !strings.Contains(problems[1], `no plugin named "nope" is installed`) {
+			t.Errorf("entry = %q, want the not-installed wording", problems[1])
+		}
+	})
 }

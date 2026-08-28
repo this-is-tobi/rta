@@ -24,7 +24,7 @@ func TestConformance(t *testing.T) { sdktest.Check(t, Plugin()) }
 func req(t *testing.T, values map[string]any) plugin.Request {
 	t.Helper()
 	c := Plugin().Capabilities[0]
-	return plugin.NewRequest(plugin.Resolve(c, values, nil), false, false)
+	return plugin.NewRequest(plugin.Resolve(c, plugin.Inputs{Caller: values}), false, false)
 }
 
 // A password containing '@' or '/' produces a different connection string

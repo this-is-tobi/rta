@@ -261,6 +261,18 @@ const (
 // ClassifyStatus maps common status vocabulary to a semantic kind. Renderers
 // use it to color KindStatus cells; the vocabulary is deliberately small and
 // grows only with real usage.
+//
+// **An unrecognised word is Neutral, which means it renders with no colour at
+// all** — and that failed quietly in the worst direction. `sys load` graded
+// itself "overloaded"/"busy" and `eol` graded a dead release "EOL": three
+// words this list did not know, so the most severe state each function could
+// report was the one drawn plainest, right beside an "ok" in green. The words
+// are the right words to show a person, so the list learned them rather than
+// the callers learning to say "fail overloaded".
+//
+// TestEveryStatusWordTheBuiltinsUseIsColoured is what keeps this honest: it
+// carries the literals the plugins actually emit, so adding a fourth unknown
+// word fails a test instead of silently losing a colour.
 func ClassifyStatus(s string) StatusKind {
 	v := strings.ToLower(strings.TrimSpace(s))
 	switch {
@@ -271,12 +283,19 @@ func ClassifyStatus(s string) StatusKind {
 		strings.HasPrefix(v, "active") || strings.HasPrefix(v, "read"):
 		return StatusGood
 	case strings.HasPrefix(v, "warn") || strings.HasPrefix(v, "write") ||
-		strings.HasPrefix(v, "pending"):
+		strings.HasPrefix(v, "pending") || strings.HasPrefix(v, "busy") ||
+		// A plugin found on $PATH and not run. Amber rather than red: nothing
+		// is wrong, a decision is outstanding — and rather than neutral,
+		// because "installed and doing nothing" is the state a trust gate has
+		// to make impossible to miss.
+		strings.HasPrefix(v, "untrusted"):
 		return StatusWarn
 	case strings.HasPrefix(v, "error") || strings.HasPrefix(v, "expired") ||
 		strings.HasPrefix(v, "invalid") || strings.HasPrefix(v, "fail") ||
 		strings.HasPrefix(v, "denied") || strings.HasPrefix(v, "unreachable") ||
-		strings.HasPrefix(v, "destructive") || strings.HasPrefix(v, "down"):
+		strings.HasPrefix(v, "destructive") || strings.HasPrefix(v, "down") ||
+		strings.HasPrefix(v, "overloaded") || strings.HasPrefix(v, "eol") ||
+		strings.HasPrefix(v, "critical"):
 		return StatusBad
 	case strings.HasPrefix(v, "closed") || strings.HasPrefix(v, "info") ||
 		strings.HasPrefix(v, "none") || strings.HasPrefix(v, "disabled") ||

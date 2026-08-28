@@ -366,6 +366,32 @@ func withoutLines(lines []string, drop []int) []string {
 // suggestHostnames completes from the hosts file itself — including the
 // parked ones, since re-enabling an entry you disabled last week is the
 // commonest reason to name it again and the hardest to remember.
+// suggestAddresses completes the address half of a hosts-file entry: the
+// addresses already mapped in this file, and the two everybody types.
+//
+// Reading the same file suggestHostnames does, because the useful answer is
+// almost always one that is already in it — a second name pointed at the same
+// local service, or at whatever address the last entry used.
+func suggestAddresses(_ context.Context, req plugin.Request) []string {
+	out := []string{
+		"127.0.0.1\tthis machine",
+		"::1\tthis machine, IPv6",
+	}
+	seen := map[string]bool{"127.0.0.1": true, "::1": true}
+	lines, verr := readLines(hostsPath(req))
+	if verr != nil {
+		return out
+	}
+	for _, e := range parseHosts(lines) {
+		if seen[e.ip] {
+			continue
+		}
+		seen[e.ip] = true
+		out = append(out, e.ip+"\t"+strings.Join(e.names, " "))
+	}
+	return out
+}
+
 func suggestHostnames(_ context.Context, req plugin.Request) []string {
 	lines, verr := readLines(hostsPath(req))
 	if verr != nil {

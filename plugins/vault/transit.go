@@ -16,7 +16,7 @@ import (
 // renamed it.
 func transitMountField() plugin.Field {
 	return plugin.Field{Name: "mount", Type: plugin.String, Default: "transit", Config: "transit-mount",
-		Help: "the transit secrets engine's mount path"}
+		Help: "the transit secrets engine's mount path", Live: true, Suggest: suggestMounts("transit")}
 }
 
 func transitEncryptCapability() plugin.Capability {
@@ -34,7 +34,7 @@ func transitEncryptCapability() plugin.Capability {
 		Run: runTransitEncrypt,
 	}, transitMountField(),
 		plugin.Field{Name: "key", Type: plugin.String, Positional: true, Required: true,
-			Help: "the transit key's name"},
+			Help: "the transit key's name", Live: true, Suggest: suggestTransitKeys},
 		plugin.Field{Name: "plaintext", Type: plugin.Text, Required: true,
 			Help: "the value to encrypt"})
 }
@@ -67,7 +67,7 @@ func transitDecryptCapability() plugin.Capability {
 		Run: runTransitDecrypt,
 	}, transitMountField(),
 		plugin.Field{Name: "key", Type: plugin.String, Positional: true, Required: true,
-			Help: "the transit key's name"},
+			Help: "the transit key's name", Live: true, Suggest: suggestTransitKeys},
 		plugin.Field{Name: "ciphertext", Type: plugin.Text, Required: true,
 			Help: "the vault:v#:... ciphertext to decrypt"})
 }

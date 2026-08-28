@@ -27,7 +27,7 @@ func TestAForgedGrantFileIsRefused(t *testing.T) {
 	// and the one where only a forged seal (not a missing key) can be the
 	// reason for refusal.
 	issue(t, Grant{Target: "todo.rm", Scope: "1"})
-	if verr := Check(c, map[string]any{"key": "k"}); verr == nil {
+	if verr := gate(t, c, map[string]any{"key": "k"}, "", ""); verr == nil {
 		t.Fatal("an ungranted call was authorized")
 	}
 
@@ -35,7 +35,7 @@ func TestAForgedGrantFileIsRefused(t *testing.T) {
 	if err := os.WriteFile(Path(), []byte(forged), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	verr := Check(c, map[string]any{"key": "k"})
+	verr := gate(t, c, map[string]any{"key": "k"}, "", "")
 	if verr == nil {
 		t.Fatal("a forged grant file authorized the call")
 	}
@@ -137,7 +137,7 @@ func TestAPreSealGrantFileIsDroppedRatherThanRefused(t *testing.T) {
 	if len(grants) != 0 {
 		t.Fatalf("a pre-seal grant was honoured: %+v", grants)
 	}
-	if verr := Check(declare("kv.get", plugin.Read, "", true), map[string]any{}); verr == nil {
+	if verr := gate(t, declare("kv.get", plugin.Read, "", true), map[string]any{}, "", ""); verr == nil {
 		t.Error("a pre-seal file authorized a gated call")
 	}
 	// And the half that is about the operator: nothing else may break.
@@ -256,5 +256,184 @@ func TestConcurrentCreatorsAgreeOnOneSealKey(t *testing.T) {
 	}
 	if !bytes.Equal(onDisk, keys[0]) {
 		t.Error("the key on disk is not the one the creators are using")
+	}
+}
+
+// What the seal covers, in both directions of version skew — because the two
+// are not the same and getting it wrong once already produced a false comment
+// and a test that proved nothing.
+//
+// The MAC is taken over the *parsed* grants (canonical is json.Marshal of
+// []Grant), so it covers the fields the writing build declared and is checked
+// against the fields the reading build declares.
+func TestTheSealAcrossVersionSkew(t *testing.T) {
+	// Upgrading: a field a newer build added is absent from what an older one
+	// wrote, so omitempty makes both sides encode identical bytes. This is the
+	// direction the Profile and ProfilePin field comments claim, and it holds.
+	t.Run("an older build's file still verifies", func(t *testing.T) {
+		dir := t.TempDir()
+		t.Setenv("RTA_DATA_DIR", dir)
+		now := time.Now()
+		if verr := Save([]Grant{{
+			Target: "kv.get", Scope: "db-password", Issued: now, Expires: now.Add(time.Hour),
+		}}); verr != nil {
+			t.Fatal(verr)
+		}
+		loaded, verr := Load()
+		if verr != nil {
+			t.Fatalf("a grant with no new field populated no longer verifies: %v", verr)
+		}
+		if len(loaded) != 1 {
+			t.Fatalf("loaded %d grants, want the one that is there", len(loaded))
+		}
+	})
+
+	// Downgrading: once a grant *populates* a field the reading build lacks,
+	// the writer sealed over bytes that include it, the reader re-encodes
+	// without it, and the MAC fails. It has to fail — the reader cannot check
+	// what it cannot represent — but it must not be reported as forgery.
+	//
+	// Built the only way that actually exercises it: the seal is computed over
+	// content that CARRIES the unknown field. An earlier version of this test
+	// injected the field into a file this build had already sealed, which
+	// proves a field added *after* sealing is uncovered — true, and not the
+	// question.
+	t.Run("a newer build's file is not called forged", func(t *testing.T) {
+		dir := t.TempDir()
+		t.Setenv("RTA_DATA_DIR", dir)
+		now := time.Now().UTC().Truncate(time.Second)
+
+		// A future rta's grant: everything this build knows, plus a field it
+		// does not.
+		future := []map[string]any{{
+			"target":           "kv.get",
+			"scope":            "db-password",
+			"issued":           now,
+			"expires":          now.Add(time.Hour),
+			"rateLimitPerHour": 12,
+		}}
+		canon, err := json.Marshal(future)
+		if err != nil {
+			t.Fatal(err)
+		}
+		key, verr := sealKey(true)
+		if verr != nil {
+			t.Fatal(verr)
+		}
+		body, err := json.MarshalIndent(map[string]any{
+			"seal": seal(key, canon), "grants": future,
+		}, "", "  ")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "grants.json"), body, 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		_, verr = Load()
+		if verr == nil {
+			t.Fatal("a file this build cannot fully represent was honoured")
+		}
+		if verr.Code != "core.grant.unknownfields" {
+			t.Fatalf("code = %q, want the newer-writer refusal rather than an accusation: %v",
+				verr.Code, verr)
+		}
+		if strings.Contains(verr.Message, "something other than rta") {
+			t.Errorf("still accuses the operator's own rta: %s", verr.Message)
+		}
+		if !strings.Contains(verr.Message, "rateLimitPerHour") {
+			t.Errorf("does not name the field it could not read: %s", verr.Message)
+		}
+		if !strings.Contains(verr.Hint, "upgrade rta") {
+			t.Errorf("hint = %q, want the remedy that keeps the grants", verr.Hint)
+		}
+	})
+
+	// And tampering still reads as tampering. Every field this build declares
+	// is inside the MAC, so editing one is caught with the accusation earned.
+	t.Run("an edited grant is still called forged", func(t *testing.T) {
+		for _, tc := range []struct {
+			name string
+			edit func(map[string]json.RawMessage)
+		}{
+			{"a scope widened to another record", func(g map[string]json.RawMessage) {
+				g["scope"] = json.RawMessage(`"prod-token"`)
+			}},
+			{"a scope removed, widening it to every record", func(g map[string]json.RawMessage) {
+				delete(g, "scope")
+			}},
+			{"a deadline pushed out", func(g map[string]json.RawMessage) {
+				g["expires"] = json.RawMessage(`"2099-01-01T00:00:00Z"`)
+			}},
+			{"a connection pin substituted", func(g map[string]json.RawMessage) {
+				g["profile"] = json.RawMessage(`"staging"`)
+				g["profilePin"] = json.RawMessage(`"forged"`)
+			}},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				dir := t.TempDir()
+				t.Setenv("RTA_DATA_DIR", dir)
+				now := time.Now()
+				if verr := Save([]Grant{{
+					Target: "kv.get", Scope: "db-password", Issued: now, Expires: now.Add(time.Hour),
+				}}); verr != nil {
+					t.Fatal(verr)
+				}
+				path := filepath.Join(dir, "grants.json")
+				data, err := os.ReadFile(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var doc struct {
+					Seal   string                       `json:"seal"`
+					Grants []map[string]json.RawMessage `json:"grants"`
+				}
+				if err := json.Unmarshal(data, &doc); err != nil {
+					t.Fatal(err)
+				}
+				tc.edit(doc.Grants[0])
+				out, err := json.MarshalIndent(doc, "", "  ")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, out, 0o600); err != nil {
+					t.Fatal(err)
+				}
+				loaded, verr := Load()
+				if verr == nil {
+					t.Fatalf("an edited grant was honoured: %+v", loaded)
+				}
+				if verr.Code != "core.grant.forged" {
+					t.Errorf("code = %q, want the forgery refusal", verr.Code)
+				}
+			})
+		}
+	})
+}
+
+// The known-field set is read off the struct, never written out by hand.
+//
+// A hand-maintained list goes stale the day a field is added, which is the
+// exact day it matters: the new field would be reported unknown by the very
+// build that writes it, so every file rta produced would refuse itself.
+func TestKnownFieldsTrackTheStruct(t *testing.T) {
+	declared := declaredFields()
+	for _, name := range []string{"target", "scope", "profile", "profilePin", "issued",
+		"expires", "note", "ttl", "maxUses", "uses"} {
+		if !declared[name] {
+			t.Errorf("%q is a Grant field and is not recognised — a file this build writes "+
+				"would refuse itself", name)
+		}
+	}
+	now := time.Now()
+	canon, err := canonical([]Grant{{
+		Target: "pg", Profile: "staging", ProfilePin: "abc", TTL: "1h", MaxUses: 3, Uses: 1,
+		Scope: "x", Note: "why", Issued: now, Expires: now.Add(time.Hour),
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if extra := unknown([]byte(`{"seal":"x","grants":` + string(canon) + `}`)); len(extra) > 0 {
+		t.Errorf("this build's own grants report unknown fields: %v", extra)
 	}
 }

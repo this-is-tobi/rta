@@ -90,7 +90,14 @@ type capDelegate struct {
 }
 
 func newCapDelegate(items []list.Item) capDelegate {
-	d := capDelegate{}
+	// Seeded from the headings, because a column narrower than its own
+	// heading is a column whose heading is a lie: `CAPABILI…` over a
+	// catalogue of eight-cell ids, and `PERM…` whenever nothing installed
+	// happens to be destructive. The data widens it from there.
+	d := capDelegate{
+		idW:   lipgloss.Width(headID),
+		permW: lipgloss.Width(headPermission),
+	}
 	for _, it := range items {
 		c, ok := it.(capItem)
 		if !ok {
@@ -126,6 +133,12 @@ const (
 	marker     = 4  // "  ❯ " / "    "
 	gutter     = 2  // between columns
 	minSummary = 24 // below this a summary stops being a sentence
+
+	// The headings, named once so the column widths and the header line
+	// cannot disagree about how much room a heading needs.
+	headID         = "CAPABILITY"
+	headPermission = "PERMISSION"
+	headSummary    = "SUMMARY"
 )
 
 func (d capDelegate) Render(w io.Writer, m list.Model, index int, item list.Item) {
@@ -163,20 +176,25 @@ func (d capDelegate) Render(w io.Writer, m list.Model, index int, item list.Item
 // scroll away. A table whose headings leave the screen on the first page is
 // a table you have to remember the shape of.
 func (m Model) browseHeader(width int) string {
-	idW, permW, sumW := m.cols.columns(max(width-2, 20))
-	line := strings.Repeat(" ", marker) + cell("CAPABILITY", idW)
+	// One expression for the content width, shared with the row renderer
+	// (capDelegate.Render): the count used to be right-aligned against the
+	// full width while the columns resolved against two cells less, so it
+	// floated past the edge of the table it counts.
+	inner := max(width-2, 20)
+	idW, permW, sumW := m.cols.columns(inner)
+	line := strings.Repeat(" ", marker) + cell(headID, idW)
 	if permW > 0 {
-		line += strings.Repeat(" ", gutter) + cell("PERMISSION", permW)
+		line += strings.Repeat(" ", gutter) + cell(headPermission, permW)
 	}
 	if sumW > 0 {
 		// Unpadded: the count sits on the right of this same line, and a
 		// SUMMARY heading stretched to the full column would push it off.
-		line += strings.Repeat(" ", gutter) + "SUMMARY"
+		line += strings.Repeat(" ", gutter) + headSummary
 	}
 	// The count rides on the same line rather than in a status bar of its
 	// own: it is one number, and a line spent on one number is a row of the
 	// catalogue nobody gets to see.
-	return rightAlign(theme.Subtle.Render(line), theme.Subtle.Render(m.catalogueCount()), width)
+	return rightAlign(theme.Subtle.Render(line), theme.Subtle.Render(m.catalogueCount()), inner)
 }
 
 // catalogueCount says how much of the catalogue is in front of you, which
@@ -232,10 +250,8 @@ func (m Model) browseFooter() string {
 	if width <= 0 {
 		width = 80
 	}
-	return fitHintBar(width, footerMaxLines,
-		item(bindColumn), labelled(bindOpen, "run"), labelled(bindSearch, "filter"),
-		item(bindBack), item(bindQuit),
-	)
+	m.width = width
+	return m.footerFor(modeBrowse)
 }
 
 // cell left-aligns s in a column of w rendered cells.
@@ -250,7 +266,11 @@ func cell(s string, w int) string {
 // column is measured against.
 func permissionText(c plugin.Capability) string {
 	s := string(c.Safety)
-	if grant.Required(c) {
+	// The unprofiled picture: what an agent needs to reach this against the
+	// operator's base connection. Naming a profile always needs a grant on top,
+	// which the profile picker says at the point of choosing one rather than
+	// here, where it would read as a property of the capability.
+	if grant.Required(c, "") {
 		// The second half of the answer: an operator's --allow-write is not
 		// enough for this one, a person has to allow it at the time.
 		s += " · grant"

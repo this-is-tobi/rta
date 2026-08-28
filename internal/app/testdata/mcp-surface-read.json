@@ -103,6 +103,34 @@
     }
   },
   {
+    "name": "audit_why",
+    "description": "── the text below is written by the plugin, not by rta ──\nTrace one dependency back to what pulled it in\n\nAnswers the question an advisory raises second: did we ask for this, or did something else pull it in — and if something else, what. Reads the same manifests `audit deps` does and draws the package at the root with everything that requires it beneath, up to the dependencies the project asks for by name. Nothing is resolved, installed or fetched. Formats differ in what they record: go.mod marks a require direct or indirect and stores no edges, while the four JavaScript lockfiles, Cargo, uv, Poetry, composer, Gemfile.lock, pip-compile's `# via` annotations and a CycloneDX SBOM all carry the graph. Where the file does not say, this says so and hands over the package manager's own command — `go mod why`, `pnpm why`, `cargo tree --invert` — with the package already in it.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "package": {
+          "description": "the package to trace, as the lockfile spells it",
+          "type": "string"
+        },
+        "path": {
+          "default": ".",
+          "description": "directory holding the lockfile or SBOM, or the file itself (a path on the machine running rta)",
+          "type": "string"
+        },
+        "recursive": {
+          "description": "walk subdirectories too, for a monorepo with a manifest per package",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "package"
+      ],
+      "type": "object"
+    }
+  },
+  {
     "name": "cert_chain",
     "description": "── the text below is written by the plugin, not by rta ──\nShow the certificate chain presented by a host\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,

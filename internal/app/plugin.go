@@ -7,10 +7,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/this-is-tobi/rule-them-all/internal/pluginhost"
+	"github.com/this-is-tobi/rule-them-all/internal/plugintrust"
 	"github.com/this-is-tobi/rule-them-all/internal/registry"
 	"github.com/this-is-tobi/rule-them-all/internal/render/cli"
 	"github.com/this-is-tobi/rule-them-all/internal/render/tui"
@@ -37,14 +39,229 @@ func newPluginCommand(reg *registry.Registry, version string, opts *globalOpts) 
 		Short: "List, write and test plugins",
 		Long: "A plugin is a program that returns a declaration and serves it over\n" +
 			"gRPC; rta launches it and renders what it declares on every surface.\n" +
-			"Anything named " + pluginhost.Prefix + "* on your $PATH is loaded.\n\n" +
+			"rta finds anything named " + pluginhost.Prefix + "* on your $PATH and runs it once\n" +
+			"you have approved that artifact — `rta plugin trust`.\n\n" +
 			"`rta plugin list` is the inventory; `new` and `dev` are for writing one.",
 		RunE: groupRunE,
 	}
 	root.AddCommand(newPluginListCommand(reg, opts))
+	root.AddCommand(newPluginTrustCommand(opts))
+	root.AddCommand(newPluginUntrustCommand())
 	root.AddCommand(newPluginNewCommand())
 	root.AddCommand(newPluginDevCommand(reg, version, opts))
+	root.AddCommand(newPluginInstallCommand(opts))
+	root.AddCommand(newPluginUpgradeCommand(opts))
+	root.AddCommand(newPluginRemoveCommand(opts))
+	root.AddCommand(newPluginSearchCommand(opts))
+	root.AddCommand(newPluginIndexCommand(opts))
 	return root
+}
+
+// newPluginTrustCommand implements `rta plugin trust`: the decision that lets
+// an artifact run at all.
+//
+// Bare, it lists what has been found and refused. With a name, it approves
+// that artifact — and it prints what it is approving first, because the whole
+// value of the step is that somebody looked.
+//
+// Nothing here executes the binary. That is the point: rta cannot show what an
+// untrusted plugin declares, because asking it would be the thing being
+// decided about. What it can show is what the filesystem says — where the file
+// is, how big it is, when it was written, and the digest the approval attaches
+// to — and the operator brings everything else they know about where it came
+// from.
+//
+// Those facts are printed *with* the approval rather than before it behind a
+// prompt, and that is a judgement rather than an omission: typing `rta plugin
+// trust weather` is already the deliberate act, and a confirmation on top of
+// an explicit command is the kind of friction people learn to answer without
+// reading. What the output is for is the moment after — a size or a timestamp
+// that is not what you expected is a thing to act on, and `rta plugin untrust`
+// is one command away.
+func newPluginTrustCommand(opts *globalOpts) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "trust [name]",
+		Short: "Allow a discovered plugin artifact to run",
+		Long: "A binary on your $PATH is not consent. rta loads a plugin by *running*\n" +
+			"it, so an unapproved `" + pluginhost.Prefix + "*` would execute before anybody\n" +
+			"typed a command naming it — including during shell completion.\n\n" +
+			"Trust attaches to the artifact's content digest, not its name, so\n" +
+			"rebuilding or replacing a plugin needs approving again. That is the\n" +
+			"feature: a plugin's bytes changing under a name you already approved is\n" +
+			"the event worth stopping for.\n\n" +
+			"With no argument, lists what was found and not run.",
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			format, err := cli.ParseFormat(opts.output)
+			if err != nil {
+				return err
+			}
+			render := func(v view.View) error {
+				return cli.Render(cmd.OutOrStdout(), v,
+					cli.Options{Format: format, NoColor: opts.noColor || !isTTY(), Width: termWidth()})
+			}
+			if len(args) == 0 {
+				return render(trustInventory())
+			}
+			found, verr := discovered(args[0])
+			if verr != nil {
+				return verr
+			}
+			if verr := plugintrust.Add(found.Digest, found.Name, found.Path); verr != nil {
+				return verr
+			}
+			pairs := []view.Pair{
+				{Key: "trusted", Value: found.Name},
+				{Key: "artifact", Value: found.Path},
+				{Key: "digest", Value: found.Digest},
+			}
+			if info, err := os.Stat(found.Path); err == nil {
+				pairs = append(pairs,
+					view.Pair{Key: "size", Value: humanBytes(info.Size())},
+					view.Pair{Key: "modified", Value: info.ModTime().Format(time.RFC3339)})
+			}
+			pairs = append(pairs, view.Pair{Key: "next",
+				Value: "it loads on your next `rta` command — `rta plugin list` shows what it declares"})
+			return render(view.KeyValue{Pairs: pairs})
+		},
+		ValidArgsFunction: func(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
+			// Only the ones that are actually waiting: completing a plugin
+			// that is already trusted offers a keystroke that does nothing.
+			var out []cobra.Completion
+			for _, u := range untrustedPlugins() {
+				out = append(out, cobra.CompletionWithDesc(u.Name, u.Short()+" — "+u.Path))
+			}
+			return out, cobra.ShellCompDirectiveNoFileComp
+		},
+	}
+	return cmd
+}
+
+// newPluginUntrustCommand takes an approval back.
+//
+// By name as well as by digest, because that is how somebody reaches for it in
+// the moment they want it: an operator taking a plugin back has a name in
+// their head, and every digest that name ever had is a thing they want gone.
+func newPluginUntrustCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "untrust <name|digest>",
+		Short: "Withdraw approval from a plugin artifact",
+		Long: "Removes every approval recorded under a name, or the one matching a\n" +
+			"digest prefix. The binary is left exactly where it is, because deleting\n" +
+			"somebody's file is not what \"I no longer trust this\" asked for.\n\n" +
+			"Trust is checked once per process, before anything is launched, so a\n" +
+			"session already running keeps the plugin it loaded — restart `rta mcp\n" +
+			"serve` or the TUI to be rid of it.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			n, verr := plugintrust.Remove(args[0])
+			if verr != nil {
+				return verr
+			}
+			if n == 0 {
+				return view.Errorf("plugin.untrust.unknown",
+					"nothing trusted is called %q", args[0]).
+					WithHint("`rta plugin trust` with no argument lists what is waiting; " +
+						"`rta doctor` lists what is trusted")
+			}
+			fmt.Fprintf(cmd.OutOrStdout(),
+				"withdrew %s — it will not load again; a session already running keeps what it loaded\n",
+				plural(n, "approval", "approvals"))
+			return nil
+		},
+		ValidArgsFunction: func(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
+			var out []cobra.Completion
+			for _, e := range plugintrust.Load().Entries() {
+				// Every name the artifact has been trusted under, because
+				// untrust accepts every one of them and a completion that
+				// offered fewer would be the shell disagreeing with the
+				// command it completes.
+				for _, name := range e.Names {
+					out = append(out, cobra.CompletionWithDesc(name, e.Short()+" — "+e.Path))
+				}
+			}
+			return out, cobra.ShellCompDirectiveNoFileComp
+		},
+	}
+}
+
+// humanBytes is a file size a person reads without counting digits. Local to
+// this one report: nothing else in the app formats a size, and a shared helper
+// for a single caller is a dependency without a reason.
+func humanBytes(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := int64(unit), 0
+	for m := n / unit; m >= unit; m /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGT"[exp])
+}
+
+// discovered finds one plugin by the name it is installed under, and hashes
+// it. It refuses a name that is not on $PATH rather than trusting a digest
+// nothing produced.
+func discovered(name string) (pluginhost.Untrusted, *view.Error) {
+	for _, f := range pluginhost.Discover() {
+		if f.Name != name {
+			continue
+		}
+		id, err := pluginhost.Identify(f.Path)
+		if err != nil {
+			return pluginhost.Untrusted{}, view.Errorf("plugin.trust.unreadable", "%v", err)
+		}
+		return pluginhost.Untrusted{Name: f.Name, Path: id.Path, Digest: id.Digest}, nil
+	}
+	return pluginhost.Untrusted{}, view.Errorf("plugin.trust.notfound",
+		"no plugin called %q is installed", name).
+		WithHint("rta finds a plugin as `" + pluginhost.Prefix + name + "` on your $PATH; " +
+			"`rta plugin trust` with no argument lists what it found")
+}
+
+// untrustedPlugins is what discovery would refuse right now.
+//
+// Recomputed rather than read off the host, because this command runs *after*
+// startup already skipped them and the operator may have installed one since —
+// and because it is a filesystem question with a filesystem answer, needing no
+// plugin to be running to ask it.
+func untrustedPlugins() []pluginhost.Untrusted {
+	trusted := plugintrust.Load()
+	var out []pluginhost.Untrusted
+	for _, f := range pluginhost.Discover() {
+		id, err := pluginhost.Identify(f.Path)
+		if err != nil || trusted.Trusts(id.Digest) {
+			continue
+		}
+		out = append(out, pluginhost.Untrusted{Name: f.Name, Path: id.Path, Digest: id.Digest})
+	}
+	return out
+}
+
+// trustInventory is what `rta plugin trust` shows with no argument: what was
+// found and not run, and what it would take to change that.
+func trustInventory() view.View {
+	waiting := untrustedPlugins()
+	if len(waiting) == 0 {
+		n := plugintrust.Load().Len()
+		return view.KeyValue{Pairs: []view.Pair{
+			{Key: "waiting", Value: "nothing — every plugin found on $PATH is one you have approved"},
+			{Key: "trusted", Value: plural(n, "artifact", "artifacts")},
+		}}
+	}
+	t := view.Table{Columns: []view.Column{
+		{Name: "Plugin"},
+		{Name: "Digest"},
+		{Name: "Artifact"},
+		{Name: "To load it"},
+	}}
+	for _, u := range waiting {
+		t.Rows = append(t.Rows, []string{u.Name, u.Short(), u.Path, "rta plugin trust " + u.Name})
+	}
+	t.Total = len(t.Rows)
+	return t
 }
 
 func newPluginNewCommand() *cobra.Command {
@@ -116,6 +333,25 @@ func newPluginNewCommand() *cobra.Command {
 	cmd.Flags().StringVar(&rtaSource, "rta-source", "",
 		"local rta checkout to `replace` with, since rta is not published yet "+
 			"(default: found by walking up from here)")
+	// Both name a directory, so the shell does the listing. --rta-source also
+	// offers the answer this command would compute for itself, because on most
+	// machines there is exactly one and it is already known.
+	_ = cmd.RegisterFlagCompletionFunc("dir",
+		func(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
+			return nil, cobra.ShellCompDirectiveFilterDirs
+		})
+	_ = cmd.RegisterFlagCompletionFunc("rta-source",
+		func(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
+			if found := findRta(); found != "" {
+				return []cobra.Completion{
+					cobra.CompletionWithDesc(found, "the checkout rta found for itself"),
+				}, cobra.ShellCompDirectiveFilterDirs
+			}
+			return nil, cobra.ShellCompDirectiveFilterDirs
+		})
+	// A new namespace is a name being invented, so there is nothing to
+	// complete it from — and the filesystem is the wrong answer.
+	cmd.ValidArgsFunction = cobra.NoFileCompletions
 	return cmd
 }
 
@@ -128,6 +364,15 @@ func newPluginNewCommand() *cobra.Command {
 // and a separate dev path would mean the fifteen-minute gate exercises a path
 // no user ever runs. What dev changes is where the binary comes from, and
 // nothing else.
+//
+// **It does not need `rta plugin trust`, and that is not an exception to the
+// rule but the rule applied.** The trust gate exists because being on $PATH is
+// not consent: nobody named the artifact, and it runs anyway. Here the operator
+// named a source directory in the command they just typed, rta compiled it in
+// front of them, and the binary exists only for the length of this run. The act
+// of approval that a digest records has already happened, in a stronger form
+// than a digest could carry. Confinement is a different question and still
+// applies, which is why it is the same spawn.
 func newPluginDevCommand(reg *registry.Registry, version string, opts *globalOpts) *cobra.Command {
 	var keep bool
 	cmd := &cobra.Command{

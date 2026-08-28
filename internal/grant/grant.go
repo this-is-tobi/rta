@@ -57,19 +57,99 @@ type Grant struct {
 	// Scope narrows the grant to one record — the key, task or hostname the
 	// capability names. Empty means every record the target can reach, which
 	// is the wider and rarer thing to want.
-	Scope   string    `json:"scope,omitempty"`
-	Issued  time.Time `json:"issued"`
-	Expires time.Time `json:"expires"`
-	Note    string    `json:"note,omitempty"`
+	Scope string `json:"scope,omitempty"`
+	// Profile narrows the grant to one of the operator's named connections.
+	//
+	// Empty means the call must name NO profile — the operator's base
+	// configuration — and nothing else. **It is not a wildcard, and there is
+	// no wildcard.**
+	//
+	// Scope's empty-means-every-record deliberately does not transfer. That is
+	// a *record* wildcard inside a connection the operator already chose,
+	// which is what makes it tolerable; a profile wildcard would be a
+	// *connection* wildcard — one grant issued while pointed at a scratch
+	// database authorizing the identical call against production. That is
+	// D94's credential redirect rebuilt from the grant side.
+	//
+	// It is also the only reading under which this field's arrival is safe for
+	// grants already on disk: they unmarshal with Profile empty and keep
+	// covering exactly the unprofiled calls they cover today, gaining nothing.
+	// Under "empty means any" every one of them would silently widen to every
+	// connection added afterwards.
+	//
+	// omitempty is load-bearing for the seal, not decoration. canonical() is
+	// json.Marshal over the parsed []Grant, so a field that is the zero string
+	// on every stored grant is omitted and re-encodes byte-identically, and
+	// every existing seal still verifies. Without it old rows re-encode with
+	// "profile":"", fail hmac.Equal, and rta reports its own file as forged.
+	Profile string `json:"profile,omitempty"`
+	// ProfilePin fingerprints the connection this grant was issued against:
+	// profile.ConnStamp of the entry for this grant's namespace.
+	//
+	// **Because Profile is a name, and a name is not a connection.** Editing
+	// an environment's `host`, `endpoint` or `secrets:` mapping repoints every
+	// live grant naming it, silently: the operator consented to a call
+	// reaching staging, and the identical grant now authorizes it against
+	// whatever that name means afterwards. ADR 0019 and ADR 0020 both record
+	// this as the thing to build, "required the moment stage 2 lands" — the
+	// moment a connection can also carry cluster coordinates and a credential
+	// read out of that cluster.
+	//
+	// It is the same rule the rest of rta already follows for artifacts:
+	// `--allow-destructive <id>@<digest>` (ADR 0015) and `plugins.<ns>@<digest>`
+	// (ADR 0016) bind an authorization to a thing rather than to a label. This
+	// binds it to a *connection* for the same reason and by the same means.
+	//
+	// **Required exactly when Profile is set.** An unprofiled grant keeps an
+	// empty profile and an empty pin and is untouched, which is also what
+	// leaves the field free for the seal. Both other readings are wrong:
+	// "empty matches anything" rebuilds the hole for every grant issued before
+	// this and makes the empty pin the default a blind-writing attacker
+	// produces — ADR 0019's no-wildcard argument, one field along — and
+	// "empty matches nothing" would refuse every live profiled grant on
+	// upgrade. Fail-closed, self-healing within one TTL.
+	//
+	// Not re-stamped at load to smooth that upgrade, for legacy()'s own
+	// reason: a migration that re-seals what it finds is the same hole with
+	// more steps, because re-stamping binds the grant to whatever the config
+	// says *now*, which is precisely the repoint this exists to catch.
+	//
+	// **What it can and cannot promise.** It is content-addressed, so it
+	// answers "this differs from what was consented to" and not "this has been
+	// edited since": a profile changed and changed back matches again. It
+	// binds content and never provenance — Lookup's Trusted() check still
+	// stands in front of it. And no hash over a config file can see
+	// `RTA_PROFILE_<NAME>_<INPUT>`, so the claim is scoped to the configured
+	// connection. See profile.ConnStamp.
+	//
+	// omitempty for the seal, exactly as Profile above documents: canonical()
+	// is json.Marshal over the parsed []Grant, so a field that is the zero
+	// string on every stored grant re-encodes byte-identically and every
+	// existing seal still verifies.
+	ProfilePin string    `json:"profilePin,omitempty"`
+	Issued     time.Time `json:"issued"`
+	Expires    time.Time `json:"expires"`
+	Note       string    `json:"note,omitempty"`
+	// TTL is the window as the operator typed it ("15m", "1h"), so renew can
+	// extend by the same amount rather than guess at one.
+	//
+	// Empty on every grant sealed before this field existed; renew falls back
+	// to Expires.Sub(Issued), which for a grant that has never been renewed is
+	// exactly the window it was issued with.
+	TTL string `json:"ttl,omitempty"`
 	// MaxUses caps how many successful calls this grant authorizes before it
 	// is spent, on top of Expires. Zero means unlimited within the TTL — the
 	// behavior of every grant issued before this field existed, and the
 	// common case today: "for the next 15 minutes" needs no counting.
 	MaxUses int `json:"maxUses,omitempty"`
-	// Uses counts successful calls consumed so far. Consume increments it
-	// only after a granted call actually succeeds — a call refused for an
-	// unrelated reason (the capability itself failed, the process was
-	// killed mid-run) must not spend a one-time grant that revealed nothing.
+	// Uses counts what has been spent so far. Reserve increments it *before*
+	// the call runs, under the lock that authorized it, and hands back a
+	// release() that gives the use back if the call then fails — a call
+	// refused for an unrelated reason (the capability itself failed, the
+	// process was killed mid-run) must not spend a one-time grant that
+	// revealed nothing. Incrementing afterwards was the obvious ordering and
+	// the wrong one: it left the decision and the spend in different critical
+	// sections, so two concurrent calls both read Uses=0 and both ran.
 	Uses int `json:"uses,omitempty"`
 }
 
@@ -87,9 +167,38 @@ func (g Grant) Active(now time.Time) bool {
 		(g.MaxUses == 0 || g.Uses < g.MaxUses)
 }
 
-// covers reports whether this grant authorizes a call of capID on scope.
-func (g Grant) covers(capID, scope string) bool {
+// Window is the lifetime this grant was issued with, for renew to extend by
+// the same amount rather than guess.
+//
+// TTL when it is recorded; otherwise Expires-Issued, which for a grant that
+// has never been renewed is exactly the window it was issued with, and is the
+// only answer available for one sealed before TTL existed. Clamped to MaxTTL
+// so a hand-edited file cannot turn a renewal into a longer grant than any
+// person could have asked for.
+func (g Grant) Window() time.Duration {
+	if g.TTL != "" {
+		if d, err := time.ParseDuration(g.TTL); err == nil && d > 0 {
+			return min(d, MaxTTL)
+		}
+	}
+	if d := g.Expires.Sub(g.Issued); d > 0 {
+		return min(d, MaxTTL)
+	}
+	return DefaultTTL
+}
+
+// covers reports whether this grant authorizes a call of capID on scope,
+// running against profile.
+func (g Grant) covers(capID, scope, profile string) bool {
 	if g.Target != capID && g.Target != Namespace(capID) {
+		return false
+	}
+	// Exact, in both directions, with no g.Profile == "" escape hatch. A grant
+	// for "staging" does not authorize a call naming no profile, and a grant
+	// naming no profile does not authorize a call on "staging". See the field
+	// comment: this is what makes the arrival of Profile safe for every grant
+	// already sealed on disk.
+	if g.Profile != profile {
 		return false
 	}
 	// A scoped grant authorizes that record and nothing else — including a
@@ -107,9 +216,9 @@ func (g Grant) covers(capID, scope string) bool {
 // naming exactly the target it was asked to revoke can be gone while a
 // wider grant still authorizes every call that target would ever make, and
 // "No active grant for X" is the wrong thing to print when that is true.
-func Covering(grants []Grant, capID, scope string) *Grant {
+func Covering(grants []Grant, capID, scope, profile string) *Grant {
 	for i := range grants {
-		if grants[i].covers(capID, scope) {
+		if grants[i].covers(capID, scope, profile) {
 			return &grants[i]
 		}
 	}
@@ -118,12 +227,11 @@ func Covering(grants []Grant, capID, scope string) *Grant {
 
 // Namespace is the plugin part of a capability ID: the coarsest thing a grant
 // may name.
-func Namespace(capID string) string {
-	if i := strings.Index(capID, "."); i >= 0 {
-		return capID[:i]
-	}
-	return capID
-}
+//
+// Delegates to plugin.Namespace rather than deriving it again. Two copies of
+// "the part before the first dot" is one too many once internal/profile needs
+// the same answer to decide which plugin a profile configures.
+func Namespace(capID string) string { return plugin.Namespace(capID) }
 
 // Normalize accepts the forms people type for a target — "kv", "kv.*",
 // "kv.get" — and returns the stored one.
@@ -190,6 +298,20 @@ func loadAll() ([]Grant, *view.Error) {
 		return nil, view.Errorf("core.grant.corrupt", "re-encoding %s: %v", Path(), err)
 	}
 	if !hmac.Equal([]byte(doc.Seal), []byte(seal(key, canon))) {
+		// Nothing is honoured either way; only the sentence differs. A file
+		// carrying fields this build never declared fails the seal because
+		// canonical() re-encodes what it parsed and drops them — which is what
+		// an ordinary downgrade looks like from here, and accusing the
+		// operator's own newer rta of forgery while telling them to delete
+		// every grant is the wrong reading of it. See unknown().
+		if extra := unknown(data); len(extra) > 0 {
+			return nil, view.Errorf("core.grant.unknownfields",
+				"%s carries grant fields this rta does not know (%s), so its seal cannot be "+
+					"checked — it was written by a newer rta, or it has been modified",
+				Path(), strings.Join(extra, ", ")).
+				WithHint("no grant is honoured either way; upgrade rta to read it, or `rm " +
+					Path() + "` to clear every grant and re-issue what you still need")
+		}
 		return nil, view.Errorf("core.grant.forged",
 			"%s does not match its seal — it was written by something other than rta", Path()).
 			WithHint("no grant is honoured until this is resolved; `rm " + Path() +
@@ -200,10 +322,10 @@ func loadAll() ([]Grant, *view.Error) {
 
 // Save replaces the grant file.
 //
-// Written atomically (temp file, then rename over the target): Consume's
-// lock only ever serializes the writers, and a reader — Load, called from
-// Check on every gated MCP call, with no lock of its own — can still land
-// mid-write against a plain os.WriteFile, which truncates before it writes.
+// Written atomically (temp file, then rename over the target): the grant lock
+// only ever serializes the writers, and a reader — Load, called from Reserve's
+// unlocked fast path on every gated MCP call — can still land mid-write
+// against a plain os.WriteFile, which truncates before it writes.
 // A reader that races a torn file sees valid JSON either way: the old
 // complete grants, or the new ones, never a half-written one.
 func Save(grants []Grant) *view.Error {
@@ -277,14 +399,28 @@ func Mutate(f func([]Grant) ([]Grant, bool)) *view.Error {
 }
 
 // Required reports whether a capability needs a grant before an agent may
-// call it.
+// call it, given the profile the call names.
 //
 // Destructive is implicit: a capability that permanently removes something is
 // exactly what a standing allowlist should not be enough for. Everything else
 // opts in, which is how kv.get — a read by the letter of the safety model,
 // a leak in practice — ends up here too.
-func Required(c plugin.Capability) bool {
-	return c.NeedsGrant || c.Safety == plugin.Destructive
+//
+// **Naming a profile is itself enough**, and that clause is the whole of the
+// profiles feature. plugins/pg declares no NeedsGrant and all six of its
+// capabilities are Safety: Read — honestly, since pg.query runs inside a READ
+// ONLY transaction — so without it a profile-aware covers() would do nothing
+// for pg at all, and "read the database the operator configured" would
+// quietly become "read any database the operator has configured".
+//
+// The alternative was marking pg's capabilities NeedsGrant, which is wrong in
+// the other direction: it would gate `rta pg status` against the operator's
+// own localhost, where nobody consented to anything because nothing left the
+// machine. The requirement belongs to the connection, not to the capability —
+// so the zero-config path stays exactly as frictionless as it is today, and
+// consent is required at precisely the moment a call reaches somewhere else.
+func Required(c plugin.Capability, profile string) bool {
+	return profile != "" || c.NeedsGrant || c.Safety == plugin.Destructive
 }
 
 // scopes reads the records a call names, from the input the capability
@@ -352,22 +488,6 @@ func numericScope(v any) string {
 	return fmt.Sprint(v)
 }
 
-// Check gates one call. It is the whole enforcement: the MCP bridge calls it
-// before Run, and no plugin has to remember to.
-//
-// Every record a call names needs its own cover — `kv env a b c` with a grant
-// for `a` is two thirds of a leak, not a partial success.
-func Check(c plugin.Capability, values map[string]any) *view.Error {
-	if !Required(c) {
-		return nil
-	}
-	grants, verr := Load()
-	if verr != nil {
-		return verr
-	}
-	return checkAgainst(c, values, grants)
-}
-
 // allocate walks the scopes a call names and, for each, greedily picks the
 // first grant that covers it and can still afford one more use in this same
 // call — a grant already spoken for elsewhere in the call, right up to its
@@ -387,12 +507,12 @@ func Check(c plugin.Capability, values map[string]any) *view.Error {
 // was capped at blown past in a call that never touched the lock twice.
 // Sharing one walk and one tally is what keeps the authorization decision
 // and the spend decision looking at the same arithmetic.
-func allocate(c plugin.Capability, values map[string]any, grants []Grant) (tally map[int]int, missing []string) {
+func allocate(c plugin.Capability, values map[string]any, grants []Grant, profile string) (tally map[int]int, missing []string) {
 	tally = map[int]int{}
 	for _, scope := range scopes(c, values) {
 		covered := false
 		for i, g := range grants {
-			if !g.covers(c.ID, scope) {
+			if !g.covers(c.ID, scope, profile) {
 				continue
 			}
 			if g.MaxUses > 0 && g.Uses+tally[i] >= g.MaxUses {
@@ -411,16 +531,193 @@ func allocate(c plugin.Capability, values map[string]any, grants []Grant) (tally
 	return tally, missing
 }
 
-// checkAgainst is Check against a set of grants already in hand, so that the
-// authorization decision can be made under the same lock that spends the use.
-func checkAgainst(c plugin.Capability, values map[string]any, grants []Grant) *view.Error {
-	_, missing := allocate(c, values, grants)
+// checkAgainst answers "is this call authorized" against a set of grants
+// already in hand, so that the authorization decision can be made under the
+// same lock that spends the use.
+//
+// Every record a call names needs its own cover — `kv env a b c` with a grant
+// for `a` is two thirds of a leak, not a partial success.
+//
+// **Unexported, and it stays that way.** There used to be a Check() wrapping
+// this that did its own Load, and it was the package's second gate: it applied
+// the pin filter but not the active bound, so the two exported entry points
+// answered differently about the same call. Nothing called it — the bridge has
+// always called Reserve — but its own doc comment claimed it was "the whole
+// enforcement", which is the sentence that would have sent the next caller to
+// the weaker of the two. A gate reachable only through the function that
+// spends the use cannot drift from it.
+func checkAgainst(c plugin.Capability, values map[string]any, grants []Grant, profile string) *view.Error {
+	_, missing := allocate(c, values, grants, profile)
 	if len(missing) == 0 {
 		return nil
 	}
+	// The hint has to name the profile, because a grant that does not name it
+	// authorizes nothing: covers() matches the profile exactly, so
+	// `rta grant allow pg.status --ttl 15m` issued for a call on "prod"
+	// produces a row that looks right in `grant list` and refuses every call it
+	// was issued for. A refusal that hands somebody a command which does not
+	// fix the problem is worse than one that hands them nothing — they run it,
+	// see success, and go looking for the cause somewhere else.
+	//
+	// The subject is the namespace rather than the capability when a profile is
+	// in play: an operator granting access to a connection almost never means
+	// "and only the status call".
+	return refuseMissing(c, missing, profile)
+}
+
+// samePin compares two connection fingerprints.
+//
+// **An empty pin matches nothing, including another empty pin**, and that
+// asymmetry with ordinary string equality is the whole control. Two ways of
+// arriving at empty had to be closed, and `==` closed neither:
+//
+//   - A profiled grant issued before this field existed carries no pin. Left
+//     equal to an empty computed stamp it would be honoured, which is exactly
+//     the "empty means any" reading Profile's own comment rejects one field up.
+//   - ConnStampFor answers empty for a profile that has been deleted, renamed,
+//     or stripped of the plugin. A grant naming a connection that no longer
+//     exists must authorize nothing rather than everything.
+//
+// The same load-bearing zero value plugintrust.Set.Trusts uses, for the same
+// reason: a caller that could not compute the thing being compared must not
+// get "yes" by default.
+func samePin(a, b string) bool { return a != "" && a == b }
+
+// reachable drops the grants this call cannot be authorized by, and reports
+// each survivor's position in the set it came from.
+//
+// Two subtractions, and they were two functions until the second one made the
+// case for merging them:
+//
+//   - **active** — the environment the operator has switched on. While they are
+//     working in one place, a grant naming any other profile does not count.
+//   - **pin** — the connection this call will actually be filled from. A grant
+//     issued against a different one does not count, because the name it
+//     consented to now resolves somewhere else.
+//
+// **Both are filters on the grant set, not checks beside it**, and that is the
+// whole design. The active bound started as a short-circuit in internal/mcp
+// that refused before Reserve, and it was wrong in two ways at once. It
+// compared `profileName != active` without excluding the empty profile, so
+// switching *anything* on refused every call that named no profile — most of
+// the catalogue — and blacked out the whole agent surface with a hint telling
+// the operator to issue grants that could not help. And even correct, it
+// produced its own refusal, which named every scope the call carried while the
+// real check names only the uncovered ones: an agent holding a partial grant
+// could tell the two apart and read "the operator is working somewhere else"
+// off the difference.
+//
+// The pin has the same shape and a sharper version of the same leak. A second
+// refusal saying "this profile changed since you were granted" separates
+// "granted, then edited" from "never granted", disclosing to an agent both that
+// the profile exists and that consent was once given for it. Filtering removes
+// the second refusal by construction, so the sentence an agent sees is the
+// identical one a call with no grant at all gets, out of the same allocate()
+// over the same tally.
+//
+// **It can only subtract**: nothing here adds a grant, widens one, or changes
+// which connection a call is filled from. A call naming no profile still
+// matches the grants that name none, because covers() already compares the two
+// exactly. A grant with a profile and no pin is one issued before the field
+// existed, and it is dropped rather than honoured — fail-closed, and it heals
+// when the operator re-consents, which is within one TTL because MaxTTL is a
+// day.
+//
+// pin is the stamp of the connection *this call resolves through*, computed by
+// the caller from the same config the fill will read. That matters where the
+// two can differ: `rta mcp serve` snapshots profiles at startup (so that a
+// profile removed from the file stops being reachable at the next start), and
+// a pin taken from a fresh read would refuse every call on an environment
+// edited since — with "re-issue the grant" as a remedy that could never work,
+// because the server would keep computing the older stamp. Computed from what
+// the call will use, a mismatch means what it says.
+//
+// **The positions are the point.** The decision is made over what is left — but
+// the *write* goes back to the whole file, and a caller that saved the filtered
+// slice would delete every row the filters dropped. That is not hypothetical:
+// Reserve did exactly that, so one use-limited call erased the operator's other
+// grants, including the stale-pinned row `rta grant list` and `rta doctor`
+// exist to show them. The hazard is the one Mutate's own comment names — "a
+// writer that round-trips through Load deletes every row it was not shown,
+// merely by saving" — reached through two filters instead of one.
+//
+// Returning positions rather than a filtered copy makes the mistake hard to
+// repeat: there is no subset to hand to Save. Merging the two filters into one
+// function is the other half of it — the pair used to be callable separately,
+// and the one caller that applied only one of them was the package's second,
+// weaker gate.
+func reachable(grants []Grant, profile, pin, active string) (view []Grant, at []int) {
+	for i, g := range grants {
+		if active != "" && g.Profile != "" && g.Profile != active {
+			continue
+		}
+		if profile != "" && g.Profile == profile && !samePin(g.ProfilePin, pin) {
+			continue
+		}
+		view = append(view, g)
+		at = append(at, i)
+	}
+	return view, at
+}
+
+// identity names a grant across a reload.
+//
+// The fields runAllow dedupes on, plus the moment of consent — which together
+// are what makes two rows the same decision rather than two decisions that
+// happen to look alike. Needed because a refund runs after the grant file has
+// been written and re-read, so an index means nothing by then, and matching by
+// "the first row that covers this" is what let a refund give back a use it
+// never spent.
+type identity struct {
+	target, scope, profile, pin string
+	issued                      time.Time
+}
+
+func (g Grant) identity() identity {
+	return identity{g.Target, g.Scope, g.Profile, g.ProfilePin, g.Issued}
+}
+
+// spentUse records that this call took n uses from one specific grant, so the
+// refund can give back exactly that and nothing else.
+type spentUse struct {
+	who identity
+	n   int
+}
+
+// Stale reports whether this grant names a connection that no longer matches
+// the one it was issued against.
+//
+// For the surfaces where a *person* is looking — `rta grant list`, `rta
+// doctor` — which is where the remedy belongs, because the remedy names the
+// profile and the agent-facing refusal deliberately does not. Computed by
+// asking the same filter the gate asks, so a row cannot be marked stale by one
+// rule and refused by another.
+func (g Grant) Stale(pin string) bool {
+	return g.Profile != "" && !samePin(g.ProfilePin, pin)
+}
+
+// refuseMissing is the sentence a call gets when nothing authorizes it.
+func refuseMissing(c plugin.Capability, missing []string, profile string) *view.Error {
+	if len(missing) == 0 {
+		missing = []string{""}
+	}
+	// The hint has to name the profile, because a grant that does not name it
+	// authorizes nothing: covers() matches the profile exactly, so
+	// `rta grant allow pg.status --ttl 15m` issued for a call on "prod"
+	// produces a row that looks right in `grant list` and refuses every call it
+	// was issued for. A refusal that hands somebody a command which does not
+	// fix the problem is worse than one that hands them nothing — they run it,
+	// see success, and go looking for the cause somewhere else.
+	//
+	// The subject is the namespace rather than the capability when a profile is
+	// in play: an operator granting access to a connection almost never means
+	// "and only the status call".
+	what := strings.TrimSpace(c.ID + " " + missing[0])
+	if profile != "" {
+		what = strings.TrimSpace(Namespace(c.ID)+" "+missing[0]) + " --profile " + profile
+	}
 	return view.Errorf("core.grant.required", "no active grant for %s", describe(c.ID, missing)).
-		WithHint("a person has to allow this first: rta grant allow " +
-			strings.TrimSpace(c.ID+" "+missing[0]) + " --ttl 15m")
+		WithHint("a person has to allow this first: rta grant allow " + what + " --ttl 15m")
 }
 
 // describe names what was refused the way the person issuing the grant will
@@ -443,10 +740,11 @@ func describe(capID string, scopes []string) string {
 // Reserve authorizes a call and spends its use in one atomic step, returning
 // a release to call if the call then fails.
 //
-// This is the whole gate for a use-limited grant, and it has to be one step.
-// The sequence it replaces was Check -> Run -> Consume, with the lock held
-// only by Consume: two concurrent tool calls both read Uses=0 against
-// MaxUses=1, both cleared Check, and both ran. The go-sdk dispatches every
+// **This is the gate.** Not one of two — the only exported way to ask whether
+// a call is authorized, and the only thing that spends a use. It has to be one
+// step. The sequence it replaces was check -> Run -> consume, with the lock
+// held only by the consume: two concurrent tool calls both read Uses=0 against
+// MaxUses=1, both cleared the check, and both ran. The go-sdk dispatches every
 // tools/call in its own goroutine, so an agent pipelining two requests is the
 // normal case rather than an exotic one — and the outcome was that a grant
 // documented as "read this value exactly once" delivered the secret twice,
@@ -460,17 +758,22 @@ func describe(capID string, scopes []string) string {
 //
 // Grants with no use limit (MaxUses == 0, everything issued before the field
 // existed, and the overwhelming common case) never take the lock: there is
-// nothing to spend, and the unlocked Check is a correct and complete answer
-// for them.
-func Reserve(c plugin.Capability, values map[string]any) (release func(), verr *view.Error) {
-	if !Required(c) {
+// nothing to spend, and the unlocked checkAgainst is a correct and complete
+// answer for them.
+//
+// active is the environment the operator currently has switched on, or "", and
+// pin is the connection this call resolves through. Both only ever subtract —
+// see reachable().
+func Reserve(c plugin.Capability, values map[string]any, profile, pin, active string) (release func(), verr *view.Error) {
+	if !Required(c, profile) {
 		return func() {}, nil
 	}
 	grants, verr := Load()
 	if verr != nil {
 		return nil, verr
 	}
-	if !anyLimited(grants) {
+	view, _ := reachable(grants, profile, pin, active)
+	if !anyLimited(view) {
 		// Checked against this same snapshot — checkAgainst, not Check, which
 		// would Load again. A second, independent read here reopened exactly
 		// the window this function exists to close: a MaxUses grant created
@@ -482,7 +785,7 @@ func Reserve(c plugin.Capability, values map[string]any) (release func(), verr *
 		// the authorization decision, makes that impossible: whatever this
 		// call is authorized against is exactly what it already knows has
 		// nothing to spend.
-		return func() {}, checkAgainst(c, values, grants)
+		return func() {}, checkAgainst(c, values, view, profile)
 	}
 
 	unlock, verr := acquireLock()
@@ -497,21 +800,51 @@ func Reserve(c plugin.Capability, values map[string]any) (release func(), verr *
 	if verr != nil {
 		return nil, verr
 	}
-	if verr := checkAgainst(c, values, grants); verr != nil {
+	view, at := reachable(grants, profile, pin, active)
+	if verr := checkAgainst(c, values, view, profile); verr != nil {
 		return nil, verr
 	}
-	spent, changed := spend(c, values, grants)
-	if !changed {
+	// The tally is over the view; the write is over everything Load returned.
+	// Saving the view instead is how one call came to erase the operator's
+	// other grants — see reachable.
+	tally, missing := allocate(c, values, view, profile)
+	if len(missing) > 0 || len(tally) == 0 {
+		// checkAgainst just approved every scope, so missing is unreachable
+		// here; a scope that could not be covered must not silently spend the
+		// ones that could.
 		return func() {}, nil
 	}
-	if verr := Save(spent); verr != nil {
+	spent := make([]spentUse, 0, len(tally))
+	for i, n := range tally {
+		grants[at[i]].Uses += n
+		spent = append(spent, spentUse{who: grants[at[i]].identity(), n: n})
+	}
+	if verr := Save(grants); verr != nil {
 		return nil, verr
 	}
-	return func() { _ = refund(c, values) }, nil
+	return func() { _ = refund(spent) }, nil
 }
 
-// refund gives back a use spent for a call that then failed.
-func refund(c plugin.Capability, values map[string]any) *view.Error {
+// refund gives back the uses a call spent, for a call that then failed.
+//
+// **It gives back what was taken, from the grants it was taken from.** The
+// first version recomputed: it walked the call's scopes and, for each, gave a
+// use back to the first grant that covered it, restarting the search every
+// time. Where one call had spent uses on two different grants — an ordinary
+// multi-record call against a wide grant and a narrow one — that walked into
+// the same grant twice, giving back a use the call never took there and
+// leaving the narrow grant paid for a call that failed. The operator's budget
+// stayed the same size and moved: a use they had scoped to one record became a
+// use on any record.
+//
+// Recomputing was wrong for a second reason, too. The state it recomputes
+// against is the state *after* the spend, and other calls may have run in
+// between — so "the first covering grant with a use to give" is a question
+// about now, and the only correct question is what this call took.
+func refund(spent []spentUse) *view.Error {
+	if len(spent) == 0 {
+		return nil
+	}
 	unlock, verr := acquireLock()
 	if verr != nil {
 		return verr
@@ -524,13 +857,18 @@ func refund(c plugin.Capability, values map[string]any) *view.Error {
 		return verr
 	}
 	changed := false
-	for _, scope := range scopes(c, values) {
+	for _, s := range spent {
 		for i := range grants {
-			if grants[i].MaxUses > 0 && grants[i].Uses > 0 && grants[i].covers(c.ID, scope) {
-				grants[i].Uses--
-				changed = true
-				break
+			if grants[i].identity() != s.who {
+				continue
 			}
+			// Never below zero: a concurrent revoke-and-reissue could put a
+			// fresh row here, and a refund must not mint uses.
+			if give := min(s.n, grants[i].Uses); give > 0 {
+				grants[i].Uses -= give
+				changed = true
+			}
+			break
 		}
 	}
 	if !changed {
@@ -546,70 +884,6 @@ func refund(c plugin.Capability, values map[string]any) *view.Error {
 		}
 	}
 	return Save(keep)
-}
-
-// spend increments the covering grant for every record the call named, using
-// the same allocate() a preceding checkAgainst already approved — so a grant
-// that authorized every scope in the call also has, by construction, the
-// budget left to be spent for every one of them.
-func spend(c plugin.Capability, values map[string]any, grants []Grant) ([]Grant, bool) {
-	tally, missing := allocate(c, values, grants)
-	if len(missing) > 0 {
-		// Reserve calls checkAgainst before spend and would already have
-		// refused the call; a scope allocate can't cover here shouldn't
-		// silently spend the ones it can.
-		return grants, false
-	}
-	for i, n := range tally {
-		grants[i].Uses += n
-	}
-	return grants, len(tally) > 0
-}
-
-// Consume spends one use, per record the call named, from whichever grant
-// authorized it.
-//
-// Deprecated in favour of Reserve, which decides and spends under one lock.
-// Kept for callers outside the MCP bridge that have already run their own
-// check and only need the bookkeeping.
-func Consume(c plugin.Capability, values map[string]any) *view.Error {
-	if !Required(c) {
-		return nil
-	}
-	grants, verr := Load()
-	if verr != nil {
-		return verr
-	}
-	if !anyLimited(grants) {
-		return nil
-	}
-
-	release, verr := acquireLock()
-	if verr != nil {
-		return verr
-	}
-	defer release()
-
-	// Re-read under the lock: another call may have spent a use, or a grant
-	// may have been revoked, since the unlocked check above.
-	grants, verr = Load()
-	if verr != nil {
-		return verr
-	}
-	changed := false
-	for _, scope := range scopes(c, values) {
-		for i := range grants {
-			if grants[i].MaxUses > 0 && grants[i].covers(c.ID, scope) {
-				grants[i].Uses++
-				changed = true
-				break // one grant per named record, the same granularity Check uses
-			}
-		}
-	}
-	if !changed {
-		return nil
-	}
-	return Save(grants)
 }
 
 func anyLimited(grants []Grant) bool {

@@ -7,6 +7,7 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/storer"
+	"github.com/go-git/go-git/v5/plumbing/transport"
 
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
@@ -74,6 +75,53 @@ func runLog(ctx context.Context, req plugin.Request) (view.View, error) {
 	}
 	t.Total = len(t.Rows)
 	return t, nil
+}
+
+// suggestCommitLimit is how far back a completion looks. A commit anybody is
+// naming by hand is a recent one; walking further is work done per keystroke
+// for answers nobody scrolls to.
+const suggestCommitLimit = 20
+
+// suggestCommits offers recent commits of the repository being asked about,
+// short hash and the message's own first line.
+//
+// A revision is the one input in this plugin that nobody retypes correctly,
+// and the answer is entirely local: the object store on this machine, no
+// network and no process.
+//
+// Deliberately not openRepo, which clones a remote endpoint into memory. That
+// is right for a run somebody asked for and wrong on a keystroke — a --path
+// naming a URL simply offers nothing rather than fetching a repository because
+// somebody pressed tab.
+func suggestCommits(_ context.Context, req plugin.Request) []string {
+	path := req.String("path")
+	if path == "" {
+		path = "."
+	}
+	if ep, err := transport.NewEndpoint(path); err == nil && ep.Protocol != "file" {
+		return nil
+	}
+	repo, err := git.PlainOpenWithOptions(path, &git.PlainOpenOptions{
+		DetectDotGit:          true,
+		EnableDotGitCommonDir: true,
+	})
+	if err != nil {
+		return nil
+	}
+	iter, err := repo.Log(&git.LogOptions{Order: git.LogOrderCommitterTime})
+	if err != nil {
+		return nil
+	}
+	defer iter.Close()
+	var out []string
+	_ = iter.ForEach(func(c *object.Commit) error {
+		if len(out) >= suggestCommitLimit {
+			return storer.ErrStop
+		}
+		out = append(out, shortHash(c.Hash)+"\t"+firstLine(c.Message))
+		return nil
+	})
+	return out
 }
 
 // firstLine is a commit's own summary line — the part every git tool that

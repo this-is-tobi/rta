@@ -156,10 +156,11 @@ func Plugin() plugin.Plugin {
 				Description: "Empty fields keep their current value. --tag - clears all tags; " +
 					"--due none clears the due date.",
 				Inputs: append([]plugin.Field{
-					{Name: "id", Type: plugin.Int, Positional: true, Required: true, Help: "task id"},
+					{Name: "id", Type: plugin.Int, Positional: true, Required: true,
+						Suggest: suggestAnyID, Help: "task id"},
 					{Name: "title", Type: plugin.String, Help: "new title (empty keeps the current one)"},
 					{Name: "body", Type: plugin.Text, Help: "new body, markdown supported (empty keeps the current one)"},
-					{Name: "parent", Type: plugin.Int, Default: noParentChange,
+					{Name: "parent", Type: plugin.Int, Default: noParentChange, Suggest: suggestOpenIDs,
 						Help: "re-parent to this task id (0 makes it top-level)"},
 				}, tagField, dueField),
 				Run:     runEdit,

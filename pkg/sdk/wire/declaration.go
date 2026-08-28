@@ -33,6 +33,49 @@ var fieldTypes = []struct {
 	{plugin.Secret, rtav1.FieldType_FIELD_TYPE_SECRET},
 }
 
+var endpointRoles = []struct {
+	go_ plugin.EndpointRole
+	pb  rtav1.EndpointRole
+}{
+	{plugin.EndpointNone, rtav1.EndpointRole_ENDPOINT_ROLE_UNSPECIFIED},
+	{plugin.EndpointHost, rtav1.EndpointRole_ENDPOINT_ROLE_HOST},
+	{plugin.EndpointPort, rtav1.EndpointRole_ENDPOINT_ROLE_PORT},
+	{plugin.EndpointAddress, rtav1.EndpointRole_ENDPOINT_ROLE_ADDRESS},
+	{plugin.EndpointURL, rtav1.EndpointRole_ENDPOINT_ROLE_URL},
+	{plugin.EndpointTLS, rtav1.EndpointRole_ENDPOINT_ROLE_TLS},
+}
+
+// EndpointRoleToProto encodes which part of a tunnel an input takes.
+func EndpointRoleToProto(r plugin.EndpointRole) rtav1.EndpointRole {
+	for _, m := range endpointRoles {
+		if m.go_ == r {
+			return m.pb
+		}
+	}
+	return rtav1.EndpointRole_ENDPOINT_ROLE_UNSPECIFIED
+}
+
+// EndpointRoleFromProto decodes it, and an unrecognised role decodes to
+// EndpointNone.
+//
+// **Unspecified is the safe default here, unlike FieldType's.** A type this
+// host does not know had to be reported, because the branch meaning "string"
+// is the default one and a plugin's secret would quietly become a string flag.
+// A *role* this host does not know means only that the host will not fill that
+// input from a tunnel — the input keeps its declared default and the call goes
+// where it would have gone with no tunnel at all. Failing to fill is visible
+// (the call reaches the plugin's default rather than the cluster) and failing
+// closed here would mean refusing to load a plugin over one input the host
+// merely cannot point at a forward.
+func EndpointRoleFromProto(r rtav1.EndpointRole) plugin.EndpointRole {
+	for _, m := range endpointRoles {
+		if m.pb == r {
+			return m.go_
+		}
+	}
+	return plugin.EndpointNone
+}
+
 var surfaces = []struct {
 	go_ plugin.Surface
 	pb  rtav1.Surface
@@ -132,6 +175,7 @@ func FieldToProto(f plugin.Field) *rtav1.Field {
 		Positional:  f.Positional,
 		Local:       f.Local,
 		EnvFallback: f.EnvFallback,
+		Endpoint:    EndpointRoleToProto(f.Endpoint),
 		Config:      f.Config,
 		Options:     f.Options,
 		Min:         ValueToProto(f.Min),
@@ -142,6 +186,7 @@ func FieldToProto(f plugin.Field) *rtav1.Field {
 		// the values — and shipping them with the declaration would send them
 		// to every caller including the ones that must never see them.
 		HasSuggest: f.Suggest != nil,
+		Live:       f.Live,
 	}
 }
 
@@ -161,10 +206,12 @@ func FieldFromProto(f *rtav1.Field) (plugin.Field, bool) {
 		Positional:  f.GetPositional(),
 		Local:       f.GetLocal(),
 		EnvFallback: f.GetEnvFallback(),
+		Endpoint:    EndpointRoleFromProto(f.GetEndpoint()),
 		Config:      f.GetConfig(),
 		Options:     f.GetOptions(),
 		Min:         ValueFromProto(f.GetMin()),
 		Max:         ValueFromProto(f.GetMax()),
+		Live:        f.GetLive(),
 	}, ok
 }
 

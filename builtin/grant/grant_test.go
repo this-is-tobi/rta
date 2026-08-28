@@ -160,13 +160,14 @@ func TestAllowThenList(t *testing.T) {
 	if !ok {
 		t.Fatalf("list = %s", view.TypeOf(v))
 	}
-	if len(tbl.Rows) != 1 || tbl.Rows[0][0] != "kv.get" || tbl.Rows[0][1] != "db-password" {
+	if len(tbl.Rows) != 1 || cell(t, tbl, 0, "Capability") != "kv.get" ||
+		cell(t, tbl, 0, "Record") != "db-password" {
 		t.Fatalf("rows = %v", tbl.Rows)
 	}
-	if tbl.Rows[0][3] != "unlimited" {
+	if cell(t, tbl, 0, "Uses Left") != "unlimited" {
 		t.Errorf("a grant with no --max-uses should read unlimited: %v", tbl.Rows[0])
 	}
-	if tbl.Rows[0][4] != "deploy" {
+	if cell(t, tbl, 0, "Note") != "deploy" {
 		t.Errorf("the note is what makes a stale grant explainable: %v", tbl.Rows[0])
 	}
 }
@@ -177,8 +178,8 @@ func TestUnscopedGrantSaysAny(t *testing.T) {
 	setup(t)
 	run(t, allowH, map[string]any{"target": "todo"})
 	tbl := run(t, listH, nil).(view.Table)
-	if tbl.Rows[0][1] != "any" {
-		t.Errorf("record = %q, want \"any\"", tbl.Rows[0][1])
+	if got := cell(t, tbl, 0, "Record"); got != "any" {
+		t.Errorf("record = %q, want \"any\"", got)
 	}
 }
 
@@ -375,8 +376,8 @@ func TestMaxUsesIsRecordedAndShownInList(t *testing.T) {
 		t.Fatalf("grants = %+v, want MaxUses 1", grants)
 	}
 	tbl := run(t, listH, nil).(view.Table)
-	if tbl.Rows[0][3] != "1" {
-		t.Errorf("uses left = %q, want 1", tbl.Rows[0][3])
+	if got := cell(t, tbl, 0, "Uses Left"); got != "1" {
+		t.Errorf("uses left = %q, want 1", got)
 	}
 }
 
@@ -393,13 +394,12 @@ func TestMaxUsesGrantIsSpentAfterASuccessfulCall(t *testing.T) {
 	c := catalog()[0] // kv.get
 	values := map[string]any{"key": "db-password"}
 
-	if verr := core.Check(c, values); verr != nil {
+	// Reserve, the way the bridge calls it: authorize and spend in one step,
+	// keeping the use because the call succeeded.
+	if _, verr := core.Reserve(c, values, "", "", ""); verr != nil {
 		t.Fatalf("the fresh grant was refused: %v", verr)
 	}
-	if verr := core.Consume(c, values); verr != nil {
-		t.Fatalf("consume: %v", verr)
-	}
-	if verr := core.Check(c, values); verr == nil {
+	if _, verr := core.Reserve(c, values, "", "", ""); verr == nil {
 		t.Fatal("a one-time grant still authorized a second call")
 	}
 }
@@ -459,7 +459,7 @@ func TestDetailedListSplitsEveryCapabilityByWhetherItNeedsAGrant(t *testing.T) {
 		}
 		want := "reachable by default"
 		switch {
-		case core.Required(c):
+		case core.Required(c, ""):
 			want = "needs a grant a person issues"
 		case c.Safety != plugin.Read:
 			want = "needs --allow-write on the server"
@@ -507,7 +507,7 @@ func TestRevokeIsNotUndoneByAConcurrentReserve(t *testing.T) {
 				// that succeeded, and a refund would only put uses back into
 				// a file this test reads for presence, not for arithmetic.
 				// Being refused is the correct outcome once the revoke lands.
-				_, _ = core.Reserve(c, values)
+				_, _ = core.Reserve(c, values, "", "", "")
 			}()
 		}
 		wg.Add(1)
@@ -587,5 +587,60 @@ func TestALapsedGrantIsNotReportedAsStillCovering(t *testing.T) {
 	body := run(t, runRevoke, map[string]any{"target": "kv.get", "scope": "db-password"}).(view.Text).Body
 	if strings.Contains(body, "still covered") {
 		t.Errorf("an expired namespace grant was reported as covering kv.get: %q", body)
+	}
+}
+
+// cell reads a table cell by column NAME.
+//
+// These assertions indexed by position, and adding the Profile column shifted
+// every one of them — so a test about what "uses left" says started asserting
+// on a duration and failing for a reason that had nothing to do with its
+// subject. A column's position is a rendering detail; its name is the contract.
+func cell(t *testing.T, tbl view.Table, row int, column string) string {
+	t.Helper()
+	for i, c := range tbl.Columns {
+		if c.Name == column {
+			if row >= len(tbl.Rows) || i >= len(tbl.Rows[row]) {
+				t.Fatalf("no cell at row %d column %q", row, column)
+			}
+			return tbl.Rows[row][i]
+		}
+	}
+	t.Fatalf("no column named %q; have %v", column, tbl.Columns)
+	return ""
+}
+
+// The windows `--ttl` offers are the ones it will actually accept.
+//
+// Written as literals so they read the way somebody types them, which means
+// the constants and the list can drift apart in silence — this is what stops
+// that: every entry parses, the one called "the default" is the default, and
+// the one called the maximum is the maximum.
+func TestTheOfferedWindowsMatchTheRealBounds(t *testing.T) {
+	offered := suggestTTL(context.Background(), plugin.Request{})
+	if len(offered) == 0 {
+		t.Fatal("no windows offered")
+	}
+	labelled := map[string]time.Duration{}
+	for _, entry := range offered {
+		value, desc, found := strings.Cut(entry, "\t")
+		if !found {
+			t.Errorf("%q has no description", entry)
+		}
+		d, err := time.ParseDuration(value)
+		if err != nil {
+			t.Errorf("%q is offered and does not parse: %v", value, err)
+			continue
+		}
+		if d <= 0 || d > core.MaxTTL {
+			t.Errorf("%q is offered and would be refused or capped", value)
+		}
+		labelled[desc] = d
+	}
+	if got := labelled["the default"]; got != core.DefaultTTL {
+		t.Errorf("the entry called the default is %s, want %s", got, core.DefaultTTL)
+	}
+	if got := labelled["the most a grant can last"]; got != core.MaxTTL {
+		t.Errorf("the entry called the maximum is %s, want %s", got, core.MaxTTL)
 	}
 }

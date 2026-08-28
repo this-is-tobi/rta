@@ -293,6 +293,19 @@ func TestMCPServeKeepsStdoutForTheProtocol(t *testing.T) {
 
 	// …and the human-facing banner belongs on stderr, where it cannot corrupt
 	// the stream a client is parsing.
+	//
+	// Waited for rather than sampled. stdout and stderr are independent pipes,
+	// and os/exec copies stderr into errBuf from a goroutine of its own — so
+	// the instant the first JSON-RPC line arrives on stdout guarantees nothing
+	// about what has reached this buffer yet. Asserting there passed almost
+	// always and failed inside the full -race -shuffle suite, reporting an
+	// empty stderr for a server that had printed the banner before it served.
+	// The claim is "the banner goes to stderr", not "it is there by the time
+	// stdout answers", so the wait is the honest way to ask.
+	deadline := time.Now().Add(5 * time.Second)
+	for !strings.Contains(errBuf.String(), "listening") && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
 	if !strings.Contains(errBuf.String(), "listening") {
 		t.Errorf("banner should be on stderr, got %q", errBuf.String())
 	}

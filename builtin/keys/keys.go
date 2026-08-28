@@ -108,7 +108,7 @@ func Plugin() plugin.Plugin {
 						Help: "encrypt the restored key with this passphrase; omit for none — " +
 							"typed explicitly every time, not read from the environment, since a restore is a " +
 							"one-off choice rather than a standing credential for the session"},
-					{Name: "comment", Type: plugin.String,
+					{Name: "comment", Type: plugin.String, Suggest: suggestComment,
 						Help: "comment for the restored public key, e.g. me@laptop"},
 				},
 				Run: runRestore,

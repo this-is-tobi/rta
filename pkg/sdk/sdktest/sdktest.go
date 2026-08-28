@@ -231,11 +231,11 @@ func drive(t reporter, p plugin.Plugin, cfg config, dir string, inputs map[strin
 			continue
 		}
 
-		values := plugin.Resolve(c, inputs[c.ID],
-			// nil: a conformance run has no operator and therefore no
-			// configuration. A capability that only works once somebody has
-			// written a config file is one this suite should see failing.
-			nil)
+		// No Config and no Profile: a conformance run has no operator, and
+		// therefore neither a configuration file nor a named connection. A
+		// capability that only works once somebody has written one is a
+		// capability this suite should see failing.
+		values := plugin.Resolve(c, plugin.Inputs{Caller: inputs[c.ID]})
 		if missing := missingRequired(c, values); len(missing) > 0 {
 			t.Logf("sdktest: %s: %s not run — no value for required input %s; supply one with sdktest.WithInputs",
 				rule, c.ID, strings.Join(missing, ", "))

@@ -17,8 +17,12 @@ import (
 // the wizard, which assembled a fresh Config and wrote it, deleted the block
 // on every run without anybody typing a line about it.
 var (
-	initOwns    = []string{"Output", "Dashboard"}
-	initCarries = []string{"Plugins", "Theme"}
+	initOwns = []string{"Output", "Dashboard"}
+	// Profiles is carried, never decided. `rta init` asks about output and the
+	// dashboard; a connection is something an operator writes deliberately,
+	// and losing one to a re-run of the wizard would silently repoint every
+	// grant that names it.
+	initCarries = []string{"Plugins", "Profiles", "Theme"}
 )
 
 func TestInitKeepsEveryPartOfTheFileItDoesNotOwn(t *testing.T) {

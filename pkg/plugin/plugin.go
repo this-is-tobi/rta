@@ -7,8 +7,6 @@ package plugin
 
 import (
 	"context"
-	"fmt"
-	"regexp"
 	"slices"
 	"strings"
 
@@ -62,6 +60,101 @@ const (
 	// message, since that surfaces on every renderer.
 	Secret FieldType = "secret"
 )
+
+// EndpointRole is which part of a resolved tunnel an input takes.
+//
+// A tunnel produces exactly one fact — the local address a forward is
+// listening on — and the roles are the shapes plugins take it in. They exist
+// because the shapes genuinely differ rather than the names: a two-role
+// Host/Port scheme was proposed and rejected for being unable to express `s3`,
+// which has one input holding `host:port`, or `vault`, which has one holding a
+// URL (ADR 0019's amendment to ADR 0018 §2). These four cover every plugin in
+// the tree, and a shape none of them fits is a reason to add a fifth rather
+// than to make the operator hand-map it.
+//
+// The set is closed and the zero value is a member — EndpointNone, meaning
+// "not filled from a tunnel", which is every input of every plugin that has
+// not opted in.
+type EndpointRole string
+
+const (
+	// EndpointNone is an input a tunnel never fills. The zero value.
+	EndpointNone EndpointRole = ""
+	// EndpointHost takes the address alone: "127.0.0.1".
+	EndpointHost EndpointRole = "host"
+	// EndpointPort takes the port alone, as an Int: 54321.
+	EndpointPort EndpointRole = "port"
+	// EndpointAddress takes both, joined: "127.0.0.1:54321".
+	EndpointAddress EndpointRole = "address"
+	// EndpointURL takes both as a URL: "http://127.0.0.1:54321".
+	//
+	// Plain http, and that is not a downgrade to argue about. A port-forward
+	// is already inside the API server's TLS for the only hop that leaves the
+	// machine: rta talks to 127.0.0.1, kubectl wraps that in HTTPS to the API
+	// server, and the kubelet delivers it into the pod's network namespace.
+	// Re-encrypting a loopback socket at each end buys nothing (ADR 0018 §7).
+	EndpointURL EndpointRole = "url"
+	// EndpointTLS takes whether transport security is worth negotiating over
+	// the forward, which is: no.
+	//
+	// **The host owns this decision, because only the host knows.** The
+	// plugin cannot tell it is talking through a forward and rta cannot not
+	// know. Left to the plugin's own default it actively breaks: PostgreSQL's
+	// `prefer` kills the forward on the *clean disconnect*, measured against a
+	// real cluster — the TLS layer's trailing close_notify arrives at a socket
+	// PostgreSQL has already closed, the pod-side read resets, and kubectl
+	// exits. The next call gets "connection refused" on a local port with
+	// nothing anywhere connecting the two, and it happens on the first call,
+	// to somebody who changed nothing (ADR 0018 §7).
+	//
+	// The value is rendered per input type: "disable" for a String whose
+	// Options say so, false for a Bool. A caller who disagrees still wins,
+	// because a caller-supplied value beats a tunnel.
+	EndpointTLS EndpointRole = "tls"
+)
+
+// endpointRoles is every legal role, for validation and for the AST test that
+// keeps this block and that list from drifting.
+var endpointRoles = []EndpointRole{
+	EndpointNone, EndpointHost, EndpointPort, EndpointAddress, EndpointURL, EndpointTLS,
+}
+
+// tlsOff is how a String input may spell "do not negotiate TLS", most
+// preferred first.
+//
+// A list rather than one value because this is the plugin's vocabulary, not
+// the host's: `pg` says `disable` because libpq does, and another library says
+// `off` or `none`. The host has to produce a word the plugin will accept, and
+// the only honest way to know which is to read what the author enumerated.
+var tlsOff = []string{"disable", "off", "false", "none", "insecure"}
+
+// TLSOffValue is the value the host fills into f to turn transport security
+// off, and "" if f declares no way to say it.
+//
+// Empty is what validate refuses at registration, so by the time anything
+// fills a tunnel this has an answer. Exported because the filler lives in
+// internal/profile and this is the plugin contract's own statement about what
+// a declaration means — deriving it a second time over there is how the two
+// come to disagree about which word a plugin accepts.
+func TLSOffValue(f Field) any {
+	if f.Type == Bool {
+		return false
+	}
+	if v := tlsOffValue(f); v != "" {
+		return v
+	}
+	return nil
+}
+
+// tlsOffValue picks the first spelling f's Options offer.
+func tlsOffValue(f Field) string {
+	for _, want := range tlsOff {
+		if slices.Contains(f.Options, want) {
+			return want
+		}
+	}
+	return ""
+}
 
 // Field declares one capability input.
 type Field struct {
@@ -173,6 +266,40 @@ type Field struct {
 	// Nil means unbounded in that direction. They apply to Int and Float.
 	Min any
 	Max any
+	// Endpoint names which part of a resolved tunnel fills this input, so the
+	// host can point a call at a port-forward it opened (ADR 0018 §2).
+	//
+	// A tunnel yields one thing — a local address — and plugins take it in
+	// different shapes: `pg` wants `host` and `port` separately, `s3` wants one
+	// `endpoint` holding `host:port`, `vault` wants one `address` holding a
+	// URL. Declaring the role is how the host fills whichever of those a plugin
+	// actually has, without knowing any of their names.
+	//
+	// **Declared rather than conventional**, because a plugin is free to call
+	// its inputs `server` and `addr`, and matching on the names `host` and
+	// `port` is the mistake this codebase has recorded four times (D40: a name
+	// a thing chooses for itself is not an identity).
+	//
+	// **Declared by the plugin rather than mapped by the operator**, which is
+	// the opposite of the rule `secrets:` follows and for a reason that does
+	// not apply here. D50 makes the operator write a secret mapping because a
+	// plugin that could name the secret it wanted could name any secret in the
+	// namespace — it would cause a *fetch*. This causes none: it names one of
+	// the plugin's own declared inputs as the destination for a value the host
+	// already computed, cannot point at anything else, and cannot read
+	// anything. It is `Config` one step along — the plugin says which input a
+	// value belongs in, and the host decides whether there is a value.
+	//
+	// Refused on a Secret input, for the reason Config is: an endpoint is not a
+	// credential, and an input that takes one has no business being filled with
+	// an address. At most one input may claim each role, and EndpointHost and
+	// EndpointPort are declared together or not at all — half an address is not
+	// a connection. Both are checked at registration, so a plugin that gets it
+	// wrong fails to load rather than dialling somewhere surprising.
+	//
+	// Zero value is EndpointNone: no input is filled from a tunnel, which is
+	// every plugin that has not opted in.
+	Endpoint EndpointRole
 	// Suggest returns values that exist right now: the tags you have used,
 	// the keys in your store, the hostnames in your hosts file. Unlike
 	// Options it is not exhaustive — anything may still be typed — so it
@@ -192,156 +319,29 @@ type Field struct {
 	// completion that cannot answer should slow nobody down. req carries
 	// what the caller has supplied so far, which is what lets a suggestion
 	// depend on an earlier answer.
-	Suggest func(ctx context.Context, req Request) []string
-}
-
-// Surface names the renderer a request arrived through.
-//
-// Handlers must not branch on it to change what they do — one handler
-// serving every surface is the point of the whole model (PROJECT.md P1),
-// and a capability that behaves differently in the TUI than in a pipe is a
-// bug. The one legitimate use is trust: a request from SurfaceMCP has no
-// human in the loop, so a capability whose blast radius is "an AI agent
-// reads your secret" can require that an operator authorized it first. That
-// is a question of *whether* the call is allowed, not of what it returns.
-//
-// SurfaceUnknown means a direct in-process caller (tests, embedding code),
-// which is inside the trust boundary. Every renderer that can be reached
-// from outside the process must stamp its surface.
-type Surface string
-
-const (
-	SurfaceUnknown Surface = ""
-	SurfaceCLI     Surface = "cli"
-	SurfaceTUI     Surface = "tui"
-	SurfaceMCP     Surface = "mcp"
-	// SurfaceCompletion is a keystroke rather than a caller: the shell asking
-	// what could come next while somebody is still typing the command.
 	//
-	// It is its own surface because of what is *not* there. Nobody is waiting
-	// to answer a question — a passphrase prompt fired by the tab key would
-	// hang a shell mid-command-line on a question nobody expects — and the
-	// only output that can be seen is a word list. So anything that would
-	// prompt, confirm, or take a visible moment must not run here, and
-	// checking the surface is how that stays true without every Suggest
-	// having to remember it.
-	SurfaceCompletion Surface = "completion"
-)
-
-// Request carries resolved inputs and invocation context to a handler.
-type Request struct {
-	values  map[string]any
-	surface Surface
-	DryRun  bool
-	Yes     bool
-}
-
-// NewRequest builds a Request from resolved input values.
-func NewRequest(values map[string]any, dryRun, yes bool) Request {
-	if values == nil {
-		values = map[string]any{}
-	}
-	return Request{values: values, DryRun: dryRun, Yes: yes}
-}
-
-// Surface reports which renderer this request came through.
-func (r Request) Surface() Surface { return r.surface }
-
-// WithSurface stamps the calling renderer on a request. Renderers call this
-// once, at the boundary; handlers only ever read it.
-func (r Request) WithSurface(s Surface) Request {
-	r.surface = s
-	return r
-}
-
-// With returns a copy of r carrying values overlaid on the inputs it already
-// holds. It is how a composed detail page hands its own inputs down to the
-// capabilities it embeds (see Page): a section built from kv.list needs the
-// unlock key the page was given, and a section built from a per-host check
-// needs the host. The receiver is unchanged, so a handler cannot reshape the
-// request its caller is still holding.
-func (r Request) With(values map[string]any) Request {
-	merged := make(map[string]any, len(r.values)+len(values))
-	for k, v := range r.values {
-		merged[k] = v
-	}
-	for k, v := range values {
-		merged[k] = v
-	}
-	r.values = merged
-	return r
-}
-
-// Values returns every resolved input, as a copy.
-//
-// The typed accessors below are what a handler wants: they name one input and
-// coerce it. This is for the one caller that cannot name them — the plugin
-// host, which has to put the whole request on a wire without knowing what any
-// of it means. A copy rather than the map itself, for the same reason With
-// returns a new Request: a handler must not be able to reshape a request its
-// caller is still holding, and neither must a transport.
-func (r Request) Values() map[string]any {
-	out := make(map[string]any, len(r.values))
-	for k, v := range r.values {
-		out[k] = v
-	}
-	return out
-}
-
-func (r Request) String(name string) string {
-	v, _ := r.values[name].(string)
-	return v
-}
-
-func (r Request) Int(name string) int {
-	n, _ := toInt(r.values[name])
-	return n
-}
-
-func (r Request) Bool(name string) bool {
-	v, _ := r.values[name].(bool)
-	return v
-}
-
-func (r Request) Float(name string) float64 {
-	n, _ := toFloat(r.values[name])
-	return n
-}
-
-// StringSlice reads a StringSlice input. A bare string is treated as one
-// value rather than none: a caller passing a scalar where a list is declared
-// almost always means "just this one" — --tag work is not a wordy way of
-// saying no tags — and an MCP client is not schema-checked before its
-// arguments reach here (the SDK's own contract makes validation the
-// caller's responsibility), so a model that sends {"key": "x"} instead of
-// {"key": ["x"]} is a case this has to get right, not just a style
-// preference.
-//
-// This one behavior is now the single source of truth for what a scalar
-// means in a list slot. It used to be answered twice — this accessor said
-// "nothing", while internal/grant read the same raw value and said "exactly
-// this one thing" — and the two answers did not agree. A per-key grant on
-// kv.env, scoped to db-password, was satisfied by the string form of the
-// call (the gate's reading), while the handler's nil (its own reading) took
-// the "no keys named" branch and exported the entire store. Two readers of
-// one untyped value must not be free to disagree about what it means.
-func (r Request) StringSlice(name string) []string {
-	switch v := r.values[name].(type) {
-	case []string:
-		return v
-	case []any:
-		out := make([]string, 0, len(v))
-		for _, e := range v {
-			out = append(out, fmt.Sprint(e))
-		}
-		return out
-	case string:
-		if v == "" {
-			return nil
-		}
-		return []string{v}
-	}
-	return nil
+	// With Live set the cadence changes and the rest stands: still
+	// read-only, still silent on failure, but called only on a deliberate
+	// completion press.
+	Suggest func(ctx context.Context, req Request) []string
+	// Live marks Suggest as reading the service this plugin fronts — a
+	// bucket listing, a mount table — rather than computing locally.
+	//
+	// The split is ADR 0018 §8 applied to plugins: a read of somebody's
+	// infrastructure must be something the operator did, not something
+	// typing caused. A live Suggest runs only on a deliberate completion
+	// press, and with the credentials the run would get (LiveRequest) —
+	// the same pinned binary receives the same values moments earlier, on
+	// a key that asked for exactly that. The per-keystroke channel never
+	// calls it and carries no credentials: Candidates answers nil for a
+	// live input.
+	//
+	// Entries may end in a separator ("backups/") to compose: an accepted
+	// segment stops extending the box, so the next press fetches deeper
+	// with the box's text as the partial — the field's own name carries it
+	// in the request. Registration refuses Live without Suggest, beside
+	// Options, or on anything but a String input.
+	Live bool
 }
 
 // Handler executes a capability. Implementations must honor ctx cancellation.
@@ -435,383 +435,14 @@ type Plugin struct {
 	Capabilities []Capability
 }
 
-var (
-	idRe    = regexp.MustCompile(`^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*){1,2}$`)
-	nameRe  = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
-	fieldRe = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
-	// A dotted path of the same segments, so a plugin can nest its own
-	// settings. Closed deliberately: no leading dot, no empty segment, no
-	// "..", nothing that could be read as a filesystem path by whatever
-	// looks at it next.
-	configKeyRe = regexp.MustCompile(`^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)*$`)
-	safetySet   = map[Safety]bool{Read: true, Write: true, Destructive: true}
-	// safeties is safetySet in the order harm increases, which is the order
-	// anything listing them should use.
-	safeties = []Safety{Read, Write, Destructive}
-	// fieldTypes is the closed set an input may declare, in the order the
-	// rejection message lists them.
-	fieldTypes = []FieldType{String, Int, Bool, Float, StringSlice, Text, Path, Secret}
-)
-
-// FieldTypes returns every type an input may declare, in the order the
-// rejection message lists them.
+// EndpointRoles returns every endpoint role, including EndpointNone.
 //
-// The set is closed and the zero value is not a member (ADR 0011), so anything
-// that maps a declaration onto another representation — a wire enum, a JSON
-// Schema, a form widget, a code generator — has a finite set to cover and a
-// way to find out when it grows. Exported for exactly that: the alternative is
-// every such mapping restating the list from memory, which is how one of them
-// ends up missing Secret and rendering a credential as a plain string field.
-func FieldTypes() []FieldType { return slices.Clone(fieldTypes) }
-
-// Safeties returns every safety class, in the order harm increases.
-func Safeties() []Safety { return slices.Clone(safeties) }
-
-// fieldTypeList renders the accepted types for an error message, so a rejected
-// plugin is told what to write instead of what not to.
-func fieldTypeList() string {
-	names := make([]string, len(fieldTypes))
-	for i, t := range fieldTypes {
-		names[i] = string(t)
-	}
-	return strings.Join(names, ", ")
-}
-
-// Validate checks structural correctness of a plugin declaration. It is used
-// by the registry at load time and by the sdktest conformance suite.
-func (p Plugin) Validate() error {
-	if !nameRe.MatchString(p.Name) {
-		return fmt.Errorf("plugin name %q: must be lowercase [a-z0-9-]", p.Name)
-	}
-	if why, reserved := reservedNamespaces[p.Name]; reserved {
-		return fmt.Errorf("plugin name %q is reserved by the host (%s); pick another namespace",
-			p.Name, why)
-	}
-	if len(p.Capabilities) == 0 {
-		return fmt.Errorf("plugin %q declares no capabilities", p.Name)
-	}
-	// Name is already constrained to [a-z0-9-] by nameRe; the prose is not.
-	if err := checkLine(fmt.Sprintf("plugin %q summary", p.Name), p.Summary, maxSummary); err != nil {
-		return err
-	}
-	if err := checkLine(fmt.Sprintf("plugin %q version", p.Name), p.Version, maxOption); err != nil {
-		return err
-	}
-	seen := map[string]bool{}
-	for _, c := range p.Capabilities {
-		if err := c.validate(p.Name); err != nil {
-			return err
-		}
-		if seen[c.ID] {
-			return fmt.Errorf("duplicate capability ID %q", c.ID)
-		}
-		seen[c.ID] = true
-	}
-	return nil
-}
-
-func (c Capability) validate(ns string) error {
-	if !idRe.MatchString(c.ID) {
-		return fmt.Errorf("capability ID %q: want 2-3 lowercase dot-separated segments", c.ID)
-	}
-	if !strings.HasPrefix(c.ID, ns+".") {
-		return fmt.Errorf("capability %q: ID must start with plugin namespace %q", c.ID, ns)
-	}
-	if c.Summary == "" {
-		return fmt.Errorf("capability %q: summary is required", c.ID)
-	}
-	if err := checkLine(fmt.Sprintf("capability %q: summary", c.ID), c.Summary, maxSummary); err != nil {
-		return err
-	}
-	if err := checkText(fmt.Sprintf("capability %q: description", c.ID), c.Description, maxDescription); err != nil {
-		return err
-	}
-	if !safetySet[c.Safety] {
-		return fmt.Errorf("capability %q: invalid safety %q", c.ID, c.Safety)
-	}
-	if c.Run == nil {
-		return fmt.Errorf("capability %q: nil handler", c.ID)
-	}
-	scoped := c.Scope == ""
-	seenInputs := map[string]bool{}
-	for _, f := range c.Inputs {
-		if !fieldRe.MatchString(f.Name) {
-			return fmt.Errorf("capability %q: field name %q must be lowercase [a-z0-9-]", c.ID, f.Name)
-		}
-		// Two fields sharing a name is not a harmless typo: declareFlags
-		// registers one pflag.Flag per input in declaration order, and the
-		// second AddFlag for the same name panics the whole process at
-		// startup — not just for the capability that declared it, since
-		// every registered plugin's flags are built into one command tree
-		// before any command runs. The same duplicate-check Plugin.Validate
-		// already does one level up, for capability IDs.
-		if seenInputs[f.Name] {
-			return fmt.Errorf("capability %q declares input %q twice", c.ID, f.Name)
-		}
-		seenInputs[f.Name] = true
-		if why, reserved := reservedInputs[f.Name]; reserved {
-			return fmt.Errorf("capability %q: input %q is reserved by the host (%s); rename it",
-				c.ID, f.Name, why)
-		}
-		if f.Config != "" {
-			if !configKeyRe.MatchString(f.Config) {
-				return fmt.Errorf("capability %q: input %q has config key %q; want dot-separated lowercase segments",
-					c.ID, f.Name, f.Config)
-			}
-			// Refused rather than quietly ignored, and the message names the
-			// alternative, because an author who reaches for this is trying
-			// to solve a real problem and needs to be pointed at the path
-			// that already solves it.
-			if f.Type == Secret {
-				return fmt.Errorf("capability %q: input %q is a Secret and cannot be filled from config; "+
-					"config is a plaintext file read on every invocation and a Secret default is published "+
-					"in the MCP tool schema — declare Local: true and let the host resolve it from its own "+
-					"environment instead", c.ID, f.Name)
-			}
-			if f.Positional {
-				return fmt.Errorf("capability %q: input %q is positional and cannot be filled from config; "+
-					"CLI argument arity is computed from Required, so a config-satisfied positional changes "+
-					"what an argument count means", c.ID, f.Name)
-			}
-		}
-		if f.EnvFallback && !f.Local {
-			return fmt.Errorf("capability %q: input %q declares EnvFallback without Local; "+
-				"EnvFallback only changes how a Local field resolves, and a non-Local field is already "+
-				"reachable from a caller directly", c.ID, f.Name)
-		}
-		// Every surface switches on Field.Type with a default branch meaning
-		// "string", so a type nothing recognises is caught nowhere downstream.
-		// Type: "integer" — JSON Schema's spelling, and the obvious thing to
-		// reach for — builds a --port string flag, publishes {"type": "string"}
-		// in the MCP schema, and hands the handler a value req.Int reads as 0.
-		// No error anywhere: the capability just runs against port 0.
-		//
-		// It has to be rejected here rather than added later. Once pkg/plugin
-		// is semver-committed, turning the silent string default into an error
-		// breaks every plugin that had come to depend on it.
-		//
-		// The zero value is rejected too, and that is a deliberate second
-		// decision rather than a consequence of the first. Field{Name: "host"}
-		// used to validate and behave as a string everywhere, which is exactly
-		// how a credential input ends up untyped: Secret is what makes a value
-		// masked, Path is what makes it completable, and neither is something
-		// the host can infer from a name. Making the author say which one it
-		// is costs a word and is the only moment the question gets asked.
-		switch {
-		case f.Type == "":
-			return fmt.Errorf("capability %q: input %q declares no type, want one of %s",
-				c.ID, f.Name, fieldTypeList())
-		case !slices.Contains(fieldTypes, f.Type):
-			return fmt.Errorf("capability %q: input %q has unknown type %q, want one of %s",
-				c.ID, f.Name, f.Type, fieldTypeList())
-		}
-		if err := checkText(fmt.Sprintf("capability %q: input %q help", c.ID, f.Name), f.Help, maxHelp); err != nil {
-			return err
-		}
-		if err := checkBounds(c.ID, f); err != nil {
-			return err
-		}
-		for _, o := range f.Options {
-			// Options are published as an MCP enum and drawn as a select, so
-			// they are as much displayed text as Help is.
-			if err := checkLine(fmt.Sprintf("capability %q: input %q option %q", c.ID, f.Name, o), o, maxOption); err != nil {
-				return err
-			}
-		}
-		// A Default is printed in `--help`, seeded into every form, and
-		// published in the MCP tool schema, so it is displayed text wherever
-		// it came from. Both shapes are checked: only the string case was,
-		// and a StringSlice input's []string default went to models verbatim
-		// — the one declared-text hole left in a function whose whole job is
-		// that there are none (ADR 0013).
-		switch d := f.Default.(type) {
-		case string:
-			if err := checkLine(fmt.Sprintf("capability %q: input %q default", c.ID, f.Name), d, maxHelp); err != nil {
-				return err
-			}
-		case []string:
-			for i, e := range d {
-				if err := checkLine(fmt.Sprintf("capability %q: input %q default[%d]", c.ID, f.Name, i), e, maxHelp); err != nil {
-					return err
-				}
-			}
-		}
-		if f.Name == c.Scope {
-			scoped = true
-		}
-	}
-	// A Scope naming no input is not a harmless typo: grants would silently
-	// stop narrowing to a record and start covering the whole capability.
-	if !scoped {
-		return fmt.Errorf("capability %q: scope %q names no input", c.ID, c.Scope)
-	}
-	return nil
-}
-
-// checkBounds rejects a Min/Max the host will never enforce.
-//
-// The field exists because "remember to clamp" is not a rule a third-party
-// author can be expected to follow — `net ping --timeout 0` reached
-// time.NewTicker(0) inside a library goroutine and took the process down, and
-// over MCP that is one schema-valid call from an unprivileged agent killing
-// `rta mcp serve` for every tool attached to it. A bound that is declared and
-// silently not applied is worse than no bound at all: the author believes the
-// input is clamped and stops checking, and nothing anywhere says otherwise.
-//
-// Three ways to declare one that does nothing, all of them quiet:
-//
-//   - A non-numeric value. Resolve reads Min through toInt/toFloat, which
-//     return not-ok for a string, so `Min: "1"` means "no minimum" — and the
-//     MCP bridge publishes it as the JSON Schema "minimum" keyword regardless,
-//     where a string is not a legal value, so the tool schema every connected
-//     agent reads is malformed as well.
-//   - A bound on a type Resolve does not clamp. Only Int and Float are
-//     clamped, so a Min on a string is a promise nothing made.
-//   - Min above Max. Clamping applies Min and then Max, so an inverted pair
-//     does not error; it pins every value, including valid ones, to Max.
-//
-// All three were conformance-suite findings, which meant a plugin could fail
-// `sdktest` and still register and run. They belong here instead: this is the
-// gate every surface goes through, and the suite reports what this returns.
-func checkBounds(id string, f Field) error {
-	if f.Min == nil && f.Max == nil {
-		return nil
-	}
-	if f.Type != Int && f.Type != Float {
-		return fmt.Errorf("capability %q: input %q is %s and declares Min/Max, which apply only to %s and %s",
-			id, f.Name, f.Type, Int, Float)
-	}
-	lo, loOK := toFloat(f.Min)
-	hi, hiOK := toFloat(f.Max)
-	if f.Min != nil && !loOK {
-		return fmt.Errorf("capability %q: input %q has a non-numeric Min (%#v), which is not a bound the host can apply",
-			id, f.Name, f.Min)
-	}
-	if f.Max != nil && !hiOK {
-		return fmt.Errorf("capability %q: input %q has a non-numeric Max (%#v), which is not a bound the host can apply",
-			id, f.Name, f.Max)
-	}
-	if loOK && hiOK && lo > hi {
-		return fmt.Errorf("capability %q: input %q has Min %v above Max %v, so every value clamps to Max",
-			id, f.Name, f.Min, f.Max)
-	}
-	return nil
-}
-
-// reservedInputs are names the host owns on a capability's command line, so a
-// capability may not also declare them. Each carries why, because a rule with
-// no stated reason is one nobody can check and nobody dares extend.
-//
-// The failure mode is silence, not a collision. cobra resolves a subcommand's
-// own flag before an inherited one, so an input named "dry-run" does not
-// conflict with the root's persistent --dry-run: it quietly *becomes* it, and
-// the host's copy is never set. `rta acme wipe --yes --dry-run` against such a
-// plugin exits 0, reports success, and performs the wipe — the operator asked
-// for a preview and the one flag that promised nothing would happen is the
-// flag that stopped working.
-//
-// This map cannot derive the CLI's flag set: it lives in the SDK, which knows
-// nothing about cobra or internal/app. So it is the *contract* — the host
-// declares what it reserves, and internal/app is tested to stay inside it by
-// TestTheCLIReservesEveryNameItOwns. That test is the only thing keeping the
-// two in step, which is exactly why this map had one entry while the CLI had
-// grown five more names.
-//
-// Single letters are deliberately absent: an input named "o" registers the
-// long flag --o, and pflag keeps long names and shorthands in separate
-// namespaces, so -o still reaches --output. Verified, not assumed —
-// over-reserving would refuse legitimate names for a collision that does not
-// happen.
-var reservedInputs = map[string]string{
-	"detail": "the host sets it on any surface that owns the whole screen, and Page clears it for embedded sections",
-	"dry-run": "the host's promise that a write or destructive capability changed nothing; " +
-		"an input of this name makes that promise unkeepable",
-	"yes":      "the host's record that a human confirmed a destructive operation",
-	"output":   "chooses the renderer, so shadowing it means a caller cannot ask for JSON",
-	"no-color": "disables styling, which is what makes rta's output safe to pipe",
-	"help":     "cobra's; shadowing it makes `rta <ns> <cap> --help` unreachable",
-}
-
-// ReservedInputs lists the names the host owns, sorted.
-//
-// Exported so the CLI can be tested against it rather than expected to
-// remember it: the flag set and this list live in different packages and
-// neither derives from the other, so nothing but a test can hold them
-// together.
-func ReservedInputs() []string {
-	out := make([]string, 0, len(reservedInputs))
-	for name := range reservedInputs {
-		out = append(out, name)
-	}
-	slices.Sort(out)
-	return out
-}
-
-// reservedNamespaces are rta's own top-level commands, so a plugin may not
-// take one as its namespace.
-//
-// The same defect as reservedInputs, one level up, and it fails the same way:
-// a namespace becomes a top-level command, so a plugin called "doctor"
-// *replaces* `rta doctor` — which then prints the plugin's usage and exits 0,
-// having run none of the checks an operator ran it for. The check most likely
-// to reveal a hostile plugin is the one a hostile plugin can switch off, and
-// nothing anywhere says it happened.
-//
-// RegisterFrom already refuses a namespace another *plugin* holds, which is
-// why sys and kv cannot be taken. rta's own commands are not plugins and were
-// protected by nothing.
-//
-// "help" and "completion" are cobra's rather than rta's; they are reserved
-// for the same reason and kept in the same list, because the operator does
-// not care whose command it is, only that it stopped working.
-var reservedNamespaces = map[string]string{
-	"completion": "generates the shell completion script",
-	"doctor":     "diagnoses the installation, plugins included — the one command that must not be maskable",
-	"explain":    "prints what a capability takes and what it is allowed to do",
-	"help":       "cobra's help command",
-	"init":       "writes a starter configuration",
-	"mcp":        "serves and installs the MCP server",
-	"plugin":     "lists, installs and scaffolds plugins",
-}
-
-// ReservedNamespaces lists the names rta's own commands hold, sorted. Exported
-// for the same reason as ReservedInputs: the command tree lives in
-// internal/app and this list lives here, so only a test can hold them
-// together — TestTheCLIReservesEveryTopLevelCommandItOwns.
-func ReservedNamespaces() []string {
-	out := make([]string, 0, len(reservedNamespaces))
-	for name := range reservedNamespaces {
-		out = append(out, name)
-	}
-	slices.Sort(out)
-	return out
-}
+// Exported for the same reason FieldTypes is: anything mapping a declaration
+// onto another representation has a finite set to cover and a way to find out
+// when it grows. The wire codec is the caller that matters — a role with no
+// wire form crosses as "no tunnel", and the far side then runs the call
+// against the plugin's own default host with nothing reporting why.
+func EndpointRoles() []EndpointRole { return slices.Clone(endpointRoles) }
 
 // Words returns the ID split into command segments, e.g. ["pg","table","list"].
 func (c Capability) Words() []string { return strings.Split(c.ID, ".") }
-
-// Candidates returns what a human surface may offer for this input:
-// the closed set when there is one, otherwise whatever exists right now.
-// Entries may carry a tab-separated description (see Field.Suggest).
-//
-// Options wins over Suggest: a field that declares both is saying "these are
-// the values, and here are some of them", which the closed set already
-// answers.
-func (f Field) Candidates(ctx context.Context, req Request) []string {
-	if len(f.Options) > 0 {
-		return f.Options
-	}
-	if f.Suggest == nil {
-		return nil
-	}
-	return f.Suggest(ctx, req)
-}
-
-// CandidateValue drops the description from a completion entry, leaving the
-// value a caller would actually submit.
-func CandidateValue(entry string) string {
-	if i := strings.IndexByte(entry, '\t'); i >= 0 {
-		return entry[:i]
-	}
-	return entry
-}

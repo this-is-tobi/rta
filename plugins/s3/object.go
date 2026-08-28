@@ -14,7 +14,8 @@ import (
 )
 
 func keyField(help string) plugin.Field {
-	return plugin.Field{Name: "key", Type: plugin.String, Positional: true, Required: true, Help: help}
+	return plugin.Field{Name: "key", Type: plugin.String, Positional: true, Required: true, Help: help,
+		Live: true, Suggest: suggestKeys("key")}
 }
 
 func s3ObjectListCapability() plugin.Capability {
@@ -27,7 +28,8 @@ func s3ObjectListCapability() plugin.Capability {
 			"whole prefix.",
 		Run: runObjectList,
 	}, bucketField("bucket to list"),
-		plugin.Field{Name: "prefix", Type: plugin.String, Help: "only keys starting with this"},
+		plugin.Field{Name: "prefix", Type: plugin.String, Help: "only keys starting with this",
+			Live: true, Suggest: suggestKeys("prefix")},
 		plugin.Field{Name: "recursive", Type: plugin.Bool, Help: "ignore the \"/\" delimiter and list everything under prefix"})
 }
 
@@ -169,8 +171,10 @@ func s3ObjectSetCapability() plugin.Capability {
 	}, bucketField("bucket to write to"), keyField("object to set"),
 		plugin.Field{Name: "value", Type: plugin.Text, Positional: true, Help: "content to upload"},
 		plugin.Field{Name: "file", Type: plugin.Path, Local: true, Help: "upload this file's content instead"},
-		plugin.Field{Name: "content-type", Type: plugin.String, Help: "MIME type; guessed from --file's extension if omitted"},
-		plugin.Field{Name: "storage-class", Type: plugin.String, Help: "e.g. STANDARD, STANDARD_IA, GLACIER — left to the server's default if omitted"})
+		plugin.Field{Name: "content-type", Type: plugin.String, Suggest: suggestContentTypes,
+			Help: "MIME type; guessed from --file's extension if omitted"},
+		plugin.Field{Name: "storage-class", Type: plugin.String, Suggest: suggestStorageClasses,
+			Help: "e.g. STANDARD, STANDARD_IA, GLACIER — left to the server's default if omitted"})
 }
 
 func runObjectSet(ctx context.Context, req plugin.Request) (view.View, error) {
@@ -236,4 +240,42 @@ func runObjectRemove(ctx context.Context, req plugin.Request) (view.View, error)
 		}
 		return view.Text{Body: "removed " + bucket + "/" + key}, nil
 	})
+}
+
+// suggestStorageClasses and suggestContentTypes turn two Help strings into
+// something a surface can use.
+//
+// Both are Suggest rather than Options, and that distinction is the whole
+// point: S3-compatible servers are not one server. MinIO, R2 and Ceph accept
+// classes AWS never defined, and a closed set would refuse a value the
+// operator's own storage understands. This offers the answers that are almost
+// always right and takes nothing away.
+//
+// Static, so no connection is opened and nothing is enumerated on a keystroke.
+func suggestStorageClasses(context.Context, plugin.Request) []string {
+	return []string{
+		"STANDARD\tthe default — immediate access",
+		"STANDARD_IA\tinfrequent access, cheaper to store and dearer to read",
+		"ONEZONE_IA\tinfrequent access in one availability zone",
+		"INTELLIGENT_TIERING\tmoved between tiers by access pattern",
+		"GLACIER_IR\tarchive with immediate retrieval",
+		"GLACIER\tarchive, retrieved in minutes to hours",
+		"DEEP_ARCHIVE\tcheapest archive, retrieved in hours",
+		"REDUCED_REDUNDANCY\tlegacy, kept for older buckets",
+	}
+}
+
+func suggestContentTypes(context.Context, plugin.Request) []string {
+	return []string{
+		"application/json\t",
+		"application/octet-stream\tunknown bytes — what a server assumes",
+		"application/pdf\t",
+		"application/zip\t",
+		"image/jpeg\t",
+		"image/png\t",
+		"image/svg+xml\t",
+		"text/csv; charset=utf-8\t",
+		"text/html; charset=utf-8\t",
+		"text/plain; charset=utf-8\twhat this capability assumes for text",
+	}
 }

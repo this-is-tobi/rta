@@ -27,7 +27,7 @@ func req(t *testing.T, capID string, values map[string]any) plugin.Request {
 	t.Helper()
 	for _, c := range Plugin().Capabilities {
 		if c.ID == capID {
-			return plugin.NewRequest(plugin.Resolve(c, values, nil), false, false)
+			return plugin.NewRequest(plugin.Resolve(c, plugin.Inputs{Caller: values}), false, false)
 		}
 	}
 	t.Fatalf("no capability %q", capID)

@@ -42,7 +42,7 @@ func TestAServerCannotWriteToTheReadersClipboard(t *testing.T) {
 		t.Fatal("http.get is not in the plugin any more; this test has to follow it")
 	}
 	v, err := get.Run(context.Background(),
-		plugin.NewRequest(plugin.Resolve(get, map[string]any{"url": srv.URL}, nil), false, false))
+		plugin.NewRequest(plugin.Resolve(get, plugin.Inputs{Caller: map[string]any{"url": srv.URL}}), false, false))
 	if err != nil {
 		t.Fatal(err)
 	}

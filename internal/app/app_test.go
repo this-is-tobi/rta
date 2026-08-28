@@ -522,7 +522,7 @@ func TestEveryBuiltinViewSurvivesEveryOutputFormat(t *testing.T) {
 		if c.Safety != plugin.Read || c.NoPreview {
 			continue
 		}
-		values := plugin.Resolve(c, inputs[c.ID], nil)
+		values := plugin.Resolve(c, plugin.Inputs{Caller: inputs[c.ID]})
 		if !runnable(c, values) {
 			continue
 		}
@@ -629,7 +629,7 @@ func TestNoDryRunReachesTheNetwork(t *testing.T) {
 			continue
 		}
 		before := accepted.Load()
-		req := plugin.NewRequest(plugin.Resolve(c, values, nil), true, false).WithSurface(plugin.SurfaceCLI)
+		req := plugin.NewRequest(plugin.Resolve(c, plugin.Inputs{Caller: values}), true, false).WithSurface(plugin.SurfaceCLI)
 		_, _ = c.Run(context.Background(), req)
 		// The kernel completes a connect() from the backlog before Accept
 		// runs, so the counter can trail the handler by a moment. Every leak
@@ -1000,7 +1000,7 @@ func TestEverySectionInTheCatalogueHasAStableID(t *testing.T) {
 			continue
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		v, err := c.Run(ctx, plugin.NewRequest(plugin.Resolve(c, values, nil), false, false))
+		v, err := c.Run(ctx, plugin.NewRequest(plugin.Resolve(c, plugin.Inputs{Caller: values}), false, false))
 		cancel()
 		if err != nil || v == nil {
 			skipped = append(skipped, c.ID)

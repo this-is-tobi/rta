@@ -163,19 +163,37 @@ func depthOf(root, p string) int {
 	return strings.Count(rel, string(filepath.Separator)) + 1
 }
 
-// parseManifest dispatches on the file's name and, for JSON, on what is
-// actually inside it — an SBOM's filename is a convention, its format is not.
-func parseManifest(path string) ([]component, error) {
+// parseManifest reads one file twice over: once for what it lists, once for
+// what it says about the shape of that list.
+//
+// Two passes over the same bytes rather than one parser doing both, and the
+// separation is the point rather than an accident of how it grew. The
+// component parsers must not be wrong — a wrong version in a security report
+// is an all-clear for something that is affected — while the graph parsers
+// answer a question whose worst failure is "no explanation offered". Keeping
+// them apart means no amount of care or carelessness in the second can reach
+// the first. The cost is one extra scan of a file already in memory.
+func parseManifest(path string) ([]component, graph, error) {
 	base := filepath.Base(path)
 	// Decided before the read: nothing here can parse a binary lockfile, so
 	// pulling one into memory only makes the failure slower.
 	if base == "bun.lockb" {
-		return nil, errBinaryLockfile
+		return nil, graph{}, errBinaryLockfile
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, err
+		return nil, graph{}, err
 	}
+	comps, err := parseComponents(base, data, path)
+	if err != nil {
+		return nil, graph{}, err
+	}
+	return comps, parseGraph(base, data), nil
+}
+
+// parseComponents dispatches on the file's name and, for JSON, on what is
+// actually inside it — an SBOM's filename is a convention, its format is not.
+func parseComponents(base string, data []byte, path string) ([]component, error) {
 	switch base {
 	case "go.mod":
 		return parseGoMod(string(data), path), nil

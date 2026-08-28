@@ -7,7 +7,10 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
+
+	"golang.org/x/term"
 
 	"charm.land/fang/v2"
 	"github.com/spf13/cobra"
@@ -65,6 +68,50 @@ func main() {
 	// doctor` instead of here: this runs before every command, and a fact
 	// about the installation printed on every command is noise.
 	app.SetLoadedPlugins(host.Loaded())
+	// And what it found and refused to launch, so a plugin that is installed
+	// and silent is visible everywhere plugins are listed rather than only in
+	// the line that scrolled past at startup.
+	untrusted := host.Untrusted()
+	app.SetUntrustedPlugins(untrusted)
+	// One line, and only when somebody is there to read it.
+	//
+	// A trust gate's failure mode is silence: a plugin installed, present and
+	// doing nothing looks exactly like one that was never installed, and the
+	// operator has no reason to suspect a decision is outstanding. So it is
+	// said — once per run, however many are waiting, naming the command that
+	// resolves it.
+	//
+	// Gated on stderr being a terminal, which is the question actually being
+	// asked: is a person watching this stream. A script's stderr is somewhere
+	// nobody is reading, and repeating a pending decision into it on every
+	// invocation is how the message stops being read anywhere. `rta plugin
+	// list` and `rta doctor` carry it in full for the times somebody looks.
+	// Split by whether trusting would actually help. An artifact whose name
+	// something already answers to is not a pending decision — approving it
+	// earns a namespace collision on the next start — so it must not be
+	// counted among the plugins waiting to be loaded, or offered that remedy.
+	var waiting, colliding []string
+	for _, u := range untrusted {
+		if u.Taken {
+			colliding = append(colliding, u.Name)
+			continue
+		}
+		waiting = append(waiting, u.Name)
+	}
+	if term.IsTerminal(int(os.Stderr.Fd())) {
+		if len(waiting) > 0 {
+			fmt.Fprintf(os.Stderr,
+				"rta: %d plugin(s) installed and not run: %s — `rta plugin trust <name>` to load, "+
+					"`rta plugin trust` to see them\n",
+				len(waiting), strings.Join(waiting, ", "))
+		}
+		if len(colliding) > 0 {
+			fmt.Fprintf(os.Stderr,
+				"rta: %d artifact(s) on $PATH name something already registered and were not run: "+
+					"%s — trusting one would collide; remove or rename the file\n",
+				len(colliding), strings.Join(colliding, ", "))
+		}
+	}
 
 	// After the plugins, because a section is matched to the artifact that
 	// registered the namespace and there is nothing to match against until

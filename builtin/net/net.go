@@ -52,7 +52,8 @@ func Plugin() plugin.Plugin {
 				Safety:     plugin.Read,
 				Idempotent: true,
 				Inputs: []plugin.Field{
-					{Name: "host", Type: plugin.String, Positional: true, Required: true, Help: "host to ping"},
+					{Name: "host", Type: plugin.String, Positional: true, Required: true,
+						Suggest: suggestHostnames, Help: "host to ping"},
 					{Name: "count", Type: plugin.Int, Default: 4, Min: 1, Max: 100, Help: "number of probes"},
 					{Name: "timeout", Type: plugin.Int, Default: 10, Min: 1, Max: 300, Help: "overall timeout in seconds"},
 					{Name: "graph", Type: plugin.Bool, Help: "plot per-probe latency instead of summary stats"},
@@ -71,7 +72,8 @@ func Plugin() plugin.Plugin {
 					"apart from \"my resolver is stale\". With --detail: the query, the resolver that " +
 					"answered, and how long it took.",
 				Inputs: []plugin.Field{
-					{Name: "name", Type: plugin.String, Positional: true, Required: true, Help: "name or IP address to resolve"},
+					{Name: "name", Type: plugin.String, Positional: true, Required: true,
+						Suggest: suggestHostnames, Help: "name or IP address to resolve"},
 					{Name: "type", Type: plugin.String, Default: "auto",
 						Options: append([]string{"auto"}, dnsTypes...),
 						Help:    "which record type to ask for"},
@@ -91,7 +93,8 @@ func Plugin() plugin.Plugin {
 					"\"where does it stop\". Silent hops show as *; that is a router declining to " +
 					"reply, not necessarily a fault.",
 				Inputs: []plugin.Field{
-					{Name: "host", Type: plugin.String, Positional: true, Required: true, Help: "host to trace"},
+					{Name: "host", Type: plugin.String, Positional: true, Required: true,
+						Suggest: suggestHostnames, Help: "host to trace"},
 					{Name: "max-hops", Type: plugin.Int, Default: 30, Min: 1, Max: 64, Help: "stop after this many hops"},
 					{Name: "probes", Type: plugin.Int, Default: 3, Min: 1, Max: 10, Help: "probes per hop"},
 					{Name: "timeout", Type: plugin.Int, Default: 2, Min: 1, Max: 60, Help: "per-probe timeout in seconds"},
@@ -110,7 +113,8 @@ func Plugin() plugin.Plugin {
 					"cipher. It only ever listens; to speak first — the protocols that expect the " +
 					"client to open — use `net send`, which is a write and gated as one.",
 				Inputs: []plugin.Field{
-					{Name: "host", Type: plugin.String, Positional: true, Required: true, Help: "host to connect to"},
+					{Name: "host", Type: plugin.String, Positional: true, Required: true,
+						Suggest: suggestHostnames, Help: "host to connect to"},
 					{Name: "port", Type: plugin.Int, Positional: true, Required: true, Min: 1, Max: 65535, Help: "port to connect to"},
 					{Name: "tls", Type: plugin.Bool, Help: "complete a TLS handshake after connecting"},
 					{Name: "timeout", Type: plugin.Int, Default: 5, Min: 1, Max: 120, Help: "connect timeout in seconds"},
@@ -139,7 +143,8 @@ func Plugin() plugin.Plugin {
 					"an explicit grant before an AI agent can use it. `net probe` is the read-only " +
 					"half — connect, handshake, listen — and needs no grant.",
 				Inputs: []plugin.Field{
-					{Name: "host", Type: plugin.String, Positional: true, Required: true, Help: "host to connect to"},
+					{Name: "host", Type: plugin.String, Positional: true, Required: true,
+						Suggest: suggestHostnames, Help: "host to connect to"},
 					{Name: "port", Type: plugin.Int, Positional: true, Required: true, Min: 1, Max: 65535, Help: "port to connect to"},
 					{Name: "data", Type: plugin.String, Required: true, Help: `bytes to send, e.g. "GET / HTTP/1.0\r\n\r\n"`},
 					{Name: "tls", Type: plugin.Bool, Help: "complete a TLS handshake before sending"},
@@ -154,7 +159,8 @@ func Plugin() plugin.Plugin {
 				Safety:     plugin.Read,
 				Idempotent: true,
 				Inputs: []plugin.Field{
-					{Name: "host", Type: plugin.String, Positional: true, Required: true, Help: "host to scan"},
+					{Name: "host", Type: plugin.String, Positional: true, Required: true,
+						Suggest: suggestHostnames, Help: "host to scan"},
 					{Name: "ports", Type: plugin.String, Default: "22,80,443",
 						Help: "comma-separated ports and ranges, e.g. 22,80,8000-8010"},
 					{Name: "timeout", Type: plugin.Int, Default: 2, Min: 1, Max: 60, Help: "per-port timeout in seconds"},
@@ -189,8 +195,10 @@ func Plugin() plugin.Plugin {
 					"silently reroutes traffic instead of failing. Over MCP that means a per-capability " +
 					"allowlist, not just --allow-write.",
 				Inputs: []plugin.Field{
-					{Name: "ip", Type: plugin.String, Positional: true, Required: true, Help: "address to point at"},
-					{Name: "hostname", Type: plugin.StringSlice, Positional: true, Required: true, Help: "hostnames to map"},
+					{Name: "ip", Type: plugin.String, Positional: true, Required: true,
+						Suggest: suggestAddresses, Help: "address to point at"},
+					{Name: "hostname", Type: plugin.StringSlice, Positional: true, Required: true,
+						Suggest: suggestHostnames, Help: "hostnames to map"},
 					// Local here and on the three capabilities below it that also
 					// write, and deliberately not on net.hosts.list or
 					// net.resolver.list. Over MCP, an operator who allowlists

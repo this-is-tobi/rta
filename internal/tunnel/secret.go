@@ -34,7 +34,7 @@ func Secrets(ctx context.Context, name string, t Target) (map[string]string, *vi
 	}
 	if _, err := exec.LookPath(kubectl); err != nil {
 		return nil, view.Errorf("tunnel.kubectl.missing",
-			"target %q reads its credentials from a cluster secret and kubectl is not on $PATH", name).
+			"profile %q reads its credentials from a cluster secret and kubectl is not on $PATH", name).
 			WithHint("rta shells out rather than linking client-go, so the cluster " +
 				"credentials you already have keep working — install kubectl, or " +
 				"drop `secret:` and export the credential yourself")
@@ -44,10 +44,10 @@ func Secrets(ctx context.Context, name string, t Target) (map[string]string, *vi
 	// chances to see a secret mid-rotation and assemble a username from
 	// before it with a password from after.
 	//
-	// The namespace is the target's own. A target already names
-	// context/namespace, and letting `secret:` reach into a different one
+	// The namespace is the coordinate's own. A coordinate already names
+	// context/namespace, and letting a reference reach into a different one
 	// would turn a coordinate for one service into a general-purpose cluster
-	// reader — a secret somewhere else is a different target.
+	// reader — a secret somewhere else is a different connection.
 	cmd := exec.CommandContext(ctx, kubectl,
 		"--context", kctx, "--namespace", ns,
 		"get", "secret", t.Secret, "-o", "json")
@@ -63,10 +63,10 @@ func Secrets(ctx context.Context, name string, t Target) (map[string]string, *vi
 	}
 	if err := json.Unmarshal(out, &payload); err != nil {
 		return nil, view.Errorf("tunnel.secret.unreadable",
-			"target %q: could not read secret %q: %v", name, t.Secret, err)
+			"profile %q: could not read secret %q: %v", name, t.Secret, err)
 	}
 
-	// Sorted, so a target that maps three missing keys names the same one
+	// Sorted, so a connection that maps three missing keys names the same one
 	// twice running and a rerun is about the cluster.
 	inputs := make([]string, 0, len(t.From))
 	for input := range t.From {
@@ -80,7 +80,7 @@ func Secrets(ctx context.Context, name string, t Target) (map[string]string, *vi
 		encoded, ok := payload.Data[key]
 		if !ok {
 			return nil, view.Errorf("tunnel.secret.key.missing",
-				"target %q maps %q to key %q, which secret %q does not have",
+				"profile %q maps %q to key %q, which secret %q does not have",
 				name, input, key, t.Secret).
 				WithHint("it has: " + strings.Join(keysOf(payload.Data), ", "))
 		}
@@ -90,7 +90,7 @@ func Secrets(ctx context.Context, name string, t Target) (map[string]string, *vi
 		value, err := base64.StdEncoding.DecodeString(encoded)
 		if err != nil {
 			return nil, view.Errorf("tunnel.secret.undecodable",
-				"target %q: key %q of secret %q is not base64", name, key, t.Secret)
+				"profile %q: key %q of secret %q is not base64", name, key, t.Secret)
 		}
 		filled[input] = string(value)
 	}
@@ -112,16 +112,16 @@ func secretFailed(name, ns, secret, stderr string) *view.Error {
 	switch {
 	case strings.Contains(s, "not found"):
 		return view.Errorf("tunnel.secret.missing",
-			"target %q names secret %q, which does not exist in namespace %q", name, secret, ns).
+			"profile %q names secret %q, which does not exist in namespace %q", name, secret, ns).
 			WithHint("`kubectl -n " + ns + " get secrets` lists them")
 	case strings.Contains(s, "forbidden") || strings.Contains(s, "Unauthorized"):
 		return view.Errorf("tunnel.secret.denied",
-			"target %q: not allowed to read secret %q in namespace %q", name, secret, ns).
+			"profile %q: not allowed to read secret %q in namespace %q", name, secret, ns).
 			WithHint("this is the cluster refusing, not rta — the verb is `get` on " +
 				"`secrets`, which is a different permission from the one port-forward needs")
 	case s == "":
 		return view.Errorf("tunnel.secret.unreadable",
-			"target %q: kubectl could not read secret %q", name, secret)
+			"profile %q: kubectl could not read secret %q", name, secret)
 	default:
 		return view.Errorf("tunnel.secret.unreadable", "%s: %s", name, one).
 			WithHint("that message is kubectl's; rta shells out to it so your cluster " +

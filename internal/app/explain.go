@@ -90,7 +90,7 @@ func cardView(reg *registry.Registry, c plugin.Capability) view.View {
 			Value: "off by default — `rta mcp serve " + flag + "`",
 		})
 	}
-	if grant.Required(c) {
+	if grant.Required(c, "") {
 		// The safety class alone no longer says what an agent may do, so the
 		// card has to say the rest of it.
 		need := "yes — a person must run `rta grant allow " + c.ID + "`"
@@ -98,6 +98,18 @@ func cardView(reg *registry.Registry, c plugin.Capability) view.View {
 			need += ", optionally naming one " + c.Scope
 		}
 		pairs = append(pairs, view.Pair{Key: "grant required (mcp)", Value: need})
+	}
+	// The other axis, and it is a property of the call rather than of the
+	// capability: reaching any connection but the operator's base one always
+	// needs a grant, whatever the safety class. Printed where somebody looking
+	// up "how do I invoke this" will see it, since that is the same page they
+	// consult to find out why an agent was refused.
+	if plugin.Profilable(c) {
+		pairs = append(pairs, view.Pair{
+			Key: "profiles",
+			Value: "--profile <name> runs this against a configured connection; over MCP that " +
+				"always needs `rta grant allow " + plugin.Namespace(c.ID) + " --profile <name>`",
+		})
 	}
 	if c.Description != "" {
 		pairs = append(pairs, view.Pair{Key: "description", Value: c.Description})
@@ -149,6 +161,16 @@ func cardView(reg *registry.Registry, c plugin.Capability) view.View {
 			// questions, and neither of them needs the value echoed onto a
 			// terminal that may be shared.
 			detail += ", from config " + configSection(reg, c) + "." + f.Config
+		}
+		if f.Endpoint != plugin.EndpointNone {
+			// Named on the same page and for the same reason the config key
+			// is: this answers "why did that host appear?" for the one source
+			// an operator did not type anywhere. A profile stating a `kube:`
+			// coordinate overwrites this input with an address rta computed,
+			// and an input silently overwritten by the host is the kind of
+			// thing somebody discovers by wondering why their `set: host` did
+			// nothing.
+			detail += ", filled by a profile's tunnel (the forward's " + string(f.Endpoint) + ")"
 		}
 		if f.Help != "" {
 			detail += " — " + f.Help

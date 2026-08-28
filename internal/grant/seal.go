@@ -8,6 +8,9 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
+	"sort"
+	"strings"
 
 	"github.com/this-is-tobi/rule-them-all/internal/atomicfile"
 	"github.com/this-is-tobi/rule-them-all/internal/paths"
@@ -150,7 +153,86 @@ type sealed struct {
 // written differed and every file failed its own check. Two representations
 // of the same value is exactly the trap the comment above is about, one level
 // down.
+//
+// **It therefore covers the fields the WRITING build declared, and is checked
+// against the fields the READING build declares** — which are the same set
+// only while both builds agree, and the two directions of disagreement behave
+// differently:
+//
+//   - Upgrading is safe, and `omitempty` is what makes it so. A field a newer
+//     build added is absent from every grant an older one wrote, so both sides
+//     encode identical bytes and every existing seal still verifies. That is
+//     the guarantee the Profile and ProfilePin field comments claim, and it
+//     holds.
+//   - Downgrading is not. Once a grant actually *populates* a new field, the
+//     newer build sealed over bytes that include it; an older build drops it
+//     on unmarshal, re-encodes without it, and the MAC fails. See unknown()
+//     for what that must not be reported as.
+//
+// The second half was got wrong here once, in the direction that matters: a
+// test that injected an unknown field into a file this build had already
+// sealed proved only that a field added *after* sealing is not covered, which
+// is true and is not the question. The question is what happens to a file
+// sealed *with* one.
 func canonical(grants []Grant) ([]byte, error) { return json.Marshal(grants) }
+
+// unknown reports the grant field names in data that this build does not
+// declare, sorted and deduplicated.
+//
+// **So that a downgrade is not reported as an attack.** Every seal mismatch
+// answered `core.grant.forged` — "it was written by something other than rta"
+// — with a hint to delete the file. Run an older rta against a grant file a
+// newer one wrote, once any grant populates a field the older build lacks,
+// and rta accuses itself and then tells the operator to destroy every
+// permission they hold. seal.go already names that shape the worst possible
+// reading, for the truncated-key case; ProfilePin is the first field likely to
+// be populated on an ordinary machine, and every field after it widens the
+// same door.
+//
+// It changes the diagnosis and never the decision. An unknown field still
+// fails the seal and still honours nothing, which is the only safe answer when
+// the bytes and the MAC disagree — an attacker who appends junk earns a
+// differently-worded refusal and no access. What it buys is that the sentence
+// is true: this build genuinely cannot tell a newer writer from a modified
+// file, and it now says so rather than picking the accusation.
+//
+// Derived from the struct rather than a list kept here, because a list goes
+// stale on the day a field is added, which is the day it matters.
+func unknown(data []byte) []string {
+	var doc struct {
+		Grants []map[string]json.RawMessage `json:"grants"`
+	}
+	if err := json.Unmarshal(data, &doc); err != nil {
+		return nil
+	}
+	known := declaredFields()
+	seen := map[string]bool{}
+	var out []string
+	for _, g := range doc.Grants {
+		for name := range g {
+			if known[name] || seen[name] {
+				continue
+			}
+			seen[name] = true
+			out = append(out, name)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// declaredFields is the JSON names Grant declares.
+func declaredFields() map[string]bool {
+	out := map[string]bool{}
+	t := reflect.TypeOf(Grant{})
+	for i := range t.NumField() {
+		name, _, _ := strings.Cut(t.Field(i).Tag.Get("json"), ",")
+		if name != "" && name != "-" {
+			out[name] = true
+		}
+	}
+	return out
+}
 
 // legacy reports whether data is a grant file written before the seal
 // existed: the bare JSON array Save produced until v0.5.

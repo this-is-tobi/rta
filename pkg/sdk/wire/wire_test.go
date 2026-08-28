@@ -68,6 +68,40 @@ func TestEveryFieldTypeOnTheWireHasAMapping(t *testing.T) {
 	}
 }
 
+// The same coverage in both directions for endpoint roles, and the second
+// half matters more than it does for FieldType.
+//
+// A role declared in Go with no wire form crosses as unspecified, and the
+// receiving host reads that as "not filled from a tunnel". Nothing reports it:
+// the plugin loads, the capability runs, and the call reaches the plugin's own
+// default host instead of the cluster the operator pointed it at. That is a
+// silently wrong destination rather than a refusal, which is the failure mode
+// this whole feature is built to remove.
+func TestEveryEndpointRoleOnTheWireHasAMapping(t *testing.T) {
+	for v, name := range rtav1.EndpointRole_name {
+		if rtav1.EndpointRole(v) == rtav1.EndpointRole_ENDPOINT_ROLE_UNSPECIFIED {
+			continue
+		}
+		got := EndpointRoleFromProto(rtav1.EndpointRole(v))
+		if got == plugin.EndpointNone {
+			t.Errorf("%s is in the contract and decodes to no role", name)
+			continue
+		}
+		if back := EndpointRoleToProto(got); back != rtav1.EndpointRole(v) {
+			t.Errorf("%s round-tripped to %s", name, back)
+		}
+	}
+	for _, role := range plugin.EndpointRoles() {
+		if role == plugin.EndpointNone {
+			continue
+		}
+		if EndpointRoleToProto(role) == rtav1.EndpointRole_ENDPOINT_ROLE_UNSPECIFIED {
+			t.Errorf("plugin.EndpointRole %q has no wire form, so an input declaring it "+
+				"crosses as \"no tunnel\" and the call silently reaches the plugin's default host", role)
+		}
+	}
+}
+
 func TestEverySurfaceOnTheWireHasAMapping(t *testing.T) {
 	for v, name := range rtav1.Surface_name {
 		if rtav1.Surface(v) == rtav1.Surface_SURFACE_UNSPECIFIED {
@@ -254,6 +288,15 @@ func fullDeclaration() plugin.Plugin {
 				{Name: "body", Type: plugin.Text, Help: "body"},
 				{Name: "file", Type: plugin.Path, Help: "file"},
 				{Name: "token", Type: plugin.Secret, Help: "token", Local: true, EnvFallback: true},
+				// The address role rather than host/port, because those two
+				// are legal only as a pair and this fixture needs one input
+				// carrying a non-zero Endpoint, not a connection.
+				{Name: "addr", Type: plugin.String, Help: "address", Local: true,
+					Config: "connection.addr", Endpoint: plugin.EndpointAddress},
+				// Live crosses as data even though the Suggest it marks is a
+				// handler: a host that loses this bit would call the plugin's
+				// service listing per keystroke.
+				{Name: "bucket", Type: plugin.String, Help: "bucket", Live: true},
 			},
 		}},
 	}

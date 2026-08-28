@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -15,7 +16,10 @@ import (
 	"github.com/this-is-tobi/rule-them-all/internal/config"
 	"github.com/this-is-tobi/rule-them-all/internal/grant"
 	"github.com/this-is-tobi/rule-them-all/internal/pluginconf"
+	"github.com/this-is-tobi/rule-them-all/internal/plugindist"
 	"github.com/this-is-tobi/rule-them-all/internal/pluginhost"
+	"github.com/this-is-tobi/rule-them-all/internal/plugintrust"
+	"github.com/this-is-tobi/rule-them-all/internal/profile"
 	"github.com/this-is-tobi/rule-them-all/internal/registry"
 	"github.com/this-is-tobi/rule-them-all/internal/render/cli"
 	"github.com/this-is-tobi/rule-them-all/internal/render/theme"
@@ -28,9 +32,10 @@ import (
 // with the features that need them (config, plugins, keyring...).
 func newDoctorCommand(reg *registry.Registry, opts *globalOpts) *cobra.Command {
 	return &cobra.Command{
-		Use:   "doctor",
-		Short: "Check rta's environment and report actionable findings",
-		Args:  cobra.NoArgs,
+		Use:               "doctor",
+		Short:             "Check rta's environment and report actionable findings",
+		Args:              cobra.NoArgs,
+		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			format, err := cli.ParseFormat(opts.output)
 			if err != nil {
@@ -52,6 +57,27 @@ var loadedPlugins []*pluginhost.Client
 
 // SetLoadedPlugins records the plugins a host loaded, for `rta doctor`.
 func SetLoadedPlugins(cs []*pluginhost.Client) { loadedPlugins = cs }
+
+// untrustedPluginsFound is what discovery refused to launch this run.
+//
+// A trust gate's failure mode is silence — a plugin installed, present, and
+// doing nothing, with no way to tell that from a plugin that is broken. So
+// what was refused is carried the same way what was loaded is, and every
+// surface that lists plugins says it out loud.
+var untrustedPluginsFound []pluginhost.Untrusted
+
+// SetUntrustedPlugins records what a host found and did not run.
+func SetUntrustedPlugins(us []pluginhost.Untrusted) { untrustedPluginsFound = us }
+
+// untrustedNames is the same list as bare namespaces, for the surfaces that
+// want to name them in a sentence rather than tabulate them.
+func untrustedNames() []string {
+	out := make([]string, 0, len(untrustedPluginsFound))
+	for _, u := range untrustedPluginsFound {
+		out = append(out, u.Name)
+	}
+	return out
+}
 
 // pluginConfig is the operator's per-plugin configuration, matched to the
 // artifacts actually registered. Package state for the same reason
@@ -226,6 +252,117 @@ func doctorReport(reg *registry.Registry) view.View {
 		}
 	}
 
+	// Profiles: whether each configured connection is usable, and — for the
+	// ones that are — whether the credential they need is actually present.
+	//
+	// The second half is the one people get wrong. A profile carries no secret
+	// (ADR 0016 refuses Config on a Secret input), so the only way a
+	// credential reaches a connection is $RTA_PROFILE_<NAME>_<INPUT>, and a
+	// profile with the destination right and that variable unset fails as an
+	// authentication error naming the role — three steps from the cause.
+	// Saying it here means an operator finds out before the call rather than
+	// from it.
+	if cfg, err := config.Load(); err == nil && len(cfg.Profiles) > 0 {
+		problems := profile.Check(cfg, reg)
+		for _, p := range problems {
+			add("profile", "warn", p.String())
+		}
+		bad := map[string]bool{}
+		for _, p := range problems {
+			bad[p.Name] = true
+		}
+		fromStore := 0
+		for _, name := range cfg.ProfileNames() {
+			if bad[name] {
+				continue
+			}
+			p := cfg.Profiles[name]
+			detail := fmt.Sprintf("%s → %s", name, strings.Join(p.PluginKeys(), ", "))
+			var named []string
+			for _, key := range p.PluginKeys() {
+				for _, r := range p.Plugins[key].SecretRefs() {
+					named = append(named, config.PluginNamespace(key)+"."+r.Input+
+						" from "+r.Scheme+":"+r.Ref)
+					if r.Scheme == "kv" {
+						fromStore++
+					}
+				}
+			}
+			if len(named) > 0 {
+				detail += " — " + strings.Join(named, ", ")
+			}
+			// Unmapped and unexported credentials are reported even when others
+			// are mapped: an environment is several plugins now, and "the
+			// database has a password" says nothing about the bucket.
+			if missing := missingCredentials(name, p, reg); len(missing) > 0 {
+				add("profile", "warn", detail+" — no credential: set $"+strings.Join(missing, ", $")+
+					", or map one with `secrets:`")
+				continue
+			}
+			add("profile", "ok", detail)
+		}
+		// Which environment is switched on, and for how long. It is the fact
+		// that changes what every other row above means, and it is invisible
+		// from the config file — so a report that omitted it would describe
+		// somewhere the operator is not.
+		if sel := profile.LoadSelection(); sel.Active != "" {
+			now := time.Now()
+			switch name := sel.Name(now); {
+			case name == "":
+				add("profile", "info", sel.Active+" has lapsed — commands run against the "+
+					"base configuration, and agents may name any profile a grant covers")
+			default:
+				note := name + " is switched on with no deadline"
+				if left, deadline := sel.Left(now); deadline {
+					note = fmt.Sprintf("%s is switched on for another %s", name,
+						left.Round(time.Minute))
+				}
+				add("profile", "info", note+" — while it is, `rta mcp serve` refuses "+
+					"every other profile, whatever grants exist")
+			}
+		}
+		// The widening, said out loud. A profile that maps a credential out of
+		// the store means an agent holding a grant for that profile can cause
+		// those entries to be read — it never sees them, and it cannot reach an
+		// entry no profile maps, but the set of things a profile grant reaches
+		// is larger than the connection alone and the operator should know it
+		// from here rather than work it out.
+		if unlockable, _ := kv.Unlockable(); fromStore > 0 && unlockable {
+			add("profile", "info", fmt.Sprintf(
+				"%d profile credential(s) come from the store, which unlocks from this "+
+					"environment — an agent granted one of those profiles causes that entry to be "+
+					"read (it never receives the value, and reaches no entry a profile does not map)",
+				fromStore))
+		}
+		// R5 in the other direction: once a namespace has profiles, an MCP call
+		// naming none is refused, so the base section stops being agent-reachable.
+		// Said out loud because it is a change in what an already-running agent
+		// can do, and the operator caused it by writing a profile.
+	profiled:
+		for _, name := range cfg.ProfileNames() {
+			for _, ns := range cfg.Profiles[name].Namespaces() {
+				// **Applied, not merely written.** RawSection answers whether a
+				// heading names this namespace, which is a different question
+				// from whether anything reads it: Resolve rejects a section
+				// whose pin no longer matches the installed artifact — the
+				// ordinary state after upgrading a plugin — and For then
+				// applies none of it. Asked the weaker question, doctor stated
+				// "`plugins.<ns>` still serves the CLI" about a section it had
+				// itself just warned was dead, in the same table.
+				if _, _, configured := pluginconf.RawSection(cfg, ns); !configured {
+					continue
+				}
+				if pluginConfig == nil || len(pluginConfig.For(ns)) == 0 {
+					continue
+				}
+				add("profile", "info", fmt.Sprintf(
+					"agents must now name a profile for %s — `plugins.%s` still serves the CLI, "+
+						"but an MCP call that names no profile is refused", ns, ns))
+				break profiled
+			}
+		}
+	}
+
 	// Theme overrides that could not be honoured — an unknown field, a
 	// malformed hex. theme.Apply already fell back to the built-in for each
 	// one before this row is even reached; what this says is why the color
@@ -268,11 +405,41 @@ func doctorReport(reg *registry.Registry) view.View {
 		add("agent grants", "ok", "none active — agents cannot write or destroy anything")
 	} else {
 		named := make([]string, 0, len(grants))
+		var stale []string
+		// Loaded here rather than reused from the profile section above, which
+		// scopes its own: an unreadable config leaves stale empty, and the row
+		// below simply does not appear. Every other reader of the file has
+		// already said so by the time this runs.
+		grantCfg, grantCfgErr := config.Load()
 		for _, g := range grants {
 			named = append(named, strings.TrimSpace(g.Target+" "+g.Scope))
+			// A grant issued against a connection that has since been
+			// repointed. It is listed, it is inside its TTL, and every call it
+			// was issued for is refused — which is the shape of thing that
+			// costs an afternoon, because the row looks live.
+			//
+			// **The remedy lives here and not in the refusal.** An agent is
+			// told only what an ungranted call is told: "this profile changed
+			// since you were granted" would disclose that the profile exists
+			// and that consent was once given for it, which is the oracle ADR
+			// 0019 §6 exists to close. So a person has to be able to find it,
+			// and this is where they look.
+			if g.Profile == "" || grantCfgErr != nil {
+				continue
+			}
+			if g.Stale(profile.ConnStampFor(grantCfg, g.Profile, grant.Namespace(g.Target))) {
+				stale = append(stale, strings.TrimSpace(g.Target+" on "+g.Profile))
+			}
 		}
 		add("agent grants", "info", fmt.Sprintf("%d active: %s (`rta grant list`)",
 			len(grants), strings.Join(named, ", ")))
+		if len(stale) > 0 {
+			add("agent grants", "warn", fmt.Sprintf(
+				"%d name a connection that has changed since it was issued, so they authorize "+
+					"nothing: %s — `rta grant allow` re-consents to the connection as it is now "+
+					"(`rta grant renew` moves the deadline and deliberately does not)",
+				len(stale), strings.Join(stale, ", ")))
+		}
 	}
 
 	// What an MCP server launched from this shell would inherit. The store is
@@ -328,6 +495,69 @@ func doctorReport(reg *registry.Registry) view.View {
 			}
 			add("plugin "+p.Declared.Name, status, detail)
 		}
+	}
+
+	// Found on $PATH and not run, because nothing said this artifact may.
+	// A warning rather than info: it is a plugin the operator installed and
+	// is not getting, and the fix is one command.
+	for _, u := range untrustedPluginsFound {
+		if u.Taken {
+			add("plugin "+u.Name, "warn", fmt.Sprintf(
+				"%s (%s) was found on $PATH and not run, and %q is already registered — "+
+					"trusting it would collide rather than add anything; remove or rename the file",
+				u.Path, u.Short(), u.Name))
+			continue
+		}
+		add("plugin "+u.Name, "warn", fmt.Sprintf(
+			"%s (%s) is installed and was not run — nothing has said this artifact may. "+
+				"`rta plugin trust %s` after checking where it came from",
+			u.Path, u.Short(), u.Name))
+	}
+	if n := plugintrust.Load().Len(); n > 0 {
+		add("plugin trust", "ok", plural(n, "artifact", "artifacts")+
+			" approved to run — `rta plugin untrust <name>` takes one back")
+	}
+
+	// Provenance for managed plugins (ADR 0017): what rta.lock recorded
+	// against what the store and the loaded processes actually say. Every
+	// mismatch here is a fact about drift, stated rather than repaired —
+	// the lockfile records, it never authorizes.
+	for _, e := range plugindist.ReadLock() {
+		short := e.Digest
+		if len(short) > 12 {
+			short = short[:12]
+		}
+		name, status := "managed "+e.Name, "ok"
+		detail := fmt.Sprintf("%s from index %q (%s) — signature: %s",
+			e.Version, e.Index, short, e.Signature)
+		current, linked := plugindist.CurrentDigest(e.Name)
+		switch {
+		case !linked:
+			status, detail = "warn", detail+" — the store's bin link is gone; "+
+				"`rta plugin install "+e.Name+"` after `rta plugin remove "+e.Name+"` restores it"
+		case current != e.Digest:
+			status, detail = "warn", detail+fmt.Sprintf(
+				" — the store serves %.12s while rta.lock records %s: an upgrade that did not "+
+					"finish, or a swap rta did not make", current, short)
+		}
+		if _, attached := plugindist.IndexByName(e.Index); !attached {
+			if status == "ok" {
+				status = "info"
+			}
+			detail += " — index " + e.Index + " is no longer attached, so upgrade has nowhere to ask"
+		}
+		// A $PATH copy outranking the managed one is ordinary shadowing,
+		// deliberate or stale — said here because the managed row is where
+		// somebody looks when the version they installed is not the one
+		// answering.
+		for _, p := range loadedPlugins {
+			if p.Declared.Name == e.Name &&
+				!strings.HasPrefix(p.Identity.Path, plugindist.StoreDir()+string(filepath.Separator)) {
+				status = "warn"
+				detail += " — shadowed: calls run " + p.Identity.Path + ", not the managed copy"
+			}
+		}
+		add(name, status, detail)
 	}
 
 	// Exec-tier plugins on $PATH (rta-<name>), discovery convention only for

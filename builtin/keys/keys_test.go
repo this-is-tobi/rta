@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/tyler-smith/go-bip39"
 	"golang.org/x/crypto/ssh"
 
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
@@ -84,8 +85,18 @@ func writeRSAKeypair(t *testing.T, dir, name, passphrase string) (private string
 	return private
 }
 
+// errCode names the failure a call produced, and "" when it did not fail.
+//
+// The empty string rather than a dereference: view.AsError returns nil for a
+// nil error, so reading .Code straight off it turns "this call unexpectedly
+// succeeded" — the exact thing these 27 assertions exist to catch — into a
+// segfault with a stack trace instead of `code = "", want keys.restore.words`.
+// Found when a 1-in-256 flake in the checksum test below landed on it.
 func errCode(err error) string {
 	verr := view.AsError(err, "keys.test")
+	if verr == nil {
+		return ""
+	}
 	return verr.Code
 }
 
@@ -346,7 +357,7 @@ func TestRestorePassphraseDoesNotCollideWithBackupsEnvVar(t *testing.T) {
 	if restoreCap.ID != "keys.restore" {
 		t.Fatalf("Capabilities[2] = %q, want keys.restore (test index is stale)", restoreCap.ID)
 	}
-	resolved := plugin.Resolve(restoreCap, map[string]any{"out": out, "words": words}, nil)
+	resolved := plugin.Resolve(restoreCap, plugin.Inputs{Caller: map[string]any{"out": out, "words": words}})
 	if got := resolved["new-passphrase"]; got != nil && got != "" {
 		t.Fatalf("new-passphrase resolved to %q from the backup capability's env var — collision is back", got)
 	}
@@ -501,13 +512,7 @@ func TestRestoreRejectsAWordCountThatIsNotA32ByteSeed(t *testing.T) {
 }
 
 func TestRestoreRejectsAWordWithABrokenChecksum(t *testing.T) {
-	words := freshWords(t)
-	fields := strings.Fields(words)
-	// "abandon" is BIP39 word index 0 — swapping the last word for it is
-	// still every word in the list, so this exercises the checksum branch
-	// specifically rather than the "unknown word" branch.
-	fields[len(fields)-1] = "abandon"
-	broken := strings.Join(fields, " ")
+	broken := brokenChecksum(t, freshWords(t))
 
 	dir := t.TempDir()
 	_, err := runRestore(context.Background(), req(map[string]any{
@@ -806,6 +811,41 @@ func TestSuggestPrivateKeysListsIdFilesOnly(t *testing.T) {
 // freshWords makes a valid 24-word backup phrase for a throwaway ed25519
 // key, for tests that need well-formed words but do not care whose key they
 // encode.
+// brokenChecksum swaps the last word of a valid mnemonic for one that makes
+// the checksum wrong, and proves it did before handing it back.
+//
+// **The proof is the point.** This used to substitute a single fixed word
+// ("abandon", BIP39 index 0) and assume the result was invalid. Usually it is —
+// but the last word of a 24-word mnemonic carries 8 checksum bits over 3 bits
+// of entropy, so about one substitution in 256 lands on a mnemonic that is
+// still perfectly valid. Against a freshly generated key every run, that is a
+// ~0.4% flake: restore succeeds, the test asserts a refusal code on a nil
+// error, and the package panics rather than fails. Rare enough to look like
+// infrastructure, frequent enough to keep coming back.
+//
+// Trying candidates until fromMnemonic actually rejects one makes it
+// deterministic for any input: at most a handful of the 2048 words leave the
+// checksum intact, so the loop settles immediately and — unlike a fixed
+// choice — cannot silently stop testing the branch it names.
+func brokenChecksum(t *testing.T, words string) string {
+	t.Helper()
+	fields := strings.Fields(words)
+	last := len(fields) - 1
+	// Every candidate is a real BIP39 word, so this exercises the checksum
+	// branch rather than the "unknown word" one.
+	for _, candidate := range bip39.GetWordList() {
+		if candidate == fields[last] {
+			continue
+		}
+		fields[last] = candidate
+		if _, err := fromMnemonic(strings.Join(fields, " ")); err != nil {
+			return strings.Join(fields, " ")
+		}
+	}
+	t.Fatalf("no single-word substitution broke the checksum of %q", words)
+	return ""
+}
+
 func freshWords(t *testing.T) string {
 	t.Helper()
 	_, priv, err := ed25519.GenerateKey(rand.Reader)

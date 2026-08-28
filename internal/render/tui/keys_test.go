@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
@@ -141,6 +142,114 @@ func TestATruncatedFooterSaysSo(t *testing.T) {
 	if got := strings.Count(wrapped, "\n") + 1; got != 2 {
 		t.Errorf("wrapped bar took %d lines, want 2: %q", got, wrapped)
 	}
+}
+
+// The reported bug, in the reporter's words: "I don't see the profile action".
+//
+// `f` opened the profiles pane from the day it was written and the dashboard's
+// footer never learned to say so, because each screen built its own bar at the
+// place it painted it and a new pane touched neither. A key nobody can see is a
+// key nobody has.
+//
+// So this is the general form rather than an assertion about `f`: put the model
+// in a screen, press everything a keyboard offers, and fail on anything that
+// does something the footer never mentions. The next pane to arrive gets the
+// same treatment for free.
+func TestEveryKeyAScreenAnswersToIsAdvertised(t *testing.T) {
+	// Only the screens whose keys rta writes itself. The form-driven modes —
+	// modeForm, modeTheme, modeCopyPick, modeBrowse-while-filtering — hand
+	// every key to huh or to the bubbles list, which answer to the whole
+	// alphabet by typing it into a field; advertising that is not a thing a
+	// footer can do or should try to.
+	screens := map[string]func(*testing.T) (Model, mode){
+		"dashboard": func(t *testing.T) (Model, mode) {
+			m, _ := realModel(t, 120, 40)
+			m.selected = 1 // a real tile, so its own actions are in play
+			return m, modeDashboard
+		},
+		"plugins": func(t *testing.T) (Model, mode) {
+			m, _ := realModel(t, 120, 40)
+			return press(t, m, "p"), modePlugins
+		},
+		"profiles": func(t *testing.T) (Model, mode) {
+			m := profileModel(t, twoProfileConfig())
+			m.mode = modeProfiles
+			return m, modeProfiles
+		},
+		"running": func(t *testing.T) (Model, mode) {
+			m, _ := realModel(t, 120, 40)
+			m.mode = modeRunning
+			return m, modeRunning
+		},
+	}
+	for name, build := range screens {
+		t.Run(name, func(t *testing.T) {
+			base, screen := build(t)
+			advertised := map[string]bool{}
+			for _, it := range base.footerItems(screen) {
+				for _, k := range it.keys {
+					advertised[k] = true
+				}
+			}
+			if len(advertised) == 0 {
+				t.Fatalf("%s advertises nothing at all", name)
+			}
+			for _, key := range everyKey() {
+				if advertised[key] {
+					continue
+				}
+				// Rebuilt per key: `d` deletes a profile, and a screen that
+				// carried the last press's side effects into the next one would
+				// be testing something else by the third letter.
+				fresh, _ := build(t)
+				before := fingerprint(fresh)
+				after, cmd := fresh.Update(keyMsg(key))
+				if fingerprint(after.(Model)) == before && cmd == nil {
+					continue
+				}
+				t.Errorf("%s answers to %q but its footer never says so:\n  %s",
+					name, key, plain(fitHintBar(0, footerMaxLines, base.footerItems(screen)...)))
+			}
+		})
+	}
+}
+
+// everyKey is what a person can press without contorting: the alphabet in both
+// cases, the punctuation this app has ever bound, and the named keys.
+func everyKey() []string {
+	var out []string
+	for c := 'a'; c <= 'z'; c++ {
+		out = append(out, string(c), strings.ToUpper(string(c)))
+	}
+	for _, k := range []string{
+		"[", "]", "<", ">", "/", ":", ".", ",", "-", "=", "?", "!", "@", "#", "$", "%",
+		"up", "down", "left", "right", "enter", "esc", "tab", " ", "ctrl+c",
+	} {
+		out = append(out, k)
+	}
+	return out
+}
+
+// keyMsg builds the press bubbletea would deliver for a key name.
+func keyMsg(key string) tea.KeyPressMsg {
+	if code := keyCodeFor(key); code != 0 {
+		return tea.KeyPressMsg{Code: code}
+	}
+	if key == "ctrl+c" {
+		return tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}
+	}
+	return tea.KeyPressMsg{Code: rune(key[0]), Text: key}
+}
+
+// fingerprint is everything a key press could visibly move. Compared rather
+// than inspected: the question is only "did that do anything", and listing
+// what each key is allowed to change would be the same drift this test exists
+// to catch, written twice.
+func fingerprint(m Model) string {
+	return fmt.Sprintf("%v|%d|%d|%d|%d|%d|%d|%q|%v|%v|%v|%v|%d|%q|%d",
+		m.mode, m.selected, m.pluginSel, m.pluginScroll, m.profileSel, m.profileScroll,
+		m.row, m.query, m.searchEditing, m.form != nil, m.themeForm != nil,
+		m.copyPick != nil, len(m.trail), m.flash, m.tickGen)
 }
 
 // One idea, one word, one notation — everywhere. Three spellings of "the

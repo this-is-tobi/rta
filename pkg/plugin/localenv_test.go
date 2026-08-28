@@ -35,7 +35,7 @@ func localCap() Capability {
 // sees rta's whole environment. P6 says there are no second-class plugins.
 func TestALocalInputIsFilledFromTheHostEnvironment(t *testing.T) {
 	t.Setenv("RTA_PG_PASSWORD", "hunter2")
-	got := Resolve(localCap(), map[string]any{"sql": "select 1"}, nil)
+	got := Resolve(localCap(), Inputs{Caller: map[string]any{"sql": "select 1"}})
 	if got["password"] != "hunter2" {
 		t.Errorf("password = %v, want the value from RTA_PG_PASSWORD", got["password"])
 	}
@@ -51,7 +51,7 @@ func TestALocalInputIsFilledFromTheHostEnvironment(t *testing.T) {
 // (Local, no EnvFallback) must stay empty no matter what is exported.
 func TestALocalFieldWithoutEnvFallbackIsNeverFilledFromTheEnvironment(t *testing.T) {
 	t.Setenv("RTA_PG_SSL_MODE", "disable")
-	got := Resolve(localCap(), map[string]any{"sql": "select 1"}, nil)
+	got := Resolve(localCap(), Inputs{Caller: map[string]any{"sql": "select 1"}})
 	if v, present := got["ssl-mode"]; present {
 		t.Errorf("ssl-mode = %q, want it absent — Local without EnvFallback must not read the environment", v)
 	}
@@ -63,7 +63,7 @@ func TestALocalFieldWithoutEnvFallbackIsNeverFilledFromTheEnvironment(t *testing
 func TestALocalInputCannotReachAnotherNamespacesVariable(t *testing.T) {
 	t.Setenv("RTA_KV_PASSPHRASE", "the kv store's passphrase")
 	t.Setenv("AWS_SECRET_ACCESS_KEY", "an unrelated credential")
-	got := Resolve(localCap(), map[string]any{"sql": "select 1"}, nil)
+	got := Resolve(localCap(), Inputs{Caller: map[string]any{"sql": "select 1"}})
 	for _, leaked := range []any{"the kv store's passphrase", "an unrelated credential"} {
 		for name, v := range got {
 			if v == leaked {
@@ -77,7 +77,7 @@ func TestALocalInputCannotReachAnotherNamespacesVariable(t *testing.T) {
 // an exported variable silently changing what a command does.
 func TestANonLocalInputIsNeverFilledFromTheEnvironment(t *testing.T) {
 	t.Setenv("RTA_PG_SQL", "drop table users")
-	got := Resolve(localCap(), map[string]any{"sql": "select 1"}, nil)
+	got := Resolve(localCap(), Inputs{Caller: map[string]any{"sql": "select 1"}})
 	if got["sql"] != "select 1" {
 		t.Errorf("sql = %v; the environment overwrote a non-Local input", got["sql"])
 	}
@@ -86,7 +86,7 @@ func TestANonLocalInputIsNeverFilledFromTheEnvironment(t *testing.T) {
 // An explicitly typed credential beats an ambient one.
 func TestACallerSuppliedLocalValueBeatsTheEnvironment(t *testing.T) {
 	t.Setenv("RTA_PG_PASSWORD", "from the environment")
-	got := Resolve(localCap(), map[string]any{"sql": "x", "password": "typed"}, nil)
+	got := Resolve(localCap(), Inputs{Caller: map[string]any{"sql": "x", "password": "typed"}})
 	if got["password"] != "typed" {
 		t.Errorf("password = %v, want the caller's value", got["password"])
 	}
@@ -96,7 +96,7 @@ func TestACallerSuppliedLocalValueBeatsTheEnvironment(t *testing.T) {
 // different, and a store unlocked with an empty passphrase is not the same
 // event as one that refused to unlock.
 func TestAnUnsetVariableLeavesTheInputAbsent(t *testing.T) {
-	got := Resolve(localCap(), map[string]any{"sql": "x"}, nil)
+	got := Resolve(localCap(), Inputs{Caller: map[string]any{"sql": "x"}})
 	if v, present := got["password"]; present {
 		t.Errorf("password is present as %q with nothing set", v)
 	}

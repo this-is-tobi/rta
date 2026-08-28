@@ -45,10 +45,14 @@ import (
 // an ambient variable the MCP server happened to inherit.
 func connFields() []plugin.Field {
 	return []plugin.Field{
+		// host and port carry the endpoint roles, so a profile naming a
+		// cluster reaches this database through a port-forward the host opens
+		// and closes: pg never learns a forward was there, which is ADR 0004's
+		// contract and the reason none of the code below changes.
 		{Name: "host", Type: plugin.String, Default: "localhost", Config: "host",
-			Local: true, Help: "database host"},
+			Local: true, Endpoint: plugin.EndpointHost, Help: "database host"},
 		{Name: "port", Type: plugin.Int, Default: 5432, Config: "port",
-			Local: true, Min: 1, Max: 65535, Help: "database port"},
+			Local: true, Endpoint: plugin.EndpointPort, Min: 1, Max: 65535, Help: "database port"},
 		{Name: "user", Type: plugin.String, Default: "postgres", Config: "user",
 			Local: true, Help: "role to connect as"},
 		{Name: "database", Type: plugin.String, Default: "postgres", Config: "database",
@@ -57,10 +61,22 @@ func connFields() []plugin.Field {
 		// not change *where* the call goes, it changes whether the transport
 		// is protected. An agent that could set it could ask for `disable`
 		// and downgrade a connection the operator configured as verify-full.
+		// The tls role, and it is not a downgrade to argue about — it is
+		// measured. Through a port-forward, `prefer` kills the forward on the
+		// *clean disconnect*: PostgreSQL closes, the TLS layer's trailing
+		// close_notify arrives at a socket that is already gone, the pod-side
+		// read resets, and kubectl exits. The next call gets "connection
+		// refused" on a local port and nothing connects the two. It buys
+		// nothing either, since the forward is loopback and the hop that leaves
+		// the machine is already inside the API server's TLS (ADR 0018 §7).
+		//
+		// Only when a tunnel is actually open. Every other call keeps `prefer`,
+		// and a caller who says otherwise still wins.
 		{Name: "sslmode", Type: plugin.String, Default: "prefer", Config: "sslmode",
-			Local:   true,
-			Options: []string{"disable", "prefer", "require", "verify-ca", "verify-full"},
-			Help:    "TLS negotiation mode"},
+			Local:    true,
+			Endpoint: plugin.EndpointTLS,
+			Options:  []string{"disable", "prefer", "require", "verify-ca", "verify-full"},
+			Help:     "TLS negotiation mode"},
 		{Name: "password", Type: plugin.Secret, Local: true, EnvFallback: true,
 			Help: "password for the role"},
 	}

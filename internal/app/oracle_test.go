@@ -70,7 +70,7 @@ func TestNoInputBehavesLikeAFileWithoutBeingDeclaredOne(t *testing.T) {
 		// than no dry run"). Without them this test could not see the kv.init
 		// shape at all, which is half of what D42 was.
 		v, err := c.Run(ctx, plugin.NewRequest(
-			plugin.Resolve(c, values, nil), c.Safety != plugin.Read, false))
+			plugin.Resolve(c, plugin.Inputs{Caller: values}), c.Safety != plugin.Read, false))
 		var buf bytes.Buffer
 		if v != nil {
 			_ = cli.Render(&buf, v, cli.Options{Format: cli.JSON, NoColor: true})

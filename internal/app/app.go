@@ -11,6 +11,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -19,6 +20,7 @@ import (
 	"github.com/this-is-tobi/rule-them-all/builtin/all"
 	"github.com/this-is-tobi/rule-them-all/internal/config"
 	"github.com/this-is-tobi/rule-them-all/internal/pluginhost"
+	"github.com/this-is-tobi/rule-them-all/internal/recent"
 	"github.com/this-is-tobi/rule-them-all/internal/registry"
 	"github.com/this-is-tobi/rule-them-all/internal/render/cli"
 	"github.com/this-is-tobi/rule-them-all/internal/render/tui"
@@ -192,6 +194,10 @@ func groupRunE(cmd *cobra.Command, args []string) error {
 // NewRoot builds the root cobra command over the given registry.
 func NewRoot(reg *registry.Registry, version string) *cobra.Command {
 	opts := &globalOpts{}
+	// Recorded here rather than threaded: resolveProfile is reached from a
+	// cobra RunE that has the capability and nothing else, and this is the
+	// registry the whole tree is being built from.
+	SetInstalled(withTrust{reg})
 	// Config is optional; a broken file must not brick the CLI — doctor and
 	// init both diagnose it, so they need the binary to still run.
 	cfg, cfgErr := config.Load()
@@ -214,7 +220,13 @@ func NewRoot(reg *registry.Registry, version string) *cobra.Command {
 			if cfgErr != nil {
 				return cfgErr
 			}
-			return tui.Run(cmd.Context(), reg, cfg.Dashboard, pluginConfig.For)
+			// The untrusted artifacts go in too. The startup line naming them
+			// is written to the primary buffer and the TUI opens on the
+			// alternate one, so it is covered before it can be read and does
+			// not come back until the session ends — which makes the pane the
+			// only place a person in the TUI can learn a decision is pending.
+			return tui.Run(cmd.Context(), reg, cfg.Dashboard, pluginConfig.For,
+				tui.WithUntrusted(untrustedPluginsFound))
 		},
 	}
 	pf := root.PersistentFlags()
@@ -222,6 +234,13 @@ func NewRoot(reg *registry.Registry, version string) *cobra.Command {
 	pf.BoolVar(&opts.noColor, "no-color", false, "disable styled output")
 	pf.BoolVarP(&opts.yes, "yes", "y", false, "skip confirmation prompts")
 	pf.BoolVar(&opts.dryRun, "dry-run", false, "report what would happen without doing it")
+	// A closed set of five, inherited by every command in the tree — the same
+	// case Field.Options already gets for free on a plugin's own inputs, which
+	// is what makes its absence here conspicuous rather than acceptable.
+	_ = root.RegisterFlagCompletionFunc("output",
+		func(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
+			return cli.Formats(), cobra.ShellCompDirectiveNoFileComp
+		})
 
 	// Namespace commands host their capabilities as subcommands.
 	nsCmds := map[string]*cobra.Command{}
@@ -242,6 +261,8 @@ func NewRoot(reg *registry.Registry, version string) *cobra.Command {
 	root.AddCommand(newPluginCommand(reg, version, opts))
 	root.AddCommand(newDoctorCommand(reg, opts))
 	root.AddCommand(newInitCommand(reg))
+	root.AddCommand(newUseCommand(opts))
+	root.AddCommand(newProfileCommand(reg, opts))
 	return root
 }
 
@@ -287,6 +308,26 @@ func attach(parent *cobra.Command, c plugin.Capability, opts *globalOpts) {
 	// cheaper than losing the binary.
 	if c.Detailed && cmd.Flags().Lookup("detail") == nil {
 		cmd.Flags().Bool("detail", false, "show the full detailed view")
+	}
+	// Per capability rather than persistent on the root, for the same reason
+	// --detail is: a flag that exists everywhere and does something nowhere
+	// teaches people it is decoration. `rta sys cpu --profile x` should say
+	// "unknown flag", which names the fact, instead of accepting a value that
+	// no input could ever receive.
+	if plugin.Profilable(c) && cmd.Flags().Lookup("profile") == nil {
+		cmd.Flags().String("profile", "", "run against one of the connections in your config")
+		_ = cmd.RegisterFlagCompletionFunc("profile",
+			func(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
+				cfg, err := config.Load()
+				if err != nil {
+					return nil, cobra.ShellCompDirectiveNoFileComp
+				}
+				var out []cobra.Completion
+				for _, name := range cfg.ProfilesFor(plugin.Namespace(c.ID)) {
+					out = append(out, cobra.CompletionWithDesc(name, cfg.Profiles[name].Note))
+				}
+				return out, cobra.ShellCompDirectiveNoFileComp
+			})
 	}
 	cmd.SetFlagErrorFunc(positionalFlagError(c, positionals))
 	declareCompletion(cmd, c, positionals)
@@ -360,7 +401,14 @@ func declareCompletion(cmd *cobra.Command, c plugin.Capability, positionals []pl
 		// A path is completable with nothing declared at all: the shell
 		// already knows what is on the filesystem, and does it better than we
 		// could — quoting, colours, and the directory you are actually in.
-		return len(f.Options) > 0 || f.Suggest != nil || f.Type == plugin.Path
+		//
+		// And so is a field this operator has already answered. Without that
+		// clause the gate excluded every plain String with no Suggest, which
+		// is exactly the set internal/recent exists for — a bucket, a
+		// database, a schema — so the values were recorded on every run and
+		// offered on none of them.
+		return len(f.Options) > 0 || f.Suggest != nil || f.Type == plugin.Path ||
+			len(remembered().For(c.ID, f.Name)) > 0
 	}
 
 	if len(positionals) > 0 {
@@ -371,6 +419,14 @@ func declareCompletion(cmd *cobra.Command, c plugin.Capability, positionals []pl
 			}
 			return candidates(cmd, c, f, args)
 		}
+	} else {
+		// A capability that takes no argument offers none, rather than
+		// falling through to cobra's default of listing the working
+		// directory. `rta sys cpu <tab>` printing your files is the shell
+		// telling somebody this command takes a filename, which is a
+		// confident answer to a question the declaration already answers the
+		// other way.
+		cmd.ValidArgsFunction = cobra.NoFileCompletions
 	}
 	for _, f := range c.Inputs {
 		if f.Positional || !completable(f) {
@@ -417,9 +473,16 @@ func candidates(cmd *cobra.Command, c plugin.Capability, f plugin.Field, args []
 	//
 	// SurfaceCompletion, not SurfaceCLI: this is a keystroke with nobody
 	// waiting to answer anything, and a Suggest that would have prompted must
-	// be able to tell the difference.
-	req := plugin.NewRequest(
-		plugin.Resolve(c, values, PluginConfig(c)), false, false).WithSurface(plugin.SurfaceCompletion)
+	// be able to tell the difference. And without any credential the resolve
+	// pulled in from the environment fallback — see plugin.CompletionRequest.
+	//
+	// Through the environment as well, so a suggestion is computed against the
+	// connection the command would actually reach. Bind, never Fill: this runs
+	// on every keystroke and must not open a store — see bindProfile.
+	name, bound := bindProfile(cmd, c)
+	req := plugin.CompletionRequest(c, plugin.Resolve(c, plugin.Inputs{
+		Caller: values, Profile: bound, ProfileName: name, Config: PluginConfig(c),
+	}))
 
 	// A path keeps file completion alongside whatever was declared: zsh offers
 	// the suggestions first and falls back to the filesystem when none of them
@@ -429,11 +492,43 @@ func candidates(cmd *cobra.Command, c plugin.Capability, f plugin.Field, args []
 	if f.Type == plugin.Path {
 		directive = cobra.ShellCompDirectiveDefault
 	}
-	out := f.Candidates(ctx, req)
+	out := offering(f, c, f.Candidates(ctx, req))
 	if len(out) == 0 {
 		return nil, directive
 	}
 	return out, directive
+}
+
+// remembered is this process's view of the shortlists. Read once: a shell
+// completion is one process answering one question, and a file read per field
+// would be work done to learn the same thing twice.
+var remembered = sync.OnceValue(recent.Load)
+
+// offering puts what the operator has actually used behind whatever the field
+// declared for itself.
+//
+// Behind, not in front: a declared list is authoritative — those are the tags
+// that exist — while a shortlist is a convenience, and burying the real answer
+// under a habit would be the wrong way round. For the inputs this matters most
+// for (a bucket, a database, a vault path) there is no declared list at all
+// and the shortlist is the whole of it.
+func offering(f plugin.Field, c plugin.Capability, declared []cobra.Completion) []cobra.Completion {
+	used := remembered().For(c.ID, f.Name)
+	if len(used) == 0 {
+		return declared
+	}
+	seen := make(map[string]bool, len(declared))
+	for _, d := range declared {
+		seen[plugin.CandidateValue(d)] = true
+	}
+	out := declared
+	for _, value := range used {
+		if seen[value] {
+			continue
+		}
+		out = append(out, cobra.CompletionWithDesc(value, "you used this"))
+	}
+	return out
 }
 
 func findOrCreate(parent *cobra.Command, name string) *cobra.Command {
@@ -574,7 +669,25 @@ func runCapability(ctx context.Context, cmd *cobra.Command, c plugin.Capability,
 	if err != nil {
 		return err
 	}
-	resolved := plugin.Resolve(c, values, PluginConfig(c))
+	// The profile, and the values it contributes. A person at a terminal
+	// needs no grant for any of this: the gate is on the MCP surface, because
+	// the operator writing the profile and the operator running the command
+	// are the same person, and consent to yourself is not a thing.
+	profileName, filled, closeTunnel, verr := resolveProfile(ctx, cmd, c, values)
+	// Deferred before the error check on purpose: a `kube:` connection whose
+	// forward came up and whose next step then failed still has a port open,
+	// and closeTunnel is never nil.
+	defer closeTunnel()
+	if verr != nil {
+		_ = cli.RenderError(cmd.ErrOrStderr(), verr, renderOpts)
+		return Rendered(verr)
+	}
+	resolved := plugin.Resolve(c, plugin.Inputs{
+		Caller:      values,
+		Profile:     filled,
+		ProfileName: profileName,
+		Config:      PluginConfig(c),
+	})
 	// The required check for config-backed inputs, which cobra no longer
 	// makes because making it would have run before config was consulted.
 	// Named here rather than left as a handler's zero value: an input that is
@@ -598,6 +711,13 @@ func runCapability(ctx context.Context, cmd *cobra.Command, c plugin.Capability,
 		}
 		_ = cli.RenderError(cmd.ErrOrStderr(), ve, renderOpts)
 		return Rendered(ve)
+	}
+	// Remembered after the run succeeded, and from `values` rather than from
+	// `resolved`: a declared default is not a choice anybody made, and a host
+	// the environment filled in is already offered by the environment. What
+	// this keeps is what the person typed and it worked.
+	if !opts.dryRun {
+		recent.Record(plugin.SurfaceCLI, c, values)
 	}
 	if v == nil {
 		return nil

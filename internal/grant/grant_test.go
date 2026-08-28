@@ -44,6 +44,33 @@ func issue(t *testing.T, g Grant) {
 	}
 }
 
+// gate asks whether a call is authorized, without keeping the use — Reserve
+// spends under the lock, and release() gives it back, which is exactly what
+// the bridge does when the call it authorized then fails.
+//
+// These tests used to call an exported Check() that decided without spending.
+// Nothing in the product ever called it, so every assertion about scope
+// matching, secret gating and budget exhaustion was made against a function no
+// call ever went through. Going through Reserve costs a spend-and-refund round
+// trip and buys the property the suite is supposed to have: the thing being
+// tested is the thing that runs.
+func gate(t *testing.T, c plugin.Capability, values map[string]any, profile, pin string) *view.Error {
+	t.Helper()
+	release, verr := Reserve(c, values, profile, pin, "")
+	if verr == nil {
+		release()
+	}
+	return verr
+}
+
+// call is an authorized call that then succeeds: the use stays spent, because
+// the bridge only calls release() on failure.
+func call(t *testing.T, c plugin.Capability, values map[string]any, profile, pin string) *view.Error {
+	t.Helper()
+	_, verr := Reserve(c, values, profile, pin, "")
+	return verr
+}
+
 func declare(id string, safety plugin.Safety, scope string, needs bool) plugin.Capability {
 	return plugin.Capability{
 		ID: id, Summary: id, Safety: safety, Scope: scope, NeedsGrant: needs,
@@ -58,7 +85,7 @@ func declare(id string, safety plugin.Safety, scope string, needs bool) plugin.C
 // gate on everything is a gate people turn off.
 func TestReadsNeedNoGrant(t *testing.T) {
 	setup(t)
-	if verr := Check(declare("todo.list", plugin.Read, "", false), nil); verr != nil {
+	if verr := gate(t, declare("todo.list", plugin.Read, "", false), nil, "", ""); verr != nil {
 		t.Errorf("a read was refused: %v", verr)
 	}
 }
@@ -67,7 +94,7 @@ func TestReadsNeedNoGrant(t *testing.T) {
 func TestDestructiveNeedsAGrantWithoutOptingIn(t *testing.T) {
 	setup(t)
 	c := declare("todo.rm", plugin.Destructive, "id", false)
-	verr := Check(c, map[string]any{"id": "7"})
+	verr := gate(t, c, map[string]any{"id": "7"}, "", "")
 	if verr == nil {
 		t.Fatal("a destructive call went through with no grant")
 	}
@@ -86,12 +113,12 @@ func TestGrantAuthorizesTheRecordItNames(t *testing.T) {
 	issue(t, Grant{Target: "kv.get", Scope: "db-password"})
 	c := declare("kv.get", plugin.Write, "key", true)
 
-	if verr := Check(c, map[string]any{"key": "db-password"}); verr != nil {
+	if verr := gate(t, c, map[string]any{"key": "db-password"}, "", ""); verr != nil {
 		t.Errorf("the granted key was refused: %v", verr)
 	}
 	// …and only that one. A grant that widened to the whole store on the
 	// first read would be worse than no grant, because it would look right.
-	if verr := Check(c, map[string]any{"key": "prod-token"}); verr == nil {
+	if verr := gate(t, c, map[string]any{"key": "prod-token"}, "", ""); verr == nil {
 		t.Error("a grant for one key authorized another")
 	}
 }
@@ -100,31 +127,31 @@ func TestGrantAuthorizesTheRecordItNames(t *testing.T) {
 func TestNamespaceGrant(t *testing.T) {
 	setup(t)
 	issue(t, Grant{Target: "kv"})
-	if verr := Check(declare("kv.get", plugin.Write, "key", true), map[string]any{"key": "any"}); verr != nil {
+	if verr := gate(t, declare("kv.get", plugin.Write, "key", true), map[string]any{"key": "any"}, "", ""); verr != nil {
 		t.Errorf("a plugin-wide grant did not cover its capability: %v", verr)
 	}
-	if verr := Check(declare("todo.rm", plugin.Destructive, "id", false), map[string]any{"id": "1"}); verr == nil {
+	if verr := gate(t, declare("todo.rm", plugin.Destructive, "id", false), map[string]any{"id": "1"}, "", ""); verr == nil {
 		t.Error("a kv grant authorized a todo call")
 	}
 }
 
-// Covering is the same question Check asks, turned around: not "does
+// Covering is the same question the gate asks, turned around: not "does
 // anything authorize this call" but "after some grants are gone, does
 // anything left still authorize it". grant.revoke depends on this to avoid
 // reporting "No active grant" while a wider one still stands.
 func TestCovering(t *testing.T) {
 	grants := []Grant{{Target: "kv"}, {Target: "todo.rm", Scope: "1"}}
 
-	if g := Covering(grants, "kv.get", ""); g == nil || g.Target != "kv" {
+	if g := Covering(grants, "kv.get", "", ""); g == nil || g.Target != "kv" {
 		t.Errorf("Covering(kv.get) = %v, want the namespace grant", g)
 	}
-	if g := Covering(grants, "todo.rm", "1"); g == nil {
+	if g := Covering(grants, "todo.rm", "1", ""); g == nil {
 		t.Error("Covering did not find the exact scoped grant")
 	}
-	if g := Covering(grants, "todo.rm", "2"); g != nil {
+	if g := Covering(grants, "todo.rm", "2", ""); g != nil {
 		t.Errorf("a grant scoped to record 1 wrongly covered record 2: %v", g)
 	}
-	if g := Covering(nil, "kv.get", ""); g != nil {
+	if g := Covering(nil, "kv.get", "", ""); g != nil {
 		t.Errorf("Covering(nil) = %v, want nil", g)
 	}
 }
@@ -136,10 +163,10 @@ func TestEveryNamedRecordMustBeCovered(t *testing.T) {
 	c := declare("kv.env", plugin.Write, "key", true)
 	c.Inputs = []plugin.Field{{Name: "key", Type: plugin.StringSlice}}
 
-	if verr := Check(c, map[string]any{"key": []string{"a"}}); verr != nil {
+	if verr := gate(t, c, map[string]any{"key": []string{"a"}}, "", ""); verr != nil {
 		t.Errorf("the granted key was refused: %v", verr)
 	}
-	verr := Check(c, map[string]any{"key": []string{"a", "b"}})
+	verr := gate(t, c, map[string]any{"key": []string{"a", "b"}}, "", "")
 	if verr == nil {
 		t.Fatal("a partly-granted call went through")
 	}
@@ -147,7 +174,7 @@ func TestEveryNamedRecordMustBeCovered(t *testing.T) {
 		t.Errorf("the refusal should name what is missing: %q", verr.Message)
 	}
 	// MCP arguments arrive as []any from JSON, not []string.
-	if verr := Check(c, map[string]any{"key": []any{"a", "b"}}); verr == nil {
+	if verr := gate(t, c, map[string]any{"key": []any{"a", "b"}}, "", ""); verr == nil {
 		t.Error("JSON-shaped arguments bypassed the check")
 	}
 }
@@ -158,11 +185,11 @@ func TestScopedGrantDoesNotCoverAScopelessCall(t *testing.T) {
 	setup(t)
 	issue(t, Grant{Target: "kv.env", Scope: "a"})
 	c := declare("kv.env", plugin.Write, "key", true)
-	if verr := Check(c, map[string]any{}); verr == nil {
+	if verr := gate(t, c, map[string]any{}, "", ""); verr == nil {
 		t.Error("a grant for one key authorized exporting everything")
 	}
 	issue(t, Grant{Target: "kv.env"})
-	if verr := Check(c, map[string]any{}); verr != nil {
+	if verr := gate(t, c, map[string]any{}, "", ""); verr != nil {
 		t.Errorf("an unscoped grant did not cover the unscoped call: %v", verr)
 	}
 }
@@ -170,7 +197,7 @@ func TestScopedGrantDoesNotCoverAScopelessCall(t *testing.T) {
 func TestExpiredGrantsDoNotAuthorize(t *testing.T) {
 	setup(t)
 	issue(t, Grant{Target: "kv.get", Scope: "k", Expires: time.Now().Add(-time.Second)})
-	if verr := Check(declare("kv.get", plugin.Write, "key", true), map[string]any{"key": "k"}); verr == nil {
+	if verr := gate(t, declare("kv.get", plugin.Write, "key", true), map[string]any{"key": "k"}, "", ""); verr == nil {
 		t.Error("an expired grant still authorized a read")
 	}
 	// Expired grants are dropped on read, so nothing has to sweep them.
@@ -229,11 +256,8 @@ func TestZeroMaxUsesIsUnlimitedLikeBefore(t *testing.T) {
 	issue(t, Grant{Target: "kv.get", Scope: "k"})
 	c := declare("kv.get", plugin.Write, "key", true)
 	for range 5 {
-		if verr := Check(c, map[string]any{"key": "k"}); verr != nil {
+		if verr := call(t, c, map[string]any{"key": "k"}, "", ""); verr != nil {
 			t.Fatalf("an unlimited grant stopped authorizing calls: %v", verr)
-		}
-		if verr := Consume(c, map[string]any{"key": "k"}); verr != nil {
-			t.Fatalf("consume: %v", verr)
 		}
 	}
 }
@@ -245,14 +269,11 @@ func TestMaxUsesGrantStopsAuthorizingOnceSpent(t *testing.T) {
 	values := map[string]any{"key": "k"}
 
 	for i := range 2 {
-		if verr := Check(c, values); verr != nil {
+		if verr := call(t, c, values, "", ""); verr != nil {
 			t.Fatalf("call %d: refused while uses remained: %v", i+1, verr)
 		}
-		if verr := Consume(c, values); verr != nil {
-			t.Fatalf("call %d: consume: %v", i+1, verr)
-		}
 	}
-	if verr := Check(c, values); verr == nil {
+	if verr := gate(t, c, values, "", ""); verr == nil {
 		t.Fatal("a grant with 0 uses left still authorized a call")
 	}
 }
@@ -272,11 +293,8 @@ func TestARepeatedScopeInOneCallSpendsOnlyOnce(t *testing.T) {
 	}
 	values := map[string]any{"key": []string{"db-password", "db-password"}}
 
-	if verr := Check(c, values); verr != nil {
+	if verr := call(t, c, values, "", ""); verr != nil {
 		t.Fatalf("first call: %v", verr)
-	}
-	if verr := Consume(c, values); verr != nil {
-		t.Fatalf("first call consume: %v", verr)
 	}
 
 	grants, verr := Load()
@@ -289,7 +307,7 @@ func TestARepeatedScopeInOneCallSpendsOnlyOnce(t *testing.T) {
 
 	// The budget was for two calls; one call with a duplicated name must not
 	// have spent both.
-	if verr := Check(c, map[string]any{"key": []string{"db-password"}}); verr != nil {
+	if verr := gate(t, c, map[string]any{"key": []string{"db-password"}}, "", ""); verr != nil {
 		t.Errorf("a second, independent call was refused — the first call over-spent: %v", verr)
 	}
 }
@@ -314,7 +332,7 @@ func TestDistinctRecordsInOneCallCannotExceedAGrantsBudget(t *testing.T) {
 	}
 	values := map[string]any{"key": []string{"a", "b", "c"}}
 
-	release, verr := Reserve(c, values)
+	release, verr := Reserve(c, values, "", "", "")
 	if verr == nil {
 		release()
 		t.Fatal("a call naming three records was authorized against a one-use grant")
@@ -335,7 +353,7 @@ func TestDistinctRecordsInOneCallCannotExceedAGrantsBudget(t *testing.T) {
 	// grant and muddy the count.
 	setup(t)
 	issue(t, Grant{Target: "kv.env", MaxUses: 3})
-	_, verr = Reserve(c, values)
+	_, verr = Reserve(c, values, "", "", "")
 	if verr != nil {
 		t.Fatalf("a call naming exactly as many records as the budget allows was refused: %v", verr)
 	}
@@ -365,7 +383,7 @@ func TestIntScopedGrantMatchesTheOperatorTypedNumber(t *testing.T) {
 	}
 	// An MCP call's JSON number decodes to float64 before Reserve/Check ever
 	// see it — this is that shape, not the CLI's already-typed int.
-	if verr := Check(c, map[string]any{"id": float64(1000000)}); verr != nil {
+	if verr := gate(t, c, map[string]any{"id": float64(1000000)}, "", ""); verr != nil {
 		t.Errorf("a grant for id 1000000 did not cover the same id as a JSON number: %v", verr)
 	}
 }
@@ -388,7 +406,7 @@ func TestReserveFailsClosedWhenTheGrantFileIsUnreadable(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	release, verr := Reserve(c, map[string]any{"key": "k"})
+	release, verr := Reserve(c, map[string]any{"key": "k"}, "", "", "")
 	if verr == nil {
 		if release != nil {
 			release()
@@ -397,42 +415,55 @@ func TestReserveFailsClosedWhenTheGrantFileIsUnreadable(t *testing.T) {
 	}
 }
 
-// A call that never happened must not cost a use — Consume is only ever
-// called by the bridge after Run succeeds, but this pins the contract for
-// anyone calling it directly: consuming a scope the grant does not cover is
-// a no-op, not an error and not a spend against some other grant.
-func TestConsumeIgnoresACallItDoesNotCover(t *testing.T) {
+// A call the grant does not cover is refused, and costs nothing. The second
+// half is the one worth pinning: a budget that could be drained by calls it
+// never authorized would let an agent exhaust a one-time grant on records it
+// was never given, and the operator would find it spent with nothing revealed.
+func TestAnUncoveredCallSpendsNothing(t *testing.T) {
 	setup(t)
 	issue(t, Grant{Target: "kv.get", Scope: "a", MaxUses: 1})
 	c := declare("kv.get", plugin.Write, "key", true)
 
-	if verr := Consume(c, map[string]any{"key": "b"}); verr != nil {
-		t.Fatalf("consume: %v", verr)
+	if verr := call(t, c, map[string]any{"key": "b"}, "", ""); verr == nil {
+		t.Fatal("a call naming an ungranted record was authorized")
 	}
 	grants, _ := Load()
 	if len(grants) != 1 || grants[0].Uses != 0 {
-		t.Errorf("an uncovered call spent a use: %+v", grants)
+		t.Errorf("a refused call spent a use: %+v", grants)
 	}
 }
 
 // The whole point of the lock: two goroutines racing to spend the same
-// one-time grant must not both see it unspent. Without acquireLock this
-// reliably overspends under -race on a handful of iterations.
-func TestConcurrentConsumeDoesNotOverspendAOneTimeGrant(t *testing.T) {
+// one-time grant must not both see it unspent. The go-sdk dispatches every
+// tools/call in its own goroutine, so this is the ordinary case for an agent
+// that pipelines two requests, not an exotic one.
+//
+// **This used to race Consume, which nothing called.** Reserve is the only
+// thing that spends a use in the product, and it could be stripped of
+// acquireLock entirely with this suite still green — the concurrency test was
+// guarding the twin. Racing Reserve, the same edit fails here.
+func TestConcurrentReserveDoesNotOverspendAOneTimeGrant(t *testing.T) {
 	setup(t)
 	const uses = 8
 	issue(t, Grant{Target: "kv.get", Scope: "k", MaxUses: uses})
 	c := declare("kv.get", plugin.Write, "key", true)
 	values := map[string]any{"key": "k"}
 
+	// Twice the budget, all at once. Unlike Consume — which returned nil
+	// whether or not it spent anything — Reserve refuses once the budget is
+	// gone, so the count of successes is the assertion.
 	done := make(chan *view.Error, uses*2)
 	for range uses * 2 {
-		go func() { done <- Consume(c, values) }()
+		go func() { done <- call(t, c, values, "", "") }()
 	}
+	granted := 0
 	for range uses * 2 {
-		if verr := <-done; verr != nil {
-			t.Fatalf("consume: %v", verr)
+		if verr := <-done; verr == nil {
+			granted++
 		}
+	}
+	if granted != uses {
+		t.Errorf("%d of %d concurrent calls were authorized against a %d-use grant", granted, uses*2, uses)
 	}
 	grants, verr := Load()
 	if verr != nil {
@@ -442,7 +473,7 @@ func TestConcurrentConsumeDoesNotOverspendAOneTimeGrant(t *testing.T) {
 	// exhausted, so its absence here is itself part of the assertion: a
 	// surviving row would mean Uses < MaxUses despite 2x uses worth of calls.
 	if len(grants) != 0 {
-		t.Errorf("grant survived %d consumes against a %d-use limit: %+v", uses*2, uses, grants)
+		t.Errorf("grant survived %d calls against a %d-use limit: %+v", uses*2, uses, grants)
 	}
 }
 
@@ -486,7 +517,7 @@ func TestReserveFastPathIsNotFooledByAGrantThatArrivesMidCheck(t *testing.T) {
 			verr    *view.Error
 		}, 1)
 		go func() {
-			release, verr := Reserve(c, values)
+			release, verr := Reserve(c, values, "", "", "")
 			done <- struct {
 				release func()
 				verr    *view.Error

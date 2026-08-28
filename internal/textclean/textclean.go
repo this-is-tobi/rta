@@ -66,6 +66,28 @@ func Model(s string) string {
 	return out
 }
 
+// Deceives reports whether s would display as something other than what it
+// is: the control and escape sequences a terminal acts on, and the invisible
+// and bidi characters that hide or reorder what a reader sees.
+//
+// A predicate rather than a third cleaner, because its one caller must not
+// clean. internal/recent remembers what an operator used so a completion can
+// offer it back, and a completion entry is a string somebody accepts as an
+// input with one keystroke — so handing them a *cleaned* version would hand
+// them a value that is not the one that worked. Declining to remember it costs
+// nothing, and leaves nothing on a list that reads as one thing and is
+// another.
+func Deceives(s string) bool {
+	// Newline and tab included here and exempt in isTerminalControl, and the
+	// difference is the context. A *view* value may legitimately hold either —
+	// a note body, a table cell — and the layout handles them. A completion
+	// entry is one line offered as one value: a newline in it renders as two
+	// entries and a tab as a column break, so what somebody accepts is not
+	// what they saw.
+	return strings.ContainsAny(s, "\n\t") ||
+		dirtyForTerminal(s) || strings.ContainsFunc(s, isInvisible)
+}
+
 func filter(s string, drop func(rune) bool) string {
 	var b strings.Builder
 	b.Grow(len(s))

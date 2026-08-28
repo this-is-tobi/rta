@@ -7,10 +7,30 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/this-is-tobi/rule-them-all/internal/plugintrust"
 	"github.com/this-is-tobi/rule-them-all/internal/registry"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
+
+// trustHello approves the example plugin's artifact for this test, in a data
+// directory of its own.
+//
+// Every LoadInto test needs it, and that is the point of the gate rather than
+// a cost of it: a binary on $PATH is not consent, so a test that wants a
+// plugin loaded has to say so exactly as an operator would. Isolated per test
+// so nothing here can read or write the developer's own trust file.
+func trustHello(t *testing.T) {
+	t.Helper()
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	id, err := Identify(hello(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verr := plugintrust.Add(id.Digest, "hello", id.Path); verr != nil {
+		t.Fatal(verr)
+	}
+}
 
 func touch(t *testing.T, path string, mode os.FileMode) {
 	t.Helper()
@@ -105,6 +125,7 @@ func TestACollidingPluginIsRefusedWithoutTakingDownTheRegistry(t *testing.T) {
 	}
 	t.Setenv("PATH", dir)
 
+	trustHello(t)
 	h := New(nil)
 	t.Cleanup(h.CloseAll)
 	problems := h.LoadInto(context.Background(), reg)
@@ -138,6 +159,7 @@ func TestADiscoveredPluginBecomesUsableCapabilities(t *testing.T) {
 	t.Setenv("PATH", dir)
 
 	reg := registry.New()
+	trustHello(t)
 	h := New(nil)
 	t.Cleanup(h.CloseAll)
 	if problems := h.LoadInto(context.Background(), reg); len(problems) != 0 {
@@ -197,7 +219,7 @@ func TestASecondNameForOneBinaryDoesNotUnregisterTheFirst(t *testing.T) {
 		}
 	}
 	t.Setenv("PATH", dir)
-	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	trustHello(t)
 
 	h := New(nil)
 	t.Cleanup(h.CloseAll)
@@ -226,7 +248,7 @@ func TestASecondNameForOneBinaryDoesNotUnregisterTheFirst(t *testing.T) {
 
 	// And it still runs, so nothing was killed out from under the registry.
 	c, _ := reg.Capability("hello.greet")
-	values := plugin.Resolve(c, map[string]any{"name": "twin"}, nil)
+	values := plugin.Resolve(c, plugin.Inputs{Caller: map[string]any{"name": "twin"}})
 	if _, err := c.Run(context.Background(), plugin.NewRequest(values, false, false)); err != nil {
 		t.Errorf("the registered capability no longer runs: %v", err)
 	}
@@ -264,6 +286,7 @@ func TestAPluginMayOnlyDeclareTheNamespaceItIsInstalledUnder(t *testing.T) {
 	// is exactly the disagreement.
 	installAs(t, dir, "rta-plugin-aaa-innocent")
 	t.Setenv("PATH", dir)
+	trustHello(t)
 
 	h := New(nil)
 	t.Cleanup(h.CloseAll)
@@ -309,6 +332,7 @@ func TestAPluginInstalledUnderItsOwnNamespaceLoads(t *testing.T) {
 	dir := t.TempDir()
 	installAs(t, dir, "rta-plugin-hello")
 	t.Setenv("PATH", dir)
+	trustHello(t)
 
 	h := New(nil)
 	t.Cleanup(h.CloseAll)
@@ -371,5 +395,39 @@ func TestADirectoryTwiceOnPathIsNotAPluginTwice(t *testing.T) {
 	if len(dup.Shadowed) != 0 {
 		t.Errorf("Shadowed = %v, want none — every entry is the same directory, "+
 			"so there is no second copy to be shadowed by anything", dup.Shadowed)
+	}
+}
+
+// The managed store's bin/ is discovered without being on $PATH — and after
+// every $PATH entry, so a copy the operator put on $PATH shadows the managed
+// one the ordinary, reported way rather than rta's store outranking a
+// deliberate local build (ADR 0017 §3).
+func TestTheManagedStoreIsDiscoveredLast(t *testing.T) {
+	data := t.TempDir()
+	t.Setenv("RTA_DATA_DIR", data)
+	managed := filepath.Join(data, "plugins", "bin")
+	if err := os.MkdirAll(managed, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	touch(t, filepath.Join(managed, "rta-plugin-hello"), 0o755)
+
+	// Alone, the managed copy is found.
+	t.Setenv("PATH", t.TempDir())
+	found := Discover()
+	if len(found) != 1 || found[0].Path != filepath.Join(managed, "rta-plugin-hello") {
+		t.Fatalf("found = %+v, want the managed copy", found)
+	}
+
+	// Beside a $PATH copy, the $PATH copy wins and the managed one is the
+	// recorded shadow.
+	dir := t.TempDir()
+	touch(t, filepath.Join(dir, "rta-plugin-hello"), 0o755)
+	t.Setenv("PATH", dir)
+	found = Discover()
+	if len(found) != 1 || found[0].Path != filepath.Join(dir, "rta-plugin-hello") {
+		t.Fatalf("found = %+v, want the $PATH copy first", found)
+	}
+	if len(found[0].Shadowed) != 1 || found[0].Shadowed[0] != filepath.Join(managed, "rta-plugin-hello") {
+		t.Fatalf("shadowed = %v, want the managed copy reported", found[0].Shadowed)
 	}
 }
