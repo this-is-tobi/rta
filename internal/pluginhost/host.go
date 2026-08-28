@@ -80,8 +80,53 @@ const (
 type Host struct {
 	mu      sync.Mutex
 	running map[string]*Client
+	// untrusted is what discovery found and refused to launch, in $PATH
+	// order. Kept rather than only reported, so `rta plugin list` and `rta
+	// doctor` can show an operator the plugin that is installed and silent —
+	// which is the whole failure mode a trust gate introduces, and the one it
+	// has to answer for.
+	untrusted []Untrusted
 	// Stderr receives plugin stderr. Nil means discard.
 	Stderr io.Writer
+}
+
+// Untrusted is a discovered plugin binary that nothing has approved, and that
+// therefore was never executed. Everything here comes from the filesystem: the
+// name it is installed under and the hash of its bytes. Nothing it says about
+// itself is in here, because saying anything about itself would have required
+// running it.
+type Untrusted struct {
+	// Taken is set when something already answers to this name — a built-in,
+	// or a trusted plugin that got there first. Such an artifact is not a
+	// missing capability waiting on an approval: approving it would only earn
+	// a namespace collision on the next start, so the surfaces that report it
+	// must not offer `rta plugin trust` as the fix.
+	Taken  bool
+	Name   string
+	Path   string
+	Digest string
+}
+
+// Short is the digest as a person quotes it.
+func (u Untrusted) Short() string {
+	if len(u.Digest) > 12 {
+		return u.Digest[:12]
+	}
+	return u.Digest
+}
+
+// remember records a plugin that was found and not run.
+func (h *Host) remember(u Untrusted) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.untrusted = append(h.untrusted, u)
+}
+
+// Untrusted lists what discovery refused to launch.
+func (h *Host) Untrusted() []Untrusted {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([]Untrusted(nil), h.untrusted...)
 }
 
 // New builds a host. The zero Host works; New exists for the Stderr option.
@@ -303,6 +348,17 @@ func (h *Host) Open(ctx context.Context, name string, args ...string) (*Client, 
 	if err != nil {
 		return nil, err
 	}
+	return h.openIdentified(ctx, id, deny, args)
+}
+
+// openIdentified is Open for a caller that has already hashed the artifact.
+//
+// Split out so that LoadInto can check the digest against what the operator
+// trusts and then launch *that* digest, rather than hashing once to decide and
+// again to run. Two hashes would be two reads of a file that can change
+// between them — a window this does not need to open, on the one path whose
+// whole purpose is to decide whether a stranger's code may execute.
+func (h *Host) openIdentified(ctx context.Context, id Identity, deny DenySet, args []string) (*Client, error) {
 	key := cacheKey(id, deny, args)
 
 	if c := h.cached(key); c != nil {

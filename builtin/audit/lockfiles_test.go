@@ -298,7 +298,7 @@ func TestIsVersionishRejectsResolutions(t *testing.T) {
 // A bun project whose only lockfile is binary has dependencies. Reporting
 // nothing and saying nothing answers "are we affected?" with a confident no.
 func TestBinaryBunLockfileIsAFindingNotASilence(t *testing.T) {
-	_, err := parseManifest("bun.lockb")
+	_, _, err := parseManifest("bun.lockb")
 	if err == nil {
 		t.Fatal("bun.lockb must not read as an empty dependency list")
 	}

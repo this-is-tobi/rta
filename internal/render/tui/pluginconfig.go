@@ -98,6 +98,17 @@ func (m Model) startConfigForm(row pluginRow) (tea.Model, tea.Cmd) {
 	// screen exists to fix, and formSeed would seed the form with the
 	// declared defaults instead of the values sitting on disk.
 	m.form = newCapForm(synth, fields, raw, true, nil)
+	// Fields the file does not state are displays of declared defaults, not
+	// values to write: this editor's save treats absent-from-values as
+	// cleared, and an untouched default written back would make every save
+	// pin the plugin's current defaults into the file as if the operator had
+	// chosen them.
+	m.form.derived = map[string]bool{}
+	for _, f := range fields {
+		if _, inFile := raw[f.Name]; !inFile {
+			m.form.derived[f.Name] = true
+		}
+	}
 	m.form.configTarget = row.plugin.Name
 	m.form.configOrigin = row.origin
 	m.origin = modePlugins
@@ -179,7 +190,7 @@ func (m Model) saveConfigForm() (tea.Model, tea.Cmd) {
 	// leaving and restarting rta.
 	resolver, _ := pluginconf.Resolve(cfg, m.reg.Origin)
 	m.pluginCfg = resolver.For
-	m.plugins = pluginRows(m.reg, m.dash)
+	m.plugins = pluginRows(m.reg, m.dash, m.untrusted)
 
 	m.flash = "saved plugins." + heading
 	return m.closeToOrigin()

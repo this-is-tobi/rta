@@ -58,6 +58,19 @@ func Identify(name string) (Identity, error) {
 	if err != nil {
 		return Identity{}, fmt.Errorf("resolving %q: %w", resolved, err)
 	}
+	// Through symlinks, so Path names the file the digest below actually
+	// reads — os.Open always followed the link, and an Identity whose Path is
+	// a link records an artifact beside a name whose target can move. It is
+	// also load-bearing on macOS: the managed store's bin/ links live inside
+	// rta's own data dir, which the sandbox denies file-read* on, and SBPL
+	// blocks *resolving a symlink* there even though executing the real file
+	// is a separate operation it allows — so a spawn through the link dies
+	// with EPERM while the same binary runs by its real path. Found by
+	// running an installed plugin, not by reading the profile.
+	abs, err = filepath.EvalSymlinks(abs)
+	if err != nil {
+		return Identity{}, fmt.Errorf("resolving %q: %w", resolved, err)
+	}
 	f, err := os.Open(abs)
 	if err != nil {
 		return Identity{}, fmt.Errorf("reading plugin %q: %w", abs, err)

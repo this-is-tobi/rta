@@ -34,7 +34,7 @@ func diffCapability() plugin.Capability {
 			"comparison is a distinct enough question to design on its own rather than bolt on.",
 		Inputs: []plugin.Field{
 			pathField("repository path, or a subdirectory of one"),
-			{Name: "commit", Type: plugin.String,
+			{Name: "commit", Type: plugin.String, Suggest: suggestCommits,
 				Help: "diff this commit against its own parent, instead of the working tree against HEAD"},
 		},
 		Run: runDiff,

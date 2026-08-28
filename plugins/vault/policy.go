@@ -47,7 +47,8 @@ func policyGetCapability() plugin.Capability {
 		Idempotent: true,
 		Run:        runPolicyGet,
 	}, plugin.Field{Name: "name", Type: plugin.String, Positional: true, Required: true,
-		Help: "the policy's name, as vault.policy.list shows it"})
+		Help: "the policy's name, as vault.policy.list shows it",
+		Live: true, Suggest: suggestPolicies})
 }
 
 func runPolicyGet(ctx context.Context, req plugin.Request) (view.View, error) {

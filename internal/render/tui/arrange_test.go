@@ -13,6 +13,7 @@ import (
 
 	"github.com/this-is-tobi/rule-them-all/builtin/all"
 	"github.com/this-is-tobi/rule-them-all/internal/config"
+	"github.com/this-is-tobi/rule-them-all/internal/pluginhost"
 	"github.com/this-is-tobi/rule-them-all/internal/registry"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
@@ -762,7 +763,7 @@ func TestSearchKeysReachTheWholeList(t *testing.T) {
 // config file. A hide you cannot undo is not a preference.
 func TestPluginPaneShowsAndHidesTiles(t *testing.T) {
 	m := dashboardModel(t)
-	m.plugins = pluginRows(m.reg, m.dash)
+	m.plugins = pluginRows(m.reg, m.dash, nil)
 
 	idx := -1
 	for i, row := range m.plugins {
@@ -812,7 +813,7 @@ func TestPluginPaneShowsAndHidesTiles(t *testing.T) {
 // installed — and says why it has no tile instead of silently ignoring the key.
 func TestPluginPaneListsPluginsWithoutTiles(t *testing.T) {
 	m := dashboardModel(t)
-	m.plugins = pluginRows(m.reg, m.dash)
+	m.plugins = pluginRows(m.reg, m.dash, nil)
 	if len(m.plugins) != len(m.reg.Plugins()) {
 		t.Fatalf("pane lists %d of %d plugins", len(m.plugins), len(m.reg.Plugins()))
 	}
@@ -1241,7 +1242,7 @@ func TestThePluginPaneDistinguishesBuiltInFromExternal(t *testing.T) {
 	}
 
 	m := New(reg, config.Dashboard{}, nil)
-	m.plugins = pluginRows(reg, m.dash)
+	m.plugins = pluginRows(reg, m.dash, nil)
 	m.width, m.height = 200, 60
 
 	var ext, builtin pluginRow
@@ -1293,7 +1294,7 @@ func TestThePluginPaneShowsWhatEachPluginCanDo(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := New(reg, config.Dashboard{}, nil)
-	m.plugins = pluginRows(reg, m.dash)
+	m.plugins = pluginRows(reg, m.dash, nil)
 	m.width, m.height = 200, 60
 
 	for _, row := range m.plugins {
@@ -1333,7 +1334,7 @@ func TestThePluginPaneScrollsToTheSelection(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := New(reg, config.Dashboard{}, nil)
-	m.plugins = pluginRows(reg, m.dash)
+	m.plugins = pluginRows(reg, m.dash, nil)
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 96, Height: 24})
 	m = sized.(Model)
 	m.mode = modePlugins
@@ -1376,7 +1377,7 @@ func TestThePluginPaneSaysWhenThereIsMore(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := New(reg, config.Dashboard{}, nil)
-	m.plugins = pluginRows(reg, m.dash)
+	m.plugins = pluginRows(reg, m.dash, nil)
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 96, Height: 24})
 	m = sized.(Model)
 
@@ -1481,6 +1482,105 @@ func TestATileResultForARemovedTileIsDropped(t *testing.T) {
 	for _, tl := range m.tiles {
 		if body, _ := tl.view.(view.Text); body.Body == "STALE" {
 			t.Errorf("a result for a hidden tile was painted onto %s", tl.cap.ID)
+		}
+	}
+}
+
+// A plugin that is installed and was refused is a row, not an absence.
+//
+// The trust gate's failure mode is silence, and this pane was the one place
+// rta kept it: an untrusted artifact never registers, `pluginRows` was built
+// from the registry alone, and the footer then asserted a confident "N
+// installed" that left it out. So the screen whose stated job is "which
+// plugins do I actually have?" answered the question wrongly, on the one
+// surface where the startup line naming the artifact cannot be read — it is
+// written to the primary buffer and the TUI opens on the alternate one.
+func TestThePluginPaneShowsWhatWasFoundAndNotRun(t *testing.T) {
+	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
+	run := func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "x"}, nil }
+	reg := registry.New()
+	if err := reg.Register(plugin.Plugin{Name: "home", Summary: "home summary",
+		Capabilities: []plugin.Capability{
+			{ID: "home.info", Summary: "info", Safety: plugin.Read, Idempotent: true, Run: run},
+		}}); err != nil {
+		t.Fatal(err)
+	}
+	waiting := []pluginhost.Untrusted{{
+		Name: "weather", Path: "/usr/local/bin/rta-plugin-weather", Digest: strings.Repeat("cd", 32),
+	}}
+
+	m := New(reg, config.Dashboard{}, nil, WithUntrusted(waiting))
+	m.plugins = pluginRows(reg, m.dash, m.untrusted)
+	m.width, m.height = 200, 60
+
+	var row pluginRow
+	found := false
+	for _, r := range m.plugins {
+		if r.plugin.Name == "weather" {
+			row, found = r, true
+		}
+	}
+	if !found {
+		t.Fatalf("the refused artifact has no row: %+v", m.plugins)
+	}
+	if row.usable() {
+		t.Error("a refused artifact reports as usable")
+	}
+
+	// The count is the second half of the lie: a footer saying "1 installed"
+	// beside a pane holding two rows is a number the operator would rely on.
+	out := m.pluginsView()
+	if !strings.Contains(out, "2 installed") {
+		t.Errorf("the footer does not count the refused artifact:\n%s", out)
+	}
+	for _, want := range []string{"weather", "not run", "rta plugin trust weather"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the pane never says %q:\n%s", want, out)
+		}
+	}
+	// It never claims a reach it cannot know: rta has not asked this artifact
+	// what it can do, and printing "read" would state a fact it does not have.
+	detail := pluginDetail(row)
+	if strings.Contains(detail, "capabilities") {
+		t.Errorf("a plugin that was never run is credited with capabilities: %s", detail)
+	}
+}
+
+// Every key that acts on a plugin says why it cannot act on this one.
+//
+// The alternative is three keys that each do nothing in their own way —
+// a tile toggle that silently fails, a search that opens on a namespace with
+// no rows, and a config form built from no declared inputs that writes a
+// `plugins:` section nothing reads.
+func TestKeysOnARefusedArtifactExplainThemselves(t *testing.T) {
+	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
+	reg := registry.New()
+	waiting := []pluginhost.Untrusted{{Name: "weather", Path: "/bin/rta-plugin-weather",
+		Digest: strings.Repeat("cd", 32)}}
+	m := New(reg, config.Dashboard{}, nil, WithUntrusted(waiting))
+	m.plugins = pluginRows(reg, m.dash, m.untrusted)
+	m.width, m.height = 200, 60
+	m.mode, m.pluginSel = modePlugins, 0
+
+	if note := m.toggleShown(0); !strings.Contains(note, "rta plugin trust weather") {
+		t.Errorf("the tile toggle says %q, want the command that resolves it", note)
+	}
+
+	for _, key := range []string{"enter", "c"} {
+		got := press(t, m, key)
+		if !strings.Contains(got.flash, "rta plugin trust weather") {
+			t.Errorf("%s flashed %q, want the command that resolves it", key, got.flash)
+		}
+		if got.mode != modePlugins {
+			t.Errorf("%s navigated away from the pane on a row it cannot act on", key)
+		}
+	}
+
+	// And it is not offered as a profile target: a profile naming it cannot
+	// resolve, so completing to it would hand over a broken entry.
+	for _, s := range m.installedPlugins() {
+		if strings.HasPrefix(s, "weather") {
+			t.Errorf("a refused artifact is offered as a profile plugin: %q", s)
 		}
 	}
 }

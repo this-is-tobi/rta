@@ -13,7 +13,8 @@ func copyFields(bucketHelp, keyHelp string) []plugin.Field {
 	return []plugin.Field{
 		bucketField(bucketHelp),
 		keyField(keyHelp),
-		{Name: "dest-bucket", Type: plugin.String, Help: "destination bucket; same as --bucket if omitted"},
+		{Name: "dest-bucket", Type: plugin.String, Help: "destination bucket; same as --bucket if omitted",
+			Live: true, Suggest: suggestBuckets},
 		{Name: "dest-key", Type: plugin.String, Required: true, Help: "destination object name"},
 	}
 }

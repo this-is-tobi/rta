@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"charm.land/lipgloss/v2"
+
 	"fmt"
 	"io"
 	"strconv"
@@ -222,7 +224,7 @@ func writeMarkdownGrid(b *strings.Builder, header []string, rows [][]string) {
 	widths := make([]int, len(header))
 	for i, h := range header {
 		head[i] = inlineMarkdown(h)
-		widths[i] = len([]rune(head[i]))
+		widths[i] = lipgloss.Width(head[i])
 	}
 	cells := make([][]string, 0, len(rows))
 	for _, row := range rows {
@@ -234,7 +236,7 @@ func writeMarkdownGrid(b *strings.Builder, header []string, rows [][]string) {
 			if i < len(row) {
 				out[i] = inlineMarkdown(row[i])
 			}
-			if n := len([]rune(out[i])); n > widths[i] {
+			if n := lipgloss.Width(out[i]); n > widths[i] {
 				widths[i] = n
 			}
 		}
@@ -244,7 +246,7 @@ func writeMarkdownGrid(b *strings.Builder, header []string, rows [][]string) {
 	line := func(vals []string) {
 		b.WriteString("|")
 		for i, v := range vals {
-			b.WriteString(" " + v + strings.Repeat(" ", widths[i]-len([]rune(v))) + " |")
+			b.WriteString(" " + v + strings.Repeat(" ", widths[i]-lipgloss.Width(v)) + " |")
 		}
 		b.WriteString("\n")
 	}

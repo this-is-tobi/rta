@@ -381,6 +381,46 @@ func identityPath(req plugin.Request) string {
 // It reads directory entries and nothing else. Parsing a key would be enough
 // to make a tab keystroke ask for a passphrase, which is the one thing a
 // completion must never do.
+// suggestRecipients completes the public half: who may read the store.
+//
+// The mirror image of suggestIdentities, and deliberately the same walk — the
+// .pub siblings it skips are exactly the files this one wants. `kv rekey`
+// decides who keeps access to everything already stored, which makes it the
+// worst field in rta to fat-finger, and a public key is not a string anybody
+// retypes correctly.
+//
+// Directory entries only, never a parse: the same rule suggestIdentities
+// holds. Reading a key to decide whether to offer it would be work done on
+// every keystroke, and being wrong about the contents is not a reason to hide
+// a path somebody can see.
+func suggestRecipients(_ context.Context, _ plugin.Request) []string {
+	var out []string
+	if p := defaultIdentity(); fileExists(p) {
+		// Its own public half, which is what age derives from it — offered as
+		// the identity path because that is what runInit and runRekey accept.
+		out = append(out, p+"\tthe key kv init --generate made")
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return out
+	}
+	dir := filepath.Join(home, ".ssh")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return out
+	}
+	var keys []string
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasPrefix(name, "id_") || !strings.HasSuffix(name, ".pub") {
+			continue
+		}
+		keys = append(keys, filepath.Join(dir, name)+"\tSSH public key")
+	}
+	sort.Strings(keys)
+	return append(out, keys...)
+}
+
 func suggestIdentities(_ context.Context, _ plugin.Request) []string {
 	var out []string
 	if p := defaultIdentity(); fileExists(p) {

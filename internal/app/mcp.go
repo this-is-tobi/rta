@@ -12,10 +12,13 @@ import (
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
 
+	"github.com/this-is-tobi/rule-them-all/builtin/kv"
+	"github.com/this-is-tobi/rule-them-all/internal/config"
 	"github.com/this-is-tobi/rule-them-all/internal/mcp"
 	"github.com/this-is-tobi/rule-them-all/internal/pathguard"
 	"github.com/this-is-tobi/rule-them-all/internal/registry"
 	"github.com/this-is-tobi/rule-them-all/internal/stdio"
+	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 )
 
 // newMCPCommand wires the MCP surface: serve (stdio) and install helpers.
@@ -49,7 +52,8 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 			"The gate governs path arguments only: a capability that opens a fixed\n" +
 			"file of its own — `net hosts list` and /etc/hosts — is unaffected,\n" +
 			"because that path is never an argument for anyone to send.",
-		Args: cobra.NoArgs,
+		Args:              cobra.NoArgs,
+		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if len(roots) == 0 {
 				// The directory the operator started the server in. It is what
@@ -66,12 +70,48 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// The operator's connections, for the tool schema. Loaded through
+			// config.Load — the same file every other surface reads — so a
+			// profile an agent may name is one the operator wrote. The schema
+			// is sent once, so this is a snapshot; what a call actually
+			// resolves through is Reload, below.
+			//
+			// A config that will not parse is not fatal here. It costs the
+			// agent every profile, which is the fail-closed direction: the
+			// server still serves the base connection, and `rta doctor` is
+			// where the operator finds out why nothing else worked.
+			profileCfg, cfgErr := config.Load()
+			if cfgErr != nil {
+				fmt.Fprintln(cmd.ErrOrStderr(), "rta: no profiles are available:", cfgErr)
+				profileCfg = config.Config{}
+			}
 			opts := mcp.Options{
 				AllowWrite:       allowWrite,
 				AllowDestructive: allowDestructive,
 				Origin:           reg.Origin,
 				Config:           pluginConfig.For,
-				Paths:            guard,
+				Profiles:         profileCfg,
+				// The schema above is a snapshot; what a call resolves through
+				// is the file as it is now, so an environment the operator
+				// edits takes effect without a restart — and the grant they
+				// issue against it is compared to the same connection it will
+				// reach. A read that fails costs the agent every profile,
+				// which is the fail-closed direction and the same call the
+				// snapshot above makes.
+				Reload: func() config.Config {
+					live, err := config.Load()
+					if err != nil {
+						return config.Config{}
+					}
+					return live
+				},
+				// The store, opened from this server's own environment and
+				// never by prompting. Wired here and not inside internal/mcp so
+				// that "this server may read the operator's store" is a line
+				// somebody typed rather than a transitive import.
+				Secrets:   kv.Reveal,
+				Untrusted: untrustedNames(),
+				Paths:     guard,
 			}
 			server := mcp.NewServer(reg, version, opts)
 			// Logs must go to stderr: stdout is the protocol channel.
@@ -114,6 +154,21 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 			"to their digest (e.g. todo.rm, hello.wipe@5dae737f8845)")
 	cmd.Flags().StringSliceVar(&roots, "root", nil,
 		"directory a caller may name in a path argument (repeatable; default: the working directory)")
+	// The two flags whose values nobody can be expected to type. A pinned
+	// capability ID is a digest an operator would otherwise have to go and
+	// look up, and a control that costs a lookup is one that gets left off.
+	allowing := func(safety plugin.Safety) func(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
+		return func(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
+			return mcp.Options{Origin: reg.Origin}.AllowValues(reg, safety), cobra.ShellCompDirectiveNoFileComp
+		}
+	}
+	_ = cmd.RegisterFlagCompletionFunc("allow-write", allowing(plugin.Write))
+	_ = cmd.RegisterFlagCompletionFunc("allow-destructive", allowing(plugin.Destructive))
+	// A root is a directory, and the shell has the list.
+	_ = cmd.RegisterFlagCompletionFunc("root",
+		func(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
+			return nil, cobra.ShellCompDirectiveFilterDirs
+		})
 	return cmd
 }
 

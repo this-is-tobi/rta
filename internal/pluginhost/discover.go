@@ -9,6 +9,8 @@ import (
 
 	"strings"
 
+	"github.com/this-is-tobi/rule-them-all/internal/paths"
+	"github.com/this-is-tobi/rule-them-all/internal/plugintrust"
 	"github.com/this-is-tobi/rule-them-all/internal/registry"
 )
 
@@ -50,7 +52,14 @@ type Found struct {
 	Shadowed []string
 }
 
-// Discover lists SDK plugin binaries on $PATH.
+// ManagedBin is the managed store's directory of current-version symlinks
+// (ADR 0017 §3) — <data>/plugins/bin. Defined here rather than in
+// internal/plugindist, which owns the store, because discovery must scan it
+// and plugindist already imports this package; plugindist.BinDir delegates,
+// so the layout still has one home.
+func ManagedBin() string { return filepath.Join(paths.Data(), "plugins", "bin") }
+
+// Discover lists SDK plugin binaries on $PATH, then in the managed store.
 //
 // First match wins, in $PATH order, which is what a shell does and therefore
 // what a user predicts. A later duplicate does not change that and is not an
@@ -58,6 +67,14 @@ type Found struct {
 // exactly the case the ordering rule exists to resolve — but it is recorded
 // on the winner rather than dropped, so `rta doctor` can answer "which one is
 // this actually running" without anybody reaching for `which -a`.
+//
+// The managed store's bin/ comes after every $PATH entry, deliberately last:
+// $PATH is the operator's own statement and the store is rta's, so a copy the
+// operator put on $PATH shadows the managed one the ordinary, reported way —
+// rather than rta's store silently outranking a deliberate local build. An
+// operator who wants managed plugins visible to other tools adds the dir to
+// their $PATH themselves, and the walked-dedup below keeps that from reading
+// it twice.
 func Discover() []Found {
 	at := map[string]int{}
 	// A directory named twice on $PATH is walked once. Shells commonly end
@@ -73,7 +90,8 @@ func Discover() []Found {
 	// which shadows exist rather than which are reported twice.
 	walked := map[string]bool{}
 	var out []Found
-	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
+	dirs := append(filepath.SplitList(os.Getenv("PATH")), ManagedBin())
+	for _, dir := range dirs {
 		if clean := filepath.Clean(dir); walked[clean] {
 			continue
 		} else {
@@ -149,8 +167,61 @@ func (h *Host) LoadInto(ctx context.Context, reg *registry.Registry) []error {
 	//
 	// Copies, hardlinks and busybox-style multicall binaries all produce it.
 	registered := map[*Client]bool{}
+
+	// Read once for the whole sweep, and read before anything is launched.
+	// This is the gate: a binary on $PATH has not been consented to by being
+	// there, and the moment rta launches it to ask what it declares is the
+	// moment a stranger's code runs. See internal/plugintrust.
+	trusted := plugintrust.Load()
+	// Asked once, up front. Open() checks this before every launch and
+	// LoadInto used to reach it through Open; taking the hash out to check
+	// trust first took the check with it, so on a macOS without
+	// /usr/bin/sandbox-exec the operator got an opaque exec failure per plugin
+	// instead of being told plugins cannot be confined here. Not a
+	// confinement hole — wrap() still prepends the sandbox and the exec still
+	// fails — but a diagnostic worth keeping.
+	availErr := available()
+	deny, denyErr := Resolve()
+
 	for _, f := range Discover() {
-		c, err := h.Open(ctx, f.Path)
+		// Hashed here rather than inside Open, so the digest the operator
+		// approved is the digest that gets launched — one read of the file,
+		// no window between deciding and running.
+		id, err := Identify(f.Path)
+		if err != nil {
+			problems = append(problems, fmt.Errorf("plugin %s: %w", f.Name, err))
+			continue
+		}
+		if !trusted.Trusts(id.Digest) {
+			// Recorded, not returned as a problem. LoadInto's problems are
+			// printed before every command, and this is not a failure — it is
+			// a decision nobody has made yet, which would then be announced on
+			// every invocation forever, in the stderr of every script. It is
+			// carried out through Untrusted() instead, where `rta plugin
+			// list`, `rta doctor` and one line at startup can each say it in
+			// the place and at the volume that suits them.
+			// Whether anything already answers to this name, asked here
+			// because this is the only place that knows both. A file called
+			// `rta-plugin-kv` on $PATH records an Untrusted entry for a
+			// namespace a built-in already owns and fully exposes — so every
+			// surface reading this list would otherwise say that kv's
+			// capabilities are unavailable, which is false, and send the
+			// operator to `rta plugin trust kv`, which on the next start is
+			// refused for declaring a namespace that is taken. A remedy that
+			// cannot succeed is worse than none.
+			_, taken := reg.Origin(f.Name)
+			h.remember(Untrusted{Name: f.Name, Path: id.Path, Digest: id.Digest, Taken: taken})
+			continue
+		}
+		if availErr != nil {
+			problems = append(problems, fmt.Errorf("plugin %s: %w", f.Name, availErr))
+			continue
+		}
+		if denyErr != nil {
+			problems = append(problems, fmt.Errorf("plugin %s: %w", f.Name, denyErr))
+			continue
+		}
+		c, err := h.openIdentified(ctx, id, deny, nil)
 		if err != nil {
 			problems = append(problems, fmt.Errorf("plugin %s: %w", f.Name, err))
 			continue

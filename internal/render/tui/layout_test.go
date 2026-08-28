@@ -82,7 +82,7 @@ func sized(t *testing.T, w, h int) Model {
 	next, _ := m.Update(tea.WindowSizeMsg{Width: w, Height: h})
 	model := next.(Model)
 	for i, ti := range model.tiles {
-		msg := tileCmd(i, ti, nil)()
+		msg := tileCmd(i, ti, nil, "", nil, config.Connection{})()
 		next, _ = model.Update(msg)
 		model = next.(Model)
 	}
@@ -124,7 +124,7 @@ func TestFramesFitTerminalWidth(t *testing.T) {
 
 		// Result pane with wide content.
 		c, _ := layoutRegistry(t).Capability("lay.table")
-		msg := runCmd(context.Background(), 0, c, nil, false, nil)()
+		msg := runCmd(context.Background(), 0, c, nil, false, nil, "", nil, config.Connection{})()
 		next, _ := m.Update(msg)
 		rm := next.(Model)
 		assertFits(t, sizeName("result", size.w), frame(t, rm), size.w)
@@ -157,7 +157,7 @@ func TestDumpFrames(t *testing.T) {
 	m.mode = modeBrowse
 	t.Logf("browse 100x30:\n%s", frame(t, m))
 	c, _ := layoutRegistry(t).Capability("lay.table")
-	next, _ := m.Update(runCmd(context.Background(), 0, c, nil, false, nil)())
+	next, _ := m.Update(runCmd(context.Background(), 0, c, nil, false, nil, "", nil, config.Connection{})())
 	t.Logf("result 100x30:\n%s", frame(t, next.(Model)))
 	needy, _ := layoutRegistry(t).Capability("lay.needy")
 	fnext, _ := m.open(needy)

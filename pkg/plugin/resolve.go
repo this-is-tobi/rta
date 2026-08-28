@@ -6,6 +6,36 @@ import (
 	"strings"
 )
 
+// Inputs are the layers Resolve merges, listed highest-precedence first — in
+// the struct and in this comment, because the ordering *is* the security
+// property and a positional parameter list is a swap the compiler cannot
+// catch whose failure mode is a silent inversion.
+//
+// A nil field is a decision somebody typed, which is the argument the cfg
+// parameter this replaced already made at length: three surfaces were found
+// shadowing config by building values in a way that could never lose to it,
+// and there is exactly one Resolve so a fourth cannot appear.
+type Inputs struct {
+	// Caller is what a person typed or an agent sent. It wins everything —
+	// including the profile, so `--profile prod --host x` connects to x.
+	Caller map[string]any
+
+	// Profile is the operator's named connection, already resolved, keyed by
+	// INPUT name rather than by Config key: internal/profile has done that
+	// translation, and it is the only layer that may carry a Secret.
+	Profile map[string]any
+
+	// ProfileName is the profile in play, empty for none.
+	//
+	// Separate from Profile because an EMPTY profile map is still an active
+	// profile: it is the *name*, not the contents, that switches the
+	// namespace-wide environment layer off below.
+	ProfileName string
+
+	// Config is the operator's plugins:<ns@pin> section, keyed by Field.Config.
+	Config map[string]any
+}
+
 // Resolve turns the values a surface collected into the values a handler
 // actually runs with: declared defaults filled in, numbers normalised to one
 // Go type, and declared bounds applied.
@@ -31,19 +61,12 @@ import (
 // Every surface that runs a handler calls this. Nothing downstream has to
 // know which of the values were declared, defaulted, or clamped.
 //
-// cfg is the operator's configuration for this plugin — the section
-// internal/pluginconf resolved for the artifact the capability came from —
-// and nil means "none, or this surface does not apply it". It is a parameter
-// rather than a second function on purpose: three surfaces were found
-// shadowing config by building values in a way that could never lose to it,
-// and a Resolve that could still be called the old way is a fourth waiting to
-// happen. Passing nil is a decision somebody had to type.
-//
-// Precedence is caller, then config, then Default. A handler reads
-// req.String("host") and cannot tell which of the three it got, which is the
-// point: a config-backed input is an ordinary input.
-func Resolve(c Capability, values map[string]any, cfg map[string]any) map[string]any {
-	out := make(map[string]any, len(c.Inputs)+len(values))
+// Precedence is caller, then profile, then the namespace-wide environment
+// fallback, then config, then Default. A handler reads req.String("host") and
+// cannot tell which of the five it got, which is the point: a config-backed
+// input is an ordinary input, and so is a profile-backed one.
+func Resolve(c Capability, in Inputs) map[string]any {
+	out := make(map[string]any, len(c.Inputs)+len(in.Caller))
 	for _, f := range c.Inputs {
 		if f.Default != nil {
 			out[f.Name] = f.Default
@@ -64,7 +87,7 @@ func Resolve(c Capability, values map[string]any, cfg map[string]any) map[string
 		if f.Config == "" {
 			continue
 		}
-		if v, ok := lookupConfig(cfg, f.Config); ok {
+		if v, ok := lookupConfig(in.Config, f.Config); ok {
 			out[f.Name] = v
 		}
 	}
@@ -106,15 +129,48 @@ func Resolve(c Capability, values map[string]any, cfg map[string]any) map[string
 	//
 	// Below the caller's values, because an explicitly typed credential beats
 	// an ambient one, and above config, which refuses Secret inputs outright.
+	//
+	// **Skipped entirely while a profile is active**, and that is a security
+	// rule rather than a tidiness one. RTA_<NS>_<INPUT> is bound to a
+	// namespace, so it follows the connection wherever a profile points it:
+	// an operator with RTA_PG_PASSWORD exported for their own database, whose
+	// agent then names a profile aimed somewhere else, would have the host
+	// pair a destination somebody else chose with a credential they did not
+	// supply for it — which is D94's credential redirect rebuilt one layer up.
+	//
+	// The whole layer, not just the inputs the profile happened to fill.
+	// Skipping only the overlap leaves exactly the same shape: a profile that
+	// sets `host` and no password still redirects the ambient one. A profile
+	// carries its own credential (RTA_PROFILE_<P>_<INPUT>, which
+	// internal/profile reads into in.Profile above) or it carries none and
+	// the connection fails saying so.
+	if in.ProfileName == "" {
+		for _, f := range c.Inputs {
+			if !f.Local || !f.EnvFallback {
+				continue
+			}
+			if v, ok := os.LookupEnv(LocalEnvVar(c.ID, f.Name)); ok {
+				out[f.Name] = v
+			}
+		}
+	}
+	// The operator's named connection, above config and the ambient
+	// environment because naming one is a more specific statement than either,
+	// and below the caller because a person who typed --host meant it.
+	//
+	// Gated on ProfileFillable so the reachable set stays a property of the
+	// declaration: a profile can never fill a Path, nor the input a capability
+	// declares as its Scope, nor anything its author offered neither to
+	// configuration nor as a credential.
 	for _, f := range c.Inputs {
-		if !f.Local || !f.EnvFallback {
+		if !ProfileFillable(c, f) {
 			continue
 		}
-		if v, ok := os.LookupEnv(LocalEnvVar(c.ID, f.Name)); ok {
+		if v, ok := in.Profile[f.Name]; ok {
 			out[f.Name] = v
 		}
 	}
-	for k, v := range values {
+	for k, v := range in.Caller {
 		out[k] = v
 	}
 
@@ -267,8 +323,5 @@ func lookupConfig(cfg map[string]any, key string) (any, bool) {
 // capability rather than in a plugin's README.
 func LocalEnvVar(capID, input string) string {
 	ns, _, _ := strings.Cut(capID, ".")
-	clean := func(s string) string {
-		return strings.ToUpper(strings.ReplaceAll(s, "-", "_"))
-	}
-	return "RTA_" + clean(ns) + "_" + clean(input)
+	return "RTA_" + envToken(ns) + "_" + envToken(input)
 }

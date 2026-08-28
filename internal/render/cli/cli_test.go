@@ -572,3 +572,45 @@ func TestFillStillShrinksAnOverwideTable(t *testing.T) {
 		t.Errorf("table width = %d, want it shrunk to 40", got)
 	}
 }
+
+// A hyphen is not a place to break a line.
+//
+// x/ansi treats "-" as a breakpoint always, which is right for prose and wrong
+// for everything this renderer shows: `rta explain s3.object.get` wrapped its
+// own command line as "[--" / "endpoint <string>]", which is a line nobody can
+// copy and a flag that reads as two things. Every hyphen in this tool is
+// inside an identifier somebody may be about to paste.
+func TestAFlagIsNeverBrokenInHalf(t *testing.T) {
+	v := view.KeyValue{Pairs: []view.Pair{{
+		Key:   "cli",
+		Value: "rta s3 object get <bucket> <key> [--out <path>] [--endpoint <string>] [--access-key <string>]",
+	}}}
+	var buf bytes.Buffer
+	if err := Render(&buf, v, Options{Format: Pretty, NoColor: true, Width: 60}); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if strings.Count(out, "\n") < 2 {
+		t.Fatalf("nothing wrapped, so nothing is under test:\n%s", out)
+	}
+	for _, whole := range []string{"--out", "--endpoint", "--access-key"} {
+		if !strings.Contains(out, whole) {
+			t.Errorf("%q was broken across lines:\n%s", whole, out)
+		}
+	}
+}
+
+// And a single token longer than the whole budget still cannot escape it: the
+// word wrap leaves it alone, so a hard break has to finish the job.
+func TestATokenLongerThanTheWidthIsStillBroken(t *testing.T) {
+	v := view.Text{Body: "see https://example.com/" + strings.Repeat("a-very-long-path-segment/", 6)}
+	var buf bytes.Buffer
+	if err := Render(&buf, v, Options{Format: Pretty, NoColor: true, Width: 40}); err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range strings.Split(strings.TrimRight(buf.String(), "\n"), "\n") {
+		if w := lipgloss.Width(line); w > 40 {
+			t.Errorf("line is %d cells wide, want at most 40: %q", w, line)
+		}
+	}
+}

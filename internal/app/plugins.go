@@ -37,7 +37,8 @@ func newPluginListCommand(reg *registry.Registry, opts *globalOpts) *cobra.Comma
 			"whether any of them write or destroy.\n\n" +
 			"Use `rta explain` for the capabilities themselves, and the TUI's `p`\n" +
 			"pane to choose which plugins appear on the dashboard.",
-		Args: cobra.NoArgs,
+		Args:              cobra.NoArgs,
+		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			format, err := cli.ParseFormat(opts.output)
 			if err != nil {
@@ -63,6 +64,28 @@ func pluginsView(reg *registry.Registry) view.View {
 			reach(p),
 			p.Summary,
 		})
+	}
+	// Installed and not run, in the same table rather than a section of its
+	// own. A trust gate's failure mode is silence: a plugin that is present,
+	// approved by nobody, and simply absent from the inventory is
+	// indistinguishable from one that was never installed — and the inventory
+	// is the first place somebody looks when a plugin "does not work".
+	//
+	// It has no capability count and no summary, and that is not a gap to fill
+	// in: both of those are things the plugin says about itself, and asking it
+	// would mean running it, which is the decision that has not been made.
+	for _, u := range untrustedPluginsFound {
+		detail := "installed and not run (" + u.Short() + ") — `rta plugin trust " + u.Name +
+			"` to load it"
+		if u.Taken {
+			// The row above already carries this name. Offering to trust this
+			// artifact would be offering a namespace collision on the next
+			// start, and the plugin the operator can see is not the one that
+			// was refused.
+			detail = "found on $PATH (" + u.Short() + ") and not run — the name above is " +
+				"already taken, so trusting it would collide; remove or rename the file"
+		}
+		t.Rows = append(t.Rows, []string{u.Name, "—", "untrusted", detail})
 	}
 	t.Total = len(t.Rows)
 	return t

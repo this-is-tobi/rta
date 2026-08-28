@@ -11,7 +11,8 @@ import (
 )
 
 func bucketField(help string) plugin.Field {
-	return plugin.Field{Name: "bucket", Type: plugin.String, Positional: true, Required: true, Help: help}
+	return plugin.Field{Name: "bucket", Type: plugin.String, Positional: true, Required: true, Help: help,
+		Live: true, Suggest: suggestBuckets}
 }
 
 func bucketListCapability() plugin.Capability {

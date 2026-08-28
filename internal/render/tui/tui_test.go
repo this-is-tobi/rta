@@ -43,7 +43,23 @@ import (
 // the ambient environment's $TERM happened to be.
 func TestMain(m *testing.M) {
 	os.Setenv("TERM", "xterm-256color")
-	os.Exit(m.Run())
+	// A data directory of this binary's own, for the whole package.
+	//
+	// Tests here run real capabilities, and a run now records what it was
+	// given so a later completion can offer it back (internal/recent). Without
+	// this the fixtures land in the developer's own ~/.local/share/rta and
+	// come back as suggestions in their real shell — which is both a dirty
+	// test and a surprising thing to do to somebody's machine. Set for every
+	// test rather than in the helpers, because the rule is about the package
+	// and a helper is something a new test can forget to call.
+	dir, err := os.MkdirTemp("", "rta-tui-tests")
+	if err != nil {
+		panic(err)
+	}
+	os.Setenv("RTA_DATA_DIR", dir)
+	code := m.Run()
+	os.RemoveAll(dir)
+	os.Exit(code)
 }
 
 func testRegistry(t *testing.T) *registry.Registry {
@@ -375,10 +391,19 @@ func TestFormValueConversion(t *testing.T) {
 	if len(tags) != 3 || tags[1] != "b" {
 		t.Errorf("tags = %v", tags)
 	}
-	// Empty binding falls back to the declared default.
+	// An emptied box answers nothing — plugin.Resolve lays the declared
+	// default at its own layer when the request is built, so handing it back
+	// here would only ever *change* something when a layer that should
+	// outrank it (a profile, a forward's endpoint, config) was about to.
 	*cf.bindings["count"] = ""
-	if cf.values()["count"] != 3 {
-		t.Errorf("default not applied: %v", cf.values()["count"])
+	if v, given := cf.values()["count"]; given {
+		t.Errorf("an emptied box came back as a caller value: %v", v)
+	}
+	// And a box still showing the declared default is a display, not an
+	// answer, for the same reason.
+	fresh := newCapForm(c, c.Inputs, nil, true, nil)
+	if v, given := fresh.values()["count"]; given {
+		t.Errorf("an untouched declared default came back as a caller value: %v", v)
 	}
 }
 
@@ -853,7 +878,7 @@ func TestTilePreviewIsCompactDetailIsFull(t *testing.T) {
 	reg := detailRegistry(t)
 	tiles := buildTiles(reg, config.Dashboard{Tiles: []config.Tile{{ID: "deep.thing"}}})
 	// Tile 1 is the capability (0 is the search bar); its refresh is compact.
-	msg := tileCmd(1, tiles[1], nil)().(tileMsg)
+	msg := tileCmd(1, tiles[1], nil, "", nil, config.Connection{})().(tileMsg)
 	if body := msg.v.(view.Text).Body; body != "COMPACT" {
 		t.Errorf("tile preview = %q, want COMPACT", body)
 	}
@@ -1182,10 +1207,10 @@ func TestRowActionSuppliesAStringSliceScopeAsOneRecord(t *testing.T) {
 	}
 }
 
-// Suggestions are computed when the form is built, and they see what earlier
-// stages already answered — which is what lets a suggestion depend on the
-// record being edited rather than on the whole store.
+// Suggestions see what earlier stages already answered — which is what lets a
+// suggestion depend on the record being edited rather than on the whole store.
 func TestFormSuggestionsSeeEarlierAnswers(t *testing.T) {
+	noHistory(t)
 	var sawID int
 	c := plugin.Capability{
 		ID: "demo.edit", Summary: "edit", Safety: plugin.Write,
@@ -1199,9 +1224,61 @@ func TestFormSuggestionsSeeEarlierAnswers(t *testing.T) {
 		Run: func(context.Context, plugin.Request) (view.View, error) { return view.Text{}, nil },
 	}
 	base := map[string]any{"id": 7}
-	newCapForm(c, fieldsAfter(c, base), nil, true, base)
+	cf := newCapForm(c, fieldsAfter(c, base), nil, true, base)
+	if got := cf.candidates(c.Inputs[1]); len(got) != 2 {
+		t.Errorf("candidates = %v, want both declared tags", got)
+	}
 	if sawID != 7 {
 		t.Errorf("Suggest saw id %d, want the record the form is about", sawID)
+	}
+}
+
+// And they see a sibling in the same form, recomputed as it is filled in.
+//
+// They used to be frozen into a static list when the form was built, so a
+// capability like `grant allow` — whose `scope` completes from whichever
+// `target` was named — offered nothing in the TUI while completing perfectly
+// from a shell. Field.Suggest is documented to receive "what the caller has
+// supplied so far"; this is that promise holding on the surface where the
+// caller is still typing.
+func TestFormSuggestionsSeeASiblingBeingTyped(t *testing.T) {
+	noHistory(t)
+	c := plugin.Capability{
+		ID: "demo.allow", Summary: "allow", Safety: plugin.Write,
+		Inputs: []plugin.Field{
+			{Name: "target", Type: plugin.String},
+			{Name: "scope", Type: plugin.String, Suggest: func(_ context.Context, req plugin.Request) []string {
+				return []string{req.String("target") + "-scope"}
+			}},
+		},
+		Run: func(context.Context, plugin.Request) (view.View, error) { return view.Text{}, nil },
+	}
+	cf := newCapForm(c, c.Inputs, nil, true, nil)
+	if got := cf.candidates(c.Inputs[1]); len(got) != 1 || got[0] != "-scope" {
+		t.Fatalf("candidates before typing = %v, want the empty target's", got)
+	}
+	cf.syncs["target"].Set("kv")
+	if got := cf.candidates(c.Inputs[1]); len(got) != 1 || got[0] != "kv-scope" {
+		t.Errorf("candidates = %v, want them recomputed from the sibling", got)
+	}
+}
+
+// A comma-separated list completes the item being typed, not the whole box.
+//
+// bubbles matches a suggestion against everything in the field, so a plain list
+// stopped matching the moment a first item was accepted — `note add --tag`
+// typing "recipe, ita" offered nothing.
+func TestAListCompletesTheItemBeingTyped(t *testing.T) {
+	declared := []string{"italian", "recipe", "urgent"}
+	if got := extending("rec", declared); len(got) != 1 || got[0] != "recipe" {
+		t.Errorf("extending(%q) = %v, want recipe", "rec", got)
+	}
+	got := extending("recipe, ita", declared)
+	if len(got) != 1 || got[0] != "recipe, italian" {
+		t.Errorf("extending = %v, want the whole box with the item completed", got)
+	}
+	if len(extending("recipe, ", declared)) != 3 {
+		t.Error("an empty trailing item does not offer everything")
 	}
 }
 
@@ -1263,7 +1340,7 @@ func TestCancellingARunReleasesTheHandler(t *testing.T) {
 		},
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	cmd := runCmd(ctx, 1, slow, nil, false, nil)
+	cmd := runCmd(ctx, 1, slow, nil, false, nil, "", nil, config.Connection{})
 
 	done := make(chan tea.Msg, 1)
 	go func() { done <- cmd() }()
@@ -1520,7 +1597,7 @@ func TestExplicitDetailPreferenceReachesTheHandler(t *testing.T) {
 	}
 	ran := func(values map[string]any) string {
 		var got string
-		collect(t, runCmd(context.Background(), 0, c, values, false, nil), func(msg tea.Msg) {
+		collect(t, runCmd(context.Background(), 0, c, values, false, nil, "", nil, config.Connection{}), func(msg tea.Msg) {
 			if r, ok := msg.(resultMsg); ok {
 				got = r.view.(view.Text).Body
 			}

@@ -124,7 +124,13 @@ func parseYarnLock(text, source string) []component {
 			if spec == "__metadata" {
 				continue
 			}
-			at := strings.LastIndexByte(spec, '@')
+			// The first `@` after a leading scope, not the last — a Berry
+			// `patch:` resolution embeds a second name@range inside itself.
+			// Here the mistake was contained by isVersionish below rejecting
+			// the mangled remainder, so the component was dropped rather than
+			// misnamed; the graph parser had no such backstop. Same rule in
+			// both, so they cannot drift.
+			at := specSeparator(spec)
 			if at <= 0 {
 				continue
 			}
@@ -202,10 +208,15 @@ func parseTOMLLock(text, source, ecosystem string, localWhenSourceless bool) []c
 			if isLocalSource(val) {
 				local = true
 			}
-		case "type", "url", "path", "editable", "virtual", "directory":
-			if isLocalSource(line) {
+		case "type":
+			// Poetry's [package.source] discriminator. `url` used to be in this
+			// list beside it and was never a marker of anything: poetry writes
+			// `url` for a plain URL source too.
+			if val == "directory" || val == "file" {
 				local = true
 			}
+		case "path", "editable", "virtual", "directory":
+			local = true
 		}
 	}
 	flush()
@@ -214,13 +225,45 @@ func parseTOMLLock(text, source, ecosystem string, localWhenSourceless bool) []c
 
 // isLocalSource recognises the several ways these formats say "this one is
 // not from a registry, it is a directory on the machine that built the lock".
-func isLocalSource(s string) bool {
-	for _, marker := range []string{"editable", "virtual", "directory", "path"} {
-		if strings.Contains(s, marker) {
+//
+// **Keys and whole values, never substrings**, and the difference is a package
+// silently missing from a security report. This matched "path" anywhere in the
+// text it was handed, and it was handed the source string — so
+//
+//	source = "git+https://github.com/acme/pathfinder?branch=main#deadbeef"
+//
+// read as "a directory on this machine", and the crate was dropped from the
+// inventory: never sent to OSV, never counted, never mentioned. A private
+// package index whose URL contains the word does it too
+// (`https://nexus.corp/repository/pypi-pathways/simple`). Neither is exotic,
+// and the failure is the quiet kind — a shorter report that looks complete.
+func isLocalSource(val string) bool {
+	for _, k := range inlineKeys(val) {
+		switch k {
+		case "editable", "virtual", "directory", "path", "file":
 			return true
 		}
 	}
 	return false
+}
+
+// inlineKeys reads the keys of a TOML inline table: `{ virtual = "." }` yields
+// ["virtual"]. A plain string value yields nothing, which is exactly what
+// Cargo's `source = "git+https://…"` has to produce.
+func inlineKeys(val string) []string {
+	val = strings.TrimSpace(val)
+	if !strings.HasPrefix(val, "{") {
+		return nil
+	}
+	var out []string
+	for _, part := range strings.Split(strings.Trim(val, "{}"), ",") {
+		if k, _, ok := strings.Cut(part, "="); ok {
+			if k = strings.Trim(strings.TrimSpace(k), `"'`); k != "" {
+				out = append(out, k)
+			}
+		}
+	}
+	return out
 }
 
 // bunLock is the text lockfile bun 1.2 introduced. Each entry's first element

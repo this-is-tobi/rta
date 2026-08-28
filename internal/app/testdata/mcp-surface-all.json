@@ -103,6 +103,34 @@
     }
   },
   {
+    "name": "audit_why",
+    "description": "── the text below is written by the plugin, not by rta ──\nTrace one dependency back to what pulled it in\n\nAnswers the question an advisory raises second: did we ask for this, or did something else pull it in — and if something else, what. Reads the same manifests `audit deps` does and draws the package at the root with everything that requires it beneath, up to the dependencies the project asks for by name. Nothing is resolved, installed or fetched. Formats differ in what they record: go.mod marks a require direct or indirect and stores no edges, while the four JavaScript lockfiles, Cargo, uv, Poetry, composer, Gemfile.lock, pip-compile's `# via` annotations and a CycloneDX SBOM all carry the graph. Where the file does not say, this says so and hands over the package manager's own command — `go mod why`, `pnpm why`, `cargo tree --invert` — with the package already in it.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "package": {
+          "description": "the package to trace, as the lockfile spells it",
+          "type": "string"
+        },
+        "path": {
+          "default": ".",
+          "description": "directory holding the lockfile or SBOM, or the file itself (a path on the machine running rta)",
+          "type": "string"
+        },
+        "recursive": {
+          "description": "walk subdirectories too, for a monorepo with a manifest per package",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "package"
+      ],
+      "type": "object"
+    }
+  },
+  {
     "name": "cert_chain",
     "description": "── the text below is written by the plugin, not by rta ──\nShow the certificate chain presented by a host\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
@@ -718,6 +746,10 @@
           "description": "why — shown by grant list",
           "type": "string"
         },
+        "profile": {
+          "description": "narrow it to one configured connection",
+          "type": "string"
+        },
         "scope": {
           "description": "narrow it to one record: a key, a task id, a hostname",
           "type": "string"
@@ -756,6 +788,34 @@
     }
   },
   {
+    "name": "grant_renew",
+    "description": "── the text below is written by the plugin, not by rta ──\nPush out the deadline on grants you already have\n\nRenew extends time and nothing else. Scope, profile, use limit, uses already spent and note are all carried forward from the stored grant — so a renewal can never turn a one-time grant into an unlimited one, which is what re-running `grant allow` without retyping --max-uses quietly did. The moment of first consent is not moved either, so a chain of renewals is still capped at 24h from when a person first said yes. With no arguments it renews every active grant, which is the common case: the work is still going, the clock is not.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
+    "destructive_hint": false,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "description": "only grants on this connection",
+          "type": "string"
+        },
+        "scope": {
+          "description": "only the grant for this record",
+          "type": "string"
+        },
+        "target": {
+          "description": "only grants on this capability or plugin",
+          "type": "string"
+        },
+        "ttl": {
+          "description": "how much longer — defaults to the window the grant was issued with",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
     "name": "grant_revoke",
     "description": "── the text below is written by the plugin, not by rta ──\nTake an agent's access back\n\nCan only be run by a person at a terminal, the same as grant.allow and for the same reason: consent state belongs to whoever is deciding it, not to whoever is currently being granted or denied.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
     "destructive_hint": false,
@@ -766,6 +826,10 @@
         "all": {
           "description": "revoke every grant",
           "type": "boolean"
+        },
+        "profile": {
+          "description": "only the grant for this connection",
+          "type": "string"
         },
         "scope": {
           "description": "only the grant for this record",

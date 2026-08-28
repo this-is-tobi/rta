@@ -157,7 +157,7 @@ func (m Model) closeCopyPick() (tea.Model, tea.Cmd) {
 	m.mode = returnTo
 	if returnTo == modeDashboard {
 		m.tickGen++
-		return m, refreshTiles(m.tiles, m.tickGen, m.pluginCfg)
+		return m, refreshTiles(m.tiles, m.tickGen, m.pluginCfg, m.profileFor)
 	}
 	return m, nil
 }
@@ -169,7 +169,6 @@ func (m Model) copyPickView() string {
 	if m.copyPick == nil {
 		return ""
 	}
-	footer := fitHintBar(m.width, footerMaxLines,
-		labelled(bindOpen, "copy"), item(bindFastSubmit), labelled(bindBack, "cancel"))
+	footer := m.footerFor(modeCopyPick)
 	return panel(capHead(m.copyPick.cap), "\n"+m.copyPick.form.View(), m.width, m.height-lipgloss.Height(footer), true) + "\n" + footer
 }

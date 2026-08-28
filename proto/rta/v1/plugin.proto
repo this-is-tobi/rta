@@ -130,6 +130,50 @@ message Field {
   // never be filled from an ambient variable on a caller's behalf, only a
   // field that actually authenticates should be.
   bool env_fallback = 13;
+  // Which part of a resolved tunnel fills this input, so the host can point a
+  // call at a port-forward it opened.
+  //
+  // Declared rather than matched on the names "host" and "port": a plugin is
+  // free to call its inputs "server" and "addr". Declared by the plugin rather
+  // than mapped by the operator because it names one of the plugin's OWN
+  // inputs as the destination for a value the host already computed — it
+  // causes no fetch and can point at nothing else, which is what separates it
+  // from a secret mapping.
+  //
+  // Refused on a secret input, and refused unless local is set: an input that
+  // decides where a call goes must not be settable by a remote caller.
+  EndpointRole endpoint = 14;
+  // Whether Suggest reads the service this plugin fronts — a bucket listing,
+  // a mount table — instead of computing locally. A live listing runs only
+  // on a deliberate completion press and with the credentials a run would
+  // get; the per-keystroke channel never calls it and carries none. Requires
+  // has_suggest, refused beside options, and the input must be a string.
+  bool live = 15;
+}
+
+// EndpointRole is which part of a resolved tunnel an input takes.
+//
+// A tunnel produces one fact — the local address a forward listens on — and
+// plugins take it in different shapes: separate host and port, one field
+// holding host:port, or one holding a URL. The roles are those shapes.
+enum EndpointRole {
+  // Not filled from a tunnel. Every input of every plugin that has not opted
+  // in.
+  ENDPOINT_ROLE_UNSPECIFIED = 0;
+  // The address alone: "127.0.0.1".
+  ENDPOINT_ROLE_HOST = 1;
+  // The port alone, as an int: 54321. The input must be typed int.
+  ENDPOINT_ROLE_PORT = 2;
+  // Both, joined: "127.0.0.1:54321".
+  ENDPOINT_ROLE_ADDRESS = 3;
+  // Both as a URL: "http://127.0.0.1:54321". Plain http, because a
+  // port-forward is already inside the API server's TLS for the only hop that
+  // leaves the machine.
+  ENDPOINT_ROLE_URL = 4;
+  // Whether transport security is worth negotiating over the forward, which
+  // is: no. The host owns this because only the host knows a forward is in
+  // the path, and a plugin's own default can actively break it.
+  ENDPOINT_ROLE_TLS = 5;
 }
 
 // Capability is the atom of the system: one operation, one stable ID.
@@ -234,6 +278,16 @@ message SuggestRequest {
   // What earlier inputs have already been answered, so a suggestion can
   // depend on them — the tags on this task, not every tag.
   map<string, Value> values = 3;
+  // Which renderer is asking. SURFACE_COMPLETION means a keystroke with
+  // nobody waiting to answer anything.
+  //
+  // Added because its absence made a documented rule unavailable to exactly
+  // the plugins that need it: a request with no surface decodes to
+  // SurfaceUnknown, which pkg/plugin documents as "a direct in-process
+  // caller (tests, embedding code), which is inside the trust boundary" —
+  // the precise opposite of a tab key. Built-ins were told, and every
+  // external plugin could not tell a keystroke from a unit test.
+  Surface surface = 4;
 }
 
 message SuggestResponse {

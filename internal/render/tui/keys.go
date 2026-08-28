@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/this-is-tobi/rule-them-all/internal/render/theme"
 )
@@ -61,6 +62,15 @@ var (
 	bindPlugin = binding{display: "p", keys: []string{"p"}, label: "plugins", rank: rankExtra}
 	bindTheme  = binding{display: "t", keys: []string{"t"}, label: "theme", rank: rankExtra}
 	bindConfig = binding{display: "c", keys: []string{"c"}, label: "configure", rank: rankAction}
+	// The profiles pane and its actions. `f` rather than `p`, which the
+	// plugins pane already holds — and a profile is a connection, not a
+	// plugin, so overloading one key for both would be a lie about what they
+	// are.
+	bindProfile = binding{display: "f", keys: []string{"f"}, label: "profiles", rank: rankExtra}
+	bindUse     = binding{display: "u", keys: []string{"u"}, label: "use", rank: rankPrimary}
+	bindNew     = binding{display: "n", keys: []string{"n"}, label: "new", rank: rankAction}
+	bindRemove  = binding{display: "d", keys: []string{"d"}, label: "delete", rank: rankAction}
+	bindSecret  = binding{display: "s", keys: []string{"s"}, label: "credential", rank: rankAction}
 	// shift+enter accepts whatever is currently bound across every
 	// remaining field, exactly as pressing enter on each in turn would —
 	// the shortcut for a form where the defaults are already fine and the
@@ -133,21 +143,49 @@ func (b binding) hint() string { return hint(b.display, b.label) }
 // hintItem is one entry in a footer: a binding, or an ad-hoc pair for the
 // per-capability actions, whose keys and words come from the capability
 // rather than from the vocabulary.
+//
+// keys is what this entry teaches, which is not always what it displays: "↑↓"
+// stands for six keys and "c" for one. Carrying it is what lets a test ask the
+// only question that matters about a footer — does this screen advertise every
+// key it answers to — without parsing a rendered bar back into intentions.
 type hintItem struct {
 	display, label string
 	rank           int
+	keys           []string
+	// style renders the whole entry when it is not a key hint. Only the flash
+	// uses it: a confirmation is an answer rather than something to press, and
+	// it has read green since it existed.
+	style *lipgloss.Style
 }
 
-func item(b binding) hintItem { return hintItem{b.display, b.label, b.rank} }
+func item(b binding) hintItem {
+	return hintItem{display: b.display, label: b.label, rank: b.rank, keys: b.keys}
+}
 
 // action is a per-capability shortcut — `a add` on the todo tile. It outranks
 // everything: it is the one thing on the screen that cannot be guessed from
 // any other screen, so it is the last thing that should be dropped.
-func action(key, label string) hintItem { return hintItem{key, label, rankAction} }
+func action(key, label string) hintItem {
+	return hintItem{display: key, label: label, rank: rankAction, keys: []string{key}}
+}
 
 // labelled overrides a binding's word for one screen, for the cases where the
 // same key genuinely does a more specific thing worth naming.
-func labelled(b binding, label string) hintItem { return hintItem{b.display, label, b.rank} }
+func labelled(b binding, label string) hintItem {
+	return hintItem{display: b.display, label: label, rank: b.rank, keys: b.keys}
+}
+
+// alias records that an entry also answers to extra keys it does not have room
+// to display — `enter` beside `c configure`, where showing both would spend a
+// second slot in the bar to teach the same verb twice.
+//
+// It is not a licence to hide keys: an alias is a key somebody would try, not
+// one they would have to be told. Anything that does something a person could
+// not guess from the displayed key belongs in its own entry.
+func alias(it hintItem, extra ...string) hintItem {
+	it.keys = append(append([]string{}, it.keys...), extra...)
+	return it
+}
 
 // fitHintBar lays the hints out in at most maxLines lines of the given
 // width, dropping the least important only when even that will not hold.
@@ -207,6 +245,10 @@ func layout(items []hintItem, keep []bool, width int) (string, int) {
 			dropped = true
 			continue
 		}
+		if it.style != nil {
+			parts = append(parts, it.style.Render(it.display+" "+it.label))
+			continue
+		}
 		parts = append(parts, hint(it.display, it.label))
 	}
 	if len(parts) == 0 {
@@ -245,3 +287,107 @@ func layout(items []hintItem, keep []bool, width int) (string, int) {
 // for every screen in the app at any width people actually use, and a third
 // would start eating the content the footer exists to explain.
 const footerMaxLines = 2
+
+// footerItems is what the screen currently on show advertises — every screen,
+// in one table.
+//
+// It used to be seven expressions written at the seven places a bar was
+// painted, and the profiles pane is what that cost: `f` opened it from the day
+// it was written and the dashboard's footer never learned to say so. A key
+// nobody can see is a key nobody has, however well it works.
+//
+// One table also makes the guarantee testable. Every entry carries the keys it
+// teaches, so a test can put the model in each screen, press everything, and
+// fail on anything that does something without appearing here — which is the
+// only way this stops drifting again the next time a pane gains an action.
+func (m Model) footerItems(screen mode) []hintItem {
+	switch screen {
+	case modeDashboard:
+		return m.dashFooterItems()
+	case modeResult:
+		return m.resultFooterItems()
+	case modePlugins:
+		return []hintItem{
+			item(bindColumn), item(bindToggle), item(bindConfig),
+			labelled(bindOpen, "capabilities"),
+			// The key that opened the pane closes it — the habit every pane
+			// with a letter shortcut trains, and one nobody needs told.
+			alias(item(bindBack), "p"), item(bindQuit),
+		}
+	case modeProfiles:
+		return []hintItem{
+			item(bindScroll), item(bindUse), alias(labelled(bindOpen, "plugins"), "right", "l"),
+			alias(item(bindConfig), "e"), item(bindNew), item(bindRemove),
+			labelled(bindCopy, "export lines"), alias(item(bindBack), "f"), item(bindQuit),
+		}
+	case modeProfilePlugins:
+		return []hintItem{
+			item(bindScroll), alias(item(bindConfig), "enter", "e"), item(bindNew),
+			item(bindSecret), item(bindRemove),
+			alias(item(bindBack), "left", "h"), item(bindQuit),
+		}
+	case modeBrowse:
+		return []hintItem{
+			item(bindColumn), labelled(bindOpen, "run"), labelled(bindSearch, "filter"),
+			item(bindBack), item(bindQuit),
+		}
+	case modeForm:
+		return []hintItem{
+			labelled(bindOpen, "next"), item(bindFastSubmit), labelled(bindBack, "cancel"),
+		}
+	case modeTheme:
+		return []hintItem{
+			labelled(bindOpen, "next/save"), item(bindFastSubmit), labelled(bindBack, "cancel"),
+		}
+	case modeCopyPick:
+		return []hintItem{
+			labelled(bindOpen, "copy"), item(bindFastSubmit), labelled(bindBack, "cancel"),
+		}
+	case modeRunning:
+		return []hintItem{
+			alias(labelled(bindBack, "leave it running"), "q"),
+			action("ctrl+c", "quit"),
+		}
+	}
+	return nil
+}
+
+// footerFor renders one screen's bar, with the flash beside it.
+//
+// It takes the screen rather than reading m.mode so that a view function is
+// self-contained: pluginsView asks for the plugin pane's keys and gets them,
+// whatever state the model happens to be in. Reading m.mode here would make
+// every view's footer depend on a field none of them otherwise touch, which is
+// the kind of coupling that makes a test render the right pane under the wrong
+// bar and still pass.
+//
+// The flash lives here because it is the answer to the key just pressed, and
+// the bar is where the key was advertised — putting the confirmation anywhere
+// else makes somebody look for it.
+func (m Model) footerFor(screen mode) string {
+	items := m.footerItems(screen)
+	if m.flash != "" {
+		// Packed with everything else rather than appended after it, which is
+		// the whole fix: it used to be glued on past the width fitHintBar had
+		// just packed to, so a long confirmation ran off the edge or soft
+		// wrapped — and dashRowsVisible budgets the tile grid from
+		// lipgloss.Height(dashFooter()), which then reported one line while
+		// the terminal drew two. A saved-profile message stole a row the grid
+		// had already given to a tile and scrolled the header off the top.
+		//
+		// rankAction, so it is the last thing dropped: it is the answer to the
+		// key just pressed, which is more use in that moment than any hint
+		// beside it.
+		good := theme.GoodText
+		// Truncated as well as packed. Every other entry is two words and is
+		// never split — "a half-rendered key is worse than a missing one" —
+		// but a confirmation is a sentence, so the one that does not fit has
+		// to give ground rather than run off the edge.
+		flash := m.flash
+		if m.width > 0 {
+			flash = ansi.Truncate(flash, max(m.width-3, 8), "…")
+		}
+		items = append(items, hintItem{display: "✓", label: flash, rank: rankAction, style: &good})
+	}
+	return fitHintBar(m.width, footerMaxLines, items...)
+}

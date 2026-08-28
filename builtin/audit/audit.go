@@ -112,6 +112,36 @@ func Plugin() plugin.Plugin {
 				},
 				Run: runDeps,
 			},
+			{
+				ID:         "audit.why",
+				Summary:    "Trace one dependency back to what pulled it in",
+				Safety:     plugin.Read,
+				Idempotent: true,
+				// Same argument as audit.deps: it reads a path with a usable
+				// default and mutates nothing, which is the shape the dashboard
+				// fills itself with — and a tile asking "why is lodash here"
+				// about a project nobody named is a question with no subject.
+				NoPreview: true,
+				Description: "Answers the question an advisory raises second: did we ask for this, " +
+					"or did something else pull it in — and if something else, what. Reads the same " +
+					"manifests `audit deps` does and draws the package at the root with everything " +
+					"that requires it beneath, up to the dependencies the project asks for by name. " +
+					"Nothing is resolved, installed or fetched. Formats differ in what they record: " +
+					"go.mod marks a require direct or indirect and stores no edges, while the four " +
+					"JavaScript lockfiles, Cargo, uv, Poetry, composer, Gemfile.lock, pip-compile's " +
+					"`# via` annotations and a CycloneDX SBOM all carry the graph. Where the file " +
+					"does not say, this says so and hands over the package manager's own command — " +
+					"`go mod why`, `pnpm why`, `cargo tree --invert` — with the package already in it.",
+				Inputs: []plugin.Field{
+					{Name: "package", Type: plugin.String, Positional: true, Required: true,
+						Help: "the package to trace, as the lockfile spells it"},
+					{Name: "path", Type: plugin.Path, Default: ".",
+						Help: "directory holding the lockfile or SBOM, or the file itself"},
+					{Name: "recursive", Type: plugin.Bool,
+						Help: "walk subdirectories too, for a monorepo with a manifest per package"},
+				},
+				Run: runWhy,
+			},
 		},
 	}
 }

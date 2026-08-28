@@ -17,11 +17,12 @@ import (
 // Field with that default rather than a literal baked into the path.
 func mountField() plugin.Field {
 	return plugin.Field{Name: "mount", Type: plugin.String, Default: "secret", Config: "kv-mount",
-		Help: "the KV v2 secrets engine's mount path"}
+		Help: "the KV v2 secrets engine's mount path", Live: true, Suggest: suggestMounts("kv")}
 }
 
 func pathField(help string) plugin.Field {
-	return plugin.Field{Name: "path", Type: plugin.String, Positional: true, Required: true, Help: help}
+	return plugin.Field{Name: "path", Type: plugin.String, Positional: true, Required: true, Help: help,
+		Live: true, Suggest: suggestPaths}
 }
 
 func kvListCapability() plugin.Capability {
@@ -36,7 +37,8 @@ func kvListCapability() plugin.Capability {
 		Run: runKVList,
 	}, mountField(),
 		plugin.Field{Name: "path", Type: plugin.String, Positional: true, Default: "",
-			Help: "list under this path; empty lists the mount's root"})
+			Help: "list under this path; empty lists the mount's root",
+			Live: true, Suggest: suggestPaths})
 }
 
 func runKVList(ctx context.Context, req plugin.Request) (view.View, error) {

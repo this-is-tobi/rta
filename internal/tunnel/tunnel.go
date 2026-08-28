@@ -22,6 +22,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"os/exec"
 	"regexp"
 	"strconv"
@@ -33,12 +34,21 @@ import (
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
 
-// Target is one entry in the operator's `targets:` block.
+// Target is one entry in the operator's `targets:` block. Kube and SSH are
+// two spellings of one job — a forward filling the same declared endpoint
+// inputs — and a target states exactly one of them.
 type Target struct {
 	// Kube is context/namespace/kind/name:port, e.g.
 	// homelab/databases/svc/postgres:5432.
 	Kube string `yaml:"kube,omitempty" json:"kube,omitempty"`
-	// Secret names a Secret in the target's own namespace holding the
+
+	// SSH is a jump-host target, [user@]host[:port]/desthost:destport, e.g.
+	// tobi@bastion:2222/vault.internal:8200. The head names where to log in —
+	// an ~/.ssh/config alias with everything the config gives it — and the
+	// tail what the far end dials once there. See ssh.go for why this shape
+	// resolves differently from a kube coordinate.
+	SSH string `yaml:"ssh,omitempty" json:"ssh,omitempty"`
+	// Secret names a Secret in the coordinate's own namespace holding the
 	// credentials for the thing at the other end of the tunnel.
 	Secret string `yaml:"secret,omitempty" json:"secret,omitempty"`
 	// From maps a declared input name to a key in that Secret. Written by the
@@ -56,14 +66,22 @@ type Endpoint struct {
 // Tunnel is a live forward. Close is idempotent and safe from any goroutine.
 type Tunnel struct {
 	Endpoint
-	cmd      *exec.Cmd
 	closeOne sync.Once
+	// stop is this tunnel's teardown, installed by whichever opener built it:
+	// a kube tunnel reaps one kubectl and waits for its exit, an ssh tunnel
+	// closes its listener and reaps a child per spliced connection. Close is
+	// the only caller, and a tunnel that failed before anything needed
+	// tearing down simply never installs one.
+	stop func()
 	// gaveUp records that a wait fell through to its timeout instead of
 	// seeing the exit. Exported to tests through TimedOut, because the defect
 	// it exists to catch — two waiters and one consumable signal — shows up
 	// as *latency*, and asserting on a wall clock inside a -race -shuffle
 	// suite measures the machine's load as much as the code's.
 	gaveUp atomic.Bool
+
+	// The kube half: one long-lived kubectl owns the forward.
+	cmd *exec.Cmd
 	// exited is closed when kubectl has been reaped. A closed channel rather
 	// than a value on a buffered one, because two places wait for the exit —
 	// awaitForwarding, to be sure stderr is complete, and Close, to be sure
@@ -71,6 +89,15 @@ type Tunnel struct {
 	// arrives first. That cost two seconds on every failed open before the
 	// tests were timed rather than merely watched to pass.
 	exited chan struct{}
+
+	// The ssh half: rta owns the listener, and each accepted connection is an
+	// `ssh -W` child of its own — see ssh.go for why there is no single
+	// long-lived process to point at.
+	ln       net.Listener
+	mu       sync.Mutex
+	closing  bool
+	children map[*exec.Cmd]net.Conn
+	served   sync.WaitGroup
 }
 
 // kubectl is overridable in tests, which have no cluster and must not need
@@ -92,7 +119,7 @@ var forwarding = regexp.MustCompile(`Forwarding from (\d{1,3}(?:\.\d{1,3}){3}):(
 // parseKube splits context/namespace/kind/name:port.
 func parseKube(spec string) (ctx, ns, kind, name string, port int, verr *view.Error) {
 	bad := func(why string) *view.Error {
-		return view.Errorf("tunnel.target.malformed", "%q is not a kube target: %s", spec, why).
+		return view.Errorf("tunnel.target.malformed", "%q is not a kube coordinate: %s", spec, why).
 			WithHint("the form is context/namespace/kind/name:port, e.g. " +
 				"homelab/databases/svc/postgres:5432")
 	}
@@ -117,6 +144,27 @@ func parseKube(spec string) (ctx, ns, kind, name string, port int, verr *view.Er
 	return parts[0], parts[1], parts[2], name, p, nil
 }
 
+// CheckKube reports what is wrong with a coordinate, without touching a
+// cluster.
+//
+// The static half of ADR 0018's "a target that cannot be resolved should be
+// visible before the call that needs it, not during". It answers only whether
+// the string is a coordinate at all — four slash-separated segments and a
+// port — because that is the half that costs nothing and is the half people
+// get wrong. Whether the context exists, whether the service is there and
+// whether this operator may forward to it are cluster questions, and asking
+// them would make `rta doctor` and `rta profile list` spawn a kubectl per
+// profile on a path somebody runs while something is already broken.
+//
+// So a coordinate that passes this can still fail to open, and the failure is
+// classified where it happens. What it catches is the typo, which is the case
+// that would otherwise be discovered by a call in the middle of a piece of
+// work.
+func CheckKube(spec string) *view.Error {
+	_, _, _, _, _, verr := parseKube(spec)
+	return verr
+}
+
 // openCeiling is the fallback deadline Open imposes on waiting for the
 // listener line, so it can never hang forever regardless of what context a
 // caller passes in — see openInstrumented's waitCtx comment. A listener
@@ -138,9 +186,18 @@ func Open(ctx context.Context, name string, t Target) (*Tunnel, *view.Error) {
 // that tests can ask how the failure was reached. A caller has nothing to do
 // with a dead tunnel, which is why Open drops it.
 func openInstrumented(ctx context.Context, name string, t Target) (*Tunnel, *view.Error) {
-	if t.Kube == "" {
-		return nil, view.Errorf("tunnel.target.empty", "target %q declares no tunnel", name).
-			WithHint("give it a `kube:` coordinate")
+	switch {
+	case t.Kube != "" && t.SSH != "":
+		// Belt and braces: config.Check refuses this long before a call, but
+		// this package must not pick one of two stated reaches by itself.
+		return nil, view.Errorf("tunnel.target.twice",
+			"profile %q states two tunnels — `kube:` and `ssh:`", name).
+			WithHint("a call opens one forward; keep whichever names where this connection really goes")
+	case t.SSH != "":
+		return openSSH(ctx, name, t)
+	case t.Kube == "":
+		return nil, view.Errorf("tunnel.target.empty", "profile %q declares no tunnel", name).
+			WithHint("give it a `kube:` coordinate or an `ssh:` target")
 	}
 	kctx, ns, kind, obj, port, verr := parseKube(t.Kube)
 	if verr != nil {
@@ -148,7 +205,7 @@ func openInstrumented(ctx context.Context, name string, t Target) (*Tunnel, *vie
 	}
 	if _, err := exec.LookPath(kubectl); err != nil {
 		return nil, view.Errorf("tunnel.kubectl.missing",
-			"target %q needs kubectl and it is not on $PATH", name).
+			"profile %q needs kubectl and it is not on $PATH", name).
 			WithHint("rta shells out rather than linking client-go, so the cluster " +
 				"credentials you already have keep working — install kubectl, or " +
 				"give the plugin a plain --host and --port")
@@ -176,6 +233,7 @@ func openInstrumented(ctx context.Context, name string, t Target) (*Tunnel, *vie
 	}
 
 	tun := &Tunnel{cmd: cmd, exited: make(chan struct{})}
+	tun.stop = tun.stopKube
 	go func() { _ = cmd.Wait(); close(tun.exited) }()
 
 	// waitCtx bounds only how long we wait for the listener line — a
@@ -237,7 +295,7 @@ func awaitForwarding(ctx context.Context, stdout io.Reader, name, spec string,
 		return Endpoint{}, kubectlFailed(name, spec, stderr.String())
 	case <-ctx.Done():
 		return Endpoint{}, view.Errorf("tunnel.open.timeout",
-			"target %q did not come up in time", name).
+			"profile %q did not come up in time", name).
 			WithHint("`kubectl --context … port-forward` by hand shows what it is waiting for")
 	}
 }
@@ -253,7 +311,7 @@ func kubectlFailed(name, spec, stderr string) *view.Error {
 	}
 	switch {
 	case strings.Contains(s, "context") && strings.Contains(s, "does not exist"):
-		return view.Errorf("tunnel.context.unknown", "target %q names a kube context that does not exist", name).
+		return view.Errorf("tunnel.context.unknown", "profile %q names a kube context that does not exist", name).
 			WithHint("`kubectl config get-contexts` lists them")
 	case strings.Contains(s, "not found"):
 		return view.Errorf("tunnel.service.missing", "%s: %s", name, one).
@@ -265,7 +323,7 @@ func kubectlFailed(name, spec, stderr string) *view.Error {
 		return view.Errorf("tunnel.port.taken", "%s: the local port kubectl chose is already in use", name).
 			WithHint("retrying usually picks another")
 	case s == "":
-		return view.Errorf("tunnel.open.failed", "target %q: kubectl exited without forwarding", name).
+		return view.Errorf("tunnel.open.failed", "profile %q: kubectl exited without forwarding", name).
 			WithHint("`kubectl --context … port-forward` by hand shows why")
 	default:
 		return view.Errorf("tunnel.open.failed", "%s: %s", name, one).
@@ -284,15 +342,22 @@ func (t *Tunnel) Close() {
 		return
 	}
 	t.closeOne.Do(func() {
-		if t.cmd.Process != nil {
-			reap(t.cmd)
-		}
-		select {
-		case <-t.exited:
-		case <-time.After(2 * time.Second):
-			t.gaveUp.Store(true)
+		if t.stop != nil {
+			t.stop()
 		}
 	})
+}
+
+// stopKube ends the one kubectl that owns a kube forward.
+func (t *Tunnel) stopKube() {
+	if t.cmd.Process != nil {
+		reap(t.cmd)
+	}
+	select {
+	case <-t.exited:
+	case <-time.After(2 * time.Second):
+		t.gaveUp.Store(true)
+	}
 }
 
 // syncBuffer is an io.Writer safe to read while os/exec writes to it.

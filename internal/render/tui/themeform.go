@@ -72,12 +72,39 @@ func newThemeForm(existing map[string]string) *themeForm {
 		tf.bindings[key] = &v
 		fields = append(fields, huh.NewInput().
 			Title(key).
-			Description(fmt.Sprintf("%s (currently %s)", themeFieldHelp[key], live[key])).
+			Description(fmt.Sprintf("%s (currently %s) — tab completes",
+				themeFieldHelp[key], live[key])).
+			Suggestions(paletteFor(key, live)).
 			Value(&v).
 			Validate(hexOrEmpty))
 	}
-	tf.form = huh.NewForm(huh.NewGroup(fields...))
+	tf.form = huh.NewForm(huh.NewGroup(fields...)).WithKeyMap(formKeyMap())
 	return tf
+}
+
+// paletteFor is what this field can be completed to: its own current value
+// first, then the rest of the live palette.
+//
+// The form already prints "(currently #7d56f4)" under every box and then makes
+// somebody retype it, which is the shape of a screen that knows the answer and
+// will not say it — pressing tab now fills it in. The other nine follow
+// because the usual edit is not inventing a colour, it is making two things
+// match: accent taking primary's shade, warn taking error's.
+//
+// Static, unlike a capForm's: a palette does not change while the form that
+// edits it is open.
+func paletteFor(key string, live map[string]string) []string {
+	out := make([]string, 0, len(themeFieldOrder))
+	if v := live[key]; v != "" {
+		out = append(out, v)
+	}
+	for _, other := range themeFieldOrder {
+		if other == key || live[other] == "" || live[other] == live[key] {
+			continue
+		}
+		out = append(out, live[other])
+	}
+	return out
 }
 
 // hexOrEmpty accepts theme.HexColor's shape or nothing at all — clearing a
@@ -200,7 +227,7 @@ func (m Model) saveTheme() (tea.Model, tea.Cmd) {
 		m.flash = fmt.Sprintf("saved %d theme %s", len(overrides), pluralNoun(len(overrides), "override"))
 	}
 	m.tickGen++
-	return m, refreshTiles(m.tiles, m.tickGen, m.pluginCfg)
+	return m, refreshTiles(m.tiles, m.tickGen, m.pluginCfg, m.profileFor)
 }
 
 // updateThemeForm drives the embedded huh form and dispatches on completion,
@@ -251,8 +278,7 @@ func (m Model) themeView() string {
 	if m.themeForm == nil {
 		return ""
 	}
-	footer := fitHintBar(m.width, footerMaxLines,
-		labelled(bindOpen, "next/save"), item(bindFastSubmit), labelled(bindBack, "cancel"))
+	footer := m.footerFor(modeTheme)
 	strip := m.themeForm.preview()
 	if m.width > 4 {
 		// Soft-wrapped, not truncated: at a narrow width the strip runs onto

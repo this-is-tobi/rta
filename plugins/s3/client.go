@@ -37,15 +37,19 @@ import (
 // remain ordinary flags for a person at a terminal.
 func connFields() []plugin.Field {
 	return []plugin.Field{
+		// One input holding host[:port], which is the address role. This is
+		// the shape that made a two-role Host/Port scheme unworkable and the
+		// reason the roles are what they are.
 		{Name: "endpoint", Type: plugin.String, Default: "127.0.0.1:9000", Config: "endpoint",
-			Local: true, Help: "S3-compatible endpoint, host[:port]"},
+			Local: true, Endpoint: plugin.EndpointAddress, Help: "S3-compatible endpoint, host[:port]"},
 		{Name: "region", Type: plugin.String, Default: "us-east-1", Config: "region",
 			Local: true, Help: "bucket region"},
 		// Local for the downgrade reason rather than the redirect one: an
 		// agent that could set this could ask for plaintext against an
 		// endpoint the operator configured as HTTPS.
 		{Name: "tls", Type: plugin.Bool, Default: false, Config: "tls",
-			Local: true, Help: "use HTTPS (a local MinIO ordinarily does not)"},
+			Local: true, Endpoint: plugin.EndpointTLS,
+			Help: "use HTTPS (a local MinIO ordinarily does not)"},
 		{Name: "access-key", Type: plugin.String, Config: "access-key",
 			Local: true, Help: "access key ID"},
 		{Name: "secret-key", Type: plugin.Secret, Local: true, EnvFallback: true,

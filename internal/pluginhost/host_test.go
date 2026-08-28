@@ -593,3 +593,43 @@ func TestRestartingAPluginDoesNotLeakTheOneItReplaced(t *testing.T) {
 			"the replaced client's connection is not being closed", grew, restarts, float64(grew)/restarts)
 	}
 }
+
+// The managed store's shape end to end: the binary lives inside rta's own
+// data dir — which the sandbox denies file-read* on — and is launched through
+// the bin/ symlink. This exact spawn failed with EPERM before Identify
+// resolved symlinks, because SBPL blocks reading a link in a denied subtree
+// even though executing its target is a separate, allowed operation. Found by
+// running an installed plugin; this is that run, as a test.
+func TestAManagedStoreSymlinkSpawns(t *testing.T) {
+	data := t.TempDir()
+	t.Setenv("RTA_DATA_DIR", data)
+	store := filepath.Join(data, "plugins", "store", "hello", "d1")
+	bin := filepath.Join(data, "plugins", "bin")
+	for _, d := range []string{store, bin} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	raw, err := os.ReadFile(hello(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	real := filepath.Join(store, "rta-plugin-hello")
+	if err := os.WriteFile(real, raw, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(bin, "rta-plugin-hello")
+	if err := os.Symlink(filepath.Join("..", "store", "hello", "d1", "rta-plugin-hello"), link); err != nil {
+		t.Fatal(err)
+	}
+
+	h := New(nil)
+	t.Cleanup(h.CloseAll)
+	c, err := h.Open(context.Background(), link)
+	if err != nil {
+		t.Fatalf("opening through the managed bin link: %v", err)
+	}
+	if c.Declared.Name != "hello" {
+		t.Fatalf("declared %q", c.Declared.Name)
+	}
+}

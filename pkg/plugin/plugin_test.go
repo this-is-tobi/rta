@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"slices"
 	"strings"
 	"testing"
 
@@ -59,7 +60,69 @@ func TestValidateFailures(t *testing.T) {
 		{"unknown field type", func(p *Plugin) {
 			p.Capabilities[0].Inputs = []Field{{Name: "port", Type: "integer"}}
 		}, "unknown type"},
+		// Live marks a Suggest for the deliberate-press channel, so each rule
+		// is about the mark pointing at something that can answer it.
+		{"live without suggest", func(p *Plugin) {
+			p.Capabilities[0].Inputs = []Field{{Name: "bucket", Type: String, Live: true}}
+		}, "no Suggest"},
+		{"live beside options", func(p *Plugin) {
+			p.Capabilities[0].Inputs = []Field{{Name: "bucket", Type: String, Live: true,
+				Options: []string{"a"}, Suggest: func(context.Context, Request) []string { return nil }}}
+		}, "beside Options"},
+		{"live on an int", func(p *Plugin) {
+			p.Capabilities[0].Inputs = []Field{{Name: "port", Type: Int, Live: true,
+				Suggest: func(context.Context, Request) []string { return nil }}}
+		}, "String box"},
 		{"scope names no input", func(p *Plugin) { p.Capabilities[0].Scope = "nope" }, "names no input"},
+		// Endpoint roles. Every one of these is refused at registration rather
+		// than at dial time, because what goes wrong is *where a call goes*
+		// and the operator diagnosing it holds a connection error naming
+		// nothing.
+		{"unknown endpoint role", func(p *Plugin) {
+			p.Capabilities[0].Inputs = []Field{{Name: "host", Type: String, Local: true, Config: "host", Endpoint: "hsot"}}
+		}, "does not recognise"},
+		{"endpoint on a secret", func(p *Plugin) {
+			p.Capabilities[0].Inputs = []Field{{Name: "host", Type: Secret, Local: true, Config: "host", Endpoint: EndpointAddress}}
+		}, "not a credential"},
+		{"endpoint without local", func(p *Plugin) {
+			p.Capabilities[0].Inputs = []Field{{Name: "host", Type: String, Config: "host", Endpoint: EndpointAddress}}
+		}, "point the operator's credential at a machine it chose"},
+		{"port role on a string", func(p *Plugin) {
+			p.Capabilities[0].Inputs = []Field{
+				{Name: "host", Type: String, Local: true, Config: "host", Endpoint: EndpointHost},
+				{Name: "port", Type: String, Local: true, Config: "port", Endpoint: EndpointPort},
+			}
+		}, "a port is an Int"},
+		{"two inputs claim one role", func(p *Plugin) {
+			p.Capabilities[0].Inputs = []Field{
+				{Name: "addr", Type: String, Local: true, Config: "addr", Endpoint: EndpointAddress},
+				{Name: "server", Type: String, Local: true, Config: "server", Endpoint: EndpointAddress},
+			}
+		}, "at most one input may take each"},
+		// Half an address is the dangerous one: filled, it points the call at
+		// 127.0.0.1 on the plugin's own default port, which is a live port on
+		// the operator's machine often enough to connect to the wrong thing
+		// rather than fail.
+		{"host without port", func(p *Plugin) {
+			p.Capabilities[0].Inputs = []Field{{Name: "host", Type: String, Local: true, Config: "host", Endpoint: EndpointHost}}
+		}, "no input takes port"},
+		{"endpoint without config", func(p *Plugin) {
+			p.Capabilities[0].Inputs = []Field{{Name: "addr", Type: String, Local: true, Endpoint: EndpointAddress}}
+		}, "was never offered"},
+		// The tls role is the one where the host produces a value the plugin
+		// must accept, so what it can say is pinned at registration rather
+		// than discovered when the plugin rejects the word.
+		{"tls role with no off spelling", func(p *Plugin) {
+			p.Capabilities[0].Inputs = []Field{{Name: "sslmode", Type: String, Local: true,
+				Config: "sslmode", Endpoint: EndpointTLS, Options: []string{"prefer", "require"}}}
+		}, "no way to turn TLS off"},
+		{"tls role on a wrong type", func(p *Plugin) {
+			p.Capabilities[0].Inputs = []Field{{Name: "sslmode", Type: Int, Local: true,
+				Config: "sslmode", Endpoint: EndpointTLS}}
+		}, "must be one of those two types"},
+		{"port without host", func(p *Plugin) {
+			p.Capabilities[0].Inputs = []Field{{Name: "port", Type: Int, Local: true, Config: "port", Endpoint: EndpointPort}}
+		}, "no input takes host"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -263,6 +326,65 @@ func TestFieldTypesCoversEveryDeclaredConstant(t *testing.T) {
 	}
 	if len(declared) != len(fieldTypes) {
 		t.Errorf("%d FieldType constants but %d in fieldTypes", len(declared), len(fieldTypes))
+	}
+}
+
+// TestEndpointRolesCoversEveryDeclaredConstant is the same oracle as above,
+// for the same reason, one closed set along.
+//
+// The drift it catches is worse here than for FieldType. A role declared in
+// the source and missing from endpointRoles is refused by validate() — so a
+// plugin declaring it fails to load, which is at least loud. The direction
+// that is quiet is the tunnel filler: a role nothing fills is an input the
+// host was asked to point at a forward and silently did not, and what the
+// operator gets is a call that reaches the plugin's *default* host instead of
+// the cluster. That is the "connects to the wrong thing rather than fails"
+// failure checkEndpoints exists to prevent, arriving through the back door.
+func TestEndpointRolesCoversEveryDeclaredConstant(t *testing.T) {
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "plugin.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var declared []string
+	for _, decl := range f.Decls {
+		gen, ok := decl.(*ast.GenDecl)
+		if !ok || gen.Tok != token.CONST {
+			continue
+		}
+		for _, spec := range gen.Specs {
+			vs, ok := spec.(*ast.ValueSpec)
+			if !ok {
+				continue
+			}
+			id, ok := vs.Type.(*ast.Ident)
+			if !ok || id.Name != "EndpointRole" {
+				continue
+			}
+			declared = append(declared, vs.Names[0].Name)
+		}
+	}
+	if len(declared) == 0 {
+		t.Fatal("found no EndpointRole constants — the parse is wrong, not the code")
+	}
+	byName := map[string]EndpointRole{
+		"EndpointNone": EndpointNone, "EndpointHost": EndpointHost,
+		"EndpointPort": EndpointPort, "EndpointAddress": EndpointAddress,
+		"EndpointURL": EndpointURL, "EndpointTLS": EndpointTLS,
+	}
+	for _, name := range declared {
+		role, known := byName[name]
+		if !known {
+			t.Fatalf("EndpointRole %s was added to plugin.go but not to this test's map, "+
+				"so nothing checks whether endpointRoles lists it", name)
+		}
+		if !slices.Contains(endpointRoles, role) {
+			t.Errorf("EndpointRole %s (%q) is declared but missing from endpointRoles, so "+
+				"validate rejects every plugin that declares it", name, role)
+		}
+	}
+	if len(declared) != len(endpointRoles) {
+		t.Errorf("%d EndpointRole constants but %d in endpointRoles", len(declared), len(endpointRoles))
 	}
 }
 

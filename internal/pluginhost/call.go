@@ -114,6 +114,12 @@ func (c *Client) suggest(ctx context.Context, id, field string, req plugin.Reque
 		CapabilityId: id,
 		Field:        field,
 		Values:       wire.ValuesToProto(req.Values()),
+		// Carried across, so a plugin can tell a keystroke from a caller.
+		// Without it every external plugin's Suggest saw SurfaceUnknown —
+		// which pkg/plugin documents as an in-process caller inside the trust
+		// boundary — and the rule that anything which would prompt or take a
+		// visible moment must not run on this path had no way to be obeyed.
+		Surface: wire.SurfaceToProto(req.Surface()),
 	})
 	if err != nil {
 		return nil

@@ -306,6 +306,12 @@ func TestShiftEnterSavesThePluginConfigForm(t *testing.T) {
 	tm.Send(tea.KeyPressMsg{Code: 'c', Text: "c"})
 	waitFor(t, tm, "host")
 
+	// Clear the displayed default and state a host, so the save has one real
+	// answer and one untouched display to tell apart.
+	tm.Send(tea.KeyPressMsg{Code: 'u', Mod: tea.ModCtrl})
+	for _, r := range "db.internal" {
+		tm.Send(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
 	tm.Send(shiftEnter)
 	waitFor(t, tm, "saved") // flash text is "saved plugins.db", the tail can get clipped at 100 cols
 
@@ -319,8 +325,14 @@ func TestShiftEnterSavesThePluginConfigForm(t *testing.T) {
 	if !ok {
 		t.Fatalf("no db section written; plugins = %v", onDisk.Plugins)
 	}
-	if section["host"] != "localhost" {
-		t.Errorf("host = %v, want the declared default carried through by shift+enter", section["host"])
+	if section["host"] != "db.internal" {
+		t.Errorf("host = %v, want the value typed before shift+enter", section["host"])
+	}
+	// The untouched port box was a display of the declared default, not a
+	// statement: writing it would pin today's default into the file as if the
+	// operator had chosen it.
+	if v, has := section["port"]; has {
+		t.Errorf("port = %v was written, and nobody stated a port", v)
 	}
 }
 

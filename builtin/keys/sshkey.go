@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/user"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -301,6 +302,28 @@ func describeKey(path string) []string {
 		fp = "-"
 	}
 	return []string{path, keyType, lockedCell, eligible, fp}
+}
+
+// suggestComment offers what a public key's comment almost always is:
+// <user>@<host> for the machine the key is being restored onto.
+//
+// The comment is not encoded in the seed words and is lost on backup — the
+// restore output says so — so it is always being retyped from memory, and it
+// is the one field here whose right answer this process already knows. Nothing
+// is read but the process's own identity, so it costs nothing on a keystroke.
+func suggestComment(_ context.Context, _ plugin.Request) []string {
+	u, err := user.Current()
+	if err != nil || u.Username == "" {
+		return nil
+	}
+	host, err := os.Hostname()
+	if err != nil || host == "" {
+		return nil
+	}
+	// The short form, matching what ssh-keygen writes: a fully-qualified name
+	// in a key comment is noise nobody types.
+	host, _, _ = strings.Cut(host, ".")
+	return []string{u.Username + "@" + host + "\tthis user on this machine"}
 }
 
 // suggestPrivateKeys offers the private keys this machine already has: id_*

@@ -12,17 +12,32 @@ cd rta-plugin-weather
 rta plugin dev                # build it, and see what rta sees
 rta plugin dev -- weather greet world
 go build -o ~/.local/bin/rta-plugin-weather .
+rta plugin trust weather
 rta weather greet world
 ```
 
 That is the whole loop. The mechanical part takes about two seconds; the rest
 is deciding what your capability should do.
 
+**The `trust` step is not paperwork.** rta loads a plugin by *running* it —
+that is how it learns what you declared — so a file called `rta-plugin-*` on
+`$PATH` would execute before anybody typed a command naming it, including the
+`rta __complete` a tab press runs. Being on `$PATH` is not consent, so an
+artifact runs once somebody has approved that exact digest. Rebuild and it
+needs approving again, which during development is a keystroke and in
+production is the event worth stopping for. `rta plugin trust` on its own lists
+what is waiting.
+
+Your inner loop does not need it at all: `rta plugin dev` compiles from a
+directory you named in the command you just typed, which is a stronger act of
+approval than a digest in a file, so it is exempt.
+
 **Your binary's name is your namespace.** `rta-plugin-weather` declares
 `Name: "weather"`, and rta refuses it otherwise — the name an operator gave
 the file by installing it wins over the name the file gives itself, because
-anything on `$PATH` can claim to be anything. `rta plugin new` gets this right
-for you; `rta plugin dev` is exempt, so your inner loop does not care what the
+anything on `$PATH` can claim to be anything — the same reason the artifact
+needs trusting before it runs at all. `rta plugin new` gets this right for you;
+`rta plugin dev` is exempt from both, so your inner loop does not care what the
 temporary binary is called.
 
 > **Before rta is published**, a scaffolded plugin needs a `replace` directive
@@ -78,7 +93,12 @@ What each one buys you:
 - **`Suggest`** is a function returning what exists *right now* — your tags,
   their hostnames. It runs on human surfaces only, never for an agent: the list
   itself is information. It must be cheap and silent on failure, because it
-  fires on a keystroke.
+  fires on a keystroke — no network call, no prompt, no connection opened.
+  It receives what the caller has supplied so far, on the CLI and in a TUI form
+  alike, so a suggestion can depend on a sibling field being typed above it.
+  Tab completes it on both surfaces. Not accepted on a `Secret` or a `Text`
+  input: the list renders in plain text beside the box, which defeats a mask,
+  and a body is written in `$EDITOR` rather than completed.
 - **`Local: true`** means the value names something on *this* machine, so it is
   refused over MCP. `--out` is the example: a grant authorises revealing a
   value, not choosing where on the operator's disk it lands.

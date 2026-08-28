@@ -43,8 +43,16 @@ func Plugin() plugin.Plugin {
 		{Name: "url", Type: plugin.String, Positional: true, Required: true, Help: "request URL"},
 		{Name: "header", Type: plugin.StringSlice, Suggest: suggestHeaders,
 			Help: "request header, repeatable: -H 'Key: Value'"},
-		{Name: "bearer", Type: plugin.String, Help: "bearer token (Authorization: Bearer ...)"},
-		{Name: "basic", Type: plugin.String, Help: "basic auth as user:password"},
+		// Secret, not String, and it always should have been: both are
+		// credentials, so both belong masked in a form rather than drawn in
+		// the clear, and neither is a value anything should keep. Declaring
+		// them plainly is what let internal/recent write a bearer token to
+		// disk and offer it back on a completion list.
+		//
+		// Not Local: an agent granted a URL may legitimately supply its own
+		// authorization for it, which is what Local would take away.
+		{Name: "bearer", Type: plugin.Secret, Help: "bearer token (Authorization: Bearer ...)"},
+		{Name: "basic", Type: plugin.Secret, Help: "basic auth as user:password"},
 		{Name: "timeout", Type: plugin.Int, Default: 30, Min: 1, Max: 600, Help: "request timeout in seconds"},
 	}
 	withBody := append([]plugin.Field{}, common...)

@@ -16,9 +16,10 @@ import (
 // has to hand-write YAML to change a default (PROJECT.md §5.1).
 func newInitCommand(reg *registry.Registry) *cobra.Command {
 	return &cobra.Command{
-		Use:   "init",
-		Short: "Create or update the rta config file interactively",
-		Args:  cobra.NoArgs,
+		Use:               "init",
+		Short:             "Create or update the rta config file interactively",
+		Args:              cobra.NoArgs,
+		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if !isTTY() {
 				return fmt.Errorf("rta init is interactive and needs a terminal")

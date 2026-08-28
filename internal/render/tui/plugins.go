@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/this-is-tobi/rule-them-all/internal/config"
+	"github.com/this-is-tobi/rule-them-all/internal/pluginhost"
 	"github.com/this-is-tobi/rule-them-all/internal/registry"
 	"github.com/this-is-tobi/rule-them-all/internal/render/theme"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
@@ -49,13 +50,42 @@ type pluginRow struct {
 	tile string
 	// shown is false when a tile exists but the user hid it.
 	shown bool
+	// waiting marks an artifact discovery found on $PATH and refused to
+	// launch, because nothing has trusted it (ADR 0015, D107).
+	//
+	// **It is a row rather than an absence, and that is the whole point.** A
+	// trust gate's failure mode is silence: a plugin installed, present and
+	// doing nothing looks exactly like one that was never installed. Every
+	// other inventory rta has says so — `rta plugin list` carries the row,
+	// `rta doctor` warns, and startup prints a line — and this pane, whose
+	// stated job is "which plugins do I actually have?", was the one that did
+	// not, while also printing a confident count that left them out.
+	waiting bool
 }
 
 // canTile reports whether this plugin could be on the dashboard at all.
 func (r pluginRow) canTile() bool { return r.tile != "" }
 
+// usable reports whether this row is a plugin rta can actually do anything
+// with. An untrusted artifact has no capabilities to browse, no config to
+// edit and nothing to put on a dashboard, because it was never asked.
+func (r pluginRow) usable() bool { return !r.waiting }
+
 // external reports whether this plugin came from a binary on $PATH.
 func (r pluginRow) external() bool { return r.origin.External() }
+
+// pinnedName is how a profile or a plugins: section key must name this plugin:
+// bare for a built-in, pinned to the installed artifact otherwise.
+//
+// One function because two callers building the string themselves is how a
+// digest ends up written one way in a completion and another in a validator,
+// and a pin that does not match is a profile that refuses to resolve.
+func (r pluginRow) pinnedName() string {
+	if r.external() {
+		return r.plugin.Name + "@" + r.origin.Short()
+	}
+	return r.plugin.Name
+}
 
 // reach is the worst a plugin can do, in the safety vocabulary the rest of
 // the system uses. It is the column worth having next to provenance: "this is
@@ -74,13 +104,17 @@ func (r pluginRow) reach() plugin.Safety {
 	return worst
 }
 
-// pluginRows lists every registered plugin with its dashboard state.
-func pluginRows(reg *registry.Registry, dash config.Dashboard) []pluginRow {
+// pluginRows lists every registered plugin with its dashboard state, followed
+// by the artifacts discovery refused to launch.
+//
+// Untrusted last, because they are a smaller list and an outstanding decision
+// rather than an inventory — the same order `rta plugin list` puts them in.
+func pluginRows(reg *registry.Registry, dash config.Dashboard, untrusted []pluginhost.Untrusted) []pluginRow {
 	hidden := map[string]bool{}
 	for _, id := range dash.Hidden {
 		hidden[id] = true
 	}
-	rows := make([]pluginRow, 0, len(reg.Plugins()))
+	rows := make([]pluginRow, 0, len(reg.Plugins())+len(untrusted))
 	for _, p := range reg.Plugins() {
 		origin, _ := reg.Origin(p.Name)
 		row := pluginRow{plugin: p, origin: origin}
@@ -89,6 +123,16 @@ func pluginRows(reg *registry.Registry, dash config.Dashboard) []pluginRow {
 			row.shown = !hidden[t.cap.ID]
 		}
 		rows = append(rows, row)
+	}
+	for _, u := range untrusted {
+		// The name and the artifact are all discovery learned: it hashed the
+		// file and stopped, so there is no summary and no capability list to
+		// show, because asking for them is the thing that runs the code.
+		rows = append(rows, pluginRow{
+			plugin:  plugin.Plugin{Name: u.Name},
+			origin:  registry.Origin{Path: u.Path, Digest: u.Digest},
+			waiting: true,
+		})
 	}
 	return rows
 }
@@ -100,6 +144,9 @@ func (m *Model) toggleShown(idx int) string {
 		return ""
 	}
 	row := &m.plugins[idx]
+	if !row.usable() {
+		return untrustedNote(*row)
+	}
 	if !row.canTile() {
 		// Saying why beats a key that silently does nothing.
 		return row.plugin.Name + " has nothing to show without being told what to look at"
@@ -149,6 +196,14 @@ func withoutID(list []string, id string) []string {
 		}
 	}
 	return out
+}
+
+// untrustedNote is the one sentence every key that cannot act on an untrusted
+// row answers with. One function, because a row that browses, configures and
+// profiles differently is a row where two of the three explanations drift.
+func untrustedNote(row pluginRow) string {
+	return row.plugin.Name + " has not been run: `rta plugin trust " + row.plugin.Name +
+		"` approves this artifact, and the next rta loads it"
 }
 
 // pluginRowHeight is how many lines one plugin occupies: a band naming it,
@@ -210,16 +265,7 @@ func (m *Model) clampPluginScroll(bodyHeight int) {
 // pluginFooter is built in one place because both the view and the scroll
 // arithmetic need its height, and two constructions that drift by a line put
 // the selection just off the bottom of the pane.
-func (m Model) pluginFooter() string {
-	footer := fitHintBar(m.width, footerMaxLines,
-		item(bindColumn), item(bindToggle), item(bindConfig), labelled(bindOpen, "capabilities"),
-		item(bindBack), item(bindQuit),
-	)
-	if m.flash != "" {
-		footer += theme.GoodText.Render("  ✓ " + m.flash)
-	}
-	return footer
-}
+func (m Model) pluginFooter() string { return m.footerFor(modePlugins) }
 
 // pluginBodyHeight is the space inside the panel, in lines.
 func (m Model) pluginBodyHeight() int {
@@ -271,6 +317,12 @@ func (m Model) pluginsView() string {
 			state = theme.Subtle.Render("[off]")
 		}
 		right := " " + state + theme.Subtle.Render(" · ") + reachLabel(row, string(row.reach())) + " "
+		if row.waiting {
+			// Not a reach: rta has never asked this artifact what it can do,
+			// and printing "read" for something it declined to run would be
+			// stating a fact it does not have.
+			right = " " + theme.WarnText.Render("not run") + " "
+		}
 
 		rule := max(inner-lipgloss.Width(label)-lipgloss.Width(right)-3, 0)
 		name := theme.Key.Render(label)
@@ -282,7 +334,11 @@ func (m Model) pluginsView() string {
 			right + theme.Subtle.Render("─") + "\n")
 
 		indent := strings.Repeat(" ", pluginTextAt)
-		b.WriteString(ansi.Truncate(indent+theme.Subtle.Render(row.plugin.Summary), inner, "…") + "\n")
+		summary := theme.Subtle.Render(row.plugin.Summary)
+		if row.waiting {
+			summary = theme.WarnText.Render("installed and not run — nothing has trusted this artifact")
+		}
+		b.WriteString(ansi.Truncate(indent+summary, inner, "…") + "\n")
 		b.WriteString(ansi.Truncate(indent+theme.Faded.Render(pluginDetail(row)), inner, "…") + "\n")
 	}
 
@@ -311,6 +367,13 @@ func pluginDetail(row pluginRow) string {
 	origin := "built in"
 	if row.external() {
 		origin = "$PATH: " + row.origin.Path + " · " + row.origin.Short()
+	}
+	if row.waiting {
+		// The command, not a key. Trust is read once per process before
+		// anything is launched, so approving it from inside a running TUI
+		// would change a file and load nothing — a control that appears to
+		// work and does not is worse than one that sends you to a shell.
+		return origin + " · `rta plugin trust " + row.plugin.Name + "` to load it, next run"
 	}
 	detail := origin + " · " + fmt.Sprintf("%d capabilities", len(row.plugin.Capabilities))
 	switch {

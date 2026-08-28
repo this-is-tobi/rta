@@ -32,8 +32,24 @@ func wrapSetCapability() plugin.Capability {
 		Run: runWrapSet,
 	}, plugin.Field{Name: "data", Type: plugin.StringSlice, Required: true,
 		Help: "key=value, repeated for more than one field"},
-		plugin.Field{Name: "ttl", Type: plugin.String, Default: "5m",
+		plugin.Field{Name: "ttl", Type: plugin.String, Default: "5m", Suggest: suggestWrapTTL,
 			Help: "how long the token stays valid, unread — not the data's own lifetime"})
+}
+
+// suggestWrapTTL offers the windows a wrapping token is usually given.
+//
+// Free text, because Vault takes any duration it understands and this plugin
+// does not get to narrow that. What it removes is the round trip through a
+// rejected call: an unparseable ttl is refused by the server, after the
+// request, which is a slow way to find out about a typo.
+func suggestWrapTTL(context.Context, plugin.Request) []string {
+	return []string{
+		"60s\thanded over immediately",
+		"5m\tthe default",
+		"30m\tpasted into another terminal",
+		"1h\tsent to somebody",
+		"24h\tthe longest worth using for a hand-off",
+	}
 }
 
 func runWrapSet(ctx context.Context, req plugin.Request) (view.View, error) {
