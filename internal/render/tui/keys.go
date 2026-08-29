@@ -89,7 +89,7 @@ var (
 	// Protocol), and even with that on, a shift+enter keybinding installed
 	// by Claude Code's own /terminal-setup (workbench.action.terminal.
 	// sendSequence, sending literal ESC+CR) claims the key first regardless
-	// — a real, reported conflict (PROJECT.md D76). ESC immediately
+	// — a real, reported conflict. ESC immediately
 	// followed by one more byte is the older, universal "meta sends
 	// escape" convention every terminal already speaks with zero protocol
 	// negotiation, and github.com/charmbracelet/ultraviolet (bubbletea's

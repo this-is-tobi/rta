@@ -216,7 +216,7 @@ func TestASecretHandlingCapabilityThatMarksNothingWarnsRatherThanFails(t *testin
 	}
 }
 
-// The rule the http post/put/delete postmortem paid for (PROJECT.md §4.7): a
+// The rule the http post/put/delete postmortem paid for: a
 // dry run reports what would happen, and does not do it first.
 func TestADryRunThatWritesIsRejected(t *testing.T) {
 	dir := t.TempDir()
@@ -258,8 +258,13 @@ func TestADryRunThatRewritesIdenticalBytesIsInert(t *testing.T) {
 	}
 }
 
-// A skip is not silence. A capability the suite could not drive has to say so
-// on every run, or the coverage it does not have looks exactly like coverage.
+// A skip is not silence, and for a mutating capability it is not a log line
+// either. The coverage the suite does not have looked exactly like coverage:
+// every external plugin called Check, every one went green, and behind that
+// six handlers wrote to remote systems under --dry-run because not one of
+// them was ever driven. A read that cannot be driven is a gap worth naming; a
+// Write or Destructive one that cannot be driven means the only rule with a
+// postmortem behind it did not run, which is a failure.
 func TestAnUndrivableCapabilityIsReportedRatherThanPassedOver(t *testing.T) {
 	c := plugin.Capability{
 		ID: "demo.item.add", Summary: "add", Safety: plugin.Write,
@@ -268,6 +273,20 @@ func TestAnUndrivableCapabilityIsReportedRatherThanPassedOver(t *testing.T) {
 	}
 	rec := &recorder{}
 	drive(rec, plugin.Plugin{Name: "demo", Capabilities: []plugin.Capability{c}}, noConfig(), t.TempDir(), nil)
+	if !strings.Contains(rec.errText(), "was never run — no value for required input title") {
+		t.Errorf("an undriven mutating capability passed: %q", rec.errText())
+	}
+
+	// The read half stays a log: it is missing coverage, not a broken promise,
+	// and erroring would demand a live target for every diagnostic in the
+	// catalogue — which is the thing conformanceInputs deliberately withholds.
+	read := c
+	read.ID, read.Safety = "demo.item.show", plugin.Read
+	rec = &recorder{}
+	drive(rec, plugin.Plugin{Name: "demo", Capabilities: []plugin.Capability{read}}, noConfig(), t.TempDir(), nil)
+	if len(rec.errs) > 0 {
+		t.Errorf("an undrivable read was an error: %s", rec.errText())
+	}
 	if !strings.Contains(rec.logText(), "no value for required input title") {
 		t.Errorf("skip was silent: %q", rec.logText())
 	}
@@ -284,7 +303,7 @@ func TestAnUndrivableCapabilityIsReportedRatherThanPassedOver(t *testing.T) {
 	}
 }
 
-// D8 chose warnings over errors here, and the suite has to keep that choice
+// Warnings rather than errors here, and the suite has to keep that choice
 // even for the case it is most confident about.
 func TestASynonymOfAVocabularyWordWarnsAndNamesTheReplacement(t *testing.T) {
 	rec := &recorder{}
@@ -292,14 +311,14 @@ func TestASynonymOfAVocabularyWordWarnsAndNamesTheReplacement(t *testing.T) {
 		{ID: "demo.item.remove", Summary: "s", Safety: plugin.Read},
 	}}, noConfig())
 	if len(rec.errs) > 0 {
-		t.Errorf("verb check errored, D8 says warn: %s", rec.errText())
+		t.Errorf("verb check errored, it must only warn: %s", rec.errText())
 	}
 	if !strings.Contains(rec.logText(), "demo.item.rm") {
 		t.Errorf("replacement not named: %q", rec.logText())
 	}
 }
 
-// A domain verb is what D8 refuses to fight, so it is reported in one line
+// A domain verb is what this refuses to fight, so it is reported in one line
 // per plugin rather than one per capability — thirty individually correct
 // warnings are indistinguishable from noise.
 func TestDomainVerbsAreReportedOncePerPlugin(t *testing.T) {

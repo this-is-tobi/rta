@@ -4,9 +4,9 @@ package net
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	stdnet "net"
-	"net/url"
 	"os"
 	"sort"
 	"strconv"
@@ -162,7 +162,7 @@ func Plugin() plugin.Plugin {
 					{Name: "host", Type: plugin.String, Positional: true, Required: true,
 						Suggest: suggestHostnames, Help: "host to scan"},
 					{Name: "ports", Type: plugin.String, Default: "22,80,443",
-						Help: "comma-separated ports and ranges, e.g. 22,80,8000-8010"},
+						Help: "comma-separated ports and ranges, e.g. 22,80,8000-8010 (up to 4096 at a time)"},
 					{Name: "timeout", Type: plugin.Int, Default: 2, Min: 1, Max: 60, Help: "per-port timeout in seconds"},
 				},
 				Run: runPort,
@@ -470,9 +470,45 @@ func runDNS(ctx context.Context, req plugin.Request) (view.View, error) {
 	}}, nil
 }
 
+// maxScanPorts bounds what one call may ask for.
+//
+// `--ports 1-65535` is seven bytes. It bought 65,535 goroutines and ~180 MiB
+// before the first dial, and over MCP net.port is a plain Read — exposed with
+// no grant, no allowlist and no operator interaction — so that was an agent
+// allocating a sixth of a gigabyte per call inside the process that enforces
+// every grant for every other tool the agent has open.
+//
+// The cap is not redundant with the worker pool below, and it is the half that
+// bounds the *unbounded* cost. The goroutine spike has a ceiling and drains on
+// its own; parsePorts' expansion has neither. It runs on the calling goroutine
+// and takes no context, so there is nothing for a client cancellation, a
+// closed stdio pipe or a killed session to interrupt — measured at ~55µs per
+// argument byte, which makes a 1 MB `ports` value roughly a minute of
+// uninterruptible single-threaded work, and 10 MB about nine. The dedup map
+// keeps resident memory flat at 65,535 entries throughout, so every
+// memory-shaped guard is blind to it.
+//
+// A sweep wider than this is nmap's job, not a diagnostics tile's.
+const maxScanPorts = 4096
+
+// portScanWorkers is how many dials are in flight at once — the number the
+// old semaphore claimed to enforce and now actually does.
+const portScanWorkers = 64
+
+// errTooManyPorts is a sentinel rather than a plain message because the two
+// refusals need different hints. `net.port.badspec` says "example: --ports
+// 22,80,8000-8010", which is exactly the advice somebody who asked for 1-65535
+// does not need — it tells them to do the thing that was just refused.
+var errTooManyPorts = fmt.Errorf("more than %d ports requested", maxScanPorts)
+
 // parsePorts expands "22,80,8000-8010" into a sorted port list.
 func parsePorts(spec string) ([]int, error) {
 	seen := map[int]bool{}
+	// Counted before expanding rather than checked afterwards, which is what
+	// makes it a bound on the CPU and not only on the result: `len(seen)` is
+	// deduplicated, so "1-65535,1-65535,…" costs 65,535 map writes per
+	// repeated part while the count never moves.
+	expanded := 0
 	for _, part := range strings.Split(spec, ",") {
 		part = strings.TrimSpace(part)
 		if part == "" {
@@ -492,6 +528,10 @@ func parsePorts(spec string) ([]int, error) {
 		if start < 1 || end > 65535 || end < start {
 			return nil, fmt.Errorf("port range %q out of bounds", part)
 		}
+		expanded += end - start + 1
+		if expanded > maxScanPorts {
+			return nil, errTooManyPorts
+		}
 		for p := start; p <= end; p++ {
 			seen[p] = true
 		}
@@ -507,6 +547,11 @@ func parsePorts(spec string) ([]int, error) {
 func runPort(ctx context.Context, req plugin.Request) (view.View, error) {
 	host := req.String("host")
 	ports, err := parsePorts(req.String("ports"))
+	if errors.Is(err, errTooManyPorts) {
+		return nil, view.Errorf("net.port.toomany", "%v", err).
+			WithHint(fmt.Sprintf("scan up to %d ports at a time — this is a diagnostic, and a "+
+				"full sweep is nmap's job", maxScanPorts))
+	}
 	if err != nil {
 		return nil, view.Errorf("net.port.badspec", "%v", err).
 			WithHint("example: --ports 22,80,8000-8010")
@@ -521,22 +566,45 @@ func runPort(ctx context.Context, req plugin.Request) (view.View, error) {
 		open bool
 	}
 	results := make([]result, len(ports))
+	// A worker pool, not a goroutine per port that then queues on a semaphore.
+	// The old shape spawned every goroutine first and made them wait, so the
+	// bound applied to the concurrent *dials* and the fan-out was the port
+	// count — and the comment beside it said "bounded concurrency", which is
+	// the bound it did not provide. Against a filtered host the parked
+	// goroutines do not retire until they get through, so the memory was held
+	// for the whole scan rather than spiked and released.
+	//
+	// Feeding the channel under a ctx select also means a cancelled scan stops
+	// at the current batch instead of walking the rest of the list to hand
+	// each remaining port an already-dead context.
+	jobs := make(chan int)
 	var wg sync.WaitGroup
-	sem := make(chan struct{}, 64) // bounded concurrency
 	dialer := &stdnet.Dialer{Timeout: timeout}
-	for i, port := range ports {
+	for range min(portScanWorkers, len(ports)) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			conn, err := dialer.DialContext(ctx, "tcp", stdnet.JoinHostPort(host, strconv.Itoa(port)))
-			if err == nil {
-				conn.Close()
+			for i := range jobs {
+				conn, err := dialer.DialContext(ctx, "tcp",
+					stdnet.JoinHostPort(host, strconv.Itoa(ports[i])))
+				if err == nil {
+					conn.Close()
+				}
+				// Written by index, so the rows keep the caller's port order
+				// without a sort and without a lock.
+				results[i] = result{port: ports[i], open: err == nil}
 			}
-			results[i] = result{port: port, open: err == nil}
 		}()
 	}
+feed:
+	for i := range ports {
+		select {
+		case jobs <- i:
+		case <-ctx.Done():
+			break feed
+		}
+	}
+	close(jobs)
 	wg.Wait()
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
@@ -664,18 +732,41 @@ func proxySummary() string {
 
 // maskProxy hides credentials embedded in a proxy URL. The host stays
 // visible — it is the useful part; the secret is the userinfo.
+//
+// **Parsed by hand rather than by url.Parse, because the schemeless form is
+// a working configuration and url.Parse does not read it as one.** Given
+// `bob:s3cret@proxy.corp:3128` — with no scheme, which is what a great many
+// shells actually export — url.Parse takes `bob` for the scheme and the rest
+// for an opaque body, so u.User is nil, the guard above returned raw, and
+// this function printed the password in the clear directly underneath its
+// own published promise that proxy credentials are masked.
+//
+// It is not a form to dismiss as malformed: golang.org/x/net/http/httpproxy
+// re-parses a schemeless value with `http://` prepended, so the credential
+// works, and rta's own http plugin reaches through it via DefaultTransport.
+// A value that authenticates is a value that has to be masked.
+//
+// Scanning for the userinfo covers both spellings with one rule and no
+// dependency on a parser's opinion of what a scheme is.
 func maskProxy(raw string) string {
-	u, err := url.Parse(raw)
-	if err != nil || u.User == nil {
+	prefix, rest := "", raw
+	if i := strings.Index(raw, "://"); i >= 0 {
+		prefix, rest = raw[:i+3], raw[i+3:]
+	}
+	at := strings.Index(rest, "@")
+	if at < 0 {
 		return raw
 	}
-	// Splice the mask in directly: url.User would %-encode it.
-	u.User = nil
-	s := u.String()
-	if i := strings.Index(s, "://"); i >= 0 {
-		return s[:i+3] + "***@" + s[i+3:]
+	// Userinfo is what precedes the first `@`, and only when that `@` comes
+	// before any path — otherwise an `@` further along the URL would be read
+	// as a credential boundary and the host would be masked instead of the
+	// secret.
+	if slash := strings.IndexByte(rest, '/'); slash >= 0 && slash < at {
+		return raw
 	}
-	return "***@" + s
+	// The whole userinfo, username included: this function's stated rule is
+	// that the host is the useful part and the userinfo is the secret.
+	return prefix + "***@" + rest[at+1:]
 }
 
 // throughput samples total rx/tx over 500ms and reports per-second rates.

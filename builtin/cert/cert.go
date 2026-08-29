@@ -13,11 +13,13 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/this-is-tobi/rule-them-all/builtin/internal/x509check"
+	"github.com/this-is-tobi/rule-them-all/internal/atomicfile"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
@@ -75,6 +77,44 @@ func Plugin() plugin.Plugin {
 				Run:        runChain,
 			},
 			{
+				ID:         "cert.pem",
+				Summary:    "Print the certificate chain as PEM",
+				Safety:     plugin.Read,
+				Idempotent: true,
+				Description: "The bytes, not a description of them. `cert chain` draws what a host " +
+					"presents so a person can read it; this hands the same certificates back in the " +
+					"form every other tool takes one — a Kubernetes ConfigMap, a Dockerfile COPY, " +
+					"`update-ca-certificates`, a paste into somebody's terminal.\n\n" +
+					"--include issuers is the one to reach for behind a private CA: it drops the leaf " +
+					"and leaves the chain that has to be *trusted*, which is what a ca-bundle is. " +
+					"chain (the default) is everything the host presented, leaf is the end-entity " +
+					"certificate alone.\n\n" +
+					"A presented chain is what the host chose to send and is not always complete — a " +
+					"server that omits its intermediate presents a leaf that validates nowhere else, " +
+					"and this reports what arrived rather than filling the gap from a trust store, " +
+					"because a bundle that silently differs from what the server serves is how a " +
+					"working local test hides a broken deployment.\n\n" +
+					"Read, and it stays read from anywhere but a terminal: --out names a path on " +
+					"*this* machine, so it is a person's flag only and an MCP caller always gets the " +
+					"PEM back in the response.",
+				Inputs: []plugin.Field{
+					targetField,
+					{Name: "include", Type: plugin.String, Default: "chain",
+						Options: []string{"chain", "issuers", "leaf"},
+						Help:    "which certificates to print"},
+					// Local, the same rule --out follows everywhere: a
+					// destination is a destination. Nothing here is secret — a
+					// certificate is what a host hands to anybody who connects —
+					// but "which of this machine's files gets overwritten" is not
+					// a question a remote caller gets to answer, whatever it is
+					// being overwritten with.
+					{Name: "out", Type: plugin.Path, Local: true,
+						Help: "write the PEM to this file (0644) instead of printing it"},
+					timeoutField,
+				},
+				Run: runPEM,
+			},
+			{
 				ID:         "cert.expiry",
 				Summary:    "Check certificate expiry for one or more hosts",
 				Safety:     plugin.Read,
@@ -116,7 +156,7 @@ func dialTimeout(req plugin.Request) time.Duration {
 // loadCerts fetches the peer chain from a live host or parses a PEM file.
 //
 // The file branch is for the capabilities that declare a Path input and are
-// therefore confined at the MCP boundary (ADR 0014). Anything whose target is
+// therefore confined at the MCP boundary. Anything whose target is
 // a host must call dialCerts instead — see expiryRow.
 func loadCerts(ctx context.Context, target string, timeout time.Duration) ([]*x509.Certificate, *tls.ConnectionState, error) {
 	if _, err := os.Stat(target); err == nil {
@@ -261,6 +301,102 @@ func runChain(ctx context.Context, req plugin.Request) (view.View, error) {
 	return view.Tree{Roots: build(0)}, nil
 }
 
+// runPEM hands back the certificates themselves, in the encoding every other
+// tool on the machine accepts one in.
+func runPEM(ctx context.Context, req plugin.Request) (view.View, error) {
+	target := req.String("target")
+	certs, _, err := loadCerts(ctx, target, dialTimeout(req))
+	if err != nil {
+		return nil, err
+	}
+	chosen, verr := include(certs, req.String("include"))
+	if verr != nil {
+		return nil, verr
+	}
+	body, verr := encodePEM(chosen)
+	if verr != nil {
+		return nil, verr
+	}
+
+	out := strings.TrimSpace(req.String("out"))
+	if out == "" {
+		return view.Text{Body: body}, nil
+	}
+	if req.DryRun {
+		return view.Text{Body: fmt.Sprintf("would write %s from %s to %s",
+			plural(len(chosen), "certificate", "certificates"), target, out)}, nil
+	}
+	path := expandHome(out)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, view.Errorf("cert.out.unwritable", "creating %s: %v", filepath.Dir(path), err)
+	}
+	// 0644 and not 0600: this is a certificate, which is public by
+	// construction, and the file's whole purpose is to be read by something
+	// else — a container build, a system trust store, another user's tool.
+	// Atomic, so a half-written bundle never exists for anything to pick up.
+	if err := atomicfile.Write(path, []byte(body), 0o644); err != nil {
+		return nil, view.Errorf("cert.out.unwritable", "writing %s: %v", path, err)
+	}
+	return view.Text{Body: fmt.Sprintf("wrote %s from %s to %s (%d bytes, mode 0644)",
+		plural(len(chosen), "certificate", "certificates"), target, out, len(body))}, nil
+}
+
+// include narrows a presented chain to what was asked for.
+//
+// "issuers" is the interesting one and the reason this is not a boolean: what
+// a private CA needs installed is everything *except* the leaf, which is the
+// bundle a trust store takes. A chain of one certificate has no issuers in it,
+// and saying so beats handing back an empty file that fails later somewhere
+// with no explanation.
+func include(certs []*x509.Certificate, which string) ([]*x509.Certificate, *view.Error) {
+	switch which {
+	case "", "chain":
+		return certs, nil
+	case "leaf":
+		return certs[:1], nil
+	case "issuers":
+		if len(certs) < 2 {
+			return nil, view.Errorf("cert.chain.leafonly",
+				"only the leaf certificate was presented, so there are no issuers to print").
+				WithHint("many servers omit their intermediates; --include chain prints what did arrive")
+		}
+		return certs[1:], nil
+	}
+	return nil, view.Errorf("cert.include.invalid", "unknown --include %q", which).
+		WithHint("one of: chain, issuers, leaf")
+}
+
+func encodePEM(certs []*x509.Certificate) (string, *view.Error) {
+	var b strings.Builder
+	for _, c := range certs {
+		if err := pem.Encode(&b, &pem.Block{Type: "CERTIFICATE", Bytes: c.Raw}); err != nil {
+			return "", view.Errorf("cert.encode.failed", "encoding %s: %v", c.Subject.CommonName, err)
+		}
+	}
+	return b.String(), nil
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return fmt.Sprintf("%d %s", n, one)
+	}
+	return fmt.Sprintf("%d %s", n, many)
+}
+
+// expandHome resolves a leading ~/ in a path a person typed. The shell does it
+// for an unquoted argument and not for a quoted one, and --out is exactly the
+// flag somebody quotes.
+func expandHome(path string) string {
+	if !strings.HasPrefix(path, "~/") {
+		return path
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return path
+	}
+	return filepath.Join(home, path[2:])
+}
+
 func runExpiry(ctx context.Context, req plugin.Request) (view.View, error) {
 	targets := req.StringSlice("targets")
 	warnDays := req.Int("warn-days")
@@ -272,17 +408,33 @@ func runExpiry(ctx context.Context, req plugin.Request) (view.View, error) {
 	// written into a slot rather than appended, so the answer still comes
 	// back in the order the targets were given no matter who replies first.
 	rows := make([][]string, len(targets))
+	// A worker pool rather than a goroutine per target queueing on a
+	// semaphore. Same correction net.port needed, and for the same reason:
+	// taking the semaphore *inside* the goroutine bounds the dials and leaves
+	// the fan-out equal to the input length. It matters far less here — a
+	// target is bytes the caller had to send, where net.port's "1-65535" is
+	// seven bytes for 65,535 of them — but a bound that is not a bound is
+	// worth having in one shape rather than two.
+	jobs := make(chan int)
 	var wg sync.WaitGroup
-	sem := make(chan struct{}, expiryConcurrency)
-	for i, target := range targets {
+	for range min(expiryConcurrency, len(targets)) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			rows[i] = expiryRow(ctx, target, warnDays, timeout)
+			for i := range jobs {
+				rows[i] = expiryRow(ctx, targets[i], warnDays, timeout)
+			}
 		}()
 	}
+feed:
+	for i := range targets {
+		select {
+		case jobs <- i:
+		case <-ctx.Done():
+			break feed
+		}
+	}
+	close(jobs)
 	wg.Wait()
 	if ctx.Err() != nil {
 		return nil, ctx.Err()

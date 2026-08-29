@@ -421,7 +421,7 @@ func TestDepsGradesAffectedPackages(t *testing.T) {
 	if _, ok := find(r, "example.com/clean"); ok {
 		t.Error("a package with no advisories got a finding of its own")
 	}
-	// A hit has to name what goes deeper — that is ADR 0008's first rule.
+	// A hit has to name what goes deeper — that is the plugin's first rule.
 	next := mustFind(t, r, "next step")
 	if !strings.Contains(next.detail, "trivy") {
 		t.Errorf("no scanner named for the depth this does not have: %q", next.detail)

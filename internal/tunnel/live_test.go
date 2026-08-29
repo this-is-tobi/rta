@@ -25,7 +25,7 @@ import (
 	"time"
 )
 
-// The two questions ADR 0018 left open, which needed a cluster.
+// The two questions the design left open, which needed a cluster.
 //
 //	kind create cluster --name rta-lab
 //	go test ./internal/tunnel/ -tags livecluster -count=1 -run TestTunnelAgainstARealCluster -v
@@ -202,7 +202,7 @@ func TestSecretFailuresAgainstARealCluster(t *testing.T) {
 	}
 }
 
-// The whole of ADR 0018 §6 in one pass, against a real cluster: name a
+// The whole resolution path in one pass, against a real cluster: name a
 // service and the secret beside it, and rta resolves both — no port-forward
 // in another terminal, no credential copied into a shell.
 //

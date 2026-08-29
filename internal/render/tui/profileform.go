@@ -199,7 +199,7 @@ func (m Model) startConnForm(key string) (tea.Model, tea.Cmd) {
 				"tab completes each segment; leave empty to connect directly"},
 		{Name: profileSSHField, Type: plugin.String,
 			// The suggestions are the aliases in the operator's own ssh config
-			// — a local file, so per-keystroke is fine (ADR 0018 §8) — because
+			// — a local file, so per-keystroke is fine — because
 			// an alias is the case this is best at: one word carrying the
 			// user, port, key and ProxyJump the config already states.
 			Suggest: func(context.Context, plugin.Request) []string { return tunnel.SSHHosts() },
@@ -328,8 +328,8 @@ func (m Model) saveConnForm() (tea.Model, tea.Cmd) {
 	ssh := strings.TrimSpace(str(values[profileSSHField]))
 	// A refusal, unlike the endpoint-key repair below, because it is honest
 	// here: both boxes are plain text, so "empty one of them" is an action
-	// the widget can always perform — the select trap D119 records cannot
-	// occur on these two fields.
+	// the widget can always perform — the select trap below cannot occur on
+	// these two plain-text fields.
 	if kube != "" && ssh != "" {
 		m.flash = "one tunnel: keep `kube:` or `ssh:`, and empty the other"
 		return m, nil
@@ -762,7 +762,7 @@ func (m Model) startCredentialForm() (tea.Model, tea.Cmd) {
 			// The help says out loud that key completion reads the Secret,
 			// because it does: there is no keys-only read in the API, so the
 			// listing is a real `get secret` in the cluster's audit log —
-			// which is why it happens on tab and never as typing (ADR 0018
+			// which is why it happens on tab and never as typing
 			// §8). The values stay in kubectl's process either way.
 			Help: "which Secret and key, as <secret>/<key> — tab completes; " +
 				"listing keys reads the Secret from the coordinate's namespace",
@@ -855,7 +855,7 @@ func (m Model) saveCredentialForm() (tea.Model, tea.Cmd) {
 		// rather than asked for. One less field, and a name that says what it is
 		// wherever it is later seen in `rta kv list`.
 		entry = name + "-" + config.PluginNamespace(key) + "-" + input
-		if verr := kv.Store(entry, secret, "credential for profile "+name); verr != nil {
+		if verr := kv.Store(entry, secret, "credential for profile "+name, "profile:"+name); verr != nil {
 			m.flash = "not stored: " + verr.Message
 			return m.closeToOrigin()
 		}

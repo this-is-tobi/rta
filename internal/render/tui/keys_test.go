@@ -22,7 +22,7 @@ func plain(s string) string { return ansiSeq.ReplaceAllString(s, "") }
 
 func realModel(t *testing.T, w, h int) (Model, *registry.Registry) {
 	t.Helper()
-	reg, err := all.Registry()
+	reg, err := all.Registry(nil)
 	if err != nil {
 		t.Fatal(err)
 	}

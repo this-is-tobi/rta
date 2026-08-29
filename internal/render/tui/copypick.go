@@ -81,7 +81,7 @@ func (m *Model) fitCopyPick() {
 		return
 	}
 	if m.width > 0 {
-		m.copyPick.form = m.copyPick.form.WithWidth(min(m.width-6, 80))
+		m.copyPick.form = m.copyPick.form.WithWidth(formWidth(m.width))
 	}
 	if m.height > 0 {
 		m.copyPick.form = m.copyPick.form.WithHeight(max(m.height-5, 6))

@@ -22,7 +22,7 @@ import (
 // something a pipe can parse with nothing else mixed in. `main` is where
 // those are decided and it had no test at all.
 //
-// PROJECT.md §10: "E2E CLI — binary invocation, --output json, assert on
+// The end-to-end contract: "E2E CLI — binary invocation, --output json, assert on
 // parsed structures + exit codes."
 //
 // Skipped under -short; it builds the binary once.

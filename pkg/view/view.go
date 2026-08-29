@@ -3,7 +3,7 @@
 // colors, or layout. Rendering decisions belong to the host (CLI, TUI, MCP,
 // web), which is what lets one capability serve every surface.
 //
-// Contract rules (see PROJECT.md §4.3):
+// Contract rules:
 //   - Every View must be expressible as plain text, JSON, and an MCP result.
 //   - Tables are paginated at the contract level.
 //   - Secrets are marked Redacted by the producer and masked by the host.
@@ -169,7 +169,7 @@ func (s Section) Key() string {
 //
 // This is also the shape a component-driven surface consumes: each Section
 // maps to one component with a typed payload, which is the seam a future
-// a2tea/A2UI integration plugs into (PROJECT.md §6.4).
+// component-driven surface plugs into.
 type Sections struct {
 	Items []Section `json:"items"`
 	// Warnings carries what the page could not produce, so that a partial
@@ -211,8 +211,8 @@ func named(list []string, name string) bool {
 }
 
 // Redact returns a copy of v with redacted values masked. It is the single
-// enforcement point for the contract's redaction promise (PROJECT.md §4.7:
-// "the host masks them in TUI, CLI, logs and MCP output") — every renderer
+// enforcement point for the contract's redaction promise — the host masks
+// redacted values in TUI, CLI, logs and MCP output alike, so every renderer
 // that turns a View into bytes a caller can read must run it first,
 // including the MCP bridge, which callers can reach without a human present.
 //

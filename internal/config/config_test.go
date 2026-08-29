@@ -86,7 +86,7 @@ func TestInvalidYAMLIsCodedWithHint(t *testing.T) {
 	}
 }
 
-// A regression test for a real bug review found (PROJECT.md D88): Config has
+// A regression test for a real bug review found: Config has
 // no legitimate use for a YAML anchor or alias, so even a small, harmless
 // one — nothing here fans out into anything — must be refused rather than
 // silently decoded, the same way an unrelated syntax error already is.

@@ -69,7 +69,7 @@ func TestNeedsBackupOnlyOnTheUpgradeWrite(t *testing.T) {
 	}
 }
 
-// A coverage test for a real gap review found (PROJECT.md D74):
+// A coverage test for a real gap review found:
 // backupUnstamped's own doc comment calls the copy it makes "the one
 // failure this package must not have" — a secrets store that quietly
 // destroys a secret — and yet no test had ever placed a real, on-disk,

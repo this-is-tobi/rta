@@ -46,7 +46,7 @@ func checkInputs(t reporter, c plugin.Capability) {
 	// registers flags into one set and pflag panics with "flag redefined",
 	// which takes down every rta invocation including the doctor that would
 	// have explained it. That check now lives in Capability.validate itself
-	// (the audit that found it: PROJECT.md D87), which p.Validate above
+	// (found by audit), which p.Validate above
 	// already calls and already returns false on — so it never reaches this
 	// loop for that failure any more, and re-checking it here would be dead
 	// code testing a rule Validate itself now owns.
@@ -296,7 +296,7 @@ func renderOnce(v view.View, f cli.Format) (err error) {
 
 // checkVerbs reports last ID segments that are not the word rta already uses.
 //
-// It logs and never errors, per D8: a hard error here would fight legitimate
+// It logs and never errors: a hard error here would fight legitimate
 // domain verbs, and the catalogue is full of them — `net.ping`, `codec.b64`,
 // `cert.chain`. The signal worth having is narrower than "unknown word", so
 // the two cases are reported differently: a word that duplicates one already

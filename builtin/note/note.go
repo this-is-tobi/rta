@@ -4,7 +4,7 @@
 // task without a status, due date or sub-items. Editing prefills current
 // content on interactive surfaces, like editing an issue.
 //
-// AI trajectory (PROJECT.md §7): exposed over MCP, so agents can capture and
+// AI trajectory: exposed over MCP, so agents can capture and
 // rework notes; later the ai plugin can improve wording or restructure them.
 package note
 
@@ -139,7 +139,7 @@ func hasAnyTag(it itemstore.Item, tags []string) bool {
 
 // applyTags mirrors todo's --tag convention: a single "-" clears, anything
 // else replaces. Kept in sync deliberately rather than shared, since the two
-// packages otherwise stay independent (PROJECT.md low-maintenance principle
+// packages otherwise stay independent (the low-maintenance principle
 // favors one small duplication over a cross-plugin dependency here).
 func applyTags(raw []string) []string {
 	if len(raw) == 1 && raw[0] == "-" {

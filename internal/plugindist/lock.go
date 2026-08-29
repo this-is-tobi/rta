@@ -14,7 +14,7 @@ import (
 )
 
 // rta.lock records what rta computed, per installed plugin — never what a
-// manifest claimed (ADR 0017 §1). Every field is either observed by rta (the
+// manifest claimed. Every field is either observed by rta (the
 // digest it hashed, the time, the signature check's outcome) or chosen by the
 // operator (which index, which URL was fetched). The version is the one
 // labelled exception: it is the index's claim, recorded *as* the claim so

@@ -20,8 +20,8 @@
 //
 // # Keyed on the digest, because a name is not an artifact
 //
-// The same rule `--allow-destructive <id>@<digest>` (ADR 0015) and
-// `plugins.<ns>@<digest>` (ADR 0016) already follow. Trusting a *name* would
+// The same rule `--allow-destructive <id>@<digest>` and
+// `plugins.<ns>@<digest>` already follow. Trusting a *name* would
 // trust whatever is called that tomorrow, which is exactly the substitution
 // the check exists to notice. Rebuilding a plugin therefore requires trusting
 // it again — the same friction pnpm has on a version bump, and it is the
@@ -53,8 +53,7 @@
 // It is not a signature, an audit, or a claim that the artifact is safe. It is
 // a record that a person decided to run this exact artifact, which is the one
 // fact rta can establish and the one that was missing. Everything after it is
-// still the safety class, the grant, the sandbox and the operator (ADR 0012,
-// ADR 0015).
+// still the safety class, the grant, the sandbox and the operator.
 package plugintrust
 
 import (

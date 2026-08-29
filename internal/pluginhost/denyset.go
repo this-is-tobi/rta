@@ -27,7 +27,7 @@ import (
 //
 // So the profile is `(allow default)` plus a deny set, and the deny set is
 // scoped to two things: what rta owns, and the credentials that are not any
-// plugin's business. ADR 0012 says plainly what that does not buy — the honest
+// plugin's business. What that does not buy is said plainly — the honest
 // headline is that every attack found during the pre-M2 review succeeds
 // identically on a fully confined macOS host. This raises the floor; it is not
 // a boundary.
@@ -39,7 +39,7 @@ import (
 // the one member whose dangerous operation is a *write* wide open. A confined
 // plugin could not read grants.json and did not need to: the Grant struct is
 // public, so an 82-byte blind overwrite handed it a standing grant over every
-// kv capability. Sealing the grant file (ADR 0015) closed that specific route;
+// kv capability. Sealing the grant file closed that specific route;
 // denying the write closes the shape.
 func tier1() []string {
 	return dedupe([]string{
@@ -87,6 +87,25 @@ type DenySet struct {
 	// Each holds every path plus, where a path is a symlink, its target.
 	NoAccess []string
 	NoRead   []string
+	// NoMove is every directory whose own name has to stay where it is for the
+	// two sets above to go on meaning anything. Denied for renaming and
+	// removal, and for nothing else — the entry itself, never its contents.
+	//
+	// **A rule that names a path stops applying when the path stops having
+	// that name.** Proven against /usr/bin/sandbox-exec, not reasoned about:
+	// with `~/.ssh` read-denied and writes deliberately left open, `mv ~/.ssh
+	// ~/x` succeeds and every key is then readable at a path no rule mentions.
+	// Two syscalls, no cleverness, and it applies to all ten of tier2 — the
+	// entire tier bought nothing.
+	//
+	// The ancestors are the same defect one level up and are why this is a
+	// separate list rather than an extra verb on the others. `~/.docker/
+	// config.json` is read-denied; `~/.docker` is not, so renaming *it* moves
+	// the file out from under the rule just as effectively. Denying the whole
+	// ancestor subpath would deny writing to `~/.config` and `~` — which is
+	// most of what a plugin legitimately does — so what is denied is the
+	// literal directory entry, leaving everything inside it alone.
+	NoMove []string
 }
 
 // Resolve builds the deny set for this machine.
@@ -97,9 +116,11 @@ type DenySet struct {
 // is what home-manager, chezmoi and stow all produce, so the machines most
 // likely to be running this are the ones where the naive version does nothing.
 //
-// A path that does not exist is kept rather than dropped. It may be created
-// while the plugin runs, and a rule naming a path that never appears costs
-// nothing.
+// A path that does not exist is kept rather than dropped, and resolved as far
+// as the filesystem allows right now — which is what withTarget's walk is for.
+// It may be created while the plugin runs, and a rule naming a path that never
+// appears costs nothing. What it must not do is name a path the kernel never
+// produces, which is what a missing component used to cause.
 func Resolve() (DenySet, error) {
 	var d DenySet
 	for _, p := range tier1() {
@@ -109,23 +130,92 @@ func Resolve() (DenySet, error) {
 		d.NoRead = append(d.NoRead, withTarget(p)...)
 	}
 	d.NoAccess, d.NoRead = dedupe(d.NoAccess), dedupe(d.NoRead)
-	if err := validate(append(append([]string{}, d.NoAccess...), d.NoRead...)); err != nil {
+	d.NoMove = ancestors(append(append([]string{}, d.NoAccess...), d.NoRead...))
+	if err := validate(append(append(append([]string{}, d.NoAccess...), d.NoRead...), d.NoMove...)); err != nil {
 		return DenySet{}, err
 	}
 	return d, nil
 }
 
-// withTarget returns p and, if p is a symlink, what it resolves to.
+// ancestors is every directory above each path, up to the root.
+//
+// The whole chain rather than the immediate parent: `~/.config/gcloud` is
+// moved out from under its rule by renaming `~/.config`, and equally by
+// renaming `~`. Naming all of them costs a handful of rules that match a
+// directory entry nothing honest renames, and stops the question being "how
+// far up did we think to look".
+func ancestors(paths []string) []string {
+	var out []string
+	for _, p := range paths {
+		for dir := filepath.Dir(p); ; {
+			out = append(out, dir)
+			parent := filepath.Dir(dir)
+			if parent == dir {
+				break
+			}
+			dir = parent
+		}
+	}
+	return dedupe(out)
+}
+
+// withTarget returns p and, if any part of p resolves elsewhere, that too.
+//
+// **Both spellings are load-bearing and neither is redundant.** SBPL matches
+// against the kernel's canonical path, so the resolved form is the one that
+// actually denies reads. The unresolved form is what pins the *link* — a
+// `(literal "<link>")` under file-write-unlink is what stops `mv ~/.config x`,
+// and it does not protect the directory behind it.
 func withTarget(p string) []string {
 	abs, err := filepath.Abs(p)
 	if err != nil {
 		return []string{p}
 	}
-	resolved, err := filepath.EvalSymlinks(abs)
-	if err != nil || resolved == abs {
-		return []string{abs}
+	if resolved := resolveDeepest(abs); resolved != abs {
+		return []string{abs, resolved}
 	}
-	return []string{abs, resolved}
+	return []string{abs}
+}
+
+// resolveDeepest resolves the longest existing prefix of abs and re-attaches
+// what is left.
+//
+// filepath.EvalSymlinks fails on the *whole* path when any single component is
+// missing, and withTarget used to treat that failure exactly like "not a
+// symlink" — returning the unresolved spelling alone. Missing components are
+// the normal case here, not an edge: the deny set names `~/.config/gcloud` on
+// machines with no gcloud, `~/.docker/config.json` before a docker login, and
+// rta's own data directory before rta has ever written anything.
+//
+// When an *ancestor* is a symlink, that unresolved spelling is a path the
+// kernel never produces, so the rule is inert rather than narrow — proven
+// against /usr/bin/sandbox-exec: with `.config` a link and a profile naming
+// only the link spelling, a sandboxed `cat` read the credential through both
+// names; naming only the resolved spelling denied both. That layout is exactly
+// the one Resolve's comment cites — home-manager, chezmoi and stow all produce
+// it — so the function was blindest on the machines it was written for.
+//
+// internal/pathguard does the same walk for MCP arguments, and for the same
+// reason it states there: once a component is missing the rest accumulates
+// lexically, which is correct, because a path that does not exist cannot be a
+// symlink. A component created later *as a symlink* still points somewhere
+// this did not name; that is why the deny set is recomputed on every spawn and
+// why the ancestors are pinned against creation and renaming.
+func resolveDeepest(abs string) string {
+	vol := filepath.VolumeName(abs)
+	out := vol + string(filepath.Separator)
+	for _, seg := range strings.Split(abs[len(vol):], string(filepath.Separator)) {
+		if seg == "" || seg == "." {
+			continue
+		}
+		next := filepath.Join(out, seg)
+		if resolved, err := filepath.EvalSymlinks(next); err == nil {
+			out = resolved
+			continue
+		}
+		out = next
+	}
+	return out
 }
 
 // validate refuses any path that could break out of the quoting in a

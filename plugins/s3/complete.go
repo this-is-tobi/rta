@@ -10,7 +10,7 @@ import (
 )
 
 // Live completion: the inputs whose values exist server-side, completed on
-// the deliberate channel (Field.Live, ADR 0018 §8 as amended). Each one is a
+// the deliberate channel (Field.Live). Each one is a
 // listing — a read, made with the credentials the run would use, visible in
 // the provider's own audit trail as the same principal. Silent on every
 // failure, like any Suggest: a completion that cannot answer slows nobody

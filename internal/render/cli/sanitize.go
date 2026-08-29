@@ -25,7 +25,7 @@ import (
 //
 // `-o json` is the one byte-exact format. It escapes control characters on the
 // way out, so nothing raw reaches a terminal from the encoder, and it is what
-// P2 promises works in a pipe. Every other format is cleaned, which was
+// the contract promises works in a pipe. Every other format is cleaned, which was
 // measured rather than assumed: goccy/go-yaml writes a control character
 // straight into a plain scalar (which is also YAML that is not legal), and
 // encoding/csv quotes a field for comma, quote and newline, none of which ESC

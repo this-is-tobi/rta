@@ -15,7 +15,7 @@ import (
 )
 
 // An index is a git repository holding plugins/<name>.yaml manifests — Krew's
-// shape, adopted with its reasons (ADR 0017 §2): git buys partial updates,
+// shape, adopted with its reasons: git buys partial updates,
 // signed commits, blame and rollback, and every author already knows how to
 // open a pull request against one. rta shells out to git the way tunnels
 // shell out to kubectl and ssh: the operator's transports, proxies and
@@ -218,7 +218,7 @@ func Manifests(ix Index) ([]Listed, []*view.Error) {
 		}
 		// The filename is the name the index gave the entry by placing it,
 		// and the name inside is what the entry says about itself — where
-		// they disagree, the layout wins and the manifest is refused (D40's
+		// they disagree, the layout wins and the manifest is refused (the
 		// rule, third application).
 		if m.Name != base {
 			bad = append(bad, view.Errorf("plugin.index.manifest",

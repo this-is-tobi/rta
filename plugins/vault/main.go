@@ -1,7 +1,7 @@
 // Command rta-plugin-vault talks to a HashiCorp Vault deployment: kv
 // read/write/list, token and lease info, seal status, policy view, transit
 // encrypt/decrypt, and response-wrapping as a within-your-infra share
-// (PROJECT.md §7, Wave 2; D13/ADR 0006 for wrapping specifically).
+// Response-wrapping is the answer to sharing a secret within your own infra.
 //
 // Build it and put it on your $PATH as `rta-plugin-vault`:
 //
@@ -70,6 +70,7 @@ func Plugin() plugin.Plugin {
 			overviewCapability(),
 			sealStatusCapability(),
 			kvListCapability(),
+			kvTreeCapability(),
 			kvGetCapability(),
 			kvSetCapability(),
 			tokenStatusCapability(),
@@ -80,6 +81,7 @@ func Plugin() plugin.Plugin {
 			transitDecryptCapability(),
 			wrapSetCapability(),
 			wrapGetCapability(),
+			snapshotCapability(),
 		},
 	}
 }

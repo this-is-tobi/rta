@@ -11,7 +11,7 @@ import (
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
 
-// The managed store (ADR 0017 §3): Krew's store/ + bin/ split, for Krew's
+// The managed store: Krew's store/ + bin/ split, for Krew's
 // reasons.
 //
 //	<data>/plugins/store/pg/<digest>/rta-plugin-pg   # by name, then by digest
@@ -21,8 +21,8 @@ import (
 // a re-download; the bin/ symlink is the one place "current" is stated, and
 // swapping it is the upgrade. Bare $PATH discovery keeps working unchanged —
 // the store is discovered *after* $PATH, so an operator's own copy earlier on
-// $PATH shadows the managed one the ordinary way and `rta doctor` reports it
-// (D40), rather than rta's store silently outranking a deliberate local
+// $PATH shadows the managed one the ordinary way and `rta doctor` reports it,
+// rather than rta's store silently outranking a deliberate local
 // build.
 
 // StoreDir is where installed artifacts live, by name then digest.

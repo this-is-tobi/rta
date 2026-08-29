@@ -358,7 +358,7 @@ func newPluginNewCommand() *cobra.Command {
 // newPluginDevCommand builds a plugin from source and uses it without
 // installing it.
 //
-// The spawn is the ordinary one. ADR 0012 §6 is explicit that `rta plugin dev`
+// The spawn is the ordinary one: `rta plugin dev`
 // gets no confinement exemption and shares one code path with installed mode,
 // because "works in dev, breaks for users" is what kills sandbox adoption —
 // and a separate dev path would mean the fifteen-minute gate exercises a path

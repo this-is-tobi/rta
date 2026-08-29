@@ -12,7 +12,7 @@
 // type, so supporting them would mean shelling out to the gpg binary on
 // every read: a hidden external dependency, a second trust model, and a
 // second set of failure modes inside a store whose value is that it has
-// almost none. A gpg plugin (PROJECT.md §7.5) is the honest home for
+// almost none. A gpg plugin is the honest home for
 // gpg-native workflows; this store speaks age, and age speaks SSH.
 package kv
 
@@ -127,7 +127,7 @@ func parseRecipient(spec string) (age.Recipient, string, error) {
 // recipient spec: the spec itself, truncated, unless it looks like a
 // private key — in which case echoing any of it at all would leak secret
 // material into an error message that reaches the terminal, shell history,
-// or any log capturing command output. Found by review (PROJECT.md D74):
+// or any log capturing command output. Found by review:
 // a mistyped `--recipient AGE-SECRET-KEY-1...` — a private identity pasted
 // where a public recipient was expected — used to be echoed here verbatim,
 // truncated but real, in exactly the class of place parseIdentity's own
@@ -189,7 +189,7 @@ type identity struct {
 // Plural because age's own identity-file convention allows several keys in
 // one file (age-keygen >> identities.txt is the documented way to
 // accumulate them), and a version of this function that read only the
-// first line — found by review, PROJECT.md D74 — silently dropped every key
+// first line — found by review — silently dropped every key
 // after it: a store actually protected by the second key in the file
 // reported kv.wrongkey with the correct key sitting right there on disk.
 func parseIdentities(req plugin.Request, path string) ([]identity, *view.Error) {
@@ -603,6 +603,27 @@ func writeKeys(req plugin.Request, embedded []string) (recipients []age.Recipien
 		return nil, nil, nil, verr
 	}
 	if mode == modeKeys {
+		// **A recipients file with no store behind it is not a lock anybody
+		// chose.** Nothing rta does produces that state: saveTo writes the
+		// recipients only once the ciphertext is on disk, and kv.init refuses
+		// outright when a recipients file is already there. So the pairing
+		// exists exactly one way — somebody wrote the file directly.
+		//
+		// It mattered because the mismatch guard below cannot fire on a first
+		// write: there is no ciphertext yet, so `embedded` is nil and there is
+		// nothing to compare. An operator who had never run `kv init` — the
+		// path kv's own doc calls the one that needs no setup — would have
+		// their first `kv set` create a store encrypted to a planted key and
+		// to nothing else, locking them out of their own secret while handing
+		// it to whoever planted it. Refusing costs a legitimate operator
+		// nothing, because no legitimate operator is ever in this state.
+		if !fileExists(storePath()) {
+			return nil, nil, nil, view.Errorf("kv.recipients.orphan",
+				"%s lists keys but there is no store for them to unlock", recipientsPath()).
+				WithHint("rta never writes that file on its own — it is written with the store, " +
+					"never before it. Check whether those keys are yours (`rta kv recipients`); " +
+					"if they are not, delete the file and start over with `rta kv init`")
+		}
 		// kv.recipients has to be plaintext — the point of it is answering
 		// "who can read this?" without unlocking anything — which also means
 		// it is a file with no cryptographic tie to the store at all,
@@ -660,7 +681,7 @@ func writeKeys(req plugin.Request, embedded []string) (recipients []age.Recipien
 	}
 	// Every key in a multi-key identity file becomes a reader, not just the
 	// first — the operator holds all of them, so all of them belong among
-	// the keys this write cannot lock itself out from (PROJECT.md D74).
+	// the keys this write cannot lock itself out from.
 	for _, id := range ids {
 		want = mergeSpec(want, id.spec)
 	}

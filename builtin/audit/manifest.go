@@ -10,7 +10,7 @@ import (
 
 // Reading what a project already declares, rather than resolving it.
 //
-// The distinction is the whole reason this stays inside ADR 0008's first
+// The distinction is the whole reason this stays inside the plugin's first
 // rule. syft builds an SBOM by understanding build systems; trivy and grype
 // walk images and resolve trees. None of that happens here: a lockfile is a
 // list somebody's package manager already committed, an SBOM is a list

@@ -183,7 +183,7 @@ func renderChains(chains [][]string) string {
 // gradeProvenance says what the manifests could not explain, and names the
 // one command that can.
 //
-// This is where the plugin's first rule (ADR 0008: it does not reimplement
+// This is where the plugin's first rule (it does not reimplement
 // scanners) meets the question the operator actually has. Reading a
 // committed lockfile is free and safe; resolving a module graph is a package
 // manager's job, and every package manager already ships the command. So the

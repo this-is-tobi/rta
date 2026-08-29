@@ -27,7 +27,7 @@ import (
 var version = "dev"
 
 func main() {
-	// Before anything reads a secret into this address space. ADR 0012
+	// Before anything reads a secret into this address space. Confinement
 	// documented this in two places and it was implemented in none, which is
 	// the worst shape a security claim can have.
 	pluginhost.HardenSelf()

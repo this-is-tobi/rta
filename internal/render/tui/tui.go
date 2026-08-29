@@ -1,7 +1,6 @@
 // Package tui is the interactive shell over the capability registry: one app
 // that hosts every plugin's views. Capabilities never own the screen — the
-// shell browses the registry, runs capabilities, and renders their Views
-// (PROJECT.md §5.2).
+// shell browses the registry, runs capabilities, and renders their Views.
 //
 // v0 scope: filterable capability browser (the proto command palette),
 // direct execution of capabilities without required inputs, results in a
@@ -185,7 +184,7 @@ type Model struct {
 // namespace, already matched to the artifact by internal/pluginconf; nil is a
 // decision the caller has to type, which is the point.
 //
-// A parameter rather than a setter, for the reason ADR 0016 gives for
+// A parameter rather than a setter, for the same reason as
 // plugin.Resolve's third argument: Run used to take this and New could not,
 // so the value had nowhere to go and was dropped on the floor. Every surface
 // that reads it — the form seed, the run, the dashboard refresh — then saw

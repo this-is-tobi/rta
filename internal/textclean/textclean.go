@@ -60,10 +60,11 @@ func Model(s string) string {
 	if strings.ContainsFunc(out, isInvisible) {
 		out = filter(out, isInvisible)
 	}
-	for _, frame := range []string{plugin.AuthoredOpen, plugin.AuthoredClose} {
-		out = strings.ReplaceAll(out, frame, "")
-	}
-	return out
+	// By sense rather than by bytes: the reader is a model, and "─── end of
+	// plugin-written text ───" with a third dash closes the block as
+	// convincingly as the literal while matching no ReplaceAll. See
+	// plugin.StripFrames.
+	return plugin.StripFrames(out)
 }
 
 // Deceives reports whether s would display as something other than what it

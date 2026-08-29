@@ -13,7 +13,7 @@ import (
 )
 
 // Every rule about "the forward fills the endpoint inputs" was written while
-// `kube:` was the only tunnel, and D119 records what happens when a rule's
+// `kube:` was the only tunnel, and it is on record what happens when a rule's
 // twin goes unwritten: the `secrets:` copy of the `set:` shadowing rule
 // simply did not exist. `ssh:` is the second scheme, so these tests are the
 // twin-hunt made explicit — each one is an existing kube rule asserted to
@@ -193,7 +193,7 @@ profiles:
 }
 
 // And the `secrets:` twin — the rule whose kube original only exists because
-// its absence was a bug once (D119).
+// its absence was a bug once.
 func TestASecretMappedOntoAnSSHForwardedInputIsRefused(t *testing.T) {
 	reg := tunnelledRegistry(t)
 	cfg := load(t, `

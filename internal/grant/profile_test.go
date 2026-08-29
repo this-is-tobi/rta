@@ -53,21 +53,21 @@ func TestAGrantForOneConnectionAuthorizesNoOther(t *testing.T) {
 	staging := Grant{Target: "pg", Profile: "staging"}
 	base := Grant{Target: "pg"}
 
-	if staging.covers("pg.query", "", "prod") {
+	if staging.covers("pg.query", "", Caller{Profile: "prod"}) {
 		t.Error("a grant for staging authorized a call against prod")
 	}
-	if staging.covers("pg.query", "", "") {
+	if staging.covers("pg.query", "", Caller{}) {
 		t.Error("a grant for staging authorized a call against the base connection")
 	}
-	if !staging.covers("pg.query", "", "staging") {
+	if !staging.covers("pg.query", "", Caller{Profile: "staging"}) {
 		t.Error("a grant for staging did not authorize a call against staging")
 	}
 	// And the direction that matters most for everything already on disk.
-	if base.covers("pg.query", "", "prod") {
+	if base.covers("pg.query", "", Caller{Profile: "prod"}) {
 		t.Error("a grant naming no profile authorized a call against prod — " +
 			"every grant issued before profiles existed just widened to every connection")
 	}
-	if !base.covers("pg.query", "", "") {
+	if !base.covers("pg.query", "", Caller{}) {
 		t.Error("a grant naming no profile stopped authorizing the calls it was issued for")
 	}
 }
@@ -153,17 +153,17 @@ func TestUsesAreSpentPerConnection(t *testing.T) {
 		t.Fatal(verr)
 	}
 
-	release, verr := Reserve(c, map[string]any{"sql": "select 1"}, "staging", stagingPin, "")
+	release, verr := Reserve(c, map[string]any{"sql": "select 1"}, Caller{Profile: "staging", Pin: stagingPin})
 	if verr != nil {
 		t.Fatalf("the staging grant did not authorize a staging call: %v", verr)
 	}
 	_ = release
 
 	// staging is spent; prod is untouched.
-	if _, verr := Reserve(c, map[string]any{"sql": "select 1"}, "staging", stagingPin, ""); verr == nil {
+	if _, verr := Reserve(c, map[string]any{"sql": "select 1"}, Caller{Profile: "staging", Pin: stagingPin}); verr == nil {
 		t.Error("a one-time grant for staging authorized a second staging call")
 	}
-	if _, verr := Reserve(c, map[string]any{"sql": "select 1"}, "prod", prodPin, ""); verr != nil {
+	if _, verr := Reserve(c, map[string]any{"sql": "select 1"}, Caller{Profile: "prod", Pin: prodPin}); verr != nil {
 		t.Errorf("spending the staging grant also spent the prod one: %v", verr)
 	}
 }
@@ -215,7 +215,7 @@ func TestASwitchedOnEnvironmentBoundsOnlyOtherProfiles(t *testing.T) {
 		{active: "somewhere-else", want: []string{""}},
 	} {
 		var got []string
-		view, _ := reachable(grants, "", "", tc.active)
+		view, _ := reachable(grants, Caller{Active: tc.active})
 		for _, g := range view {
 			got = append(got, g.Profile)
 		}
@@ -232,7 +232,7 @@ func TestASwitchedOnEnvironmentBoundsOnlyOtherProfiles(t *testing.T) {
 	}
 	// And it never adds: the reachable set is a subset, whatever is switched on.
 	for _, active := range []string{"", "staging", "prod", "nothing-like-this"} {
-		view, at := reachable(grants, "", "", active)
+		view, at := reachable(grants, Caller{Active: active})
 		if len(view) > len(grants) {
 			t.Errorf("active=%q produced more grants than were stored", active)
 		}
@@ -257,7 +257,7 @@ func TestASwitchedOnEnvironmentBoundsOnlyOtherProfiles(t *testing.T) {
 // naming it: the operator consented to a call reaching staging, and the
 // identical grant went on authorizing it against whatever that name meant
 // afterwards — a credential redirect with the consent record still reading
-// "staging". ADR 0019 and ADR 0020 both record it as required the moment a
+// "staging". It became required the moment a
 // connection can also carry cluster coordinates.
 func TestAGrantStopsCoveringAConnectionThatWasRepointed(t *testing.T) {
 	t.Setenv("RTA_DATA_DIR", t.TempDir())
@@ -357,7 +357,7 @@ func TestRevocationStillSeesAGrantWhoseConnectionMoved(t *testing.T) {
 		Target: "pg", Profile: "staging", ProfilePin: "as-consented",
 		Issued: now, Expires: now.Add(time.Hour),
 	}}
-	if Covering(grants, "pg.query", "", "staging") == nil {
+	if Covering(grants, "pg.query", "", Caller{Profile: "staging"}) == nil {
 		t.Error("revoke cannot see a grant whose connection has been repointed")
 	}
 	// And Stale says so, which is what the person-facing surfaces print.
@@ -450,8 +450,7 @@ func TestAGrantedCallDoesNotDeleteTheGrantsItWasNotShown(t *testing.T) {
 			if verr := Save(tc.grants); verr != nil {
 				t.Fatal(verr)
 			}
-			release, verr := Reserve(readCapFor("pg.query"),
-				map[string]any{"sql": "select 1"}, tc.profile, tc.pin, tc.active)
+			release, verr := Reserve(readCapFor("pg.query"), map[string]any{"sql": "select 1"}, Caller{Profile: tc.profile, Pin: tc.pin, Active: tc.active})
 			if verr != nil {
 				t.Fatalf("the covering grant did not authorize the call: %v", verr)
 			}
@@ -504,7 +503,7 @@ func TestARefundGivesBackExactlyWhatTheCallTook(t *testing.T) {
 		t.Fatal(verr)
 	}
 
-	release, verr := Reserve(c, map[string]any{"key": []string{"a", "b"}}, "", "", "")
+	release, verr := Reserve(c, map[string]any{"key": []string{"a", "b"}}, Caller{})
 	if verr != nil {
 		t.Fatalf("the call was refused: %v", verr)
 	}

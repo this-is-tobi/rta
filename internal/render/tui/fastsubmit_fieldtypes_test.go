@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"testing"
-	"time"
 
 	tea "charm.land/bubbletea/v2"
 	teatest "github.com/charmbracelet/x/exp/teatest/v2"
@@ -205,7 +204,7 @@ func TestShiftEnterDeclinesADestructiveCapabilityWithRealInputsAheadOfTheConfirm
 	waitFor(t, tm, "capabilities") // declined, back to browse — no intermediate stop
 
 	tm.Send(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
-	tm.WaitFinished(t, teatest.WithFinalTimeout(3*time.Second))
+	tm.WaitFinished(t, teatest.WithFinalTimeout(framePatience))
 	buf := new(bytes.Buffer)
 	_, _ = buf.ReadFrom(tm.FinalOutput(t))
 	if bytes.Contains(buf.Bytes(), []byte("DESTRUCTIVE-EXECUTED")) {

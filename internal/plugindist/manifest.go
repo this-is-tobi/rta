@@ -1,4 +1,4 @@
-// Package plugindist is plugin distribution (ADR 0017): indexes that state
+// Package plugindist is plugin distribution: indexes that state
 // claims, a managed store, and a lockfile recording what rta computed.
 //
 // The one line the whole design hangs on: an index is a list of claims made
@@ -28,10 +28,10 @@ import (
 // written by whoever maintains the index. Krew's shape (a YAML file per
 // plugin under plugins/), plus the one thing Krew structurally cannot carry —
 // the plugin's declaration — because an rta plugin declares itself before it
-// runs, so the claim is checkable at install (ADR 0017 §2).
+// runs, so the claim is checkable at install.
 type Manifest struct {
 	// Name is the namespace this manifest claims, and the file must be
-	// called <name>.yaml — the D40 rule again: where the name in a thing and
+	// called <name>.yaml — the same rule again: where the name in a thing and
 	// the name on the thing disagree, the operator-visible one wins, and here
 	// the index's file layout is what an operator browses.
 	Name    string `yaml:"name"`
@@ -44,9 +44,9 @@ type Manifest struct {
 	Capabilities []CapabilityClaim `yaml:"capabilities"`
 
 	// Signature names a detached signature for the artifact, verified when
-	// present and recorded — never required, never a gate (ADR 0017 §5): a
+	// present and recorded — never required, never a gate: a
 	// valid signature on a worse plugin verifies perfectly, and the campaigns
-	// ADR 0015 cites shipped malware with valid provenance.
+	// Shipped malware has carried valid provenance before now.
 	Signature *SignatureClaim `yaml:"signature,omitempty"`
 }
 
@@ -123,7 +123,7 @@ func ParseManifest(raw []byte) (Manifest, *view.Error) {
 // check is every rule a manifest must satisfy before its claims are shown to
 // anybody. The grammar rules are pkg/plugin's own exports, so a claim is held
 // to exactly the grammar the binary will be held to at registration — one
-// home per rule (D30).
+// home per rule.
 func (m Manifest) check() *view.Error {
 	bad := func(format string, args ...any) *view.Error {
 		return view.Errorf("plugin.index.manifest", format, args...)
@@ -228,7 +228,7 @@ func (p Platform) check(name string) *view.Error {
 
 // checkArtifactURL admits the schemes an artifact may be fetched over.
 // file:// exists for local indexes — the only kind until the module is
-// published (ADR 0017 §0) — and for tests; oci:// is a legal claim whose
+// published — and for tests; oci:// is a legal claim whose
 // transport install refuses until it is built.
 func checkArtifactURL(name, what, raw string) *view.Error {
 	u, err := url.Parse(raw)

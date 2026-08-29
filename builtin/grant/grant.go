@@ -9,7 +9,9 @@ package grant
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -74,9 +76,14 @@ func Plugin(catalog func() []plugin.Capability) plugin.Plugin {
 					"gate at all. The target is a capability ID (kv.get) or a plugin name (kv), " +
 					"which covers all of it. A second argument narrows the grant to one record: " +
 					"`rta grant allow kv.get db-password` allows that key and no other. " +
+					"--agent narrows it to one of your named agents, so consent given while " +
+					"talking to one client does not follow every other client on this machine. " +
 					"--max-uses expires the grant after that many successful calls, on top of " +
 					"--ttl, whichever comes first — `--max-uses 1` for a value that should be " +
-					"read exactly once.",
+					"read exactly once. --rate bounds how fast instead of how much: " +
+					"`--rate 10/1h` allows ten calls in any hour and tells the agent when to " +
+					"come back, so a session that has gone wrong slows to something you can " +
+					"notice rather than draining at machine speed.",
 				Inputs: []plugin.Field{
 					{Name: "target", Type: plugin.String, Positional: true, Required: true,
 						Suggest: suggestGatedTargets,
@@ -85,9 +92,13 @@ func Plugin(catalog func() []plugin.Capability) plugin.Plugin {
 						Help: "narrow it to one record: a key, a task id, a hostname"},
 					{Name: "profile", Type: plugin.String, Suggest: suggestConfiguredProfiles,
 						Help: "narrow it to one configured connection"},
+					{Name: "agent", Type: plugin.String, Suggest: suggestHeldAgents,
+						Help: "narrow it to one named agent — the name `rta mcp serve --as` uses"},
 					{Name: "ttl", Type: plugin.String, Default: "15m", Suggest: suggestTTL,
 						Help: "how long it lasts: 30s, 15m, 2h"},
 					{Name: "max-uses", Type: plugin.Int, Help: "expire after this many successful calls (0 = unlimited)"},
+					{Name: "rate", Type: plugin.String, Suggest: suggestRate,
+						Help: "how fast it may be used, as calls/window — e.g. 10/1h"},
 					{Name: "note", Type: plugin.String, Help: "why — shown by grant list"},
 				},
 				Run: func(ctx context.Context, req plugin.Request) (view.View, error) {
@@ -112,6 +123,8 @@ func Plugin(catalog func() []plugin.Capability) plugin.Plugin {
 						Help: "only the grant for this record"},
 					{Name: "profile", Type: plugin.String, Suggest: suggestHeldProfiles,
 						Help: "only grants on this connection"},
+					{Name: "agent", Type: plugin.String, Suggest: suggestHeldAgents,
+						Help: "only grants for this named agent"},
 					{Name: "ttl", Type: plugin.String, Suggest: suggestTTL,
 						Help: "how much longer — defaults to the window the grant was issued with"},
 				},
@@ -141,6 +154,8 @@ func Plugin(catalog func() []plugin.Capability) plugin.Plugin {
 						Help: "only the grant for this record"},
 					{Name: "profile", Type: plugin.String, Suggest: suggestHeldProfiles,
 						Help: "only the grant for this connection"},
+					{Name: "agent", Type: plugin.String, Suggest: suggestHeldAgents,
+						Help: "only the grant for this named agent"},
 					{Name: "all", Type: plugin.Bool, Help: "revoke every grant"},
 				},
 				Run: runRevoke,
@@ -210,6 +225,34 @@ func suggestHeldProfiles(context.Context, plugin.Request) []string {
 		}
 		seen[g.Profile] = true
 		out = append(out, g.Profile)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// suggestHeldAgents completes from the grants that exist, and is used by allow
+// as well as by revoke and renew.
+//
+// Deliberately not from a configured list, because there is no such list to
+// read: an agent's name is written into whatever MCP client config the
+// operator wired up — Claude's, Cursor's, a systemd unit — and rta never sees
+// those files. The names it has seen are the ones it was told about, so this
+// completes what has been used and never claims to enumerate what exists. The
+// first grant for a new agent is typed in full, which is the honest behaviour
+// for a name only the operator knows.
+func suggestHeldAgents(context.Context, plugin.Request) []string {
+	grants, verr := core.Load()
+	if verr != nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, g := range grants {
+		if g.Agent == "" || seen[g.Agent] {
+			continue
+		}
+		seen[g.Agent] = true
+		out = append(out, g.Agent)
 	}
 	sort.Strings(out)
 	return out
@@ -339,55 +382,64 @@ func runAllow(_ context.Context, req plugin.Request, catalog func() []plugin.Cap
 		return nil, view.Errorf("grant.badmaxuses", "--max-uses cannot be negative").
 			WithHint("0 means unlimited within the TTL, which is also the default")
 	}
+	rateMax, rateWindow, verr := parseRate(req.String("rate"))
+	if verr != nil {
+		return nil, verr
+	}
+	scope := strings.TrimSpace(req.String("scope"))
+	if verr := core.CheckScope(scope); verr != nil {
+		return nil, verr
+	}
+	agent := strings.TrimSpace(req.String("agent"))
+	if verr := core.CheckAgent(agent); verr != nil {
+		return nil, verr
+	}
 
 	now := time.Now()
 	g := core.Grant{
 		Target: target,
-		Scope:  strings.TrimSpace(req.String("scope")),
+		Scope:  scope,
 		// The name and the connection behind it. The pin is what makes this a
 		// grant against a place rather than against a label: edit the
 		// environment afterwards and this stops covering calls on it, instead
 		// of quietly following the name to wherever it now points.
 		Profile:    profile,
 		ProfilePin: pin,
+		// Who may spend it. Empty is not "anybody": it is the server the
+		// operator launched without a name, which is the only caller a grant
+		// issued before agents were named has ever had.
+		Agent:      agent,
 		Issued:     now,
 		Expires:    now.Add(ttl),
 		Note:       req.String("note"),
 		TTL:        strings.TrimSpace(req.String("ttl")),
 		MaxUses:    maxUses,
+		RateMax:    rateMax,
+		RateWindow: rateWindow,
 	}
 	// Reading the file and replacing it used to be two unlocked steps here,
-	// which is how a revoke issued in between got written back out.
-	if verr := core.Mutate(func(stored []core.Grant) ([]core.Grant, bool) {
-		// One grant per target+scope+profile: re-allowing extends the deadline
-		// rather than stacking two grants whose earlier expiry means nothing.
-		//
-		// Profile is part of the key, and leaving it out would have made this
-		// destructive: `grant allow pg --profile b` would have deleted the
-		// grant for profile a while reporting only that b had been allowed,
-		// silently revoking access nobody asked to revoke. The key has to be
-		// exactly what covers() distinguishes, or "replace the equivalent
-		// grant" replaces one that is not equivalent.
-		kept := stored[:0]
-		for _, existing := range stored {
-			if existing.Target != g.Target || existing.Scope != g.Scope || existing.Profile != g.Profile {
-				kept = append(kept, existing)
-			}
-		}
-		// A preview declines the write from inside the lock rather than
-		// returning before it, so --dry-run still reads the file and still
-		// reports an unreadable one instead of promising a grant that would
-		// have failed.
-		return append(kept, g), !req.DryRun
-	}); verr != nil {
+	// which is how a revoke issued in between got written back out. The
+	// replace-equivalent rule itself now lives in core.Issue, shared with
+	// the consent prompt that can also issue one.
+	if verr := core.Issue(g, !req.DryRun); verr != nil {
 		return nil, verr
 	}
 	if req.DryRun {
-		return view.Text{Body: fmt.Sprintf("would allow agents to %s for %s%s", describe(g), ttl, usesSuffix(maxUses))}, nil
+		return view.Text{Body: fmt.Sprintf("would allow agents to %s for %s%s%s",
+			describe(g), ttl, usesSuffix(maxUses), rateSuffix(g))}, nil
 	}
-	msg := fmt.Sprintf("agents may %s for %s (until %s)%s", describe(g), ttl, g.Expires.Format("15:04:05"), usesSuffix(maxUses))
-	if asked > core.MaxTTL {
-		msg += fmt.Sprintf("\ncapped at the %s maximum (you asked for %s)", core.MaxTTL, asked)
+	msg := fmt.Sprintf("agents may %s for %s (until %s)%s%s",
+		describe(g), ttl, g.Expires.Format("15:04:05"), usesSuffix(maxUses), rateSuffix(g))
+	switch {
+	case ttl < asked:
+		// Which ceiling bit, because "capped" without a source sends somebody
+		// to change a flag that was never the problem.
+		if _, clamped, where := core.ClampTTL(asked); clamped {
+			msg += fmt.Sprintf("\ncapped at %s by your team's policy (you asked for %s) — %s",
+				ttl, asked, where)
+		} else {
+			msg += fmt.Sprintf("\ncapped at the %s maximum (you asked for %s)", core.MaxTTL, asked)
+		}
 	}
 	// A grant for an environment that is not the one switched on cannot be
 	// exercised until it is: the MCP bound refuses every profile but the active
@@ -414,6 +466,73 @@ func usesSuffix(maxUses int) string {
 		return ", or once, whichever comes first"
 	}
 	return fmt.Sprintf(", or %d uses, whichever comes first", maxUses)
+}
+
+// parseRate reads "10/1h" — how many calls, over what window.
+//
+// One argument rather than two because the two halves are meaningless
+// apart: "10" is not a rate and neither is "1h", and a pair of flags is a
+// pair somebody sets one of.
+func parseRate(raw string) (int, string, *view.Error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, "", nil
+	}
+	bad := func(why string) *view.Error {
+		return view.Errorf("grant.badrate", "%q is not a rate: %s", raw, why).
+			WithHint("write it as calls/window — 10/1h, 1/30s, 100/24h")
+	}
+	n, window, ok := strings.Cut(raw, "/")
+	if !ok {
+		return 0, "", bad("it needs a window, after a slash")
+	}
+	calls, err := strconv.Atoi(strings.TrimSpace(n))
+	if err != nil || calls <= 0 {
+		return 0, "", bad("the number of calls has to be a positive whole number")
+	}
+	if calls > core.MaxRate {
+		return 0, "", bad(fmt.Sprintf("the most rta will pace is %d calls a window — "+
+			"past that it is not slowing anything down", core.MaxRate))
+	}
+	window = strings.TrimSpace(window)
+	d, err := time.ParseDuration(window)
+	if err != nil || d <= 0 {
+		return 0, "", bad("the window has to be a duration: 30s, 1h, 24h")
+	}
+	// A window longer than a grant can live is a limit that never refills,
+	// which is --max-uses wearing a different hat and worth saying so.
+	if d > core.MaxTTL {
+		return 0, "", bad(fmt.Sprintf("a window longer than the %s a grant can live is "+
+			"--max-uses %d in disguise", core.MaxTTL, calls))
+	}
+	return calls, window, nil
+}
+
+// rateSuffix says the pace, when there is one.
+func rateSuffix(g core.Grant) string {
+	if g.RateMax <= 0 || g.RateWindow == "" {
+		return ""
+	}
+	return fmt.Sprintf(", no faster than %d %s per %s",
+		g.RateMax, plural(g.RateMax, "call", "calls"), g.RateWindow)
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
+}
+
+// suggestRate offers the paces worth typing, rather than leaving somebody to
+// discover the format from an error message.
+func suggestRate(context.Context, plugin.Request) []string {
+	return []string{
+		"1/1m	one call a minute",
+		"10/1h	ten calls an hour",
+		"60/1h	a call a minute, averaged",
+		"100/24h	a hundred calls a day",
+	}
 }
 
 // targetExists reports whether target names a real capability ID or a
@@ -443,7 +562,11 @@ func parseTTL(raw, target string) (ttl, asked time.Duration, verr *view.Error) {
 		return 0, 0, view.Errorf("grant.badttl", "a grant must last longer than zero").
 			WithHint("to take access away, use: rta grant revoke " + target)
 	}
-	return min(parsed, core.MaxTTL), parsed, nil
+	// Two ceilings, and the tighter one wins: rta's own day, and whatever the
+	// team's policy file says. Reported through `asked` so the caller can name
+	// which one bit.
+	capped, _, _ := core.ClampTTL(min(parsed, core.MaxTTL))
+	return capped, parsed, nil
 }
 
 // suggestTTL offers the windows a grant is usually given, up to the ceiling
@@ -472,11 +595,26 @@ func suggestTTL(context.Context, plugin.Request) []string {
 // describe says what a grant allows, in the words the person used.
 func describe(g core.Grant) string {
 	s := "call " + g.Target
-	if g.Scope != "" {
+	switch {
+	case core.IsFolderScope(g.Scope):
+		// Said differently from an exact scope on purpose. "on prod/" reads
+		// like one record with an odd name; this grant covers every record
+		// under it, including ones that do not exist yet, and the operator is
+		// agreeing to that rather than to what a listing shows today.
+		s += " on any record under " + g.Scope
+	case g.Scope != "":
 		s += " on " + g.Scope
 	}
 	if g.Profile != "" {
 		s += " via profile " + g.Profile
+	}
+	// Last, because it is the subject rather than the object: the sentence
+	// reads "call kv.get on prod/ via profile staging, as agent ci". Said at
+	// all because a grant that names an agent authorizes strictly less than
+	// one that does not, and an operator re-reading their own consent has to
+	// be able to see which they gave.
+	if g.Agent != "" {
+		s += ", as agent " + g.Agent
 	}
 	return s
 }
@@ -504,6 +642,7 @@ func runRenew(_ context.Context, req plugin.Request) (view.View, error) {
 	target := core.Normalize(req.String("target"))
 	scope := strings.TrimSpace(req.String("scope"))
 	profile := strings.TrimSpace(req.String("profile"))
+	agent := strings.TrimSpace(req.String("agent"))
 	askedTTL := strings.TrimSpace(req.String("ttl"))
 
 	var ttl time.Duration
@@ -542,6 +681,9 @@ func runRenew(_ context.Context, req plugin.Request) (view.View, error) {
 				continue
 			}
 			if profile != "" && g.Profile != profile {
+				continue
+			}
+			if agent != "" && g.Agent != agent {
 				continue
 			}
 			window := ttl
@@ -694,7 +836,27 @@ func heldTable() (view.View, *view.Error) {
 				"  rm " + core.Path() + "\n\n" +
 				"Allow one with: rta grant allow <capability> --ttl 15m"
 		}
+		// Same reasoning as the line above, one cause along: a grant that is
+		// on disk and suppressed by the team's ceiling is not "no grant", and
+		// somebody certain they issued one has to be told why it is not here.
+		if n := core.Suppressed(); n > 0 {
+			body += suppressedNote(n)
+		}
 		return view.Text{Body: body}, nil
+	}
+	// The Agent column appears only once something has one, and that is the
+	// point rather than a saving. An operator who has never named an agent has
+	// exactly one principal, so a column of em dashes answers a question they
+	// do not have — the failure budgetLeft below is written against. The
+	// moment they name one, the column's arrival is itself the news: there is
+	// now more than one caller, and which one a grant is for is the most
+	// important thing on the row.
+	named := false
+	for _, g := range grants {
+		if g.Agent != "" {
+			named = true
+			break
+		}
 	}
 	t := view.Table{Columns: []view.Column{
 		{Name: "Capability"},
@@ -706,15 +868,25 @@ func heldTable() (view.View, *view.Error) {
 		{Name: "Profile"},
 		{Name: "Record"},
 		{Name: "Expires In", Kind: view.KindDuration},
-		{Name: "Uses Left"},
+		{Name: "Budget Left"},
 		{Name: "Note"},
 	}}
+	if named {
+		t.Columns = slices.Insert(t.Columns, 2, view.Column{Name: "Agent"})
+	}
 	now := time.Now()
 	cfg, cfgErr := config.Load()
 	for _, g := range grants {
 		record := g.Scope
 		if record == "" {
 			record = "any"
+		}
+		if core.IsFolderScope(g.Scope) {
+			// The width has to be legible in the one screen whose job is
+			// "what may the agent do right now?". A bare "prod/" in a column
+			// headed Record reads as one record with a trailing slash, which
+			// is the opposite of what it authorizes.
+			record = g.Scope + " (all)"
 		}
 		// An em dash rather than the word "any", deliberately: the Record column
 		// one place over already uses "any" for the opposite meaning, and an
@@ -736,22 +908,80 @@ func heldTable() (view.View, *view.Error) {
 		if cfgErr == nil && g.Stale(profiles.ConnStampFor(cfg, g.Profile, core.Namespace(g.Target))) {
 			connection += " (changed)"
 		}
-		usesLeft := "unlimited"
-		if g.MaxUses > 0 {
-			usesLeft = fmt.Sprintf("%d", g.MaxUses-g.Uses)
-		}
-		t.Rows = append(t.Rows, []string{
+		row := []string{
 			g.Target,
 			connection,
 			record,
 			g.Expires.Sub(now).Round(time.Second).String(),
-			usesLeft,
+			budgetLeft(g, now),
 			g.Note,
-		})
+		}
+		if named {
+			// An em dash for the same reason the Profile column uses one: an
+			// empty agent is not a wildcard. It is the server launched without
+			// a name, and beside a row that names one the difference is
+			// exactly what the operator needs to see.
+			who := g.Agent
+			if who == "" {
+				who = "—"
+			}
+			row = slices.Insert(row, 2, who)
+		}
+		t.Rows = append(t.Rows, row)
 	}
 
 	t.Total = len(t.Rows)
+	// A partial suppression is the confusing one: some rows are here, the one
+	// being looked for is not, and nothing on the screen accounts for it.
+	if n := core.Suppressed(); n > 0 {
+		return view.Sections{Items: []view.Section{
+			{ID: "grants", Title: "Allowed", View: t},
+			{ID: "policy", Title: "Your team's policy",
+				View: view.Text{Body: strings.TrimPrefix(suppressedNote(n), "\n\n")}},
+		}}, nil
+	}
 	return t, nil
+}
+
+// suppressedNote accounts for grants the ceiling is holding back, so that
+// "where did my grant go" has an answer on the screen where it is asked.
+func suppressedNote(n int) string {
+	where := ""
+	if c, verr := core.Ceiling(); verr == nil {
+		where = " — " + c.Where()
+	}
+	return fmt.Sprintf("\n\n%d grant(s) on disk are suppressed by your team's policy%s\n"+
+		"They are not deleted: relaxing the policy brings them back, and "+
+		"`rta doctor` says what it forbids.", n, where)
+}
+
+// budgetLeft is the one cell that answers "how much of this is left", across
+// both kinds of budget a grant can carry.
+//
+// One column rather than two: a grant almost never carries both, and a table
+// with an "unlimited" in every row of a column nobody uses is a table people
+// stop reading across. When it does carry both, they are separated by a
+// comma and the reader can see which bites first.
+func budgetLeft(g core.Grant, now time.Time) string {
+	var parts []string
+	if g.MaxUses > 0 {
+		parts = append(parts, fmt.Sprintf("%d of %d uses", g.MaxUses-g.Uses, g.MaxUses))
+	}
+	if room, next, limited := g.RateRoom(now); limited {
+		switch {
+		case room > 0:
+			parts = append(parts, fmt.Sprintf("%d of %d per %s", room, g.RateMax, g.RateWindow))
+		case next.IsZero():
+			parts = append(parts, "paced, and the window will not parse")
+		default:
+			parts = append(parts, fmt.Sprintf("paced out, %s to go",
+				time.Until(next).Truncate(time.Second)))
+		}
+	}
+	if len(parts) == 0 {
+		return "unlimited"
+	}
+	return strings.Join(parts, ", ")
 }
 
 func runRevoke(_ context.Context, req plugin.Request) (view.View, error) {
@@ -769,7 +999,8 @@ func runRevoke(_ context.Context, req plugin.Request) (view.View, error) {
 	target := core.Normalize(req.String("target"))
 	scope := strings.TrimSpace(req.String("scope"))
 	profile := strings.TrimSpace(req.String("profile"))
-	if !all && target == "" && profile == "" {
+	agent := strings.TrimSpace(req.String("agent"))
+	if !all && target == "" && profile == "" && agent == "" {
 		return nil, view.Errorf("grant.notarget", "name a capability, or pass --all").
 			WithHint("run `rta grant list` to see what is currently allowed")
 	}
@@ -803,6 +1034,13 @@ func runRevoke(_ context.Context, req plugin.Request) (view.View, error) {
 			if match && !all && profile != "" && g.Profile != profile {
 				match = false
 			}
+			// And the same for an agent: `rta grant revoke kv --agent ci`
+			// takes back what one client was allowed and leaves the others
+			// alone. Without it the narrowest request would again do the
+			// widest thing.
+			if match && !all && agent != "" && g.Agent != agent {
+				match = false
+			}
 			active := g.Active(now)
 			if match {
 				if active {
@@ -826,7 +1064,10 @@ func runRevoke(_ context.Context, req plugin.Request) (view.View, error) {
 		// through something wider, is how a namespace grant on kv survived
 		// `rta grant revoke kv.get` while the operator was told there was
 		// nothing to revoke — true of the row, false of the access.
-		still := core.Covering(live, target, scope, profile)
+		// The caller this revoke was about: asking whether the target is
+		// still reachable means asking it for the same agent and connection,
+		// not for some other one that happens to still hold a grant.
+		still := core.Covering(live, target, scope, core.Caller{Agent: agent, Profile: profile})
 		stillCovered := func(line string) string {
 			if still == nil {
 				return line

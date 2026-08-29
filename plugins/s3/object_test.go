@@ -30,7 +30,7 @@ func reqFor(t *testing.T, capID, endpoint string, values map[string]any) plugin.
 	return req(t, capID, values)
 }
 
-// A regression test for a real bug live testing caught (PROJECT.md D93).
+// A regression test for a real bug live testing caught.
 //
 // minio-go's GetObject is lazy: it validates the names, returns a *Object,
 // and does not issue the HTTP request until the first Read. So the error

@@ -177,7 +177,7 @@ func TestProbeClosedPortIsCoded(t *testing.T) {
 	}
 }
 
-// A regression test for a real bug review found (PROJECT.md D89): the TLS
+// A regression test for a real bug review found: the TLS
 // handshake was never bounded by the documented timeout field — only the
 // TCP dial was — so a peer that accepts the connection and then never sends
 // a single TLS record hung HandshakeContext forever. No grant is needed for
@@ -219,7 +219,7 @@ func TestProbeTLSHandshakeRespectsTimeout(t *testing.T) {
 	}
 }
 
-// A regression test for a real bug review found (PROJECT.md D90): every
+// A regression test for a real bug review found: every
 // read after the first got a fresh 200ms deadline no matter how long the
 // call had already run, so a peer trickling one byte at a time — fully
 // within its control, since host/port are caller-supplied — could hold the
@@ -274,7 +274,7 @@ func TestProbeBannerReadRespectsWaitAgainstATricklingPeer(t *testing.T) {
 // A dry run must not reach the network. net.send shipped without the branch,
 // so `rta net send --dry-run` opened the connection, wrote the bytes, and
 // then reported what "would" happen — the exact mistake http.post made once
-// already (PROJECT.md §4.7), on the capability whose own declaration calls it
+// already, on the capability whose own declaration calls it
 // a remote write primitive strictly more capable than http.post.
 //
 // The listener accepts and records; a dry run that touches it at all fails.

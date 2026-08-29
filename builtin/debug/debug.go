@@ -1,9 +1,9 @@
-// Package debug absorbs sequin (PROJECT.md §3.3, §7 Wave 1, D70): explain
+// Package debug absorbs sequin: explain
 // the raw ANSI/terminal escape sequences in a string, byte by byte, rather
 // than letting a terminal silently act on them.
 //
 // Built-in rather than an external plugin, unlike pg and eol — reclassified
-// from Wave 3 by D70, alongside `keys`, once building `eol` raised the
+// forward, alongside `keys`, once building `eol` raised the
 // question of what else on that list was filed as "external" out of habit
 // rather than necessity. This one has no such necessity: it needs no
 // credential, no live service, and no filesystem access a confined plugin
@@ -12,7 +12,7 @@
 // (internal/render/tui uses it today), so this adds no new one.
 //
 // Useful to rta's own development, not just to whoever installs it: the
-// same OSC 52/OSC 0/CSI J hazards PROJECT.md §4.7 (item 13) found reaching a
+// same OSC 52/OSC 0/CSI J hazards found reaching a
 // real terminal from this project's own renderer are exactly what this
 // capability exists to make visible before they happen somewhere else.
 package debug

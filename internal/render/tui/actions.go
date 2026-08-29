@@ -93,25 +93,80 @@ var capActionSpecs = map[string][]struct {
 		{"e", "renew", "grant.allow", srcRow},
 		{"x", "revoke", "grant.revoke", srcRow},
 	},
-	// Deliberately no "reveal" action: a secret shown because a key was
-	// pressed on a list is a secret shown by accident. `kv get` asks for it
-	// by name, which is the point at which you meant to. Enter opens the
-	// entry's metadata instead, which is everything about it that is safe to
-	// put on a screen.
+	// The consent queue, answerable from the screen the operator is already
+	// looking at: a parked call is a question with exactly two
+	// answers, and until now both of them lived in another terminal.
 	//
-	// `c` is not that decision quietly reversed. A copy puts nothing on the
-	// screen, so it leaves none of what a reveal leaves — no scrollback, no
-	// screen share, no photograph of somebody's monitor, no asciinema
-	// recording — and the next thing anybody copies undoes it, while a
-	// revealed secret stays revealed for as long as the buffer lives. It is
-	// also not one keystroke: the passphrase and identity are inputs like any
-	// other, so every kv action opens the unlock form on the way.
+	// `a` and `d` are the verbs' own initials, and the asymmetry between them
+	// is the point. Deny carries no second input, so it runs on the keypress
+	// — the safe answer is one key, and a denial the operator did not mean
+	// costs the agent a retry. Allow declares an optional --ttl, so runAction
+	// opens the form for it: granting access stops for a confirmation, which
+	// is the direction that cannot be taken back once a secret has been read.
 	//
-	// kv.edit is absent for the opposite reason to the missing reveal: it
-	// hands the terminal to $EDITOR, and the terminal is what this program
-	// is drawing on.
+	// `d` also means "done" on the task lists, and net.hosts.list avoided
+	// exactly that overlap. It is deliberate here: this screen is a security
+	// prompt rather than another list, both keys spell their own verb, and
+	// the mistake the overlap could produce — denying a call meant to be
+	// allowed — is the recoverable one.
+	"agent.pending": {
+		// enter is "show" on every list in this table, and a parked call has
+		// more to show than a row can hold — what it would actually do, most
+		// of all. Reading before answering is the point, so the key that
+		// opens the detail is the one already in everybody's fingers.
+		{"enter", "show", "agent.show", srcRow},
+		{"a", "allow", "agent.allow", srcRow},
+		{"d", "deny", "agent.deny", srcRow},
+	},
+	// And the two answers again from the detail page, so reading it does not
+	// mean going back to the list to act on what you read.
+	"agent.show": {
+		{"a", "allow", "agent.allow", srcSelf},
+		{"d", "deny", "agent.deny", srcSelf},
+	},
+	// The tile says how many calls are waiting; these are the two places to
+	// go from there. `g` because l is navigation and every other letter in
+	// "log" is spoken for.
+	"agent.overview": {
+		{"w", "waiting", "agent.pending", srcNone},
+		{"g", "log", "agent.log", srcNone},
+	},
+	// `v` reveals, and the argument for it is the argument that was originally
+	// made against it, followed through.
+	//
+	// This table used to say: no reveal action, because "a secret shown
+	// because a key was pressed on a list is a secret shown by accident" —
+	// `kv get` asks for it by name, which is the point at which you meant to.
+	// The reasoning is right and the conclusion did not follow, because it
+	// measured the wrong thing. **The friction that makes a reveal deliberate
+	// is not the typing; it is the unlock.** Every kv action opens the unlock
+	// form on the way — the passphrase and identity are inputs like any other,
+	// so `fieldsAfter` always has something left to ask — and an operator who
+	// pressed `v` by accident is looking at a form naming the entry, not at
+	// its value. The value then arrives on its own result page, titled with
+	// the entry it belongs to, rather than in a cell of a list somebody was
+	// scrolling.
+	//
+	// `c` was the tell. Copying is the same act with a smaller audience —
+	// The catalogue classifies it identically for exactly that reason, "a value on
+	// the clipboard has been revealed" — and it has been a row action here
+	// since the beginning. The old comment argued the difference (no
+	// scrollback, no screen share, undone by the next copy), and that
+	// difference is real; what it does not support is making the *other* half
+	// unreachable from the screen an operator is already on, which sent people
+	// to a second terminal for a secret they had already unlocked the store
+	// for.
+	//
+	// What stays refused is the thing actually worth refusing: nothing on this
+	// screen puts a value in a row. `kv list` shows names, kinds and
+	// descriptions, and the entry's page shows its metadata; a value appears
+	// only where somebody asked for that one entry.
+	//
+	// kv.edit is still absent, for an unrelated reason: it hands the terminal
+	// to $EDITOR, and the terminal is what this program is drawing on.
 	"kv.list": {
 		{"enter", "show", "kv.show", srcRow},
+		{"v", "reveal", "kv.get", srcRow},
 		{"c", "copy", "kv.copy", srcRow},
 		{"a", "add", "kv.set", srcNone},
 		{"e", "set", "kv.set", srcRow},
@@ -126,6 +181,7 @@ var capActionSpecs = map[string][]struct {
 		{"a", "add", "kv.set", srcNone},
 	},
 	"kv.show": {
+		{"v", "reveal", "kv.get", srcSelf},
 		{"c", "copy", "kv.copy", srcSelf},
 		{"e", "set", "kv.set", srcSelf},
 		{"m", "rename", "kv.rename", srcSelf},

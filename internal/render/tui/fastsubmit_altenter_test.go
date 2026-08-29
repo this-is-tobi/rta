@@ -14,7 +14,7 @@ import (
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
 
-// PROJECT.md D76: alt+enter is a second, independent way into fast-submit —
+// alt+enter is a second, independent way into fast-submit —
 // what a real ESC+CR byte pair (VS Code's own Claude-Code-installed
 // shift+enter terminal keybinding, or "Option as Meta" on another terminal)
 // actually decodes to, proven against the real decoder bubbletea uses

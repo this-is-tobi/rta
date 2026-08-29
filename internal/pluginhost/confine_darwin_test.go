@@ -14,7 +14,7 @@ import (
 // is actually refused.
 //
 // Without it the package would be a set of confident assertions about a
-// string. ADR 0012 rests the whole platform story on this profile working,
+// string. The whole platform story rests on this profile working,
 // and "we generated some SBPL" is not evidence that it does.
 func TestTheGeneratedProfileActuallyDeniesReads(t *testing.T) {
 	if err := available(); err != nil {
@@ -176,7 +176,7 @@ func TestTheBlanketAllowComesBeforeTheDenials(t *testing.T) {
 	}
 }
 
-// The grant seal (ADR 0015) is only worth anything if a confined plugin
+// The grant seal is only worth anything if a confined plugin
 // cannot read the key. Sealing was built for exactly one attacker — a writer
 // that cannot read the directory it writes to, which is the shape a sandbox
 // creates — so the two mechanisms have to line up, and "the key happens to be
@@ -265,5 +265,177 @@ func TestARefusedWriteNamesThePath(t *testing.T) {
 	out, _ := exec.Command(name, argv...).CombinedOutput()
 	if !strings.Contains(string(out), "scratch.tmp") {
 		t.Errorf("the refusal does not name the path a plugin author would search for: %q", out)
+	}
+}
+
+// The bypass that made the read-denied tier worth nothing, proven against
+// /usr/bin/sandbox-exec rather than reasoned about.
+//
+// A rule names a path. Renaming the path is how it stops having that name, and
+// tier2 deliberately leaves writes open — so `mv ~/.ssh ~/x` succeeded and
+// every key was readable one command later, at a path no rule mentions. Two
+// syscalls, no cleverness, and it applied to all ten entries.
+//
+// Driven through a fixture rather than the real ~/.ssh: the test has to move a
+// directory, and the one thing it must never do is move somebody's keys.
+func TestAReadDeniedDirectoryCannotBeRenamedOutOfItsRule(t *testing.T) {
+	if err := available(); err != nil {
+		t.Skipf("no sandbox-exec: %v", err)
+	}
+	home := t.TempDir()
+	secrets := filepath.Join(home, ".ssh")
+	if err := os.MkdirAll(secrets, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	key := filepath.Join(secrets, "id_rsa")
+	if err := os.WriteFile(key, []byte("PRIVATE-KEY-MATERIAL"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Through withTarget, the way Resolve builds it: t.TempDir() hands back a
+	// path under /var, which is a symlink to /private/var, and a rule naming
+	// the unresolved spelling matches nothing the kernel sees.
+	denied := withTarget(secrets)
+	d := DenySet{NoRead: denied, NoMove: ancestors(denied)}
+
+	// The direct read is refused — otherwise the rest proves nothing.
+	name, argv := wrap(d, "/bin/cat", []string{key})
+	if out, err := exec.Command(name, argv...).CombinedOutput(); err == nil {
+		t.Fatalf("the fixture is not even read-denied: %s", out)
+	}
+
+	moved := filepath.Join(home, "exposed")
+	name, argv = wrap(d, "/bin/sh", []string{"-c",
+		"mv " + secrets + " " + moved + " && cat " + filepath.Join(moved, "id_rsa")})
+	out, err := exec.Command(name, argv...).CombinedOutput()
+	if err == nil || strings.Contains(string(out), "PRIVATE-KEY-MATERIAL") {
+		t.Fatalf("a confined plugin renamed a read-denied directory and read it: %s", out)
+	}
+	if _, statErr := os.Stat(moved); statErr == nil {
+		t.Errorf("%s exists, so the rename landed despite a non-zero exit", moved)
+	}
+}
+
+// The same defect one level up, and the reason the ancestors are named at all.
+// ~/.docker/config.json is read-denied; ~/.docker is not, so renaming the
+// parent moves the file out from under the rule just as effectively.
+func TestAnAncestorOfADeniedPathCannotBeRenamedEither(t *testing.T) {
+	if err := available(); err != nil {
+		t.Skipf("no sandbox-exec: %v", err)
+	}
+	home := t.TempDir()
+	dir := filepath.Join(home, ".docker")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(target, []byte("REGISTRY-TOKEN"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	denied := withTarget(target)
+	d := DenySet{NoRead: denied, NoMove: ancestors(denied)}
+
+	moved := filepath.Join(home, "dockerx")
+	name, argv := wrap(d, "/bin/sh", []string{"-c",
+		"mv " + dir + " " + moved + " && cat " + filepath.Join(moved, "config.json")})
+	out, err := exec.Command(name, argv...).CombinedOutput()
+	if err == nil || strings.Contains(string(out), "REGISTRY-TOKEN") {
+		t.Fatalf("a confined plugin renamed the parent of a read-denied file and read it: %s", out)
+	}
+}
+
+// And the cost is bounded to the entry itself. Denying the ancestors as
+// subpaths would deny writing under ~ and ~/.config, which is most of what a
+// plugin legitimately does; denying the literal directory entry leaves
+// everything inside it exactly as it was.
+func TestAncestorsStayWritableInside(t *testing.T) {
+	if err := available(); err != nil {
+		t.Skipf("no sandbox-exec: %v", err)
+	}
+	home := t.TempDir()
+	dir := filepath.Join(home, ".config")
+	denied := filepath.Join(dir, "gcloud")
+	if err := os.MkdirAll(denied, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	noRead := withTarget(denied)
+	d := DenySet{NoRead: noRead, NoMove: ancestors(noRead)}
+
+	// Create, read back, rename and remove an ordinary file in an ancestor.
+	other := filepath.Join(dir, "settings.json")
+	script := "echo ok > " + other +
+		" && cat " + other +
+		" && mv " + other + " " + other + ".bak" +
+		" && rm " + other + ".bak" +
+		" && echo done"
+	name, argv := wrap(d, "/bin/sh", []string{"-c", script})
+	out, err := exec.Command(name, argv...).CombinedOutput()
+	if err != nil {
+		t.Fatalf("ordinary work inside a named ancestor was refused: %v (%s)", err, out)
+	}
+	if !strings.Contains(string(out), "done") {
+		t.Errorf("output = %q", out)
+	}
+}
+
+// **A deny rule for a path below a symlinked ancestor denied nothing at all,
+// and the leaf being absent is what switched the resolution off.**
+//
+// The kernel matches an SBPL filter against its own canonical path. When
+// `.config` is a symlink — home-manager, chezmoi and stow all produce that —
+// the spelling `<home>/.config/gcloud/credentials.db` is one the kernel never
+// produces, so a profile naming only it is inert rather than narrow. The
+// resolution was switched off by nothing more exotic than the leaf not
+// existing yet, because filepath.EvalSymlinks fails on the whole path when any
+// component is missing and withTarget read that failure as "not a symlink".
+//
+// Both directions are asserted. The unresolved spelling alone must let the
+// read through — otherwise this test would pass against a profile that denies
+// everything and proves nothing — and what Resolve builds today must refuse it.
+func TestADenyPathBelowASymlinkDeniesTheRealFile(t *testing.T) {
+	if err := available(); err != nil {
+		t.Skipf("no sandbox-exec: %v", err)
+	}
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	real := filepath.Join(home, "dotfiles", "config", "gcloud")
+	if err := os.MkdirAll(real, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(home, "dotfiles", "config"), filepath.Join(home, ".config")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	credentials := filepath.Join(real, "credentials.db")
+	if err := os.WriteFile(credentials, []byte("GCLOUD-REFRESH-TOKEN"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// The deny entry as tier2 states it: through the link, and naming a leaf
+	// directory that has to be walked to reach the file.
+	entry := filepath.Join(home, ".config", "gcloud")
+
+	// The control: what withTarget used to emit for an entry it could not
+	// resolve. If this does not read the file, the test below is vacuous.
+	old := DenySet{NoRead: []string{entry}}
+	name, argv := wrap(old, "/bin/cat", []string{credentials})
+	out, err := exec.Command(name, argv...).CombinedOutput()
+	if err != nil || !strings.Contains(string(out), "GCLOUD-REFRESH-TOKEN") {
+		t.Fatalf("the control did not read the file, so this test proves nothing: %v %s", err, out)
+	}
+
+	// And what Resolve builds now.
+	denied := withTarget(entry)
+	d := DenySet{NoRead: denied, NoMove: ancestors(denied)}
+	name, argv = wrap(d, "/bin/cat", []string{credentials})
+	out, err = exec.Command(name, argv...).CombinedOutput()
+	if err == nil || strings.Contains(string(out), "GCLOUD-REFRESH-TOKEN") {
+		t.Errorf("the rule named a path the kernel never produces, so it denied nothing: %s", out)
+	}
+
+	// Through the link as well, since that is the name the operator wrote.
+	name, argv = wrap(d, "/bin/cat", []string{filepath.Join(entry, "credentials.db")})
+	if out, err := exec.Command(name, argv...).CombinedOutput(); err == nil {
+		t.Errorf("the link spelling still reads: %s", out)
 	}
 }

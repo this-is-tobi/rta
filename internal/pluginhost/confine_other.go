@@ -17,7 +17,7 @@ package pluginhost
 // What Linux does get is in host.go and applies on every platform: the
 // environment allowlist, process-group reaping, PR_SET_DUMPABLE=0, mTLS, and
 // the descriptor handling. Those are the parts that were load-bearing anyway.
-// ADR 0012 §2.
+
 //
 // Windows gets a job object with KILL_ON_JOB_CLOSE (procattr_windows.go),
 // documented as lifetime control and not as confinement.

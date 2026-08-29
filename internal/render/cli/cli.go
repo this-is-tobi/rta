@@ -177,6 +177,9 @@ func renderCSV(w io.Writer, v view.View, opts Options) error {
 		// query as broken.
 		_, _ = fmt.Fprintf(opts.Notes, "# %d of %d rows\n", len(t.Rows), t.Total)
 	}
+	if more := continues(t); more != "" && opts.Notes != nil {
+		_, _ = fmt.Fprintf(opts.Notes, "# %s\n", more)
+	}
 	return nil
 }
 
@@ -448,11 +451,36 @@ func prettyTable(w io.Writer, t view.Table, st styles, highlight int) error {
 	if _, err := fmt.Fprintln(w, restoreHyphens(rendered)); err != nil {
 		return err
 	}
+	var footer []string
 	if t.Total > len(t.Rows) {
-		_, err := fmt.Fprintln(w, st.muted.Render(fmt.Sprintf("%d of %d rows", len(t.Rows), t.Total)))
+		footer = append(footer, fmt.Sprintf("%d of %d rows", len(t.Rows), t.Total))
+	}
+	if more := continues(t); more != "" {
+		footer = append(footer, more)
+	}
+	if len(footer) > 0 {
+		_, err := fmt.Fprintln(w, st.muted.Render(strings.Join(footer, " · ")))
 		return err
 	}
 	return nil
+}
+
+// continues describes an answer that stops short of the data behind it.
+//
+// **The cursor was in the contract and rendered nowhere.** view.Table.Page
+// crosses the wire and is carried by pkg/sdk/wire, and no surface read it — so
+// a listing bounded at its limit came out looking exactly like a complete one,
+// which is the same defect the csv branch records for Total. A source of a
+// thousand objects answering with two hundred is not wrong; answering with two
+// hundred and saying nothing is.
+//
+// The continuation value is shown because it is the argument somebody types
+// next. Total is a count and needs no action; this is an instruction.
+func continues(t view.Table) string {
+	if t.Page == nil || t.Page.Next == "" {
+		return ""
+	}
+	return "more rows after " + t.Page.Next
 }
 
 // grownColumns decides which columns absorb the space a table has been given

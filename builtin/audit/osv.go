@@ -14,7 +14,7 @@ import (
 // osv.dev is the OpenSSF's aggregator: it is where GitHub advisories, the Go
 // vulnerability database, PyPA, RustSec and the distributions all end up, and
 // it is queryable without a key or an account. Asking it directly is what
-// keeps this inside ADR 0008's first rule — one interaction, read-only, no
+// keeps this inside the plugin's first rule — one interaction, read-only, no
 // local database to sync and no scanner reimplemented.
 //
 // The batch endpoint answers with vulnerability *identifiers*, not severities

@@ -10,7 +10,7 @@
 //
 // What an author does NOT do here is decide anything about security. There is
 // no confinement option, no environment knob, no descriptor choice: the host
-// makes every one of those (ADR 0012), because a plugin that could ask to be
+// makes every one of those, because a plugin that could ask to be
 // less confined is a plugin that will.
 package sdk
 

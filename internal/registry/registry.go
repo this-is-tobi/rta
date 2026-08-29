@@ -20,7 +20,7 @@ import (
 // once, which was enough: a plugin that stayed registered while dropping out
 // of the host's bookkeeping was read by the gate as a built-in, and a
 // built-in needs no digest pin on --allow-destructive. The artifact binding
-// (ADR 0015, D27) was defeated not by a flaw in the check but by the check
+// was defeated not by a flaw in the check but by the check
 // asking a different component what it was looking at.
 //
 // It is set by the caller that did the loading and cannot be declared by a

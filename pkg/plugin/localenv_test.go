@@ -32,7 +32,7 @@ func localCap() Capability {
 //
 // kv had resolved RTA_KV_PASSPHRASE by hand since it was written, which is
 // this convention already, available only to a built-in because a built-in
-// sees rta's whole environment. P6 says there are no second-class plugins.
+// sees rta's whole environment, and there are no second-class plugins.
 func TestALocalInputIsFilledFromTheHostEnvironment(t *testing.T) {
 	t.Setenv("RTA_PG_PASSWORD", "hunter2")
 	got := Resolve(localCap(), Inputs{Caller: map[string]any{"sql": "select 1"}})
@@ -41,7 +41,7 @@ func TestALocalInputIsFilledFromTheHostEnvironment(t *testing.T) {
 	}
 }
 
-// A regression test for a real bug review caught (PROJECT.md D74): every
+// A regression test for a real bug review caught: every
 // Local field used to resolve from the environment, which is right for a
 // credential and wrong for a field that only chooses a destination —
 // kv.get's own --out is Local so a grant on kv.get cannot be read as "and

@@ -344,7 +344,7 @@ func Plugin() plugin.Plugin {
 				Inputs: unlockFields([]plugin.Field{
 					{Name: "generate", Type: plugin.Bool,
 						Help: "create a dedicated age key for this store and add it"},
-					// Local, matching kv.init and kv.set. ADR 0014 recorded
+					// Local, matching kv.init and kv.set. It is on record
 					// this as a known gap on the grounds that Destructive
 					// already forces a grant — true, and a grant is a
 					// capability-level TTL window rather than a decision per

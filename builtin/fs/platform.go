@@ -4,7 +4,6 @@ import (
 	"errors"
 	"io/fs"
 	"os"
-	"syscall"
 )
 
 // Crossing a filesystem boundary turns "what is using space here" into a
@@ -12,10 +11,13 @@ import (
 // mount, or into /proc, counts space that is not on this device and may not
 // answer at all.
 //
-// The device number is the portable-enough way to tell. syscall.Stat_t is
-// available on every unix Go builds for; where it is not (Windows), the check
-// degrades to "always the same device", which is the pre-existing behaviour
-// rather than a new failure.
+// The device number is the portable-enough way to tell, and where it is not
+// available the check degrades to "always the same device" — see
+// platform_unix.go and platform_windows.go. That split is a build tag rather
+// than a type assertion because syscall.Stat_t does not merely fail to match
+// on Windows, it does not exist: written as one file with a comma-ok
+// assertion, this package did not compile for windows/amd64 at all, and the
+// degradation the comment promised could never happen.
 
 func deviceOf(path string) (uint64, bool) {
 	info, err := os.Stat(path)
@@ -23,14 +25,6 @@ func deviceOf(path string) (uint64, bool) {
 		return 0, false
 	}
 	return deviceOfInfo(info)
-}
-
-func deviceOfInfo(info os.FileInfo) (uint64, bool) {
-	st, ok := info.Sys().(*syscall.Stat_t)
-	if !ok {
-		return 0, false
-	}
-	return uint64(st.Dev), true
 }
 
 // sameDevice reports whether an entry lives on the filesystem the scan

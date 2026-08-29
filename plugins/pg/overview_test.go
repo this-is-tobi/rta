@@ -41,7 +41,7 @@ func TestOverviewIsDetailed(t *testing.T) {
 	}
 }
 
-// Every capability in this plugin opens a real connection, and ADR 0018 §7
+// Every capability in this plugin opens a real connection, and the tunnel rules
 // measured that connection killing a kubectl port-forward on its own clean
 // disconnect — so cap() forces NoPreview on all five, unconditionally,
 // rather than trust each declaration to remember it. That override is what

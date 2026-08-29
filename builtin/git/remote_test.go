@@ -87,7 +87,7 @@ func TestCloneRepoPopulatesAFullyUsableRepository(t *testing.T) {
 // rather than a real network dependency — the point is which function ran,
 // not whether the clone succeeds.
 func TestOpenRepoRoutesARemoteLookingPathToCloneRatherThanLocalOpen(t *testing.T) {
-	_, verr := openRepo(context.Background(), "https://127.0.0.1:1/nonexistent.git")
+	_, verr := openRepo(context.Background(), req(t, "https://127.0.0.1:1/nonexistent.git", nil))
 	if verr == nil {
 		t.Fatal("expected a clone failure")
 	}

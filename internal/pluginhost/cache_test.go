@@ -209,7 +209,7 @@ func TestWriteCacheSurvivesAnUnwritableDirectory(t *testing.T) {
 //
 // This is the attack the seal exists for, in the form it was reproduced. The
 // attacker never touches the plugin binary — its digest is what rta hashes on
-// every Open and is the anchor for every authorisation (ADR 0015) — and never
+// every Open and is the anchor for every authorisation — and never
 // reads the data directory, because the proto shape is public. One file write
 // re-authors what rta believes, and the declaration carries the Safety class
 // that decides whether an agent needs --allow-destructive and a human-issued

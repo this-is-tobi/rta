@@ -211,13 +211,39 @@ func fieldsAfter(c plugin.Capability, base map[string]any) []plugin.Field {
 // destructive confirmation, which is the one nobody may miss. Given a height,
 // huh scrolls its group instead, so every field stays reachable on a laptop
 // with a split terminal.
+// formWidth is how wide a form may be in a terminal of the given width.
+//
+// It used to be `min(width-6, 80)`, with the comment "80 is plenty on wide
+// screens". It is not: on a 190-column terminal that left the form using
+// under half the pane, and a one-sentence field description — "which Secret
+// and key, as <secret>/<key> — tab completes; listing keys reads the Secret
+// from the coordinate's namespace" — broke across two lines with the rest of
+// the window empty beside it. The wrap read as a layout bug because it was
+// one: the text was fitted to a bound that had nothing to do with the space
+// available.
+//
+// **Bounded rather than unbounded, though**, because "use the whole terminal"
+// is the other way to get this wrong. Measure is a readability property, not
+// a space-filling one: past roughly 120 characters the eye loses its place
+// returning to the start of the next line, and a form stretched across a
+// 240-column terminal puts a field's label and its input at opposite ends of
+// the desk. So this takes the room it is given, up to the point where more
+// room stops being an improvement.
+//
+// The 6 is the panel's border and padding, which the form does not own.
+func formWidth(width int) int {
+	// The upper end of comfortable measure for technical prose. Wider is
+	// harder to read, not easier.
+	const maxMeasure = 120
+	return min(width-6, maxMeasure)
+}
+
 func (m *Model) fitForm() {
 	if m.form == nil {
 		return
 	}
 	if m.width > 0 {
-		// 80 is plenty on wide screens.
-		m.form.form = m.form.form.WithWidth(min(m.width-6, 80))
+		m.form.form = m.form.form.WithWidth(formWidth(m.width))
 	}
 	if m.height > 0 {
 		// Panel border (2) + the blank lead-in line (1) + footer (1) + a row

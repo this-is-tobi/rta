@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"path/filepath"
 	"testing"
 
 	vaultapi "github.com/hashicorp/vault/api"
@@ -12,10 +13,39 @@ import (
 	"github.com/this-is-tobi/rule-them-all/pkg/sdk/sdktest"
 )
 
-// sdktest is the definition of "a correct plugin" — no exemption for vault
-// (P6). Needs no live Vault: a declaration is checkable before anything
-// connects.
-func TestConformance(t *testing.T) { sdktest.Check(t, Plugin()) }
+// sdktest is the definition of "a correct plugin" — no exemption for vault.
+//
+// Called with no inputs it drove one capability of fourteen — vault.snapshot,
+// the only mutating one whose inputs all have defaults — and passed. Behind
+// that, vault.kv.set really wrote a new secret version under --dry-run,
+// vault.wrap.set really minted a live single-use token and printed it, and
+// vault.transit.encrypt really used the key.
+func TestConformance(t *testing.T) {
+	sdktest.Check(t, Plugin(), sdktest.WithInputs(conformanceInputs))
+}
+
+// conformanceInputs points every mutating capability at an address nothing is
+// listening on, so a dry run that stops being dry fails here as a refused
+// connection rather than as a write to somebody's Vault.
+func conformanceInputs(dir string) map[string]map[string]any {
+	conn := func(m map[string]any) map[string]any {
+		m["address"] = "http://127.0.0.1:1"
+		m["token"] = "conformance"
+		return m
+	}
+	return map[string]map[string]any{
+		"vault.kv.get":          conn(map[string]any{"path": "app/db"}),
+		"vault.kv.set":          conn(map[string]any{"path": "app/db", "data": []string{"password=s3cret"}}),
+		"vault.transit.encrypt": conn(map[string]any{"key": "app", "plaintext": "hello"}),
+		"vault.transit.decrypt": conn(map[string]any{"key": "app", "ciphertext": "vault:v1:xxxx"}),
+		"vault.wrap.set":        conn(map[string]any{"data": []string{"password=s3cret"}}),
+		"vault.wrap.get":        conn(map[string]any{"wrapping-token": "hvs.conformance"}),
+		// Already drivable from its defaults, but its default --out is a path
+		// in the operator's own home. Pointed inside dir so the rule that
+		// watches for a stray write is watching the place it would land.
+		"vault.snapshot": conn(map[string]any{"out": filepath.Join(dir, "vault.snap")}),
+	}
+}
 
 // req builds a resolved request the way the host would, against the named
 // capability's own declared inputs (connFields included, via cap) — so
@@ -147,7 +177,7 @@ func TestEveryCapabilityIsNoPreview(t *testing.T) {
 	}
 }
 
-// The capabilities PROJECT.md §7 calls out explicitly as "Both Write+NeedsGrant"
+// The capabilities called out explicitly as "Both Write+NeedsGrant"
 // (kv.get's reveal, kv.put's overwrite, transit.decrypt's reveal, and the
 // two wrap capabilities) must actually declare it — a design note is not an
 // enforcement mechanism, the struct field is.
@@ -161,11 +191,17 @@ func TestWriteAndDestructiveCapabilitiesNeedAGrant(t *testing.T) {
 		"vault.wrap.get":        true,
 		"vault.seal.status":     false,
 		"vault.kv.list":         false,
+		"vault.kv.tree":         false, // the same names kv.list gives, in one call instead of many
 		"vault.token.status":    false,
 		"vault.lease.show":      false,
 		"vault.policy.list":     false,
 		"vault.policy.get":      false,
 		"vault.overview":        false,
+		// Refuses SurfaceMCP outright rather than taking a grant: a snapshot of
+		// the whole Vault has no blast radius a grant could name. NeedsGrant stays
+		// unset for keys.backup's reason — a grant that can never be exercised is
+		// an entry in `grant list` that means nothing.
+		"vault.snapshot": false,
 	}
 	seen := map[string]bool{}
 	for _, c := range Plugin().Capabilities {

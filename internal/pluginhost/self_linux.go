@@ -16,7 +16,7 @@ import "golang.org/x/sys/unix"
 // spawn path to fix that: the dumpable flag is reset by execve, so the only
 // place it can be applied to a plugin is inside the plugin, after exec —
 // which is `pkg/sdk`'s Serve, cooperatively, and only for plugins that use
-// the Go SDK. ADR 0012 records that as a decision rather than an omission.
+// the Go SDK. That is a decision rather than an omission.
 //
 // This is a floor and not a boundary, in the same sense §4.7.10 already says
 // about the age identity: an attacker at this uid can read rta's binary, its

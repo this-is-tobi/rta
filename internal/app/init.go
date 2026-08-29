@@ -13,7 +13,7 @@ import (
 
 // newInitCommand implements `rta init`: an interactive wizard that writes
 // the config file. Config stays optional — the wizard exists so nobody ever
-// has to hand-write YAML to change a default (PROJECT.md §5.1).
+// has to hand-write YAML to change a default.
 func newInitCommand(reg *registry.Registry) *cobra.Command {
 	return &cobra.Command{
 		Use:               "init",
@@ -93,7 +93,7 @@ func newInitCommand(reg *registry.Registry) *cobra.Command {
 //
 // Into it, not over it. This built a fresh config.Config and wrote that, so
 // `rta init` — "Create or update the rta config file interactively" — deleted
-// the entire `plugins:` block every time it ran. ADR 0016 added that block
+// the entire `plugins:` block every time it ran. That block was added
 // and nothing brought this along, which is the failure mode of writing back a
 // value assembled from scratch: it is not that somebody made a mistake, it is
 // that the next field added to config.Config is dropped too, silently, by a

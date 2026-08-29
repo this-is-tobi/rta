@@ -49,7 +49,7 @@ func TestValidateFailures(t *testing.T) {
 		{"bad field", func(p *Plugin) {
 			p.Capabilities[0].Inputs = []Field{{Name: "BadName", Type: String}}
 		}, "field name"},
-		// A real bug an audit found (PROJECT.md D87): two inputs sharing a
+		// A real bug an audit found: two inputs sharing a
 		// name used to validate cleanly, and declareFlags then registered
 		// one pflag.Flag per input in declaration order — the second
 		// AddFlag for the same name panics the whole process at startup,
@@ -141,7 +141,7 @@ func TestValidateFailures(t *testing.T) {
 // naming nothing — "keys" where the field is "key" — leaves the gate with no
 // value to match against, so every grant issued on that capability silently
 // covers every record it can reach: exactly the "read the staging token" that
-// turns out to mean "read every secret I own" (PROJECT.md §4.7.11). Nothing
+// turns out to mean "read every secret I own". Nothing
 // else in the system would notice, because the grant still looks scoped in
 // `rta grant list`.
 func TestScopeMustNameADeclaredInput(t *testing.T) {

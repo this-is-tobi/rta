@@ -173,7 +173,7 @@ func TestSetGetRoundTrip(t *testing.T) {
 	}
 }
 
-// A regression test for a real bug review found (PROJECT.md D86): kv's
+// A regression test for a real bug review found: kv's
 // write handlers (set, rename, remove, rekey) decrypt the whole store,
 // mutate one entry in memory, and write the whole thing back, with nothing
 // between the load and the save stopping a second writer from doing the
@@ -370,8 +370,75 @@ func TestSetFromFileRecordsKindAndSource(t *testing.T) {
 	if got := tbl.Rows[0][col(t, tbl, "Kind")]; got != "certificate" {
 		t.Errorf("kind = %q, want certificate", got)
 	}
-	if got := tbl.Rows[0][col(t, tbl, "Source")]; got != "server.crt" {
+	if got := tbl.Rows[0][col(t, tbl, "Source")]; got != "file:server.crt" {
 		t.Errorf("source = %q", got)
+	}
+}
+
+// **Source says how the entry came to exist, not which file it came from.**
+//
+// It used to print Filename, which is empty for anything not read off disk —
+// so the column was blank for every secret somebody typed and every one a
+// profile form created, and their provenance lived in the description or
+// nowhere. "agent" is the value that cannot be recovered later by any means:
+// a secret an MCP caller wrote is byte-identical afterwards to one the
+// operator typed, and "which of these did I not put here myself" is a fair
+// question to ask of your own store.
+func TestSourceSaysHowTheEntryCameToExist(t *testing.T) {
+	setup(t)
+	// Store reads the passphrase from the environment, the way the TUI runs it.
+	t.Setenv(passphraseEnv, "correct horse battery staple")
+	dir := t.TempDir()
+	if err := os.WriteFile(dir+"/server.crt", []byte("-----BEGIN CERTIFICATE-----\nx\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	text(t, runSet, map[string]any{"key": "typed-one", "value": "hunter2"}, false)
+	text(t, runSet, map[string]any{"key": "from-file", "file": dir + "/server.crt"}, false)
+	if verr := Store("from-form", "s3cret", "credential for profile staging", "profile:staging"); verr != nil {
+		t.Fatal(verr)
+	}
+	// The MCP surface, which is the one nothing else records.
+	if _, err := runSet(context.Background(), plugin.NewRequest(
+		map[string]any{"key": "from-agent", "value": "written-by-a-model",
+			"passphrase": "correct horse battery staple"}, false, true).WithSurface(plugin.SurfaceMCP)); err != nil {
+		t.Fatal(err)
+	}
+
+	want := map[string]string{
+		"typed-one":  "typed",
+		"from-file":  "file:server.crt",
+		"from-form":  "profile:staging",
+		"from-agent": "agent",
+	}
+	tbl := table(t, runList, map[string]any{"detail": true})
+	keyCol, srcCol := col(t, tbl, "Key"), col(t, tbl, "Source")
+	got := map[string]string{}
+	for _, row := range tbl.Rows {
+		got[row[keyCol]] = row[srcCol]
+	}
+	for key, w := range want {
+		if got[key] != w {
+			t.Errorf("%s: source = %q, want %q", key, got[key], w)
+		}
+	}
+}
+
+// An entry written before Origin existed still says what little it knew, and
+// says nothing rather than guessing when it knew nothing. Otherwise every
+// store in existence would report its whole contents as "typed" the moment
+// this shipped.
+func TestAnEntryWrittenBeforeOriginFallsBackToItsFilename(t *testing.T) {
+	if got := (entry{Filename: "server.crt"}).origin(); got != "file:server.crt" {
+		t.Errorf("origin = %q, want file:server.crt", got)
+	}
+	if got := (entry{}).origin(); got != "" {
+		t.Errorf("origin = %q, want nothing claimed", got)
+	}
+	// A recorded origin wins over a filename, so an entry that has both is
+	// described by the one that was chosen deliberately.
+	if got := (entry{Origin: "agent", Filename: "server.crt"}).origin(); got != "agent" {
+		t.Errorf("origin = %q, want agent", got)
 	}
 }
 
@@ -548,8 +615,8 @@ func TestEnvName(t *testing.T) {
 	}
 }
 
-// A regression test for a real, reproduced vulnerability review found
-// (PROJECT.md D74): --prefix was concatenated into `kv env`'s output with
+// A regression test for a real, reproduced vulnerability review found:
+// --prefix was concatenated into `kv env`'s output with
 // no filtering, unlike key (character-whitelisted) and value
 // (shell-quoted). A prefix containing a newline broke the output into
 // extra lines, one of which could carry a live command substitution — a
@@ -898,7 +965,7 @@ func TestSSHKeyEncryptionRoundTrip(t *testing.T) {
 	}
 }
 
-// A regression test for a real bug review caught (PROJECT.md D74):
+// A regression test for a real bug review caught:
 // parseIdentities used to read only the first AGE-SECRET-KEY- line of an
 // identity file, silently ignoring every key after it — even though age's
 // own convention (age-keygen >> identities.txt) is to accumulate several
@@ -941,7 +1008,7 @@ func TestMultiKeyIdentityFileUsesEveryKeyNotJustTheFirst(t *testing.T) {
 	}
 }
 
-// A regression test for a real bug review caught (PROJECT.md D74):
+// A regression test for a real bug review caught:
 // parseRecipient's fallback error echoed up to 32 characters of whatever
 // the caller supplied, including a mistakenly pasted private key — an
 // AGE-SECRET-KEY-1... string is unambiguously secret material, and none of
@@ -978,7 +1045,7 @@ func TestParseRecipientNeverEchoesAPastedPrivateKey(t *testing.T) {
 	}
 }
 
-// A gap named rather than fixed alongside the rest of PROJECT.md D74:
+// A gap named rather than fixed alongside the rest of that review:
 // publicHalf's other branch — a --recipient path whose own content is a raw
 // age identity, not one kv generated itself — derives the recipient
 // directly from the identity's public half (age.ParseX25519Identity) rather
@@ -1573,7 +1640,7 @@ func TestLockedIdentityIsReportedSeparately(t *testing.T) {
 	}
 }
 
-// A regression test for a real bug review caught (PROJECT.md D74):
+// A regression test for a real bug review caught:
 // Unlockable() trusted RTA_KV_IDENTITY without checking the path it names
 // actually exists — unlike LockedIdentity(), its sibling two functions
 // above, which already guarded this. `rta doctor` uses Unlockable() to tell
@@ -1599,7 +1666,7 @@ func TestUnlockableDoesNotTrustAStaleIdentityEnvVar(t *testing.T) {
 
 // --- Re-keying -----------------------------------------------------------
 
-// A regression test for a real bug review caught (PROJECT.md D74): saveTo
+// A regression test for a real bug review caught: saveTo
 // writes the re-encrypted store and the plaintext kv.recipients file as two
 // separate, non-atomic steps. If the second fails after the first
 // succeeds, the store really is re-encrypted to the new key set, but the
@@ -2282,5 +2349,25 @@ func TestNothingCountsWithParenthesisedPlurals(t *testing.T) {
 	// The -y rule, the only one that comes up.
 	if got := plural(2, "identity"); got != "2 identities" {
 		t.Errorf("plural(2, identity) = %q", got)
+	}
+}
+
+// A folder is what names share, not a thing that is stored. The grant
+// vocabulary rests on that: a scope ending in "/" covers the records under it,
+// so a *record* by that name would be covered exactly and as a prefix at once,
+// and no reader could tell which a grant meant.
+func TestAKeyCannotBeNamedLikeAFolder(t *testing.T) {
+	for _, key := range []string{"prod/", "prod/eu/", "/"} {
+		if verr := checkKeyName(key); verr == nil {
+			t.Errorf("%q was accepted as an entry name", key)
+		} else if verr.Code != "kv.set.foldername" {
+			t.Errorf("%q refused as %s, want kv.set.foldername", key, verr.Code)
+		}
+	}
+	// And the folder convention itself stays free: these are ordinary names.
+	for _, key := range []string{"prod/db-password", "prod/eu/db-password", "db-password", "prod"} {
+		if verr := checkKeyName(key); verr != nil {
+			t.Errorf("%q was refused: %v", key, verr)
+		}
 	}
 }

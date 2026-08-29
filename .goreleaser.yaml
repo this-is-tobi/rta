@@ -1,0 +1,112 @@
+# What a release ships, and what it says about itself.
+#
+# rta is a security tool, so the interesting parts of this file are the ones
+# about provenance rather than the ones about platforms: a checksum file, an
+# SBOM, and a version the binary can state back to you. `rta plugin trust`
+# already binds an authorization to an artifact's digest rather than to its
+# name (ADR 0017); a release that could not be checked the same way would be
+# holding its own users to a standard it does not meet.
+version: 2
+
+project_name: rta
+
+# Deliberately no `before: hooks: [go mod tidy]`, which is GoReleaser's own
+# scaffolded default. A release must build what is committed rather than tidy
+# it first: the hook rewrites go.mod and go.sum in the working tree, and
+# `goreleaser release` requires a clean tree, so on a tree that is not already
+# tidy the hook makes the release fail — and on one that is, it does nothing.
+# Tidiness is a thing to gate in CI, not to do inside the release.
+
+builds:
+  - id: rta
+    main: ./cmd/rta
+    binary: rta
+    env:
+      # Static, and deliberately. rta is copied between machines, run from a
+      # scratch container, and launched by an MCP client that inherited a
+      # different libc than the one it was built against — none of which is a
+      # good moment to discover a dynamic link. Nothing here needs cgo: the
+      # Landlock path that once did was dropped whole (internal/pluginhost,
+      # ADR 0012 §2), and the pure-Go resolver is the more predictable one for
+      # a tool whose network capabilities are the point.
+      - CGO_ENABLED=0
+    goos: [darwin, linux, windows]
+    goarch: [amd64, arm64]
+    flags:
+      # Keeps the build machine's directory layout out of the artifact. Both
+      # smaller and nobody else's business — the same reason the Makefile
+      # passes it for an ordinary build.
+      - -trimpath
+    ldflags:
+      # -s -w drop the symbol table and DWARF: about 21 MB of a 71 MB binary,
+      # none of which a person running a CLI reads. A panic still prints a
+      # full stack with names and line numbers, because that comes from
+      # pclntab and pclntab stays.
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.FullCommit}}
+      - -X main.date={{.CommitDate}}
+    # Stamped from the commit rather than from now(), so two builds of the
+    # same tag produce the same bytes. A reproducible artifact is what makes a
+    # published digest worth anything.
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: rta
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    files:
+      - README.md
+      - LICENSE*
+      # The whole user guide. docs/ holds nothing but user-facing material —
+      # the blueprint, the decision records and the working notes live in
+      # .local/ — so shipping the directory ships a guide rather than a mixture.
+      - docs/*.md
+      - docs/examples/*
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  use: github
+  sort: asc
+  groups:
+    - title: Security and correctness
+      regexp: '^fix(\(.+\))?:'
+      order: 0
+    - title: Features
+      regexp: '^feat(\(.+\))?:'
+      order: 1
+    - title: Everything else
+      order: 99
+  filters:
+    exclude:
+      - "^test:"
+      - "^chore:"
+      - "^docs:"
+
+release:
+  # Drafted rather than published. A release is the moment a digest-pinning
+  # tool's own artifacts become the thing everybody pins, so it gets read
+  # before it is public.
+  draft: true
+  prerelease: auto
+  footer: |
+    ## Verifying what you just downloaded
+
+    ```
+    sha256sum -c checksums.txt --ignore-missing
+    ```
+
+    Plugins are separate artifacts and are pinned by digest, not by name:
+    `rta plugin trust <name>` records the hash of the binary you approved, and
+    a replacement with the same name is refused rather than inherited (ADR
+    0017). The same reasoning is why the checksums above exist.

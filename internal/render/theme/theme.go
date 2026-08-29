@@ -1,5 +1,5 @@
 // Package theme is the single source of truth for styling across every
-// renderer (PROJECT.md §8). Sober but warm: one identity color, one sparing
+// renderer. Sober but warm: one identity color, one sparing
 // accent, semantic state colors, and — the detail that makes structure
 // recede and content pop — two distinct grays: Faint for chrome (borders,
 // fills) and Muted for secondary text. No other renderer defines colors.

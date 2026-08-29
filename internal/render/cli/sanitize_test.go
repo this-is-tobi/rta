@@ -65,7 +65,7 @@ func withPayload(p string) map[string]view.View {
 }
 
 // A view is data from somewhere else — an HTTP body, a DNS record, a
-// filename, a database row — so "plugins do not emit ANSI" (§4.3, P3) was
+// filename, a database row — so "plugins do not emit ANSI" was
 // never a property the producer could be trusted for. The renderer is where
 // it becomes true.
 func TestNoEscapeSequenceReachesTheTerminal(t *testing.T) {
@@ -108,7 +108,7 @@ func TestNoEscapeSequenceReachesTheTerminalThroughAnError(t *testing.T) {
 // json is the byte-exact channel and stays that way: it escapes the control
 // character rather than dropping it, so it is lossless and safe at once, and
 // making it lossy for the sake of a display problem would break the one
-// format P2 promises works in a pipe.
+// format the contract promises works in a pipe.
 func TestJSONStaysByteExact(t *testing.T) {
 	const p = "ok\x1b]52;c;AAAA\x07"
 	v := view.KeyValue{Pairs: []view.Pair{{Key: "k", Value: p}}}

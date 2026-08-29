@@ -147,7 +147,7 @@ func environmentStamp(name string) string {
 // **Fill and not Dial, so no forward is opened here.** This loop covers every
 // capability the environment mentions — `pg` alone has six — so dialling would
 // raise one port-forward per capability and hold them all for as long as the
-// environment stood. A forward is per call by decision (ADR 0018 §4) and a hole
+// environment stood. A forward is per call by decision and a hole
 // in a cluster's network boundary the rest of the time; startRun opens exactly
 // one, for the call being made, and closes it when that call ends.
 //

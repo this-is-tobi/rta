@@ -5,7 +5,7 @@
 // All four capabilities stay Read even though jwt.decode and the *.decode
 // direction of the others reveal a value in a new form — unlike kv.get, the
 // caller already possesses the encoded input; decoding it does not hand them
-// anything they did not already have (PROJECT.md §7.5). codec.jwt makes no
+// anything they did not already have. codec.jwt makes no
 // claim about the token's authenticity: it decodes and prints the claims for
 // inspection, nothing more, and says so in its own output.
 package codec

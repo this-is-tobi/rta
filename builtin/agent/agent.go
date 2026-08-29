@@ -1,0 +1,679 @@
+// Package agent is the operator's view of what AI agents are doing with
+// rta: what they asked for and got (the ledger), what they are asking for
+// right now (parked requests), and the answer.
+//
+// **None of it is reachable by an agent.** Every capability here refuses
+// SurfaceMCP outright, reads included, and that is stronger than NeedsGrant
+// on purpose. An agent that could approve its own parked request would make
+// the mechanism theatre — the precedent grant.allow/grant.revoke already
+// set — and one that could read the ledger could enumerate the operator's
+// other agents, their profiles and their records, which is the inventory
+// disclosure InputSchema already refuses to hand out. The right answer to
+// both is not "with permission" but "not here".
+//
+// It is its own namespace rather than more of `grant` because the objects
+// differ. A grant is a standing policy a person writes; a pending request
+// is a question an agent asked; the ledger is history. `rta grant list`
+// answers what may happen, `rta agent log` answers what did.
+package agent
+
+import (
+	"context"
+	"fmt"
+	"slices"
+	"sort"
+	"strings"
+	"time"
+	"unicode/utf8"
+
+	"github.com/this-is-tobi/rule-them-all/internal/agentlog"
+	"github.com/this-is-tobi/rule-them-all/internal/consent"
+	"github.com/this-is-tobi/rule-them-all/internal/grant"
+	"github.com/this-is-tobi/rule-them-all/pkg/format"
+	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
+	"github.com/this-is-tobi/rule-them-all/pkg/view"
+)
+
+// maxRows bounds a listing. The ledger is append-only and unbounded; a
+// table is a thing somebody reads.
+const maxRows = 500
+
+// Plugin returns the agent plugin declaration.
+func Plugin() plugin.Plugin {
+	return plugin.Plugin{
+		Name:    "agent",
+		Summary: "What AI agents asked rta for, what they got, and what is waiting on you",
+		Capabilities: []plugin.Capability{
+			{
+				ID:      "agent.overview",
+				Summary: "Agent activity at a glance: recent calls, refusals, anything waiting",
+				Description: "The last hour of calls that arrived over MCP, how many were refused, " +
+					"and how many requests are parked waiting for you to answer right now. With " +
+					"--detail: the chain's integrity, where the ledger lives and how big it is.",
+				Safety:     plugin.Read,
+				Idempotent: true,
+				Detailed:   true,
+				Run:        localOnly(runOverview),
+			},
+			{
+				ID:      "agent.log",
+				Summary: "The record of what agents did — one line per call, refusals included",
+				Description: "Every call that arrived over MCP: the capability, the arguments " +
+					"(secrets masked), the profile, what happened, and how it was authorized — no " +
+					"grant needed, a standing grant, or you answering live. The file is chained, so " +
+					"an edited or missing line is visible: --detail verifies it and says where it " +
+					"breaks. This is history and not policy; `rta grant list` is what may happen next.",
+				Safety:     plugin.Read,
+				Idempotent: true,
+				Detailed:   true,
+				NoPreview:  true, // agent.overview is the tile; this is the page
+				Inputs: []plugin.Field{
+					{Name: "limit", Type: plugin.Int, Default: 30, Min: 1, Max: maxRows,
+						Help: "how many of the most recent calls to show"},
+					{Name: "refused", Type: plugin.Bool, Help: "only the calls rta would not make"},
+				},
+				Run: localOnly(runLog),
+			},
+			{
+				ID:      "agent.pending",
+				Summary: "Calls parked right now, waiting for you to allow or deny",
+				Description: "With `rta mcp serve --consent`, a call that needs a grant nobody " +
+					"issued is parked instead of refused, and waits for you. Each row is one such " +
+					"call: its id, what it wants, against which connection, and how long it will " +
+					"keep waiting. Answer with `rta agent allow <id>` or `rta agent deny <id>`.",
+				Safety:     plugin.Read,
+				Idempotent: true,
+				Run:        localOnly(runPending),
+			},
+			{
+				ID:      "agent.show",
+				Summary: "Everything about one parked call, including what it would do",
+				Description: "The request in full: which capability, which record, against which " +
+					"connection, every argument, and — for a destructive call rta could preview — " +
+					"what running it would actually do, taken from the capability's own --dry-run. " +
+					"That last part is the difference between approving an intention and approving " +
+					"an outcome. Answer with `rta agent allow <id>` or `rta agent deny <id>`.",
+				Safety:     plugin.Read,
+				Idempotent: true,
+				Inputs: []plugin.Field{
+					{Name: "id", Type: plugin.String, Positional: true, Required: true,
+						Help: "the request id from `rta agent pending`", Suggest: suggestPending},
+				},
+				Run: localOnly(runShow),
+			},
+			{
+				ID:      "agent.allow",
+				Summary: "Allow one parked call",
+				Description: "Authorizes exactly the call the request names, and nothing else — " +
+					"the agent's call proceeds, and no standing state is created. With --ttl it " +
+					"also issues the grant you would have typed (same target, same record, same " +
+					"connection), which is worth doing when the same question is about to be asked " +
+					"five more times. Never reachable over MCP: an agent that could answer its own " +
+					"request would make the whole mechanism theatre.",
+				Safety: plugin.Write,
+				Scope:  "id",
+				Inputs: []plugin.Field{
+					{Name: "id", Type: plugin.String, Positional: true, Required: true,
+						Help: "the request id from `rta agent pending`", Suggest: suggestPending},
+					{Name: "ttl", Type: plugin.String,
+						Help: "also issue a standing grant for this long, e.g. 15m (max 24h)"},
+				},
+				Run: localOnly(runAllow),
+			},
+			{
+				ID:      "agent.deny",
+				Summary: "Deny one parked call",
+				Description: "The agent's call is refused with your answer rather than with a " +
+					"timeout, which is the difference between a model that stops and one that " +
+					"retries. Never reachable over MCP.",
+				Safety: plugin.Write,
+				Scope:  "id",
+				Inputs: []plugin.Field{
+					{Name: "id", Type: plugin.String, Positional: true, Required: true,
+						Help: "the request id from `rta agent pending`", Suggest: suggestPending},
+				},
+				Run: localOnly(runDeny),
+			},
+		},
+	}
+}
+
+// localOnly refuses the MCP surface, in one place so that adding a
+// capability here cannot forget it.
+//
+// The refusal names the reason rather than pretending the capability does
+// not exist: a model that reads "not from here" stops, while one that reads
+// "unknown tool" tries a different spelling.
+func localOnly(h plugin.Handler) plugin.Handler {
+	return func(ctx context.Context, req plugin.Request) (view.View, error) {
+		if req.Surface() == plugin.SurfaceMCP {
+			return nil, view.Errorf("agent.surface",
+				"the agent namespace is for the person at the terminal, not for a caller over MCP").
+				WithHint("consent and its record are about you deciding; ask the operator to run `rta agent pending`")
+		}
+		return h(ctx, req)
+	}
+}
+
+func suggestPending(context.Context, plugin.Request) []string {
+	reqs, err := consent.Pending()
+	if err != nil {
+		return nil
+	}
+	out := make([]string, 0, len(reqs))
+	for _, r := range reqs {
+		out = append(out, r.ID+"\t"+r.Cap+" "+strings.Join(r.Scopes, " "))
+	}
+	return out
+}
+
+func runOverview(_ context.Context, req plugin.Request) (view.View, error) {
+	entries, err := agentlog.Read(maxRows)
+	if err != nil {
+		return nil, view.Errorf("agent.log.unreadable", "%v", err)
+	}
+	waiting, _ := consent.Pending()
+
+	hour := time.Now().Add(-time.Hour)
+	var recent, refused, approved int
+	for _, e := range entries {
+		if e.At.Before(hour) {
+			continue
+		}
+		recent++
+		if e.Outcome == agentlog.Refused {
+			refused++
+		}
+		if e.Auth == agentlog.Live {
+			approved++
+		}
+	}
+	// The one line on this tile that is about the present rather than the
+	// past, and the only one that asks for anything. A bare count reads as
+	// another statistic beside the other three; the number and the key to
+	// press together are what turn a tile somebody glances at into a queue
+	// somebody clears.
+	nowWaiting := fmt.Sprintf("%d", len(waiting))
+	if len(waiting) > 0 {
+		nowWaiting += " — press w to answer"
+	}
+	pairs := []view.Pair{
+		{Key: "waiting on you", Value: nowWaiting},
+		{Key: "calls in the last hour", Value: fmt.Sprintf("%d", recent)},
+		{Key: "refused", Value: fmt.Sprintf("%d", refused)},
+		{Key: "you approved live", Value: fmt.Sprintf("%d", approved)},
+	}
+	if len(entries) > 0 {
+		last := entries[len(entries)-1]
+		pairs = append(pairs, view.Pair{Key: "last call",
+			Value: fmt.Sprintf("%s %s, %s", last.Cap, last.Outcome, format.Ago(last.At))})
+	} else {
+		pairs = append(pairs, view.Pair{Key: "last call", Value: "nothing recorded yet"})
+	}
+	if !req.Bool("detail") {
+		return view.KeyValue{Pairs: pairs}, nil
+	}
+
+	rep, verr := agentlog.Verify()
+	return view.Sections{Items: []view.Section{
+		{ID: "activity", Title: "Activity", View: view.KeyValue{Pairs: pairs}},
+		{ID: "ledger", Title: "The record", View: view.KeyValue{Pairs: recordPairs(rep, verr)}},
+		{ID: "waiting", Title: "Waiting on you", View: pendingTable(waiting)},
+	}}, nil
+}
+
+// recordPairs describes the record itself: where it is, how much of it
+// there is, how far back it goes, and whether it is intact.
+//
+// Retention is stated rather than left to be inferred. A reader who does
+// not know that history was dropped will read "no calls before the 14th" as
+// "nothing happened before the 14th", which is the one misreading a log
+// must not invite.
+func recordPairs(rep agentlog.Report, verr error) []view.Pair {
+	pairs := []view.Pair{
+		{Key: "file", Value: agentlog.Path()},
+		{Key: "entries", Value: fmt.Sprintf("%d", rep.Entries)},
+		{Key: "size", Value: format.Bytes(uint64(max(rep.Size, 0)))},
+	}
+	if rep.Files > 1 {
+		pairs = append(pairs, view.Pair{Key: "files",
+			Value: fmt.Sprintf("%d, rolled at 8 MB apiece", rep.Files)})
+	}
+	if rep.Missed > 0 {
+		pairs = append(pairs, view.Pair{Key: "not recorded",
+			Value: fmt.Sprintf("%d calls rta could not write down — the entries after them say where",
+				rep.Missed)})
+	}
+	if rep.Retired > 0 {
+		pairs = append(pairs, view.Pair{Key: "retired",
+			Value: fmt.Sprintf("the first %d calls, dropped %s — the chain still verifies across the gap",
+				rep.Retired, rep.RetiredAt.Local().Format("2006-01-02 15:04"))})
+	}
+	switch {
+	case verr != nil:
+		pairs = append(pairs, view.Pair{Key: "chain", Value: verr.Error()})
+	case rep.Broken != 0:
+		pairs = append(pairs, view.Pair{Key: "chain",
+			Value: fmt.Sprintf("BROKEN at entry %d — %s", rep.Broken, rep.Why)})
+	default:
+		pairs = append(pairs, view.Pair{Key: "chain",
+			Value: "whole — every entry follows the one before it, matches its seal, and the record ends where rta last left it"})
+	}
+	return pairs
+}
+
+func runLog(_ context.Context, req plugin.Request) (view.View, error) {
+	limit := req.Int("limit")
+	if limit <= 0 {
+		limit = 30
+	}
+	onlyRefused := req.Bool("refused")
+	// Read more than asked for when filtering, so `--refused --limit 10`
+	// answers with ten refusals rather than the refusals among the last ten
+	// calls — which is the same number for a quiet server and nothing at
+	// all for a busy one.
+	want := limit
+	if onlyRefused {
+		want = maxRows
+	}
+	entries, err := agentlog.Read(want)
+	if err != nil {
+		return nil, view.Errorf("agent.log.unreadable", "%v", err)
+	}
+	// The column appears only once a row can fill it, which for a record
+	// written before agents were named is never — and a column of em dashes
+	// on the screen an operator opens in a hurry is a column they learn to
+	// skip.
+	named := false
+	for _, e := range entries {
+		if e.Agent != "" || e.Client != "" {
+			named = true
+			break
+		}
+	}
+	rows := make([][]string, 0, len(entries))
+	for i := len(entries) - 1; i >= 0; i-- {
+		e := entries[i]
+		if onlyRefused && e.Outcome != agentlog.Refused {
+			continue
+		}
+		row := []string{
+			e.At.Local().Format("15:04:05"),
+			e.Cap,
+			argsLine(e.Args),
+			e.Profile,
+			string(e.Outcome),
+			string(e.Auth),
+			whyLine(e),
+		}
+		if named {
+			row = slices.Insert(row, 2, whoCalled(e))
+		}
+		rows = append(rows, row)
+		if len(rows) >= limit {
+			break
+		}
+	}
+	cols := []view.Column{
+		{Name: "at", Kind: view.KindTimestamp}, {Name: "capability"}, {Name: "arguments"},
+		{Name: "profile"}, {Name: "outcome", Kind: view.KindStatus},
+		{Name: "authorized"}, {Name: "why"},
+	}
+	if named {
+		cols = slices.Insert(cols, 2, view.Column{Name: "agent"})
+	}
+	table := view.Table{Columns: cols, Rows: rows, Total: len(entries)}
+	if !req.Bool("detail") {
+		return table, nil
+	}
+	rep, verr := agentlog.Verify()
+	return view.Sections{Items: []view.Section{
+		{ID: "calls", Title: "Calls", View: table},
+		{ID: "integrity", Title: "The record itself", View: view.KeyValue{Pairs: recordPairs(rep, verr)}},
+	}}, nil
+}
+
+func runPending(context.Context, plugin.Request) (view.View, error) {
+	reqs, err := consent.Pending()
+	if err != nil {
+		return nil, view.Errorf("agent.pending.unreadable", "%v", err)
+	}
+	return pendingTable(reqs), nil
+}
+
+func pendingTable(reqs []consent.Request) view.Table {
+	// Shown only when something is asking under a name. The queue is the one
+	// screen where the answer is a decision, so "which of my agents is this"
+	// belongs beside the capability rather than one command away — and where
+	// nobody has named an agent there is only ever one asker.
+	asking := false
+	for _, r := range reqs {
+		if r.Agent != "" {
+			asking = true
+			break
+		}
+	}
+	rows := make([][]string, 0, len(reqs))
+	for _, r := range reqs {
+		left := time.Until(r.Deadline).Truncate(time.Second)
+		if left < 0 {
+			left = 0
+		}
+		// The preview itself is prose and belongs on `agent show`; what the
+		// list owes is the fact that there is one to read before answering.
+		what := argsLine(r.Args)
+		if r.Preview != "" {
+			what = r.Preview
+		}
+		row := []string{
+			r.ID, r.Cap, strings.Join(r.Scopes, " "), r.Safety, r.Profile,
+			clip(what), left.String(),
+		}
+		if asking {
+			row = slices.Insert(row, 1, r.Agent)
+		}
+		rows = append(rows, row)
+	}
+	cols := []view.Column{
+		{Name: "id"}, {Name: "capability"}, {Name: "record"}, {Name: "safety", Kind: view.KindStatus},
+		{Name: "profile"}, {Name: "would do"}, {Name: "expires in", Kind: view.KindDuration},
+	}
+	if asking {
+		cols = slices.Insert(cols, 1, view.Column{Name: "agent"})
+	}
+	return view.Table{Columns: cols, Rows: rows, Total: len(rows)}
+}
+
+// whoCalled is the one cell that answers "which agent was this".
+//
+// **Two fields, and the rendering keeps them apart.** e.Agent is the operator's
+// own name for this server and is what the grant was compared against; e.Client
+// is what the caller announced for itself, which anything speaking the protocol
+// can set to anything. So a name the operator chose is printed plainly, and a
+// name only the client asserts is printed in parentheses — the parentheses mean
+// "nobody checked this". Printing them the same way would be the more readable
+// table and the dishonest one.
+func whoCalled(e agentlog.Entry) string {
+	switch {
+	case e.Agent != "":
+		return e.Agent
+	case e.Client != "":
+		return "(" + e.Client + ")"
+	default:
+		return "—"
+	}
+}
+
+func runShow(_ context.Context, req plugin.Request) (view.View, error) {
+	id := strings.TrimSpace(req.String("id"))
+	r, ok := consent.Find(id)
+	if !ok {
+		return nil, unknownRequest(id)
+	}
+	left := time.Until(r.Deadline).Truncate(time.Second)
+	if left < 0 {
+		left = 0
+	}
+	pairs := []view.Pair{
+		{Key: "capability", Value: r.Cap},
+		{Key: "safety", Value: r.Safety},
+	}
+	if len(r.Scopes) > 0 {
+		pairs = append(pairs, view.Pair{Key: "record", Value: strings.Join(r.Scopes, " ")})
+	}
+	if r.Profile != "" {
+		pairs = append(pairs, view.Pair{Key: "connection", Value: r.Profile})
+	}
+	// Which agent asked, on the page where the operator decides. Omitted when
+	// nothing was named, because "agent: —" on a detail page reads as a fact
+	// about this request rather than as an absence of configuration.
+	if r.Agent != "" {
+		pairs = append(pairs, view.Pair{Key: "agent", Value: r.Agent})
+	}
+	pairs = append(pairs,
+		view.Pair{Key: "why you are being asked", Value: r.Why},
+		view.Pair{Key: "asked", Value: format.Ago(r.AskedAt)},
+		view.Pair{Key: "expires in", Value: left.String()},
+	)
+	sections := []view.Section{
+		{ID: "request", Title: "The request", View: view.KeyValue{Pairs: pairs}},
+	}
+	if len(r.Args) > 0 {
+		arg := make([]view.Pair, 0, len(r.Args))
+		keys := make([]string, 0, len(r.Args))
+		for k := range r.Args {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			arg = append(arg, view.Pair{Key: k, Value: fmt.Sprintf("%v", r.Args[k])})
+		}
+		sections = append(sections, view.Section{
+			ID: "arguments", Title: "Arguments", View: view.KeyValue{Pairs: arg}})
+	}
+	// The preview, and the sentence that bounds it. An operator reading
+	// "would remove task 4" has to know whether they are reading a fact
+	// about this call or a guess — and for a capability rta will not
+	// preview, silence would read as "it would do nothing".
+	body := r.Preview
+	if body == "" {
+		body = notPreviewed(r)
+	}
+	sections = append(sections, view.Section{
+		ID: "outcome", Title: "What it would do", View: view.Text{Body: body}})
+	return view.Sections{Items: sections}, nil
+}
+
+// notPreviewed says why there is no preview, in the caller's terms.
+func notPreviewed(r consent.Request) string {
+	switch {
+	case r.Safety != string(plugin.Destructive):
+		return "no preview: rta previews destructive calls, and this one is a " + r.Safety +
+			" — the capability and its arguments above are the whole of it"
+	case r.Profile != "":
+		return "no preview: this call names a connection, and rta resolves connections only " +
+			"after you answer — a preview run without one would describe the wrong place convincingly"
+	default:
+		return "no preview: either this capability comes from an external plugin, whose --dry-run " +
+			"is a promise rta cannot check, or its preview did not finish in time"
+	}
+}
+
+func runAllow(_ context.Context, req plugin.Request) (view.View, error) {
+	id := strings.TrimSpace(req.String("id"))
+	r, ok := consent.Find(id)
+	if !ok {
+		return nil, unknownRequest(id)
+	}
+	if req.DryRun {
+		return view.Text{Body: fmt.Sprintf("would allow %s (%s) for the agent waiting on request %s",
+			r.Cap, strings.Join(r.Scopes, " "), id)}, nil
+	}
+	if err := consent.Decide(id, true, "cli"); err != nil {
+		return nil, view.Errorf("agent.allow.failed", "%v", err)
+	}
+	pairs := []view.Pair{
+		{Key: "allowed", Value: strings.TrimSpace(r.Cap + " " + strings.Join(r.Scopes, " "))},
+		{Key: "for", Value: "this call only"},
+	}
+	if ttl := strings.TrimSpace(req.String("ttl")); ttl != "" {
+		note, verr := alsoGrant(r, ttl)
+		if verr != nil {
+			// The call is already allowed; a bad --ttl must not read as if
+			// nothing happened.
+			pairs = append(pairs, view.Pair{Key: "grant", Value: "not issued: " + verr.Message})
+			return view.KeyValue{Pairs: pairs}, nil
+		}
+		pairs[1] = view.Pair{Key: "for", Value: note}
+	}
+	return view.KeyValue{Pairs: pairs}, nil
+}
+
+// alsoGrant issues exactly the grant the operator would have typed.
+//
+// Through internal/grant's own path, so a grant issued from a prompt is
+// indistinguishable from one issued deliberately — it appears in
+// `rta grant list`, expires the same way, and is bound to the same
+// connection. A second mechanism that also authorizes calls would be a
+// second thing to audit.
+func alsoGrant(r consent.Request, ttl string) (string, *view.Error) {
+	d, err := time.ParseDuration(ttl)
+	if err != nil {
+		return "", view.Errorf("agent.allow.ttl", "%q is not a duration", ttl).
+			WithHint("try 15m, 1h — the maximum is 24h")
+	}
+	if d <= 0 {
+		return "", view.Errorf("agent.allow.ttl", "a grant has to last longer than nothing")
+	}
+	if d > grant.MaxTTL {
+		d = grant.MaxTTL
+	}
+	scope := ""
+	if len(r.Scopes) == 1 {
+		scope = r.Scopes[0]
+	}
+	// More than one record in a single call is not something a standing
+	// grant can express narrowly, and widening it to the whole capability
+	// is not what the operator asked for by typing --ttl.
+	if len(r.Scopes) > 1 {
+		return "", view.Errorf("agent.allow.ttl",
+			"this call names %d records, so there is no single grant that covers it and nothing else", len(r.Scopes))
+	}
+	now := time.Now()
+	g := grant.Grant{
+		Target: r.Cap,
+		Scope:  scope,
+		// The name and the connection behind it, exactly as `grant allow`
+		// records them: the pin is what makes this a grant against a place
+		// rather than against a label.
+		Profile:    r.Profile,
+		ProfilePin: r.Pin,
+		// And who asked. Without it, answering a named agent's question with
+		// --ttl would issue a grant covering the *unnamed* server — a grant
+		// that reads as consent, lists as live, and never authorizes the
+		// agent it was granted to.
+		Agent:   r.Agent,
+		Issued:  now,
+		Expires: now.Add(d),
+		TTL:     ttl,
+		Note:    "issued while answering request " + r.ID,
+	}
+	if verr := grant.Issue(g, true); verr != nil {
+		return "", verr
+	}
+	return fmt.Sprintf("this call, and %s for the next %s", r.Cap, d), nil
+}
+
+func runDeny(_ context.Context, req plugin.Request) (view.View, error) {
+	id := strings.TrimSpace(req.String("id"))
+	r, ok := consent.Find(id)
+	if !ok {
+		return nil, unknownRequest(id)
+	}
+	if req.DryRun {
+		return view.Text{Body: "would deny " + r.Cap + " for request " + id}, nil
+	}
+	if err := consent.Decide(id, false, "cli"); err != nil {
+		return nil, view.Errorf("agent.deny.failed", "%v", err)
+	}
+	return view.KeyValue{Pairs: []view.Pair{
+		{Key: "denied", Value: strings.TrimSpace(r.Cap + " " + strings.Join(r.Scopes, " "))},
+		{Key: "the agent", Value: "gets your answer rather than a timeout"},
+	}}, nil
+}
+
+// unknownRequest is the answer when an id names nothing answerable.
+//
+// Every capability here that takes an id funnels through it — show, allow and
+// deny — so that the one case worth distinguishing is distinguished in one
+// place. That case is a request that *is* on disk and does not describe the
+// call it is bound to: something rewrote it after rta parked it, which is an
+// attempt to have the operator approve one call while reading another. It is
+// refused either way, and reporting it as "no request is waiting" would file
+// an attack on the consent prompt under housekeeping — the operator would
+// shrug at a stale id and never learn that something on their machine is
+// writing into rta's data directory.
+func unknownRequest(id string) *view.Error {
+	q, err := consent.Scan()
+	if err == nil {
+		for _, bad := range q.Tampered {
+			if bad != id {
+				continue
+			}
+			return view.Errorf("agent.request.tampered",
+				"request %q does not describe the call it is bound to, so it cannot be answered", id).
+				WithHint("something rewrote it after rta parked it — the call it really names was " +
+					"never released, and `rta doctor` reports this; whatever can write " +
+					"rta's data directory is the thing to look at")
+		}
+	}
+	e := view.Errorf("agent.request.unknown", "no request %q is waiting", id)
+	if err != nil || len(q.Waiting) == 0 {
+		return e.WithHint("nothing is waiting — a parked call expires on its own, and the agent is told")
+	}
+	ids := make([]string, 0, len(q.Waiting))
+	for _, r := range q.Waiting {
+		ids = append(ids, r.ID)
+	}
+	sort.Strings(ids)
+	return e.WithHint("waiting right now: " + strings.Join(ids, ", "))
+}
+
+// whyLine is the last column: the refusal or error, and — where there was
+// one — the admission that calls just before this one went unrecorded.
+//
+// On the row rather than in a footnote, because the gap has a position: an
+// operator reading down this column to find out what happened at 14:32 has
+// to be able to see that something at 14:32 is missing.
+func whyLine(e agentlog.Entry) string {
+	if e.Missed == 0 {
+		return e.Reason
+	}
+	note := fmt.Sprintf("(%d call before this one could not be recorded)", e.Missed)
+	if e.Missed > 1 {
+		note = fmt.Sprintf("(%d calls before this one could not be recorded)", e.Missed)
+	}
+	if e.Reason == "" {
+		return note
+	}
+	return e.Reason + " " + note
+}
+
+// argsLine renders arguments for one table cell: compact, ordered, and
+// never wider than a person will read.
+func argsLine(args map[string]any) string {
+	if len(args) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(args))
+	for k := range args {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		parts = append(parts, fmt.Sprintf("%s=%v", k, args[k]))
+	}
+	return clip(strings.Join(parts, " "))
+}
+
+// clip bounds one table cell.
+//
+// Counted in runes, and cut on a rune boundary. A byte slice through text an
+// agent chose ends in a replacement character whenever it is not ASCII — in
+// the column a person reads while deciding whether to allow the call, which
+// is the last place to put a mystery character.
+func clip(line string) string {
+	const wide = 60
+	if utf8.RuneCountInString(line) <= wide {
+		return line
+	}
+	cut := 0
+	for i := range line {
+		if cut == wide-1 {
+			return line[:i] + "…"
+		}
+		cut++
+	}
+	return line
+}

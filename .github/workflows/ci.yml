@@ -6,8 +6,11 @@
 # happened once here: tests picked up a developer's own age key and only went
 # red on the day that key existed. CI is the second machine.
 #
-# `make hard` rather than `go test`: no cached results, no ordering luck, no
-# data races. All three have caught something real.
+# Everything below is a call into the shared workflow catalogue rather than a
+# script kept here. The gates are the same ones `make ci` runs, expressed as
+# that catalogue's inputs: -count=1, -race and -shuffle=on are `make hard`.
+# forget. Two things stay local, and only because nothing general covers them:
+# the plugin modules, and the cross build.
 name: CI
 
 on:
@@ -15,64 +18,180 @@ on:
     branches: ["**"]
   pull_request:
 
+# Every job below narrows this further; nothing here writes.
 permissions:
   contents: read
 
 jobs:
-  check:
+  lint-commits:
+    name: Lint commits
+    # Only on a pull request: on a push the range this walks is whatever was
+    # pushed, which on a branch's first push is its entire history.
+    if: ${{ github.event_name == 'pull_request' }}
+    uses: this-is-tobi/github-workflows/.github/workflows/lint-commits.yml@v0
+    permissions:
+      contents: read
+      pull-requests: read
+
+  lint:
+    name: Lint
+    uses: this-is-tobi/github-workflows/.github/workflows/lint-go.yml@v0
+    permissions:
+      contents: read
+    with:
+      # The four trees that are this module. `plugins/` and `examples/` are
+      # separate modules with their own go.mod and are linted below.
+      FORMAT_PATHS: ./builtin ./cmd ./internal ./pkg
+
+  # proto/v1 is frozen: a plugin compiled against it must keep working. Nothing
+  # enforced that for a while — `proto-check` existed, `make ci` did not call
+  # it, and the pipeline called neither — so renumbering a field passed gofmt,
+  # vet, build and the whole race suite, and was caught by no gate anywhere.
+  lint-proto:
+    name: Lint proto
+    uses: this-is-tobi/github-workflows/.github/workflows/lint-proto.yml@v0
+    permissions:
+      contents: read
+    with:
+      WORKING_DIRECTORY: proto
+
+  test:
+    name: Test
+    uses: this-is-tobi/github-workflows/.github/workflows/test-go.yml@v0
+    permissions:
+      contents: read
+    with:
+      # `make hard` in the catalogue's own words: no cached results, no
+      # ordering luck, no data races. All three have caught something real.
+      RACE: true
+      SHUFFLE: true
+      COUNT: "1"
+      # The second machine. A suite that reads the host it runs on passes on
+      # the host it was written on.
+      RUNNERS: '[["ubuntu-latest"], ["macos-latest"]]'
+      COVERAGE: true
+      # Most of this module is exercised from other packages' tests, which
+      # reads as untested without this.
+      COVERAGE_PACKAGES: ./...
+
+  # Every target a release ships, built the way a release builds it. This runs
+  # GoReleaser's own configuration, so it fails on a change that breaks
+  # packaging and not only on one that breaks compiling — which the plain cross
+  # build below cannot see.
+  build:
+    name: Build
+    uses: this-is-tobi/github-workflows/.github/workflows/build-go.yml@v0
+    permissions:
+      contents: read
+
+  # **A laptop can check this and nobody did.** `builtin/fs/platform.go`
+  # asserted on `syscall.Stat_t` behind a comma-ok and documented the Windows
+  # case as degrading to "always the same device" — but that type does not
+  # exist on Windows, so the package did not compile there at all and the
+  # degradation it promised could never happen. Nothing noticed, because
+  # nothing ever built for a platform other than the one it was sitting on.
+  #
+  # Kept local rather than folded into `build` above: GoReleaser builds what a
+  # release ships, and this proves every target compiles at all — a narrower
+  # question with a much faster answer. Cross compilation is host-independent,
+  # so once is enough.
+  cross:
+    name: Cross-compile every target
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+    - name: Checks-out repository
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+
+    - name: Setup Go
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version-file: go.mod
+        cache: true
+
+    - name: Cross-compile
+      run: make cross
+
+  # Every module under plugins/ has its own go.mod, so nothing above this line
+  # compiles any of them. The first external plugin landed outside CI for
+  # exactly that reason — and it is the one build that would notice a change to
+  # pkg/plugin or pkg/sdk breaking a plugin author, which is the whole reason
+  # it lives in this repository.
+  lint-plugins:
+    name: Lint plugin
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+        module: [docker, eol, kube, pg, s3, vault]
+    uses: this-is-tobi/github-workflows/.github/workflows/lint-go.yml@v0
+    permissions:
+      contents: read
+    with:
+      WORKING_DIRECTORY: plugins/${{ matrix.module }}
+
+  test-plugins:
+    name: Test plugin
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [docker, eol, kube, pg, s3, vault]
+    uses: this-is-tobi/github-workflows/.github/workflows/test-go.yml@v0
+    permissions:
+      contents: read
+    with:
+      WORKING_DIRECTORY: plugins/${{ matrix.module }}
+      RACE: true
+      SHUFFLE: true
+      COUNT: "1"
+      # Both operating systems, unlike proto: a plugin is a binary and the
+      # sandbox that confines it differs per OS.
+      RUNNERS: '[["ubuntu-latest"], ["macos-latest"]]'
+
+  # rta is a security tool. A credential in its own history would be the kind
+  # of thing it exists to find in yours.
+  scan-secrets:
+    name: Scan secrets
+    uses: this-is-tobi/github-workflows/.github/workflows/scan-gitleaks.yml@v0
+    permissions:
+      contents: read
+      security-events: write
+      pull-requests: write
+    with:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+
+  # One required check to protect the branch with, rather than a list that has
+  # to be edited every time a job is added. A skipped job is a pass; anything
+  # else is not.
+  all-jobs-passed:
+    name: Check jobs status
+    runs-on: ubuntu-latest
+    if: ${{ always() }}
+    permissions: {}
+    needs:
+    - lint-commits
+    - lint
+    - lint-proto
+    - test
+    - build
+    - cross
+    - lint-plugins
+    - test-plugins
+    - scan-secrets
     steps:
-      - uses: actions/checkout@v4
-        with:
-          # buf breaking compares against main, which a depth-1 checkout does
-          # not have. The compatibility gate is the reason this job exists at
-          # all for the proto, so it must not silently degrade to "no base to
-          # compare with".
-          fetch-depth: 0
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: gofmt
-        run: |
-          unformatted=$(gofmt -l ./builtin ./cmd ./internal ./pkg)
-          if [ -n "$unformatted" ]; then
-            echo "::error::gofmt needed:"; echo "$unformatted"; exit 1
+    - name: Check status of all required jobs
+      run: |-
+        NEEDS_CONTEXT='${{ toJson(needs) }}'
+        JOB_IDS=$(echo "$NEEDS_CONTEXT" | jq -r 'keys[]')
+        for JOB_ID in $JOB_IDS; do
+          RESULT=$(echo "$NEEDS_CONTEXT" | jq -r ".[\"$JOB_ID\"].result")
+          echo "$JOB_ID job result: $RESULT"
+          if [[ $RESULT != "success" && $RESULT != "skipped" ]]; then
+            echo "***"
+            echo "Error: The $JOB_ID job did not pass."
+            exit 1
           fi
-
-      - name: vet
-        run: go vet ./...
-
-      - name: build
-        run: go build ./...
-
-      # -count=1 -race -shuffle=on
-      - name: test
-        run: make hard
-
-      - name: coverage
-        run: make coverage
-
-      # proto/v1 is frozen: a plugin compiled against it must keep working.
-      # Nothing enforced that. `proto-check` existed, `make ci` did not call
-      # it, and the pipeline called neither — so renumbering a field passed
-      # gofmt, vet, build and the whole race suite, and was caught by no gate
-      # anywhere. Runs on one OS: it reads .proto files, not the machine.
-      - name: proto
-        if: matrix.os == 'ubuntu-latest'
-        run: make proto-lint proto-check
-
-      # Every module under plugins/ has its own go.mod, so nothing above this
-      # line compiles any of them. The first external plugin landed outside CI
-      # for exactly that reason — and it is the one build that would notice a
-      # change to pkg/plugin or pkg/sdk breaking a plugin author, which is the
-      # whole reason it lives in this repo. Runs on both operating systems:
-      # unlike proto, a plugin is a binary and the sandbox differs per OS.
-      - name: plugins
-        run: make plugins
+        done
+        echo "All jobs passed or were skipped."

@@ -1,6 +1,7 @@
 // Package plugin defines the public contract every capability provider
-// implements — built-ins and external plugins alike (PROJECT.md P6: no
-// second-class plugins). A Plugin is a namespace plus a set of Capabilities;
+// implements — built-ins and external plugins alike. There are no
+// second-class plugins: a built-in declares itself exactly as an external
+// one does, and the host cannot tell them apart. A Plugin is a namespace plus a set of Capabilities;
 // a Capability is one operation with a stable ID, declared inputs, a safety
 // class, and a handler returning a view.View.
 package plugin
@@ -14,7 +15,7 @@ import (
 )
 
 // Safety classifies the blast radius of a capability. The host enforces
-// confirmation and AI-exposure rules from it (PROJECT.md §4.7).
+// confirmation and AI-exposure rules from it.
 type Safety string
 
 const (
@@ -68,7 +69,7 @@ const (
 // because the shapes genuinely differ rather than the names: a two-role
 // Host/Port scheme was proposed and rejected for being unable to express `s3`,
 // which has one input holding `host:port`, or `vault`, which has one holding a
-// URL (ADR 0019's amendment to ADR 0018 §2). These four cover every plugin in
+// URL. These four cover every plugin in
 // the tree, and a shape none of them fits is a reason to add a fifth rather
 // than to make the operator hand-map it.
 //
@@ -92,7 +93,7 @@ const (
 	// is already inside the API server's TLS for the only hop that leaves the
 	// machine: rta talks to 127.0.0.1, kubectl wraps that in HTTPS to the API
 	// server, and the kubelet delivers it into the pod's network namespace.
-	// Re-encrypting a loopback socket at each end buys nothing (ADR 0018 §7).
+	// Re-encrypting a loopback socket at each end buys nothing.
 	EndpointURL EndpointRole = "url"
 	// EndpointTLS takes whether transport security is worth negotiating over
 	// the forward, which is: no.
@@ -105,7 +106,7 @@ const (
 	// PostgreSQL has already closed, the pod-side read resets, and kubectl
 	// exits. The next call gets "connection refused" on a local port with
 	// nothing anywhere connecting the two, and it happens on the first call,
-	// to somebody who changed nothing (ADR 0018 §7).
+	// to somebody who changed nothing.
 	//
 	// The value is rendered per input type: "disable" for a String whose
 	// Options say so, false for a Bool. A caller who disagrees still wins,
@@ -182,7 +183,7 @@ type Field struct {
 	//
 	// **A destination is a destination whether or not it is on this
 	// machine**, and reading that narrowly was a live credential-redirect
-	// hole (PROJECT.md D94). A service plugin declares the connection it
+	// hole. A service plugin declares the connection it
 	// talks to — host, port, user, database, endpoint, region, address,
 	// namespace — as ordinary inputs so config can fill them. Ordinary also
 	// meant published in the MCP tool schema and accepted from a caller, and
@@ -200,8 +201,8 @@ type Field struct {
 	// unattended `rta mcp serve` the same way any other credential reaches a
 	// long-running process. Ignored on a non-Local field.
 	//
-	// Off by default, and that default is the fix for a real bug (PROJECT.md
-	// D74): every Local field used to get this for free, which is right for
+	// Off by default, and that default is the fix for a real bug: every
+	// Local field used to get this for free, which is right for
 	// a credential and wrong for a field that only chooses a destination —
 	// kv.get's own --out is Local specifically so a grant on kv.get cannot
 	// be read as "and write the value wherever you like", and an ambient
@@ -267,7 +268,7 @@ type Field struct {
 	Min any
 	Max any
 	// Endpoint names which part of a resolved tunnel fills this input, so the
-	// host can point a call at a port-forward it opened (ADR 0018 §2).
+	// host can point a call at a port-forward it opened.
 	//
 	// A tunnel yields one thing — a local address — and plugins take it in
 	// different shapes: `pg` wants `host` and `port` separately, `s3` wants one
@@ -277,12 +278,12 @@ type Field struct {
 	//
 	// **Declared rather than conventional**, because a plugin is free to call
 	// its inputs `server` and `addr`, and matching on the names `host` and
-	// `port` is the mistake this codebase has recorded four times (D40: a name
-	// a thing chooses for itself is not an identity).
+	// `port` is the mistake this codebase has recorded four times: a name a
+	// thing chooses for itself is not an identity.
 	//
 	// **Declared by the plugin rather than mapped by the operator**, which is
 	// the opposite of the rule `secrets:` follows and for a reason that does
-	// not apply here. D50 makes the operator write a secret mapping because a
+	// not apply here. The operator writes a secret mapping because a
 	// plugin that could name the secret it wanted could name any secret in the
 	// namespace — it would cause a *fetch*. This causes none: it names one of
 	// the plugin's own declared inputs as the destination for a value the host
@@ -327,7 +328,7 @@ type Field struct {
 	// Live marks Suggest as reading the service this plugin fronts — a
 	// bucket listing, a mount table — rather than computing locally.
 	//
-	// The split is ADR 0018 §8 applied to plugins: a read of somebody's
+	// The split is the rule tunnels already follow: a read of somebody's
 	// infrastructure must be something the operator did, not something
 	// typing caused. A live Suggest runs only on a deliberate completion
 	// press, and with the credentials the run would get (LiveRequest) —
@@ -392,8 +393,8 @@ type Capability struct {
 	//
 	// Reaching off the box: disclosing a dependency list to a third party,
 	// spending an API quota, waking a device. None of it is something a
-	// person expects from opening a TUI, and D9 promises network calls
-	// happen only on explicit user action.
+	// person expects from opening a TUI. Network calls here happen only on
+	// explicit user action.
 	//
 	// Unbounded local work: a recursive scan of wherever the caller
 	// happened to be standing is cheap in a source tree and ruinous in a

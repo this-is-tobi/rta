@@ -8,8 +8,9 @@
 // The rules it enforces are the ones the host silently assumes and no
 // renderer re-checks — an unreachable default, a view that cannot become
 // JSON, a --dry-run that is not dry. Each one is here because it has already
-// shipped broken at least once (PROJECT.md §4.7 has the postmortem for the
-// third).
+// shipped broken at least once. The third is the one that cost most: an
+// http write capability whose --dry-run performed the write and then
+// described it.
 //
 // # What it does to your machine
 //
@@ -77,7 +78,7 @@ const (
 	// the data directory byte-identical.
 	RuleDryRun Rule = "dry-run"
 	// RuleVerbs: the last ID segment is a word the catalogue already uses.
-	// Warning only, per D8.
+	// Warning only: see checkVerbs for why an error would be wrong here.
 	RuleVerbs Rule = "verbs"
 	// RuleRedaction: a view that declares a redacted field names one that
 	// exists, and a capability that handles secrets declares one at all.
@@ -237,6 +238,26 @@ func drive(t reporter, p plugin.Plugin, cfg config, dir string, inputs map[strin
 		// capability this suite should see failing.
 		values := plugin.Resolve(c, plugin.Inputs{Caller: inputs[c.ID]})
 		if missing := missingRequired(c, values); len(missing) > 0 {
+			// A read that cannot be driven is a coverage gap. A *mutating* one
+			// is this suite failing at the only job it has ever caught anything
+			// doing: RuleDryRun exists because `http post --dry-run` and then
+			// `net.send --dry-run` both shipped performing the act they
+			// promised to describe, and a capability that is never driven has
+			// never been asked. Reported as a pass, that is worse than no rule
+			// at all — the external plugins each called Check, each went green,
+			// and behind it six handlers wrote to remote systems under
+			// --dry-run. Almost every mutating capability names a required
+			// bucket, path or key, so "no inputs supplied" is the normal state
+			// rather than an edge, which is exactly why it cannot be a log
+			// line. An author who genuinely cannot supply one says so with
+			// Skip, and that exemption is then on the record.
+			if mutating {
+				t.Errorf("sdktest: %s: %s was never run — no value for required input %s. "+
+					"Supply one with sdktest.WithInputs, or state why not with "+
+					"sdktest.Skip(sdktest.RuleDryRun, %q, …): an undriven capability has not been checked.",
+					rule, c.ID, strings.Join(missing, ", "), c.ID)
+				continue
+			}
 			t.Logf("sdktest: %s: %s not run — no value for required input %s; supply one with sdktest.WithInputs",
 				rule, c.ID, strings.Join(missing, ", "))
 			continue

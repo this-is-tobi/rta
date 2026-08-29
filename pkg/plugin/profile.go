@@ -28,7 +28,7 @@ import "strings"
 //     s3.object.get's --out is Path+Local, so both would otherwise qualify.
 //     internal/mcp's checkPaths runs before Resolve and skips Local fields on
 //     the reasoning that a caller cannot supply them — so a profile-filled
-//     path would sit outside --root confinement twice over (ADR 0014). A
+//     path would sit outside --root confinement twice over. A
 //     profile chooses where a call *goes*, never what it reads or where it
 //     writes.
 //

@@ -16,8 +16,7 @@ import (
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
 
-// Completing a coordinate or a Secret reference from the cluster, on tab
-// (ADR 0018 §8).
+// Completing a coordinate or a Secret reference from the cluster, on tab.
 //
 // Tab is this app's one completion key — "tab completes paths", "press tab",
 // "tab completes" — and these two fields keep it that way: with a suggestion
@@ -194,7 +193,7 @@ func (m Model) liveTarget() (plugin.Field, bool) {
 // decides which credentials the listing runs with, and resolveProfile is an
 // event-loop call (its bind cache is the loop's to touch). What is never
 // done here is a dial: a connection naming a cluster is refused with the
-// reason, because a forward opens per call (ADR 0018 §4) and a completion is
+// reason, because a forward opens per call and a completion is
 // not a call — the plugin would list against a port nothing listens on.
 func (m Model) completeFromService(msg tea.Msg) (tea.Model, tea.Cmd) {
 	f, ok := m.liveTarget()

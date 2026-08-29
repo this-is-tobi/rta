@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"os/exec"
 	"sort"
 	"strings"
@@ -12,11 +13,11 @@ import (
 )
 
 // Secrets reads the credentials a target names and returns them keyed by the
-// *input* they fill (ADR 0018 §6).
+// *input* they fill.
 //
 // The mapping is the operator's, never the plugin's. That is the same rule
 // that made the local-credential environment variable derived rather than
-// declared (ADR 0016, D50): a plugin that could name the secret it wanted
+// declared: a plugin that could name the secret it wanted
 // would be a plugin that could name any secret in the namespace and have the
 // host fetch it. Here a plugin declares only that it has an input; which
 // secret key fills it is written in the operator's own file.
@@ -51,10 +52,22 @@ func Secrets(ctx context.Context, name string, t Target) (map[string]string, *vi
 	cmd := exec.CommandContext(ctx, kubectl,
 		"--context", kctx, "--namespace", ns,
 		"get", "secret", t.Secret, "-o", "json")
+	// The same bound the completion path pays, for a stronger reason: this
+	// runs on every call whose connection names `secret:`, so a kubeconfig
+	// whose credential helper leaves something behind wedged the whole rta
+	// invocation permanently — no error, no ceiling, and the caller's context
+	// ignored, because what is stuck is os/exec's copying goroutines rather
+	// than the process. Over MCP that is a tool call that never answers and
+	// an agent that never gets its turn back.
+	cmd.WaitDelay = waitDelay
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
-	if err != nil {
+	// ErrWaitDelay means the process finished and something else was holding
+	// the pipes; the bytes may be the whole answer or a prefix of it. JSON is
+	// self-delimiting, so Unmarshal below is a better judge of which than a
+	// blanket refusal that throws away a complete answer.
+	if err != nil && !errors.Is(err, exec.ErrWaitDelay) {
 		return nil, secretFailed(name, ns, t.Secret, stderr.String())
 	}
 

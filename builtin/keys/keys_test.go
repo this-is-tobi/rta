@@ -185,7 +185,7 @@ func TestBackupRestoreRoundTrip(t *testing.T) {
 // The key material round-trips exactly (proven above by fingerprint); the
 // PEM file on disk does not. Found live, against the real rta binary and
 // real ssh-keygen, before it shipped as a "bit-for-bit" claim in this
-// capability's own Description (PROJECT.md D72) — OpenSSH's private-key
+// capability's own Description — OpenSSH's private-key
 // container writes a random per-encode nonce (the "checkint" pair)
 // alongside the key material, which differs on every encode regardless of
 // input. Pinning both halves of this — same fingerprint, different bytes —
@@ -326,7 +326,7 @@ func TestRestoreAppliesAPassphraseToTheWrittenKey(t *testing.T) {
 	}
 }
 
-// A regression test for a real bug review caught (PROJECT.md D73):
+// A regression test for a real bug review caught:
 // keys.backup's --passphrase and keys.restore's --new-passphrase are
 // different secrets — one unlocks the key being read, the other locks the
 // key being written — and used to share a field name, so both resolved
@@ -648,7 +648,7 @@ func TestListReportsAnRSAKeyAsNotEligible(t *testing.T) {
 // without decrypting anything: the OpenSSH container a locked key is
 // stored in carries its own public key in cleartext
 // (ssh.PassphraseMissingError.PublicKey), and probeKey uses exactly that.
-// Found by review (PROJECT.md D73) — the original version of this test
+// Found by review — the original version of this test
 // asserted "unknown" as the correct answer, on a premise (verified false by
 // the review) that no public data was available here at all.
 func TestListReportsALockedKeyAsLockedButStillIdentifiesItFromTheContainersOwnPublicKey(t *testing.T) {
@@ -859,7 +859,7 @@ func freshWords(t *testing.T) string {
 	return words
 }
 
-// --- gaps a review pass found (PROJECT.md D73) --------------------------
+// --- gaps a review pass found --------------------------
 
 // The interactive word prompt (keys.restore's analogue of keys.backup's
 // promptKeyPassphrase, tested above) had no test at all before this one —

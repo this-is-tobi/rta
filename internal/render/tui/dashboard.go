@@ -16,7 +16,7 @@ import (
 
 // A tile is a capability previewed as a dashboard pane. Tiles are pure
 // composition — capability ID + values in, View out — the same data-driven
-// shape a future a2tea integration would consume (PROJECT.md §6.4). Enter or
+// shape a future a2tea integration would consume. Enter or
 // a mouse click opens the full result.
 type tile struct {
 	cap    plugin.Capability
@@ -62,9 +62,14 @@ const (
 )
 
 // pluginOrder is the shipped arrangement: what you glance at most, first.
+//
+// agent sits beside grant deliberately: grant is the standing policy and
+// agent is what happened under it, and a parked call waiting for an answer
+// has a clock on it — a dashboard is where somebody notices in
+// time rather than after the request has expired.
 // Plugins not named here follow, alphabetically — a plugin installed later
 // lands on the dashboard without anyone editing this list.
-var pluginOrder = []string{"todo", "note", "sys", "net", "kv", "grant"}
+var pluginOrder = []string{"todo", "note", "sys", "net", "kv", "grant", "agent"}
 
 // preferredTile overrides the tile convention for a plugin whose best glance
 // is not the one the convention lands on.
@@ -309,7 +314,7 @@ type tickMsg struct{ gen int }
 // through the one path that did not dial.
 //
 // The cost is one forward per tunnelled tile per refresh, which is the price
-// ADR 0018 §4 already said the TUI would pay per call — 54 ms median against a
+// The TUI pays this per call — 54 ms median against a
 // real cluster. Tiles are one per plugin by default, so a profile covering pg
 // costs one; a hand-configured second tile of the same plugin costs a second
 // forward, which works (they get different local ports) and is the rare case.

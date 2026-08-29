@@ -37,12 +37,15 @@ type profileFixture struct {
 	dir string
 }
 
-func newProfileFixture(t *testing.T, yaml string) *profileFixture {
+func newProfileFixture(t *testing.T, yaml string, tweaks ...func(*Options)) *profileFixture {
 	t.Helper()
-	return newProfileFixtureIn(t, yaml, t.TempDir())
+	return newProfileFixtureIn(t, yaml, t.TempDir(), tweaks...)
 }
 
-func newProfileFixtureIn(t *testing.T, yaml, dir string) *profileFixture {
+// tweaks let one test build the same fixture with a different server
+// configuration — consent, today. Variadic so every existing caller is
+// unchanged and the default stays "what a plain server does".
+func newProfileFixtureIn(t *testing.T, yaml, dir string, tweaks ...func(*Options)) *profileFixture {
 	t.Helper()
 	var host, pass, sql string
 
@@ -107,7 +110,7 @@ func newProfileFixtureIn(t *testing.T, yaml, dir string) *profileFixture {
 	}
 
 	resolver, _ := pluginconf.Resolve(cfg, reg.Origin)
-	server := NewServer(reg, "test", Options{
+	opts := Options{
 		Origin: reg.Origin, Config: resolver.For, Profiles: cfg,
 		// Wired the way internal/app wires it, so these tests exercise what a
 		// real server does rather than the zero value's fallback.
@@ -118,7 +121,11 @@ func newProfileFixtureIn(t *testing.T, yaml, dir string) *profileFixture {
 			}
 			return live
 		},
-	})
+	}
+	for _, tweak := range tweaks {
+		tweak(&opts)
+	}
+	server := NewServer(reg, "test", opts)
 	st, ct := sdk.NewInMemoryTransports()
 	ctx := context.Background()
 	if _, err := server.Connect(ctx, st, nil); err != nil {
@@ -215,6 +222,50 @@ profiles:
         set:
           host: prod.internal
 `
+
+// R5 begins the moment the operator writes their first profile, not at the
+// next restart.
+//
+// The rule exists because an operator who carefully grants "staging" leaves
+// production sitting in `plugins.pg:`, reachable by any agent holding nothing.
+// Deciding it from the startup snapshot inverted the timing of the protection
+// against the timing of the belief: adopting profiles is exactly when somebody
+// thinks their base connection has stopped being reachable, and a server that
+// has been up since this morning went on running unprofiled calls against it
+// with nothing anywhere saying so. Same defect as the connection stamp one
+// field along, and the fixture wires Reload the way internal/app does, so this
+// is what a real server does rather than what the zero value falls back to.
+func TestR5StartsWhenTheOperatorWritesAProfileNotWhenTheServerRestarts(t *testing.T) {
+	// A server started before there were any profiles at all.
+	f := newProfileFixture(t, `
+plugins:
+  pg:
+    host: base.internal
+`)
+	if res := f.call(t, map[string]any{"sql": "select 1"}); res.IsError {
+		t.Fatalf("an unprofiled call was refused before any profile existed: %s", contentText(t, res))
+	}
+	if *f.sawHost != "base.internal" {
+		t.Fatalf("host = %q, want the base connection", *f.sawHost)
+	}
+
+	// The operator adopts profiles. Nothing restarts the server — an editor
+	// does not, and neither does the TUI's profile form.
+	if err := writeFile(f.dir+"/config.yaml", twoProfiles); err != nil {
+		t.Fatal(err)
+	}
+
+	*f.sawHost = ""
+	res := f.call(t, map[string]any{"sql": "select 1"})
+	if !res.IsError {
+		t.Fatalf("the base connection was still reachable with no profile named "+
+			"and no grant: host=%q", *f.sawHost)
+	}
+	assertCode(t, res, "core.profile.required")
+	if *f.sawHost != "" {
+		t.Errorf("the handler ran against %q", *f.sawHost)
+	}
+}
 
 // An agent may name a connection, and naming one it has no grant for is
 // refused — with no grant needed for anything else about the call.
@@ -400,7 +451,7 @@ func TestTheSchemaNeverListsTheOperatorsConnections(t *testing.T) {
 				name, schema)
 		}
 	}
-	// And the connection inputs themselves stay gone — D94 is untouched.
+	// And the connection inputs themselves stay gone: the redirect hole stays closed.
 	for _, gone := range []string{`"host"`, `"password"`} {
 		if strings.Contains(schema, gone) {
 			t.Errorf("the schema advertises %s again:\n%s", gone, schema)
@@ -442,7 +493,7 @@ func TestOnceAProfileExistsAnUnprofiledAgentCallIsRefused(t *testing.T) {
 //
 // RTA_PG_PASSWORD is bound to the plugin, so it follows the connection
 // wherever a profile points it. Pairing a destination somebody else named with
-// a credential the operator exported for their own database is D94's redirect
+// a credential the operator exported for their own database is the redirect
 // rebuilt one layer up — so under a profile the whole layer is skipped, and
 // the profile carries its own credential or none.
 func TestAProfileNeverInheritsTheNamespaceWideCredential(t *testing.T) {

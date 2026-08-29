@@ -34,7 +34,7 @@ import (
 // is built on. No output is parsed and no port is raced; the cost is one ssh
 // process per TCP connection, which the operator's own ControlMaster settings
 // collapse to milliseconds, and which a tunnel that lives for one call
-// (ADR 0018 §4) rarely sees more than a handful of.
+// rarely sees more than a handful of.
 
 // sshBin is overridable in tests, which have no bastion and must not need one
 // to exercise the lifecycle.
@@ -189,6 +189,11 @@ func openSSH(ctx context.Context, name string, t Target) (*Tunnel, *view.Error) 
 func probeSSH(ctx context.Context, name string, spec sshSpec, tun *Tunnel) *view.Error {
 	cmd := exec.CommandContext(ctx, sshBin, sshArgs(spec)...)
 	harden(cmd)
+	// ssh has its own askpass and helper machinery that can outlive it and
+	// keep this stderr pipe open. The probe itself is already bounded by
+	// openCeiling and gaveUp, so what this bounds is the Wait goroutine
+	// below, which would otherwise leak one per timed-out probe.
+	cmd.WaitDelay = waitDelay
 	stderr := &syncBuffer{}
 	cmd.Stderr = stderr
 	if err := cmd.Start(); err != nil {
@@ -252,8 +257,30 @@ func (t *Tunnel) spliceSSH(ctx context.Context, spec sshSpec, conn net.Conn) {
 	defer t.served.Done()
 	defer conn.Close()
 	cmd := exec.CommandContext(ctx, sshBin, sshArgs(spec)...)
-	cmd.Stdin = conn
-	cmd.Stdout = conn
+	// Pipes rather than `cmd.Stdin = conn; cmd.Stdout = conn`, and WaitDelay
+	// is not an alternative here: when it fires it closes os/exec's own pipes
+	// and then *blocks* on the copier, which is parked in conn.Read — closing
+	// a pipe does not interrupt a read on a socket somebody else owns.
+	// Assigning a net.Conn directly makes os/exec run both copies, so Wait
+	// waited on a read from the caller's connection; an ssh child that died
+	// first therefore left Wait blocked until the client closed its end, and
+	// with it t.served.Done, t.abandon and the deferred conn.Close. That is a
+	// goroutine, an fd and a map entry per connection, for the life of the
+	// tunnel rather than only until teardown.
+	//
+	// With pipes, Wait returns when ssh exits. The conn->stdin copy stays
+	// parked until the deferred conn.Close below fires, which is the point: a
+	// child that died must not leave the caller holding a connection nothing
+	// will ever answer.
+	in, ierr := cmd.StdinPipe()
+	if ierr != nil {
+		return
+	}
+	out, oerr := cmd.StdoutPipe()
+	if oerr != nil {
+		_ = in.Close()
+		return
+	}
 	// Discarded rather than classified: the probe already turned this
 	// target's failure modes into open-time errors, and a child failing
 	// mid-call surfaces as the reset the plugin reports in its own words.
@@ -267,10 +294,9 @@ func (t *Tunnel) spliceSSH(ctx context.Context, spec sshSpec, conn net.Conn) {
 	// a started child, and once closing is set nothing starts at all.
 	//
 	// The connection is registered alongside because reaping the process is
-	// not enough to end the splice: Cmd.Wait also waits for the copier
-	// reading the connection, and a caller still holding its end open leaves
-	// that read blocked past any reap. Teardown closes the connection to
-	// unblock it.
+	// not enough to end the splice: the conn->stdin copy below stays parked in
+	// conn.Read past any reap while the caller holds its end open. Teardown
+	// closes the connection to unblock it.
 	t.mu.Lock()
 	if t.closing {
 		t.mu.Unlock()
@@ -282,6 +308,14 @@ func (t *Tunnel) spliceSSH(ctx context.Context, spec sshSpec, conn net.Conn) {
 	}
 	t.children[cmd] = conn
 	t.mu.Unlock()
+
+	go func() {
+		_, _ = io.Copy(in, conn)
+		// Half-close: the destination sees EOF and, if it is well behaved,
+		// closes back — the same clean shutdown probeSSH relies on.
+		_ = in.Close()
+	}()
+	_, _ = io.Copy(conn, out)
 	_ = cmd.Wait()
 	t.abandon(cmd)
 }
@@ -333,7 +367,7 @@ var sshConfigPath = func() (string, error) {
 // is the exact case this feature is best at: one word that carries the user,
 // port, key and ProxyJump the config already states.
 //
-// A local file read, so it may run per keystroke (ADR 0018 §8 — the boundary
+// A local file read, so it may run per keystroke (the boundary
 // is somebody's infrastructure, not the operator's own disk). Patterns
 // (*, ?, !) are skipped — a pattern matches hosts, it does not name one — and
 // Include directives are not followed: the common case is one file, and a

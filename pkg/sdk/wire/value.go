@@ -27,7 +27,7 @@ import (
 // An unknown type encodes as nil rather than as its Go formatting. Something
 // no Field.Type can describe has no business crossing: rendering it as a
 // string would hand the handler a value its declared type says is impossible,
-// which is the failure mode Field.Type was closed to prevent (ADR 0011).
+// which is the failure mode Field.Type was closed to prevent.
 func ValueToProto(v any) *rtav1.Value {
 	switch n := v.(type) {
 	case nil:

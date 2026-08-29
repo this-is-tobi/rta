@@ -292,7 +292,7 @@ func (EndpointRole) EnumDescriptor() ([]byte, []int) {
 //
 // The Go contract carries these as `any`, which a wire format cannot. A
 // oneof is used rather than google.protobuf.Value because Field.Type is a
-// closed set of eight (ADR 0011) that maps onto exactly these five shapes,
+// closed set of eight that maps onto exactly these five shapes,
 // and because Value would round-trip every integer through a double: a port
 // or a timeout survives that, a byte count above 2^53 does not, and a
 // contract that is lossless for the values people happen to have tried is

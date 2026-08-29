@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
 
 	vaultapi "github.com/hashicorp/vault/api"
 
+	"github.com/this-is-tobi/rule-them-all/pkg/format"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
@@ -42,6 +44,14 @@ func transitEncryptCapability() plugin.Capability {
 func runTransitEncrypt(ctx context.Context, req plugin.Request) (view.View, error) {
 	return withClient(req, func(client *vaultapi.Client) (view.View, error) {
 		path := req.String("mount") + "/encrypt/" + req.String("key")
+		// Encrypting is a write to the key: it advances the key's usage and,
+		// on a convergent or auto-rotating key, is not free of consequence.
+		// The plaintext is the caller's own, so a preview owes them only the
+		// terms.
+		if req.DryRun {
+			return view.Text{Body: fmt.Sprintf("would encrypt %s with %s",
+				format.Bytes(uint64(len(req.String("plaintext")))), path)}, nil
+		}
 		secret, err := client.Logical().WriteWithContext(ctx, path, map[string]interface{}{
 			"plaintext": base64.StdEncoding.EncodeToString([]byte(req.String("plaintext"))),
 		})

@@ -16,7 +16,7 @@ import (
 
 // Prefix is how an SDK plugin announces itself on $PATH.
 //
-// The exec tier already owns `rta-<name>` (P8's escape hatch: any binary in
+// The exec tier already owns `rta-<name>` (the escape hatch: any binary in
 // any language that prints a view as JSON, no SDK involved), so the two tiers
 // need names that cannot be confused. `rta-plugin-<name>` is the longer
 // prefix, and the rule is decidable in one direction: everything matching
@@ -53,7 +53,7 @@ type Found struct {
 }
 
 // ManagedBin is the managed store's directory of current-version symlinks
-// (ADR 0017 §3) — <data>/plugins/bin. Defined here rather than in
+// — <data>/plugins/bin. Defined here rather than in
 // internal/plugindist, which owns the store, because discovery must scan it
 // and plugindist already imports this package; plugindist.BinDir delegates,
 // so the layout still has one home.
@@ -161,7 +161,7 @@ func (h *Host) LoadInto(ctx context.Context, reg *registry.Registry) []error {
 	// from h.running, which is a worse state than either outcome. Loaded()
 	// went empty, so PluginOrigins() lost the namespace, so the MCP gate read
 	// it as built-in and accepted an *unpinned* --allow-destructive for a
-	// binary on $PATH — the artifact binding D27 and ADR 0015 exist to make.
+	// binary on $PATH: an authorization binds to an artifact, not to a name.
 	// And CloseAll could no longer see the process, so the one Client.live
 	// relaunched on the next call outlived rta.
 	//

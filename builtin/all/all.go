@@ -9,6 +9,7 @@
 package all
 
 import (
+	rtaagent "github.com/this-is-tobi/rule-them-all/builtin/agent"
 	"github.com/this-is-tobi/rule-them-all/builtin/audit"
 	"github.com/this-is-tobi/rule-them-all/builtin/cert"
 	"github.com/this-is-tobi/rule-them-all/builtin/codec"
@@ -29,7 +30,14 @@ import (
 )
 
 // Registry returns every built-in plugin, registered and indexed.
-func Registry() (*registry.Registry, error) {
+//
+// conf answers what the operator's configuration states for a capability —
+// the app layer passes its pin-matched resolver, tests pass nil (meaning
+// "nothing configured") or their own. It exists for the one built-in that
+// runs *other* capabilities: the ai plugin's tool bridge hands each tool
+// call the same config every surface would, and a parameter rather than
+// package state is what keeps two registries in one test process apart.
+func Registry(conf func(plugin.Capability) map[string]any) (*registry.Registry, error) {
 	reg := registry.New()
 	for _, p := range []plugin.Plugin{
 		sys.Plugin(),
@@ -46,8 +54,11 @@ func Registry() (*registry.Registry, error) {
 		codec.Plugin(),
 		rtadebug.Plugin(),
 		keys.Plugin(),
-		// grant is about the others: it is handed the catalogue so what can
-		// be granted is derived from what is registered, never listed twice.
+		// agent is the operator's window onto what AI agents did and what
+		// they are asking for; grant is the standing policy beside it, and
+		// is handed the catalogue so what can be granted is derived from
+		// what is registered, never listed twice.
+		rtaagent.Plugin(),
 		grant.Plugin(reg.Capabilities),
 	} {
 		if err := reg.Register(p); err != nil {

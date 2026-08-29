@@ -15,7 +15,7 @@ import (
 )
 
 // sdktest is the definition of "a correct plugin" and eol gets no exemption
-// from it, the same as pg (PROJECT.md P6). It needs no network: a
+// from it, the same as pg — no second-class plugins. It needs no network: a
 // declaration is checkable before anything is asked.
 func TestConformance(t *testing.T) { sdktest.Check(t, Plugin()) }
 

@@ -26,7 +26,7 @@ import (
 //
 // It exists for the reason the plugins pane exists: the alternative was
 // hand-editing YAML and guessing. A profile is the unit an agent's permission is
-// granted against and the bound on what agents may reach (ADR 0019), so "which
+// granted against and the bound on what agents may reach, so "which
 // environments do I have, what does each reach, and which one am I in" is a
 // question somebody has to be able to answer *before* issuing consent — and
 // answering it by opening a config file is exactly the friction that makes
@@ -491,11 +491,22 @@ func profileCovers(row profileRow) string {
 	if len(row.p.Plugins) == 0 {
 		return theme.WarnText.Render("covers nothing — no plugins configured")
 	}
-	detail := strings.Join(row.p.PluginKeys(), theme.Subtle.Render(" · "))
-	if row.p.Note != "" {
-		detail += theme.Subtle.Render(" · ") + theme.Subtle.Render(row.p.Note)
+	// **Styled per segment, never as one assembled string.** A style applied
+	// over text that already carries ANSI ends at the first reset inside it:
+	// the separator emits its own colour and then `ESC[m`, so wrapping the
+	// joined string left the first plugin faded and every one after it in the
+	// terminal's default — `pg@…` dim, `s3@…` and `vault@…` bright white,
+	// which read as a status difference between plugins that does not exist.
+	keys := row.p.PluginKeys()
+	styled := make([]string, 0, len(keys))
+	for _, key := range keys {
+		styled = append(styled, theme.Faded.Render(key))
 	}
-	return theme.Faded.Render(detail)
+	detail := strings.Join(styled, theme.Subtle.Render(" · "))
+	if row.p.Note != "" {
+		detail += theme.Subtle.Render(" · " + row.p.Note)
+	}
+	return detail
 }
 
 // profileDetail is the third line: why this environment does not work, or how

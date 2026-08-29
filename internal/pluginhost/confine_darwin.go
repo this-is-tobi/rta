@@ -41,6 +41,30 @@ func profile(d DenySet) string {
 		}
 		b.WriteString(")\n")
 	}
+	// **A rule that names a path stops applying when the path stops having
+	// that name.** Renaming is the operation that does it, and in SBPL a
+	// rename needs unlink permission on what is being renamed — so this is the
+	// verb that makes every rule above hold: without it `mv ~/.ssh ~/x`
+	// succeeds and every key is readable one command later, at a path no rule
+	// mentions. The whole read-denied tier was worth nothing.
+	//
+	// Two kinds of filter, deliberately. `subpath` over the read-denied set,
+	// so nothing inside it can be moved out either. `literal` over the
+	// ancestors, because those directories must stay put while everything
+	// inside them stays ordinary — `~` is on that list, and denying writes
+	// under a subpath rooted there would deny most of what a plugin does.
+	//
+	// NoAccess needs neither: file-write* already contains file-write-unlink.
+	if len(d.NoRead) > 0 || len(d.NoMove) > 0 {
+		b.WriteString("(deny file-write-unlink\n")
+		for _, p := range d.NoRead {
+			fmt.Fprintf(&b, "  (subpath %q)\n", p)
+		}
+		for _, p := range d.NoMove {
+			fmt.Fprintf(&b, "  (literal %q)\n", p)
+		}
+		b.WriteString(")\n")
+	}
 	return b.String()
 }
 
@@ -55,7 +79,7 @@ func profile(d DenySet) string {
 // every crash. Inline has neither.
 //
 // The profile is an argument, not an environment variable and not stdin:
-// stdin belongs to the plugin protocol (ADR 0012 §5), and an environment
+// stdin belongs to the plugin protocol, and an environment
 // variable would be inherited by everything the plugin itself spawns.
 func wrap(d DenySet, name string, args []string) (string, []string) {
 	argv := append([]string{"-p", profile(d), name}, args...)

@@ -167,9 +167,11 @@ func TestExplainNamesTheFileTheConfigBlockGoesIn(t *testing.T) {
 // for no others.
 //
 // Local and EnvFallback were the same set when this line was written, so
-// "Local" was a correct test for "filled from $RTA_<NS>_<INPUT>". D74 split
+// "Local" was a correct test for "filled from $RTA_<NS>_<INPUT>". Splitting
+// EnvFallback out of it separated
 // them — EnvFallback is for the fields that genuinely are credentials — and
-// D94 then marked every connection input on pg, s3 and vault Local *without*
+// Closing the redirect hole then marked every connection input on pg, s3
+// and vault Local *without*
 // EnvFallback, deliberately, because a field that merely chooses a
 // destination must not be fillable from an ambient variable. The card did not
 // follow: `rta explain pg.status` told operators that --host comes from

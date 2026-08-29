@@ -70,7 +70,7 @@ func Plugin() plugin.Plugin {
 		Capabilities: []plugin.Capability{
 			// GET and HEAD read: they mutate nothing, and the safety class is
 			// right. They still need a grant, which is the same correction
-			// net.send took (D18, ADR 0009) on strictly weaker grounds.
+			// net.send took on strictly weaker grounds.
 			//
 			// Fetching a URL is bidirectional. Outbound it is arbitrary egress
 			// to a host of the caller's choosing, with the caller's bytes in

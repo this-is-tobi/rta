@@ -74,7 +74,7 @@ func liveModel(t *testing.T, lr *liveRecorder, profiles map[string]config.Profil
 				Suggest: lr.suggest("backups\tprod data", "media/")},
 			{Name: "endpoint", Type: plugin.String, Config: "endpoint", Local: true,
 				Endpoint: plugin.EndpointURL, Help: "endpoint"},
-			// EnvFallback, as every real credential input declares (D74):
+			// EnvFallback, as every real credential input declares:
 			// without it the input is not ProfileFillable, so a `secrets:`
 			// mapping onto it is refused — which checkSecretRefs now says at
 			// the page, and this fixture found out the day it landed.
@@ -176,7 +176,7 @@ func TestTabAsksTheServiceAndTypingNeverDoes(t *testing.T) {
 // the environment the picker names, and before anything is fetched.
 //
 // Three rules in one flow, each found the hard way. The forward opens per
-// call (ADR 0018 §4) and a completion is not a call, so the coordinate is a
+// call and a completion is not a call, so the coordinate is a
 // refusal rather than a listing against a loopback port nothing listens on.
 // The environment is the picker's answer: a first cut stripped the picker
 // before resolving, so tab completed against the switched-on environment

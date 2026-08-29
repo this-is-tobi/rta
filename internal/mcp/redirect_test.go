@@ -13,8 +13,8 @@ import (
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
 
-// A regression test for a real, live hole a design review found
-// (PROJECT.md D94): a service plugin declares the connection it talks to as
+// A regression test for a real, live hole a design review found:
+// a service plugin declares the connection it talks to as
 // ordinary inputs so config can fill them, and "ordinary" also meant
 // published in the MCP tool schema and accepted from a caller. Since
 // plugin.Resolve applies caller values last — above config, above the host's
@@ -102,7 +102,7 @@ func TestAnAgentCannotChooseWhereACallGoes(t *testing.T) {
 	}
 
 	// And sending it anyway must not work, since a declared name passes
-	// validateGivenArgs whether or not the schema advertised it.
+	// ValidateArgs whether or not the schema advertised it.
 	res, err := session.CallTool(ctx, &sdk.CallToolParams{
 		Name:      "svc_table_list",
 		Arguments: map[string]any{"host": "attacker.example.com", "table": "users"},

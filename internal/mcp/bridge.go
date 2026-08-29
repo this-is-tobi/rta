@@ -1,6 +1,6 @@
 // Package mcp bridges the capability registry to a Model Context Protocol
 // server. Every capability becomes an MCP tool generated from the same
-// declared inputs the CLI uses — zero per-capability work (PROJECT.md §6.1).
+// declared inputs the CLI uses — zero per-capability work.
 //
 // Safety gate: only read capabilities are exposed by default. Write requires
 // an explicit opt-in; destructive requires a per-capability allowlist. The
@@ -13,15 +13,18 @@ import (
 	"encoding/json"
 	"os"
 	"strings"
+	"time"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/this-is-tobi/rule-them-all/internal/agentlog"
 	"github.com/this-is-tobi/rule-them-all/internal/config"
 	"github.com/this-is-tobi/rule-them-all/internal/grant"
 	"github.com/this-is-tobi/rule-them-all/internal/pathguard"
 	"github.com/this-is-tobi/rule-them-all/internal/profile"
 	"github.com/this-is-tobi/rule-them-all/internal/registry"
 	"github.com/this-is-tobi/rule-them-all/internal/textclean"
+	"github.com/this-is-tobi/rule-them-all/internal/toolcall"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
@@ -63,10 +66,42 @@ func NewServer(reg *registry.Registry, version string, opts Options) *sdk.Server
 // can leave nil and lose a check with.
 func handler(c plugin.Capability, opts Options, reg *registry.Registry) sdk.ToolHandler {
 	return func(ctx context.Context, req *sdk.CallToolRequest) (*sdk.CallToolResult, error) {
+		// Every call is recorded, whatever becomes of it: the
+		// refusals are the half an operator most wants back. The zero
+		// values say "refused before anything could authorize it", which
+		// is what an exit before the gate actually was.
+		rec := agentlog.Entry{
+			Cap: c.ID, Tool: toolcall.Name(c.ID),
+			Outcome: agentlog.Refused, Auth: agentlog.Blocked,
+			Agent: opts.Agent, Client: clientName(req),
+		}
+		res, err := call(ctx, c, opts, reg, req, &rec)
+		record(rec)
+		return res, err
+	}
+}
+
+// call is the handler's body, with rec filled in as it goes so that the one
+// place that writes the ledger sees what happened on every path.
+func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.Registry,
+	req *sdk.CallToolRequest, rec *agentlog.Entry) (*sdk.CallToolResult, error) {
+	{
 		values := map[string]any{}
 		if raw := req.Params.Arguments; len(raw) > 0 {
 			if err := json.Unmarshal(raw, &values); err != nil {
 				return errResult(view.Errorf("core.mcp.badargs", "invalid arguments: %v", err)), nil
+			}
+			// `"arguments": null` is legal JSON and legal MCP — the field is
+			// optional and clients do send it explicitly — and unmarshalling
+			// null into a map sets the map to nil rather than leaving the
+			// empty one alone. Every write below then panics, which on this
+			// surface means one schema-valid call from an unprivileged agent
+			// killing `rta mcp serve` for every tool attached to it. Found by
+			// a test that passed nil arguments to a capability that declares
+			// a default; the panic needs both, which is why four hundred
+			// tests missed it.
+			if values == nil {
+				values = map[string]any{}
 			}
 		}
 		// The published schema says integer, enum, array-of-string — and
@@ -82,7 +117,8 @@ func handler(c plugin.Capability, opts Options, reg *registry.Registry) sdk.Tool
 		// defaults or Local-stripping touch the map: a default is our own
 		// value and always well-typed, so only what arrived over the wire
 		// needs the scrutiny.
-		if verr := validateGivenArgs(c, values); verr != nil {
+		if verr := toolcall.Validate(c, values); verr != nil {
+			refusedBy(rec, verr)
 			return errResult(verr), nil
 		}
 		// The profile comes out of the arguments here — before defaults, before
@@ -99,8 +135,10 @@ func handler(c plugin.Capability, opts Options, reg *registry.Registry) sdk.Tool
 		// this surface for exactly that reason.
 		profileName, verr := takeProfile(c, values, opts)
 		if verr != nil {
+			refusedBy(rec, verr)
 			return errResult(verr), nil
 		}
+		rec.Profile = profileName
 		// Declared defaults apply to omitted arguments, exactly like the CLI.
 		// Local fields are dropped whatever the caller sent: they are absent
 		// from the schema, so anything arriving under that name was guessed,
@@ -117,9 +155,14 @@ func handler(c plugin.Capability, opts Options, reg *registry.Registry) sdk.Tool
 				values[f.Name] = f.Default
 			}
 		}
-		if verr := requireArgs(c, values); verr != nil {
+		if verr := toolcall.Require(c, values); verr != nil {
+			refusedBy(rec, verr)
 			return errResult(verr), nil
 		}
+		// Recorded here: after Local fields are gone and defaults are in,
+		// so the ledger shows the call as it would actually run — and
+		// before the gate, so a refusal records what was asked for.
+		rec.Args = auditArgs(c, values)
 		// After defaults, deliberately, and this used to be before them.
 		//
 		// The old ordering exempted declared defaults from the root check, on
@@ -145,6 +188,7 @@ func handler(c plugin.Capability, opts Options, reg *registry.Registry) sdk.Tool
 		// survive: a default is rta's own value and is always well-typed, so
 		// only what arrived over the wire needs that scrutiny.
 		if verr := checkPaths(c, values, opts.Paths); verr != nil {
+			refusedBy(rec, verr)
 			return errResult(verr), nil
 		}
 		// The exposure gate said this agent may in principle make this kind of
@@ -186,10 +230,37 @@ func handler(c plugin.Capability, opts Options, reg *registry.Registry) sdk.Tool
 		// covering it. Computed from the same read profile.Lookup uses below,
 		// so a mismatch means "you consented to a different connection" and
 		// never "this process has not noticed your edit".
-		release, verr := grant.Reserve(c, values, profileName,
-			opts.connStamp(profileName, grant.Namespace(c.ID)), opts.active())
+		//
+		// The agent name goes in the same way and subtracts in the same
+		// direction: it is the operator's own word for the client at the far
+		// end of this pipe, so a grant issued while talking to one agent no
+		// longer authorizes every other one on the machine.
+		release, verr := grant.Reserve(c, values, grant.Caller{
+			Agent:   opts.Agent,
+			Profile: profileName,
+			Pin:     opts.connStamp(profileName, grant.Namespace(c.ID)),
+			Active:  opts.active(),
+		})
 		if verr != nil {
-			return errResult(verr), nil
+			// Nobody pre-authorized it. With consent enabled, that is a
+			// question rather than an answer: park the call, ask the
+			// person, and proceed on their word.
+			// Everything about the refusal is preserved for the case where
+			// the answer never comes.
+			allowed, asked := askConsent(ctx, c, opts, values, profileName, verr, rec)
+			if !allowed {
+				if !asked {
+					refusedBy(rec, verr)
+				}
+				return errResult(verr), nil
+			}
+			// Approved live: there is no grant, so there is no use to
+			// refund either.
+			release = func() {}
+		} else if grant.Required(c, profileName) {
+			rec.Auth = agentlog.Standing
+		} else {
+			rec.Auth = agentlog.Open
 		}
 		// Only now, with consent in hand, is the profile resolved. The order
 		// matters and is asserted: an unknown profile and an ungranted one must
@@ -202,6 +273,7 @@ func handler(c plugin.Capability, opts Options, reg *registry.Registry) sdk.Tool
 			conn, verr := profile.Lookup(opts.profiles(), c, profileName, reg)
 			if verr != nil {
 				release()
+				rec.Outcome, rec.Reason = agentlog.Refused, "core.profile.unusable"
 				// The reason is deliberately discarded on this surface. A person
 				// at a terminal gets profile.Lookup's real message and its list
 				// of what would have worked; an agent gets one sentence for
@@ -263,16 +335,27 @@ func handler(c plugin.Capability, opts Options, reg *registry.Registry) sdk.Tool
 				filled[input] = v
 			}
 		}
+		started := time.Now()
 		v, err := c.Run(ctx, plugin.NewRequest(plugin.Resolve(c, plugin.Inputs{
 			Caller:      values,
 			Profile:     filled,
 			ProfileName: profileName,
 			Config:      opts.pluginConfig(c),
-		}), false, true).WithSurface(plugin.SurfaceMCP))
+		}), false, true).WithSurface(plugin.SurfaceMCP).
+			// The same guard the arguments went through, carried into the
+			// handler for the paths it derives from them rather than
+			// receives. checkPaths cannot see those: it walks the declared
+			// inputs, and a repository reached by walking upward out of one
+			// was never an argument.
+			WithConfinement(opts.Paths.Check))
+		rec.Millis = time.Since(started).Milliseconds()
 		if err != nil {
 			release()
-			return errResult(view.AsError(err, c.ID+".failed")), nil
+			ve := view.AsError(err, c.ID+".failed")
+			rec.Outcome, rec.Reason = agentlog.Failed, ve.Code+": "+ve.Message
+			return errResult(ve), nil
 		}
+		rec.Outcome = agentlog.Ran
 		return viewResult(v)
 	}
 }
@@ -307,7 +390,17 @@ func takeProfile(c plugin.Capability, values map[string]any, opts Options) (stri
 		// until an operator opts in by writing one, and it has no config key to
 		// turn it off — a fail-closed rule with an off switch is a fail-open
 		// rule with extra steps.
-		if named := opts.Profiles.ProfilesFor(plugin.Namespace(c.ID)); len(named) > 0 && plugin.Profilable(c) {
+		//
+		// **From the file, not from the startup snapshot.** Writing the first
+		// profile for a namespace is the moment R5 starts protecting it, and it
+		// is also the moment the operator believes they have protected it: the
+		// base connection in `plugins.pg:` is production often enough that "I
+		// have adopted profiles" and "production is still ungated" is the exact
+		// pair this rule exists to prevent. Deciding from a snapshot meant the
+		// rule switched on at the next restart, with nothing anywhere saying
+		// so — the same defect as the connection stamp above, one field along.
+		// Every other input to this decision is already read per call.
+		if named := opts.profiles().ProfilesFor(plugin.Namespace(c.ID)); len(named) > 0 && plugin.Profilable(c) {
 			return "", view.Errorf("core.profile.required",
 				"%s has configured connections, so a call must name which one", c.ID).
 				WithHint("ask the operator which profile to use and for a grant naming it")
@@ -346,13 +439,13 @@ func ungranted(c plugin.Capability, name string) *view.Error {
 			" --profile " + name + " --ttl 15m")
 }
 
-// validateGivenArgs checks every argument the caller actually supplied
+// ValidateArgs checks every argument the caller actually supplied
 // against its declared Field — type, and closed-set membership when the
 // field declares Options — and refuses any name the schema does not offer.
 // checkPaths confines every caller-supplied path argument to the guard.
 //
 // The hook is Field.Type == Path, which is what makes it worth having had a
-// closed and mandatory type (ADR 0011): the declaration already says which
+// closed and mandatory type: the declaration already says which
 // inputs name files, so the host does not have to guess from the value. The
 // alternative — treating any argument that looks absolute as a path — was
 // tried and is wrong: base64's alphabet contains "/", so `codec.b64` decoding
@@ -385,7 +478,7 @@ func checkPaths(c plugin.Capability, values map[string]any, g *pathguard.Guard) 
 			// that ever stops holding, this is the line that turns it into an
 			// unconfined read rather than an error.
 			return view.Errorf("core.mcp.path.unresolvable",
-				"%s: expected a path, got %s", f.Name, jsonKind(v))
+				"%s: expected a path, got %s", f.Name, toolcall.JSONKind(v))
 		}
 		resolved, verr := g.Check(f.Name, s)
 		if verr != nil {
@@ -422,7 +515,7 @@ func checkPaths(c plugin.Capability, values map[string]any, g *pathguard.Guard) 
 // renderers do is owed here, plus the invisible characters a terminal does not
 // care about and a model reads as text.
 //
-// PROJECT.md §4.7.13 used to say json was "lossless and safe at once, and it
+// The contract used to say json was "lossless and safe at once, and it
 // is what the MCP bridge encodes". The first half is true against a terminal,
 // because the encoder escapes the byte. It was never true against a model,
 // which reads the decoded string.

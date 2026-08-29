@@ -344,7 +344,7 @@ func hyperlinkURI(data string) string {
 
 // explainClipboard decodes OSC 52's payload rather than showing the base64,
 // because "what text is this about to put on my clipboard" is exactly the
-// question PROJECT.md §4.7 (item 13) describes this sequence answering
+// question this sequence answers
 // wrongly for a bare terminal — this capability exists partly to make that
 // answer visible before it happens somewhere else.
 func explainClipboard(data string) string {
@@ -414,7 +414,7 @@ func explainControl(b byte) string {
 
 // visualize renders a raw escape/control token as safe, literal text for
 // display — never the bytes themselves. This is not a formatting choice:
-// PROJECT.md §4.7 (item 13) is a record of exactly what happens when a
+// It is on record what happens when a
 // control sequence reaches a terminal as itself rather than as a
 // description of itself (OSC 52 into the system clipboard, OSC 0 rewriting
 // the window title, a bare CR overwriting the line already drawn). A tool

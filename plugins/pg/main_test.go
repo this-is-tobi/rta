@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -15,9 +16,30 @@ import (
 )
 
 // sdktest is the definition of "a correct plugin" and pg gets no exemption
-// from it (P6). This needs no database: a declaration is checkable before
-// anything connects, which is most of why the declaration is data.
-func TestConformance(t *testing.T) { sdktest.Check(t, Plugin()) }
+// from it.
+//
+// The declaration half needs no database. The dry-run half needs inputs, and
+// without them two of pg's four mutating capabilities were never driven at
+// all — the suite reported a pass for capabilities it had not run.
+func TestConformance(t *testing.T) {
+	sdktest.Check(t, Plugin(), sdktest.WithInputs(conformanceInputs))
+}
+
+// conformanceInputs points the mutating capabilities at a port nothing is
+// listening on, so a dry run that stops being dry fails as a refused
+// connection rather than as a query against somebody's database.
+func conformanceInputs(dir string) map[string]map[string]any {
+	conn := func(m map[string]any) map[string]any {
+		m["host"], m["port"] = "127.0.0.1", 1
+		m["user"], m["database"] = "conformance", "conformance"
+		return m
+	}
+	return map[string]map[string]any{
+		"pg.query":      conn(map[string]any{"sql": "select 1"}),
+		"pg.table.dump": conn(map[string]any{"table": "public.conformance"}),
+		"pg.dump":       conn(map[string]any{"out": filepath.Join(dir, "pg.dump")}),
+	}
+}
 
 // req builds a resolved request the way the host would, so these test the
 // values a handler actually sees rather than a hand-made map.

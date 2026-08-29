@@ -16,8 +16,8 @@ import (
 // The editor and run-form rules about a forward were written under `kube:`
 // and re-derive from one predicate (config.Connection.Tunnelled) — these
 // tests hold each of them under `ssh:`, the second scheme, so the predicate
-// is pinned rather than trusted. D119 is why: the last time a rule lived on
-// a scheme's own field, its twin went unwritten.
+// is pinned rather than trusted, because the last time a rule lived on a
+// scheme's own field its twin went unwritten.
 
 const sshEditorTarget = "tobi@bastion.internal:2222/postgres.internal:5432"
 
@@ -127,7 +127,7 @@ func TestSavingAnSSHTargetRemovesTheKeptEndpointKeys(t *testing.T) {
 
 // Two tunnels in the editor is a refusal, not a repair — both boxes are plain
 // text, so "empty one" is an action the widget can always perform, which is
-// exactly the line D119 draws between the two answers. Nothing is written.
+// exactly the line between a refusal and a repair. Nothing is written.
 func TestTheConnEditorRefusesTwoTunnels(t *testing.T) {
 	m := endpointEditorModel(t, config.Connection{Set: map[string]any{"schema": "public"}})
 	model, _ := m.startConnForm("db")

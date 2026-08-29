@@ -362,7 +362,7 @@ func missing(a, b []string) []string {
 // point, and the fix is one word, named in the failure. Doing it any other way
 // means the README states a number rta does not stand behind.
 func TestTheREADMECountsTheCatalogueCorrectly(t *testing.T) {
-	reg, err := all.Registry()
+	reg, err := all.Registry(nil)
 	if err != nil {
 		t.Fatal(err)
 	}

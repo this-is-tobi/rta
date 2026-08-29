@@ -103,6 +103,13 @@ func TestTheCLIReservesEveryTopLevelCommandItOwns(t *testing.T) {
 		if namespaces[name] {
 			continue // a plugin's own command, which is the point of it
 		}
+		if _, yields := c.Annotations[yieldsToPlugin]; yields {
+			// A command that steps aside for a plugin of the same name
+			// cannot be masked by one: being replaced is what it is for.
+			// See yieldsToPlugin — today only the `rta ai` explainer in a
+			// build without the AI engine.
+			continue
+		}
 		owned[name] = true
 		if !slices.Contains(reserved, name) {
 			t.Errorf("rta owns the command %q and nothing reserves it: a plugin taking that "+

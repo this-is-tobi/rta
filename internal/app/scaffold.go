@@ -296,7 +296,36 @@ import (
 // because a test that arrives with the code is a test that gets run. It found
 // a built-in sending real bytes on --dry-run the first time it was pointed at
 // rta's own catalogue.
-func TestPlugin(t *testing.T) { sdktest.Check(t, Plugin()) }
+//
+// **Fill in conformanceInputs as you add capabilities.** Almost every
+// capability that changes something names a required input — a bucket, a path,
+// an id — and the suite cannot invent one, so without a value here it cannot
+// drive that capability at all. It used to say so in a log line and pass;
+// rta's own external plugins each went green that way while six of their
+// handlers wrote to real systems under --dry-run. A mutating capability with
+// no value is now a failure, and this is where you answer it.
+func TestPlugin(t *testing.T) {
+	sdktest.Check(t, Plugin(), sdktest.WithInputs(conformanceInputs))
+}
+
+// conformanceInputs supplies values for capabilities the suite cannot drive
+// from their declared defaults, keyed by capability id.
+//
+// Two rules make the difference between a real check and a green nothing:
+// point anything that connects at somewhere nothing is listening
+// (127.0.0.1:1), so a dry run that stops being dry fails as a refused
+// connection instead of reaching a real service; and point every path input
+// inside dir, which is the directory the suite watches — a write that should
+// not have happened is then a test failure rather than a file in a temp
+// directory nobody looks at.
+//
+//	return map[string]map[string]any{
+//		"{{.Name}}.thing.set": {"endpoint": "127.0.0.1:1", "name": "conformance"},
+//		"{{.Name}}.thing.get": {"endpoint": "127.0.0.1:1", "out": filepath.Join(dir, "got")},
+//	}
+func conformanceInputs(dir string) map[string]map[string]any {
+	return map[string]map[string]any{}
+}
 `
 
 // binaryIgnoreTemplate covers two different names because "go build" does:

@@ -30,7 +30,7 @@ import (
 // than an agent ever supplying or inventing one.
 // Every field here is Local, and that is the security property rather than a
 // detail — the same reasoning plugins/pg's own connFields documents at
-// length (PROJECT.md D94). Together they name which endpoint this call
+// length. Together they name which endpoint this call
 // reaches and as whom, and an MCP caller may not choose that: an agent that
 // could set `endpoint` could point rta at a bucket it controls and have the
 // host supply $RTA_S3_SECRET_KEY beside it. They remain Config-backed and

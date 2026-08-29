@@ -69,7 +69,7 @@ func reachedTile(t *testing.T, seen *string) tile {
 //
 // A dashboard that lies is worse than one that costs, which is what decides
 // the trade-off here: one forward per tunnelled plugin per refresh is the
-// price ADR 0018 §4 already said the TUI would pay per call.
+// price the TUI pays per call.
 func TestATileUnderAClusterConnectionRunsThroughTheForward(t *testing.T) {
 	port := fakeForward(t)
 	var seen string

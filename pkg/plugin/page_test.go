@@ -116,8 +116,8 @@ func TestWithKeepsTheSurfaceAndFlags(t *testing.T) {
 	}
 }
 
-// A regression test for a real architectural gap review found (PROJECT.md
-// D74): Page composes a handler directly, with none of the checks the MCP
+// A regression test for a real architectural gap review found: Page
+// composes a handler directly, with none of the checks the MCP
 // bridge applies to a capability an MCP call actually names — no grant, no
 // --allow-write/--allow-destructive gate. Nothing in the registry embeds a
 // Write or Destructive handler today, but nothing prevented a future one

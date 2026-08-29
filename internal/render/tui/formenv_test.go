@@ -340,7 +340,7 @@ func TestTheCredentialFormAsksOnlyWhatTheSourceNeeds(t *testing.T) {
 func TestTheCredentialFormShowsTheEntryPickerOnlyWhenReferencing(t *testing.T) {
 	t.Setenv("RTA_KV_PASSPHRASE", "correct horse battery staple")
 	m := credentialModel(t, "password")
-	if verr := kv.Store("existing-entry", "s3cret", "a test entry"); verr != nil {
+	if verr := kv.Store("existing-entry", "s3cret", "a test entry", "profile:test"); verr != nil {
 		t.Fatal(verr)
 	}
 	form := openCredentialForm(t, m)

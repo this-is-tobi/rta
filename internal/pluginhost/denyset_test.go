@@ -97,6 +97,59 @@ func TestASymlinkedDenyPathDeniesItsTargetToo(t *testing.T) {
 	}
 }
 
+// **The leaf is usually absent, and that used to switch symlink resolution
+// off entirely.**
+//
+// filepath.EvalSymlinks fails on the whole path when any component is
+// missing, and withTarget treated that failure exactly like "not a symlink".
+// So on the layout it was written for — `.config` a symlink, which
+// home-manager, chezmoi and stow all produce — a deny entry for a leaf that
+// does not exist yet emitted only a spelling the kernel never produces. Not a
+// narrower rule: an inert one, proven against sandbox-exec in
+// confine_darwin_test.go. And the absent leaf is the normal case, not an
+// edge: `~/.config/gcloud` with no gcloud installed, `~/.docker/config.json`
+// before a docker login, rta's own data dir before rta has written anything.
+func TestADenyPathBelowASymlinkResolvesEvenWhenItDoesNotExist(t *testing.T) {
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	real := filepath.Join(base, "dotfiles", "config")
+	if err := os.MkdirAll(real, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(base, ".config")
+	if err := os.Symlink(real, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	// Deliberately never created — that is the whole point.
+	absent := filepath.Join(link, "gcloud", "credentials.db")
+	got := withTarget(absent)
+
+	if !containsPath(got, absent) {
+		t.Errorf("the link spelling is missing, so nothing pins the link: %v", got)
+	}
+	want := filepath.Join(real, "gcloud", "credentials.db")
+	if !containsPath(got, want) {
+		t.Errorf("the rule names nothing the kernel sees: got %v, want it to include %s", got, want)
+	}
+}
+
+// The walk must not invent resolution where there is none. A plain missing
+// path with no symlink anywhere above it has exactly one spelling, and
+// emitting a second would be a rule for a path that is not the path.
+func TestAMissingPathWithNoSymlinkAncestorResolvesToItself(t *testing.T) {
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	absent := filepath.Join(base, "nothing", "here")
+	if got := withTarget(absent); len(got) != 1 || got[0] != absent {
+		t.Errorf("withTarget(%s) = %v, want just the path itself", absent, got)
+	}
+}
+
 // The spec hash is a cache key, and a cache key that collides hands a call to
 // a process launched under a different policy.
 func TestTheSpecHashTracksThePolicy(t *testing.T) {

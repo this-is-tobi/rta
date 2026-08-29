@@ -314,25 +314,86 @@ func runHostsToggle(_ context.Context, req plugin.Request) (view.View, error) {
 	if verr != nil {
 		return nil, verr
 	}
-	flipped, nowEnabled := 0, false
+	// **One name, whatever else shares its line.**
+	//
+	// A hosts line carries as many names as somebody put on it, and flipping
+	// the line flips all of them: `toggle api.example.com` against
+	//
+	//	10.0.0.5  api.example.com  metrics.example.com
+	//
+	// parked a name nobody mentioned, changing what every process on this
+	// machine resolves it to. That is a promise broken rather than a rough
+	// edge — this capability declares Scope "hostname", so a grant naming one
+	// name is consent to that name and to nothing else, and net.hosts.rm one
+	// capability along already works per name.
+	//
+	// The enabling direction is the one to think about: a parked line is one
+	// disabled row in `hosts list`, so re-enabling the granted name silently
+	// brings back every other name parked beside it.
+	//
+	// So a line with company is split rather than flipped — the named entry
+	// moves to a line of its own in its new state, the others stay exactly as
+	// they were. Rebuilt through a replacement map rather than in place,
+	// because inserting a line shifts every index parseHosts recorded.
+	replace := map[int][]string{}
+	nowEnabled := false
 	for _, e := range parseHosts(lines) {
 		if !containsFold(e.names, name) {
 			continue
 		}
-		e.enabled = !e.enabled
-		nowEnabled = e.enabled
-		lines[e.line] = formatHostLine(e, lines[e.line])
-		flipped++
+		nowEnabled = !e.enabled
+		named, others := splitName(e.names, name)
+		if len(others) == 0 {
+			e.enabled = nowEnabled
+			replace[e.line] = []string{formatHostLine(e, lines[e.line])}
+			continue
+		}
+		// The note on the line stays with the entry that keeps the line; the
+		// new one carries the mapping and nothing else.
+		rest := hostEntry{ip: e.ip, names: others, enabled: e.enabled}
+		moved := hostEntry{ip: e.ip, names: named, enabled: nowEnabled}
+		replace[e.line] = []string{
+			formatHostLine(rest, lines[e.line]),
+			formatHostLine(moved, ""),
+		}
 	}
-	if flipped == 0 {
+	if len(replace) == 0 {
 		return nil, view.Errorf("net.hosts.notfound", "no entry for %s", name).
 			WithHint("run `rta net hosts list` to see every entry")
 	}
+	rebuilt := make([]string, 0, len(lines)+len(replace))
+	for i, line := range lines {
+		if r, ok := replace[i]; ok {
+			rebuilt = append(rebuilt, r...)
+			continue
+		}
+		rebuilt = append(rebuilt, line)
+	}
+	lines = rebuilt
 	action, done := "disable", "disabled"
 	if nowEnabled {
 		action, done = "enable", "enabled"
 	}
 	return applyHosts(req, lines, action+" "+name, done+" "+name)
+}
+
+// splitName divides an entry's names into the ones that are `want` and the
+// ones that are not, keeping each side's spelling and order.
+//
+// Case-insensitively, matching containsFold and the DNS the file stands in
+// for. All the matches move, not the first: a line spelling one name twice
+// ("api.example.com API.EXAMPLE.COM") is one name to a resolver, and leaving
+// half of it behind would produce a file whose two lines disagree about
+// whether that name is in force.
+func splitName(names []string, want string) (named, others []string) {
+	for _, n := range names {
+		if strings.EqualFold(n, want) {
+			named = append(named, n)
+			continue
+		}
+		others = append(others, n)
+	}
+	return named, others
 }
 
 func containsFold(list []string, want string) bool {

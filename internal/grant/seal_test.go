@@ -321,7 +321,7 @@ func TestTheSealAcrossVersionSkew(t *testing.T) {
 			t.Fatal(verr)
 		}
 		body, err := json.MarshalIndent(map[string]any{
-			"seal": seal(key, canon), "grants": future,
+			"seal": sealOf(key, canon), "grants": future,
 		}, "", "  ")
 		if err != nil {
 			t.Fatal(err)

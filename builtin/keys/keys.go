@@ -1,16 +1,17 @@
-// Package keys absorbs melt (PROJECT.md §3.3, §7 Wave 1, D70, D72): back up
+// Package keys absorbs melt: back up
 // an ed25519 SSH private key as 24 memorizable BIP39 seed words, and restore
 // it from them.
 //
 // Built-in rather than external, reclassified from Wave 3 alongside debug by
-// D70: it reads ~/.ssh directly, and internal/pluginhost/denyset.go's tier2
+// A built-in rather than a plugin: it reads ~/.ssh directly, and
+// internal/pluginhost/denyset.go's tier2
 // denies a confined plugin read access there on every platform confinement
 // actually covers — deliberately, per the function's own comment. kv
 // --identity already reads ~/.ssh/id_ed25519 today for exactly this reason.
 //
 // "Absorbing melt" means the idea, not the module: melt.go itself is a
 // twenty-line wrapper around github.com/tyler-smith/go-bip39, so this
-// package calls go-bip39 directly (D72) rather than adding a dependency on a
+// package calls go-bip39 directly rather than adding a dependency on a
 // dependency — the same call builtin/debug made absorbing sequin as
 // charmbracelet/x/ansi rather than as sequin itself. The SSH-specific half —
 // parsing an OpenSSH private key, prompting for its passphrase, marshaling a

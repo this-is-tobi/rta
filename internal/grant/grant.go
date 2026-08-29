@@ -22,7 +22,6 @@
 package grant
 
 import (
-	"crypto/hmac"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -36,6 +35,8 @@ import (
 	"github.com/this-is-tobi/rule-them-all/internal/atomicfile"
 	"github.com/this-is-tobi/rule-them-all/internal/filelock"
 	"github.com/this-is-tobi/rule-them-all/internal/paths"
+	"github.com/this-is-tobi/rule-them-all/internal/policy"
+	"github.com/this-is-tobi/rule-them-all/internal/seal"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
@@ -69,7 +70,8 @@ type Grant struct {
 	// which is what makes it tolerable; a profile wildcard would be a
 	// *connection* wildcard — one grant issued while pointed at a scratch
 	// database authorizing the identical call against production. That is
-	// D94's credential redirect rebuilt from the grant side.
+	// the credential-redirect hole rebuilt from the grant side: the operator's
+	// credential paired with a destination somebody else chose.
 	//
 	// It is also the only reading under which this field's arrival is safe for
 	// grants already on disk: they unmarshal with Profile empty and keep
@@ -90,14 +92,13 @@ type Grant struct {
 	// an environment's `host`, `endpoint` or `secrets:` mapping repoints every
 	// live grant naming it, silently: the operator consented to a call
 	// reaching staging, and the identical grant now authorizes it against
-	// whatever that name means afterwards. ADR 0019 and ADR 0020 both record
-	// this as the thing to build, "required the moment stage 2 lands" — the
-	// moment a connection can also carry cluster coordinates and a credential
-	// read out of that cluster.
+	// whatever that name means afterwards. That became required the moment a
+	// connection could also carry cluster coordinates and a credential read
+	// out of that cluster.
 	//
 	// It is the same rule the rest of rta already follows for artifacts:
-	// `--allow-destructive <id>@<digest>` (ADR 0015) and `plugins.<ns>@<digest>`
-	// (ADR 0016) bind an authorization to a thing rather than to a label. This
+	// `--allow-destructive <id>@<digest>` and `plugins.<ns>@<digest>`
+	// bind an authorization to a thing rather than to a label. This
 	// binds it to a *connection* for the same reason and by the same means.
 	//
 	// **Required exactly when Profile is set.** An unprofiled grant keeps an
@@ -105,7 +106,7 @@ type Grant struct {
 	// leaves the field free for the seal. Both other readings are wrong:
 	// "empty matches anything" rebuilds the hole for every grant issued before
 	// this and makes the empty pin the default a blind-writing attacker
-	// produces — ADR 0019's no-wildcard argument, one field along — and
+	// produces — the no-wildcard argument, one field along — and
 	// "empty matches nothing" would refuse every live profiled grant on
 	// upgrade. Fail-closed, self-healing within one TTL.
 	//
@@ -126,10 +127,47 @@ type Grant struct {
 	// is json.Marshal over the parsed []Grant, so a field that is the zero
 	// string on every stored grant re-encodes byte-identically and every
 	// existing seal still verifies.
-	ProfilePin string    `json:"profilePin,omitempty"`
-	Issued     time.Time `json:"issued"`
-	Expires    time.Time `json:"expires"`
-	Note       string    `json:"note,omitempty"`
+	ProfilePin string `json:"profilePin,omitempty"`
+	// Agent narrows the grant to one of the operator's named agents — the
+	// name `rta mcp serve --as` was launched under.
+	//
+	// **Because consent is about a conversation, and rta could not tell two
+	// of them apart.** Every MCP client on this machine reads the same grant
+	// file, so a grant issued while talking to one agent authorized every
+	// other one, including any installed afterwards, with nothing in the
+	// record to say which had spent it. The operator who typed `rta grant
+	// allow kv.get prod/db-password` was thinking of the agent in front of
+	// them; what they got was every agent.
+	//
+	// Empty means the call must come from a server launched with NO name.
+	// **It is not a wildcard, and there is no wildcard** — Profile's rule,
+	// one field along, for Profile's reasons. Under "empty means any agent"
+	// every grant already on disk would silently widen to cover each agent
+	// added later, which is the hole this closes arriving from the other
+	// side; and it would make the empty field the default a blind-writing
+	// attacker produces. Under this reading they keep covering exactly the
+	// unnamed calls they cover today and gain nothing.
+	//
+	// The cost is a real one and it is bounded: an operator who starts naming
+	// their agents invalidates the grants they already hold, and re-consents
+	// once. Fail-closed, self-healing within one TTL, because MaxTTL is a day.
+	//
+	// **What it is not is authentication.** The name is the operator's own
+	// word, written where they wired the client up, and it is trusted exactly
+	// as much as `--allow-write` beside it in the same argv. The name a client
+	// asserts for *itself* over the wire is a different thing and never
+	// reaches this field: a name a thing chooses for itself is not an
+	// identity. See agentlog.Entry.Client, which records the claim as
+	// provenance and never as authorization.
+	//
+	// omitempty is load-bearing for the seal, exactly as Profile documents:
+	// canonical() is json.Marshal over the parsed []Grant, so a field that is
+	// the zero string on every stored grant is omitted, re-encodes
+	// byte-identically, and every existing seal still verifies.
+	Agent   string    `json:"agent,omitempty"`
+	Issued  time.Time `json:"issued"`
+	Expires time.Time `json:"expires"`
+	Note    string    `json:"note,omitempty"`
 	// TTL is the window as the operator typed it ("15m", "1h"), so renew can
 	// extend by the same amount rather than guess at one.
 	//
@@ -151,6 +189,140 @@ type Grant struct {
 	// the wrong one: it left the decision and the spend in different critical
 	// sections, so two concurrent calls both read Uses=0 and both ran.
 	Uses int `json:"uses,omitempty"`
+	// RateMax and RateWindow bound how *often* this grant may be spent:
+	// "10 calls an hour" rather than "10 calls ever". Zero and empty mean no
+	// rate limit, which is every grant issued before these fields existed.
+	//
+	// MaxUses answers "how much of this may happen at all" and a rate
+	// answers "how fast", and the difference is what a leaked session turns
+	// on. A MaxUses budget an agent can spend in one second is a budget that
+	// buys the operator nothing: the whole point of a bound here is that a
+	// session which has gone wrong degrades into something slow enough to be
+	// noticed and stopped, rather than draining at machine speed. They
+	// compose — a grant may carry both, and a call needs room under each.
+	RateMax    int    `json:"rateMax,omitempty"`
+	RateWindow string `json:"rateWindow,omitempty"`
+	// Recent is when the uses inside the current window happened, oldest
+	// first. Bounded by RateMax: a true rolling window rather than a
+	// tumbling one, because a tumbling window lets twice the limit through
+	// across a boundary and the storage a rolling one costs is exactly
+	// proportional to the limit the operator chose.
+	Recent []time.Time `json:"recent,omitempty"`
+}
+
+// MaxRate bounds what --rate will accept.
+//
+// Recent holds one timestamp per use in the window, so the limit is also
+// the storage. Past this the control has stopped being a brake anyway: a
+// thousand calls an hour is not a session anybody is degrading.
+const MaxRate = 1000
+
+// rateRoom answers how many more times this grant may be spent right now,
+// and when the next opportunity comes if the answer is none.
+//
+// limited is false for a grant with no rate at all, which is the common case
+// and the one that must stay free: it takes no lock, keeps no timestamps,
+// and behaves exactly as it did before this existed.
+//
+// A window that will not parse means no room and no answer about when. That
+// is a hand-edited file, and the fail-closed reading is the only safe one —
+// the alternative is that corrupting one string turns a throttled grant into
+// an unthrottled one.
+// RateRoom is rateRoom for the surfaces that display a grant.
+func (g Grant) RateRoom(now time.Time) (room int, next time.Time, limited bool) {
+	return g.rateRoom(now)
+}
+
+func (g Grant) rateRoom(now time.Time) (room int, next time.Time, limited bool) {
+	if g.RateMax == 0 && g.RateWindow == "" {
+		return 0, time.Time{}, false
+	}
+	d, err := time.ParseDuration(g.RateWindow)
+	if err != nil || d <= 0 || g.RateMax <= 0 || g.RateMax > MaxRate {
+		return 0, time.Time{}, true
+	}
+	cut := now.Add(-d)
+	used, oldest := 0, time.Time{}
+	for _, t := range g.Recent {
+		if t.After(cut) {
+			if used == 0 {
+				oldest = t
+			}
+			used++
+		}
+	}
+	if room = g.RateMax - used; room < 0 {
+		room = 0
+	}
+	if room == 0 && !oldest.IsZero() {
+		next = oldest.Add(d)
+	}
+	return room, next, true
+}
+
+// room is how many uses of this grant one call may still take, across both
+// budgets, or -1 for "as many as it likes".
+//
+// A call needs room under every budget the grant carries, so the answer is
+// the smaller of them — and a grant carrying neither is not counted at all,
+// which is what keeps the unlimited case off the lock.
+func (g Grant) room(now time.Time) int {
+	left := -1
+	if g.MaxUses > 0 {
+		if left = g.MaxUses - g.Uses; left < 0 {
+			left = 0
+		}
+	}
+	if rr, _, limited := g.rateRoom(now); limited && (left < 0 || rr < left) {
+		left = rr
+	}
+	return left
+}
+
+// counted reports whether spending this grant has to be written down, which
+// is also whether deciding about it needs the lock.
+func (g Grant) counted() bool { return g.MaxUses > 0 || g.RateMax != 0 || g.RateWindow != "" }
+
+// mark records n uses at now, and forgets what has left the window.
+//
+// The pruning is here rather than on a timer because this is the only code
+// with a reason to look, and it is what keeps Recent bounded by the limit
+// the operator chose rather than by how long the grant has existed.
+func (g *Grant) mark(now time.Time, n int) {
+	if _, _, limited := g.rateRoom(now); !limited {
+		return
+	}
+	for i := 0; i < n; i++ {
+		g.Recent = append(g.Recent, now.UTC().Truncate(time.Second))
+	}
+	d, err := time.ParseDuration(g.RateWindow)
+	if err != nil || d <= 0 {
+		return
+	}
+	cut := now.Add(-d)
+	kept := g.Recent[:0]
+	for _, t := range g.Recent {
+		if t.After(cut) {
+			kept = append(kept, t)
+		}
+	}
+	g.Recent = kept
+	if len(g.Recent) == 0 {
+		// nil rather than an empty slice: canonical() is json.Marshal over
+		// the parsed grants and `"recent":[]` is not the same bytes as an
+		// omitted field, so an empty one left behind would change the seal of
+		// a grant nothing had happened to.
+		g.Recent = nil
+	}
+}
+
+// unmark takes back the n most recent timestamps, for a call that failed.
+func (g *Grant) unmark(n int) {
+	if n >= len(g.Recent) {
+		g.Recent = nil
+		return
+	}
+	g.Recent = g.Recent[:len(g.Recent)-n]
 }
 
 // Active reports whether the grant still stands at now: its TTL has not
@@ -187,10 +359,46 @@ func (g Grant) Window() time.Duration {
 	return DefaultTTL
 }
 
-// covers reports whether this grant authorizes a call of capID on scope,
-// running against profile.
-func (g Grant) covers(capID, scope, profile string) bool {
+// Caller is who is asking and through what.
+//
+// The four travel together because they are one decision, and because four
+// bare strings in a row at a call site is a transposition that compiles: the
+// old signature was already `Reserve(c, values, profile, pin, active)`, and
+// most of its callers read `Reserve(c, values, "", "", "")`. Swapping the pin
+// and the profile there is a security bug no reviewer can see and no type
+// checker can catch. Named fields make the same mistake visible.
+//
+// Every field can only *subtract* authority — see reachable — which is what
+// makes it admissible for the MCP server to fill any of them from its own
+// session state rather than from the operator's typing.
+type Caller struct {
+	// Agent is the name `rta mcp serve --as` was launched under, empty for a
+	// server launched without one. Compared exactly against Grant.Agent.
+	Agent string
+	// Profile is the connection this call names, empty for the operator's
+	// base configuration. Compared exactly against Grant.Profile.
+	Profile string
+	// Pin is profile.ConnStamp of the connection this call will actually be
+	// filled from, so a grant issued against a different one for the same
+	// *name* stops covering it.
+	Pin string
+	// Active is the environment the operator has switched on, empty when they
+	// have not switched. While they are working in one place, a grant naming
+	// any other profile does not count.
+	Active string
+}
+
+// covers reports whether this grant authorizes a call of capID on scope, made
+// by this caller.
+func (g Grant) covers(capID, scope string, by Caller) bool {
 	if g.Target != capID && g.Target != Namespace(capID) {
+		return false
+	}
+	// Exact, in both directions, with no g.Agent == "" escape hatch, for the
+	// reason Profile's own check below gives: a grant issued before anybody
+	// was named authorizes the unnamed server it was issued to, and does not
+	// widen to cover an agent added afterwards.
+	if g.Agent != by.Agent {
 		return false
 	}
 	// Exact, in both directions, with no g.Profile == "" escape hatch. A grant
@@ -198,12 +406,138 @@ func (g Grant) covers(capID, scope, profile string) bool {
 	// naming no profile does not authorize a call on "staging". See the field
 	// comment: this is what makes the arrival of Profile safe for every grant
 	// already sealed on disk.
-	if g.Profile != profile {
+	if g.Profile != by.Profile {
 		return false
 	}
 	// A scoped grant authorizes that record and nothing else — including a
 	// call that names no record at all, which is by definition wider.
-	return g.Scope == "" || g.Scope == scope
+	if g.Scope == "" || g.Scope == scope {
+		return true
+	}
+	return coversFolder(g.Scope, scope)
+}
+
+// coversFolder is the one relaxation of byte-exact scope matching: a scope
+// ending in "/" is a folder, and covers the records under it.
+//
+// **It exists because the granularity had no middle.** A kv store is one
+// namespace, so an operator could authorize `kv.get` on one key or on every
+// secret they own, and nothing between — which is exactly the pressure that
+// makes people type the everything-grant "so it stops failing", the same
+// pressure just-in-time consent was written against. Most scope
+// dimensions in the catalogue are already slash-separated (kv keys, S3 object
+// keys, Vault paths, URLs), so the folder is a boundary the operator can
+// already see in a listing.
+//
+// **The trailing slash is not sugar, it is the security rule.** A bare prefix
+// match is the classic boundary bug: a grant for "https://api.example.com"
+// would cover "https://api.example.com.evil.com/x", and one for "prod" would
+// cover "prod-adjacent". Requiring the separator makes the boundary a real
+// one, and leaves a scope without it byte-exact — "prod" still means the
+// record named exactly "prod" and nothing else.
+//
+// **A traversal segment is never covered**, which is the other half and the
+// one that is easy to miss. `https://api.example.com/v1/../admin` starts with
+// `https://api.example.com/v1/` and a server resolves it to `/admin`, so a
+// literal prefix would authorize precisely what the operator scoped away
+// from. The same is true of any store that canonicalises a path. A call
+// naming such a scope can still be authorized — by an exact grant, where the
+// operator has typed that whole strange string themselves and no inference is
+// being made on their behalf. What it cannot be is swept in by a folder.
+//
+// Empty segments are deliberately *not* refused: "https://host/a" splits to
+// ["https:", "", "host", "a"], so a blanket rule against them would refuse
+// every URL.
+// IsFolderScope reports whether a scope names a folder rather than a record.
+//
+// Exported because the surfaces have to say so: a folder grant and an exact
+// grant are different widths, and a row reading "on prod/" looks like one
+// record with an odd name.
+func IsFolderScope(scope string) bool {
+	return strings.HasSuffix(scope, "/") && scope != "/"
+}
+
+// MaxAgentName bounds a name the operator invents for themselves. Generous
+// for anything readable, and short enough that a row in `grant list` stays a
+// row.
+const MaxAgentName = 64
+
+// CheckAgent refuses an agent name that could be mistaken for another one.
+//
+// **The charset is the control, and homoglyphs are the reason.** An agent name
+// is compared byte-exactly and displayed to a person, which is the exact
+// combination that makes lookalikes dangerous: `claude-desktop` with a
+// non-breaking hyphen (U+2011) renders identically to the one with an ASCII
+// hyphen in every terminal, so an operator reading `grant list` cannot tell a
+// grant for their own agent from a grant for something else. Restricting the
+// set to characters that cannot collide removes the whole class rather than
+// trying to detect it — and costs nothing, because this is a name the operator
+// invents and types twice: once where they wire the client up, once here.
+//
+// Refused at issue *and* at `rta mcp serve --as`, deliberately the same
+// function. A server that accepted a name the grant command refuses could
+// never be granted anything, and would say so nowhere.
+func CheckAgent(name string) *view.Error {
+	if name == "" {
+		return nil
+	}
+	if len(name) > MaxAgentName {
+		return view.Errorf("grant.agent.long", "an agent name is at most %d characters", MaxAgentName).
+			WithHint("it is a label you choose, not a description")
+	}
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case r == '-', r == '_', r == '.':
+		default:
+			return view.Errorf("grant.agent.charset",
+				"%q is not allowed in an agent name (found %q)", name, string(r)).
+				WithHint("letters, digits, - _ and . only — so that two names cannot " +
+					"look identical and mean different things")
+		}
+	}
+	return nil
+}
+
+// CheckScope refuses a scope that cannot mean what it appears to mean.
+//
+// A grant is issued once and consulted many times, so a scope that reads like
+// a boundary and is not one is worth refusing at the moment somebody types it
+// rather than discovering later that it authorized more or less than it
+// looked like. "/" alone is refused because a grant over everything is what
+// omitting the scope already says, and spelling it as a folder hides that.
+func CheckScope(scope string) *view.Error {
+	if scope == "/" {
+		return view.Errorf("grant.scope.root", "%q would cover every record", scope).
+			WithHint("omit the scope entirely to allow the whole target — a grant that " +
+				"wide should look wide")
+	}
+	if !IsFolderScope(scope) {
+		return nil
+	}
+	for seg := range strings.SplitSeq(strings.TrimSuffix(scope, "/"), "/") {
+		if seg == "." || seg == ".." {
+			return view.Errorf("grant.scope.traversal",
+				"%q contains a %q segment, so what it covers depends on who resolves it", scope, seg).
+				WithHint("name the folder as it appears in a listing")
+		}
+	}
+	return nil
+}
+
+func coversFolder(prefix, scope string) bool {
+	if !IsFolderScope(prefix) {
+		return false
+	}
+	if !strings.HasPrefix(scope, prefix) {
+		return false
+	}
+	for seg := range strings.SplitSeq(scope, "/") {
+		if seg == "." || seg == ".." {
+			return false
+		}
+	}
+	return true
 }
 
 // Covering returns the first grant in grants that would authorize a call to
@@ -216,9 +550,9 @@ func (g Grant) covers(capID, scope, profile string) bool {
 // naming exactly the target it was asked to revoke can be gone while a
 // wider grant still authorizes every call that target would ever make, and
 // "No active grant for X" is the wrong thing to print when that is true.
-func Covering(grants []Grant, capID, scope, profile string) *Grant {
+func Covering(grants []Grant, capID, scope string, by Caller) *Grant {
 	for i := range grants {
-		if grants[i].covers(capID, scope, profile) {
+		if grants[i].covers(capID, scope, by) {
 			return &grants[i]
 		}
 	}
@@ -242,6 +576,87 @@ func Normalize(target string) string {
 // Path is where grants are kept.
 func Path() string { return filepath.Join(paths.Data(), file) }
 
+// Ceiling is the team's policy in force right now.
+//
+// **Read on every call rather than cached, and that was measured rather than
+// assumed**: the walk costs 7.7µs from a directory six deep, against a Load
+// that already reads and HMAC-verifies the grant file on the same path. A
+// cache would have bought that back and cost two things worth more — test
+// isolation, and the surprise of an operator editing a policy while a running
+// server ignores it.
+//
+// Re-reading is also the better behaviour *because* a ceiling only subtracts:
+// a team can tighten one and every running server picks it up on its next
+// call, with no restart, and with no way for the change to widen anything.
+func Ceiling() (policy.Ceiling, *view.Error) { return policy.Load() }
+
+// CheckCeiling refuses a grant the team's policy does not allow, in words
+// that name both the rule and the file.
+//
+// **A ceiling that applies has to say so out loud.** A silent clamp — issuing
+// the 2h grant the operator asked for and quietly storing 15m — teaches them
+// to distrust the number they typed, and a grant that vanishes with no
+// explanation sends them to debug the agent instead of the policy.
+func CheckCeiling(target, scope, profile string) *view.Error {
+	c, verr := Ceiling()
+	if verr != nil {
+		return verr
+	}
+	why := c.Forbids(target, scope, profile)
+	if why == "" {
+		return nil
+	}
+	return view.Errorf("grant.policy.refused", "%s — %s", why, c.Where()).
+		WithHint("this is a ceiling, and a ceiling only ever narrows: edit that " +
+			"file, or ask whoever shares it")
+}
+
+// ClampTTL brings a requested window under the team's ceiling, and reports
+// whether it had to. Returning the fact rather than only the value is the
+// same rule CheckCeiling states: the caller has a sentence to write.
+func ClampTTL(d time.Duration) (time.Duration, bool, string) {
+	c, verr := Ceiling()
+	if verr != nil || c.MaxTTL <= 0 || d <= c.MaxTTL {
+		return d, false, ""
+	}
+	return c.MaxTTL, true, c.Where()
+}
+
+// Suppressed counts the stored grants that would be standing if the team's
+// ceiling did not forbid them.
+//
+// **A ceiling that applies has to say so out loud**, and this is the half
+// that is easy to leave out: `grant list` on a machine whose policy has just
+// tightened reads "no active grants", which is true of what may happen and
+// deeply misleading about what is on disk. An operator reading that goes to
+// look for a grant they are sure they issued.
+//
+// Expired and spent grants are not counted — those are gone on their own
+// terms, and reporting them here would make the ceiling look responsible for
+// the ordinary passage of time.
+func Suppressed() int {
+	ceiling, verr := Ceiling()
+	if verr != nil || ceiling.Empty() {
+		return 0
+	}
+	all, verr := loadAll()
+	if verr != nil {
+		return 0
+	}
+	now := time.Now()
+	n := 0
+	for _, g := range all {
+		if !g.Active(now) {
+			continue
+		}
+		if ceiling.Forbids(g.Target, g.Scope, g.Profile) != "" ||
+			(ceiling.MaxTTL > 0 && !now.Before(g.Issued.Add(ceiling.MaxTTL))) {
+			n++
+		}
+	}
+	return n
+}
+
 // Load returns the grants that are still active; expired and fully-spent ones
 // are dropped on read, so nothing has to sweep them.
 func Load() ([]Grant, *view.Error) {
@@ -249,12 +664,36 @@ func Load() ([]Grant, *view.Error) {
 	if verr != nil {
 		return nil, verr
 	}
+	// The team's ceiling is applied here, on the way *out*, for exactly the
+	// reason Active() gives for MaxTTL one function down: checking it only
+	// where a grant is issued leaves the cap in the CLI and trusts the file to
+	// have been written by it. Applied here it is a property of what a grant
+	// can do, which is the version that survives a policy tightening after the
+	// grant was issued — and the grant is not deleted, so relaxing the policy
+	// brings it back rather than having thrown it away.
+	//
+	// loadAll deliberately does not do this: the refund path has to find a
+	// grant in order to give a use back to it, and a use spent under yesterday's
+	// policy must still be refundable under today's.
+	ceiling, verr := Ceiling()
+	if verr != nil {
+		return nil, verr
+	}
 	now := time.Now()
 	active := make([]Grant, 0, len(all))
 	for _, g := range all {
-		if g.Active(now) {
-			active = append(active, g)
+		if !g.Active(now) {
+			continue
 		}
+		if !ceiling.Empty() {
+			if ceiling.Forbids(g.Target, g.Scope, g.Profile) != "" {
+				continue
+			}
+			if ceiling.MaxTTL > 0 && !now.Before(g.Issued.Add(ceiling.MaxTTL)) {
+				continue
+			}
+		}
+		active = append(active, g)
 	}
 	sort.Slice(active, func(i, j int) bool { return active[i].Expires.Before(active[j].Expires) })
 	return active, nil
@@ -297,7 +736,7 @@ func loadAll() ([]Grant, *view.Error) {
 	if err != nil {
 		return nil, view.Errorf("core.grant.corrupt", "re-encoding %s: %v", Path(), err)
 	}
-	if !hmac.Equal([]byte(doc.Seal), []byte(seal(key, canon))) {
+	if !seal.Equal(doc.Seal, sealOf(key, canon)) {
 		// Nothing is honoured either way; only the sentence differs. A file
 		// carrying fields this build never declared fails the seal because
 		// canonical() re-encodes what it parsed and drops them — which is what
@@ -341,7 +780,7 @@ func Save(grants []Grant) *view.Error {
 	if verr != nil {
 		return verr
 	}
-	data, err := json.MarshalIndent(sealed{Seal: seal(key, canon), Grants: grants}, "", "  ")
+	data, err := json.MarshalIndent(sealed{Seal: sealOf(key, canon), Grants: grants}, "", "  ")
 	if err != nil {
 		return view.Errorf("core.grant.write", "encoding grants: %v", err)
 	}
@@ -352,6 +791,51 @@ func Save(grants []Grant) *view.Error {
 		return view.Errorf("core.grant.write", "writing %s: %v", Path(), err)
 	}
 	return nil
+}
+
+// Issue stores g, replacing any grant it is equivalent to.
+//
+// write=false previews: the file is still read, and an unreadable one is
+// still reported, so a preview cannot promise a grant that would have
+// failed.
+//
+// One grant per target+scope+profile: re-allowing extends the deadline
+// rather than stacking two grants whose earlier expiry means nothing.
+// Profile is part of the key, and leaving it out would make this
+// destructive — `grant allow pg --profile b` would delete the grant for
+// profile a while reporting only that b had been allowed, silently
+// revoking access nobody asked to revoke. The key has to be exactly what
+// covers() distinguishes, or "replace the equivalent grant" replaces one
+// that is not equivalent.
+//
+// Here rather than in builtin/grant because a second caller arrived (ADR
+// 0022: answering a parked request with --ttl issues exactly the grant the
+// operator would have typed), and two implementations of "what counts as
+// the same grant" is how the two come to disagree.
+func Issue(g Grant, write bool) *view.Error {
+	// Refused where somebody is standing and can fix it. Load already stops a
+	// forbidden grant authorizing anything, so this is not the enforcement —
+	// it is the difference between a grant that never works and never says
+	// why, and a refusal naming the rule and the file it came from.
+	if verr := CheckCeiling(g.Target, g.Scope, g.Profile); verr != nil {
+		return verr
+	}
+	return Mutate(func(stored []Grant) ([]Grant, bool) {
+		kept := stored[:0]
+		for _, existing := range stored {
+			// Agent is part of the key for the reason stated above: it is one
+			// of the things covers() distinguishes, so two grants that differ
+			// only by who may spend them are two decisions. Leaving it out
+			// would make `grant allow kv.get --agent ci` silently revoke the
+			// grant the operator's desktop agent was already holding — the
+			// exact failure this rule was written after.
+			if existing.Target != g.Target || existing.Scope != g.Scope ||
+				existing.Profile != g.Profile || existing.Agent != g.Agent {
+				kept = append(kept, existing)
+			}
+		}
+		return append(kept, g), write
+	})
 }
 
 // Mutate rewrites the grant file under the lock: it hands f every stored
@@ -432,8 +916,16 @@ func Required(c plugin.Capability, profile string) bool {
 // to make spend() walk that scope twice in the same call, incrementing
 // MaxUses' Uses counter once per occurrence rather than once per record —
 // letting a --max-uses 1 grant authorize itself twice within a single call
-// that named the same key two ways. Found by review (PROJECT.md D74) and
+// that named the same key two ways. Found by review and
 // reproduced directly against Reserve.
+// Scopes is the records a call names, as a grant would have to name them.
+//
+// Exported for the consent prompt: the operator is being asked
+// about one call, and "which record" is the whole of what distinguishes
+// `kv.get db-password` from `kv.get` — the same question a grant answers,
+// so it has to be the same answer, from the same code.
+func Scopes(c plugin.Capability, values map[string]any) []string { return scopes(c, values) }
+
 func scopes(c plugin.Capability, values map[string]any) []string {
 	if c.Scope == "" {
 		return []string{""}
@@ -479,7 +971,7 @@ func scopes(c plugin.Capability, values map[string]any) []string {
 // is the boundary that has to normalise it. A whole-number float is printed
 // as a plain integer; anything with a fractional part falls back to %v,
 // since no Field.Type this package scopes against is ever a genuine Float.
-// Found by review (PROJECT.md D74), which demonstrated the mismatch
+// Found by review, which demonstrated the mismatch
 // directly rather than only asserting it existed.
 func numericScope(v any) string {
 	if f, ok := v.(float64); ok && f == math.Trunc(f) {
@@ -507,18 +999,32 @@ func numericScope(v any) string {
 // was capped at blown past in a call that never touched the lock twice.
 // Sharing one walk and one tally is what keeps the authorization decision
 // and the spend decision looking at the same arithmetic.
-func allocate(c plugin.Capability, values map[string]any, grants []Grant, profile string) (tally map[int]int, missing []string) {
+func allocate(c plugin.Capability, values map[string]any, grants []Grant, by Caller) (tally map[int]int, missing []string, throttled *Grant) {
 	tally = map[int]int{}
+	now := time.Now()
 	for _, scope := range scopes(c, values) {
 		covered := false
 		for i, g := range grants {
-			if !g.covers(c.ID, scope, profile) {
+			if !g.covers(c.ID, scope, by) {
 				continue
 			}
-			if g.MaxUses > 0 && g.Uses+tally[i] >= g.MaxUses {
-				continue // this grant's budget is spoken for by this same call; try another
+			if room := g.room(now); room >= 0 && tally[i] >= room {
+				// This grant's budget is spoken for — by an earlier scope of
+				// this same call, or by the window it is inside. Try another,
+				// and remember the first one that was merely *out of pace*:
+				// a call refused because a rate limit is full is a different
+				// answer to the operator than one refused because nobody
+				// allowed it, and it is the only one that can say when to
+				// come back.
+				if throttled == nil {
+					if _, _, limited := g.rateRoom(now); limited {
+						g := g
+						throttled = &g
+					}
+				}
+				continue
 			}
-			if g.MaxUses > 0 {
+			if g.counted() {
 				tally[i]++
 			}
 			covered = true
@@ -528,7 +1034,10 @@ func allocate(c plugin.Capability, values map[string]any, grants []Grant, profil
 			missing = append(missing, scope)
 		}
 	}
-	return tally, missing
+	if len(missing) == 0 {
+		throttled = nil
+	}
+	return tally, missing, throttled
 }
 
 // checkAgainst answers "is this call authorized" against a set of grants
@@ -546,10 +1055,25 @@ func allocate(c plugin.Capability, values map[string]any, grants []Grant, profil
 // enforcement", which is the sentence that would have sent the next caller to
 // the weaker of the two. A gate reachable only through the function that
 // spends the use cannot drift from it.
-func checkAgainst(c plugin.Capability, values map[string]any, grants []Grant, profile string) *view.Error {
-	_, missing := allocate(c, values, grants, profile)
+func checkAgainst(c plugin.Capability, values map[string]any, grants []Grant, by Caller) *view.Error {
+	_, missing, throttled := allocate(c, values, grants, by)
 	if len(missing) == 0 {
 		return nil
+	}
+	// A grant that covers this call and is merely out of pace gets its own
+	// answer, and the difference matters twice over. To the operator,
+	// because "no active grant" sends them to `grant allow` for a grant they
+	// already issued. And to the agent, because this is the one refusal that
+	// can say *when to come back* — a model told to wait twelve minutes
+	// waits, where one told it has no permission retries, and a retry loop
+	// against a rate limit is the same flood the consent queue is capped
+	// against.
+	//
+	// It is deliberately not a consent question either: consent asks only on
+	// core.grant.required, so an agent cannot spend its way past a budget the
+	// operator set by making them answer the same prompt ten more times.
+	if throttled != nil {
+		return refuseThrottled(c, *throttled)
 	}
 	// The hint has to name the profile, because a grant that does not name it
 	// authorizes nothing: covers() matches the profile exactly, so
@@ -562,7 +1086,7 @@ func checkAgainst(c plugin.Capability, values map[string]any, grants []Grant, pr
 	// The subject is the namespace rather than the capability when a profile is
 	// in play: an operator granting access to a connection almost never means
 	// "and only the status call".
-	return refuseMissing(c, missing, profile)
+	return refuseMissing(c, missing, by.Profile)
 }
 
 // samePin compares two connection fingerprints.
@@ -646,12 +1170,12 @@ func samePin(a, b string) bool { return a != "" && a == b }
 // function is the other half of it — the pair used to be callable separately,
 // and the one caller that applied only one of them was the package's second,
 // weaker gate.
-func reachable(grants []Grant, profile, pin, active string) (view []Grant, at []int) {
+func reachable(grants []Grant, by Caller) (view []Grant, at []int) {
 	for i, g := range grants {
-		if active != "" && g.Profile != "" && g.Profile != active {
+		if by.Active != "" && g.Profile != "" && g.Profile != by.Active {
 			continue
 		}
-		if profile != "" && g.Profile == profile && !samePin(g.ProfilePin, pin) {
+		if by.Profile != "" && g.Profile == by.Profile && !samePin(g.ProfilePin, by.Pin) {
 			continue
 		}
 		view = append(view, g)
@@ -669,12 +1193,12 @@ func reachable(grants []Grant, profile, pin, active string) (view []Grant, at []
 // "the first row that covers this" is what let a refund give back a use it
 // never spent.
 type identity struct {
-	target, scope, profile, pin string
-	issued                      time.Time
+	target, scope, profile, pin, agent string
+	issued                             time.Time
 }
 
 func (g Grant) identity() identity {
-	return identity{g.Target, g.Scope, g.Profile, g.ProfilePin, g.Issued}
+	return identity{g.Target, g.Scope, g.Profile, g.ProfilePin, g.Agent, g.Issued}
 }
 
 // spentUse records that this call took n uses from one specific grant, so the
@@ -718,6 +1242,39 @@ func refuseMissing(c plugin.Capability, missing []string, profile string) *view.
 	}
 	return view.Errorf("core.grant.required", "no active grant for %s", describe(c.ID, missing)).
 		WithHint("a person has to allow this first: rta grant allow " + what + " --ttl 15m")
+}
+
+// refuseThrottled is the answer for a call a grant covers and a budget will
+// not let through yet.
+//
+// It names the pace rather than the grant's identity: an agent that has been
+// using this grant already knows it exists, and what it does not know — and
+// what turns a retry loop into a wait — is how long to leave it. The code is
+// its own, so nothing downstream mistakes a full budget for a missing grant:
+// `rta doctor` reads it, and consent deliberately does not ask about it.
+func refuseThrottled(c plugin.Capability, g Grant) *view.Error {
+	_, next, _ := g.rateRoom(time.Now())
+	e := view.Errorf("core.grant.rate",
+		"the grant for %s allows %d %s per %s and that is spent",
+		g.Target, g.RateMax, plural(g.RateMax, "call", "calls"), g.RateWindow)
+	if next.IsZero() {
+		// A window that would not parse: the grant cannot say when, and
+		// guessing would be worse than admitting it.
+		return e.WithHint("the operator can re-issue it with `rta grant allow " + g.Target + "`")
+	}
+	wait := time.Until(next).Truncate(time.Second)
+	if wait < time.Second {
+		wait = time.Second
+	}
+	return e.WithHint(fmt.Sprintf("try again in %s — this is a pace the operator set, not a missing permission", wait))
+}
+
+// plural is one word or two, for the sentences above.
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
 }
 
 // describe names what was refused the way the person issuing the grant will
@@ -764,15 +1321,15 @@ func describe(capID string, scopes []string) string {
 // active is the environment the operator currently has switched on, or "", and
 // pin is the connection this call resolves through. Both only ever subtract —
 // see reachable().
-func Reserve(c plugin.Capability, values map[string]any, profile, pin, active string) (release func(), verr *view.Error) {
-	if !Required(c, profile) {
+func Reserve(c plugin.Capability, values map[string]any, by Caller) (release func(), verr *view.Error) {
+	if !Required(c, by.Profile) {
 		return func() {}, nil
 	}
 	grants, verr := Load()
 	if verr != nil {
 		return nil, verr
 	}
-	view, _ := reachable(grants, profile, pin, active)
+	view, _ := reachable(grants, by)
 	if !anyLimited(view) {
 		// Checked against this same snapshot — checkAgainst, not Check, which
 		// would Load again. A second, independent read here reopened exactly
@@ -785,7 +1342,7 @@ func Reserve(c plugin.Capability, values map[string]any, profile, pin, active st
 		// the authorization decision, makes that impossible: whatever this
 		// call is authorized against is exactly what it already knows has
 		// nothing to spend.
-		return func() {}, checkAgainst(c, values, view, profile)
+		return func() {}, checkAgainst(c, values, view, by)
 	}
 
 	unlock, verr := acquireLock()
@@ -800,23 +1357,25 @@ func Reserve(c plugin.Capability, values map[string]any, profile, pin, active st
 	if verr != nil {
 		return nil, verr
 	}
-	view, at := reachable(grants, profile, pin, active)
-	if verr := checkAgainst(c, values, view, profile); verr != nil {
+	view, at := reachable(grants, by)
+	if verr := checkAgainst(c, values, view, by); verr != nil {
 		return nil, verr
 	}
 	// The tally is over the view; the write is over everything Load returned.
 	// Saving the view instead is how one call came to erase the operator's
 	// other grants — see reachable.
-	tally, missing := allocate(c, values, view, profile)
+	tally, missing, _ := allocate(c, values, view, by)
 	if len(missing) > 0 || len(tally) == 0 {
 		// checkAgainst just approved every scope, so missing is unreachable
 		// here; a scope that could not be covered must not silently spend the
 		// ones that could.
 		return func() {}, nil
 	}
+	now := time.Now()
 	spent := make([]spentUse, 0, len(tally))
 	for i, n := range tally {
 		grants[at[i]].Uses += n
+		grants[at[i]].mark(now, n)
 		spent = append(spent, spentUse{who: grants[at[i]].identity(), n: n})
 	}
 	if verr := Save(grants); verr != nil {
@@ -866,6 +1425,11 @@ func refund(spent []spentUse) *view.Error {
 			// fresh row here, and a refund must not mint uses.
 			if give := min(s.n, grants[i].Uses); give > 0 {
 				grants[i].Uses -= give
+				// And the pace with it. A call that failed did not spend the
+				// operator's minute any more than it spent their use, and
+				// leaving the timestamps behind would make a flaky capability
+				// look like a busy agent.
+				grants[i].unmark(give)
 				changed = true
 			}
 			break
@@ -888,7 +1452,7 @@ func refund(spent []spentUse) *view.Error {
 
 func anyLimited(grants []Grant) bool {
 	for _, g := range grants {
-		if g.MaxUses > 0 {
+		if g.counted() {
 			return true
 		}
 	}
