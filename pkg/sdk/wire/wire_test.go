@@ -57,7 +57,7 @@ func TestEveryFieldTypeOnTheWireHasAMapping(t *testing.T) {
 			t.Errorf("%s round-tripped to %s", name, back)
 		}
 	}
-	// plugin.FieldTypes() is the closed set (ADR 0011). A type declared in Go
+	// plugin.FieldTypes() is the closed set. A type declared in Go
 	// with no wire form would cross as unspecified, and the receiving host
 	// would report it as unknown — safe, but at run time on somebody else's
 	// machine rather than here.
@@ -195,7 +195,7 @@ func everyViewType() map[string]view.View {
 }
 
 // A view that does not survive the wire is a plugin whose output is silently
-// different from a built-in's, which is P6 broken in the least visible way
+// different from a built-in's — a second-class plugin, in the least visible way
 // available: the capability works, the numbers are right, and one column has
 // lost the hint that made it align.
 func TestEveryViewSurvivesARoundTrip(t *testing.T) {
@@ -305,7 +305,8 @@ func fullDeclaration() plugin.Plugin {
 // The declaration is what every surface is built from — flags, form fields,
 // dashboard tiles, MCP schemas, grant scoping — so a field that does not
 // cross is a plugin that behaves differently from a built-in with the same
-// declaration, which is P6 broken.
+// declaration: a second-class plugin, which is the one thing the contract
+// must never allow.
 func TestTheDeclarationSurvivesARoundTrip(t *testing.T) {
 	want := fullDeclaration()
 	got, unknown := PluginFromProto(PluginToProto(want))

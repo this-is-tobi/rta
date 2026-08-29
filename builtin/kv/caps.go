@@ -65,7 +65,7 @@ func runList(_ context.Context, req plugin.Request) (view.View, error) {
 		e := s.Entries[k]
 		row := []string{k, e.Kind, format.Bytes(uint64(len(e.Value))), e.Description, itemstore.Age(e.Updated)}
 		if detail {
-			row = append(row, e.Filename, itemstore.Age(e.Created))
+			row = append(row, e.origin(), itemstore.Age(e.Created))
 		}
 		t.Rows = append(t.Rows, row)
 	}
@@ -94,8 +94,8 @@ func runShow(_ context.Context, req plugin.Request) (view.View, error) {
 	if e.Description != "" {
 		pairs = append(pairs, view.Pair{Key: "description", Value: e.Description})
 	}
-	if e.Filename != "" {
-		pairs = append(pairs, view.Pair{Key: "source", Value: e.Filename})
+	if o := e.origin(); o != "" {
+		pairs = append(pairs, view.Pair{Key: "source", Value: o})
 	}
 	pairs = append(pairs,
 		view.Pair{Key: "updated", Value: itemstore.Age(e.Updated)},
@@ -160,8 +160,8 @@ func writeOut(path string, data []byte) *view.Error {
 // with one.
 //
 // Both halves go through the identical character whitelist. Key alone used
-// to be filtered while prefix was written verbatim — found by review
-// (PROJECT.md D74): a prefix containing a newline broke `kv env`'s output
+// to be filtered while prefix was written verbatim — found by review:
+// a prefix containing a newline broke `kv env`'s output
 // into extra lines, one of which could be a live command substitution,
 // directly against the eval "$(rta kv env …)" usage this capability's own
 // Description recommends. Filtering the whole name together, rather than
@@ -254,10 +254,53 @@ func valueToStore(req plugin.Request) (value []byte, filename string, err error)
 	return []byte(raw), "", nil
 }
 
+// checkKeyName refuses the one key shape the folder convention cannot afford.
+//
+// A "/" in a key is a folder separator: `kv list --match prod/` browses one,
+// and a grant scoped `prod/` covers the records under it and nothing else
+// (internal/grant's CheckScope and coversFolder). That distinction only holds
+// while `prod/` names a folder and never a record — a stored key ending in
+// "/" would be both, and a grant naming it would be exact and prefix at once.
+//
+// Nothing else about a key is constrained. Keys are opaque strings and stay
+// that way: a "." or ".." segment is legal here and is simply never swept into
+// a folder grant, which is the grant matcher's job rather than this one's.
+func checkKeyName(key string) *view.Error {
+	if strings.HasSuffix(key, "/") {
+		return view.Errorf("kv.set.foldername", "%q ends in a slash, so it names a folder rather than an entry", key).
+			WithHint("drop the trailing slash — a folder is not stored, it is what the names " +
+				"share, and `rta grant allow kv.get " + key + "` already covers everything under it")
+	}
+	return nil
+}
+
+// originOf records how this value reached the store.
+//
+// The surface is part of the answer and is the part nothing else preserves: a
+// secret an agent wrote over MCP looks identical afterwards to one the
+// operator typed, and "which of these did I not put here myself" is a
+// reasonable question to be able to ask of your own store. --file is Local, so
+// it cannot be the answer on the MCP surface and the two never contend.
+func originOf(req plugin.Request, filename string) string {
+	if filename != "" {
+		// The basename only, matching Filename: which file it was is worth
+		// recording and where it sat on disk is not, and the store should not
+		// grow a copy of somebody's directory layout.
+		return "file:" + filename
+	}
+	if req.Surface() == plugin.SurfaceMCP {
+		return "agent"
+	}
+	return "typed"
+}
+
 func runSet(_ context.Context, req plugin.Request) (view.View, error) {
 	key := strings.TrimSpace(req.String("key"))
 	if key == "" {
 		return nil, view.Errorf("kv.set.nokey", "key is empty")
+	}
+	if verr := checkKeyName(key); verr != nil {
+		return nil, verr
 	}
 	if verr := refuseSilentIdentity(req); verr != nil {
 		return nil, verr
@@ -289,7 +332,7 @@ func runSet(_ context.Context, req plugin.Request) (view.View, error) {
 	now := time.Now()
 	previous, existed := s.Entries[key]
 	e := entry{
-		Value: value, Kind: kind, Filename: filename,
+		Value: value, Kind: kind, Filename: filename, Origin: originOf(req, filename),
 		Description: req.String("description"), Created: now, Updated: now,
 	}
 	if existed {
@@ -337,6 +380,10 @@ func runRename(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 	if from == to {
 		return nil, view.Errorf("kv.rename.samename", "%q is already its name", from)
+	}
+	// The same guard set has: a rename is the other way to arrive at a name.
+	if verr := checkKeyName(to); verr != nil {
+		return nil, verr
 	}
 	if verr := refuseSilentIdentity(req); verr != nil {
 		return nil, verr
@@ -504,6 +551,30 @@ func runRekey(_ context.Context, req plugin.Request) (view.View, error) {
 		return nil, verr
 	}
 
+	// **The base set has to agree with the ciphertext before it may be a
+	// base.** Without --only, this re-key starts from kv.recipients and adds
+	// to it — and kv.recipients is plaintext with no cryptographic tie to the
+	// store, writable by anyone who can write the data directory without ever
+	// holding a key — a writer that cannot read. writeKeys refuses
+	// exactly that divergence on an ordinary write; re-key computes its own
+	// recipient set and so never reached that guard, which made it the way
+	// past it: append one line to kv.recipients, wait for the operator to run
+	// any `kv rekey`, and every secret is re-encrypted to the new reader with
+	// nothing on screen to say so.
+	//
+	// --only is deliberately exempt, and it is the documented recovery: it
+	// discards the stored set entirely and uses only what was named on the
+	// command line, so nothing untrusted reaches the new recipients. That is
+	// what the mismatch hint tells people to run, here and in writeKeys, and
+	// refusing it would leave a tampered file unfixable.
+	if !only && s.Recipients != nil && !equal(stored, s.Recipients) {
+		return nil, view.Errorf("kv.recipients.mismatch",
+			"kv.recipients does not match who the store is actually encrypted to, "+
+				"so it cannot be the set this re-key builds on").
+			WithHint("something other than `kv rekey` edited it — compare `rta kv recipients` " +
+				"against what you expect, then name the set you want outright: " +
+				"`rta kv rekey --only --recipient <each key that should read it>`")
+	}
 	var want []string
 	if !only {
 		want = append(want, stored...)

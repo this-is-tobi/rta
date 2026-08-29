@@ -37,6 +37,28 @@ func Plugin() plugin.Plugin {
 				Safety:     plugin.Read,
 				Idempotent: true,
 				Detailed:   true,
+				// **The same primitive http.get is gated for, under a
+				// different name.** The lesson is that `Read` is the
+				// class that costs nothing to reach — read capabilities go
+				// onto every `rta mcp serve` with no --allow-write, no grant
+				// and read_only_hint: true — so a capability that fetches a
+				// caller-chosen URL and returns what came back cannot be one.
+				//
+				// http.get carries NeedsGrant + Scope:"url" because the
+				// response arrives in a model's context and because the
+				// request itself is an outbound channel: everything after the
+				// `?` is bytes an agent chose, delivered to a host an agent
+				// chose. This performed exactly that request while http.get
+				// was refused beside it — two blast radii wearing one name,
+				// which is the shape that split net.probe and net.send
+				// over.
+				//
+				// Scoped to the host rather than the URL: an audit is about a
+				// host, and "this agent may audit staging.internal for the
+				// next fifteen minutes" is the sentence an operator can
+				// actually reason about.
+				NeedsGrant: true,
+				Scope:      "host",
 				Description: "One HTTPS request, graded: TLS version and cipher, certificate validity, " +
 					"expiry and signature algorithm, the security headers a host should send (HSTS, CSP " +
 					"— checked for weak directives like unsafe-inline, not just presence — " +

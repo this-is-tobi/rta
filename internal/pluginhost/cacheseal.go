@@ -14,7 +14,7 @@ import (
 // The cache is sealed because an unsealed one defeats the digest.
 //
 // Everything else in this package is built on binding an authorisation to an
-// artifact rather than to a name (ADR 0015): the binary is re-hashed on every
+// artifact rather than to a name: the binary is re-hashed on every
 // Open, so a plugin that changed on disk is a different plugin and its
 // declaration is re-read. The cache is the one thing that can assert a
 // declaration for a digest *without* the bytes that produced it — so an
@@ -27,7 +27,7 @@ import (
 // other one — Destructive to Read is the same write, and it puts a capability
 // that needs --allow-destructive and a human-issued grant in front of an
 // agent with neither. The declaration also carries Summary, Description and
-// Options, which go to models verbatim (ADR 0013), so the same write is a
+// Options, which go to models verbatim, so the same write is a
 // prompt-injection channel that survives restarts.
 //
 // No read of the data directory is needed for any of that: the proto shape is

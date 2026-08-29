@@ -2,6 +2,8 @@ package plugin
 
 import (
 	"fmt"
+
+	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
 
 // Request is what a handler runs with, and the accessors it reads inputs
@@ -11,7 +13,7 @@ import (
 // Surface names the renderer a request arrived through.
 //
 // Handlers must not branch on it to change what they do — one handler
-// serving every surface is the point of the whole model (PROJECT.md P1),
+// serving every surface is the point of the whole model,
 // and a capability that behaves differently in the TUI than in a pipe is a
 // bug. The one legitimate use is trust: a request from SurfaceMCP has no
 // human in the loop, so a capability whose blast radius is "an AI agent
@@ -45,6 +47,7 @@ const (
 type Request struct {
 	values  map[string]any
 	surface Surface
+	confine func(field, path string) (string, *view.Error)
 	DryRun  bool
 	Yes     bool
 }
@@ -65,6 +68,42 @@ func (r Request) Surface() Surface { return r.surface }
 func (r Request) WithSurface(s Surface) Request {
 	r.surface = s
 	return r
+}
+
+// WithConfinement stamps the host's bound on what this call may open. A
+// surface that confines paths calls it once, at the boundary, beside
+// WithSurface.
+func (r Request) WithConfinement(check func(field, path string) (string, *view.Error)) Request {
+	r.confine = check
+	return r
+}
+
+// Confine checks a path the handler *derived* rather than received, and
+// returns the form it should open.
+//
+// The boundary can only check the strings a caller sent. A handler that turns
+// one of them into a different path leaves that check behind, and nothing
+// downstream knows the derivation happened: builtin/git receives a directory
+// inside an allowed root and walks *upward* from it looking for the repository
+// that directory belongs to, which is the right behaviour for a person in a
+// subdirectory and an escape for an agent — root `~/work/project` with no
+// repository in it, and a `.git` two levels up in `~`, means `git.diff`
+// returns the contents of files the root was drawn to exclude. The handler is
+// the only place that knows a second path exists, so it is the place that has
+// to ask.
+//
+// An unconfined request — every surface with a person behind it, and every
+// direct in-process caller — allows everything and returns the path unchanged,
+// so a handler may call this unconditionally.
+//
+// Not carried across the plugin-host wire: an external plugin gets its bound
+// from the sandbox it runs in, which is enforced by the operating
+// system rather than by a promise the plugin makes.
+func (r Request) Confine(field, path string) (string, *view.Error) {
+	if r.confine == nil {
+		return path, nil
+	}
+	return r.confine(field, path)
 }
 
 // With returns a copy of r carrying values overlaid on the inputs it already

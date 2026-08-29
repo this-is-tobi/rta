@@ -13,7 +13,7 @@
 // dashboard's five-second timer, forever.
 //
 // So a section is keyed on the artifact, using the pin grammar an operator
-// already knows from --allow-destructive (ADR 0015):
+// already knows from --allow-destructive:
 //
 //	plugins:
 //	  sys:                  # built-in: no pin, and a pin is refused

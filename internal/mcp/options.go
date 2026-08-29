@@ -1,6 +1,8 @@
 package mcp
 
 import (
+	"time"
+
 	"fmt"
 	"sort"
 	"strings"
@@ -45,6 +47,43 @@ type Options struct {
 	// attach to a name rather than to an artifact, on the surface with no
 	// human present.
 	AllowDestructive []string
+	// Consent turns on just-in-time consent: a call the grant
+	// gate refuses for want of a grant is parked, the operator is asked,
+	// and it proceeds or is refused with the answer they gave.
+	//
+	// Off by default, and the default is the important half: a parked call
+	// in a server nobody is watching is worse than a refusal, and an
+	// operator running headless has said by their absence that there is
+	// nobody to ask. With it off, every refusal is exactly what it is
+	// today.
+	//
+	// It never widens the surface. A capability the operator did not expose
+	// with AllowWrite or AllowDestructive is not a tool at all, and no
+	// amount of asking makes it one; this answers the grant question and
+	// nothing else.
+	Consent bool
+	// ConsentWait bounds how long a parked call waits. Zero means
+	// consent.DefaultWait.
+	ConsentWait time.Duration
+	// ConsentNotify rings this machine's desktop notification when a call
+	// parks, because a control nobody notices is a control that times out.
+	//
+	// Separately off by default, and not folded into Consent: a background
+	// process that raises OS notifications without having been asked to is
+	// behaving like malware, and the operator who wants consent on a server
+	// they watch through its log is not asking for their screen to be
+	// interrupted. What it shows is rta's own words only — see
+	// ringDoorbell.
+	ConsentNotify bool
+	// ConsentPreview runs a destructive call's own --dry-run before parking
+	// it, so the operator answers a question about an outcome rather than
+	// about an intention.
+	//
+	// On by default where consent is on, and bounded to built-in
+	// capabilities: see propose. A dry run is an extra invocation of the
+	// handler, so it rests on the handler being honest about DryRun — true
+	// of rta's own by test, a claim for anybody else's.
+	ConsentPreview bool
 	// Origin answers where a namespace came from. It is the registry's
 	// method, passed in rather than a map built beside it, so the gate and
 	// the catalogue cannot disagree about what is registered — which they
@@ -115,7 +154,7 @@ type Options struct {
 	// disagree, while a subtracting one cannot.
 	Active func() string
 	// Untrusted names the plugin artifacts discovery found on $PATH and
-	// refused to launch, because nothing has approved them (D107).
+	// refused to launch, because nothing has approved them.
 	//
 	// Names rather than the pluginhost type, so this package keeps depending
 	// on nothing that spawns a process. It exists for one reason: `rta mcp
@@ -129,6 +168,20 @@ type Options struct {
 	// everything, which is what the tests that predate it do and what no
 	// server should.
 	Paths *pathguard.Guard
+	// Agent is the name this server was launched under (`--as claude-desktop`),
+	// empty when the operator did not name it.
+	//
+	// **It is the operator's word, not the client's.** An MCP client announces
+	// a name for itself in the initialize handshake and rta records that too
+	// — beside this, never instead of it, because a name a thing chooses for
+	// itself is not an identity. This one is typed where the operator
+	// wired the client up, in the same argv as --allow-write, and is trusted
+	// exactly as much as those flags are.
+	//
+	// It reaches the gate as grant.Caller.Agent, where it can only subtract:
+	// a named server matches only grants issued to that name, and an unnamed
+	// one matches only grants issued to no name. See grant.Grant.Agent.
+	Agent string
 }
 
 // active is the profile switched on right now, or "".
@@ -168,7 +221,7 @@ func (o Options) profiles() config.Config {
 }
 
 // entryMatches reports whether one allowlist entry names the artifact behind
-// ns, in ADR 0015's `name@digest-prefix` grammar.
+// ns, in the `name@digest-prefix` grammar trust already uses.
 //
 // Shared by --allow-write and --allow-destructive so the two cannot drift
 // into different grammars, which they had: --allow-destructive *required* a
@@ -183,7 +236,7 @@ func (o Options) profiles() config.Config {
 // bareOK is the one deliberate difference between the two, not an accident.
 // --allow-destructive refuses a bare entry because a destructive capability
 // is exactly where "whatever binary currently answers to this name" is not
-// good enough. --allow-write accepts one because ADR 0015 chose namespace
+// good enough. --allow-write accepts one because namespace
 // granularity there on purpose: a pin is a tightening available to an
 // operator who wants it, not homework demanded of everyone.
 func (o Options) entryMatches(entry, want, ns string, bareOK bool) bool {
@@ -448,7 +501,7 @@ func (o Options) allowValue(c plugin.Capability) string {
 // for the capabilities reg holds, in the exact form the flag requires, each
 // with a tab-separated description — the same shape Field.Suggest returns.
 //
-// Exported for one caller: shell completion for those two flags. ADR 0015 pins
+// Exported for one caller: shell completion for those two flags. Trust pins
 // an external plugin's destructive capability to its artifact digest, and a
 // digest somebody has to go and look up is a control that gets turned off.
 // `rta explain` already hands the whole line over after the fact; this hands

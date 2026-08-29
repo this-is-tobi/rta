@@ -8,7 +8,7 @@
 // it is why the wire package converts declarations rather than the renderers
 // learning a second shape.
 //
-// The security decisions here are ADR 0012's, and they are decisions this
+// The security decisions here are confinement's, and they are decisions this
 // package makes alone. There is no per-call launch option beyond argv,
 // environment and standard descriptors, and no message in proto/v1 for a
 // plugin to ask for anything different. That absence is deliberate: a plugin
@@ -54,15 +54,20 @@ import (
 // about the RPC answering — a plugin can complete the handshake and then
 // never reply, and without this that is an indefinite hang with the process
 // cache locked behind it.
-const (
+// Variables rather than constants for one reason, and it is not
+// configuration: a race-instrumented build raises them (see slow_race.go).
+// Nothing else writes to them, and there is no flag or environment variable
+// behind them — the values below are what every real invocation uses.
+var (
 	startTimeout    = 5 * time.Second
 	describeTimeout = 5 * time.Second
-	// killTimeout bounds go-plugin's own shutdown before rta stops waiting
-	// for it and takes the process group instead. Its internal graceful wait
-	// is two seconds, so this is the smallest value that does not routinely
-	// pre-empt a shutdown that was about to succeed.
-	killTimeout = 3 * time.Second
 )
+
+// killTimeout bounds go-plugin's own shutdown before rta stops waiting for it
+// and takes the process group instead. Its internal graceful wait is two
+// seconds, so this is the smallest value that does not routinely pre-empt a
+// shutdown that was about to succeed.
+const killTimeout = 3 * time.Second
 
 // Host owns every running plugin process.
 //
@@ -358,6 +363,23 @@ func (h *Host) Open(ctx context.Context, name string, args ...string) (*Client, 
 // again to run. Two hashes would be two reads of a file that can change
 // between them — a window this does not need to open, on the one path whose
 // whole purpose is to decide whether a stranger's code may execute.
+// OpenIdentified is Open for a caller outside this package that has already
+// hashed the artifact and made a decision about that digest.
+//
+// It exists for the same reason the unexported one does: the decision and the
+// launch must name one Identity. Re-resolving by path here would reopen the
+// window between them, which is the whole point of the split.
+func (h *Host) OpenIdentified(ctx context.Context, id Identity, args ...string) (*Client, error) {
+	if err := available(); err != nil {
+		return nil, err
+	}
+	deny, err := Resolve()
+	if err != nil {
+		return nil, err
+	}
+	return h.openIdentified(ctx, id, deny, args)
+}
+
 func (h *Host) openIdentified(ctx context.Context, id Identity, deny DenySet, args []string) (*Client, error) {
 	key := cacheKey(id, deny, args)
 
@@ -423,7 +445,7 @@ func (h *Host) describeOnly(ctx context.Context, id Identity, deny DenySet, args
 // arguments.
 //
 // argv is in the key because argv is one of the three launch levers this
-// package exposes (ADR 0012 §6), and a lever that changes the process but not
+// package exposes, and a lever that changes the process but not
 // its cache key hands a caller a process configured for somebody else. It
 // cannot fire today — LoadInto passes no arguments — which is exactly why it
 // is worth encoding now rather than after `rta plugin dev` starts passing
@@ -500,7 +522,7 @@ func (h *Host) launch(ctx context.Context, id Identity, deny DenySet, args []str
 		// The host's environment is not the plugin's. env.go says which
 		// names cross and why each one is there.
 		SkipHostEnv: true,
-		// mTLS on the loopback socket. ADR 0002 listed this among the things
+		// mTLS on the loopback socket. This was listed among the things
 		// go-plugin gives us for free; it is off by default and dialGRPCConn
 		// takes the insecure branch without it.
 		AutoMTLS: true,

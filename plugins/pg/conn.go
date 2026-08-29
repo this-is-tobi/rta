@@ -18,14 +18,14 @@ import (
 
 // connFields are the inputs every capability here shares.
 //
-// Each one declares a Config key, which is the whole reason ADR 0016 exists:
+// Each one declares a Config key, which is the whole reason config keys exist:
 // an operator states the connection once, in their own file, and never types
 // it again. The handler reads req.String("host") and cannot tell whether that
 // came from a flag, the config file or the declared default — which is the
 // point, not an accident of the API.
 //
 // **Every one of them is also Local, and that is a security property rather
-// than a detail** (PROJECT.md D94). Together they name *which server this
+// than a detail**. Together they name *which server this
 // call reaches and as whom*, and an MCP caller may not choose that. They
 // were ordinary inputs until a design review found what that meant: an
 // input a plugin declares is published in the MCP tool schema and accepted
@@ -38,7 +38,7 @@ import (
 // choose them no longer can.
 //
 // The password differs only in also declaring EnvFallback, and that
-// distinction is deliberate (D74): EnvFallback is for values that genuinely
+// distinction is deliberate: EnvFallback is for values that genuinely
 // are credentials, so the host resolves it from $RTA_PG_PASSWORD and
 // `rta explain` prints that variable name. A field that merely chooses a
 // destination must come from an explicit caller or from config, never from
@@ -47,7 +47,7 @@ func connFields() []plugin.Field {
 	return []plugin.Field{
 		// host and port carry the endpoint roles, so a profile naming a
 		// cluster reaches this database through a port-forward the host opens
-		// and closes: pg never learns a forward was there, which is ADR 0004's
+		// and closes: pg never learns a forward was there, which is the tunnel
 		// contract and the reason none of the code below changes.
 		{Name: "host", Type: plugin.String, Default: "localhost", Config: "host",
 			Local: true, Endpoint: plugin.EndpointHost, Help: "database host"},
@@ -68,7 +68,7 @@ func connFields() []plugin.Field {
 		// read resets, and kubectl exits. The next call gets "connection
 		// refused" on a local port and nothing connects the two. It buys
 		// nothing either, since the forward is loopback and the hop that leaves
-		// the machine is already inside the API server's TLS (ADR 0018 §7).
+		// the machine is already inside the API server's TLS.
 		//
 		// Only when a tunnel is actually open. Every other call keeps `prefer`,
 		// and a caller who says otherwise still wins.
@@ -112,6 +112,25 @@ func dsn(req plugin.Request) string {
 // proves the contract: every one of these is a sentence somebody has stared
 // at without knowing what to do next.
 func classify(err error, req plugin.Request) *view.Error {
+	// **An error that is already a view.Error has already been classified,
+	// and classifying it twice loses it.** Every capability here runs its
+	// work inside a closure — withConn, and readOnly inside that — and a
+	// closure can only report a refusal by returning an error, so a
+	// handler's own view.Error arrives back at exactly the same place a
+	// driver failure does. Falling through the switches below, it matched
+	// nothing and came out as `pg.conn.failed: could not connect to
+	// 127.0.0.1:55432: the query returned more than 1.0 MiB` — a connection
+	// error naming a hint about an input, for a connection that was fine.
+	//
+	// Found by running pg.query against a real server rather than by a test:
+	// the row bound had unit tests either side of this function and none
+	// through it, so the refusal was correct, reached, and then thrown away
+	// one frame later.
+	var already *view.Error
+	if errors.As(err, &already) {
+		return already
+	}
+
 	where := fmt.Sprintf("%s:%d", req.String("host"), req.Int("port"))
 
 	var pgErr *pgconn.PgError
@@ -210,12 +229,67 @@ func readOnly(ctx context.Context, conn *pgx.Conn, fn func(pgx.Tx) error) error 
 }
 
 // rowsToTable renders a result set, whatever its shape.
-func rowsToTable(rows pgx.Rows) (view.Table, error) {
+// ErrTooManyRows is what a result set larger than the caller allowed comes
+// back as, so the handler can say which flag fixes it.
+var ErrTooManyRows = errors.New("the result set is larger than the row bound")
+
+// ErrTooLarge is the other half: within the row bound, over the byte one.
+var ErrTooLarge = errors.New("the result set is larger than the size bound")
+
+// maxRows bounds a result set rta wrote the SQL for and therefore already
+// knows the size of — a ceiling against a catalogue nobody expected to be
+// this big, not a limit anybody tunes.
+const maxRows = 10000
+
+// maxBytes bounds the same result set by size, because **a row bound is not
+// a size bound**: `select body from documents` at two hundred rows is two
+// hundred rows of whatever a text column holds, and a bytea column makes
+// that arbitrary. The row bound alone was the whole protection here, and it
+// counts the wrong thing.
+//
+// What makes it a correctness bound and not only a courtesy: a plugin's view
+// crosses go-plugin's gRPC channel, and nothing configures
+// MaxCallRecvMsgSize on either side, so grpc-go's 4 MiB default applies.
+// Past it the caller does not get a large answer or a truncated one — the
+// transport fails with ResourceExhausted, an error naming gRPC rather than
+// the query that caused it, from a layer the operator has no flag for.
+// Refusing here costs one comparison and says which flag fixes it.
+//
+// One mebibyte because that is the ceiling this codebase already applies
+// twice for the same reason — builtin/http's response body and plugins/s3's
+// inline object — and because the room between it and the transport's limit
+// is where the host's own re-encoding lives.
+const maxBytes = 1 << 20
+
+// rowsToTable reads a result set into a table, bounded.
+//
+// **The bound is a parameter because forgetting it is the bug.** Every
+// listing capability in this plugin declares a limit and applies it in SQL,
+// and pg.query — the one capability whose SQL the *caller* writes — did not:
+// `select * from users` streamed every row into a slice in the plugin, then
+// through the host, then at a model's context. That is an unbounded
+// allocation driven by an argument, which is a denial of service, and a bulk
+// read of a table nobody consented to row by row, which is the more
+// interesting half.
+//
+// One past the bound, so a full page and an overflowing one are told apart,
+// and the overflow is **refused rather than truncated** — the same rule
+// ai.ask's context bound follows, and for the same reason: a silently
+// shortened answer is a different answer wearing the right shape. The caller
+// gets to decide, by raising the bound or by writing a LIMIT.
+func rowsToTable(rows pgx.Rows, bound int) (view.Table, error) {
 	var t view.Table
 	for _, fd := range rows.FieldDescriptions() {
 		t.Columns = append(t.Columns, view.Column{Name: string(fd.Name)})
 	}
+	if bound <= 0 {
+		bound = maxRows
+	}
+	var size int
 	for rows.Next() {
+		if len(t.Rows) == bound {
+			return t, ErrTooManyRows
+		}
 		vals, err := rows.Values()
 		if err != nil {
 			return t, err
@@ -223,6 +297,13 @@ func rowsToTable(rows pgx.Rows) (view.Table, error) {
 		row := make([]string, len(vals))
 		for i, v := range vals {
 			row[i] = cell(v)
+			size += len(row[i])
+		}
+		// Checked after the row is built rather than before, so the refusal
+		// happens on the row that crosses the line instead of one row early
+		// on a guess about how big the next one will be.
+		if size > maxBytes {
+			return t, ErrTooLarge
 		}
 		t.Rows = append(t.Rows, row)
 	}

@@ -13,7 +13,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/this-is-tobi/rule-them-all/builtin/kv"
+	"github.com/this-is-tobi/rule-them-all/internal/agentlog"
 	"github.com/this-is-tobi/rule-them-all/internal/config"
+	"github.com/this-is-tobi/rule-them-all/internal/consent"
 	"github.com/this-is-tobi/rule-them-all/internal/grant"
 	"github.com/this-is-tobi/rule-them-all/internal/pluginconf"
 	"github.com/this-is-tobi/rule-them-all/internal/plugindist"
@@ -23,12 +25,13 @@ import (
 	"github.com/this-is-tobi/rule-them-all/internal/registry"
 	"github.com/this-is-tobi/rule-them-all/internal/render/cli"
 	"github.com/this-is-tobi/rule-them-all/internal/render/theme"
+	"github.com/this-is-tobi/rule-them-all/pkg/format"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
 
 // newDoctorCommand implements `rta doctor`: one command that checks the
-// environment and reports actionable state (PROJECT.md §5.1). Checks grow
+// environment and reports actionable state. Checks grow
 // with the features that need them (config, plugins, keyring...).
 func newDoctorCommand(reg *registry.Registry, opts *globalOpts) *cobra.Command {
 	return &cobra.Command{
@@ -256,7 +259,7 @@ func doctorReport(reg *registry.Registry) view.View {
 	// ones that are — whether the credential they need is actually present.
 	//
 	// The second half is the one people get wrong. A profile carries no secret
-	// (ADR 0016 refuses Config on a Secret input), so the only way a
+	// (Config is refused on a Secret input), so the only way a
 	// credential reaches a connection is $RTA_PROFILE_<NAME>_<INPUT>, and a
 	// profile with the destination right and that variable unset fails as an
 	// authentication error naming the role — three steps from the cause.
@@ -392,6 +395,31 @@ func doctorReport(reg *registry.Registry) view.View {
 			f.Path, len(f.Shadowed), copies, strings.Join(f.Shadowed, ", ")))
 	}
 
+	// The team's ceiling, before the grants it constrains — because a grant
+	// that has quietly stopped working is exactly what somebody runs this
+	// command about, and "your team's policy forbids it" is the answer they
+	// will not otherwise find. A malformed policy is reported as an error
+	// rather than as an absence, for the reason internal/policy is written
+	// around: a bound that reports itself without running is worse than none.
+	if ceiling, verr := grant.Ceiling(); verr != nil {
+		add("team policy", "error", verr.Message)
+	} else if !ceiling.Empty() {
+		limits := make([]string, 0, 4)
+		if ceiling.MaxTTL > 0 {
+			limits = append(limits, "no grant may last longer than "+ceiling.MaxTTL.String())
+		}
+		if n := len(ceiling.Never); n > 0 {
+			limits = append(limits, fmt.Sprintf("%d target(s) not grantable", n))
+		}
+		if n := len(ceiling.NeverProfile); n > 0 {
+			limits = append(limits, fmt.Sprintf("%d connection(s) not grantable", n))
+		}
+		if n := len(ceiling.RequireScope); n > 0 {
+			limits = append(limits, fmt.Sprintf("%d target(s) must name a record", n))
+		}
+		add("team policy", "info", strings.Join(limits, "; ")+" — "+ceiling.Where())
+	}
+
 	// Standing agent permissions. Worth a line of its own: a grant issued
 	// yesterday and forgotten is exactly the thing a health check should
 	// surface, and the answer is usually "none".
@@ -462,7 +490,8 @@ func doctorReport(reg *registry.Registry) view.View {
 	//
 	// A count with a scope and an explicit "everything else is readable" is a
 	// fact somebody can act on; a per-plugin green tick would be the same
-	// information dressed as an assurance it does not carry. ADR 0012 §2 is
+	// information dressed as an assurance it does not carry. The confinement
+	// contract is
 	// blunt about the bound, and so is this: every attack found in the pre-M2
 	// review succeeds identically on a confined macOS host.
 	deny, denyErr := pluginhost.Resolve()
@@ -476,8 +505,9 @@ func doctorReport(reg *registry.Registry) view.View {
 	default:
 		add("plugin confinement", "ok", fmt.Sprintf(
 			"sandbox-exec: %d paths denied read+write (rta's own state), %d denied read "+
-				"(credential locations); everything else is readable",
-			len(deny.NoAccess), len(deny.NoRead)))
+				"(credential locations), %d directories pinned in place so a rename cannot "+
+				"move either out of its rule; everything else is readable",
+			len(deny.NoAccess), len(deny.NoRead), len(deny.NoMove)))
 	}
 
 	// SDK plugins actually loaded, and anything about them worth knowing but
@@ -518,7 +548,88 @@ func doctorReport(reg *registry.Registry) view.View {
 			" approved to run — `rta plugin untrust <name>` takes one back")
 	}
 
-	// Provenance for managed plugins (ADR 0017): what rta.lock recorded
+	// What agents have been doing, and whether the record of it is intact.
+	// A ledger is a promise, and an unverified promise is the
+	// kind of thing somebody builds a policy on.
+	rep, lerr := agentlog.Verify()
+	// Its own row, whatever else the record says about itself. A file carrying
+	// a segment's name and a number rta has never rolled was put there by
+	// something else — it changes nothing about the record, because rta no
+	// longer counts it as part of one, and the thing worth acting on is
+	// whatever can write into rta's data directory.
+	if len(rep.Foreign) > 0 {
+		add("agent log", "warn", fmt.Sprintf(
+			"%s in the data directory %s named like part of the record and %s not written by rta, "+
+				"so %s excluded from it (%s)",
+			plural(len(rep.Foreign), "file is", "files are"),
+			pick(len(rep.Foreign), "is", "are"), pick(len(rep.Foreign), "was", "were"),
+			pick(len(rep.Foreign), "it is", "they are"), strings.Join(rep.Foreign, ", ")))
+	}
+	if lerr != nil {
+		add("agent log", "warn", lerr.Error())
+	} else if rep.Broken != 0 {
+		// Said whether or not anything is left: "the whole record has been
+		// removed" is precisely the case where rep.Entries is zero.
+		add("agent log", "warn", fmt.Sprintf(
+			"the record of agent calls breaks at entry %d — %s; `rta agent log --detail` shows it",
+			rep.Broken, rep.Why))
+	} else if rep.Entries > 0 {
+		// Retention is reported rather than warned about: rotation is the
+		// answer to a growing file, and what an operator needs to know is
+		// how far back the record they are about to read actually goes.
+		note := fmt.Sprintf("%s recorded, chain intact",
+			plural(rep.Entries, "agent call", "agent calls"))
+		if rep.Files > 1 {
+			note += fmt.Sprintf(" across %d files (%s)", rep.Files, format.Bytes(uint64(rep.Size)))
+		}
+		if rep.Missed > 0 {
+			// A record with a hole in it is a warn, not an ok, whatever else
+			// is right about it: this is the one number that says the answer
+			// to "what did it touch" is incomplete.
+			add("agent log", "warn", fmt.Sprintf(
+				"%s could not be written to the record — `rta agent log --detail` shows where; "+
+					"the rest of it verifies", plural(int(rep.Missed), "agent call", "agent calls")))
+		}
+		if rep.Retired > 0 {
+			note += fmt.Sprintf("; the %s before it were retired %s",
+				plural(int(rep.Retired), "call", "calls"), rep.RetiredAt.Local().Format("2006-01-02"))
+		}
+		add("agent log", "ok", note+" — `rta agent log` reads it")
+	}
+	// And what is waiting on the operator right now. This is the one check
+	// with a clock on it: a parked call expires, so a person who learns
+	// about it from a health check has minutes, not days.
+	if q, cerr := consent.Scan(); cerr == nil {
+		if waiting := q.Waiting; len(waiting) > 0 {
+			soonest := waiting[0]
+			for _, r := range waiting[1:] {
+				if r.Deadline.Before(soonest.Deadline) {
+					soonest = r
+				}
+			}
+			add("agent consent", "warn", fmt.Sprintf(
+				"%s waiting for you — the next expires in %s; `rta agent pending` lists them",
+				plural(len(waiting), "call is", "calls are"),
+				time.Until(soonest.Deadline).Truncate(time.Second)))
+		}
+		// Its own row, and the loudest sentence in this function. A request
+		// that does not match the call it is bound to was rewritten after rta
+		// wrote it, by something with access to the data directory — which is
+		// an attempt to have the operator approve one call while reading
+		// another, and is worth saying plainly even though it did not work.
+		if n := len(q.Tampered); n > 0 {
+			verb := "does"
+			if n > 1 {
+				verb = "do"
+			}
+			add("agent consent", "warn", fmt.Sprintf(
+				"%s on the consent queue %s not describe the call it is bound to — something rewrote "+
+					"it after rta parked it, and it will not be offered or answered (%s)",
+				plural(n, "request", "requests"), verb, strings.Join(q.Tampered, ", ")))
+		}
+	}
+
+	// Provenance for managed plugins: what rta.lock recorded
 	// against what the store and the loaded processes actually say. Every
 	// mismatch here is a fact about drift, stated rather than repaired —
 	// the lockfile records, it never authorizes.
@@ -611,6 +722,15 @@ func execPlugins() []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+// pick is plural without the count, for the second and third agreement in a
+// sentence that has already said the number once.
+func pick(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
 }
 
 // plural formats a count with the right noun, so a report never says

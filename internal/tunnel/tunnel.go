@@ -1,5 +1,5 @@
 // Package tunnel resolves a named target to a local host:port the caller can
-// dial, and tears it down afterwards (ADR 0018).
+// dial, and tears it down afterwards.
 //
 // The operator names targets in configuration; a caller — including an agent
 // over MCP — selects one by name and can never supply a cluster coordinate of
@@ -14,7 +14,7 @@
 // authentication: OIDC refresh, `aws eks get-token`, `gke-gcloud-auth-plugin`
 // and whatever exec credential plugin an organisation runs are all solved on
 // the user's machine already, and adopting client-go means adopting their
-// maintenance. ADR 0018 §3.
+// maintenance.
 package tunnel
 
 import (
@@ -147,7 +147,7 @@ func parseKube(spec string) (ctx, ns, kind, name string, port int, verr *view.Er
 // CheckKube reports what is wrong with a coordinate, without touching a
 // cluster.
 //
-// The static half of ADR 0018's "a target that cannot be resolved should be
+// The static half of "a target that cannot be resolved should be
 // visible before the call that needs it, not during". It answers only whether
 // the string is a coordinate at all — four slash-separated segments and a
 // port — because that is the half that costs nothing and is the half people
@@ -217,6 +217,14 @@ func openInstrumented(ctx context.Context, name string, t Target) (*Tunnel, *vie
 		"--context", kctx, "--namespace", ns,
 		"port-forward", kind+"/"+obj, fmt.Sprintf(":%d", port))
 	harden(cmd)
+	// Without this, a forward that *fails* while a credential helper still
+	// holds the pipes takes both non-context arms of awaitForwarding's select
+	// out at once: the scanner never sees EOF so `lines` is never closed, and
+	// Wait never returns so `exited` never closes. Open then sits for the
+	// whole openCeiling and reports tunnel.open.timeout — "did not come up in
+	// time" — throwing away kubectl's real, already-buffered explanation. It
+	// is the first failed open that pays this, not a long-running one.
+	cmd.WaitDelay = waitDelay
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -266,14 +274,30 @@ func awaitForwarding(ctx context.Context, stdout io.Reader, name, spec string,
 	lines := make(chan string, 1)
 	go func() {
 		sc := bufio.NewScanner(stdout)
+		found := false
 		for sc.Scan() {
+			if found {
+				// kubectl writes "Handling connection for <port>" to stdout
+				// for every connection it accepts, *before* it moves a byte.
+				// Returning at the match left nobody reading that pipe for the
+				// life of the tunnel, so at 64 KiB — about 2100 of those lines
+				// — kubectl blocks inside its own Fprintf: a forward that goes
+				// on accepting connections and carries none of them, which
+				// looks from the plugin's side like a successful connect
+				// followed by silence. Read and drop; Wait closes the pipe.
+				continue
+			}
 			if m := forwarding.FindStringSubmatch(sc.Text()); m != nil {
 				p, _ := strconv.Atoi(m[2])
 				lines <- m[1] + " " + strconv.Itoa(p)
-				return
+				found = true
 			}
 		}
-		close(lines)
+		// Only when no listener line ever arrived: closing it after a
+		// successful match would tell awaitForwarding the forward had failed.
+		if !found {
+			close(lines)
+		}
 	}()
 
 	select {

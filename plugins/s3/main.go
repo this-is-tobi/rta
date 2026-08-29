@@ -1,5 +1,5 @@
 // Command rta-plugin-s3 talks to an S3-compatible object store: buckets,
-// objects, presigned URLs and bucket policy (PROJECT.md §7, Wave 2).
+// objects, presigned URLs and bucket policy.
 // Works against real AWS S3, MinIO, R2, Ceph — anything minio-go speaks —
 // which is why every field is generic (endpoint, not "AWS region + account").
 //
@@ -52,6 +52,7 @@ func Plugin() plugin.Plugin {
 			s3ObjectRenameCapability(),
 			s3ObjectRemoveCapability(),
 			s3ObjectPresignCapability(),
+			s3BucketDownloadCapability(),
 		},
 	}
 }

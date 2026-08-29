@@ -15,7 +15,7 @@ import (
 
 // leavesTheMachine names the namespaces whose capabilities reach off the box.
 //
-// D9 promises network calls happen only on explicit user action, and a test
+// Network calls happen only on explicit user action, and a test
 // suite is nobody asking. The existing conformance run gets this for free by
 // declining to supply their required inputs; this test *supplies* a value, so
 // it could turn an undrivable capability into a drivable one that resolves a
@@ -25,13 +25,13 @@ var leavesTheMachine = map[string]bool{"cert": true, "http": true, "net": true}
 // The MCP path gate hooks on Field.Type == Path. An input that names a file
 // but is declared String, StringSlice or Text is invisible to it, so a caller
 // gets an unconfined read through a capability whose schema never mentions a
-// path. That shipped twice (D42): cert.expiry's targets was a StringSlice and
+// path. That shipped twice: cert.expiry's targets was a StringSlice and
 // became a file-existence oracle over MCP with no flag and no grant, and
 // kv.init's recipient echoed 32 bytes of any readable file back in a parse
 // error.
 //
 // Both replacements so far asked the declaration a question — is this input
-// Path? does its help mention a file? — and PROJECT.md recorded the real
+// Path? does its help mention a file? — and review recorded the real
 // answer as an interprocedural AST walk of what handlers reach. This asks
 // something better than either, because it is the property that actually
 // matters rather than a proxy for it: *can a caller tell an existing file
@@ -68,7 +68,7 @@ func TestNoInputBehavesLikeAFileWithoutBeingDeclaredOne(t *testing.T) {
 		// mandatory for them (proto CallRequest.dry_run: "a dry run that
 		// performs the operation and then reports what would happen is worse
 		// than no dry run"). Without them this test could not see the kv.init
-		// shape at all, which is half of what D42 was.
+		// shape at all, which is half of what this test exists to cover.
 		v, err := c.Run(ctx, plugin.NewRequest(
 			plugin.Resolve(c, plugin.Inputs{Caller: values}), c.Safety != plugin.Read, false))
 		var buf bytes.Buffer
@@ -151,7 +151,7 @@ func TestNoInputBehavesLikeAFileWithoutBeingDeclaredOne(t *testing.T) {
 
 	// Said out loud, because the failure mode of this test is covering
 	// nothing: every capability could be skipped as undrivable and it would
-	// pass in silence. D36 learned that the hard way.
+	// pass in silence, and that has happened here before.
 	t.Logf("probed %d input(s) for file-oracle behaviour: %v", len(tested), tested)
 	// The limits, measured rather than claimed, and the first measurement was
 	// wrong so the correction is worth keeping: reverting kv.init's recipient

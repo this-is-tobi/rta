@@ -1,4 +1,14 @@
-package mcp
+// Package toolcall is the grammar of a capability call a *model* makes —
+// the argument validation, the required check, and the JSON Schema the
+// arguments were published under.
+//
+// It sits upstream of internal/mcp rather than inside it, because this is
+// the boundary grammar rather than one channel's implementation of it: a
+// second channel putting capability calls in front of a model would have to
+// hold to the same rules, and the way to guarantee that is for the rules to
+// have one home. rta shipped such a second channel once, and the grammar
+// moved here when it did.
+package toolcall
 
 import (
 	"fmt"
@@ -13,10 +23,15 @@ import (
 // is validated against the declaration before anything runs, and refusals
 // name what was accepted rather than only what was not.
 
+// Validate checks every argument a model-facing caller actually sent
+// against the declaration. Exported because the boundary grammar has one
+// home rather than one copy per channel: a fix here lands on every caller
+// by construction.
+//
 // A Local field is never type-checked: it is stripped regardless of what
 // arrived, so validating a value about to be discarded would only produce a
 // confusing error about a field the model does not even know exists.
-func validateGivenArgs(c plugin.Capability, values map[string]any) *view.Error {
+func Validate(c plugin.Capability, values map[string]any) *view.Error {
 	declared := make(map[string]bool, len(c.Inputs)+1)
 	check := func(f plugin.Field) *view.Error {
 		v, given := values[f.Name]
@@ -25,7 +40,7 @@ func validateGivenArgs(c plugin.Capability, values map[string]any) *view.Error {
 		}
 		if err := checkFieldType(f, v); err != nil {
 			return view.Errorf("core.mcp.badargs", "%s: %v", f.Name, err).
-				WithHint(fmt.Sprintf("%s expects %s", f.Name, schemaTypeName(f.Type)))
+				WithHint(fmt.Sprintf("%s expects %s", f.Name, SchemaTypeName(f.Type)))
 		}
 		return nil
 	}
@@ -120,14 +135,14 @@ func acceptedHint(c plugin.Capability) string {
 	return "accepted arguments: " + strings.Join(names, ", ")
 }
 
-// requireArgs enforces the schema's "required" list on the final value map —
+// Require enforces the schema's "required" list on the final value map —
 // after defaults have filled in what the caller left out, so a declared
 // default satisfies its own field's requirement. Local fields are exempt:
 // they are never suppliable over MCP, so requiring one here would make a
 // capability that declares Required on a Local field permanently
 // uncallable — a contradiction for the plugin author to avoid, not
 // something this boundary should enforce.
-func requireArgs(c plugin.Capability, values map[string]any) *view.Error {
+func Require(c plugin.Capability, values map[string]any) *view.Error {
 	for _, f := range c.Inputs {
 		if !f.Required || f.Local {
 			continue
@@ -147,18 +162,18 @@ func checkFieldType(f plugin.Field, v any) error {
 	case plugin.Int:
 		n, ok := v.(float64)
 		if !ok {
-			return fmt.Errorf("must be an integer, got %s", jsonKind(v))
+			return fmt.Errorf("must be an integer, got %s", JSONKind(v))
 		}
 		if n != float64(int64(n)) {
 			return fmt.Errorf("must be an integer, got a non-integer number")
 		}
 	case plugin.Float:
 		if _, ok := v.(float64); !ok {
-			return fmt.Errorf("must be a number, got %s", jsonKind(v))
+			return fmt.Errorf("must be a number, got %s", JSONKind(v))
 		}
 	case plugin.Bool:
 		if _, ok := v.(bool); !ok {
-			return fmt.Errorf("must be a boolean, got %s", jsonKind(v))
+			return fmt.Errorf("must be a boolean, got %s", JSONKind(v))
 		}
 	case plugin.StringSlice:
 		if err := checkStringSlice(v); err != nil {
@@ -166,7 +181,7 @@ func checkFieldType(f plugin.Field, v any) error {
 		}
 	default: // String, Text, Secret, Path
 		if _, ok := v.(string); !ok {
-			return fmt.Errorf("must be a string, got %s", jsonKind(v))
+			return fmt.Errorf("must be a string, got %s", JSONKind(v))
 		}
 	}
 	if len(f.Options) > 0 {
@@ -189,12 +204,12 @@ func checkStringSlice(v any) error {
 	case []any:
 		for _, e := range vv {
 			if _, ok := e.(string); !ok {
-				return fmt.Errorf("must be an array of strings, got %s in it", jsonKind(e))
+				return fmt.Errorf("must be an array of strings, got %s in it", JSONKind(e))
 			}
 		}
 		return nil
 	default:
-		return fmt.Errorf("must be a string or an array of strings, got %s", jsonKind(vv))
+		return fmt.Errorf("must be a string or an array of strings, got %s", JSONKind(vv))
 	}
 }
 
@@ -225,9 +240,9 @@ func checkEnum(f plugin.Field, v any) error {
 	return nil
 }
 
-// jsonKind names a decoded JSON value the way somebody reading an error
+// JSONKind names a decoded JSON value the way somebody reading an error
 // would think of it, not the way Go's %T would.
-func jsonKind(v any) string {
+func JSONKind(v any) string {
 	switch v.(type) {
 	case nil:
 		return "null"

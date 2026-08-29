@@ -12,7 +12,7 @@ import (
 // Input dispatch: every key press and wheel event, routed to the open pane.
 //
 // One handler per mode rather than one 380-line switch inside Update — the
-// carve D117 deliberately left out of the pure-move commits, because the
+// carve deliberately left out of the pure-move commits, because the
 // bool these handlers return is new logic: it says whether the pane consumed
 // the key. False hands the key to the pane's passthrough at the bottom of
 // Update — the embedded list, form or viewport — and **promises m was not
@@ -326,7 +326,7 @@ func (m Model) formKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 	case "tab":
 		// Tab is the app's one completion key. On the completing fields it
 		// may open a socket — the one place a form may, and only because
-		// there was nothing left to accept (ADR 0018 §8). Everywhere else
+		// there was nothing left to accept. Everywhere else
 		// this hands the key straight to the form, which is what happened
 		// before the case existed.
 		nm, cmd := m.completeFromCluster(msg)

@@ -330,15 +330,19 @@ func TestABinaryThatIsNotAPluginFailsQuickly(t *testing.T) {
 				h.CloseAll()
 				t.Fatal("a script was accepted as a plugin")
 			}
-			// Generous against the 5s handshake bound, and far under the
-			// minute go-plugin would otherwise spend.
-			if opened > 20*time.Second {
+			// Derived from the handshake bound rather than hardcoded against
+			// it, so the two cannot drift — a race build raises that bound
+			// (slow_race.go) and this has to move with it. Still far under
+			// the minute go-plugin would otherwise spend, which is the whole
+			// point of the test.
+			slack := startTimeout + 15*time.Second
+			if opened > slack {
 				t.Errorf("Open took %s; every rta invocation pays this", opened)
 			}
 
 			start = time.Now()
 			h.CloseAll()
-			if closing := time.Since(start); closing > 20*time.Second {
+			if closing := time.Since(start); closing > slack {
 				t.Errorf("CloseAll took %s, so ctrl-c could not escape either", closing)
 			}
 		})

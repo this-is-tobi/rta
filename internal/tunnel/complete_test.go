@@ -156,7 +156,7 @@ func TestAnObjectWithNoDeclaredPortsCompletesToNothing(t *testing.T) {
 // **Key completion never asks for values.** There is no keys-only read in the
 // API — `get` on secrets grants the values — so the one control rta owns is
 // the output format: a go-template that has kubectl print key names alone,
-// leaving the values in kubectl's process, not this one. ADR 0018 §8. A
+// leaving the values in kubectl's process, not this one. A
 // regression to `-o json` here would pull every value of the Secret into
 // rta's memory for a suggestion list.
 func TestSecretKeyCompletionNeverAsksForValues(t *testing.T) {

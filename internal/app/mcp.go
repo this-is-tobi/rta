@@ -6,15 +6,18 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"strings"
+	"time"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
 
 	"github.com/this-is-tobi/rule-them-all/builtin/kv"
 	"github.com/this-is-tobi/rule-them-all/internal/config"
+	"github.com/this-is-tobi/rule-them-all/internal/consent"
+	"github.com/this-is-tobi/rule-them-all/internal/grant"
 	"github.com/this-is-tobi/rule-them-all/internal/mcp"
+	"github.com/this-is-tobi/rule-them-all/internal/notify"
 	"github.com/this-is-tobi/rule-them-all/internal/pathguard"
 	"github.com/this-is-tobi/rule-them-all/internal/registry"
 	"github.com/this-is-tobi/rule-them-all/internal/stdio"
@@ -35,8 +38,13 @@ func newMCPCommand(reg *registry.Registry, version string) *cobra.Command {
 
 func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 	var (
+		consentOn        bool
+		consentWait      time.Duration
+		consentNotify    bool
+		consentPreview   bool
 		allowWrite       []string
 		allowDestructive []string
+		agentName        string
 		roots            []string
 	)
 	cmd := &cobra.Command{
@@ -55,6 +63,18 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			// Both of these are said once, at startup, on stderr — which under
+			// a client is the server's log. A flag that silently does nothing
+			// is worse than a missing feature: the operator believes they are
+			// covered, and the way they find out is by not being asked.
+			if consentNotify && !consentOn {
+				fmt.Fprintln(cmd.ErrOrStderr(),
+					"rta: --consent-notify does nothing without --consent, since nothing parks to ring about")
+			}
+			if consentNotify && !notify.Available() {
+				fmt.Fprintln(cmd.ErrOrStderr(),
+					"rta: no desktop notifier here, so parked calls will only appear in `rta agent pending`")
+			}
 			if len(roots) == 0 {
 				// The directory the operator started the server in. It is what
 				// an MCP client passes as cwd, so it is the project the agent
@@ -85,9 +105,21 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				fmt.Fprintln(cmd.ErrOrStderr(), "rta: no profiles are available:", cfgErr)
 				profileCfg = config.Config{}
 			}
+			// Refused here, by the same function `rta grant allow --agent`
+			// uses. A server that accepted a name the grant command rejects
+			// could never be granted anything and would say so nowhere — the
+			// operator would issue grants that silently never match.
+			if verr := grant.CheckAgent(agentName); verr != nil {
+				return verr
+			}
 			opts := mcp.Options{
+				Agent:            agentName,
 				AllowWrite:       allowWrite,
 				AllowDestructive: allowDestructive,
+				Consent:          consentOn,
+				ConsentWait:      consentWait,
+				ConsentNotify:    consentNotify,
+				ConsentPreview:   consentPreview,
 				Origin:           reg.Origin,
 				Config:           pluginConfig.For,
 				Profiles:         profileCfg,
@@ -152,8 +184,30 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 	cmd.Flags().StringSliceVar(&allowDestructive, "allow-destructive", nil,
 		"destructive capabilities to allow; external plugins must be pinned "+
 			"to their digest (e.g. todo.rm, hello.wipe@5dae737f8845)")
+	// Named, because until it is there is exactly one principal on this
+	// machine: every MCP client the operator wires up reads the same grant
+	// file, so consent given while talking to one follows all the others.
+	// The name is the operator's own word, written where they wire the client
+	// up, and trusted exactly as much as --allow-write beside it.
+	cmd.Flags().StringVar(&agentName, "as", "",
+		"name this agent, so grants and the record can tell it from your other clients")
 	cmd.Flags().StringSliceVar(&roots, "root", nil,
 		"directory a caller may name in a path argument (repeatable; default: the working directory)")
+	// Off by default, and the default is the important half: a call parked
+	// in a server nobody is watching is worse than a refusal.
+	cmd.Flags().BoolVar(&consentOn, "consent", false,
+		"ask instead of refusing when a call needs a grant nobody issued — you answer with `rta agent allow`")
+	cmd.Flags().DurationVar(&consentWait, "consent-wait", consent.DefaultWait,
+		"how long a parked call waits for your answer before it is refused")
+	cmd.Flags().BoolVar(&consentNotify, "consent-notify", false,
+		"also ring this machine's desktop notification when a call is parked")
+	// On by default, unlike the two above: it costs one extra run of rta's
+	// own handler in --dry-run and it changes the question from "may this
+	// agent call todo.rm" to "may it remove *this task*". The off switch is
+	// for a capability whose dry run is expensive, which is a thing an
+	// operator discovers rather than something rta can know.
+	cmd.Flags().BoolVar(&consentPreview, "consent-preview", true,
+		"show what a destructive call would do (its own --dry-run) on the parked request")
 	// The two flags whose values nobody can be expected to type. A pinned
 	// capability ID is a digest an operator would otherwise have to go and
 	// look up, and a control that costs a lookup is one that gets left off.
@@ -170,37 +224,4 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 			return nil, cobra.ShellCompDirectiveFilterDirs
 		})
 	return cmd
-}
-
-func newMCPInstallCommand() *cobra.Command {
-	return &cobra.Command{
-		Use:   "install claude",
-		Short: "Register rta as an MCP server in a client (claude)",
-		Args:  cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
-		ValidArgs: []cobra.Completion{
-			cobra.CompletionWithDesc("claude", "Claude Code"),
-		},
-		RunE: func(cmd *cobra.Command, args []string) error {
-			self, err := os.Executable()
-			if err != nil {
-				return fmt.Errorf("locating rta binary: %w", err)
-			}
-			claude, err := exec.LookPath("claude")
-			if err != nil {
-				// No claude CLI: print the manual config instead of failing.
-				fmt.Fprintf(cmd.OutOrStdout(),
-					"claude CLI not found. Add this to your .mcp.json:\n\n"+
-						"{\n  \"mcpServers\": {\n    \"rta\": {\n      \"command\": %q,\n      \"args\": [\"mcp\", \"serve\"]\n    }\n  }\n}\n", self)
-				return nil
-			}
-			install := exec.CommandContext(cmd.Context(), claude, "mcp", "add", "rta", "--", self, "mcp", "serve")
-			install.Stdout = cmd.OutOrStdout()
-			install.Stderr = cmd.ErrOrStderr()
-			if err := install.Run(); err != nil {
-				return fmt.Errorf("claude mcp add failed: %w", err)
-			}
-			fmt.Fprintln(cmd.OutOrStdout(), "✓ registered — try asking Claude Code about your system: “what's eating my CPU?”")
-			return nil
-		},
-	}
 }

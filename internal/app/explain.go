@@ -12,12 +12,13 @@ import (
 	"github.com/this-is-tobi/rule-them-all/internal/mcp"
 	"github.com/this-is-tobi/rule-them-all/internal/registry"
 	"github.com/this-is-tobi/rule-them-all/internal/render/cli"
+	"github.com/this-is-tobi/rule-them-all/internal/toolcall"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
 
 // newExplainCommand implements `rta explain [capability]`: the capability
-// card (PROJECT.md §6.1). Works for humans, works pasted into a prompt, and
+// card. Works for humans, works pasted into a prompt, and
 // is what the MCP resources will serve.
 func newExplainCommand(reg *registry.Registry, opts *globalOpts) *cobra.Command {
 	return &cobra.Command{
@@ -77,7 +78,7 @@ func cardView(reg *registry.Registry, c plugin.Capability) view.View {
 		{Key: "safety", Value: string(c.Safety)},
 		{Key: "idempotent", Value: fmt.Sprintf("%t", c.Idempotent)},
 		{Key: "cli", Value: cliForm(c)},
-		{Key: "mcp-tool", Value: mcp.ToolName(c.ID)},
+		{Key: "mcp-tool", Value: toolcall.Name(c.ID)},
 	}
 	// What it takes for an agent to reach this at all, before any grant: the
 	// operator's flag, spelled out. An external plugin's destructive
@@ -138,10 +139,11 @@ func cardView(reg *registry.Registry, c plugin.Capability) view.View {
 			// name, never the value.
 			//
 			// Gated on EnvFallback because Resolve is (resolve.go's env loop,
-			// D74): Local alone means "no remote caller may supply this", and
+			// Local alone means "no remote caller may supply this", and
 			// says nothing about where it comes from. Printing the variable for
 			// every Local input was true while the two were the same set, and
-			// D94 made them different — marking eleven connection inputs across
+			// Closing the credential-redirect hole made them different — marking
+			// eleven connection inputs across
 			// pg, s3 and vault Local without making them EnvFallback, on
 			// purpose, because a field that merely chooses a destination must
 			// not be fillable from an ambient variable. So `rta explain
@@ -271,7 +273,7 @@ func similarity(a, b string) int {
 // configSection names the config block this capability's plugin reads,
 // spelled the way an operator has to write it: bare for a built-in, and
 // pinned to the artifact for anything found on $PATH — the same grammar
-// --allow-destructive uses, and the same reason (ADR 0015).
+// --allow-destructive uses, and the same reason.
 func configSection(reg *registry.Registry, c plugin.Capability) string {
 	words := c.Words()
 	if len(words) == 0 {

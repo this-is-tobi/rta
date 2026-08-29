@@ -9,7 +9,7 @@ package pluginhost
 // runtime, which is a property of a *signed* binary and therefore of the
 // release pipeline (M3) rather than of anything this process can do to
 // itself. Between now and then, `vmmap`/`lldb` against rta at the same uid
-// work, and ADR 0012 says so rather than implying the sandbox covers it —
+// work, and this says so rather than implying the sandbox covers it —
 // the sandbox confines plugins, not readers of rta.
 //
 // **Windows** protects a process's memory from same-user readers only via an

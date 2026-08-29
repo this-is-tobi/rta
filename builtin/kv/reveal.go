@@ -22,7 +22,7 @@ import (
 //	      password: kv:prod-db-password
 //
 // is saying "this connection's password is that entry" — the same statement
-// ADR 0018 §6 already accepts for a Kubernetes Secret beside a service, and
+// is already accepted for a Kubernetes Secret beside a service, and
 // accepted for the same reason: **the operator writes the mapping and the
 // plugin never does.** A plugin that could name the entry it wanted could name
 // any entry in the store; here it declares only that it has a Secret input,
@@ -115,7 +115,7 @@ func Names() []string {
 // screen, open a shell and run `rta kv set` to make a profile work. It refuses
 // to overwrite, because "store this" and "replace what is there" are different
 // intentions and only one of them was expressed.
-func Store(name, value, description string) *view.Error {
+func Store(name, value, description, origin string) *view.Error {
 	if name == "" {
 		return view.Errorf("kv.key.empty", "no entry named")
 	}
@@ -123,6 +123,24 @@ func Store(name, value, description string) *view.Error {
 		"passphrase": os.Getenv(passphraseEnv),
 		"identity":   os.Getenv(identityEnv),
 	}, false, true)
+	// **Under the store lock, like every other writer.** This is a
+	// load-modify-save over the whole store: it decrypts everything, adds one
+	// entry, and re-encrypts everything. Two of those interleaving means the
+	// later save writes a snapshot taken before the earlier one landed, and
+	// the earlier entry is gone — with both callers told they succeeded.
+	//
+	// It is not a theoretical interleave. This is the TUI's credential
+	// action, and the process that runs it is also serving MCP: an agent's
+	// `kv.set` takes the lock, this took nothing, and a probe lost a write on
+	// 20 runs out of 20. Every other write path in this package — set, rm,
+	// rename, edit, rekey — already holds it; this one was written later and
+	// separately, which is exactly how a discipline that lives in each caller
+	// rather than in the store gets missed. This shape has been fixed once already.
+	unlock, verr := lockStore()
+	if verr != nil {
+		return verr
+	}
+	defer unlock()
 	s, verr := load(req)
 	if verr != nil {
 		return verr
@@ -135,7 +153,7 @@ func Store(name, value, description string) *view.Error {
 	now := time.Now()
 	s.Entries[name] = entry{
 		Value: []byte(value), Description: description, Kind: detectKind(value, ""),
-		Created: now, Updated: now,
+		Origin: origin, Created: now, Updated: now,
 	}
 	return save(req, s)
 }

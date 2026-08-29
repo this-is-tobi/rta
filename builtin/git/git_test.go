@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -20,7 +21,15 @@ func TestPluginIsValid(t *testing.T) {
 	}
 }
 
-var testAuthor = &object.Signature{Name: "Ada Lovelace", Email: "ada@example.com"}
+// When is set on every commit these fixtures make: go-git leaves a zero
+// Signature.When alone, so a fixture without one produces commits dated 1970 —
+// which reads as "57 years ago" in any view that reports an age, and as a bug
+// in the view rather than in the fixture.
+func signature() *object.Signature {
+	return &object.Signature{Name: "Ada Lovelace", Email: "ada@example.com", When: time.Now()}
+}
+
+var testAuthor = signature()
 
 // testRepo initializes a real, on-disk repository in a temp directory —
 // every capability here opens a real *git.Repository, so a fixture built
@@ -39,6 +48,13 @@ func testRepo(t *testing.T) (dir string, repo *git.Repository) {
 // and commits it, returning the new commit's hash.
 func commitFile(t *testing.T, repo *git.Repository, dir, name, content, message string) plumbing.Hash {
 	t.Helper()
+	return commitFileAt(t, repo, dir, name, content, message, time.Now())
+}
+
+// commitFileAt is commitFile with the commit's date under the test's control,
+// for the views that report an age rather than a timestamp.
+func commitFileAt(t *testing.T, repo *git.Repository, dir, name, content, message string, when time.Time) plumbing.Hash {
+	t.Helper()
 	full := filepath.Join(dir, name)
 	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 		t.Fatal(err)
@@ -53,7 +69,9 @@ func commitFile(t *testing.T, repo *git.Repository, dir, name, content, message 
 	if _, err := wt.Add(name); err != nil {
 		t.Fatal(err)
 	}
-	hash, err := wt.Commit(message, &git.CommitOptions{Author: testAuthor})
+	author := signature()
+	author.When = when
+	hash, err := wt.Commit(message, &git.CommitOptions{Author: author})
 	if err != nil {
 		t.Fatal(err)
 	}

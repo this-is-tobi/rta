@@ -52,7 +52,7 @@ func Stamp(p config.Profile) string {
 //
 // **Everything Stamp covers except the profile's TTL, and one connection
 // rather than all of them.** Both narrowings are what makes it usable as the
-// thing a grant is bound to (ADR 0019, ADR 0020):
+// thing a grant is bound to:
 //
 //   - `p.TTL` is the operator's activation window for `rta use`. It never
 //     reaches Bind, Fill or Resolve and cannot change where a call goes, so a

@@ -2,13 +2,19 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
+	"io/fs"
+	"mime"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/minio/minio-go/v7"
 
+	"github.com/this-is-tobi/rule-them-all/pkg/format"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
@@ -18,6 +24,16 @@ func keyField(help string) plugin.Field {
 		Live: true, Suggest: suggestKeys("key")}
 }
 
+// listLimit is how many objects one listing returns unless somebody asks for
+// more.
+//
+// A bucket is not a directory and does not behave like one: a build-artifact
+// bucket holds millions of keys, and `s3 object list` used to walk every one
+// of them into a table in memory. Two hundred is a screen or two — enough to
+// see the shape of a prefix, which is what a listing is for — and the answer
+// says how to continue rather than stopping in silence.
+const listLimit = 200
+
 func s3ObjectListCapability() plugin.Capability {
 	return cap(plugin.Capability{
 		ID:         "s3.object.list",
@@ -25,25 +41,43 @@ func s3ObjectListCapability() plugin.Capability {
 		Safety:     plugin.Read,
 		Idempotent: true,
 		Description: "Grouped by \"/\" like a directory listing unless --recursive flattens the " +
-			"whole prefix.",
+			"whole prefix.\n\n" +
+			"Bounded: a bucket can hold millions of keys, so this returns --limit of them and " +
+			"says what to pass to --after for the next page. A listing that stopped and did not " +
+			"say so reads exactly like a bucket with that little in it.",
 		Run: runObjectList,
 	}, bucketField("bucket to list"),
 		plugin.Field{Name: "prefix", Type: plugin.String, Help: "only keys starting with this",
 			Live: true, Suggest: suggestKeys("prefix")},
-		plugin.Field{Name: "recursive", Type: plugin.Bool, Help: "ignore the \"/\" delimiter and list everything under prefix"})
+		plugin.Field{Name: "recursive", Type: plugin.Bool, Help: "ignore the \"/\" delimiter and list everything under prefix"},
+		plugin.Field{Name: "limit", Type: plugin.Int, Default: listLimit, Min: 1, Max: 10000,
+			Help: "how many objects to return"},
+		plugin.Field{Name: "after", Type: plugin.String,
+			Help: "continue from the key the last page ended at"})
 }
 
 func runObjectList(ctx context.Context, req plugin.Request) (view.View, error) {
 	return withClient(req, func(ctx context.Context, client *minio.Client) (view.View, error) {
 		bucket := req.String("bucket")
-		t := view.Table{Columns: []view.Column{{Name: "Key"}, {Name: "Size"}, {Name: "Modified"}}}
+		limit := req.Int("limit")
+		t := view.Table{Columns: []view.Column{{Name: "Key"}, {Name: "Size", Kind: view.KindNumber}, {Name: "Modified", Kind: view.KindTimestamp}}}
+		last := ""
 		for obj := range client.ListObjects(ctx, bucket, minio.ListObjectsOptions{
-			Prefix:    req.String("prefix"),
-			Recursive: req.Bool("recursive"),
+			Prefix:     req.String("prefix"),
+			Recursive:  req.Bool("recursive"),
+			StartAfter: req.String("after"),
 		}) {
 			if obj.Err != nil {
 				return nil, classify(obj.Err, req)
 			}
+			if len(t.Rows) == limit {
+				// One past the limit is what tells a full page from a page that
+				// happens to end on the boundary — the difference between "here
+				// is the rest" and "there is more" cannot be guessed from a count.
+				t.Page = &view.Cursor{Next: last}
+				break
+			}
+			last = obj.Key
 			if strings.HasSuffix(obj.Key, "/") && obj.Size == 0 {
 				// A common-prefix "directory" marker under a non-recursive
 				// listing, not a real object — shown as a folder, not a
@@ -51,7 +85,11 @@ func runObjectList(ctx context.Context, req plugin.Request) (view.View, error) {
 				t.Rows = append(t.Rows, []string{obj.Key, "", ""})
 				continue
 			}
-			t.Rows = append(t.Rows, []string{obj.Key, strconv.FormatInt(obj.Size, 10), obj.LastModified.Format("2006-01-02 15:04")})
+			// format.Bytes, not the integer. pkg/format exists because "the
+			// first one to show a byte count showed 1392640", and this was it:
+			// a size column nobody can read at a glance is a column that gets
+			// piped into another tool instead of being looked at.
+			t.Rows = append(t.Rows, []string{obj.Key, format.Bytes(uint64(obj.Size)), obj.LastModified.Format("2006-01-02 15:04")})
 		}
 		t.Total = len(t.Rows)
 		return t, nil
@@ -75,7 +113,7 @@ func runObjectShow(ctx context.Context, req plugin.Request) (view.View, error) {
 			return nil, classify(err, req)
 		}
 		pairs := []view.Pair{
-			{Key: "size", Value: strconv.FormatInt(info.Size, 10)},
+			{Key: "size", Value: format.Bytes(uint64(info.Size))},
 			{Key: "content-type", Value: info.ContentType},
 			{Key: "etag", Value: info.ETag},
 			{Key: "modified", Value: info.LastModified.Format("2006-01-02 15:04:05")},
@@ -100,10 +138,11 @@ func s3ObjectGetCapability() plugin.Capability {
 			"anything binary, --out writes it to a file (0600) instead — a person's flag only, " +
 			"since a grant authorizes revealing the content, not choosing where on this machine " +
 			"it lands. An MCP caller always gets the content back in the response, bounded the " +
-			"same way http.get bounds a response body.",
+			"same way http.get bounds a response body. --out never overwrites: a destination that " +
+			"already exists is refused, and a download that fails partway removes what it wrote.",
 		Run: runObjectGet,
 	}, bucketField("bucket the object is in"), keyField("object to reveal"),
-		plugin.Field{Name: "out", Type: plugin.Path, Local: true, Help: "write the content to this file instead of printing it"})
+		plugin.Field{Name: "out", Type: plugin.Path, Local: true, Help: "write the content to this file instead of printing it (refused if it exists)"})
 }
 
 // maxInline mirrors http's maxBody: enough for anything worth printing to a
@@ -128,13 +167,32 @@ func runObjectGet(ctx context.Context, req plugin.Request) (view.View, error) {
 		defer obj.Close()
 
 		if out := req.String("out"); out != "" {
-			f, ferr := os.OpenFile(expandHome(out), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+			if req.DryRun {
+				return view.Text{Body: "would write " + bucket + "/" + key + " to " + out}, nil
+			}
+			// O_EXCL, like pg.dump, vault.snapshot and s3.bucket.download:
+			// this is the only path in the tree that used to open a
+			// caller-named file O_TRUNC *before* the first byte arrived, so a
+			// download that failed halfway — or a --dry-run, which never
+			// reached the copy at all — left the operator with the empty
+			// remains of whatever they pointed it at. Refusing an existing
+			// destination is the same answer the rest of the family gives.
+			f, ferr := os.OpenFile(expandHome(out), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+			if errors.Is(ferr, fs.ErrExist) {
+				return nil, view.Errorf("s3.object.exists", "%s already exists", out).
+					WithHint("this never overwrites — remove it, or name a path that does not exist yet")
+			}
 			if ferr != nil {
 				return nil, view.Errorf("s3.object.out", "opening %s: %v", out, ferr)
 			}
 			defer f.Close()
 			n, cerr := io.Copy(f, obj)
 			if cerr != nil {
+				// The file did not exist before this call, so removing it
+				// leaves the operator where they started rather than with a
+				// truncated object under a name that says it is whole —
+				// s3.bucket.download's rule, one object at a time.
+				_ = os.Remove(expandHome(out))
 				return nil, classify(cerr, req)
 			}
 			return view.Text{Body: "wrote " + strconv.FormatInt(n, 10) + " bytes to " + out}, nil
@@ -194,6 +252,15 @@ func runObjectSet(ctx context.Context, req plugin.Request) (view.View, error) {
 				size = info.Size()
 			}
 			body = f
+			// The declaration promises the type is "guessed from --file's
+			// extension if omitted" and nothing was doing the guessing:
+			// minio's own default is a flat application/octet-stream, so
+			// every uploaded .json, .html and .png was typed as bytes while
+			// the help said otherwise. The dry-run preview below prints the
+			// type, which is what made the gap visible.
+			if contentType == "" {
+				contentType = mime.TypeByExtension(filepath.Ext(path))
+			}
 		} else {
 			value := req.String("value")
 			if value == "" {
@@ -207,6 +274,17 @@ func runObjectSet(ctx context.Context, req plugin.Request) (view.View, error) {
 			}
 		}
 
+		// After the content is resolved, so the preview reports the upload
+		// that would actually happen — an unreadable --file or a missing
+		// value is a refusal here exactly as it is on the real call.
+		if req.DryRun {
+			typed := contentType
+			if typed == "" {
+				typed = "application/octet-stream (the server's default)"
+			}
+			return view.Text{Body: fmt.Sprintf("would set %s/%s (%s, %s)",
+				bucket, key, format.Bytes(uint64(max(size, 0))), typed)}, nil
+		}
 		info, err := client.PutObject(ctx, bucket, key, body, size, minio.PutObjectOptions{
 			ContentType:  contentType,
 			StorageClass: req.String("storage-class"),

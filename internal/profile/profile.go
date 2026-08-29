@@ -331,7 +331,7 @@ func configured(cfg config.Config, ns string) string {
 //     operator writes the key they would write under plugins:, and this is
 //     where it becomes the input name a handler reads.
 //   - RTA_PROFILE_<NAME>_<INPUT>, for the inputs a profile may carry a
-//     credential for. A config file never holds a secret (ADR 0016), so this
+//     credential for. A config file never holds a secret, so this
 //     is the channel — narrower than the namespace-wide RTA_<NS>_<INPUT>,
 //     which plugin.Resolve switches off entirely while a profile is active.
 //
@@ -396,7 +396,7 @@ type Reader func(ref string) (string, *view.Error)
 // made while that environment stands, which is why the TUI resolves it once at
 // the switch and holds it — unlocking an age store costs about a second of
 // scrypt and the dashboard refreshes every five. A forward is the opposite: it
-// is per call by decision (ADR 0018 §4, because a port-forward outlives the pod
+// is per call by decision (because a port-forward outlives the pod
 // it points at) and holding one for as long as an environment would leave a
 // hole in a cluster's network boundary open across a whole session, one per
 // capability the environment covers. Dial is that half, and it is called where
@@ -500,7 +500,7 @@ func Fill(ctx context.Context, name string, conn config.Connection, c plugin.Cap
 // because it is tidy. Fill's answer describes the environment and is cached for
 // as long as one stands; this is per call by decision, because a port-forward
 // outlives the pod it points at and a cached tunnel to a rescheduled pod fails
-// in a way nobody can read (ADR 0018 §4). Measured at 54 ms median to open
+// in a way nobody can read. Measured at 54 ms median to open
 // against a real cluster, which is the cost that has to stay worth it.
 //
 // No `caller` argument, and that is not an omission: plugin.Resolve already

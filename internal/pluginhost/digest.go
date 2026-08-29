@@ -44,7 +44,7 @@ func (i Identity) Short() string {
 // a distance: a green checkmark over an unverified artifact is worse than no
 // checkmark, because somebody will build a policy on it.
 //
-// This is TOFU at best and rta does not claim more (§4.2, ADR 0012 §4): a
+// This is TOFU at best and rta does not claim more: a
 // $PATH binary can be replaced between this hash and the exec that follows it,
 // and go-plugin's own SecureConfig has exactly the same TOCTOU shape. The
 // digest's value is that it names *an artifact* for the cache key and for any
@@ -106,6 +106,7 @@ func specHash(d DenySet) string {
 	fmt.Fprintf(h, "confined:%t\n", confined)
 	write("noaccess", d.NoAccess)
 	write("noread", d.NoRead)
+	write("nomove", d.NoMove)
 	return hex.EncodeToString(h.Sum(nil))
 }
 

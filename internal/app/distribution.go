@@ -13,12 +13,12 @@ import (
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
 
-// Distribution commands (ADR 0017): install, upgrade, remove, search, and the
+// Distribution commands: install, upgrade, remove, search, and the
 // index namespace. The design in one line — the index states claims, rta.lock
 // records what rta computed — and the install output is a sequence of
 // statements the operator can act on, ending with the two load-bearing lines:
 // the pinned config heading and the credential variable, handed over at the
-// one moment the operator has the digest in hand (ADR 0015: a control that
+// one moment the operator has the digest in hand (a control that
 // requires homework is a control that gets turned off).
 
 func renderView(cmd *cobra.Command, opts *globalOpts, v view.View) error {
@@ -52,7 +52,8 @@ func newPluginInstallCommand(opts *globalOpts) *cobra.Command {
 	}
 }
 
-// installView is ADR 0017 §4's sequence of statements as a KeyValue page.
+// installView renders the install sequence as a KeyValue page: what was
+// claimed, what was fetched, what it hashed to, and what it declared.
 func installView(rep plugindist.Report) view.View {
 	pin := rep.Name + "@" + shortDigest(rep.Digest)
 	pairs := []view.Pair{
@@ -126,7 +127,7 @@ func firstCapability(p plugin.Plugin) string {
 
 // credentialVars lists the environment variables the plugin's credential
 // inputs read, deduped and sorted — the same Local+EnvFallback gate `rta
-// explain` applies, for its reason (D94): a variable printed here that
+// explain` applies, for its reason: a variable printed here that
 // nothing reads is documentation of a channel that does not exist.
 func credentialVars(p plugin.Plugin) []string {
 	seen := map[string]bool{}

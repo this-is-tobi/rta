@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// The claim, checked where it can be. ADR 0012 asserted PR_SET_DUMPABLE=0 on
+// The claim, checked where it can be. PR_SET_DUMPABLE=0 is asserted on
 // the host in two separate places while nothing set it — a documented control
 // that does not exist is worse than an absent one, because somebody builds a
 // threat model on the document.

@@ -412,7 +412,7 @@ func TestPluginsInventory(t *testing.T) {
 // pkg/sdk/sdktest is about to be published as the definition of "a correct
 // plugin", and M2 freezes the contract it checks. A rule nothing has ever
 // been held to is a guess, so these run the suite over the real catalogue —
-// the built-ins are the first third-party plugin, and P6 says they get no
+// the built-ins are the first third-party plugin, and they get no
 // exemption.
 
 // conformanceInputs supplies values for the capabilities the suite cannot
@@ -421,7 +421,7 @@ func TestPluginsInventory(t *testing.T) {
 // What is deliberately absent is as load-bearing as what is here: no target
 // is given to anything that would leave the machine. cert.*, http.get/head,
 // net.dns/ping/port/probe/trace, audit.mail and audit.web are left
-// undrivable, and the suite reports each one by name. D9 promises network
+// undrivable, and the suite reports each one by name. Network
 // calls happen only on explicit user action, and a test suite is nobody
 // asking.
 func conformanceInputs(dir string) map[string]map[string]any {
@@ -448,7 +448,7 @@ func conformanceInputs(dir string) map[string]map[string]any {
 		"kv.copy":     {"key": "absent", "to": "absent-copy"},
 		"kv.edit":     {"key": "absent"},
 		"kv.get":      {"key": "absent"},
-		"kv.rename":   {"key": "absent", "to": "absent-renamed"},
+		"kv.rename":   {"key": "absent", "new-name": "absent-renamed"},
 		"kv.rm":       {"key": "absent"},
 		"kv.set":      {"key": "demo", "value": "s3cret"},
 		"kv.show":     {"key": "absent"},
@@ -465,6 +465,35 @@ func conformanceInputs(dir string) map[string]map[string]any {
 		"note.add":    {"title": "conformance"},
 		"todo.add":    {"title": "conformance"},
 		"grant.allow": {"target": "sys.cpu", "ttl": "1m"},
+
+		// Ids nothing is parked under: the dry-run rule watches the directory,
+		// and a request that does not exist still has to leave it alone.
+		"agent.allow": {"id": "absent"},
+		"agent.deny":  {"id": "absent"},
+
+		// keys.restore is driven with a real mnemonic on purpose. The all-zero
+		// entropy BIP39 vector reaches the key derivation and the write, which
+		// is the only part of this capability --dry-run has anything to say
+		// about; an invalid phrase would be refused at validation and would
+		// have proved nothing about the write. keys.backup gets an absent path
+		// because it writes nothing at all — it reads a key and prints words.
+		"keys.backup": {"key": filepath.Join(dir, "absent-key")},
+		"keys.restore": {"out": filepath.Join(dir, "restored"), "words": strings.TrimSpace(
+			strings.Repeat("abandon ", 23) + "art")},
+
+		// net.send, on the same doctrine as http.post below and for a sharper
+		// reason: its own declaration calls it "a remote write primitive, and a
+		// strictly more capable one than http.post", and it is the capability
+		// whose dry run this suite caught sending real bytes on its first run.
+		// Leaving it undriven afterwards was the gap that let six external
+		// plugins ship the same defect.
+		"net.send": {"host": "127.0.0.1", "port": 1, "data": "conformance\n"},
+
+		// Only present under -tags ai, and an unused key in the lean build.
+		// --base-url at a dead port for the same reason http.post gets one,
+		// with a sharper edge: the request this would send costs the operator
+		// money and goes to a third party.
+		"ai.ask": {"prompt": []string{"conformance"}, "base-url": "http://127.0.0.1:1/v1", "key": "conformance"},
 
 		// Files the mutating net capabilities edit, redirected into the
 		// watched directory. Without this they are skipped, and hosts/resolver
@@ -722,7 +751,7 @@ func TestTheVerbVocabularyIsDerivedFromTheCatalogue(t *testing.T) {
 // walk exists for: it covers every group there is now and every one added
 // later, without anybody remembering to extend a list.
 func TestEveryGroupCommandRejectsUnknownSubcommands(t *testing.T) {
-	reg, err := all.Registry()
+	reg, err := all.Registry(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -732,7 +761,11 @@ func TestEveryGroupCommandRejectsUnknownSubcommands(t *testing.T) {
 		if !cmd.HasSubCommands() {
 			return
 		}
-		if len(path) > 0 {
+		// The ai namespace is deliberately not a pure group: its bare form
+		// takes free words as the question (`rta ai what broke`), so an
+		// unrecognised first word is a prompt, never a typo to refuse. Its
+		// subcommands underneath still get the rule.
+		if len(path) > 0 && path[0] != "ai" {
 			groups = append(groups, path)
 		}
 		for _, sub := range cmd.Commands() {
@@ -781,7 +814,7 @@ func TestEveryGroupCommandRejectsUnknownSubcommands(t *testing.T) {
 // silently — printed it again in a slightly different layout. Two renderings
 // of one problem reads as two problems.
 func TestACommandThatPrintsItsOwnErrorMarksIt(t *testing.T) {
-	reg, err := all.Registry()
+	reg, err := all.Registry(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -806,7 +839,7 @@ func TestACommandThatPrintsItsOwnErrorMarksIt(t *testing.T) {
 // plainly exists. The capability knows which of its inputs are positional, so
 // the error names the one they meant and shows the form that works.
 func TestAPositionalPassedAsAFlagSaysSo(t *testing.T) {
-	reg, err := all.Registry()
+	reg, err := all.Registry(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -861,7 +894,7 @@ func TestAPositionalPassedAsAFlagSaysSo(t *testing.T) {
 // modelling somebody else's renderer and state the rule instead: whatever
 // capitalises the first letter, it must not be inside an identifier.
 func TestThePositionalHintDoesNotStartWithTheInputName(t *testing.T) {
-	reg, err := all.Registry()
+	reg, err := all.Registry(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -896,7 +929,7 @@ func TestThePositionalHintDoesNotStartWithTheInputName(t *testing.T) {
 // inside the renderer. This was the same fault at the one call site that did
 // not go through it.
 func TestATopLevelErrorHonoursTheOutputFormat(t *testing.T) {
-	reg, err := all.Registry()
+	reg, err := all.Registry(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1175,7 +1208,7 @@ func failingCapability(t *testing.T) (*registry.Registry, registry.Origin) {
 }
 
 // Rebuild a plugin and its digest changes, so the operator's section stops
-// applying — by design (ADR 0016). What they see is the capability failing
+// applying — by design. What they see is the capability failing
 // against the *declared defaults*, with an error naming the database's
 // refusal and nothing naming the reason it was asked that question. `rta
 // doctor` knows; the failure did not say so.

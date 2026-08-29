@@ -62,7 +62,7 @@ func (p *Page) Add(title string, run Handler, safety Safety, values map[string]a
 // Destructive section even if it wanted to. Requiring the caller to state
 // the safety class, checked immediately rather than trusted, is what turns
 // "nothing currently composes anything ungated" into "nothing ever can" —
-// found by review (PROJECT.md D74): every embedded call in the registry
+// found by review: every embedded call in the registry
 // today happens to be Read, but nothing stopped a future one from not
 // being, and the gap would have been invisible until it was exploited.
 func (p *Page) AddAs(id, title string, run Handler, safety Safety, values map[string]any) *Page {

@@ -66,7 +66,7 @@ func TestSSHOpenServesAnEndpointThatSplices(t *testing.T) {
 	}
 }
 
-// A tunnel that outlives its call is the hole ADR 0018 exists to avoid, and
+// A tunnel that outlives its call is the hole this exists to avoid, and
 // for ssh there are two things to end: the listener and every child serving a
 // connection. Close must end both — a closed listener with a live child is a
 // process nobody can find still holding a path to the far side.

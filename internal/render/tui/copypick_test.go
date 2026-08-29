@@ -350,7 +350,10 @@ func TestDashFooterOffersCopyOnlyWhenTheSelectedTileHasSomethingToCopy(t *testin
 // tile from a fresh dashboard, copy straight off its preview without
 // opening it, confirm the default choice, land back on the dashboard.
 func TestPressingCOnTheRealGenTileEndToEnd(t *testing.T) {
-	tm := teatest.NewTestModel(t, New(mustRegistry(t), config.Dashboard{}, nil), teatest.WithInitialTermSize(120, 40))
+	// Tall enough for the whole shipped dashboard: this test is about what
+	// `c` does on the gen tile, and a terminal that cannot show that tile
+	// makes it fail for a reason that has nothing to do with copying.
+	tm := teatest.NewTestModel(t, New(mustRegistry(t), config.Dashboard{}, nil), teatest.WithInitialTermSize(120, 60))
 	waitFor(t, tm, "gen.overview")
 	// Move onto the gen tile: right along the bottom-right area of the
 	// grid a few times is more robust than counting exact columns, since

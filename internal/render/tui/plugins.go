@@ -34,7 +34,7 @@ import (
 // capabilities and nothing about its origin, so `kv` and a binary somebody
 // dropped on $PATH rendered as the same kind of thing — on the one screen
 // whose whole job is "what do I actually have". Every security property in
-// pluginhost is built on binding a plugin to its artifact (ADR 0015), and
+// pluginhost is built on binding a plugin to its artifact, and
 // this is where a person gets to see that binding.
 
 // pluginRow is one installed plugin and its relationship to the dashboard.
@@ -51,7 +51,7 @@ type pluginRow struct {
 	// shown is false when a tile exists but the user hid it.
 	shown bool
 	// waiting marks an artifact discovery found on $PATH and refused to
-	// launch, because nothing has trusted it (ADR 0015, D107).
+	// launch, because nothing has trusted it.
 	//
 	// **It is a row rather than an absence, and that is the whole point.** A
 	// trust gate's failure mode is silence: a plugin installed, present and
@@ -361,7 +361,7 @@ func (m Model) pluginsView() string {
 // something else entirely about a binary that appeared on $PATH.
 //
 // The digest is shown short. It is the identity every authorisation in rta is
-// bound to (ADR 0015), so it is worth being able to see it here and compare it
+// bound to, so it is worth being able to see it here and compare it
 // against what `--allow-destructive` was pinned to, without running doctor.
 func pluginDetail(row pluginRow) string {
 	origin := "built in"

@@ -71,8 +71,8 @@ func endpointValues(c plugin.Capability, ep tunnel.Endpoint) map[string]any {
 // target is the tunnel a connection states — either scheme — in the shape
 // internal/tunnel takes.
 //
-// Two shapes for one fact because ADR 0018 wrote `targets:` with a `secret:`
-// and a `from:` mapping, and ADR 0019 replaced that block with a profile whose
+// Two shapes for one fact because the first design wrote `targets:` with a
+// `secret:` and a `from:` mapping, and a profile replaced that block, whose
 // `secrets:` maps each input onto a `<scheme>:<ref>` — one grammar for `kv:`
 // and `kube:` rather than one per source. internal/tunnel still speaks the
 // first, so the translation happens here and not by rewriting a package that

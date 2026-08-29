@@ -18,7 +18,7 @@ import "slices"
 // plugin needing that action should reach for the same word rather than
 // coining a rival.
 //
-// This is D8's warning list, not a whitelist. The point is not that a plugin
+// This is a warning list, not a whitelist. The point is not that a plugin
 // may only use these words — most of the catalogue does not — but that a
 // plugin performing one of these operations must not call it something else.
 var vocabulary = []string{
@@ -54,7 +54,7 @@ func Vocabulary() []string { return slices.Clone(vocabulary) }
 // the catalogue ships three of them as `http.delete`/`http.put`/`http.post`,
 // and telling the next plugin that speaks HTTP to rename its DELETE to `rm`
 // would be confidently wrong advice given to exactly the author most likely
-// to need the word. D8 chose warnings over errors for this shape of case; a
+// to need the word. Warnings rather than errors for this shape of case: a
 // warning that is wrong is still worth avoiding.
 var synonyms = map[string]string{
 	"create":    "add",

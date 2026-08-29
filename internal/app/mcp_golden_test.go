@@ -24,7 +24,7 @@ import (
 //
 // It is taken through a real client session over the in-memory transport
 // rather than by inspecting our own structs, so what is pinned is what a
-// client is actually told. PROJECT.md §10 asks for exactly this.
+// client is actually told.
 //
 // Update with: go test ./internal/app -update
 //

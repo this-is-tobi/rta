@@ -2,13 +2,16 @@ package net
 
 import (
 	"context"
+	"errors"
 	stdnet "net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
@@ -78,6 +81,13 @@ func TestParsePorts(t *testing.T) {
 		{"10-5", nil, true},
 		{"0", nil, true},
 		{"70000", nil, true},
+		// Seven bytes that used to buy 65,535 goroutines and ~180 MiB before
+		// the first dial, from a grant-free MCP read.
+		{"1-65535", nil, true},
+		// And the shape a cap on the *result* would miss: each part is
+		// individually legal and within the cap, and the dedup map hides the
+		// repetition, so only counting before expanding bounds the CPU.
+		{"1-4096,1-4096", nil, true},
 	}
 	for _, tt := range tests {
 		got, err := parsePorts(tt.spec)
@@ -331,5 +341,68 @@ func TestInfoIsWellFormed(t *testing.T) {
 		if !keys[want] {
 			t.Errorf("missing %q pair", want)
 		}
+	}
+}
+
+// The cap is a bound, not a blanket refusal: exactly maxScanPorts is fine, and
+// one more is not. Without both halves, "refuse everything" would pass.
+func TestTheScanCapIsABoundAndNotARefusal(t *testing.T) {
+	at := strconv.Itoa(maxScanPorts)
+	got, err := parsePorts("1-" + at)
+	if err != nil {
+		t.Fatalf("parsePorts(1-%s) = %v, want the cap to be inclusive", at, err)
+	}
+	if len(got) != maxScanPorts {
+		t.Errorf("got %d ports, want %d", len(got), maxScanPorts)
+	}
+	if _, err := parsePorts("1-" + strconv.Itoa(maxScanPorts+1)); !errors.Is(err, errTooManyPorts) {
+		t.Errorf("one past the cap = %v, want errTooManyPorts", err)
+	}
+}
+
+// **The fan-out is the port count, not the concurrency bound.**
+//
+// The old loop spawned one goroutine per port and acquired the semaphore
+// *inside* it, so the bound applied to the dials and every port got a live
+// goroutine the instant the loop ran. The cap alone would not catch a
+// reintroduction of that shape — it would just make the spike smaller — so
+// this measures the fan-out directly.
+//
+// Against a closed loopback port, so nothing leaves the machine and every dial
+// fails immediately.
+func TestThePortScanDoesNotSpawnAGoroutinePerPort(t *testing.T) {
+	base := runtime.NumGoroutine()
+	peak := make(chan int, 1)
+	done := make(chan struct{})
+	go func() {
+		high := 0
+		for {
+			select {
+			case <-done:
+				peak <- high
+				return
+			default:
+			}
+			if n := runtime.NumGoroutine(); n > high {
+				high = n
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}()
+
+	// 2000 distinct ports, all closed. Enough that a goroutine-per-port shape
+	// is unmistakable against a 1ms sampler.
+	r := req(map[string]any{"host": "127.0.0.1", "ports": "1-2000", "timeout": 1})
+	if _, err := runPort(t.Context(), r); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	close(done)
+
+	// 2000 ports through a 64-worker pool: the pool's own goroutines plus the
+	// test's, nowhere near one per port. The old shape peaked at the port
+	// count.
+	if got := <-peak - base; got > portScanWorkers*2 {
+		t.Errorf("peak was %d goroutines above baseline for 2000 ports — the bound is on "+
+			"the dials and the fan-out is the port count", got)
 	}
 }

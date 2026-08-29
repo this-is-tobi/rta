@@ -14,10 +14,45 @@ import (
 	"github.com/this-is-tobi/rule-them-all/pkg/sdk/sdktest"
 )
 
-// sdktest is the definition of "a correct plugin" — no exemption for s3
-// (P6). Needs no live endpoint: a declaration is checkable before anything
-// connects.
-func TestConformance(t *testing.T) { sdktest.Check(t, Plugin()) }
+// sdktest is the definition of "a correct plugin" — no exemption for s3.
+//
+// It used to be called with no inputs, and every mutating capability here
+// names a required bucket and key, so the suite drove *nothing*: twelve
+// capabilities, zero runs, green. Behind that, s3.object.get truncated the
+// operator's --out file under --dry-run, s3.object.set really uploaded, and
+// s3.object.presign really minted a working bearer URL. The suite could see
+// all three the moment it was given something to drive them with.
+func TestConformance(t *testing.T) {
+	sdktest.Check(t, Plugin(), sdktest.WithInputs(conformanceInputs))
+}
+
+// conformanceInputs points every mutating capability at a bucket and key that
+// do not exist, on an endpoint nothing is listening on.
+//
+// The dead endpoint is the load-bearing half, copied from the built-ins' own
+// fixture: a dry run that stops being dry fails here as a refused connection
+// to 127.0.0.1:1 rather than as a request against somebody's real storage.
+// Paths land inside dir, which is the directory the dry-run rule watches, so
+// a write that should not have happened is a test failure rather than a file
+// in a temp directory nobody looks at.
+func conformanceInputs(dir string) map[string]map[string]any {
+	conn := func(m map[string]any) map[string]any {
+		m["endpoint"] = "127.0.0.1:1"
+		m["access-key"], m["secret-key"] = "conformance", "conformance"
+		return m
+	}
+	return map[string]map[string]any{
+		"s3.object.get":  conn(map[string]any{"bucket": "conformance", "key": "some/key", "out": filepath.Join(dir, "got.bin")}),
+		"s3.object.set":  conn(map[string]any{"bucket": "conformance", "key": "some/key", "value": "x"}),
+		"s3.object.copy": conn(map[string]any{"bucket": "conformance", "key": "some/key", "dest-key": "some/copy"}),
+		"s3.object.rename": conn(map[string]any{"bucket": "conformance", "key": "some/key",
+			"dest-key": "some/renamed"}),
+		"s3.object.rm":      conn(map[string]any{"bucket": "conformance", "key": "some/key"}),
+		"s3.object.presign": conn(map[string]any{"bucket": "conformance", "key": "some/key"}),
+		"s3.bucket.download": conn(map[string]any{"bucket": "conformance",
+			"out": filepath.Join(dir, "bucket-copy")}),
+	}
+}
 
 // req builds a resolved request the way the host would, against the named
 // capability's own declared inputs (connFields included, via cap) — so
@@ -95,7 +130,7 @@ func TestEveryCapabilityIsNoPreview(t *testing.T) {
 	}
 }
 
-// The capabilities PROJECT.md §7 designed as revealing content, granting
+// The capabilities designed as revealing content, granting
 // access or overwriting/destroying it must actually declare NeedsGrant — a
 // design note is not an enforcement mechanism, the struct field is.
 func TestWriteAndDestructiveCapabilitiesNeedAGrant(t *testing.T) {
@@ -111,6 +146,11 @@ func TestWriteAndDestructiveCapabilitiesNeedAGrant(t *testing.T) {
 		"s3.object.rename":  true,
 		"s3.object.rm":      false, // Destructive already implies a grant
 		"s3.object.presign": true,
+		// Refuses SurfaceMCP outright rather than taking a grant: a whole bucket
+		// has no blast radius a grant could name. NeedsGrant stays unset for
+		// keys.backup's reason — a grant that can never be exercised is an entry
+		// in `grant list` that means nothing.
+		"s3.bucket.download": false,
 	}
 	seen := map[string]bool{}
 	for _, c := range Plugin().Capabilities {

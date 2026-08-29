@@ -14,6 +14,7 @@ import (
 	"github.com/this-is-tobi/rule-them-all/internal/grant"
 	"github.com/this-is-tobi/rule-them-all/internal/mcp"
 	"github.com/this-is-tobi/rule-them-all/internal/registry"
+	"github.com/this-is-tobi/rule-them-all/internal/toolcall"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 )
 
@@ -131,7 +132,7 @@ func TestOutCannotBeAimedAtAnArbitraryFileOverMCP(t *testing.T) {
 	}
 }
 
-// A regression test for a real bug review caught (PROJECT.md D74) and
+// A regression test for a real bug review caught and
 // reproduced against this exact real bridge: --out being Local only proved
 // a *caller-supplied* value could not redirect a revealed secret. Every
 // Local field also resolved from the host's own environment unconditionally,
@@ -270,7 +271,7 @@ func TestCopyAndEditAreRefusedOverMCPEvenWithAGrant(t *testing.T) {
 		// One at a time: grant.Save writes the whole set, so issuing both up
 		// front would leave only the second.
 		grantFor(t, capID, "db-password")
-		tool := mcp.ToolName(capID)
+		tool := toolcall.Name(capID)
 		res, err := session.CallTool(context.Background(), &sdk.CallToolParams{
 			Name:      tool,
 			Arguments: map[string]any{"key": "db-password"},
@@ -331,7 +332,7 @@ func TestInitRecipientCannotBeSuppliedOverMCP(t *testing.T) {
 	}
 }
 
-// The same property as kv.init, on the capability ADR 0014 named as the
+// The same property as kv.init, on the capability named as the
 // known gap: kv.rekey's recipient is Local, but Destructive already forcing
 // a grant only authorises the act, not which file this reads — no kv
 // capability takes a recipient from a remote caller now, which is the actual
@@ -381,7 +382,7 @@ func TestRekeyRecipientCannotBeSuppliedOverMCP(t *testing.T) {
 // exactly like kv.set's overwrite and kv.rename's move — proven at the same
 // layer, not assumed to follow from the two of them (Destructive is gated
 // through AllowDestructive rather than AllowWrite, a different exposure
-// list, and D74 named this capability specifically as unverified here).
+// list, and review named this capability specifically as unverified here).
 func TestRmNeedsAGrantForTheKeyItRemoves(t *testing.T) {
 	setup(t)
 	text(t, runSet, map[string]any{"key": "db-password", "value": "s3cret"}, false)

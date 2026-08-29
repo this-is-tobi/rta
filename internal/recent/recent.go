@@ -16,7 +16,7 @@
 //   - **A keystroke is a stricter budget than a dashboard tick, not a looser
 //     one.** `plugins/pg` sets NoPreview on every capability so rta never
 //     polls a database it was not told it may poll; opening one on tab is the
-//     same guess with a shorter fuse. ADR 0018 §7 measured what that costs
+//     same guess with a shorter fuse. What that costs was measured
 //     through a `kubectl port-forward`: PostgreSQL's default `sslmode:
 //     prefer` kills the forward on a *clean disconnect*, so a tab press would
 //     take the operator's tunnel down.

@@ -19,6 +19,7 @@ import (
 	"github.com/this-is-tobi/rule-them-all/internal/grant"
 	"github.com/this-is-tobi/rule-them-all/internal/pathguard"
 	"github.com/this-is-tobi/rule-them-all/internal/registry"
+	"github.com/this-is-tobi/rule-them-all/internal/toolcall"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
@@ -60,7 +61,15 @@ func testRegistry(t *testing.T) *registry.Registry {
 			},
 			{
 				ID: "demo.item.rm", Summary: "remove item", Safety: plugin.Destructive,
-				Run: func(context.Context, plugin.Request) (view.View, error) {
+				Scope: "name",
+				Inputs: []plugin.Field{
+					{Name: "name", Type: plugin.String, Help: "which item"},
+				},
+				Run: func(_ context.Context, req plugin.Request) (view.View, error) {
+					if req.DryRun {
+						return view.Text{Body: "would remove item " + req.String("name") +
+							" and the 3 things filed under it"}, nil
+					}
 					return view.Text{Body: "removed"}, nil
 				},
 			},
@@ -118,6 +127,18 @@ func testRegistry(t *testing.T) *registry.Registry {
 				},
 			},
 			{
+				// A Secret input a caller DOES supply (not Local): the one
+				// shape that can carry a credential into the ledger, which
+				// is why auditArgs masks by declared type.
+				ID: "demo.item.token", Summary: "takes a secret argument", Safety: plugin.Write,
+				Inputs: []plugin.Field{
+					{Name: "token", Type: plugin.Secret, Help: "supplied by the caller"},
+				},
+				Run: func(context.Context, plugin.Request) (view.View, error) {
+					return view.Text{Body: "took it"}, nil
+				},
+			},
+			{
 				ID: "demo.item.fail", Summary: "always fails", Safety: plugin.Read,
 				Run: func(context.Context, plugin.Request) (view.View, error) {
 					return nil, view.Errorf("demo.broken", "nope").WithHint("give up")
@@ -171,7 +192,14 @@ func testRegistry(t *testing.T) *registry.Registry {
 func connect(t *testing.T, opts Options) *sdk.ClientSession {
 	t.Helper()
 	t.Setenv("RTA_DATA_DIR", t.TempDir())
-	server := NewServer(testRegistry(t), "test", opts)
+	return connectWith(t, testRegistry(t), opts)
+}
+
+// connectWith is connect over a registry the caller built, for the tests
+// that need a capability instrumented rather than the shared fixture.
+func connectWith(t *testing.T, reg *registry.Registry, opts Options) *sdk.ClientSession {
+	t.Helper()
+	server := NewServer(reg, "test", opts)
 	st, ct := sdk.NewInMemoryTransports()
 	ctx := context.Background()
 	if _, err := server.Connect(ctx, st, nil); err != nil {
@@ -466,7 +494,7 @@ func TestDetailedCapabilitiesPublishDetail(t *testing.T) {
 	if !ok {
 		t.Fatal("missing test capability")
 	}
-	props := InputSchema(c, nil)["properties"].(map[string]any)
+	props := toolcall.InputSchema(c, nil)["properties"].(map[string]any)
 	detail, ok := props["detail"].(map[string]any)
 	if !ok {
 		t.Fatalf("a Detailed capability publishes no detail property: %v", props)
@@ -476,7 +504,7 @@ func TestDetailedCapabilitiesPublishDetail(t *testing.T) {
 	}
 
 	plain, _ := testRegistry(t).Capability("demo.item.list")
-	if _, published := InputSchema(plain, nil)["properties"].(map[string]any)["detail"]; published {
+	if _, published := toolcall.InputSchema(plain, nil)["properties"].(map[string]any)["detail"]; published {
 		t.Error("a capability with no detail view published one anyway")
 	}
 }
@@ -522,8 +550,8 @@ func TestCallToolErrorCarriesCodeAndHint(t *testing.T) {
 	}
 }
 
-func TestToolName(t *testing.T) {
-	if ToolName("pg.table.list") != "pg_table_list" {
+func TestToolNameMapping(t *testing.T) {
+	if toolcall.Name("pg.table.list") != "pg_table_list" {
 		t.Error("ToolName mapping wrong")
 	}
 }
@@ -591,7 +619,7 @@ func TestLocalFieldsAreNotOfferedToAgents(t *testing.T) {
 	if !ok {
 		t.Fatal("missing test capability")
 	}
-	props := InputSchema(c, nil)["properties"].(map[string]any)
+	props := toolcall.InputSchema(c, nil)["properties"].(map[string]any)
 	if _, offered := props["passphrase"]; offered {
 		t.Error("a Local credential was advertised in the tool schema")
 	}
@@ -608,7 +636,7 @@ func TestPathFieldsSayWhoseFilesystem(t *testing.T) {
 		Inputs: []plugin.Field{{Name: "out", Type: plugin.Path, Help: "where to write it"}},
 		Run:    func(context.Context, plugin.Request) (view.View, error) { return view.Text{}, nil },
 	}
-	prop := InputSchema(c, nil)["properties"].(map[string]any)["out"].(map[string]any)
+	prop := toolcall.InputSchema(c, nil)["properties"].(map[string]any)["out"].(map[string]any)
 	if prop["type"] != "string" {
 		t.Errorf("type = %v, want string", prop["type"])
 	}
@@ -1070,7 +1098,7 @@ func TestAnErrorCannotSmuggleIntoAModelsContext(t *testing.T) {
 // doing their job. The question is not whether the caller may run it but
 // whether this caller may point it there.
 func TestEveryPathInputIsConfined(t *testing.T) {
-	reg, err := all.Registry()
+	reg, err := all.Registry(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1123,12 +1151,12 @@ func TestANonPathArgumentIsNotConfined(t *testing.T) {
 	}
 }
 
-// A regression/coverage test for a real gap review found (PROJECT.md D74):
+// A regression/coverage test for a real gap review found:
 // checkPaths' own defensive branch for a non-string value in a declared
 // Path field — the line its own comment calls out as "the line that turns
 // it into an unconfined read rather than an error" if it ever became
 // reachable — had never actually been driven with a non-string value by any
-// test. validateGivenArgs refuses this before checkPaths runs in the real
+// test. ValidateArgs refuses this before checkPaths runs in the real
 // handler path today, which is exactly why this matters: if that ordering
 // ever changed, or a future injected argument bypassed the earlier check
 // the way "detail" already does, this is the only thing standing between a
@@ -1379,7 +1407,7 @@ func originLookup(m map[string]registry.Origin) func(string) (registry.Origin, b
 // separately, so when a plugin stayed registered while dropping out of that
 // cache, the gate saw no entry for its namespace and read absence as "built
 // in" — and a built-in needs no digest pin on --allow-destructive. The
-// artifact binding (ADR 0015, D27) was defeated without any flaw in the check
+// artifact binding was defeated without any flaw in the check
 // itself: the check was asking a different component what it was looking at.
 //
 // It now asks the registry, which is where the registration happened, so the
@@ -1414,7 +1442,7 @@ func TestAnUnknownNamespaceIsRefusedRatherThanTreatedAsBuiltIn(t *testing.T) {
 // removes functionality teaches people to fill in a field instead of to be
 // right, and one whose zero value silently adds reach is worse.
 func TestNewServerDefaultsTheGateToItsRegistry(t *testing.T) {
-	reg, err := all.Registry()
+	reg, err := all.Registry(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1432,7 +1460,7 @@ func TestNewServerDefaultsTheGateToItsRegistry(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = session.Close() })
 
-	if _, ok := listTools(t, session)[ToolName("kv.rm")]; !ok {
+	if _, ok := listTools(t, session)[toolcall.Name("kv.rm")]; !ok {
 		t.Error("an allowed built-in destructive was not exposed, so the gate was not wired to the registry")
 	}
 }
@@ -1506,7 +1534,7 @@ func TestAPathIsRewrittenToTheOneTheGuardApproved(t *testing.T) {
 // next input described the way a path is described. That is worth having and
 // it is not the general answer.
 //
-// The general answer is the one PROJECT.md records as open: walk builtin/ for
+// The general answer is still open: walk builtin/ for
 // os.Open/ReadFile/Stat reachable from a handler, and require every
 // String-ish input of that capability to be Path or Local. That derives
 // coverage from what handlers *do* rather than from what declarations say,
@@ -1515,7 +1543,7 @@ func TestAPathIsRewrittenToTheOneTheGuardApproved(t *testing.T) {
 // It needs interprocedural reachability, both real cases crossed a function
 // boundary, and half of it would be worse than none.
 func TestNoRemoteInputSmellsLikeAPathWithoutBeingOne(t *testing.T) {
-	reg, err := all.Registry()
+	reg, err := all.Registry(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1599,7 +1627,7 @@ func TestBothAllowFlagsSpeakOnePinGrammar(t *testing.T) {
 		want  bool
 		why   string
 	}{
-		{"pg", true, "a bare namespace still works: ADR 0015 chose that granularity for writes"},
+		{"pg", true, "a bare namespace still works: that is the granularity writes are opened at"},
 		{"pg@1a2b3c4d5e6f", true, "the pin an operator pastes from `rta explain` is honoured"},
 		{"pg@" + digest, true, "the full digest is a prefix of itself"},
 		{"pg@deadbeef", false, "a pin naming another artifact authorizes nothing"},
@@ -1695,7 +1723,7 @@ func TestUnhonourableAllowlistEntriesAreReported(t *testing.T) {
 }
 
 // The message has to carry the string to type, or the operator is sent to
-// compute a digest — which ADR 0015 says is how a control gets turned off.
+// compute a digest, which is how a control gets turned off.
 func TestAStalePinReportsTheInstalledDigest(t *testing.T) {
 	const digest = "1a2b3c4d5e6f7890aabbccddeeff00112233445566778899aabbccddeeff0011"
 	o := Options{AllowWrite: []string{"demo@deadbeef"}, Origin: externalOrigin("demo", digest)}

@@ -10,7 +10,7 @@
 // (Capability.Prefill). The note built-in shares the same store shape minus
 // status/due/parent.
 //
-// AI trajectory (PROJECT.md §7): like every capability, these are exposed
+// AI trajectory: like every capability, these are exposed
 // over MCP — `rta mcp serve --allow-write` lets an agent capture and
 // complete tasks for you. Later the ai plugin can delegate a task ("rta ai
 // work on todo 3"), improve wording, or triage the list.

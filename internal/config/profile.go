@@ -108,7 +108,7 @@ type Connection struct {
 	//	  password: kv:prod-db-password        # this release
 	//	  password: kube:postgres-creds/password  # stage 2
 	//
-	// **A reference, never a value.** ADR 0016 refuses `Config` on a `Secret`
+	// **A reference, never a value.** `Config` is refused on a `Secret`
 	// input because a config file is plaintext read on every invocation with
 	// nobody watching; that argument is untouched here, because what this holds
 	// is a name. The value is fetched at resolution time and travels the path
@@ -120,26 +120,25 @@ type Connection struct {
 	// `rta profile show` has a single table to print rather than two shapes
 	// that mean the same thing.
 	//
-	// The operator writes this mapping and the plugin never does — D50's rule,
+	// The operator writes this mapping and the plugin never does,
 	// unchanged. A plugin that could name the entry it wanted could name any
 	// entry in the store; here it declares only that it has a Secret input.
 	Secrets map[string]string `yaml:"secrets,omitempty" json:"secrets,omitempty"`
 
-	// Kube is the port-forward coordinate, context/namespace/kind/name:port
-	// (ADR 0018 §3).
+	// Kube is the port-forward coordinate, context/namespace/kind/name:port.
 	//
 	// A call filled from a connection stating this runs through a
 	// `kubectl port-forward` the host raises and tears down again, and the
 	// plugin sees an ordinary local address in whichever inputs it declared
 	// with a plugin.Field.Endpoint role. It never learns a forward was there,
-	// which is ADR 0004's contract and the reason no service plugin changes to
+	// which is the tunnel contract and the reason no service plugin changes to
 	// gain this.
 	//
 	// One forward per call, torn down after. Caching one across calls is an
 	// optimisation with a correctness cost: a port-forward outlives the pod it
 	// points at, so a cached tunnel to a rescheduled pod fails in a way nobody
 	// can read. Measured against a real cluster at 54 ms median to open, which
-	// is the cost that has to stay worth it (ADR 0018 §4).
+	// is the cost that has to stay worth it.
 	Kube string `yaml:"kube,omitempty" json:"kube,omitempty"`
 
 	// SSH is the jump-host target, [user@]host[:port]/desthost:destport —

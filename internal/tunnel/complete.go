@@ -10,7 +10,7 @@ import (
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
 
-// Completing a coordinate, one segment at a time (ADR 0018 §8).
+// Completing a coordinate, one segment at a time.
 //
 // Everything here runs only when an operator pressed the completion key on a
 // field — never per keystroke, never at form build, never from shell
@@ -189,11 +189,23 @@ func kubeList(ctx context.Context, c Completion, prefix, next string, args ...st
 	return c, nil
 }
 
-// completeWaitDelay bounds how long a finished-or-killed listing may hold its
-// pipes. kubectl's exec credential plugins inherit stdout; without this, an
-// auth helper that outlives a killed kubectl keeps Wait blocked past every
-// deadline the caller set.
-const completeWaitDelay = 2 * time.Second
+// waitDelay bounds how long a finished-or-killed kubectl may hold its pipes.
+//
+// A kubeconfig's exec credential helper is handed kubectl's own stderr, so a
+// helper that outlives the kubectl rta started — kubelogin shelling out to a
+// browser for an OIDC device flow is the concrete one — keeps that write end
+// open after kubectl is gone. Cmd.Wait with WaitDelay unset ends in an
+// unguarded receive on the copier's channel, so it blocks until every pipe
+// sees EOF, which that helper is holding: not slow, *forever*, and past every
+// deadline the caller set, because it is os/exec's copying goroutines that
+// are stuck rather than the process. exec.CommandContext does not save it —
+// cancelling kills kubectl and does not close the pipes.
+//
+// This applies to every kubectl rta starts, which is why it is not named
+// after the listing that needed it first. It cannot cut a healthy child
+// short: WaitDelay only starts counting once the process has exited or the
+// context has killed it.
+const waitDelay = 2 * time.Second
 
 // kubeLines runs one read-only kubectl and returns its stdout lines.
 //
@@ -208,7 +220,7 @@ func kubeLines(ctx context.Context, what string, args ...string) ([]string, *vie
 			WithHint("the field still takes typing — completion is an assist, not a gate")
 	}
 	cmd := exec.CommandContext(ctx, kubectl, args...)
-	cmd.WaitDelay = completeWaitDelay
+	cmd.WaitDelay = waitDelay
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()

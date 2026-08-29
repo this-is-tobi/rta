@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"testing"
-	"time"
 
 	tea "charm.land/bubbletea/v2"
 	huh "charm.land/huh/v2"
@@ -19,7 +18,7 @@ import (
 var shiftEnter = tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModShift}
 
 // altEnter is the second, independent way into the same fast-submit path
-// (PROJECT.md D76) — what a real ESC+CR byte pair decodes to (the "meta
+// — what a real ESC+CR byte pair decodes to (the "meta
 // sends escape" convention, e.g. VS Code's own Claude-Code-installed
 // shift+enter keybinding, or "Option as Meta" on another terminal), proven
 // against the actual decoder in TestAltEnterIsWhatEscThenCarriageReturnDecodesTo.
@@ -44,7 +43,7 @@ var altEnter = tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModAlt}
 // properties that matter most if something in this file's understanding
 // of the mechanism turns out to be wrong in a way only the real event
 // loop would expose — which is exactly what happened twice while this
-// was being built (PROJECT.md's own entry for this feature has both).
+// was being built.
 
 // advanceFormBySyntheticEnter/settleForm: direct, no Model, no teatest.
 
@@ -247,7 +246,7 @@ func TestShiftEnterDoesNotRunWithARequiredFieldBlank(t *testing.T) {
 	waitFor(t, tm, "target is required") // validatorFor's own message, still on screen
 
 	tm.Send(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
-	tm.WaitFinished(t, teatest.WithFinalTimeout(3*time.Second))
+	tm.WaitFinished(t, teatest.WithFinalTimeout(framePatience))
 	buf := new(bytes.Buffer)
 	_, _ = buf.ReadFrom(tm.FinalOutput(t))
 	if bytes.Contains(buf.Bytes(), []byte("SHOULD-NOT-RUN")) {
@@ -278,7 +277,7 @@ func TestShiftEnterDeclinesADestructiveCapabilityByDefault(t *testing.T) {
 	waitFor(t, tm, "capabilities") // declined by default, back to browse
 
 	tm.Send(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
-	tm.WaitFinished(t, teatest.WithFinalTimeout(3*time.Second))
+	tm.WaitFinished(t, teatest.WithFinalTimeout(framePatience))
 	buf := new(bytes.Buffer)
 	_, _ = buf.ReadFrom(tm.FinalOutput(t))
 	if bytes.Contains(buf.Bytes(), []byte("BOOM-EXECUTED")) {

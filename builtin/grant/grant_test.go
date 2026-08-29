@@ -164,8 +164,8 @@ func TestAllowThenList(t *testing.T) {
 		cell(t, tbl, 0, "Record") != "db-password" {
 		t.Fatalf("rows = %v", tbl.Rows)
 	}
-	if cell(t, tbl, 0, "Uses Left") != "unlimited" {
-		t.Errorf("a grant with no --max-uses should read unlimited: %v", tbl.Rows[0])
+	if cell(t, tbl, 0, "Budget Left") != "unlimited" {
+		t.Errorf("a grant with no budget should read unlimited: %v", tbl.Rows[0])
 	}
 	if cell(t, tbl, 0, "Note") != "deploy" {
 		t.Errorf("the note is what makes a stale grant explainable: %v", tbl.Rows[0])
@@ -376,8 +376,76 @@ func TestMaxUsesIsRecordedAndShownInList(t *testing.T) {
 		t.Fatalf("grants = %+v, want MaxUses 1", grants)
 	}
 	tbl := run(t, listH, nil).(view.Table)
-	if got := cell(t, tbl, 0, "Uses Left"); got != "1" {
-		t.Errorf("uses left = %q, want 1", got)
+	if got := cell(t, tbl, 0, "Budget Left"); got != "1 of 1 uses" {
+		t.Errorf("budget left = %q, want the count and the cap", got)
+	}
+}
+
+func TestARateIsRecordedAndShownInList(t *testing.T) {
+	setup(t)
+	v := run(t, allowH, map[string]any{"target": "kv.get", "scope": "db", "rate": "10/1h"})
+	if body := v.(view.Text).Body; !strings.Contains(body, "no faster than 10 calls per 1h") {
+		t.Errorf("the pace was not said out loud: %q", body)
+	}
+	grants, _ := core.Load()
+	if len(grants) != 1 || grants[0].RateMax != 10 || grants[0].RateWindow != "1h" {
+		t.Fatalf("grants = %+v", grants)
+	}
+	tbl := run(t, listH, nil).(view.Table)
+	if got := cell(t, tbl, 0, "Budget Left"); got != "10 of 10 per 1h" {
+		t.Errorf("budget left = %q", got)
+	}
+}
+
+func TestABadRateIsRefusedWithTheFormatItWanted(t *testing.T) {
+	setup(t)
+	// The message matters as much as the refusal: somebody typing --rate is
+	// getting the format wrong, and a message naming the half they got wrong
+	// is the difference between one more attempt and three.
+	for _, tc := range []struct{ in, says string }{
+		{"10", "it needs a window, after a slash"},
+		{"10/", "the window has to be a duration"},
+		{"/1h", "the number of calls has to be a positive whole number"},
+		{"ten/1h", "the number of calls has to be a positive whole number"},
+		{"0/1h", "positive"},
+		{"-1/1h", "positive"},
+		{"10/soon", "the window has to be a duration"},
+		{"10/0s", "the window has to be a duration"},
+		{"10/48h", "--max-uses 10 in disguise"},
+		{"100000/1h", "the most rta will pace"},
+		{"10 per hour/1h", "the number of calls has to be a positive whole number"},
+	} {
+		_, err := allowH(context.Background(), req(map[string]any{"target": "kv.get", "rate": tc.in}))
+		if err == nil {
+			t.Errorf("--rate %q was accepted", tc.in)
+			continue
+		}
+		ve, ok := err.(*view.Error)
+		if !ok || ve.Code != "grant.badrate" {
+			t.Errorf("--rate %q refused with %v", tc.in, err)
+			continue
+		}
+		if !strings.Contains(ve.Message, tc.says) {
+			t.Errorf("--rate %q said %q, want it to name %q", tc.in, ve.Message, tc.says)
+		}
+		if !strings.Contains(ve.Hint, "calls/window") {
+			t.Errorf("--rate %q did not say the format: %q", tc.in, ve.Hint)
+		}
+	}
+}
+
+func TestARenewalCarriesThePaceForward(t *testing.T) {
+	// The same rule --max-uses already has: renew extends time and nothing
+	// else, or re-running it would be the way to quietly drop a budget.
+	setup(t)
+	run(t, allowH, map[string]any{"target": "kv.get", "rate": "3/1h", "ttl": "1m"})
+	run(t, runRenew, map[string]any{"target": "kv.get"})
+	grants, _ := core.Load()
+	if len(grants) != 1 {
+		t.Fatalf("grants = %+v", grants)
+	}
+	if grants[0].RateMax != 3 || grants[0].RateWindow != "1h" {
+		t.Fatalf("the renewal dropped the pace: %+v", grants[0])
 	}
 }
 
@@ -396,10 +464,10 @@ func TestMaxUsesGrantIsSpentAfterASuccessfulCall(t *testing.T) {
 
 	// Reserve, the way the bridge calls it: authorize and spend in one step,
 	// keeping the use because the call succeeded.
-	if _, verr := core.Reserve(c, values, "", "", ""); verr != nil {
+	if _, verr := core.Reserve(c, values, core.Caller{}); verr != nil {
 		t.Fatalf("the fresh grant was refused: %v", verr)
 	}
-	if _, verr := core.Reserve(c, values, "", "", ""); verr == nil {
+	if _, verr := core.Reserve(c, values, core.Caller{}); verr == nil {
 		t.Fatal("a one-time grant still authorized a second call")
 	}
 }
@@ -507,7 +575,7 @@ func TestRevokeIsNotUndoneByAConcurrentReserve(t *testing.T) {
 				// that succeeded, and a refund would only put uses back into
 				// a file this test reads for presence, not for arithmetic.
 				// Being refused is the correct outcome once the revoke lands.
-				_, _ = core.Reserve(c, values, "", "", "")
+				_, _ = core.Reserve(c, values, core.Caller{})
 			}()
 		}
 		wg.Add(1)

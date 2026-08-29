@@ -201,7 +201,7 @@ func names(found []Found) []string {
 // registered and callable while vanishing from h.running, so Loaded() went
 // empty, PluginOrigins() lost the namespace, and the MCP gate read a binary
 // from $PATH as a built-in — accepting an unpinned --allow-destructive, which
-// is exactly the artifact binding D27 and ADR 0015 exist to make. CloseAll
+// is exactly the artifact binding trust exists to make. CloseAll
 // could no longer see the process either, so the one Client.live relaunched
 // on the next call outlived rta.
 func TestASecondNameForOneBinaryDoesNotUnregisterTheFirst(t *testing.T) {
@@ -401,7 +401,7 @@ func TestADirectoryTwiceOnPathIsNotAPluginTwice(t *testing.T) {
 // The managed store's bin/ is discovered without being on $PATH — and after
 // every $PATH entry, so a copy the operator put on $PATH shadows the managed
 // one the ordinary, reported way rather than rta's store outranking a
-// deliberate local build (ADR 0017 §3).
+// deliberate local build.
 func TestTheManagedStoreIsDiscoveredLast(t *testing.T) {
 	data := t.TempDir()
 	t.Setenv("RTA_DATA_DIR", data)

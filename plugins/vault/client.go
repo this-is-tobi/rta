@@ -23,13 +23,13 @@ import (
 //
 // Every field here is Local, and that is a security property rather than a
 // detail — the same reasoning plugins/pg's own connFields documents at
-// length (PROJECT.md D94). `address` names which Vault this call reaches and
+// length. `address` names which Vault this call reaches and
 // `namespace` names which tenant inside it; an MCP caller may not choose
 // either, or an agent could point rta at a Vault it controls and have the
 // host supply $RTA_VAULT_TOKEN beside it. Both remain Config-backed and
 // remain ordinary flags for a person at a terminal. The token differs only
 // in also declaring EnvFallback, which is for values that genuinely are
-// credentials (D74).
+// credentials.
 func connFields() []plugin.Field {
 	return []plugin.Field{
 		// One input holding a whole URL, which is the url role — the third

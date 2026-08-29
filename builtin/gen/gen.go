@@ -3,7 +3,7 @@
 // only entropy source anywhere in it is crypto/rand.
 //
 // Nothing here reveals a secret the caller did not already have, or uses one
-// on their behalf — the kv.get precedent (PROJECT.md §4.7) is about crossing
+// on their behalf — the kv.get precedent is about crossing
 // the line between "protected at rest" and "revealed", and there is no "at
 // rest" here: every value is synthesized fresh, with no prior owner, and
 // handed straight back to the caller who asked for it. So everything below
@@ -37,7 +37,7 @@ const (
 	ambiguousChars = "0O1lI"
 
 	// Caps on numeric inputs. Table's contract already forbids streaming
-	// unbounded rows into a slice (PROJECT.md §4.3); gen is the first plugin
+	// unbounded rows into a slice; gen is the first plugin
 	// whose own numeric fields can drive an unbounded loop, so it needs its
 	// own bound rather than inheriting one.
 	maxCount          = 1000

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"sort"
 
 	vaultapi "github.com/hashicorp/vault/api"
@@ -131,6 +132,13 @@ func runKVSet(ctx context.Context, req plugin.Request) (view.View, error) {
 		return nil, verr
 	}
 	return withClient(req, func(client *vaultapi.Client) (view.View, error) {
+		// The field names, never the values: this reports what a write would
+		// do, and the values are the caller's own input rather than anything
+		// only Vault could tell them.
+		if req.DryRun {
+			return view.Text{Body: fmt.Sprintf("would set %s/%s with %d field(s) — a new version, "+
+				"the current one kept", req.String("mount"), req.String("path"), len(data))}, nil
+		}
 		secret, err := client.KVv2(req.String("mount")).Put(ctx, req.String("path"), data)
 		if err != nil {
 			return nil, classify(err, req)

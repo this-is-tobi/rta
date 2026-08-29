@@ -189,7 +189,7 @@ func (m *Model) fitThemeForm() {
 		return
 	}
 	if m.width > 0 {
-		m.themeForm.form = m.themeForm.form.WithWidth(min(m.width-6, 80))
+		m.themeForm.form = m.themeForm.form.WithWidth(formWidth(m.width))
 	}
 	if m.height > 0 {
 		m.themeForm.form = m.themeForm.form.WithHeight(max(m.height-7, 6))

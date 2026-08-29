@@ -41,18 +41,39 @@ func TestOverviewCompactReportsBranchStatusAndLastCommit(t *testing.T) {
 	}
 }
 
-func TestOverviewCompactReportsChangedPathCount(t *testing.T) {
+// "7 path(s) changed" was one number standing in for three different
+// situations. What a person does next depends on which: commit it, add it, or
+// ignore it.
+func TestOverviewCompactSaysWhatKindOfChange(t *testing.T) {
 	dir, repo := testRepo(t)
 	commitFile(t, repo, dir, "a.txt", "v1\n", "initial commit")
 	writeFile(t, dir, "a.txt", "v2\n")
+	writeFile(t, dir, "junk.log", "output\n")
 
 	v, err := runOverview(context.Background(), req(t, dir, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
 	kv := v.(view.KeyValue)
-	if got := kvValue(t, kv, "working tree"); got != "1 path(s) changed" {
-		t.Errorf("working tree = %q, want %q", got, "1 path(s) changed")
+	if got := kvValue(t, kv, "working tree"); got != "1 modified, 1 untracked" {
+		t.Errorf("working tree = %q, want the modified file and the untracked one told apart", got)
+	}
+
+	// And a staged change is its own answer, since it is the one that is ready
+	// to be committed.
+	wt, err := repo.Worktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := wt.Add("a.txt"); err != nil {
+		t.Fatal(err)
+	}
+	v, err = runOverview(context.Background(), req(t, dir, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := kvValue(t, v.(view.KeyValue), "working tree"); got != "1 staged, 1 untracked" {
+		t.Errorf("working tree = %q, want the staged change named as staged", got)
 	}
 }
 

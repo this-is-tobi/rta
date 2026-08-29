@@ -122,7 +122,7 @@ var canPrompt = func(req plugin.Request) bool {
 // after the passphrase is typed. The OpenSSH private-key container carries
 // its own public key in cleartext regardless of encryption — PassphraseMissingError.PublicKey
 // exposes it with no decryption at all — so the type is already knowable
-// before asking anybody for anything. Found by review (PROJECT.md D73): the
+// before asking anybody for anything. Found by review: the
 // original version prompted up to three times for an RSA key's real
 // passphrase, then rejected it as unsupported no matter what was typed.
 func unlockKey(req plugin.Request, path string, data []byte) (any, *view.Error) {
@@ -275,7 +275,7 @@ func describeKey(path string) []string {
 	// to probeKey's answer, which is safe and available either way (real
 	// parse when unlocked, the container's own embedded public key when
 	// locked). A corrupt .pub used to leave a perfectly good key reported as
-	// unknown; found by review (PROJECT.md D73).
+	// unknown; found by review.
 	if data, err := os.ReadFile(path + ".pub"); err == nil {
 		if parsed, _, _, _, err := ssh.ParseAuthorizedKey(data); err == nil {
 			keyType, fp = parsed.Type(), ssh.FingerprintSHA256(parsed)
@@ -404,7 +404,7 @@ func publishRestoredKey(privPath string, priv ed25519.PrivateKey, passphrase []b
 		// back), so a retry at the same out immediately hits runRestore's
 		// own fileExists(out) guard before ever reaching this function
 		// again. The hint has to name both files, not just the stray one.
-		// Found by review (PROJECT.md D73): the original text sent the
+		// Found by review: the original text sent the
 		// operator toward an instruction that could not succeed as given.
 		return "", view.Errorf("keys.restore.exists", "%s already exists — %s was already written and is not removed automatically",
 			pubPath, privPath).

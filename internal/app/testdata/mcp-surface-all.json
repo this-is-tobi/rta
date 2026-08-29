@@ -1,5 +1,120 @@
 [
   {
+    "name": "agent_allow",
+    "description": "── the text below is written by the plugin, not by rta ──\nAllow one parked call\n\nAuthorizes exactly the call the request names, and nothing else — the agent's call proceeds, and no standing state is created. With --ttl it also issues the grant you would have typed (same target, same record, same connection), which is worth doing when the same question is about to be asked five more times. Never reachable over MCP: an agent that could answer its own request would make the whole mechanism theatre.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
+    "destructive_hint": false,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "the request id from `rta agent pending`",
+          "type": "string"
+        },
+        "ttl": {
+          "description": "also issue a standing grant for this long, e.g. 15m (max 24h)",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "agent_deny",
+    "description": "── the text below is written by the plugin, not by rta ──\nDeny one parked call\n\nThe agent's call is refused with your answer rather than with a timeout, which is the difference between a model that stops and one that retries. Never reachable over MCP.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
+    "destructive_hint": false,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "the request id from `rta agent pending`",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "agent_log",
+    "description": "── the text below is written by the plugin, not by rta ──\nThe record of what agents did — one line per call, refusals included\n\nEvery call that arrived over MCP: the capability, the arguments (secrets masked), the profile, what happened, and how it was authorized — no grant needed, a standing grant, or you answering live. The file is chained, so an edited or missing line is visible: --detail verifies it and says where it breaks. This is history and not policy; `rta grant list` is what may happen next.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "default": false,
+          "description": "return the full detailed view instead of the compact summary",
+          "type": "boolean"
+        },
+        "limit": {
+          "default": 30,
+          "description": "how many of the most recent calls to show",
+          "maximum": 500,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "refused": {
+          "description": "only the calls rta would not make",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "agent_overview",
+    "description": "── the text below is written by the plugin, not by rta ──\nAgent activity at a glance: recent calls, refusals, anything waiting\n\nThe last hour of calls that arrived over MCP, how many were refused, and how many requests are parked waiting for you to answer right now. With --detail: the chain's integrity, where the ledger lives and how big it is.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "default": false,
+          "description": "return the full detailed view instead of the compact summary",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "agent_pending",
+    "description": "── the text below is written by the plugin, not by rta ──\nCalls parked right now, waiting for you to allow or deny\n\nWith `rta mcp serve --consent`, a call that needs a grant nobody issued is parked instead of refused, and waits for you. Each row is one such call: its id, what it wants, against which connection, and how long it will keep waiting. Answer with `rta agent allow \u003cid\u003e` or `rta agent deny \u003cid\u003e`.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    }
+  },
+  {
+    "name": "agent_show",
+    "description": "── the text below is written by the plugin, not by rta ──\nEverything about one parked call, including what it would do\n\nThe request in full: which capability, which record, against which connection, every argument, and — for a destructive call rta could preview — what running it would actually do, taken from the capability's own --dry-run. That last part is the difference between approving an intention and approving an outcome. Answer with `rta agent allow \u003cid\u003e` or `rta agent deny \u003cid\u003e`.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "the request id from `rta agent pending`",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    }
+  },
+  {
     "name": "audit_deps",
     "description": "── the text below is written by the plugin, not by rta ──\nCheck declared dependencies against the OSV vulnerability database\n\nReads what a project already declares — go.mod, any of the four JavaScript lockfiles (npm, pnpm, yarn, bun), uv.lock, poetry.lock, Pipfile.lock, requirements.txt, Cargo.lock, composer.lock, Gemfile.lock, or a CycloneDX/SPDX SBOM sitting beside them — and asks osv.dev once about every pinned dependency, reporting which are named in an advisory. Nothing is resolved, built or crawled: a lockfile is a list a package manager already committed, and reading it is not scanning. The batch endpoint answers with advisory identifiers, not severities or fixed versions, so a hit points at osv-scanner, trivy or grype for the depth this deliberately does not have. Components whose ecosystem OSV does not recognise are counted and named rather than dropped. --offline inventories without asking anything. --recursive walks a monorepo, skipping node_modules, vendor and build output, which is what a polyglot repository needs: one lockfile per service and no single file that knows about the others. Cites A03:2025 Software Supply Chain Failures and CWE-1395.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
@@ -73,7 +188,7 @@
   },
   {
     "name": "audit_web",
-    "description": "── the text below is written by the plugin, not by rta ──\nAudit a web host: TLS, certificate, headers, cookies, exposure\n\nOne HTTPS request, graded: TLS version and cipher, certificate validity, expiry and signature algorithm, the security headers a host should send (HSTS, CSP — checked for weak directives like unsafe-inline, not just presence — X-Frame-Options/frame-ancestors, cross-origin isolation headers), CORS behavior (probed with an Origin no real browser would send, to catch blind reflection), cookie flags, and the version/stack details a host should not leak. Every finding cites an OWASP Top 10:2025 category and a MITRE CWE, so a result traces back to a named control rather than an opinion. With --detail: one section per area plus the cited references with lookup URLs. Read-only — it only inspects the response the host volunteers, plus the one Origin header the CORS probe adds.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nAudit a web host: TLS, certificate, headers, cookies, exposure\n\nOne HTTPS request, graded: TLS version and cipher, certificate validity, expiry and signature algorithm, the security headers a host should send (HSTS, CSP — checked for weak directives like unsafe-inline, not just presence — X-Frame-Options/frame-ancestors, cross-origin isolation headers), CORS behavior (probed with an Origin no real browser would send, to catch blind reflection), cookie flags, and the version/stack details a host should not leak. Every finding cites an OWASP Top 10:2025 category and a MITRE CWE, so a result traces back to a named control rather than an opinion. With --detail: one section per area plus the cited references with lookup URLs. Read-only — it only inspects the response the host volunteers, plus the one Origin header the CORS probe adds.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"host\"). You cannot issue one yourself — ask the operator to run `rta grant allow audit.web`.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -198,6 +313,42 @@
     "input_schema": {
       "additionalProperties": false,
       "properties": {
+        "target": {
+          "description": "host[:port] to connect to, or a path to a PEM file (a path on the machine running rta)",
+          "type": "string"
+        },
+        "timeout": {
+          "default": 10,
+          "description": "connect timeout in seconds",
+          "maximum": 120,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "cert_pem",
+    "description": "── the text below is written by the plugin, not by rta ──\nPrint the certificate chain as PEM\n\nThe bytes, not a description of them. `cert chain` draws what a host presents so a person can read it; this hands the same certificates back in the form every other tool takes one — a Kubernetes ConfigMap, a Dockerfile COPY, `update-ca-certificates`, a paste into somebody's terminal.\n\n--include issuers is the one to reach for behind a private CA: it drops the leaf and leaves the chain that has to be *trusted*, which is what a ca-bundle is. chain (the default) is everything the host presented, leaf is the end-entity certificate alone.\n\nA presented chain is what the host chose to send and is not always complete — a server that omits its intermediate presents a leaf that validates nowhere else, and this reports what arrived rather than filling the gap from a trust store, because a bundle that silently differs from what the server serves is how a working local test hides a broken deployment.\n\nRead, and it stays read from anywhere but a terminal: --out names a path on *this* machine, so it is a person's flag only and an MCP caller always gets the PEM back in the response.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "include": {
+          "default": "chain",
+          "description": "which certificates to print",
+          "enum": [
+            "chain",
+            "issuers",
+            "leaf"
+          ],
+          "type": "string"
+        },
         "target": {
           "description": "host[:port] to connect to, or a path to a PEM file (a path on the machine running rta)",
           "type": "string"
@@ -610,7 +761,7 @@
   },
   {
     "name": "git_config",
-    "description": "── the text below is written by the plugin, not by rta ──\nEffective config across system, global and local scope\n\nEvery key set in system, global or local config, one row per scope it's set in — the same three files `git config --list --show-origin` reads, before any of them override each other: local wins over global, global wins over system. A key missing from a scope simply has no row there rather than one with an empty value. `[include]`/`[includeIf]` directives are shown as written, not followed into the file they point at.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nEffective config across system, global and local scope\n\nEvery key set in system, global or local config, one row per scope it's set in — the same three files `git config --list --show-origin` reads, before any of them override each other: local wins over global, global wins over system. A key missing from a scope simply has no row there rather than one with an empty value. `[include]`/`[includeIf]` directives are shown as written, not followed into the file they point at. Over MCP only the repository's own config is returned: the machine-wide scopes are the operator's, not the repository's. Values that carry a credential are masked on every surface.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -714,6 +865,23 @@
     }
   },
   {
+    "name": "git_remotes",
+    "description": "── the text below is written by the plugin, not by rta ──\nWhere this repository fetches from and pushes to\n\nThe other half of \"which branch am I on\": which server that branch reaches, and whether this machine has ever heard from it. Three remotes with confusingly similar URLs is how somebody pushes a fix to their fork and waits for a review nobody can see.\n\nBranches counts what this repository knows about that remote — the refs a fetch left behind — so a remote that has never been fetched reads as 0 rather than as missing.\n\nA credential embedded in a remote URL is masked, the same rule `git config` follows: `https://user:token@host/repo.git` is a password in a file people paste into issues, and it is not what anybody is asking this for.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "default": ".",
+          "description": "repository path, or a subdirectory of one — or a remote URL (https://, ssh://, git@host:path), cloned in memory (a path on the machine running rta)",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
     "name": "git_status",
     "description": "── the text below is written by the plugin, not by rta ──\nWhat has changed in the working tree, staged and unstaged\n\nThe structured equivalent of `git status --porcelain`: every path with a staged change, an unstaged change, or neither yet — added, tracked at all — one row per path, both halves shown side by side rather than requiring the two-column code to be decoded by eye.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
@@ -732,12 +900,16 @@
   },
   {
     "name": "grant_allow",
-    "description": "── the text below is written by the plugin, not by rta ──\nAllow AI agents to use one capability, temporarily\n\nGrants expire (15m by default, 24h maximum) and can only be issued by a person at a terminal — an agent that could grant itself access would be no gate at all. The target is a capability ID (kv.get) or a plugin name (kv), which covers all of it. A second argument narrows the grant to one record: `rta grant allow kv.get db-password` allows that key and no other. --max-uses expires the grant after that many successful calls, on top of --ttl, whichever comes first — `--max-uses 1` for a value that should be read exactly once.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nAllow AI agents to use one capability, temporarily\n\nGrants expire (15m by default, 24h maximum) and can only be issued by a person at a terminal — an agent that could grant itself access would be no gate at all. The target is a capability ID (kv.get) or a plugin name (kv), which covers all of it. A second argument narrows the grant to one record: `rta grant allow kv.get db-password` allows that key and no other. --agent narrows it to one of your named agents, so consent given while talking to one client does not follow every other client on this machine. --max-uses expires the grant after that many successful calls, on top of --ttl, whichever comes first — `--max-uses 1` for a value that should be read exactly once. --rate bounds how fast instead of how much: `--rate 10/1h` allows ten calls in any hour and tells the agent when to come back, so a session that has gone wrong slows to something you can notice rather than draining at machine speed.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
     "destructive_hint": false,
     "idempotent_hint": true,
     "input_schema": {
       "additionalProperties": false,
       "properties": {
+        "agent": {
+          "description": "narrow it to one named agent — the name `rta mcp serve --as` uses",
+          "type": "string"
+        },
         "max-uses": {
           "description": "expire after this many successful calls (0 = unlimited)",
           "type": "integer"
@@ -748,6 +920,10 @@
         },
         "profile": {
           "description": "narrow it to one configured connection",
+          "type": "string"
+        },
+        "rate": {
+          "description": "how fast it may be used, as calls/window — e.g. 10/1h",
           "type": "string"
         },
         "scope": {
@@ -795,6 +971,10 @@
     "input_schema": {
       "additionalProperties": false,
       "properties": {
+        "agent": {
+          "description": "only grants for this named agent",
+          "type": "string"
+        },
         "profile": {
           "description": "only grants on this connection",
           "type": "string"
@@ -823,6 +1003,10 @@
     "input_schema": {
       "additionalProperties": false,
       "properties": {
+        "agent": {
+          "description": "only the grant for this named agent",
+          "type": "string"
+        },
         "all": {
           "description": "revoke every grant",
           "type": "boolean"
@@ -1597,7 +1781,7 @@
         },
         "ports": {
           "default": "22,80,443",
-          "description": "comma-separated ports and ranges, e.g. 22,80,8000-8010",
+          "description": "comma-separated ports and ranges, e.g. 22,80,8000-8010 (up to 4096 at a time)",
           "type": "string"
         },
         "timeout": {

@@ -1,7 +1,7 @@
 // Command rta-plugin-eol answers one question — is a product's release
 // still supported — against the public endoflife.date API.
 //
-// It exists as the small counterpart to plugins/pg (PROJECT.md §7, Wave 3):
+// It exists as the small counterpart to plugins/pg:
 // where pg needs a connection, a credential and a config section before its
 // first call, eol needs none of that — no auth, no local state, one public
 // GET request per call. Build it and put it on $PATH as rta-plugin-eol

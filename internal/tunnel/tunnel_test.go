@@ -80,24 +80,40 @@ func TestCloseEndsTheForward(t *testing.T) {
 	if verr != nil {
 		t.Fatalf("open: %v", verr)
 	}
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if _, err := os.Stat(marker); err == nil {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
+	// Waited for rather than assumed. If the forward has not written its
+	// marker yet — which a loaded machine makes ordinary — the check below
+	// finds no marker and reports success without a forward ever having run,
+	// so the test would pass hardest exactly when it should fail.
+	if !awaitMarker(marker, true) {
+		t.Fatal("the forward never started, so this proves nothing about Close")
 	}
 	tun.Close()
 
 	// The trap removes the marker on SIGTERM; if it is still there, the
 	// forward survived the call.
-	for i := 0; i < 100; i++ {
-		if _, err := os.Stat(marker); os.IsNotExist(err) {
-			return
-		}
-		time.Sleep(20 * time.Millisecond)
+	//
+	// Patient on purpose. A shell trap runs between commands, so the signal
+	// waits out whatever `sleep` is in flight, and under load that is not
+	// the 0.05s the script asks for. The bug this guards against is a forward
+	// that never dies at all, and no amount of waiting turns that green.
+	if !awaitMarker(marker, false) {
+		t.Error("the forward was still running after Close: a tunnel outlived its call")
 	}
-	t.Error("the forward was still running after Close: a tunnel outlived its call")
+}
+
+// awaitMarker waits for the marker to exist, or to be gone.
+func awaitMarker(path string, want bool) bool {
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		_, err := os.Stat(path)
+		if (err == nil) == want {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 func TestCloseIsIdempotent(t *testing.T) {
@@ -167,7 +183,7 @@ func TestMalformedTargetsAreRefusedWithTheForm(t *testing.T) {
 	}
 }
 
-// The dependency argument in ADR 0018 is only honest if the absence of
+// The dependency argument is only honest if the absence of
 // kubectl is a legible message rather than "exec: not found".
 func TestAMissingKubectlSaysWhatToDo(t *testing.T) {
 	saved := kubectl
@@ -199,7 +215,7 @@ func TestAForwardThatNeverComesUpTimesOut(t *testing.T) {
 	}
 }
 
-// A regression test for a real bug review found (PROJECT.md D92): Open had
+// A regression test for a real bug review found: Open had
 // no fallback ceiling of its own, so a caller passing a context with no
 // deadline — context.Background(), which every call site in this package's
 // own tests used until this one — combined with a kubectl that neither
@@ -251,7 +267,7 @@ func TestAFailedOpenDoesNotWaitForASignalItAlreadyConsumed(t *testing.T) {
 	}
 }
 
-// Measured, because ADR 0018 §4 says one tunnel per call and whether that is
+// Measured, because one tunnel per call is the rule and whether that is
 // tolerable is a number rather than an opinion. Against a stub this is the
 // resolver's own overhead with the cluster round-trip removed — the floor,
 // not the real cost.
@@ -302,7 +318,7 @@ func TestSetupOverheadIsReported(t *testing.T) {
 
 // --- What a stub cannot answer -------------------------------------------
 //
-// Recorded here rather than claimed as covered, because ADR 0018 asks five
+// Recorded here rather than claimed as covered, because five
 // questions and a fake kubectl answers three of them:
 //
 //   - ANSWERED: how the local port is chosen (parsed off stdout, and the
@@ -314,7 +330,7 @@ func TestSetupOverheadIsReported(t *testing.T) {
 //
 //   - OPEN: real setup cost against a cluster. The stub measures rta's
 //     overhead with the round-trip removed, which is a floor. If the true
-//     figure is around a second, ADR 0018 §4's one-tunnel-per-call is wrong
+//     figure is around a second, one-tunnel-per-call is wrong
 //     for the TUI's five-second refresh and caching reopens.
 //   - OPEN: whether "Forwarding from" means the tunnel carries traffic yet.
 //     If a connection can be refused after that line, the resolver needs a

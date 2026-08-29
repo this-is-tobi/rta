@@ -147,7 +147,7 @@ func TestAttachRefusals(t *testing.T) {
 
 // One malformed manifest is reported and costs nothing else; and a manifest
 // whose declared name disagrees with its filename is refused, because the
-// file's placement is the index's claim (D40's rule for claims).
+// file's placement is the index's claim, and a claim is not an identity.
 func TestABadManifestCostsOnlyItself(t *testing.T) {
 	testData(t)
 	repo := gitFixture(t, map[string]string{

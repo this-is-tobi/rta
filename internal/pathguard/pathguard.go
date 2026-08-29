@@ -14,7 +14,7 @@
 //
 // So the control is not per-capability and not a safety class. It is a root,
 // enforced once at the MCP boundary, in the same place and for the same
-// reason grants are (ADR 0005): a person at a terminal can already read their
+// reason grants are: a person at a terminal can already read their
 // own files, and an agent with no human behind it cannot be given the same
 // reach by default.
 //
@@ -30,6 +30,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/this-is-tobi/rule-them-all/internal/paths"
@@ -98,6 +99,13 @@ func (g *Guard) Check(field, raw string) (string, *view.Error) {
 	if g == nil || len(g.roots) == 0 || strings.TrimSpace(raw) == "" {
 		return raw, nil
 	}
+	if remote(raw) {
+		return "", view.Errorf("core.mcp.path.remote",
+			"%s: %q names a remote endpoint, not a path", field, raw).
+			WithHint("under a root, a path input is a local path and nothing else — a capability " +
+				"that fetches what a caller names is an outbound request an agent chose the " +
+				"destination of, which is the thing a root exists to bound")
+	}
 	abs, err := resolve(raw)
 	if err != nil {
 		return "",
@@ -125,6 +133,39 @@ func (g *Guard) Check(field, raw string) (string, *view.Error) {
 		field, raw, strings.Join(g.roots, ", ")).
 		WithHint("an MCP server reads only under its roots, because there is no person here to " +
 			"judge the request — ask the operator to restart it with --root, or use a path inside")
+}
+
+// scpLike matches git's other address form, `user@host:path`, which has no
+// scheme to give it away. Anchored and deliberately narrow: a host part with
+// no slash in it, then a colon. A Windows drive letter has no "@" and a real
+// local file called "notes@work" has no colon after it.
+var scpLike = regexp.MustCompile(`^[A-Za-z0-9._~-]+@[A-Za-z0-9._-]+:`)
+
+// remote reports whether a caller's "path" is really an address somewhere
+// else.
+//
+// **Under a root, a Path input is a local path and nothing else.** That
+// invariant is worth more than the two lines it costs, because without it the
+// guard silently does something surprising: `resolve` treats
+// "https://host/repo.git" as a relative path, joins it to the working
+// directory, and hands the handler "/cwd/https:/host/repo.git" — an address
+// turned into a local read of a file that does not exist. builtin/git's path
+// input accepts a URL by design (it clones one in memory), so the substitution
+// converted a remote clone into "not a git repository" and nobody could tell
+// why.
+//
+// Refusing is the right half of that fix rather than passing the URL through
+// unchecked. A capability that fetches whatever a caller names is an outbound
+// request whose destination an agent chose — the shape a root exists to
+// bound — and it is a `read` capability with no grant in front of it. On the
+// CLI and the TUI there is no guard, so the URL still works for the person who
+// typed it.
+func remote(raw string) bool {
+	s := strings.TrimSpace(raw)
+	if i := strings.Index(s, "://"); i > 0 && !strings.ContainsAny(s[:i], `/\`) {
+		return true
+	}
+	return scpLike.MatchString(s)
 }
 
 // resolve turns a caller's string into the absolute path a handler would

@@ -100,7 +100,7 @@ func resolveProfile(ctx context.Context, cmd *cobra.Command, c plugin.Capability
 	}
 	// And the forward, if this connection names a cluster. Separate from Fill
 	// because their lifetimes are: what Fill produces is true for as long as
-	// the environment stands, and a forward is per call by decision (ADR 0018
+	// the environment stands, and a forward is per call by decision
 	// §4). closeTunnel is never nil, so the caller defers it unconditionally.
 	dialled, closeTunnel, verr := profile.Dial(ctx, name, conn, c)
 	if verr != nil {
@@ -498,7 +498,7 @@ func profileCard(name string, p config.Profile, reg *registry.Registry) view.Vie
 // "which of these two wins" is the question somebody has when both are present.
 //
 // The credential half is the half people get wrong. A profile can never carry a
-// secret in the file (ADR 0016 refuses Config on a Secret), so the only ways one
+// secret in the file (Config is refused on a Secret), so the only ways one
 // reaches a connection are the variable and the `secrets:` reference, and naming
 // them here is the difference between a working environment and a connection
 // that fails authentication for no visible reason.

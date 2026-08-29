@@ -5,7 +5,7 @@ syntax = "proto3";
 //
 // It mirrors pkg/view and pkg/plugin deliberately and not accidentally. The
 // Go types are the contract an in-process built-in implements, and this is
-// the same contract for a subprocess — P6 says a built-in and a plugin
+// the same contract for a subprocess — a built-in and a plugin
 // implement the same interface, so a difference between these two files and
 // those packages is a bug in one of them, never a design.
 //
@@ -17,7 +17,7 @@ syntax = "proto3";
 //   - Enum values are appended. The zero value of every enum is
 //     *_UNSPECIFIED and means "the sender did not say", which is an error at
 //     the receiving end rather than a default — the same decision Field.Type
-//     made in Go, for the same reason (ADR 0011).
+//     made in Go, for the same reason.
 //   - New optional fields may be added. Anything that changes the meaning of
 //     an existing one is v2.
 package rta.v1;

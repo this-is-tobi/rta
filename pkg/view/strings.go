@@ -16,7 +16,7 @@ package view
 //
 //   - Error.Code was exempt as "the stable identifier callers branch on,
 //     whose shape Validate already constrains at the producer". Validate
-//     constrains *declared* text at registration (ADR 0013). An error code is
+//     constrains *declared* text at registration. An error code is
 //     per-call output, and wire.ErrorFromProto copies it off the wire
 //     verbatim, so a plugin's code is neither declared nor validated and went
 //     straight to a model.

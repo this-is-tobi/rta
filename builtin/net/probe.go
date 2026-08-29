@@ -110,7 +110,7 @@ func runSend(ctx context.Context, req plugin.Request) (view.View, error) {
 			WithHint("pass --data, or use `rta net probe` to listen without speaking")
 	}
 	// A dry run must not reach the network — the same rule http.post learned
-	// the hard way (PROJECT.md §4.7), and this capability is the one with the
+	// the hard way, and this capability is the one with the
 	// strongest claim to it: its own declaration calls it a remote write
 	// primitive strictly more capable than http.post. It shipped without the
 	// branch, so `rta net send --dry-run --host redis --port 6379 --data

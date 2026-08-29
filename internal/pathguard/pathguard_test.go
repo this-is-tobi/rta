@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
 
 func rooted(t *testing.T) (*Guard, string) {
@@ -119,8 +121,13 @@ func TestASiblingWithASharedPrefixIsRefused(t *testing.T) {
 // with "/" — base64's alphabet contains it, and a JPEG encodes to a leading
 // "/9j/". Which arguments are paths is the caller's question, answered by
 // Field.Type == Path in the bridge, which is why that type being closed and
-// mandatory (ADR 0011) is load-bearing here and not only documentation.
+// mandatory is load-bearing here and not only documentation.
 // TestANonPathArgumentIsNotConfined in internal/mcp pins the other half.
+//
+// A remote address is the one shape it now does decide about, and the reason
+// is that passing one through was never "untouched": resolve joins it to the
+// working directory, so "https://host/repo.git" reached the handler as
+// "/cwd/https:/host/repo.git" — see TestARemoteAddressIsNotAPath.
 func TestRelativeValuesAreNotRefused(t *testing.T) {
 	wd, err := os.Getwd()
 	if err != nil {
@@ -132,14 +139,54 @@ func TestRelativeValuesAreNotRefused(t *testing.T) {
 	}
 	for _, v := range []string{
 		"example.com:443",
-		"https://example.com/a/b?c=d",
 		"kv.get",
+		"notes@work",
+		"C:relative",
 		"sub/dir/file.txt",
 		"",
 		"   ",
 	} {
 		if _, err := g.Check("value", v); err != nil {
 			t.Errorf("%q was refused: %v", v, err)
+		}
+	}
+}
+
+// Under a root, a path input is a local path and nothing else.
+//
+// Not a style rule: builtin/git's path input accepts a remote URL by design
+// and clones it in memory, and the guard used to turn one into a local path
+// nobody asked for — resolve treats it as relative, joins it to the working
+// directory, and the handler opens "/cwd/https:/host/repo.git", which is not
+// a repository and not the thing that was asked for either. Refusing is the
+// right half of that fix rather than letting the URL through: a capability
+// that fetches what a caller names is an outbound request an agent chose the
+// destination of, from a `read` capability with no grant in front of it.
+//
+// The scp-like form has no scheme to give it away and is a git address all
+// the same, so it is refused by shape.
+func TestARemoteAddressIsNotAPath(t *testing.T) {
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, err := New(wd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range []string{
+		"https://example.com/a/b?c=d",
+		"ssh://git@example.com/repo.git",
+		"git://example.com/repo.git",
+		"git@github.com:owner/repo.git",
+	} {
+		verr := func() *view.Error { _, e := g.Check("path", v); return e }()
+		if verr == nil {
+			t.Errorf("%q was accepted as a path under a root", v)
+			continue
+		}
+		if verr.Code != "core.mcp.path.remote" {
+			t.Errorf("%q refused as %q, want core.mcp.path.remote", v, verr.Code)
 		}
 	}
 }

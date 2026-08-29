@@ -13,7 +13,7 @@ import (
 //
 // Every field of config.Config has to be in one of them, which is the point:
 // this test is not really about Plugins. It is about the next field somebody
-// adds, because that is how Plugins was lost — ADR 0016 added a block, and
+// adds, because that is how Plugins was lost — a block was added, and
 // the wizard, which assembled a fresh Config and wrote it, deleted the block
 // on every run without anybody typing a line about it.
 var (

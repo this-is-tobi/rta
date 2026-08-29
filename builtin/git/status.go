@@ -49,7 +49,7 @@ func statusLetter(c git.StatusCode) string {
 }
 
 func runStatus(ctx context.Context, req plugin.Request) (view.View, error) {
-	repo, verr := openRepo(ctx, req.String("path"))
+	repo, verr := openRepo(ctx, req)
 	if verr != nil {
 		return nil, verr
 	}

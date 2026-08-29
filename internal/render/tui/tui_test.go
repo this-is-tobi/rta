@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -26,7 +27,7 @@ import (
 // gets zero capabilities, including capICH, which routes every line insert
 // through its IRM fallback (ansi.SetModeInsertReplace) instead of the direct
 // ansi.InsertCharacter it uses everywhere else. That fallback path is where
-// PROJECT.md D77 traced a real output-corruption bug (a footer line cut off
+// Review traced a real output-corruption bug (a footer line cut off
 // mid-word around a stray "insert mode" toggle) — reproduced by unsetting
 // $TERM, and gone the instant a real terminal type was forced, so this is
 // not a bug in anything this package renders (confirmed independently:
@@ -72,11 +73,18 @@ func testRegistry(t *testing.T) *registry.Registry {
 				ID: "demo.hello", Summary: "say hello", Safety: plugin.Read,
 				// Counter makes each run's frame unique, so re-runs are
 				// observable through bubbletea's diff renderer.
+				//
+				// Atomic because the dashboard refreshes its tiles as a
+				// bubbletea batch, and a batch runs its commands on separate
+				// goroutines — so two refreshes of this one capability land in
+				// this closure at once. A plain int++ here is a data race in
+				// the fixture, which -race reported as a failure of whichever
+				// test happened to be running: seen once in about ten full
+				// runs, and nothing to do with the code under test.
 				Run: func() plugin.Handler {
-					n := 0
+					var n atomic.Int64
 					return func(context.Context, plugin.Request) (view.View, error) {
-						n++
-						return view.Text{Body: fmt.Sprintf("HELLO-FROM-CAPABILITY run=%d", n)}, nil
+						return view.Text{Body: fmt.Sprintf("HELLO-FROM-CAPABILITY run=%d", n.Add(1))}, nil
 					}
 				}(),
 			},
@@ -118,6 +126,18 @@ func newDashboard(t *testing.T) *teatest.TestModel {
 	return teatest.NewTestModel(t, New(testRegistry(t), config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
 }
 
+// framePatience is how long a test waits for the TUI to paint what it is
+// looking for.
+//
+// Generous, and it costs nothing when things work: every wait here returns
+// as soon as the frame arrives, so this bounds only the failure case. What
+// it buys is that a failure means the frame never came, rather than that the
+// machine was busy — these tests drive a real Bubble Tea program through a
+// real renderer, and under -race on a loaded host the first paint is not a
+// few milliseconds' work. A deadline tight enough to fail on load is a test
+// that reports the machine instead of the code.
+const framePatience = 30 * time.Second
+
 // waitFor blocks until one frame contains every wanted string. teatest's
 // Output is a stream — separate WaitFor calls consume bytes, so strings that
 // appear in the same frame must be asserted in a single call.
@@ -130,13 +150,13 @@ func waitFor(t *testing.T, tm *teatest.TestModel, wants ...string) {
 			}
 		}
 		return true
-	}, teatest.WithDuration(5*time.Second))
+	}, teatest.WithDuration(framePatience))
 }
 
 func quit(t *testing.T, tm *teatest.TestModel) {
 	t.Helper()
 	tm.Send(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
-	tm.WaitFinished(t, teatest.WithFinalTimeout(3*time.Second))
+	tm.WaitFinished(t, teatest.WithFinalTimeout(framePatience))
 }
 
 func TestBrowseListsCapabilities(t *testing.T) {
@@ -151,7 +171,7 @@ func TestDashboardIsTheLanding(t *testing.T) {
 	// (boom is destructive, needy has required inputs) — and it runs.
 	waitFor(t, tm, "dashboard", "demo.hello", "HELLO-FROM-CAPABILITY")
 	tm.Send(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
-	tm.WaitFinished(t, teatest.WithFinalTimeout(3*time.Second))
+	tm.WaitFinished(t, teatest.WithFinalTimeout(framePatience))
 }
 
 func TestDashboardBKeyOpensBrowse(t *testing.T) {
@@ -199,12 +219,21 @@ func TestDashboardSearchTile(t *testing.T) {
 }
 
 func TestBrowseEscReturnsToDashboard(t *testing.T) {
+	// The first wait is for the browse table's own column heading, not for
+	// "capabilities" — which the *dashboard* also prints, in its search bar
+	// ("3 capabilities"). Waiting on a string both screens contain meant that
+	// whenever the `b` keypress had not been handled yet, the wait matched the
+	// dashboard nobody had left, Esc then did nothing, and the last wait sat
+	// there for a header that was already correct and so was never repainted
+	// — bubbletea's renderer emits diffs, and an unchanged line is not a
+	// diff. It failed roughly one run in ten, and raising the patience only
+	// made it fail slower.
 	tm := newTest(t)
-	waitFor(t, tm, "capabilities")
+	waitFor(t, tm, headID)
 	tm.Send(tea.KeyPressMsg{Code: tea.KeyEscape})
 	waitFor(t, tm, "dashboard")
 	tm.Send(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
-	tm.WaitFinished(t, teatest.WithFinalTimeout(3*time.Second))
+	tm.WaitFinished(t, teatest.WithFinalTimeout(framePatience))
 }
 
 func TestDashboardExcludesUnsafeTiles(t *testing.T) {
@@ -285,7 +314,7 @@ func TestDestructiveRequiresConfirm(t *testing.T) {
 	tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
 	waitFor(t, tm, "capabilities") // back to browse, nothing ran
 	tm.Send(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
-	tm.WaitFinished(t, teatest.WithFinalTimeout(3*time.Second))
+	tm.WaitFinished(t, teatest.WithFinalTimeout(framePatience))
 	buf := new(bytes.Buffer)
 	_, _ = buf.ReadFrom(tm.FinalOutput(t))
 	if bytes.Contains(buf.Bytes(), []byte("BOOM-EXECUTED")) {
@@ -1989,7 +2018,7 @@ func TestSuggestionsAreCleaned(t *testing.T) {
 //
 // It was already safe, and safe only because cli.Render — the single reader
 // of a tile's view — sanitises its own local copy. That is the arrangement
-// that produced the runAction defect ADR 0013 records, where the cell on
+// that produced the runAction defect, where the cell on
 // screen came from the sanitised copy while the row's identity came from the
 // raw one. This asserts the model's own state instead, so a second reader
 // added later inherits a clean string rather than a latent bug.

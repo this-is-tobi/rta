@@ -56,7 +56,7 @@ func issue(t *testing.T, g Grant) {
 // tested is the thing that runs.
 func gate(t *testing.T, c plugin.Capability, values map[string]any, profile, pin string) *view.Error {
 	t.Helper()
-	release, verr := Reserve(c, values, profile, pin, "")
+	release, verr := Reserve(c, values, Caller{Profile: profile, Pin: pin})
 	if verr == nil {
 		release()
 	}
@@ -67,7 +67,7 @@ func gate(t *testing.T, c plugin.Capability, values map[string]any, profile, pin
 // the bridge only calls release() on failure.
 func call(t *testing.T, c plugin.Capability, values map[string]any, profile, pin string) *view.Error {
 	t.Helper()
-	_, verr := Reserve(c, values, profile, pin, "")
+	_, verr := Reserve(c, values, Caller{Profile: profile, Pin: pin})
 	return verr
 }
 
@@ -142,16 +142,16 @@ func TestNamespaceGrant(t *testing.T) {
 func TestCovering(t *testing.T) {
 	grants := []Grant{{Target: "kv"}, {Target: "todo.rm", Scope: "1"}}
 
-	if g := Covering(grants, "kv.get", "", ""); g == nil || g.Target != "kv" {
+	if g := Covering(grants, "kv.get", "", Caller{}); g == nil || g.Target != "kv" {
 		t.Errorf("Covering(kv.get) = %v, want the namespace grant", g)
 	}
-	if g := Covering(grants, "todo.rm", "1", ""); g == nil {
+	if g := Covering(grants, "todo.rm", "1", Caller{}); g == nil {
 		t.Error("Covering did not find the exact scoped grant")
 	}
-	if g := Covering(grants, "todo.rm", "2", ""); g != nil {
+	if g := Covering(grants, "todo.rm", "2", Caller{}); g != nil {
 		t.Errorf("a grant scoped to record 1 wrongly covered record 2: %v", g)
 	}
-	if g := Covering(nil, "kv.get", "", ""); g != nil {
+	if g := Covering(nil, "kv.get", "", Caller{}); g != nil {
 		t.Errorf("Covering(nil) = %v, want nil", g)
 	}
 }
@@ -278,7 +278,7 @@ func TestMaxUsesGrantStopsAuthorizingOnceSpent(t *testing.T) {
 	}
 }
 
-// A regression test for a real bug review caught (PROJECT.md D74): a call
+// A regression test for a real bug review caught: a call
 // naming the same record twice in a StringSlice-typed scope (kv.env's
 // --key, repeatable) used to spend the covering grant once per occurrence
 // rather than once per call, so a single authorized call could burn through
@@ -312,7 +312,7 @@ func TestARepeatedScopeInOneCallSpendsOnlyOnce(t *testing.T) {
 	}
 }
 
-// A regression test for a real bug review caught (PROJECT.md D83): unlike
+// A regression test for a real bug review caught: unlike
 // TestARepeatedScopeInOneCallSpendsOnlyOnce above (the same record named
 // twice), this is *distinct* records named in one call — kv.env's --key is
 // repeatable, so `kv env --key a --key b --key c` against a --max-uses 1
@@ -332,7 +332,7 @@ func TestDistinctRecordsInOneCallCannotExceedAGrantsBudget(t *testing.T) {
 	}
 	values := map[string]any{"key": []string{"a", "b", "c"}}
 
-	release, verr := Reserve(c, values, "", "", "")
+	release, verr := Reserve(c, values, Caller{})
 	if verr == nil {
 		release()
 		t.Fatal("a call naming three records was authorized against a one-use grant")
@@ -353,7 +353,7 @@ func TestDistinctRecordsInOneCallCannotExceedAGrantsBudget(t *testing.T) {
 	// grant and muddy the count.
 	setup(t)
 	issue(t, Grant{Target: "kv.env", MaxUses: 3})
-	_, verr = Reserve(c, values, "", "", "")
+	_, verr = Reserve(c, values, Caller{})
 	if verr != nil {
 		t.Fatalf("a call naming exactly as many records as the budget allows was refused: %v", verr)
 	}
@@ -368,8 +368,8 @@ func TestDistinctRecordsInOneCallCannotExceedAGrantsBudget(t *testing.T) {
 	}
 }
 
-// A regression test for a real bug review demonstrated directly
-// (PROJECT.md D74): fmt.Sprint(float64(1000000)) is "1e+06", not
+// A regression test for a real bug review demonstrated directly:
+// fmt.Sprint(float64(1000000)) is "1e+06", not
 // "1000000" — an ordinary six-digit Int-typed Scope value (todo.rm's id,
 // for instance) delivered over MCP as a JSON number would never match a
 // grant an operator issued for the same id typed as a plain string.
@@ -388,7 +388,7 @@ func TestIntScopedGrantMatchesTheOperatorTypedNumber(t *testing.T) {
 	}
 }
 
-// A coverage test for a real gap review found (PROJECT.md D74): Reserve is,
+// A coverage test for a real gap review found: Reserve is,
 // by its own doc comment, the whole gate a use-limited grant passes
 // through, and its Load()/acquireLock()/Save() failure branches — the
 // difference between failing closed and silently authorizing an
@@ -406,7 +406,7 @@ func TestReserveFailsClosedWhenTheGrantFileIsUnreadable(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	release, verr := Reserve(c, map[string]any{"key": "k"}, "", "", "")
+	release, verr := Reserve(c, map[string]any{"key": "k"}, Caller{})
 	if verr == nil {
 		if release != nil {
 			release()
@@ -483,7 +483,7 @@ func TestConcurrentReserveDoesNotOverspendAOneTimeGrant(t *testing.T) {
 // the gap between those two reads was invisible to the first (so the fast
 // path never touched the lock or spent anything) and visible to the second
 // (so the call was authorized anyway): a one-time grant delivered for free,
-// reproduced and left open in PROJECT.md D74.
+// reproduced and left open by an earlier review.
 //
 // The real gap is a handful of microseconds, too narrow to land reliably by
 // launching two goroutines and hoping. This widens it without touching what
@@ -517,7 +517,7 @@ func TestReserveFastPathIsNotFooledByAGrantThatArrivesMidCheck(t *testing.T) {
 			verr    *view.Error
 		}, 1)
 		go func() {
-			release, verr := Reserve(c, values, "", "", "")
+			release, verr := Reserve(c, values, Caller{})
 			done <- struct {
 				release func()
 				verr    *view.Error

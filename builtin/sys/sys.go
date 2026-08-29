@@ -1,6 +1,6 @@
 // Package sys is the built-in host telemetry plugin: CPU, memory, disk,
 // load, host info and processes. It needs zero configuration, which makes it
-// the first-contact experience (PROJECT.md §5.1) and the M0 proof that one
+// the first-contact experience and the M0 proof that one
 // capability serves every renderer.
 package sys
 

@@ -170,7 +170,7 @@ func (m Model) configFor(c plugin.Capability) map[string]any {
 // ends. It happens inside the returned tea.Msg func because that runs off the
 // update loop — an open costs ~54 ms against a real cluster, which is a
 // visible stall if it happens on a keypress — and because "as long as the
-// call" is the tunnel's whole lifetime rule (ADR 0018 §4), which is exactly
+// call" is the tunnel's whole lifetime rule, which is exactly
 // the scope of this function.
 func runCmd(ctx context.Context, seq int, c plugin.Capability, values map[string]any, yes bool,
 	cfg map[string]any, profileName string, filled map[string]any, conn config.Connection) tea.Cmd {

@@ -14,7 +14,7 @@
 // the human surfaces with a different symptom: fd 0 there is the user's
 // keystrokes, and a plugin holding it eats them from the TUI.
 //
-// ADR 0012 §5 specifies dup(2) on fd 0 plus a reopen. This does the simpler
+// The contract specifies dup(2) on fd 0 plus a reopen. This does the simpler
 // thing that covers the actual gap: go-plugin reads the `os.Stdin` *variable*
 // at spawn time, so repointing that variable is sufficient and needs no
 // platform split for Windows, where dup2 has no equivalent. What the dup

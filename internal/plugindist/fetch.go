@@ -67,8 +67,8 @@ func fetchArtifact(ctx context.Context, rawURL string, dst *os.File) (string, *v
 	case "oci":
 		return "", view.Errorf("plugin.install.oci",
 			"%s names an oci:// artifact, and that transport is not built yet", rawURL).
-			WithHint("ADR 0017 §6 admits it as a claim; ask the index for an https or file URL " +
-				"until the transport lands")
+			WithHint("an index may claim an oci:// artifact, but rta cannot fetch one yet; " +
+				"ask the index for an https or file URL until the transport lands")
 	default:
 		return "", view.Errorf("plugin.install.fetch", "%q: the schemes are https and file", rawURL)
 	}

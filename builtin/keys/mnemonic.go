@@ -34,8 +34,8 @@ func toMnemonic(seed []byte) (string, error) {
 // even as one word out of twenty-four. Only the two exported sentinels,
 // whose text is fixed and never carries input, are allowed through as-is;
 // everything else, including that one and anything future versions of the
-// dependency might add, gets a fixed, safe message instead. Found by review
-// (PROJECT.md D73): the original version of this function passed the
+// dependency might add, gets a fixed, safe message instead. Found by review:
+// the original version of this function passed the
 // error straight through.
 func fromMnemonic(words string) ([]byte, error) {
 	seed, err := bip39.EntropyFromMnemonic(words)

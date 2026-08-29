@@ -129,7 +129,7 @@ func FieldTypeToProto(t plugin.FieldType) rtav1.FieldType {
 // the default one — so a type this host has never heard of, from a plugin
 // built against a newer contract, would quietly become a string flag holding
 // what the plugin declared as a secret. Validate rejects the zero value in Go
-// for the same reason (ADR 0011); this is that rule at the wire.
+// for the same reason; this is that rule at the wire.
 func FieldTypeFromProto(t rtav1.FieldType) (plugin.FieldType, bool) {
 	for _, m := range fieldTypes {
 		if m.pb == t {

@@ -12,7 +12,7 @@ import (
 // never removed — the config file is the operator's, may be shared across
 // machines, and `rta doctor` already reports orphans as problems; what an
 // uninstall owes is telling them at the moment they can still connect the
-// dots (ADR 0017's own walkthrough finding: "nothing offered to clean it up
+// dots (found while walking the install path end to end: "nothing offered to clean it up
 // because nothing knew an uninstall had happened").
 func orphanedConfig(name string) []string {
 	cfg, err := config.LoadFile()
@@ -38,7 +38,7 @@ func orphanedConfig(name string) []string {
 
 // SearchRow is one line of `rta plugin search`: claims, labelled by the index
 // making them, answerable without downloading anything — the reason the
-// declaration lives in the manifest at all (ADR 0017 §2).
+// declaration lives in the manifest at all.
 type SearchRow struct {
 	Name    string
 	Index   string

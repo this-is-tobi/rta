@@ -146,7 +146,7 @@ func TestEachEndpointRoleFillsTheInputThatDeclaredIt(t *testing.T) {
 
 // The TLS role turns transport security off, in the plugin's own vocabulary.
 //
-// Measured rather than argued (ADR 0018 §7): PostgreSQL's `prefer` kills a
+// Measured rather than argued: PostgreSQL's `prefer` kills a
 // port-forward on the clean disconnect, so a run through a forward that left
 // sslmode at its declared default would work once and leave the next call
 // staring at "connection refused" on a local port.

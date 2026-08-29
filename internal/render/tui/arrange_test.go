@@ -101,7 +101,7 @@ func TestPluginWithNothingToShowGetsNoTile(t *testing.T) {
 // every few seconds. That reasoning is about this machine. audit.deps is
 // Read, mutates nothing, and defaults its path to "." — and running it sends
 // the project's dependency list to osv.dev, which is not something opening a
-// TUI should do, and D9 says network calls happen on explicit user action.
+// TUI should do: network calls happen on explicit user action.
 //
 // It very nearly shipped as the audit plugin's tile.
 func TestNoPreviewKeepsACapabilityOffTheAutomaticDashboard(t *testing.T) {
@@ -152,7 +152,7 @@ func TestNoPreviewKeepsACapabilityOffTheAutomaticDashboard(t *testing.T) {
 // The rule, applied to the real catalogue: nothing that reaches off this
 // machine may run because somebody opened the dashboard.
 func TestNoBuiltinTileReachesOffTheMachineUnasked(t *testing.T) {
-	reg, err := all.Registry()
+	reg, err := all.Registry(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -282,7 +282,7 @@ func TestAnExplicitPreferredTileBeatsTheOverviewConvention(t *testing.T) {
 // loosening — this test is where it is pinned, and gen.password taking the
 // tile back fails it by name.
 func TestTheShippedDashboardIsTheOneWeThinkItIs(t *testing.T) {
-	reg, err := all.Registry()
+	reg, err := all.Registry(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -294,6 +294,11 @@ func TestTheShippedDashboardIsTheOneWeThinkItIs(t *testing.T) {
 		"kv.status",
 		"grant.list",
 		// Unranked by pluginOrder, so alphabetical after the ranked six.
+		// agent.overview earns one deliberately: "what have
+		// agents been doing, and is anything waiting on me" is the question
+		// this product exists to answer, and a parked call has a clock on
+		// it — a dashboard is where somebody notices in time.
+		"agent.overview",
 		"fs.tree",
 		"gen.overview",
 		"git.overview",
@@ -310,7 +315,7 @@ func TestTheShippedDashboardIsTheOneWeThinkItIs(t *testing.T) {
 // dashboard shows something nobody chose. Checking it against the real
 // registry is what makes that a failing test instead of a surprise.
 func TestEveryPreferredTileNamesACapabilityThatExists(t *testing.T) {
-	reg, err := all.Registry()
+	reg, err := all.Registry(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -349,7 +354,7 @@ func TestEveryPreferredTileNamesACapabilityThatExists(t *testing.T) {
 // argument renders the same "missing input" error forever — and must not have
 // declared NoPreview, which the pin has no standing to overrule.
 func TestEveryPreferredTileIsActuallyUsableAsATile(t *testing.T) {
-	reg, err := all.Registry()
+	reg, err := all.Registry(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1105,7 +1110,7 @@ func TestEveryTileIsReachableByMovingDownAndRight(t *testing.T) {
 
 func wideRowModel(t *testing.T) Model {
 	t.Helper()
-	reg, err := all.Registry()
+	reg, err := all.Registry(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1188,7 +1193,7 @@ func TestConfiguredTilesRefuseAnythingThatWrites(t *testing.T) {
 // A future tile with genuinely nothing more to show is a legitimate answer.
 // It just has to be written down here rather than discovered by opening it.
 func TestEveryBuiltinTileHasAFullScreenView(t *testing.T) {
-	reg, err := all.Registry()
+	reg, err := all.Registry(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1220,7 +1225,7 @@ func TestEveryBuiltinTileHasAFullScreenView(t *testing.T) {
 // say — and once they existed, `kv` and a binary somebody dropped on $PATH
 // rendered as the same kind of thing, on the one screen whose whole job is
 // "what do I actually have". Every security property in pluginhost binds a
-// plugin to its artifact (ADR 0015); this is where a person sees that binding
+// plugin to its artifact; this is where a person sees that binding
 // without running doctor.
 func TestThePluginPaneDistinguishesBuiltInFromExternal(t *testing.T) {
 	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
@@ -1289,7 +1294,7 @@ func TestThePluginPaneShowsWhatEachPluginCanDo(t *testing.T) {
 	// three safety classes — multiRegistry is Read throughout, so asserting
 	// against it would have proved the pane renders one word.
 	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
-	reg, err := all.Registry()
+	reg, err := all.Registry(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1329,7 +1334,7 @@ func TestThePluginPaneShowsWhatEachPluginCanDo(t *testing.T) {
 // see reads as the app being broken rather than as the pane being short.
 func TestThePluginPaneScrollsToTheSelection(t *testing.T) {
 	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
-	reg, err := all.Registry()
+	reg, err := all.Registry(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1372,7 +1377,7 @@ func TestThePluginPaneScrollsToTheSelection(t *testing.T) {
 // list ends where the panel does.
 func TestThePluginPaneSaysWhenThereIsMore(t *testing.T) {
 	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
-	reg, err := all.Registry()
+	reg, err := all.Registry(nil)
 	if err != nil {
 		t.Fatal(err)
 	}

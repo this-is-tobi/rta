@@ -10,7 +10,7 @@ import (
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 )
 
-// Live completion (Field.Live, ADR 0018 §8 as amended): each Suggest here is
+// Live completion (Field.Live): each Suggest here is
 // a listing Vault already answers for this token, visible in Vault's own
 // audit log like any other request by the same identity. Names only by
 // construction — LIST is Vault's names-only operation and sys/mounts is a

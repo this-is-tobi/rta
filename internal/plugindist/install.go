@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strings"
@@ -19,7 +20,7 @@ import (
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
 
-// Install is a decision, and the decision is a digest (ADR 0017 §4). The
+// Install is a decision, and the decision is a digest. The
 // sequence is claims first, then evidence: resolve the manifest, fetch the
 // bytes, hash them, check the index's checksum claim, launch the binary in
 // the same sandbox any load uses, and refuse if what it declares is not what
@@ -102,7 +103,7 @@ func installFrom(ctx context.Context, listed Listed, stderr io.Writer) (Report, 
 	}
 
 	// The staged binary carries its final name: the filename is the
-	// operator-side half of the D40 identity check, and the verification
+	// operator-side half of the identity check, and the verification
 	// launch below must see the same one the store will.
 	staged := filepath.Join(staging, binaryName(m.Name))
 	if plat.Bin != "" {
@@ -187,8 +188,90 @@ func describeBinary(ctx context.Context, path string, stderr io.Writer) (plugin.
 	return client.Declared, nil
 }
 
-// verifyClaims is the check no opaque-executable manager can perform
-// (ADR 0017 §2): the index said what this plugin declares, the binary just
+// hexDigest is what a lockfile digest must look like before it is allowed to
+// become a path.
+var hexDigest = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
+// describeStored is describeBinary for bytes that are already installed, and
+// it is the admission check Upgrade was missing.
+//
+// The store path *states* a digest and rta.lock *records* one; neither is the
+// bytes. Upgrade used to join the lockfile's digest onto the store path and
+// launch whatever sat there, so `rta plugin upgrade` was the one path that ran
+// plugin code with no admission check at all — every other place hashes first
+// and refuses what the operator does not trust (discover.go's LoadInto).
+//
+// Three refusals, in the order they have to happen:
+//
+// The shape first, because the digest is a *path component* before it is
+// anything else. ReadLock admits any non-empty string, so a hand-edited
+// rta.lock naming "../../../tmp/evil" made filepath.Join clean the climb and
+// rta launched a binary from outside the store entirely. That falsifies what
+// lock.go says about itself — "nothing authorizes through this record" — and
+// it is one line, but it is the line that turns rta.lock into an execution
+// input. Checking the shape before the Join is what closes it; the digest
+// comparison below would also refuse it, but only by accident, and only after
+// having already resolved and read the attacker's path.
+//
+// Then the bytes, against what the lockfile claims. Then trust, because
+// `rta plugin untrust` promises the artifact will not load again and an
+// upgrade is a load. Each is a different fact for the operator, so each gets
+// its own code rather than one "it did not work".
+//
+// The launch names the Identity that was checked, not the path — hashing once
+// to decide and again to run is two reads of a file that can change in
+// between, which is the window pluginhost's own split exists to close.
+func describeStored(ctx context.Context, name, want string, stderr io.Writer) (plugin.Plugin, *view.Error) {
+	if !hexDigest.MatchString(want) {
+		return plugin.Plugin{}, view.Errorf("plugin.upgrade.lock",
+			"rta.lock records %q as %s's digest, which is not a digest", want, name).
+			WithHint("the lockfile has been edited by hand or corrupted; `rta plugin remove " +
+				name + "` and a fresh install rewrite it")
+	}
+	path := filepath.Join(StoreDir(), name, want, binaryName(name))
+	id, err := pluginhost.Identify(path)
+	if err != nil {
+		return plugin.Plugin{}, view.Errorf("plugin.upgrade.old",
+			"the installed %s cannot be read: %v", name, err).
+			WithHint("`rta plugin remove " + name + "` and a fresh install replace it")
+	}
+	if id.Digest != want {
+		return plugin.Plugin{}, view.Errorf("plugin.upgrade.drift",
+			"the installed %s hashes to %s and rta.lock records %s — refusing to run it",
+			name, short(id.Digest), short(want)).
+			WithHint("something rewrote the store after rta placed it there; `rta plugin remove " +
+				name + "` and a fresh install replace it")
+	}
+	if !plugintrust.Load().Trusts(id.Digest) {
+		return plugin.Plugin{}, view.Errorf("plugin.upgrade.untrusted",
+			"%s (%s) is installed and not trusted — refusing to run it to read its declaration",
+			name, short(id.Digest)).
+			WithHint("`rta plugin trust " + name + "` restores the approval, or `rta plugin remove " +
+				name + "` takes the artifact out")
+	}
+	host := pluginhost.New(stderr)
+	defer host.CloseAll()
+	client, err := host.OpenIdentified(ctx, id)
+	if err != nil {
+		return plugin.Plugin{}, view.Errorf("plugin.upgrade.old",
+			"the installed %s cannot describe itself: %v", name, err).
+			WithHint("`rta plugin remove " + name + "` and a fresh install replace it")
+	}
+	return client.Declared, nil
+}
+
+// short is the first twelve characters of a digest, or all of it if somebody
+// handed us fewer — a refusal that panics while formatting its own message is
+// worse than the thing it was refusing.
+func short(digest string) string {
+	if len(digest) > 12 {
+		return digest[:12]
+	}
+	return digest
+}
+
+// verifyClaims is the check no opaque-executable manager can perform:
+// the index said what this plugin declares, the binary just
 // declared itself, and a disagreement is an install failure naming the index.
 //
 // The fields checked are the ones an authorization hangs off — the ID set,
@@ -250,7 +333,7 @@ func verifyClaims(listed Listed, declared plugin.Plugin) *view.Error {
 }
 
 // cosignBin is overridable in tests; signature checking is recorded, never
-// required (ADR 0017 §5).
+// required.
 var cosignBin = "cosign"
 
 // checkSignature verifies the manifest's detached signature when one is
@@ -302,7 +385,7 @@ func checkSignature(ctx context.Context, m Manifest, binary string, stderr io.Wr
 // Removed is what an uninstall leaves for the CLI to say: what went, and the
 // statements elsewhere that now point at nothing — named rather than
 // silently orphaned, because nothing else knows an uninstall happened
-// (ADR 0017's own walkthrough finding).
+// (found while walking the install path end to end).
 type Removed struct {
 	Name    string
 	Digests []string
@@ -340,7 +423,7 @@ func Remove(name string) (Removed, *view.Error) {
 }
 
 // Upgraded is one upgrade's outcome: the move, and the declaration diff that
-// is the supply-chain event worth reading (ADR 0017 §4).
+// is the supply-chain event worth reading.
 type Upgraded struct {
 	Report
 	UpToDate    bool
@@ -369,12 +452,13 @@ func Upgrade(ctx context.Context, name string, stderr io.Writer) (Upgraded, *vie
 	// The old declaration, read before anything changes — from the installed
 	// binary itself, which is the only honest source: the manifest's old
 	// claim may never have matched and the declaration cache is a cache.
-	oldPath := filepath.Join(StoreDir(), name, locked.Digest, binaryName(name))
-	oldDecl, verr := describeBinary(ctx, oldPath, stderr)
+	//
+	// Reading it means *running* it, and this is the only place in the tree
+	// that runs bytes out of the store. describeStored is what makes that a
+	// load rather than an exec.
+	oldDecl, verr := describeStored(ctx, name, locked.Digest, stderr)
 	if verr != nil {
-		return Upgraded{}, view.Errorf("plugin.upgrade.old",
-			"the installed %s cannot describe itself: %s", name, verr.Message).
-			WithHint("`rta plugin remove " + name + "` and a fresh install replace it")
+		return Upgraded{}, verr
 	}
 
 	report, verr := installFrom(ctx, listed, stderr)

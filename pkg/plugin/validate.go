@@ -34,7 +34,7 @@ var (
 // FieldTypes returns every type an input may declare, in the order the
 // rejection message lists them.
 //
-// The set is closed and the zero value is not a member (ADR 0011), so anything
+// The set is closed and the zero value is not a member, so anything
 // that maps a declaration onto another representation — a wire enum, a JSON
 // Schema, a form widget, a code generator — has a finite set to cover and a
 // way to find out when it grows. Exported for exactly that: the alternative is
@@ -48,7 +48,7 @@ func Safeties() []Safety { return slices.Clone(safeties) }
 // ValidName reports whether s is a legal plugin namespace. Exported so that
 // anything holding a namespace that did not come through Validate — an index
 // manifest's claim, before any binary exists to validate — is held to the
-// same grammar rather than a restated one (the D30 rule: one home per list).
+// same grammar rather than a restated one: a list has one home.
 func ValidName(s string) bool { return nameRe.MatchString(s) }
 
 // ValidID reports whether s is a legal capability ID, for the same reason.
@@ -179,8 +179,8 @@ func (c Capability) validate(ns string) error {
 					"a tunnel fills an address, not a credential — the credential beside it comes from "+
 					"the profile's `secrets:` mapping", c.ID, f.Name)
 			}
-			// A tunnel is a destination, and D94's rule is that a destination
-			// is a destination whether or not it is on this machine. An
+			// A tunnel is a destination, and a destination is a destination
+			// whether or not it is on this machine. An
 			// endpoint input that a caller could supply would let an agent
 			// name the address the operator's credential is carried to, which
 			// is the hole Local exists to close.
@@ -340,7 +340,7 @@ func (c Capability) validate(ns string) error {
 		// it came from. Both shapes are checked: only the string case was,
 		// and a StringSlice input's []string default went to models verbatim
 		// — the one declared-text hole left in a function whose whole job is
-		// that there are none (ADR 0013).
+		// that there are none.
 		switch d := f.Default.(type) {
 		case string:
 			if err := checkLine(fmt.Sprintf("capability %q: input %q default", c.ID, f.Name), d, maxHelp); err != nil {

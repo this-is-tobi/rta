@@ -1,19 +1,14 @@
 package grant
 
 import (
-	"crypto/hmac"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"os"
-	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
 
-	"github.com/this-is-tobi/rule-them-all/internal/atomicfile"
-	"github.com/this-is-tobi/rule-them-all/internal/paths"
+	"github.com/this-is-tobi/rule-them-all/internal/seal"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
 
@@ -22,31 +17,13 @@ import (
 // data directory could author the answer to "what is this agent allowed to
 // do". A sealed file is one that says who wrote it.
 //
-// WHAT THIS DEFENDS, EXACTLY — the bound matters more than the mechanism.
-//
-// It stops a writer that cannot read the directory it is writing to. That is
-// not a contrivance: it is precisely the shape a filesystem sandbox creates.
-// A confined plugin under the deny set is refused reads of rta's data
-// directory and was never refused writes, so it could blind-overwrite
-// grants.json — no read required, since the Grant struct is public — and
-// hand itself a standing grant over every kv capability with a far-future
-// expiry. That was reproduced end to end: a refused kv.get became the secret
-// after an 82-byte write. Sealing closes it, because forging the seal needs
-// the key and reading the key needs the read the sandbox denies.
-//
-// It does NOT stop anything that can read this directory. Same-uid means no
-// secret here is a secret from an attacker at that uid: they read the key and
-// seal their own file. §4.7.10 already says this about the age identity —
-// "an agent with any file-reading tool can take the key and the ciphertext
-// and decrypt the store itself, never touching kv.get or its grants" — and
-// the same sentence is true of grants. What sealing adds is that the two
-// cases are now different: an attacker who can only write is stopped, and an
-// attacker who can read as well is not, where before there was one case and
-// it was lost.
-//
-// A MAC and not encryption, because §4.7.11's promise that "what can the
-// agent do right now?" is answerable without unlocking anything is worth
-// keeping, and a plaintext file that cannot be forged keeps it.
+// The mechanism and its exact bound now live in internal/seal, which grants
+// share with the consent decisions and the agent ledger — the
+// bound is unchanged and worth restating in one line: it stops a writer that
+// cannot read (a confined plugin blind-overwriting grants.json, reproduced
+// end to end: a refused kv.get became the secret after an 82-byte write),
+// and it stops nothing that can read this directory, because that attacker
+// reads the key and seals their own file.
 //
 // The precedent is one directory over: builtin/kv/crypt.go's writeKeys
 // already refuses when kv.recipients disagrees with the recipient list
@@ -58,7 +35,7 @@ const keyFile = "grants.key"
 
 // keyPath is where the seal key lives. 0600, beside the file it authenticates
 // — which is the whole of its threat model, see above.
-func keyPath() string { return filepath.Join(paths.Data(), keyFile) }
+func keyPath() string { return seal.Path(keyFile) }
 
 // sealKey loads the key, creating it on first use.
 //
@@ -66,11 +43,11 @@ func keyPath() string { return filepath.Join(paths.Data(), keyFile) }
 // was written by something that did not have one, and generating a fresh key
 // to check it against would turn "unforgeable" into "regenerate and accept".
 func sealKey(create bool) ([]byte, *view.Error) {
-	raw, err := os.ReadFile(keyPath())
-	if err == nil && len(raw) >= 32 {
-		return raw, nil
-	}
-	if !create {
+	key, err := seal.Key(keyFile, create)
+	switch {
+	case err == nil:
+		return key, nil
+	case errors.Is(err, seal.ErrMissing):
 		// Only reached with a grant file already in hand, so this is not the
 		// "no grants yet" case — that one returns before any key is wanted.
 		// A grant file with no key beside it was written by something that
@@ -80,57 +57,23 @@ func sealKey(create bool) ([]byte, *view.Error) {
 			"%s exists with no seal key beside it, so it was not written by rta", Path()).
 			WithHint("no grant is honoured until this is resolved; `rm " + Path() +
 				"` clears every grant, and any that were legitimate can be re-issued")
-	}
-	key := make([]byte, 32)
-	if _, err := rand.Read(key); err != nil {
-		return nil, view.Errorf("core.grant.write", "generating a seal key: %v", err)
-	}
-	if err := os.MkdirAll(paths.Data(), 0o755); err != nil {
-		return nil, view.Errorf("core.grant.write", "creating %s: %v", paths.Data(), err)
-	}
-	// 0600, and written before the grants it authenticates, so there is never
-	// a moment where a sealed file exists with no key to check it.
-	//
-	// Published rather than written, for the same reason Save is atomic and
-	// on behalf of the same reader: Load is called from Check on every gated
-	// MCP call and takes no lock, so it can land in the middle of a plain
-	// os.WriteFile — which truncates first. A reader that caught the key file
-	// mid-write read fewer than 32 bytes and concluded, out loud, that the
-	// grant file "was not written by rta", advising the operator to delete
-	// every grant they had. rta accusing itself of forgery is the worst
-	// possible reading of a transient. The same truncation left permanently
-	// by a crash or a full disk was worse still, because nothing recovered
-	// from it.
-	//
-	// Publish also settles which key wins. Two writers are serialized by
-	// acquireLock today, but that is a fact about the callers rather than
-	// about this function, and a second key silently replacing the first
-	// invalidates every grant sealed with the first — so the loser adopts the
-	// winner's key instead of overwriting it.
-	stored, err := atomicfile.Publish(keyPath(), key, 0o600)
-	if err != nil {
-		return nil, view.Errorf("core.grant.write", "writing %s: %v", keyPath(), err)
-	}
-	if len(stored) < 32 {
-		// Something short was already there — a key truncated by the
-		// os.WriteFile this replaced, most likely. Generating a fresh one
-		// over the top would reject every grant sealed with the original as
-		// forged, which is a security alarm raised by the recovery rather
-		// than by the incident.
+	case errors.Is(err, seal.ErrShort):
+		// Something short was already there — a key truncated by a
+		// non-atomic write, most likely. Generating a fresh one over the top
+		// would reject every grant sealed with the original as forged, which
+		// is a security alarm raised by the recovery rather than by the
+		// incident.
 		return nil, view.Errorf("core.grant.unsealed",
 			"%s is too short to be a seal key, so it was not written by this rta", keyPath()).
 			WithHint("`rm " + keyPath() + " " + Path() + "` clears every grant and starts clean; " +
 				"any that were legitimate can be re-issued")
+	default:
+		return nil, view.Errorf("core.grant.write", "%v", err)
 	}
-	return stored, nil
 }
 
-// seal returns the MAC for a grant file's bytes.
-func seal(key, data []byte) string {
-	mac := hmac.New(sha256.New, key)
-	mac.Write(data)
-	return hex.EncodeToString(mac.Sum(nil))
-}
+// sealOf returns the MAC for a grant file's bytes.
+func sealOf(key, data []byte) string { return seal.MAC(key, data) }
 
 // sealed is the on-disk shape: the grants, and a MAC over them.
 //

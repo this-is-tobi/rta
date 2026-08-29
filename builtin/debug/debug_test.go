@@ -232,7 +232,7 @@ func TestOscHyperlinkNamesTheUri(t *testing.T) {
 	}
 }
 
-// The one PROJECT.md's own §4.7 (item 13) is about: decode it, don't just
+// The one the hazard is about: decode it, don't just
 // say "clipboard write" and leave the payload as base64 nobody reads twice.
 func TestOscClipboardWriteIsDecoded(t *testing.T) {
 	// base64("hello") == "aGVsbG8="

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"sort"
 
 	vaultapi "github.com/hashicorp/vault/api"
@@ -10,13 +11,12 @@ import (
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
 
-// wrapSetCapability and wrapGetCapability are D13/ADR 0006's answer to
+// wrapSetCapability and wrapGetCapability are the answer to
 // "share a secret within your own infra": Vault's native response-wrapping
 // (sys/wrapping/wrap) as a single-use, TTL'd cubbyhole token, a thin
 // pass-through rather than a new transport — it reaches only someone who can
-// already reach this Vault deployment, which PROJECT.md §7 is explicit is
-// "share within your infra", not "send to anybody" (that is builtin/share,
-// Wave 3, built on magic-wormhole instead).
+// already reach this Vault deployment. That is "share within your infra",
+// not "send to anybody", which would need a different transport entirely.
 func wrapSetCapability() plugin.Capability {
 	return cap(plugin.Capability{
 		ID:         "vault.wrap.set",
@@ -59,6 +59,15 @@ func runWrapSet(ctx context.Context, req plugin.Request) (view.View, error) {
 	}
 	return withClient(req, func(client *vaultapi.Client) (view.View, error) {
 		ttl := req.String("ttl")
+		// Wrapping mints a live single-use token in a real cubbyhole and this
+		// prints it, so a preview that went through would hand out the
+		// credential it was meant to be rehearsing — and burn a use of it.
+		// vault.wrap.get already previews rather than consuming; this is the
+		// same rule on the other half of the pair.
+		if req.DryRun {
+			return view.Text{Body: fmt.Sprintf("would wrap %d field(s) into a single-use token valid for %s",
+				len(data), ttl)}, nil
+		}
 		client.SetWrappingLookupFunc(func(operation, path string) string { return ttl })
 		secret, err := client.Logical().WriteWithContext(ctx, "sys/wrapping/wrap", data)
 		if err != nil {

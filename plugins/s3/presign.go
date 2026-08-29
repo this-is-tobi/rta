@@ -39,6 +39,21 @@ func runObjectPresign(ctx context.Context, req plugin.Request) (view.View, error
 		bucket, key := req.String("bucket"), req.String("key")
 		ttl := time.Duration(req.Int("ttl")) * time.Second
 
+		// Signing *is* the side effect here, which is what makes this the odd
+		// one out among the dry-run branches: nothing is written and no
+		// request is made, so it looks inert — and it mints a working bearer
+		// credential that outlives the call by up to seven days and is
+		// checked by nobody on use. A preview reports the terms and never the
+		// signature, because a URL printed under --dry-run is as spent as one
+		// printed without it.
+		if req.DryRun {
+			return view.KeyValue{Pairs: []view.Pair{
+				{Key: "would presign", Value: bucket + "/" + key},
+				{Key: "method", Value: req.String("method")},
+				{Key: "expires in", Value: ttl.String()},
+			}}, nil
+		}
+
 		var u *url.URL
 		var err error
 		switch req.String("method") {

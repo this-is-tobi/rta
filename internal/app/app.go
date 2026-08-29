@@ -28,8 +28,8 @@ import (
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
 
-// ExitCode maps an error returned by Execute to the fixed exit-code contract
-// (PROJECT.md §4.3): 0 ok, 1 capability error, 2 usage error, 3 confirmation
+// ExitCode maps an error returned by Execute to the fixed exit-code contract:
+// 0 ok, 1 capability error, 2 usage error, 3 confirmation
 // declined.
 func ExitCode(err error) int {
 	if err == nil {
@@ -148,7 +148,7 @@ func asViewError(err error, target **view.Error) bool {
 // NewRegistry builds the registry of built-in plugins. The catalogue itself
 // lives in builtin/all, where nothing downstream of it can be an import
 // cycle away from asking what is in it.
-func NewRegistry() (*registry.Registry, error) { return all.Registry() }
+func NewRegistry() (*registry.Registry, error) { return all.Registry(PluginConfig) }
 
 // LoadPlugins adds every SDK plugin found on $PATH to reg and returns the
 // host that owns their processes, plus whatever went wrong.
@@ -172,6 +172,21 @@ type globalOpts struct {
 	yes     bool
 	dryRun  bool
 }
+
+// yieldsToPlugin marks a root command that deliberately steps aside when a
+// plugin claims its namespace, which is what makes it safe for that name to
+// be unreserved.
+//
+// Exactly one command wears it: the `rta ai` explainer a binary built
+// without the AI engine registers, and only when no plugin holds the name.
+// The reservation rule exists so that a hostile plugin cannot mask a
+// command whose absence matters — `rta doctor` is the case it was written
+// for. A message saying "this feature is not in this build" is the
+// opposite: a real ai plugin taking that word is the feature arriving, and
+// it should win. TestTheCLIReservesEveryTopLevelCommandItOwns reads this
+// annotation, so the exemption is stated here rather than special-cased
+// there.
+const yieldsToPlugin = "rta.yields-to-plugin"
 
 // groupRunE is what a command that only groups other commands does with its
 // arguments: nothing shows help, anything else is a usage error.
@@ -256,6 +271,10 @@ func NewRoot(reg *registry.Registry, version string) *cobra.Command {
 	for _, c := range reg.Capabilities() {
 		attach(nsCmds[c.Words()[0]], c, opts)
 	}
+	// The one namespace with a bare form of its own: `rta ai "question"`
+	// streams, while its subcommands stay ordinary capability commands. In
+	// a binary built without the AI engine there is no such namespace, and
+	// this is where `rta ai` still gets an answer worth reading.
 	root.AddCommand(newMCPCommand(reg, version))
 	root.AddCommand(newExplainCommand(reg, opts))
 	root.AddCommand(newPluginCommand(reg, version, opts))
@@ -649,7 +668,7 @@ func runCapability(ctx context.Context, cmd *cobra.Command, c plugin.Capability,
 		Width: termWidth(), Notes: cmd.ErrOrStderr(),
 	}
 
-	// Safety gate (PROJECT.md §4.7). Interactive confirmation lands in M1;
+	// Safety gate. Interactive confirmation lands in M1;
 	// in M0 destructive capabilities require an explicit --yes.
 	if c.Safety == plugin.Destructive && !opts.yes && !opts.dryRun {
 		verr := &view.Error{

@@ -37,12 +37,46 @@ type entry struct {
 	// keystore) the moment it was stored, with no error at set, get, list or
 	// show. There is nothing to detect after the fact: the damage happens
 	// before encryption, so the original bytes are gone from the store.
-	Value       []byte    `json:"value"`
-	Description string    `json:"description,omitempty"`
-	Kind        string    `json:"kind,omitempty"`
-	Filename    string    `json:"filename,omitempty"` // set when the value came from disk
-	Created     time.Time `json:"created"`
-	Updated     time.Time `json:"updated"`
+	Value       []byte `json:"value"`
+	Description string `json:"description,omitempty"`
+	Kind        string `json:"kind,omitempty"`
+	Filename    string `json:"filename,omitempty"` // set when the value came from disk
+	// Origin is how this entry came to exist: "typed", "agent",
+	// "file:<name>", "profile:<name>".
+	//
+	// Separate from Filename because they answer different questions and only
+	// one of them was ever being asked. Filename is an input to detectKind on
+	// edit — a ".pem" is a certificate whatever the bytes look like — and it
+	// is empty for anything not read off disk, which is most of the store. It
+	// was also what the "Source" column printed, so that column was blank for
+	// every secret somebody typed or a profile form created, and their real
+	// provenance lived in the description or nowhere.
+	//
+	// It is worth recording rather than inferring because one of its values
+	// cannot be inferred later at all: "agent" says an MCP caller wrote this,
+	// which is exactly the fact an operator auditing their own store wants and
+	// the one nothing else in the entry preserves.
+	//
+	// Empty on every entry written before this field existed; the surfaces
+	// fall back to Filename there rather than claiming to know.
+	Origin  string    `json:"origin,omitempty"`
+	Created time.Time `json:"created"`
+	Updated time.Time `json:"updated"`
+}
+
+// Origin reports where an entry came from, for the surfaces.
+//
+// The fallback is what keeps an existing store honest: before Origin existed
+// the only provenance recorded was a filename, so an entry that has one came
+// from a file and an entry that has neither says nothing rather than guessing.
+func (e entry) origin() string {
+	if e.Origin != "" {
+		return e.Origin
+	}
+	if e.Filename != "" {
+		return "file:" + e.Filename
+	}
+	return ""
 }
 
 // store is the plaintext shape, only ever held in memory — on disk it exists
@@ -290,8 +324,7 @@ func saveTo(s store, recipients []age.Recipient, specs []string) *view.Error {
 			// itself does not detect this (it reads the plaintext file, not
 			// the ciphertext's own embedded record), so the hint has to say
 			// so explicitly rather than leave an operator trusting a stale
-			// answer to "who can decrypt this". Found by review (PROJECT.md
-			// D74).
+			// answer to "who can decrypt this". Found by review.
 			return verr.WithHint("the store WAS re-encrypted to the new key set; only recording that " +
 				"failed — `rta kv recipients` may now be stale until the next successful write. " +
 				"Retry, or `rta kv rekey --only --recipient <the set it should be>` to reconcile")
@@ -355,7 +388,7 @@ func Unlockable() (bool, string) {
 		// telling an operator whether an MCP agent's inherited environment
 		// can decrypt the store unattended — even though a real kv.get
 		// against the same environment would fail with
-		// kv.identity.unreadable. Found by review (PROJECT.md D74); mirrors
+		// kv.identity.unreadable. Found by review; mirrors
 		// the guard LockedIdentity, two functions below, already had.
 		if p := os.Getenv(identityEnv); p != "" {
 			if !fileExists(expandHome(p)) {

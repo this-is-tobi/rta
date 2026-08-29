@@ -1,5 +1,5 @@
-// Package config loads rta's configuration. Zero config is a valid config
-// (PROJECT.md §4.6): everything works without a file, and rta init writes
+// Package config loads rta's configuration. Zero config is a valid config:
+// everything works without a file, and rta init writes
 // one interactively when the user wants persistent choices.
 //
 // v0 keeps loading deliberately small (goccy-yaml, already a dependency,

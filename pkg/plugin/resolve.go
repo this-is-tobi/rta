@@ -108,7 +108,7 @@ func Resolve(c Capability, in Inputs) map[string]any {
 	// was written, which is this convention already — implemented once,
 	// written down nowhere, and available only to a built-in because a
 	// built-in runs inside rta and sees rta's whole environment. That is a
-	// second-class plugin, which P6 says there are none of. Lifting it here
+	// second-class plugin, and there are none of those. Lifting it here
 	// makes it the host's job for everyone.
 	//
 	// The name is derived, never declared, and that is the security property:
@@ -116,8 +116,8 @@ func Resolve(c Capability, in Inputs) map[string]any {
 	// A declared Env field would let a hostile declaration name
 	// AWS_SECRET_ACCESS_KEY and have the host hand it over.
 	//
-	// Gated on EnvFallback, not on Local alone — a real bug this closed
-	// (PROJECT.md D74): kv.get's --out is Local so an MCP caller can never
+	// Gated on EnvFallback, not on Local alone — a real bug this closed:
+	// kv.get's --out is Local so an MCP caller can never
 	// aim a revealed secret at an arbitrary file, but every Local field used
 	// to resolve from the environment unconditionally, so an operator's own
 	// RTA_KV_OUT silently redirected a legitimate, per-key-granted kv_get
@@ -136,7 +136,8 @@ func Resolve(c Capability, in Inputs) map[string]any {
 	// an operator with RTA_PG_PASSWORD exported for their own database, whose
 	// agent then names a profile aimed somewhere else, would have the host
 	// pair a destination somebody else chose with a credential they did not
-	// supply for it — which is D94's credential redirect rebuilt one layer up.
+	// supply for it — the credential-redirect hole Local closes, rebuilt one
+	// layer up.
 	//
 	// The whole layer, not just the inputs the profile happened to fill.
 	// Skipping only the overlap leaves exactly the same shape: a profile that
