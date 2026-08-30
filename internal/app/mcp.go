@@ -50,6 +50,9 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 		roots            []string
 		httpAddr         string
 		tokenFile        string
+		oidcIssuer       string
+		oidcAudience     string
+		oidcSubjects     []string
 	)
 	cmd := &cobra.Command{
 		Use:   "serve",
@@ -68,8 +71,8 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 			"Locality gate, --http only: capabilities that describe the machine\n" +
 			"this runs on (sys, fs, git, keys.list, net's host-identity and\n" +
 			"host-mutation calls) are absent from tools/list — a remote caller is\n" +
-			"never this machine. --http also requires --token-file, since there is\n" +
-			"no stdio parent process left to trust instead.",
+			"never this machine. --http also requires --token-file or --oidc-issuer\n" +
+			"(or both), since there is no stdio parent process left to trust instead.",
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -126,12 +129,17 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				fmt.Fprintln(cmd.ErrOrStderr(),
 					"rta: --token-file does nothing without --http, since nothing is listening for a bearer token to guard")
 			}
+			if httpAddr == "" && oidcIssuer != "" {
+				fmt.Fprintln(cmd.ErrOrStderr(),
+					"rta: --oidc-issuer does nothing without --http, since nothing is listening for a bearer token to guard")
+			}
 			// The HTTP transport's own gate, checked before anything else it
 			// needs is built: a caller proves who it is over the wire here,
 			// where stdio has only ever had "whoever the operator's shell
 			// launched". There is no path through this command that opens the
-			// listener without a verifier — refusing early says so plainly
-			// instead of failing later inside net/http with a less legible error.
+			// listener without at least one verifier — refusing early says so
+			// plainly instead of failing later inside net/http with a less
+			// legible error.
 			var (
 				verifier auth.TokenVerifier
 				ln       net.Listener
@@ -148,24 +156,43 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 					return fmt.Errorf("--consent has nobody positioned to answer on a remote server; " +
 						"see \"Remote hosting\" in docs/20-mcp.md")
 				}
-				if tokenFile == "" {
-					return fmt.Errorf("--http needs a way to verify who is calling: pass --token-file")
+				if tokenFile == "" && oidcIssuer == "" {
+					return fmt.Errorf("--http needs a way to verify who is calling: pass --token-file or --oidc-issuer")
 				}
-				tokens, groupReadable, err := mcp.LoadTokenFile(tokenFile)
-				if err != nil {
-					return fmt.Errorf("--token-file: %w", err)
+				var verifiers []auth.TokenVerifier
+				if tokenFile != "" {
+					tokens, groupReadable, err := mcp.LoadTokenFile(tokenFile)
+					if err != nil {
+						return fmt.Errorf("--token-file: %w", err)
+					}
+					if groupReadable {
+						fmt.Fprintf(cmd.ErrOrStderr(),
+							"rta: %s is group-readable — anyone in that group can authenticate as every label it holds\n",
+							tokenFile)
+					}
+					verifiers = append(verifiers, mcp.StaticTokenVerifier(tokens))
 				}
-				if groupReadable {
-					fmt.Fprintf(cmd.ErrOrStderr(),
-						"rta: %s is group-readable — anyone in that group can authenticate as every label it holds\n",
-						tokenFile)
+				if oidcIssuer != "" {
+					if oidcAudience == "" {
+						return fmt.Errorf("--oidc-issuer needs --oidc-audience")
+					}
+					if len(oidcSubjects) == 0 {
+						return fmt.Errorf("--oidc-issuer needs at least one --oidc-subject — " +
+							"an issuer and audience alone identify an application, not a person")
+					}
+					oidcVerifier, err := mcp.OIDCVerifier(cmd.Context(), oidcIssuer, oidcAudience, oidcSubjects, cmd.ErrOrStderr())
+					if err != nil {
+						return fmt.Errorf("--oidc-issuer: %w", err)
+					}
+					verifiers = append(verifiers, oidcVerifier)
 				}
-				verifier = mcp.Compose(cmd.ErrOrStderr(), mcp.StaticTokenVerifier(tokens))
+				verifier = mcp.Compose(cmd.ErrOrStderr(), verifiers...)
 				// Bound now rather than left to Serve, so a taken port or a bad
 				// address is this command's own error message — and so the
 				// banner below can report the address actually bound, which is
 				// the real one rather than the ":0" an operator or a test asked
 				// for.
+				var err error
 				ln, err = net.Listen("tcp", httpAddr)
 				if err != nil {
 					return fmt.Errorf("--http: %w", err)
@@ -291,7 +318,16 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 		"serve over HTTP instead of stdio, listening on this address (e.g. 127.0.0.1:8443) — "+
 			"TLS and network exposure are the operator's job, not this flag's")
 	cmd.Flags().StringVar(&tokenFile, "token-file", "",
-		"bearer tokens allowed to connect, one \"label token\" pair per line; required with --http")
+		"bearer tokens allowed to connect, one \"label token\" pair per line; required with --http "+
+			"unless --oidc-issuer is set")
+	cmd.Flags().StringVar(&oidcIssuer, "oidc-issuer", "",
+		"OpenID Connect issuer URL to verify bearer tokens against; required with --http "+
+			"unless --token-file is set")
+	cmd.Flags().StringVar(&oidcAudience, "oidc-audience", "",
+		"required audience for tokens verified against --oidc-issuer")
+	cmd.Flags().StringSliceVar(&oidcSubjects, "oidc-subject", nil,
+		"subject (\"sub\" claim) allowed to authenticate (repeatable); required with --oidc-issuer, "+
+			"since an issuer and audience alone name an application, not a person")
 	// Off by default, and the default is the important half: a call parked
 	// in a server nobody is watching is worse than a refusal.
 	cmd.Flags().BoolVar(&consentOn, "consent", false,

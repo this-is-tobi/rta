@@ -55,6 +55,52 @@ func TestHTTPConsentIsCheckedBeforeTokenFile(t *testing.T) {
 	}
 }
 
+func TestHTTPOIDCIssuerRequiresAudience(t *testing.T) {
+	cmd := NewRoot(registry.New(), "test")
+	cmd.SetArgs([]string{"mcp", "serve", "--http", "127.0.0.1:0", "--oidc-issuer", "https://idp.example"})
+	cmd.SetOut(new(strings.Builder))
+	cmd.SetErr(new(strings.Builder))
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("--oidc-issuer with no --oidc-audience was accepted")
+	}
+	if !strings.Contains(err.Error(), "oidc-audience") {
+		t.Errorf("err = %q, want it to name --oidc-audience", err)
+	}
+}
+
+func TestHTTPOIDCIssuerRequiresASubject(t *testing.T) {
+	cmd := NewRoot(registry.New(), "test")
+	cmd.SetArgs([]string{"mcp", "serve", "--http", "127.0.0.1:0",
+		"--oidc-issuer", "https://idp.example", "--oidc-audience", "rta"})
+	cmd.SetOut(new(strings.Builder))
+	cmd.SetErr(new(strings.Builder))
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("--oidc-issuer with no --oidc-subject was accepted")
+	}
+	if !strings.Contains(err.Error(), "oidc-subject") {
+		t.Errorf("err = %q, want it to name --oidc-subject", err)
+	}
+}
+
+// Well-formed but pointing nowhere real: discovery must fail as this
+// command's own clear error, not several layers down inside net/http.
+func TestHTTPOIDCDiscoveryFailureIsRefusedAtStartup(t *testing.T) {
+	cmd := NewRoot(registry.New(), "test")
+	cmd.SetArgs([]string{"mcp", "serve", "--http", "127.0.0.1:0",
+		"--oidc-issuer", "http://127.0.0.1:1", "--oidc-audience", "rta", "--oidc-subject", "alice"})
+	cmd.SetOut(new(strings.Builder))
+	cmd.SetErr(new(strings.Builder))
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("an --oidc-issuer with no discovery document was accepted")
+	}
+	if !strings.Contains(err.Error(), "oidc-issuer") {
+		t.Errorf("err = %q, want it to name --oidc-issuer", err)
+	}
+}
+
 func TestHTTPRefusesAnUnreadableTokenFile(t *testing.T) {
 	if os.PathSeparator == '\\' {
 		t.Skip("POSIX permission bits do not apply")
