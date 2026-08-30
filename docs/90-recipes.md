@@ -104,6 +104,32 @@ rta audit why some-package
 
 `audit deps` checks what you already declare against OSV, and each hit says whether **you** asked for that package or something else pulled it in — which is the difference between a fix you make and a fix you wait for. `audit why` draws the whole route from the lockfile.
 
+## Audit every repository a team owns
+
+`audit deps` reads what a project already committed, and from a terminal `--path` also takes a repository URL — cloned shallowly in memory, never written to disk. So auditing a repository is one command, and auditing all of them is that command in a loop:
+
+```bash
+gh repo list my-org --limit 200 --json url --jq '.[].url' |
+  while read -r repo; do
+    rta audit deps "$repo" -o json | jq -c --arg r "$repo" '{repo: $r, grade: .rows[0][1], detail: .rows[0][2]}'
+  done
+```
+
+Nothing is installed, resolved or built — a lockfile is a list a package manager already committed, and reading a list is not scanning. The whole tree does arrive in memory, so a very large monorepo is a very large process; `--recursive` is what finds the manifests in one.
+
+**It is refused over MCP, and that is not an oversight.** `audit deps` is read-only and needs no grant, which is what puts it on an agent's tool list with nothing asked. A URL an agent composes is a request rta makes on its behalf, to a host the agent chose, with the reply landing in its context — the thing `http.get` carries a grant for. Point an agent at a checkout you made.
+
+`--detail` ends with the tools that answer what this cannot, with the target already substituted in — severity and fixed versions, the ecosystem's own auditor, the dependencies nothing imports, and an SBOM worth committing:
+
+```
+severity            `trivy fs .` or `grype dir:.` — the OSV batch endpoint carries identifiers only
+reachability        `govulncheck ./...` — whether your code can reach the vulnerable function
+unused              `go mod tidy` — declared dependencies nothing imports
+an sbom to keep     `syft . -o cyclonedx-json` — read once here, kept there
+```
+
+They are pointers, never wrappers: rta does not run them, parse them, or track their flags. What it owes is the invocation with the target already in it, so the next step is a paste and not a search. The rows fit what was actually read — a Go project is never told about `knip`, and a pnpm project is never told to run `npm audit`.
+
 ## A security review you can paste into an issue
 
 ```bash
@@ -137,6 +163,8 @@ rta git blame internal/grant/grant.go
 ```
 
 `git overview` is the branch, what it tracks, how far it has drifted, any rebase or merge left half-finished, staged/modified/untracked told apart, and the last commit's age. It works against a local checkout or a remote URL cloned in memory, and it is read-only.
+
+**A remote URL is a person's affordance, and rta refuses one over MCP.** Every `git` capability is read-only and needs no grant, which is what puts it on an agent's tool list with nothing asked — and a URL an agent composes is an outbound request on the way there and a stranger's commit messages arriving in the model's context on the way back. That is `http.get`, which is gated. Point an agent at a checkout you made.
 
 ## Run an agent against a scratch directory only
 
@@ -173,9 +201,57 @@ Answering `allow` runs that one call and creates no standing grant.
 
 ## Ship the record somewhere durable
 
+Every row carries the sequence number the ledger assigned it, and `--after` takes one, so an append picks up exactly where the last one stopped:
+
 ```bash
-rta agent log -o csv --limit 1000 >> ~/audit/rta-$(date +%F).csv
+ARCHIVE=~/audit/rta.jsonl
+cursor=$(jq -rs 'map(.[0] | tonumber) | max // 0' "$ARCHIVE" 2>/dev/null || echo 0)
+rta agent log --after "$cursor" --limit 500 -o json | jq -c '.rows[]' >> "$ARCHIVE"
 ```
+
+Run it on a timer and the archive grows by what happened and nothing else. The cursor lives in the archive itself, so there is no second file to lose, and a run that finds nothing new writes nothing.
+
+`--since` asks the same question the way a person does — `--since 2h` while something is going wrong, `--since 2026-08-30` when writing it up. It is the right flag for reading and the wrong one for shipping: a duration has a boundary, and a sequence number does not.
+
+The date appears on a row exactly when the rows are not all from today, so a live view stays narrow and an archive is still readable a month later.
+
+## Put it on a dashboard
+
+The Grafana stack takes this in two halves, and rta meets both without a listener or a port.
+
+**Loki takes the lines.** The cursor above is already what a log shipper wants — an append-only record with a sequence number — so point Promtail or Alloy at the JSONL file the recipe above writes, or run the same loop into `logger`/`vector`.
+
+**Prometheus takes the counters.** One command writes the standard text exposition format into node_exporter's textfile collector:
+
+```bash
+rta agent metrics > /var/lib/node_exporter/textfile_collector/rta.prom.$$ \
+  && mv /var/lib/node_exporter/textfile_collector/rta.prom.$$ \
+        /var/lib/node_exporter/textfile_collector/rta.prom
+```
+
+Write-then-rename because the collector reads the file whenever it likes, and half a file is a parse error that drops every series in it. A timer every minute is plenty; nothing here changes faster than that.
+
+| Series | |
+| --- | --- |
+| `rta_agent_calls_total` | every call ever, including any retention has dropped — a counter that survives rotation |
+| `rta_agent_calls_recorded_total{capability,agent,outcome,authorized}` | the retained record, split the four ways worth splitting |
+| `rta_agent_calls_retired_total` | what retention dropped, so the gap between the two above is visible rather than merely handled |
+| `rta_grants_active{capability,agent}` | reach in force right now |
+| `rta_agent_pending` | calls parked, waiting for a person |
+| `rta_ledger_intact` | 1 while the hash chain verifies end to end |
+| `rta_ledger_bytes`, `rta_ledger_segments` | the record's own size |
+
+**`rta_ledger_intact == 0` is the alert worth having.** A record that stops verifying is either a bug or somebody editing it, and both are things to hear about in minutes rather than at the next review:
+
+```yaml
+- alert: RtaLedgerBroken
+  expr: rta_ledger_intact == 0
+  for: 1m
+  annotations:
+    summary: "rta's agent record no longer verifies — run `rta agent log --detail`"
+```
+
+Nothing is kept to produce any of this: rta stores no counters, so every number is one you could recompute from the record itself.
 
 The record is hash-chained, so an edited or missing entry is visible:
 
@@ -184,6 +260,37 @@ rta agent log --detail
 ```
 
 That makes tampering *visible*, not impossible — which is the realistic goal for a local file, and enough to catch the quiet single-line edit.
+
+## Set up a machine with no terminal
+
+Everything here is idempotent, so it belongs in a provisioning script, a Dockerfile, or a dotfiles bootstrap that runs on every login:
+
+```bash
+# The credential goes in the store, never on a command line.
+rta kv set staging-db-password --file /run/secrets/db-password
+
+# The environment, one line per plugin.
+rta profile set staging --note "shared staging" --ttl 8h \
+    --plugin pg --set host=db.staging.internal --set sslmode=require \
+    --secret password=kv:staging-db-password
+
+rta profile set staging --plugin s3 --set endpoint=https://s3.staging.internal
+
+# The ceiling, in your own policy file rather than in any repository.
+rta policy require
+```
+
+Three rules worth knowing before you write that script:
+
+- **A value on a command line is in `ps`, in your history, and in most CI logs.** `rta kv set` takes `--file`, and `--file /dev/stdin` works from a pipe. `rta profile set --set` refuses a declared credential outright, so this is enforced rather than advised.
+- **`--set` states the whole block.** A second run that mentions only `host` removes `sslmode` — and says which keys it dropped. Restate the block you mean.
+- **`$RTA_CONFIG` matters in a container.** With no config directory the config path falls back to `./.rta.yaml`, and profiles read from a working-directory file are ignored. `rta profile set` refuses to write there rather than succeeding silently.
+
+Then check it, without unlocking anything:
+
+```bash
+rta profile list && rta policy show && rta doctor
+```
 
 ## Check a machine is set up, without unlocking anything
 

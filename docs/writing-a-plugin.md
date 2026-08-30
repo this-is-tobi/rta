@@ -176,9 +176,29 @@ p.AddAs("stations", "nearby stations", listStations, nil)
 
 It is optional — `Put` and `Add` work, and `Key()` falls back to the title — but then rewording a heading silently renames the handle. `sdktest` says so.
 
+## Worked examples, in the order worth reading them
+
+Ten plugins ship in this repository, and they are not a showcase — they are the proof the contract works, written against the same public SDK you have. Every one is a separate module that cannot reach into rta's internals, so anything they do, you can do.
+
+Read them in this order and each one adds exactly one idea:
+
+| Plugin | Read it for | Capabilities |
+| --- | --- | --- |
+| [`examples/plugin-hello`](../examples/plugin-hello/main.go) | The whole shape in one file — and the fixture rta's own host tests run against | 2 |
+| [`plugins/eol`](../plugins/eol/) | The smallest real one: a single capability over a public API, nothing to configure | 1 |
+| [`plugins/kube`](../plugins/kube/) | Shelling out to a tool the operator already has (`kubectl`) instead of linking its client library, and why | 10 |
+| [`plugins/mysql`](../plugins/mysql/) | A connection: declared inputs, a `Secret` a profile fills, an endpoint role a tunnel can fill | 7 |
+| [`plugins/mariadb`](../plugins/mariadb/) | Two plugins over one service family without either becoming a fork of the other | 9 |
+| [`plugins/pg`](../plugins/pg/) | Safety classes doing real work — three dumps graded by what a grant can name, one refusing MCP outright | 9 |
+| [`plugins/s3`](../plugins/s3/) | `Live` completion from the service itself, and a download that refuses any object key landing outside the directory you named | 13 |
+| [`plugins/vault`](../plugins/vault/) | A plugin where almost everything is a secret, and what that does to every declaration | 15 |
+| [`plugins/etcd`](../plugins/etcd/) · [`plugins/qdrant`](../plugins/qdrant/) | Tree views, and a plugin whose whole subject is a keyspace | 6 · 5 |
+| [`plugins/docker`](../plugins/docker/) | A local daemon socket rather than a network endpoint | 13 |
+
+`rta plugin new <name>` scaffolds one that builds, passes its conformance suite and runs, so none of these is where you start — they are where you look when your plugin needs the thing they already do.
+
 ## Reference
 
-- [`examples/plugin-hello`](../examples/plugin-hello/main.go) — a complete two-capability plugin, and the fixture rta's own host tests run against.
 - [`rta explain <capability>`](./10-cli.md#rta-explain) — the authoritative card for any capability, generated from the declaration itself. The fastest way to check what rta made of yours.
 - [`pkg/plugin`](../pkg/plugin/) and [`pkg/view`](../pkg/view/) — the contract in code, with the reasoning in the doc comments.
 - [`pkg/sdk/sdktest`](../pkg/sdk/sdktest/) — the conformance suite your plugin should pass.

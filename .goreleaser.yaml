@@ -4,7 +4,7 @@
 # about provenance rather than the ones about platforms: a checksum file, an
 # SBOM, and a version the binary can state back to you. `rta plugin trust`
 # already binds an authorization to an artifact's digest rather than to its
-# name (ADR 0017); a release that could not be checked the same way would be
+# name; a release that could not be checked the same way would be
 # holding its own users to a standard it does not meet.
 version: 2
 
@@ -26,8 +26,8 @@ builds:
       # scratch container, and launched by an MCP client that inherited a
       # different libc than the one it was built against — none of which is a
       # good moment to discover a dynamic link. Nothing here needs cgo: the
-      # Landlock path that once did was dropped whole (internal/pluginhost,
-      # ADR 0012 §2), and the pure-Go resolver is the more predictable one for
+      # Landlock path that once did was dropped whole (internal/pluginhost),
+      # and the pure-Go resolver is the more predictable one for
       # a tool whose network capabilities are the point.
       - CGO_ENABLED=0
     goos: [darwin, linux, windows]
@@ -62,11 +62,54 @@ archives:
     files:
       - README.md
       - LICENSE*
-      # The whole user guide. docs/ holds nothing but user-facing material —
-      # the blueprint, the decision records and the working notes live in
-      # .local/ — so shipping the directory ships a guide rather than a mixture.
+      # The whole user guide. docs/ holds nothing but user-facing material,
+      # so shipping the directory ships a guide rather than a mixture.
       - docs/*.md
       - docs/examples/*
+
+# A .deb and a .rpm beside the tarballs, and deliberately no hosted apt
+# repository behind them.
+#
+# `apt install ./rta_1.2.3_amd64.deb` works from a downloaded file and gets
+# the two things a package is actually wanted for: the binary on $PATH
+# without anybody untarring into /usr/local, and a package manager that knows
+# rta is installed and can remove it. A repository would add unattended
+# upgrades, and it would cost a signing key to generate, protect, rotate and
+# distribute — key management for a tool whose own argument is that
+# authorization must be something you can point at. Not worth it until
+# somebody asks for the upgrade path specifically.
+#
+# The checksums below cover these exactly as they cover the archives, so a
+# .deb is verified the same way and by the same command.
+nfpms:
+  - id: rta
+    package_name: rta
+    formats: [deb, rpm, apk]
+    maintainer: this-is-tobi <this-is-tobi@proton.me>
+    description: |-
+      One binary over the tools you already juggle, and the layer that decides
+      what an AI agent may touch.
+      Databases, object storage, secrets, networking, certificates, host
+      telemetry and HTTP APIs behind one capability model, rendered as a
+      scriptable CLI, an interactive TUI and an MCP server with per-capability,
+      time-boxed consent.
+    homepage: https://github.com/this-is-tobi/rule-them-all
+    license: Apache-2.0
+    section: utils
+    # No dependencies, no scriptlets and no conffiles: the binary is static
+    # (CGO_ENABLED=0 above) and rta creates its own configuration on first
+    # use. A package that installs one file is a package that uninstalls
+    # cleanly, which is the other half of what people want one for.
+    bindir: /usr/bin
+    contents:
+      - src: ./LICENSE
+        dst: /usr/share/doc/rta/LICENSE
+      - src: ./README.md
+        dst: /usr/share/doc/rta/README.md
+      - src: ./docs
+        dst: /usr/share/doc/rta/docs
+    file_name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
 
 checksum:
   name_template: "checksums.txt"
@@ -106,7 +149,12 @@ release:
     sha256sum -c checksums.txt --ignore-missing
     ```
 
+    A `.deb`, `.rpm` and `.apk` are published beside the archives. There is no
+    package repository: install the file you downloaded and verified —
+    `sudo apt install ./rta_{{ .Version }}_linux_amd64.deb` — which is the
+    same artifact the checksum above covers.
+
     Plugins are separate artifacts and are pinned by digest, not by name:
     `rta plugin trust <name>` records the hash of the binary you approved, and
-    a replacement with the same name is refused rather than inherited (ADR
-    0017). The same reasoning is why the checksums above exist.
+    a replacement with the same name is refused rather than inherited. The
+    same reasoning is why the checksums above exist.

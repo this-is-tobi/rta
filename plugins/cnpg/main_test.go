@@ -1,0 +1,324 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
+	"github.com/this-is-tobi/rule-them-all/pkg/sdk/sdktest"
+	"github.com/this-is-tobi/rule-them-all/pkg/view"
+)
+
+// The suite this plugin is held to as a stranger's plugin, before anything
+// specific to CloudNativePG.
+func TestPluginPassesTheConformanceSuite(t *testing.T) {
+	sdktest.Check(t, Plugin(), sdktest.WithInputs(func(string) map[string]map[string]any {
+		return map[string]map[string]any{
+			// A name nothing is called, so the dry-run rule drives the
+			// capability without needing a cluster to exist. There is no
+			// cluster in a test anyway: kubectl is not on the path this
+			// resolves, and the failure it produces is the one being checked.
+			"cnpg.status": {"name": "absent"},
+		}
+	}))
+}
+
+// fakeKubectl points the plugin at a script instead of a cluster.
+func fakeKubectl(t *testing.T, body string) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "kubectl")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	saved := kubectlBin
+	kubectlBin = path
+	t.Cleanup(func() { kubectlBin = saved })
+}
+
+// serves makes a kubectl that prints one JSON document and exits.
+func serves(t *testing.T, doc any) {
+	t.Helper()
+	raw, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "body.json")
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fakeKubectl(t, "cat "+path+"\n")
+}
+
+func req(values map[string]any) plugin.Request {
+	return plugin.NewRequest(values, false, false)
+}
+
+// healthy is a three-instance cluster with nothing wrong with it, which is
+// the baseline every finding below is a departure from.
+func healthy() cluster {
+	var c cluster
+	c.Metadata.Name, c.Metadata.Namespace = "app-db", "databases"
+	c.Metadata.CreationTimestamp = time.Now().Add(-72 * time.Hour)
+	c.Spec.Instances, c.Spec.ImageName = 3, "ghcr.io/cloudnative-pg/postgresql:16.4"
+	c.Spec.Storage.Size = "50Gi"
+	c.Status.Phase = "Cluster in healthy state"
+	c.Status.Instances, c.Status.ReadyInstances = 3, 3
+	c.Status.CurrentPrimary, c.Status.TargetPrimary = "app-db-1", "app-db-1"
+	c.Status.InstanceNames = []string{"app-db-1", "app-db-2", "app-db-3"}
+	c.Status.InstancesStatus = map[string][]string{"healthy": {"app-db-1", "app-db-2", "app-db-3"}}
+	c.Status.InstancesReportedState = map[string]instanceState{
+		"app-db-1": {IP: "10.1.0.1", IsPrimary: true, TimelineID: 3},
+		"app-db-2": {IP: "10.1.0.2", TimelineID: 3},
+		"app-db-3": {IP: "10.1.0.3", TimelineID: 3},
+	}
+	c.Status.TimelineID = 3
+	c.Status.Topology.NodesUsed = 3
+	c.Status.LastSuccessfulBackup = time.Now().Add(-4 * time.Hour).Format(time.RFC3339)
+	c.Status.Conditions = []condition{{Type: "Ready", Status: "True"}}
+	return c
+}
+
+func problemsIn(t *testing.T, c cluster) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	for _, row := range problemTable(c).Rows {
+		out[row[0]] = row[2]
+	}
+	return out
+}
+
+// **A healthy cluster produces no problems section at all**, which is the
+// conditional-section doctrine the rest of rta follows: a "Needs attention"
+// heading with nothing under it teaches people to skip the heading.
+func TestAHealthyClusterHasNothingToSay(t *testing.T) {
+	if got := problemsIn(t, healthy()); len(got) != 0 {
+		t.Errorf("a healthy cluster reported %v", got)
+	}
+	sections := statusView(healthy()).(view.Sections)
+	for _, s := range sections.Items {
+		if s.Title == "Needs attention" {
+			t.Error("the section is present with nothing in it")
+		}
+	}
+}
+
+// **The switchover is the derived fact worth having.** CNPG moves
+// targetPrimary first and currentPrimary once the promotion lands, so the two
+// differing means a promotion is happening right now — which is exactly the
+// moment somebody runs a status command, and exactly what a column of raw
+// fields makes them work out for themselves.
+func TestAPromotionInFlightIsNamedRatherThanLeftToBeInferred(t *testing.T) {
+	c := healthy()
+	c.Status.TargetPrimary = "app-db-2"
+
+	if !c.switchingOver() {
+		t.Fatal("targetPrimary differing from currentPrimary is not read as a switchover")
+	}
+	got := problemsIn(t, c)
+	if !strings.Contains(got["switchover"], "app-db-2") {
+		t.Errorf("switchover = %q, want it to name where the primary is going", got["switchover"])
+	}
+	if line := primaryLine(c); !strings.Contains(line, "→") {
+		t.Errorf("primary = %q, want both ends of the move", line)
+	}
+}
+
+// The role comes from the cluster's own currentPrimary, not from each
+// instance's self-report: during a failover an instance can still believe it
+// is primary while the cluster has moved on, and two rows saying "primary" is
+// a status page contradicting itself.
+func TestOnlyOneInstanceIsEverThePrimary(t *testing.T) {
+	c := healthy()
+	c.Status.CurrentPrimary = "app-db-2"
+	st := c.Status.InstancesReportedState["app-db-1"]
+	st.IsPrimary = true // the old primary has not caught up
+	c.Status.InstancesReportedState["app-db-1"] = st
+
+	primaries := 0
+	for _, r := range c.instances() {
+		if r.role == "primary" {
+			primaries++
+			if r.name != "app-db-2" {
+				t.Errorf("primary is %q, want the cluster's own currentPrimary", r.name)
+			}
+		}
+	}
+	if primaries != 1 {
+		t.Errorf("%d instances claim to be primary", primaries)
+	}
+	if first := c.instances()[0].name; first != "app-db-2" {
+		t.Errorf("first row is %q — the primary is the row that matters", first)
+	}
+}
+
+// Every finding this plugin can make, each from the field that carries it.
+func TestEachProblemIsFoundFromItsOwnField(t *testing.T) {
+	failing := time.Now().Add(-10 * time.Minute)
+	for _, tc := range []struct {
+		what   string
+		mutate func(*cluster)
+		key    string
+		want   string
+	}{
+		{"a primary that is unhealthy", func(c *cluster) {
+			c.Status.PrimaryFailingSince = &failing
+		}, "primary", "unhealthy"},
+		{"fewer ready than the spec asks for", func(c *cluster) {
+			c.Status.ReadyInstances = 2
+		}, "instances", "2/3"},
+		{"no primary at all", func(c *cluster) {
+			c.Status.CurrentPrimary, c.Status.TargetPrimary = "", ""
+		}, "primary", "no primary"},
+		{"every instance on one node", func(c *cluster) {
+			c.Status.Topology.NodesUsed = 1
+		}, "topology", "one node"},
+		{"a backup that has never succeeded", func(c *cluster) {
+			c.Status.LastSuccessfulBackup = ""
+		}, "backup", "no successful backup"},
+		{"a stuck PVC", func(c *cluster) {
+			c.Status.UnusablePVC = []string{"app-db-4"}
+		}, "unusable PVCs", "app-db-4"},
+		{"a condition that is not satisfied", func(c *cluster) {
+			c.Status.Conditions = append(c.Status.Conditions, condition{
+				Type: "ContinuousArchiving", Status: "False",
+				Reason: "Continuous archiving failed", Message: "wal-archive exit 1"})
+		}, "ContinuousArchiving", "wal-archive exit 1"},
+	} {
+		t.Run(tc.what, func(t *testing.T) {
+			c := healthy()
+			tc.mutate(&c)
+			got := problemsIn(t, c)
+			if tc.key == "" {
+				if len(got) == 0 {
+					t.Error("nothing was reported")
+				}
+				return
+			}
+			if !strings.Contains(got[tc.key], tc.want) {
+				t.Errorf("%s = %q, want it to mention %q", tc.key, got[tc.key], tc.want)
+			}
+		})
+	}
+}
+
+// A condition that IS satisfied is not a row: a list where every line says
+// True is a list nobody reads.
+func TestSatisfiedConditionsAreNotReported(t *testing.T) {
+	c := healthy()
+	c.Status.Conditions = []condition{
+		{Type: "Ready", Status: "True"},
+		{Type: "ContinuousArchiving", Status: "True"},
+	}
+	if got := problemsIn(t, c); len(got) != 0 {
+		t.Errorf("satisfied conditions produced rows: %v", got)
+	}
+}
+
+// The list reads a real kubectl answer end to end, so the JSON field names
+// are checked against the CRD rather than assumed.
+func TestTheListReadsWhatKubectlActuallyPrints(t *testing.T) {
+	serves(t, clusterList{Items: []cluster{healthy()}})
+
+	v, err := runList(context.Background(), req(map[string]any{"all-namespaces": true}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tbl, ok := v.(view.Table)
+	if !ok || len(tbl.Rows) != 1 {
+		t.Fatalf("view = %#v", v)
+	}
+	row := tbl.Rows[0]
+	for i, want := range []string{"databases", "app-db", "3/3", "ok", "app-db-1"} {
+		if row[i] != want {
+			t.Errorf("column %d = %q, want %q", i, row[i], want)
+		}
+	}
+}
+
+// An empty answer is a sentence, not an empty table: "no clusters here" and
+// "a table with no rows" read differently to somebody who is checking.
+func TestNoClustersIsSaidInWords(t *testing.T) {
+	serves(t, clusterList{})
+	v, err := runList(context.Background(), req(map[string]any{"namespace": "empty"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text, ok := v.(view.Text)
+	if !ok || !strings.Contains(text.Body, "namespace empty") {
+		t.Errorf("view = %#v, want a sentence naming where it looked", v)
+	}
+}
+
+// **A missing operator is its own answer.** "the server could not find the
+// requested resource" from a cluster with no CloudNativePG installed reads
+// like a broken plugin; it is the one failure where the next step is
+// installing something rather than fixing something.
+func TestAClusterWithoutTheOperatorSaysSo(t *testing.T) {
+	fakeKubectl(t, `echo 'error: the server doesn'"'"'t have a resource type "clusters"' >&2
+exit 1
+`)
+	_, err := runList(context.Background(), req(nil))
+	verr, ok := err.(*view.Error)
+	if !ok {
+		t.Fatalf("err = %#v", err)
+	}
+	if verr.Code != "cnpg.notinstalled" {
+		t.Errorf("code = %q, want cnpg.notinstalled", verr.Code)
+	}
+}
+
+// Authentication and permission are told apart, which matters more here than
+// anywhere: this plugin exists to be usable behind a proxy handing out
+// short-lived credentials, so an expired one is the ordinary failure and
+// reporting it as RBAC sends people to argue with the wrong team.
+func TestAnExpiredLoginIsNotReportedAsRBAC(t *testing.T) {
+	for _, tc := range []struct{ stderr, code string }{
+		{`error: You must be logged in to the server (Unauthorized)`, "cnpg.unauthenticated"},
+		{`Unable to connect to the server: getting credentials: exec: executable tsh failed`,
+			"cnpg.unauthenticated"},
+		{`Error from server (Forbidden): clusters.postgresql.cnpg.io is forbidden`, "cnpg.denied"},
+	} {
+		fakeKubectl(t, "echo '"+tc.stderr+"' >&2\nexit 1\n")
+		_, err := runList(context.Background(), req(nil))
+		verr, ok := err.(*view.Error)
+		if !ok {
+			t.Fatalf("err = %#v", err)
+		}
+		if verr.Code != tc.code {
+			t.Errorf("%q → %q, want %q", tc.stderr, verr.Code, tc.code)
+		}
+	}
+}
+
+// **Argument injection, refused before kubectl sees it.** A context name
+// beginning with a dash is read by kubectl as a flag, and
+// `--kubeconfig=/tmp/mine` where a context was expected points the call at a
+// different cluster entirely.
+func TestAValueThatWouldBeReadAsAFlagIsRefused(t *testing.T) {
+	fakeKubectl(t, "echo '{}'\n")
+	for _, bad := range []string{"--kubeconfig=/tmp/mine", "-n", "a b", "a\nb", `a"b`} {
+		if _, err := runList(context.Background(), req(map[string]any{"context": bad})); err == nil {
+			t.Errorf("context %q was accepted", bad)
+		}
+		if _, err := runStatus(context.Background(),
+			req(map[string]any{"name": bad})); err == nil {
+			t.Errorf("cluster name %q was accepted", bad)
+		}
+	}
+}
+
+// Nothing here can change a database. The capability model says so, and this
+// asserts it rather than trusting a reviewer to notice a Safety that drifted.
+func TestEveryCapabilityIsReadOnly(t *testing.T) {
+	for _, c := range Plugin().Capabilities {
+		if c.Safety != plugin.Read {
+			t.Errorf("%s is %v — this plugin reads one custom resource and nothing else",
+				c.ID, c.Safety)
+		}
+	}
+}

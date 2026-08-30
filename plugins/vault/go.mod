@@ -1,5 +1,5 @@
 // vault is an external plugin — its own module, consuming the SDK exactly as
-// a stranger would (PROJECT.md P6), the same reasoning plugins/pg documents.
+// a stranger would, the same reasoning plugins/pg documents.
 //
 // The replace is the one concession to nothing being published yet: a local
 // path rather than a version, so `go build` here compiles against the SDK in

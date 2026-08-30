@@ -288,6 +288,11 @@ func (m Model) afterFormUpdate(cmd tea.Cmd) (tea.Model, tea.Cmd) {
 	if nm, c, rebuilt := m.reseedOnPickerMove(); rebuilt {
 		return nm, c
 	}
+	// And the connection editor on the plugin it is about, which decides the
+	// `set:` boxes below it exactly as the picker decides the run form's.
+	if nm, c, rebuilt := m.reseedOnConnPluginChange(); rebuilt {
+		return nm, c
+	}
 	switch m.form.form.State {
 	case huh.StateCompleted:
 		if m.form.configTarget != "" {

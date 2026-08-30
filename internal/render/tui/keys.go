@@ -106,6 +106,11 @@ var (
 	bindBrowse     = binding{display: "b", keys: []string{"b", ":"}, label: "browse", rank: rankExtra}
 	bindSearch     = binding{display: "/", keys: []string{"/"}, label: "search", rank: rankExtra}
 	bindToggle     = binding{display: "space", keys: []string{" ", "space", "x"}, label: "show/hide", rank: rankPrimary}
+	// "approve" rather than "trust", because the footer has to say what the
+	// key does and not what the subsystem is called: somebody looking at a
+	// row marked "not run" is deciding whether to allow it, and that is the
+	// word for it.
+	bindTrust = binding{display: "t", keys: []string{"t"}, label: "approve", rank: rankAction}
 
 	// One notation for moving a cursor, everywhere. The dashboard is a grid
 	// and the others are columns, but "the arrow keys move the thing you are
@@ -308,18 +313,14 @@ func (m Model) footerItems(screen mode) []hintItem {
 		return m.resultFooterItems()
 	case modePlugins:
 		return []hintItem{
-			item(bindColumn), item(bindToggle), item(bindConfig),
+			item(bindColumn), item(bindToggle), item(bindTrust), item(bindConfig),
 			labelled(bindOpen, "capabilities"),
 			// The key that opened the pane closes it — the habit every pane
 			// with a letter shortcut trains, and one nobody needs told.
 			alias(item(bindBack), "p"), item(bindQuit),
 		}
 	case modeProfiles:
-		return []hintItem{
-			item(bindScroll), item(bindUse), alias(labelled(bindOpen, "plugins"), "right", "l"),
-			alias(item(bindConfig), "e"), item(bindNew), item(bindRemove),
-			labelled(bindCopy, "export lines"), alias(item(bindBack), "f"), item(bindQuit),
-		}
+		return m.profileFooterItems()
 	case modeProfilePlugins:
 		return []hintItem{
 			item(bindScroll), alias(item(bindConfig), "enter", "e"), item(bindNew),

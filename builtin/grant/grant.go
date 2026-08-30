@@ -18,6 +18,9 @@ import (
 	"github.com/this-is-tobi/rule-them-all/internal/config"
 	core "github.com/this-is-tobi/rule-them-all/internal/grant"
 	profiles "github.com/this-is-tobi/rule-them-all/internal/profile"
+	"golang.org/x/term"
+
+	"github.com/this-is-tobi/rule-them-all/internal/stdio"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
@@ -408,8 +411,14 @@ func runAllow(_ context.Context, req plugin.Request, catalog func() []plugin.Cap
 		// Who may spend it. Empty is not "anybody": it is the server the
 		// operator launched without a name, which is the only caller a grant
 		// issued before agents were named has ever had.
-		Agent:      agent,
-		Issued:     now,
+		Agent:  agent,
+		Issued: now,
+		// Where this came from, so a grant nobody remembers issuing can be
+		// recognised as one. stdio.Real rather than os.Stdin, for the reason
+		// builtin/kv records: after main takes fd 0 away from the plugins it
+		// spawns, os.Stdin is /dev/null and every run would read as
+		// unattended.
+		From:       core.Origin(req.Surface(), term.IsTerminal(int(stdio.Real().Fd()))),
 		Expires:    now.Add(ttl),
 		Note:       req.String("note"),
 		TTL:        strings.TrimSpace(req.String("ttl")),
@@ -858,6 +867,22 @@ func heldTable() (view.View, *view.Error) {
 			break
 		}
 	}
+	// The Origin column follows the Agent column's rule and for a sharper
+	// version of its reason: it appears only when a grant was issued with
+	// nobody at the terminal, so the column's arrival *is* the finding. On a
+	// machine where every grant was typed by the operator it never shows up,
+	// and the day one was not, a column appears saying which.
+	//
+	// Not a warning, because all three of the things that issue one
+	// unattended — a provisioning script, a CI job, an agent's shell tool —
+	// are legitimate, and only the operator knows which of them ran.
+	unwatched := false
+	for _, g := range grants {
+		if g.From == core.FromCommand {
+			unwatched = true
+			break
+		}
+	}
 	t := view.Table{Columns: []view.Column{
 		{Name: "Capability"},
 		// Which connection this grant is about. Without it the operator cannot
@@ -871,6 +896,9 @@ func heldTable() (view.View, *view.Error) {
 		{Name: "Budget Left"},
 		{Name: "Note"},
 	}}
+	if unwatched {
+		t.Columns = slices.Insert(t.Columns, 3, view.Column{Name: "Origin"})
+	}
 	if named {
 		t.Columns = slices.Insert(t.Columns, 2, view.Column{Name: "Agent"})
 	}
@@ -915,6 +943,9 @@ func heldTable() (view.View, *view.Error) {
 			g.Expires.Sub(now).Round(time.Second).String(),
 			budgetLeft(g, now),
 			g.Note,
+		}
+		if unwatched {
+			row = slices.Insert(row, 3, originLabel(g))
 		}
 		if named {
 			// An em dash for the same reason the Profile column uses one: an
@@ -1100,4 +1131,21 @@ func runRevoke(_ context.Context, req plugin.Request) (view.View, error) {
 		return nil, verr
 	}
 	return view.Text{Body: body}, nil
+}
+
+// originLabel is how a grant says where it came from.
+//
+// An em dash for a grant sealed before the field existed, and never the word
+// "command": unknown and unattended are different facts, and a display that
+// conflated them would accuse an old grant of something it did not do.
+func originLabel(g core.Grant) string {
+	switch g.From {
+	case core.FromForm:
+		return "form"
+	case core.FromTerminal:
+		return "terminal"
+	case core.FromCommand:
+		return "command"
+	}
+	return "—"
 }

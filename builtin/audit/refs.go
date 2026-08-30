@@ -58,6 +58,16 @@ var (
 	refSpoofing       = reference{owaspAuth, "CWE-290", "Authentication Bypass by Spoofing"}
 	refVulnerableDep  = reference{owaspSupplyChain, "CWE-1395", "Dependency on Vulnerable Third-Party Component"}
 	refUnpinnedDep    = reference{owaspIntegrity, "CWE-494", "Download of Code Without Integrity Check"}
+	// A credential a configuration file holds in plain text, and a file whose
+	// mode lets somebody else read it, are two different weaknesses with two
+	// different fixes — move the secret, or change the mode — so they cite
+	// the two CWEs that say so rather than one that covers neither exactly.
+	refCredExposed = reference{owaspMisconfig, "CWE-522", "Insufficiently Protected Credentials"}
+	// An agent allowed every tool is a principal running with more authority
+	// than the task needs, which is what CWE-250 names. It is Broken Access
+	// Control rather than Misconfiguration because the setting *is* the
+	// access-control decision.
+	refExcessivePriv = reference{owaspAccessControl, "CWE-250", "Execution with Unnecessary Privileges"}
 )
 
 // referenceTable lists, once each, the controls this run actually cited —

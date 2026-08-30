@@ -61,25 +61,82 @@ var themeFieldHelp = map[string]string{
 type themeForm struct {
 	form     *huh.Form
 	bindings map[string]*string
+	// The three things tab's rule needs, for the same reasons capForm keeps
+	// them: the widget the cursor is in, what that box can be completed to,
+	// and which boxes have already had their list said out loud. A palette
+	// does not change while the form editing it is open, so unlike a capForm's
+	// these are values rather than functions.
+	inputs map[string]*huh.Input
+	offers map[string][]string
+	listed map[string]bool
 }
 
 func newThemeForm(existing map[string]string) *themeForm {
-	tf := &themeForm{bindings: map[string]*string{}}
+	tf := &themeForm{
+		bindings: map[string]*string{},
+		inputs:   map[string]*huh.Input{},
+		offers:   map[string][]string{},
+		listed:   map[string]bool{},
+	}
 	live := theme.Current()
 	var fields []huh.Field
 	for _, key := range themeFieldOrder {
 		v := existing[key] // "" when this field has no override on disk
 		tf.bindings[key] = &v
-		fields = append(fields, huh.NewInput().
+		tf.offers[key] = paletteFor(key, live)
+		in := huh.NewInput().
 			Title(key).
 			Description(fmt.Sprintf("%s (currently %s) — tab completes",
 				themeFieldHelp[key], live[key])).
-			Suggestions(paletteFor(key, live)).
+			Suggestions(tf.offers[key]).
 			Value(&v).
-			Validate(hexOrEmpty))
+			Validate(hexOrEmpty)
+		tf.inputs[key] = in
+		fields = append(fields, in)
 	}
 	tf.form = huh.NewForm(huh.NewGroup(fields...)).WithKeyMap(formKeyMap())
 	return tf
+}
+
+// tabInTheme is tab on the theme editor, and it is the same rule the
+// capability form follows (tabOn) rather than a second one that resembles it.
+//
+// Every box here starts empty — an empty box means "no override" — which is
+// precisely the state bubbles will not match a suggestion against, so this is
+// the screen where listing on the first press earns its keep: "tab completes"
+// is written under all ten fields, and until the list was said out loud the
+// only way to find out what it offered was to guess a prefix.
+func (m Model) tabInTheme(msg tea.Msg) (tea.Model, tea.Cmd) {
+	tf := m.themeForm
+	name, ok := tf.focusedInput()
+	if !ok {
+		return m.updateThemeForm(msg)
+	}
+	typed := strings.TrimSpace(*tf.bindings[name])
+	switch tabOn(typed, tf.offers[name], tf.listed[name]) {
+	case tabAccepts:
+		return m.updateThemeForm(msg)
+	case tabLists:
+		tf.listed[name] = true
+		m.flash = listing(tf.offers[name])
+		return m, nil
+	}
+	return m, huh.NextField
+}
+
+// focusedInput names the box the cursor is in. Every field of this form is
+// one, so the only false is a form that has not started.
+func (tf *themeForm) focusedInput() (string, bool) {
+	if tf == nil || tf.form == nil {
+		return "", false
+	}
+	focused := tf.form.GetFocusedField()
+	for name, in := range tf.inputs {
+		if focused == huh.Field(in) {
+			return name, true
+		}
+	}
+	return "", false
 }
 
 // paletteFor is what this field can be completed to: its own current value
@@ -204,18 +261,15 @@ func (m Model) saveTheme() (tea.Model, tea.Cmd) {
 	m.themeForm = nil
 	m.mode = modeDashboard
 
-	cfg, err := config.LoadFile()
-	if err != nil {
-		m.flash = "theme not saved: " + err.Error()
-		return m, nil
-	}
-	cfg.Theme = overrides
-	if err := config.Write(cfg); err != nil {
+	if err := config.Mutate(func(cfg config.Config) (config.Config, bool) {
+		cfg.Theme = overrides
+		return cfg, true
+	}); err != nil {
 		m.flash = "theme not saved: " + err.Error()
 		return m, nil
 	}
 
-	problems := theme.Apply(cfg.Theme)
+	problems := theme.Apply(overrides)
 	switch {
 	case len(problems) == 1:
 		m.flash = "saved, but " + problems[0].String()

@@ -4,8 +4,8 @@
 //
 // It exists because two security features need the identical primitive and
 // two implementations of "create a key, refuse to regenerate it on the read
-// path" is one too many. internal/grant seals the authorization file (ADR
-// 0015); internal/consent seals the decisions that answer a parked call and
+// path" is one too many. internal/grant seals the authorization file;
+// internal/consent seals the decisions that answer a parked call and
 // internal/agentlog chains the record of what agents did.
 //
 // WHAT THIS DEFENDS, EXACTLY — the bound matters more than the mechanism,

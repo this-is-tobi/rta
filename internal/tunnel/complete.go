@@ -248,7 +248,15 @@ func listFailed(what, stderr string) *view.Error {
 		one = one[:i]
 	}
 	switch {
-	case strings.Contains(s, "forbidden") || strings.Contains(s, "Unauthorized"):
+	case notAuthenticated(s):
+		// Lowest stakes of the three — "type it instead" is good advice
+		// either way — but the same words, because an operator who reads
+		// "refused" here and "refused" on the forward should be reading about
+		// the same thing.
+		return view.Errorf("tunnel.unauthenticated",
+			"listing %s: this cluster does not know who you are", what).
+			WithHint("authenticate again and tab will answer; the field takes typing meanwhile")
+	case strings.Contains(s, "forbidden"):
 		return view.Errorf("tunnel.list.denied", "the cluster refused listing %s", what).
 			WithHint("completion needs `list`, which the forward itself does not — type the value instead")
 	case s == "":

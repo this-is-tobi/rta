@@ -12,7 +12,7 @@ rta grant allow kv.get db-password --ttl 30m
 
 That reads as: allow `kv.get`, but only the key `db-password`, for thirty minutes.
 
-| | |
+| Part | What it means |
 | --- | --- |
 | `<target>` | A capability ID (`kv.get`) or a plugin name (`kv`, covering all of it) |
 | `[scope]` | One record — a key, a table, a bucket. Omit to cover the whole capability |
@@ -80,6 +80,8 @@ See [MCP and the safety gate](./20-mcp.md#live-consent) for why this is off by d
 ## The file, and why it is sealed
 
 Grants live in `~/.local/share/rta/grants.json`, and the file carries a tamper seal.
+
+The seal stops a forged line from a process that cannot read the key. It does not stop an agent that can run `rta grant allow` itself — which is why every grant also records [whether anybody was at the terminal when it was issued](./19-the-boundary.md#what-a-grant-says-about-where-it-came-from).
 
 The reason is asymmetry: **a forged line in a grant file *adds* permission.** Anything that can write that file can write itself an allowance, and rta would honour it. So the file is sealed, and a grant file that does not verify is not honoured — `rta doctor` says so plainly rather than failing quietly.
 

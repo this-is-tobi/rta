@@ -115,18 +115,26 @@ func Plugin() plugin.Plugin {
 					"SBOM sitting beside them — and asks osv.dev " +
 					"once about every pinned dependency, reporting which are named in an advisory. " +
 					"Nothing is resolved, built or crawled: a lockfile is a list a package manager " +
-					"already committed, and reading it is not scanning. The batch endpoint answers with " +
-					"advisory identifiers, not severities or fixed versions, so a hit points at " +
-					"osv-scanner, trivy or grype for the depth this deliberately does not have. " +
+					"already committed, and reading it is not scanning. Each advisory it finds is then " +
+					"read for its severity and the versions that fix it — a second question asked only " +
+					"about findings, so a project with nothing wrong asks nothing extra — and the " +
+					"records every database publishes for one vulnerability are collapsed onto it, " +
+					"since a package can otherwise be counted twice under a GHSA and a GO identifier " +
+					"for the same CVE. It still points at osv-scanner, trivy or grype for the depth " +
+					"this does not have: whether your code reaches the vulnerable function at all, " +
+					"which no advisory can say. " +
 					"Components whose ecosystem OSV does not recognise are counted and named rather " +
 					"than dropped. --offline inventories without asking anything. --recursive walks a " +
 					"monorepo, skipping node_modules, vendor and build output, which is what a " +
 					"polyglot repository needs: one lockfile per service and no single file that " +
-					"knows about the others. Cites A03:2025 Software Supply Chain Failures and " +
-					"CWE-1395.",
+					"knows about the others. From a terminal --path also takes a repository URL, " +
+					"read shallowly in memory and never written to disk, which is how you audit a " +
+					"repository you have not checked out — refused over MCP, since a URL a caller " +
+					"composes is a request rta makes on its behalf. Cites A03:2025 Software Supply " +
+					"Chain Failures and CWE-1395.",
 				Inputs: []plugin.Field{
 					{Name: "path", Type: plugin.Path, Positional: true, Default: ".",
-						Help: "directory holding the lockfile or SBOM, or the file itself"},
+						Help: pathHelp("directory holding the lockfile or SBOM, or the file itself")},
 					{Name: "recursive", Type: plugin.Bool,
 						Help: "walk subdirectories too, for a monorepo with a manifest per package"},
 					{Name: "offline", Type: plugin.Bool, Help: "inventory the dependencies without querying osv.dev"},
@@ -158,11 +166,36 @@ func Plugin() plugin.Plugin {
 					{Name: "package", Type: plugin.String, Positional: true, Required: true,
 						Help: "the package to trace, as the lockfile spells it"},
 					{Name: "path", Type: plugin.Path, Default: ".",
-						Help: "directory holding the lockfile or SBOM, or the file itself"},
+						Help: pathHelp("directory holding the lockfile or SBOM, or the file itself")},
 					{Name: "recursive", Type: plugin.Bool,
 						Help: "walk subdirectories too, for a monorepo with a manifest per package"},
 				},
 				Run: runWhy,
+			},
+			{
+				ID:         "audit.agents",
+				Summary:    "Audit the AI agents configured on this machine — tools, servers, credentials",
+				Safety:     plugin.Read,
+				Idempotent: true,
+				Detailed:   true,
+				// A dashboard tile that read every agent config on a timer
+				// would be a tile listing where each of them keeps its
+				// credential, redrawn every few seconds.
+				NoPreview: true,
+				Description: "An agent's configuration decides more about a machine's exposure than " +
+					"most of what this plugin grades, and nothing reads it. This does: which tools " +
+					"the model may run, which MCP servers launch with it, whether any of them is " +
+					"handed a credential in plain text, whether one is fetched from a registry at " +
+					"launch rather than pinned, whether the files are readable by anybody else, and " +
+					"whether the endpoint every prompt is sent to is the one you expect. " +
+					"**It reads and never writes** — that file is what grants an agent access to " +
+					"your secrets, and the change is yours to make. Credential *names* are reported " +
+					"and values never are. It also states the boundary out loud: an agent that can " +
+					"run commands can run rta directly, so rta bounds an agent without a shell and " +
+					"is hygiene rather than containment for one with. Refused over MCP, because the " +
+					"subject of this audit is the agent asking. Cites A01:2025 Broken Access " +
+					"Control and A02:2025 Security Misconfiguration.",
+				Run: runAgents,
 			},
 		},
 	}

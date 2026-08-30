@@ -386,6 +386,16 @@ func (c Config) ProfilesFor(namespace string) []string {
 // would reach it. A plugins: section has the same shape but predates this and
 // is left alone; the rule is scoped to the new block, where the whole point is
 // that a name stands for somewhere else.
+// TrustedPath is trustedPath for the surfaces that write a profile rather
+// than read one.
+//
+// A profile written into a file nothing honours is a silent no-op: the write
+// succeeds, `rta profile show` prints it back, and every command ignores it.
+// The command that writes has to be able to ask the question before it writes,
+// and it cannot ask the profile — the answer is stamped onto a profile by the
+// loader, which has not run yet on something being created.
+func TrustedPath() bool { return trustedPath() }
+
 func trustedPath() bool {
 	if os.Getenv("RTA_CONFIG") != "" {
 		return true

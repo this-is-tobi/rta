@@ -1,4 +1,4 @@
-# The cluster ADR 0018's live tests run against.
+# The cluster the tunnel plugin's live tests run against.
 #
 #   kind create cluster --name rta-lab
 #   kubectl --context kind-rta-lab apply -f docs/examples/kube-lab.yaml

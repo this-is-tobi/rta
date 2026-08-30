@@ -596,46 +596,64 @@ func Check(cfg config.Config, inst Installed) []Problem {
 				"rename it — a profile name and a namespace share a command line")
 		}
 		for _, key := range p.PluginKeys() {
-			conn := p.Plugins[key]
-			at := func(reason, hint string) {
-				problems = append(problems, Problem{Name: name, Plugin: key, Reason: reason, Hint: hint})
-			}
-			if unknown := conn.UnknownKeys(); len(unknown) > 0 {
-				at("has "+strings.Join(unknown, ", ")+", which nothing reads",
-					"a plugin entry takes set, secrets, kube and ssh")
-				continue
-			}
-			if bad := conn.BadSecretRefs(); len(bad) > 0 {
-				at(strings.Join(bad, ", ")+" names no source", "write it as `kv:<entry>`")
-				continue
-			}
-			// The same check Lookup enforces, in the same words. Two copies of
-			// this rule is how `rta profile list` came to print "invalid" for
-			// a profile that connected perfectly well.
-			if verr := checkTunnel(conn); verr != nil {
-				at(verr.Message, verr.Hint)
-				continue
-			}
-			// The same rules Lookup enforces, in the same words, so what this
-			// report calls invalid is exactly what refuses to resolve. Two
-			// copies of a rule is how `rta profile list` came to print
-			// "invalid" for a profile that connected perfectly well — and how
-			// `rta profile show` came to print a tunnel "problem" that every
-			// run sailed past.
-			if conn.Tunnelled() && !tunnellable(config.PluginNamespace(key), inst) {
-				at(config.PluginNamespace(key)+" declares no input a tunnel can fill, "+
-					"so the forward would be opened and ignored",
-					"update the plugin, or remove `"+conn.TunnelKey()+":`")
-				continue
-			}
-			if verr := checkPin(key, inst); verr != nil {
-				at(verr.Message, verr.Hint)
-				continue
-			}
-			problems = append(problems, checkSet(name, key, conn, config.PluginNamespace(key), inst)...)
-			problems = append(problems, checkSecretRefs(name, key, conn, config.PluginNamespace(key), inst)...)
+			problems = append(problems, CheckConnection(name, key, p.Plugins[key], inst)...)
 		}
 	}
+	return problems
+}
+
+// CheckConnection reports what is wrong with one plugin entry, without needing
+// the profile it sits in to exist anywhere yet.
+//
+// Split out of Check for the surface that writes one. A command that builds a
+// connection from flags has to refuse a broken one *before* it lands in the
+// file — an operator scripting their setup is not watching a report — and the
+// only way for that refusal and this report to stay the same refusal is for
+// them to be the same code. Every rule this package has ever duplicated
+// eventually disagreed with itself; this is the one shape that cannot.
+//
+// Profile-level rules stay in Check, because they are about the profile: its
+// name, whether the file it came from is trusted, its ttl, and whether it
+// configures anything at all.
+func CheckConnection(name, key string, conn config.Connection, inst Installed) []Problem {
+	var problems []Problem
+	at := func(reason, hint string) {
+		problems = append(problems, Problem{Name: name, Plugin: key, Reason: reason, Hint: hint})
+	}
+	if unknown := conn.UnknownKeys(); len(unknown) > 0 {
+		at("has "+strings.Join(unknown, ", ")+", which nothing reads",
+			"a plugin entry takes set, secrets, kube and ssh")
+		return problems
+	}
+	if bad := conn.BadSecretRefs(); len(bad) > 0 {
+		at(strings.Join(bad, ", ")+" names no source", "write it as `kv:<entry>`")
+		return problems
+	}
+	// The same check Lookup enforces, in the same words. Two copies of
+	// this rule is how `rta profile list` came to print "invalid" for
+	// a profile that connected perfectly well.
+	if verr := checkTunnel(conn); verr != nil {
+		at(verr.Message, verr.Hint)
+		return problems
+	}
+	// The same rules Lookup enforces, in the same words, so what this
+	// report calls invalid is exactly what refuses to resolve. Two
+	// copies of a rule is how `rta profile list` came to print
+	// "invalid" for a profile that connected perfectly well — and how
+	// `rta profile show` came to print a tunnel "problem" that every
+	// run sailed past.
+	if conn.Tunnelled() && !tunnellable(config.PluginNamespace(key), inst) {
+		at(config.PluginNamespace(key)+" declares no input a tunnel can fill, "+
+			"so the forward would be opened and ignored",
+			"update the plugin, or remove `"+conn.TunnelKey()+":`")
+		return problems
+	}
+	if verr := checkPin(key, inst); verr != nil {
+		at(verr.Message, verr.Hint)
+		return problems
+	}
+	problems = append(problems, checkSet(name, key, conn, config.PluginNamespace(key), inst)...)
+	problems = append(problems, checkSecretRefs(name, key, conn, config.PluginNamespace(key), inst)...)
 	return problems
 }
 
@@ -742,6 +760,15 @@ func checkSet(name, key string, conn config.Connection, ns string, inst Installe
 				Hint: "remove it, or remove `" + conn.TunnelKey() + ":` to connect directly"})
 			continue
 		}
+		// Before the Options check, because a value the handler cannot read
+		// at all is the more fundamental complaint — and because Options
+		// compares the text of a value, so it has nothing useful to say about
+		// one that is not text.
+		if problem, hint := plugin.StatedTypeProblem(f, conn.Set[k]); problem != "" {
+			problems = append(problems, Problem{Name: name, Plugin: key,
+				Reason: fmt.Sprintf("`set: %s` %s", k, problem), Hint: hint})
+			continue
+		}
 		if len(f.Options) > 0 {
 			if s, isStr := conn.Set[k].(string); isStr && !slicesContains(f.Options, s) {
 				problems = append(problems, Problem{Name: name, Plugin: key,
@@ -827,6 +854,31 @@ func checkSecretRefs(name, key string, conn config.Connection, ns string, inst I
 			at(fmt.Sprintf("`secrets: %s` is overridden by the forward `%s:` opens",
 				ref.Input, conn.TunnelKey()),
 				"remove the mapping, or remove `"+conn.TunnelKey()+":` to connect directly")
+			continue
+		}
+		// The two blocks can target the same input — `set:` is keyed by
+		// Field.Config and `secrets:` by Field.Name, and for most inputs those
+		// are the same word — and when they do, Fill never fetches the
+		// reference: a value Bind already supplied wins, deliberately, so that
+		// nothing is fetched for an input the caller typed.
+		//
+		// Which leaves a `secrets:` line that resolves nothing, silently, in
+		// the block whose whole purpose is that a credential comes from
+		// somewhere safe. It is the failure the rest of this function reports,
+		// with the more dangerous ending: an operator who moves a password out
+		// of `set:` and into `secrets:` but leaves the old line behind has
+		// changed nothing, and the plaintext one is still what authenticates.
+		//
+		// Reported rather than resolved by reordering. `set:` winning is what
+		// makes `--host` beat a profile everywhere else, and quietly inverting
+		// it for one block would be a precedence rule that holds in four
+		// places and not the fifth.
+		if f.Config != "" {
+			if _, stated := conn.Set[f.Config]; stated {
+				at(fmt.Sprintf("`secrets: %s` never takes effect — `set: %s` supplies that input "+
+					"and a stated value wins", ref.Input, f.Config),
+					"remove `set: "+f.Config+"`, which is the plaintext one, or remove the mapping")
+			}
 		}
 	}
 	return problems

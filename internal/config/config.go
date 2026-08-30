@@ -18,6 +18,7 @@ import (
 	"github.com/goccy/go-yaml/parser"
 
 	"github.com/this-is-tobi/rule-them-all/internal/atomicfile"
+	"github.com/this-is-tobi/rule-them-all/internal/filelock"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
 
@@ -242,11 +243,96 @@ func Load() (Config, error) {
 	return cfg, nil
 }
 
-// Write persists cfg to Path(), creating parent directories. Atomically:
-// the dashboard saves the arrangement on every tile move, so this is the
-// file rta rewrites most often and the one a torn write would cost the
-// user a `config.invalid` on every subsequent run.
+// lockFile is the sentinel beside the config file, named after the file
+// rather than the directory so that RTA_CONFIG pointing somewhere else does
+// not queue behind the default path.
+const lockFile = ".lock"
+
+// Mutate applies f to the configuration under a lock and writes the result,
+// so a read-modify-write cannot lose another writer's.
+//
+// **Every writer has to use this, and the reason is measured.** Config is
+// edited by nine places — five in the profile forms, the plugin and theme
+// forms, the dashboard arrangement, `rta init` — and each of them was doing
+// LoadFile, mutate, Write with nothing in between stopping a second writer
+// from doing the same and one of them silently losing. That was survivable
+// while every writer was a keystroke in a form: a person cannot press two
+// keys in two processes at once.
+//
+// `rta profile set` ends that. It is built to be scripted, and a script that
+// states four environments states them in parallel as readily as in sequence.
+// Eight concurrent writes to one config lost between one and three of them on
+// three runs out of five, with all eight reporting success — which for this
+// file means a profile an operator believes exists, and therefore a
+// `--profile staging` that quietly reaches the base configuration instead.
+//
+// The identical shape has been fixed twice already, in internal/grant and in
+// builtin/kv, and internal/filelock exists because of it. This is the third
+// resource to need it, and it takes that same lock rather than growing a
+// third copy of the argument.
+//
+// f receives the file as it is *now*, never a copy read earlier, and returns
+// what to write plus whether to write it — so a caller that decides mid-edit
+// to refuse returns false, nothing is written, and the lock is still released
+// on the ordinary path.
+func Mutate(f func(Config) (Config, bool)) error {
+	release, err := lock()
+	if err != nil {
+		return err
+	}
+	defer release()
+
+	// LoadFile, not Load: Load folds this session's RTA_* over the file, and
+	// writing that back would bake one shell's environment into the file for
+	// every future run.
+	cfg, err := LoadFile()
+	if err != nil {
+		return err
+	}
+	next, save := f(cfg)
+	if !save {
+		return nil
+	}
+	return write(next)
+}
+
+// lock serializes access to the config file.
+func lock() (func(), error) {
+	path := Path()
+	release, err := filelock.Acquire(filepath.Join(filepath.Dir(path), filepath.Base(path)+lockFile),
+		filelock.DefaultStale, filelock.DefaultRetry, filelock.DefaultTimeout)
+	if err != nil {
+		return nil, view.Errorf("config.lock", "acquiring the config file lock: %v", err)
+	}
+	return release, nil
+}
+
+// Write replaces the whole file with cfg, under the same lock.
+//
+// **This is not the writer to reach for.** It states the entire config, so a
+// caller that read the file, changed part of it and calls this has already
+// lost whatever another writer did in between — a lock cannot help with a
+// value decided before it was taken. Everything that modifies part of the
+// configuration goes through Mutate, and no production caller is left here;
+// what remains are tests and any caller genuinely stating the whole file with
+// nothing to merge.
+//
+// It takes the lock regardless, so such a caller cannot interleave with a
+// Mutate already in flight and truncate its result.
 func Write(cfg Config) error {
+	release, err := lock()
+	if err != nil {
+		return err
+	}
+	defer release()
+	return write(cfg)
+}
+
+// write persists cfg to Path(), creating parent directories. Atomically: the
+// dashboard saves the arrangement on every tile move, so this is the file rta
+// rewrites most often and the one a torn write would cost the user a
+// `config.invalid` on every subsequent run.
+func write(cfg Config) error {
 	path := Path()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return view.Errorf("config.mkdir", "creating %s: %v", filepath.Dir(path), err)

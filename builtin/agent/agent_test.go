@@ -376,7 +376,7 @@ func TestALostCallIsShownOnTheRowThatFollowsIt(t *testing.T) {
 	if len(rows) != 2 {
 		t.Fatalf("%d rows", len(rows))
 	}
-	if why := rows[0][6]; !strings.Contains(why, "2 calls before this one could not be recorded") {
+	if why := cell(t, v.(view.Table), 0, "why"); !strings.Contains(why, "2 calls before this one could not be recorded") {
 		t.Fatalf("the row does not admit the gap: %q", why)
 	}
 	// One is singular, and a row with nothing missing says nothing.
@@ -438,7 +438,7 @@ func TestTheLogShowsCallsAndVerifiesItsOwnChain(t *testing.T) {
 		t.Fatalf("%d rows", len(table.Rows))
 	}
 	// Newest first, which is what somebody scanning a log wants.
-	if table.Rows[0][1] != "kv.get" {
+	if got := cell(t, table, 0, "capability"); got != "kv.get" {
 		t.Fatalf("rows are not newest-first: %v", table.Rows)
 	}
 
@@ -447,8 +447,8 @@ func TestTheLogShowsCallsAndVerifiesItsOwnChain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rows := v.(view.Table).Rows; len(rows) != 1 || rows[0][1] != "kv.get" {
-		t.Fatalf("--refused = %v", rows)
+	if tbl := v.(view.Table); len(tbl.Rows) != 1 || cell(t, tbl, 0, "capability") != "kv.get" {
+		t.Fatalf("--refused = %v", tbl.Rows)
 	}
 
 	// --detail carries the integrity verdict.
@@ -620,4 +620,24 @@ func appendRaw(t *testing.T, line string) {
 	if _, err := f.WriteString(line + "\n"); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// cell reads one column of one row by name.
+//
+// By name and not by index because these tests were written against the
+// index, and adding a `seq` column at the front broke four of them at once
+// while the code under test was correct. A test that has to be renumbered
+// when a column moves is a test that stops being run.
+func cell(t *testing.T, tbl view.Table, row int, column string) string {
+	t.Helper()
+	for i, c := range tbl.Columns {
+		if c.Name == column {
+			if row >= len(tbl.Rows) || i >= len(tbl.Rows[row]) {
+				t.Fatalf("no cell at row %d column %q", row, column)
+			}
+			return tbl.Rows[row][i]
+		}
+	}
+	t.Fatalf("no column %q in %v", column, tbl.Columns)
+	return ""
 }

@@ -40,6 +40,8 @@ import (
 
 	"github.com/goccy/go-yaml"
 
+	"github.com/this-is-tobi/rule-them-all/internal/config"
+
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
 
@@ -72,9 +74,39 @@ type Ceiling struct {
 	// with no scope authorizes the whole store, which is exactly the pressure
 	// folder scopes exist to relieve.
 	RequireScope []string `yaml:"requireScope,omitempty"`
+	// RequireRepo says a repository policy must have been found, and is the
+	// answer to the one attack the subtract-only property does not cover.
+	//
+	// Every other axis here defends against a hostile *edit*, which can only
+	// ever remove authority. None of them defends against the file not being
+	// there — and the failure modes are inverted, which is what makes it worth
+	// a mechanism. Corrupt .rta-policy.yaml and every grant load fails loudly.
+	// Delete it, or replace its contents with `{}`, and rta runs with no
+	// ceiling and says nothing, because a machine whose policy vanished is
+	// indistinguishable from a machine that never had one.
+	//
+	// A file cannot close that on its own: a repository policy demanding a
+	// repository policy is deleted along with the demand. So this is honoured
+	// only from the operator's own policy file and from RTA_POLICY — sources
+	// that live outside the repository and survive a bad merge, a branch that
+	// never carried the file, a `git clean`, and a client that launched rta
+	// from somewhere else entirely.
+	//
+	// It only ever causes more refusals, so it keeps the property that makes
+	// the rest of this package safe.
+	RequireRepo bool `yaml:"requireRepoPolicy,omitempty"`
 	// From names the files this ceiling was assembled from, nearest first, so
 	// a refusal can say which one to go and edit.
 	From []string `yaml:"-"`
+	// RepoFound records whether the walk up from the working directory found
+	// anything. Distinct from From being non-empty: the operator's own file is
+	// also a source, and it is not the one RequireRepo is asking about.
+	RepoFound bool `yaml:"-"`
+	// SearchedFrom is the directory the walk started in, so a report can say
+	// where rta looked rather than only that it found nothing. For an MCP
+	// server this is whatever directory the client launched it from, which is
+	// the fact most likely to be surprising.
+	SearchedFrom string `yaml:"-"`
 }
 
 // Empty reports whether this ceiling constrains nothing, which is the answer
@@ -82,7 +114,7 @@ type Ceiling struct {
 // existing behaviour exactly as it was.
 func (c Ceiling) Empty() bool {
 	return c.MaxTTL == 0 && len(c.Never) == 0 &&
-		len(c.NeverProfile) == 0 && len(c.RequireScope) == 0
+		len(c.NeverProfile) == 0 && len(c.RequireScope) == 0 && !c.RequireRepo
 }
 
 // Where names the policy files in force, for a message that has to send
@@ -99,7 +131,7 @@ func (c Ceiling) Where() string {
 //
 // The sentence is the return value because every caller needs it: refusing at
 // `grant allow` is only useful if it says which rule and which file, and the
-// ADR's own consequence is that a ceiling which applies must say so out loud —
+// consequence of that is that a ceiling which applies must say so out loud —
 // a silent clamp teaches people to distrust the number they typed.
 func (c Ceiling) Forbids(target, scope, profile string) string {
 	for _, t := range c.Never {
@@ -164,17 +196,25 @@ func namespaceOf(id string) string {
 // than this one.
 func Load() (Ceiling, *view.Error) {
 	var found []Ceiling
+	// requireRepo is collected only from the two sources outside the
+	// repository. A repository file asking for a repository file is deleted
+	// along with its own demand, so honouring it there would be a check that
+	// passes exactly when it is not needed.
+	requireRepo := false
 
 	if explicit := strings.TrimSpace(os.Getenv("RTA_POLICY")); explicit != "" {
 		c, verr := read(explicit, true)
 		if verr != nil {
 			return Ceiling{}, verr
 		}
+		requireRepo = requireRepo || c.RequireRepo
 		found = append(found, c)
 	}
 
-	dir, err := os.Getwd()
+	repoFound, repoConstrains := false, false
+	start, err := os.Getwd()
 	if err == nil {
+		dir := start
 		for range maxWalk {
 			candidate := filepath.Join(dir, RepoFile)
 			if _, err := os.Stat(candidate); err == nil {
@@ -182,6 +222,13 @@ func Load() (Ceiling, *view.Error) {
 				if verr != nil {
 					return Ceiling{}, verr
 				}
+				repoFound = true
+				// Presence is not the same as a ceiling. A file holding `{}`
+				// parses, is found, and constrains nothing — so checking only
+				// that something is there would make the quietest edit the
+				// most effective one, which is the shape of the problem this
+				// whole mechanism exists to fix.
+				repoConstrains = repoConstrains || !c.Empty()
 				found = append(found, c)
 			}
 			parent := filepath.Dir(dir)
@@ -192,15 +239,63 @@ func Load() (Ceiling, *view.Error) {
 		}
 	}
 
-	if base, err := os.UserConfigDir(); err == nil {
-		c, verr := read(filepath.Join(base, "rta", "policy.yaml"), false)
+	if own := OperatorPath(); own != "" {
+		c, verr := read(own, false)
 		if verr != nil {
 			return Ceiling{}, verr
 		}
+		requireRepo = requireRepo || c.RequireRepo
 		found = append(found, c)
 	}
 
-	return intersect(found), nil
+	out := intersect(found)
+	// **The one place the requirement is decided.** The assignment rather than
+	// the intersect is deliberate: requireRepo was collected only inside the
+	// two branches reading sources outside the repository, so a
+	// .rta-policy.yaml setting the key cannot satisfy its own demand. Folding
+	// it in through intersect would let a repository file require itself,
+	// which passes in exactly the case this exists to catch — the file being
+	// gone.
+	out.RequireRepo, out.RepoFound, out.SearchedFrom = requireRepo, repoFound, start
+
+	if requireRepo && repoFound && !repoConstrains {
+		return out, view.Errorf("policy.repo.empty",
+			"the %s found from %s constrains nothing, and this machine requires a ceiling",
+			RepoFile, start).
+			WithHint("a policy file holding no limits is not a ceiling — set maxTTL, never, " +
+				"neverProfile or requireScope in it, or unset requireRepoPolicy in your own " +
+				"policy file")
+	}
+	if requireRepo && !repoFound {
+		// Fail closed, and say all three things somebody needs: what was
+		// expected, where rta looked, and who asked for it. The last one
+		// matters because this refusal appears on a machine whose repository
+		// looks fine — the demand lives in a file they may have forgotten
+		// setting.
+		return out, view.Errorf("policy.repo.missing",
+			"no %s found from %s, and this machine requires one", RepoFile, start).
+			WithHint("either you are not in the repository you meant to be in — an MCP client " +
+				"launches rta from a directory it chooses, not one you do — or the file was " +
+				"removed. `rta policy show` says where rta looked; unset requireRepoPolicy in " +
+				"your own policy file if this machine no longer needs one")
+	}
+	return out, nil
+}
+
+// OperatorPath is the operator's own policy file, beside their config.
+//
+// Derived from the config's own location rather than from os.UserConfigDir
+// directly, because RTA_CONFIG moves the config and this used not to follow
+// it. On a default install the two are identical; on a portable or managed
+// setup they were not, so "beside their config" was false in exactly the
+// deployments most likely to be relying on a policy — and requireRepoPolicy
+// set there would have been written to a file rta never reads.
+func OperatorPath() string {
+	dir := filepath.Dir(config.Path())
+	if dir == "" || dir == "." {
+		return ""
+	}
+	return filepath.Join(dir, "policy.yaml")
 }
 
 // read parses one file. A missing file is an empty ceiling unless the caller

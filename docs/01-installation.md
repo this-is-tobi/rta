@@ -35,7 +35,7 @@ rta doctor
 
 ```
 CHECK                STATUS  DETAIL
-capabilities         ok      16 plugins, 98 capabilities (16 built in)
+capabilities         ok      16 plugins, 100 capabilities (16 built in)
 config               ok      ~/.config/rta/config.yaml
 kv store             info    unlocks from this environment — an MCP server
                              started here can read secrets, bounded only by grants
@@ -61,16 +61,6 @@ rta completion fish > ~/.config/fish/completions/rta.fish
 ```
 
 Restart your shell afterwards.
-
-## The `ai` build
-
-There is a second build carrying an inbound AI engine (`rta ai`), which costs about 19 MB:
-
-```bash
-make build-ai
-```
-
-It is deliberately opt-in and deliberately not the default. rta is the secured capability layer *other people's* agents call; being one more AI CLI is not the product. Unless you specifically want `rta ai`, use the ordinary build.
 
 ## Configuration
 

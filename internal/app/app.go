@@ -221,8 +221,27 @@ func NewRoot(reg *registry.Registry, version string) *cobra.Command {
 		defaultOutput = "pretty"
 	}
 	root := &cobra.Command{
-		Use:           "rta",
-		Short:         "One capability model to rule them all",
+		Use:   "rta",
+		Short: "One capability model to rule them all",
+		// The startup notice, here rather than in main, because this is the
+		// first point at which the *format* is known. It used to print from
+		// main on every run where stderr was a terminal, which put a sentence
+		// of English above the JSON of every `rta … -o json` somebody ran at
+		// a prompt — and the output a person copies off their screen is the
+		// output they paste into a parser.
+		//
+		// Not on the completion command either. A banner appearing while
+		// somebody is still typing is the noise the notice exists to avoid
+		// being.
+		PersistentPreRun: func(cmd *cobra.Command, _ []string) {
+			if cmd.Name() == cobra.ShellCompRequestCmd || cmd.Name() == cobra.ShellCompNoDescRequestCmd {
+				return
+			}
+			if !stderrIsTerminal() {
+				return
+			}
+			WarnUntrustedPlugins(cmd.ErrOrStderr(), opts.output != "pretty")
+		},
 		Long:          "rta is a single extendable binary offering one consistent interface\nover the tools you juggle daily — scriptable CLI, TUI, and MCP for AI agents.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -281,6 +300,7 @@ func NewRoot(reg *registry.Registry, version string) *cobra.Command {
 	root.AddCommand(newDoctorCommand(reg, opts))
 	root.AddCommand(newInitCommand(reg))
 	root.AddCommand(newUseCommand(opts))
+	root.AddCommand(newPolicyCommand(opts))
 	root.AddCommand(newProfileCommand(reg, opts))
 	return root
 }

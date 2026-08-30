@@ -5,8 +5,6 @@ import (
 	"strings"
 	"testing"
 
-	tea "charm.land/bubbletea/v2"
-
 	"github.com/this-is-tobi/rule-them-all/internal/config"
 	"github.com/this-is-tobi/rule-them-all/internal/recent"
 	"github.com/this-is-tobi/rule-them-all/internal/registry"
@@ -152,8 +150,9 @@ func TestAPlainFieldStillOffersWhatWasUsed(t *testing.T) {
 	recent.Record(plugin.SurfaceCLI, c, map[string]any{"bucket": "my-prod-bucket"})
 
 	cf := newCapForm(c, c.Inputs, nil, true, nil)
-	f := typeInto(startedForm(cf), "my-")
-	f = settleForm(f, tea.KeyPressMsg{Code: tea.KeyTab})
+	m := formModel(t, cf)
+	m.form.form = typeInto(m.form.form, "my-")
+	m = pressTab(t, m)
 	if got := *cf.bindings["bucket"]; got != "my-prod-bucket" {
 		t.Errorf("after tab the box holds %q — the shortlist was never attached", got)
 	}

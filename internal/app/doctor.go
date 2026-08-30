@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,8 +20,11 @@ import (
 	"github.com/this-is-tobi/rule-them-all/internal/grant"
 	"github.com/this-is-tobi/rule-them-all/internal/pluginconf"
 	"github.com/this-is-tobi/rule-them-all/internal/plugindist"
+	"golang.org/x/term"
+
 	"github.com/this-is-tobi/rule-them-all/internal/pluginhost"
 	"github.com/this-is-tobi/rule-them-all/internal/plugintrust"
+	"github.com/this-is-tobi/rule-them-all/internal/policy"
 	"github.com/this-is-tobi/rule-them-all/internal/profile"
 	"github.com/this-is-tobi/rule-them-all/internal/registry"
 	"github.com/this-is-tobi/rule-them-all/internal/render/cli"
@@ -71,6 +75,62 @@ var untrustedPluginsFound []pluginhost.Untrusted
 
 // SetUntrustedPlugins records what a host found and did not run.
 func SetUntrustedPlugins(us []pluginhost.Untrusted) { untrustedPluginsFound = us }
+
+// stderrIsTerminal asks whether anybody is watching the stream the startup
+// notice goes to.
+//
+// A var for the same reason builtin/kv's canPrompt is one: the answer is a
+// property of the process rather than of the code, so the only way to test
+// what is built on top of it is to be able to say what it is. Without that
+// the format half of the notice's condition is unreachable from a test,
+// which is exactly where the bug it fixes lived.
+var stderrIsTerminal = func() bool { return term.IsTerminal(int(os.Stderr.Fd())) }
+
+// WarnUntrustedPlugins says once, at startup, that a decision is outstanding.
+//
+// A trust gate's failure mode is silence: a plugin installed, present and
+// doing nothing looks exactly like one that was never installed, and the
+// operator has no reason to suspect a decision is waiting. So it is said —
+// once per run, however many are waiting, naming the command that resolves
+// it.
+//
+// **Two conditions, and the second one is the fix.** Somebody has to be
+// watching the stream, which is what the terminal check asks. And they have
+// to have asked for prose: a run with `-o json` is a person building a
+// pipeline, and a sentence above their JSON is the thing they then have to
+// strip out of what they copied off the screen. `rta plugin list` and `rta
+// doctor` carry the same fact in full, in the format that was asked for, for
+// the times somebody looks.
+//
+// Split by whether trusting would actually help. An artifact whose name
+// something already answers to is not a pending decision — approving it
+// earns a namespace collision on the next start — so it is not counted among
+// the plugins waiting to be loaded, or offered that remedy.
+func WarnUntrustedPlugins(w io.Writer, machineReadable bool) {
+	if machineReadable {
+		return
+	}
+	var waiting, colliding []string
+	for _, u := range untrustedPluginsFound {
+		if u.Taken {
+			colliding = append(colliding, u.Name)
+			continue
+		}
+		waiting = append(waiting, u.Name)
+	}
+	if len(waiting) > 0 {
+		fmt.Fprintf(w,
+			"rta: %d plugin(s) installed and not run: %s — `rta plugin trust <name>` to load, "+
+				"`rta plugin trust` to see them\n",
+			len(waiting), strings.Join(waiting, ", "))
+	}
+	if len(colliding) > 0 {
+		fmt.Fprintf(w,
+			"rta: %d artifact(s) on $PATH name something already registered and were not run: "+
+				"%s — trusting one would collide; remove or rename the file\n",
+			len(colliding), strings.Join(colliding, ", "))
+	}
+}
 
 // untrustedNames is the same list as bare namespaces, for the surfaces that
 // want to name them in a sentence rather than tabulate them.
@@ -417,7 +477,22 @@ func doctorReport(reg *registry.Registry) view.View {
 		if n := len(ceiling.RequireScope); n > 0 {
 			limits = append(limits, fmt.Sprintf("%d target(s) must name a record", n))
 		}
+		if ceiling.RequireRepo {
+			limits = append(limits, "a repository policy is required on this machine")
+		}
 		add("team policy", "info", strings.Join(limits, "; ")+" — "+ceiling.Where())
+	} else {
+		// **Said rather than omitted**, which is the whole point of the row.
+		//
+		// This used to print nothing when no policy was found, so a machine
+		// whose .rta-policy.yaml had just been deleted produced byte-identical
+		// output to one that never had a ceiling at all. Every other axis of
+		// this package defends against a hostile edit, which can only subtract;
+		// none of them defends against the file simply not being there, and an
+		// absence nothing reports is the version of that nobody notices.
+		add("team policy", "info", "none in force — no "+policy.RepoFile+
+			" found from "+ceiling.SearchedFrom+", and no policy beside your config. "+
+			"`rta policy require` makes a missing one an error instead of silence")
 	}
 
 	// Standing agent permissions. Worth a line of its own: a grant issued
@@ -433,7 +508,7 @@ func doctorReport(reg *registry.Registry) view.View {
 		add("agent grants", "ok", "none active — agents cannot write or destroy anything")
 	} else {
 		named := make([]string, 0, len(grants))
-		var stale []string
+		var stale, unwatched []string
 		// Loaded here rather than reused from the profile section above, which
 		// scopes its own: an unreadable config leaves stale empty, and the row
 		// below simply does not appear. Every other reader of the file has
@@ -441,6 +516,13 @@ func doctorReport(reg *registry.Registry) view.View {
 		grantCfg, grantCfgErr := config.Load()
 		for _, g := range grants {
 			named = append(named, strings.TrimSpace(g.Target+" "+g.Scope))
+			// Issued with nobody at the terminal. All three things that do
+			// that — a provisioning script, a CI job, an agent's own shell
+			// tool — are legitimate, and only the operator knows which of
+			// them ran. So this is a question and not a verdict.
+			if g.From == grant.FromCommand {
+				unwatched = append(unwatched, strings.TrimSpace(g.Target+" "+g.Scope))
+			}
 			// A grant issued against a connection that has since been
 			// repointed. It is listed, it is inside its TTL, and every call it
 			// was issued for is refused — which is the shape of thing that
@@ -449,8 +531,9 @@ func doctorReport(reg *registry.Registry) view.View {
 			// **The remedy lives here and not in the refusal.** An agent is
 			// told only what an ungranted call is told: "this profile changed
 			// since you were granted" would disclose that the profile exists
-			// and that consent was once given for it, which is the oracle ADR
-			// 0019 §6 exists to close. So a person has to be able to find it,
+			// and that consent was once given for it, which is the oracle the
+			// refusal deliberately will not open. So a person has to be able
+			// to find it,
 			// and this is where they look.
 			if g.Profile == "" || grantCfgErr != nil {
 				continue
@@ -461,6 +544,13 @@ func doctorReport(reg *registry.Registry) view.View {
 		}
 		add("agent grants", "info", fmt.Sprintf("%d active: %s (`rta grant list`)",
 			len(grants), strings.Join(named, ", ")))
+		if len(unwatched) > 0 {
+			add("agent grants", "info", fmt.Sprintf(
+				"%d issued with nobody at the terminal: %s — a script or a CI job does that, and "+
+					"so does an agent that can run commands, which can issue itself one. If none "+
+					"of those was you, `rta grant revoke --all`",
+				len(unwatched), strings.Join(unwatched, ", ")))
+		}
 		if len(stale) > 0 {
 			add("agent grants", "warn", fmt.Sprintf(
 				"%d name a connection that has changed since it was issued, so they authorize "+

@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/this-is-tobi/rule-them-all/internal/render/theme"
+	"github.com/this-is-tobi/rule-them-all/internal/textclean"
 )
 
 // panelHead is what goes in a panel's top border.
@@ -18,6 +19,9 @@ import (
 // A convention that four places have to remember is a convention that gets
 // broken by the fifth; panel decides now, and there is nowhere left to decide
 // it differently.
+// Plain text also means text a terminal will not act on: a title is often a
+// name out of a config file or off an artifact on $PATH, and panel cleans all
+// three fields for the same reason renderBands cleans a band's name.
 type panelHead struct {
 	Title string // the pane's name, in theme.PanelTitle
 	Note  string // muted, beside the title: a summary
@@ -40,6 +44,8 @@ func panel(h panelHead, body string, width, height int, focus bool) string {
 	if width < 10 {
 		return body // degenerate terminal: give the content back unframed
 	}
+	h.Title, h.Note, h.Right = textclean.Terminal(h.Title),
+		textclean.Terminal(h.Note), textclean.Terminal(h.Right)
 	border := theme.Border
 	if focus {
 		border = lipgloss.NewStyle().Foreground(theme.Primary)

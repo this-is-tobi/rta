@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/this-is-tobi/rule-them-all/internal/render/theme"
+	"github.com/this-is-tobi/rule-them-all/internal/textclean"
 )
 
 // A band list: a rule carrying a name on the left and the fact you scan for on
@@ -20,7 +21,14 @@ import (
 // copies of a layout drift into two layouts, and the whole argument for the
 // grammar was that a person learns to read it once.
 type band struct {
-	// name goes in the rule, upper-cased by the renderer.
+	// name goes in the rule, upper-cased and cleaned by the renderer.
+	//
+	// **Plain text, and the renderer enforces it.** Every name on these lists
+	// is a string somebody else wrote — a profile's name and a plugin key come
+	// out of a config file, a plugin's name out of an artifact on $PATH — and
+	// a value carrying `ESC [ 2 J` clears the screen from inside a pane rta
+	// drew. internal/textclean exists for this and was reaching the strings a
+	// plugin returns and not the ones a file holds; here is the other half.
 	name string
 	// right is the pre-rendered status cluster, joined with the muted middot.
 	right []string
@@ -44,16 +52,17 @@ func renderBands(bands []band, sel, scroll, visible, inner int) string {
 		row := bands[i]
 
 		mark := " "
-		name := theme.Key.Render(" " + strings.ToUpper(row.name) + " ")
+		plainName := strings.ToUpper(textclean.Terminal(row.name))
+		name := theme.Key.Render(" " + plainName + " ")
 		if i == sel {
 			mark = theme.AccentTxt.Render("❯")
-			name = theme.Title.Render(" " + strings.ToUpper(row.name) + " ")
+			name = theme.Title.Render(" " + plainName + " ")
 		}
 		right := ""
 		if len(row.right) > 0 {
 			right = " " + strings.Join(row.right, theme.Subtle.Render(" · ")) + " "
 		}
-		rule := max(inner-lipgloss.Width(" "+strings.ToUpper(row.name)+" ")-lipgloss.Width(right)-3, 0)
+		rule := max(inner-lipgloss.Width(" "+plainName+" ")-lipgloss.Width(right)-3, 0)
 		b.WriteString(theme.Subtle.Render("─") + mark + name +
 			theme.Subtle.Render(strings.Repeat("─", rule)) +
 			right + theme.Subtle.Render("─") + "\n")

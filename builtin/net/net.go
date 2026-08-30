@@ -410,6 +410,13 @@ func lookup(ctx context.Context, r *stdnet.Resolver, rtype, name string, add fun
 		WithHint("use auto, " + strings.Join(dnsTypes, ", "))
 }
 
+// isNotFound reports that the resolver answered and the answer was "no such
+// name" — as opposed to every other error, which means it did not answer.
+func isNotFound(err error) bool {
+	var d *stdnet.DNSError
+	return errors.As(err, &d) && d.IsNotFound
+}
+
 func runDNS(ctx context.Context, req plugin.Request) (view.View, error) {
 	name := strings.TrimSpace(req.String("name"))
 	rtype := strings.ToUpper(strings.TrimSpace(req.String("type")))
@@ -445,11 +452,23 @@ func runDNS(ctx context.Context, req plugin.Request) (view.View, error) {
 	}
 	elapsed := time.Since(start)
 
-	// A single-type query that found nothing is a failure worth reporting;
-	// an auto query tolerates the misses that come with asking broadly.
+	// Nothing came back, and whether that is an answer or a failure to get one
+	// is the whole difference between "this name has no AAAA record" and "this
+	// machine could not ask". Reported as the first, the second is a
+	// diagnostic tool saying a name does not resolve when it never found out
+	// — measured in a `--network none` container, where `net dns example.com`
+	// answered "no A/AAAA/CNAME records for example.com".
+	//
+	// `auto` used to suppress the error entirely, on reasoning that holds for
+	// a partial miss and not for this one: with no rows at all every type
+	// failed, so the errors are not the misses that come with asking broadly,
+	// they are the whole answer. A name that genuinely does not exist keeps
+	// the old wording, because a name that does not exist really has no
+	// records — that is an answer, and the resolver gave it.
 	if len(t.Rows) == 0 {
-		if lastErr != nil && !auto {
-			return nil, view.Errorf("net.dns.failed", "resolving %s %s: %v", rtype, name, lastErr)
+		if lastErr != nil && !isNotFound(lastErr) {
+			return nil, view.Errorf("net.dns.failed", "resolving %s %s: %v",
+				strings.Join(types, "/"), name, lastErr)
 		}
 		return nil, view.Errorf("net.dns.norecords", "no %s records for %s", strings.Join(types, "/"), name).
 			WithHint("try another --type (" + strings.Join(dnsTypes, ", ") + ") or another --server")

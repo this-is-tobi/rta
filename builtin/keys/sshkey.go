@@ -12,11 +12,12 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/term"
+
+	"github.com/this-is-tobi/rule-them-all/builtin/internal/sshkeys"
 
 	"github.com/this-is-tobi/rule-them-all/internal/atomicfile"
 	"github.com/this-is-tobi/rule-them-all/internal/stdio"
@@ -332,25 +333,18 @@ func suggestComment(_ context.Context, _ plugin.Request) []string {
 // side-effect free, and parsing a key would be enough to trigger a
 // passphrase prompt on a keystroke.
 func suggestPrivateKeys(_ context.Context, _ plugin.Request) []string {
+	return sshkeys.PrivateKeys(sshDir())
+}
+
+// sshDir is ~/.ssh, or empty when there is no home to resolve — which every
+// caller here treats as "no keys", the same answer an unreadable directory
+// gives.
+func sshDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return nil
+		return ""
 	}
-	dir := filepath.Join(home, ".ssh")
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil
-	}
-	var out []string
-	for _, e := range entries {
-		name := e.Name()
-		if e.IsDir() || !strings.HasPrefix(name, "id_") || strings.HasSuffix(name, ".pub") {
-			continue
-		}
-		out = append(out, filepath.Join(dir, name))
-	}
-	sort.Strings(out)
-	return out
+	return filepath.Join(home, ".ssh")
 }
 
 // publishRestoredKey writes the reconstructed private key and its .pub

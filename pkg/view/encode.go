@@ -1,6 +1,7 @@
 package view
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 )
@@ -87,14 +88,57 @@ func (e Envelope) MarshalJSON() ([]byte, error) {
 }
 
 // ToMap returns the envelope as a generic map, for non-JSON encoders (YAML).
+//
+// **UseNumber, and it is not a detail.** encoding/json decodes every number
+// into a float64, so a round trip through a generic map turned every integer
+// a view carries into a floating-point one — invisible on the way back out
+// through json, where Go writes a whole float64 as `5`, and plainly visible
+// through YAML, where the same table's row count came out as `total: 5.0`.
+// Two machine-readable formats disagreeing about the type of the same field
+// is the thing a consumer cannot work around, because both look right on
+// their own.
+//
+// The conversion below puts the type back rather than the digits: a number
+// written without a fraction reads back as an integer, and one with a
+// fraction stays a float. json.Number holds the original text, so a value
+// past float64's exact range survives that too, which it did not before.
 func ToMap(v View) (map[string]any, error) {
 	raw, err := json.Marshal(Envelope{View: v})
 	if err != nil {
 		return nil, fmt.Errorf("encoding view: %w", err)
 	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
 	var m map[string]any
-	if err := json.Unmarshal(raw, &m); err != nil {
+	if err := dec.Decode(&m); err != nil {
 		return nil, fmt.Errorf("decoding view envelope: %w", err)
 	}
-	return m, nil
+	out, _ := asWritten(m).(map[string]any)
+	return out, nil
+}
+
+// asWritten replaces every json.Number with the Go type its text describes.
+func asWritten(v any) any {
+	switch t := v.(type) {
+	case json.Number:
+		if i, err := t.Int64(); err == nil {
+			return i
+		}
+		if f, err := t.Float64(); err == nil {
+			return f
+		}
+		// Neither: keep the text rather than invent a number for it.
+		return t.String()
+	case map[string]any:
+		for k, val := range t {
+			t[k] = asWritten(val)
+		}
+		return t
+	case []any:
+		for i, val := range t {
+			t[i] = asWritten(val)
+		}
+		return t
+	}
+	return v
 }

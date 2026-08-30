@@ -6,6 +6,35 @@ It is also the unit of consent. `rta grant allow pg.query --profile staging` let
 
 ## Defining one
 
+**From a script, one command per plugin:**
+
+```bash
+rta profile set staging --note "the shared staging stack" --ttl 8h \
+    --plugin pg \
+    --set host=db.staging.internal --set database=app \
+    --secret password=kv:staging-db-password
+```
+
+It is idempotent — running it twice is running it once — so it belongs in a provisioning script, a Dockerfile, or a dotfiles repository as easily as in a terminal. `rta profile rm` is the other half.
+
+**Or from the form, which is the shortest path at a keyboard.** Open the TUI, press `f` for profiles, then `n`:
+
+```bash
+rta
+```
+
+| Key | What it does |
+| --- | --- |
+| `f` | the profiles pane |
+| `n` | a new profile — name it, then add a plugin to it |
+| `enter` | open one, to add or edit the plugins inside it |
+| `c` or `e` | edit whatever is selected |
+| `tab` | in the plugin field, what is installed — already pinned to its artifact, because nobody should type a digest |
+
+Both are generated from each plugin's own declared inputs — the same declaration the CLI flags and the MCP schema come from — so both show exactly the keys that plugin reads, with their types, defaults and bounds. Both know which inputs are credentials, and neither will let one land in `set:`.
+
+Everything below is what they write, and is worth reading whether or not you use them: the file is yours to edit, and a profile is the thing a grant names.
+
 Profiles live in your config (`rta init` creates it; `rta doctor` prints its path):
 
 ```yaml
@@ -32,7 +61,7 @@ profiles:
           token: kv:staging-vault-token
 ```
 
-| Key | |
+| Key | What it sets |
 | --- | --- |
 | `note` | What this environment is, shown by `profile list` |
 | `ttl` | A deadline the profile brings with it when switched on |
@@ -52,6 +81,17 @@ secrets:
 A config file is plaintext, read on every invocation, with nobody watching. So this block holds a **name**, and the value is fetched at resolution time — reaching neither this file, nor an environment variable, nor an argv.
 
 You write the mapping; a plugin never does. A plugin that could name the entry it wanted could name *any* entry in your store. All it declares is that it has a secret input.
+
+**A stated value wins over a mapping**, so the two blocks must not target the same input:
+
+```yaml
+set:
+  user: app          # this is what authenticates
+secrets:
+  user: kv:app-user  # never fetched
+```
+
+That is reported, and it matters most in the direction you would actually hit it: moving a credential out of `set:` and into `secrets:` while leaving the old line behind changes nothing, and the plaintext one is still in force. The report names the plaintext line as the one to remove.
 
 ## Reaching things that are not directly reachable
 
@@ -74,6 +114,105 @@ The same fact, spelled for a service behind a jump host rather than in a cluster
 One forward per call, torn down afterwards. A cached port-forward outlives the pod it points at, and a stale tunnel to a rescheduled pod fails in a way nobody can read.
 
 A connection states **at most one** of `kube` and `ssh`; both at once is refused.
+
+## Writing one from a script
+
+`rta profile set` states a profile from flags. Nothing about it needs a terminal, which is the point: before it existed the only alternatives were a TTY form and hand-written YAML, and a team that cannot script its setup ships the YAML — the path where nothing checks the block until something tries to use it.
+
+```bash
+rta profile set <name> [--note ...] [--ttl 8h|none]
+                       [--plugin <name> [--set k=v ...] [--secret input=kv:entry ...]
+                                        [--kube ...] [--ssh ...] [--direct]]
+rta profile rm  <name> [--plugin <name>]
+```
+
+**Each block is replaced by what the flags state, and a block no flag mentions is left alone.** So `--set` states that plugin's whole `set:` block — omit a key to remove it — while its `secrets:` stays exactly as it was, and a run with neither touches neither. That is the only reading under which running the command twice and running it once are the same thing, which is what makes it safe in a script that runs on every boot.
+
+**Anything a restatement leaves out is named.** Changing one key of four is also how `sslmode: require` disappears from the line beside it, so the loss is reported rather than assumed to be intended:
+
+```
+dropped  set.database, set.sslmode — the flags state the whole block, and these were not among them
+```
+
+One plugin per invocation. A profile spanning three plugins is three lines, and each of them is independently re-runnable — including in parallel: every writer of the config file takes a lock across the whole read-modify-write, so concurrent runs cannot lose each other's profiles.
+
+`rta profile rm <name>` removes the environment, switches it off if it was on, and **revokes every grant naming it**. That last part is not tidiness: a grant naming a profile nothing can look up authorizes nothing, so leaving it behind is a row in `rta grant list` that reads like access and is not. `--plugin` removes one entry and keeps the environment.
+
+### What it refuses
+
+| What you typed | Why it is refused |
+| --- | --- |
+| `--set password=…` on a declared credential | `set:` is a plaintext value in a world-readable file. It names `--secret` instead |
+| `--secret password=hunter2` | that block takes a **reference**, never a value — and the refusal does not repeat what you passed |
+| `--set port=six-thousand`, `--set tls=yes` | the declared type cannot hold it (see below) |
+| `--set hsot=…` | nothing in that plugin reads the key |
+| `--kube …` and `--ssh …` together | a call opens one forward |
+| a profile named after an installed plugin | a profile name and a namespace share a command line |
+| writing where profiles are not honoured | with no config directory the config path falls back to `./.rta.yaml` — ordinary in a container or in CI — and profiles read from a working-directory file are ignored, because that file could have come from a repository you cloned. Set `$RTA_CONFIG` |
+
+Neither credential refusal echoes the value it was given. If you did pass a real one, it is in your shell history — rta will not put it anywhere else.
+
+`--plugin pg` is enough; the artifact pin is filled in from what is installed. A digest is not something anyone should type, and typing one wrong is exactly the failure the pin exists to prevent.
+
+**Tab completion knows the keys.** With `--plugin` on the line, `--set <tab>` offers exactly what that plugin reads, with its help text and — for a closed set — its accepted values. `--secret <tab>` offers the inputs a mapping may target, marking which of them are credentials. A credential never appears under `--set`, because it cannot be a config key at all:
+
+```
+$ rta profile set staging --plugin pg --set <tab>
+database=   database to connect to
+host=       database host
+port=       database port
+sslmode=    disable|prefer|require|verify-ca|verify-full
+user=       role to connect as
+```
+
+### Adding a forward to an existing connection
+
+A forward fills the endpoint inputs itself, so a stated host beside a coordinate is a line no run reads. `--kube` on a connection that already sets one drops the keys it replaces and says so:
+
+```
+removed  set.host, set.port — the forward fills those, so nothing read them
+```
+
+Stating both in the same command is refused instead. Quietly dropping half of what you just typed is a different thing from clearing a line you are not looking at.
+
+## Types are part of the declaration
+
+Every value in `set:` is read back as the type the plugin declared, by a type assertion. A value of the wrong shape is therefore neither refused nor ignored — it is read as the **zero**:
+
+```yaml
+set:
+  tls: "true"     # a string. The handler reads false.
+  tls: yes        # also a string — YAML 1.2. The handler reads false.
+  port: "5432"    # a string. The handler reads 0, and the declared default is gone.
+```
+
+Both `tls` spellings leave a connection running without the transport security its own configuration states. `rta profile list` and `rta doctor` now report all three, and a mistyped profile refuses to resolve rather than connecting somewhere unexpected:
+
+```
+profiles.staging.pg: `set: tls` is written as text where a boolean is declared — the handler would read false
+  (write it unquoted as `true` or `false` — a quoted `"true"` is a string, and so is a bare `yes`)
+```
+
+There is deliberately no coercion. Reading `"true"` as true would then have to answer for `yes`, `on`, `1` and `TRUE`, and every answer is a guess about a value that decides whether a connection is encrypted.
+
+`rta profile set` cannot produce this: a flag argument is always text, so it converts to the declared type before writing, and refuses what will not convert.
+
+The same rule covers the base `plugins:` block, which `rta doctor` reports.
+
+## A secret in the wrong block
+
+`set:` holds values and `secrets:` holds references, and putting a credential in the first one is the mistake this grammar invites. It is inert — nothing reads it, and `profile show` says so:
+
+```
+problem   nothing in pg reads "password" — `rta explain <capability>` lists the config keys it reads
+```
+
+The value itself is redacted in that output, because the config file is written world-readable on the documented basis that it holds no secrets. Move it:
+
+```yaml
+secrets:
+  password: kv:staging-db-password
+```
 
 ## Using one
 

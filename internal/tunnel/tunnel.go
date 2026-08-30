@@ -24,6 +24,7 @@ import (
 	"io"
 	"net"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -340,9 +341,22 @@ func kubectlFailed(name, spec, stderr string) *view.Error {
 	case strings.Contains(s, "not found"):
 		return view.Errorf("tunnel.service.missing", "%s: %s", name, one).
 			WithHint("check the namespace and the service name in `" + spec + "`")
-	case strings.Contains(s, "forbidden") || strings.Contains(s, "Unauthorized"):
+	case notAuthenticated(s):
+		// **401 and 403 are different questions and were one answer.** Both
+		// landed on "not allowed to port-forward there — the verb is `create`
+		// on `pods/portforward`", which sends somebody to audit RBAC when
+		// what expired is their login. On any cluster reached through an exec
+		// credential plugin — Teleport, `aws eks get-token`,
+		// `gke-gcloud-auth-plugin`, an OIDC refresh — that is the ordinary
+		// daily failure, and it is the one this said the least useful thing
+		// about.
+		return view.Errorf("tunnel.unauthenticated",
+			"profile %q: this cluster does not know who you are", name).
+			WithHint(loginHint(spec))
+	case strings.Contains(s, "forbidden"):
 		return view.Errorf("tunnel.denied", "%s: not allowed to port-forward there", name).
-			WithHint("this is the cluster refusing, not rta — the verb is `create` on `pods/portforward`")
+			WithHint("this is the cluster refusing, not rta — you are authenticated, and the " +
+				"verb is `create` on `pods/portforward`")
 	case strings.Contains(s, "address already in use"):
 		return view.Errorf("tunnel.port.taken", "%s: the local port kubectl chose is already in use", name).
 			WithHint("retrying usually picks another")
@@ -353,6 +367,89 @@ func kubectlFailed(name, spec, stderr string) *view.Error {
 		return view.Errorf("tunnel.open.failed", "%s: %s", name, one).
 			WithHint("that message is kubectl's; rta shells out to it so your cluster credentials keep working")
 	}
+}
+
+// notAuthenticated reports whether kubectl's stderr is about identity rather
+// than permission.
+//
+// The two shapes are the API server's 401 and the credential plugin failing
+// before there is a request to make at all. The second one never reached the
+// cluster, so it cannot be a permissions answer however it is worded.
+func notAuthenticated(stderr string) bool {
+	for _, s := range []string{
+		"Unauthorized",
+		"You must be logged in to the server",
+		"getting credentials", // kubectl's own wrapper around an exec plugin
+		"exec plugin",         // "exec plugin: invalid apiVersion", and friends
+		"credential plugin",   //
+		"no Auth Provider found",
+	} {
+		if strings.Contains(stderr, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// loginHint names the command that fixes it, by asking kubectl locally which
+// credential helper this context uses.
+//
+// **The generic version of this hint is useless and the specific one is one
+// cheap question away.** "Log in again" leaves somebody to work out which of
+// ten contexts, which tool, and which cluster flag; `kubectl config view` is
+// a local read of a file, contacts nothing, and answers all three. It runs
+// only here, on a path where something has already stopped.
+//
+// Anything unexpected falls back to the general sentence rather than to a
+// guess: a wrong command in a hint is worse than no command.
+func loginHint(spec string) string {
+	kctx, _, _, _, _, verr := parseKube(spec)
+	if verr != nil {
+		return "authenticate to the cluster again — `kubectl get ns --context …` fails the same way"
+	}
+	helper, args := credentialHelper(kctx)
+	switch {
+	case helper == "":
+		return "authenticate to the cluster again — `kubectl get ns --context " + kctx +
+			"` fails the same way, and succeeds once you have"
+	case helper == "tsh":
+		if cluster := flagValue(args, "--kube-cluster"); cluster != "" {
+			return "this context authenticates through Teleport — `tsh kube login " + cluster +
+				"` renews it, and `tsh status` says when it expired"
+		}
+		return "this context authenticates through Teleport — `tsh kube login` renews it"
+	}
+	return "this context authenticates through `" + helper +
+		"` — run whatever renews that, then retry; `kubectl get ns --context " + kctx +
+		"` is the same question without rta in the way"
+}
+
+// credentialHelper is the exec plugin a context authenticates with, and its
+// arguments — empty when the context uses none, or when kubectl cannot say.
+func credentialHelper(kctx string) (string, []string) {
+	out, err := exec.Command(kubectl, "config", "view", "--minify",
+		"--context="+kctx, "-o", "jsonpath={.users[0].user.exec.command} {.users[0].user.exec.args}").Output()
+	if err != nil {
+		return "", nil
+	}
+	fields := strings.Fields(strings.NewReplacer("[", " ", "]", " ").Replace(string(out)))
+	if len(fields) == 0 {
+		return "", nil
+	}
+	return filepath.Base(fields[0]), fields[1:]
+}
+
+// flagValue reads --name=value out of an argument list.
+func flagValue(args []string, name string) string {
+	for i, a := range args {
+		if v, ok := strings.CutPrefix(a, name+"="); ok {
+			return v
+		}
+		if a == name && i+1 < len(args) {
+			return args[i+1]
+		}
+	}
+	return ""
 }
 
 // TimedOut reports whether any wait for kubectl's exit fell through to its

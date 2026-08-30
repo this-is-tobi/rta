@@ -153,6 +153,15 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 			// from an agent reporting that a file it can see does not exist.
 			fmt.Fprintf(cmd.ErrOrStderr(), "path arguments confined to: %s\n",
 				strings.Join(guard.Roots(), ", "))
+			// The ceiling, said out loud for the same reason the roots are.
+			//
+			// It matters more here than anywhere else, because this is the one
+			// context where the operator did not choose the working directory:
+			// a client launches rta from wherever it likes, and the repository
+			// policy is found by walking up from there. A team can commit
+			// .rta-policy.yaml, wire up a client that starts in $HOME, and get
+			// no ceiling at all — with nothing anywhere saying so.
+			fmt.Fprintln(cmd.ErrOrStderr(), "rta:", ceilingLine())
 			// An allowlist entry that authorizes nothing is indistinguishable
 			// from one the operator chose not to write: the capability is
 			// simply absent, and the agent reports only that the tool does not
@@ -224,4 +233,20 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 			return nil, cobra.ShellCompDirectiveFilterDirs
 		})
 	return cmd
+}
+
+// ceilingLine describes the team ceiling in one line for the startup banner.
+//
+// A failure to load is reported rather than swallowed: a policy that cannot be
+// parsed already stops every grant from loading, and an operator watching this
+// server start is the person who can fix it.
+func ceilingLine() string {
+	ceiling, verr := grant.Ceiling()
+	if verr != nil {
+		return "team policy: " + verr.Message
+	}
+	if ceiling.Empty() {
+		return "team policy: none in force (searched up from " + ceiling.SearchedFrom + ")"
+	}
+	return "team policy: " + ceiling.Where()
 }

@@ -7,6 +7,8 @@ import (
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
+
+	"github.com/this-is-tobi/rule-them-all/builtin/internal/gitclone"
 )
 
 // bareRepo builds a real bare repository on the local disk, pushed to from a
@@ -55,16 +57,16 @@ func TestOpenRepoOpensABareRepositoryDirectly(t *testing.T) {
 	}
 }
 
-// cloneRepo is what openRepo hands a remote-looking path to. Exercised here
+// gitclone.InMemory is what openRepo hands a remote-looking path to. Exercised here
 // against go-git's own "file" transport client (registered the same way
 // http/ssh are, just addressed by a local path) rather than a real network
 // host, so the test has no external dependency — what it proves is that the
-// *git.Repository cloneRepo hands back is fully usable afterward, the same
+// *git.Repository it hands back is fully usable afterward, the same
 // as one PlainOpen would have returned, not merely that Clone did not error.
 func TestCloneRepoPopulatesAFullyUsableRepository(t *testing.T) {
 	bareDir := bareRepo(t)
 
-	repo, verr := cloneRepo(context.Background(), bareDir)
+	repo, verr := gitclone.InMemory(context.Background(), bareDir, gitclone.Options{})
 	if verr != nil {
 		t.Fatal(verr)
 	}
@@ -82,7 +84,7 @@ func TestCloneRepoPopulatesAFullyUsableRepository(t *testing.T) {
 }
 
 // The routing decision itself, proven without depending on a real, reachable
-// remote: a URL-shaped path must reach cloneRepo, never be misread as a
+// remote: a URL-shaped path must reach the clone, never be misread as a
 // bogus local path. Deliberately unreachable (port 1 is never a git server)
 // rather than a real network dependency — the point is which function ran,
 // not whether the clone succeeds.
@@ -92,7 +94,7 @@ func TestOpenRepoRoutesARemoteLookingPathToCloneRatherThanLocalOpen(t *testing.T
 		t.Fatal("expected a clone failure")
 	}
 	if verr.Code != "git.clone.failed" {
-		t.Errorf("code = %q, want git.clone.failed — a URL-shaped path must be routed to cloneRepo, "+
+		t.Errorf("code = %q, want git.clone.failed — a URL-shaped path must be routed to the clone, "+
 			"not treated as a bogus local path", verr.Code)
 	}
 }

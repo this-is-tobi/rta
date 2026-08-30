@@ -245,6 +245,19 @@ func TestDedupeCollapsesTheSamePackageFromTwoManifests(t *testing.T) {
 	}
 }
 
+// manifestsOf drives the real entry point rather than the scanner underneath
+// it, so the three shapes --path accepts — a directory, one file, a missing
+// path — are covered by the function that has to tell them apart.
+func manifestsOf(t *testing.T, target string, recursive bool) (shown []string, truncated bool, err error) {
+	t.Helper()
+	proj, verr := openProject(t.Context(), req(map[string]any{}), target)
+	if verr != nil {
+		return nil, false, verr
+	}
+	_, shown, truncated, err = proj.manifests(recursive)
+	return shown, truncated, err
+}
+
 func TestFindManifests(t *testing.T) {
 	dir := t.TempDir()
 	for _, name := range []string{"go.mod", "package-lock.json", "README.md"} {
@@ -252,20 +265,74 @@ func TestFindManifests(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	got, _, err := findManifests(dir, false)
+	got, _, err := manifestsOf(t, dir, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(got) != 2 {
 		t.Errorf("found %v, want go.mod and package-lock.json", got)
 	}
+	// The reader is shown the path they typed, not a path relative to some
+	// filesystem root they never named.
+	for _, g := range got {
+		if !strings.HasPrefix(g, dir) {
+			t.Errorf("manifest reported as %q, want it under the path that was asked about", g)
+		}
+	}
 	// A file may be named directly, whatever it is called.
 	one := filepath.Join(dir, "README.md")
-	if got, _, err := findManifests(one, false); err != nil || len(got) != 1 || got[0] != one {
+	if got, _, err := manifestsOf(t, one, false); err != nil || len(got) != 1 || got[0] != one {
 		t.Errorf("naming a file directly: %v, %v", got, err)
 	}
-	if _, _, err := findManifests(filepath.Join(dir, "nope"), false); err == nil {
+	if _, _, err := manifestsOf(t, filepath.Join(dir, "nope"), false); err == nil {
 		t.Error("a missing path should be an error")
+	}
+}
+
+// The depth bound is what keeps --recursive from walking a home directory
+// when it meets a mistyped path, and it is invisible: a manifest below it is
+// simply not there, and the report reads as a project that declares nothing.
+// Only the truncation flag distinguishes "clean" from "not looked at", which
+// is why the bound needs a test of its own rather than a comment.
+func TestTheRecursiveScanStopsAtItsDepthBound(t *testing.T) {
+	root := t.TempDir()
+	// One level past the bound, with nothing above it to find.
+	deep := root
+	for range maxScanDepth + 1 {
+		deep = filepath.Join(deep, "d")
+	}
+	if err := os.MkdirAll(deep, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(deep, "go.mod"), []byte("module x\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, _, err := manifestsOf(t, root, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Errorf("the walk went past %d levels: %v", maxScanDepth, got)
+	}
+
+	// …and stays able to find one at the bound, or the bound is off by one in
+	// the direction that loses manifests somebody has.
+	shallow := root
+	for range maxScanDepth - 1 {
+		shallow = filepath.Join(shallow, "s")
+	}
+	if err := os.MkdirAll(shallow, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(shallow, "go.mod"), []byte("module y\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, _, err = manifestsOf(t, root, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 {
+		t.Errorf("a manifest inside the bound was not found: %v", got)
 	}
 }
 
@@ -292,7 +359,7 @@ func TestFindManifestsWalksAMonorepoOnlyWhenAsked(t *testing.T) {
 	write("services/api/vendor/x/go.mod")
 	write(".git/modules/thing/go.mod")
 
-	flat, _, err := findManifests(root, false)
+	flat, _, err := manifestsOf(t, root, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -300,7 +367,7 @@ func TestFindManifestsWalksAMonorepoOnlyWhenAsked(t *testing.T) {
 		t.Errorf("the default scan must not walk: %v", flat)
 	}
 
-	deep, truncated, err := findManifests(root, true)
+	deep, truncated, err := manifestsOf(t, root, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -400,7 +467,7 @@ func TestDepsGradesAffectedPackages(t *testing.T) {
 
 	r := &report{}
 	gradeDeps(r, inventory{all: comps, queryable: comps, manifests: []string{"go.mod"},
-		structure: newGraph()}, vulns, false)
+		structure: newGraph()}, vulns, nil, false, false)
 
 	f := mustFind(t, r, "example.com/bad")
 	if f.status != stFail {
@@ -437,7 +504,7 @@ func TestDepsSaysWhatItCouldNotCheck(t *testing.T) {
 		all: append(known, unknown...), queryable: known, unknown: unknown,
 		unreadable: []unreadableManifest{{path: "weird.json", reason: "invalid character"}},
 		manifests:  []string{"go.mod", "weird.json"}, structure: newGraph(),
-	}, nil, false)
+	}, nil, nil, false, false)
 
 	// Silent partial coverage is the failure mode that matters: a report that
 	// looks complete and is not.
@@ -455,7 +522,7 @@ func TestDepsOfflineDoesNotClaimAnAllClear(t *testing.T) {
 	comps := []component{{ecosystem: "Go", name: "a", version: "v1"}}
 	r := &report{}
 	gradeDeps(r, inventory{all: comps, queryable: comps, manifests: []string{"go.mod"},
-		structure: newGraph()}, nil, true)
+		structure: newGraph()}, nil, nil, false, true)
 
 	f := mustFind(t, r, "advisories")
 	if f.status != stInfo {
@@ -481,7 +548,7 @@ func TestEveryDepsFindingLandsInADeclaredGroup(t *testing.T) {
 			all: comps, queryable: comps[:1], unknown: comps[1:],
 			unreadable: []unreadableManifest{{path: "x.json", reason: "unexpected end of JSON input"}},
 			manifests:  []string{"go.mod"}, structure: newGraph(),
-		}, map[string][]string{comps[0].key(): {"GHSA-1"}}, offline)
+		}, map[string][]string{comps[0].key(): {"GHSA-1"}}, nil, false, offline)
 		for _, f := range r.findings {
 			if !declared[f.group] {
 				t.Errorf("finding %q is in group %q, which the detail page never renders", f.check, f.group)

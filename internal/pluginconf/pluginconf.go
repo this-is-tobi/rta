@@ -202,10 +202,21 @@ func (r *Resolver) Check(reg *registry.Registry) []Problem {
 					Hint:   "`rta explain` lists the inputs a capability takes"})
 				continue
 			}
+			v, _ := lookup(r.sections[ns], key)
+			// Before the Options check, and reported here for the reason the
+			// rest of this function exists: a value whose type the handler
+			// cannot read is not ignored, it is read as the zero — so a
+			// quoted `"true"` under a `tls` key leaves the connection
+			// unencrypted while the file says otherwise. Louder than a key
+			// nothing reads, and it was the one this did not look for.
+			if problem, hint := plugin.StatedTypeProblem(f, v); problem != "" {
+				problems = append(problems, Problem{Section: ns,
+					Reason: key + " " + problem, Hint: hint})
+				continue
+			}
 			if len(f.Options) == 0 {
 				continue
 			}
-			v, _ := lookup(r.sections[ns], key)
 			got := fmt.Sprint(v)
 			if !contains(f.Options, got) {
 				problems = append(problems, Problem{Section: ns,

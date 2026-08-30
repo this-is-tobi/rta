@@ -19,8 +19,8 @@ import (
 //
 // A Live Suggest never answers here. This is the per-keystroke channel — the
 // TUI re-evaluates it as siblings change, shell completion builds it a
-// credential-less request — and a network read on that cadence is what ADR
-// 0018 §8 exists to prevent. The deliberate channel calls f.Suggest itself,
+// credential-less request — and a network read on that cadence is exactly
+// what this channel exists to prevent. The deliberate channel calls f.Suggest itself,
 // with LiveRequest, on a completion press. One gate at the fork rather than
 // one per surface, for CompletionRequest's reason: a rule that lives in two
 // places is a rule that will hold in one of them.

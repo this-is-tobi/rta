@@ -353,6 +353,19 @@ func (c Capability) validate(ns string) error {
 				}
 			}
 		}
+		// The same mismatch StatedTypeProblem reports about an operator's
+		// config file, one layer earlier: a Default whose Go type is not the
+		// one the field declares is read as the zero by every accessor, so
+		// `{Type: Bool, Default: "true"}` ships a capability whose declared
+		// default is false. Refused at registration rather than reported,
+		// because this is the plugin author's own declaration and they are
+		// the only person who can fix it.
+		if f.Default != nil {
+			if problem, hint := StatedTypeProblem(f, f.Default); problem != "" {
+				return fmt.Errorf("capability %q: input %q default %s; %s",
+					c.ID, f.Name, problem, hint)
+			}
+		}
 		if f.Name == c.Scope {
 			scoped = true
 		}
@@ -534,9 +547,13 @@ var reservedNamespaces = map[string]string{
 	"init":       "writes a starter configuration",
 	"mcp":        "serves and installs the MCP server",
 	"plugin":     "lists, installs and scaffolds plugins",
+	"policy": "reads and writes the ceiling no grant may exceed — a plugin taking this " +
+		"name would shadow the command that reports whether a ceiling is in force, which is " +
+		"the one answer that must not come from something an operator has not audited",
 	"profile": "rta's own `rta profile` commands, and the RTA_PROFILE_* prefix a " +
 		"profile-scoped credential is read from — a plugin namespace of this name could " +
-		"produce a LocalEnvVar colliding with one",
+		"produce a LocalEnvVar colliding with one, and would shadow the commands that " +
+		"write where a connection goes and which stored entry fills its credential",
 	"use": "selects which configured connection this machine's commands run against",
 }
 

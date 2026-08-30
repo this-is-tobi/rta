@@ -11,3 +11,9 @@ coverage.out
 .DS_Store
 .idea/
 .images/
+
+# Working documents: the blueprint, the decision records, the backlogs. They
+# are how this gets built and not how it gets used, and the release tarball
+# has always shipped docs/ alone for that reason — this is the same rule
+# applied to the repository, which was shipping all of it.
+.local/

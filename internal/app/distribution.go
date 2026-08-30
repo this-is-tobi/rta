@@ -67,8 +67,15 @@ func installView(rep plugindist.Report) view.View {
 			firstCapability(rep.Declared) + "` lists its keys"},
 	}
 	if creds := credentialVars(rep.Declared); len(creds) > 0 {
+		// Named, not spelled as a command. `export A, B` reads like a line to
+		// paste and is not one — a shell takes the comma as part of the
+		// identifier and refuses the whole thing — and a report that hands out
+		// a broken command is worse than one that hands out none. Where rta
+		// does write a real export line it writes one per variable with a
+		// placeholder, which is the TUI's `y` (copyExportLine).
 		pairs = append(pairs, view.Pair{Key: "credentials",
-			Value: "export " + strings.Join(creds, ", ") + " — the name, never in the config file"})
+			Value: strings.Join(creds, ", ") +
+				" — from the environment or a profile's `secrets:`, never the config file"})
 	}
 	return view.KeyValue{Pairs: pairs}
 }

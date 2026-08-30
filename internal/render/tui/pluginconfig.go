@@ -141,54 +141,58 @@ func (m Model) saveConfigForm() (tea.Model, tea.Cmd) {
 		heading = namespace + "@" + origin.Short()
 	}
 
-	cfg, err := config.LoadFile()
-	if err != nil {
-		m.flash = "config not saved: " + err.Error()
-		return m.closeToOrigin()
-	}
-	if cfg.Plugins == nil {
-		cfg.Plugins = map[string]map[string]any{}
-	}
-	// Migrate rather than accumulate: any other heading already naming this
-	// namespace — most often the stale pin this form was seeded from — is
-	// replaced by the one just confirmed, so saving does not leave an old
-	// pin and a new one both making a claim about the same plugin, which
-	// `rta doctor` would then report as if the operator meant both.
-	for section := range cfg.Plugins {
-		if ns, _, _ := strings.Cut(section, "@"); ns == namespace && section != heading {
-			delete(cfg.Plugins, section)
+	if err := config.Mutate(func(cfg config.Config) (config.Config, bool) {
+		if cfg.Plugins == nil {
+			cfg.Plugins = map[string]map[string]any{}
 		}
-	}
-	// The form owns the keys it showed, and nothing else. Assigning `values`
-	// over the whole section replaced it, so every key this editor did not
-	// collect was deleted by the act of saving an unrelated field — a key for
-	// a capability the installed binary happens not to declare right now, or
-	// one written by hand for a version this build does not know about.
-	//
-	// Not a plain merge, which would make a field impossible to clear:
-	// capForm.values() omits a text field left empty with no default, so an
-	// overlay would keep resurrecting the value the operator just deleted.
-	// Declared keys are therefore taken from the form even when absent —
-	// absent means cleared — and only undeclared ones are carried forward.
-	merged := map[string]any{}
-	for k, v := range cfg.Plugins[heading] {
-		if !declared[k] {
+		// Migrate rather than accumulate: any other heading already naming this
+		// namespace — most often the stale pin this form was seeded from — is
+		// replaced by the one just confirmed, so saving does not leave an old
+		// pin and a new one both making a claim about the same plugin, which
+		// `rta doctor` would then report as if the operator meant both.
+		for section := range cfg.Plugins {
+			if ns, _, _ := strings.Cut(section, "@"); ns == namespace && section != heading {
+				delete(cfg.Plugins, section)
+			}
+		}
+		// The form owns the keys it showed, and nothing else. Assigning `values`
+		// over the whole section replaced it, so every key this editor did not
+		// collect was deleted by the act of saving an unrelated field — a key for
+		// a capability the installed binary happens not to declare right now, or
+		// one written by hand for a version this build does not know about.
+		//
+		// Not a plain merge, which would make a field impossible to clear:
+		// capForm.values() omits a text field left empty with no default, so an
+		// overlay would keep resurrecting the value the operator just deleted.
+		// Declared keys are therefore taken from the form even when absent —
+		// absent means cleared — and only undeclared ones are carried forward.
+		merged := map[string]any{}
+		for k, v := range cfg.Plugins[heading] {
+			if !declared[k] {
+				merged[k] = v
+			}
+		}
+		for k, v := range values {
 			merged[k] = v
 		}
-	}
-	for k, v := range values {
-		merged[k] = v
-	}
-	cfg.Plugins[heading] = merged
-	if err := config.Write(cfg); err != nil {
+		cfg.Plugins[heading] = merged
+		return cfg, true
+	}); err != nil {
 		m.flash = "config not saved: " + err.Error()
 		return m.closeToOrigin()
 	}
 
 	// Live effect within this session: rebuild the resolver from what was
 	// just written, so the very next dashboard refresh sees it without
-	// leaving and restarting rta.
-	resolver, _ := pluginconf.Resolve(cfg, m.reg.Origin)
+	// leaving and restarting rta. Read back from the file rather than from
+	// the value handed to Mutate, so what this session uses next is what a
+	// later run will load.
+	written, err := config.LoadFile()
+	if err != nil {
+		m.flash = "saved, but not re-read: " + err.Error()
+		return m.closeToOrigin()
+	}
+	resolver, _ := pluginconf.Resolve(written, m.reg.Origin)
 	m.pluginCfg = resolver.For
 	m.plugins = pluginRows(m.reg, m.dash, m.untrusted)
 

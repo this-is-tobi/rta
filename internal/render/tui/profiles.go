@@ -12,6 +12,7 @@ import (
 	"github.com/this-is-tobi/rule-them-all/internal/config"
 	"github.com/this-is-tobi/rule-them-all/internal/profile"
 	"github.com/this-is-tobi/rule-them-all/internal/render/theme"
+	"github.com/this-is-tobi/rule-them-all/internal/textclean"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 )
 
@@ -395,6 +396,52 @@ func (m Model) openProfile() (profileRow, bool) {
 
 func (m Model) profileFooter() string { return m.footerFor(modeProfiles) }
 
+// profileFooterItems is the profiles pane's bar.
+//
+// **`y export lines` was the one hint in the app that named an artifact
+// instead of an action.** Every other entry reads as a verb — `u use`, `n
+// new`, `d delete` — and `y` is the copy key on every screen that has one, so
+// a label that dropped the verb read as though the key exported something,
+// or as a stray line of output.
+//
+// It is also conditional now, on the same reasoning the panes already apply to
+// a column: the key copies `export VAR=…` for credentials nothing has set, so
+// on an environment where nothing is unset it advertised an action whose whole
+// answer was "nothing to export". Offered only when there is something to
+// copy, its presence is the news — and it lands directly under the band that
+// has just said "2 credentials · 1 not set".
+func (m Model) profileFooterItems() []hintItem {
+	items := []hintItem{
+		item(bindScroll), item(bindUse), alias(labelled(bindOpen, "plugins"), "right", "l"),
+		alias(item(bindConfig), "e"), item(bindNew), item(bindRemove),
+	}
+	if m.selectedProfileHasUnsetCredential() {
+		items = append(items, labelled(bindCopy, "copy export lines"))
+	}
+	return append(items, alias(item(bindBack), "f"), item(bindQuit))
+}
+
+// selectedProfileHasUnsetCredential reports whether the environment under the
+// cursor needs a credential that neither the environment nor a mapping
+// supplies — which is exactly what `y` writes a line for.
+func (m Model) selectedProfileHasUnsetCredential() bool {
+	if m.profileSel >= len(m.profiles) {
+		return false
+	}
+	row := m.profiles[m.profileSel]
+	if !row.valid() {
+		return false
+	}
+	for _, c := range row.conns {
+		for _, cr := range c.credentials {
+			if !cr.satisfied() {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (m Model) profileBodyHeight() int {
 	return max(m.height-1-lipgloss.Height(m.profileFooter())-2, bandHeight)
 }
@@ -497,14 +544,20 @@ func profileCovers(row profileRow) string {
 	// joined string left the first plugin faded and every one after it in the
 	// terminal's default — `pg@…` dim, `s3@…` and `vault@…` bright white,
 	// which read as a status difference between plugins that does not exist.
+	//
+	// Cleaned per segment for the same reason it is styled per segment: a
+	// plugin key and a note are whatever the config file holds, and a band's
+	// detail line is documented as already styled, so the renderer cannot
+	// clean it afterwards without stripping the colour this function just
+	// applied. The data is cleaned; the styling is added after.
 	keys := row.p.PluginKeys()
 	styled := make([]string, 0, len(keys))
 	for _, key := range keys {
-		styled = append(styled, theme.Faded.Render(key))
+		styled = append(styled, theme.Faded.Render(textclean.Terminal(key)))
 	}
 	detail := strings.Join(styled, theme.Subtle.Render(" · "))
 	if row.p.Note != "" {
-		detail += theme.Subtle.Render(" · " + row.p.Note)
+		detail += theme.Subtle.Render(" · " + textclean.Terminal(row.p.Note))
 	}
 	return detail
 }
@@ -538,7 +591,7 @@ func (m Model) connsView() string {
 		return m.profilesView()
 	}
 	header := theme.Title.Render(" rta") +
-		theme.Subtle.Render("  profiles · ") + theme.Key.Render(row.name)
+		theme.Subtle.Render("  profiles · ") + theme.Key.Render(textclean.Terminal(row.name))
 	footer := m.footerFor(modeProfilePlugins)
 
 	width := m.width
@@ -596,7 +649,7 @@ func connSummary(c connRow) string {
 	}
 	parts := make([]string, 0, len(keys))
 	for _, k := range keys {
-		parts = append(parts, fmt.Sprintf("%s=%v", k, c.conn.Set[k]))
+		parts = append(parts, textclean.Terminal(fmt.Sprintf("%s=%v", k, c.conn.Set[k])))
 	}
 	return theme.Faded.Render(strings.Join(parts, " "))
 }
