@@ -1,11 +1,13 @@
 package grant
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
+	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
 
 // A budget on how *fast* a grant may be spent, not just how much of it.
@@ -197,5 +199,40 @@ func TestAGrantWithNoPaceIsUntouchedByAnyOfThis(t *testing.T) {
 	grants, _ := Load()
 	if len(grants[0].Recent) != 0 || grants[0].Uses != 0 {
 		t.Fatalf("an unbudgeted grant grew state: %+v", grants[0])
+	}
+}
+
+// A grant that covers one scope and has merely run out of pace must not
+// masquerade as the reason a call is refused when a DIFFERENT scope in the
+// same call has no covering grant at all — waiting out the rate limit would
+// never fix that one, so telling the caller to wait is the wrong answer.
+func TestARateLimitOnOneScopeIsNotBlamedForAnUnrelatedMissingOne(t *testing.T) {
+	setup(t)
+	c := plugin.Capability{
+		ID: "kv.env", Summary: "kv.env", Safety: plugin.Write, Scope: "key", NeedsGrant: true,
+		Inputs: []plugin.Field{{Name: "key", Type: plugin.StringSlice}},
+		Run:    func(context.Context, plugin.Request) (view.View, error) { return view.Text{}, nil },
+	}
+	issue(t, paced("kv.env", "secretA", 1, "1h"))
+	// No grant at all for secretB.
+
+	if verr := call(t, c, map[string]any{"key": []string{"secretA"}}, "", ""); verr != nil {
+		t.Fatalf("spending secretA's one use: %v", verr)
+	}
+
+	// secretA is now rate-exhausted; secretB was never covered by anything.
+	verr := call(t, c, map[string]any{"key": []string{"secretA", "secretB"}}, "", "")
+	if verr == nil {
+		t.Fatal("expected a refusal")
+	}
+	if verr.Code == "core.grant.rate" {
+		t.Fatalf("blamed the rate limit for a call that also names an uncovered scope "+
+			"(secretB) — waiting cannot fix that one: %v", verr)
+	}
+	if verr.Code != "core.grant.required" {
+		t.Fatalf("code = %q, want core.grant.required", verr.Code)
+	}
+	if !strings.Contains(verr.Message, "secretB") {
+		t.Fatalf("refusal does not name the actually-uncovered scope: %v", verr)
 	}
 }
