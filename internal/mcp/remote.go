@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"runtime"
 	"strings"
@@ -33,6 +34,12 @@ type RemoteOptions struct {
 	// Stderr is where the real reason a request was refused goes — never the
 	// response, which an unauthenticated caller reads. nil discards it.
 	Stderr io.Writer
+	// ShutdownGrace bounds how long a graceful shutdown waits for in-flight
+	// calls to finish once Serve's ctx is cancelled, before the remaining
+	// connections are forced closed. Zero means defaultShutdownGrace (10s).
+	// Production callers have no reason to set this; it exists so a test can
+	// exercise the forced-close path without waiting out ten real seconds.
+	ShutdownGrace time.Duration
 }
 
 // Serve runs server over the Streamable HTTP transport on ln, blocking
@@ -49,9 +56,16 @@ type RemoteOptions struct {
 // protection wraps that: a browser page cannot drive this endpoint against
 // its holder's wishes just because it can reach the address, and neither
 // check is optional or bypassable by a flag.
+// defaultShutdownGrace is RemoteOptions.ShutdownGrace's value when unset.
+const defaultShutdownGrace = 10 * time.Second
+
 func Serve(ctx context.Context, server *sdk.Server, ln net.Listener, opts RemoteOptions) error {
 	if opts.Verifier == nil {
 		return errors.New("mcp: Serve requires a Verifier — refusing to open an unauthenticated listener")
+	}
+	grace := opts.ShutdownGrace
+	if grace <= 0 {
+		grace = defaultShutdownGrace
 	}
 	handler := sdk.NewStreamableHTTPHandler(func(*http.Request) *sdk.Server { return server }, nil)
 	authed := auth.RequireBearerToken(opts.Verifier, &auth.RequireBearerTokenOptions{
@@ -88,9 +102,22 @@ func Serve(ctx context.Context, server *sdk.Server, ln net.Listener, opts Remote
 		}
 		return err
 	case <-ctx.Done():
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		// Asked to stop is not a failure to report, whether every connection
+		// drained inside grace or had to be forced closed — a plain SIGINT
+		// under load must not come back as the same error a real failure
+		// would. A caller that wants to know which happened reads Stderr,
+		// not the return value.
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), grace)
 		defer cancel()
-		return httpServer.Shutdown(shutdownCtx)
+		if err := httpServer.Shutdown(shutdownCtx); err != nil {
+			if opts.Stderr != nil {
+				fmt.Fprintf(opts.Stderr,
+					"rta: mcp http: graceful shutdown did not finish within %s, forcing the remaining connections closed: %v\n",
+					grace, err)
+			}
+			_ = httpServer.Close()
+		}
+		return nil
 	}
 }
 
@@ -129,12 +156,13 @@ func Compose(stderr io.Writer, verifiers ...auth.TokenVerifier) auth.TokenVerifi
 // StaticTokenVerifier authenticates against a fixed set of operator-issued
 // tokens, mapping each to the label that names it in the audit trail.
 //
-// Comparison is constant-time per candidate: an early exit on the first
+// Each candidate is compared in constant time: an early exit on the first
 // differing byte would leak, one guess at a time, which characters of a
-// valid token are correct. Trying every candidate rather than stopping at
-// the first match costs nothing an attacker can observe, since the map has
-// no meaningful iteration-time signal beyond what the constant-time compare
-// itself already flattens.
+// valid token are correct. The loop does still exit on the first match, but
+// that costs nothing an attacker can observe: Go randomizes map iteration
+// order on every call, so which candidate gets compared first — and
+// therefore the loop's total length — carries no signal that stays stable
+// across repeated attempts.
 func StaticTokenVerifier(tokens map[string]string) auth.TokenVerifier {
 	return func(_ context.Context, token string, _ *http.Request) (*auth.TokenInfo, error) {
 		for candidate, label := range tokens {
@@ -150,14 +178,34 @@ func StaticTokenVerifier(tokens map[string]string) auth.TokenVerifier {
 // non-blank, non-comment line, whitespace-separated. A line starting with #
 // is a comment.
 //
-// Refuses a file the group or world can read. This file is the entire trust
-// anchor for the static-token path, and unlike grants.json — which rta
-// writes itself at 0600 and protects with an HMAC seal against tampering,
-// not exposure — rta never writes this one; the operator does, by whatever
-// means they chose, and a permission check at load time is the only
-// guarantee available that a wider read did not happen along the way.
+// Refuses a file the group or world can read, write or execute. This file is
+// the entire trust anchor for the static-token path, and unlike
+// grants.json — which rta writes itself at 0600 and protects with an HMAC
+// seal against tampering, not exposure — rta never writes this one; the
+// operator does, by whatever means they chose, and a permission check at
+// load time is the only guarantee available that a wider read did not
+// happen along the way.
+//
+// On Windows this check does not run: Go's Mode().Perm() on that platform is
+// synthesized from the single read-only file attribute, identical for
+// owner/group/other, so applying the POSIX bit test there would either
+// refuse nearly every file or verify nothing — neither is honest. Rather
+// than add a new dependency for real ACL introspection (see
+// internal/pluginhost/procattr_windows.go for the same tradeoff made the
+// same way elsewhere in this codebase), internal/app/mcp.go prints an
+// explicit warning on Windows instead of silently claiming a guarantee this
+// function cannot give there.
 func LoadTokenFile(path string) (tokens map[string]string, groupReadable bool, err error) {
-	info, err := os.Stat(path)
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, false, err
+	}
+	defer f.Close()
+	// Stat the open handle, not the path a second time: checking permissions
+	// and reading content through the same fd closes the window between
+	// them — a check against the path and a read against the path again
+	// could see two different files if something replaced it in between.
+	info, err := f.Stat()
 	if err != nil {
 		return nil, false, err
 	}
@@ -165,12 +213,13 @@ func LoadTokenFile(path string) (tokens map[string]string, groupReadable bool, e
 		mode := info.Mode().Perm()
 		if mode&0o007 != 0 {
 			return nil, false, fmt.Errorf(
-				"%s is world-readable (mode %s) — it is the entire trust anchor for the static-token "+
-					"path, readable by any account on this machine; chmod 600 it", path, mode)
+				"%s has weak permissions (mode %s) — someone besides its owner can read, write or "+
+					"execute it, and it is the entire trust anchor for the static-token path; chmod 600 it",
+				path, mode)
 		}
 		groupReadable = mode&0o070 != 0
 	}
-	raw, err := os.ReadFile(path)
+	raw, err := io.ReadAll(f)
 	if err != nil {
 		return nil, groupReadable, err
 	}
@@ -224,12 +273,33 @@ func LoadTokenFile(path string) (tokens map[string]string, groupReadable bool, e
 // moment it happens. The returned function itself always fails with the bare
 // auth.ErrInvalidToken sentinel and nothing else, so this verifier is safe
 // to hand directly to auth.RequireBearerToken and not only through Compose.
+//
+// issuer must be https, unless it names a loopback address — the exception
+// exists for local testing (this package's own tests included), and it
+// covers only the discovery/JWKS fetch: a plaintext round trip either of
+// those took could be tampered with in transit, up to and including handing
+// back a signing key the attacker controls.
+//
+// Discovery is bounded by oidcDiscoveryTimeout rather than running on ctx
+// alone: ctx here is the command's own context, cancelled only by
+// SIGINT/SIGTERM, so an --oidc-issuer host that never answers would
+// otherwise hang `rta mcp serve --http` at startup indefinitely.
 func OIDCVerifier(ctx context.Context, issuer, audience string, subjects []string, stderr io.Writer) (auth.TokenVerifier, error) {
 	if len(subjects) == 0 {
 		return nil, errors.New("oidc: at least one --oidc-subject is required — " +
 			"an issuer and audience alone identify an application, not a person")
 	}
-	provider, err := oidc.NewProvider(ctx, issuer)
+	for _, s := range subjects {
+		if strings.TrimSpace(s) == "" {
+			return nil, errors.New("oidc: --oidc-subject cannot be empty")
+		}
+	}
+	if err := requireSecureIssuer(issuer); err != nil {
+		return nil, err
+	}
+	discoverCtx, cancel := context.WithTimeout(ctx, oidcDiscoveryTimeout)
+	defer cancel()
+	provider, err := oidc.NewProvider(discoverCtx, issuer)
 	if err != nil {
 		return nil, fmt.Errorf("oidc: discovery against %s: %w", issuer, err)
 	}
@@ -254,4 +324,34 @@ func OIDCVerifier(ctx context.Context, issuer, audience string, subjects []strin
 		}
 		return &auth.TokenInfo{UserID: idToken.Subject, Expiration: idToken.Expiry}, nil
 	}, nil
+}
+
+// oidcDiscoveryTimeout bounds the one-time discovery/JWKS fetch OIDCVerifier
+// performs at startup. See the timeout paragraph on OIDCVerifier's doc
+// comment for why this cannot simply be left to the caller's context.
+const oidcDiscoveryTimeout = 15 * time.Second
+
+// requireSecureIssuer refuses a plaintext issuer unless it names a loopback
+// address. See the issuer paragraph on OIDCVerifier's doc comment.
+func requireSecureIssuer(issuer string) error {
+	u, err := url.Parse(issuer)
+	if err != nil {
+		return fmt.Errorf("oidc: --oidc-issuer: %w", err)
+	}
+	if u.Scheme == "https" {
+		return nil
+	}
+	if u.Scheme == "http" && isLoopbackHost(u.Hostname()) {
+		return nil
+	}
+	return fmt.Errorf("oidc: --oidc-issuer %q must be https — plain http is only accepted for a "+
+		"loopback address, since discovery and JWKS are fetched from wherever it points", issuer)
+}
+
+func isLoopbackHost(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }

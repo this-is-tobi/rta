@@ -2,6 +2,8 @@ package mcp
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -82,22 +84,40 @@ func clientName(req *sdk.CallToolRequest) string {
 // well-behaved.
 const maxCredentialName = 64
 
+// credentialSuffixLen is how many bytes of a hash of the *full* value are
+// appended, as hex, when credentialName has to cut a name down to
+// maxCredentialName. A plain byte-slice truncation — the same one
+// clientName uses — is fine for a client's self-reported display name,
+// which authorizes nothing; it is not fine here, where two different real
+// identities (most plausibly two long OIDC subjects) sharing the same
+// 64-byte prefix would otherwise be written into the sealed audit trail as
+// the byte-identical Credential value, silently merging two people into one
+// row of the record.
+const credentialSuffixLen = 5
+
 // credentialName is which bearer credential authenticated this call, over
-// HTTP, or "" over stdio where nothing verified one. See agentlog.Entry.Credential.
+// HTTP — a static token's label or an OIDC subject — or "" over stdio, where
+// there is no bearer identity on the wire to name. Neither built-in verifier
+// can hand back an empty UserID for an authenticated call (LoadTokenFile
+// rejects an empty label, OIDCVerifier rejects an empty --oidc-subject), so
+// "" here means stdio and nothing else. See agentlog.Entry.Credential.
 func credentialName(ctx context.Context) string {
 	info := auth.TokenInfoFromContext(ctx)
 	if info == nil || info.UserID == "" {
 		return ""
 	}
 	name := textclean.Terminal(strings.TrimSpace(info.UserID))
-	if len(name) > maxCredentialName {
-		for len(name) > maxCredentialName {
-			_, size := utf8.DecodeLastRuneInString(name)
-			name = name[:len(name)-size]
-		}
-		name += "…"
+	if len(name) <= maxCredentialName {
+		return name
 	}
-	return name
+	sum := sha256.Sum256([]byte(name))
+	suffix := "~" + hex.EncodeToString(sum[:credentialSuffixLen])
+	budget := maxCredentialName - len(suffix)
+	for len(name) > budget {
+		_, size := utf8.DecodeLastRuneInString(name)
+		name = name[:len(name)-size]
+	}
+	return name + suffix
 }
 
 // record writes one entry, and never fails a call over it.
