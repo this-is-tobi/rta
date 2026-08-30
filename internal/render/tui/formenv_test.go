@@ -212,6 +212,40 @@ func TestTheSeedLeavesCredentialsOut(t *testing.T) {
 	}
 }
 
+// "Edit inputs" (`e`) reopens the form with m.lastValues as prev — the
+// caller's own prior run, verbatim, secrets included. Reproduces the exact
+// scenario a real capability hits: run http.get against one target with a
+// bearer token, press `e`, change only the URL, and confirm the bearer box
+// does not still carry the first target's token underneath.
+func TestEditingInputsDoesNotReseedASecretFromTheLastRun(t *testing.T) {
+	c := plugin.Capability{ID: "http.get", Summary: "get", Safety: plugin.Read, Inputs: []plugin.Field{
+		{Name: "url", Type: plugin.String, Required: true},
+		{Name: "bearer", Type: plugin.Secret},
+	}, Run: func(context.Context, plugin.Request) (view.View, error) { return view.Text{}, nil }}
+	reg := registry.New()
+	if err := reg.Register(plugin.Plugin{Name: "http", Summary: "http",
+		Capabilities: []plugin.Capability{c}}); err != nil {
+		t.Fatal(err)
+	}
+	m := New(reg, config.Dashboard{}, nil)
+	m.width, m.height = 100, 40
+
+	// The last run's values, exactly what m.lastValues holds after a real
+	// call — see formflow.go:334.
+	prev := map[string]any{"url": "https://api.a.example", "bearer": "sk-secret-for-a"}
+
+	model, _ := m.startForm(c, prev)
+	nm := model.(Model)
+	if got, ok := nm.form.bindings["bearer"]; ok && *got != "" {
+		t.Fatalf("bearer box = %q, want empty — a secret from the last run must not reseed", *got)
+	}
+	// The ordinary (non-secret) field still carries forward, unaffected —
+	// this is what makes edit-inputs useful at all.
+	if got := nm.form.bindings["url"]; got == nil || *got != "https://api.a.example" {
+		t.Errorf("url box = %v, want the last run's value carried forward", got)
+	}
+}
+
 // secretPlugin declares credentials, so a connection has something to attach.
 func secretPlugin(inputs ...string) plugin.Plugin {
 	fields := []plugin.Field{{Name: "host", Type: plugin.String, Config: "host"}}

@@ -121,20 +121,6 @@ func copyChoices(spec copySpec, v view.View) (values []string, ok bool) {
 	return values, len(values) > 0
 }
 
-// copyValueToClipboard puts value on the system clipboard directly, through
-// internal/clipboard — the same stdin-only subprocess mechanism kv.copy
-// uses, never tea.SetClipboard's OSC 52 escape sequence.
-//
-// OSC 52 is what `y` (copy the whole view as JSON) uses, and that is the
-// right tool there: a person pasting a data blob into an editor expects
-// structure. It is the wrong tool here. json.MarshalIndent inserts a real
-// newline between every field, and most places a generated secret gets
-// pasted — a password field, a shell prompt, `kubectl create secret
-// --from-literal` — read a newline as Enter: the paste submits, or the
-// command runs, after whatever text preceded the break, and the rest of the
-// value is silently gone. The same subprocess kv already proved out — value
-// on stdin, never argv — sidesteps that entirely, along with OSC 52's own
-// payload-length limits in tmux and older terminals: what lands on the
 // copyHint returns the footer hint copySpecs offers for v, if any — shared
 // between resultView (a result on screen) and dashFooter (a tile's own,
 // without opening it): "copy value" when exactly one value is addressable,
@@ -178,6 +164,20 @@ func (m Model) copyOrPick(spec copySpec, cap plugin.Capability, v view.View, ret
 	return m, nil
 }
 
+// copyValueToClipboard puts value on the system clipboard directly, through
+// internal/clipboard — the same stdin-only subprocess mechanism kv.copy
+// uses, never tea.SetClipboard's OSC 52 escape sequence.
+//
+// OSC 52 is what `y` (copy the whole view as JSON) uses, and that is the
+// right tool there: a person pasting a data blob into an editor expects
+// structure. It is the wrong tool here. json.MarshalIndent inserts a real
+// newline between every field, and most places a generated secret gets
+// pasted — a password field, a shell prompt, `kubectl create secret
+// --from-literal` — read a newline as Enter: the paste submits, or the
+// command runs, after whatever text preceded the break, and the rest of the
+// value is silently gone. The same subprocess kv already proved out — value
+// on stdin, never argv — sidesteps that entirely, along with OSC 52's own
+// payload-length limits in tmux and older terminals: what lands on the
 // clipboard is the exact bytes generated, one unbroken value, whatever its
 // length or alphabet.
 func copyValueToClipboard(value string) *view.Error {

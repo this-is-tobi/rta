@@ -30,6 +30,19 @@ import (
 // all again". Opening a fresh capability passes nil and starts from its own
 // defaults rather than inheriting anything from whatever ran last.
 func (m Model) startForm(c plugin.Capability, prev map[string]any) (tea.Model, tea.Cmd) {
+	// A Secret field's plaintext must never carry forward into a new form
+	// the way an ordinary value does. withoutSecrets already exists for
+	// exactly this reason on the profile-resolved seeding path (active.go);
+	// this is the other path that feeds newCapForm — the one "edit inputs"
+	// (`e`, dispatch.go) actually uses, with prev being m.lastValues, which
+	// includes whatever a Secret field was last submitted as. Stripped
+	// before carry and shown are derived, so neither this form nor a
+	// Prefill-staged second one downstream can reseed it: without this, a
+	// credential typed for one target reopened pre-filled — masked as dots,
+	// indistinguishable from any other default — and could be silently
+	// resubmitted to whatever the operator had just edited the rest of the
+	// form to point at instead.
+	prev = withoutSecrets(c, prev)
 	carry, shown := unasked(c, prev), asked(c, prev)
 	keys, rest := keyFields(c)
 	switch {
@@ -64,6 +77,10 @@ func (m Model) startForm(c plugin.Capability, prev map[string]any) (tea.Model, t
 // cursor is on and prev is about the listing it was found in, so where they
 // name the same input the record's own value is the more specific answer.
 func (m Model) startFormWith(c plugin.Capability, base, prev map[string]any) (tea.Model, tea.Cmd) {
+	// Same reason as startForm: prev is a prior run's values verbatim, which
+	// includes whatever a Secret field was last submitted as, and it feeds
+	// the same newCapForm that would bind it into a reopened, pre-filled box.
+	prev = withoutSecrets(c, prev)
 	defaults := prev
 	if c.Prefill != nil && len(base) > 0 {
 		d, err := prefill(c, base)
