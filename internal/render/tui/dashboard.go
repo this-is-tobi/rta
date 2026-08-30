@@ -402,6 +402,19 @@ func refreshTiles(tiles []tile, gen int, pluginCfg func(string) map[string]any,
 // is simply dropped, which is right — nothing is asking for it any more.
 func (m Model) tileIndexFor(msg tileMsg) int {
 	if msg.id != "" {
+		// The position this refresh was actually dispatched from, checked
+		// first and exactly: two tiles can watch the same capability
+		// against two different `with:` targets (a config listing obj.get
+		// twice, once per host), and a config that lists a capability twice
+		// is not deduplicated by buildTiles — matching by ID alone always
+		// finds the first of the two, silently painting one target's result
+		// under the other's panel. msg.idx is the index tileCmd actually
+		// ran at, so it disambiguates correctly unless the grid was *also*
+		// reordered while this one refresh was in flight, which the
+		// ID-matching fallback below still covers on its own terms.
+		if msg.idx >= 0 && msg.idx < len(m.tiles) && m.tiles[msg.idx].cap.ID == msg.id {
+			return msg.idx
+		}
 		for i, t := range m.tiles {
 			if t.cap.ID == msg.id {
 				return i
