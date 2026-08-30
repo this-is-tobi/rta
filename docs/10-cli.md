@@ -92,7 +92,7 @@ rta kv get missing-key -o json
 ```
 
 ```json
-{ "code": "kv.key.absent", "message": "no such key: missing-key", "hint": "…" }
+{ "code": "kv.notfound", "message": "no key \"missing-key\"", "hint": "…" }
 ```
 
 The code is stable across versions; the message is not. Match on the code.
