@@ -98,6 +98,12 @@ func runDeps(ctx context.Context, req plugin.Request) (view.View, error) {
 				" directory levels, so this covers part of the tree — narrow the path to audit the rest",
 			refVulnerableDep)
 	}
+	if inv.truncated {
+		r.add(grpInventory, "scan", stWarn,
+			"one manifest declared more components than this reads at once, so the inventory covers "+
+				"part of it — narrow the path to audit the rest",
+			refVulnerableDep)
+	}
 
 	if req.Bool("detail") {
 		summary := append([]view.Pair{
@@ -339,6 +345,12 @@ type inventory struct {
 	manifests []string
 	// structure is what those files record about how they fit together.
 	structure graph
+	// truncated records that the flat component list hit maxComponents and
+	// the rest of a manifest's declared components were not read. Its own
+	// field rather than reusing structure.truncated: the two bounds fire
+	// independently (a manifest can be edge-light and component-heavy, or
+	// the reverse), and collapsing them would report the wrong one hit.
+	truncated bool
 	// ambiguous names the packages this project holds more than one version
 	// of. A fact about the inventory rather than about any one manifest, and
 	// the thing that decides whether a name-keyed answer may be repeated: a
@@ -356,6 +368,14 @@ func (inv inventory) relation(c component) string {
 // names are fs paths to read; shown is the same list as the reader should
 // see it, index for index. Two slices rather than a struct because every
 // consumer downstream wants only the second.
+// maxComponents bounds the flat component list one run holds in memory. It
+// is fed by the same untrusted lockfiles and SBOMs the edge graph is — up to
+// and including one read from an in-memory clone of an arbitrary --path
+// repository URL — and is at least as large, so it gets the same
+// order-of-magnitude bound and the same announced-rather-than-silent
+// treatment maxEdges already gets.
+const maxComponents = 200000
+
 func read(fsys fs.FS, names, shown []string) inventory {
 	inv := inventory{manifests: shown, structure: newGraph()}
 	var comps []component
@@ -365,6 +385,10 @@ func read(fsys fs.FS, names, shown []string) inventory {
 			inv.unreadable = append(inv.unreadable,
 				unreadableManifest{path: shown[i], reason: clip(err.Error())})
 			continue
+		}
+		if room := maxComponents - len(comps); len(got) > room {
+			got = got[:max(0, room)]
+			inv.truncated = true
 		}
 		comps = append(comps, got...)
 		inv.structure.merge(g)

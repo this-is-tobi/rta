@@ -74,7 +74,7 @@ func runWhy(ctx context.Context, req plugin.Request) (view.View, error) {
 	}
 
 	p := plugin.NewPage(ctx, req)
-	p.PutAs("summary", "summary", whySummary(found, inv, truncated))
+	p.PutAs("summary", "summary", whySummary(found, inv, truncated || inv.truncated))
 	tree, cut := whyTree(inv.structure, found)
 	p.PutAs("reached from", "reached from", tree)
 	if cut {
