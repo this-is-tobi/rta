@@ -1096,7 +1096,36 @@ type Report struct {
 // it in memory would be a verification an operator learns not to run.
 func Verify() (Report, error) {
 	rep := Report{}
-	files, foreign, err := segments(bounds())
+	// The same lock Append holds for its own read-then-write, and for the
+	// same reason: Append can rotate mid-call, renaming the active file to
+	// a numbered one and recreating it empty, and Verify has to see one
+	// state or the other — never a file list snapshotted before a rotation
+	// read back after it, which is a rename this function was never told
+	// about happening underneath a file name it already committed to. Held
+	// for the whole walk, not just the snapshot: releasing it the moment
+	// the file list is in hand would still leave every read after that
+	// point racing the next rotation.
+	appendMu.Lock()
+	defer appendMu.Unlock()
+	release, err := filelock.Acquire(Path()+".lock", lockStale, lockRetry, lockTimeout)
+	if err != nil {
+		return rep, fmt.Errorf("agent log is busy: %w", err)
+	}
+	defer release()
+
+	// .settle(), not plain bounds(), matching the call Append always makes
+	// before trusting the directory listing — settle is a no-op once the
+	// bound is already known (its own first line), so this only changes
+	// anything during the narrow, one-time upgrade window before any real
+	// Append has ever settled it, and even then it is a one-call answer:
+	// settle never writes anything, so it buys this call the same
+	// trust-the-directory-once reasoning Append gets, not a persisted
+	// decision later calls can rely on.
+	b, err := bounds().settle()
+	if err != nil {
+		return rep, err
+	}
+	files, foreign, err := segments(b)
 	if err != nil {
 		return rep, err
 	}

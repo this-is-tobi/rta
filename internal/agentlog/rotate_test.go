@@ -39,6 +39,73 @@ func fill(t *testing.T, n int) {
 	}
 }
 
+// Verify used to take no lock at all, unlike every write path in this
+// package. Append can rotate mid-call — rename the active file to a
+// numbered one, recreate it empty — and a Verify that snapshotted the file
+// list a moment before that rename, then read by the names it had already
+// captured, could see a file list a concurrent rotation had already made
+// stale: a segment it expected gone, or a freshly recreated head file whose
+// sequence picks up far past what Verify's own chain walk expects. Either
+// way the ordinary sequence-continuity check reads as tampering, on a chain
+// nobody actually touched.
+func TestVerifyDoesNotRaceARotation(t *testing.T) {
+	isolate(t)
+	small(t, 1<<10, 400) // ~3 entries a segment; keep enough that nothing retires
+	fill(t, 5)
+
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				_ = Append(Entry{
+					Cap: "sys.cpu", Outcome: Ran, Auth: Open,
+					Args: map[string]any{"pad": strings.Repeat("x", 200)},
+				})
+			}
+		}()
+	}
+
+	var mu sync.Mutex
+	var falseBreaks []Report
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				rep, err := Verify()
+				if err == nil && rep.Broken != 0 {
+					mu.Lock()
+					falseBreaks = append(falseBreaks, rep)
+					mu.Unlock()
+				}
+			}
+		}()
+	}
+
+	time.Sleep(500 * time.Millisecond)
+	close(stop)
+	wg.Wait()
+
+	if len(falseBreaks) > 0 {
+		t.Fatalf("a concurrent rotation made a healthy chain report as tampered %d time(s) — e.g. %+v",
+			len(falseBreaks), falseBreaks[0])
+	}
+}
+
 func TestTheChainRunsThroughARotation(t *testing.T) {
 	isolate(t)
 	small(t, 1<<10, 40) // ~3 entries a segment, and keep enough that none retires

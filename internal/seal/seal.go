@@ -71,6 +71,13 @@ func Key(name string, create bool) ([]byte, error) {
 		return raw, nil
 	}
 	if !create {
+		if err == nil {
+			// The file exists — it read without error — and is simply too
+			// short to be a real key: a truncation, not an absence, and the
+			// package doc comment above is explicit that these must not
+			// collapse into the same answer.
+			return nil, ErrShort
+		}
 		return nil, ErrMissing
 	}
 	key := make([]byte, 32)
