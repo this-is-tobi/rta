@@ -13,9 +13,25 @@ import (
 	"github.com/this-is-tobi/rule-them-all/internal/agentlog"
 	"github.com/this-is-tobi/rule-them-all/internal/consent"
 	"github.com/this-is-tobi/rule-them-all/internal/grant"
+	"github.com/this-is-tobi/rule-them-all/internal/policy"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
+
+// withPolicy puts a team ceiling above the working directory, so alsoGrant's
+// clamp has a policy to apply against. Duplicated from builtin/grant's own
+// test helper of the same name rather than shared, because it is test-only
+// and the two packages do not otherwise depend on each other's tests.
+func withPolicy(t *testing.T, body string) {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, policy.RepoFile), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+}
 
 func isolate(t *testing.T) {
 	t.Helper()
@@ -201,6 +217,44 @@ func TestAllowWithATTLAlsoIssuesTheGrantYouWouldHaveTyped(t *testing.T) {
 	}
 	if d := time.Until(g.Expires); d > 16*time.Minute || d < 14*time.Minute {
 		t.Fatalf("the grant lasts %s, want about 15m", d)
+	}
+}
+
+// alsoGrant issues a standing grant through the same internal/grant.Issue
+// path `rta grant allow` uses, so it has to apply the same ceiling —
+// otherwise a team policy tightening the window did nothing here, while
+// internal/grant.Load() went on enforcing it on every read regardless,
+// silently expiring the grant far earlier than the answer just given here
+// promised, with nothing saying so.
+func TestAllowWithATTLAppliesTheTeamCeilingAndSaysSo(t *testing.T) {
+	isolate(t)
+	withPolicy(t, "maxTTL: 15m\n")
+	r := park(t, "kv.get", "db-password")
+
+	v, err := run(t, "agent.allow", map[string]any{"id": r.ID, "ttl": "4h"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := ""
+	for _, p := range v.(view.KeyValue).Pairs {
+		joined += p.Key + "=" + p.Value + ";"
+	}
+	if !strings.Contains(joined, "capped") || !strings.Contains(joined, "team's policy") {
+		t.Fatalf("the answer did not say the grant was capped by the team's policy: %s", joined)
+	}
+	if !strings.Contains(joined, policy.RepoFile) {
+		t.Fatalf("the answer did not name the policy file: %s", joined)
+	}
+
+	grants, verr := grant.Load()
+	if verr != nil {
+		t.Fatal(verr)
+	}
+	if len(grants) != 1 {
+		t.Fatalf("%d grants issued, want one", len(grants))
+	}
+	if window := grants[0].Expires.Sub(grants[0].Issued); window > 16*time.Minute {
+		t.Fatalf("the stored grant lasts %s, want about 15m — the policy ceiling did not apply", window)
 	}
 }
 
