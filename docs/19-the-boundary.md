@@ -89,18 +89,18 @@ But the *instinct* behind it is right, and it is World C. If team members' agent
 
 The way to get there today is [one instance per person from a shared image](./20-mcp.md#a-team-share-the-configuration-not-the-process): the profiles are baked in, the credentials are `kube:` references resolved with each person's own RBAC, and the agent's container holds nothing.
 
-**A remote server, one per person, would be stronger still, and it is the shape worth building.** Grants live on the server's disk; an agent with a shell on its own machine can run `rta grant allow` all it likes and be writing to a file the server never reads. There is no shell on the server, so the only way in is the protocol, and `grant allow` refuses over MCP. That closes the seam this whole chapter is about — and it closes the other one too, because with no local CLI there is no unrecorded path: every call is an MCP call, and every MCP call is in the ledger.
+**A remote server, one per person, is stronger still, and [`rta mcp serve --http`](./20-mcp.md#remote-hosting-http) is that shape.** Grants live on the server's disk; an agent with a shell on its own machine can run `rta grant allow` all it likes and be writing to a file the server never reads. There is no shell on the server, so the only way in is the protocol, and `grant allow` refuses over MCP. That closes the seam this whole chapter is about — and it closes the other one too, because with no local CLI there is no unrecorded path: every call is an MCP call, and every MCP call is in the ledger.
 
-It is not free, and the costs are worth naming before anybody builds it:
+It is not free, and the costs are worth naming rather than glossing over:
 
-| Cost | Why |
+| Cost | Where it stands |
 | --- | --- |
-| **Paths change meaning** | `fs tree`, `git status` and `--root` would describe the *server's* filesystem. An agent working in your repository cannot use them, which is most of what people use an agent for |
-| **Consent needs somewhere to go** | `--consent` parks a call and waits for the person at the machine. Remote, there is no such person until something is built to reach them |
-| **The credentials move** | Off the laptops, which is better, and onto one process with reach, which is a target. The trade is real in both directions |
+| **Paths change meaning** | `fs tree`, `git status` and `--root` would describe the *server's* filesystem, not the one an agent thinks it is working in — so instead of answering wrong, the whole `fs`/`git`/`sys` families (and the parts of `net` that read or change this host's own configuration) are simply absent from a remote instance's tool list. The functionality is still gone; what changed is that gone is honest instead of silently misleading |
+| **Consent needs somewhere to go** | Still true, and still unsolved: `--consent` refuses to even start combined with `--http`, rather than parking a call for a person who is not there to answer it |
+| **The credentials move** | Off the laptops, which is better, and onto one process with reach, which is a target. The trade is real in both directions, and authenticating callers over `--http` does not change it — see the next row |
 | **It only bounds anything if it is the only route** | If the agent's own machine can reach production directly, routing rta through a server changes nothing. The containment is the network and credential boundary; rta is what makes a *useful* hole in it |
 
-The transport itself is the easy part: MCP specifies OAuth 2.1 for HTTP, and the SDK rta already links supports Streamable HTTP and bearer-token verification.
+The transport itself turned out to be the easy part, as expected: MCP specifies OAuth 2.1 for HTTP, and [Remote hosting](./20-mcp.md#remote-hosting-http) is that, built on the bearer-token verification the SDK rta links already ships.
 
 ## What rta does not do yet, and would be right to
 

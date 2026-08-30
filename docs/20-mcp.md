@@ -1,6 +1,6 @@
 # MCP and the safety gate
 
-rta speaks the Model Context Protocol over stdio. An MCP client — Claude Code, VS Code, Cursor, Codex, Gemini, Copilot — launches `rta mcp serve` and gets every capability as a tool, with typed schemas, safety annotations and structured results.
+rta speaks the Model Context Protocol over stdio by default, and over HTTP with `--http` — see [Remote hosting](#remote-hosting-http). An MCP client — Claude Code, VS Code, Cursor, Codex, Gemini, Copilot — launches `rta mcp serve` and gets every capability as a tool, with typed schemas, safety annotations and structured results.
 
 The interesting part is not that it works. It is what an agent can reach before you have decided anything.
 
@@ -157,7 +157,7 @@ rta: team policy: /Users/you/projects/.rta-policy.yaml
 
 ## Where the server runs
 
-There is no daemon, no port and nothing to start. `rta mcp serve` is a child process of your MCP client, speaking JSON-RPC over its own stdin and stdout, and it lives exactly as long as the client does. Two clients means two processes:
+Over stdio, the default, there is no daemon, no port and nothing to start. `rta mcp serve` is a child process of your MCP client, speaking JSON-RPC over its own stdin and stdout, and it lives exactly as long as the client does. Two clients means two processes:
 
 ```mermaid
 flowchart LR
@@ -275,9 +275,54 @@ Because "a shared server that can reach everything anybody is authorised for" is
 | `rta use` | It exists to *subtract* — switching to staging takes production away from every agent. Shared, one person switching takes it away from everyone, silently |
 | Blast radius | One compromised agent on one laptop reaches the union of every environment, because the union is what the server was configured with |
 
-The transport is the smaller problem, and smaller than it first looks: MCP specifies an OAuth 2.1 authorization framework for HTTP, and the SDK rta already links supports both Streamable HTTP and bearer-token verification. So "who is on the other end" has a standard answer. What it does not change is anything in the table above — authenticating five people to one process that holds the union of their environments tells you which of them is calling and leaves every other row exactly as it is.
+The transport was the smaller problem, and smaller than it first looked: [Remote hosting](#remote-hosting-http), below, is `--http` — authenticated over the wire instead of by parent-process trust, so "who is on the other end" has a standard answer. What it does not change is anything in the table above — authenticating five people to one process that holds the union of their environments tells you which of them is calling and leaves every other row exactly as it is.
 
 None of that is an argument against rta running somewhere other than a laptop. Run it in your dev platform, in a Codespace, in a per-user pod — **one instance per person, authenticating as that person**, built from the shared image. That is the same convenience with none of the collapse.
+
+## Remote hosting (HTTP)
+
+```bash
+rta mcp serve --http 127.0.0.1:8443 --token-file tokens.txt --as work
+```
+
+A second transport, opt-in: the server listens on TCP instead of speaking stdio to a parent process, which is what running it somewhere other than your own machine — the shape the previous section argues for — actually needs.
+
+A caller now has to prove who it is over the wire, since there is no parent process left to trust instead. Two mechanisms, usable together:
+
+| Flag | Proves |
+| --- | --- |
+| `--token-file <path>` | A static, operator-issued token — one `label token` pair per line in a file only the operator can read; world-readable files are refused |
+| `--oidc-issuer`, `--oidc-audience`, `--oidc-subject` | A real identity provider's token, for one of the named subjects. An issuer and audience alone identify an application, not a person, so at least one `--oidc-subject` is required |
+
+`--http` refuses to start with neither configured, and refuses to combine with `--consent` — a parked call has nobody positioned to answer it remotely, and a control nobody can exercise must not be allowed to pretend it works.
+
+TLS is not this process's job. Bind to a private address and put a reverse proxy, ingress or service mesh in front of it for termination.
+
+Every request's verified identity is recorded a third way, beside `--as` and the client's own self-report: `rta agent log` shows which credential actually authenticated each call — a token's label, an OIDC subject — so more than one credential valid for an instance stays distinguishable instead of collapsing into one indistinguishable principal.
+
+### The surface changes shape
+
+`sys`, `fs`, `git`, `keys.list`, and the parts of `net` that read or change this host's own network configuration (`net.info`, `net.hosts.*`, `net.resolver.*`) answer for the machine rta happens to run on. Over HTTP those are never registered as tools at all — absent from `tools/list`, not refused when called — because a remote caller is never this machine. `rta mcp serve --http` says so at startup:
+
+```
+rta mcp server listening on http://127.0.0.1:8443
+rta: every request needs a bearer token; TLS is not this process's job — put a reverse proxy, ingress or service mesh in front of it
+rta: remote transport hides 28 capabilities that describe this machine: fs.hash, fs.tree, fs.usage, git.blame, … (28 total)
+```
+
+Everything else in `net` — `ping`, `dns`, `trace`, `probe`, `send`, `port` — stays reachable, since those describe a caller-named target rather than this host. A result still reflects the vantage point of wherever rta is actually running, which is worth knowing rather than assuming.
+
+### What is still true, and what stops being true
+
+The credentials-move trade [the container recipe above](#in-a-container-for-a-hardened-server) rests on — "the caller's own kubeconfig, the caller's own RBAC" — needs restating here rather than assumed. A container on your own machine still has *your* kubeconfig mounted into it; a real network call has no caller-side credential at all, only whatever the server's own ambient identity is. Provision that identity as deliberately as any other production credential.
+
+The `kv` store is exactly as strong remotely as locally, no stronger — "unlocks from this environment" (`rta doctor`) is equally true of a laptop and a gateway, with no hardware-backed second factor either way. Prefer a passphrase over a plaintext identity file sitting on a host other people can reach.
+
+Plugin confinement (`rta doctor`'s "plugin confinement" row) is `sandbox-exec` on macOS and nothing on Linux — a deliberate, documented gap rather than an oversight, and Linux is the realistic OS for a remote gateway. A hardened deployment supplies its own process sandboxing there — containers, seccomp, a read-only root filesystem, an egress allowlist — since rta contributes none of its own on that platform.
+
+Consent has nowhere to go yet. `--consent` refuses to combine with `--http` because answering a parked call needs a channel to reach a person, and this design deliberately does not build one — see [the cost table](./19-the-boundary.md#what-this-means-for-a-team) for what that would take.
+
+`--network none` in [the container recipe above](#in-a-container-for-a-hardened-server) was only ever safe because stdio needs no network at all. A listener needs an inbound path: publish the container's port to wherever the reverse proxy in front of it reaches, and keep outbound scoped to what the enabled plugins actually call — not open, and not none.
 
 ## Next
 

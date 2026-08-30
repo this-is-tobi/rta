@@ -98,6 +98,8 @@ The rule that catches people: **a capability that reveals a secret's plaintext i
 
 Set `NeedsGrant: true` when the class understates it, and `Scope: "city"` to name the input a grant can be narrowed to — then a person can allow one record rather than the capability.
 
+Set `HostSpecific: true` if what a capability returns describes the machine your plugin's process happens to run on — its own filesystem, its own network configuration — rather than a configured remote service or a pure computation. A remote, HTTP-transport `rta mcp serve` hides a capability marked this way from `tools/list` entirely, since a caller on another machine is never the one it would be describing. Most plugins reach somewhere the operator configured (a database, a cluster) or compute from their own arguments, and never need this — it exists for the same reason rta's own `sys`, `fs` and `git` built-ins declare it themselves.
+
 ## If your plugin needs a credential location
 
 Plugins run confined and rta denies them a standard list of credential directories — `~/.ssh`, `~/.aws`, `~/.kube` and the rest. If yours cannot work without one, declare it:
