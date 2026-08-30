@@ -680,6 +680,26 @@ func Suppressed() int {
 	return n
 }
 
+// ceilingActive reports whether g may still authorize anything: not
+// expired, not fully spent, and not forbidden by ceiling. This is the one
+// place that decides it — Load, and Reserve's reachableNow below, both
+// call this rather than each keeping their own copy of the rule.
+func ceilingActive(g Grant, ceiling policy.Ceiling, now time.Time) bool {
+	if !g.Active(now) {
+		return false
+	}
+	if ceiling.Empty() {
+		return true
+	}
+	if ceiling.Forbids(g.Target, g.Scope, g.Profile) != "" {
+		return false
+	}
+	if ceiling.MaxTTL > 0 && !now.Before(g.Issued.Add(ceiling.MaxTTL)) {
+		return false
+	}
+	return true
+}
+
 // Load returns the grants that are still active; expired and fully-spent ones
 // are dropped on read, so nothing has to sweep them.
 func Load() ([]Grant, *view.Error) {
@@ -688,7 +708,7 @@ func Load() ([]Grant, *view.Error) {
 		return nil, verr
 	}
 	// The team's ceiling is applied here, on the way *out*, for exactly the
-	// reason Active() gives for MaxTTL one function down: checking it only
+	// reason Active() gives for MaxTTL in ceilingActive: checking it only
 	// where a grant is issued leaves the cap in the CLI and trusts the file to
 	// have been written by it. Applied here it is a property of what a grant
 	// can do, which is the version that survives a policy tightening after the
@@ -697,7 +717,8 @@ func Load() ([]Grant, *view.Error) {
 	//
 	// loadAll deliberately does not do this: the refund path has to find a
 	// grant in order to give a use back to it, and a use spent under yesterday's
-	// policy must still be refundable under today's.
+	// policy must still be refundable under today's. Reserve's locked write
+	// path has the same requirement for the same reason — see reachableNow.
 	ceiling, verr := Ceiling()
 	if verr != nil {
 		return nil, verr
@@ -705,18 +726,9 @@ func Load() ([]Grant, *view.Error) {
 	now := time.Now()
 	active := make([]Grant, 0, len(all))
 	for _, g := range all {
-		if !g.Active(now) {
-			continue
+		if ceilingActive(g, ceiling, now) {
+			active = append(active, g)
 		}
-		if !ceiling.Empty() {
-			if ceiling.Forbids(g.Target, g.Scope, g.Profile) != "" {
-				continue
-			}
-			if ceiling.MaxTTL > 0 && !now.Before(g.Issued.Add(ceiling.MaxTTL)) {
-				continue
-			}
-		}
-		active = append(active, g)
 	}
 	sort.Slice(active, func(i, j int) bool { return active[i].Expires.Before(active[j].Expires) })
 	return active, nil
@@ -1195,16 +1207,79 @@ func samePin(a, b string) bool { return a != "" && a == b }
 // weaker gate.
 func reachable(grants []Grant, by Caller) (view []Grant, at []int) {
 	for i, g := range grants {
-		if by.Active != "" && g.Profile != "" && g.Profile != by.Active {
-			continue
-		}
-		if by.Profile != "" && g.Profile == by.Profile && !samePin(g.ProfilePin, by.Pin) {
+		if !callerReachable(g, by) {
 			continue
 		}
 		view = append(view, g)
 		at = append(at, i)
 	}
 	return view, at
+}
+
+// callerReachable is reachable's per-grant rule: the profile fence and the
+// stale-pin check. Factored out so reachableNow can apply it in the same
+// pass as ceilingActive instead of chaining two separately-filtered views —
+// see reachableNow for why that chaining is exactly the hazard this
+// function's sibling exists to avoid.
+func callerReachable(g Grant, by Caller) bool {
+	if by.Active != "" && g.Profile != "" && g.Profile != by.Active {
+		return false
+	}
+	if by.Profile != "" && g.Profile == by.Profile && !samePin(g.ProfilePin, by.Pin) {
+		return false
+	}
+	return true
+}
+
+// reachableNow is reachable(Load(), by) — but computed in one pass over
+// loadAll's complete result, with at indexing straight back into it, rather
+// than by calling reachable on Load's already ceiling-and-active-filtered
+// slice.
+//
+// **That chaining was the bug.** Reserve's locked write path used to do
+// exactly that — grants, _ := Load(); view, at := reachable(grants, by) —
+// which reads as "the write goes back to everything Load returned" and
+// sounds like the fix reachable's own doc comment describes for the
+// profile/pin filter. It is not: Load already dropped every grant the
+// team's ceiling currently forbids before reachable ever saw it, so `at`
+// indexed into a slice that was missing those rows from the start, and
+// Save(grants) wrote the file back without them — a ceiling-suppressed but
+// still-active grant deleted from disk the moment any unrelated
+// rate/use-limited grant was spent, silently defeating Load's own
+// documented promise that a ceiling "only ever subtracts" and relaxing it
+// "brings the grant back rather than having thrown it away".
+//
+// Composing both filters over all in one pass, the way this function does,
+// is what keeps at valid against the slice Reserve actually saves.
+func reachableNow(all []Grant, ceiling policy.Ceiling, now time.Time, by Caller) (view []Grant, at []int) {
+	for i, g := range all {
+		if !ceilingActive(g, ceiling, now) || !callerReachable(g, by) {
+			continue
+		}
+		view = append(view, g)
+		at = append(at, i)
+	}
+	// Same order Load promises everywhere else it is read: soonest-expiring
+	// first, so a call two grants could both cover spends the one closer to
+	// going to waste rather than whichever happened to load first.
+	sort.Sort(byExpiry{view, at})
+	return view, at
+}
+
+// byExpiry sorts view by expiry while keeping at in step with it — the two
+// slices name the same grants, position for position, so a plain
+// sort.Slice(view, ...) that moved only view would leave at pointing at the
+// wrong rows of the file reachableNow's caller is about to write back to.
+type byExpiry struct {
+	view []Grant
+	at   []int
+}
+
+func (b byExpiry) Len() int           { return len(b.view) }
+func (b byExpiry) Less(i, j int) bool { return b.view[i].Expires.Before(b.view[j].Expires) }
+func (b byExpiry) Swap(i, j int) {
+	b.view[i], b.view[j] = b.view[j], b.view[i]
+	b.at[i], b.at[j] = b.at[j], b.at[i]
 }
 
 // identity names a grant across a reload.
@@ -1375,18 +1450,27 @@ func Reserve(c plugin.Capability, values map[string]any, by Caller) (release fun
 	defer unlock()
 
 	// Re-read under the lock: the unlocked Load above is only a fast path for
-	// deciding whether a lock is needed at all.
-	grants, verr = Load()
+	// deciding whether a lock is needed at all. loadAll here, not Load — the
+	// write below goes back to everything the file holds, and reachableNow is
+	// what keeps at indexing correctly into that full slice rather than into
+	// a copy Load has already dropped rows from. See reachableNow's doc
+	// comment for the incident that made this the rule.
+	all, verr := loadAll()
 	if verr != nil {
 		return nil, verr
 	}
-	view, at := reachable(grants, by)
+	ceiling, verr := Ceiling()
+	if verr != nil {
+		return nil, verr
+	}
+	view, at := reachableNow(all, ceiling, time.Now(), by)
 	if verr := checkAgainst(c, values, view, by); verr != nil {
 		return nil, verr
 	}
-	// The tally is over the view; the write is over everything Load returned.
-	// Saving the view instead is how one call came to erase the operator's
-	// other grants — see reachable.
+	// The tally is over the view; the write is over everything loadAll
+	// returned. Saving the view instead — or a view whose positions were
+	// computed against anything less than the full file — is how one call
+	// came to erase the operator's other grants; see reachableNow.
 	tally, missing, _ := allocate(c, values, view, by)
 	if len(missing) > 0 || len(tally) == 0 {
 		// checkAgainst just approved every scope, so missing is unreachable
@@ -1397,11 +1481,11 @@ func Reserve(c plugin.Capability, values map[string]any, by Caller) (release fun
 	now := time.Now()
 	spent := make([]spentUse, 0, len(tally))
 	for i, n := range tally {
-		grants[at[i]].Uses += n
-		grants[at[i]].mark(now, n)
-		spent = append(spent, spentUse{who: grants[at[i]].identity(), n: n})
+		all[at[i]].Uses += n
+		all[at[i]].mark(now, n)
+		spent = append(spent, spentUse{who: all[at[i]].identity(), n: n})
 	}
-	if verr := Save(grants); verr != nil {
+	if verr := Save(all); verr != nil {
 		return nil, verr
 	}
 	return func() { _ = refund(spent) }, nil
