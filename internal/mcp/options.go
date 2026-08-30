@@ -270,10 +270,13 @@ func (o Options) entryMatches(entry, want, ns string, bareOK bool) bool {
 	case !pinned:
 		return bareOK
 	default:
-		// Prefix match, so an operator can paste the short digest rta prints.
-		// An empty pin is not a prefix of everything: it is a missing
-		// decision.
-		return pin != "" && strings.HasPrefix(origin.Digest, pin)
+		// Prefix match, so an operator can paste the short digest rta prints
+		// (always the full 12-char Origin.Short()). The 8-char floor mirrors
+		// internal/plugintrust's identical digest-prefix match: below it, a
+		// hand-typed or truncated pin is cheap enough to grind that it
+		// degrades pinning back into "whatever replaces this name" — the one
+		// thing pinning an artifact instead of a name exists to prevent.
+		return len(pin) >= 8 && strings.HasPrefix(origin.Digest, pin)
 	}
 }
 
