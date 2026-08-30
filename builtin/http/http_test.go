@@ -3,14 +3,29 @@ package http
 import (
 	"context"
 	"encoding/json"
+	stdnet "net"
 	stdhttp "net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
+
+// TestMain relaxes isBlockedIP for this package's whole test binary.
+//
+// Every test in this package (this file and its siblings) reaches its
+// target through an httptest.Server, which binds to loopback — exactly
+// what dialGuarded refuses by default. These tests are about the plugin's
+// request handling, not its address policy, and need a loopback server to
+// reach at all. The guard's own default behavior is what ssrf_test.go
+// tests, restoring isBlockedIP deliberately around each of those cases.
+func TestMain(m *testing.M) {
+	isBlockedIP = func(stdnet.IP) bool { return false }
+	os.Exit(m.Run())
+}
 
 func req(values map[string]any) plugin.Request {
 	if values["timeout"] == nil {
@@ -191,6 +206,47 @@ func TestBodyTruncation(t *testing.T) {
 	out := formatBody([]byte(big), "text/plain")
 	if len(out) >= 10000 || !strings.Contains(out, "more bytes") {
 		t.Error("large body not truncated")
+	}
+}
+
+// The 1 MiB cap on doRequest's own body read (maxBody) is separate from,
+// and happens before, formatBody's display truncation above — what it cuts
+// never reaches formatBody at all. Silently reporting the captured length
+// as "size" reads as the whole response; this pins that the view says
+// otherwise once the cap is actually hit.
+func TestOversizedResponseIsMarkedTruncated(t *testing.T) {
+	big := strings.Repeat("x", maxBody+1024)
+	srv := httptest.NewServer(stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, _ *stdhttp.Request) {
+		w.Write([]byte(big))
+	}))
+	defer srv.Close()
+
+	v, err := doRequest(context.Background(), "GET", req(map[string]any{"url": srv.URL}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pairs := pairsOf(t, v)
+	if !strings.Contains(pairs["size"], "truncated") {
+		t.Errorf("size = %q, want it to say the response was truncated", pairs["size"])
+	}
+}
+
+func TestNormalResponseIsNotMarkedTruncated(t *testing.T) {
+	srv := httptest.NewServer(stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, _ *stdhttp.Request) {
+		w.Write([]byte("hello"))
+	}))
+	defer srv.Close()
+
+	v, err := doRequest(context.Background(), "GET", req(map[string]any{"url": srv.URL}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pairs := pairsOf(t, v)
+	if strings.Contains(pairs["size"], "truncated") {
+		t.Errorf("size = %q, an ordinary response should not be marked truncated", pairs["size"])
+	}
+	if pairs["size"] != "5 B" {
+		t.Errorf("size = %q, want %q", pairs["size"], "5 B")
 	}
 }
 

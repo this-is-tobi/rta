@@ -6,6 +6,7 @@ package http
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	stdhttp "net/http"
@@ -35,6 +36,10 @@ var client = &stdhttp.Client{
 	CheckRedirect: func(*stdhttp.Request, []*stdhttp.Request) error {
 		return stdhttp.ErrUseLastResponse
 	},
+	// See ssrf.go: a grant authorizes the URL named, not wherever its DNS
+	// answer points at connection time, and guardedTransport is what checks
+	// the difference.
+	Transport: guardedTransport(),
 }
 
 // Plugin returns the http plugin declaration.
@@ -195,6 +200,13 @@ func doRequest(ctx context.Context, method string, req plugin.Request) (view.Vie
 
 	resp, err := client.Do(httpReq)
 	if err != nil {
+		var blocked *blockedAddrError
+		if errors.As(err, &blocked) {
+			return nil, view.Errorf("http.request.blocked", "%s %s: %v", method, url, err).
+				WithHint("the destination resolves to a loopback, private, or link-local address " +
+					"(this includes cloud metadata endpoints) — rta refuses to connect there even " +
+					"though the grant named this URL")
+		}
 		return nil, view.Errorf("http.request.failed", "%s %s: %v", method, url, err).
 			WithHint("check the URL is reachable; use --timeout to extend the deadline")
 	}
@@ -222,9 +234,19 @@ func doRequest(ctx context.Context, method string, req plugin.Request) (view.Vie
 			firstByte.Sub(start).Round(time.Millisecond),
 		)})
 	}
+	sizeValue := fmt.Sprintf("%d B", len(bodyBytes))
+	// io.LimitReader above caps what's read at maxBody: past it, bodyBytes
+	// is a prefix of the real response, not the whole thing. Showing its
+	// length as "size" with nothing else said reads as the true size — a
+	// 5 MB body cut to 1 MiB is a partial answer nobody could tell apart
+	// from a complete one. HEAD never has a body to cut — 0 bytes is by
+	// design, not truncation — so it is excluded rather than flagged.
+	if method != stdhttp.MethodHead && bodyWasTruncated(resp, len(bodyBytes)) {
+		sizeValue += " (truncated, showing first 1 MiB)"
+	}
 	pairs = append(pairs,
 		view.Pair{Key: "content-type", Value: resp.Header.Get("Content-Type")},
-		view.Pair{Key: "size", Value: fmt.Sprintf("%d B", len(bodyBytes))},
+		view.Pair{Key: "size", Value: sizeValue},
 	)
 	if len(bodyBytes) > 0 && method != stdhttp.MethodHead {
 		pairs = append(pairs, view.Pair{Key: "body", Value: formatBody(bodyBytes, resp.Header.Get("Content-Type"))})
@@ -262,6 +284,16 @@ func dryRunView(method, url string, httpReq *stdhttp.Request, data string) view.
 			view.Pair{Key: "body", Value: data})
 	}
 	return view.KeyValue{Pairs: pairs, Redacted: redacted}
+}
+
+// bodyWasTruncated reports whether captured — what io.LimitReader actually
+// let through — is a prefix of the response rather than the whole thing.
+// Either the cap itself was hit, or the server said up front, via
+// Content-Length, that more was coming than the cap allows; a response can
+// hit the second without the first only if it closed early, which is still
+// bodyBytes short of what was promised and just as worth flagging.
+func bodyWasTruncated(resp *stdhttp.Response, captured int) bool {
+	return captured == maxBody || (resp.ContentLength >= 0 && resp.ContentLength > maxBody)
 }
 
 // formatBody pretty-prints JSON responses and truncates the rest sensibly.
