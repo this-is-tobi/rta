@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/modelcontextprotocol/go-sdk/auth"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -198,4 +199,59 @@ func LoadTokenFile(path string) (tokens map[string]string, groupReadable bool, e
 		return nil, groupReadable, fmt.Errorf("%s has no tokens", path)
 	}
 	return tokens, groupReadable, nil
+}
+
+// OIDCVerifier builds a verifier for ID tokens issued by issuer, accepted
+// only for audience and only for one of subjects.
+//
+// subjects is not optional. issuer and audience alone name an application
+// an identity provider will vouch for, not the specific person the operator
+// meant — "one instance, one principal" is this design's whole premise, and
+// without pinning specific subjects that premise is asserted, not enforced.
+//
+// Discovery — the JWKS location and the set of signing algorithms the
+// provider actually supports — happens once here, against issuer as the
+// operator configured it. That set, not the token's own "alg" header, is
+// what bounds which algorithm ID.Verify will accept; a token's self-claimed
+// algorithm is exactly the thing every algorithm-confusion attack relies on
+// being trusted; oidc.Provider.Verifier never does. The fetch target is
+// fixed at startup and never derived from anything inside a caller-presented
+// token, which is what keeps a hostile "iss" claim from turning into a
+// server-side request to somewhere the operator did not configure.
+//
+// stderr receives the real reason a token was rejected — bad signature,
+// wrong audience or issuer, expiry, or a subject outside the allowlist — the
+// moment it happens. The returned function itself always fails with the bare
+// auth.ErrInvalidToken sentinel and nothing else, so this verifier is safe
+// to hand directly to auth.RequireBearerToken and not only through Compose.
+func OIDCVerifier(ctx context.Context, issuer, audience string, subjects []string, stderr io.Writer) (auth.TokenVerifier, error) {
+	if len(subjects) == 0 {
+		return nil, errors.New("oidc: at least one --oidc-subject is required — " +
+			"an issuer and audience alone identify an application, not a person")
+	}
+	provider, err := oidc.NewProvider(ctx, issuer)
+	if err != nil {
+		return nil, fmt.Errorf("oidc: discovery against %s: %w", issuer, err)
+	}
+	verify := provider.Verifier(&oidc.Config{ClientID: audience}).Verify
+	allowed := make(map[string]bool, len(subjects))
+	for _, s := range subjects {
+		allowed[s] = true
+	}
+	return func(ctx context.Context, token string, _ *http.Request) (*auth.TokenInfo, error) {
+		idToken, err := verify(ctx, token)
+		if err != nil {
+			if stderr != nil {
+				fmt.Fprintf(stderr, "rta: mcp http: oidc token rejected: %v\n", err)
+			}
+			return nil, auth.ErrInvalidToken
+		}
+		if !allowed[idToken.Subject] {
+			if stderr != nil {
+				fmt.Fprintf(stderr, "rta: mcp http: oidc token subject %q is not in the allowed list\n", idToken.Subject)
+			}
+			return nil, auth.ErrInvalidToken
+		}
+		return &auth.TokenInfo{UserID: idToken.Subject, Expiration: idToken.Expiry}, nil
+	}, nil
 }
