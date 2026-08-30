@@ -69,9 +69,9 @@ rta kv recipients           # which public keys can decrypt this store
 ## Changing the lock afterwards
 
 ```bash
-rta kv rekey --recipient age1colleague...   # add a reader
-rta kv rekey --generate                     # move to a dedicated key
-rta kv rekey --only age1me...               # drop every other reader
+rta kv rekey --recipient age1colleague...            # add a reader
+rta kv rekey --generate                              # move to a dedicated key
+rta kv rekey --only --recipient age1me...            # drop every other reader
 ```
 
 `rekey` always refuses to lock you out. That is not a courtesy — it is the difference between a key-rotation command you can use and one you use once.
@@ -80,7 +80,7 @@ rta kv rekey --only age1me...               # drop every other reader
 
 This is the part to read before connecting an MCP client.
 
-**`kv.get` is a read capability.** It is exposed over MCP by default, like every other read — but the store still has to open, and opening it is a separate question from calling the capability.
+**`kv.get` is classified as a write**, even though it only reads the store — revealing a secret is the sensitive act, not the lookup. An MCP agent needs `--allow-write kv` before it can even attempt the call, and on top of that the store still has to open, which is a separate question from calling the capability.
 
 ```bash
 rta doctor
