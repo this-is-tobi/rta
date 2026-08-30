@@ -99,11 +99,12 @@ func Plugin() plugin.Plugin {
 				Run: runMail,
 			},
 			{
-				ID:         "audit.deps",
-				Summary:    "Check declared dependencies against the OSV vulnerability database",
-				Safety:     plugin.Read,
-				Idempotent: true,
-				Detailed:   true,
+				ID:           "audit.deps",
+				Summary:      "Check declared dependencies against the OSV vulnerability database",
+				Safety:       plugin.Read,
+				HostSpecific: true,
+				Idempotent:   true,
+				Detailed:     true,
 				// It reads a path with a usable default and mutates nothing,
 				// which is exactly the shape the dashboard fills itself with —
 				// and it would send this project's dependency list to osv.dev
@@ -143,10 +144,11 @@ func Plugin() plugin.Plugin {
 				Run: runDeps,
 			},
 			{
-				ID:         "audit.why",
-				Summary:    "Trace one dependency back to what pulled it in",
-				Safety:     plugin.Read,
-				Idempotent: true,
+				ID:           "audit.why",
+				Summary:      "Trace one dependency back to what pulled it in",
+				Safety:       plugin.Read,
+				HostSpecific: true,
+				Idempotent:   true,
 				// Same argument as audit.deps: it reads a path with a usable
 				// default and mutates nothing, which is the shape the dashboard
 				// fills itself with — and a tile asking "why is lodash here"

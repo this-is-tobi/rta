@@ -362,7 +362,7 @@ func Plugin() plugin.Plugin {
 			},
 			{
 				ID: "kv.status", Summary: "Where the store is and what can open it",
-				Safety: plugin.Read, Idempotent: true,
+				Safety: plugin.Read, HostSpecific: true, Idempotent: true,
 				Detailed: true,
 				Description: "Everything about the store that can be known without unlocking it: " +
 					"whether it exists, how big it is, when it last changed, whether it is locked " +
