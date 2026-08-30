@@ -434,7 +434,62 @@ type Plugin struct {
 	Summary      string
 	Version      string
 	Capabilities []Capability
+	// Needs is the credential locations this plugin cannot work without.
+	//
+	// Plugins run confined, and the confinement denies a standard list of
+	// credential directories — a weather plugin has no business reading your
+	// kubeconfig. But some plugins exist precisely to use one, and denying it
+	// to them means shipping a plugin that cannot do the thing it is for:
+	// `~/.kube` was on that list from the first commit of the plugin host,
+	// which made both plugins/kube and plugins/cnpg unable to read a
+	// kubeconfig at all on macOS.
+	//
+	// **Declaring a need does not grant it.** The declaration says what the
+	// plugin is asking for; `rta plugin allow` is where somebody decides, and
+	// the decision attaches to the artifact's digest exactly as trust does, so
+	// a rebuild asks again. A plugin whose need is not granted still runs —
+	// with the ordinary denials — and fails at the operation that wanted the
+	// file, which is the honest outcome and the one that tells the operator
+	// what to grant.
+	Needs []Need
 }
+
+// Need names one credential location a plugin may ask to read.
+//
+// **A closed set, and deliberately not a path.** A plugin naming its own path
+// would be a plugin choosing what to be allowed to read, which is the same
+// mistake as letting a remote caller choose a destination — the operator would
+// be approving a string rather than a thing they recognise. These name
+// locations rta already knows about, one per entry of the deny list, so what
+// `rta plugin allow` prints is a location an operator can reason about.
+type Need string
+
+const (
+	NeedKubeconfig Need = "kubeconfig"      // ~/.kube
+	NeedSSH        Need = "ssh"             // ~/.ssh
+	NeedAWS        Need = "aws"             // ~/.aws
+	NeedGnuPG      Need = "gnupg"           // ~/.gnupg
+	NeedDocker     Need = "docker"          // ~/.docker/config.json
+	NeedGCloud     Need = "gcloud"          // ~/.config/gcloud
+	NeedNetrc      Need = "netrc"           // ~/.netrc
+	NeedNPM        Need = "npmrc"           // ~/.npmrc
+	NeedPyPI       Need = "pypirc"          // ~/.pypirc
+	NeedGitCreds   Need = "git-credentials" // ~/.git-credentials
+)
+
+var needs = []Need{
+	NeedKubeconfig, NeedSSH, NeedAWS, NeedGnuPG, NeedDocker,
+	NeedGCloud, NeedNetrc, NeedNPM, NeedPyPI, NeedGitCreds,
+}
+
+// Needs returns every need, so anything mapping the set onto another
+// representation — the wire codec, the deny list, the help text — has a finite
+// list and a way to find out when it grows. The same reason EndpointRoles and
+// FieldTypes are exported.
+func Needs() []Need { return slices.Clone(needs) }
+
+// KnownNeed reports whether n is a member.
+func KnownNeed(n Need) bool { return slices.Contains(needs, n) }
 
 // EndpointRoles returns every endpoint role, including EndpointNone.
 //

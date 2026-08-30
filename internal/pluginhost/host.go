@@ -380,6 +380,35 @@ func (h *Host) OpenIdentified(ctx context.Context, id Identity, args ...string) 
 	return h.openIdentified(ctx, id, deny, args)
 }
 
+// OpenAllowing is Open for a caller that has decided this artifact may read
+// the credential locations it declares.
+//
+// **`rta plugin dev` is the caller, and the reason is the one that already
+// exempts it from trust**: compiling from a directory named in the command
+// just typed is a stronger act of approval than a digest in a file. Without
+// it a plugin author cannot exercise their own declaration at all — the
+// temporary binary is rebuilt on every run, so its digest is new every time
+// and `rta plugin allow` could never name it. The mechanism would be usable
+// by everybody except the people writing for it.
+//
+// Nothing else calls this. An installed plugin's grant is read from the trust
+// record by digest, which is the path that has an operator's decision behind
+// it.
+func (h *Host) OpenAllowing(ctx context.Context, name string, allowed []plugin.Need, args ...string) (*Client, error) {
+	if err := available(); err != nil {
+		return nil, err
+	}
+	deny, err := ResolveAllowing(allowed)
+	if err != nil {
+		return nil, err
+	}
+	id, err := Identify(name)
+	if err != nil {
+		return nil, err
+	}
+	return h.openIdentified(ctx, id, deny, args)
+}
+
 func (h *Host) openIdentified(ctx context.Context, id Identity, deny DenySet, args []string) (*Client, error) {
 	key := cacheKey(id, deny, args)
 

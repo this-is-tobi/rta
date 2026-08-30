@@ -24,6 +24,8 @@ To build into the current directory instead of installing:
 make build      # ./rta
 ```
 
+`make help` lists every target the repository has — building, formatting, the test gates, a release rehearsal, and the plugin equivalent of each.
+
 ## Verify
 
 ```bash

@@ -159,13 +159,21 @@ func Lookup(cfg config.Config, c plugin.Capability, name string, inst Installed)
 	// they existed declares none. `rta profile show` had this sentence as an
 	// advisory "problem" row while every run sailed past it — page-versus-run
 	// drift, fifth recorded instance, in the direction that hides the failure.
-	if conn.Tunnelled() && !tunnellable(config.PluginNamespace(key), inst) {
+	//
+	// Only when the declaration was actually read. An unregistered namespace
+	// falls through to the pin check below, which names the real problem —
+	// and refuses just the same, so nothing is loosened by declining to
+	// guess here.
+	fillable, declRead := tunnellable(config.PluginNamespace(key), inst)
+	if conn.Tunnelled() && declRead && !fillable {
 		return none, view.Errorf("core.profile.untunnellable",
 			"profile %q: %s declares no input a tunnel can fill, so the forward would "+
 				"be opened and ignored", name, config.PluginNamespace(key)).
-			WithHint("the call would reach the plugin's own default host, not the tunnel — " +
-				"update the plugin (endpoint roles are declared by the artifact), or remove `" +
-				conn.TunnelKey() + ":`")
+			WithHint("the call would reach the plugin's own destination, not the tunnel. " +
+				"`rta profile set " + name + " --plugin " + config.PluginNamespace(key) +
+				" --direct` removes the `" + conn.TunnelKey() + ":` line — a plugin that " +
+				"reaches its service another way needs no forward, and one that dials but " +
+				"predates endpoint roles needs rebuilding instead")
 	}
 	// The pin, enforced here and not only reported by Check.
 	//
@@ -642,10 +650,16 @@ func CheckConnection(name, key string, conn config.Connection, inst Installed) [
 	// "invalid" for a profile that connected perfectly well — and how
 	// `rta profile show` came to print a tunnel "problem" that every
 	// run sailed past.
-	if conn.Tunnelled() && !tunnellable(config.PluginNamespace(key), inst) {
+	// Only when there was a declaration to read; otherwise checkPin below
+	// says what is actually wrong.
+	fillable, declRead := tunnellable(config.PluginNamespace(key), inst)
+	if conn.Tunnelled() && declRead && !fillable {
 		at(config.PluginNamespace(key)+" declares no input a tunnel can fill, "+
 			"so the forward would be opened and ignored",
-			"update the plugin, or remove `"+conn.TunnelKey()+":`")
+			"`rta profile set "+name+" --plugin "+config.PluginNamespace(key)+
+				" --direct` removes the `"+conn.TunnelKey()+":` line — a plugin that reaches "+
+				"its service another way needs no forward, and one that dials but predates "+
+				"endpoint roles needs rebuilding instead")
 		return problems
 	}
 	if verr := checkPin(key, inst); verr != nil {
@@ -682,18 +696,29 @@ func checkTunnel(conn config.Connection) *view.Error {
 // or an `ssh:` target means anything at all. Endpoint roles are a fact about
 // the installed artifact, so a rebuilt plugin can gain or lose this without
 // the config file changing a character.
-func tunnellable(ns string, inst Installed) bool {
+// tunnellable answers whether a tunnel can fill anything ns declares, and
+// separately whether ns was there to ask.
+//
+// The second return is the whole point. A namespace with no registered
+// capabilities is not a plugin that declares nothing — it is a plugin nobody
+// read, and the two are opposite conclusions from the same empty slice.
+// Collapsing them produced a refusal asserting what an unread declaration
+// says, under a hint offering to delete the operator's `kube:` line: the
+// commonest way to get here is a **stale pin**, where the artifact is
+// installed and working and the profile names an older digest of it. The
+// coordinate is correct, the pin is not, and the advice was to destroy the
+// correct half.
+func tunnellable(ns string, inst Installed) (fillable, known bool) {
+	var mine []plugin.Capability
 	for _, c := range capabilitiesOf(inst) {
-		if plugin.Namespace(c.ID) != ns {
-			continue
-		}
-		for _, f := range c.Inputs {
-			if f.Endpoint != plugin.EndpointNone && plugin.ProfileFillable(c, f) {
-				return true
-			}
+		if plugin.Namespace(c.ID) == ns {
+			mine = append(mine, c)
 		}
 	}
-	return false
+	if len(mine) == 0 {
+		return false, false
+	}
+	return plugin.Tunnellable(mine), true
 }
 
 // checkSet reports a key of Set that no capability in the namespace reads, a

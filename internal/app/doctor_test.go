@@ -10,6 +10,8 @@ import (
 
 	"github.com/this-is-tobi/rule-them-all/builtin/kv"
 	"github.com/this-is-tobi/rule-them-all/internal/grant"
+	"github.com/this-is-tobi/rule-them-all/internal/pluginhost"
+	"github.com/this-is-tobi/rule-them-all/internal/plugintrust"
 	"github.com/this-is-tobi/rule-them-all/internal/render/theme"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
@@ -137,6 +139,49 @@ func TestDoctorNamesActiveGrants(t *testing.T) {
 	check(t, rows, "agent grants", "info", "kv.get db-password")
 	if !strings.Contains(rows["agent grants"][1], "1 active") {
 		t.Errorf("detail = %q, want the count", rows["agent grants"][1])
+	}
+}
+
+// Both sides of a credential grant, because a report that only names what was
+// withheld is not a report of what this machine permits.
+//
+// The ungranted row is the one that saves a debugging session: a plugin whose
+// every call needs a kubeconfig fails with its own tool's "operation not
+// permitted", which reads as a broken install. The granted row is the one that
+// makes the permission auditable — rta's whole argument is that an
+// authorisation should be something you can point at, and one that shows up
+// only in the subcommand that issued it is not.
+func TestDoctorNamesACredentialLocationGrantedAndWithheld(t *testing.T) {
+	asks := func(digest string) *pluginhost.Client {
+		return &pluginhost.Client{
+			Identity: pluginhost.Identity{Path: "/somewhere/rta-plugin-" + digest[:4], Digest: digest},
+			Declared: plugin.Plugin{
+				Name: "lab" + digest[:4], Summary: "a lab plugin",
+				Capabilities: []plugin.Capability{{ID: "lab" + digest[:4] + ".get", Safety: plugin.Read}},
+				Needs:        []plugin.Need{plugin.NeedKubeconfig},
+			},
+		}
+	}
+	withheld, granted := strings.Repeat("a", 64), strings.Repeat("b", 64)
+
+	isolate(t)
+	for _, d := range []string{withheld, granted} {
+		if verr := plugintrust.Add(d, "lab"+d[:4], "/somewhere/rta-plugin-"+d[:4]); verr != nil {
+			t.Fatal(verr)
+		}
+	}
+	if verr := plugintrust.Allow(granted, []string{string(plugin.NeedKubeconfig)}); verr != nil {
+		t.Fatal(verr)
+	}
+	SetLoadedPlugins([]*pluginhost.Client{asks(withheld), asks(granted)})
+	t.Cleanup(func() { SetLoadedPlugins(nil) })
+
+	rows := report(t)
+	check(t, rows, "plugin lab"+withheld[:4], "warn", "has not been allowed to")
+	check(t, rows, "plugin lab"+granted[:4], "ok", "allowed to read kubeconfig")
+	if !strings.Contains(rows["plugin lab"+granted[:4]][1], "disallow") {
+		t.Errorf("the granted row does not say how to take it back: %q",
+			rows["plugin lab"+granted[:4]][1])
 	}
 }
 

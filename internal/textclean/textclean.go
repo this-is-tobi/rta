@@ -4,8 +4,8 @@
 // Two consumers, two different ideas of what "act on it" means, one shared
 // idea of where the text came from. A view carries data from somewhere else —
 // an HTTP response body, a DNS record, a certificate subject, a filename, a
-// database row — so §4.3's "views carry data, never ANSI codes" was a rule the
-// code we write kept and the data we display never did.
+// database row — so the rule that "views carry data, never ANSI codes" was one
+// the code we write kept and the data we display never did.
 //
 // Terminal is for a person reading a screen. Model is for an LLM reading tool
 // output, which is a superset: an MCP client usually renders that output in a

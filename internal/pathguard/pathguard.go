@@ -9,8 +9,8 @@
 // `cert_inspect` distinguishes "exists and is readable" from "does not
 // exist". Every one of those capabilities is `read` and correctly so — they
 // mutate nothing — and every one of them is doing exactly its job. The
-// question §4.7 asks is not whether the caller may run it but whether *this*
-// caller may point it there, and until now nothing asked.
+// question that matters is not whether the caller may run it but whether
+// *this* caller may point it there, and until now nothing asked.
 //
 // So the control is not per-capability and not a safety class. It is a root,
 // enforced once at the MCP boundary, in the same place and for the same

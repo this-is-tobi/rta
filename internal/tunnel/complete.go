@@ -14,7 +14,7 @@ import (
 //
 // Everything here runs only when an operator pressed the completion key on a
 // field — never per keystroke, never at form build, never from shell
-// completion, which stays pure. The one exception written into §8 is the
+// completion, which stays pure. The one exception is the
 // segment that needs no cluster at all: the kind list is static and returns
 // before kubectl is even looked for, so a machine without kubectl still
 // completes what it locally can.
@@ -110,7 +110,7 @@ func CompleteSecretRef(ctx context.Context, coordinate, partial string) (Complet
 }
 
 // kubeContexts lists what kubeconfig holds. Local — `kubectl config` never
-// touches a network — which is what makes this segment eligible for §8's
+// touches a network — which is what makes this segment eligible for the
 // automatic tier; it still runs from the same keypress as the rest, because
 // one key with one meaning beats two rules an operator has to hold.
 func kubeContexts(ctx context.Context) (Completion, *view.Error) {

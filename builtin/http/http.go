@@ -85,8 +85,8 @@ func Plugin() plugin.Plugin {
 			//
 			// Scoped to the URL, so a person can allow one destination for
 			// fifteen minutes rather than the internet indefinitely. It costs
-			// CLI and TUI nothing: grants are enforced only in the MCP bridge
-			// (§4.7.11), because a person at a terminal is never gated.
+			// CLI and TUI nothing: grants are enforced only in the MCP bridge,
+			// because a person at a terminal is never gated.
 			{
 				ID: "http.get", Summary: "GET a URL and show status, timing and body",
 				Safety: plugin.Read, Idempotent: true,

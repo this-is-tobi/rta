@@ -43,6 +43,19 @@ type Manifest struct {
 	Platforms    []Platform        `yaml:"platforms"`
 	Capabilities []CapabilityClaim `yaml:"capabilities"`
 
+	// Needs is the credential locations the artifact declares it cannot work
+	// without, and it is the one claim a person most wants before deciding
+	// rather than after. A plugin that reads your kubeconfig says so in its
+	// declaration; an index that carries the declaration and drops that field
+	// would be describing the plugin accurately right up to the part that
+	// matters. Checked at install in both directions like the capability set,
+	// so an index cannot quietly omit one.
+	//
+	// Claiming a need is not being granted it — `rta plugin allow` is still a
+	// separate decision against the digest. This is what makes the decision an
+	// informed one.
+	Needs []plugin.Need `yaml:"needs,omitempty"`
+
 	// Signature names a detached signature for the artifact, verified when
 	// present and recorded — never required, never a gate: a
 	// valid signature on a worse plugin verifies perfectly, and the campaigns
@@ -189,6 +202,17 @@ func (m Manifest) check() *view.Error {
 		}
 	}
 
+	seenNeed := map[plugin.Need]bool{}
+	for _, n := range m.Needs {
+		if !plugin.KnownNeed(n) {
+			return bad("%s asks for %q, which is not a location rta knows how to allow", m.Name, n)
+		}
+		if seenNeed[n] {
+			return bad("%s asks for %s twice", m.Name, n)
+		}
+		seenNeed[n] = true
+	}
+
 	if s := m.Signature; s != nil {
 		for what, ref := range map[string]string{"sig": s.Sig, "key": s.Key} {
 			if verr := checkArtifactURL(m.Name, "signature "+what, ref); verr != nil {
@@ -319,8 +343,14 @@ func (m Manifest) Offered() string {
 	return strings.Join(out, ", ")
 }
 
-// Safety summarises the claimed classes the way the install prompt prints
+// SafetyLine summarises the claimed classes the way the install prompt prints
 // them: "all read · none needs a grant", or the counts when it is mixed.
+//
+// A declared credential location belongs on this line and not a column of its
+// own. It is the same kind of fact as a safety class — how far the thing
+// reaches — and `rta plugin search` is where somebody reads one line per
+// plugin and decides which to look at properly. "all read" on a plugin that
+// wants your kubeconfig is true and, alone, misleading.
 func (m Manifest) SafetyLine() string {
 	counts := map[string]int{}
 	grants := 0
@@ -347,6 +377,13 @@ func (m Manifest) SafetyLine() string {
 		parts = append(parts, "1 needs a grant")
 	default:
 		parts = append(parts, fmt.Sprintf("%d need a grant", grants))
+	}
+	if len(m.Needs) > 0 {
+		asks := make([]string, len(m.Needs))
+		for i, n := range m.Needs {
+			asks[i] = string(n)
+		}
+		parts = append(parts, "asks for "+strings.Join(asks, ", "))
 	}
 	return strings.Join(parts, " · ")
 }

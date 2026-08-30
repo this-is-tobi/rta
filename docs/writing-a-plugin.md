@@ -98,6 +98,24 @@ The rule that catches people: **a capability that reveals a secret's plaintext i
 
 Set `NeedsGrant: true` when the class understates it, and `Scope: "city"` to name the input a grant can be narrowed to — then a person can allow one record rather than the capability.
 
+## If your plugin needs a credential location
+
+Plugins run confined and rta denies them a standard list of credential directories — `~/.ssh`, `~/.aws`, `~/.kube` and the rest. If yours cannot work without one, declare it:
+
+```go
+plugin.Plugin{
+    Name:  "clusters",
+    Needs: []plugin.Need{plugin.NeedKubeconfig},
+    ...
+}
+```
+
+Declaring is asking. The operator runs `rta plugin allow <name>` to grant it, against your artifact's digest, and a rebuild asks again. Until then your plugin still loads and runs — it just fails at whatever call wanted the file, and `rta doctor` tells the operator which command fixes that.
+
+`rta plugin dev` honours your declaration without any of that, for the same reason it skips trust: you compiled it from a directory you named in the command you just typed. Its report says what it allowed and what installing the plugin will need instead, so the difference is visible before somebody else hits it.
+
+Ask for the least you need. Every location you declare is one the operator has to weigh, and a plugin that asks for four when it uses one is a plugin people stop granting anything to.
+
 `rta explain <capability>` prints the exact flag an operator would need. So does `rta plugin dev`, in its `Agents` column, which is the fastest way to check you classified something the way you meant to.
 
 ## What rta does to your process
@@ -176,9 +194,51 @@ p.AddAs("stations", "nearby stations", listStations, nil)
 
 It is optional — `Put` and `Add` work, and `Key()` falls back to the title — but then rewording a heading silently renames the handle. `sdktest` says so.
 
+## Publishing it
+
+An **index** is a git repository holding one `plugins/<name>.yaml` manifest per plugin. That is the entire format. rta clones it with your own `git`, so your remotes, proxies and credentials keep working, and it answers `rta plugin search` from the manifests alone without fetching or running anything.
+
+```
+my-index/
+└── plugins/
+    ├── mytool.yaml
+    └── othertool.yaml
+```
+
+**Do not write the manifest by hand.** Every claim in one is already in your declaration: the name, the version, the summary, each capability's ID, safety class and grant flag, and each credential location the plugin asks for. `rta plugin install` derives all of it again from the bytes it downloads and refuses the install when the two disagree — so a transcription slip does not surface for you, it surfaces on somebody else's machine as a message about an index they cannot fix.
+
+Generate it instead:
+
+```bash
+rta plugin manifest bin/rta-plugin-mytool \
+  --version v1.2.0 \
+  --homepage https://github.com/you/rta-plugin-mytool \
+  --checksums dist/checksums.txt \
+  --platform linux/amd64=https://github.com/you/rta-plugin-mytool/releases/download/v1.2.0/mytool_linux_amd64.tar.gz \
+  --platform darwin/arm64=https://github.com/you/rta-plugin-mytool/releases/download/v1.2.0/mytool_darwin_arm64.tar.gz \
+  --index ../my-index
+```
+
+rta runs your binary the way a load does — sandboxed — and writes down what it declares. You supply the one thing the binary cannot know: where its bytes will live. `--checksums` reads the `<sha256>  <filename>` lines your release already publishes and matches them by filename; a `--platform` pointing at a file on your machine is hashed on the spot instead, and its archive is opened to prove the `bin:` claim while it is still in reach.
+
+Two things to know before you publish:
+
+- **`.tar.gz`, or a bare binary.** rta extracts a single member from a gzipped tar and has no zip reader at all, so a `.zip` artifact cannot be installed — including on Windows, where GoReleaser's default format is zip. `rta plugin manifest` refuses one rather than letting it become a failed install somewhere else.
+- **The version is yours to state.** `--version` claims your release tag. Without it the manifest claims whatever `Version` your declaration carries, which is a fact about the source rather than about the release.
+
+Then attach your own index and take the round trip yourself, before anybody else does:
+
+```bash
+rta plugin index add mine /path/to/my-index
+rta plugin search mytool
+rta plugin install mine/mytool
+```
+
+Install is where claims meet evidence: rta fetches the artifact, hashes it, launches it in the same sandbox any load uses, and refuses if what it declares is not what your index said — naming your index. Earning that refusal on your own machine is the point of running it.
+
 ## Worked examples, in the order worth reading them
 
-Ten plugins ship in this repository, and they are not a showcase — they are the proof the contract works, written against the same public SDK you have. Every one is a separate module that cannot reach into rta's internals, so anything they do, you can do.
+Eleven plugins ship in this repository, and they are not a showcase — they are the proof the contract works, written against the same public SDK you have. Every one is a separate module that cannot reach into rta's internals, so anything they do, you can do.
 
 Read them in this order and each one adds exactly one idea:
 

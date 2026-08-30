@@ -1904,8 +1904,8 @@ func TestOpeningAFreshCapabilityCarriesNothing(t *testing.T) {
 	}
 }
 
-// The TUI draws strings that never pass through cli.Render, and the claim in
-// §4.7.13 that the renderers neutralise "every view string" was true of the
+// The TUI draws strings that never pass through cli.Render, and the promise
+// that renderers neutralise "every view string" was true of the
 // renderer and false of the surface. cli.Render sanitises its own local copy;
 // everything the TUI draws around that copy was raw.
 //

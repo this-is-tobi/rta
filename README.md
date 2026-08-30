@@ -45,7 +45,7 @@ Read these in order. Each one is a smaller blast radius than the one before it.
 | Chapter | What it covers |
 | --- | --- |
 | [Using plugins](./docs/50-plugins.md) | Discovery, trust, indexes, install and upgrade |
-| [Writing a plugin](./docs/writing-a-plugin.md) | The SDK, the conformance suite, `plugin new` and `plugin dev` |
+| [Writing a plugin](./docs/writing-a-plugin.md) | The SDK, the conformance suite, `plugin new` and `plugin dev`, and publishing it to an index |
 
 ## Going further
 

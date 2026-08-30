@@ -98,6 +98,19 @@ type Entry struct {
 	Path string `json:"path,omitempty"`
 	// At is when it was trusted.
 	At time.Time `json:"at"`
+	// Allow is the credential locations this artifact may read, from rta's
+	// closed set of needs.
+	//
+	// **A second decision, on the same key.** Trust says the bytes may run;
+	// this says they may read a location the confinement otherwise denies to
+	// every plugin. Two separate commands write them, because "run this" and
+	// "read my kubeconfig" are different questions and one answer must not
+	// stand in for the other — but both attach to the digest, so a rebuild
+	// asks both again. That is the property, not the friction: a plugin's
+	// bytes changing under a name you already allowed is exactly the event
+	// worth stopping for, and it is the more so when what was allowed is a
+	// credential store.
+	Allow []string `json:"allow,omitempty"`
 }
 
 // Short is the digest as a person quotes it.
@@ -280,6 +293,13 @@ func Add(digest, name, path string) *view.Error {
 		// Every name it has carried, so a revocation typed against any of
 		// them finds it.
 		e.Names = existing.normalize().Names
+		// And whatever it was allowed to read. Re-trusting the same bytes is
+		// a refresh of where they were seen, so dropping the grant here would
+		// make `rta plugin trust` a silent revocation — the operator's own
+		// artifact, still the same digest, quietly losing access with nothing
+		// said. The digest is what both decisions hang on; while it stands,
+		// both stand.
+		e.Allow = append([]string{}, existing.Allow...)
 	}
 	if name != "" {
 		// Appended after dropping any earlier occurrence, so the list stays in
@@ -293,6 +313,66 @@ func Add(digest, name, path string) *view.Error {
 		e.Names = append(kept, name)
 	}
 	return write(file{Trusted: append(out, e.normalize())})
+}
+
+// Allowed is the credential locations an artifact may read, empty for one that
+// has been granted none — which is every artifact until somebody says
+// otherwise.
+func (s Set) Allowed(digest string) []string {
+	for _, e := range s.entries {
+		if e.Digest == digest {
+			return append([]string{}, e.Allow...)
+		}
+	}
+	return nil
+}
+
+// Allow records that an artifact may read the named locations, replacing
+// whatever it was allowed before rather than adding to it.
+//
+// Replacing, because the command states the whole grant: adding would make a
+// location impossible to withdraw without withdrawing all of them, and a
+// permission you can only accumulate is one nobody trims. `rta plugin
+// disallow` is the empty case spelled as its own command, so taking access
+// away is a thing somebody typed rather than a subtlety of an argument list.
+//
+// Refused for an artifact that is not trusted: allowing bytes to read a
+// credential store while they are not even allowed to run is a record that
+// means nothing and would outlive the reason it was written.
+func Allow(digest string, locations []string) *view.Error {
+	if digest == "" {
+		return view.Errorf("plugin.allow.nodigest", "cannot allow an artifact with no digest")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	release, verr := lock()
+	if verr != nil {
+		return verr
+	}
+	defer release()
+	f, verr := read()
+	if verr != nil {
+		return verr
+	}
+	found := false
+	out := make([]Entry, 0, len(f.Trusted))
+	for _, e := range f.Trusted {
+		if e.Digest == digest {
+			found = true
+			e.Allow = append([]string{}, locations...)
+			if len(e.Allow) == 0 {
+				e.Allow = nil
+			}
+		}
+		out = append(out, e)
+	}
+	if !found {
+		return view.Errorf("plugin.allow.untrusted",
+			"that artifact is not trusted, so there is nothing to allow it").
+			WithHint("`rta plugin trust <name>` first — running it at all is the decision " +
+				"that comes before reading anything")
+	}
+	return write(file{Trusted: out})
 }
 
 // Remove withdraws trust from an artifact, by digest or by the name it was

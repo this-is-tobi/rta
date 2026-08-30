@@ -223,6 +223,20 @@ message Plugin {
   string summary = 2;
   string version = 3;
   repeated Capability capabilities = 4;
+  // Credential locations this plugin cannot work without, from rta's closed
+  // set: "kubeconfig", "ssh", "aws", "gnupg", "docker", "gcloud", "netrc",
+  // "npmrc", "pypirc", "git-credentials".
+  //
+  // A request, never a grant. Plugins run confined and those locations are
+  // denied by default; `rta plugin allow` is where an operator decides, and
+  // the decision attaches to the artifact's digest exactly as trust does. A
+  // value rta does not know is refused at registration rather than ignored,
+  // so a plugin cannot declare a requirement nothing can show or grant.
+  //
+  // Added rather than renumbered: a plugin compiled against v1 before this
+  // field existed sends nothing here and keeps working, which is what the
+  // freeze promises.
+  repeated string needs = 5;
 }
 
 message DescribeRequest {}

@@ -3,6 +3,8 @@ package plugindist
 import (
 	"strings"
 	"testing"
+
+	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 )
 
 const goodManifest = `name: pg
@@ -118,4 +120,40 @@ func TestHostileManifestsAreRefused(t *testing.T) {
 			t.Fatalf("verr = %v", verr)
 		}
 	})
+}
+
+// The one line `rta plugin search` gives a plugin has to carry it too — a row
+// reading "all read" for something that wants your kubeconfig is true and
+// useless.
+func TestTheSearchLineSaysWhatAPluginAsksToRead(t *testing.T) {
+	m := Manifest{
+		Capabilities: []CapabilityClaim{{ID: "lab.get", Safety: "read"}},
+		Needs:        []plugin.Need{plugin.NeedKubeconfig, plugin.NeedSSH},
+	}
+	if got := m.SafetyLine(); got != "all read · none needs a grant · asks for kubeconfig, ssh" {
+		t.Fatalf("SafetyLine = %q", got)
+	}
+	m.Needs = nil
+	if got := m.SafetyLine(); got != "all read · none needs a grant" {
+		t.Fatalf("SafetyLine = %q, want no clause when nothing is asked for", got)
+	}
+}
+
+// A location rta has no way to allow cannot be claimed: `rta plugin allow`
+// works from a closed set, so an entry naming something outside it would be
+// asking the operator to approve a word.
+func TestAManifestCannotAskForALocationRtaCannotAllow(t *testing.T) {
+	doc := "name: lab\nversion: 0.1.0\nsummary: a lab\n" +
+		"platforms:\n  - os: linux\n    arch: amd64\n    url: https://example.com/lab\n" +
+		"    sha256: " + strings.Repeat("a", 64) + "\n" +
+		"capabilities:\n  - id: lab.get\n    safety: read\n"
+	if _, verr := ParseManifest([]byte(doc + "needs:\n  - my-private-keys\n")); verr == nil {
+		t.Fatal("a manifest asked for a location nothing could grant")
+	}
+	if _, verr := ParseManifest([]byte(doc + "needs:\n  - aws\n  - aws\n")); verr == nil {
+		t.Fatal("a manifest asked for one location twice")
+	}
+	if _, verr := ParseManifest([]byte(doc + "needs:\n  - aws\n")); verr != nil {
+		t.Fatalf("a manifest stating a real location was refused: %v", verr)
+	}
 }

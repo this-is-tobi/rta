@@ -323,3 +323,110 @@ func TestALegacyRecordKeepsTheNameItWasTrustedUnder(t *testing.T) {
 		t.Errorf("withdrew %d, want the legacy entry", n)
 	}
 }
+
+// Allowing a credential location round-trips, and attaches to the artifact
+// rather than to the name.
+func TestAllowRoundTripsAgainstTheDigest(t *testing.T) {
+	isolated(t)
+	if verr := Add(digestA, "cnpg", "/usr/local/bin/rta-plugin-cnpg"); verr != nil {
+		t.Fatal(verr)
+	}
+	if got := Load().Allowed(digestA); len(got) != 0 {
+		t.Errorf("a freshly trusted artifact is allowed %v — trust is not a grant", got)
+	}
+	if verr := Allow(digestA, []string{"kubeconfig"}); verr != nil {
+		t.Fatal(verr)
+	}
+	if got := Load().Allowed(digestA); len(got) != 1 || got[0] != "kubeconfig" {
+		t.Errorf("Allowed = %v, want [kubeconfig]", got)
+	}
+	if got := Load().Allowed(digestB); len(got) != 0 {
+		t.Errorf("allowing one artifact allowed another: %v", got)
+	}
+}
+
+// **Allowing bytes that are not even allowed to run is a record that means
+// nothing**, and it would outlive the reason it was written: the artifact
+// could be trusted later, by somebody who never saw this decision, and arrive
+// with a credential grant already attached.
+func TestAllowingAnUntrustedArtifactIsRefused(t *testing.T) {
+	isolated(t)
+	verr := Allow(digestA, []string{"kubeconfig"})
+	if verr == nil {
+		t.Fatal("an untrusted artifact was allowed a credential location")
+	}
+	if verr.Code != "plugin.allow.untrusted" {
+		t.Errorf("code = %s, want plugin.allow.untrusted", verr.Code)
+	}
+	if got := Load().Allowed(digestA); len(got) != 0 {
+		t.Errorf("the refusal still wrote something: %v", got)
+	}
+}
+
+// **Re-trusting the same bytes must not silently revoke.** `rta plugin trust`
+// on an artifact already trusted is a refresh — somebody moved the binary, or
+// typed the command twice — and dropping the grant there would take a
+// permission away with nothing said, at the moment the operator was
+// reaffirming the artifact rather than reconsidering it.
+func TestTrustingAgainKeepsWhatWasAllowed(t *testing.T) {
+	isolated(t)
+	if verr := Add(digestA, "cnpg", "/old/path"); verr != nil {
+		t.Fatal(verr)
+	}
+	if verr := Allow(digestA, []string{"kubeconfig"}); verr != nil {
+		t.Fatal(verr)
+	}
+	if verr := Add(digestA, "cnpg", "/new/path"); verr != nil {
+		t.Fatal(verr)
+	}
+	if got := Load().Allowed(digestA); len(got) != 1 || got[0] != "kubeconfig" {
+		t.Errorf("Allowed = %v after re-trusting the same bytes, want it kept", got)
+	}
+}
+
+// And withdrawing trust takes the grant with it: the record is gone, so there
+// is nothing left to be allowed. Trusting the artifact again starts from
+// nothing, which is the same answer a rebuild gets.
+func TestUntrustingTakesTheGrantWithIt(t *testing.T) {
+	isolated(t)
+	if verr := Add(digestA, "cnpg", "/p"); verr != nil {
+		t.Fatal(verr)
+	}
+	if verr := Allow(digestA, []string{"kubeconfig"}); verr != nil {
+		t.Fatal(verr)
+	}
+	if _, verr := Remove("cnpg"); verr != nil {
+		t.Fatal(verr)
+	}
+	if verr := Add(digestA, "cnpg", "/p"); verr != nil {
+		t.Fatal(verr)
+	}
+	if got := Load().Allowed(digestA); len(got) != 0 {
+		t.Errorf("Allowed = %v after untrust and re-trust, want nothing carried over", got)
+	}
+}
+
+// Allow states the whole grant rather than adding to it, so a location can be
+// taken away without taking all of them.
+func TestAllowReplacesRatherThanAccumulates(t *testing.T) {
+	isolated(t)
+	if verr := Add(digestA, "many", "/p"); verr != nil {
+		t.Fatal(verr)
+	}
+	if verr := Allow(digestA, []string{"kubeconfig", "ssh"}); verr != nil {
+		t.Fatal(verr)
+	}
+	if verr := Allow(digestA, []string{"ssh"}); verr != nil {
+		t.Fatal(verr)
+	}
+	got := Load().Allowed(digestA)
+	if len(got) != 1 || got[0] != "ssh" {
+		t.Errorf("Allowed = %v, want only what the second call stated", got)
+	}
+	if verr := Allow(digestA, nil); verr != nil {
+		t.Fatal(verr)
+	}
+	if got := Load().Allowed(digestA); len(got) != 0 {
+		t.Errorf("Allowed = %v after withdrawing everything", got)
+	}
+}

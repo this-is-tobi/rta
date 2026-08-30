@@ -2,11 +2,14 @@ package app
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
 
+	"github.com/this-is-tobi/rule-them-all/internal/atomicfile"
 	"github.com/this-is-tobi/rule-them-all/internal/plugindist"
 	"github.com/this-is-tobi/rule-them-all/internal/render/cli"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
@@ -62,10 +65,30 @@ func installView(rep plugindist.Report) view.View {
 		{Key: "digest", Value: shortDigest(rep.Digest) + " (computed by rta from the bytes)"},
 		{Key: "signature", Value: rep.Signature},
 		{Key: "declares", Value: declaresLine(rep.Declared)},
+	}
+	// Named here and not only at `rta plugin search`, because this is the
+	// moment it costs something to not know. The artifact is installed and
+	// trusted, and a plugin whose need is ungranted runs and fails at the call
+	// that wanted the file — so an operator who never sees this line meets it
+	// later as somebody else's "operation not permitted".
+	//
+	// Install is deliberately not the place the grant happens. Letting an
+	// artifact run and letting it read a credential location are separate
+	// decisions, and this line is the first half of the second one.
+	if len(rep.Declared.Needs) > 0 {
+		asks := make([]string, len(rep.Declared.Needs))
+		for i, n := range rep.Declared.Needs {
+			asks[i] = needLine(n)
+		}
+		pairs = append(pairs, view.Pair{Key: "asks to read",
+			Value: strings.Join(asks, ", ") + " — not granted by installing; " +
+				"`rta plugin allow " + rep.Name + "` decides"})
+	}
+	pairs = append(pairs, []view.Pair{
 		{Key: "installed", Value: rep.Path},
 		{Key: "to configure it", Value: "plugins." + pin + ": — `rta explain " +
 			firstCapability(rep.Declared) + "` lists its keys"},
-	}
+	}...)
 	if creds := credentialVars(rep.Declared); len(creds) > 0 {
 		// Named, not spelled as a command. `export A, B` reads like a line to
 		// paste and is not one — a shell takes the comma as part of the
@@ -351,4 +374,161 @@ func newPluginIndexCommand(opts *globalOpts) *cobra.Command {
 		},
 	})
 	return root
+}
+
+// newPluginManifestCommand implements `rta plugin manifest`: the producer side
+// of an index, and the half that was missing.
+//
+// rta could read an index, search one, install from one and refuse an index
+// that lied — and nothing anywhere helped anybody write one. So publishing a
+// plugin meant hand-transcribing its declaration into YAML: every capability
+// ID, its safety class, whether it needs a grant, and a sha256 per platform.
+// That transcription is graded, and not by the person doing it — a slip
+// surfaces at a stranger's `rta plugin install` as "index X claims Y and the
+// binary disagrees", which is a true message pointing at somebody who is not
+// reading it.
+//
+// Deriving it removes the step rather than checking it. rta already runs a
+// plugin sandboxed to read its declaration on every load; doing it here and
+// writing down what it says makes a manifest that disagrees with its artifact
+// unrepresentable. What the author supplies is the one thing the artifact
+// cannot know: where its bytes will be published.
+func newPluginManifestCommand(opts *globalOpts) *cobra.Command {
+	var (
+		version   string
+		homepage  string
+		platforms []string
+		checksums string
+		binMember string
+		indexDir  string
+	)
+	cmd := &cobra.Command{
+		Use:   "manifest <binary>",
+		Short: "Write an index manifest from a plugin binary's own declaration",
+		Long: "Runs the binary the way a load does — sandboxed — and writes the index\n" +
+			"entry its declaration implies: name, version, summary, every capability\n" +
+			"with its safety class and grant flag, and every credential location it\n" +
+			"asks for. None of that is typed, so none of it can drift from the\n" +
+			"artifact.\n\n" +
+			"You supply where the bytes will live:\n\n" +
+			"    rta plugin manifest bin/rta-plugin-pg --version v1.2.0 \\\n" +
+			"      --checksums dist/checksums.txt \\\n" +
+			"      --platform linux/amd64=https://example.com/pg_linux_amd64.tar.gz\n\n" +
+			"A platform whose artifact is a local file is hashed on the spot, and its\n" +
+			"archive is opened to prove the `bin:` claim; anything else is looked up\n" +
+			"in the checksums file by filename.\n\n" +
+			"Prints the manifest, or writes it into an index with --index.",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: cobra.NoFileCompletions,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			req := plugindist.GenerateRequest{
+				Binary:   args[0],
+				Version:  version,
+				Homepage: homepage,
+			}
+			for _, spec := range platforms {
+				src, verr := parsePlatformSpec(spec, binMember)
+				if verr != nil {
+					return verr
+				}
+				req.Platforms = append(req.Platforms, src)
+			}
+			if checksums != "" {
+				raw, err := os.ReadFile(checksums)
+				if err != nil {
+					return view.Errorf("plugin.manifest.checksums", "%v", err)
+				}
+				sums, verr := plugindist.ParseChecksums(raw)
+				if verr != nil {
+					return verr
+				}
+				req.Checksums = sums
+			}
+			doc, m, verr := plugindist.Generate(cmd.Context(), req, cmd.ErrOrStderr())
+			if verr != nil {
+				return verr
+			}
+			if indexDir == "" {
+				// The file's exact bytes, not a rendering of them. This
+				// command produces a document that goes into a git repository
+				// and whose name is load-bearing; a caller redirecting it is
+				// doing the ordinary thing, and a view wrapper would make
+				// `> plugins/pg.yaml` write something an index refuses.
+				_, err := cmd.OutOrStdout().Write(doc)
+				return err
+			}
+			dest := filepath.Join(indexDir, plugindist.FileName(m))
+			if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+				return view.Errorf("plugin.manifest.write", "%v", err)
+			}
+			// Atomically, because this lands in a git repository somebody
+			// commits. A truncated manifest is a claim about a plugin that
+			// is not the claim anybody made, and the window a plain write
+			// opens is exactly the one where a regeneration is interrupted
+			// half way through an index.
+			if err := atomicfile.Write(dest, doc, 0o644); err != nil {
+				return view.Errorf("plugin.manifest.write", "%v", err)
+			}
+			return renderView(cmd, opts, view.KeyValue{Pairs: []view.Pair{
+				{Key: "wrote", Value: dest},
+				{Key: "version", Value: m.Version},
+				{Key: "claims", Value: plural(len(m.Capabilities), "capability", "capabilities") +
+					" — " + m.SafetyLine()},
+				{Key: "platforms", Value: m.Offered()},
+			}})
+		},
+	}
+	cmd.Flags().StringVar(&version, "version", "",
+		"version to claim (default: what the binary declares)")
+	cmd.Flags().StringVar(&homepage, "homepage", "", "where a person reads more, as an https URL")
+	// Worded so the first word is not a literal: the help renderer
+	// sentence-cases a flag's description, and `<Os>/<Arch>` is a platform
+	// the manifest grammar refuses.
+	cmd.Flags().StringArrayVar(&platforms, "platform", nil,
+		"one <os>/<arch>=<url or local file>, repeated once per artifact")
+	cmd.Flags().StringVar(&checksums, "checksums", "",
+		"file of `<sha256>  <file>` lines covering the artifacts")
+	cmd.Flags().StringVar(&binMember, "bin", "",
+		"where the binary sits inside a .tar.gz artifact (default: rta-plugin-<name>)")
+	cmd.Flags().StringVar(&indexDir, "index", "",
+		"index directory to write plugins/<name>.yaml into, instead of printing")
+	return cmd
+}
+
+// parsePlatformSpec reads `<os>/<arch>=<url>`.
+//
+// A value with no URL scheme is a path on this machine, and it is turned into
+// the absolute file:// URL a manifest requires. That is the whole local
+// rehearsal story: build the plugins, point at the files, and the index that
+// comes out is one `rta plugin install` genuinely works against — the same
+// fetch, the same hash, the same sandboxed declaration check as a published
+// one, minus the publishing.
+func parsePlatformSpec(spec, binMember string) (plugindist.PlatformSource, *view.Error) {
+	bad := func(format string, args ...any) *view.Error {
+		return view.Errorf("plugin.manifest.platform", format, args...).
+			WithHint("`--platform <os>/<arch>=<url>`, for example " +
+				"linux/amd64=https://example.com/pg_linux_amd64.tar.gz")
+	}
+	target, location, ok := strings.Cut(spec, "=")
+	if !ok || location == "" {
+		return plugindist.PlatformSource{}, bad("%q states no artifact", spec)
+	}
+	goos, goarch, ok := strings.Cut(target, "/")
+	if !ok || goos == "" || goarch == "" {
+		return plugindist.PlatformSource{}, bad("%q does not start with <os>/<arch>", spec)
+	}
+	if !strings.Contains(location, "://") {
+		abs, err := filepath.Abs(location)
+		if err != nil {
+			return plugindist.PlatformSource{}, bad("%s: %v", location, err)
+		}
+		if _, err := os.Stat(abs); err != nil {
+			return plugindist.PlatformSource{}, view.Errorf("plugin.manifest.platform",
+				"%s: %v", location, err).
+				WithHint("a value with no scheme is a file on this machine; " +
+					"a published artifact needs its https:// URL")
+		}
+		location = "file://" + filepath.ToSlash(abs)
+	}
+	return plugindist.PlatformSource{OS: goos, Arch: goarch, URL: location, Bin: binMember}, nil
 }

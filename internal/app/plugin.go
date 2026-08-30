@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -47,15 +48,280 @@ func newPluginCommand(reg *registry.Registry, version string, opts *globalOpts) 
 	root.AddCommand(newPluginListCommand(reg, opts))
 	root.AddCommand(newPluginTrustCommand(opts))
 	root.AddCommand(newPluginUntrustCommand())
+	root.AddCommand(newPluginAllowCommand(opts))
+	root.AddCommand(newPluginDisallowCommand(opts))
 	root.AddCommand(newPluginNewCommand())
 	root.AddCommand(newPluginDevCommand(reg, version, opts))
 	root.AddCommand(newPluginInstallCommand(opts))
 	root.AddCommand(newPluginUpgradeCommand(opts))
 	root.AddCommand(newPluginRemoveCommand(opts))
 	root.AddCommand(newPluginSearchCommand(opts))
+	root.AddCommand(newPluginManifestCommand(opts))
 	root.AddCommand(newPluginIndexCommand(opts))
 	return root
 }
+
+// newPluginAllowCommand implements `rta plugin allow`: the second decision,
+// after trust and separate from it.
+//
+// Plugins run confined and a standard list of credential locations is denied
+// to all of them — a weather plugin has no business reading a kubeconfig. Some
+// plugins exist to use one, and for those the denial is not caution but
+// breakage: `~/.kube` was denied from the first commit of the plugin host, and
+// both plugins/kube and plugins/cnpg were unable to read a kubeconfig at all
+// on macOS, which is to say unable to do anything.
+//
+// The plugin declares what it needs; this is where somebody decides. Two
+// commands rather than one, because "these bytes may run" and "these bytes may
+// read my cluster credentials" are different questions and an answer to the
+// first must not stand in for the second. Both attach to the digest, so a
+// rebuild asks both again.
+//
+// **Only what the plugin declared.** An operator cannot allow a location the
+// artifact never asked for: that would be handing out access nobody requested,
+// and the request is the only reason there is anything to weigh.
+func newPluginAllowCommand(opts *globalOpts) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "allow [name] [location...]",
+		Short: "Let a plugin read a credential location it declares it needs",
+		Long: "Plugins run confined, and rta denies them a standard list of credential\n" +
+			"locations. A plugin that exists to use one declares which; this is where\n" +
+			"you decide.\n\n" +
+			"Separate from `rta plugin trust` on purpose: running an artifact and\n" +
+			"letting it read your credentials are different decisions. Both attach to\n" +
+			"the artifact's digest, so rebuilding a plugin asks again.\n\n" +
+			"With no argument, lists what every loaded plugin asks for and what it has.\n" +
+			"With a name and no locations, allows everything that plugin declares.",
+		Args: cobra.ArbitraryArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			format, err := cli.ParseFormat(opts.output)
+			if err != nil {
+				return err
+			}
+			render := func(v view.View) error {
+				return cli.Render(cmd.OutOrStdout(), v,
+					cli.Options{Format: format, NoColor: opts.noColor || !isTTY(), Width: termWidth()})
+			}
+			if len(args) == 0 {
+				return render(needsInventory())
+			}
+			c, verr := loadedByName(args[0])
+			if verr != nil {
+				return verr
+			}
+			declared := c.Declared.Needs
+			if len(declared) == 0 {
+				// Named by digest, because the declaration is the artifact's
+				// and not the plugin's. Somebody whose installed copy is
+				// older than the source they are reading gets this refusal,
+				// and the digest is the thread that leads them to why.
+				return view.Errorf("plugin.allow.none",
+					"%s@%s declares no credential location it needs",
+					args[0], c.Identity.Short()).
+					WithHint("nothing to allow — a plugin only reaches a denied location " +
+						"when its own declaration asks for one, and this is the " +
+						"declaration of the artifact rta loaded")
+			}
+			want, verr := chosenNeeds(args[0], args[1:], declared)
+			if verr != nil {
+				return verr
+			}
+			stored := make([]string, len(want))
+			for i, n := range want {
+				stored[i] = string(n)
+			}
+			if verr := plugintrust.Allow(c.Identity.Digest, stored); verr != nil {
+				return verr
+			}
+			pairs := []view.Pair{
+				{Key: "allowed", Value: c.Declared.Name},
+				{Key: "digest", Value: c.Identity.Digest},
+			}
+			for _, n := range want {
+				pairs = append(pairs, view.Pair{Key: "may read", Value: needLine(n)})
+			}
+			pairs = append(pairs, view.Pair{Key: "next",
+				Value: "it applies on your next `rta` command — the plugin is relaunched with " +
+					"that location left out of its sandbox"})
+			return render(view.KeyValue{Pairs: pairs})
+		},
+		ValidArgsFunction: func(_ *cobra.Command, args []string, _ string) ([]cobra.Completion, cobra.ShellCompDirective) {
+			// The plugins that ask for something first, then that plugin's own
+			// declared locations — never the whole closed set, because a
+			// location the artifact did not ask for is not allowable.
+			var out []cobra.Completion
+			if len(args) == 0 {
+				for _, c := range loadedPlugins {
+					if len(c.Declared.Needs) > 0 {
+						out = append(out, cobra.CompletionWithDesc(c.Declared.Name,
+							"asks for "+needNames(c.Declared.Needs)))
+					}
+				}
+				return out, cobra.ShellCompDirectiveNoFileComp
+			}
+			c, verr := loadedByName(args[0])
+			if verr != nil {
+				return nil, cobra.ShellCompDirectiveNoFileComp
+			}
+			for _, n := range c.Declared.Needs {
+				if !containsArg(args[1:], string(n)) {
+					out = append(out, cobra.CompletionWithDesc(string(n), pluginhost.Tier2Path(n)))
+				}
+			}
+			return out, cobra.ShellCompDirectiveNoFileComp
+		},
+	}
+	return cmd
+}
+
+// newPluginDisallowCommand withdraws it.
+//
+// Its own command rather than `allow` with no locations, because taking access
+// away has to be something somebody typed on purpose. `allow x` with an empty
+// list would be one keystroke away from `allow x`, and the two would mean
+// opposite things.
+func newPluginDisallowCommand(opts *globalOpts) *cobra.Command {
+	return &cobra.Command{
+		Use:   "disallow <name>",
+		Short: "Withdraw a plugin's access to the locations it was allowed",
+		Long: "The plugin keeps running — this takes back only what `rta plugin allow`\n" +
+			"gave it, so the next call that wanted the file fails and says so.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			format, err := cli.ParseFormat(opts.output)
+			if err != nil {
+				return err
+			}
+			c, verr := loadedByName(args[0])
+			if verr != nil {
+				return verr
+			}
+			had := plugintrust.Load().Allowed(c.Identity.Digest)
+			if len(had) == 0 {
+				return view.Errorf("plugin.disallow.none",
+					"%s is not allowed any credential location", args[0]).
+					WithHint("nothing to withdraw")
+			}
+			if verr := plugintrust.Allow(c.Identity.Digest, nil); verr != nil {
+				return verr
+			}
+			return cli.Render(cmd.OutOrStdout(), view.KeyValue{Pairs: []view.Pair{
+				{Key: "withdrawn", Value: c.Declared.Name},
+				{Key: "digest", Value: c.Identity.Digest},
+				{Key: "no longer reads", Value: strings.Join(had, ", ")},
+				{Key: "next", Value: "it applies on your next `rta` command"},
+			}}, cli.Options{Format: format, NoColor: opts.noColor || !isTTY(), Width: termWidth()})
+		},
+		ValidArgsFunction: func(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
+			var out []cobra.Completion
+			set := plugintrust.Load()
+			for _, c := range loadedPlugins {
+				if len(set.Allowed(c.Identity.Digest)) > 0 {
+					out = append(out, cobra.Completion(c.Declared.Name))
+				}
+			}
+			return out, cobra.ShellCompDirectiveNoFileComp
+		},
+	}
+}
+
+// needsInventory is every loaded plugin that asks for a credential location,
+// and what it has been given.
+//
+// Only the ones that ask. A table listing every installed plugin with an empty
+// column is a table nobody reads, and the column's arrival is itself the news:
+// a plugin appearing here is a plugin that wants something.
+func needsInventory() view.View {
+	set := plugintrust.Load()
+	t := view.Table{Columns: []view.Column{
+		{Name: "Plugin"}, {Name: "Asks for"}, {Name: "Status", Kind: view.KindStatus},
+		{Name: "To allow"},
+	}}
+	for _, c := range loadedPlugins {
+		if len(c.Declared.Needs) == 0 {
+			continue
+		}
+		allowed := set.Allowed(c.Identity.Digest)
+		status, action := "warn", "rta plugin allow "+c.Declared.Name
+		if len(allowed) == len(c.Declared.Needs) {
+			status, action = "ok", "—"
+		}
+		t.Rows = append(t.Rows, []string{
+			c.Declared.Name, needNames(c.Declared.Needs), status, action,
+		})
+	}
+	t.Total = len(t.Rows)
+	if t.Total == 0 {
+		return view.Text{Body: "No installed plugin asks for a credential location."}
+	}
+	return t
+}
+
+// loadedByName finds a loaded plugin, which is also the check that it is
+// trusted: an untrusted artifact is never launched, so it has no declaration
+// and nothing here could know what it asks for.
+func loadedByName(name string) (*pluginhost.Client, *view.Error) {
+	for _, c := range loadedPlugins {
+		if c.Declared.Name == name {
+			return c, nil
+		}
+	}
+	return nil, view.Errorf("plugin.allow.notloaded", "no loaded plugin called %q", name).
+		WithHint("`rta plugin list` shows what is loaded; an artifact that is not trusted " +
+			"is never run, so rta cannot know what it declares")
+}
+
+// chosenNeeds is what the operator asked for, refusing anything the plugin did
+// not declare.
+func chosenNeeds(name string, asked []string, declared []plugin.Need) ([]plugin.Need, *view.Error) {
+	if len(asked) == 0 {
+		return declared, nil
+	}
+	var out []plugin.Need
+	for _, a := range asked {
+		n := plugin.Need(a)
+		if !slices.Contains(declared, n) {
+			return nil, view.Errorf("plugin.allow.undeclared",
+				"%s does not ask for %q", name, a).
+				WithHint("it declares " + needNames(declared) + " — a location the artifact " +
+					"never asked for is access nobody requested")
+		}
+		if !slices.Contains(out, n) {
+			out = append(out, n)
+		}
+	}
+	return out, nil
+}
+
+// needLine is a need and the path it names, because "kubeconfig" is the label
+// and `~/.kube` is the thing being handed over.
+func needLine(n plugin.Need) string {
+	if p := pluginhost.Tier2Path(n); p != "" {
+		return string(n) + " (" + p + ")"
+	}
+	return string(n)
+}
+
+// ungranted is what a plugin asked for and has not been given.
+func ungranted(declared []plugin.Need, allowed []string) []plugin.Need {
+	var out []plugin.Need
+	for _, n := range declared {
+		if !slices.Contains(allowed, string(n)) {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+func needNames(ns []plugin.Need) string {
+	out := make([]string, len(ns))
+	for i, n := range ns {
+		out[i] = string(n)
+	}
+	return strings.Join(out, ", ")
+}
+
+func containsArg(args []string, want string) bool { return slices.Contains(args, want) }
 
 // newPluginTrustCommand implements `rta plugin trust`: the decision that lets
 // an artifact run at all.
@@ -292,9 +558,6 @@ func newPluginNewCommand() *cobra.Command {
 			if dir == "" {
 				dir = s.Binary
 			}
-			// Resolved before writing, so the replace directive names an
-			// absolute path that still works when the plugin is built from
-			// somewhere else.
 			if rtaSource == "" {
 				rtaSource = findRta()
 			}
@@ -303,7 +566,7 @@ func newPluginNewCommand() *cobra.Command {
 				if err != nil {
 					return view.Errorf("plugin.badsource", "resolving %q: %v", rtaSource, err)
 				}
-				s.RtaPath = abs
+				s.RtaPath = replacePath(abs, dir)
 			}
 			if err := s.write(dir); err != nil {
 				return err
@@ -415,6 +678,28 @@ func newPluginDevCommand(reg *registry.Registry, version string, opts *globalOpt
 						"a failure here is usually a panic in Plugin() or a declaration " +
 						"rta refuses — the message above says which")
 			}
+			// A declaration that asks for a credential location is honoured
+			// here, and here only, for the reason dev mode is already exempt
+			// from trust: compiling from a directory named in the command just
+			// typed is a stronger act of approval than a digest in a file.
+			//
+			// Twice on purpose. The declaration is what says which locations,
+			// and running the plugin is how a declaration is read — so the
+			// first launch is fully confined and answers the question, and the
+			// second is the one that can act on the answer. Only for a plugin
+			// that asks for something, so the ordinary inner loop is one
+			// launch as before. The report says what was allowed, because a
+			// relaxation nobody is told about is the kind that surprises
+			// somebody later.
+			if len(client.Declared.Needs) > 0 {
+				relaxed, err := host.OpenAllowing(cmd.Context(), binary, client.Declared.Needs)
+				if err != nil {
+					return view.Errorf("plugin.dev.load", "%v", err).
+						WithHint("the plugin declares a credential location it needs, and " +
+							"relaunching it with that location readable failed")
+				}
+				client = relaxed
+			}
 			if err := reg.RegisterFrom(client.Declared, client.Origin()); err != nil {
 				return view.Errorf("plugin.dev.register", "%v", err).
 					WithHint("the namespace this plugin declares is already taken by a " +
@@ -494,7 +779,15 @@ func devReport(reg *registry.Registry, c *pluginhost.Client) view.View {
 		{Key: "name", Value: p.Name},
 		{Key: "summary", Value: p.Summary},
 		{Key: "binary", Value: c.Identity.Path + " (" + c.Identity.Short() + ")"},
-		{Key: "confinement", Value: confinementLine()},
+		{Key: "confinement", Value: confinementLine(p.Needs...)},
+	}
+	// What this run allowed that an installed copy would not get for free.
+	// An author who never sees this line learns the difference the first time
+	// somebody installs their plugin and it stops working.
+	if len(p.Needs) > 0 {
+		pairs = append(pairs, view.Pair{Key: "credentials",
+			Value: needNames(p.Needs) + " — readable here because you compiled it. " +
+				"Installed, it needs `rta plugin allow " + p.Name + "`"})
 	}
 	if p.Version != "" {
 		pairs = append(pairs, view.Pair{Key: "version", Value: p.Version})
@@ -553,11 +846,18 @@ func agentReach(reg *registry.Registry, c plugin.Capability) string {
 	}
 }
 
-func confinementLine() string {
+// confinementLine describes the sandbox a plugin is actually running under.
+//
+// `allowed` is what this particular run released, so the count is this run's
+// and not the machine's. The two differ in dev mode, and a report that said
+// "10 denied read" directly above a line explaining that one of them is
+// readable would be contradicting itself on the same screen — the sort of
+// small dishonesty that teaches people to stop reading the number.
+func confinementLine(allowed ...plugin.Need) string {
 	if !pluginhost.Confined() {
 		return "none on this platform — see `rta doctor`"
 	}
-	d, err := pluginhost.Resolve()
+	d, err := pluginhost.ResolveAllowing(allowed)
 	if err != nil {
 		return "unavailable: " + err.Error()
 	}

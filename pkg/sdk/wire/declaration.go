@@ -287,6 +287,7 @@ func PluginToProto(p plugin.Plugin) *rtav1.Plugin {
 		Summary:      p.Summary,
 		Version:      p.Version,
 		Capabilities: mapSlice(p.Capabilities, CapabilityToProto),
+		Needs:        mapSlice(p.Needs, func(n plugin.Need) string { return string(n) }),
 	}
 }
 
@@ -309,5 +310,11 @@ func PluginFromProto(p *rtav1.Plugin) (plugin.Plugin, map[string][]string) {
 		Summary:      p.GetSummary(),
 		Version:      p.GetVersion(),
 		Capabilities: caps,
+		// Carried across verbatim, unknown members included. Registration is
+		// what refuses a need rta does not know, and it must refuse it rather
+		// than find it already silently dropped here — a plugin asking for
+		// something this build has never heard of is a fact the operator
+		// should be told, not one the codec should tidy away.
+		Needs: mapSlice(p.GetNeeds(), func(n string) plugin.Need { return plugin.Need(n) }),
 	}, unknown
 }

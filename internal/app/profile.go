@@ -100,8 +100,8 @@ func resolveProfile(ctx context.Context, cmd *cobra.Command, c plugin.Capability
 	}
 	// And the forward, if this connection names a cluster. Separate from Fill
 	// because their lifetimes are: what Fill produces is true for as long as
-	// the environment stands, and a forward is per call by decision
-	// §4). closeTunnel is never nil, so the caller defers it unconditionally.
+	// the environment stands, and a forward is per call, by decision.
+	// closeTunnel is never nil, so the caller defers it unconditionally.
 	dialled, closeTunnel, verr := profile.Dial(ctx, name, conn, c)
 	if verr != nil {
 		return "", nil, closeTunnel, verr
@@ -430,7 +430,7 @@ func newProfileCommand(reg *registry.Registry, opts *globalOpts) *cobra.Command 
 
 func profileTable(cfg config.Config, reg *registry.Registry) view.View {
 	problems := map[string]string{}
-	for _, p := range profile.Check(cfg, reg) {
+	for _, p := range profile.Check(cfg, withTrust{reg}) {
 		if _, already := problems[p.Name]; !already {
 			problems[p.Name] = p.Reason
 		}
@@ -517,8 +517,13 @@ func profileCard(name string, p config.Profile, reg *registry.Registry) view.Key
 		}
 		pairs = append(pairs, credentialPairs(name, key, conn, reg)...)
 	}
+	// withTrust rather than the bare registry, so this page distinguishes
+	// "not installed" from "installed and not approved" exactly as `rta use`
+	// does. The two are one command apart and the second is what a rebuild
+	// produces every time; `rta use` was taught the difference and the page
+	// beside it was not, which is this file's recorded failure mode.
 	for _, problem := range profile.Check(
-		config.Config{Profiles: map[string]config.Profile{name: p}}, reg) {
+		config.Config{Profiles: map[string]config.Profile{name: p}}, withTrust{reg}) {
 		pairs = append(pairs, view.Pair{Key: "problem", Value: problem.Reason + " — " + problem.Hint})
 	}
 	return view.KeyValue{Pairs: pairs}
@@ -574,6 +579,7 @@ func credentialPairs(name, key string, conn config.Connection, reg *registry.Reg
 	// which is the report-versus-reality drift this repo has recorded three
 	// times. The rule that decides is the one on the path that uses the value.
 	fillable := profileFillableInputs(config.PluginNamespace(key), reg)
+	known := registeredNamespace(config.PluginNamespace(key), reg)
 	for _, r := range conn.SecretRefs() {
 		switch {
 		case seen[r.Input]:
@@ -584,6 +590,12 @@ func credentialPairs(name, key string, conn config.Connection, reg *registry.Reg
 			// connection is, which is exactly what this page is for.
 			pairs = append(pairs, view.Pair{
 				Key: "  " + r.Input, Value: r.Scheme + ":" + r.Ref + " (from the connection)"})
+		case !known:
+			// Same guard as the coordinate row above: with nothing registered
+			// under this namespace there is no declaration to hold the
+			// mapping against, and the pin row already says why.
+			pairs = append(pairs, view.Pair{
+				Key: "  " + r.Input, Value: r.Scheme + ":" + r.Ref})
 		default:
 			pairs = append(pairs, view.Pair{
 				Key:   "  problem",
@@ -655,6 +667,11 @@ func tunnelledPairs(ns string, reg *registry.Registry) []view.Pair {
 				filled[f.Name] = f.Endpoint
 			}
 		}
+	}
+	if !registeredNamespace(ns, reg) {
+		// Nothing is said about a declaration nobody read; the card's pin row
+		// already names the real problem.
+		return nil
 	}
 	if len(filled) == 0 {
 		// A coordinate the plugin cannot be pointed at. Said plainly, because
@@ -733,4 +750,28 @@ func missingCredentials(name string, p config.Profile, reg *registry.Registry) [
 	}
 	sort.Strings(missing)
 	return missing
+}
+
+// registeredNamespace answers whether anything in ns was actually registered.
+//
+// The guard every declaration-dependent row on this card needs. An empty
+// answer from a lookup against a namespace nobody registered is not the plugin
+// saying no — it is nobody having asked it, and the two argue for opposite
+// conclusions. Printing the first for the second tells an operator their
+// configuration is wrong when what is wrong is that a rebuilt plugin has not
+// been approved yet, which is the ordinary state after `make plugins-install`
+// or any upgrade: trust is keyed on the digest, so new bytes register nothing
+// until somebody says so.
+//
+// Both spellings of that mistake shipped here — a `kube:` coordinate reported
+// as unusable, and a `secrets:` mapping reported as naming an input the plugin
+// does not offer — each under a hint offering to delete the line that was
+// right.
+func registeredNamespace(ns string, reg *registry.Registry) bool {
+	for _, c := range reg.Capabilities() {
+		if plugin.Namespace(c.ID) == ns {
+			return true
+		}
+	}
+	return false
 }

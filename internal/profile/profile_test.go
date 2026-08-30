@@ -737,6 +737,49 @@ func TestAProfileNamingAnUnapprovedPluginSaysSo(t *testing.T) {
 // own default host. Real data from the wrong server, under a badge naming
 // the cluster: found in the field, by an operator whose freshly-written
 // profile carried the page's "problem" row while every run sailed past it.
+// And the same rule must not fire when there was no declaration to read.
+//
+// "No capability in this namespace" has two causes that argue for opposite
+// conclusions: the plugin declares nothing a forward can fill, or nobody
+// registered the plugin. The second is the ordinary state after a rebuild —
+// trust is keyed on the digest, so new bytes register nothing until they are
+// approved — and reading it as the first produced a refusal asserting what an
+// unread declaration says, under a hint offering to delete the operator's
+// `kube:` line. The coordinate was right; the approval was missing.
+//
+// It still refuses. Only the reason changes, to the one the operator can act
+// on.
+func TestACoordinateIsNotJudgedAgainstADeclarationNobodyRead(t *testing.T) {
+	cfg := load(t, `
+profiles:
+  homelab:
+    plugins:
+      pg:
+        kube: homelab/databases/svc/postgres:5432
+`)
+	// A registry with no pg in it at all: installed, not approved, so nothing
+	// under that namespace registered.
+	empty := registry.New()
+
+	_, verr := Lookup(cfg, pgCap(), "homelab", empty)
+	if verr == nil {
+		t.Fatal("a profile naming an unregistered plugin resolved")
+	}
+	if verr.Code == "core.profile.untunnellable" {
+		t.Fatalf("an unread declaration was reported as one that says no: %s", verr.Message)
+	}
+
+	for _, pr := range Check(cfg, empty) {
+		if strings.Contains(pr.Reason, "no input a tunnel can fill") {
+			t.Fatalf("the report makes the same claim: %s — %s", pr.Reason, pr.Hint)
+		}
+	}
+	// And the report says something, rather than falling silent.
+	if len(Check(cfg, empty)) == 0 {
+		t.Fatal("an unregistered plugin was reported as no problem at all")
+	}
+}
+
 func TestACoordinateThePluginCannotBePointedAtIsRefused(t *testing.T) {
 	cfg := load(t, `
 profiles:

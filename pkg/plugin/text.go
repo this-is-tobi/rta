@@ -37,8 +37,8 @@ const (
 // clean at the point of use.
 //
 // A view is data from somewhere else — an HTTP body, a filename, a database
-// row — so the renderer neutralises control sequences in it on the way out
-// (§4.7.13). A declaration is the opposite: static text an author wrote, read
+// row — so the renderer neutralises control sequences in it on the way out.
+// A declaration is the opposite: static text an author wrote, read
 // once at registration, and then printed in places that are not renderers at
 // all. `Capability.Summary` goes straight into the TUI browse list and the
 // plugin pane, `Field.Help` into cobra's usage output, and both go verbatim

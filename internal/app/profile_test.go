@@ -68,3 +68,46 @@ func TestTheRedactionSurvivesEveryOutputFormat(t *testing.T) {
 		}
 	}
 }
+
+// A plugin nobody registered is not a plugin that says no.
+//
+// `rta profile show` builds most of its rows by asking the registry what the
+// namespace declares, and an empty answer has two causes arguing for opposite
+// conclusions: the plugin offers no such input, or nothing under that
+// namespace registered at all. The second is the ordinary state after any
+// rebuild — trust is keyed on the digest, so new bytes register nothing until
+// somebody approves them — and reading it as the first told an operator their
+// `kube:` coordinate was unusable and their `secrets:` mapping named an input
+// that does not exist, with a hint offering to delete each. Both lines were
+// right; the approval was missing.
+func TestTheCardDoesNotJudgeAPluginNobodyRegistered(t *testing.T) {
+	const cfg = `profiles:
+  staging:
+    plugins:
+      absent@0123456789ab:
+        kube: ctx/ns/svc/thing:5432
+        secrets:
+          password: kv:some-entry
+`
+	out, _, err := runWith(t, connRegistry(t), cfg, "profile", "show", "staging")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, claim := range []string{
+		"declares no input a tunnel can fill",
+		"names an input absent does not offer",
+	} {
+		if strings.Contains(out, claim) {
+			t.Errorf("the card asserted %q about a declaration it never read:\n%s", claim, out)
+		}
+	}
+	// It still says something, and what it says is the actionable thing.
+	if !strings.Contains(out, "problem") {
+		t.Errorf("an unregistered plugin was reported as no problem at all:\n%s", out)
+	}
+	// And the configured values still print, so the page remains a record of
+	// what the operator wrote.
+	if !strings.Contains(out, "kv:some-entry") {
+		t.Errorf("the secrets mapping vanished from the page:\n%s", out)
+	}
+}

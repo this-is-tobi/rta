@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 )
 
 // The injection the validator exists for. SBPL is last-match-wins, so a path
@@ -241,5 +243,139 @@ func TestTheNonConfinementHardeningIsPlatformIndependent(t *testing.T) {
 	}
 	if cmd.SysProcAttr == nil {
 		t.Error("no SysProcAttr, so the process group reaping does not apply")
+	}
+}
+
+// **Every need names a location, and every denied location has a need.**
+//
+// Both directions are the point. A need with no path is a grant that grants
+// nothing — the operator allows it, the plugin still cannot read the file, and
+// nothing anywhere says why. A denied location with no need is the shape that
+// broke plugins/kube and plugins/cnpg: ~/.kube was denied from this package's
+// first commit, no plugin could ever be allowed it, and both plugins were
+// unable to read a kubeconfig at all on macOS.
+func TestEveryNeedNamesADeniedLocationAndBack(t *testing.T) {
+	paths := tier2()
+	for _, n := range plugin.Needs() {
+		if paths[n] == "" {
+			t.Errorf("need %q names no location, so allowing it would grant nothing", n)
+		}
+	}
+	for n := range paths {
+		if !plugin.KnownNeed(n) {
+			t.Errorf("tier2 denies a location keyed by %q, which is not a need any plugin "+
+				"can declare — nothing could ever be allowed it", n)
+		}
+	}
+	if len(paths) != len(plugin.Needs()) {
+		t.Errorf("%d locations against %d needs; the two sets have drifted",
+			len(paths), len(plugin.Needs()))
+	}
+}
+
+// A grant subtracts one location and leaves the rest of the policy alone.
+func TestAGrantRemovesOnlyWhatItNames(t *testing.T) {
+	base, err := Resolve()
+	if err != nil {
+		t.Fatal(err)
+	}
+	kube := Tier2Path(plugin.NeedKubeconfig)
+	if !containsPath(base.NoRead, kube) {
+		t.Fatalf("the kubeconfig is not denied by default, so there is nothing to grant")
+	}
+	granted, err := ResolveAllowing([]plugin.Need{plugin.NeedKubeconfig})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if containsPath(granted.NoRead, kube) {
+		t.Error("the granted location is still denied")
+	}
+	if ssh := Tier2Path(plugin.NeedSSH); !containsPath(granted.NoRead, ssh) {
+		t.Error("granting the kubeconfig also released ~/.ssh")
+	}
+	if len(granted.NoAccess) != len(base.NoAccess) {
+		t.Errorf("a grant reached rta's own state: %d entries against %d",
+			len(granted.NoAccess), len(base.NoAccess))
+	}
+}
+
+// **A grant can only ever subtract.** There is no need naming anything in
+// tier1, so no combination of grants reaches rta's own directories — the
+// property that bounds the worst case of this whole mechanism.
+func TestNoGrantCanReachRtasOwnState(t *testing.T) {
+	everything, err := ResolveAllowing(plugin.Needs())
+	if err != nil {
+		t.Fatal(err)
+	}
+	base, err := Resolve()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(everything.NoRead) != 0 {
+		t.Errorf("allowing every need left %d locations denied", len(everything.NoRead))
+	}
+	for _, p := range base.NoAccess {
+		if !containsPath(everything.NoAccess, p) {
+			t.Errorf("allowing every need released %s, which is rta's own state", p)
+		}
+	}
+}
+
+// A stored grant this build does not recognise is dropped rather than obeyed.
+// The store outlives the binary that wrote it, and denying is the safe way to
+// be wrong: the plugin fails at the call that wanted the file and the operator
+// is told what to grant.
+func TestAnUnknownStoredGrantIsDropped(t *testing.T) {
+	got := asNeeds([]string{"kubeconfig", "something-a-later-rta-invented"})
+	if len(got) != 1 || got[0] != plugin.NeedKubeconfig {
+		t.Errorf("asNeeds = %v, want only the known member", got)
+	}
+}
+
+// **The deny set is byte-identical across calls, and the process cache
+// depends on it.**
+//
+// specHash writes NoRead in slice order and the result is the cache key a
+// running plugin is matched against. A set whose order moves between two
+// calls hashes differently, the cache misses, and every call spawns a fresh
+// plugin process — a launch every few seconds per plugin on a dashboard that
+// refreshes on a timer.
+//
+// Not hypothetical. Keying tier2 by need turned it into a map, Go randomises
+// map iteration, and this broke immediately: two Opens on the same binary
+// produced two clients. TestTheSameBinaryIsNotLaunchedTwice caught it, which
+// is the test that should — but it says "two clients", not "the deny set is
+// unstable", so the reason lives here.
+func TestTheDenySetIsStableAcrossCalls(t *testing.T) {
+	first, err := Resolve()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 8; i++ {
+		again, err := Resolve()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if specHash(first) != specHash(again) {
+			t.Fatalf("call %d hashed differently:\n%v\n%v", i, first.NoRead, again.NoRead)
+		}
+	}
+	// And with a grant, which is the path that iterates the keyed set.
+	granted, err := ResolveAllowing([]plugin.Need{plugin.NeedKubeconfig})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 8; i++ {
+		again, err := ResolveAllowing([]plugin.Need{plugin.NeedKubeconfig})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if specHash(granted) != specHash(again) {
+			t.Fatalf("granted call %d hashed differently:\n%v\n%v", i, granted.NoRead, again.NoRead)
+		}
+	}
+	if specHash(first) == specHash(granted) {
+		t.Error("a grant did not change the spec hash, so a granted plugin would " +
+			"reuse the process of an ungranted one")
 	}
 }

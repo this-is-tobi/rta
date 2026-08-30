@@ -18,9 +18,17 @@ import (
 // connFields, so a config editor over the plugin has to dedup rather than
 // ask "host" once per capability.
 func dbPlugin() plugin.Plugin {
+	// The endpoint roles are what make this a plugin a profile's forward can
+	// fill, and they were missing. Every real database plugin declares the
+	// pair — plugins/pg, mysql and mariadb all do — and without them this
+	// fixture could not tell a plugin a coordinate means something for from
+	// one it does not, so no test here modelled the difference and the
+	// connection editor offered the coordinate box to both.
 	shared := []plugin.Field{
-		{Name: "host", Type: plugin.String, Default: "localhost", Config: "host"},
-		{Name: "port", Type: plugin.Int, Default: 5432, Config: "port"},
+		{Name: "host", Type: plugin.String, Default: "localhost", Config: "host",
+			Local: true, Endpoint: plugin.EndpointHost},
+		{Name: "port", Type: plugin.Int, Default: 5432, Config: "port",
+			Local: true, Endpoint: plugin.EndpointPort},
 	}
 	run := func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "ok"}, nil }
 	return plugin.Plugin{
@@ -30,6 +38,27 @@ func dbPlugin() plugin.Plugin {
 			{ID: "db.list", Summary: "list", Safety: plugin.Read,
 				Inputs: append(append([]plugin.Field{}, shared...),
 					plugin.Field{Name: "schema", Type: plugin.String, Config: "schema"}), Run: run},
+		},
+	}
+}
+
+// otherDBPlugin is a second plugin a forward can fill, so a rebuild between
+// two of them can be told apart from a rebuild onto one that takes no
+// coordinate at all.
+//
+// Addressed as one string rather than as a host and a port — the shape
+// plugins/etcd and plugins/qdrant use — so it shares no config key with
+// dbPlugin and a key dropped by the rebuild is visible as a key dropped.
+func otherDBPlugin() plugin.Plugin {
+	run := func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "ok"}, nil }
+	return plugin.Plugin{
+		Name: "db2", Summary: "another database plugin",
+		Capabilities: []plugin.Capability{
+			{ID: "db2.status", Summary: "status", Safety: plugin.Read, Run: run,
+				Inputs: []plugin.Field{
+					{Name: "addr", Type: plugin.String, Config: "addr", Local: true,
+						Endpoint: plugin.EndpointAddress, Help: "host[:port]"},
+				}},
 		},
 	}
 }

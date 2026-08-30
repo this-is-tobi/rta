@@ -2,6 +2,7 @@ package tui
 
 import (
 	"charm.land/lipgloss/v2"
+	"slices"
 
 	"fmt"
 	"strings"
@@ -67,6 +68,17 @@ type pluginRow struct {
 	// process has not, so the row must say something neither "trusted" nor
 	// "waiting" covers. Empty until somebody presses the key.
 	decided string
+	// ungranted is what this plugin declares it needs to read and has not
+	// been allowed.
+	//
+	// **A loaded plugin that cannot do anything looks exactly like one that
+	// works until it is called.** A plugin whose every call needs a kubeconfig
+	// fails with whatever its own tool says about a file it cannot open, which
+	// reads as a broken install rather than as a decision nobody has made. The
+	// pane whose job is "which plugins do I actually have" is the pane that
+	// should say so — the same argument `waiting` above is written for, one
+	// permission further along.
+	ungranted []plugin.Need
 }
 
 // The two decisions a row can carry from this session.
@@ -74,6 +86,15 @@ const (
 	decidedTrust   = "trusted"
 	decidedUntrust = "untrusted"
 )
+
+// needList names the locations a row is short of, in the plugin's own words.
+func needList(ns []plugin.Need) string {
+	out := make([]string, len(ns))
+	for i, n := range ns {
+		out[i] = string(n)
+	}
+	return strings.Join(out, ", ")
+}
 
 // canTile reports whether this plugin could be on the dashboard at all.
 func (r pluginRow) canTile() bool { return r.tile != "" }
@@ -126,10 +147,18 @@ func pluginRows(reg *registry.Registry, dash config.Dashboard, untrusted []plugi
 	for _, id := range dash.Hidden {
 		hidden[id] = true
 	}
+	// Read once for the pane rather than per row per frame: this is a file,
+	// and the plugin list is redrawn on every keystroke.
+	allowed := plugintrust.Load()
 	rows := make([]pluginRow, 0, len(reg.Plugins())+len(untrusted))
 	for _, p := range reg.Plugins() {
 		origin, _ := reg.Origin(p.Name)
 		row := pluginRow{plugin: p, origin: origin}
+		for _, n := range p.Needs {
+			if !slices.Contains(allowed.Allowed(origin.Digest), string(n)) {
+				row.ungranted = append(row.ungranted, n)
+			}
+		}
 		if t, ok := pluginTile(reg, p); ok {
 			row.tile = t.cap.ID
 			row.shown = !hidden[t.cap.ID]
@@ -353,6 +382,10 @@ func (m Model) pluginsView() string {
 
 		indent := strings.Repeat(" ", pluginTextAt)
 		summary := theme.Subtle.Render(row.plugin.Summary)
+		if len(row.ungranted) > 0 {
+			summary = theme.WarnText.Render("needs " + needList(row.ungranted) +
+				" and has not been allowed — `rta plugin allow " + row.plugin.Name + "`")
+		}
 		if row.waiting {
 			summary = theme.WarnText.Render("installed and not run — nothing has trusted this artifact")
 		}

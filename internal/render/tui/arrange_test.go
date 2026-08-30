@@ -14,6 +14,7 @@ import (
 	"github.com/this-is-tobi/rule-them-all/builtin/all"
 	"github.com/this-is-tobi/rule-them-all/internal/config"
 	"github.com/this-is-tobi/rule-them-all/internal/pluginhost"
+	"github.com/this-is-tobi/rule-them-all/internal/plugintrust"
 	"github.com/this-is-tobi/rule-them-all/internal/registry"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
@@ -1282,6 +1283,61 @@ func TestThePluginPaneDistinguishesBuiltInFromExternal(t *testing.T) {
 
 	if out := m.pluginsView(); !strings.Contains(out, "built in") {
 		t.Error("the rendered pane never says a plugin is built in")
+	}
+}
+
+// **A loaded plugin that cannot do anything looks exactly like one that
+// works**, right up until somebody calls it and reads a message from a tool
+// they did not run about a file they did not name.
+//
+// A plugin declaring a credential location it has not been allowed says so on
+// the line the pane already gives it, with the command beside it. The same
+// argument the untrusted row is written for, one permission further along:
+// a gate's failure mode is silence.
+func TestThePluginPaneNamesACredentialItHasNotBeenAllowed(t *testing.T) {
+	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	run := func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "x"}, nil }
+	reg := registry.New()
+	origin := registry.Origin{Path: "/somewhere/rta-plugin-clusters", Digest: strings.Repeat("cd", 32)}
+	if err := reg.RegisterFrom(plugin.Plugin{
+		Name: "clusters", Summary: "reads a cluster through kubectl",
+		Needs: []plugin.Need{plugin.NeedKubeconfig},
+		Capabilities: []plugin.Capability{
+			{ID: "clusters.list", Summary: "list", Safety: plugin.Read, Idempotent: true, Run: run},
+		},
+	}, origin); err != nil {
+		t.Fatal(err)
+	}
+
+	m := New(reg, config.Dashboard{}, nil)
+	m.plugins = pluginRows(reg, m.dash, nil)
+	m.width, m.height = 200, 60
+
+	out := plain(m.pluginsView())
+	if !strings.Contains(out, "kubeconfig") {
+		t.Errorf("the pane never names what the plugin is short of:\n%s", out)
+	}
+	if !strings.Contains(out, "rta plugin allow clusters") {
+		t.Errorf("the pane names the problem and not the fix:\n%s", out)
+	}
+
+	// Allowed, and the line goes back to being the plugin's own summary —
+	// a warning that stays after the decision is a warning people stop
+	// reading.
+	if verr := plugintrust.Add(origin.Digest, "clusters", origin.Path); verr != nil {
+		t.Fatal(verr)
+	}
+	if verr := plugintrust.Allow(origin.Digest, []string{"kubeconfig"}); verr != nil {
+		t.Fatal(verr)
+	}
+	m.plugins = pluginRows(reg, m.dash, nil)
+	out = plain(m.pluginsView())
+	if strings.Contains(out, "rta plugin allow clusters") {
+		t.Errorf("the pane still asks for a decision that was made:\n%s", out)
+	}
+	if !strings.Contains(out, "reads a cluster through kubectl") {
+		t.Errorf("the summary did not come back:\n%s", out)
 	}
 }
 

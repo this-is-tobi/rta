@@ -1,11 +1,13 @@
 package app
 
 import (
+	"bytes"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/goccy/go-yaml"
 	"github.com/spf13/cobra"
 
 	"github.com/this-is-tobi/rule-them-all/internal/config"
@@ -245,13 +247,24 @@ func runProfileSet(cmd *cobra.Command, name string, reg *registry.Registry) (vie
 		receipts []view.Pair
 		verr     *view.Error
 		existed  bool
+		// unchanged is a run that asked for a state the profile is already
+		// in: not a refusal, and not a write either.
+		unchanged bool
 	)
 	if err := config.Mutate(func(cfg config.Config) (config.Config, bool) {
 		if cfg.Profiles == nil {
 			cfg.Profiles = map[string]config.Profile{}
 		}
-		_, existed = cfg.Profiles[name]
-		p := cfg.Profiles[name]
+		current, wasThere := cfg.Profiles[name]
+		existed = wasThere
+		// Snapshotted as bytes rather than kept as a value. Profile.Plugins is
+		// a map, so a copy of the struct shares it with the copy about to be
+		// mutated, and any struct comparison between the two is equal by
+		// construction — which reads as "nothing changed" for every edit. It
+		// is also the honest question: what is being asked is whether the file
+		// would differ, and this is the file.
+		before, beforeErr := yaml.Marshal(current)
+		p := current
 
 		if cmd.Flags().Changed("note") {
 			note, _ := cmd.Flags().GetString("note")
@@ -284,6 +297,18 @@ func runProfileSet(cmd *cobra.Command, name string, reg *registry.Registry) (vie
 				WithHint("add `--plugin <name>` and what it should connect to")
 			return cfg, false
 		}
+		// A run asking for a state the profile is already in writes nothing
+		// and says so. `--direct` on a plugin that never had a coordinate is
+		// the case that matters: it is what somebody types after being told a
+		// stray forward is their problem, and "updated me" over a
+		// byte-identical file tells them they fixed something that was never
+		// wrong. `rta policy` already answers "already off" rather than
+		// reporting a write it did not need to make.
+		after, afterErr := yaml.Marshal(p)
+		if existed && beforeErr == nil && afterErr == nil && bytes.Equal(before, after) {
+			unchanged = true
+			return cfg, false
+		}
 		cfg.Profiles[name] = p
 		return cfg, true
 	}); err != nil {
@@ -311,7 +336,16 @@ func runProfileSet(cmd *cobra.Command, name string, reg *registry.Registry) (vie
 	if key != "" {
 		what += " — " + key
 	}
-	head := append([]view.Pair{{Key: "wrote", Value: what + " in " + config.Path()}}, receipts...)
+	head := []view.Pair{{Key: "wrote", Value: what + " in " + config.Path()}}
+	if unchanged {
+		already := name + " already reads this way"
+		if key != "" {
+			already = key + " in " + name + " already reads this way"
+		}
+		head = []view.Pair{{Key: "unchanged",
+			Value: already + " — nothing written to " + config.Path()}}
+	}
+	head = append(head, receipts...)
 	card.Pairs = append(head, card.Pairs...)
 	return card, nil
 }
@@ -353,9 +387,29 @@ func applyConnectionFlags(cmd *cobra.Command, name string, p *config.Profile,
 	if p.Plugins == nil {
 		p.Plugins = map[string]config.Connection{}
 	}
+	ns := config.PluginNamespace(key)
 	// Whatever is already there, so a run that states one block leaves the
 	// others exactly as they were.
 	conn := p.Plugins[key]
+	// **Re-pinned rather than added.** A profile configures a namespace once —
+	// For() returns the first entry it finds and every reader downstream
+	// assumes there is one — so a second key for the same namespace is not a
+	// second configuration. It is the operator's blocks stranded on the old
+	// pin while the new key resolves to nothing.
+	//
+	// It is also the ordinary consequence of the command somebody runs after
+	// rebuilding a plugin, and rebuilding is routine here: trust is keyed on
+	// the artifact digest, so every rebuild leaves every pin in every profile
+	// stale at once, and `--plugin pg` is what pointing the profile at the new
+	// artifact looks like. Adding a second entry made that command produce a
+	// profile with the configuration on the dead half and nothing on the live
+	// one, reported as neither.
+	var repinnedFrom string
+	if _, here := p.Plugins[key]; !here {
+		if prevKey, prev, found := p.For(ns); found && prevKey != key {
+			conn, repinnedFrom = prev, prevKey
+		}
+	}
 
 	if direct, _ := cmd.Flags().GetBool("direct"); direct {
 		conn.Kube, conn.SSH = "", ""
@@ -367,7 +421,6 @@ func applyConnectionFlags(cmd *cobra.Command, name string, p *config.Profile,
 		conn.SSH, conn.Kube = strings.TrimSpace(mustString(cmd, "ssh")), ""
 	}
 
-	ns := config.PluginNamespace(key)
 	// What a restated block leaves behind. Stating the whole block is what
 	// makes the command idempotent, and it is also how somebody changing a
 	// host loses the `sslmode: require` line sitting beside it — a security
@@ -435,7 +488,15 @@ func applyConnectionFlags(cmd *cobra.Command, name string, p *config.Profile,
 		return "", nil, view.Errorf("core.profile.unusable", "%s", problems[0].Reason).
 			WithHint(problems[0].Hint)
 	}
+	if repinnedFrom != "" {
+		delete(p.Plugins, repinnedFrom)
+	}
 	p.Plugins[key] = conn
+	if repinnedFrom != "" {
+		receipts = append(receipts, view.Pair{Key: "re-pinned",
+			Value: repinnedFrom + " → " + key +
+				" — the artifact changed, and this profile's blocks moved with it"})
+	}
 	// Two different losses, so two different sentences. A key the forward
 	// makes dead and a key a restatement left out are both the operator's
 	// line going away, and telling them apart is the difference between "that

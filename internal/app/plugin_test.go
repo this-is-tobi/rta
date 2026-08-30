@@ -429,3 +429,119 @@ func TestDevReportNamesTheDashboardTile(t *testing.T) {
 		t.Errorf("dashboard tile line names something else: %q", strings.TrimSpace(line))
 	}
 }
+
+// A plugin scaffolded inside the rta tree moves with the tree, so the replace
+// has to be relative. Four plugins in this repository shipped an absolute one
+// and built on exactly one machine — the laptop that scaffolded them — while
+// every other clone and every CI runner got `replacement directory does not
+// exist`. Locally there is nothing to see, because locally the path resolves.
+func TestAPluginInsideTheTreeGetsARelativeReplace(t *testing.T) {
+	rta := t.TempDir()
+	inside := filepath.Join(rta, "plugins", "weather")
+	if got, want := replacePath(rta, inside), "../.."; got != want {
+		t.Errorf("replace points at %q, want %q — an absolute path here builds on one machine", got, want)
+	}
+	// One level down and several levels down are both relative, and by
+	// different amounts: the depth is what a hard-coded "../.." would get
+	// wrong.
+	if got, want := replacePath(rta, filepath.Join(rta, "weather")), ".."; got != want {
+		t.Errorf("replace points at %q, want %q", got, want)
+	}
+}
+
+// Outside the tree the original rule stands: the two directories are
+// independent and only an absolute path survives either one moving.
+func TestAPluginOutsideTheTreeKeepsAnAbsoluteReplace(t *testing.T) {
+	rta := t.TempDir()
+	elsewhere := t.TempDir()
+	if got := replacePath(rta, elsewhere); got != rta {
+		t.Errorf("replace points at %q, want the absolute %q", got, rta)
+	}
+}
+
+// The containment test is what decides between the two, and a prefix
+// comparison is the wrong tool for it: "/rta-other" starts with "/rta" and is
+// not inside it. Getting this backwards would emit "../.." for a plugin that
+// is nowhere near the tree — a build failure, not a portability nicety.
+func TestWithinIsNotAPrefixComparison(t *testing.T) {
+	for _, c := range []struct {
+		dir, path string
+		want      bool
+	}{
+		{"/rta", "/rta/plugins/pg", true},
+		{"/rta", "/rta", true},
+		{"/rta", "/rta-other/plugins/pg", false},
+		{"/rta", "/elsewhere", false},
+		{"/rta/plugins", "/rta", false},
+	} {
+		if got := within(c.dir, c.path); got != c.want {
+			t.Errorf("within(%q, %q) = %v, want %v", c.dir, c.path, got, c.want)
+		}
+	}
+}
+
+// **A plugin author has to be able to exercise their own declaration**, and
+// almost could not: `rta plugin dev` rebuilds the plugin on every run, so the
+// temporary binary's digest is new each time and `rta plugin allow` — which
+// names an artifact — could never reach it. The mechanism would have been
+// usable by everybody except the people writing for it.
+//
+// Dev mode honours the declaration for the reason it is already exempt from
+// trust: compiling from a directory named in the command just typed is a
+// stronger act of approval than a digest in a file. The report says so,
+// because the difference between "works here" and "works installed" is
+// exactly what an author needs told before somebody else installs it.
+func TestTheDevReportSaysWhatItAllowedAndWhatInstallingWillNot(t *testing.T) {
+	p := plugin.Plugin{
+		Name: "clusters", Summary: "reads a cluster through kubectl",
+		Needs: []plugin.Need{plugin.NeedKubeconfig},
+		Capabilities: []plugin.Capability{
+			{ID: "clusters.list", Summary: "list", Safety: plugin.Read,
+				Run: func(context.Context, plugin.Request) (view.View, error) {
+					return view.Text{Body: "ok"}, nil
+				}},
+		},
+	}
+	reg := registry.New()
+	if err := reg.RegisterFrom(p, registry.Origin{
+		Path: "/tmp/rta-plugin-clusters", Digest: "sha256:clusters"}); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := cli.Render(&buf, devReport(reg, &pluginhost.Client{Declared: p}),
+		cli.Options{Format: cli.Pretty, NoColor: true, Width: 120}); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "kubeconfig") {
+		t.Errorf("the report does not name what it allowed:\n%s", out)
+	}
+	if !strings.Contains(out, "rta plugin allow clusters") {
+		t.Errorf("the report does not say what installing it will need:\n%s", out)
+	}
+
+	// And a plugin that asks for nothing gets no such line — a report that
+	// mentions credentials for every plugin is one where the mention means
+	// nothing.
+	plain := plugin.Plugin{
+		Name: "quiet", Summary: "asks for nothing",
+		Capabilities: []plugin.Capability{
+			{ID: "quiet.get", Summary: "get", Safety: plugin.Read,
+				Run: func(context.Context, plugin.Request) (view.View, error) {
+					return view.Text{Body: "ok"}, nil
+				}},
+		},
+	}
+	reg2 := registry.New()
+	if err := reg2.Register(plain); err != nil {
+		t.Fatal(err)
+	}
+	buf.Reset()
+	if err := cli.Render(&buf, devReport(reg2, &pluginhost.Client{Declared: plain}),
+		cli.Options{Format: cli.Pretty, NoColor: true, Width: 120}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(buf.String(), "credentials") {
+		t.Errorf("a plugin that asks for nothing has a credentials line:\n%s", buf.String())
+	}
+}

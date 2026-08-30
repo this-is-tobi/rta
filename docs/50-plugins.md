@@ -6,7 +6,7 @@ A plugin is a program that returns a declaration and serves it over gRPC. rta la
 rta plugin list
 ```
 
-Ten plugins ship in this repository. They are the proof the contract works, and each is a separate binary you install only if you want it — none of them is linked into `rta` itself, so the ones you skip cost you nothing.
+Eleven plugins ship in this repository. They are the proof the contract works, and each is a separate binary you install only if you want it — none of them is linked into `rta` itself, so the ones you skip cost you nothing.
 
 | Plugin | Service |
 | --- | --- |
@@ -23,6 +23,18 @@ Ten plugins ship in this repository. They are the proof the contract works, and 
 | `eol` | end-of-life checks against endoflife.date |
 
 Every one of them draws the same line in the same place: the read tier describes the thing, and anything that returns a value somebody stored is a write. `mysql.schema` tells you a database's shape and `mysql.query` returns its rows; `etcd.kv.list` gives you key names and `etcd.kv.get` gives you what a key holds. That is what makes read worth granting.
+
+## Building the ones that ship here
+
+Each is a separate module, so `go install` from the repository root does not build any of them. The Makefile does:
+
+```bash
+make plugins-install              # every one, into the same directory as rta
+make plugins-install PLUGIN=pg    # just that one
+make plugins-list                 # what is available to build
+```
+
+That puts `rta-plugin-<name>` beside your `rta`, which is the whole of the installation. It approves nothing — which is the next section.
 
 ## Trust
 
@@ -67,6 +79,39 @@ plugin confinement   ok   sandbox-exec: 2 paths denied read+write (rta's own sta
 
 Read that row rather than assuming it. It states what is denied on *this* machine, and it is honest about platforms where confinement is weaker.
 
+### When a plugin needs one of those locations
+
+Some plugins exist to use a credential location. `kube` and `cnpg` shell out to `kubectl`, and `kubectl` cannot reach any cluster without `~/.kube/config` — so for them the denial is not caution, it is the plugin being unable to do the one thing it is for.
+
+Such a plugin **declares** what it needs. Declaring is asking, never getting:
+
+```bash
+rta plugin allow                  # what each plugin asks for, and what it has
+rta plugin allow cnpg             # allow everything it declares
+rta plugin allow cnpg kubeconfig  # or just that one
+rta plugin disallow cnpg          # take it back
+```
+
+This is deliberately a second decision, separate from `rta plugin trust`. Letting an artifact run and letting it read your cluster credentials are different questions, and an answer to the first must not stand in for the second. Both attach to the artifact's digest, so **rebuilding a plugin asks again** — for the credential grant exactly as for trust, and for the same reason.
+
+You can only allow what the artifact asked for. A location a plugin never declared is access nobody requested, so there is no way to hand it over.
+
+A plugin whose need is not granted still runs. It fails at the call that wanted the file, which is the honest outcome — and `rta doctor` names it as a decision rather than leaving you to read someone else's "operation not permitted":
+
+```
+plugin cnpg   warn   ~/.local/bin/rta-plugin-cnpg (2 capabilities, e1a4fcaacd73)
+                     — asks to read kubeconfig and has not been allowed to;
+                     calls that need it fail. `rta plugin allow cnpg`
+```
+
+It names the granted side too, because a standing permission is the thing worth being able to point at:
+
+```
+plugin cnpg   ok   ~/.local/bin/rta-plugin-cnpg (2 capabilities, 24757826bbf5)
+                   — allowed to read kubeconfig;
+                   `rta plugin disallow cnpg` takes it back
+```
+
 ## Indexes
 
 An index is a git repository of `plugins/<name>.yaml` manifests — claims about plugins, searchable without downloading anything.
@@ -79,11 +124,24 @@ rta plugin index update
 
 **There is no default index.** The first one you attach is your decision, not one rta made for you. rta shells out to your `git`, so your remotes, proxies and credentials keep working.
 
+An index is a directory of manifests and nothing else:
+
+```
+my-index/
+└── plugins/
+    ├── pg.yaml
+    └── kube.yaml
+```
+
+Each manifest is generated from the plugin binary rather than written: `rta plugin manifest` reads the artifact's own declaration, so an entry cannot disagree with the plugin it describes. [Publishing a plugin](./writing-a-plugin.md#publishing-it) is the whole path — and an index of your own is a repository with that one directory in it, attached by the same command as anybody else's.
+
 ```bash
 rta plugin search postgres
 ```
 
 Search answers from the manifests alone — nothing is fetched and nothing is executed. Every row is a **claim**, labelled with the index making it.
+
+The safety column says what a plugin can do *and* what it asks to read, because both decide whether you want it. A row reading `all read · none needs a grant · asks for kubeconfig` is a plugin that changes nothing and wants your cluster credentials, and the first half alone would be true and misleading.
 
 ## Installing
 
@@ -93,7 +151,9 @@ rta plugin upgrade pg
 rta plugin remove pg
 ```
 
-Install is where claims meet evidence. rta fetches the artifact, hashes it, launches it in the same sandbox any load uses, and **refuses if what it declares is not what the index said** — naming the index that made the claim.
+Install is where claims meet evidence. rta fetches the artifact, hashes it, launches it in the same sandbox any load uses, and **refuses if what it declares is not what the index said** — naming the index that made the claim. Capability by capability, safety class and grant flag, and every credential location the plugin asks for: an index cannot quietly leave out that a plugin wants your kubeconfig.
+
+The install report names what it asks for, at the one moment you have the digest in front of you. Installing does not grant it — `rta plugin allow` is still a separate decision, and this is what makes it an informed one.
 
 Only then does it land: the managed store, the trust entry, and `rta.lock`, which records what rta *computed* rather than what anybody claimed.
 
