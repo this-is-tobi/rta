@@ -304,6 +304,11 @@ func TestHostSpecificCoversExactlyTheKnownHostDescribingCapabilities(t *testing.
 		"keys.list": true,
 		"net.info":  true, "net.hosts.list": true, "net.hosts.add": true, "net.hosts.toggle": true,
 		"net.hosts.rm": true, "net.resolver.list": true, "net.resolver.set": true,
+		// Not sys/fs/git/net, but the same shape: a caller-supplied path
+		// defaulting to "." (audit.deps, audit.why — exactly fs.tree's
+		// pattern) or a report of the server's own local store, never the
+		// caller's (kv.status).
+		"audit.deps": true, "audit.why": true, "kv.status": true,
 	}
 	reg, err := all.Registry(nil)
 	if err != nil {

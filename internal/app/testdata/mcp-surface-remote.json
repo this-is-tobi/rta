@@ -152,43 +152,6 @@
     }
   },
   {
-    "name": "audit_deps",
-    "description": "── the text below is written by the plugin, not by rta ──\nCheck declared dependencies against the OSV vulnerability database\n\nReads what a project already declares — go.mod, any of the four JavaScript lockfiles (npm, pnpm, yarn, bun), uv.lock, poetry.lock, Pipfile.lock, requirements.txt, Cargo.lock, composer.lock, Gemfile.lock, or a CycloneDX/SPDX SBOM sitting beside them — and asks osv.dev once about every pinned dependency, reporting which are named in an advisory. Nothing is resolved, built or crawled: a lockfile is a list a package manager already committed, and reading it is not scanning. Each advisory it finds is then read for its severity and the versions that fix it — a second question asked only about findings, so a project with nothing wrong asks nothing extra — and the records every database publishes for one vulnerability are collapsed onto it, since a package can otherwise be counted twice under a GHSA and a GO identifier for the same CVE. It still points at osv-scanner, trivy or grype for the depth this does not have: whether your code reaches the vulnerable function at all, which no advisory can say. Components whose ecosystem OSV does not recognise are counted and named rather than dropped. --offline inventories without asking anything. --recursive walks a monorepo, skipping node_modules, vendor and build output, which is what a polyglot repository needs: one lockfile per service and no single file that knows about the others. From a terminal --path also takes a repository URL, read shallowly in memory and never written to disk, which is how you audit a repository you have not checked out — refused over MCP, since a URL a caller composes is a request rta makes on its behalf. Cites A03:2025 Software Supply Chain Failures and CWE-1395.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
-    "read_only_hint": true,
-    "idempotent_hint": true,
-    "input_schema": {
-      "additionalProperties": false,
-      "properties": {
-        "detail": {
-          "default": false,
-          "description": "return the full detailed view instead of the compact summary",
-          "type": "boolean"
-        },
-        "offline": {
-          "description": "inventory the dependencies without querying osv.dev",
-          "type": "boolean"
-        },
-        "path": {
-          "default": ".",
-          "description": "directory holding the lockfile or SBOM, or the file itself — or, from a terminal, a repository URL (https://, ssh://, git@host:path) read in memory; not over MCP (a path on the machine running rta)",
-          "type": "string"
-        },
-        "recursive": {
-          "description": "walk subdirectories too, for a monorepo with a manifest per package",
-          "type": "boolean"
-        },
-        "timeout": {
-          "default": 30,
-          "description": "query timeout in seconds",
-          "maximum": 300,
-          "minimum": 1,
-          "type": "integer"
-        }
-      },
-      "type": "object"
-    }
-  },
-  {
     "name": "audit_mail",
     "description": "── the text below is written by the plugin, not by rta ──\nAudit a domain's email authentication: SPF, DKIM, DMARC, MTA-STS\n\nAnswers \"can somebody send mail as this domain\" from the records the domain publishes: SPF (present, singular, how it ends, and how close it is to RFC 7208's ten-lookup limit past which it silently stops applying), DMARC (policy, rollout percentage, whether anything reports back), DKIM for a given selector, MTA-STS and TLS-RPT for the server-to-server hop, and MX — including RFC 7505's null MX, which is a hardening measure rather than an omission. Every finding cites an OWASP Top 10:2025 category and a MITRE CWE. With --detail: one section per area plus the cited references with lookup URLs. Read-only, a handful of lookups of names derived from the domain by rule — nothing is enumerated, which is why DKIM needs its selector handed to it.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
@@ -250,34 +213,6 @@
       },
       "required": [
         "host"
-      ],
-      "type": "object"
-    }
-  },
-  {
-    "name": "audit_why",
-    "description": "── the text below is written by the plugin, not by rta ──\nTrace one dependency back to what pulled it in\n\nAnswers the question an advisory raises second: did we ask for this, or did something else pull it in — and if something else, what. Reads the same manifests `audit deps` does and draws the package at the root with everything that requires it beneath, up to the dependencies the project asks for by name. Nothing is resolved, installed or fetched. Formats differ in what they record: go.mod marks a require direct or indirect and stores no edges, while the four JavaScript lockfiles, Cargo, uv, Poetry, composer, Gemfile.lock, pip-compile's `# via` annotations and a CycloneDX SBOM all carry the graph. Where the file does not say, this says so and hands over the package manager's own command — `go mod why`, `pnpm why`, `cargo tree --invert` — with the package already in it.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
-    "read_only_hint": true,
-    "idempotent_hint": true,
-    "input_schema": {
-      "additionalProperties": false,
-      "properties": {
-        "package": {
-          "description": "the package to trace, as the lockfile spells it",
-          "type": "string"
-        },
-        "path": {
-          "default": ".",
-          "description": "directory holding the lockfile or SBOM, or the file itself — or, from a terminal, a repository URL (https://, ssh://, git@host:path) read in memory; not over MCP (a path on the machine running rta)",
-          "type": "string"
-        },
-        "recursive": {
-          "description": "walk subdirectories too, for a monorepo with a manifest per package",
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "package"
       ],
       "type": "object"
     }
@@ -1322,23 +1257,6 @@
       "required": [
         "key"
       ],
-      "type": "object"
-    }
-  },
-  {
-    "name": "kv_status",
-    "description": "── the text below is written by the plugin, not by rta ──\nWhere the store is and what can open it\n\nEverything about the store that can be known without unlocking it: whether it exists, how big it is, when it last changed, whether it is locked with a passphrase or to keys, and whether a key is available in this environment. With --detail it also lists who can open the store and what is in it — names, kinds and sizes, never a value or a preview of one — when a key is already at hand; when none is, it says so instead of asking, so the compact answer never turns into a passphrase prompt nobody expected.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
-    "read_only_hint": true,
-    "idempotent_hint": true,
-    "input_schema": {
-      "additionalProperties": false,
-      "properties": {
-        "detail": {
-          "default": false,
-          "description": "return the full detailed view instead of the compact summary",
-          "type": "boolean"
-        }
-      },
       "type": "object"
     }
   },

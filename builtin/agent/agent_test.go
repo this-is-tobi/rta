@@ -466,6 +466,48 @@ func TestTheLogShowsCallsAndVerifiesItsOwnChain(t *testing.T) {
 	}
 }
 
+func TestTheLogShowsWhichCredentialAuthenticatedEachCall(t *testing.T) {
+	isolate(t)
+	for _, e := range []agentlog.Entry{
+		{Cap: "sys.cpu", Outcome: agentlog.Ran, Auth: agentlog.Open},
+		{Cap: "kv.get", Outcome: agentlog.Ran, Auth: agentlog.Open, Credential: "gateway-token"},
+	} {
+		if err := agentlog.Append(e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	v, err := run(t, "agent.log", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	table := v.(view.Table)
+	// Newest first: the credentialed call was appended last.
+	if got := cell(t, table, 0, "credential"); got != "gateway-token" {
+		t.Fatalf("credential column = %q, want the token label", got)
+	}
+	if got := cell(t, table, 1, "credential"); got != "—" {
+		t.Fatalf("credential column for a stdio call = %q, want the placeholder", got)
+	}
+
+	// The column disappears entirely when nothing on this connection ever
+	// carried a bearer credential — the same rule the "agent" column
+	// already follows, so a quiet stdio-only server does not grow a column
+	// of dashes nobody can fill.
+	isolate(t)
+	if err := agentlog.Append(agentlog.Entry{Cap: "sys.cpu", Outcome: agentlog.Ran, Auth: agentlog.Open}); err != nil {
+		t.Fatal(err)
+	}
+	v, err = run(t, "agent.log", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range v.(view.Table).Columns {
+		if c.Name == "credential" {
+			t.Fatal("credential column appeared with nothing to fill it")
+		}
+	}
+}
+
 func TestOverviewCountsWhatMatters(t *testing.T) {
 	isolate(t)
 	park(t, "kv.get", "db-password")

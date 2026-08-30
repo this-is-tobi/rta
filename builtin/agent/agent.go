@@ -315,15 +315,17 @@ func runLog(_ context.Context, req plugin.Request) (view.View, error) {
 	if err != nil {
 		return nil, view.Errorf("agent.log.unreadable", "%v", err)
 	}
-	// The column appears only once a row can fill it, which for a record
-	// written before agents were named is never — and a column of em dashes
-	// on the screen an operator opens in a hurry is a column they learn to
-	// skip.
-	named := false
+	// Both columns appear only once a row can fill them, which for a record
+	// written before agents were named — or before rta could serve over
+	// HTTP at all — is never, and a column of em dashes on the screen an
+	// operator opens in a hurry is a column they learn to skip.
+	named, namedCred := false, false
 	for _, e := range entries {
 		if e.Agent != "" || e.Client != "" {
 			named = true
-			break
+		}
+		if e.Credential != "" {
+			namedCred = true
 		}
 	}
 	// Filtered first, rendered second, because two of the rendering decisions
@@ -355,6 +357,13 @@ func runLog(_ context.Context, req plugin.Request) (view.View, error) {
 		if named {
 			row = slices.Insert(row, 3, whoCalled(e))
 		}
+		if namedCred {
+			pos := 3
+			if named {
+				pos = 4
+			}
+			row = slices.Insert(row, pos, credentialCell(e))
+		}
 		rows = append(rows, row)
 	}
 	// seq is first because it is the join key and the cursor: `--after` takes
@@ -369,6 +378,13 @@ func runLog(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 	if named {
 		cols = slices.Insert(cols, 3, view.Column{Name: "agent"})
+	}
+	if namedCred {
+		pos := 3
+		if named {
+			pos = 4
+		}
+		cols = slices.Insert(cols, pos, view.Column{Name: "credential"})
 	}
 	table := view.Table{Columns: cols, Rows: rows, Total: len(entries)}
 	if !req.Bool("detail") {
@@ -450,6 +466,19 @@ func whoCalled(e agentlog.Entry) string {
 	default:
 		return "—"
 	}
+}
+
+// credentialCell is which bearer credential authenticated this call — a
+// static token's label or an OIDC subject — distinct from whoCalled: --as
+// names one principal per server, e.Client is whatever a caller claims about
+// itself, and neither says which of possibly several valid tokens for that
+// one server actually authenticated this particular row. Empty for every
+// call served over stdio, where nothing on the wire verified an identity.
+func credentialCell(e agentlog.Entry) string {
+	if e.Credential == "" {
+		return "—"
+	}
+	return e.Credential
 }
 
 func runShow(_ context.Context, req plugin.Request) (view.View, error) {
