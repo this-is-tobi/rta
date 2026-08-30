@@ -91,6 +91,23 @@ func TestAnEmptyPinMatchesNothing(t *testing.T) {
 	}
 }
 
+// A pin below minPinLen is cheap enough to grind that a hand-written or
+// copy-truncated one degrades pinning back into trusting whatever currently
+// answers to the name — even though, unlike a stale pin, this one is a
+// genuine prefix of the real digest.
+func TestAShortPinIsRefusedEvenWhenItMatches(t *testing.T) {
+	cfg := config.Config{Plugins: map[string]map[string]any{
+		"pg@1a2b3c": {"host": "db.internal"},
+	}}
+	if got := section(t, cfg, "pg"); got != nil {
+		t.Fatalf("a pin below the minimum length matched: %v", got)
+	}
+	_, problems := Resolve(cfg, installed)
+	if len(problems) != 1 || !strings.Contains(problems[0].Reason, "too short") {
+		t.Fatalf("problems = %v, want one naming the pin as too short", problems)
+	}
+}
+
 // A built-in has no artifact of its own, so accepting a pin would imply a
 // check that is not happening.
 func TestABuiltInTakesNoPin(t *testing.T) {

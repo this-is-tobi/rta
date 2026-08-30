@@ -314,6 +314,30 @@ func (p Profile) Covers(namespace string) bool {
 	return ok
 }
 
+// DuplicateNamespaces reports which namespaces this profile names more than
+// once — a stale pin left beside its replacement after a rebuild, most
+// realistically. For's "first match by sorted key order" is not a decision
+// anyone made; it is PluginKeys' sort falling out however the two entries'
+// digests happen to compare. Reported here so a caller that must not act on
+// an ambiguous answer — Lookup, and Check reporting the same thing it does —
+// can refuse it as what it is, rather than the one entry that happened to
+// sort first silently standing in for both.
+func (p Profile) DuplicateNamespaces() []string {
+	seen := map[string]int{}
+	for _, key := range p.PluginKeys() {
+		ns, _, _ := strings.Cut(key, "@")
+		seen[ns]++
+	}
+	var out []string
+	for ns, n := range seen {
+		if n > 1 {
+			out = append(out, ns)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 // Window is how long an activation of this profile lasts, and whether it has a
 // deadline at all. An unparseable TTL yields no deadline and is reported as a
 // problem by Check — a profile is not the place to guess.

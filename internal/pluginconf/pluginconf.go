@@ -30,12 +30,18 @@ package pluginconf
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/this-is-tobi/rule-them-all/internal/config"
 	"github.com/this-is-tobi/rule-them-all/internal/registry"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 )
+
+// minPinLen matches internal/profile's, internal/plugintrust's and
+// internal/mcp's own digest-prefix floor: short enough to type, long enough
+// that grinding a second artifact to collide with it is not realistic.
+const minPinLen = 8
 
 // Resolver holds the sections that survived the pin check, by namespace.
 type Resolver struct {
@@ -102,10 +108,21 @@ func Resolve(cfg config.Config, origin Origin) (*Resolver, []Problem) {
 			problems = append(problems, Problem{Section: section,
 				Reason: fmt.Sprintf("%q is an installed plugin, so its config must name the artifact it is for", ns),
 				Hint:   "write it as `" + ns + "@" + o.Short() + ":`"})
-		case pin == "" || !strings.HasPrefix(o.Digest, pin):
-			// An empty pin is not a prefix of everything: it is a missing
-			// decision. A stale one is the ordinary case after an upgrade,
-			// and saying which digest is installed is the whole point.
+		case len(pin) < minPinLen:
+			// Below the floor internal/profile, internal/plugintrust and
+			// internal/mcp's own digest-prefix matches all share: short
+			// enough to be cheap to grind, which turns "survives a rebuild
+			// without silently re-trusting a different artifact" — pinning's
+			// whole point — back into trusting whatever currently answers to
+			// the name. An empty pin is the extreme case of this, not a
+			// separate one.
+			problems = append(problems, Problem{Section: section,
+				Reason: fmt.Sprintf("this pin for %q is too short to trust", ns),
+				Hint: "the installed one is `" + ns + "@" + o.Short() + "` — at least " +
+					strconv.Itoa(minPinLen) + " hex characters"})
+		case !strings.HasPrefix(o.Digest, pin):
+			// A stale pin is the ordinary case after an upgrade, and saying
+			// which digest is installed is the whole point.
 			problems = append(problems, Problem{Section: section,
 				Reason: fmt.Sprintf("this pin does not match the installed %q", ns),
 				Hint:   "the installed one is `" + ns + "@" + o.Short() + "`"})
