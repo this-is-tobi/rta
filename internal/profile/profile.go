@@ -26,7 +26,9 @@ package profile
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/this-is-tobi/rule-them-all/internal/config"
@@ -111,6 +113,18 @@ func Lookup(cfg config.Config, c plugin.Capability, name string, inst Installed)
 		return none, migrationOr(name, p, view.Errorf("core.profile.unknownkey",
 			"profile %q has %s, which nothing reads", name, strings.Join(unknown, ", ")).
 			WithHint("a profile takes plugins, note and ttl"))
+	}
+	// Ahead of For, deliberately: two entries for one namespace — a stale
+	// pin left beside its replacement, most realistically — is not
+	// something For's first-match-by-sort-order can answer for. Silently
+	// resolving through whichever one sorts first is exactly how Check
+	// reports a profile broken while a call through it quietly succeeds
+	// anyway, which the doc comment above states this function must not
+	// allow: "Lookup refuses what Check reports."
+	if dups := p.DuplicateNamespaces(); slices.Contains(dups, ns) {
+		return none, view.Errorf("core.profile.ambiguous",
+			"profile %q names %s more than once", name, ns).
+			WithHint("`rta profile show " + name + "` lists every entry — remove the one that no longer applies")
 	}
 	key, conn, covered := p.For(ns)
 	if !covered {
@@ -223,6 +237,11 @@ func migrationOr(name string, p config.Profile, generic *view.Error) *view.Error
 			"the environment beside it")
 }
 
+// minPinLen matches internal/plugintrust's and internal/mcp's own
+// digest-prefix floor: short enough to type, long enough that grinding a
+// second artifact to collide with it is not a realistic attack.
+const minPinLen = 8
+
 // checkPin confirms a profile's plugin key names the artifact that is actually
 // installed.
 //
@@ -266,7 +285,21 @@ func checkPin(key string, inst Installed) *view.Error {
 		return view.Errorf("core.profile.unpinned",
 			"%q is an installed plugin, so a profile entry for it must name the artifact", ns).
 			WithHint("write it as `" + ns + "@" + o.Short() + ":`")
-	case pin == "" || !strings.HasPrefix(o.Digest, pin):
+	case len(pin) < minPinLen:
+		// Below the floor every other digest-prefix match in the codebase
+		// shares (internal/plugintrust, internal/mcp's --allow-destructive
+		// pin): short enough to be cheap to grind, which turns "survives a
+		// rebuild without silently re-trusting a different artifact" —
+		// pinning's whole point — back into trusting whatever currently
+		// answers to the name. Every writer of a profile entry
+		// (profileset.go, the TUI, explain.go) already always emits the
+		// full 12-char short digest; this only closes a hand-written or
+		// copy-truncated one.
+		return view.Errorf("core.profile.shortpin",
+			"this profile's pin for %q is too short to trust", ns).
+			WithHint("the installed one is `" + ns + "@" + o.Short() + "` — at least " +
+				strconv.Itoa(minPinLen) + " hex characters")
+	case !strings.HasPrefix(o.Digest, pin):
 		return view.Errorf("core.profile.stalepin",
 			"this profile's pin does not match the installed %q", ns).
 			WithHint("the installed one is `" + ns + "@" + o.Short() + "`")
@@ -602,6 +635,16 @@ func Check(cfg config.Config, inst Installed) []Problem {
 		if _, taken := originOf(inst, name); taken {
 			add("has the same name as a registered plugin",
 				"rename it — a profile name and a namespace share a command line")
+		}
+		// Ahead of the per-key loop below: a namespace named twice is a
+		// problem about the profile's shape, not about either entry on its
+		// own — the same reason Lookup refuses it before ever asking For to
+		// pick one. Reported even when every individual entry would
+		// otherwise pass CheckConnection, which a stale-pin duplicate is not
+		// guaranteed to trip.
+		for _, ns := range p.DuplicateNamespaces() {
+			add("names "+ns+" more than once, so which entry governs is ambiguous",
+				"`rta profile show "+name+"` lists every entry — remove the one that no longer applies")
 		}
 		for _, key := range p.PluginKeys() {
 			problems = append(problems, CheckConnection(name, key, p.Plugins[key], inst)...)

@@ -290,8 +290,34 @@ func TestAProfileForAnExternalPluginMustBePinned(t *testing.T) {
 	if len(Check(load(t, envFor("pg@000000000000")), reg)) == 0 {
 		t.Error("a pin that does not match the installed artifact was accepted")
 	}
-	if problems := Check(load(t, envFor("pg@1a2b3c")), reg); len(problems) != 0 {
+	if problems := Check(load(t, envFor("pg@1a2b3c4d")), reg); len(problems) != 0 {
 		t.Errorf("a correctly pinned profile was reported as a problem: %v", problems)
+	}
+}
+
+// A pin below minPinLen is cheap enough to grind that a hand-written or
+// copy-truncated one degrades pinning back into trusting whatever currently
+// answers to the name — the exact thing surviving a rebuild without silently
+// re-trusting a different artifact exists to prevent. Every writer of a
+// profile entry always emits the full 12-char short digest; this only
+// closes a hand-written gap.
+func TestAShortPinIsRefusedEvenWhenItMatches(t *testing.T) {
+	reg := registry.New()
+	origin := registry.Origin{Path: "/usr/local/bin/rta-plugin-pg", Digest: "1a2b3c4d5e6f"}
+	if err := reg.RegisterFrom(plugin.Plugin{
+		Name: "pg", Summary: "pg", Capabilities: []plugin.Capability{pgCap()},
+	}, origin); err != nil {
+		t.Fatal(err)
+	}
+	// "1a2b3c" is a genuine prefix of the installed digest — this is not a
+	// wrong pin, only a short one.
+	cfg := load(t, envFor("pg@1a2b3c"))
+	problems := Check(cfg, reg)
+	if len(problems) == 0 {
+		t.Fatal("a pin below the minimum length was accepted because it happened to match")
+	}
+	if _, verr := Lookup(cfg, pgCap(), "staging", reg); verr == nil {
+		t.Error("Check calls this invalid and Lookup resolved it anyway")
 	}
 }
 
@@ -368,7 +394,7 @@ func TestEveryProfileCheckRejectsIsAlsoRefusedAtUse(t *testing.T) {
 	}
 
 	// And the matching pin works on both.
-	ok := load(t, envFor("pg@1a2b3c"))
+	ok := load(t, envFor("pg@1a2b3c4d"))
 	if problems := Check(ok, reg); len(problems) != 0 {
 		t.Errorf("a correctly pinned profile was reported: %v", problems)
 	}
@@ -379,6 +405,41 @@ func TestEveryProfileCheckRejectsIsAlsoRefusedAtUse(t *testing.T) {
 	// A nil origin resolves nothing, so it refuses rather than waving through.
 	if _, verr := Lookup(ok, pgCap(), "staging", nil); verr == nil {
 		t.Error("a caller that forgot to wire the origin accessor got a profile anyway")
+	}
+}
+
+// Two entries for one namespace — a stale pin left beside its replacement
+// after a rebuild, most realistically — is an ambiguity, not a coin flip
+// PluginKeys' sort order gets to settle. Both entries here are individually
+// well-formed (unlike the stale/empty/unpinned cases above, each of which
+// Check already catches on its own terms) — the only problem is the
+// duplication itself, which is exactly the case a per-key-only validation
+// would never notice.
+func TestADuplicateNamespaceIsAmbiguousNotFirstMatchWins(t *testing.T) {
+	reg := registry.New()
+	origin := registry.Origin{Path: "/usr/local/bin/rta-plugin-pg", Digest: "1a2b3c4d5e6f"}
+	if err := reg.RegisterFrom(plugin.Plugin{
+		Name: "pg", Summary: "pg", Capabilities: []plugin.Capability{pgCap()},
+	}, origin); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := load(t, `
+profiles:
+  staging:
+    plugins:
+      pg@1a2b3c4d:
+        set:
+          host: correct
+      pg@1a2b3c4d5e:
+        set:
+          host: also-individually-valid
+`)
+	if problems := Check(cfg, reg); len(problems) == 0 {
+		t.Fatal("Check reported no problem for a namespace named twice")
+	}
+	if _, verr := Lookup(cfg, pgCap(), "staging", reg); verr == nil {
+		t.Fatal("Check calls this invalid and Lookup resolved it anyway")
 	}
 }
 
