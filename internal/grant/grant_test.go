@@ -108,6 +108,31 @@ func TestDestructiveNeedsAGrantWithoutOptingIn(t *testing.T) {
 	}
 }
 
+// kv places no restriction on a key's characters, so the hint's suggested
+// command has to stay a valid single command even when the scope has a
+// space in it — copy-pasted verbatim, an unquoted scope would be parsed as
+// an extra shell argument rather than part of the key.
+func TestTheHintQuotesAScopeThatNeedsIt(t *testing.T) {
+	setup(t)
+	c := declare("kv.get", plugin.Write, "key", true)
+	verr := gate(t, c, map[string]any{"key": "db password"}, "", "")
+	if verr == nil {
+		t.Fatal("a call with no grant went through")
+	}
+	if !strings.Contains(verr.Hint, "'db password'") {
+		t.Errorf("hint = %q, want the scope quoted as one shell word", verr.Hint)
+	}
+
+	// The common case — nothing to quote — reads exactly as it always has.
+	verr = gate(t, c, map[string]any{"key": "db-password"}, "", "")
+	if verr == nil {
+		t.Fatal("a call with no grant went through")
+	}
+	if strings.Contains(verr.Hint, "'") {
+		t.Errorf("hint = %q, an ordinary scope should not be quoted", verr.Hint)
+	}
+}
+
 func TestGrantAuthorizesTheRecordItNames(t *testing.T) {
 	setup(t)
 	issue(t, Grant{Target: "kv.get", Scope: "db-password"})

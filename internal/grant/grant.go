@@ -1037,8 +1037,12 @@ func numericScope(v any) string {
 func allocate(c plugin.Capability, values map[string]any, grants []Grant, by Caller) (tally map[int]int, missing []string, throttled *Grant) {
 	tally = map[int]int{}
 	now := time.Now()
+	// Whether every scope this call could not get covers *has* a grant that
+	// merely ran out of pace, versus at least one scope nothing covers at
+	// all. Only the first case is something waiting can fix — see below.
+	allThrottled := true
 	for _, scope := range scopes(c, values) {
-		covered := false
+		covered, scopeThrottled := false, false
 		for i, g := range grants {
 			if !g.covers(c.ID, scope, by) {
 				continue
@@ -1051,6 +1055,7 @@ func allocate(c plugin.Capability, values map[string]any, grants []Grant, by Cal
 				// answer to the operator than one refused because nobody
 				// allowed it, and it is the only one that can say when to
 				// come back.
+				scopeThrottled = true
 				if throttled == nil {
 					if _, _, limited := g.rateRoom(now); limited {
 						g := g
@@ -1067,9 +1072,16 @@ func allocate(c plugin.Capability, values map[string]any, grants []Grant, by Cal
 		}
 		if !covered {
 			missing = append(missing, scope)
+			// A scope with no covering grant at all is not something a wait
+			// fixes, whatever some OTHER scope in this same call found. One
+			// such scope is enough to make "try again later" the wrong
+			// answer for the whole refusal — see checkAgainst.
+			if !scopeThrottled {
+				allThrottled = false
+			}
 		}
 	}
-	if len(missing) == 0 {
+	if len(missing) == 0 || !allThrottled {
 		throttled = nil
 	}
 	return tally, missing, throttled
@@ -1334,12 +1346,49 @@ func refuseMissing(c plugin.Capability, missing []string, profile string) *view.
 	// The subject is the namespace rather than the capability when a profile is
 	// in play: an operator granting access to a connection almost never means
 	// "and only the status call".
-	what := strings.TrimSpace(c.ID + " " + missing[0])
+	// Quoted only when it has to be: kv places no restriction on a key's
+	// characters, so a scope like "db password" built into this hint by
+	// plain concatenation produces a command that is not the one command it
+	// looks like — a shell splits it into an extra argument. Quoting only
+	// the scopes that need it keeps the common case (a bare word) reading
+	// exactly as it always has.
+	scope := shellQuoteIfNeeded(missing[0])
+	what := strings.TrimSpace(c.ID + " " + scope)
 	if profile != "" {
-		what = strings.TrimSpace(Namespace(c.ID)+" "+missing[0]) + " --profile " + profile
+		what = strings.TrimSpace(Namespace(c.ID)+" "+scope) + " --profile " + profile
 	}
 	return view.Errorf("core.grant.required", "no active grant for %s", describe(c.ID, missing)).
 		WithHint("a person has to allow this first: rta grant allow " + what + " --ttl 15m")
+}
+
+// shellQuoteIfNeeded wraps s in POSIX single quotes when it contains
+// anything a shell would treat as a word boundary or a metacharacter, so a
+// hint built by string concatenation stays the one copy-pasteable command it
+// claims to be. Left bare when every character is already shell-safe, which
+// covers every scope this codebase's own tooling ever generates — this only
+// matters for a scope a person or a plugin typed by hand.
+func shellQuoteIfNeeded(s string) string {
+	if s == "" {
+		return s
+	}
+	safe := true
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case strings.ContainsRune("-_./:@%", r):
+		default:
+			safe = false
+		}
+		if !safe {
+			break
+		}
+	}
+	if safe {
+		return s
+	}
+	// The POSIX way to embed a literal single quote inside a single-quoted
+	// string: close the quote, emit an escaped quote, reopen it.
+	return "'" + strings.ReplaceAll(s, "'", `'"'"'`) + "'"
 }
 
 // refuseThrottled is the answer for a call a grant covers and a budget will
