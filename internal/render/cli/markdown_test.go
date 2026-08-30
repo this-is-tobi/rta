@@ -113,6 +113,40 @@ func TestMarkdownEscapesPipesSoColumnsDoNotShift(t *testing.T) {
 	}
 }
 
+// inlineMarkdown is the one place every markdown-rendered cell goes through —
+// table, tree, key/value, chart. Left unescaped, a link opens for real, a
+// backtick opens a code span early, and a raw tag is read as HTML by any
+// downstream renderer without its own sanitizer: a wiki, a static-site
+// generator, an editor preview, a ticket tracker.
+func TestMarkdownEscapesLinkCodeAndHTMLSyntaxInCells(t *testing.T) {
+	tbl := view.Table{
+		Columns: []view.Column{{Name: "note"}},
+		Rows: [][]string{{
+			"[Click to verify your account](https://evil.example/phish) and some `code` and <img src=x onerror=alert(1)>",
+		}},
+	}
+	out := md(t, tbl)
+	checkGrid(t, out)
+	for _, raw := range []string{
+		"[Click to verify your account](https://evil.example/phish)",
+		"some `code` and",
+		"and <img src=x onerror=alert(1)>",
+	} {
+		if strings.Contains(out, raw) {
+			t.Errorf("unescaped markdown/HTML syntax survived into a cell (%q):\n%s", raw, out)
+		}
+	}
+	for _, escaped := range []string{
+		`\[Click to verify your account\]`,
+		"\\`code\\`",
+		"\\<img src=x onerror=alert(1)>",
+	} {
+		if !strings.Contains(out, escaped) {
+			t.Errorf("missing escaped form %q:\n%s", escaped, out)
+		}
+	}
+}
+
 // A newline inside a cell breaks out of the row entirely, which turns the
 // rest of the table into prose.
 func TestMarkdownKeepsMultilineCellsInsideTheirRow(t *testing.T) {
@@ -286,6 +320,42 @@ func TestMarkdownRendersErrors(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q:\n%s", want, out)
 		}
+	}
+}
+
+// RenderError is a separate entry point from the rest of the page, and
+// AsError puts a foreign error's own text into Message — so a hostile
+// server's error string needs the same inlineMarkdown treatment
+// markdownWarnings already gives a warning, or a newline in it ends the line
+// unquoted and a pipe shifts whatever comes after it.
+func TestMarkdownEscapesErrorMessageAndHint(t *testing.T) {
+	var buf bytes.Buffer
+	e := &view.Error{
+		Code:    "http.upstream",
+		Message: "upstream said 500 | retry\n# Injected Heading",
+		Hint:    "second attempt\nstill failing",
+	}
+	if err := RenderError(&buf, e, Options{Format: Markdown}); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, `\|`) {
+		t.Errorf("the pipe in the message was not escaped:\n%s", out)
+	}
+	if strings.Contains(out, "500 | retry") {
+		t.Errorf("a raw pipe survived in the message:\n%s", out)
+	}
+	if strings.Contains(out, "\n# Injected Heading") {
+		t.Errorf("a newline in the message broke out into a real heading:\n%s", out)
+	}
+	if !strings.Contains(out, "retry<br># Injected Heading") {
+		t.Errorf("the message's newline was not folded:\n%s", out)
+	}
+	if strings.Contains(out, "attempt\nstill failing") {
+		t.Errorf("a newline in the hint broke out of the blockquote:\n%s", out)
+	}
+	if !strings.Contains(out, "attempt<br>still failing") {
+		t.Errorf("the hint's newline was not folded:\n%s", out)
 	}
 }
 

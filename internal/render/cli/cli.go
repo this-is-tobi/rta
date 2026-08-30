@@ -155,12 +155,20 @@ func renderCSV(w io.Writer, v view.View, opts Options) error {
 	cw := csv.NewWriter(w)
 	header := make([]string, len(t.Columns))
 	for i, c := range t.Columns {
-		header[i] = c.Name
+		header[i] = csvSafeCell(c.Name)
 	}
 	if err := cw.Write(header); err != nil {
 		return err
 	}
-	if err := cw.WriteAll(t.Rows); err != nil {
+	rows := make([][]string, len(t.Rows))
+	for i, row := range t.Rows {
+		out := make([]string, len(row))
+		for j, cell := range row {
+			out[j] = csvSafeCell(cell)
+		}
+		rows[i] = out
+	}
+	if err := cw.WriteAll(rows); err != nil {
 		return err
 	}
 	cw.Flush()
@@ -183,6 +191,27 @@ func renderCSV(w io.Writer, v view.View, opts Options) error {
 		_, _ = fmt.Fprintf(opts.Notes, "# %s\n", more)
 	}
 	return nil
+}
+
+// csvFormulaTriggers are the leading characters Excel, LibreOffice Calc and
+// Google Sheets all read as "this cell is a formula, evaluate it" rather than
+// display it as the text it is: CWE-1236. encoding/csv only quotes a field
+// for a comma, a quote or a newline — never for a leading character — so a
+// cell that opened with one of these went into the file exactly as it was
+// handed to renderCSV. -o csv exists to be opened in a spreadsheet, which
+// makes that cell a place to run a formula, and on legacy DDE-enabled Excel
+// a place to run a command.
+const csvFormulaTriggers = "=+-@"
+
+// csvSafeCell prefixes a formula-triggering cell with an apostrophe, which
+// every mainstream spreadsheet reads as "the rest of this cell is text" and
+// writes nowhere in the file itself, so the cell still round-trips as the
+// original value everywhere but the one place it would otherwise be run.
+func csvSafeCell(s string) string {
+	if s == "" || !strings.ContainsRune(csvFormulaTriggers, rune(s[0])) {
+		return s
+	}
+	return "'" + s
 }
 
 func renderPretty(w io.Writer, v view.View, opts Options) error {

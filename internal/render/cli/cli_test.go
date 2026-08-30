@@ -125,6 +125,51 @@ func TestCSVReportsTruncationOnTheNotesChannel(t *testing.T) {
 	}
 }
 
+// -o csv says it feeds a spreadsheet, and Excel, LibreOffice Calc and Google
+// Sheets all read a cell opening with =, +, - or @ as a formula to evaluate
+// rather than text to display (CWE-1236). encoding/csv quotes a field for a
+// comma, a quote or a newline — never for a leading character like this —
+// so nothing between a capability's own data and the file on disk was
+// neutralizing it.
+func TestCSVNeutralizesFormulaTriggerCells(t *testing.T) {
+	tbl := view.Table{
+		Columns: []view.Column{{Name: "=cmd"}, {Name: "note"}},
+		Rows: [][]string{
+			{"=cmd|' /C calc'!A0", "ok"},
+			{"+1+1", "ok"},
+			{"-1+1", "ok"},
+			{"@SUM(A1:A2)", "ok"},
+			{"alpha", "hello, world"},
+		},
+	}
+	out := render(t, tbl, CSV)
+	rows, err := csv.NewReader(strings.NewReader(out)).ReadAll()
+	if err != nil {
+		t.Fatalf("body is not csv: %v\n%s", err, out)
+	}
+	want := [][]string{
+		{"'=cmd", "note"},
+		{"'=cmd|' /C calc'!A0", "ok"},
+		{"'+1+1", "ok"},
+		{"'-1+1", "ok"},
+		{"'@SUM(A1:A2)", "ok"},
+		// An ordinary cell, including one whose standard CSV quoting (the
+		// comma) has nothing to do with formula triggers, must round-trip
+		// untouched.
+		{"alpha", "hello, world"},
+	}
+	if len(rows) != len(want) {
+		t.Fatalf("got %d rows, want %d:\n%v", len(rows), len(want), rows)
+	}
+	for i := range want {
+		for j := range want[i] {
+			if rows[i][j] != want[i][j] {
+				t.Errorf("row %d col %d = %q, want %q", i, j, rows[i][j], want[i][j])
+			}
+		}
+	}
+}
+
 func TestPrettyTable(t *testing.T) {
 	out := render(t, sampleTable, Pretty)
 	for _, want := range []string{"NAME", "SIZE", "alpha", "2 GB"} {

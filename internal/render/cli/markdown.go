@@ -263,11 +263,22 @@ func writeMarkdownGrid(b *strings.Builder, header []string, rows [][]string) {
 	}
 }
 
-// inlineMarkdown makes a cell safe to sit inside a table row. A pipe would
-// end the cell early and shift every value after it into the wrong column —
-// silently, and only for the rows that happen to contain one.
+// inlineMarkdown makes a cell safe to sit inline in a document assembled
+// around data from somewhere else — an HTTP body, a plugin's own error text,
+// a database row. A pipe would end a table cell early and shift every value
+// after it into the wrong column, silently, and only for the rows that
+// happen to contain one; [ ] and a backtick can open a live link or a code
+// span the source never intended; and < can be read as raw HTML by whatever
+// renders the document next (a wiki, a static-site generator, a ticket
+// tracker without its own sanitizer). Each gets the same treatment GFM uses
+// for its own inline escaping: a leading backslash, so the character prints
+// instead of taking on its syntactic meaning.
 func inlineMarkdown(s string) string {
 	s = strings.ReplaceAll(s, "|", "\\|")
+	s = strings.ReplaceAll(s, "[", "\\[")
+	s = strings.ReplaceAll(s, "]", "\\]")
+	s = strings.ReplaceAll(s, "`", "\\`")
+	s = strings.ReplaceAll(s, "<", "\\<")
 	s = strings.ReplaceAll(s, "\r\n", "\n")
 	s = strings.ReplaceAll(s, "\n", "<br>")
 	return s
@@ -277,9 +288,14 @@ func inlineMarkdown(s string) string {
 // carries its failure instead of an empty file.
 func markdownError(w io.Writer, e *view.Error) error {
 	var b strings.Builder
-	b.WriteString("**Error** `" + e.Code + "` — " + e.Message + "\n")
+	// inlineMarkdown, same as markdownWarnings just above: AsError puts a
+	// foreign error's own text into Message, so a hostile server's response
+	// is as much a display channel here as it is in the body of a report —
+	// and this one lands unquoted, not behind a blockquote, the moment a
+	// newline in that text ends the line it started on.
+	b.WriteString("**Error** `" + e.Code + "` — " + inlineMarkdown(e.Message) + "\n")
 	if e.Hint != "" {
-		b.WriteString("\n> " + e.Hint + "\n")
+		b.WriteString("\n> " + inlineMarkdown(e.Hint) + "\n")
 	}
 	_, err := io.WriteString(w, b.String())
 	return err
