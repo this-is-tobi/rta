@@ -3,6 +3,7 @@ package audit
 import (
 	"encoding/json"
 	"io/fs"
+	"net/url"
 	"path"
 	"strings"
 )
@@ -426,9 +427,26 @@ func fromPURL(purl, source string) (component, bool) {
 	if !ok {
 		return component{}, false
 	}
-	path, version, ok := strings.Cut(rest, "@")
-	if !ok || version == "" || path == "" {
+	// The LAST '@' in the string, not the first: a scoped npm package's own
+	// leading '@' — written literally or, per the purl spec, percent-encoded
+	// as %40 — must not be mistaken for the version separator. A version
+	// never contains '@', so whichever one appears last always is the real
+	// separator, whether or not the name before it has one of its own.
+	i := strings.LastIndex(rest, "@")
+	if i < 0 {
 		return component{}, false
+	}
+	path, version := rest[:i], rest[i+1:]
+	if version == "" || path == "" {
+		return component{}, false
+	}
+	// The namespace/name portion of a purl is percent-encoded per spec —
+	// %40 for npm's leading '@' is the common case a real SBOM generator
+	// emits. Decoded here so the name this stores and later queries OSV
+	// with is the actual package name, not its escaped spelling; a no-op
+	// for any purl already written with the literal, unescaped form.
+	if decoded, err := url.PathUnescape(path); err == nil {
+		path = decoded
 	}
 	eco, known := purlEcosystems[strings.ToLower(typ)]
 	if !known {

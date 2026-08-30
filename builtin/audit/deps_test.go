@@ -8,8 +8,10 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+	"testing/fstest"
 )
 
 func TestParseGoMod(t *testing.T) {
@@ -200,13 +202,19 @@ func TestParseCycloneDXAndSPDX(t *testing.T) {
 func TestPURLEcosystemsUseOSVSpelling(t *testing.T) {
 	cases := map[string]struct{ eco, name, version string }{
 		"pkg:golang/golang.org/x/crypto@v0.53.0": {"Go", "golang.org/x/crypto", "v0.53.0"},
-		"pkg:npm/%40scope/pkg@1.0.0":             {"npm", "%40scope/pkg", "1.0.0"},
-		"pkg:pypi/django@4.2":                    {"PyPI", "django", "4.2"},
-		"pkg:cargo/serde@1.0":                    {"crates.io", "serde", "1.0"},
-		"pkg:gem/rails@7.0":                      {"RubyGems", "rails", "7.0"},
-		"pkg:nuget/Newtonsoft.Json@13.0":         {"NuGet", "Newtonsoft.Json", "13.0"},
-		"pkg:npm/lodash@4.17.21?arch=x64":        {"npm", "lodash", "4.17.21"},
-		"pkg:npm/lodash@4.17.21#sub/path":        {"npm", "lodash", "4.17.21"},
+		// A scoped npm name's own leading '@' must not be mistaken for the
+		// version separator, whether it arrives percent-encoded (the
+		// purl-spec-conformant form real SBOM generators emit) or literal
+		// (the common, unescaped form) — and either way, the '@' the name
+		// itself carries must not survive into the stored/queried name.
+		"pkg:npm/%40scope/pkg@1.0.0":      {"npm", "@scope/pkg", "1.0.0"},
+		"pkg:npm/@scope/pkg@1.0.0":        {"npm", "@scope/pkg", "1.0.0"},
+		"pkg:pypi/django@4.2":             {"PyPI", "django", "4.2"},
+		"pkg:cargo/serde@1.0":             {"crates.io", "serde", "1.0"},
+		"pkg:gem/rails@7.0":               {"RubyGems", "rails", "7.0"},
+		"pkg:nuget/Newtonsoft.Json@13.0":  {"NuGet", "Newtonsoft.Json", "13.0"},
+		"pkg:npm/lodash@4.17.21?arch=x64": {"npm", "lodash", "4.17.21"},
+		"pkg:npm/lodash@4.17.21#sub/path": {"npm", "lodash", "4.17.21"},
 	}
 	for purl, want := range cases {
 		got, ok := fromPURL(purl, "src")
@@ -533,6 +541,31 @@ func TestDepsOfflineDoesNotClaimAnAllClear(t *testing.T) {
 	}
 	if !strings.Contains(f.detail, "--offline") {
 		t.Errorf("the finding should say why nothing was checked: %q", f.detail)
+	}
+}
+
+// The flat component list has no size bound of its own, unlike the edge
+// graph's maxEdges — fed by the same untrusted lockfiles/SBOMs (including
+// one read from an in-memory clone of an arbitrary --path repository URL),
+// and at least as large, so a single oversized manifest could grow it
+// without bound. read() now caps it the same way, and says so rather than
+// silently covering less than it appears to.
+func TestReadCapsTheComponentListAndSaysSo(t *testing.T) {
+	var b strings.Builder
+	b.WriteString(`{"lockfileVersion": 3, "packages": {"": {"name": "root", "version": "1.0.0"}`)
+	for i := 0; i < maxComponents+1; i++ {
+		b.WriteString(`, "node_modules/pkg` + strconv.Itoa(i) + `": {"version": "1.0.0"}`)
+	}
+	b.WriteString("}}")
+
+	fsys := fstest.MapFS{"package-lock.json": &fstest.MapFile{Data: []byte(b.String())}}
+	inv := read(fsys, []string{"package-lock.json"}, []string{"package-lock.json"})
+
+	if !inv.truncated {
+		t.Fatal("a manifest declaring more than maxComponents components was not reported as truncated")
+	}
+	if len(inv.all) > maxComponents {
+		t.Fatalf("inv.all holds %d components, more than the %d bound", len(inv.all), maxComponents)
 	}
 }
 
