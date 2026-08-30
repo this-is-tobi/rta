@@ -231,7 +231,7 @@ rta agent metrics > /var/lib/node_exporter/textfile_collector/rta.prom.$$ \
 
 Write-then-rename because the collector reads the file whenever it likes, and half a file is a parse error that drops every series in it. A timer every minute is plenty; nothing here changes faster than that.
 
-| Series | |
+| Series | What it counts |
 | --- | --- |
 | `rta_agent_calls_total` | every call ever, including any retention has dropped — a counter that survives rotation |
 | `rta_agent_calls_recorded_total{capability,agent,outcome,authorized}` | the retained record, split the four ways worth splitting |

@@ -1,7 +1,5 @@
 # Installation
 
-> **No packaged release yet.** rta is pre-1.0 and builds from source. The release matrix is wired and verified (darwin, linux and windows on amd64 and arm64), so the tagged builds below will appear — until then, `go install` is the path.
-
 ## From source
 
 You need Go 1.26 or newer.
@@ -37,11 +35,14 @@ rta doctor
 
 ```
 CHECK                STATUS  DETAIL
-capabilities         ok      16 plugins, 100 capabilities (16 built in)
+capabilities         ok      16 plugins, 101 capabilities
 config               ok      ~/.config/rta/config.yaml
 kv store             info    unlocks from this environment — an MCP server
                              started here can read secrets, bounded only by grants
-plugin confinement   ok      sandbox-exec: 2 paths denied read+write, 10 denied read
+plugin confinement   ok      sandbox-exec: 2 paths denied read+write (rta's own
+                             state), 10 denied read (credential locations), 8
+                             directories pinned in place so a rename cannot move
+                             either out of its rule
 agent log            ok      the record is intact
 ```
 

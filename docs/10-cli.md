@@ -52,7 +52,6 @@ rta net dns github.com -o json
 }
 ```
 
-
 **A machine-readable format means machine consumption, and rta treats it that way.** With `-o json|yaml|csv|md`, stdout carries the view and nothing else — errors go to stderr, also in the format you asked for, and the startup notice about untrusted artifacts is suppressed entirely. So the output on your screen is the output a parser accepts, which is where copy-and-paste gets it from:
 
 ```bash
@@ -66,7 +65,8 @@ rta profile list -o json | jq -r '.rows[] | "\(.[0])\t\(.[1])"'
 rta agent log --after "$cursor" -o json | jq -c '.rows[]'
 ```
 
-Exit codes make the loop safe to write: `0` succeeded, `1` the capability refused and said why in the structured error, `2` you typed something wrong, `3` a confirmation was needed.
+Exit codes make the loop safe to write, and they are the next thing worth knowing.
+
 ## Exit codes
 
 | Code | Meaning |

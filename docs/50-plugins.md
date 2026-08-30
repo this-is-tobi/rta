@@ -55,7 +55,7 @@ rta doctor
 ```
 
 ```
-plugin pg      ok   ~/.local/bin/rta-plugin-pg (6 capabilities, 685186a7c11a)
+plugin pg      ok   ~/.local/bin/rta-plugin-pg (9 capabilities, 685186a7c11a)
 plugin trust   ok   8 artifacts approved to run
 ```
 
