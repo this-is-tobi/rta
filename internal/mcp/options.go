@@ -586,3 +586,26 @@ func (o Options) exposed(c plugin.Capability) bool {
 func (o Options) remoteExposed(c plugin.Capability) bool {
 	return !o.Remote || !c.HostSpecific
 }
+
+// RemoteBlocked lists every capability the locality gate hides, for the
+// startup banner: what Remote actually did, named, rather than left for an
+// operator to infer from a shorter tools/list or an agent to discover as a
+// tool that quietly is not there.
+//
+// Scoped to what would otherwise be visible — a HostSpecific capability the
+// safety gate was already refusing (an unallowed destructive one, say) is
+// not this gate's doing, and naming it here would double-count a different
+// refusal as if Remote had caused it.
+func (o Options) RemoteBlocked(reg *registry.Registry) []string {
+	if !o.Remote || reg == nil {
+		return nil
+	}
+	var out []string
+	for _, c := range reg.Capabilities() {
+		if c.HostSpecific && o.exposed(c) {
+			out = append(out, c.ID)
+		}
+	}
+	sort.Strings(out)
+	return out
+}

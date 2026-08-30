@@ -73,7 +73,7 @@ func handler(c plugin.Capability, opts Options, reg *registry.Registry) sdk.Tool
 		rec := agentlog.Entry{
 			Cap: c.ID, Tool: toolcall.Name(c.ID),
 			Outcome: agentlog.Refused, Auth: agentlog.Blocked,
-			Agent: opts.Agent, Client: clientName(req),
+			Agent: opts.Agent, Client: clientName(req), Credential: credentialName(ctx),
 		}
 		res, err := call(ctx, c, opts, reg, req, &rec)
 		record(rec)

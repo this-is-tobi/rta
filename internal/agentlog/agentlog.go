@@ -221,10 +221,22 @@ type Entry struct {
 	// one name on a server launched as another is either a reconfigured
 	// client or something worth looking at, and the record can only show that
 	// if it keeps both.
-	Client  string        `json:"client,omitempty"`
-	Profile string        `json:"profile,omitempty"`
-	Outcome Outcome       `json:"outcome"`
-	Auth    Authorization `json:"auth"`
+	Client string `json:"client,omitempty"`
+	// Credential names which bearer credential authenticated this call, over
+	// the HTTP transport only — the static token's own label, or an OIDC
+	// subject. Empty over stdio, where there is nothing on the wire to name:
+	// Agent there is the operator's word and nothing else backs it.
+	//
+	// A third field beside Agent and Client for the reason Client exists
+	// beside Agent: a remote instance's token file or OIDC audience can admit
+	// more than one holder, and without this every one of them logs as the
+	// identical Agent. This is the field that tells them apart after the
+	// fact, which Agent alone cannot once more than one credential is valid
+	// for it.
+	Credential string        `json:"credential,omitempty"`
+	Profile    string        `json:"profile,omitempty"`
+	Outcome    Outcome       `json:"outcome"`
+	Auth       Authorization `json:"auth"`
 	// Reason names the refusal, or the error, in rta's own code vocabulary
 	// ("core.grant.required") plus its message.
 	Reason string `json:"reason,omitempty"`

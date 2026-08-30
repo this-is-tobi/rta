@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/auth"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
 
@@ -46,11 +48,14 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 		allowDestructive []string
 		agentName        string
 		roots            []string
+		httpAddr         string
+		tokenFile        string
 	)
 	cmd := &cobra.Command{
 		Use:   "serve",
-		Short: "Serve capabilities as MCP tools on stdio",
-		Long: "Serve every registered capability as an MCP tool on stdio.\n\n" +
+		Short: "Serve capabilities as MCP tools, over stdio or HTTP",
+		Long: "Serve every registered capability as an MCP tool, over stdio by default\n" +
+			"or over HTTP with --http.\n\n" +
 			"Safety gate: only read capabilities are exposed by default.\n" +
 			"Use --allow-write for write capabilities, and --allow-destructive\n" +
 			"with explicit capability IDs for destructive ones.\n\n" +
@@ -59,7 +64,12 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 			"the server was started in; widen it with --root, which is repeatable.\n" +
 			"The gate governs path arguments only: a capability that opens a fixed\n" +
 			"file of its own — `net hosts list` and /etc/hosts — is unaffected,\n" +
-			"because that path is never an argument for anyone to send.",
+			"because that path is never an argument for anyone to send.\n\n" +
+			"Locality gate, --http only: capabilities that describe the machine\n" +
+			"this runs on (sys, fs, git, keys.list, net's host-identity and\n" +
+			"host-mutation calls) are absent from tools/list — a remote caller is\n" +
+			"never this machine. --http also requires --token-file, since there is\n" +
+			"no stdio parent process left to trust instead.",
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -112,6 +122,55 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 			if verr := grant.CheckAgent(agentName); verr != nil {
 				return verr
 			}
+			if httpAddr == "" && tokenFile != "" {
+				fmt.Fprintln(cmd.ErrOrStderr(),
+					"rta: --token-file does nothing without --http, since nothing is listening for a bearer token to guard")
+			}
+			// The HTTP transport's own gate, checked before anything else it
+			// needs is built: a caller proves who it is over the wire here,
+			// where stdio has only ever had "whoever the operator's shell
+			// launched". There is no path through this command that opens the
+			// listener without a verifier — refusing early says so plainly
+			// instead of failing later inside net/http with a less legible error.
+			var (
+				verifier auth.TokenVerifier
+				ln       net.Listener
+			)
+			if httpAddr != "" {
+				// A parked call has nobody positioned to answer it: --consent
+				// waits for the person at the machine, and the machine, over
+				// HTTP, is reached only by the infrastructure-level access this
+				// design deliberately does not build a network surface for (see
+				// docs/20-mcp.md). Refusing to start is the same rule
+				// ConsentNotify already follows one flag over — a control
+				// nobody can exercise must not be allowed to pretend it works.
+				if consentOn {
+					return fmt.Errorf("--consent has nobody positioned to answer on a remote server; " +
+						"see \"Remote hosting\" in docs/20-mcp.md")
+				}
+				if tokenFile == "" {
+					return fmt.Errorf("--http needs a way to verify who is calling: pass --token-file")
+				}
+				tokens, groupReadable, err := mcp.LoadTokenFile(tokenFile)
+				if err != nil {
+					return fmt.Errorf("--token-file: %w", err)
+				}
+				if groupReadable {
+					fmt.Fprintf(cmd.ErrOrStderr(),
+						"rta: %s is group-readable — anyone in that group can authenticate as every label it holds\n",
+						tokenFile)
+				}
+				verifier = mcp.Compose(cmd.ErrOrStderr(), mcp.StaticTokenVerifier(tokens))
+				// Bound now rather than left to Serve, so a taken port or a bad
+				// address is this command's own error message — and so the
+				// banner below can report the address actually bound, which is
+				// the real one rather than the ":0" an operator or a test asked
+				// for.
+				ln, err = net.Listen("tcp", httpAddr)
+				if err != nil {
+					return fmt.Errorf("--http: %w", err)
+				}
+			}
 			opts := mcp.Options{
 				Agent:            agentName,
 				AllowWrite:       allowWrite,
@@ -144,15 +203,31 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				Secrets:   kv.Reveal,
 				Untrusted: untrustedNames(),
 				Paths:     guard,
+				Remote:    httpAddr != "",
 			}
 			server := mcp.NewServer(reg, version, opts)
-			// Logs must go to stderr: stdout is the protocol channel.
-			fmt.Fprintln(cmd.ErrOrStderr(), "rta mcp server listening on stdio")
+			// Logs must go to stderr: stdout is the protocol channel over
+			// stdio, and a banner on the wire over HTTP would be a client
+			// speaking to a server that has not accepted the connection yet.
+			if httpAddr != "" {
+				fmt.Fprintf(cmd.ErrOrStderr(), "rta mcp server listening on http://%s\n", ln.Addr())
+				fmt.Fprintln(cmd.ErrOrStderr(),
+					"rta: every request needs a bearer token; TLS is not this process's job — "+
+						"put a reverse proxy, ingress or service mesh in front of it")
+			} else {
+				fmt.Fprintln(cmd.ErrOrStderr(), "rta mcp server listening on stdio")
+			}
 			// Said out loud rather than left to be discovered from a refusal:
 			// an operator who needs a wider root should learn it here, not
 			// from an agent reporting that a file it can see does not exist.
 			fmt.Fprintf(cmd.ErrOrStderr(), "path arguments confined to: %s\n",
 				strings.Join(guard.Roots(), ", "))
+			// What Remote hides, named rather than left for an agent to notice
+			// as a shorter tool list: see plugin.Capability.HostSpecific.
+			if blocked := opts.RemoteBlocked(reg); len(blocked) > 0 {
+				fmt.Fprintf(cmd.ErrOrStderr(), "rta: remote transport hides %d capabilities that describe this machine: %s\n",
+					len(blocked), strings.Join(blocked, ", "))
+			}
 			// The ceiling, said out loud for the same reason the roots are.
 			//
 			// It matters more here than anywhere else, because this is the one
@@ -170,17 +245,27 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 			for _, p := range opts.Problems(reg) {
 				fmt.Fprintln(cmd.ErrOrStderr(), "rta:", p)
 			}
-			// fd 0 here is the agent's request stream. main() has already
-			// taken it away from anything this process launches — it had to,
-			// since plugins are spawned during startup, long before this runs
-			// — so what is left to do is ask for it back.
-			err = server.Run(cmd.Context(), &sdk.IOTransport{
-				Reader: stdio.Real(),
-				Writer: stdio.Writer(cmd.OutOrStdout()),
-			})
+			if httpAddr != "" {
+				// Bearer-authenticated and cross-origin-protected inside
+				// Serve, unconditionally — see internal/mcp/remote.go.
+				err = mcp.Serve(cmd.Context(), server, ln, mcp.RemoteOptions{
+					Verifier: verifier, Stderr: cmd.ErrOrStderr(),
+				})
+			} else {
+				// fd 0 here is the agent's request stream. main() has already
+				// taken it away from anything this process launches — it had
+				// to, since plugins are spawned during startup, long before
+				// this runs — so what is left to do is ask for it back.
+				err = server.Run(cmd.Context(), &sdk.IOTransport{
+					Reader: stdio.Real(),
+					Writer: stdio.Writer(cmd.OutOrStdout()),
+				})
+			}
 			// Client hang-up and ctrl-c are clean shutdowns, not failures.
 			// The SDK does not expose a sentinel for the session-closing error
 			// (it wraps EOF in a plain fmt error), hence the string match.
+			// Serve already returns nil on its own clean shutdown path, so
+			// this is stdio-specific in practice and harmless otherwise.
 			if err == nil || errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) ||
 				strings.Contains(err.Error(), "server is closing") {
 				return nil
@@ -202,6 +287,11 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 		"name this agent, so grants and the record can tell it from your other clients")
 	cmd.Flags().StringSliceVar(&roots, "root", nil,
 		"directory a caller may name in a path argument (repeatable; default: the working directory)")
+	cmd.Flags().StringVar(&httpAddr, "http", "",
+		"serve over HTTP instead of stdio, listening on this address (e.g. 127.0.0.1:8443) — "+
+			"TLS and network exposure are the operator's job, not this flag's")
+	cmd.Flags().StringVar(&tokenFile, "token-file", "",
+		"bearer tokens allowed to connect, one \"label token\" pair per line; required with --http")
 	// Off by default, and the default is the important half: a call parked
 	// in a server nobody is watching is worse than a refusal.
 	cmd.Flags().BoolVar(&consentOn, "consent", false,

@@ -1,0 +1,1973 @@
+[
+  {
+    "name": "agent_allow",
+    "description": "── the text below is written by the plugin, not by rta ──\nAllow one parked call\n\nAuthorizes exactly the call the request names, and nothing else — the agent's call proceeds, and no standing state is created. With --ttl it also issues the grant you would have typed (same target, same record, same connection), which is worth doing when the same question is about to be asked five more times. Never reachable over MCP: an agent that could answer its own request would make the whole mechanism theatre.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
+    "destructive_hint": false,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "the request id from `rta agent pending`",
+          "type": "string"
+        },
+        "ttl": {
+          "description": "also issue a standing grant for this long, e.g. 15m (max 24h)",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "agent_deny",
+    "description": "── the text below is written by the plugin, not by rta ──\nDeny one parked call\n\nThe agent's call is refused with your answer rather than with a timeout, which is the difference between a model that stops and one that retries. Never reachable over MCP.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
+    "destructive_hint": false,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "the request id from `rta agent pending`",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "agent_log",
+    "description": "── the text below is written by the plugin, not by rta ──\nThe record of what agents did — one line per call, refusals included\n\nEvery call that arrived over MCP: the capability, the arguments (secrets masked), the profile, what happened, and how it was authorized — no grant needed, a standing grant, or you answering live. The file is chained, so an edited or missing line is visible: --detail verifies it and says where it breaks. This is history and not policy; `rta grant list` is what may happen next.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "after": {
+          "description": "only calls after this `seq` — an exact cursor, for shipping the record somewhere",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "detail": {
+          "default": false,
+          "description": "return the full detailed view instead of the compact summary",
+          "type": "boolean"
+        },
+        "limit": {
+          "default": 30,
+          "description": "how many of the most recent calls to show",
+          "maximum": 500,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "refused": {
+          "description": "only the calls rta would not make",
+          "type": "boolean"
+        },
+        "since": {
+          "description": "only calls after this: a duration like `2h`, or a date like 2026-08-30",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "agent_metrics",
+    "description": "── the text below is written by the plugin, not by rta ──\nThe record as Prometheus metrics, for a dashboard and an alert\n\nOne command, the standard text exposition format, no listener and no port: `rta agent metrics \u003e /var/lib/node_exporter/textfile_collector/rta.prom` on a timer is the whole integration. Calls by capability, agent, outcome and how they were authorized; grants in force; calls parked waiting for you; and whether the record's hash chain still verifies — which is the one worth an alert, because a record that stops verifying is either a bug or somebody editing it. Nothing is kept: every number is derived from the ledger, so it is a number you could recompute. The Grafana stack's other half needs nothing here — `agent log --after \u003cseq\u003e -o json` is already a cursor over an append-only record, which is what a log shipper wants.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    }
+  },
+  {
+    "name": "agent_overview",
+    "description": "── the text below is written by the plugin, not by rta ──\nAgent activity at a glance: recent calls, refusals, anything waiting\n\nThe last hour of calls that arrived over MCP, how many were refused, and how many requests are parked waiting for you to answer right now. With --detail: the chain's integrity, where the ledger lives and how big it is.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "default": false,
+          "description": "return the full detailed view instead of the compact summary",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "agent_pending",
+    "description": "── the text below is written by the plugin, not by rta ──\nCalls parked right now, waiting for you to allow or deny\n\nWith `rta mcp serve --consent`, a call that needs a grant nobody issued is parked instead of refused, and waits for you. Each row is one such call: its id, what it wants, against which connection, and how long it will keep waiting. Answer with `rta agent allow \u003cid\u003e` or `rta agent deny \u003cid\u003e`.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    }
+  },
+  {
+    "name": "agent_show",
+    "description": "── the text below is written by the plugin, not by rta ──\nEverything about one parked call, including what it would do\n\nThe request in full: which capability, which record, against which connection, every argument, and — for a destructive call rta could preview — what running it would actually do, taken from the capability's own --dry-run. That last part is the difference between approving an intention and approving an outcome. Answer with `rta agent allow \u003cid\u003e` or `rta agent deny \u003cid\u003e`.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "the request id from `rta agent pending`",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "audit_agents",
+    "description": "── the text below is written by the plugin, not by rta ──\nAudit the AI agents configured on this machine — tools, servers, credentials\n\nAn agent's configuration decides more about a machine's exposure than most of what this plugin grades, and nothing reads it. This does: which tools the model may run, which MCP servers launch with it, whether any of them is handed a credential in plain text, whether one is fetched from a registry at launch rather than pinned, whether the files are readable by anybody else, and whether the endpoint every prompt is sent to is the one you expect. **It reads and never writes** — that file is what grants an agent access to your secrets, and the change is yours to make. Credential *names* are reported and values never are. It also states the boundary out loud: an agent that can run commands can run rta directly, so rta bounds an agent without a shell and is hygiene rather than containment for one with. Refused over MCP, because the subject of this audit is the agent asking. Cites A01:2025 Broken Access Control and A02:2025 Security Misconfiguration.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "default": false,
+          "description": "return the full detailed view instead of the compact summary",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "audit_deps",
+    "description": "── the text below is written by the plugin, not by rta ──\nCheck declared dependencies against the OSV vulnerability database\n\nReads what a project already declares — go.mod, any of the four JavaScript lockfiles (npm, pnpm, yarn, bun), uv.lock, poetry.lock, Pipfile.lock, requirements.txt, Cargo.lock, composer.lock, Gemfile.lock, or a CycloneDX/SPDX SBOM sitting beside them — and asks osv.dev once about every pinned dependency, reporting which are named in an advisory. Nothing is resolved, built or crawled: a lockfile is a list a package manager already committed, and reading it is not scanning. Each advisory it finds is then read for its severity and the versions that fix it — a second question asked only about findings, so a project with nothing wrong asks nothing extra — and the records every database publishes for one vulnerability are collapsed onto it, since a package can otherwise be counted twice under a GHSA and a GO identifier for the same CVE. It still points at osv-scanner, trivy or grype for the depth this does not have: whether your code reaches the vulnerable function at all, which no advisory can say. Components whose ecosystem OSV does not recognise are counted and named rather than dropped. --offline inventories without asking anything. --recursive walks a monorepo, skipping node_modules, vendor and build output, which is what a polyglot repository needs: one lockfile per service and no single file that knows about the others. From a terminal --path also takes a repository URL, read shallowly in memory and never written to disk, which is how you audit a repository you have not checked out — refused over MCP, since a URL a caller composes is a request rta makes on its behalf. Cites A03:2025 Software Supply Chain Failures and CWE-1395.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "default": false,
+          "description": "return the full detailed view instead of the compact summary",
+          "type": "boolean"
+        },
+        "offline": {
+          "description": "inventory the dependencies without querying osv.dev",
+          "type": "boolean"
+        },
+        "path": {
+          "default": ".",
+          "description": "directory holding the lockfile or SBOM, or the file itself — or, from a terminal, a repository URL (https://, ssh://, git@host:path) read in memory; not over MCP (a path on the machine running rta)",
+          "type": "string"
+        },
+        "recursive": {
+          "description": "walk subdirectories too, for a monorepo with a manifest per package",
+          "type": "boolean"
+        },
+        "timeout": {
+          "default": 30,
+          "description": "query timeout in seconds",
+          "maximum": 300,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "audit_mail",
+    "description": "── the text below is written by the plugin, not by rta ──\nAudit a domain's email authentication: SPF, DKIM, DMARC, MTA-STS\n\nAnswers \"can somebody send mail as this domain\" from the records the domain publishes: SPF (present, singular, how it ends, and how close it is to RFC 7208's ten-lookup limit past which it silently stops applying), DMARC (policy, rollout percentage, whether anything reports back), DKIM for a given selector, MTA-STS and TLS-RPT for the server-to-server hop, and MX — including RFC 7505's null MX, which is a hardening measure rather than an omission. Every finding cites an OWASP Top 10:2025 category and a MITRE CWE. With --detail: one section per area plus the cited references with lookup URLs. Read-only, a handful of lookups of names derived from the domain by rule — nothing is enumerated, which is why DKIM needs its selector handed to it.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "default": false,
+          "description": "return the full detailed view instead of the compact summary",
+          "type": "boolean"
+        },
+        "domain": {
+          "description": "domain to audit",
+          "type": "string"
+        },
+        "selector": {
+          "description": "DKIM selector to check (the s= tag of a DKIM-Signature)",
+          "type": "string"
+        },
+        "timeout": {
+          "default": 15,
+          "description": "lookup timeout in seconds",
+          "maximum": 300,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "domain"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "audit_web",
+    "description": "── the text below is written by the plugin, not by rta ──\nAudit a web host: TLS, certificate, headers, cookies, exposure\n\nOne HTTPS request, graded: TLS version and cipher, certificate validity, expiry and signature algorithm, the security headers a host should send (HSTS, CSP — checked for weak directives like unsafe-inline, not just presence — X-Frame-Options/frame-ancestors, cross-origin isolation headers), CORS behavior (probed with an Origin no real browser would send, to catch blind reflection), cookie flags, and the version/stack details a host should not leak. Every finding cites an OWASP Top 10:2025 category and a MITRE CWE, so a result traces back to a named control rather than an opinion. With --detail: one section per area plus the cited references with lookup URLs. Read-only — it only inspects the response the host volunteers, plus the one Origin header the CORS probe adds.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"host\"). You cannot issue one yourself — ask the operator to run `rta grant allow audit.web`.",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "default": false,
+          "description": "return the full detailed view instead of the compact summary",
+          "type": "boolean"
+        },
+        "host": {
+          "description": "host or URL to audit",
+          "type": "string"
+        },
+        "timeout": {
+          "default": 15,
+          "description": "request timeout in seconds",
+          "maximum": 300,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "host"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "audit_why",
+    "description": "── the text below is written by the plugin, not by rta ──\nTrace one dependency back to what pulled it in\n\nAnswers the question an advisory raises second: did we ask for this, or did something else pull it in — and if something else, what. Reads the same manifests `audit deps` does and draws the package at the root with everything that requires it beneath, up to the dependencies the project asks for by name. Nothing is resolved, installed or fetched. Formats differ in what they record: go.mod marks a require direct or indirect and stores no edges, while the four JavaScript lockfiles, Cargo, uv, Poetry, composer, Gemfile.lock, pip-compile's `# via` annotations and a CycloneDX SBOM all carry the graph. Where the file does not say, this says so and hands over the package manager's own command — `go mod why`, `pnpm why`, `cargo tree --invert` — with the package already in it.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "package": {
+          "description": "the package to trace, as the lockfile spells it",
+          "type": "string"
+        },
+        "path": {
+          "default": ".",
+          "description": "directory holding the lockfile or SBOM, or the file itself — or, from a terminal, a repository URL (https://, ssh://, git@host:path) read in memory; not over MCP (a path on the machine running rta)",
+          "type": "string"
+        },
+        "recursive": {
+          "description": "walk subdirectories too, for a monorepo with a manifest per package",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "package"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "cert_chain",
+    "description": "── the text below is written by the plugin, not by rta ──\nShow the certificate chain presented by a host\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "target": {
+          "description": "host[:port] to connect to, or a path to a PEM file (a path on the machine running rta)",
+          "type": "string"
+        },
+        "timeout": {
+          "default": 10,
+          "description": "connect timeout in seconds",
+          "maximum": 120,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "cert_expiry",
+    "description": "── the text below is written by the plugin, not by rta ──\nCheck certificate expiry for one or more hosts\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "targets": {
+          "description": "hosts to check (host[:port])",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "timeout": {
+          "default": 10,
+          "description": "connect timeout in seconds",
+          "maximum": 120,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "warn-days": {
+          "default": 30,
+          "description": "flag certificates expiring within this many days",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "targets"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "cert_inspect",
+    "description": "── the text below is written by the plugin, not by rta ──\nShow certificate details for a host or PEM file\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "target": {
+          "description": "host[:port] to connect to, or a path to a PEM file (a path on the machine running rta)",
+          "type": "string"
+        },
+        "timeout": {
+          "default": 10,
+          "description": "connect timeout in seconds",
+          "maximum": 120,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "cert_pem",
+    "description": "── the text below is written by the plugin, not by rta ──\nPrint the certificate chain as PEM\n\nThe bytes, not a description of them. `cert chain` draws what a host presents so a person can read it; this hands the same certificates back in the form every other tool takes one — a Kubernetes ConfigMap, a Dockerfile COPY, `update-ca-certificates`, a paste into somebody's terminal.\n\n--include issuers is the one to reach for behind a private CA: it drops the leaf and leaves the chain that has to be *trusted*, which is what a ca-bundle is. chain (the default) is everything the host presented, leaf is the end-entity certificate alone.\n\nA presented chain is what the host chose to send and is not always complete — a server that omits its intermediate presents a leaf that validates nowhere else, and this reports what arrived rather than filling the gap from a trust store, because a bundle that silently differs from what the server serves is how a working local test hides a broken deployment.\n\nRead, and it stays read from anywhere but a terminal: --out names a path on *this* machine, so it is a person's flag only and an MCP caller always gets the PEM back in the response.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "include": {
+          "default": "chain",
+          "description": "which certificates to print",
+          "enum": [
+            "chain",
+            "issuers",
+            "leaf"
+          ],
+          "type": "string"
+        },
+        "target": {
+          "description": "host[:port] to connect to, or a path to a PEM file (a path on the machine running rta)",
+          "type": "string"
+        },
+        "timeout": {
+          "default": 10,
+          "description": "connect timeout in seconds",
+          "maximum": 120,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "cert_tls",
+    "description": "── the text below is written by the plugin, not by rta ──\nReport the negotiated TLS version and cipher for a host\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "target": {
+          "description": "host[:port] to connect to, or a path to a PEM file (a path on the machine running rta)",
+          "type": "string"
+        },
+        "timeout": {
+          "default": 10,
+          "description": "connect timeout in seconds",
+          "maximum": 120,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "codec_b64",
+    "description": "── the text below is written by the plugin, not by rta ──\nBase64 encode or decode a value\n\nDecoding accepts standard, URL-safe, and unpadded variants without being told which — the caller already has the encoded value, so being forgiving about which base64 dialect produced it costs nothing.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "decode": {
+          "description": "decode instead of encode",
+          "type": "boolean"
+        },
+        "url": {
+          "description": "use the URL-safe alphabet when encoding",
+          "type": "boolean"
+        },
+        "value": {
+          "description": "the text to transform",
+          "type": "string"
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "codec_hex",
+    "description": "── the text below is written by the plugin, not by rta ──\nHex encode or decode a value\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "decode": {
+          "description": "decode instead of encode",
+          "type": "boolean"
+        },
+        "value": {
+          "description": "the text to transform",
+          "type": "string"
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "codec_jwt",
+    "description": "── the text below is written by the plugin, not by rta ──\nDecode a JWT's header and claims for inspection\n\nUnverified by default and clearly labeled as such: this is for reading a token while debugging, not for authenticating one. No signature check is performed — anyone can hand you a token with any claims at all.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "token": {
+          "description": "the JWT to decode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "token"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "codec_url",
+    "description": "── the text below is written by the plugin, not by rta ──\nURL-escape or unescape a value\n\nQuery-component escaping (spaces become +), the form almost everyone means by \"URL encode this\" — the value for a query string or form body.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "decode": {
+          "description": "decode instead of encode",
+          "type": "boolean"
+        },
+        "value": {
+          "description": "the text to transform",
+          "type": "string"
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "debug_ansi",
+    "description": "── the text below is written by the plugin, not by rta ──\nBreak down the ANSI escape sequences in a string, byte by byte\n\nWalks the input the way a terminal would, one printable run or control/escape sequence at a time, and names what each one does — SGR colors and attributes, cursor movement, screen/line erase, and the OSC sequences most worth knowing about on sight: window title, hyperlink target, and the system clipboard write (decoded, not left as base64). Never prints a raw control byte back at the terminal it is running in — the whole point is seeing what a sequence does without it happening.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "input": {
+          "description": "text containing escape sequences; reads piped stdin when omitted",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "gen_overview",
+    "description": "── the text below is written by the plugin, not by rta ──\nA sampler of the shapes worth generating, ready to use\n\nGenerates one of each common shape side by side — passwords, encryption key material, URL-safe and TOTP tokens, UUIDs — labelled with what it is for, the entropy it actually carries and the command that reproduces it, so picking the right shape does not require remembering the flags first. With --detail: every preset, plus why a \"32-character key\" is not a 32-byte one. Every value is real and freshly generated; nothing is an example.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "default": false,
+          "description": "return the full detailed view instead of the compact summary",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "gen_password",
+    "description": "── the text below is written by the plugin, not by rta ──\nGenerate a cryptographically random password\n\ncrypto/rand only, with unbiased alphabet selection (rand.Int, never rand.Intn or modulo, which biases low indices unless the alphabet size divides the RNG range evenly). Reports entropy in bits: length x log2(alphabet size).\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "default": 1,
+          "description": "how many to generate",
+          "type": "integer"
+        },
+        "exclude-ambiguous": {
+          "description": "drop look-alike characters: 0O1lI",
+          "type": "boolean"
+        },
+        "length": {
+          "default": 20,
+          "description": "characters",
+          "maximum": 4096,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "no-digits": {
+          "description": "exclude digits",
+          "type": "boolean"
+        },
+        "no-lower": {
+          "description": "exclude lowercase letters",
+          "type": "boolean"
+        },
+        "no-upper": {
+          "description": "exclude uppercase letters",
+          "type": "boolean"
+        },
+        "symbols": {
+          "description": "include symbols: !@#$%^\u0026*()-_=+[]{}\u003c\u003e?",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "gen_token",
+    "description": "── the text below is written by the plugin, not by rta ──\nGenerate random bytes, formatted as hex/base64/base32\n\ncrypto/rand bytes, formatted with --encoding. base32 at the right length is already a TOTP secret (RFC 4648/6238) — there is no separate gen.totp.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "encoding": {
+          "default": "hex",
+          "description": "output encoding",
+          "enum": [
+            "hex",
+            "base64",
+            "base64url",
+            "base32"
+          ],
+          "type": "string"
+        },
+        "length": {
+          "default": 32,
+          "description": "bytes of entropy",
+          "maximum": 4096,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "gen_uuid",
+    "description": "── the text below is written by the plugin, not by rta ──\nGenerate a UUID: v4 random (default) or v7 time-ordered\n\nv1/v3/v5/v6 are deliberately not offered: v1 leaks the generating machine's MAC address and a timestamp, v3/v5 hash a namespace+name instead of generating anything (a different operation), and v6 is superseded by v7 for the same time-ordering goal, per RFC 9562's own recommendation.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "default": 1,
+          "description": "how many to generate",
+          "type": "integer"
+        },
+        "version": {
+          "default": "4",
+          "description": "UUID version",
+          "enum": [
+            "4",
+            "7"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "grant_allow",
+    "description": "── the text below is written by the plugin, not by rta ──\nAllow AI agents to use one capability, temporarily\n\nGrants expire (15m by default, 24h maximum) and can only be issued by a person at a terminal — an agent that could grant itself access would be no gate at all. The target is a capability ID (kv.get) or a plugin name (kv), which covers all of it. A second argument narrows the grant to one record: `rta grant allow kv.get db-password` allows that key and no other. --agent narrows it to one of your named agents, so consent given while talking to one client does not follow every other client on this machine. --max-uses expires the grant after that many successful calls, on top of --ttl, whichever comes first — `--max-uses 1` for a value that should be read exactly once. --rate bounds how fast instead of how much: `--rate 10/1h` allows ten calls in any hour and tells the agent when to come back, so a session that has gone wrong slows to something you can notice rather than draining at machine speed.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
+    "destructive_hint": false,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "agent": {
+          "description": "narrow it to one named agent — the name `rta mcp serve --as` uses",
+          "type": "string"
+        },
+        "max-uses": {
+          "description": "expire after this many successful calls (0 = unlimited)",
+          "type": "integer"
+        },
+        "note": {
+          "description": "why — shown by grant list",
+          "type": "string"
+        },
+        "profile": {
+          "description": "narrow it to one configured connection",
+          "type": "string"
+        },
+        "rate": {
+          "description": "how fast it may be used, as calls/window — e.g. 10/1h",
+          "type": "string"
+        },
+        "scope": {
+          "description": "narrow it to one record: a key, a task id, a hostname",
+          "type": "string"
+        },
+        "target": {
+          "description": "capability to allow, e.g. kv.get — or a plugin name for all of it",
+          "type": "string"
+        },
+        "ttl": {
+          "default": "15m",
+          "description": "how long it lasts: 30s, 15m, 2h",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "grant_list",
+    "description": "── the text below is written by the plugin, not by rta ──\nList what AI agents are currently allowed to do\n\nReadable without unlocking anything, so the question stays answerable in a hurry. Expired grants are dropped on read. With --detail: what is currently allowed, then everything an agent can reach with no grant at all, and everything that would need one — because \"what did I allow\" is only half of \"what can it do\".\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "default": false,
+          "description": "return the full detailed view instead of the compact summary",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "grant_renew",
+    "description": "── the text below is written by the plugin, not by rta ──\nPush out the deadline on grants you already have\n\nRenew extends time and nothing else. Scope, profile, use limit, uses already spent and note are all carried forward from the stored grant — so a renewal can never turn a one-time grant into an unlimited one, which is what re-running `grant allow` without retyping --max-uses quietly did. The moment of first consent is not moved either, so a chain of renewals is still capped at 24h from when a person first said yes. With no arguments it renews every active grant, which is the common case: the work is still going, the clock is not.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
+    "destructive_hint": false,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "agent": {
+          "description": "only grants for this named agent",
+          "type": "string"
+        },
+        "profile": {
+          "description": "only grants on this connection",
+          "type": "string"
+        },
+        "scope": {
+          "description": "only the grant for this record",
+          "type": "string"
+        },
+        "target": {
+          "description": "only grants on this capability or plugin",
+          "type": "string"
+        },
+        "ttl": {
+          "description": "how much longer — defaults to the window the grant was issued with",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "grant_revoke",
+    "description": "── the text below is written by the plugin, not by rta ──\nTake an agent's access back\n\nCan only be run by a person at a terminal, the same as grant.allow and for the same reason: consent state belongs to whoever is deciding it, not to whoever is currently being granted or denied.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
+    "destructive_hint": false,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "agent": {
+          "description": "only the grant for this named agent",
+          "type": "string"
+        },
+        "all": {
+          "description": "revoke every grant",
+          "type": "boolean"
+        },
+        "profile": {
+          "description": "only the grant for this connection",
+          "type": "string"
+        },
+        "scope": {
+          "description": "only the grant for this record",
+          "type": "string"
+        },
+        "target": {
+          "description": "capability or plugin to revoke",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "http_delete",
+    "description": "── the text below is written by the plugin, not by rta ──\nDELETE a URL\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"url\"). You cannot issue one yourself — ask the operator to run `rta grant allow http.delete`.",
+    "destructive_hint": false,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "basic": {
+          "description": "basic auth as user:password",
+          "type": "string"
+        },
+        "bearer": {
+          "description": "bearer token (Authorization: Bearer ...)",
+          "type": "string"
+        },
+        "header": {
+          "description": "request header, repeatable: -H 'Key: Value'",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "timeout": {
+          "default": 30,
+          "description": "request timeout in seconds",
+          "maximum": 600,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "url": {
+          "description": "request URL",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "http_get",
+    "description": "── the text below is written by the plugin, not by rta ──\nGET a URL and show status, timing and body\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"url\"). You cannot issue one yourself — ask the operator to run `rta grant allow http.get`.",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "basic": {
+          "description": "basic auth as user:password",
+          "type": "string"
+        },
+        "bearer": {
+          "description": "bearer token (Authorization: Bearer ...)",
+          "type": "string"
+        },
+        "header": {
+          "description": "request header, repeatable: -H 'Key: Value'",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "timeout": {
+          "default": 30,
+          "description": "request timeout in seconds",
+          "maximum": 600,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "url": {
+          "description": "request URL",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "http_head",
+    "description": "── the text below is written by the plugin, not by rta ──\nHEAD a URL and show status, timing and headers\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"url\"). You cannot issue one yourself — ask the operator to run `rta grant allow http.head`.",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "basic": {
+          "description": "basic auth as user:password",
+          "type": "string"
+        },
+        "bearer": {
+          "description": "bearer token (Authorization: Bearer ...)",
+          "type": "string"
+        },
+        "header": {
+          "description": "request header, repeatable: -H 'Key: Value'",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "timeout": {
+          "default": 30,
+          "description": "request timeout in seconds",
+          "maximum": 600,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "url": {
+          "description": "request URL",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "http_post",
+    "description": "── the text below is written by the plugin, not by rta ──\nPOST to a URL with an optional body\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"url\"). You cannot issue one yourself — ask the operator to run `rta grant allow http.post`.",
+    "destructive_hint": false,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "basic": {
+          "description": "basic auth as user:password",
+          "type": "string"
+        },
+        "bearer": {
+          "description": "bearer token (Authorization: Bearer ...)",
+          "type": "string"
+        },
+        "data": {
+          "description": "request body, sent as given",
+          "type": "string"
+        },
+        "header": {
+          "description": "request header, repeatable: -H 'Key: Value'",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "timeout": {
+          "default": 30,
+          "description": "request timeout in seconds",
+          "maximum": 600,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "url": {
+          "description": "request URL",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "http_put",
+    "description": "── the text below is written by the plugin, not by rta ──\nPUT to a URL with an optional body\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"url\"). You cannot issue one yourself — ask the operator to run `rta grant allow http.put`.",
+    "destructive_hint": false,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "basic": {
+          "description": "basic auth as user:password",
+          "type": "string"
+        },
+        "bearer": {
+          "description": "bearer token (Authorization: Bearer ...)",
+          "type": "string"
+        },
+        "data": {
+          "description": "request body, sent as given",
+          "type": "string"
+        },
+        "header": {
+          "description": "request header, repeatable: -H 'Key: Value'",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "timeout": {
+          "default": 30,
+          "description": "request timeout in seconds",
+          "maximum": 600,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "url": {
+          "description": "request URL",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "keys_add",
+    "description": "── the text below is written by the plugin, not by rta ──\nGenerate an ed25519 SSH key, ready to back up\n\ned25519 and nothing else, which is the same rule keys.backup already enforces from the other end: a key generated here can always be melted into words, and one that could not would be a key this plugin cannot do its own job on. Writes \u003cout\u003e at 0600 and \u003cout\u003e.pub at 0644, refusing to touch either if it already exists — the discipline keys.restore uses, for the sharper reason here: overwriting a private key destroys access to everything that key authorises, with nothing to restore from. --passphrase encrypts the key being written and is always typed, never read from the environment, for keys.restore's --new-passphrase reason: generating a key is a one-off act, not a standing credential for the session. Refuses SurfaceMCP outright, the same gate keys.backup and keys.restore set: a key an agent generated is a credential nobody watched being made. There is deliberately no keys.rm — deleting a key file is irreversible loss of access, `rm` is a command everybody already has, and the shell they run it in will ask.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
+    "destructive_hint": false,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "comment": {
+          "description": "comment for the public key, e.g. me@laptop",
+          "type": "string"
+        },
+        "out": {
+          "description": "where to write the private key (and \u003cout\u003e.pub) (a path on the machine running rta)",
+          "type": "string"
+        }
+      },
+      "required": [
+        "out"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "keys_backup",
+    "description": "── the text below is written by the plugin, not by rta ──\nBack up an SSH private key as 24 BIP39 seed words\n\nThe words ARE the private key — anyone holding them can restore it and use it exactly as if they had the file, with no passphrase of their own to guess. Classified as a write for the same reason `kv get` is: revealing key material is the sensitive act, not changing anything. Refuses SurfaceMCP outright rather than only requiring a grant — the same precedent grant.allow/grant.revoke set, for the same reason `share.secret.set/get` will: once melted, the words work forever until the underlying key is rotated, with no per-call log and nothing a grant's expiry can take back. ed25519 only: the algorithm has a single 32-byte seed to encode; RSA and ECDSA keys do not.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
+    "destructive_hint": false,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "description": "private key to back up, e.g. ~/.ssh/id_ed25519 (a path on the machine running rta)",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "keys_restore",
+    "description": "── the text below is written by the plugin, not by rta ──\nReconstruct an SSH private key from its BIP39 seed words\n\nWrites \u003cout\u003e and \u003cout\u003e.pub, refusing to touch either if it already exists — a restored key is never written over an existing one, the same discipline `kv init --generate` uses for a fresh identity. Deterministic: an ed25519 private key is entirely derived from its 32-byte seed, so the restored key is cryptographically identical to the one `keys.backup` read — same fingerprint, always, provably so by comparing the one this prints against the original's. The on-disk file itself is not byte-identical: OpenSSH's own container writes a random per-encode nonce alongside the key material, which is the harmless difference to expect, not a sign anything went wrong. A comment (the user@host after the key material in a .pub file) is never encoded in the words and is lost on backup; pass --comment to put one back. --new-passphrase locks the key being written here — a different secret from keys.backup's --passphrase, which unlocks the key being read there, named differently on purpose and, unlike --passphrase, never read from the environment: a restore is a one-off action, not a standing credential for the session, so this always has to be typed explicitly rather than inherited from whatever a scripted backup earlier in the same shell happened to leave set. Refuses SurfaceMCP outright, the same gate keys.backup sets and for the same reason.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
+    "destructive_hint": false,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "comment": {
+          "description": "comment for the restored public key, e.g. me@laptop",
+          "type": "string"
+        },
+        "out": {
+          "description": "where to write the restored private key (and \u003cout\u003e.pub) (a path on the machine running rta)",
+          "type": "string"
+        },
+        "words": {
+          "description": "24 BIP39 seed words, space-separated — omit to paste at a masked prompt, or pipe them in",
+          "type": "string"
+        }
+      },
+      "required": [
+        "out"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "kv_copy",
+    "description": "── the text below is written by the plugin, not by rta ──\nCopy a value to the clipboard without displaying it\n\nThe value goes to this machine's clipboard and nowhere else: not to the screen, not into scrollback, not into shell history — because getting a secret somewhere is nearly always a paste rather than a read, and the reading is the part that leaves a copy behind.\n\nClassified with `kv get`, not below it: a value on the clipboard has been revealed, and every process running as you can read it. Printing nothing buys a smaller audience, not a different act.\n\nRefused over MCP however the grants read. The clipboard is not a return value — it is a shared channel on somebody else's desk that the caller cannot read back, so an agent gains nothing here it could not get from `kv get`, while gaining the ability to silently replace the address you copied a moment ago.\n\nNothing clears the clipboard afterwards, and this says so rather than pretending otherwise: a command that has printed its answer and exited cannot come back in 45 seconds to undo it.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"key\"). You cannot issue one yourself — ask the operator to run `rta grant allow kv.copy`.",
+    "destructive_hint": false,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "description": "key to copy",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "kv_edit",
+    "description": "── the text below is written by the plugin, not by rta ──\nOpen a stored value in $EDITOR and re-encrypt it on save\n\nFor changing a secret you have to look at while you change it: one line of a kubeconfig, one field of a JSON credential, a certificate chain gaining an intermediate. `kv set` can do all of that too, and puts the entire new value in your shell history on the way — which is the exact leak this store exists to close.\n\nThe plaintext is written to a file mode 0600 inside a directory mode 0700 (/dev/shm where there is one, so it never reaches a disk at all), and the whole directory is removed afterwards — including the swap and backup files editors leave beside what they are editing.\n\n$VISUAL, then $EDITOR, then vi. An editor that returns before you have saved loses the edit, so a windowed one needs its wait flag: EDITOR='code --wait'.\n\nRefused anywhere there is no terminal to hand over — an editor is a person at a keyboard, which over MCP is nobody. Binary values are refused too: a DER certificate opened in a text editor comes back mangled, so those take the `kv get --out` / `kv set --file` round trip that preserves bytes.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"key\"). You cannot issue one yourself — ask the operator to run `rta grant allow kv.edit`.",
+    "destructive_hint": false,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "description": "key to edit",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "kv_env",
+    "description": "── the text below is written by the plugin, not by rta ──\nPrint stored values as shell exports\n\nFor `eval \"$(rta kv env db-password)\"` — loads secrets into a shell session without ever writing them to a file. Key names become environment names (db-password → DB_PASSWORD). --format dotenv writes .env syntax instead. Same grant requirement as kv.get: this reveals values. Naming no key means every key, which is a wider ask and needs a grant for kv.env itself rather than one per key.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"key\"). You cannot issue one yourself — ask the operator to run `rta grant allow kv.env`.",
+    "destructive_hint": false,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "format": {
+          "default": "export",
+          "description": "shell exports, or .env syntax",
+          "enum": [
+            "export",
+            "dotenv"
+          ],
+          "type": "string"
+        },
+        "key": {
+          "description": "keys to export (default: all)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "prefix": {
+          "description": "prepend this to every variable name, e.g. APP_",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "kv_get",
+    "description": "── the text below is written by the plugin, not by rta ──\nReveal a stored value\n\nWrites the value to stdout with no quoting and no framing, so `rta kv get gh-token | gh auth login --with-token` is a pipe and not a transformation. The pretty renderer terminates the line, so a value stored without a trailing newline gains one on the way out; for the byte-exact copy use --out, which writes the stored bytes to a file with 0600 instead, and is how a certificate or key goes back to disk without passing through your scrollback. To use a secret without seeing it at all, `kv copy` puts it on the clipboard and prints nothing.\n\nClassified as a write because revealing a secret is the sensitive act. An MCP agent therefore needs --allow-write, and on top of that a per-key grant issued by a person (`rta grant allow kv.get \u003ckey\u003e --ttl 15m`). --out is a person's flag only, since a grant authorizes revealing a value, not choosing where on this machine it gets written; an MCP caller always gets the value back in the response.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"key\"). You cannot issue one yourself — ask the operator to run `rta grant allow kv.get`.",
+    "destructive_hint": false,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "description": "key to reveal",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "kv_init",
+    "description": "── the text below is written by the plugin, not by rta ──\nSet up how the store is encrypted\n\nChooses the lock once, so nothing has to be repeated afterwards. --generate makes a dedicated age key for this store and uses it: no passphrase to type, no flags to remember, and — unlike your SSH login key — a key whose loss costs you this store and nothing else. --identity locks it to a key you already have (age or SSH). --recipient adds other readers.\n\nA passphrase store needs no init: that is what you get by default.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
+    "destructive_hint": false,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "generate": {
+          "description": "create a dedicated age key for this store and lock it to that",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "kv_list",
+    "description": "── the text below is written by the plugin, not by rta ──\nList stored keys (names and metadata only, never values)\n\nNever returns a value or a preview of one — only key names, what kind of thing each is, its size, its description and when it changed. With --detail: the source filename of anything stored from disk.\n\n--match is the \"which one was it called?\" filter: a substring of the name or the description, case-insensitive, so `kv list --match aws` finds `prod-deploy-key` when the description is the only place the word AWS appears.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "default": false,
+          "description": "return the full detailed view instead of the compact summary",
+          "type": "boolean"
+        },
+        "kind": {
+          "description": "only entries of this kind",
+          "enum": [
+            "string",
+            "json",
+            "certificate",
+            "private-key",
+            "public-key",
+            "ssh-key",
+            "file"
+          ],
+          "type": "string"
+        },
+        "match": {
+          "description": "only keys whose name or description contains this (case-insensitive)",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "kv_recipients",
+    "description": "── the text below is written by the plugin, not by rta ──\nList the public keys that can decrypt the store\n\nAnswers \"who can read this?\" without unlocking anything — recipients are public keys, so the list is plaintext by design. An empty list means the store is passphrase-encrypted.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    }
+  },
+  {
+    "name": "kv_rekey",
+    "description": "── the text below is written by the plugin, not by rta ──\nChange which keys can open the store\n\nThe store is decrypted and written back under a new set of keys, so this is the one command that changes who can read what you already stored.\n\nAdding is the default: `--generate` makes a dedicated age key and leaves the existing readers alone, which is how a store locked to your SSH key gains a key that needs no passphrase — after which both open it and the new one is found without a flag. `--only` makes the set exclusive instead: `--generate --only` switches the lock from one key to the other, and naming the readers you keep is how a reader is removed.\n\n--identity never changes the set: it says which private key is here, which is what opens the store and the only way to prove a key is yours — a public key on its own shows nothing of the sort.\n\nTwo things are refused rather than confirmed. Reading comes first, so a store you cannot open is a store you cannot re-key. And a key you hold has to survive the change: handing the store to somebody else and locking yourself out of it in the same keystroke is not a thing to be sure about.\n\nOld copies of the file stay readable by the old keys — re-keying changes the lock, it does not reach into backups.\n── end of plugin-written text ──\n\nSafety: destructive. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability. You cannot issue one yourself — ask the operator to run `rta grant allow kv.rekey`.",
+    "destructive_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "generate": {
+          "description": "create a dedicated age key for this store and add it",
+          "type": "boolean"
+        },
+        "only": {
+          "description": "lock it to exactly these keys, dropping every other reader",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "kv_rename",
+    "description": "── the text below is written by the plugin, not by rta ──\nRename a key, keeping its value and its history\n\nRenaming used to mean `kv get` piped into `kv set` and then `kv rm`: two grants for an operation that reveals nothing, and the secret itself sitting in shell history at the join. This moves the entry inside the store — the value is never decrypted into anything but memory, and its description, kind, source and timestamps travel with it.\n\nA name that is already taken is refused rather than overwritten: renaming onto an existing key would destroy the secret in it, which is `kv rm`'s question and is asked with `kv rm`'s answer.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"key\"). You cannot issue one yourself — ask the operator to run `rta grant allow kv.rename`.",
+    "destructive_hint": false,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "description": "key to rename",
+          "type": "string"
+        },
+        "new-name": {
+          "description": "what to call it instead",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "new-name"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "kv_rm",
+    "description": "── the text below is written by the plugin, not by rta ──\nRemove a stored key permanently\n\nThe entry and its value are gone when this returns. There is no history, no backup and no undo — a store keeps one version of each secret, which is the whole reason overwriting one with `kv set` asks the same question this does.\n\nWho can open the store does not change: removing the last entry leaves an empty store locked to the same keys, not an unlocked one. To rename rather than replace, `kv rename` moves an entry without its value ever leaving memory.\n── end of plugin-written text ──\n\nSafety: destructive. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"key\"). You cannot issue one yourself — ask the operator to run `rta grant allow kv.rm`.",
+    "destructive_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "description": "key to remove",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "kv_set",
+    "description": "── the text below is written by the plugin, not by rta ──\nSet (or overwrite) a stored value\n\nThe value comes from the argument or from --file. The kind (certificate, private key, json, file, string) is detected from the content unless --kind says otherwise. Writing an entry never changes who can read the store: that is `kv rekey`, which is destructive for the reason this is not.\n\nSetting a key that already exists replaces the secret in it, and nothing keeps the old one — no history, no backup, no undo. That is the same loss as `kv rm`, which an agent may only reach with --allow-destructive and a per-key grant, so this asks a person the same question rather than a cheaper one for the same damage. CLI and TUI are unaffected: grants gate MCP calls, and at a terminal the person is already there.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"key\"). You cannot issue one yourself — ask the operator to run `rta grant allow kv.set`.",
+    "destructive_hint": false,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "description": "what this is for — shown by kv list",
+          "type": "string"
+        },
+        "key": {
+          "description": "key to set",
+          "type": "string"
+        },
+        "kind": {
+          "description": "override the kind detected from the content",
+          "enum": [
+            "string",
+            "json",
+            "certificate",
+            "private-key",
+            "public-key",
+            "ssh-key",
+            "file"
+          ],
+          "type": "string"
+        },
+        "value": {
+          "description": "value to store",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "kv_show",
+    "description": "── the text below is written by the plugin, not by rta ──\nShow everything about one entry except its value\n\nThe detail page for a stored key: what kind of thing it is, what it is for, how big it is, where it came from and when it changed. Deliberately not the value — that is `kv get` (prints it) or `kv copy` (does not), both writes for exactly that reason. This stays Read because everything on it is metadata you can safely put on a screen.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "description": "key to describe",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "kv_status",
+    "description": "── the text below is written by the plugin, not by rta ──\nWhere the store is and what can open it\n\nEverything about the store that can be known without unlocking it: whether it exists, how big it is, when it last changed, whether it is locked with a passphrase or to keys, and whether a key is available in this environment. With --detail it also lists who can open the store and what is in it — names, kinds and sizes, never a value or a preview of one — when a key is already at hand; when none is, it says so instead of asking, so the compact answer never turns into a passphrase prompt nobody expected.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "default": false,
+          "description": "return the full detailed view instead of the compact summary",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "net_dns",
+    "description": "── the text below is written by the plugin, not by rta ──\nResolve DNS records for a name, or a name for an address\n\n--type auto (the default) asks the question you usually mean: A, AAAA and CNAME for a name, PTR for an address. --server sends the query to a specific resolver instead of the system one, which is how you tell \"the record is wrong\" apart from \"my resolver is stale\". With --detail: the query, the resolver that answered, and how long it took.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "default": false,
+          "description": "return the full detailed view instead of the compact summary",
+          "type": "boolean"
+        },
+        "name": {
+          "description": "name or IP address to resolve",
+          "type": "string"
+        },
+        "server": {
+          "description": "resolver to query, e.g. 1.1.1.1 or 9.9.9.9:53 (default: the system resolver)",
+          "type": "string"
+        },
+        "timeout": {
+          "default": 5,
+          "description": "query timeout in seconds",
+          "maximum": 120,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "type": {
+          "default": "auto",
+          "description": "which record type to ask for",
+          "enum": [
+            "auto",
+            "A",
+            "AAAA",
+            "CNAME",
+            "MX",
+            "NS",
+            "TXT",
+            "PTR",
+            "SRV"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "net_ping",
+    "description": "── the text below is written by the plugin, not by rta ──\nPing a host and report latency statistics\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "default": 4,
+          "description": "number of probes",
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "graph": {
+          "description": "plot per-probe latency instead of summary stats",
+          "type": "boolean"
+        },
+        "host": {
+          "description": "host to ping",
+          "type": "string"
+        },
+        "timeout": {
+          "default": 10,
+          "description": "overall timeout in seconds",
+          "maximum": 300,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "host"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "net_port",
+    "description": "── the text below is written by the plugin, not by rta ──\nTCP connect-scan ports on a host\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "description": "host to scan",
+          "type": "string"
+        },
+        "ports": {
+          "default": "22,80,443",
+          "description": "comma-separated ports and ranges, e.g. 22,80,8000-8010 (up to 4096 at a time)",
+          "type": "string"
+        },
+        "timeout": {
+          "default": 2,
+          "description": "per-port timeout in seconds",
+          "maximum": 60,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "host"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "net_probe",
+    "description": "── the text below is written by the plugin, not by rta ──\nOpen a TCP connection and report what answers\n\nWhat telnet \u003chost\u003e \u003cport\u003e is really used for: prove the port accepts a connection, time the handshake, and show the banner the service volunteers. --tls completes a TLS handshake first and reports the negotiated version and cipher. It only ever listens; to speak first — the protocols that expect the client to open — use `net send`, which is a write and gated as one.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "description": "host to connect to",
+          "type": "string"
+        },
+        "port": {
+          "description": "port to connect to",
+          "maximum": 65535,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "timeout": {
+          "default": 5,
+          "description": "connect timeout in seconds",
+          "maximum": 120,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "tls": {
+          "description": "complete a TLS handshake after connecting",
+          "type": "boolean"
+        },
+        "wait": {
+          "default": 2,
+          "description": "seconds to wait for the service to say something",
+          "maximum": 120,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "host",
+        "port"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "net_send",
+    "description": "── the text below is written by the plugin, not by rta ──\nSend bytes to a TCP port and report what comes back\n\nOpens a TCP connection, writes what you give it, and shows the reply — how you poke a protocol that expects the client to speak first (SMTP, Redis, HTTP/1.0). \\r\\n and \\n in --data are interpreted. --tls speaks it over TLS. This is a write: what arrives is executed by whatever is listening, so it needs an explicit grant before an AI agent can use it. `net probe` is the read-only half — connect, handshake, listen — and needs no grant.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"host\"). You cannot issue one yourself — ask the operator to run `rta grant allow net.send`.",
+    "destructive_hint": false,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "description": "bytes to send, e.g. \"GET / HTTP/1.0\\r\\n\\r\\n\"",
+          "type": "string"
+        },
+        "host": {
+          "description": "host to connect to",
+          "type": "string"
+        },
+        "port": {
+          "description": "port to connect to",
+          "maximum": 65535,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "timeout": {
+          "default": 5,
+          "description": "connect timeout in seconds",
+          "maximum": 120,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "tls": {
+          "description": "complete a TLS handshake before sending",
+          "type": "boolean"
+        },
+        "wait": {
+          "default": 2,
+          "description": "seconds to wait for a reply",
+          "maximum": 120,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "host",
+        "port",
+        "data"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "net_trace",
+    "description": "── the text below is written by the plugin, not by rta ──\nTrace the route to a host, hop by hop\n\nICMP echo probes with a rising TTL: each hop that expires one reports itself. Answers the question ping cannot — not just \"is it reachable\" but \"where does it stop\". Silent hops show as *; that is a router declining to reply, not necessarily a fault.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "description": "host to trace",
+          "type": "string"
+        },
+        "max-hops": {
+          "default": 30,
+          "description": "stop after this many hops",
+          "maximum": 64,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "probes": {
+          "default": 3,
+          "description": "probes per hop",
+          "maximum": 10,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "resolve": {
+          "default": true,
+          "description": "reverse-resolve hop addresses to names",
+          "type": "boolean"
+        },
+        "timeout": {
+          "default": 2,
+          "description": "per-probe timeout in seconds",
+          "maximum": 60,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "host"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "note_add",
+    "description": "── the text below is written by the plugin, not by rta ──\nAdd a note\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
+    "destructive_hint": false,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "body": {
+          "description": "note content, markdown supported",
+          "type": "string"
+        },
+        "tag": {
+          "description": "tags, repeatable (--tag recipe --tag italian)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "title": {
+          "description": "note title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "title"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "note_edit",
+    "description": "── the text below is written by the plugin, not by rta ──\nEdit a note's title, body or tags\n\nEmpty fields keep their current value. --tag - clears all tags.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
+    "destructive_hint": false,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "body": {
+          "description": "new body, markdown supported (empty keeps the current one)",
+          "type": "string"
+        },
+        "id": {
+          "description": "note id",
+          "type": "integer"
+        },
+        "tag": {
+          "description": "tags, repeatable (--tag recipe --tag italian)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "title": {
+          "description": "new title (empty keeps the current one)",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "note_list",
+    "description": "── the text below is written by the plugin, not by rta ──\nList notes\n\nWith --detail: adds creation date and a preview of each note's body.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "default": false,
+          "description": "return the full detailed view instead of the compact summary",
+          "type": "boolean"
+        },
+        "tag": {
+          "description": "only notes with any of these tags",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "note_rm",
+    "description": "── the text below is written by the plugin, not by rta ──\nRemove a note permanently\n── end of plugin-written text ──\n\nSafety: destructive. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"id\"). You cannot issue one yourself — ask the operator to run `rta grant allow note.rm`.",
+    "destructive_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "note id",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "note_search",
+    "description": "── the text below is written by the plugin, not by rta ──\nSearch notes by title, body or tag\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "query": {
+          "description": "search terms",
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "note_show",
+    "description": "── the text below is written by the plugin, not by rta ──\nShow one note: metadata, content, references\n\nMetadata (tags, size, age) stays separate from the markdown content, which is rendered richly on human surfaces. Cross-references (\"#12\" in a body) resolve both ways.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "note id",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "note_tags",
+    "description": "── the text below is written by the plugin, not by rta ──\nList tags in use and how many notes carry each\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    }
+  },
+  {
+    "name": "todo_add",
+    "description": "── the text below is written by the plugin, not by rta ──\nAdd a task\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
+    "destructive_hint": false,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "body": {
+          "description": "longer description, markdown supported",
+          "type": "string"
+        },
+        "due": {
+          "description": "due date: today, tomorrow, a weekday, or 2006-01-02",
+          "type": "string"
+        },
+        "parent": {
+          "description": "make this a sub-task of the given task id",
+          "type": "integer"
+        },
+        "tag": {
+          "description": "tags, repeatable (--tag backend --tag urgent)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "title": {
+          "description": "task title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "title"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "todo_done",
+    "description": "── the text below is written by the plugin, not by rta ──\nMark a task as done\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
+    "destructive_hint": false,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "task id",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "todo_edit",
+    "description": "── the text below is written by the plugin, not by rta ──\nEdit a task's title, body, tags or due date\n\nEmpty fields keep their current value. --tag - clears all tags; --due none clears the due date.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
+    "destructive_hint": false,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "body": {
+          "description": "new body, markdown supported (empty keeps the current one)",
+          "type": "string"
+        },
+        "due": {
+          "description": "due date: today, tomorrow, a weekday, or 2006-01-02",
+          "type": "string"
+        },
+        "id": {
+          "description": "task id",
+          "type": "integer"
+        },
+        "parent": {
+          "default": -1,
+          "description": "re-parent to this task id (0 makes it top-level)",
+          "type": "integer"
+        },
+        "tag": {
+          "description": "tags, repeatable (--tag backend --tag urgent)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "title": {
+          "description": "new title (empty keeps the current one)",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "todo_list",
+    "description": "── the text below is written by the plugin, not by rta ──\nList tasks\n\nShows top-level tasks by default; pass --parent to list one task's sub-tasks. With --detail: adds creation date and a body preview.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "all": {
+          "description": "include completed tasks",
+          "type": "boolean"
+        },
+        "detail": {
+          "default": false,
+          "description": "return the full detailed view instead of the compact summary",
+          "type": "boolean"
+        },
+        "parent": {
+          "default": 0,
+          "description": "list sub-tasks of this task id instead of top-level tasks",
+          "type": "integer"
+        },
+        "tag": {
+          "description": "only tasks with any of these tags",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "todo_reopen",
+    "description": "── the text below is written by the plugin, not by rta ──\nUn-complete a task\n\nThe undo for `todo done`. Marking the wrong task complete is a one-keystroke mistake, and a list you cannot take something back out of is a list people stop trusting. Completing an already-open task is a no-op, not an error.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
+    "destructive_hint": false,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "task id",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "todo_rm",
+    "description": "── the text below is written by the plugin, not by rta ──\nRemove a task permanently\n\nSub-tasks are re-parented to the removed task's parent, never deleted silently.\n── end of plugin-written text ──\n\nSafety: destructive. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"id\"). You cannot issue one yourself — ask the operator to run `rta grant allow todo.rm`.",
+    "destructive_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "task id",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "todo_search",
+    "description": "── the text below is written by the plugin, not by rta ──\nSearch tasks by title, body or tag\n\nSearches every task regardless of parent/child, done or open.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "query": {
+          "description": "search terms",
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "todo_show",
+    "description": "── the text below is written by the plugin, not by rta ──\nShow one task: metadata, description, sub-tasks, references\n\nA composed page rather than one blob: structured metadata (status, due, tags, parent, progress) stays separate from the markdown description, so both stay readable and machine callers can read a due date without parsing prose. Sub-tasks and cross-references (\"#12\" in a body, resolved both ways) follow.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "task id",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "todo_tags",
+    "description": "── the text below is written by the plugin, not by rta ──\nList tags in use and how many tasks carry each\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    }
+  }
+]
