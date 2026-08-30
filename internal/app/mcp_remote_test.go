@@ -117,7 +117,7 @@ func TestHTTPRefusesAnUnreadableTokenFile(t *testing.T) {
 	if err == nil {
 		t.Fatal("a world-readable --token-file was accepted")
 	}
-	if !strings.Contains(err.Error(), "world-readable") {
+	if !strings.Contains(err.Error(), "weak permissions") {
 		t.Errorf("err = %q, want it to name the permission problem", err)
 	}
 }

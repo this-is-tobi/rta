@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"runtime"
 	"strings"
 	"time"
 
@@ -133,6 +134,10 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				fmt.Fprintln(cmd.ErrOrStderr(),
 					"rta: --oidc-issuer does nothing without --http, since nothing is listening for a bearer token to guard")
 			}
+			if oidcIssuer == "" && (oidcAudience != "" || len(oidcSubjects) > 0) {
+				fmt.Fprintln(cmd.ErrOrStderr(),
+					"rta: --oidc-audience/--oidc-subject do nothing without --oidc-issuer, since there is no token to verify them against")
+			}
 			// The HTTP transport's own gate, checked before anything else it
 			// needs is built: a caller proves who it is over the wire here,
 			// where stdio has only ever had "whoever the operator's shell
@@ -159,6 +164,23 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				if tokenFile == "" && oidcIssuer == "" {
 					return fmt.Errorf("--http needs a way to verify who is calling: pass --token-file or --oidc-issuer")
 				}
+				// Bound before anything else that follows does real I/O of its
+				// own — reading the token file, an OIDC discovery round trip to
+				// a remote issuer — so a taken port or a bad address is always
+				// the first thing an operator sees, never a wait behind a slow
+				// or unresponsive issuer. The banner below then reports the
+				// address actually bound, which is the real one rather than the
+				// ":0" an operator or a test asked for.
+				var err error
+				ln, err = net.Listen("tcp", httpAddr)
+				if err != nil {
+					return fmt.Errorf("--http: %w", err)
+				}
+				// net/http's Serve always closes the listener it is handed, so
+				// this is a no-op on the path that reaches it below — it exists
+				// for every path that returns before then, once the bind above
+				// has already succeeded.
+				defer func() { _ = ln.Close() }()
 				var verifiers []auth.TokenVerifier
 				if tokenFile != "" {
 					tokens, groupReadable, err := mcp.LoadTokenFile(tokenFile)
@@ -168,6 +190,12 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 					if groupReadable {
 						fmt.Fprintf(cmd.ErrOrStderr(),
 							"rta: %s is group-readable — anyone in that group can authenticate as every label it holds\n",
+							tokenFile)
+					}
+					if runtime.GOOS == "windows" {
+						fmt.Fprintf(cmd.ErrOrStderr(),
+							"rta: %s's permissions were not checked — rta cannot read NTFS ACLs on Windows; "+
+								"make sure only you can read, write or execute it before relying on it as a trust anchor\n",
 							tokenFile)
 					}
 					verifiers = append(verifiers, mcp.StaticTokenVerifier(tokens))
@@ -187,16 +215,6 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 					verifiers = append(verifiers, oidcVerifier)
 				}
 				verifier = mcp.Compose(cmd.ErrOrStderr(), verifiers...)
-				// Bound now rather than left to Serve, so a taken port or a bad
-				// address is this command's own error message — and so the
-				// banner below can report the address actually bound, which is
-				// the real one rather than the ":0" an operator or a test asked
-				// for.
-				var err error
-				ln, err = net.Listen("tcp", httpAddr)
-				if err != nil {
-					return fmt.Errorf("--http: %w", err)
-				}
 			}
 			opts := mcp.Options{
 				Agent:            agentName,
