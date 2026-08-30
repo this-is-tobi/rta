@@ -263,6 +263,7 @@ func fullDeclaration() plugin.Plugin {
 		Name:    "demo",
 		Summary: "a demo plugin",
 		Version: "1.2.3",
+		Needs:   []plugin.Need{plugin.NeedKubeconfig},
 		Capabilities: []plugin.Capability{{
 			ID:          "demo.thing.get",
 			Summary:     "get a thing",

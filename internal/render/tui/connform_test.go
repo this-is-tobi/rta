@@ -36,6 +36,35 @@ func twoPluginModel(t *testing.T) Model {
 	return m
 }
 
+// kubectlPlugin is shaped like plugins/cnpg: it reaches its cluster through
+// kubectl, so it has something to configure — a context — and nothing at all
+// that a port-forward could fill. The two facts together are what the
+// connection editor got wrong, and no fixture here had them until now.
+func kubectlPlugin() plugin.Plugin {
+	run := func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "ok"}, nil }
+	return plugin.Plugin{
+		Name: "clusters", Summary: "reads a cluster through kubectl",
+		Capabilities: []plugin.Capability{
+			{ID: "clusters.list", Summary: "list", Safety: plugin.Read, Run: run,
+				Inputs: []plugin.Field{
+					{Name: "context", Type: plugin.String, Config: "context", Local: true,
+						Help: "kubeconfig context to use"},
+				}},
+		},
+	}
+}
+
+func configurablePlainModel(t *testing.T) Model {
+	t.Helper()
+	m := twoPluginModel(t)
+	if err := m.reg.Register(kubectlPlugin()); err != nil {
+		t.Fatal(err)
+	}
+	m.plugins = pluginRows(m.reg, config.Dashboard{}, nil)
+	m.pluginSel = pluginIndex(t, m, "clusters")
+	return m
+}
+
 func setBoxes(cf *capForm) []string {
 	var out []string
 	for _, f := range cf.fields {
@@ -134,11 +163,17 @@ func TestAHalfTypedPluginNameRebuildsNothing(t *testing.T) {
 	}
 }
 
-// The coordinate survives a rebuild and the old plugin's keys do not: they
-// described something the entry no longer names.
+// The coordinate survives a rebuild onto another plugin a forward can reach,
+// and the old plugin's keys do not: those described something the entry no
+// longer names, while the coordinate still describes somewhere the new plugin
+// can be pointed.
 func TestARebuildKeepsTheCoordinateAndDropsTheOtherPluginsKeys(t *testing.T) {
 	noHistory(t)
 	m := twoPluginModel(t)
+	if err := m.reg.Register(otherDBPlugin()); err != nil {
+		t.Fatal(err)
+	}
+	m.plugins = pluginRows(m.reg, config.Dashboard{}, nil)
 	m.pluginSel = pluginIndex(t, m, "db")
 
 	next, _ := m.startConnForm("")
@@ -146,7 +181,7 @@ func TestARebuildKeepsTheCoordinateAndDropsTheOtherPluginsKeys(t *testing.T) {
 	nm.form.form = startedForm(nm.form)
 	*nm.form.bindings[profileKubeField] = "homelab/db/svc/postgres:5432"
 	*nm.form.bindings[profileSetPrefix+"host"] = "db.staging.internal"
-	*nm.form.bindings[profilePluginField] = "plain"
+	*nm.form.bindings[profilePluginField] = "db2"
 
 	after, _, rebuilt := nm.reseedOnConnPluginChange()
 	if !rebuilt {
@@ -158,6 +193,97 @@ func TestARebuildKeepsTheCoordinateAndDropsTheOtherPluginsKeys(t *testing.T) {
 	}
 	if _, still := nm.form.bindings[profileSetPrefix+"host"]; still {
 		t.Error("a key belonging to the plugin that is no longer named is still on the form")
+	}
+}
+
+// **A plugin that declares no input a forward can fill is offered no
+// coordinate box at all**, and the heading says why where the box was.
+//
+// This is the bug that shipped. The box was offered to every plugin, it
+// completed against the operator's real cluster, and it was the most prominent
+// thing on the screen — so for a plugin that reaches its cluster through
+// kubectl and takes no host or port, it read as *the* way to point the plugin
+// somewhere. The profile saved, and every run of it was then refused:
+// "declares no input a tunnel can fill, so the forward would be opened and
+// ignored". The resolver had the rule all along; the one screen that could
+// have prevented the state did not ask.
+func TestNoCoordinateBoxForAPluginNoForwardCanReach(t *testing.T) {
+	noHistory(t)
+	m := twoPluginModel(t)
+	m.pluginSel = pluginIndex(t, m, "plain")
+	m.width, m.height = 110, 44
+
+	next, _ := m.startConnForm("")
+	nm := next.(Model)
+	nm.form.form = startedForm(nm.form)
+
+	for _, gone := range []string{profileKubeField, profileSSHField} {
+		if _, offered := nm.form.bindings[gone]; offered {
+			t.Errorf("%s is offered for a plugin no forward can reach", gone)
+		}
+	}
+	// And db, which declares the pair, still gets both.
+	m.pluginSel = pluginIndex(t, m, "db")
+	next, _ = m.startConnForm("")
+	nm = next.(Model)
+	nm.form.form = startedForm(nm.form)
+	for _, want := range []string{profileKubeField, profileSSHField} {
+		if _, offered := nm.form.bindings[want]; !offered {
+			t.Errorf("%s is missing for a plugin a forward can fill", want)
+		}
+	}
+}
+
+// The absence is explained rather than left to be noticed: every other plugin
+// in the profile has that box, so a missing one reads as a missing feature
+// until the heading names it as a fact about this plugin.
+func TestTheMissingCoordinateSaysWhyItIsMissing(t *testing.T) {
+	noHistory(t)
+	m := configurablePlainModel(t)
+	m.width, m.height = 110, 44
+
+	next, _ := m.startConnForm("")
+	nm := next.(Model)
+	nm.form.form = startedForm(nm.form)
+	out := plain(nm.formView())
+
+	if strings.Contains(out, "how to reach it") {
+		t.Errorf("the coordinate heading is drawn over boxes that are not there:\n%s", out)
+	}
+	if !strings.Contains(out, "needs no forward") {
+		t.Errorf("the form never says why there is no coordinate box:\n%s", out)
+	}
+}
+
+// And the save refuses a coordinate that arrived some other way — typed before
+// the picker finished resolving the name, or already in the file from an
+// artifact since rebuilt without its endpoint roles. Nothing is written: unlike
+// an endpoint key a forward shadows, there is nothing here to salvage.
+func TestSavingRefusesACoordinateThePluginCannotUse(t *testing.T) {
+	noHistory(t)
+	m := twoPluginModel(t)
+	m.pluginSel = pluginIndex(t, m, "db")
+
+	next, _ := m.startConnForm("")
+	nm := next.(Model)
+	nm.form.form = startedForm(nm.form)
+	// The coordinate is typed while db is named, then the name is changed to a
+	// plugin that cannot use it — without the intervening rebuild that would
+	// have taken the box away.
+	*nm.form.bindings[profileKubeField] = "homelab/db/svc/postgres:5432"
+	*nm.form.bindings[profilePluginField] = "plain"
+
+	after, _ := nm.saveConnForm()
+	nm = after.(Model)
+	if !strings.Contains(nm.flash, "no input a tunnel can fill") {
+		t.Errorf("the save did not say why it refused: %q", nm.flash)
+	}
+	cfg, err := config.LoadFile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, written := cfg.Profiles["staging"].Plugins["plain"]; written {
+		t.Error("a profile every run would refuse was written anyway")
 	}
 }
 

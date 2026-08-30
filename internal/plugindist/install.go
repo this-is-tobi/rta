@@ -181,9 +181,13 @@ func describeBinary(ctx context.Context, path string, stderr io.Writer) (plugin.
 	defer host.CloseAll()
 	client, err := host.Open(ctx, path)
 	if err != nil {
-		return plugin.Plugin{}, view.Errorf("plugin.install.describe", "%v", err).
-			WithHint("rta verifies an index's claims by running the binary and asking what " +
-				"it declares; a binary that cannot answer is not installed")
+		// Neutrally coded, because this is reached from install and from
+		// `rta plugin manifest`, and a code naming the wrong one of those is
+		// a code that misleads whoever pastes it into a search.
+		return plugin.Plugin{}, view.Errorf("plugin.declaration.unreadable", "%v", err).
+			WithHint("rta learns what a plugin declares by running it and asking, which is " +
+				"how an index's claims get checked and how a manifest gets written; " +
+				"a binary that cannot answer is not one rta will use")
 	}
 	return client.Declared, nil
 }
@@ -328,6 +332,36 @@ func verifyClaims(listed Listed, declared plugin.Plugin) *view.Error {
 	}
 	if len(missing) > 0 {
 		return lied("it does not declare %s", strings.Join(missing, ", "))
+	}
+
+	// The same two directions, for the same reason. A need the binary asks for
+	// and the index never mentioned is the motivating case — the operator read
+	// "all read" and is about to install something that wants their kubeconfig
+	// — and one the index promised that is not there means they weighed a
+	// question the artifact never asked.
+	claimedNeeds := map[plugin.Need]bool{}
+	for _, n := range m.Needs {
+		claimedNeeds[n] = true
+	}
+	var unasked, unclaimed []string
+	for _, n := range declared.Needs {
+		if !claimedNeeds[n] {
+			unclaimed = append(unclaimed, string(n))
+			continue
+		}
+		delete(claimedNeeds, n)
+	}
+	for n := range claimedNeeds {
+		unasked = append(unasked, string(n))
+	}
+	sort.Strings(unclaimed)
+	sort.Strings(unasked)
+	if len(unclaimed) > 0 {
+		return lied("it asks to read %s, which the index never mentioned",
+			strings.Join(unclaimed, ", "))
+	}
+	if len(unasked) > 0 {
+		return lied("it does not ask for %s", strings.Join(unasked, ", "))
 	}
 	return nil
 }

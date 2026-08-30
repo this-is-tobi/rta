@@ -8,7 +8,7 @@ import (
 // sanitize removes terminal control sequences from every string a
 // presentation renderer is about to print.
 //
-// §4.3 says a view carries "data and semantic hints only — never ANSI codes".
+// A view is meant to carry "data and semantic hints only — never ANSI codes".
 // That held for the code we write and not at all for the data we display,
 // which is the half that matters: an HTTP response body, a DNS TXT record, a
 // certificate subject, a filename, a container name, a database row.

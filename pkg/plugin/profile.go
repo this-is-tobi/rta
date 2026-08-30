@@ -47,6 +47,34 @@ func ProfileFillable(c Capability, f Field) bool {
 	return f.Config != "" || (f.Local && f.EnvFallback)
 }
 
+// Tunnellable reports whether any capability among caps declares an input a
+// profile's forward could fill — the condition under which a `kube:` or an
+// `ssh:` coordinate on a connection means anything at all.
+//
+// Derived from the declarations, like Profilable, so no plugin author states
+// it and a rebuilt artifact can gain or lose it without the config file
+// changing a character.
+//
+// **Every surface that offers a coordinate has to ask this first.** The
+// resolver refuses a forward for a plugin that cannot use one, and `rta
+// profile set` asks before it writes — but the TUI's connection editor
+// offered the box to everything and saved what the runtime then refused. A
+// plugin that reaches its cluster through kubectl declares no endpoint input
+// at all, so the forward it was given would have been opened and ignored:
+// real data from the plugin's own default destination, under a badge naming
+// the profile. That is the failure profiles exist to prevent.
+
+func Tunnellable(caps []Capability) bool {
+	for _, c := range caps {
+		for _, f := range c.Inputs {
+			if f.Endpoint != EndpointNone && ProfileFillable(c, f) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // Profilable reports whether a profile could change anything about a call to
 // c — which is to say whether --profile means something here.
 //

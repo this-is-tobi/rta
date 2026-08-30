@@ -1027,8 +1027,8 @@ func TestTheToolTitleIsHostDerived(t *testing.T) {
 // "may the caller see this value" and says nothing about what the value does
 // when a model reads it.
 //
-// §4.7.13 used to say json was "lossless and safe at once, and it is what the
-// MCP bridge encodes". True against a terminal, because the encoder escapes
+// It used to be assumed that json was "lossless and safe at once, and it is
+// what the MCP bridge encodes". True against a terminal, because the encoder escapes
 // the byte; never true against a model, which reads the decoded string.
 func TestAResultCannotSmuggleIntoAModelsContext(t *testing.T) {
 	var smuggled = []rune("total 3")

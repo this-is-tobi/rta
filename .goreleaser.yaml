@@ -1,11 +1,19 @@
 # What a release ships, and what it says about itself.
 #
 # rta is a security tool, so the interesting parts of this file are the ones
-# about provenance rather than the ones about platforms: a checksum file, an
-# SBOM, and a version the binary can state back to you. `rta plugin trust`
+# about provenance rather than the ones about platforms: a checksum file, and
+# a version and commit the binary can state back to you. `rta plugin trust`
 # already binds an authorization to an artifact's digest rather than to its
 # name; a release that could not be checked the same way would be
 # holding its own users to a standard it does not meet.
+#
+# **No SBOM, and named rather than assumed.** This comment used to list one
+# among the things a release ships, and no `sboms:` block has ever been here.
+# GoReleaser generates them by shelling out to syft, an external binary the
+# release machine has to have — which makes it a decision about the release
+# environment rather than a line of configuration, and an unmade decision
+# should not read as a shipped feature. Same failure as `-X main.date` below,
+# in prose instead of a flag.
 version: 2
 
 project_name: rta
@@ -42,10 +50,16 @@ builds:
       # none of which a person running a CLI reads. A panic still prints a
       # full stack with names and line numbers, because that comes from
       # pclntab and pclntab stays.
+      #
+      # Only symbols that exist. `-X` on a variable a package does not declare
+      # is discarded in silence — no warning, exit 0 — so a stamp nobody
+      # declared is provenance this file claims and does not deliver. There
+      # was a `-X main.date` here doing exactly that. The build date is
+      # already in the artifact by a better route: mod_timestamp below comes
+      # from the commit, which is what makes two builds of a tag identical.
       - -s -w
       - -X main.version={{.Version}}
       - -X main.commit={{.FullCommit}}
-      - -X main.date={{.CommitDate}}
     # Stamped from the commit rather than from now(), so two builds of the
     # same tag produce the same bytes. A reproducible artifact is what makes a
     # published digest worth anything.

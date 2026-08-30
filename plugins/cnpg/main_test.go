@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -320,5 +321,51 @@ func TestEveryCapabilityIsReadOnly(t *testing.T) {
 			t.Errorf("%s is %v — this plugin reads one custom resource and nothing else",
 				c.ID, c.Safety)
 		}
+	}
+}
+
+// **Every flag goes after the subcommand, and this is not cosmetic.**
+//
+// `--all-namespaces` is a flag of `get`, not a kubectl global. Placed before
+// the verb, kubectl decides it is being asked for a plugin and refuses with
+// "flags cannot be placed before plugin name: --request-timeout=15s" — which
+// names the first flag it saw rather than the one it could not place. Every
+// `--all-namespaces` call this plugin made failed that way, and the message
+// sent the reader after a timeout that was not the problem.
+func TestEveryFlagFollowsTheSubcommand(t *testing.T) {
+	got := selection{context: "homelab", allNamespace: true}.
+		args("get", clusterCRD, "-o", "json")
+	if len(got) == 0 || got[0] != "get" {
+		t.Fatalf("args = %v, want the subcommand first", got)
+	}
+	verb := -1
+	for i, a := range got {
+		if a == "get" {
+			verb = i
+			break
+		}
+	}
+	for i, a := range got {
+		if strings.HasPrefix(a, "-") && i < verb {
+			t.Errorf("args = %v: %q comes before the subcommand", got, a)
+		}
+	}
+	for _, want := range []string{"--context=homelab", "--all-namespaces", "-o", "json"} {
+		if !slices.Contains(got, want) {
+			t.Errorf("args = %v, missing %q", got, want)
+		}
+	}
+}
+
+// A namespace and every-namespace are exclusive, and the namespace form is
+// the one a global flag would have tolerated in either position — so it is
+// the one whose regression this would not catch without asking directly.
+func TestANamespaceIsPassedAndNotBothForms(t *testing.T) {
+	got := selection{namespace: "keycloak-system"}.args("get", clusterCRD)
+	if !slices.Contains(got, "--namespace=keycloak-system") {
+		t.Errorf("args = %v, missing the namespace", got)
+	}
+	if slices.Contains(got, "--all-namespaces") {
+		t.Errorf("args = %v names both a namespace and every namespace", got)
 	}
 }

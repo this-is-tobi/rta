@@ -43,7 +43,7 @@ type LockEntry struct {
 	URL   string `json:"url"`
 	// Signature is the outcome of the recorded-never-required check:
 	// "none stated", "not checked (cosign not installed)", "verified", or
-	// "FAILED verification" — the loud spelling, because §5 records rather
+	// "FAILED verification" — the loud spelling, because this records rather
 	// than gates and a failure must at least be unmissable.
 	Signature string `json:"signature"`
 	// InstalledAt is when rta placed the bytes.

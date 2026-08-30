@@ -269,7 +269,7 @@ func TestBareBel(t *testing.T) {
 
 // --- visualize: the safety property ---
 
-// Every dangerous byte class §4.7 (item 13) names — ESC, BEL, bare CR — must
+// Every dangerous byte class this package names — ESC, BEL, bare CR — must
 // never appear literally in a row's Sequence column. This is the one test
 // in the package that is really about correctness of a *security* property
 // rather than a parsing one: the Sequence column is rendered straight into

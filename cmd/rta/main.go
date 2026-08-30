@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"syscall"
 
 	"charm.land/fang/v2"
@@ -20,8 +21,36 @@ import (
 	"github.com/this-is-tobi/rule-them-all/internal/stdio"
 )
 
-// version is set by the linker at release time (-X main.version=...).
-var version = "dev"
+// version and commit are set by the linker at release time
+// (-X main.version=..., -X main.commit=...).
+var (
+	version = "dev"
+	commit  = ""
+)
+
+// buildCommit is the revision this binary was built from.
+//
+// **An unstamped build is not an anonymous one.** The Go toolchain records
+// `vcs.revision` in every binary built from a checkout, and rta was throwing
+// it away: a `go install` build reported `rta version dev` while carrying the
+// exact commit it came from. For a tool whose own argument is that
+// authorization must attach to an artifact rather than to a name, being
+// unable to say which artifact it is was the wrong way round.
+func buildCommit() string {
+	if commit != "" {
+		return commit
+	}
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return ""
+	}
+	for _, s := range info.Settings {
+		if s.Key == "vcs.revision" {
+			return s.Value
+		}
+	}
+	return ""
+}
 
 func main() {
 	// Before anything reads a secret into this address space. Confinement
@@ -104,6 +133,7 @@ func main() {
 
 	err = fang.Execute(ctx, root,
 		fang.WithVersion(version),
+		fang.WithCommit(buildCommit()),
 		fang.WithErrorHandler(errorHandler(root)),
 	)
 

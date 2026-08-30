@@ -87,6 +87,27 @@ func (p Plugin) Validate() error {
 	if err := checkLine(fmt.Sprintf("plugin %q version", p.Name), p.Version, maxOption); err != nil {
 		return err
 	}
+	// A need rta does not know is refused rather than ignored: silently
+	// dropping it would leave a plugin declaring a requirement no surface can
+	// show and no operator can grant, which reads as "asked for and denied"
+	// and is really "never asked".
+	// Deduplicated for the same reason capability IDs are, one loop down: the
+	// set is what every surface counts, prints and grants against. A repeat
+	// makes `rta plugin allow` offer one location twice and makes an index's
+	// claim about it unrepresentable — a manifest refuses a duplicate — so the
+	// plugin that would be unpublishable is refused here, where its author is,
+	// rather than later where somebody else is.
+	askedFor := map[Need]bool{}
+	for _, n := range p.Needs {
+		if !KnownNeed(n) {
+			return fmt.Errorf("plugin %q: unknown need %q; rta knows %s",
+				p.Name, n, needList())
+		}
+		if askedFor[n] {
+			return fmt.Errorf("plugin %q: duplicate need %q", p.Name, n)
+		}
+		askedFor[n] = true
+	}
 	seen := map[string]bool{}
 	for _, c := range p.Capabilities {
 		if err := c.validate(p.Name); err != nil {
@@ -98,6 +119,16 @@ func (p Plugin) Validate() error {
 		seen[c.ID] = true
 	}
 	return nil
+}
+
+// needList renders the accepted needs for an error message, so a rejected
+// plugin is told what to write rather than only what not to.
+func needList() string {
+	names := make([]string, len(needs))
+	for i, n := range needs {
+		names[i] = string(n)
+	}
+	return strings.Join(names, ", ")
 }
 
 func (c Capability) validate(ns string) error {

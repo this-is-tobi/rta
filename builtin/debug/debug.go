@@ -48,11 +48,11 @@ func Plugin() plugin.Plugin {
 				Idempotent: true,
 				// input is Positional but not Required — stdin can supply
 				// it instead — so the dashboard's auto-tile heuristic
-				// (every Read capability that needs no input, §4.3) would
+				// (every Read capability that needs no input) would
 				// otherwise pick this up and call it, unasked, every five
 				// seconds with nothing to explain: not a cost the way
 				// pg's or eol's off-box calls are, but not a tile either,
-				// the exact gen.password precedent §4.3 already names.
+				// the exact precedent gen.password already sets.
 				NoPreview: true,
 				Inputs: []plugin.Field{
 					{Name: "input", Type: plugin.Text, Positional: true,

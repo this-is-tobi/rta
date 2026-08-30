@@ -117,7 +117,17 @@ func setPayload(v reflect.Value, s string) bool {
 		if v.Type().Elem().Kind() != reflect.String {
 			return false
 		}
-		v.Set(reflect.ValueOf([]string{s}))
+		// Through the declared element type rather than as []string, because
+		// a named-string slice is not assignable from one. Plugin.Needs is
+		// []Need and made this panic — a field the reflection was right to
+		// reach and could not write to. It is refused by its closed set
+		// rather than by checkLine, which is the stronger guarantee, and this
+		// test should still be the thing that proves it.
+		elem := reflect.New(v.Type().Elem()).Elem()
+		elem.SetString(s)
+		slice := reflect.MakeSlice(v.Type(), 1, 1)
+		slice.Index(0).Set(elem)
+		v.Set(slice)
 		return true
 	}
 	return false

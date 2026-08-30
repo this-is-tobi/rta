@@ -217,10 +217,31 @@ func (m Model) connForm(key, chosen string, seed map[string]any) (tea.Model, tea
 		conn.Set = nil
 	}
 
+	// The chosen plugin's own declaration, when the picker names one that is
+	// installed. Everything below depends on it: which boxes exist at all,
+	// and which of them a forward would shadow.
+	decl, known := m.declarationOf(chosen)
+	// **The coordinate boxes are offered only to a plugin a forward can
+	// reach.** They used to be offered to everything, which is how a
+	// port-forward came to be saved against a plugin that talks to its cluster
+	// through kubectl and declares no endpoint input: the box was the most
+	// prominent thing on the screen, it completed against the real cluster, so
+	// it read as *the* way to point the plugin somewhere — and every run of
+	// that profile was then refused by the resolver. Offering a box the
+	// runtime will not honour is the page-versus-run drift this codebase keeps
+	// removing, in the direction where the operator does the work twice.
+	//
+	// Offered while the plugin is unknown, because the picker completes to
+	// `name@digest` and every prefix on the way there names nothing. The save
+	// refuses what this cannot yet judge.
+	forwardable := !known || plugin.Tunnellable(decl.Capabilities)
+
 	fields := []plugin.Field{
 		{Name: profilePluginField, Type: plugin.String, Required: true,
 			Suggest: func(context.Context, plugin.Request) []string { return m.installedPlugins() },
 			Help:    "which plugin, pinned to its artifact — press tab"},
+	}
+	coordinates := []plugin.Field{
 		// Above the set. fields, because it decides where the call goes and
 		// they are subordinate to it: a `set.host` beside a coordinate is two
 		// statements about the destination, and the forward is the one that
@@ -241,40 +262,38 @@ func (m Model) connForm(key, chosen string, seed map[string]any) (tea.Model, tea
 			Suggest: func(context.Context, plugin.Request) []string { return tunnel.SSHHosts() },
 			Help:    "an ssh host: [user@]host[:port]/desthost:destport — tab suggests your ssh aliases"},
 	}
+	if forwardable {
+		fields = append(fields, coordinates...)
+	}
 	// Every config key the plugin declares, when one is already chosen. On a
 	// new entry there is nothing to offer yet, and the operator submits once to
 	// choose the plugin and reopens to fill it in.
-	if ns := config.PluginNamespace(chosen); ns != "" {
+	if known {
 		tunnelled := strings.TrimSpace(conn.Kube) != "" || strings.TrimSpace(conn.SSH) != ""
-		for _, prow := range m.plugins {
-			if prow.plugin.Name != ns {
+		for _, f := range configFields(decl) {
+			// Under a coordinate the endpoint keys are the forward's to
+			// fill — Dial lays them over `set:` per call, and checkSet
+			// refuses the pair — so the editor does not offer them, even
+			// when the file states one. A first cut kept a stated key's
+			// box "so it could be cleared", which assumed clearing is
+			// something every widget can do: a select always holds one of
+			// its Options and a toggle always holds a bool, so a stated
+			// `sslmode` or `tls` was a box whose one legal action the
+			// widget could not perform — and the save guard then refused
+			// every save of the entry. The save is the repair instead:
+			// it drops the file's dead endpoint keys and the flash names
+			// them (saveConnForm). Decided at open, like the
+			// reopen-to-fill flow above: clearing the coordinate reveals
+			// the boxes on reopen.
+			if tunnelled && f.Endpoint != plugin.EndpointNone {
 				continue
 			}
-			for _, f := range configFields(prow.plugin) {
-				// Under a coordinate the endpoint keys are the forward's to
-				// fill — Dial lays them over `set:` per call, and checkSet
-				// refuses the pair — so the editor does not offer them, even
-				// when the file states one. A first cut kept a stated key's
-				// box "so it could be cleared", which assumed clearing is
-				// something every widget can do: a select always holds one of
-				// its Options and a toggle always holds a bool, so a stated
-				// `sslmode` or `tls` was a box whose one legal action the
-				// widget could not perform — and the save guard then refused
-				// every save of the entry. The save is the repair instead:
-				// it drops the file's dead endpoint keys and the flash names
-				// them (saveConnForm). Decided at open, like the
-				// reopen-to-fill flow above: clearing the coordinate reveals
-				// the boxes on reopen.
-				if tunnelled && f.Endpoint != plugin.EndpointNone {
-					continue
-				}
-				// Prefixed so a plugin's own key can never collide with the
-				// field above: a plugin declaring a config key called "plugin"
-				// would otherwise silently become the entry's key.
-				f.Name = profileSetPrefix + f.Name
-				f.Required = false
-				fields = append(fields, f)
-			}
+			// Prefixed so a plugin's own key can never collide with the
+			// field above: a plugin declaring a config key called "plugin"
+			// would otherwise silently become the entry's key.
+			f.Name = profileSetPrefix + f.Name
+			f.Required = false
+			fields = append(fields, f)
 		}
 	}
 
@@ -300,17 +319,28 @@ func (m Model) connForm(key, chosen string, seed map[string]any) (tea.Model, tea
 	}
 	m.current = synth
 	m.trail = nil
-	// Two headings, not three: the panel above already says what the form is,
-	// so a heading over the first field would repeat it. The one that earns
-	// its line is the boundary — "how to reach it" makes the two coordinate
-	// boxes read as one either/or question, and the `set.` block below it
-	// stops looking like two more of the same.
-	opts := []formOption{
-		withSection(profileKubeField, "how to reach it — one of these, or neither to connect directly"),
+	// At most two headings, and never one over the first field: the panel
+	// above already says what the form is. The ones that earn their line are
+	// the boundaries — "how to reach it" makes the two coordinate boxes read
+	// as one either/or question, and the `set.` block below it stops looking
+	// like two more of the same. A heading with nothing under it is worse than
+	// none, so the first goes when the boxes do.
+	var opts []formOption
+	if forwardable {
+		opts = append(opts, withSection(profileKubeField,
+			"how to reach it — one of these, or neither to connect directly"))
 	}
 	if firstSet := firstSetField(fields); firstSet != "" {
-		opts = append(opts, withSection(firstSet,
-			"what "+row.name+" changes about it"))
+		// The absent coordinate is said here rather than left to be noticed.
+		// Every other plugin in the profile has that box, so its absence reads
+		// as a missing feature unless the heading names it as a fact about
+		// this one — the same reason a column that appears only when a row can
+		// fill it still has to announce itself.
+		title := "what " + row.name + " changes about it"
+		if !forwardable {
+			title += " — " + decl.Name + " needs no forward"
+		}
+		opts = append(opts, withSection(firstSet, title))
 	}
 	m.form = newCapForm(synth, fields, defaults, true, nil, opts...)
 	// The set. fields the file does not state are displays of the plugin's
@@ -333,6 +363,26 @@ func (m Model) connForm(key, chosen string, seed map[string]any) (tea.Model, tea
 	m.fitForm()
 	m.mode = modeForm
 	return m, m.form.form.Init()
+}
+
+// declarationOf is the installed plugin a profile key names, and whether it
+// names one at all.
+//
+// The key is `name@digest` and the picker completes toward it one keystroke
+// at a time, so "not installed" is the ordinary state while somebody is still
+// typing — the caller decides what an unknown plugin means rather than being
+// handed a zero value that looks like an answer.
+func (m Model) declarationOf(key string) (plugin.Plugin, bool) {
+	ns := config.PluginNamespace(key)
+	if ns == "" {
+		return plugin.Plugin{}, false
+	}
+	for _, prow := range m.plugins {
+		if prow.plugin.Name == ns {
+			return prow.plugin, true
+		}
+	}
+	return plugin.Plugin{}, false
 }
 
 // reseedOnConnPluginChange rebuilds the connection editor when the plugin it
@@ -416,6 +466,7 @@ func (m Model) saveConnForm() (tea.Model, tea.Cmd) {
 		// would repoint the connection and silently drop its credential in one
 		// keystroke.
 		conn := p.Plugins[was]
+		decl, known := m.declarationOf(key)
 		// Refused here rather than written and reported later. This is the one
 		// screen where somebody is typing a coordinate, so it is where a typo
 		// should be caught — `rta doctor` finding it afterwards means the profile
@@ -441,6 +492,17 @@ func (m Model) saveConnForm() (tea.Model, tea.Cmd) {
 				refusal = verr.Message
 				return cfg, false
 			}
+		}
+		// And whether this plugin can use a forward at all. connForm does not
+		// offer the boxes to one that cannot, so this catches the two ways a
+		// value arrives anyway: typed before the picker finished resolving the
+		// name, and already in the file from an artifact since rebuilt without
+		// its endpoint roles. Refused rather than repaired — unlike a shadowed
+		// endpoint key there is nothing to salvage, and writing it would save a
+		// profile every run then refuses.
+		if (kube != "" || ssh != "") && known && !plugin.Tunnellable(decl.Capabilities) {
+			refusal = decl.Name + " declares no input a tunnel can fill — empty the coordinate"
+			return cfg, false
 		}
 		conn.Kube = kube
 		conn.SSH = ssh
@@ -472,14 +534,9 @@ func (m Model) saveConnForm() (tea.Model, tea.Cmd) {
 		// or from boxes visible while the coordinate was being typed; either
 		// way every possible value is one the forward overrides, so the only
 		// honest file is one without the key — and the flash is the receipt.
-		known := false
-		for _, prow := range m.plugins {
-			if prow.plugin.Name != config.PluginNamespace(key) {
-				continue
-			}
-			known = true
+		if known {
 			declared := map[string]bool{}
-			for _, f := range configFields(prow.plugin) {
+			for _, f := range configFields(decl) {
 				declared[f.Name] = true
 				if !tunnelled || f.Endpoint == plugin.EndpointNone {
 					continue
@@ -514,7 +571,7 @@ func (m Model) saveConnForm() (tea.Model, tea.Cmd) {
 				// configFields' config-key renames. This form keeps Secrets
 				// untouched otherwise, so the file's map is what is repaired.
 				seen := map[string]bool{}
-				for _, c := range prow.plugin.Capabilities {
+				for _, c := range decl.Capabilities {
 					for _, f := range c.Inputs {
 						if f.Endpoint == plugin.EndpointNone || !plugin.ProfileFillable(c, f) ||
 							seen[f.Name] {
@@ -912,8 +969,8 @@ func (m Model) startCredentialForm() (tea.Model, tea.Cmd) {
 			// The help says out loud that key completion reads the Secret,
 			// because it does: there is no keys-only read in the API, so the
 			// listing is a real `get secret` in the cluster's audit log —
-			// which is why it happens on tab and never as typing
-			// §8). The values stay in kubectl's process either way.
+			// which is why it happens on tab and never as typing.
+			// The values stay in kubectl's process either way.
 			Help: "which Secret and key, as <secret>/<key> — tab completes; " +
 				"listing keys reads the Secret from the coordinate's namespace",
 		})

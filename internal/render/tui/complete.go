@@ -24,7 +24,7 @@ import (
 // decades (kubectl's own completion runs `kubectl get` on it). The state
 // decides, never a second key.
 //
-// The boundary §8 draws still holds. Every other suggestion in this package
+// That boundary still holds. Every other suggestion in this package
 // is computed locally and may refresh per keystroke; these fields complete
 // from an apiserver, and a read of somebody's cluster must be something the
 // operator did, not something typing caused. Tab is not typing — and on

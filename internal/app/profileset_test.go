@@ -256,6 +256,65 @@ func TestSetIsIdempotent(t *testing.T) {
 	}
 }
 
+// A run that asks for a state the profile is already in says so, rather than
+// reporting a write it did not make.
+//
+// The case this exists for: somebody is told a stray port-forward is breaking
+// their plugin and types `--direct`. If the coordinate was never there, the
+// file does not change and "updated me" tells them they fixed something that
+// was never wrong — which is worse than saying nothing, because they stop
+// looking for the real cause.
+//
+// Both directions, and the second is not decoration. Profile.Plugins is a map,
+// so the obvious implementation compares two structs that share it and reports
+// every edit as unchanged. That version passes the first half of this test.
+func TestARunThatChangesNothingSaysSo(t *testing.T) {
+	reg := setRegistry(t)
+	create := []string{"profile", "set", "staging",
+		"--plugin", "db", "--set", "host=db.internal"}
+	out, errOut, err := runWith(t, reg, "", create...)
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	if !strings.Contains(out, "wrote") || !strings.Contains(out, "created staging") {
+		t.Fatalf("creating a profile did not report a write:\n%s", out)
+	}
+	seed := configOf(t)
+
+	// The same command again: nothing to do, and the file must be untouched.
+	out, errOut, err = runWith(t, reg, seed, create...)
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	if !strings.Contains(out, "unchanged") {
+		t.Errorf("a run that changed nothing reported a write:\n%s", out)
+	}
+	if strings.Contains(out, "wrote") {
+		t.Errorf("a run that changed nothing said `wrote`:\n%s", out)
+	}
+	if after := configOf(t); after != seed {
+		t.Errorf("a run that changed nothing rewrote the file:\n--- before\n%s\n--- after\n%s",
+			seed, after)
+	}
+
+	// And a run that does change something still reports it. Without this the
+	// aliasing bug above is invisible.
+	out, errOut, err = runWith(t, reg, seed, "profile", "set", "staging",
+		"--plugin", "db", "--set", "host=elsewhere.internal")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	if !strings.Contains(out, "wrote") || strings.Contains(out, "unchanged") {
+		t.Errorf("a real change was reported as unchanged:\n%s", out)
+	}
+	if after := configOf(t); after == seed {
+		t.Error("a real change did not reach the file")
+	}
+	if !strings.Contains(configOf(t), "elsewhere.internal") {
+		t.Errorf("the new value is not in the file:\n%s", configOf(t))
+	}
+}
+
 // Each block is replaced by what the flags state; a block no flag mentions is
 // left exactly as it was. That is what lets one line of a script restate a
 // connection without disturbing its credentials.
@@ -569,6 +628,70 @@ func TestABareNamespaceIsPinnedToTheInstalledArtifact(t *testing.T) {
 	}
 	if body := configOf(t); !strings.Contains(body, "ext@"+digest[:12]) {
 		t.Errorf("the entry was not pinned to the installed artifact:\n%s", body)
+	}
+}
+
+// Pointing a profile at a rebuilt plugin moves its blocks rather than leaving
+// them behind.
+//
+// Every rebuild invalidates every pin at once — trust is keyed on the artifact
+// digest, so this is routine rather than exceptional — and `--plugin <name>` is
+// what re-pointing looks like. It used to add a second entry for the same
+// namespace: the operator's `set:`, `secrets:` and coordinate stranded under
+// the dead digest, an empty block under the live one, and nothing anywhere
+// reporting that the profile now configured one plugin twice. The only repair
+// was to edit the YAML by hand.
+//
+// A namespace resolves to one entry (Profile.For takes the first), so there is
+// no reading under which two of them is what somebody meant.
+func TestRePinningAPluginCarriesItsConfiguration(t *testing.T) {
+	const digest = "1a2b3c4d5e6f7890aabbccddeeff00112233445566778899aabbccddeeff0011"
+	reg := registry.New()
+	if err := reg.RegisterFrom(plugin.Plugin{
+		Name: "ext", Summary: "an external plugin",
+		Capabilities: []plugin.Capability{{
+			ID: "ext.status", Summary: "status", Safety: plugin.Read,
+			Inputs: []plugin.Field{
+				{Name: "host", Type: plugin.String, Config: "host", Local: true, Help: "host"},
+				{Name: "token", Type: plugin.Secret, Local: true, EnvFallback: true, Help: "token"},
+			},
+			Run: func(context.Context, plugin.Request) (view.View, error) {
+				return view.Text{Body: "ok"}, nil
+			},
+		}},
+	}, registry.Origin{Path: "/usr/local/bin/rta-plugin-ext", Digest: digest}); err != nil {
+		t.Fatal(err)
+	}
+
+	// A profile written against the artifact that was installed yesterday.
+	const stale = `profiles:
+  staging:
+    plugins:
+      ext@ffffffffffff:
+        set:
+          host: x.internal
+        secrets:
+          token: kv:ext-token
+`
+	out, errOut, err := runWith(t, reg, stale, "profile", "set", "staging", "--plugin", "ext")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	body := configOf(t)
+	if strings.Contains(body, "ext@ffffffffffff") {
+		t.Errorf("the stale pin survived beside the new one:\n%s", body)
+	}
+	if !strings.Contains(body, "ext@"+digest[:12]) {
+		t.Errorf("the entry was not moved to the installed artifact:\n%s", body)
+	}
+	// The blocks came with it. Losing them is the whole failure this prevents.
+	for _, kept := range []string{"x.internal", "kv:ext-token"} {
+		if !strings.Contains(body, kept) {
+			t.Errorf("%s was left behind on the old pin:\n%s", kept, body)
+		}
+	}
+	if !strings.Contains(out, "re-pinned") {
+		t.Errorf("the move was silent:\n%s", out)
 	}
 }
 

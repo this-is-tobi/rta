@@ -18,8 +18,8 @@ import "golang.org/x/sys/unix"
 // which is `pkg/sdk`'s Serve, cooperatively, and only for plugins that use
 // the Go SDK. That is a decision rather than an omission.
 //
-// This is a floor and not a boundary, in the same sense §4.7.10 already says
-// about the age identity: an attacker at this uid can read rta's binary, its
+// This is a floor and not a boundary, the same way an age identity's file
+// permissions are: an attacker at this uid can read rta's binary, its
 // config, its data directory and the store's ciphertext without touching the
 // process at all. What it closes is the cheapest read of the most valuable
 // bytes — a shell one-liner against /proc — and it closes core dumps carrying

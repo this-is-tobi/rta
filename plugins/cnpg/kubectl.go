@@ -106,9 +106,27 @@ func selectionOf(req plugin.Request) (selection, *view.Error) {
 	return s, nil
 }
 
-// args prefixes the selection onto a kubectl command line.
+// args puts the subcommand first and the selection flags after it.
+//
+// **That order is not cosmetic, and getting it wrong made every
+// `--all-namespaces` call fail.** `--context` and `--namespace` are kubectl
+// global flags and are accepted on either side of the verb; `--all-namespaces`
+// is a flag of `get` and is not. kubectl reading an unrecognised flag before
+// the verb concludes it is being asked for a *plugin* and answers "flags
+// cannot be placed before plugin name: --request-timeout=15s" — naming the
+// first flag it saw rather than the one it could not place, which is why this
+// read as a timeout problem and was not one.
+//
+// Everything after the subcommand is the shape that works for all four flags,
+// so the class is gone rather than the instance.
+//
+// `--flag=value` rather than `--flag value`, everywhere and without exception:
+// it keeps the value inside its own argv element, so a value that begins with
+// a dash is a malformed value rather than a new flag. checkName refuses those
+// anyway; this is the second of the two.
 func (s selection) args(rest ...string) []string {
-	out := []string{"--request-timeout=" + requestTimeout}
+	out := append([]string{}, rest...)
+	out = append(out, "--request-timeout="+requestTimeout)
 	if s.context != "" {
 		out = append(out, "--context="+s.context)
 	}
@@ -118,7 +136,7 @@ func (s selection) args(rest ...string) []string {
 	case s.namespace != "":
 		out = append(out, "--namespace="+s.namespace)
 	}
-	return append(out, rest...)
+	return out
 }
 
 // where names what was read, for a message that has to say which cluster.

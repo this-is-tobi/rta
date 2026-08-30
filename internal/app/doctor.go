@@ -603,6 +603,7 @@ func doctorReport(reg *registry.Registry) view.View {
 	// SDK plugins actually loaded, and anything about them worth knowing but
 	// not worth printing before every command.
 	if plugins := loadedPlugins; len(plugins) > 0 {
+		trust := plugintrust.Load()
 		for _, p := range plugins {
 			detail := fmt.Sprintf("%s (%s, %s)",
 				p.Identity.Path, plural(len(p.Declared.Capabilities), "capability", "capabilities"),
@@ -612,6 +613,31 @@ func doctorReport(reg *registry.Registry) view.View {
 				status = "info"
 				detail += fmt.Sprintf(" — %s declares %s, which this rta does not understand; "+
 					"it may have been built against a newer one", id, strings.Join(fields, ", "))
+			}
+			// A credential location it asked for and has not been given.
+			//
+			// **This is the row that would have saved a day.** A plugin whose
+			// every call needs a kubeconfig fails with whatever its own tool
+			// says about a file it cannot open — kubectl's is "operation not
+			// permitted", which reads as a broken installation and not as a
+			// decision nobody has made. doctor is where somebody looks when a
+			// thing behaves oddly, so the decision belongs here, named, with
+			// the command beside it.
+			allowed := trust.Allowed(p.Identity.Digest)
+			if missing := ungranted(p.Declared.Needs, allowed); len(missing) > 0 {
+				status = "warn"
+				detail += fmt.Sprintf(" — asks to read %s and has not been allowed to; "+
+					"calls that need it fail. `rta plugin allow %s`",
+					needNames(missing), p.Declared.Name)
+			} else if len(p.Declared.Needs) > 0 {
+				// The granted case, said out loud. A credential location a
+				// plugin may read is a standing permission, and a tool whose
+				// argument is that authorisation should be something you can
+				// point at cannot report only the permissions it withheld.
+				// `rta plugin allow` lists it; doctor is where somebody reads
+				// what this machine is currently letting happen.
+				detail += fmt.Sprintf(" — allowed to read %s; `rta plugin disallow %s` takes it back",
+					needNames(p.Declared.Needs), p.Declared.Name)
 			}
 			add("plugin "+p.Declared.Name, status, detail)
 		}

@@ -8,6 +8,7 @@ import (
 
 	"github.com/this-is-tobi/rule-them-all/internal/config"
 	"github.com/this-is-tobi/rule-them-all/internal/paths"
+	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 )
 
 // The deny set is what a confined plugin may not touch. It is small on
@@ -56,28 +57,65 @@ func tier1() []string {
 // list is the well-known set and is deliberately not exhaustive; the `.env`
 // beside somebody's docker-compose.yml is exactly what a denylist misses, and
 // pretending otherwise is what makes people trust it further than it goes.
-func tier2() []string {
+// tier2 is keyed by the need that asks for each location, because denying a
+// location outright is only right until a plugin's whole purpose is to use it.
+//
+// `~/.kube` is the case that proved it: on the list from the first commit of
+// this package, before plugins/kube existed, and the comment above names "a
+// `kube` plugin reads ~/.kube/config" as the example of what a denylist must
+// not get in the way of. It got in the way of exactly that — both kube and
+// cnpg were unable to read a kubeconfig at all on macOS, which is to say
+// unable to do anything.
+//
+// The key is what makes the entry grantable. A plugin declares the need, an
+// operator grants it against the artifact's digest, and only then is the path
+// left out of that plugin's profile. Everything ungranted is denied exactly
+// as before, so the default is unchanged and the exception is something
+// somebody said out loud.
+func tier2() map[plugin.Need]string {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil
 	}
-	var out []string
-	for _, rel := range []string{
-		".ssh",
-		".aws",
-		".kube",
-		".gnupg",
-		".docker/config.json",
-		".config/gcloud",
-		".netrc",
-		".npmrc",
-		".pypirc",
-		".git-credentials",
-	} {
-		out = append(out, filepath.Join(home, rel))
+	rel := map[plugin.Need]string{
+		plugin.NeedSSH:        ".ssh",
+		plugin.NeedAWS:        ".aws",
+		plugin.NeedKubeconfig: ".kube",
+		plugin.NeedGnuPG:      ".gnupg",
+		plugin.NeedDocker:     ".docker/config.json",
+		plugin.NeedGCloud:     ".config/gcloud",
+		plugin.NeedNetrc:      ".netrc",
+		plugin.NeedNPM:        ".npmrc",
+		plugin.NeedPyPI:       ".pypirc",
+		plugin.NeedGitCreds:   ".git-credentials",
 	}
-	return dedupe(out)
+	out := make(map[plugin.Need]string, len(rel))
+	for need, r := range rel {
+		out[need] = filepath.Join(home, r)
+	}
+	return out
 }
+
+// asNeeds converts a stored grant to the closed set.
+//
+// An entry rta does not recognise is dropped rather than refused: the store
+// outlives the build that wrote it, and a need removed from a later rta must
+// not stop every plugin loading. Dropping it denies the location, which is
+// the safe direction — the plugin fails at the operation that wanted it and
+// the operator is told what to grant.
+func asNeeds(stored []string) []plugin.Need {
+	out := make([]plugin.Need, 0, len(stored))
+	for _, s := range stored {
+		if n := plugin.Need(s); plugin.KnownNeed(n) {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// Tier2Path is the location a need names, for a caller that has to say which
+// file an operator is about to allow.
+func Tier2Path(n plugin.Need) string { return tier2()[n] }
 
 // DenySet is the resolved policy for this machine, so that a caller — `rta
 // doctor`, a test, the profile builder — reads one value rather than
@@ -121,13 +159,40 @@ type DenySet struct {
 // It may be created while the plugin runs, and a rule naming a path that never
 // appears costs nothing. What it must not do is name a path the kernel never
 // produces, which is what a missing component used to cause.
-func Resolve() (DenySet, error) {
+func Resolve() (DenySet, error) { return ResolveAllowing(nil) }
+
+// ResolveAllowing builds it for one artifact, leaving out the locations that
+// artifact has been granted.
+//
+// A grant subtracts from the deny list and can do nothing else — it cannot add
+// a path, cannot reach tier1, and cannot name anything outside the closed set
+// tier2 is keyed by. That is the same shape team policy has: a mechanism that
+// can only ever narrow is one whose worst case is bounded by what it started
+// from.
+func ResolveAllowing(granted []plugin.Need) (DenySet, error) {
+	allowed := map[plugin.Need]bool{}
+	for _, n := range granted {
+		allowed[n] = true
+	}
 	var d DenySet
 	for _, p := range tier1() {
 		d.NoAccess = append(d.NoAccess, withTarget(p)...)
 	}
-	for _, p := range tier2() {
-		d.NoRead = append(d.NoRead, withTarget(p)...)
+	// **In plugin.Needs() order, never the map's.** Go randomises map
+	// iteration, and this slice is hashed into the process cache key
+	// (specHash): a set whose order moves between two calls hashes
+	// differently, the cache misses, and every call spawns a fresh plugin
+	// process — which is the exact thing that cache was written to prevent.
+	// Caught by TestTheSameBinaryIsNotLaunchedTwice, which is why it is a
+	// test and not a comment.
+	paths := tier2()
+	for _, need := range plugin.Needs() {
+		if allowed[need] {
+			continue
+		}
+		if p := paths[need]; p != "" {
+			d.NoRead = append(d.NoRead, withTarget(p)...)
+		}
 	}
 	d.NoAccess, d.NoRead = dedupe(d.NoAccess), dedupe(d.NoRead)
 	d.NoMove = ancestors(append(append([]string{}, d.NoAccess...), d.NoRead...))

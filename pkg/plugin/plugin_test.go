@@ -536,3 +536,54 @@ func TestTheConfigKeyGrammarIsClosed(t *testing.T) {
 		}
 	}
 }
+
+// A need rta does not know is refused rather than ignored. Dropping it would
+// leave a plugin declaring a requirement no surface can show and no operator
+// can grant — which reads as "asked for and denied" and is really "never
+// asked", the worst shape a permission can have.
+func TestAnUnknownNeedIsRefused(t *testing.T) {
+	p := Plugin{
+		Name: "demo", Summary: "s",
+		Needs:        []Need{"root"},
+		Capabilities: []Capability{{ID: "demo.get", Summary: "g", Safety: Read}},
+	}
+	err := p.Validate()
+	if err == nil {
+		t.Fatal("a plugin declaring an unknown need registered")
+	}
+	if !strings.Contains(err.Error(), "kubeconfig") {
+		t.Errorf("the refusal does not say what is accepted: %v", err)
+	}
+}
+
+// A location asked for twice is asked for once, and saying so here is what
+// keeps every count downstream honest: `rta plugin allow` would offer the
+// operator one location on two rows, and an index manifest cannot carry the
+// duplicate at all — so a plugin that registered with one would be a plugin
+// nobody could publish.
+func TestADuplicateNeedIsRefused(t *testing.T) {
+	p := Plugin{
+		Name: "demo", Summary: "s",
+		Needs:        []Need{NeedKubeconfig, NeedKubeconfig},
+		Capabilities: []Capability{{ID: "demo.get", Summary: "g", Safety: Read, Run: noop}},
+	}
+	err := p.Validate()
+	if err == nil {
+		t.Fatal("a plugin asking for one location twice registered")
+	}
+	if !strings.Contains(err.Error(), "duplicate need") {
+		t.Errorf("the refusal does not name what is wrong: %v", err)
+	}
+}
+
+// And a known one passes, so the check is a filter rather than a wall.
+func TestADeclaredNeedIsAccepted(t *testing.T) {
+	p := Plugin{
+		Name: "demo", Summary: "s",
+		Needs:        []Need{NeedKubeconfig},
+		Capabilities: []Capability{{ID: "demo.get", Summary: "g", Safety: Read, Run: noop}},
+	}
+	if err := p.Validate(); err != nil {
+		t.Errorf("a plugin declaring a known need was refused: %v", err)
+	}
+}

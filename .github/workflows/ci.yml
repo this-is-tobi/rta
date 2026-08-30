@@ -9,8 +9,8 @@
 # Everything below is a call into the shared workflow catalogue rather than a
 # script kept here. The gates are the same ones `make ci` runs, expressed as
 # that catalogue's inputs: -count=1, -race and -shuffle=on are `make hard`.
-# forget. Two things stay local, and only because nothing general covers them:
-# the plugin modules, and the cross build.
+# Two things stay local, and only because nothing general covers them: the
+# plugin modules, and the cross build.
 name: CI
 
 on:
@@ -39,9 +39,12 @@ jobs:
     permissions:
       contents: read
     with:
-      # The four trees that are this module. `plugins/` and `examples/` are
-      # separate modules with their own go.mod and are linted below.
-      FORMAT_PATHS: ./builtin ./cmd ./internal ./pkg
+      # The trees that are this module. `plugins/` are separate modules with
+      # their own go.mod and are linted below; `examples/` is not one — it has
+      # no go.mod, so it compiles as part of this module, and leaving it out
+      # here made it the single directory nothing formatted. It is also the
+      # first Go a plugin author reads.
+      FORMAT_PATHS: ./builtin ./cmd ./examples ./internal ./pkg
 
   # proto/v1 is frozen: a plugin compiled against it must keep working. Nothing
   # enforced that for a while — `proto-check` existed, `make ci` did not call
@@ -120,12 +123,48 @@ jobs:
   # exactly that reason — and it is the one build that would notice a change to
   # pkg/plugin or pkg/sdk breaking a plugin author, which is the whole reason
   # it lives in this repository.
+  #
+  # **The matrix is discovered, not written down.** The hand-written list this
+  # replaces named ten modules while eleven were in the tree, so the newest
+  # plugin — the one most likely to be broken, and the only one nothing else
+  # had ever compiled — was precisely the one the matrix left out. A list that
+  # has to be edited whenever a directory is added will eventually not be.
+  # `make plugins-list` is the same expression every local plugin target reads,
+  # so the pipeline and the Makefile cannot disagree about what a plugin is.
+  discover-plugins:
+    name: Discover plugin modules
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      modules: ${{ steps.list.outputs.modules }}
+    steps:
+    - name: Checks-out repository
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+
+    # A `replace` naming an absolute path builds on exactly one machine, and
+    # four plugins here shipped one. The jobs below would fail on it anyway,
+    # with `replacement directory does not exist` repeated per module; this
+    # says which files and what to do, once, before anything is compiled.
+    - name: Check plugin replace directives
+      run: make plugins-replace-check
+
+    - name: List plugin modules
+      id: list
+      run: |-
+        MODULES=$(make plugins-list | jq -R . | jq -sc .)
+        echo "Found: $MODULES"
+        echo "modules=$MODULES" >> "$GITHUB_OUTPUT"
+
   lint-plugins:
     name: Lint plugin
+    needs: discover-plugins
     strategy:
       fail-fast: false
       matrix:
-        module: [docker, eol, etcd, kube, mariadb, mysql, pg, qdrant, s3, vault]
+        module: ${{ fromJson(needs.discover-plugins.outputs.modules) }}
     uses: this-is-tobi/github-workflows/.github/workflows/lint-go.yml@v0
     permissions:
       contents: read
@@ -134,10 +173,11 @@ jobs:
 
   test-plugins:
     name: Test plugin
+    needs: discover-plugins
     strategy:
       fail-fast: false
       matrix:
-        module: [docker, eol, etcd, kube, mariadb, mysql, pg, qdrant, s3, vault]
+        module: ${{ fromJson(needs.discover-plugins.outputs.modules) }}
     uses: this-is-tobi/github-workflows/.github/workflows/test-go.yml@v0
     permissions:
       contents: read
@@ -177,6 +217,7 @@ jobs:
     - test
     - build
     - cross
+    - discover-plugins
     - lint-plugins
     - test-plugins
     - scan-secrets

@@ -339,7 +339,7 @@ func TestAFailedOpenDoesNotWaitForASignalItAlreadyConsumed(t *testing.T) {
 // 250 ms, and it fired for real during a `-race -shuffle` run of the whole
 // suite: 282 ms, on a machine that was busy running everything else. Five
 // process spawns on a loaded box is a measurement of the box. The number that
-// decides §4 is the one against a real cluster — 54 ms median, attributed
+// decides here is the one against a real cluster — 54 ms median, attributed
 // against kubectl's own startup — and it lives in live_test.go where it can
 // be taken on a machine doing nothing else. What is asserted here is what is
 // deterministic: five opens in a row all work, and none of them falls through

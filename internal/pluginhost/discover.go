@@ -221,7 +221,24 @@ func (h *Host) LoadInto(ctx context.Context, reg *registry.Registry) []error {
 			problems = append(problems, fmt.Errorf("plugin %s: %w", f.Name, denyErr))
 			continue
 		}
-		c, err := h.openIdentified(ctx, id, deny, nil)
+		// This artifact's own profile, when somebody has allowed it a
+		// credential location the rest of the machine's plugins are denied.
+		//
+		// Keyed by digest, read from the same record trust is: the grant
+		// applies to these bytes and to nothing else with this name. Resolved
+		// per artifact rather than once for the sweep because the answer is
+		// per artifact — and only when there is a grant, so the ordinary
+		// plugin costs nothing.
+		mine := deny
+		if allowed := trusted.Allowed(id.Digest); len(allowed) > 0 {
+			relaxed, err := ResolveAllowing(asNeeds(allowed))
+			if err != nil {
+				problems = append(problems, fmt.Errorf("plugin %s: %w", f.Name, err))
+				continue
+			}
+			mine = relaxed
+		}
+		c, err := h.openIdentified(ctx, id, mine, nil)
 		if err != nil {
 			problems = append(problems, fmt.Errorf("plugin %s: %w", f.Name, err))
 			continue

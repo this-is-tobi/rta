@@ -86,6 +86,12 @@ func Plugin() plugin.Plugin {
 		Name:    "cnpg",
 		Summary: "Read the state of CloudNativePG PostgreSQL clusters",
 		Version: "0.1.0",
+		// Everything this plugin does is a kubectl call, and kubectl cannot
+		// make one without the kubeconfig. Declaring it is a request, not a
+		// grant: rta denies credential locations to every plugin by default,
+		// and `rta plugin allow cnpg` is where an operator decides — against
+		// this artifact's digest, so a rebuild asks again.
+		Needs: []plugin.Need{plugin.NeedKubeconfig},
 		Capabilities: []plugin.Capability{
 			cap(plugin.Capability{
 				ID: "cnpg.list", Summary: "Every CloudNativePG cluster, and whether it is healthy",

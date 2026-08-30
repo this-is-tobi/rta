@@ -22,7 +22,7 @@ import (
 // credentials keep working, and rta adopts none of their maintenance.
 //
 // There is no default index. The official one is a repository that does not
-// exist until the module is published (§0), and hardcoding its future URL
+// exist until the module is published, and hardcoding its future URL
 // would make rta reach for a name nobody controls yet on the day somebody
 // registers it. `rta plugin index add` is the whole story, and the first
 // index attached is a decision the operator makes by name.

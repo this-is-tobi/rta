@@ -143,6 +143,52 @@ func findRta() string {
 	return ""
 }
 
+// replacePath is what the `replace` directive points at, and the choice
+// depends entirely on where the plugin is being written.
+//
+// **Absolute when the plugin lands outside the rta tree.** The two are
+// independent things that move independently, and a relative path between
+// them breaks the moment either one is moved. This is the case the original
+// absolute-always rule was written for, and for that case it was right.
+//
+// **Relative when the plugin lands inside it**, which absolute-always got
+// wrong: a plugin under `plugins/` moves with the tree, so naming the tree by
+// absolute path pins the module to one directory on one machine. It is not a
+// theoretical failure — four plugins in this repository were scaffolded that
+// way and shipped a go.mod naming a `/Users/...` path, which builds on the
+// laptop that wrote it and on nothing else. Every other clone and every CI
+// runner gets `replacement directory does not exist`, and no local gate can
+// see it, because locally the directory does exist.
+func replacePath(rtaDir, pluginDir string) string {
+	abs, err := filepath.Abs(pluginDir)
+	if err != nil {
+		return rtaDir
+	}
+	if !within(rtaDir, abs) {
+		return rtaDir
+	}
+	rel, err := filepath.Rel(abs, rtaDir)
+	if err != nil {
+		return rtaDir
+	}
+	// Slashes rather than the host separator: go.mod is read on every
+	// platform, including by the machine that did not write it.
+	return filepath.ToSlash(rel)
+}
+
+// within reports whether path is inside dir.
+//
+// Lexical, deliberately: the directory being asked about has usually not been
+// created yet. `strings.HasPrefix` is the wrong test here — it answers yes for
+// `/rta-other` against `/rta` — so this asks Rel and reads its answer.
+func within(dir, path string) bool {
+	rel, err := filepath.Rel(dir, path)
+	if err != nil || filepath.IsAbs(rel) {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
 // nextSteps is what to print after scaffolding. It names the exact commands,
 // because "build it and put it on your PATH" is the sentence that turns a
 // fifteen-minute task into an hour.

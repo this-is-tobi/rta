@@ -216,7 +216,7 @@ func TestGrantFileHoldsNoSecret(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A seal envelope, still plain readable JSON: §4.7.11's promise is that
+	// A seal envelope, still plain readable JSON: the promise is that
 	// "what can the agent do right now?" is answerable without unlocking
 	// anything, so the file is authenticated and not encrypted.
 	var doc struct {

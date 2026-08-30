@@ -47,7 +47,7 @@ func Plugin() plugin.Plugin {
 					"that row; leave it out to see all of them. Aliases work — \"postgres\" and " +
 					"\"postgresql\" name the same product.",
 				// No dashboard tile: product is Required, so the automatic
-				// picker (every Read capability that needs no input, §4.3)
+				// picker (every Read capability that needs no input)
 				// already skips this — stated anyway, the way pg states it
 				// on every capability, because the reason ("reaches off the
 				// box") is a property of the plugin, not an accident of one

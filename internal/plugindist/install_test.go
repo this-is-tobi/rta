@@ -240,6 +240,12 @@ func TestADeclarationLieIsRefused(t *testing.T) {
 		{"a capability the index omits", func(d string) string {
 			return strings.Replace(d, "  - id: hello.languages\n    safety: read\n", "", 1)
 		}, "also declares hello.languages"},
+		// The claim an operator most wants before deciding, and the one an
+		// index has most reason to leave quiet. hello asks for nothing, so an
+		// index saying otherwise is inventing a question it never posed.
+		{"a credential location the binary never asked for", func(d string) string {
+			return d + "needs:\n  - aws\n"
+		}, "does not ask for aws"},
 	}
 	for _, lie := range lies {
 		t.Run(lie.name, func(t *testing.T) {
@@ -586,5 +592,43 @@ func TestExtractMemberIsExact(t *testing.T) {
 	if _, verr := extractMember(f, "dist/tool", &sink); verr == nil ||
 		!strings.Contains(verr.Message, "regular file") {
 		t.Fatalf("a symlink member: %v", verr)
+	}
+}
+
+// The needs check, both directions, on the function that decides. A
+// credential location is the claim an operator most wants before installing
+// and the one an index has most reason to leave out.
+func TestAnIndexCannotMisstateWhatAPluginAsksToRead(t *testing.T) {
+	declared := plugin.Plugin{
+		Name:         "lab",
+		Capabilities: []plugin.Capability{{ID: "lab.get", Safety: plugin.Read}},
+		Needs:        []plugin.Need{plugin.NeedKubeconfig},
+	}
+	base := Manifest{
+		Name:         "lab",
+		Capabilities: []CapabilityClaim{{ID: "lab.get", Safety: "read"}},
+	}
+	honest := base
+	honest.Needs = []plugin.Need{plugin.NeedKubeconfig}
+	if verr := verifyClaims(Listed{Manifest: honest, Index: "ix"}, declared); verr != nil {
+		t.Fatalf("an index stating the truth was refused: %v", verr)
+	}
+
+	// Silent about it: the operator reads "all read" and installs something
+	// that wants their kubeconfig.
+	verr := verifyClaims(Listed{Manifest: base, Index: "ix"}, declared)
+	if verr == nil || !strings.Contains(verr.Message, "asks to read kubeconfig") {
+		t.Fatalf("a hidden need was accepted: %v", verr)
+	}
+
+	// Inventing one: the operator weighed a question the artifact never asked.
+	invented := base
+	invented.Needs = []plugin.Need{plugin.NeedAWS}
+	verr = verifyClaims(Listed{Manifest: invented, Index: "ix"}, plugin.Plugin{
+		Name:         "lab",
+		Capabilities: declared.Capabilities,
+	})
+	if verr == nil || !strings.Contains(verr.Message, "does not ask for aws") {
+		t.Fatalf("an invented need was accepted: %v", verr)
 	}
 }

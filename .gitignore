@@ -5,12 +5,11 @@
 
 # Test artifacts
 coverage.out
+coverage.html
 *.test
 
 # Editor / OS
 .DS_Store
-.idea/
-.images/
 
 # Working documents: the blueprint, the decision records, the backlogs. They
 # are how this gets built and not how it gets used, and the release tarball
