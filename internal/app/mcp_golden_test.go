@@ -148,6 +148,30 @@ func TestGoldenFullSurface(t *testing.T) {
 	}))
 }
 
+// …and the same full surface again, over HTTP transport, so the locality
+// gate's effect on the real registry is pinned exactly like the safety
+// gate's is above: every plugin.Capability.HostSpecific capability should be
+// missing from this file and from no other, and a capability newly marked
+// HostSpecific — or un-marked — shows up here as a diff in review.
+func TestGoldenRemoteSurface(t *testing.T) {
+	reg, err := NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var destructive, namespaces []string
+	for _, c := range reg.Capabilities() {
+		if c.Safety == "destructive" {
+			destructive = append(destructive, c.ID)
+		}
+	}
+	for _, p := range reg.Plugins() {
+		namespaces = append(namespaces, p.Name)
+	}
+	golden(t, "mcp-surface-remote.json", surface(t, mcp.Options{
+		AllowWrite: namespaces, AllowDestructive: destructive, Remote: true,
+	}))
+}
+
 // The safety gate is the load-bearing part: nothing that can write or destroy
 // may appear on the default surface, whatever anybody edits.
 func TestDefaultSurfaceIsReadOnly(t *testing.T) {

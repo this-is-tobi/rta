@@ -10,6 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/modelcontextprotocol/go-sdk/auth"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/this-is-tobi/rule-them-all/internal/agentlog"
@@ -66,6 +67,31 @@ func clientName(req *sdk.CallToolRequest) string {
 		// Cut on a rune boundary: a byte-slice through a multi-byte character
 		// puts invalid UTF-8 into a sealed file, where it stays forever.
 		for len(name) > maxClientName {
+			_, size := utf8.DecodeLastRuneInString(name)
+			name = name[:len(name)-size]
+		}
+		name += "…"
+	}
+	return name
+}
+
+// maxCredentialName mirrors maxClientName: a token's own label crosses a
+// trust boundary (an operator's file over the static-token path, an external
+// IdP's subject claim over the OIDC one) into a sealed, permanent log, so it
+// gets the same bound rather than a second, unexamined assumption that it is
+// well-behaved.
+const maxCredentialName = 64
+
+// credentialName is which bearer credential authenticated this call, over
+// HTTP, or "" over stdio where nothing verified one. See agentlog.Entry.Credential.
+func credentialName(ctx context.Context) string {
+	info := auth.TokenInfoFromContext(ctx)
+	if info == nil || info.UserID == "" {
+		return ""
+	}
+	name := textclean.Terminal(strings.TrimSpace(info.UserID))
+	if len(name) > maxCredentialName {
+		for len(name) > maxCredentialName {
 			_, size := utf8.DecodeLastRuneInString(name)
 			name = name[:len(name)-size]
 		}
