@@ -11,7 +11,9 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -65,7 +67,7 @@ func NewServer(reg *registry.Registry, version string, opts Options) *sdk.Server
 // this catalogue came from, so wiring it here means there is no field a caller
 // can leave nil and lose a check with.
 func handler(c plugin.Capability, opts Options, reg *registry.Registry) sdk.ToolHandler {
-	return func(ctx context.Context, req *sdk.CallToolRequest) (*sdk.CallToolResult, error) {
+	return func(ctx context.Context, req *sdk.CallToolRequest) (res *sdk.CallToolResult, err error) {
 		// Every call is recorded, whatever becomes of it: the
 		// refusals are the half an operator most wants back. The zero
 		// values say "refused before anything could authorize it", which
@@ -75,8 +77,26 @@ func handler(c plugin.Capability, opts Options, reg *registry.Registry) sdk.Tool
 			Outcome: agentlog.Refused, Auth: agentlog.Blocked,
 			Agent: opts.Agent, Client: clientName(req), Credential: credentialName(ctx),
 		}
-		res, err := call(ctx, c, opts, reg, req, &rec)
-		record(rec)
+		// A panic anywhere in call() — in a capability's own Run, or in this
+		// package — must cost this one call, not every other agent and tool
+		// attached to the same `mcp serve` process. go-sdk runs each
+		// tools/call in its own unrecovered goroutine, so nothing upstream of
+		// this catches it: an unrecovered panic here takes the whole server
+		// down mid-flight for everyone, from the least-privileged caller the
+		// surface has. Recovered rather than left to crash, the same
+		// direction refusedBy already treats every other failure: the record
+		// still gets written, and the caller gets a refusal instead of a
+		// hang-up.
+		defer func() {
+			if r := recover(); r != nil {
+				fmt.Fprintf(os.Stderr, "rta: %s panicked, recovered: %v\n%s\n", c.ID, r, debug.Stack())
+				verr := view.Errorf("core.mcp.panic", "%s failed unexpectedly", c.ID)
+				refusedBy(&rec, verr)
+				res, err = errResult(verr), nil
+			}
+			record(rec)
+		}()
+		res, err = call(ctx, c, opts, reg, req, &rec)
 		return res, err
 	}
 }

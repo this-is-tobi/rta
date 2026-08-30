@@ -145,6 +145,18 @@ func testRegistry(t *testing.T) *registry.Registry {
 				},
 			},
 			{
+				// A handler bug, not a refusal: the class of failure recover()
+				// exists for. A capability returning an error is the ordinary
+				// case demo.item.fail covers; this one is the one that would
+				// otherwise take the whole server down.
+				ID: "demo.item.panics", Summary: "always panics", Safety: plugin.Read,
+				Run: func(context.Context, plugin.Request) (view.View, error) {
+					var m map[string]string
+					m["boom"] = "nil map write, the same panic class defaults filling once found"
+					return nil, nil
+				},
+			},
+			{
 				// Grant-gated and always fails: the one capability that lets a
 				// test prove a call which passed Check but then failed inside
 				// Run does not spend a one-time grant.
@@ -627,6 +639,43 @@ func TestCallToolErrorCarriesCodeAndHint(t *testing.T) {
 	}
 	if m["code"] != "demo.broken" || m["hint"] != "give up" {
 		t.Errorf("error envelope wrong: %v", m)
+	}
+}
+
+// A panic anywhere in a capability's Run must cost that one call, not the
+// whole server: go-sdk dispatches each tools/call in its own unrecovered
+// goroutine, so nothing upstream of handler() catches it on its own — every
+// other agent and tool attached to the same `mcp serve` process would go
+// down with it.
+func TestAPanicIsRecoveredRatherThanKillingTheServer(t *testing.T) {
+	s := connect(t, Options{})
+	res, err := s.CallTool(context.Background(), &sdk.CallToolParams{Name: "demo_item_panics"})
+	if err != nil {
+		t.Fatalf("the panicking call errored at the transport level instead of being recovered: %v", err)
+	}
+	if !res.IsError {
+		t.Fatal("expected IsError for a panicking capability")
+	}
+	text := res.Content[0].(*sdk.TextContent).Text
+	var m map[string]any
+	if err := json.Unmarshal([]byte(text), &m); err != nil {
+		t.Fatal(err)
+	}
+	if m["code"] != "core.mcp.panic" {
+		t.Errorf("code = %v, want core.mcp.panic", m["code"])
+	}
+
+	// The server survived: an unrelated call on the same session still
+	// works. This is the assertion that actually distinguishes "recovered"
+	// from "crashed" — a dead process answers nothing at all.
+	res2, err := s.CallTool(context.Background(), &sdk.CallToolParams{
+		Name: "demo_item_list", Arguments: json.RawMessage(`{"name":"x"}`),
+	})
+	if err != nil {
+		t.Fatalf("the server did not survive the panic: %v", err)
+	}
+	if res2.IsError {
+		t.Errorf("a call after the panic was refused: %+v", res2)
 	}
 }
 
@@ -1408,6 +1457,13 @@ func TestAnExternalDestructiveMustBePinnedToItsArtifact(t *testing.T) {
 		{"wrong pin", "hello.wipe@000000000000", false},
 		{"empty pin is a missing decision, not a wildcard", "hello.wipe@", false},
 		{"pin belonging to another capability", "hello.other@5dae737f8845", false},
+		// Below the 8-char floor (matching internal/plugintrust's identical
+		// check), a matching prefix is refused rather than accepted — cheap
+		// enough to grind that it degrades pinning back into trusting
+		// whatever replaces this name, which is the one thing pinning an
+		// artifact instead of a name exists to prevent.
+		{"pin below the 8-char floor is refused even though it matches", "hello.wipe@5dae7", false},
+		{"pin at exactly the 8-char floor is accepted", "hello.wipe@5dae737f", true},
 	} {
 		o := Options{AllowDestructive: []string{tc.entry}, Origin: origins}
 		if got := o.exposed(cap); got != tc.want {
@@ -1793,7 +1849,7 @@ func TestUnhonourableAllowlistEntriesAreReported(t *testing.T) {
 	// becomes noise an operator learns to scroll past.
 	for _, o := range []Options{
 		{AllowWrite: []string{"demo"}, Origin: builtInOrigin("demo")},
-		{AllowWrite: []string{"demo@1a2b3c"}, Origin: externalOrigin("demo", digest)},
+		{AllowWrite: []string{"demo@1a2b3c4d"}, Origin: externalOrigin("demo", digest)},
 		{},
 	} {
 		if got := o.Problems(reg); len(got) != 0 {
