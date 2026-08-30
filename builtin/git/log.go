@@ -17,10 +17,11 @@ const defaultLogLimit = 20
 
 func logCapability() plugin.Capability {
 	return plugin.Capability{
-		ID:         "git.log",
-		Summary:    "Recent commit history",
-		Safety:     plugin.Read,
-		Idempotent: true,
+		ID:           "git.log",
+		Summary:      "Recent commit history",
+		Safety:       plugin.Read,
+		HostSpecific: true,
+		Idempotent:   true,
 		Description: "The most recent commits reaching HEAD, newest first — hash, author, date and " +
 			"the message's own first line, each a table row rather than text to parse. --file " +
 			"narrows it to commits that touched one path, the structured equivalent of " +

@@ -15,10 +15,11 @@ import (
 
 func remotesCapability() plugin.Capability {
 	return plugin.Capability{
-		ID:         "git.remotes",
-		Summary:    "Where this repository fetches from and pushes to",
-		Safety:     plugin.Read,
-		Idempotent: true,
+		ID:           "git.remotes",
+		Summary:      "Where this repository fetches from and pushes to",
+		Safety:       plugin.Read,
+		HostSpecific: true,
+		Idempotent:   true,
 		Description: "The other half of \"which branch am I on\": which server that branch reaches, " +
 			"and whether this machine has ever heard from it. Three remotes with confusingly " +
 			"similar URLs is how somebody pushes a fix to their fork and waits for a review " +

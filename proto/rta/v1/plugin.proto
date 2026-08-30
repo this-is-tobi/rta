@@ -214,6 +214,11 @@ message Capability {
   // Whether the plugin implements Prefill, which lets interactive surfaces
   // edit in place rather than making somebody type blind.
   bool has_prefill = 12;
+  // Whether this capability's answer is about the machine it runs on — its
+  // filesystem, its checked-out repo, its own host — rather than a
+  // configured remote service or a pure computation. A remote-transport MCP
+  // server hides a capability that sets this; nothing else reads it.
+  bool host_specific = 13;
 }
 
 // Plugin is a unit of distribution and a namespace.

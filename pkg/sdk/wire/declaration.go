@@ -222,18 +222,19 @@ func FieldFromProto(f *rtav1.Field) (plugin.Field, bool) {
 // whether calling them would mean anything.
 func CapabilityToProto(c plugin.Capability) *rtav1.Capability {
 	return &rtav1.Capability{
-		Id:          c.ID,
-		Summary:     c.Summary,
-		Description: c.Description,
-		Safety:      SafetyToProto(c.Safety),
-		Idempotent:  c.Idempotent,
-		Inputs:      mapSlice(c.Inputs, FieldToProto),
-		MinWidth:    int32(c.MinWidth),
-		Detailed:    c.Detailed,
-		NoPreview:   c.NoPreview,
-		NeedsGrant:  c.NeedsGrant,
-		Scope:       c.Scope,
-		HasPrefill:  c.Prefill != nil,
+		Id:           c.ID,
+		Summary:      c.Summary,
+		Description:  c.Description,
+		Safety:       SafetyToProto(c.Safety),
+		Idempotent:   c.Idempotent,
+		Inputs:       mapSlice(c.Inputs, FieldToProto),
+		MinWidth:     int32(c.MinWidth),
+		Detailed:     c.Detailed,
+		NoPreview:    c.NoPreview,
+		NeedsGrant:   c.NeedsGrant,
+		Scope:        c.Scope,
+		HasPrefill:   c.Prefill != nil,
+		HostSpecific: c.HostSpecific,
 	}
 }
 
@@ -266,17 +267,18 @@ func CapabilityFromProto(c *rtav1.Capability) (plugin.Capability, []string) {
 		return field
 	})
 	return plugin.Capability{
-		ID:          c.GetId(),
-		Summary:     c.GetSummary(),
-		Description: c.GetDescription(),
-		Safety:      safety,
-		Idempotent:  c.GetIdempotent(),
-		Inputs:      inputs,
-		MinWidth:    int(c.GetMinWidth()),
-		Detailed:    c.GetDetailed(),
-		NoPreview:   c.GetNoPreview(),
-		NeedsGrant:  c.GetNeedsGrant(),
-		Scope:       c.GetScope(),
+		ID:           c.GetId(),
+		Summary:      c.GetSummary(),
+		Description:  c.GetDescription(),
+		Safety:       safety,
+		Idempotent:   c.GetIdempotent(),
+		Inputs:       inputs,
+		MinWidth:     int(c.GetMinWidth()),
+		Detailed:     c.GetDetailed(),
+		NoPreview:    c.GetNoPreview(),
+		NeedsGrant:   c.GetNeedsGrant(),
+		Scope:        c.GetScope(),
+		HostSpecific: c.GetHostSpecific(),
 	}, unknown
 }
 

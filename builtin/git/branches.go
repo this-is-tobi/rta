@@ -12,10 +12,11 @@ import (
 
 func branchesCapability() plugin.Capability {
 	return plugin.Capability{
-		ID:         "git.branches",
-		Summary:    "Local branches, and which one is checked out",
-		Safety:     plugin.Read,
-		Idempotent: true,
+		ID:           "git.branches",
+		Summary:      "Local branches, and which one is checked out",
+		Safety:       plugin.Read,
+		HostSpecific: true,
+		Idempotent:   true,
 		Description: "Every local branch, alphabetically, with the checked-out one marked. A " +
 			"detached HEAD — checked out at a commit rather than a branch — is reported as its " +
 			"own row rather than left for the caller to notice no branch was marked.",

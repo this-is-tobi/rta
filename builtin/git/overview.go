@@ -16,11 +16,12 @@ const detailLogLimit = 10
 
 func overviewCapability() plugin.Capability {
 	return plugin.Capability{
-		ID:         "git.overview",
-		Summary:    "Branch, working-tree state and the latest commit, at a glance",
-		Safety:     plugin.Read,
-		Idempotent: true,
-		Detailed:   true,
+		ID:           "git.overview",
+		Summary:      "Branch, working-tree state and the latest commit, at a glance",
+		Safety:       plugin.Read,
+		HostSpecific: true,
+		Idempotent:   true,
+		Detailed:     true,
 		Description: "A one-line answer to \"what state is this repository in\": which branch is " +
 			"checked out (or that HEAD is detached), whether the working tree is clean, and the " +
 			"latest commit. With --detail (and on any full-page surface) it expands into the same " +

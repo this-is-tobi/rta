@@ -43,7 +43,7 @@ func Plugin() plugin.Plugin {
 		Capabilities: []plugin.Capability{
 			{
 				ID: "keys.list", Summary: "List the SSH private keys in ~/.ssh, how protected each is, and whether it can be backed up",
-				Safety: plugin.Read, Idempotent: true,
+				Safety: plugin.Read, HostSpecific: true, Idempotent: true,
 				Description: "Finds keys by their PEM preamble rather than by an id_* name, so a key " +
 					"called work_ed25519 — or symlinked in from a dotfiles repository under any name at " +
 					"all — is listed, and a stray file that was never a key is not. Reads only public " +

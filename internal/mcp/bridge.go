@@ -52,7 +52,7 @@ func NewServer(reg *registry.Registry, version string, opts Options) *sdk.Server
 	}, nil)
 
 	for _, c := range reg.Capabilities() {
-		if !opts.exposed(c) {
+		if !opts.exposed(c) || !opts.remoteExposed(c) {
 			continue
 		}
 		server.AddTool(toolDef(c, opts), handler(c, opts, reg))

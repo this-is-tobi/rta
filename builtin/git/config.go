@@ -13,10 +13,11 @@ import (
 
 func configCapability() plugin.Capability {
 	return plugin.Capability{
-		ID:         "git.config",
-		Summary:    "Effective config across system, global and local scope",
-		Safety:     plugin.Read,
-		Idempotent: true,
+		ID:           "git.config",
+		Summary:      "Effective config across system, global and local scope",
+		Safety:       plugin.Read,
+		HostSpecific: true,
+		Idempotent:   true,
 		Description: "Every key set in system, global or local config, one row per scope it's " +
 			"set in — the same three files `git config --list --show-origin` reads, before any of " +
 			"them override each other: local wins over global, global wins over system. A key " +
