@@ -717,16 +717,113 @@ func TestListEditOpensPrefilledForm(t *testing.T) {
 	var doneLog []int
 	m := listResult(t, listRegistry(t, &doneLog))
 
-	edited, _ := m.Update(tea.KeyPressMsg{Code: 'e', Text: "e"})
+	edited, _ := m.Update(tea.KeyPressMsg{Code: 'u', Text: "u"})
 	em := edited.(Model)
 	if em.mode != modeForm || em.current.ID != "todo.edit" {
-		t.Fatalf("e: mode=%v current=%s", em.mode, em.current.ID)
+		t.Fatalf("u: mode=%v current=%s", em.mode, em.current.ID)
 	}
 	if em.form.base["id"] != 1 {
 		t.Fatalf("form base = %v, want id 1 from the selected row", em.form.base)
 	}
 	if got := *em.form.bindings["title"]; got != "CURRENT-1" {
 		t.Fatalf("edit form not prefilled: title = %q", got)
+	}
+}
+
+// resultKeys checks capActionSpecs before its own generic "edit inputs"
+// case, so a capability declaring its own "e" action used to make the
+// generic case unreachable — todo.list's own action is "u" precisely so
+// both stay reachable. This is the other half of
+// TestListEditOpensPrefilledForm: that test is "u" reaches the row action;
+// this one is "e" now reaches the generic form instead of being swallowed
+// by it.
+func TestGenericEditInputsIsReachableOnACapabilityWithItsOwnAction(t *testing.T) {
+	reg := registry.New()
+	err := reg.Register(plugin.Plugin{
+		Name: "todo", Summary: "tasks",
+		Capabilities: []plugin.Capability{
+			{ID: "todo.list", Summary: "list", Safety: plugin.Read, Idempotent: true,
+				Inputs: []plugin.Field{{Name: "all", Type: plugin.Bool, Help: "show done too"}},
+				Run: func(context.Context, plugin.Request) (view.View, error) {
+					return view.Table{
+						Columns: []view.Column{{Name: "ID", Kind: view.KindNumber}, {Name: "Task"}},
+						Rows:    [][]string{{"1", "first"}},
+						Total:   1,
+					}, nil
+				}},
+			{ID: "todo.edit", Summary: "edit", Safety: plugin.Write, Idempotent: true,
+				Inputs: []plugin.Field{
+					{Name: "id", Type: plugin.Int, Positional: true, Required: true, Help: "i"},
+					{Name: "title", Type: plugin.String, Help: "t"},
+				},
+				Run: func(context.Context, plugin.Request) (view.View, error) {
+					return view.Text{Body: "edited"}, nil
+				}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := listResult(t, reg)
+
+	// "u" still reaches the row action.
+	viaU, _ := m.Update(tea.KeyPressMsg{Code: 'u', Text: "u"})
+	if um := viaU.(Model); um.mode != modeForm || um.current.ID != "todo.edit" {
+		t.Fatalf("u: mode=%v current=%s, want todo.edit", um.mode, um.current.ID)
+	}
+
+	// "e" now reaches the generic edit-inputs case instead of being
+	// swallowed by capActionSpecs — before the fix, todo.list declaring no
+	// "e" entry of its own meant this already worked; the real regression
+	// coverage is that renaming todo.list's OWN action away from "e" is
+	// what makes this assertion meaningful for capabilities that used to
+	// collide (todo.list among them, in production).
+	viaE, _ := m.Update(tea.KeyPressMsg{Code: 'e', Text: "e"})
+	em := viaE.(Model)
+	if em.mode != modeForm || em.current.ID != "todo.list" {
+		t.Fatalf("e: mode=%v current=%s, want the generic edit-inputs form on todo.list itself", em.mode, em.current.ID)
+	}
+}
+
+// A dashboard config can watch the same capability twice against two
+// different `with:` targets (buildTiles does not deduplicate by ID) —
+// reproduced exactly as the reviewer who found this did: two tiles, same
+// capability, different host. tileIndexFor used to match by capability ID
+// alone, always finding the first of the two, so the second tile's own
+// results were silently painted into the first tile's slot.
+func TestTileIndexForDisambiguatesTwoTilesOfTheSameCapability(t *testing.T) {
+	reg := registry.New()
+	err := reg.Register(plugin.Plugin{
+		Name: "obj", Summary: "object store",
+		Capabilities: []plugin.Capability{
+			{ID: "obj.get", Summary: "get", Safety: plugin.Read, Idempotent: true,
+				Inputs: []plugin.Field{{Name: "host", Type: plugin.String}},
+				Run: func(context.Context, plugin.Request) (view.View, error) {
+					return view.Text{Body: "ok"}, nil
+				}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dash := config.Dashboard{Tiles: []config.Tile{
+		{ID: "obj.get", With: map[string]any{"host": "alpha"}},
+		{ID: "obj.get", With: map[string]any{"host": "beta"}},
+	}}
+	m := New(reg, dash, nil)
+
+	// index 0 is the always-prepended search tile, so alpha is 1 and beta is 2.
+	if m.tiles[1].values["host"] != "alpha" || m.tiles[2].values["host"] != "beta" {
+		t.Fatalf("tiles = %+v, want alpha at 1 and beta at 2", m.tiles)
+	}
+
+	betaResult := tileMsg{id: "obj.get", idx: 2, v: view.Text{Body: "beta's own result"}}
+	if got := m.tileIndexFor(betaResult); got != 2 {
+		t.Fatalf("tileIndexFor(beta's result) = %d, want 2 (beta's own slot), not alpha's", got)
+	}
+	alphaResult := tileMsg{id: "obj.get", idx: 1, v: view.Text{Body: "alpha's own result"}}
+	if got := m.tileIndexFor(alphaResult); got != 1 {
+		t.Fatalf("tileIndexFor(alpha's result) = %d, want 1", got)
 	}
 }
 
@@ -788,10 +885,10 @@ func TestDetailPageEditIsPrefilled(t *testing.T) {
 	reg := listRegistry(t, &doneLog)
 	m := detailPage(t, reg, listResult(t, reg))
 
-	edited, _ := m.Update(tea.KeyPressMsg{Code: 'e', Text: "e"})
+	edited, _ := m.Update(tea.KeyPressMsg{Code: 'u', Text: "u"})
 	em := edited.(Model)
 	if em.mode != modeForm || em.current.ID != "todo.edit" {
-		t.Fatalf("e on detail: mode=%v current=%s", em.mode, em.current.ID)
+		t.Fatalf("u on detail: mode=%v current=%s", em.mode, em.current.ID)
 	}
 	if em.form.base["id"] != 1 {
 		t.Fatalf("form base = %v, want the page's own id", em.form.base)

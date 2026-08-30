@@ -34,12 +34,17 @@ type capAction struct {
 // which opens the tile), row actions inside result tables, and the actions
 // on a record's own page — so a note is as editable as a task, wherever you
 // happen to be looking at it. Keys must not collide with navigation
-// (hjkl/arrows, tab, b, :, /, q) or result keys (r, y, c) — "c" here means
-// this table's own row-action copy (kv.list/kv.show → kv.copy); it is also
-// the key copyvalue.go's copySpecs uses for a capability with no sibling
-// action to copy through, checked both on a result already open
+// (hjkl/arrows, tab, b, :, /, q), result keys (r, y, c), or "e" — "c" here
+// means this table's own row-action copy (kv.list/kv.show → kv.copy); it is
+// also the key copyvalue.go's copySpecs uses for a capability with no
+// sibling action to copy through, checked both on a result already open
 // (resultView) and directly against a tile's own preview (dashFooter,
-// tui.go's modeDashboard "c" case). A capability must not appear in both
+// tui.go's modeDashboard "c" case). "e" is resultKeys' own generic "edit
+// inputs" (dispatch.go) — reopen the form this result ran with, seeded —
+// and resultKeys checks this table first, so an entry declaring "e" for
+// itself would silently make edit-inputs unreachable for that capability
+// rather than share the key: this table's own loop returns before the
+// generic case is ever reached. A capability must not appear in both
 // tables, or whichever one this loop or that case reaches first shadows
 // the other's hint silently — today that would require a capability that
 // both backs a tile (its own "overview") and declares a capActionSpecs "c"
@@ -51,7 +56,7 @@ var capActionSpecs = map[string][]struct {
 	"todo.list": {
 		{"enter", "show", "todo.show", srcRow},
 		{"a", "add", "todo.add", srcNone},
-		{"e", "edit", "todo.edit", srcRow},
+		{"u", "update", "todo.edit", srcRow},
 		{"d", "done", "todo.done", srcRow},
 		// The undo for `d`, one key away from it: marking the wrong task
 		// complete is a one-keystroke mistake and should cost one keystroke
@@ -62,7 +67,7 @@ var capActionSpecs = map[string][]struct {
 	"note.list": {
 		{"enter", "show", "note.show", srcRow},
 		{"a", "add", "note.add", srcNone},
-		{"e", "edit", "note.edit", srcRow},
+		{"u", "update", "note.edit", srcRow},
 		{"x", "remove", "note.rm", srcRow},
 	},
 	// The hosts file is a list you manage, not just read: park an override
@@ -85,12 +90,12 @@ var capActionSpecs = map[string][]struct {
 		{"w", "why", "audit.why", srcRow},
 	},
 	// A stale grant is something you notice on the dashboard, so taking it
-	// back has to be possible from there and not only from a shell. `e`
+	// back has to be possible from there and not only from a shell. `n`
 	// re-issues the grant under the cursor, which is what "it expired while I
 	// was still using it" actually needs.
 	"grant.list": {
 		{"a", "allow", "grant.allow", srcNone},
-		{"e", "renew", "grant.allow", srcRow},
+		{"n", "renew", "grant.allow", srcRow},
 		{"x", "revoke", "grant.revoke", srcRow},
 	},
 	// The consent queue, answerable from the screen the operator is already
@@ -169,7 +174,7 @@ var capActionSpecs = map[string][]struct {
 		{"v", "reveal", "kv.get", srcRow},
 		{"c", "copy", "kv.copy", srcRow},
 		{"a", "add", "kv.set", srcNone},
-		{"e", "set", "kv.set", srcRow},
+		{"s", "set", "kv.set", srcRow},
 		{"m", "rename", "kv.rename", srcRow},
 		{"x", "remove", "kv.rm", srcRow},
 	},
@@ -183,21 +188,21 @@ var capActionSpecs = map[string][]struct {
 	"kv.show": {
 		{"v", "reveal", "kv.get", srcSelf},
 		{"c", "copy", "kv.copy", srcSelf},
-		{"e", "set", "kv.set", srcSelf},
+		{"s", "set", "kv.set", srcSelf},
 		{"m", "rename", "kv.rename", srcSelf},
 		{"x", "remove", "kv.rm", srcSelf},
 		{"a", "add", "kv.set", srcNone},
 	},
 	// The detail pages act on the record they are already showing.
 	"todo.show": {
-		{"e", "edit", "todo.edit", srcSelf},
+		{"u", "update", "todo.edit", srcSelf},
 		{"d", "done", "todo.done", srcSelf},
 		{"o", "re-open", "todo.reopen", srcSelf},
 		{"x", "remove", "todo.rm", srcSelf},
 		{"a", "add", "todo.add", srcNone},
 	},
 	"note.show": {
-		{"e", "edit", "note.edit", srcSelf},
+		{"u", "update", "note.edit", srcSelf},
 		{"x", "remove", "note.rm", srcSelf},
 		{"a", "add", "note.add", srcNone},
 	},

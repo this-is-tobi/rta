@@ -181,6 +181,24 @@ func TestEveryKeyAScreenAnswersToIsAdvertised(t *testing.T) {
 			m.mode = modeRunning
 			return m, modeRunning
 		},
+		// rta's own key-by-key dispatch with capability-declared and
+		// row-conditional keys layered on top of the shared vocabulary —
+		// exactly the shape most prone to the drift this test exists to
+		// catch (see the "e" key that used to silently shadow "edit
+		// inputs" on several capabilities at once). An interactive,
+		// at-top result so the row-navigation and capAction branches are
+		// actually in play, not skipped.
+		"result": func(t *testing.T) (Model, mode) {
+			var doneLog []int
+			m := listResult(t, listRegistry(t, &doneLog))
+			return m, modeResult
+		},
+		"profilePlugins": func(t *testing.T) (Model, mode) {
+			m := profileModel(t, twoProfileConfig())
+			m.profileOpen = "staging"
+			m.mode = modeProfilePlugins
+			return m, modeProfilePlugins
+		},
 	}
 	for name, build := range screens {
 		t.Run(name, func(t *testing.T) {
