@@ -182,6 +182,16 @@ type Options struct {
 	// a named server matches only grants issued to that name, and an unnamed
 	// one matches only grants issued to no name. See grant.Grant.Agent.
 	Agent string
+	// Remote marks a server reached over the HTTP transport rather than
+	// stdio — a caller on a different machine from the one rta runs on.
+	//
+	// It narrows what exposed already narrowed: a capability marked
+	// plugin.Capability.HostSpecific describes the machine rta happens to
+	// run on, which is the operator's own machine under stdio (the client
+	// launched this process) and is not under HTTP (a network caller is
+	// never the machine). False for stdio, which is every server this field
+	// existed before and changes nothing for.
+	Remote bool
 }
 
 // active is the profile switched on right now, or "".
@@ -563,4 +573,16 @@ func (o Options) exposed(c plugin.Capability) bool {
 	default:
 		return false
 	}
+}
+
+// remoteExposed reports whether a capability passes the locality gate: a
+// second, independent question from exposed's safety-class one.
+//
+// Registration-time, like exposed, and for the same reason: a capability
+// that fails this is absent from tools/list, not present-and-refusing, so an
+// agent behind a remote instance never sees sys_overview or git_status as
+// something to try. There is no allowlist to widen this with — an operator
+// who wants a HostSpecific capability from the box rta runs on has SSH.
+func (o Options) remoteExposed(c plugin.Capability) bool {
+	return !o.Remote || !c.HostSpecific
 }

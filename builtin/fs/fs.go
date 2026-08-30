@@ -32,11 +32,12 @@ func Plugin() plugin.Plugin {
 		Summary: "Filesystem answers: what is using space, what is here, what is this file",
 		Capabilities: []plugin.Capability{
 			{
-				ID:         "fs.usage",
-				Summary:    "Show what is using space under a path, biggest first",
-				Safety:     plugin.Read,
-				Idempotent: true,
-				Detailed:   true,
+				ID:           "fs.usage",
+				Summary:      "Show what is using space under a path, biggest first",
+				Safety:       plugin.Read,
+				HostSpecific: true,
+				Idempotent:   true,
+				Detailed:     true,
 				// A recursive scan of the working directory, repeated on the
 				// dashboard's refresh tick, is cheap in a source tree and
 				// ruinous in a home directory. fs.tree is the fs tile: same
@@ -58,10 +59,11 @@ func Plugin() plugin.Plugin {
 				Run: runUsage,
 			},
 			{
-				ID:         "fs.tree",
-				Summary:    "Show a directory as a tree, with sizes",
-				Safety:     plugin.Read,
-				Idempotent: true,
+				ID:           "fs.tree",
+				Summary:      "Show a directory as a tree, with sizes",
+				Safety:       plugin.Read,
+				HostSpecific: true,
+				Idempotent:   true,
 				// fs.tree is the fs tile (fs.usage is NoPreview), so this is
 				// the page the dashboard opens into. Without it fs was the
 				// one plugin whose tile expanded to exactly what the tile
@@ -84,10 +86,11 @@ func Plugin() plugin.Plugin {
 				Run: runTree,
 			},
 			{
-				ID:         "fs.hash",
-				Summary:    "Checksum a file, and compare it against an expected value",
-				Safety:     plugin.Read,
-				Idempotent: true,
+				ID:           "fs.hash",
+				Summary:      "Checksum a file, and compare it against an expected value",
+				Safety:       plugin.Read,
+				HostSpecific: true,
+				Idempotent:   true,
 				Description: "Hashes a file and, given --expect, says plainly whether it matches — " +
 					"which is the actual task, and the one comparing two hex strings by eye is bad " +
 					"at. The comparison is case-insensitive and tolerates the \"sha256:\" prefix and " +

@@ -426,6 +426,26 @@ type Capability struct {
 	// record instead of the whole capability, so "read the staging token"
 	// does not have to mean "read every secret I own".
 	Scope string
+	// HostSpecific marks a capability whose answer is about the machine rta
+	// happens to run on — its CPU, its filesystem, its checked-out repo, its
+	// own hosts file — rather than a configured remote service or a pure
+	// computation. Read only by the MCP bridge, to decide what a remote,
+	// HTTP-transport server exposes.
+	//
+	// Defaults false, which is fail-*open*: the overwhelming majority of
+	// capabilities reach somewhere the operator configured (pg.query,
+	// kube.get) or compute from their own arguments (gen.password,
+	// codec.b64), and neither changes meaning when the server does not run
+	// where the caller is sitting. Defaulting the other way would block
+	// almost everything remotely and put the burden of opting back in on
+	// every plugin author; instead the small, identifiable set that
+	// actually describes this machine opts in.
+	//
+	// A capability marked true is absent from tools/list entirely on a
+	// remote-transport server — not merely refused per call — the same
+	// registration-time treatment Safety already gets. There is no override
+	// flag: an operator who wants sys.cpu from the box rta runs on has SSH.
+	HostSpecific bool
 }
 
 // Plugin is a unit of distribution and a namespace.

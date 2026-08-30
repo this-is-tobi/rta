@@ -178,6 +178,17 @@ func testRegistry(t *testing.T) *registry.Registry {
 					return view.Text{Body: strings.Join(keys, ",")}, nil
 				},
 			},
+			{
+				// A Read capability that describes the machine rta runs on,
+				// like sys.overview or git.status — the shape a remote-transport
+				// server must hide regardless of the safety gate, which passes
+				// it (Read needs no allowlist).
+				ID: "demo.item.hostspecific", Summary: "describes the machine this runs on",
+				Safety: plugin.Read, HostSpecific: true,
+				Run: func(context.Context, plugin.Request) (view.View, error) {
+					return view.Text{Body: "this machine"}, nil
+				},
+			},
 		},
 	})
 	if err != nil {
@@ -251,6 +262,70 @@ func TestOptInExposure(t *testing.T) {
 	if _, ok := tools["demo_item_rm"]; !ok {
 		t.Error("allowlisted destructive capability missing")
 	}
+}
+
+func TestStdioStillExposesHostSpecificCapabilities(t *testing.T) {
+	// Remote's zero value is false, which is every server this field existed
+	// before — a HostSpecific capability must keep working over ordinary
+	// stdio exactly as it always has, safety class permitting.
+	tools := listTools(t, connect(t, Options{}))
+	if _, ok := tools["demo_item_hostspecific"]; !ok {
+		t.Error("HostSpecific capability missing over stdio, where it describes the operator's own machine")
+	}
+}
+
+func TestRemoteHidesHostSpecificCapabilities(t *testing.T) {
+	tools := listTools(t, connect(t, Options{Remote: true}))
+	if _, ok := tools["demo_item_hostspecific"]; ok {
+		t.Error("HostSpecific capability exposed to a remote-transport server")
+	}
+	if _, ok := tools["demo_item_list"]; !ok {
+		t.Error("an ordinary read capability was also hidden by Remote — it should not be")
+	}
+}
+
+// TestHostSpecificCoversExactlyTheKnownHostDescribingCapabilities pins the
+// real catalogue against the list decided when Remote was designed, in both
+// directions: a capability dropped from this list stops being hidden from a
+// remote caller with nothing failing to say so, and one added to it without
+// updating this test is a decision nobody wrote down. There is no mechanical
+// way to detect "this capability describes the host rta runs on" the way
+// TestEveryPathInputIsConfined detects a Path input, so unlike that test this
+// one cannot force a new capability to be considered — only pin what was
+// already decided. See docs/writing-a-plugin.md for the convention new
+// plugins are asked to follow instead.
+func TestHostSpecificCoversExactlyTheKnownHostDescribingCapabilities(t *testing.T) {
+	want := map[string]bool{
+		"sys.overview": true, "sys.cpu": true, "sys.mem": true, "sys.disk": true,
+		"sys.load": true, "sys.host": true, "sys.ps": true, "sys.temp": true,
+		"fs.usage": true, "fs.tree": true, "fs.hash": true,
+		"git.overview": true, "git.status": true, "git.log": true, "git.diff": true,
+		"git.branches": true, "git.blame": true, "git.remotes": true, "git.config": true, "git.hooks": true,
+		"keys.list": true,
+		"net.info":  true, "net.hosts.list": true, "net.hosts.add": true, "net.hosts.toggle": true,
+		"net.hosts.rm": true, "net.resolver.list": true, "net.resolver.set": true,
+	}
+	reg, err := all.Registry(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, c := range reg.Capabilities() {
+		if c.HostSpecific {
+			got[c.ID] = true
+		}
+	}
+	for id := range want {
+		if !got[id] {
+			t.Errorf("%s: expected HostSpecific, no longer marked so", id)
+		}
+	}
+	for id := range got {
+		if !want[id] {
+			t.Errorf("%s: newly marked HostSpecific — decide whether that's right and update this list", id)
+		}
+	}
+	t.Logf("%d capabilities marked HostSpecific, matching the decided set", len(got))
 }
 
 func TestAnnotationsMapping(t *testing.T) {

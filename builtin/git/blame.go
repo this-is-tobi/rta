@@ -12,10 +12,11 @@ import (
 
 func blameCapability() plugin.Capability {
 	return plugin.Capability{
-		ID:         "git.blame",
-		Summary:    "Who last touched each line of a file, and when",
-		Safety:     plugin.Read,
-		Idempotent: true,
+		ID:           "git.blame",
+		Summary:      "Who last touched each line of a file, and when",
+		Safety:       plugin.Read,
+		HostSpecific: true,
+		Idempotent:   true,
 		Description: "One row per line: who last changed it, when, and the commit that did — the " +
 			"structured equivalent of `git blame`. Reads the whole file's history to answer, so it " +
 			"is not offered as a dashboard tile the way a bounded, no-input capability would be; a " +

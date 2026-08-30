@@ -20,10 +20,11 @@ import (
 
 func diffCapability() plugin.Capability {
 	return plugin.Capability{
-		ID:         "git.diff",
-		Summary:    "Line-level changes — uncommitted, or one commit against its parent",
-		Safety:     plugin.Read,
-		Idempotent: true,
+		ID:           "git.diff",
+		Summary:      "Line-level changes — uncommitted, or one commit against its parent",
+		Safety:       plugin.Read,
+		HostSpecific: true,
+		Idempotent:   true,
 		Description: "Unified diff text, the structured-plugin equivalent of `git diff`. With no " +
 			"--commit, this is every uncommitted change — staged and unstaged together — against " +
 			"HEAD; git.status already answers which paths changed, this answers what changed in " +

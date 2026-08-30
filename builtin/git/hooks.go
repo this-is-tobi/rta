@@ -15,10 +15,11 @@ import (
 
 func hooksCapability() plugin.Capability {
 	return plugin.Capability{
-		ID:         "git.hooks",
-		Summary:    "What's in the hooks directory, and which of it git would actually run",
-		Safety:     plugin.Read,
-		Idempotent: true,
+		ID:           "git.hooks",
+		Summary:      "What's in the hooks directory, and which of it git would actually run",
+		Safety:       plugin.Read,
+		HostSpecific: true,
+		Idempotent:   true,
 		Description: "Every entry in the repository's hooks directory, judged by the same rule " +
 			"git itself uses to decide whether one fires on commit, push and the rest: named " +
 			"exactly (a `.sample` suffix never runs) and executable. A hook is an arbitrary script " +

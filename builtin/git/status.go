@@ -12,10 +12,11 @@ import (
 
 func statusCapability() plugin.Capability {
 	return plugin.Capability{
-		ID:         "git.status",
-		Summary:    "What has changed in the working tree, staged and unstaged",
-		Safety:     plugin.Read,
-		Idempotent: true,
+		ID:           "git.status",
+		Summary:      "What has changed in the working tree, staged and unstaged",
+		Safety:       plugin.Read,
+		HostSpecific: true,
+		Idempotent:   true,
 		Description: "The structured equivalent of `git status --porcelain`: every path with a " +
 			"staged change, an unstaged change, or neither yet — added, tracked at all — one row " +
 			"per path, both halves shown side by side rather than requiring the two-column code to " +
