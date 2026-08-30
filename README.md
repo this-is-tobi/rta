@@ -12,17 +12,18 @@ Which is why the security chapters below are not an appendix, and why every one 
 
 ## Start here
 
-| | |
+| Chapter | What it covers |
 | --- | --- |
 | [Installation](./docs/01-installation.md) | Build it, verify it, put it on `$PATH`, turn on completion |
 | [Quick start](./docs/02-quickstart.md) | Ten minutes: the CLI, the TUI, and an agent that can only read |
 
 ## Using rta yourself
 
-| | |
+| Chapter | What it covers |
 | --- | --- |
 | [The CLI](./docs/10-cli.md) | Output formats, exit codes, `--dry-run`, `explain`, scripting |
 | [The TUI](./docs/11-tui.md) | The dashboard, the catalogue, forms and confirmations |
+| [Seeing the shape of things](./docs/15-trees.md) | Mapping a directory, a bucket, a Vault mount or an etcd keyspace in one call |
 | [Secrets (`kv`)](./docs/30-secrets.md) | An encrypted local store for passwords, certificates and key files |
 | [Profiles](./docs/40-profiles.md) | Naming an environment once and pointing every plugin at it |
 
@@ -30,34 +31,35 @@ Which is why the security chapters below are not an appendix, and why every one 
 
 Read these in order. Each one is a smaller blast radius than the one before it.
 
-| | |
+| Chapter | What it covers |
 | --- | --- |
+| [What rta actually bounds](./docs/19-the-boundary.md) | **Read this first.** An agent with a shell is not bounded by rta — what that means, and how to be in the configuration where it is |
 | [MCP and the safety gate](./docs/20-mcp.md) | Connecting a client, naming it, and what it can reach before you grant anything |
+| [Connecting your AI tool](./docs/24-ai-clients.md) | Claude Code, VS Code, Cursor, Codex, Gemini, Copilot — and anything else that speaks MCP |
 | [Grants](./docs/21-grants.md) | Time-boxed permission for one capability, optionally one record |
 | [The record](./docs/22-audit-trail.md) | What agents asked for, what they got, and what is waiting on you |
-| [Team policy](./docs/23-team-policy.md) | A ceiling a repository can commit, which can only ever subtract |
+| [Team policy](./docs/23-team-policy.md) | A ceiling a repository can commit, which can only ever subtract — and how to notice when it goes missing |
 
 ## Extending rta
 
-| | |
+| Chapter | What it covers |
 | --- | --- |
 | [Using plugins](./docs/50-plugins.md) | Discovery, trust, indexes, install and upgrade |
 | [Writing a plugin](./docs/writing-a-plugin.md) | The SDK, the conformance suite, `plugin new` and `plugin dev` |
 
 ## Going further
 
-| | |
+| Chapter | What it covers |
 | --- | --- |
 | [Recipes](./docs/90-recipes.md) | Worked end-to-end examples: incident triage, a scoped agent, CI checks, backups |
-| [Architecture decisions](./.local/adr/) | Why things are the way they are, 23 records and counting |
 
 ## What is in it
 
-**16 built-in plugins, 98 capabilities** in the default build, and `rta plugin list` is the inventory:
+**16 built-in plugins, 101 capabilities** in the default build, and `rta plugin list` is the inventory:
 
 `sys` · `net` · `http` · `cert` · `fs` · `kv` · `todo` · `note` · `gen` · `codec` · `audit` · `grant` · `agent` · `debug` · `keys` · `git`
 
-Plus anything you install — `pg`, `s3`, `vault`, `kube`, `docker` and `eol` ship in this repository as proof the plugin contract works.
+Plus anything you install. Eleven plugins ship in this repository as proof the contract works — `pg`, `mysql`, `mariadb`, `etcd`, `qdrant`, `s3`, `vault`, `kube`, `cnpg`, `docker` and `eol` — each a separate binary, so the ones you skip cost you nothing.
 
 ## The shape of the thing
 
@@ -65,12 +67,12 @@ Everything in rta is a **capability** — a small, declared unit of work with ty
 
 A capability declares itself once, and the surfaces are generated from that declaration:
 
-```
-                       ┌──────────────► CLI      rta sys cpu --cores
-  capability           │
-  (declared once) ─────┼──────────────► TUI      a form, a table, a chart
-                       │
-                       └──────────────► MCP      a tool an agent can call
+```mermaid
+flowchart LR
+    C["capability<br/>declared once"]
+    C --> CLI["CLI<br/>rta sys cpu --cores"]
+    C --> TUI["TUI<br/>a form, a table, a chart"]
+    C --> MCP["MCP<br/>a tool an agent can call"]
 ```
 
 Which means three things worth knowing early:

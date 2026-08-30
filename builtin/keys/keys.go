@@ -24,12 +24,13 @@ package keys
 import (
 	"context"
 	"crypto/ed25519"
+	"crypto/rand"
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
-	"strings"
+	"runtime"
 
+	"github.com/this-is-tobi/rule-them-all/builtin/internal/sshkeys"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
@@ -41,13 +42,19 @@ func Plugin() plugin.Plugin {
 		Summary: "Back up an SSH private key as memorizable words, and restore it",
 		Capabilities: []plugin.Capability{
 			{
-				ID: "keys.list", Summary: "List the SSH private keys in ~/.ssh, and whether each can be backed up",
+				ID: "keys.list", Summary: "List the SSH private keys in ~/.ssh, how protected each is, and whether it can be backed up",
 				Safety: plugin.Read, Idempotent: true,
-				Description: "Reads only public data: a key's .pub sibling for its type, fingerprint and " +
+				Description: "Finds keys by their PEM preamble rather than by an id_* name, so a key " +
+					"called work_ed25519 — or symlinked in from a dotfiles repository under any name at " +
+					"all — is listed, and a stray file that was never a key is not. Reads only public " +
+					"data: a key's .pub sibling for its type, fingerprint and " +
 					"comment, and whether the private key itself is passphrase-protected — the same check " +
 					"`rta doctor` uses, which parses far enough to see a key is locked without ever supplying " +
 					"a passphrase. Never decrypts anything. Backup-eligible means ed25519: `keys.backup` has " +
-					"nothing to encode as words for an RSA or ECDSA key, which carries no single seed.",
+					"nothing to encode as words for an RSA or ECDSA key, which carries no single seed. An " +
+					"Exposed column appears only when some key's permissions let another account on this " +
+					"machine read it, which is both a credential exposure and the reason ssh has stopped " +
+					"accepting that key.",
 				// Not NoPreview for either of pkg/plugin's own two reasons —
 				// this reaches nothing off the box and ~/.ssh is not a
 				// recursive scan — but for a third: an unencrypted key's
@@ -80,6 +87,35 @@ func Plugin() plugin.Plugin {
 							plugin.LocalEnvVar("keys.backup", "passphrase"))},
 				},
 				Run: runBackup,
+			},
+			{
+				ID: "keys.add", Summary: "Generate an ed25519 SSH key, ready to back up",
+				Safety: plugin.Write, Idempotent: true,
+				Description: "ed25519 and nothing else, which is the same rule keys.backup " +
+					"already enforces from the other end: a key generated here can always be " +
+					"melted into words, and one that could not would be a key this plugin " +
+					"cannot do its own job on. Writes <out> at 0600 and <out>.pub at 0644, " +
+					"refusing to touch either if it already exists — the discipline keys.restore " +
+					"uses, for the sharper reason here: overwriting a private key destroys access " +
+					"to everything that key authorises, with nothing to restore from. " +
+					"--passphrase encrypts the key being written and is always typed, never read " +
+					"from the environment, for keys.restore's --new-passphrase reason: generating " +
+					"a key is a one-off act, not a standing credential for the session. " +
+					"Refuses SurfaceMCP outright, the same gate keys.backup and keys.restore set: " +
+					"a key an agent generated is a credential nobody watched being made. " +
+					"There is deliberately no keys.rm — deleting a key file is irreversible loss " +
+					"of access, `rm` is a command everybody already has, and the shell they run " +
+					"it in will ask.",
+				Inputs: []plugin.Field{
+					{Name: "out", Type: plugin.Path, Positional: true, Required: true,
+						Help: "where to write the private key (and <out>.pub)"},
+					{Name: "passphrase", Type: plugin.Secret, Local: true,
+						Help: "encrypt the key with this passphrase; omit for none — " +
+							"typed explicitly every time, never read from the environment"},
+					{Name: "comment", Type: plugin.String, Suggest: suggestComment,
+						Help: "comment for the public key, e.g. me@laptop"},
+				},
+				Run: runAdd,
 			},
 			{
 				ID: "keys.restore", Summary: "Reconstruct an SSH private key from its BIP39 seed words",
@@ -138,33 +174,82 @@ func runList(_ context.Context, _ plugin.Request) (view.View, error) {
 		return nil, view.Errorf("keys.list.home", "resolving the home directory: %v", err)
 	}
 	dir := filepath.Join(home, ".ssh")
-	entries, err := os.ReadDir(dir)
-	if err != nil {
+	if _, err := os.Stat(dir); err != nil {
 		if os.IsNotExist(err) {
 			return view.Text{Body: "No ~/.ssh directory found."}, nil
 		}
 		return nil, view.Errorf("keys.list.read", "reading %s: %v", dir, err)
 	}
-	var names []string
-	for _, e := range entries {
-		name := e.Name()
-		if e.IsDir() || !strings.HasPrefix(name, "id_") || strings.HasSuffix(name, ".pub") {
-			continue
-		}
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	if len(names) == 0 {
+	paths := sshkeys.PrivateKeys(dir)
+	if len(paths) == 0 {
 		return view.Text{Body: "No private keys found in ~/.ssh."}, nil
 	}
-	t := view.Table{Columns: []view.Column{
-		{Name: "Key"}, {Name: "Type"}, {Name: "Locked"}, {Name: "Backup-eligible"}, {Name: "Fingerprint"},
-	}}
-	for _, name := range names {
-		t.Rows = append(t.Rows, describeKey(filepath.Join(dir, name)))
+	return keyTable(paths), nil
+}
+
+// keyTable lays the keys out, with one column that comes and goes.
+//
+// **Exposed appears only when a key is.** It is the column doctrine the rest
+// of this app follows — a column whose every cell would read "fine" tells
+// nobody anything, and its arrival is the finding. What it reports is not a
+// style preference either: ssh refuses to use a private key other accounts
+// can read ("UNPROTECTED PRIVATE KEY FILE!"), so this is simultaneously a
+// credential-exposure finding and the answer to why that key stopped working.
+//
+// The grading vocabulary is builtin/audit's, deliberately word for word:
+// world-readable is a failure and group-readable is a warning, and somebody
+// who has read one of these reports should not have to learn a second scale
+// for the same fact.
+func keyTable(paths []string) view.Table {
+	rows := make([][]string, 0, len(paths))
+	exposed := make([]string, 0, len(paths))
+	any := false
+	for _, path := range paths {
+		rows = append(rows, describeKey(path))
+		e := exposure(path)
+		if e != "" {
+			any = true
+		}
+		exposed = append(exposed, e)
 	}
-	t.Total = len(t.Rows)
-	return t, nil
+	cols := []view.Column{
+		{Name: "Key"}, {Name: "Type"}, {Name: "Locked"}, {Name: "Backup-eligible"}, {Name: "Fingerprint"},
+	}
+	if any {
+		// Beside Locked, because the two together are the whole answer to
+		// "how protected is this key" — one against somebody with the file,
+		// the other against somebody with an account on this machine.
+		cols = append(cols[:3:3], append([]view.Column{{Name: "Exposed"}}, cols[3:]...)...)
+		for i, row := range rows {
+			cell := exposed[i]
+			if cell == "" {
+				cell = "—"
+			}
+			rows[i] = append(row[:3:3], append([]string{cell}, row[3:]...)...)
+		}
+	}
+	return view.Table{Columns: cols, Rows: rows, Total: len(rows)}
+}
+
+// exposure grades one key file's permissions, and is empty when there is
+// nothing to say — including on Windows, where the POSIX bits mean nothing
+// and the ACL is the real answer (builtin/audit draws the same line).
+func exposure(path string) string {
+	if runtime.GOOS == "windows" {
+		return ""
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return ""
+	}
+	mode := info.Mode().Perm()
+	switch {
+	case mode&0o007 != 0:
+		return fmt.Sprintf("world (%04o)", mode)
+	case mode&0o070 != 0:
+		return fmt.Sprintf("group (%04o)", mode)
+	}
+	return ""
 }
 
 func runBackup(_ context.Context, req plugin.Request) (view.View, error) {
@@ -211,6 +296,62 @@ func runBackup(_ context.Context, req plugin.Request) (view.View, error) {
 				"app, or anywhere else the key file itself would not go. Before trusting a written-down copy, " +
 				"verify the fingerprint above against `ssh-keygen -lf " + path + "`.",
 		}},
+	}}, nil
+}
+
+// runAdd generates a key.
+//
+// Named add rather than new because rta has one verb catalogue and the
+// conformance suite enforces it: somebody who has learned `add` everywhere
+// else should not meet a synonym here.
+//
+// **The absorbed-not-depended-on rule, again.** charmbracelet/keygen was the
+// obvious library and is the wrong shape for this: what it adds over
+// crypto/ed25519 plus x/crypto/ssh is filename conventions, key-type
+// switching this plugin does not want, and an authorized_keys writer nothing
+// here asks for — while sshkey.go already marshals an OpenSSH private key,
+// with and without a passphrase, because keys.restore needed exactly that.
+// The same call builtin/debug made absorbing sequin as charmbracelet/x/ansi,
+// and this package made absorbing melt as go-bip39.
+//
+// So this is ed25519.GenerateKey and the writer that already existed. The
+// generation itself is four lines; everything that makes a key file correct —
+// refusing to overwrite, 0600, the .pub sibling, the fingerprint to compare
+// against later — is publishRestoredKey's, unchanged.
+func runAdd(_ context.Context, req plugin.Request) (view.View, error) {
+	if verr := refuseMCP(req, "keys.add"); verr != nil {
+		return nil, verr
+	}
+	out := expandHome(req.String("out"))
+	pub := out + ".pub"
+	// Both checked before anything is generated, and the message says what is
+	// at stake: unlike a restore, there is nothing to recover an overwritten
+	// key from.
+	for _, path := range []string{out, pub} {
+		if fileExists(path) {
+			return nil, view.Errorf("keys.add.exists", "%s already exists", path).
+				WithHint("name a different file — overwriting a private key destroys access to " +
+					"everything it authorises, and nothing here could put it back")
+		}
+	}
+
+	if req.DryRun {
+		return view.Text{Body: fmt.Sprintf("would write %s and %s", out, pub)}, nil
+	}
+
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return nil, view.Errorf("keys.add.generate", "generating a key: %v", err)
+	}
+	fp, verr := publishRestoredKey(out, priv, []byte(req.String("passphrase")), req.String("comment"))
+	if verr != nil {
+		return nil, verr
+	}
+	return view.KeyValue{Pairs: []view.Pair{
+		{Key: "Private key", Value: out},
+		{Key: "Public key", Value: pub},
+		{Key: "Fingerprint", Value: fp},
+		{Key: "Back it up", Value: "rta keys backup " + out + " — 24 words that restore it exactly"},
 	}}, nil
 }
 

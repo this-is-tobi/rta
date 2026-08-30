@@ -3,8 +3,7 @@ package audit
 import (
 	"encoding/json"
 	"io/fs"
-	"os"
-	"path/filepath"
+	"path"
 	"strings"
 )
 
@@ -98,19 +97,17 @@ const (
 // own and no single file knows about the others.
 //
 // The bounds are reported rather than applied silently — see truncated.
-func findManifests(path string, recursive bool) (found []string, truncated bool, err error) {
-	info, err := os.Stat(path)
-	if err != nil {
-		return nil, false, err
-	}
-	if !info.IsDir() {
-		return []string{path}, false, nil
-	}
+// It reads through an fs.FS rather than through os, which is what lets the
+// same scanner answer for a directory on this machine and for a repository
+// nobody checked out — os.DirFS on one side, the clone's own filesystem on
+// the other. Everything below therefore speaks slash-separated fs paths;
+// what the *reader* is shown is a separate string, because the path inside a
+// clone means nothing to them and the URL means nothing to fs.FS.
+func findManifests(fsys fs.FS, recursive bool) (found []string, truncated bool, err error) {
 	if !recursive {
-		return manifestsIn(path), false, nil
+		return manifestsIn(fsys, "."), false, nil
 	}
-	root := filepath.Clean(path)
-	err = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+	err = fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			// An unreadable subdirectory is not a reason to abandon the
 			// eleven that were readable.
@@ -123,17 +120,17 @@ func findManifests(path string, recursive bool) (found []string, truncated bool,
 			return nil
 		}
 		name := d.Name()
-		if p != root && (skipDirs[name] || strings.HasPrefix(name, ".")) {
+		if p != "." && (skipDirs[name] || strings.HasPrefix(name, ".")) {
 			return fs.SkipDir
 		}
-		if depthOf(root, p) > maxScanDepth {
+		if depthOf(p) > maxScanDepth {
 			return fs.SkipDir
 		}
 		if len(found) >= maxManifests {
 			truncated = true
 			return fs.SkipAll
 		}
-		found = append(found, manifestsIn(p)...)
+		found = append(found, manifestsIn(fsys, p)...)
 		return nil
 	})
 	if len(found) > maxManifests {
@@ -144,23 +141,24 @@ func findManifests(path string, recursive bool) (found []string, truncated bool,
 
 // manifestsIn lists the manifests directly in one directory, in the order
 // manifestNames declares.
-func manifestsIn(dir string) []string {
+func manifestsIn(fsys fs.FS, dir string) []string {
 	var found []string
 	for _, name := range manifestNames {
-		full := filepath.Join(dir, name)
-		if st, err := os.Stat(full); err == nil && !st.IsDir() {
+		full := path.Join(dir, name)
+		if st, err := fs.Stat(fsys, full); err == nil && !st.IsDir() {
 			found = append(found, full)
 		}
 	}
 	return found
 }
 
-func depthOf(root, p string) int {
-	rel, err := filepath.Rel(root, p)
-	if err != nil || rel == "." {
+// depthOf counts directory levels below the root. fs paths are already
+// relative to it, so this is a separator count and not a filepath.Rel.
+func depthOf(p string) int {
+	if p == "." {
 		return 0
 	}
-	return strings.Count(rel, string(filepath.Separator)) + 1
+	return strings.Count(p, "/") + 1
 }
 
 // parseManifest reads one file twice over: once for what it lists, once for
@@ -173,18 +171,22 @@ func depthOf(root, p string) int {
 // answer a question whose worst failure is "no explanation offered". Keeping
 // them apart means no amount of care or carelessness in the second can reach
 // the first. The cost is one extra scan of a file already in memory.
-func parseManifest(path string) ([]component, graph, error) {
-	base := filepath.Base(path)
+// name is where to read it; shown is what a finding calls it. They are the
+// same string for a directory on this machine and necessarily different for
+// a clone, and the parsers only ever see the second — a component's source
+// is a thing somebody has to be able to go and open.
+func parseManifest(fsys fs.FS, name, shown string) ([]component, graph, error) {
+	base := path.Base(name)
 	// Decided before the read: nothing here can parse a binary lockfile, so
 	// pulling one into memory only makes the failure slower.
 	if base == "bun.lockb" {
 		return nil, graph{}, errBinaryLockfile
 	}
-	data, err := os.ReadFile(path)
+	data, err := fs.ReadFile(fsys, name)
 	if err != nil {
 		return nil, graph{}, err
 	}
-	comps, err := parseComponents(base, data, path)
+	comps, err := parseComponents(base, data, shown)
 	if err != nil {
 		return nil, graph{}, err
 	}

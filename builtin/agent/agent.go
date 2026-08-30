@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -71,8 +72,30 @@ func Plugin() plugin.Plugin {
 					{Name: "limit", Type: plugin.Int, Default: 30, Min: 1, Max: maxRows,
 						Help: "how many of the most recent calls to show"},
 					{Name: "refused", Type: plugin.Bool, Help: "only the calls rta would not make"},
+					{Name: "since", Type: plugin.String,
+						Help: "only calls after this: a duration like `2h`, or a date like 2026-08-30"},
+					{Name: "after", Type: plugin.Int, Min: 0,
+						Help: "only calls after this `seq` — an exact cursor, for shipping the record somewhere"},
 				},
 				Run: localOnly(runLog),
+			},
+			{
+				ID:      "agent.metrics",
+				Summary: "The record as Prometheus metrics, for a dashboard and an alert",
+				Description: "One command, the standard text exposition format, no listener and no " +
+					"port: `rta agent metrics > /var/lib/node_exporter/textfile_collector/rta.prom` " +
+					"on a timer is the whole integration. Calls by capability, agent, outcome and " +
+					"how they were authorized; grants in force; calls parked waiting for you; and " +
+					"whether the record's hash chain still verifies — which is the one worth an " +
+					"alert, because a record that stops verifying is either a bug or somebody " +
+					"editing it. Nothing is kept: every number is derived from the ledger, so it " +
+					"is a number you could recompute. The Grafana stack's other half needs nothing " +
+					"here — `agent log --after <seq> -o json` is already a cursor over an " +
+					"append-only record, which is what a log shipper wants.",
+				Safety:     plugin.Read,
+				Idempotent: true,
+				NoPreview:  true, // a full pass over the record is not a tile
+				Run:        localOnly(runMetrics),
 			},
 			{
 				ID:      "agent.pending",
@@ -268,10 +291,22 @@ func runLog(_ context.Context, req plugin.Request) (view.View, error) {
 		limit = 30
 	}
 	onlyRefused := req.Bool("refused")
+	after := int64(req.Int("after"))
+	since, sinceErr := parseSince(req.String("since"))
+	if sinceErr != nil {
+		return nil, sinceErr
+	}
 	// Read more than asked for when filtering, so `--refused --limit 10`
 	// answers with ten refusals rather than the refusals among the last ten
 	// calls — which is the same number for a quiet server and nothing at
 	// all for a busy one.
+	//
+	// --after and --since deliberately do not widen it, and the difference is
+	// worth stating because the first draft widened all three. Those two keep
+	// a *suffix* of a newest-first read: the newest thirty entries that pass
+	// them are the newest thirty that pass them, whether thirty or five
+	// hundred were read to find them. --refused keeps a scattered subset,
+	// which is the only one of the three that can come up short.
 	want := limit
 	if onlyRefused {
 		want = maxRows
@@ -291,14 +326,25 @@ func runLog(_ context.Context, req plugin.Request) (view.View, error) {
 			break
 		}
 	}
-	rows := make([][]string, 0, len(entries))
-	for i := len(entries) - 1; i >= 0; i-- {
+	// Filtered first, rendered second, because two of the rendering decisions
+	// below are about the set rather than the row.
+	shown := make([]agentlog.Entry, 0, limit)
+	for i := len(entries) - 1; i >= 0 && len(shown) < limit; i-- {
 		e := entries[i]
-		if onlyRefused && e.Outcome != agentlog.Refused {
-			continue
+		switch {
+		case onlyRefused && e.Outcome != agentlog.Refused:
+		case e.Seq <= after:
+		case !since.IsZero() && e.At.Before(since):
+		default:
+			shown = append(shown, e)
 		}
+	}
+	stamp := stampFormat(shown)
+	rows := make([][]string, 0, len(shown))
+	for _, e := range shown {
 		row := []string{
-			e.At.Local().Format("15:04:05"),
+			strconv.FormatInt(e.Seq, 10),
+			e.At.Local().Format(stamp),
 			e.Cap,
 			argsLine(e.Args),
 			e.Profile,
@@ -307,20 +353,22 @@ func runLog(_ context.Context, req plugin.Request) (view.View, error) {
 			whyLine(e),
 		}
 		if named {
-			row = slices.Insert(row, 2, whoCalled(e))
+			row = slices.Insert(row, 3, whoCalled(e))
 		}
 		rows = append(rows, row)
-		if len(rows) >= limit {
-			break
-		}
 	}
+	// seq is first because it is the join key and the cursor: `--after` takes
+	// it, and an archive without it cannot be appended to twice without
+	// duplicating everything — which is what the documented way of shipping
+	// this record actually did.
 	cols := []view.Column{
+		{Name: "seq"},
 		{Name: "at", Kind: view.KindTimestamp}, {Name: "capability"}, {Name: "arguments"},
 		{Name: "profile"}, {Name: "outcome", Kind: view.KindStatus},
 		{Name: "authorized"}, {Name: "why"},
 	}
 	if named {
-		cols = slices.Insert(cols, 2, view.Column{Name: "agent"})
+		cols = slices.Insert(cols, 3, view.Column{Name: "agent"})
 	}
 	table := view.Table{Columns: cols, Rows: rows, Total: len(entries)}
 	if !req.Bool("detail") {
@@ -552,8 +600,13 @@ func alsoGrant(r consent.Request, ttl string) (string, *view.Error) {
 		// --ttl would issue a grant covering the *unnamed* server — a grant
 		// that reads as consent, lists as live, and never authorizes the
 		// agent it was granted to.
-		Agent:   r.Agent,
-		Issued:  now,
+		Agent:  r.Agent,
+		Issued: now,
+		// Answering a parked request is always a person. The queue exists
+		// because somebody is there to answer it, `agent allow` refuses over
+		// MCP outright, and the whole feature is a question rta asked and
+		// waited for — so this is the one origin that needs no test for it.
+		From:    grant.FromForm,
 		Expires: now.Add(d),
 		TTL:     ttl,
 		Note:    "issued while answering request " + r.ID,
@@ -676,4 +729,56 @@ func clip(line string) string {
 		cut++
 	}
 	return line
+}
+
+// parseSince reads what "since" means to a person: a duration back from now,
+// or a day, or an exact instant.
+//
+// Three spellings because three questions ask it — "the last two hours" while
+// something is going wrong, "today" when writing it up, and an exact
+// timestamp when joining this record against another system's. Refused rather
+// than guessed at when it is none of them: a filter that silently matched
+// everything would report an empty record as a quiet one.
+func parseSince(raw string) (time.Time, *view.Error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return time.Time{}, nil
+	}
+	if d, err := time.ParseDuration(raw); err == nil {
+		if d < 0 {
+			d = -d
+		}
+		return time.Now().Add(-d), nil
+	}
+	for _, layout := range []string{time.RFC3339, "2006-01-02 15:04:05", "2006-01-02 15:04", "2006-01-02"} {
+		if t, err := time.ParseInLocation(layout, raw, time.Local); err == nil {
+			return t, nil
+		}
+	}
+	return time.Time{}, view.Errorf("agent.log.since",
+		"%q is not a time this understands", raw).
+		WithHint("a duration back from now (`2h`, `15m`), a day (`2026-08-30`), " +
+			"or an exact instant (`2026-08-30T14:00:00Z`)")
+}
+
+// stampFormat decides how much of an instant a row has to carry.
+//
+// The same table answers two questions. "What did it touch while I was in
+// that meeting" is read on a terminal minutes later, where a date on every
+// row is width taken from the arguments column; an archive is read months
+// later, where a bare `15:04:05` is a row nobody can place. So the date
+// appears exactly when it is load-bearing: when the rows are not all from
+// today.
+//
+// The same shape as the agent column above it, which appears only once a row
+// can fill it — a column that says nothing is a column people learn to skip.
+func stampFormat(entries []agentlog.Entry) string {
+	const timeOnly, dated = "15:04:05", "2006-01-02 15:04:05"
+	today := time.Now().Local().Format("2006-01-02")
+	for _, e := range entries {
+		if e.At.Local().Format("2006-01-02") != today {
+			return dated
+		}
+	}
+	return timeOnly
 }

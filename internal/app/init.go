@@ -80,7 +80,15 @@ func newInitCommand(reg *registry.Registry) *cobra.Command {
 				return nil
 			}
 
-			if err := config.Write(initConfig(current, output, selectedTiles)); err != nil {
+			// Folded into the file as it is *now*, not into the copy read
+			// before the form opened. The wizard is interactive, so that gap
+			// is measured in minutes rather than microseconds — the longest
+			// read-to-write window of any writer here — and anything else
+			// that touched the config meanwhile should survive answers that
+			// say nothing about it.
+			if err := config.Mutate(func(cfg config.Config) (config.Config, bool) {
+				return initConfig(cfg, output, selectedTiles), true
+			}); err != nil {
 				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "✓ wrote %s — run `rta` to see your dashboard\n", config.Path())

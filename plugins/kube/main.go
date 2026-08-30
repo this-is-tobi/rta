@@ -189,8 +189,8 @@ func Plugin() plugin.Plugin {
 					"why it needs a grant naming the context you mean, and why the grant is worth " +
 					"reading twice before you issue it.",
 				// Write and not Destructive: nothing is deleted and the
-				// previous context is one call away. NeedsGrant anyway, on ADR
-				// 0007's third trigger — a quiet, reversible mutation whose
+				// previous context is one call away. NeedsGrant anyway, on
+				// the third trigger for one — a quiet, reversible mutation whose
 				// real risk is what it silently enables afterward. Scope is
 				// the context name, so a grant reads "kube.context.set
 				// kind-rta-lab" and authorizes exactly that switch and no

@@ -10,6 +10,7 @@ import (
 
 	"github.com/this-is-tobi/rule-them-all/internal/config"
 	"github.com/this-is-tobi/rule-them-all/internal/pluginhost"
+	"github.com/this-is-tobi/rule-them-all/internal/plugintrust"
 	"github.com/this-is-tobi/rule-them-all/internal/registry"
 	"github.com/this-is-tobi/rule-them-all/internal/render/theme"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
@@ -61,7 +62,18 @@ type pluginRow struct {
 	// stated job is "which plugins do I actually have?", was the one that did
 	// not, while also printing a confident count that left them out.
 	waiting bool
+	// decided records a trust decision taken in this session, which is a
+	// third state and not a fourth flag: the file has changed and the
+	// process has not, so the row must say something neither "trusted" nor
+	// "waiting" covers. Empty until somebody presses the key.
+	decided string
 }
+
+// The two decisions a row can carry from this session.
+const (
+	decidedTrust   = "trusted"
+	decidedUntrust = "untrusted"
+)
 
 // canTile reports whether this plugin could be on the dashboard at all.
 func (r pluginRow) canTile() bool { return r.tile != "" }
@@ -323,6 +335,12 @@ func (m Model) pluginsView() string {
 			// stating a fact it does not have.
 			right = " " + theme.WarnText.Render("not run") + " "
 		}
+		if row.decided == decidedTrust {
+			right = " " + theme.GoodText.Render("approved") + " "
+		}
+		if row.decided == decidedUntrust {
+			right = " " + theme.WarnText.Render("untrusted") + " "
+		}
 
 		rule := max(inner-lipgloss.Width(label)-lipgloss.Width(right)-3, 0)
 		name := theme.Key.Render(label)
@@ -337,6 +355,12 @@ func (m Model) pluginsView() string {
 		summary := theme.Subtle.Render(row.plugin.Summary)
 		if row.waiting {
 			summary = theme.WarnText.Render("installed and not run — nothing has trusted this artifact")
+		}
+		switch row.decided {
+		case decidedTrust:
+			summary = theme.GoodText.Render("approved just now — this artifact runs from the next rta onwards")
+		case decidedUntrust:
+			summary = theme.WarnText.Render("approval taken back — it stays loaded until rta exits, and will not run again")
 		}
 		b.WriteString(ansi.Truncate(indent+summary, inner, "…") + "\n")
 		b.WriteString(ansi.Truncate(indent+theme.Faded.Render(pluginDetail(row)), inner, "…") + "\n")
@@ -368,12 +392,23 @@ func pluginDetail(row pluginRow) string {
 	if row.external() {
 		origin = "$PATH: " + row.origin.Path + " · " + row.origin.Short()
 	}
+	if row.decided == decidedTrust {
+		return origin + " · approved — it loads when rta restarts"
+	}
 	if row.waiting {
-		// The command, not a key. Trust is read once per process before
-		// anything is launched, so approving it from inside a running TUI
-		// would change a file and load nothing — a control that appears to
-		// work and does not is worse than one that sends you to a shell.
-		return origin + " · `rta plugin trust " + row.plugin.Name + "` to load it, next run"
+		// **This used to send people to a shell, and the reasoning was
+		// wrong in an interesting way.** It said a control that changes a
+		// file and loads nothing appears to work and does not, so the
+		// command was safer than a key. But `rta plugin trust` does exactly
+		// the same thing — it writes the approval and tells you the plugin
+		// loads on your next command — and nobody reads that as broken.
+		// What made the TUI version sound broken was the missing sentence,
+		// not the missing restart.
+		//
+		// And the key is the better moment for the decision, not merely the
+		// shorter one: the digest and the artifact path are on the screen
+		// while it is being made, where the command shows them only after.
+		return origin + " · press t to approve it — it loads when rta restarts"
 	}
 	detail := origin + " · " + fmt.Sprintf("%d capabilities", len(row.plugin.Capabilities))
 	switch {
@@ -408,4 +443,44 @@ func pad(styled, plain string, width int) string {
 		return styled + strings.Repeat(" ", n)
 	}
 	return styled + " "
+}
+
+// trustSelected takes the trust decision the pane is showing, without leaving
+// it.
+//
+// Both directions from one key, because the row already says which one it is
+// and a second key for the reverse would be a key that does nothing on most
+// rows. The asymmetry that matters is handled by what happens rather than by
+// what is pressed: approving is the decision with consequences and it is the
+// one the row spells out first, while taking approval back only ever narrows.
+//
+// Neither takes effect on the running process. That is stated in the flash
+// and in the row rather than worked around, for the reason `rta plugin trust`
+// states it too: trust is read once, before anything is launched.
+func (m *Model) trustSelected() string {
+	if m.pluginSel >= len(m.plugins) {
+		return ""
+	}
+	row := m.plugins[m.pluginSel]
+	if !row.external() && !row.waiting {
+		return row.plugin.Name + " is built into rta — there is no artifact to approve"
+	}
+	if row.waiting {
+		if verr := plugintrust.Add(row.origin.Digest, row.plugin.Name, row.origin.Path); verr != nil {
+			return "not approved: " + verr.Message
+		}
+		m.plugins[m.pluginSel].decided = decidedTrust
+		return "approved " + row.plugin.Name + " (" + row.origin.Short() +
+			") — it loads when rta restarts"
+	}
+	n, verr := plugintrust.Remove(row.plugin.Name)
+	if verr != nil {
+		return "not withdrawn: " + verr.Message
+	}
+	if n == 0 {
+		return row.plugin.Name + " was not in the trusted list"
+	}
+	m.plugins[m.pluginSel].decided = decidedUntrust
+	return "took approval back from " + row.plugin.Name +
+		" — it stays loaded until rta exits, and will not run again"
 }

@@ -91,8 +91,7 @@ func Identify(name string) (Identity, error) {
 // the spec is argument-independent, so this will fire zero times at M2 — every
 // call to a given plugin hashes identically. It is encoded anyway because it
 // is a *cache-key shape*, and a cache key is precisely the thing that cannot
-// be widened later without auditing every call site that ever read it. ADR
-// 0012 §1.
+// be widened later without auditing every call site that ever read it.
 func specHash(d DenySet) string {
 	h := sha256.New()
 	// Length-prefixed rather than joined, so that two different sets cannot

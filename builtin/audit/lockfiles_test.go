@@ -3,6 +3,7 @@ package audit
 import (
 	"strings"
 	"testing"
+	"testing/fstest"
 )
 
 // want asserts an exact name@version set, because the failure that matters
@@ -298,7 +299,10 @@ func TestIsVersionishRejectsResolutions(t *testing.T) {
 // A bun project whose only lockfile is binary has dependencies. Reporting
 // nothing and saying nothing answers "are we affected?" with a confident no.
 func TestBinaryBunLockfileIsAFindingNotASilence(t *testing.T) {
-	_, _, err := parseManifest("bun.lockb")
+	// An empty filesystem on purpose: the refusal has to happen before the
+	// read, since nothing here can parse a binary lockfile and pulling one
+	// into memory only makes the failure slower.
+	_, _, err := parseManifest(fstest.MapFS{}, "bun.lockb", "bun.lockb")
 	if err == nil {
 		t.Fatal("bun.lockb must not read as an empty dependency list")
 	}

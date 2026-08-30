@@ -137,6 +137,22 @@ func TestEveryKubectlFailureIsClassified(t *testing.T) {
 		{"unknown context", `error: context "nope" does not exist`, "tunnel.context.unknown"},
 		{"no such service", `Error from server (NotFound): services "pg" not found`, "tunnel.service.missing"},
 		{"rbac", `Error from server (Forbidden): pods is forbidden`, "tunnel.denied"},
+		// **401 and 403 were one answer, and only one of them was about
+		// permissions.** On any cluster behind an exec credential plugin —
+		// Teleport, aws eks get-token, gke-gcloud-auth-plugin, an OIDC
+		// refresh — an expired login is the ordinary daily failure, and it
+		// was reported as "not allowed to port-forward there, the verb is
+		// create on pods/portforward", which is an afternoon in the wrong
+		// place.
+		{"expired login", `error: You must be logged in to the server (Unauthorized)`,
+			"tunnel.unauthenticated"},
+		{"401 from the api server", `Error from server (Unauthorized): unknown`,
+			"tunnel.unauthenticated"},
+		// The helper failing before a request exists at all: whatever it
+		// says, it cannot be a permissions answer, because nothing asked.
+		{"credential plugin failed",
+			`Unable to connect to the server: getting credentials: exec: executable tsh failed`,
+			"tunnel.unauthenticated"},
 		{"port taken", `Unable to listen on port: address already in use`, "tunnel.port.taken"},
 		{"silent death", ``, "tunnel.open.failed"},
 		{"anything else", `error: something new`, "tunnel.open.failed"},
@@ -155,6 +171,53 @@ func TestEveryKubectlFailureIsClassified(t *testing.T) {
 				t.Error("no hint: this is the error somebody is stuck on")
 			}
 		})
+	}
+}
+
+// **The hint names the command, because the generic one is useless here.**
+//
+// "Log in again" leaves somebody to work out which of ten contexts, which
+// tool, and which cluster flag. `kubectl config view` is a local read of a
+// file that contacts nothing and answers all three, and this is a path where
+// something has already stopped, so it can afford one question.
+func TestAnExpiredLoginIsToldWhichCommandRenewsIt(t *testing.T) {
+	// A kubectl that fails the forward and, asked about the context, reports
+	// the exec plugin a Teleport-issued kubeconfig carries — the shape read
+	// off a real one: `tsh kube credentials --kube-cluster=… --teleport-cluster=…`.
+	fakeKubectl(t, `case "$1" in
+  config) echo 'tsh [kube credentials --kube-cluster=dso --teleport-cluster=rke.example.com]' ;;
+  *) echo 'error: You must be logged in to the server (Unauthorized)' >&2; exit 1 ;;
+esac
+`)
+	_, verr := Open(context.Background(), "homelab-pg", Target{Kube: homelab})
+	if verr == nil {
+		t.Fatal("a failing kubectl produced no error")
+	}
+	if verr.Code != "tunnel.unauthenticated" {
+		t.Fatalf("code = %q", verr.Code)
+	}
+	if !strings.Contains(verr.Hint, "tsh kube login dso") {
+		t.Errorf("hint = %q, want the exact command that renews this context", verr.Hint)
+	}
+}
+
+// And falls back to the general sentence when it cannot tell, because a wrong
+// command in a hint is worse than no command.
+func TestAnUnknownCredentialHelperIsNotGuessedAt(t *testing.T) {
+	fakeKubectl(t, `case "$1" in
+  config) echo '' ;;
+  *) echo 'error: You must be logged in to the server (Unauthorized)' >&2; exit 1 ;;
+esac
+`)
+	_, verr := Open(context.Background(), "homelab-pg", Target{Kube: homelab})
+	if verr == nil {
+		t.Fatal("no error")
+	}
+	if strings.Contains(verr.Hint, "tsh") {
+		t.Errorf("hint invented a tool: %q", verr.Hint)
+	}
+	if !strings.Contains(verr.Hint, "homelab") {
+		t.Errorf("hint = %q, want it to name the context that failed", verr.Hint)
 	}
 }
 

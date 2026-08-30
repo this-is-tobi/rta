@@ -30,6 +30,26 @@ func creds(t *testing.T) Target {
 	}
 }
 
+// The credential path makes the same split as the forward, and it matters
+// more here: this is where a credential is fetched, so "not allowed to read
+// secret X" sends somebody to argue about RBAC for a secret they can read
+// perfectly well once they have logged in again.
+func TestAnExpiredLoginReadingASecretIsNotReportedAsRBAC(t *testing.T) {
+	fakeKubectl(t, `echo 'error: You must be logged in to the server (Unauthorized)' >&2; exit 1`+"\n")
+	_, verr := Secrets(context.Background(), "homelab", Target{
+		Kube: homelab, Secret: "postgres-creds", From: map[string]string{"password": "password"},
+	})
+	if verr == nil {
+		t.Fatal("a failing kubectl produced no error")
+	}
+	if verr.Code != "tunnel.unauthenticated" {
+		t.Errorf("code = %q, want tunnel.unauthenticated", verr.Code)
+	}
+	if strings.Contains(verr.Hint, "verb is `get`") {
+		t.Errorf("hint sends the operator to RBAC for an authentication failure: %q", verr.Hint)
+	}
+}
+
 func TestSecretsFillTheInputsTheOperatorMapped(t *testing.T) {
 	fakeKubectl(t, "cat <<'JSON'\n"+
 		secretJSON(t, map[string]string{"username": "appuser", "password": "s3cr3t", "unused": "x"})+

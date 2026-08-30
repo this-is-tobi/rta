@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	huh "charm.land/huh/v2"
 
@@ -54,30 +53,6 @@ type completeMsg struct {
 	field string
 	c     tunnel.Completion
 	err   *view.Error
-}
-
-// completionKeyMap keeps tab in the field: accept the suggestion, stay put.
-//
-// The form-wide keymap binds tab to accept *and* Next, which is right for a
-// whole-value suggestion — the box is finished, moving on is the point. A
-// coordinate is accepted a segment at a time, and a tab that hopped to the
-// next field after each segment would make the one flow this field exists
-// for cost a shift+tab per segment. Enter still advances, exactly as it does
-// everywhere; this is tab meaning what it means in a shell, scoped to the
-// two fields completed like one.
-func completionKeyMap() *huh.KeyMap {
-	km := formKeyMap()
-	km.Input.Next = key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "next"))
-	return km
-}
-
-// segmented marks one field as cluster-completed: tab stays in the field.
-// Called after the form is built, because huh.NewForm applies the form-wide
-// keymap to every field at construction and would clobber this.
-func (cf *capForm) segmented(name string) {
-	if in, ok := cf.inputs[name]; ok {
-		in.WithKeyMap(completionKeyMap())
-	}
 }
 
 // completionTarget is the field a tab would cluster-complete right now: the
@@ -134,10 +109,39 @@ func needsFetch(value string, offered []string) bool {
 	return true
 }
 
+// settled reports that tab has already fetched this field for exactly this
+// value and nothing came back that extends it. It is the difference between
+// "there is more to complete" and "this is as far as completion goes", which
+// nothing else in the form can tell apart — an empty answer and an answer
+// that was never asked for look identical from the widget.
+func (cf *capForm) settled(field, value string) bool {
+	last, asked := cf.fetchedFor[field]
+	return asked && last == value
+}
+
+// **One sentence has to be true of tab on every field: it completes when
+// there is something to complete, and moves on when there is not.**
+//
+// It was true of every field except the completing ones, and the exception
+// is what somebody reports as "tab goes to the next field here and completes
+// there". A completing field bound tab to accept-or-fetch and Next to enter
+// alone, so at the end of a coordinate — nothing deeper to offer — every
+// press refetched the same segment and stayed, and the key that leaves the
+// field was a different one than on the field above it.
+//
+// Segment-at-a-time still needs tab to stay while there is a segment to take;
+// that part was right and is unchanged. What is added is the third answer:
+// once a fetch has been made for exactly this text and brought back nothing
+// that extends it, there is no completion left to offer, and tab means what
+// it means everywhere else. huh.NextField is that, without synthesizing a
+// keypress the field would have to interpret.
+func (m Model) advanceForm() (tea.Model, tea.Cmd) { return m, huh.NextField }
+
 // completeFromCluster handles tab in a form: fetch the focused segment's
-// completions in the background when there is nothing left to accept, and
-// otherwise hand the key to the form — the widget's own accept on a
-// segmented field, the ordinary accept-and-advance everywhere else.
+// completions in the background when there is nothing left to accept, move
+// on when a fetch already found nothing, and otherwise hand the key to the
+// form — the widget's own accept on a segmented field, the ordinary
+// accept-and-advance everywhere else.
 func (m Model) completeFromCluster(msg tea.Msg) (tea.Model, tea.Cmd) {
 	field, coord, ok := m.completionTarget()
 	if !ok {
@@ -148,6 +152,13 @@ func (m Model) completeFromCluster(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if !needsFetch(partial, cf.suggested[field]) {
 		return m.updateForm(msg)
 	}
+	if cf.settled(field, partial) {
+		return m.advanceForm()
+	}
+	// Recorded before the fetch rather than after it, so a cluster that
+	// cannot answer costs one press and not every press: the error is
+	// flashed, and the next tab leaves the field instead of asking again.
+	cf.fetchedFor[field] = partial
 	m.flash = "completing…"
 	return m, func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), completeTimeout)
@@ -198,12 +209,15 @@ func (m Model) liveTarget() (plugin.Field, bool) {
 func (m Model) completeFromService(msg tea.Msg) (tea.Model, tea.Cmd) {
 	f, ok := m.liveTarget()
 	if !ok {
-		return m.updateForm(msg)
+		return m.completeLocally(msg)
 	}
 	cf := m.form
 	partial := strings.TrimSpace(*cf.bindings[f.Name])
 	if !needsFetch(partial, cf.suggested[f.Name]) {
 		return m.updateForm(msg)
+	}
+	if cf.settled(f.Name, partial) {
+		return m.advanceForm()
 	}
 	c := cf.cap
 	// Resolved from the full values and stripped only for the request, the
@@ -247,6 +261,9 @@ func (m Model) completeFromService(msg tea.Msg) (tea.Model, tea.Cmd) {
 	req := plugin.LiveRequest(resolved)
 	suggest := f.Suggest
 	what := f.Name + " completions"
+	// Same as the cluster path: one fetch per value, so a service that
+	// answers nothing leaves tab free to move on rather than asking again.
+	cf.fetchedFor[f.Name] = partial
 	m.flash = "completing…"
 	return m, func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), completeTimeout)
@@ -261,6 +278,117 @@ func (m Model) completeFromService(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return completeMsg{form: cf, field: f.Name,
 			c: tunnel.Completion{Items: items, Names: items, What: what}}
 	}
+}
+
+// completeLocally is tab on every other field, and it is where the sentence
+// above is finally true of all of them: accept what is on offer, say what is
+// on offer when the box is too empty for the widget to show it, and otherwise
+// move on.
+//
+// Nothing here reaches a network. The lists are a plugin's own Suggest, a
+// directory listing, or what this machine ran last — computed already, for
+// the ghost the widget draws — so the only question is which of tab's
+// meanings this press is, and needsFetch is the same question the two
+// fetching paths ask.
+//
+// The middle case is the one worth naming. bubbles matches suggestions only
+// against non-empty text (textinput.updateSuggestions), so an untouched box
+// has no ghost and the widget has nothing to accept — which is exactly the
+// box somebody presses tab in first, and on a plugin picker whose help says
+// "press tab" the answer cannot be silence. The names themselves are the
+// answer, the same one the cluster fetch gives an empty coordinate; the press
+// after it moves on, because a key that only ever listed would be the dead
+// key this whole rule exists to remove.
+func (m Model) completeLocally(msg tea.Msg) (tea.Model, tea.Cmd) {
+	cf := m.form
+	name, ok := m.focusedInput()
+	if !ok {
+		// A picker, a confirm, a multi-select: nothing to complete, and huh's
+		// own tab already advances them.
+		return m.updateForm(msg)
+	}
+	typed := strings.TrimSpace(*cf.bindings[name])
+	var offered []string
+	if offer := cf.offers[name]; offer != nil {
+		offered = offer()
+	}
+	switch tabOn(typed, offered, cf.settled(name, typed)) {
+	case tabAccepts:
+		// The widget takes the ghost and the cursor stays, which is what lets
+		// a path be walked a segment at a time.
+		return m.updateForm(msg)
+	case tabLists:
+		cf.fetchedFor[name] = typed
+		m.flash = listing(offered)
+		return m, nil
+	}
+	return m.advanceForm()
+}
+
+// tabMeaning is which of tab's three jobs one press is.
+type tabMeaning int
+
+const (
+	// tabAccepts: something on offer extends the box, so the ghost is on
+	// screen and the widget takes it — in place.
+	tabAccepts tabMeaning = iota
+	// tabLists: nothing to accept *yet*, because the box is empty and bubbles
+	// matches only against non-empty text. The names are the answer.
+	tabLists
+	// tabAdvances: nothing left to complete. Tab is navigation again.
+	tabAdvances
+)
+
+// tabOn is the whole rule, on the state of one box: what it holds, what it
+// can be completed to, and whether its list has already been said out loud
+// for exactly this text.
+//
+// A free function on three values because two forms in this package have to
+// answer tab identically — the capability form and the theme editor — and a
+// rule expressed twice is a rule that drifts. That is not hypothetical: they
+// were sharing a keymap and not a decision, so the day tab's meaning moved
+// out of huh, the theme editor's every box went dead and the capability
+// form's did not.
+func tabOn(typed string, offered []string, listed bool) tabMeaning {
+	if !needsFetch(typed, offered) {
+		return tabAccepts
+	}
+	if typed == "" && len(offered) > 0 && !listed {
+		return tabLists
+	}
+	return tabAdvances
+}
+
+// focusedInput names the free-text field the cursor is in, or reports that it
+// is not in one. huh answers with a widget and this package keys everything by
+// the plugin field's name, so the identity comparison is the join.
+func (m Model) focusedInput() (string, bool) {
+	cf := m.form
+	if cf == nil || cf.form == nil {
+		return "", false
+	}
+	focused := cf.form.GetFocusedField()
+	for name, in := range cf.inputs {
+		if focused == huh.Field(in) && cf.bindings[name] != nil {
+			return name, true
+		}
+	}
+	return "", false
+}
+
+// listedAtMost bounds what an empty box's tab says out loud. A path field
+// offers a whole directory (up to maxPathSuggestions) and a flash is one
+// line: past a handful the list stops being an answer and becomes a wall,
+// and the count is the more useful half of it anyway.
+const listedAtMost = 8
+
+// listing is that line: the names, and how many were not named.
+func listing(offered []string) string {
+	if len(offered) <= listedAtMost {
+		return strings.Join(offered, ", ")
+	}
+	return fmt.Sprintf("%s … and %d more", strings.Join(offered[:listedAtMost], ", "),
+		len(offered)-listedAtMost)
 }
 
 // applyCompletion lands one fetch's answer: suggestions onto the widget, and

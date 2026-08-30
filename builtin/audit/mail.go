@@ -58,6 +58,7 @@ func runMail(ctx context.Context, req plugin.Request) (view.View, error) {
 
 	if req.Bool("detail") {
 		summary := append([]view.Pair{{Key: "domain", Value: domain}}, r.grade()...)
+		summary = append(summary, mailDeeper(domain)...)
 		return detailPage(ctx, req, r, mailGroupOrder, view.KeyValue{Pairs: summary}), nil
 	}
 	return r.table(true), nil

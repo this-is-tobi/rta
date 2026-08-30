@@ -1,7 +1,7 @@
 // pg is the first external plugin, and it is a separate module on purpose:
-// PROJECT.md P6 says first-party plugins are the proof, consuming the SDK
-// exactly as a stranger would. A stranger cannot reach into rta's internal
-// packages, and neither can this.
+// a first-party plugin is the proof, consuming the SDK exactly as a stranger
+// would. A stranger cannot reach into rta's internal packages, and neither
+// can this.
 //
 // The replace is the one concession to nothing being published yet. It is a
 // local path rather than a version, so `go build` here compiles against the

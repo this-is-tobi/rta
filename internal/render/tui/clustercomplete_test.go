@@ -61,7 +61,8 @@ func connFormOnKubeField(t *testing.T) Model {
 	m.profileOpen = "staging"
 	next, _ := m.startConnForm("db")
 	nm := next.(Model)
-	nm.form.form = settleForm(startedForm(nm.form), tea.KeyPressMsg{Code: tea.KeyTab})
+	nm.form.form = startedForm(nm.form)
+	nm = pressTab(t, nm) // off the plugin picker, which has nothing left to offer
 	if nm.form.form.GetFocusedField() != huh.Field(nm.form.inputs[profileKubeField]) {
 		t.Fatal("one tab from the top did not land on the coordinate field")
 	}
@@ -149,12 +150,12 @@ func TestTabAcceptsASegmentAndStaysInTheField(t *testing.T) {
 	nm.form.form = typeInto(nm.form.form, "homelab/")
 	nm = fetchFromCluster(t, nm)
 
-	// Through settleForm, not Model.Update: settling runs the command cascade
-	// the way a live program does, so a NextField the form should not emit —
-	// the exact regression this test exists for — actually moves the focus
-	// here. Model.Update alone returns that command unrun, and a first
-	// version of this test passed against the dropped override because of it.
-	nm.form.form = settleForm(nm.form.form, tabKey)
+	// pressTab, not a tab into the form: the press has to run the command it
+	// produces, or a NextField this field should not emit — the exact
+	// regression this test exists for — is returned unrun and the focus never
+	// moves. A first version of this test asserted against a dropped keymap
+	// override and passed for that reason.
+	nm = pressTab(t, nm)
 	if got := *nm.form.bindings[profileKubeField]; got != "homelab/databases/" {
 		t.Errorf("after tab the field holds %q, want the first suggestion accepted in place", got)
 	}

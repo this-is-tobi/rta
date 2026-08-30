@@ -276,8 +276,8 @@ func short(digest string) string {
 //
 // The fields checked are the ones an authorization hangs off — the ID set,
 // each capability's safety class, and whether it needs a grant — in both
-// directions: a capability the binary declares beyond the claim is the ADR's
-// own motivating case, and one the index promised that is not there means the
+// directions: a capability the binary declares beyond the claim is the
+// motivating case, and one the index promised that is not there means the
 // operator decided from a menu the kitchen does not serve. Summaries are
 // display and are not compared; once installed, the binary's own win.
 func verifyClaims(listed Listed, declared plugin.Plugin) *view.Error {

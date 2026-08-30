@@ -23,6 +23,10 @@ func isolate(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("RTA_POLICY", "")
+	// Cleared too, now that the operator policy path is derived from the
+	// config location: a runner with RTA_CONFIG exported would otherwise
+	// point every test at a real file on that machine.
+	t.Setenv("RTA_CONFIG", "")
 }
 
 func write(t *testing.T, dir, body string) {

@@ -24,7 +24,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"filippo.io/age"
@@ -32,6 +31,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/this-is-tobi/rule-them-all/builtin/internal/itemstore"
+	"github.com/this-is-tobi/rule-them-all/builtin/internal/sshkeys"
 	"github.com/this-is-tobi/rule-them-all/internal/atomicfile"
 	"github.com/this-is-tobi/rule-them-all/internal/config"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
@@ -404,21 +404,10 @@ func suggestRecipients(_ context.Context, _ plugin.Request) []string {
 	if err != nil {
 		return out
 	}
-	dir := filepath.Join(home, ".ssh")
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return out
+	for _, p := range sshkeys.PublicKeys(filepath.Join(home, ".ssh")) {
+		out = append(out, p+"\tSSH public key")
 	}
-	var keys []string
-	for _, e := range entries {
-		name := e.Name()
-		if e.IsDir() || !strings.HasPrefix(name, "id_") || !strings.HasSuffix(name, ".pub") {
-			continue
-		}
-		keys = append(keys, filepath.Join(dir, name)+"\tSSH public key")
-	}
-	sort.Strings(keys)
-	return append(out, keys...)
+	return out
 }
 
 func suggestIdentities(_ context.Context, _ plugin.Request) []string {
@@ -430,23 +419,13 @@ func suggestIdentities(_ context.Context, _ plugin.Request) []string {
 	if err != nil {
 		return out
 	}
-	dir := filepath.Join(home, ".ssh")
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return out
+	// The private half of a key pair, and not config, known_hosts or an
+	// authorized_keys file — decided by the file's own PEM preamble rather
+	// than by its name, so a key called anything but id_* is still offered.
+	for _, p := range sshkeys.PrivateKeys(filepath.Join(home, ".ssh")) {
+		out = append(out, p+"\tSSH private key")
 	}
-	var keys []string
-	for _, e := range entries {
-		name := e.Name()
-		// id_* without a .pub sibling suffix: the private half of a key pair,
-		// and not config, known_hosts or an authorized_keys file.
-		if e.IsDir() || !strings.HasPrefix(name, "id_") || strings.HasSuffix(name, ".pub") {
-			continue
-		}
-		keys = append(keys, filepath.Join(dir, name)+"\tSSH private key")
-	}
-	sort.Strings(keys)
-	return append(out, keys...)
+	return out
 }
 
 // lockedKey reports whether this key file would need a passphrase before it

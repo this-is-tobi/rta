@@ -178,6 +178,11 @@ func (m Model) pluginsKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		}
 		m.tickGen++
 		return m, refreshTiles(m.tiles, m.tickGen, m.pluginCfg, m.profileFor), true
+	case "t":
+		// The trust decision, taken where the digest and the artifact
+		// path are already on the screen.
+		m.flash = m.trustSelected()
+		return m, nil, true
 	case "c":
 		if m.pluginSel < len(m.plugins) {
 			// The form is built from the inputs a plugin declares, and
@@ -241,6 +246,15 @@ func (m Model) profilesKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		m.clampProfileScroll(m.profileBodyHeight())
 		return m, m.syncActive(), true
 	case "y":
+		// The same predicate the footer offers the key on, so the two cannot
+		// disagree — a key that answers where nothing advertises it is what
+		// TestEveryKeyAScreenAnswersToIsAdvertised exists to catch, and a key
+		// whose only answer is "there was nothing to do" is the dead key this
+		// app keeps removing. The band above has already said whether this
+		// environment needs a credential.
+		if !m.selectedProfileHasUnsetCredential() {
+			return m, nil, true
+		}
 		m.flash = m.copyExportLine()
 		return m, nil, true
 	}
@@ -345,6 +359,12 @@ func (m Model) themeKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		return m, tea.Quit, true
 	case "shift+enter", "alt+enter":
 		nm, cmd := m.fastSubmitThemeForm()
+		return nm, cmd, true
+	case "tab":
+		// Same key, same rule as the capability form (tabOn): complete what
+		// there is to complete, say what is on offer to a box too empty to
+		// show a ghost, and otherwise move on.
+		nm, cmd := m.tabInTheme(msg)
 		return nm, cmd, true
 	}
 	return m, nil, false

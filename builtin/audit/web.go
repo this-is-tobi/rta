@@ -63,6 +63,11 @@ func runWeb(ctx context.Context, req plugin.Request) (view.View, error) {
 	// report; validity is graded from the presented certificates instead.
 	client := &stdhttp.Client{
 		Timeout: timeout,
+		// A grant on this capability names one host (Scope: "host"), and the
+		// bridge checks it once before Run starts. Following a 3xx off that
+		// host would spend the operator's authorization somewhere they never
+		// named — see followSameHost.
+		CheckRedirect: followSameHost(u),
 		Transport: &stdhttp.Transport{
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec
 		},
@@ -81,15 +86,28 @@ func runWeb(ctx context.Context, req plugin.Request) (view.View, error) {
 	defer resp.Body.Close()
 
 	r := &report{}
+	// Every check below reads the response that came back, so the hostname
+	// they are told about has to be the one it came from. Reading the
+	// certificate against the URL that was *asked for* is how a valid
+	// certificate for www.example.com got reported as invalid for
+	// example.com.
+	landed := resp.Request.URL
+	auditRedirect(r, u, resp)
 	auditTransport(r, u, resp)
-	auditTLS(r, resp.TLS, u.Hostname())
+	auditTLS(r, resp.TLS, landed.Hostname())
 	auditSecurityHeaders(r, resp.Header)
+	// A 3xx is not a document, and grading it against a document's checklist
+	// invents findings: a 301 to www needs no CSP and no framing policy, and
+	// saying it does buries the one row that matters — where it points.
+	if redirectTarget(resp) == nil {
+		auditDocumentHeaders(r, resp.Header)
+	}
 	auditCORS(r, resp.Header)
 	auditCookies(r, resp)
 	auditExposure(r, resp.Header)
 
 	if req.Bool("detail") {
-		return detailedWeb(ctx, req, r, resp)
+		return detailedWeb(ctx, req, r, u, resp)
 	}
 	return r.table(true), nil
 }
@@ -99,15 +117,26 @@ func runWeb(ctx context.Context, req plugin.Request) (view.View, error) {
 // controls they cite. Nothing is recomputed — a detail page is an
 // arrangement of what the compact view already found, which is what keeps
 // the two from ever disagreeing.
-func detailedWeb(ctx context.Context, req plugin.Request, r *report, resp *stdhttp.Response) (view.View, error) {
-	pairs := append([]view.Pair{
-		{Key: "target", Value: resp.Request.URL.String()},
-	}, r.grade()...)
+func detailedWeb(ctx context.Context, req plugin.Request, r *report, requested *url.URL, resp *stdhttp.Response) (view.View, error) {
+	landed := resp.Request.URL
+	pairs := []view.Pair{{Key: "target", Value: landed.String()}}
+	if landed.String() != requested.String() {
+		// The page says which URL it is about *and* which one was asked for,
+		// because a report read later is read without the command that
+		// produced it.
+		pairs = append(pairs, view.Pair{Key: "requested", Value: requested.String()})
+	}
+	pairs = append(pairs, r.grade()...)
 	if resp.TLS != nil {
 		pairs = append(pairs, view.Pair{Key: "tls", Value: tls.VersionName(resp.TLS.Version) +
 			" · " + tls.CipherSuiteName(resp.TLS.CipherSuite)})
 	}
 	pairs = append(pairs, view.Pair{Key: "status", Value: resp.Status})
+	// What one request cannot answer, and what does — the plugin-wide
+	// convention, see deeper.go. On the detail page rather than the compact
+	// table: the page is what somebody opens because the summary was not
+	// enough, and a list of other people's tools is not a finding.
+	pairs = append(pairs, webDeeper(landed.Host)...)
 
 	return detailPage(ctx, req, r, groupOrder, view.KeyValue{Pairs: pairs}), nil
 }
@@ -122,17 +151,42 @@ func normalizeURL(host string) string {
 	return host
 }
 
-func auditTransport(r *report, u *url.URL, resp *stdhttp.Response) {
-	if resp.TLS == nil || u.Scheme == "http" {
-		r.add(grpTransport, "transport", stFail, "plaintext HTTP — traffic is unencrypted", refCleartext)
-		return
-	}
-	// Where we landed after redirects: an http→https upgrade is good hygiene.
-	final := resp.Request.URL
-	if final.Scheme == "https" {
+// auditTransport grades the transport the graded response actually arrived
+// over, and names its relation to the URL that was asked for.
+//
+// It used to read the scheme off the requested URL while every other check
+// read the response, so `audit web http://host` that upgrades to HTTPS was
+// graded "plaintext HTTP — traffic is unencrypted" on the line directly above
+// "tls-version ok TLS 1.3". An upgrade is the behaviour the check exists to
+// ask for; a report that calls it a failure — and contradicts itself in the
+// next row — teaches the reader to stop reading.
+//
+// The same swap makes the downgrade reportable. https that redirects to
+// plaintext used to reach the same "plaintext HTTP" row as a site that was
+// never encrypted at all, and the two are not the same finding: one has no
+// certificate, the other has one and sends you past it.
+func auditTransport(r *report, requested *url.URL, resp *stdhttp.Response) {
+	landed := resp.Request.URL
+	switch {
+	case resp.TLS != nil && landed.Scheme == "https":
+		if requested.Scheme == "http" {
+			r.add(grpTransport, "transport", stOK,
+				"HTTPS — the plaintext URL redirects here, which is the upgrade to want", refCleartext)
+			return
+		}
 		r.add(grpTransport, "transport", stOK, "HTTPS", refCleartext)
-	} else {
-		r.add(grpTransport, "transport", stFail, "final response served over "+final.Scheme, refCleartext)
+	case requested.Scheme == "https":
+		r.add(grpTransport, "transport", stFail,
+			"downgraded to plaintext — "+requested.String()+" redirects to "+landed.String()+
+				", so traffic that started encrypted does not stay that way", refCleartext)
+	default:
+		detail := "plaintext HTTP — traffic is unencrypted"
+		if redirectTarget(resp) == nil {
+			// Only assertable when there is no redirect at all; when there is,
+			// the redirect row is what says where it goes.
+			detail += ", and nothing redirects to HTTPS"
+		}
+		r.add(grpTransport, "transport", stFail, detail, refCleartext)
 	}
 }
 
@@ -229,8 +283,23 @@ func info(name, missing string) func(stdhttp.Header) (string, string) {
 	}
 }
 
+// securityHeaders apply to any response a host sends, redirects included.
+// HSTS is the whole list: it is a promise about the origin rather than about
+// a page, and the 301 an apex serves is exactly where a site forgets to make
+// it — which is the one finding that would be lost by skipping a redirect's
+// headers wholesale.
 var securityHeaders = []headerCheck{
 	{"hsts", refMisconfig, func(h stdhttp.Header) (string, string) { return gradeHSTS(h.Get("Strict-Transport-Security")) }},
+}
+
+// documentHeaders describe a rendered document, so they are graded only when
+// the response is one. A 301 with no Content-Security-Policy is not a
+// finding, and reporting it as one puts seven invented warnings around the
+// single row that matters.
+//
+// Two slices rather than a flag on each row: the split is the rule, and a
+// rule that lives in one place cannot drift from the table it describes.
+var documentHeaders = []headerCheck{
 	{"csp", refMisconfig, func(h stdhttp.Header) (string, string) { return gradeCSP(h.Get("Content-Security-Policy")) }},
 	{"x-content-type-options", refMisconfig, func(h stdhttp.Header) (string, string) {
 		v := h.Get("X-Content-Type-Options")
@@ -255,8 +324,12 @@ var securityHeaders = []headerCheck{
 	{"corp", refMisconfig, info("Cross-Origin-Resource-Policy", "not set — this response can be embedded cross-origin")},
 }
 
-func auditSecurityHeaders(r *report, h stdhttp.Header) {
-	for _, hc := range securityHeaders {
+func auditSecurityHeaders(r *report, h stdhttp.Header) { gradeHeaders(r, h, securityHeaders) }
+
+func auditDocumentHeaders(r *report, h stdhttp.Header) { gradeHeaders(r, h, documentHeaders) }
+
+func gradeHeaders(r *report, h stdhttp.Header, checks []headerCheck) {
+	for _, hc := range checks {
 		status, detail := hc.grade(h)
 		r.add(grpHeaders, hc.label, status, detail, hc.ref)
 	}

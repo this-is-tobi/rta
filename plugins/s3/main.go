@@ -45,6 +45,7 @@ func Plugin() plugin.Plugin {
 			bucketListCapability(),
 			policyGetCapability(),
 			s3ObjectListCapability(),
+			s3ObjectTreeCapability(),
 			s3ObjectShowCapability(),
 			s3ObjectGetCapability(),
 			s3ObjectSetCapability(),

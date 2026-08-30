@@ -364,6 +364,14 @@ func runUse(cmd *cobra.Command, args []string) (view.View, *view.Error) {
 // default, and the operator's whole connection inventory is exactly what an
 // ungranted agent must not be handed. Living here keeps it off that surface by
 // construction rather than by a flag somebody has to remember.
+// renderFn is the closure each command group builds over its global options:
+// render this view, or render this refusal to stderr and fail.
+//
+// Named because the group is no longer one function — `set` and `rm` live in
+// profileset.go — and passing it is what keeps `--output` meaning the same
+// thing on every subcommand.
+type renderFn func(*cobra.Command, view.View, *view.Error) error
+
 func newProfileCommand(reg *registry.Registry, opts *globalOpts) *cobra.Command {
 	render := func(cmd *cobra.Command, v view.View, verr *view.Error) error {
 		format, err := cli.ParseFormat(opts.output)
@@ -416,7 +424,7 @@ func newProfileCommand(reg *registry.Registry, opts *globalOpts) *cobra.Command 
 			return render(cmd, profileCard(args[0], p, reg), nil)
 		},
 	}
-	cmd.AddCommand(list, show)
+	cmd.AddCommand(list, show, profileSetCommand(reg, render), profileRemoveCommand(reg, render))
 	return cmd
 }
 
@@ -451,7 +459,7 @@ func profileTable(cfg config.Config, reg *registry.Registry) view.View {
 	return t
 }
 
-func profileCard(name string, p config.Profile, reg *registry.Registry) view.View {
+func profileCard(name string, p config.Profile, reg *registry.Registry) view.KeyValue {
 	pairs := []view.Pair{{Key: "profile", Value: name}}
 	if p.Note != "" {
 		pairs = append(pairs, view.Pair{Key: "note", Value: p.Note})
@@ -481,8 +489,31 @@ func profileCard(name string, p config.Profile, reg *registry.Registry) view.Vie
 			set = append(set, k)
 		}
 		sort.Strings(set)
+		// A `set:` key naming a declared secret is redacted, and the reason is
+		// that this is a mistake somebody makes rather than a thing they do.
+		//
+		// `secrets:` holds a reference and `set:` holds a value, so a password
+		// typed into `set:` is inert — nothing reads it, and Check says so
+		// below. What it is not is harmless: the config file is written 0644
+		// because it is documented to hold no secrets, and this command exists
+		// to be read and pasted. Printing the literal back, in the pretty view
+		// and in --output json, turns one wrong line in a file into a
+		// credential on a screen and in a ticket.
+		//
+		// Redacted by the plugin's own declaration rather than by guessing at
+		// names like "password": what counts as a secret is something the
+		// capability already states, and this is the same list credentialPairs
+		// reads two lines down.
+		secretInputs := map[string]bool{}
+		for _, f := range profileSecrets(config.PluginNamespace(key), reg) {
+			secretInputs[f] = true
+		}
 		for _, k := range set {
-			pairs = append(pairs, view.Pair{Key: "  set:" + k, Value: fmt.Sprint(conn.Set[k])})
+			value := fmt.Sprint(conn.Set[k])
+			if secretInputs[k] {
+				value = "(redacted — a secret under `set:` is inert; map it with `secrets:` instead)"
+			}
+			pairs = append(pairs, view.Pair{Key: "  set:" + k, Value: value})
 		}
 		pairs = append(pairs, credentialPairs(name, key, conn, reg)...)
 	}

@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/this-is-tobi/rule-them-all/builtin/internal/gitclone"
 )
 
 func writeHook(t *testing.T, dir, name string, executable bool) {
@@ -60,7 +62,7 @@ func TestHooksOnARepositoryWithNoHooksDirectoryReturnsEmptyNotAnError(t *testing
 
 func TestHooksFilesystemRefusesAMemoryBackedClone(t *testing.T) {
 	bareDir := bareRepo(t)
-	repo, verr := cloneRepo(context.Background(), bareDir)
+	repo, verr := gitclone.InMemory(context.Background(), bareDir, gitclone.Options{})
 	if verr != nil {
 		t.Fatal(verr)
 	}

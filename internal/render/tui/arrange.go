@@ -80,14 +80,12 @@ func (m *Model) moveSelected(delta int) string {
 // anything else — including this shell's RTA_* environment, which is why it
 // re-reads the file rather than the resolved config (config.LoadFile).
 func (m Model) save() error {
-	cfg, err := config.LoadFile()
-	if err != nil {
-		return err
-	}
-	cfg.Dashboard.Hidden = m.dash.Hidden
-	cfg.Dashboard.Order = m.dash.Order
-	cfg.Dashboard.Tiles = m.dash.Tiles
-	return config.Write(cfg)
+	return config.Mutate(func(cfg config.Config) (config.Config, bool) {
+		cfg.Dashboard.Hidden = m.dash.Hidden
+		cfg.Dashboard.Order = m.dash.Order
+		cfg.Dashboard.Tiles = m.dash.Tiles
+		return cfg, true
+	})
 }
 
 func dropTile(tiles []config.Tile, id string) []config.Tile {

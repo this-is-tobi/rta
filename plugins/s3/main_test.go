@@ -135,10 +135,15 @@ func TestEveryCapabilityIsNoPreview(t *testing.T) {
 // design note is not an enforcement mechanism, the struct field is.
 func TestWriteAndDestructiveCapabilitiesNeedAGrant(t *testing.T) {
 	want := map[string]bool{
-		"s3.overview":       false,
-		"s3.bucket.list":    false,
-		"s3.policy.get":     false,
-		"s3.object.list":    false,
+		"s3.overview":    false,
+		"s3.bucket.list": false,
+		"s3.policy.get":  false,
+		"s3.object.list": false,
+		// Ungated for the reason a listing is ungated: this discloses exactly
+		// what a caller could already have by walking s3.object.list one
+		// --prefix at a time. Fewer round trips is not a wider permission —
+		// the blast radius of a list of names and sizes is that same list.
+		"s3.object.tree":    false,
 		"s3.object.show":    false,
 		"s3.object.get":     true,
 		"s3.object.set":     true,

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	huh "charm.land/huh/v2"
 
 	"github.com/this-is-tobi/rule-them-all/builtin/kv"
 	"github.com/this-is-tobi/rule-them-all/internal/clipboard"
@@ -125,38 +126,34 @@ func (m Model) saveProfileForm() (tea.Model, tea.Cmd) {
 		return m.closeToOrigin()
 	}
 
-	cfg, err := config.LoadFile()
-	if err != nil {
-		m.flash = "config not saved: " + err.Error()
-		return m.closeToOrigin()
-	}
-	if cfg.Profiles == nil {
-		cfg.Profiles = map[string]config.Profile{}
-	}
-	// Keep what this form does not collect. The `plugins:` block is written one
-	// level in, and losing it by renaming an environment would empty it in a
-	// single keystroke.
-	p := cfg.Profiles[was]
-	p.Note = strings.TrimSpace(str(values[profileNoteField]))
-	p.TTL = ""
-	if ttl := strings.TrimSpace(str(values[profileTTLField])); ttl != "" && ttl != profileTTLNone {
-		p.TTL = ttl
-	}
-
-	// A rename moves the row rather than leaving two. The switch follows, or
-	// this machine would be switched on to a profile that no longer exists —
-	// and, because the selection also bounds agents, every agent call would be
-	// refused against a name nothing can look up.
-	if was != "" && was != name {
-		delete(cfg.Profiles, was)
-		if sel := profile.LoadSelection(); sel.Active == was {
-			sel.Active = name
-			_ = profile.SaveSelection(sel)
+	if err := config.Mutate(func(cfg config.Config) (config.Config, bool) {
+		if cfg.Profiles == nil {
+			cfg.Profiles = map[string]config.Profile{}
 		}
-	}
-	cfg.Profiles[name] = p
+		// Keep what this form does not collect. The `plugins:` block is
+		// written one level in, and losing it by renaming an environment would
+		// empty it in a single keystroke.
+		p := cfg.Profiles[was]
+		p.Note = strings.TrimSpace(str(values[profileNoteField]))
+		p.TTL = ""
+		if ttl := strings.TrimSpace(str(values[profileTTLField])); ttl != "" && ttl != profileTTLNone {
+			p.TTL = ttl
+		}
 
-	if err := config.Write(cfg); err != nil {
+		// A rename moves the row rather than leaving two. The switch follows,
+		// or this machine would be switched on to a profile that no longer
+		// exists — and, because the selection also bounds agents, every agent
+		// call would be refused against a name nothing can look up.
+		if was != "" && was != name {
+			delete(cfg.Profiles, was)
+			if sel := profile.LoadSelection(); sel.Active == was {
+				sel.Active = name
+				_ = profile.SaveSelection(sel)
+			}
+		}
+		cfg.Profiles[name] = p
+		return cfg, true
+	}); err != nil {
 		m.flash = "config not saved: " + err.Error()
 		return m.closeToOrigin()
 	}
@@ -176,11 +173,49 @@ func (m Model) saveProfileForm() (tea.Model, tea.Cmd) {
 // typing one wrong is the failure the pin exists to prevent — so the field that
 // carries it is exactly where the answer should be offered rather than demanded.
 func (m Model) startConnForm(key string) (tea.Model, tea.Cmd) {
+	chosen := key
+	if key == "" && m.pluginSel < len(m.plugins) {
+		// A new entry inherits the plugin under the cursor in the plugins pane
+		// when there is one, so the common path — look at what is installed,
+		// add it to this environment — needs no typing of a digest. Not an
+		// untrusted one: it would seed the form with an entry that cannot
+		// resolve.
+		if row := m.plugins[m.pluginSel]; row.usable() {
+			chosen = row.pinnedName()
+		}
+	}
+	return m.connForm(key, chosen, nil)
+}
+
+// connForm builds the editor for one entry. key is the entry as the file holds
+// it — empty for a new one — and chosen is the plugin the form is *about*,
+// which is the same thing on an existing entry and the seeded or newly typed
+// one otherwise.
+//
+// **Splitting the two is what lets a new entry be configured on the way in.**
+// The config boxes come from whichever plugin is named, and the name used to be
+// read off the file's key, so a new entry had none: you picked the plugin,
+// submitted, reopened the entry you had just made, and filled it in. Nothing
+// about that was a decision — the plugin simply was not known at the moment the
+// form was built. It is known now, at both moments it can change: seeded from
+// the plugins pane when the form opens, and re-read when the operator completes
+// the field into a different one (reseedOnConnPluginChange).
+//
+// seed carries the operator's current answers across a rebuild; nil on a fresh
+// open, where the file's own values are the seed.
+func (m Model) connForm(key, chosen string, seed map[string]any) (tea.Model, tea.Cmd) {
 	row, ok := m.openProfile()
 	if !ok {
 		return m, nil
 	}
 	conn := row.p.Plugins[key]
+	// A rebuild onto a different plugin keeps the coordinate and drops the
+	// `set:` block: those keys belonged to the plugin that is no longer named,
+	// and carrying them over would offer one plugin's configuration under
+	// another's name.
+	if chosen != key {
+		conn.Set = nil
+	}
 
 	fields := []plugin.Field{
 		{Name: profilePluginField, Type: plugin.String, Required: true,
@@ -194,22 +229,22 @@ func (m Model) startConnForm(key string) (tea.Model, tea.Cmd) {
 			// Short on purpose: help wraps at the form's width and every
 			// wrapped line pushes a field off a small screen. No example —
 			// tab completes each segment from the cluster, so the field
-			// produces real ones.
-			Help: "reach it through a port-forward: context/namespace/kind/name:port — " +
-				"tab completes each segment; leave empty to connect directly"},
+			// produces real ones. The either/or and the "or neither" now live
+			// in the heading above both boxes, where they are said once
+			// instead of half in each.
+			Help: "a port-forward: context/namespace/kind/name:port — tab completes each segment"},
 		{Name: profileSSHField, Type: plugin.String,
 			// The suggestions are the aliases in the operator's own ssh config
 			// — a local file, so per-keystroke is fine — because
 			// an alias is the case this is best at: one word carrying the
 			// user, port, key and ProxyJump the config already states.
 			Suggest: func(context.Context, plugin.Request) []string { return tunnel.SSHHosts() },
-			Help: "or through an ssh host: [user@]host[:port]/desthost:destport — " +
-				"tab suggests hosts from your ssh config; one tunnel, kube or ssh"},
+			Help:    "an ssh host: [user@]host[:port]/desthost:destport — tab suggests your ssh aliases"},
 	}
 	// Every config key the plugin declares, when one is already chosen. On a
 	// new entry there is nothing to offer yet, and the operator submits once to
 	// choose the plugin and reopens to fill it in.
-	if ns := config.PluginNamespace(key); ns != "" {
+	if ns := config.PluginNamespace(chosen); ns != "" {
 		tunnelled := strings.TrimSpace(conn.Kube) != "" || strings.TrimSpace(conn.SSH) != ""
 		for _, prow := range m.plugins {
 			if prow.plugin.Name != ns {
@@ -243,20 +278,18 @@ func (m Model) startConnForm(key string) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	defaults := map[string]any{profilePluginField: key,
+	defaults := map[string]any{profilePluginField: chosen,
 		profileKubeField: conn.Kube, profileSSHField: conn.SSH}
-	if key == "" && m.pluginSel < len(m.plugins) {
-		// A new entry inherits the plugin under the cursor in the plugins pane
-		// when there is one, so the common path — look at what is installed,
-		// add it to this environment — needs no typing of a digest. Not an
-		// untrusted one: it would seed the form with an entry that cannot
-		// resolve.
-		if row := m.plugins[m.pluginSel]; row.usable() {
-			defaults[profilePluginField] = row.pinnedName()
-		}
-	}
 	for k, v := range conn.Set {
 		defaults[profileSetPrefix+k] = v
+	}
+	// What the operator has already typed wins over the file, so a rebuild is
+	// invisible except for the boxes it added.
+	for k, v := range seed {
+		if s, isString := v.(string); isString && strings.TrimSpace(s) == "" {
+			continue
+		}
+		defaults[k] = v
 	}
 
 	synth := plugin.Capability{
@@ -267,8 +300,19 @@ func (m Model) startConnForm(key string) (tea.Model, tea.Cmd) {
 	}
 	m.current = synth
 	m.trail = nil
-	m.form = newCapForm(synth, fields, defaults, true, nil)
-	m.form.segmented(profileKubeField)
+	// Two headings, not three: the panel above already says what the form is,
+	// so a heading over the first field would repeat it. The one that earns
+	// its line is the boundary — "how to reach it" makes the two coordinate
+	// boxes read as one either/or question, and the `set.` block below it
+	// stops looking like two more of the same.
+	opts := []formOption{
+		withSection(profileKubeField, "how to reach it — one of these, or neither to connect directly"),
+	}
+	if firstSet := firstSetField(fields); firstSet != "" {
+		opts = append(opts, withSection(firstSet,
+			"what "+row.name+" changes about it"))
+	}
+	m.form = newCapForm(synth, fields, defaults, true, nil, opts...)
 	// The set. fields the file does not state are displays of the plugin's
 	// own defaults, not statements to keep: submitting them unchanged must
 	// not write `set: host: localhost` into an environment whose operator
@@ -284,10 +328,54 @@ func (m Model) startConnForm(key string) (tea.Model, tea.Cmd) {
 	}
 	m.form.profileTarget = key
 	m.form.connEditing = true
+	m.form.builtOn = chosen
 	m.origin = modeProfilePlugins
 	m.fitForm()
 	m.mode = modeForm
 	return m, m.form.form.Init()
+}
+
+// reseedOnConnPluginChange rebuilds the connection editor when the plugin it
+// is about has changed under the cursor — the same move the run form makes
+// when its environment picker moves (reseedOnPickerMove), for the same reason:
+// the boxes below depend on the answer above, so they have to be rebuilt when
+// it changes rather than describe the plugin that was named a keystroke ago.
+//
+// Only on a *registered* plugin, and that is the whole guard. The field
+// completes to `name@digest`, so every intermediate prefix somebody types is a
+// name that resolves to nothing — rebuilding on those would throw the form away
+// on almost every keystroke. Waiting until the value names something installed
+// means the rebuild happens exactly once, on the press that finishes the name.
+func (m Model) reseedOnConnPluginChange() (tea.Model, tea.Cmd, bool) {
+	cf := m.form
+	if cf == nil || !cf.connEditing || cf.form.State != huh.StateNormal {
+		return m, nil, false
+	}
+	b, bound := cf.bindings[profilePluginField]
+	if !bound {
+		return m, nil, false
+	}
+	chosen := strings.TrimSpace(*b)
+	if chosen == cf.builtOn {
+		return m, nil, false
+	}
+	ns := config.PluginNamespace(chosen)
+	if ns == "" || !m.registered(ns) {
+		return m, nil, false
+	}
+	target := cf.profileTarget
+	nm, cmd := m.connForm(target, chosen, cf.values())
+	return nm, cmd, true
+}
+
+// registered reports whether a namespace is one of the plugins loaded now.
+func (m Model) registered(ns string) bool {
+	for _, row := range m.plugins {
+		if row.plugin.Name == ns && row.usable() {
+			return true
+		}
+	}
+	return false
 }
 
 // saveConnForm writes one plugin entry back into the open environment.
@@ -302,157 +390,174 @@ func (m Model) saveConnForm() (tea.Model, tea.Cmd) {
 		return m.closeToOrigin()
 	}
 
-	cfg, err := config.LoadFile()
-	if err != nil {
-		m.flash = "config not saved: " + err.Error()
-		return m.closeToOrigin()
-	}
-	p, ok := cfg.Profiles[m.profileOpen]
-	if !ok {
-		m.flash = "profile " + m.profileOpen + " is gone"
-		return m.closeToOrigin()
-	}
-	if p.Plugins == nil {
-		p.Plugins = map[string]config.Connection{}
-	}
-	// Keep what this form does not collect. A `secrets:` mapping is written by
-	// the credential action rather than here, and losing it by editing a host
-	// would repoint the connection and silently drop its credential in one
-	// keystroke.
-	conn := p.Plugins[was]
-	// Refused here rather than written and reported later. This is the one
-	// screen where somebody is typing a coordinate, so it is where a typo
-	// should be caught — `rta doctor` finding it afterwards means the profile
-	// was saved broken and the operator has moved on.
-	kube := strings.TrimSpace(str(values[profileKubeField]))
-	ssh := strings.TrimSpace(str(values[profileSSHField]))
-	// A refusal, unlike the endpoint-key repair below, because it is honest
-	// here: both boxes are plain text, so "empty one of them" is an action
-	// the widget can always perform — the select trap below cannot occur on
-	// these two plain-text fields.
-	if kube != "" && ssh != "" {
-		m.flash = "one tunnel: keep `kube:` or `ssh:`, and empty the other"
-		return m, nil
-	}
-	if kube != "" {
-		if verr := tunnel.CheckKube(kube); verr != nil {
-			m.flash = verr.Message
-			return m, nil
+	var (
+		gone    bool
+		refusal string
+		freed   []string
+		unread  []string
+	)
+	// The whole load-mutate-write under one lock, like every other writer of
+	// this file: the gap between reading it and writing it back is where a
+	// concurrent save is lost, and this form is one of nine places that had
+	// that gap. A decision to refuse mid-edit returns false rather than
+	// returning early, so nothing is written and the lock is released on the
+	// ordinary path.
+	if err := config.Mutate(func(cfg config.Config) (config.Config, bool) {
+		p, ok := cfg.Profiles[m.profileOpen]
+		if !ok {
+			gone = true
+			return cfg, false
 		}
-	}
-	if ssh != "" {
-		if verr := tunnel.CheckSSH(ssh); verr != nil {
-			m.flash = verr.Message
-			return m, nil
+		if p.Plugins == nil {
+			p.Plugins = map[string]config.Connection{}
 		}
-	}
-	conn.Kube = kube
-	conn.SSH = ssh
-	tunnelled := kube != "" || ssh != ""
-	// Remembered before the rebuild, so the endpoint-key repair below can
-	// name what the file loses even when no box carried it: under a
-	// coordinate startConnForm offers no endpoint boxes at all, so a stated
-	// key vanishes through this rebuild — silently, without this.
-	prior := conn.Set
-	conn.Set = map[string]any{}
-	for k, v := range values {
-		name, isSet := strings.CutPrefix(k, profileSetPrefix)
-		if !isSet {
-			continue
+		// Keep what this form does not collect. A `secrets:` mapping is written by
+		// the credential action rather than here, and losing it by editing a host
+		// would repoint the connection and silently drop its credential in one
+		// keystroke.
+		conn := p.Plugins[was]
+		// Refused here rather than written and reported later. This is the one
+		// screen where somebody is typing a coordinate, so it is where a typo
+		// should be caught — `rta doctor` finding it afterwards means the profile
+		// was saved broken and the operator has moved on.
+		kube := strings.TrimSpace(str(values[profileKubeField]))
+		ssh := strings.TrimSpace(str(values[profileSSHField]))
+		// A refusal, unlike the endpoint-key repair below, because it is honest
+		// here: both boxes are plain text, so "empty one of them" is an action
+		// the widget can always perform — the select trap below cannot occur on
+		// these two plain-text fields.
+		if kube != "" && ssh != "" {
+			refusal = "one tunnel: keep `kube:` or `ssh:`, and empty the other"
+			return cfg, false
 		}
-		if s, isStr := v.(string); isStr && strings.TrimSpace(s) == "" {
-			continue
+		if kube != "" {
+			if verr := tunnel.CheckKube(kube); verr != nil {
+				refusal = verr.Message
+				return cfg, false
+			}
 		}
-		conn.Set[name] = v
-	}
-	// An endpoint key beside a coordinate is removed here, and the flash says
-	// so — repaired at save for CheckKube's reason: this is the one screen
-	// that knows both halves, and writing the pair would save a profile
-	// checkSet then refuses everywhere. Removed rather than refused, which a
-	// first cut tried: refusal assumed the operator could empty the box, and
-	// an Options or Bool endpoint input has no empty to choose — the entry
-	// became unsaveable while the coordinate stood. The keys reach here from
-	// the file (startConnForm offers no endpoint boxes under a coordinate)
-	// or from boxes visible while the coordinate was being typed; either
-	// way every possible value is one the forward overrides, so the only
-	// honest file is one without the key — and the flash is the receipt.
-	var freed, unread []string
-	known := false
-	for _, prow := range m.plugins {
-		if prow.plugin.Name != config.PluginNamespace(key) {
-			continue
+		if ssh != "" {
+			if verr := tunnel.CheckSSH(ssh); verr != nil {
+				refusal = verr.Message
+				return cfg, false
+			}
 		}
-		known = true
-		declared := map[string]bool{}
-		for _, f := range configFields(prow.plugin) {
-			declared[f.Name] = true
-			if !tunnelled || f.Endpoint == plugin.EndpointNone {
+		conn.Kube = kube
+		conn.SSH = ssh
+		tunnelled := kube != "" || ssh != ""
+		// Remembered before the rebuild, so the endpoint-key repair below can
+		// name what the file loses even when no box carried it: under a
+		// coordinate startConnForm offers no endpoint boxes at all, so a stated
+		// key vanishes through this rebuild — silently, without this.
+		prior := conn.Set
+		conn.Set = map[string]any{}
+		for k, v := range values {
+			name, isSet := strings.CutPrefix(k, profileSetPrefix)
+			if !isSet {
 				continue
 			}
-			_, stated := conn.Set[f.Name]
-			_, had := prior[f.Name]
-			if stated || had {
-				delete(conn.Set, f.Name)
-				freed = append(freed, "set."+f.Name)
+			if s, isStr := v.(string); isStr && strings.TrimSpace(s) == "" {
+				continue
 			}
+			conn.Set[name] = v
 		}
-		// A prior key no declared field offered a box for vanishes through
-		// the rebuild whatever this save was about — it is a key nothing
-		// reads (checkSet refuses the profile over it), usually left behind
-		// by a plugin rebuilt without it. Removing it is the same
-		// repair-at-save the endpoint keys get, and the receipt below is
-		// what keeps it from being a mystery.
-		stale := make([]string, 0, len(prior))
-		for k := range prior {
-			if !declared[k] {
-				stale = append(stale, k)
+		// An endpoint key beside a coordinate is removed here, and the flash says
+		// so — repaired at save for CheckKube's reason: this is the one screen
+		// that knows both halves, and writing the pair would save a profile
+		// checkSet then refuses everywhere. Removed rather than refused, which a
+		// first cut tried: refusal assumed the operator could empty the box, and
+		// an Options or Bool endpoint input has no empty to choose — the entry
+		// became unsaveable while the coordinate stood. The keys reach here from
+		// the file (startConnForm offers no endpoint boxes under a coordinate)
+		// or from boxes visible while the coordinate was being typed; either
+		// way every possible value is one the forward overrides, so the only
+		// honest file is one without the key — and the flash is the receipt.
+		known := false
+		for _, prow := range m.plugins {
+			if prow.plugin.Name != config.PluginNamespace(key) {
+				continue
 			}
-		}
-		sort.Strings(stale)
-		for _, k := range stale {
-			unread = append(unread, "set."+k)
-		}
-		if tunnelled {
-			// And the `secrets:` mappings aimed at the same inputs, which the
-			// forward shadows identically (checkSecretRefs) — keyed by input
-			// name, so walked off the raw declarations rather than
-			// configFields' config-key renames. This form keeps Secrets
-			// untouched otherwise, so the file's map is what is repaired.
-			seen := map[string]bool{}
-			for _, c := range prow.plugin.Capabilities {
-				for _, f := range c.Inputs {
-					if f.Endpoint == plugin.EndpointNone || !plugin.ProfileFillable(c, f) ||
-						seen[f.Name] {
-						continue
-					}
-					seen[f.Name] = true
-					if _, mapped := conn.Secrets[f.Name]; mapped {
-						delete(conn.Secrets, f.Name)
-						freed = append(freed, "secrets."+f.Name)
+			known = true
+			declared := map[string]bool{}
+			for _, f := range configFields(prow.plugin) {
+				declared[f.Name] = true
+				if !tunnelled || f.Endpoint == plugin.EndpointNone {
+					continue
+				}
+				_, stated := conn.Set[f.Name]
+				_, had := prior[f.Name]
+				if stated || had {
+					delete(conn.Set, f.Name)
+					freed = append(freed, "set."+f.Name)
+				}
+			}
+			// A prior key no declared field offered a box for vanishes through
+			// the rebuild whatever this save was about — it is a key nothing
+			// reads (checkSet refuses the profile over it), usually left behind
+			// by a plugin rebuilt without it. Removing it is the same
+			// repair-at-save the endpoint keys get, and the receipt below is
+			// what keeps it from being a mystery.
+			stale := make([]string, 0, len(prior))
+			for k := range prior {
+				if !declared[k] {
+					stale = append(stale, k)
+				}
+			}
+			sort.Strings(stale)
+			for _, k := range stale {
+				unread = append(unread, "set."+k)
+			}
+			if tunnelled {
+				// And the `secrets:` mappings aimed at the same inputs, which the
+				// forward shadows identically (checkSecretRefs) — keyed by input
+				// name, so walked off the raw declarations rather than
+				// configFields' config-key renames. This form keeps Secrets
+				// untouched otherwise, so the file's map is what is repaired.
+				seen := map[string]bool{}
+				for _, c := range prow.plugin.Capabilities {
+					for _, f := range c.Inputs {
+						if f.Endpoint == plugin.EndpointNone || !plugin.ProfileFillable(c, f) ||
+							seen[f.Name] {
+							continue
+						}
+						seen[f.Name] = true
+						if _, mapped := conn.Secrets[f.Name]; mapped {
+							delete(conn.Secrets, f.Name)
+							freed = append(freed, "secrets."+f.Name)
+						}
 					}
 				}
 			}
 		}
-	}
-	if !known {
-		// The plugin is not installed, so this form offered no `set.` boxes
-		// and nothing here can tell a statement from a leftover. A form must
-		// not rewrite what it could not show: the file's own block stands,
-		// exactly as Secrets always has.
-		conn.Set = prior
-	}
-	if len(conn.Set) == 0 {
-		conn.Set = nil
-	}
-	if was != "" && was != key {
-		delete(p.Plugins, was)
-	}
-	p.Plugins[key] = conn
-	cfg.Profiles[m.profileOpen] = p
-
-	if err := config.Write(cfg); err != nil {
+		if !known {
+			// The plugin is not installed, so this form offered no `set.` boxes
+			// and nothing here can tell a statement from a leftover. A form must
+			// not rewrite what it could not show: the file's own block stands,
+			// exactly as Secrets always has.
+			conn.Set = prior
+		}
+		if len(conn.Set) == 0 {
+			conn.Set = nil
+		}
+		if was != "" && was != key {
+			delete(p.Plugins, was)
+		}
+		p.Plugins[key] = conn
+		cfg.Profiles[m.profileOpen] = p
+		return cfg, true
+	}); err != nil {
 		m.flash = "config not saved: " + err.Error()
 		return m.closeToOrigin()
+	}
+	if gone {
+		m.flash = "profile " + m.profileOpen + " is gone"
+		return m.closeToOrigin()
+	}
+	if refusal != "" {
+		// Stays on the form, as it did before: the operator has a coordinate
+		// to correct and the boxes are still in front of them.
+		m.flash = refusal
+		return m, nil
 	}
 	m.profiles = m.profileRows()
 	m.flash = "saved " + key + " in " + m.profileOpen
@@ -470,7 +575,53 @@ func (m Model) saveConnForm() (tea.Model, tea.Cmd) {
 		}
 		m.flash += " — dropped " + strings.Join(unread, ", ") + ": " + what
 	}
+	if was == "" {
+		if nm, cmd, asked := m.credentialAfterAdding(key); asked {
+			return nm, cmd
+		}
+	}
 	return m.closeToOrigin()
+}
+
+// credentialAfterAdding opens the credential editor on an entry that has just
+// been added and cannot be used without one.
+//
+// **Only after adding, and only when nothing supplies it.** An environment's
+// plugin entry that needs a credential and has none is not a half-finished
+// thing the operator can come back to — it is the state the pane reports as
+// "1 not set" and every call through it refuses. Making that the next screen
+// costs no keystroke and removes three: close the form, find the entry again,
+// press `s`. Editing an existing entry does not do this, because there the
+// operator came to change a host and being taken somewhere else is a different
+// experience from being taken further.
+//
+// Esc is still the answer: the entry is already written, so leaving is
+// declining to finish rather than losing the work.
+func (m Model) credentialAfterAdding(key string) (tea.Model, tea.Cmd, bool) {
+	row, ok := m.openProfile()
+	if !ok {
+		return m, nil, false
+	}
+	for i, c := range row.conns {
+		if c.key != key {
+			continue
+		}
+		unset := false
+		for _, cr := range c.credentials {
+			if !cr.satisfied() {
+				unset = true
+			}
+		}
+		if !unset {
+			return m, nil, false
+		}
+		m.connSel = i
+		m.mode = modeProfilePlugins
+		m.flash += " — it needs a credential"
+		nm, cmd := m.startCredentialForm()
+		return nm, cmd, true
+	}
+	return m, nil, false
 }
 
 // installedPlugins is every registered plugin in the form a profile must name
@@ -491,33 +642,6 @@ func (m Model) installedPlugins() []string {
 	}
 	sort.Strings(out)
 	return out
-}
-
-// revokeProfileGrants drops every grant naming an environment, and reports how
-// many were standing.
-//
-// Deleting an environment and leaving grants for it is a row in `rta grant
-// list` that reads like access and is not: Lookup refuses a name that is no
-// longer configured, so the grant authorizes nothing while looking exactly like
-// one that does.
-func revokeProfileGrants(name string) int {
-	revoked := 0
-	now := time.Now()
-	_ = grant.Mutate(func(stored []grant.Grant) ([]grant.Grant, bool) {
-		revoked = 0
-		kept := make([]grant.Grant, 0, len(stored))
-		for _, g := range stored {
-			if g.Profile == name {
-				if g.Active(now) {
-					revoked++
-				}
-				continue
-			}
-			kept = append(kept, g)
-		}
-		return kept, revoked > 0 || len(kept) != len(stored)
-	})
-	return revoked
 }
 
 // useSelectedProfile switches this machine to the selected environment, or off
@@ -568,19 +692,17 @@ func (m *Model) deleteSelectedProfile() string {
 		return ""
 	}
 	row := m.profiles[m.profileSel]
-	cfg, err := config.LoadFile()
-	if err != nil {
-		return "not deleted: " + err.Error()
-	}
-	delete(cfg.Profiles, row.name)
-	if err := config.Write(cfg); err != nil {
+	if err := config.Mutate(func(cfg config.Config) (config.Config, bool) {
+		delete(cfg.Profiles, row.name)
+		return cfg, true
+	}); err != nil {
 		return "not deleted: " + err.Error()
 	}
 	if sel := profile.LoadSelection(); sel.Active == row.name {
 		_ = profile.SaveSelection(profile.Selection{})
 	}
 	note := "deleted profile " + row.name
-	if n := revokeProfileGrants(row.name); n > 0 {
+	if n := grant.RevokeProfile(row.name, time.Now()); n > 0 {
 		note += ", and revoked " + plural(n, "grant") + " naming it"
 	}
 	return note
@@ -593,18 +715,21 @@ func (m *Model) deleteSelectedConn() string {
 		return ""
 	}
 	key := row.conns[m.connSel].key
-	cfg, err := config.LoadFile()
-	if err != nil {
+	gone := false
+	if err := config.Mutate(func(cfg config.Config) (config.Config, bool) {
+		p, exists := cfg.Profiles[m.profileOpen]
+		if !exists {
+			gone = true
+			return cfg, false
+		}
+		delete(p.Plugins, key)
+		cfg.Profiles[m.profileOpen] = p
+		return cfg, true
+	}); err != nil {
 		return "not removed: " + err.Error()
 	}
-	p, exists := cfg.Profiles[m.profileOpen]
-	if !exists {
+	if gone {
 		return "profile " + m.profileOpen + " is gone"
-	}
-	delete(p.Plugins, key)
-	cfg.Profiles[m.profileOpen] = p
-	if err := config.Write(cfg); err != nil {
-		return "not removed: " + err.Error()
 	}
 	return "removed " + key + " from " + m.profileOpen
 }
@@ -616,11 +741,24 @@ func (m *Model) deleteSelectedConn() string {
 // reach its parent's environment — so the honest thing is to hand over the
 // lines to paste. The values are deliberately left as placeholders: this is a
 // screen, and a credential belongs on it no more than in a config file.
+//
+// **An environment rta has already called invalid does not get to write a
+// command.** The variable name is derived from the profile's name, and a name
+// that never passed ValidName can be anything a config file holds — so this
+// pane once printed "not a valid profile name" in red on the band and then,
+// on the very next keypress, put a line built out of that name on the
+// clipboard under "fill in the value and run it". envToken now makes the name
+// an identifier whatever it was given, and this refuses on top of it: two
+// independent reasons the paste is safe, because the one that was relied on
+// lived in another package.
 func (m *Model) copyExportLine() string {
 	if m.profileSel >= len(m.profiles) {
 		return ""
 	}
 	row := m.profiles[m.profileSel]
+	if !row.valid() {
+		return row.name + " is not usable — " + row.problem
+	}
 	var missing []string
 	for _, c := range row.conns {
 		for _, cr := range c.credentials {
@@ -640,6 +778,18 @@ func (m *Model) copyExportLine() string {
 		return "no clipboard here — " + strings.Join(missing, "; ")
 	}
 	return "copied " + plural(len(missing), "export line") + " — fill in the value and run it"
+}
+
+// firstSetField names the first config box, which is where the second heading
+// goes. Empty when the plugin has nothing to configure, or when none is chosen
+// yet — in both cases there is no block to head.
+func firstSetField(fields []plugin.Field) string {
+	for _, f := range fields {
+		if strings.HasPrefix(f.Name, profileSetPrefix) {
+			return f.Name
+		}
+	}
+	return ""
 }
 
 // str renders a form value as the string a config key should hold.
@@ -792,7 +942,6 @@ func (m Model) startCredentialForm() (tea.Model, tea.Cmd) {
 		hideUnless(credEntryField, sourceIs(credSourceRef)),
 		hideUnless(credValueField, sourceIs(credSourceStore)),
 		hideUnless(credKubeField, sourceIs(credSourceKube)))
-	m.form.segmented(credKubeField)
 	m.form.kubeCoord = conn.conn.Kube
 	m.form.profileTarget = conn.key
 	m.form.credentialEditing = true
@@ -868,29 +1017,35 @@ func (m Model) saveCredentialForm() (tea.Model, tea.Cmd) {
 		ref = "kv:" + entry
 	}
 
-	cfg, err := config.LoadFile()
-	if err != nil {
+	missing := ""
+	if err := config.Mutate(func(cfg config.Config) (config.Config, bool) {
+		p, ok := cfg.Profiles[name]
+		if !ok {
+			missing = "profile " + name + " is gone"
+			return cfg, false
+		}
+		conn, has := p.Plugins[key]
+		if !has {
+			missing = key + " is no longer in " + name
+			return cfg, false
+		}
+		if conn.Secrets == nil {
+			conn.Secrets = map[string]string{}
+		}
+		conn.Secrets[input] = ref
+		p.Plugins[key] = conn
+		cfg.Profiles[name] = p
+		return cfg, true
+	}); err != nil {
 		m.flash = "config not saved: " + err.Error()
 		return m.closeToOrigin()
 	}
-	p, ok := cfg.Profiles[name]
-	if !ok {
-		m.flash = "profile " + name + " is gone"
-		return m.closeToOrigin()
-	}
-	conn, has := p.Plugins[key]
-	if !has {
-		m.flash = key + " is no longer in " + name
-		return m.closeToOrigin()
-	}
-	if conn.Secrets == nil {
-		conn.Secrets = map[string]string{}
-	}
-	conn.Secrets[input] = ref
-	p.Plugins[key] = conn
-	cfg.Profiles[name] = p
-	if err := config.Write(cfg); err != nil {
-		m.flash = "config not saved: " + err.Error()
+	if missing != "" {
+		// The entry was stored before this point and stays stored: it is a
+		// real credential under a name `rta kv list` shows, and deleting it
+		// because the profile moved would be destroying the thing the
+		// operator just typed.
+		m.flash = missing
 		return m.closeToOrigin()
 	}
 	m.profiles = m.profileRows()

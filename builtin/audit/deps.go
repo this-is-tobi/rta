@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/this-is-tobi/rule-them-all/builtin/internal/gitclone"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
@@ -39,41 +40,58 @@ func runDeps(ctx context.Context, req plugin.Request) (view.View, error) {
 		path = "."
 	}
 	recursive := req.Bool("recursive")
-	manifests, truncated, err := findManifests(path, recursive)
+	proj, verr := openProject(ctx, req, path)
+	if verr != nil {
+		return nil, verr
+	}
+	names, shown, truncated, err := proj.manifests(recursive)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, view.Errorf("audit.deps.nopath", "no such path: %s", path).
-				WithHint("pass the directory holding the lockfile or SBOM, or the file itself")
+				WithHint("pass the directory holding the lockfile or SBOM, the file itself, " +
+					"or a repository URL")
 		}
 		return nil, view.Errorf("audit.deps.path", "reading %s: %v", path, err)
 	}
-	if len(manifests) == 0 {
+	if len(names) == 0 {
 		hint := "reads what a project already declares, so one of these has to exist: " +
 			strings.Join(ecosystems, "; ")
 		if !recursive {
 			hint += ". In a monorepo the manifests are a level down: try --recursive"
 		}
-		return nil, view.Errorf("audit.deps.nomanifest", "no lockfile or SBOM in %s", path).
+		return nil, view.Errorf("audit.deps.nomanifest", "no lockfile or SBOM in %s", remoteLabel(path)).
 			WithHint(hint)
 	}
 
-	inv := read(manifests)
+	inv := read(proj.fsys, names, shown)
 
 	r := &report{}
 	offline := req.Bool("offline")
-	var vulns map[string][]string
+	var (
+		vulns   map[string][]string
+		records map[string]osvRecord
+		capped  bool
+	)
 	if !offline && len(inv.queryable) > 0 {
 		timeout := time.Duration(req.Int("timeout")) * time.Second
 		qctx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
-		vulns, err = queryOSV(qctx, &stdhttp.Client{Timeout: timeout}, inv.queryable)
+		client := &stdhttp.Client{Timeout: timeout}
+		vulns, err = queryOSV(qctx, client, inv.queryable)
 		if err != nil {
 			return nil, view.Errorf("audit.deps.osv", "querying osv.dev: %v", err).
 				WithHint("use --offline to inventory the dependencies without asking anything")
 		}
+		// Only for what the first question found, which on a clean project is
+		// nothing at all. The deadline is the one the caller already set for
+		// the whole query, so grading cannot make an audit run longer than it
+		// was asked to.
+		if ids := everyAdvisory(vulns); len(ids) > 0 {
+			records, capped = detailOSV(qctx, client, ids)
+		}
 	}
 
-	gradeDeps(r, inv, vulns, offline)
+	gradeDeps(r, inv, vulns, records, capped, offline)
 	if truncated {
 		r.add(grpInventory, "scan", stWarn,
 			"stopped at "+strconv.Itoa(maxManifests)+" manifests or "+strconv.Itoa(maxScanDepth)+
@@ -83,10 +101,11 @@ func runDeps(ctx context.Context, req plugin.Request) (view.View, error) {
 
 	if req.Bool("detail") {
 		summary := append([]view.Pair{
-			{Key: "path", Value: path},
-			{Key: "manifests", Value: manifestSummary(path, manifests)},
+			{Key: "path", Value: remoteLabel(path)},
+			{Key: "manifests", Value: manifestSummary(path, shown)},
 			{Key: "dependencies", Value: strconv.Itoa(len(inv.all))},
 		}, r.grade()...)
+		summary = append(summary, depsDeeper(remoteLabel(path), gitclone.IsRemote(path), shown)...)
 		return detailPage(ctx, req, r, depsGroupOrder, view.KeyValue{Pairs: summary}), nil
 	}
 	return r.table(true), nil
@@ -334,13 +353,17 @@ func (inv inventory) relation(c component) string {
 }
 
 // read parses every manifest into one inventory.
-func read(manifests []string) inventory {
-	inv := inventory{manifests: manifests, structure: newGraph()}
+// names are fs paths to read; shown is the same list as the reader should
+// see it, index for index. Two slices rather than a struct because every
+// consumer downstream wants only the second.
+func read(fsys fs.FS, names, shown []string) inventory {
+	inv := inventory{manifests: shown, structure: newGraph()}
 	var comps []component
-	for _, m := range manifests {
-		got, g, err := parseManifest(m)
+	for i, m := range names {
+		got, g, err := parseManifest(fsys, m, shown[i])
 		if err != nil {
-			inv.unreadable = append(inv.unreadable, unreadableManifest{path: m, reason: clip(err.Error())})
+			inv.unreadable = append(inv.unreadable,
+				unreadableManifest{path: shown[i], reason: clip(err.Error())})
 			continue
 		}
 		comps = append(comps, got...)
@@ -376,7 +399,26 @@ func read(manifests []string) inventory {
 
 // gradeDeps turns the inventory and OSV's answer into findings. Pure, so the
 // judgement is testable without a network or a filesystem.
-func gradeDeps(r *report, inv inventory, vulns map[string][]string, offline bool) {
+// everyAdvisory is the distinct identifiers across every affected package,
+// which is what a detail pass has to ask about — the same advisory naming
+// four packages is one request, not four.
+func everyAdvisory(vulns map[string][]string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, ids := range vulns {
+		for _, id := range ids {
+			if !seen[id] {
+				seen[id] = true
+				out = append(out, id)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func gradeDeps(r *report, inv inventory, vulns map[string][]string,
+	records map[string]osvRecord, capped, offline bool) {
 	for _, m := range inv.unreadable {
 		r.add(grpInventory, "manifest", stWarn,
 			m.path+" could not be read, so nothing in it was checked: "+m.reason, refVulnerableDep)
@@ -398,14 +440,15 @@ func gradeDeps(r *report, inv inventory, vulns map[string][]string, offline bool
 		}
 	}
 	for _, c := range affected {
-		ids := vulns[c.key()]
-		sort.Strings(ids)
+		classes := classify(vulns[c.key()], records)
 		detail := c.name + " " + c.version + " (" + c.ecosystem + ")"
 		if where := whereFrom(inv, c); where != "" {
 			detail += " — " + where
 		}
-		detail += " — named in " + plural(len(ids), "advisory") + ": " + strings.Join(ids, ", ")
-		r.addLinked(grpVulnerable, c.name, stFail, detail, refVulnerableDep, osvURL(ids[0]))
+		detail += " — " + advisoryLine(c, classes)
+		// Linked to the worst rather than the first: classify sorts by grade,
+		// so the page this opens is the one that says how bad this is.
+		r.addLinked(grpVulnerable, c.name, stFail, detail, refVulnerableDep, osvURL(classes[0].id))
 	}
 	switch {
 	case offline:
@@ -416,13 +459,20 @@ func gradeDeps(r *report, inv inventory, vulns map[string][]string, offline bool
 		r.add(grpInventory, "advisories", stOK,
 			"none of the "+strconv.Itoa(len(inv.queryable))+" checked dependencies is named in an OSV advisory",
 			refVulnerableDep)
+	case len(affected) > 0 && capped:
+		// Never silently: a capped or timed-out detail pass leaves some rows
+		// ungraded, and a blank severity that means "not asked" reads exactly
+		// like one that means "nobody published a grade".
+		r.add(grpInventory, "grading", stWarn,
+			"stopped after "+strconv.Itoa(osvDetailMax)+" advisories or at the --timeout, so some rows "+
+				"below are counted but not graded — raise --timeout, or run osv-scanner, trivy or grype "+
+				"for a full pass",
+			refVulnerableDep)
 	case len(affected) > 0:
-		// The identifiers are what one batch query can answer. Severity and
-		// fixed versions are one request per advisory, which is the crawl
-		// this plugin does not do — so it says where to go instead.
 		r.add(grpInventory, "next step", stInfo,
-			"advisory IDs only: osv.dev's batch endpoint does not carry severity or fixed versions. "+
-				"Run osv-scanner, trivy or grype against this project for those",
+			"severity and fixed versions come from osv.dev's own records. Run osv-scanner, trivy or "+
+				"grype against this project for reachability — whether your code calls the vulnerable "+
+				"function at all, which no advisory can say",
 			refVulnerableDep)
 	}
 	if len(affected) > 0 {

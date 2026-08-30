@@ -6,7 +6,23 @@ A plugin is a program that returns a declaration and serves it over gRPC. rta la
 rta plugin list
 ```
 
-Four plugins ship in this repository as proof the contract works: `pg` (PostgreSQL), `s3` (S3-compatible object storage), `vault` (HashiCorp Vault), `kube` (Kubernetes), `docker`, and `eol` (end-of-life checks).
+Ten plugins ship in this repository. They are the proof the contract works, and each is a separate binary you install only if you want it — none of them is linked into `rta` itself, so the ones you skip cost you nothing.
+
+| Plugin | Service |
+| --- | --- |
+| `pg` | PostgreSQL |
+| `mysql` | MySQL, and MariaDB where nothing fork-specific is needed |
+| `mariadb` | MariaDB, adding Galera cluster state and replica status |
+| `etcd` | etcd v3: cluster health, members, leases, the keyspace |
+| `qdrant` | Qdrant: collections, their configuration and index health |
+| `s3` | S3-compatible object storage |
+| `vault` | HashiCorp Vault |
+| `kube` | Kubernetes |
+| `cnpg` | CloudNativePG: which PostgreSQL clusters exist, and what one will tell you about its own health, replication, backups and storage |
+| `docker` | containers and images |
+| `eol` | end-of-life checks against endoflife.date |
+
+Every one of them draws the same line in the same place: the read tier describes the thing, and anything that returns a value somebody stored is a write. `mysql.schema` tells you a database's shape and `mysql.query` returns its rows; `etcd.kv.list` gives you key names and `etcd.kv.get` gives you what a key holds. That is what makes read worth granting.
 
 ## Trust
 
@@ -85,7 +101,7 @@ Only then does it land: the managed store, the trust entry, and `rta.lock`, whic
 
 ## What a plugin can and cannot do
 
-| | |
+| A plugin… | Can it? |
 | --- | --- |
 | Adds capabilities to all three surfaces | ✅ automatic |
 | Declares its own safety classes | ✅ — and rta enforces them |

@@ -652,7 +652,9 @@ func TestProvenanceReachesTheFinding(t *testing.T) {
 	}`)
 	write("go.mod", "module example.com/x\n\ngo 1.24\n\nrequire (\n\tgithub.com/a/b v1.0.0\n\tgithub.com/c/d v2.0.0 // indirect\n)\n")
 
-	inv := read(manifestsIn(dir))
+	fsys := os.DirFS(dir)
+	names := manifestsIn(fsys, ".")
+	inv := read(fsys, names, names)
 	if len(inv.all) != 4 {
 		t.Fatalf("read %d components, want 4: %+v", len(inv.all), inv.all)
 	}
@@ -660,7 +662,7 @@ func TestProvenanceReachesTheFinding(t *testing.T) {
 	gradeDeps(r, inv, map[string][]string{
 		"npm/qs@6.7.0":             {"GHSA-qs"},
 		"Go/github.com/c/d@v2.0.0": {"GHSA-cd"},
-	}, false)
+	}, nil, false, false)
 
 	qs := mustFind(t, r, "qs")
 	if !strings.Contains(qs.detail, "indirect, pulled in by express") {

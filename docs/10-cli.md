@@ -52,6 +52,21 @@ rta net dns github.com -o json
 }
 ```
 
+
+**A machine-readable format means machine consumption, and rta treats it that way.** With `-o json|yaml|csv|md`, stdout carries the view and nothing else — errors go to stderr, also in the format you asked for, and the startup notice about untrusted artifacts is suppressed entirely. So the output on your screen is the output a parser accepts, which is where copy-and-paste gets it from:
+
+```bash
+# Approve every artifact rta found and refused to run.
+rta plugin trust -o json | jq -r '.rows[][0]' | xargs -rn1 rta plugin trust
+
+# Every profile, and what each one covers.
+rta profile list -o json | jq -r '.rows[] | "\(.[0])\t\(.[1])"'
+
+# Ship the record onward from where you left off.
+rta agent log --after "$cursor" -o json | jq -c '.rows[]'
+```
+
+Exit codes make the loop safe to write: `0` succeeded, `1` the capability refused and said why in the structured error, `2` you typed something wrong, `3` a confirmation was needed.
 ## Exit codes
 
 | Code | Meaning |
@@ -144,6 +159,8 @@ echo '{"a":1}' | rta codec jwt decode
 - **`3` is not a failure.** It is a question you did not answer.
 - **Bare `rta` in a pipe prints help** rather than opening the TUI, so a script never hangs on an invisible interface.
 - **`--no-color` is honoured**, and colour is already suppressed when stdout is not a terminal.
+- **Setup itself is scriptable.** `rta profile set` and `rta policy` state an environment and a ceiling from flags, both idempotent, so provisioning does not have to fall back to writing YAML by hand — see [Profiles](./40-profiles.md#writing-one-from-a-script).
+- **Never pass a credential on a command line.** Store it (`rta kv set <entry> --file <path>`, or `--file /dev/stdin` from a pipe) and reference it: `--secret password=kv:<entry>`. A value in argv is in `ps`, in your shell history, and in most CI logs. `rta profile set` refuses one rather than writing it.
 
 ## Next
 

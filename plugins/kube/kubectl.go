@@ -15,8 +15,7 @@ import (
 )
 
 // This plugin shells out to `kubectl` rather than linking client-go, which is
-// the same decision internal/tunnel took for port-forwards and records in ADR
-// 0018 §3. Two reasons, and the second is the bigger one.
+// the same decision internal/tunnel took for port-forwards. Two reasons, and the second is the bigger one.
 //
 // Size: measured for the surface a resolver needs — clientcmd, spdy,
 // portforward — client-go is +67 modules and +11 MB. This plugin needs

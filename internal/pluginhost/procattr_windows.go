@@ -9,8 +9,7 @@ import (
 //
 // CREATE_NEW_PROCESS_GROUP is the Windows analogue of Setpgid for the purpose
 // that matters here — one handle, one kill, no orphans. A job object with
-// JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE is the stronger form and is what ADR
-// 0012 names; it needs the golang.org/x/sys/windows job APIs and a handle held
+// JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE is the stronger form; it needs the golang.org/x/sys/windows job APIs and a handle held
 // for the process's lifetime, which is a real amount of Windows-specific
 // plumbing for a platform that is documented as unconfined either way.
 //

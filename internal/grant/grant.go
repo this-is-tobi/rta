@@ -167,7 +167,30 @@ type Grant struct {
 	Agent   string    `json:"agent,omitempty"`
 	Issued  time.Time `json:"issued"`
 	Expires time.Time `json:"expires"`
-	Note    string    `json:"note,omitempty"`
+	// From is where this grant was issued: a form, a terminal with somebody
+	// at it, or a command with nobody there.
+	//
+	// **It is detection and not prevention, and the difference is the whole
+	// point of the field.** An agent that can run commands can run `rta grant
+	// allow` and issue itself anything — the seal stops a process that cannot
+	// read the key from forging a line, and stops nothing that can simply ask
+	// rta to write one. Nothing here changes that. What it changes is that
+	// such a grant no longer looks identical to one the operator issued: a
+	// row saying it arrived from a non-interactive command, minutes ago, is a
+	// row somebody can recognise as not theirs.
+	//
+	// It can be defeated — a shell can allocate a pty and claim to be a
+	// terminal — and it is worth having anyway, for the same reason the
+	// record's hash chain is: against something running as you, making the
+	// ordinary case visible is the most that is honest, and the ordinary case
+	// is the one that actually happens.
+	//
+	// Empty on every grant sealed before this field existed, which is why the
+	// vocabulary has no empty member: unknown and non-interactive are
+	// different facts and a display that conflated them would accuse an old
+	// grant of something.
+	From string `json:"from,omitempty"`
+	Note string `json:"note,omitempty"`
 	// TTL is the window as the operator typed it ("15m", "1h"), so renew can
 	// extend by the same amount rather than guess at one.
 	//
@@ -808,9 +831,9 @@ func Save(grants []Grant) *view.Error {
 // covers() distinguishes, or "replace the equivalent grant" replaces one
 // that is not equivalent.
 //
-// Here rather than in builtin/grant because a second caller arrived (ADR
-// 0022: answering a parked request with --ttl issues exactly the grant the
-// operator would have typed), and two implementations of "what counts as
+// Here rather than in builtin/grant because a second caller arrived —
+// answering a parked request with --ttl issues exactly the grant the
+// operator would have typed — and two implementations of "what counts as
 // the same grant" is how the two come to disagree.
 func Issue(g Grant, write bool) *view.Error {
 	// Refused where somebody is standing and can fix it. Load already stops a
@@ -1505,3 +1528,69 @@ func acquireLock() (release func(), verr *view.Error) {
 	}
 	return release, nil
 }
+
+// RevokeProfile drops every grant naming an environment, and reports how many
+// of them were still standing.
+//
+// Called wherever a profile stops existing. A grant for a name nothing can
+// look up authorizes nothing — internal/profile.Lookup refuses it — so leaving
+// it behind is a row in `rta grant list` that reads like access and is not,
+// which is the one thing a record of consent must never contain.
+//
+// Here rather than in the surface that deletes, because there are now two of
+// them: the TUI's delete action and `rta profile rm`. A rule about what
+// happens to a grant belongs with the grants.
+func RevokeProfile(name string, now time.Time) int {
+	revoked := 0
+	_ = Mutate(func(stored []Grant) ([]Grant, bool) {
+		revoked = 0
+		kept := make([]Grant, 0, len(stored))
+		for _, g := range stored {
+			if g.Profile == name {
+				if g.Active(now) {
+					revoked++
+				}
+				continue
+			}
+			kept = append(kept, g)
+		}
+		return kept, revoked > 0 || len(kept) != len(stored)
+	})
+	return revoked
+}
+
+// Where a grant can come from. Three values and no more: the question a
+// reader has is "was somebody there", and finer provenance would be a claim
+// about identity that nothing here can back.
+const (
+	// FromForm is a TUI form — a person, unambiguously.
+	FromForm = "form"
+	// FromTerminal is the CLI with a terminal on the other end.
+	FromTerminal = "terminal"
+	// FromCommand is the CLI with nobody there: a provisioning script, a CI
+	// job, or an agent's shell tool. All three are legitimate and only one of
+	// them is a surprise, which is why this is reported and never refused.
+	FromCommand = "command"
+)
+
+// Origin names where a request to issue a grant came from.
+//
+// A TUI request is a form. Everything else is the CLI, and the question that
+// remains is whether a person is on the other end of it — the same test
+// builtin/kv uses before it decides whether it may ask for a passphrase, and
+// for a related reason: both are asking "is anybody there".
+func Origin(surface plugin.Surface, interactive bool) string {
+	switch {
+	case surface == plugin.SurfaceTUI:
+		return FromForm
+	case interactive:
+		return FromTerminal
+	default:
+		return FromCommand
+	}
+}
+
+// Watched reports whether a person was present when this grant was issued.
+// An old grant with no origin recorded answers false, and callers say
+// "unknown" rather than "nobody" — see From.
+func (g Grant) Watched() bool { return g.From == FromForm || g.From == FromTerminal }

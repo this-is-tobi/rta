@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"strings"
 )
@@ -325,4 +326,100 @@ func lookupConfig(cfg map[string]any, key string) (any, bool) {
 func LocalEnvVar(capID, input string) string {
 	ns, _, _ := strings.Cut(capID, ".")
 	return "RTA_" + envToken(ns) + "_" + envToken(input)
+}
+
+// StatedTypeProblem reports why a value written in a configuration file will
+// not reach a handler as the type f declares, and how to write it instead.
+// Both are empty when the value is fine.
+//
+// **The failure this names is silent and it points the wrong way.** Resolve
+// normalises the shapes an integer legitimately arrives in (uint64 from YAML,
+// float64 from JSON) and leaves anything else alone rather than replacing it
+// with a confident zero — right for Resolve, because a value it does not
+// recognise is not its to invent. But the accessor downstream is a type
+// assertion, so what the handler actually reads is the zero: Request.Bool on
+// the string "true" is false, and Request.Int on "5432" is 0 with the
+// declared default already overwritten.
+//
+// That is worse than the "nothing reads this key" problems the config checks
+// already report, because the key *is* read — as the opposite of what the
+// file says. YAML makes it easy to hit without noticing: `tls: "true"` is a
+// string because somebody quoted it, and `tls: yes` is a string because YAML
+// 1.2 stopped treating it as a boolean. Both leave a connection running
+// without the transport security its own configuration states.
+//
+// Deliberately no coercion. Reading "true" as true would fix the quoted case
+// and then have to answer for "yes", "on", "1" and "TRUE", and every answer
+// is a guess about a value that decides whether a connection is encrypted.
+// The value gets reported and the operator writes what they meant.
+//
+// The value itself is never echoed — only its shape. This runs over
+// configuration the operator wrote, and a message quoting it would be one
+// mistyped block away from printing a credential.
+func StatedTypeProblem(f Field, v any) (problem, hint string) {
+	switch f.Type {
+	case Int:
+		if _, ok := toInt(v); ok {
+			return "", ""
+		}
+		return statedProblem(v, "an integer", "0"),
+			"write it as a bare number: `5432`, not `\"5432\"`"
+	case Float:
+		if _, ok := toFloat(v); ok {
+			return "", ""
+		}
+		return statedProblem(v, "a number", "0"),
+			"write it as a bare number: `1.5`, not `\"1.5\"`"
+	case Bool:
+		if _, ok := v.(bool); ok {
+			return "", ""
+		}
+		return statedProblem(v, "a boolean", "false"),
+			"write it unquoted as `true` or `false` — a quoted `\"true\"` is a string, " +
+				"and so is a bare `yes`"
+	case StringSlice:
+		switch v.(type) {
+		case []string, []any, string:
+			return "", ""
+		}
+		return statedProblem(v, "a list", "no values"),
+			"write it as `[a, b]`, as a `- ` list, or as one bare value"
+	case String, Text, Path, Secret:
+		if _, ok := v.(string); ok {
+			return "", ""
+		}
+		return statedProblem(v, "text", "an empty string"),
+			"quote it, so it is read as text rather than as a number, a boolean or a date"
+	}
+	// A type this does not know is a field Validate would have refused. No
+	// opinion is the right answer: inventing a problem about a declaration
+	// nothing here understands would be a report the run does not make.
+	return "", ""
+}
+
+func statedProblem(v any, want, reads string) string {
+	return "is written as " + statedShape(v) + " where " + want +
+		" is declared — the handler would read " + reads
+}
+
+// statedShape names what a decoded value arrived as, in the words somebody
+// reading their own YAML would use. Never its contents.
+func statedShape(v any) string {
+	switch v.(type) {
+	case nil:
+		return "nothing"
+	case string:
+		return "text"
+	case bool:
+		return "a boolean"
+	case int, int8, int16, int32, int64,
+		uint, uint8, uint16, uint32, uint64,
+		float32, float64, json.Number:
+		return "a number"
+	case []string, []any:
+		return "a list"
+	case map[string]any, map[any]any:
+		return "a block"
+	}
+	return "a " + fmt.Sprintf("%T", v)
 }

@@ -40,11 +40,32 @@ type capForm struct {
 	// reach one after the form is built — the cluster completion sets a
 	// fetched suggestion list on exactly one of them (complete.go), which no
 	// binding can express: a binding is the field's value, not its widget.
+	//
+	// Every huh.Input the form builds, not only the completable ones. It held
+	// just those until tab's meaning moved out of huh, and then a map missing
+	// the masked and path boxes was a map that could not tell "the cursor is
+	// in a box with nothing to complete" from "the cursor is in a picker" —
+	// so tab died on exactly the fields it had just been fixed for.
 	inputs map[string]*huh.Input
+	// offers is the suggestion function each free-text field was built with,
+	// kept because tab has to ask the same question the widget answers — does
+	// anything on offer extend what is typed — and huh exposes neither the list
+	// it last computed nor the ghost it is drawing. Recomputing from a second
+	// expression of "what this field suggests" would be a copy free to drift;
+	// this is the one the field is wired to.
+	offers map[string]func() []string
 	// suggested is what a cluster fetch last offered each field, because the
 	// widget cannot be asked: tab's fetch-or-accept split (needsFetch) reads
 	// it to know whether anything on offer still extends what is typed.
 	suggested map[string][]string
+	// fetchedFor is the value each field was last fetched for, which is what
+	// turns tab's third answer — "nothing left to do, so move on" — from a
+	// guess into a fact. Without it a completing field is the one place in
+	// the app where tab does not eventually advance: at the end of a
+	// coordinate every press refetches, finds nothing deeper, and stays,
+	// which is the inconsistency somebody notices as "tab works on some
+	// fields and not others".
+	fetchedFor map[string]string
 	// liveGot is what a live fetch last brought back per field, behind its
 	// own lock: applyCompletion writes it on the event loop, and suggestion
 	// functions read it off the loop — the same split syncs exists for, on
@@ -117,6 +138,9 @@ type capForm struct {
 	// keyed by field name. Empty for every form that does not branch, which is
 	// all of them but one. See hideUnless.
 	show map[string]func(*capForm) bool
+	// heads is the section title rendered above a named field, keyed by that
+	// field's name. See withSection.
+	heads map[string]string
 }
 
 // formOption tunes a form beyond the fields it collects.
@@ -148,6 +172,65 @@ func hideUnless(name string, want func(*capForm) bool) formOption {
 	}
 }
 
+// withSection puts a heading above one field, and by doing so puts every
+// field after it under that heading.
+//
+// **A form is a list of questions until something says which of them are the
+// same question.** The connection editor asks three unrelated things — which
+// plugin, how to reach it, and what this environment changes about it — in one
+// flat column of identical-looking boxes, and the operator has to infer the
+// boundaries from a `set.` prefix. A heading is one line and it turns the
+// column into three short answers.
+//
+// A huh Note rather than a group, deliberately: huh renders one group per
+// page, so grouping for legibility would have cost an extra keypress between
+// every section — the opposite of what this is for. A Note skips itself when
+// the cursor moves (charm.land/huh/v2, NewNote defaults skip: true), so the
+// heading is passed over rather than tabbed into.
+func withSection(field, title string) formOption {
+	return func(cf *capForm) {
+		if cf.heads == nil {
+			cf.heads = map[string]string{}
+		}
+		cf.heads[field] = title
+	}
+}
+
+// sectioned splices the headings in, keeping fields and names index-aligned —
+// groups() reads names[i] to find the field a widget was built from, and a
+// Note is built from none.
+func (cf *capForm) sectioned(fields []huh.Field, names []string) ([]huh.Field, []string) {
+	if len(cf.heads) == 0 {
+		return fields, names
+	}
+	outF := make([]huh.Field, 0, len(fields)+len(cf.heads))
+	outN := make([]string, 0, len(names)+len(cf.heads))
+	for i, field := range fields {
+		if i < len(names) {
+			if head, ok := cf.heads[names[i]]; ok {
+				outF = append(outF, huh.NewNote().Title(sectionRule(head)))
+				outN = append(outN, "")
+			}
+		}
+		outF = append(outF, field)
+		if i < len(names) {
+			outN = append(outN, names[i])
+		}
+	}
+	return outF, outN
+}
+
+// sectionRule is what a heading looks like: a named rule.
+//
+// huh gives a Note's title the same bold primary as a field's, so a heading
+// written as plain words is a field name with no box under it — which is
+// worse than no heading at all. Pre-styling it does not work either: a style
+// applied over text that already carries ANSI ends at the first reset inside
+// it, the lesson profileCovers records. So the distinction is typographic
+// rather than chromatic, and it is the one this app already uses for exactly
+// this — the band lists draw a section as a rule with a name in it.
+func sectionRule(title string) string { return "── " + title + " " + strings.Repeat("─", 4) }
+
 // hidden reports whether a field is currently not being asked about.
 func (cf *capForm) hidden(name string) bool {
 	want, conditional := cf.show[name]
@@ -159,6 +242,7 @@ func (cf *capForm) hidden(name string) bool {
 // goes. Fields keep their declared order, so a form with no conditions is a
 // single group exactly as before.
 func (cf *capForm) groups(fields []huh.Field, names []string) []*huh.Group {
+	fields, names = cf.sectioned(fields, names)
 	if len(cf.show) == 0 {
 		return []*huh.Group{huh.NewGroup(fields...)}
 	}
@@ -269,18 +353,20 @@ func hasInputs(c plugin.Capability) bool { return len(c.Inputs) > 0 }
 func newCapForm(c plugin.Capability, fs []plugin.Field, defaults map[string]any, final bool,
 	base map[string]any, opts ...formOption) *capForm {
 	cf := &capForm{
-		cap:       c,
-		fields:    fs,
-		final:     final,
-		base:      base,
-		seed:      defaults,
-		bindings:  map[string]*string{},
-		bools:     map[string]*bool{},
-		slices:    map[string]*[]string{},
-		inputs:    map[string]*huh.Input{},
-		suggested: map[string][]string{},
-		syncs:     map[string]*syncString{},
-		used:      recent.Load(),
+		cap:        c,
+		fields:     fs,
+		final:      final,
+		base:       base,
+		seed:       defaults,
+		bindings:   map[string]*string{},
+		bools:      map[string]*bool{},
+		slices:     map[string]*[]string{},
+		inputs:     map[string]*huh.Input{},
+		offers:     map[string]func() []string{},
+		suggested:  map[string][]string{},
+		fetchedFor: map[string]string{},
+		syncs:      map[string]*syncString{},
+		used:       recent.Load(),
 	}
 	var (
 		fields []huh.Field
@@ -347,41 +433,39 @@ func newCapForm(c plugin.Capability, fs []plugin.Field, defaults map[string]any,
 			// Prefill result, e.g. a task's current tags) must render as
 			// "a, b" — fmt.Sprint would print "[a b]" and break re-submission.
 			typed := cf.bind(f.Name, defaultString(f))
-			fields = append(fields, cf.completing(huh.NewInput().
+			fields = append(fields, cf.record(f.Name, cf.completing(huh.NewInput().
 				Title(f.Name).
 				Description(completionHint(f, fieldDescription(f)+" (comma-separated)")).
 				Accessor(typed).
-				Validate(validatorFor(f)), f, typed, lastItem))
+				Validate(validatorFor(f)), f, typed, lastItem)))
 		case plugin.Path:
 			// The filesystem is re-read on every keystroke, which is what
 			// makes it a completion rather than a list, and whatever the field
 			// declared for itself goes first.
 			typed := cf.bind(f.Name, defaultString(f))
-			fields = append(fields, cf.completing(huh.NewInput().
+			fields = append(fields, cf.record(f.Name, cf.completing(huh.NewInput().
 				Title(f.Name).
 				Description(fieldDescription(f)+" — tab completes paths").
 				Accessor(typed).
-				Validate(validatorFor(f)), f, typed, walkingDisk))
+				Validate(validatorFor(f)), f, typed, walkingDisk)))
 		case plugin.Secret:
 			// Never completed, and that is a rule rather than an omission: a
 			// suggestion list renders in plain text beside a box that is
 			// masked precisely so the value is not on screen. Capability
 			// validate refuses Suggest on a Secret for the same reason.
-			fields = append(fields, huh.NewInput().
+			fields = append(fields, cf.record(f.Name, huh.NewInput().
 				Title(f.Name).
 				Description(fieldDescription(f)).
 				EchoMode(huh.EchoModePassword).
 				Accessor(cf.bind(f.Name, defaultString(f))).
-				Validate(validatorFor(f)))
+				Validate(validatorFor(f))))
 		default:
 			typed := cf.bind(f.Name, defaultString(f))
-			in := cf.completing(huh.NewInput().
+			fields = append(fields, cf.record(f.Name, cf.completing(huh.NewInput().
 				Title(f.Name).
 				Description(completionHint(f, fieldDescription(f))).
 				Accessor(typed).
-				Validate(validatorFor(f)), f, typed, wholeBox)
-			cf.inputs[f.Name] = in
-			fields = append(fields, in)
+				Validate(validatorFor(f)), f, typed, wholeBox)))
 		}
 	}
 	if final && c.Safety == plugin.Destructive {
@@ -398,20 +482,11 @@ func newCapForm(c plugin.Capability, fs []plugin.Field, defaults map[string]any,
 		opt(cf)
 	}
 	cf.form = huh.NewForm(cf.groups(fields, names)...).WithKeyMap(formKeyMap())
-	// After the form exists, because huh.NewForm applies the form-wide keymap
-	// to every field at construction and would clobber this. A live field is
-	// completed like a coordinate — often a segment at a time — so tab stays
-	// in it and enter advances (see completionKeyMap).
-	for _, f := range fs {
-		if f.Live {
-			cf.segmented(f.Name)
-		}
-	}
 	return cf
 }
 
-// formKeyMap is huh's default with one change: on a text input, tab also
-// completes.
+// formKeyMap is huh's default with tab moved: it completes, and it is no
+// longer also the key that leaves the field.
 //
 // huh binds AcceptSuggestion to ctrl+e (charm.land/huh/v2, keymap.go). rta has
 // been telling people to press tab since the first Path field — "tab completes
@@ -420,20 +495,33 @@ func newCapForm(c plugin.Capability, fs []plugin.Field, defaults map[string]any,
 // completion key in every shell and every editor, which is why the
 // documentation kept saying so.
 //
-// **It stays on Next as well, and that is the part worth explaining.** Taking
-// tab off Next made it a dead key everywhere there was nothing to complete,
-// which is most of the time: bubbles only matches a suggestion against a
-// *non-empty* value (textinput.updateSuggestions), so tab on a box somebody
-// has not typed in yet — the ordinary way anyone tabs through a form — did
-// nothing at all, on every field, and on a masked box the text they typed next
-// went into the password. Bound to both, tab completes what there is to
-// complete and then moves on, which is what tab did before this app had any
-// completion at all. A field with several matches cycles them on ↓ before you
-// press it (textinput's own NextSuggestion).
+// **Binding it to Next as well looked like the way to keep both meanings, and
+// it silently destroyed the first one.** Input.Update tests Next before
+// AcceptSuggestion and returns early when the value does not validate
+// (field_input.go), so on a required box that is still empty the textinput
+// never saw the key at all: no completion, no move, nothing — which is a
+// plugin picker whose own help says "press tab" and does not respond to it.
+// Where the value did validate, the two meanings fired on the same press, so
+// accepting a path threw the cursor out of the field and there was no way to
+// take the next segment.
+//
+// So huh no longer decides. Tab arrives at completeLocally, which asks the one
+// question that separates the meanings — is there anything on offer that
+// extends what is typed — and either hands the key to the widget or advances
+// the form itself. Enter keeps Next, on every field, as it always did.
 func formKeyMap() *huh.KeyMap {
 	km := huh.NewDefaultKeyMap()
 	km.Input.AcceptSuggestion = key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "complete"))
+	km.Input.Next = key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "next"))
 	return km
+}
+
+// record files one widget under the field it was built for and hands it back,
+// so a construction stays one expression. Every free-text box goes in,
+// completable or not: the map is how tab tells a box from a picker.
+func (cf *capForm) record(name string, in *huh.Input) *huh.Input {
+	cf.inputs[name] = in
+	return in
 }
 
 // syncString is a huh.Accessor guarding one field's value with a mutex.
@@ -543,7 +631,7 @@ func (cf *capForm) completing(in *huh.Input, f plugin.Field, typed *syncString, 
 	if how == wholeBox && f.Suggest == nil && len(cf.used.For(cf.cap.ID, f.Name)) == 0 {
 		return in
 	}
-	return in.SuggestionsFunc(func() []string {
+	offer := func() []string {
 		declared := cf.candidates(f)
 		switch how {
 		case walkingDisk:
@@ -553,7 +641,9 @@ func (cf *capForm) completing(in *huh.Input, f plugin.Field, typed *syncString, 
 		default:
 			return declared
 		}
-	}, cf.watched())
+	}
+	cf.offers[f.Name] = offer
+	return in.SuggestionsFunc(offer, cf.watched())
 }
 
 // watched is what huh hashes to decide a suggestion is stale: every string the

@@ -17,13 +17,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"time"
 
-	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing/transport"
-	"github.com/go-git/go-git/v5/storage/memory"
 
+	"github.com/this-is-tobi/rule-them-all/builtin/internal/gitclone"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
@@ -51,32 +48,32 @@ func Plugin() plugin.Plugin {
 // the same shape and default builtin/fs and builtin/audit already use for
 // "which directory", so an agent that already knows one plugin's --path
 // input knows this one. Unlike fs/audit, it also accepts a remote URL: a
-// local checkout is not always what is at hand, and every capability here
-// already only reads.
+// local checkout is not always what is at hand.
+//
+// The help says where that stops, because the MCP schema is generated from
+// it and a schema that advertises what the handler refuses is a schema that
+// lies — see refuseRemoteOverMCP.
 func pathField(help string) plugin.Field {
 	return plugin.Field{Name: "path", Type: plugin.Path, Positional: true, Default: ".",
-		Help: help + " — or a remote URL (https://, ssh://, git@host:path), cloned in memory"}
+		Help: help + " — or, from a terminal, a remote URL (https://, ssh://, " +
+			"git@host:path) cloned in memory; not over MCP"}
 }
 
-// cloneTimeout bounds a remote clone. Not a Field: every capability here
-// would need the same one, and the difference between "the URL is wrong"
-// and "the network is slow" is not a distinction worth a person deciding
-// per call — a generous, fixed budget covers both without asking.
-const cloneTimeout = 60 * time.Second
-
 // openRepo opens the repository at (or above) path, or clones it into memory
-// if path names a remote instead of a local one.
+// if path names a remote instead of a local one. Both halves of "remote" —
+// telling one apart from a local path, and who may ask for one — live in
+// builtin/internal/gitclone, because builtin/audit asks the same two
+// questions about the same URLs.
 //
-// The two are told apart by reusing go-git's own endpoint parser rather than
-// a hand-rolled prefix check: transport.NewEndpoint classifies a bare local
-// path as protocol "file" and anything else (https://, ssh://, an
-// scp-like git@host:path) as remote, which is the same classification the
-// git binary itself would reach for the same string — so "does this look
-// like a URL" is never answered twice, once here and once wrong.
+// No shallow clone here: `git log` and `git blame` are the history, and a
+// depth of one would answer them with a single commit.
 func openRepo(ctx context.Context, req plugin.Request) (*git.Repository, *view.Error) {
 	path := req.String("path")
-	if ep, err := transport.NewEndpoint(path); err == nil && ep.Protocol != "file" {
-		return cloneRepo(ctx, path)
+	if gitclone.IsRemote(path) {
+		if verr := gitclone.RefuseOverMCP(req, "repository"); verr != nil {
+			return nil, verr
+		}
+		return gitclone.InMemory(ctx, path, gitclone.Options{})
 	}
 	// **The repository is a path this handler derives, not one it was given.**
 	// DetectDotGit walks upward, which is what an operator standing in a
@@ -104,23 +101,6 @@ func openRepo(ctx context.Context, req plugin.Request) (*git.Repository, *view.E
 	if err != nil {
 		return nil, view.Errorf("git.notarepo", "%s is not a git repository: %v", path, err).
 			WithHint("run this against a directory inside a git repository, a checkout's own root, or a bare repository's own directory")
-	}
-	return repo, nil
-}
-
-// cloneRepo clones url entirely in memory — no working copy is left behind
-// on disk, matching every capability here being Read: nothing is kept that
-// would need cleaning up or could be found by someone else on the same
-// machine. Only unauthenticated (public) URLs are supported in this first
-// cut; a private repository fails with a clear reason rather than hanging
-// on a credential prompt nobody is there to answer.
-func cloneRepo(ctx context.Context, url string) (*git.Repository, *view.Error) {
-	cctx, cancel := context.WithTimeout(ctx, cloneTimeout)
-	defer cancel()
-	repo, err := git.CloneContext(cctx, memory.NewStorage(), memfs.New(), &git.CloneOptions{URL: url})
-	if err != nil {
-		return nil, view.Errorf("git.clone.failed", "cloning %s: %v", url, err).
-			WithHint("only unauthenticated (public) URLs are supported")
 	}
 	return repo, nil
 }

@@ -41,7 +41,7 @@ func allowing(t *testing.T, values map[string]any) (string, *view.Error) {
 
 // **The clamp is user-visible, so it is pinned.** Load already stops a grant
 // that outlives the ceiling, which is the enforcement; this is the other
-// half the ADR asks for — a ceiling that applies has to say so, and it has to
+// half of it — a ceiling that applies has to say so, and it has to
 // store what it says, or `grant list` shows a four-hour row that dies in
 // fifteen minutes.
 func TestATeamCeilingClampsTheTTLAndSaysWhichCeilingBit(t *testing.T) {

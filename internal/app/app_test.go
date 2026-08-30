@@ -478,6 +478,11 @@ func conformanceInputs(dir string) map[string]map[string]any {
 		// have proved nothing about the write. keys.backup gets an absent path
 		// because it writes nothing at all — it reads a key and prints words.
 		"keys.backup": {"key": filepath.Join(dir, "absent-key")},
+		// keys.add gets a path nothing occupies, so the dry run reaches the
+		// point where it would write and the watched-directory comparison has
+		// something to say about it. A path that already existed would be
+		// refused before that, which proves nothing about the write.
+		"keys.add": {"out": filepath.Join(dir, "generated")},
 		"keys.restore": {"out": filepath.Join(dir, "restored"), "words": strings.TrimSpace(
 			strings.Repeat("abandon ", 23) + "art")},
 

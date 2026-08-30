@@ -1538,7 +1538,13 @@ func TestThePluginPaneShowsWhatWasFoundAndNotRun(t *testing.T) {
 	if !strings.Contains(out, "2 installed") {
 		t.Errorf("the footer does not count the refused artifact:\n%s", out)
 	}
-	for _, want := range []string{"weather", "not run", "rta plugin trust weather"} {
+	// …and it says what to do about it. The pane used to name the shell
+	// command, on the reasoning that approving from inside a running TUI
+	// changes a file and loads nothing. It now offers the key instead and
+	// says the same sentence `rta plugin trust` says about the restart —
+	// what made the in-pane version sound broken was the missing sentence
+	// and not the missing restart.
+	for _, want := range []string{"weather", "not run", "press t to approve", "loads when rta restarts"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the pane never says %q:\n%s", want, out)
 		}

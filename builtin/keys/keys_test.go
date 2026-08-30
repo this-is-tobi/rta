@@ -9,6 +9,7 @@ import (
 	"encoding/pem"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -18,6 +19,32 @@ import (
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
+
+// capabilityByID looks one up by name rather than by position. The index
+// version carried its own staleness check and duly fired the day a
+// capability was inserted above it, which is a guard doing a lookup's job.
+// pairIn reads one labelled value out of a KeyValue view.
+func pairIn(t *testing.T, kv view.KeyValue, key string) string {
+	t.Helper()
+	for _, p := range kv.Pairs {
+		if p.Key == key {
+			return p.Value
+		}
+	}
+	t.Fatalf("no %q in %v", key, kv.Pairs)
+	return ""
+}
+
+func capabilityByID(t *testing.T, id string) plugin.Capability {
+	t.Helper()
+	for _, c := range Plugin().Capabilities {
+		if c.ID == id {
+			return c
+		}
+	}
+	t.Fatalf("no capability %q", id)
+	return plugin.Capability{}
+}
 
 func req(values map[string]any) plugin.Request {
 	return plugin.NewRequest(values, false, false)
@@ -353,10 +380,7 @@ func TestRestorePassphraseDoesNotCollideWithBackupsEnvVar(t *testing.T) {
 	}
 	out := filepath.Join(dir, "restored")
 
-	restoreCap := Plugin().Capabilities[2]
-	if restoreCap.ID != "keys.restore" {
-		t.Fatalf("Capabilities[2] = %q, want keys.restore (test index is stale)", restoreCap.ID)
-	}
+	restoreCap := capabilityByID(t, "keys.restore")
 	resolved := plugin.Resolve(restoreCap, plugin.Inputs{Caller: map[string]any{"out": out, "words": words}})
 	if got := resolved["new-passphrase"]; got != nil && got != "" {
 		t.Fatalf("new-passphrase resolved to %q from the backup capability's env var — collision is back", got)
@@ -934,7 +958,10 @@ func TestListReportsAnUnparseableKeyFileAsUnknownRatherThanCrashing(t *testing.T
 	if err := os.MkdirAll(sshDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(sshDir, "id_garbage"), []byte("not a key"), 0o600); err != nil {
+	// A key by its own preamble and garbage inside it: something went wrong
+	// with a real key, which is exactly what a listing must survive and say.
+	corrupt := "-----BEGIN OPENSSH PRIVATE KEY-----\nnot base64 at all\n-----END OPENSSH PRIVATE KEY-----\n"
+	if err := os.WriteFile(filepath.Join(sshDir, "id_garbage"), []byte(corrupt), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -946,6 +973,141 @@ func TestListReportsAnUnparseableKeyFileAsUnknownRatherThanCrashing(t *testing.T
 	if row[1] != "unknown" || row[2] != "no" || row[3] != "unknown" || row[4] != "-" {
 		t.Errorf("got %v", row)
 	}
+}
+
+// **And a file that is not a key at all is not a row.**
+//
+// It used to be one, reported as `unknown`, because the listing decided by
+// name: anything called id_* counted. `id_rsa.old`, a scratch file, an
+// editor's backup — each turned up looking like a key something had gone
+// wrong with. The distinction matters in both directions, which is why the
+// test above stayed: a corrupt key is news, a file that was never a key is
+// not.
+func TestListSkipsAFileThatIsNotAKeyHoweverItIsNamed(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	sshDir := filepath.Join(home, ".ssh")
+	if err := os.MkdirAll(sshDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{
+		"id_notes":       "just some notes\n",
+		"config":         "Host example\n  User me\n",
+		"known_hosts":    "example.com ssh-ed25519 AAAA\n",
+		"id_rsa.old.bak": "",
+	} {
+		if err := os.WriteFile(filepath.Join(sshDir, name), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	v, err := runList(context.Background(), req(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, isTable := v.(view.Table); isTable {
+		t.Errorf("a directory holding no keys produced a table of them: %v", v)
+	}
+}
+
+// **A key called anything else is still a key.**
+//
+// `ssh-keygen -f ~/.ssh/work_ed25519` is an ordinary thing to type and a
+// dotfiles repository symlinks keys under whatever names it likes — and a key
+// this capability cannot see is a key `keys.backup` cannot be pointed at,
+// which is the plugin's whole reason for existing.
+func TestListFindsAKeyThatIsNotCalledIdSomething(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	sshDir := filepath.Join(home, ".ssh")
+	if err := os.MkdirAll(sshDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(sshDir, "work_ed25519")
+	writeEd25519Keypair(t, sshDir, "work_ed25519", "")
+
+	v, err := runList(context.Background(), req(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tbl, isTable := v.(view.Table)
+	if !isTable || len(tbl.Rows) != 1 {
+		t.Fatalf("a key not named id_* was not listed: %v", v)
+	}
+	if tbl.Rows[0][0] != path {
+		t.Errorf("listed %q, want %q", tbl.Rows[0][0], path)
+	}
+	// And the completion offers it, or the listing found something the
+	// capability that acts on it cannot be pointed at.
+	offered := suggestPrivateKeys(context.Background(), req(nil))
+	if len(offered) != 1 || offered[0] != path {
+		t.Errorf("keys.backup would not complete to it: %v", offered)
+	}
+}
+
+// **Exposed is a column that comes and goes**, and its arrival is the
+// finding: ssh refuses a private key other accounts can read, so this is at
+// once a credential-exposure report and the answer to why that key stopped
+// working.
+func TestTheExposedColumnAppearsOnlyWhenAKeyIs(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX mode bits mean nothing here; the ACL is the real answer")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	sshDir := filepath.Join(home, ".ssh")
+	if err := os.MkdirAll(sshDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeEd25519Keypair(t, sshDir, "id_ed25519", "")
+
+	v, err := runList(context.Background(), req(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if has, _ := columnAt(v.(view.Table), "Exposed"); has {
+		t.Error("a directory of well-guarded keys still grew the column")
+	}
+
+	// Two grades, not one: ssh refuses both, but "every account on this
+	// machine" and "the group this file happens to be in" are different
+	// sizes of problem, and builtin/audit already tells them apart.
+	loose, _ := writeEd25519Keypair(t, sshDir, "id_shared", "")
+	if err := os.Chmod(loose, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	team, _ := writeEd25519Keypair(t, sshDir, "id_team", "")
+	if err := os.Chmod(team, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	v, err = runList(context.Background(), req(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tbl := v.(view.Table)
+	has, at := columnAt(tbl, "Exposed")
+	if !has {
+		t.Fatalf("a world-readable key did not raise the column: %v", tbl.Columns)
+	}
+	graded := map[string]string{loose: "world (0644)", team: "group (0640)"}
+	for _, row := range tbl.Rows {
+		want, listed := graded[row[0]]
+		if !listed {
+			want = "—"
+		}
+		if row[at] != want {
+			t.Errorf("%s: Exposed = %q, want %q", row[0], row[at], want)
+		}
+	}
+}
+
+func columnAt(t view.Table, name string) (bool, int) {
+	for i, c := range t.Columns {
+		if c.Name == name {
+			return true, i
+		}
+	}
+	return false, 0
 }
 
 // A corrupt .pub sibling used to leave a perfectly good, unencrypted
@@ -1068,5 +1230,143 @@ func TestPublishRestoredKeyDetectsAPubCollisionAfterThePrivateKeyIsAlreadyWritte
 	}
 	if _, err := os.Stat(out); err != nil {
 		t.Errorf("private key was not written despite succeeding before the .pub collision: %v", err)
+	}
+}
+
+// keys.add: a key that can always be melted, written where nothing was.
+
+// **Generated here means backupable here.** ed25519 and nothing else, which
+// is the same rule keys.backup enforces from the other end — a key this
+// plugin generated and could not back up would be a plugin failing at its own
+// job.
+func TestANewKeyIsOneThisPluginCanBackUp(t *testing.T) {
+	dir := t.TempDir()
+	out := filepath.Join(dir, "id_new")
+
+	v, err := runAdd(context.Background(), req(map[string]any{"out": out, "comment": "me@laptop"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, statErr := os.Stat(out + ".pub"); statErr != nil {
+		t.Errorf("no public key beside it: %v", statErr)
+	}
+
+	// The proof is the round trip, not the file's existence: back it up and
+	// restore it, and the fingerprints have to match.
+	backedUp, err := runBackup(context.Background(), req(map[string]any{"key": out}))
+	if err != nil {
+		t.Fatalf("a key this plugin generated could not be backed up: %v", err)
+	}
+	words := pairIn(t, backedUp.(view.Sections).Items[0].View.(view.KeyValue), "Words")
+	again := filepath.Join(dir, "id_again")
+	restored, err := runRestore(context.Background(), req(map[string]any{"out": again, "words": words}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := pairIn(t, v.(view.KeyValue), "Fingerprint")
+	b := pairIn(t, restored.(view.KeyValue), "Fingerprint")
+	if a != b {
+		t.Errorf("restored fingerprint %q, generated %q — the round trip is not the same key", b, a)
+	}
+}
+
+// The private key is not readable by anybody else, which `keys.list` would
+// otherwise report as Exposed the moment it was made.
+func TestANewKeyIsWrittenTightlyEnoughForSSHToUseIt(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX mode bits mean nothing here")
+	}
+	dir := t.TempDir()
+	out := filepath.Join(dir, "id_new")
+	if _, err := runAdd(context.Background(), req(map[string]any{"out": out})); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mode := info.Mode().Perm(); mode&0o077 != 0 {
+		t.Errorf("mode = %04o — ssh refuses a private key other accounts can read", mode)
+	}
+}
+
+// **Refusing to overwrite is the sharpest rule here.** A restore that
+// clobbered something could at least be redone from the words; this cannot,
+// because what it would destroy is access to everything the old key
+// authorised.
+func TestANewKeyNeverOverwritesAnything(t *testing.T) {
+	dir := t.TempDir()
+	out := filepath.Join(dir, "id_new")
+	if err := os.WriteFile(out, []byte("something precious\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := runAdd(context.Background(), req(map[string]any{"out": out}))
+	if errCode(err) != "keys.add.exists" {
+		t.Fatalf("code = %q, want keys.add.exists", errCode(err))
+	}
+	data, readErr := os.ReadFile(out)
+	if readErr != nil || string(data) != "something precious\n" {
+		t.Error("the file was touched anyway")
+	}
+
+	// And the same when only the .pub side is in the way, which is the half
+	// somebody notices later.
+	fresh := filepath.Join(dir, "id_fresh")
+	if err := os.WriteFile(fresh+".pub", []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runAdd(context.Background(), req(map[string]any{"out": fresh})); errCode(err) != "keys.add.exists" {
+		t.Errorf("an existing .pub did not stop it: %v", err)
+	}
+	if _, statErr := os.Stat(fresh); statErr == nil {
+		t.Error("the private key was written beside a .pub that was already there")
+	}
+}
+
+// The same gate keys.backup and keys.restore set: a key an agent generated is
+// a credential nobody watched being made.
+func TestGeneratingAKeyIsRefusedOverMCP(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "id_new")
+	_, err := runAdd(context.Background(),
+		req(map[string]any{"out": out}).WithSurface(plugin.SurfaceMCP))
+	if errCode(err) != "keys.human" {
+		t.Fatalf("code = %q, want keys.human", errCode(err))
+	}
+	if _, statErr := os.Stat(out); statErr == nil {
+		t.Error("a refused generation still wrote a key")
+	}
+}
+
+// --passphrase is never inherited from the environment, for the reason
+// keys.restore's --new-passphrase is not: generating a key is a one-off act,
+// not a standing credential for the session.
+func TestTheNewKeysPassphraseIsNeverReadFromTheEnvironment(t *testing.T) {
+	t.Setenv(plugin.LocalEnvVar("keys.backup", "passphrase"), "hunter2")
+	newCap := capabilityByID(t, "keys.add")
+	out := filepath.Join(t.TempDir(), "id_new")
+	resolved := plugin.Resolve(newCap, plugin.Inputs{Caller: map[string]any{"out": out}})
+	if got := resolved["passphrase"]; got != nil && got != "" {
+		t.Fatalf("passphrase resolved to %q from the environment", got)
+	}
+	if _, err := runAdd(context.Background(), plugin.NewRequest(resolved, false, false)); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ssh.ParseRawPrivateKey(data); err != nil {
+		t.Errorf("the key is passphrase-protected (%v) — the environment leaked in", err)
+	}
+}
+
+// **And there is no keys.rm**, which is a decision rather than an omission:
+// deleting a key file is irreversible loss of access, `rm` is a command
+// everybody already has, and the shell they run it in will ask.
+func TestThereIsNoCapabilityThatDeletesAKey(t *testing.T) {
+	for _, c := range Plugin().Capabilities {
+		if c.Safety == plugin.Destructive {
+			t.Errorf("%s is destructive — this plugin exists to make keys recoverable", c.ID)
+		}
 	}
 }

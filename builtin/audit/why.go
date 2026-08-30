@@ -48,21 +48,26 @@ func runWhy(ctx context.Context, req plugin.Request) (view.View, error) {
 	if path == "" {
 		path = "."
 	}
-	manifests, truncated, err := findManifests(path, req.Bool("recursive"))
+	proj, verr := openProject(ctx, req, path)
+	if verr != nil {
+		return nil, verr
+	}
+	names, shown, truncated, err := proj.manifests(req.Bool("recursive"))
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, view.Errorf("audit.why.nopath", "no such path: %s", path).
-				WithHint("pass the directory holding the lockfile or SBOM, or the file itself")
+				WithHint("pass the directory holding the lockfile or SBOM, the file itself, " +
+					"or a repository URL")
 		}
 		return nil, view.Errorf("audit.why.path", "reading %s: %v", path, err)
 	}
-	if len(manifests) == 0 {
-		return nil, view.Errorf("audit.why.nomanifest", "no lockfile or SBOM in %s", path).
+	if len(names) == 0 {
+		return nil, view.Errorf("audit.why.nomanifest", "no lockfile or SBOM in %s", remoteLabel(path)).
 			WithHint("reads what a project already declares, so one of these has to exist: " +
 				strings.Join(ecosystems, "; "))
 	}
 
-	inv := read(manifests)
+	inv := read(proj.fsys, names, shown)
 	found := matching(inv.all, name)
 	if len(found) == 0 {
 		return nil, notInstalled(name, inv)

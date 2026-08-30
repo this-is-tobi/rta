@@ -8,7 +8,9 @@ import (
 	tea "charm.land/bubbletea/v2"
 	huh "charm.land/huh/v2"
 
+	"github.com/this-is-tobi/rule-them-all/internal/config"
 	"github.com/this-is-tobi/rule-them-all/internal/recent"
+	"github.com/this-is-tobi/rule-them-all/internal/registry"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
@@ -27,6 +29,42 @@ func typeInto(f *huh.Form, s string) *huh.Form {
 	return f
 }
 
+// pressTab drives one tab the way a session does: into the model, which is
+// where the key's meaning is decided, and then whatever the press asked the
+// event loop to do next.
+//
+// These tests used to press it straight into the form, which was the same
+// thing only while huh's own Next binding still held tab. It does not: huh
+// tests Next before AcceptSuggestion and returns early when the value does
+// not validate, so binding both made tab a dead key on a required empty box
+// and a leave-the-field key on a completing one. Deciding here is the fix, and
+// a form driven around the model no longer sees it.
+func pressTab(t *testing.T, m Model) Model {
+	t.Helper()
+	next, cmd := m.Update(tabKey)
+	nm := next.(Model)
+	if cmd == nil {
+		return nm
+	}
+	msg := cmd()
+	if msg == nil {
+		return nm
+	}
+	next, _ = nm.Update(msg)
+	return next.(Model)
+}
+
+// formModel wraps a bare capForm in the model that dispatches its keys, for
+// the tests that build one directly.
+func formModel(t *testing.T, cf *capForm) Model {
+	t.Helper()
+	m := New(registry.New(), config.Dashboard{}, nil)
+	m.width, m.height = 100, 40
+	m.mode, m.form = modeForm, cf
+	m.form.form = startedForm(cf)
+	return m
+}
+
 // noHistory gives one test a data directory of its own, so what another test
 // happened to run does not turn up in this one's completion list. The package
 // as a whole already has one (TestMain); this narrows it to the test.
@@ -37,8 +75,12 @@ func noHistory(t *testing.T) {
 
 // startedForm inits the form the way a running program does, so the first
 // field is focused and huh has computed its first round of suggestions.
-func startedForm(cf *capForm) *huh.Form {
-	f := cf.form
+func startedForm(cf *capForm) *huh.Form { return startedHuhForm(cf.form) }
+
+// startedHuhForm is the same for a form this package builds outside capForm —
+// the theme editor, which answers tab by the same rule and so has to be
+// driveable by the same test.
+func startedHuhForm(f *huh.Form) *huh.Form {
 	if init := f.Init(); init != nil {
 		if msg, ok := resolveCmd(init); ok {
 			f = settleForm(f, msg)
@@ -74,8 +116,9 @@ func TestTabCompletesAField(t *testing.T) {
 	noHistory(t)
 	c := completingCap()
 	cf := newCapForm(c, c.Inputs, nil, true, nil)
-	f := typeInto(startedForm(cf), "kv.")
-	f = settleForm(f, tea.KeyPressMsg{Code: tea.KeyTab})
+	m := formModel(t, cf)
+	m.form.form = typeInto(m.form.form, "kv.")
+	m = pressTab(t, m)
 	if got := *cf.bindings["target"]; got != "kv.get" {
 		t.Errorf("after tab, target = %q, want kv.get", got)
 	}
@@ -83,16 +126,28 @@ func TestTabCompletesAField(t *testing.T) {
 
 // And the field below completes from the one above, as it is typed.
 //
-// One tab does both jobs: it takes the match and moves on, which is what tab
-// did before this app had completion at all.
+// **Two presses, and the second one is the point.** The first takes the match
+// and leaves the cursor where it is, so what was accepted is on screen and a
+// path or a coordinate can take its next segment; the second finds nothing
+// left to take and moves on. One press used to do both, which read as
+// efficient and cost the whole shell rhythm: a completion you never see, and
+// no way to complete twice in the same box.
 func TestTabCompletesFromWhatWasJustTyped(t *testing.T) {
 	noHistory(t)
 	c := completingCap()
 	cf := newCapForm(c, c.Inputs, nil, true, nil)
-	f := typeInto(startedForm(cf), "kv.")
-	f = settleForm(f, tea.KeyPressMsg{Code: tea.KeyTab})
-	f = typeInto(f, "kv.get-b")
-	f = settleForm(f, tea.KeyPressMsg{Code: tea.KeyTab})
+	m := formModel(t, cf)
+	m.form.form = typeInto(m.form.form, "kv.")
+
+	focused := m.form.form.GetFocusedField()
+	m = pressTab(t, m) // accepts "kv.get"
+	if m.form.form.GetFocusedField() != focused {
+		t.Fatal("the accept moved off the field — nothing shows what tab just took")
+	}
+	m = pressTab(t, m) // nothing extends it: on to the next field
+
+	m.form.form = typeInto(m.form.form, "kv.get-b")
+	m = pressTab(t, m)
 	if got := *cf.bindings["scope"]; got != "kv.get-beta" {
 		t.Errorf("after tab, scope = %q, want it completed from the target above it", got)
 	}
@@ -105,6 +160,11 @@ func TestTabCompletesFromWhatWasJustTyped(t *testing.T) {
 // every field somebody is tabbing through. With tab bound only to completion
 // it did nothing there, on every field of every form; on a masked box the text
 // typed next went into the password, where nothing on screen would show it.
+//
+// A masked box is the sharpest case for a second reason: it is never
+// completed at all (a suggestion list renders in plain text beside a box that
+// is masked on purpose), so it has no widget entry to fall back on and no
+// ghost to accept. Tab there is only ever "move on", and it has to be.
 func TestTabAlwaysMovesOnWhenThereIsNothingToComplete(t *testing.T) {
 	noHistory(t)
 	c := plugin.Capability{
@@ -116,9 +176,10 @@ func TestTabAlwaysMovesOnWhenThereIsNothingToComplete(t *testing.T) {
 		Run: func(context.Context, plugin.Request) (view.View, error) { return view.Text{}, nil },
 	}
 	cf := newCapForm(c, c.Inputs, nil, true, nil)
-	f := typeInto(startedForm(cf), "hunter2")
-	f = settleForm(f, tea.KeyPressMsg{Code: tea.KeyTab})
-	f = typeInto(f, "bob")
+	m := formModel(t, cf)
+	m.form.form = typeInto(m.form.form, "hunter2")
+	m = pressTab(t, m)
+	m.form.form = typeInto(m.form.form, "bob")
 
 	if got := *cf.bindings["password"]; got != "hunter2" {
 		t.Errorf("password = %q — the next field's text went into the masked box", got)

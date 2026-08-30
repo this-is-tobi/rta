@@ -114,7 +114,9 @@ func Render(w io.Writer, v view.View, opts Options) error {
 		if err != nil {
 			return err
 		}
-		out, err := yaml.Marshal(m)
+		// yamlSafe, because the encoder writes a tab into a plain scalar and
+		// every parser folds it away — see yamlsafe.go.
+		out, err := yaml.Marshal(yamlSafe(m))
 		if err != nil {
 			return err
 		}
