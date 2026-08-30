@@ -2,7 +2,9 @@ package note
 
 import (
 	"context"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
@@ -291,5 +293,32 @@ func TestShowIgnoresSelfReferences(t *testing.T) {
 	refs := section(t, show(t, 1), "references").(view.Table)
 	if len(refs.Rows) != 1 || refs.Rows[0][1] != "2" {
 		t.Errorf("references = %v, want only the real link", refs.Rows)
+	}
+}
+
+// The MCP bridge dispatches every tools/call in its own goroutine — see the
+// identical test and comment in builtin/todo.
+func TestConcurrentAddsDoNotLoseAWrite(t *testing.T) {
+	setup(t)
+	const n = 20
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			if _, err := runAdd(context.Background(),
+				req(map[string]any{"title": fmt.Sprintf("note %d", i)}, false)); err != nil {
+				t.Error(err)
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	s, err := load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Items) != n {
+		t.Fatalf("%d items landed, want %d — a concurrent add lost a write", len(s.Items), n)
 	}
 }

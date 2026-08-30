@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/this-is-tobi/rule-them-all/internal/atomicfile"
+	"github.com/this-is-tobi/rule-them-all/internal/filelock"
 	"github.com/this-is-tobi/rule-them-all/internal/paths"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
@@ -108,6 +109,36 @@ func Load(file, ns string) (Store, error) {
 		s.Items[i].LegacyText = ""
 	}
 	return s, nil
+}
+
+const (
+	lockStale   = 5 * time.Second
+	lockRetry   = 10 * time.Millisecond
+	lockTimeout = 2 * time.Second
+)
+
+// Lock serializes a read-modify-write cycle against file, across goroutines
+// and processes both.
+//
+// Load and Save are each atomic on their own — Save never leaves a
+// half-written file, and a concurrent Load sees the whole old content or
+// the whole new content, never a torn mix — but that says nothing about two
+// callers each doing Load, then deciding what to write, then Save: both can
+// read the same starting state, both compute their own change against it,
+// and the second Save simply overwrites the first with no error to either
+// caller, whichever change was made. Every write handler must hold this for
+// the whole of its own load-decide-save, not just call Load and Save
+// separately — this is not automatic, which is exactly how the race got in
+// (grant.Mutate exists in internal/grant for the identical reason, after
+// the identical bug: MCP dispatches every tools/call in its own goroutine,
+// so two calls racing is the ordinary case, not an exotic one).
+func Lock(file string) (release func(), err error) {
+	path := filepath.Join(dataDir(), file+".lock")
+	release, err = filelock.Acquire(path, lockStale, lockRetry, lockTimeout)
+	if err != nil {
+		return nil, fmt.Errorf("acquiring the %s lock: %w", file, err)
+	}
+	return release, nil
 }
 
 // Save writes the store atomically, so a crash mid-write cannot leave a

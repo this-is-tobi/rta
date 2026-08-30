@@ -2,8 +2,10 @@ package todo
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
@@ -211,13 +213,31 @@ func TestDryRunTouchesNothing(t *testing.T) {
 	}
 }
 
+// The response text alone cannot tell "already done, left alone" apart from
+// "marked done again": runDone's message is the task's title either way, so
+// it says nothing about whether the guard actually fired. Checked against
+// store state instead — DoneAt unchanged across the two calls — the same
+// way TestReopenUndoesDone already checks state rather than response text.
 func TestDoneIsIdempotent(t *testing.T) {
 	setup(t)
 	text(t, runAdd, map[string]any{"title": "x"}, false)
-	first := text(t, runDone, map[string]any{"id": 1}, false)
-	second := text(t, runDone, map[string]any{"id": 1}, false)
-	if first != second {
-		t.Errorf("done not idempotent: %q vs %q", first, second)
+	text(t, runDone, map[string]any{"id": 1}, false)
+	s, err := load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstDoneAt := s.Items[0].DoneAt
+	if firstDoneAt == nil {
+		t.Fatal("the first done call did not set DoneAt")
+	}
+
+	text(t, runDone, map[string]any{"id": 1}, false)
+	s, err = load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Items[0].DoneAt == nil || !s.Items[0].DoneAt.Equal(*firstDoneAt) {
+		t.Errorf("DoneAt moved on a second done call: %v -> %v", firstDoneAt, s.Items[0].DoneAt)
 	}
 }
 
@@ -660,5 +680,43 @@ func TestReopenDryRunChangesNothing(t *testing.T) {
 	text(t, runReopen, map[string]any{"id": 1}, true)
 	if s, _ := load(); !s.Items[0].Done {
 		t.Error("a dry run re-opened the task")
+	}
+}
+
+// The MCP bridge dispatches every tools/call in its own goroutine, so two
+// pipelined `todo_add` calls racing each other is the ordinary case, not an
+// exotic one. Before the load-decide-save cycle was locked, both could read
+// the same NextID, both append their own item, and the second Save simply
+// overwrite the first — the loser's task silently gone despite being told
+// it was added.
+func TestConcurrentAddsDoNotLoseAWrite(t *testing.T) {
+	setup(t)
+	const n = 20
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			if _, err := runAdd(context.Background(),
+				req(map[string]any{"title": fmt.Sprintf("task %d", i)}, false)); err != nil {
+				t.Error(err)
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	s, err := load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Items) != n {
+		t.Fatalf("%d items landed, want %d — a concurrent add lost a write", len(s.Items), n)
+	}
+	seen := map[int]bool{}
+	for _, item := range s.Items {
+		if seen[item.ID] {
+			t.Fatalf("two items share id %d: %+v", item.ID, s.Items)
+		}
+		seen[item.ID] = true
 	}
 }
