@@ -202,6 +202,30 @@ func TestAgentsCannotIssueGrants(t *testing.T) {
 	}
 }
 
+// The roster names every agent's grants by name — exactly the cross-agent
+// visibility an agent asking about itself must not get, and exactly the
+// same rule its allow/renew/revoke siblings already follow.
+func TestAgentsCannotListTheRoster(t *testing.T) {
+	setup(t)
+	run(t, allowH, map[string]any{"target": "kv.get", "agent": "other-agent"})
+
+	_, err := listH(context.Background(),
+		plugin.NewRequest(nil, false, true).WithSurface(plugin.SurfaceMCP))
+	var verr *view.Error
+	if !asError(err, &verr) {
+		t.Fatalf("err = %v, want a refusal", err)
+	}
+	if verr.Code != "grant.human" {
+		t.Errorf("code = %s", verr.Code)
+	}
+
+	// The same call from a human surface still works — this is a caller
+	// restriction, not a capability withdrawn from everyone.
+	if tbl, ok := run(t, listH, nil).(view.Table); !ok || len(tbl.Rows) != 1 {
+		t.Errorf("a human caller could not list the roster it is meant for: %v", tbl)
+	}
+}
+
 // The cap is the point: a grant whose whole purpose is expiring should not be
 // talked into lasting a week.
 func TestTTLIsCapped(t *testing.T) {

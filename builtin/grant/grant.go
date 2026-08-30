@@ -140,7 +140,10 @@ func Plugin(catalog func() []plugin.Capability) plugin.Plugin {
 				Description: "Readable without unlocking anything, so the question stays answerable " +
 					"in a hurry. Expired grants are dropped on read. With --detail: what is currently " +
 					"allowed, then everything an agent can reach with no grant at all, and everything " +
-					"that would need one — because \"what did I allow\" is only half of \"what can it do\".",
+					"that would need one — because \"what did I allow\" is only half of \"what can it do\". " +
+					"Can only be run by a person at a terminal, the same as grant.allow/renew/revoke: the " +
+					"roster names every agent by name, which is exactly the cross-agent visibility an " +
+					"agent asking about itself must not get.",
 				Run: func(ctx context.Context, req plugin.Request) (view.View, error) {
 					return runList(ctx, req, catalog)
 				},
@@ -758,6 +761,17 @@ func runRenew(_ context.Context, req plugin.Request) (view.View, error) {
 }
 
 func runList(ctx context.Context, req plugin.Request, catalog func() []plugin.Capability) (view.View, error) {
+	// The same rule grant.allow/renew/revoke already follow, for the reading
+	// side of it: the roster names every agent's grants, by name, which is
+	// exactly the cross-caller visibility an agent must not get from asking —
+	// a capability handler has no notion of "which agent is calling" to
+	// filter it down to (Request carries a Surface, not an identity), and
+	// this is the file consent state belongs to whoever is deciding it, not
+	// to whoever is currently allowed or denied.
+	if req.Surface() == plugin.SurfaceMCP {
+		return nil, view.Errorf("grant.human", "the grant roster is for the person deciding it, not the agents it is about").
+			WithHint("ask the operator to run: rta grant list")
+	}
 	held, verr := heldTable()
 	if verr != nil {
 		return nil, verr
