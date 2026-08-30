@@ -358,6 +358,16 @@ func fit(req *Request) ([]byte, error) {
 	if body, err = json.MarshalIndent(req, "", "  "); err != nil {
 		return nil, err
 	}
+	// The placeholder just re-added is itself bytes, and the check two steps
+	// up never accounted for them: a body that landed just under maxRequest
+	// with Preview/Why stripped can land back over it once this sentence
+	// goes back in. Unchecked, that body would still be written — by
+	// readRequestFile's own bound, a file rta's own writer produced and
+	// could never read back.
+	if len(body) > maxRequest {
+		return nil, fmt.Errorf("%w: %d bytes of arguments is more than a person can be shown",
+			ErrTooBig, len(body))
+	}
 	return body, nil
 }
 
@@ -485,6 +495,20 @@ func Scan() (Queue, error) {
 		id := strings.TrimSuffix(name, ".request.json")
 		r, ok := load(id)
 		if !ok {
+			// Nothing here will ever become a valid request: load fails only
+			// for a parse error, an id that does not match its own filename,
+			// or a file bigger than rta's own writer ever produces (all of
+			// which land only through this directory's other writer — see
+			// Honest's doc comment — since Ask writes atomically and this
+			// process's own files always parse) or a file that is simply
+			// gone by the time this got to it. A deadline is a property of a
+			// request Scan could actually read; there is no reason to wait
+			// on one for bytes that were never a request at all, and no
+			// sweep elsewhere in this package will ever reach these — the
+			// deadline sweep two lines below runs only for entries that
+			// parsed.
+			_ = os.Remove(requestPath(id))
+			_ = os.Remove(decisionPath(id))
 			continue
 		}
 		// A minute past the deadline the asker has certainly stopped

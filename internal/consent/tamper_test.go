@@ -193,6 +193,56 @@ func TestAnEnormousRequestFileIsNotReadIntoMemory(t *testing.T) {
 	}
 }
 
+// A request Scan cannot even parse — garbage JSON, or a file too big to be
+// genuine — was never removed before this fix: the deadline sweep only ran
+// for requests that parsed, so junk like this sat in the directory forever
+// and was re-read, and re-rejected, on every future Scan.
+func TestAnUnparsableRequestIsSweptRatherThanAccumulating(t *testing.T) {
+	isolate(t)
+	if err := os.MkdirAll(Dir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	garbage := requestPath("not-json")
+	if err := os.WriteFile(garbage, []byte("{not valid json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Scan(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(garbage); !os.IsNotExist(err) {
+		t.Fatal("an unparsable request survived a Scan")
+	}
+
+	// The oversized case, same story: real JSON, agrees with its own
+	// digest, too big to be genuine — and just as permanent as garbage once
+	// it is loaded and skipped instead of removed.
+	parked, err := Ask(aCall(), 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer parked.Close()
+	oversized, err := Ask(aCall(), 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer oversized.Close()
+	doctor(t, oversized.Request.ID, func(r *Request) {
+		r.Preview = strings.Repeat("x", maxRequest)
+	})
+
+	if _, err := Scan(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(requestPath(oversized.Request.ID)); !os.IsNotExist(err) {
+		t.Fatal("an oversized request survived a Scan")
+	}
+	// The genuine one beside it must not be swept too.
+	if _, err := os.Stat(requestPath(parked.Request.ID)); err != nil {
+		t.Fatalf("a genuine request was swept alongside the oversized one: %v", err)
+	}
+}
+
 func TestRtaNeverWritesARequestItWillNotReadBack(t *testing.T) {
 	// The self-inflicted version of the same bound, and the reason it needs
 	// its own test: no attacker is involved. A preview is a capability's own
@@ -242,6 +292,57 @@ func TestACallTooLargeToShowIsRefusedRatherThanShownInPart(t *testing.T) {
 	pending, _ := Pending()
 	if len(pending) != 0 {
 		t.Fatalf("something was parked anyway: %+v", pending)
+	}
+}
+
+// fit's own doc comment describes three sizes it tries in order: as asked,
+// with Preview/Why stripped, and — the one this test is about — with a
+// short "too long to show" placeholder put back into Why once stripping
+// alone was enough. That placeholder is itself bytes fit never accounted
+// for after re-adding it, so a body that fit exactly under the bound with
+// Why empty could be written back over it.
+func TestThePlaceholderPutBackIntoWhyIsStillCheckedAgainstTheBound(t *testing.T) {
+	// Binary search for the longest Args that (a) overflows with Preview in
+	// place, forcing fit() to strip it, but (b) still fits once it is gone —
+	// landing exactly on the boundary the placeholder-reinsertion step has
+	// to re-check, rather than failing at the already-tested check before it.
+	fits := func(argsLen int, withPreview bool) bool {
+		req := &Request{Cap: "kv.get", Args: map[string]any{"key": strings.Repeat("k", argsLen)}}
+		if withPreview {
+			req.Preview = strings.Repeat("p", 4000)
+		}
+		body, err := json.MarshalIndent(req, "", "  ")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(body) <= maxRequest
+	}
+	lo, hi := 0, maxRequest
+	for lo < hi {
+		mid := (lo + hi + 1) / 2
+		if fits(mid, false) {
+			lo = mid
+		} else {
+			hi = mid - 1
+		}
+	}
+	argsLen := lo // the largest Args that fits once Preview/Why are gone
+	if fits(argsLen, true) {
+		t.Fatal("test setup: Args alone should already overflow with Preview in place")
+	}
+
+	req := &Request{Cap: "kv.get", Args: map[string]any{"key": strings.Repeat("k", argsLen)},
+		Preview: strings.Repeat("p", 4000)}
+	body, err := fit(req)
+	if err != nil {
+		if !errors.Is(err, ErrTooBig) {
+			t.Fatalf("err = %v, want ErrTooBig", err)
+		}
+		return // fit correctly refused rather than writing an oversized body
+	}
+	if len(body) > maxRequest {
+		t.Fatalf("fit returned a %d-byte body, %d over its own %d-byte bound",
+			len(body), len(body)-maxRequest, maxRequest)
 	}
 }
 
