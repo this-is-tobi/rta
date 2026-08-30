@@ -33,7 +33,7 @@ Two more facts from the same run, both by design and both worth knowing:
 
 Three things, all of them real, and all of them conditional on the agent going through it.
 
-| | |
+| What MCP buys | Why |
 | --- | --- |
 | **A narrower interface** | With no flags, an MCP client sees read capabilities and nothing else. The same agent at a shell has everything you have. The tool list *is* the smaller surface |
 | **A record** | Every call over MCP is written to a chained, sealed ledger — arguments, outcome, and how it was authorized. Nothing else in rta writes to it |
@@ -93,7 +93,7 @@ The way to get there today is [one instance per person from a shared image](./20
 
 It is not free, and the costs are worth naming before anybody builds it:
 
-| | |
+| Cost | Why |
 | --- | --- |
 | **Paths change meaning** | `fs tree`, `git status` and `--root` would describe the *server's* filesystem. An agent working in your repository cannot use them, which is most of what people use an agent for |
 | **Consent needs somewhere to go** | `--consent` parks a call and waits for the person at the machine. Remote, there is no such person until something is built to reach them |
@@ -119,7 +119,7 @@ CAPABILITY  PROFILE  AGENT   RECORD  ORIGIN   EXPIRES IN  BUDGET LEFT
 kv.get      —        claude  any     command      59m43s  unlimited
 ```
 
-| Origin | |
+| Origin | What it means |
 | --- | --- |
 | `form` | issued from a TUI form |
 | `terminal` | issued at a command line with somebody on the other end of it |

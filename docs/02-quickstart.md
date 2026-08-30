@@ -14,7 +14,7 @@ cores  14 physical, 14 logical
 usage  62.5%
 ```
 
-Every capability works the same way, and there are 98 of them in the default build:
+Every capability works the same way, and there are 101 of them in the default build:
 
 ```bash
 rta sys overview            # grouped host health

@@ -22,7 +22,7 @@ Your inner loop does not need it at all: `rta plugin dev` compiles from a direct
 
 **Your binary's name is your namespace.** `rta-plugin-weather` declares `Name: "weather"`, and rta refuses it otherwise — the name an operator gave the file by installing it wins over the name the file gives itself, because anything on `$PATH` can claim to be anything — the same reason the artifact needs trusting before it runs at all. `rta plugin new` gets this right for you; `rta plugin dev` is exempt from both, so your inner loop does not care what the temporary binary is called.
 
-> **Before rta is published**, a scaffolded plugin needs a `replace` directive pointing at your rta checkout. `rta plugin new` adds one automatically when it can find one by walking up from your working directory or from the rta binary; otherwise pass `--rta-source <path>`. It tells you which happened.
+> A scaffolded plugin needs a `replace` directive pointing at your rta checkout, so its `go.mod` can resolve `pkg/sdk`. `rta plugin new` adds one automatically when it can find one by walking up from your working directory or from the rta binary; otherwise pass `--rta-source <path>`. It tells you which happened.
 
 ## The one thing to understand
 
@@ -246,14 +246,15 @@ Read them in this order and each one adds exactly one idea:
 | --- | --- | --- |
 | [`examples/plugin-hello`](../examples/plugin-hello/main.go) | The whole shape in one file — and the fixture rta's own host tests run against | 2 |
 | [`plugins/eol`](../plugins/eol/) | The smallest real one: a single capability over a public API, nothing to configure | 1 |
-| [`plugins/kube`](../plugins/kube/) | Shelling out to a tool the operator already has (`kubectl`) instead of linking its client library, and why | 10 |
+| [`plugins/kube`](../plugins/kube/) | Shelling out to a tool the operator already has (`kubectl`) instead of linking its client library, and why | 7 |
+| [`plugins/cnpg`](../plugins/cnpg/) | The opposite choice from `kube`: one plain API read against a Custom Resource instead of a shell-out, and declaring a credential [`Need`](#if-your-plugin-needs-a-credential-location) rather than assuming one | 2 |
 | [`plugins/mysql`](../plugins/mysql/) | A connection: declared inputs, a `Secret` a profile fills, an endpoint role a tunnel can fill | 7 |
 | [`plugins/mariadb`](../plugins/mariadb/) | Two plugins over one service family without either becoming a fork of the other | 9 |
 | [`plugins/pg`](../plugins/pg/) | Safety classes doing real work — three dumps graded by what a grant can name, one refusing MCP outright | 9 |
 | [`plugins/s3`](../plugins/s3/) | `Live` completion from the service itself, and a download that refuses any object key landing outside the directory you named | 13 |
 | [`plugins/vault`](../plugins/vault/) | A plugin where almost everything is a secret, and what that does to every declaration | 15 |
 | [`plugins/etcd`](../plugins/etcd/) · [`plugins/qdrant`](../plugins/qdrant/) | Tree views, and a plugin whose whole subject is a keyspace | 6 · 5 |
-| [`plugins/docker`](../plugins/docker/) | A local daemon socket rather than a network endpoint | 13 |
+| [`plugins/docker`](../plugins/docker/) | A local daemon socket rather than a network endpoint | 7 |
 
 `rta plugin new <name>` scaffolds one that builds, passes its conformance suite and runs, so none of these is where you start — they are where you look when your plugin needs the thing they already do.
 

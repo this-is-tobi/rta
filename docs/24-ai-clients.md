@@ -207,8 +207,8 @@ rta plugin list
 
 ```
 PLUGIN   CAPABILITIES   CAN           SUMMARY
-agent               6   write         What AI agents asked rta for, what they got, and what is waiting on you
-audit               4   read          Security hardening checks, each graded against a named OWASP/CWE control
+agent               7   write         What AI agents asked rta for, what they got, and what is waiting on you
+audit               5   read          Security hardening checks, each graded against a named OWASP/CWE control
 grant               4   write         Time-boxed permissions for AI agents
 kv                 13   destructive   Encrypted local store for secrets, certificates and key files
 ```
