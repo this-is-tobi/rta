@@ -699,3 +699,51 @@ func TestReleasingDoesNotRemoveSomebodyElsesLock(t *testing.T) {
 // tests — moved to internal/filelock/filelock_test.go along with the
 // mechanism; this package only exercises it indirectly, through
 // acquireLock and TestStaleLockIsReclaimed above.
+
+// **A ceiling only ever subtracts — Load's own comment says so, and
+// spending an unrelated grant must not be the thing that quietly breaks
+// that promise.**
+//
+// Before reachableNow existed, Reserve's locked write path re-read grants
+// through Load — which drops anything the current ceiling forbids — and
+// then saved that same dropped-from slice back over the whole file. A
+// grant the ceiling suppressed but had not revoked, sitting on disk right
+// next to a completely unrelated MaxUses grant, was deleted the instant
+// that unrelated grant was spent: routine traffic against one capability
+// erasing a consent record for another.
+func TestSpendingAnUnrelatedGrantDoesNotDeleteACeilingSuppressedOne(t *testing.T) {
+	setup(t)
+
+	// Both issued while there is no ceiling at all — an operator's ordinary
+	// consent, not a special case.
+	issue(t, Grant{Target: "pg.dump"})
+	issue(t, Grant{Target: "kv.get", Scope: "k", MaxUses: 1})
+
+	// The team tightens policy afterward. pg.dump's grant is now forbidden —
+	// Load will not authorize it — but it was never revoked, and Load's own
+	// doc comment promises relaxing the policy "brings it back rather than
+	// having thrown it away".
+	policyPath := filepath.Join(t.TempDir(), "policy.yaml")
+	if err := os.WriteFile(policyPath, []byte("never: [\"pg.dump\"]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("RTA_POLICY", policyPath)
+
+	// An ordinary, authorized call against the unrelated, use-limited grant
+	// — this is what routes Reserve through its locked write path.
+	c := declare("kv.get", plugin.Read, "k", true)
+	if verr := call(t, c, map[string]any{"k": "k"}, "", ""); verr != nil {
+		t.Fatalf("the unrelated call was refused: %v", verr)
+	}
+
+	all, verr := loadAll()
+	if verr != nil {
+		t.Fatal(verr)
+	}
+	for _, g := range all {
+		if g.Target == "pg.dump" {
+			return
+		}
+	}
+	t.Fatalf("the pg.dump grant was deleted from disk by an unrelated Reserve() spend: %+v", all)
+}
