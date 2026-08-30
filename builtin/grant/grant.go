@@ -379,7 +379,7 @@ func runAllow(_ context.Context, req plugin.Request, catalog func() []plugin.Cap
 	if verr != nil {
 		return nil, verr
 	}
-	ttl, asked, verr := parseTTL(req.String("ttl"), target)
+	ttl, asked, byPolicy, capWhere, verr := parseTTL(req.String("ttl"), target)
 	if verr != nil {
 		return nil, verr
 	}
@@ -445,10 +445,13 @@ func runAllow(_ context.Context, req plugin.Request, catalog func() []plugin.Cap
 	switch {
 	case ttl < asked:
 		// Which ceiling bit, because "capped" without a source sends somebody
-		// to change a flag that was never the problem.
-		if _, clamped, where := core.ClampTTL(asked); clamped {
+		// to change a flag that was never the problem. byPolicy and capWhere
+		// are parseTTL's own verdict — not re-derived from `asked` here a
+		// second time, which used to name the team's policy even when rta's
+		// own day was the tighter ceiling and the policy never applied at all.
+		if byPolicy {
 			msg += fmt.Sprintf("\ncapped at %s by your team's policy (you asked for %s) — %s",
-				ttl, asked, where)
+				ttl, asked, capWhere)
 		} else {
 			msg += fmt.Sprintf("\ncapped at the %s maximum (you asked for %s)", core.MaxTTL, asked)
 		}
@@ -560,25 +563,33 @@ func targetExists(catalog func() []plugin.Capability, target string) bool {
 }
 
 // parseTTL reads the requested lifetime and caps it.
-func parseTTL(raw, target string) (ttl, asked time.Duration, verr *view.Error) {
+//
+// byPolicy and where are core.ClampTTL's own verdict, computed here against
+// the same min(parsed, core.MaxTTL) that decides ttl — not left for a caller
+// to re-derive from the raw ask afterwards. A caller that re-asked the
+// question against `asked` instead of reusing this answer could disagree
+// with what was actually stored: rta's own day can already be the tighter of
+// the two ceilings, in which case the policy ceiling never even applies, and
+// checking the raw ask against it in isolation reports it as the cause
+// anyway.
+func parseTTL(raw, target string) (ttl, asked time.Duration, byPolicy bool, where string, verr *view.Error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return core.DefaultTTL, core.DefaultTTL, nil
+		return core.DefaultTTL, core.DefaultTTL, false, "", nil
 	}
 	parsed, err := time.ParseDuration(raw)
 	if err != nil {
-		return 0, 0, view.Errorf("grant.badttl", "%q is not a duration: %v", raw, err).
+		return 0, 0, false, "", view.Errorf("grant.badttl", "%q is not a duration: %v", raw, err).
 			WithHint("use a Go duration: 30s, 15m, 2h")
 	}
 	if parsed <= 0 {
-		return 0, 0, view.Errorf("grant.badttl", "a grant must last longer than zero").
+		return 0, 0, false, "", view.Errorf("grant.badttl", "a grant must last longer than zero").
 			WithHint("to take access away, use: rta grant revoke " + target)
 	}
 	// Two ceilings, and the tighter one wins: rta's own day, and whatever the
-	// team's policy file says. Reported through `asked` so the caller can name
-	// which one bit.
-	capped, _, _ := core.ClampTTL(min(parsed, core.MaxTTL))
-	return capped, parsed, nil
+	// team's policy file says.
+	capped, byPolicy, where := core.ClampTTL(min(parsed, core.MaxTTL))
+	return capped, parsed, byPolicy, where, nil
 }
 
 // suggestTTL offers the windows a grant is usually given, up to the ceiling
@@ -660,7 +671,7 @@ func runRenew(_ context.Context, req plugin.Request) (view.View, error) {
 	var ttl time.Duration
 	if askedTTL != "" {
 		var verr *view.Error
-		ttl, _, verr = parseTTL(askedTTL, target)
+		ttl, _, _, _, verr = parseTTL(askedTTL, target)
 		if verr != nil {
 			return nil, verr
 		}
@@ -1076,14 +1087,25 @@ func runRevoke(_ context.Context, req plugin.Request) (view.View, error) {
 			// other. Without this, `rta grant revoke pg --profile staging`
 			// would have removed the production grant too — the widest possible
 			// reading of the narrowest possible request.
-			if match && !all && profile != "" && g.Profile != profile {
+			//
+			// **Not guarded by !all**, on purpose, the same as scope above.
+			// --all's job is to stand in for a --target nobody typed — the
+			// first clause already does that — and it is not a second, wider
+			// meaning of --profile: `rta grant revoke --all --profile staging`
+			// still has to read as "every target, but only staging". Guarding
+			// this with !all instead made --all silently discard --profile
+			// too, so a request meant to clear one connection took every
+			// other one with it, and "revoked N grant(s)" gave no sign that
+			// --profile had been ignored.
+			if match && profile != "" && g.Profile != profile {
 				match = false
 			}
 			// And the same for an agent: `rta grant revoke kv --agent ci`
 			// takes back what one client was allowed and leaves the others
 			// alone. Without it the narrowest request would again do the
-			// widest thing.
-			if match && !all && agent != "" && g.Agent != agent {
+			// widest thing — and --all does not widen it either, for the
+			// reason given above.
+			if match && agent != "" && g.Agent != agent {
 				match = false
 			}
 			active := g.Active(now)

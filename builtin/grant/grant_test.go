@@ -290,6 +290,78 @@ func TestRevokeAll(t *testing.T) {
 	}
 }
 
+// --all stands in for a --target nobody typed; it is not a second, wider
+// meaning of --agent. `rta grant revoke --all --agent ci` has to read as
+// "every target, but only ci's" — the same way --all --scope already narrows
+// — and must leave a different agent's grants alone.
+func TestRevokeAllWithAgentNarrowsToThatAgent(t *testing.T) {
+	setup(t)
+	now := time.Now()
+	if verr := core.Save([]core.Grant{
+		{Target: "kv.get", Agent: "ci", Issued: now, Expires: now.Add(time.Hour)},
+		{Target: "todo.rm", Agent: "desktop", Issued: now, Expires: now.Add(time.Hour)},
+	}); verr != nil {
+		t.Fatal(verr)
+	}
+
+	body := run(t, runRevoke, map[string]any{"all": true, "agent": "ci"}).(view.Text).Body
+	if !strings.Contains(body, "revoked 1 grant") {
+		t.Errorf("body = %q, want exactly one grant revoked", body)
+	}
+	grants, _ := core.Load()
+	if len(grants) != 1 || grants[0].Agent != "desktop" {
+		t.Errorf("--all --agent ci also took desktop's grant: %+v", grants)
+	}
+}
+
+// The same guarantee for --profile: --all must narrow to the connection
+// named and leave grants on another connection standing.
+func TestRevokeAllWithProfileNarrowsToThatProfile(t *testing.T) {
+	setup(t)
+	now := time.Now()
+	if verr := core.Save([]core.Grant{
+		{Target: "kv.get", Profile: "staging", Issued: now, Expires: now.Add(time.Hour)},
+		{Target: "todo.rm", Profile: "prod", Issued: now, Expires: now.Add(time.Hour)},
+	}); verr != nil {
+		t.Fatal(verr)
+	}
+
+	body := run(t, runRevoke, map[string]any{"all": true, "profile": "staging"}).(view.Text).Body
+	if !strings.Contains(body, "revoked 1 grant") {
+		t.Errorf("body = %q, want exactly one grant revoked", body)
+	}
+	grants, _ := core.Load()
+	if len(grants) != 1 || grants[0].Profile != "prod" {
+		t.Errorf("--all --profile staging also took the prod grant: %+v", grants)
+	}
+}
+
+// --all with both narrowing flags at once takes the intersection, not the
+// union: only a grant matching *both* the named agent and the named profile.
+func TestRevokeAllWithAgentAndProfileNarrowsToBoth(t *testing.T) {
+	setup(t)
+	now := time.Now()
+	if verr := core.Save([]core.Grant{
+		{Target: "kv.get", Agent: "ci", Profile: "staging", Issued: now, Expires: now.Add(time.Hour)},
+		{Target: "kv.get", Agent: "ci", Profile: "prod", Issued: now, Expires: now.Add(time.Hour)},
+		{Target: "todo.rm", Agent: "desktop", Profile: "staging", Issued: now, Expires: now.Add(time.Hour)},
+	}); verr != nil {
+		t.Fatal(verr)
+	}
+
+	run(t, runRevoke, map[string]any{"all": true, "agent": "ci", "profile": "staging"})
+
+	grants, _ := core.Load()
+	if len(grants) != 2 {
+		t.Fatalf("grants = %+v, want the two that are not (ci, staging)", grants)
+	}
+	for _, g := range grants {
+		if g.Agent == "ci" && g.Profile == "staging" {
+			t.Errorf("the (ci, staging) grant survived: %+v", g)
+		}
+	}
+}
+
 // A row naming exactly the target can be gone while a wider grant still
 // authorizes every call that target would ever make. Reporting only whether
 // a matching row existed — without saying whether the target is actually

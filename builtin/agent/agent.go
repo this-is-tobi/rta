@@ -594,17 +594,23 @@ func runAllow(_ context.Context, req plugin.Request) (view.View, error) {
 // connection. A second mechanism that also authorizes calls would be a
 // second thing to audit.
 func alsoGrant(r consent.Request, ttl string) (string, *view.Error) {
-	d, err := time.ParseDuration(ttl)
+	asked, err := time.ParseDuration(ttl)
 	if err != nil {
 		return "", view.Errorf("agent.allow.ttl", "%q is not a duration", ttl).
 			WithHint("try 15m, 1h — the maximum is 24h")
 	}
-	if d <= 0 {
+	if asked <= 0 {
 		return "", view.Errorf("agent.allow.ttl", "a grant has to last longer than nothing")
 	}
-	if d > grant.MaxTTL {
-		d = grant.MaxTTL
-	}
+	// The same two ceilings grant.allow's own parseTTL applies, by the same
+	// call: rta's own day first, then whatever the team's policy file says.
+	// Skipping this made the answer given below a lie by omission —
+	// internal/grant.Load() re-applies the team's ceiling on every read
+	// regardless of what issued the grant, so a standing grant from here
+	// that outran a 15m policy stopped being honoured after 15m, with the
+	// "for the next 4h" this function had just told the operator never
+	// having said so.
+	d, byPolicy, where := grant.ClampTTL(min(asked, grant.MaxTTL))
 	scope := ""
 	if len(r.Scopes) == 1 {
 		scope = r.Scopes[0]
@@ -643,7 +649,18 @@ func alsoGrant(r consent.Request, ttl string) (string, *view.Error) {
 	if verr := grant.Issue(g, true); verr != nil {
 		return "", verr
 	}
-	return fmt.Sprintf("this call, and %s for the next %s", r.Cap, d), nil
+	note := fmt.Sprintf("this call, and %s for the next %s", r.Cap, d)
+	if d < asked {
+		// Which ceiling bit, the same distinction grant.allow's own message
+		// makes: "capped" with no source sends the operator to change a flag
+		// that was never the problem.
+		if byPolicy {
+			note += fmt.Sprintf("; capped at %s by your team's policy (you asked for %s) — %s", d, asked, where)
+		} else {
+			note += fmt.Sprintf("; capped at the %s maximum (you asked for %s)", grant.MaxTTL, asked)
+		}
+	}
+	return note, nil
 }
 
 func runDeny(_ context.Context, req plugin.Request) (view.View, error) {
