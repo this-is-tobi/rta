@@ -235,7 +235,7 @@ func load(req plugin.Request) (store, *view.Error) {
 	if err != nil {
 		return store{}, view.Errorf("kv.store.unreadable", "reading %s: %v", storePath(), err)
 	}
-	identities, verr := readKeys(req)
+	identities, verr := readKeys(req, data)
 	if verr != nil {
 		return store{}, verr
 	}

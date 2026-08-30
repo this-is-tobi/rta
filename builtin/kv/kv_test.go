@@ -1978,6 +1978,44 @@ func TestRekeyMovesAPassphraseStoreToAKey(t *testing.T) {
 	}
 }
 
+// kv.recipients decides key-vs-passphrase mode, and it is exactly as
+// writable as everything else in the data directory: by anyone who can
+// write there without ever holding a key or a passphrase. Appending even
+// one garbage line to it must not lock the legitimate passphrase holder
+// out of a store that is, underneath, unchanged and still
+// passphrase-encrypted — and must not block the one documented recovery
+// path either.
+func TestGarbageInRecipientsDoesNotLockOutTheRealPassphrase(t *testing.T) {
+	setup(t)
+	text(t, runSet, map[string]any{"key": "token", "value": "s3cr3t"}, false)
+
+	f, err := os.OpenFile(recipientsPath(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString("garbage-not-a-real-recipient\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	v, err := runGet(context.Background(), req(map[string]any{"key": "token"}, false))
+	if err != nil {
+		t.Fatalf("the correct passphrase was refused after garbage landed in kv.recipients: %v", err)
+	}
+	if v.(view.Text).Body != "s3cr3t" {
+		t.Fatalf("got %v", v)
+	}
+
+	// The documented recovery path must not be blocked by the same check.
+	if _, err := runRekey(context.Background(), req(map[string]any{
+		"only": true, "generate": true,
+	}, false)); err != nil {
+		t.Fatalf("kv rekey, the documented recovery, was itself blocked: %v", err)
+	}
+}
+
 // Writing an entry must never change who can read the store — that is the
 // whole reason `kv set` is a write and `kv rekey` is destructive.
 func TestSetCannotChangeTheLock(t *testing.T) {

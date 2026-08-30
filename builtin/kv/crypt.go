@@ -17,6 +17,7 @@
 package kv
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rsa"
@@ -524,7 +525,10 @@ func currentMode() (keyMode, []string, *view.Error) {
 // the caller supplies both a passphrase and an identity, and the store on
 // disk is still the passphrase-encrypted one. Choosing on the presence of
 // --identity would try the new key against the old file and fail.
-func readKeys(req plugin.Request) ([]age.Identity, *view.Error) {
+//
+// ciphertext is the store's own bytes, needed for the one case below where
+// what to trust cannot be decided from currentMode's say-so alone.
+func readKeys(req plugin.Request, ciphertext []byte) ([]age.Identity, *view.Error) {
 	mode, _, verr := currentMode()
 	if verr != nil {
 		return nil, verr
@@ -532,6 +536,36 @@ func readKeys(req plugin.Request) ([]age.Identity, *view.Error) {
 	if mode == modeKeys {
 		path := identityPath(req)
 		if path == "" {
+			// currentMode decided this from kv.recipients, which is exactly
+			// as writable as the rest of this file's own comments already
+			// say it is: by anyone who can write to the data directory
+			// without ever holding a key or a passphrase. Every other
+			// attack that capability enables here is about widening who
+			// can read the store; refusing outright at this point would
+			// let it do the opposite — deny the legitimate passphrase
+			// holder, on an unchanged, still passphrase-encrypted store,
+			// with the officially-hinted recovery (`kv rekey`) blocked by
+			// this identical check before its own logic ever runs.
+			//
+			// An explicit passphrase the caller supplied gets a real trial
+			// against the actual ciphertext before refusing — not merely
+			// constructed and trusted, which would accept literally any
+			// string: a scrypt identity always builds successfully
+			// regardless of whether the passphrase is right, so that check
+			// alone would silently turn "wrong passphrase against a
+			// genuinely key-mode store" into the same misleading answer
+			// this fix exists to avoid, just in the other direction. Only a
+			// passphrase that actually opens *this* ciphertext, right now,
+			// is trusted instead of what kv.recipients claims; anything
+			// else — including an ordinary wrong passphrase after a real
+			// rekey — falls through to the refusal below exactly as before.
+			if passphrase := lookupPassphrase(req); passphrase != "" {
+				if id, err := age.NewScryptIdentity(passphrase); err == nil {
+					if _, decErr := age.Decrypt(bytes.NewReader(ciphertext), id); decErr == nil {
+						return []age.Identity{id}, nil
+					}
+				}
+			}
 			return nil, view.Errorf("kv.identity.required", "this store is encrypted to keys, not a passphrase").
 				WithHint("pass --identity <your private key>, e.g. --identity ~/.ssh/id_ed25519 — `rta kv recipients` lists who can read it")
 		}

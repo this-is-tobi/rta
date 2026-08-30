@@ -65,6 +65,35 @@ func TestCopyIsRefusedOverMCPBeforeAnythingIsDecrypted(t *testing.T) {
 	}
 }
 
+// The success path itself: every other test in this file covers a reason
+// copyToClipboard is never reached (MCP, dry-run, no program, unknown key).
+// None of them read fakeClipboard's stdin file for anything but "does this
+// exist" — so a bug that copied the wrong entry's value, a truncated or
+// re-encoded one, or dropped the copy from the success path entirely while
+// still printing the confirmation message, would pass every test here.
+func TestCopyPutsTheExactStoredValueOnTheClipboard(t *testing.T) {
+	setup(t)
+	stdin, _ := fakeClipboard(t)
+	text(t, runSet, map[string]any{"key": "db-password", "value": "s3cr3t"}, false)
+	text(t, runSet, map[string]any{"key": "other-key", "value": "not-this-one"}, false)
+
+	body := text(t, runCopy, map[string]any{"key": "db-password"}, false)
+
+	got, err := os.ReadFile(stdin)
+	if err != nil {
+		t.Fatalf("nothing reached the clipboard program: %v", err)
+	}
+	if string(got) != "s3cr3t" {
+		t.Fatalf("clipboard stdin = %q, want %q", got, "s3cr3t")
+	}
+	if !strings.Contains(body, "db-password") {
+		t.Errorf("confirmation message does not name the key: %q", body)
+	}
+	if strings.Contains(body, "s3cr3t") {
+		t.Errorf("the confirmation message itself printed the value: %q", body)
+	}
+}
+
 func TestCopyDryRunLeavesTheClipboardAlone(t *testing.T) {
 	setup(t)
 	stdin, _ := fakeClipboard(t)
