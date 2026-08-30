@@ -324,6 +324,15 @@ func runAdd(_ context.Context, req plugin.Request) (view.View, error) {
 	if title == "" {
 		return nil, view.Errorf("note.add.empty", "note title is empty")
 	}
+	// Held across the whole load-decide-save below: two calls racing this
+	// (an ordinary pattern for pipelined MCP tool calls) can otherwise both
+	// read the same NextID and both save, with the loser's note silently
+	// gone despite being told it was added. See itemstore.Lock.
+	unlock, err := itemstore.Lock(storeFile)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
 	s, err := load()
 	if err != nil {
 		return nil, err
@@ -364,6 +373,12 @@ func runEdit(_ context.Context, req plugin.Request) (view.View, error) {
 		return nil, view.Errorf("note.edit.nochange", "nothing to change").
 			WithHint("pass --title, --body and/or --tag with the new content")
 	}
+	// Held across the whole load-decide-save below — see itemstore.Lock.
+	unlock, err := itemstore.Lock(storeFile)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
 	s, err := load()
 	if err != nil {
 		return nil, err
@@ -392,6 +407,12 @@ func runEdit(_ context.Context, req plugin.Request) (view.View, error) {
 }
 
 func runRemove(_ context.Context, req plugin.Request) (view.View, error) {
+	// Held across the whole load-decide-save below — see itemstore.Lock.
+	unlock, err := itemstore.Lock(storeFile)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
 	s, err := load()
 	if err != nil {
 		return nil, err
