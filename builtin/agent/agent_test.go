@@ -258,6 +258,32 @@ func TestAllowWithATTLAppliesTheTeamCeilingAndSaysSo(t *testing.T) {
 	}
 }
 
+// The bare "this call only" answer is the one place a live approval actually
+// executes the capability — see the comment beside grant.CheckCeiling in
+// runAllow. A `never` rule is documented as needing nobody's agreement, so it
+// has to stop this exactly as it already stops alsoGrant's --ttl branch,
+// tested above.
+func TestAllowIsRefusedWhenTheTeamCeilingForbidsTheTarget(t *testing.T) {
+	isolate(t)
+	withPolicy(t, "never:\n  - kv.get\n")
+	r := park(t, "kv.get", "db-password")
+
+	_, err := run(t, "agent.allow", map[string]any{"id": r.ID})
+	if err == nil {
+		t.Fatal("a ceiling-forbidden target was allowed")
+	}
+	ve, ok := err.(*view.Error)
+	if !ok || ve.Code != "grant.policy.refused" {
+		t.Fatalf("refused with %v, want the policy refusal", err)
+	}
+
+	// Refused, not silently consumed: the request is still there, exactly as
+	// if nobody had answered it yet, so `agent pending` still shows it.
+	if _, ok := consent.Find(r.ID); !ok {
+		t.Fatal("the parked request was consumed by a refused approval")
+	}
+}
+
 func TestATTLIsRefusedWhenNoSingleGrantWouldCoverTheCall(t *testing.T) {
 	isolate(t)
 	// Two records in one call: a standing grant either misses one or

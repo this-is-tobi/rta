@@ -566,6 +566,26 @@ func runAllow(_ context.Context, req plugin.Request) (view.View, error) {
 		return view.Text{Body: fmt.Sprintf("would allow %s (%s) for the agent waiting on request %s",
 			r.Cap, strings.Join(r.Scopes, " "), id)}, nil
 	}
+	// The team's ceiling binds a live "yes" exactly as it binds `grant allow`:
+	// `never`/`neverProfile` are documented as needing nobody's agreement, not
+	// as a default a rushed answer can override. Without this, a capability or
+	// connection the policy forbids outright still reached internal/mcp's
+	// askConsent — Reserve's refusal for "ceiling-suppressed" and "simply
+	// ungranted" is deliberately the same core.grant.required, so an agent
+	// cannot tell the two apart — and a bare `agent allow <id>` approved it
+	// with no ceiling check anywhere in the path; only the --ttl branch below,
+	// through alsoGrant, ever consulted the ceiling, and only after this
+	// approval had already run. Checked here, at the one place a live
+	// approval is minted, rather than duplicated where the call gets parked —
+	// a second gate that could disagree with this one is the mistake
+	// checkAgainst's own comment (internal/grant/grant.go) already names.
+	scope := ""
+	if len(r.Scopes) == 1 {
+		scope = r.Scopes[0]
+	}
+	if verr := grant.CheckCeiling(r.Cap, scope, r.Profile); verr != nil {
+		return nil, verr
+	}
 	if err := consent.Decide(id, true, "cli"); err != nil {
 		return nil, view.Errorf("agent.allow.failed", "%v", err)
 	}
