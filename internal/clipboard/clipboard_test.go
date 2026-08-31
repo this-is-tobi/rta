@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 // fakeClipboard puts a stand-in for every clipboard program this package
@@ -156,5 +157,61 @@ func TestWaylandIsPreferredByEnvironmentNotByWhatIsInstalled(t *testing.T) {
 	t.Setenv("WAYLAND_DISPLAY", "")
 	if first := Commands()[0].Name; first == "wl-copy" {
 		t.Error("wl-copy is first without a compositor to talk to")
+	}
+}
+
+// A program that never exits — a wrapped or shimmed binary stuck talking to
+// something that never answers — must not block Copy forever. Whichever
+// program Commands() tries first is stubbed, whatever its name on this
+// platform.
+//
+// The stub blocks unconditionally from its first line (no redirection or
+// other setup step to race first): however long spawning a shell takes
+// under host load, the program is guaranteed to still be blocked when
+// Copy's deadline arrives, so this does not depend on winning a timing
+// race against process-start latency the way an earlier version of this
+// test did — it flaked under `make ci`'s -race -shuffle=on ./... because
+// that cost is not free under contention.
+//
+// Copy runs on a goroutine with its own bound on how long the test is
+// willing to wait, deliberately shorter than Go's own default per-test
+// timeout: a real regression here should fail in seconds, not hang the
+// whole run for minutes before the test binary's own timeout kills it.
+func TestCopyDoesNotHangOnAProgramThatNeverExits(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the stand-in is a shell script")
+	}
+	old := timeout
+	timeout = 2 * time.Second
+	t.Cleanup(func() { timeout = old })
+
+	dir := t.TempDir()
+	name := Commands()[0].Name
+	script := "#!/bin/sh\ntail -f /dev/null\n"
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	type result struct {
+		ok     bool
+		failed []string
+	}
+	done := make(chan result, 1)
+	go func() {
+		ok, failed, _ := Copy([]byte("s3cr3t"))
+		done <- result{ok, failed}
+	}()
+
+	select {
+	case r := <-done:
+		if r.ok {
+			t.Fatal("Copy reported success for a program that never exited")
+		}
+		if len(r.failed) != 1 || !strings.Contains(r.failed[0], "timed out") {
+			t.Errorf("failed = %v, want the wedged program reported as timed out", r.failed)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("Copy did not return within 30s of a program that never exits — the timeout did not bound it")
 	}
 }
