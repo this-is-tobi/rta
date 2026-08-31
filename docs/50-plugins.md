@@ -159,6 +159,12 @@ Only then does it land: the managed store, the trust entry, and `rta.lock`, whic
 
 **Installing is the trust decision.** There is no separate `rta plugin trust` afterwards — you approved the artifact by installing it, having seen it verified.
 
+```bash
+rta plugin outdated
+```
+
+Lists what changed without upgrading anything: for each installed plugin, the version recorded at install time against what its index claims now. Cheap like search — nothing is fetched — so it is a hint worth a look, never a verdict. `rta plugin upgrade <name>` is what actually re-verifies against the bytes; a plugin respun under an unchanged version number is invisible to `outdated` for the same reason it would be invisible to a signature.
+
 ## What a plugin can and cannot do
 
 | A plugin… | Can it? |
