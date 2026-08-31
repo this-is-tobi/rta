@@ -19,11 +19,26 @@ package clipboard
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"runtime"
+	"time"
 )
+
+// timeout bounds each program's attempt. Every entry in Commands() is a
+// local subprocess rather than a network round trip, so this is generous
+// compared to internal/notify's DBus-derived 3 seconds — what this guards
+// against is not a slow answer but a wedged one: a wrapped or shimmed
+// binary that never returns, a compositor connection that never completes.
+// Without a bound, one wedged program blocks Copy forever instead of moving
+// on to the next entry in Commands() the way an outright failure already
+// does, silently turning "the installed program is broken" into "the call
+// never returns" — a frozen TUI, or a stuck MCP request for kv.copy.
+//
+// A var, not a const, so a test can shrink it rather than actually wait.
+var timeout = 5 * time.Second
 
 // Command is one program that can take bytes on stdin and put them on this
 // machine's clipboard.
@@ -88,10 +103,19 @@ func Copy(value []byte) (ok bool, failed, tried []string) {
 		if err != nil {
 			continue
 		}
-		cmd := exec.Command(path, c.args...)
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		cmd := exec.CommandContext(ctx, path, c.args...)
 		cmd.Stdin = bytes.NewReader(value)
-		if err := cmd.Run(); err != nil {
-			failed = append(failed, fmt.Sprintf("%s (%v)", c.Name, err))
+		harden(cmd)
+		cmd.Cancel = func() error { reap(cmd); return ctx.Err() }
+		err = cmd.Run()
+		cancel()
+		if err != nil {
+			if ctx.Err() != nil {
+				failed = append(failed, fmt.Sprintf("%s (timed out)", c.Name))
+			} else {
+				failed = append(failed, fmt.Sprintf("%s (%v)", c.Name, err))
+			}
 			continue
 		}
 		return true, failed, tried
