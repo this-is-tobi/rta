@@ -3,7 +3,7 @@
 // The questions a stub cannot answer, run against a real cluster.
 //
 //	kind create cluster --name rta-lab
-//	kubectl apply -f docs/examples/kube-lab.yaml
+//	kubectl apply -f internal/tunnel/testdata/kube-lab.yaml
 //	RTA_TEST_KUBE=kind-rta-lab/databases/svc/postgres:5432 \
 //	RTA_TEST_SECRET=postgres-creds \
 //	  go test ./internal/tunnel/ -tags livecluster -count=1 -v
@@ -19,15 +19,13 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"os/exec"
-	"strings"
 	"testing"
 	"time"
 )
 
-// The two questions the design left open, which needed a cluster.
+// The two questions the design left open, which needed a cluster — setup is
+// the package doc above. Scoped to just this test:
 //
-//	kind create cluster --name rta-lab
 //	go test ./internal/tunnel/ -tags livecluster -count=1 -run TestTunnelAgainstARealCluster -v
 
 func TestTunnelAgainstARealCluster(t *testing.T) {
@@ -200,65 +198,4 @@ func TestSecretFailuresAgainstARealCluster(t *testing.T) {
 			t.Logf("%s\n  %s\n  hint: %s", verr.Code, verr.Message, verr.Hint)
 		})
 	}
-}
-
-// The whole resolution path in one pass, against a real cluster: name a
-// service and the secret beside it, and rta resolves both — no port-forward
-// in another terminal, no credential copied into a shell.
-//
-// This is a prototype harness, not a shipped path: nothing is wired to a
-// surface yet, so the test does by hand what plugin.Resolve will do by
-// position once Field.Endpoint exists.
-//
-// Through psql rather than pgx. plugins/pg is a separate module precisely so
-// that the host never depends on a database driver, and adding one here for a
-// prototype test would undo that — `go mod tidy` put pgx in the host's own
-// require block the moment this file imported it.
-func TestATargetResolvesAConnectionEndToEnd(t *testing.T) {
-	spec := os.Getenv("RTA_TEST_KUBE")
-	if spec == "" {
-		t.Skip("set RTA_TEST_KUBE")
-	}
-	if _, err := exec.LookPath("psql"); err != nil {
-		t.Skip("psql is not on $PATH")
-	}
-	target := Target{
-		Kube:   spec,
-		Secret: os.Getenv("RTA_TEST_SECRET"),
-		From: map[string]string{
-			"user":     "username",
-			"password": "password",
-			"database": "database",
-		},
-	}
-	ctx := context.Background()
-
-	creds, verr := Secrets(ctx, "homelab-pg", target)
-	if verr != nil {
-		t.Fatalf("credentials: %v", verr)
-	}
-	tun, verr := Open(ctx, "homelab-pg", target)
-	if verr != nil {
-		t.Fatalf("tunnel: %v", verr)
-	}
-	defer tun.Close()
-
-	cmd := exec.CommandContext(ctx, "psql",
-		"-h", tun.Host, "-p", fmt.Sprint(tun.Port),
-		"-U", creds["user"], "-d", creds["database"],
-		"-At", "-c", "select current_database()||' as '||current_user")
-	// The password goes in the environment of one child, never in an argv
-	// and never through a shell — which is the shape the real path has too.
-	cmd.Env = append(os.Environ(), "PGPASSWORD="+creds["password"])
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("connect through the tunnel with the cluster's own credentials: %v\n%s", err, out)
-	}
-	got := strings.TrimSpace(string(out))
-	want := creds["database"] + " as " + creds["user"]
-	if got != want {
-		t.Errorf("connected as %q, want %q", got, want)
-	}
-	t.Logf("connected to %s through %s:%d — no port-forward, no exported password",
-		got, tun.Host, tun.Port)
 }
