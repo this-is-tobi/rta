@@ -5,7 +5,7 @@
       "release-type": "simple",
       "initial-version": "0.0.0",
       "include-component-in-tag": false,
-      "draft": true,
+      "draft": false,
       "force-tag-creation": true,
       "changelog-sections": [
         { "type": "feat", "section": "Features", "hidden": false },

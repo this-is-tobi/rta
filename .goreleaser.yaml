@@ -79,7 +79,6 @@ archives:
       # The whole user guide. docs/ holds nothing but user-facing material,
       # so shipping the directory ships a guide rather than a mixture.
       - docs/*.md
-      - docs/examples/*
 
 # A .deb and a .rpm beside the tarballs, and deliberately no hosted apt
 # repository behind them.
@@ -151,9 +150,18 @@ changelog:
       - "^docs:"
 
 release:
-  # Drafted rather than published. A release is the moment a digest-pinning
-  # tool's own artifacts become the thing everybody pins, so it gets read
-  # before it is public.
+  # Drafted rather than published — a backstop for the one path this actually
+  # governs: GoReleaser creating a release itself, which only happens outside
+  # cd.yml's pipeline (a manual `goreleaser release` run with no
+  # release-please ahead of it). A release built that way skipped the
+  # PR-merge review a normal one gets, so it stays a human's decision to
+  # publish.
+  #
+  # Inert in cd.yml itself: release-please always creates the release first
+  # there, GoReleaser finds it via mode: keep-existing below and only attaches
+  # assets. release-please-config.json's own "draft" (false) is what actually
+  # decides in that pipeline — merging the PR is the review, so it publishes
+  # immediately.
   draft: true
   prerelease: auto
   # The default, made explicit because cd.yml now depends on it: release-please

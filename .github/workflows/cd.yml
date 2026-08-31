@@ -8,11 +8,12 @@
 # to keep-existing, so it never touches the notes release-please already
 # wrote, only the assets.
 #
-# The draft is the point, not an accident of composing the two. rta's own
-# .goreleaser.yaml already says why: "a release is the moment a digest-pinning
-# tool's own artifacts become the thing everybody pins, so it gets read before
-# it is public." Nothing here publishes it — that stays a human clicking
-# "Publish release" once the binaries and the notes both look right.
+# Published immediately, not draft: merging a PR into main is the review gate
+# — a release-please "chore(main): release" PR included — so a second manual
+# "click publish" step afterward is ceremony the merge already did. See
+# .goreleaser.yaml for why its own `draft: true` doesn't contradict this: it
+# is a backstop for a release built outside this pipeline, not what governs
+# here.
 #
 # main only, on purpose: no develop branch, no prerelease channel. Revisit if
 # that stops being enough.
