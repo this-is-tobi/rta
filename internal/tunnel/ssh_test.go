@@ -114,6 +114,49 @@ func TestSSHCloseEndsTheListenerAndTheChildren(t *testing.T) {
 	}
 }
 
+// spliceSSH creates its pipes (cmd.StdinPipe/StdoutPipe — real os.Pipe()
+// pairs) before it ever checks t.closing under the lock. Racing acceptSSH's
+// goroutine spawn against a Close is what produces this in production; here
+// closing is simply set before spliceSSH is ever called, which hits the
+// exact same early return deterministically, many times over, to turn a
+// couple of leaked fds per call into a difference /dev/fd can actually see.
+func TestSpliceSSHClosesItsPipesOnTheClosingRace(t *testing.T) {
+	if _, err := os.Stat("/dev/fd"); err != nil {
+		t.Skip("no /dev/fd on this platform")
+	}
+	fakeSSH(t, "exec cat\n")
+	openFDs := func() int {
+		t.Helper()
+		entries, err := os.ReadDir("/dev/fd")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(entries)
+	}
+
+	tun := &Tunnel{closing: true}
+	spec := sshSpec{host: "bastion", dest: "vault.internal:8200"}
+
+	before := openFDs()
+	const n = 50
+	for i := 0; i < n; i++ {
+		client, server := net.Pipe()
+		// acceptSSH's own half of the contract spliceSSH relies on: Add
+		// before the goroutine spawn, Done as spliceSSH's first deferred
+		// call — see ssh.go:247/257.
+		tun.served.Add(1)
+		tun.spliceSSH(context.Background(), spec, server)
+		_ = client.Close()
+		_ = server.Close()
+	}
+	after := openFDs()
+
+	if after > before+5 {
+		t.Fatalf("open fds went from %d to %d after %d calls that each hit the closing race — "+
+			"the pipes spliceSSH creates before checking t.closing are not being closed", before, after, n)
+	}
+}
+
 func TestSSHCloseIsIdempotent(t *testing.T) {
 	fakeSSH(t, "exec cat\n")
 	tun, verr := Open(context.Background(), "bastion-vault", Target{SSH: bastion})
