@@ -156,6 +156,12 @@ release:
   # before it is public.
   draft: true
   prerelease: auto
+  # The default, made explicit because cd.yml now depends on it: release-please
+  # creates the draft and writes its own changelog into it first, and this is
+  # what stops GoReleaser from overwriting those notes with the changelog block
+  # below when it attaches the binaries. replace would discard release-please's
+  # notes silently on every release.
+  mode: keep-existing
   footer: |
     ## Verifying what you just downloaded
 

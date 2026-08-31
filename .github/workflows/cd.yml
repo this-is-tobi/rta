@@ -1,0 +1,56 @@
+# Two things create a release, in order, and neither is allowed to own both
+# halves. release-please computes the version from conventional commits,
+# writes the changelog, and opens the release as a draft — force-tag-creation
+# is what makes the tag exist the moment the draft does, rather than only once
+# somebody publishes it, which is what release-go.yml needs to have anything
+# to build. GoReleaser then builds every target this repository ships and
+# attaches them to that same draft: release.mode in .goreleaser.yaml defaults
+# to keep-existing, so it never touches the notes release-please already
+# wrote, only the assets.
+#
+# The draft is the point, not an accident of composing the two. rta's own
+# .goreleaser.yaml already says why: "a release is the moment a digest-pinning
+# tool's own artifacts become the thing everybody pins, so it gets read before
+# it is public." Nothing here publishes it — that stays a human clicking
+# "Publish release" once the binaries and the notes both look right.
+#
+# main only, on purpose: no develop branch, no prerelease channel. Revisit if
+# that stops being enough.
+name: CD
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  release:
+    name: Release please
+    uses: this-is-tobi/github-workflows/.github/workflows/release-app.yml@v0
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    # Neither secret needs to exist yet: unset, this falls through to the
+    # job's own GITHUB_TOKEN, which is enough to open and update the release
+    # pull request. What it buys once a GitHub App is set up (see
+    # github-workflows/docs/05-authentication.md) is that pull request
+    # actually running this repository's own CI, which GITHUB_TOKEN-opened
+    # pull requests cannot trigger.
+    secrets:
+      APP_CLIENT_ID: ${{ secrets.APP_CLIENT_ID }}
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+
+  binaries:
+    name: Release binaries
+    needs: [release]
+    if: ${{ needs.release.outputs.release-created == 'true' }}
+    uses: this-is-tobi/github-workflows/.github/workflows/release-go.yml@v0
+    permissions:
+      contents: write
+      # Not packages: write. rta's .goreleaser.yaml has no `dockers:` block —
+      # nothing in this release pushes an image — so the one thing that
+      # permission would grant is left at the workflow's implicit `none`
+      # rather than requested and unused.
+    secrets:
+      APP_CLIENT_ID: ${{ secrets.APP_CLIENT_ID }}
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
