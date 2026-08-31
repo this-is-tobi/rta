@@ -126,19 +126,16 @@ func newPluginAllowCommand(opts *globalOpts) *cobra.Command {
 			if verr != nil {
 				return verr
 			}
-			stored := make([]string, len(want))
-			for i, n := range want {
-				stored[i] = string(n)
-			}
-			if verr := plugintrust.Allow(c.Identity.Digest, stored); verr != nil {
+			union := mergedAllow(plugintrust.Load().Allowed(c.Identity.Digest), want)
+			if verr := plugintrust.Allow(c.Identity.Digest, union); verr != nil {
 				return verr
 			}
 			pairs := []view.Pair{
 				{Key: "allowed", Value: c.Declared.Name},
 				{Key: "digest", Value: c.Identity.Digest},
 			}
-			for _, n := range want {
-				pairs = append(pairs, view.Pair{Key: "may read", Value: needLine(n)})
+			for _, loc := range union {
+				pairs = append(pairs, view.Pair{Key: "may read", Value: needLine(plugin.Need(loc))})
 			}
 			pairs = append(pairs, view.Pair{Key: "next",
 				Value: "it applies on your next `rta` command — the plugin is relaunched with " +
@@ -291,6 +288,26 @@ func chosenNeeds(name string, asked []string, declared []plugin.Need) ([]plugin.
 		}
 	}
 	return out, nil
+}
+
+// mergedAllow unions want into had, so a second `allow` naming a different
+// location adds to what an earlier one already granted rather than
+// replacing it.
+//
+// plugintrust.Allow stores exactly the list it is given, and disallow is
+// its own command "because taking access away has to be something somebody
+// typed on purpose" (see its own doc comment). allow calling Allow with
+// only the locations named in one invocation would silently withdraw
+// whatever an earlier call had granted — the same removal disallow exists
+// to make deliberate, reached by accident instead.
+func mergedAllow(had []string, want []plugin.Need) []string {
+	union := append([]string{}, had...)
+	for _, n := range want {
+		if !slices.Contains(union, string(n)) {
+			union = append(union, string(n))
+		}
+	}
+	return union
 }
 
 // needLine is a need and the path it names, because "kubeconfig" is the label

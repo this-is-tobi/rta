@@ -545,3 +545,48 @@ func TestTheDevReportSaysWhatItAllowedAndWhatInstallingWillNot(t *testing.T) {
 		t.Errorf("a plugin that asks for nothing has a credentials line:\n%s", buf.String())
 	}
 }
+
+// A second `allow` naming a different location must add to what an earlier
+// one granted, not replace it — disallow is its own command specifically
+// because taking access away is meant to be deliberate, and Allow itself
+// stores exactly the list it is given.
+func TestMergedAllowAddsRatherThanReplaces(t *testing.T) {
+	had := []string{"kv.file"}
+	want := []plugin.Need{"net.hosts"}
+
+	got := mergedAllow(had, want)
+
+	if !slices.Contains(got, "kv.file") {
+		t.Errorf("mergedAllow(%v, %v) = %v, dropped a location an earlier call already granted",
+			had, want, got)
+	}
+	if !slices.Contains(got, "net.hosts") {
+		t.Errorf("mergedAllow(%v, %v) = %v, missing the newly requested location", had, want, got)
+	}
+}
+
+// Asking again for something already allowed must not duplicate it — the
+// list plugintrust.Allow stores is what a report reads back and what a
+// person sees in `rta plugin allow` with no arguments.
+func TestMergedAllowDoesNotDuplicate(t *testing.T) {
+	had := []string{"kv.file"}
+	want := []plugin.Need{"kv.file"}
+
+	got := mergedAllow(had, want)
+
+	if len(got) != 1 {
+		t.Errorf("mergedAllow(%v, %v) = %v, want the one location once", had, want, got)
+	}
+}
+
+// With nothing previously allowed, the result is exactly what was asked
+// for — merging with an empty set must not itself introduce anything.
+func TestMergedAllowWithNothingPreviouslyAllowed(t *testing.T) {
+	want := []plugin.Need{"kv.file", "net.hosts"}
+
+	got := mergedAllow(nil, want)
+
+	if len(got) != 2 || !slices.Contains(got, "kv.file") || !slices.Contains(got, "net.hosts") {
+		t.Errorf("mergedAllow(nil, %v) = %v, want exactly the two requested", want, got)
+	}
+}
