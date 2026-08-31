@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -123,6 +124,43 @@ func TestValidateFailures(t *testing.T) {
 		{"port without host", func(p *Plugin) {
 			p.Capabilities[0].Inputs = []Field{{Name: "port", Type: Int, Local: true, Config: "port", Endpoint: EndpointPort}}
 		}, "no input takes host"},
+		// Every identifier regex (nameRe, idRe, fieldRe, configKeyRe)
+		// constrains character set but not length, so nothing before this
+		// stopped a declaration built to be pathological rather than typed
+		// by hand — a plugin author never writes a name this long, but
+		// nothing checked that until now.
+		{"plugin name too long", func(p *Plugin) {
+			p.Name = strings.Repeat("a", maxIdentifier+1)
+		}, "characters, want at most"},
+		{"capability id too long", func(p *Plugin) {
+			p.Capabilities[0].ID = "demo." + strings.Repeat("a", maxIdentifier)
+		}, "characters, want at most"},
+		{"field name too long", func(p *Plugin) {
+			p.Capabilities[0].Inputs = []Field{{Name: strings.Repeat("a", maxIdentifier+1), Type: String}}
+		}, "characters, want at most"},
+		{"config key too long", func(p *Plugin) {
+			p.Capabilities[0].Inputs = []Field{
+				{Name: "target", Type: String, Config: strings.Repeat("a", maxIdentifier+1)},
+			}
+		}, "characters, want at most"},
+		// Unlike capability count (see text.go's own comment on why that is
+		// deliberately not bounded here), one capability's own input list
+		// and one field's own enum have no downstream mechanism that
+		// absorbs an unbounded count the way many capabilities does.
+		{"too many inputs", func(p *Plugin) {
+			inputs := make([]Field, maxInputs+1)
+			for i := range inputs {
+				inputs[i] = Field{Name: fmt.Sprintf("f%d", i), Type: String}
+			}
+			p.Capabilities[0].Inputs = inputs
+		}, "declares 65 inputs"},
+		{"too many options", func(p *Plugin) {
+			opts := make([]string, maxOptions+1)
+			for i := range opts {
+				opts[i] = fmt.Sprintf("o%d", i)
+			}
+			p.Capabilities[0].Inputs = []Field{{Name: "choice", Type: String, Options: opts}}
+		}, "declares 257 options"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

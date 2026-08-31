@@ -31,6 +31,29 @@ var (
 	fieldTypes = []FieldType{String, Int, Bool, Float, StringSlice, Text, Path, Secret}
 )
 
+// maxIdentifier bounds a plugin name, a capability ID, a field name and a
+// config key — every machine-facing identifier idRe, nameRe, fieldRe and
+// configKeyRe constrain by character set but not by length. 64 matches the
+// bound this codebase already uses for a short, human-typed name elsewhere
+// (internal/mcp's client and credential names, internal/grant's agent
+// name): generous for anything a person would actually write — the longest
+// real capability ID in this repo is under 20 — while still a real ceiling
+// on a declaration built to be pathological rather than typed by hand.
+const maxIdentifier = 64
+
+// maxInputs and maxOptions bound one capability's own input list and one
+// field's own enum, unlike the deliberate absence of a cap on how many
+// capabilities a plugin may declare (see text.go's own comment on that: the
+// fix for volume there is downstream, in the MCP bridge). Neither of those
+// has the same escape hatch. A single tool's own JSON Schema is one object,
+// not a list the bridge can reorder or paginate across, so a capability
+// with thousands of inputs or a field with thousands of options has no
+// place downstream to absorb the cost the way many capabilities does.
+const (
+	maxInputs  = 64
+	maxOptions = 256
+)
+
 // FieldTypes returns every type an input may declare, in the order the
 // rejection message lists them.
 //
@@ -72,6 +95,9 @@ func fieldTypeList() string {
 func (p Plugin) Validate() error {
 	if !nameRe.MatchString(p.Name) {
 		return fmt.Errorf("plugin name %q: must be lowercase [a-z0-9-]", p.Name)
+	}
+	if len(p.Name) > maxIdentifier {
+		return fmt.Errorf("plugin name %q is %d characters, want at most %d", p.Name, len(p.Name), maxIdentifier)
 	}
 	if why, reserved := reservedNamespaces[p.Name]; reserved {
 		return fmt.Errorf("plugin name %q is reserved by the host (%s); pick another namespace",
@@ -135,8 +161,14 @@ func (c Capability) validate(ns string) error {
 	if !idRe.MatchString(c.ID) {
 		return fmt.Errorf("capability ID %q: want 2-3 lowercase dot-separated segments", c.ID)
 	}
+	if len(c.ID) > maxIdentifier {
+		return fmt.Errorf("capability ID %q is %d characters, want at most %d", c.ID, len(c.ID), maxIdentifier)
+	}
 	if !strings.HasPrefix(c.ID, ns+".") {
 		return fmt.Errorf("capability %q: ID must start with plugin namespace %q", c.ID, ns)
+	}
+	if len(c.Inputs) > maxInputs {
+		return fmt.Errorf("capability %q declares %d inputs, want at most %d", c.ID, len(c.Inputs), maxInputs)
 	}
 	if c.Summary == "" {
 		return fmt.Errorf("capability %q: summary is required", c.ID)
@@ -158,6 +190,10 @@ func (c Capability) validate(ns string) error {
 	for _, f := range c.Inputs {
 		if !fieldRe.MatchString(f.Name) {
 			return fmt.Errorf("capability %q: field name %q must be lowercase [a-z0-9-]", c.ID, f.Name)
+		}
+		if len(f.Name) > maxIdentifier {
+			return fmt.Errorf("capability %q: field name %q is %d characters, want at most %d",
+				c.ID, f.Name, len(f.Name), maxIdentifier)
 		}
 		// Two fields sharing a name is not a harmless typo: declareFlags
 		// registers one pflag.Flag per input in declaration order, and the
@@ -268,6 +304,10 @@ func (c Capability) validate(ns string) error {
 				return fmt.Errorf("capability %q: input %q has config key %q; want dot-separated lowercase segments",
 					c.ID, f.Name, f.Config)
 			}
+			if len(f.Config) > maxIdentifier {
+				return fmt.Errorf("capability %q: input %q has config key %q, %d characters, want at most %d",
+					c.ID, f.Name, f.Config, len(f.Config), maxIdentifier)
+			}
 			// Refused rather than quietly ignored, and the message names the
 			// alternative, because an author who reaches for this is trying
 			// to solve a real problem and needs to be pointed at the path
@@ -358,6 +398,10 @@ func (c Capability) validate(ns string) error {
 		}
 		if err := checkBounds(c.ID, f); err != nil {
 			return err
+		}
+		if len(f.Options) > maxOptions {
+			return fmt.Errorf("capability %q: input %q declares %d options, want at most %d",
+				c.ID, f.Name, len(f.Options), maxOptions)
 		}
 		for _, o := range f.Options {
 			// Options are published as an MCP enum and drawn as a select, so
