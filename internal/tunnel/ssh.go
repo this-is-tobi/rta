@@ -272,12 +272,38 @@ func (t *Tunnel) spliceSSH(ctx context.Context, spec sshSpec, conn net.Conn) {
 	// parked until the deferred conn.Close below fires, which is the point: a
 	// child that died must not leave the caller holding a connection nothing
 	// will ever answer.
+	//
+	// Checking t.closing, not just holding the lock, is why this is deferred
+	// until here rather than done up front alongside StdinPipe/StdoutPipe.
+	// Those calls stash a *child*-side fd apiece in cmd's own unexported
+	// bookkeeping (parentIOPipes' counterpart) that only Start (or its
+	// own failure-cleanup, when Start itself errors) ever closes — there is
+	// no public way to release them otherwise. Creating the pipes before
+	// knowing whether Start will ever run left exactly those fds leaked
+	// every time this goroutine lost the race against a Close that set
+	// t.closing first: two pipes, one child-side fd apiece, gone with
+	// nothing left holding a reference to close them.
+	//
+	// Starting and registering are one critical section, and that is the
+	// second half of the gate in acceptSSH. Held apart, teardown can snapshot
+	// between them and reap a child whose Process is still nil — a no-op reap
+	// racing Start's write, after which the process launches *behind* the
+	// kill pass and survives teardown. Under the lock, a child in the map is
+	// a started child, and once closing is set nothing starts at all — and
+	// now nothing so much as opens a pipe, either.
+	t.mu.Lock()
+	if t.closing {
+		t.mu.Unlock()
+		return
+	}
 	in, ierr := cmd.StdinPipe()
 	if ierr != nil {
+		t.mu.Unlock()
 		return
 	}
 	out, oerr := cmd.StdoutPipe()
 	if oerr != nil {
+		t.mu.Unlock()
 		_ = in.Close()
 		return
 	}
@@ -286,26 +312,17 @@ func (t *Tunnel) spliceSSH(ctx context.Context, spec sshSpec, conn net.Conn) {
 	// mid-call surfaces as the reset the plugin reports in its own words.
 	cmd.Stderr = io.Discard
 	harden(cmd)
-	// Starting and registering are one critical section, and that is the
-	// second half of the gate in acceptSSH. Held apart, teardown can snapshot
-	// between them and reap a child whose Process is still nil — a no-op reap
-	// racing Start's write, after which the process launches *behind* the
-	// kill pass and survives teardown. Under the lock, a child in the map is
-	// a started child, and once closing is set nothing starts at all.
-	//
+	if err := cmd.Start(); err != nil {
+		t.mu.Unlock()
+		// Go's own cleanup handles this branch: os/exec closes both halves
+		// of each pipe when Start fails partway through, in.Close/out.Close
+		// included.
+		return
+	}
 	// The connection is registered alongside because reaping the process is
 	// not enough to end the splice: the conn->stdin copy below stays parked in
 	// conn.Read past any reap while the caller holds its end open. Teardown
 	// closes the connection to unblock it.
-	t.mu.Lock()
-	if t.closing {
-		t.mu.Unlock()
-		return
-	}
-	if err := cmd.Start(); err != nil {
-		t.mu.Unlock()
-		return
-	}
 	t.children[cmd] = conn
 	t.mu.Unlock()
 
