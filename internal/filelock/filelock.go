@@ -48,12 +48,12 @@ var (
 //
 // **The lock is held by identity, not by name.** Every operation on the
 // sentinel is by content — release removes it only if it still holds this
-// call's own token, and a waiter reclaiming a stale lock moves it aside and
-// confirms by identity that it moved the one it judged before creating its
-// own. Two waiters both finding a crashed holder's lock both moving it and
-// both creating their own would mean both held it; without the identity
-// check, a holder whose lock had been broken as stale would remove its
-// successor's on the way out.
+// call's own token, and a waiter reclaiming a stale lock links a reference
+// to it and confirms by identity that what it linked is still the one it
+// judged before removing it and creating its own. Two waiters both finding
+// a crashed holder's lock both reclaiming it and both creating their own
+// would mean both held it; without the identity check, a holder whose lock
+// had been broken as stale would remove its successor's on the way out.
 //
 // **`stale` is a lease, not a deadline on the work.** A holder renews its
 // sentinel while it holds it, so the threshold measures silence rather than
@@ -205,13 +205,36 @@ func (h *heartbeat) stop() {
 // that has gone quiet for a whole lease is evidence of death rather than of
 // slowness — and only that lock.
 //
-// Moving it aside first is what makes this safe against a second waiter
-// doing the same thing: rename succeeds for exactly one of them, and the
-// loser finds nothing to move. The identity check is for the narrower case
-// where the file changed between the stat that judged it stale and the
-// rename that took it — the file we moved is then somebody's live lock, and
-// it goes back. Link rather than Rename to put it back, so restoring can
-// never overwrite a lock a third process has since taken.
+// Link, not Rename, is what takes the reference to examine. Rename would
+// make path briefly not exist, and any waiter — including one in another
+// process — that checks path in that window finds nothing there and
+// legitimately Publishes a fresh lock of its own: two holders, reached
+// through breakStale's own steal rather than through the ordinary
+// contention path Acquire already handles correctly. Link instead adds a
+// second name for the same inode without disturbing the first, so path
+// keeps existing, and keeps being checkable and renewable by whoever
+// actually holds it, for as long as this function is still deciding.
+//
+// Two conditions gate the final removal, and both are needed. SameFile
+// catches the file having been replaced outright — the case where it
+// changed between the stat that judged it stale and the Link that took a
+// reference. A matching identity alone is not enough, though: Chtimes,
+// which is all a heartbeat ever does (see renew), never changes a file's
+// identity, only its timestamp, so a holder that is very much alive and
+// simply renewed in the narrow window between being judged stale and being
+// linked would pass the identity check and still lose its lock. The mtime
+// comparison is what catches that — judged is a snapshot from before this
+// call even started, and a linked copy whose mtime has moved past it since
+// is proof a renewal landed in between, whatever its identity says.
+//
+// path is removed by name only once both checks pass, which leaves one
+// residual window without flock(2): between that decision and the
+// os.Remove call itself, two bare syscalls with no I/O between them. A
+// renewal landing in that exact instant is not caught. It is narrow enough,
+// on top of already having missed a full lease, to be the same kind of
+// bargain renew's own doc comment already makes about a pathologically
+// paused holder — not eliminated, but too small to be worth flock(2)'s
+// platform-dependent behaviour to close.
 func breakStale(dir, path string, judged os.FileInfo) {
 	tmp, err := os.CreateTemp(dir, ".lock-stale-*")
 	if err != nil {
@@ -219,15 +242,18 @@ func breakStale(dir, path string, judged os.FileInfo) {
 	}
 	name := tmp.Name()
 	_ = tmp.Close()
-	// Whatever happens below, the moved-aside copy does not stay: it is not
-	// the lock any more, and a leftover in the data directory outlives every
-	// process that could explain it.
+	_ = os.Remove(name) // frees the name for Link, which needs it not to exist
+	// Whatever happens below, the linked copy does not stay: it is not the
+	// lock itself, only this call's reference to examine it, and a leftover
+	// in the data directory outlives every process that could explain it.
 	defer os.Remove(name)
 
-	if err := os.Rename(path, name); err != nil {
-		return // another waiter moved it first, or the holder released it
+	if err := os.Link(path, name); err != nil {
+		return // the holder already released it, or another waiter's ahead of us
 	}
-	if after, err := os.Stat(name); err == nil && !os.SameFile(judged, after) {
-		_ = os.Link(name, path)
+	after, err := os.Stat(name)
+	if err != nil || !os.SameFile(judged, after) || after.ModTime().After(judged.ModTime()) {
+		return // replaced, or renewed since judged — leave path exactly as it is
 	}
+	_ = os.Remove(path)
 }
