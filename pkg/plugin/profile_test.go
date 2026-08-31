@@ -49,3 +49,24 @@ func TestTunnellableNeedsTheRoleToBeFillable(t *testing.T) {
 		t.Error("an input a profile may not fill was counted as one a forward can")
 	}
 }
+
+// The plugin part of a capability ID, pinned directly: internal/policy used
+// to derive this by hand rather than calling Namespace, and disagreed with
+// it for a leading-dot ID — its own i > 0 check treated index 0, where the
+// dot actually is, as "no dot found" and returned the string unchanged.
+// Every caller of Namespace relies on this exact table, which is what makes
+// a hand-rolled second copy of it a bug waiting to happen rather than a
+// harmless duplication.
+func TestNamespace(t *testing.T) {
+	for _, tc := range []struct{ id, want string }{
+		{"kv.get", "kv"},
+		{"vault.kv.get", "vault"},
+		{"standalone", "standalone"},
+		{".vault", ""},
+		{"", ""},
+	} {
+		if got := Namespace(tc.id); got != tc.want {
+			t.Errorf("Namespace(%q) = %q, want %q", tc.id, got, tc.want)
+		}
+	}
+}

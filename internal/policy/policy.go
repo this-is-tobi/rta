@@ -42,6 +42,7 @@ import (
 
 	"github.com/this-is-tobi/rule-them-all/internal/config"
 
+	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
 
@@ -138,7 +139,7 @@ func (c Ceiling) Forbids(target, scope, profile string) string {
 		// A namespace in the file covers every capability in it, the same
 		// widening a grant target already has: "pg" in `never` means no
 		// grant on pg at all, not a grant on something literally named pg.
-		if t == target || t == namespaceOf(target) {
+		if t == target || t == plugin.Namespace(target) {
 			return fmt.Sprintf("%q is not grantable here", t)
 		}
 	}
@@ -151,25 +152,12 @@ func (c Ceiling) Forbids(target, scope, profile string) string {
 	}
 	if scope == "" {
 		for _, t := range c.RequireScope {
-			if t == target || t == namespaceOf(target) {
+			if t == target || t == plugin.Namespace(target) {
 				return fmt.Sprintf("a grant on %q must name a record", t)
 			}
 		}
 	}
 	return ""
-}
-
-// namespaceOf is the plugin part of a capability ID.
-//
-// Duplicated from internal/grant rather than imported, and deliberately: this
-// package is below that one (grant reads a ceiling on every load), so the
-// dependency has to run one way. It is four lines and it is the definition of
-// a dot.
-func namespaceOf(id string) string {
-	if i := strings.IndexByte(id, '.'); i > 0 {
-		return id[:i]
-	}
-	return id
 }
 
 // Load assembles the ceiling in force for the working directory.

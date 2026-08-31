@@ -151,6 +151,27 @@ func TestForbidsCoversTheAxesItClaims(t *testing.T) {
 	}
 }
 
+// Forbids used to derive a target's namespace with its own hand-rolled copy
+// of plugin.Namespace rather than calling it, and the two disagreed on a
+// leading-dot target: plugin.Namespace(".vault") is "" (Cut splits at the
+// dot, which sits at index 0, into an empty prefix), while the hand-rolled
+// version's `i > 0` check treated that same index 0 as "no dot found" and
+// returned the string unchanged.
+//
+// An empty Never entry is what turns that disagreement into two different
+// verdicts to tell apart: the hand-rolled version never produced "" for any
+// input, so it never matched such an entry, while plugin.Namespace does for
+// exactly the leading-dot case this covers. An ordinary capability or
+// namespace entry cannot show the same difference — both versions derive a
+// "kv.get"-shaped target identically and disagree only here.
+func TestForbidsUsesPluginNamespaceNotAHandRolledCopy(t *testing.T) {
+	c := Ceiling{Never: []string{""}}
+	if why := c.Forbids(".vault", "", ""); why == "" {
+		t.Fatal("a leading-dot target was not forbidden by an empty Never entry — " +
+			"Forbids is not deriving its namespace the way plugin.Namespace does")
+	}
+}
+
 // A policy that cannot be parsed is not a policy, and must not read as an
 // absent one — that is the failure this whole package is written against.
 func TestAMalformedPolicyIsAnErrorAndNotAnAbsentOne(t *testing.T) {
