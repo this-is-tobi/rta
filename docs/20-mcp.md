@@ -184,7 +184,7 @@ Restarting the server changes none of it. That is deliberate: a deadline that en
 
 ### In a container, for a hardened server
 
-The binary is static and needs nothing at runtime, so it runs in a `scratch` image — no shell, no package manager, no libc for anything to reach. Point the client at `docker` instead of at `rta`:
+The binary is static and needs almost nothing at runtime — almost, because `cert`, `http`, `audit web` and every plugin that dials TLS (`pg`, `s3`, `vault`, `qdrant`...) still need a CA bundle to verify against, which a bare `scratch` image does not have. [`ghcr.io/this-is-tobi/rta`](https://github.com/this-is-tobi/rule-them-all/pkgs/container/rta) is built `FROM gcr.io/distroless/static-debian12:nonroot` instead: that CA bundle and the `/etc/passwd` entry for its nonroot user, and nothing else — still no shell, no package manager, no libc for anything to reach. Published multi-arch (`amd64`/`arm64`) with every release, with SLSA provenance, an SBOM and a cosign signature attached to the image digest. Point the client at `docker` instead of at `rta`:
 
 ```json
 {
@@ -200,7 +200,7 @@ The binary is static and needs nothing at runtime, so it runs in a `scratch` ima
         "-e", "RTA_CONFIG=/rta-home/config.yaml",
         "-e", "RTA_DATA_DIR=/rta-home",
         "-w", "/work",
-        "ghcr.io/you/rta:latest", "mcp", "serve", "--as", "sandboxed", "--root", "/work"
+        "ghcr.io/this-is-tobi/rta:latest", "mcp", "serve", "--as", "sandboxed", "--root", "/work"
       ]
     }
   }
@@ -230,7 +230,8 @@ The want is real and worth stating plainly: a team has environments — dev and 
 
 ```dockerfile
 FROM alpine:3.20 AS setup
-COPY rta rta-plugin-pg /usr/local/bin/
+COPY --from=ghcr.io/this-is-tobi/rta:latest /usr/local/bin/rta /usr/local/bin/rta
+COPY rta-plugin-pg /usr/local/bin/
 ENV RTA_CONFIG=/rta-home/config.yaml RTA_DATA_DIR=/rta-home
 RUN mkdir -p /rta-home && \
     rta plugin trust pg --yes && \
@@ -243,12 +244,14 @@ RUN mkdir -p /rta-home && \
       --kube prod/app-b/svc/postgres:5432 \
       --secret password=kube:postgres-creds/password
 
-FROM scratch
+FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=setup /usr/local/bin/ /usr/local/bin/
 COPY --from=setup /rta-home /rta-home
 ENV RTA_CONFIG=/rta-home/config.yaml RTA_DATA_DIR=/rta-home PATH=/usr/local/bin
 ENTRYPOINT ["/usr/local/bin/rta"]
 ```
+
+The `setup` stage needs Alpine's shell to run `rta plugin trust`/`rta profile set` at build time — it never ships. The final stage starts over from the same distroless base the published image uses, for the same reason: `pg` over TLS needs a CA bundle to verify against, same as the primary recipe above.
 
 Each member wires their client to `docker run` on that image, exactly as in the recipe above, mounting their own `~/.kube` and their own state volume. What the image carries is a *reference*, never a value:
 

@@ -1,0 +1,18 @@
+# Every plugin is its own module, built by its own job - none of it belongs
+# in the build context of the root module's image.
+plugins/
+
+# Working documents: never shipped, see .gitignore for why.
+.local/
+
+.git/
+dist/
+bin/
+*.test
+coverage.out
+coverage.html
+.DS_Store
+
+docs/
+*.md
+examples/
