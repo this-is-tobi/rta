@@ -1,0 +1,20 @@
+title = "rta gitleaks config"
+
+[extend]
+useDefault = true
+
+# These four files hold synthetic key/token fixtures rta's own tests use to
+# exercise its secret-detection capabilities (sshkeys, kv, codec) - truncated
+# PEM stubs and a fabricated JWT, never a real credential. Named individually
+# rather than a blanket `_test\.go$` pattern: a security tool's own CI should
+# not stop looking at test files in general, only at the specific fixtures
+# already reviewed here. sshkeys.go itself is included for one non-test hit -
+# a doc comment that quotes the PEM header text it parses, not a key.
+[[allowlists]]
+description = "Reviewed synthetic secret fixtures, not real credentials"
+paths = [
+  '''^builtin/internal/sshkeys/sshkeys\.go$''',
+  '''^builtin/internal/sshkeys/sshkeys_test\.go$''',
+  '''^internal/app/app_test\.go$''',
+  '''^builtin/kv/kv_test\.go$''',
+]
