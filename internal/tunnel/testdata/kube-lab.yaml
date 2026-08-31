@@ -1,7 +1,7 @@
 # The cluster the tunnel plugin's live tests run against.
 #
 #   kind create cluster --name rta-lab
-#   kubectl --context kind-rta-lab apply -f docs/examples/kube-lab.yaml
+#   kubectl --context kind-rta-lab apply -f internal/tunnel/testdata/kube-lab.yaml
 #   kubectl --context kind-rta-lab -n databases rollout status deploy/postgres
 #
 # A PostgreSQL, the Secret holding its credentials, and a ServiceAccount that
