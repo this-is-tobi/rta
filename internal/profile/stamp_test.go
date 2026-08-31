@@ -141,6 +141,15 @@ func TestConnStampDistinguishesWhatAGrantMustNotConflate(t *testing.T) {
 			Secrets: map[string]string{"password": "kv:staging-db"},
 			SSH:     "bastion.internal/staging.internal:5432",
 		}},
+		// The same gap, one axis over: tunnelTLS: true changes what an
+		// EndpointURL input resolves to (https instead of http) with
+		// everything else — key included — held identical to base. A scheme
+		// flip is a repoint in exactly the sense this stamp exists to catch.
+		{"tunnelTLS flipped on, everything else unchanged", "pg@1b6093cf90ce", config.Connection{
+			Set:       map[string]any{"host": "staging.internal", "port": 5432},
+			Secrets:   map[string]string{"password": "kv:staging-db"},
+			TunnelTLS: true,
+		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := stamp(tc.key, tc.conn); got == origin {
@@ -301,10 +310,11 @@ func TestConnStampIsConfrontedWithEveryConnectionField(t *testing.T) {
 	// Every exported field, with the decision recorded: true means ConnStamp
 	// writes it, and a false entry documents why not rather than being absent.
 	decided := map[string]bool{
-		"Set":     true,
-		"Secrets": true, // the reference, never the value — see ConnStamp's doc
-		"Kube":    true,
-		"SSH":     true,
+		"Set":       true,
+		"Secrets":   true, // the reference, never the value — see ConnStamp's doc
+		"Kube":      true,
+		"SSH":       true,
+		"TunnelTLS": true, // a scheme flip is a repoint, same as Kube/SSH — see ConnStamp's doc
 	}
 	rt := reflect.TypeOf(config.Connection{})
 	for i := 0; i < rt.NumField(); i++ {

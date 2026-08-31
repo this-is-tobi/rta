@@ -142,7 +142,7 @@ func Lookup(cfg config.Config, c plugin.Capability, name string, inst Installed)
 		return none, view.Errorf("core.profile.unknownkey",
 			"profile %q, under %s, has %s, which nothing reads",
 			name, key, strings.Join(unknown, ", ")).
-			WithHint("a plugin entry takes set, secrets, kube and ssh")
+			WithHint("a plugin entry takes set, secrets, kube, ssh and tunnelTLS")
 	}
 	if bad := conn.BadSecretRefs(); len(bad) > 0 {
 		return none, view.Errorf("core.profile.secret.scheme",
@@ -560,7 +560,7 @@ func Dial(ctx context.Context, name string, conn config.Connection, c plugin.Cap
 	if verr != nil {
 		return nil, noop, verr
 	}
-	return endpointValues(c, tun.Endpoint), tun.Close, nil
+	return endpointValues(c, tun.Endpoint, conn.TunnelTLS), tun.Close, nil
 }
 
 // Problem is one thing wrong with a configured profile.
@@ -673,7 +673,7 @@ func CheckConnection(name, key string, conn config.Connection, inst Installed) [
 	}
 	if unknown := conn.UnknownKeys(); len(unknown) > 0 {
 		at("has "+strings.Join(unknown, ", ")+", which nothing reads",
-			"a plugin entry takes set, secrets, kube and ssh")
+			"a plugin entry takes set, secrets, kube, ssh and tunnelTLS")
 		return problems
 	}
 	if bad := conn.BadSecretRefs(); len(bad) > 0 {
@@ -724,6 +724,12 @@ func checkTunnel(conn config.Connection) *view.Error {
 		return view.Errorf("core.profile.tunnel.twice",
 			"states both `kube:` and `ssh:` — a call opens one forward").
 			WithHint("keep whichever names where this connection really goes")
+	}
+	if conn.TunnelTLS && !conn.Tunnelled() {
+		return view.Errorf("core.profile.tunnel.tls",
+			"states `tunnelTLS: true` with neither `kube:` nor `ssh:` — there is no forward for it to describe").
+			WithHint("tunnelTLS: true tells the host the far side of a tunnel speaks TLS on its own; " +
+				"remove it, or add the `kube:`/`ssh:` line it belongs beside")
 	}
 	if conn.Kube != "" {
 		return tunnel.CheckKube(conn.Kube)
@@ -782,11 +788,21 @@ func tunnellable(ns string, inst Installed) (fillable, known bool) {
 func checkSet(name, key string, conn config.Connection, ns string, inst Installed) []Problem {
 	fillable := map[string]plugin.Field{}
 	declared := map[string]bool{}
+	// Whether this namespace has an EndpointTLS input at all — not which
+	// capability declares it, matching fillable/declared's own namespace-wide
+	// grain, and correct at that grain because a plugin's connFields()
+	// pattern puts the same shared fields on every capability alike. If one
+	// exists, a tunnel forces it to its off value unconditionally (see
+	// EndpointTLS), which is the fact a TLSAdjacent field depends on below.
+	hasTLSField := false
 	for _, c := range capabilitiesOf(inst) {
 		if plugin.Namespace(c.ID) != ns {
 			continue
 		}
 		for _, f := range c.Inputs {
+			if f.Endpoint == plugin.EndpointTLS {
+				hasTLSField = true
+			}
 			if f.Config == "" {
 				continue
 			}
@@ -824,6 +840,18 @@ func checkSet(name, key string, conn config.Connection, ns string, inst Installe
 			// misspelt on top is not the sentence the operator needs first.
 			problems = append(problems, Problem{Name: name, Plugin: key,
 				Reason: fmt.Sprintf("`set: %s` is overridden by the forward `%s:` opens",
+					k, conn.TunnelKey()),
+				Hint: "remove it, or remove `" + conn.TunnelKey() + ":` to connect directly"})
+			continue
+		}
+		// The harder half of the same fact: this key is not itself
+		// overridden, it is inert because what it depends on was. A tunnel
+		// forces this namespace's EndpointTLS input to its off value
+		// unconditionally, and TLSAdjacent is a plugin's own declaration
+		// that its value then does nothing — see plugin.Field.TLSAdjacent.
+		if conn.Tunnelled() && f.TLSAdjacent && hasTLSField {
+			problems = append(problems, Problem{Name: name, Plugin: key,
+				Reason: fmt.Sprintf("`set: %s` is overridden along with the TLS mode the forward `%s:` turns off",
 					k, conn.TunnelKey()),
 				Hint: "remove it, or remove `" + conn.TunnelKey() + ":` to connect directly"})
 			continue

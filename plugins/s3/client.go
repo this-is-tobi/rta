@@ -5,7 +5,9 @@ import (
 	"crypto/x509"
 	"errors"
 	stdnet "net"
+	"net/http"
 	"net/url"
+	"os"
 	"strings"
 
 	"github.com/minio/minio-go/v7"
@@ -54,6 +56,17 @@ func connFields() []plugin.Field {
 			Local: true, Help: "access key ID"},
 		{Name: "secret-key", Type: plugin.Secret, Local: true, EnvFallback: true,
 			Help: "secret access key"},
+		// Local for the same reason plugins/etcd's own ca-file is: it is read
+		// off this machine's disk, not held as a value rta's own store could
+		// manage. Not a plugin.Secret, and deliberately: a CA certificate is
+		// the public half of a key pair — it is what a CA hands out for
+		// wide distribution so anyone can verify what it signed, the same
+		// reason a browser or an OS trust store ships thousands of them in
+		// the clear. Nothing about it needs secrecy; ca-file only needs Local
+		// for the same file-read-primitive reason address does, not because
+		// its contents are sensitive.
+		{Name: "ca-file", Type: plugin.String, Default: "", Config: "ca-file",
+			Local: true, Help: "PEM bundle to verify the server against, beyond the host's own trust store"},
 	}
 }
 
@@ -65,16 +78,52 @@ func connect(req plugin.Request) (*minio.Client, *view.Error) {
 	endpoint := req.String("endpoint")
 	access := req.String("access-key")
 	secret := req.String("secret-key")
-	client, err := minio.New(endpoint, &minio.Options{
-		Creds:  credentials.NewStaticV4(access, secret, ""),
-		Secure: req.Bool("tls"),
+	opts := &minio.Options{
+		Creds: credentials.NewStaticV4(access, secret, ""),
+		// ca-file only means anything over TLS, so setting it turns TLS on
+		// the same way etcd's own ca-file does — the alternative is a value
+		// that silently does nothing until --tls is also typed.
+		Secure: req.Bool("tls") || req.String("ca-file") != "",
 		Region: req.String("region"),
-	})
+	}
+	if ca := req.String("ca-file"); ca != "" {
+		transport, verr := caTransport(ca)
+		if verr != nil {
+			return nil, verr
+		}
+		opts.Transport = transport
+	}
+	client, err := minio.New(endpoint, opts)
 	if err != nil {
 		return nil, view.Errorf("s3.conn.invalid", "%s: %v", endpoint, err).
 			WithHint("endpoint is host[:port] with no scheme — set --tls separately")
 	}
 	return client, nil
+}
+
+// caTransport is minio-go's own default HTTPS transport (proxying, idle
+// connection pooling, timeouts — the same one Secure:true would have built
+// anyway) with its trust replaced by ca-file's bundle rather than the host's
+// system trust store, the same full-replacement etcd's and vault's own
+// ca-file already give: an operator naming a private CA means exactly that
+// CA, not that CA in addition to the public web PKI.
+func caTransport(ca string) (*http.Transport, *view.Error) {
+	pem, err := os.ReadFile(ca)
+	if err != nil {
+		return nil, view.Errorf("s3.tls.ca.unreadable", "%v", err).
+			WithHint("ca-file is a path on this machine, read by rta rather than by the server")
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(pem) {
+		return nil, view.Errorf("s3.tls.ca.invalid", "%s holds no PEM certificate", ca).
+			WithHint("this wants the CA bundle, not the server's own certificate")
+	}
+	transport, err := minio.DefaultTransport(true)
+	if err != nil {
+		return nil, view.Errorf("s3.tls.transport", "%v", err)
+	}
+	transport.TLSClientConfig.RootCAs = pool
+	return transport, nil
 }
 
 // classify turns a client error into something an operator can act on.
@@ -134,7 +183,8 @@ func classify(err error, req plugin.Request) *view.Error {
 	var certErr x509.UnknownAuthorityError
 	if errors.As(err, &certErr) {
 		return view.Errorf("s3.tls.untrusted", "%s presented a certificate nothing here trusts", where).
-			WithHint("a local MinIO's self-signed cert needs --tls=false, or its CA trusted")
+			WithHint("a local MinIO's self-signed cert needs --tls=false for a real try, or its CA " +
+				"trusted with ca-file for the real thing")
 	}
 	return view.Errorf("s3.conn.failed", "could not reach %s: %v", where, err).
 		WithHint("`rta explain s3.overview` lists every input and where each one can come from")

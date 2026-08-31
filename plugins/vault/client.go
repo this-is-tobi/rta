@@ -1,10 +1,12 @@
 package main
 
 import (
+	"crypto/tls"
 	"crypto/x509"
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"net/url"
 	"strings"
 
@@ -40,6 +42,19 @@ func connFields() []plugin.Field {
 			Local: true, Help: "Vault Enterprise namespace — empty for OSS or the root namespace"},
 		{Name: "token", Type: plugin.Secret, Local: true, EnvFallback: true,
 			Help: "Vault token"},
+		// Local for the same reason plugins/etcd's own ca-file is: it is read
+		// off this machine's disk, and an input naming a file that the host
+		// then opens is a file-read primitive the moment a caller can choose
+		// the path. Named to match etcd's field rather than inventing a
+		// second word for the same thing — an operator who has configured one
+		// already knows this one. Matters most for a `kube:`/`ssh:`
+		// connection with `tls: true`: the server's own certificate is
+		// commonly signed by a cluster-internal CA (a Vault operator's
+		// generated root, cert-manager's cluster issuer) the host's trust
+		// store does not carry, and address alone reaching https:// does not
+		// change what rta is willing to trust.
+		{Name: "ca-file", Type: plugin.String, Default: "", Config: "ca-file",
+			Local: true, Help: "PEM bundle to verify the server against, beyond the host's own trust store"},
 	}
 }
 
@@ -54,6 +69,25 @@ func connect(req plugin.Request) (*vaultapi.Client, *view.Error) {
 		return nil, classify(cfg.Error, req)
 	}
 	cfg.Address = req.String("address")
+	// DefaultConfig's own ReadEnvironment already pulled in whatever
+	// VAULT_CACERT/VAULT_CLIENT_CERT/VAULT_SKIP_VERIFY/etc. happen to be set
+	// in this shell — harmless for Address, overwritten the line above, but
+	// not for TLS trust: an operator who also uses the vault CLI directly
+	// could have VAULT_SKIP_VERIFY=true exported for an unrelated reason and
+	// find rta silently stopped verifying certificates, with nothing here
+	// saying so. Reset to a clean baseline (DefaultConfig's own
+	// MinVersion, nothing more) so the only things able to affect trust past
+	// this line are the host's own trust store and ca-file below — the one
+	// surface this plugin actually documents.
+	if transport, ok := cfg.HttpClient.Transport.(*http.Transport); ok {
+		transport.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+	}
+	if ca := req.String("ca-file"); ca != "" {
+		if err := cfg.ConfigureTLS(&vaultapi.TLSConfig{CACert: ca}); err != nil {
+			return nil, view.Errorf("vault.tls.ca.invalid", "%v", err).
+				WithHint("ca-file is a path on this machine, read by rta rather than by Vault")
+		}
+	}
 	client, err := vaultapi.NewClient(cfg)
 	if err != nil {
 		return nil, classify(err, req)
@@ -115,7 +149,9 @@ func classify(err error, req plugin.Request) *view.Error {
 	var certErr x509.UnknownAuthorityError
 	if errors.As(err, &certErr) {
 		return view.Errorf("vault.tls.untrusted", "%s presented a certificate rta does not trust", addr).
-			WithHint("this is a real TLS trust failure, not something to work around here")
+			WithHint("this is a real TLS trust failure, not something to work around here — a Vault " +
+				"behind a tunnel commonly has its own operator- or cluster-generated CA; pass it with " +
+				"ca-file rather than disabling verification")
 	}
 	return view.Errorf("vault.conn.failed", "could not reach %s: %v", addr, err).
 		WithHint("`rta explain vault.seal.status` lists every input and where each can come from")

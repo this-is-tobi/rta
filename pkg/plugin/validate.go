@@ -346,6 +346,11 @@ func (c Capability) validate(ns string) error {
 				"EnvFallback only changes how a Local field resolves, and a non-Local field is already "+
 				"reachable from a caller directly", c.ID, f.Name)
 		}
+		if f.TLSAdjacent && !f.Local {
+			return fmt.Errorf("capability %q: input %q declares TLSAdjacent without Local; "+
+				"a CA bundle or client cert/key is a path read on this machine, the same file-read "+
+				"primitive Endpoint's own inputs are refused for on a non-Local field", c.ID, f.Name)
+		}
 		// Live is the deliberate-press completion channel (Field.Live), and
 		// these rules keep it coherent: it marks a Suggest, so one must
 		// exist; a closed set is already the whole answer (Options wins over

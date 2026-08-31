@@ -299,6 +299,10 @@ func fullDeclaration() plugin.Plugin {
 				// handler: a host that loses this bit would call the plugin's
 				// service listing per keystroke.
 				{Name: "bucket", Type: plugin.String, Help: "bucket", Live: true},
+				// TLSAdjacent needs its own input rather than riding one already
+				// declared here: addr already carries a non-zero Endpoint, and
+				// TLSAdjacent's own contract is that it carries none.
+				{Name: "ca-file", Type: plugin.String, Help: "ca", Local: true, TLSAdjacent: true},
 			},
 		}},
 	}

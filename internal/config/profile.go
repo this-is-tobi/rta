@@ -152,6 +152,48 @@ type Connection struct {
 	// two — Check refuses both at once.
 	SSH string `yaml:"ssh,omitempty" json:"ssh,omitempty"`
 
+	// TunnelTLS states that the far side of this connection's forward speaks
+	// TLS on its own, so a plugin.EndpointURL input should be filled with
+	// `https://` instead of the tunnel's ordinary `http://`.
+	//
+	// **Named apart from every plugin's own TLS field on purpose.** etcd,
+	// pg, mysql, mariadb, qdrant and s3 each declare their own `tls` or
+	// `sslmode` — a plugin.EndpointTLS-role field naming *that plugin's*
+	// on/off spelling in its own client library's vocabulary (libpq's
+	// `sslmode`, go-sql-driver's `tls=`), forced to "off" by the host over a
+	// tunnel. This is a different fact at a different layer: not a plugin's
+	// own setting, but what the host must know about the *coordinate itself*
+	// to fill plugin.EndpointURL correctly, before any plugin config is even
+	// read. Sharing the word "tls" with those would read as one concept and
+	// mean two, right where a profile stacks a connection's own `set: {tls:
+	// ...}` beside `kube:`/`ssh:` — etcd's `tls` and qdrant's are exactly this
+	// shape one level down.
+	//
+	// **A statement about the destination, never about the hop that carries
+	// it.** `kubectl port-forward` and `ssh -L` are both a raw byte pipe from
+	// 127.0.0.1 straight into whatever the far end's socket speaks — neither
+	// terminates or re-originates a request. plugin.EndpointURL's own default
+	// of plain http reasons correctly about the tunnel itself (a loopback hop
+	// that never leaves the machine) and says nothing about the process
+	// listening at the other end. A service that terminates TLS at that
+	// socket — Vault's own listener, unlike PostgreSQL or MySQL, has no
+	// plaintext fallback to negotiate down to — needs to be told so
+	// explicitly, because nothing about the forward lets the host guess it.
+	//
+	// Opt-in and default false, matching EndpointURL's own existing default:
+	// the overwhelming majority of tunnelled services are the plaintext-behind
+	// TLS-transport case that default already reasons about correctly, and
+	// flipping the default would ask every one of them to state
+	// `tunnelTLS: false` instead of the minority stating `tunnelTLS: true`.
+	//
+	// Verifies the certificate rta actually receives — this is not
+	// InsecureSkipVerify, and does not become it. A self-signed or
+	// cluster-internal CA the client does not already trust still refuses,
+	// with the same `*.tls.untrusted` a direct connection would get; a plugin
+	// that reads a CA bundle of its own (vault's `ca-file`, following etcd's)
+	// is how that gets resolved, not this flag.
+	TunnelTLS bool `yaml:"tunnelTLS,omitempty" json:"tunnelTLS,omitempty"`
+
 	// unknown is every key in this connection no field above claims. Same
 	// argument as Profile.unknown, one level down — and the level a migration
 	// lands on, since the old single-plugin shape put `set:` where `plugins:`
@@ -238,7 +280,7 @@ func (p Profile) Trusted() bool { return p.trusted }
 // unknown by the very next test run rather than silently accepted.
 var (
 	profileKeys    = map[string]bool{"plugins": true, "note": true, "ttl": true}
-	connectionKeys = map[string]bool{"set": true, "secrets": true, "kube": true, "ssh": true}
+	connectionKeys = map[string]bool{"set": true, "secrets": true, "kube": true, "ssh": true, "tunnelTLS": true}
 )
 
 // unclaimed lists the keys of a raw block that no field of the shape claims,

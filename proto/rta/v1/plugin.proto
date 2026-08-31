@@ -149,6 +149,16 @@ message Field {
   // get; the per-keystroke channel never calls it and carries none. Requires
   // has_suggest, refused beside options, and the input must be a string.
   bool live = 15;
+  // Marks an input — a CA bundle, a client cert, a client key — that only
+  // affects the connection once this capability's own EndpointTLS input
+  // actually negotiates TLS. It carries no endpoint role itself: the host
+  // does not fill it. What the host needs to know is the opposite fact —
+  // that a tunnel forces EndpointTLS to its off value unconditionally, so a
+  // value that only mattered once TLS was negotiated does nothing once it is
+  // not, and a profile stating both gets refused rather than left silently
+  // inert. False by default and left false by a plugin whose own connect()
+  // already compensates by re-enabling TLS when this field is set.
+  bool tls_adjacent = 16;
 }
 
 // EndpointRole is which part of a resolved tunnel an input takes.

@@ -39,6 +39,7 @@ const (
 	profilePluginField = "profile-plugin"
 	profileKubeField   = "profile-kube"
 	profileSSHField    = "profile-ssh"
+	profileTLSField    = "profile-tls"
 	profileSetPrefix   = "set."
 
 	profileTTLNone = "no deadline"
@@ -261,6 +262,14 @@ func (m Model) connForm(key, chosen string, seed map[string]any) (tea.Model, tea
 			// user, port, key and ProxyJump the config already states.
 			Suggest: func(context.Context, plugin.Request) []string { return tunnel.SSHHosts() },
 			Help:    "an ssh host: [user@]host[:port]/desthost:destport — tab suggests your ssh aliases"},
+		// Below both boxes, not beside either: it is a fact about whichever one
+		// is filled, not a third destination. Named apart from a plugin's own
+		// `set.tls`/`set.sslmode` box below (etcd, pg, mysql, mariadb, qdrant,
+		// s3 all declare one) on purpose — config.Connection.TunnelTLS's doc
+		// comment has the reasoning, and this screen can show both at once
+		// without either explaining the other.
+		{Name: profileTLSField, Type: plugin.Bool,
+			Help: "the far side of the forward above speaks TLS on its own — fill it as https, not http"},
 	}
 	if forwardable {
 		fields = append(fields, coordinates...)
@@ -285,7 +294,13 @@ func (m Model) connForm(key, chosen string, seed map[string]any) (tea.Model, tea
 			// them (saveConnForm). Decided at open, like the
 			// reopen-to-fill flow above: clearing the coordinate reveals
 			// the boxes on reopen.
-			if tunnelled && f.Endpoint != plugin.EndpointNone {
+			//
+			// A TLSAdjacent field — pg's sslrootcert — is offered no box
+			// here for the same reason, one step removed: it carries no
+			// Endpoint role itself, but it depends on the EndpointTLS field
+			// this same tunnel already forces off, so a value typed here
+			// would do nothing the moment it left the box.
+			if tunnelled && (f.Endpoint != plugin.EndpointNone || f.TLSAdjacent) {
 				continue
 			}
 			// Prefixed so a plugin's own key can never collide with the
@@ -298,7 +313,7 @@ func (m Model) connForm(key, chosen string, seed map[string]any) (tea.Model, tea
 	}
 
 	defaults := map[string]any{profilePluginField: chosen,
-		profileKubeField: conn.Kube, profileSSHField: conn.SSH}
+		profileKubeField: conn.Kube, profileSSHField: conn.SSH, profileTLSField: conn.TunnelTLS}
 	for k, v := range conn.Set {
 		defaults[profileSetPrefix+k] = v
 	}
@@ -507,6 +522,20 @@ func (m Model) saveConnForm() (tea.Model, tea.Cmd) {
 		conn.Kube = kube
 		conn.SSH = ssh
 		tunnelled := kube != "" || ssh != ""
+		// Repaired rather than refused, the same reason the endpoint-key
+		// removal below is: a Bool toggle has no empty to choose, so an
+		// operator who clears the coordinate while a previously-saved TLS
+		// toggle still reads on (this screen does not react live to a
+		// sibling box the way a rebuild between opens would) would find the
+		// form unsaveable until they also flipped a switch nothing drew
+		// their eye to. internal/profile.checkTunnel would refuse this
+		// combination outright if it reached a file, so cleared is the only
+		// value worth writing — named in the flash so it is not a mystery.
+		tlsOn, _ := values[profileTLSField].(bool)
+		conn.TunnelTLS = tlsOn && tunnelled
+		if tlsOn && !tunnelled {
+			unread = append(unread, "tunnelTLS")
+		}
 		// Remembered before the rebuild, so the endpoint-key repair below can
 		// name what the file loses even when no box carried it: under a
 		// coordinate startConnForm offers no endpoint boxes at all, so a stated
@@ -538,7 +567,12 @@ func (m Model) saveConnForm() (tea.Model, tea.Cmd) {
 			declared := map[string]bool{}
 			for _, f := range configFields(decl) {
 				declared[f.Name] = true
-				if !tunnelled || f.Endpoint == plugin.EndpointNone {
+				// Endpoint-role fields are overridden directly; a
+				// TLSAdjacent one depends on an EndpointTLS field the same
+				// tunnel forces off (plugin.Field.TLSAdjacent's own doc
+				// comment has the full reasoning) — both are exactly as
+				// dead, so both get the same repair.
+				if !tunnelled || (f.Endpoint == plugin.EndpointNone && !f.TLSAdjacent) {
 					continue
 				}
 				_, stated := conn.Set[f.Name]
