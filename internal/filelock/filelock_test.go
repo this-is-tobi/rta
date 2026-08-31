@@ -146,3 +146,48 @@ func TestBreakingAStaleLockDoesReclaimIt(t *testing.T) {
 		t.Errorf("leftover in the directory: %s", e.Name())
 	}
 }
+
+// A renewal that lands between the stat that judged a lock stale and the
+// break that acts on it must save it, the same as an outright replacement
+// does — even though, unlike a replacement, it never changes the file's
+// identity. Chtimes (all a heartbeat ever does — see renew) restamps the
+// same inode in place, so an identity check alone cannot tell "the live
+// holder we judged too early" apart from "the corpse we judged correctly".
+//
+// Deterministic rather than racy, matching
+// TestBreakingAStaleLockLeavesAFresherOneAlone's own reasoning: this plants
+// the renewal by hand between the stat and the call instead of trying to
+// win a real race against a running heartbeat.
+func TestBreakingAStaleLockDoesNotStealARenewalThatLandedAfterJudging(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "resource.lock")
+	token := []byte("1 still alive\n")
+	if err := os.WriteFile(path, token, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(path, old, old); err != nil {
+		t.Fatal(err)
+	}
+	judged, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Same file, same content — only the timestamp moves, exactly as a
+	// landed heartbeat would leave it.
+	fresh := time.Now()
+	if err := os.Chtimes(path, fresh, fresh); err != nil {
+		t.Fatal(err)
+	}
+
+	breakStale(dir, path, judged)
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("a lock renewed after being judged stale was broken anyway: %v", err)
+	}
+	if !bytes.Equal(got, token) {
+		t.Errorf("lock file holds %q, want the still-alive holder's original token", got)
+	}
+}
