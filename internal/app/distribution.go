@@ -294,6 +294,43 @@ func newPluginSearchCommand(opts *globalOpts) *cobra.Command {
 	return cmd
 }
 
+// newPluginOutdatedCommand implements `rta plugin outdated`: search's own
+// "answers from the manifests alone" restraint, scoped to what is installed
+// and turned into a comparison instead of a listing.
+func newPluginOutdatedCommand(opts *globalOpts) *cobra.Command {
+	return &cobra.Command{
+		Use:   "outdated",
+		Short: "List installed plugins whose index no longer agrees with what is installed",
+		Long: "Compares each installed plugin's recorded version against what its index\n" +
+			"currently claims. Like search, nothing is fetched or executed — this is a\n" +
+			"hint worth a look, not a verdict: `rta plugin upgrade <name>` is what\n" +
+			"actually re-verifies against the bytes and reports whether anything a\n" +
+			"grant hangs off changed. A respin under an unchanged version number is\n" +
+			"invisible here for the same reason it is invisible to a signature.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(plugindist.ReadLock()) == 0 {
+				return renderView(cmd, opts, view.Text{Body: "no plugin is installed"})
+			}
+			rows := plugindist.Outdated()
+			if len(rows) == 0 {
+				return renderView(cmd, opts, view.Text{
+					Body: "every installed plugin matches what its index claims"})
+			}
+			t := view.Table{Columns: []view.Column{{Name: "Plugin"}, {Name: "Installed"},
+				{Name: "Available"}, {Name: "Index"}}}
+			for _, r := range rows {
+				available := r.AvailableVersion
+				if r.Problem != "" {
+					available = r.Problem
+				}
+				t.Rows = append(t.Rows, []string{r.Name, r.InstalledVersion, available, r.Index})
+			}
+			return renderView(cmd, opts, t)
+		},
+	}
+}
+
 func newPluginIndexCommand(opts *globalOpts) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "index",
