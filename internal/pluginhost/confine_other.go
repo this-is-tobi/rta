@@ -19,8 +19,12 @@ package pluginhost
 // the descriptor handling. Those are the parts that were load-bearing anyway.
 
 //
-// Windows gets a job object with KILL_ON_JOB_CLOSE (procattr_windows.go),
-// documented as lifetime control and not as confinement.
+// Windows gets CREATE_NEW_PROCESS_GROUP (procattr_windows.go) — one handle,
+// one kill, no orphans — documented there as lifetime control and not as
+// confinement. A job object with JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE would be
+// the stronger form; it is not what runs today, and procattr_windows.go
+// says so rather than letting this file's own silence about it read as
+// "already done".
 
 const confined = false
 
