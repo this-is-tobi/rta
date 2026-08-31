@@ -10,6 +10,12 @@ import (
 const (
 	digestA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	digestB = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	// digestC and digestD share an 8-character prefix and diverge after it —
+	// two real, distinct digests a short prefix cannot tell apart, which is
+	// exactly the fixture an ambiguous-prefix test needs and digestA/digestB
+	// (no shared prefix at all) cannot provide.
+	digestC = "cafe000011111111111111111111111111111111111111111111111111111111"
+	digestD = "cafe000022222222222222222222222222222222222222222222222222222222"
 )
 
 // isolated points the record at a directory of its own, so nothing here can
@@ -146,6 +152,51 @@ func TestUntrustByDigestPrefixTakesExactlyOne(t *testing.T) {
 	// not something to do quietly.
 	if n, _ := Remove("a"); n != 0 {
 		t.Errorf("a one-character prefix withdrew %d approvals", n)
+	}
+}
+
+// A prefix long enough to pass the minDigestPrefix floor can still name more
+// than one real, distinct artifact once the trust store holds enough of
+// them — the doc comment's "one artifact and nothing else" promise is about
+// the outcome, not about the length typed. Removing both silently would be
+// the same failure a one-character prefix already refuses, just reached a
+// different way; refusing and naming both is what keeps the promise.
+func TestUntrustByAnAmbiguousPrefixIsRefused(t *testing.T) {
+	isolated(t)
+	for _, d := range []string{digestC, digestD} {
+		if verr := Add(d, "", ""); verr != nil {
+			t.Fatal(verr)
+		}
+	}
+	prefix := digestC[:minDigestPrefix] // "cafe0000" — where digestC and digestD diverge
+	if digestD[:minDigestPrefix] != prefix {
+		t.Fatalf("test fixture bug: digestC and digestD do not share %q", prefix)
+	}
+
+	n, verr := Remove(prefix)
+	if n != 0 {
+		t.Errorf("an ambiguous prefix withdrew %d approvals, want none", n)
+	}
+	if verr == nil {
+		t.Fatal("an ambiguous prefix was accepted rather than refused")
+	}
+	s := Load()
+	if !s.Trusts(digestC) || !s.Trusts(digestD) {
+		t.Error("an ambiguous prefix removed an artifact anyway")
+	}
+
+	// The full digest is never ambiguous, collision aside, and must still
+	// work even though its own 12-character prefix is shared with another
+	// trusted artifact.
+	n, verr = Remove(digestC)
+	if verr != nil {
+		t.Fatal(verr)
+	}
+	if n != 1 {
+		t.Fatalf("withdrew %d for the full digest, want exactly one", n)
+	}
+	if !Load().Trusts(digestD) {
+		t.Error("removing one full digest took an unrelated artifact that merely shared a prefix")
 	}
 }
 

@@ -375,14 +375,28 @@ func Allow(digest string, locations []string) *view.Error {
 	return write(file{Trusted: out})
 }
 
+// minDigestPrefix is the shortest prefix Remove accepts as naming a digest,
+// matching the pin-length floor internal/mcp, internal/profile and
+// internal/pluginconf all use for the same reason: short enough to type,
+// long enough that a collision is not something to plan around.
+const minDigestPrefix = 8
+
+// fullDigestLen is a sha256 hex digest's length. A string this long can
+// only equal one artifact's digest — cryptographic collision aside — so
+// only a shorter string is a prefix Remove has to check for ambiguity.
+const fullDigestLen = 64
+
 // Remove withdraws trust from an artifact, by digest or by the name it was
 // trusted under. It reports how many entries went.
 //
 // By name as well as by digest because that is how somebody will reach for
 // it: an operator taking back a plugin after a rebuild has a name in their
-// head, and every digest that name ever had is a thing they want gone. A
-// digest given in full or as a prefix is matched exactly, so `rta plugin
-// untrust 1a2b3c4d` means one artifact and nothing else.
+// head, and every digest that name ever had is a thing they want gone —
+// deliberately more than one entry when that is what the name matches. A
+// digest given in full or as a prefix is a different promise: matched
+// exactly, so `rta plugin untrust 1a2b3c4d` means one artifact and nothing
+// else, which is why a prefix short enough to match more than one trusted
+// digest is refused up front rather than quietly taking all of them.
 func Remove(which string) (int, *view.Error) {
 	if strings.TrimSpace(which) == "" {
 		return 0, view.Errorf("plugin.untrust.empty", "nothing named")
@@ -398,13 +412,27 @@ func Remove(which string) (int, *view.Error) {
 	if verr != nil {
 		return 0, verr
 	}
+	if len(which) >= minDigestPrefix && len(which) < fullDigestLen {
+		var matches []string
+		for _, e := range f.Trusted {
+			if strings.HasPrefix(e.Digest, which) {
+				matches = append(matches, e.Digest)
+			}
+		}
+		if len(matches) > 1 {
+			return 0, view.Errorf("plugin.untrust.ambiguous",
+				"%q matches %d trusted artifacts, not one", which, len(matches)).
+				WithHint("name one: " + strings.Join(matches, ", "))
+		}
+	}
 	var kept []Entry
 	removed := 0
 	for _, e := range f.Trusted {
 		// Any name it has ever been trusted under, not just the most recent:
 		// the operator is withdrawing a plugin, and every name it has carried
 		// is a name they might reach for.
-		if e.normalize().Knows(which) || (len(which) >= 8 && strings.HasPrefix(e.Digest, which)) {
+		if e.normalize().Knows(which) ||
+			(len(which) >= minDigestPrefix && strings.HasPrefix(e.Digest, which)) {
 			removed++
 			continue
 		}
