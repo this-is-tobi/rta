@@ -13,6 +13,7 @@ package toolcall
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
@@ -231,6 +232,18 @@ func checkEnum(f plugin.Field, v any) error {
 		for _, e := range vv {
 			items = append(items, e.(string)) // checkFieldType already proved this
 		}
+	case float64:
+		// checkFieldType already proved this is whole for plugin.Int; Float
+		// gets the general form. Either way, an Options entry is a string
+		// an operator wrote by hand ("1", "2.5") — the same shape this must
+		// produce, or a numeric field's enum could never actually match.
+		if f.Type == plugin.Int {
+			items = append(items, strconv.FormatInt(int64(vv), 10))
+		} else {
+			items = append(items, strconv.FormatFloat(vv, 'g', -1, 64))
+		}
+	case bool:
+		items = append(items, strconv.FormatBool(vv))
 	}
 	for _, s := range items {
 		if !allowed(s) {
