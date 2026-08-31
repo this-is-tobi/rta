@@ -92,6 +92,42 @@ jobs:
     permissions:
       contents: read
 
+  # Builds the same Dockerfile the release pipeline publishes from, so a
+  # change that breaks the image is caught here rather than on a release.
+  # PUSH: false exports it as a tarball instead — nothing is published from a
+  # pull request.
+  build-docker:
+    name: Build Docker image
+    uses: this-is-tobi/github-workflows/.github/workflows/build-docker.yml@v0
+    permissions:
+      packages: write
+      contents: read
+    with:
+      IMAGE_NAME: ghcr.io/this-is-tobi/rta
+      IMAGE_TAG: pr-${{ github.event.pull_request.number }}
+      IMAGE_CONTEXT: ./
+      IMAGE_DOCKERFILE: ./Dockerfile
+      PUSH: false
+      BUILD_AMD64: true
+      BUILD_ARM64: false
+      BUILD_ARGS: |
+        VERSION=pr-${{ github.event.pull_request.number }}
+        COMMIT=${{ github.sha }}
+
+  # Catches what a successful build cannot: a binary that built but does not
+  # actually start in the image it was built into — the same class of gap
+  # `cross` exists for below, one layer further out.
+  test-docker:
+    name: Test Docker image
+    needs: [build-docker]
+    uses: this-is-tobi/github-workflows/.github/workflows/test-docker.yml@v0
+    permissions:
+      contents: read
+      packages: read
+    with:
+      IMAGE_ARTIFACT: ${{ needs.build-docker.outputs.artifact-prefix }}-amd64
+      COMMAND: --version
+
   # **A laptop can check this and nobody did.** `builtin/fs/platform.go`
   # asserted on `syscall.Stat_t` behind a comma-ok and documented the Windows
   # case as degrading to "always the same device" — but that type does not
@@ -256,6 +292,8 @@ jobs:
     - lint-proto
     - test
     - build
+    - build-docker
+    - test-docker
     - cross
     - discover-plugins
     - lint-plugins
