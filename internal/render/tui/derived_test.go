@@ -285,6 +285,11 @@ func endpointEditorModel(t *testing.T, conn config.Connection) Model {
 				{Name: "sslmode", Type: plugin.String, Default: "prefer", Config: "sslmode",
 					Local: true, Endpoint: plugin.EndpointTLS,
 					Options: []string{"disable", "prefer"}, Help: "tls"},
+				// TLSAdjacent, not itself an endpoint role: it depends on
+				// sslmode rather than being filled directly, the same shape
+				// plugins/pg's real sslrootcert has beside its real sslmode.
+				{Name: "sslrootcert", Type: plugin.String, Config: "sslrootcert",
+					Local: true, TLSAdjacent: true, Help: "ca"},
 				{Name: "schema", Type: plugin.String, Config: "schema", Help: "schema"},
 				{Name: "password", Type: plugin.Secret, Local: true, EnvFallback: true,
 					Help: "password"},
@@ -315,11 +320,11 @@ func endpointEditorModel(t *testing.T, conn config.Connection) Model {
 func TestTheConnEditorDoesNotOfferWhatTheForwardFills(t *testing.T) {
 	m := endpointEditorModel(t, config.Connection{
 		Kube: "homelab/databases/svc/postgres:5432",
-		Set:  map[string]any{"host": "stale.internal", "sslmode": "prefer"},
+		Set:  map[string]any{"host": "stale.internal", "sslmode": "prefer", "sslrootcert": "/etc/rta/ca.crt"},
 	})
 	model, _ := m.startConnForm("db")
 	nm := model.(Model)
-	for _, name := range []string{"host", "port", "sslmode"} {
+	for _, name := range []string{"host", "port", "sslmode", "sslrootcert"} {
 		if _, offered := nm.form.bindings[profileSetPrefix+name]; offered {
 			t.Errorf("set.%s has a box beside a coordinate — an invitation to state the "+
 				"losing destination", name)
@@ -332,7 +337,7 @@ func TestTheConnEditorDoesNotOfferWhatTheForwardFills(t *testing.T) {
 	// go, and the flash names what happened to them.
 	model, _ = nm.saveConnForm()
 	nm = model.(Model)
-	if !strings.Contains(nm.flash, "removed set.host, set.sslmode") {
+	if !strings.Contains(nm.flash, "removed set.host, set.sslmode, set.sslrootcert") {
 		t.Errorf("flash = %q, want the removal named — a save that silently drops a "+
 			"statement is a save that lies", nm.flash)
 	}
@@ -344,7 +349,7 @@ func TestTheConnEditorDoesNotOfferWhatTheForwardFills(t *testing.T) {
 	if saved.Kube != "homelab/databases/svc/postgres:5432" {
 		t.Errorf("kube = %q, want the coordinate kept", saved.Kube)
 	}
-	for _, name := range []string{"host", "sslmode"} {
+	for _, name := range []string{"host", "sslmode", "sslrootcert"} {
 		if v, still := saved.Set[name]; still {
 			t.Errorf("set.%s = %v survived the save — the file still names two destinations", name, v)
 		}
@@ -360,7 +365,7 @@ func TestTheConnEditorDoesNotOfferWhatTheForwardFills(t *testing.T) {
 // the coordinate stood.
 func TestSavingACoordinateRemovesTheKeptEndpointKeys(t *testing.T) {
 	m := endpointEditorModel(t, config.Connection{
-		Set: map[string]any{"host": "stale.internal", "sslmode": "prefer"},
+		Set: map[string]any{"host": "stale.internal", "sslmode": "prefer", "sslrootcert": "/etc/rta/ca.crt"},
 		// A mapping aimed at the same input the forward fills, and one aimed
 		// at a credential: the first dies with the coordinate
 		// (checkSecretRefs), the second is the feature working as intended.
@@ -376,7 +381,7 @@ func TestSavingACoordinateRemovesTheKeptEndpointKeys(t *testing.T) {
 	*nm.form.bindings[profileKubeField] = "homelab/databases/svc/postgres:5432"
 	model, _ = nm.saveConnForm()
 	nm = model.(Model)
-	if !strings.Contains(nm.flash, "removed set.host, set.sslmode") ||
+	if !strings.Contains(nm.flash, "removed set.host, set.sslmode, set.sslrootcert") ||
 		!strings.Contains(nm.flash, "secrets.host") {
 		t.Errorf("flash = %q, want every removal named", nm.flash)
 	}
@@ -388,7 +393,7 @@ func TestSavingACoordinateRemovesTheKeptEndpointKeys(t *testing.T) {
 	if saved.Kube != "homelab/databases/svc/postgres:5432" {
 		t.Errorf("kube = %q, want the coordinate the person typed", saved.Kube)
 	}
-	for _, name := range []string{"host", "sslmode"} {
+	for _, name := range []string{"host", "sslmode", "sslrootcert"} {
 		if v, still := saved.Set[name]; still {
 			t.Errorf("set.%s = %v was written beside the coordinate — the pair every "+
 				"surface refuses", name, v)

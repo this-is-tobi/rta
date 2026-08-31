@@ -185,8 +185,9 @@ func FieldToProto(f plugin.Field) *rtav1.Field {
 		// right — the names of somebody's secrets are worth something without
 		// the values — and shipping them with the declaration would send them
 		// to every caller including the ones that must never see them.
-		HasSuggest: f.Suggest != nil,
-		Live:       f.Live,
+		HasSuggest:  f.Suggest != nil,
+		Live:        f.Live,
+		TlsAdjacent: f.TLSAdjacent,
 	}
 }
 
@@ -212,6 +213,7 @@ func FieldFromProto(f *rtav1.Field) (plugin.Field, bool) {
 		Min:         ValueFromProto(f.GetMin()),
 		Max:         ValueFromProto(f.GetMax()),
 		Live:        f.GetLive(),
+		TLSAdjacent: f.GetTlsAdjacent(),
 	}, ok
 }
 

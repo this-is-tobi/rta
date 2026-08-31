@@ -428,6 +428,13 @@ func childEnv(req plugin.Request) []string {
 	if mode := req.String("sslmode"); mode != "" {
 		env = append(env, "PGSSLMODE="+mode)
 	}
+	if ca := req.String("sslrootcert"); ca != "" {
+		// The same keyword dsn() writes into the in-process driver's
+		// connection string, carried the only way a subprocess reads it —
+		// pg_dump has no connection-string argument for a single value like
+		// this one, only PG* environment variables and its own -h/-p/-U/-d.
+		env = append(env, "PGSSLROOTCERT="+ca)
+	}
 	if home := os.Getenv("HOME"); home != "" {
 		// pg_dump reads certificates and CRLs from under it for the verify-*
 		// modes, so an sslmode the operator configured keeps working.

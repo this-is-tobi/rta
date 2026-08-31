@@ -37,7 +37,7 @@ import (
 // A role the host does not recognise fills nothing. That is the same answer
 // wire.EndpointRoleFromProto gives for a role from a newer contract, and it
 // leaves the input at whatever configuration or the plugin's own default says.
-func endpointValues(c plugin.Capability, ep tunnel.Endpoint) map[string]any {
+func endpointValues(c plugin.Capability, ep tunnel.Endpoint, tunnelTLS bool) map[string]any {
 	out := map[string]any{}
 	addr := net.JoinHostPort(ep.Host, strconv.Itoa(ep.Port))
 	for _, f := range c.Inputs {
@@ -52,9 +52,19 @@ func endpointValues(c plugin.Capability, ep tunnel.Endpoint) map[string]any {
 		case plugin.EndpointAddress:
 			out[f.Name] = addr
 		case plugin.EndpointURL:
-			// http, not https: the forward is loopback and the hop that
+			// http by default: the forward is loopback and the hop that
 			// leaves the machine is already inside the API server's TLS.
-			out[f.Name] = "http://" + addr
+			// https only when the connection's own `tunnelTLS: true` says
+			// the far end terminates TLS itself — config.Connection.
+			// TunnelTLS's doc comment has the reasoning; a port-forward
+			// carries whatever the destination socket speaks unchanged, so
+			// the host cannot infer this from the forward alone the way it
+			// infers http.
+			scheme := "http"
+			if tunnelTLS {
+				scheme = "https"
+			}
+			out[f.Name] = scheme + "://" + addr
 		case plugin.EndpointTLS:
 			// The host owns this, because only the host knows a forward is in
 			// the path — see plugin.EndpointTLS. Nil when the declaration

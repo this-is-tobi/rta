@@ -95,6 +95,14 @@ func profileSetCommand(reg *registry.Registry, render renderFn) *cobra.Command {
 	cmd.Flags().String("kube", "", "reach it through a port-forward: `context/namespace/kind/name:port`")
 	cmd.Flags().String("ssh", "", "or through an ssh host: `[user@]host[:port]/desthost:destport`")
 	cmd.Flags().Bool("direct", false, "connect directly: remove any `kube:` or `ssh:` forward")
+	// Named apart from a plugin's own --set tls=... (etcd, qdrant, s3) or
+	// --set sslmode=... (pg) — those are that plugin's on/off toggle in its
+	// own library's vocabulary, forced off by the host over a tunnel; this
+	// is a different fact at a different layer, about the coordinate itself
+	// rather than about any plugin's configuration. config.Connection.
+	// TunnelTLS's doc comment has the full reasoning.
+	cmd.Flags().Bool("tunnel-tls", false,
+		"the far side of the forward speaks TLS on its own — fill the endpoint as https, not http")
 	_ = cmd.RegisterFlagCompletionFunc("plugin", completeInstalledPlugins)
 	_ = cmd.RegisterFlagCompletionFunc("ttl", completeWindow)
 	_ = cmd.RegisterFlagCompletionFunc("set", completeSetKeys)
@@ -357,7 +365,7 @@ func applyConnectionFlags(cmd *cobra.Command, name string, p *config.Profile,
 	reg *registry.Registry,
 ) (key string, receipts []view.Pair, verr *view.Error) {
 	stated := make([]string, 0, 5)
-	for _, f := range []string{"set", "secret", "kube", "ssh", "direct"} {
+	for _, f := range []string{"set", "secret", "kube", "ssh", "direct", "tunnel-tls"} {
 		if cmd.Flags().Changed(f) {
 			stated = append(stated, "--"+f)
 		}
@@ -412,13 +420,20 @@ func applyConnectionFlags(cmd *cobra.Command, name string, p *config.Profile,
 	}
 
 	if direct, _ := cmd.Flags().GetBool("direct"); direct {
-		conn.Kube, conn.SSH = "", ""
+		// tunnelTLS: true states something about the forward direct just
+		// removed — left behind, it is not a stale value sitting quietly, it
+		// is a connection CheckConnection now refuses to resolve at all,
+		// over a flag that never mentioned it.
+		conn.Kube, conn.SSH, conn.TunnelTLS = "", "", false
 	}
 	if cmd.Flags().Changed("kube") {
 		conn.Kube, conn.SSH = strings.TrimSpace(mustString(cmd, "kube")), ""
 	}
 	if cmd.Flags().Changed("ssh") {
 		conn.SSH, conn.Kube = strings.TrimSpace(mustString(cmd, "ssh")), ""
+	}
+	if cmd.Flags().Changed("tunnel-tls") {
+		conn.TunnelTLS, _ = cmd.Flags().GetBool("tunnel-tls")
 	}
 
 	// What a restated block leaves behind. Stating the whole block is what

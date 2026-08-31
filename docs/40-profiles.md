@@ -115,6 +115,47 @@ One forward per call, torn down afterwards. A cached port-forward outlives the p
 
 A connection states **at most one** of `kube` and `ssh`; both at once is refused.
 
+### When the far side speaks TLS on its own
+
+```yaml
+plugins:
+  vault:
+    kube: homelab/vault-operator-system/svc/vault:8200
+    tunnelTLS: true
+    set:
+      ca-file: ~/.config/rta/vault-ca.crt
+```
+
+`kubectl port-forward` and `ssh -L` are both a raw byte pipe from `127.0.0.1` straight into whatever the destination socket speaks — neither terminates a request the way a proxy would. So the plain `http://` a forward fills in by default is correct for the ordinary case (a plaintext service behind a TLS-secured cluster or bastion hop) and silently wrong for a service whose own listener speaks TLS, Vault's being the common example: the forward carries the TLS bytes through unchanged, and a plain HTTP client sending a request into them gets a connection that closes with nothing readable back.
+
+`tunnelTLS: true` says the far end terminates TLS itself, so the forward should be addressed as `https://` — refused if the connection states neither `kube:` nor `ssh:`, since there is then no forward for it to describe. It changes *scheme only*. Certificate verification still runs as normal, against whatever this machine already trusts: a self-signed or cluster-internal CA (an operator-generated root, a private issuer) still refuses, exactly as it would over a direct connection, and `tunnelTLS: true` does not become `--insecure` under any configuration.
+
+**Named apart from any plugin's own `tls` or `sslmode`.** etcd, qdrant and s3 each read `set: {tls: ...}`; pg reads `set: {sslmode: ...}` — that is the plugin's *own* on/off toggle, in its own client library's vocabulary, and the host forces it off over a tunnel (see [Types are part of the declaration](#types-are-part-of-the-declaration) below for that mechanism). `tunnelTLS` is a different fact at a different layer: not a plugin's setting, but what the host must know about the coordinate itself to address it correctly, before any plugin config is even read. The two can sit beside each other in the same entry without conflict — they answer different questions — but they would not if they shared a word.
+
+Where that CA lives is a plugin's own concern rather than the tunnel's, because reading it is a file-read primitive and the plugin declares — or does not — that it trusts a caller-named path for it: a PEM bundle read from this machine, never from the cluster, and never fillable by an MCP caller. `rta explain <capability>` lists whether a given plugin offers one. Not a secret either — a CA certificate is the public half of a key pair, the half a CA hands out for wide distribution so anyone can verify what it signed, the same reason an OS trust store ships thousands of them in the clear. It needs no more protection than `address` does, and reading it through `kv:`/`kube:` the way a credential is would be reaching for the wrong tool.
+
+The field is named for what it mirrors, plugin by plugin, rather than one word forced everywhere:
+
+| Plugin | Field | Why that name |
+| --- | --- | --- |
+| `etcd`, `vault`, `s3`, `qdrant` | `ca-file` | No existing library vocabulary to mirror, so these four agree with each other instead |
+| `pg` | `sslrootcert` | Its own `sslmode` already commits this plugin to libpq's vocabulary, and `sslrootcert` is libpq's own keyword for exactly this — pgx's DSN parser reads it directly |
+
+**`pg`'s `sslrootcert` only matters for a connection reached directly — no `kube:`, no `ssh:`.** A tunnelled one forces `sslmode` to `disable` regardless of what is written under `set:`: `sslmode` carries `plugin.EndpointTLS`, the role a forward's own hop takes over unconditionally (the same mechanism etcd's, qdrant's and s3's own `tls` field go through, and the reasoning is the same one — PostgreSQL's TLS kills a `kubectl port-forward` on the clean disconnect). `disable` never attempts TLS at all, so `sslrootcert` sits in the connection string built and unread. This is not new with `sslrootcert` — it is the standing rule that governs everything `set:` states about transport security under a coordinate — but a CA is the one value here that is easy to type expecting it to survive, since nothing about the DSN complains that it did not.
+
+For a directly-reached server — a managed Postgres, an on-prem instance with no forward in front of it — `sslmode` is exactly what `set:` states:
+
+```yaml
+plugins:
+  pg:
+    host: pg.example.internal
+    set:
+      sslmode: verify-ca
+      sslrootcert: ~/.config/rta/pg-ca.crt
+```
+
+**`sslmode` does not follow `sslrootcert` automatically, and that is worth reading twice even here.** `sslmode`'s own default, `prefer`, tells the driver to skip certificate verification regardless of what `sslrootcert` names — filling in a CA and leaving `sslmode` untouched builds a trust store and then never consults it. This is deliberate rather than a gap: which axis to move — the CA, how strict to be about it — is two separate decisions, and silently elevating one because the other was set would be a second, undocumented way `sslmode`'s value changes (the codebase already argues against exactly that kind of surprise — see the type-coercion section below). Set both, as above.
+
 ## Writing one from a script
 
 `rta profile set` states a profile from flags. Nothing about it needs a terminal, which is the point: before it existed the only alternatives were a TTY form and hand-written YAML, and a team that cannot script its setup ships the YAML — the path where nothing checks the block until something tries to use it.
@@ -122,7 +163,7 @@ A connection states **at most one** of `kube` and `ssh`; both at once is refused
 ```bash
 rta profile set <name> [--note ...] [--ttl 8h|none]
                        [--plugin <name> [--set k=v ...] [--secret input=kv:entry ...]
-                                        [--kube ...] [--ssh ...] [--direct]]
+                                        [--kube ...] [--ssh ...] [--direct] [--tunnel-tls]]
 rta profile rm  <name> [--plugin <name>]
 ```
 
@@ -147,6 +188,7 @@ One plugin per invocation. A profile spanning three plugins is three lines, and 
 | `--set port=six-thousand`, `--set tls=yes` | the declared type cannot hold it (see below) |
 | `--set hsot=…` | nothing in that plugin reads the key |
 | `--kube …` and `--ssh …` together | a call opens one forward |
+| `--tunnel-tls` with neither `--kube` nor `--ssh` in effect (this run or already stored) | it states something about the far side of a forward that does not exist — `--direct` clears a stored `tunnelTLS: true` for the same reason |
 | a profile named after an installed plugin | a profile name and a namespace share a command line |
 | writing where profiles are not honoured | with no config directory the config path falls back to `./.rta.yaml` — ordinary in a container or in CI — and profiles read from a working-directory file are ignored, because that file could have come from a repository you cloned. Set `$RTA_CONFIG` |
 

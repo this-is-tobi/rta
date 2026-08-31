@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/x509"
 	"database/sql/driver"
 	"errors"
 	"fmt"
@@ -79,6 +80,39 @@ func connFields() []plugin.Field {
 			Help:     "TLS negotiation mode"},
 		{Name: "password", Type: plugin.Secret, Local: true, EnvFallback: true,
 			Help: "password for the role"},
+		// Local for the same reason plugins/etcd's own ca-file is: it is read
+		// off this machine's disk. Named sslrootcert rather than etcd's
+		// ca-file on purpose — unlike vault, which invented no libpq-shaped
+		// word to mirror, sslmode above already commits this plugin to
+		// libpq's own vocabulary, and sslrootcert is libpq's own keyword for
+		// exactly this (jackc/pgx's pgconn.configTLS reads it directly,
+		// alongside sslcert/sslkey for a client pair this plugin does not
+		// expose). Not a plugin.Secret: a CA certificate is the public half
+		// of a key pair, the half a CA hands out for wide distribution so
+		// anyone can verify what it signed.
+		//
+		// **Does not itself change sslmode.** sslmode's own default,
+		// prefer, tells pgx to skip verification regardless of what this
+		// names — see its Help. An operator may want the CA filled in
+		// before deciding how strict to be about it, and elevating sslmode
+		// as a side effect of a different field would be a second,
+		// undocumented way its value changes — worth documenting loudly
+		// instead of working around silently.
+		//
+		// TLSAdjacent for the harder half of the same fact: under a tunnel,
+		// sslmode is not merely left at prefer, it is forced to disable —
+		// EndpointTLS's own unconditional rule — and disable never attempts
+		// TLS at all, so a CA named here goes unread whatever sslmode says.
+		// Unlike plugins/etcd's ca-file, nothing in connect() below turns TLS
+		// back on when this is set: sslmode is a tier, not a bool, and
+		// picking one on the operator's behalf is exactly the elevation the
+		// comment above already declines to do. checkSet reads this flag to
+		// refuse the combination instead of leaving it silently inert.
+		{Name: "sslrootcert", Type: plugin.String, Default: "", Config: "sslrootcert",
+			Local: true, TLSAdjacent: true,
+			Help: "CA bundle to verify the server against — has no effect " +
+				"unless sslmode is require or stricter, and is overridden along with sslmode " +
+				"under a kube:/ssh: tunnel"},
 	}
 }
 
@@ -101,6 +135,9 @@ func dsn(req plugin.Request) string {
 	}
 	if pw := req.String("password"); pw != "" {
 		parts = append(parts, "password="+quote(pw))
+	}
+	if ca := req.String("sslrootcert"); ca != "" {
+		parts = append(parts, "sslrootcert="+quote(ca))
 	}
 	return strings.Join(parts, " ")
 }
@@ -185,6 +222,13 @@ func classify(err error, req plugin.Request) *view.Error {
 		strings.Contains(err.Error(), "server does not support SSL") {
 		return view.Errorf("pg.tls.unsupported", "%s does not offer TLS", where).
 			WithHint("--sslmode disable if that is expected on this network")
+	}
+	var certErr x509.UnknownAuthorityError
+	if errors.As(err, &certErr) {
+		return view.Errorf("pg.tls.untrusted", "%s presented a certificate nothing here trusts", where).
+			WithHint("a tunnelled PostgreSQL commonly has its own operator- or cluster-generated CA; " +
+				"pass it with sslrootcert — and check --sslmode is require or stricter, since prefer " +
+				"never verifies it")
 	}
 	return view.Errorf("pg.conn.failed", "could not connect to %s: %v", where, err).
 		WithHint("`rta explain pg.status` lists every input and where each one can come from")

@@ -125,6 +125,23 @@ func TestTheChildGetsAMinimalEnvironment(t *testing.T) {
 	}
 }
 
+// pg_dump has no single-value connection-string argument the way the
+// in-process driver's DSN does — PGSSLROOTCERT is the only way the same CA
+// dsn() writes for pg.query reaches pg_dump too, so an operator's sslrootcert
+// is not honoured for queries and silently ignored for backups.
+func TestTheChildGetsSSLRootCert(t *testing.T) {
+	env := childEnv(reqFor(t, "pg.dump", map[string]any{"sslrootcert": "/etc/rta/pg-ca.crt"}))
+	var found bool
+	for _, kv := range env {
+		if kv == "PGSSLROOTCERT=/etc/rta/pg-ca.crt" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("PGSSLROOTCERT did not reach the child: %v", env)
+	}
+}
+
 // The receipt states the guarantee rather than leaving it implied, and the
 // two forms are genuinely different mechanisms: one transaction, or one
 // exported snapshot several connections join.

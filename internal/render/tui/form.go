@@ -407,7 +407,7 @@ func newCapForm(c plugin.Capability, fs []plugin.Field, defaults map[string]any,
 			}
 			cf.bools[f.Name] = &v
 			fields = append(fields, huh.NewConfirm().
-				Title(f.Name).
+				Title(fieldTitle(f.Name)).
 				Description(f.Help).
 				Affirmative("yes").Negative("no").
 				Value(&v))
@@ -418,7 +418,7 @@ func newCapForm(c plugin.Capability, fs []plugin.Field, defaults map[string]any,
 			// Capability.validate refuses Suggest on a Text input, so nothing
 			// is being dropped here — see pkg/plugin.
 			fields = append(fields, huh.NewText().
-				Title(f.Name).
+				Title(fieldTitle(f.Name)).
 				// ctrl+e opens $EDITOR on the body, which is how a note gets
 				// written in the tool you write in. It works by default; it
 				// is said here because an affordance nobody knows about is
@@ -434,7 +434,7 @@ func newCapForm(c plugin.Capability, fs []plugin.Field, defaults map[string]any,
 			// "a, b" — fmt.Sprint would print "[a b]" and break re-submission.
 			typed := cf.bind(f.Name, defaultString(f))
 			fields = append(fields, cf.record(f.Name, cf.completing(huh.NewInput().
-				Title(f.Name).
+				Title(fieldTitle(f.Name)).
 				Description(completionHint(f, fieldDescription(f)+" (comma-separated)")).
 				Accessor(typed).
 				Validate(validatorFor(f)), f, typed, lastItem)))
@@ -444,7 +444,7 @@ func newCapForm(c plugin.Capability, fs []plugin.Field, defaults map[string]any,
 			// declared for itself goes first.
 			typed := cf.bind(f.Name, defaultString(f))
 			fields = append(fields, cf.record(f.Name, cf.completing(huh.NewInput().
-				Title(f.Name).
+				Title(fieldTitle(f.Name)).
 				Description(fieldDescription(f)+" — tab completes paths").
 				Accessor(typed).
 				Validate(validatorFor(f)), f, typed, walkingDisk)))
@@ -454,7 +454,7 @@ func newCapForm(c plugin.Capability, fs []plugin.Field, defaults map[string]any,
 			// masked precisely so the value is not on screen. Capability
 			// validate refuses Suggest on a Secret for the same reason.
 			fields = append(fields, cf.record(f.Name, huh.NewInput().
-				Title(f.Name).
+				Title(fieldTitle(f.Name)).
 				Description(fieldDescription(f)).
 				EchoMode(huh.EchoModePassword).
 				Accessor(cf.bind(f.Name, defaultString(f))).
@@ -462,7 +462,7 @@ func newCapForm(c plugin.Capability, fs []plugin.Field, defaults map[string]any,
 		default:
 			typed := cf.bind(f.Name, defaultString(f))
 			fields = append(fields, cf.record(f.Name, cf.completing(huh.NewInput().
-				Title(f.Name).
+				Title(fieldTitle(f.Name)).
 				Description(completionHint(f, fieldDescription(f))).
 				Accessor(typed).
 				Validate(validatorFor(f)), f, typed, wholeBox)))
@@ -802,7 +802,7 @@ func (cf *capForm) selectOne(f plugin.Field) huh.Field {
 		opts = append(opts, huh.NewOption(o, o))
 	}
 	return huh.NewSelect[string]().
-		Title(f.Name).
+		Title(fieldTitle(f.Name)).
 		Description(fieldDescription(f)).
 		Options(opts...).
 		Accessor(typed)
@@ -826,7 +826,7 @@ func (cf *capForm) multiSelect(f plugin.Field) huh.Field {
 		opts = append(opts, huh.NewOption(o, o).Selected(contains(v, o)))
 	}
 	return huh.NewMultiSelect[string]().
-		Title(f.Name).
+		Title(fieldTitle(f.Name)).
 		Description(fieldDescription(f) + " (space to toggle)").
 		Options(opts...).
 		Value(&v)
@@ -839,6 +839,31 @@ func contains(list []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// fieldTitle is what a field's box is headed with — f.Name for a capability's
+// own input, which is also its CLI flag name and MCP schema property, so the
+// three already agree without help. It only does anything for the three
+// prefixes this package itself adds to keep a synthesized form's internal
+// binding keys from colliding with a real plugin's own field names
+// (profileform.go's "profile-"/"credential-" constants, and the "set."
+// rename configFields() gives a plugin's own key when it rides inside a
+// connection editor) — those prefixes exist for cf.bindings/cf.bools, a map
+// keyed across every field on the form at once, and were never meant to be
+// read. Before this, they were: a box titled "set.host" or "profile-kube" is
+// an implementation detail on screen instead of the word an operator typed.
+//
+// A real plugin field spelled with one of these prefixes on purpose is not a
+// case this codebase has (see the audit behind config.Connection.TunnelTLS's
+// naming), and stripping a prefix nothing declared is a no-op, so this is
+// safe to apply unconditionally rather than only inside profileform.go.
+func fieldTitle(name string) string {
+	for _, prefix := range []string{profileSetPrefix, "profile-", "credential-"} {
+		if rest, ok := strings.CutPrefix(name, prefix); ok {
+			return rest
+		}
+	}
+	return name
 }
 
 func fieldDescription(f plugin.Field) string {

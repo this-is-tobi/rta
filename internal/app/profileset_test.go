@@ -469,6 +469,59 @@ func TestTwoForwardsAreRefused(t *testing.T) {
 	}
 }
 
+// `--tunnel-tls` states something about the far side of a forward, so it is
+// refused the moment there is no forward for it to describe — neither
+// stated in this run nor already on file.
+func TestTLSWithoutAForwardIsRefused(t *testing.T) {
+	_, errOut, err := runWith(t, setRegistry(t), "",
+		"profile", "set", "staging", "--plugin", "db", "--tunnel-tls")
+	if err == nil {
+		t.Fatal("--tunnel-tls with no kube: or ssh: was written")
+	}
+	if !strings.Contains(errOut, "forward") {
+		t.Errorf("the refusal does not say why: %q", errOut)
+	}
+}
+
+// Stated beside a forward in the same run, it is written as an ordinary peer
+// of `kube:` — the CLI's half of what internal/profile.endpointValues then
+// acts on.
+func TestAddingATLSForwardWritesIt(t *testing.T) {
+	_, _, err := runWith(t, setRegistry(t), "",
+		"profile", "set", "staging", "--plugin", "db",
+		"--kube", "prod/db/svc/postgres:5432", "--tunnel-tls")
+	if err != nil {
+		t.Fatalf("kube: with tunnelTLS: true was refused: %v", err)
+	}
+	body := configOf(t)
+	if !strings.Contains(body, "tunnelTLS: true") {
+		t.Errorf("tunnelTLS: true was not written:\n%s", body)
+	}
+}
+
+// `--direct` removes the forward `tunnelTLS: true` describes, so it has to
+// remove the statement too — left behind, it is not a stale value sitting
+// quietly, it is a connection CheckConnection now refuses to resolve at
+// all, over a flag that never mentioned it.
+func TestDirectClearsAStoredTLSStatement(t *testing.T) {
+	const before = `profiles:
+  staging:
+    plugins:
+      db:
+        kube: prod/db/svc/postgres:5432
+        tunnelTLS: true
+`
+	_, _, err := runWith(t, setRegistry(t), before,
+		"profile", "set", "staging", "--plugin", "db", "--direct")
+	if err != nil {
+		t.Fatalf("--direct was refused: %v", err)
+	}
+	body := configOf(t)
+	if strings.Contains(body, "tunnelTLS: true") {
+		t.Errorf("tunnelTLS: true survived --direct, which just removed the forward it describes:\n%s", body)
+	}
+}
+
 // **Removing an environment revokes the grants naming it.** A grant for a
 // name nothing can look up authorizes nothing, so leaving it behind is a row
 // in `rta grant list` that reads like access and is not.

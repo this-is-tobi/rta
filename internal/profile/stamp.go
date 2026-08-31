@@ -85,13 +85,14 @@ func Stamp(p config.Profile) string {
 func ConnStamp(key string, c config.Connection) string {
 	h := sha256.New()
 	write := lengthPrefixed(h)
-	// Both tunnel schemes, labelled apart: each is "where this connection
-	// goes", which is the first thing a grant pinned to this stamp must see
-	// change. This line is the enumeration the Tunnelled predicate cannot
-	// cover for — a field added to Connection without a write here is a
-	// repoint no standing grant notices, so the drift test in stamp_test.go
-	// counts Connection's fields.
-	write("key", key, "kube", c.Kube, "ssh", c.SSH)
+	// Both tunnel schemes, labelled apart, and whether the far end of one
+	// speaks TLS on its own: each is "where this connection goes" — a
+	// scheme flip changes it exactly as a host flip would, which is the
+	// whole reason it exists. This line is the enumeration the Tunnelled
+	// predicate cannot cover for — a field added to Connection without a
+	// write here is a repoint no standing grant notices, so the drift test
+	// in stamp_test.go counts Connection's fields.
+	write("key", key, "kube", c.Kube, "ssh", c.SSH, "tunnelTLS", fmt.Sprintf("%t", c.TunnelTLS))
 	for _, k := range sortedKeys(c.Set) {
 		write("set", k, canonical(c.Set[k]))
 	}

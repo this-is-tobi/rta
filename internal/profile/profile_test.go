@@ -967,6 +967,81 @@ profiles:
 	}
 }
 
+// The harder half of the same rule: a TLSAdjacent key is not itself
+// overridden by the forward — it carries no Endpoint role, the host never
+// writes into it — but it depends on the EndpointTLS key the forward forces
+// off unconditionally, so it is exactly as dead as one sitting beside its
+// own endpoint would be. plugins/pg's sslrootcert beside sslmode is the real
+// case this fixture stands in for.
+func TestATLSAdjacentSetKeyBesideACoordinateIsRefused(t *testing.T) {
+	reg := registry.New()
+	tunnelled := plugin.Capability{
+		ID: "pg.query", Summary: "query", Safety: plugin.Read, Run: run,
+		Inputs: []plugin.Field{
+			{Name: "host", Type: plugin.String, Config: "host", Local: true,
+				Endpoint: plugin.EndpointHost, Help: "host"},
+			{Name: "port", Type: plugin.Int, Default: 5432, Config: "port", Local: true,
+				Endpoint: plugin.EndpointPort, Min: 1, Max: 65535, Help: "port"},
+			{Name: "sslmode", Type: plugin.String, Default: "prefer", Config: "sslmode", Local: true,
+				Endpoint: plugin.EndpointTLS, Options: []string{"disable", "prefer", "verify-ca"}, Help: "tls"},
+			{Name: "sslrootcert", Type: plugin.String, Config: "sslrootcert", Local: true,
+				TLSAdjacent: true, Help: "ca"},
+			{Name: "database", Type: plugin.String, Config: "database", Help: "database"},
+		},
+	}
+	if err := reg.Register(plugin.Plugin{Name: "pg", Summary: "pg",
+		Capabilities: []plugin.Capability{tunnelled}}); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := load(t, `
+profiles:
+  homelab:
+    plugins:
+      pg:
+        kube: homelab/databases/svc/postgres:5432
+        set:
+          sslrootcert: /etc/rta/pg-ca.crt
+          database: app
+`)
+	_, verr := Lookup(cfg, tunnelled, "homelab", reg)
+	if verr == nil {
+		t.Fatal("a profile stating both a coordinate and set.sslrootcert resolved — the forward " +
+			"forces sslmode off, so the CA is read and never consulted")
+	}
+	if verr.Code != "core.profile.set" {
+		t.Errorf("code = %s, want core.profile.set", verr.Code)
+	}
+	if !strings.Contains(verr.Message, "overridden along with the TLS mode") {
+		t.Errorf("message = %q, want it to say the forward turns off what this depends on", verr.Message)
+	}
+
+	found := false
+	for _, p := range Check(cfg, reg) {
+		if strings.Contains(p.Reason, "overridden along with the TLS mode") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("Check does not report what Lookup refuses")
+	}
+
+	// Reached directly — no coordinate at all — sslmode is never touched, so
+	// sslrootcert does exactly what it says.
+	direct := load(t, `
+profiles:
+  homelab:
+    plugins:
+      pg:
+        set:
+          sslrootcert: /etc/rta/pg-ca.crt
+          database: app
+`)
+	if _, verr := Lookup(direct, tunnelled, "homelab", reg); verr != nil {
+		t.Errorf("sslrootcert with no coordinate at all was refused: %s", verr.Message)
+	}
+}
+
 // A `secrets:` mapping onto an input the coordinate's forward fills is
 // refused at resolution — the mapping's twin of the `set:` rule.
 //

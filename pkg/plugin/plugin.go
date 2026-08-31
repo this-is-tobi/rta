@@ -89,11 +89,23 @@ const (
 	EndpointAddress EndpointRole = "address"
 	// EndpointURL takes both as a URL: "http://127.0.0.1:54321".
 	//
-	// Plain http, and that is not a downgrade to argue about. A port-forward
-	// is already inside the API server's TLS for the only hop that leaves the
-	// machine: rta talks to 127.0.0.1, kubectl wraps that in HTTPS to the API
-	// server, and the kubelet delivers it into the pod's network namespace.
-	// Re-encrypting a loopback socket at each end buys nothing.
+	// Plain http by default, and that is not a downgrade to argue about for
+	// the ordinary case. A port-forward is already inside the API server's
+	// TLS for the only hop that leaves the machine: rta talks to 127.0.0.1,
+	// kubectl wraps that in HTTPS to the API server, and the kubelet
+	// delivers it into the pod's network namespace unchanged. Re-encrypting
+	// a loopback socket at each end buys nothing there.
+	//
+	// "Unchanged" is the part worth stating twice: a port-forward is a raw
+	// byte pipe into the destination socket, not a proxy that terminates a
+	// request. If that socket itself speaks TLS — a service's own listener,
+	// as opposed to transport the forward provides — plain http is a
+	// downgrade this default cannot see, because nothing about the forward
+	// says so. config.Connection's `tunnelTLS: true` is how the operator says
+	// it — named apart from any plugin's own tls/sslmode field, which is a
+	// different fact at a different layer; see config.Connection.TunnelTLS's
+	// doc comment. internal/profile's endpointValues makes the resulting
+	// scheme choice.
 	EndpointURL EndpointRole = "url"
 	// EndpointTLS takes whether transport security is worth negotiating over
 	// the forward, which is: no.
@@ -301,6 +313,30 @@ type Field struct {
 	// Zero value is EndpointNone: no input is filled from a tunnel, which is
 	// every plugin that has not opted in.
 	Endpoint EndpointRole
+	// TLSAdjacent marks an input that only affects the connection when this
+	// capability's own EndpointTLS-role input actually negotiates TLS — a CA
+	// bundle, a client certificate, a client key. It carries no Endpoint role
+	// itself: the host does not fill it, the operator does. What it needs
+	// said is the opposite fact — that a tunnel silently strips its effect,
+	// because EndpointTLS is forced to its off value unconditionally
+	// whenever a forward is open (see EndpointTLS), and a value that only
+	// mattered once TLS was negotiated does nothing once TLS is not.
+	//
+	// **Not the same claim `checkSet` already makes about an Endpoint-role
+	// input.** Those are overridden because the host writes into them
+	// directly; this one is untouched and inert anyway, because what it
+	// depended on was overridden instead — a harder failure to notice, since
+	// nothing about the value itself looks wrong.
+	//
+	// **False by default, and that default is load-bearing, not merely
+	// unset.** A plugin whose own connect() already compensates — turning
+	// TLS back on when this field is given, the way plugins/etcd's
+	// ca-file/cert-file/key-file do (`tls || ca-file != "" || cert-file !=
+	// ""`) — must leave this false, or a connection that works correctly
+	// gets refused for a reason that no longer applies to it. Only a plugin
+	// that leaves the forced-off value standing, as plugins/pg's sslrootcert
+	// does against its own multi-valued sslmode, opts in.
+	TLSAdjacent bool
 	// Suggest returns values that exist right now: the tags you have used,
 	// the keys in your store, the hostnames in your hosts file. Unlike
 	// Options it is not exhaustive — anything may still be typed — so it

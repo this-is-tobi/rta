@@ -287,6 +287,118 @@ func TestSavingRefusesACoordinateThePluginCannotUse(t *testing.T) {
 	}
 }
 
+// The TLS toggle is offered exactly where the coordinate boxes are — it is a
+// fact about whichever one is filled, so a plugin no forward can reach has
+// nothing for it to describe either.
+func TestTLSToggleFollowsTheCoordinateBoxes(t *testing.T) {
+	noHistory(t)
+	m := twoPluginModel(t)
+	m.pluginSel = pluginIndex(t, m, "plain")
+	m.width, m.height = 110, 44
+
+	next, _ := m.startConnForm("")
+	nm := next.(Model)
+	nm.form.form = startedForm(nm.form)
+	if _, offered := nm.form.bools[profileTLSField]; offered {
+		t.Error("the TLS toggle is offered for a plugin no forward can reach")
+	}
+
+	m.pluginSel = pluginIndex(t, m, "db")
+	next, _ = m.startConnForm("")
+	nm = next.(Model)
+	nm.form.form = startedForm(nm.form)
+	if _, offered := nm.form.bools[profileTLSField]; !offered {
+		t.Error("the TLS toggle is missing for a plugin a forward can fill")
+	}
+}
+
+// Stated beside a coordinate, it is written as an ordinary peer of `kube:` —
+// the TUI's half of what internal/profile.endpointValues then acts on.
+func TestSavingWithTLSOnAndACoordinateWritesIt(t *testing.T) {
+	noHistory(t)
+	m := twoPluginModel(t)
+	m.pluginSel = pluginIndex(t, m, "db")
+
+	next, _ := m.startConnForm("")
+	nm := next.(Model)
+	nm.form.form = startedForm(nm.form)
+	*nm.form.bindings[profileKubeField] = "homelab/db/svc/postgres:5432"
+	*nm.form.bools[profileTLSField] = true
+
+	after, _ := nm.saveConnForm()
+	nm = after.(Model)
+	cfg, err := config.LoadFile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Profiles["staging"].Plugins["db"].TunnelTLS {
+		t.Errorf("tunnelTLS: true was not written, flash: %q", nm.flash)
+	}
+}
+
+// A toggle left on while the coordinate above it is cleared is repaired at
+// save rather than refused — the same reason the endpoint-key removal a few
+// lines up is: a Bool has no empty to choose, and this screen does not redraw
+// itself the moment a sibling box changes, so refusing would make the form
+// unsaveable until the operator noticed a switch nothing drew their eye to.
+func TestSavingRepairsATLSToggleLeftOnWithNoCoordinate(t *testing.T) {
+	noHistory(t)
+	m := profileModel(t, config.Config{Profiles: map[string]config.Profile{
+		"staging": {Plugins: map[string]config.Connection{
+			"db": {Kube: "homelab/db/svc/postgres:5432", TunnelTLS: true},
+		}}},
+	})
+	m.profiles = m.profileRows()
+	m.profileOpen = "staging"
+
+	next, _ := m.startConnForm("db")
+	nm := next.(Model)
+	nm.form.form = startedForm(nm.form)
+	*nm.form.bindings[profileKubeField] = ""
+
+	after, _ := nm.saveConnForm()
+	nm = after.(Model)
+	cfg, err := config.LoadFile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Profiles["staging"].Plugins["db"].TunnelTLS {
+		t.Error("tunnelTLS: true survived clearing the coordinate it describes")
+	}
+	if !strings.Contains(nm.flash, "tunnelTLS") {
+		t.Errorf("the repair has no receipt: %q", nm.flash)
+	}
+}
+
+// Every box titled with the word an operator actually typed — `kube`,
+// `tls`, `host` — never with this form's own internal binding key
+// (`profile-kube`, `set.host`) that key exists only to keep one plugin's
+// field from colliding with another's in a form-wide map. A box titled
+// "set.host" is an implementation detail on screen instead of the word the
+// config file itself uses.
+func TestFieldTitlesNeverLeakTheFormsOwnPrefixes(t *testing.T) {
+	noHistory(t)
+	m := twoPluginModel(t)
+	m.pluginSel = pluginIndex(t, m, "db")
+	m.width, m.height = 110, 44
+
+	next, _ := m.startConnForm("")
+	nm := next.(Model)
+	nm.form.form = startedForm(nm.form)
+	out := plain(nm.formView())
+
+	for _, leaked := range []string{"profile-plugin", "profile-kube", "profile-ssh", "profile-tls", "set.host", "set.port"} {
+		if strings.Contains(out, leaked) {
+			t.Errorf("the form shows its own internal field name %q instead of a title:\n%s", leaked, out)
+		}
+	}
+	for _, want := range []string{"kube", "ssh", "tls", "host", "port"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the form is missing the plain title %q:\n%s", want, out)
+		}
+	}
+}
+
 // The two headings, which are what makes the column read as three questions
 // rather than six boxes.
 func TestTheConnectionEditorSaysWhereEachSectionStarts(t *testing.T) {

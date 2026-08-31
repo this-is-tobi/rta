@@ -120,7 +120,7 @@ func tunnelledRegistry(t *testing.T) *registry.Registry {
 // req.Int reads as 0, and a URL that arrived without a scheme is a URL nothing
 // dials.
 func TestEachEndpointRoleFillsTheInputThatDeclaredIt(t *testing.T) {
-	got := endpointValues(tunnelCap(), endpointAt("127.0.0.1", 54321))
+	got := endpointValues(tunnelCap(), endpointAt("127.0.0.1", 54321), false)
 	want := map[string]any{
 		"host":    "127.0.0.1",
 		"port":    54321,
@@ -141,6 +141,28 @@ func TestEachEndpointRoleFillsTheInputThatDeclaredIt(t *testing.T) {
 	}
 	if len(got) != len(want) {
 		t.Errorf("filled %d inputs, want %d: %v", len(got), len(want), got)
+	}
+}
+
+// EndpointURL answers http by default and https only when the connection
+// says the far side of the forward speaks TLS on its own — config.
+// Connection.TunnelTLS's doc comment has the reasoning; this is the
+// resulting choice made concrete.
+func TestEndpointURLIsHTTPSOnlyWhenTheConnectionSaysTheFarSideSpeaksTLS(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		tunnelTLS bool
+		want      string
+	}{
+		{"default: http, the tunnel's own hop", false, "http://127.0.0.1:54321"},
+		{"tunnelTLS: true, the destination terminates TLS itself", true, "https://127.0.0.1:54321"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := endpointValues(tunnelCap(), endpointAt("127.0.0.1", 54321), tc.tunnelTLS)
+			if got["url"] != tc.want {
+				t.Errorf("url = %v, want %q", got["url"], tc.want)
+			}
+		})
 	}
 }
 
@@ -168,7 +190,7 @@ func TestTheTLSRoleIsRenderedInThePluginsOwnVocabulary(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			c := plugin.Capability{ID: "x.y", Summary: "y", Safety: plugin.Read, Run: run,
 				Inputs: []plugin.Field{tc.field}}
-			if got := endpointValues(c, endpointAt("127.0.0.1", 1)); got[tc.field.Name] != tc.want {
+			if got := endpointValues(c, endpointAt("127.0.0.1", 1), false); got[tc.field.Name] != tc.want {
 				t.Errorf("%s = %#v, want %#v", tc.field.Name, got[tc.field.Name], tc.want)
 			}
 		})
@@ -191,7 +213,7 @@ func TestAnEndpointRoleCannotReachAnInputAProfileMayNotFill(t *testing.T) {
 		Inputs: []plugin.Field{{Name: "out", Type: plugin.Path, Config: "out", Local: true,
 			Endpoint: plugin.EndpointAddress}},
 	}
-	if got := endpointValues(c, endpointAt("127.0.0.1", 1)); len(got) != 0 {
+	if got := endpointValues(c, endpointAt("127.0.0.1", 1), false); len(got) != 0 {
 		t.Errorf("a tunnel filled an input a profile may not fill: %v", got)
 	}
 }
@@ -367,6 +389,40 @@ func TestAForwardThatCannotBeOpenedRefusesRatherThanFallingBack(t *testing.T) {
 	}
 	if got != nil {
 		t.Errorf("a failed forward filled inputs anyway: %v", got)
+	}
+}
+
+// `tunnelTLS: true` states something about the far side of a forward that
+// does not exist, caught before the call that needs it and by both the
+// report and the resolver — the same twin-hunt
+// TestBothTunnelsAtOnceAreRefusedEverywhere runs for the kube/ssh rule.
+func TestTLSWithoutATunnelIsRefusedByBothCheckAndLookup(t *testing.T) {
+	cfg := load(t, `
+profiles:
+  homelab:
+    plugins:
+      pg:
+        tunnelTLS: true
+`)
+	reg := tunnelledRegistry(t)
+	_, verr := Lookup(cfg, tunnelCap(), "homelab", reg)
+	if verr == nil {
+		t.Fatal("tunnelTLS: true with no kube: or ssh: resolved — TLS to what forward?")
+	}
+	if verr.Code != "core.profile.tunnel" {
+		t.Errorf("code = %s, want core.profile.tunnel", verr.Code)
+	}
+	if !strings.Contains(verr.Message, "states `tunnelTLS: true`") {
+		t.Errorf("message = %q, want it to name the statement", verr.Message)
+	}
+	found := false
+	for _, p := range Check(cfg, reg) {
+		if strings.Contains(p.Reason, "states `tunnelTLS: true`") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("Check does not report what Lookup refuses")
 	}
 }
 

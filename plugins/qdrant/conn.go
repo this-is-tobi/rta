@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
 	"errors"
@@ -11,6 +12,7 @@ import (
 	stdnet "net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -42,6 +44,16 @@ func connFields() []plugin.Field {
 			Help: "use HTTPS (a local Qdrant ordinarily does not)"},
 		{Name: "api-key", Type: plugin.Secret, Local: true, EnvFallback: true,
 			Help: "API key, for an instance that requires one"},
+		// Local for the same reason plugins/etcd's own ca-file is: it is read
+		// off this machine's disk, not held as a value rta's own store could
+		// manage. Not a plugin.Secret: a CA certificate is the public half
+		// of a key pair, the half a CA hands out for wide distribution so
+		// anyone can verify what it signed — the same reason an OS trust
+		// store ships thousands of them in the clear. ca-file only needs
+		// Local for the file-read-primitive reason address does, not
+		// because its contents are sensitive.
+		{Name: "ca-file", Type: plugin.String, Default: "", Config: "ca-file",
+			Local: true, Help: "PEM bundle to verify the server against, beyond the host's own trust store"},
 	}
 }
 
@@ -77,7 +89,10 @@ type rawTarget struct{ into any }
 
 func call(ctx context.Context, req plugin.Request, method, path string, body, out any) *view.Error {
 	base := "http://"
-	if req.Bool("tls") {
+	// ca-file only means anything over TLS, so setting it turns TLS on the
+	// same way etcd's own ca-file does — the alternative is a value that
+	// silently does nothing until --tls is also typed.
+	if req.Bool("tls") || req.String("ca-file") != "" {
 		base = "https://"
 	}
 	base += req.String("endpoint")
@@ -107,7 +122,11 @@ func call(ctx context.Context, req plugin.Request, method, path string, body, ou
 		httpReq.Header.Set("api-key", key)
 	}
 
-	resp, err := http.DefaultClient.Do(httpReq)
+	client, verr := httpClient(req)
+	if verr != nil {
+		return verr
+	}
+	resp, err := client.Do(httpReq)
 	if err != nil {
 		return classify(err, req)
 	}
@@ -145,6 +164,29 @@ func call(ctx context.Context, req plugin.Request, method, path string, body, ou
 		}
 	}
 	return nil
+}
+
+// httpClient is http.DefaultClient unless ca-file names a CA to trust beyond
+// this machine's own store, in which case it is a client built for exactly
+// that — read and parsed fresh on every call, the same as every other input
+// here, because this plugin keeps no client or connection across calls to
+// begin with (call is the only entry point, per-request end to end).
+func httpClient(req plugin.Request) (*http.Client, *view.Error) {
+	ca := req.String("ca-file")
+	if ca == "" {
+		return http.DefaultClient, nil
+	}
+	pem, err := os.ReadFile(ca)
+	if err != nil {
+		return nil, view.Errorf("qdrant.tls.ca.unreadable", "%v", err).
+			WithHint("ca-file is a path on this machine, read by rta rather than by the server")
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(pem) {
+		return nil, view.Errorf("qdrant.tls.ca.invalid", "%s holds no PEM certificate", ca).
+			WithHint("this wants the CA bundle, not the server's own certificate")
+	}
+	return &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool}}}, nil
 }
 
 // maxResponseBytes bounds one response. Points carry payloads and vectors, and
@@ -238,7 +280,8 @@ func classify(err error, req plugin.Request) *view.Error {
 	var certErr x509.UnknownAuthorityError
 	if errors.As(err, &certErr) {
 		return view.Errorf("qdrant.tls.untrusted", "%s presented a certificate nothing here trusts", where).
-			WithHint("a self-signed certificate needs --tls=false, or its CA trusted on this machine")
+			WithHint("a self-signed certificate needs --tls=false for a real try, or its CA trusted " +
+				"with ca-file for the real thing")
 	}
 	return view.Errorf("qdrant.conn.failed", "could not reach %s: %v", where, err).
 		WithHint("`rta explain qdrant.overview` lists every input and where each one can come from")

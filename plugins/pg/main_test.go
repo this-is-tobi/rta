@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/x509"
 	"errors"
 	"net"
 	"os"
@@ -75,6 +76,25 @@ func TestAnEmptyPasswordIsOmitted(t *testing.T) {
 	}
 }
 
+// sslrootcert rides the DSN exactly where libpq expects to find it — pgx's
+// own ParseConfig reads this key directly, which is the whole reason it is
+// spelled this and not something rta invented.
+func TestDSNCarriesSSLRootCert(t *testing.T) {
+	got := dsn(req(t, map[string]any{"sslrootcert": "/etc/rta/pg-ca.crt"}))
+	if !strings.Contains(got, "sslrootcert='/etc/rta/pg-ca.crt'") {
+		t.Errorf("sslrootcert missing or unquoted: %s", got)
+	}
+}
+
+// Unset, it is absent rather than empty — the same reason password is: an
+// empty sslrootcert is not "no CA named", it is libpq trying to read a file
+// called "" and failing in a way that names nothing.
+func TestAnEmptySSLRootCertIsOmitted(t *testing.T) {
+	if got := dsn(req(t, map[string]any{})); strings.Contains(got, "sslrootcert=") {
+		t.Errorf("an unset sslrootcert was sent as empty: %s", got)
+	}
+}
+
 // Every classified failure has to say what to do next. These are the errors
 // people stare at without knowing the next move, which is the whole reason
 // pg is the plugin that proves the contract.
@@ -92,6 +112,7 @@ func TestEveryClassifiedFailureNamesTheNextStep(t *testing.T) {
 		{"unknown host", &net.DNSError{Err: "no such host", Name: "db.internal"}, "pg.host.unknown"},
 		{"timed out", context.DeadlineExceeded, "pg.conn.timeout"},
 		{"no TLS", errors.New("server does not support SSL"), "pg.tls.unsupported"},
+		{"untrusted CA", x509.UnknownAuthorityError{}, "pg.tls.untrusted"},
 		{"anything else", errors.New("something unexpected"), "pg.conn.failed"},
 	}
 	for _, tc := range cases {
