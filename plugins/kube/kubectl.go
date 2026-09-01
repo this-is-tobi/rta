@@ -108,6 +108,32 @@ func selectionOf(req plugin.Request) (selection, *view.Error) {
 	if verr := checkName("namespace", s.Namespace); verr != nil {
 		return selection{}, verr
 	}
+	// **Refused rather than resolved, because a grant is scoped on one of
+	// these two and not the other.** args() below picks --all-namespaces when
+	// both are set, which reads as a harmless precedence rule and is not one:
+	// every capability here declares Scope: "namespace", and internal/grant's
+	// scopes() derives the scope a call is checked against from the value of
+	// the `namespace` field alone — it has no idea `all-namespaces` exists. So
+	// a caller holding a grant for one namespace could send that namespace
+	// *and* all-namespaces together, satisfy the scope check on the first, and
+	// have the request answered from every namespace in the cluster.
+	//
+	// Latent rather than live today, only because no kube capability sets
+	// NeedsGrant and none is Destructive — grant.Required() is false, so the
+	// check never runs. A profile makes it true, and so would adding
+	// NeedsGrant to any of these later. Closing it at the point where the two
+	// fields are read means the bypass cannot come back by way of a decision
+	// somewhere else that looks unrelated.
+	//
+	// Fail closed, not "narrowest wins": silently choosing the namespace would
+	// answer a question nobody asked, and a caller that sent both does not
+	// know what it wants.
+	if s.AllNS && s.Namespace != "" {
+		return selection{}, view.Errorf("kube.namespace.ambiguous",
+			"--namespace and --all-namespaces ask for different things").
+			WithHint("pass one or the other — a namespace to read that namespace, " +
+				"--all-namespaces to read every one")
+	}
 	return s, nil
 }
 

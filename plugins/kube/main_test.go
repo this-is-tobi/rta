@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/sdk/sdktest"
 )
 
@@ -71,5 +72,39 @@ func TestANamespaceIsPassedAndNotBothForms(t *testing.T) {
 	}
 	if slices.Contains(got, "--all-namespaces") {
 		t.Errorf("args = %v names both a namespace and every namespace", got)
+	}
+}
+
+// args() resolves the two-fields-set case by preferring --all-namespaces,
+// which is a scope bypass rather than a precedence rule: every capability
+// here declares Scope: "namespace", and internal/grant derives the scope a
+// call is checked against from the `namespace` value alone. A caller granted
+// one namespace could send that namespace together with --all-namespaces,
+// pass the check on the first and be answered from every namespace.
+//
+// So the property is not "args picks the narrower one" — it is that the
+// combination never reaches args() at all.
+func TestANamespaceAndEveryNamespaceTogetherAreRefused(t *testing.T) {
+	_, verr := selectionOf(plugin.NewRequest(map[string]any{
+		"namespace": "gitea", "all-namespaces": true,
+	}, false, false))
+	if verr == nil {
+		t.Fatal("a scoped namespace sent alongside --all-namespaces was accepted")
+	}
+	if verr.Code != "kube.namespace.ambiguous" || verr.Hint == "" {
+		t.Errorf("want a coded, hinted kube.namespace.ambiguous, got %+v", verr)
+	}
+}
+
+// The two halves on their own stay accepted — the refusal above must not cost
+// either ordinary form.
+func TestEitherNamespaceFormAloneIsAccepted(t *testing.T) {
+	one, verr := selectionOf(plugin.NewRequest(map[string]any{"namespace": "gitea"}, false, false))
+	if verr != nil || one.Namespace != "gitea" || one.AllNS {
+		t.Errorf("a plain namespace was not accepted: %+v %v", one, verr)
+	}
+	every, verr := selectionOf(plugin.NewRequest(map[string]any{"all-namespaces": true}, false, false))
+	if verr != nil || !every.AllNS || every.Namespace != "" {
+		t.Errorf("--all-namespaces alone was not accepted: %+v %v", every, verr)
 	}
 }
