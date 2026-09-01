@@ -26,6 +26,48 @@ A search bar across the top, and one tile per plugin that has something to show 
 
 Tiles are yours to arrange. `H` hides one you never look at; `p` opens the inventory where any of them comes back.
 
+### Stating the dashboard yourself
+
+With no `dashboard:` block, rta builds one: a tile per plugin that has a capability which is `Read`, needs no input, and is cheap enough to run unasked. Plugins installed later appear on their own.
+
+There are two ways to change that, and the difference is whether tomorrow's plugin still shows up.
+
+**Adjust the automatic set.** `hidden:` and `order:` bend it without freezing it:
+
+```yaml
+dashboard:
+  hidden:
+  - git.overview
+  order:
+  - sys.overview
+  - todo.list
+  columns: 3
+```
+
+**Or state it exactly.** `tiles:` replaces the automatic set outright — `hidden:` and `order:` are not consulted, because the list is already both:
+
+```yaml
+dashboard:
+  tiles:
+  - id: kube.overview
+  - id: todo.list
+    span: 2
+  - id: pg.overview
+    with:
+      profile: prod
+```
+
+`with:` fills the capability's inputs. `span:` widens a tile past what its own declared width works out to — for the one you actually read.
+
+**Naming a tile is the only way to get a capability the automatic dashboard leaves out.** Anything that reaches off the box — every `kube`, `pg`, `s3` and `vault` capability — is kept off it deliberately, however cheap it looks: a dashboard runs its tiles on load and again on a timer, and nobody expects opening a TUI to spend an API quota or disclose anything to a third party. Writing one into `tiles:` is you asking for it, which is a decision the automatic path can't make for you.
+
+Worth knowing what that costs before you do: a tile refreshes on a timer for as long as the TUI is open, so a cluster-wide `kube.overview` tile is that many `kubectl` calls an hour, every hour. `rta explain kube.overview` prints what a capability actually reads, which is not always only what its name suggests.
+
+Two things the block will not do, whatever you write in it:
+
+- **A tile that is not `Read` is dropped.** Otherwise `{id: kv.rm, with: {key: old-token}}` would delete that key on startup and keep deleting it — on a timer, with no form and no confirmation, since the destructive gate lives on the CLI and the browse path and a tile goes through neither.
+- **The whole block is ignored unless the config is one you named** — your user config directory, or `RTA_CONFIG`. rta falls back to `./.rta.yaml` when there is no user config directory (ordinary under `env -i`, in a container, in CI), and a cloned repository does not get to arrange your screen: `{id: http.get, with: {url: …}}` there would be a beacon that starts the moment you open the TUI in that directory. `hidden:` is the same hazard pointed the other way — it can take the agent tile off the screen, and that tile is where you notice a parked consent request before its clock runs out.
+
 ## The catalogue
 
 Every capability as a table grouped by plugin — one row each, with its ID, its safety class and its summary. The filter stays live, every pane is bounded by the terminal and scrolls inside it, and the mouse wheel works.
