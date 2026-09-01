@@ -359,6 +359,54 @@ func TestMarkdownEscapesErrorMessageAndHint(t *testing.T) {
 	}
 }
 
+// An error code and a section title both read like identifiers, which is
+// exactly why they were the two fields left concatenated raw while the message
+// and the hint beside them were escaped. Neither is declared text: Validate's
+// identifier grammar constrains what a plugin registers, never what it returns
+// per call, and both arrive from the wire byte for byte.
+func TestMarkdownEscapesTheFieldsThatOnlyLookLikeIdentifiers(t *testing.T) {
+	t.Run("an error code cannot close its own code span", func(t *testing.T) {
+		var buf bytes.Buffer
+		e := &view.Error{Code: "x` <img src=z onerror=alert(1)>", Message: "failed"}
+		if err := RenderError(&buf, e, Options{Format: Markdown}); err != nil {
+			t.Fatal(err)
+		}
+		if out := buf.String(); strings.Contains(out, "x` <img") {
+			t.Errorf("a backtick in the code closed the span and let a tag through:\n%s", out)
+		}
+	})
+
+	t.Run("an error code cannot fabricate a heading", func(t *testing.T) {
+		var buf bytes.Buffer
+		e := &view.Error{Code: "boom\n\n# Security review passed", Message: "failed"}
+		if err := RenderError(&buf, e, Options{Format: Markdown}); err != nil {
+			t.Fatal(err)
+		}
+		if out := buf.String(); strings.Contains(out, "\n# Security review passed") {
+			t.Errorf("a newline in the code invented a heading:\n%s", out)
+		}
+	})
+
+	t.Run("a warning code cannot end the blockquote", func(t *testing.T) {
+		page := view.Sections{
+			Items:    []view.Section{{Title: "identity", View: view.Text{Body: "poire"}}},
+			Warnings: []view.Error{{Code: "one\nnot a warning any more", Message: "m"}},
+		}
+		if out := md(t, page); strings.Contains(out, "\nnot a warning any more") {
+			t.Errorf("a newline in the code dropped out of the blockquote:\n%s", out)
+		}
+	})
+
+	t.Run("a section title cannot start blocks of its own", func(t *testing.T) {
+		page := view.Sections{Items: []view.Section{
+			{Title: "real\n\n## Injected", View: view.Text{Body: "leaf"}},
+		}}
+		if out := md(t, page); strings.Contains(out, "\n## Injected") {
+			t.Errorf("a newline in the title opened a section nobody sent:\n%s", out)
+		}
+	})
+}
+
 // Markdown is a document format, not a terminal one: it must not pick up the
 // styling or the width shaping that pretty output applies.
 func TestMarkdownIgnoresTerminalShaping(t *testing.T) {
