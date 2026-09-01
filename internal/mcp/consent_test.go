@@ -735,20 +735,39 @@ func TestConsentDoesNotCrossTheSessionFence(t *testing.T) {
 
 	// …and the fence narrows rather than closes: the switched-on
 	// environment is still a question somebody can answer.
-	saw, stop = watchPending(t)
-	defer stop()
+	//
+	// **One poller, not two, and that is a correctness fix rather than a
+	// tidy-up.** This used to run watchPending alongside a separate goroutine
+	// that answered whatever it found, with both polling consent.Pending()
+	// every 5ms over the same single request. Whichever got there first
+	// consumed it: when the answerer won, the watcher polled an empty queue
+	// forever and the assertion below failed claiming the call had been
+	// refused without asking — the exact opposite of what had happened, since
+	// it had been asked *and answered*.
+	//
+	// Nothing about the code under test decides which goroutine wins, so it
+	// passed on a quiet machine and failed on a loaded runner. Confirmed by
+	// slowing the watcher's poll, which reproduces the CI failure verbatim.
+	//
+	// The goroutine that answers is the one that saw the request, so it is the
+	// one that reports it, and there is no second reader to race.
+	seen := make(chan consent.Request, 1)
 	go func() {
 		deadline := time.Now().Add(3 * time.Second)
 		for time.Now().Before(deadline) {
 			if p, err := consent.Pending(); err == nil && len(p) > 0 {
+				seen <- p[0]
 				_ = consent.Decide(p[0].ID, false, "test")
 				return
 			}
 			time.Sleep(5 * time.Millisecond)
 		}
+		// Closed rather than left open, so the receive below reports "nothing
+		// was ever asked" instead of hanging until the test binary times out.
+		close(seen)
 	}()
 	f.call(t, map[string]any{"profile": "staging", "sql": "select 1"})
-	if req := saw(); req.ID == "" {
+	if req, ok := <-seen; !ok || req.ID == "" {
 		t.Fatal("a call into the switched-on environment was refused without asking")
 	}
 }
