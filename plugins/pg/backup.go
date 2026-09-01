@@ -440,6 +440,20 @@ func childEnv(req plugin.Request) []string {
 		// modes, so an sslmode the operator configured keeps working.
 		env = append(env, "HOME="+home)
 	}
+	// The same ambient credential dsn() closes for the in-process driver,
+	// closed here for the subprocess — a separate fix, because libpq and
+	// pgconn disagree about what an empty value means. `PGPASSFILE=` is read
+	// by libpq as "unset, use the default", so it reads ~/.pgpass anyway;
+	// only naming a path that is not there fails closed. /dev/null works too
+	// and is worse: libpq prints `WARNING: password file "/dev/null" is not a
+	// plain file` onto the stderr classifyDump parses.
+	//
+	// Dropping the HOME line above would not have done it either. libpq falls
+	// back to getpwuid when HOME is unset, so it finds the operator's
+	// ~/.pgpass either way — verified against a real server before this line
+	// was written, because the obvious version of this fix silently does
+	// nothing.
+	env = append(env, "PGPASSFILE=/nonexistent/rta-refuses-ambient-credentials")
 	return env
 }
 
