@@ -186,6 +186,25 @@ func Plugin() plugin.Plugin {
 			Run:        runDeploymentList,
 		}, nsFields()...),
 		cap(plugin.Capability{
+			ID:      "kube.event.list",
+			Summary: "What the cluster is complaining about, oldest-running problems still visible",
+			Description: "Warnings only unless --normal: on a cluster running any active " +
+				"operator the Normal events are routine narration and outnumber the warnings " +
+				"heavily.\n\nAn Event is a counter, not a log line — a recurring problem updates " +
+				"the existing event rather than appending one — so first-seen and count are " +
+				"reported alongside last-seen. Those two columns are the payload: an event first " +
+				"seen eleven days ago with thirteen thousand occurrences is a different signal " +
+				"from a one-off thirty seconds ago, and last-seen alone renders them the same. " +
+				"It also means the usual \"events only go back an hour\" is true only for " +
+				"problems that stopped: the TTL runs from last-seen, so anything still recurring " +
+				"is never collected and its first-seen can be weeks old.",
+			Safety:     plugin.Read,
+			Idempotent: true,
+			Scope:      "namespace",
+			Run:        runEventList,
+		}, append(nsFields(), plugin.Field{Name: "normal", Type: plugin.Bool,
+			Help: "include Normal events, not only Warnings"})...),
+		cap(plugin.Capability{
 			ID:      "kube.quota.list",
 			Summary: "ResourceQuota pressure per namespace: used against hard, as a percentage",
 			Description: "One row per resource a quota tracks, not one row per quota object — " +
