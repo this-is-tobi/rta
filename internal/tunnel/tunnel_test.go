@@ -72,8 +72,26 @@ func TestOpenReturnsAnAddressThatAnswers(t *testing.T) {
 // only stop reading from it.
 func TestCloseEndsTheForward(t *testing.T) {
 	marker := filepath.Join(t.TempDir(), "alive")
+	// **The trap is armed before the marker exists, and the order is the
+	// whole correctness of this test.**
+	//
+	// The marker is what tells the test the forward is up, so the moment it
+	// appears Close may be called. With `touch` first there is a window — one
+	// line of shell — in which the marker exists and no TERM handler does: a
+	// Close landing there kills the shell by SIGTERM's default action, the
+	// trap never runs, the marker survives, and the test reports "the forward
+	// was still running after Close". That is the exact opposite of what
+	// happened. The forward died; it just died before it could say so.
+	//
+	// Microseconds wide on an idle machine and reachable on a loaded runner,
+	// which is why this passed locally every time and failed on both CI
+	// platforms at once. Reproduced deterministically by widening the gap:
+	// with touch first the marker survives, with the trap first it does not.
+	//
+	// Armed first, the marker's existence proves the handler is installed, so
+	// there is no window left to lose.
 	fakeKubectl(t, fmt.Sprintf(
-		"echo 'Forwarding from 127.0.0.1:1 -> 5432'\ntouch %s\ntrap 'rm -f %s; exit 0' TERM\nwhile true; do sleep 0.05; done\n",
+		"echo 'Forwarding from 127.0.0.1:1 -> 5432'\ntrap 'rm -f %s; exit 0' TERM\ntouch %s\nwhile true; do sleep 0.05; done\n",
 		marker, marker))
 
 	tun, verr := Open(context.Background(), "homelab-pg", Target{Kube: homelab})
