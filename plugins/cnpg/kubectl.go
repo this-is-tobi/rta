@@ -292,7 +292,19 @@ func age(t time.Time) string {
 	if t.IsZero() {
 		return "—"
 	}
-	d := time.Since(t)
+	return span(time.Since(t))
+}
+
+// until is age pointed forward, for the certificate expiries: "in how long"
+// with the same buckets, so the two directions read alike.
+func until(t time.Time) string {
+	if t.IsZero() {
+		return "—"
+	}
+	return span(time.Until(t))
+}
+
+func span(d time.Duration) string {
 	switch {
 	case d < time.Minute:
 		return fmt.Sprintf("%ds", int(d.Seconds()))
