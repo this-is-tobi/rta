@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -38,6 +39,29 @@ type cluster struct {
 		Storage   struct {
 			Size string `json:"size"`
 		} `json:"storage"`
+		WalStorage struct {
+			Size string `json:"size"`
+		} `json:"walStorage"`
+		// Decoded only for presence: a cluster with no `backup` stanza has
+		// nothing to back it up, which is a different finding from one whose
+		// configured backups never succeed.
+		Backup    *struct{} `json:"backup,omitempty"`
+		Resources struct {
+			Requests map[string]string `json:"requests"`
+			Limits   map[string]string `json:"limits"`
+		} `json:"resources"`
+		MinSyncReplicas int `json:"minSyncReplicas"`
+		MaxSyncReplicas int `json:"maxSyncReplicas"`
+		// A pointer because absent and false mean different things: the
+		// operator's default has changed across CNPG versions, so an unset
+		// field is "whatever this operator does", not "disabled" — and
+		// printing a guess would be worse than printing nothing.
+		EnableSuperuserAccess *bool `json:"enableSuperuserAccess,omitempty"`
+		ReplicationSlots      struct {
+			HighAvailability struct {
+				Enabled *bool `json:"enabled,omitempty"`
+			} `json:"highAvailability"`
+		} `json:"replicationSlots"`
 	} `json:"spec"`
 	Status struct {
 		Phase       string `json:"phase"`
@@ -51,15 +75,31 @@ type cluster struct {
 		// Set only while the primary is unhealthy, which makes its presence
 		// the finding rather than its value.
 		PrimaryFailingSince *time.Time `json:"currentPrimaryFailingSinceTimestamp,omitempty"`
+		// When the current primary took the role — which is the answer to
+		// "did this cluster fail over recently", the question a young value
+		// raises on its own.
+		CurrentPrimaryTimestamp string `json:"currentPrimaryTimestamp"`
 
-		Image      string `json:"image"`
-		TimelineID int    `json:"timelineID"`
+		Image           string `json:"image"`
+		PGDataImageInfo struct {
+			Image        string `json:"image"`
+			MajorVersion int    `json:"majorVersion"`
+		} `json:"pgDataImageInfo"`
+		TimelineID int `json:"timelineID"`
+
+		// The operator rotates these itself, so an expiry approaching means
+		// the rotation is not happening — an operator wedged or paused — not
+		// a renewal somebody forgot.
+		Certificates struct {
+			Expirations map[string]string `json:"expirations"`
+		} `json:"certificates"`
 
 		InstanceNames          []string                 `json:"instanceNames"`
 		InstancesStatus        map[string][]string      `json:"instancesStatus"`
 		InstancesReportedState map[string]instanceState `json:"instancesReportedState"`
 
 		LastSuccessfulBackup     string `json:"lastSuccessfulBackup"`
+		LastFailedBackup         string `json:"lastFailedBackup"`
 		FirstRecoverabilityPoint string `json:"firstRecoverabilityPoint"`
 
 		Conditions []condition `json:"conditions"`
@@ -198,11 +238,114 @@ func role(name, currentPrimary string, selfReport bool) string {
 // has ever been one. The timestamp is RFC3339 in the resource; the question is
 // always asked as a duration.
 func (c cluster) backupAge() (string, bool) {
-	t, err := time.Parse(time.RFC3339, c.Status.LastSuccessfulBackup)
-	if err != nil || t.IsZero() {
+	t, ok := c.lastSuccessfulBackup()
+	if !ok {
 		return "", false
 	}
 	return age(t), true
+}
+
+func (c cluster) lastSuccessfulBackup() (time.Time, bool) {
+	return parseWhen(c.Status.LastSuccessfulBackup)
+}
+
+// primaryFor is how long the current primary has held the role. A young
+// value is the trace of a failover: the pod may be days old, the *role* hours
+// old, and only the second one says something happened.
+func (c cluster) primaryFor() (string, bool) {
+	t, ok := parseWhen(c.Status.CurrentPrimaryTimestamp)
+	if !ok || c.Status.CurrentPrimary == "" {
+		return "", false
+	}
+	return age(t), true
+}
+
+// soonestCert is the certificate closest to expiry, because the one nearest
+// the cliff is the one the question is about — the operator rotates all of a
+// cluster's certificates together, so in practice they expire together too.
+func (c cluster) soonestCert() (name string, at time.Time, ok bool) {
+	for n, raw := range c.Status.Certificates.Expirations {
+		t, parsed := parseWhen(raw)
+		if !parsed {
+			continue
+		}
+		if !ok || t.Before(at) {
+			name, at, ok = n, t, true
+		}
+	}
+	return name, at, ok
+}
+
+// parseWhen reads the two timestamp spellings the Cluster resource actually
+// uses: RFC3339 for the backup and primary fields, and Go's own time.String()
+// form ("2026-11-06 01:46:28 +0000 UTC") for the certificate expirations —
+// the operator writes those with fmt.Sprintf("%v"), so the second layout is
+// its wire format whether anyone meant it to be or not.
+func parseWhen(s string) (time.Time, bool) {
+	for _, layout := range []string{time.RFC3339, "2006-01-02 15:04:05.999999999 -0700 MST"} {
+		if t, err := time.Parse(layout, s); err == nil && !t.IsZero() {
+			return t, true
+		}
+	}
+	return time.Time{}, false
+}
+
+// replicationLine says how writes are protected, which the raw fields spread
+// over three places: sync replica bounds in the spec, slot management in its
+// own stanza, and "there is nothing to replicate to" implied by the instance
+// count.
+func (c cluster) replicationLine() string {
+	if c.Spec.Instances <= 1 {
+		return "none — a single instance has no replica"
+	}
+	mode := "asynchronous"
+	if c.Spec.MinSyncReplicas > 0 || c.Spec.MaxSyncReplicas > 0 {
+		mode = fmt.Sprintf("synchronous, %d–%d replicas",
+			c.Spec.MinSyncReplicas, c.Spec.MaxSyncReplicas)
+	}
+	if e := c.Spec.ReplicationSlots.HighAvailability.Enabled; e != nil && *e {
+		mode += ", HA replication slots"
+	}
+	return mode
+}
+
+// storageLine is the data volume and, when one is split off, the WAL volume —
+// a full WAL volume stops writes just as surely as a full data volume, so a
+// size that exists should be visible.
+func (c cluster) storageLine() string {
+	s := c.Spec.Storage.Size
+	if s == "" {
+		return "—"
+	}
+	if w := c.Spec.WalStorage.Size; w != "" {
+		s += " + " + w + " WAL"
+	}
+	return s
+}
+
+// resourceLine renders requests and limits, and is empty when neither is set
+// — absence means the pods run unbounded, which is worth a word too, but not
+// a row that says "requests — · limits —".
+func (c cluster) resourceLine() string {
+	var parts []string
+	if r := quantities(c.Spec.Resources.Requests); r != "" {
+		parts = append(parts, "requests "+r)
+	}
+	if l := quantities(c.Spec.Resources.Limits); l != "" {
+		parts = append(parts, "limits "+l)
+	}
+	return strings.Join(parts, " · ")
+}
+
+func quantities(m map[string]string) string {
+	var parts []string
+	if v := m["cpu"]; v != "" {
+		parts = append(parts, v+" cpu")
+	}
+	if v := m["memory"]; v != "" {
+		parts = append(parts, v+" memory")
+	}
+	return strings.Join(parts, ", ")
 }
 
 func orDash(s string) string {

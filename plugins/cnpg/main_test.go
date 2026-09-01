@@ -178,9 +178,29 @@ func TestEachProblemIsFoundFromItsOwnField(t *testing.T) {
 		{"every instance on one node", func(c *cluster) {
 			c.Status.Topology.NodesUsed = 1
 		}, "topology", "one node"},
-		{"a backup that has never succeeded", func(c *cluster) {
+		{"backup not configured at all", func(c *cluster) {
 			c.Status.LastSuccessfulBackup = ""
-		}, "backup", "no successful backup"},
+		}, "backup", "not configured"},
+		{"backup configured but never once succeeded", func(c *cluster) {
+			c.Status.LastSuccessfulBackup = ""
+			c.Spec.Backup = &struct{}{}
+			c.Status.LastFailedBackup = time.Now().Add(-30 * time.Minute).Format(time.RFC3339)
+		}, "backup", "no backup has ever succeeded"},
+		{"a backup failing after an earlier success", func(c *cluster) {
+			c.Status.LastFailedBackup = time.Now().Add(-time.Hour).Format(time.RFC3339)
+		}, "backup", "most recent attempt failed"},
+		{"a certificate close to expiry", func(c *cluster) {
+			c.Status.Certificates.Expirations = map[string]string{
+				"app-db-server": time.Now().Add(10 * 24 * time.Hour).UTC().
+					Format("2006-01-02 15:04:05 -0700 MST"),
+			}
+		}, "certificates", "expires in"},
+		{"a certificate already expired", func(c *cluster) {
+			c.Status.Certificates.Expirations = map[string]string{
+				"app-db-server": time.Now().Add(-24 * time.Hour).UTC().
+					Format("2006-01-02 15:04:05 -0700 MST"),
+			}
+		}, "certificates", "expired"},
 		{"a stuck PVC", func(c *cluster) {
 			c.Status.UnusablePVC = []string{"app-db-4"}
 		}, "unusable PVCs", "app-db-4"},
@@ -205,6 +225,81 @@ func TestEachProblemIsFoundFromItsOwnField(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A certificate months from expiry belongs in the overview, never in the
+// problems — the operator rotates these itself, so far-out expiry is the
+// system working.
+func TestAFarOffCertificateExpiryIsInformationNotAProblem(t *testing.T) {
+	c := healthy()
+	c.Status.Certificates.Expirations = map[string]string{
+		"app-db-ca": time.Now().Add(90 * 24 * time.Hour).UTC().
+			Format("2006-01-02 15:04:05 -0700 MST"),
+	}
+	if got := problemsIn(t, c); got["certificates"] != "" {
+		t.Errorf("a healthy expiry was graded a problem: %q", got["certificates"])
+	}
+	if v := overviewOf(t, c)["Certificates"]; !strings.Contains(v, "expires in 89d") {
+		t.Errorf("Certificates = %q, want the soonest expiry as an age", v)
+	}
+}
+
+// The overview rows that are derived rather than copied: version before image
+// tag, WAL storage beside data, replication posture assembled from three
+// spec stanzas, and the primary's tenure — the failover trace.
+func TestTheOverviewDerivesWhatTheRawFieldsSpread(t *testing.T) {
+	c := healthy()
+	c.Status.PGDataImageInfo.Image = "ghcr.io/cloudnative-pg/postgresql:17.10"
+	c.Status.PGDataImageInfo.MajorVersion = 17
+	c.Status.CurrentPrimaryTimestamp = time.Now().Add(-3 * time.Hour).Format(time.RFC3339)
+	c.Spec.WalStorage.Size = "1Gi"
+	c.Spec.Resources.Requests = map[string]string{"cpu": "100m", "memory": "256Mi"}
+	c.Spec.Resources.Limits = map[string]string{"cpu": "250m", "memory": "512Mi"}
+	c.Spec.MinSyncReplicas, c.Spec.MaxSyncReplicas = 1, 2
+	slots := true
+	c.Spec.ReplicationSlots.HighAvailability.Enabled = &slots
+	superuser := false
+	c.Spec.EnableSuperuserAccess = &superuser
+
+	got := overviewOf(t, c)
+	for key, want := range map[string]string{
+		"PostgreSQL":       "17 — ghcr.io/cloudnative-pg/postgresql:17.10",
+		"Primary":          "primary for 3h",
+		"Storage":          "50Gi + 1Gi WAL",
+		"Resources":        "requests 100m cpu, 256Mi memory · limits 250m cpu, 512Mi memory",
+		"Replication":      "synchronous, 1–2 replicas, HA replication slots",
+		"Superuser access": "disabled",
+	} {
+		if !strings.Contains(got[key], want) {
+			t.Errorf("%s = %q, want it to carry %q", key, got[key], want)
+		}
+	}
+	if _, ok := got["Image"]; ok {
+		t.Error("the Image row should give way when the version row can be built")
+	}
+}
+
+// A single instance replicates nowhere, and the row should say so rather
+// than claim "asynchronous" about a replica that does not exist.
+func TestASingleInstanceDoesNotClaimAReplicationMode(t *testing.T) {
+	c := healthy()
+	c.Spec.Instances = 1
+	if v := overviewOf(t, c)["Replication"]; !strings.Contains(v, "no replica") {
+		t.Errorf("Replication = %q, want it to say there is none", v)
+	}
+}
+
+func overviewOf(t *testing.T, c cluster) map[string]string {
+	t.Helper()
+	kv, ok := statusView(c).(view.Sections).Items[0].View.(view.KeyValue)
+	if !ok {
+		t.Fatal("the first status section is not the key/value overview")
+	}
+	out := map[string]string{}
+	for _, p := range kv.Pairs {
+		out[p.Key] = p.Value
+	}
+	return out
 }
 
 // A condition that IS satisfied is not a row: a list where every line says

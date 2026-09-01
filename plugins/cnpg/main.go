@@ -37,6 +37,7 @@ import (
 	"context"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/sdk"
@@ -122,7 +123,13 @@ func Plugin() plugin.Plugin {
 					"because the CRD's own documentation calls that the absence of high " +
 					"availability. Conditions are shown only when they are not satisfied. " +
 					"The last successful backup is reported as an age, since that is the form " +
-					"the question is asked in.",
+					"the question is asked in — and a backup that is not configured at all is " +
+					"distinguished from one that is configured and failing, which the resource " +
+					"spells identically. The primary's tenure is derived (a young primary on an " +
+					"old cluster is the trace of a failover), certificate expiries are graded " +
+					"against the same 30-day window rta's other certificate checks use, and the " +
+					"replication posture, resource bounds and superuser-access switch are read " +
+					"from the spec.",
 				Inputs: []plugin.Field{
 					{Name: "name", Type: plugin.String, Positional: true, Required: true,
 						Help: "the cluster to read"},
@@ -202,11 +209,45 @@ func statusView(c cluster) view.View {
 	overview = append(overview,
 		view.Pair{Key: "Instances", Value: c.ready() + " ready"},
 		view.Pair{Key: "Primary", Value: primaryLine(c)},
-		view.Pair{Key: "Image", Value: orDash(firstNonEmpty(c.Status.Image, c.Spec.ImageName))},
-		view.Pair{Key: "Storage", Value: orDash(c.Spec.Storage.Size)},
+	)
+	// The major version answers "what am I actually running" one field
+	// earlier than the image tag does; when the operator is too old to report
+	// it, the image row carries what there is.
+	if info := c.Status.PGDataImageInfo; info.MajorVersion > 0 {
+		overview = append(overview, view.Pair{Key: "PostgreSQL",
+			Value: strconv.Itoa(info.MajorVersion) + " — " +
+				firstNonEmpty(info.Image, c.Status.Image, c.Spec.ImageName)})
+	} else {
+		overview = append(overview, view.Pair{
+			Key: "Image", Value: orDash(firstNonEmpty(c.Status.Image, c.Spec.ImageName))})
+	}
+	overview = append(overview,
+		view.Pair{Key: "Storage", Value: c.storageLine()},
+	)
+	if r := c.resourceLine(); r != "" {
+		overview = append(overview, view.Pair{Key: "Resources", Value: r})
+	}
+	overview = append(overview,
+		view.Pair{Key: "Replication", Value: c.replicationLine()},
+	)
+	if e := c.Spec.EnableSuperuserAccess; e != nil {
+		v := "disabled"
+		if *e {
+			v = "enabled"
+		}
+		overview = append(overview, view.Pair{Key: "Superuser access", Value: v})
+	}
+	overview = append(overview,
 		view.Pair{Key: "Timeline", Value: strconv.Itoa(c.Status.TimelineID)},
 		view.Pair{Key: "Backup", Value: backupLine(c)},
 	)
+	if name, at, ok := c.soonestCert(); ok {
+		v := "soonest expires in " + until(at) + " (" + name + ")"
+		if time.Until(at) <= 0 {
+			v = name + " expired " + age(at) + " ago"
+		}
+		overview = append(overview, view.Pair{Key: "Certificates", Value: v})
+	}
 	if c.Status.FirstRecoverabilityPoint != "" {
 		overview = append(overview, view.Pair{
 			Key: "Recoverable from", Value: c.Status.FirstRecoverabilityPoint})
@@ -230,6 +271,13 @@ func statusView(c cluster) view.View {
 	}
 	return view.Sections{Items: sections}
 }
+
+// certWarnDays mirrors builtin/internal/x509check.DefaultWarnDays — restated
+// rather than imported, because this plugin is its own module and that
+// package is internal to the core binary. If the two ever disagree, the core
+// value is the one to follow: every certificate rta grades should go amber on
+// the same day.
+const certWarnDays = 30
 
 // problemTable is everything worth acting on, and is empty on a healthy
 // cluster.
@@ -262,8 +310,39 @@ func problemTable(c cluster) view.Table {
 	if c.singleNode() {
 		add("topology", "warn", "every instance is on one node, so nothing survives losing it")
 	}
-	if _, ever := c.backupAge(); !ever {
-		add("backup", "warn", "no successful backup has ever been recorded")
+	// Three backup findings, one row: "nothing is configured", "configured
+	// and never once worked", and "worked before, failing now" are different
+	// conversations with different people, and the old single message ("no
+	// successful backup has ever been recorded") collapsed the first two —
+	// sending somebody to debug a backup job that does not exist.
+	success, ever := c.lastSuccessfulBackup()
+	lastFail, failedOnce := parseWhen(c.Status.LastFailedBackup)
+	switch {
+	case !ever && c.Spec.Backup == nil:
+		add("backup", "warn", "not configured — nothing backs this cluster up")
+	case !ever:
+		msg := "configured, but no backup has ever succeeded"
+		if failedOnce {
+			msg += " — the last attempt failed " + age(lastFail) + " ago"
+		}
+		add("backup", "warn", msg)
+	case failedOnce && lastFail.After(success):
+		add("backup", "warn", "the most recent attempt failed "+age(lastFail)+
+			" ago — the last success is "+age(success)+" old")
+	}
+	if name, at, ok := c.soonestCert(); ok {
+		switch {
+		case time.Until(at) <= 0:
+			add("certificates", "fail", name+" expired "+age(at)+
+				" ago — TLS connections to this cluster are failing or about to")
+		case time.Until(at) < certWarnDays*24*time.Hour:
+			// The operator rotates these certificates itself, so one this
+			// close to expiry is not a renewal somebody forgot — it means the
+			// rotation is not happening, which is an operator problem wearing
+			// a certificate's clothes.
+			add("certificates", "warn", name+" expires in "+until(at)+
+				" — the operator should have rotated it already")
+		}
 	}
 	for _, pvc := range []struct {
 		what  string
@@ -295,7 +374,14 @@ func primaryLine(c cluster) string {
 	if c.switchingOver() {
 		return c.Status.CurrentPrimary + " → " + c.Status.TargetPrimary + " (switching over)"
 	}
-	return c.Status.CurrentPrimary
+	line := c.Status.CurrentPrimary
+	// The tenure is the failover trace: a cluster whose primary is hours old
+	// on a resource that is months old changed primaries recently, and this
+	// is the only line that says so.
+	if tenure, ok := c.primaryFor(); ok {
+		line += " — primary for " + tenure
+	}
+	return line
 }
 
 func backupLine(c cluster) string {
