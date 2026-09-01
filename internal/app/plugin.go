@@ -65,8 +65,12 @@ func newPluginCommand(reg *registry.Registry, version string, opts *globalOpts) 
 // newPluginAllowCommand implements `rta plugin allow`: the second decision,
 // after trust and separate from it.
 //
-// Plugins run confined and a standard list of credential locations is denied
-// to all of them — a weather plugin has no business reading a kubeconfig. Some
+// On the platforms that confine plugins, a standard list of credential
+// locations is denied to all of them — a weather plugin has no business
+// reading a kubeconfig. (macOS confines; Linux and Windows do not, and say so
+// through `rta doctor` and confinementLine below. The allow list still governs
+// what a plugin *declares* it needs on every platform, which is what this
+// command edits; what changes is whether anything enforces the denial.) Some
 // plugins exist to use one, and for those the denial is not caution but
 // breakage: `~/.kube` was denied from the first commit of the plugin host, and
 // both plugins/kube and plugins/cnpg were unable to read a kubeconfig at all
@@ -85,9 +89,9 @@ func newPluginAllowCommand(opts *globalOpts) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "allow [name] [location...]",
 		Short: "Let a plugin read a credential location it declares it needs",
-		Long: "Plugins run confined, and rta denies them a standard list of credential\n" +
-			"locations. A plugin that exists to use one declares which; this is where\n" +
-			"you decide.\n\n" +
+		Long: "Where plugins run confined, rta denies them a standard list of\n" +
+			"credential locations — see `rta doctor` for whether this platform is one.\n" +
+			"A plugin that exists to use one declares which; this is where you decide.\n\n" +
 			"Separate from `rta plugin trust` on purpose: running an artifact and\n" +
 			"letting it read your credentials are different decisions. Both attach to\n" +
 			"the artifact's digest, so rebuilding a plugin asks again.\n\n" +
