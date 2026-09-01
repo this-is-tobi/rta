@@ -89,9 +89,15 @@ jobs:
       RACE: true
       SHUFFLE: true
       COUNT: "1"
-      # The second machine. A suite that reads the host it runs on passes on
-      # the host it was written on.
-      RUNNERS: '[["ubuntu-latest"], ["macos-latest"]]'
+      # The second machine — and the third. A suite that reads the host it
+      # runs on passes on the host it was written on, and the first two
+      # runners share a blind spot: ubuntu is amd64 and macOS reads sysctl
+      # rather than procfs, so nothing here ever read arm64 Linux — the
+      # platform the docker image and half the release binaries target. That
+      # gap hid a real bug (sys.cpu rendered a blank model on every Pi and
+      # Graviton) until the suite was run in an arm64 container by hand; the
+      # arm runner makes that reading automatic.
+      RUNNERS: '[["ubuntu-latest"], ["macos-latest"], ["ubuntu-24.04-arm"]]'
       COVERAGE: true
       # Most of this module is exercised from other packages' tests, which
       # reads as untested without this.
