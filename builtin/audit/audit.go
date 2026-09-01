@@ -199,6 +199,70 @@ func Plugin() plugin.Plugin {
 					"Control and A02:2025 Security Misconfiguration.",
 				Run: runAgents,
 			},
+			{
+				ID:         "audit.kube.rbac",
+				Summary:    "Overly-broad RBAC: cluster-admin bindings and wildcard rules",
+				Safety:     plugin.Read,
+				Idempotent: true,
+				Detailed:   true,
+				// Reaches a configured cluster the same way kube.pod.list
+				// does, so it gets the same treatment: not on a dashboard
+				// that redraws on a timer with no one having asked for it.
+				NoPreview: true,
+				Description: "Every ClusterRoleBinding to cluster-admin, and every Role/ClusterRole " +
+					"rule using a wildcard verb, resource or apiGroup. cluster-admin bound to a broad " +
+					"group (system:authenticated, system:unauthenticated, system:masters) grades fail; " +
+					"bound to anything else grades warn — sometimes a real operator's binding, always " +
+					"worth reading. Cites CIS Kubernetes Benchmark 2.0.1 5.1.1 and 5.1.3.",
+				Inputs: []plugin.Field{contextField()},
+				Run:    runKubeRBAC,
+			},
+			{
+				ID:         "audit.kube.podsecurity",
+				Summary:    "Pods running privileged, in a host namespace, or with root not excluded",
+				Safety:     plugin.Read,
+				Idempotent: true,
+				Detailed:   true,
+				NoPreview:  true,
+				Description: "Every pod cluster-wide, checked against three Pod Security Standards " +
+					"controls: a privileged container (fail), hostNetwork/hostPID/hostIPC (fail), and " +
+					"whether anything in the pod asserts non-root — neither the pod nor any container " +
+					"sets runAsNonRoot or a non-zero runAsUser (warn). The non-root check approximates " +
+					"Kubernetes' own securityContext merge rather than fully simulating it: a pod that " +
+					"asserts non-root at the pod level and never overrides it per container is not " +
+					"flagged, which is the common, correct case; one relying only on an image's own " +
+					"non-root USER with no Kubernetes-level assertion at all is. Cites CWE-250 and " +
+					"Kubernetes Pod Security Standards.",
+				Inputs: []plugin.Field{contextField()},
+				Run:    runKubePodSecurity,
+			},
+			{
+				ID:         "audit.kube.quotas",
+				Summary:    "Namespaces with no ResourceQuota — unbounded resource consumption",
+				Safety:     plugin.Read,
+				Idempotent: true,
+				Detailed:   true,
+				NoPreview:  true,
+				Description: "Every non-system namespace checked for at least one ResourceQuota. CIS " +
+					"Kubernetes Benchmark has no numbered control for this — confirmed absent rather " +
+					"than assumed — so this cites NSA/CISA Kubernetes Hardening Guidance's " +
+					"\"Resource policies\" section instead.",
+				Inputs: []plugin.Field{contextField()},
+				Run:    runKubeQuotas,
+			},
+			{
+				ID:         "audit.kube.netpol",
+				Summary:    "Namespaces with no NetworkPolicy — unrestricted pod-to-pod traffic",
+				Safety:     plugin.Read,
+				Idempotent: true,
+				Detailed:   true,
+				NoPreview:  true,
+				Description: "Every non-system namespace checked for at least one NetworkPolicy. With " +
+					"none, the cluster's default applies: every pod in the namespace can reach every " +
+					"other pod, in either direction. Cites CIS Kubernetes Benchmark 2.0.1 5.3.2.",
+				Inputs: []plugin.Field{contextField()},
+				Run:    runKubeNetworkPolicy,
+			},
 		},
 	}
 }
