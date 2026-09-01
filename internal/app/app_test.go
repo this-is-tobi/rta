@@ -20,6 +20,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/goccy/go-yaml"
+
 	"github.com/this-is-tobi/rule-them-all/builtin/all"
 	"github.com/this-is-tobi/rule-them-all/internal/config"
 	"github.com/this-is-tobi/rule-them-all/internal/pluginconf"
@@ -1119,14 +1121,39 @@ func configCapability(t *testing.T) (*registry.Registry, registry.Origin) {
 
 // The end-to-end property, on the surface where it was structurally
 // impossible before: cobra bakes every declared default into its flag set, so
+
+// trustedConfig returns cfg as it would arrive from a config file somebody
+// named. pluginconf.Resolve refuses every section of a file rta was not told
+// to honour, and a config.Config literal is untrusted because the zero value
+// is — so a test that hands Resolve a literal is now testing the refusal
+// rather than whatever it meant to test. Going through the real loader is the
+// idiom internal/profile's tests already use.
+func trustedConfig(t *testing.T, cfg config.Config) config.Config {
+	t.Helper()
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("RTA_CONFIG", path)
+	loaded, err := config.LoadFile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return loaded
+}
+
 // collectValues read them all back and config could never be the thing that
 // supplied a value.
 func TestConfigFillsAnInputTheCallerDidNotPassOnTheCLI(t *testing.T) {
 	reg, origin := configCapability(t)
 	t.Cleanup(func() { SetPluginConfig(nil, nil) })
-	SetPluginConfig(pluginconf.Resolve(config.Config{Plugins: map[string]map[string]any{
+	SetPluginConfig(pluginconf.Resolve(trustedConfig(t, config.Config{Plugins: map[string]map[string]any{
 		"pg@" + origin.Short(): {"host": "db.internal", "port": uint64(6543)},
-	}}, reg.Origin))
+	}}), reg.Origin))
 
 	out, _, err := run(t, reg, "pg", "query")
 	if err != nil {
@@ -1146,9 +1173,9 @@ func TestConfigFillsAnInputTheCallerDidNotPassOnTheCLI(t *testing.T) {
 func TestAPassedFlagBeatsConfigIncludingAFalseBool(t *testing.T) {
 	reg, origin := configCapability(t)
 	t.Cleanup(func() { SetPluginConfig(nil, nil) })
-	SetPluginConfig(pluginconf.Resolve(config.Config{Plugins: map[string]map[string]any{
+	SetPluginConfig(pluginconf.Resolve(trustedConfig(t, config.Config{Plugins: map[string]map[string]any{
 		"pg@" + origin.Short(): {"host": "db.internal", "verbose": true},
-	}}, reg.Origin))
+	}}), reg.Origin))
 
 	out, _, err := run(t, reg, "pg", "query", "--host", "typed.example", "--verbose=false")
 	if err != nil {
@@ -1169,9 +1196,9 @@ func TestARequiredInputIsSatisfiedByConfigAndReportedWhenNeitherSuppliesIt(t *te
 	reg, origin := configCapability(t)
 	t.Cleanup(func() { SetPluginConfig(nil, nil) })
 
-	SetPluginConfig(pluginconf.Resolve(config.Config{Plugins: map[string]map[string]any{
+	SetPluginConfig(pluginconf.Resolve(trustedConfig(t, config.Config{Plugins: map[string]map[string]any{
 		"pg@" + origin.Short(): {"host": "db.internal"},
-	}}, reg.Origin))
+	}}), reg.Origin))
 	if _, _, err := run(t, reg, "pg", "query"); err != nil {
 		t.Fatalf("a config-satisfied required input was still refused: %v", err)
 	}
@@ -1220,9 +1247,9 @@ func failingCapability(t *testing.T) (*registry.Registry, registry.Origin) {
 func TestAFailureSaysWhenTheOperatorsSectionWasNotApplied(t *testing.T) {
 	reg, _ := failingCapability(t)
 	t.Cleanup(func() { SetPluginConfig(nil, nil) })
-	SetPluginConfig(pluginconf.Resolve(config.Config{Plugins: map[string]map[string]any{
+	SetPluginConfig(pluginconf.Resolve(trustedConfig(t, config.Config{Plugins: map[string]map[string]any{
 		"pg@0000000000": {"host": "db.internal"}, // a pin from before the rebuild
-	}}, reg.Origin))
+	}}), reg.Origin))
 
 	_, errOut, err := run(t, reg, "pg", "query")
 	if err == nil {
@@ -1245,9 +1272,9 @@ func TestAFailureSaysWhenTheOperatorsSectionWasNotApplied(t *testing.T) {
 func TestNoNoteWhenTheSectionAppliedOrTheRunSucceeded(t *testing.T) {
 	reg, origin := failingCapability(t)
 	t.Cleanup(func() { SetPluginConfig(nil, nil) })
-	SetPluginConfig(pluginconf.Resolve(config.Config{Plugins: map[string]map[string]any{
+	SetPluginConfig(pluginconf.Resolve(trustedConfig(t, config.Config{Plugins: map[string]map[string]any{
 		"pg@" + origin.Short(): {"host": "db.internal"},
-	}}, reg.Origin))
+	}}), reg.Origin))
 
 	_, errOut, err := run(t, reg, "pg", "query")
 	if err == nil {
@@ -1261,10 +1288,10 @@ func TestNoNoteWhenTheSectionAppliedOrTheRunSucceeded(t *testing.T) {
 	// the namespace match this passes anyway, because a config whose only
 	// section applied produces no problems at all — so the note has to be
 	// offered a problem belonging to a different plugin.
-	SetPluginConfig(pluginconf.Resolve(config.Config{Plugins: map[string]map[string]any{
+	SetPluginConfig(pluginconf.Resolve(trustedConfig(t, config.Config{Plugins: map[string]map[string]any{
 		"pg@" + origin.Short(): {"host": "db.internal"},
 		"nosuchplugin@0000":    {"host": "elsewhere"},
-	}}, reg.Origin))
+	}}), reg.Origin))
 	_, errOut, err = run(t, reg, "pg", "query")
 	if err == nil {
 		t.Fatal("the capability was supposed to fail")
@@ -1276,9 +1303,9 @@ func TestNoNoteWhenTheSectionAppliedOrTheRunSucceeded(t *testing.T) {
 	// A run that succeeds says nothing either, however stale the pin — which
 	// is SetPluginConfig's argument and the reason this is on failures only.
 	okReg, _ := configCapability(t)
-	SetPluginConfig(pluginconf.Resolve(config.Config{Plugins: map[string]map[string]any{
+	SetPluginConfig(pluginconf.Resolve(trustedConfig(t, config.Config{Plugins: map[string]map[string]any{
 		"pg@0000000000": {"host": "db.internal"},
-	}}, okReg.Origin))
+	}}), okReg.Origin))
 	out, errOut, err := run(t, okReg, "pg", "query", "--host", "typed.example")
 	if err != nil {
 		t.Fatalf("run: %v", err)

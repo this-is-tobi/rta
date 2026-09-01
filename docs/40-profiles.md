@@ -190,7 +190,7 @@ One plugin per invocation. A profile spanning three plugins is three lines, and 
 | `--kube …` and `--ssh …` together | a call opens one forward |
 | `--tunnel-tls` with neither `--kube` nor `--ssh` in effect (this run or already stored) | it states something about the far side of a forward that does not exist — `--direct` clears a stored `tunnelTLS: true` for the same reason |
 | a profile named after an installed plugin | a profile name and a namespace share a command line |
-| writing where profiles are not honoured | with no config directory the config path falls back to `./.rta.yaml` — ordinary in a container or in CI — and profiles read from a working-directory file are ignored, because that file could have come from a repository you cloned. Set `$RTA_CONFIG` |
+| writing where the file is not honoured | with no config directory the config path falls back to `./.rta.yaml` — ordinary in a container or in CI — and nothing in a working-directory file is honoured: `profiles:`, `plugins:` and `dashboard:` are all ignored, because that file could have come from a repository you cloned. Set `$RTA_CONFIG` |
 
 Neither credential refusal echoes the value it was given. If you did pass a real one, it is in your shell history — rta will not put it anywhere else.
 

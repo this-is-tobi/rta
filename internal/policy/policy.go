@@ -186,8 +186,10 @@ func (c Ceiling) Forbids(target, scope, profile string) string {
 // Walking up from an arbitrary directory is safe *because* of the subtract-only
 // property: the worst a file planted somewhere can do is make rta refuse more
 // than the operator wanted, which is loud and immediate. rta already reads
-// ./.rta.yaml as a config fallback, which is a strictly larger trust surface
-// than this one.
+// ./.rta.yaml as a config fallback — and nothing in such a file is honoured
+// now, so this walk-up is the larger of the two surfaces rather than the
+// smaller. What keeps it safe is the subtract-only property above, not a
+// comparison to a fallback that has since been closed.
 func Load() (Ceiling, *view.Error) {
 	var found []Ceiling
 	// requireRepo is collected only from the two sources outside the

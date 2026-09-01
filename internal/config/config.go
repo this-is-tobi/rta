@@ -95,6 +95,44 @@ type Config struct {
 	// before anything has decided whether this run even has a renderer to
 	// color, and read by `rta mcp serve` too, which colors nothing at all.
 	Theme map[string]string `yaml:"theme,omitempty" json:"theme,omitempty"`
+
+	// trusted records that this file is one somebody named, rather than the
+	// ./.rta.yaml fallback. Unexported and set by the loader, exactly as
+	// Profile.trusted is: a config file must not be able to declare itself
+	// trustworthy, so `trusted: true` in a hostile file is an unclaimed key
+	// rather than a self-issued grant.
+	//
+	// On the file rather than per block, because provenance is a fact about
+	// the file. LoadFile asks once and three readers get the same answer:
+	// profiles (internal/profile's Lookup and Check), plugin sections
+	// (internal/pluginconf.Resolve) and the dashboard (TrustedDashboard
+	// below). Stamping each block separately is how the second one came to be
+	// forgotten for a whole release.
+	trusted bool
+}
+
+// Trusted reports whether this configuration came from a path somebody named.
+func (c Config) Trusted() bool { return c.trusted }
+
+// TrustedDashboard is the arrangement to actually draw: the stated one when
+// somebody named this config file, and the empty one otherwise — which is not
+// a blank screen but the automatic dashboard, one tile per registered plugin,
+// exactly what a machine with no dashboard: block already gets.
+//
+// buildTiles already refuses a tile that is not plugin.Read, because a tile
+// runs on load and again on a timer with no form and no confirmation. But
+// http.get IS Read and takes a caller-chosen URL, so `{id: http.get, with:
+// {url: …}}` in a cloned repository's ./.rta.yaml is a beacon that starts the
+// moment somebody opens the TUI in that directory. `hidden:` is the same
+// hazard pointed the other way, and is why this refuses the whole block
+// rather than only `tiles:`: it can take the agent tile off the screen, and
+// that tile is where a person notices a parked consent request before its
+// clock runs out.
+func (c Config) TrustedDashboard() Dashboard {
+	if !c.trusted {
+		return Dashboard{}
+	}
+	return c.Dashboard
 }
 
 // Path returns the config file location. RTA_CONFIG overrides it (tests,
@@ -132,13 +170,18 @@ func LoadFile() (Config, error) {
 				WithHint("fix the file or re-create it with `rta init`")
 		}
 	}
-	// Stamped here, once, rather than asked at each point of use: a profile
-	// that came from the working-directory fallback carries trusted=false for
-	// the rest of its life, and nothing downstream has to remember to check
-	// where the file was. The field is unexported so the answer can only come
-	// from this line — a config file cannot declare itself trustworthy.
+	// Stamped here, once, rather than asked at each point of use: a file that
+	// came from the working-directory fallback carries trusted=false for the
+	// rest of its life, and nothing downstream has to remember to check where
+	// the file was. The field is unexported so the answer can only come from
+	// this line — a config file cannot declare itself trustworthy.
+	//
+	// Outside the profiles branch, because provenance is a fact about the
+	// file rather than about one block. Scoping it to profiles is precisely
+	// what left `plugins:` and `dashboard:` honoured from a file nobody
+	// named.
+	cfg.trusted = trustedPath()
 	if len(cfg.Profiles) > 0 {
-		trusted := trustedPath()
 		// Read back the raw profiles block to find keys no field claimed.
 		// goccy drops an unrecognised key without a word, and a profile is
 		// where that costs the most: `plguin: pg` is one keystroke from a
@@ -148,7 +191,7 @@ func LoadFile() (Config, error) {
 		}
 		_ = yaml.Unmarshal(data, &raw)
 		for name, p := range cfg.Profiles {
-			p.trusted = trusted
+			p.trusted = cfg.trusted
 			p.unknown = unclaimed(raw.Profiles[name], profileKeys)
 			// One level down, where a migration lands: the single-plugin shape
 			// put `set:` and `secrets:` directly under the profile, and those

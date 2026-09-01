@@ -259,7 +259,7 @@ func NewRoot(reg *registry.Registry, version string) *cobra.Command {
 			// alternate one, so it is covered before it can be read and does
 			// not come back until the session ends — which makes the pane the
 			// only place a person in the TUI can learn a decision is pending.
-			return tui.Run(cmd.Context(), reg, cfg.Dashboard, pluginConfig.For,
+			return tui.Run(cmd.Context(), reg, cfg.TrustedDashboard(), pluginConfig.For,
 				tui.WithUntrusted(untrustedPluginsFound))
 		},
 	}

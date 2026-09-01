@@ -47,7 +47,7 @@ func sysRegistry(t *testing.T) *registry.Registry {
 
 func checkOf(t *testing.T, values map[string]any) []Problem {
 	t.Helper()
-	r, _ := Resolve(config.Config{Plugins: map[string]map[string]any{"sys": values}}, installed)
+	r, _ := Resolve(trusted(t, config.Config{Plugins: map[string]map[string]any{"sys": values}}), installed)
 	return r.Check(sysRegistry(t))
 }
 

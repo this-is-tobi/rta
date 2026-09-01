@@ -23,6 +23,14 @@ var (
 	// and losing one to a re-run of the wizard would silently repoint every
 	// grant that names it.
 	initCarries = []string{"Plugins", "Profiles", "Theme"}
+	// initDerives names fields that are not part of the file at all: the
+	// loader computes them, no YAML tag writes them, and the wizard neither
+	// decides nor carries them because there is nothing on disk to carry.
+	// `trusted` is provenance — which file this configuration came from —
+	// and a config that could round-trip its own trust through `rta init`
+	// would be a config declaring itself trustworthy, which is the one thing
+	// the unexported field exists to prevent.
+	initDerives = []string{"trusted"}
 )
 
 func TestInitKeepsEveryPartOfTheFileItDoesNotOwn(t *testing.T) {
@@ -31,14 +39,15 @@ func TestInitKeepsEveryPartOfTheFileItDoesNotOwn(t *testing.T) {
 	for i := 0; i < rt.NumField(); i++ {
 		declared = append(declared, rt.Field(i).Name)
 	}
-	classified := append(append([]string{}, initOwns...), initCarries...)
+	classified := append(append(append([]string{}, initOwns...), initCarries...), initDerives...)
 	sort.Strings(declared)
 	sort.Strings(classified)
 	if !reflect.DeepEqual(declared, classified) {
 		t.Fatalf("config.Config fields are %v, classified %v\n"+
-			"a new field is either something `rta init` decides or something it must "+
-			"carry through untouched — until it is named here, the wizard writes a "+
-			"config assembled without it and the operator's value is gone",
+			"a new field is something `rta init` decides, something it must carry "+
+			"through untouched, or something the loader derives that is not in the "+
+			"file at all — until it is named here, the wizard writes a config "+
+			"assembled without it and the operator's value is gone",
 			declared, classified)
 	}
 
