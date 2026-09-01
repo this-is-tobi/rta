@@ -50,9 +50,15 @@ func SelectionPath() string { return filepath.Join(paths.Data(), "profile.json")
 // It is also the safe direction now that the selection bounds agents: an
 // unreadable file switches everything off rather than leaving a stale name in
 // force.
+// maxSelection bounds the selection read, for the reason
+// internal/atomicfile.ReadCapped states. This file names the active profile
+// and so bounds what an agent may reach; it is a couple of fields, and 4 KiB
+// is far past anything Save writes.
+const maxSelection = 4 << 10
+
 func LoadSelection() Selection {
 	var s Selection
-	data, err := os.ReadFile(SelectionPath())
+	data, err := atomicfile.ReadCapped(SelectionPath(), maxSelection)
 	if err != nil {
 		return Selection{}
 	}

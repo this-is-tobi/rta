@@ -245,9 +245,20 @@ func lock() (func(), *view.Error) {
 // truncated must cost the operator a plugin, never cost them the check. The
 // opposite default — "unreadable, so allow" — is how a security control
 // becomes a formality the first time a disk fills up.
+// maxTrustFile bounds every read of the trust store, for the reason
+// internal/atomicfile.ReadCapped states — and this is the file where that
+// reason bites hardest: it decides which plugin binaries are allowed to run
+// at all, and Load's own contract below is that an unreadable store costs the
+// operator a plugin rather than the check. An oversized store now takes that
+// same fail-closed path instead of taking the process with it.
+//
+// An entry is a digest, a path and a few fields; 256 KiB is hundreds of
+// trusted artifacts, matched to the cap its sibling state files use.
+const maxTrustFile = 256 << 10
+
 func Load() Set {
 	s := Set{entries: map[string]Entry{}}
-	data, err := os.ReadFile(Path())
+	data, err := atomicfile.ReadCapped(Path(), maxTrustFile)
 	if err != nil {
 		return s
 	}
@@ -462,7 +473,7 @@ func Remove(which string) (int, *view.Error) {
 // nothing trusted yet.
 func read() (file, *view.Error) {
 	var f file
-	data, err := os.ReadFile(Path())
+	data, err := atomicfile.ReadCapped(Path(), maxTrustFile)
 	if os.IsNotExist(err) {
 		return f, nil
 	}

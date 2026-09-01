@@ -3,11 +3,11 @@ package grant
 import (
 	"encoding/json"
 	"errors"
-	"os"
 	"reflect"
 	"sort"
 	"strings"
 
+	"github.com/this-is-tobi/rule-them-all/internal/atomicfile"
 	"github.com/this-is-tobi/rule-them-all/internal/seal"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
@@ -218,7 +218,22 @@ func legacy(data []byte) bool {
 // callers are `grant list` and `rta doctor`, both of which a person is
 // waiting on, and neither is worth a second return value on the path every
 // MCP call takes.
+// maxGrantFile bounds every read of grants.json.
+//
+// The file is written by rta and read by rta, and in between it sits in a
+// directory a lower-trust process can write to — the same reasoning
+// internal/consent states for its own queue, and grants.json sits on a
+// strictly hotter path than that queue: Reserve reads it before every gated
+// MCP call. The read happens before the seal is checked (it has to — the seal
+// is inside the bytes), so a forged file does not need to be *valid* to cost
+// something, only large.
+//
+// A grant is a few hundred bytes and Issue collapses duplicates, so 256 KiB
+// is several hundred live grants — past any real operator, and matched to the
+// number the consent queue already chose for a file in the same directory.
+const maxGrantFile = 256 << 10
+
 func Legacy() bool {
-	data, err := os.ReadFile(Path())
+	data, err := atomicfile.ReadCapped(Path(), maxGrantFile)
 	return err == nil && legacy(data)
 }
