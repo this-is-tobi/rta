@@ -24,6 +24,17 @@ import (
 // the operator's own terminal, or write it to a file they name — is what
 // keys.backup already established for exactly this situation.
 
+// minTokenTTL matches the Kubernetes TokenRequest API's own hardcoded floor
+// (MinTokenExpirationSeconds upstream, 600s) — not a policy this or any
+// particular cluster chose. Every standard distribution's API server rejects
+// a shorter --duration outright: "may not specify a duration less than 10
+// minutes", confirmed directly against a real cluster rather than assumed.
+// Checked here so a too-short --ttl is refused before any cluster write, the
+// same fail-fast discipline the parse-error case already gets — without it,
+// the ServiceAccount/Role/RoleBinding get created and only the token mint
+// fails, leaving a partial provision the operator has to notice and clean up.
+const minTokenTTL = 10 * time.Minute
+
 func serviceAccountCapabilities() []plugin.Capability {
 	return []plugin.Capability{
 		cap(plugin.Capability{
@@ -150,9 +161,10 @@ func runServiceAccountProvision(ctx context.Context, req plugin.Request) (view.V
 
 	ttlStr := strings.TrimSpace(req.String("ttl"))
 	ttl, err := time.ParseDuration(ttlStr)
-	if err != nil || ttl <= 0 {
+	if err != nil || ttl < minTokenTTL {
 		return nil, view.Errorf("kube.serviceaccount.ttl.invalid", "%q is not a usable duration", ttlStr).
-			WithHint("use a Go-style duration like 15m, 1h or 24h")
+			WithHint("use a Go-style duration of at least 10m — the TokenRequest API's own floor, " +
+				"e.g. 15m, 1h or 24h")
 	}
 
 	rules, verr := rulesFor(req.StringSlice("capability"))
