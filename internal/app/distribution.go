@@ -337,7 +337,9 @@ func newPluginIndexCommand(opts *globalOpts) *cobra.Command {
 		Short: "Attach, refresh and detach plugin indexes",
 		Long: "An index is a git repository of plugins/<name>.yaml manifests — claims\n" +
 			"about plugins, searchable without downloading anything. rta shells out\n" +
-			"to your git, so your remotes, proxies and credentials keep working.\n" +
+			"to your git, so your remotes, proxies and credentials keep working —\n" +
+			"except that a repository may not name a remote helper (`ext::` runs a\n" +
+			"command line) and may not be fetched in cleartext.\n" +
 			"There is no default index: the first one attached is your decision.",
 		RunE: groupRunE,
 	}
@@ -371,11 +373,28 @@ func newPluginIndexCommand(opts *globalOpts) *cobra.Command {
 				return renderView(cmd, opts, view.Text{
 					Body: "no index is attached — `rta plugin index add <name> <repository>`"})
 			}
-			t := view.Table{Columns: []view.Column{{Name: "Index"}, {Name: "Plugins"},
-				{Name: "Problems"}}}
+			// Origin is shown because it decides something: an index
+			// attached from a path on this machine may name file://
+			// artifacts and one attached from a network URL may not, so an
+			// operator reading a refusal that says "attached from X" needs
+			// somewhere to see what rta thinks X is. Until now nothing
+			// showed where an attached index came from at all.
+			//
+			// Masked on the way out — an origin can carry a token, and a
+			// table is also `--output json` and terminal scrollback.
+			t := view.Table{Columns: []view.Column{{Name: "Index"}, {Name: "Origin"},
+				{Name: "Plugins"}, {Name: "Problems"}}}
 			for _, ix := range indexes {
 				listed, bad := plugindist.Manifests(ix)
-				t.Rows = append(t.Rows, []string{ix.Name,
+				origin, verr := plugindist.IndexOrigin(cmd.Context(), ix)
+				shown := plugindist.OriginForDisplay(origin)
+				if verr != nil {
+					// Not fatal: a listing that refused to name the other
+					// indexes because one of them is odd would be a worse
+					// answer than the odd one.
+					shown = "unknown"
+				}
+				t.Rows = append(t.Rows, []string{ix.Name, shown,
 					fmt.Sprint(len(listed)), fmt.Sprint(len(bad))})
 			}
 			return renderView(cmd, opts, t)

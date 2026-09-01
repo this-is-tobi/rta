@@ -130,6 +130,59 @@ func attach(t *testing.T, manifest string) {
 	}
 }
 
+// An index attached from a path may name a file:// artifact — that is the
+// local rehearsal `rta plugin manifest --index` is for, and every test in this
+// package relies on it. An index attached from a network URL may not, and this
+// is the difference.
+//
+// Without the gate, an index cloned from anywhere could name
+// file:///home/you/.ssh/id_ed25519 as its artifact and rta would open it, in
+// its own unconfined process, while pluginhost's denyset refuses a *plugin*
+// that exact path. The bytes go nowhere — the checksum gate stops the install
+// before anything launches — but the read happens, and the mismatch message
+// hands back the first 48 bits of the real file's sha256.
+//
+// The origin is re-pointed after the attach rather than cloned from a real
+// remote, because what the gate reads is remote.origin.url and what it has to
+// refuse is any origin that is not a path on this machine. That also covers
+// the case a cache could not: an index attached locally and re-pointed later.
+func TestARemotelyAttachedIndexMayNotNameALocalFile(t *testing.T) {
+	testData(t)
+	ctx := context.Background()
+	bin := hello(t)
+	attach(t, helloManifest(t, bin, ""))
+
+	ix, ok := IndexByName("lab")
+	if !ok {
+		t.Fatal("the index did not attach")
+	}
+	// It still installs while the origin is the path it was attached from.
+	if _, verr := Install(ctx, "hello", io.Discard); verr != nil {
+		t.Fatalf("a locally attached index was refused its own file:// artifact: %v", verr)
+	}
+	if _, verr := Remove("hello"); verr != nil {
+		t.Fatal(verr)
+	}
+
+	setURL := exec.Command("git", "-C", ix.Dir, "remote", "set-url", "origin",
+		"https://github.com/somebody/rta-index.git")
+	if out, err := setURL.CombinedOutput(); err != nil {
+		t.Fatalf("re-pointing the origin: %v: %s", err, out)
+	}
+
+	_, verr := Install(ctx, "hello", io.Discard)
+	if verr == nil {
+		t.Fatal("an index attached from a network URL opened a local file")
+	}
+	if verr.Code != "plugin.install.localfile" {
+		t.Fatalf("code = %s, want plugin.install.localfile: %v", verr.Code, verr)
+	}
+	if !strings.Contains(verr.Message, "github.com/somebody/rta-index.git") {
+		t.Errorf("the refusal does not name the origin it refused: %s", verr.Message)
+	}
+	assertNothingInstalled(t, sha256Of(t, bin))
+}
+
 // The whole arc, both artifact shapes: fetch, checksum, verification launch,
 // store, symlink, trust, lockfile — every durable fact checked against what
 // rta computed, none against the claim.
