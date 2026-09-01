@@ -5,5 +5,33 @@ lint:
   use:
     - STANDARD
 breaking:
+  # WIRE, not FILE, because the wire format is the contract and the generated
+  # Go source is not.
+  #
+  # A plugin author writes a plugin.Plugin and hands it to sdk.Serve;
+  # pkg/sdk/wire translates that into these messages. Nothing outside this
+  # repository imports the generated types — examples/plugin-hello, the
+  # reference for what an author actually writes, names them zero times. So
+  # what has to survive the gap between a plugin binary built against one rta
+  # and a host from another is how the bytes are laid out, not what the fields
+  # are called.
+  #
+  # FILE, the stricter category, refuses a pure rename. That change cannot
+  # break an installed plugin — the wire encoding carries a field's number and
+  # type, never its name — but it would block exactly the kind of "take the
+  # cleaner shape outright" edit this project wants to stay free to make.
+  # Meanwhile the in-repo consumers a rename really does break (plugins/* are
+  # separate modules compiling against the generated types) fail loudly at
+  # compile time in the same CI run, which is a better error than this one.
+  #
+  # What WIRE still refuses is the class nothing else catches: renumbering or
+  # retyping a field. That passes gofmt, vet, build and the whole race suite,
+  # and then an already-installed plugin silently reads the wrong value across
+  # a process boundary. `proto-check` exists because that once went unnoticed.
+  #
+  # On the day a real wire break is the right call, this gate firing is the
+  # cue to bump ProtocolVersion in pkg/sdk/handshake.go in the same change —
+  # that is what turns "the old plugin launches and misreads fields" into "the
+  # old plugin is refused before the user sees a timeout."
   use:
-    - FILE
+    - WIRE

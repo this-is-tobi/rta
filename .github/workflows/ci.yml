@@ -62,21 +62,11 @@ jobs:
       contents: read
     with:
       WORKING_DIRECTORY: proto
-      # Temporary, and only because there is nothing to compare against yet.
-      #
       # BREAKING defaults to true and derives its baseline from the pull
-      # request's base branch. main is currently a single empty commit, so
-      # buf looks for proto/ there, finds no module, and fails the job with
-      # `Module "path: "proto"" had no .proto files` — the same failure `make
-      # proto-check` gives locally, and one no change to this branch can fix.
-      #
-      # **Remove this line the moment this branch lands.** Once main carries
-      # proto/, the check has a real baseline and becomes the gate the schema
-      # exists for: v1 is frozen, and a renumbered field breaks every plugin
-      # compiled against it. Leaving this false past that point would silently
-      # retire the one gate that catches it — which is exactly how proto-check
-      # came to exist unwired in the first place (see the comment above).
-      BREAKING: false
+      # request's base branch, which main now carries. What counts as breaking
+      # is proto/buf.yaml's `breaking.use`, deliberately set to WIRE rather
+      # than the stricter FILE — see that file for why, and for what to do on
+      # the day a wire break is the right call.
 
   test:
     name: Test
