@@ -67,6 +67,35 @@ func TestOnlyTheWritingFileCapabilitiesHideTheirPathFromMCP(t *testing.T) {
 	}
 }
 
+// The host is the caller's choice on all three of these, and what comes back
+// — a banner, an open/closed map, whatever a written payload provokes —
+// arrives in an agent's context the same way http.get's response does. A
+// future capability that dials a caller-chosen destination has to make the
+// same choice on purpose, the same reason net.hosts's Local split is pinned
+// above.
+func TestHostReachingCapabilitiesNeedAGrantScopedToHost(t *testing.T) {
+	want := map[string]bool{"net.probe": true, "net.send": true, "net.port": true}
+	seen := map[string]bool{}
+	for _, c := range Plugin().Capabilities {
+		needsGrant, classified := want[c.ID]
+		if !classified {
+			continue
+		}
+		seen[c.ID] = true
+		if c.NeedsGrant != needsGrant {
+			t.Errorf("%s.NeedsGrant = %v, want %v", c.ID, c.NeedsGrant, needsGrant)
+		}
+		if c.Scope != "host" {
+			t.Errorf("%s.Scope = %q, want %q", c.ID, c.Scope, "host")
+		}
+	}
+	for id := range want {
+		if !seen[id] {
+			t.Errorf("%s no longer exists", id)
+		}
+	}
+}
+
 func TestParsePorts(t *testing.T) {
 	tests := []struct {
 		spec    string

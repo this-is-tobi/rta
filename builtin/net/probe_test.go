@@ -180,8 +180,7 @@ func TestProbeClosedPortIsCoded(t *testing.T) {
 // A regression test for a real bug review found: the TLS
 // handshake was never bounded by the documented timeout field — only the
 // TCP dial was — so a peer that accepts the connection and then never sends
-// a single TLS record hung HandshakeContext forever. No grant is needed for
-// this: net.probe is classified Read.
+// a single TLS record hung HandshakeContext forever.
 func TestProbeTLSHandshakeRespectsTimeout(t *testing.T) {
 	ln, err := stdnet.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
