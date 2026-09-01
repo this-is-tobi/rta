@@ -121,23 +121,53 @@ func TestSSHCloseEndsTheListenerAndTheChildren(t *testing.T) {
 // exact same early return deterministically, many times over, to turn a
 // couple of leaked fds per call into a difference /dev/fd can actually see.
 func TestSpliceSSHClosesItsPipesOnTheClosingRace(t *testing.T) {
-	if _, err := os.Stat("/dev/fd"); err != nil {
-		t.Skip("no /dev/fd on this platform")
-	}
 	fakeSSH(t, "exec cat\n")
-	openFDs := func() int {
-		t.Helper()
-		entries, err := os.ReadDir("/dev/fd")
+
+	// Readdirnames, never os.ReadDir, and that is not a style preference.
+	//
+	// Every entry in /dev/fd *is* a file descriptor, and the directory is a
+	// live view of a table this process is still mutating — goroutines left
+	// running by earlier tests in this package close sockets and pipes while
+	// this enumerates. os.ReadDir asks for a DirEntry per name, and neither
+	// procfs nor fdescfs fills d_type, so Go falls back to lstat-ing every
+	// entry; a descriptor closed between the getdents that named it and the
+	// stat of it fails with EBADF and takes the whole read down with it.
+	//
+	// Go carries a workaround for exactly this (go.dev/issue/80143) — but only
+	// on darwin, and only since 1.27. So `os.ReadDir("/dev/fd")` passes on a
+	// 1.27 Mac and fails on both a 1.26 Mac and every Linux, which is how this
+	// test went green on a laptop and red on both CI runners the first time
+	// the suite actually ran there.
+	//
+	// Readdirnames returns names without stat-ing anything, so it cannot fail
+	// that way on any platform or version — and a count is all this needs.
+	openFDs := func() (int, error) {
+		f, err := os.Open("/dev/fd")
 		if err != nil {
-			t.Fatal(err)
+			return 0, err
 		}
-		return len(entries)
+		defer f.Close()
+		names, err := f.Readdirnames(-1)
+		if err != nil {
+			return 0, err
+		}
+		// The handle opened just above is itself one of the entries. It is
+		// counted in both readings and cancels out.
+		return len(names), nil
 	}
 
 	tun := &Tunnel{closing: true}
 	spec := sshSpec{host: "bastion", dest: "vault.internal:8200"}
 
-	before := openFDs()
+	// The skip tests the operation this actually performs, rather than
+	// os.Stat("/dev/fd") standing in for it: the directory existing says
+	// nothing about whether it can be enumerated, and treating the two as the
+	// same question is what let a platform that cannot do the second reach the
+	// assertion and fail there instead of skipping.
+	before, err := openFDs()
+	if err != nil {
+		t.Skipf("cannot enumerate open file descriptors here: %v", err)
+	}
 	const n = 50
 	for i := 0; i < n; i++ {
 		client, server := net.Pipe()
@@ -149,7 +179,10 @@ func TestSpliceSSHClosesItsPipesOnTheClosingRace(t *testing.T) {
 		_ = client.Close()
 		_ = server.Close()
 	}
-	after := openFDs()
+	after, err := openFDs()
+	if err != nil {
+		t.Fatalf("counting open file descriptors after the run: %v", err)
+	}
 
 	if after > before+5 {
 		t.Fatalf("open fds went from %d to %d after %d calls that each hit the closing race — "+
