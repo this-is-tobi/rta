@@ -1,8 +1,12 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"slices"
 	"testing"
+
+	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 )
 
 // podFrom decodes a pod the way kubectl hands one over, so these cases
@@ -86,5 +90,31 @@ func TestRunningWithNoContainersIsNotHealthy(t *testing.T) {
 	p := podFrom(t, `{"status":{"phase":"Running","containerStatuses":[]}}`)
 	if healthOf(p).healthy {
 		t.Error("a Running pod with no container statuses was judged healthy")
+	}
+}
+
+// selectionOf refuses --namespace together with --all-namespaces, which is
+// right for a call and wrong for a completion: the moment somebody is
+// tab-completing a namespace on a line that already carries
+// --all-namespaces is precisely when they want to see the list. Completion
+// is not an action, so it reads the context and nothing else.
+func TestNamespaceCompletionSurvivesTheAmbiguousCombination(t *testing.T) {
+	withFixtureKubectl(t, `{"items":[{"metadata":{"name":"gitea"}},{"metadata":{"name":"argo-cd"}}]}`)
+
+	got := suggestNamespaces(context.Background(), plugin.NewRequest(map[string]any{
+		"namespace": "gi", "all-namespaces": true,
+	}, false, false))
+	if !slices.Contains(got, "gitea") || !slices.Contains(got, "argo-cd") {
+		t.Errorf("suggestNamespaces = %v, want the namespaces listed despite the ambiguous pair", got)
+	}
+}
+
+// The context is the one field completion does read, so an unusable one still
+// stops it — a value kubectl would take for a flag must not reach argv.
+func TestNamespaceCompletionStillRefusesAnUnusableContext(t *testing.T) {
+	if got := suggestNamespaces(context.Background(), plugin.NewRequest(map[string]any{
+		"context": "--kubeconfig=/tmp/theirs",
+	}, false, false)); got != nil {
+		t.Errorf("suggestNamespaces = %v, want nothing for an injectable context", got)
 	}
 }

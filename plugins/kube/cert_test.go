@@ -11,8 +11,6 @@ import (
 	"encoding/pem"
 	"fmt"
 	"math/big"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -130,20 +128,8 @@ func TestThePrivateKeyArrivesAndIsDroppedRatherThanRendered(t *testing.T) {
 	encodedKey := base64.StdEncoding.EncodeToString([]byte(marker))
 	crt := selfSignedPEM(t, "kept.example.com", time.Now().Add(90*24*time.Hour))
 
-	dir := t.TempDir()
-	payload := filepath.Join(dir, "payload.json")
-	body := `{"items":[{"metadata":{"name":"web-tls","namespace":"prod"},"data":{` +
-		`"tls.crt":"` + crt + `","tls.key":"` + encodedKey + `"}}]}`
-	if err := os.WriteFile(payload, []byte(body), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	script := filepath.Join(dir, "kubectl")
-	if err := os.WriteFile(script, []byte("#!/bin/sh\ncat '"+payload+"'\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	orig := kubectlBin
-	kubectlBin = script
-	t.Cleanup(func() { kubectlBin = orig })
+	withFixtureKubectl(t, `{"items":[{"metadata":{"name":"web-tls","namespace":"prod"},"data":{`+
+		`"tls.crt":"`+crt+`","tls.key":"`+encodedKey+`"}}]}`)
 
 	v, err := runCertList(context.Background(), saReq(plugin.SurfaceCLI, false, map[string]any{
 		"namespace": "prod",

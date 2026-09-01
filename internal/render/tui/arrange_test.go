@@ -835,8 +835,15 @@ func TestPluginPaneListsPluginsWithoutTiles(t *testing.T) {
 	if m.plugins[idx].canTile() {
 		t.Error("zeta should have no tile")
 	}
-	if note := m.toggleShown(idx); !strings.Contains(note, "nothing to show") {
+	// Pinned against NoTileReason rather than a literal, because the bug this
+	// replaced was three copies of one sentence drifting apart: the flash has
+	// to say the same thing the inventory line says, whatever that is.
+	note := m.toggleShown(idx)
+	if !strings.Contains(note, "no dashboard tile") {
 		t.Errorf("toggling an untileable plugin said %q", note)
+	}
+	if want := NoTileReason(m.plugins[idx].plugin); !strings.Contains(note, want) {
+		t.Errorf("flash %q does not carry the reason %q the inventory gives", note, want)
 	}
 	if !strings.Contains(pluginDetail(m.plugins[idx]), "no dashboard tile") {
 		t.Errorf("detail = %q", pluginDetail(m.plugins[idx]))
@@ -1705,8 +1712,14 @@ func TestNoTileReasonTellsTheThreeApartFromEachOther(t *testing.T) {
 
 // The real plugin set is what the copy is actually read against, so at least
 // one plugin has to land in each of the two interesting buckets — otherwise
-// the distinction above is theory. kube declines (every capability sets
-// NoPreview); cert needs a target.
+// the distinction above is theory.
+//
+// Builtins only, and worth being clear about the gap: all.Registry returns
+// what is compiled in, so the external plugins that motivated the fix — kube,
+// pg, vault, cnpg, every one of which sets NoPreview on all its capabilities —
+// are not in it. This passes on debug and keys, which decline for their own
+// reasons. It is evidence that both buckets occur in practice, not coverage of
+// the plugins the wrong sentence was actually being shown for.
 func TestTheRealPluginSetExercisesBothReasons(t *testing.T) {
 	reg, err := all.Registry(nil)
 	if err != nil {

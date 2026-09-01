@@ -369,3 +369,35 @@ func TestANamespaceIsPassedAndNotBothForms(t *testing.T) {
 		t.Errorf("args = %v names both a namespace and every namespace", got)
 	}
 }
+
+// The kube twin of this refusal was closing a real grant scope bypass; here
+// it is closing a trap. These capabilities declare no Scope, so there is
+// nothing to bypass today — but rta derives the scope a call is checked
+// against from the `namespace` value alone, so giving either of them
+// `Scope: "namespace"` (the natural thing, since both already take a
+// namespace) would make args()' preference for --all-namespaces into a way
+// past that scope. A trap with no test is one a future refactor removes
+// without noticing, which is the whole reason this is here.
+func TestANamespaceAndEveryNamespaceTogetherAreRefused(t *testing.T) {
+	_, verr := selectionOf(plugin.NewRequest(map[string]any{
+		"namespace": "gitea", "all-namespaces": true,
+	}, false, false))
+	if verr == nil {
+		t.Fatal("a scoped namespace sent alongside --all-namespaces was accepted")
+	}
+	if verr.Code != "cnpg.namespace.ambiguous" || verr.Hint == "" {
+		t.Errorf("want a coded, hinted cnpg.namespace.ambiguous, got %+v", verr)
+	}
+}
+
+// Neither ordinary form may be caught by the refusal above.
+func TestEitherNamespaceFormAloneIsAccepted(t *testing.T) {
+	one, verr := selectionOf(plugin.NewRequest(map[string]any{"namespace": "gitea"}, false, false))
+	if verr != nil || one.namespace != "gitea" || one.allNamespace {
+		t.Errorf("a plain namespace was not accepted: %+v %v", one, verr)
+	}
+	every, verr := selectionOf(plugin.NewRequest(map[string]any{"all-namespaces": true}, false, false))
+	if verr != nil || !every.allNamespace || every.namespace != "" {
+		t.Errorf("--all-namespaces alone was not accepted: %+v %v", every, verr)
+	}
+}
