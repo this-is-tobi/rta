@@ -1897,7 +1897,7 @@
   },
   {
     "name": "net_port",
-    "description": "── the text below is written by the plugin, not by rta ──\nTCP connect-scan ports on a host\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nTCP connect-scan ports on a host\n\nWhich ports answer, not what they say — `net probe` shows the banner for one; this maps many at once. Needs a grant for the same reason: the host is the caller's choice.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"host\"). You cannot issue one yourself — ask the operator to run `rta grant allow net.port`.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -1928,7 +1928,7 @@
   },
   {
     "name": "net_probe",
-    "description": "── the text below is written by the plugin, not by rta ──\nOpen a TCP connection and report what answers\n\nWhat telnet \u003chost\u003e \u003cport\u003e is really used for: prove the port accepts a connection, time the handshake, and show the banner the service volunteers. --tls completes a TLS handshake first and reports the negotiated version and cipher. It only ever listens; to speak first — the protocols that expect the client to open — use `net send`, which is a write and gated as one.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nOpen a TCP connection and report what answers\n\nWhat telnet \u003chost\u003e \u003cport\u003e is really used for: prove the port accepts a connection, time the handshake, and show the banner the service volunteers. --tls completes a TLS handshake first and reports the negotiated version and cipher. It only ever listens; to speak first — the protocols that expect the client to open — use `net send`, which is a write. Both need a grant: the destination is the caller's choice either way, and whatever it says back is read as tool output.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"host\"). You cannot issue one yourself — ask the operator to run `rta grant allow net.probe`.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -2013,7 +2013,7 @@
   },
   {
     "name": "net_send",
-    "description": "── the text below is written by the plugin, not by rta ──\nSend bytes to a TCP port and report what comes back\n\nOpens a TCP connection, writes what you give it, and shows the reply — how you poke a protocol that expects the client to speak first (SMTP, Redis, HTTP/1.0). \\r\\n and \\n in --data are interpreted. --tls speaks it over TLS. This is a write: what arrives is executed by whatever is listening, so it needs an explicit grant before an AI agent can use it. `net probe` is the read-only half — connect, handshake, listen — and needs no grant.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"host\"). You cannot issue one yourself — ask the operator to run `rta grant allow net.send`.",
+    "description": "── the text below is written by the plugin, not by rta ──\nSend bytes to a TCP port and report what comes back\n\nOpens a TCP connection, writes what you give it, and shows the reply — how you poke a protocol that expects the client to speak first (SMTP, Redis, HTTP/1.0). \\r\\n and \\n in --data are interpreted. --tls speaks it over TLS. This is a write: what arrives is executed by whatever is listening, so it needs an explicit grant before an AI agent can use it. `net probe` is the read-only half — connect, handshake, listen — and carries the same grant, since the destination is still the caller's to choose either way.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"host\"). You cannot issue one yourself — ask the operator to run `rta grant allow net.send`.",
     "destructive_hint": false,
     "input_schema": {
       "additionalProperties": false,

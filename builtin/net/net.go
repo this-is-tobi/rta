@@ -108,11 +108,22 @@ func Plugin() plugin.Plugin {
 				Summary:    "Open a TCP connection and report what answers",
 				Safety:     plugin.Read,
 				Idempotent: true,
+				// It only ever listens, which is what earned it Read — but the
+				// host is the caller's choice and whatever answers arrives
+				// straight into an agent's context, the exact shape http.get
+				// carries NeedsGrant for despite also mutating nothing. Shipped
+				// without it: an ungated MCP caller could dial any address this
+				// machine can reach — including loopback and RFC1918/link-local,
+				// unlike http.* — and read back whatever greeted it.
+				NeedsGrant: true,
+				Scope:      "host",
 				Description: "What telnet <host> <port> is really used for: prove the port accepts a " +
 					"connection, time the handshake, and show the banner the service volunteers. " +
 					"--tls completes a TLS handshake first and reports the negotiated version and " +
 					"cipher. It only ever listens; to speak first — the protocols that expect the " +
-					"client to open — use `net send`, which is a write and gated as one.",
+					"client to open — use `net send`, which is a write. Both need a grant: the " +
+					"destination is the caller's choice either way, and whatever it says back is " +
+					"read as tool output.",
 				Inputs: []plugin.Field{
 					{Name: "host", Type: plugin.String, Positional: true, Required: true,
 						Suggest: suggestHostnames, Help: "host to connect to"},
@@ -142,7 +153,8 @@ func Plugin() plugin.Plugin {
 					"HTTP/1.0). \\r\\n and \\n in --data are interpreted. --tls speaks it over TLS. " +
 					"This is a write: what arrives is executed by whatever is listening, so it needs " +
 					"an explicit grant before an AI agent can use it. `net probe` is the read-only " +
-					"half — connect, handshake, listen — and needs no grant.",
+					"half — connect, handshake, listen — and carries the same grant, since the " +
+					"destination is still the caller's to choose either way.",
 				Inputs: []plugin.Field{
 					{Name: "host", Type: plugin.String, Positional: true, Required: true,
 						Suggest: suggestHostnames, Help: "host to connect to"},
@@ -159,6 +171,15 @@ func Plugin() plugin.Plugin {
 				Summary:    "TCP connect-scan ports on a host",
 				Safety:     plugin.Read,
 				Idempotent: true,
+				// Same reasoning as net.probe: the host is the caller's choice,
+				// and an open/closed map of an arbitrary address — including
+				// one this machine can reach but the caller never should have
+				// been able to name — is reconnaissance, not a harmless read.
+				NeedsGrant: true,
+				Scope:      "host",
+				Description: "Which ports answer, not what they say — `net probe` shows the banner " +
+					"for one; this maps many at once. Needs a grant for the same reason: the host " +
+					"is the caller's choice.",
 				Inputs: []plugin.Field{
 					{Name: "host", Type: plugin.String, Positional: true, Required: true,
 						Suggest: suggestHostnames, Help: "host to scan"},
@@ -499,10 +520,11 @@ func runDNS(ctx context.Context, req plugin.Request) (view.View, error) {
 // maxScanPorts bounds what one call may ask for.
 //
 // `--ports 1-65535` is seven bytes. It bought 65,535 goroutines and ~180 MiB
-// before the first dial, and over MCP net.port is a plain Read — exposed with
-// no grant, no allowlist and no operator interaction — so that was an agent
-// allocating a sixth of a gigabyte per call inside the process that enforces
-// every grant for every other tool the agent has open.
+// before the first dial — and a grant authorizes a host, not a ports value,
+// so even a caller already holding one for this host can still pass an
+// unbounded --ports spec (and the CLI/TUI are never gated at all), so that
+// was an agent allocating a sixth of a gigabyte per call inside the process
+// that enforces every grant for every other tool the agent has open.
 //
 // The cap is not redundant with the worker pool below, and it is the half that
 // bounds the *unbounded* cost. The goroutine spike has a ceiling and drains on
