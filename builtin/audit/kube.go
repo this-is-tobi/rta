@@ -76,12 +76,41 @@ type meta struct {
 
 func runKubeRBAC(ctx context.Context, req plugin.Request) (view.View, error) {
 	kubeContext := req.String("context")
+	ns, verr := scopeOf(req)
+	if verr != nil {
+		return nil, verr
+	}
 	r := &report{}
 
+	// **Narrowing this audit means dropping half its subject, and the half it
+	// drops has to be said out loud.** Two of the three things checked here —
+	// ClusterRoleBindings to cluster-admin, and wildcard ClusterRoles — are
+	// cluster-scoped objects that do not belong to any namespace. There is no
+	// honest way to narrow them: they either apply everywhere or they are not
+	// examined.
+	//
+	// Skipping them silently is the dangerous option, because the finding this
+	// audit exists to surface is precisely a cluster-admin binding, and a
+	// scoped run would then report a clean RBAC posture while never having
+	// looked. So the skip is itself a finding — info rather than warn, since
+	// nothing is wrong, but present in the output where somebody reading the
+	// result will see it rather than buried in the capability's description
+	// where they will not.
+	if ns != "" {
+		r.add(grpKubeRBAC, "cluster-scoped RBAC not examined", stInfo,
+			"narrowed to namespace "+ns+", so ClusterRoleBindings to cluster-admin and wildcard "+
+				"ClusterRoles were not checked — they belong to no namespace. Run without a "+
+				"namespace to include them.", refRBACClusterAdmin)
+	}
+	// Everything added from here on is a real finding about what was examined.
+	examined := len(r.findings)
+
 	var crb list[bindingItem]
-	crbErr := kubeGetJSON(ctx, kubeContext, "", "clusterrolebindings", &crb)
-	if crbErr != nil {
-		return nil, crbErr
+	if ns == "" {
+		crbErr := kubeGetJSON(ctx, kubeContext, "", "clusterrolebindings", &crb)
+		if crbErr != nil {
+			return nil, crbErr
+		}
 	}
 	// system:authenticated and system:unauthenticated bound to cluster-admin
 	// are never a sane default — no installer creates them, and the group
@@ -115,7 +144,7 @@ func runKubeRBAC(ctx context.Context, req plugin.Request) (view.View, error) {
 			"bound to "+names, refRBACClusterAdmin)
 	}
 
-	roles, rolesErr := fetchAllRules(ctx, kubeContext)
+	roles, rolesErr := fetchAllRules(ctx, kubeContext, ns)
 	if rolesErr != nil {
 		return nil, rolesErr
 	}
@@ -129,9 +158,14 @@ func runKubeRBAC(ctx context.Context, req plugin.Request) (view.View, error) {
 		}
 	}
 
-	if len(r.findings) == 0 {
+	// Counted from the mark rather than from zero, because a narrowed run has
+	// already added the "cluster-scoped RBAC not examined" note above — and
+	// `len(r.findings) == 0` would then be false on a perfectly clean
+	// namespace, so the clean result would silently stop being reported for
+	// exactly the runs that added the note.
+	if len(r.findings) == examined {
 		r.add(grpKubeRBAC, "cluster-admin and wildcard rules", stOK,
-			"no cluster-admin binding and no wildcard verb/resource/apiGroup found", refRBACClusterAdmin)
+			rbacClean(ns), refRBACClusterAdmin)
 	}
 
 	if !req.Bool("detail") {
@@ -166,10 +200,18 @@ func subjectNames(subs []subject) string {
 // fetchAllRules reads every Role and ClusterRole and returns them as one
 // slice with a shared shape — the wildcard check does not care which kind a
 // rule came from, only what it grants.
-func fetchAllRules(ctx context.Context, kubeContext string) ([]roleItem, *view.Error) {
+//
+// Narrowed to a namespace it reads Roles there and no ClusterRoles at all: a
+// ClusterRole belongs to no namespace, so including them would attribute
+// cluster-wide findings to a namespace that does not own them. The caller
+// reports that omission; see runKubeRBAC.
+func fetchAllRules(ctx context.Context, kubeContext, ns string) ([]roleItem, *view.Error) {
 	var roles, clusterRoles list[roleItem]
-	if verr := kubeGetJSON(ctx, kubeContext, "", "roles", &roles); verr != nil {
+	if verr := kubeGetJSON(ctx, kubeContext, ns, "roles", &roles); verr != nil {
 		return nil, verr
+	}
+	if ns != "" {
+		return roles.Items, nil
 	}
 	if verr := kubeGetJSON(ctx, kubeContext, "", "clusterroles", &clusterRoles); verr != nil {
 		return nil, verr
@@ -234,8 +276,12 @@ type podSecurityCtn struct {
 
 func runKubePodSecurity(ctx context.Context, req plugin.Request) (view.View, error) {
 	kubeContext := req.String("context")
+	ns, verr := scopeOf(req)
+	if verr != nil {
+		return nil, verr
+	}
 	var pods list[podSecurityItem]
-	if verr := kubeGetJSON(ctx, kubeContext, "", "pods", &pods); verr != nil {
+	if verr := kubeGetJSON(ctx, kubeContext, ns, "pods", &pods); verr != nil {
 		return nil, verr
 	}
 
@@ -260,7 +306,8 @@ func runKubePodSecurity(ctx context.Context, req plugin.Request) (view.View, err
 	}
 	if len(r.findings) == 0 {
 		r.add(grpKubePod, "host namespaces, privileged containers, non-root", stOK,
-			"no pod uses a host namespace, runs privileged, or leaves root unexcluded", refPodSecurityHostNS)
+			"no pod "+within(ns)+" uses a host namespace, runs privileged, or leaves root unexcluded",
+			refPodSecurityHostNS)
 	}
 
 	if !req.Bool("detail") {
@@ -316,37 +363,83 @@ type limitedNamespace struct {
 	Metadata meta `json:"metadata"`
 }
 
-func runKubeQuotas(ctx context.Context, req plugin.Request) (view.View, error) {
-	kubeContext := req.String("context")
+// namespacesToCheck resolves the set a coverage audit walks.
+//
+// **When narrowed, the namespace list is not read at all, and that is a
+// correctness fix rather than an optimisation.** Namespaces are cluster-scoped,
+// so `kubectl get namespaces --namespace=gitea` does not filter — kubectl
+// accepts the flag and ignores it. Passing the narrowing to both reads
+// therefore narrows only the second one: the quota (or policy) read comes back
+// holding gitea alone while the namespace read comes back holding every
+// namespace in the cluster, and every namespace that is not gitea then looks
+// like one with no coverage. The result is a report naming nineteen namespaces
+// as findings when four qualify — each one a namespace the caller explicitly
+// excluded, which is both wrong and the opposite of what narrowing was asked
+// for.
+func namespacesToCheck(ctx context.Context, kubeContext, ns string) ([]string, *view.Error) {
+	if ns != "" {
+		return []string{ns}, nil
+	}
 	var namespaces list[limitedNamespace]
 	if verr := kubeGetJSON(ctx, kubeContext, "", "namespaces", &namespaces); verr != nil {
 		return nil, verr
 	}
-	var quotas list[limitedNamespace] // only .metadata.namespace is read
-	if verr := kubeGetJSON(ctx, kubeContext, "", "resourcequotas", &quotas); verr != nil {
+	out := make([]string, 0, len(namespaces.Items))
+	for _, n := range namespaces.Items {
+		out = append(out, n.Metadata.Name)
+	}
+	return out, nil
+}
+
+// coverageGaps names the namespaces with no object of this kind in them.
+//
+// A namespace named explicitly is never skipped as a system one: the
+// systemNamespaces filter exists so a cluster-wide sweep does not report
+// kube-system for a policy it is not expected to carry, and somebody who typed
+// `kube-system` is asking about kube-system.
+func coverageGaps(ctx context.Context, kubeContext, ns, kind string) ([]string, *view.Error) {
+	names, verr := namespacesToCheck(ctx, kubeContext, ns)
+	if verr != nil {
+		return nil, verr
+	}
+	var found list[limitedNamespace] // only .metadata.namespace is read
+	if verr := kubeGetJSON(ctx, kubeContext, ns, kind, &found); verr != nil {
 		return nil, verr
 	}
 	has := map[string]bool{}
-	for _, q := range quotas.Items {
-		has[q.Metadata.Namespace] = true
+	for _, f := range found.Items {
+		has[f.Metadata.Namespace] = true
+	}
+	var missing []string
+	for _, name := range names {
+		if has[name] || (ns == "" && systemNamespaces[name]) {
+			continue
+		}
+		missing = append(missing, name)
+	}
+	sort.Strings(missing)
+	return missing, nil
+}
+
+func runKubeQuotas(ctx context.Context, req plugin.Request) (view.View, error) {
+	kubeContext := req.String("context")
+	ns, verr := scopeOf(req)
+	if verr != nil {
+		return nil, verr
+	}
+	missing, verr := coverageGaps(ctx, kubeContext, ns, "resourcequotas")
+	if verr != nil {
+		return nil, verr
 	}
 
 	r := &report{}
-	var missing []string
-	for _, ns := range namespaces.Items {
-		if systemNamespaces[ns.Metadata.Name] || has[ns.Metadata.Name] {
-			continue
-		}
-		missing = append(missing, ns.Metadata.Name)
-	}
-	sort.Strings(missing)
 	for _, ns := range missing {
 		r.add(grpKubeQuota, "no ResourceQuota: "+ns, stWarn,
 			"namespace has no ResourceQuota, so it can consume unbounded cluster resources", refResourcePolicies)
 	}
 	if len(missing) == 0 {
 		r.add(grpKubeQuota, "ResourceQuota coverage", stOK,
-			"every non-system namespace has at least one ResourceQuota", refResourcePolicies)
+			coverageClean(ns, "ResourceQuota"), refResourcePolicies)
 	}
 
 	if !req.Bool("detail") {
@@ -359,35 +452,23 @@ func runKubeQuotas(ctx context.Context, req plugin.Request) (view.View, error) {
 
 func runKubeNetworkPolicy(ctx context.Context, req plugin.Request) (view.View, error) {
 	kubeContext := req.String("context")
-	var namespaces list[limitedNamespace]
-	if verr := kubeGetJSON(ctx, kubeContext, "", "namespaces", &namespaces); verr != nil {
+	ns, verr := scopeOf(req)
+	if verr != nil {
 		return nil, verr
 	}
-	var policies list[limitedNamespace] // only .metadata.namespace is read
-	if verr := kubeGetJSON(ctx, kubeContext, "", "networkpolicies", &policies); verr != nil {
+	missing, verr := coverageGaps(ctx, kubeContext, ns, "networkpolicies")
+	if verr != nil {
 		return nil, verr
-	}
-	has := map[string]bool{}
-	for _, p := range policies.Items {
-		has[p.Metadata.Namespace] = true
 	}
 
 	r := &report{}
-	var missing []string
-	for _, ns := range namespaces.Items {
-		if systemNamespaces[ns.Metadata.Name] || has[ns.Metadata.Name] {
-			continue
-		}
-		missing = append(missing, ns.Metadata.Name)
-	}
-	sort.Strings(missing)
 	for _, ns := range missing {
 		r.add(grpKubeNetwork, "no NetworkPolicy: "+ns, stWarn,
 			"namespace has no NetworkPolicy, so pod-to-pod traffic is unrestricted by default", refNetworkPolicy)
 	}
 	if len(missing) == 0 {
 		r.add(grpKubeNetwork, "NetworkPolicy coverage", stOK,
-			"every non-system namespace has at least one NetworkPolicy", refNetworkPolicy)
+			coverageClean(ns, "NetworkPolicy"), refNetworkPolicy)
 	}
 
 	if !req.Bool("detail") {

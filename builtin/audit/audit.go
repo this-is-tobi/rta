@@ -213,8 +213,13 @@ func Plugin() plugin.Plugin {
 					"rule using a wildcard verb, resource or apiGroup. cluster-admin bound to a broad " +
 					"group (system:authenticated, system:unauthenticated, system:masters) grades fail; " +
 					"bound to anything else grades warn — sometimes a real operator's binding, always " +
-					"worth reading. Cites CIS Kubernetes Benchmark 2.0.1 5.1.1 and 5.1.3.",
-				Inputs: []plugin.Field{contextField()},
+					"worth reading. Cites CIS Kubernetes Benchmark 2.0.1 5.1.1 and 5.1.3.\n\nNarrowed to a " +
+					"namespace it checks that namespace's Roles only. ClusterRoleBindings and ClusterRoles " +
+					"belong to no namespace, so they are not examined at all — reported in the result " +
+					"rather than left implied, since a scoped run that silently skipped the cluster-admin " +
+					"check would read as a clean RBAC posture.",
+				Scope:  "namespace",
+				Inputs: []plugin.Field{namespaceField(), contextField()},
 				Run:    runKubeRBAC,
 			},
 			{
@@ -232,8 +237,11 @@ func Plugin() plugin.Plugin {
 					"asserts non-root at the pod level and never overrides it per container is not " +
 					"flagged, which is the common, correct case; one relying only on an image's own " +
 					"non-root USER with no Kubernetes-level assertion at all is. Cites CWE-250 and " +
-					"Kubernetes Pod Security Standards.",
-				Inputs: []plugin.Field{contextField()},
+					"Kubernetes Pod Security Standards.\n\nA namespace narrows which pods are read, and the " +
+					"clean result says so — it reports that no pod in that namespace is affected, never " +
+					"that no pod in the cluster is.",
+				Scope:  "namespace",
+				Inputs: []plugin.Field{namespaceField(), contextField()},
 				Run:    runKubePodSecurity,
 			},
 			{
@@ -246,8 +254,11 @@ func Plugin() plugin.Plugin {
 				Description: "Every non-system namespace checked for at least one ResourceQuota. CIS " +
 					"Kubernetes Benchmark has no numbered control for this — confirmed absent rather " +
 					"than assumed — so this cites NSA/CISA Kubernetes Hardening Guidance's " +
-					"\"Resource policies\" section instead.",
-				Inputs: []plugin.Field{contextField()},
+					"\"Resource policies\" section instead.\n\nNarrowed to a namespace it checks that one, " +
+					"including a system namespace if you name it explicitly — the system-namespace filter " +
+					"exists so a cluster-wide sweep stays quiet, not to refuse a direct question.",
+				Scope:  "namespace",
+				Inputs: []plugin.Field{namespaceField(), contextField()},
 				Run:    runKubeQuotas,
 			},
 			{
@@ -259,8 +270,11 @@ func Plugin() plugin.Plugin {
 				NoPreview:  true,
 				Description: "Every non-system namespace checked for at least one NetworkPolicy. With " +
 					"none, the cluster's default applies: every pod in the namespace can reach every " +
-					"other pod, in either direction. Cites CIS Kubernetes Benchmark 2.0.1 5.3.2.",
-				Inputs: []plugin.Field{contextField()},
+					"other pod, in either direction. Cites CIS Kubernetes Benchmark 2.0.1 5.3.2.\n\nNarrowed " +
+					"to a namespace it checks that one, including a system namespace if you name it " +
+					"explicitly.",
+				Scope:  "namespace",
+				Inputs: []plugin.Field{namespaceField(), contextField()},
 				Run:    runKubeNetworkPolicy,
 			},
 		},
