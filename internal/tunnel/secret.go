@@ -49,9 +49,14 @@ func Secrets(ctx context.Context, name string, t Target) (map[string]string, *vi
 	// context/namespace, and letting a reference reach into a different one
 	// would turn a coordinate for one service into a general-purpose cluster
 	// reader — a secret somewhere else is a different connection.
+	// `--` before the positional, the same belt-and-braces parseSSH applies
+	// to its own argv: the name is refused at parse time for a leading dash,
+	// and this keeps the guarantee if that ever moves. Without it a Secret
+	// named `--kubeconfig=...` is read by kubectl as a flag, and a kubeconfig
+	// naming an exec credential plugin runs it.
 	cmd := exec.CommandContext(ctx, kubectl,
 		"--context", kctx, "--namespace", ns,
-		"get", "secret", t.Secret, "-o", "json")
+		"get", "secret", "-o", "json", "--", t.Secret)
 	// The same bound the completion path pays, for a stronger reason: this
 	// runs on every call whose connection names `secret:`, so a kubeconfig
 	// whose credential helper leaves something behind wedged the whole rta

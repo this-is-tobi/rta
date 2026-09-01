@@ -141,6 +141,16 @@ func parseKube(spec string) (ctx, ns, kind, name string, port int, verr *view.Er
 			return "", "", "", "", 0, bad([]string{"empty context", "empty namespace",
 				"empty kind", "empty name"}[i])
 		}
+		// The same refusal parseSSH makes, for the same reason, and it was
+		// missing on this half. kind and name are joined into one bare
+		// positional argument for kubectl, so a kind beginning with `-` is
+		// read as a flag — measured, not assumed: `--context <v>` and
+		// `--namespace <v>` are safe because pflag binds the next token as a
+		// value even when it starts with a dash, and the positional is not.
+		// A Kubernetes name or a kubectl short kind never begins with one.
+		if strings.HasPrefix(seg, "-") {
+			return "", "", "", "", 0, bad("a segment may not begin with -")
+		}
 	}
 	return parts[0], parts[1], parts[2], name, p, nil
 }
@@ -216,7 +226,10 @@ func openInstrumented(ctx context.Context, name string, t Target) (*Tunnel, *vie
 	// still reaped — the same reason pluginhost sets Setpgid.
 	cmd := exec.CommandContext(ctx, kubectl,
 		"--context", kctx, "--namespace", ns,
-		"port-forward", kind+"/"+obj, fmt.Sprintf(":%d", port))
+		// `--` for the same reason secret.go carries one: kind/obj is a bare
+		// positional, and parseKube's dash refusal is the primary guard
+		// rather than the only one.
+		"port-forward", "--", kind+"/"+obj, fmt.Sprintf(":%d", port))
 	harden(cmd)
 	// Without this, a forward that *fails* while a credential helper still
 	// holds the pipes takes both non-context arms of awaitForwarding's select

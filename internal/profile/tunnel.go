@@ -113,6 +113,14 @@ func kubeSecrets(ctx context.Context, name string, conn config.Connection) (map[
 			continue
 		}
 		secret, key, ok := strings.Cut(ref.Ref, "/")
+		// A leading dash is refused here rather than only escaped in argv:
+		// the Secret name is passed to kubectl as a positional, and the
+		// message is better aimed at the profile than at kubectl.
+		if strings.HasPrefix(secret, "-") || strings.HasPrefix(key, "-") {
+			return nil, view.Errorf("core.profile.secret.malformed",
+				"profile %q resolves %s through kube:%s, and a name may not begin with -",
+				name, ref.Input, ref.Ref)
+		}
 		if !ok || secret == "" || key == "" {
 			return nil, view.Errorf("core.profile.secret.malformed",
 				"profile %q resolves %s through kube:%s, which is not <secret>/<key>",
