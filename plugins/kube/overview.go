@@ -33,6 +33,8 @@ import (
 type overviewFetch struct {
 	namespaces list[namespaceItem]
 	nsErr      *view.Error
+	nodes      list[nodeItem]
+	nodeErr    *view.Error
 	pods       []podItem
 	podErr     *view.Error
 	quotas     list[resourceQuotaItem]
@@ -44,8 +46,9 @@ type overviewFetch struct {
 func fetchOverview(ctx context.Context, all, nsSel selection) overviewFetch {
 	var f overviewFetch
 	var wg sync.WaitGroup
-	wg.Add(4)
+	wg.Add(5)
 	go func() { defer wg.Done(); f.nsErr = getJSON(ctx, nsSel, "namespaces", &f.namespaces) }()
+	go func() { defer wg.Done(); f.nodes, f.nodeErr = fetchNodes(ctx, nsSel) }()
 	go func() { defer wg.Done(); f.pods, f.podErr = fetchPods(ctx, all) }()
 	go func() { defer wg.Done(); f.quotas, f.quotaErr = fetchQuotas(ctx, all) }()
 	go func() { defer wg.Done(); f.certs, f.certErr = fetchTLSSecrets(ctx, all) }()
@@ -141,6 +144,42 @@ func runOverview(ctx context.Context, req plugin.Request) (view.View, error) {
 	pairs = append(pairs, view.Pair{Key: "namespaces",
 		Value: fmt.Sprintf("%d", len(f.namespaces.Items))})
 
+	// Nodes before pods, because a node that is gone explains the pods and not
+	// the other way round — and because pod health alone cannot see it at all
+	// (node.go says why).
+	//
+	// A failure here is reported and stepped over rather than returned, unlike
+	// the namespace read above. Nodes are cluster-scoped, and a perfectly
+	// ordinary namespaced credential — the kind kube.serviceaccount.provision
+	// mints — can list pods in its namespace and not list nodes at all. Making
+	// that fatal would turn the one view meant to always answer into one that
+	// refuses for the most common restricted identity there is. Quotas and
+	// certificates are already treated this way; this is the same rule.
+	var notReadyNodes, cordonedNodes, pressuredNodes []string
+	if f.nodeErr != nil {
+		pairs = append(pairs, view.Pair{Key: "nodes",
+			Value: "could not be read — " + f.nodeErr.Message})
+	} else {
+		notReadyNodes, cordonedNodes, pressuredNodes = nodeTrouble(f.nodes.Items)
+		pairs = append(pairs, view.Pair{Key: "nodes",
+			Value: fmt.Sprintf("%d, %d not ready", len(f.nodes.Items), len(notReadyNodes))})
+		if len(notReadyNodes) > 0 {
+			pairs = append(pairs, view.Pair{
+				Key:   plural(len(notReadyNodes), "not ready", "not ready"),
+				Value: truncate(notReadyNodes, 6)})
+		}
+		if len(cordonedNodes) > 0 {
+			pairs = append(pairs, view.Pair{
+				Key:   plural(len(cordonedNodes), "cordoned", "cordoned"),
+				Value: truncate(cordonedNodes, 6)})
+		}
+		if len(pressuredNodes) > 0 {
+			pairs = append(pairs, view.Pair{
+				Key:   plural(len(pressuredNodes), "under pressure", "under pressure"),
+				Value: truncate(pressuredNodes, 6)})
+		}
+	}
+
 	if f.podErr != nil {
 		pairs = append(pairs, view.Pair{Key: "pods", Value: "could not be read — " + f.podErr.Message})
 		return view.KeyValue{Pairs: pairs}, nil
@@ -159,6 +198,17 @@ func runOverview(ctx context.Context, req plugin.Request) (view.View, error) {
 		pairs = append(pairs, view.Pair{
 			Key:   plural(len(unhealthy), "not ready", "not ready"),
 			Value: truncate(podNames, 6)})
+	}
+	// Needs both reads, so it lives here rather than in the node block above.
+	// Skipped entirely when there are no schedulable nodes to divide by: that
+	// is either a cluster in real trouble, already reported by the not-ready
+	// count, or a credential that could not read nodes — and "0 of 0" would be
+	// a claim about capacity in a case where nothing was actually learned.
+	if slots := podSlots(f.nodes.Items); slots > 0 {
+		used := occupiedSlots(f.pods)
+		pairs = append(pairs, view.Pair{Key: "pod slots",
+			Value: fmt.Sprintf("%d of %d used (%s)", used, slots,
+				percentOf(float64(used), float64(slots)))})
 	}
 
 	var pressure []string
@@ -191,6 +241,15 @@ func runOverview(ctx context.Context, req plugin.Request) (view.View, error) {
 
 	sections := []view.Section{
 		{ID: "cluster", Title: "Cluster", View: view.KeyValue{Pairs: pairs}},
+	}
+	// Every node, not only the troubled ones — unlike pods and deployments
+	// below. There are tens of nodes where there are hundreds of pods, and the
+	// full list is what makes "two are gone" mean something: which two, out of
+	// how many, running what version. A three-node cluster missing one is a
+	// different morning from a fifty-node cluster missing one.
+	if f.nodeErr == nil && len(f.nodes.Items) > 0 {
+		sections = append(sections, view.Section{
+			ID: "nodes", Title: "Nodes", View: nodeTable(f.nodes.Items)})
 	}
 	if len(unhealthy) > 0 {
 		sections = append(sections, view.Section{

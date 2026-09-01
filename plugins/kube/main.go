@@ -146,6 +146,20 @@ func Plugin() plugin.Plugin {
 			Run:        runNamespaceList,
 		}),
 		cap(plugin.Capability{
+			ID:      "kube.node.list",
+			Summary: "Nodes, with readiness, cordon state and the pressures a kubelet reports",
+			Description: "Conditions, not usage — no metrics-server needed, unlike " +
+				"kube.metrics.node. Three statuses and they mean different things: NotReady is " +
+				"a kubelet reporting a problem, Unknown is a kubelet that stopped reporting at " +
+				"all, and SchedulingDisabled is an operator having cordoned the node on purpose. " +
+				"The pressure column is the kubelet's own MemoryPressure/DiskPressure/PIDPressure " +
+				"— a node can be Ready and under pressure at the same time, which is the state " +
+				"worth catching before it evicts anything.",
+			Safety:     plugin.Read,
+			Idempotent: true,
+			Run:        runNodeList,
+		}),
+		cap(plugin.Capability{
 			ID:      "kube.pod.list",
 			Summary: "Pods in a namespace, with readiness, restarts and age",
 			Description: "One namespace by default — the context's own — or every namespace " +
@@ -236,13 +250,19 @@ func Plugin() plugin.Plugin {
 			ID:      "kube.overview",
 			Summary: "One cluster at a glance: where you are pointed and what is not healthy",
 			Description: "The context, whether the cluster answers, how many namespaces it " +
-				"has, and every pod that is not serving — Failed, Pending, Unknown, or " +
-				"Running without every container ready. A finished Job in Succeeded is not " +
-				"one of them. With --detail: deployments whose replicas are short, and the " +
-				"pods themselves.\n\nReads more than it names: every ResourceQuota and every " +
+				"has, which nodes are not Ready, and every pod that is not serving — Failed, " +
+				"Pending, Unknown, or Running without every container ready. A finished Job in " +
+				"Succeeded is not one of them, and a cordoned node is reported separately rather " +
+				"than counted as not ready: both are deliberate states, not faults. Pod-slot " +
+				"headroom comes from the schedulable nodes' own max-pods, which is the number " +
+				"that says whether a cluster can still take work when CPU and memory look fine. " +
+				"With --detail: every node, deployments whose replicas are short, and the pods " +
+				"themselves.\n\nReads more than it names: every ResourceQuota and every " +
 				"TLS Secret in every namespace, on every run and regardless of any namespace " +
 				"narrowing, to report quota pressure and certificate expiry. See kube.cert.list " +
-				"for what reading a TLS Secret costs — it applies here too, unconditionally.",
+				"for what reading a TLS Secret costs — it applies here too, unconditionally. A " +
+				"credential that cannot list nodes still gets the rest: the node read is " +
+				"reported as unavailable and stepped over, not treated as a failure.",
 			Safety:     plugin.Read,
 			Idempotent: true,
 			Detailed:   true,
