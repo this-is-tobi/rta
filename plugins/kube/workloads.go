@@ -119,10 +119,23 @@ func healthOf(p podItem) podHealth {
 		ready:    fmt.Sprintf("%d/%d", ready, total),
 		restarts: restarts,
 		status:   status,
+		// Two conditions, and the second one was originally missing.
+		//
 		// Running is not enough on its own: a pod whose containers are not
 		// all ready is not serving, and that is the case an overview exists
 		// to surface.
-		healthy: p.Status.Phase == "Running" && total > 0 && ready == total,
+		//
+		// But "not Running" is not enough either, because Succeeded is not a
+		// failure — it is a Job that finished, a CronJob between runs, an init
+		// task that did its work. Those pods are *supposed* to be sitting in a
+		// terminal phase, and counting them as unhealthy made kube.overview
+		// cry wolf on a cluster where nothing was wrong: every completed Job
+		// ever run showed up in "not ready" until something reaped it. Failed,
+		// Pending and Unknown stay unhealthy, which is the distinction that
+		// matters — a pod that stopped because it was done is not a pod that
+		// stopped because it broke.
+		healthy: p.Status.Phase == "Succeeded" ||
+			(p.Status.Phase == "Running" && total > 0 && ready == total),
 	}
 }
 

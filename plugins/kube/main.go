@@ -151,15 +151,16 @@ func Plugin() plugin.Plugin {
 			Description: "One namespace by default — the context's own — or every namespace " +
 				"with --all-namespaces. Restarts are worth reading: a pod that is Running and " +
 				"has restarted forty times is not healthy, and only one of those two facts " +
-				"shows in its status. --unhealthy narrows to pods that are not Running or not " +
-				"fully ready — the same judgement kube.overview already makes, available here " +
-				"without the rest of the overview.",
+				"shows in its status. --unhealthy narrows to pods that are not serving: Failed, " +
+				"Pending, or Running without every container ready. A pod in Succeeded is not " +
+				"included — a finished Job is not a broken one. The same judgement " +
+				"kube.overview makes, available here without the rest of the overview.",
 			Safety:     plugin.Read,
 			Idempotent: true,
 			Scope:      "namespace",
 			Run:        runPodList,
 		}, append(nsFields(), plugin.Field{Name: "unhealthy", Type: plugin.Bool,
-			Help: "only pods that are not Running or not fully ready"})...),
+			Help: "only pods that are not serving — Failed, Pending, or Running without every container ready"})...),
 		cap(plugin.Capability{
 			ID:      "kube.deployment.list",
 			Summary: "Deployments in a namespace, with how many replicas are actually ready",
