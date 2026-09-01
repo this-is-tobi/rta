@@ -132,6 +132,22 @@ func dsn(req plugin.Request) string {
 		"user=" + quote(req.String("user")),
 		"dbname=" + quote(req.String("database")),
 		"sslmode=" + quote(req.String("sslmode")),
+		// Emitted always, and empty on purpose. Leaving the key out does not
+		// mean "no passfile" — pgconn's defaultSettings fills it with
+		// $HOME/.pgpass and ParseConfig then loads a password from it whenever
+		// none was supplied, so an operator who configured a host and a user
+		// and deliberately no password got authenticated with whatever
+		// credential their own interactive psql keeps for that host. That is
+		// the exact shape connFields' Local-everywhere rule exists to prevent,
+		// arriving one layer below it: not a value a caller chose, but a value
+		// nobody chose, read out of the ambient environment.
+		//
+		// An empty passfile fails the open and pgconn skips the lookup, so
+		// this fails closed. Note it is not interchangeable with the fix
+		// pg.dump needs: libpq treats an empty PGPASSFILE as "use the default"
+		// and reads ~/.pgpass anyway, which is why backup.go names a path
+		// instead.
+		"passfile=''",
 	}
 	if pw := req.String("password"); pw != "" {
 		parts = append(parts, "password="+quote(pw))
@@ -177,7 +193,8 @@ func classify(err error, req plugin.Request) *view.Error {
 			return view.Errorf("pg.auth.failed", "%s rejected the credentials for %q",
 				where, req.String("user")).
 				WithHint("set $" + plugin.LocalEnvVar("pg.status", "password") +
-					", or check the role name — rta never reads ~/.pgpass")
+					", or check the role name — rta only ever uses the password you give it, " +
+					"never ~/.pgpass")
 		case "3D000": // invalid_catalog_name
 			return view.Errorf("pg.database.missing", "%s has no database named %q",
 				where, req.String("database")).

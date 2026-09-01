@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -122,6 +123,34 @@ func TestTheChildGetsAMinimalEnvironment(t *testing.T) {
 	}
 	if !sawPassword {
 		t.Error("the password did not reach the child, which is the one thing it needs")
+	}
+}
+
+// The subprocess half of the ambient-credential fix, and it needs a different
+// value from the in-process half: libpq reads an empty PGPASSFILE as "unset,
+// use the default" and goes to ~/.pgpass anyway, where pgconn treats an empty
+// passfile as a file it cannot open and skips the lookup. Naming a path that
+// does not exist is what fails closed for both.
+//
+// Not /dev/null, which also blocks the read but makes libpq print a WARNING
+// onto the stderr classifyDump parses.
+func TestTheChildCannotFallBackToAnAmbientPassfile(t *testing.T) {
+	// Set deliberately: unsetting HOME does not help, because libpq falls
+	// back to getpwuid and finds the same file.
+	t.Setenv("HOME", "/home/operator")
+	env := childEnv(reqFor(t, "pg.dump", map[string]any{}))
+
+	var passfile string
+	for _, kv := range env {
+		if after, ok := strings.CutPrefix(kv, "PGPASSFILE="); ok {
+			passfile = after
+		}
+	}
+	if passfile == "" {
+		t.Fatal("the child was given no PGPASSFILE, so libpq reads the operator's ~/.pgpass")
+	}
+	if _, err := os.Stat(passfile); err == nil {
+		t.Errorf("PGPASSFILE=%s exists, so libpq would read it", passfile)
 	}
 }
 

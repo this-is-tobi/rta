@@ -89,6 +89,28 @@ func TestDSNCarriesSSLRootCert(t *testing.T) {
 // Unset, it is absent rather than empty — the same reason password is: an
 // empty sslrootcert is not "no CA named", it is libpq trying to read a file
 // called "" and failing in a way that names nothing.
+// pgx's own defaults fill passfile with $HOME/.pgpass and load a password
+// from it whenever the connection string names none — so omitting the key
+// does not mean "no passfile", it means "the operator's own". An operator who
+// configured a host and a user and deliberately no password was being
+// authenticated with whatever credential their interactive psql keeps for
+// that host, and the auth-failure hint told them this could not happen.
+//
+// Empty rather than absent, and always rather than only when the password is
+// blank: an empty passfile fails the open, which is what makes pgconn skip
+// the lookup.
+func TestTheDSNAlwaysRefusesTheAmbientPassfile(t *testing.T) {
+	for _, password := range []string{"", "hunter2"} {
+		got := dsn(req(t, map[string]any{
+			"host": "db.internal", "port": 5432, "user": "postgres",
+			"database": "postgres", "sslmode": "prefer", "password": password,
+		}))
+		if !strings.Contains(got, "passfile=''") {
+			t.Errorf("password=%q: dsn does not refuse the ambient passfile: %s", password, got)
+		}
+	}
+}
+
 func TestAnEmptySSLRootCertIsOmitted(t *testing.T) {
 	if got := dsn(req(t, map[string]any{})); strings.Contains(got, "sslrootcert=") {
 		t.Errorf("an unset sslrootcert was sent as empty: %s", got)
