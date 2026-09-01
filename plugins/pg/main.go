@@ -483,6 +483,51 @@ func Plugin() plugin.Plugin {
 					Help:    "what to put in the file"}),
 
 			cap(plugin.Capability{
+				ID:      "pg.restore",
+				Summary: "Restore a pg.dump backup into a database, for a person at a terminal",
+				// Destructive, because that is what it is: it writes a file's
+				// whole contents into a live database, and with --clean it
+				// drops objects on the way in. The class buys the --yes gate
+				// a person should have to type through.
+				Safety:     plugin.Destructive,
+				Idempotent: false,
+				Description: "The other half of pg.dump — the file back into a database. **Refuses MCP " +
+					"outright** for the dump's reason run in reverse: the dump refuses because " +
+					"everything would leave, and a restore is everything arriving, written into a live " +
+					"database. Neither direction has a blast radius a grant could name, so both belong " +
+					"to the person at the keyboard.\n\n" +
+					"The format is read from the bytes, never the filename: a directory holding " +
+					"toc.dat restores through pg_restore --jobs, a file beginning PGDMP is a custom " +
+					"archive, anything else replays through psql — so a custom archive named " +
+					"backup.sql cannot be handed to the wrong tool.\n\n" +
+					"**A non-empty target is refused unless --clean says that is the point**, which is " +
+					"the dump's O_EXCL pointing the other way: the dump never writes over an existing " +
+					"file, and the restore never lands on a database that already holds relations. A " +
+					"replica is refused before anything runs — a standby cannot be written, and the " +
+					"only path that keeps it matching its primary is restoring there.\n\n" +
+					"All-or-nothing by default: one transaction that rolls back entirely on failure, " +
+					"with ON_ERROR_STOP so psql cannot count errors quietly and commit the half that " +
+					"worked. --jobs N trades that guarantee for speed — parallel workers cannot share " +
+					"a transaction, the same reason a parallel dump needs pg_export_snapshot — and " +
+					"the receipt says which guarantee the run actually had. rta does not create the " +
+					"target database: a capability that invented a database on a typo'd name would " +
+					"turn every misspelling into a new database, so `createdb` stays one command away.",
+				Run: runRestore,
+			},
+				plugin.Field{Name: "file", Type: plugin.Path, Local: true, Positional: true,
+					Required: true,
+					Help: "the dump to restore — plain SQL, a custom-format file, or a " +
+						"directory-format dump; the format is read from the bytes, not the name"},
+				plugin.Field{Name: "jobs", Type: plugin.Int, Default: 1, Min: 1, Max: 32,
+					Help: "restore this many objects at once (custom or directory format; trades " +
+						"the single-transaction guarantee for speed)"},
+				plugin.Field{Name: "clean", Type: plugin.Bool,
+					Help: "drop existing objects before recreating them (custom or directory format)"},
+				plugin.Field{Name: "no-owner", Type: plugin.Bool,
+					Help: "skip ownership changes so restored objects belong to the connecting " +
+						"role (custom or directory format)"}),
+
+			cap(plugin.Capability{
 				ID:         "pg.database.list",
 				Summary:    "List databases on this server, with their sizes",
 				Safety:     plugin.Read,

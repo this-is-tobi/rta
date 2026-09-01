@@ -226,8 +226,8 @@ func TestParallelReachesBothTheDumpAndTheRestore(t *testing.T) {
 		t.Errorf("argv has no --jobs: %s", got)
 	}
 	restore := restoreCommand(r, "/backups/app")
-	if !strings.HasPrefix(restore, "pg_restore ") || !strings.Contains(restore, "--jobs=6") {
-		t.Errorf("restore = %q, want a parallel pg_restore", restore)
+	if !strings.HasPrefix(restore, "rta pg restore ") || !strings.Contains(restore, "--jobs=6") {
+		t.Errorf("restore = %q, want a parallel rta pg restore", restore)
 	}
 	// And the serial case says nothing about jobs rather than saying --jobs=1.
 	serial := restoreCommand(reqFor(t, "pg.dump", map[string]any{
@@ -277,22 +277,22 @@ func TestNoDestinationIsRefusedWithTheFlagNamed(t *testing.T) {
 }
 
 // **A backup capability that does not say how to restore is the shape of
-// every backup that turned out not to be one.** The command depends on the
-// format, and getting it wrong is a person discovering at the worst possible
-// moment that psql cannot read a custom-format archive.
-func TestTheRestoreCommandMatchesTheFormat(t *testing.T) {
-	plain := restoreCommand(reqFor(t, "pg.dump", map[string]any{
-		"format": "plain", "database": "app", "host": "db.internal", "port": 5432,
-	}), "/backups/app.sql")
-	if !strings.HasPrefix(plain, "psql ") || !strings.Contains(plain, "--file=/backups/app.sql") {
-		t.Errorf("plain restore = %q, want a psql command", plain)
-	}
-
-	custom := restoreCommand(reqFor(t, "pg.dump", map[string]any{
+// every backup that turned out not to be one.** It used to print the raw
+// psql or pg_restore command and pick between them by format; pg.restore
+// now makes that choice from the bytes at restore time, so the receipt
+// names it — the line must carry the path and the connection, since it may
+// be run on a machine whose rta config does not point at this server.
+func TestTheRestoreCommandNamesTheOtherHalf(t *testing.T) {
+	got := restoreCommand(reqFor(t, "pg.dump", map[string]any{
 		"format": "custom", "database": "app", "host": "db.internal", "port": 5432,
 	}), "/backups/app.dump")
-	if !strings.HasPrefix(custom, "pg_restore ") {
-		t.Errorf("custom restore = %q, want a pg_restore command", custom)
+	if !strings.HasPrefix(got, "rta pg restore /backups/app.dump") {
+		t.Errorf("restore = %q, want it to lead with the capability and the path", got)
+	}
+	for _, want := range []string{"--host=db.internal", "--port=5432", "--database=app"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("restore = %q, missing %q", got, want)
+		}
 	}
 }
 

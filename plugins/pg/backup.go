@@ -50,19 +50,22 @@ var dumpTools = []string{"pg_dump"}
 // humanOnly is this plugin's copy of the gate builtin/keys opens with. It
 // comes first in the handler, before the connection is opened, so an agent's
 // call never spends the operator's password on a question that was always
-// going to be answered no.
-func humanOnly(req plugin.Request, id string) *view.Error {
+// going to be answered no. The hint is the caller's, because the dump and
+// the restore refuse for mirrored reasons — everything leaving, everything
+// arriving — and one blended hint would explain neither.
+func humanOnly(req plugin.Request, id, hint string) *view.Error {
 	if req.Surface() != plugin.SurfaceMCP {
 		return nil
 	}
 	return view.Errorf("pg.human", "%s can only be run by a person at a terminal", id).
-		WithHint("a whole-database dump has no blast radius a grant could name — its one " +
-			"authorized use is everything. Ask for the table you need with pg.table.dump, " +
-			"which takes a grant naming that table")
+		WithHint(hint)
 }
 
 func runFullDump(ctx context.Context, req plugin.Request) (view.View, error) {
-	if verr := humanOnly(req, "pg.dump"); verr != nil {
+	if verr := humanOnly(req, "pg.dump",
+		"a whole-database dump has no blast radius a grant could name — its one "+
+			"authorized use is everything. Ask for the table you need with pg.table.dump, "+
+			"which takes a grant naming that table"); verr != nil {
 		return nil, verr
 	}
 
@@ -579,22 +582,25 @@ func contentsOf(req plugin.Request) string {
 // restoreCommand names the other half. A backup capability that does not say
 // how to restore is the shape of every backup that turned out not to be one.
 //
-// **--jobs carries over to the restore**, which is the half people forget: a
-// dump written by eight workers restores serially unless you ask, and the
-// restore is usually the slower direction because it rebuilds every index.
+// It names `rta pg restore` rather than the raw psql/pg_restore invocation it
+// printed before that capability existed: rta reads the format off the bytes,
+// so the psql-versus-pg_restore decision this line used to make for the
+// reader is made again, correctly, at restore time — and the raw command
+// carried none of the guardrails (the non-empty refusal, the standby
+// refusal, ON_ERROR_STOP) that are the reason the capability exists.
+//
+// **--jobs still carries over**, which is the half people forget: a dump
+// written by eight workers restores serially unless you ask, and the restore
+// is usually the slower direction because it rebuilds every index. The
+// connection flags are spelled out so the line works on a machine whose rta
+// config does not already point at this server.
 func restoreCommand(req plugin.Request, path string) string {
-	where := fmt.Sprintf("--host=%s --port=%d --username=%s",
-		req.String("host"), req.Int("port"), req.String("user"))
-	switch req.String("format") {
-	case "custom", "directory":
-		jobs := ""
-		if n := req.Int("jobs"); n > 1 {
-			jobs = fmt.Sprintf(" --jobs=%d", n)
-		}
-		return fmt.Sprintf("pg_restore %s%s --dbname=%s %s",
-			where, jobs, req.String("database"), path)
+	cmd := fmt.Sprintf("rta pg restore %s --host=%s --port=%d --user=%s --database=%s",
+		path, req.String("host"), req.Int("port"), req.String("user"), req.String("database"))
+	if n := req.Int("jobs"); n > 1 {
+		cmd += fmt.Sprintf(" --jobs=%d", n)
 	}
-	return fmt.Sprintf("psql %s --dbname=%s --file=%s", where, req.String("database"), path)
+	return cmd
 }
 
 func backupSuffix(f string) string {
