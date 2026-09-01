@@ -173,8 +173,11 @@ func markdownSections(b *strings.Builder, s view.Sections, level int) {
 		// and a report that printed "cpu_temp" where the page says
 		// "Temperature" would be a worse document for the sake of a handle
 		// no reader has any use for.
+		// Escaped for the same reason Code just below is: a section title
+		// arrives from the wire verbatim, and a newline in one ends the
+		// heading and starts writing blocks of its own.
 		if item.Title != "" {
-			b.WriteString("\n" + strings.Repeat("#", clampLevel(level)) + " " + item.Title + "\n")
+			b.WriteString("\n" + strings.Repeat("#", clampLevel(level)) + " " + inlineMarkdown(item.Title) + "\n")
 		}
 		markdownView(b, item.View, level+1)
 	}
@@ -195,7 +198,19 @@ func markdownWarnings(b *strings.Builder, warnings []view.Error) {
 	for _, e := range warnings {
 		// inlineMarkdown, because a newline in the message would end the
 		// blockquote and leave the rest of the warnings as body prose.
-		line := "> - `" + e.Code + "` — " + inlineMarkdown(e.Message)
+		//
+		// Code gets the same treatment, and the reason it looks like it
+		// should not need it is the trap: an error code reads as an
+		// identifier, but it is per-call output a plugin writes, not
+		// declared text. Validate's identifier grammar constrains what a
+		// plugin registers — capability ids, field names, config keys —
+		// and never sees this, wire.ErrorFromProto copies it off the wire
+		// byte for byte, and sdktest's code conventions are a conformance
+		// test an author opts into rather than a gate anything passes
+		// through. pkg/view/strings.go made exactly this call once already
+		// when it stopped exempting Code from cleaning; this is the same
+		// ruling at the renderer, where a backtick closes the span early.
+		line := "> - `" + inlineMarkdown(e.Code) + "` — " + inlineMarkdown(e.Message)
 		if e.Hint != "" {
 			line += " (" + inlineMarkdown(e.Hint) + ")"
 		}
@@ -293,7 +308,7 @@ func markdownError(w io.Writer, e *view.Error) error {
 	// is as much a display channel here as it is in the body of a report —
 	// and this one lands unquoted, not behind a blockquote, the moment a
 	// newline in that text ends the line it started on.
-	b.WriteString("**Error** `" + e.Code + "` — " + inlineMarkdown(e.Message) + "\n")
+	b.WriteString("**Error** `" + inlineMarkdown(e.Code) + "` — " + inlineMarkdown(e.Message) + "\n")
 	if e.Hint != "" {
 		b.WriteString("\n> " + inlineMarkdown(e.Hint) + "\n")
 	}
