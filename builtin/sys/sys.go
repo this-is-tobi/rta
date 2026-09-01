@@ -191,18 +191,99 @@ func detailedOverview(ctx context.Context, req plugin.Request) (view.View, error
 // useful, short enough to stay one screen.
 const detailTopN = 5
 
+// realPartitions lists the filesystems worth reporting: what the platform
+// calls real storage, minus rta's own noise filter, plus the root filesystem
+// whenever the first two lost it.
+//
+// **That last clause is why rta reports any disk at all inside a container.**
+// gopsutil keeps a mount only when its fstype is a non-"nodev" entry of
+// /proc/filesystems and the mount is not a bind. In a container the root is
+// `overlay`, which is nodev, and every other mount is a bind or a pseudo
+// filesystem — so the list comes back *completely empty*, and `rta sys disk`
+// printed an empty table while `df /` in the same shell showed a filesystem at
+// 96%. rta publishes a Docker image, so this is a supported way to run it and
+// the silence was the whole answer.
+//
+// Rescuing "/" rather than un-filtering `overlay` is deliberate: it fixes the
+// class instead of the instance. Any root the platform's heuristic declines to
+// call storage — a squashfs live image, a tmpfs initramfs — is still the
+// filesystem holding your files and still the one that fills up, and whatever
+// heuristic runs, "/" always counts. On an ordinary host the root is already
+// in the filtered list and the rescue never runs.
+// The decision is split into pure pieces below because the interesting half
+// of it — that a missing root is recovered — cannot be provoked on a developer
+// machine or on either CI runner, all of which have an ordinary root. Testing
+// it through the live call would mean testing it nowhere.
+func realPartitions(ctx context.Context) ([]disk.PartitionStat, error) {
+	parts, err := disk.PartitionsWithContext(ctx, false)
+	if err != nil {
+		return nil, view.Errorf("sys.disk.partitions", "listing partitions: %v", err)
+	}
+	kept := keepReal(parts)
+	if hasRoot(kept) {
+		return kept, nil
+	}
+	// Only reached when the root went missing, so the second, unfiltered read
+	// is paid for exactly where it buys something.
+	all, err := disk.PartitionsWithContext(ctx, true)
+	if err != nil {
+		return kept, nil
+	}
+	return withRoot(kept, all), nil
+}
+
+// keepReal drops the mounts rta considers noise.
+func keepReal(parts []disk.PartitionStat) []disk.PartitionStat {
+	out := make([]disk.PartitionStat, 0, len(parts))
+	for _, p := range parts {
+		if pseudoFS[p.Fstype] || systemVolume(p.Mountpoint) {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+func hasRoot(parts []disk.PartitionStat) bool {
+	for _, p := range parts {
+		if p.Mountpoint == "/" {
+			return true
+		}
+	}
+	return false
+}
+
+// withRoot puts the root filesystem back at the front of a list that lost it,
+// taking it from the unfiltered mount table. First, because it is the one an
+// operator scanning the table wants to see, and because fullestDisk otherwise
+// reports whichever mount happens to be fullest while the root fills up
+// unmentioned.
+//
+// It re-checks kept rather than trusting the caller to have done so. The
+// hasRoot call in realPartitions is about not paying for a second read of the
+// mount table, not about correctness here — and a version of this that relied
+// on the caller listed the root twice the moment a test called it directly.
+func withRoot(kept, all []disk.PartitionStat) []disk.PartitionStat {
+	if hasRoot(kept) {
+		return kept
+	}
+	for _, p := range all {
+		if p.Mountpoint == "/" {
+			return append([]disk.PartitionStat{p}, kept...)
+		}
+	}
+	return kept
+}
+
 // fullestDisk summarizes the most-used real filesystem — the one that pages
 // you first.
 func fullestDisk(ctx context.Context) string {
-	parts, err := disk.PartitionsWithContext(ctx, false)
+	parts, err := realPartitions(ctx)
 	if err != nil {
 		return ""
 	}
 	best, bestPct := "", -1.0
 	for _, p := range parts {
-		if pseudoFS[p.Fstype] || systemVolume(p.Mountpoint) {
-			continue
-		}
 		u, err := disk.UsageWithContext(ctx, p.Mountpoint)
 		if err != nil || u.Total == 0 {
 			continue
@@ -245,7 +326,9 @@ func runCPU(ctx context.Context, req plugin.Request) (view.View, error) {
 
 	kv := view.KeyValue{}
 	if len(infos) > 0 {
-		kv.Pairs = append(kv.Pairs, view.Pair{Key: "model", Value: infos[0].ModelName})
+		if model := cpuModel(infos[0]); model != "" {
+			kv.Pairs = append(kv.Pairs, view.Pair{Key: "model", Value: model})
+		}
 	}
 	kv.Pairs = append(kv.Pairs,
 		view.Pair{Key: "cores", Value: fmt.Sprintf("%d physical, %d logical", physical, logical)},
@@ -254,6 +337,27 @@ func runCPU(ctx context.Context, req plugin.Request) (view.View, error) {
 		kv.Pairs = append(kv.Pairs, view.Pair{Key: "usage", Value: fmt.Sprintf("%.1f%%", percs[0])})
 	}
 	return kv, nil
+}
+
+// cpuModel names the processor as well as the platform allows.
+//
+// ModelName is empty on every arm64 Linux machine, and rta ships linux/arm64:
+// /proc/cpuinfo there has no "model name" line at all, only "CPU implementer"
+// and "CPU part", which gopsutil folds into VendorID instead. Reading
+// ModelName alone therefore printed a bare "model:" with nothing after it on
+// every Pi, Graviton and Ampere box, and the CI matrix cannot see it — ubuntu
+// is amd64, where the line exists, and macOS is arm64 but reads sysctl rather
+// than procfs.
+//
+// The vendor alone ("ARM", "Broadcom", "Apple", "Qualcomm"…) is thinner than
+// a model name and it is what the hardware actually reports; an empty string
+// falls through to no pair at all, because a key with no value tells a reader
+// less than its absence does.
+func cpuModel(i cpu.InfoStat) string {
+	if i.ModelName != "" {
+		return i.ModelName
+	}
+	return i.VendorID
 }
 
 func runMem(ctx context.Context, _ plugin.Request) (view.View, error) {
@@ -279,9 +383,15 @@ func runMem(ctx context.Context, _ plugin.Request) (view.View, error) {
 
 func runDisk(ctx context.Context, req plugin.Request) (view.View, error) {
 	all := req.Bool("all")
-	parts, err := disk.PartitionsWithContext(ctx, all)
-	if err != nil {
-		return nil, view.Errorf("sys.disk.partitions", "listing partitions: %v", err)
+	var parts []disk.PartitionStat
+	var err error
+	if all {
+		parts, err = disk.PartitionsWithContext(ctx, true)
+		if err != nil {
+			return nil, view.Errorf("sys.disk.partitions", "listing partitions: %v", err)
+		}
+	} else if parts, err = realPartitions(ctx); err != nil {
+		return nil, err
 	}
 	t := view.Table{Columns: []view.Column{
 		{Name: "Mount"},
@@ -292,12 +402,8 @@ func runDisk(ctx context.Context, req plugin.Request) (view.View, error) {
 		{Name: "Use%", Kind: view.KindPercent},
 		{Name: "Status", Kind: view.KindStatus},
 	}}
-	// By default show real storage only: pseudo filesystems and the mirrored
-	// macOS APFS system volumes are noise. --all shows everything raw.
+	// realPartitions has already dropped the noise; --all keeps the raw list.
 	for _, p := range parts {
-		if !all && (pseudoFS[p.Fstype] || systemVolume(p.Mountpoint)) {
-			continue
-		}
 		u, err := disk.UsageWithContext(ctx, p.Mountpoint)
 		if err != nil || u.Total == 0 {
 			continue
@@ -317,9 +423,19 @@ func runDisk(ctx context.Context, req plugin.Request) (view.View, error) {
 }
 
 // pseudoFS lists filesystem types that are not storage.
+//
+// Most of these only ever fire on macOS and the BSDs. On Linux gopsutil has
+// already dropped every "nodev" type — which is all of them but squashfs —
+// before this map is consulted, so the entries are kept as a statement of what
+// rta considers noise on any platform rather than as a filter that does work
+// on every one.
+//
+// `overlay` is deliberately *not* here. It is a container's real root, backed
+// by real disk, and the numbers statfs reports for it are the ones that decide
+// whether the container runs out of space. See realPartitions.
 var pseudoFS = map[string]bool{
 	"devfs": true, "devtmpfs": true, "tmpfs": true, "proc": true,
-	"sysfs": true, "cgroup": true, "cgroup2": true, "overlay": true,
+	"sysfs": true, "cgroup": true, "cgroup2": true,
 	"squashfs": true, "autofs": true, "nullfs": true, "debugfs": true,
 	"securityfs": true, "fusectl": true, "ramfs": true,
 }
