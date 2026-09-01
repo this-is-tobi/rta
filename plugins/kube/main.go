@@ -198,9 +198,12 @@ func Plugin() plugin.Plugin {
 			ID:      "kube.cert.list",
 			Summary: "Every TLS certificate this cluster stores as a Secret, and its expiry",
 			Description: "Reads type: kubernetes.io/tls Secrets only, selected server-side so no " +
-				"other secret's data ever leaves the API server for this process. Only tls.crt is " +
-				"read — tls.key, the private key, is never requested. The leaf certificate's own " +
-				"expiry is judged on the same 30-day window `cert expiry` and `rta audit web` use.",
+				"other secret's data ever leaves the API server for this process. The TLS Secrets " +
+				"it does select arrive whole, tls.key included — Kubernetes cannot project a subset " +
+				"of a Secret's data, so no way of asking avoids that. Only tls.crt is decoded; the " +
+				"private key is never parsed, rendered, logged or stored, but it does cross the " +
+				"wire into this process. The leaf certificate's own expiry is judged on the same " +
+				"30-day window `cert expiry` and `rta audit web` use.",
 			Safety:     plugin.Read,
 			Idempotent: true,
 			Scope:      "namespace",
