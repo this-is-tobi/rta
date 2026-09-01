@@ -65,6 +65,9 @@ func TestAReaderNeverSeesAPartialFile(t *testing.T) {
 // data; leaving a truncated file behind because the new one could not be
 // produced turns a transient error into permanent loss.
 func TestAFailedWriteLeavesTheOriginalIntact(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root: nothing is permission-denied")
+	}
 	dir := t.TempDir()
 	path := filepath.Join(dir, "state.yaml")
 	if err := os.WriteFile(path, []byte("original"), 0o600); err != nil {

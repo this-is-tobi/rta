@@ -398,6 +398,9 @@ func TestTheMintedKubeconfigReplacesAnExistingFileWholly(t *testing.T) {
 // stops CreateTemp rather than the write itself, so this exercises the
 // earliest failure point rather than the most convenient one.
 func TestAFailedWriteLeavesThePreviousCredentialIntact(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root: nothing is permission-denied")
+	}
 	dir := t.TempDir()
 	path := filepath.Join(dir, "kubeconfig")
 	const previous = "PREVIOUS CREDENTIAL THAT MUST SURVIVE"
