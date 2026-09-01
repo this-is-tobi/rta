@@ -763,6 +763,42 @@ func TestSearchKeysReachTheWholeList(t *testing.T) {
 	}
 }
 
+// Option+Delete (alt+backspace) and ctrl+w must erase a word, not be
+// swallowed — before this test they fell into the printable-text default,
+// which has no text for them, and did nothing at all.
+func TestSearchDeletesWordsAndClearsTheLine(t *testing.T) {
+	m := New(searchRegistry(t), config.Dashboard{}, nil)
+	m.query = "kube.metrics.pre"
+	m.searchEditing = true
+
+	wordBack := tea.KeyPressMsg{Code: tea.KeyBackspace, Mod: tea.ModAlt}
+	var model tea.Model = m
+	for _, want := range []string{"kube.metrics.", "kube.", ""} {
+		model, _ = model.(Model).updateSearch(wordBack)
+		if got := model.(Model).query; got != want {
+			t.Fatalf("after alt+backspace query = %q, want %q", got, want)
+		}
+	}
+	// One more on an empty query leaves the bar, the same way backspace does.
+	model, _ = model.(Model).updateSearch(wordBack)
+	if model.(Model).searchEditing {
+		t.Error("alt+backspace on an empty query should leave the search bar")
+	}
+
+	m.query = "quota list"
+	model, _ = m.updateSearch(tea.KeyPressMsg{Code: 'w', Mod: tea.ModCtrl})
+	if got := model.(Model).query; got != "quota " {
+		t.Errorf("ctrl+w left %q, want the last word gone: %q", got, "quota ")
+	}
+	model, _ = model.(Model).updateSearch(tea.KeyPressMsg{Code: 'u', Mod: tea.ModCtrl})
+	if got := model.(Model).query; got != "" {
+		t.Errorf("ctrl+u left %q, want the whole line gone", got)
+	}
+	if !model.(Model).searchEditing {
+		t.Error("ctrl+u clears the line but must stay in the search bar")
+	}
+}
+
 // --- The plugins pane -------------------------------------------------------
 
 // Hiding was one-way: `H` took a tile off and the only way back was the
