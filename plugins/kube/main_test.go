@@ -24,6 +24,13 @@ func TestConformance(t *testing.T) {
 func conformanceInputs(string) map[string]map[string]any {
 	return map[string]map[string]any{
 		"kube.context.set": {"name": "rta-conformance-does-not-exist"},
+		"kube.serviceaccount.provision": {
+			"name": "rta-conformance-does-not-exist", "namespace": "rta-conformance-does-not-exist",
+			"capability": []string{"kube.pod.list"}, "ttl": "15m",
+		},
+		"kube.serviceaccount.revoke": {
+			"name": "rta-conformance-does-not-exist", "namespace": "rta-conformance-does-not-exist",
+		},
 	}
 }
 

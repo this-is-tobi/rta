@@ -7,7 +7,10 @@ go 1.26.6
 // from any checkout instead of only from the machine it was scaffolded on.
 replace github.com/this-is-tobi/rule-them-all => ../..
 
-require github.com/this-is-tobi/rule-them-all v0.0.0
+require (
+	github.com/goccy/go-yaml v1.19.2
+	github.com/this-is-tobi/rule-them-all v0.0.0
+)
 
 require (
 	charm.land/glamour/v2 v2.0.1 // indirect
@@ -25,7 +28,6 @@ require (
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/dlclark/regexp2 v1.11.0 // indirect
 	github.com/fatih/color v1.13.0 // indirect
-	github.com/goccy/go-yaml v1.19.2 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/gorilla/css v1.0.1 // indirect
 	github.com/guptarohit/asciigraph v0.10.0 // indirect

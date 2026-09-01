@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -158,15 +159,25 @@ func (s selection) where() string {
 // version, a missing auth plugin's advice — would otherwise turn a good
 // answer into a parse error.
 func run(ctx context.Context, args ...string) ([]byte, *view.Error) {
+	return runStdin(ctx, nil, args...)
+}
+
+// runStdin is run with one difference: stdin is a byte slice this package
+// built itself (a manifest for `create -f -`), never the plugin host's own
+// stdin. That distinction is the reason run doesn't just set cmd.Stdin to
+// the caller's os.Stdin-equivalent unconditionally — inheriting it would
+// hand a kubectl subprocess the plugin host's own gRPC channel; a manifest
+// this package assembled and immediately hands to a subprocess it also
+// waits on has none of that risk.
+func runStdin(ctx context.Context, stdin []byte, args ...string) ([]byte, *view.Error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, kubectlBin, args...)
 	var errBuf strings.Builder
 	cmd.Stderr = &errBuf
-	// No stdin. kubectl prompts for nothing here, and a subprocess that
-	// inherited this process's stdin would be reading the plugin host's gRPC
-	// channel.
-	cmd.Stdin = nil
+	if stdin != nil {
+		cmd.Stdin = bytes.NewReader(stdin)
+	}
 	out, err := cmd.Output()
 	if err == nil {
 		return out, nil
