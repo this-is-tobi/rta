@@ -213,6 +213,25 @@ func TestProvisionRejectsZeroOrNegativeTTL(t *testing.T) {
 	}
 }
 
+// Found by an actual provision against a real cluster: kubectl create token
+// fails outright below Kubernetes' own 10-minute TokenRequest floor, and
+// before this fix that failure only surfaced after the ServiceAccount, Role
+// and RoleBinding were already created — a partial provision the zero/negative
+// check above never would have caught.
+func TestProvisionRejectsATTLBelowTheTokenRequestFloor(t *testing.T) {
+	failIfInvoked(t)
+	for _, ttl := range []string{"1m", "9m59s"} {
+		_, err := runServiceAccountProvision(context.Background(), saReq(plugin.SurfaceCLI, false, map[string]any{
+			"name": "agent-a", "namespace": "team-prod",
+			"capability": []string{"kube.pod.list"}, "ttl": ttl,
+		}))
+		ve := view.AsError(err, "x")
+		if ve == nil || ve.Code != "kube.serviceaccount.ttl.invalid" {
+			t.Errorf("ttl %q: want kube.serviceaccount.ttl.invalid, got %v", ttl, err)
+		}
+	}
+}
+
 func TestProvisionRefusesAnUngrantableCapabilityBeforeAnyClusterCall(t *testing.T) {
 	failIfInvoked(t)
 	_, err := runServiceAccountProvision(context.Background(), saReq(plugin.SurfaceCLI, false, map[string]any{
