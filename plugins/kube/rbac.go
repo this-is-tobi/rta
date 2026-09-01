@@ -53,6 +53,16 @@ type policyRule struct {
 //     via-granularity-mismatch between this plugin's capability model and
 //     Kubernetes' actual access-control model, not a rule worth minting with
 //     a caveat nobody will re-read at the moment it matters.
+//   - kube.metrics.pressure and kube.pvc.usage read the kubelet's Summary API
+//     through nodes/proxy, and that permission is indivisible: it covers the
+//     entire kubelet API on every node, including /exec, /run and /logs on
+//     every pod running there. There is no way to grant "just the stats". A
+//     ServiceAccount minted with it would hold remote code execution on every
+//     workload in the cluster in exchange for a disk-usage column — the single
+//     worst trade in this table, which is why these two are excluded on their
+//     blast radius and not merely on being cluster-scoped. This exclusion is
+//     not a gap to close later; closing it would mean Kubernetes had split the
+//     permission, and it has not.
 //   - kube.overview is a composite view over several of the above, not a
 //     single resource to name a rule for, and kube.context.* reads/writes the
 //     local kubeconfig file — no cluster permission applies to either.

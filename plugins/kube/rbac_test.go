@@ -39,7 +39,10 @@ func TestProvisionableRulesNeverUseAWildcard(t *testing.T) {
 // entry that crept back in.
 func TestUngrantableCapabilitiesStayUngrantable(t *testing.T) {
 	for _, id := range []string{"kube.cert.list", "kube.overview", "kube.namespace.list",
-		"kube.metrics.node", "kube.node.list"} {
+		"kube.metrics.node", "kube.node.list",
+		// These two for a sharper reason than being cluster-scoped: nodes/proxy
+		// is indivisible and carries exec on every pod on the node.
+		"kube.metrics.pressure", "kube.pvc.usage"} {
 		if _, ok := provisionable[id]; ok {
 			t.Errorf("%s must not be grantable — see provisionable's doc comment for why", id)
 		}

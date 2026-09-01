@@ -266,6 +266,43 @@ func Plugin() plugin.Plugin {
 			Run:        runMetricsNode,
 		}),
 		cap(plugin.Capability{
+			ID:      "kube.metrics.pressure",
+			Summary: "Kernel pressure stall per node: is anything waiting, and is it getting worse",
+			Description: "Reads the kubelet's own Summary API, not metrics-server. Pressure " +
+				"answers a question a usage percentage cannot: whether work is actually being " +
+				"held up. A node at 90% CPU with nothing waiting is a node being used well.\n\n" +
+				"Each resource is reported over a 10-second and a 5-minute window, and the pair " +
+				"is the point — a short window above the long one is pressure building, below it " +
+				"is pressure clearing. That is the shape you would otherwise open a dashboard " +
+				"for.\n\nThe \"some\" series is reported, meaning at least one task was stalled. " +
+				"The \"full\" series is not: for CPU it is defined as zero at system level, so a " +
+				"node stalling a third of the time reads as perfectly idle through it.\n\nNeeds " +
+				"cgroup v2 and a Linux kernel 4.20 or newer; nodes without it are named rather " +
+				"than shown as zeroes. Needs the nodes/proxy permission — see kube.pvc.usage.",
+			Safety:     plugin.Read,
+			Idempotent: true,
+			Run:        runMetricsPressure,
+		}, plugin.Field{Name: "node", Type: plugin.String,
+			Help: "one node instead of every node"}),
+		cap(plugin.Capability{
+			ID:      "kube.pvc.usage",
+			Summary: "How full each PersistentVolumeClaim actually is, worst first",
+			Description: "The number kube.pvc.list deliberately does not report, because it " +
+				"comes from somewhere else entirely: the kubelet's Summary API, one call per " +
+				"node, rather than the PVC objects themselves.\n\nTwo limits worth knowing. Only " +
+				"volumes a live pod currently mounts are measured at all — an unmounted claim " +
+				"has no kubelet reporting on it and simply will not appear. And reaching this " +
+				"needs the nodes/proxy permission, which is indivisible: it covers the whole " +
+				"kubelet API including exec on every pod on the node. That is why this is a " +
+				"separate capability rather than columns on kube.pvc.list, and why neither it " +
+				"nor kube.metrics.pressure can be granted to a minted ServiceAccount.\n\nA node " +
+				"that cannot be read is named, because a missing node means missing claims.",
+			Safety:     plugin.Read,
+			Idempotent: true,
+			Run:        runPVCUsage,
+		}, plugin.Field{Name: "node", Type: plugin.String,
+			Help: "one node instead of every node"}),
+		cap(plugin.Capability{
 			ID:      "kube.overview",
 			Summary: "One cluster at a glance: where you are pointed and what is not healthy",
 			Description: "The context, whether the cluster answers, how many namespaces it " +
