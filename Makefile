@@ -274,7 +274,7 @@ $(INSTALL_PLUGINS): install-plugin-%:
 	@echo "==> $(BINDIR)/rta-plugin-$*"
 	@cd plugins/$* && $(GOBUILD_PLUGIN) -o "$(BINDIR)/rta-plugin-$*" .
 
-cross: ## Compile every release target, core and plugins, and discard the output
+cross: plugins-name-check ## Compile every release target, core and plugins, and discard the output
 	@for t in $(CROSS_TARGETS); do \
 		os=$${t%/*}; arch=$${t#*/}; \
 		echo "==> $$t"; \
@@ -357,7 +357,50 @@ $(CHECK_PLUGINS): check-plugin-%:
 # not compile for any other clone or any CI runner, from the day each landed.
 # Every local gate stayed green throughout, because locally the directory is
 # there — which is precisely why this has to be a gate and not a habit.
-plugins-replace-check:
+plugins-name-check:
+	@bad=$$(ls -1 plugins 2>/dev/null | grep -vE '^[a-z0-9][a-z0-9-]*$$' || true); \
+	if [ -n "$$bad" ]; then \
+		echo "plugin directory name is not a plugin namespace:"; \
+		echo "$$bad" | sed 's/^/  /'; \
+		echo "lowercase letters, digits and dashes — a name make splices into a recipe"; \
+		echo "is a name the shell expands"; \
+		exit 1; \
+	fi
+
+# PLUGINS comes from $(wildcard plugins/*/go.mod) — which is to say from
+# whatever directory names are in the tree, and a pull request adds those.
+# Make does not expand `$(...)` inside a value it read from the filesystem; it
+# splices the characters into the recipe line and hands them to the shell,
+# which performs the command substitution. Verified here rather than reasoned
+# about: a directory named `plugins/$(touch${IFS}rta-pwned)/` makes
+#
+#	printf '[%s]\n' $(PLUGINS)
+#
+# reach the shell as
+#
+#	printf '[%s]\n' $(touch${IFS}rta-pwned) cnpg docker ...
+#
+# and the file appears. CI runs `make plugins-list` and `make cross` on a fork
+# pull request before anybody reads the Go source, which is the whole point of
+# having a gate rather than a habit.
+#
+# **The obvious gate is itself vulnerable, which is worth the warning.** The
+# first version of this rule was `printf '%s\n' $(PLUGINS) | grep -vE ...` —
+# and it ran the payload while trying to detect it, then reported the tree
+# clean, because the shell substituted the name before grep ever saw it. So
+# the names must never reach a command line: `ls -1 plugins` is executed by
+# the shell and its *output* is the names, which no later expansion touches.
+#
+# Quoting is not the fix either. Make expands $(PLUGINS) before the shell sees
+# it, and per-word quoting across a make list does not stay correct. A
+# name-shape gate does, and it closes every splice site at once — the loops in
+# fmt, cross, plugins-install, index and clean as well as the two CI reaches —
+# rather than the two that were reported.
+#
+# Every real plugin already matches, so this only rejects names no plugin
+# would have. Wired as a prerequisite of the targets that splice the list, so
+# make stops before expanding their recipes.
+plugins-replace-check: plugins-name-check
 	@bad=$$(grep -lE '^replace .*=> +(/|[A-Za-z]:)' plugins/*/go.mod 2>/dev/null); \
 	if [ -n "$$bad" ]; then \
 		echo "absolute replace directive — these build only on the machine that wrote them:"; \
@@ -411,7 +454,7 @@ proto-check: ## Refuse a change that breaks a plugin already compiled against v1
 
 ##@ Housekeeping
 
-plugins-list: ## Print the plugin module names, one per line
+plugins-list: plugins-name-check ## Print the plugin module names, one per line
 	@printf '%s\n' $(PLUGINS)
 
 clean: ## Remove build output, coverage artifacts and stray plugin binaries
