@@ -35,10 +35,17 @@ func conformanceInputs(dir string) map[string]map[string]any {
 		m["user"], m["database"] = "conformance", "conformance"
 		return m
 	}
+	// A real plain-SQL fixture, because pg.restore reads the format off the
+	// bytes before its dry run says anything — the supported shape per
+	// sdktest.WithInputs' own doc. The suite's snapshot is taken after this
+	// runs, so a dry run that touched the fixture would still be caught.
+	fixture := filepath.Join(dir, "conformance.sql")
+	_ = os.WriteFile(fixture, []byte("select 1;\n"), 0o600)
 	return map[string]map[string]any{
 		"pg.query":      conn(map[string]any{"sql": "select 1"}),
 		"pg.table.dump": conn(map[string]any{"table": "public.conformance"}),
 		"pg.dump":       conn(map[string]any{"out": filepath.Join(dir, "pg.dump")}),
+		"pg.restore":    conn(map[string]any{"file": fixture}),
 	}
 }
 

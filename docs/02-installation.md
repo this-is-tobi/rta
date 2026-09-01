@@ -93,6 +93,7 @@ Nothing here is required to install or run rta. A missing tool costs you exactly
 | `git` | `rta plugin index add/update`, the `git.*` capabilities | Indexes cannot be attached; `git.*` is unavailable |
 | `kubectl` | the `kube` and `cnpg` plugins, `audit.kube.*`, and `kube:` tunnel targets | Those capabilities refuse, naming kubectl |
 | `pg_dump` | `pg.dump` only — `pg.query` and the rest of the `pg` plugin connect in-process and need nothing | `pg.dump` refuses; every other `pg.*` capability is unaffected |
+| `pg_restore`, `psql` | `pg.restore` — `pg_restore` reads custom and directory dumps, `psql` replays plain SQL | `pg.restore` refuses, naming whichever one the dump's format needs |
 | `docker` | the `docker` plugin | Those capabilities refuse |
 | `ssh` | `ssh:` tunnel targets | Those targets cannot be resolved |
 | `cosign` | verifying a plugin artifact's signature, when an index states one | The outcome is recorded as unverifiable; **an install is never blocked, because a signature is recorded and never required** |

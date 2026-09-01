@@ -99,6 +99,13 @@ var expected = map[string]grading{
 	// at all. NeedsGrant deliberately unset: a grant that can never be
 	// exercised would be an entry in `grant list` that means nothing.
 	"pg.dump": {mcp: "never"},
+
+	// The same radius in the direction that overwrites: everything arriving.
+	// Refuses the surface the way pg.dump does, and is Destructive besides —
+	// the --yes gate is for the person the refusal leaves it with, since a
+	// restore writes a file's whole contents into a live database and with
+	// --clean drops objects on the way in.
+	"pg.restore": {mcp: "never"},
 }
 
 func TestEveryCapabilityIsGradedDeliberately(t *testing.T) {
