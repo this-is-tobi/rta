@@ -94,8 +94,14 @@ func connFields() []plugin.Field {
 // nsFields are the inputs for the capabilities that read namespaced objects.
 func nsFields() []plugin.Field {
 	return []plugin.Field{
+		// Live, because suggestNamespaces contacts the cluster: that read
+		// must be something a completion press asked for, never something
+		// typing caused — the per-keystroke channel re-evaluates plain
+		// Suggests on every sibling edit, which is exactly the cadence
+		// suggestNamespaces's own comment promises it is not called at.
 		{Name: "namespace", Type: plugin.String, Positional: true,
-			Help: "namespace to read — the context's own when omitted", Suggest: suggestNamespaces},
+			Help: "namespace to read — the context's own when omitted",
+			Live: true, Suggest: suggestNamespaces},
 		{Name: "all-namespaces", Type: plugin.Bool,
 			Help: "every namespace instead of one"},
 	}

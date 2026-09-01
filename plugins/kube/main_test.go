@@ -35,6 +35,34 @@ func conformanceInputs(string) map[string]map[string]any {
 	}
 }
 
+// A Suggest that contacts the cluster must be Live, and one that reads a
+// local file must not be. Live is what keeps the per-keystroke channel from
+// calling it — without the flag, every keystroke in a TUI form's namespace
+// box fired a namespace list at the cluster, exactly the "read of somebody's
+// infrastructure caused by typing" the Field contract rules out. The local
+// half is pinned in the same walk because the mistake is symmetric: Live on
+// suggestContexts would hide a free kubeconfig read from the channel built
+// for it.
+func TestClusterReadingSuggestsAreLiveAndLocalOnesAreNot(t *testing.T) {
+	for _, c := range Plugin().Capabilities {
+		for _, f := range c.Inputs {
+			if f.Suggest == nil {
+				continue
+			}
+			switch f.Name {
+			case "namespace":
+				if !f.Live {
+					t.Errorf("%s: the namespace Suggest reads the cluster and must be Live", c.ID)
+				}
+			case "context":
+				if f.Live {
+					t.Errorf("%s: the context Suggest reads a local file and must not be Live", c.ID)
+				}
+			}
+		}
+	}
+}
+
 // **Every flag goes after the subcommand, and this is not cosmetic.**
 //
 // `--all-namespaces` is a flag of `get`, not a kubectl global. Placed before
