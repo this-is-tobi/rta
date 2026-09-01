@@ -58,7 +58,7 @@ func (f Field) Candidates(ctx context.Context, req Request) []string {
 func CompletionRequest(c Capability, values map[string]any) Request {
 	secret := make(map[string]bool, len(c.Inputs))
 	for _, f := range c.Inputs {
-		if f.Type == Secret {
+		if f.Type.Sensitive() {
 			secret[f.Name] = true
 		}
 	}

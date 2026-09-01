@@ -60,7 +60,55 @@ const (
 	// typing. Handlers should avoid putting a Secret value in a Text/Error
 	// message, since that surfaces on every renderer.
 	Secret FieldType = "secret"
+	// SecretSlice is a repeatable Secret: a credential input a caller may
+	// give more than once. `vault.kv.set --data 'password=hunter2'` is the
+	// shape — the operation of writing a secret into a secret manager, whose
+	// payload is a list of key=value pairs, every one of them the credential.
+	//
+	// It exists because there was no way to declare one, and "no way to
+	// declare it" is not a gap an author routes around, it is one they fall
+	// into: the only repeatable type was StringSlice, every sink keyed off
+	// Secret, and so a credential supplied through such a field was written
+	// verbatim to the completion shortlist (internal/recent) and into the
+	// sealed agent log (internal/mcp's auditArgs) — which docs/22-audit-trail
+	// promises holds "the arguments with secrets masked".
+	//
+	// It is Secret's sensitivity and StringSlice's shape, and both halves
+	// have to be asked about separately: see Sensitive and Repeatable. CLI
+	// carries it as a repeatable flag, MCP as an array of strings; the TUI
+	// masks the box.
+	//
+	// Filled from an EnvFallback or a profile `secrets:` mapping it can only
+	// ever carry one element — both deliver one string, which
+	// Request.StringSlice reads as a one-item list. That is usable, and it is
+	// not a list; an author who needs several values from the environment
+	// wants several inputs.
+	SecretSlice FieldType = "secretSlice"
 )
+
+// Sensitive reports whether a value of this type is a credential — the
+// question every sink that must not write a caller's value down is actually
+// asking, and the question `== Secret` only appeared to answer.
+//
+// A predicate rather than a comparison, because the comparison was the bug.
+// The moment a second credential-carrying type existed, a dozen sites tested
+// one member of a two-member set: internal/recent wrote a repeatable
+// credential to the completion shortlist and offered it back on tab, and
+// internal/mcp's auditArgs wrote one unmasked into the permanent, sealed
+// agent log. Both key off this now, so a third member added later lands on
+// every sink at once instead of on whichever ones somebody remembered.
+func (t FieldType) Sensitive() bool { return t == Secret || t == SecretSlice }
+
+// Repeatable reports whether a value of this type is a list rather than a
+// scalar: a CLI flag that may be given more than once, a JSON Schema "array",
+// a comma-separated box.
+//
+// The other half of the same split, and the half that fails quietly. Every
+// surface switches on Field.Type with a default arm meaning "one string", so
+// a SecretSlice reaching one becomes a single-valued flag that keeps the last
+// value and drops the rest — no error, and the values that vanished were the
+// credentials.
+func (t FieldType) Repeatable() bool { return t == StringSlice || t == SecretSlice }
 
 // EndpointRole is which part of a resolved tunnel an input takes.
 //

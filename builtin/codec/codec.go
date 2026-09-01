@@ -68,7 +68,10 @@ func Plugin() plugin.Plugin {
 					"token while debugging, not for authenticating one. No signature check is performed " +
 					"— anyone can hand you a token with any claims at all.",
 				Safety: plugin.Read,
-				Inputs: []plugin.Field{{Name: "token", Type: plugin.String, Positional: true, Required: true, Help: "the JWT to decode"}},
+				// Secret: a JWT handed to `codec jwt` is a live bearer token far
+				// more often than it is a specimen, and a String here reached
+				// both the completion shortlist and the agent log intact.
+				Inputs: []plugin.Field{{Name: "token", Type: plugin.Secret, Positional: true, Required: true, Help: "the JWT to decode"}},
 				Run:    runJWT,
 			},
 		},

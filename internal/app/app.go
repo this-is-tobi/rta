@@ -486,7 +486,7 @@ func positionalAt(positionals []plugin.Field, idx int) (plugin.Field, bool) {
 	if idx < len(positionals) {
 		return positionals[idx], true
 	}
-	if last := positionals[len(positionals)-1]; last.Type == plugin.StringSlice {
+	if last := positionals[len(positionals)-1]; last.Type.Repeatable() {
 		return last, true
 	}
 	return plugin.Field{}, false
@@ -592,7 +592,7 @@ func positionalArgsValidator(fields []plugin.Field) cobra.PositionalArgs {
 		if f.Required {
 			required++
 		}
-		if f.Type == plugin.StringSlice {
+		if f.Type.Repeatable() {
 			variadic = true // a slice positional swallows all remaining args
 		}
 	}
@@ -621,6 +621,16 @@ func declareFlags(cmd *cobra.Command, c plugin.Capability) {
 		case plugin.StringSlice:
 			def, _ := f.Default.([]string)
 			cmd.Flags().StringSlice(f.Name, def, usage)
+		case plugin.SecretSlice:
+			// StringArray, never StringSlice, and this is the same ruling
+			// profileset.go's `--set` already made: StringSlice splits its
+			// argument on commas, so `--data 'password=a,b'` would silently
+			// become two values. For a credential that is not a cosmetic
+			// difference — it writes half a password under one key and a
+			// fragment under another, with nothing said. StringSlice keeps
+			// its splitting because callers of the existing type rely on it.
+			def, _ := f.Default.([]string)
+			cmd.Flags().StringArray(f.Name, def, usage)
 		default:
 			def, _ := f.Default.(string)
 			cmd.Flags().String(f.Name, def, usage)
@@ -769,7 +779,7 @@ func collectValues(cmd *cobra.Command, c plugin.Capability, args []string) (map[
 	argIdx := 0
 	for _, f := range c.Inputs {
 		if f.Positional {
-			if f.Type == plugin.StringSlice {
+			if f.Type.Repeatable() {
 				// A slice positional consumes every remaining argument.
 				values[f.Name] = args[argIdx:]
 				argIdx = len(args)
@@ -817,6 +827,15 @@ func collectValues(cmd *cobra.Command, c plugin.Capability, args []string) (map[
 			values[f.Name] = v
 		case plugin.StringSlice:
 			v, err := cmd.Flags().GetStringSlice(f.Name)
+			if err != nil {
+				return nil, err
+			}
+			values[f.Name] = v
+		case plugin.SecretSlice:
+			// Declared as a StringArray above, so it must be read back as
+			// one: GetStringSlice on an array flag returns an error rather
+			// than the values.
+			v, err := cmd.Flags().GetStringArray(f.Name)
 			if err != nil {
 				return nil, err
 			}

@@ -164,7 +164,7 @@ func credentialVars(p plugin.Plugin) []string {
 	var out []string
 	for _, c := range p.Capabilities {
 		for _, f := range c.Inputs {
-			if !f.Local || !f.EnvFallback || f.Type != plugin.Secret {
+			if !f.Local || !f.EnvFallback || !f.Type.Sensitive() {
 				continue
 			}
 			name := "$" + plugin.LocalEnvVar(c.ID, f.Name)

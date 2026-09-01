@@ -148,7 +148,7 @@ func auditArgs(c plugin.Capability, values map[string]any) map[string]any {
 	}
 	secret := make(map[string]bool, len(c.Inputs))
 	for _, f := range c.Inputs {
-		if f.Type == plugin.Secret {
+		if f.Type.Sensitive() {
 			secret[f.Name] = true
 		}
 	}

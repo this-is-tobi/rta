@@ -28,7 +28,7 @@ var (
 	safeties = []Safety{Read, Write, Destructive}
 	// fieldTypes is the closed set an input may declare, in the order the
 	// rejection message lists them.
-	fieldTypes = []FieldType{String, Int, Bool, Float, StringSlice, Text, Path, Secret}
+	fieldTypes = []FieldType{String, Int, Bool, Float, StringSlice, Text, Path, Secret, SecretSlice}
 )
 
 // maxIdentifier bounds a plugin name, a capability ID, a field name and a
@@ -241,10 +241,10 @@ func (c Capability) validate(ns string) error {
 			// credential taking one instead is a connection pointed somewhere
 			// nobody chose, and an author reaching for it has confused the
 			// address with what authenticates to it.
-			if f.Type == Secret {
-				return fmt.Errorf("capability %q: input %q is a Secret and cannot take an endpoint role; "+
+			if f.Type.Sensitive() {
+				return fmt.Errorf("capability %q: input %q is a %s and cannot take an endpoint role; "+
 					"a tunnel fills an address, not a credential — the credential beside it comes from "+
-					"the profile's `secrets:` mapping", c.ID, f.Name)
+					"the profile's `secrets:` mapping", c.ID, f.Name, f.Type)
 			}
 			// A tunnel is a destination, and a destination is a destination
 			// whether or not it is on this machine. An
@@ -312,11 +312,11 @@ func (c Capability) validate(ns string) error {
 			// alternative, because an author who reaches for this is trying
 			// to solve a real problem and needs to be pointed at the path
 			// that already solves it.
-			if f.Type == Secret {
-				return fmt.Errorf("capability %q: input %q is a Secret and cannot be filled from config; "+
-					"config is a plaintext file read on every invocation and a Secret default is published "+
-					"in the MCP tool schema — declare Local: true and let the host resolve it from its own "+
-					"environment instead", c.ID, f.Name)
+			if f.Type.Sensitive() {
+				return fmt.Errorf("capability %q: input %q is a %s and cannot be filled from config; "+
+					"config is a plaintext file read on every invocation and a credential default is "+
+					"published in the MCP tool schema — declare Local: true and let the host resolve it "+
+					"from its own environment instead", c.ID, f.Name, f.Type)
 			}
 			if f.Positional {
 				return fmt.Errorf("capability %q: input %q is positional and cannot be filled from config; "+
@@ -335,7 +335,7 @@ func (c Capability) validate(ns string) error {
 		// things about the same field. A Secret's list would defeat the mask it
 		// is drawn beside; a Text field is a body written in an editor, and huh
 		// offers no completion for one at all.
-		if f.Suggest != nil && (f.Type == Secret || f.Type == Text) {
+		if f.Suggest != nil && (f.Type.Sensitive() || f.Type == Text) {
 			return fmt.Errorf("capability %q: input %q is a %s and cannot declare Suggest; "+
 				"a completion list is rendered in plain text beside the field, which defeats a "+
 				"Secret's mask, and a Text body is written in an editor rather than completed",
@@ -447,6 +447,23 @@ func (c Capability) validate(ns string) error {
 			}
 		}
 		if f.Name == c.Scope {
+			// A scope is a record's name, and a record's name is written down
+			// everywhere a grant is: into the parked consent request, into
+			// the grant file, onto `rta grant list`, and into the completion
+			// `rta grant revoke <tab>` builds from held scopes. A credential
+			// cannot survive that — and it cannot *work* there either, since
+			// a value that differs on every call names a grant covering
+			// exactly one call, which has already happened by the time
+			// anybody could issue it. vault.wrap.get declared Scope on its
+			// wrapping token and got both halves: the live token on disk,
+			// and a grant nobody could reuse.
+			if f.Type.Sensitive() {
+				return fmt.Errorf("capability %q: scope %q is a %s; a scope is written to the grant "+
+					"file, printed by `rta grant list` and offered as a completion, and a credential "+
+					"that differs on every call names a grant covering one call that has already "+
+					"happened — scope on the record being acted on, or declare no Scope and let the "+
+					"grant cover the capability", c.ID, f.Name, f.Type)
+			}
 			scoped = true
 		}
 	}

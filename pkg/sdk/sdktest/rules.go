@@ -99,7 +99,7 @@ func holds(ft plugin.FieldType, v any) bool {
 			return true
 		}
 		return isInt(v)
-	case plugin.StringSlice:
+	case plugin.StringSlice, plugin.SecretSlice:
 		switch v.(type) {
 		case []string, []any:
 			return true
@@ -416,7 +416,7 @@ func handlesSecrets(c plugin.Capability) bool {
 		return true
 	}
 	for _, f := range c.Inputs {
-		if f.Type == plugin.Secret {
+		if f.Type.Sensitive() {
 			return true
 		}
 	}

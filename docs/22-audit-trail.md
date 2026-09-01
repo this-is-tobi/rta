@@ -10,7 +10,7 @@ rta agent pending     # anything parked, waiting on you
 
 ## What a line carries
 
-Every call that arrived over MCP is written down: the capability, the arguments with secrets masked, the profile it resolved through, what happened, and **how it was authorized** — no grant needed, a standing grant, or you answering live.
+Every call that arrived over MCP is written down: the capability, the arguments with every input declared `Secret` or `SecretSlice` masked, the profile it resolved through, what happened, and **how it was authorized** — no grant needed, a standing grant, or you answering live.
 
 ```bash
 rta agent log --limit 50

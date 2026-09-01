@@ -636,7 +636,7 @@ func profileSecrets(ns string, reg *registry.Registry) []string {
 			continue
 		}
 		for _, f := range c.Inputs {
-			if f.Type != plugin.Secret || !plugin.ProfileFillable(c, f) || seen[f.Name] {
+			if !f.Type.Sensitive() || !plugin.ProfileFillable(c, f) || seen[f.Name] {
 				continue
 			}
 			seen[f.Name] = true

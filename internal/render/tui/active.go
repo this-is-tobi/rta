@@ -317,7 +317,7 @@ func withoutSecrets(c plugin.Capability, filled map[string]any) map[string]any {
 		out[k] = v
 	}
 	for _, f := range c.Inputs {
-		if f.Type == plugin.Secret {
+		if f.Type.Sensitive() {
 			delete(out, f.Name)
 		}
 	}

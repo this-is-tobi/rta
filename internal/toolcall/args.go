@@ -176,7 +176,7 @@ func checkFieldType(f plugin.Field, v any) error {
 		if _, ok := v.(bool); !ok {
 			return fmt.Errorf("must be a boolean, got %s", JSONKind(v))
 		}
-	case plugin.StringSlice:
+	case plugin.StringSlice, plugin.SecretSlice:
 		if err := checkStringSlice(v); err != nil {
 			return err
 		}

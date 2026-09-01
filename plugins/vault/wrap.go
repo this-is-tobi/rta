@@ -30,7 +30,7 @@ func wrapSetCapability() plugin.Capability {
 			"rather than acting on a record that already exists, so there is nothing to name one " +
 			"grant against the way vault.kv.get names a path.",
 		Run: runWrapSet,
-	}, plugin.Field{Name: "data", Type: plugin.StringSlice, Required: true,
+	}, plugin.Field{Name: "data", Type: plugin.SecretSlice, Required: true,
 		Help: "key=value, repeated for more than one field"},
 		plugin.Field{Name: "ttl", Type: plugin.String, Default: "5m", Suggest: suggestWrapTTL,
 			Help: "how long the token stays valid, unread — not the data's own lifetime"})
@@ -89,7 +89,16 @@ func wrapGetCapability() plugin.Capability {
 		Summary:    "Unwrap a single-use token, once",
 		Safety:     plugin.Write,
 		NeedsGrant: true,
-		Scope:      "wrapping-token",
+		// No Scope, and the token is the reason. A scope is written into the
+		// grant file, printed by `rta grant list` and offered as a shell
+		// completion, so scoping on a live single-use credential put it in
+		// all three. It could not work either: a value that differs on every
+		// call names a grant covering one call that has already happened by
+		// the time anybody could issue it. vault.wrap.set next door had
+		// already reasoned this out for the other half of the pair — "this
+		// wraps whatever data it is handed rather than acting on a record
+		// that already exists, so there is nothing to name one grant
+		// against". Validate now refuses the combination outright.
 		Idempotent: false,
 		Description: "Consumes the token: a second call against the same token gets Vault's own " +
 			"\"wrapping token is not valid or does not exist\" refusal, from Vault itself rather " +
@@ -97,7 +106,7 @@ func wrapGetCapability() plugin.Capability {
 			"has, so it calls sys/wrapping/lookup instead — creation time, path and TTL, without " +
 			"the payload and without consuming anything.",
 		Run: runWrapGet,
-	}, plugin.Field{Name: "wrapping-token", Type: plugin.String, Positional: true, Required: true,
+	}, plugin.Field{Name: "wrapping-token", Type: plugin.Secret, Positional: true, Required: true,
 		Help: "the wrapping token vault.wrap.set returned — a different token from --token, " +
 			"this plugin's own auth credential"})
 }

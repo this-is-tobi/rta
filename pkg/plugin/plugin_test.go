@@ -350,6 +350,7 @@ func TestFieldTypesCoversEveryDeclaredConstant(t *testing.T) {
 	byName := map[string]FieldType{
 		"String": String, "Int": Int, "Bool": Bool, "Float": Float,
 		"StringSlice": StringSlice, "Text": Text, "Path": Path, "Secret": Secret,
+		"SecretSlice": SecretSlice,
 	}
 	for _, name := range declared {
 		ft, known := byName[name]

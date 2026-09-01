@@ -37,7 +37,13 @@ func transitEncryptCapability() plugin.Capability {
 	}, transitMountField(),
 		plugin.Field{Name: "key", Type: plugin.String, Positional: true, Required: true,
 			Help: "the transit key's name", Live: true, Suggest: suggestTransitKeys},
-		plugin.Field{Name: "plaintext", Type: plugin.Text, Required: true,
+		// Secret, not Text. The whole point of handing something to
+		// transit.encrypt is that it is worth encrypting, so the plaintext
+		// is a credential by construction — and Text is not Sensitive, so it
+		// was written verbatim into the sealed agent log on every MCP call
+		// and into the completion shortlist from a terminal. The mask costs
+		// nothing here: nothing completes a value nobody has typed before.
+		plugin.Field{Name: "plaintext", Type: plugin.Secret, Required: true,
 			Help: "the value to encrypt"})
 }
 

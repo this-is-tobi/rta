@@ -312,7 +312,7 @@ func (cf *capForm) displayed(f plugin.Field, current any) bool {
 	if _, given := cf.seed[f.Name]; given {
 		return false
 	}
-	if !cf.final || len(f.Options) > 0 || f.Type == plugin.Bool || f.Type == plugin.StringSlice {
+	if !cf.final || len(f.Options) > 0 || f.Type == plugin.Bool || f.Type.Repeatable() {
 		return false
 	}
 	return f.Default != nil && seedString(f.Default) == seedString(current)
@@ -392,7 +392,7 @@ func newCapForm(c plugin.Capability, fs []plugin.Field, defaults map[string]any,
 		// submitted, and nobody has to read the help text to learn the words.
 		if len(f.Options) > 0 {
 			switch f.Type {
-			case plugin.StringSlice:
+			case plugin.StringSlice, plugin.SecretSlice:
 				fields = append(fields, cf.multiSelect(f))
 			default:
 				fields = append(fields, cf.selectOne(f))
@@ -448,14 +448,22 @@ func newCapForm(c plugin.Capability, fs []plugin.Field, defaults map[string]any,
 				Description(fieldDescription(f)+" — tab completes paths").
 				Accessor(typed).
 				Validate(validatorFor(f)), f, typed, walkingDisk)))
-		case plugin.Secret:
+		case plugin.Secret, plugin.SecretSlice:
 			// Never completed, and that is a rule rather than an omission: a
 			// suggestion list renders in plain text beside a box that is
 			// masked precisely so the value is not on screen. Capability
 			// validate refuses Suggest on a Secret for the same reason.
+			//
+			// A SecretSlice is masked rather than comma-hinted, which is the
+			// arm it shares with Secret and not the one it shares with
+			// StringSlice: the box takes the same comma-separated text — the
+			// same typedValue splits it — but it must not be on screen while
+			// somebody types it, and the hint would be the only thing telling
+			// them so. That trade is the reason this is masked-and-terse
+			// rather than legible-and-visible.
 			fields = append(fields, cf.record(f.Name, huh.NewInput().
 				Title(fieldTitle(f.Name)).
-				Description(fieldDescription(f)).
+				Description(commaHint(f)).
 				EchoMode(huh.EchoModePassword).
 				Accessor(cf.bind(f.Name, defaultString(f))).
 				Validate(validatorFor(f))))
@@ -866,6 +874,17 @@ func fieldTitle(name string) string {
 	return name
 }
 
+// commaHint describes a masked box that nonetheless takes a list. A
+// SecretSlice cannot carry the completion hint StringSlice gets — nothing is
+// completed into a masked field — so the shape has to be said in words or it
+// is not said at all.
+func commaHint(f plugin.Field) string {
+	if f.Type == plugin.SecretSlice {
+		return fieldDescription(f) + " (comma-separated)"
+	}
+	return fieldDescription(f)
+}
+
 func fieldDescription(f plugin.Field) string {
 	d := f.Help
 	extra := string(f.Type)
@@ -1113,7 +1132,7 @@ func typedValue(f plugin.Field, raw string) any {
 	case plugin.Float:
 		v, _ := strconv.ParseFloat(raw, 64)
 		return v
-	case plugin.StringSlice:
+	case plugin.StringSlice, plugin.SecretSlice:
 		parts := strings.Split(raw, ",")
 		for i := range parts {
 			parts[i] = strings.TrimSpace(parts[i])

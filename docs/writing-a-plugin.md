@@ -58,10 +58,12 @@ Inputs: []plugin.Field{
 
 `Type` is mandatory and closed — there is no inference from the name, because `Secret` is what makes a value masked and `Path` is what makes it completable, and neither is guessable.
 
+A credential a caller may give more than once is `SecretSlice`, not `StringSlice`. It is `Secret`'s masking with `StringSlice`'s shape, and declaring the list type alone is the mistake worth naming: the value is then written to the completion shortlist and, over MCP, into the audit log in cleartext, because every sink that hides a credential asks whether the *type* is one. `vault.kv.set --data 'password=…'` is the shape.
+
 What each one buys you:
 
 - **`Options`** becomes a TUI picker, shell completion, and an `enum` in the MCP schema. Use it for a fixed set.
-- **`Suggest`** is a function returning what exists *right now* — your tags, their hostnames. It runs on human surfaces only, never for an agent: the list itself is information. It must be cheap and silent on failure, because it fires on a keystroke — no network call, no prompt, no connection opened. It receives what the caller has supplied so far, on the CLI and in a TUI form alike, so a suggestion can depend on a sibling field being typed above it. Tab completes it on both surfaces. Not accepted on a `Secret` or a `Text` input: the list renders in plain text beside the box, which defeats a mask, and a body is written in `$EDITOR` rather than completed.
+- **`Suggest`** is a function returning what exists *right now* — your tags, their hostnames. It runs on human surfaces only, never for an agent: the list itself is information. It must be cheap and silent on failure, because it fires on a keystroke — no network call, no prompt, no connection opened. It receives what the caller has supplied so far, on the CLI and in a TUI form alike, so a suggestion can depend on a sibling field being typed above it. Tab completes it on both surfaces. Not accepted on a `Secret`, a `SecretSlice` or a `Text` input: the list renders in plain text beside the box, which defeats a mask, and a body is written in `$EDITOR` rather than completed.
 - **`Local: true`** means the value names something on *this* machine, so it is refused over MCP. `--out` is the example: a grant authorises revealing a value, not choosing where on the operator's disk it lands.
 - **`Path`** inputs are confined to the server's roots when an agent supplies them.
 - **`Config`** names a key in the operator's configuration this input may be filled from when nobody passed it, so a connection is stated once instead of retyped. Precedence is caller, then config, then `Default`, and your handler cannot tell which it got.
@@ -80,7 +82,7 @@ plugins:
     host: db.internal
 ```
 
-`rta doctor` prints the exact line, digest included, and says so again if you upgrade and the pin goes stale. **`Config` is refused on a `Secret` input** — configuration is a plaintext file read on every invocation, and a `Secret`'s default is published in your MCP tool schema. Use `Local: true` and let the host resolve it from its own environment.
+`rta doctor` prints the exact line, digest included, and says so again if you upgrade and the pin goes stale. **`Config` is refused on a `Secret` or `SecretSlice` input** — configuration is a plaintext file read on every invocation, and a `Secret`'s default is published in your MCP tool schema. Use `Local: true` and let the host resolve it from its own environment.
 
 ## Safety is a claim, not a label
 
