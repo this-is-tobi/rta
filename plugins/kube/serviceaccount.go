@@ -75,7 +75,11 @@ func serviceAccountCapabilities() []plugin.Capability {
 				{Name: "name", Type: plugin.String, Positional: true, Required: true,
 					Help: "name for the new ServiceAccount, Role and RoleBinding (all three share it)"},
 				{Name: "namespace", Type: plugin.String, Positional: true, Required: true,
-					Help: "namespace to provision the identity in", Suggest: suggestNamespaces},
+					// Live for nsFields' reason: this Suggest contacts the
+					// cluster, so it answers a deliberate completion press
+					// only, never a keystroke.
+					Help: "namespace to provision the identity in",
+					Live: true, Suggest: suggestNamespaces},
 				{Name: "capability", Type: plugin.StringSlice, Required: true,
 					Help: "kube.* capability to grant, repeatable — see the error for the full list"},
 				{Name: "ttl", Type: plugin.String, Required: true,
@@ -126,7 +130,10 @@ func serviceAccountCapabilities() []plugin.Capability {
 				{Name: "name", Type: plugin.String, Positional: true, Required: true,
 					Help: "the ServiceAccount to revoke"},
 				{Name: "namespace", Type: plugin.String, Positional: true, Required: true,
-					Help: "namespace it was provisioned in", Suggest: suggestNamespaces},
+					// Live for nsFields' reason: a cluster read answers a
+					// press, not a keystroke.
+					Help: "namespace it was provisioned in",
+					Live: true, Suggest: suggestNamespaces},
 			},
 			Run: runServiceAccountRevoke,
 		}),
