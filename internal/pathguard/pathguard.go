@@ -31,6 +31,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 
 	"github.com/this-is-tobi/rule-them-all/internal/paths"
@@ -165,7 +166,55 @@ func remote(raw string) bool {
 	if i := strings.Index(s, "://"); i > 0 && !strings.ContainsAny(s[:i], `/\`) {
 		return true
 	}
+	if unc(s) {
+		return true
+	}
 	return scpLike.MatchString(s)
+}
+
+// unc reports whether a path names a Windows network share.
+//
+// **This is the one address form that makes the guard itself do the
+// connecting.** The two cases above hand a mangled string to a handler and let
+// it fail; a UNC path does its damage inside `resolve`, before any in-root
+// decision is reached. `filepath.EvalSymlinks` on `\\host\share` asks the
+// Windows SMB redirector to open it, which dials the host and authenticates
+// with the rta process's own machine credentials — the forced-authentication
+// primitive Responder and ntlmrelayx are built to catch. The eventual
+// "outside what this server may read" is returned long after the NetNTLM
+// exchange has happened, so refusing at the string is the only place it can be
+// stopped.
+//
+// Two separators, judged differently, because they are not the same claim:
+//
+//   - A backslash pair is refused on every platform. No POSIX caller means a
+//     file whose name begins `\\`, and the server's GOOS is not something the
+//     value should depend on when the value is this unambiguous.
+//   - A forward-slash pair is refused only on Windows, where FromSlash turns
+//     `//host/share` into exactly the UNC volume above. On POSIX `//x/y` is an
+//     ordinary absolute path that Clean collapses to `/x/y`, and refusing it
+//     there would be a false positive on a path nobody chose for its network
+//     meaning.
+//
+// Testing the first two bytes rather than matching a host name also covers
+// `\\?\` and `\\.\` device paths, which a host-shaped pattern would let
+// through.
+//
+// The cost, stated rather than discovered: an operator who serves with
+// `--root \\fileserver\projects` can no longer have callers name absolute
+// paths under it, because this refuses the root's own spelling. That
+// deployment is exotic, the refusal is explicit and names itself, and
+// fail-closed is the rule everywhere else in this package — a caller-chosen
+// network destination is not something to allow because a root happened to be
+// spelled the same way.
+func unc(s string) bool {
+	if len(s) < 2 {
+		return false
+	}
+	sep := func(c byte) bool {
+		return c == '\\' || (c == '/' && runtime.GOOS == "windows")
+	}
+	return sep(s[0]) && sep(s[1])
 }
 
 // resolve turns a caller's string into the absolute path a handler would
