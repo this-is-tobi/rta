@@ -38,12 +38,13 @@ type policyRule struct {
 // Excluded, and why — both found by checking each capability's underlying
 // Kubernetes resource before adding it here, not by copying a candidate list:
 //
-//   - kube.namespace.list and kube.metrics.node read cluster-scoped resources
-//     (Namespace; the nodes.metrics.k8s.io resource). A Role — namespaced by
-//     definition — cannot grant access to a cluster-scoped resource; only a
-//     ClusterRole can, and this mechanism deliberately mints only namespaced
-//     objects (see serviceaccount.go). Listing either here would be a rule
-//     that looks like it grants the capability and silently does not.
+//   - kube.namespace.list, kube.node.list and kube.metrics.node read
+//     cluster-scoped resources (Namespace; Node; the nodes.metrics.k8s.io
+//     resource). A Role — namespaced by definition — cannot grant access to a
+//     cluster-scoped resource; only a ClusterRole can, and this mechanism
+//     deliberately mints only namespaced objects (see serviceaccount.go).
+//     Listing any of them here would be a rule that looks like it grants the
+//     capability and silently does not.
 //   - kube.cert.list reads `type: kubernetes.io/tls` Secrets, but Kubernetes
 //     RBAC cannot scope a rule by Secret *type* — only by resource kind, or a
 //     fixed resourceNames allowlist. A rule granting this would grant read on

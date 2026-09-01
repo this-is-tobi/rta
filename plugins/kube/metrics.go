@@ -208,16 +208,6 @@ type nodeMetricsItem struct {
 	} `json:"usage"`
 }
 
-type nodeItem struct {
-	Metadata meta `json:"metadata"`
-	Status   struct {
-		Allocatable struct {
-			CPU    string `json:"cpu"`
-			Memory string `json:"memory"`
-		} `json:"allocatable"`
-	} `json:"status"`
-}
-
 func runMetricsNode(ctx context.Context, req plugin.Request) (view.View, error) {
 	s, verr := selectionOf(req)
 	if verr != nil {
