@@ -154,12 +154,15 @@ func Plugin() plugin.Plugin {
 				Description: "One namespace by default — the context's own — or every namespace " +
 					"with --all-namespaces. Restarts are worth reading: a pod that is Running and " +
 					"has restarted forty times is not healthy, and only one of those two facts " +
-					"shows in its status.",
+					"shows in its status. --unhealthy narrows to pods that are not Running or not " +
+					"fully ready — the same judgement kube.overview already makes, available here " +
+					"without the rest of the overview.",
 				Safety:     plugin.Read,
 				Idempotent: true,
 				Scope:      "namespace",
 				Run:        runPodList,
-			}, nsFields()...),
+			}, append(nsFields(), plugin.Field{Name: "unhealthy", Type: plugin.Bool,
+				Help: "only pods that are not Running or not fully ready"})...),
 			cap(plugin.Capability{
 				ID:      "kube.deployment.list",
 				Summary: "Deployments in a namespace, with how many replicas are actually ready",
@@ -170,6 +173,64 @@ func Plugin() plugin.Plugin {
 				Scope:      "namespace",
 				Run:        runDeploymentList,
 			}, nsFields()...),
+			cap(plugin.Capability{
+				ID:      "kube.quota.list",
+				Summary: "ResourceQuota pressure per namespace: used against hard, as a percentage",
+				Description: "One row per resource a quota tracks, not one row per quota object — " +
+					"cpu, memory and pod-count headroom read as a percentage rather than two numbers " +
+					"to do the division on by hand. LimitRange objects are noted by count rather than " +
+					"fully modeled; their shape does not table-ize alongside a used/hard resource map.",
+				Safety:     plugin.Read,
+				Idempotent: true,
+				Scope:      "namespace",
+				Run:        runQuotaList,
+			}, nsFields()...),
+			cap(plugin.Capability{
+				ID:      "kube.pvc.list",
+				Summary: "PersistentVolumeClaims: capacity, requested size, storage class and phase",
+				Description: "Provisioned capacity, not how full a volume actually is — that number " +
+					"lives in kubelet volume stats, a different and more involved mechanism this does " +
+					"not reach. A Pending PVC (no bound PersistentVolume yet) reports its requested " +
+					"size and an empty capacity, which is the honest state of an unfulfilled claim.",
+				Safety:     plugin.Read,
+				Idempotent: true,
+				Scope:      "namespace",
+				Run:        runPVCList,
+			}, nsFields()...),
+			cap(plugin.Capability{
+				ID:      "kube.cert.list",
+				Summary: "Every TLS certificate this cluster stores as a Secret, and its expiry",
+				Description: "Reads type: kubernetes.io/tls Secrets only, selected server-side so no " +
+					"other secret's data ever leaves the API server for this process. Only tls.crt is " +
+					"read — tls.key, the private key, is never requested. The leaf certificate's own " +
+					"expiry is judged on the same 30-day window `cert expiry` and `rta audit web` use.",
+				Safety:     plugin.Read,
+				Idempotent: true,
+				Scope:      "namespace",
+				Run:        runCertList,
+			}, nsFields()...),
+			cap(plugin.Capability{
+				ID:      "kube.metrics.pod",
+				Summary: "Pod CPU/memory usage against each pod's own limit, worst pressure first",
+				Description: "Needs the metrics-server add-on (metrics.k8s.io); a cluster without it " +
+					"names that in the error rather than a bare \"not found\". Sorted by memory " +
+					"pressure — the failure mode a container hits is OOMKilled, not \"CPU too high\" " +
+					"— so the pod closest to its own limit leads regardless of namespace or name.",
+				Safety:     plugin.Read,
+				Idempotent: true,
+				Scope:      "namespace",
+				Run:        runMetricsPod,
+			}, nsFields()...),
+			cap(plugin.Capability{
+				ID:      "kube.metrics.node",
+				Summary: "Node CPU/memory usage against what the node can actually allocate",
+				Description: "Same metrics-server dependency as kube.metrics.pod. Allocatable, not " +
+					"capacity: a node reserves some of its own resources for the kubelet and system " +
+					"daemons, and allocatable is what workloads can actually be scheduled into.",
+				Safety:     plugin.Read,
+				Idempotent: true,
+				Run:        runMetricsNode,
+			}),
 			cap(plugin.Capability{
 				ID:      "kube.overview",
 				Summary: "One cluster at a glance: where you are pointed and what is not healthy",

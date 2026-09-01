@@ -149,6 +149,15 @@ func runPodList(ctx context.Context, req plugin.Request) (view.View, error) {
 	if verr != nil {
 		return nil, verr
 	}
+	if req.Bool("unhealthy") {
+		kept := pods[:0]
+		for _, p := range pods {
+			if !healthOf(p).healthy {
+				kept = append(kept, p)
+			}
+		}
+		pods = kept
+	}
 	return podTable(pods, s.AllNS), nil
 }
 
