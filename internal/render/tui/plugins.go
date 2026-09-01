@@ -79,6 +79,21 @@ type pluginRow struct {
 	// should say so — the same argument `waiting` above is written for, one
 	// permission further along.
 	ungranted []plugin.Need
+	// granted is what this plugin declares it needs and *has* been allowed.
+	//
+	// **The counterpart to ungranted, and its absence made the pane able to
+	// report a permission only while it was missing.** A plugin allowed to read
+	// a kubeconfig rendered identically to one that never asked for anything:
+	// ungranted was empty in both cases, so the line fell through to the plain
+	// summary. That is the same silence `waiting` and `ungranted` were both
+	// written to break, pointed at the state somebody would actually want to
+	// audit — "what have I handed this binary?" is a question about what was
+	// granted, and the pane could only ever answer what was not.
+	//
+	// It is also the prerequisite for taking a grant back from here. A control
+	// that revokes something the screen never shows is a control with no
+	// referent: you cannot point at what you are removing.
+	granted []plugin.Need
 }
 
 // The two decisions a row can carry from this session.
@@ -155,7 +170,9 @@ func pluginRows(reg *registry.Registry, dash config.Dashboard, untrusted []plugi
 		origin, _ := reg.Origin(p.Name)
 		row := pluginRow{plugin: p, origin: origin}
 		for _, n := range p.Needs {
-			if !slices.Contains(allowed.Allowed(origin.Digest), string(n)) {
+			if slices.Contains(allowed.Allowed(origin.Digest), string(n)) {
+				row.granted = append(row.granted, n)
+			} else {
 				row.ungranted = append(row.ungranted, n)
 			}
 		}
@@ -449,6 +466,17 @@ func pluginDetail(row pluginRow) string {
 		return origin + " · press t to approve it — it loads when rta restarts"
 	}
 	detail := origin + " · " + fmt.Sprintf("%d capabilities", len(row.plugin.Capabilities))
+	// What this binary has actually been handed, named on the row rather than
+	// implied by the absence of a warning. A plugin reading a kubeconfig and
+	// one reading nothing at all were previously the same line.
+	//
+	// Placed before the tile state deliberately: a granted location is a
+	// standing permission on this machine and the tile is a display preference,
+	// and the more consequential fact should not be the one that gets truncated
+	// off the end of a narrow pane.
+	if len(row.granted) > 0 {
+		detail += " · allowed to read " + needList(row.granted)
+	}
 	switch {
 	case !row.canTile():
 		detail += " · no dashboard tile: " + NoTileReason(row.plugin)

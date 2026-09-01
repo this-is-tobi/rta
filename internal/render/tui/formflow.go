@@ -315,6 +315,9 @@ func (m Model) afterFormUpdate(cmd tea.Cmd) (tea.Model, tea.Cmd) {
 		if m.form.configTarget != "" {
 			return m.saveConfigForm()
 		}
+		if m.form.allowTarget != "" {
+			return m.saveAllowForm()
+		}
 		if m.form.credentialEditing {
 			return m.saveCredentialForm()
 		}

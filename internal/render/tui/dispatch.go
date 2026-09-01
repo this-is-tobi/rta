@@ -183,6 +183,17 @@ func (m Model) pluginsKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		// path are already on the screen.
 		m.flash = m.trustSelected()
 		return m, nil, true
+	case "a":
+		// The credential decision, one permission further along than `t`
+		// and deliberately not shaped like it: this opens a form rather
+		// than acting, because a plugin declares several locations and a
+		// bare key would hand over every one of them from a cursor
+		// position. See pluginallow.go.
+		if m.pluginSel < len(m.plugins) {
+			nm, cmd := m.startAllowForm(m.plugins[m.pluginSel])
+			return nm, cmd, true
+		}
+		return m, nil, true
 	case "c":
 		if m.pluginSel < len(m.plugins) {
 			// The form is built from the inputs a plugin declares, and
