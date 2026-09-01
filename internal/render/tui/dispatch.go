@@ -627,6 +627,25 @@ func (m Model) updateSearch(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.query = string(r[:len(r)-1])
 		m.searchSel = 0
 		return m, nil
+	case "alt+backspace", "ctrl+w":
+		// Option+Delete on macOS arrives as alt+backspace, and ctrl+w is the
+		// same stroke at every readline prompt. A query box that ignores both
+		// makes somebody erase a mistyped capability name one letter at a
+		// time. Deleting stops at the dots IDs are built from, not only at
+		// spaces, so one press on "kube.metrics.pre" leaves "kube.metrics."
+		// rather than nothing — the way word-delete walks any path-shaped
+		// value.
+		if m.query == "" {
+			m.searchEditing = false
+			return m, nil
+		}
+		m.query = trimLastWord(m.query)
+		m.searchSel = 0
+		return m, nil
+	case "ctrl+u":
+		m.query = ""
+		m.searchSel = 0
+		return m, nil
 	default:
 		if msg.Text != "" {
 			m.query += msg.Text
@@ -634,4 +653,20 @@ func (m Model) updateSearch(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+}
+
+// trimLastWord removes the query's trailing word and the separators that led
+// to it, treating the dot and dash of a capability ID as separators alongside
+// the space a summary match may carry.
+func trimLastWord(s string) string {
+	sep := func(r rune) bool { return r == ' ' || r == '.' || r == '-' }
+	r := []rune(s)
+	i := len(r)
+	for i > 0 && sep(r[i-1]) {
+		i--
+	}
+	for i > 0 && !sep(r[i-1]) {
+		i--
+	}
+	return string(r[:i])
 }
