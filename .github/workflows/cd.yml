@@ -49,10 +49,16 @@ jobs:
     uses: this-is-tobi/github-workflows/.github/workflows/release-go.yml@v0
     permissions:
       contents: write
-      # Not packages: write. .goreleaser.yaml has no `dockers:` block — the
-      # image below is a separate build from source, not something GoReleaser
-      # produces — so the one thing that permission would grant is left at
-      # this job's implicit `none` rather than requested and unused.
+      # Granted and unused, because there is no narrower option: release-go's
+      # job declares `packages: write` for the configurations whose GoReleaser
+      # pushes images, a permissions block cannot be conditional, and GitHub
+      # refuses to *start* a workflow whose nested job explicitly requests
+      # more than its caller grants. An earlier revision left this at its
+      # implicit `none` on the theory that the grant would intersect away —
+      # it does not: the first CD run ever failed at validation, before a
+      # single job ran, over exactly this line. .goreleaser.yaml still has no
+      # `dockers:` block, so nothing in the job ever exercises the scope.
+      packages: write
     secrets:
       APP_CLIENT_ID: ${{ secrets.APP_CLIENT_ID }}
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
