@@ -103,6 +103,26 @@ func selectionOf(req plugin.Request) (selection, *view.Error) {
 	if verr := checkName("namespace", s.namespace); verr != nil {
 		return selection{}, verr
 	}
+	// **Refused here rather than resolved in args(), which prefers
+	// --all-namespaces when both are set.** That preference is safe only for
+	// as long as these capabilities declare no Scope: rta derives the scope a
+	// call is checked against from the value of the `namespace` field, and
+	// knows nothing about `all-namespaces`. Give either capability below
+	// `Scope: "namespace"` — the natural thing to do, since both already take
+	// a namespace — and a caller granted one namespace could send it together
+	// with --all-namespaces, pass the scope check on the first, and be
+	// answered from every namespace in the cluster.
+	//
+	// So this is not fixing a live bug here; it is refusing to leave a trap
+	// that springs on whoever adds the scope later and has no reason to look
+	// at this function. plugins/kube carries the same refusal for the same
+	// reason, where the scope *is* declared and the bypass was real.
+	if s.allNamespace && s.namespace != "" {
+		return selection{}, view.Errorf("cnpg.namespace.ambiguous",
+			"--namespace and --all-namespaces ask for different things").
+			WithHint("pass one or the other — a namespace to read that namespace, " +
+				"--all-namespaces to read every one")
+	}
 	return s, nil
 }
 
