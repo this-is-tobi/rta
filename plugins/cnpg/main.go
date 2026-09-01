@@ -62,14 +62,19 @@ func main() { sdk.Serve(Plugin()) }
 func connFields() []plugin.Field {
 	return []plugin.Field{
 		{Name: "context", Type: plugin.String, Config: "context", Local: true,
-			Help: "kubeconfig context to use — the current one when omitted"},
+			Help:    "kubeconfig context to use — the current one when omitted",
+			Suggest: suggestContexts},
 	}
 }
 
 func nsFields() []plugin.Field {
 	return []plugin.Field{
+		// Live, because the Suggest contacts the cluster: that read must be
+		// something a completion press asked for, never something typing
+		// caused. plugins/kube pins the same rule on its own namespace field.
 		{Name: "namespace", Type: plugin.String,
-			Help: "namespace to read — the context's own when omitted"},
+			Help: "namespace to read — the context's own when omitted",
+			Live: true, Suggest: suggestNamespaces},
 	}
 }
 
@@ -132,7 +137,8 @@ func Plugin() plugin.Plugin {
 					"from the spec.",
 				Inputs: []plugin.Field{
 					{Name: "name", Type: plugin.String, Positional: true, Required: true,
-						Help: "the cluster to read"},
+						Help: "the cluster to read",
+						Live: true, Suggest: suggestClusters},
 				},
 				Run: runStatus,
 			}),
