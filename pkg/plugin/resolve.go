@@ -377,7 +377,7 @@ func StatedTypeProblem(f Field, v any) (problem, hint string) {
 		return statedProblem(v, "a boolean", "false"),
 			"write it unquoted as `true` or `false` — a quoted `\"true\"` is a string, " +
 				"and so is a bare `yes`"
-	case StringSlice:
+	case StringSlice, SecretSlice:
 		switch v.(type) {
 		case []string, []any, string:
 			return "", ""

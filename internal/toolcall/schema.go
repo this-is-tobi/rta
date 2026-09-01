@@ -43,7 +43,7 @@ func InputSchema(c plugin.Capability, profiles []string) map[string]any {
 			prop["type"] = "boolean"
 		case plugin.Float:
 			prop["type"] = "number"
-		case plugin.StringSlice:
+		case plugin.StringSlice, plugin.SecretSlice:
 			prop["type"] = "array"
 			prop["items"] = map[string]any{"type": "string"}
 		default:
@@ -56,7 +56,7 @@ func InputSchema(c plugin.Capability, profiles []string) map[string]any {
 		// and a model can read it: guessing "PTR" at a field that wants "ptr"
 		// should not cost a round trip to find out.
 		if len(f.Options) > 0 {
-			if f.Type == plugin.StringSlice {
+			if f.Type.Repeatable() {
 				prop["items"] = map[string]any{"type": "string", "enum": f.Options}
 			} else {
 				prop["enum"] = f.Options
@@ -145,7 +145,7 @@ func SchemaTypeName(t plugin.FieldType) string {
 		return "a number"
 	case plugin.Bool:
 		return "a boolean"
-	case plugin.StringSlice:
+	case plugin.StringSlice, plugin.SecretSlice:
 		return "an array of strings"
 	default:
 		return "a string"

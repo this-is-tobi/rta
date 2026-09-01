@@ -122,7 +122,14 @@ func kvSetCapability() plugin.Capability {
 			"there before this replaces it.",
 		Run: runKVSet,
 	}, mountField(), pathField("the secret's path within the mount"),
-		plugin.Field{Name: "data", Type: plugin.StringSlice, Required: true,
+		// SecretSlice, not StringSlice: this is the operation of writing a
+		// secret into a secret manager, so every element of it is the
+		// credential. Declared as a plain list it was written verbatim to
+		// the completion shortlist and re-offered on tab, and — over MCP —
+		// into the sealed agent log, which docs/22-audit-trail promises
+		// holds the arguments with secrets masked. builtin/kv's own `value`
+		// input has been Secret all along for the identical act.
+		plugin.Field{Name: "data", Type: plugin.SecretSlice, Required: true,
 			Help: "key=value, repeated for more than one field"})
 }
 

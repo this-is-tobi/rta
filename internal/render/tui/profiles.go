@@ -359,7 +359,7 @@ func (m Model) fillableInputs(key string, tunnelled bool) []string {
 			if f.Type == plugin.Int || f.Type == plugin.Bool || f.Type == plugin.Float {
 				continue
 			}
-			if f.Type == plugin.Secret {
+			if f.Type.Sensitive() {
 				creds = append(creds, f.Name)
 			} else {
 				others = append(others, f.Name)

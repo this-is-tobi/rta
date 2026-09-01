@@ -67,6 +67,20 @@ func Plugin() plugin.Plugin {
 		// literally — and a declaration is published verbatim as an MCP tool
 		// description, which makes an unimplemented promise an instruction a
 		// model follows.
+		// Text rather than Secret, deliberately, and the tradeoff is worth
+		// naming because it is the one place this class stays open. A
+		// request body is usually not a credential — it is JSON somebody
+		// wants to see echoed in a dry run and in the audit line — but it
+		// certainly can be one: `grant_type=client_credentials&
+		// client_secret=…` is the shape of every OAuth token exchange, and
+		// that lands in the sealed agent log intact.
+		//
+		// Masking the whole body would make the log useless for the ninety
+		// per cent that is not a secret, and recognising the ten per cent by
+		// looking at the value is the thing internal/recent's own comments
+		// say twice does not work. So this stays legible, and the answer for
+		// a caller who is sending a credential is the same as for a header:
+		// put it in a field declared for it.
 		Name: "data", Type: plugin.Text, Help: "request body, sent as given",
 	})
 	return plugin.Plugin{

@@ -63,6 +63,9 @@ enum FieldType {
   FIELD_TYPE_PATH = 7;
   // A credential. Masked while typing and never echoed back.
   FIELD_TYPE_SECRET = 8;
+  // A repeatable credential: everything FIELD_TYPE_SECRET says about
+  // masking, and everything FIELD_TYPE_STRING_SLICE says about shape.
+  FIELD_TYPE_SECRET_SLICE = 9;
 }
 
 // Surface is the renderer a request arrived through.

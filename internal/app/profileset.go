@@ -185,7 +185,7 @@ func completeSecretInputs(cmd *cobra.Command, _ []string, prefix string) ([]cobr
 			}
 			seen[f.Name] = true
 			desc := f.Help
-			if f.Type == plugin.Secret {
+			if f.Type.Sensitive() {
 				// The same test profileSecrets applies, asked here because
 				// this loop already has the declaration in hand.
 				desc = "credential — " + desc
@@ -662,7 +662,7 @@ func parseSetFlags(pairs []string, ns string, reg *registry.Registry) (map[strin
 			set[k] = values[len(values)-1]
 			continue
 		}
-		if f.Type != plugin.StringSlice && len(values) > 1 {
+		if !f.Type.Repeatable() && len(values) > 1 {
 			return nil, view.Errorf("core.profile.set.repeated",
 				"`--set %s` is given more than once, and %s takes one value", k, k).
 				WithHint("repeating a key states a list, and only a list-shaped input takes one")
@@ -683,7 +683,7 @@ func parseSetFlags(pairs []string, ns string, reg *registry.Registry) (map[strin
 func typedSetValue(f plugin.Field, values []string) (any, *view.Error) {
 	raw := values[len(values)-1]
 	switch f.Type {
-	case plugin.StringSlice:
+	case plugin.StringSlice, plugin.SecretSlice:
 		return append([]string{}, values...), nil
 	case plugin.Int:
 		n, err := strconv.Atoi(raw)

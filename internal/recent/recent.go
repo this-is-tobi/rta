@@ -217,7 +217,7 @@ func offerable(c plugin.Capability, values map[string]any) map[string][]string {
 // neither of which anybody completes.
 func worthOffering(f plugin.Field) bool {
 	switch f.Type {
-	case plugin.Secret, plugin.Text, plugin.Bool:
+	case plugin.Secret, plugin.SecretSlice, plugin.Text, plugin.Bool:
 		return false
 	}
 	if credentialName(f.Name) || credentialName(f.Config) {
