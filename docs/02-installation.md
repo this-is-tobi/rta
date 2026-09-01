@@ -127,5 +127,5 @@ Exact paths differ per platform. `rta doctor` prints the real ones rather than t
 
 ## Next
 
-- [Quick start](./02-quickstart.md) — the first ten minutes
+- [Quick start](./03-quickstart.md) — the first ten minutes
 - [MCP and the safety gate](./20-mcp.md) — if you came here to connect an agent

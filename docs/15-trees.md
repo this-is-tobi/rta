@@ -49,8 +49,8 @@ rta fs tree docs --depth 1
 ```
 docs/ /Users/you/project/docs
 ├── examples/ 1 entries
-├── 01-installation.md 3.2 KiB
-├── 02-quickstart.md 3.9 KiB
+├── 02-installation.md 3.2 KiB
+├── 03-quickstart.md 3.9 KiB
 ├── 10-cli.md 4.4 KiB
 ```
 

@@ -133,7 +133,7 @@ my-index/
     └── kube.yaml
 ```
 
-Each manifest is generated from the plugin binary rather than written: `rta plugin manifest` reads the artifact's own declaration, so an entry cannot disagree with the plugin it describes. [Publishing a plugin](./writing-a-plugin.md#publishing-it) is the whole path — and an index of your own is a repository with that one directory in it, attached by the same command as anybody else's.
+Each manifest is generated from the plugin binary rather than written: `rta plugin manifest` reads the artifact's own declaration, so an entry cannot disagree with the plugin it describes. [Publishing a plugin](./51-writing-a-plugin.md#publishing-it) is the whole path — and an index of your own is a repository with that one directory in it, attached by the same command as anybody else's.
 
 ```bash
 rta plugin search postgres
@@ -201,10 +201,10 @@ rta plugin dev -- mytool greet world
 
 `plugin new` writes a plugin that works as it stands rather than a skeleton with TODOs, so the first run succeeds and every edit after it changes something known-good. `plugin dev` loads it exactly as an installed plugin is loaded — sandbox included — without installing anything.
 
-See [Writing a plugin](./writing-a-plugin.md) for the SDK and the `sdktest` conformance suite.
+See [Writing a plugin](./51-writing-a-plugin.md) for the SDK and the `sdktest` conformance suite.
 
 ## Next
 
 - [Profiles](./40-profiles.md) — configuring a plugin per environment
 - [Grants](./21-grants.md) — bounding what an agent reaches through one
-- [Writing a plugin](./writing-a-plugin.md)
+- [Writing a plugin](./51-writing-a-plugin.md)

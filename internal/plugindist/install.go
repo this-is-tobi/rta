@@ -601,7 +601,7 @@ func namesLocalFile(rawURL string) bool {
 // this index attached from a path on this machine", not "did somebody local
 // write it". `git clone https://evil/rta-plugins && rta plugin index add
 // community ./rta-plugins` produces a local origin for an index somebody else
-// authored, and docs/writing-a-plugin.md teaches that attach-by-path shape.
+// authored, and docs/51-writing-a-plugin.md teaches that attach-by-path shape.
 // The gate stops a *remote* index from reaching into the filesystem; it does
 // not vouch for the contents of a local one, and nothing here could.
 //

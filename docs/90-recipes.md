@@ -305,4 +305,4 @@ rta doctor
 ## Next
 
 - [Grants](./21-grants.md) · [Team policy](./23-team-policy.md) · [The record](./22-audit-trail.md)
-- [Writing a plugin](./writing-a-plugin.md) — if the capability you want does not exist yet
+- [Writing a plugin](./51-writing-a-plugin.md) — if the capability you want does not exist yet
