@@ -61,6 +61,32 @@ func runWeb(ctx context.Context, req plugin.Request) (view.View, error) {
 
 	// Inspect, don't trust: skip verification so a bad chain still yields a
 	// report; validity is graded from the presented certificates instead.
+	//
+	// Nothing guards where this connects, and that is a decision rather than
+	// an omission — it has now been reported twice as a missing SSRF guard,
+	// so the reasoning lives here. builtin/http wires dialGuarded into its
+	// transport to refuse loopback, RFC1918 and link-local; this client
+	// deliberately does not, because "this agent may audit staging.internal
+	// for the next fifteen minutes" — the sentence Scope: "host" was written
+	// for, in audit.go's own words — names a private address by definition.
+	// net.probe, net.port and cert.expiry all dial bare for the same reason;
+	// http.get is the exception, not the rule, and it earns the exception by
+	// buffering up to a megabyte of response body. This reads none: the body
+	// is closed unread, and what reaches the caller is header values, cookie
+	// names, TLS facts and a Location. Pointed at a cloud metadata endpoint
+	// it returns the server banner and nothing else, because the credentials
+	// there live in a body this never opens.
+	//
+	// What that leaves open, said plainly because it is easy to rediscover
+	// and mistake for a bug: the grant authorizes a *name*, and this line is
+	// the first thing that ever resolves it. The operator approved a host
+	// minutes ago — a grant lives for its TTL — so a name answering with one
+	// address then and another now sends the request somewhere they did not
+	// picture, and a lying record does that without needing to win any race.
+	// Closing it means resolving at approval time and carrying the address
+	// into the request, which is one change across consent, grant and the
+	// request shape covering all four capabilities at once, not a transport
+	// swapped in here.
 	client := &stdhttp.Client{
 		Timeout: timeout,
 		// A grant on this capability names one host (Scope: "host"), and the
