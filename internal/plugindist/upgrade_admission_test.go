@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/this-is-tobi/rule-them-all/internal/atomicfile"
 	"github.com/this-is-tobi/rule-them-all/internal/plugintrust"
 )
 
@@ -39,7 +40,17 @@ func TestUpgradeRefusesStoreBytesThatAreNotTheLockedDigest(t *testing.T) {
 	stored := filepath.Join(StoreDir(), "hello", first.Digest, "rta-plugin-hello")
 	// Not a plugin at all: if this runs, the handshake fails and the test
 	// would report plugin.upgrade.old — the point is that it is never asked.
-	if err := os.WriteFile(stored, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	//
+	// Replaced rather than truncated, because installHello just *ran* these
+	// bytes. Linux refuses open(O_WRONLY) on an executable image that is still
+	// mapped, and it stays mapped past the wait() that reaped the process —
+	// measured at ~20ms during which /proc holds no process to blame. So
+	// os.WriteFile here failed with ETXTBSY on Linux and never once on macOS,
+	// which does not enforce the rule at all. A rename puts a new inode at the
+	// path without ever asking for write access on the executed one, which is
+	// also how the store itself installs (store.go's place): the test now
+	// reaches the path the way the code under test does.
+	if err := atomicfile.Write(stored, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
