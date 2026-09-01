@@ -1,10 +1,13 @@
 package plugindist
 
 import (
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
+	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
 
 const goodManifest = `name: pg
@@ -32,6 +35,45 @@ signature:
   sig: https://example.com/pg.sig
   key: https://example.com/pg.pub
 `
+
+// The cap on a manifest's bytes is not a cap on what those bytes expand into.
+// An index is cloned from a repository somebody else merges to and re-read on
+// every search, and 620 bytes of aliases nested through the fields Manifest
+// declares cost 3.86 GB — comfortably under the 1 MB cap that was the only
+// bound here. yaml.Strict() does not help: it refuses a misspelled key and
+// says nothing about a legal one whose value fans out.
+func TestAManifestBombIsRefusedBeforeItIsDecoded(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("a0: &a0 [x, x, x, x, x, x, x, x, x, x]\n")
+	for i := 1; i < 6; i++ {
+		fmt.Fprintf(&b, "a%d: &a%d [", i, i)
+		for j := range 10 {
+			if j > 0 {
+				b.WriteString(", ")
+			}
+			fmt.Fprintf(&b, "*a%d", i-1)
+		}
+		b.WriteString("]\n")
+	}
+	fmt.Fprintf(&b, "name: [*a5, *a5, *a5, *a5, *a5, *a5, *a5, *a5, *a5, *a5]\n")
+
+	done := make(chan *view.Error, 1)
+	go func() {
+		_, verr := ParseManifest([]byte(b.String()))
+		done <- verr
+	}()
+	select {
+	case verr := <-done:
+		if verr == nil {
+			t.Fatal("an alias-expansion bomb parsed as a manifest")
+		}
+		if verr.Code != "plugin.index.manifest" {
+			t.Fatalf("want plugin.index.manifest, got %s: %s", verr.Code, verr.Message)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("ParseManifest did not return within 2s — it expanded the bomb instead of refusing it")
+	}
+}
 
 func TestAManifestParsesAndItsClaimsAreLegible(t *testing.T) {
 	m, verr := ParseManifest([]byte(goodManifest))

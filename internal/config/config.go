@@ -8,17 +8,15 @@
 package config
 
 import (
-	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
 
 	"github.com/goccy/go-yaml"
-	"github.com/goccy/go-yaml/ast"
-	"github.com/goccy/go-yaml/parser"
 
 	"github.com/this-is-tobi/rule-them-all/internal/atomicfile"
 	"github.com/this-is-tobi/rule-them-all/internal/filelock"
+	"github.com/this-is-tobi/rule-them-all/internal/yamlguard"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
 
@@ -125,7 +123,7 @@ func LoadFile() (Config, error) {
 	case err != nil:
 		return cfg, view.Errorf("config.unreadable", "reading %s: %v", Path(), err)
 	default:
-		if err := refuseAnchors(data); err != nil {
+		if err := yamlguard.RefuseAnchors(data); err != nil {
 			return cfg, view.Errorf("config.invalid", "parsing %s: %v", Path(), err).
 				WithHint("fix the file or re-create it with `rta init`")
 		}
@@ -167,66 +165,6 @@ func LoadFile() (Config, error) {
 		}
 	}
 	return cfg, nil
-}
-
-// refuseAnchors rejects a config that uses a YAML anchor or alias
-// (&name / *name) before yaml.Unmarshal ever gets to decode it.
-//
-// Config has no legitimate use for either: it is a flat, known set of
-// fields (Output, Dashboard, Plugins, Theme), none of which benefit from
-// YAML's own value-reuse syntax. What they enable instead is a "billion
-// laughs" bomb — a handful of nested anchor/alias pairs, each fanning out
-// 10x into the next, expands a few hundred bytes of syntactically valid
-// YAML into 10^9+ decoded values, exhausting memory. And LoadFile runs at
-// the start of essentially every rta command, including read-only ones, so
-// simply having such a file at the config path (RTA_CONFIG, or the default
-// path — both routinely shared between operators and machines) denies
-// service on every subsequent invocation, not just once.
-//
-// Rather than pick a "safe" nesting depth or alias count a cleverer bomb
-// could still clear, this refuses the syntax outright — checked by parsing
-// alone, never decoding: goccy's parser builds a graph proportional to the
-// bytes on disk (an AliasNode holds the name it references, not a
-// dereferenced copy of the anchor's subtree), so walking that graph costs
-// exactly what parsing it already did, before anything is substituted.
-func refuseAnchors(data []byte) error {
-	file, err := parser.ParseBytes(data, 0)
-	if err != nil {
-		// yaml.Unmarshal will hit and report the identical parse failure
-		// with its own message; this just isn't it.
-		return nil
-	}
-	v := &anchorVisitor{}
-	for _, doc := range file.Docs {
-		ast.Walk(v, doc)
-		if v.found {
-			// The matched node is deliberately not echoed into the message:
-			// an AnchorNode's own String() walks the value it anchors, and
-			// while that is bounded by what is actually written in the
-			// file (never a dereferenced, expanded copy), there is no
-			// reason to stringify attacker-controlled YAML into an error
-			// message when naming the rule is enough.
-			return errAnchorsNotSupported
-		}
-	}
-	return nil
-}
-
-var errAnchorsNotSupported = errors.New(
-	"uses a YAML anchor or alias (&name / *name), which this file does not support")
-
-type anchorVisitor struct{ found bool }
-
-func (v *anchorVisitor) Visit(n ast.Node) ast.Visitor {
-	if v.found {
-		return nil
-	}
-	switch n.(type) {
-	case *ast.AnchorNode, *ast.AliasNode:
-		v.found = true
-		return nil
-	}
-	return v
 }
 
 // Load reads the config file and applies env overrides. Precedence:
