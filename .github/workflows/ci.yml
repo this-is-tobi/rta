@@ -111,6 +111,12 @@ jobs:
   # change that breaks the image is caught here rather than on a release.
   # PUSH: false exports it as a tarball instead — nothing is published from a
   # pull request.
+  #
+  # Both architectures the release ships, each on its own native runner
+  # (build-docker.yml's matrix — no QEMU). The release pipeline's arm64 leg
+  # would otherwise run for the first time on release day, which is the one
+  # day nobody wants a first time; a pure-Go build on a native arm runner
+  # costs about what the amd64 leg costs.
   build-docker:
     name: Build Docker image
     uses: this-is-tobi/github-workflows/.github/workflows/build-docker.yml@v0
@@ -124,7 +130,7 @@ jobs:
       IMAGE_DOCKERFILE: ./Dockerfile
       PUSH: false
       BUILD_AMD64: true
-      BUILD_ARM64: false
+      BUILD_ARM64: true
       BUILD_ARGS: |
         VERSION=pr-${{ github.event.pull_request.number }}
         COMMIT=${{ github.sha }}
@@ -133,7 +139,7 @@ jobs:
   # actually start in the image it was built into — the same class of gap
   # `cross` exists for below, one layer further out.
   test-docker:
-    name: Test Docker image
+    name: Test Docker image (amd64)
     needs: [build-docker]
     uses: this-is-tobi/github-workflows/.github/workflows/test-docker.yml@v0
     permissions:
@@ -142,6 +148,23 @@ jobs:
     with:
       IMAGE_ARTIFACT: ${{ needs.build-docker.outputs.artifact-prefix }}-amd64
       COMMAND: --version
+
+  # The arm64 image, actually executed — on the arm runner, so this runs the
+  # real binary rather than an emulation of it. This is the only place the
+  # suite runs anything on arm64 Linux at all: the test matrix is
+  # ubuntu-amd64 + macos-arm64, a gap that has already hidden one real bug
+  # (sys.cpu's blank model, invisible to both runners).
+  test-docker-arm64:
+    name: Test Docker image (arm64)
+    needs: [build-docker]
+    uses: this-is-tobi/github-workflows/.github/workflows/test-docker.yml@v0
+    permissions:
+      contents: read
+      packages: read
+    with:
+      IMAGE_ARTIFACT: ${{ needs.build-docker.outputs.artifact-prefix }}-arm64
+      COMMAND: --version
+      RUNS_ON: '["ubuntu-24.04-arm"]'
 
   # **A laptop can check this and nobody did.** `builtin/fs/platform.go`
   # asserted on `syscall.Stat_t` behind a comma-ok and documented the Windows
@@ -309,6 +332,7 @@ jobs:
     - build
     - build-docker
     - test-docker
+    - test-docker-arm64
     - cross
     - discover-plugins
     - lint-plugins
