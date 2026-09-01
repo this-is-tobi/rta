@@ -446,7 +446,7 @@ func pluginDetail(row pluginRow) string {
 	detail := origin + " · " + fmt.Sprintf("%d capabilities", len(row.plugin.Capabilities))
 	switch {
 	case !row.canTile():
-		detail += " · no dashboard tile: needs to be told what to look at"
+		detail += " · no dashboard tile: " + NoTileReason(row.plugin)
 	case row.shown:
 		detail += " · dashboard tile: " + row.tile
 	default:

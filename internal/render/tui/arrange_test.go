@@ -1651,3 +1651,80 @@ func TestKeysOnARefusedArtifactExplainThemselves(t *testing.T) {
 		}
 	}
 }
+
+// The two callers of NoTileReason each used to state one reason for every
+// tile-less plugin, and they picked opposite ones — the inventory said they
+// all needed input, `plugin dev` said none of them could run unasked. Each was
+// true of the plugin its author was looking at and wrong for most of the rest.
+//
+// Walked over the three shapes rather than asserting on today's plugin set, so
+// this keeps holding when a plugin changes which bucket it is in.
+func TestNoTileReasonTellsTheThreeApartFromEachOther(t *testing.T) {
+	read := func(id string, noPreview bool, required bool) plugin.Capability {
+		c := plugin.Capability{ID: id, Safety: plugin.Read, NoPreview: noPreview}
+		if required {
+			c.Inputs = []plugin.Field{{Name: "target", Type: plugin.String, Required: true}}
+		}
+		return c
+	}
+	cases := []struct {
+		name string
+		caps []plugin.Capability
+		want string
+	}{
+		{
+			name: "declines to run unasked",
+			caps: []plugin.Capability{read("x.a", true, false), read("x.b", true, false)},
+			want: "nothing here runs unasked",
+		},
+		{
+			name: "needs an argument",
+			caps: []plugin.Capability{read("x.a", false, true), read("x.b", false, true)},
+			want: "needs to be told what to look at",
+		},
+		{
+			name: "nothing that only reads",
+			caps: []plugin.Capability{{ID: "x.a", Safety: plugin.Destructive}},
+			want: "nothing here only reads",
+		},
+		{
+			name: "one of each",
+			caps: []plugin.Capability{read("x.a", true, false), read("x.b", false, true)},
+			want: "what it reads either needs input or declines to run unasked",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := NoTileReason(plugin.Plugin{Name: "x", Capabilities: c.caps})
+			if got != c.want {
+				t.Errorf("NoTileReason = %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+// The real plugin set is what the copy is actually read against, so at least
+// one plugin has to land in each of the two interesting buckets — otherwise
+// the distinction above is theory. kube declines (every capability sets
+// NoPreview); cert needs a target.
+func TestTheRealPluginSetExercisesBothReasons(t *testing.T) {
+	reg, err := all.Registry(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var declined, needsInput []string
+	for _, p := range reg.Plugins() {
+		if _, ok := TileFor(reg, p); ok {
+			continue
+		}
+		switch NoTileReason(p) {
+		case "nothing here runs unasked":
+			declined = append(declined, p.Name)
+		case "needs to be told what to look at":
+			needsInput = append(needsInput, p.Name)
+		}
+	}
+	if len(declined) == 0 || len(needsInput) == 0 {
+		t.Errorf("both reasons should be represented: declined=%v needsInput=%v", declined, needsInput)
+	}
+}

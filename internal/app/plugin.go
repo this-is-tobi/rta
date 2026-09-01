@@ -818,7 +818,7 @@ func devReport(reg *registry.Registry, c *pluginhost.Client) view.View {
 	if id, ok := tui.TileFor(reg, p); ok {
 		pairs = append(pairs, view.Pair{Key: "dashboard tile", Value: id})
 	} else {
-		pairs = append(pairs, view.Pair{Key: "dashboard tile", Value: "none — nothing here can run unasked"})
+		pairs = append(pairs, view.Pair{Key: "dashboard tile", Value: "none — " + tui.NoTileReason(p)})
 	}
 
 	caps := view.Table{Columns: []view.Column{

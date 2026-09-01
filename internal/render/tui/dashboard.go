@@ -186,6 +186,47 @@ func TileFor(reg *registry.Registry, p plugin.Plugin) (string, bool) {
 	return t.cap.ID, true
 }
 
+// NoTileReason says why a plugin has no dashboard tile.
+//
+// One function because there are three reasons and two callers, and until now
+// each caller stated one reason for all of them — in opposite directions. The
+// plugin inventory said every tile-less plugin "needs to be told what to look
+// at", which is true of cert and http and false of the dozen that decline to
+// run unasked; `rta plugin list` said "nothing here can run unasked", which is
+// the same sentence with the same flaw pointed the other way. Both were
+// written while looking at the plugin that motivated them.
+//
+// The distinction is worth keeping precise because the two have opposite
+// remedies: a capability that needs input can be given a default and become a
+// tile, while one that declined has to be told to run unasked — a decision
+// about consent, not about arguments. Telling an operator the wrong one sends
+// them to fix something that is not there.
+func NoTileReason(p plugin.Plugin) string {
+	var read, declined, needsInput int
+	for _, c := range p.Capabilities {
+		if c.Safety != plugin.Read {
+			continue
+		}
+		read++
+		if c.NoPreview {
+			declined++
+		}
+		if formNeeded(c) {
+			needsInput++
+		}
+	}
+	switch {
+	case read == 0:
+		return "nothing here only reads"
+	case declined == read:
+		return "nothing here runs unasked"
+	case needsInput == read:
+		return "needs to be told what to look at"
+	default:
+		return "what it reads either needs input or declines to run unasked"
+	}
+}
+
 // previewable reports whether the dashboard may run a capability on its own:
 // on load, then again every few seconds, with nobody watching.
 //
