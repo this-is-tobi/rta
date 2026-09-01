@@ -178,8 +178,26 @@ func StaticTokenVerifier(tokens map[string]string) auth.TokenVerifier {
 // non-blank, non-comment line, whitespace-separated. A line starting with #
 // is a comment.
 //
-// Refuses a file the group or world can read, write or execute. This file is
-// the entire trust anchor for the static-token path, and unlike
+// Refuses a file that anyone but its owner can write or execute, or that any
+// account on the machine can read; a file the *group* can read loads with a
+// warning rather than a refusal. That split is deliberate and is not the one
+// this comment used to claim — it said the group could not read either, while
+// the code only ever tested the world bits, so a 0640 file passed silently.
+// Corrected here rather than in the code because the two halves earn
+// different answers:
+//
+//   - Group *write* is authentication bypass, not exposure. A group member who
+//     can write this file appends a line with a token of their own choosing
+//     and is then a valid caller under whatever label they pick. Nothing rta
+//     documents needs the file writable by anyone but its owner, so this is
+//     refused outright, along with group execute.
+//   - Group *read* leaks the tokens that exist, which is worse than 0600 and
+//     better than the alternative of refusing to start: a shared-group file
+//     is how some deployments hand a credential to a service account, and
+//     docs/20-mcp.md promises only that world-readable files are refused.
+//     internal/app/mcp.go prints the warning, and the operator decides.
+//
+// This file is the entire trust anchor for the static-token path, and unlike
 // grants.json — which rta writes itself at 0600 and protects with an HMAC
 // seal against tampering, not exposure — rta never writes this one; the
 // operator does, by whatever means they chose, and a permission check at
@@ -211,13 +229,21 @@ func LoadTokenFile(path string) (tokens map[string]string, groupReadable bool, e
 	}
 	if runtime.GOOS != "windows" {
 		mode := info.Mode().Perm()
-		if mode&0o007 != 0 {
+		// 0o037: every world bit, plus group write (2) and group execute (1).
+		// Group read (0o040) is deliberately absent from the mask — it warns
+		// instead, see above. Worth spelling the digits out, because the first
+		// attempt at this wrote 0o027 and a comment claiming it covered group
+		// execute; 2 is write alone, and only the test for an 0o610 file said
+		// so. A permission mask is exactly the place a plausible-looking
+		// constant goes unchallenged.
+		if mode&0o037 != 0 {
 			return nil, false, fmt.Errorf(
-				"%s has weak permissions (mode %s) — someone besides its owner can read, write or "+
-					"execute it, and it is the entire trust anchor for the static-token path; chmod 600 it",
+				"%s has weak permissions (mode %s) — someone besides its owner can write or execute "+
+					"it, or any account on this machine can read it, and it is the entire trust anchor "+
+					"for the static-token path; chmod 600 it",
 				path, mode)
 		}
-		groupReadable = mode&0o070 != 0
+		groupReadable = mode&0o040 != 0
 	}
 	raw, err := io.ReadAll(f)
 	if err != nil {

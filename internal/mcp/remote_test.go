@@ -64,10 +64,18 @@ func TestComposeTriesEachAndFailsGenerically(t *testing.T) {
 	}
 }
 
+// Chmod after the write, not just WriteFile's mode argument: that argument
+// applies only at creation and is filtered by the process umask, so under the
+// common 022 a request for 0620 silently produced 0600 — a permission test
+// that cannot express the permission it is testing, and one that would have
+// reported the group-write refusal below as working before it existed.
 func writeTokenFile(t *testing.T, mode os.FileMode, body string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "tokens")
 	if err := os.WriteFile(path, []byte(body), mode); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, mode); err != nil {
 		t.Fatal(err)
 	}
 	return path
@@ -96,6 +104,25 @@ func TestLoadTokenFile(t *testing.T) {
 			t.Fatal("world-readable token file was accepted")
 		}
 	})
+	// The half the old mask missed entirely, and the more serious half: a
+	// group member who can write this file does not merely read the tokens,
+	// they append one of their own and become a valid caller under any label
+	// they like. Group read stays a warning (below); group write is a
+	// refusal.
+	t.Run("group-writable refuses", func(t *testing.T) {
+		path := writeTokenFile(t, 0o620, "alice tok-a\n")
+		if _, _, err := LoadTokenFile(path); err == nil {
+			t.Error("a group-writable token file was accepted")
+		}
+	})
+
+	t.Run("group-executable refuses", func(t *testing.T) {
+		path := writeTokenFile(t, 0o610, "alice tok-a\n")
+		if _, _, err := LoadTokenFile(path); err == nil {
+			t.Error("a group-executable token file was accepted")
+		}
+	})
+
 	t.Run("group-readable warns but loads", func(t *testing.T) {
 		if runtime.GOOS == "windows" {
 			t.Skip("POSIX permission bits do not apply")
