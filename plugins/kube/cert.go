@@ -20,10 +20,29 @@ import (
 // `--field-selector` rather than fetched-and-filtered — an Opaque secret's
 // `data` is API-token and password material with no reason to ever leave
 // the API server for this process's memory, let alone transit a JSON
-// unmarshal it has no use for. Within a TLS secret, only `tls.crt` is read.
-// `tls.key` is the private key: this capability never requests it, never
-// decodes it, and its absence from every struct below is the property under
-// test, not an oversight.
+// unmarshal it has no use for. That half holds: a non-TLS secret's data
+// genuinely never comes back.
+//
+// **Within a TLS secret, `tls.key` does arrive, and the struct below does not
+// stop it.** This comment used to say the opposite — that the private key "is
+// never requested", and that its absence from every struct here was "the
+// property under test, not an oversight". That was a category error worth
+// naming rather than quietly deleting, because it is an easy one to make
+// again: a struct governs what json.Unmarshal *keeps*, never what the API
+// server *sends*. Kubernetes has no field projection for a Secret's `data` —
+// `--field-selector` chooses which objects come back, never which keys inside
+// one — so every selected Secret arrives whole, private key included. Measured
+// rather than reasoned about: on a mid-sized cluster that is tens of TLS
+// secrets and tens of kilobytes of base64 key material, on every call. Asking
+// differently cannot avoid it; only asking less often can.
+//
+// What is true, and is the property actually worth stating: `tls.key` is never
+// decoded, never rendered, never logged and never written anywhere — it is
+// dropped at the unmarshal and the response buffer is all that ever held it.
+// What is not true is that it stays on the API server. So anything that raises
+// how often this runs multiplies how often every private key in the cluster
+// crosses the wire into this process — a dashboard tile on a refresh timer
+// most of all, which is the tradeoff to weigh before adding one.
 //
 // Expiry judgement would ideally be builtin/internal/x509check, the same
 // package `cert expiry` and `audit.web` use so two implementations cannot
