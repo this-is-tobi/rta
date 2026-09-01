@@ -741,7 +741,7 @@ func Load() ([]Grant, *view.Error) {
 // for the one that has to give a use back after a failed call. Refunding
 // needs the record Load has already filtered away.
 func loadAll() ([]Grant, *view.Error) {
-	data, err := os.ReadFile(Path())
+	data, err := atomicfile.ReadCapped(Path(), maxGrantFile)
 	if os.IsNotExist(err) {
 		return nil, nil
 	}

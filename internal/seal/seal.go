@@ -65,8 +65,13 @@ func Path(name string) string { return filepath.Join(paths.Data(), name) }
 // missing key there means the file being checked was written by something
 // that did not have one, and generating a fresh key to check it against
 // would turn "unforgeable" into "regenerate and accept".
+// maxKeyFile bounds a key read. A key is a fixed handful of bytes; anything
+// larger is not a key rta wrote, and reading it in full to discover that
+// would be doing the attacker's work for them.
+const maxKeyFile = 4 << 10
+
 func Key(name string, create bool) ([]byte, error) {
-	raw, err := os.ReadFile(Path(name))
+	raw, err := atomicfile.ReadCapped(Path(name), maxKeyFile)
 	if err == nil && len(raw) >= 32 {
 		return raw, nil
 	}

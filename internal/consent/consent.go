@@ -43,7 +43,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -437,7 +436,7 @@ func (p *Parked) Wait(ctx context.Context) Answer {
 // without letting a forged file cut short a question the operator is in the
 // middle of answering.
 func readDecision(key []byte, id string) (decision, bool) {
-	raw, err := os.ReadFile(decisionPath(id))
+	raw, err := atomicfile.ReadCapped(decisionPath(id), maxDecision)
 	if err != nil {
 		return decision{}, false
 	}
@@ -547,6 +546,14 @@ func Scan() (Queue, error) {
 // request, which is a few hundred bytes plus a preview.
 const maxRequest = 256 << 10
 
+// maxDecision bounds one decision file, for the reason above and one more:
+// a decision is the *authorization*, where a request is only the display of
+// one, and it is read on a 200ms poll for as long as a call stays parked —
+// so the unbounded read this replaces was the cheaper of the two to trigger
+// and the more valuable to hit. Decide writes a couple of hundred bytes;
+// 4 KiB is far past anything real and still nothing to load.
+const maxDecision = 4 << 10
+
 // load reads and parses one request by id, without judging it.
 //
 // The honesty check is the caller's, deliberately: the two callers want
@@ -567,20 +574,7 @@ func load(id string) (Request, bool) {
 
 // readRequestFile reads one request, refusing one too big to be genuine.
 func readRequestFile(id string) ([]byte, error) {
-	f, err := os.Open(requestPath(id))
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	buf := make([]byte, maxRequest+1)
-	n, err := io.ReadFull(f, buf)
-	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
-		return nil, err
-	}
-	if n > maxRequest {
-		return nil, fmt.Errorf("%s is larger than any request rta writes", requestPath(id))
-	}
-	return buf[:n], nil
+	return atomicfile.ReadCapped(requestPath(id), maxRequest)
 }
 
 // Pending lists the requests waiting right now, oldest first, sweeping any

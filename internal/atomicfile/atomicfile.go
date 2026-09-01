@@ -17,11 +17,53 @@
 package atomicfile
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 )
+
+// ReadCapped reads a file rta wrote, refusing one larger than rta writes.
+//
+// **This is the read half of the same problem Write solves, and it was
+// missing for as long as Write has existed.** These files sit under
+// paths.Data(), a directory whose threat model internal/consent states
+// plainly: "a directory whose whole threat model is that somebody else can
+// write there". Write makes rta's own writes whole; nothing made rta's own
+// *reads* survive a file rta did not write. An unbounded os.ReadFile on a
+// path a lower-trust process can replace is a way to take the operator's
+// terminal — or the server that reads this before every gated call — out with
+// a single large write, no seal forgery required, because the read happens
+// long before anything checks the seal.
+//
+// io.ReadFull into max+1 rather than a Stat: a Stat is a separate syscall
+// from the read, so the file can grow between them, and the check would be
+// on a size that is no longer the size. Reading one byte past the limit and
+// refusing on that byte cannot be raced — the bytes counted are the bytes
+// taken.
+//
+// The cap belongs to the caller because only the caller knows what its own
+// format writes. Size it as "larger than anything rta would ever put here",
+// not as "as small as possible": the point is to refuse a file that is
+// evidence of tampering, not to police a format that grew a field.
+func ReadCapped(path string, max int) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	buf := make([]byte, max+1)
+	n, err := io.ReadFull(f, buf)
+	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
+		return nil, err
+	}
+	if n > max {
+		return nil, fmt.Errorf("%s is larger than anything rta writes there (over %d bytes)", path, max)
+	}
+	return buf[:n], nil
+}
 
 // Write replaces path with data, atomically, at exactly perm.
 //

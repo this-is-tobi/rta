@@ -464,8 +464,23 @@ func anchorMAC(key []byte, a anchor) (string, error) {
 // leaves the chain it would have linked reported as broken. That is the
 // fail-closed direction: a forged anchor's whole purpose is to make a
 // deletion look like retention.
+// maxRetired and maxHead bound the two fixed-name files this package reads
+// whole, for the reason internal/atomicfile.ReadCapped states.
+//
+// The head is one record: 4 KiB is orders past it. The retired list is the
+// one file here that legitimately grows — one anchor per rotation, forever,
+// which is the point of it — so its cap is sized as a lifetime rather than a
+// working set: at a few hundred bytes per anchor, 8 MiB is tens of thousands
+// of rotations, far beyond any real install, while still refusing the single
+// enormous write this exists to stop. A cap that only has to be *reachable in
+// principle* is still a cap.
+const (
+	maxRetired = 8 << 20
+	maxHead    = 4 << 10
+)
+
 func readAnchors(key []byte) (map[int64]anchor, int, error) {
-	raw, err := os.ReadFile(retiredPath())
+	raw, err := atomicfile.ReadCapped(retiredPath(), maxRetired)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, 0, nil
 	}
@@ -574,7 +589,7 @@ func writeHead(key []byte, e Entry, seg int) error {
 // is itself reported: both mean nothing trustworthy says where the record
 // ends.
 func readHead(key []byte) (head, bool) {
-	raw, err := os.ReadFile(headPath())
+	raw, err := atomicfile.ReadCapped(headPath(), maxHead)
 	if err != nil {
 		return head{}, false
 	}

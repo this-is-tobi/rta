@@ -369,3 +369,43 @@ func TestPublishSurvivesTheWinnerLettingGo(t *testing.T) {
 	close(stop)
 	wg.Wait()
 }
+
+// ReadCapped's whole purpose is the file it refuses, so the refusal is what
+// the test is about — a version that only ever read small files would pass
+// every other assertion here.
+func TestReadCappedRefusesAFileLargerThanRtaWrites(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "state.json")
+	if err := os.WriteFile(path, make([]byte, 4096), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := ReadCapped(path, 1024); err == nil {
+		t.Error("a file four times the cap was read in full")
+	}
+
+	// The boundary itself, both sides: a file exactly at the cap is something
+	// rta could have written, so it must still load. Off-by-one here would
+	// reject real state and look like corruption.
+	if err := os.WriteFile(path, make([]byte, 1024), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ReadCapped(path, 1024)
+	if err != nil {
+		t.Fatalf("a file exactly at the cap was refused: %v", err)
+	}
+	if len(got) != 1024 {
+		t.Errorf("read %d bytes, want the whole 1024", len(got))
+	}
+}
+
+// A missing file has to stay distinguishable from a refused one: callers
+// branch on os.IsNotExist to mean "nothing trusted yet" or "no grants yet",
+// and turning that into a generic error would change what an empty machine
+// does.
+func TestReadCappedPassesNotExistThrough(t *testing.T) {
+	_, err := ReadCapped(filepath.Join(t.TempDir(), "absent.json"), 1024)
+	if !os.IsNotExist(err) {
+		t.Errorf("err = %v, want it to satisfy os.IsNotExist", err)
+	}
+}
