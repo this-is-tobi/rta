@@ -3,7 +3,7 @@
   "packages": {
     ".": {
       "release-type": "simple",
-      "initial-version": "0.0.0",
+      "initial-version": "0.1.0",
       "include-component-in-tag": false,
       "draft": false,
       "force-tag-creation": true,

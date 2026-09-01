@@ -1,12 +1,13 @@
 # Two things create a release, in order, and neither is allowed to own both
 # halves. release-please computes the version from conventional commits,
-# writes the changelog, and opens the release as a draft — force-tag-creation
-# is what makes the tag exist the moment the draft does, rather than only once
-# somebody publishes it, which is what release-go.yml needs to have anything
-# to build. GoReleaser then builds every target this repository ships and
-# attaches them to that same draft: release.mode in .goreleaser.yaml defaults
-# to keep-existing, so it never touches the notes release-please already
-# wrote, only the assets.
+# writes the changelog, and publishes the release — publishing is what makes
+# the tag exist, which is what release-go.yml needs to have anything to
+# build. force-tag-creation stays set as belt and braces: it is what would
+# keep the tag appearing if `draft` ever went back to true, where only
+# publishing creates one. GoReleaser then builds every target this
+# repository ships and attaches them to that same release: release.mode in
+# .goreleaser.yaml is keep-existing, so it never touches the notes
+# release-please already wrote, only the assets.
 #
 # Published immediately, not draft: merging a PR into main is the review gate
 # — a release-please "chore(main): release" PR included — so a second manual
