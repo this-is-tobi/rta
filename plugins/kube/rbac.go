@@ -66,6 +66,16 @@ var provisionable = map[string][]policyRule{
 	"kube.quota.list": {
 		{APIGroups: []string{""}, Resources: []string{"resourcequotas", "limitranges"}, Verbs: []string{"get", "list"}},
 	},
+	// Events are namespaced and read through the core/v1 endpoint, so unlike
+	// the node and namespace reads above this one maps cleanly onto a Role.
+	// Worth granting rather than withholding: "what is this namespace
+	// complaining about" is most of what an agent debugging one actually
+	// needs, and refusing it pushes whoever is driving that agent back to
+	// handing over their own kubeconfig, which is the outcome this whole
+	// mechanism exists to avoid.
+	"kube.event.list": {
+		{APIGroups: []string{""}, Resources: []string{"events"}, Verbs: []string{"get", "list"}},
+	},
 	"kube.pvc.list": {
 		{APIGroups: []string{""}, Resources: []string{"persistentvolumeclaims"}, Verbs: []string{"get", "list"}},
 	},

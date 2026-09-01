@@ -38,7 +38,8 @@ func TestProvisionableRulesNeverUseAWildcard(t *testing.T) {
 // either reappearing is a decision somebody makes on purpose, not a table
 // entry that crept back in.
 func TestUngrantableCapabilitiesStayUngrantable(t *testing.T) {
-	for _, id := range []string{"kube.cert.list", "kube.overview", "kube.namespace.list", "kube.metrics.node"} {
+	for _, id := range []string{"kube.cert.list", "kube.overview", "kube.namespace.list",
+		"kube.metrics.node", "kube.node.list"} {
 		if _, ok := provisionable[id]; ok {
 			t.Errorf("%s must not be grantable — see provisionable's doc comment for why", id)
 		}
