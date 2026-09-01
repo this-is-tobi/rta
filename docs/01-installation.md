@@ -82,6 +82,25 @@ rta completion fish > ~/.config/fish/completions/rta.fish
 
 Restart your shell afterwards.
 
+## External tools
+
+The binary is self-contained and the core needs nothing. Some capabilities shell out to a tool you already have, rather than linking a client library — that is a deliberate trade, and it is why your existing credentials, proxies, contexts and credential helpers keep working without rta learning about any of them.
+
+Nothing here is required to install or run rta. A missing tool costs you exactly the capabilities that use it, and the refusal names the tool.
+
+| Tool | Needed for | If it is missing |
+| --- | --- | --- |
+| `git` | `rta plugin index add/update`, the `git.*` capabilities | Indexes cannot be attached; `git.*` is unavailable |
+| `kubectl` | the `kube` and `cnpg` plugins, `audit.kube.*`, and `kube:` tunnel targets | Those capabilities refuse, naming kubectl |
+| `pg_dump` | `pg.dump` only — `pg.query` and the rest of the `pg` plugin connect in-process and need nothing | `pg.dump` refuses; every other `pg.*` capability is unaffected |
+| `docker` | the `docker` plugin | Those capabilities refuse |
+| `ssh` | `ssh:` tunnel targets | Those targets cannot be resolved |
+| `cosign` | verifying a plugin artifact's signature, when an index states one | The outcome is recorded as unverifiable; **an install is never blocked, because a signature is recorded and never required** |
+
+Version policy is the same for all of them: rta uses what is on your `$PATH` and adopts none of their maintenance. There is no preflight check — a capability looks its tool up when you run it, and refuses by name if it is not there.
+
+Two consequences worth knowing. The container image is distroless, so it carries none of these — a containerised `rta mcp serve` covers the capabilities that need no external tool, and [MCP and the safety gate](./20-mcp.md) says which. And a plugin that reads a credential location, such as kubectl's `~/.kube/config`, still needs `rta plugin allow` before it may: having the tool is not being granted the file.
+
 ## Configuration
 
 rta runs with no configuration at all. When you want some:

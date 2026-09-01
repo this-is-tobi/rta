@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -68,10 +69,29 @@ func TestTheIncludeAndFormatFlagsMap(t *testing.T) {
 	}
 }
 
+// needsPgDump skips a test that cannot reach its own subject without pg_dump
+// on $PATH.
+//
+// runFullDump looks the tool up before it checks anything else, and that order
+// is right for the operator: "no pg_dump on $PATH" is the blocker to fix
+// first, and reversing it would send somebody to move a file and then meet the
+// real problem anyway. It does mean these two tests assert on a refusal that
+// happens *after* the lookup, so without the tool they fail on a message about
+// something else entirely — which is a broken test, not a broken product, and
+// is how it failed on a CI runner with no postgres client installed while
+// passing on every developer machine that has one.
+func needsPgDump(t *testing.T) {
+	t.Helper()
+	if _, err := exec.LookPath("pg_dump"); err != nil {
+		t.Skip("pg_dump is not on $PATH, and this test's subject is only reachable past the lookup")
+	}
+}
+
 // **A dump is never written over an existing file**, the same discipline
 // keys.restore applies to a restored key. O_EXCL rather than a stat followed
 // by a create, because a backup should not have that race.
 func TestAnExistingFileIsNeverOverwritten(t *testing.T) {
+	needsPgDump(t)
 	path := filepath.Join(t.TempDir(), "app.sql")
 	if err := os.WriteFile(path, []byte("the backup that already existed"), 0o600); err != nil {
 		t.Fatal(err)
@@ -223,6 +243,7 @@ func TestParallelReachesBothTheDumpAndTheRestore(t *testing.T) {
 // explicitly. plugins/s3's object.get is the counter-example in this
 // codebase: it writes on --dry-run.
 func TestDryRunCreatesNothing(t *testing.T) {
+	needsPgDump(t)
 	path := filepath.Join(t.TempDir(), "app.sql")
 	v, err := runFullDump(context.Background(),
 		dryRunReqFor(t, "pg.dump", map[string]any{"out": path}))
