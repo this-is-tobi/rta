@@ -304,7 +304,7 @@ func TestRemoteHidesHostSpecificCapabilities(t *testing.T) {
 // way to detect "this capability describes the host rta runs on" the way
 // TestEveryPathInputIsConfined detects a Path input, so unlike that test this
 // one cannot force a new capability to be considered — only pin what was
-// already decided. See docs/writing-a-plugin.md for the convention new
+// already decided. See docs/51-writing-a-plugin.md for the convention new
 // plugins are asked to follow instead.
 func TestHostSpecificCoversExactlyTheKnownHostDescribingCapabilities(t *testing.T) {
 	want := map[string]bool{
