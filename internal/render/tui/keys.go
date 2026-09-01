@@ -111,6 +111,11 @@ var (
 	// row marked "not run" is deciding whether to allow it, and that is the
 	// word for it.
 	bindTrust = binding{display: "t", keys: []string{"t"}, label: "approve", rank: rankAction}
+	// "allow" and not "grant": the file, the command (`rta plugin allow`) and
+	// the row's own warning all say allow, and a footer inventing a fourth
+	// word for the thing three other surfaces already name is how somebody
+	// comes to look for a `grant` subcommand that does something else.
+	bindAllow = binding{display: "a", keys: []string{"a"}, label: "allow", rank: rankAction}
 
 	// One notation for moving a cursor, everywhere. The dashboard is a grid
 	// and the others are columns, but "the arrow keys move the thing you are
@@ -313,7 +318,7 @@ func (m Model) footerItems(screen mode) []hintItem {
 		return m.resultFooterItems()
 	case modePlugins:
 		return []hintItem{
-			item(bindColumn), item(bindToggle), item(bindTrust), item(bindConfig),
+			item(bindColumn), item(bindToggle), item(bindTrust), item(bindAllow), item(bindConfig),
 			labelled(bindOpen, "capabilities"),
 			// The key that opened the pane closes it — the habit every pane
 			// with a letter shortcut trains, and one nobody needs told.

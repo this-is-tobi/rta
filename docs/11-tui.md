@@ -105,10 +105,15 @@ Destructive capabilities confirm before acting, the same as on the CLI.
 | `p` | Open the inventory (and close it) |
 | `space` | Show or hide its dashboard tile |
 | `t` | Approve an artifact, or take an approval back |
+| `a` | Choose which credential locations it may read |
 | `c` | Configure it |
 | `enter` | Its capabilities, in the search bar |
 
 `t` is the decision made where the evidence is: the digest and the path are on the screen while you take it, which the command line shows you only afterwards. Neither direction takes effect on the process you are in — trust is read once, before anything is launched — so approving says it loads when rta restarts, and withdrawing says the plugin already running stays running until rta exits.
+
+`a` is the permission after that one. Approving says these bytes may run; allowing says what they may read — a kubeconfig, an SSH directory, whatever the plugin declares it needs. The row shows both sides: what it has been allowed, and what it is still asking for.
+
+**`a` opens a form where `t` is a keypress, and the difference is deliberate.** Approving is one yes/no about one thing already named on the row. Allowing is plural — a plugin can declare several locations, and a bare key would hand over every one of them from a cursor position. The form is also what makes taking access back expressible: the list you submit *is* the whole grant, so clearing a box withdraws that location and there is no second command to learn. A plugin you have not approved yet cannot be allowed anything — running at all is the decision that comes first, and the pane says so rather than opening a form that could not succeed.
 
 ## Working with results
 

@@ -99,6 +99,14 @@ type capForm struct {
 	// heading (bare for a built-in, pinned to the artifact otherwise).
 	configTarget string
 	configOrigin registry.Origin
+	// allowTarget/allowDigest mark the credential-allow editor
+	// (internal/render/tui/pluginallow.go), which reuses this form for the
+	// same reason the two above do: its fields are one Bool per declared
+	// plugin.Need, and only the submit differs. The digest is carried
+	// alongside the name because a grant binds to the artifact, never to the
+	// name — the same rule `rta plugin trust` and `rta plugin install` hold.
+	allowTarget string
+	allowDigest string
 	// profileTarget/profileEditing mark the profile editor, which reuses this
 	// form for the same reason the plugin config editor does: a profile's
 	// `set:` block is keyed by Field.Config, and configFields already collects
