@@ -71,6 +71,13 @@ func TestAltEnterOnAnEmptyThemeFormSavesNoOverrides(t *testing.T) {
 }
 
 func TestAltEnterOnTheCopyPickerAcceptsTheDefaultChoice(t *testing.T) {
+	// Without this the test asserts on whatever clipboard the machine
+	// running it happens to have. A headless runner has none, and
+	// clipboard.Copy then reports honestly that it could not copy — so the
+	// assertion below fails for a property of the box rather than of the
+	// code. Seven tests in this package already stand a fake in; these did
+	// not, and passed only where pbcopy exists.
+	fakeClipboard(t)
 	c := plugin.Capability{
 		ID: "gen.password", Summary: "s", Safety: plugin.Read,
 		Run: func(context.Context, plugin.Request) (view.View, error) {

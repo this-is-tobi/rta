@@ -198,6 +198,13 @@ func TestResizingWhileThePickerIsOpenDoesNotPanic(t *testing.T) {
 // Select's bound value to its first option before any key is pressed, and
 // with one field in the group that same Enter both confirms and submits.
 func TestPressingCThenEnterCopiesTheDefaultChoice(t *testing.T) {
+	// Without this the test asserts on whatever clipboard the machine
+	// running it happens to have. A headless runner has none, and
+	// clipboard.Copy then reports honestly that it could not copy — so the
+	// assertion below fails for a property of the box rather than of the
+	// code. Seven tests in this package already stand a fake in; these did
+	// not, and passed only where pbcopy exists.
+	fakeClipboard(t)
 	reg := registry.New()
 	if err := reg.Register(plugin.Plugin{
 		Name: "gen", Summary: "gen",
@@ -350,6 +357,13 @@ func TestDashFooterOffersCopyOnlyWhenTheSelectedTileHasSomethingToCopy(t *testin
 // tile from a fresh dashboard, copy straight off its preview without
 // opening it, confirm the default choice, land back on the dashboard.
 func TestPressingCOnTheRealGenTileEndToEnd(t *testing.T) {
+	// Without this the test asserts on whatever clipboard the machine
+	// running it happens to have. A headless runner has none, and
+	// clipboard.Copy then reports honestly that it could not copy — so the
+	// assertion below fails for a property of the box rather than of the
+	// code. Seven tests in this package already stand a fake in; these did
+	// not, and passed only where pbcopy exists.
+	fakeClipboard(t)
 	// Tall enough for the whole shipped dashboard: this test is about what
 	// `c` does on the gen tile, and a terminal that cannot show that tile
 	// makes it fail for a reason that has nothing to do with copying.
