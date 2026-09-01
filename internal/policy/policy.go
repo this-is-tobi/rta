@@ -40,8 +40,9 @@ import (
 
 	"github.com/goccy/go-yaml"
 
+	"github.com/this-is-tobi/rule-them-all/internal/atomicfile"
 	"github.com/this-is-tobi/rule-them-all/internal/config"
-
+	"github.com/this-is-tobi/rule-them-all/internal/yamlguard"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
@@ -49,6 +50,11 @@ import (
 // RepoFile is the name looked for on the way up from the working directory.
 // Dotted and rta-named, so a repository holding one is obviously holding one.
 const RepoFile = ".rta-policy.yaml"
+
+// maxPolicyFile bounds one policy file. Sized as "larger than anything a
+// person writes by hand" rather than as small as possible: the point is to
+// refuse a file that is evidence of something other than a policy.
+const maxPolicyFile = 256 << 10
 
 // maxWalk bounds the climb toward the filesystem root. A path deeper than
 // this is not a repository checkout, and an unbounded loop over a path is
@@ -289,7 +295,12 @@ func OperatorPath() string {
 // read parses one file. A missing file is an empty ceiling unless the caller
 // asked for it by name.
 func read(path string, mustExist bool) (Ceiling, *view.Error) {
-	data, err := os.ReadFile(path)
+	// Capped because the anchor guard below bounds what the bytes *expand*
+	// into and nothing bounded the bytes themselves: this file is found by
+	// walking up from the working directory, so a cloned repository chooses
+	// its size, and Ceiling() re-reads it on every gated call. A ceiling that
+	// needs a megabyte is not a ceiling anybody wrote by hand.
+	data, err := atomicfile.ReadCapped(path, maxPolicyFile)
 	if os.IsNotExist(err) {
 		if mustExist {
 			return Ceiling{}, view.Errorf("policy.missing",
@@ -303,6 +314,27 @@ func read(path string, mustExist bool) (Ceiling, *view.Error) {
 		return Ceiling{}, view.Errorf("policy.unreadable", "reading %s: %v", path, err)
 	}
 	var c Ceiling
+	// Before the decode, because the expansion *is* the decode. This file is
+	// the most exposed of the three rta parses: Load walks up to 64 parents
+	// from the working directory looking for it, which for an MCP server is
+	// whatever directory the client launched it from, so a cloned repository
+	// ships one and every gated call re-reads it — Ceiling() is deliberately
+	// uncached, measured at 7.7µs against a benign file. A hostile one is not
+	// bounded by that measurement: 510 bytes of nested aliases aimed at any
+	// declared []string field here cost 37.8 seconds and 34.7 GB.
+	//
+	// The subtract-only argument this package rests on ("the worst a hostile
+	// edit achieves is that rta refuses more than it should, which is loud,
+	// local and recoverable") is an argument about authority, and it does not
+	// reach availability: an OOM kill is not a refusal, it lands on every
+	// gated call rather than one, and `rta policy show` — the command the
+	// refusal below tells the operator to run — loads the same file and dies
+	// the same way.
+	if err := yamlguard.RefuseAnchors(data); err != nil {
+		return Ceiling{}, view.Errorf("policy.malformed", "%s: %v", path, err).
+			WithHint("a policy that cannot be parsed is not a policy — fix it, or " +
+				"remove it and say so to whoever shares it")
+	}
 	if err := yaml.Unmarshal(data, &c); err != nil {
 		return Ceiling{}, view.Errorf("policy.malformed", "%s: %v", path, err).
 			WithHint("a policy that cannot be parsed is not a policy — fix it, or " +

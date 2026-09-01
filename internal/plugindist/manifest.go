@@ -20,6 +20,7 @@ import (
 	"github.com/goccy/go-yaml"
 
 	"github.com/this-is-tobi/rule-them-all/internal/textclean"
+	"github.com/this-is-tobi/rule-them-all/internal/yamlguard"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
@@ -122,6 +123,15 @@ func ParseManifest(raw []byte) (Manifest, *view.Error) {
 	if len(raw) > manifestCap {
 		return m, view.Errorf("plugin.index.manifest", "manifest is %d bytes; the cap is %d",
 			len(raw), manifestCap)
+	}
+	// manifestCap above bounds the bytes on disk; this bounds what they
+	// expand into, and the two are not interchangeable — a 620-byte manifest
+	// nesting aliases through the fields Manifest actually declares costs
+	// 3.86 GB, comfortably under the 1 MB cap. yaml.Strict() does not help
+	// either: it is DisallowUnknownField, so it refuses a misspelled key and
+	// says nothing about a legal one whose value fans out.
+	if err := yamlguard.RefuseAnchors(raw); err != nil {
+		return m, view.Errorf("plugin.index.manifest", "%v", err)
 	}
 	if err := yaml.UnmarshalWithOptions(raw, &m, yaml.Strict()); err != nil {
 		return m, view.Errorf("plugin.index.manifest", "%s",

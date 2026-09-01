@@ -1,10 +1,14 @@
 package policy
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
 
 // chdir moves into dir for the test, so the walk-up has something to find.
@@ -174,6 +178,56 @@ func TestForbidsUsesPluginNamespaceNotAHandRolledCopy(t *testing.T) {
 
 // A policy that cannot be parsed is not a policy, and must not read as an
 // absent one — that is the failure this whole package is written against.
+// The subtract-only property this package rests on is an argument about
+// authority, and it does not reach availability. A hostile repository ships
+// this file, Load walks up to 64 parents to find it, and Ceiling() is
+// deliberately uncached — so every gated call re-reads it. Unguarded, 510
+// bytes aimed at any declared []string field here cost 37.8 seconds and
+// 34.7 GB before the decoder gave up on a type mismatch, which means the
+// mismatch is not a defense: the memory is committed before the error.
+//
+// Asserting the refusal is *fast* is the point. A slow refusal is the same
+// wall reached by a longer route.
+func TestAPolicyBombIsRefusedBeforeItIsDecoded(t *testing.T) {
+	isolate(t)
+	dir := t.TempDir()
+	var b strings.Builder
+	b.WriteString("a0: &a0 [x, x, x, x, x, x, x, x, x, x]\n")
+	for i := 1; i < 6; i++ {
+		fmt.Fprintf(&b, "a%d: &a%d [", i, i)
+		for j := range 10 {
+			if j > 0 {
+				b.WriteString(", ")
+			}
+			fmt.Fprintf(&b, "*a%d", i-1)
+		}
+		b.WriteString("]\n")
+	}
+	// Aimed at a field Ceiling actually declares: an anchor chain sitting in
+	// keys it ignores is skipped cheaply, so a bomb in an undeclared key
+	// would prove nothing.
+	fmt.Fprintf(&b, "never: [*a5, *a5, *a5, *a5, *a5, *a5, *a5, *a5, *a5, *a5]\n")
+	write(t, dir, b.String())
+	chdir(t, dir)
+
+	done := make(chan *view.Error, 1)
+	go func() {
+		_, verr := Load()
+		done <- verr
+	}()
+	select {
+	case verr := <-done:
+		if verr == nil {
+			t.Fatal("an alias-expansion bomb loaded as a policy")
+		}
+		if verr.Code != "policy.malformed" {
+			t.Fatalf("want policy.malformed, got %s: %s", verr.Code, verr.Message)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Load did not return within 2s — it expanded the bomb instead of refusing it")
+	}
+}
+
 func TestAMalformedPolicyIsAnErrorAndNotAnAbsentOne(t *testing.T) {
 	isolate(t)
 	dir := t.TempDir()
