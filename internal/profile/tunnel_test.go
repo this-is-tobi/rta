@@ -281,8 +281,17 @@ func TestKubeSecretsReadsEachDistinctSecretInTheCoordinatesNamespace(t *testing.
 	}
 	// Sorted, so a connection with two unreadable Secrets names the same one
 	// twice running and a rerun is about the cluster rather than map order.
-	if !strings.Contains(got[0], " one ") || !strings.Contains(got[1], " two ") {
+	// Matched at the end of the argv rather than surrounded by spaces: the
+	// name is the last argument because a `--` separates it from the flags.
+	if !strings.HasSuffix(got[0], " one") || !strings.HasSuffix(got[1], " two") {
 		t.Errorf("Secrets were not read in a stable order: %v", got)
+	}
+	// The separator itself, which is what stops a Secret named like a flag
+	// from being read as one.
+	for _, call := range got {
+		if !strings.Contains(call, " -- ") {
+			t.Errorf("the Secret name was not separated from the flags: %q", call)
+		}
 	}
 }
 
