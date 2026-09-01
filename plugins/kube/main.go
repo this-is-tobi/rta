@@ -152,7 +152,7 @@ func Plugin() plugin.Plugin {
 				"with --all-namespaces. Restarts are worth reading: a pod that is Running and " +
 				"has restarted forty times is not healthy, and only one of those two facts " +
 				"shows in its status. --unhealthy narrows to pods that are not serving: Failed, " +
-				"Pending, or Running without every container ready. A pod in Succeeded is not " +
+				"Pending, Unknown, or Running without every container ready. A pod in Succeeded is not " +
 				"included — a finished Job is not a broken one. The same judgement " +
 				"kube.overview makes, available here without the rest of the overview.",
 			Safety:     plugin.Read,
@@ -160,7 +160,7 @@ func Plugin() plugin.Plugin {
 			Scope:      "namespace",
 			Run:        runPodList,
 		}, append(nsFields(), plugin.Field{Name: "unhealthy", Type: plugin.Bool,
-			Help: "only pods that are not serving — Failed, Pending, or Running without every container ready"})...),
+			Help: "only pods that are not serving — Failed, Pending, Unknown, or Running without every container ready"})...),
 		cap(plugin.Capability{
 			ID:      "kube.deployment.list",
 			Summary: "Deployments in a namespace, with how many replicas are actually ready",
@@ -236,8 +236,13 @@ func Plugin() plugin.Plugin {
 			ID:      "kube.overview",
 			Summary: "One cluster at a glance: where you are pointed and what is not healthy",
 			Description: "The context, whether the cluster answers, how many namespaces it " +
-				"has, and every pod that is not Running or not fully ready. With --detail: " +
-				"deployments whose replicas are short, and the pods themselves.",
+				"has, and every pod that is not serving — Failed, Pending, Unknown, or " +
+				"Running without every container ready. A finished Job in Succeeded is not " +
+				"one of them. With --detail: deployments whose replicas are short, and the " +
+				"pods themselves.\n\nReads more than it names: every ResourceQuota and every " +
+				"TLS Secret in every namespace, on every run and regardless of any namespace " +
+				"narrowing, to report quota pressure and certificate expiry. See kube.cert.list " +
+				"for what reading a TLS Secret costs — it applies here too, unconditionally.",
 			Safety:     plugin.Read,
 			Idempotent: true,
 			Detailed:   true,

@@ -189,8 +189,13 @@ func (m *Model) toggleShown(idx int) string {
 		return untrustedNote(*row)
 	}
 	if !row.canTile() {
-		// Saying why beats a key that silently does nothing.
-		return row.plugin.Name + " has nothing to show without being told what to look at"
+		// Saying why beats a key that silently does nothing — and saying the
+		// *right* why matters more here than in the inventory line, because
+		// this fires on a keypress somebody made expecting something to
+		// happen. Through NoTileReason rather than a sentence of its own: this
+		// was the third copy of "needs to be told what to look at", which is
+		// wrong for every plugin that simply declines to run unasked.
+		return row.plugin.Name + " has no dashboard tile: " + NoTileReason(row.plugin)
 	}
 	row.shown = !row.shown
 

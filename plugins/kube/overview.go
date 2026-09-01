@@ -98,19 +98,39 @@ func runOverview(ctx context.Context, req plugin.Request) (view.View, error) {
 		// reports the unreachability and everything it could still learn from
 		// the kubeconfig, rather than refusing outright.
 		//
-		// But "did not answer" was applied to every failure, including the two
-		// where the cluster answered perfectly well and said no — rendering an
-		// RBAC refusal as `did not answer — namespaces is forbidden: User ...
-		// cannot list resource "namespaces"`, a sentence that contradicts
-		// itself inside its own line and sends the reader looking for a
-		// network problem they do not have. classify() already separates these
-		// into their own codes; this just stops throwing that away.
-		answer := "did not answer"
+		// But "did not answer" was applied to every failure, and only one of
+		// the three kinds classify() distinguishes actually means silence.
+		//
+		// Two of them mean the cluster answered and said no, which rendered as
+		// `did not answer — namespaces is forbidden: User ... cannot list
+		// resource "namespaces"` — a sentence that contradicts itself inside
+		// its own line.
+		//
+		// The rest never reached a cluster at all: no kubeconfig, an unknown
+		// context, kubectl not installed, the call cancelled. Those read worse
+		// than the refusal did, because "did not answer" sends somebody to
+		// check a VPN and a firewall over a purely local problem — and
+		// `kubectl` missing is the most likely way this plugin fails on a
+		// machine the first time.
+		//
+		// classify() already draws both distinctions and hands over its own
+		// hint per code; all this does is stop discarding them.
+		// The default is deliberately the vaguest of the four rather than the
+		// most common one. "did not answer" is a claim about the network, and
+		// a code this does not recognise — kube.failed is the catch-all, and
+		// classify() may grow others — is precisely the case where that claim
+		// is unsupported. An unmapped code now says only that the read did not
+		// happen, which is the part that is always true.
+		answer := "could not be read"
 		switch f.nsErr.Code {
 		case "kube.forbidden":
 			answer = "answered, and refused"
 		case "kube.unauthorized":
 			answer = "answered, and did not accept this credential"
+		case "kube.noconfig", "kube.context.unknown", "kube.kubectl.missing", "kube.cancelled":
+			answer = "was never contacted"
+		case "kube.unreachable":
+			answer = "did not answer"
 		}
 		pairs = append(pairs,
 			view.Pair{Key: "cluster", Value: answer + " — " + f.nsErr.Message},

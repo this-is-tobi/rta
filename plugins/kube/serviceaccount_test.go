@@ -284,6 +284,72 @@ func TestRevokeRefusesAnInvalidName(t *testing.T) {
 // The path is often an existing kubeconfig, and by the time the write happens
 // the ServiceAccount backing the new token already exists on the cluster, so a
 // half-written file is not something re-running fixes.
+// The O_EXCL at the write is the race-free guarantee, but on its own it fires
+// only after the ServiceAccount, Role, RoleBinding and token have been
+// created — so an existing --out would burn the name, orphan three objects and
+// discard a token that cannot be recovered. Observed exactly that against a
+// real cluster before the up-front check existed. failIfInvoked is what makes
+// "cheaply" the property under test rather than just "refused".
+func TestOutThatAlreadyExistsIsRefusedBeforeAnyClusterCall(t *testing.T) {
+	failIfInvoked(t)
+	path := filepath.Join(t.TempDir(), "kubeconfig")
+	if err := os.WriteFile(path, []byte("A WORKING KUBECONFIG"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := runServiceAccountProvision(context.Background(), saReq(plugin.SurfaceCLI, false, map[string]any{
+		"name": "agent-a", "namespace": "team-prod",
+		"capability": []string{"kube.pod.list"}, "ttl": "15m", "out": path,
+	}))
+	ve := view.AsError(err, "x")
+	if ve == nil || ve.Code != "kube.serviceaccount.out.exists" {
+		t.Errorf("want kube.serviceaccount.out.exists before any cluster call, got %v", err)
+	}
+}
+
+func TestOutRefusesAnExistingFileUnlessForced(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "kubeconfig")
+	const previous = "A WORKING KUBECONFIG"
+	if err := os.WriteFile(path, []byte(previous), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	verr := writeKubeconfig(path, []byte("MINTED"), false)
+	if verr == nil {
+		t.Fatal("an existing credential file was silently replaced")
+	}
+	if verr.Code != "kube.serviceaccount.out.exists" || verr.Hint == "" {
+		t.Errorf("want a coded, hinted refusal naming --force, got %+v", verr)
+	}
+	got, _ := os.ReadFile(path)
+	if string(got) != previous {
+		t.Errorf("the refused write still changed the file: %q", got)
+	}
+
+	if verr := writeKubeconfig(path, []byte("MINTED"), true); verr != nil {
+		t.Fatalf("--force did not replace the file: %v", verr)
+	}
+	got, _ = os.ReadFile(path)
+	if string(got) != "MINTED" {
+		t.Errorf("content after --force = %q, want the new credential", got)
+	}
+}
+
+// A fresh path needs no --force, and lands at 0600 either way.
+func TestOutWritesAFreshPathAt0600(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "kubeconfig")
+	if verr := writeKubeconfig(path, []byte("MINTED"), false); verr != nil {
+		t.Fatal(verr)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf("mode = %v, want 0600 — this is a bearer token", info.Mode().Perm())
+	}
+}
+
 func TestTheMintedKubeconfigReplacesAnExistingFileWholly(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "kubeconfig")
@@ -319,5 +385,38 @@ func TestTheMintedKubeconfigReplacesAnExistingFileWholly(t *testing.T) {
 		if strings.HasSuffix(e.Name(), ".tmp") {
 			t.Errorf("a temporary file holding credential bytes was left behind: %s", e.Name())
 		}
+	}
+}
+
+// The other half of "wholly old or wholly new", and the half that is the
+// reason for the change: when the write cannot happen at all, what was there
+// before has to survive intact. os.WriteFile fails this by construction — it
+// truncates first, so the previous credential is already gone by the time the
+// error is returned.
+//
+// The failure is forced by making the *directory* unwritable, which is what
+// stops CreateTemp rather than the write itself, so this exercises the
+// earliest failure point rather than the most convenient one.
+func TestAFailedWriteLeavesThePreviousCredentialIntact(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "kubeconfig")
+	const previous = "PREVIOUS CREDENTIAL THAT MUST SURVIVE"
+	if err := os.WriteFile(path, []byte(previous), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+
+	if err := writeAtomically(path, []byte("MINTED"), 0o600); err == nil {
+		t.Fatal("writing into an unwritable directory reported success")
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != previous {
+		t.Errorf("content = %q, want the previous credential untouched", got)
 	}
 }

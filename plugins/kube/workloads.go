@@ -273,11 +273,20 @@ func deploymentTable(deps []deploymentItem, withNS bool) view.Table {
 // action. A namespace list is a read the caller could have made anyway, and
 // it is bounded by the same timeout as every other call here.
 func suggestNamespaces(ctx context.Context, req plugin.Request) []string {
-	s, verr := selectionOf(req)
-	if verr != nil {
+	// Only the context is read, and deliberately not through selectionOf.
+	//
+	// This lists every namespace, so the namespace and all-namespaces fields
+	// are not inputs to it — the previous version validated both and then
+	// immediately cleared them. That was harmless until selectionOf started
+	// refusing the two together, at which point completion went silent in the
+	// one situation it is most wanted: somebody tab-completing a namespace on
+	// a line that already carries --all-namespaces. Refusing the *call* there
+	// is right; refusing to *suggest* is just withholding the list that shows
+	// them what they are choosing between.
+	s := selection{Context: strings.TrimSpace(req.String("context"))}
+	if verr := checkName("context", s.Context); verr != nil {
 		return nil
 	}
-	s.Namespace, s.AllNS = "", false
 	var out list[namespaceItem]
 	if verr := getJSON(ctx, s, "namespaces", &out); verr != nil {
 		return nil

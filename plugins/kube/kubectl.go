@@ -118,12 +118,15 @@ func selectionOf(req plugin.Request) (selection, *view.Error) {
 	// *and* all-namespaces together, satisfy the scope check on the first, and
 	// have the request answered from every namespace in the cluster.
 	//
-	// Latent rather than live today, only because no kube capability sets
-	// NeedsGrant and none is Destructive — grant.Required() is false, so the
-	// check never runs. A profile makes it true, and so would adding
-	// NeedsGrant to any of these later. Closing it at the point where the two
-	// fields are read means the bypass cannot come back by way of a decision
-	// somewhere else that looks unrelated.
+	// Latent rather than live today, only because no *namespace-scoped* kube
+	// capability sets NeedsGrant or is Destructive, so grant.Required() is
+	// false for every capability that carries these two fields and the check
+	// never runs. (kube.context.set and kube.serviceaccount.revoke do set
+	// them, and neither takes a namespace.) A profile makes Required() true
+	// for everything, and so would adding NeedsGrant to any of these later.
+	// Closing it at the point where the two fields are read means the bypass
+	// cannot come back by way of a decision somewhere else that looks
+	// unrelated.
 	//
 	// Fail closed, not "narrowest wins": silently choosing the namespace would
 	// answer a question nobody asked, and a caller that sent both does not

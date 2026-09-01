@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -63,7 +65,8 @@ func serviceAccountCapabilities() []plugin.Capability {
 			Description: "Creates a ServiceAccount, a Role built from exactly the capabilities named " +
 				"in --capability (nothing broader — an unmapped capability refuses the whole request " +
 				"rather than silently granting less than asked), a RoleBinding, and a token scoped to " +
-				"--ttl. Returns the assembled kubeconfig — to the terminal, or to --out. Refuses to run " +
+				"--ttl. Returns the assembled kubeconfig — to the terminal, or to --out, which " +
+				"refuses an existing file unless --force says to replace it. Refuses to run " +
 				"anywhere but a person's own CLI/TUI: an agent must never be able to mint its own " +
 				"parallel credential. There is no link enforced between --ttl and any `grant allow` " +
 				"TTL issued elsewhere — matching them is the operator's convention to keep, not " +
@@ -79,6 +82,8 @@ func serviceAccountCapabilities() []plugin.Capability {
 					Help: "how long the minted token should last, e.g. 15m, 1h, 24h"},
 				{Name: "out", Type: plugin.Path, Local: true,
 					Help: "write the kubeconfig to this file (0600) instead of printing it"},
+				{Name: "force", Type: plugin.Bool, Local: true,
+					Help: "replace --out's file if it already exists"},
 			},
 			Run: runServiceAccountProvision,
 		}),
@@ -180,6 +185,28 @@ func runServiceAccountProvision(ctx context.Context, req plugin.Request) (view.V
 		return nil, verr
 	}
 
+	// **Checked here, before the first cluster write, and again at the write
+	// itself.** The second check is the race-free one — O_EXCL is what
+	// guarantees an existing file is never replaced — but on its own it fires
+	// only after the ServiceAccount, Role, RoleBinding and token have all been
+	// created, so pointing --out at a path that already exists would burn a
+	// name, leave three objects behind, and discard a freshly minted token
+	// that cannot be recovered. That is the same shape as minting against a
+	// too-short --ttl, which is checked up here for the same reason.
+	//
+	// So this is not a duplicate of the O_EXCL below: it is the difference
+	// between refusing and refusing *cheaply*.
+	out := strings.TrimSpace(req.String("out"))
+	force := req.Bool("force")
+	if out != "" && !force {
+		if _, err := os.Stat(expandHome(out)); err == nil {
+			return nil, view.Errorf("kube.serviceaccount.out.exists",
+				"%s already exists", expandHome(out)).
+				WithHint("name a path that does not exist yet, or pass --force to replace it — " +
+					"checked before anything was created on the cluster")
+		}
+	}
+
 	if req.DryRun {
 		return dryRunProvision(name, namespace, rules, ttlStr), nil
 	}
@@ -271,7 +298,6 @@ func runServiceAccountProvision(ctx context.Context, req plugin.Request) (view.V
 		{Key: "actual token expiry", Value: grantedExpiry},
 	}}
 
-	out := strings.TrimSpace(req.String("out"))
 	if out == "" {
 		return view.Sections{Items: []view.Section{
 			{ID: "summary", Title: "summary", View: summary},
@@ -283,10 +309,8 @@ func runServiceAccountProvision(ctx context.Context, req plugin.Request) (view.V
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, view.Errorf("kube.serviceaccount.out.unwritable", "creating %s: %v", filepath.Dir(path), err)
 	}
-	// 0600, not cert.pem's 0644: a certificate is public by design, a bearer
-	// token is not.
-	if err := writeAtomically(path, []byte(kubeconfigYAML), 0o600); err != nil {
-		return nil, view.Errorf("kube.serviceaccount.out.unwritable", "writing %s: %v", path, err)
+	if verr := writeKubeconfig(path, []byte(kubeconfigYAML), force); verr != nil {
+		return nil, verr
 	}
 	summary.Pairs = append(summary.Pairs, view.Pair{Key: "wrote kubeconfig to", Value: path})
 	return summary, nil
@@ -478,6 +502,48 @@ func ownedByProvision(ctx context.Context, s selection, kind, name string) (bool
 		return false, view.Errorf("kube.unreadable", "reading %s/%s: %v", kind, name, err)
 	}
 	return obj.Metadata.Labels[provisionedByLabel] == provisionedByValue, nil
+}
+
+// writeKubeconfig puts the minted credential at path, refusing to replace
+// whatever is already there unless the operator said to.
+//
+// **Refusing is the majority rule for a credential in this tree**, not a
+// preference: pg's backup, vault's snapshot, s3's object and download, and
+// kv's crypt all open their --out O_EXCL and refuse. cert.pem overwrites, and
+// is the reason this originally did too — but cert.pem writes a public
+// certificate, which is not the same kind of thing as a bearer token. The file
+// a silent overwrite destroys here is most often a working kubeconfig, and by
+// the time this runs the ServiceAccount backing the new token already exists
+// on the cluster, so the mistake is not recoverable by re-running: that name
+// is taken now.
+//
+// --force follows net.resolver.set's own `force` field rather than inventing a
+// spelling for the same idea. Forcing goes through writeAtomically so that
+// replacing is still all-or-nothing; refusing does not need to, because
+// O_EXCL's guarantee is that there was nothing to lose.
+func writeKubeconfig(path string, data []byte, force bool) *view.Error {
+	if force {
+		if err := writeAtomically(path, data, 0o600); err != nil {
+			return view.Errorf("kube.serviceaccount.out.unwritable", "writing %s: %v", path, err)
+		}
+		return nil
+	}
+	// 0600 at creation rather than chmod'd after, so there is no instant where
+	// the file holds a token at a wider mode. Not cert.pem's 0644: a
+	// certificate is public by design, a bearer token is not.
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if errors.Is(err, fs.ErrExist) {
+		return view.Errorf("kube.serviceaccount.out.exists", "%s already exists", path).
+			WithHint("name a path that does not exist yet, or pass --force to replace it")
+	}
+	if err != nil {
+		return view.Errorf("kube.serviceaccount.out.unwritable", "creating %s: %v", path, err)
+	}
+	defer f.Close()
+	if _, err := f.Write(data); err != nil {
+		return view.Errorf("kube.serviceaccount.out.unwritable", "writing %s: %v", path, err)
+	}
+	return nil
 }
 
 // writeAtomically is internal/atomicfile.Write, restated here for the same

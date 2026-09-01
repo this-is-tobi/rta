@@ -73,10 +73,16 @@ func TestRawArgs(t *testing.T) {
 	// No --namespace, no --all-namespaces, ever — --raw does not understand
 	// them, and rawArgs' whole reason to exist rather than reusing
 	// selection.args is not emitting them.
-	got = rawArgs(selection{AllNS: true, Namespace: "prod"}, "/apis/metrics.k8s.io/v1beta1/pods")
-	for _, a := range got {
-		if a == "--all-namespaces" || a == "--namespace=prod" {
-			t.Errorf("rawArgs leaked a resource-listing flag into a --raw call: %v", got)
+	//
+	// Checked as two selections rather than one carrying both, because
+	// selectionOf refuses that combination: a single case asserting about a
+	// state no caller can produce would look like coverage and be none.
+	for _, s := range []selection{{AllNS: true}, {Namespace: "prod"}} {
+		got = rawArgs(s, "/apis/metrics.k8s.io/v1beta1/pods")
+		for _, a := range got {
+			if a == "--all-namespaces" || a == "--namespace=prod" {
+				t.Errorf("rawArgs leaked a resource-listing flag into a --raw call: %v", got)
+			}
 		}
 	}
 }

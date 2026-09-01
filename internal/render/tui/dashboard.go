@@ -192,8 +192,8 @@ func TileFor(reg *registry.Registry, p plugin.Plugin) (string, bool) {
 // each caller stated one reason for all of them — in opposite directions. The
 // plugin inventory said every tile-less plugin "needs to be told what to look
 // at", which is true of cert and http and false of the dozen that decline to
-// run unasked; `rta plugin list` said "nothing here can run unasked", which is
-// the same sentence with the same flaw pointed the other way. Both were
+// run unasked; `rta plugin dev`'s report said "nothing here can run unasked",
+// which is the same sentence with the same flaw pointed the other way. Both were
 // written while looking at the plugin that motivated them.
 //
 // The distinction is worth keeping precise because the two have opposite
