@@ -3,6 +3,7 @@ package pathguard
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -179,6 +180,17 @@ func TestARemoteAddressIsNotAPath(t *testing.T) {
 		"ssh://git@example.com/repo.git",
 		"git://example.com/repo.git",
 		"git@github.com:owner/repo.git",
+		// A UNC share is the address form that makes the guard itself dial:
+		// EvalSymlinks on it asks the Windows SMB redirector to connect and
+		// authenticate, before any in-root decision is reached. Refused on
+		// every platform, because no POSIX caller means a file whose name
+		// begins with two backslashes.
+		`\\attacker.example.com\share\x`,
+		`\\attacker.example.com\share`,
+		// Device-path spellings ride the same two-separator test rather than
+		// needing a host-shaped pattern of their own.
+		`\\?\UNC\attacker.example.com\share\x`,
+		`\\.\pipe\whatever`,
 	} {
 		verr := func() *view.Error { _, e := g.Check("path", v); return e }()
 		if verr == nil {
@@ -188,6 +200,35 @@ func TestARemoteAddressIsNotAPath(t *testing.T) {
 		if verr.Code != "core.mcp.path.remote" {
 			t.Errorf("%q refused as %q, want core.mcp.path.remote", v, verr.Code)
 		}
+	}
+}
+
+// The other half of the UNC refusal, and the reason it judges the two
+// separators differently: on POSIX a doubled forward slash is an ordinary
+// absolute path that Clean collapses, not a network share, so refusing it
+// here would break a caller who never asked for one. On Windows the same
+// spelling is the UNC volume and is refused by the case above.
+func TestADoubledForwardSlashIsAnOrdinaryPathOffWindows(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("//host/share is a UNC volume here, and is refused on purpose")
+	}
+	dir := t.TempDir()
+	g, err := New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Spelled with a doubled separator, naming a path inside the root.
+	got, verr := g.Check("path", "/"+strings.TrimPrefix(dir, "/")+"//sub/file")
+	if verr != nil {
+		t.Fatalf("a doubled slash inside the root was refused: %v", verr)
+	}
+	// Compared by suffix, not prefix: the root itself resolves through
+	// symlinks here (/var is /private/var on macOS), so the prefix is the
+	// resolved root rather than the one New was handed. The property under
+	// test is that the doubled separator collapsed instead of being read as
+	// a share name.
+	if !strings.HasSuffix(got, string(filepath.Separator)+filepath.Join("sub", "file")) {
+		t.Errorf("resolved to %q, want it to end at sub/file", got)
 	}
 }
 
