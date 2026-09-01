@@ -278,3 +278,46 @@ func TestRevokeRefusesAnInvalidName(t *testing.T) {
 		t.Errorf("want kube.name.invalid, got %v", err)
 	}
 }
+
+// --out writes a bearer credential, and os.WriteFile - what this used to use,
+// until internal/atomicfile's drift test caught it - truncates before writing.
+// The path is often an existing kubeconfig, and by the time the write happens
+// the ServiceAccount backing the new token already exists on the cluster, so a
+// half-written file is not something re-running fixes.
+func TestTheMintedKubeconfigReplacesAnExistingFileWholly(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "kubeconfig")
+	if err := os.WriteFile(path, []byte("PREVIOUS CREDENTIAL"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeAtomically(path, []byte("MINTED"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "MINTED" {
+		t.Errorf("content = %q, want the new credential and nothing of the old", got)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 0644 was the mode going in: the replacement must impose its own, or a
+	// credential inherits whatever the file it replaced happened to allow.
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf("mode = %v, want 0600 regardless of what the file had before", info.Mode().Perm())
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".tmp") {
+			t.Errorf("a temporary file holding credential bytes was left behind: %s", e.Name())
+		}
+	}
+}

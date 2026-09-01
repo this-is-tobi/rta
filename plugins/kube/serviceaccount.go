@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -284,7 +285,7 @@ func runServiceAccountProvision(ctx context.Context, req plugin.Request) (view.V
 	}
 	// 0600, not cert.pem's 0644: a certificate is public by design, a bearer
 	// token is not.
-	if err := os.WriteFile(path, []byte(kubeconfigYAML), 0o600); err != nil {
+	if err := writeAtomically(path, []byte(kubeconfigYAML), 0o600); err != nil {
 		return nil, view.Errorf("kube.serviceaccount.out.unwritable", "writing %s: %v", path, err)
 	}
 	summary.Pairs = append(summary.Pairs, view.Pair{Key: "wrote kubeconfig to", Value: path})
@@ -477,6 +478,47 @@ func ownedByProvision(ctx context.Context, s selection, kind, name string) (bool
 		return false, view.Errorf("kube.unreadable", "reading %s/%s: %v", kind, name, err)
 	}
 	return obj.Metadata.Labels[provisionedByLabel] == provisionedByValue, nil
+}
+
+// writeAtomically is internal/atomicfile.Write, restated here for the same
+// reason expandHome below is: this plugin is its own Go module and cannot
+// import an internal package, however small.
+//
+// Worth the duplication rather than a plain os.WriteFile, which truncates
+// before it writes. --out is frequently an existing kubeconfig, and a
+// truncating write that fails partway leaves the operator with neither the
+// credential they just minted nor the one that was there before — at a moment
+// when the ServiceAccount backing the new token already exists on the cluster,
+// so the failure is not even recoverable by re-running. Temp-file-plus-rename
+// makes the file either wholly old or wholly new, and never a half-written
+// credential another process can read.
+//
+// No Sync, matching atomicfile's own measured decision: rename already covers
+// a dying process, and surviving power loss is not what this is protecting.
+func writeAtomically(path string, data []byte, perm os.FileMode) error {
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+"-*.tmp")
+	if err != nil {
+		return fmt.Errorf("creating a temporary file in %s: %w", dir, err)
+	}
+	defer os.Remove(tmp.Name())
+
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return fmt.Errorf("writing %s: %w", tmp.Name(), err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("closing %s: %w", tmp.Name(), err)
+	}
+	// Chmod before the rename, never after: the window where a credential sits
+	// at the temp file's own mode is the window this is closing.
+	if err := os.Chmod(tmp.Name(), perm); err != nil {
+		return fmt.Errorf("setting permissions on %s: %w", tmp.Name(), err)
+	}
+	if err := os.Rename(tmp.Name(), path); err != nil {
+		return fmt.Errorf("replacing %s: %w", path, err)
+	}
+	return nil
 }
 
 // expandHome mirrors builtin/cert/cert.go's own helper — the shell expands an
