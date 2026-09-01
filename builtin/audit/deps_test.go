@@ -134,6 +134,31 @@ urllib3 == 1.26.5
 	}
 }
 
+// A pin with nothing after the == crashed the whole command: strings.Fields
+// returns an empty slice for a whitespace-only string, unlike strings.Split,
+// so indexing [0] panicked. Worth pinning as more than an injection case —
+// every input here is something an ordinary repository produces by accident.
+// A file authored on Windows reaches the parser with a trailing \r, and
+// "pin later" is a comment somebody genuinely writes.
+func TestParseRequirementsSurvivesAnEmptyPin(t *testing.T) {
+	for _, line := range []string{
+		"foo==",
+		"foo==;marker",
+		"foo==\r",
+		"foo==  # pin later",
+		"foo== \t ",
+	} {
+		t.Run(line, func(t *testing.T) {
+			got := parseRequirements("django==4.2.1\n"+line+"\nurllib3==1.26.5\n", "requirements.txt")
+			// The unparseable line is skipped, and — the part that matters —
+			// the pins on either side of it still arrive.
+			if len(got) != 2 {
+				t.Fatalf("read %d pins around an empty one, want 2: %+v", len(got), got)
+			}
+		})
+	}
+}
+
 func TestParseCycloneDXAndSPDX(t *testing.T) {
 	cdx := []byte(`{
 	  "bomFormat": "CycloneDX", "specVersion": "1.5",

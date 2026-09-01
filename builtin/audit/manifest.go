@@ -330,7 +330,17 @@ func parseRequirements(text, source string) []component {
 			name = name[:i]
 		}
 		version, _, _ = strings.Cut(version, ";")
-		version = strings.TrimSpace(strings.Fields(version + " ")[0])
+		// Fields, not Split, returns an empty slice for a whitespace-only
+		// string, so `foo==` — or a CRLF file's `foo==\r`, or `foo==  # pin
+		// later` — indexed [0] on nothing and panicked. The trailing space
+		// this line used to append was there to prevent exactly that and
+		// could not: it made the string whitespace-only rather than empty,
+		// which is the one input Fields returns nothing for.
+		fields := strings.Fields(version)
+		if len(fields) == 0 {
+			continue
+		}
+		version = fields[0]
 		if name = strings.TrimSpace(name); name == "" || version == "" {
 			continue
 		}
