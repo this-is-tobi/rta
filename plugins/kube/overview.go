@@ -97,8 +97,23 @@ func runOverview(ctx context.Context, req plugin.Request) (view.View, error) {
 		// the capability somebody runs *because* something is wrong, so it
 		// reports the unreachability and everything it could still learn from
 		// the kubeconfig, rather than refusing outright.
+		//
+		// But "did not answer" was applied to every failure, including the two
+		// where the cluster answered perfectly well and said no — rendering an
+		// RBAC refusal as `did not answer — namespaces is forbidden: User ...
+		// cannot list resource "namespaces"`, a sentence that contradicts
+		// itself inside its own line and sends the reader looking for a
+		// network problem they do not have. classify() already separates these
+		// into their own codes; this just stops throwing that away.
+		answer := "did not answer"
+		switch f.nsErr.Code {
+		case "kube.forbidden":
+			answer = "answered, and refused"
+		case "kube.unauthorized":
+			answer = "answered, and did not accept this credential"
+		}
 		pairs = append(pairs,
-			view.Pair{Key: "cluster", Value: "did not answer — " + f.nsErr.Message},
+			view.Pair{Key: "cluster", Value: answer + " — " + f.nsErr.Message},
 			view.Pair{Key: "what to check", Value: hintOf(f.nsErr)})
 		return view.KeyValue{Pairs: pairs}, nil
 	}
