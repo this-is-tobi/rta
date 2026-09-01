@@ -85,6 +85,37 @@ func Resolve(cfg config.Config, origin Origin) (*Resolver, []Problem) {
 	}
 	sort.Strings(names)
 
+	// First, and structurally before origin() is consulted for any section: a
+	// file rta has decided not to honour must not be able to ask questions of
+	// the installation. Every arm below answers one — whether a namespace is
+	// registered at all, and in three of them the digest of the artifact that
+	// is installed, handed over as the fix to paste. `rta doctor` prints
+	// those and app.ConfigNotApplied puts them on a failing call's Hint.
+	// internal/profile's Lookup already refuses to let a refusal become "an
+	// oracle for the operator's connection inventory"; a plugins: section is
+	// that same question asked about artifacts.
+	//
+	// Reported and not fatal, one Problem per section, which is Problem's own
+	// severity and internal/profile.Check's own wording for the identical
+	// state. The section's values simply never reach a capability, which is
+	// what a stale pin already produces; refusing to start would let a file in
+	// whatever directory somebody is standing in stop rta from running.
+	//
+	// An early return rather than a first switch arm, because `o, known :=
+	// origin(ns)` is evaluated above the switch: an arm would still query the
+	// registry on behalf of a file rta has refused. It also gives one true
+	// reason per section instead of a wrong one — an untrusted unpinned `pg:`
+	// would otherwise be told to write `pg@1a2b3c4d5e6f`, an instruction that
+	// fixes nothing.
+	if !cfg.Trusted() {
+		for _, section := range names {
+			problems = append(problems, Problem{Section: section,
+				Reason: "read from a working-directory config file, so it is not honoured",
+				Hint:   "set $RTA_CONFIG to name this file deliberately"})
+		}
+		return r, problems
+	}
+
 	for _, section := range names {
 		ns, pin, pinned := strings.Cut(section, "@")
 		o, known := origin(ns)
@@ -157,6 +188,14 @@ func (r *Resolver) For(namespace string) map[string]any {
 // interactive config editor, which needs to show a stale section's values
 // in order to fix the stale pin, not the declared defaults For would hand
 // back for the same namespace.
+//
+// It does not enforce the file's provenance either, and that is the same
+// decision one axis over. Resolve refuses every section of a config file
+// nobody named; this one still answers, because the caller it exists for is
+// the editor an operator uses to move those values somewhere that *is*
+// honoured, and an editor that cannot show what is written cannot help
+// anybody do that. It applies nothing. `rta doctor` is the other caller, and
+// it must keep telling the truth about a file it is diagnosing.
 //
 // A namespace named under two headings — an old pin never cleaned up after
 // an upgrade, alongside a new one — is resolved by taking the

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/this-is-tobi/rule-them-all/internal/config"
@@ -80,6 +81,17 @@ func (m *Model) moveSelected(delta int) string {
 // anything else — including this shell's RTA_* environment, which is why it
 // re-reads the file rather than the resolved config (config.LoadFile).
 func (m Model) save() error {
+	// Refused on a path nobody named, and this is the half of the dashboard
+	// gate that is not about reading. app.go draws config.TrustedDashboard(),
+	// so on such a path m.dash holds the automatic arrangement rather than
+	// whatever the file states — and this function copies m.dash *back into
+	// the file*. Without the refusal, gating the read turns one `h` keypress
+	// into "erase the dashboard: block somebody wrote", which is a worse
+	// outcome than the hole the gate closes.
+	if !config.TrustedPath() {
+		return errors.New(config.Path() + " is not a config file rta honours, so the " +
+			"arrangement was not written — set $RTA_CONFIG to name it deliberately")
+	}
 	return config.Mutate(func(cfg config.Config) (config.Config, bool) {
 		cfg.Dashboard.Hidden = m.dash.Hidden
 		cfg.Dashboard.Order = m.dash.Order

@@ -284,7 +284,7 @@ Three rules worth knowing before you write that script:
 
 - **A value on a command line is in `ps`, in your history, and in most CI logs.** `rta kv set` takes `--file`, and `--file /dev/stdin` works from a pipe. `rta profile set --set` refuses a declared credential outright, so this is enforced rather than advised.
 - **`--set` states the whole block.** A second run that mentions only `host` removes `sslmode` — and says which keys it dropped. Restate the block you mean.
-- **`$RTA_CONFIG` matters in a container.** With no config directory the config path falls back to `./.rta.yaml`, and profiles read from a working-directory file are ignored. `rta profile set` refuses to write there rather than succeeding silently.
+- **`$RTA_CONFIG` matters in a container.** With no config directory the config path falls back to `./.rta.yaml`, and a working-directory file is not honoured: its `profiles:`, `plugins:` and `dashboard:` blocks are all ignored, because that file could have come from a repository you cloned. `rta profile set` refuses to write there rather than succeeding silently.
 
 Then check it, without unlocking anything:
 
