@@ -299,6 +299,14 @@ func runObjectSet(ctx context.Context, req plugin.Request) (view.View, error) {
 func s3ObjectRemoveCapability() plugin.Capability {
 	return cap(plugin.Capability{
 		ID: "s3.object.rm", Summary: "Delete an object", Safety: plugin.Destructive,
+		// Destructive already forces the gate without NeedsGrant, but the gate
+		// still needs to know which record it is gating: scopes() derives that
+		// from the named field, and with no Scope it derives "". A grant
+		// written as `grant allow s3.object.rm somekey` then matches nothing,
+		// so the only grant that ever worked here was the capability-wide one
+		// — every object in every bucket. The single irreversible call in this
+		// plugin was the single one that could not be narrowed.
+		Scope: "key",
 		Description: "No history, no backup, no undo — the same loss `kv rm` is. S3's DELETE is " +
 			"idempotent: removing a key that is already gone is not an error, on this or the real " +
 			"call — --dry-run does not probe for existence first, since that would report a " +
