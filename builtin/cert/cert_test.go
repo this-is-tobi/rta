@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/this-is-tobi/rule-them-all/builtin/internal/x509check"
+	"github.com/this-is-tobi/rule-them-all/internal/pathguard"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
@@ -80,6 +81,25 @@ func TestPluginIsValid(t *testing.T) {
 	if err := Plugin().Validate(); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// cert.expiry dials whatever hosts the caller lists with nothing standing
+// between an MCP caller and the network — see its declaration comment in
+// Plugin() for why it differs from its Path-typed siblings.
+func TestExpiryNeedsAGrantScopedToTargets(t *testing.T) {
+	for _, c := range Plugin().Capabilities {
+		if c.ID != "cert.expiry" {
+			continue
+		}
+		if !c.NeedsGrant {
+			t.Error("cert.expiry.NeedsGrant = false, want true")
+		}
+		if c.Scope != "targets" {
+			t.Errorf("cert.expiry.Scope = %q, want %q", c.Scope, "targets")
+		}
+		return
+	}
+	t.Fatal("cert.expiry not registered")
 }
 
 func TestInspectLiveHost(t *testing.T) {
@@ -176,6 +196,38 @@ func TestTLSRejectsFileTarget(t *testing.T) {
 	ve := view.AsError(err, "x")
 	if ve == nil || ve.Code != "cert.tls.filetarget" {
 		t.Errorf("want cert.tls.filetarget, got %v", err)
+	}
+}
+
+// cert.inspect/chain/pem/tls carry no NeedsGrant, unlike cert.expiry and
+// net.probe/net.port, because today they do not need it: targetField's
+// pathguard.Check step (see Plugin()'s comment on targetField) rewrites a
+// bare host:port into "<cwd>/host:port" before it ever reaches dialCerts,
+// and that string can never split back into a dialable address. This pins
+// the mechanism itself rather than leaving it assumed — if pathguard's
+// handling of a non-path value ever changes so a live host becomes reachable
+// through this field again, this test fails, and these four need the same
+// NeedsGrant + Scope: "target" treatment cert.expiry got instead of a
+// silently reopened gap.
+func TestLiveHostTargetIsUndialableOnceRoutedThroughThePathGate(t *testing.T) {
+	addr, _ := startTLS(t)
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	guard, err := pathguard.New(wd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, verr := guard.Check("target", addr)
+	if verr != nil {
+		return // refused outright is even safer than corrupted
+	}
+	if _, err := runInspect(context.Background(), req(map[string]any{
+		"target": resolved, "timeout": 2,
+	})); err == nil {
+		t.Fatal("a host:port value rewritten by the path gate still reached a live host — " +
+			"cert.inspect/chain/pem/tls need NeedsGrant now")
 	}
 }
 

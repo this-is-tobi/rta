@@ -48,6 +48,25 @@ func Plugin() plugin.Plugin {
 	// guards. A host:port still works — it resolves under the root like any
 	// relative value — and file completion is an improvement for the PEM case
 	// rather than a cost.
+	//
+	// That resolution is also, today, the only thing standing between an MCP
+	// caller and an ungated live-host dial through this field: a bare
+	// "host:port" is not a filesystem path, so nothing here refuses it, and
+	// pathguard's own resolve() treats it exactly like a relative path — it
+	// gets the server's working directory prepended before the bounds check
+	// runs (internal/mcp/bridge.go's checkPaths substitutes that judged value
+	// back into the request). "<cwd>/host:port" can never split back into a
+	// dialable host:port — SplitHostPort takes everything before the last
+	// colon as the host, slashes included, which no resolver accepts — so the
+	// live-host branch of cert.inspect/chain/pem/tls is not reachable over
+	// MCP in practice. TestLiveHostTargetIsUndialableOnceRoutedThroughThePathGate
+	// (cert_test.go) pins that rather than leaving it assumed. It is not a
+	// deliberate gate, though: it is a side effect of a check built for
+	// filesystem paths landing on a field that is sometimes something else. If
+	// pathguard's handling of a non-path value ever changes, these four need
+	// the same NeedsGrant + Scope cert.expiry already carries, for the same
+	// reason net.probe and net.port do — see their declarations below and in
+	// builtin/net/net.go.
 	targetField := plugin.Field{
 		Name: "target", Type: plugin.Path, Positional: true, Required: true,
 		Help: "host[:port] to connect to, or a path to a PEM file",
@@ -119,6 +138,20 @@ func Plugin() plugin.Plugin {
 				Summary:    "Check certificate expiry for one or more hosts",
 				Safety:     plugin.Read,
 				Idempotent: true,
+				// `targets` is a StringSlice (see expiryRow's comment for why —
+				// no Path type exists for a slice), which means it never passes
+				// through the MCP path gate at all: unlike targetField above,
+				// nothing rewrites or refuses it, so this dials whatever host an
+				// MCP caller lists, straight through, banner-and-all in the
+				// certificate fields that come back. Same shape as net.probe and
+				// net.port, same fix: a grant, scoped to host — and Scope already
+				// handles a []string field natively, checking every listed target
+				// individually rather than one for all of them.
+				NeedsGrant: true,
+				Scope:      "targets",
+				Description: "Same reasoning as `net probe`: the hosts are the caller's choice, and " +
+					"what a certificate says about itself — subject, issuer, DNS names — is read as " +
+					"tool output the same way a banner is. Needs a grant, one per host listed.",
 				Inputs: []plugin.Field{
 					{Name: "targets", Type: plugin.StringSlice, Positional: true, Required: true,
 						Help: "hosts to check (host[:port])"},
