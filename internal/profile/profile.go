@@ -85,13 +85,20 @@ type withheld interface {
 // operator's connection inventory. The caller decides how much to say — this
 // returns a code and a message, and internal/mcp replaces the message with a
 // generic one.
-func Lookup(cfg config.Config, c plugin.Capability, name string, inst Installed) (config.Connection, *view.Error) {
+func Lookup(cfg config.Config, c plugin.Capability, ref string, inst Installed) (config.Connection, *view.Error) {
 	ns := plugin.Namespace(c.ID)
 	none := config.Connection{}
-	if !config.ValidName(name) {
+	// The reference splits into the profile and, optionally, which instance
+	// of this plugin inside it: `staging` or `staging/analytics`. Split
+	// first, because everything profile-level below is about the name — the
+	// instance only matters once the profile's entries for ns are in hand.
+	name, instance := config.SplitRef(ref)
+	if !config.ValidRef(ref) {
 		return none, view.Errorf("core.profile.invalid",
-			"%q is not a valid profile name", name).
-			WithHint("lowercase letters, digits and dashes, starting with a letter or digit")
+			"%q is not a valid profile reference", ref).
+			WithHint("a name — lowercase letters, digits and dashes, starting with a letter " +
+				"or digit — optionally followed by /<instance> to pick one of several " +
+				"connections to the same plugin")
 	}
 	p, ok := cfg.Profiles[name]
 	if !ok {
@@ -114,23 +121,63 @@ func Lookup(cfg config.Config, c plugin.Capability, name string, inst Installed)
 			"profile %q has %s, which nothing reads", name, strings.Join(unknown, ", ")).
 			WithHint("a profile takes plugins, note and ttl"))
 	}
-	// Ahead of For, deliberately: two entries for one namespace — a stale
-	// pin left beside its replacement, most realistically — is not
-	// something For's first-match-by-sort-order can answer for. Silently
+	// Ahead of resolution, deliberately: two entries for one namespace and
+	// instance — a stale pin left beside its replacement, most realistically
+	// — is not something first-match-by-sort-order can answer for. Silently
 	// resolving through whichever one sorts first is exactly how Check
 	// reports a profile broken while a call through it quietly succeeds
 	// anyway, which the doc comment above states this function must not
-	// allow: "Lookup refuses what Check reports."
-	if dups := p.DuplicateNamespaces(); slices.Contains(dups, ns) {
-		return none, view.Errorf("core.profile.ambiguous",
-			"profile %q names %s more than once", name, ns).
+	// allow: "Lookup refuses what Check reports." Scoped to the entry this
+	// call addresses: a duplicated `pg/analytics` does not break a call for
+	// the pg default, though Check still reports it.
+	addressed := ns
+	if instance != "" {
+		addressed = ns + "/" + instance
+	}
+	if dups := p.DuplicateNamespaces(); slices.Contains(dups, addressed) {
+		return none, view.Errorf("core.profile.duplicate",
+			"profile %q names %s more than once", name, addressed).
 			WithHint("`rta profile show " + name + "` lists every entry — remove the one that no longer applies")
 	}
-	key, conn, covered := p.For(ns)
+	var (
+		key     string
+		conn    config.Connection
+		covered bool
+	)
+	switch {
+	case instance != "":
+		key, conn, covered = p.ForInstance(ns, instance)
+		if !covered && p.Covers(ns) {
+			// The profile covers the plugin; the label is what missed. Told
+			// apart from silence because the fix is different: a mistyped
+			// label wants the list, not "configure pg".
+			return none, view.Errorf("core.profile.instance",
+				"profile %q has no %s instance called %q", name, ns, instance).
+				WithHint("it has: " + strings.Join(instanceRefs(p, name, ns), ", "))
+		}
+	case p.Ambiguous(ns):
+		// Several labeled connections and no default. Picking one by sort
+		// order would send the call to whichever database's label happens to
+		// alphabetize first, so the caller is asked to say which — this is
+		// the refusal that makes a labeled entry addressable at all.
+		return none, view.Errorf("core.profile.instance.required",
+			"profile %q holds several %s connections, so a call must name which one", name, ns).
+			WithHint("one of: " + strings.Join(instanceRefs(p, name, ns), ", "))
+	default:
+		key, conn, covered = p.For(ns)
+	}
 	if !covered {
 		return none, view.Errorf("core.profile.mismatch",
 			"profile %q says nothing about %s", name, ns).
 			WithHint(configured(cfg, ns))
+	}
+	// A labeled key whose label does not parse is refused as what it is; it
+	// would otherwise surface as the pin check misreading `pg/x_y` as a
+	// namespace nothing registered.
+	if _, keyInst, _ := config.SplitKey(key); keyInst != "" && !config.ValidInstance(keyInst) {
+		return none, view.Errorf("core.profile.instance.invalid",
+			"profile %q, under %s: %q is not a valid instance label", name, key, keyInst).
+			WithHint("lowercase letters, digits and dashes, starting with a letter")
 	}
 	if !plugin.Profilable(c) {
 		return none, view.Errorf("core.profile.unusable",
@@ -249,7 +296,8 @@ const minPinLen = 8
 // which is the right zero value for a gate: a caller who forgets to wire it
 // loses profiles rather than losing the check.
 func checkPin(key string, inst Installed) *view.Error {
-	ns, pin, pinned := strings.Cut(key, "@")
+	ns, _, pin := config.SplitKey(key)
+	pinned := pin != ""
 	var (
 		o     registry.Origin
 		known bool
@@ -354,6 +402,23 @@ func capabilitiesOf(inst Installed) []plugin.Capability {
 	return inst.Capabilities()
 }
 
+// instanceRefs renders a profile's entries for one namespace the way a call
+// would name them — `staging` for the default, `staging/analytics` for a
+// labeled one — so a hint about instances is in the grammar the fix uses.
+// For a person at a terminal; internal/mcp discards hints.
+func instanceRefs(p config.Profile, name, ns string) []string {
+	labels := p.Instances(ns)
+	out := make([]string, 0, len(labels))
+	for _, l := range labels {
+		if l == "" {
+			out = append(out, name)
+			continue
+		}
+		out = append(out, name+"/"+l)
+	}
+	return out
+}
+
 // configured names the profiles that would have worked, for a person at a
 // terminal. Never reaches an agent: internal/mcp discards this hint.
 func configured(cfg config.Config, ns string) string {
@@ -394,6 +459,17 @@ func Bind(name string, conn config.Connection, c plugin.Capability, look func(st
 		if f, ok := byConfig[key]; ok {
 			out[f.Name] = v
 		}
+	}
+	// The environment channel exists for the default instance only. A ref
+	// like `staging/analytics` has no RTA_PROFILE_* spelling: every separator
+	// an env token can carry is one a legal profile name can also produce
+	// ("staging--x" and "staging/x" would both render STAGING__X), so a
+	// labeled instance's variable would be forgeable by naming a profile
+	// carefully — a repoint by spelling. Labeled instances carry credentials
+	// the way multi-database setups already do, through `secrets:`
+	// references, where nothing is derived from a string.
+	if config.RefInstance(name) != "" {
+		return out
 	}
 	for _, f := range c.Inputs {
 		if !plugin.ProfileFillable(c, f) {
@@ -674,6 +750,14 @@ func CheckConnection(name, key string, conn config.Connection, inst Installed) [
 	if unknown := conn.UnknownKeys(); len(unknown) > 0 {
 		at("has "+strings.Join(unknown, ", ")+", which nothing reads",
 			"a plugin entry takes set, secrets, secrets-from, kube, ssh and tunnelTLS")
+		return problems
+	}
+	// The same refusal Lookup makes for a label that does not parse, in the
+	// same words — before the pin check, which would otherwise misread
+	// `pg/x_y` as a namespace nothing registered.
+	if _, instance, _ := config.SplitKey(key); instance != "" && !config.ValidInstance(instance) {
+		at("is written under "+key+", and "+instance+" is not a valid instance label",
+			"lowercase letters, digits and dashes, starting with a letter")
 		return problems
 	}
 	if bad := conn.BadSecretRefs(); len(bad) > 0 {
