@@ -39,6 +39,13 @@ import (
 // OperatorConfig assembles an operator handler.
 type OperatorConfig struct {
 	Roster operator.Roster
+	// URL is this server's canonical identity — the exact string operators
+	// put in their remotes.yaml, from --operators-url. Every envelope's
+	// signature covers it (operator.Verify reconstructs the message from
+	// *this* value, never from anything a caller sent), which is what stops
+	// a hostile server the operator also talks to from relaying their
+	// signed calls here: an envelope aimed elsewhere names elsewhere.
+	URL string
 	// Version and Agent answer the status verb: the server's build and the
 	// --as name its grants match against.
 	Version string
@@ -130,9 +137,10 @@ func (h *operatorHandler) call(w http.ResponseWriter, r *http.Request) {
 		h.refuse(w, fmt.Sprintf("nonce not honoured (spent, expired, or never issued) for fingerprint %q", env.Fingerprint))
 		return
 	}
-	label, ok := h.cfg.Roster.Verify(env)
+	label, ok := h.cfg.Roster.Verify(env, h.cfg.URL)
 	if !ok {
-		h.refuse(w, fmt.Sprintf("signature rejected for fingerprint %q, verb %q", env.Fingerprint, env.Verb))
+		h.refuse(w, fmt.Sprintf("signature rejected for fingerprint %q, verb %q — a valid-looking envelope "+
+			"may have been signed for a different server than %q", env.Fingerprint, env.Verb, h.cfg.URL))
 		return
 	}
 	h.logf("%s (%s) called %s", label, env.Fingerprint, env.Verb)

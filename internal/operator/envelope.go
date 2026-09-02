@@ -29,12 +29,27 @@ type Envelope struct {
 }
 
 // message frames what an envelope signature covers. NUL separators are
-// unambiguous because neither field to the left of one can contain NUL: the
-// nonce is base64url from Issue, and a verb is a dotted lowercase word —
-// only the payload, which comes last and needs no terminator, is free-form.
-func message(nonce, verb string, payload []byte) []byte {
-	b := make([]byte, 0, len(signContext)+len(nonce)+1+len(verb)+1+len(payload))
+// unambiguous because no field to the left of one can contain NUL: the
+// server URL has been through url.Parse, the nonce is base64url from Issue,
+// and a verb is a dotted lowercase word — only the payload, which comes last
+// and needs no terminator, is free-form.
+//
+// The server segment is the anti-relay binding, and its shape matters: the
+// *client* signs the URL it resolved from remotes.yaml, and the *server*
+// reconstructs the message from its own --operators-url, never from
+// anything in the envelope. A nonce alone does not scope a signature to a
+// server, because "a nonce from one server never matches another's" holds
+// only for honest servers — a hostile one in the operator's remotes.yaml
+// can fetch a victim server's challenge, present it as its own, and relay
+// the resulting envelope to a server that trusts the same operator key. With
+// the URL inside the signed bytes and the verifier supplying its own, the
+// relayed envelope names the wrong server and verifies nowhere but where
+// the operator actually aimed it.
+func message(server, nonce, verb string, payload []byte) []byte {
+	b := make([]byte, 0, len(signContext)+len(server)+1+len(nonce)+1+len(verb)+1+len(payload))
 	b = append(b, signContext...)
+	b = append(b, server...)
+	b = append(b, 0)
 	b = append(b, nonce...)
 	b = append(b, 0)
 	b = append(b, verb...)
@@ -43,38 +58,57 @@ func message(nonce, verb string, payload []byte) []byte {
 	return b
 }
 
-// Sign seals one request into its envelope. The nonce came from the server
-// the envelope is for, which is what scopes the signature to that server and
-// that one call — there is nothing else to bind, because there is nothing
-// else the signature should be valid for.
-func (s Signer) Sign(nonce, verb string, payload []byte) Envelope {
+// Sign seals one request into its envelope, bound to the one server it is
+// for: server is the canonical URL the caller resolved and is about to dial,
+// and the nonce came from that server's own challenge.
+func (s Signer) Sign(server, nonce, verb string, payload []byte) Envelope {
 	return Envelope{
 		Fingerprint: s.fingerprint,
 		Nonce:       nonce,
 		Verb:        verb,
 		Payload:     payload,
-		Sig:         base64.StdEncoding.EncodeToString(ed25519.Sign(s.priv, message(nonce, verb, payload))),
+		Sig:         base64.StdEncoding.EncodeToString(ed25519.Sign(s.priv, message(server, nonce, verb, payload))),
 	}
 }
 
-// Verify reports whether env carries a valid signature by an enrolled key,
-// and whose. It checks the signature only — the nonce is the caller's to
-// consume first, because single-use is a property of the store, not of the
-// math. False carries no reason on purpose: the reason goes to the server's
-// stderr, never to an unauthenticated caller.
-func (r Roster) Verify(env Envelope) (string, bool) {
+// Verify reports whether env carries a valid signature by an enrolled key
+// over this server's own identity, and whose. server is the verifier's
+// canonical URL from its own configuration — deliberately a parameter and
+// not an envelope field, so a relayed envelope cannot bring the identity it
+// was signed for along with it. It checks the signature only — the nonce is
+// the caller's to consume first, because single-use is a property of the
+// store, not of the math. False carries no reason on purpose: the reason
+// goes to the server's stderr, never to an unauthenticated caller.
+func (r Roster) Verify(env Envelope, server string) (string, bool) {
 	raw, err := base64.StdEncoding.DecodeString(env.Sig)
 	if err != nil {
 		return "", false
 	}
-	msg := message(env.Nonce, env.Verb, env.Payload)
+	msg := message(server, env.Nonce, env.Verb, env.Payload)
 	for _, e := range r.keys[env.Fingerprint] {
 		if ed25519.Verify(e.key, msg, raw) {
 			return e.label, true
 		}
 	}
+	// An unknown fingerprint costs one verify against a throwaway key, the
+	// same work a wrong signature costs against a real one — otherwise
+	// response timing tells an unauthenticated caller which fingerprints are
+	// enrolled, the one thing the uniform refusal body exists to withhold.
+	if len(r.keys[env.Fingerprint]) == 0 {
+		ed25519.Verify(timingDummy, msg, raw)
+	}
 	return "", false
 }
+
+// timingDummy is the key Verify burns a check against when a fingerprint
+// names no enrolled key; see the comment at its use.
+var timingDummy = func() ed25519.PublicKey {
+	pub, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		panic(err)
+	}
+	return pub
+}()
 
 // Nonces is a server's single-use challenge store, in memory beside the
 // roster: what makes a captured envelope worthless a second time. Issuance
@@ -132,6 +166,17 @@ func (n *Nonces) Issue() (string, error) {
 	}
 	n.live[nonce] = now.Add(n.ttl)
 	n.order = append(n.order, nonce)
+	// order can outgrow live: Consume deletes from the map and leaves its
+	// stale entry for GC to reach. The loop above stops at the first live
+	// head, so an issue-and-consume flood would otherwise grow order without
+	// bound for a TTL window. Past the cap the oldest go regardless of
+	// liveness — evicting a live challenge is the documented degradation
+	// (a retry), an unbounded slice is a memory bill.
+	for len(n.order) > n.cap {
+		head := n.order[0]
+		n.order = n.order[1:]
+		delete(n.live, head)
+	}
 	return nonce, nil
 }
 

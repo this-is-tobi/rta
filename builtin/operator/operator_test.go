@@ -2,6 +2,7 @@ package operator
 
 import (
 	"context"
+	"net"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -122,14 +123,24 @@ func TestStatusWithAServerAsksTheServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := httptest.NewServer(mcp.NewOperatorHandler(mcp.OperatorConfig{
-		Roster: roster, Version: "9.9-test", Agent: "lab-agent",
+	// The handler must know its canonical URL before it serves — the same
+	// string the client resolves from remotes.yaml and signs.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := "http://" + ln.Addr().String()
+	srv := httptest.NewUnstartedServer(mcp.NewOperatorHandler(mcp.OperatorConfig{
+		Roster: roster, URL: base, Version: "9.9-test", Agent: "lab-agent",
 	}))
+	srv.Listener.Close()
+	srv.Listener = ln
+	srv.Start()
 	defer srv.Close()
 
 	confDir := t.TempDir()
 	t.Setenv("RTA_CONFIG", filepath.Join(confDir, "config.yaml"))
-	remotes := "servers:\n  lab:\n    url: " + srv.URL + "\n"
+	remotes := "servers:\n  lab:\n    url: " + base + "\n"
 	if err := os.WriteFile(filepath.Join(confDir, "remotes.yaml"), []byte(remotes), 0o600); err != nil {
 		t.Fatal(err)
 	}

@@ -1,8 +1,11 @@
 package operator
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -90,10 +93,34 @@ func TestTheRosterLineEnrolls(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	env := s.Sign("nonce-1", VerbStatus, nil)
-	label, ok := roster.Verify(env)
+	env := s.Sign("https://a.example", "nonce-1", VerbStatus, nil)
+	label, ok := roster.Verify(env, "https://a.example")
 	if !ok || label != "tobi" {
 		t.Fatalf("Verify = %q, %v — want tobi, true", label, ok)
+	}
+}
+
+// The relay: a hostile server the operator also talks to presents a victim
+// server's challenge as its own and forwards the signed envelope. The
+// signature covers the URL the operator aimed at, the victim verifies
+// against its own — the relayed envelope names the wrong server.
+func TestAnEnvelopeSignedForOneServerVerifiesOnNoOther(t *testing.T) {
+	freshHome(t)
+	s, verr := Init("correct horse")
+	if verr != nil {
+		t.Fatal(verr)
+	}
+	line, _ := RosterLine("tobi")
+	roster, _, err := LoadRoster(writeRoster(t, line+"\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	relayed := s.Sign("https://hostile.example", "victim-nonce", VerbGrantList, nil)
+	if _, ok := roster.Verify(relayed, "https://victim.example"); ok {
+		t.Fatal("an envelope aimed at one server verified on another")
+	}
+	if _, ok := roster.Verify(relayed, "https://hostile.example"); !ok {
+		t.Fatal("the same envelope does not verify even where it was aimed — the binding is broken, not working")
 	}
 }
 
@@ -109,24 +136,25 @@ func TestVerifyRefusesWhatTheRosterNeverEnrolled(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	env := s.Sign("nonce-1", VerbGrantList, []byte(`{"a":1}`))
-	if _, ok := roster.Verify(env); !ok {
+	const at = "https://a.example"
+	env := s.Sign(at, "nonce-1", VerbGrantList, []byte(`{"a":1}`))
+	if _, ok := roster.Verify(env, at); !ok {
 		t.Fatal("the enrolled key was refused")
 	}
 
 	tampered := env
 	tampered.Payload = []byte(`{"a":2}`)
-	if _, ok := roster.Verify(tampered); ok {
+	if _, ok := roster.Verify(tampered, at); ok {
 		t.Fatal("a tampered payload verified")
 	}
 	replayedVerb := env
 	replayedVerb.Verb = VerbStatus
-	if _, ok := roster.Verify(replayedVerb); ok {
+	if _, ok := roster.Verify(replayedVerb, at); ok {
 		t.Fatal("a signature travelled to a different verb")
 	}
 	otherNonce := env
 	otherNonce.Nonce = "nonce-2"
-	if _, ok := roster.Verify(otherNonce); ok {
+	if _, ok := roster.Verify(otherNonce, at); ok {
 		t.Fatal("a signature travelled to a different nonce")
 	}
 
@@ -138,9 +166,9 @@ func TestVerifyRefusesWhatTheRosterNeverEnrolled(t *testing.T) {
 	if verr != nil {
 		t.Fatal(verr)
 	}
-	forged := stranger.Sign("nonce-1", VerbGrantList, []byte(`{"a":1}`))
+	forged := stranger.Sign(at, "nonce-1", VerbGrantList, []byte(`{"a":1}`))
 	forged.Fingerprint = env.Fingerprint
-	if _, ok := roster.Verify(forged); ok {
+	if _, ok := roster.Verify(forged, at); ok {
 		t.Fatal("an un-enrolled key verified")
 	}
 }
@@ -203,4 +231,50 @@ func TestAnExpiredNonceDoesNotSpend(t *testing.T) {
 	if n.Consume(nonce) {
 		t.Fatal("an expired nonce spent")
 	}
+}
+
+// A redirect would re-POST a signed envelope wherever a hostile server
+// points, or move the response off TLS — there are two fixed endpoints and
+// no legitimate hop, so the client refuses rather than follows.
+func TestTheClientRefusesRedirects(t *testing.T) {
+	freshHome(t)
+	s, verr := Init("p")
+	if verr != nil {
+		t.Fatal(verr)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "http://127.0.0.1:1/operator/v1/challenge", http.StatusTemporaryRedirect)
+	}))
+	defer srv.Close()
+	verr = Client{URL: srv.URL, Signer: s}.Call(VerbStatus, nil, nil)
+	if verr == nil {
+		t.Fatal("a redirecting server was followed")
+	}
+	if !strings.Contains(verr.Message, "redirect") {
+		t.Fatalf("the refusal does not name the redirect: %s", verr.Message)
+	}
+}
+
+// Consume leaves its stale entry in order for GC; an issue-and-consume flood
+// with one live head parked in front must not grow the slice without bound
+// for a TTL window.
+func TestAFloodCannotGrowTheNonceStoreUnbounded(t *testing.T) {
+	n := NewNonces(time.Hour)
+	parked, err := n.Issue()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2*nonceCap; i++ {
+		nonce, err := n.Issue()
+		if err != nil {
+			t.Fatal(err)
+		}
+		n.Consume(nonce)
+	}
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if len(n.order) > n.cap {
+		t.Fatalf("order holds %d entries, cap is %d", len(n.order), n.cap)
+	}
+	_ = parked
 }

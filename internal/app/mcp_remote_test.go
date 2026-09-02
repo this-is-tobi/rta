@@ -137,7 +137,8 @@ func TestHTTPRefusesAGarbledOperatorsFile(t *testing.T) {
 	}
 	cmd := NewRoot(registry.New(), "test")
 	cmd.SetArgs([]string{"mcp", "serve", "--http", "127.0.0.1:0",
-		"--token-file", tokens, "--operators", roster})
+		"--token-file", tokens, "--operators", roster,
+		"--operators-url", "https://rta.example.com"})
 	cmd.SetOut(new(strings.Builder))
 	cmd.SetErr(new(strings.Builder))
 	err := cmd.Execute()
@@ -146,5 +147,29 @@ func TestHTTPRefusesAGarbledOperatorsFile(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "--operators") {
 		t.Errorf("err = %q, want it to name --operators", err)
+	}
+}
+
+// Without the canonical URL there is nothing to verify signatures against
+// that a relay could not forge, so the channel refuses to exist rather than
+// exist unbound.
+func TestHTTPOperatorsRequiresACanonicalURL(t *testing.T) {
+	dir := t.TempDir()
+	tokens := filepath.Join(dir, "tokens")
+	if err := os.WriteFile(tokens, []byte("alice tok-a\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	roster := filepath.Join(dir, "operators")
+	if err := os.WriteFile(roster, []byte("# empty on purpose\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := NewRoot(registry.New(), "test")
+	cmd.SetArgs([]string{"mcp", "serve", "--http", "127.0.0.1:0",
+		"--token-file", tokens, "--operators", roster})
+	cmd.SetOut(new(strings.Builder))
+	cmd.SetErr(new(strings.Builder))
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "--operators-url") {
+		t.Fatalf("err = %v, want the missing --operators-url named", err)
 	}
 }

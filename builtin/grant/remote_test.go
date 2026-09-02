@@ -2,6 +2,7 @@ package grant
 
 import (
 	"context"
+	"net"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -44,12 +45,20 @@ func TestRemoteListReadsTheServersRoster(t *testing.T) {
 	}, true); verr != nil {
 		t.Fatal(verr)
 	}
-	srv := httptest.NewServer(mcp.NewOperatorHandler(mcp.OperatorConfig{Roster: roster}))
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := "http://" + ln.Addr().String()
+	srv := httptest.NewUnstartedServer(mcp.NewOperatorHandler(mcp.OperatorConfig{Roster: roster, URL: base}))
+	srv.Listener.Close()
+	srv.Listener = ln
+	srv.Start()
 	defer srv.Close()
 	confDir := t.TempDir()
 	t.Setenv("RTA_CONFIG", filepath.Join(confDir, "config.yaml"))
 	if err := os.WriteFile(filepath.Join(confDir, "remotes.yaml"),
-		[]byte("servers:\n  lab:\n    url: "+srv.URL+"\n"), 0o600); err != nil {
+		[]byte("servers:\n  lab:\n    url: "+base+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
