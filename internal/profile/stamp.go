@@ -92,7 +92,16 @@ func ConnStamp(key string, c config.Connection) string {
 	// predicate cannot cover for — a field added to Connection without a
 	// write here is a repoint no standing grant notices, so the drift test
 	// in stamp_test.go counts Connection's fields.
-	write("key", key, "kube", c.Kube, "ssh", c.SSH, "tunnelTLS", fmt.Sprintf("%t", c.TunnelTLS))
+	//
+	// `secrets-from:` is in the stamp for a sharper version of the same
+	// reason. It names the cluster and namespace a credential is read out of,
+	// so editing it repoints *which* credential authenticates the call while
+	// every other line stays identical — `homelab/dev` to `homelab/prod` is
+	// one word, and a grant issued against the first would otherwise keep
+	// authorizing calls made with the second. It changes where a call goes as
+	// surely as a host does, one layer further in.
+	write("key", key, "kube", c.Kube, "ssh", c.SSH,
+		"secretsFrom", c.SecretsFrom, "tunnelTLS", fmt.Sprintf("%t", c.TunnelTLS))
 	for _, k := range sortedKeys(c.Set) {
 		write("set", k, canonical(c.Set[k]))
 	}

@@ -25,11 +25,32 @@ import (
 // The value reaches the plugin the way every other credential does — over the
 // AutoMTLS socket, resolved by the host — so nothing here is written to
 // configuration, exported into an environment, or visible in an argv.
+// secretSource resolves which cluster and namespace this target's Secret is
+// read from.
+//
+// Kube wins when both are set, and that ordering is only a tiebreak on input
+// config.Check already refuses: a connection states one or the other, so
+// reaching here with both means something upstream stopped enforcing it, and
+// preferring the coordinate keeps the answer the same as it was before
+// SecretsFrom existed rather than silently moving where credentials come from.
+func (t Target) secretSource() (kctx, ns string, verr *view.Error) {
+	if t.Kube != "" {
+		k, n, _, _, _, verr := parseKube(t.Kube)
+		return k, n, verr
+	}
+	return parseKubeNamespace(t.SecretsFrom)
+}
+
 func Secrets(ctx context.Context, name string, t Target) (map[string]string, *view.Error) {
 	if t.Secret == "" || len(t.From) == 0 {
 		return nil, nil
 	}
-	kctx, ns, _, _, _, verr := parseKube(t.Kube)
+	// Only the context and namespace are ever used, whichever field stated
+	// them — the kind, name and port of a full coordinate are the forward's
+	// business and are discarded here. That is exactly why SecretsFrom can
+	// exist: reading a Secret never needed the service half, so a connection
+	// that opens no forward can still say which namespace to read from.
+	kctx, ns, verr := t.secretSource()
 	if verr != nil {
 		return nil, verr
 	}

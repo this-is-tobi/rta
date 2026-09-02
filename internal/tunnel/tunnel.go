@@ -49,6 +49,12 @@ type Target struct {
 	// tail what the far end dials once there. See ssh.go for why this shape
 	// resolves differently from a kube coordinate.
 	SSH string `yaml:"ssh,omitempty" json:"ssh,omitempty"`
+	// SecretsFrom is context/namespace, naming where Secret is read from when
+	// this target opens no forward at all — the connection that reaches its
+	// service directly and keeps only its credentials in a cluster. Ignored
+	// when Kube is set, whose own namespace is then the answer; the two are
+	// refused together well before this, at config.Check.
+	SecretsFrom string `yaml:"secrets-from,omitempty" json:"secrets-from,omitempty"`
 	// Secret names a Secret in the coordinate's own namespace holding the
 	// credentials for the thing at the other end of the tunnel.
 	Secret string `yaml:"secret,omitempty" json:"secret,omitempty"`
@@ -153,6 +159,48 @@ func parseKube(spec string) (ctx, ns, kind, name string, port int, verr *view.Er
 		}
 	}
 	return parts[0], parts[1], parts[2], name, p, nil
+}
+
+// parseKubeNamespace splits context/namespace — where a connection's Secrets
+// are read from, with no service and no forward.
+//
+// Deliberately its own parser rather than a shorter branch inside parseKube.
+// The two answer different questions and only one of them may ever open a
+// listener, so a coordinate that names a service cannot arrive here by
+// accident and a namespace cannot arrive at the forward path: parseKube still
+// insists on four segments and a port, and this insists on exactly two.
+func parseKubeNamespace(spec string) (kctx, ns string, verr *view.Error) {
+	bad := func(why string) *view.Error {
+		return view.Errorf("tunnel.secrets.malformed",
+			"%q is not a cluster and namespace: %s", spec, why).
+			WithHint("the form is context/namespace, e.g. homelab/databases — a service and " +
+				"port belong in `kube:`, which also opens a forward")
+	}
+	parts := strings.Split(spec, "/")
+	if len(parts) != 2 {
+		return "", "", bad("want two slash-separated segments")
+	}
+	for i, seg := range parts {
+		if seg == "" {
+			return "", "", bad([]string{"empty context", "empty namespace"}[i])
+		}
+		// parseKube's refusal, for the same reason: both segments become
+		// `--context <v>` / `--namespace <v>` in kubectl's argv, and while
+		// pflag binds a dashed value to its flag rather than reading it as
+		// one, the guarantee is worth holding here too rather than depending
+		// on that staying true.
+		if strings.HasPrefix(seg, "-") {
+			return "", "", bad("a segment may not begin with -")
+		}
+	}
+	return parts[0], parts[1], nil
+}
+
+// CheckKubeNamespace reports what is wrong with a `secrets-from:` value,
+// without touching a cluster — CheckKube's contract for the read-only half.
+func CheckKubeNamespace(spec string) *view.Error {
+	_, _, verr := parseKubeNamespace(spec)
+	return verr
 }
 
 // CheckKube reports what is wrong with a coordinate, without touching a

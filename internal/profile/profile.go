@@ -673,7 +673,7 @@ func CheckConnection(name, key string, conn config.Connection, inst Installed) [
 	}
 	if unknown := conn.UnknownKeys(); len(unknown) > 0 {
 		at("has "+strings.Join(unknown, ", ")+", which nothing reads",
-			"a plugin entry takes set, secrets, kube, ssh and tunnelTLS")
+			"a plugin entry takes set, secrets, secrets-from, kube, ssh and tunnelTLS")
 		return problems
 	}
 	if bad := conn.BadSecretRefs(); len(bad) > 0 {
@@ -730,6 +730,24 @@ func checkTunnel(conn config.Connection) *view.Error {
 			"states `tunnelTLS: true` with neither `kube:` nor `ssh:` — there is no forward for it to describe").
 			WithHint("tunnelTLS: true tells the host the far side of a tunnel speaks TLS on its own; " +
 				"remove it, or add the `kube:`/`ssh:` line it belongs beside")
+	}
+	// Two statements about where this connection's Secrets come from, which is
+	// one fact. Refused rather than ordered, the same treatment `kube:` and
+	// `ssh:` get one check above: a coordinate already names the namespace its
+	// Secrets are read from, so a `secrets-from:` beside it is either the same
+	// answer written twice or a second, different one that a reader has no way
+	// to rank.
+	if conn.Kube != "" && conn.SecretsFrom != "" {
+		return view.Errorf("core.profile.secrets.twice",
+			"states both `kube:` and `secrets-from:` — a `kube:` coordinate already names "+
+				"the namespace its Secrets are read from").
+			WithHint("drop `secrets-from:`, or drop `kube:` if this connection reaches its " +
+				"service directly and only its credentials live in the cluster")
+	}
+	if conn.SecretsFrom != "" {
+		if verr := tunnel.CheckKubeNamespace(conn.SecretsFrom); verr != nil {
+			return verr
+		}
 	}
 	if conn.Kube != "" {
 		return tunnel.CheckKube(conn.Kube)
@@ -933,16 +951,20 @@ func checkSecretRefs(name, key string, conn config.Connection, ns string, inst I
 				"only a text-shaped input can carry a secret's value")
 			continue
 		}
-		if ref.Scheme == "kube" && conn.Kube == "" {
-			hint := "a `kube:` secret is read from the namespace the coordinate names, so add " +
-				"`kube: <context>/<namespace>/svc/<name>:<port>` — or use `kv:` for a local entry"
+		if ref.Scheme == "kube" && conn.Kube == "" && conn.SecretsFrom == "" {
+			hint := "name where to read it: `secrets-from: <context>/<namespace>` for a connection " +
+				"that reaches its service directly, or `kube: <context>/<namespace>/svc/<name>:<port>` " +
+				"when the call also needs a forward — or use `kv:` for a local entry"
 			if conn.SSH != "" {
-				// Following the usual hint would state two tunnels, which is
-				// its own refusal — say the real choice instead.
-				hint = "an `ssh:` tunnel cannot read a Kubernetes Secret — use `kv:` for a " +
-					"local entry, or switch the tunnel to a `kube:` coordinate"
+				// Following the old hint would state two tunnels, which is its
+				// own refusal — say the real choice instead. `secrets-from:` is
+				// open to an ssh connection, because reading a Secret is a
+				// separate cluster call and not part of the forward.
+				hint = "an `ssh:` tunnel cannot read a Kubernetes Secret — add " +
+					"`secrets-from: <context>/<namespace>` to say which cluster holds it, " +
+					"or use `kv:` for a local entry"
 			}
-			at(fmt.Sprintf("secrets.%s reads a credential from a cluster and states no `kube:` coordinate",
+			at(fmt.Sprintf("secrets.%s reads a credential from a cluster and does not say which",
 				ref.Input), hint)
 			continue
 		}

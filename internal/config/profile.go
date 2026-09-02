@@ -141,6 +141,33 @@ type Connection struct {
 	// is the cost that has to stay worth it.
 	Kube string `yaml:"kube,omitempty" json:"kube,omitempty"`
 
+	// SecretsFrom names the cluster and namespace a `kube:` secret reference
+	// is read from, as `context/namespace`, for a connection that reaches its
+	// service directly.
+	//
+	// **It exists because `kube:` was carrying two unrelated facts.** A
+	// coordinate says both "read this connection's Secrets from here" and
+	// "open a forward to this service", and only the first two of its four
+	// segments are used for the read — tunnel.Secrets discards kind, name and
+	// port. That conflation had a consequence nothing in the codebase ever
+	// argued for: a credential kept in a cluster forced the connection through
+	// a port-forward, because stating the coordinate needed to read it also
+	// laid that coordinate's endpoint over `set: host`. A database on a public
+	// address whose password lives in a cluster Secret was simply not
+	// expressible.
+	//
+	// So this is the read half on its own, and `kube:` keeps meaning exactly
+	// what it did — a forward. A connection states at most one of the two:
+	// with `kube:` present the Secrets already come from its namespace, and
+	// naming a second source would be two statements about one fact, which
+	// Check refuses the way it refuses `kube:` and `ssh:` together.
+	//
+	// The namespace is still the connection's own and never a caller's, which
+	// is the invariant that mattered all along: a reference reaching into a
+	// different namespace would turn one connection's coordinate into a
+	// general-purpose cluster reader.
+	SecretsFrom string `yaml:"secrets-from,omitempty" json:"secrets-from,omitempty"`
+
 	// SSH is the jump-host target, [user@]host[:port]/desthost:destport —
 	// the other spelling of the same fact, for the service that lives behind
 	// a bastion rather than in a cluster. The head is an ~/.ssh/config alias
@@ -280,7 +307,8 @@ func (p Profile) Trusted() bool { return p.trusted }
 // unknown by the very next test run rather than silently accepted.
 var (
 	profileKeys    = map[string]bool{"plugins": true, "note": true, "ttl": true}
-	connectionKeys = map[string]bool{"set": true, "secrets": true, "kube": true, "ssh": true, "tunnelTLS": true}
+	connectionKeys = map[string]bool{"set": true, "secrets": true, "kube": true, "ssh": true,
+		"secrets-from": true, "tunnelTLS": true}
 )
 
 // unclaimed lists the keys of a raw block that no field of the shape claims,

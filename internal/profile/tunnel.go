@@ -139,17 +139,21 @@ func kubeSecrets(ctx context.Context, name string, conn config.Connection) (map[
 	// A credential in a cluster needs the coordinate that says which cluster.
 	// Refused rather than guessed: there is no default namespace to fall back
 	// to that would not be somebody else's.
-	if conn.Kube == "" {
-		hint := "a `kube:` secret is read from the namespace the coordinate names, so add " +
-			"`kube: <context>/<namespace>/svc/<name>:<port>` — or use `kv:` for a local entry"
+	if conn.Kube == "" && conn.SecretsFrom == "" {
+		hint := "name where to read it: `secrets-from: <context>/<namespace>` for a connection " +
+			"that reaches its service directly, or `kube: <context>/<namespace>/svc/<name>:<port>` " +
+			"when the call also needs a forward — or use `kv:` for a local entry"
 		if conn.SSH != "" {
 			// checkSecretRefs' words for the same case, kept identical: an
-			// `ssh:` tunnel reaches a TCP port, not an apiserver.
-			hint = "an `ssh:` tunnel cannot read a Kubernetes Secret — use `kv:` for a " +
-				"local entry, or switch the tunnel to a `kube:` coordinate"
+			// `ssh:` tunnel reaches a TCP port, not an apiserver. `secrets-from:`
+			// is still open to it, because reading a Secret is a separate
+			// cluster call that has nothing to do with the forward.
+			hint = "an `ssh:` tunnel cannot read a Kubernetes Secret — add " +
+				"`secrets-from: <context>/<namespace>` to say which cluster holds it, " +
+				"or use `kv:` for a local entry"
 		}
 		return nil, view.Errorf("core.profile.secret.nocluster",
-			"profile %q reads a credential from a cluster and states no `kube:` coordinate", name).
+			"profile %q reads a credential from a cluster and does not say which", name).
 			WithHint(hint)
 	}
 	secrets := make([]string, 0, len(from))
@@ -160,10 +164,12 @@ func kubeSecrets(ctx context.Context, name string, conn config.Connection) (map[
 
 	out := map[string]string{}
 	for _, secret := range secrets {
-		// Kube alone, never target(conn): the Secret is read through the
-		// coordinate, and by the time this runs the nocluster refusal above
-		// has guaranteed there is one.
-		t := tunnel.Target{Kube: conn.Kube}
+		// The read halves alone, never target(conn): the Secret is read
+		// through a cluster reference, and by the time this runs the nocluster
+		// refusal above has guaranteed one of the two is set. Carrying both is
+		// not carrying the forward — Secrets opens nothing, it uses whichever
+		// of these states the context and namespace.
+		t := tunnel.Target{Kube: conn.Kube, SecretsFrom: conn.SecretsFrom}
 		t.Secret, t.From = secret, from[secret]
 		filled, verr := tunnel.Secrets(ctx, name, t)
 		if verr != nil {
