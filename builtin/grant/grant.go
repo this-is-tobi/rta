@@ -106,7 +106,13 @@ func Plugin(catalog func() []plugin.Capability) plugin.Plugin {
 					{Name: "rate", Type: plugin.String, Suggest: suggestRate,
 						Help: "how fast it may be used, as calls/window — e.g. 10/1h"},
 					{Name: "note", Type: plugin.String, Help: "why — shown by grant list"},
+					// One passphrase field serves both gates that can ask: the
+					// local guard's, and — with --server — the operator key's.
+					// Same name, same channels, same argv refusal.
 					guard.PassphraseField,
+					{Name: "server", Type: plugin.String, Local: true,
+						Help: "issue on a remote server instead (a name from remotes.yaml): it prepares " +
+							"the grant under its own policy, you sign it with your operator key"},
 				},
 				Run: func(ctx context.Context, req plugin.Request) (view.View, error) {
 					return runAllow(ctx, req, catalog)
@@ -175,6 +181,10 @@ func Plugin(catalog func() []plugin.Capability) plugin.Plugin {
 					{Name: "agent", Type: plugin.String, Suggest: suggestHeldAgents,
 						Help: "only the grant for this named agent"},
 					{Name: "all", Type: plugin.Bool, Help: "revoke every grant"},
+					{Name: "server", Type: plugin.String, Local: true,
+						Help: "revoke on a remote server instead (a name from remotes.yaml), as a " +
+							"signed operator call"},
+					operatorid.PassphraseField,
 				},
 				Run: runRevoke,
 			},
@@ -463,6 +473,9 @@ func runAllow(_ context.Context, req plugin.Request, catalog func() []plugin.Cap
 	if req.Surface() == plugin.SurfaceMCP {
 		return nil, view.Errorf("grant.human", "grants can only be issued by a person").
 			WithHint("ask the operator to run: rta grant allow <capability> --ttl 15m")
+	}
+	if server := req.String("server"); server != "" {
+		return remoteAllow(req, server)
 	}
 	// Validation and construction live in buildGrant, shared with the
 	// operator channel's prepare verb — the machine whose config, policy and
@@ -1150,6 +1163,9 @@ func runRevoke(_ context.Context, req plugin.Request) (view.View, error) {
 	if req.Surface() == plugin.SurfaceMCP {
 		return nil, view.Errorf("grant.human", "grants can only be revoked by a person").
 			WithHint("ask the operator to run: rta grant revoke <capability>")
+	}
+	if server := req.String("server"); server != "" {
+		return remoteRevoke(req, server)
 	}
 	spec := operatorid.RevokeSpec{
 		All:     req.Bool("all"),
