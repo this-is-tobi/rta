@@ -161,7 +161,7 @@ func LoadRoster(path string) (Roster, bool, error) {
 		return Roster{}, groupReadable, err
 	}
 	r := Roster{keys: map[string][]rosterEntry{}}
-	seen := map[string]string{} // base64 pubkey -> label, to name a duplicate's other half
+	seen := map[string]string{} // decoded key bytes -> label, to name a duplicate's other half
 	labels := map[string]bool{} // one label per person: a shared label makes the audit line name a role
 	for i, line := range strings.Split(string(raw), "\n") {
 		line = strings.TrimSpace(line)
@@ -199,12 +199,21 @@ func LoadRoster(path string) (Roster, bool, error) {
 		if verr := grant.CheckAgent(label); verr != nil || label == "" {
 			return Roster{}, groupReadable, fmt.Errorf("%s:%d: label %q is not a valid operator label", path, i+1, label)
 		}
-		pub, err := base64.StdEncoding.DecodeString(encoded)
+		// Strict, because base64 is not injective by default: a 32-byte key
+		// ends its encoding with two padding bits the lenient decoder ignores,
+		// so four spellings name one key. This file's one-label-per-key rule
+		// is an anti-impersonation check, and with roles it became a security
+		// boundary — the same key enrolled twice, once role=read and once
+		// bare, would let a watching key answer as a full operator and cross
+		// into the guard's signing set. Strict decoding leaves one spelling
+		// per key (the one RosterLine prints), and the dedup below keys on
+		// the decoded bytes anyway, so neither layer's removal reopens this.
+		pub, err := base64.StdEncoding.Strict().DecodeString(encoded)
 		if err != nil || len(pub) != ed25519.PublicKeySize {
 			return Roster{}, groupReadable, fmt.Errorf("%s:%d: %q is not an ed25519 public key — "+
 				"`rta operator status` on the operator's own machine prints the line to paste here", path, i+1, encoded)
 		}
-		if other, dup := seen[encoded]; dup {
+		if other, dup := seen[string(pub)]; dup {
 			return Roster{}, groupReadable, fmt.Errorf("%s:%d: this key is already enrolled as %q — "+
 				"one label per key, so the audit trail names one person", path, i+1, other)
 		}
@@ -212,7 +221,7 @@ func LoadRoster(path string) (Roster, bool, error) {
 			return Roster{}, groupReadable, fmt.Errorf("%s:%d: %q is already enrolled — "+
 				"one key per label, or the audit trail names a role instead of a person", path, i+1, label)
 		}
-		seen[encoded] = label
+		seen[string(pub)] = label
 		labels[label] = true
 		fp := passkey.Fingerprint(pub)
 		r.keys[fp] = append(r.keys[fp], rosterEntry{label: label, key: ed25519.PublicKey(pub), role: role})
