@@ -772,3 +772,96 @@ func TestAConfigWriteMidResolveDoesNotUnprofileTheCall(t *testing.T) {
 		t.Errorf("values = %v, want the environment as it now stands", filled)
 	}
 }
+
+// `d` deletes nothing on its own: it arms a question in the footer, and only
+// `y` answers it. This pane once removed a whole environment — config entry,
+// active switch and every grant naming it — on that single keypress, one row
+// mispick away from the navigation keys, while a Destructive capability's
+// form stops for an explicit confirmation stage.
+func TestDeleteAsksBeforeRemovingAProfile(t *testing.T) {
+	m := profileModel(t, twoProfileConfig())
+	m.mode = modeProfiles
+
+	m = press(t, m, "d")
+	if m.armedDelete != "prod" { // row 0 is prod
+		t.Fatalf("armedDelete = %q, want prod", m.armedDelete)
+	}
+	onDisk, err := config.LoadFile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(onDisk.Profiles) != 2 {
+		t.Fatalf("d alone already changed the file: %+v", onDisk.Profiles)
+	}
+	bar := plain(m.profileFooter())
+	if !strings.Contains(bar, "delete profile prod") || !strings.Contains(bar, "cancels") {
+		t.Errorf("armed footer does not name what y would do: %q", bar)
+	}
+
+	m = press(t, m, "y")
+	if m.armedDelete != "" {
+		t.Errorf("armedDelete = %q after firing, want empty", m.armedDelete)
+	}
+	onDisk, err = config.LoadFile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, still := onDisk.Profiles["prod"]; still || len(onDisk.Profiles) != 1 {
+		t.Errorf("profiles on disk = %+v, want only staging", onDisk.Profiles)
+	}
+}
+
+// Any key that is not `y` disarms, and is spent doing so: a cancel that also
+// moved the cursor or left the pane would make the safe answer do something.
+// Swallowing is also what freezes the selection between the two presses, so
+// what `y` deletes is exactly what the bar named.
+func TestAnyOtherKeyCancelsAnArmedDelete(t *testing.T) {
+	m := profileModel(t, twoProfileConfig())
+	m.mode = modeProfiles
+	m = press(t, m, "d")
+	m = press(t, m, "j")
+	if m.armedDelete != "" {
+		t.Errorf("armedDelete = %q, want disarmed", m.armedDelete)
+	}
+	if m.profileSel != 0 {
+		t.Errorf("the cancelling key also moved the cursor, to row %d", m.profileSel)
+	}
+	if m.mode != modeProfiles {
+		t.Errorf("the cancelling key also changed screens, to %v", m.mode)
+	}
+	onDisk, err := config.LoadFile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(onDisk.Profiles) != 2 {
+		t.Errorf("a cancelled delete changed the file: %+v", onDisk.Profiles)
+	}
+	if bar := plain(m.profileFooter()); strings.Contains(bar, "cancels") {
+		t.Errorf("footer still shows the armed question: %q", bar)
+	}
+}
+
+// The same gate, one level down: removing one plugin from an environment.
+func TestDeleteAsksBeforeRemovingAConnection(t *testing.T) {
+	m := profileModel(t, twoProfileConfig())
+	m.profileOpen = "staging"
+	m.mode = modeProfilePlugins
+
+	m = press(t, m, "d")
+	if m.armedDelete != "db" {
+		t.Fatalf("armedDelete = %q, want db", m.armedDelete)
+	}
+	bar := plain(m.footerFor(modeProfilePlugins))
+	if !strings.Contains(bar, "remove db from staging") {
+		t.Errorf("armed footer does not name what y would do: %q", bar)
+	}
+
+	m = press(t, m, "y")
+	onDisk, err := config.LoadFile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := onDisk.Profiles["staging"].Plugins; len(got) != 0 {
+		t.Errorf("staging still has %+v after a confirmed remove", got)
+	}
+}

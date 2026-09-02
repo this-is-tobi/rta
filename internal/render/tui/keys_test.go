@@ -264,10 +264,10 @@ func keyMsg(key string) tea.KeyPressMsg {
 // what each key is allowed to change would be the same drift this test exists
 // to catch, written twice.
 func fingerprint(m Model) string {
-	return fmt.Sprintf("%v|%d|%d|%d|%d|%d|%d|%q|%v|%v|%v|%v|%d|%q|%d",
+	return fmt.Sprintf("%v|%d|%d|%d|%d|%d|%d|%q|%v|%v|%v|%v|%d|%q|%d|%q",
 		m.mode, m.selected, m.pluginSel, m.pluginScroll, m.profileSel, m.profileScroll,
 		m.row, m.query, m.searchEditing, m.form != nil, m.themeForm != nil,
-		m.copyPick != nil, len(m.trail), m.flash, m.tickGen)
+		m.copyPick != nil, len(m.trail), m.flash, m.tickGen, m.armedDelete)
 }
 
 // One idea, one word, one notation — everywhere. Three spellings of "the
