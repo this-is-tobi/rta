@@ -18,7 +18,9 @@ package passkey
 import (
 	"bytes"
 	"crypto/ed25519"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -32,6 +34,16 @@ import (
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
+
+// Fingerprint names a verification key in eight hex characters: enough to
+// notice a key that changed, short enough for a table cell. It lives here
+// because both keys that wear it must compute it identically — the operator
+// fingerprint a client prints is the string a server's roster looks up, so
+// two implementations would be an interop bug waiting for its first rotation.
+func Fingerprint(pub ed25519.PublicKey) string {
+	sum := sha256.Sum256(pub)
+	return hex.EncodeToString(sum[:4])
+}
 
 // ErrPassphrase marks an unwrap that failed on the passphrase itself rather
 // than on the ciphertext's encoding. age cannot tell a wrong passphrase from
