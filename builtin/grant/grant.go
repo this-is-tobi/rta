@@ -18,6 +18,7 @@ import (
 	"github.com/this-is-tobi/rule-them-all/internal/config"
 	core "github.com/this-is-tobi/rule-them-all/internal/grant"
 	"github.com/this-is-tobi/rule-them-all/internal/guard"
+	operatorid "github.com/this-is-tobi/rule-them-all/internal/operator"
 	profiles "github.com/this-is-tobi/rule-them-all/internal/profile"
 	"golang.org/x/term"
 
@@ -145,9 +146,16 @@ func Plugin(catalog func() []plugin.Capability) plugin.Plugin {
 					"in a hurry. Expired grants are dropped on read. With --detail: what is currently " +
 					"allowed, then everything an agent can reach with no grant at all, and everything " +
 					"that would need one — because \"what did I allow\" is only half of \"what can it do\". " +
-					"Can only be run by a person at a terminal, the same as grant.allow/renew/revoke: the " +
-					"roster names every agent by name, which is exactly the cross-agent visibility an " +
+					"With --server <name> (a server from remotes.yaml): the same roster read from a " +
+					"remote rta server as a signed operator call, your operator key's passphrase asked " +
+					"first. Can only be run by a person at a terminal, the same as grant.allow/renew/revoke: " +
+					"the roster names every agent by name, which is exactly the cross-agent visibility an " +
 					"agent asking about itself must not get.",
+				Inputs: []plugin.Field{
+					{Name: "server", Type: plugin.String, Local: true,
+						Help: "read a remote server's roster instead of this machine's (a name from remotes.yaml)"},
+					operatorid.PassphraseField,
+				},
 				Run: func(ctx context.Context, req plugin.Request) (view.View, error) {
 					return runList(ctx, req, catalog)
 				},
@@ -901,6 +909,9 @@ func runList(ctx context.Context, req plugin.Request, catalog func() []plugin.Ca
 		return nil, view.Errorf("grant.human", "the grant roster is for the person deciding it, not the agents it is about").
 			WithHint("ask the operator to run: rta grant list")
 	}
+	if server := req.String("server"); server != "" {
+		return remoteList(req, server)
+	}
 	held, verr := heldTable()
 	if verr != nil {
 		return nil, verr
@@ -996,6 +1007,37 @@ func heldTable() (view.View, *view.Error) {
 		}
 		return view.Text{Body: body}, nil
 	}
+	cfg, cfgErr := config.Load()
+	t := grantsTable(grants, func(g core.Grant) bool {
+		// A grant whose connection has been repointed since it was issued is
+		// still a row, and it is the row somebody most needs to see: it looks
+		// live, it is listed, and every call it was issued for is refused.
+		//
+		// **This is where the remedy belongs.** The MCP refusal is deliberately
+		// the same sentence an ungranted call gets — telling an agent "this
+		// profile changed since you were granted" would disclose both that the
+		// profile exists and that consent was once given for it — so the person
+		// has to be able to find out here instead.
+		return cfgErr == nil && g.Stale(profiles.ConnStampFor(cfg, g.Profile, core.Namespace(g.Target)))
+	})
+	// A partial suppression is the confusing one: some rows are here, the one
+	// being looked for is not, and nothing on the screen accounts for it.
+	if n := core.Suppressed(); n > 0 {
+		return view.Sections{Items: []view.Section{
+			{ID: "grants", Title: "Allowed", View: t},
+			{ID: "policy", Title: "Your team's policy",
+				View: view.Text{Body: strings.TrimPrefix(suppressedNote(n), "\n\n")}},
+		}}, nil
+	}
+	return t, nil
+}
+
+// grantsTable renders grant rows, wherever they came from — this machine's
+// store or a remote server's answer. stale reports whether a row's
+// connection changed under it; the remote path passes nil, because
+// staleness is judged against the server's config and the server already
+// judged it by the same rule when it loaded the rows.
+func grantsTable(grants []core.Grant, stale func(core.Grant) bool) view.Table {
 	// The Agent column appears only once something has one, and that is the
 	// point rather than a saving. An operator who has never named an agent has
 	// exactly one principal, so a column of em dashes answers a question they
@@ -1046,7 +1088,6 @@ func heldTable() (view.View, *view.Error) {
 		t.Columns = slices.Insert(t.Columns, 2, view.Column{Name: "Agent"})
 	}
 	now := time.Now()
-	cfg, cfgErr := config.Load()
 	for _, g := range grants {
 		record := g.Scope
 		if record == "" {
@@ -1067,16 +1108,7 @@ func heldTable() (view.View, *view.Error) {
 		if connection == "" {
 			connection = "—"
 		}
-		// A grant whose connection has been repointed since it was issued is
-		// still a row, and it is the row somebody most needs to see: it looks
-		// live, it is listed, and every call it was issued for is refused.
-		//
-		// **This is where the remedy belongs.** The MCP refusal is deliberately
-		// the same sentence an ungranted call gets — telling an agent "this
-		// profile changed since you were granted" would disclose both that the
-		// profile exists and that consent was once given for it — so the person
-		// has to be able to find out here instead.
-		if cfgErr == nil && g.Stale(profiles.ConnStampFor(cfg, g.Profile, core.Namespace(g.Target))) {
+		if stale != nil && stale(g) {
 			connection += " (changed)"
 		}
 		row := []string{
@@ -1105,16 +1137,7 @@ func heldTable() (view.View, *view.Error) {
 	}
 
 	t.Total = len(t.Rows)
-	// A partial suppression is the confusing one: some rows are here, the one
-	// being looked for is not, and nothing on the screen accounts for it.
-	if n := core.Suppressed(); n > 0 {
-		return view.Sections{Items: []view.Section{
-			{ID: "grants", Title: "Allowed", View: t},
-			{ID: "policy", Title: "Your team's policy",
-				View: view.Text{Body: strings.TrimPrefix(suppressedNote(n), "\n\n")}},
-		}}, nil
-	}
-	return t, nil
+	return t
 }
 
 // suppressedNote accounts for grants the ceiling is holding back, so that
