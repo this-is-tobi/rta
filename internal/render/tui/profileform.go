@@ -37,10 +37,15 @@ const (
 	profileNoteField   = "profile-note"
 	profileTTLField    = "profile-ttl"
 	profilePluginField = "profile-plugin"
-	profileKubeField   = "profile-kube"
-	profileSSHField    = "profile-ssh"
-	profileTLSField    = "profile-tls"
-	profileSetPrefix   = "set."
+	// The instance label rides in its own box rather than inside the plugin
+	// one, because the plugin box is completed to `name@digest` and a label
+	// belongs in the middle of that string — a place completion cannot put
+	// it and a person should not have to.
+	profileInstanceField = "profile-instance"
+	profileKubeField     = "profile-kube"
+	profileSSHField      = "profile-ssh"
+	profileTLSField      = "profile-tls"
+	profileSetPrefix     = "set."
 
 	profileTTLNone = "no deadline"
 )
@@ -241,6 +246,13 @@ func (m Model) connForm(key, chosen string, seed map[string]any) (tea.Model, tea
 		{Name: profilePluginField, Type: plugin.String, Required: true,
 			Suggest: func(context.Context, plugin.Request) []string { return m.installedPlugins() },
 			Help:    "which plugin, pinned to its artifact — press tab"},
+		// Below the plugin, above everything the plugin's declaration
+		// contributes: the label is part of *which entry* this form edits,
+		// not part of what the entry says. Optional, because one connection
+		// per plugin stays the ordinary case.
+		{Name: profileInstanceField, Type: plugin.String,
+			Help: "optional label when this environment holds several connections " +
+				"to the plugin — e.g. analytics; calls pick it as --profile name/label"},
 	}
 	coordinates := []plugin.Field{
 		// Above the set. fields, because it decides where the call goes and
@@ -312,7 +324,16 @@ func (m Model) connForm(key, chosen string, seed map[string]any) (tea.Model, tea
 		}
 	}
 
-	defaults := map[string]any{profilePluginField: chosen,
+	// An existing labeled entry opens with the label in its own box and the
+	// plugin box carrying the base key, matching how the two are edited —
+	// the completion that fills the plugin box produces `name@digest`, never
+	// a labeled key.
+	chosenNS, chosenInstance, chosenPin := config.SplitKey(chosen)
+	chosenBase := chosenNS
+	if chosenPin != "" {
+		chosenBase += "@" + chosenPin
+	}
+	defaults := map[string]any{profilePluginField: chosenBase, profileInstanceField: chosenInstance,
 		profileKubeField: conn.Kube, profileSSHField: conn.SSH, profileTLSField: conn.TunnelTLS}
 	for k, v := range conn.Set {
 		defaults[profileSetPrefix+k] = v
@@ -453,6 +474,20 @@ func (m Model) saveConnForm() (tea.Model, tea.Cmd) {
 	if key == "" {
 		m.flash = "nothing saved: no plugin named"
 		return m.closeToOrigin()
+	}
+	// The label box wins over one typed into the plugin box, and recomposes
+	// the key the file will hold: `pg@pin` + `analytics` = `pg/analytics@pin`.
+	if instance := strings.TrimSpace(str(values[profileInstanceField])); instance != "" {
+		if !config.ValidInstance(instance) {
+			m.flash = "nothing saved: " + instance + " is not a valid instance label — " +
+				"lowercase letters, digits and dashes, starting with a letter"
+			return m.closeToOrigin()
+		}
+		ns, _, pin := config.SplitKey(key)
+		key = ns + "/" + instance
+		if pin != "" {
+			key += "@" + pin
+		}
 	}
 
 	var (
@@ -853,7 +888,11 @@ func (m *Model) copyExportLine() string {
 	var missing []string
 	for _, c := range row.conns {
 		for _, cr := range c.credentials {
-			if !cr.satisfied() {
+			// No line for a labeled instance's credential: the variable
+			// does not exist as a channel, and a pasted export that fills
+			// nothing — or worse, fills the default instance — is exactly
+			// the confident wrong answer this pane exists to prevent.
+			if !cr.satisfied() && cr.env != "" {
 				missing = append(missing, "export "+cr.env+"=…")
 			}
 		}
