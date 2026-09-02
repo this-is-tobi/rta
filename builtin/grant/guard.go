@@ -3,9 +3,11 @@ package grant
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	core "github.com/this-is-tobi/rule-them-all/internal/grant"
 	"github.com/this-is-tobi/rule-them-all/internal/guard"
+	operatorid "github.com/this-is-tobi/rule-them-all/internal/operator"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
@@ -69,6 +71,29 @@ func runGuardOff(_ context.Context, req plugin.Request) (view.View, error) {
 	if verr != nil {
 		return nil, verr
 	}
+	// A remote guard has no passphrase to prove — its secrets live with
+	// operators who are elsewhere — so the legitimate way off costs presence
+	// at this terminal and nothing else. What still stands against an agent
+	// with a shell here is what always stood: the running server's Pin, and
+	// the audit trail of a guard that read "on" yesterday.
+	if guard.Remote() {
+		if req.DryRun {
+			return view.Text{Body: fmt.Sprintf("would disable the remote guard, clearing the %d "+
+				"grant(s) its operators signed", len(held))}, nil
+		}
+		if verr := core.Mutate(func([]core.Grant) ([]core.Grant, bool) {
+			return nil, true
+		}); verr != nil {
+			return nil, verr
+		}
+		if verr := guard.DisableRemote(); verr != nil {
+			return nil, verr
+		}
+		return view.KeyValue{Pairs: []view.Pair{
+			{Key: "guard", Value: "off — grants issue without an operator signature again"},
+			{Key: "cleared", Value: fmt.Sprintf("%d grant(s) the operators had signed", len(held))},
+		}}, nil
+	}
 	if req.DryRun {
 		return view.Text{Body: fmt.Sprintf("would disable the guard after checking the passphrase, "+
 			"clearing the %d grant(s) it signed", len(held))}, nil
@@ -99,6 +124,53 @@ func runGuardOff(_ context.Context, req plugin.Request) (view.View, error) {
 	}}, nil
 }
 
+// runGuardRemote is the provisioning-time enrollment: this machine's guard
+// becomes the roster's public keys, and nothing else, ever. It shares
+// guard-on's ordering — clear first, enable second — and its crash story.
+func runGuardRemote(_ context.Context, req plugin.Request) (view.View, error) {
+	if req.Surface() == plugin.SurfaceMCP {
+		return nil, view.Errorf("grant.human", "the guard can only be enabled by a person")
+	}
+	if guard.Enabled() {
+		return nil, view.Errorf("core.guard.exists", "the guard is already enabled").
+			WithHint("`rta grant guard off` first, if you mean to change what it trusts")
+	}
+	path := strings.TrimSpace(req.String("operators"))
+	if path == "" {
+		return nil, view.Errorf("core.guard.remote.roster", "name the roster file to enroll").
+			WithHint("rta grant guard remote operators.txt — the file `rta mcp serve --operators` reads")
+	}
+	roster, _, err := operatorid.LoadRoster(path)
+	if err != nil {
+		return nil, view.Errorf("core.guard.remote.roster", "%v", err)
+	}
+	held, verr := core.Load()
+	if verr != nil {
+		return nil, verr
+	}
+	if req.DryRun {
+		return view.Text{Body: fmt.Sprintf("would enroll %s as this machine's guard — grants are "+
+			"then honoured only when signed by one of them, issued over the operator channel — and "+
+			"clear the %d grant(s) currently held",
+			strings.Join(roster.Labels(), ", "), len(held))}, nil
+	}
+	if verr := core.Mutate(func([]core.Grant) ([]core.Grant, bool) {
+		return nil, true
+	}); verr != nil {
+		return nil, verr
+	}
+	if verr := guard.EnableRemote(roster.Entries()); verr != nil {
+		return nil, verr
+	}
+	return view.KeyValue{Pairs: []view.Pair{
+		{Key: "guard", Value: "remote — a grant is honoured only when an enrolled operator signed it"},
+		{Key: "operators", Value: strings.Join(roster.Labels(), ", ")},
+		{Key: "key", Value: guard.Fingerprint()},
+		{Key: "cleared", Value: fmt.Sprintf("%d grant(s) issued before the guard", len(held))},
+		{Key: "issuance", Value: "rta grant allow <capability> --server <this server>, from an enrolled machine"},
+	}}, nil
+}
+
 func runGuardStatus(_ context.Context, req plugin.Request) (view.View, error) {
 	if req.Surface() == plugin.SurfaceMCP {
 		return nil, view.Errorf("grant.human", "the guard's status is for the person at the terminal")
@@ -112,6 +184,15 @@ func runGuardStatus(_ context.Context, req plugin.Request) (view.View, error) {
 	held, verr := core.Load()
 	if verr != nil {
 		return nil, verr
+	}
+	if guard.Remote() {
+		return view.KeyValue{Pairs: []view.Pair{
+			{Key: "guard", Value: "remote — a grant is honoured only when an enrolled operator signed it"},
+			{Key: "since", Value: guard.Created().Local().Format("2006-01-02 15:04")},
+			{Key: "operators", Value: strings.Join(guard.OperatorLabels(), ", ")},
+			{Key: "key", Value: guard.Fingerprint()},
+			{Key: "grants", Value: fmt.Sprintf("%d held, all operator-signed", len(held))},
+		}}, nil
 	}
 	return view.KeyValue{Pairs: []view.Pair{
 		{Key: "guard", Value: "on — issuing or renewing a grant asks for the passphrase"},

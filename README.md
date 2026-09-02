@@ -36,7 +36,7 @@ The five chapters from the boundary to team policy are worth reading in that ord
 
 ## What is in it
 
-**17 built-in plugins, 111 capabilities** in the default build, and `rta plugin list` is the inventory:
+**17 built-in plugins, 112 capabilities** in the default build, and `rta plugin list` is the inventory:
 
 `sys` · `net` · `http` · `cert` · `fs` · `kv` · `todo` · `note` · `gen` · `codec` · `audit` · `grant` · `agent` · `operator` · `debug` · `keys` · `git`
 

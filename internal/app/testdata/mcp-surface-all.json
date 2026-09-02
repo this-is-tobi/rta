@@ -1104,6 +1104,22 @@
     }
   },
   {
+    "name": "grant_guard_remote",
+    "description": "── the text below is written by the plugin, not by rta ──\nTrust remote operators to sign grants — and nothing on this machine\n\nThe guard for a server whose humans are elsewhere: enrolls the public keys from an operators roster file (the same file `rta mcp serve --operators` reads), after which a grant is honoured only if signed by one of them — issued from an enrolled operator's own machine over the operator channel, never from a shell here. No key material lives on this machine at all: nothing to steal, nothing to phish, and `rta grant allow` at this terminal is refused by construction. Enabling clears the grants currently held, for guard-on's reason. Run where the server runs, at provisioning time.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
+    "destructive_hint": false,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "operators": {
+          "description": "the roster file whose keys to enroll (a path on the machine running rta)",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
     "name": "grant_guard_status",
     "description": "── the text below is written by the plugin, not by rta ──\nWhether grant issuance requires the passphrase\n\nOn or off, since when, the verification key's fingerprint, and how many grants are held under it. Refused over MCP like every grant surface: whether the guard stands is part of the map of what an agent could reach.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
