@@ -213,6 +213,28 @@ func (m Model) pluginsKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 }
 
 func (m Model) profilesKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
+	// The armed half of the delete gate — see Model.armedDelete. Only `y`
+	// fires; every other key disarms and is *spent* doing so, because a
+	// cancel that also moved the cursor or opened a form would make the safe
+	// answer do something. Swallowing everything is also what freezes the
+	// selection between the two presses, so what `y` deletes is exactly what
+	// the bar named. ctrl+c stays an exit rather than a cancel: an emergency
+	// key that sometimes means "no, the other thing" is not an emergency key.
+	if m.armedDelete != "" {
+		if msg.String() == "ctrl+c" {
+			return m, tea.Quit, true
+		}
+		fire := msg.String() == "y"
+		m.armedDelete = ""
+		if fire {
+			m.flash = m.deleteSelectedProfile()
+			m.profiles = m.profileRows()
+			m.profileSel = min(m.profileSel, max(len(m.profiles)-1, 0))
+			m.clampProfileScroll(m.profileBodyHeight())
+			return m, m.syncActive(), true
+		}
+		return m, nil, true
+	}
 	switch msg.String() {
 	case "q", "ctrl+c":
 		return m, tea.Quit, true
@@ -251,11 +273,10 @@ func (m Model) profilesKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		}
 		return m, nil, true
 	case "d":
-		m.flash = m.deleteSelectedProfile()
-		m.profiles = m.profileRows()
-		m.profileSel = min(m.profileSel, max(len(m.profiles)-1, 0))
-		m.clampProfileScroll(m.profileBodyHeight())
-		return m, m.syncActive(), true
+		if m.profileSel < len(m.profiles) {
+			m.armedDelete = m.profiles[m.profileSel].name
+		}
+		return m, nil, true
 	case "y":
 		// The same predicate the footer offers the key on, so the two cannot
 		// disagree — a key that answers where nothing advertises it is what
@@ -273,6 +294,24 @@ func (m Model) profilesKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 }
 
 func (m Model) profilePluginsKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
+	// Same two-press gate as profilesKeys, one level down; the reasoning
+	// lives there and on Model.armedDelete.
+	if m.armedDelete != "" {
+		if msg.String() == "ctrl+c" {
+			return m, tea.Quit, true
+		}
+		fire := msg.String() == "y"
+		m.armedDelete = ""
+		if fire {
+			m.flash = m.deleteSelectedConn()
+			m.profiles = m.profileRows()
+			row, _ := m.openProfile()
+			m.connSel = min(m.connSel, max(len(row.conns)-1, 0))
+			m.clampConnScroll(m.profileBodyHeight())
+			return m, m.syncActive(), true
+		}
+		return m, nil, true
+	}
 	row, open := m.openProfile()
 	switch msg.String() {
 	case "q", "ctrl+c":
@@ -302,12 +341,10 @@ func (m Model) profilePluginsKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool
 		nm, cmd := m.startCredentialForm()
 		return nm, cmd, true
 	case "d":
-		m.flash = m.deleteSelectedConn()
-		m.profiles = m.profileRows()
-		row, _ = m.openProfile()
-		m.connSel = min(m.connSel, max(len(row.conns)-1, 0))
-		m.clampConnScroll(m.profileBodyHeight())
-		return m, m.syncActive(), true
+		if open && m.connSel < len(row.conns) {
+			m.armedDelete = row.conns[m.connSel].key
+		}
+		return m, nil, true
 	}
 	return m, nil, true
 }

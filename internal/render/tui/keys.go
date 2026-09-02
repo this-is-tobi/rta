@@ -371,6 +371,28 @@ func (m Model) footerItems(screen mode) []hintItem {
 // the bar is where the key was advertised — putting the confirmation anywhere
 // else makes somebody look for it.
 func (m Model) footerFor(screen mode) string {
+	// An armed delete replaces the whole bar rather than joining it. While
+	// the removal is one key away every other hint is a distraction, and `y`
+	// must not keep the meaning this pane's own vocabulary gives it — in
+	// modeProfiles it copies export lines. The bar is also what makes the
+	// gate honest: it names exactly what `y` would remove, in the place the
+	// key that armed it was advertised. Gated on m.mode as well as the armed
+	// string so a view rendered for another screen under this state — which
+	// no key sequence reaches, but tests do — keeps its own bar.
+	if m.armedDelete != "" && screen == m.mode {
+		label := "delete profile " + m.armedDelete + " and revoke the grants naming it"
+		if screen == modeProfilePlugins {
+			label = "remove " + m.armedDelete + " from " + m.profileOpen
+		}
+		if m.width > 0 {
+			label = ansi.Truncate(label, max(m.width-3, 8), "…")
+		}
+		bad := theme.BadText
+		return fitHintBar(m.width, footerMaxLines,
+			hintItem{display: "y", label: label, rank: rankAction, keys: []string{"y"}},
+			hintItem{display: "✗", label: "any other key cancels", rank: rankAction, style: &bad},
+		)
+	}
 	items := m.footerItems(screen)
 	if m.flash != "" {
 		// Packed with everything else rather than appended after it, which is

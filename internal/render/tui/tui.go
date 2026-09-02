@@ -96,6 +96,15 @@ type Model struct {
 	lastYes    bool
 	result     resultMsg
 	flash      string // one-shot footer notice (e.g. "copied"), cleared on next key
+	// armedDelete is the two-press gate on the profile panes' `d`: the first
+	// press names what would be removed, the next `y` removes it, and any
+	// other key disarms. It exists because `d` sat one mispress from the
+	// navigation keys and deleted a whole environment — config entry, active
+	// switch and every grant naming it — with less ceremony than the TUI
+	// gives a Destructive capability's form, which stops for an explicit
+	// confirmation stage. Holds the profile name in modeProfiles and the
+	// plugin key in modeProfilePlugins; "" when nothing is armed.
+	armedDelete string
 	width      int
 	height     int
 
