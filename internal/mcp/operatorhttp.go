@@ -252,7 +252,12 @@ func (h *operatorHandler) answer(env operator.Envelope, label string,
 // Opened only past Verify, so every row names an enrolled key. The route
 // is reachable unauthenticated, and a stranger who could write rows by
 // POSTing garbage would hold a disk-filling primitive against the one
-// file that must outlive an incident.
+// file that must outlive an incident. An enrolled key that is locked or
+// role=read still writes its refused attempts — that is the incident
+// evidence the row exists to keep, and the accepted edge of it: a key
+// worth distrusting can still add rows until the roster edit that
+// un-enrolls it, the same standing every bearer holder has against the
+// bridge's own recording.
 //
 // Cap carries the verb under an "operator." prefix because the bare verb
 // names collide with builtin capability IDs — grant.revoke is also a
@@ -350,6 +355,24 @@ func mutationArgs(env operator.Envelope) (map[string]any, bool) {
 	return args, true
 }
 
+// OperatorLedgerCaps is every capability ID the operator channel can
+// write into the agent ledger — "operator." plus each mutation verb —
+// derived from mutationArgs rather than restated, so it cannot drift
+// from what is actually recorded. internal/app's reservation test walks
+// it against the real registry: these IDs live inside the operator
+// builtin's namespace, and a capability registered under one of them
+// would make an agent's probe grep-identical to an enrolled operator's
+// action in the sealed record.
+func OperatorLedgerCaps() []string {
+	var out []string
+	for _, v := range operator.Verbs() {
+		if _, mutates := mutationArgs(operator.Envelope{Verb: v, Payload: []byte("{}")}); mutates {
+			out = append(out, "operator."+v)
+		}
+	}
+	return out
+}
+
 // putArg records one string field, skipping empties so rows stay as tight
 // as the specs that made them, and cleaned because every value here
 // crossed the network inside a payload rta did not write.
@@ -360,30 +383,50 @@ func putArg(args map[string]any, key, val string) {
 	args[key] = cleanValue(val)
 }
 
-// statusFor sorts a dispatch refusal into its HTTP class. The named codes
-// are this server working as configured — a role outside its allowlist, a
-// verb it does not offer, a payload that does not parse — and a read-only
-// monitoring key hitting them must not page whoever watches this server's
-// error rate as if the server were failing. Anything unnamed stays 500,
-// because an unexpected failure is exactly what error rates exist to
-// surface. The client is deliberately status-agnostic (it reads the
-// view.Error in the body), so this classification is for the middleboxes
-// and dashboards that never parse rta's own vocabulary.
+// statusFor sorts a dispatch refusal into its HTTP class — and, because
+// answer derives the ledger's Refused/Failed split from it, into the
+// record's vocabulary too: a 4xx row is Refused, a 500 is Failed. One
+// classifier for both readers is deliberate; drifting apart is how a
+// probe pages the on-call while its ledger row claims the work merely
+// errored.
+//
+// The named codes are this server working as configured — a role outside
+// its allowlist, a verb it does not offer, a submission failing a stated
+// expectation — and a read-only monitoring key hitting them must not page
+// whoever watches this server's error rate as if the server were failing.
+// The vocabulary reaches into the wired packages because the verbs do:
+// grant grammar, the guard's signature gate, the consent answer's tamper
+// defenses all refuse through here. Anything unnamed stays 500, because
+// an unexpected failure is exactly what error rates exist to surface —
+// which also means a new refusal code lands there until it is named
+// here: the direction that alarms rather than hides. The client is
+// deliberately status-agnostic (it reads the view.Error in the body), so
+// the HTTP class is for the middleboxes and dashboards that never parse
+// rta's own vocabulary.
 func statusFor(code string) int {
 	switch code {
-	case "core.operator.role", "core.operator.consent", "core.operator.verb", "core.operator.guard":
+	// Authorization and policy saying no — the guard refusing a submitted
+	// grant's signature included, and the two consent tamper defenses (a
+	// rewritten queue entry, a digest that no longer matches what the
+	// operator's screen showed), which refuse the answer precisely
+	// because the thing being answered is not what was read.
+	case "core.operator.role", "core.operator.consent", "core.operator.verb", "core.operator.guard",
+		"grant.policy.refused", "core.grant.guard.unsigned", "core.grant.guard.forged",
+		"agent.request.tampered", "agent.answer.failed":
 		return http.StatusForbidden
-	case "core.operator.payload", "core.lock.kind", "core.lock.ttl", "core.lock.name":
+	// The request itself is the problem: malformed, mis-addressed, or
+	// naming something that is not there to act on.
+	case "core.operator.payload", "core.lock.kind", "core.lock.ttl", "core.lock.name", "core.lock.note",
+		"grant.notarget", "agent.request.unknown", "agent.answer.elsewhere":
 		return http.StatusBadRequest
 	}
-	// The issue path's own refusals are the client's submission failing a
-	// stated expectation — "sign what prepare returned, unchanged" — which
-	// is the caller's request to fix, not this server failing. Matched by
-	// prefix because the family grows with checkSubmitted, and a new
-	// expectation forgotten here would page somebody as a server error.
-	// The ledger rides this classification too (see answer), so the prefix
-	// is also what keeps those rows Refused rather than Failed.
-	if strings.HasPrefix(code, "core.operator.issue.") {
+	// Families matched by prefix because they grow at their source: a new
+	// checkSubmitted expectation, or a new grammar rule in the grant
+	// package, is classified the day it is written instead of paging as a
+	// server error until somebody notices.
+	if strings.HasPrefix(code, "core.operator.issue.") ||
+		strings.HasPrefix(code, "grant.agent.") ||
+		strings.HasPrefix(code, "grant.scope.") {
 		return http.StatusBadRequest
 	}
 	return http.StatusInternalServerError
