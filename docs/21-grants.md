@@ -75,6 +75,8 @@ rta agent allow 3
 
 Answering `allow` runs that one call. It does not create a standing grant — if the agent asks again, you are asked again. That is the difference between consent and permission, and rta keeps them separate.
 
+The same three commands take `--server <name>` to answer a call parked on a remote server, as a signed call over [the operator channel](./20-mcp.md#the-operator-channel) — where, unlike here, even the one-shot answer costs your operator key's passphrase, because "an agent with a shell could have done this anyway" is true at your terminal and false across a network.
+
 See [MCP and the safety gate](./20-mcp.md#live-consent) for why this is off by default.
 
 ## The file, and why it is sealed
