@@ -40,6 +40,15 @@ type RemoteOptions struct {
 	// Production callers have no reason to set this; it exists so a test can
 	// exercise the forced-close path without waiting out ten real seconds.
 	ShutdownGrace time.Duration
+	// Operator, when non-nil, mounts the operator channel (NewOperatorHandler)
+	// under /operator/v1 beside the MCP handler. It sits outside the bearer
+	// wall on purpose — its authentication is the envelope signature, and an
+	// agent's bearer token must open nothing there — see operatorhttp.go.
+	// Cross-origin protection still wraps it, like everything on this
+	// listener. nil means the channel is absent: those paths fall through to
+	// the MCP handler and its bearer refusal, indistinguishable from a server
+	// that never heard of operators.
+	Operator http.Handler
 }
 
 // Serve runs server over the Streamable HTTP transport on ln, blocking
@@ -76,9 +85,16 @@ func Serve(ctx context.Context, server *sdk.Server, ln net.Listener, opts Remote
 		// when set.
 		AllowMissingExpiration: true,
 	})(handler)
+	var root http.Handler = authed
+	if opts.Operator != nil {
+		mux := http.NewServeMux()
+		mux.Handle("/operator/v1/", opts.Operator)
+		mux.Handle("/", authed)
+		root = mux
+	}
 	// The deprecated StreamableHTTPOptions.CrossOriginProtection field is
 	// left unset on purpose; this is the SDK's own documented replacement.
-	protected := http.NewCrossOriginProtection().Handler(authed)
+	protected := http.NewCrossOriginProtection().Handler(root)
 
 	httpServer := &http.Server{
 		Handler:           protected,
