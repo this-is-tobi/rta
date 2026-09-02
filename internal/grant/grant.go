@@ -875,12 +875,18 @@ func Issue(g Grant, write bool) *view.Error {
 	// Only when something will be written: a preview mints nothing, so it
 	// must not demand the passphrase a real issuance would — the dry run is
 	// how the TUI and --dry-run describe the grant before anyone commits.
-	if write {
-		if verr := guardIssuable(g); verr != nil {
-			return verr
+	// Checked *inside* the locked callback rather than out here, so a guard
+	// transition cannot interleave: a `guard on` landing between an outside
+	// check and the write would persist an unsigned row the next read then
+	// refuses as forgery — a false alarm this ordering is cheaper than.
+	var guardErr *view.Error
+	verr := Mutate(func(stored []Grant) ([]Grant, bool) {
+		if write {
+			if verr := guardIssuable(g); verr != nil {
+				guardErr = verr
+				return stored, false
+			}
 		}
-	}
-	return Mutate(func(stored []Grant) ([]Grant, bool) {
 		kept := stored[:0]
 		for _, existing := range stored {
 			// Agent is part of the key for the reason stated above: it is one
@@ -896,6 +902,10 @@ func Issue(g Grant, write bool) *view.Error {
 		}
 		return append(kept, g), write
 	})
+	if guardErr != nil {
+		return guardErr
+	}
+	return verr
 }
 
 // Mutate rewrites the grant file under the lock: it hands f every stored

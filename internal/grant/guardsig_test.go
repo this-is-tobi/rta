@@ -2,6 +2,8 @@ package grant
 
 import (
 	"os"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -154,5 +156,49 @@ func TestGuardOffRefusesASignedIssue(t *testing.T) {
 	}
 	if verr.Code != "core.grant.guard.off" {
 		t.Fatalf("code = %s, want core.grant.guard.off", verr.Code)
+	}
+}
+
+// The signed set is a decision, and this is its teeth: a field added to
+// Grant tomorrow must either join the authority struct or be added to the
+// consciously-unsigned list below — shipping it unsigned by accident would
+// make it mutable under the seal alone, which is exactly the granularity
+// mismatch the guard exists to close.
+func TestEveryGrantFieldIsSignedOrConsciouslyExcluded(t *testing.T) {
+	// Uses and Recent are consumption bookkeeping the server rewrites per
+	// call with no passphrase in reach; Sig is the signature itself.
+	unsigned := map[string]bool{"Uses": true, "Recent": true, "Sig": true}
+
+	fields := func(v any) map[string]string {
+		out := map[string]string{}
+		rt := reflect.TypeOf(v)
+		for i := range rt.NumField() {
+			f := rt.Field(i)
+			tag, _, _ := strings.Cut(f.Tag.Get("json"), ",")
+			out[f.Name] = tag
+		}
+		return out
+	}
+	g, a := fields(Grant{}), fields(authority{})
+	for name, tag := range g {
+		if unsigned[name] {
+			if _, in := a[name]; in {
+				t.Errorf("%s is consciously unsigned and also in authority", name)
+			}
+			continue
+		}
+		atag, in := a[name]
+		if !in {
+			t.Errorf("Grant.%s is not signed and not in the consciously-unsigned list", name)
+			continue
+		}
+		if atag != tag {
+			t.Errorf("Grant.%s json tag %q differs from authority's %q — the signed bytes drift", name, tag, atag)
+		}
+	}
+	for name := range a {
+		if _, in := g[name]; !in {
+			t.Errorf("authority.%s signs a field Grant does not have", name)
+		}
 	}
 }

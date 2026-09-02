@@ -9,6 +9,7 @@ import (
 
 	"github.com/this-is-tobi/rule-them-all/internal/config"
 	"github.com/this-is-tobi/rule-them-all/internal/grant"
+	"github.com/this-is-tobi/rule-them-all/internal/guard"
 	"github.com/this-is-tobi/rule-them-all/internal/pathguard"
 	"github.com/this-is-tobi/rule-them-all/internal/profile"
 	"github.com/this-is-tobi/rule-them-all/internal/registry"
@@ -21,6 +22,12 @@ import (
 
 // Options configures which capabilities are exposed.
 type Options struct {
+	// guardPin is the guard state NewServer observed at startup, checked
+	// before any grant is honoured — see the comment beside grant.Reserve in
+	// bridge.go. Unexported on purpose: it is this package's own snapshot,
+	// not a knob, and a caller who could set it could also set it wrong.
+	guardPin guard.Pin
+
 	// AllowWrite names the plugins whose write-class capabilities are
 	// exposed. Empty means none.
 	//

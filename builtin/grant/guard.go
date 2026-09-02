@@ -54,7 +54,7 @@ func runGuardOn(_ context.Context, req plugin.Request) (view.View, error) {
 		{Key: "guard", Value: "on — issuing or renewing a grant now asks for the passphrase"},
 		{Key: "key", Value: guard.Fingerprint()},
 		{Key: "cleared", Value: fmt.Sprintf("%d grant(s) issued before the guard", len(held))},
-		{Key: "forgotten?", Value: "rm " + guard.Path() + " and `rta grant revoke --all` start clean"},
+		{Key: "forgotten?", Value: "rm " + guard.Path() + " and the grants.json beside it starts clean"},
 	}}, nil
 }
 

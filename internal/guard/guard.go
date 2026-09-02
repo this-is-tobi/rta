@@ -14,17 +14,23 @@
 // for the path that actually happens, which is more than the origin field's
 // detection and is claimed for exactly as much as it covers.
 //
-// **What it does not change.** A same-uid process can still delete this
-// state, swap the verification key for its own, and re-seal the grant file
-// with the disk keys — file tampering stays in the detection regime, because
-// against something running as you there is nowhere tamper-proof to stand
-// (docs/19-the-boundary.md owns that argument). Every such rewrite rta can
-// notice is refused loudly and fails closed: a signed grant with no guard
+// **What it does not change.** A same-uid process can still tamper with the
+// files — against something running as you there is nowhere tamper-proof to
+// stand (docs/19-the-boundary.md owns that argument). Every *inconsistent*
+// rewrite is refused loudly and fails closed: a signed grant with no guard
 // state beside it, an unsigned grant while the guard is on, a signature the
 // key does not verify — each kills the whole file's authority, never part of
-// it. The attacker's remaining move is a *consistent* multi-file rewrite,
-// which is no longer an agent typing a command; it is custom tooling, built
-// on purpose, against a boundary the docs state plainly.
+// it. The cheapest defeat is worth naming plainly rather than hiding behind
+// "custom tooling": deleting BOTH files makes the machine look like the
+// guard was never enabled, and nothing on disk can contradict that, because
+// anything that could is a file the same attacker deletes. Two answers, each
+// covering what it can: a running MCP server takes a Pin of the guard state
+// at startup and refuses every grant-gated call if the guard it started
+// under disappears or changes key — the attacker talks *through* that
+// process, so its memory is the one place a same-uid rm cannot reach. Across
+// restarts, no on-disk defense exists; the harness-side deny list
+// (`rta audit agents --fix`) and the operator noticing a guard they enabled
+// reading "off" are what remain, and the docs say so.
 //
 // **No environment channel, by design.** The kv store accepts its passphrase
 // from RTA_KV_PASSPHRASE because a store that cannot open unattended is a
@@ -52,6 +58,8 @@ import (
 
 	"filippo.io/age"
 	"golang.org/x/term"
+
+	"github.com/this-is-tobi/rule-them-all/internal/filelock"
 
 	"github.com/this-is-tobi/rule-them-all/internal/atomicfile"
 	"github.com/this-is-tobi/rule-them-all/internal/seal"
@@ -107,6 +115,38 @@ func (s Signer) Sign(msg []byte) string {
 		ed25519.Sign(s.priv, append([]byte(signContext), msg...)))
 }
 
+// Pin is the guard state as one process observed it at startup, held in
+// memory where a same-uid rm cannot reach. An MCP server takes one before
+// serving and checks it before honouring any grant: the rollback that
+// deletes the guard's files mid-session then reads as tampering to the one
+// process the attacker is actually talking through, instead of succeeding
+// silently. It only ever subtracts — a Pin taken with the guard off checks
+// nothing, so enabling mid-session still works and still strengthens.
+type Pin struct {
+	enabled     bool
+	fingerprint string
+}
+
+// TakePin snapshots the current guard state.
+func TakePin() Pin { return Pin{enabled: Enabled(), fingerprint: Fingerprint()} }
+
+// Check refuses when the guard this Pin saw has been weakened: disabled, or
+// its key replaced. Nil when the Pin saw no guard — the off→on direction is
+// an operator strengthening their machine, not an attack.
+func (p Pin) Check() *view.Error {
+	if !p.enabled {
+		return nil
+	}
+	if !Enabled() || Fingerprint() != p.fingerprint {
+		return view.Errorf("core.guard.pinned",
+			"the guard this server started under is gone or changed key — refusing every "+
+				"grant-gated call until an operator looks").
+			WithHint("if you disabled the guard yourself, restart the server; if you did not, " +
+				"something else removed it — `rta doctor` and `rta agent log` are where to look")
+	}
+	return nil
+}
+
 // Enabled reports whether the guard is on: the state file exists. Existence
 // alone, deliberately — a file that exists but does not parse still reads as
 // enabled, because Enabled=true only ever *refuses* things, and a corrupt
@@ -128,8 +168,8 @@ func load() (state, *view.Error) {
 	if err := json.Unmarshal(data, &st); err != nil || st.PublicKey == "" || st.Key == "" {
 		return st, view.Errorf("core.guard.corrupt",
 			"%s does not parse as guard state — it has been modified or truncated", Path()).
-			WithHint("no grant is honoured while this stands; `rm " + Path() +
-				"` and `rta grant revoke --all` start clean, then `rta grant guard on` again")
+			WithHint("no grant is honoured while this stands; `rm " + Path() + " " + grantsHint() +
+				"` starts clean, then `rta grant guard on` again")
 	}
 	return st, nil
 }
@@ -174,8 +214,8 @@ func Verifier() (func(msg []byte, sig string) bool, *view.Error) {
 	if err != nil || len(pub) != ed25519.PublicKeySize {
 		return nil, view.Errorf("core.guard.corrupt",
 			"%s carries an unreadable verification key", Path()).
-			WithHint("no grant is honoured while this stands; `rm " + Path() +
-				"` and `rta grant revoke --all` start clean, then `rta grant guard on` again")
+			WithHint("no grant is honoured while this stands; `rm " + Path() + " " + grantsHint() +
+				"` starts clean, then `rta grant guard on` again")
 	}
 	key := ed25519.PublicKey(pub)
 	return func(msg []byte, sig string) bool {
@@ -225,6 +265,18 @@ var PassphraseField = plugin.Field{
 // environment inherits may satisfy the guard.
 func PromptSecret(req plugin.Request, confirm bool) (string, *view.Error) {
 	if p := req.String("passphrase"); p != "" {
+		// From the CLI this value travelled on argv, which every process
+		// running as you can read while the command runs, and which lands in
+		// shell history when it ends. One capture is guard-off until the
+		// passphrase rotates, so the flag is refused on this surface rather
+		// than discouraged — the TUI's masked field and the prompt are the
+		// channels that land nowhere.
+		if req.Surface() == plugin.SurfaceCLI {
+			return "", view.Errorf("core.guard.passphrase.argv",
+				"the passphrase must not travel on the command line — argv is readable by "+
+					"every process you run, and shell history keeps it").
+				WithHint("run again without --passphrase and answer the prompt")
+		}
 		return p, nil
 	}
 	if req.Surface() != plugin.SurfaceCLI || !term.IsTerminal(int(stdio.Real().Fd())) {
@@ -270,6 +322,11 @@ func PromptSecret(req plugin.Request, confirm bool) (string, *view.Error) {
 // operator takes by disabling first, not a side effect of running enable
 // twice.
 func Enable(passphrase string) (Signer, *view.Error) {
+	unlock, verr := transitionLock()
+	if verr != nil {
+		return Signer{}, verr
+	}
+	defer unlock()
 	if _, err := os.Stat(Path()); err == nil {
 		return Signer{}, view.Errorf("core.guard.exists", "the guard is already enabled").
 			WithHint("`rta grant guard off` first, if you mean to rotate the passphrase")
@@ -334,14 +391,14 @@ func Unlock(passphrase string) (Signer, *view.Error) {
 	r, err := age.Decrypt(bytes.NewReader(raw), id)
 	if err != nil {
 		return Signer{}, view.Errorf("core.guard.passphrase", "that is not the guard's passphrase").
-			WithHint("forgotten? `rm " + Path() + "` and `rta grant revoke --all` start clean — " +
-				"grants last a day at most, so what is lost is re-issued in minutes")
+			WithHint("forgotten? `rm " + Path() + " " + grantsHint() + "` starts clean — every grant " +
+				"is cleared, and grants last a day at most, so what is lost is re-issued in minutes")
 	}
 	priv, err := io.ReadAll(r)
 	if err != nil || len(priv) != ed25519.PrivateKeySize {
 		return Signer{}, view.Errorf("core.guard.passphrase", "that is not the guard's passphrase").
-			WithHint("forgotten? `rm " + Path() + "` and `rta grant revoke --all` start clean — " +
-				"grants last a day at most, so what is lost is re-issued in minutes")
+			WithHint("forgotten? `rm " + Path() + " " + grantsHint() + "` starts clean — every grant " +
+				"is cleared, and grants last a day at most, so what is lost is re-issued in minutes")
 	}
 	return Signer{priv: ed25519.PrivateKey(priv)}, nil
 }
@@ -352,6 +409,11 @@ func Unlock(passphrase string) (Signer, *view.Error) {
 // exists to make the *legitimate* way off cost what turning it on promised:
 // the secret.
 func Disable(passphrase string) *view.Error {
+	unlock, verr := transitionLock()
+	if verr != nil {
+		return verr
+	}
+	defer unlock()
 	if _, verr := Unlock(passphrase); verr != nil {
 		return verr
 	}
@@ -360,3 +422,25 @@ func Disable(passphrase string) *view.Error {
 	}
 	return nil
 }
+
+// transitionLock serializes Enable/Disable against each other across
+// processes. Without it two concurrent enables both pass the exists check,
+// both write, and the loser holds a signer whose signatures then read as
+// forged — a false alarm this lock is cheaper than. Same constants as the
+// grant store's own lock, same reasoning.
+func transitionLock() (func(), *view.Error) {
+	release, err := filelock.Acquire(Path()+".lock",
+		15*time.Second, 5*time.Millisecond, 10*time.Second)
+	if err != nil {
+		return nil, view.Errorf("core.guard.locked",
+			"another rta is changing the guard state: %v", err)
+	}
+	return release, nil
+}
+
+// grantsHint names the grant file for recovery hints. Spelled here rather
+// than importing internal/grant (which imports this package): the two files
+// live beside each other by construction, and a recovery that removes the
+// guard state but not the grants it signed strands the operator on a second
+// error — the orphaned-grants refusal — whose hint is the one that works.
+func grantsHint() string { return seal.Path("grants.json") }
