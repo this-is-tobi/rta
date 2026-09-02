@@ -2,10 +2,17 @@
 // call arriving over MCP, chained so that an edited or missing line is
 // visible.
 //
-// Only the MCP surface is recorded. The operator's own CLI and TUI calls
-// are not — this answers "what did the agent touch while I was away", and
-// mixing in the commands the operator typed themselves would double the
-// file and blur the only question it exists to answer.
+// Only the network surfaces are recorded: calls arriving over MCP, and the
+// remote operator channel's mutations — a revoked or issued grant, an
+// answered consent, a lock placed or lifted — because those change the
+// authority every other line is read against, and "who changed it" is the
+// first question an incident review asks of this file. The operator's own
+// CLI and TUI calls are not recorded — this answers "what happened while I
+// was away", and mixing in the commands the operator typed themselves
+// would double the file and blur the only question it exists to answer.
+// The channel's reads stay off the record for the polling reason: a
+// watching dashboard asks for status every few seconds, and recording
+// polls would churn real history out of retention.
 //
 // The chain's threat model is internal/seal's: it
 // stops a writer that cannot read (a confined plugin appending a flattering
@@ -185,6 +192,12 @@ const (
 	Denied Authorization = "declined"
 	// Blocked: refused before any question could be asked.
 	Blocked Authorization = "blocked"
+	// Operator: a roster-enrolled operator's signed call over the remote
+	// channel — authorized by enrollment and an ed25519 signature, never by
+	// a grant. Rows carrying it are the channel's mutations; Credential
+	// names which key, in the same operator:<label> form grants and locks
+	// attribute themselves with.
+	Operator Authorization = "operator"
 )
 
 // Entry is one recorded call.

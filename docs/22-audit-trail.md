@@ -1,6 +1,6 @@
 # The record
 
-Grants say what may happen next. The record says what already did — one line per call that arrived over MCP, refusals included.
+Grants say what may happen next. The record says what already did — one line per call that arrived over MCP, one per authority change an operator made over [the remote channel](./20-mcp.md#the-operator-channel), refusals included.
 
 ```bash
 rta agent overview    # the last hour at a glance
@@ -28,6 +28,12 @@ Two names appear, and they are not the same kind of thing:
 - **The client's own claim**, in parentheses — what the MCP client announced about itself in the protocol handshake.
 
 rta records the claim for provenance and authorizes on the name you gave, because *a name a thing chooses for itself is not an identity*. A client can call itself anything; only you can say which principal it is.
+
+## Operators appear too
+
+A remote operator's mutations land in the same record: a revoked or issued grant, an answered consent, a lock placed or lifted — each on its own line with `operator.` in front of the verb (`operator.lock.add`), the credential column naming the enrolled key (`operator:dash`), and `operator` in the authorization column, because the signature was the authorization, not any grant. So the row that shows an agent's call `approved` has a partner row naming who approved it, from which key.
+
+The channel's reads stay out, as do the commands you type at the machine itself: the record answers "what happened while I was away", and a status poll every few seconds would churn real history out of retention to say nothing.
 
 ## The chain
 

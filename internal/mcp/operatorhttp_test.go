@@ -397,3 +397,21 @@ func TestAReadOnlyKeyIsGatedToItsVerbs(t *testing.T) {
 		}
 	}
 }
+
+// The issue path's refusals are the caller's submission to fix, and they
+// answer 400 — a client that skipped prepare, or a skewed clock, must not
+// page whoever watches this server's error rate. Matched by prefix so a
+// new checkSubmitted expectation is classified the day it is written.
+func TestIssueRefusalsAreTheCallersToFix(t *testing.T) {
+	for _, code := range []string{
+		"core.operator.issue.unsigned", "core.operator.issue.bookkeeping",
+		"core.operator.issue.skew", "core.operator.issue.yet-unwritten",
+	} {
+		if got := statusFor(code); got != http.StatusBadRequest {
+			t.Errorf("statusFor(%s) = %d, want 400", code, got)
+		}
+	}
+	if got := statusFor("core.grant.store"); got != http.StatusInternalServerError {
+		t.Errorf("an unnamed code answers %d, and only 500 keeps real failures on the error rate", got)
+	}
+}
