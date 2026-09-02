@@ -69,6 +69,7 @@ profiles:
 | `plugins.<name>.secrets` | Maps a declared input onto **where its value comes from** |
 | `plugins.<name>.kube` | Reach it through a `kubectl port-forward` |
 | `plugins.<name>.ssh` | Reach it through an SSH jump host |
+| `plugins.<name>.secrets-from` | Which cluster and namespace a `kube:` secret is read from, when the connection opens no forward |
 
 ## `secrets:` holds a reference, never a value
 
@@ -79,6 +80,19 @@ secrets:
 ```
 
 A config file is plaintext, read on every invocation, with nobody watching. So this block holds a **name**, and the value is fetched at resolution time — reaching neither this file, nor an environment variable, nor an argv.
+
+A `kube:` reference needs to know *which* cluster and namespace to read from. A `kube:` coordinate answers that as a side effect of naming a forward — but a connection that reaches its service directly has no forward to name, and stating one purely to locate a Secret would drag the call through a port-forward it never needed and quietly override `set: host`. `secrets-from:` is that answer on its own:
+
+```yaml
+pg:
+  set:
+    host: db.example.com     # reached directly, no forward
+  secrets:
+    password: kube:pg-creds/password
+  secrets-from: homelab/databases
+```
+
+Two segments, `context/namespace` — a service and a port belong in `kube:`, which also opens a forward. State one or the other: a coordinate already names the namespace its Secrets come from, so both together are refused rather than ranked. The namespace is always the connection's own and never a caller's, which is what keeps one connection's reference from becoming a general-purpose cluster reader — and because moving it changes *which credential authenticates*, a standing grant does not survive the edit.
 
 You write the mapping; a plugin never does. A plugin that could name the entry it wanted could name *any* entry in your store. All it declares is that it has a secret input.
 

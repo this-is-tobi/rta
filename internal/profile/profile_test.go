@@ -1134,12 +1134,12 @@ profiles:
 	if verr.Code != "core.profile.secrets" {
 		t.Errorf("code = %s, want core.profile.secrets", verr.Code)
 	}
-	if !strings.Contains(verr.Message, "states no `kube:` coordinate") {
+	if !strings.Contains(verr.Message, "does not say which") {
 		t.Errorf("message = %q, want the run path's own words", verr.Message)
 	}
 	found := false
 	for _, p := range Check(cfg, reg) {
-		if strings.Contains(p.Reason, "states no `kube:` coordinate") {
+		if strings.Contains(p.Reason, "does not say which") {
 			found = true
 		}
 	}

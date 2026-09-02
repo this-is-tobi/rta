@@ -310,11 +310,12 @@ func TestConnStampIsConfrontedWithEveryConnectionField(t *testing.T) {
 	// Every exported field, with the decision recorded: true means ConnStamp
 	// writes it, and a false entry documents why not rather than being absent.
 	decided := map[string]bool{
-		"Set":       true,
-		"Secrets":   true, // the reference, never the value — see ConnStamp's doc
-		"Kube":      true,
-		"SSH":       true,
-		"TunnelTLS": true, // a scheme flip is a repoint, same as Kube/SSH — see ConnStamp's doc
+		"Set":         true,
+		"Secrets":     true, // the reference, never the value — see ConnStamp's doc
+		"Kube":        true,
+		"SSH":         true,
+		"SecretsFrom": true, // repoints which credential authenticates — see ConnStamp's doc
+		"TunnelTLS":   true, // a scheme flip is a repoint, same as Kube/SSH — see ConnStamp's doc
 	}
 	rt := reflect.TypeOf(config.Connection{})
 	for i := 0; i < rt.NumField(); i++ {
