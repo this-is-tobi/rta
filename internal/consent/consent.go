@@ -288,7 +288,7 @@ func Ask(c Call, wait time.Duration) (*Parked, error) {
 	if live >= MaxParked {
 		return nil, ErrTooMany
 	}
-	id, err := newID()
+	id, err := freshID()
 	if err != nil {
 		return nil, err
 	}
@@ -485,9 +485,32 @@ func Scan() (Queue, error) {
 	if err != nil {
 		return q, err
 	}
+	// Which requests exist, before judging anything — the walk below also
+	// sweeps decision files whose request is gone, and that pairing has to
+	// be read off one directory snapshot.
+	requests := map[string]bool{}
+	for _, e := range entries {
+		if name := e.Name(); strings.HasSuffix(name, ".request.json") {
+			requests[strings.TrimSuffix(name, ".request.json")] = true
+		}
+	}
 	now := time.Now()
 	for _, e := range entries {
 		name := e.Name()
+		// A decision without its request is an orphan: decide racing
+		// Parked.Close can write the answer after the asker stopped waiting
+		// and removed the question, and nothing else ever looks at the file
+		// again — Close removes by the id it holds, and every other sweep
+		// here starts from a request. Left behind, it is also the one input
+		// to a stale-approval replay: ids are 32-bit, so a future Ask can
+		// mint this id again, and a byte-identical call under it would find
+		// an answer nobody gave *this* asking. Ask lists the queue through
+		// this walk, under the queue lock, before minting an id — so
+		// sweeping here is what makes that reuse meet an empty slot instead.
+		if id, ok := strings.CutSuffix(name, ".decision.json"); ok && !requests[id] {
+			_ = os.Remove(decisionPath(id))
+			continue
+		}
 		if !strings.HasSuffix(name, ".request.json") {
 			continue
 		}
@@ -689,4 +712,23 @@ func newID() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(b), nil
+}
+
+// freshID mints an id no parked request already holds. 32 bits make a
+// collision unlikely, not impossible, and Ask would otherwise overwrite a
+// live request in place — the first call's asker left polling a file that
+// now describes somebody else's question. The caller holds the queue
+// lock, so check-then-write cannot race another Ask; the bound exists
+// only so a broken filesystem fails as an error instead of a spin.
+func freshID() (string, error) {
+	for range 4 {
+		id, err := newID()
+		if err != nil {
+			return "", err
+		}
+		if _, err := os.Stat(requestPath(id)); errors.Is(err, os.ErrNotExist) {
+			return id, nil
+		}
+	}
+	return "", errors.New("could not mint an unused request id")
 }

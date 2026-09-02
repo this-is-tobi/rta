@@ -143,6 +143,67 @@ func TestDenyIsOneKeyAndAllowStopsToConfirm(t *testing.T) {
 	}
 }
 
+// bare's blast radius is the whole action table, so its soundness net has
+// to be too — the consent-pane test above pins the four entries the
+// feature shipped with, and without this walk a one-line table edit could
+// hand any capability a one-key mutation with nothing failing.
+func TestBareIsDeclaredOnlyWhereItIsSafe(t *testing.T) {
+	reg := realRegistry(t)
+	for capID, specs := range capActionSpecs {
+		for _, spec := range specs {
+			if !spec.bare {
+				continue
+			}
+			c, ok := reg.Capability(spec.id)
+			if !ok {
+				t.Errorf("%s %s: bare on unknown capability %q", capID, spec.key, spec.id)
+				continue
+			}
+			// runAction checks Destructive before bare, so this flag would be
+			// inert there — which is exactly why it is refused here: a bare
+			// destructive entry is a claim about the action that the code
+			// quietly does not honour, and the next refactor of that ordering
+			// would have a lie already waiting in the table.
+			if c.Safety == plugin.Destructive {
+				t.Errorf("%s %s: bare on destructive %s", capID, spec.key, spec.id)
+			}
+			// One non-Read capability may run on a keypress, and it is named:
+			// deny is the fail-safe direction, taking nothing and granting
+			// nothing. Anything else mutating in one key is a decision for
+			// this list, not a side effect of setting a flag.
+			if c.Safety != plugin.Read && spec.id != "agent.deny" {
+				t.Errorf("%s %s: bare on %s (%s) — a one-key mutation is for the fail-safe direction only",
+					capID, spec.key, spec.id, c.Safety)
+			}
+			// bare waives only the optional-field form; a required field it
+			// never asks for would turn the one-key action into a validation
+			// error. Positional identity comes from the row, so only the
+			// non-positional kind can strand it.
+			for _, f := range c.Inputs {
+				if f.Required && !f.Positional {
+					t.Errorf("%s %s: %s requires %q, which a bare action never asks for",
+						capID, spec.key, spec.id, f.Name)
+				}
+			}
+		}
+	}
+}
+
+// The other half of the invariant, pinned on the code rather than the
+// table: whatever the table says, bare must never waive the destructive
+// confirmation, because runAction consults Destructive first.
+func TestBareNeverWaivesTheDestructiveConfirmation(t *testing.T) {
+	reg := realRegistry(t)
+	m := Model{reg: reg}
+	c := plugin.Capability{ID: "x.rm", Safety: plugin.Destructive,
+		Inputs: []plugin.Field{{Name: "id", Type: plugin.String, Positional: true, Required: true}}}
+	tbl := view.Table{Columns: []view.Column{{Name: "id"}}, Rows: [][]string{{"a1"}}}
+	next, _ := m.runAction(capAction{key: "x", label: "rm", cap: c, src: srcRow, bare: true}, tbl)
+	if nm := next.(Model); nm.mode != modeForm {
+		t.Fatalf("a bare destructive action skipped its confirmation (mode %v)", nm.mode)
+	}
+}
+
 func TestTheOverviewTileLeadsToTheQueueAndTheRecord(t *testing.T) {
 	reg := realRegistry(t)
 	var got []string
