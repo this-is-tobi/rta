@@ -49,6 +49,8 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/this-is-tobi/rule-them-all/internal/filelock"
@@ -70,17 +72,39 @@ const stateFile = "guard.json"
 // nothing that sets it changes what an existing state file costs to unlock.
 var ScryptWorkFactor = 0
 
-// state is the on-disk shape. The public key is in the clear — verification
-// must work for a server nobody is standing at — and the private key exists
-// only inside the age ciphertext, which is what makes the passphrase
-// load-bearing rather than decorative.
+// state is the on-disk shape, in one of two modes.
+//
+// Local — PublicKey and Key set: the guard as first built. The public key is
+// in the clear — verification must work for a server nobody is standing at —
+// and the private key exists only inside the age ciphertext, which is what
+// makes the passphrase load-bearing rather than decorative.
+//
+// Remote — Operators set, no key material at all: the guard for a machine
+// whose humans are elsewhere. Every listed public key may sign grants (the
+// remote operator channel's issuance path), and *nothing on this machine
+// can*: there is no ciphertext to steal, no passphrase to phish out of a
+// server, and `rta grant allow` at the machine's own shell has no key to
+// unlock — which on a remote server is the boundary working, not a gap.
+//
+// The two modes are exclusive: a state carrying both a local key and an
+// operator list reads as corrupt rather than as a hybrid nobody designed.
 type state struct {
 	Created time.Time `json:"created"`
-	// PublicKey is the ed25519 verification key, base64.
-	PublicKey string `json:"publicKey"`
-	// Key is the ed25519 signing key, age-encrypted under the operator
+	// PublicKey is the local ed25519 verification key, base64.
+	PublicKey string `json:"publicKey,omitempty"`
+	// Key is the local ed25519 signing key, age-encrypted under the operator
 	// passphrase (scrypt), base64 of the ciphertext.
-	Key string `json:"key"`
+	Key string `json:"key,omitempty"`
+	// Operators are the remote keys this machine honours grant signatures
+	// from, imported from a roster file by `rta grant guard remote`.
+	Operators []OperatorKey `json:"operators,omitempty"`
+}
+
+// OperatorKey is one enrolled remote signer: a label for the surfaces that
+// answer "who may issue here", and the base64 ed25519 verification key.
+type OperatorKey struct {
+	Label     string `json:"label"`
+	PublicKey string `json:"publicKey"`
 }
 
 // Path is where the guard state lives: beside the grant file it governs, for
@@ -106,6 +130,15 @@ func (s Signer) Sign(msg []byte) string {
 	return base64.StdEncoding.EncodeToString(
 		ed25519.Sign(s.priv, append([]byte(signContext), msg...)))
 }
+
+// SignerFor wraps an already-unwrapped private key in a Signer. It exists
+// for exactly one caller: internal/operator's unlock path, where a remote
+// operator's key — presented through the same passphrase discipline as the
+// guard's own — signs grant authority for a server whose guard enrolls it.
+// The invariant on Signer holds transitively: every path to a raw private
+// key in this codebase costs a passphrase, and a new caller that does not is
+// a review finding, not a convenience.
+func SignerFor(priv ed25519.PrivateKey) Signer { return Signer{priv: priv} }
 
 // Pin is the guard state as one process observed it at startup, held in
 // memory where a same-uid rm cannot reach. An MCP server takes one before
@@ -157,22 +190,68 @@ func load() (state, *view.Error) {
 		return st, view.Errorf("core.guard.off", "the guard is not enabled").
 			WithHint("rta grant guard on")
 	}
-	if err := json.Unmarshal(data, &st); err != nil || st.PublicKey == "" || st.Key == "" {
-		return st, view.Errorf("core.guard.corrupt",
-			"%s does not parse as guard state — it has been modified or truncated", Path()).
-			WithHint("no grant is honoured while this stands; `rm " + Path() + " " + grantsHint() +
-				"` starts clean, then `rta grant guard on` again")
+	if err := json.Unmarshal(data, &st); err != nil {
+		return st, corruptState()
+	}
+	local := st.PublicKey != "" && st.Key != "" && len(st.Operators) == 0
+	remote := len(st.Operators) > 0 && st.PublicKey == "" && st.Key == ""
+	if !local && !remote {
+		return st, corruptState()
 	}
 	return st, nil
 }
 
-// Fingerprint names the verification key in eight hex characters, for the
-// status and doctor surfaces: enough to notice a key that changed, short
-// enough to sit in a table cell.
+func corruptState() *view.Error {
+	return view.Errorf("core.guard.corrupt",
+		"%s does not parse as guard state — it has been modified or truncated", Path()).
+		WithHint("no grant is honoured while this stands; `rm " + Path() + " " + grantsHint() +
+			"` starts clean, then `rta grant guard on` (or `... guard remote`) again")
+}
+
+// Remote reports whether the guard is in remote mode: grant signatures are
+// honoured from enrolled operator keys, and no local key exists at all.
+func (st state) remote() bool { return len(st.Operators) > 0 }
+
+// Remote reports whether the enabled guard trusts remote operators instead
+// of a local passphrase-wrapped key. False when the guard is off or corrupt
+// — callers gate on Enabled first, and every corrupt path fails closed on
+// its own.
+func Remote() bool {
+	st, verr := load()
+	return verr == nil && st.remote()
+}
+
+// OperatorLabels names the enrolled remote signers, for status and doctor.
+func OperatorLabels() []string {
+	st, verr := load()
+	if verr != nil {
+		return nil
+	}
+	out := make([]string, 0, len(st.Operators))
+	for _, op := range st.Operators {
+		out = append(out, op.Label)
+	}
+	return out
+}
+
+// Fingerprint names the guard's trust in eight hex characters, for the
+// status and doctor surfaces and the server Pin: enough to notice a key —
+// or, in remote mode, the enrolled set — that changed, short enough to sit
+// in a table cell. Remote mode hashes the sorted key set, so enrolling or
+// removing any operator changes the fingerprint the same way a swapped
+// local key does, and Pin.Check trips on both alike.
 func Fingerprint() string {
 	st, verr := load()
 	if verr != nil {
 		return ""
+	}
+	if st.remote() {
+		keys := make([]string, 0, len(st.Operators))
+		for _, op := range st.Operators {
+			keys = append(keys, op.PublicKey)
+		}
+		sort.Strings(keys)
+		return passkey.Fingerprint([]byte(strings.Join(keys, "\n")))
 	}
 	pub, err := base64.StdEncoding.DecodeString(st.PublicKey)
 	if err != nil {
@@ -201,20 +280,37 @@ func Verifier() (func(msg []byte, sig string) bool, *view.Error) {
 	if verr != nil {
 		return nil, verr
 	}
-	pub, err := base64.StdEncoding.DecodeString(st.PublicKey)
-	if err != nil || len(pub) != ed25519.PublicKeySize {
-		return nil, view.Errorf("core.guard.corrupt",
-			"%s carries an unreadable verification key", Path()).
-			WithHint("no grant is honoured while this stands; `rm " + Path() + " " + grantsHint() +
-				"` starts clean, then `rta grant guard on` again")
+	var encoded []string
+	if st.remote() {
+		for _, op := range st.Operators {
+			encoded = append(encoded, op.PublicKey)
+		}
+	} else {
+		encoded = []string{st.PublicKey}
 	}
-	key := ed25519.PublicKey(pub)
+	keys := make([]ed25519.PublicKey, 0, len(encoded))
+	for _, e := range encoded {
+		pub, err := base64.StdEncoding.DecodeString(e)
+		if err != nil || len(pub) != ed25519.PublicKeySize {
+			return nil, view.Errorf("core.guard.corrupt",
+				"%s carries an unreadable verification key", Path()).
+				WithHint("no grant is honoured while this stands; `rm " + Path() + " " + grantsHint() +
+					"` starts clean, then `rta grant guard on` (or `... guard remote`) again")
+		}
+		keys = append(keys, ed25519.PublicKey(pub))
+	}
 	return func(msg []byte, sig string) bool {
 		raw, err := base64.StdEncoding.DecodeString(sig)
 		if err != nil {
 			return false
 		}
-		return ed25519.Verify(key, append([]byte(signContext), msg...), raw)
+		full := append([]byte(signContext), msg...)
+		for _, key := range keys {
+			if ed25519.Verify(key, full, raw) {
+				return true
+			}
+		}
+		return false
 	}, nil
 }
 
@@ -306,6 +402,44 @@ func Enable(passphrase string) (Signer, *view.Error) {
 	return Signer{priv: priv}, nil
 }
 
+// EnableRemote writes the guard in remote mode: the listed operator keys may
+// sign grants, and nothing on this machine can. Refuses over existing state
+// for Enable's reason — replacing the trusted set silently is a decision,
+// not a side effect — and validates every key before anything is written,
+// because a state file that half-parses is a machine that refuses every
+// grant it holds.
+func EnableRemote(ops []OperatorKey) *view.Error {
+	unlock, verr := transitionLock()
+	if verr != nil {
+		return verr
+	}
+	defer unlock()
+	if _, err := os.Stat(Path()); err == nil {
+		return view.Errorf("core.guard.exists", "the guard is already enabled").
+			WithHint("`rta grant guard off` first, if you mean to change what it trusts")
+	}
+	if len(ops) == 0 {
+		return view.Errorf("core.guard.remote.empty", "no operator keys to enroll — that would be a guard nobody can satisfy")
+	}
+	for _, op := range ops {
+		pub, err := base64.StdEncoding.DecodeString(op.PublicKey)
+		if err != nil || len(pub) != ed25519.PublicKeySize {
+			return view.Errorf("core.guard.remote.key", "%q does not carry an ed25519 public key", op.Label)
+		}
+	}
+	data, err := json.MarshalIndent(state{
+		Created:   time.Now().UTC(),
+		Operators: ops,
+	}, "", "  ")
+	if err != nil {
+		return view.Errorf("core.guard.write", "encoding guard state: %v", err)
+	}
+	if err := atomicfile.Write(Path(), data, 0o600); err != nil {
+		return view.Errorf("core.guard.write", "writing %s: %v", Path(), err)
+	}
+	return nil
+}
+
 // Unlock decrypts the signing key with the passphrase. A wrong passphrase is
 // its own error code so the surfaces can say "wrong passphrase" rather than
 // "corrupt file" — age cannot tell those apart from the ciphertext alone,
@@ -315,6 +449,12 @@ func Unlock(passphrase string) (Signer, *view.Error) {
 	st, verr := load()
 	if verr != nil {
 		return Signer{}, verr
+	}
+	if st.remote() {
+		return Signer{}, view.Errorf("core.guard.remote",
+			"this machine's guard trusts remote operators only — there is no local key to unlock").
+			WithHint("grants here are issued through the operator channel: `rta grant allow <capability> " +
+				"--server <this server>` from an enrolled operator's own machine")
 	}
 	priv, err := passkey.Unwrap(st.Key, passphrase)
 	if err != nil {
@@ -342,6 +482,33 @@ func Disable(passphrase string) *view.Error {
 	defer unlock()
 	if _, verr := Unlock(passphrase); verr != nil {
 		return verr
+	}
+	if err := os.Remove(Path()); err != nil {
+		return view.Errorf("core.guard.write", "removing %s: %v", Path(), err)
+	}
+	return nil
+}
+
+// DisableRemote removes a remote-mode guard. There is no passphrase to
+// prove — the secrets live with operators who are elsewhere, which is the
+// mode's point — so the legitimate way off costs only presence at this
+// machine's own terminal, and the capability layer enforces exactly that.
+// Refused for a local guard: its off-switch must cost what turning it on
+// promised, and this function must never become the way around Disable.
+func DisableRemote() *view.Error {
+	unlock, verr := transitionLock()
+	if verr != nil {
+		return verr
+	}
+	defer unlock()
+	st, verr := load()
+	if verr != nil {
+		return verr
+	}
+	if !st.remote() {
+		return view.Errorf("core.guard.passphrase.required",
+			"this guard is locked by a passphrase, and disabling it costs exactly that").
+			WithHint("rta grant guard off")
 	}
 	if err := os.Remove(Path()); err != nil {
 		return view.Errorf("core.guard.write", "removing %s: %v", Path(), err)

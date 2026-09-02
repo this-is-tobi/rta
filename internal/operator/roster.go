@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/this-is-tobi/rule-them-all/internal/grant"
+	"github.com/this-is-tobi/rule-them-all/internal/guard"
 	"github.com/this-is-tobi/rule-them-all/internal/passkey"
 )
 
@@ -40,6 +41,23 @@ func (r Roster) Len() int {
 		n += len(es)
 	}
 	return n
+}
+
+// Entries hands the roster to the guard's remote mode: the same label/key
+// pairs, in guard.OperatorKey's shape, so `rta grant guard remote` enrolls
+// exactly what a roster file says and nothing re-parses it a second way.
+func (r Roster) Entries() []guard.OperatorKey {
+	var out []guard.OperatorKey
+	for _, es := range r.keys {
+		for _, e := range es {
+			out = append(out, guard.OperatorKey{
+				Label:     e.label,
+				PublicKey: base64.StdEncoding.EncodeToString(e.key),
+			})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Label < out[j].Label })
+	return out
 }
 
 // Labels names every enrolled operator, sorted, for the startup banner.

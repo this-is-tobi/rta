@@ -45,6 +45,7 @@ import (
 
 	"github.com/this-is-tobi/rule-them-all/internal/atomicfile"
 	"github.com/this-is-tobi/rule-them-all/internal/filelock"
+	"github.com/this-is-tobi/rule-them-all/internal/guard"
 	"github.com/this-is-tobi/rule-them-all/internal/passkey"
 	"github.com/this-is-tobi/rule-them-all/internal/seal"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
@@ -86,6 +87,14 @@ type Signer struct {
 
 // Fingerprint names the key this Signer speaks for.
 func (s Signer) Fingerprint() string { return s.fingerprint }
+
+// GrantSigner adapts this operator key to sign grant authority — the same
+// bytes, same domain context, same verification path as the local guard's
+// own signatures, because on a server whose guard enrolls this key (remote
+// mode) an operator-signed grant *is* a guard-signed grant. The passphrase
+// invariant guard.Signer documents holds: this Signer exists only past
+// Init or Unlock.
+func (s Signer) GrantSigner() guard.Signer { return guard.SignerFor(s.priv) }
 
 // Exists reports whether an operator key has been initialized. Existence
 // alone, like guard.Enabled: a corrupt file must read as "there is a key and
