@@ -68,6 +68,15 @@ type OperatorConfig struct {
 	// each attributed to the enrolled operator the envelope verified.
 	Pending func() (operator.ConsentList, *view.Error)
 	Answer  func(spec operator.AnswerSpec, label string) (operator.AnswerOutcome, *view.Error)
+	// Consent says whether this process itself parks calls (--consent).
+	// The consent verbs refuse without it, and the gate is load-bearing
+	// rather than tidy: the queue on disk is machine-global — several
+	// servers, one operator's attention — while a roster is one server's
+	// trust decision. Without this, enrolling an operator on any server of
+	// this uid would quietly make them an answerer for every co-resident
+	// server's questions, under this process's policy context instead of
+	// the asking server's. The stage-3 security review's one held finding.
+	Consent bool
 }
 
 // maxEnvelopeBytes bounds a /call body. An envelope is a signature around a
@@ -239,11 +248,17 @@ func (h *operatorHandler) dispatch(env operator.Envelope, label string) (any, *v
 		}
 		return g, nil
 	case operator.VerbConsentList:
+		if verr := h.consentOffered(); verr != nil {
+			return nil, verr
+		}
 		if h.cfg.Pending == nil {
 			return nil, verbUnoffered(env.Verb)
 		}
 		return h.cfg.Pending()
 	case operator.VerbConsentAnswer:
+		if verr := h.consentOffered(); verr != nil {
+			return nil, verr
+		}
 		if h.cfg.Answer == nil {
 			return nil, verbUnoffered(env.Verb)
 		}
@@ -326,6 +341,21 @@ func (h *operatorHandler) checkSubmitted(g grant.Grant, label string) *view.Erro
 			"the submitted grant outlives this server's ceiling (%s allowed)", limit)
 	}
 	return grant.CheckCeiling(g.Target, g.Scope, g.Profile)
+}
+
+// consentOffered is the guard.Remote() precheck's reasoning one verb
+// family over: a server that parks nothing has nothing its operators
+// should answer, so both consent verbs refuse before touching the
+// machine-global queue — which may well hold *other* servers' questions,
+// and those belong to the servers that asked them (see
+// OperatorConfig.Consent for the full argument).
+func (h *operatorHandler) consentOffered() *view.Error {
+	if h.cfg.Consent {
+		return nil
+	}
+	return view.Errorf("core.operator.consent",
+		"this server was started without --consent, so nothing parks here and there is nothing to answer").
+		WithHint("`rta mcp serve --http --operators <roster> --consent` is the shape that parks and answers")
 }
 
 func verbUnoffered(verb string) *view.Error {

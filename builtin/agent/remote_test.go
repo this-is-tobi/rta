@@ -68,8 +68,9 @@ func consentServer(t *testing.T) {
 	srv := httptest.NewUnstartedServer(mcp.NewOperatorHandler(mcp.OperatorConfig{
 		Roster:  roster,
 		URL:     base,
-		Pending: PendingRemote,
-		Answer:  AnswerRemote,
+		Pending: PendingRemote("lab"),
+		Answer:  AnswerRemote("lab"),
+		Consent: true,
 	}))
 	srv.Listener.Close()
 	srv.Listener = ln
@@ -88,7 +89,8 @@ func TestRemotePendingAllowAndDenyEndToEnd(t *testing.T) {
 	t.Setenv("RTA_DATA_DIR", dataDir)
 	consentServer(t)
 	parked, err := consent.Ask(consent.Call{
-		Cap: "kv.get", Safety: "read", Scopes: []string{"db-password"}, Why: "needs a grant",
+		Cap: "kv.get", Safety: "read", Scopes: []string{"db-password"},
+		Agent: "lab", Why: "needs a grant",
 	}, time.Minute)
 	if err != nil {
 		t.Fatal(err)
@@ -149,7 +151,7 @@ func TestRemotePendingAllowAndDenyEndToEnd(t *testing.T) {
 	}
 	parked.Close()
 
-	denied, err := consent.Ask(consent.Call{Cap: "todo.rm", Safety: "destructive"}, time.Minute)
+	denied, err := consent.Ask(consent.Call{Cap: "todo.rm", Safety: "destructive", Agent: "lab"}, time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,11 +225,42 @@ func TestAnAnswerNamingTheWrongDigestIsRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer parked.Close()
-	_, verr := AnswerRemote(operatorid.AnswerSpec{
+	_, verr := AnswerRemote("")(operatorid.AnswerSpec{
 		ID: parked.Request.ID, Digest: consent.Call{Cap: "todo.rm"}.Digest(), Allow: true,
 	}, "tobi")
 	if verr == nil || verr.Code != "agent.answer.failed" {
 		t.Fatalf("err = %v, want agent.answer.failed", verr)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if a := parked.Wait(ctx); a.Answered {
+		t.Fatalf("answer = %+v, want nothing decided", a)
+	}
+}
+
+// The queue is machine-global; a roster is one server's trust decision.
+// The consent verbs answer only for the serving server's own --as name, so
+// enrollment on one server is not consent authority over every co-resident
+// server's questions — the stage-3 review's one held finding.
+func TestConsentAnswersAreScopedToTheServersOwnName(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	parked, err := consent.Ask(consent.Call{Cap: "kv.get", Safety: "read", Agent: "other"}, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer parked.Close()
+	cl, verr := PendingRemote("lab")()
+	if verr != nil {
+		t.Fatal(verr)
+	}
+	if len(cl.Waiting) != 0 {
+		t.Fatalf("lab's listing shows another server's questions: %+v", cl.Waiting)
+	}
+	_, verr = AnswerRemote("lab")(operatorid.AnswerSpec{
+		ID: parked.Request.ID, Digest: parked.Request.Digest, Allow: true,
+	}, "tobi")
+	if verr == nil || verr.Code != "agent.answer.elsewhere" {
+		t.Fatalf("err = %v, want agent.answer.elsewhere", verr)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
