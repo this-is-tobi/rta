@@ -1,5 +1,50 @@
 # Changelog
 
+## [0.3.0](https://github.com/this-is-tobi/rule-them-all/compare/v0.2.0...v0.3.0) (2026-09-02)
+
+
+### Features
+
+* **agent:** pending, show, allow and deny gain --server - consent answered where you are ([3e54ccf](https://github.com/this-is-tobi/rule-them-all/commit/3e54ccf25fe9851d769e89f0550393160980112f))
+* **consent:** digest-bound answers - DecideBound pins what was read ([256e996](https://github.com/this-is-tobi/rule-them-all/commit/256e996d58a2d18e196d0a216099e897e616535b))
+* **grant:** allow and revoke gain --server - grants managed where you stand ([32a01ad](https://github.com/this-is-tobi/rule-them-all/commit/32a01adf63dc0bb179bbc433bdbbbfa33a823aab))
+* **grant:** grant guard on/off/status - the passphrase gate's operator surface ([62a2f7f](https://github.com/this-is-tobi/rule-them-all/commit/62a2f7f4c48d232d2ec97dd67120d69f0584b481))
+* **grant:** guard signatures over grant authority, enforced on read and issue ([19e80c7](https://github.com/this-is-tobi/rule-them-all/commit/19e80c7cd6d03c0bb435dd2cc0aa116c6b1a25dc))
+* **grant:** rta grant guard remote - enroll a roster as this machine's guard ([085adc2](https://github.com/this-is-tobi/rule-them-all/commit/085adc2247171b5ce394078bf3ef180cc071316c))
+* **grant:** the guard gates allow, renew and agent allow --ttl ([d610461](https://github.com/this-is-tobi/rule-them-all/commit/d6104617d7c81696d18252cae8dc8e51f4ef2082))
+* **guard:** operator passphrase gate - key wrapping and signatures ([96f8993](https://github.com/this-is-tobi/rule-them-all/commit/96f89935655dd99ffa47415ead004918699e7f4c))
+* **guard:** remote mode - a guard whose keys live with operators elsewhere ([eed8208](https://github.com/this-is-tobi/rule-them-all/commit/eed820854fe4286879d5ac3c758aa3304f8bedec))
+* **lock:** freeze one principal now - the instant path revocation was missing ([c9c9bd0](https://github.com/this-is-tobi/rule-them-all/commit/c9c9bd0a722cebebcc2c38736e20a59bba4400ec))
+* **mcp:** --consent starts beside --http when --operators names who answers ([1626535](https://github.com/this-is-tobi/rule-them-all/commit/162653575b4f54d3ebee4bf39148155465da2d1f))
+* **mcp:** mount the operator channel beside the MCP endpoint ([665378e](https://github.com/this-is-tobi/rule-them-all/commit/665378efcaafad1fb7e5308fdac04591ebc7bfe7))
+* **mcp:** the operator channel's consent verbs - list the queue, answer a call ([d79d1a8](https://github.com/this-is-tobi/rule-them-all/commit/d79d1a8890a1a3f23f6259721fafcb74726b1611))
+* **mcp:** the operator channel's mutation verbs - revoke, prepare, issue ([0965912](https://github.com/this-is-tobi/rule-them-all/commit/0965912dd26c82c70d25556c41c681c4ea435041))
+* **operator,agentlog:** ledger the channel's mutations, attributed to the signing key ([fe170bc](https://github.com/this-is-tobi/rule-them-all/commit/fe170bce89cbd8a23fa6baf1c4864449fae89832))
+* **operator:** role=read roster rows - enrollment that watches but cannot act ([16dfa11](https://github.com/this-is-tobi/rule-them-all/commit/16dfa1152203880ae0aca958b5274e895ebbb3a1))
+* **operator:** the client side - one CLI, many servers, HITL on every call ([a309f1e](https://github.com/this-is-tobi/rule-them-all/commit/a309f1e52e2132dd178359f398bc431be47ccd20))
+* **operator:** the identity layer of the remote operator channel ([bd3d558](https://github.com/this-is-tobi/rule-them-all/commit/bd3d55897fcf14e198a5cf590433745b90baa8f7))
+* **tui:** bare actions - the consent pane keeps its one-key answers ([b20825c](https://github.com/this-is-tobi/rule-them-all/commit/b20825c975cde9e881dc539043fbda4ea30467f7))
+
+
+### Bug Fixes
+
+* **consent,tui:** close the stage-3 review's deferred lows - orphan sweep, bare soundness ([5b57d9c](https://github.com/this-is-tobi/rule-them-all/commit/5b57d9c2cc4701d750fe4c58cea1c676f778dded))
+* **deps:** upgrade x/crypto to v0.56.0 for the ssh channel DoS advisories ([9d29e90](https://github.com/this-is-tobi/rule-them-all/commit/9d29e908a43f7394e8b7d203b17b3ca1361e8140))
+* **guard,mcp:** close the roster review's lows - drift warning, honest statuses ([3aa761c](https://github.com/this-is-tobi/rule-them-all/commit/3aa761c9696c8626771fcd5ffd7d9b0da259e56c))
+* **guard:** close the review findings - argv channel, silent rollback, races ([14449e0](https://github.com/this-is-tobi/rule-them-all/commit/14449e082582aa466d7d8613ceaaa812982846f7))
+* **guard:** refuse a remote guard before the prompt, not after the typing ([d997519](https://github.com/this-is-tobi/rule-them-all/commit/d997519d62734e2037840b6ab11cafe5dd7852fb))
+* **lockdown,mcp:** close the lock review findings - credential grammar, parked race, recovery hint ([436f1fd](https://github.com/this-is-tobi/rule-them-all/commit/436f1fdec3c3331dcc15ccaa2277d467768c53a0))
+* **mcp:** classify the wired packages' refusals - the ledger and the pager were both wrong ([c246b3a](https://github.com/this-is-tobi/rule-them-all/commit/c246b3a55c5ece8e0309c7fe598a75d044ca1545))
+* **operator:** close the security review's findings - above all, bind the server ([20ce35c](https://github.com/this-is-tobi/rule-them-all/commit/20ce35c1e29e44feaf6d0d819ffbb238965008f6))
+* **operator:** close the stage-2 review - bind grants to their server, verify before signing ([b278c3b](https://github.com/this-is-tobi/rule-them-all/commit/b278c3b3ce21ae2590d44f4bb012d5b9ceb22a45))
+* **operator:** consent verbs answer only for the server that parks ([8b48dcd](https://github.com/this-is-tobi/rule-them-all/commit/8b48dcd47c0244a640100118b0d3eac7f5259359))
+* **operator:** one spelling per key - strict base64, dedup by decoded bytes ([b23259d](https://github.com/this-is-tobi/rule-them-all/commit/b23259d3cd4c5efd2ac8e580614307240fc93671))
+
+
+### Code Refactoring
+
+* **guard:** extract the passphrase-wrapped-key shape into internal/passkey ([9cc9e65](https://github.com/this-is-tobi/rule-them-all/commit/9cc9e65470f972e63ebfe19f6e04ffbe0a43958f))
+
 ## [0.2.0](https://github.com/this-is-tobi/rule-them-all/compare/v0.1.0...v0.2.0) (2026-09-02)
 
 
