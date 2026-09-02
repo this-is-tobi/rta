@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 )
 
 // Profile is one named environment: everywhere "proj1-staging" is, across
@@ -341,12 +343,18 @@ func (p Profile) Legacy() bool {
 }
 
 // Namespaces lists the plugin namespaces this profile configures, without
-// pins, sorted.
+// pins or instance labels, deduplicated and sorted. Deduplicated because two
+// instances of one plugin are one namespace — the question this answers is
+// "which plugins does this environment touch", and `pg, pg` is not an answer.
 func (p Profile) Namespaces() []string {
+	seen := map[string]bool{}
 	out := make([]string, 0, len(p.Plugins))
 	for key := range p.Plugins {
-		ns, _, _ := strings.Cut(key, "@")
-		out = append(out, ns)
+		ns, _, _ := SplitKey(key)
+		if !seen[ns] {
+			seen[ns] = true
+			out = append(out, ns)
+		}
 	}
 	sort.Strings(out)
 	return out
@@ -362,46 +370,117 @@ func (p Profile) PluginKeys() []string {
 	return out
 }
 
-// For finds what this profile says about a namespace, and the key it was
-// written under.
+// SplitKey splits a plugins: key into its namespace, instance label and pin:
+// "pg" → (pg, "", ""), "pg@1a2b" → (pg, "", 1a2b), "pg/analytics@1a2b" →
+// (pg, analytics, 1a2b).
 //
-// By namespace rather than by exact key because the pin is checked separately,
-// against what is actually installed — a stale pin has to produce "this pin
-// does not match" and not "this profile is silent about pg", which would send
-// the call to the base connection with no complaint at all.
-func (p Profile) For(namespace string) (string, Connection, bool) {
+// The one splitter, exported, because four call sites were already cutting
+// "@" by hand when the instance segment arrived, and a fifth doing it from
+// memory is how "pg/analytics" gets looked up as a namespace. An instance
+// label is how one profile holds several connections to the same plugin —
+// staging's main database and its analytics one — without a second grammar:
+// the label rides inside the key that already existed, the pin stays where
+// it was, and a bare key keeps meaning what it always meant, the default
+// instance.
+func SplitKey(key string) (ns, instance, pin string) {
+	head, pin, _ := strings.Cut(key, "@")
+	ns, instance, _ = strings.Cut(head, "/")
+	return ns, instance, pin
+}
+
+// ValidInstance reports whether s is a legal instance label. The grammar is
+// deliberately the plugin-name grammar — the label sits in the key position a
+// namespace owns, reaches grant records and audit lines through a profile
+// ref, and "whatever the operator typed" is the wrong amount of freedom in
+// all three places.
+func ValidInstance(s string) bool { return plugin.ValidName(s) }
+
+// Instances lists the instance labels this profile holds for a namespace,
+// sorted — which places "" first when an unlabeled default exists. Empty when
+// the profile says nothing about the namespace at all.
+func (p Profile) Instances(namespace string) []string {
+	var out []string
 	for _, key := range p.PluginKeys() {
-		if ns, _, _ := strings.Cut(key, "@"); ns == namespace {
+		if ns, instance, _ := SplitKey(key); ns == namespace {
+			out = append(out, instance)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// ForInstance finds the entry for exactly this namespace and instance label,
+// and the key it was written under. "" names the unlabeled default entry.
+func (p Profile) ForInstance(namespace, instance string) (string, Connection, bool) {
+	for _, key := range p.PluginKeys() {
+		if ns, inst, _ := SplitKey(key); ns == namespace && inst == instance {
 			return key, p.Plugins[key], true
 		}
 	}
 	return "", Connection{}, false
 }
 
-// Covers reports whether this profile says anything about a namespace.
-func (p Profile) Covers(namespace string) bool {
-	_, _, ok := p.For(namespace)
-	return ok
+// For finds what this profile says about a namespace when the caller names no
+// instance, and the key it was written under.
+//
+// By namespace rather than by exact key because the pin is checked separately,
+// against what is actually installed — a stale pin has to produce "this pin
+// does not match" and not "this profile is silent about pg", which would send
+// the call to the base connection with no complaint at all.
+//
+// The default rules, in order: an unlabeled entry is the default (it is
+// *written* as one — `pg@pin:` beside `pg/analytics@pin:` reads exactly that
+// way); with no unlabeled entry, a sole labeled one is unambiguous and wins;
+// several labeled entries and no default resolve to nothing, because picking
+// one by sort order would send a call to whichever database's label happens
+// to alphabetize first. Callers that must tell that refusal apart from "says
+// nothing about pg" ask Ambiguous — Covers deliberately stays true for an
+// ambiguous namespace, since the profile plainly does cover it.
+func (p Profile) For(namespace string) (string, Connection, bool) {
+	if key, conn, ok := p.ForInstance(namespace, ""); ok {
+		return key, conn, ok
+	}
+	if labels := p.Instances(namespace); len(labels) == 1 {
+		return p.ForInstance(namespace, labels[0])
+	}
+	return "", Connection{}, false
 }
 
-// DuplicateNamespaces reports which namespaces this profile names more than
+// Ambiguous reports whether a call naming this namespace without an instance
+// has no single answer: several labeled entries and no unlabeled default.
+func (p Profile) Ambiguous(namespace string) bool {
+	labels := p.Instances(namespace)
+	return len(labels) > 1 && labels[0] != ""
+}
+
+// Covers reports whether this profile says anything about a namespace.
+func (p Profile) Covers(namespace string) bool {
+	return len(p.Instances(namespace)) > 0
+}
+
+// DuplicateNamespaces reports which entries this profile names more than
 // once — a stale pin left beside its replacement after a rebuild, most
-// realistically. For's "first match by sorted key order" is not a decision
-// anyone made; it is PluginKeys' sort falling out however the two entries'
-// digests happen to compare. Reported here so a caller that must not act on
-// an ambiguous answer — Lookup, and Check reporting the same thing it does —
-// can refuse it as what it is, rather than the one entry that happened to
-// sort first silently standing in for both.
+// realistically. Two entries are duplicates when they share namespace *and*
+// instance label: `pg@old` beside `pg@new` is the stale-pin accident, while
+// `pg@pin` beside `pg/analytics@pin` is the multi-instance feature. Reported
+// as the label a person would write ("pg", "pg/analytics") so a caller that
+// must not act on an ambiguous answer — Lookup, and Check reporting the same
+// thing it does — can refuse it as what it is, rather than the one entry
+// that happened to sort first silently standing in for both.
 func (p Profile) DuplicateNamespaces() []string {
 	seen := map[string]int{}
 	for _, key := range p.PluginKeys() {
-		ns, _, _ := strings.Cut(key, "@")
-		seen[ns]++
+		ns, instance, _ := SplitKey(key)
+		id := ns
+		if instance != "" {
+			id = ns + "/" + instance
+		}
+		seen[id]++
 	}
 	var out []string
-	for ns, n := range seen {
+	for id, n := range seen {
 		if n > 1 {
-			out = append(out, ns)
+			out = append(out, id)
 		}
 	}
 	sort.Strings(out)
@@ -431,10 +510,53 @@ func (p Profile) BadTTL() bool {
 	return !ok
 }
 
-// PluginNamespace is the namespace half of a plugins: key, pin removed.
+// PluginNamespace is the namespace of a plugins: key, instance label and pin
+// removed.
 func PluginNamespace(key string) string {
-	ns, _, _ := strings.Cut(key, "@")
+	ns, _, _ := SplitKey(key)
 	return ns
+}
+
+// SplitRef splits a profile reference — what --profile carries — into the
+// profile name and the instance label: "staging" → (staging, ""),
+// "staging/analytics" → (staging, analytics).
+//
+// One string rather than a second flag, deliberately. The reference already
+// travels every surface unchanged — CLI flag, MCP call argument, grant
+// record, audit line, TUI picker row — and "/" cannot appear in a profile
+// name, so the parse is unambiguous everywhere at once. A second field would
+// be a second column on grants, a second argument on the MCP schema, and a
+// second thing every one of those surfaces must remember to print.
+func SplitRef(ref string) (name, instance string) {
+	name, instance, _ = strings.Cut(ref, "/")
+	return name, instance
+}
+
+// RefName is the profile-name half of a reference. The bound surfaces
+// compare with this: an active environment covers every instance grant
+// inside it, and deleting a profile revokes them all.
+func RefName(ref string) string {
+	name, _ := SplitRef(ref)
+	return name
+}
+
+// RefInstance is the instance half of a reference, "" for the default.
+func RefInstance(ref string) string {
+	_, instance := SplitRef(ref)
+	return instance
+}
+
+// ValidRef reports whether ref is a legal profile reference: a valid name,
+// optionally followed by one "/" and a valid instance label.
+func ValidRef(ref string) bool {
+	name, instance, cut := strings.Cut(ref, "/")
+	if !ValidName(name) {
+		return false
+	}
+	if !cut {
+		return true
+	}
+	return ValidInstance(instance)
 }
 
 // profileName is what a profile may be called: lowercase, digits and dashes,

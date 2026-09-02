@@ -22,11 +22,16 @@ package config
 // schemaPatterns, named once so a grammar stated here cannot drift from the
 // code that enforces it.
 var (
-	// pluginKey mirrors what registration and pluginconf accept: a namespace,
-	// with a profile-style instance pin for anything on $PATH.
-	schemaPluginKey = `^[a-z0-9][a-z0-9-]*(@[0-9a-f]+)?$`
-	schemaDuration  = `^([0-9]+(\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$`
-	schemaColor     = `^#[0-9a-fA-F]{6}$`
+	// schemaPluginKey mirrors what registration and pluginconf accept: a
+	// namespace, with an artifact pin for anything on $PATH.
+	schemaPluginKey = `^[a-z][a-z0-9-]*(@[0-9a-f]+)?$`
+	// schemaProfileKey adds the instance label a profile entry may carry —
+	// `pg/analytics@pin` — which a top-level plugins: section may not: plugin
+	// config is about the artifact, instances are about places, and places
+	// live in profiles.
+	schemaProfileKey = `^[a-z][a-z0-9-]*(/[a-z][a-z0-9-]*)?(@[0-9a-f]+)?$`
+	schemaDuration   = `^([0-9]+(\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$`
+	schemaColor      = `^#[0-9a-fA-F]{6}$`
 )
 
 // Schema is the JSON Schema (draft 2020-12) for the config file.
@@ -128,12 +133,16 @@ func Schema() map[string]any {
 				"additionalProperties": false,
 				"properties": map[string]any{
 					"plugins": map[string]any{
-						"description": "What this environment is: one connection per plugin, " +
-							"keyed the way the top-level plugins: section is keyed — " +
-							"and pinned (pg@1a2b3c4d) for anything on $PATH, so a " +
-							"PATH impostor cannot inherit the stated connection.",
+						"description": "What this environment is: the connections, keyed the " +
+							"way the top-level plugins: section is keyed — pinned " +
+							"(pg@1a2b3c4d) for anything on $PATH, so a PATH impostor " +
+							"cannot inherit the stated connection — plus an optional " +
+							"instance label (pg/analytics@1a2b3c4d) when one " +
+							"environment holds several connections to the same " +
+							"plugin. A bare key is the default instance; a call " +
+							"names a labeled one as --profile <name>/<instance>.",
 						"type":                 "object",
-						"propertyNames":        map[string]any{"pattern": schemaPluginKey},
+						"propertyNames":        map[string]any{"pattern": schemaProfileKey},
 						"additionalProperties": map[string]any{"$ref": "#/$defs/connection"},
 					},
 					"note": map[string]any{
