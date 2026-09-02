@@ -90,6 +90,7 @@ func LoadRoster(path string) (Roster, bool, error) {
 	}
 	r := Roster{keys: map[string][]rosterEntry{}}
 	seen := map[string]string{} // base64 pubkey -> label, to name a duplicate's other half
+	labels := map[string]bool{} // one label per person: a shared label makes the audit line name a role
 	for i, line := range strings.Split(string(raw), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
@@ -112,7 +113,12 @@ func LoadRoster(path string) (Roster, bool, error) {
 			return Roster{}, groupReadable, fmt.Errorf("%s:%d: this key is already enrolled as %q — "+
 				"one label per key, so the audit trail names one person", path, i+1, other)
 		}
+		if labels[label] {
+			return Roster{}, groupReadable, fmt.Errorf("%s:%d: %q is already enrolled — "+
+				"one key per label, or the audit trail names a role instead of a person", path, i+1, label)
+		}
 		seen[encoded] = label
+		labels[label] = true
 		fp := passkey.Fingerprint(pub)
 		r.keys[fp] = append(r.keys[fp], rosterEntry{label: label, key: ed25519.PublicKey(pub)})
 	}

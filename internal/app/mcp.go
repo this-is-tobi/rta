@@ -57,6 +57,7 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 		oidcAudience     string
 		oidcSubjects     []string
 		operatorsFile    string
+		operatorsURL     string
 	)
 	cmd := &cobra.Command{
 		Use:   "serve",
@@ -224,6 +225,22 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				}
 				verifier = mcp.Compose(cmd.ErrOrStderr(), verifiers...)
 				if operatorsFile != "" {
+					// The canonical URL is required, not defaulted: it is the
+					// identity every operator signature is checked against, and
+					// nothing this process can observe — not the bind address,
+					// not a Host header a relay would forge — is trustworthy to
+					// derive it from. The operators' remotes.yaml and this flag
+					// must carry the same string; that agreement is the
+					// anti-relay binding.
+					if operatorsURL == "" {
+						return fmt.Errorf("--operators needs --operators-url: the exact URL operators " +
+							"put in their remotes.yaml, signed into every operator request so a call " +
+							"meant for this server verifies nowhere else")
+					}
+					canonical, verr := operator.CanonicalServerURL("--operators-url", operatorsURL)
+					if verr != nil {
+						return fmt.Errorf("--operators-url: %s", verr.Message)
+					}
 					roster, groupReadable, err := operator.LoadRoster(operatorsFile)
 					if err != nil {
 						return fmt.Errorf("--operators: %w", err)
@@ -241,13 +258,14 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 					}
 					operatorHandler = mcp.NewOperatorHandler(mcp.OperatorConfig{
 						Roster:  roster,
+						URL:     canonical,
 						Version: version,
 						Agent:   agentName,
 						Stderr:  cmd.ErrOrStderr(),
 					})
 					fmt.Fprintf(cmd.ErrOrStderr(),
-						"rta: operator channel at /operator/v1, enrolling %s\n",
-						strings.Join(roster.Labels(), ", "))
+						"rta: operator channel at /operator/v1 as %s, enrolling %s\n",
+						canonical, strings.Join(roster.Labels(), ", "))
 				}
 			}
 			opts := mcp.Options{
@@ -384,6 +402,10 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 	cmd.Flags().StringVar(&operatorsFile, "operators", "",
 		"operator public keys allowed to manage this server remotely, one \"label base64-pubkey\" "+
 			"per line (`rta operator status` prints yours); mounts /operator/v1 beside the MCP endpoint")
+	cmd.Flags().StringVar(&operatorsURL, "operators-url", "",
+		"this server's canonical URL, exactly as operators write it in remotes.yaml; required with "+
+			"--operators — it is signed into every operator request, so a call meant for this server "+
+			"verifies nowhere else")
 	// Off by default, and the default is the important half: a call parked
 	// in a server nobody is watching is worse than a refusal.
 	cmd.Flags().BoolVar(&consentOn, "consent", false,

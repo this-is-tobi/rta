@@ -33,7 +33,8 @@ func startOperatorRemote(t *testing.T, roster operator.Roster) string {
 		done <- Serve(ctx, server, ln, RemoteOptions{
 			Verifier: StaticTokenVerifier(map[string]string{"tok-a": "alice"}),
 			Operator: NewOperatorHandler(OperatorConfig{
-				Roster: roster, Version: "test", Agent: "demo-agent", Stderr: io.Discard,
+				Roster: roster, URL: "http://" + ln.Addr().String(),
+				Version: "test", Agent: "demo-agent", Stderr: io.Discard,
 			}),
 		})
 	}()
@@ -113,7 +114,7 @@ func TestTheOperatorChannelAnswersASignedCall(t *testing.T) {
 	}
 	addr := startOperatorRemote(t, roster)
 
-	status, body := postEnvelope(t, addr, signer.Sign(fetchChallenge(t, addr), operator.VerbStatus, nil))
+	status, body := postEnvelope(t, addr, signer.Sign("http://"+addr, fetchChallenge(t, addr), operator.VerbStatus, nil))
 	if status != http.StatusOK {
 		t.Fatalf("status verb: %d — %s", status, body)
 	}
@@ -125,7 +126,7 @@ func TestTheOperatorChannelAnswersASignedCall(t *testing.T) {
 		t.Fatalf("status = %+v", st)
 	}
 
-	status, body = postEnvelope(t, addr, signer.Sign(fetchChallenge(t, addr), operator.VerbGrantList, nil))
+	status, body = postEnvelope(t, addr, signer.Sign("http://"+addr, fetchChallenge(t, addr), operator.VerbGrantList, nil))
 	if status != http.StatusOK {
 		t.Fatalf("grant.list verb: %d — %s", status, body)
 	}
@@ -143,7 +144,7 @@ func TestACapturedEnvelopeReplaysNowhere(t *testing.T) {
 	signer, roster := enrolled(t, "tobi")
 	addr := startOperatorRemote(t, roster)
 
-	env := signer.Sign(fetchChallenge(t, addr), operator.VerbStatus, nil)
+	env := signer.Sign("http://"+addr, fetchChallenge(t, addr), operator.VerbStatus, nil)
 	if status, body := postEnvelope(t, addr, env); status != http.StatusOK {
 		t.Fatalf("first use: %d — %s", status, body)
 	}
@@ -171,7 +172,7 @@ func TestAStrangerCannotCall(t *testing.T) {
 	if verr != nil {
 		t.Fatal(verr)
 	}
-	env := stranger.Sign(fetchChallenge(t, addr), operator.VerbStatus, nil)
+	env := stranger.Sign("http://"+addr, fetchChallenge(t, addr), operator.VerbStatus, nil)
 	if status, _ := postEnvelope(t, addr, env); status != http.StatusUnauthorized {
 		t.Fatalf("an un-enrolled key was answered: %d", status)
 	}

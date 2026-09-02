@@ -3,11 +3,14 @@ package operator
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -44,23 +47,48 @@ type remotesFile struct {
 	} `yaml:"servers"`
 }
 
-// ServerURL resolves a server name to its base URL. Every refusal names what
-// would fix it, because this is the first thing a new setup gets wrong.
+// ServerURL resolves a server name to its canonical base URL. Every refusal
+// names what would fix it, because this is the first thing a new setup gets
+// wrong.
+//
+// The file gets the roster's permission discipline, because it is the same
+// kind of trust anchor pointed the other way: the roster decides who may
+// speak to a server, this file decides where an operator's signatures are
+// aimed. Someone who can rewrite it repoints "prod" at a server they run —
+// the signature binding then refuses the relay, but the misdirection alone
+// is worth refusing at the source.
 func ServerURL(name string) (string, *view.Error) {
-	data, err := os.ReadFile(RemotesPath())
+	f, err := os.Open(RemotesPath())
 	if err != nil {
 		return "", view.Errorf("core.operator.remotes",
 			"no server list at %s", RemotesPath()).
 			WithHint("create it with your servers:\n  servers:\n    prod:\n      url: https://rta.example.com")
 	}
-	var f remotesFile
-	if err := yaml.Unmarshal(data, &f); err != nil {
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return "", view.Errorf("core.operator.remotes", "reading %s: %v", RemotesPath(), err)
+	}
+	if runtime.GOOS != "windows" {
+		if mode := info.Mode().Perm(); mode&0o037 != 0 {
+			return "", view.Errorf("core.operator.remotes",
+				"%s has weak permissions (mode %s) — someone besides its owner can write or execute it, "+
+					"and it decides where your signed operator calls go", RemotesPath(), mode).
+				WithHint("chmod 600 " + RemotesPath())
+		}
+	}
+	data, err := io.ReadAll(f)
+	if err != nil {
+		return "", view.Errorf("core.operator.remotes", "reading %s: %v", RemotesPath(), err)
+	}
+	var rf remotesFile
+	if err := yaml.Unmarshal(data, &rf); err != nil {
 		return "", view.Errorf("core.operator.remotes", "parsing %s: %v", RemotesPath(), err)
 	}
-	s, ok := f.Servers[name]
+	s, ok := rf.Servers[name]
 	if !ok || s.URL == "" {
-		known := make([]string, 0, len(f.Servers))
-		for n, srv := range f.Servers {
+		known := make([]string, 0, len(rf.Servers))
+		for n, srv := range rf.Servers {
 			if srv.URL != "" {
 				known = append(known, n)
 			}
@@ -73,32 +101,38 @@ func ServerURL(name string) (string, *view.Error) {
 		return "", view.Errorf("core.operator.server", "%s names no server in %s", name, RemotesPath()).
 			WithHint(hint)
 	}
-	if verr := checkServerURL(name, s.URL); verr != nil {
-		return "", verr
-	}
-	return strings.TrimRight(s.URL, "/"), nil
+	return CanonicalServerURL(name, s.URL)
 }
 
-// checkServerURL refuses plaintext to anywhere but loopback — the same rule,
-// with the same loopback exception for local testing, that OIDC discovery
-// applies to its issuer. The signature needs no private channel, but the
-// *response* does: without TLS an on-path attacker cannot forge a grant, yet
-// can hand the operator a grant listing that lies, and decisions get made on
-// that screen.
-func checkServerURL(name, raw string) *view.Error {
-	u, err := url.Parse(raw)
+// CanonicalServerURL validates a server URL and returns the one spelling of
+// it both ends sign and verify: lowercased host, no trailing slash. The
+// signature binds the operator's call to this exact string (see message()),
+// so the client canonicalising remotes.yaml's value and the server
+// canonicalising --operators-url must land on the same bytes — this
+// function is that agreement, shared rather than approximated twice.
+//
+// Plaintext is refused for anywhere but loopback — the same rule, with the
+// same loopback exception for local testing, that OIDC discovery applies to
+// its issuer. The signature needs no private channel, but the *response*
+// does: without TLS an on-path attacker cannot forge a grant, yet can hand
+// the operator a grant listing that lies, and decisions get made on that
+// screen.
+func CanonicalServerURL(name, raw string) (string, *view.Error) {
+	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil {
-		return view.Errorf("core.operator.server", "server %s has an unparseable url: %v", name, err)
+		return "", view.Errorf("core.operator.server", "server %s has an unparseable url: %v", name, err)
 	}
-	if u.Scheme == "https" {
-		return nil
+	secure := u.Scheme == "https" || (u.Scheme == "http" && isLoopback(u.Hostname()))
+	if !secure {
+		return "", view.Errorf("core.operator.insecure",
+			"server %s uses %q — what it answers could be rewritten in transit", name, raw).
+			WithHint("put TLS in front (a reverse proxy or tunnel); plain http is only accepted for loopback")
 	}
-	if u.Scheme == "http" && isLoopback(u.Hostname()) {
-		return nil
-	}
-	return view.Errorf("core.operator.insecure",
-		"server %s uses %q — what it answers could be rewritten in transit", name, raw).
-		WithHint("put TLS in front (a reverse proxy or tunnel); plain http is only accepted for loopback")
+	u.Host = strings.ToLower(u.Host)
+	u.Path = strings.TrimRight(u.Path, "/")
+	u.Fragment = ""
+	u.RawQuery = ""
+	return u.String(), nil
 }
 
 func isLoopback(host string) bool {
@@ -122,7 +156,19 @@ func (c Client) http() *http.Client {
 	if c.HTTP != nil {
 		return c.HTTP
 	}
-	return &http.Client{Timeout: 30 * time.Second}
+	return &http.Client{
+		Timeout: 30 * time.Second,
+		// There are exactly two fixed endpoints and no legitimate redirect.
+		// Following one would re-POST a signed envelope wherever a hostile
+		// server points — the do-it-yourself version of the relay message()'s
+		// binding refuses — or move the response the TLS rule protects onto
+		// plaintext. Refused, not silently dropped, so a misconfigured proxy
+		// reads as its own error instead of a signature mystery.
+		CheckRedirect: func(req *http.Request, _ []*http.Request) error {
+			return errors.New("the operator channel does not follow redirects (got one to " +
+				req.URL.Redacted() + ")")
+		},
+	}
 }
 
 // Call signs one verb and decodes the answer into out. payload may be nil.
@@ -141,14 +187,14 @@ func (c Client) Call(verb string, payload, out any) *view.Error {
 	var challenge struct {
 		Nonce string `json:"nonce"`
 	}
-	decodeErr := json.NewDecoder(res.Body).Decode(&challenge)
+	decodeErr := json.NewDecoder(bounded(res.Body)).Decode(&challenge)
 	res.Body.Close()
 	if res.StatusCode != http.StatusOK || decodeErr != nil || challenge.Nonce == "" {
 		return view.Errorf("core.operator.protocol",
 			"%s did not answer a challenge (HTTP %d) — is it an rta mcp server started with --operators?",
 			c.URL, res.StatusCode)
 	}
-	body, err := json.Marshal(c.Signer.Sign(challenge.Nonce, verb, raw))
+	body, err := json.Marshal(c.Signer.Sign(c.URL, challenge.Nonce, verb, raw))
 	if err != nil {
 		return view.Errorf("core.operator.encode", "encoding the envelope: %v", err)
 	}
@@ -163,7 +209,7 @@ func (c Client) Call(verb string, payload, out any) *view.Error {
 		var remote struct {
 			Error *view.Error `json:"error"`
 		}
-		if err := json.NewDecoder(res.Body).Decode(&remote); err == nil && remote.Error != nil {
+		if err := json.NewDecoder(bounded(res.Body)).Decode(&remote); err == nil && remote.Error != nil {
 			if remote.Error.Code == "core.operator.refused" {
 				// The generic refusal is deliberate server-side reticence; the
 				// hint belongs client-side, where the likely causes live.
@@ -177,11 +223,15 @@ func (c Client) Call(verb string, payload, out any) *view.Error {
 	if out == nil {
 		return nil
 	}
-	if err := json.NewDecoder(res.Body).Decode(out); err != nil {
+	if err := json.NewDecoder(bounded(res.Body)).Decode(out); err != nil {
 		return view.Errorf("core.operator.protocol", "decoding %s's %s answer: %v", c.URL, verb, err)
 	}
 	return nil
 }
+
+// bounded caps what a server's answer may cost this process: a roster read
+// is a table, not a stream, and a hostile server must not be a memory bill.
+func bounded(r io.Reader) io.Reader { return io.LimitReader(r, 8<<20) }
 
 func unreachable(base string, err error) *view.Error {
 	return view.Errorf("core.operator.unreachable", "cannot reach %s: %v", base, err).

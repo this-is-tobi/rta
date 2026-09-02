@@ -315,8 +315,11 @@ rta operator init                     # mints your key; prints the line below
 # on the server, in a file only its owner can write
 tobi 4Jx…base64…Qk=                   # one "label base64-pubkey" per line
 # start the server with it
-rta mcp serve --http :8443 --token-file tokens.txt --operators operators.txt
+rta mcp serve --http :8443 --token-file tokens.txt \
+  --operators operators.txt --operators-url https://rta.example.com
 ```
+
+`--operators-url` is the server's canonical identity — the exact URL operators write in their `remotes.yaml` — and it is signed into every operator request. That is the anti-relay binding: a hostile server you also talk to could present another server's challenge as its own, but the envelope it collects names the server you were actually addressing and verifies nowhere else.
 
 `--operators` mounts `/operator/v1` beside the MCP endpoint. Name the server in `remotes.yaml` beside your config —
 
@@ -328,7 +331,7 @@ servers:
 
 — and the existing verbs grow a `--server` flag: `rta grant list --server work` reads that server's roster, `rta operator status --server work` asks who it is (version, agent name, guard state, enrolled operators). Two verbs, both reads; each names its target per call, because an ambient "current server" is how a staging command lands on prod.
 
-What makes this channel one an agent cannot ride: every call is an ed25519 signature over a single-use nonce the server just issued, and the signing key exists on your machine only inside a passphrase — the [guard](./21-grants.md)'s own mechanics, pointed outward. The passphrase arrives through a prompt or the TUI's masked field, never from the environment, and is refused on the command line; so an agent that reads every file you own still cannot sign, a captured request replays nowhere, and an agent's bearer token opens nothing here — the two mechanisms never meet. The server, for its part, holds only public keys: compromising it forges no operator's hand.
+What makes this channel one an agent cannot ride: every call is an ed25519 signature over the server's canonical URL, a single-use nonce the server just issued, the verb and its payload — and the signing key exists on your machine only inside a passphrase, the [guard](./21-grants.md)'s own mechanics pointed outward. The passphrase arrives through a prompt or the TUI's masked field, never from the environment, and is refused on the command line; so an agent that reads every file you own still cannot sign, a captured request replays nowhere and verifies on no other server, and an agent's bearer token opens nothing here — the two mechanisms never meet. The server, for its part, holds only public keys: compromising it forges no operator's hand.
 
 The roster is the token file's kind of trust anchor and gets the same treatment: rta never writes it, weak permissions refuse startup, and it is read once — a rewrite behind a running server's back changes nothing until the next deliberate restart. Plain `http://` in `remotes.yaml` is refused for anything but loopback, and for the OIDC issuer's reason: the signature protects what you send, TLS protects what you *read* — a grant listing rewritten in transit is decisions made on a lie.
 

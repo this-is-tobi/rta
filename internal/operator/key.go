@@ -14,7 +14,14 @@
 //     every endpoint; it cannot sign, because signing takes the passphrase
 //     and the passphrase arrives only through a prompt or a masked field.
 //   - A captured envelope replays nowhere: its nonce is consumed on first
-//     sight, and a nonce from one server never matches another's.
+//     sight, and the signature covers the canonical URL of the one server it
+//     was aimed at. The nonce alone would not be enough — "a nonce from one
+//     server never matches another's" holds only for honest servers, and a
+//     hostile server in the operator's own remotes.yaml could present a
+//     victim server's challenge as its own and relay the signed result. The
+//     URL inside the signed bytes, verified against the server's own
+//     --operators-url and never against anything the envelope carries, is
+//     what makes that relay verify nowhere.
 //   - A compromised server can misenforce its own boundary — the bar a
 //     compromised server already sets — but it cannot mint authority in any
 //     operator's name, because verification keys are all it ever held.

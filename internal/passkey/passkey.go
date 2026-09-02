@@ -128,7 +128,18 @@ type PromptText struct {
 // command runs and which shell history keeps when it ends. The TUI's masked
 // field and the prompt are the channels that land nowhere.
 func Prompt(req plugin.Request, confirm bool, text PromptText) (string, *view.Error) {
-	if p := req.String("passphrase"); p != "" {
+	// Refused here and not only by the callers' surface gates: this package
+	// is the stated single home of "how the passphrase arrives", so the
+	// invariant that no MCP caller can supply one holds locally rather than
+	// by the grace of every capability that declares the field. Today three
+	// independent layers already make this unreachable — the field is Local,
+	// has no env fallback, and every caller refuses MCP first — and a fourth
+	// caller added without a gate must meet a wall here, not a channel.
+	if req.Surface() == plugin.SurfaceMCP {
+		return "", view.Errorf(text.Codes+".surface",
+			"a passphrase can only come from the person at the terminal")
+	}
+	if p := req.String("passphrase"); strings.TrimSpace(p) != "" {
 		if req.Surface() == plugin.SurfaceCLI {
 			return "", view.Errorf(text.Codes+".argv",
 				"the passphrase must not travel on the command line — argv is readable by "+
