@@ -3,6 +3,7 @@ package operator
 import (
 	"github.com/this-is-tobi/rule-them-all/internal/consent"
 	"github.com/this-is-tobi/rule-them-all/internal/grant"
+	"github.com/this-is-tobi/rule-them-all/internal/lockdown"
 )
 
 // The verbs a server dispatches, and each verb's result shape. They landed
@@ -43,6 +44,17 @@ const (
 	// same binding the local flow rests on, carried inside the signed
 	// envelope so it survives the network.
 	VerbConsentAnswer = "consent.answer"
+	// VerbLockList reads the frozen principals — who is refused right now,
+	// and why, which is dashboard material and so part of the read set.
+	VerbLockList = "lock.list"
+	// VerbLockAdd freezes one principal on the server, effective on its
+	// next call — the instant path revocation needs when editing a roster
+	// and restarting is too slow, and the reason a compromised operator
+	// key does not get to keep talking until a redeploy.
+	VerbLockAdd = "lock.add"
+	// VerbLockRm lifts one lock. The expanding direction, so it stays a
+	// full-operator verb like every other mutation.
+	VerbLockRm = "lock.rm"
 )
 
 // IssueSpec is what an operator asks to allow, in the raw strings they
@@ -154,4 +166,32 @@ type AnswerSpec struct {
 type AnswerOutcome struct {
 	Cap    string   `json:"capability"`
 	Scopes []string `json:"scopes,omitempty"`
+}
+
+// LockSpec asks the server to freeze one principal. TTL travels as the
+// raw string the operator typed, for IssueSpec's reason: the server's
+// parser is the one that binds. Empty means until removed.
+type LockSpec struct {
+	Kind string `json:"kind"`
+	Name string `json:"name"`
+	Note string `json:"note,omitempty"`
+	TTL  string `json:"ttl,omitempty"`
+}
+
+// LockRmSpec lifts one lock.
+type LockRmSpec struct {
+	Kind string `json:"kind"`
+	Name string `json:"name"`
+}
+
+// LockList is VerbLockList's result: the live locks as the server's own
+// store loads them, expired rows already dropped.
+type LockList struct {
+	Locks []lockdown.Lock `json:"locks,omitempty"`
+}
+
+// LockRmOutcome distinguishes "unlocked" from "nothing was locked" — an
+// operator clearing an incident deserves to know which sentence is true.
+type LockRmOutcome struct {
+	Removed bool `json:"removed"`
 }

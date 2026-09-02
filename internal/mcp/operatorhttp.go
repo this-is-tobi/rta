@@ -9,6 +9,7 @@ import (
 
 	"github.com/this-is-tobi/rule-them-all/internal/grant"
 	"github.com/this-is-tobi/rule-them-all/internal/guard"
+	"github.com/this-is-tobi/rule-them-all/internal/lockdown"
 	"github.com/this-is-tobi/rule-them-all/internal/operator"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
@@ -89,7 +90,7 @@ const maxEnvelopeBytes = 1 << 20
 // under /operator/v1/. Patterns carry the full path because the mount does
 // not strip the prefix.
 func NewOperatorHandler(cfg OperatorConfig) http.Handler {
-	h := &operatorHandler{cfg: cfg, nonces: operator.NewNonces(cfg.NonceTTL)}
+	h := &operatorHandler{cfg: cfg, nonces: operator.NewNonces(cfg.NonceTTL), locks: lockdown.NewPin()}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /operator/v1/challenge", h.challenge)
 	mux.HandleFunc("POST /operator/v1/call", h.call)
@@ -99,6 +100,7 @@ func NewOperatorHandler(cfg OperatorConfig) http.Handler {
 type operatorHandler struct {
 	cfg    OperatorConfig
 	nonces *operator.Nonces
+	locks  *lockdown.Pin
 }
 
 func (h *operatorHandler) logf(format string, args ...any) {
@@ -165,6 +167,27 @@ func (h *operatorHandler) call(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.logf("%s (%s) called %s", label, env.Fingerprint, env.Verb)
+	// The frozen check sits past the signature and before everything else,
+	// the role gate included: a locked operator key gets no verb at all,
+	// which is what makes locking the answer to a compromised key that
+	// beats editing the roster and restarting. Post-auth, so the named
+	// operator is owed the real reason — including the note whoever locked
+	// them wrote for exactly this moment.
+	if l, alarm := h.locks.Frozen(lockdown.KindOperator, label); l != nil || alarm != "" {
+		if alarm != "" {
+			h.logf("%s", alarm)
+		}
+		if l != nil {
+			msg := "this operator key is locked on this server"
+			if l.Note != "" {
+				msg += ": " + l.Note
+			}
+			writeJSON(w, http.StatusForbidden, errorBody{Error: view.Errorf("core.lock.operator", "%s", msg).
+				WithHint("another full operator lifts it with `rta lock rm operator " + label +
+					" --server <this server>`, or a person at the machine runs it directly")})
+			return
+		}
+	}
 	res, verr := h.dispatch(env, label, role)
 	if verr != nil {
 		// Past the signature the caller is a named operator, and owed the
@@ -189,7 +212,7 @@ func statusFor(code string) int {
 	switch code {
 	case "core.operator.role", "core.operator.consent", "core.operator.verb", "core.operator.guard":
 		return http.StatusForbidden
-	case "core.operator.payload":
+	case "core.operator.payload", "core.lock.kind", "core.lock.ttl", "core.lock.name":
 		return http.StatusBadRequest
 	}
 	return http.StatusInternalServerError
@@ -204,8 +227,8 @@ func (h *operatorHandler) dispatch(env operator.Envelope, label string, role ope
 	// their key is nothing the uniform refusal body exists to withhold.
 	if !role.Allows(env.Verb) {
 		return nil, view.Errorf("core.operator.role",
-			"this key is enrolled role=read on this server — status, grant.list and consent.list are "+
-				"what that covers, and %q is not among them", env.Verb).
+			"this key is enrolled role=read on this server — status, grant.list, consent.list and "+
+				"lock.list are what that covers, and %q is not among them", env.Verb).
 			WithHint("a roster line without the annotation enrolls a full operator; edit the server's " +
 				"--operators file and restart it")
 	}
@@ -299,6 +322,43 @@ func (h *operatorHandler) dispatch(env operator.Envelope, label string, role ope
 			return nil, badPayload(env.Verb, err)
 		}
 		return h.cfg.Answer(spec, label)
+	case operator.VerbLockList:
+		locks, verr := lockdown.Load()
+		if verr != nil {
+			return nil, verr
+		}
+		return operator.LockList{Locks: locks}, nil
+	case operator.VerbLockAdd:
+		// Dispatched directly rather than wired from the app layer like the
+		// grant and consent verbs, for the same reason grant.list is: locks
+		// are core state with no capability behind them, so there is no
+		// builtin whose absence could leave the verb half-configured.
+		var spec operator.LockSpec
+		if err := json.Unmarshal(env.Payload, &spec); err != nil {
+			return nil, badPayload(env.Verb, err)
+		}
+		l, verr := lockdown.Build(spec.Kind, spec.Name, spec.Note, spec.TTL, grant.FromOperatorPrefix+label)
+		if verr != nil {
+			return nil, verr
+		}
+		if verr := lockdown.Add(l); verr != nil {
+			return nil, verr
+		}
+		return l, nil
+	case operator.VerbLockRm:
+		var spec operator.LockRmSpec
+		if err := json.Unmarshal(env.Payload, &spec); err != nil {
+			return nil, badPayload(env.Verb, err)
+		}
+		kind, verr := lockdown.CheckKind(spec.Kind)
+		if verr != nil {
+			return nil, verr
+		}
+		removed, verr := lockdown.Remove(kind, spec.Name)
+		if verr != nil {
+			return nil, verr
+		}
+		return operator.LockRmOutcome{Removed: removed}, nil
 	default:
 		return nil, view.Errorf("core.operator.verb",
 			"this server does not answer %q — its rta may be older than your client", env.Verb).

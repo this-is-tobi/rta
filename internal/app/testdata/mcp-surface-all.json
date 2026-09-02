@@ -1793,6 +1793,73 @@
     }
   },
   {
+    "name": "lock_add",
+    "description": "── the text below is written by the plugin, not by rta ──\nLock one principal out of the network surfaces, effective on its next call\n\nFreezes an agent name, a credential, or an operator label: every MCP call from a locked agent or credential is refused before any other gate — the ungated read tier included, which is what `grant revoke` alone never covered — and a locked operator key gets no verb on the operator channel. Running servers pick it up on their next request, no restart. Re-locking the same principal replaces the row, so a new note or window needs no rm first. Asks for no passphrase: a lock only subtracts, and an incident is the wrong moment to demand a secret. With --server \u003cname\u003e: places the lock on a remote rta server, as a signed operator call. Never reachable over MCP.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
+    "destructive_hint": false,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "description": "what to freeze: agent (a server's --as name), credential (a bearer token's identity), or operator (a roster label on the operator channel)",
+          "type": "string"
+        },
+        "name": {
+          "description": "the principal to freeze, exactly as the surface verifies it",
+          "type": "string"
+        },
+        "note": {
+          "description": "shown to the locked party on every refusal — write it for them",
+          "type": "string"
+        },
+        "ttl": {
+          "description": "auto-lift after this window (30m, 2h); omit for a lock that stands until removed",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "name"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "lock_list",
+    "description": "── the text below is written by the plugin, not by rta ──\nWho is frozen right now, and why\n\nThe live locks: kind, principal, the note the locked party is shown, who placed it and until when. With --server \u003cname\u003e: reads a remote server's locks as a signed operator call. Never reachable over MCP — who an operator has frozen is incident state, and not an agent's to enumerate.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    }
+  },
+  {
+    "name": "lock_rm",
+    "description": "── the text below is written by the plugin, not by rta ──\nLift one lock\n\nRemoves a lock so the principal's next call is judged by the ordinary gates again. This is the expanding direction — the one an agent must never hold, which is why the harness deny list from `rta audit agents --fix` covers `rta lock` and why this is never reachable over MCP. With --server \u003cname\u003e: lifts a lock on a remote server, as a signed operator call.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
+    "destructive_hint": false,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "description": "what to freeze: agent (a server's --as name), credential (a bearer token's identity), or operator (a roster label on the operator channel)",
+          "type": "string"
+        },
+        "name": {
+          "description": "the principal to unfreeze",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "name"
+      ],
+      "type": "object"
+    }
+  },
+  {
     "name": "net_dns",
     "description": "── the text below is written by the plugin, not by rta ──\nResolve DNS records for a name, or a name for an address\n\n--type auto (the default) asks the question you usually mean: A, AAAA and CNAME for a name, PTR for an address. --server sends the query to a specific resolver instead of the system one, which is how you tell \"the record is wrong\" apart from \"my resolver is stale\". With --detail: the query, the resolver that answered, and how long it took.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,

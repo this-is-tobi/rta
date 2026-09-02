@@ -345,7 +345,24 @@ What makes this channel one an agent cannot ride: every call is an ed25519 signa
 
 The roster is the token file's kind of trust anchor and gets the same treatment: rta never writes it, weak permissions refuse startup, and it is read once — a rewrite behind a running server's back changes nothing until the next deliberate restart. Plain `http://` in `remotes.yaml` is refused for anything but loopback, and for the OIDC issuer's reason: the signature protects what you send, TLS protects what you *read* — a grant listing rewritten in transit is decisions made on a lie.
 
-A roster line is `label base64-pubkey` — the exact line `rta operator status` prints on the operator's own machine — optionally annotated `role=read`. A read-only key answers `status`, `grant.list` and `consent.list` and nothing else: no revocation, no issuance, no consent answers, and `grant guard remote` never enrolls it as grant-signing trust, so even its stolen key mints nothing. The intended occupant is a component rather than a person — a status page or dashboard watching the queue and the grants under its own key, with a blast radius of reads. A bare line stays what it has always been, a full operator; and anything unrecognized in the annotation position refuses the whole file, because a typo that silently meant "full" is the one failure a restriction must not have.
+A roster line is `label base64-pubkey` — the exact line `rta operator status` prints on the operator's own machine — optionally annotated `role=read`. A read-only key answers `status`, `grant.list`, `consent.list` and `lock.list` and nothing else: no revocation, no issuance, no consent answers, and `grant guard remote` never enrolls it as grant-signing trust, so even its stolen key mints nothing. The intended occupant is a component rather than a person — a status page or dashboard watching the queue and the grants under its own key, with a blast radius of reads. A bare line stays what it has always been, a full operator; and anything unrecognized in the annotation position refuses the whole file, because a typo that silently meant "full" is the one failure a restriction must not have.
+
+### Locks: the instant no
+
+Expiry and revocation both leave a gap that only shows during an incident: revoking every grant still leaves a misbehaving agent's bearer token opening the ungated read tools, and a compromised operator key stays enrolled until someone edits the roster and restarts — the roster is deliberately read once. A **lock** is the instant path:
+
+```bash
+rta lock add agent claude --note "runaway loop, ping me"   # on the machine
+rta lock add operator dash --server work                    # or from your machine, signed
+rta lock list
+rta lock rm agent claude
+```
+
+A locked *agent* or *credential* is refused on every MCP call before any other gate — never parked as a consent question, because a lock is the "stop asking me" control — and a locked *operator* label gets no verb on the channel at all. Running servers pick a lock up on their next request, no restart, and the note travels to the locked party on every refusal. Locks only subtract, so placing one asks for no passphrase: revoking never asks, and an incident is the wrong moment to demand a secret. `--ttl 2h` makes one lift itself; without it a lock stands until `rta lock rm`.
+
+Two edges worth knowing before you need them. First lock wins: a locked operator cannot unlock anyone, themselves included, so a fully locked-out roster is recovered at the machine's own terminal — where `rta lock` always works, because the person standing there is the authority locks answer to. And the lock file is sealed like the grant file, with the guard's failure direction: a running server that saw locks keeps enforcing them even if the file is deleted out from under it, so the `rm` that would quietly restore access restores nothing for the process the attacker is talking through. Lifting a lock is `rta lock rm`, on the machine or as a signed operator call — never a file deletion.
+
+Locking an operator freezes the key, not what it already signed — pair it with `rta grant revoke` for anything that key issued. And `rta lock` is on the harness deny list `rta audit agents --fix` prints, for the expanding half: an agent that could run `lock rm` would be unfreezing itself.
 
 `sys`, `fs`, `git`, `keys.list`, and the parts of `net` that read or change this host's own network configuration (`net.info`, `net.hosts.*`, `net.resolver.*`) answer for the machine rta happens to run on. Over HTTP those are never registered as tools at all — absent from `tools/list`, not refused when called — because a remote caller is never this machine. `rta mcp serve --http` says so at startup:
 

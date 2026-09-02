@@ -65,7 +65,7 @@ func (ro Role) Allows(verb string) bool {
 		return true
 	case RoleRead:
 		switch verb {
-		case VerbStatus, VerbGrantList, VerbConsentList:
+		case VerbStatus, VerbGrantList, VerbConsentList, VerbLockList:
 			return true
 		}
 	}
@@ -193,7 +193,7 @@ func LoadRoster(path string) (Roster, bool, error) {
 				role = RoleRead
 			default:
 				return Roster{}, groupReadable, fmt.Errorf("%s:%d: %q is not a role — \"read\" restricts this "+
-					"key to status, grant.list and consent.list; \"full\" (or no annotation) is everything", path, i+1, v)
+					"key to status, grant.list, consent.list and lock.list; \"full\" (or no annotation) is everything", path, i+1, v)
 			}
 		}
 		if verr := grant.CheckAgent(label); verr != nil || label == "" {

@@ -21,6 +21,7 @@ import (
 	rtahttp "github.com/this-is-tobi/rule-them-all/builtin/http"
 	"github.com/this-is-tobi/rule-them-all/builtin/keys"
 	"github.com/this-is-tobi/rule-them-all/builtin/kv"
+	rtalock "github.com/this-is-tobi/rule-them-all/builtin/lock"
 	rtanet "github.com/this-is-tobi/rule-them-all/builtin/net"
 	"github.com/this-is-tobi/rule-them-all/builtin/note"
 	rtaoperator "github.com/this-is-tobi/rule-them-all/builtin/operator"
@@ -64,6 +65,9 @@ func Registry(conf func(plugin.Capability) map[string]any) (*registry.Registry, 
 		// operator is the person's other half of the same story: the identity
 		// with which they manage rta servers that are not this machine.
 		rtaoperator.Plugin(),
+		// lock is the emergency brake beside both: freeze one principal
+		// across the network surfaces now, without restarting anything.
+		rtalock.Plugin(),
 	} {
 		if err := reg.Register(p); err != nil {
 			return nil, err

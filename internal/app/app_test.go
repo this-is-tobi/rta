@@ -448,6 +448,8 @@ func conformanceInputs(dir string) map[string]map[string]any {
 
 		// Local state, against the temp data dir.
 		"kv.copy":     {"key": "absent", "to": "absent-copy"},
+		"lock.add":    {"kind": "agent", "name": "nobody"},
+		"lock.rm":     {"kind": "agent", "name": "nobody"},
 		"kv.edit":     {"key": "absent"},
 		"kv.get":      {"key": "absent"},
 		"kv.rename":   {"key": "absent", "new-name": "absent-renamed"},

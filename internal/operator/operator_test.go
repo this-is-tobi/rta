@@ -356,8 +356,8 @@ func TestReadOnlyKeysStayOutOfTheGuardEntries(t *testing.T) {
 // added without classifying it — is refused for read-only keys, and the
 // zero Role, which only a bug could produce, allows nothing at all.
 func TestARoleAllowsItsVerbsAndNothingElse(t *testing.T) {
-	reads := []string{VerbStatus, VerbGrantList, VerbConsentList}
-	rest := []string{VerbGrantRevoke, VerbGrantPrepare, VerbGrantIssue, VerbConsentAnswer, "grant.future"}
+	reads := []string{VerbStatus, VerbGrantList, VerbConsentList, VerbLockList}
+	rest := []string{VerbGrantRevoke, VerbGrantPrepare, VerbGrantIssue, VerbConsentAnswer, VerbLockAdd, VerbLockRm, "grant.future"}
 	for _, v := range append(append([]string{}, reads...), rest...) {
 		if !RoleFull.Allows(v) {
 			t.Fatalf("full refuses %s", v)

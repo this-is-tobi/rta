@@ -538,6 +538,7 @@ func auditRtaReach(r *agentReport, claudeSeen bool) {
 				"      \"Bash(rta grant:*)\",\n"+
 				"      \"Bash(rta agent:*)\",\n"+
 				"      \"Bash(rta kv:*)\",\n"+
+				"      \"Bash(rta lock:*)\",\n"+
 				"      \"Bash(rta plugin trust:*)\",\n"+
 				"      \"Bash(rta plugin allow:*)\",\n"+
 				"      \"Bash(rta plugin install:*)\"\n"+
