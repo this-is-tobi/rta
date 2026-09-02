@@ -45,9 +45,7 @@ package guard
 import (
 	"crypto/ed25519"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"os"
@@ -180,8 +178,7 @@ func Fingerprint() string {
 	if err != nil {
 		return ""
 	}
-	sum := sha256.Sum256(pub)
-	return hex.EncodeToString(sum[:4])
+	return passkey.Fingerprint(pub)
 }
 
 // Created reports when the guard was enabled, zero when it is not.
