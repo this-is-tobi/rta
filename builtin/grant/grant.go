@@ -230,6 +230,9 @@ func Plugin(catalog func() []plugin.Capability) plugin.Plugin {
 				Inputs: []plugin.Field{
 					{Name: "operators", Type: plugin.Path, Positional: true,
 						Help: "the roster file whose keys to enroll"},
+					{Name: "url", Type: plugin.String,
+						Help: "this server's canonical URL, exactly as operators write it in remotes.yaml — " +
+							"signed into every grant, so one issued for this server verifies on no other"},
 				},
 				Run: runGuardRemote,
 			},

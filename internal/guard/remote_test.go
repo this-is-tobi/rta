@@ -19,7 +19,7 @@ func remoteKey(t *testing.T) (string, ed25519.PrivateKey) {
 func TestARemoteGuardTrustsExactlyItsOperators(t *testing.T) {
 	t.Setenv("RTA_DATA_DIR", t.TempDir())
 	pub, priv := remoteKey(t)
-	if verr := EnableRemote([]OperatorKey{{Label: "tobi", PublicKey: pub}}); verr != nil {
+	if verr := EnableRemote([]OperatorKey{{Label: "tobi", PublicKey: pub}}, "https://a.example"); verr != nil {
 		t.Fatal(verr)
 	}
 	if !Enabled() || !Remote() {
@@ -43,7 +43,7 @@ func TestARemoteGuardTrustsExactlyItsOperators(t *testing.T) {
 func TestARemoteGuardHasNothingToUnlock(t *testing.T) {
 	t.Setenv("RTA_DATA_DIR", t.TempDir())
 	pub, _ := remoteKey(t)
-	if verr := EnableRemote([]OperatorKey{{Label: "tobi", PublicKey: pub}}); verr != nil {
+	if verr := EnableRemote([]OperatorKey{{Label: "tobi", PublicKey: pub}}, "https://a.example"); verr != nil {
 		t.Fatal(verr)
 	}
 	_, verr := Unlock("any passphrase at all")
@@ -61,7 +61,7 @@ func TestTheRemoteFingerprintTracksTheEnrolledSet(t *testing.T) {
 	t.Setenv("RTA_DATA_DIR", t.TempDir())
 	pubA, _ := remoteKey(t)
 	pubB, _ := remoteKey(t)
-	if verr := EnableRemote([]OperatorKey{{Label: "a", PublicKey: pubA}}); verr != nil {
+	if verr := EnableRemote([]OperatorKey{{Label: "a", PublicKey: pubA}}, "https://a.example"); verr != nil {
 		t.Fatal(verr)
 	}
 	one := Fingerprint()
@@ -70,7 +70,7 @@ func TestTheRemoteFingerprintTracksTheEnrolledSet(t *testing.T) {
 	}
 	if verr := EnableRemote([]OperatorKey{
 		{Label: "a", PublicKey: pubA}, {Label: "b", PublicKey: pubB},
-	}); verr != nil {
+	}, "https://a.example"); verr != nil {
 		t.Fatal(verr)
 	}
 	if two := Fingerprint(); one == "" || two == "" || one == two {
@@ -96,10 +96,10 @@ func TestDisableRemoteRefusesALocalGuard(t *testing.T) {
 
 func TestARemoteGuardRefusesAnEmptyOrGarbledEnrollment(t *testing.T) {
 	t.Setenv("RTA_DATA_DIR", t.TempDir())
-	if verr := EnableRemote(nil); verr == nil {
+	if verr := EnableRemote(nil, "https://a.example"); verr == nil {
 		t.Fatal("an empty enrollment enabled a guard nobody can satisfy")
 	}
-	if verr := EnableRemote([]OperatorKey{{Label: "x", PublicKey: "not-a-key"}}); verr == nil {
+	if verr := EnableRemote([]OperatorKey{{Label: "x", PublicKey: "not-a-key"}}, "https://a.example"); verr == nil {
 		t.Fatal("a garbled key enrolled")
 	}
 	if Enabled() {

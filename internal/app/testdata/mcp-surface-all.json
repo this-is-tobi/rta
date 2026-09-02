@@ -1114,6 +1114,10 @@
         "operators": {
           "description": "the roster file whose keys to enroll (a path on the machine running rta)",
           "type": "string"
+        },
+        "url": {
+          "description": "this server's canonical URL, exactly as operators write it in remotes.yaml — signed into every grant, so one issued for this server verifies on no other",
+          "type": "string"
         }
       },
       "type": "object"

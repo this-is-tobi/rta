@@ -228,11 +228,11 @@ func errCode(t *testing.T, body []byte) string {
 func TestSubmittedGrantsAreHeldToTheirShape(t *testing.T) {
 	t.Setenv("RTA_DATA_DIR", t.TempDir())
 	signer, roster := enrolled(t, "tobi")
-	if verr := guard.EnableRemote(roster.Entries()); verr != nil {
-		t.Fatal(verr)
-	}
 	addr := startOperatorWith(t, OperatorConfig{Roster: roster})
 	at := "http://" + addr
+	if verr := guard.EnableRemote(roster.Entries(), at); verr != nil {
+		t.Fatal(verr)
+	}
 	submit := func(g grant.Grant) (int, []byte) {
 		raw, err := json.Marshal(g)
 		if err != nil {
@@ -244,7 +244,7 @@ func TestSubmittedGrantsAreHeldToTheirShape(t *testing.T) {
 		now := time.Now()
 		return grant.Grant{
 			Target: "demo.item.reveal", From: grant.FromOperatorPrefix + "tobi",
-			Issued: now, Expires: now.Add(15 * time.Minute),
+			Issued: now, Expires: now.Add(15 * time.Minute), Server: at,
 		}
 	}
 
@@ -272,6 +272,21 @@ func TestSubmittedGrantsAreHeldToTheirShape(t *testing.T) {
 	grant.SignWith(signer.GrantSigner(), &over)
 	if _, body := submit(over); errCode(t, body) != "core.operator.issue.ttl" {
 		t.Fatalf("over ceiling: %s", body)
+	}
+
+	preloaded := base()
+	preloaded.MaxUses = 1
+	preloaded.Uses = -1000000
+	grant.SignWith(signer.GrantSigner(), &preloaded)
+	if _, body := submit(preloaded); errCode(t, body) != "core.operator.issue.bookkeeping" {
+		t.Fatalf("pre-loaded bookkeeping: %s", body)
+	}
+
+	elsewhere := base()
+	elsewhere.Server = "https://elsewhere.example"
+	grant.SignWith(signer.GrantSigner(), &elsewhere)
+	if _, body := submit(elsewhere); errCode(t, body) != "core.operator.issue.server" {
+		t.Fatalf("bound elsewhere: %s", body)
 	}
 
 	good := base()

@@ -232,6 +232,14 @@ type Grant struct {
 	// across a boundary and the storage a rolling one costs is exactly
 	// proportional to the limit the operator chose.
 	Recent []time.Time `json:"recent,omitempty"`
+	// Server is the canonical URL of the machine this grant was issued FOR,
+	// set exactly when a remote operator issued it and part of the signed
+	// authority. It is what stops a fleet sharing one roster from becoming
+	// one trust domain: without it, a signature made for staging would be
+	// byte-for-byte valid on prod, and a same-uid agent on either machine
+	// could transplant the row. guardcheck.go verifies it against the local
+	// guard state's own bound URL, never against anything the row says.
+	Server string `json:"server,omitempty"`
 	// Sig is the guard's signature over this grant's authority fields —
 	// present exactly when the operator passphrase guard was on at issuance,
 	// see guardcheck.go for what it covers, what it leaves to the seal, and
@@ -1743,6 +1751,12 @@ const (
 	FromForm = "form"
 	// FromTerminal is the CLI with a terminal on the other end.
 	FromTerminal = "terminal"
+	// FromOperatorPrefix marks a grant issued over the remote operator
+	// channel; the rest of the value is the enrolled roster label whose key
+	// signed it. A prefix rather than a bare word because the label is the
+	// attribution — on a multi-operator server, "operator" alone would name
+	// a role, and the roster promised a person.
+	FromOperatorPrefix = "operator:"
 	// FromCommand is the CLI with nobody there: a provisioning script, a CI
 	// job, or an agent's shell tool. All three are legitimate and only one of
 	// them is a surprise, which is why this is reported and never refused.

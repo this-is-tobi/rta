@@ -7,6 +7,7 @@ import (
 
 	"github.com/this-is-tobi/rule-them-all/internal/config"
 	core "github.com/this-is-tobi/rule-them-all/internal/grant"
+	"github.com/this-is-tobi/rule-them-all/internal/guard"
 	operatorid "github.com/this-is-tobi/rule-them-all/internal/operator"
 	profiles "github.com/this-is-tobi/rule-them-all/internal/profile"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
@@ -132,6 +133,10 @@ func PrepareRemote(catalog func() []plugin.Capability) func(spec operatorid.Issu
 		if verr != nil {
 			return operatorid.Prepared{}, verr
 		}
+		// The binding is the guard state's, the single source of truth the
+		// store will verify against — never the request's, and never the
+		// channel's own config, which could drift from it.
+		g.Server = guard.BoundServer()
 		p := operatorid.Prepared{Grant: g}
 		if n := cappedNote(notes); n != "" {
 			p.Notes = append(p.Notes, n)

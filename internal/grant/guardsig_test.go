@@ -219,10 +219,11 @@ func TestARemoteGuardHonoursOperatorSignedGrants(t *testing.T) {
 	}
 	if verr := guard.EnableRemote([]guard.OperatorKey{
 		{Label: "tobi", PublicKey: base64.StdEncoding.EncodeToString(pub)},
-	}); verr != nil {
+	}, "https://a.example"); verr != nil {
 		t.Fatal(verr)
 	}
 	g := stamped("demo.item.reveal")
+	g.Server = "https://a.example"
 	SignWith(guard.SignerFor(priv), &g)
 	if verr := Issue(g, true); verr != nil {
 		t.Fatal(verr)
@@ -240,6 +241,7 @@ func TestARemoteGuardHonoursOperatorSignedGrants(t *testing.T) {
 		t.Fatal(err)
 	}
 	forged := stamped("demo.item.write")
+	forged.Server = "https://a.example"
 	SignWith(guard.SignerFor(stranger), &forged)
 	verr = Issue(forged, true)
 	if verr == nil {
@@ -247,5 +249,40 @@ func TestARemoteGuardHonoursOperatorSignedGrants(t *testing.T) {
 	}
 	if verr.Code != "core.grant.guard.unsigned" {
 		t.Fatalf("code = %s, want core.grant.guard.unsigned", verr.Code)
+	}
+}
+
+// The transplant: one operator key enrolled on two servers, a row signed
+// for A re-sealed into B's store by a same-uid agent. The signature
+// verifies — the binding is what refuses it, against B's own guard state
+// and never against anything the row says.
+func TestAGrantBoundToAnotherServerIsRefused(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verr := guard.EnableRemote([]guard.OperatorKey{
+		{Label: "tobi", PublicKey: base64.StdEncoding.EncodeToString(pub)},
+	}, "https://b.example"); verr != nil {
+		t.Fatal(verr)
+	}
+	transplant := stamped("demo.item.reveal")
+	transplant.Server = "https://a.example"
+	SignWith(guard.SignerFor(priv), &transplant)
+	if verr := Issue(transplant, true); verr == nil {
+		t.Fatal("a grant bound to another server issued here")
+	}
+	// And through the file path an agent would actually use: Save re-seals
+	// like a same-uid attacker can, and the load must kill the whole file.
+	if verr := Save([]Grant{transplant}); verr != nil {
+		t.Fatal(verr)
+	}
+	_, verr := Load()
+	if verr == nil {
+		t.Fatal("a transplanted row still loaded")
+	}
+	if verr.Code != "core.grant.guard.forged" {
+		t.Fatalf("code = %s, want core.grant.guard.forged", verr.Code)
 	}
 }

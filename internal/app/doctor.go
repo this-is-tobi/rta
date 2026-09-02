@@ -565,9 +565,17 @@ func doctorReport(reg *registry.Registry) view.View {
 	// row when off rather than a warn: ungated issuance is the default and a
 	// legitimate posture — the row exists so the stronger one is discoverable
 	// exactly where an operator already reads about grants.
-	if guard.Remote() {
-		add("grant guard", "ok", "remote (key "+guard.Fingerprint()+") — a grant is honoured only "+
-			"when signed by an enrolled operator's key, and no key material lives on this machine at all")
+	if guard.Enabled() && guard.Fingerprint() == "" {
+		// Enabled is a stat, Fingerprint needs a parse: together they mean
+		// the state file exists and does not read. Authorization already
+		// fails closed everywhere; doctor's job is to *name* it, because
+		// "on (key )" would look like health.
+		add("grant guard", "warn", "guard state present but unreadable — modified or truncated; "+
+			"no grant is honoured until it is removed and re-enabled")
+	} else if guard.Remote() {
+		add("grant guard", "ok", "remote (key "+guard.Fingerprint()+", for "+guard.BoundServer()+") — "+
+			"a grant is honoured only when signed by an enrolled operator's key, and no key material "+
+			"lives on this machine at all")
 	} else if guard.Enabled() {
 		add("grant guard", "ok", "on (key "+guard.Fingerprint()+") — issuing or renewing a grant "+
 			"asks for the operator passphrase, so a process running as you cannot mint authority alone")
