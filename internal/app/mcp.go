@@ -21,6 +21,7 @@ import (
 	"github.com/this-is-tobi/rule-them-all/internal/config"
 	"github.com/this-is-tobi/rule-them-all/internal/consent"
 	"github.com/this-is-tobi/rule-them-all/internal/grant"
+	grantguard "github.com/this-is-tobi/rule-them-all/internal/guard"
 	"github.com/this-is-tobi/rule-them-all/internal/mcp"
 	"github.com/this-is-tobi/rule-them-all/internal/notify"
 	"github.com/this-is-tobi/rule-them-all/internal/operator"
@@ -241,6 +242,17 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 					canonical, verr := operator.CanonicalServerURL("--operators-url", operatorsURL)
 					if verr != nil {
 						return fmt.Errorf("--operators-url: %s", verr.Message)
+					}
+					// The guard's bound URL and this flag must agree, or every
+					// remote issuance dies on a binding mismatch the operator
+					// cannot see from their end. Checked here, where the person
+					// who can fix it is watching the process start.
+					if grantguard.Remote() {
+						if bound := grantguard.BoundServer(); bound != canonical {
+							return fmt.Errorf("--operators-url is %q but this machine's guard is bound to %q — "+
+								"remote issuance would refuse every grant; re-enroll the guard with --url %s, "+
+								"or fix the flag", canonical, bound, canonical)
+						}
 					}
 					roster, groupReadable, err := operator.LoadRoster(operatorsFile)
 					if err != nil {

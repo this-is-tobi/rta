@@ -5,9 +5,12 @@ import (
 	"fmt"
 	"strings"
 
+	"golang.org/x/term"
+
 	core "github.com/this-is-tobi/rule-them-all/internal/grant"
 	"github.com/this-is-tobi/rule-them-all/internal/guard"
 	operatorid "github.com/this-is-tobi/rule-them-all/internal/operator"
+	"github.com/this-is-tobi/rule-them-all/internal/stdio"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
@@ -81,6 +84,16 @@ func runGuardOff(_ context.Context, req plugin.Request) (view.View, error) {
 			return view.Text{Body: fmt.Sprintf("would disable the remote guard, clearing the %d "+
 				"grant(s) its operators signed", len(held))}, nil
 		}
+		// "Presence at this terminal" enforced, not assumed: without this, an
+		// agent's shell tool tears the guard down more cleanly than the rm it
+		// could always run — rm leaves orphaned signed grants screaming on
+		// every read, guard off leaves the tidy was-never-enabled state.
+		// rta must not be the attacker's quietest tool.
+		if req.Surface() == plugin.SurfaceCLI && !term.IsTerminal(int(stdio.Real().Fd())) {
+			return nil, view.Errorf("core.guard.remote.terminal",
+				"disabling the remote guard needs a person at a terminal").
+				WithHint("run this at a terminal, or from the TUI")
+		}
 		if verr := core.Mutate(func([]core.Grant) ([]core.Grant, bool) {
 			return nil, true
 		}); verr != nil {
@@ -138,9 +151,20 @@ func runGuardRemote(_ context.Context, req plugin.Request) (view.View, error) {
 	path := strings.TrimSpace(req.String("operators"))
 	if path == "" {
 		return nil, view.Errorf("core.guard.remote.roster", "name the roster file to enroll").
-			WithHint("rta grant guard remote operators.txt — the file `rta mcp serve --operators` reads")
+			WithHint("rta grant guard remote operators.txt --url https://rta.example.com")
 	}
-	roster, _, err := operatorid.LoadRoster(path)
+	rawURL := strings.TrimSpace(req.String("url"))
+	if rawURL == "" {
+		return nil, view.Errorf("core.guard.remote.server",
+			"a remote guard needs this server's canonical URL (--url) — it is signed into every "+
+				"grant, so a grant issued for this server verifies on no other").
+			WithHint("the exact URL operators write in their remotes.yaml, and `rta mcp serve --operators-url` carries")
+	}
+	canonical, verr := operatorid.CanonicalServerURL("--url", rawURL)
+	if verr != nil {
+		return nil, verr
+	}
+	roster, groupReadable, err := operatorid.LoadRoster(path)
 	if err != nil {
 		return nil, view.Errorf("core.guard.remote.roster", "%v", err)
 	}
@@ -149,26 +173,34 @@ func runGuardRemote(_ context.Context, req plugin.Request) (view.View, error) {
 		return nil, verr
 	}
 	if req.DryRun {
-		return view.Text{Body: fmt.Sprintf("would enroll %s as this machine's guard — grants are "+
-			"then honoured only when signed by one of them, issued over the operator channel — and "+
-			"clear the %d grant(s) currently held",
-			strings.Join(roster.Labels(), ", "), len(held))}, nil
+		return view.Text{Body: fmt.Sprintf("would enroll %s as this machine's guard, bound to %s — "+
+			"grants are then honoured only when signed by one of them, issued over the operator "+
+			"channel — and clear the %d grant(s) currently held",
+			strings.Join(roster.Labels(), ", "), canonical, len(held))}, nil
 	}
 	if verr := core.Mutate(func([]core.Grant) ([]core.Grant, bool) {
 		return nil, true
 	}); verr != nil {
 		return nil, verr
 	}
-	if verr := guard.EnableRemote(roster.Entries()); verr != nil {
+	if verr := guard.EnableRemote(roster.Entries(), canonical); verr != nil {
 		return nil, verr
 	}
-	return view.KeyValue{Pairs: []view.Pair{
+	pairs := []view.Pair{
 		{Key: "guard", Value: "remote — a grant is honoured only when an enrolled operator signed it"},
+		{Key: "server", Value: canonical},
 		{Key: "operators", Value: strings.Join(roster.Labels(), ", ")},
 		{Key: "key", Value: guard.Fingerprint()},
 		{Key: "cleared", Value: fmt.Sprintf("%d grant(s) issued before the guard", len(held))},
 		{Key: "issuance", Value: "rta grant allow <capability> --server <this server>, from an enrolled machine"},
-	}}, nil
+	}
+	if groupReadable {
+		// The serve path prints the same fact; the enrollment path is the
+		// more trust-anchor-ish of the two, and must not be quieter.
+		pairs = append(pairs, view.Pair{Key: "warning",
+			Value: path + " is group-readable — anyone who can also write it can enroll themselves"})
+	}
+	return view.KeyValue{Pairs: pairs}, nil
 }
 
 func runGuardStatus(_ context.Context, req plugin.Request) (view.View, error) {

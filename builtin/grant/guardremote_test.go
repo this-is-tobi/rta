@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
+
 	core "github.com/this-is-tobi/rule-them-all/internal/grant"
 	"github.com/this-is-tobi/rule-them-all/internal/guard"
 	operatorid "github.com/this-is-tobi/rule-them-all/internal/operator"
@@ -33,7 +35,7 @@ func TestGuardRemoteClosesLocalIssuance(t *testing.T) {
 	}
 
 	v, err := guardCap(t, "grant.guard.remote").Run(context.Background(),
-		reqTUI(map[string]any{"operators": rosterPath}))
+		reqTUI(map[string]any{"operators": rosterPath, "url": "https://rta.example.com"}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,5 +70,34 @@ func TestGuardRemoteClosesLocalIssuance(t *testing.T) {
 	}
 	if held, verr := core.Load(); verr != nil || len(held) != 0 {
 		t.Fatalf("held = %v, %v — want an empty store", held, verr)
+	}
+}
+
+// Tearing down the remote guard from a non-interactive shell — the shape
+// of an agent's command tool — is refused: rta must not be a quieter
+// teardown than the rm it cannot prevent.
+func TestRemoteGuardOffNeedsATerminal(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	operatorid.ScryptWorkFactor = 10
+	if _, verr := operatorid.Init("p"); verr != nil {
+		t.Fatal(verr)
+	}
+	line, _ := operatorid.RosterLine("tobi")
+	rosterPath := filepath.Join(t.TempDir(), "operators")
+	if err := os.WriteFile(rosterPath, []byte(line+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := guardCap(t, "grant.guard.remote").Run(context.Background(),
+		reqTUI(map[string]any{"operators": rosterPath, "url": "https://rta.example.com"})); err != nil {
+		t.Fatal(err)
+	}
+	_, err := guardCap(t, "grant.guard.off").Run(context.Background(),
+		plugin.NewRequest(nil, false, true).WithSurface(plugin.SurfaceCLI))
+	verr, ok := err.(*view.Error)
+	if !ok || verr.Code != "core.guard.remote.terminal" {
+		t.Fatalf("err = %v, want core.guard.remote.terminal", err)
+	}
+	if !guard.Enabled() {
+		t.Fatal("the refusal still removed the guard")
 	}
 }

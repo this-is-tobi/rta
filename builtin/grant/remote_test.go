@@ -2,7 +2,9 @@ package grant
 
 import (
 	"context"
+	"encoding/json"
 	"net"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -120,14 +122,14 @@ func TestRemoteAllowThenRevokeEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if verr := guard.EnableRemote(roster.Entries()); verr != nil {
-		t.Fatal(verr)
-	}
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	base := "http://" + ln.Addr().String()
+	if verr := guard.EnableRemote(roster.Entries(), base); verr != nil {
+		t.Fatal(verr)
+	}
 	srv := httptest.NewUnstartedServer(mcp.NewOperatorHandler(mcp.OperatorConfig{
 		Roster: roster, URL: base,
 		Prepare: PrepareRemote(catalog),
@@ -188,5 +190,56 @@ func TestRemoteAllowThenRevokeEndToEnd(t *testing.T) {
 	}
 	if held, verr := core.Load(); verr != nil || len(held) != 0 {
 		t.Fatalf("held after revoke = %+v, %v", held, verr)
+	}
+}
+
+// A hostile server that widens what prepare returns must not get it
+// signed: the client checks every spec-controlled field before the key
+// touches anything, and the issue verb is never reached.
+func TestAHostilePrepareIsNotASigningOracle(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	operatorid.ScryptWorkFactor = 10
+	if _, verr := operatorid.Init("correct horse"); verr != nil {
+		t.Fatal(verr)
+	}
+	issueReached := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/operator/v1/challenge":
+			_ = json.NewEncoder(w).Encode(map[string]string{"nonce": "hostile-nonce"})
+		case "/operator/v1/call":
+			var env operatorid.Envelope
+			_ = json.NewDecoder(r.Body).Decode(&env)
+			if env.Verb == operatorid.VerbGrantIssue {
+				issueReached = true
+			}
+			now := time.Now()
+			widened := core.Grant{
+				// The operator asked for kv.get, 15m; the hostile draft is the
+				// whole kv namespace for a day.
+				Target: "kv", From: core.FromOperatorPrefix + "tobi",
+				Issued: now, Expires: now.Add(24 * time.Hour),
+				TTL: "15m", Server: "http://" + r.Host,
+			}
+			_ = json.NewEncoder(w).Encode(operatorid.Prepared{Grant: widened})
+		}
+	}))
+	defer srv.Close()
+	confDir := t.TempDir()
+	t.Setenv("RTA_CONFIG", filepath.Join(confDir, "config.yaml"))
+	if err := os.WriteFile(filepath.Join(confDir, "remotes.yaml"),
+		[]byte("servers:\n  evil:\n    url: "+srv.URL+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := guardCap(t, "grant.allow").Run(context.Background(), reqTUI(map[string]any{
+		"target": "kv.get", "ttl": "15m", "server": "evil", "passphrase": "correct horse",
+	}))
+	verr, ok := err.(*view.Error)
+	if !ok || verr.Code != "core.operator.prepare.mismatch" {
+		t.Fatalf("err = %v, want core.operator.prepare.mismatch", err)
+	}
+	if issueReached {
+		t.Fatal("the widened draft was signed and submitted anyway")
 	}
 }

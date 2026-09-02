@@ -45,7 +45,9 @@ package guard
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"os"
@@ -98,6 +100,15 @@ type state struct {
 	// Operators are the remote keys this machine honours grant signatures
 	// from, imported from a roster file by `rta grant guard remote`.
 	Operators []OperatorKey `json:"operators,omitempty"`
+	// Server is this machine's canonical URL, remote mode only: the value
+	// every honoured grant's signed authority must carry in its own Server
+	// field. Without it, one operator key enrolled on two servers would make
+	// a grant signed for staging byte-for-byte valid on prod — an agent on
+	// either machine could transplant the row, and remote mode's "nothing
+	// on this machine can mint" claim would be false the day a fleet shares
+	// a roster. The client anchors the same value independently: it refuses
+	// to sign authority naming any server but the one it dialed.
+	Server string `json:"server,omitempty"`
 }
 
 // OperatorKey is one enrolled remote signer: a label for the surfaces that
@@ -148,12 +159,17 @@ func SignerFor(priv ed25519.PrivateKey) Signer { return Signer{priv: priv} }
 // silently. It only ever subtracts — a Pin taken with the guard off checks
 // nothing, so enabling mid-session still works and still strengthens.
 type Pin struct {
-	enabled     bool
-	fingerprint string
+	enabled bool
+	digest  string
 }
 
-// TakePin snapshots the current guard state.
-func TakePin() Pin { return Pin{enabled: Enabled(), fingerprint: Fingerprint()} }
+// TakePin snapshots the current guard state. It pins trustDigest — the
+// full-width hash — and never the eight-hex display fingerprint: a 32-bit
+// comparison is a target a same-uid attacker can collide offline (2³²
+// keygens against a check that is the one mid-session defense), while the
+// display constraint that justifies truncating for a table cell does not
+// apply to a value held in memory.
+func TakePin() Pin { return Pin{enabled: Enabled(), digest: trustDigest()} }
 
 // Check refuses when the guard this Pin saw has been weakened: disabled, or
 // its key replaced. Nil when the Pin saw no guard — the off→on direction is
@@ -162,7 +178,7 @@ func (p Pin) Check() *view.Error {
 	if !p.enabled {
 		return nil
 	}
-	if !Enabled() || Fingerprint() != p.fingerprint {
+	if !Enabled() || trustDigest() != p.digest {
 		return view.Errorf("core.guard.pinned",
 			"the guard this server started under is gone or changed key — refusing every "+
 				"grant-gated call until an operator looks").
@@ -193,12 +209,23 @@ func load() (state, *view.Error) {
 	if err := json.Unmarshal(data, &st); err != nil {
 		return st, corruptState()
 	}
-	local := st.PublicKey != "" && st.Key != "" && len(st.Operators) == 0
-	remote := len(st.Operators) > 0 && st.PublicKey == "" && st.Key == ""
+	local := st.PublicKey != "" && st.Key != "" && len(st.Operators) == 0 && st.Server == ""
+	remote := len(st.Operators) > 0 && st.PublicKey == "" && st.Key == "" && st.Server != ""
 	if !local && !remote {
 		return st, corruptState()
 	}
 	return st, nil
+}
+
+// BoundServer is the canonical URL grant signatures must be bound to:
+// empty for a local guard (its key is unique to this machine, which is the
+// binding), the enrolled URL in remote mode.
+func BoundServer() string {
+	st, verr := load()
+	if verr != nil {
+		return ""
+	}
+	return st.Server
 }
 
 func corruptState() *view.Error {
@@ -241,9 +268,21 @@ func OperatorLabels() []string {
 // removing any operator changes the fingerprint the same way a swapped
 // local key does, and Pin.Check trips on both alike.
 func Fingerprint() string {
+	if material := trustMaterial(); material != nil {
+		return passkey.Fingerprint(material)
+	}
+	return ""
+}
+
+// trustMaterial is the byte string that identifies what this guard trusts:
+// the local verification key, or in remote mode the sorted enrolled set
+// plus the bound server. One definition feeds both the display fingerprint
+// (truncated) and the Pin's digest (full width), so the two can never
+// disagree about what counts as a change.
+func trustMaterial() []byte {
 	st, verr := load()
 	if verr != nil {
-		return ""
+		return nil
 	}
 	if st.remote() {
 		keys := make([]string, 0, len(st.Operators))
@@ -251,13 +290,25 @@ func Fingerprint() string {
 			keys = append(keys, op.PublicKey)
 		}
 		sort.Strings(keys)
-		return passkey.Fingerprint([]byte(strings.Join(keys, "\n")))
+		return []byte(st.Server + "\n" + strings.Join(keys, "\n"))
 	}
 	pub, err := base64.StdEncoding.DecodeString(st.PublicKey)
 	if err != nil {
+		return nil
+	}
+	return pub
+}
+
+// trustDigest is trustMaterial at full hash width, for the Pin. Empty when
+// the guard is off or unreadable — which Pin.Check treats as a change, the
+// closed direction.
+func trustDigest() string {
+	material := trustMaterial()
+	if material == nil {
 		return ""
 	}
-	return passkey.Fingerprint(pub)
+	sum := sha256.Sum256(material)
+	return hex.EncodeToString(sum[:])
 }
 
 // Created reports when the guard was enabled, zero when it is not.
@@ -408,7 +459,7 @@ func Enable(passphrase string) (Signer, *view.Error) {
 // not a side effect — and validates every key before anything is written,
 // because a state file that half-parses is a machine that refuses every
 // grant it holds.
-func EnableRemote(ops []OperatorKey) *view.Error {
+func EnableRemote(ops []OperatorKey, server string) *view.Error {
 	unlock, verr := transitionLock()
 	if verr != nil {
 		return verr
@@ -421,6 +472,11 @@ func EnableRemote(ops []OperatorKey) *view.Error {
 	if len(ops) == 0 {
 		return view.Errorf("core.guard.remote.empty", "no operator keys to enroll — that would be a guard nobody can satisfy")
 	}
+	if strings.TrimSpace(server) == "" {
+		return view.Errorf("core.guard.remote.server",
+			"a remote guard needs this server's canonical URL — it is signed into every grant, "+
+				"so a grant issued for this server verifies on no other")
+	}
 	for _, op := range ops {
 		pub, err := base64.StdEncoding.DecodeString(op.PublicKey)
 		if err != nil || len(pub) != ed25519.PublicKeySize {
@@ -430,6 +486,7 @@ func EnableRemote(ops []OperatorKey) *view.Error {
 	data, err := json.MarshalIndent(state{
 		Created:   time.Now().UTC(),
 		Operators: ops,
+		Server:    server,
 	}, "", "  ")
 	if err != nil {
 		return view.Errorf("core.guard.write", "encoding guard state: %v", err)

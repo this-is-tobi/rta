@@ -209,6 +209,15 @@ func (h *operatorHandler) dispatch(env operator.Envelope, label string) (any, *v
 		}
 		return h.cfg.Prepare(spec, label)
 	case operator.VerbGrantIssue:
+		// The same precheck as prepare, for the same message-quality reason:
+		// a caller who skipped prepare on a never-provisioned server should
+		// hear about the provisioning step, not about signatures.
+		if !guard.Remote() {
+			return nil, view.Errorf("core.operator.guard",
+				"this server's guard does not trust remote operators, so nothing you sign would be honoured").
+				WithHint("on the server: `rta grant guard remote <roster> --url <canonical>` enrolls the " +
+					"operator keys; revocation and listing work regardless")
+		}
 		var g grant.Grant
 		if err := json.Unmarshal(env.Payload, &g); err != nil {
 			return nil, badPayload(env.Verb, err)
@@ -240,6 +249,31 @@ func (h *operatorHandler) checkSubmitted(g grant.Grant, label string) *view.Erro
 	if g.Sig == "" {
 		return view.Errorf("core.operator.issue.unsigned",
 			"the submitted grant carries no signature — sign what prepare returned, unchanged")
+	}
+	// The consumption bookkeeping is deliberately outside the signed
+	// authority — the server rewrites it per counted call — which makes it
+	// the one part of the struct a network caller could pre-load: a grant
+	// signed with maxUses 1 arriving with Uses -1000000 would read as
+	// tightly budgeted to every reviewer and spend a million times. Refused,
+	// never zeroed: "sign what prepare returned, unchanged" is the contract.
+	if g.Uses != 0 || len(g.Recent) != 0 || g.MaxUses < 0 {
+		return view.Errorf("core.operator.issue.bookkeeping",
+			"the submitted grant pre-loads its own consumption bookkeeping — sign what prepare returned, unchanged")
+	}
+	// The grammar checks prepare ran, re-run on submission: what they refuse
+	// would be stored dead (fail closed) except the agent name, whose only
+	// power is to *render* — a homoglyph agent column is exactly the
+	// lookalike-row deception CheckAgent exists to kill, and one enrolled
+	// operator must not be able to plant it against another's review.
+	if verr := grant.CheckAgent(g.Agent); verr != nil {
+		return verr
+	}
+	if verr := grant.CheckScope(g.Scope); verr != nil {
+		return verr
+	}
+	if bound := guard.BoundServer(); g.Server != bound {
+		return view.Errorf("core.operator.issue.server",
+			"the submitted grant is bound to %q, and this server answers for %q", g.Server, bound)
 	}
 	if g.From != grant.FromOperatorPrefix+label {
 		// The attribution is part of the signed authority, so an operator

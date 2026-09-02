@@ -41,6 +41,9 @@ type authority struct {
 	MaxUses    int       `json:"maxUses,omitempty"`
 	RateMax    int       `json:"rateMax,omitempty"`
 	RateWindow string    `json:"rateWindow,omitempty"`
+	// Server is inside the signed bytes so a signature cannot travel: see
+	// Grant.Server for the transplant it forbids.
+	Server string `json:"server,omitempty"`
 }
 
 // AuthorityBytes is the byte form a guard signature covers for g.
@@ -51,6 +54,7 @@ func AuthorityBytes(g Grant) []byte {
 		Issued: g.Issued, Expires: g.Expires,
 		From: g.From, Note: g.Note, TTL: g.TTL,
 		MaxUses: g.MaxUses, RateMax: g.RateMax, RateWindow: g.RateWindow,
+		Server: g.Server,
 	})
 	if err != nil {
 		// Strings, ints and times through MarshalJSON cannot fail; if this
@@ -74,6 +78,17 @@ func SignWith(s guard.Signer, g *Grant) { g.Sig = s.Sign(AuthorityBytes(*g)) }
 // wrong first message for a caller who simply forgot a passphrase.
 func guardIssuable(g Grant) *view.Error {
 	if guard.Enabled() {
+		// The server binding, before the mathematics: a signature that
+		// verifies but names another machine is a transplant, and the
+		// expected value comes from this machine's own guard state — never
+		// from the row, which is exactly the thing being distrusted. A local
+		// guard binds to the empty string, because its key exists nowhere
+		// else and is its own binding.
+		if g.Server != guard.BoundServer() {
+			return view.Errorf("core.grant.guard.unsigned",
+				"this grant's authority is bound to %q, and this machine's guard answers for %q",
+				g.Server, guard.BoundServer())
+		}
 		// An empty authority form never verifies as a matter of policy, not
 		// luck: ed25519 would happily sign and verify the bare domain prefix,
 		// so a marshal failure that returned nil bytes would give every
@@ -90,7 +105,7 @@ func guardIssuable(g Grant) *view.Error {
 		}
 		return nil
 	}
-	if g.Sig != "" {
+	if g.Sig != "" || g.Server != "" {
 		return view.Errorf("core.grant.guard.off",
 			"this grant carries a guard signature, and the guard is not enabled")
 	}
@@ -110,7 +125,7 @@ func guardIssuable(g Grant) *view.Error {
 func guardChecked(grants []Grant) *view.Error {
 	if !guard.Enabled() {
 		for _, g := range grants {
-			if g.Sig != "" {
+			if g.Sig != "" || g.Server != "" {
 				return view.Errorf("core.grant.guard.orphaned",
 					"%s holds guard-signed grants with no guard state beside them — "+
 						"the guard was removed by something other than rta", Path()).
@@ -124,11 +139,13 @@ func guardChecked(grants []Grant) *view.Error {
 	if verr != nil {
 		return verr
 	}
+	bound := guard.BoundServer()
 	for _, g := range grants {
 		// The same nil-bytes refusal guardIssuable applies, for the same
-		// reason: empty authority must never verify.
+		// reason: empty authority must never verify — and the same server
+		// binding, because a transplanted row's signature verifies fine.
 		ab := AuthorityBytes(g)
-		if len(ab) == 0 || !verify(ab, g.Sig) {
+		if g.Server != bound || len(ab) == 0 || !verify(ab, g.Sig) {
 			return view.Errorf("core.grant.guard.forged",
 				"%s holds a grant the guard never signed — written by something "+
 					"without the passphrase", Path()).
