@@ -20,6 +20,7 @@ import (
 	"github.com/this-is-tobi/rule-them-all/builtin/all"
 	"github.com/this-is-tobi/rule-them-all/internal/config"
 	"github.com/this-is-tobi/rule-them-all/internal/pluginhost"
+	"github.com/this-is-tobi/rule-them-all/internal/profile"
 	"github.com/this-is-tobi/rule-them-all/internal/recent"
 	"github.com/this-is-tobi/rule-them-all/internal/registry"
 	"github.com/this-is-tobi/rule-them-all/internal/render/cli"
@@ -355,16 +356,33 @@ func attach(parent *cobra.Command, c plugin.Capability, opts *globalOpts) {
 	// "unknown flag", which names the fact, instead of accepting a value that
 	// no input could ever receive.
 	if plugin.Profilable(c) && cmd.Flags().Lookup("profile") == nil {
-		cmd.Flags().String("profile", "", "run against one of the connections in your config")
+		cmd.Flags().String("profile", "", "run against one of the connections in your config "+
+			"(name, or name/instance when an environment holds several)")
 		_ = cmd.RegisterFlagCompletionFunc("profile",
 			func(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
 				cfg, err := config.Load()
 				if err != nil {
 					return nil, cobra.ShellCompDirectiveNoFileComp
 				}
+				// The refs a call would accept, not just the names: an
+				// environment holding several connections to this plugin
+				// completes as staging/analytics beside staging, because a
+				// bare name over several labeled entries is exactly what
+				// Lookup refuses. The description carries the connection's
+				// own address where the note would repeat per instance.
+				ns := plugin.Namespace(c.ID)
 				var out []cobra.Completion
-				for _, name := range cfg.ProfilesFor(plugin.Namespace(c.ID)) {
-					out = append(out, cobra.CompletionWithDesc(name, cfg.Profiles[name].Note))
+				for _, name := range cfg.ProfilesFor(ns) {
+					p := cfg.Profiles[name]
+					for _, ref := range profile.InstanceRefs(p, name, ns) {
+						desc := p.Note
+						if instance := config.RefInstance(ref); instance != "" {
+							if _, conn, ok := p.ForInstance(ns, instance); ok {
+								desc = connAddress(conn, p.Note)
+							}
+						}
+						out = append(out, cobra.CompletionWithDesc(ref, desc))
+					}
 				}
 				return out, cobra.ShellCompDirectiveNoFileComp
 			})
@@ -372,6 +390,25 @@ func attach(parent *cobra.Command, c plugin.Capability, opts *globalOpts) {
 	cmd.SetFlagErrorFunc(positionalFlagError(c, positionals))
 	declareCompletion(cmd, c, positionals)
 	parent.AddCommand(cmd)
+}
+
+// connAddress names where one instance points, for a completion description —
+// the one line that tells two instances of a plugin apart, which the
+// profile's note cannot do since every instance shares it.
+func connAddress(conn config.Connection, fallback string) string {
+	if conn.Kube != "" {
+		return conn.Kube
+	}
+	if conn.SSH != "" {
+		return conn.SSH
+	}
+	// The most address-like set: keys, in the order a person would look.
+	for _, k := range []string{"host", "endpoint", "url", "bucket", "database", "addr"} {
+		if v, ok := conn.Set[k]; ok {
+			return fmt.Sprintf("%v", v)
+		}
+	}
+	return fallback
 }
 
 // positionalFlagError improves the one flag mistake a declaration makes
