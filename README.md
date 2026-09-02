@@ -36,9 +36,9 @@ The five chapters from the boundary to team policy are worth reading in that ord
 
 ## What is in it
 
-**16 built-in plugins, 109 capabilities** in the default build, and `rta plugin list` is the inventory:
+**17 built-in plugins, 111 capabilities** in the default build, and `rta plugin list` is the inventory:
 
-`sys` · `net` · `http` · `cert` · `fs` · `kv` · `todo` · `note` · `gen` · `codec` · `audit` · `grant` · `agent` · `debug` · `keys` · `git`
+`sys` · `net` · `http` · `cert` · `fs` · `kv` · `todo` · `note` · `gen` · `codec` · `audit` · `grant` · `agent` · `operator` · `debug` · `keys` · `git`
 
 Plus anything you install. Eleven plugins ship in this repository as proof the contract works — `pg`, `mysql`, `mariadb`, `etcd`, `qdrant`, `s3`, `vault`, `kube`, `cnpg`, `docker` and `eol` — each a separate binary, so the ones you skip cost you nothing.
 

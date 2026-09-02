@@ -763,7 +763,7 @@
   },
   {
     "name": "grant_list",
-    "description": "── the text below is written by the plugin, not by rta ──\nList what AI agents are currently allowed to do\n\nReadable without unlocking anything, so the question stays answerable in a hurry. Expired grants are dropped on read. With --detail: what is currently allowed, then everything an agent can reach with no grant at all, and everything that would need one — because \"what did I allow\" is only half of \"what can it do\". Can only be run by a person at a terminal, the same as grant.allow/renew/revoke: the roster names every agent by name, which is exactly the cross-agent visibility an agent asking about itself must not get.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nList what AI agents are currently allowed to do\n\nReadable without unlocking anything, so the question stays answerable in a hurry. Expired grants are dropped on read. With --detail: what is currently allowed, then everything an agent can reach with no grant at all, and everything that would need one — because \"what did I allow\" is only half of \"what can it do\". With --server \u003cname\u003e (a server from remotes.yaml): the same roster read from a remote rta server as a signed operator call, your operator key's passphrase asked first. Can only be run by a person at a terminal, the same as grant.allow/renew/revoke: the roster names every agent by name, which is exactly the cross-agent visibility an agent asking about itself must not get.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -1798,6 +1798,39 @@
     "input_schema": {
       "additionalProperties": false,
       "properties": {},
+      "type": "object"
+    }
+  },
+  {
+    "name": "operator_init",
+    "description": "── the text below is written by the plugin, not by rta ──\nMint your operator key — the identity remote servers enroll\n\nGenerates an ed25519 keypair: the private half stays on this machine, encrypted under a passphrase that is never stored, never accepted from the environment, and refused on the command line; the public half is what you paste into a server's --operators roster. Signing anything takes the passphrase, so an agent that reads every file on this machine still cannot speak as you. Refuses to overwrite an existing key: rotating is `rm` plus re-enrolling everywhere, deliberately manual.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
+    "destructive_hint": false,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "default": "operator",
+          "description": "how server rosters and audit lines will name you (e.g. your handle)",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "operator_status",
+    "description": "── the text below is written by the plugin, not by rta ──\nYour operator key at a glance — or a remote server's, with --server\n\nWithout --server: whether this machine holds an operator key, its fingerprint, and the exact line to paste into a server's --operators roster. With --server \u003cname\u003e (from remotes.yaml, beside your config): asks that server who it is — version, agent name, guard state, enrolled operators — as a signed call, so it also proves your enrollment end to end.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "default": "operator",
+          "description": "the label to print in the roster line",
+          "type": "string"
+        }
+      },
       "type": "object"
     }
   },

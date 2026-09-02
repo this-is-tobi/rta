@@ -23,6 +23,7 @@ import (
 	"github.com/this-is-tobi/rule-them-all/builtin/kv"
 	rtanet "github.com/this-is-tobi/rule-them-all/builtin/net"
 	"github.com/this-is-tobi/rule-them-all/builtin/note"
+	rtaoperator "github.com/this-is-tobi/rule-them-all/builtin/operator"
 	"github.com/this-is-tobi/rule-them-all/builtin/sys"
 	"github.com/this-is-tobi/rule-them-all/builtin/todo"
 	"github.com/this-is-tobi/rule-them-all/internal/registry"
@@ -60,6 +61,9 @@ func Registry(conf func(plugin.Capability) map[string]any) (*registry.Registry, 
 		// what is registered, never listed twice.
 		rtaagent.Plugin(),
 		grant.Plugin(reg.Capabilities),
+		// operator is the person's other half of the same story: the identity
+		// with which they manage rta servers that are not this machine.
+		rtaoperator.Plugin(),
 	} {
 		if err := reg.Register(p); err != nil {
 			return nil, err
