@@ -10,6 +10,10 @@ import (
 // nothing mintable riding on it, then revocation (fail-safe), then
 // issuance, then consent answers — but every verb rides the same envelope,
 // and the order no longer shows at runtime.
+//
+// A new verb starts refused for role=read enrollments: Role.Allows names
+// its read set verb by verb, so declaring a constant here grants a
+// read-only key nothing until that switch says otherwise.
 const (
 	// VerbStatus answers what a server is: version, agent name, guard state,
 	// enrolled operators. The remote analogue of the doctor's glance.
@@ -90,11 +94,27 @@ type RevokeOutcome struct {
 
 // Status is VerbStatus's result.
 type Status struct {
-	Version          string   `json:"version"`
-	Agent            string   `json:"agent,omitempty"`
-	GuardOn          bool     `json:"guardOn"`
-	GuardFingerprint string   `json:"guardFingerprint,omitempty"`
-	Operators        []string `json:"operators"`
+	Version          string         `json:"version"`
+	Agent            string         `json:"agent,omitempty"`
+	GuardOn          bool           `json:"guardOn"`
+	GuardFingerprint string         `json:"guardFingerprint,omitempty"`
+	Operators        []OperatorInfo `json:"operators"`
+}
+
+// OperatorInfo is one roster row as status reports it and the startup
+// banner prints it: who, and what their enrollment covers.
+type OperatorInfo struct {
+	Label string `json:"label"`
+	Role  Role   `json:"role"`
+}
+
+// String renders a row for a human listing — the role only when it
+// subtracts something, since "full" is what enrollment has always meant.
+func (o OperatorInfo) String() string {
+	if o.Role == RoleRead {
+		return o.Label + " (read)"
+	}
+	return o.Label
 }
 
 // GrantList is VerbGrantList's result: the active grants as the server's own

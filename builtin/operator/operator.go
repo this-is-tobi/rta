@@ -174,13 +174,17 @@ func remoteStatus(req plugin.Request, server string) (view.View, error) {
 	if agent == "" {
 		agent = "—"
 	}
+	enrolled := make([]string, 0, len(st.Operators))
+	for _, o := range st.Operators {
+		enrolled = append(enrolled, o.String())
+	}
 	return view.KeyValue{Pairs: []view.Pair{
 		{Key: "server", Value: server + " (" + base + ")"},
 		{Key: "version", Value: st.Version},
 		{Key: "agent", Value: agent},
 		{Key: "guard", Value: guardCell},
 		{Key: "operators", Value: fmt.Sprintf("%d enrolled: %s", len(st.Operators),
-			joinOr(st.Operators, "none"))},
+			joinOr(enrolled, "none"))},
 	}}, nil
 }
 

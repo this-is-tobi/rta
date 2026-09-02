@@ -62,6 +62,12 @@ func startOperatorWith(t *testing.T, cfg OperatorConfig) string {
 }
 
 func enrolled(t *testing.T, label string) (operator.Signer, operator.Roster) {
+	return enrolledAs(t, label, "")
+}
+
+// enrolledAs enrolls this machine's key under label with an annotation
+// suffix on its roster line — " role=read" builds the read-only enrollment.
+func enrolledAs(t *testing.T, label, annotation string) (operator.Signer, operator.Roster) {
 	t.Helper()
 	operator.ScryptWorkFactor = 10
 	s, verr := operator.Init("correct horse")
@@ -73,7 +79,7 @@ func enrolled(t *testing.T, label string) (operator.Signer, operator.Roster) {
 		t.Fatal(verr)
 	}
 	path := t.TempDir() + "/operators"
-	if err := os.WriteFile(path, []byte(line+"\n"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(line+annotation+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	roster, _, err := operator.LoadRoster(path)
@@ -136,7 +142,8 @@ func TestTheOperatorChannelAnswersASignedCall(t *testing.T) {
 	if err := json.Unmarshal(body, &st); err != nil {
 		t.Fatal(err)
 	}
-	if st.Agent != "demo-agent" || len(st.Operators) != 1 || st.Operators[0] != "tobi" {
+	if st.Agent != "demo-agent" || len(st.Operators) != 1 ||
+		st.Operators[0] != (operator.OperatorInfo{Label: "tobi", Role: operator.RoleFull}) {
 		t.Fatalf("status = %+v", st)
 	}
 
@@ -330,5 +337,51 @@ func TestAnUnwiredVerbSaysSo(t *testing.T) {
 	_, body := postEnvelope(t, addr, signer.Sign(at, fetchChallenge(t, addr), operator.VerbGrantRevoke, []byte(`{"all":true}`)))
 	if errCode(t, body) != "core.operator.verb" {
 		t.Fatalf("unwired revoke: %s", body)
+	}
+}
+
+// A role=read enrollment answers the read verbs and nothing else. The gate
+// sits before verb wiring and before the unknown-verb answer, so a
+// mutation this server never wired — or a verb this build never heard of —
+// refuses as "outside your role", named to the authenticated caller, and a
+// consent answer signed by a watching dashboard's stolen key mints nothing.
+func TestAReadOnlyKeyIsGatedToItsVerbs(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	signer, roster := enrolledAs(t, "dash", " role=read")
+	addr := startOperatorWith(t, OperatorConfig{
+		Roster:  roster,
+		Consent: true,
+		Pending: func() (operator.ConsentList, *view.Error) { return operator.ConsentList{}, nil },
+	})
+	at := "http://" + addr
+	call := func(verb string, payload []byte) (int, []byte) {
+		return postEnvelope(t, addr, signer.Sign(at, fetchChallenge(t, addr), verb, payload))
+	}
+
+	status, body := call(operator.VerbStatus, nil)
+	if status != http.StatusOK {
+		t.Fatalf("status verb: %d — %s", status, body)
+	}
+	var st operator.Status
+	if err := json.Unmarshal(body, &st); err != nil {
+		t.Fatal(err)
+	}
+	if len(st.Operators) != 1 || st.Operators[0].Role != operator.RoleRead {
+		t.Fatalf("status does not report the role: %+v", st.Operators)
+	}
+	if status, body := call(operator.VerbGrantList, nil); status != http.StatusOK {
+		t.Fatalf("grant.list verb: %d — %s", status, body)
+	}
+	if status, body := call(operator.VerbConsentList, nil); status != http.StatusOK {
+		t.Fatalf("consent.list verb: %d — %s", status, body)
+	}
+
+	for _, verb := range []string{
+		operator.VerbGrantRevoke, operator.VerbGrantPrepare, operator.VerbGrantIssue,
+		operator.VerbConsentAnswer, "grant.future",
+	} {
+		if _, body := call(verb, []byte(`{}`)); errCode(t, body) != "core.operator.role" {
+			t.Fatalf("%s under role=read: %s", verb, body)
+		}
 	}
 }

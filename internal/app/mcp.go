@@ -291,9 +291,13 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 						Answer:  agentcap.AnswerRemote(agentName),
 						Consent: consentOn,
 					})
+					rows := make([]string, 0, len(roster.Operators()))
+					for _, o := range roster.Operators() {
+						rows = append(rows, o.String())
+					}
 					fmt.Fprintf(cmd.ErrOrStderr(),
 						"rta: operator channel at /operator/v1 as %s, enrolling %s\n",
-						canonical, strings.Join(roster.Labels(), ", "))
+						canonical, strings.Join(rows, ", "))
 				}
 			}
 			opts := mcp.Options{

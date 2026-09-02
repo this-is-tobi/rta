@@ -101,3 +101,62 @@ func TestRemoteGuardOffNeedsATerminal(t *testing.T) {
 		t.Fatal("the refusal still removed the guard")
 	}
 }
+
+// A roster of nothing but role=read keys can watch a server, but a guard
+// trusting nobody who signs could never honour a grant again — refused as
+// the misconfiguration it is. A mixed roster enrolls the signers and names
+// who stayed out, so the read-only rows are a decision on the record, not
+// a silent drop.
+func TestGuardRemoteNeedsASigner(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	operatorid.ScryptWorkFactor = 10
+	if _, verr := operatorid.Init("one"); verr != nil {
+		t.Fatal(verr)
+	}
+	watcher, _ := operatorid.RosterLine("dash")
+	dir := t.TempDir()
+	allRead := filepath.Join(dir, "watchers")
+	if err := os.WriteFile(allRead, []byte(watcher+" role=read\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := guardCap(t, "grant.guard.remote").Run(context.Background(),
+		reqTUI(map[string]any{"operators": allRead, "url": "https://rta.example.com"}))
+	verr, ok := err.(*view.Error)
+	if !ok || verr.Code != "core.guard.remote.readonly" {
+		t.Fatalf("an all-read roster enrolled: %v, want core.guard.remote.readonly", err)
+	}
+	if guard.Enabled() {
+		t.Fatal("the refusal still enabled the guard")
+	}
+
+	if err := os.Remove(operatorid.Path()); err != nil {
+		t.Fatal(err)
+	}
+	if _, verr := operatorid.Init("two"); verr != nil {
+		t.Fatal(verr)
+	}
+	signerLine, _ := operatorid.RosterLine("tobi")
+	mixed := filepath.Join(dir, "operators")
+	if err := os.WriteFile(mixed, []byte(signerLine+"\n"+watcher+" role=read\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	v, err := guardCap(t, "grant.guard.remote").Run(context.Background(),
+		reqTUI(map[string]any{"operators": mixed, "url": "https://rta.example.com"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !guard.Remote() {
+		t.Fatal("the guard is not in remote mode")
+	}
+	for _, p := range v.(view.KeyValue).Pairs {
+		if p.Key != "operators" {
+			continue
+		}
+		if !strings.Contains(p.Value, "tobi") || strings.Contains(p.Value, "dash") ||
+			!strings.Contains(p.Value, "role=read") {
+			t.Fatalf("operators cell = %q — want the signer named, the watcher counted out", p.Value)
+		}
+		return
+	}
+	t.Fatal("no operators pair in the enrollment view")
+}
