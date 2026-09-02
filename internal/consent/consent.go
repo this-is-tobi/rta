@@ -609,6 +609,28 @@ func Find(id string) (Request, bool) {
 // ever call this — builtin/agent refuses SurfaceMCP outright — and that
 // refusal is the mechanism, not this parameter.
 func Decide(id string, allow bool, by string) error {
+	return decide(id, "", allow, by)
+}
+
+// DecideBound is Decide with one more precondition: the request on disk
+// must still carry the digest the answerer read. The local flow can live
+// without it because display and decision are seconds apart on one
+// machine; a remote answer's display crossed a network and a queue that
+// something else can write, so the digest of what was shown travels with
+// the answer and is compared here, against the same load the decision is
+// minted from — checking it any earlier would leave a gap between the
+// check and the seal for the file to be swapped in.
+func DecideBound(id, digest string, allow bool, by string) error {
+	if digest == "" {
+		// An empty binding must not degrade into Decide's trust-the-disk
+		// behaviour silently: the one caller of this function always has a
+		// digest, so an empty one is a bug upstream, not a choice.
+		return fmt.Errorf("an answer to request %q arrived with no digest to bind it", id)
+	}
+	return decide(id, digest, allow, by)
+}
+
+func decide(id, digest string, allow bool, by string) error {
 	// Read directly rather than through Find, and check honesty here.
 	//
 	// Find filters already, so routing through it would be shorter and would
@@ -629,6 +651,13 @@ func Decide(id string, allow bool, by string) error {
 	if !req.Honest() {
 		return fmt.Errorf("request %q does not describe the call it is bound to, so it "+
 			"cannot be answered — something rewrote it after rta parked it", id)
+	}
+	if digest != "" && req.Digest != digest {
+		// Honest on its own only proves the file agrees with itself; a swap
+		// for a *different* honest request under the same id passes it. The
+		// answerer's digest is what pins the file to the call they read.
+		return fmt.Errorf("request %q no longer describes the call that was read before answering — "+
+			"it was replaced after being displayed, and the answer given binds nothing that is waiting", id)
 	}
 	key, err := seal.Key(keyFile, true)
 	if err != nil {
