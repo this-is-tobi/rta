@@ -43,27 +43,21 @@
 package guard
 
 import (
-	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
-	"io"
+	"errors"
 	"os"
-	"strings"
 	"time"
-
-	"filippo.io/age"
-	"golang.org/x/term"
 
 	"github.com/this-is-tobi/rule-them-all/internal/filelock"
 
 	"github.com/this-is-tobi/rule-them-all/internal/atomicfile"
+	"github.com/this-is-tobi/rule-them-all/internal/passkey"
 	"github.com/this-is-tobi/rule-them-all/internal/seal"
-	"github.com/this-is-tobi/rule-them-all/internal/stdio"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
@@ -258,59 +252,19 @@ var PassphraseField = plugin.Field{
 // /dev/null before spawning plugins. confirm asks twice, for the one moment
 // (enabling) where a typo becomes a passphrase nobody knows.
 //
-// It lives here rather than beside one capability because two plugins gate
-// on it — grant issuance and the consent prompt's --ttl branch — and two
-// implementations of "how the passphrase arrives" is how one of them grows
-// an env fallback someday. There deliberately is none: nothing an agent's
-// environment inherits may satisfy the guard.
+// It lives in internal/passkey rather than beside one capability because
+// more than one key gates on it — grant issuance, the consent prompt's
+// --ttl branch, the operator identity — and two implementations of "how the
+// passphrase arrives" is how one of them grows an env fallback someday.
+// There deliberately is none: nothing an agent's environment inherits may
+// satisfy the guard.
 func PromptSecret(req plugin.Request, confirm bool) (string, *view.Error) {
-	if p := req.String("passphrase"); p != "" {
-		// From the CLI this value travelled on argv, which every process
-		// running as you can read while the command runs, and which lands in
-		// shell history when it ends. One capture is guard-off until the
-		// passphrase rotates, so the flag is refused on this surface rather
-		// than discouraged — the TUI's masked field and the prompt are the
-		// channels that land nowhere.
-		if req.Surface() == plugin.SurfaceCLI {
-			return "", view.Errorf("core.guard.passphrase.argv",
-				"the passphrase must not travel on the command line — argv is readable by "+
-					"every process you run, and shell history keeps it").
-				WithHint("run again without --passphrase and answer the prompt")
-		}
-		return p, nil
-	}
-	if req.Surface() != plugin.SurfaceCLI || !term.IsTerminal(int(stdio.Real().Fd())) {
-		return "", view.Errorf("core.guard.passphrase.required",
-			"the guard needs its passphrase, and there is no terminal to ask at").
-			WithHint("run this at a terminal, or fill the passphrase field in the TUI form")
-	}
-	read := func(prompt string) (string, *view.Error) {
-		fmt.Fprint(os.Stderr, prompt)
-		secret, err := term.ReadPassword(int(stdio.Real().Fd()))
-		fmt.Fprintln(os.Stderr)
-		if err != nil {
-			return "", view.Errorf("core.guard.passphrase.read", "reading the passphrase: %v", err)
-		}
-		return string(secret), nil
-	}
-	p, verr := read("Guard passphrase: ")
-	if verr != nil {
-		return "", verr
-	}
-	if strings.TrimSpace(p) == "" {
-		return "", view.Errorf("core.guard.passphrase.empty", "an empty passphrase is not a guard")
-	}
-	if confirm {
-		again, verr := read("Once more: ")
-		if verr != nil {
-			return "", verr
-		}
-		if p != again {
-			return "", view.Errorf("core.guard.passphrase.mismatch",
-				"the two answers differ — nothing was changed")
-		}
-	}
-	return p, nil
+	return passkey.Prompt(req, confirm, passkey.PromptText{
+		Subject: "the guard",
+		Prompt:  "Guard passphrase: ",
+		Codes:   "core.guard.passphrase",
+		Empty:   "an empty passphrase is not a guard",
+	})
 }
 
 // Enable generates the keypair, wraps the private half under passphrase, and
@@ -335,28 +289,14 @@ func Enable(passphrase string) (Signer, *view.Error) {
 	if err != nil {
 		return Signer{}, view.Errorf("core.guard.keygen", "generating the guard key: %v", err)
 	}
-	rec, err := age.NewScryptRecipient(passphrase)
-	if err != nil {
-		return Signer{}, view.Errorf("core.guard.wrap", "deriving from the passphrase: %v", err)
-	}
-	if ScryptWorkFactor > 0 {
-		rec.SetWorkFactor(ScryptWorkFactor)
-	}
-	var buf bytes.Buffer
-	w, err := age.Encrypt(&buf, rec)
-	if err == nil {
-		_, err = w.Write(priv)
-	}
-	if err == nil {
-		err = w.Close()
-	}
+	wrapped, err := passkey.Wrap(priv, passphrase, ScryptWorkFactor)
 	if err != nil {
 		return Signer{}, view.Errorf("core.guard.wrap", "wrapping the guard key: %v", err)
 	}
 	data, err := json.MarshalIndent(state{
 		Created:   time.Now().UTC(),
 		PublicKey: base64.StdEncoding.EncodeToString(pub),
-		Key:       base64.StdEncoding.EncodeToString(buf.Bytes()),
+		Key:       wrapped,
 	}, "", "  ")
 	if err != nil {
 		return Signer{}, view.Errorf("core.guard.write", "encoding guard state: %v", err)
@@ -379,28 +319,17 @@ func Unlock(passphrase string) (Signer, *view.Error) {
 	if verr != nil {
 		return Signer{}, verr
 	}
-	raw, err := base64.StdEncoding.DecodeString(st.Key)
+	priv, err := passkey.Unwrap(st.Key, passphrase)
 	if err != nil {
+		if errors.Is(err, passkey.ErrPassphrase) {
+			return Signer{}, view.Errorf("core.guard.passphrase", "that is not the guard's passphrase").
+				WithHint("forgotten? `rm " + Path() + " " + grantsHint() + "` starts clean — every grant " +
+					"is cleared, and grants last a day at most, so what is lost is re-issued in minutes")
+		}
 		return Signer{}, view.Errorf("core.guard.corrupt",
 			"%s carries an unreadable key", Path())
 	}
-	id, err := age.NewScryptIdentity(passphrase)
-	if err != nil {
-		return Signer{}, view.Errorf("core.guard.unlock", "deriving from the passphrase: %v", err)
-	}
-	r, err := age.Decrypt(bytes.NewReader(raw), id)
-	if err != nil {
-		return Signer{}, view.Errorf("core.guard.passphrase", "that is not the guard's passphrase").
-			WithHint("forgotten? `rm " + Path() + " " + grantsHint() + "` starts clean — every grant " +
-				"is cleared, and grants last a day at most, so what is lost is re-issued in minutes")
-	}
-	priv, err := io.ReadAll(r)
-	if err != nil || len(priv) != ed25519.PrivateKeySize {
-		return Signer{}, view.Errorf("core.guard.passphrase", "that is not the guard's passphrase").
-			WithHint("forgotten? `rm " + Path() + " " + grantsHint() + "` starts clean — every grant " +
-				"is cleared, and grants last a day at most, so what is lost is re-issued in minutes")
-	}
-	return Signer{priv: ed25519.PrivateKey(priv)}, nil
+	return Signer{priv: priv}, nil
 }
 
 // Disable removes the state after proving the passphrase. Deleting the file
