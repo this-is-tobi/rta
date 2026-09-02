@@ -22,6 +22,7 @@ import (
 	"github.com/this-is-tobi/rule-them-all/internal/agentlog"
 	"github.com/this-is-tobi/rule-them-all/internal/config"
 	"github.com/this-is-tobi/rule-them-all/internal/grant"
+	"github.com/this-is-tobi/rule-them-all/internal/guard"
 	"github.com/this-is-tobi/rule-them-all/internal/pathguard"
 	"github.com/this-is-tobi/rule-them-all/internal/profile"
 	"github.com/this-is-tobi/rule-them-all/internal/registry"
@@ -47,6 +48,11 @@ func NewServer(reg *registry.Registry, version string, opts Options) *sdk.Server
 	if opts.Origin == nil {
 		opts.Origin = reg.Origin
 	}
+	// Snapshot the guard before serving anything — see the check beside
+	// grant.Reserve for what this closes. Taken here so every handler shares
+	// one observation: a server that read the state fresh per call would
+	// believe the rollback the pin exists to catch.
+	opts.guardPin = guard.TakePin()
 	server := sdk.NewServer(&sdk.Implementation{
 		Name:    "rta",
 		Title:   "Rule Them All",
@@ -255,6 +261,26 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 		// direction: it is the operator's own word for the client at the far
 		// end of this pipe, so a grant issued while talking to one agent no
 		// longer authorizes every other one on the machine.
+		//
+		// Before any grant is honoured: the guard this server started under
+		// must still stand. The pin lives in this process's memory, which is
+		// the one place a same-uid `rm guard.json grants.json` cannot reach —
+		// on disk that rollback looks exactly like a machine where the guard
+		// was never enabled, but the attacker performing it is talking
+		// *through* this process, and this process remembers. Checked here
+		// rather than at the top of call() because it guards grant-minted
+		// authority specifically: a weakened guard says nothing about the
+		// read-tier surface that never needed a grant. Never parked as a
+		// consent question either — a tampered state is an alarm for the
+		// operator, not a request from the agent.
+		if verr := opts.guardPin.Check(); verr != nil {
+			// Through the same refusal path every gate uses, not a protocol
+			// error: the ledger entry is half the point — the alarm belongs
+			// in `rta agent log`, timestamped beside whatever the caller was
+			// doing when the guard vanished.
+			refusedBy(rec, verr)
+			return errResult(verr), nil
+		}
 		release, verr := grant.Reserve(c, values, grant.Caller{
 			Agent:   opts.Agent,
 			Profile: profileName,

@@ -74,6 +74,15 @@ func SignWith(s guard.Signer, g *Grant) { g.Sig = s.Sign(AuthorityBytes(*g)) }
 // wrong first message for a caller who simply forgot a passphrase.
 func guardIssuable(g Grant) *view.Error {
 	if guard.Enabled() {
+		// An empty authority form never verifies as a matter of policy, not
+		// luck: ed25519 would happily sign and verify the bare domain prefix,
+		// so a marshal failure that returned nil bytes would give every
+		// affected grant the same "valid" signature. Unreachable through any
+		// ordinary path (it takes a year outside [0,9999]), refused anyway.
+		if len(AuthorityBytes(g)) == 0 {
+			return view.Errorf("core.grant.guard.unsigned",
+				"this grant's authority cannot be encoded for signing")
+		}
 		if !guard.Verify(AuthorityBytes(g), g.Sig) {
 			return view.Errorf("core.grant.guard.unsigned",
 				"the guard is on, and this grant was not signed with its passphrase").
@@ -116,7 +125,10 @@ func guardChecked(grants []Grant) *view.Error {
 		return verr
 	}
 	for _, g := range grants {
-		if !verify(AuthorityBytes(g), g.Sig) {
+		// The same nil-bytes refusal guardIssuable applies, for the same
+		// reason: empty authority must never verify.
+		ab := AuthorityBytes(g)
+		if len(ab) == 0 || !verify(ab, g.Sig) {
 			return view.Errorf("core.grant.guard.forged",
 				"%s holds a grant the guard never signed — written by something "+
 					"without the passphrase", Path()).

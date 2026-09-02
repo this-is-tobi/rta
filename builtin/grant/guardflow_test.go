@@ -11,6 +11,12 @@ import (
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
 
+// reqTUI is req through the TUI's masked form — the surface that may carry
+// the passphrase as a value, since the CLI refuses it on argv.
+func reqTUI(values map[string]any) plugin.Request {
+	return plugin.NewRequest(values, false, true).WithSurface(plugin.SurfaceTUI)
+}
+
 // guardCap fetches one of the plugin's declared capabilities, so the flow
 // under test is the declared one — field list included — and not a bare
 // handler the declaration could drift from.
@@ -31,7 +37,7 @@ func guardOn(t *testing.T, pass string) {
 	guard.ScryptWorkFactor = 10
 	t.Cleanup(func() { guard.ScryptWorkFactor = old })
 	if _, err := guardCap(t, "grant.guard.on").Run(context.Background(),
-		req(map[string]any{"passphrase": pass})); err != nil {
+		reqTUI(map[string]any{"passphrase": pass})); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -67,7 +73,7 @@ func TestGuardOnGatesGrantAllow(t *testing.T) {
 	}
 
 	if _, err := allow.Run(context.Background(),
-		req(map[string]any{"target": "kv.get", "ttl": "15m", "passphrase": "correct horse"})); err != nil {
+		reqTUI(map[string]any{"target": "kv.get", "ttl": "15m", "passphrase": "correct horse"})); err != nil {
 		t.Fatal(err)
 	}
 	grants, verr := core.Load()
@@ -85,7 +91,7 @@ func TestAWrongPassphraseIsNamedAsSuch(t *testing.T) {
 	t.Setenv("RTA_DATA_DIR", t.TempDir())
 	guardOn(t, "correct horse")
 	_, err := guardCap(t, "grant.allow").Run(context.Background(),
-		req(map[string]any{"target": "kv.get", "ttl": "15m", "passphrase": "wrong horse"}))
+		reqTUI(map[string]any{"target": "kv.get", "ttl": "15m", "passphrase": "wrong horse"}))
 	if err == nil {
 		t.Fatal("a wrong passphrase issued a grant")
 	}
@@ -120,7 +126,7 @@ func TestRenewUnderTheGuardCostsThePassphraseAndResigns(t *testing.T) {
 	guardOn(t, "correct horse")
 	allow, renew := guardCap(t, "grant.allow"), guardCap(t, "grant.renew")
 	if _, err := allow.Run(context.Background(),
-		req(map[string]any{"target": "kv.get", "ttl": "15m", "passphrase": "correct horse"})); err != nil {
+		reqTUI(map[string]any{"target": "kv.get", "ttl": "15m", "passphrase": "correct horse"})); err != nil {
 		t.Fatal(err)
 	}
 	before, _ := core.Load()
@@ -129,7 +135,7 @@ func TestRenewUnderTheGuardCostsThePassphraseAndResigns(t *testing.T) {
 		t.Fatal("a renewal extended authority with no passphrase")
 	}
 	if _, err := renew.Run(context.Background(),
-		req(map[string]any{"ttl": "1h", "passphrase": "correct horse"})); err != nil {
+		reqTUI(map[string]any{"ttl": "1h", "passphrase": "correct horse"})); err != nil {
 		t.Fatal(err)
 	}
 	after, verr := core.Load()
@@ -147,7 +153,7 @@ func TestRevokeNeedsNoPassphrase(t *testing.T) {
 	t.Setenv("RTA_DATA_DIR", t.TempDir())
 	guardOn(t, "correct horse")
 	if _, err := guardCap(t, "grant.allow").Run(context.Background(),
-		req(map[string]any{"target": "kv.get", "ttl": "15m", "passphrase": "correct horse"})); err != nil {
+		reqTUI(map[string]any{"target": "kv.get", "ttl": "15m", "passphrase": "correct horse"})); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := guardCap(t, "grant.revoke").Run(context.Background(),
@@ -165,13 +171,13 @@ func TestGuardOffProvesThePassphraseAndClears(t *testing.T) {
 	t.Setenv("RTA_DATA_DIR", t.TempDir())
 	guardOn(t, "correct horse")
 	if _, err := guardCap(t, "grant.allow").Run(context.Background(),
-		req(map[string]any{"target": "kv.get", "ttl": "15m", "passphrase": "correct horse"})); err != nil {
+		reqTUI(map[string]any{"target": "kv.get", "ttl": "15m", "passphrase": "correct horse"})); err != nil {
 		t.Fatal(err)
 	}
 	off := guardCap(t, "grant.guard.off")
 
 	if _, err := off.Run(context.Background(),
-		req(map[string]any{"passphrase": "wrong horse"})); err == nil {
+		reqTUI(map[string]any{"passphrase": "wrong horse"})); err == nil {
 		t.Fatal("the guard came off without its passphrase")
 	}
 	if grants, _ := core.Load(); len(grants) != 1 {
@@ -179,7 +185,7 @@ func TestGuardOffProvesThePassphraseAndClears(t *testing.T) {
 	}
 
 	if _, err := off.Run(context.Background(),
-		req(map[string]any{"passphrase": "correct horse"})); err != nil {
+		reqTUI(map[string]any{"passphrase": "correct horse"})); err != nil {
 		t.Fatal(err)
 	}
 	if guard.Enabled() {
@@ -201,5 +207,25 @@ func TestEnablingClearsPreGuardGrants(t *testing.T) {
 	guardOn(t, "correct horse")
 	if grants, verr := core.Load(); verr != nil || len(grants) != 0 {
 		t.Fatalf("after enable: %d grants, err %v", len(grants), verr)
+	}
+}
+
+// The flag is the one channel that leaks — argv is readable by every process
+// and lands in shell history — so the CLI refuses it outright rather than
+// warning about it. The TUI's masked field, exercised by every other test
+// here, is the surface that may carry the value.
+func TestThePassphraseFlagIsRefusedOnTheCLI(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	guardOn(t, "correct horse")
+	_, err := guardCap(t, "grant.allow").Run(context.Background(),
+		req(map[string]any{"target": "kv.get", "ttl": "15m", "passphrase": "correct horse"}))
+	if err == nil {
+		t.Fatal("a passphrase on argv was accepted")
+	}
+	if got := code(t, err); got != "core.guard.passphrase.argv" {
+		t.Fatalf("code = %s, want core.guard.passphrase.argv", got)
+	}
+	if grants, _ := core.Load(); len(grants) != 0 {
+		t.Fatal("the refused flag still issued a grant")
 	}
 }

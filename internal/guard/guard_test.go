@@ -132,3 +132,63 @@ func TestFingerprintIsStableAndShort(t *testing.T) {
 		t.Fatalf("fingerprint %q is not eight lowercase hex characters", a)
 	}
 }
+
+// The two-rm rollback — deleting guard.json and grants.json together — is
+// invisible on disk: the machine reads as one where the guard was never
+// enabled. The Pin is a running process's memory of the guard it started
+// under, and the one place that rollback cannot reach.
+func TestThePinCatchesTheRollback(t *testing.T) {
+	isolate(t)
+	if _, verr := Enable("correct horse"); verr != nil {
+		t.Fatal(verr)
+	}
+	pin := TakePin()
+	if verr := pin.Check(); verr != nil {
+		t.Fatalf("a consistent state failed its own pin: %v", verr)
+	}
+	if err := os.Remove(Path()); err != nil {
+		t.Fatal(err)
+	}
+	verr := pin.Check()
+	if verr == nil {
+		t.Fatal("the rollback passed the pin")
+	}
+	if verr.Code != "core.guard.pinned" {
+		t.Fatalf("code = %s, want core.guard.pinned", verr.Code)
+	}
+}
+
+// A key swapped for the attacker's own is a weakening too: the fingerprint
+// the pin took no longer matches, whatever the new state verifies.
+func TestThePinCatchesAKeySwap(t *testing.T) {
+	isolate(t)
+	if _, verr := Enable("original"); verr != nil {
+		t.Fatal(verr)
+	}
+	pin := TakePin()
+	if err := os.Remove(Path()); err != nil {
+		t.Fatal(err)
+	}
+	if _, verr := Enable("attacker"); verr != nil {
+		t.Fatal(verr)
+	}
+	if verr := pin.Check(); verr == nil {
+		t.Fatal("a swapped key passed the pin")
+	}
+}
+
+// The off→on direction is an operator strengthening their machine: a pin
+// taken with no guard checks nothing, ever.
+func TestAPinTakenWithNoGuardNeverRefuses(t *testing.T) {
+	isolate(t)
+	pin := TakePin()
+	if verr := pin.Check(); verr != nil {
+		t.Fatal(verr)
+	}
+	if _, verr := Enable("later"); verr != nil {
+		t.Fatal(verr)
+	}
+	if verr := pin.Check(); verr != nil {
+		t.Fatalf("enabling mid-session tripped the pin: %v", verr)
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"github.com/this-is-tobi/rule-them-all/internal/consent"
 	"github.com/this-is-tobi/rule-them-all/internal/grant"
 	"github.com/this-is-tobi/rule-them-all/internal/guard"
+	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
 
@@ -40,8 +41,13 @@ func TestAllowWithATTLUnderTheGuard(t *testing.T) {
 		t.Fatal("a refused passphrase consumed the parked request")
 	}
 
-	if _, err := run(t, "agent.allow",
-		map[string]any{"id": r.ID, "ttl": "15m", "passphrase": "correct horse"}); err != nil {
+	// Through the TUI surface, the one that may carry the passphrase as a
+	// value — the CLI refuses it on argv.
+	c := capability(t, "agent.allow")
+	tui := plugin.NewRequest(plugin.Resolve(c, plugin.Inputs{
+		Caller: map[string]any{"id": r.ID, "ttl": "15m", "passphrase": "correct horse"},
+	}), false, false).WithSurface(plugin.SurfaceTUI)
+	if _, err := c.Run(t.Context(), tui); err != nil {
 		t.Fatal(err)
 	}
 	grants, verr := grant.Load()
