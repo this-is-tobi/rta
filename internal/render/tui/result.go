@@ -261,7 +261,9 @@ func (m Model) runAction(a capAction, tbl view.Table) (tea.Model, tea.Cmd) {
 		}
 	}
 	m.current = a.cap
-	if a.cap.Safety == plugin.Destructive || len(fieldsAfter(a.cap, base)) > 0 {
+	// A bare action waives only the optional-field form — never the
+	// destructive confirmation, which is checked first on purpose.
+	if a.cap.Safety == plugin.Destructive || (!a.bare && len(fieldsAfter(a.cap, base)) > 0) {
 		return m.startFormWith(a.cap, base, prev)
 	}
 	m.lastValues, m.lastYes = base, false

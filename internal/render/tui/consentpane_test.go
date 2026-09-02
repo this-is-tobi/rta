@@ -89,7 +89,7 @@ func TestTheRowUnderTheCursorIsTheRequestThatGetsAnswered(t *testing.T) {
 		Columns: []view.Column{{Name: "id"}, {Name: "capability"}},
 		Rows:    [][]string{{"aaaa1111", "kv.get"}, {"bbbb2222", "kv.rm"}},
 	}
-	next, _ := m.runAction(capAction{key: "d", label: "deny", cap: mustCap(t, reg, "agent.deny"), src: srcRow}, tbl)
+	next, _ := m.runAction(capAction{key: "d", label: "deny", cap: mustCap(t, reg, "agent.deny"), src: srcRow, bare: true}, tbl)
 	nm := next.(Model)
 	if got := nm.lastValues["id"]; got != "bbbb2222" {
 		t.Fatalf("the answer was aimed at %v, not at the row under the cursor", got)
@@ -97,22 +97,48 @@ func TestTheRowUnderTheCursorIsTheRequestThatGetsAnswered(t *testing.T) {
 }
 
 func TestDenyIsOneKeyAndAllowStopsToConfirm(t *testing.T) {
-	// The asymmetry is the security property, and it falls out of the
-	// declarations rather than being enforced anywhere: deny has nothing left
-	// to ask, allow has --ttl. A future input added to agent.deny would turn
-	// the safe answer into a form; a --ttl dropped from agent.allow would make
-	// granting standing access a single keystroke.
+	// The asymmetry is the security property. It used to fall out of the
+	// declarations alone — deny had nothing left to ask — until the remote
+	// consent flow gave deny `--server` and a passphrase; now the spec table
+	// declares it per action, and this test is what keeps the declaration
+	// honest: deny and show run bare, allow never does, so granting access
+	// still stops for a form (--ttl above all) while the safe answer and the
+	// reading both stay one key.
 	reg := realRegistry(t)
-	deny := mustCap(t, reg, "agent.deny")
-	if rest := fieldsAfter(deny, map[string]any{"id": "x"}); len(rest) != 0 {
-		t.Fatalf("deny would open a form for %+v — the safe answer must cost one key", rest)
+	bare := map[string]bool{}
+	for _, capID := range []string{"agent.pending", "agent.show"} {
+		for _, spec := range capActionSpecs[capID] {
+			bare[capID+" "+spec.key] = spec.bare
+		}
 	}
+	for _, want := range []string{"agent.pending enter", "agent.pending d", "agent.show d"} {
+		if !bare[want] {
+			t.Errorf("%s is not bare — the one-key answer now opens a form", want)
+		}
+	}
+	for _, notWant := range []string{"agent.pending a", "agent.show a"} {
+		if bare[notWant] {
+			t.Errorf("%s is bare — granting access has to stop for a confirmation", notWant)
+		}
+	}
+	// bare waives only the optional-field form, so it is sound exactly while
+	// nothing beyond the row's id is required. A future required input on
+	// these would make the one-key answer a validation error instead of a
+	// form — loud, but wrong: it belongs in this table as a decision.
+	for _, capID := range []string{"agent.deny", "agent.show"} {
+		c := mustCap(t, reg, capID)
+		for _, f := range c.Inputs {
+			if f.Required && f.Name != "id" {
+				t.Errorf("%s requires %q, which a bare action never asks for", capID, f.Name)
+			}
+		}
+	}
+	deny := mustCap(t, reg, "agent.deny")
 	if deny.Safety == plugin.Destructive {
 		t.Fatal("deny is destructive, so it would stop for a confirmation it does not need")
 	}
 	allow := mustCap(t, reg, "agent.allow")
-	rest := fieldsAfter(allow, map[string]any{"id": "x"})
-	if len(rest) == 0 {
+	if rest := fieldsAfter(allow, map[string]any{"id": "x"}); len(rest) == 0 {
 		t.Fatal("allow runs on a keypress — granting access has to stop for a confirmation")
 	}
 }
