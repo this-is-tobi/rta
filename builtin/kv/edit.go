@@ -214,6 +214,11 @@ func runEdit(_ context.Context, req plugin.Request) (view.View, error) {
 	// entry, and `kv list` filtering on a stale label is how you fail to
 	// find it. The description, source filename and creation time are the
 	// entry's, not the value's, and stay.
+	//
+	// Re-detection is skipped for a kind that was pinned by hand — see below
+	// for how that is told apart. Unconditional re-detection silently threw
+	// away `kv set --kind` on the next edit, which is the operator's stated
+	// answer being replaced by a guess.
 	// Re-read before writing, under the same store lock every other write
 	// takes, and apply only this entry.
 	//
@@ -257,7 +262,15 @@ func runEdit(_ context.Context, req plugin.Request) (view.View, error) {
 				"` to start from the current value")
 	}
 	current.Value = edited
-	current.Kind = detectKind(string(edited), current.Filename)
+	// A pinned kind is one that disagrees with what detection would have said
+	// about the value being replaced: nothing but `--kind` could have put it
+	// there. Inferring it this way rather than recording a "pinned" flag keeps
+	// the stored shape unchanged, and the one state it cannot distinguish — a
+	// hand-set kind that happens to equal the detected one — is a state where
+	// re-detecting produces the same answer anyway.
+	if current.Kind == detectKind(string(e.Value), current.Filename) {
+		current.Kind = detectKind(string(edited), current.Filename)
+	}
 	current.Updated = time.Now()
 	fresh.Entries[key] = current
 	if verr := save(req, fresh); verr != nil {
