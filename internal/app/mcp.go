@@ -260,6 +260,18 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 					if err != nil {
 						return fmt.Errorf("--operators: %w", err)
 					}
+					// A warning and not a refusal: adding an operator to the
+					// roster without re-enrolling the guard leaves a server
+					// worth starting (revocation and listing still work), but
+					// a key the roster demoted or rotated keeps grant-signing
+					// trust until the guard is re-enrolled, and this startup
+					// line is the only place that drift can surface.
+					if grantguard.Remote() && !grantguard.RemoteMatches(roster.Entries()) {
+						fmt.Fprintf(cmd.ErrOrStderr(),
+							"rta: the guard's signing set no longer matches %s's role=full keys — "+
+								"re-run `rta grant guard remote` so demoted or rotated keys lose grant-signing trust\n",
+							operatorsFile)
+					}
 					if groupReadable {
 						fmt.Fprintf(cmd.ErrOrStderr(),
 							"rta: %s is group-readable — it holds no secret, but anyone who can also write it can enroll themselves\n",

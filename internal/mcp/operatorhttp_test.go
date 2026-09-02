@@ -334,9 +334,12 @@ func TestAnUnwiredVerbSaysSo(t *testing.T) {
 	signer, roster := enrolled(t, "tobi")
 	addr := startOperatorWith(t, OperatorConfig{Roster: roster})
 	at := "http://" + addr
-	_, body := postEnvelope(t, addr, signer.Sign(at, fetchChallenge(t, addr), operator.VerbGrantRevoke, []byte(`{"all":true}`)))
+	status, body := postEnvelope(t, addr, signer.Sign(at, fetchChallenge(t, addr), operator.VerbGrantRevoke, []byte(`{"all":true}`)))
 	if errCode(t, body) != "core.operator.verb" {
 		t.Fatalf("unwired revoke: %s", body)
+	}
+	if status != http.StatusForbidden {
+		t.Fatalf("unwired revoke: HTTP %d, want 403 — a configuration refusal is not a server failure", status)
 	}
 }
 
@@ -380,8 +383,14 @@ func TestAReadOnlyKeyIsGatedToItsVerbs(t *testing.T) {
 		operator.VerbGrantRevoke, operator.VerbGrantPrepare, operator.VerbGrantIssue,
 		operator.VerbConsentAnswer, "grant.future",
 	} {
-		if _, body := call(verb, []byte(`{}`)); errCode(t, body) != "core.operator.role" {
+		status, body := call(verb, []byte(`{}`))
+		if errCode(t, body) != "core.operator.role" {
 			t.Fatalf("%s under role=read: %s", verb, body)
+		}
+		// 403, not 500: a policy refusal must not read as a failing server
+		// to whatever dashboards this read-only key exists to feed.
+		if status != http.StatusForbidden {
+			t.Fatalf("%s under role=read: HTTP %d, want 403", verb, status)
 		}
 	}
 }

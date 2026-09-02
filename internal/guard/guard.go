@@ -261,6 +261,38 @@ func OperatorLabels() []string {
 	return out
 }
 
+// RemoteMatches reports whether the enabled remote guard trusts exactly
+// the given signer set, by key bytes. It exists for the serve-time
+// cross-check: the roster gates verbs per request from the file as it is
+// now, while grant signatures answer to the set pinned here at enrollment
+// — and a key the roster since demoted to role=read, rotated, or removed
+// keeps its grant-signing trust until `grant guard remote` is re-run,
+// with nothing on disk to testify that the two drifted apart. False when
+// the guard is off, local, or unreadable: those states have their own
+// checks, and this one only answers the drift question.
+func RemoteMatches(ops []OperatorKey) bool {
+	st, verr := load()
+	if verr != nil || !st.remote() || len(ops) != len(st.Operators) {
+		return false
+	}
+	want := make([]string, 0, len(ops))
+	for _, op := range ops {
+		want = append(want, op.PublicKey)
+	}
+	have := make([]string, 0, len(st.Operators))
+	for _, op := range st.Operators {
+		have = append(have, op.PublicKey)
+	}
+	sort.Strings(want)
+	sort.Strings(have)
+	for i := range want {
+		if want[i] != have[i] {
+			return false
+		}
+	}
+	return true
+}
+
 // Fingerprint names the guard's trust in eight hex characters, for the
 // status and doctor surfaces and the server Pin: enough to notice a key —
 // or, in remote mode, the enrolled set — that changed, short enough to sit

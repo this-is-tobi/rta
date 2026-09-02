@@ -106,3 +106,40 @@ func TestARemoteGuardRefusesAnEmptyOrGarbledEnrollment(t *testing.T) {
 		t.Fatal("a refused enrollment left state behind")
 	}
 }
+
+// RemoteMatches is the serve-time drift question: does the guard still
+// trust exactly the roster's signing set? Label edits are cosmetic — the
+// comparison is by key bytes — and every stateful mismatch (a demoted or
+// removed key, a rotated key, an added one, a local or absent guard)
+// answers false.
+func TestRemoteMatchesAnswersTheDriftQuestion(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	pubA, _ := remoteKey(t)
+	pubB, _ := remoteKey(t)
+	enrolled := []OperatorKey{{Label: "a", PublicKey: pubA}, {Label: "b", PublicKey: pubB}}
+	if RemoteMatches(enrolled) {
+		t.Fatal("no guard at all matched")
+	}
+	if verr := EnableRemote(enrolled, "https://a.example"); verr != nil {
+		t.Fatal(verr)
+	}
+	if !RemoteMatches(enrolled) {
+		t.Fatal("the enrolled set does not match itself")
+	}
+	relabeled := []OperatorKey{{Label: "b", PublicKey: pubA}, {Label: "a", PublicKey: pubB}}
+	if !RemoteMatches(relabeled) {
+		t.Fatal("a label edit read as key drift")
+	}
+	if RemoteMatches(enrolled[:1]) {
+		t.Fatal("a demoted or removed key went unnoticed")
+	}
+	pubC, _ := remoteKey(t)
+	rotated := []OperatorKey{{Label: "a", PublicKey: pubC}, {Label: "b", PublicKey: pubB}}
+	if RemoteMatches(rotated) {
+		t.Fatal("a rotated key went unnoticed")
+	}
+	grown := append(append([]OperatorKey{}, enrolled...), OperatorKey{Label: "c", PublicKey: pubC})
+	if RemoteMatches(grown) {
+		t.Fatal("an added key went unnoticed")
+	}
+}

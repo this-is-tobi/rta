@@ -170,10 +170,29 @@ func (h *operatorHandler) call(w http.ResponseWriter, r *http.Request) {
 		// Past the signature the caller is a named operator, and owed the
 		// real error — this is their server misbehaving, not a stranger
 		// probing it.
-		writeJSON(w, http.StatusInternalServerError, errorBody{Error: verr})
+		writeJSON(w, statusFor(verr.Code), errorBody{Error: verr})
 		return
 	}
 	writeJSON(w, http.StatusOK, res)
+}
+
+// statusFor sorts a dispatch refusal into its HTTP class. The named codes
+// are this server working as configured — a role outside its allowlist, a
+// verb it does not offer, a payload that does not parse — and a read-only
+// monitoring key hitting them must not page whoever watches this server's
+// error rate as if the server were failing. Anything unnamed stays 500,
+// because an unexpected failure is exactly what error rates exist to
+// surface. The client is deliberately status-agnostic (it reads the
+// view.Error in the body), so this classification is for the middleboxes
+// and dashboards that never parse rta's own vocabulary.
+func statusFor(code string) int {
+	switch code {
+	case "core.operator.role", "core.operator.consent", "core.operator.verb", "core.operator.guard":
+		return http.StatusForbidden
+	case "core.operator.payload":
+		return http.StatusBadRequest
+	}
+	return http.StatusInternalServerError
 }
 
 func (h *operatorHandler) dispatch(env operator.Envelope, label string, role operator.Role) (any, *view.Error) {
