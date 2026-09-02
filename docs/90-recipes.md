@@ -292,6 +292,54 @@ Then check it, without unlocking anything:
 rta profile list && rta policy show && rta doctor
 ```
 
+## One config for the whole team, in git
+
+A team that names its deployments consistently can write the whole map once — every app, every environment, every cluster — and every member points rta at the same checked-in file. What makes this safe to share is that the file carries *references and coordinates, only*: where things are and which stored entry fills each credential, never a value.
+
+`infra/rta.yaml`, in the repository the team already owns:
+
+```yaml
+# yaml-language-server: $schema=schema.json    # `rta config schema > schema.json`, committed beside it
+profiles:
+  shop-staging:
+    note: "shop, staging — safe to hand to an agent"
+    ttl: 8h
+    plugins:
+      pg@685186a7f1c2:
+        kube: staging/shop/svc/postgres:5432
+        secrets: {password: kube:postgres-creds/password}
+      s3@a586c1f19b04:
+        set: {endpoint: https://s3.staging.internal, bucket: shop-assets}
+        secrets: {secret-key: kv:shop-staging-s3}
+  shop-prod:
+    note: "shop, production — grants only, short ones"
+    ttl: 1h
+    plugins:
+      pg@685186a7f1c2:
+        set: {host: db.prod.shop.internal, sslmode: require}
+        secrets-from: prod/shop
+        secrets: {password: kube:postgres-creds/password}
+```
+
+Each member's shell setup names it:
+
+```bash
+export RTA_CONFIG="$HOME/dev/infra/rta.yaml"
+```
+
+Two facts carry the whole arrangement:
+
+- **`RTA_CONFIG` is the trust decision.** A config path somebody named is honoured in full; a `.rta.yaml` merely sitting in a cloned repository is not — its profiles are ignored, so a repository cannot ship a `prod` profile pointing at your cluster and wait for you to `cd` into it. Exporting the variable *is* the moment a person chooses to trust the team's file.
+- **Credentials stay personal even though the map is shared.** `kv:shop-staging-s3` names an entry in each member's own encrypted store — the file says *which* entry, each person runs `rta kv set shop-staging-s3` once with their own value. `kube:` references go further: the Secret is read from the cluster at call time with each member's own kubectl credentials, so RBAC keeps deciding who can actually resolve the profile, and offboarding is the cluster access removal the team already does.
+
+New machine, whole setup:
+
+```bash
+export RTA_CONFIG=... && rta kv set shop-staging-s3 --file /dev/stdin && rta doctor
+```
+
+`rta doctor` then names anything missing per profile — the pin that does not match the installed plugin, the store entry not yet created — which is the onboarding checklist, generated instead of maintained.
+
 ## Check a machine is set up, without unlocking anything
 
 ```bash
