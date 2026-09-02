@@ -167,6 +167,46 @@ func Plugin(catalog func() []plugin.Capability) plugin.Plugin {
 				},
 				Run: runRevoke,
 			},
+			{
+				ID: "grant.guard.on", Summary: "Require a passphrase to issue or renew a grant",
+				Safety: plugin.Write, Idempotent: true,
+				Description: "Turns issuance from something any process running as you can do into " +
+					"something that needs a secret only you hold: every grant is signed with a key " +
+					"that exists only encrypted under the passphrase, and a grant without that " +
+					"signature is not honoured. An agent that runs `rta grant allow` from a shell " +
+					"is refused, however it invokes the binary — prevention for the ordinary " +
+					"self-granting path, where the origin column could only detect it after the " +
+					"fact. Enabling clears the grants currently held: they were issued without a " +
+					"passphrase, and blessing them wholesale would launder exactly what the guard " +
+					"exists to pin. Grants last a day at most, so re-issuing costs minutes. " +
+					"Forgotten passphrase: remove the guard state and revoke everything — the " +
+					"recovery is loud and loses at most a day of grants, never a secret.",
+				Inputs: []plugin.Field{guardPassphraseField},
+				Run:    runGuardOn,
+			},
+			{
+				ID: "grant.guard.off", Summary: "Stop requiring the guard passphrase",
+				Safety: plugin.Destructive, Idempotent: true,
+				Description: "Proves the passphrase first — turning the guard off is exactly what " +
+					"an agent would want, so the legitimate way off costs what turning it on " +
+					"promised. Clears the grants the guard signed, mirroring enable: signatures " +
+					"without a guard beside them read as tampering, by design. Destructive " +
+					"because it removes a protection: the confirmation is the point.",
+				Inputs: []plugin.Field{guardPassphraseField},
+				Run:    runGuardOff,
+			},
+			{
+				ID: "grant.guard.status", Summary: "Whether grant issuance requires the passphrase",
+				Safety: plugin.Read, Idempotent: true,
+				// Not on a dashboard tile redrawing on a timer: the status
+				// names the verification key's fingerprint, which is worth a
+				// deliberate look rather than ambient display.
+				NoPreview: true,
+				Description: "On or off, since when, the verification key's fingerprint, and how " +
+					"many grants are held under it. Refused over MCP like every grant surface: " +
+					"whether the guard stands is part of the map of what an agent could reach.",
+				Run: runGuardStatus,
+			},
 		},
 	}
 }
