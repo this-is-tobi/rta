@@ -94,7 +94,7 @@ func TestTheRosterLineEnrolls(t *testing.T) {
 		t.Fatal(err)
 	}
 	env := s.Sign("https://a.example", "nonce-1", VerbStatus, nil)
-	label, ok := roster.Verify(env, "https://a.example")
+	label, _, ok := roster.Verify(env, "https://a.example")
 	if !ok || label != "tobi" {
 		t.Fatalf("Verify = %q, %v — want tobi, true", label, ok)
 	}
@@ -116,10 +116,10 @@ func TestAnEnvelopeSignedForOneServerVerifiesOnNoOther(t *testing.T) {
 		t.Fatal(err)
 	}
 	relayed := s.Sign("https://hostile.example", "victim-nonce", VerbGrantList, nil)
-	if _, ok := roster.Verify(relayed, "https://victim.example"); ok {
+	if _, _, ok := roster.Verify(relayed, "https://victim.example"); ok {
 		t.Fatal("an envelope aimed at one server verified on another")
 	}
-	if _, ok := roster.Verify(relayed, "https://hostile.example"); !ok {
+	if _, _, ok := roster.Verify(relayed, "https://hostile.example"); !ok {
 		t.Fatal("the same envelope does not verify even where it was aimed — the binding is broken, not working")
 	}
 }
@@ -138,23 +138,23 @@ func TestVerifyRefusesWhatTheRosterNeverEnrolled(t *testing.T) {
 
 	const at = "https://a.example"
 	env := s.Sign(at, "nonce-1", VerbGrantList, []byte(`{"a":1}`))
-	if _, ok := roster.Verify(env, at); !ok {
+	if _, _, ok := roster.Verify(env, at); !ok {
 		t.Fatal("the enrolled key was refused")
 	}
 
 	tampered := env
 	tampered.Payload = []byte(`{"a":2}`)
-	if _, ok := roster.Verify(tampered, at); ok {
+	if _, _, ok := roster.Verify(tampered, at); ok {
 		t.Fatal("a tampered payload verified")
 	}
 	replayedVerb := env
 	replayedVerb.Verb = VerbStatus
-	if _, ok := roster.Verify(replayedVerb, at); ok {
+	if _, _, ok := roster.Verify(replayedVerb, at); ok {
 		t.Fatal("a signature travelled to a different verb")
 	}
 	otherNonce := env
 	otherNonce.Nonce = "nonce-2"
-	if _, ok := roster.Verify(otherNonce, at); ok {
+	if _, _, ok := roster.Verify(otherNonce, at); ok {
 		t.Fatal("a signature travelled to a different nonce")
 	}
 
@@ -168,7 +168,7 @@ func TestVerifyRefusesWhatTheRosterNeverEnrolled(t *testing.T) {
 	}
 	forged := stranger.Sign(at, "nonce-1", VerbGrantList, []byte(`{"a":1}`))
 	forged.Fingerprint = env.Fingerprint
-	if _, ok := roster.Verify(forged, at); ok {
+	if _, _, ok := roster.Verify(forged, at); ok {
 		t.Fatal("an un-enrolled key verified")
 	}
 }
@@ -277,4 +277,101 @@ func TestAFloodCannotGrowTheNonceStoreUnbounded(t *testing.T) {
 		t.Fatalf("order holds %d entries, cap is %d", len(n.order), n.cap)
 	}
 	_ = parked
+}
+
+// A role annotation subtracts from an enrollment; anything unrecognized in
+// that position refuses the whole load, because a typo that silently meant
+// "full operator" is the one failure a restriction must not have.
+func TestARosterRoleParsesAndAnythingElseRefuses(t *testing.T) {
+	freshHome(t)
+	s, verr := Init("correct horse")
+	if verr != nil {
+		t.Fatal(verr)
+	}
+	line, verr := RosterLine("dash")
+	if verr != nil {
+		t.Fatal(verr)
+	}
+
+	roster, _, err := LoadRoster(writeRoster(t, line+" role=read\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := s.Sign("https://a.example", "nonce-1", VerbStatus, nil)
+	label, role, ok := roster.Verify(env, "https://a.example")
+	if !ok || label != "dash" || role != RoleRead {
+		t.Fatalf("Verify = %q, %q, %v — want dash, read, true", label, role, ok)
+	}
+
+	explicit, _, err := LoadRoster(writeRoster(t, line+" role=full\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, role, ok := explicit.Verify(env, "https://a.example"); !ok || role != RoleFull {
+		t.Fatalf("an explicit role=full parsed as %q, %v", role, ok)
+	}
+
+	for _, bad := range []string{" roel=read", " role=admin", " read", " role=read role=full"} {
+		if _, _, err := LoadRoster(writeRoster(t, line+bad+"\n")); err == nil {
+			t.Fatalf("a roster line with %q loaded", bad)
+		}
+	}
+}
+
+// Entries feeds `rta grant guard remote`, and a guard entry is
+// grant-signing trust with no verb dispatch in between — so a read-only
+// key must never appear in it, however the roster mixes its rows.
+func TestReadOnlyKeysStayOutOfTheGuardEntries(t *testing.T) {
+	freshHome(t)
+	if _, verr := Init("one"); verr != nil {
+		t.Fatal(verr)
+	}
+	full, _ := RosterLine("tobi")
+	if err := os.Remove(Path()); err != nil {
+		t.Fatal(err)
+	}
+	if _, verr := Init("two"); verr != nil {
+		t.Fatal(verr)
+	}
+	readOnly, _ := RosterLine("dash")
+
+	roster, _, err := LoadRoster(writeRoster(t, full+"\n"+readOnly+" role=read\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries := roster.Entries()
+	if len(entries) != 1 || entries[0].Label != "tobi" {
+		t.Fatalf("Entries = %+v — want tobi alone", entries)
+	}
+	ops := roster.Operators()
+	if len(ops) != 2 || ops[0] != (OperatorInfo{Label: "dash", Role: RoleRead}) ||
+		ops[1] != (OperatorInfo{Label: "tobi", Role: RoleFull}) {
+		t.Fatalf("Operators = %+v", ops)
+	}
+}
+
+// The read allowlist is closed: a verb this build never heard of — or one
+// added without classifying it — is refused for read-only keys, and the
+// zero Role, which only a bug could produce, allows nothing at all.
+func TestARoleAllowsItsVerbsAndNothingElse(t *testing.T) {
+	reads := []string{VerbStatus, VerbGrantList, VerbConsentList}
+	rest := []string{VerbGrantRevoke, VerbGrantPrepare, VerbGrantIssue, VerbConsentAnswer, "grant.future"}
+	for _, v := range append(append([]string{}, reads...), rest...) {
+		if !RoleFull.Allows(v) {
+			t.Fatalf("full refuses %s", v)
+		}
+		if Role("").Allows(v) {
+			t.Fatalf("the zero role allows %s", v)
+		}
+	}
+	for _, v := range reads {
+		if !RoleRead.Allows(v) {
+			t.Fatalf("read refuses %s", v)
+		}
+	}
+	for _, v := range rest {
+		if RoleRead.Allows(v) {
+			t.Fatalf("read allows %s", v)
+		}
+	}
 }

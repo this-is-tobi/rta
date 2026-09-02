@@ -72,22 +72,25 @@ func (s Signer) Sign(server, nonce, verb string, payload []byte) Envelope {
 }
 
 // Verify reports whether env carries a valid signature by an enrolled key
-// over this server's own identity, and whose. server is the verifier's
-// canonical URL from its own configuration — deliberately a parameter and
-// not an envelope field, so a relayed envelope cannot bring the identity it
-// was signed for along with it. It checks the signature only — the nonce is
-// the caller's to consume first, because single-use is a property of the
-// store, not of the math. False carries no reason on purpose: the reason
-// goes to the server's stderr, never to an unauthenticated caller.
-func (r Roster) Verify(env Envelope, server string) (string, bool) {
+// over this server's own identity, and whose — the label and the role the
+// roster enrolled that key under, so the dispatch downstream gates verbs
+// on what the signature actually proved, never on anything the envelope
+// claimed. server is the verifier's canonical URL from its own
+// configuration — deliberately a parameter and not an envelope field, so a
+// relayed envelope cannot bring the identity it was signed for along with
+// it. It checks the signature only — the nonce is the caller's to consume
+// first, because single-use is a property of the store, not of the math.
+// False carries no reason on purpose: the reason goes to the server's
+// stderr, never to an unauthenticated caller.
+func (r Roster) Verify(env Envelope, server string) (string, Role, bool) {
 	raw, err := base64.StdEncoding.DecodeString(env.Sig)
 	if err != nil {
-		return "", false
+		return "", "", false
 	}
 	msg := message(server, env.Nonce, env.Verb, env.Payload)
 	for _, e := range r.keys[env.Fingerprint] {
 		if ed25519.Verify(e.key, msg, raw) {
-			return e.label, true
+			return e.label, e.role, true
 		}
 	}
 	// An unknown fingerprint costs one verify against a throwaway key, the
@@ -97,7 +100,7 @@ func (r Roster) Verify(env Envelope, server string) (string, bool) {
 	if len(r.keys[env.Fingerprint]) == 0 {
 		ed25519.Verify(timingDummy, msg, raw)
 	}
-	return "", false
+	return "", "", false
 }
 
 // timingDummy is the key Verify burns a check against when a fingerprint

@@ -158,14 +158,14 @@ func (h *operatorHandler) call(w http.ResponseWriter, r *http.Request) {
 		h.refuse(w, fmt.Sprintf("nonce not honoured (spent, expired, or never issued) for fingerprint %q", env.Fingerprint))
 		return
 	}
-	label, ok := h.cfg.Roster.Verify(env, h.cfg.URL)
+	label, role, ok := h.cfg.Roster.Verify(env, h.cfg.URL)
 	if !ok {
 		h.refuse(w, fmt.Sprintf("signature rejected for fingerprint %q, verb %q — a valid-looking envelope "+
 			"may have been signed for a different server than %q", env.Fingerprint, env.Verb, h.cfg.URL))
 		return
 	}
 	h.logf("%s (%s) called %s", label, env.Fingerprint, env.Verb)
-	res, verr := h.dispatch(env, label)
+	res, verr := h.dispatch(env, label, role)
 	if verr != nil {
 		// Past the signature the caller is a named operator, and owed the
 		// real error — this is their server misbehaving, not a stranger
@@ -176,7 +176,20 @@ func (h *operatorHandler) call(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, res)
 }
 
-func (h *operatorHandler) dispatch(env operator.Envelope, label string) (any, *view.Error) {
+func (h *operatorHandler) dispatch(env operator.Envelope, label string, role operator.Role) (any, *view.Error) {
+	// The role gate comes before everything, the unknown-verb answer
+	// included: what a read-only key may do is a closed list, and the
+	// refusal names that list rather than reasoning about a verb this
+	// build may never have heard of. Past the signature this is a named
+	// operator owed the real reason — the roster's own restriction on
+	// their key is nothing the uniform refusal body exists to withhold.
+	if !role.Allows(env.Verb) {
+		return nil, view.Errorf("core.operator.role",
+			"this key is enrolled role=read on this server — status, grant.list and consent.list are "+
+				"what that covers, and %q is not among them", env.Verb).
+			WithHint("a roster line without the annotation enrolls a full operator; edit the server's " +
+				"--operators file and restart it")
+	}
 	switch env.Verb {
 	case operator.VerbStatus:
 		return operator.Status{
@@ -184,7 +197,7 @@ func (h *operatorHandler) dispatch(env operator.Envelope, label string) (any, *v
 			Agent:            h.cfg.Agent,
 			GuardOn:          guard.Enabled(),
 			GuardFingerprint: guard.Fingerprint(),
-			Operators:        h.cfg.Roster.Labels(),
+			Operators:        h.cfg.Roster.Operators(),
 		}, nil
 	case operator.VerbGrantList:
 		grants, verr := grant.Load()

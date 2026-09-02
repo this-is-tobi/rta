@@ -168,28 +168,51 @@ func runGuardRemote(_ context.Context, req plugin.Request) (view.View, error) {
 	if err != nil {
 		return nil, view.Errorf("core.guard.remote.roster", "%v", err)
 	}
+	// Entries is already the signing subset: read-only rows never reach the
+	// guard (the roster's own comment carries why). A roster of nothing but
+	// them can watch a server, but a guard trusting nobody could never
+	// honour a grant again — refused as the misconfiguration it is, not
+	// enabled as a lockout.
+	signers := roster.Entries()
+	if len(signers) == 0 {
+		return nil, view.Errorf("core.guard.remote.readonly",
+			"every key in %s is role=read — a guard needs at least one operator who can sign grants", path)
+	}
+	signerLabels := make([]string, 0, len(signers))
+	for _, s := range signers {
+		signerLabels = append(signerLabels, s.Label)
+	}
+	skipped := roster.Len() - len(signers)
 	held, verr := core.Load()
 	if verr != nil {
 		return nil, verr
 	}
 	if req.DryRun {
-		return view.Text{Body: fmt.Sprintf("would enroll %s as this machine's guard, bound to %s — "+
+		body := fmt.Sprintf("would enroll %s as this machine's guard, bound to %s — "+
 			"grants are then honoured only when signed by one of them, issued over the operator "+
 			"channel — and clear the %d grant(s) currently held",
-			strings.Join(roster.Labels(), ", "), canonical, len(held))}, nil
+			strings.Join(signerLabels, ", "), canonical, len(held))
+		if skipped > 0 {
+			body += fmt.Sprintf("; %d role=read key(s) stay out of the guard", skipped)
+		}
+		return view.Text{Body: body}, nil
 	}
 	if verr := core.Mutate(func([]core.Grant) ([]core.Grant, bool) {
 		return nil, true
 	}); verr != nil {
 		return nil, verr
 	}
-	if verr := guard.EnableRemote(roster.Entries(), canonical); verr != nil {
+	if verr := guard.EnableRemote(signers, canonical); verr != nil {
 		return nil, verr
+	}
+	operatorsCell := strings.Join(signerLabels, ", ")
+	if skipped > 0 {
+		operatorsCell += fmt.Sprintf(" — %d role=read key(s) not enrolled: they cannot sign grants", skipped)
 	}
 	pairs := []view.Pair{
 		{Key: "guard", Value: "remote — a grant is honoured only when an enrolled operator signed it"},
 		{Key: "server", Value: canonical},
-		{Key: "operators", Value: strings.Join(roster.Labels(), ", ")},
+		{Key: "operators", Value: operatorsCell},
 		{Key: "key", Value: guard.Fingerprint()},
 		{Key: "cleared", Value: fmt.Sprintf("%d grant(s) issued before the guard", len(held))},
 		{Key: "issuance", Value: "rta grant allow <capability> --server <this server>, from an enrolled machine"},
