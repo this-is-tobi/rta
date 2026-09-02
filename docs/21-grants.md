@@ -109,6 +109,10 @@ Honest edges, stated rather than implied:
 
 `rta grant guard status` says whether it is on, since when, and under which key; `rta doctor` carries the same fact.
 
+### Remote mode: a guard whose keys are elsewhere
+
+For a machine whose humans are not at its terminal — an `rta mcp serve --http` gateway — the guard has a second shape: `rta grant guard remote operators.txt` enrolls the public keys from an operator roster, and from then on a grant is honoured only when one of those keys signed it. No key material lives on the machine at all: nothing to steal, no passphrase to phish out of a server process, and `rta grant allow` at its own shell finds nothing to unlock — refused by construction, which on a remote server is the boundary completing itself rather than a gap. Issuance happens from an enrolled operator's own machine over [the operator channel](./20-mcp.md#the-operator-channel), each grant signed there under that operator's passphrase and attributed to their roster label in the listing's Origin column. Turning remote mode off asks for no passphrase — there is none here to ask for — so it costs presence at the machine's terminal, and clears the grants the operators signed, the same clean-slate rule as every other guard transition.
+
 ## What a grant does not do
 
 - **It does not open a safety class.** If `todo.rm` is destructive and the server was started without `--allow-destructive todo.rm`, no grant makes it reachable. The startup gate is upstream of grants and is not negotiable at run time.
