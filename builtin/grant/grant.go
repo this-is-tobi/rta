@@ -207,6 +207,23 @@ func Plugin(catalog func() []plugin.Capability) plugin.Plugin {
 				Run:    runGuardOff,
 			},
 			{
+				ID: "grant.guard.remote", Summary: "Trust remote operators to sign grants — and nothing on this machine",
+				Safety: plugin.Write, Idempotent: true,
+				Description: "The guard for a server whose humans are elsewhere: enrolls the public " +
+					"keys from an operators roster file (the same file `rta mcp serve --operators` " +
+					"reads), after which a grant is honoured only if signed by one of them — issued " +
+					"from an enrolled operator's own machine over the operator channel, never from a " +
+					"shell here. No key material lives on this machine at all: nothing to steal, " +
+					"nothing to phish, and `rta grant allow` at this terminal is refused by " +
+					"construction. Enabling clears the grants currently held, for guard-on's reason. " +
+					"Run where the server runs, at provisioning time.",
+				Inputs: []plugin.Field{
+					{Name: "operators", Type: plugin.Path, Positional: true,
+						Help: "the roster file whose keys to enroll"},
+				},
+				Run: runGuardRemote,
+			},
+			{
 				ID: "grant.guard.status", Summary: "Whether grant issuance requires the passphrase",
 				Safety: plugin.Read, Idempotent: true,
 				// Not on a dashboard tile redrawing on a timer: the status

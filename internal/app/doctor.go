@@ -565,7 +565,10 @@ func doctorReport(reg *registry.Registry) view.View {
 	// row when off rather than a warn: ungated issuance is the default and a
 	// legitimate posture — the row exists so the stronger one is discoverable
 	// exactly where an operator already reads about grants.
-	if guard.Enabled() {
+	if guard.Remote() {
+		add("grant guard", "ok", "remote (key "+guard.Fingerprint()+") — a grant is honoured only "+
+			"when signed by an enrolled operator's key, and no key material lives on this machine at all")
+	} else if guard.Enabled() {
 		add("grant guard", "ok", "on (key "+guard.Fingerprint()+") — issuing or renewing a grant "+
 			"asks for the operator passphrase, so a process running as you cannot mint authority alone")
 	} else {
