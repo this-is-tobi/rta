@@ -87,6 +87,26 @@ The reason is asymmetry: **a forged line in a grant file *adds* permission.** An
 
 This is exactly why a [team policy ceiling](./23-team-policy.md) needs no seal: it can only ever subtract, so the worst a hostile edit achieves is making rta refuse more.
 
+## The guard: a passphrase in front of issuance
+
+The seal's limit above has an answer, and it is opt-in:
+
+```bash
+rta grant guard on
+```
+
+From then on, issuing or renewing a grant asks for a passphrase — including `rta agent allow --ttl`, which also mints one. Every grant is signed with a key that exists only encrypted under that passphrase, and a grant without a valid signature is not honoured. The difference from the seal is one of kind, not degree: the seal's key sits on disk where anything running as you can read it, while the guard's passphrase lives in your head. An agent that runs `rta grant allow` from its shell is *refused*, however it invokes the binary — the ordinary self-granting path moves from detection (the Origin column, after the fact) to prevention.
+
+Honest edges, stated rather than implied:
+
+- **Enabling and disabling both clear the grant file.** Grants issued without a passphrase would be laundered by blessing them wholesale, and signatures with no guard beside them read as tampering. Grants last a day at most; re-issuing costs minutes.
+- **Revoking never asks.** Taking authority away is the fail-safe direction, and an incident is the wrong moment to demand a secret.
+- **A forgotten passphrase costs at most a day.** `rm` the guard state, `rta grant revoke --all`, `rta grant guard on` with a new passphrase — loud, bounded, and no secret is ever recoverable from disk.
+- **File tampering stays in the detection regime.** Something running as you can still delete the guard's state or swap its key; every such rewrite rta can notice is refused loudly and fails closed, and [the boundary chapter](./19-the-boundary.md) owns what remains.
+- **There is no environment variable for the passphrase, and there will not be one.** The kv store accepts `RTA_KV_PASSPHRASE` because some setups need unattended unlocks, and `rta doctor` warns about the inheritance. The guard exists for the opposite trade: issuance is rare, attended, and nothing an agent inherits may satisfy it.
+
+`rta grant guard status` says whether it is on, since when, and under which key; `rta doctor` carries the same fact.
+
 ## What a grant does not do
 
 - **It does not open a safety class.** If `todo.rm` is destructive and the server was started without `--allow-destructive todo.rm`, no grant makes it reachable. The startup gate is upstream of grants and is not negotiable at run time.

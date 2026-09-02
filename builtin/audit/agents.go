@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/this-is-tobi/rule-them-all/internal/guard"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
@@ -512,6 +513,13 @@ func auditRtaReach(r *agentReport, claudeSeen bool) {
 	detail := "an agent that can run commands can run rta itself: issue a grant, then call " +
 		"capabilities the MCP record never sees. rta bounds an agent with no shell; with one, " +
 		"these gates are hygiene rather than containment"
+	if guard.Enabled() {
+		// The row keeps telling the truth on a guarded machine: the
+		// self-grant half is closed, the unrecorded-CLI half is not.
+		detail = "an agent that can run commands can run rta itself and call capabilities the " +
+			"MCP record never sees — the grant guard stops it issuing itself a grant, and the " +
+			"rest stays true: with a shell, these gates are hygiene rather than containment"
+	}
 	if self, err := os.Executable(); err == nil {
 		detail += " (" + shortPath(self) + ")"
 	}

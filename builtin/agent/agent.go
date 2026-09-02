@@ -33,6 +33,7 @@ import (
 	"github.com/this-is-tobi/rule-them-all/internal/agentlog"
 	"github.com/this-is-tobi/rule-them-all/internal/consent"
 	"github.com/this-is-tobi/rule-them-all/internal/grant"
+	"github.com/this-is-tobi/rule-them-all/internal/guard"
 	"github.com/this-is-tobi/rule-them-all/internal/stdio"
 	"github.com/this-is-tobi/rule-them-all/pkg/format"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
@@ -144,6 +145,7 @@ func Plugin() plugin.Plugin {
 						Help: "the request id from `rta agent pending`", Suggest: suggestPending},
 					{Name: "ttl", Type: plugin.String,
 						Help: "also issue a standing grant for this long, e.g. 15m (max 24h)"},
+					guard.PassphraseField,
 				},
 				Run: localOnly(runAllow),
 			},
@@ -660,6 +662,26 @@ func runAllow(_ context.Context, req plugin.Request) (view.View, error) {
 	if verr := grant.CheckCeiling(r.Cap, scope, r.Profile); verr != nil {
 		return nil, verr
 	}
+	// The guard, before the decision and not after: answering consumes the
+	// parked request, so a passphrase refused past that point would release
+	// the call, lose the standing grant, and leave nothing to retry against.
+	// Refused here, the request stays parked and the retry costs a rerun.
+	// The one-shot answer itself stays passphrase-free on purpose — it
+	// releases a single call an agent with a shell could have run directly,
+	// while --ttl mints authority that outlives this conversation, which is
+	// exactly what the guard exists to price.
+	var signer *guard.Signer
+	if strings.TrimSpace(req.String("ttl")) != "" && guard.Enabled() {
+		pass, verr := guard.PromptSecret(req, false)
+		if verr != nil {
+			return nil, verr
+		}
+		s, verr := guard.Unlock(pass)
+		if verr != nil {
+			return nil, verr
+		}
+		signer = &s
+	}
 	if err := consent.Decide(id, true, answeredBy(req)); err != nil {
 		return nil, view.Errorf("agent.allow.failed", "%v", err)
 	}
@@ -671,7 +693,7 @@ func runAllow(_ context.Context, req plugin.Request) (view.View, error) {
 		// Measured here rather than inside alsoGrant because the surface is
 		// this request's fact, not the parked call's.
 		from := grant.Origin(req.Surface(), term.IsTerminal(int(stdio.Real().Fd())))
-		note, verr := alsoGrant(r, ttl, from)
+		note, verr := alsoGrant(r, ttl, from, signer)
 		if verr != nil {
 			// The call is already allowed; a bad --ttl must not read as if
 			// nothing happened.
@@ -690,7 +712,7 @@ func runAllow(_ context.Context, req plugin.Request) (view.View, error) {
 // `rta grant list`, expires the same way, and is bound to the same
 // connection. A second mechanism that also authorizes calls would be a
 // second thing to audit.
-func alsoGrant(r consent.Request, ttl, from string) (string, *view.Error) {
+func alsoGrant(r consent.Request, ttl, from string, signer *guard.Signer) (string, *view.Error) {
 	asked, err := time.ParseDuration(ttl)
 	if err != nil {
 		return "", view.Errorf("agent.allow.ttl", "%q is not a duration", ttl).
@@ -748,6 +770,12 @@ func alsoGrant(r consent.Request, ttl, from string) (string, *view.Error) {
 		Expires: now.Add(d),
 		TTL:     ttl,
 		Note:    "issued while answering request " + r.ID,
+	}
+	// Signed after the Grant is fully built, so the signature covers the
+	// struct as issued; Issue's own backstop refuses if the guard is on and
+	// no signer reached this far.
+	if signer != nil {
+		grant.SignWith(*signer, &g)
 	}
 	if verr := grant.Issue(g, true); verr != nil {
 		return "", verr
