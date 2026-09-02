@@ -28,9 +28,12 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"golang.org/x/term"
+
 	"github.com/this-is-tobi/rule-them-all/internal/agentlog"
 	"github.com/this-is-tobi/rule-them-all/internal/consent"
 	"github.com/this-is-tobi/rule-them-all/internal/grant"
+	"github.com/this-is-tobi/rule-them-all/internal/stdio"
 	"github.com/this-is-tobi/rule-them-all/pkg/format"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
@@ -617,6 +620,16 @@ func notPreviewed(r consent.Request) string {
 	}
 }
 
+// answeredBy names the surface that answered, for the decision file and the
+// ledger. It was the literal "cli" once, which the TUI inherited by
+// dispatching this same capability — a label, not a lie, but a wrong one.
+func answeredBy(req plugin.Request) string {
+	if req.Surface() == plugin.SurfaceTUI {
+		return "tui"
+	}
+	return "cli"
+}
+
 func runAllow(_ context.Context, req plugin.Request) (view.View, error) {
 	id := strings.TrimSpace(req.String("id"))
 	r, ok := consent.Find(id)
@@ -647,7 +660,7 @@ func runAllow(_ context.Context, req plugin.Request) (view.View, error) {
 	if verr := grant.CheckCeiling(r.Cap, scope, r.Profile); verr != nil {
 		return nil, verr
 	}
-	if err := consent.Decide(id, true, "cli"); err != nil {
+	if err := consent.Decide(id, true, answeredBy(req)); err != nil {
 		return nil, view.Errorf("agent.allow.failed", "%v", err)
 	}
 	pairs := []view.Pair{
@@ -655,7 +668,10 @@ func runAllow(_ context.Context, req plugin.Request) (view.View, error) {
 		{Key: "for", Value: "this call only"},
 	}
 	if ttl := strings.TrimSpace(req.String("ttl")); ttl != "" {
-		note, verr := alsoGrant(r, ttl)
+		// Measured here rather than inside alsoGrant because the surface is
+		// this request's fact, not the parked call's.
+		from := grant.Origin(req.Surface(), term.IsTerminal(int(stdio.Real().Fd())))
+		note, verr := alsoGrant(r, ttl, from)
 		if verr != nil {
 			// The call is already allowed; a bad --ttl must not read as if
 			// nothing happened.
@@ -674,7 +690,7 @@ func runAllow(_ context.Context, req plugin.Request) (view.View, error) {
 // `rta grant list`, expires the same way, and is bound to the same
 // connection. A second mechanism that also authorizes calls would be a
 // second thing to audit.
-func alsoGrant(r consent.Request, ttl string) (string, *view.Error) {
+func alsoGrant(r consent.Request, ttl, from string) (string, *view.Error) {
 	asked, err := time.ParseDuration(ttl)
 	if err != nil {
 		return "", view.Errorf("agent.allow.ttl", "%q is not a duration", ttl).
@@ -718,11 +734,17 @@ func alsoGrant(r consent.Request, ttl string) (string, *view.Error) {
 		// agent it was granted to.
 		Agent:  r.Agent,
 		Issued: now,
-		// Answering a parked request is always a person. The queue exists
-		// because somebody is there to answer it, `agent allow` refuses over
-		// MCP outright, and the whole feature is a question rta asked and
-		// waited for — so this is the one origin that needs no test for it.
-		From:    grant.FromForm,
+		// Measured, never assumed. This was FromForm unconditionally once, on
+		// the argument that answering a parked request is always a person —
+		// but `rta agent allow` runs from any shell, and an agent that parks
+		// a call through its own MCP session can answer it the same way it
+		// would run `grant allow`. The assumption made this the one issuing
+		// path where a self-issued grant got recorded as the *most* trusted
+		// origin, while grant.allow was carefully writing `command` for the
+		// identical act. Same measurement as grant.allow's, same honesty
+		// clause: a pty can still fake `terminal`, and detection of the
+		// ordinary case is still the point.
+		From:    from,
 		Expires: now.Add(d),
 		TTL:     ttl,
 		Note:    "issued while answering request " + r.ID,
@@ -753,7 +775,7 @@ func runDeny(_ context.Context, req plugin.Request) (view.View, error) {
 	if req.DryRun {
 		return view.Text{Body: "would deny " + r.Cap + " for request " + id}, nil
 	}
-	if err := consent.Decide(id, false, "cli"); err != nil {
+	if err := consent.Decide(id, false, answeredBy(req)); err != nil {
 		return nil, view.Errorf("agent.deny.failed", "%v", err)
 	}
 	return view.KeyValue{Pairs: []view.Pair{
