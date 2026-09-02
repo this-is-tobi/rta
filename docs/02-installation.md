@@ -100,7 +100,20 @@ Nothing here is required to install or run rta. A missing tool costs you exactly
 
 Version policy is the same for all of them: rta uses what is on your `$PATH` and adopts none of their maintenance. There is no preflight check — a capability looks its tool up when you run it, and refuses by name if it is not there.
 
-Two consequences worth knowing. The container image is distroless, so it carries none of these — a containerised `rta mcp serve` covers the capabilities that need no external tool, and [MCP and the safety gate](./20-mcp.md) says which. And a plugin that reads a credential location, such as kubectl's `~/.kube/config`, still needs `rta plugin allow` before it may: having the tool is not being granted the file.
+Two consequences worth knowing. The primary container image is distroless, so it carries none of these — a containerised `rta mcp serve` covers the capabilities that need no external tool, and [MCP and the safety gate](./20-mcp.md) says which. And a plugin that reads a credential location, such as kubectl's `~/.kube/config`, still needs `rta plugin allow` before it may: having the tool is not being granted the file.
+
+If you want the tools rather than the narrowness, `ghcr.io/this-is-tobi/rta-full` is the same rta with every first-party plugin and every tool in the table above already in it — Alpine-based rather than distroless, because a distroless image has no package manager to put them there. Roughly 100 MB against the primary image's 12, and the plugins arrive already trusted, since they were built from the same source in the same build.
+
+**Reach for it when you are the one at the keyboard, and for the primary image when something else is.** That is not a style preference: [the image is the plugin allowlist](./20-mcp.md) — a plugin that is not in the image is one an agent cannot reach at all — so the full image is the widest reach rta has, and handing it to an agent gives up a boundary the narrow one enforces for free. For a team that wants three plugins and not eleven, derive from the primary image instead; [the recipe](./20-mcp.md) is a dozen lines. What the full image does *not* do is answer the credential question for you: `kube` and `cnpg` still show `warn` until you run `rta plugin allow`, on your machine, against your own kubeconfig. Mount a state volume at `/rta-home` and that answer sticks, the same as on a laptop.
+
+For the throwaway case where it cannot stick — `docker run --rm`, with no volume — the entrypoint takes `RTA_ALLOW_PLUGINS`, and it is off unless you set it:
+
+```bash
+docker run --rm -e RTA_ALLOW_PLUGINS=kube,cnpg \
+  -v ~/.kube:/rta-home/.kube:ro ghcr.io/this-is-tobi/rta-full kube pod list
+```
+
+`all` covers every bundled plugin that asks for something. Naming a plugin that asks for nothing is an error rather than a no-op, because you typed it expecting it to mean something. It can only ever grant what a plugin already declares — `rta plugin allow` cannot invent a location the artifact never asked for — and setting it is visible in the command, the compose file or the pod spec that launched the container, which is the point of it not being a default.
 
 ## Configuration
 

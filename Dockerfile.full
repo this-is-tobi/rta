@@ -1,0 +1,126 @@
+# syntax=docker/dockerfile:1
+
+# The batteries-included image: rta, every first-party plugin, and the
+# external tools those plugins shell out to.
+#
+# **Deliberately a second image rather than a replacement**, because the
+# primary one's narrowness is a security property and not an oversight.
+# docs/20-mcp.md puts it plainly — "the image is the plugin allowlist": a
+# plugin that is not in the image is one an agent cannot reach, with no trust
+# decision to make and no $PATH to search, so building an image with two
+# plugins in it is the narrowest reach rta can be given. This image is the
+# opposite end of that trade, and choosing it should be a choice: everything
+# rta can do, in one pull, for a person who wants a console rather than a
+# minimal surface to hand an agent.
+#
+# So: reach for ghcr.io/this-is-tobi/rta when something else will talk to it,
+# and this one when you are the one at the keyboard. If you want a middle
+# ground — three plugins and nothing else — derive from the primary image
+# instead; docs/20-mcp.md has that recipe and it is the better answer to
+# "which plugins should my team have".
+#
+# Pinned by digest, not by tag, for the reason the primary Dockerfile gives:
+# the same reason `rta plugin trust` binds to a digest rather than a name.
+FROM golang:1.26.6-bookworm@sha256:116d58cbd88c1297624acc6e967a060012422bacf9930927e23fb719189c6f36 AS build
+WORKDIR /src
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+
+ARG TARGETOS
+ARG TARGETARCH
+ARG VERSION=dev
+ARG COMMIT=
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build \
+    -trimpath \
+    -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT}" \
+    -o /out/rta \
+    ./cmd/rta
+
+# Every plugin is its own Go module with its own go.sum, so each is built in
+# its own directory rather than as a package of the root module. They resolve
+# the core through a `replace ... => ../..`, which is why the whole tree is
+# copied above and not just the plugin directories.
+#
+# The loop is over what is on disk rather than a list repeated here: a plugin
+# added to plugins/ joins this image by existing, the same way it joins
+# `make plugins`. A list in a Dockerfile is a list that goes stale silently.
+RUN set -eux; \
+    for dir in plugins/*/; do \
+      name="$(basename "$dir")"; \
+      ( cd "$dir" && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build \
+          -trimpath -ldflags "-s -w" -o "/out/rta-plugin-$name" . ); \
+    done
+
+# Alpine rather than the primary image's distroless base, and that is forced
+# rather than preferred: distroless has no package manager and no shell, and
+# the whole point here is the tools. Every one below is something a capability
+# shells out to — see docs/02-installation.md's table, which is the list this
+# tracks:
+#
+#   postgresql-client  pg_dump, pg_restore and psql, for pg.dump and pg.restore
+#   kubectl            the kube and cnpg plugins, audit.kube.*, kube: forwards
+#   docker-cli         the docker plugin
+#   git                the git.* capabilities and `rta plugin index add/update`
+#   openssh-client     ssh: tunnel targets
+#   ca-certificates    every TLS dial — the one thing the distroless base did carry
+#
+# mysql and mariadb are absent on purpose and are not an omission: those
+# plugins connect in-process through a Go driver and shell out to nothing, so
+# a client here would be weight that no capability would ever execute.
+FROM alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce
+
+RUN apk add --no-cache \
+      ca-certificates \
+      docker-cli \
+      git \
+      kubectl \
+      openssh-client \
+      postgresql-client
+
+COPY --from=build /out/ /usr/local/bin/
+
+# 65532:65532 to match the primary image's nonroot user, so a state volume
+# populated by one is readable by the other and the two images can share it.
+RUN addgroup -g 65532 -S nonroot && \
+    adduser -u 65532 -S -G nonroot -h /rta-home nonroot
+
+ENV RTA_CONFIG=/rta-home/config.yaml \
+    RTA_DATA_DIR=/rta-home \
+    PATH=/usr/local/bin:/usr/bin:/bin:/sbin:/usr/sbin
+
+# Trust is baked; permission to read a credential is not, and the asymmetry is
+# the point.
+#
+# rta makes two separate decisions about a plugin (docs/50-plugins.md): `trust`
+# says an artifact may run, `allow` says it may read a credential location such
+# as ~/.kube/config. Trust is answered here because it is answerable here —
+# these binaries were built from this source in the stage above, and the digest
+# it pins is theirs. Nobody gains anything by being asked to re-approve an
+# artifact they just pulled as one image.
+#
+# `allow` is deliberately left alone. Whether a plugin may read *your* cluster
+# credentials is a question about your machine, not about this image, and
+# baking it would answer it for every user of the image at once — for a file
+# none of them has mounted yet. Run `rta plugin allow kube` once against a
+# persistent state volume and it stays answered; see docs/02-installation.md,
+# which says the same thing about having a tool versus being granted the file.
+#
+# For the ephemeral case where no volume is mounted and the answer cannot
+# stick, docker-entrypoint.sh takes RTA_ALLOW_PLUGINS — opt-in, never on by
+# default, see that file for why the two decisions are split this way.
+RUN set -eux; \
+    mkdir -p /rta-home; \
+    for bin in /usr/local/bin/rta-plugin-*; do \
+      rta plugin trust "${bin#/usr/local/bin/rta-plugin-}" --yes; \
+    done; \
+    rta plugin list; \
+    chown -R 65532:65532 /rta-home
+
+COPY --chmod=0755 docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+
+USER nonroot:nonroot
+
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
