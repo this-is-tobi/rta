@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.2.0](https://github.com/this-is-tobi/rule-them-all/compare/v0.1.0...v0.2.0) (2026-09-02)
+
+
+### Features
+
+* **agent:** repair a record that lost only its integrity mark ([76d2ef0](https://github.com/this-is-tobi/rule-them-all/commit/76d2ef081a5bb6b1bba3620ad26e85f3e6547ecc))
+* **app:** state, remove and complete profile instances from the CLI ([5de2380](https://github.com/this-is-tobi/rule-them-all/commit/5de2380fb75ccf5495a3d0542ee03adf23cf304e))
+* **audit:** audit.agents --fix prints the exact edit for each finding ([9cdc272](https://github.com/this-is-tobi/rule-them-all/commit/9cdc272e0f8ce017a4c3e459038a78ccae05e010))
+* **config:** instance labels in profile plugin keys ([9274d96](https://github.com/this-is-tobi/rule-them-all/commit/9274d963f4f20a93373eeed80ce63c689321b421))
+* **config:** print the file's JSON Schema for editor completion ([859590c](https://github.com/this-is-tobi/rule-them-all/commit/859590cc378b0203151e153a1d89e063e98a1ff9))
+* **docker:** a batteries-included image beside the narrow one ([9ac06ba](https://github.com/this-is-tobi/rule-them-all/commit/9ac06baa44eebf355bb5517d2007fb50e0e34ae3))
+* **grant:** per-instance consent ([732e308](https://github.com/this-is-tobi/rule-them-all/commit/732e30857b7ba05e3f5589b9118a6320223f2ecf))
+* **kv:** say which profiles use each entry, off the agent surface ([b3ac28b](https://github.com/this-is-tobi/rule-them-all/commit/b3ac28b4cdc3d0459060696168b375589eed1a53))
+* **profile:** read a credential from a cluster without forcing a forward ([a2130dc](https://github.com/this-is-tobi/rule-them-all/commit/a2130dc8722799ae8049b1d4ea20ffdb4d4501a6))
+* **profile:** resolve instance refs, stamp per instance ([62aec35](https://github.com/this-is-tobi/rule-them-all/commit/62aec357b4ffa4f196764761f19499ca8a559daa))
+* **tui:** arm profile deletes behind a second keypress ([645b517](https://github.com/this-is-tobi/rule-them-all/commit/645b517d471e6c60e7ad8fa89a70d3a255e51208))
+* **tui:** edit, pick and read profile instances ([ed2babb](https://github.com/this-is-tobi/rule-them-all/commit/ed2babb8c5710d18ee2307f02a6878fde965d9fb))
+
+
+### Bug Fixes
+
+* **agent:** measure a parked answer's origin instead of assuming a person ([0a9d29b](https://github.com/this-is-tobi/rule-them-all/commit/0a9d29b799f0ce4bfac8ecee9e18c7f9d2e60687))
+* **config:** explain a repeated plugin key instead of advising rta init ([fa7c5af](https://github.com/this-is-tobi/rule-them-all/commit/fa7c5af15ea596927758be970c049ce926ba97f6))
+* **docs:** stop the boundary diagram clipping its own node text ([c4ccd44](https://github.com/this-is-tobi/rule-them-all/commit/c4ccd44dd08a942736a5d46109a2c3ea0cc69f11))
+* **kv:** relabel an entry without re-supplying its secret ([43af6fa](https://github.com/this-is-tobi/rule-them-all/commit/43af6faa82e208aabc80a2486f16878041335024))
+
 ## 0.1.0 (2026-09-01)
 
 
