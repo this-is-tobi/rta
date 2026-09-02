@@ -34,6 +34,7 @@ import (
 	"github.com/this-is-tobi/rule-them-all/internal/consent"
 	"github.com/this-is-tobi/rule-them-all/internal/grant"
 	"github.com/this-is-tobi/rule-them-all/internal/guard"
+	operatorid "github.com/this-is-tobi/rule-them-all/internal/operator"
 	"github.com/this-is-tobi/rule-them-all/internal/stdio"
 	"github.com/this-is-tobi/rule-them-all/pkg/format"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
@@ -108,10 +109,18 @@ func Plugin() plugin.Plugin {
 				Description: "With `rta mcp serve --consent`, a call that needs a grant nobody " +
 					"issued is parked instead of refused, and waits for you. Each row is one such " +
 					"call: its id, what it wants, against which connection, and how long it will " +
-					"keep waiting. Answer with `rta agent allow <id>` or `rta agent deny <id>`.",
+					"keep waiting. Answer with `rta agent allow <id>` or `rta agent deny <id>`. " +
+					"With --server <name> (a server from remotes.yaml): the same queue read from a " +
+					"remote rta server as a signed operator call, your operator key's passphrase " +
+					"asked first.",
 				Safety:     plugin.Read,
 				Idempotent: true,
-				Run:        localOnly(runPending),
+				Inputs: []plugin.Field{
+					{Name: "server", Type: plugin.String, Local: true,
+						Help: "read a remote server's parked queue instead of this machine's (a name from remotes.yaml)"},
+					operatorid.PassphraseField,
+				},
+				Run: localOnly(runPending),
 			},
 			{
 				ID:      "agent.show",
@@ -126,6 +135,9 @@ func Plugin() plugin.Plugin {
 				Inputs: []plugin.Field{
 					{Name: "id", Type: plugin.String, Positional: true, Required: true,
 						Help: "the request id from `rta agent pending`", Suggest: suggestPending},
+					{Name: "server", Type: plugin.String, Local: true,
+						Help: "the request is parked on this remote server (a name from remotes.yaml)"},
+					operatorid.PassphraseField,
 				},
 				Run: localOnly(runShow),
 			},
@@ -137,7 +149,10 @@ func Plugin() plugin.Plugin {
 					"also issues the grant you would have typed (same target, same record, same " +
 					"connection), which is worth doing when the same question is about to be asked " +
 					"five more times. Never reachable over MCP: an agent that could answer its own " +
-					"request would make the whole mechanism theatre.",
+					"request would make the whole mechanism theatre. With --server <name>: answers " +
+					"a call parked on a remote rta server as a signed operator call — every remote " +
+					"answer costs your operator key's passphrase, one-shot included, because the " +
+					"local one-shot's shell-equivalence argument does not travel a network.",
 				Safety: plugin.Write,
 				Scope:  "id",
 				Inputs: []plugin.Field{
@@ -145,7 +160,12 @@ func Plugin() plugin.Plugin {
 						Help: "the request id from `rta agent pending`", Suggest: suggestPending},
 					{Name: "ttl", Type: plugin.String,
 						Help: "also issue a standing grant for this long, e.g. 15m (max 24h)"},
+					// One passphrase field serves both gates that can ask: the
+					// local guard's (with --ttl), and — with --server — the
+					// operator key's. Same name, same channels, same argv refusal.
 					guard.PassphraseField,
+					{Name: "server", Type: plugin.String, Local: true,
+						Help: "the request is parked on this remote server (a name from remotes.yaml)"},
 				},
 				Run: localOnly(runAllow),
 			},
@@ -154,12 +174,16 @@ func Plugin() plugin.Plugin {
 				Summary: "Deny one parked call",
 				Description: "The agent's call is refused with your answer rather than with a " +
 					"timeout, which is the difference between a model that stops and one that " +
-					"retries. Never reachable over MCP.",
+					"retries. Never reachable over MCP. With --server <name>: denies a call parked " +
+					"on a remote rta server, as a signed operator call.",
 				Safety: plugin.Write,
 				Scope:  "id",
 				Inputs: []plugin.Field{
 					{Name: "id", Type: plugin.String, Positional: true, Required: true,
 						Help: "the request id from `rta agent pending`", Suggest: suggestPending},
+					{Name: "server", Type: plugin.String, Local: true,
+						Help: "the request is parked on this remote server (a name from remotes.yaml)"},
+					operatorid.PassphraseField,
 				},
 				Run: localOnly(runDeny),
 			},
@@ -463,7 +487,10 @@ func runLog(_ context.Context, req plugin.Request) (view.View, error) {
 	}}, nil
 }
 
-func runPending(context.Context, plugin.Request) (view.View, error) {
+func runPending(_ context.Context, req plugin.Request) (view.View, error) {
+	if server := strings.TrimSpace(req.String("server")); server != "" {
+		return remotePending(req, server)
+	}
 	reqs, err := consent.Pending()
 	if err != nil {
 		return nil, view.Errorf("agent.pending.unreadable", "%v", err)
@@ -549,10 +576,20 @@ func credentialCell(e agentlog.Entry) string {
 
 func runShow(_ context.Context, req plugin.Request) (view.View, error) {
 	id := strings.TrimSpace(req.String("id"))
+	if server := strings.TrimSpace(req.String("server")); server != "" {
+		return remoteShow(req, server, id)
+	}
 	r, ok := consent.Find(id)
 	if !ok {
 		return nil, unknownRequest(id)
 	}
+	return showView(r), nil
+}
+
+// showView renders one request in full, wherever it was fetched from — the
+// local queue and a remote server's answer the same question, and two
+// renderings would drift apart exactly where an operator compares them.
+func showView(r consent.Request) view.View {
 	left := time.Until(r.Deadline).Truncate(time.Second)
 	if left < 0 {
 		left = 0
@@ -604,7 +641,7 @@ func runShow(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 	sections = append(sections, view.Section{
 		ID: "outcome", Title: "What it would do", View: view.Text{Body: body}})
-	return view.Sections{Items: sections}, nil
+	return view.Sections{Items: sections}
 }
 
 // notPreviewed says why there is no preview, in the caller's terms.
@@ -634,6 +671,9 @@ func answeredBy(req plugin.Request) string {
 
 func runAllow(_ context.Context, req plugin.Request) (view.View, error) {
 	id := strings.TrimSpace(req.String("id"))
+	if server := strings.TrimSpace(req.String("server")); server != "" {
+		return remoteAnswer(req, server, id, true)
+	}
 	r, ok := consent.Find(id)
 	if !ok {
 		return nil, unknownRequest(id)
@@ -792,6 +832,9 @@ func alsoGrant(r consent.Request, ttl, from string, signer *guard.Signer) (strin
 
 func runDeny(_ context.Context, req plugin.Request) (view.View, error) {
 	id := strings.TrimSpace(req.String("id"))
+	if server := strings.TrimSpace(req.String("server")); server != "" {
+		return remoteAnswer(req, server, id, false)
+	}
 	r, ok := consent.Find(id)
 	if !ok {
 		return nil, unknownRequest(id)
