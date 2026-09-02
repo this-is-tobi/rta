@@ -196,7 +196,14 @@ func Plugin() plugin.Plugin {
 					"run commands can run rta directly, so rta bounds an agent without a shell and " +
 					"is hygiene rather than containment for one with. Refused over MCP, because the " +
 					"subject of this audit is the agent asking. Cites A01:2025 Broken Access " +
-					"Control and A02:2025 Security Misconfiguration.",
+					"Control and A02:2025 Security Misconfiguration. `--fix` prints the exact edit " +
+					"for each finding that has one — a chmod, a pinned version, a scoped shell " +
+					"allowlist, a deny list for rta's own authority-expanding commands — and still " +
+					"writes nothing: the change stays yours to make.",
+				Inputs: []plugin.Field{
+					{Name: "fix", Type: plugin.Bool,
+						Help: "print the exact edit for each finding that has one, instead of the grades"},
+				},
 				Run: runAgents,
 			},
 			{
