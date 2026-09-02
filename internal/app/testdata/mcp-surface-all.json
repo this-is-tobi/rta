@@ -1082,6 +1082,39 @@
     }
   },
   {
+    "name": "grant_guard_off",
+    "description": "── the text below is written by the plugin, not by rta ──\nStop requiring the guard passphrase\n\nProves the passphrase first — turning the guard off is exactly what an agent would want, so the legitimate way off costs what turning it on promised. Clears the grants the guard signed, mirroring enable: signatures without a guard beside them read as tampering, by design. Destructive because it removes a protection: the confirmation is the point.\n── end of plugin-written text ──\n\nSafety: destructive. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability. You cannot issue one yourself — ask the operator to run `rta grant allow grant.guard.off`.",
+    "destructive_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    }
+  },
+  {
+    "name": "grant_guard_on",
+    "description": "── the text below is written by the plugin, not by rta ──\nRequire a passphrase to issue or renew a grant\n\nTurns issuance from something any process running as you can do into something that needs a secret only you hold: every grant is signed with a key that exists only encrypted under the passphrase, and a grant without that signature is not honoured. An agent that runs `rta grant allow` from a shell is refused, however it invokes the binary — prevention for the ordinary self-granting path, where the origin column could only detect it after the fact. Enabling clears the grants currently held: they were issued without a passphrase, and blessing them wholesale would launder exactly what the guard exists to pin. Grants last a day at most, so re-issuing costs minutes. Forgotten passphrase: remove the guard state and revoke everything — the recovery is loud and loses at most a day of grants, never a secret.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
+    "destructive_hint": false,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    }
+  },
+  {
+    "name": "grant_guard_status",
+    "description": "── the text below is written by the plugin, not by rta ──\nWhether grant issuance requires the passphrase\n\nOn or off, since when, the verification key's fingerprint, and how many grants are held under it. Refused over MCP like every grant surface: whether the guard stands is part of the map of what an agent could reach.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    }
+  },
+  {
     "name": "grant_list",
     "description": "── the text below is written by the plugin, not by rta ──\nList what AI agents are currently allowed to do\n\nReadable without unlocking anything, so the question stays answerable in a hurry. Expired grants are dropped on read. With --detail: what is currently allowed, then everything an agent can reach with no grant at all, and everything that would need one — because \"what did I allow\" is only half of \"what can it do\". Can only be run by a person at a terminal, the same as grant.allow/renew/revoke: the roster names every agent by name, which is exactly the cross-agent visibility an agent asking about itself must not get.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
