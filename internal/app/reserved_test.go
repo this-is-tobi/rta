@@ -8,6 +8,8 @@ import (
 
 	"github.com/spf13/pflag"
 
+	"github.com/this-is-tobi/rule-them-all/builtin/all"
+	"github.com/this-is-tobi/rule-them-all/internal/mcp"
 	"github.com/this-is-tobi/rule-them-all/internal/registry"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
@@ -179,5 +181,37 @@ func TestAReservedNamespaceIsRefusedAtRegistration(t *testing.T) {
 				t.Errorf("error %q does not say the name is reserved", err)
 			}
 		})
+	}
+}
+
+// The operator channel writes its mutations into the agent ledger under
+// synthetic capability IDs — "operator." + verb, operator.grant.revoke
+// and its four siblings — chosen so a channel row is never grep-identical
+// to a real capability's row. That holds only while no registered
+// capability claims one of those names, and they live inside a real
+// builtin's namespace (operator.init, operator.status), so nothing but
+// this test reserves them: a future operator.lock.add capability would
+// compile, register, and quietly make an agent's probe indistinguishable
+// from an enrolled operator's action in the sealed record. The set comes
+// from the channel's own classifier, not a copy here — the channel's
+// reads (operator.status the *verb row* would collide with the builtin,
+// for instance) are never recorded and so reserve nothing.
+func TestTheLedgersOperatorRowsCollideWithNoCapability(t *testing.T) {
+	reg, err := all.Registry(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	synthetic := map[string]bool{}
+	for _, id := range mcp.OperatorLedgerCaps() {
+		synthetic[id] = true
+	}
+	if len(synthetic) == 0 {
+		t.Fatal("the channel claims to record nothing, so this test checks nothing")
+	}
+	for _, c := range reg.Capabilities() {
+		if synthetic[c.ID] {
+			t.Errorf("capability %q is registered, and the operator channel already writes ledger rows "+
+				"under that ID — rename one of them", c.ID)
+		}
 	}
 }

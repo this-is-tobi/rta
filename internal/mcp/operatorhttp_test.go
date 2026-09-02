@@ -398,20 +398,34 @@ func TestAReadOnlyKeyIsGatedToItsVerbs(t *testing.T) {
 	}
 }
 
-// The issue path's refusals are the caller's submission to fix, and they
-// answer 400 — a client that skipped prepare, or a skewed clock, must not
-// page whoever watches this server's error rate. Matched by prefix so a
-// new checkSubmitted expectation is classified the day it is written.
-func TestIssueRefusalsAreTheCallersToFix(t *testing.T) {
-	for _, code := range []string{
-		"core.operator.issue.unsigned", "core.operator.issue.bookkeeping",
-		"core.operator.issue.skew", "core.operator.issue.yet-unwritten",
+// Every refusal the mutation verbs can actually surface — their own
+// codes, and the wired packages' — answers 4xx, never 500: a policy or
+// grammar refusal must not page whoever watches this server's error
+// rate, and (because the ledger's Refused/Failed split rides statusFor)
+// must not be sealed into the record as an operator's authorized work
+// failing. The representatives here are real codes from the packages the
+// verbs dispatch into, not statusFor's own literals read back.
+func TestRefusalsAreClassifiedNotPaged(t *testing.T) {
+	for code, want := range map[string]int{
+		// the caller's submission to fix
+		"core.operator.issue.unsigned":      http.StatusBadRequest,
+		"core.operator.issue.yet-unwritten": http.StatusBadRequest,
+		"grant.agent.charset":               http.StatusBadRequest,
+		"grant.scope.traversal":             http.StatusBadRequest,
+		"grant.notarget":                    http.StatusBadRequest,
+		"core.lock.note":                    http.StatusBadRequest,
+		"agent.request.unknown":             http.StatusBadRequest,
+		"agent.answer.elsewhere":            http.StatusBadRequest,
+		// authorization, policy, and the tamper defenses saying no
+		"grant.policy.refused":    http.StatusForbidden,
+		"core.grant.guard.forged": http.StatusForbidden,
+		"agent.request.tampered":  http.StatusForbidden,
+		"agent.answer.failed":     http.StatusForbidden,
+		// unnamed stays a page — real failures belong on the error rate
+		"core.grant.store": http.StatusInternalServerError,
 	} {
-		if got := statusFor(code); got != http.StatusBadRequest {
-			t.Errorf("statusFor(%s) = %d, want 400", code, got)
+		if got := statusFor(code); got != want {
+			t.Errorf("statusFor(%s) = %d, want %d", code, got, want)
 		}
-	}
-	if got := statusFor("core.grant.store"); got != http.StatusInternalServerError {
-		t.Errorf("an unnamed code answers %d, and only 500 keeps real failures on the error rate", got)
 	}
 }

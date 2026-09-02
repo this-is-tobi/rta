@@ -171,6 +171,9 @@ func TestAnswersAndFailuresRecordWhoWasActing(t *testing.T) {
 			return operator.AnswerOutcome{Cap: "demo.item.reveal"}, nil
 		},
 		Revoke: func(spec operator.RevokeSpec, write bool) (operator.RevokeOutcome, *view.Error) {
+			if spec.Target == "" && !spec.All {
+				return operator.RevokeOutcome{}, view.Errorf("grant.notarget", "name a capability, or pass --all")
+			}
 			return operator.RevokeOutcome{}, view.Errorf("core.grant.store", "the store is unreadable")
 		},
 	})
@@ -187,9 +190,15 @@ func TestAnswersAndFailuresRecordWhoWasActing(t *testing.T) {
 		[]byte(`{"target":"demo.item.reveal"}`)); status != http.StatusInternalServerError {
 		t.Fatalf("a store failure did not answer 500: %d", status)
 	}
+	// A wired package's refusal — a code statusFor names from outside the
+	// channel's own core.operator vocabulary — records Refused, never
+	// Failed: the row must be findable by the operator grepping refusals.
+	if status, _ := call(operator.VerbGrantRevoke, []byte(`{}`)); status != http.StatusBadRequest {
+		t.Fatalf("a selector-less revoke did not answer 400: %d", status)
+	}
 
 	entries := ledgerEntries(t)
-	if len(entries) != 2 {
+	if len(entries) != 3 {
 		t.Fatalf("wrote %d entries: %+v", len(entries), entries)
 	}
 	ans := entries[0]
@@ -204,6 +213,10 @@ func TestAnswersAndFailuresRecordWhoWasActing(t *testing.T) {
 	}
 	if failed.Args["target"] != "demo.item.reveal" {
 		t.Fatalf("the failed row's args: %+v", failed.Args)
+	}
+	if refused := entries[2]; refused.Outcome != agentlog.Refused || refused.Auth != agentlog.Blocked ||
+		!strings.Contains(refused.Reason, "grant.notarget") {
+		t.Fatalf("a wired refusal's row: %+v", refused)
 	}
 }
 
