@@ -31,10 +31,10 @@ import (
 // caller learns nothing from a refusal beyond its status code, and the real
 // reason goes to stderr.
 //
-// Stage one serves reads only. When mutations join (revoke, issue, consent
-// answers), each rides the same envelope, and ledgering into the agent log
-// is designed against those verbs — for reads, the stderr line naming
-// label, fingerprint and verb is the record.
+// Every verb — reads, grant mutations, consent answers — rides the same
+// envelope. The stderr line naming label, fingerprint and verb is the
+// per-call record here; ledgering operator actions into the agent log is
+// still ahead of this channel, not behind it.
 
 // OperatorConfig assembles an operator handler.
 type OperatorConfig struct {
@@ -63,6 +63,11 @@ type OperatorConfig struct {
 	// with a message naming what the server was started without.
 	Prepare func(spec operator.IssueSpec, label string) (operator.Prepared, *view.Error)
 	Revoke  func(spec operator.RevokeSpec, write bool) (operator.RevokeOutcome, *view.Error)
+	// Pending and Answer implement the consent verbs, wired the same way
+	// from builtin/agent: listing the queue and answering one parked call,
+	// each attributed to the enrolled operator the envelope verified.
+	Pending func() (operator.ConsentList, *view.Error)
+	Answer  func(spec operator.AnswerSpec, label string) (operator.AnswerOutcome, *view.Error)
 }
 
 // maxEnvelopeBytes bounds a /call body. An envelope is a signature around a
@@ -233,6 +238,20 @@ func (h *operatorHandler) dispatch(env operator.Envelope, label string) (any, *v
 			return nil, verr
 		}
 		return g, nil
+	case operator.VerbConsentList:
+		if h.cfg.Pending == nil {
+			return nil, verbUnoffered(env.Verb)
+		}
+		return h.cfg.Pending()
+	case operator.VerbConsentAnswer:
+		if h.cfg.Answer == nil {
+			return nil, verbUnoffered(env.Verb)
+		}
+		var spec operator.AnswerSpec
+		if err := json.Unmarshal(env.Payload, &spec); err != nil {
+			return nil, badPayload(env.Verb, err)
+		}
+		return h.cfg.Answer(spec, label)
 	default:
 		return nil, view.Errorf("core.operator.verb",
 			"this server does not answer %q — its rta may be older than your client", env.Verb).
