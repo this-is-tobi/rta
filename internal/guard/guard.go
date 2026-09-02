@@ -451,10 +451,7 @@ func Unlock(passphrase string) (Signer, *view.Error) {
 		return Signer{}, verr
 	}
 	if st.remote() {
-		return Signer{}, view.Errorf("core.guard.remote",
-			"this machine's guard trusts remote operators only — there is no local key to unlock").
-			WithHint("grants here are issued through the operator channel: `rta grant allow <capability> " +
-				"--server <this server>` from an enrolled operator's own machine")
+		return Signer{}, remoteRefusal()
 	}
 	priv, err := passkey.Unwrap(st.Key, passphrase)
 	if err != nil {
@@ -467,6 +464,30 @@ func Unlock(passphrase string) (Signer, *view.Error) {
 			"%s carries an unreadable key", Path())
 	}
 	return Signer{priv: priv}, nil
+}
+
+func remoteRefusal() *view.Error {
+	return view.Errorf("core.guard.remote",
+		"this machine's guard trusts remote operators only — there is no local key to unlock").
+		WithHint("grants here are issued through the operator channel: `rta grant allow <capability> " +
+			"--server <this server>` from an enrolled operator's own machine")
+}
+
+// UnlockPrompted is the guard-gated flows' one way to a Signer: refuse a
+// remote guard before the prompt — nobody should type a passphrase that
+// cannot exist on this machine — then read it through the shared channels
+// and unlock. Three flows gate on it (grant allow, grant renew, the consent
+// prompt's --ttl branch), and one function is what keeps a fourth from
+// prompting first and discovering remote mode after.
+func UnlockPrompted(req plugin.Request) (Signer, *view.Error) {
+	if Remote() {
+		return Signer{}, remoteRefusal()
+	}
+	pass, verr := PromptSecret(req, false)
+	if verr != nil {
+		return Signer{}, verr
+	}
+	return Unlock(pass)
 }
 
 // Disable removes the state after proving the passphrase. Deleting the file

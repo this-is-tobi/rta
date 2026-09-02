@@ -504,11 +504,7 @@ func runAllow(_ context.Context, req plugin.Request, catalog func() []plugin.Cap
 	// struct as issued, and signing a draft that a later field-set would
 	// silently invalidate is the bug this ordering forbids.
 	if !req.DryRun && guard.Enabled() {
-		pass, verr := guard.PromptSecret(req, false)
-		if verr != nil {
-			return nil, verr
-		}
-		signer, verr := guard.Unlock(pass)
+		signer, verr := guard.UnlockPrompted(req)
 		if verr != nil {
 			return nil, verr
 		}
@@ -767,11 +763,7 @@ func runRenew(_ context.Context, req plugin.Request) (view.View, error) {
 	// dry run declines the write below, so it asks for nothing.
 	var signer *guard.Signer
 	if !req.DryRun && guard.Enabled() {
-		pass, verr := guard.PromptSecret(req, false)
-		if verr != nil {
-			return nil, verr
-		}
-		s, verr := guard.Unlock(pass)
+		s, verr := guard.UnlockPrompted(req)
 		if verr != nil {
 			return nil, verr
 		}
