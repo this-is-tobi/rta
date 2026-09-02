@@ -48,10 +48,10 @@ Read it as a sentence about a *hostile or prompt-injected* agent with a shell an
 ```mermaid
 flowchart TD
     Q{"can the agent<br/>run shell commands?"}
-    Q -->|yes| A["<b>A — hygiene</b><br/>rta is the easy path, and a record<br/>of the calls that took it"]
+    Q -->|yes| A["A — hygiene<br/>rta is the easy path,<br/>and a record of the<br/>calls that took it"]
     Q -->|no| Q2{"can it reach<br/>credentials directly?"}
-    Q2 -->|yes| B["<b>B — enforced</b><br/>rta's gates are the agent's reach"]
-    Q2 -->|no| C["<b>C — contained</b><br/>rta is the only route that exists"]
+    Q2 -->|yes| B["B — enforced<br/>rta's gates are<br/>the agent's reach"]
+    Q2 -->|no| C["C — contained<br/>rta is the only<br/>route that exists"]
 ```
 
 **World A — an unrestricted shell.** rta is hygiene and visibility. It reduces mistakes, gives you a record of what came through the front door, and takes credentials out of the agent's context. It does not contain anything. Most people setting up an agent for the first time are here and do not know it.
