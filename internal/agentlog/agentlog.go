@@ -1097,6 +1097,23 @@ type Report struct {
 	// wrote a file pretending to be part of the ledger, and whatever can do
 	// that is the thing to go and look at.
 	Foreign []string
+	// Unanchored marks the one fault that is repairable, and the distinction
+	// it draws is the whole reason Reanchor can exist safely.
+	//
+	// Broken is set for three different situations and an operator reading it
+	// cannot act on any of them differently: an entry that fails its own
+	// seal, a record shorter than the mark says it should be, and a mark that
+	// is simply not there. Only the last one is a lost *marker* rather than
+	// lost *evidence* — every entry on disk verified, and what is missing is
+	// the note saying where the record was supposed to stop. Re-anchoring
+	// that is bookkeeping.
+	//
+	// Re-anchoring either of the others would be destroying the finding. A
+	// failed seal means a line was edited; a record short of its mark means
+	// entries were removed from the end. In both cases the chain is doing its
+	// job, and a repair command that could not tell them apart would be a
+	// tool for erasing the thing the record exists to show.
+	Unanchored bool
 }
 
 // Verify walks the chain from the beginning of what is still on disk.
@@ -1269,6 +1286,7 @@ func Verify() (Report, error) {
 	switch {
 	case !ok && rep.Entries > 0:
 		rep.Broken = seq
+		rep.Unanchored = true
 		rep.Why = "nothing records where this record is supposed to end, so entries could have been removed from it without trace"
 	case ok && h.Seq > seq:
 		rep.Broken = seq + 1
@@ -1283,6 +1301,72 @@ func Verify() (Report, error) {
 	// entry's own seal — and one with the key can rewrite the mark too. A
 	// check that guards nothing is a check somebody eventually trusts.
 	return rep, nil
+}
+
+// ErrNothingToRepair is returned when Reanchor is asked to fix a record whose
+// fault is not a lost mark — either there is nothing wrong, or what is wrong
+// is evidence rather than bookkeeping. See Report.Unanchored.
+var ErrNothingToRepair = errors.New("the record's fault is not a missing mark")
+
+// Reanchor writes a fresh high-water mark at the record's current tip, for
+// the one case where the entries are intact and only the mark is gone.
+//
+// **The refusal is the feature.** A record that has lost its mark reports
+// BROKEN forever with no way back, because deleting the mark does not help
+// either — absent is exactly the state being reported. That leaves an
+// operator with a permanently alarming record and no supported answer, which
+// is how people learn to ignore the one line that would matter on the day it
+// meant something. So there is a repair, and it is deliberately incapable of
+// touching anything else: Report.Unanchored is set only when every entry on
+// disk verified, so a failed seal or a record shorter than its mark reaches
+// ErrNothingToRepair and stays visible.
+//
+// Verify runs first and unlocked, then the write takes the lock and reads the
+// tip again rather than trusting the one Verify saw. An Append landing in
+// between is not a race to lose: it writes its own correct mark, and reading
+// the tip fresh under the lock means this either writes the same answer or a
+// newer one, never an older one.
+func Reanchor() (int64, error) {
+	rep, err := Verify()
+	if err != nil {
+		return 0, err
+	}
+	if !rep.Unanchored {
+		return 0, ErrNothingToRepair
+	}
+
+	appendMu.Lock()
+	defer appendMu.Unlock()
+	release, err := filelock.Acquire(Path()+".lock", lockStale, lockRetry, lockTimeout)
+	if err != nil {
+		return 0, fmt.Errorf("agent log is busy: %w", err)
+	}
+	defer release()
+
+	key, err := seal.Key(keyFile, false)
+	if err != nil {
+		return 0, err
+	}
+	// settle() rather than the raw bound, because the mark being unreadable is
+	// precisely why bounds() has nothing to report: the segment high-water
+	// lives in the mark this call is about to rewrite, so the directory is the
+	// only thing left that knows how far the record has rolled. Writing a mark
+	// that claimed segment zero would disown rta's own rolled segments.
+	b, err := bounds().settle()
+	if err != nil {
+		return 0, err
+	}
+	last, err := lastEntry(b)
+	if err != nil {
+		return 0, err
+	}
+	if last.Seq == 0 {
+		return 0, ErrNothingToRepair
+	}
+	if err := writeHead(key, last, b.limit); err != nil {
+		return 0, err
+	}
+	return last.Seq, nil
 }
 
 // plural keeps the two truncation messages readable without pulling a
