@@ -16,6 +16,7 @@ import (
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
 
+	grantcap "github.com/this-is-tobi/rule-them-all/builtin/grant"
 	"github.com/this-is-tobi/rule-them-all/builtin/kv"
 	"github.com/this-is-tobi/rule-them-all/internal/config"
 	"github.com/this-is-tobi/rule-them-all/internal/consent"
@@ -262,6 +263,14 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 						Version: version,
 						Agent:   agentName,
 						Stderr:  cmd.ErrOrStderr(),
+						// The mutation verbs, out of builtin/grant — wired here
+						// and not imported inside internal/mcp, so that "this
+						// server prepares and revokes grants for its operators"
+						// is a line somebody typed, the way Secrets: kv.Reveal
+						// is below. Preparation additionally requires the
+						// machine's guard in remote mode, checked per call.
+						Prepare: grantcap.PrepareRemote(reg.Capabilities),
+						Revoke:  grantcap.RevokeRemote,
 					})
 					fmt.Fprintf(cmd.ErrOrStderr(),
 						"rta: operator channel at /operator/v1 as %s, enrolling %s\n",
