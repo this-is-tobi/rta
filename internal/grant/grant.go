@@ -232,6 +232,15 @@ type Grant struct {
 	// across a boundary and the storage a rolling one costs is exactly
 	// proportional to the limit the operator chose.
 	Recent []time.Time `json:"recent,omitempty"`
+	// Sig is the guard's signature over this grant's authority fields —
+	// present exactly when the operator passphrase guard was on at issuance,
+	// see guardcheck.go for what it covers, what it leaves to the seal, and
+	// the all-or-nothing rule loadAll applies to it.
+	//
+	// omitempty is load-bearing for the seal, exactly as Profile documents:
+	// on every grant issued with the guard off the field is the zero string,
+	// re-encodes byte-identically, and every existing seal still verifies.
+	Sig string `json:"sig,omitempty"`
 }
 
 // MaxRate bounds what --rate will accept.
@@ -792,6 +801,13 @@ func loadAll() ([]Grant, *view.Error) {
 			WithHint("no grant is honoured until this is resolved; `rm " + Path() +
 				"` clears every grant, and any that were legitimate can be re-issued")
 	}
+	// After the seal, so the guard's verdict is about rows the seal already
+	// vouched for — the seal keeps the last word on authorship, and a guard
+	// statement about bytes the seal disowns would be a statement about
+	// nothing. Same all-or-nothing stance, see guardcheck.go.
+	if verr := guardChecked(doc.Grants); verr != nil {
+		return nil, verr
+	}
 	return doc.Grants, nil
 }
 
@@ -854,6 +870,9 @@ func Issue(g Grant, write bool) *view.Error {
 	// it is the difference between a grant that never works and never says
 	// why, and a refusal naming the rule and the file it came from.
 	if verr := CheckCeiling(g.Target, g.Scope, g.Profile); verr != nil {
+		return verr
+	}
+	if verr := guardIssuable(g); verr != nil {
 		return verr
 	}
 	return Mutate(func(stored []Grant) ([]Grant, bool) {
