@@ -464,73 +464,28 @@ func runAllow(_ context.Context, req plugin.Request, catalog func() []plugin.Cap
 		return nil, view.Errorf("grant.human", "grants can only be issued by a person").
 			WithHint("ask the operator to run: rta grant allow <capability> --ttl 15m")
 	}
-	target := core.Normalize(req.String("target"))
-	if target == "" {
-		return nil, view.Errorf("grant.notarget", "name what to allow").
-			WithHint("rta grant allow kv.get db-password --ttl 15m")
-	}
-	// A grant that authorizes nothing is worse than an error: `grant list`
-	// shows it looking exactly like a working one, so a typo — kv.gett for
-	// kv.get — reads back as "done" right up until the agent tries the call
-	// it was supposedly just allowed to make, and is refused anyway.
-	if !targetExists(catalog, target) {
-		return nil, view.Errorf("grant.unknowntarget", "%q does not name a registered capability or plugin", target).
-			WithHint("rta explain lists capability IDs, rta plugin list lists plugin names — check for a typo")
-	}
-	profile, pin, verr := checkProfile(target, req.String("profile"))
+	// Validation and construction live in buildGrant, shared with the
+	// operator channel's prepare verb — the machine whose config, policy and
+	// catalogue bind is the machine that builds the grant, whichever flow
+	// asked. From is measured here because it is the one input the shared
+	// builder must not guess: stdio.Real rather than os.Stdin, for the
+	// reason builtin/kv records — after main takes fd 0 away from the
+	// plugins it spawns, os.Stdin is /dev/null and every run would read as
+	// unattended.
+	g, notes, verr := buildGrant(catalog, operatorid.IssueSpec{
+		Target:  req.String("target"),
+		Scope:   req.String("scope"),
+		Profile: req.String("profile"),
+		Agent:   req.String("agent"),
+		TTL:     req.String("ttl"),
+		Note:    req.String("note"),
+		MaxUses: req.Int("max-uses"),
+		Rate:    req.String("rate"),
+	}, core.Origin(req.Surface(), term.IsTerminal(int(stdio.Real().Fd()))))
 	if verr != nil {
 		return nil, verr
 	}
-	ttl, asked, byPolicy, capWhere, verr := parseTTL(req.String("ttl"), target)
-	if verr != nil {
-		return nil, verr
-	}
-	maxUses := req.Int("max-uses")
-	if maxUses < 0 {
-		return nil, view.Errorf("grant.badmaxuses", "--max-uses cannot be negative").
-			WithHint("0 means unlimited within the TTL, which is also the default")
-	}
-	rateMax, rateWindow, verr := parseRate(req.String("rate"))
-	if verr != nil {
-		return nil, verr
-	}
-	scope := strings.TrimSpace(req.String("scope"))
-	if verr := core.CheckScope(scope); verr != nil {
-		return nil, verr
-	}
-	agent := strings.TrimSpace(req.String("agent"))
-	if verr := core.CheckAgent(agent); verr != nil {
-		return nil, verr
-	}
-
-	now := time.Now()
-	g := core.Grant{
-		Target: target,
-		Scope:  scope,
-		// The name and the connection behind it. The pin is what makes this a
-		// grant against a place rather than against a label: edit the
-		// environment afterwards and this stops covering calls on it, instead
-		// of quietly following the name to wherever it now points.
-		Profile:    profile,
-		ProfilePin: pin,
-		// Who may spend it. Empty is not "anybody": it is the server the
-		// operator launched without a name, which is the only caller a grant
-		// issued before agents were named has ever had.
-		Agent:  agent,
-		Issued: now,
-		// Where this came from, so a grant nobody remembers issuing can be
-		// recognised as one. stdio.Real rather than os.Stdin, for the reason
-		// builtin/kv records: after main takes fd 0 away from the plugins it
-		// spawns, os.Stdin is /dev/null and every run would read as
-		// unattended.
-		From:       core.Origin(req.Surface(), term.IsTerminal(int(stdio.Real().Fd()))),
-		Expires:    now.Add(ttl),
-		Note:       req.String("note"),
-		TTL:        strings.TrimSpace(req.String("ttl")),
-		MaxUses:    maxUses,
-		RateMax:    rateMax,
-		RateWindow: rateWindow,
-	}
+	ttl := notes.ttl
 	// The guard, before anything is written: prove the passphrase, sign the
 	// authority. After the Grant is fully built — the signature covers the
 	// struct as issued, and signing a draft that a later field-set would
@@ -559,34 +514,21 @@ func runAllow(_ context.Context, req plugin.Request, catalog func() []plugin.Cap
 			note = " — the guard will ask for its passphrase"
 		}
 		return view.Text{Body: fmt.Sprintf("would allow agents to %s for %s%s%s%s",
-			describe(g), ttl, usesSuffix(maxUses), rateSuffix(g), note)}, nil
+			describe(g), ttl, usesSuffix(g.MaxUses), rateSuffix(g), note)}, nil
 	}
 	msg := fmt.Sprintf("agents may %s for %s (until %s)%s%s",
-		describe(g), ttl, g.Expires.Format("15:04:05"), usesSuffix(maxUses), rateSuffix(g))
-	switch {
-	case ttl < asked:
-		// Which ceiling bit, because "capped" without a source sends somebody
-		// to change a flag that was never the problem. byPolicy and capWhere
-		// are parseTTL's own verdict — not re-derived from `asked` here a
-		// second time, which used to name the team's policy even when rta's
-		// own day was the tighter ceiling and the policy never applied at all.
-		if byPolicy {
-			msg += fmt.Sprintf("\ncapped at %s by your team's policy (you asked for %s) — %s",
-				ttl, asked, capWhere)
-		} else {
-			msg += fmt.Sprintf("\ncapped at the %s maximum (you asked for %s)", core.MaxTTL, asked)
-		}
+		describe(g), ttl, g.Expires.Format("15:04:05"), usesSuffix(g.MaxUses), rateSuffix(g))
+	// Which ceiling bit, and whether the environment this names is even
+	// switched on: worded by cappedNote and inactiveProfileNote, shared with
+	// the operator channel's prepare verb so the remote flow warns in the
+	// same sentences. Said here because the operator has just spent a
+	// command — the clock is running, and a 15-minute grant issued and then
+	// noticed is most of a grant wasted.
+	if n := cappedNote(notes); n != "" {
+		msg += "\n" + n
 	}
-	// A grant for an environment that is not the one switched on cannot be
-	// exercised until it is: the MCP bound refuses every profile but the active
-	// one, in the same words an ungranted call gets. Said here because the
-	// operator has just spent a command and would otherwise watch the agent be
-	// refused with no way to connect the two — the clock is also running, so a
-	// 15-minute grant issued and then noticed is most of a grant wasted.
-	if on := profiles.Active(); on != "" && g.Profile != "" && config.RefName(g.Profile) != on {
-		msg += fmt.Sprintf("\nnote: %s is switched on, so this grant does nothing until "+
-			"`rta use %s` — no agent can reach %s while you are working elsewhere",
-			on, g.Profile, g.Profile)
+	if n := inactiveProfileNote(g); n != "" {
+		msg += "\n" + n
 	}
 	return view.Text{Body: msg}, nil
 }
@@ -1080,7 +1022,7 @@ func grantsTable(grants []core.Grant, stale func(core.Grant) bool) view.Table {
 	// are legitimate, and only the operator knows which of them ran.
 	unwatched := false
 	for _, g := range grants {
-		if g.From == core.FromCommand {
+		if g.From == core.FromCommand || strings.HasPrefix(g.From, core.FromOperatorPrefix) {
 			unwatched = true
 			break
 		}
@@ -1209,122 +1151,25 @@ func runRevoke(_ context.Context, req plugin.Request) (view.View, error) {
 		return nil, view.Errorf("grant.human", "grants can only be revoked by a person").
 			WithHint("ask the operator to run: rta grant revoke <capability>")
 	}
-	all := req.Bool("all")
-	target := core.Normalize(req.String("target"))
-	scope := strings.TrimSpace(req.String("scope"))
-	profile := strings.TrimSpace(req.String("profile"))
-	agent := strings.TrimSpace(req.String("agent"))
-	if !all && target == "" && profile == "" && agent == "" {
+	spec := operatorid.RevokeSpec{
+		All:     req.Bool("all"),
+		Target:  core.Normalize(req.String("target")),
+		Scope:   strings.TrimSpace(req.String("scope")),
+		Profile: strings.TrimSpace(req.String("profile")),
+		Agent:   strings.TrimSpace(req.String("agent")),
+	}
+	if !spec.All && spec.Target == "" && spec.Profile == "" && spec.Agent == "" {
 		return nil, view.Errorf("grant.notarget", "name a capability, or pass --all").
 			WithHint("run `rta grant list` to see what is currently allowed")
 	}
-	// The count, the surviving-coverage warning and the rows that get written
-	// back are three answers to one question, so they are all decided from the
-	// snapshot the lock is held over. Deriving them from an unlocked read let
-	// an operator be told "revoked 1 grant(s)" while a Reserve running at that
-	// instant put the grant back.
-	var body string
-	if verr := core.Mutate(func(stored []core.Grant) ([]core.Grant, bool) {
-		now := time.Now()
-		kept := make([]core.Grant, 0, len(stored))
-		// live is the active subset of kept. The stored file also holds rows
-		// that authorize nothing — expired, or spent and waiting on a refund
-		// — and those must survive a revoke of some other target without ever
-		// being counted or reported as covering anything.
-		var live []core.Grant
-		revoked := 0
-		for _, g := range stored {
-			// Revoking a plugin takes back every grant inside it: the point of
-			// `rta grant revoke kv` in a hurry is that nothing kv-shaped survives
-			// it, not that grants naming a capability slip through.
-			match := all || target == "" || g.Target == target || core.Namespace(g.Target) == target
-			if match && scope != "" && g.Scope != scope {
-				match = false
-			}
-			// A revoke that names a profile takes back that connection and no
-			// other. Without this, `rta grant revoke pg --profile staging`
-			// would have removed the production grant too — the widest possible
-			// reading of the narrowest possible request.
-			//
-			// **Not guarded by !all**, on purpose, the same as scope above.
-			// --all's job is to stand in for a --target nobody typed — the
-			// first clause already does that — and it is not a second, wider
-			// meaning of --profile: `rta grant revoke --all --profile staging`
-			// still has to read as "every target, but only staging". Guarding
-			// this with !all instead made --all silently discard --profile
-			// too, so a request meant to clear one connection took every
-			// other one with it, and "revoked N grant(s)" gave no sign that
-			// --profile had been ignored.
-			if match && profile != "" && g.Profile != profile {
-				match = false
-			}
-			// And the same for an agent: `rta grant revoke kv --agent ci`
-			// takes back what one client was allowed and leaves the others
-			// alone. Without it the narrowest request would again do the
-			// widest thing — and --all does not widen it either, for the
-			// reason given above.
-			if match && agent != "" && g.Agent != agent {
-				match = false
-			}
-			active := g.Active(now)
-			if match {
-				if active {
-					revoked++
-				}
-				continue
-			}
-			kept = append(kept, g)
-			if active {
-				live = append(live, g)
-			}
-		}
-		if revoked == 0 && len(live) == 0 {
-			body = "Nothing to revoke — no grant is active."
-			return nil, false
-		}
-		// A row naming exactly this target can be gone while a wider grant still
-		// authorizes every call it would ever make — "kv" covers "kv.get" the
-		// same way in Check as it does here. Reporting only whether a matching
-		// row existed, without asking whether the target is still reachable
-		// through something wider, is how a namespace grant on kv survived
-		// `rta grant revoke kv.get` while the operator was told there was
-		// nothing to revoke — true of the row, false of the access.
-		// The caller this revoke was about: asking whether the target is
-		// still reachable means asking it for the same agent and connection,
-		// not for some other one that happens to still hold a grant.
-		still := core.Covering(live, target, scope, core.Caller{Agent: agent, Profile: profile})
-		stillCovered := func(line string) string {
-			if still == nil {
-				return line
-			}
-			record := still.Scope
-			if record == "" {
-				record = "any"
-			}
-			return line + fmt.Sprintf("\nstill covered by an active grant on %s (record: %s) — revoke that too: rta grant revoke %s",
-				still.Target, record, still.Target)
-		}
-
-		if revoked == 0 {
-			msg := fmt.Sprintf("No active grant for %s.", target)
-			if still != nil {
-				// "No active grant" would be a flat lie here: nothing named this
-				// target exactly, but something else still authorizes it.
-				msg = fmt.Sprintf("No grant named exactly %s to remove.", target)
-			}
-			body = stillCovered(msg)
-			return nil, false
-		}
-		if req.DryRun {
-			body = stillCovered(fmt.Sprintf("would revoke %d grant(s)", revoked))
-			return nil, false
-		}
-		body = stillCovered(fmt.Sprintf("revoked %d grant(s)", revoked))
-		return kept, true
-	}); verr != nil {
+	// The matching rules and the locked-snapshot discipline live in
+	// revokeOutcome, shared with the operator channel's revoke verb; the
+	// sentences live in revokeBody, shared with the remote flow's rendering.
+	out, verr := revokeOutcome(spec, !req.DryRun)
+	if verr != nil {
 		return nil, verr
 	}
-	return view.Text{Body: body}, nil
+	return view.Text{Body: revokeBody(spec.Target, out, req.DryRun)}, nil
 }
 
 // originLabel is how a grant says where it came from.
@@ -1340,6 +1185,12 @@ func originLabel(g core.Grant) string {
 		return "terminal"
 	case core.FromCommand:
 		return "command"
+	}
+	// A remote operator's grant carries its issuer: "operator:tobi" is the
+	// attribution the roster promised, shown whole because on a
+	// multi-operator server *which* operator is the point of the column.
+	if strings.HasPrefix(g.From, core.FromOperatorPrefix) {
+		return g.From
 	}
 	return "—"
 }

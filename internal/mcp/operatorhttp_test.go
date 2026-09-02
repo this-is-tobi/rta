@@ -12,7 +12,9 @@ import (
 	"time"
 
 	"github.com/this-is-tobi/rule-them-all/internal/grant"
+	"github.com/this-is-tobi/rule-them-all/internal/guard"
 	"github.com/this-is-tobi/rule-them-all/internal/operator"
+	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
 
 // These tests drive the operator channel over the real Serve stack — the
@@ -21,21 +23,33 @@ import (
 // bearer, while everything else on the listener still demands one.
 
 func startOperatorRemote(t *testing.T, roster operator.Roster) string {
+	return startOperatorWith(t, OperatorConfig{Roster: roster})
+}
+
+// startOperatorWith serves cfg over the real stack, filling in the identity
+// fields a test rarely cares about; cfg.URL is always the bound address,
+// because that is what the test's client will sign.
+func startOperatorWith(t *testing.T, cfg OperatorConfig) string {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
+	cfg.URL = "http://" + ln.Addr().String()
+	if cfg.Version == "" {
+		cfg.Version = "test"
+	}
+	if cfg.Agent == "" {
+		cfg.Agent = "demo-agent"
+	}
+	cfg.Stderr = io.Discard
 	server := NewServer(testRegistry(t), "test", Options{})
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
 		done <- Serve(ctx, server, ln, RemoteOptions{
 			Verifier: StaticTokenVerifier(map[string]string{"tok-a": "alice"}),
-			Operator: NewOperatorHandler(OperatorConfig{
-				Roster: roster, URL: "http://" + ln.Addr().String(),
-				Version: "test", Agent: "demo-agent", Stderr: io.Discard,
-			}),
+			Operator: NewOperatorHandler(cfg),
 		})
 	}()
 	t.Cleanup(func() {
@@ -190,5 +204,116 @@ func TestWithoutARosterThePathIsBearerWalled(t *testing.T) {
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("challenge without a roster: %d, want 401", res.StatusCode)
+	}
+}
+
+// errCode digs the view.Error code out of a refusal body.
+func errCode(t *testing.T, body []byte) string {
+	t.Helper()
+	var remote struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(body, &remote); err != nil {
+		t.Fatalf("body is not an error envelope: %s", body)
+	}
+	return remote.Error.Code
+}
+
+// The issue verb's own expectations, each named to an authenticated
+// operator: unsigned, misattributed, clock-skewed and over-ceiling
+// submissions are refused with codes, and preparation is refused outright
+// on a server whose guard never enrolled anyone.
+func TestSubmittedGrantsAreHeldToTheirShape(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	signer, roster := enrolled(t, "tobi")
+	if verr := guard.EnableRemote(roster.Entries()); verr != nil {
+		t.Fatal(verr)
+	}
+	addr := startOperatorWith(t, OperatorConfig{Roster: roster})
+	at := "http://" + addr
+	submit := func(g grant.Grant) (int, []byte) {
+		raw, err := json.Marshal(g)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return postEnvelope(t, addr, signer.Sign(at, fetchChallenge(t, addr), operator.VerbGrantIssue, raw))
+	}
+	base := func() grant.Grant {
+		now := time.Now()
+		return grant.Grant{
+			Target: "demo.item.reveal", From: grant.FromOperatorPrefix + "tobi",
+			Issued: now, Expires: now.Add(15 * time.Minute),
+		}
+	}
+
+	unsigned := base()
+	if _, body := submit(unsigned); errCode(t, body) != "core.operator.issue.unsigned" {
+		t.Fatalf("unsigned: %s", body)
+	}
+
+	misattributed := base()
+	misattributed.From = grant.FromOperatorPrefix + "somebody-else"
+	grant.SignWith(signer.GrantSigner(), &misattributed)
+	if _, body := submit(misattributed); errCode(t, body) != "core.operator.issue.from" {
+		t.Fatalf("misattributed: %s", body)
+	}
+
+	skewed := base()
+	skewed.Issued = skewed.Issued.Add(-time.Hour)
+	grant.SignWith(signer.GrantSigner(), &skewed)
+	if _, body := submit(skewed); errCode(t, body) != "core.operator.issue.skew" {
+		t.Fatalf("skewed: %s", body)
+	}
+
+	over := base()
+	over.Expires = over.Issued.Add(100 * 24 * time.Hour)
+	grant.SignWith(signer.GrantSigner(), &over)
+	if _, body := submit(over); errCode(t, body) != "core.operator.issue.ttl" {
+		t.Fatalf("over ceiling: %s", body)
+	}
+
+	good := base()
+	grant.SignWith(signer.GrantSigner(), &good)
+	if status, body := submit(good); status != http.StatusOK {
+		t.Fatalf("a well-shaped submission was refused: %s", body)
+	}
+	held, verr := grant.Load()
+	if verr != nil || len(held) != 1 || held[0].From != grant.FromOperatorPrefix+"tobi" {
+		t.Fatalf("held = %+v, %v", held, verr)
+	}
+}
+
+// Preparation on a never-provisioned server refuses before the operator
+// signs anything, naming the provisioning step — and a signed grant
+// submitted anyway dies on the store's own gate.
+func TestPrepareRefusesWithoutARemoteGuard(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	signer, roster := enrolled(t, "tobi")
+	addr := startOperatorWith(t, OperatorConfig{
+		Roster: roster,
+		Prepare: func(operator.IssueSpec, string) (operator.Prepared, *view.Error) {
+			t.Fatal("prepare ran with no remote guard")
+			return operator.Prepared{}, nil
+		},
+	})
+	at := "http://" + addr
+	_, body := postEnvelope(t, addr, signer.Sign(at, fetchChallenge(t, addr), operator.VerbGrantPrepare, []byte(`{}`)))
+	if errCode(t, body) != "core.operator.guard" {
+		t.Fatalf("prepare without a remote guard: %s", body)
+	}
+}
+
+// A verb the serve command never wired is refused by name, not served
+// half-broken.
+func TestAnUnwiredVerbSaysSo(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	signer, roster := enrolled(t, "tobi")
+	addr := startOperatorWith(t, OperatorConfig{Roster: roster})
+	at := "http://" + addr
+	_, body := postEnvelope(t, addr, signer.Sign(at, fetchChallenge(t, addr), operator.VerbGrantRevoke, []byte(`{"all":true}`)))
+	if errCode(t, body) != "core.operator.verb" {
+		t.Fatalf("unwired revoke: %s", body)
 	}
 }

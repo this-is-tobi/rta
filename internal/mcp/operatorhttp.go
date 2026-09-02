@@ -56,6 +56,13 @@ type OperatorConfig struct {
 	// NonceTTL overrides the challenge lifetime; zero means operator.NonceTTL.
 	// It exists for tests, like RemoteOptions.ShutdownGrace.
 	NonceTTL time.Duration
+	// Prepare and Revoke implement the grant-mutation verbs, wired from the
+	// app layer out of builtin/grant — the kv.Reveal pattern: "this server
+	// mutates grants for operators" is a line somebody typed, never a
+	// transitive import. nil leaves the verb unoffered, refused post-auth
+	// with a message naming what the server was started without.
+	Prepare func(spec operator.IssueSpec, label string) (operator.Prepared, *view.Error)
+	Revoke  func(spec operator.RevokeSpec, write bool) (operator.RevokeOutcome, *view.Error)
 }
 
 // maxEnvelopeBytes bounds a /call body. An envelope is a signature around a
@@ -144,7 +151,7 @@ func (h *operatorHandler) call(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.logf("%s (%s) called %s", label, env.Fingerprint, env.Verb)
-	res, verr := h.dispatch(env)
+	res, verr := h.dispatch(env, label)
 	if verr != nil {
 		// Past the signature the caller is a named operator, and owed the
 		// real error — this is their server misbehaving, not a stranger
@@ -155,7 +162,7 @@ func (h *operatorHandler) call(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, res)
 }
 
-func (h *operatorHandler) dispatch(env operator.Envelope) (any, *view.Error) {
+func (h *operatorHandler) dispatch(env operator.Envelope, label string) (any, *view.Error) {
 	switch env.Verb {
 	case operator.VerbStatus:
 		return operator.Status{
@@ -171,9 +178,108 @@ func (h *operatorHandler) dispatch(env operator.Envelope) (any, *view.Error) {
 			return nil, verr
 		}
 		return operator.GrantList{Grants: grants, Suppressed: grant.Suppressed()}, nil
+	case operator.VerbGrantRevoke:
+		if h.cfg.Revoke == nil {
+			return nil, verbUnoffered(env.Verb)
+		}
+		var spec operator.RevokeSpec
+		if err := json.Unmarshal(env.Payload, &spec); err != nil {
+			return nil, badPayload(env.Verb, err)
+		}
+		return h.cfg.Revoke(spec, true)
+	case operator.VerbGrantPrepare:
+		if h.cfg.Prepare == nil {
+			return nil, verbUnoffered(env.Verb)
+		}
+		// Preparation is refused outright unless this machine's guard is in
+		// remote mode: an issued grant must carry a signature loadAll will
+		// honour, and only a remote guard honours an operator's. Said at
+		// prepare time — before the operator signs anything — because "your
+		// signed grant was refused" is the wrong first message for a server
+		// that was simply never provisioned for issuance.
+		if !guard.Remote() {
+			return nil, view.Errorf("core.operator.guard",
+				"this server's guard does not trust remote operators, so nothing you sign would be honoured").
+				WithHint("on the server: `rta grant guard remote <roster>` enrolls the operator keys; " +
+					"revocation and listing work regardless")
+		}
+		var spec operator.IssueSpec
+		if err := json.Unmarshal(env.Payload, &spec); err != nil {
+			return nil, badPayload(env.Verb, err)
+		}
+		return h.cfg.Prepare(spec, label)
+	case operator.VerbGrantIssue:
+		var g grant.Grant
+		if err := json.Unmarshal(env.Payload, &g); err != nil {
+			return nil, badPayload(env.Verb, err)
+		}
+		if verr := h.checkSubmitted(g, label); verr != nil {
+			return nil, verr
+		}
+		// grant.Issue re-runs the guard's own gate: the signature must verify
+		// under an enrolled key, inside the store's lock, whoever the network
+		// caller was — the checks above exist for better error messages and
+		// tighter invariants, not as the enforcement.
+		if verr := grant.Issue(g, true); verr != nil {
+			return nil, verr
+		}
+		return g, nil
 	default:
 		return nil, view.Errorf("core.operator.verb",
 			"this server does not answer %q — its rta may be older than your client", env.Verb).
 			WithHint("`rta operator status --server <name>` reports the server's version")
 	}
+}
+
+// checkSubmitted holds a submitted grant to the shape prepare produced:
+// attributed to the operator actually submitting it, timestamped by a clock
+// this server agrees with, and within every ceiling. None of it replaces
+// Issue's own signature check — it turns "refused" into a sentence naming
+// which expectation broke.
+func (h *operatorHandler) checkSubmitted(g grant.Grant, label string) *view.Error {
+	if g.Sig == "" {
+		return view.Errorf("core.operator.issue.unsigned",
+			"the submitted grant carries no signature — sign what prepare returned, unchanged")
+	}
+	if g.From != grant.FromOperatorPrefix+label {
+		// The attribution is part of the signed authority, so an operator
+		// cannot submit a grant prepared for — and signed by — someone else
+		// and have the audit trail name the wrong person.
+		return view.Errorf("core.operator.issue.from",
+			"the submitted grant is attributed to %q, and this call was made by %q", g.From,
+			grant.FromOperatorPrefix+label)
+	}
+	now := time.Now()
+	if skew := now.Sub(g.Issued); skew < -2*time.Minute || skew > 2*time.Minute {
+		return view.Errorf("core.operator.issue.skew",
+			"the grant's issue time is %s from this server's clock — prepare, sign and submit "+
+				"in one flow, and check both machines' clocks", skew.Round(time.Second)).
+			WithHint("Retryable: run the command again")
+	}
+	if !g.Expires.After(now) {
+		return view.Errorf("core.operator.issue.expired", "the submitted grant is already expired")
+	}
+	// The ceiling cannot rewrite a signed authority the way parseTTL clamps
+	// a requested one, so anything over it is refused whole — prepare
+	// already clamps, which makes this reachable only by bypassing prepare.
+	// Both bounds apply, tightest first: rta's own absolute maximum, and the
+	// team policy's if one stands (ClampTTL knows only the latter).
+	limit := grant.MaxTTL
+	if tighter, changed, _ := grant.ClampTTL(limit); changed {
+		limit = tighter
+	}
+	if window := g.Expires.Sub(g.Issued); window > limit {
+		return view.Errorf("core.operator.issue.ttl",
+			"the submitted grant outlives this server's ceiling (%s allowed)", limit)
+	}
+	return grant.CheckCeiling(g.Target, g.Scope, g.Profile)
+}
+
+func verbUnoffered(verb string) *view.Error {
+	return view.Errorf("core.operator.verb",
+		"this server was started without %q — the serve command did not wire it", verb)
+}
+
+func badPayload(verb string, err error) *view.Error {
+	return view.Errorf("core.operator.payload", "decoding the %s payload: %v", verb, err)
 }
