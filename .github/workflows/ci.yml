@@ -162,6 +162,50 @@ jobs:
       COMMAND: --version
       RUNS_ON: '["ubuntu-24.04-arm"]'
 
+  # The full image is a different build of a different thing: eleven plugin
+  # modules, an Alpine base with real packages on it, and a `plugin trust` per
+  # plugin at build time. build-docker above exercises none of that, so
+  # without this a break in it would be found by the release that publishes
+  # it rather than by the pull request that caused it.
+  #
+  # It does cost more than the primary image — eleven extra module builds per
+  # architecture — and the two legs run on their own native runners in
+  # parallel, so the wall-clock is one leg rather than both. If that ever
+  # stops being worth it, this is the job to drop: CD would still build the
+  # image, just later than here.
+  build-docker-full:
+    name: Build full Docker image
+    uses: this-is-tobi/github-workflows/.github/workflows/build-docker.yml@v0
+    permissions:
+      packages: write
+      contents: read
+    with:
+      IMAGE_NAME: ghcr.io/this-is-tobi/rta-full
+      IMAGE_TAG: pr-${{ github.event.pull_request.number }}
+      IMAGE_CONTEXT: ./
+      IMAGE_DOCKERFILE: ./Dockerfile.full
+      PUSH: false
+      BUILD_AMD64: true
+      BUILD_ARM64: true
+      BUILD_ARGS: |
+        VERSION=pr-${{ github.event.pull_request.number }}
+        COMMIT=${{ github.sha }}
+
+  # Worth its own run rather than trusting the primary image's: this one has a
+  # shell script between docker and rta, and an entrypoint that fails to exec
+  # is precisely the "built fine, does not start" gap test-docker exists for.
+  test-docker-full:
+    name: Test full Docker image (arm64)
+    needs: [build-docker-full]
+    uses: this-is-tobi/github-workflows/.github/workflows/test-docker.yml@v0
+    permissions:
+      contents: read
+      packages: read
+    with:
+      IMAGE_ARTIFACT: ${{ needs.build-docker-full.outputs.artifact-prefix }}-arm64
+      COMMAND: --version
+      RUNS_ON: '["ubuntu-24.04-arm"]'
+
   # **A laptop can check this and nobody did.** `builtin/fs/platform.go`
   # asserted on `syscall.Stat_t` behind a comma-ok and documented the Windows
   # case as degrading to "always the same device" — but that type does not
@@ -329,6 +373,8 @@ jobs:
     - build-docker
     - test-docker
     - test-docker-arm64
+    - build-docker-full
+    - test-docker-full
     - cross
     - discover-plugins
     - lint-plugins

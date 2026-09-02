@@ -100,6 +100,34 @@ jobs:
         VERSION=${{ needs.release.outputs.version }}
         COMMIT=${{ github.sha }}
 
+  # The batteries-included image, published beside the narrow one rather than
+  # instead of it. Two images because the narrowness is a security property —
+  # docs/20-mcp.md's "the image is the plugin allowlist" — so the one carrying
+  # every plugin and every tool is a deliberate second choice, not an upgrade
+  # of the first. See Dockerfile.full for the whole argument.
+  #
+  # `latest` tracks it the same way it tracks the primary image. That is the
+  # ordinary expectation of the tag, and the two live in separate packages, so
+  # `rta-full:latest` cannot be reached by anyone who asked for `rta`.
+  docker-full:
+    name: Release full Docker image
+    needs: [release]
+    if: ${{ needs.release.outputs.release-created == 'true' }}
+    uses: this-is-tobi/github-workflows/.github/workflows/build-docker.yml@v0
+    permissions:
+      packages: write
+      contents: read
+    with:
+      IMAGE_NAME: ghcr.io/this-is-tobi/rta-full
+      IMAGE_TAG: ${{ needs.release.outputs.version }}
+      IMAGE_CONTEXT: ./
+      IMAGE_DOCKERFILE: ./Dockerfile.full
+      LATEST_TAG: true
+      TAG_MAJOR_AND_MINOR: true
+      BUILD_ARGS: |
+        VERSION=${{ needs.release.outputs.version }}
+        COMMIT=${{ github.sha }}
+
   # Same reasoning as attest-binaries, against the pushed image digest
   # instead of a release asset — see attest-docker.yml's own notes for why
   # the SBOM verifies differently (cosign) than the provenance (gh
@@ -115,6 +143,25 @@ jobs:
     with:
       IMAGE_NAME: ${{ needs.docker.outputs.image }}
       DIGEST: ${{ needs.docker.outputs.digest }}
+      PROVENANCE: true
+      SBOM: true
+      SIGN: true
+
+  # The full image gets the same attestations as the narrow one, and if
+  # anything needs them more: it carries eleven plugin binaries and a package
+  # manager's worth of tools, so "which build produced this, and what is in
+  # it" is a longer answer that somebody is more likely to want.
+  attest-docker-full:
+    name: Attest full Docker image
+    needs: [docker-full]
+    uses: this-is-tobi/github-workflows/.github/workflows/attest-docker.yml@v0
+    permissions:
+      packages: write
+      id-token: write
+      attestations: write
+    with:
+      IMAGE_NAME: ${{ needs.docker-full.outputs.image }}
+      DIGEST: ${{ needs.docker-full.outputs.digest }}
       PROVENANCE: true
       SBOM: true
       SIGN: true
