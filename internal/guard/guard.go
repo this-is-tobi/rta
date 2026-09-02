@@ -206,7 +206,8 @@ func Verify(msg []byte, sig string) bool {
 // exactly the field this declares.
 var PassphraseField = plugin.Field{
 	Name: "passphrase", Type: plugin.Secret, Local: true,
-	Help: "the guard passphrase (prompted for when omitted at a terminal)",
+	Help: "the guard passphrase — omit it at a terminal and answer the prompt instead: " +
+		"a flag lands in shell history, a prompt lands nowhere",
 }
 
 // PromptSecret reads the passphrase for a guard-gated capability: the
