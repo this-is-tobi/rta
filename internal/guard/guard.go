@@ -44,14 +44,19 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	"filippo.io/age"
+	"golang.org/x/term"
 
 	"github.com/this-is-tobi/rule-them-all/internal/atomicfile"
 	"github.com/this-is-tobi/rule-them-all/internal/seal"
+	"github.com/this-is-tobi/rule-them-all/internal/stdio"
+	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
 
@@ -191,6 +196,68 @@ func Verify(msg []byte, sig string) bool {
 		return false
 	}
 	return v(msg, sig)
+}
+
+// PassphraseField is the input a guard-gated capability declares so the
+// passphrase can arrive through the TUI's masked form field. Local and
+// Secret, and — unlike kv's passphraseField — with NO EnvFallback: the guard
+// exists so that nothing an agent's environment inherits can satisfy it.
+// Beside PromptSecret because the two are one contract: the prompt reads
+// exactly the field this declares.
+var PassphraseField = plugin.Field{
+	Name: "passphrase", Type: plugin.Secret, Local: true,
+	Help: "the guard passphrase (prompted for when omitted at a terminal)",
+}
+
+// PromptSecret reads the passphrase for a guard-gated capability: the
+// request's own Secret field first (the TUI's masked input), then a prompt
+// when a person is there to answer one — builtin/kv's promptPassphrase
+// shape: echo off, prompt to stderr so an eval'd or redirected command never
+// captures it, read from the real stdin because main repoints os.Stdin at
+// /dev/null before spawning plugins. confirm asks twice, for the one moment
+// (enabling) where a typo becomes a passphrase nobody knows.
+//
+// It lives here rather than beside one capability because two plugins gate
+// on it — grant issuance and the consent prompt's --ttl branch — and two
+// implementations of "how the passphrase arrives" is how one of them grows
+// an env fallback someday. There deliberately is none: nothing an agent's
+// environment inherits may satisfy the guard.
+func PromptSecret(req plugin.Request, confirm bool) (string, *view.Error) {
+	if p := req.String("passphrase"); p != "" {
+		return p, nil
+	}
+	if req.Surface() != plugin.SurfaceCLI || !term.IsTerminal(int(stdio.Real().Fd())) {
+		return "", view.Errorf("core.guard.passphrase.required",
+			"the guard needs its passphrase, and there is no terminal to ask at").
+			WithHint("run this at a terminal, or fill the passphrase field in the TUI form")
+	}
+	read := func(prompt string) (string, *view.Error) {
+		fmt.Fprint(os.Stderr, prompt)
+		secret, err := term.ReadPassword(int(stdio.Real().Fd()))
+		fmt.Fprintln(os.Stderr)
+		if err != nil {
+			return "", view.Errorf("core.guard.passphrase.read", "reading the passphrase: %v", err)
+		}
+		return string(secret), nil
+	}
+	p, verr := read("Guard passphrase: ")
+	if verr != nil {
+		return "", verr
+	}
+	if strings.TrimSpace(p) == "" {
+		return "", view.Errorf("core.guard.passphrase.empty", "an empty passphrase is not a guard")
+	}
+	if confirm {
+		again, verr := read("Once more: ")
+		if verr != nil {
+			return "", verr
+		}
+		if p != again {
+			return "", view.Errorf("core.guard.passphrase.mismatch",
+				"the two answers differ — nothing was changed")
+		}
+	}
+	return p, nil
 }
 
 // Enable generates the keypair, wraps the private half under passphrase, and

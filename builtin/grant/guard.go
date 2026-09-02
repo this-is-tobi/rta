@@ -3,69 +3,12 @@ package grant
 import (
 	"context"
 	"fmt"
-	"os"
-	"strings"
-
-	"golang.org/x/term"
 
 	core "github.com/this-is-tobi/rule-them-all/internal/grant"
 	"github.com/this-is-tobi/rule-them-all/internal/guard"
-	"github.com/this-is-tobi/rule-them-all/internal/stdio"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
-
-// guardPassphraseField is how a passphrase reaches a guard-gated capability
-// when a prompt cannot: the TUI's masked field, mostly. Local, Secret, and —
-// unlike kv's passphraseField — with NO EnvFallback: the guard exists so
-// that nothing an agent's environment inherits can satisfy it, and an env
-// channel here would be the hole the whole feature closes.
-var guardPassphraseField = plugin.Field{
-	Name: "passphrase", Type: plugin.Secret, Local: true,
-	Help: "the guard passphrase (prompted for when omitted at a terminal)",
-}
-
-// promptGuardSecret reads the passphrase: the request's field first, then a
-// prompt when a person is there to answer one — kv's promptPassphrase shape,
-// echo off, prompt to stderr, read from the real stdin. confirm asks twice,
-// for the one moment (enabling) where a typo becomes a passphrase nobody
-// knows.
-func promptGuardSecret(req plugin.Request, confirm bool) (string, *view.Error) {
-	if p := req.String("passphrase"); p != "" {
-		return p, nil
-	}
-	if req.Surface() != plugin.SurfaceCLI || !term.IsTerminal(int(stdio.Real().Fd())) {
-		return "", view.Errorf("grant.guard.passphrase.required",
-			"the guard needs its passphrase, and there is no terminal to ask at").
-			WithHint("run this at a terminal, or fill the passphrase field in the TUI form")
-	}
-	read := func(prompt string) (string, *view.Error) {
-		fmt.Fprint(os.Stderr, prompt)
-		secret, err := term.ReadPassword(int(stdio.Real().Fd()))
-		fmt.Fprintln(os.Stderr)
-		if err != nil {
-			return "", view.Errorf("grant.guard.passphrase", "reading the passphrase: %v", err)
-		}
-		return string(secret), nil
-	}
-	p, verr := read("Guard passphrase: ")
-	if verr != nil {
-		return "", verr
-	}
-	if strings.TrimSpace(p) == "" {
-		return "", view.Errorf("grant.guard.passphrase", "an empty passphrase is not a guard")
-	}
-	if confirm {
-		again, verr := read("Once more: ")
-		if verr != nil {
-			return "", verr
-		}
-		if p != again {
-			return "", view.Errorf("grant.guard.passphrase", "the two answers differ — nothing was changed")
-		}
-	}
-	return p, nil
-}
 
 func runGuardOn(_ context.Context, req plugin.Request) (view.View, error) {
 	if req.Surface() == plugin.SurfaceMCP {
@@ -84,7 +27,7 @@ func runGuardOn(_ context.Context, req plugin.Request) (view.View, error) {
 			"then requires the passphrase, and the %d grant(s) currently held are cleared — "+
 			"they were issued without one", len(held))}, nil
 	}
-	pass, verr := promptGuardSecret(req, true)
+	pass, verr := guard.PromptSecret(req, true)
 	if verr != nil {
 		return nil, verr
 	}
@@ -130,7 +73,7 @@ func runGuardOff(_ context.Context, req plugin.Request) (view.View, error) {
 		return view.Text{Body: fmt.Sprintf("would disable the guard after checking the passphrase, "+
 			"clearing the %d grant(s) it signed", len(held))}, nil
 	}
-	pass, verr := promptGuardSecret(req, false)
+	pass, verr := guard.PromptSecret(req, false)
 	if verr != nil {
 		return nil, verr
 	}

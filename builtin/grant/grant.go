@@ -17,6 +17,7 @@ import (
 
 	"github.com/this-is-tobi/rule-them-all/internal/config"
 	core "github.com/this-is-tobi/rule-them-all/internal/grant"
+	"github.com/this-is-tobi/rule-them-all/internal/guard"
 	profiles "github.com/this-is-tobi/rule-them-all/internal/profile"
 	"golang.org/x/term"
 
@@ -104,6 +105,7 @@ func Plugin(catalog func() []plugin.Capability) plugin.Plugin {
 					{Name: "rate", Type: plugin.String, Suggest: suggestRate,
 						Help: "how fast it may be used, as calls/window — e.g. 10/1h"},
 					{Name: "note", Type: plugin.String, Help: "why — shown by grant list"},
+					guard.PassphraseField,
 				},
 				Run: func(ctx context.Context, req plugin.Request) (view.View, error) {
 					return runAllow(ctx, req, catalog)
@@ -131,6 +133,7 @@ func Plugin(catalog func() []plugin.Capability) plugin.Plugin {
 						Help: "only grants for this named agent"},
 					{Name: "ttl", Type: plugin.String, Suggest: suggestTTL,
 						Help: "how much longer — defaults to the window the grant was issued with"},
+					guard.PassphraseField,
 				},
 				Run: runRenew,
 			},
@@ -181,7 +184,7 @@ func Plugin(catalog func() []plugin.Capability) plugin.Plugin {
 					"exists to pin. Grants last a day at most, so re-issuing costs minutes. " +
 					"Forgotten passphrase: remove the guard state and revoke everything — the " +
 					"recovery is loud and loses at most a day of grants, never a secret.",
-				Inputs: []plugin.Field{guardPassphraseField},
+				Inputs: []plugin.Field{guard.PassphraseField},
 				Run:    runGuardOn,
 			},
 			{
@@ -192,7 +195,7 @@ func Plugin(catalog func() []plugin.Capability) plugin.Plugin {
 					"promised. Clears the grants the guard signed, mirroring enable: signatures " +
 					"without a guard beside them read as tampering, by design. Destructive " +
 					"because it removes a protection: the confirmation is the point.",
-				Inputs: []plugin.Field{guardPassphraseField},
+				Inputs: []plugin.Field{guard.PassphraseField},
 				Run:    runGuardOff,
 			},
 			{
@@ -503,6 +506,21 @@ func runAllow(_ context.Context, req plugin.Request, catalog func() []plugin.Cap
 		RateMax:    rateMax,
 		RateWindow: rateWindow,
 	}
+	// The guard, before anything is written: prove the passphrase, sign the
+	// authority. After the Grant is fully built — the signature covers the
+	// struct as issued, and signing a draft that a later field-set would
+	// silently invalidate is the bug this ordering forbids.
+	if !req.DryRun && guard.Enabled() {
+		pass, verr := guard.PromptSecret(req, false)
+		if verr != nil {
+			return nil, verr
+		}
+		signer, verr := guard.Unlock(pass)
+		if verr != nil {
+			return nil, verr
+		}
+		core.SignWith(signer, &g)
+	}
 	// Reading the file and replacing it used to be two unlocked steps here,
 	// which is how a revoke issued in between got written back out. The
 	// replace-equivalent rule itself now lives in core.Issue, shared with
@@ -511,8 +529,12 @@ func runAllow(_ context.Context, req plugin.Request, catalog func() []plugin.Cap
 		return nil, verr
 	}
 	if req.DryRun {
-		return view.Text{Body: fmt.Sprintf("would allow agents to %s for %s%s%s",
-			describe(g), ttl, usesSuffix(maxUses), rateSuffix(g))}, nil
+		note := ""
+		if guard.Enabled() {
+			note = " — the guard will ask for its passphrase"
+		}
+		return view.Text{Body: fmt.Sprintf("would allow agents to %s for %s%s%s%s",
+			describe(g), ttl, usesSuffix(maxUses), rateSuffix(g), note)}, nil
 	}
 	msg := fmt.Sprintf("agents may %s for %s (until %s)%s%s",
 		describe(g), ttl, g.Expires.Format("15:04:05"), usesSuffix(maxUses), rateSuffix(g))
@@ -759,6 +781,22 @@ func runRenew(_ context.Context, req plugin.Request) (view.View, error) {
 	// cannot be read costs the note and nothing else.
 	cfg, cfgErr := config.Load()
 	seenStale := map[string]bool{}
+	// The guard: renewing extends authority, so it costs the passphrase
+	// exactly as issuing does. Unlocked out here — prompting inside a locked
+	// Mutate would hold the grant lock across a human's typing speed — and a
+	// dry run declines the write below, so it asks for nothing.
+	var signer *guard.Signer
+	if !req.DryRun && guard.Enabled() {
+		pass, verr := guard.PromptSecret(req, false)
+		if verr != nil {
+			return nil, verr
+		}
+		s, verr := guard.Unlock(pass)
+		if verr != nil {
+			return nil, verr
+		}
+		signer = &s
+	}
 	if verr := core.Mutate(func(stored []core.Grant) ([]core.Grant, bool) {
 		renewed = nil
 		stale = nil
@@ -804,6 +842,12 @@ func runRenew(_ context.Context, req plugin.Request) (view.View, error) {
 			stored[i].Expires = expires
 			if askedTTL != "" {
 				stored[i].TTL = askedTTL
+			}
+			// A renewal rewrites signed authority — the deadline — so the
+			// extended grant is re-signed under the same locked write, or
+			// loadAll would refuse the whole file as forged on the next read.
+			if signer != nil {
+				core.SignWith(*signer, &stored[i])
 			}
 			renewed = append(renewed, fmt.Sprintf("  %-24s until %s", describe(g), expires.Format("15:04:05")))
 			// A renewal is the only person-facing surface that reports

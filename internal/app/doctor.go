@@ -18,6 +18,7 @@ import (
 	"github.com/this-is-tobi/rule-them-all/internal/config"
 	"github.com/this-is-tobi/rule-them-all/internal/consent"
 	"github.com/this-is-tobi/rule-them-all/internal/grant"
+	"github.com/this-is-tobi/rule-them-all/internal/guard"
 	"github.com/this-is-tobi/rule-them-all/internal/pluginconf"
 	"github.com/this-is-tobi/rule-them-all/internal/plugindist"
 	"golang.org/x/term"
@@ -558,6 +559,18 @@ func doctorReport(reg *registry.Registry) view.View {
 					"(`rta grant renew` moves the deadline and deliberately does not)",
 				len(stale), strings.Join(stale, ", ")))
 		}
+	}
+
+	// Whether issuing a grant costs a secret an agent cannot inherit. An info
+	// row when off rather than a warn: ungated issuance is the default and a
+	// legitimate posture — the row exists so the stronger one is discoverable
+	// exactly where an operator already reads about grants.
+	if guard.Enabled() {
+		add("grant guard", "ok", "on (key "+guard.Fingerprint()+") — issuing or renewing a grant "+
+			"asks for the operator passphrase, so a process running as you cannot mint authority alone")
+	} else {
+		add("grant guard", "info", "off — anything that can run commands as you can issue a grant; "+
+			"`rta grant guard on` puts a passphrase in front of that")
 	}
 
 	// What an MCP server launched from this shell would inherit. The store is
