@@ -38,8 +38,52 @@ jobs:
       contents: read
       pull-requests: read
 
+  # A pull request that only touches prose has nothing for the build, test,
+  # cross-compile or image gates to check, so those jobs skip when every
+  # changed file is documentation. This job is the one place "documentation"
+  # is defined; everything unmatched — code, workflows, build files, anything
+  # new — counts as code, so an unanticipated path fails toward running the
+  # suite rather than skipping it.
+  #
+  # Only the root jobs read this output. Their dependents (test-docker,
+  # the plugin matrix, scan-deps-plugins) skip transitively through `needs`,
+  # and `all-jobs-passed` already counts a skipped job as a pass — it was
+  # built for exactly this. The file list comes from the API rather than a
+  # checkout: it is the pull request's own answer to "what does this change",
+  # needs no third-party filter action, and costs seconds.
+  #
+  # lint-commits and scan-secrets stay unconditional on purpose: a docs PR
+  # still needs conventional commits, and a credential pasted into a docs
+  # page is exactly as leaked as one in code.
+  changes:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+    - name: Classify changed files
+      id: diff
+      run: |-
+        files=$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" --paginate --jq '.[].filename')
+        code=false
+        while IFS= read -r f; do
+          [ -z "$f" ] && continue
+          case "$f" in
+            docs/*|*.md|LICENSE|NOTICE) ;;
+            *) code=true ;;
+          esac
+        done <<< "$files"
+        echo "changed files are docs-only: $([ "$code" = false ] && echo yes || echo no)"
+        echo "code=$code" >> "$GITHUB_OUTPUT"
+
   lint:
     name: Lint
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
     uses: this-is-tobi/github-workflows/.github/workflows/lint-go.yml@v0
     permissions:
       contents: read
@@ -57,6 +101,8 @@ jobs:
   # vet, build and the whole race suite, and was caught by no gate anywhere.
   lint-proto:
     name: Lint proto
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
     uses: this-is-tobi/github-workflows/.github/workflows/lint-proto.yml@v0
     permissions:
       contents: read
@@ -70,6 +116,8 @@ jobs:
 
   test:
     name: Test
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
     uses: this-is-tobi/github-workflows/.github/workflows/test-go.yml@v0
     permissions:
       contents: read
@@ -99,6 +147,8 @@ jobs:
   # build below cannot see.
   build:
     name: Build
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
     uses: this-is-tobi/github-workflows/.github/workflows/build-go.yml@v0
     permissions:
       contents: read
@@ -115,6 +165,8 @@ jobs:
   # costs about what the amd64 leg costs.
   build-docker:
     name: Build Docker image
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
     uses: this-is-tobi/github-workflows/.github/workflows/build-docker.yml@v0
     permissions:
       packages: write
@@ -175,6 +227,8 @@ jobs:
   # image, just later than here.
   build-docker-full:
     name: Build full Docker image
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
     uses: this-is-tobi/github-workflows/.github/workflows/build-docker.yml@v0
     permissions:
       packages: write
@@ -219,6 +273,8 @@ jobs:
   # so once is enough.
   cross:
     name: Cross-compile every target
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -252,6 +308,8 @@ jobs:
   # so the pipeline and the Makefile cannot disagree about what a plugin is.
   discover-plugins:
     name: Discover plugin modules
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -328,6 +386,8 @@ jobs:
   # only reporting.
   scan-deps:
     name: Scan dependencies
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
     uses: this-is-tobi/github-workflows/.github/workflows/scan-govulncheck.yml@v0
     permissions:
       contents: read
@@ -366,6 +426,7 @@ jobs:
     permissions: {}
     needs:
     - lint-commits
+    - changes
     - lint
     - lint-proto
     - test
