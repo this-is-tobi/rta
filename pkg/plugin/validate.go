@@ -638,12 +638,15 @@ func ReservedInputs() []string {
 // not care whose command it is, only that it stopped working.
 var reservedNamespaces = map[string]string{
 	"completion": "generates the shell completion script",
-	"doctor":     "diagnoses the installation, plugins included — the one command that must not be maskable",
-	"explain":    "prints what a capability takes and what it is allowed to do",
-	"help":       "cobra's help command",
-	"init":       "writes a starter configuration",
-	"mcp":        "serves and installs the MCP server",
-	"plugin":     "lists, installs and scaffolds plugins",
+	"config": "rta's own `rta config` commands — the file every profile, credential " +
+		"reference and plugin section lives in; a plugin shadowing the command that " +
+		"describes that file would sit exactly where an operator goes to check it",
+	"doctor":  "diagnoses the installation, plugins included — the one command that must not be maskable",
+	"explain": "prints what a capability takes and what it is allowed to do",
+	"help":    "cobra's help command",
+	"init":    "writes a starter configuration",
+	"mcp":     "serves and installs the MCP server",
+	"plugin":  "lists, installs and scaffolds plugins",
 	"policy": "reads and writes the ceiling no grant may exceed — a plugin taking this " +
 		"name would shadow the command that reports whether a ceiling is in force, which is " +
 		"the one answer that must not come from something an operator has not audited",

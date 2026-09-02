@@ -302,6 +302,7 @@ func NewRoot(reg *registry.Registry, version string) *cobra.Command {
 	root.AddCommand(newUseCommand(opts))
 	root.AddCommand(newPolicyCommand(opts))
 	root.AddCommand(newProfileCommand(reg, opts))
+	root.AddCommand(newConfigCommand())
 	return root
 }
 
