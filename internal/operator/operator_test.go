@@ -1,6 +1,8 @@
 package operator
 
 import (
+	"bytes"
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -373,5 +375,43 @@ func TestARoleAllowsItsVerbsAndNothingElse(t *testing.T) {
 		if RoleRead.Allows(v) {
 			t.Fatalf("read allows %s", v)
 		}
+	}
+}
+
+// Base64 is not injective by default: the char before a 32-byte key's
+// padding carries two bits the lenient decoder ignores, so four spellings
+// name one key. The review that caught this drew the full attack: the same
+// key enrolled twice through an alias spelling — once role=read, once
+// bare — would answer as a full operator and cross into the guard's
+// signing set. One spelling per key, and one label per key by decoded
+// bytes, must both hold.
+func TestAnAliasSpellingOfAKeyDoesNotEnrollTwice(t *testing.T) {
+	freshHome(t)
+	if _, verr := Init("correct horse"); verr != nil {
+		t.Fatal(verr)
+	}
+	line, verr := RosterLine("dash")
+	if verr != nil {
+		t.Fatal(verr)
+	}
+	fields := strings.Fields(line)
+	encoded := fields[1]
+	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+	mal := []byte(encoded)
+	last := len(mal) - 2 // the data char before "=", whose low 2 bits are padding
+	mal[last] = alphabet[strings.IndexByte(alphabet, mal[last])^1]
+	alias := string(mal)
+	aliased, err := base64.StdEncoding.DecodeString(alias)
+	canonical, _ := base64.StdEncoding.DecodeString(encoded)
+	if alias == encoded || err != nil || !bytes.Equal(aliased, canonical) {
+		t.Fatal("the alias does not leniently decode to the same key — the test is not testing")
+	}
+
+	if _, _, err := LoadRoster(writeRoster(t, "mallory "+alias+"\n")); err == nil {
+		t.Fatal("a non-canonical key spelling enrolled")
+	}
+	both := line + " role=read\nmallory " + alias + "\n"
+	if _, _, err := LoadRoster(writeRoster(t, both)); err == nil {
+		t.Fatal("one key enrolled under two labels through an alias spelling")
 	}
 }
