@@ -9,21 +9,44 @@ import (
 	"github.com/this-is-tobi/rule-them-all/internal/registry"
 )
 
-// These two combinations must never reach net.Listen, let alone
-// mcp.Serve — both are checked and refused before this command builds
-// anything that could accept a connection.
+// These combinations must never reach net.Listen, let alone mcp.Serve —
+// each is checked and refused before this command builds anything that
+// could accept a connection.
 
-func TestHTTPRefusesConsentCombination(t *testing.T) {
+func TestHTTPRefusesConsentWithoutOperators(t *testing.T) {
 	cmd := NewRoot(registry.New(), "test")
 	cmd.SetArgs([]string{"mcp", "serve", "--http", "127.0.0.1:0", "--consent"})
 	cmd.SetOut(new(strings.Builder))
 	cmd.SetErr(new(strings.Builder))
 	err := cmd.Execute()
 	if err == nil {
-		t.Fatal("--http --consent was accepted")
+		t.Fatal("--http --consent with no --operators was accepted")
 	}
-	if !strings.Contains(err.Error(), "consent") {
-		t.Errorf("err = %q, want it to name --consent as the reason", err)
+	if !strings.Contains(err.Error(), "consent") || !strings.Contains(err.Error(), "--operators") {
+		t.Errorf("err = %q, want it to name --consent and the --operators fix", err)
+	}
+}
+
+// With a roster named, --consent is a control somebody can exercise, so the
+// consent gate opens and the next check in line — the missing verifier —
+// is what refuses. The roster does not need to exist for this: it is
+// loaded after the verifier checks, and what this test pins is only which
+// gate answered.
+func TestHTTPConsentWithOperatorsClearsTheConsentGate(t *testing.T) {
+	cmd := NewRoot(registry.New(), "test")
+	cmd.SetArgs([]string{"mcp", "serve", "--http", "127.0.0.1:0", "--consent",
+		"--operators", "does-not-matter-yet", "--operators-url", "https://rta.example.com"})
+	cmd.SetOut(new(strings.Builder))
+	cmd.SetErr(new(strings.Builder))
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("--http with no verifier was accepted")
+	}
+	if strings.Contains(err.Error(), "consent") {
+		t.Errorf("err = %q, still the consent refusal despite --operators", err)
+	}
+	if !strings.Contains(err.Error(), "token") {
+		t.Errorf("err = %q, want the missing-verifier refusal next in line", err)
 	}
 }
 
@@ -41,9 +64,10 @@ func TestHTTPRequiresATokenFile(t *testing.T) {
 	}
 }
 
-// The consent check runs first: a caller who passed neither --consent nor
-// --token-file should never see the token-file message stand in for the
-// consent one, since fixing that message's complaint would still refuse.
+// The consent check runs first: a caller who passed --consent with neither
+// --operators nor --token-file should never see the token-file message
+// stand in for the consent one, since fixing that message's complaint
+// would still refuse.
 func TestHTTPConsentIsCheckedBeforeTokenFile(t *testing.T) {
 	cmd := NewRoot(registry.New(), "test")
 	cmd.SetArgs([]string{"mcp", "serve", "--http", "127.0.0.1:0", "--consent"})

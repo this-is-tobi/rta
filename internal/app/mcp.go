@@ -16,6 +16,7 @@ import (
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
 
+	agentcap "github.com/this-is-tobi/rule-them-all/builtin/agent"
 	grantcap "github.com/this-is-tobi/rule-them-all/builtin/grant"
 	"github.com/this-is-tobi/rule-them-all/builtin/kv"
 	"github.com/this-is-tobi/rule-them-all/internal/config"
@@ -161,16 +162,17 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				operatorHandler http.Handler
 			)
 			if httpAddr != "" {
-				// A parked call has nobody positioned to answer it: --consent
-				// waits for the person at the machine, and the machine, over
-				// HTTP, is reached only by the infrastructure-level access this
-				// design deliberately does not build a network surface for (see
-				// docs/20-mcp.md). Refusing to start is the same rule
-				// ConsentNotify already follows one flag over — a control
-				// nobody can exercise must not be allowed to pretend it works.
-				if consentOn {
-					return fmt.Errorf("--consent has nobody positioned to answer on a remote server; " +
-						"see \"Remote hosting\" in docs/20-mcp.md")
+				// A parked call needs a person positioned to answer it. Over
+				// HTTP that person is an enrolled operator answering through
+				// the channel — `rta agent allow <id> --server <name>` — so
+				// --consent stands or falls with --operators: without a
+				// roster there is still nobody to reach, and a control nobody
+				// can exercise must not be allowed to pretend it works (the
+				// same rule ConsentNotify follows one flag over).
+				if consentOn && operatorsFile == "" {
+					return fmt.Errorf("--consent over --http needs --operators: a parked call waits " +
+						"for a person, and enrolled operators answering with `rta agent allow --server` " +
+						"are the only people positioned to; see \"The operator channel\" in docs/20-mcp.md")
 				}
 				if tokenFile == "" && oidcIssuer == "" {
 					return fmt.Errorf("--http needs a way to verify who is calling: pass --token-file or --oidc-issuer")
@@ -275,14 +277,18 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 						Version: version,
 						Agent:   agentName,
 						Stderr:  cmd.ErrOrStderr(),
-						// The mutation verbs, out of builtin/grant — wired here
-						// and not imported inside internal/mcp, so that "this
-						// server prepares and revokes grants for its operators"
-						// is a line somebody typed, the way Secrets: kv.Reveal
-						// is below. Preparation additionally requires the
-						// machine's guard in remote mode, checked per call.
+						// The mutation verbs, out of builtin/grant and
+						// builtin/agent — wired here and not imported inside
+						// internal/mcp, so that "this server prepares and
+						// revokes grants, and answers consent, for its
+						// operators" is a line somebody typed, the way
+						// Secrets: kv.Reveal is below. Preparation
+						// additionally requires the machine's guard in remote
+						// mode, checked per call.
 						Prepare: grantcap.PrepareRemote(reg.Capabilities),
 						Revoke:  grantcap.RevokeRemote,
+						Pending: agentcap.PendingRemote,
+						Answer:  agentcap.AnswerRemote,
 					})
 					fmt.Fprintf(cmd.ErrOrStderr(),
 						"rta: operator channel at /operator/v1 as %s, enrolling %s\n",
