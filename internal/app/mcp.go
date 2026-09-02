@@ -287,8 +287,9 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 						// mode, checked per call.
 						Prepare: grantcap.PrepareRemote(reg.Capabilities),
 						Revoke:  grantcap.RevokeRemote,
-						Pending: agentcap.PendingRemote,
-						Answer:  agentcap.AnswerRemote,
+						Pending: agentcap.PendingRemote(agentName),
+						Answer:  agentcap.AnswerRemote(agentName),
+						Consent: consentOn,
 					})
 					fmt.Fprintf(cmd.ErrOrStderr(),
 						"rta: operator channel at /operator/v1 as %s, enrolling %s\n",
