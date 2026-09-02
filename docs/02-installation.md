@@ -1,5 +1,43 @@
 # Installation
 
+## From a release
+
+Every release ships prebuilt binaries for Linux, macOS and Windows on both `amd64` and `arm64`, as `rta_<version>_<os>_<arch>.tar.gz` (`.zip` on Windows), plus `.deb`/`.rpm`/`.apk` packages for Linux. With the [gh CLI](https://cli.github.com):
+
+```bash
+gh release download --repo this-is-tobi/rule-them-all \
+    --pattern "rta_*_$(uname -s | tr A-Z a-z)_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" \
+    --pattern checksums.txt
+```
+
+Or with nothing but curl — the asset names carry the version, so ask the API which one is latest first:
+
+```bash
+tag=$(curl -s https://api.github.com/repos/this-is-tobi/rule-them-all/releases/latest | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p')
+os=$(uname -s | tr A-Z a-z); arch=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+curl -fsSLO "https://github.com/this-is-tobi/rule-them-all/releases/download/v${tag}/rta_${tag}_${os}_${arch}.tar.gz"
+curl -fsSLO "https://github.com/this-is-tobi/rule-them-all/releases/download/v${tag}/checksums.txt"
+```
+
+**Verify before you extract.** The checksum proves the download is intact; the attestation proves the archive was built by this repository's release workflow from the tagged commit — provenance, not just integrity:
+
+```bash
+shasum -a 256 -c checksums.txt --ignore-missing     # sha256sum on Linux
+gh attestation verify rta_*_"${os}"_"${arch}".tar.gz --owner this-is-tobi
+```
+
+Then put the binary on your `$PATH`:
+
+```bash
+tar -xzf rta_*.tar.gz rta
+install -m 0755 rta /usr/local/bin/rta    # or ~/.local/bin, anywhere on $PATH
+rta --version
+```
+
+On a Debian, RPM or Alpine machine the package does the `$PATH` half for you: download the matching `.deb`, `.rpm` or `.apk` the same way and hand it to `dpkg -i` / `rpm -i` / `apk add --allow-untrusted`.
+
+Upgrading is the same download again — the new binary replaces the old one, and your config, store and grants live in your own directories, untouched (see "Where rta keeps things" below).
+
 ## From source
 
 You need Go 1.26 or newer.
