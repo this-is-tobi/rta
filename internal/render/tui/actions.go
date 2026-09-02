@@ -27,6 +27,18 @@ type capAction struct {
 	label string
 	cap   plugin.Capability
 	src   actionSource
+	// bare runs with what the source gave and asks for nothing more, where
+	// the default is to open a form for any input still unfilled. It exists
+	// because a declaration is not only for this screen: agent.deny carries
+	// `server` and `passphrase` for answering a *remote* queue from the CLI,
+	// and stopping the local one-key deny to ask about them would spend the
+	// safe answer's whole property on inputs this screen never needs. A
+	// required field is still safe under bare — the run refuses without it —
+	// so what bare actually waives is the optional-field form, per action
+	// and on purpose rather than by a global rule: kv.get's unlock form is
+	// the counterexample that keeps this per-action (kv.list's own comment
+	// tells that story).
+	bare bool
 }
 
 // capActionSpecs declares which capabilities each view can reach in one key.
@@ -52,32 +64,33 @@ type capAction struct {
 var capActionSpecs = map[string][]struct {
 	key, label, id string
 	src            actionSource
+	bare           bool
 }{
 	"todo.list": {
-		{"enter", "show", "todo.show", srcRow},
-		{"a", "add", "todo.add", srcNone},
-		{"u", "update", "todo.edit", srcRow},
-		{"d", "done", "todo.done", srcRow},
+		{"enter", "show", "todo.show", srcRow, false},
+		{"a", "add", "todo.add", srcNone, false},
+		{"u", "update", "todo.edit", srcRow, false},
+		{"d", "done", "todo.done", srcRow, false},
 		// The undo for `d`, one key away from it: marking the wrong task
 		// complete is a one-keystroke mistake and should cost one keystroke
 		// to take back.
-		{"o", "re-open", "todo.reopen", srcRow},
-		{"x", "remove", "todo.rm", srcRow},
+		{"o", "re-open", "todo.reopen", srcRow, false},
+		{"x", "remove", "todo.rm", srcRow, false},
 	},
 	"note.list": {
-		{"enter", "show", "note.show", srcRow},
-		{"a", "add", "note.add", srcNone},
-		{"u", "update", "note.edit", srcRow},
-		{"x", "remove", "note.rm", srcRow},
+		{"enter", "show", "note.show", srcRow, false},
+		{"a", "add", "note.add", srcNone, false},
+		{"u", "update", "note.edit", srcRow, false},
+		{"x", "remove", "note.rm", srcRow, false},
 	},
 	// The hosts file is a list you manage, not just read: park an override
 	// with `t`, drop it with `x`. `t` rather than `d` — d is "done" on the
 	// task lists, and a key that means two things across two screens is a
 	// key you hesitate over.
 	"net.hosts.list": {
-		{"a", "add", "net.hosts.add", srcNone},
-		{"t", "toggle", "net.hosts.toggle", srcRow},
-		{"x", "remove", "net.hosts.rm", srcRow},
+		{"a", "add", "net.hosts.add", srcNone, false},
+		{"t", "toggle", "net.hosts.toggle", srcRow, false},
+		{"x", "remove", "net.hosts.rm", srcRow, false},
 	},
 	// A finding names a package, and the question it raises second is what
 	// pulled that package in — which decides whether the fix is a version bump
@@ -87,27 +100,30 @@ var capActionSpecs = map[string][]struct {
 	// The form it opens is seeded with the path the listing ran against, so the
 	// answer is about the project on screen rather than the working directory.
 	"audit.deps": {
-		{"w", "why", "audit.why", srcRow},
+		{"w", "why", "audit.why", srcRow, false},
 	},
 	// A stale grant is something you notice on the dashboard, so taking it
 	// back has to be possible from there and not only from a shell. `n`
 	// re-issues the grant under the cursor, which is what "it expired while I
 	// was still using it" actually needs.
 	"grant.list": {
-		{"a", "allow", "grant.allow", srcNone},
-		{"n", "renew", "grant.allow", srcRow},
-		{"x", "revoke", "grant.revoke", srcRow},
+		{"a", "allow", "grant.allow", srcNone, false},
+		{"n", "renew", "grant.allow", srcRow, false},
+		{"x", "revoke", "grant.revoke", srcRow, false},
 	},
 	// The consent queue, answerable from the screen the operator is already
 	// looking at: a parked call is a question with exactly two
 	// answers, and until now both of them lived in another terminal.
 	//
 	// `a` and `d` are the verbs' own initials, and the asymmetry between them
-	// is the point. Deny carries no second input, so it runs on the keypress
-	// — the safe answer is one key, and a denial the operator did not mean
-	// costs the agent a retry. Allow declares an optional --ttl, so runAction
-	// opens the form for it: granting access stops for a confirmation, which
-	// is the direction that cannot be taken back once a secret has been read.
+	// is the point. Deny is bare, so it runs on the keypress — the safe
+	// answer is one key, and a denial the operator did not mean costs the
+	// agent a retry. Allow is not, so runAction opens its form (--ttl above
+	// all): granting access stops for a confirmation, which is the direction
+	// that cannot be taken back once a secret has been read. The asymmetry
+	// used to fall out of the declarations alone — deny had no second input
+	// — until the remote consent flow gave deny `--server` and a passphrase;
+	// now it is declared here and pinned by consentpane_test.
 	//
 	// `d` also means "done" on the task lists, and net.hosts.list avoided
 	// exactly that overlap. It is deliberate here: this screen is a security
@@ -118,23 +134,27 @@ var capActionSpecs = map[string][]struct {
 		// enter is "show" on every list in this table, and a parked call has
 		// more to show than a row can hold — what it would actually do, most
 		// of all. Reading before answering is the point, so the key that
-		// opens the detail is the one already in everybody's fingers.
-		{"enter", "show", "agent.show", srcRow},
-		{"a", "allow", "agent.allow", srcRow},
-		{"d", "deny", "agent.deny", srcRow},
+		// opens the detail is the one already in everybody's fingers — and
+		// bare, because a form between the list and the reading would teach
+		// people to answer without the reading.
+		{key: "enter", label: "show", id: "agent.show", src: srcRow, bare: true},
+		{key: "a", label: "allow", id: "agent.allow", src: srcRow},
+		{key: "d", label: "deny", id: "agent.deny", src: srcRow, bare: true},
 	},
 	// And the two answers again from the detail page, so reading it does not
 	// mean going back to the list to act on what you read.
 	"agent.show": {
-		{"a", "allow", "agent.allow", srcSelf},
-		{"d", "deny", "agent.deny", srcSelf},
+		{key: "a", label: "allow", id: "agent.allow", src: srcSelf},
+		{key: "d", label: "deny", id: "agent.deny", src: srcSelf, bare: true},
 	},
 	// The tile says how many calls are waiting; these are the two places to
 	// go from there. `g` because l is navigation and every other letter in
-	// "log" is spoken for.
+	// "log" is spoken for. `w` is bare for the tile's own promise — "press w
+	// to answer" has to land on the queue, not on a form asking which remote
+	// server this machine's own waiting calls are on.
 	"agent.overview": {
-		{"w", "waiting", "agent.pending", srcNone},
-		{"g", "log", "agent.log", srcNone},
+		{key: "w", label: "waiting", id: "agent.pending", src: srcNone, bare: true},
+		{key: "g", label: "log", id: "agent.log", src: srcNone},
 	},
 	// `v` reveals, and the argument for it is the argument that was originally
 	// made against it, followed through.
@@ -170,41 +190,41 @@ var capActionSpecs = map[string][]struct {
 	// kv.edit is still absent, for an unrelated reason: it hands the terminal
 	// to $EDITOR, and the terminal is what this program is drawing on.
 	"kv.list": {
-		{"enter", "show", "kv.show", srcRow},
-		{"v", "reveal", "kv.get", srcRow},
-		{"c", "copy", "kv.copy", srcRow},
-		{"a", "add", "kv.set", srcNone},
-		{"s", "set", "kv.set", srcRow},
-		{"m", "rename", "kv.rename", srcRow},
-		{"x", "remove", "kv.rm", srcRow},
+		{"enter", "show", "kv.show", srcRow, false},
+		{"v", "reveal", "kv.get", srcRow, false},
+		{"c", "copy", "kv.copy", srcRow, false},
+		{"a", "add", "kv.set", srcNone, false},
+		{"s", "set", "kv.set", srcRow, false},
+		{"m", "rename", "kv.rename", srcRow, false},
+		{"x", "remove", "kv.rm", srcRow, false},
 	},
 	// The kv tile is `kv status`, which is about the store rather than any
 	// entry — so its actions are the two things you want from there: the
 	// list, and a new secret.
 	"kv.status": {
-		{"s", "secrets", "kv.list", srcNone},
-		{"a", "add", "kv.set", srcNone},
+		{"s", "secrets", "kv.list", srcNone, false},
+		{"a", "add", "kv.set", srcNone, false},
 	},
 	"kv.show": {
-		{"v", "reveal", "kv.get", srcSelf},
-		{"c", "copy", "kv.copy", srcSelf},
-		{"s", "set", "kv.set", srcSelf},
-		{"m", "rename", "kv.rename", srcSelf},
-		{"x", "remove", "kv.rm", srcSelf},
-		{"a", "add", "kv.set", srcNone},
+		{"v", "reveal", "kv.get", srcSelf, false},
+		{"c", "copy", "kv.copy", srcSelf, false},
+		{"s", "set", "kv.set", srcSelf, false},
+		{"m", "rename", "kv.rename", srcSelf, false},
+		{"x", "remove", "kv.rm", srcSelf, false},
+		{"a", "add", "kv.set", srcNone, false},
 	},
 	// The detail pages act on the record they are already showing.
 	"todo.show": {
-		{"u", "update", "todo.edit", srcSelf},
-		{"d", "done", "todo.done", srcSelf},
-		{"o", "re-open", "todo.reopen", srcSelf},
-		{"x", "remove", "todo.rm", srcSelf},
-		{"a", "add", "todo.add", srcNone},
+		{"u", "update", "todo.edit", srcSelf, false},
+		{"d", "done", "todo.done", srcSelf, false},
+		{"o", "re-open", "todo.reopen", srcSelf, false},
+		{"x", "remove", "todo.rm", srcSelf, false},
+		{"a", "add", "todo.add", srcNone, false},
 	},
 	"note.show": {
-		{"u", "update", "note.edit", srcSelf},
-		{"x", "remove", "note.rm", srcSelf},
-		{"a", "add", "note.add", srcNone},
+		{"u", "update", "note.edit", srcSelf, false},
+		{"x", "remove", "note.rm", srcSelf, false},
+		{"a", "add", "note.add", srcNone, false},
 	},
 }
 
@@ -241,7 +261,7 @@ func capActions(reg *registry.Registry, capID string) []capAction {
 	var out []capAction
 	for _, spec := range capActionSpecs[capID] {
 		if c, ok := reg.Capability(spec.id); ok {
-			out = append(out, capAction{key: spec.key, label: spec.label, cap: c, src: spec.src})
+			out = append(out, capAction{key: spec.key, label: spec.label, cap: c, src: spec.src, bare: spec.bare})
 		}
 	}
 	return out

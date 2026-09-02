@@ -6,6 +6,7 @@ import (
 	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
 
@@ -125,10 +126,21 @@ func (m Model) dashboardKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		return m, nil, true
 	default:
 		// Selected-tile actions: one key opens a sibling capability
-		// (e.g. `a` on the todo tile opens the add form).
+		// (e.g. `a` on the todo tile opens the add form). A bare Read
+		// action skips open's form and runs on its defaults — openTile's
+		// own fast path, for the tile promise that names it: "press w to
+		// answer" has to land on the queue, not on a form for the optional
+		// remote-flow inputs the local queue never needs.
 		if a, ok := m.selectedAction(msg.String()); ok {
 			m.origin = modeDashboard
 			m.trail = nil
+			if a.bare && a.cap.Safety == plugin.Read {
+				m.current = a.cap
+				m.lastValues, m.lastYes = nil, false
+				m.row = 0
+				m.refreshPending = false
+				return m, m.startRun(a.cap, nil, false), true
+			}
 			nm, cmd := m.open(a.cap)
 			return nm, cmd, true
 		}
