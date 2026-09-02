@@ -23,6 +23,7 @@ import (
 	"github.com/this-is-tobi/rule-them-all/internal/config"
 	"github.com/this-is-tobi/rule-them-all/internal/grant"
 	"github.com/this-is-tobi/rule-them-all/internal/guard"
+	"github.com/this-is-tobi/rule-them-all/internal/lockdown"
 	"github.com/this-is-tobi/rule-them-all/internal/pathguard"
 	"github.com/this-is-tobi/rule-them-all/internal/profile"
 	"github.com/this-is-tobi/rule-them-all/internal/registry"
@@ -53,6 +54,12 @@ func NewServer(reg *registry.Registry, version string, opts Options) *sdk.Server
 	// one observation: a server that read the state fresh per call would
 	// believe the rollback the pin exists to catch.
 	opts.guardPin = guard.TakePin()
+	// The lock pin is the opposite temperament for the opposite reason: it
+	// re-reads per call, because a lock placed mid-incident must land on the
+	// next request — while remembering the last verified set, so deleting
+	// the file is not an unlock for the process an attacker is talking
+	// through. One pin per server, shared by every handler.
+	opts.locks = lockdown.NewPin()
 	server := sdk.NewServer(&sdk.Implementation{
 		Name:    "rta",
 		Title:   "Rule Them All",
@@ -111,6 +118,24 @@ func handler(c plugin.Capability, opts Options, reg *registry.Registry) sdk.Tool
 // place that writes the ledger sees what happened on every path.
 func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.Registry,
 	req *sdk.CallToolRequest, rec *agentlog.Entry) (*sdk.CallToolResult, error) {
+	// The frozen check comes before every other gate — validation, paths,
+	// grants, consent — because it answers a different question: not "may
+	// this call proceed" but "is this caller allowed to ask". A locked
+	// principal is refused outright and never parked as a consent question:
+	// a lock is the "stop asking me" control for an incident in progress,
+	// and it covers the read tier the grant gate never touches — which is
+	// exactly the surface a misbehaving agent's bearer token still opened
+	// after every grant was revoked.
+	if l, alarm := opts.locks.Check(opts.Agent, credentialName(ctx)); l != nil || alarm != "" {
+		if alarm != "" {
+			fmt.Fprintf(os.Stderr, "rta: %s\n", alarm)
+		}
+		if l != nil {
+			verr := lockdown.Refusal(l)
+			refusedBy(rec, verr)
+			return errResult(verr), nil
+		}
+	}
 	{
 		values := map[string]any{}
 		if raw := req.Params.Arguments; len(raw) > 0 {

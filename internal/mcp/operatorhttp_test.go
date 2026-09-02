@@ -378,10 +378,13 @@ func TestAReadOnlyKeyIsGatedToItsVerbs(t *testing.T) {
 	if status, body := call(operator.VerbConsentList, nil); status != http.StatusOK {
 		t.Fatalf("consent.list verb: %d — %s", status, body)
 	}
+	if status, body := call(operator.VerbLockList, nil); status != http.StatusOK {
+		t.Fatalf("lock.list verb: %d — %s", status, body)
+	}
 
 	for _, verb := range []string{
 		operator.VerbGrantRevoke, operator.VerbGrantPrepare, operator.VerbGrantIssue,
-		operator.VerbConsentAnswer, "grant.future",
+		operator.VerbConsentAnswer, operator.VerbLockAdd, operator.VerbLockRm, "grant.future",
 	} {
 		status, body := call(verb, []byte(`{}`))
 		if errCode(t, body) != "core.operator.role" {

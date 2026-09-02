@@ -10,6 +10,7 @@ import (
 	"github.com/this-is-tobi/rule-them-all/internal/config"
 	"github.com/this-is-tobi/rule-them-all/internal/grant"
 	"github.com/this-is-tobi/rule-them-all/internal/guard"
+	"github.com/this-is-tobi/rule-them-all/internal/lockdown"
 	"github.com/this-is-tobi/rule-them-all/internal/pathguard"
 	"github.com/this-is-tobi/rule-them-all/internal/profile"
 	"github.com/this-is-tobi/rule-them-all/internal/registry"
@@ -27,6 +28,11 @@ type Options struct {
 	// bridge.go. Unexported on purpose: it is this package's own snapshot,
 	// not a knob, and a caller who could set it could also set it wrong.
 	guardPin guard.Pin
+
+	// locks is this process's live view of the frozen principals, checked
+	// before every other gate on every call — see the comment at the top of
+	// call(). Unexported for guardPin's reason; set by NewServer.
+	locks *lockdown.Pin
 
 	// AllowWrite names the plugins whose write-class capabilities are
 	// exposed. Empty means none.

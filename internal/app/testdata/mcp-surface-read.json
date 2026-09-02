@@ -1186,6 +1186,17 @@
     }
   },
   {
+    "name": "lock_list",
+    "description": "── the text below is written by the plugin, not by rta ──\nWho is frozen right now, and why\n\nThe live locks: kind, principal, the note the locked party is shown, who placed it and until when. With --server \u003cname\u003e: reads a remote server's locks as a signed operator call. Never reachable over MCP — who an operator has frozen is incident state, and not an agent's to enumerate.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    }
+  },
+  {
     "name": "net_dns",
     "description": "── the text below is written by the plugin, not by rta ──\nResolve DNS records for a name, or a name for an address\n\n--type auto (the default) asks the question you usually mean: A, AAAA and CNAME for a name, PTR for an address. --server sends the query to a specific resolver instead of the system one, which is how you tell \"the record is wrong\" apart from \"my resolver is stale\". With --detail: the query, the resolver that answered, and how long it took.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
