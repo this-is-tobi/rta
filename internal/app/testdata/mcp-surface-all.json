@@ -1,7 +1,7 @@
 [
   {
     "name": "agent_allow",
-    "description": "── the text below is written by the plugin, not by rta ──\nAllow one parked call\n\nAuthorizes exactly the call the request names, and nothing else — the agent's call proceeds, and no standing state is created. With --ttl it also issues the grant you would have typed (same target, same record, same connection), which is worth doing when the same question is about to be asked five more times. Never reachable over MCP: an agent that could answer its own request would make the whole mechanism theatre.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nAllow one parked call\n\nAuthorizes exactly the call the request names, and nothing else — the agent's call proceeds, and no standing state is created. With --ttl it also issues the grant you would have typed (same target, same record, same connection), which is worth doing when the same question is about to be asked five more times. Never reachable over MCP: an agent that could answer its own request would make the whole mechanism theatre. With --server \u003cname\u003e: answers a call parked on a remote rta server as a signed operator call — every remote answer costs your operator key's passphrase, one-shot included, because the local one-shot's shell-equivalence argument does not travel a network.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
     "destructive_hint": false,
     "input_schema": {
       "additionalProperties": false,
@@ -23,7 +23,7 @@
   },
   {
     "name": "agent_deny",
-    "description": "── the text below is written by the plugin, not by rta ──\nDeny one parked call\n\nThe agent's call is refused with your answer rather than with a timeout, which is the difference between a model that stops and one that retries. Never reachable over MCP.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nDeny one parked call\n\nThe agent's call is refused with your answer rather than with a timeout, which is the difference between a model that stops and one that retries. Never reachable over MCP. With --server \u003cname\u003e: denies a call parked on a remote rta server, as a signed operator call.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
     "destructive_hint": false,
     "input_schema": {
       "additionalProperties": false,
@@ -106,7 +106,7 @@
   },
   {
     "name": "agent_pending",
-    "description": "── the text below is written by the plugin, not by rta ──\nCalls parked right now, waiting for you to allow or deny\n\nWith `rta mcp serve --consent`, a call that needs a grant nobody issued is parked instead of refused, and waits for you. Each row is one such call: its id, what it wants, against which connection, and how long it will keep waiting. Answer with `rta agent allow \u003cid\u003e` or `rta agent deny \u003cid\u003e`.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nCalls parked right now, waiting for you to allow or deny\n\nWith `rta mcp serve --consent`, a call that needs a grant nobody issued is parked instead of refused, and waits for you. Each row is one such call: its id, what it wants, against which connection, and how long it will keep waiting. Answer with `rta agent allow \u003cid\u003e` or `rta agent deny \u003cid\u003e`. With --server \u003cname\u003e (a server from remotes.yaml): the same queue read from a remote rta server as a signed operator call, your operator key's passphrase asked first.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
