@@ -329,7 +329,15 @@ servers:
     url: https://rta.example.com
 ```
 
-— and the existing verbs grow a `--server` flag: `rta grant list --server work` reads that server's roster, `rta operator status --server work` asks who it is (version, agent name, guard state, enrolled operators). Two verbs, both reads; each names its target per call, because an ambient "current server" is how a staging command lands on prod.
+— and the existing verbs grow a `--server` flag. `rta grant list --server work` reads that server's roster; `rta operator status --server work` asks who it is (version, agent name, guard state, enrolled operators); `rta grant revoke kv --server work` takes authority back, with `--dry-run` previewed by the server's own store rather than guessed at from here. Each call names its target, because an ambient "current server" is how a staging command lands on prod.
+
+Issuing remotely takes one more provisioning step, because a grant is authority and authority needs a signature the server will honour. On the server, once: `rta grant guard remote operators.txt` enrolls the roster's keys as the machine's [guard](./21-grants.md) — after which a grant is honoured only when an enrolled operator signed it, and `rta grant allow` at the server's own shell has no key to unlock, by construction. Then, from your machine:
+
+```bash
+rta grant allow kv.get db-password --ttl 15m --server work
+```
+
+The server *prepares* the grant — validation, TTL clamping against its policy, profile pinning, attribution — under its own config and catalogue; your passphrase unlocks the operator key; what the server said it would store is signed byte-for-byte and submitted; and the stored row carries `operator:<label>` in its Origin column, so a multi-operator server's listing names who issued what. The server re-checks everything on submission — attribution against the caller the envelope proved, clock skew, expiry, both TTL ceilings — and the guard's own load-time enforcement then verifies the signature on every read, like any other guard-signed row.
 
 What makes this channel one an agent cannot ride: every call is an ed25519 signature over the server's canonical URL, a single-use nonce the server just issued, the verb and its payload — and the signing key exists on your machine only inside a passphrase, the [guard](./21-grants.md)'s own mechanics pointed outward. The passphrase arrives through a prompt or the TUI's masked field, never from the environment, and is refused on the command line; so an agent that reads every file you own still cannot sign, a captured request replays nowhere and verifies on no other server, and an agent's bearer token opens nothing here — the two mechanisms never meet. The server, for its part, holds only public keys: compromising it forges no operator's hand.
 
