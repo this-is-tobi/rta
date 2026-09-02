@@ -105,8 +105,8 @@ type Model struct {
 	// confirmation stage. Holds the profile name in modeProfiles and the
 	// plugin key in modeProfilePlugins; "" when nothing is armed.
 	armedDelete string
-	width      int
-	height     int
+	width       int
+	height      int
 
 	// Live search bar state (dashboard tile 0).
 	searchEditing bool
