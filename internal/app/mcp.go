@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"os"
 	"runtime"
 	"strings"
@@ -21,6 +22,7 @@ import (
 	"github.com/this-is-tobi/rule-them-all/internal/grant"
 	"github.com/this-is-tobi/rule-them-all/internal/mcp"
 	"github.com/this-is-tobi/rule-them-all/internal/notify"
+	"github.com/this-is-tobi/rule-them-all/internal/operator"
 	"github.com/this-is-tobi/rule-them-all/internal/pathguard"
 	"github.com/this-is-tobi/rule-them-all/internal/registry"
 	"github.com/this-is-tobi/rule-them-all/internal/stdio"
@@ -54,6 +56,7 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 		oidcIssuer       string
 		oidcAudience     string
 		oidcSubjects     []string
+		operatorsFile    string
 	)
 	cmd := &cobra.Command{
 		Use:   "serve",
@@ -134,6 +137,10 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				fmt.Fprintln(cmd.ErrOrStderr(),
 					"rta: --oidc-issuer does nothing without --http, since nothing is listening for a bearer token to guard")
 			}
+			if httpAddr == "" && operatorsFile != "" {
+				fmt.Fprintln(cmd.ErrOrStderr(),
+					"rta: --operators does nothing without --http — at this terminal you already are the operator")
+			}
 			if oidcIssuer == "" && (oidcAudience != "" || len(oidcSubjects) > 0) {
 				fmt.Fprintln(cmd.ErrOrStderr(),
 					"rta: --oidc-audience/--oidc-subject do nothing without --oidc-issuer, since there is no token to verify them against")
@@ -146,8 +153,9 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 			// plainly instead of failing later inside net/http with a less
 			// legible error.
 			var (
-				verifier auth.TokenVerifier
-				ln       net.Listener
+				verifier        auth.TokenVerifier
+				ln              net.Listener
+				operatorHandler http.Handler
 			)
 			if httpAddr != "" {
 				// A parked call has nobody positioned to answer it: --consent
@@ -215,6 +223,32 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 					verifiers = append(verifiers, oidcVerifier)
 				}
 				verifier = mcp.Compose(cmd.ErrOrStderr(), verifiers...)
+				if operatorsFile != "" {
+					roster, groupReadable, err := operator.LoadRoster(operatorsFile)
+					if err != nil {
+						return fmt.Errorf("--operators: %w", err)
+					}
+					if groupReadable {
+						fmt.Fprintf(cmd.ErrOrStderr(),
+							"rta: %s is group-readable — it holds no secret, but anyone who can also write it can enroll themselves\n",
+							operatorsFile)
+					}
+					if runtime.GOOS == "windows" {
+						fmt.Fprintf(cmd.ErrOrStderr(),
+							"rta: %s's permissions were not checked — rta cannot read NTFS ACLs on Windows; "+
+								"make sure only you can write it before relying on it as a trust anchor\n",
+							operatorsFile)
+					}
+					operatorHandler = mcp.NewOperatorHandler(mcp.OperatorConfig{
+						Roster:  roster,
+						Version: version,
+						Agent:   agentName,
+						Stderr:  cmd.ErrOrStderr(),
+					})
+					fmt.Fprintf(cmd.ErrOrStderr(),
+						"rta: operator channel at /operator/v1, enrolling %s\n",
+						strings.Join(roster.Labels(), ", "))
+				}
 			}
 			opts := mcp.Options{
 				Agent:            agentName,
@@ -295,6 +329,7 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				// Serve, unconditionally — see internal/mcp/remote.go.
 				err = mcp.Serve(cmd.Context(), server, ln, mcp.RemoteOptions{
 					Verifier: verifier, Stderr: cmd.ErrOrStderr(),
+					Operator: operatorHandler,
 				})
 			} else {
 				// fd 0 here is the agent's request stream. main() has already
@@ -346,6 +381,9 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 	cmd.Flags().StringSliceVar(&oidcSubjects, "oidc-subject", nil,
 		"subject (\"sub\" claim) allowed to authenticate (repeatable); required with --oidc-issuer, "+
 			"since an issuer and audience alone name an application, not a person")
+	cmd.Flags().StringVar(&operatorsFile, "operators", "",
+		"operator public keys allowed to manage this server remotely, one \"label base64-pubkey\" "+
+			"per line (`rta operator status` prints yours); mounts /operator/v1 beside the MCP endpoint")
 	// Off by default, and the default is the important half: a call parked
 	// in a server nobody is watching is worse than a refusal.
 	cmd.Flags().BoolVar(&consentOn, "consent", false,

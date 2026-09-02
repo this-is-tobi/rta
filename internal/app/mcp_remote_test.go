@@ -121,3 +121,30 @@ func TestHTTPRefusesAnUnreadableTokenFile(t *testing.T) {
 		t.Errorf("err = %q, want it to name the permission problem", err)
 	}
 }
+
+// A roster that will not load refuses startup outright — a server that
+// silently dropped its operator channel would read as "enabled" to the
+// person who passed the flag and as "absent" to everyone else.
+func TestHTTPRefusesAGarbledOperatorsFile(t *testing.T) {
+	dir := t.TempDir()
+	tokens := filepath.Join(dir, "tokens")
+	if err := os.WriteFile(tokens, []byte("alice tok-a\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	roster := filepath.Join(dir, "operators")
+	if err := os.WriteFile(roster, []byte("tobi not-a-key\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := NewRoot(registry.New(), "test")
+	cmd.SetArgs([]string{"mcp", "serve", "--http", "127.0.0.1:0",
+		"--token-file", tokens, "--operators", roster})
+	cmd.SetOut(new(strings.Builder))
+	cmd.SetErr(new(strings.Builder))
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("a garbled --operators file was accepted")
+	}
+	if !strings.Contains(err.Error(), "--operators") {
+		t.Errorf("err = %q, want it to name --operators", err)
+	}
+}
