@@ -11,6 +11,7 @@ import (
 
 	"github.com/this-is-tobi/rule-them-all/builtin/internal/itemstore"
 	"github.com/this-is-tobi/rule-them-all/internal/atomicfile"
+	"github.com/this-is-tobi/rule-them-all/internal/config"
 	"github.com/this-is-tobi/rule-them-all/pkg/format"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
@@ -50,12 +51,40 @@ func runList(_ context.Context, req plugin.Request) (view.View, error) {
 		return view.Text{Body: emptyList(len(s.Entries), kindFilter, req.String("match"))}, nil
 	}
 
+	// Which environments read each entry — config-side metadata joined in
+	// for the person at the terminal, so a listing distinguishes the entries
+	// profiles depend on from the leftovers. Withheld over MCP: an agent
+	// already sees names and kinds, and "this entry authenticates prod" is
+	// reconnaissance it has no call for, while the CLI and TUI user wrote
+	// the mapping themselves. A config that will not load costs the column
+	// and nothing else — the store's own listing must not break because the
+	// config file is broken, and `rta doctor` owns reporting that.
+	usedBy := map[string][]string{}
+	if req.Surface() != plugin.SurfaceMCP {
+		if cfg, err := config.Load(); err == nil {
+			usedBy = cfg.KVUsers()
+		}
+	}
+	withUsers := false
+	for _, k := range names {
+		if len(usedBy[k]) > 0 {
+			withUsers = true
+			break
+		}
+	}
+
 	cols := []view.Column{
 		{Name: "Key"},
 		{Name: "Kind"},
 		{Name: "Size", Kind: view.KindBytes},
 		{Name: "Description"},
 		{Name: "Updated", Kind: view.KindDuration},
+	}
+	// Only when some listed entry has a user: a column of blanks would name
+	// a concept this store does not otherwise have, on every listing, for
+	// operators who never wrote a profile.
+	if withUsers {
+		cols = append(cols, view.Column{Name: "Used by"})
 	}
 	if detail {
 		cols = append(cols, view.Column{Name: "Source"}, view.Column{Name: "Created", Kind: view.KindDuration})
@@ -64,6 +93,9 @@ func runList(_ context.Context, req plugin.Request) (view.View, error) {
 	for _, k := range names {
 		e := s.Entries[k]
 		row := []string{k, e.Kind, format.Bytes(uint64(len(e.Value))), e.Description, itemstore.Age(e.Updated)}
+		if withUsers {
+			row = append(row, strings.Join(usedBy[k], ", "))
+		}
 		if detail {
 			row = append(row, e.origin(), itemstore.Age(e.Created))
 		}
@@ -96,6 +128,15 @@ func runShow(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 	if o := e.origin(); o != "" {
 		pairs = append(pairs, view.Pair{Key: "source", Value: o})
+	}
+	// The same join kv.list makes, for one entry — and withheld over MCP for
+	// the same reason, argued at runList.
+	if req.Surface() != plugin.SurfaceMCP {
+		if cfg, err := config.Load(); err == nil {
+			if users := cfg.KVUsers()[key]; len(users) > 0 {
+				pairs = append(pairs, view.Pair{Key: "used by", Value: strings.Join(users, ", ")})
+			}
+		}
 	}
 	pairs = append(pairs,
 		view.Pair{Key: "updated", Value: itemstore.Age(e.Updated)},

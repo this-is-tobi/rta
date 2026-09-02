@@ -459,6 +459,37 @@ func (c Config) ProfileNames() []string {
 	return out
 }
 
+// KVUsers maps each kv store entry name onto the profiles whose connections
+// read a credential from it, each list sorted.
+//
+// It exists so a listing of the store can say what an entry is *for*: the
+// `secrets: password: kv:prod-db-password` line lives in this file, the entry
+// lives in the store, and nothing joined the two — an operator staring at
+// thirty entries could not see which ones their environments depend on and
+// which are leftovers. Derived here rather than where it is displayed because
+// SecretRefs owns the reference grammar, and a second walker in a display
+// package is how the `kube:` scheme would get silently miscounted the day the
+// grammar grows.
+func (c Config) KVUsers() map[string][]string {
+	out := map[string][]string{}
+	for _, name := range c.ProfileNames() {
+		p := c.Profiles[name]
+		// One mention per profile, however many of its plugins share the
+		// entry — the question is "who depends on this", not "how often".
+		seen := map[string]bool{}
+		for _, key := range p.PluginKeys() {
+			for _, ref := range p.Plugins[key].SecretRefs() {
+				if ref.Scheme != "kv" || seen[ref.Ref] {
+					continue
+				}
+				seen[ref.Ref] = true
+				out[ref.Ref] = append(out[ref.Ref], name)
+			}
+		}
+	}
+	return out
+}
+
 // ProfilesFor lists the configured profiles that configure namespace, sorted.
 func (c Config) ProfilesFor(namespace string) []string {
 	var out []string
