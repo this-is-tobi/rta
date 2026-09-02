@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/goccy/go-yaml"
 
@@ -147,6 +148,28 @@ func Path() string {
 	return filepath.Join(".", ".rta.yaml")
 }
 
+// parseHint turns the YAML parser's own message into a next step.
+//
+// A repeated mapping key earns its own sentence because the general advice is
+// actively wrong for it: the file is not corrupt, and re-creating it with
+// `rta init` would throw away every profile in it to fix one duplicated line.
+//
+// It is also the one parse error rta's own writers cannot produce — a
+// profile's plugins: block is a Go map, so marshalling it can only ever emit a
+// key once. Reaching this means the file was edited by hand, and in practice
+// for one reason: a connection is keyed by plugin namespace and pin, so
+// somebody adding a second database of the same kind copies the block and gets
+// a second `pg@<digest>:` that collides with the first instead of joining it.
+// Saying so is the difference between a fix and an afternoon.
+func parseHint(err error) string {
+	if strings.Contains(err.Error(), "already defined") {
+		return "a profile holds one connection per plugin, keyed `<plugin>@<digest>`, so a " +
+			"second connection for the same plugin replaces that key rather than adding to " +
+			"it — give each one its own profile instead of repeating the key"
+	}
+	return "fix the file or re-create it with `rta init`"
+}
+
 // LoadFile reads the config file alone (missing file = defaults), without
 // applying environment overrides. Anything that reads the config in order to
 // write it back must start here: Load would fold this session's RTA_* into
@@ -163,11 +186,11 @@ func LoadFile() (Config, error) {
 	default:
 		if err := yamlguard.RefuseAnchors(data); err != nil {
 			return cfg, view.Errorf("config.invalid", "parsing %s: %v", Path(), err).
-				WithHint("fix the file or re-create it with `rta init`")
+				WithHint(parseHint(err))
 		}
 		if err := yaml.Unmarshal(data, &cfg); err != nil {
 			return cfg, view.Errorf("config.invalid", "parsing %s: %v", Path(), err).
-				WithHint("fix the file or re-create it with `rta init`")
+				WithHint(parseHint(err))
 		}
 	}
 	// Stamped here, once, rather than asked at each point of use: a file that
