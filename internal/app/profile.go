@@ -300,6 +300,17 @@ func runUse(cmd *cobra.Command, args []string) (view.View, *view.Error) {
 		return currentView(cfg, profile.LoadSelection(), now), nil
 	default:
 		name := strings.TrimSpace(args[0])
+		// A switch is the whole environment; an instance is one connection
+		// inside it. `rta use staging/analytics` is refused rather than
+		// silently narrowed to `staging`, because the two would then be one
+		// keystroke apart and mean the same thing — and the operator who
+		// typed the instance believes something narrower happened.
+		if instance := config.RefInstance(name); instance != "" {
+			return nil, view.Errorf("core.profile.instance.unusable",
+				"%q names one connection; a switch is the whole environment", name).
+				WithHint("`rta use " + config.RefName(name) + "` switches it on — the instance is " +
+					"picked per call, with `--profile " + name + "`, and per grant")
+		}
 		p, ok := cfg.Profiles[name]
 		if !ok {
 			return nil, unknownProfile(cfg, name)

@@ -75,6 +75,9 @@ func profileSetCommand(reg *registry.Registry, render renderFn) *cobra.Command {
 			"  rta profile set staging --plugin pg \\\n" +
 			"      --set host=db.staging.internal --set port=5432 \\\n" +
 			"      --secret password=kv:staging-db-password\n" +
+			"  rta profile set staging --plugin pg/analytics \\\n" +
+			"      --set host=analytics.staging.internal \\\n" +
+			"      --secret password=kv:staging-analytics-password\n" +
 			"  rta use staging",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeProfiles,
@@ -85,7 +88,8 @@ func profileSetCommand(reg *registry.Registry, render renderFn) *cobra.Command {
 	}
 	cmd.Flags().String("note", "", "why this environment exists")
 	cmd.Flags().String("ttl", "", "how long a switch to it lasts (`30m`, `8h`, or `none`)")
-	cmd.Flags().String("plugin", "", "which plugin the connection flags below are about")
+	cmd.Flags().String("plugin", "", "which plugin the connection flags below are about — "+
+		"`pg`, or `pg/analytics` to state one of several connections to it")
 	// StringArray, never StringSlice: StringSlice splits its argument on
 	// commas, so `--set search-path=public,app` would silently become two
 	// malformed pairs. A configuration value is not a list of flags.
@@ -216,7 +220,8 @@ func profileRemoveCommand(reg *registry.Registry, render renderFn) *cobra.Comman
 			return render(cmd, v, verr)
 		},
 	}
-	cmd.Flags().String("plugin", "", "remove only this plugin's entry, keeping the environment")
+	cmd.Flags().String("plugin", "", "remove only this plugin's entry, keeping the environment — "+
+		"`pg`, or `pg/analytics` for one instance of it")
 	_ = cmd.RegisterFlagCompletionFunc("plugin", completeInstalledPlugins)
 	return cmd
 }
@@ -395,7 +400,16 @@ func applyConnectionFlags(cmd *cobra.Command, name string, p *config.Profile,
 	if p.Plugins == nil {
 		p.Plugins = map[string]config.Connection{}
 	}
-	ns := config.PluginNamespace(key)
+	ns, instance, _ := config.SplitKey(key)
+	// The same refusal Check reports and Lookup enforces, made before the
+	// key lands in the file — an operator scripting their setup is not
+	// watching a report.
+	if instance != "" && !config.ValidInstance(instance) {
+		return "", nil, view.Errorf("core.profile.instance.invalid",
+			"%q is not a valid instance label", instance).
+			WithHint("lowercase letters, digits and dashes, starting with a letter — " +
+				"`--plugin " + ns + "/analytics` is the shape")
+	}
 	// Whatever is already there, so a run that states one block leaves the
 	// others exactly as they were.
 	conn := p.Plugins[key]
@@ -412,9 +426,14 @@ func applyConnectionFlags(cmd *cobra.Command, name string, p *config.Profile,
 	// artifact looks like. Adding a second entry made that command produce a
 	// profile with the configuration on the dead half and nothing on the live
 	// one, reported as neither.
+	// Scoped to the same instance: repinning pg must not swallow
+	// pg/analytics' blocks, and stating a new labeled instance must not
+	// migrate the default's configuration onto it — ForInstance is the
+	// entry this run is actually about, where For would resolve a sole
+	// labeled entry as the namespace's answer.
 	var repinnedFrom string
 	if _, here := p.Plugins[key]; !here {
-		if prevKey, prev, found := p.For(ns); found && prevKey != key {
+		if prevKey, prev, found := p.ForInstance(ns, instance); found && prevKey != key {
 			conn, repinnedFrom = prev, prevKey
 		}
 	}
@@ -812,7 +831,10 @@ func pinKey(want string, inst profile.Installed) string {
 	if strings.Contains(want, "@") || inst == nil {
 		return want
 	}
-	if o, known := inst.Origin(want); known && o.External() {
+	// `--plugin pg/analytics` names an instance; the pin belongs to the
+	// namespace half, and the label rides through into the key unchanged.
+	ns, _, _ := config.SplitKey(want)
+	if o, known := inst.Origin(ns); known && o.External() {
 		return want + "@" + o.Short()
 	}
 	return want
