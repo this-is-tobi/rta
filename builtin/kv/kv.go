@@ -188,6 +188,10 @@ func Plugin() plugin.Plugin {
 					"private key, json, file, string) is detected from the content unless --kind says " +
 					"otherwise. Writing an entry never changes who can read the store: that is " +
 					"`kv rekey`, which is destructive for the reason this is not.\n\n" +
+					"With no value at all, --description and --kind relabel an entry that already " +
+					"exists, leaving the secret and both timestamps untouched — so correcting what " +
+					"something is for does not mean fetching and re-typing the secret itself, and " +
+					"does not reset the age `kv list` reports for it.\n\n" +
 					"Setting a key that already exists replaces the secret in it, and nothing keeps " +
 					"the old one — no history, no backup, no undo. That is the same loss as `kv rm`, " +
 					"which an agent may only reach with --allow-destructive and a per-key grant, so " +
@@ -212,7 +216,8 @@ func Plugin() plugin.Plugin {
 					{Name: "kind", Type: plugin.String, Options: kinds,
 						Help: "override the kind detected from the content"},
 				}...),
-				Run: runSet,
+				Prefill: prefillSet,
+				Run:     runSet,
 			},
 			{
 				ID: "kv.edit", Summary: "Open a stored value in $EDITOR and re-encrypt it on save",

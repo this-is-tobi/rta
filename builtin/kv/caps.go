@@ -235,23 +235,28 @@ func runEnv(_ context.Context, req plugin.Request) (view.View, error) {
 }
 
 // valueToStore resolves the value and where it came from.
-func valueToStore(req plugin.Request) (value []byte, filename string, err error) {
+//
+// `given` reports whether a value was supplied at all. Absent is not an error
+// here any more, because it has a second legitimate meaning: an edit that
+// changes only what an entry is *labelled*, leaving the secret alone. runSet
+// decides which of the two it is, since only it knows whether the entry
+// already exists and whether any metadata was named.
+func valueToStore(req plugin.Request) (value []byte, filename string, given bool, err error) {
 	if path := req.String("file"); path != "" {
 		data, err := os.ReadFile(expandHome(path))
 		if err != nil {
-			return nil, "", view.Errorf("kv.file.unreadable", "reading %s: %v", path, err)
+			return nil, "", false, view.Errorf("kv.file.unreadable", "reading %s: %v", path, err)
 		}
 		// Exactly what was on disk. Trimming a trailing newline was a
 		// convenience for text, and it cost every other file its last bytes —
 		// a certificate's final DER byte is not whitespace to be tidied away.
-		return data, filepath.Base(path), nil
+		return data, filepath.Base(path), true, nil
 	}
 	raw := req.String("value")
 	if raw == "" {
-		return nil, "", view.Errorf("kv.set.novalue", "no value given").
-			WithHint("pass a value, or --file to read one from disk")
+		return nil, "", false, nil
 	}
-	return []byte(raw), "", nil
+	return []byte(raw), "", true, nil
 }
 
 // checkKeyName refuses the one key shape the folder convention cannot afford.
@@ -294,6 +299,42 @@ func originOf(req plugin.Request, filename string) string {
 	return "typed"
 }
 
+// prefillSet hands interactive surfaces what an entry is currently labelled,
+// so the form somebody opens on an existing key shows what is there instead
+// of four empty boxes that overwrite it.
+//
+// **The value is deliberately absent, and that is the whole design of this
+// function.** Every other Prefill in the codebase returns the record's
+// content; returning a secret here would put decrypted plaintext into a form
+// box on a screen, which is the one thing the kv row actions are built to
+// avoid — nothing on that screen shows a value, and `v` to reveal is a
+// separate, deliberate act. An empty value box also means the ordinary
+// submit path stays a relabel unless somebody types a new secret, which is
+// exactly the behaviour runSet now implements.
+//
+// A store that will not open is answered with no defaults rather than an
+// error. The form is blocked outright on a Prefill failure (startFormWith),
+// and blocking it would be a regression on a locked store from what this did
+// before there was any prefill at all — opening blank. The passphrase is
+// asked for on submit either way.
+func prefillSet(_ context.Context, req plugin.Request) (map[string]any, error) {
+	key := strings.TrimSpace(req.String("key"))
+	if key == "" {
+		return map[string]any{}, nil
+	}
+	s, verr := load(req)
+	if verr != nil {
+		return map[string]any{}, nil
+	}
+	e, ok := s.Entries[key]
+	if !ok {
+		// A key being invented has nothing to show, and seeding the previous
+		// row's labels onto a new entry would be worse than blank.
+		return map[string]any{}, nil
+	}
+	return map[string]any{"description": e.Description, "kind": e.Kind}, nil
+}
+
 func runSet(_ context.Context, req plugin.Request) (view.View, error) {
 	key := strings.TrimSpace(req.String("key"))
 	if key == "" {
@@ -305,18 +346,27 @@ func runSet(_ context.Context, req plugin.Request) (view.View, error) {
 	if verr := refuseSilentIdentity(req); verr != nil {
 		return nil, verr
 	}
-	value, filename, err := valueToStore(req)
+	value, filename, given, err := valueToStore(req)
 	if err != nil {
 		return nil, err
 	}
 	kind := strings.TrimSpace(req.String("kind"))
-	if kind == "" {
-		kind = detectKind(string(value), filename)
-	} else if !contains(kinds, kind) {
+	if kind != "" && !contains(kinds, kind) {
 		return nil, view.Errorf("kv.set.badkind", "unknown kind %q", kind).
 			WithHint("use one of: " + strings.Join(kinds, ", "))
 	}
-	if req.DryRun {
+	// A call that names neither a value nor anything to relabel is asking for
+	// nothing at all, and saying so beats storing an empty secret.
+	label := kind != "" || req.String("description") != ""
+	if !given && !label {
+		return nil, view.Errorf("kv.set.novalue", "no value given").
+			WithHint("pass a value, or --file to read one from disk — or --description/--kind " +
+				"to change what an existing entry is labelled without touching the secret")
+	}
+	if given && kind == "" {
+		kind = detectKind(string(value), filename)
+	}
+	if req.DryRun && given {
 		return view.Text{Body: fmt.Sprintf("would set %q (%s, %s)", key, kind, format.Bytes(uint64(len(value))))}, nil
 	}
 
@@ -331,16 +381,41 @@ func runSet(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 	now := time.Now()
 	previous, existed := s.Entries[key]
-	e := entry{
-		Value: value, Kind: kind, Filename: filename, Origin: originOf(req, filename),
-		Description: req.String("description"), Created: now, Updated: now,
-	}
-	if existed {
-		e.Created = previous.Created
-		// An edit that says nothing about the description keeps the old one:
-		// re-setting a rotated token should not silently erase what it is for.
-		if e.Description == "" {
-			e.Description = previous.Description
+
+	var e entry
+	if !given {
+		if !existed {
+			return nil, view.Errorf("kv.set.unknown", "%q is not in the store", key).
+				WithHint("pass a value to create it — --description and --kind change what an " +
+					"entry already holding a secret is labelled, and there is nothing to label yet")
+		}
+		// The secret, where it came from, and both timestamps are untouched.
+		// Updated especially: `kv list`'s Updated column is how you see that a
+		// token has been sitting there for fourteen months, and a description
+		// somebody corrected is not a rotation — the same reasoning kv.rename
+		// already records for leaving that column alone when a name changes.
+		e = previous
+		if kind != "" {
+			e.Kind = kind
+		}
+		if d := req.String("description"); d != "" {
+			e.Description = d
+		}
+		if req.DryRun {
+			return view.Text{Body: fmt.Sprintf("would relabel %q (%s)", key, e.Kind)}, nil
+		}
+	} else {
+		e = entry{
+			Value: value, Kind: kind, Filename: filename, Origin: originOf(req, filename),
+			Description: req.String("description"), Created: now, Updated: now,
+		}
+		if existed {
+			e.Created = previous.Created
+			// An edit that says nothing about the description keeps the old one:
+			// re-setting a rotated token should not silently erase what it is for.
+			if e.Description == "" {
+				e.Description = previous.Description
+			}
 		}
 	}
 	s.Entries[key] = e
@@ -348,11 +423,15 @@ func runSet(_ context.Context, req plugin.Request) (view.View, error) {
 		return nil, verr
 	}
 
-	verb := "set"
-	if existed {
-		verb = "updated"
+	var msg string
+	switch {
+	case !given:
+		msg = fmt.Sprintf("relabelled %q (%s) — the secret is unchanged", key, e.Kind)
+	case existed:
+		msg = fmt.Sprintf("updated %q (%s, %s)", key, kind, format.Bytes(uint64(len(value))))
+	default:
+		msg = fmt.Sprintf("set %q (%s, %s)", key, kind, format.Bytes(uint64(len(value))))
 	}
-	msg := fmt.Sprintf("%s %q (%s, %s)", verb, key, kind, format.Bytes(uint64(len(value))))
 	if specs := req.StringSlice("recipient"); len(specs) > 0 {
 		msg += "\nstore re-encrypted — `rta kv recipients` lists who can read it"
 	}
