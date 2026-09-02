@@ -438,8 +438,13 @@ func takeProfile(c plugin.Capability, values map[string]any, opts Options) (stri
 	if name == "" {
 		return "", view.Errorf("core.profile.invalid", "profile must not be empty")
 	}
-	if !config.ValidName(name) {
-		return "", view.Errorf("core.profile.invalid", "%q is not a valid profile name", name)
+	// A reference, not just a name: `staging/analytics` addresses one of
+	// several connections to the same plugin, and it must be expressible
+	// here because a grant can name exactly that. Same grammar as the CLI
+	// flag, so the string in the grant record, the call argument and the
+	// audit line stay one string.
+	if !config.ValidRef(name) {
+		return "", view.Errorf("core.profile.invalid", "%q is not a valid profile reference", name)
 	}
 	return name, nil
 }

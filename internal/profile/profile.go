@@ -153,7 +153,7 @@ func Lookup(cfg config.Config, c plugin.Capability, ref string, inst Installed) 
 			// label wants the list, not "configure pg".
 			return none, view.Errorf("core.profile.instance",
 				"profile %q has no %s instance called %q", name, ns, instance).
-				WithHint("it has: " + strings.Join(instanceRefs(p, name, ns), ", "))
+				WithHint("it has: " + strings.Join(InstanceRefs(p, name, ns), ", "))
 		}
 	case p.Ambiguous(ns):
 		// Several labeled connections and no default. Picking one by sort
@@ -162,7 +162,7 @@ func Lookup(cfg config.Config, c plugin.Capability, ref string, inst Installed) 
 		// the refusal that makes a labeled entry addressable at all.
 		return none, view.Errorf("core.profile.instance.required",
 			"profile %q holds several %s connections, so a call must name which one", name, ns).
-			WithHint("one of: " + strings.Join(instanceRefs(p, name, ns), ", "))
+			WithHint("one of: " + strings.Join(InstanceRefs(p, name, ns), ", "))
 	default:
 		key, conn, covered = p.For(ns)
 	}
@@ -402,11 +402,11 @@ func capabilitiesOf(inst Installed) []plugin.Capability {
 	return inst.Capabilities()
 }
 
-// instanceRefs renders a profile's entries for one namespace the way a call
+// InstanceRefs renders a profile's entries for one namespace the way a call
 // would name them — `staging` for the default, `staging/analytics` for a
 // labeled one — so a hint about instances is in the grammar the fix uses.
 // For a person at a terminal; internal/mcp discards hints.
-func instanceRefs(p config.Profile, name, ns string) []string {
+func InstanceRefs(p config.Profile, name, ns string) []string {
 	labels := p.Instances(ns)
 	out := make([]string, 0, len(labels))
 	for _, l := range labels {

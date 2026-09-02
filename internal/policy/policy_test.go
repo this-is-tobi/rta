@@ -139,7 +139,12 @@ func TestForbidsCoversTheAxesItClaims(t *testing.T) {
 		{"a namespace grant on a forbidden namespace", "vault", "", "", true},
 		{"an ordinary capability", "kv.set", "k", "", false},
 		{"a forbidden connection", "pg.query", "", "prod", true},
+		// The ceiling names the environment, and an instance is inside it:
+		// `neverProfile: [prod]` that let `prod/analytics` through would be
+		// bypassable by one slash.
+		{"an instance of a forbidden connection", "pg.query", "", "prod/analytics", true},
 		{"another connection", "pg.query", "", "staging", false},
+		{"an instance of another connection", "pg.query", "", "staging/analytics", false},
 		// The "every secret at once" grant, which is the pressure folder
 		// scopes exist to relieve — refused here, and the scoped one allowed.
 		{"an unscoped grant where a record is required", "kv.get", "", "", true},

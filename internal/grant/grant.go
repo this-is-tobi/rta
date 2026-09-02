@@ -33,6 +33,7 @@ import (
 	"time"
 
 	"github.com/this-is-tobi/rule-them-all/internal/atomicfile"
+	"github.com/this-is-tobi/rule-them-all/internal/config"
 	"github.com/this-is-tobi/rule-them-all/internal/filelock"
 	"github.com/this-is-tobi/rule-them-all/internal/paths"
 	"github.com/this-is-tobi/rule-them-all/internal/policy"
@@ -1234,7 +1235,12 @@ func reachable(grants []Grant, by Caller) (view []Grant, at []int) {
 // see reachableNow for why that chaining is exactly the hazard this
 // function's sibling exists to avoid.
 func callerReachable(g Grant, by Caller) bool {
-	if by.Active != "" && g.Profile != "" && g.Profile != by.Active {
+	// By the name half: the switch is the whole environment, so an active
+	// `staging` keeps a grant naming `staging/analytics` reachable — the
+	// instance is inside the place the operator switched on, and dropping it
+	// would make activating an environment revoke consent for its own
+	// databases.
+	if by.Active != "" && g.Profile != "" && config.RefName(g.Profile) != by.Active {
 		return false
 	}
 	if by.Profile != "" && g.Profile == by.Profile && !samePin(g.ProfilePin, by.Pin) {
@@ -1679,7 +1685,10 @@ func RevokeProfile(name string, now time.Time) int {
 		revoked = 0
 		kept := make([]Grant, 0, len(stored))
 		for _, g := range stored {
-			if g.Profile == name {
+			// By the name half: deleting an environment deletes its
+			// instances, so a grant naming `staging/analytics` must not
+			// outlive `staging` as a row that reads like access.
+			if config.RefName(g.Profile) == name {
 				if g.Active(now) {
 					revoked++
 				}

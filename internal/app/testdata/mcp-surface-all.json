@@ -1050,7 +1050,7 @@
           "type": "string"
         },
         "profile": {
-          "description": "narrow it to one configured connection",
+          "description": "narrow it to one configured connection — name/instance when an environment holds several for this plugin",
           "type": "string"
         },
         "rate": {

@@ -94,7 +94,8 @@ func Plugin(catalog func() []plugin.Capability) plugin.Plugin {
 					{Name: "scope", Type: plugin.String, Positional: true, Suggest: suggestTargetScope,
 						Help: "narrow it to one record: a key, a task id, a hostname"},
 					{Name: "profile", Type: plugin.String, Suggest: suggestConfiguredProfiles,
-						Help: "narrow it to one configured connection"},
+						Help: "narrow it to one configured connection — name/instance when an " +
+							"environment holds several for this plugin"},
 					{Name: "agent", Type: plugin.String, Suggest: suggestHeldAgents,
 						Help: "narrow it to one named agent — the name `rta mcp serve --as` uses"},
 					{Name: "ttl", Type: plugin.String, Default: "15m", Suggest: suggestTTL,
@@ -274,8 +275,17 @@ func suggestConfiguredProfiles(_ context.Context, req plugin.Request) []string {
 	}
 	target := core.Normalize(req.String("target"))
 	if ns := core.Namespace(target); target != "" && ns != "" {
-		if named := cfg.ProfilesFor(ns); len(named) > 0 {
-			return named
+		// The refs a grant would accept, not just the names: an environment
+		// holding several connections to this plugin completes as
+		// staging/analytics beside staging, because that is the string
+		// checkProfile requires — offering only the name would complete
+		// straight into the instance-required refusal.
+		var refs []string
+		for _, name := range cfg.ProfilesFor(ns) {
+			refs = append(refs, profiles.InstanceRefs(cfg.Profiles[name], name, ns)...)
+		}
+		if len(refs) > 0 {
+			return refs
 		}
 	}
 	return cfg.ProfileNames()
@@ -298,15 +308,16 @@ func suggestConfiguredProfiles(_ context.Context, req plugin.Request) []string {
 // because this function has already loaded the config and already holds the
 // profile, and because the pin has to describe the connection the operator is
 // looking at when they decide.
-func checkProfile(target, name string) (string, string, *view.Error) {
-	name = strings.TrimSpace(name)
-	if name == "" {
+func checkProfile(target, ref string) (string, string, *view.Error) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
 		return "", "", nil
 	}
 	cfg, err := config.Load()
 	if err != nil {
 		return "", "", view.AsError(err, "grant.config")
 	}
+	name, instance := config.SplitRef(ref)
 	p, ok := cfg.Profiles[name]
 	if !ok {
 		return "", "", view.Errorf("grant.unknownprofile", "no profile named %q", name).
@@ -328,7 +339,30 @@ func checkProfile(target, name string) (string, string, *view.Error) {
 			"profile %q says nothing about %s", name, ns).
 			WithHint(profileCovers(p, name))
 	}
-	key, conn, ok := p.For(ns)
+	// One instance, exactly. Consent is a decision about a connection, and
+	// "analytics, not the main database" is precisely the distinction the
+	// operator minting a grant is making — so a bare name over several
+	// labeled connections is refused with the refs a grant would use, never
+	// resolved by sort order into a consent nobody gave.
+	var (
+		key  string
+		conn config.Connection
+	)
+	switch {
+	case instance != "":
+		key, conn, ok = p.ForInstance(ns, instance)
+		if !ok {
+			return "", "", view.Errorf("grant.unknowninstance",
+				"profile %q has no %s instance called %q", name, ns, instance).
+				WithHint("it has: " + strings.Join(profiles.InstanceRefs(p, name, ns), ", "))
+		}
+	case p.Ambiguous(ns):
+		return "", "", view.Errorf("grant.instancerequired",
+			"profile %q holds several %s connections, and consent must name which one", name, ns).
+			WithHint("one of: " + strings.Join(profiles.InstanceRefs(p, name, ns), ", "))
+	default:
+		key, conn, ok = p.For(ns)
+	}
 	if !ok {
 		// Covers() just said otherwise, so this is a target with no namespace
 		// at all — nothing a grant can name today, and a pin over the whole
@@ -336,7 +370,7 @@ func checkProfile(target, name string) (string, string, *view.Error) {
 		return "", "", view.Errorf("grant.profilescope",
 			"%q does not name a plugin, so there is no connection to grant against", target)
 	}
-	return name, profiles.ConnStamp(key, conn), nil
+	return ref, profiles.ConnStamp(key, conn), nil
 }
 
 func profileCovers(p config.Profile, name string) string {
@@ -462,7 +496,7 @@ func runAllow(_ context.Context, req plugin.Request, catalog func() []plugin.Cap
 	// operator has just spent a command and would otherwise watch the agent be
 	// refused with no way to connect the two — the clock is also running, so a
 	// 15-minute grant issued and then noticed is most of a grant wasted.
-	if on := profiles.Active(); on != "" && g.Profile != "" && g.Profile != on {
+	if on := profiles.Active(); on != "" && g.Profile != "" && config.RefName(g.Profile) != on {
 		msg += fmt.Sprintf("\nnote: %s is switched on, so this grant does nothing until "+
 			"`rta use %s` — no agent can reach %s while you are working elsewhere",
 			on, g.Profile, g.Profile)

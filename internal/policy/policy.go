@@ -151,7 +151,11 @@ func (c Ceiling) Forbids(target, scope, profile string) string {
 	}
 	if profile != "" {
 		for _, p := range c.NeverProfile {
-			if p == profile {
+			// A ceiling naming an environment covers every instance inside
+			// it: `neverProfile: [prod]` must forbid `prod/analytics`, or
+			// the ceiling is bypassable by one slash. The exact match stays
+			// first so a ceiling may also name a single instance.
+			if p == profile || p == config.RefName(profile) {
 				return fmt.Sprintf("no grant may name the %q connection", p)
 			}
 		}
