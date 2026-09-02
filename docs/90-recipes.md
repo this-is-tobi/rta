@@ -308,6 +308,9 @@ profiles:
       pg@685186a7f1c2:
         kube: staging/shop/svc/postgres:5432
         secrets: {password: kube:postgres-creds/password}
+      pg/analytics@685186a7f1c2:    # a second database, picked as --profile shop-staging/analytics
+        kube: staging/shop/svc/postgres-analytics:5432
+        secrets: {password: kube:analytics-creds/password}
       s3@a586c1f19b04:
         set: {endpoint: https://s3.staging.internal, bucket: shop-assets}
         secrets: {secret-key: kv:shop-staging-s3}

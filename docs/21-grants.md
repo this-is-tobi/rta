@@ -93,6 +93,7 @@ This is exactly why a [team policy ceiling](./23-team-policy.md) needs no seal: 
 - **It does not widen a path root.** Path confinement is checked separately, on every path argument.
 - **It does not survive a ceiling.** If a `.rta-policy.yaml` says `maxTTL: 15m`, a `--ttl 2h` grant is clamped to 15m and told so.
 - **It does not authorize a profile you have not configured.** `--profile staging` matches the connection named `staging`, exactly.
+- **It does not blur instances.** When an environment holds several connections to one plugin — `pg` and `pg/analytics` — a grant names exactly one (`--profile staging/analytics`), and asking for the bare name is refused with the list rather than resolved into a consent you did not give. Each grant pins the instance it was issued against, so re-aiming that one connection revokes exactly that grant.
 
 ## Next
 
