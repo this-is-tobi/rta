@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
+	"github.com/this-is-tobi/rule-them-all/internal/agentlog"
 	"github.com/this-is-tobi/rule-them-all/internal/grant"
 	"github.com/this-is-tobi/rule-them-all/internal/guard"
 	"github.com/this-is-tobi/rule-them-all/internal/lockdown"
@@ -33,9 +35,10 @@ import (
 // reason goes to stderr.
 //
 // Every verb — reads, grant mutations, consent answers — rides the same
-// envelope. The stderr line naming label, fingerprint and verb is the
-// per-call record here; ledgering operator actions into the agent log is
-// still ahead of this channel, not behind it.
+// envelope. The mutations also land in the agent ledger, attributed
+// operator:<label> — see mutationEntry for which and why — so the sealed
+// file that shows an approved call also shows who approved it. Reads leave
+// only the stderr line naming label, fingerprint and verb.
 
 // OperatorConfig assembles an operator handler.
 type OperatorConfig struct {
@@ -167,6 +170,23 @@ func (h *operatorHandler) call(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.logf("%s (%s) called %s", label, env.Fingerprint, env.Verb)
+	// The row is written before the response leaves, never in a defer
+	// after it: a mutation the caller has seen acknowledged must already
+	// be in the record, or a crash between the two acknowledges an action
+	// history never shows. The bridge has the same ordering — its record
+	// runs before the handler returns the result to the SDK.
+	rec := h.mutationEntry(env, label)
+	status, answer := h.answer(env, label, role, rec)
+	if rec != nil {
+		record(*rec)
+	}
+	writeJSON(w, status, answer)
+}
+
+// answer runs one verified call, classifying the outcome into the wire
+// answer and — when rec is non-nil — the ledger row.
+func (h *operatorHandler) answer(env operator.Envelope, label string,
+	role operator.Role, rec *agentlog.Entry) (int, any) {
 	// The frozen check sits past the signature and before everything else,
 	// the role gate included: a locked operator key gets no verb at all,
 	// which is what makes locking the answer to a compromised key that
@@ -182,21 +202,162 @@ func (h *operatorHandler) call(w http.ResponseWriter, r *http.Request) {
 			if l.Note != "" {
 				msg += ": " + l.Note
 			}
-			writeJSON(w, http.StatusForbidden, errorBody{Error: view.Errorf("core.lock.operator", "%s", msg).
+			verr := view.Errorf("core.lock.operator", "%s", msg).
 				WithHint("another full operator lifts it with `rta lock rm operator " + label +
-					" --server <this server>`, or a person at the machine runs it directly")})
-			return
+					" --server <this server>`, or a person at the machine runs it directly")
+			refusedBy(rec, verr)
+			return http.StatusForbidden, errorBody{Error: verr}
 		}
 	}
+	start := time.Now()
 	res, verr := h.dispatch(env, label, role)
 	if verr != nil {
+		if rec != nil {
+			// statusFor already sorts the channel's errors into "this server
+			// working as configured" and "unexpected failure", and the ledger's
+			// Refused/Failed split is the same line: a 4xx is a gate saying no
+			// (the zero outcome, plus the reason), a 500 is a verb that was
+			// allowed and whose work went wrong.
+			if statusFor(verr.Code) == http.StatusInternalServerError {
+				rec.Outcome, rec.Auth = agentlog.Failed, agentlog.Operator
+				rec.Reason = verr.Code + ": " + verr.Message
+				rec.Millis = time.Since(start).Milliseconds()
+			} else {
+				refusedBy(rec, verr)
+			}
+		}
 		// Past the signature the caller is a named operator, and owed the
 		// real error — this is their server misbehaving, not a stranger
 		// probing it.
-		writeJSON(w, statusFor(verr.Code), errorBody{Error: verr})
+		return statusFor(verr.Code), errorBody{Error: verr}
+	}
+	if rec != nil {
+		rec.Outcome, rec.Auth = agentlog.Ran, agentlog.Operator
+		rec.Millis = time.Since(start).Milliseconds()
+	}
+	return http.StatusOK, res
+}
+
+// mutationEntry opens the ledger row for a verb that changes something,
+// nil for everything else — which is the recording rule in one line. The
+// channel's mutations are what the rest of the record is read against: a
+// revoked grant explains the refusals after it, an issued one the calls it
+// covers, an answered consent is the other half of the agent row marked
+// auth=approved, and a lock explains a principal going quiet — so who did
+// each belongs in the same sealed file, not only in stderr scrollback.
+// Reads stay off the record because a watching dashboard polls them, and
+// at one status call every few seconds a recorded poll is real history
+// churned out of the ledger's retention.
+//
+// Opened only past Verify, so every row names an enrolled key. The route
+// is reachable unauthenticated, and a stranger who could write rows by
+// POSTing garbage would hold a disk-filling primitive against the one
+// file that must outlive an incident.
+//
+// Cap carries the verb under an "operator." prefix because the bare verb
+// names collide with builtin capability IDs — grant.revoke is also a
+// capability an agent can probe over MCP, and its refused row must not be
+// grep-identical to an operator actually revoking.
+//
+// The zero outcome is the bridge's: Refused/Blocked, "refused before
+// anything could authorize it", flipped only by the paths that allow.
+func (h *operatorHandler) mutationEntry(env operator.Envelope, label string) *agentlog.Entry {
+	args, mutates := mutationArgs(env)
+	if !mutates {
+		return nil
+	}
+	return &agentlog.Entry{
+		Cap:        "operator." + env.Verb,
+		Agent:      h.cfg.Agent,
+		Credential: grant.FromOperatorPrefix + label,
+		Outcome:    agentlog.Refused,
+		Auth:       agentlog.Blocked,
+		Args:       args,
+	}
+}
+
+// mutationArgs decodes what a mutation verb asked for into the ledger's
+// args column, and answers whether the verb mutates at all.
+//
+// Decoded beside dispatch rather than threaded through it — a second
+// unmarshal of a small payload buys every case staying untouched. Only
+// named fields are copied, never the raw payload: the payload is
+// caller-controlled JSON and a ledger line is read back by people in
+// terminals and by agents grepping it, so what reaches it gets the same
+// selected, cleaned treatment auditArgs gives a tool call's arguments. A
+// mutation payload that does not decode still records the attempt, with
+// no arguments — dispatch is about to refuse it and the row carries that
+// reason.
+//
+// A dry-run revoke is the one mutation verb that changes nothing, and it
+// is skipped for the reads' reason: it is a preview.
+func mutationArgs(env operator.Envelope) (map[string]any, bool) {
+	args := map[string]any{}
+	switch env.Verb {
+	case operator.VerbGrantRevoke:
+		var spec operator.RevokeSpec
+		if err := json.Unmarshal(env.Payload, &spec); err != nil {
+			return nil, true
+		}
+		if spec.DryRun {
+			return nil, false
+		}
+		if spec.All {
+			args["all"] = true
+		}
+		putArg(args, "target", spec.Target)
+		putArg(args, "scope", spec.Scope)
+		putArg(args, "profile", spec.Profile)
+		putArg(args, "agent", spec.Agent)
+	case operator.VerbGrantIssue:
+		var g grant.Grant
+		if err := json.Unmarshal(env.Payload, &g); err != nil {
+			return nil, true
+		}
+		putArg(args, "target", g.Target)
+		putArg(args, "scope", g.Scope)
+		putArg(args, "profile", g.Profile)
+		putArg(args, "agent", g.Agent)
+	case operator.VerbConsentAnswer:
+		var spec operator.AnswerSpec
+		if err := json.Unmarshal(env.Payload, &spec); err != nil {
+			return nil, true
+		}
+		putArg(args, "id", spec.ID)
+		args["allow"] = spec.Allow
+	case operator.VerbLockAdd:
+		var spec operator.LockSpec
+		if err := json.Unmarshal(env.Payload, &spec); err != nil {
+			return nil, true
+		}
+		putArg(args, "kind", spec.Kind)
+		putArg(args, "name", spec.Name)
+		putArg(args, "note", spec.Note)
+		putArg(args, "ttl", spec.TTL)
+	case operator.VerbLockRm:
+		var spec operator.LockRmSpec
+		if err := json.Unmarshal(env.Payload, &spec); err != nil {
+			return nil, true
+		}
+		putArg(args, "kind", spec.Kind)
+		putArg(args, "name", spec.Name)
+	default:
+		return nil, false
+	}
+	if len(args) == 0 {
+		args = nil
+	}
+	return args, true
+}
+
+// putArg records one string field, skipping empties so rows stay as tight
+// as the specs that made them, and cleaned because every value here
+// crossed the network inside a payload rta did not write.
+func putArg(args map[string]any, key, val string) {
+	if val == "" {
 		return
 	}
-	writeJSON(w, http.StatusOK, res)
+	args[key] = cleanValue(val)
 }
 
 // statusFor sorts a dispatch refusal into its HTTP class. The named codes
@@ -213,6 +374,16 @@ func statusFor(code string) int {
 	case "core.operator.role", "core.operator.consent", "core.operator.verb", "core.operator.guard":
 		return http.StatusForbidden
 	case "core.operator.payload", "core.lock.kind", "core.lock.ttl", "core.lock.name":
+		return http.StatusBadRequest
+	}
+	// The issue path's own refusals are the client's submission failing a
+	// stated expectation — "sign what prepare returned, unchanged" — which
+	// is the caller's request to fix, not this server failing. Matched by
+	// prefix because the family grows with checkSubmitted, and a new
+	// expectation forgotten here would page somebody as a server error.
+	// The ledger rides this classification too (see answer), so the prefix
+	// is also what keeps those rows Refused rather than Failed.
+	if strings.HasPrefix(code, "core.operator.issue.") {
 		return http.StatusBadRequest
 	}
 	return http.StatusInternalServerError

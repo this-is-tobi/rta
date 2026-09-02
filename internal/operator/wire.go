@@ -57,6 +57,17 @@ const (
 	VerbLockRm = "lock.rm"
 )
 
+// Verbs is the wire's whole vocabulary, for the callers that need it
+// closed: the ledger's recording rule classifies every verb as recorded
+// or not, and its test walks this list so a new constant above cannot
+// ship unclassified.
+func Verbs() []string {
+	return []string{
+		VerbStatus, VerbGrantList, VerbGrantRevoke, VerbGrantPrepare, VerbGrantIssue,
+		VerbConsentList, VerbConsentAnswer, VerbLockList, VerbLockAdd, VerbLockRm,
+	}
+}
+
 // IssueSpec is what an operator asks to allow, in the raw strings they
 // typed. Deliberately unparsed: the server's rules — its policy ceiling,
 // its TTL grammar, its catalogue — are the ones that bind, and parsing
