@@ -1,6 +1,9 @@
 package grant
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/base64"
 	"os"
 	"reflect"
 	"strings"
@@ -200,5 +203,49 @@ func TestEveryGrantFieldIsSignedOrConsciouslyExcluded(t *testing.T) {
 		if _, in := g[name]; !in {
 			t.Errorf("authority.%s signs a field Grant does not have", name)
 		}
+	}
+}
+
+// The remote guard, end to end at the store level: a grant signed by an
+// enrolled operator's key is a guard-signed grant — same bytes, same
+// context, same all-or-nothing enforcement — and one signed by anything
+// else kills nothing but itself at issue time, exactly as an unsigned one
+// would under a local guard.
+func TestARemoteGuardHonoursOperatorSignedGrants(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verr := guard.EnableRemote([]guard.OperatorKey{
+		{Label: "tobi", PublicKey: base64.StdEncoding.EncodeToString(pub)},
+	}); verr != nil {
+		t.Fatal(verr)
+	}
+	g := stamped("demo.item.reveal")
+	SignWith(guard.SignerFor(priv), &g)
+	if verr := Issue(g, true); verr != nil {
+		t.Fatal(verr)
+	}
+	held, verr := Load()
+	if verr != nil {
+		t.Fatal(verr)
+	}
+	if len(held) != 1 || held[0].Target != "demo.item.reveal" {
+		t.Fatalf("held = %+v", held)
+	}
+
+	_, stranger, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	forged := stamped("demo.item.write")
+	SignWith(guard.SignerFor(stranger), &forged)
+	verr = Issue(forged, true)
+	if verr == nil {
+		t.Fatal("a stranger-signed grant issued under the remote guard")
+	}
+	if verr.Code != "core.grant.guard.unsigned" {
+		t.Fatalf("code = %s, want core.grant.guard.unsigned", verr.Code)
 	}
 }
