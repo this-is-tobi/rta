@@ -305,7 +305,32 @@ TLS is not this process's job. Bind to a private address and put a reverse proxy
 
 Every request's verified identity is recorded a third way, beside `--as` and the client's own self-report: `rta agent log` shows which credential actually authenticated each call — a token's label, an OIDC subject — so more than one credential valid for an instance stays distinguishable instead of collapsing into one indistinguishable principal.
 
-### The surface changes shape
+### The operator channel
+
+A remote server closes the agent out of `grant allow` — and closes you out with it: its grant roster lived behind whatever infrastructure access reaches the machine. The operator channel is the way back in that an agent cannot use.
+
+```bash
+# on your machine, once
+rta operator init                     # mints your key; prints the line below
+# on the server, in a file only its owner can write
+tobi 4Jx…base64…Qk=                   # one "label base64-pubkey" per line
+# start the server with it
+rta mcp serve --http :8443 --token-file tokens.txt --operators operators.txt
+```
+
+`--operators` mounts `/operator/v1` beside the MCP endpoint. Name the server in `remotes.yaml` beside your config —
+
+```yaml
+servers:
+  work:
+    url: https://rta.example.com
+```
+
+— and the existing verbs grow a `--server` flag: `rta grant list --server work` reads that server's roster, `rta operator status --server work` asks who it is (version, agent name, guard state, enrolled operators). Two verbs, both reads; each names its target per call, because an ambient "current server" is how a staging command lands on prod.
+
+What makes this channel one an agent cannot ride: every call is an ed25519 signature over a single-use nonce the server just issued, and the signing key exists on your machine only inside a passphrase — the [guard](./21-grants.md)'s own mechanics, pointed outward. The passphrase arrives through a prompt or the TUI's masked field, never from the environment, and is refused on the command line; so an agent that reads every file you own still cannot sign, a captured request replays nowhere, and an agent's bearer token opens nothing here — the two mechanisms never meet. The server, for its part, holds only public keys: compromising it forges no operator's hand.
+
+The roster is the token file's kind of trust anchor and gets the same treatment: rta never writes it, weak permissions refuse startup, and it is read once — a rewrite behind a running server's back changes nothing until the next deliberate restart. Plain `http://` in `remotes.yaml` is refused for anything but loopback, and for the OIDC issuer's reason: the signature protects what you send, TLS protects what you *read* — a grant listing rewritten in transit is decisions made on a lie.
 
 `sys`, `fs`, `git`, `keys.list`, and the parts of `net` that read or change this host's own network configuration (`net.info`, `net.hosts.*`, `net.resolver.*`) answer for the machine rta happens to run on. Over HTTP those are never registered as tools at all — absent from `tools/list`, not refused when called — because a remote caller is never this machine. `rta mcp serve --http` says so at startup:
 
@@ -325,7 +350,7 @@ The `kv` store is exactly as strong remotely as locally, no stronger — "unlock
 
 Plugin confinement (`rta doctor`'s "plugin confinement" row) is `sandbox-exec` on macOS and nothing on Linux — a deliberate, documented gap rather than an oversight, and Linux is the realistic OS for a remote gateway. A hardened deployment supplies its own process sandboxing there — containers, seccomp, a read-only root filesystem, an egress allowlist — since rta contributes none of its own on that platform.
 
-Consent has nowhere to go yet. `--consent` refuses to combine with `--http` because answering a parked call needs a channel to reach a person, and this design deliberately does not build one — see [the cost table](./19-the-boundary.md#what-this-means-for-a-team) for what that would take.
+Consent still has nowhere to go. `--consent` refuses to combine with `--http` because answering a parked call needs a channel to reach a person, and while [the operator channel](#the-operator-channel) is now that channel for reading a server's state, it does not carry consent decisions — the refusal stands until answering through it is built, rather than pretending a parked call has somewhere to land. See [the cost table](./19-the-boundary.md#what-this-means-for-a-team) for the rest of what a shared server would take.
 
 `--network none` in [the container recipe above](#in-a-container-for-a-hardened-server) was only ever safe because stdio needs no network at all. A listener needs an inbound path: publish the container's port to wherever the reverse proxy in front of it reaches, and keep outbound scoped to what the enabled plugins actually call — not open, and not none.
 

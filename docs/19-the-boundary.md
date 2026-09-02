@@ -100,7 +100,7 @@ It is not free, and the costs are worth naming rather than glossing over:
 | Cost | Where it stands |
 | --- | --- |
 | **Paths change meaning** | `fs tree`, `git status` and `--root` would describe the *server's* filesystem, not the one an agent thinks it is working in — so instead of answering wrong, the whole `fs`/`git`/`sys` families (and the parts of `net` that read or change this host's own configuration) are simply absent from a remote instance's tool list. The functionality is still gone; what changed is that gone is honest instead of silently misleading |
-| **Consent needs somewhere to go** | Still true, and still unsolved: `--consent` refuses to even start combined with `--http`, rather than parking a call for a person who is not there to answer it |
+| **Consent needs somewhere to go** | Still true: `--consent` refuses to even start combined with `--http`, rather than parking a call for a person who is not there to answer it. The [operator channel](./20-mcp.md#the-operator-channel) is the somewhere taking shape — signed, passphrase-gated, agent-unrideable — but it reads a server's state and does not yet answer its parked calls, so the refusal stands |
 | **The credentials move** | Off the laptops, which is better, and onto one process with reach, which is a target. The trade is real in both directions, and authenticating callers over `--http` does not change it — see the next row |
 | **It only bounds anything if it is the only route** | If the agent's own machine can reach production directly, routing rta through a server changes nothing. The containment is the network and credential boundary; rta is what makes a *useful* hole in it |
 
