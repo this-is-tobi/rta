@@ -63,8 +63,9 @@ func connFormOnKubeField(t *testing.T) Model {
 	nm := next.(Model)
 	nm.form.form = startedForm(nm.form)
 	nm = pressTab(t, nm) // off the plugin picker, which has nothing left to offer
+	nm = pressTab(t, nm) // off the empty instance box
 	if nm.form.form.GetFocusedField() != huh.Field(nm.form.inputs[profileKubeField]) {
-		t.Fatal("one tab from the top did not land on the coordinate field")
+		t.Fatal("two tabs from the top did not land on the coordinate field")
 	}
 	return nm
 }

@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -68,16 +69,28 @@ func (m Model) profilePicker(c plugin.Capability, on string) *plugin.Field {
 	}
 	options := []string{profileNoneLabel}
 	for _, name := range cfg.ProfilesFor(ns) {
-		if !bad[name] {
-			options = append(options, name)
+		if bad[name] {
+			continue
 		}
+		// The refs a call would accept: an environment holding several
+		// connections to this plugin lists as staging/analytics beside
+		// staging, because a bare name over several labeled entries is
+		// exactly what Lookup refuses — a picker option that can only fail
+		// is worse than an absent one.
+		options = append(options, profile.InstanceRefs(cfg.Profiles[name], name, ns)...)
 	}
 	if len(options) == 1 {
 		// Nothing configured for this plugin: a picker with one entry is a
 		// question with one answer, which is not a question.
 		return nil
 	}
-	if on == "" || bad[on] || !cfg.Profiles[on].Covers(ns) {
+	// Membership, not name-validity: the options already exclude broken
+	// profiles and already spell out which refs are answerable, so a
+	// remembered choice that is no longer among them — renamed, broken, or
+	// a bare name that has since grown labeled instances — falls back to
+	// the base configuration rather than seeding a Select with an answer
+	// it does not offer.
+	if !slices.Contains(options, on) {
 		on = profileNoneLabel
 	}
 	return &plugin.Field{
@@ -210,9 +223,11 @@ func (r connRow) valid() bool { return r.problem == "" }
 // that trusts the local socket needs no password at all.
 type credentialRow struct {
 	input string
-	// env is the RTA_PROFILE_<NAME>_<INPUT> name, always populated — it is the
-	// answer to "how do I give this thing its password" and has to be readable
-	// whether or not it happens to be set.
+	// env is the RTA_PROFILE_<NAME>_<INPUT> name — the answer to "how do I
+	// give this thing its password", readable whether or not it happens to
+	// be set. Empty for a labeled instance, which has no environment
+	// channel at all (see Bind); source() and the export-line copy both
+	// read the emptiness as "steer at `secrets:` instead".
 	env      string
 	exported bool
 	// ref is the `secrets:` mapping, empty when there is none.
@@ -228,6 +243,8 @@ func (c credentialRow) source() string {
 		return "$" + c.env + " (set)"
 	case c.ref.Scheme != "":
 		return c.ref.Scheme + ":" + c.ref.Ref
+	case c.env == "":
+		return "not set — a labeled instance takes a `secrets:` reference"
 	default:
 		return "not set"
 	}
@@ -307,8 +324,17 @@ func (m Model) credentialRows(name, key string, conn config.Connection) []creden
 				continue
 			}
 			seen[f.Name] = true
-			env := plugin.ProfileEnvVar(name, f.Name)
-			_, exported := os.LookupEnv(env)
+			// A labeled instance has no environment channel — see Bind: a
+			// variable for `staging/analytics` would be forgeable by naming
+			// a profile carefully, so none exists, and showing one here
+			// would teach an export that fills the default instead. The
+			// empty env is what tells source() and the export-line copy to
+			// steer at `secrets:` references.
+			env, exported := "", false
+			if _, instance, _ := config.SplitKey(key); instance == "" {
+				env = plugin.ProfileEnvVar(name, f.Name)
+				_, exported = os.LookupEnv(env)
+			}
 			out = append(out, credentialRow{
 				input: f.Name, env: env, exported: exported, ref: refs[f.Name],
 			})
@@ -434,7 +460,10 @@ func (m Model) selectedProfileHasUnsetCredential() bool {
 	}
 	for _, c := range row.conns {
 		for _, cr := range c.credentials {
-			if !cr.satisfied() {
+			// The same rule copyExportLine applies: a labeled instance's
+			// credential has no export line to offer, so it must not be
+			// what makes the key appear.
+			if !cr.satisfied() && cr.env != "" {
 				return true
 			}
 		}
