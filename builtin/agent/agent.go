@@ -672,11 +672,7 @@ func runAllow(_ context.Context, req plugin.Request) (view.View, error) {
 	// exactly what the guard exists to price.
 	var signer *guard.Signer
 	if strings.TrimSpace(req.String("ttl")) != "" && guard.Enabled() {
-		pass, verr := guard.PromptSecret(req, false)
-		if verr != nil {
-			return nil, verr
-		}
-		s, verr := guard.Unlock(pass)
+		s, verr := guard.UnlockPrompted(req)
 		if verr != nil {
 			return nil, verr
 		}
