@@ -57,11 +57,13 @@ import (
 
 const stateFile = "guard.json"
 
-// scryptWorkFactor overrides age's default passphrase hardening in tests,
-// exactly as builtin/kv/crypt.go does for the store: the default work factor
-// is the point in production and a tax in a test loop. Zero keeps age's
-// default.
-var scryptWorkFactor = 0
+// ScryptWorkFactor overrides age's default passphrase hardening, exactly as
+// builtin/kv/crypt.go does for the store: the default work factor is the
+// point in production and a tax in a test loop. Zero keeps age's default.
+// Exported because the grant and capability suites enable the guard in their
+// own processes; it shapes only what Enable writes in *this* process, so
+// nothing that sets it changes what an existing state file costs to unlock.
+var ScryptWorkFactor = 0
 
 // state is the on-disk shape. The public key is in the clear — verification
 // must work for a server nobody is standing at — and the private key exists
@@ -152,24 +154,43 @@ func Created() time.Time {
 	return st.Created
 }
 
+// Verifier returns a verify function bound to the state as it stands,
+// reading it once. The grant store checks every stored row on every read —
+// which is the path of every gated MCP call — and re-opening the state per
+// row would put N file reads where one belongs. A corrupt state is an error
+// here rather than a silent false, so the reader can refuse loudly instead
+// of reporting a tampered file as "no grants issued".
+func Verifier() (func(msg []byte, sig string) bool, *view.Error) {
+	st, verr := load()
+	if verr != nil {
+		return nil, verr
+	}
+	pub, err := base64.StdEncoding.DecodeString(st.PublicKey)
+	if err != nil || len(pub) != ed25519.PublicKeySize {
+		return nil, view.Errorf("core.guard.corrupt",
+			"%s carries an unreadable verification key", Path()).
+			WithHint("no grant is honoured while this stands; `rm " + Path() +
+				"` and `rta grant revoke --all` start clean, then `rta grant guard on` again")
+	}
+	key := ed25519.PublicKey(pub)
+	return func(msg []byte, sig string) bool {
+		raw, err := base64.StdEncoding.DecodeString(sig)
+		if err != nil {
+			return false
+		}
+		return ed25519.Verify(key, append([]byte(signContext), msg...), raw)
+	}, nil
+}
+
 // Verify reports whether sig is this guard's signature over msg. False when
 // the guard is off or its state is corrupt — the callers treat false as
 // "not honoured", so every failure mode lands closed.
 func Verify(msg []byte, sig string) bool {
-	st, verr := load()
+	v, verr := Verifier()
 	if verr != nil {
 		return false
 	}
-	pub, err := base64.StdEncoding.DecodeString(st.PublicKey)
-	if err != nil || len(pub) != ed25519.PublicKeySize {
-		return false
-	}
-	raw, err := base64.StdEncoding.DecodeString(sig)
-	if err != nil {
-		return false
-	}
-	return ed25519.Verify(ed25519.PublicKey(pub),
-		append([]byte(signContext), msg...), raw)
+	return v(msg, sig)
 }
 
 // Enable generates the keypair, wraps the private half under passphrase, and
@@ -193,8 +214,8 @@ func Enable(passphrase string) (Signer, *view.Error) {
 	if err != nil {
 		return Signer{}, view.Errorf("core.guard.wrap", "deriving from the passphrase: %v", err)
 	}
-	if scryptWorkFactor > 0 {
-		rec.SetWorkFactor(scryptWorkFactor)
+	if ScryptWorkFactor > 0 {
+		rec.SetWorkFactor(ScryptWorkFactor)
 	}
 	var buf bytes.Buffer
 	w, err := age.Encrypt(&buf, rec)

@@ -10,7 +10,7 @@ import (
 // builtin/kv's suite does: the default work factor is the point in
 // production and a tax in a loop.
 func TestMain(m *testing.M) {
-	scryptWorkFactor = 10
+	ScryptWorkFactor = 10
 	os.Exit(m.Run())
 }
 
