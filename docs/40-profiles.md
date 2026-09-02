@@ -71,6 +71,45 @@ profiles:
 | `plugins.<name>.ssh` | Reach it through an SSH jump host |
 | `plugins.<name>.secrets-from` | Which cluster and namespace a `kube:` secret is read from, when the connection opens no forward |
 
+## Several connections to one plugin
+
+An environment rarely has exactly one of everything: staging holds the main database *and* the analytics one, two buckets, sometimes two Vault mounts. One profile holds them all, as **instances** — a label inside the key you already write:
+
+```yaml
+profiles:
+  staging:
+    plugins:
+      pg:                     # the default instance — a bare key means what it always meant
+        set: {host: db.staging.internal}
+        secrets: {password: kv:staging-db-password}
+      pg/analytics:           # a second database, same plugin
+        set: {host: analytics.staging.internal}
+        secrets: {password: kv:staging-analytics-password}
+      s3/assets:
+        set: {bucket: shop-assets}
+      s3/logs:
+        set: {bucket: shop-logs}
+```
+
+A call picks one with the same string everywhere — the flag, the MCP argument, the grant:
+
+```bash
+rta pg query --profile staging "select 1"             # the default instance
+rta pg query --profile staging/analytics "select 1"   # the labeled one
+rta profile set staging --plugin pg/analytics --set host=…   # stating it from a script
+```
+
+The resolution rules are small and fail closed:
+
+- A bare `--profile staging` runs the **default** instance — the unlabeled entry, which is written as one.
+- With no unlabeled entry and exactly one labeled, that one is unambiguous and wins.
+- With several labeled entries and no default — the `s3` above — a bare name is **refused with the list**, never resolved by sort order: `staging/assets` or `staging/logs`, your call. Completion offers the refs directly, described by each instance's address.
+
+Two things follow from an instance being *one connection*:
+
+- **Grants name exactly one.** `rta grant allow pg.query --profile staging/analytics` consents to the analytics database and nothing else; asking for a bare `--profile staging` when several pg instances exist is refused with the same list, because "analytics, not the main database" is precisely the decision consent is recording. A policy `neverProfile: [prod]` covers every instance inside prod. `rta use staging` still switches — and bounds — the whole environment, instances included.
+- **A labeled instance's credentials come from `secrets:` references** (`kv:` or `kube:`), not from `RTA_PROFILE_*` variables — that channel belongs to the default instance only, because a variable name for `staging/analytics` would be forgeable by a carefully-named profile.
+
 ## `secrets:` holds a reference, never a value
 
 ```yaml
