@@ -127,15 +127,31 @@ func ConnStamp(key string, c config.Connection) string {
 // marked live by one rule and refused by another. This repo has recorded that
 // drift twice — an advisory checkPin, then an advisory checkSet — and both
 // times the fix was to make the two paths share the function.
-func ConnStampFor(cfg config.Config, name, namespace string) string {
-	if name == "" {
+func ConnStampFor(cfg config.Config, ref, namespace string) string {
+	if ref == "" {
 		return ""
 	}
+	// The ref may carry an instance — `staging/analytics` — and the stamp is
+	// then that instance's, which is the whole point of per-instance grants:
+	// a pin over the analytics connection must not keep matching after the
+	// grant's words are re-aimed at the main one. With no instance, For's
+	// default rules apply, and its refusal to pick among several labeled
+	// entries returns "" here — the fail-closed direction, same as a deleted
+	// profile.
+	name, instance := config.SplitRef(ref)
 	p, ok := cfg.Profiles[name]
 	if !ok {
 		return ""
 	}
-	key, conn, ok := p.For(namespace)
+	var (
+		key  string
+		conn config.Connection
+	)
+	if instance != "" {
+		key, conn, ok = p.ForInstance(namespace, instance)
+	} else {
+		key, conn, ok = p.For(namespace)
+	}
 	if !ok {
 		return ""
 	}
