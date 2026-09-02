@@ -186,7 +186,7 @@ func (h *operatorHandler) dispatch(env operator.Envelope, label string) (any, *v
 		if err := json.Unmarshal(env.Payload, &spec); err != nil {
 			return nil, badPayload(env.Verb, err)
 		}
-		return h.cfg.Revoke(spec, true)
+		return h.cfg.Revoke(spec, !spec.DryRun)
 	case operator.VerbGrantPrepare:
 		if h.cfg.Prepare == nil {
 			return nil, verbUnoffered(env.Verb)

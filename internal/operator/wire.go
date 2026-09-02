@@ -52,13 +52,18 @@ type Prepared struct {
 	Notes []string    `json:"notes,omitempty"`
 }
 
-// RevokeSpec mirrors `grant revoke`'s selectors.
+// RevokeSpec mirrors `grant revoke`'s selectors. DryRun travels to the
+// server rather than short-circuiting client-side, because the honest
+// preview — "would revoke 3 grant(s), still covered by kv" — is computed
+// from the server's store under the server's lock, and a guess made from
+// here would be the thing dry runs exist to not be.
 type RevokeSpec struct {
 	All     bool   `json:"all,omitempty"`
 	Target  string `json:"target,omitempty"`
 	Scope   string `json:"scope,omitempty"`
 	Profile string `json:"profile,omitempty"`
 	Agent   string `json:"agent,omitempty"`
+	DryRun  bool   `json:"dryRun,omitempty"`
 }
 
 // RevokeOutcome is what one revocation decided, computed under the store's
