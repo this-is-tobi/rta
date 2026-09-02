@@ -190,3 +190,41 @@ func TestTheSealedShapeIsWhatWeThink(t *testing.T) {
 		t.Fatalf("the on-disk shape drifted: %s (%v)", data, err)
 	}
 }
+
+// The credential kind must be able to name what the verifiers actually
+// prove — user@corp.com, auth0|12345, the truncated ~hash form long
+// subjects arrive as — none of which the agent-name charset admits. The
+// review that caught this named the stakes: during exactly the incident
+// locks exist for, the operator could not lock the bearer.
+func TestACredentialLockAcceptsWhatTheVerifiersProve(t *testing.T) {
+	fresh(t)
+	for _, name := range []string{"user@corp.com", "auth0|12345", "https://idp.example/sub/9",
+		strings.Repeat("x", 55) + "~ab12cd34"} {
+		if _, verr := Build("credential", name, "", "", "terminal"); verr != nil {
+			t.Fatalf("a real credential identity %q refused: %v", name, verr)
+		}
+		// The same spelling stays refused for the kinds whose surfaces
+		// enforce the agent-name grammar.
+		if _, verr := Build("agent", name, "", "", "terminal"); verr == nil {
+			t.Fatalf("%q enrolled as an agent name", name)
+		}
+	}
+	if verr := Add(Lock{Kind: KindCredential, Name: strings.Repeat("x", maxCredentialName+1), At: time.Now()}); verr == nil {
+		t.Fatal("a credential name past the ledger bound enrolled — it could never match")
+	}
+	if verr := Add(Lock{Kind: KindCredential, Name: "esc\x1b[31mape", At: time.Now()}); verr == nil {
+		t.Fatal("a terminal-escape credential enrolled")
+	}
+}
+
+// A note is a sentence for the locked party; unbounded it could write a
+// file larger than the read cap and brick the store on its own input.
+func TestANoteIsASentenceNotADocument(t *testing.T) {
+	fresh(t)
+	if _, verr := Build("agent", "claude", strings.Repeat("n", maxNote+1), "", "terminal"); verr == nil || verr.Code != "core.lock.note" {
+		t.Fatalf("an oversized note built: %v", verr)
+	}
+	if _, verr := Build("agent", "claude", strings.Repeat("n", maxNote), "", "terminal"); verr != nil {
+		t.Fatalf("a note at the bound refused: %v", verr)
+	}
+}

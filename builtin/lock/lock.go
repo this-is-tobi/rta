@@ -29,8 +29,9 @@ import (
 
 // Plugin returns the lock plugin declaration.
 func Plugin() plugin.Plugin {
-	kindHelp := "what to freeze: agent (a server's --as name), credential (a bearer token's " +
-		"identity), or operator (a roster label on the operator channel)"
+	kindHelp := "what to freeze: agent (a server's --as name), credential (a bearer identity, " +
+		"exactly as the ledger's credential column shows it), or operator (a roster label on " +
+		"the operator channel)"
 	return plugin.Plugin{
 		Name:    "lock",
 		Summary: "Freeze one principal now — the instant path when revoking and restarting are too slow",
@@ -38,7 +39,7 @@ func Plugin() plugin.Plugin {
 			{
 				ID:      "lock.add",
 				Summary: "Lock one principal out of the network surfaces, effective on its next call",
-				Description: "Freezes an agent name, a credential, or an operator label: every MCP " +
+				Description: "Freezes an agent name, a credential, or an operator label: every tool " +
 					"call from a locked agent or credential is refused before any other gate — the " +
 					"ungated read tier included, which is what `grant revoke` alone never covered — " +
 					"and a locked operator key gets no verb on the operator channel. Running servers " +

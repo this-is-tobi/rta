@@ -1,6 +1,6 @@
 // Package lockdown is the instant path revocation needs when expiry is too
-// slow: freeze one principal now, across every network surface, without
-// restarting anything.
+// slow: freeze one principal now — every tool call on the MCP surface,
+// every verb on the operator channel — without restarting anything.
 //
 // The gap it closes is real on both surfaces. Revoking grants takes
 // standing authority back, but a misbehaving agent's bearer token still
@@ -29,7 +29,11 @@
 // were seen changes nothing for the process that remembers, and is
 // reported. Across restarts, on-disk deletion wins; that is the same
 // documented detection regime as every other same-uid rollback, and the
-// boundary chapter owns what remains.
+// boundary chapter owns what remains. The seal's own bound applies here
+// too and is worth restating: a writer who can also *read* this directory
+// reads the key, re-seals an empty file, and unlocks silently — the same
+// attacker the grant seal concedes, and the reason the honest sentence is
+// "deletion is not an unlock", never "tampering is impossible".
 package lockdown
 
 import (
@@ -45,6 +49,7 @@ import (
 	"github.com/this-is-tobi/rule-them-all/internal/filelock"
 	"github.com/this-is-tobi/rule-them-all/internal/grant"
 	"github.com/this-is-tobi/rule-them-all/internal/seal"
+	"github.com/this-is-tobi/rule-them-all/internal/textclean"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
 
@@ -105,10 +110,54 @@ const (
 	// happens before the seal check, so a forged file need not be valid to
 	// cost something, only large. A lock is a few hundred bytes.
 	maxLockFile = 256 << 10
+	// maxNote bounds what Build accepts, so a pasted stack trace cannot
+	// write a file maxLockFile then refuses to read back — a store that
+	// bricks itself on its own accepted input is the one failure a bound
+	// this cheap must not allow. A note is a sentence for the locked party.
+	maxNote = 256
+	// maxCredentialName mirrors internal/mcp's constant of the same name,
+	// and the two must agree: the bridge matches locks against
+	// credentialName's *bounded* output (long identities arrive truncated
+	// with a ~hash suffix), so a name the bridge can present must be a name
+	// Add accepts, or the identity is unlockable mid-incident. Pinned by a
+	// test in internal/mcp, where both constants are visible.
+	maxCredentialName = 64
 )
+
+// checkName holds a principal's name to the grammar of the surface that
+// verifies it. Agent names and operator labels already live under
+// grant.CheckAgent everywhere they are declared, so locks reuse it. A
+// credential is different: it is whatever the bearer wall or OIDC verifier
+// proved — user@corp.com, auth0|12345, a URL — normalized and bounded by
+// the bridge before matching or ledgering, and a lock that refused those
+// spellings would be unable to name the very identity the incident is
+// about. So the credential rule is the bridge's own: terminal-clean,
+// trimmed, and within the bound the ledger's credential column enforces.
+func checkName(kind Kind, name string) *view.Error {
+	if kind == KindCredential {
+		if name == "" || name != textclean.Terminal(strings.TrimSpace(name)) || len(name) > maxCredentialName {
+			return view.Errorf("core.lock.name",
+				"a credential lock names the exact value the ledger's credential column shows — "+
+					"%q is not one", name)
+		}
+		return nil
+	}
+	return grant.CheckAgent(name)
+}
 
 // Path is where the locks live.
 func Path() string { return seal.Path(fileName) }
+
+// recoveryHint is the one story every unreadable-store refusal tells, and
+// its wording is load-bearing: `rm` alone is NOT the fix for a running
+// server, because the Pin — correctly — keeps enforcing the set it last
+// verified when the file vanishes. Re-placing a lock is what writes a
+// fresh sealed file for running pins to adopt; the earlier hint said only
+// "rm clears every lock", and an operator following it mid-incident would
+// watch it not work.
+const recoveryHint = "at the machine's terminal: `rm` the file, then re-place the locks you mean " +
+	"with `rta lock add` — running servers keep enforcing the set they last verified until a " +
+	"fresh sealed file replaces it (plain `rm` alone only takes effect at their next restart)"
 
 type sealed struct {
 	Seal  string `json:"seal"`
@@ -125,7 +174,7 @@ func sealKey(create bool) ([]byte, *view.Error) {
 	case errors.Is(err, seal.ErrMissing), errors.Is(err, seal.ErrShort):
 		return nil, view.Errorf("core.lock.unsealed",
 			"%s exists with no usable seal key beside it, so it was not written by rta", Path()).
-			WithHint("`rm " + Path() + "` clears every lock; re-place the ones that were real")
+			WithHint(recoveryHint)
 	default:
 		return nil, view.Errorf("core.lock.write", "%v", err)
 	}
@@ -150,7 +199,7 @@ func load() (locks []Lock, present bool, verr *view.Error) {
 	if err := json.Unmarshal(data, &doc); err != nil {
 		return nil, true, view.Errorf("core.lock.forged",
 			"%s does not parse, so it was not written by rta", Path()).
-			WithHint("`rm " + Path() + "` clears every lock; re-place the ones that were real")
+			WithHint(recoveryHint)
 	}
 	raw, err := canonical(doc.Locks)
 	if err != nil {
@@ -159,7 +208,7 @@ func load() (locks []Lock, present bool, verr *view.Error) {
 	if !seal.Equal(doc.Seal, seal.MAC(key, raw)) {
 		return nil, true, view.Errorf("core.lock.forged",
 			"%s does not carry rta's own seal, so something else wrote it", Path()).
-			WithHint("`rm " + Path() + "` clears every lock; re-place the ones that were real")
+			WithHint(recoveryHint)
 	}
 	now := time.Now()
 	live := doc.Locks[:0]
@@ -222,7 +271,16 @@ func Build(kind, name, note, ttl, by string) (Lock, *view.Error) {
 	if verr != nil {
 		return Lock{}, verr
 	}
-	l := Lock{Kind: k, Name: name, Note: strings.TrimSpace(note), By: by, At: time.Now()}
+	if verr := checkName(k, name); verr != nil {
+		return Lock{}, verr
+	}
+	trimmed := strings.TrimSpace(note)
+	if len(trimmed) > maxNote {
+		return Lock{}, view.Errorf("core.lock.note",
+			"the note is what the locked party reads on every refusal — %d bytes is a document, not a sentence (%d is the most)",
+			len(trimmed), maxNote)
+	}
+	l := Lock{Kind: k, Name: name, Note: trimmed, By: by, At: time.Now()}
 	if s := strings.TrimSpace(ttl); s != "" {
 		d, err := time.ParseDuration(s)
 		if err != nil || d <= 0 {
@@ -240,15 +298,15 @@ func Add(l Lock) *view.Error {
 	if _, verr := CheckKind(string(l.Kind)); verr != nil {
 		return verr
 	}
-	// The name grammar is the agent-name grammar for the reason the roster
-	// borrowed it: this string is rendered in listings and refusals, and a
-	// homoglyph principal is a lookalike row nobody meant to trust or
-	// freeze.
-	if verr := grant.CheckAgent(l.Name); verr != nil {
-		return verr
-	}
+	// Per-kind grammar — see checkName for why a credential must not be
+	// held to the agent-name charset. The empty check stays unconditional:
+	// match() treats "" as no principal, so an empty-named row would be
+	// dead weight that reads as protection.
 	if strings.TrimSpace(l.Name) == "" {
 		return view.Errorf("core.lock.name", "a lock needs the principal's name")
+	}
+	if verr := checkName(l.Kind, l.Name); verr != nil {
+		return verr
 	}
 	return mutate(func(stored []Lock) []Lock {
 		out := stored[:0]

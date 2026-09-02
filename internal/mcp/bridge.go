@@ -325,6 +325,17 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 				}
 				return errResult(verr), nil
 			}
+			// The lock check at the top ran before this call parked, and a
+			// call can wait in the queue for minutes — long enough for the
+			// operator to lock the very principal that asked. During an
+			// incident, "lock add" must poison what is already parked, not
+			// only what asks next, so the pin is consulted again on the way
+			// out of consent: an approval races a lock, the lock wins.
+			if l, _ := opts.locks.Check(opts.Agent, credentialName(ctx)); l != nil {
+				verr := lockdown.Refusal(l)
+				refusedBy(rec, verr)
+				return errResult(verr), nil
+			}
 			// Approved live: there is no grant, so there is no use to
 			// refund either.
 			release = func() {}

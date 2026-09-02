@@ -150,3 +150,56 @@ func TestALockedOperatorKeyGetsNoVerb(t *testing.T) {
 		t.Fatalf("the lifted operator lock still refuses: %d — %s", status, body)
 	}
 }
+
+// lockdown's credential-name bound must track this package's
+// maxCredentialName: the bridge matches locks against credentialName's
+// bounded output, so any name the bridge can present must be one Add
+// accepts — both constants are visible here, which makes this the one
+// place the agreement can be pinned.
+func TestACredentialLockCanNameEverythingTheBridgePresents(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	longest := strings.Repeat("a", maxCredentialName)
+	if _, verr := lockdown.Build("credential", longest, "", "", "terminal"); verr != nil {
+		t.Fatalf("a name at the bridge's own bound refused: %v", verr)
+	}
+	if _, verr := lockdown.Build("credential", longest+"a", "", "", "terminal"); verr == nil {
+		t.Fatal("a name past the bridge's bound enrolled — it could never match")
+	}
+}
+
+// A lock placed while a call sits parked must poison that call: the top
+// check ran before it parked, so the pin is consulted again on the way out
+// of consent — an approval races a lock, the lock wins.
+func TestALockPlacedWhileParkedPoisonsTheApproval(t *testing.T) {
+	s := connect(t, Options{
+		AllowWrite:  []string{"demo"},
+		Consent:     true,
+		ConsentWait: 20 * time.Second,
+		Agent:       "claude",
+	})
+	go func() {
+		deadline := time.Now().Add(15 * time.Second)
+		for time.Now().Before(deadline) {
+			pending, err := consent.Pending()
+			if err == nil && len(pending) > 0 {
+				l, _ := lockdown.Build("agent", "claude", "locked mid-park", "", "terminal")
+				if verr := lockdown.Add(l); verr != nil {
+					t.Errorf("Add: %v", verr)
+				}
+				if err := consent.Decide(pending[0].ID, true, "test"); err != nil {
+					t.Errorf("Decide: %v", err)
+				}
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		t.Error("no request was ever parked")
+	}()
+	res := callTool(t, s, "demo_item_reveal", map[string]any{"key": "db-password"})
+	if !res.IsError {
+		t.Fatal("an approval that raced a lock ran the call")
+	}
+	if text := res.Content[0].(*sdk.TextContent).Text; !strings.Contains(text, "core.lock.frozen") {
+		t.Fatalf("the poisoned approval is not refused as locked: %s", text)
+	}
+}
