@@ -65,11 +65,25 @@ RUN set -eux; \
 #   docker-cli         the docker plugin
 #   git                the git.* capabilities and `rta plugin index add/update`
 #   openssh-client     ssh: tunnel targets
+#   mariadb-client     mariadb-dump and mariadb, for mariadb.dump and .restore
 #   ca-certificates    every TLS dial — the one thing the distroless base did carry
 #
-# mysql and mariadb are absent on purpose and are not an omission: those
-# plugins connect in-process through a Go driver and shell out to nothing, so
-# a client here would be weight that no capability would ever execute.
+# mariadb-client is here and there is no MySQL client beside it, which looks
+# like an oversight and is not. Alpine has no Oracle client at all: its
+# `mysql-client` package IS MariaDB's, version 11.4 and all, and installing
+# either one plants mysqldump and mysql as symlinks onto MariaDB's binaries.
+# The mysql plugin would then find a client it can never use — verified
+# against the real images rather than assumed: MariaDB's mysqldump rejects
+# --ssl-mode, --set-gtid-purged and --no-tablespaces, the three MySQL 8
+# spellings mysql.dump passes on every run.
+#
+# So the four capabilities split two and two, deliberately. mariadb.dump and
+# mariadb.restore work here. mysql.dump and mysql.restore fail, and they fail
+# in the one way that is worth more than silence: the flag is refused by name,
+# mysql.dump.toolskew classifies it, and its hint already says what happened —
+# the installed client is really MariaDB's, and the mariadb plugin is the one
+# that drives it. Bring Oracle's client if you need MySQL from this image;
+# nothing rta can install for you would be it.
 FROM alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce
 
 RUN apk add --no-cache \
@@ -77,6 +91,7 @@ RUN apk add --no-cache \
       docker-cli \
       git \
       kubectl \
+      mariadb-client \
       openssh-client \
       postgresql-client
 
