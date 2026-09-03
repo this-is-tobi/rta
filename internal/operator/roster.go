@@ -161,8 +161,8 @@ func (r Roster) Operators() []OperatorInfo {
 
 // LoadRoster reads a roster file: one "label base64-pubkey" pair per
 // non-blank, non-comment line — the line RosterLine prints — optionally
-// followed by key=value annotations, of which `role=read` is the only one
-// yet. Anything unrecognized in the annotation position refuses the whole
+// followed by key=value annotations: `role=read` and `expires=YYYY-MM-DD`.
+// Anything unrecognized in the annotation position refuses the whole
 // load rather than falling back to a full enrollment: `roel=read` silently
 // meaning "full operator" is exactly the failure a restriction annotation
 // must not have. The same permission discipline as mcp.LoadTokenFile, for
@@ -208,7 +208,7 @@ func LoadRoster(path string) (Roster, bool, error) {
 		}
 		fields := strings.Fields(line)
 		if len(fields) < 2 {
-			return Roster{}, groupReadable, fmt.Errorf("%s:%d: expected \"label base64-pubkey [role=read]\", got %q", path, i+1, line)
+			return Roster{}, groupReadable, fmt.Errorf("%s:%d: expected \"label base64-pubkey [role=read] [expires=YYYY-MM-DD]\", got %q", path, i+1, line)
 		}
 		label, encoded := fields[0], fields[1]
 		role := RoleFull
@@ -250,7 +250,15 @@ func LoadRoster(path string) (Roster, bool, error) {
 				// operator would cut every other operator off at restart —
 				// the row itself refuses per call, which is all it ever did.
 				t, err := time.ParseInLocation("2006-01-02", v, time.Local)
-				if err != nil {
+				// Pre-epoch dates are refused with the garbage, and not only
+				// as pedantry: "0001-01-01" parses to the zero time when
+				// local is UTC — the common container default — and the zero
+				// time is this package's spelling of "never expires", which
+				// is the one thing a typo in this position must not silently
+				// mean. The epoch is a deterministic floor in every zone;
+				// an aged date a person could actually mean is years old,
+				// not decades before rta existed.
+				if err != nil || t.Year() < 1970 {
 					return Roster{}, groupReadable, fmt.Errorf("%s:%d: %q is not a date this rta reads — "+
 						"expires=YYYY-MM-DD, and the key stops working when that day arrives", path, i+1, v)
 				}

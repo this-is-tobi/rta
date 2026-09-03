@@ -169,14 +169,16 @@ func runGuardRemote(_ context.Context, req plugin.Request) (view.View, error) {
 		return nil, view.Errorf("core.guard.remote.roster", "%v", err)
 	}
 	// Entries is already the signing subset: read-only rows never reach the
-	// guard (the roster's own comment carries why). A roster of nothing but
-	// them can watch a server, but a guard trusting nobody could never
-	// honour a grant again — refused as the misconfiguration it is, not
-	// enabled as a lockout.
+	// guard, and neither does a row whose expires= day has arrived (the
+	// roster's own comments carry why). A roster of nothing but those can
+	// watch a server, but a guard trusting nobody could never honour a
+	// grant again — refused as the misconfiguration it is, not enabled as
+	// a lockout.
 	signers := roster.Entries()
 	if len(signers) == 0 {
 		return nil, view.Errorf("core.guard.remote.readonly",
-			"every key in %s is role=read — a guard needs at least one operator who can sign grants", path)
+			"every key in %s is role=read or already expired — a guard needs at least one "+
+				"operator who can sign grants", path)
 	}
 	signerLabels := make([]string, 0, len(signers))
 	for _, s := range signers {
@@ -193,7 +195,7 @@ func runGuardRemote(_ context.Context, req plugin.Request) (view.View, error) {
 			"channel — and clear the %d grant(s) currently held",
 			strings.Join(signerLabels, ", "), canonical, len(held))
 		if skipped > 0 {
-			body += fmt.Sprintf("; %d role=read key(s) stay out of the guard", skipped)
+			body += fmt.Sprintf("; %d key(s) stay out of the guard (role=read, or already expired)", skipped)
 		}
 		return view.Text{Body: body}, nil
 	}
@@ -207,7 +209,8 @@ func runGuardRemote(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 	operatorsCell := strings.Join(signerLabels, ", ")
 	if skipped > 0 {
-		operatorsCell += fmt.Sprintf(" — %d role=read key(s) not enrolled: they cannot sign grants", skipped)
+		operatorsCell += fmt.Sprintf(" — %d key(s) not enrolled (role=read, or already expired): "+
+			"they cannot sign grants", skipped)
 	}
 	pairs := []view.Pair{
 		{Key: "guard", Value: "remote — a grant is honoured only when an enrolled operator signed it"},

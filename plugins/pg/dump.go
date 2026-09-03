@@ -129,6 +129,12 @@ func resolveRelation(ctx context.Context, q querier, req plugin.Request) (relati
 	schema, name, qualified := strings.Cut(raw, ".")
 	if !qualified {
 		if req.Surface() == plugin.SurfaceMCP {
+			// Refusef, though this reads like validation: the bare name is
+			// refused over MCP only, and for a grant-integrity reason — an
+			// unqualified name would resolve through whichever schema comes
+			// first, so the exact-match grant a person issued and the table
+			// actually dumped could disagree. That is a policy line about
+			// who is asking, which is Refusef's test.
 			return relation{}, view.Refusef("pg.table.unqualified",
 				"name the table as schema.table, not %q", raw).
 				WithHint("a grant for this name will not help — grants are matched exactly, so " +

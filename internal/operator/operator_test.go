@@ -372,6 +372,10 @@ func TestARosterExpiryParsesAndRefusesAtItsDay(t *testing.T) {
 	for _, bad := range []string{
 		" expires=tomorrow", " expires=2030-6-15", " expires=2030-06-15T10:00:00Z",
 		" expires=2030-06-15 expires=2031-01-01",
+		// Pre-epoch dates refuse deterministically in every zone; the
+		// degenerate one, 0001-01-01, would otherwise parse to the zero
+		// time on a UTC machine and silently mean "never expires".
+		" expires=0001-01-01", " expires=1969-12-31",
 	} {
 		if _, _, err := LoadRoster(writeRoster(t, line+bad+"\n")); err == nil {
 			t.Fatalf("a roster line with %q loaded", bad)

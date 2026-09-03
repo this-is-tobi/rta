@@ -188,6 +188,43 @@ func TestAnExpiredOperatorKeyIsRefusedAndItsAttemptRecorded(t *testing.T) {
 	}
 }
 
+// The gate order around expiry is deliberate and worth pinning, because a
+// reorder would pass every other test silently. Expiry sits before the
+// role gate — an expired read key's refusal names the date, not the role,
+// because the enrollment being over outranks what it used to allow — and
+// after the lock, because a lock's note is the incident context a named
+// operator is owed first.
+func TestExpiryOutranksTheRoleGateAndTheLockOutranksExpiry(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	signer, roster := enrolledAs(t, "watcher", " role=read expires=2020-01-01")
+	addr := startOperatorWith(t, OperatorConfig{Roster: roster})
+	at := "http://" + addr
+
+	status, body := postEnvelope(t, addr, signer.Sign(at, fetchChallenge(t, addr),
+		operator.VerbLockAdd, []byte(`{"kind":"agent","name":"claude"}`)))
+	if status != http.StatusForbidden {
+		t.Fatalf("the expired read key's lock.add: %d — %s", status, body)
+	}
+	entries := ledgerEntries(t)
+	if len(entries) != 1 || entries[0].Code != "core.operator.expired" {
+		t.Fatalf("want the expiry named, not the role: %+v", entries)
+	}
+
+	l, _ := lockdown.Build("operator", "watcher", "key reported stolen", "", "terminal")
+	if verr := lockdown.Add(l); verr != nil {
+		t.Fatal(verr)
+	}
+	status, body = postEnvelope(t, addr, signer.Sign(at, fetchChallenge(t, addr),
+		operator.VerbLockAdd, []byte(`{"kind":"agent","name":"claude"}`)))
+	if status != http.StatusForbidden {
+		t.Fatalf("the locked, expired key's lock.add: %d — %s", status, body)
+	}
+	entries = ledgerEntries(t)
+	if len(entries) != 2 || entries[1].Code != "core.lock.operator" {
+		t.Fatalf("want the lock named over the expiry: %+v", entries)
+	}
+}
+
 // The other side of the date: a future-dated enrollment is an ordinary
 // working key until its day arrives.
 func TestAFutureDatedOperatorKeyWorksUntilItsDay(t *testing.T) {
