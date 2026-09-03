@@ -29,6 +29,8 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+
+	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
 
 // Built-in palette, as hex — the one place each value is written down.
@@ -305,6 +307,53 @@ func ClassifyStatus(s string) StatusKind {
 		return StatusMuted
 	default:
 		return StatusNeutral
+	}
+}
+
+// ClassifyUsage grades one view.KindUsage cell — how full something is, from
+// the text a producer wrote there.
+//
+// **From the text, because that is all a view carries.** Views hold
+// pre-formatted strings by contract, so a percentage arrives as "88%" or
+// "94.2%" depending on which producer wrote it, and neither the number nor
+// the capacity behind it survives the crossing. Parsing it back is the only
+// thing a renderer can do, and getting it wrong in the quiet direction is the
+// safe one: anything that does not read as a number is Neutral, which is no
+// colour rather than a wrong one. That is what an unmeasurable cell — a pod
+// with no memory limit, a node whose kubelet did not answer — already looks
+// like, and it is written as "" or "—" rather than as a number.
+//
+// Above 100 stays Bad rather than becoming a case of its own. A KindUsage
+// column is a capacity, so past it is the worst thing it can say; a column
+// where 150 is ordinary is one of the several that must not declare this kind
+// at all, and view.KindUsage's own comment names them.
+func ClassifyUsage(cell string) StatusKind {
+	v := strings.TrimSuffix(strings.TrimSpace(cell), "%")
+	pct, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
+	if err != nil {
+		return StatusNeutral
+	}
+	switch {
+	case pct >= view.UsageBad:
+		return StatusBad
+	case pct >= view.UsageWarn:
+		return StatusWarn
+	default:
+		return StatusGood
+	}
+}
+
+// UsageStyle returns the style for a usage cell.
+func UsageStyle(cell string) lipgloss.Style {
+	switch ClassifyUsage(cell) {
+	case StatusGood:
+		return GoodText
+	case StatusWarn:
+		return WarnText
+	case StatusBad:
+		return BadText
+	default:
+		return Plain
 	}
 }
 

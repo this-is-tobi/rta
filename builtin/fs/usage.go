@@ -189,6 +189,9 @@ func usageTable(entries []entry, total int64, limit int) view.Table {
 	t := view.Table{Columns: []view.Column{
 		{Name: "Entry"},
 		{Name: "Size", Kind: view.KindBytes},
+		// Percent rather than KindUsage: this is one entry's proportion of
+		// what was scanned, and nothing is filling up. A directory holding
+		// 95% of a tree is the answer somebody ran this to get.
 		{Name: "Share", Kind: view.KindPercent},
 		{Name: "Files", Kind: view.KindNumber},
 	}}

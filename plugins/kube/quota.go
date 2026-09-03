@@ -9,6 +9,24 @@ import (
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
 
+// quotaColumns: the % is used against the quota's own hard limit, so it has a
+// ceiling and 100 is the point pods start being refused — KindUsage, and the
+// renderer grades it. Named so
+// TestOnlyTheColumnsWithACapacityBehindThemAreGraded can say so.
+func quotaColumns(allNamespaces bool) []view.Column {
+	cols := []view.Column{}
+	if allNamespaces {
+		cols = append(cols, view.Column{Name: "namespace"})
+	}
+	return append(cols,
+		view.Column{Name: "quota"},
+		view.Column{Name: "resource"},
+		view.Column{Name: "used"},
+		view.Column{Name: "hard"},
+		view.Column{Name: "%", Kind: view.KindUsage},
+	)
+}
+
 // kube.quota.list: how much of a namespace's ResourceQuota is actually used.
 //
 // One row per resource tracked by a quota, not one row per quota object —
@@ -52,17 +70,7 @@ func runQuotaList(ctx context.Context, req plugin.Request) (view.View, error) {
 	var limits list[limitRangeItem]
 	limitErr := getJSON(ctx, s, "limitranges", &limits)
 
-	cols := []view.Column{}
-	if s.AllNS {
-		cols = append(cols, view.Column{Name: "namespace"})
-	}
-	cols = append(cols,
-		view.Column{Name: "quota"},
-		view.Column{Name: "resource"},
-		view.Column{Name: "used"},
-		view.Column{Name: "hard"},
-		view.Column{Name: "%", Kind: view.KindPercent},
-	)
+	cols := quotaColumns(s.AllNS)
 
 	sort.Slice(quotas.Items, func(i, j int) bool {
 		a, b := quotas.Items[i].Metadata, quotas.Items[j].Metadata

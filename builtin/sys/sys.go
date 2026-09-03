@@ -9,6 +9,7 @@ import (
 	"fmt"
 	stdnet "net"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -399,7 +400,7 @@ func runDisk(ctx context.Context, req plugin.Request) (view.View, error) {
 		{Name: "Size", Kind: view.KindBytes},
 		{Name: "Used", Kind: view.KindBytes},
 		{Name: "Free", Kind: view.KindBytes},
-		{Name: "Use%", Kind: view.KindPercent},
+		{Name: "Use%", Kind: view.KindUsage},
 		{Name: "Status", Kind: view.KindStatus},
 	}}
 	// realPartitions has already dropped the noise; --all keeps the raw list.
@@ -408,14 +409,14 @@ func runDisk(ctx context.Context, req plugin.Request) (view.View, error) {
 		if err != nil || u.Total == 0 {
 			continue
 		}
+		cell, status := diskUsage(u.UsedPercent)
 		t.Rows = append(t.Rows, []string{
 			p.Mountpoint,
 			p.Fstype,
 			format.Bytes(u.Total),
 			format.Bytes(u.Used),
 			format.Bytes(u.Free),
-			fmt.Sprintf("%.0f%%", u.UsedPercent),
-			usageStatus(u.UsedPercent),
+			cell, status,
 		})
 	}
 	t.Total = len(t.Rows)
@@ -459,14 +460,41 @@ func loadVerdict(perCore float64) string {
 	}
 }
 
+// diskUsage is one filesystem's fullness said twice: the Use% cell a renderer
+// grades by colour, and the Status word carrying the same band in text — the
+// half that survives a pipe, a --no-color terminal and --output json.
+//
+// Both from one number, and that is the whole reason this is a function. The
+// two used to be written at the call site from the raw reading, and the cell
+// rounded where the word did not: a disk at 79.6% printed "80%" beside "ok",
+// two answers about one measurement. It was invisible while the figure was
+// plain text and became amber-beside-green the moment Use% declared
+// view.KindUsage — so the fix is to round once and grade what was printed,
+// where nothing can drift back apart.
+func diskUsage(usedPercent float64) (cell, status string) {
+	shown := fmt.Sprintf("%.0f", usedPercent)
+	rounded, err := strconv.ParseFloat(shown, 64)
+	if err != nil {
+		rounded = usedPercent
+	}
+	return shown + "%", usageStatus(rounded)
+}
+
 // usageStatus maps a fill percentage to the shared status vocabulary
 // (rendered green/yellow/red by every surface).
+//
+// The bands come from view rather than from two numbers written here, because
+// the Use% column beside this one is a KindUsage and is graded against the
+// same boundaries by the renderer. Two sources would let the word and the
+// colour disagree about the same disk — one saying "ok" in green beside a
+// figure the renderer painted amber — which is the failure x509check exists
+// to have stopped happening about certificates.
 func usageStatus(pct float64) string {
 	switch {
-	case pct >= 90:
-		return "ERROR >90%"
-	case pct >= 80:
-		return "WARN >80%"
+	case pct >= view.UsageBad:
+		return fmt.Sprintf("ERROR >%.0f%%", view.UsageBad)
+	case pct >= view.UsageWarn:
+		return fmt.Sprintf("WARN >%.0f%%", view.UsageWarn)
 	default:
 		return "ok"
 	}
@@ -602,6 +630,10 @@ func runPS(ctx context.Context, req plugin.Request) (view.View, error) {
 		Columns: []view.Column{
 			{Name: "PID", Kind: view.KindNumber},
 			{Name: "Name"},
+			// Percent rather than KindUsage: a process's CPU% is per core, so
+			// 340% is four busy threads rather than a machine three times
+			// over its limit, and there is no capacity here for a percentage
+			// to be a share of.
 			{Name: "CPU%", Kind: view.KindPercent},
 			{Name: "Mem%", Kind: view.KindPercent},
 			{Name: "RSS", Kind: view.KindBytes},

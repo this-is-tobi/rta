@@ -73,6 +73,14 @@ enum ColumnKind {
   COLUMN_KIND_DURATION = 4;
   COLUMN_KIND_TIMESTAMP = 5;
   COLUMN_KIND_STATUS = 6;
+  // How much of a capacity is taken, as a percentage, where approaching 100
+  // is approaching a limit. Distinct from PERCENT, which is any proportion
+  // and says nothing about which end is the bad one: a directory's share of
+  // a disk is not a problem for being large, and a process past 100% CPU is
+  // on a second core. A host may grade this one; where the bands are is in
+  // the Go contract beside the kind, and what a band looks like is still the
+  // host's.
+  COLUMN_KIND_USAGE = 7;
 }
 
 message Column {

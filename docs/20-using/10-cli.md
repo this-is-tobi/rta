@@ -52,6 +52,12 @@ rta net dns github.com -o json
 }
 ```
 
+A column may carry a `kind` — a semantic hint the renderers style by, never styling itself. Two of them are graded rather than merely aligned: a `status` column colours its own vocabulary (`ok`, `warn`, `expired`, `denied`…), and a `usage` column is a percentage of something with a ceiling, drawn green below 80%, amber from 80 and red from 90. That is what makes a full volume in `rta kube pvc usage`, a throttled container in `kube metrics pod` and a namespace out of quota findable by glance rather than by reading every row.
+
+Not every percentage is one. `fs usage`'s Share is a directory's proportion of a tree and 95% is the answer you ran it for; `sys ps`'s CPU% passes 100 on a second core; `kube metrics pressure` reports stall time, where a node is already in trouble far below 80. Those stay `percent` — ungraded, and deliberately so.
+
+Colour is never the only signal. `sys disk` states the same band as a word in a `Status` column beside its `Use%`, which is the half that survives `--no-color`, a pipe and `-o json`.
+
 **A machine-readable format means machine consumption, and rta treats it that way.** With `-o json|yaml|csv|md`, stdout carries the view and nothing else — errors go to stderr, also in the format you asked for, and the startup notice about untrusted artifacts is suppressed entirely. So the output on your screen is the output a parser accepts, which is where copy-and-paste gets it from:
 
 ```bash

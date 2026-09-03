@@ -297,15 +297,7 @@ func runMetricsPressure(ctx context.Context, req plugin.Request) (view.View, err
 	}
 	rows, unsupported := pressureRows(fetchSummaries(ctx, s, nodes))
 
-	cols := []view.Column{
-		{Name: "node"},
-		{Name: "cpu 10s", Kind: view.KindPercent},
-		{Name: "cpu 5m", Kind: view.KindPercent},
-		{Name: "memory 10s", Kind: view.KindPercent},
-		{Name: "memory 5m", Kind: view.KindPercent},
-		{Name: "io 10s", Kind: view.KindPercent},
-		{Name: "io 5m", Kind: view.KindPercent},
-	}
+	cols := pressureColumns()
 	out := make([][]string, 0, len(rows))
 	for _, r := range rows {
 		if r.failed != "" {
@@ -338,6 +330,42 @@ func maxOf(vs ...float64) float64 {
 
 // pct renders a PSI average, which the kernel already reports as a percentage
 // rather than a ratio — so percentOf, which divides, is the wrong helper here.
+// pvcUsageColumns: used against the claim's own capacity, so 100 is a volume
+// that has stopped accepting writes — KindUsage, which the renderer grades
+// green, amber and red.
+func pvcUsageColumns() []view.Column {
+	return []view.Column{
+		{Name: "namespace"}, {Name: "claim"},
+		{Name: "used", Kind: view.KindBytes},
+		{Name: "capacity", Kind: view.KindBytes},
+		{Name: "used %", Kind: view.KindUsage},
+	}
+}
+
+// pressureColumns: KindPercent and deliberately not KindUsage, which is the
+// difference between a graded column and a misleading one.
+//
+// PSI is the share of an interval tasks spent stalled, not a share of a
+// capacity. A node at 40% memory pressure is in serious trouble and one at 8%
+// sustained io pressure has a disk that cannot keep up — both of which a
+// capacity's 80/90 bands would paint green, because they are nowhere near
+// either. There is no single threshold to use instead, since cpu, memory and
+// io pressure become interesting at different values, so the number is shown
+// and the reading is left to somebody who knows which of the three they are
+// looking at. This is the same restraint kube.pvc.list applies when it
+// declines to show a percentage it cannot compute.
+func pressureColumns() []view.Column {
+	return []view.Column{
+		{Name: "node"},
+		{Name: "cpu 10s", Kind: view.KindPercent},
+		{Name: "cpu 5m", Kind: view.KindPercent},
+		{Name: "memory 10s", Kind: view.KindPercent},
+		{Name: "memory 5m", Kind: view.KindPercent},
+		{Name: "io 10s", Kind: view.KindPercent},
+		{Name: "io 5m", Kind: view.KindPercent},
+	}
+}
+
 func pct(v float64, ok bool) string {
 	if !ok {
 		return ""
@@ -413,12 +441,7 @@ func runPVCUsage(ctx context.Context, req plugin.Request) (view.View, error) {
 	}
 	rows, failed := worstByClaim(fetchSummaries(ctx, s, nodes))
 
-	cols := []view.Column{
-		{Name: "namespace"}, {Name: "claim"},
-		{Name: "used", Kind: view.KindBytes},
-		{Name: "capacity", Kind: view.KindBytes},
-		{Name: "used %", Kind: view.KindPercent},
-	}
+	cols := pvcUsageColumns()
 	out := make([][]string, 0, len(rows))
 	for _, u := range rows {
 		out = append(out, []string{u.ns, u.name, format.Bytes(u.used), format.Bytes(u.capacity),
