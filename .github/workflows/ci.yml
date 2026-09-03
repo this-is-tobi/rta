@@ -391,11 +391,13 @@ jobs:
   # job genuinely does not hold. The text pass is the verdict: govulncheck
   # fails only on a vulnerability actually reachable from the module's own
   # code, and a broken scan fails the same way rather than passing silently.
-  # The SARIF pass is the paper trail, merged into one upload under one
-  # category so the Security tab keeps a single govulncheck-plugins view.
-  # No PR comment, deliberately: scan-deps above carries the one comment per
-  # pull request; a finding here still fails this job and lands in the
-  # Security tab, which is where a reviewer follows it.
+  # The SARIF pass is the paper trail, uploaded per module under its own
+  # govulncheck-<module> category — the shape the Security tab groups by,
+  # and since July 2025 the only shape it accepts: a file carrying several
+  # runs under one category is refused at upload. No PR comment,
+  # deliberately: scan-deps above carries the one comment per pull request;
+  # a finding here still fails this job and lands in the Security tab,
+  # which is where a reviewer follows it.
   scan-plugins:
     name: Scan plugin dependencies
     needs: changes
@@ -439,8 +441,6 @@ jobs:
         done
         find "$RUNNER_TEMP/sarif" -name '*.sarif' -size -2c -delete
         if ls "$RUNNER_TEMP"/sarif/*.sarif >/dev/null 2>&1; then
-          jq -s '{version: .[0].version, "$schema": .[0]."$schema", runs: map(.runs[])}' \
-            "$RUNNER_TEMP"/sarif/*.sarif > "$RUNNER_TEMP/plugins.sarif"
           echo "sarif=true" >> "$GITHUB_OUTPUT"
         fi
         if [ -n "$failed" ]; then
@@ -449,15 +449,27 @@ jobs:
         fi
 
     # always(): a finding fails the scan step, and a failing scan is exactly
-    # when this upload matters most. continue-on-error so the Security tab
-    # rejecting an upload cannot mask the scan's own verdict above.
+    # when this upload matters most. One API call per module rather than one
+    # merged file: code scanning stopped accepting several SARIF runs under
+    # one category (July 2025), and one action step cannot loop — the API
+    # can, and it hands every module its own govulncheck-<module> category
+    # back, which is how the Security tab groups findings for a reviewer. A
+    # rejected upload warns instead of failing, so the tab cannot mask the
+    # scan's own verdict above.
     - name: Upload scan results to the Security tab
       if: ${{ always() && steps.scan.outputs.sarif == 'true' }}
-      uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
-      with:
-        sarif_file: ${{ runner.temp }}/plugins.sarif
-        category: govulncheck-plugins
-      continue-on-error: true
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |-
+        for f in "$RUNNER_TEMP"/sarif/*.sarif; do
+          m=$(basename "$f" .sarif)
+          gh api "repos/${{ github.repository }}/code-scanning/sarifs" \
+            -f commit_sha="${{ github.sha }}" \
+            -f ref="${{ github.ref }}" \
+            -f category="govulncheck-$m" \
+            -f sarif="$(gzip -c "$f" | base64 -w0)" \
+            >/dev/null || echo "::warning::could not upload the $m scan to the Security tab"
+        done
 
   # One required check to protect the branch with, rather than a list that has
   # to be edited every time a job is added. A skipped job is a pass; anything
