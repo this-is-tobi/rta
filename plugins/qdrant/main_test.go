@@ -123,6 +123,12 @@ func TestOnlyThePointReadIsAWrite(t *testing.T) {
 		"qdrant.collection.show": {plugin.Read, false},
 		"qdrant.points.count":    {plugin.Read, false},
 		"qdrant.points.scroll":   {plugin.Write, true},
+		// The pair with no nameable blast radius: both refuse MCP outright,
+		// so neither carries NeedsGrant — a grant that can never be exercised
+		// over the surface grants gate would be a standing entry in `grant
+		// list` that means nothing (keys.backup's line, via pg.dump).
+		"qdrant.dump":    {plugin.Write, false},
+		"qdrant.restore": {plugin.Destructive, false},
 	}
 	seen := map[string]bool{}
 	for _, c := range Plugin().Capabilities {
