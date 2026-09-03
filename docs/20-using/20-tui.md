@@ -123,6 +123,21 @@ Destructive capabilities confirm before acting, the same as on the CLI.
 | `c` | Configure it |
 | `enter` | Its capabilities, in the search bar |
 
+### Grouped by where the bytes came from
+
+The pane bands its rows by provenance, because that is the fact that changes how every other fact on a row reads. "13 capabilities, one of them destructive" means one thing about code compiled into the binary you chose to run and something else about a file that appeared on your `$PATH`, and a list sorted by name buried the two or three you did not compile among a dozen you did.
+
+| Band | What it means |
+| --- | --- |
+| **built in** | Compiled into the rta binary you are running, which is why these need no digest |
+| **installed by rta** | rta placed these bytes from an index you attached; the row carries the version, the index and what the signature check found |
+| **found on $PATH** | Binaries rta did not place and holds no record of |
+| **not run** | Discovered and never launched, because nothing has approved them yet |
+
+A stock install is entirely built in, so no bands are drawn at all — one band separates nothing.
+
+**There is no "official" band, and that is a fact about rta rather than an omission.** rta attaches no index by default: `rta plugin index add <name> <repository>` is the whole story, and the name is yours to choose. So an index called `official` is only an index somebody called `official`, and a band drawn from that name would be rta vouching for provenance out of a string anyone can pick. What rta genuinely knows is whether it placed the bytes itself, and that is what the bands say. Trust here binds to a digest, never to a name — which is also why an `rta.lock` record is matched to a row by digest: an entry naming this plugin and describing different bytes belongs to a half-finished upgrade, not to what you are running.
+
 `t` is the decision made where the evidence is: the digest and the path are on the screen while you take it, which the command line shows you only afterwards. Neither direction takes effect on the process you are in — trust is read once, before anything is launched — so approving says it loads when rta restarts, and withdrawing says the plugin already running stays running until rta exits.
 
 `a` is the permission after that one. Approving says these bytes may run; allowing says what they may read — a kubeconfig, an SSH directory, whatever the plugin declares it needs. The row shows both sides: what it has been allowed, and what it is still asking for.
