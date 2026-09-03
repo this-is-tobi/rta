@@ -388,6 +388,17 @@ rta pg restore restored/shop-2026-08-01.dump --profile shop-staging --yes
 
 Two gated commands rather than one capability reaching into two services, which is on purpose: each half is separately consented, separately scoped, and separately in the record.
 
+**`cnpg` is the exception, and it is a different shape on purpose.** A CloudNativePG cluster already knows where its backups go — an object store, or a volume snapshot class, configured on the cluster itself — so there is no file for rta to write and no destination for it to choose:
+
+```bash
+rta cnpg backup request shop-prod-db     # ask the operator to take one now
+rta cnpg backup list shop-prod-db        # what it did, and where it went
+```
+
+The request carries a cluster reference and nothing else. Destination, credentials, retention and encryption all come from the cluster, which is what makes this the one mutating capability in an otherwise read-only plugin: there is no place for a caller to point it at. It is `Write`, so it is off the default MCP surface until you pass `--allow-write cnpg`, and it needs a grant that names the cluster on top of that.
+
+It is refused outright for a cluster that configures no backup. CloudNativePG accepts such a request and fails it minutes later, in a place nobody is watching — so rta reads the cluster first and tells you now.
+
 **Know what your dump does not carry.** Each of these backs up one thing, and the material it needs beside itself lives somewhere the dump cannot reach. Every one of them says this on its own receipt as well, at the moment you take the backup — this table is the same facts where a backup strategy gets planned rather than where one gets run:
 
 | Dump | What it leaves behind | Where that lives |

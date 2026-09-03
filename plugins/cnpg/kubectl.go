@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -269,7 +270,18 @@ func firstLine(s string) string {
 
 // getJSON reads one or many clusters and decodes into out.
 func getJSON(ctx context.Context, s selection, name string, out any) *view.Error {
-	args := []string{"get", clusterCRD}
+	return getResource(ctx, s, clusterCRD, name, out)
+}
+
+// getResource is getJSON over any of the two resources this plugin reads.
+//
+// Split out when backups arrived rather than copied, because the decode error
+// and the argument order are the parts that must not drift: `-o json` after
+// the name and the selection flags after that is the shape args() documents at
+// length, and a second hand-assembled call is where `--all-namespaces` lands
+// before the verb again.
+func getResource(ctx context.Context, s selection, resource, name string, out any) *view.Error {
+	args := []string{"get", resource}
 	if name != "" {
 		args = append(args, name)
 	}
@@ -281,6 +293,42 @@ func getJSON(ctx context.Context, s selection, name string, out any) *view.Error
 	if err := json.Unmarshal(raw, out); err != nil {
 		return view.Errorf("cnpg.decode", "kubectl's JSON did not parse: %v", err).
 			WithHint("that usually means a kubectl old enough to word its output differently")
+	}
+	return nil
+}
+
+// createJSON posts one object and decodes what the API server wrote back.
+//
+// **Through stdin rather than a temporary file**, which is not merely tidier:
+// a file has a path, a path has a directory, and rta confines what a plugin
+// may touch on the operator's disk precisely so that a plugin reaching for
+// somewhere to write is a decision somebody made rather than a side effect of
+// how a request was encoded. Nothing about creating an object in a cluster
+// needs the local filesystem, so it does not get it.
+//
+// The document is built by encoding/json from a typed struct here, never by
+// interpolating a name into a template — the same reason checkName exists one
+// layer up. A cluster name is still checked before it reaches this, because
+// defence that only works when the encoder is correct is defence with one
+// leg.
+func createJSON(ctx context.Context, s selection, doc []byte, out any, extra ...string) *view.Error {
+	args := s.args(append([]string{"create", "-f", "-", "-o", "json"}, extra...)...)
+	cctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	cmd := exec.CommandContext(cctx, kubectlBin, args...)
+	cmd.Stdin = bytes.NewReader(doc)
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	raw, err := cmd.Output()
+	if err != nil {
+		return classify(cctx, err, stderr.String(), args)
+	}
+	if out == nil {
+		return nil
+	}
+	if err := json.Unmarshal(raw, out); err != nil {
+		return view.Errorf("cnpg.decode", "kubectl's JSON did not parse: %v", err).
+			WithHint("the object may still have been created — `rta cnpg backup list` says")
 	}
 	return nil
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -45,7 +46,27 @@ type cluster struct {
 		// Decoded only for presence: a cluster with no `backup` stanza has
 		// nothing to back it up, which is a different finding from one whose
 		// configured backups never succeed.
-		Backup    *struct{} `json:"backup,omitempty"`
+		//
+		// The two sub-stanzas are decoded for presence too, and only for
+		// presence: which mechanisms this cluster has configured is the
+		// question a backup request has to answer before it sends anything,
+		// and the contents are the object store's address beside references
+		// to the secrets holding its keys — which this plugin has no question
+		// that needs.
+		Backup *clusterBackup `json:"backup,omitempty"`
+		// Plugins is the other way a cluster can be backed up, and reading it
+		// is a correction rather than an addition.
+		//
+		// CloudNativePG is moving object-store backup out of `.spec.backup`
+		// and into a WAL-archiver plugin — the CRD says so itself, in
+		// `isWALArchiver`'s own description: "This cannot be enabled if the
+		// `.spec.backup.barmanObjectStore` configuration is present." So the
+		// two stanzas are alternatives, and treating the absence of the first
+		// as "nothing backs this cluster up" told every cluster on the newer
+		// arrangement that it had no backups, on the screen somebody opens to
+		// check exactly that.
+		Plugins []clusterPlugin `json:"plugins,omitempty"`
+
 		Resources struct {
 			Requests map[string]string `json:"requests"`
 			Limits   map[string]string `json:"limits"`
@@ -112,6 +133,105 @@ type cluster struct {
 		UnusablePVC []string `json:"unusablePVC"`
 		ResizingPVC []string `json:"resizingPVC"`
 	} `json:"status"`
+}
+
+// clusterBackup is `.spec.backup`, decoded for the shape of what is set up
+// and never for its contents — the object store's address and the references
+// to the secrets holding its keys both live inside barmanObjectStore, and
+// nothing here has a question that needs either.
+type clusterBackup struct {
+	BarmanObjectStore *struct{} `json:"barmanObjectStore,omitempty"`
+	VolumeSnapshot    *struct{} `json:"volumeSnapshot,omitempty"`
+}
+
+// clusterPlugin is one entry of `.spec.plugins`.
+//
+// `parameters` is not decoded: it is a free-form string map a plugin defines
+// for itself, and the barman-cloud one names the ObjectStore holding an
+// object store's address and credential references.
+type clusterPlugin struct {
+	Name string `json:"name"`
+	// Enabled is a pointer because the CRD's default is true — an entry
+	// present with nothing said about it is on, and reading absent as false
+	// would report a backed-up cluster as unprotected.
+	Enabled       *bool `json:"enabled,omitempty"`
+	IsWALArchiver bool  `json:"isWALArchiver,omitempty"`
+}
+
+func (p clusterPlugin) enabled() bool { return p.Enabled == nil || *p.Enabled }
+
+// walArchiverPlugin names the enabled WAL-archiver plugin, or "".
+//
+// At most one may be designated, which the CRD states, so the first is the
+// answer rather than one of several.
+func (c cluster) walArchiverPlugin() string {
+	for _, p := range c.Spec.Plugins {
+		if p.IsWALArchiver && p.enabled() && strings.TrimSpace(p.Name) != "" {
+			return p.Name
+		}
+	}
+	return ""
+}
+
+// backupConfigured reports whether anything at all would perform a backup of
+// this cluster: the classic `.spec.backup` stanza, or a WAL-archiver plugin.
+//
+// The question a write asks before writing, and the same question the status
+// view's "not configured" finding was already asking with only half the
+// answer.
+func (c cluster) backupConfigured() bool {
+	return c.Spec.Backup != nil || c.walArchiverPlugin() != ""
+}
+
+// defaultBackupMethod is what CloudNativePG uses for a Backup that names no
+// method.
+//
+// **A fixed default, not the cluster's preference**, which is the correction a
+// live operator forced. The CRD says it in as many words — `spec.method`
+// "Defaults to: `barmanObjectStore`" — while `spec.target` right beside it
+// says "If empty, it defaults to `cluster.spec.backup.target`". The two fields
+// read alike and behave differently, and treating method like target meant
+// rta would tell an operator the cluster had chosen when nothing had: a
+// cluster configured only for volume snapshots gets a barmanObjectStore
+// backup it cannot perform, failing minutes later with rta's receipt already
+// saying the cluster decided.
+const defaultBackupMethod = "barmanObjectStore"
+
+// configuredMethods lists the backup mechanisms this cluster has set up.
+//
+// Presence only, and permissive where it cannot see. A WAL-archiver plugin
+// carries its own configuration in an ObjectStore resource this plugin does
+// not read, so a cluster using one gets no opinion from here rather than a
+// guess — refusing a legitimate backup is a worse failure than letting the
+// API server have the last word, which it has either way.
+func (c cluster) configuredMethods() []string {
+	var out []string
+	if b := c.Spec.Backup; b != nil {
+		if b.BarmanObjectStore != nil {
+			out = append(out, "barmanObjectStore")
+		}
+		if b.VolumeSnapshot != nil {
+			out = append(out, "volumeSnapshot")
+		}
+	}
+	if c.walArchiverPlugin() != "" {
+		out = append(out, "plugin")
+	}
+	return out
+}
+
+// canTake reports whether a backup by this method is something the cluster is
+// set up to perform, and is deliberately generous about what it does not
+// know: an unrecognised method, or any method at all on a cluster using a
+// WAL-archiver plugin, passes.
+func (c cluster) canTake(method string) bool {
+	if method == "" {
+		method = defaultBackupMethod
+	}
+	if c.walArchiverPlugin() != "" || method == "plugin" {
+		return true
+	}
+	return slices.Contains(c.configuredMethods(), method)
 }
 
 type instanceState struct {
