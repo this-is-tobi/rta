@@ -388,12 +388,12 @@ rta pg restore restored/shop-2026-08-01.dump --profile shop-staging --yes
 
 Two gated commands rather than one capability reaching into two services, which is on purpose: each half is separately consented, separately scoped, and separately in the record.
 
-**Know what your dump does not carry.** Each of these backs up one thing, and the material it needs beside itself lives somewhere the dump cannot reach:
+**Know what your dump does not carry.** Each of these backs up one thing, and the material it needs beside itself lives somewhere the dump cannot reach. Every one of them says this on its own receipt as well, at the moment you take the backup — this table is the same facts where a backup strategy gets planned rather than where one gets run:
 
 | Dump | What it leaves behind | Where that lives |
 | --- | --- | --- |
 | `pg.dump` | roles, tablespaces — a restore onto a fresh server fails on every ownership line | `pg_dumpall --globals-only` |
-| `mysql.dump`, `mariadb.dump` | users and grants — a single-database dump carries no `mysql.user` rows | the `mysql` database, dumped separately |
+| `mysql.dump`, `mariadb.dump` | users and grants — a single-database dump carries no `mysql.user` rows | `mariadb-dump --system=users`; MySQL has no such flag, so `mysqldump mysql` |
 | `qdrant.dump` | aliases — the snapshot restores the collection, not the name pointing at it | the alias API |
 | `vault.snapshot` | the unseal keys, and the snapshot is **sealed with the source cluster's** — a restore without them is a file you cannot open | wherever `operator init` output was stashed, never Vault itself |
 | `etcd.snapshot` | the cluster's own identity — membership, peer URLs and TLS material. The restore mints a new cluster ID and takes the topology from its own flags | your etcd configuration, wherever that is kept |

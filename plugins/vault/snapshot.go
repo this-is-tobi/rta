@@ -164,6 +164,16 @@ func runSnapshot(ctx context.Context, req plugin.Request) (view.View, error) {
 			// said where somebody is looking at the file they just made.
 			{Key: "at rest", Value: "sealed by the barrier — restoring needs the same unseal " +
 				"keys or KMS, mode 0600"},
+			// **The sharpest case in the family, and the reason the line exists at
+			// all.** The keys that open this file are the *source* cluster's, not
+			// the target's — vault.restore.mismatch is what that looks like when
+			// somebody finds out later. Vault cannot hand them back either: unseal
+			// keys are never retrievable, so they exist only wherever `operator
+			// init` output was stashed on the day the cluster was created.
+			{Key: "does not carry", Value: "the unseal keys, and it is sealed with the source " +
+				"cluster's rather than the target's — without them this is a file nothing can " +
+				"open. Vault never hands them back; they are wherever `operator init` output " +
+				"was stashed"},
 			{Key: "restore with", Value: "vault operator raft snapshot restore " + path},
 		}}, nil
 	})

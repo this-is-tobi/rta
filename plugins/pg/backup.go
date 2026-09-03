@@ -140,6 +140,15 @@ func runFullDump(ctx context.Context, req plugin.Request) (view.View, error) {
 		// row in the database in the clear, and the moment to say so is while
 		// somebody is looking at where it landed.
 		{Key: "at rest", Value: "unencrypted, mode 0600 — `rta kv` or `age` if it is going anywhere"},
+		// **The half of the restore that is not in this file.** pg_dump omits
+		// globals on purpose — roles and tablespaces belong to the cluster
+		// rather than to this database — so a restore onto a fresh server
+		// fails on the first ownership line and every one after it. pg.restore
+		// already names the symptom when it happens; this names the cause
+		// while there is still time to take the other half.
+		{Key: "does not carry", Value: "roles or tablespaces — pg_dump leaves the cluster's " +
+			"globals out, and a restore onto a fresh server fails on every ownership line " +
+			"until `pg_dumpall --globals-only` has been replayed first"},
 		{Key: "restore with", Value: restoreCommand(req, path)},
 	}}, nil
 }

@@ -243,6 +243,101 @@ func TestTheMCPChapterCountsTheRemoteHiddenCapabilities(t *testing.T) {
 	}
 }
 
+// **A backup that does not say what it leaves behind is not yet a backup.**
+// Every one of these writes a file that restores into something short of what
+// was backed up, and the missing half is different in each: pg leaves the
+// cluster's roles behind, mysql and mariadb leave the accounts that could read
+// the data, qdrant leaves the alias pointing at the collection, vault leaves
+// the keys that open the file it just wrote, and etcd leaves the cluster's own
+// identity. None of that is discoverable from the file, and all of it is
+// discovered on the day somebody needs the restore.
+//
+// So it is written in two places on purpose — the recipes chapter, where a
+// backup strategy gets planned, and the capability's own receipt, where one
+// gets taken — and this fails when a new whole-store backup ships with neither.
+//
+// The set is capabilities whose ID is exactly <plugin>.dump or
+// <plugin>.snapshot. That two-segment form is the whole test: pg.table.dump
+// and pg.schema.dump back up a named part, which is a different question with
+// a different answer, and s3.bucket.download is not a dump at all.
+//
+// The receipt half is checked against the module rather than the handler,
+// which is loose in exactly one way worth naming: a module that grew a second
+// whole-store backup would pass on the first one's row. No module has two, and
+// the day one does is the day to tighten this.
+func TestEveryWholeStoreBackupNamesWhatItLeavesBehind(t *testing.T) {
+	root := repoRoot(t)
+	body := readDoc(t, root, "docs/90-recipes/01-readme.md")
+	const heading = "Know what your dump does not carry"
+	_, table, ok := strings.Cut(body, heading)
+	if !ok {
+		t.Fatal("docs/90-recipes/01-readme.md no longer has the " + heading +
+			" table; if it moved, move this test with it")
+	}
+
+	for capID, src := range wholeStoreBackups(t, root) {
+		if !strings.Contains(src, `"does not carry"`) {
+			t.Errorf("%s backs up a whole datastore and its receipt has no `does not carry` "+
+				"row, so the one moment somebody is looking at the backup passes without "+
+				"telling them what it is missing", capID)
+		}
+		if !strings.Contains(table, "`"+capID+"`") {
+			t.Errorf("%s is absent from the %q table in docs/90-recipes/01-readme.md, which is "+
+				"where a backup strategy gets planned", capID, heading)
+		}
+	}
+}
+
+// wholeStoreBackups maps each whole-store backup capability to the source of
+// the module that declares it. Same reasoning as declaredCapabilityCounts for
+// reading the declaration rather than a built binary: the plugins are separate
+// modules, and what an operator happens to have installed is routinely older
+// than the tree.
+func wholeStoreBackups(t *testing.T, root string) map[string]string {
+	t.Helper()
+	id := regexp.MustCompile(`\bID:\s*"([a-z0-9]+\.(?:dump|snapshot))"`)
+
+	dirs, err := os.ReadDir(filepath.Join(root, "plugins"))
+	if err != nil {
+		t.Fatalf("reading plugins/: %v", err)
+	}
+
+	found := map[string]string{}
+	for _, d := range dirs {
+		if !d.IsDir() {
+			continue
+		}
+		modDir := filepath.Join(root, "plugins", d.Name())
+		files, err := os.ReadDir(modDir)
+		if err != nil {
+			t.Fatalf("reading %s: %v", modDir, err)
+		}
+		var src strings.Builder
+		for _, f := range files {
+			n := f.Name()
+			if !strings.HasSuffix(n, ".go") || strings.HasSuffix(n, "_test.go") {
+				continue
+			}
+			b, err := os.ReadFile(filepath.Join(modDir, n))
+			if err != nil {
+				t.Fatalf("reading %s: %v", n, err)
+			}
+			src.Write(b)
+		}
+		for _, m := range id.FindAllStringSubmatch(src.String(), -1) {
+			// Namespaced by its own plugin, so a mention of another plugin's
+			// capability in a comment or a hint cannot enrol this module.
+			if strings.HasPrefix(m[1], d.Name()+".") {
+				found[m[1]] = src.String()
+			}
+		}
+	}
+	if len(found) == 0 {
+		t.Fatal("found no whole-store backup capabilities under plugins/, which cannot be right")
+	}
+	return found
+}
+
 func readDoc(t *testing.T, root, rel string) string {
 	t.Helper()
 	b, err := os.ReadFile(filepath.Join(root, rel))

@@ -165,9 +165,8 @@ func runSnapshot(ctx context.Context, req plugin.Request) (view.View, error) {
 	return withClient(ctx, req, func(ctx context.Context, c *clientv3.Client) (view.View, error) {
 		// Ask the member what it is before taking anything from it, the way
 		// pg.dump asks whether it is talking to a primary: the answer changes
-		// what the file means, and finding out here means a cluster that
-		// cannot be reached is a classified error rather than a child of a
-		// half-written file.
+		// what the file means, and asking here means a cluster that cannot be
+		// reached is a classified error rather than a half-written file.
 		src, verr := describeSource(ctx, c, req)
 		if verr != nil {
 			return nil, verr
