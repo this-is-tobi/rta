@@ -91,14 +91,24 @@ func TestEveryCapabilityIsNoPreview(t *testing.T) {
 
 // **The line this plugin draws, pinned.**
 //
-// etcd.kv.get is the only capability that returns a stored value, so it is the
-// only write and the only one needing a grant. That matters more here than in
-// most places: a Kubernetes cluster keeps its Secrets in etcd base64-encoded
-// rather than encrypted, unless encryption at rest was turned on.
+// Nothing here mutates a cluster. The two writes are writes for what they
+// disclose, and they are opposite ends of the same scale — which is why only
+// one of them takes a grant.
+//
+// etcd.kv.get returns one stored value, so a person can consent to it by name
+// and the grant is worth having. etcd.snapshot returns every stored value, so
+// there is no name to put in a grant: it refuses MCP outright instead, which
+// is keys.backup's line and pg.dump's, and leaving NeedsGrant off is part of
+// that decision rather than an oversight — a grant that can never be exercised
+// over the one surface grants gate is an entry in `grant list` meaning nothing.
+//
+// It matters more here than in most places: a Kubernetes cluster keeps its
+// Secrets in etcd base64-encoded rather than encrypted, unless encryption at
+// rest was turned on.
 //
 // The table fails in both directions, so a new capability that is not
 // accounted for fails, and an entry naming one that no longer exists fails too.
-func TestOnlyTheValueReadIsAWrite(t *testing.T) {
+func TestTheWriteTierIsDisclosureAndOnlyOneHalfIsGrantable(t *testing.T) {
 	want := map[string]struct {
 		safety plugin.Safety
 		grant  bool
@@ -109,6 +119,7 @@ func TestOnlyTheValueReadIsAWrite(t *testing.T) {
 		"etcd.kv.list":     {plugin.Read, false},
 		"etcd.kv.tree":     {plugin.Read, false},
 		"etcd.kv.get":      {plugin.Write, true},
+		"etcd.snapshot":    {plugin.Write, false},
 	}
 	seen := map[string]bool{}
 	for _, c := range Plugin().Capabilities {
