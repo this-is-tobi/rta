@@ -671,7 +671,8 @@ func pluginDetail(row pluginRow) string {
 		// while it is being made, where the command shows them only after.
 		return origin + " · press t to approve it — it loads when rta restarts"
 	}
-	detail := origin + " · " + fmt.Sprintf("%d capabilities", len(row.plugin.Capabilities))
+	detail := origin + " · " + fmt.Sprintf("%d %s", len(row.plugin.Capabilities),
+		pluralNoun(len(row.plugin.Capabilities), "capability"))
 	// What this binary has actually been handed, named on the row rather than
 	// implied by the absence of a warning. A plugin reading a kubeconfig and
 	// one reading nothing at all were previously the same line.

@@ -124,9 +124,16 @@ func (m Model) resultMeta() string {
 // builtin/audit's plural, which returns "2 advisories" with the number
 // folded in: two helpers, one name and two contracts is how "2 2 warnings"
 // gets written by somebody reading the wrong one.
+// The -y → -ies rule is carried because this package's most-counted noun is
+// "capability", and the plugin inventory prints one per row for a plugin that
+// declares exactly one — `debug` does. A naive "s" gave "1 capabilities" on a
+// pane whose whole job is being read carefully.
 func pluralNoun(n int, word string) string {
 	if n == 1 {
 		return word
+	}
+	if strings.HasSuffix(word, "y") && !strings.ContainsAny(word[len(word)-2:len(word)-1], "aeiou") {
+		return word[:len(word)-1] + "ies"
 	}
 	return word + "s"
 }
