@@ -437,7 +437,17 @@ jobs:
         for m in $(make plugins-list); do
           echo "==> plugins/$m"
           (cd "plugins/$m" && govulncheck ./...) || failed="$failed plugins/$m"
-          (cd "plugins/$m" && govulncheck -format sarif ./...) > "$RUNNER_TEMP/sarif/$m.sarif" || rm -f "$RUNNER_TEMP/sarif/$m.sarif"
+          (cd "plugins/$m" && govulncheck -format sarif ./...) > "$RUNNER_TEMP/sarif/$m.raw" || { rm -f "$RUNNER_TEMP/sarif/$m.raw"; continue; }
+          # **This is where the category lives.** The upload API has no
+          # category parameter — passing one is rejected outright — because
+          # code scanning reads it from the SARIF's own
+          # runs[].automationDetails.id. Stamping it per module is what gives
+          # each plugin its own govulncheck-<module> heading in the Security
+          # tab, and it is also what keeps the eleven uploads from replacing
+          # one another under a shared default.
+          jq --arg id "govulncheck-$m/" '.runs[].automationDetails.id = $id' \
+            "$RUNNER_TEMP/sarif/$m.raw" > "$RUNNER_TEMP/sarif/$m.sarif" || rm -f "$RUNNER_TEMP/sarif/$m.sarif"
+          rm -f "$RUNNER_TEMP/sarif/$m.raw"
         done
         find "$RUNNER_TEMP/sarif" -name '*.sarif' -size -2c -delete
         if ls "$RUNNER_TEMP"/sarif/*.sarif >/dev/null 2>&1; then
@@ -452,10 +462,11 @@ jobs:
     # when this upload matters most. One API call per module rather than one
     # merged file: code scanning stopped accepting several SARIF runs under
     # one category (July 2025), and one action step cannot loop — the API
-    # can, and it hands every module its own govulncheck-<module> category
-    # back, which is how the Security tab groups findings for a reviewer. A
-    # rejected upload warns instead of failing, so the tab cannot mask the
-    # scan's own verdict above.
+    # can. The category rides inside each file (automationDetails.id, stamped
+    # above) rather than as a parameter, which the API rejects; that is what
+    # gives every module its own govulncheck-<module> heading in the Security
+    # tab, where a reviewer follows a finding. A rejected upload warns
+    # instead of failing, so the tab cannot mask the scan's own verdict.
     - name: Upload scan results to the Security tab
       if: ${{ always() && steps.scan.outputs.sarif == 'true' }}
       env:
@@ -466,7 +477,6 @@ jobs:
           gh api "repos/${{ github.repository }}/code-scanning/sarifs" \
             -f commit_sha="${{ github.sha }}" \
             -f ref="${{ github.ref }}" \
-            -f category="govulncheck-$m" \
             -f sarif="$(gzip -c "$f" | base64 -w0)" \
             >/dev/null || echo "::warning::could not upload the $m scan to the Security tab"
         done
