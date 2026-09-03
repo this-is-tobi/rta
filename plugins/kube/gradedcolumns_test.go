@@ -17,19 +17,19 @@ import (
 // So both lists are written down. A column moving between them should be a
 // change somebody made on purpose, with an argument, not a diff nobody read.
 func TestOnlyTheColumnsWithACapacityBehindThemAreGraded(t *testing.T) {
-	graded := map[string]string{
+	graded := []string{
 		// used against the claim's own capacity — the disk-full question
-		"kube.pvc.usage/used %": "used %",
+		"kube.pvc.usage/used %",
 		// used against the container's limit, which is where it is throttled
 		// or killed
-		"kube.metrics.pod/cpu %":    "cpu %",
-		"kube.metrics.pod/memory %": "memory %",
+		"kube.metrics.pod/cpu %",
+		"kube.metrics.pod/memory %",
 		// used against the node's allocatable, which is what the scheduler
 		// has left to give
-		"kube.metrics.node/cpu %":    "cpu %",
-		"kube.metrics.node/memory %": "memory %",
+		"kube.metrics.node/cpu %",
+		"kube.metrics.node/memory %",
 		// used against the quota's hard limit
-		"kube.quota.list/%": "%",
+		"kube.quota.list/%",
 	}
 	// PSI: the share of an interval tasks spent stalled, not a share of a
 	// capacity. A node at 40% memory pressure is in serious trouble and one at
@@ -40,12 +40,18 @@ func TestOnlyTheColumnsWithACapacityBehindThemAreGraded(t *testing.T) {
 	ungraded := []string{"cpu 10s", "cpu 5m", "memory 10s", "memory 5m",
 		"io 10s", "io 5m"}
 
+	// Both spellings of the two capabilities that have one. --all-namespaces
+	// prepends a column, so it is the only place a header could come to
+	// disagree with the rows built beside it, and the graded column has to
+	// keep its kind either way.
 	byName := map[string]view.ColumnKind{}
 	for id, cols := range map[string][]view.Column{
 		"kube.pvc.usage":        pvcUsageColumns(),
 		"kube.metrics.pod":      podMetricColumns(false),
+		"kube.metrics.pod/all":  podMetricColumns(true),
 		"kube.metrics.node":     nodeMetricColumns(),
 		"kube.quota.list":       quotaColumns(false),
+		"kube.quota.list/all":   quotaColumns(true),
 		"kube.metrics.pressure": pressureColumns(),
 	} {
 		for _, c := range cols {
@@ -53,9 +59,22 @@ func TestOnlyTheColumnsWithACapacityBehindThemAreGraded(t *testing.T) {
 		}
 	}
 
-	for key := range graded {
+	for _, key := range graded {
 		if got := byName[key]; got != view.KindUsage {
 			t.Errorf("%s is %q, want usage — nothing else colours it", key, got)
+		}
+	}
+	for _, key := range []string{"kube.metrics.pod/all/cpu %",
+		"kube.metrics.pod/all/memory %", "kube.quota.list/all/%"} {
+		if got := byName[key]; got != view.KindUsage {
+			t.Errorf("%s is %q — the grading was lost on the all-namespaces spelling", key, got)
+		}
+	}
+	// The extra column is the namespace and it goes first, which is what the
+	// rows built at the call sites assume.
+	for _, cols := range [][]view.Column{podMetricColumns(true), quotaColumns(true)} {
+		if cols[0].Name != "namespace" {
+			t.Errorf("--all-namespaces puts %q first, not the namespace", cols[0].Name)
 		}
 	}
 	for _, name := range ungraded {

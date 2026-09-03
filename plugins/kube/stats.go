@@ -328,8 +328,6 @@ func maxOf(vs ...float64) float64 {
 	return out
 }
 
-// pct renders a PSI average, which the kernel already reports as a percentage
-// rather than a ratio — so percentOf, which divides, is the wrong helper here.
 // pvcUsageColumns: used against the claim's own capacity, so 100 is a volume
 // that has stopped accepting writes — KindUsage, which the renderer grades
 // green, amber and red.
@@ -366,6 +364,8 @@ func pressureColumns() []view.Column {
 	}
 }
 
+// pct renders a PSI average, which the kernel already reports as a percentage
+// rather than a ratio — so percentOf, which divides, is the wrong helper here.
 func pct(v float64, ok bool) string {
 	if !ok {
 		return ""

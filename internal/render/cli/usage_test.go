@@ -38,15 +38,25 @@ func renderColoured(t *testing.T, v view.View, width int) string {
 // gradeable percentage worth a kind of its own.
 func TestAFullVolumeIsColouredAndAnEmptyOneIsNot(t *testing.T) {
 	out := renderColoured(t, usageTable(view.KindUsage), 100)
-	for _, cell := range []string{"31%", "84%", "96%"} {
-		want := theme.UsageStyle(cell).Render(cell)
-		if !strings.Contains(out, want) {
-			t.Errorf("%s is not rendered in its own band", cell)
+	// Against the palette's own styles rather than against UsageStyle, which
+	// is what the renderer just called: comparing a cell to the classifier
+	// that produced it asserts only that the renderer called *something*, and
+	// a band that regressed would move both sides together.
+	for _, tc := range []struct {
+		cell  string
+		style lipgloss.Style
+	}{
+		{"31%", theme.GoodText},
+		{"84%", theme.WarnText},
+		{"96%", theme.BadText},
+	} {
+		if want := tc.style.Render(tc.cell); !strings.Contains(out, want) {
+			t.Errorf("%s is not rendered in the band it belongs to", tc.cell)
 		}
 	}
-	// Not the same style for all three, which is the assertion that would
-	// still pass if every band resolved to Plain.
-	if theme.UsageStyle("31%").Render("x") == theme.UsageStyle("96%").Render("x") {
+	// The three bands are three different things, which is the assertion that
+	// would still pass if every one of them resolved to Plain.
+	if theme.GoodText.Render("x") == theme.BadText.Render("x") {
 		t.Fatal("comfortable and full render identically")
 	}
 }
@@ -59,7 +69,7 @@ func TestAPlainPercentageIsLeftAlone(t *testing.T) {
 	if plain == graded {
 		t.Fatal("KindPercent and KindUsage render identically")
 	}
-	if strings.Contains(plain, theme.UsageStyle("96%").Render("96%")) {
+	if strings.Contains(plain, theme.BadText.Render("96%")) {
 		t.Error("a KindPercent cell was graded")
 	}
 }
@@ -77,7 +87,7 @@ func TestTheRecordLayoutKeepsTheGrading(t *testing.T) {
 	if strings.Contains(out, "╭") {
 		t.Fatalf("still a grid at 30 cells:\n%s", out)
 	}
-	if !strings.Contains(out, theme.UsageStyle("96%").Render("96%")) {
+	if !strings.Contains(out, theme.BadText.Render("96%")) {
 		t.Errorf("the full volume lost its colour in the record layout:\n%s", out)
 	}
 }
