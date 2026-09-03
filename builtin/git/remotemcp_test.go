@@ -55,8 +55,8 @@ func TestARemoteRepositoryIsNotReachableOverMCP(t *testing.T) {
 			if !ok {
 				t.Fatalf("%s: want a view.Error, got %T", tc.name, err)
 			}
-			if verr.Code != "git.remote.mcp" {
-				t.Errorf("%s refused for a different reason: %s — %s", tc.name, verr.Code, verr.Message)
+			if verr.Code != "git.remote.mcp" || !verr.Refusal {
+				t.Errorf("%s refused for a different reason, or unmarked: %s — %s", tc.name, verr.Code, verr.Message)
 			}
 			// The refusal must not repeat the caller's own string back into a
 			// model's context under rta's name.

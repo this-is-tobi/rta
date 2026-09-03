@@ -54,8 +54,8 @@ func TestCopyIsRefusedOverMCPBeforeAnythingIsDecrypted(t *testing.T) {
 		map[string]any{"key": "db-password", "passphrase": "not the passphrase"}, false, true).
 		WithSurface(plugin.SurfaceMCP))
 	ve := view.AsError(err, "z")
-	if ve.Code != "kv.copy.noclipboard" {
-		t.Fatalf("MCP copy = %+v, want a refusal", ve)
+	if ve.Code != "kv.copy.noclipboard" || !ve.Refusal {
+		t.Fatalf("MCP copy = %+v, want a marked refusal", ve)
 	}
 	if ve.Hint == "" {
 		t.Error("a refusal an agent cannot act on is a retry loop")

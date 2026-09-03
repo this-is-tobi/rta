@@ -171,7 +171,7 @@ func validatedIdentity(req plugin.Request) (name, namespace string, verr *view.E
 
 func runServiceAccountProvision(ctx context.Context, req plugin.Request) (view.View, error) {
 	if req.Surface() == plugin.SurfaceMCP {
-		return nil, view.Errorf("kube.serviceaccount.mcp",
+		return nil, view.Refusef("kube.serviceaccount.mcp",
 			"minting a Kubernetes identity is not available over MCP").
 			WithHint("run this from the CLI or TUI — an agent must never be able to mint its own parallel credential")
 	}

@@ -66,8 +66,8 @@ func TestAnUnqualifiedNameIsRefusedOverMCP(t *testing.T) {
 	if q.asked != 0 {
 		t.Errorf("the catalogue was queried %d times before the refusal", q.asked)
 	}
-	if verr.Code != "pg.table.unqualified" {
-		t.Fatalf("code = %q, want pg.table.unqualified", verr.Code)
+	if verr.Code != "pg.table.unqualified" || !verr.Refusal {
+		t.Fatalf("want pg.table.unqualified marked a refusal, got %+v", verr)
 	}
 	// The hint has to say that issuing a grant for the bare name will not
 	// help, because the host's own refusal — which comes first, and which the
@@ -120,8 +120,8 @@ func TestTheFullDumpRefusesMCP(t *testing.T) {
 		t.Fatal("an MCP caller was allowed to dump the whole database")
 	}
 	var verr *view.Error
-	if !errors.As(err, &verr) || verr.Code != "pg.human" {
-		t.Fatalf("err = %v, want pg.human", err)
+	if !errors.As(err, &verr) || verr.Code != "pg.human" || !verr.Refusal {
+		t.Fatalf("err = %v, want pg.human marked a refusal", err)
 	}
 	// The refusal names the way through, or it is a dead end that teaches an
 	// agent nothing except to try again.

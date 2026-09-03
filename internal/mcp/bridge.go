@@ -434,7 +434,22 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 		if err != nil {
 			release()
 			ve := view.AsError(err, c.ID+".failed")
-			rec.Outcome, rec.Reason = agentlog.Failed, ve.Code+": "+ve.Message
+			// A handler's own policy gate — localOnly, humanOnly, a
+			// credential-minting verb refusing agents — says so on the error
+			// (view.Error.Refusal), and its no is a refusal in the ledger,
+			// not an execution failure: an operator grepping outcome=refused
+			// is asking what their agent tried that policy would not let it
+			// do, and these gates are the exact half of that answer that used
+			// to be filed under "the work broke". Auth deliberately keeps
+			// whatever the call earned above: blocked means it never cleared
+			// the authority gate, open or grant means authority allowed it
+			// and the handler's own policy still said no — the pair tells a
+			// reader where in the stack the refusal happened.
+			if ve.Refusal {
+				refusedBy(rec, ve)
+			} else {
+				rec.Outcome, rec.Reason = agentlog.Failed, ve.Code+": "+ve.Message
+			}
 			return errResult(ve), nil
 		}
 		rec.Outcome = agentlog.Ran

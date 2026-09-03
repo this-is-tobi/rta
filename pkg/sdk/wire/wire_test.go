@@ -190,7 +190,10 @@ func everyViewType() map[string]view.View {
 			},
 			Warnings: []view.Error{{Code: "x.partial", Message: "one sensor failed", Hint: "try later", Retryable: true}},
 		},
-		"error": &view.Error{Code: "x.y.z", Message: "it failed", Hint: "do this", Retryable: true},
+		// Refusal set so the round-trip proves the flag survives the wire: a
+		// plugin's policy gate that arrives stripped would ledger host-side
+		// as the work breaking.
+		"error": &view.Error{Code: "x.y.z", Message: "it failed", Hint: "do this", Retryable: true, Refusal: true},
 	}
 }
 

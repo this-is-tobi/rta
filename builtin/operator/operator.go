@@ -74,7 +74,7 @@ func Plugin() plugin.Plugin {
 func humanOnly(h plugin.Handler) plugin.Handler {
 	return func(ctx context.Context, req plugin.Request) (view.View, error) {
 		if req.Surface() == plugin.SurfaceMCP {
-			return nil, view.Errorf("operator.surface",
+			return nil, view.Refusef("operator.surface",
 				"the operator identity belongs to the person at the terminal, not to a caller over MCP").
 				WithHint("ask the operator to run `rta operator status`")
 		}

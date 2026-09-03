@@ -92,7 +92,7 @@ func humanOnly(req plugin.Request, id string) *view.Error {
 	if req.Surface() != plugin.SurfaceMCP {
 		return nil
 	}
-	return view.Errorf("s3.human", "%s can only be run by a person at a terminal", id).
+	return view.Refusef("s3.human", "%s can only be run by a person at a terminal", id).
 		WithHint("a whole bucket has no blast radius a grant could name — its one authorized " +
 			"use is everything. Ask for the object you need with s3.object.get, which takes a " +
 			"grant naming that key")

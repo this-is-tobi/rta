@@ -145,6 +145,19 @@ func testRegistry(t *testing.T) *registry.Registry {
 				},
 			},
 			{
+				// The handler's own policy gate, the shape every localOnly and
+				// humanOnly capability shares: the work never starts, and the
+				// no must read as refused in the ledger, not as the work
+				// breaking.
+				ID: "demo.item.humanonly", Summary: "refuses agents", Safety: plugin.Read,
+				Run: func(_ context.Context, req plugin.Request) (view.View, error) {
+					if req.Surface() == plugin.SurfaceMCP {
+						return nil, view.Refusef("demo.human", "this belongs to the person at the terminal")
+					}
+					return view.Text{Body: "hello, person"}, nil
+				},
+			},
+			{
 				// A handler bug, not a refusal: the class of failure recover()
 				// exists for. A capability returning an error is the ordinary
 				// case demo.item.fail covers; this one is the one that would

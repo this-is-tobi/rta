@@ -206,8 +206,8 @@ func TestTheDownloadRefusesMCP(t *testing.T) {
 	_, err := runBucketDownload(context.Background(),
 		downloadReq(t, srv, map[string]any{"out": root}).WithSurface(plugin.SurfaceMCP))
 	var verr *view.Error
-	if !errors.As(err, &verr) || verr.Code != "s3.human" {
-		t.Fatalf("err = %v, want s3.human", err)
+	if !errors.As(err, &verr) || verr.Code != "s3.human" || !verr.Refusal {
+		t.Fatalf("err = %v, want s3.human marked a refusal", err)
 	}
 	if !strings.Contains(verr.Hint, "s3.object.get") {
 		t.Errorf("hint = %q, want it to name the capability that does take a grant", verr.Hint)

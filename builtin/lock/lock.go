@@ -113,7 +113,7 @@ func Plugin() plugin.Plugin {
 func localOnly(h plugin.Handler) plugin.Handler {
 	return func(ctx context.Context, req plugin.Request) (view.View, error) {
 		if req.Surface() == plugin.SurfaceMCP {
-			return nil, view.Errorf("lock.human",
+			return nil, view.Refusef("lock.human",
 				"locks belong to the person at the terminal, not to a caller over MCP").
 				WithHint("ask the operator to run `rta lock list`")
 		}

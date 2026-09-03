@@ -17,7 +17,7 @@ import (
 
 func runGuardOn(_ context.Context, req plugin.Request) (view.View, error) {
 	if req.Surface() == plugin.SurfaceMCP {
-		return nil, view.Errorf("grant.human", "the guard can only be enabled by a person")
+		return nil, view.Refusef("grant.human", "the guard can only be enabled by a person")
 	}
 	if guard.Enabled() {
 		return nil, view.Errorf("core.guard.exists", "the guard is already enabled").
@@ -65,7 +65,7 @@ func runGuardOn(_ context.Context, req plugin.Request) (view.View, error) {
 
 func runGuardOff(_ context.Context, req plugin.Request) (view.View, error) {
 	if req.Surface() == plugin.SurfaceMCP {
-		return nil, view.Errorf("grant.human", "the guard can only be disabled by a person")
+		return nil, view.Refusef("grant.human", "the guard can only be disabled by a person")
 	}
 	if !guard.Enabled() {
 		return nil, view.Errorf("core.guard.off", "the guard is not enabled")
@@ -142,7 +142,7 @@ func runGuardOff(_ context.Context, req plugin.Request) (view.View, error) {
 // guard-on's ordering — clear first, enable second — and its crash story.
 func runGuardRemote(_ context.Context, req plugin.Request) (view.View, error) {
 	if req.Surface() == plugin.SurfaceMCP {
-		return nil, view.Errorf("grant.human", "the guard can only be enabled by a person")
+		return nil, view.Refusef("grant.human", "the guard can only be enabled by a person")
 	}
 	if guard.Enabled() {
 		return nil, view.Errorf("core.guard.exists", "the guard is already enabled").
@@ -228,7 +228,7 @@ func runGuardRemote(_ context.Context, req plugin.Request) (view.View, error) {
 
 func runGuardStatus(_ context.Context, req plugin.Request) (view.View, error) {
 	if req.Surface() == plugin.SurfaceMCP {
-		return nil, view.Errorf("grant.human", "the guard's status is for the person at the terminal")
+		return nil, view.Refusef("grant.human", "the guard's status is for the person at the terminal")
 	}
 	if !guard.Enabled() {
 		return view.KeyValue{Pairs: []view.Pair{

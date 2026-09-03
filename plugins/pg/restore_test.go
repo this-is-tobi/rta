@@ -187,8 +187,8 @@ func TestRestoreRefusesMCPBeforeTouchingAnything(t *testing.T) {
 		t.Fatal("an MCP caller was allowed to restore into the database")
 	}
 	var verr *view.Error
-	if !errors.As(err, &verr) || verr.Code != "pg.human" {
-		t.Fatalf("err = %v, want pg.human", err)
+	if !errors.As(err, &verr) || verr.Code != "pg.human" || !verr.Refusal {
+		t.Fatalf("err = %v, want pg.human marked a refusal", err)
 	}
 }
 

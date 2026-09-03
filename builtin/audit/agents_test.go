@@ -121,8 +121,8 @@ func TestTheAgentAuditIsRefusedOverMCP(t *testing.T) {
 	if !ok {
 		t.Fatalf("want a view.Error, got %T", err)
 	}
-	if verr.Code != "audit.agents.mcp" {
-		t.Errorf("code = %s", verr.Code)
+	if verr.Code != "audit.agents.mcp" || !verr.Refusal {
+		t.Errorf("want audit.agents.mcp marked a refusal, got %+v", verr)
 	}
 	// …and a person still gets it.
 	if rows := agentRows(t, plugin.SurfaceCLI); len(rows) == 0 {
