@@ -199,6 +199,22 @@ func runDump(ctx context.Context, req plugin.Request) (view.View, error) {
 		// row in the database in the clear, and the moment to say so is while
 		// somebody is looking at where it landed.
 		{Key: "at rest", Value: "unencrypted, mode 0600 — `rta kv` or `age` if it is going anywhere"},
+		// **The half of the restore that is not in this file.** This dumps one
+		// database, and users and grants live in another — the server's own
+		// `mysql` database — so a restore onto a fresh server lands the data
+		// and nobody who can reach it.
+		//
+		// **The other half is spelled differently per fork, and only one of
+		// them has a flag for it.** Checked against both clients rather than
+		// assumed: mariadb-dump 11.4 has `--system=name` ("Any combination of:
+		// all, users, plugins, udfs, servers, stats, timezones"), and
+		// mysqldump 8.4 has no --system at all — its usage line is
+		// `mysqldump [OPTIONS] database [tables]` and the accounts are reached
+		// by naming the `mysql` database like any other.
+		{Key: "does not carry", Value: "users or grants — those are rows in the server's " +
+			"own `mysql` database, not in this one, so a restore elsewhere arrives with the " +
+			"data and no account able to read it. `mariadb-dump --system=users` is the " +
+			"other half"},
 		{Key: "restore with", Value: restoreCommand(req, path)},
 	}}, nil
 }

@@ -162,6 +162,14 @@ func runDump(ctx context.Context, req plugin.Request) (view.View, error) {
 		// every vector, and a vector is close to its document.
 		{Key: "at rest", Value: "unencrypted, mode 0600 — payloads and raw vectors both; " +
 			"`rta kv` or `age` if it is going anywhere"},
+		// **The half of the restore that is not in this file.** A snapshot is of
+		// a collection, and an alias is a name pointing at one — kept beside
+		// collections rather than inside them. Restore this and the collection
+		// is back under its own name while whatever queried it by alias still
+		// finds nothing.
+		{Key: "does not carry", Value: "the aliases pointing at this collection — a restore " +
+			"brings the collection back under its own name, and anything querying it by an " +
+			"alias still finds nothing until the alias is recreated"},
 		{Key: "restore with", Value: fmt.Sprintf("rta qdrant restore %s %s --endpoint=%s",
 			collection, path, req.String("endpoint"))},
 	}
