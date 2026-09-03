@@ -62,11 +62,15 @@ func serviceAccountCapabilities() []plugin.Capability {
 			// still gated by "you are a person at this operator's terminal",
 			// the same bar every other ungated CLI action in rta accepts.
 			Safety: plugin.Write,
-			Description: "Creates a ServiceAccount, a Role built from exactly the capabilities named " +
-				"in --capability (nothing broader — an unmapped capability refuses the whole request " +
-				"rather than silently granting less than asked), a RoleBinding, and a token scoped to " +
-				"--ttl. Returns the assembled kubeconfig — to the terminal, or to --out, which " +
-				"refuses an existing file unless --force says to replace it. Refuses to run " +
+			Description: "Creates a ServiceAccount, a Role built from exactly the grants named in " +
+				"--grant (nothing broader — an unmapped name refuses the whole request rather than " +
+				"silently granting less than asked), a RoleBinding, and a token scoped to --ttl. " +
+				"A grant is either a kube.* capability ID (what that capability reads) or a bare " +
+				"word naming a cluster permission the minted identity needs but rta has no " +
+				"capability for: logs, workloads, services, and — the one write — rollout, which " +
+				"carries patch on workloads and is meant for environments where changing what runs " +
+				"is acceptable. Returns the assembled kubeconfig — to the terminal, or to --out, " +
+				"which refuses an existing file unless --force says to replace it. Refuses to run " +
 				"anywhere but a person's own CLI/TUI: an agent must never be able to mint its own " +
 				"parallel credential. There is no link enforced between --ttl and any `grant allow` " +
 				"TTL issued elsewhere — matching them is the operator's convention to keep, not " +
@@ -80,8 +84,13 @@ func serviceAccountCapabilities() []plugin.Capability {
 					// only, never a keystroke.
 					Help: "namespace to provision the identity in",
 					Live: true, Suggest: suggestNamespaces},
-				{Name: "capability", Type: plugin.StringSlice, Required: true,
-					Help: "kube.* capability to grant, repeatable — see the error for the full list"},
+				{Name: "grant", Type: plugin.StringSlice, Required: true,
+					// Options rather than Suggest: rulesFor fails closed on
+					// anything outside the table, so the set really is closed
+					// — and computing it from the table keeps the picker, the
+					// validation and the enforcement one list.
+					Options: provisionableNames(),
+					Help:    "what the identity may do: a kube.* capability ID, or logs, workloads, services, rollout — repeatable"},
 				{Name: "ttl", Type: plugin.String, Required: true,
 					Help: "how long the minted token should last, e.g. 15m, 1h, 24h"},
 				{Name: "out", Type: plugin.Path, Local: true,
@@ -180,7 +189,7 @@ func runServiceAccountProvision(ctx context.Context, req plugin.Request) (view.V
 				"e.g. 15m, 1h or 24h")
 	}
 
-	rules, verr := rulesFor(req.StringSlice("capability"))
+	rules, verr := rulesFor(req.StringSlice("grant"))
 	if verr != nil {
 		return nil, verr
 	}
@@ -300,7 +309,7 @@ func runServiceAccountProvision(ctx context.Context, req plugin.Request) (view.V
 	summary := view.KeyValue{Pairs: []view.Pair{
 		{Key: "serviceaccount", Value: name},
 		{Key: "namespace", Value: namespace},
-		{Key: "granted", Value: capabilityList(req.StringSlice("capability"))},
+		{Key: "granted", Value: strings.Join(req.StringSlice("grant"), ", ")},
 		{Key: "requested ttl", Value: ttlStr},
 		{Key: "actual token expiry", Value: grantedExpiry},
 	}}
@@ -337,10 +346,6 @@ func dryRunProvision(name, namespace string, rules []policyRule, ttlStr string) 
 	return view.Text{Body: "would create ServiceAccount/Role/RoleBinding " + name + " in namespace " +
 		namespace + ", mint a token valid for " + ttlStr + ", and return the assembled kubeconfig.\n\n" +
 		"Role rules:\n  " + strings.Join(ruleLines, "\n  ")}
-}
-
-func capabilityList(ids []string) string {
-	return strings.Join(ids, ", ")
 }
 
 // createManifest JSON-encodes obj and hands it to `kubectl create -f -`.
