@@ -51,7 +51,23 @@ func conformanceInputs(dir string) map[string]map[string]any {
 		"s3.object.presign": conn(map[string]any{"bucket": "conformance", "key": "some/key"}),
 		"s3.bucket.download": conn(map[string]any{"bucket": "conformance",
 			"out": filepath.Join(dir, "bucket-copy")}),
+		// The source directory lives outside dir on purpose: sdktest watches
+		// dir for stray writes, and a fixture pre-created there would read as
+		// one. os.MkdirTemp because this function has no *testing.T; the OS
+		// temp dir's own cleanup owns the leftover.
+		"s3.bucket.upload": conn(map[string]any{"bucket": "conformance", "dir": uploadFixture()}),
 	}
+}
+
+func uploadFixture() string {
+	root, err := os.MkdirTemp("", "rta-s3-upload")
+	if err != nil {
+		return "unwritable"
+	}
+	if err := os.WriteFile(filepath.Join(root, "a.txt"), []byte("x"), 0o600); err != nil {
+		return "unwritable"
+	}
+	return root
 }
 
 // req builds a resolved request the way the host would, against the named
@@ -156,6 +172,10 @@ func TestWriteAndDestructiveCapabilitiesNeedAGrant(t *testing.T) {
 		// keys.backup's reason — a grant that can never be exercised is an entry
 		// in `grant list` that means nothing.
 		"s3.bucket.download": false,
+		// Its mirror: everything arriving instead of everything leaving, and
+		// the same reasoning for the unset NeedsGrant. Destructive besides —
+		// --overwrite can replace remote objects.
+		"s3.bucket.upload": false,
 	}
 	seen := map[string]bool{}
 	for _, c := range Plugin().Capabilities {

@@ -54,6 +54,7 @@ func Plugin() plugin.Plugin {
 			s3ObjectRemoveCapability(),
 			s3ObjectPresignCapability(),
 			s3BucketDownloadCapability(),
+			s3BucketUploadCapability(),
 		},
 	}
 }
