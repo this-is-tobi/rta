@@ -330,7 +330,15 @@ func ClassifyStatus(s string) StatusKind {
 func ClassifyUsage(cell string) StatusKind {
 	v := strings.TrimSuffix(strings.TrimSpace(cell), "%")
 	pct, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
-	if err != nil {
+	// NaN is a number as far as ParseFloat is concerned — it reads "NaN",
+	// "Inf" and "Infinity" case-insensitively and returns a nil error — and
+	// every comparison against NaN is false, so it would fall past both bands
+	// to the comfortable one and paint "could not measure this" green. That is
+	// the precise opposite of what the paragraph above promises, and it is the
+	// one wrong answer that matters: a cell rta cannot read must never claim
+	// there is room. Reachable from any plugin that declares KindUsage, since
+	// the cell is whatever text it wrote.
+	if err != nil || math.IsNaN(pct) || math.IsInf(pct, 0) {
 		return StatusNeutral
 	}
 	switch {

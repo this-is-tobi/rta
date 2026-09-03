@@ -473,10 +473,11 @@ func loadVerdict(perCore float64) string {
 // where nothing can drift back apart.
 func diskUsage(usedPercent float64) (cell, status string) {
 	shown := fmt.Sprintf("%.0f", usedPercent)
-	rounded, err := strconv.ParseFloat(shown, 64)
-	if err != nil {
-		rounded = usedPercent
-	}
+	// %.0f of a finite float64 is a plain integer string, which ParseFloat
+	// reads back exactly, so this cannot fail — the parse is not a conversion
+	// so much as the mechanism by which the word is graded from the figure
+	// that was printed rather than from the reading behind it.
+	rounded, _ := strconv.ParseFloat(shown, 64)
 	return shown + "%", usageStatus(rounded)
 }
 

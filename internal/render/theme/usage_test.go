@@ -42,7 +42,12 @@ func TestEveryPercentageSpellingTheProducersUseIsGraded(t *testing.T) {
 // there is plenty of room in exactly the case rta could not tell.
 func TestACellWithNoNumberInItIsNotGradedAsEmpty(t *testing.T) {
 	for _, cell := range []string{"", "  ", "—", "-", "n/a", "unknown", "%",
-		"could not be read — the kubelet refused"} {
+		"could not be read — the kubelet refused",
+		// ParseFloat reads all of these and returns a nil error, so they used
+		// to reach the band comparison. Every comparison against NaN is false,
+		// which fell through to the comfortable band: "could not measure this"
+		// was painted green, the one wrong answer a usage column must not give.
+		"NaN%", "nan", "NAN%", "-Inf%", "Inf%", "+Infinity%"} {
 		if got := ClassifyUsage(cell); got != StatusNeutral {
 			t.Errorf("ClassifyUsage(%q) = %v, want Neutral", cell, got)
 		}
