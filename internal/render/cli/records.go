@@ -41,9 +41,12 @@ import (
 type recordStyle struct {
 	// highlight is the 1-based row to accent, or 0. The TUI's selected row.
 	highlight int
-	// status names the columns whose values are graded, so they keep their
-	// colour — the one piece of a grid's meaning that is not positional.
+	// status and usage name the columns whose values are graded, so they keep
+	// their colour — the one piece of a grid's meaning that is not positional.
+	// A narrow terminal is where a full disk is easiest to scroll past, so
+	// this is the layout that can least afford to drop the grading.
 	status map[int]bool
+	usage  map[int]bool
 }
 
 // minRecordKey keeps the label gutter from collapsing when every column name
@@ -246,8 +249,11 @@ func prettyRecords(w io.Writer, t view.Table, headers []string, rows [][]string,
 				continue // an empty field is not a fact worth a line
 			}
 			value := row[i]
-			if st.color && rs.status[i] {
+			switch {
+			case st.color && rs.status[i]:
 				value = theme.StatusStyle(value).Render(value)
+			case st.color && rs.usage[i]:
+				value = theme.UsageStyle(value).Render(value)
 			}
 			// Four cells of indent: two for the marker gutter, two so the
 			// fields sit visibly inside their heading.

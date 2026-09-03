@@ -11,6 +11,36 @@ import (
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
 
+// podMetricColumns and nodeMetricColumns are named rather than inline because
+// the kinds they declare are the whole of what makes a figure graded: KindUsage
+// is a percentage of something with a ceiling — a container's limit, a node's
+// allocatable — where nearing 100 is nearing the throttle or the OOM kill.
+// TestOnlyTheColumnsWithACapacityBehindThemAreGraded is what holds that apart
+// from the percentages in this same package that have no bad end.
+func podMetricColumns(allNamespaces bool) []view.Column {
+	cols := []view.Column{}
+	if allNamespaces {
+		cols = append(cols, view.Column{Name: "namespace"})
+	}
+	return append(cols,
+		view.Column{Name: "pod"},
+		view.Column{Name: "cpu", Kind: view.KindNumber},
+		view.Column{Name: "cpu %", Kind: view.KindUsage},
+		view.Column{Name: "memory", Kind: view.KindBytes},
+		view.Column{Name: "memory %", Kind: view.KindUsage},
+	)
+}
+
+func nodeMetricColumns() []view.Column {
+	return []view.Column{
+		{Name: "node"},
+		{Name: "cpu", Kind: view.KindNumber},
+		{Name: "cpu %", Kind: view.KindUsage},
+		{Name: "memory", Kind: view.KindBytes},
+		{Name: "memory %", Kind: view.KindUsage},
+	}
+}
+
 // kube.metrics.pod / kube.metrics.node: usage against what was actually
 // asked for, not a `kubectl top` clone.
 //
@@ -150,17 +180,7 @@ func runMetricsPod(ctx context.Context, req plugin.Request) (view.View, error) {
 		return rows[i].cpuPctN > rows[j].cpuPctN
 	})
 
-	cols := []view.Column{}
-	if s.AllNS {
-		cols = append(cols, view.Column{Name: "namespace"})
-	}
-	cols = append(cols,
-		view.Column{Name: "pod"},
-		view.Column{Name: "cpu", Kind: view.KindNumber},
-		view.Column{Name: "cpu %", Kind: view.KindPercent},
-		view.Column{Name: "memory", Kind: view.KindBytes},
-		view.Column{Name: "memory %", Kind: view.KindPercent},
-	)
+	cols := podMetricColumns(s.AllNS)
 	out := make([][]string, 0, len(rows))
 	for _, r := range rows {
 		line := []string{}
@@ -229,13 +249,7 @@ func runMetricsNode(ctx context.Context, req plugin.Request) (view.View, error) 
 	sort.Slice(metrics.Items, func(i, j int) bool {
 		return metrics.Items[i].Metadata.Name < metrics.Items[j].Metadata.Name
 	})
-	cols := []view.Column{
-		{Name: "node"},
-		{Name: "cpu", Kind: view.KindNumber},
-		{Name: "cpu %", Kind: view.KindPercent},
-		{Name: "memory", Kind: view.KindBytes},
-		{Name: "memory %", Kind: view.KindPercent},
-	}
+	cols := nodeMetricColumns()
 	rows := make([][]string, 0, len(metrics.Items))
 	for _, m := range metrics.Items {
 		cpu, _ := parseCPU(m.Usage.CPU)

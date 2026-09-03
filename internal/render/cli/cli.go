@@ -357,11 +357,17 @@ func prettyTable(w io.Writer, t view.Table, st styles, highlight int) error {
 	headers := make([]string, len(t.Columns))
 	rightAlign := map[int]bool{}
 	statusCol := map[int]bool{}
+	usageCol := map[int]bool{}
 	for i, c := range t.Columns {
 		headers[i] = strings.ToUpper(c.Name)
 		switch c.Kind {
 		case view.KindNumber, view.KindBytes, view.KindPercent, view.KindDuration:
 			rightAlign[i] = true
+		case view.KindUsage:
+			// Both, because it is a number as well as a grade — the one kind
+			// that is.
+			rightAlign[i] = true
+			usageCol[i] = true
 		case view.KindStatus:
 			statusCol[i] = true
 		}
@@ -396,7 +402,7 @@ func prettyTable(w io.Writer, t view.Table, st styles, highlight int) error {
 	// narrow terminal has to give.
 	if !fitsAsGrid(t, headers, st) {
 		return prettyRecords(w, t, headers, rows, st, recordStyle{
-			highlight: highlight, status: statusCol,
+			highlight: highlight, status: statusCol, usage: usageCol,
 		})
 	}
 
@@ -457,8 +463,13 @@ func prettyTable(w io.Writer, t view.Table, st styles, highlight int) error {
 					return s.Inherit(st.header)
 				}
 				// Semantic hint, not decoration: color state where it matters.
-				if st.color && statusCol[col] && row >= 0 && row < len(rows) && col < len(rows[row]) {
-					s = s.Inherit(theme.StatusStyle(rows[row][col]))
+				if st.color && row >= 0 && row < len(rows) && col < len(rows[row]) {
+					switch {
+					case statusCol[col]:
+						s = s.Inherit(theme.StatusStyle(rows[row][col]))
+					case usageCol[col]:
+						s = s.Inherit(theme.UsageStyle(rows[row][col]))
+					}
 				}
 				// Row selection in interactive hosts: a quiet background band.
 				if st.color && highlight > 0 && row == highlight-1 {

@@ -37,7 +37,8 @@ type KeyValue struct {
 }
 
 // ColumnKind is a semantic hint about what a column holds. It selects
-// alignment, and for KindStatus the status vocabulary a renderer styles by.
+// alignment, and for KindStatus and KindUsage the vocabulary a renderer
+// grades by.
 //
 // It never formats a cell. A view carries pre-formatted strings, so a column
 // declaring KindBytes still receives whatever its producer put there —
@@ -55,6 +56,38 @@ const (
 	KindDuration  ColumnKind = "duration"
 	KindTimestamp ColumnKind = "timestamp"
 	KindStatus    ColumnKind = "status"
+	// KindUsage is how much of a capacity is taken, as a percentage, where
+	// approaching 100 is approaching a limit: a disk filling, a quota running
+	// out, a container nearing the memory ceiling it will be killed at.
+	//
+	// Separate from KindPercent, rather than a grading rule applied to it,
+	// because a percentage does not on its own say which end is the bad one —
+	// and most of the ones in this codebase have no bad end at all.
+	// fs.usage's Share is a directory's proportion of a total, and one entry
+	// holding 95% of a disk is a finding about the shape of the tree, not a
+	// problem. sys ps's CPU% passes 100 on a second core. And
+	// kube.metrics.pressure's columns are PSI stall time, where a node is in
+	// real trouble an order of magnitude below where a disk gets interesting,
+	// so grading it against a disk's thresholds would paint a sick node green.
+	// A hint that graded every percentage would be wrong about more columns
+	// than it was right about, which makes this the one to opt into.
+	KindUsage ColumnKind = "usage"
+)
+
+// UsageWarn and UsageBad are the bands a KindUsage column is graded in: below
+// warn is comfortable, at or above bad is out of room. Renderers still choose
+// what a band looks like — the contract states only where the boundaries are.
+//
+// They live here, in the contract, rather than in a renderer because two
+// unrelated things need them and only one of them renders: `sys disk` says
+// "WARN >80%" in a Status column beside its Use%, which is the half of the
+// signal that survives a pipe, a --no-color terminal and --output json. Those
+// two must agree about the same disk, and the way this codebase has already
+// been bitten by that is x509check — a package that exists because `cert` and
+// `audit` once disagreed about the same certificate's expiry window.
+const (
+	UsageWarn = 80.0
+	UsageBad  = 90.0
 )
 
 // Column describes one table column.

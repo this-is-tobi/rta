@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/this-is-tobi/rule-them-all/internal/render/theme"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
@@ -156,6 +157,54 @@ func TestUsageStatus(t *testing.T) {
 		if got := usageStatus(tt.pct); got != tt.want {
 			t.Errorf("usageStatus(%v) = %q, want %q", tt.pct, got, tt.want)
 		}
+	}
+}
+
+// `sys disk` says the same thing twice about one mount: a Use% the renderer
+// grades by colour, and a Status column carrying the band as a word — the
+// half that survives a pipe, a --no-color terminal and --output json.
+//
+// Twice is right; disagreeing is not. A row reading "ok" in green beside a
+// figure the renderer painted amber is the failure x509check exists to have
+// stopped happening about certificates, so this walks the boundaries and both
+// sides of each rather than trusting that two lists of numbers stay equal.
+func TestTheStatusWordAndTheColourAgreeAboutTheSameDisk(t *testing.T) {
+	// The fractions matter more than the round numbers: the cell is printed to
+	// whole percent and the word used to be graded from the reading behind it,
+	// so 79.6 is exactly where the two came apart.
+	for _, pct := range []float64{0, 50, 79.4, 79.6, view.UsageWarn, 84.9, 89.4,
+		89.6, view.UsageBad, 99.9, 100} {
+		cell, status := diskUsage(pct)
+		word := theme.ClassifyStatus(status)
+		colour := theme.ClassifyUsage(cell)
+		if word != colour {
+			t.Errorf("at %.1f%%: %q classifies %v and the cell %q classifies %v",
+				pct, status, word, cell, colour)
+		}
+	}
+}
+
+// The Use% column declares the kind that makes the colour happen, and the
+// Status column beside it the one that makes the word happen. Swapping either
+// silently removes half the signal.
+func TestTheDiskColumnsDeclareTheKindsThatGradeThem(t *testing.T) {
+	v, err := runDisk(context.Background(), plugin.NewRequest(map[string]any{}, false, false))
+	if err != nil {
+		t.Skipf("no readable filesystem here: %v", err)
+	}
+	tbl, ok := v.(view.Table)
+	if !ok {
+		t.Fatalf("disk view = %T", v)
+	}
+	kinds := map[string]view.ColumnKind{}
+	for _, c := range tbl.Columns {
+		kinds[c.Name] = c.Kind
+	}
+	if kinds["Use%"] != view.KindUsage {
+		t.Errorf("Use%% is %q, want usage — nothing else colours it", kinds["Use%"])
+	}
+	if kinds["Status"] != view.KindStatus {
+		t.Errorf("Status is %q, want status", kinds["Status"])
 	}
 }
 

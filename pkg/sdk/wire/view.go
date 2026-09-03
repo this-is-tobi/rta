@@ -21,6 +21,7 @@ var columnKinds = []struct {
 	{view.KindDuration, rtav1.ColumnKind_COLUMN_KIND_DURATION},
 	{view.KindTimestamp, rtav1.ColumnKind_COLUMN_KIND_TIMESTAMP},
 	{view.KindStatus, rtav1.ColumnKind_COLUMN_KIND_STATUS},
+	{view.KindUsage, rtav1.ColumnKind_COLUMN_KIND_USAGE},
 }
 
 func columnKindToProto(k view.ColumnKind) rtav1.ColumnKind {
