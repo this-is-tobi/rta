@@ -87,19 +87,23 @@ func s3BucketDownloadCapability() plugin.Capability {
 // humanOnly is this plugin's copy of the gate builtin/keys opens with, which
 // pg.dump and vault.snapshot repeat. It comes first, before a client is
 // built, so an agent's call never spends the operator's credentials on a
-// question that was always going to be answered no.
-func humanOnly(req plugin.Request, id string) *view.Error {
+// question that was always going to be answered no. The hint is the
+// caller's, because the download and the upload refuse for mirrored reasons
+// — everything leaving, everything arriving — and one blended hint would
+// explain neither.
+func humanOnly(req plugin.Request, id, hint string) *view.Error {
 	if req.Surface() != plugin.SurfaceMCP {
 		return nil
 	}
 	return view.Refusef("s3.human", "%s can only be run by a person at a terminal", id).
-		WithHint("a whole bucket has no blast radius a grant could name — its one authorized " +
-			"use is everything. Ask for the object you need with s3.object.get, which takes a " +
-			"grant naming that key")
+		WithHint(hint)
 }
 
 func runBucketDownload(ctx context.Context, req plugin.Request) (view.View, error) {
-	if verr := humanOnly(req, "s3.bucket.download"); verr != nil {
+	if verr := humanOnly(req, "s3.bucket.download",
+		"a whole bucket has no blast radius a grant could name — its one authorized "+
+			"use is everything. Ask for the object you need with s3.object.get, which takes a "+
+			"grant naming that key"); verr != nil {
 		return nil, verr
 	}
 

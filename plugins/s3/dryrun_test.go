@@ -59,6 +59,8 @@ func TestNoMutatingCapabilityActsUnderDryRun(t *testing.T) {
 	previewReads := map[string]string{
 		"s3.bucket.download": "lists the bucket to report how many objects and how many bytes, " +
 			"and to refuse a key that would escape the destination before anything is written",
+		"s3.bucket.upload": "lists the destination prefix to refuse landing on existing " +
+			"objects before anything is sent",
 	}
 	for _, c := range Plugin().Capabilities {
 		if c.Safety != plugin.Write && c.Safety != plugin.Destructive {
@@ -77,6 +79,12 @@ func TestNoMutatingCapabilityActsUnderDryRun(t *testing.T) {
 				values["out"] = filepath.Join(dir, "got.bin")
 			case "s3.bucket.download":
 				values["out"] = filepath.Join(dir, "copy")
+			case "s3.bucket.upload":
+				// A separate TempDir, not dir: the walk runs before the
+				// dry-run branch, so the source must exist and hold a file —
+				// and pre-creating it in dir would read as the stray write
+				// this test hunts.
+				values["dir"] = dirWithFiles(t, map[string]string{"a.txt": "x"})
 			}
 
 			v, err := c.Run(t.Context(), dryReq(t, c.ID, endpointOf(t, srv), values))
