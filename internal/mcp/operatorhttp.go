@@ -219,8 +219,8 @@ func (h *operatorHandler) answer(env operator.Envelope, label string,
 			// (the zero outcome, plus the reason), a 500 is a verb that was
 			// allowed and whose work went wrong.
 			if statusFor(verr.Code) == http.StatusInternalServerError {
-				rec.Outcome, rec.Auth = agentlog.Failed, agentlog.Operator
-				rec.Reason = verr.Code + ": " + verr.Message
+				failedBy(rec, verr)
+				rec.Auth = agentlog.Operator
 				rec.Millis = time.Since(start).Milliseconds()
 			} else {
 				refusedBy(rec, verr)

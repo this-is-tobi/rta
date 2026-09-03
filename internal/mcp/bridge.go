@@ -355,7 +355,7 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 			conn, verr := profile.Lookup(opts.profiles(), c, profileName, reg)
 			if verr != nil {
 				release()
-				rec.Outcome, rec.Reason = agentlog.Refused, "core.profile.unusable"
+				rec.Outcome, rec.Code = agentlog.Refused, "core.profile.unusable"
 				// The reason is deliberately discarded on this surface. A person
 				// at a terminal gets profile.Lookup's real message and its list
 				// of what would have worked; an agent gets one sentence for
@@ -448,7 +448,7 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 			if ve.Refusal {
 				refusedBy(rec, ve)
 			} else {
-				rec.Outcome, rec.Reason = agentlog.Failed, ve.Code+": "+ve.Message
+				failedBy(rec, ve)
 			}
 			return errResult(ve), nil
 		}

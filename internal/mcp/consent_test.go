@@ -111,6 +111,11 @@ func TestADeclinedCallIsRefusedWithTheOperatorsAnswer(t *testing.T) {
 	if len(entries) != 1 || entries[0].Auth != agentlog.Denied {
 		t.Fatalf("the ledger does not record the decline: %+v", entries)
 	}
+	// The decline is the ledger's own event and carries its own stable code
+	// — it used to be the one refusal recorded as bare prose.
+	if entries[0].Code != "core.consent.declined" {
+		t.Fatalf("the decline's code: %+v", entries[0])
+	}
 }
 
 func TestNobodyAnsweringRefusesExactlyAsBefore(t *testing.T) {
@@ -136,6 +141,14 @@ func TestNobodyAnsweringRefusesExactlyAsBefore(t *testing.T) {
 	pending, _ := consent.Pending()
 	if len(pending) != 0 {
 		t.Fatalf("%d requests outlived the call", len(pending))
+	}
+	// The agent sees the unchanged refusal above; the ledger tells the
+	// operator what actually happened, under the expiry's own code rather
+	// than the question's.
+	entries, _ := agentlog.Read(0)
+	if len(entries) != 1 || entries[0].Code != "core.consent.expired" ||
+		entries[0].Outcome != agentlog.Refused {
+		t.Fatalf("the expiry is misrecorded: %+v", entries)
 	}
 }
 
@@ -184,7 +197,7 @@ func TestAFullQueueRefusesAtOnceInsteadOfAskingAgain(t *testing.T) {
 	if err != nil || len(entries) != 1 {
 		t.Fatalf("ledger: %v %d entries", err, len(entries))
 	}
-	if entries[0].Auth != agentlog.Blocked || !strings.HasPrefix(entries[0].Reason, "core.grant.required") {
+	if entries[0].Auth != agentlog.Blocked || entries[0].Code != "core.grant.required" {
 		t.Fatalf("the ledger misrecords a refusal nobody was asked about: %+v", entries[0])
 	}
 }
@@ -544,13 +557,13 @@ func TestTheLedgerRecordsEveryCallIncludingRefusals(t *testing.T) {
 	if entries[0].Cap != "demo.item.list" || entries[0].Outcome != agentlog.Ran || entries[0].Auth != agentlog.Open {
 		t.Fatalf("the read is misrecorded: %+v", entries[0])
 	}
-	if entries[1].Outcome != agentlog.Refused || !strings.Contains(entries[1].Reason, "core.grant.required") {
+	if entries[1].Outcome != agentlog.Refused || entries[1].Code != "core.grant.required" {
 		t.Fatalf("the refusal is misrecorded: %+v", entries[1])
 	}
 	if entries[2].Outcome != agentlog.Failed {
 		t.Fatalf("a handler error should read as failed, not refused: %+v", entries[2])
 	}
-	if entries[3].Outcome != agentlog.Refused || !strings.Contains(entries[3].Reason, "badargs") {
+	if entries[3].Outcome != agentlog.Refused || entries[3].Code != "core.mcp.badargs" {
 		t.Fatalf("the argument refusal is misrecorded: %+v", entries[3])
 	}
 	rep, err := agentlog.Verify()
@@ -577,8 +590,8 @@ func TestAHandlersOwnPolicyGateLedgersAsRefusedNotFailed(t *testing.T) {
 	if e.Outcome != agentlog.Refused {
 		t.Fatalf("a refusal-marked error should read as refused, got %+v", e)
 	}
-	if !strings.Contains(e.Reason, "demo.human") {
-		t.Fatalf("the reason should carry the gate's code: %+v", e)
+	if e.Code != "demo.human" {
+		t.Fatalf("the code should carry the gate's own, exactly: %+v", e)
 	}
 	// Auth deliberately keeps what the call earned. Blocked would say the
 	// call never cleared the authority gate, and it did: open + refused is

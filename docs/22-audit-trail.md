@@ -89,9 +89,11 @@ Answering `allow` runs that one call and creates no standing grant. Ask again, g
 Like every rta command, the log renders in whatever shape you need:
 
 ```bash
-rta agent log -o json | jq '.rows[] | select(.[3] == "refused")'
+rta agent log --refused -o json          # the refusals, as data
 rta agent log -o csv >> ~/audit/$(date +%F).csv
 ```
+
+Every refused or failed row carries the cause twice, deliberately split: a `code` column holding just the dotted, stable code (`core.grant.required`, `agent.surface`), and a `why` column holding the sentence. Match on the code — it is the contract a SIEM or jq rule can rely on across versions; the wording is not.
 
 Which makes "ship the record somewhere durable" a cron line rather than a feature request.
 

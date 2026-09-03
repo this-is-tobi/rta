@@ -255,8 +255,15 @@ type Entry struct {
 	Profile    string        `json:"profile,omitempty"`
 	Outcome    Outcome       `json:"outcome"`
 	Auth       Authorization `json:"auth"`
-	// Reason names the refusal, or the error, in rta's own code vocabulary
-	// ("core.grant.required") plus its message.
+	// Code is the machine's half of what went wrong: the dotted, stable
+	// code of the refusal or the error ("core.grant.required"), alone. It
+	// used to ride Reason as a "code: message" prefix, which made every jq
+	// and SIEM rule a piece of string surgery over a sentence rta is free
+	// to reword — the code is the contract, the wording never was. Absent
+	// on rows where nothing went wrong, and on rows written before the
+	// split, whose Reason still carries the glued form.
+	Code string `json:"code,omitempty"`
+	// Reason is the person's half: the message, without the code.
 	Reason string `json:"reason,omitempty"`
 	// Millis is how long the handler took, absent for calls that never ran.
 	Millis int64 `json:"ms,omitempty"`

@@ -2,7 +2,6 @@ package mcp
 
 import (
 	"net/http"
-	"strings"
 	"testing"
 
 	"github.com/this-is-tobi/rule-them-all/internal/agentlog"
@@ -118,7 +117,7 @@ func TestARefusedOperatorMutationIsARecordedRefusal(t *testing.T) {
 	}
 	e := entries[0]
 	if e.Outcome != agentlog.Refused || e.Auth != agentlog.Blocked ||
-		!strings.Contains(e.Reason, "core.operator.role") {
+		e.Code != "core.operator.role" {
 		t.Fatalf("the refusal row: %+v", e)
 	}
 	if e.Credential != grant.FromOperatorPrefix+"watcher" || e.Args["name"] != "claude" {
@@ -147,7 +146,7 @@ func TestALockedOperatorKeysAttemptIsRecorded(t *testing.T) {
 		t.Fatalf("the locked key's attempt wrote %d entries: %+v", len(entries), entries)
 	}
 	if e := entries[0]; e.Outcome != agentlog.Refused ||
-		!strings.Contains(e.Reason, "core.lock.operator") {
+		e.Code != "core.lock.operator" {
 		t.Fatalf("the locked-key row: %+v", e)
 	}
 }
@@ -208,14 +207,14 @@ func TestAnswersAndFailuresRecordWhoWasActing(t *testing.T) {
 	}
 	failed := entries[1]
 	if failed.Cap != "operator.grant.revoke" || failed.Outcome != agentlog.Failed ||
-		failed.Auth != agentlog.Operator || !strings.Contains(failed.Reason, "core.grant.store") {
+		failed.Auth != agentlog.Operator || failed.Code != "core.grant.store" {
 		t.Fatalf("the failed row: %+v", failed)
 	}
 	if failed.Args["target"] != "demo.item.reveal" {
 		t.Fatalf("the failed row's args: %+v", failed.Args)
 	}
 	if refused := entries[2]; refused.Outcome != agentlog.Refused || refused.Auth != agentlog.Blocked ||
-		!strings.Contains(refused.Reason, "grant.notarget") {
+		refused.Code != "grant.notarget" {
 		t.Fatalf("a wired refusal's row: %+v", refused)
 	}
 }
@@ -242,7 +241,7 @@ func TestAnUndecodableMutationStillRecordsTheAttempt(t *testing.T) {
 		t.Fatalf("wrote %d entries: %+v", len(entries), entries)
 	}
 	if e := entries[0]; e.Outcome != agentlog.Refused || len(e.Args) != 0 ||
-		!strings.Contains(e.Reason, "core.operator.payload") {
+		e.Code != "core.operator.payload" {
 		t.Fatalf("the undecodable row: %+v", e)
 	}
 }

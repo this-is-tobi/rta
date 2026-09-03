@@ -409,13 +409,22 @@ func runLog(_ context.Context, req plugin.Request) (view.View, error) {
 	// written before agents were named — or before rta could serve over
 	// HTTP at all — is never, and a column of em dashes on the screen an
 	// operator opens in a hurry is a column they learn to skip.
-	named, namedCred := false, false
+	named, namedCred, coded := false, false, false
 	for _, e := range entries {
 		if e.Agent != "" || e.Client != "" {
 			named = true
 		}
 		if e.Credential != "" {
 			namedCred = true
+		}
+		// Same appears-when-filled rule as the two above: a record written
+		// before the code/reason split — or one where nothing has gone wrong
+		// — shows no code column at all, rather than a column of blanks. Old
+		// rows keep their glued "code: message" in why; new rows carry the
+		// code here, exactly, which is the cell a shipped copy of this table
+		// gets matched on.
+		if e.Code != "" {
+			coded = true
 		}
 	}
 	// Filtered first, rendered second, because two of the rendering decisions
@@ -444,6 +453,9 @@ func runLog(_ context.Context, req plugin.Request) (view.View, error) {
 			string(e.Auth),
 			whyLine(e),
 		}
+		if coded {
+			row = slices.Insert(row, len(row)-1, e.Code)
+		}
 		if named {
 			row = slices.Insert(row, 3, whoCalled(e))
 		}
@@ -465,6 +477,9 @@ func runLog(_ context.Context, req plugin.Request) (view.View, error) {
 		{Name: "at", Kind: view.KindTimestamp}, {Name: "capability"}, {Name: "arguments"},
 		{Name: "profile"}, {Name: "outcome", Kind: view.KindStatus},
 		{Name: "authorized"}, {Name: "why"},
+	}
+	if coded {
+		cols = slices.Insert(cols, len(cols)-1, view.Column{Name: "code"})
 	}
 	if named {
 		cols = slices.Insert(cols, 3, view.Column{Name: "agent"})
