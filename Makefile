@@ -344,11 +344,18 @@ vet: ## go vet the root module
 
 check: vet hard ## vet, then the hard test run
 
+# The test line carries the same flags `hard` gives the root module, for the
+# same reasons — and because CI runs this exact target rather than a
+# per-module matrix carrying its own flags, this line is the only place the
+# plugin suites meet the race detector at all. Dropping the flags here would
+# drop them everywhere, silently. CI runs this with -k so one broken module
+# does not hide the ten behind it; plain `make plugins` keeps stop-on-first
+# for the tight local loop.
 plugins: $(PLUGIN_LIST:%=check-plugin-%) plugins-replace-check ## Build, vet, test and format-check every plugin module
 
 $(CHECK_PLUGINS): check-plugin-%:
 	@echo "==> plugins/$*"
-	@cd plugins/$* && go build -o /dev/null . && go vet ./... && go test ./... -count=1
+	@cd plugins/$* && go build -o /dev/null . && go vet ./... && go test ./... -count=1 -race -shuffle=on
 	@test -z "$$(cd plugins/$* && gofmt -l .)" || { echo "gofmt needed in plugins/$*"; exit 1; }
 
 # A `replace` naming an absolute path builds on exactly one machine.
