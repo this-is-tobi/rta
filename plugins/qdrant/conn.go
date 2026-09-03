@@ -88,15 +88,17 @@ func getRaw(ctx context.Context, req plugin.Request, path string, out any) *view
 type rawTarget struct{ into any }
 
 func call(ctx context.Context, req plugin.Request, method, path string, body, out any) *view.Error {
-	base := "http://"
-	// ca-file only means anything over TLS, so setting it turns TLS on the
-	// same way etcd's own ca-file does — the alternative is a value that
-	// silently does nothing until --tls is also typed.
-	if req.Bool("tls") || req.String("ca-file") != "" {
-		base = "https://"
-	}
-	base += req.String("endpoint")
+	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
+	defer cancel()
+	return slowCall(ctx, req, method, path, body, out)
+}
 
+// slowCall is call without the requestTimeout bound. The snapshot operations
+// behind qdrant.dump run for as long as the collection is large — creating a
+// snapshot walks every segment, and 30 seconds is the bound for API chatter,
+// not for work proportional to the data. The operator's own interrupt still
+// cancels through ctx.
+func slowCall(ctx context.Context, req plugin.Request, method, path string, body, out any) *view.Error {
 	var reader io.Reader
 	if body != nil {
 		encoded, err := json.Marshal(body)
@@ -106,20 +108,12 @@ func call(ctx context.Context, req plugin.Request, method, path string, body, ou
 		reader = bytes.NewReader(encoded)
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
-	defer cancel()
-
-	httpReq, err := http.NewRequestWithContext(ctx, method, base+path, reader)
-	if err != nil {
-		return view.Errorf("qdrant.endpoint.invalid", "%v", err).
-			WithHint("endpoint is host[:port] with no scheme — set --tls separately")
+	httpReq, verr := newRequest(ctx, req, method, path, reader)
+	if verr != nil {
+		return verr
 	}
-	httpReq.Header.Set("Accept", "application/json")
 	if body != nil {
 		httpReq.Header.Set("Content-Type", "application/json")
-	}
-	if key := req.String("api-key"); key != "" {
-		httpReq.Header.Set("api-key", key)
 	}
 
 	client, verr := httpClient(req)
@@ -164,6 +158,33 @@ func call(ctx context.Context, req plugin.Request, method, path string, body, ou
 		}
 	}
 	return nil
+}
+
+// newRequest builds one authenticated request against the configured
+// endpoint — the scheme decision, the Accept header and the api-key in one
+// place, so the JSON path above and the snapshot transfers in dump.go cannot
+// drift on any of them.
+func newRequest(ctx context.Context, req plugin.Request, method, path string,
+	body io.Reader) (*http.Request, *view.Error) {
+	base := "http://"
+	// ca-file only means anything over TLS, so setting it turns TLS on the
+	// same way etcd's own ca-file does — the alternative is a value that
+	// silently does nothing until --tls is also typed.
+	if req.Bool("tls") || req.String("ca-file") != "" {
+		base = "https://"
+	}
+	base += req.String("endpoint")
+
+	httpReq, err := http.NewRequestWithContext(ctx, method, base+path, body)
+	if err != nil {
+		return nil, view.Errorf("qdrant.endpoint.invalid", "%v", err).
+			WithHint("endpoint is host[:port] with no scheme — set --tls separately")
+	}
+	httpReq.Header.Set("Accept", "application/json")
+	if key := req.String("api-key"); key != "" {
+		httpReq.Header.Set("api-key", key)
+	}
+	return httpReq, nil
 }
 
 // httpClient is http.DefaultClient unless ca-file names a CA to trust beyond

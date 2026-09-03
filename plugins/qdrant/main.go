@@ -19,8 +19,11 @@
 //
 // Which is why the read tier here describes collections — their configuration,
 // their size, whether their indexes are built — and returns not one point.
-// qdrant.points.scroll is the only capability that returns stored data, and it
-// is a write that needs a grant naming it.
+// qdrant.points.scroll is the only capability that returns stored data to a
+// caller, and it is a write that needs a grant naming it. qdrant.dump and
+// qdrant.restore move whole collections as snapshot files, and they refuse
+// MCP outright — see dump.go for why that pair belongs to a person at a
+// terminal.
 //
 // Build it and put it on your $PATH as `rta-plugin-qdrant`:
 //
@@ -78,6 +81,8 @@ func Plugin() plugin.Plugin {
 			collectionShowCapability(),
 			pointsCountCapability(),
 			pointsScrollCapability(),
+			dumpCapability(),
+			restoreCapability(),
 		},
 	}
 }
