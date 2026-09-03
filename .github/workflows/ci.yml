@@ -9,8 +9,10 @@
 # Everything below is a call into the shared workflow catalogue rather than a
 # script kept here. The gates are the same ones `make ci` runs, expressed as
 # that catalogue's inputs: -count=1, -race and -shuffle=on are `make hard`.
-# Two things stay local, and only because nothing general covers them: the
-# plugin modules, and the cross build.
+# Two things stay local: the cross build, which nothing general covers, and
+# the plugin gates, where one job walking eleven modules beats eleven
+# catalogue calls that each pay a runner, a checkout and a cache restore —
+# see the plugins job for the arithmetic.
 name: CI
 
 on:
@@ -22,6 +24,15 @@ on:
     - ready_for_review
     branches:
     - "**"
+
+# A superseded run is not worth finishing: a follow-up push to the same
+# branch cancels the run for the commit it replaced, instead of letting
+# dozens of stale jobs keep their runner slots while the new run queues
+# behind them. head_ref is always set here — this workflow only runs on
+# pull_request events.
+concurrency:
+  group: ci-${{ github.head_ref }}
+  cancel-in-progress: true
 
 # Every job below narrows this further; nothing here writes.
 permissions:
@@ -45,10 +56,9 @@ jobs:
   # new — counts as code, so an unanticipated path fails toward running the
   # suite rather than skipping it.
   #
-  # Only the root jobs read this output. Their dependents (test-docker,
-  # the plugin matrix, scan-deps-plugins) skip transitively through `needs`,
-  # and `all-jobs-passed` already counts a skipped job as a pass — it was
-  # built for exactly this. The file list comes from the API rather than a
+  # Most jobs read this output directly; the test-docker jobs skip
+  # transitively through `needs` on their build, and `all-jobs-passed`
+  # already counts a skipped job as a pass — it was built for exactly this. The file list comes from the API rather than a
   # checkout: it is the pull request's own answer to "what does this change",
   # needs no third-party filter action, and costs seconds.
   #
@@ -299,73 +309,49 @@ jobs:
   # pkg/plugin or pkg/sdk breaking a plugin author, which is the whole reason
   # it lives in this repository.
   #
-  # **The matrix is discovered, not written down.** The hand-written list this
-  # replaces named ten modules while eleven were in the tree, so the newest
-  # plugin — the one most likely to be broken, and the only one nothing else
-  # had ever compiled — was precisely the one the matrix left out. A list that
-  # has to be edited whenever a directory is added will eventually not be.
-  # `make plugins-list` is the same expression every local plugin target reads,
-  # so the pipeline and the Makefile cannot disagree about what a plugin is.
-  discover-plugins:
-    name: Discover plugin modules
+  # One job per OS rather than three jobs per module. This was a matrix of
+  # lint + test + scan legs per plugin — around sixty runner slots per pull
+  # request for suites that each finish in seconds, most of the wall-clock
+  # spent provisioning VMs and restoring caches eleven times over, and the
+  # eleven macOS test legs alone funneling through the five concurrent slots
+  # the plan allows. `make plugins` is the same gate with none of the
+  # overhead: build, vet, race-mode tests, gofmt and the replace-directive
+  # check per module, the module list discovered from the tree — so the
+  # pipeline and the Makefile cannot disagree about what a plugin is, which
+  # is also how this matrix's hand-written predecessor once missed the
+  # newest plugin. -k is fail-fast:false by other means: every module is
+  # attempted and every failure named, not just the first.
+  #
+  # Both operating systems, unlike proto: a plugin is a binary and the
+  # sandbox that confines it differs per OS.
+  plugins:
+    name: Check plugin modules
     needs: changes
     if: ${{ needs.changes.outputs.code == 'true' }}
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     permissions:
       contents: read
-    outputs:
-      modules: ${{ steps.list.outputs.modules }}
     steps:
     - name: Checks-out repository
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         persist-credentials: false
 
-    # A `replace` naming an absolute path builds on exactly one machine, and
-    # four plugins here shipped one. The jobs below would fail on it anyway,
-    # with `replacement directory does not exist` repeated per module; this
-    # says which files and what to do, once, before anything is compiled.
-    - name: Check plugin replace directives
-      run: make plugins-replace-check
+    - name: Setup Go
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version-file: go.mod
+        cache: true
+        cache-dependency-path: |
+          go.sum
+          plugins/*/go.sum
 
-    - name: List plugin modules
-      id: list
-      run: |-
-        MODULES=$(make plugins-list | jq -R . | jq -sc .)
-        echo "Found: $MODULES"
-        echo "modules=$MODULES" >> "$GITHUB_OUTPUT"
-
-  lint-plugins:
-    name: Lint plugin
-    needs: discover-plugins
-    strategy:
-      fail-fast: false
-      matrix:
-        module: ${{ fromJson(needs.discover-plugins.outputs.modules) }}
-    uses: this-is-tobi/github-workflows/.github/workflows/lint-go.yml@v0
-    permissions:
-      contents: read
-    with:
-      WORKING_DIRECTORY: plugins/${{ matrix.module }}
-
-  test-plugins:
-    name: Test plugin
-    needs: discover-plugins
-    strategy:
-      fail-fast: false
-      matrix:
-        module: ${{ fromJson(needs.discover-plugins.outputs.modules) }}
-    uses: this-is-tobi/github-workflows/.github/workflows/test-go.yml@v0
-    permissions:
-      contents: read
-    with:
-      WORKING_DIRECTORY: plugins/${{ matrix.module }}
-      RACE: true
-      SHUFFLE: true
-      COUNT: "1"
-      # Both operating systems, unlike proto: a plugin is a binary and the
-      # sandbox that confines it differs per OS.
-      RUNNERS: '[["ubuntu-latest"], ["macos-latest"]]'
+    - name: Build, vet, test and format-check every plugin module
+      run: make -k plugins
 
   # rta is a security tool. A credential in its own history would be the kind
   # of thing it exists to find in yours.
@@ -396,36 +382,82 @@ jobs:
     with:
       PR_NUMBER: ${{ github.event.pull_request.number }}
 
-  scan-deps-plugins:
+  # Each plugin is its own module with its own go.sum, so the root scan above
+  # sees none of them. One job for all eleven rather than a matrix: the scan
+  # itself is seconds per module and the per-leg runner cost outweighed it —
+  # and a matrix leg calling the catalogue must be granted pull-requests:
+  # write whether it comments or not (the called workflow's notify job
+  # requests it at run setup, before its own if: can decline), a grant this
+  # job genuinely does not hold. The text pass is the verdict: govulncheck
+  # fails only on a vulnerability actually reachable from the module's own
+  # code, and a broken scan fails the same way rather than passing silently.
+  # The SARIF pass is the paper trail, merged into one upload under one
+  # category so the Security tab keeps a single govulncheck-plugins view.
+  # No PR comment, deliberately: scan-deps above carries the one comment per
+  # pull request; a finding here still fails this job and lands in the
+  # Security tab, which is where a reviewer follows it.
+  scan-plugins:
     name: Scan plugin dependencies
-    needs: discover-plugins
-    strategy:
-      fail-fast: false
-      matrix:
-        module: ${{ fromJson(needs.discover-plugins.outputs.modules) }}
-    uses: this-is-tobi/github-workflows/.github/workflows/scan-govulncheck.yml@v0
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       security-events: write
-      # Granted even though these legs never comment (no PR_NUMBER below):
-      # the called workflow's notify job requests pull-requests: write at the
-      # job level, and GitHub validates a called workflow's requested
-      # permissions against this grant when the run is set up — before any
-      # if: could skip the job that wants it. Dropping the grant failed every
-      # pull request's whole CI run as a startup_failure with no jobs and no
-      # log naming the cause. The pen is checked at the door, not when used.
-      pull-requests: write
-    with:
-      WORKING_DIRECTORY: plugins/${{ matrix.module }}
-      # Each plugin is its own module: without a distinct category the SARIF
-      # upload from one leg would replace another's in the Security tab,
-      # leaving only whichever finished last.
-      CATEGORY: govulncheck-${{ matrix.module }}
-      # No PR_NUMBER, deliberately: with per-category sticky comments, every
-      # plugin leg would post its own — eleven comments per pull request.
-      # The root scan-deps leg carries the one comment; a plugin finding
-      # still fails this leg's check and lands in the Security tab under its
-      # category, which is where a reviewer follows it.
+    steps:
+    - name: Checks-out repository
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+
+    - name: Setup Go
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version-file: go.mod
+        cache: true
+        cache-dependency-path: |
+          go.sum
+          plugins/*/go.sum
+
+    # Exact, not a range: this is third-party code executed in the job, and a
+    # floating version would let a new upstream release change what runs here
+    # without any change on our side. The same version the catalogue's
+    # scan-deps leg pins.
+    - name: Install govulncheck
+      # renovate: datasource=go depName=golang.org/x/vuln/cmd/govulncheck
+      run: go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
+
+    - name: Scan every plugin module
+      id: scan
+      run: |-
+        mkdir -p "$RUNNER_TEMP/sarif"
+        failed=""
+        for m in $(make plugins-list); do
+          echo "==> plugins/$m"
+          (cd "plugins/$m" && govulncheck ./...) || failed="$failed plugins/$m"
+          (cd "plugins/$m" && govulncheck -format sarif ./...) > "$RUNNER_TEMP/sarif/$m.sarif" || rm -f "$RUNNER_TEMP/sarif/$m.sarif"
+        done
+        find "$RUNNER_TEMP/sarif" -name '*.sarif' -size -2c -delete
+        if ls "$RUNNER_TEMP"/sarif/*.sarif >/dev/null 2>&1; then
+          jq -s '{version: .[0].version, "$schema": .[0]."$schema", runs: map(.runs[])}' \
+            "$RUNNER_TEMP"/sarif/*.sarif > "$RUNNER_TEMP/plugins.sarif"
+          echo "sarif=true" >> "$GITHUB_OUTPUT"
+        fi
+        if [ -n "$failed" ]; then
+          echo "govulncheck failed or found a reachable vulnerability in:$failed"
+          exit 1
+        fi
+
+    # always(): a finding fails the scan step, and a failing scan is exactly
+    # when this upload matters most. continue-on-error so the Security tab
+    # rejecting an upload cannot mask the scan's own verdict above.
+    - name: Upload scan results to the Security tab
+      if: ${{ always() && steps.scan.outputs.sarif == 'true' }}
+      uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+      with:
+        sarif_file: ${{ runner.temp }}/plugins.sarif
+        category: govulncheck-plugins
+      continue-on-error: true
 
   # One required check to protect the branch with, rather than a list that has
   # to be edited every time a job is added. A skipped job is a pass; anything
@@ -448,12 +480,10 @@ jobs:
     - build-docker-full
     - test-docker-full
     - cross
-    - discover-plugins
-    - lint-plugins
-    - test-plugins
+    - plugins
     - scan-secrets
     - scan-deps
-    - scan-deps-plugins
+    - scan-plugins
     steps:
     - name: Check status of all required jobs
       run: |-
