@@ -146,8 +146,8 @@ func TestProvisionDryRunNeverTouchesTheCluster(t *testing.T) {
 	failIfInvoked(t)
 	v, err := runServiceAccountProvision(context.Background(), saReq(plugin.SurfaceCLI, true, map[string]any{
 		"name": "agent-a", "namespace": "team-prod",
-		"capability": []string{"kube.pod.list", "kube.deployment.list"},
-		"ttl":        "15m",
+		"grant": []string{"kube.pod.list", "kube.deployment.list"},
+		"ttl":   "15m",
 	}))
 	if err != nil {
 		t.Fatalf("dry run itself failed: %v", err)
@@ -163,7 +163,7 @@ func TestProvisionDryRunNeverTouchesTheCluster(t *testing.T) {
 func TestProvisionRefusesOverMCP(t *testing.T) {
 	_, err := runServiceAccountProvision(context.Background(), saReq(plugin.SurfaceMCP, false, map[string]any{
 		"name": "agent-a", "namespace": "team-prod",
-		"capability": []string{"kube.pod.list"}, "ttl": "15m",
+		"grant": []string{"kube.pod.list"}, "ttl": "15m",
 	}))
 	ve := view.AsError(err, "x")
 	if ve == nil || ve.Code != "kube.serviceaccount.mcp" {
@@ -191,7 +191,7 @@ func TestProvisionRejectsAMalformedTTLBeforeAnyClusterCall(t *testing.T) {
 	failIfInvoked(t)
 	_, err := runServiceAccountProvision(context.Background(), saReq(plugin.SurfaceCLI, false, map[string]any{
 		"name": "agent-a", "namespace": "team-prod",
-		"capability": []string{"kube.pod.list"}, "ttl": "not-a-duration",
+		"grant": []string{"kube.pod.list"}, "ttl": "not-a-duration",
 	}))
 	ve := view.AsError(err, "x")
 	if ve == nil || ve.Code != "kube.serviceaccount.ttl.invalid" || ve.Hint == "" {
@@ -204,7 +204,7 @@ func TestProvisionRejectsZeroOrNegativeTTL(t *testing.T) {
 	for _, ttl := range []string{"0s", "-15m"} {
 		_, err := runServiceAccountProvision(context.Background(), saReq(plugin.SurfaceCLI, false, map[string]any{
 			"name": "agent-a", "namespace": "team-prod",
-			"capability": []string{"kube.pod.list"}, "ttl": ttl,
+			"grant": []string{"kube.pod.list"}, "ttl": ttl,
 		}))
 		ve := view.AsError(err, "x")
 		if ve == nil || ve.Code != "kube.serviceaccount.ttl.invalid" {
@@ -223,7 +223,7 @@ func TestProvisionRejectsATTLBelowTheTokenRequestFloor(t *testing.T) {
 	for _, ttl := range []string{"1m", "9m59s"} {
 		_, err := runServiceAccountProvision(context.Background(), saReq(plugin.SurfaceCLI, false, map[string]any{
 			"name": "agent-a", "namespace": "team-prod",
-			"capability": []string{"kube.pod.list"}, "ttl": ttl,
+			"grant": []string{"kube.pod.list"}, "ttl": ttl,
 		}))
 		ve := view.AsError(err, "x")
 		if ve == nil || ve.Code != "kube.serviceaccount.ttl.invalid" {
@@ -236,7 +236,7 @@ func TestProvisionRefusesAnUngrantableCapabilityBeforeAnyClusterCall(t *testing.
 	failIfInvoked(t)
 	_, err := runServiceAccountProvision(context.Background(), saReq(plugin.SurfaceCLI, false, map[string]any{
 		"name": "agent-a", "namespace": "team-prod",
-		"capability": []string{"kube.cert.list"}, "ttl": "15m",
+		"grant": []string{"kube.cert.list"}, "ttl": "15m",
 	}))
 	ve := view.AsError(err, "x")
 	if ve == nil || ve.Code != "kube.serviceaccount.ungrantable" {
@@ -298,7 +298,7 @@ func TestOutThatAlreadyExistsIsRefusedBeforeAnyClusterCall(t *testing.T) {
 	}
 	_, err := runServiceAccountProvision(context.Background(), saReq(plugin.SurfaceCLI, false, map[string]any{
 		"name": "agent-a", "namespace": "team-prod",
-		"capability": []string{"kube.pod.list"}, "ttl": "15m", "out": path,
+		"grant": []string{"kube.pod.list"}, "ttl": "15m", "out": path,
 	}))
 	ve := view.AsError(err, "x")
 	if ve == nil || ve.Code != "kube.serviceaccount.out.exists" {

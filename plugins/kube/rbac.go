@@ -102,6 +102,62 @@ var provisionable = map[string][]policyRule{
 		{APIGroups: []string{"metrics.k8s.io"}, Resources: []string{"pods"}, Verbs: []string{"get", "list"}},
 		{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"get", "list"}},
 	},
+
+	// The bare-word grants. A name without a dot is not a capability ID —
+	// it names a cluster permission this plugin has no capability for,
+	// because the minted kubeconfig's real consumer is not rta: it is
+	// whatever client the agent drives (kubectl, a Kubernetes MCP server),
+	// and an identity that can list pods but not read their logs cannot
+	// investigate anything. The lexical rule is the contract: dotted names
+	// promise "what that capability's Run does", bare words promise exactly
+	// the rules listed here, and the two can never be confused because a
+	// capability ID always carries dots. Each entry follows metrics.pod's
+	// lesson — include every rule the operation needs to actually work,
+	// because a grant that half-works renders working-but-wrong instead of
+	// refusing.
+
+	// logs carries the pods read too: `kubectl logs` resolves the pod
+	// before streaming, so pods/log alone mints an identity that can read
+	// nothing.
+	"logs": {
+		{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"get", "list"}},
+		{APIGroups: []string{""}, Resources: []string{"pods", "pods/log"}, Verbs: []string{"get"}},
+	},
+	// The rest of the workload family beyond kube.deployment.list —
+	// "which ReplicaSet owns this crashlooping pod, did the CronJob fire" —
+	// all namespaced reads.
+	"workloads": {
+		{APIGroups: []string{"apps"}, Resources: []string{"replicasets", "statefulsets", "daemonsets"},
+			Verbs: []string{"get", "list"}},
+		{APIGroups: []string{"batch"}, Resources: []string{"jobs", "cronjobs"}, Verbs: []string{"get", "list"}},
+	},
+	// "Is the Service actually pointing at my pods" — Services plus the
+	// EndpointSlices that answer it (the discovery.k8s.io group; the legacy
+	// core Endpoints resource is deliberately not granted, one API for one
+	// question).
+	"services": {
+		{APIGroups: []string{""}, Resources: []string{"services"}, Verbs: []string{"get", "list"}},
+		{APIGroups: []string{"discovery.k8s.io"}, Resources: []string{"endpointslices"}, Verbs: []string{"get", "list"}},
+	},
+	// The one write in this table, and its blast radius is stated rather
+	// than softened: patch on a workload is the power to change what runs,
+	// image included — `kubectl rollout restart`, `rollout undo` and
+	// `scale` all ride it. That is exactly the grant an operator may find
+	// acceptable on a dev cluster and unthinkable on prod, and per-mint
+	// choice is what this whole mechanism is for; the dry run shows these
+	// verbs before anything is created. watch is included because `rollout
+	// status` is a watch, and the replicasets read because undo and status
+	// both walk the revision history. Still no create, no delete: an
+	// identity that can restart and rescale cannot remove or fabricate
+	// workloads, and the forbidden-verbs test pins that line for every
+	// entry in this table at once.
+	"rollout": {
+		{APIGroups: []string{"apps"}, Resources: []string{"deployments", "statefulsets", "daemonsets"},
+			Verbs: []string{"get", "list", "watch", "patch"}},
+		{APIGroups: []string{"apps"}, Resources: []string{"deployments/scale", "statefulsets/scale"},
+			Verbs: []string{"get", "update", "patch"}},
+		{APIGroups: []string{"apps"}, Resources: []string{"replicasets"}, Verbs: []string{"get", "list", "watch"}},
+	},
 }
 
 // rulesFor resolves a caller-chosen capability list into the Role rules that
@@ -113,8 +169,8 @@ var provisionable = map[string][]policyRule{
 func rulesFor(capabilityIDs []string) ([]policyRule, *view.Error) {
 	if len(capabilityIDs) == 0 {
 		return nil, view.Errorf("kube.serviceaccount.norules",
-			"name at least one capability to grant").
-			WithHint("--capability kube.pod.list, repeatable — " + strings.Join(provisionableNames(), ", "))
+			"name at least one grant for the identity").
+			WithHint("--grant kube.pod.list (or logs, rollout…), repeatable — " + strings.Join(provisionableNames(), ", "))
 	}
 	seen := map[string]bool{}
 	var out []policyRule
@@ -124,7 +180,7 @@ func rulesFor(capabilityIDs []string) ([]policyRule, *view.Error) {
 		if !ok {
 			return nil, view.Errorf("kube.serviceaccount.ungrantable",
 				"%q cannot be granted this way", id).
-				WithHint("grantable capabilities: " + strings.Join(provisionableNames(), ", "))
+				WithHint("grantable names: " + strings.Join(provisionableNames(), ", "))
 		}
 		for _, r := range rules {
 			key := strings.Join(r.APIGroups, ",") + "|" + strings.Join(r.Resources, ",") + "|" + strings.Join(r.Verbs, ",")

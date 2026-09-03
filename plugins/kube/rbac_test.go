@@ -92,6 +92,90 @@ func TestRulesForRefusesAnEmptyList(t *testing.T) {
 	}
 }
 
+// The line the rollout entry must never cross: an identity minted from this
+// table can restart and rescale, but it can never remove, fabricate, or
+// escalate. Walked over every entry like the wildcard test, so a future
+// grant has to clear it on its own.
+func TestNoEntryCarriesADestructiveOrEscalatingVerb(t *testing.T) {
+	forbidden := []string{"create", "delete", "deletecollection", "escalate", "bind", "impersonate"}
+	for id, rules := range provisionable {
+		for _, r := range rules {
+			for _, v := range r.Verbs {
+				if slices.Contains(forbidden, v) {
+					t.Errorf("%s: verb %q — this table restarts and rescales, it never removes or escalates", id, v)
+				}
+			}
+		}
+	}
+}
+
+// The lexical contract: a dotted name promises "what that capability's Run
+// does" and must therefore name a capability this plugin actually declares;
+// a bare word names a cluster permission with no capability behind it and
+// must never look like one. Either half drifting — a capability renamed
+// without its table key, or a bare word growing a dot — would make the
+// grant list promise something that does not exist.
+func TestDottedGrantsAreDeclaredCapabilitiesAndBareWordsAreNot(t *testing.T) {
+	declared := map[string]bool{}
+	for _, c := range Plugin().Capabilities {
+		declared[c.ID] = true
+	}
+	for id := range provisionable {
+		if strings.Contains(id, ".") {
+			if !declared[id] {
+				t.Errorf("%s is dotted but this plugin declares no such capability", id)
+			}
+		} else if declared[id] {
+			t.Errorf("%s is a bare word colliding with a declared capability", id)
+		}
+	}
+}
+
+// logs follows metrics.pod's lesson: pods/log alone mints an identity that
+// can stream nothing, because kubectl resolves the pod before reading its
+// log — so the entry carries the pods read too, and a grant of just "logs"
+// actually works.
+func TestLogsCarriesThePodReadItNeeds(t *testing.T) {
+	rules, verr := rulesFor([]string{"logs"})
+	if verr != nil {
+		t.Fatal(verr)
+	}
+	podsRead, logRead := false, false
+	for _, r := range rules {
+		if slices.Contains(r.Resources, "pods") && slices.Contains(r.Verbs, "list") {
+			podsRead = true
+		}
+		if slices.Contains(r.Resources, "pods/log") && slices.Contains(r.Verbs, "get") {
+			logRead = true
+		}
+	}
+	if !podsRead || !logRead {
+		t.Fatalf("logs must grant both the pod read and the log read, got %+v", rules)
+	}
+}
+
+// The grant picker, the validation and the enforcement must be one list:
+// the field's Options are computed from the table, and this pins that a
+// future hand-maintained copy cannot silently drift from what rulesFor
+// accepts.
+func TestTheGrantInputOffersExactlyTheTable(t *testing.T) {
+	for _, c := range Plugin().Capabilities {
+		if c.ID != "kube.serviceaccount.provision" {
+			continue
+		}
+		for _, f := range c.Inputs {
+			if f.Name != "grant" {
+				continue
+			}
+			if !slices.Equal(f.Options, provisionableNames()) {
+				t.Fatalf("the grant input offers %v, the table accepts %v", f.Options, provisionableNames())
+			}
+			return
+		}
+	}
+	t.Fatal("kube.serviceaccount.provision has no grant input")
+}
+
 func TestRulesForDeduplicatesAndSorts(t *testing.T) {
 	rules, verr := rulesFor([]string{"kube.pod.list", "kube.pod.list", "kube.deployment.list"})
 	if verr != nil {
