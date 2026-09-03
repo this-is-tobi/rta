@@ -407,6 +407,14 @@ jobs:
     permissions:
       contents: read
       security-events: write
+      # Granted even though these legs never comment (no PR_NUMBER below):
+      # the called workflow's notify job requests pull-requests: write at the
+      # job level, and GitHub validates a called workflow's requested
+      # permissions against this grant when the run is set up — before any
+      # if: could skip the job that wants it. Dropping the grant failed every
+      # pull request's whole CI run as a startup_failure with no jobs and no
+      # log naming the cause. The pen is checked at the door, not when used.
+      pull-requests: write
     with:
       WORKING_DIRECTORY: plugins/${{ matrix.module }}
       # Each plugin is its own module: without a distinct category the SARIF
@@ -417,8 +425,7 @@ jobs:
       # plugin leg would post its own — eleven comments per pull request.
       # The root scan-deps leg carries the one comment; a plugin finding
       # still fails this leg's check and lands in the Security tab under its
-      # category, which is where a reviewer follows it. pull-requests: write
-      # goes with it — a job that never comments does not hold the pen.
+      # category, which is where a reviewer follows it.
 
   # One required check to protect the branch with, rather than a list that has
   # to be edited every time a job is added. A skipped job is a pass; anything
