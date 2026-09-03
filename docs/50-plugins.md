@@ -11,8 +11,8 @@ Eleven plugins ship in this repository. They are the proof the contract works, a
 | Plugin | Service |
 | --- | --- |
 | `pg` | PostgreSQL |
-| `mysql` | MySQL, and MariaDB where nothing fork-specific is needed |
-| `mariadb` | MariaDB, adding Galera cluster state and replica status |
+| `mysql` | MySQL. It reaches a MariaDB server for the capabilities that connect in-process, but not for `dump`/`restore`, which pass MySQL 8's own flags to a client that has them |
+| `mariadb` | MariaDB, adding Galera cluster state, replica status, and a `dump`/`restore` pair spelled the way that client spells it |
 | `etcd` | etcd v3: cluster health, members, leases, the keyspace |
 | `qdrant` | Qdrant: collections, their configuration and index health |
 | `s3` | S3-compatible object storage |

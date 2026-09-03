@@ -353,6 +353,47 @@ rta doctor
 
 `kv status` answers without unlocking the store, which makes it safe in a provisioning script.
 
+## Back up a datastore, and put the backup somewhere else
+
+Five plugins carry a dump and the restore that reads it back, and the shape is deliberately the same in each — `--out <file>` on the way out, the file as the first argument on the way in. Only `vault` spells the first half differently, because `snapshot` is what Vault itself calls the thing:
+
+```bash
+rta pg dump      --profile shop-prod --out shop-$(date +%F).dump
+rta mysql dump   --profile shop-prod --out shop-$(date +%F).sql
+rta mariadb dump --profile shop-prod --out shop-$(date +%F).sql
+rta vault snapshot   --profile vault-prod --out vault-$(date +%F).snap
+rta qdrant dump  docs --profile search-prod --out docs-$(date +%F).snapshot
+```
+
+Every one of them writes `0600`, refuses to overwrite a file that already exists, removes what it made if the run fails, and prints the restore command for the file it just wrote. That last line is the point: a backup nobody knows how to restore is a belief about a backup.
+
+**All of them refuse over MCP**, and that is not a gap to be granted around. A whole datastore has no blast radius a grant could name, so the refusal is the answer rather than a missing feature — an agent that needs rows still has `pg.query` or `mysql.query`, bounded per call. Restores are `Destructive`, so a person types through `--yes` before a file replaces a database.
+
+Getting the file off the machine is the second command, not a flag:
+
+```bash
+mkdir backups && mv shop-$(date +%F).dump backups/
+rta s3 bucket upload backups --profile backups-s3 --bucket nightly --prefix shop/$(date +%F)/
+```
+
+And back, the same two steps in reverse:
+
+```bash
+rta s3 bucket download --profile backups-s3 --bucket nightly --prefix shop/2026-08-01/ --out restored
+rta pg restore restored/shop-2026-08-01.dump --profile shop-staging --yes
+```
+
+Two gated commands rather than one capability reaching into two services, which is on purpose: each half is separately consented, separately scoped, and separately in the record.
+
+**Know what your dump does not carry.** Each of these backs up one thing, and the material it needs beside itself lives somewhere the dump cannot reach:
+
+| Dump | What it leaves behind | Where that lives |
+| --- | --- | --- |
+| `pg.dump` | roles, tablespaces — a restore onto a fresh server fails on every ownership line | `pg_dumpall --globals-only` |
+| `mysql.dump`, `mariadb.dump` | users and grants — a single-database dump carries no `mysql.user` rows | the `mysql` database, dumped separately |
+| `qdrant.dump` | aliases — the snapshot restores the collection, not the name pointing at it | the alias API |
+| `vault.snapshot` | the unseal keys, and the snapshot is **sealed with the source cluster's** — a restore without them is a file you cannot open | wherever `operator init` output was stashed, never Vault itself |
+
 ## Next
 
 - [Grants](./21-grants.md) · [Team policy](./23-team-policy.md) · [The record](./22-audit-trail.md)
