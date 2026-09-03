@@ -62,6 +62,35 @@ make build      # ./rta
 
 `make help` lists every target the repository has — building, formatting, the test gates, a release rehearsal, and the plugin equivalent of each.
 
+## Installing plugins from an index
+
+`rta` is one binary and every plugin is a separate module, so neither `go install` nor a release archive brings them along. An **index** is how one arrives: a git repository of `plugins/<name>.yaml` manifests, each generated from a plugin binary's own declaration. Attach one, search it, install from it.
+
+```bash
+rta plugin index add community https://github.com/someone/rta-plugins
+rta plugin search vault
+rta plugin install community/vault
+```
+
+Install is where the claim meets the evidence: rta fetches the artifact, hashes it, launches it in the same sandbox any load uses, and refuses it if what it declares is not what the index said — naming the index that got it wrong. Installing *is* the trust decision, so there is no separate approval step afterwards.
+
+**There is no default index**, and the first one you attach is a decision you make by name. To attach this repository's own plugins, build the index from them:
+
+```bash
+make index                                  # → dist/index, a real git repository
+rta plugin index add local $PWD/dist/index
+rta plugin search
+rta plugin install local/pg
+```
+
+`make index` runs each freshly built binary the way a load does and writes down what it declares, then commits the result — so attaching and installing from it performs the same fetch, the same hash and the same sandboxed declaration check any index gets. Its manifests name this machine's platform and point at the binaries just built, which is what makes it yours rather than something to hand out.
+
+Note that the repository itself is not an index and cannot be attached as one: a source tree's `plugins/` holds a directory per plugin, an index holds a manifest per plugin. `rta plugin index add` reads what it cloned and says so rather than attaching something that would answer every search with silence.
+
+Two ways to skip the index entirely. **From source**, `make plugins-install` puts `rta-plugin-<name>` beside your `rta` and `make plugins-trust` approves the eleven built here in one command — a binary on your `$PATH` is not consent, and [Trust](../40-plugins/10-plugins.md#trust) is why. **Already in an image**, `ghcr.io/this-is-tobi/rta-full` carries every first-party plugin already trusted, since they were built from the same source in the same build; [Container image](#container-image) has the tradeoff.
+
+[Plugins](../40-plugins/10-plugins.md#indexes) is the whole model.
+
 ## Container image
 
 ```bash
