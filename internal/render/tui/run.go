@@ -44,9 +44,11 @@ const runTimeout = 30 * time.Second
 // not only the environment's: the failure is the same whichever layer the
 // display came from, and the seed-time environment is not even the one the
 // run uses when the picker moves.
-// The third return says the picked connection tunnels, in which case runForm
-// does not ask about the endpoint at all — see forwardFilled.
-func (m Model) formSeed(c plugin.Capability, defaults map[string]any, on string) (map[string]any, map[string]bool, bool) {
+// The third return is the environment the seed came from, which runForm needs
+// twice over: a connection that tunnels fills the endpoint fields per call and
+// is not asked about at all (forwardFilled), and one that references
+// credentials answers boxes the seed had to leave empty (environmentNotes).
+func (m Model) formSeed(c plugin.Capability, defaults map[string]any, on string) (map[string]any, map[string]bool, formEnv) {
 	name, filled, conn := m.profileSeed(c, on)
 	seed := plugin.Resolve(c, plugin.Inputs{
 		Caller: defaults, Profile: filled, ProfileName: name, Config: m.configFor(c),
@@ -57,7 +59,15 @@ func (m Model) formSeed(c plugin.Capability, defaults map[string]any, on string)
 			derived[input] = true
 		}
 	}
-	return seed, derived, conn.Tunnelled()
+	return seed, derived, formEnv{name: name, conn: conn}
+}
+
+// formEnv is the environment a form was seeded from: the name profileSeed
+// settled on — which is not always the ref the picker shows, since an ambient
+// environment resolves through profile.Ambient — and the connection behind it.
+type formEnv struct {
+	name string
+	conn config.Connection
 }
 
 // runForm builds a form whose completion runs c.
@@ -69,12 +79,13 @@ func (m Model) formSeed(c plugin.Capability, defaults map[string]any, on string)
 // connection and reaches another.
 func (m Model) runForm(c plugin.Capability, fs []plugin.Field, defaults, base map[string]any) *capForm {
 	on := m.pickedProfile(c, base)
-	seed, derived, tunnelled := m.formSeed(c, defaults, on)
+	seed, derived, env := m.formSeed(c, defaults, on)
 	shown := fs
 	var forwarded []string
-	if tunnelled {
+	if env.conn.Tunnelled() {
 		shown, forwarded = forwardFilled(c, fs, defaults)
 	}
+	shown = environmentNotes(c, shown, seed, env.name, env.conn)
 	cf := newCapForm(c, m.withPicker(c, shown, on, forwarded), seed, true, base)
 	cf.derived = derived
 	cf.offered = fs

@@ -292,11 +292,28 @@ func (m Model) profileSeed(c plugin.Capability, on string) (string, map[string]a
 		return "", nil, none
 	}
 	if bound := m.currentBind(); on == m.active && bound != nil {
-		filled, covered := bound[c.ID]
-		if !covered {
-			return "", nil, none
+		// Only when the bind actually holds this capability, and falling
+		// through when it does not rather than answering "no environment".
+		//
+		// A missing entry is two unrelated things. One is an environment
+		// silent about this plugin, which really does mean the base
+		// configuration. The other is an environment that names it and whose
+		// bind failed — a `secrets:` reference against a store nothing has
+		// unlocked is the ordinary way, since bindCmd runs off the update
+		// loop where no passphrase can be asked for — and answering that with
+		// the base configuration put the base configuration's host in the box
+		// under a picker still reading the environment's name, which is the
+		// disagreement this function exists to remove. The run was never
+		// misdirected (it fails on the same reference), but the screen said
+		// otherwise until it did.
+		//
+		// Falling through re-asks the pure question, which tells them apart:
+		// Ambient is silent about the first and answers the second, so what
+		// the environment *states* is on screen either way and
+		// environmentNotes can name the reference that is about to be needed.
+		if filled, covered := bound[c.ID]; covered {
+			return on, withoutSecrets(c, filled.values), filled.conn
 		}
-		return on, withoutSecrets(c, filled.values), filled.conn
 	}
 	cfg, err := config.LoadFile()
 	if err != nil {
