@@ -1,6 +1,9 @@
 package operator
 
 import (
+	"strings"
+	"time"
+
 	"github.com/this-is-tobi/rule-them-all/internal/consent"
 	"github.com/this-is-tobi/rule-them-all/internal/grant"
 	"github.com/this-is-tobi/rule-them-all/internal/lockdown"
@@ -129,15 +132,33 @@ type Status struct {
 type OperatorInfo struct {
 	Label string `json:"label"`
 	Role  Role   `json:"role"`
+	// Expires is the date as the roster wrote it (YYYY-MM-DD), empty for
+	// never. A string rather than a time both because omitempty cannot
+	// elide a zero time.Time and because this is the display half — the
+	// enforced half is the parsed time Verify hands the dispatch.
+	Expires string `json:"expires,omitempty"`
 }
 
-// String renders a row for a human listing — the role only when it
-// subtracts something, since "full" is what enrollment has always meant.
+// String renders a row for a human listing — an annotation only when it
+// subtracts something, since a bare label is what enrollment has always
+// meant. An already-past date says so outright: the row that reads
+// "expired" on the status page is the one a person should go delete.
 func (o OperatorInfo) String() string {
+	var notes []string
 	if o.Role == RoleRead {
-		return o.Label + " (read)"
+		notes = append(notes, "read")
 	}
-	return o.Label
+	if o.Expires != "" {
+		word := "expires "
+		if t, err := time.ParseInLocation("2006-01-02", o.Expires, time.Local); err == nil && !time.Now().Before(t) {
+			word = "expired "
+		}
+		notes = append(notes, word+o.Expires)
+	}
+	if len(notes) == 0 {
+		return o.Label
+	}
+	return o.Label + " (" + strings.Join(notes, ", ") + ")"
 }
 
 // GrantList is VerbGrantList's result: the active grants as the server's own

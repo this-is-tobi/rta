@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/this-is-tobi/rule-them-all/internal/grant"
 	"github.com/this-is-tobi/rule-them-all/internal/guard"
@@ -33,6 +34,29 @@ type rosterEntry struct {
 	label string
 	key   ed25519.PublicKey
 	role  Role
+	// expires is when this enrollment stops working, zero for never. Parsed
+	// once at load; the comparison happens per call, against the clock at
+	// that moment — which is the whole point: unlike every other roster
+	// edit, expiry needs no restart to take effect, because the row said so
+	// in advance.
+	expires time.Time
+}
+
+// Identity is what a verified signature proved: which enrolled row made it.
+// The handler gates on all three — the role decides which verbs, the expiry
+// decides whether any verb at all is still owed to this key.
+type Identity struct {
+	Label   string
+	Role    Role
+	Expires time.Time
+}
+
+// Expired reports whether this enrollment has run out at the given moment.
+// The roster grammar names a day, and the parse anchors it at that day's
+// local midnight, so the named day itself is already refused: "expires
+// 2026-12-31" reads as "gone by the 31st", not "good through it".
+func (id Identity) Expired(now time.Time) bool {
+	return !id.Expires.IsZero() && !now.Before(id.Expires)
 }
 
 // Role is what one enrolled key may do on this server. Enrollment itself
@@ -97,6 +121,16 @@ func (r Roster) Entries() []guard.OperatorKey {
 			if e.role != RoleFull {
 				continue
 			}
+			// An already-expired row stays out for the same reason a read
+			// row does: the guard file is static once written, so this is
+			// the one chance to keep a departed key out of grant-signing
+			// trust. The honest limit: a row that expires *after* `grant
+			// guard remote` ran stays in the guard until someone re-runs it
+			// — expiry gates the channel live, the guard only at
+			// provisioning, exactly like every other roster edit.
+			if (Identity{Expires: e.expires}).Expired(time.Now()) {
+				continue
+			}
 			out = append(out, guard.OperatorKey{
 				Label:     e.label,
 				PublicKey: base64.StdEncoding.EncodeToString(e.key),
@@ -114,7 +148,11 @@ func (r Roster) Operators() []OperatorInfo {
 	var out []OperatorInfo
 	for _, es := range r.keys {
 		for _, e := range es {
-			out = append(out, OperatorInfo{Label: e.label, Role: e.role})
+			info := OperatorInfo{Label: e.label, Role: e.role}
+			if !e.expires.IsZero() {
+				info.Expires = e.expires.Format("2006-01-02")
+			}
+			out = append(out, info)
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Label < out[j].Label })
@@ -175,25 +213,52 @@ func LoadRoster(path string) (Roster, bool, error) {
 		label, encoded := fields[0], fields[1]
 		role := RoleFull
 		roleSet := false
+		var expires time.Time
 		for _, annotation := range fields[2:] {
 			k, v, cut := strings.Cut(annotation, "=")
-			if !cut || k != "role" {
+			if !cut {
 				return Roster{}, groupReadable, fmt.Errorf("%s:%d: %q is not an annotation this rta knows — "+
-					"only role=read (or role=full, the default) — and guessing here could enroll more than "+
-					"the line means", path, i+1, annotation)
+					"only role=read (or role=full, the default) and expires=YYYY-MM-DD — and guessing here "+
+					"could enroll more than the line means", path, i+1, annotation)
 			}
-			if roleSet {
-				return Roster{}, groupReadable, fmt.Errorf("%s:%d: role is set twice — one role per key", path, i+1)
-			}
-			roleSet = true
-			switch Role(v) {
-			case RoleFull:
-				role = RoleFull
-			case RoleRead:
-				role = RoleRead
+			switch k {
+			case "role":
+				if roleSet {
+					return Roster{}, groupReadable, fmt.Errorf("%s:%d: role is set twice — one role per key", path, i+1)
+				}
+				roleSet = true
+				switch Role(v) {
+				case RoleFull:
+					role = RoleFull
+				case RoleRead:
+					role = RoleRead
+				default:
+					return Roster{}, groupReadable, fmt.Errorf("%s:%d: %q is not a role — \"read\" restricts this "+
+						"key to status, grant.list, consent.list and lock.list; \"full\" (or no annotation) is everything", path, i+1, v)
+				}
+			case "expires":
+				if !expires.IsZero() {
+					return Roster{}, groupReadable, fmt.Errorf("%s:%d: expires is set twice — one date per key", path, i+1)
+				}
+				// Local midnight of the named day, so the day itself is
+				// already refused — a departure date reads as "gone by then".
+				// Local rather than UTC because the comparison happens on
+				// this server, and the person who wrote the date was thinking
+				// in this server's day, not in an offset of it. A date
+				// already past still loads: it is configuration that aged,
+				// not a typo, and refusing the whole file over one departed
+				// operator would cut every other operator off at restart —
+				// the row itself refuses per call, which is all it ever did.
+				t, err := time.ParseInLocation("2006-01-02", v, time.Local)
+				if err != nil {
+					return Roster{}, groupReadable, fmt.Errorf("%s:%d: %q is not a date this rta reads — "+
+						"expires=YYYY-MM-DD, and the key stops working when that day arrives", path, i+1, v)
+				}
+				expires = t
 			default:
-				return Roster{}, groupReadable, fmt.Errorf("%s:%d: %q is not a role — \"read\" restricts this "+
-					"key to status, grant.list, consent.list and lock.list; \"full\" (or no annotation) is everything", path, i+1, v)
+				return Roster{}, groupReadable, fmt.Errorf("%s:%d: %q is not an annotation this rta knows — "+
+					"only role=read (or role=full, the default) and expires=YYYY-MM-DD — and guessing here "+
+					"could enroll more than the line means", path, i+1, annotation)
 			}
 		}
 		if verr := grant.CheckAgent(label); verr != nil || label == "" {
@@ -224,7 +289,8 @@ func LoadRoster(path string) (Roster, bool, error) {
 		seen[string(pub)] = label
 		labels[label] = true
 		fp := passkey.Fingerprint(pub)
-		r.keys[fp] = append(r.keys[fp], rosterEntry{label: label, key: ed25519.PublicKey(pub), role: role})
+		r.keys[fp] = append(r.keys[fp], rosterEntry{
+			label: label, key: ed25519.PublicKey(pub), role: role, expires: expires})
 	}
 	if r.Len() == 0 {
 		return Roster{}, groupReadable, fmt.Errorf("%s enrolls no operators", path)

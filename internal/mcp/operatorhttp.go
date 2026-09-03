@@ -163,20 +163,20 @@ func (h *operatorHandler) call(w http.ResponseWriter, r *http.Request) {
 		h.refuse(w, fmt.Sprintf("nonce not honoured (spent, expired, or never issued) for fingerprint %q", env.Fingerprint))
 		return
 	}
-	label, role, ok := h.cfg.Roster.Verify(env, h.cfg.URL)
+	id, ok := h.cfg.Roster.Verify(env, h.cfg.URL)
 	if !ok {
 		h.refuse(w, fmt.Sprintf("signature rejected for fingerprint %q, verb %q — a valid-looking envelope "+
 			"may have been signed for a different server than %q", env.Fingerprint, env.Verb, h.cfg.URL))
 		return
 	}
-	h.logf("%s (%s) called %s", label, env.Fingerprint, env.Verb)
+	h.logf("%s (%s) called %s", id.Label, env.Fingerprint, env.Verb)
 	// The row is written before the response leaves, never in a defer
 	// after it: a mutation the caller has seen acknowledged must already
 	// be in the record, or a crash between the two acknowledges an action
 	// history never shows. The bridge has the same ordering — its record
 	// runs before the handler returns the result to the SDK.
-	rec := h.mutationEntry(env, label)
-	status, answer := h.answer(env, label, role, rec)
+	rec := h.mutationEntry(env, id.Label)
+	status, answer := h.answer(env, id, rec)
 	if rec != nil {
 		record(*rec)
 	}
@@ -185,8 +185,9 @@ func (h *operatorHandler) call(w http.ResponseWriter, r *http.Request) {
 
 // answer runs one verified call, classifying the outcome into the wire
 // answer and — when rec is non-nil — the ledger row.
-func (h *operatorHandler) answer(env operator.Envelope, label string,
-	role operator.Role, rec *agentlog.Entry) (int, any) {
+func (h *operatorHandler) answer(env operator.Envelope, id operator.Identity,
+	rec *agentlog.Entry) (int, any) {
+	label := id.Label
 	// The frozen check sits past the signature and before everything else,
 	// the role gate included: a locked operator key gets no verb at all,
 	// which is what makes locking the answer to a compromised key that
@@ -209,8 +210,24 @@ func (h *operatorHandler) answer(env operator.Envelope, label string,
 			return http.StatusForbidden, errorBody{Error: verr}
 		}
 	}
+	// Expiry sits beside the lock and shares its temperament: the roster
+	// row said in advance when this enrollment stops, and the comparison
+	// happens here per call, so the date takes effect on a running server
+	// with no restart — the one roster edit that does. After the lock,
+	// because a locked key's note is the incident context and outranks a
+	// calendar; before the role gate, because an expired read key is as
+	// gone as an expired full one.
+	if id.Expired(time.Now()) {
+		when := id.Expires.Format("2006-01-02")
+		verr := view.Errorf("core.operator.expired",
+			"this operator key's enrollment expired on %s", when).
+			WithHint("re-enrollment is a roster edit: whoever holds the --operators file removes " +
+				"or re-dates this key's line and restarts the server")
+		refusedBy(rec, verr)
+		return http.StatusForbidden, errorBody{Error: verr}
+	}
 	start := time.Now()
-	res, verr := h.dispatch(env, label, role)
+	res, verr := h.dispatch(env, label, id.Role)
 	if verr != nil {
 		if rec != nil {
 			// statusFor already sorts the channel's errors into "this server

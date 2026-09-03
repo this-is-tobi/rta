@@ -151,6 +151,57 @@ func TestALockedOperatorKeysAttemptIsRecorded(t *testing.T) {
 	}
 }
 
+// Expiry is the lock's calendar-shaped sibling: the roster row said in
+// advance when the enrollment stops, and the comparison happens per call,
+// so a running server refuses from the named day with no restart. An
+// expired key is still an identified caller — the signature verified — so
+// its mutation attempts are recorded like a locked key's: that knocking is
+// incident evidence. Its reads are refused too (an expired read key is as
+// gone as a full one) and stay off the record like every read.
+func TestAnExpiredOperatorKeyIsRefusedAndItsAttemptRecorded(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	signer, roster := enrolledAs(t, "gone", " expires=2020-01-01")
+	addr := startOperatorWith(t, OperatorConfig{Roster: roster})
+	at := "http://" + addr
+
+	status, body := postEnvelope(t, addr, signer.Sign(at, fetchChallenge(t, addr),
+		operator.VerbStatus, nil))
+	if status != http.StatusForbidden {
+		t.Fatalf("the expired key's status read: %d — %s", status, body)
+	}
+	if entries := ledgerEntries(t); len(entries) != 0 {
+		t.Fatalf("an expired key's read wrote %d entries: %+v", len(entries), entries)
+	}
+
+	status, body = postEnvelope(t, addr, signer.Sign(at, fetchChallenge(t, addr),
+		operator.VerbLockAdd, []byte(`{"kind":"agent","name":"claude"}`)))
+	if status != http.StatusForbidden {
+		t.Fatalf("the expired key's lock.add: %d — %s", status, body)
+	}
+	entries := ledgerEntries(t)
+	if len(entries) != 1 {
+		t.Fatalf("the expired key's attempt wrote %d entries: %+v", len(entries), entries)
+	}
+	if e := entries[0]; e.Outcome != agentlog.Refused || e.Code != "core.operator.expired" ||
+		e.Credential != grant.FromOperatorPrefix+"gone" {
+		t.Fatalf("the expired-key row: %+v", e)
+	}
+}
+
+// The other side of the date: a future-dated enrollment is an ordinary
+// working key until its day arrives.
+func TestAFutureDatedOperatorKeyWorksUntilItsDay(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	signer, roster := enrolledAs(t, "tobi", " expires=2999-01-01")
+	addr := startOperatorWith(t, OperatorConfig{Roster: roster})
+	at := "http://" + addr
+
+	if status, body := postEnvelope(t, addr, signer.Sign(at, fetchChallenge(t, addr),
+		operator.VerbStatus, nil)); status != http.StatusOK {
+		t.Fatalf("a future-dated key's status read: %d — %s", status, body)
+	}
+}
+
 // The consent.answer row is the ledger's other half of an approval: the
 // agent's own parked call records auth=approved, and this row records who
 // answered — the pairing a later dual-authorization check would read.
