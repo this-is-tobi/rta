@@ -5,11 +5,14 @@ import (
 	"slices"
 
 	"fmt"
+	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/this-is-tobi/rule-them-all/internal/config"
+	"github.com/this-is-tobi/rule-them-all/internal/plugindist"
 	"github.com/this-is-tobi/rule-them-all/internal/pluginhost"
 	"github.com/this-is-tobi/rule-them-all/internal/plugintrust"
 	"github.com/this-is-tobi/rule-them-all/internal/registry"
@@ -47,6 +50,17 @@ type pluginRow struct {
 	// compiled into the rta binary the user already chose to run, which is
 	// why it needs no path and no digest.
 	origin registry.Origin
+	// lock is what rta.lock records about this artifact, or nil.
+	//
+	// **Matched by digest and never by name**, which is the same rule every
+	// authorisation in rta follows. A row named `pg` and a lock entry named
+	// `pg` are not evidence of anything on their own — an upgrade that did not
+	// finish, or a local build placed over the store, leaves exactly that
+	// shape — so a version and an index attached on the strength of the name
+	// would be rta reporting provenance for bytes it did not recognise.
+	// Nothing here is nil because a plugin is unmanaged; nil means "no record
+	// of *these* bytes", and the row says the smaller true thing instead.
+	lock *plugindist.LockEntry
 	// tile is the capability that represents it on the dashboard, empty when
 	// the plugin has nothing it can show unprompted.
 	tile string
@@ -102,6 +116,95 @@ const (
 	decidedUntrust = "untrusted"
 )
 
+// pluginGroup is where a plugin's bytes came from, which is the fact that
+// changes how every other fact on its row reads: "13 capabilities, one of them
+// destructive" means one thing about code compiled into the binary this
+// operator chose to run, and something else about a file that appeared on
+// their $PATH.
+//
+// **There is deliberately no "official" group, and that is a finding rather
+// than an omission.** The obvious third band would be "installed from rta's
+// own index", and nothing rta records can honestly say that. internal/plugindist
+// attaches no default index at all — `rta plugin index add <name> <repository>`
+// is the whole story, and the name is the operator's to choose — so
+// LockEntry.Index holds whatever they typed. `rta plugin index add official
+// https://not-us/` produces a row indistinguishable from the real thing, and a
+// band drawn from it would be rta asserting a provenance property out of a
+// string anyone can pick. Trust here binds to a digest and never to a name,
+// which is the same rule that keeps a manifest's `version` from resolving
+// anything.
+//
+// What rta genuinely knows is narrower and more useful: whether it placed
+// these bytes itself. A managed artifact has an rta.lock row naming the index,
+// the version claimed at install time and what the signature check found; one
+// found on $PATH has none of that, and the difference is exactly the one an
+// operator auditing their machine is looking for.
+type pluginGroup int
+
+const (
+	groupBuiltin pluginGroup = iota
+	groupManaged
+	groupPath
+	groupWaiting
+)
+
+// title and caption are the two lines a group rule occupies. The caption says
+// what the provenance *means*, once, instead of every row spending characters
+// re-implying it.
+func (g pluginGroup) title() string {
+	switch g {
+	case groupBuiltin:
+		return "built in"
+	case groupManaged:
+		return "installed by rta"
+	case groupWaiting:
+		return "not run"
+	}
+	return "found on $PATH"
+}
+
+func (g pluginGroup) caption() string {
+	switch g {
+	case groupBuiltin:
+		return "compiled into the rta binary you chose to run, which is why they need no digest"
+	case groupManaged:
+		return "rta placed these bytes and recorded where from — the version is the index's claim, not a guarantee"
+	case groupWaiting:
+		return "discovered and never launched — approving one is a decision about that exact artifact, not its name"
+	}
+	return "binaries rta did not place and holds no record of"
+}
+
+// group answers which band this row belongs under.
+//
+// Waiting first, because an artifact rta refused to launch is a decision
+// rather than an inventory row — it is the same reason `rta plugin list` puts
+// those last — and its provenance is the less interesting half of what it is.
+func (r pluginRow) group() pluginGroup {
+	switch {
+	case r.waiting:
+		return groupWaiting
+	case !r.external():
+		return groupBuiltin
+	case underStore(r.origin.Path):
+		return groupManaged
+	}
+	return groupPath
+}
+
+// underStore reports whether an artifact sits inside the directory rta
+// installs into.
+//
+// The path, and not a name in rta.lock, because pluginhost.Identify resolves
+// symlinks before hashing — the store serves through a bin/ directory of
+// links, so a managed plugin's origin is already its real path under the
+// store. It is also the question `rta doctor` asks to spot a $PATH copy
+// shadowing a managed one, asked the same way here so the two screens cannot
+// disagree about which artifact is which.
+func underStore(path string) bool {
+	return path != "" && strings.HasPrefix(path, plugindist.StoreDir()+string(filepath.Separator))
+}
+
 // needList names the locations a row is short of, in the plugin's own words.
 func needList(ns []plugin.Need) string {
 	out := make([]string, len(ns))
@@ -155,20 +258,34 @@ func (r pluginRow) reach() plugin.Safety {
 // pluginRows lists every registered plugin with its dashboard state, followed
 // by the artifacts discovery refused to launch.
 //
-// Untrusted last, because they are a smaller list and an outstanding decision
-// rather than an inventory — the same order `rta plugin list` puts them in.
+// Grouped by provenance rather than left in the registry's alphabetical order,
+// which put the two or three artifacts an operator did not compile themselves
+// among a dozen that came with the binary. This pane's stated job is "which
+// plugins do I actually have", and the answer somebody is scanning for is
+// nearly always the third-party half; a sort by name hid it in plain sight.
+//
+// Untrusted still last, because they are a smaller list and an outstanding
+// decision rather than an inventory — the same order `rta plugin list` puts
+// them in, and the group ordering is chosen to preserve it.
 func pluginRows(reg *registry.Registry, dash config.Dashboard, untrusted []pluginhost.Untrusted) []pluginRow {
 	hidden := map[string]bool{}
 	for _, id := range dash.Hidden {
 		hidden[id] = true
 	}
-	// Read once for the pane rather than per row per frame: this is a file,
+	// Read once for the pane rather than per row per frame: these are files,
 	// and the plugin list is redrawn on every keystroke.
 	allowed := plugintrust.Load()
+	locked := map[string]plugindist.LockEntry{}
+	for _, e := range plugindist.ReadLock() {
+		locked[e.Digest] = e
+	}
 	rows := make([]pluginRow, 0, len(reg.Plugins())+len(untrusted))
 	for _, p := range reg.Plugins() {
 		origin, _ := reg.Origin(p.Name)
 		row := pluginRow{plugin: p, origin: origin}
+		if e, ok := locked[origin.Digest]; ok {
+			row.lock = &e
+		}
 		for _, n := range p.Needs {
 			if slices.Contains(allowed.Allowed(origin.Digest), string(n)) {
 				row.granted = append(row.granted, n)
@@ -186,13 +303,43 @@ func pluginRows(reg *registry.Registry, dash config.Dashboard, untrusted []plugi
 		// The name and the artifact are all discovery learned: it hashed the
 		// file and stopped, so there is no summary and no capability list to
 		// show, because asking for them is the thing that runs the code.
-		rows = append(rows, pluginRow{
+		row := pluginRow{
 			plugin:  plugin.Plugin{Name: u.Name},
 			origin:  registry.Origin{Path: u.Path, Digest: u.Digest},
 			waiting: true,
-		})
+		}
+		if e, ok := locked[u.Digest]; ok {
+			row.lock = &e
+		}
+		rows = append(rows, row)
 	}
+	// Stable within a group, by name, so the pane an operator learned the
+	// shape of yesterday has the same shape today.
+	sort.SliceStable(rows, func(i, j int) bool {
+		if a, b := rows[i].group(), rows[j].group(); a != b {
+			return a < b
+		}
+		return rows[i].plugin.Name < rows[j].plugin.Name
+	})
 	return rows
+}
+
+// pluginGroups counts the distinct bands the current list falls into.
+//
+// One group means no grouping happened, and a lone rule over every row on the
+// pane is a heading that separates nothing — the same discipline a profile
+// colour follows, where only a marked environment announces itself. The count
+// is also what the scroll arithmetic subtracts, so both halves ask one
+// function rather than two that can drift by a line.
+func (m Model) pluginGroups() int {
+	seen := map[pluginGroup]bool{}
+	for _, row := range m.plugins {
+		seen[row.group()] = true
+	}
+	if len(seen) < 2 {
+		return 0
+	}
+	return len(seen)
 }
 
 // toggleShown flips whether a plugin's tile is on the dashboard, and persists
@@ -292,8 +439,21 @@ const pluginTextAt = 3
 
 // visiblePlugins is how many whole plugins fit in the body of the pane.
 func (m Model) visiblePlugins(bodyHeight int) int {
-	return max(bodyHeight/pluginRowHeight, 1)
+	return max((bodyHeight-pluginGroupHeight*m.pluginGroups())/pluginRowHeight, 1)
 }
+
+// pluginGroupHeight is the lines a group rule and its caption occupy.
+//
+// Every group is budgeted for whether or not its rule lands inside the window,
+// which under-fills the pane by a line or two when the view is scrolled into
+// the middle of a group. That is the deliberate half of the trade: the pane's
+// rows are a fixed height precisely so the scroll arithmetic is a
+// multiplication rather than a running total, and one function answering
+// slightly small for both the clamp and the view is safe in a way that two
+// functions agreeing most of the time is not — the failure mode there is the
+// selection sitting one line under the bottom edge, which reads as the app
+// being broken.
+const pluginGroupHeight = 2
 
 // clampPluginScroll keeps the selected plugin on screen.
 //
@@ -348,10 +508,26 @@ func (m Model) pluginsView() string {
 	scroll := min(max(m.pluginScroll, 0), max(0, len(m.plugins)-visible))
 
 	inner := width - 4
+	grouped := m.pluginGroups() > 0
 	var b strings.Builder
 	for i := scroll; i < len(m.plugins) && i < scroll+visible; i++ {
 		row := m.plugins[i]
 		selected := i == m.pluginSel
+
+		// The group rule, before the first row that belongs under it.
+		//
+		// Compared against the row above in the whole list rather than the one
+		// above on screen, so scrolling into the middle of a group does not
+		// re-announce it — a heading that reappears every time you scroll is a
+		// heading that stops meaning "this is where it starts".
+		if grouped && (i == 0 || m.plugins[i-1].group() != row.group()) {
+			g := row.group()
+			label := " " + strings.ToUpper(g.title()) + " "
+			rule := max(inner-lipgloss.Width(label)-2, 0)
+			b.WriteString(theme.Subtle.Render("──"+label+strings.Repeat("─", rule)) + "\n")
+			b.WriteString(ansi.Truncate(
+				strings.Repeat(" ", pluginTextAt)+theme.Faded.Render(g.caption()), inner, "…") + "\n")
+		}
 
 		// The band: "─❯ KV ───────────── [on] · destructive ─".
 		//
@@ -442,11 +618,41 @@ func (m Model) pluginsView() string {
 // The digest is shown short. It is the identity every authorisation in rta is
 // bound to, so it is worth being able to see it here and compare it
 // against what `--allow-destructive` was pinned to, without running doctor.
-func pluginDetail(row pluginRow) string {
-	origin := "built in"
-	if row.external() {
-		origin = "$PATH: " + row.origin.Path + " · " + row.origin.Short()
+// pluginOrigin is the provenance half of the detail line: the artifact, and —
+// for one rta placed itself — what it recorded about placing it.
+//
+// The lock's three facts are here rather than only in `rta doctor` because
+// this is the pane somebody opens to ask what a plugin *is*, and until now the
+// answer for an installed one was the same "$PATH: …" a stray binary got. The
+// version is the index's claim at install time and nothing resolves through
+// it; the signature line is the outcome of a check rta records and never
+// requires, which is why it is stated in full rather than reduced to a tick.
+//
+// A managed artifact with no matching lock row says so plainly rather than
+// borrowing the row that shares its name. That state is real — an upgrade that
+// did not finish, or a local build copied into the store — and `rta doctor`
+// investigates it properly; the pane's job is to not claim a provenance it
+// cannot support.
+func pluginOrigin(row pluginRow) string {
+	if !row.external() {
+		return "built in"
 	}
+	if row.group() == groupManaged {
+		if row.lock == nil {
+			return "in rta's store · " + row.origin.Short() +
+				" — rta.lock has no record of these bytes; `rta doctor` says what drifted"
+		}
+		// The same three facts `rta doctor` prints for a managed plugin, in
+		// the same words. Two screens describing one artifact differently is
+		// how an operator ends up unsure which of them to believe.
+		return fmt.Sprintf("installed by rta · %s from index %q · signature: %s · %s",
+			row.lock.Version, row.lock.Index, row.lock.Signature, row.origin.Short())
+	}
+	return "$PATH: " + row.origin.Path + " · " + row.origin.Short()
+}
+
+func pluginDetail(row pluginRow) string {
+	origin := pluginOrigin(row)
 	if row.decided == decidedTrust {
 		return origin + " · approved — it loads when rta restarts"
 	}
