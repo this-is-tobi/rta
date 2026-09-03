@@ -99,6 +99,12 @@ func TestSafetyClassesMatchWhatEachCapabilityDiscloses(t *testing.T) {
 		// WHERE clause is a place a value hides.
 		"mariadb.query":    plugin.Write,
 		"mariadb.activity": plugin.Write,
+		// The dump/restore pair refuses MCP outright instead of taking a
+		// grant (a whole database has no blast radius a grant could name);
+		// the restore is Destructive besides — the dump's own DROP TABLE
+		// statements run first, and the class buys the --yes gate.
+		"mariadb.dump":    plugin.Write,
+		"mariadb.restore": plugin.Destructive,
 		// Read: every value is a number the server publishes about itself.
 		// Cluster health is not a value anybody stored, and an operator who
 		// cannot see it is an operator who finds out about a split brain from

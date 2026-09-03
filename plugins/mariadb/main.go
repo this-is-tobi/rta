@@ -96,6 +96,8 @@ func Plugin() plugin.Plugin {
 		Summary: "MariaDB: connection health, schema, rows, activity and cluster state",
 		Version: "0.1.0",
 		Capabilities: []plugin.Capability{
+			dumpCapability(),
+			restoreCapability(),
 			overviewCapability(),
 			statusCapability(),
 			databaseListCapability(),
