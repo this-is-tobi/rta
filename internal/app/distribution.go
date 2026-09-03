@@ -383,8 +383,12 @@ func newPluginIndexCommand(opts *globalOpts) *cobra.Command {
 			}
 			ix, _ := plugindist.IndexByName(args[0])
 			listed, bad := plugindist.Manifests(ix)
+			// Masked on the way out, the same as `index list`: a clone URL can
+			// carry a token, and this pane is also `--output json` and
+			// terminal scrollback. A URL with no userinfo comes back
+			// unchanged, so the ordinary line is unaffected.
 			pairs := []view.Pair{
-				{Key: "attached", Value: args[0] + " (" + args[1] + ")"},
+				{Key: "attached", Value: args[0] + " (" + plugindist.OriginForDisplay(args[1]) + ")"},
 				{Key: "claims", Value: fmt.Sprintf("%d plugins", len(listed))},
 			}
 			for _, verr := range bad {
