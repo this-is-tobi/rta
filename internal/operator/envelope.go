@@ -72,25 +72,28 @@ func (s Signer) Sign(server, nonce, verb string, payload []byte) Envelope {
 }
 
 // Verify reports whether env carries a valid signature by an enrolled key
-// over this server's own identity, and whose — the label and the role the
-// roster enrolled that key under, so the dispatch downstream gates verbs
-// on what the signature actually proved, never on anything the envelope
-// claimed. server is the verifier's canonical URL from its own
-// configuration — deliberately a parameter and not an envelope field, so a
-// relayed envelope cannot bring the identity it was signed for along with
-// it. It checks the signature only — the nonce is the caller's to consume
-// first, because single-use is a property of the store, not of the math.
-// False carries no reason on purpose: the reason goes to the server's
-// stderr, never to an unauthenticated caller.
-func (r Roster) Verify(env Envelope, server string) (string, Role, bool) {
+// over this server's own identity, and whose — the roster row that made
+// it, so the dispatch downstream gates verbs on what the signature
+// actually proved (label, role, expiry), never on anything the envelope
+// claimed. Expiry is deliberately proved here and enforced downstream,
+// like the role: an expired key is still an *identified* caller, owed the
+// real reason and a ledger row for the attempt, where a failed signature
+// is a stranger owed nothing. server is the verifier's canonical URL from
+// its own configuration — deliberately a parameter and not an envelope
+// field, so a relayed envelope cannot bring the identity it was signed for
+// along with it. It checks the signature only — the nonce is the caller's
+// to consume first, because single-use is a property of the store, not of
+// the math. False carries no reason on purpose: the reason goes to the
+// server's stderr, never to an unauthenticated caller.
+func (r Roster) Verify(env Envelope, server string) (Identity, bool) {
 	raw, err := base64.StdEncoding.DecodeString(env.Sig)
 	if err != nil {
-		return "", "", false
+		return Identity{}, false
 	}
 	msg := message(server, env.Nonce, env.Verb, env.Payload)
 	for _, e := range r.keys[env.Fingerprint] {
 		if ed25519.Verify(e.key, msg, raw) {
-			return e.label, e.role, true
+			return Identity{Label: e.label, Role: e.role, Expires: e.expires}, true
 		}
 	}
 	// An unknown fingerprint costs one verify against a throwaway key, the
@@ -100,7 +103,7 @@ func (r Roster) Verify(env Envelope, server string) (string, Role, bool) {
 	if len(r.keys[env.Fingerprint]) == 0 {
 		ed25519.Verify(timingDummy, msg, raw)
 	}
-	return "", "", false
+	return Identity{}, false
 }
 
 // timingDummy is the key Verify burns a check against when a fingerprint

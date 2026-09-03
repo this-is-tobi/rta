@@ -96,9 +96,12 @@ func TestTheRosterLineEnrolls(t *testing.T) {
 		t.Fatal(err)
 	}
 	env := s.Sign("https://a.example", "nonce-1", VerbStatus, nil)
-	label, _, ok := roster.Verify(env, "https://a.example")
-	if !ok || label != "tobi" {
-		t.Fatalf("Verify = %q, %v — want tobi, true", label, ok)
+	id, ok := roster.Verify(env, "https://a.example")
+	if !ok || id.Label != "tobi" {
+		t.Fatalf("Verify = %q, %v — want tobi, true", id.Label, ok)
+	}
+	if !id.Expires.IsZero() {
+		t.Fatalf("a bare roster line enrolled with an expiry: %v", id.Expires)
 	}
 }
 
@@ -118,10 +121,10 @@ func TestAnEnvelopeSignedForOneServerVerifiesOnNoOther(t *testing.T) {
 		t.Fatal(err)
 	}
 	relayed := s.Sign("https://hostile.example", "victim-nonce", VerbGrantList, nil)
-	if _, _, ok := roster.Verify(relayed, "https://victim.example"); ok {
+	if _, ok := roster.Verify(relayed, "https://victim.example"); ok {
 		t.Fatal("an envelope aimed at one server verified on another")
 	}
-	if _, _, ok := roster.Verify(relayed, "https://hostile.example"); !ok {
+	if _, ok := roster.Verify(relayed, "https://hostile.example"); !ok {
 		t.Fatal("the same envelope does not verify even where it was aimed — the binding is broken, not working")
 	}
 }
@@ -140,23 +143,23 @@ func TestVerifyRefusesWhatTheRosterNeverEnrolled(t *testing.T) {
 
 	const at = "https://a.example"
 	env := s.Sign(at, "nonce-1", VerbGrantList, []byte(`{"a":1}`))
-	if _, _, ok := roster.Verify(env, at); !ok {
+	if _, ok := roster.Verify(env, at); !ok {
 		t.Fatal("the enrolled key was refused")
 	}
 
 	tampered := env
 	tampered.Payload = []byte(`{"a":2}`)
-	if _, _, ok := roster.Verify(tampered, at); ok {
+	if _, ok := roster.Verify(tampered, at); ok {
 		t.Fatal("a tampered payload verified")
 	}
 	replayedVerb := env
 	replayedVerb.Verb = VerbStatus
-	if _, _, ok := roster.Verify(replayedVerb, at); ok {
+	if _, ok := roster.Verify(replayedVerb, at); ok {
 		t.Fatal("a signature travelled to a different verb")
 	}
 	otherNonce := env
 	otherNonce.Nonce = "nonce-2"
-	if _, _, ok := roster.Verify(otherNonce, at); ok {
+	if _, ok := roster.Verify(otherNonce, at); ok {
 		t.Fatal("a signature travelled to a different nonce")
 	}
 
@@ -170,7 +173,7 @@ func TestVerifyRefusesWhatTheRosterNeverEnrolled(t *testing.T) {
 	}
 	forged := stranger.Sign(at, "nonce-1", VerbGrantList, []byte(`{"a":1}`))
 	forged.Fingerprint = env.Fingerprint
-	if _, _, ok := roster.Verify(forged, at); ok {
+	if _, ok := roster.Verify(forged, at); ok {
 		t.Fatal("an un-enrolled key verified")
 	}
 }
@@ -300,20 +303,76 @@ func TestARosterRoleParsesAndAnythingElseRefuses(t *testing.T) {
 		t.Fatal(err)
 	}
 	env := s.Sign("https://a.example", "nonce-1", VerbStatus, nil)
-	label, role, ok := roster.Verify(env, "https://a.example")
-	if !ok || label != "dash" || role != RoleRead {
-		t.Fatalf("Verify = %q, %q, %v — want dash, read, true", label, role, ok)
+	id, ok := roster.Verify(env, "https://a.example")
+	if !ok || id.Label != "dash" || id.Role != RoleRead {
+		t.Fatalf("Verify = %q, %q, %v — want dash, read, true", id.Label, id.Role, ok)
 	}
 
 	explicit, _, err := LoadRoster(writeRoster(t, line+" role=full\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, role, ok := explicit.Verify(env, "https://a.example"); !ok || role != RoleFull {
-		t.Fatalf("an explicit role=full parsed as %q, %v", role, ok)
+	if got, ok := explicit.Verify(env, "https://a.example"); !ok || got.Role != RoleFull {
+		t.Fatalf("an explicit role=full parsed as %q, %v", got.Role, ok)
 	}
 
 	for _, bad := range []string{" roel=read", " role=admin", " read", " role=read role=full"} {
+		if _, _, err := LoadRoster(writeRoster(t, line+bad+"\n")); err == nil {
+			t.Fatalf("a roster line with %q loaded", bad)
+		}
+	}
+}
+
+// The expires annotation is subtract-only like role, and shares the
+// grammar's failure direction: a date rta cannot read refuses the whole
+// load, because a typo that silently meant "never expires" would hand a
+// departed operator's key exactly the lifetime the annotation was written
+// to end.
+func TestARosterExpiryParsesAndRefusesAtItsDay(t *testing.T) {
+	freshHome(t)
+	s, verr := Init("correct horse")
+	if verr != nil {
+		t.Fatal(verr)
+	}
+	line, verr := RosterLine("tobi")
+	if verr != nil {
+		t.Fatal(verr)
+	}
+
+	roster, _, err := LoadRoster(writeRoster(t, line+" role=read expires=2030-06-15\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := s.Sign("https://a.example", "nonce-1", VerbStatus, nil)
+	id, ok := roster.Verify(env, "https://a.example")
+	if !ok || id.Role != RoleRead || id.Expires.IsZero() {
+		t.Fatalf("Verify = %+v, %v — want a read row carrying its expiry", id, ok)
+	}
+	// The named day itself is already refused: "expires 2030-06-15" reads
+	// as "gone by the 15th", anchored at that day's local midnight.
+	day := time.Date(2030, 6, 15, 0, 0, 0, 0, time.Local)
+	if id.Expired(day.Add(-time.Minute)) {
+		t.Fatal("expired a minute before its day")
+	}
+	if !id.Expired(day) {
+		t.Fatal("still enrolled on the day the row named")
+	}
+
+	// A date already past still loads — it is configuration that aged, not
+	// a typo, and the row refuses per call all by itself; refusing the file
+	// would cut every other operator off at the next restart.
+	aged, _, err := LoadRoster(writeRoster(t, line+" expires=2020-01-01\n"))
+	if err != nil {
+		t.Fatalf("an aged expiry refused the whole roster: %v", err)
+	}
+	if got, ok := aged.Verify(env, "https://a.example"); !ok || !got.Expired(time.Now()) {
+		t.Fatalf("the aged row should verify and read as expired: %+v, %v", got, ok)
+	}
+
+	for _, bad := range []string{
+		" expires=tomorrow", " expires=2030-6-15", " expires=2030-06-15T10:00:00Z",
+		" expires=2030-06-15 expires=2031-01-01",
+	} {
 		if _, _, err := LoadRoster(writeRoster(t, line+bad+"\n")); err == nil {
 			t.Fatalf("a roster line with %q loaded", bad)
 		}
@@ -349,6 +408,52 @@ func TestReadOnlyKeysStayOutOfTheGuardEntries(t *testing.T) {
 	if len(ops) != 2 || ops[0] != (OperatorInfo{Label: "dash", Role: RoleRead}) ||
 		ops[1] != (OperatorInfo{Label: "tobi", Role: RoleFull}) {
 		t.Fatalf("Operators = %+v", ops)
+	}
+}
+
+// A guard entry is grant-signing trust and the guard file is static once
+// written, so provisioning is the one chance to keep an already-departed
+// key out of it. A row that expires later stays in until `grant guard
+// remote` is re-run — expiry gates the channel live, the guard only at
+// provisioning, like every other roster edit.
+func TestExpiredKeysStayOutOfTheGuardEntries(t *testing.T) {
+	freshHome(t)
+	if _, verr := Init("one"); verr != nil {
+		t.Fatal(verr)
+	}
+	current, _ := RosterLine("tobi")
+	if err := os.Remove(Path()); err != nil {
+		t.Fatal(err)
+	}
+	if _, verr := Init("two"); verr != nil {
+		t.Fatal(verr)
+	}
+	departed, _ := RosterLine("gone")
+
+	roster, _, err := LoadRoster(writeRoster(t,
+		current+" expires=2999-01-01\n"+departed+" expires=2020-01-01\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries := roster.Entries()
+	if len(entries) != 1 || entries[0].Label != "tobi" {
+		t.Fatalf("Entries = %+v — want tobi alone", entries)
+	}
+	// Both still appear on the status page: the row that reads "expired"
+	// is the one a person should go delete, and hiding it would hide the
+	// chore.
+	ops := roster.Operators()
+	if len(ops) != 2 || ops[0].Expires != "2020-01-01" || ops[1].Expires != "2999-01-01" {
+		t.Fatalf("Operators = %+v", ops)
+	}
+	if got := ops[0].String(); got != "gone (expired 2020-01-01)" {
+		t.Fatalf("an expired row renders as %q", got)
+	}
+	if got := ops[1].String(); got != "tobi (expires 2999-01-01)" {
+		t.Fatalf("a dated row renders as %q", got)
+	}
+	if got := (OperatorInfo{Label: "dash", Role: RoleRead, Expires: "2999-01-01"}).String(); got != "dash (read, expires 2999-01-01)" {
+		t.Fatalf("a read, dated row renders as %q", got)
 	}
 }
 
