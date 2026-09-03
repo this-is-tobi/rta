@@ -31,7 +31,7 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build \
 # A named volume mounted at a path that already exists in the image inherits
 # that path's ownership the first time Docker creates it (documented volume
 # behavior) - this is what lets `-v rta-home:/rta-home` in the container
-# recipe (docs/20-mcp.md) be writable by the nonroot user below without the
+# recipe (docs/30-boundary/20-mcp.md) be writable by the nonroot user below without the
 # operator chowning it by hand first.
 RUN mkdir /rta-home && chown 65532:65532 /rta-home
 
@@ -53,7 +53,7 @@ COPY --from=build /rta-home /rta-home
 USER nonroot:nonroot
 
 # /usr/local/bin, not the base image's own default: a derived image that
-# bakes in plugins (docs/20-mcp.md's "share the image" recipe) COPYs them
+# bakes in plugins (docs/30-boundary/20-mcp.md's "share the image" recipe) COPYs them
 # beside rta here and expects them on PATH without also having to repeat
 # this line.
 ENV PATH=/usr/local/bin

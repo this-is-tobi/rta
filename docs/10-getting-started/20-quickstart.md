@@ -112,10 +112,10 @@ Read the `info` rows rather than skipping to the failures. Lines like *"the stor
 
 | If you want to… | Read |
 | --- | --- |
-| Script rta, or use it in CI | [The CLI](./10-cli.md) |
-| Understand what an agent can reach | [MCP and the safety gate](./20-mcp.md) |
-| Grant something narrowly | [Grants](./21-grants.md) |
-| Store credentials | [Secrets](./30-secrets.md) |
-| Point rta at staging vs production | [Profiles](./40-profiles.md) |
-| Add postgres, S3, Vault, Kubernetes | [Using plugins](./50-plugins.md) |
-| See it all working together | [Recipes](./90-recipes.md) |
+| Script rta, or use it in CI | [The CLI](../20-using/10-cli.md) |
+| Understand what an agent can reach | [MCP and the safety gate](../30-boundary/20-mcp.md) |
+| Grant something narrowly | [Grants](../30-boundary/30-grants.md) |
+| Store credentials | [Secrets](../20-using/50-secrets.md) |
+| Point rta at staging vs production | [Profiles](../20-using/40-profiles.md) |
+| Add postgres, S3, Vault, Kubernetes | [Using plugins](../40-plugins/10-plugins.md) |
+| See it all working together | [Recipes](../90-recipes/01-readme.md) |

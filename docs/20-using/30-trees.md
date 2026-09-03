@@ -118,6 +118,6 @@ That matters more here than elsewhere. A Kubernetes cluster keeps every object i
 
 ## Next
 
-- [Using plugins](./50-plugins.md) — where `s3`, `vault` and `etcd` come from
-- [Grants](./21-grants.md) — why the matching `get` needs one and the tree does not
-- [The record](./22-audit-trail.md) — what one call looks like versus two hundred
+- [Using plugins](../40-plugins/10-plugins.md) — where `s3`, `vault` and `etcd` come from
+- [Grants](../30-boundary/30-grants.md) — why the matching `get` needs one and the tree does not
+- [The record](../30-boundary/40-audit-trail.md) — what one call looks like versus two hundred

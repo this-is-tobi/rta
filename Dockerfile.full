@@ -5,7 +5,7 @@
 #
 # **Deliberately a second image rather than a replacement**, because the
 # primary one's narrowness is a security property and not an oversight.
-# docs/20-mcp.md puts it plainly — "the image is the plugin allowlist": a
+# docs/30-boundary/20-mcp.md puts it plainly — "the image is the plugin allowlist": a
 # plugin that is not in the image is one an agent cannot reach, with no trust
 # decision to make and no $PATH to search, so building an image with two
 # plugins in it is the narrowest reach rta can be given. This image is the
@@ -16,7 +16,7 @@
 # So: reach for ghcr.io/this-is-tobi/rta when something else will talk to it,
 # and this one when you are the one at the keyboard. If you want a middle
 # ground — three plugins and nothing else — derive from the primary image
-# instead; docs/20-mcp.md has that recipe and it is the better answer to
+# instead; docs/30-boundary/20-mcp.md has that recipe and it is the better answer to
 # "which plugins should my team have".
 #
 # Pinned by digest, not by tag, for the reason the primary Dockerfile gives:
@@ -57,7 +57,7 @@ RUN set -eux; \
 # Alpine rather than the primary image's distroless base, and that is forced
 # rather than preferred: distroless has no package manager and no shell, and
 # the whole point here is the tools. Every one below is something a capability
-# shells out to — see docs/02-installation.md's table, which is the list this
+# shells out to — see docs/10-getting-started/10-installation.md's table, which is the list this
 # tracks:
 #
 #   postgresql-client  pg_dump, pg_restore and psql, for pg.dump and pg.restore
@@ -109,7 +109,7 @@ ENV RTA_CONFIG=/rta-home/config.yaml \
 # Trust is baked; permission to read a credential is not, and the asymmetry is
 # the point.
 #
-# rta makes two separate decisions about a plugin (docs/50-plugins.md): `trust`
+# rta makes two separate decisions about a plugin (docs/40-plugins/10-plugins.md): `trust`
 # says an artifact may run, `allow` says it may read a credential location such
 # as ~/.kube/config. Trust is answered here because it is answerable here —
 # these binaries were built from this source in the stage above, and the digest
@@ -120,7 +120,7 @@ ENV RTA_CONFIG=/rta-home/config.yaml \
 # credentials is a question about your machine, not about this image, and
 # baking it would answer it for every user of the image at once — for a file
 # none of them has mounted yet. Run `rta plugin allow kube` once against a
-# persistent state volume and it stays answered; see docs/02-installation.md,
+# persistent state volume and it stays answered; see docs/10-getting-started/10-installation.md,
 # which says the same thing about having a tool versus being granted the file.
 #
 # For the ephemeral case where no volume is mounted and the answer cannot

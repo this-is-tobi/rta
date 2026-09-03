@@ -4,7 +4,7 @@ rta speaks the Model Context Protocol over stdio by default, and over HTTP with 
 
 The interesting part is not that it works. It is what an agent can reach before you have decided anything.
 
-Everything in this chapter assumes the agent goes through the server. An agent that can also run shell commands can run `rta` itself, and [what that does to the guarantees](./19-the-boundary.md) is worth reading first.
+Everything in this chapter assumes the agent goes through the server. An agent that can also run shell commands can run `rta` itself, and [what that does to the guarantees](./10-the-boundary.md) is worth reading first.
 
 ## Registering a client
 
@@ -12,7 +12,7 @@ Everything in this chapter assumes the agent goes through the server. An agent t
 rta mcp install claude
 ```
 
-Supported clients: `claude`, `vscode`, `codex`, `gemini`, `cursor`, `copilot`. Anything else that speaks MCP works too — see [Connecting your AI tool](./24-ai-clients.md) for the per-client detail, including where each keeps its configuration and how to check afterwards that it worked.
+Supported clients: `claude`, `vscode`, `codex`, `gemini`, `cursor`, `copilot`. Anything else that speaks MCP works too — see [Connecting your AI tool](./60-ai-clients.md) for the per-client detail, including where each keeps its configuration and how to check afterwards that it worked.
 
 Where a client ships its own command for editing its own configuration, rta runs that. Where it does not, rta prints what to add and where, and stops:
 
@@ -101,7 +101,7 @@ path arguments confined to: /Users/you/projects, /tmp/scratch
 
 The `--allow-*` switches are decided **once**, when the server starts, for every call it will ever make. That is the coarse gate, and it is the right shape for "this agent works on todos".
 
-[Grants](./21-grants.md) are the other half: consent for one capability, optionally one record, expiring on its own. That is the fine gate, and it is what you reach for when the answer is "this once".
+[Grants](./30-grants.md) are the other half: consent for one capability, optionally one record, expiring on its own. That is the fine gate, and it is what you reach for when the answer is "this once".
 
 ## Live consent
 
@@ -143,7 +143,7 @@ That line is the whole warning. It is not a misconfiguration; it is a fact about
 
 ## The working directory is the client's choice
 
-A server also inherits its working directory, and two things are decided by it: the default path root, and where the walk up for a [team policy](./23-team-policy.md) starts. You did not choose that directory — the client did.
+A server also inherits its working directory, and two things are decided by it: the default path root, and where the walk up for a [team policy](./50-team-policy.md) starts. You did not choose that directory — the client did.
 
 So a committed `.rta-policy.yaml` bounds this agent only if the client happened to start inside that repository. rta says which one it found at startup, beside the roots:
 
@@ -175,10 +175,10 @@ The server is per-session by construction, so the question is really about the p
 
 | Bound to a task by | What it does | Where |
 | --- | --- | --- |
-| `rta grant allow … --ttl 30m` | Consent that expires on its own, whatever the server does | [Grants](./21-grants.md) |
-| `rta grant allow … --max-uses 5` | Consent that runs out by use rather than by clock | [Grants](./21-grants.md) |
-| `rta use staging` | While it is on, every *other* environment is refused whatever grants exist | [Profiles](./40-profiles.md) |
-| `rta grant revoke --all` | The end of the task, without touching the client | [Grants](./21-grants.md) |
+| `rta grant allow … --ttl 30m` | Consent that expires on its own, whatever the server does | [Grants](./30-grants.md) |
+| `rta grant allow … --max-uses 5` | Consent that runs out by use rather than by clock | [Grants](./30-grants.md) |
+| `rta use staging` | While it is on, every *other* environment is refused whatever grants exist | [Profiles](../20-using/40-profiles.md) |
+| `rta grant revoke --all` | The end of the task, without touching the client | [Grants](./30-grants.md) |
 
 Restarting the server changes none of it. That is deliberate: a deadline that ended when a process did would be a deadline your editor could reset by crashing.
 
@@ -266,7 +266,7 @@ So the image is safe to publish to your internal registry. The credential is rea
 
 That is the whole of "without any config", and everything else stays where it belongs. Grants are theirs. The ledger says what *they* did. `rta use` bounds *their* agents. Nothing is shared that a person has to be accountable for.
 
-Add [`.rta-policy.yaml`](./23-team-policy.md) to the repositories they work in and the team also gets a ceiling — committed, travelling with a clone, needing no seal because it can only ever subtract.
+Add [`.rta-policy.yaml`](./50-team-policy.md) to the repositories they work in and the team also gets a ceiling — committed, travelling with a clone, needing no seal because it can only ever subtract.
 
 ### Why not one server for everyone
 
@@ -331,7 +331,7 @@ servers:
 
 — and the existing verbs grow a `--server` flag. `rta grant list --server work` reads that server's roster; `rta operator status --server work` asks who it is (version, agent name, guard state, enrolled operators); `rta grant revoke kv --server work` takes authority back, with `--dry-run` previewed by the server's own store rather than guessed at from here; `rta agent pending --server work` reads its parked queue, and `rta agent allow`/`deny` answer it. Each call names its target, because an ambient "current server" is how a staging command lands on prod.
 
-Issuing remotely takes one more provisioning step, because a grant is authority and authority needs a signature the server will honour. On the server, once: `rta grant guard remote operators.txt --url https://rta.example.com` enrolls the roster's keys as the machine's [guard](./21-grants.md), bound to its canonical URL — after which a grant is honoured only when an enrolled operator signed it *for this server*, and `rta grant allow` at the server's own shell has no key to unlock, by construction. The binding is what keeps a fleet sharing one roster from becoming one trust domain: a grant signed for staging verifies on no other machine, however its bytes travel. Then, from your machine:
+Issuing remotely takes one more provisioning step, because a grant is authority and authority needs a signature the server will honour. On the server, once: `rta grant guard remote operators.txt --url https://rta.example.com` enrolls the roster's keys as the machine's [guard](./30-grants.md), bound to its canonical URL — after which a grant is honoured only when an enrolled operator signed it *for this server*, and `rta grant allow` at the server's own shell has no key to unlock, by construction. The binding is what keeps a fleet sharing one roster from becoming one trust domain: a grant signed for staging verifies on no other machine, however its bytes travel. Then, from your machine:
 
 ```bash
 rta grant allow kv.get db-password --ttl 15m --server work
@@ -341,9 +341,9 @@ The server *prepares* the grant — validation, TTL clamping against its policy,
 
 [Live consent](#live-consent) travels the same way, and it is what makes `--consent` legal beside `--http` at all: start the server with both plus `--operators`, and a call that parks waits for an enrolled operator rather than for nobody. `rta agent pending --server work` lists the queue, `rta agent show <id> --server work` reads one call in full, and `rta agent allow`/`deny` answer it — every answer signed under your passphrase, the one-shot included. That last part is a deliberate asymmetry with the local flow, where a bare `agent allow` is passphrase-free because it releases a call an agent with a shell could have run directly: that shell-equivalence argument does not travel a network, so remotely there is no passphrase-free answer. The binding is the digest the local flow already rests on, made to cross the wire: your machine derives it from the fields it *displayed* — never copies it from what the server sent — and the server compares it against the parked file at the moment the sealed decision is minted, so a queue entry that changed after you read it, or a server that showed you one call while parking another, produces a refusal instead of an approval. (`--ttl` stays out of a remote answer: a standing grant is the prepare-and-sign flow above, with its own review step.)
 
-What makes this channel one an agent cannot ride: every call is an ed25519 signature over the server's canonical URL, a single-use nonce the server just issued, the verb and its payload — and the signing key exists on your machine only inside a passphrase, the [guard](./21-grants.md)'s own mechanics pointed outward. The passphrase arrives through a prompt or the TUI's masked field, never from the environment, and is refused on the command line; so an agent that reads every file you own still cannot sign, a captured request replays nowhere and verifies on no other server, and an agent's bearer token opens nothing here — the two mechanisms never meet. The server, for its part, holds only public keys: compromising it forges no operator's hand.
+What makes this channel one an agent cannot ride: every call is an ed25519 signature over the server's canonical URL, a single-use nonce the server just issued, the verb and its payload — and the signing key exists on your machine only inside a passphrase, the [guard](./30-grants.md)'s own mechanics pointed outward. The passphrase arrives through a prompt or the TUI's masked field, never from the environment, and is refused on the command line; so an agent that reads every file you own still cannot sign, a captured request replays nowhere and verifies on no other server, and an agent's bearer token opens nothing here — the two mechanisms never meet. The server, for its part, holds only public keys: compromising it forges no operator's hand.
 
-Everything the channel *changes* is written into [the record](./22-audit-trail.md) beside the agent's own calls: a revocation, an issued grant, an answered consent, a lock placed or lifted — one line each, `operator.` in front of the verb, attributed `operator:<label>` in the credential column, refusals included. The record that shows a parked call `approved` therefore also shows who approved it, from which enrolled key. Reads stay off the record: a watching dashboard polls `status` every few seconds, and recording polls would churn real history out of the ledger's retention.
+Everything the channel *changes* is written into [the record](./40-audit-trail.md) beside the agent's own calls: a revocation, an issued grant, an answered consent, a lock placed or lifted — one line each, `operator.` in front of the verb, attributed `operator:<label>` in the credential column, refusals included. The record that shows a parked call `approved` therefore also shows who approved it, from which enrolled key. Reads stay off the record: a watching dashboard polls `status` every few seconds, and recording polls would churn real history out of the ledger's retention.
 
 The roster is the token file's kind of trust anchor and gets the same treatment: rta never writes it, weak permissions refuse startup, and it is read once — a rewrite behind a running server's back changes nothing until the next deliberate restart. Plain `http://` in `remotes.yaml` is refused for anything but loopback, and for the OIDC issuer's reason: the signature protects what you send, TLS protects what you *read* — a grant listing rewritten in transit is decisions made on a lie.
 
@@ -366,7 +366,7 @@ A locked *agent* or *credential* is refused on every tool call before any other 
 
 Two edges worth knowing before you need them. First lock wins: a locked operator cannot unlock anyone, themselves included, so a fully locked-out roster is recovered at the machine's own terminal — where `rta lock` always works, because the person standing there is the authority locks answer to. And the lock file is sealed like the grant file, with the guard's failure direction: a running server that saw locks keeps enforcing them even if the file is deleted out from under it, so the `rm` that would quietly restore access restores nothing for the process the attacker is talking through. Lifting a lock is `rta lock rm`, on the machine or as a signed operator call — never a file deletion.
 
-Locking an operator freezes the key, not what it already signed — pair it with `rta grant revoke` for anything that key issued. It silences the key's verbs, not its ink: a locked key's mutation attempts keep landing in [the record](./22-audit-trail.md) as refusals, which is the evidence trail working — and also why a key you believe compromised is one to remove from the roster (edit the `--operators` file, restart), not merely to lock forever: enrollment is what lets it make the server write anything at all. And `rta lock` is on the harness deny list `rta audit agents --fix` prints, for the expanding half: an agent that could run `lock rm` would be unfreezing itself.
+Locking an operator freezes the key, not what it already signed — pair it with `rta grant revoke` for anything that key issued. It silences the key's verbs, not its ink: a locked key's mutation attempts keep landing in [the record](./40-audit-trail.md) as refusals, which is the evidence trail working — and also why a key you believe compromised is one to remove from the roster (edit the `--operators` file, restart), not merely to lock forever: enrollment is what lets it make the server write anything at all. And `rta lock` is on the harness deny list `rta audit agents --fix` prints, for the expanding half: an agent that could run `lock rm` would be unfreezing itself.
 
 `sys`, `fs`, `git`, `keys.list`, `kv.status`, the two `audit` checks that grade a project on this disk (`audit.deps`, `audit.why`), and the parts of `net` that read or change this host's own network configuration (`net.info`, `net.hosts.*`, `net.resolver.*`) answer for the machine rta happens to run on. Over HTTP those are never registered as tools at all — absent from `tools/list`, not refused when called — because a remote caller is never this machine. `rta mcp serve --http` says so at startup:
 
@@ -386,14 +386,14 @@ The `kv` store is exactly as strong remotely as locally, no stronger — "unlock
 
 Plugin confinement (`rta doctor`'s "plugin confinement" row) is `sandbox-exec` on macOS and nothing on Linux — a deliberate, documented gap rather than an oversight, and Linux is the realistic OS for a remote gateway. A hardened deployment supplies its own process sandboxing there — containers, seccomp, a read-only root filesystem, an egress allowlist — since rta contributes none of its own on that platform.
 
-Consent now has exactly one place to go. `--consent` combines with `--http` only when `--operators` names a roster, because answering a parked call needs a channel to reach a person, and [the operator channel](#the-operator-channel) is the one built for it — a signed answer from an enrolled operator's own machine, never a bearer credential an agent could ride. What has *not* changed is the multi-user arithmetic: one queue, several operators, first answer wins, and the accountability question the [cost table](./19-the-boundary.md#what-this-means-for-a-team) raises for a shared server is answered only as far as the decision file naming which operator signed — the rest of what a shared server would take still stands.
+Consent now has exactly one place to go. `--consent` combines with `--http` only when `--operators` names a roster, because answering a parked call needs a channel to reach a person, and [the operator channel](#the-operator-channel) is the one built for it — a signed answer from an enrolled operator's own machine, never a bearer credential an agent could ride. What has *not* changed is the multi-user arithmetic: one queue, several operators, first answer wins, and the accountability question the [cost table](./10-the-boundary.md#what-this-means-for-a-team) raises for a shared server is answered only as far as the decision file naming which operator signed — the rest of what a shared server would take still stands.
 
 `--network none` in [the container recipe above](#in-a-container-for-a-hardened-server) was only ever safe because stdio needs no network at all. A listener needs an inbound path: publish the container's port to wherever the reverse proxy in front of it reaches, and keep outbound scoped to what the enabled plugins actually call — not open, and not none.
 
 ## Next
 
-- [What rta actually bounds](./19-the-boundary.md) — the precondition everything above rests on
-- [Connecting your AI tool](./24-ai-clients.md) — the per-client setup detail
-- [Grants](./21-grants.md) — per-capability, time-boxed consent
-- [The record](./22-audit-trail.md) — what actually happened
-- [Team policy](./23-team-policy.md) — a ceiling nobody can raise
+- [What rta actually bounds](./10-the-boundary.md) — the precondition everything above rests on
+- [Connecting your AI tool](./60-ai-clients.md) — the per-client setup detail
+- [Grants](./30-grants.md) — per-capability, time-boxed consent
+- [The record](./40-audit-trail.md) — what actually happened
+- [Team policy](./50-team-policy.md) — a ceiling nobody can raise

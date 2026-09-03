@@ -312,7 +312,7 @@ func TestOnlyAlreadyPrintedErrorsAreSuppressed(t *testing.T) {
 // second home whether or not anybody intended it to be, so this is the test
 // that makes it a copy rather than a fork.
 func TestTheGuideAndTheToolAgreeOnTheVerbVocabulary(t *testing.T) {
-	guide := filepath.Join(repoRoot(t), "docs", "51-writing-a-plugin.md")
+	guide := filepath.Join(repoRoot(t), "docs", "40-plugins", "20-writing-a-plugin.md")
 	data, err := os.ReadFile(guide)
 	if err != nil {
 		t.Fatal(err)

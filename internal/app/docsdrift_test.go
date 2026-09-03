@@ -84,7 +84,7 @@ func TestTheDocsNameEveryBuiltInPlugin(t *testing.T) {
 	}
 }
 
-// docs/51-writing-a-plugin.md tells a plugin author which of the eleven shipped
+// docs/40-plugins/20-writing-a-plugin.md tells a plugin author which of the eleven shipped
 // plugins to read, in order, and states how many capabilities each carries so
 // the reader knows what they are opening. Seven of the eleven were stale at
 // once — kube said 7 and had 19 — because every feature PR since has grown a
@@ -96,7 +96,7 @@ func TestTheDocsNameEveryBuiltInPlugin(t *testing.T) {
 // routinely an older build than the tree. The declaration is the truth here.
 func TestTheWorkedExamplesTableCountsEveryPluginsCapabilities(t *testing.T) {
 	root := repoRoot(t)
-	body := readDoc(t, root, "docs/51-writing-a-plugin.md")
+	body := readDoc(t, root, "docs/40-plugins/20-writing-a-plugin.md")
 
 	// | [`plugins/kube`](../plugins/kube/) | … | 19 |
 	row := regexp.MustCompile(`\[` + "`" + `plugins/([a-z0-9]+)` + "`" + `\]\([^)]*\)[^|]*\|[^|]*\|\s*([0-9 ·]+?)\s*\|`)
@@ -124,12 +124,12 @@ func TestTheWorkedExamplesTableCountsEveryPluginsCapabilities(t *testing.T) {
 	for name, want := range declaredCapabilityCounts(t, root) {
 		got, listed := stated[name]
 		if !listed {
-			t.Errorf("docs/51-writing-a-plugin.md never lists plugins/%s, which ships in this "+
+			t.Errorf("docs/40-plugins/20-writing-a-plugin.md never lists plugins/%s, which ships in this "+
 				"repository — a plugin author reading that table would not know it exists", name)
 			continue
 		}
 		if got != want {
-			t.Errorf("docs/51-writing-a-plugin.md says plugins/%s has %d capabilities; it declares %d",
+			t.Errorf("docs/40-plugins/20-writing-a-plugin.md says plugins/%s has %d capabilities; it declares %d",
 				name, got, want)
 		}
 	}
@@ -192,7 +192,7 @@ func declaredCapabilityCounts(t *testing.T, root string) map[string]int {
 // nothing, so the full image shipped four capabilities that could not run.
 func TestTheInstallationTableNamesEveryToolACapabilityShellsOutTo(t *testing.T) {
 	root := repoRoot(t)
-	body := readDoc(t, root, "docs/02-installation.md")
+	body := readDoc(t, root, "docs/10-getting-started/10-installation.md")
 
 	// Each entry is a tool the plugin looks up at run time and refuses by name
 	// when it is absent. Adding a shell-out without adding a row here is the
@@ -204,13 +204,13 @@ func TestTheInstallationTableNamesEveryToolACapabilityShellsOutTo(t *testing.T) 
 		"kubectl", "docker", "git", "ssh", "cosign",
 	} {
 		if !strings.Contains(body, "`"+tool+"`") {
-			t.Errorf("docs/02-installation.md's external-tools table never names %q, which a "+
+			t.Errorf("docs/10-getting-started/10-installation.md's external-tools table never names %q, which a "+
 				"capability shells out to; a user has no way to learn they need it", tool)
 		}
 	}
 }
 
-// docs/20-mcp.md reproduces what `rta mcp serve --http` prints at startup,
+// docs/30-boundary/20-mcp.md reproduces what `rta mcp serve --http` prints at startup,
 // including the count of capabilities the locality gate hides from a remote
 // caller. It said 28 and the answer is 27, which is the same rot as the rest
 // of this file with a sharper edge: the whole paragraph is teaching an
@@ -224,21 +224,21 @@ func TestTheMCPChapterCountsTheRemoteHiddenCapabilities(t *testing.T) {
 	}
 	want := len(mcp.Options{Remote: true}.RemoteBlocked(reg))
 
-	body := readDoc(t, repoRoot(t), "docs/20-mcp.md")
+	body := readDoc(t, repoRoot(t), "docs/30-boundary/20-mcp.md")
 	line := regexp.MustCompile(`remote transport hides (\d+) capabilities`)
 	m := line.FindStringSubmatch(body)
 	if m == nil {
-		t.Fatal("docs/20-mcp.md no longer shows the remote-transport startup line; " +
+		t.Fatal("docs/30-boundary/20-mcp.md no longer shows the remote-transport startup line; " +
 			"if it moved, move this test with it")
 	}
 	if got, _ := strconv.Atoi(m[1]); got != want {
-		t.Errorf("docs/20-mcp.md says remote transport hides %d capabilities; it hides %d", got, want)
+		t.Errorf("docs/30-boundary/20-mcp.md says remote transport hides %d capabilities; it hides %d", got, want)
 	}
 	// The line prints the count twice — "hides N … (N total)" — and a
 	// half-updated sample is worse than a stale one, because the two halves
 	// disagreeing reads as a bug in rta rather than in the doc.
 	if !strings.Contains(body, "("+m[1]+" total)") {
-		t.Errorf("docs/20-mcp.md's sample says %s in one half of the line and something else in "+
+		t.Errorf("docs/30-boundary/20-mcp.md's sample says %s in one half of the line and something else in "+
 			"the other; both halves print the same number", m[1])
 	}
 }

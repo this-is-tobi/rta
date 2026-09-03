@@ -250,22 +250,22 @@ Read them in this order and each one adds exactly one idea:
 
 | Plugin | Read it for | Capabilities |
 | --- | --- | --- |
-| [`examples/plugin-hello`](../examples/plugin-hello/main.go) | The whole shape in one file — and the fixture rta's own host tests run against | 2 |
-| [`plugins/eol`](../plugins/eol/) | The smallest real one: a single capability over a public API, nothing to configure | 1 |
-| [`plugins/kube`](../plugins/kube/) | Shelling out to a tool the operator already has (`kubectl`) instead of linking its client library, and why | 19 |
-| [`plugins/cnpg`](../plugins/cnpg/) | The opposite choice from `kube`: one plain API read against a Custom Resource instead of a shell-out, and declaring a credential [`Need`](#if-your-plugin-needs-a-credential-location) rather than assuming one | 2 |
-| [`plugins/mysql`](../plugins/mysql/) | A connection: declared inputs, a `Secret` a profile fills, an endpoint role a tunnel can fill | 9 |
-| [`plugins/mariadb`](../plugins/mariadb/) | Two plugins over one service family without either becoming a fork of the other | 11 |
-| [`plugins/pg`](../plugins/pg/) | Safety classes doing real work — three dumps graded by what a grant can name, two refusing MCP outright | 10 |
-| [`plugins/s3`](../plugins/s3/) | `Live` completion from the service itself, and a download that refuses any object key landing outside the directory you named | 14 |
-| [`plugins/vault`](../plugins/vault/) | A plugin where almost everything is a secret, and what that does to every declaration | 16 |
-| [`plugins/etcd`](../plugins/etcd/) · [`plugins/qdrant`](../plugins/qdrant/) | Tree views, and a plugin whose whole subject is a keyspace | 6 · 7 |
-| [`plugins/docker`](../plugins/docker/) | A local daemon socket rather than a network endpoint | 7 |
+| [`examples/plugin-hello`](../../examples/plugin-hello/main.go) | The whole shape in one file — and the fixture rta's own host tests run against | 2 |
+| [`plugins/eol`](../../plugins/eol/) | The smallest real one: a single capability over a public API, nothing to configure | 1 |
+| [`plugins/kube`](../../plugins/kube/) | Shelling out to a tool the operator already has (`kubectl`) instead of linking its client library, and why | 19 |
+| [`plugins/cnpg`](../../plugins/cnpg/) | The opposite choice from `kube`: one plain API read against a Custom Resource instead of a shell-out, and declaring a credential [`Need`](#if-your-plugin-needs-a-credential-location) rather than assuming one | 2 |
+| [`plugins/mysql`](../../plugins/mysql/) | A connection: declared inputs, a `Secret` a profile fills, an endpoint role a tunnel can fill | 9 |
+| [`plugins/mariadb`](../../plugins/mariadb/) | Two plugins over one service family without either becoming a fork of the other | 11 |
+| [`plugins/pg`](../../plugins/pg/) | Safety classes doing real work — three dumps graded by what a grant can name, two refusing MCP outright | 10 |
+| [`plugins/s3`](../../plugins/s3/) | `Live` completion from the service itself, and a download that refuses any object key landing outside the directory you named | 14 |
+| [`plugins/vault`](../../plugins/vault/) | A plugin where almost everything is a secret, and what that does to every declaration | 16 |
+| [`plugins/etcd`](../../plugins/etcd/) · [`plugins/qdrant`](../../plugins/qdrant/) | Tree views, and a plugin whose whole subject is a keyspace | 6 · 7 |
+| [`plugins/docker`](../../plugins/docker/) | A local daemon socket rather than a network endpoint | 7 |
 
 `rta plugin new <name>` scaffolds one that builds, passes its conformance suite and runs, so none of these is where you start — they are where you look when your plugin needs the thing they already do.
 
 ## Reference
 
-- [`rta explain <capability>`](./10-cli.md#rta-explain) — the authoritative card for any capability, generated from the declaration itself. The fastest way to check what rta made of yours.
-- [`pkg/plugin`](../pkg/plugin/) and [`pkg/view`](../pkg/view/) — the contract in code, with the reasoning in the doc comments.
-- [`pkg/sdk/sdktest`](../pkg/sdk/sdktest/) — the conformance suite your plugin should pass.
+- [`rta explain <capability>`](../20-using/10-cli.md#rta-explain) — the authoritative card for any capability, generated from the declaration itself. The fastest way to check what rta made of yours.
+- [`pkg/plugin`](../../pkg/plugin/) and [`pkg/view`](../../pkg/view/) — the contract in code, with the reasoning in the doc comments.
+- [`pkg/sdk/sdktest`](../../pkg/sdk/sdktest/) — the conformance suite your plugin should pass.

@@ -102,7 +102,7 @@ jobs:
 
   # The batteries-included image, published beside the narrow one rather than
   # instead of it. Two images because the narrowness is a security property —
-  # docs/20-mcp.md's "the image is the plugin allowlist" — so the one carrying
+  # docs/30-boundary/20-mcp.md's "the image is the plugin allowlist" — so the one carrying
   # every plugin and every tool is a deliberate second choice, not an upgrade
   # of the first. See Dockerfile.full for the whole argument.
   #

@@ -15,24 +15,32 @@ Which is why the security chapters below are not an appendix, and why every one 
 **Website:** <https://this-is-tobi.com/rule-them-all/introduction>
 
 **Table of Contents** *- md sources*:
-- [Installation](./docs/02-installation.md) *- Build it, verify it, put it on `$PATH`, turn on completion*
-- [Quick start](./docs/03-quickstart.md) *- Ten minutes: the CLI, the TUI, and an agent that can only read*
-- [The CLI](./docs/10-cli.md) *- Output formats, exit codes, `--dry-run`, `explain`, scripting*
-- [The TUI](./docs/11-tui.md) *- The dashboard, the catalogue, forms and confirmations*
-- [Seeing the shape of things](./docs/15-trees.md) *- Mapping a directory, a bucket, a Vault mount or an etcd keyspace in one call*
-- [What rta actually bounds](./docs/19-the-boundary.md) *- Read this first before giving an agent access: an agent with a shell is not bounded by rta, and this is how to be in the configuration where it is*
-- [MCP and the safety gate](./docs/20-mcp.md) *- Connecting a client, naming it, and what it can reach before you grant anything*
-- [Grants](./docs/21-grants.md) *- Time-boxed permission for one capability, optionally one record*
-- [The record](./docs/22-audit-trail.md) *- What agents asked for, what they got, and what is waiting on you*
-- [Team policy](./docs/23-team-policy.md) *- A ceiling a repository can commit, which can only ever subtract*
-- [Connecting your AI tool](./docs/24-ai-clients.md) *- Claude Code, VS Code, Cursor, Codex, Gemini, Copilot, and anything else that speaks MCP*
-- [Secrets (`kv`)](./docs/30-secrets.md) *- An encrypted local store for passwords, certificates and key files*
-- [Profiles](./docs/40-profiles.md) *- Naming an environment once and pointing every plugin at it*
-- [Using plugins](./docs/50-plugins.md) *- Discovery, trust, indexes, install and upgrade*
-- [Writing a plugin](./docs/51-writing-a-plugin.md) *- The SDK, the conformance suite, `plugin new` and `plugin dev`, and publishing it to an index*
-- [Recipes](./docs/90-recipes.md) *- Worked end-to-end examples: incident triage, a scoped agent, CI checks, backups*
 
-The five chapters from the boundary to team policy are worth reading in that order: each one is a smaller blast radius than the one before it.
+*Getting started*
+- [Installation](./docs/10-getting-started/10-installation.md) *- Build it, verify it, put it on `$PATH`, turn on completion*
+- [Quick start](./docs/10-getting-started/20-quickstart.md) *- Ten minutes: the CLI, the TUI, and an agent that can only read*
+
+*Using it*
+- [The CLI](./docs/20-using/10-cli.md) *- Output formats, exit codes, `--dry-run`, `explain`, scripting*
+- [The TUI](./docs/20-using/20-tui.md) *- The dashboard, the catalogue, forms and confirmations*
+- [Seeing the shape of things](./docs/20-using/30-trees.md) *- Mapping a directory, a bucket, a Vault mount or an etcd keyspace in one call*
+- [Profiles](./docs/20-using/40-profiles.md) *- Naming an environment once and pointing every plugin at it*
+- [Secrets (`kv`)](./docs/20-using/50-secrets.md) *- An encrypted local store for passwords, certificates and key files*
+
+*The boundary* — worth reading in this order: each chapter is a smaller blast radius than the one before it
+- [What rta actually bounds](./docs/30-boundary/10-the-boundary.md) *- Read this first before giving an agent access: an agent with a shell is not bounded by rta, and this is how to be in the configuration where it is*
+- [MCP and the safety gate](./docs/30-boundary/20-mcp.md) *- Connecting a client, naming it, and what it can reach before you grant anything*
+- [Grants](./docs/30-boundary/30-grants.md) *- Time-boxed permission for one capability, optionally one record*
+- [The record](./docs/30-boundary/40-audit-trail.md) *- What agents asked for, what they got, and what is waiting on you*
+- [Team policy](./docs/30-boundary/50-team-policy.md) *- A ceiling a repository can commit, which can only ever subtract*
+- [Connecting your AI tool](./docs/30-boundary/60-ai-clients.md) *- Claude Code, VS Code, Cursor, Codex, Gemini, Copilot, and anything else that speaks MCP*
+
+*Plugins*
+- [Using plugins](./docs/40-plugins/10-plugins.md) *- Discovery, trust, indexes, install and upgrade*
+- [Writing a plugin](./docs/40-plugins/20-writing-a-plugin.md) *- The SDK, the conformance suite, `plugin new` and `plugin dev`, and publishing it to an index*
+
+*Recipes*
+- [Recipes](./docs/90-recipes/01-readme.md) *- Worked end-to-end examples: incident triage, a scoped agent, CI checks, backups*
 
 ## What is in it
 
