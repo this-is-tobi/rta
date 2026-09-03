@@ -185,6 +185,90 @@ func (m Model) withPicker(c plugin.Capability, fs []plugin.Field, on string, for
 	return append([]plugin.Field{*picker}, fs...)
 }
 
+// environmentNotes says, under the box, when the environment the picker names
+// is the thing that answers it.
+//
+// Two kinds of box open empty under an environment that has an answer for
+// them, for two unrelated reasons, and on screen they are the same box: a
+// credential, which profileSeed drops on purpose rather than paint a
+// passphrase's length in dots, and any input a `secrets:` mapping fills,
+// which is empty because Bind is pure — a reference is not resolved until the
+// run, and a form seed may neither unlock a store nor reach a cluster to find
+// out. The operator's question at either one is "do I have to type this", and
+// until this the form could not answer it: an empty password box under
+// staging looked identical whether staging supplied the password or nobody
+// did.
+//
+// **The reference is named, the value never is.** `kv:prod-db-password` is
+// the name of an entry — configuration this operator wrote, already legible
+// one pane over — while the value behind it is the thing the store exists to
+// keep off screens. Nothing here could fetch one by mistake even if it tried:
+// Fill is the only half that resolves a reference, and it is unreachable from
+// a form seed by construction.
+//
+// Silence when the environment has no answer, which is most boxes on most
+// screens. A "not set" under every unconfigured credential is what would make
+// the one line that does say something get skipped.
+func environmentNotes(c plugin.Capability, fs []plugin.Field, seed map[string]any,
+	name string, conn config.Connection,
+) []plugin.Field {
+	if name == "" {
+		return fs
+	}
+	refs := map[string]config.SecretRef{}
+	for _, r := range conn.SecretRefs() {
+		refs[r.Input] = r
+	}
+	// A copy rather than a rewrite in place. On the untunnelled path fs is
+	// the capability's own declared inputs, which the registry hands out by
+	// reference and runForm keeps to rebuild this form on every picker move —
+	// annotating those would stamp one environment's answer onto the
+	// declaration and then onto every later form built from it.
+	out := make([]plugin.Field, 0, len(fs))
+	for _, f := range fs {
+		if note := environmentNote(c, f, seed, name, refs); note != "" {
+			if f.Help == "" {
+				f.Help = note
+			} else {
+				f.Help += " — " + note
+			}
+		}
+		out = append(out, f)
+	}
+	return out
+}
+
+// environmentNote is one box's clause, or "".
+func environmentNote(c plugin.Capability, f plugin.Field, seed map[string]any,
+	name string, refs map[string]config.SecretRef,
+) string {
+	// A box already showing something needs no note about where a value would
+	// come from: whatever is in the seed is what won, and Fill applies that
+	// same precedence when the call is finally made.
+	//
+	// Credentials are the exception, and by construction rather than by
+	// choice: profileSeed strips them, so a masked box is empty whether or
+	// not the environment fills it — the ambiguity this whole function
+	// exists to remove. One does reach the seed, from a plugin's own
+	// configuration, and it is the case that most needs the line: the box
+	// shows that value in dots while a `secrets:` reference at the profile
+	// layer is what the run will actually use.
+	if _, shown := seed[f.Name]; shown && !f.Type.Sensitive() {
+		return ""
+	}
+	if !plugin.ProfileFillable(c, f) {
+		return ""
+	}
+	row := credentialRow{input: f.Name, ref: refs[f.Name]}
+	// No environment channel for a labeled instance — see Bind, and
+	// credentialRows, which reads the same emptiness the same way.
+	if config.RefInstance(name) == "" {
+		row.env = plugin.ProfileEnvVar(name, f.Name)
+		_, row.exported = os.LookupEnv(row.env)
+	}
+	return row.formNote(name)
+}
+
 // profileRow is one configured environment and everything the outer pane shows
 // about it.
 type profileRow struct {
@@ -234,15 +318,41 @@ type credentialRow struct {
 	ref config.SecretRef
 }
 
+// winner names the channel this environment actually reads the credential
+// from, and the one it beats — both empty when nothing supplies it.
+//
+// The decision, split from the wording, because two screens ask it and phrase
+// the answer differently: a table cell in this pane, and a clause under the
+// box on a run form. Written out twice, the day a third credential channel
+// arrives is the day one of them goes on naming a channel that no longer
+// wins — and a form whose help disagrees with what the run does is the exact
+// failure the picker and the seed were made to agree about.
+func (c credentialRow) winner() (won, beaten string) {
+	ref := ""
+	if c.ref.Scheme != "" {
+		ref = c.ref.Scheme + ":" + c.ref.Ref
+	}
+	switch {
+	case c.exported && ref != "":
+		return "$" + c.env, ref
+	case c.exported:
+		return "$" + c.env, ""
+	case ref != "":
+		return ref, ""
+	}
+	return "", ""
+}
+
 // source names where the value actually comes from, in resolution order.
 func (c credentialRow) source() string {
+	won, beaten := c.winner()
 	switch {
-	case c.exported && c.ref.Scheme != "":
-		return "$" + c.env + " (set — wins over " + c.ref.Scheme + ":" + c.ref.Ref + ")"
+	case beaten != "":
+		return won + " (set — wins over " + beaten + ")"
 	case c.exported:
-		return "$" + c.env + " (set)"
-	case c.ref.Scheme != "":
-		return c.ref.Scheme + ":" + c.ref.Ref
+		return won + " (set)"
+	case won != "":
+		return won
 	case c.env == "":
 		return "not set — a labeled instance takes a `secrets:` reference"
 	default:
@@ -250,7 +360,30 @@ func (c credentialRow) source() string {
 	}
 }
 
-func (c credentialRow) satisfied() bool { return c.exported || c.ref.Scheme != "" }
+// formNote is the same answer as a clause under a form's box: what fills this
+// input, named rather than shown, or "" when nothing does.
+func (c credentialRow) formNote(name string) string {
+	won, beaten := c.winner()
+	if won == "" {
+		return ""
+	}
+	note := name + " fills it from " + won
+	if beaten != "" {
+		// Named too, and named as the loser. An operator reading their own
+		// `secrets:` line expects it to be the answer, so the box saying only
+		// "$RTA_PROFILE_PROD_PASSWORD" would leave them to work out for
+		// themselves that a variable in this shell is quietly outranking the
+		// file — which is the whole reason the pane spells this precedence
+		// out as well.
+		note += ", not " + beaten
+	}
+	return note
+}
+
+func (c credentialRow) satisfied() bool {
+	won, _ := c.winner()
+	return won != ""
+}
 
 // profileRows builds the outer pane's contents from the config on disk.
 func (m Model) profileRows() []profileRow {

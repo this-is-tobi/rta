@@ -82,6 +82,20 @@ A capability with inputs opens a form built from its declaration:
 - `ctrl+e` opens `$EDITOR` on a long body.
 - `shift+enter` accepts every remaining field at its current value, for a form whose defaults are already right.
 
+### Which environment the run goes to
+
+A capability a profile can fill opens with the environment picker first, defaulted to whatever is switched on. It is first because it changes what every other answer means — a host typed under one environment is not the same value under another — and moving it rebuilds the form on the environment it now names, rather than leaving one environment's values on screen under another one's name.
+
+Boxes that environment fills open showing its values, and you can still type over them. A credential is the exception: it opens empty, because seeding a masked box paints your passphrase's length in dots. So the box says where the value comes from instead:
+
+```
+password
+password for the role — staging fills it from kv:staging-db-password (secret)
+>
+```
+
+**The reference, never the value.** `kv:staging-db-password` is the name of an entry — something you wrote, in a file you can read — and naming it answers the question an empty masked box could not: whether you have to type this at all. An exported `RTA_PROFILE_STAGING_PASSWORD` is named the same way, and named as the winner, because that is the one the run will actually use. A box under an environment that supplies nothing says nothing, and you type it.
+
 ### Tab means one thing on every field
 
 **Take me forward.** What that is depends only on what the box under the cursor can still be completed to, never on which field it is:
