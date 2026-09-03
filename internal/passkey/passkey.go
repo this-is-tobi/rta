@@ -136,7 +136,7 @@ func Prompt(req plugin.Request, confirm bool, text PromptText) (string, *view.Er
 	// has no env fallback, and every caller refuses MCP first — and a fourth
 	// caller added without a gate must meet a wall here, not a channel.
 	if req.Surface() == plugin.SurfaceMCP {
-		return "", view.Errorf(text.Codes+".surface",
+		return "", view.Refusef(text.Codes+".surface",
 			"a passphrase can only come from the person at the terminal")
 	}
 	if p := req.String("passphrase"); strings.TrimSpace(p) != "" {
