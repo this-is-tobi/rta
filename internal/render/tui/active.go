@@ -11,6 +11,7 @@ import (
 	"github.com/this-is-tobi/rule-them-all/internal/config"
 	"github.com/this-is-tobi/rule-them-all/internal/profile"
 	"github.com/this-is-tobi/rule-them-all/internal/registry"
+	"github.com/this-is-tobi/rule-them-all/internal/render/theme"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
@@ -88,6 +89,7 @@ func (m *Model) syncActive() tea.Cmd {
 		return nil
 	}
 	m.active, m.bound, m.activeUntil, m.boundStamp = name, nil, nil, stamp
+	m.activeColor = profileColor(name)
 	if name == "" {
 		return nil
 	}
@@ -347,11 +349,45 @@ func (m Model) activeBadge() string {
 	if m.active == "" {
 		return ""
 	}
-	badge := " ● " + m.active
+	badge := m.active
 	if m.activeUntil != nil {
 		if left := time.Until(*m.activeUntil); left > 0 {
 			badge += " · " + profile.ShortDuration(left) + " left"
 		}
 	}
 	return badge
+}
+
+// paintBadge draws it: the environment's own colour when it has one, and the
+// bulleted green this has always been when it does not.
+//
+// **Green was never wrong and is still the right default.** It says "something
+// is switched on", which is all rta knows about an environment nobody marked.
+// A colour is the operator saying *which* something, and this is the only
+// place in either surface where their colour appears — so it can never be read
+// as a status, which is exactly what a repainted palette would have risked.
+func (m Model) paintBadge(badge string) string {
+	if m.activeColor == "" {
+		return theme.GoodText.Render(" ● " + badge)
+	}
+	return theme.Badge(badge, m.activeColor)
+}
+
+// profileColor is the active environment's colour, or "" — read here, off the
+// paint path, for the same reason the name is. A colour that is not a colour
+// reads as none at all: `rta doctor` is where that gets reported, and a header
+// is no place to raise it.
+func profileColor(name string) string {
+	if name == "" {
+		return ""
+	}
+	cfg, err := config.LoadFile()
+	if err != nil {
+		return ""
+	}
+	p, ok := cfg.Profiles[name]
+	if !ok || p.BadColor() {
+		return ""
+	}
+	return p.Color
 }

@@ -371,6 +371,36 @@ func TestTheDashboardHeaderNamesTheSwitchedOnEnvironment(t *testing.T) {
 	}
 }
 
+// **The colour appears on the badge and nowhere else**, which is the whole of
+// what makes it safe to hand an operator an arbitrary hex: a red production
+// environment marks the one label that says which environment it is, and never
+// a row that says ok.
+//
+// Green is what an unmarked environment keeps. It says "something is switched
+// on", which is all rta knows about one nobody marked.
+func TestTheHeaderBadgeTakesTheEnvironmentsOwnColourWhenItHasOne(t *testing.T) {
+	m := Model{active: "shop-prod"}
+
+	unmarked := m.paintBadge("shop-prod")
+	if !strings.Contains(unmarked, "●") {
+		t.Errorf("an unmarked environment lost the bullet it has always had: %q", plain(unmarked))
+	}
+
+	m.activeColor = "#FF6B7A"
+	marked := m.paintBadge("shop-prod")
+	if !strings.Contains(plain(marked), "shop-prod") {
+		t.Errorf("the badge lost the name it exists to show: %q", plain(marked))
+	}
+	if marked == unmarked {
+		t.Error("a marked environment painted exactly what an unmarked one does")
+	}
+	// The filled block replaces the bullet rather than joining it: two markers
+	// for one fact is how a header stops being glanceable.
+	if strings.Contains(marked, "●") {
+		t.Errorf("the badge kept the bullet as well as the fill: %q", plain(marked))
+	}
+}
+
 // The switched-on environment reaches the tiles, or the dashboard is quietly
 // answering a question about somewhere else.
 func TestTilesRunAgainstTheSwitchedOnEnvironment(t *testing.T) {

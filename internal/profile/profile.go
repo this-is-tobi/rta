@@ -696,7 +696,7 @@ func Check(cfg config.Config, inst Installed) []Problem {
 		if unknown := p.UnknownKeys(); len(unknown) > 0 {
 			verr := migrationOr(name, p, view.Errorf("x",
 				"has %s, which nothing reads", strings.Join(unknown, ", ")).
-				WithHint("a profile takes plugins, note and ttl"))
+				WithHint("a profile takes plugins, note, ttl and color"))
 			add(verr.Message, verr.Hint)
 			continue
 		}
@@ -707,6 +707,16 @@ func Check(cfg config.Config, inst Installed) []Problem {
 		if p.BadTTL() {
 			add("has ttl "+p.TTL+", which is not a duration",
 				"write it as `30m`, `2h`, `12h` — or remove it for no deadline")
+		}
+		// Reported and not refused, unlike the ttl above. A deadline that
+		// cannot be read leaves a production switch that never lapses, which
+		// is a security consequence; a colour that cannot be read leaves a
+		// badge unpainted. Refusing to reach an environment over a mistyped
+		// hex would be rta inventing an outage — so this is said here, where
+		// `rta doctor` will print it, and nowhere that can stop a command.
+		if p.BadColor() {
+			add("has color "+p.Color+", which is not a colour",
+				"the form is `#rrggbb`, e.g. `#FF6B7A` — the badge is unpainted until it is")
 		}
 		if _, taken := originOf(inst, name); taken {
 			add("has the same name as a registered plugin",

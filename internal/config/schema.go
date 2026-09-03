@@ -156,6 +156,14 @@ func Schema() map[string]any {
 						"type":    "string",
 						"pattern": schemaDuration,
 					},
+					"color": map[string]any{
+						"description": "Marks this environment, so which one is switched on " +
+							"is legible before the command runs. Paints the profile's own " +
+							"name and nothing else — never the palette, which would put " +
+							"this colour beside the ones that mean ok, warn and failed.",
+						"type":    "string",
+						"pattern": schemaColor,
+					},
 				},
 			},
 			"connection": map[string]any{

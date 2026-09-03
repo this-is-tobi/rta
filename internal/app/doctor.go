@@ -133,6 +133,61 @@ func WarnUntrustedPlugins(w io.Writer, machineReadable bool) {
 	}
 }
 
+// WarnActiveProfile says which environment this command is about to reach, in
+// the colour the operator gave it.
+//
+// **"Am I on prod?" had no answer on this surface.** `rta use prod` is a switch
+// that outlives the command that made it — that is the entire point of it — so
+// the twentieth command afterwards runs against production with nothing on
+// screen saying so, and the operator finds out from the result. The consent
+// model already covers the agent side of this: a grant names the profile, is
+// visible in `rta grant list`, and expires. A person at a terminal had their
+// memory. The TUI has carried this badge in its header since the switch
+// existed; this is the same fact on the surface where most commands are typed.
+//
+// **It prints only for a profile carrying a `color:`**, which is what lets it
+// print on every command without becoming the noise it exists to prevent.
+// Marking an environment is the operator saying this one is worth interrupting
+// them about, so an unmarked profile stays exactly as quiet as it was — and
+// the badge keeps meaning something, which a banner on every environment would
+// take about a week to stop doing.
+//
+// Same two conditions as the notice above, for the same two reasons: somebody
+// has to be watching the stream, and they have to have asked for prose rather
+// than for something to paste into a parser.
+func WarnActiveProfile(w io.Writer, cfg config.Config, machineReadable, noColor bool) {
+	if machineReadable {
+		return
+	}
+	sel := profile.LoadSelection()
+	now := time.Now()
+	name := sel.Name(now)
+	if name == "" {
+		return
+	}
+	p, ok := cfg.Profiles[name]
+	// BadColor rather than silently painting a default: a badge in a colour
+	// nobody chose says "this environment is marked" about one that is not.
+	if !ok || p.Color == "" || p.BadColor() {
+		return
+	}
+
+	label := theme.Badge(name, p.Color)
+	if noColor {
+		// The brackets are the badge when there is no colour to be a badge
+		// with. Dropping the line entirely would be worse: --no-color is a
+		// statement about ANSI, not about wanting to know less.
+		label = "[ " + name + " ]"
+	}
+	// The deadline rides along because it is the other half of the same
+	// question — being on production and being on it for six more minutes are
+	// different situations, and both are decided before the command runs.
+	if left, deadline := sel.Left(now); deadline && left > 0 {
+		label += " " + profile.ShortDuration(left) + " left"
+	}
+	fmt.Fprintln(w, label)
+}
+
 // untrustedNames is the same list as bare namespaces, for the surfaces that
 // want to name them in a sentence rather than tabulate them.
 func untrustedNames() []string {
