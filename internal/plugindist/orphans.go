@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/this-is-tobi/rule-them-all/internal/config"
+	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
 
 // orphanedConfig lists the config locations that still name a plugin after
@@ -51,12 +52,22 @@ type SearchRow struct {
 
 // Search lists every claim across the attached indexes, optionally filtered
 // by a substring of the name or summary and by a safety class the plugin
-// must contain. Invalid manifests are reported apart by the caller via
-// Manifests; here they are simply not rows.
-func Search(term, safety string) []SearchRow {
+// must contain, and returns what it could not read beside what it could.
+//
+// The problems used to be dropped here, on the reasoning that Manifests
+// reports them to `plugin index list` anyway. That made every index rta cannot
+// read indistinguishable from an index carrying nothing that matches, and a
+// search is where somebody actually asks: an attached repository that is not
+// an index answered "nothing matches" for every term, forever, and the count
+// in a table nobody had a reason to open was the only place that said
+// otherwise. A caller may still ignore them; it can no longer do so by
+// accident.
+func Search(term, safety string) ([]SearchRow, []*view.Error) {
 	var rows []SearchRow
+	var bad []*view.Error
 	for _, ix := range Indexes() {
-		listed, _ := Manifests(ix)
+		listed, problems := Manifests(ix)
+		bad = append(bad, problems...)
 		for _, l := range listed {
 			m := l.Manifest
 			if term != "" && !strings.Contains(m.Name, term) &&
@@ -80,7 +91,7 @@ func Search(term, safety string) []SearchRow {
 		}
 		return rows[i].Index < rows[j].Index
 	})
-	return rows
+	return rows, bad
 }
 
 func claimsSafety(m Manifest, safety string) bool {
