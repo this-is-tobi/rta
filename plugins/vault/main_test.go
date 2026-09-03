@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -44,7 +45,24 @@ func conformanceInputs(dir string) map[string]map[string]any {
 		// in the operator's own home. Pointed inside dir so the rule that
 		// watches for a stray write is watching the place it would land.
 		"vault.snapshot": conn(map[string]any{"out": filepath.Join(dir, "vault.snap")}),
+		// The input file lives outside dir on purpose: sdktest watches dir
+		// for stray writes, and a fixture pre-created there would read as
+		// one. os.MkdirTemp because this function has no *testing.T; the OS
+		// temp dir's own cleanup owns the leftover.
+		"vault.restore": conn(map[string]any{"file": restoreFixture()}),
 	}
+}
+
+func restoreFixture() string {
+	dir, err := os.MkdirTemp("", "rta-vault-restore")
+	if err != nil {
+		return "unwritable"
+	}
+	path := filepath.Join(dir, "vault.snap")
+	if err := os.WriteFile(path, []byte("archive"), 0o600); err != nil {
+		return "unwritable"
+	}
+	return path
 }
 
 // req builds a resolved request the way the host would, against the named
@@ -202,6 +220,9 @@ func TestWriteAndDestructiveCapabilitiesNeedAGrant(t *testing.T) {
 		// unset for keys.backup's reason — a grant that can never be exercised is
 		// an entry in `grant list` that means nothing.
 		"vault.snapshot": false,
+		// Its mirror: everything arriving instead of everything leaving, and
+		// the same reasoning for the unset NeedsGrant.
+		"vault.restore": false,
 	}
 	seen := map[string]bool{}
 	for _, c := range Plugin().Capabilities {

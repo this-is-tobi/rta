@@ -81,6 +81,12 @@ func TestNoMutatingCapabilityActsUnderDryRun(t *testing.T) {
 			if c.ID == "vault.snapshot" {
 				v["out"] = filepath.Join(dir, "vault.snap")
 			}
+			if c.ID == "vault.restore" {
+				// A separate TempDir, not dir: the file check runs before the
+				// dry-run branch, so the input must exist — and pre-creating
+				// it in dir would read as the stray write this test hunts.
+				v["file"] = archiveOnDisk(t, "archive")
+			}
 
 			view, err := c.Run(t.Context(), dryReq(t, c.ID, srv.URL, v))
 			if err != nil {
