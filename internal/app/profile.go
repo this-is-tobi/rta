@@ -475,6 +475,16 @@ func profileCard(name string, p config.Profile, reg *registry.Registry) view.Key
 	if p.Note != "" {
 		pairs = append(pairs, view.Pair{Key: "note", Value: p.Note})
 	}
+	if p.Color != "" {
+		what := p.Color + " — the badge every command prints while this is switched on"
+		if p.BadColor() {
+			// Shown rather than hidden. An operator who wrote a colour and
+			// sees no badge is owed the reason here, where they are looking at
+			// the profile, and not only from `rta doctor`.
+			what = p.Color + " — not a colour, so nothing is painted; the form is #rrggbb"
+		}
+		pairs = append(pairs, view.Pair{Key: "color", Value: what})
+	}
 	if p.TTL != "" {
 		pairs = append(pairs, view.Pair{Key: "ttl", Value: p.TTL + " per switch"})
 	}

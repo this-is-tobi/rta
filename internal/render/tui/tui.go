@@ -133,6 +133,10 @@ type Model struct {
 	// keystroke, which is no place for a file read.
 	active      string
 	activeUntil *time.Time
+	// activeColor is that environment's own colour, or "" for one nobody
+	// marked. Cached beside the name and for the same reason: paint runs on
+	// every keystroke and must not read a file.
+	activeColor string
 	// bound is the active environment's contribution to each capability, keyed
 	// by capability ID.
 	//
@@ -261,6 +265,7 @@ func New(reg *registry.Registry, dash config.Dashboard,
 	// loop: resolving a `secrets:` reference is a key derivation, and a shell
 	// that takes a second to appear is a shell people stop opening.
 	m.active = profile.Active()
+	m.activeColor = profileColor(m.active)
 	m.boundStamp = environmentStamp(m.active)
 	return m
 }

@@ -10,6 +10,10 @@ import (
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 )
 
+// colorPattern is the grammar a profile's `color:` must match — the same one
+// schemaColor states to an editor and theme.HexColor enforces for `theme:`.
+var colorPattern = regexp.MustCompile(schemaColor)
+
 // Profile is one named environment: everywhere "proj1-staging" is, across
 // every plugin that has something there.
 //
@@ -72,6 +76,31 @@ type Profile struct {
 	// with a single keypress. A deadline that has to be remembered is a
 	// deadline that gets forgotten exactly when it matters.
 	TTL string `yaml:"ttl,omitempty" json:"ttl,omitempty"`
+
+	// Color marks this environment so that which one you are in is legible
+	// before the command runs rather than after it. `#rrggbb`, the same
+	// grammar `theme:` uses.
+	//
+	// **rta paints exactly one thing with it: the profile's own name.** A
+	// profile that could repaint the palette would put its colour on keys,
+	// labels and selection — beside Good, Warn and Bad, which mean something
+	// — and a production environment marked red would then draw healthy rows
+	// in the colour of a failure. That is worse than no marking at all,
+	// because it teaches the eye to ignore red. One badge, in one place,
+	// cannot be misread as a status.
+	//
+	// Opt-in, and that is what lets the badge print on every command without
+	// becoming noise: writing this line is the operator saying *this* is the
+	// environment worth interrupting me about. A profile with no colour
+	// behaves exactly as it did before.
+	//
+	// A colour that is not a colour is reported by `rta doctor` and otherwise
+	// ignored — never a reason to refuse the profile. BadTTL refuses because
+	// the consequence of a missing deadline is a production switch that never
+	// lapses; the consequence here is a badge that is not painted, and
+	// refusing to reach production over a mistyped hex would be the tool
+	// inventing an outage.
+	Color string `yaml:"color,omitempty" json:"color,omitempty"`
 
 	// unknown is every key in this profile that no field above claims,
 	// computed by the loader against the raw document.
@@ -308,7 +337,8 @@ func (p Profile) Trusted() bool { return p.trusted }
 // against these, so a field added above without a line here is reported as
 // unknown by the very next test run rather than silently accepted.
 var (
-	profileKeys    = map[string]bool{"plugins": true, "note": true, "ttl": true}
+	profileKeys = map[string]bool{"plugins": true, "note": true, "ttl": true,
+		"color": true}
 	connectionKeys = map[string]bool{"set": true, "secrets": true, "kube": true, "ssh": true,
 		"secrets-from": true, "tunnelTLS": true}
 )
@@ -499,6 +529,16 @@ func (p Profile) Window() (time.Duration, bool) {
 		return 0, false
 	}
 	return d, true
+}
+
+// BadColor reports whether Color was written and is not a colour.
+//
+// The pattern is stated here rather than imported from internal/render/theme,
+// which this package deliberately does not depend on — schema.go keeps its own
+// copy of the same grammar for the same reason, and a drift test holds the
+// three of them to one answer.
+func (p Profile) BadColor() bool {
+	return p.Color != "" && !colorPattern.MatchString(p.Color)
 }
 
 // BadTTL reports whether TTL was written and cannot be read.

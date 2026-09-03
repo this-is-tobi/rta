@@ -41,6 +41,11 @@ func Stamp(p config.Profile) string {
 	// connection, and the TUI's badge has to notice it change. ConnStamp
 	// deliberately excludes it — see there.
 	write("ttl", p.TTL)
+	// Same reason as the TTL directly above, and the same narrowing: the badge
+	// is what this stamp exists to keep current, and the colour is now part of
+	// it. ConnStamp still excludes both, so nothing a grant is bound to moves
+	// when an operator recolours an environment.
+	write("color", p.Color)
 	for _, key := range p.PluginKeys() {
 		write("plugin", key, ConnStamp(key, p.Plugins[key]))
 	}

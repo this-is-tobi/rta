@@ -330,6 +330,36 @@ While a profile is on, every later command for a plugin it covers runs against i
 
 **The deadline is real.** `--for` overrides it, a profile's own `ttl:` supplies it, and when it lapses everything falls back to the base configuration on its own. A deadline that depended on a process staying alive would not be a deadline.
 
+### Mark the ones you would rather not be in by accident
+
+A switch outlives the command that made it — that is the whole point of it — so the twentieth command afterwards runs against production with nothing on screen saying so. Give an environment a colour and it says so first:
+
+```yaml
+profiles:
+  shop-prod:
+    color: "#FF6B7A"
+    ttl: 1h
+    plugins:
+      pg:
+        set: { host: db.internal }
+```
+
+```
+ shop-prod  47m left
+hostname   db.internal
+...
+```
+
+The badge prints above every command while that environment is on, in the colour you gave it, with the deadline beside it when there is one. The TUI's dashboard header carries the same badge.
+
+Three things about it are deliberate:
+
+- **It paints the profile's name and nothing else.** A profile that could repaint the palette would put its colour on keys, labels and selection — right beside the ones that mean ok, warn and failed — and an environment marked red would draw healthy rows in the colour of a failure. That is worse than no marking at all, because it teaches the eye to ignore red.
+- **Only a profile with a `color:` announces itself.** Marking one is you saying *this* is the environment worth interrupting you about. Unmarked environments stay as quiet as they were, which is what keeps the badge meaning something.
+- **It never reaches machine-readable output.** `-o json` and `-o yaml` get exactly what they got before, because the output you read off your screen is the output you paste into a parser.
+
+`--no-color` keeps the badge and drops the paint: `[ shop-prod ]`. A colour rta cannot read paints nothing and is reported by `rta profile show` and `rta doctor`, rather than falling back to one you did not choose.
+
 ## Switching authorizes nothing
 
 This is the part worth getting right.

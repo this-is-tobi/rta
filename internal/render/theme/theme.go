@@ -22,8 +22,10 @@ package theme
 import (
 	"fmt"
 	"image/color"
+	"math"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -304,6 +306,62 @@ func ClassifyStatus(s string) StatusKind {
 	default:
 		return StatusNeutral
 	}
+}
+
+// Badge renders text as a filled block in a colour chosen outside the palette
+// — today, the one an operator gave a profile.
+//
+// **The ink is computed rather than picked, and that is the whole of why this
+// is a function.** A profile colour is written by hand and can be anything:
+// white on #FFC24B is unreadable and dark on #1A1A22 is invisible, and either
+// failure lands on the single label whose entire job is to be impossible to
+// miss. WCAG relative luminance decides, at the 0.179 threshold that is the
+// crossover where black and white contrast equally against a background —
+// the same question a browser answers to pick readable text on an arbitrary
+// swatch.
+//
+// A colour that is not a colour returns the text unchanged rather than
+// half-styled. A profile with no colour is the ordinary case and not an error,
+// and a badge painted in a default would say "this environment is marked" about
+// one that is not.
+func Badge(text, hex string) string {
+	if !HexColor.MatchString(hex) {
+		return text
+	}
+	ink := inverseHex
+	if relativeLuminance(hex) > 0.179 {
+		ink = inkHex
+	}
+	return lipgloss.NewStyle().
+		Background(lipgloss.Color(hex)).
+		Foreground(lipgloss.Color(ink)).
+		Bold(true).
+		Padding(0, 1).
+		Render(text)
+}
+
+// relativeLuminance is WCAG 2.x for a #rrggbb string: each channel
+// gamma-expanded, then weighted by how much the eye owes it. Green carries
+// most of the answer, which is why a mid green background needs dark ink and a
+// mid blue of the same nominal brightness does not.
+//
+// Callers have already matched HexColor, so the parse cannot fail; a channel
+// that somehow does not read counts as black, which errs toward light ink on a
+// colour nothing knows — legible more often than the other way round.
+func relativeLuminance(hex string) float64 {
+	return 0.2126*channel(hex[1:3]) + 0.7152*channel(hex[3:5]) + 0.0722*channel(hex[5:7])
+}
+
+func channel(pair string) float64 {
+	v, err := strconv.ParseUint(pair, 16, 8)
+	if err != nil {
+		return 0
+	}
+	c := float64(v) / 255
+	if c <= 0.04045 {
+		return c / 12.92
+	}
+	return math.Pow((c+0.055)/1.055, 2.4)
 }
 
 // StatusStyle returns the style for a status string.

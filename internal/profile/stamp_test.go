@@ -334,3 +334,30 @@ func TestConnStampIsConfrontedWithEveryConnectionField(t *testing.T) {
 		t.Errorf("ConnStamp's ledger lists %s, which config.Connection no longer has", name)
 	}
 }
+
+// **The badge is what this stamp exists to keep current, so a recolour has to
+// move it.** The TUI caches the environment's name, deadline and colour rather
+// than reading them at paint time, and refreshes them only when the stamp
+// changes — so a colour left out of the stamp would show the old one until
+// something unrelated happened to the profile.
+//
+// ConnStamp is the other half of the rule and must NOT move: it is what a
+// grant is bound to, and recolouring an environment is not a change to what
+// any agent may reach.
+func TestARecolourMovesTheBadgeStampAndNotTheGrantStamp(t *testing.T) {
+	plain := config.Profile{
+		TTL:     "1h",
+		Plugins: map[string]config.Connection{"pg": {Set: map[string]any{"host": "db"}}},
+	}
+	red := plain
+	red.Color = "#FF6B7A"
+
+	if Stamp(plain) == Stamp(red) {
+		t.Error("recolouring an environment did not change Stamp, so the TUI would keep " +
+			"painting the old colour until something else about the profile moved")
+	}
+	if ConnStamp("pg", plain.Plugins["pg"]) != ConnStamp("pg", red.Plugins["pg"]) {
+		t.Error("recolouring moved ConnStamp, which is what a grant is bound to — an " +
+			"operator changing a colour would silently invalidate consent")
+	}
+}

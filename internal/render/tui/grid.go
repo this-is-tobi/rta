@@ -523,7 +523,7 @@ func (m Model) dashboardView() string {
 	// in it. A person who has to press a key to find that out will find it out
 	// after the command.
 	if badge := m.activeBadge(); badge != "" {
-		header += theme.GoodText.Render(" " + badge)
+		header += " " + m.paintBadge(badge)
 	}
 	footer := m.dashFooter()
 	if len(m.tiles) == 0 {

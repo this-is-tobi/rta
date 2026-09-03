@@ -241,6 +241,10 @@ func NewRoot(reg *registry.Registry, version string) *cobra.Command {
 			if !stderrIsTerminal() {
 				return
 			}
+			// Where am I, before the command rather than after it — and first,
+			// because it frames whatever follows it. Silent unless the active
+			// environment carries a `color:`; see WarnActiveProfile.
+			WarnActiveProfile(cmd.ErrOrStderr(), cfg, opts.output != "pretty", opts.noColor)
 			WarnUntrustedPlugins(cmd.ErrOrStderr(), opts.output != "pretty")
 		},
 		Long:          "rta is a single extendable binary offering one consistent interface\nover the tools you juggle daily — scriptable CLI, TUI, and MCP for AI agents.",
