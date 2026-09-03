@@ -407,14 +407,18 @@ jobs:
     permissions:
       contents: read
       security-events: write
-      pull-requests: write
     with:
       WORKING_DIRECTORY: plugins/${{ matrix.module }}
       # Each plugin is its own module: without a distinct category the SARIF
       # upload from one leg would replace another's in the Security tab,
       # leaving only whichever finished last.
       CATEGORY: govulncheck-${{ matrix.module }}
-      PR_NUMBER: ${{ github.event.pull_request.number }}
+      # No PR_NUMBER, deliberately: with per-category sticky comments, every
+      # plugin leg would post its own — eleven comments per pull request.
+      # The root scan-deps leg carries the one comment; a plugin finding
+      # still fails this leg's check and lands in the Security tab under its
+      # category, which is where a reviewer follows it. pull-requests: write
+      # goes with it — a job that never comments does not hold the pen.
 
   # One required check to protect the branch with, rather than a list that has
   # to be edited every time a job is added. A skipped job is a pass; anything
