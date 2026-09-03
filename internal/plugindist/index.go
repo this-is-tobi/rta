@@ -246,7 +246,34 @@ func AddIndex(ctx context.Context, name, url string) *view.Error {
 			firstLine(string(out), err.Error())).
 			WithHint(gitHint("clone", "--", url, dir) + " by hand shows the whole exchange")
 	}
+	// Attaching is the moment the operator typed the URL and can still fix it.
+	// Everything downstream answers a clone that is not an index in the
+	// vocabulary of emptiness instead — `search` says "nothing matches", which
+	// reads as a fact about the plugin somebody searched for — so what was
+	// cloned is read before the attach is called a success. Manifests reports
+	// at least one reason whenever it lists nothing, and the clone is undone
+	// for the same reason a failed one is: absence is the one state every
+	// other command interprets correctly.
+	if listed, bad := Manifests(Index{Name: name, Dir: dir}); len(listed) == 0 {
+		_ = os.RemoveAll(dir)
+		return refuseAttach(name, bad)
+	}
 	return nil
+}
+
+// refuseAttach turns the reason a clone is not a usable index into the refusal
+// the operator reads, and says the clone is gone — which is the half that
+// decides what they do next.
+func refuseAttach(name string, bad []*view.Error) *view.Error {
+	verr := view.Errorf("plugin.index.empty", "%s carries no manifest rta can read", name)
+	if len(bad) > 0 {
+		verr = bad[0]
+	}
+	hint := "nothing was attached"
+	if verr.Hint != "" {
+		hint = verr.Hint + "; nothing was attached"
+	}
+	return verr.WithHint(hint)
 }
 
 // gitURLKind is what git will make of a repository argument: a path on this
@@ -469,13 +496,17 @@ type Listed struct {
 // Manifests reads every valid manifest in one index, sorted by name, and
 // reports the invalid ones apart. One malformed file must not cost the
 // operator the rest of the catalogue — the LoadInto rule, applied to claims.
+//
+// A directory holding no manifest at all is reported the same way a missing
+// plugins/ is, and notAnIndex says why that is not the same as an empty
+// catalogue.
 func Manifests(ix Index) ([]Listed, []*view.Error) {
 	dir := filepath.Join(ix.Dir, "plugins")
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, []*view.Error{view.Errorf("plugin.index.empty",
 			"%s has no plugins/ directory — it is not an index", ix.Name).
-			WithHint("an index holds one plugins/<name>.yaml per plugin")}
+			WithHint(indexShape)}
 	}
 	var (
 		out  []Listed
@@ -513,8 +544,53 @@ func Manifests(ix Index) ([]Listed, []*view.Error) {
 		seen[m.Name] = true
 		out = append(out, Listed{Manifest: m, Index: ix.Name})
 	}
+	if len(out) == 0 && len(bad) == 0 {
+		return nil, []*view.Error{notAnIndex(ix, entries)}
+	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Manifest.Name < out[j].Manifest.Name })
 	return out, bad
+}
+
+// indexShape is what an index is, said once because three refusals say it.
+const indexShape = "an index is a repository of plugins/<name>.yaml manifests, each " +
+	"written by `rta plugin manifest` from the binary it describes — a plugin's " +
+	"source repository is not one, even though that is where the plugins are"
+
+// notAnIndex explains a plugins/ directory that holds no manifest at all.
+//
+// Whether plugins/ *existed* used to be the whole test, and there is one shape
+// it gets exactly wrong: a plugin's own source repository, whose plugins/
+// holds a directory per plugin rather than a manifest per plugin. That is also
+// the likeliest thing anybody points `rta plugin index add` at, because it is
+// where the plugins are — rta's own repository attached without complaint,
+// listed as "0 plugins, 0 problems", and answered every search against it with
+// "nothing matches", which reads as a fact about the plugin somebody searched
+// for rather than about the attachment.
+//
+// So what the directory does hold goes in the sentence. "no manifest" and "12
+// directories and no manifest" send an operator to different places.
+func notAnIndex(ix Index, entries []os.DirEntry) *view.Error {
+	dirs := 0
+	for _, e := range entries {
+		if e.IsDir() {
+			dirs++
+		}
+	}
+	held := "no manifest"
+	if dirs > 0 {
+		held = strconv.Itoa(dirs) + " " + plural(dirs, "directory", "directories") +
+			" and no manifest"
+	}
+	return view.Errorf("plugin.index.empty",
+		"%s is not an index — its plugins/ directory holds %s", ix.Name, held).
+		WithHint(indexShape)
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
 }
 
 // Resolve finds the manifest a spec names. A bare name searches every

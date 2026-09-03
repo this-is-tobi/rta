@@ -33,6 +33,18 @@ func renderView(cmd *cobra.Command, opts *globalOpts, v view.View) error {
 		cli.Options{Format: format, NoColor: opts.noColor || !isTTY(), Width: termWidth()})
 }
 
+// asWarnings puts what an index could not answer beside what the others did.
+// A partial catalogue that renders like a whole one is the same failure
+// Sections.Warnings was added for: nothing distinguishes "no index carries
+// that plugin" from "the index carrying it could not be read".
+func asWarnings(errs []*view.Error) []view.Error {
+	out := make([]view.Error, 0, len(errs))
+	for _, e := range errs {
+		out = append(out, *e)
+	}
+	return out
+}
+
 func newPluginInstallCommand(opts *globalOpts) *cobra.Command {
 	return &cobra.Command{
 		Use:   "install <name | index/name>",
@@ -266,11 +278,19 @@ func newPluginSearchCommand(opts *globalOpts) *cobra.Command {
 			if len(args) == 1 {
 				term = args[0]
 			}
-			rows := plugindist.Search(term, safety)
+			rows, problems := plugindist.Search(term, safety)
 			if len(rows) == 0 {
 				if len(plugindist.Indexes()) == 0 {
 					return view.Errorf("plugin.index.none", "no index is attached").
 						WithHint("`rta plugin index add <name> <repository>` attaches one")
+				}
+				// "nothing matches" is a claim about the catalogue, and it is
+				// only true when there was a catalogue to search. With every
+				// attached index unreadable there is nothing to match against,
+				// and saying so names something the operator can fix instead
+				// of something they would go on retyping.
+				if len(problems) > 0 {
+					return problems[0]
 				}
 				return renderView(cmd, opts, view.Text{Body: "nothing matches"})
 			}
@@ -286,7 +306,17 @@ func newPluginSearchCommand(opts *globalOpts) *cobra.Command {
 				t.Rows = append(t.Rows, []string{r.Name, r.Version, r.Index, installed,
 					r.Safety, r.Summary})
 			}
-			return renderView(cmd, opts, t)
+			if len(problems) == 0 {
+				return renderView(cmd, opts, t)
+			}
+			// Rows from the indexes that answered, and beside them the ones
+			// that did not — Sections.Warnings' own reason for existing: a
+			// degraded page that looks complete is how a search for a plugin
+			// the broken index carries comes back "not offered".
+			return renderView(cmd, opts, view.Sections{
+				Items:    []view.Section{{ID: "plugins", Title: "Plugins", View: t}},
+				Warnings: asWarnings(problems),
+			})
 		},
 	}
 	cmd.Flags().StringVar(&safety, "safety", "",
@@ -384,8 +414,10 @@ func newPluginIndexCommand(opts *globalOpts) *cobra.Command {
 			// table is also `--output json` and terminal scrollback.
 			t := view.Table{Columns: []view.Column{{Name: "Index"}, {Name: "Origin"},
 				{Name: "Plugins"}, {Name: "Problems"}}}
+			var problems []*view.Error
 			for _, ix := range indexes {
 				listed, bad := plugindist.Manifests(ix)
+				problems = append(problems, bad...)
 				origin, verr := plugindist.IndexOrigin(cmd.Context(), ix)
 				shown := plugindist.OriginForDisplay(origin)
 				if verr != nil {
@@ -397,7 +429,16 @@ func newPluginIndexCommand(opts *globalOpts) *cobra.Command {
 				t.Rows = append(t.Rows, []string{ix.Name, shown,
 					fmt.Sprint(len(listed)), fmt.Sprint(len(bad))})
 			}
-			return renderView(cmd, opts, t)
+			if len(problems) == 0 {
+				return renderView(cmd, opts, t)
+			}
+			// The count in the Problems column was the only place any of this
+			// surfaced, and a count is not a reason: nothing anywhere would
+			// name the file, or say which of the two an index of zero was.
+			return renderView(cmd, opts, view.Sections{
+				Items:    []view.Section{{ID: "indexes", Title: "Indexes", View: t}},
+				Warnings: asWarnings(problems),
+			})
 		},
 	})
 	root.AddCommand(&cobra.Command{

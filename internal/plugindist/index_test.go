@@ -320,20 +320,23 @@ func TestSearchAnswersFromClaims(t *testing.T) {
 	if verr := AddIndex(context.Background(), "lab", repo); verr != nil {
 		t.Fatal(verr)
 	}
-	rows := Search("", "")
+	rows, bad := Search("", "")
+	if len(bad) != 0 {
+		t.Fatalf("problems from a sound index = %v", bad)
+	}
 	if len(rows) != 2 || rows[0].Name != "pg" || rows[1].Name != "redis" {
 		t.Fatalf("rows = %v", rows)
 	}
 	if rows[0].Index != "lab" || rows[0].Version != "0.1.0" {
 		t.Fatalf("row = %+v", rows[0])
 	}
-	if got := Search("redis", ""); len(got) != 1 || got[0].Name != "redis" {
+	if got, _ := Search("redis", ""); len(got) != 1 || got[0].Name != "redis" {
 		t.Fatalf("term filter = %v", got)
 	}
-	if got := Search("", "write"); len(got) != 2 {
+	if got, _ := Search("", "write"); len(got) != 2 {
 		t.Fatalf("safety filter (both claim a write) = %v", got)
 	}
-	if got := Search("", "destructive"); len(got) != 0 {
+	if got, _ := Search("", "destructive"); len(got) != 0 {
 		t.Fatalf("safety filter = %v, want none destructive", got)
 	}
 }
