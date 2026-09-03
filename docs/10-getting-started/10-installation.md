@@ -76,7 +76,7 @@ gh attestation verify oci://ghcr.io/this-is-tobi/rta:latest --owner this-is-tobi
 
 Two shapes of use:
 
-- **An MCP server** — [In a container, for a hardened server](./20-mcp.md#in-a-container-for-a-hardened-server) has the full `docker run` recipe: read-only root, dropped capabilities, no network by default.
+- **An MCP server** — [In a container, for a hardened server](../30-boundary/20-mcp.md#in-a-container-for-a-hardened-server) has the full `docker run` recipe: read-only root, dropped capabilities, no network by default.
 - **A one-shot command**, anywhere `docker run` reaches, including inside a cluster: `kubectl run --rm -it rta-debug --image=ghcr.io/this-is-tobi/rta:latest -- net probe db.internal:5432`.
 
 ## Verify
@@ -142,13 +142,13 @@ Version policy is the same for all of them: rta uses what is on your `$PATH` and
 
 **MySQL and MariaDB share tool names, and that is the one place having a tool is not enough.** MariaDB ships `mysqldump` and `mysql` as symlinks onto its own binaries, so a lookup by name succeeds against either fork and the flags decide what happens next: `mysql.dump` passes MySQL 8 spellings (`--ssl-mode`, `--set-gtid-purged`, `--no-tablespaces`) that MariaDB's client refuses by name, and `mariadb.dump` passes the `--ssl` family that MySQL's client refuses the same way. Neither produces a worse dump — it is a refusal at the first flag, graded as `*.dump.toolskew`, and its hint tells you which client you really have and which plugin drives it. Point each plugin at its own fork and this never comes up.
 
-Two consequences worth knowing. The primary container image is distroless, so it carries none of these — a containerised `rta mcp serve` covers the capabilities that need no external tool, and [MCP and the safety gate](./20-mcp.md) says which. And a plugin that reads a credential location, such as kubectl's `~/.kube/config`, still needs `rta plugin allow` before it may: having the tool is not being granted the file.
+Two consequences worth knowing. The primary container image is distroless, so it carries none of these — a containerised `rta mcp serve` covers the capabilities that need no external tool, and [MCP and the safety gate](../30-boundary/20-mcp.md) says which. And a plugin that reads a credential location, such as kubectl's `~/.kube/config`, still needs `rta plugin allow` before it may: having the tool is not being granted the file.
 
 If you want the tools rather than the narrowness, `ghcr.io/this-is-tobi/rta-full` is the same rta with every first-party plugin and the tools from the table above already in it — Alpine-based rather than distroless, because a distroless image has no package manager to put them there. Roughly 120 MB against the primary image's 12, and the plugins arrive already trusted, since they were built from the same source in the same build.
 
 One row of that table it cannot carry, for the reason just above: Alpine has no Oracle MySQL client — its `mysql-client` package is MariaDB's — so the image carries `mariadb-client`, and `mysql.dump`/`mysql.restore` are the two capabilities in it that will not run. They refuse at the first flag with the skew message, which is the diagnosis rather than a mystery; bring Oracle's client yourself if you need them.
 
-**Reach for it when you are the one at the keyboard, and for the primary image when something else is.** That is not a style preference: [the image is the plugin allowlist](./20-mcp.md) — a plugin that is not in the image is one an agent cannot reach at all — so the full image is the widest reach rta has, and handing it to an agent gives up a boundary the narrow one enforces for free. For a team that wants three plugins and not eleven, derive from the primary image instead; [the recipe](./20-mcp.md) is a dozen lines. What the full image does *not* do is answer the credential question for you: `kube` and `cnpg` still show `warn` until you run `rta plugin allow`, on your machine, against your own kubeconfig. Mount a state volume at `/rta-home` and that answer sticks, the same as on a laptop.
+**Reach for it when you are the one at the keyboard, and for the primary image when something else is.** That is not a style preference: [the image is the plugin allowlist](../30-boundary/20-mcp.md) — a plugin that is not in the image is one an agent cannot reach at all — so the full image is the widest reach rta has, and handing it to an agent gives up a boundary the narrow one enforces for free. For a team that wants three plugins and not eleven, derive from the primary image instead; [the recipe](../30-boundary/20-mcp.md) is a dozen lines. What the full image does *not* do is answer the credential question for you: `kube` and `cnpg` still show `warn` until you run `rta plugin allow`, on your machine, against your own kubeconfig. Mount a state volume at `/rta-home` and that answer sticks, the same as on a laptop.
 
 For the throwaway case where it cannot stick — `docker run --rm`, with no volume — the entrypoint takes `RTA_ALLOW_PLUGINS`, and it is off unless you set it:
 
@@ -169,21 +169,21 @@ rta init
 
 That writes `~/.config/rta/config.yaml` (or the platform equivalent — `rta doctor` prints the exact path). `RTA_CONFIG` overrides the location, which is what portable setups and test harnesses use.
 
-Nothing in the config grants anything. It holds connection profiles, dashboard preferences and theme — see [Profiles](./40-profiles.md).
+Nothing in the config grants anything. It holds connection profiles, dashboard preferences and theme — see [Profiles](../20-using/40-profiles.md).
 
 ## Where rta keeps things
 
 | What | Where | Notes |
 | --- | --- | --- |
 | Config | `~/.config/rta/config.yaml` | `RTA_CONFIG` overrides |
-| Encrypted store | beside the config | [Secrets](./30-secrets.md) |
+| Encrypted store | beside the config | [Secrets](../20-using/50-secrets.md) |
 | Grants | `~/.local/share/rta/grants.json` | Sealed against tampering |
-| Agent record | beside the grants | Hash-chained; [The record](./22-audit-trail.md) |
-| Team policy | `.rta-policy.yaml`, walking up from the working directory | [Team policy](./23-team-policy.md) |
+| Agent record | beside the grants | Hash-chained; [The record](../30-boundary/40-audit-trail.md) |
+| Team policy | `.rta-policy.yaml`, walking up from the working directory | [Team policy](../30-boundary/50-team-policy.md) |
 
 Exact paths differ per platform. `rta doctor` prints the real ones rather than the documented ones, which is the answer to use when they disagree.
 
 ## Next
 
-- [Quick start](./03-quickstart.md) — the first ten minutes
-- [MCP and the safety gate](./20-mcp.md) — if you came here to connect an agent
+- [Quick start](./20-quickstart.md) — the first ten minutes
+- [MCP and the safety gate](../30-boundary/20-mcp.md) — if you came here to connect an agent

@@ -42,7 +42,7 @@ requireScope:
   - kv.get
 ```
 
-Now `rta grant allow kv.get` — which would cover the entire store — is an error. Only a grant naming one key is accepted. See [Team policy](./23-team-policy.md).
+Now `rta grant allow kv.get` — which would cover the entire store — is an error. Only a grant naming one key is accepted. See [Team policy](../30-boundary/50-team-policy.md).
 
 ## A ceiling a repository carries
 
@@ -396,5 +396,5 @@ Two gated commands rather than one capability reaching into two services, which 
 
 ## Next
 
-- [Grants](./21-grants.md) · [Team policy](./23-team-policy.md) · [The record](./22-audit-trail.md)
-- [Writing a plugin](./51-writing-a-plugin.md) — if the capability you want does not exist yet
+- [Grants](../30-boundary/30-grants.md) · [Team policy](../30-boundary/50-team-policy.md) · [The record](../30-boundary/40-audit-trail.md)
+- [Writing a plugin](../40-plugins/20-writing-a-plugin.md) — if the capability you want does not exist yet

@@ -352,7 +352,7 @@ rta grant allow pg.query --profile staging --agent claude --ttl 1h
 
 Profile matching is **exact in both directions**. A grant naming `staging` matches a call resolving through `staging`, and nothing else. An empty profile on a grant is not a wildcard — it matches a call that resolved through no profile.
 
-A [team policy](./23-team-policy.md) can forbid a connection outright, which is the blunt instrument for "not production, ever":
+A [team policy](../30-boundary/50-team-policy.md) can forbid a connection outright, which is the blunt instrument for "not production, ever":
 
 ```yaml
 neverProfile:
@@ -393,6 +393,6 @@ That second line is the one to read. A profile switched on with no deadline is a
 
 ## Next
 
-- [Grants](./21-grants.md) — `--profile` as a bound
-- [Secrets](./30-secrets.md) — what `kv:` references point at
-- [Using plugins](./50-plugins.md) — the plugins a profile configures
+- [Grants](../30-boundary/30-grants.md) — `--profile` as a bound
+- [Secrets](./50-secrets.md) — what `kv:` references point at
+- [Using plugins](../40-plugins/10-plugins.md) — the plugins a profile configures

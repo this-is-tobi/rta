@@ -8,7 +8,7 @@ Read this before the three chapters after it, because it decides what they are w
 
 That is not a bug and rta cannot fix it. rta is software running as you; so is the agent. Any tool that claimed otherwise would be claiming to contain a process with the same privileges as itself.
 
-One clause of that sentence has an opt-in answer: with [the grant guard](./21-grants.md#the-guard-a-passphrase-in-front-of-issuance) on, issuing a grant requires a passphrase that lives in your head rather than on disk, so "issue itself a grant" stops working — refused, not recorded. The rest of the sentence stands exactly as written: an agent with your shell can walk past rta to the credentials themselves, and no signature changes that.
+One clause of that sentence has an opt-in answer: with [the grant guard](./30-grants.md#the-guard-a-passphrase-in-front-of-issuance) on, issuing a grant requires a passphrase that lives in your head rather than on disk, so "issue itself a grant" stops working — refused, not recorded. The rest of the sentence stands exactly as written: an agent with your shell can walk past rta to the credentials themselves, and no signature changes that.
 
 What rta can do is be exact about where the line falls, so nobody trusts it further than it goes.
 
@@ -112,7 +112,7 @@ Stated here rather than left implied, because the gap is the interesting part of
 
 - **The CLI writes nothing to the record.** That is right for an operator and it is also the seam an agent with a shell walks through. Recording every CLI call would drown the agent record in your own work, so what is recorded instead is the one event that matters — see below.
 
-Detection rather than prevention, which is what the ledger's hash chain already is, and for the same reason: against something running as you, visible is the most that is honest — with one measured exception. A secret that is not on disk is different in kind from a check, which is what the kv store's passphrase already proved, and [the grant guard](./21-grants.md#the-guard-a-passphrase-in-front-of-issuance) applies the same fact to issuance: the ordinary self-grant is prevented outright, and only file tampering remains in the detection regime, where it fails closed and loudly.
+Detection rather than prevention, which is what the ledger's hash chain already is, and for the same reason: against something running as you, visible is the most that is honest — with one measured exception. A secret that is not on disk is different in kind from a check, which is what the kv store's passphrase already proved, and [the grant guard](./30-grants.md#the-guard-a-passphrase-in-front-of-issuance) applies the same fact to issuance: the ordinary self-grant is prevented outright, and only file tampering remains in the detection regime, where it fails closed and loudly.
 
 ## What a grant says about where it came from
 
@@ -139,5 +139,5 @@ All three unattended cases are legitimate and only you know which one ran, so th
 ## Next
 
 - [MCP and the safety gate](./20-mcp.md) — what an agent reaches before you decide anything
-- [Grants](./21-grants.md) — per-capability, time-boxed consent
-- [The record](./22-audit-trail.md) — what actually happened, and shipping it somewhere
+- [Grants](./30-grants.md) — per-capability, time-boxed consent
+- [The record](./40-audit-trail.md) — what actually happened, and shipping it somewhere

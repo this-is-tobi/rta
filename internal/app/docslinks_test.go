@@ -113,6 +113,60 @@ func TestEveryDocsPathCitedFromCodeExists(t *testing.T) {
 	}
 }
 
+// A path assembled from segments is invisible to the check above, because no
+// single string in the file spells it. `filepath.Join(root, "docs", "51-...")`
+// is the shape, and it is the one that actually broke: the docs reorganisation
+// moved the file, every prose citation was updated, and a test went on opening
+// a page that no longer existed — found by running the suite rather than by the
+// check written to find exactly this.
+//
+// So the page name is matched on its own, wherever it appears as a Go string,
+// and looked up across the whole docs tree. That is looser than resolving a real
+// path and it is the right trade: it cannot say where the file should be, only
+// that a page by that name still exists somewhere, which is the fact a
+// segment-assembled citation depends on.
+func TestEveryDocsPageNamedInGoSourceStillExists(t *testing.T) {
+	root := repoRoot(t)
+
+	pages := map[string]bool{}
+	for _, page := range markdownPages(t, root) {
+		pages[filepath.Base(page)] = true
+	}
+
+	name := regexp.MustCompile(`"([0-9]{2}-[a-z-]+\.md)"`)
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			switch d.Name() {
+			case ".git", "node_modules", "testdata", ".local", "docs":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") {
+			return nil
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(root, path)
+		for _, m := range name.FindAllStringSubmatch(string(body), -1) {
+			if !pages[m[1]] {
+				t.Errorf("%s names the docs page %q, and no page by that name exists any more — "+
+					"a path assembled from segments does not show up in a search for the whole one",
+					rel, m[1])
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walking the checkout: %v", err)
+	}
+}
+
 // markdownPages is every documentation page a link can start from: the docs
 // tree at whatever depth it has, plus the README that links into it.
 func markdownPages(t *testing.T, root string) []string {

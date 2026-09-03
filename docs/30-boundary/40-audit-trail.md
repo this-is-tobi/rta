@@ -99,5 +99,5 @@ Which makes "ship the record somewhere durable" a cron line rather than a featur
 
 ## Next
 
-- [Grants](./21-grants.md) — what the record is a record of
-- [Team policy](./23-team-policy.md) — bounds nobody on the team can raise
+- [Grants](./30-grants.md) — what the record is a record of
+- [Team policy](./50-team-policy.md) — bounds nobody on the team can raise

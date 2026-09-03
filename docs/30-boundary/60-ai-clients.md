@@ -215,10 +215,10 @@ kv                 13   destructive   Encrypted local store for secrets, certifi
 
 So of those four, an agent reaches all of `audit` and the read half of the others, and nothing in `kv` that returns a secret.
 
-Everything else is a separate decision — a namespace at a time for writes, one capability at a time for destructive ones, and grants for anything narrower. That is [MCP and the safety gate](./20-mcp.md) and [Grants](./21-grants.md).
+Everything else is a separate decision — a namespace at a time for writes, one capability at a time for destructive ones, and grants for anything narrower. That is [MCP and the safety gate](./20-mcp.md) and [Grants](./30-grants.md).
 
 ## Next
 
 - [MCP and the safety gate](./20-mcp.md) — what is exposed before you decide anything
-- [Grants](./21-grants.md) — time-boxed permission for one capability
-- [The record](./22-audit-trail.md) — what the agent actually asked for
+- [Grants](./30-grants.md) — time-boxed permission for one capability
+- [The record](./40-audit-trail.md) — what the agent actually asked for

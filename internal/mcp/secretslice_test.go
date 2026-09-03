@@ -11,7 +11,7 @@ import (
 // The sink this whole change exists for.
 //
 // auditArgs writes into internal/agentlog, which is sealed, hash-chained and
-// designed for long retention — docs/22-audit-trail.md recommends shipping it
+// designed for long retention — docs/30-boundary/40-audit-trail.md recommends shipping it
 // somewhere durable on a cron line, and its own comment says it is "read by
 // people and by the next agent that greps it". It masked a value only when
 // its field was declared Secret, and a repeatable credential could not be

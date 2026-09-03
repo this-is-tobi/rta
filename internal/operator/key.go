@@ -28,7 +28,7 @@
 //
 // What this package deliberately is not: an authorization model. One role
 // exists — operator — and a roster row's label is attribution for the audit
-// trail, not a permission set. docs/23-team-policy.md refuses roles for
+// trail, not a permission set. docs/30-boundary/50-team-policy.md refuses roles for
 // policy with an argument that applies here unchanged; the day a read-only
 // auditor row is wanted, it is an annotation on the roster, not a policy
 // engine.

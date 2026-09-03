@@ -16,7 +16,7 @@
 //
 // **What it does not change.** A same-uid process can still tamper with the
 // files — against something running as you there is nowhere tamper-proof to
-// stand (docs/19-the-boundary.md owns that argument). Every *inconsistent*
+// stand (docs/30-boundary/10-the-boundary.md owns that argument). Every *inconsistent*
 // rewrite is refused loudly and fails closed: a signed grant with no guard
 // state beside it, an unsigned grant while the guard is on, a signature the
 // key does not verify — each kills the whole file's authority, never part of

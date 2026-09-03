@@ -85,11 +85,11 @@ See [MCP and the safety gate](./20-mcp.md#live-consent) for why this is off by d
 
 Grants live in `~/.local/share/rta/grants.json`, and the file carries a tamper seal.
 
-The seal stops a forged line from a process that cannot read the key. It does not stop an agent that can run `rta grant allow` itself — which is why every grant also records [whether anybody was at the terminal when it was issued](./19-the-boundary.md#what-a-grant-says-about-where-it-came-from).
+The seal stops a forged line from a process that cannot read the key. It does not stop an agent that can run `rta grant allow` itself — which is why every grant also records [whether anybody was at the terminal when it was issued](./10-the-boundary.md#what-a-grant-says-about-where-it-came-from).
 
 The reason is asymmetry: **a forged line in a grant file *adds* permission.** Anything that can write that file can write itself an allowance, and rta would honour it. So the file is sealed, and a grant file that does not verify is not honoured — `rta doctor` says so plainly rather than failing quietly.
 
-This is exactly why a [team policy ceiling](./23-team-policy.md) needs no seal: it can only ever subtract, so the worst a hostile edit achieves is making rta refuse more.
+This is exactly why a [team policy ceiling](./50-team-policy.md) needs no seal: it can only ever subtract, so the worst a hostile edit achieves is making rta refuse more.
 
 ## The guard: a passphrase in front of issuance
 
@@ -106,7 +106,7 @@ Honest edges, stated rather than implied:
 - **Enabling and disabling both clear the grant file.** Grants issued without a passphrase would be laundered by blessing them wholesale, and signatures with no guard beside them read as tampering. Grants last a day at most; re-issuing costs minutes.
 - **Revoking never asks.** Taking authority away is the fail-safe direction, and an incident is the wrong moment to demand a secret.
 - **A forgotten passphrase costs at most a day.** `rm` the guard state, `rta grant revoke --all`, `rta grant guard on` with a new passphrase — loud, bounded, and no secret is ever recoverable from disk.
-- **File tampering stays in the detection regime.** Something running as you can still delete the guard's state or swap its key; every such rewrite rta can notice is refused loudly and fails closed. The cheapest rollback is worth naming: deleting the guard state *and* the grant file together leaves a machine indistinguishable from one where the guard was never enabled. A running MCP server pins the guard state at startup and refuses every grant-gated call if it weakens mid-session — which covers exactly the session the attacker is talking through. Across restarts nothing on disk can testify, and [the boundary chapter](./19-the-boundary.md) owns what remains.
+- **File tampering stays in the detection regime.** Something running as you can still delete the guard's state or swap its key; every such rewrite rta can notice is refused loudly and fails closed. The cheapest rollback is worth naming: deleting the guard state *and* the grant file together leaves a machine indistinguishable from one where the guard was never enabled. A running MCP server pins the guard state at startup and refuses every grant-gated call if it weakens mid-session — which covers exactly the session the attacker is talking through. Across restarts nothing on disk can testify, and [the boundary chapter](./10-the-boundary.md) owns what remains.
 - **One-shot consent answers stay passphrase-free.** `rta agent allow <id>` without `--ttl` releases exactly one already-parked call — something an agent with a shell could have run directly — and every such call is in the ledger. The guard prices authority that *outlives* the conversation; the harness deny list from `rta audit agents --fix` is the layer that stops an agent answering its own questions at all.
 - **The passphrase never travels on the command line.** `--passphrase` is refused from the CLI — argv is readable by every process you run and lands in shell history — so the channels are the prompt and the TUI's masked field, both of which land nowhere.
 - **There is no environment variable for the passphrase, and there will not be one.** The kv store accepts `RTA_KV_PASSPHRASE` because some setups need unattended unlocks, and `rta doctor` warns about the inheritance. The guard exists for the opposite trade: issuance is rare, attended, and nothing an agent inherits may satisfy it.
@@ -127,6 +127,6 @@ For a machine whose humans are not at its terminal — an `rta mcp serve --http`
 
 ## Next
 
-- [The record](./22-audit-trail.md) — what agents actually did with what you granted
-- [Team policy](./23-team-policy.md) — a ceiling nobody on the team can raise
-- [Profiles](./40-profiles.md) — what `--profile` is naming
+- [The record](./40-audit-trail.md) — what agents actually did with what you granted
+- [Team policy](./50-team-policy.md) — a ceiling nobody on the team can raise
+- [Profiles](../20-using/40-profiles.md) — what `--profile` is naming

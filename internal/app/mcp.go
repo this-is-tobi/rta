@@ -172,7 +172,7 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				if consentOn && operatorsFile == "" {
 					return fmt.Errorf("--consent over --http needs --operators: a parked call waits " +
 						"for a person, and enrolled operators answering with `rta agent allow --server` " +
-						"are the only people positioned to; see \"The operator channel\" in docs/20-mcp.md")
+						"are the only people positioned to; see \"The operator channel\" in docs/30-boundary/20-mcp.md")
 				}
 				if tokenFile == "" && oidcIssuer == "" {
 					return fmt.Errorf("--http needs a way to verify who is calling: pass --token-file or --oidc-issuer")

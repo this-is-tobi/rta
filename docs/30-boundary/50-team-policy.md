@@ -22,7 +22,7 @@ There is no `allow:` key and there never will be. Every axis in the file removes
 
 That single property is what makes this shareable. Consider what it takes to trust the two files:
 
-| Trusting it | [Grant file](./21-grants.md#the-file-and-why-it-is-sealed) | Policy file |
+| Trusting it | [Grant file](./30-grants.md#the-file-and-why-it-is-sealed) | Policy file |
 | --- | --- | --- |
 | A forged line… | **adds** permission | **removes** permission |
 | So it needs… | a tamper seal | nothing |
@@ -190,5 +190,5 @@ What all of this defends against is the failure teams actually have — the 3am 
 
 ## Next
 
-- [Grants](./21-grants.md) — what the ceiling is bounding
-- [The record](./22-audit-trail.md) — what happened inside those bounds
+- [Grants](./30-grants.md) — what the ceiling is bounding
+- [The record](./40-audit-trail.md) — what happened inside those bounds

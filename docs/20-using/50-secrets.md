@@ -103,10 +103,10 @@ Without a grant naming it, an agent's `kv.get` is refused and the refusal is wri
 
 Two further bounds worth knowing:
 
-- **`requireScope: [kv.get]`** in a [team policy](./23-team-policy.md) makes `rta grant allow kv.get` — which would cover the entire store — an error. Only a grant naming one key is accepted.
-- **Values are masked in the record.** [`rta agent log`](./22-audit-trail.md) shows that `kv.get db-password` happened, not what came back.
+- **`requireScope: [kv.get]`** in a [team policy](../30-boundary/50-team-policy.md) makes `rta grant allow kv.get` — which would cover the entire store — an error. Only a grant naming one key is accepted.
+- **Values are masked in the record.** [`rta agent log`](../30-boundary/40-audit-trail.md) shows that `kv.get db-password` happened, not what came back.
 
 ## Next
 
-- [Grants](./21-grants.md) — bounding what an agent can read
+- [Grants](../30-boundary/30-grants.md) — bounding what an agent can read
 - [Profiles](./40-profiles.md) — pointing connection credentials at stored entries

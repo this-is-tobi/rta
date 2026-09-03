@@ -168,7 +168,7 @@ Markdown bodies — notes, `audit` findings, anything returning prose — are re
 
 If rta found an `rta-plugin-*` binary it has not been told to run, the TUI says so in a pane rather than a startup line. The line would be written to the primary buffer, and the TUI opens on the alternate one — so it would be covered before anyone could read it. The pane is the only place a person inside the TUI can learn a decision is pending.
 
-See [Using plugins](./50-plugins.md#trust).
+See [Using plugins](../40-plugins/10-plugins.md#trust).
 
 ## Next
 

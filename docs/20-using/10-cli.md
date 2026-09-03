@@ -106,7 +106,7 @@ rta net hosts add 10.0.0.5 db.local --dry-run
 rta todo rm 4 --dry-run
 ```
 
-This is not only a convenience for you — it is what rta shows an operator on a [parked agent call](./22-audit-trail.md#parked-calls), which turns "may this agent call `todo.rm`" into "may it remove **this task**".
+This is not only a convenience for you — it is what rta shows an operator on a [parked agent call](../30-boundary/40-audit-trail.md#parked-calls), which turns "may this agent call `todo.rm`" into "may it remove **this task**".
 
 ## `--yes`
 
@@ -141,7 +141,7 @@ This is generated from the same declaration the CLI parser, the TUI form and the
 
 rta's completion goes further than subcommand names. A capability that declares `Options` completes to its allowed values; one that declares `Suggest` completes from **what actually exists on your machine** — your tags, your keys, your hosts file — and only on human surfaces. `Path` inputs complete filesystem paths.
 
-See [Installation](./02-installation.md#shell-completion) to turn it on.
+See [Installation](../10-getting-started/10-installation.md#shell-completion) to turn it on.
 
 ## Piping in
 
@@ -164,5 +164,5 @@ echo '{"a":1}' | rta codec jwt decode
 
 ## Next
 
-- [The TUI](./11-tui.md) — the same capabilities, interactively
-- [Recipes](./90-recipes.md) — worked examples
+- [The TUI](./20-tui.md) — the same capabilities, interactively
+- [Recipes](../90-recipes/01-readme.md) — worked examples
