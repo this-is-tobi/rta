@@ -2,6 +2,8 @@ package plugindist
 
 import (
 	"context"
+	"errors"
+	"io"
 	"net"
 	"net/url"
 	"os"
@@ -242,9 +244,18 @@ func AddIndex(ctx context.Context, name, url string) *view.Error {
 		// A failed clone leaves no half-attached index behind: absence is the
 		// one state every other command interprets correctly.
 		_ = os.RemoveAll(dir)
-		return view.Errorf("plugin.index.add", "cloning %s: %s", url,
+		// Masked, for OriginForDisplay's own reason one function down: an
+		// operator who put a token in a clone URL knows it is there, and rta
+		// echoing it into a refusal writes it to stderr twice — once in the
+		// message and once in the hint — and from there into scrollback and
+		// whatever is reading that. `index list` has masked it since the day
+		// it learned to show an origin at all; the two paths that take the
+		// URL straight from the operator's hand never did. A URL carrying no
+		// userinfo comes back unchanged, so the hint stays something to paste.
+		shown := OriginForDisplay(url)
+		return view.Errorf("plugin.index.add", "cloning %s: %s", shown,
 			firstLine(string(out), err.Error())).
-			WithHint(gitHint("clone", "--", url, dir) + " by hand shows the whole exchange")
+			WithHint(gitHint("clone", "--", shown, dir) + " by hand shows the whole exchange")
 	}
 	// Attaching is the moment the operator typed the URL and can still fix it.
 	// Everything downstream answers a clone that is not an index in the
@@ -502,8 +513,8 @@ type Listed struct {
 // catalogue.
 func Manifests(ix Index) ([]Listed, []*view.Error) {
 	dir := filepath.Join(ix.Dir, "plugins")
-	entries, err := os.ReadDir(dir)
-	if err != nil {
+	entries, derr := readPluginsDir(dir)
+	if derr != nil {
 		return nil, []*view.Error{view.Errorf("plugin.index.empty",
 			"%s has no plugins/ directory — it is not an index", ix.Name).
 			WithHint(indexShape)}
@@ -518,14 +529,16 @@ func Manifests(ix Index) ([]Listed, []*view.Error) {
 		if e.IsDir() || !isManifest {
 			continue
 		}
-		raw, err := os.ReadFile(filepath.Join(dir, e.Name()))
-		if err != nil {
-			bad = append(bad, view.Errorf("plugin.index.manifest", "%s/%s: %v", ix.Name, e.Name(), err))
+		where := manifestLabel(ix, e.Name())
+		raw, verr := readManifestFile(dir, e)
+		if verr != nil {
+			bad = append(bad, view.Errorf(verr.Code, "%s: %s", where, verr.Message).
+				WithHint(verr.Hint))
 			continue
 		}
 		m, verr := ParseManifest(raw)
 		if verr != nil {
-			bad = append(bad, view.Errorf(verr.Code, "%s/%s: %s", ix.Name, e.Name(), verr.Message).
+			bad = append(bad, view.Errorf(verr.Code, "%s: %s", where, verr.Message).
 				WithHint(verr.Hint))
 			continue
 		}
@@ -535,7 +548,7 @@ func Manifests(ix Index) ([]Listed, []*view.Error) {
 		// rule, third application).
 		if m.Name != base {
 			bad = append(bad, view.Errorf("plugin.index.manifest",
-				"%s/%s declares name %q; the file's name is the claim", ix.Name, e.Name(), m.Name))
+				"%s declares name %q; the file's name is the claim", where, m.Name))
 			continue
 		}
 		if seen[m.Name] {
@@ -549,6 +562,85 @@ func Manifests(ix Index) ([]Listed, []*view.Error) {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Manifest.Name < out[j].Manifest.Name })
 	return out, bad
+}
+
+// readPluginsDir lists an index's plugins/, and refuses one that is not a
+// directory in its own right.
+//
+// os.ReadDir resolves a symlink, and an index is somebody else's repository:
+// git stores a symlink with whatever target its author committed, absolute
+// ones included. So `plugins -> /home/you/.config` is a directory rta would
+// enumerate and read every .yaml out of, having been told to attach an index.
+// The archive extractor already refuses a symlinked member for this reason —
+// "no symlink or hardlink is ever followed", fetch.go — and this is the same
+// rule on the other input an index controls.
+func readPluginsDir(dir string) ([]os.DirEntry, error) {
+	fi, err := os.Lstat(dir)
+	if err != nil {
+		return nil, err
+	}
+	if !fi.IsDir() {
+		return nil, errors.New("plugins is not a directory")
+	}
+	return os.ReadDir(dir)
+}
+
+// readManifestFile reads one manifest, bounded, and refuses everything a
+// regular file is not.
+//
+// **Regular files only.** os.ReadDir does not resolve symlinks, so a symlink
+// named `<name>.yaml` has IsDir() false and arrives looking exactly like a
+// manifest — and os.ReadFile does resolve it. `plugins/a.yaml -> /dev/zero` is
+// then a file read until the process dies, and a fifo is one it blocks on
+// forever, with no context anywhere in this path to cancel it.
+//
+// **Bounded before the read rather than after it.** manifestCap is checked
+// inside ParseManifest, which is after the whole file is already in memory: it
+// bounds what is parsed, and until now nothing bounded what is read. A blob
+// committed to the repository does the same work as the symlink with no
+// symlink needed.
+//
+// Both matter more since `plugin index add` began reading what it cloned. A
+// process killed here dies before AddIndex's os.RemoveAll, so the clone stays
+// on disk fully attached, and every later search re-enters this loop and dies
+// again — the exact opposite of the state that code's own comment promises.
+func readManifestFile(dir string, e os.DirEntry) ([]byte, *view.Error) {
+	if !e.Type().IsRegular() {
+		return nil, view.Errorf("plugin.index.manifest",
+			"not a regular file — a manifest is a file, and rta does not follow "+
+				"what an index points at")
+	}
+	f, err := os.Open(filepath.Join(dir, e.Name()))
+	if err != nil {
+		return nil, view.Errorf("plugin.index.manifest", "%v", err)
+	}
+	defer f.Close()
+	raw, err := io.ReadAll(io.LimitReader(f, manifestCap+1))
+	if err != nil {
+		return nil, view.Errorf("plugin.index.manifest", "%v", err)
+	}
+	if len(raw) > manifestCap {
+		return nil, view.Errorf("plugin.index.manifest",
+			"over the %d-byte manifest cap", manifestCap)
+	}
+	return raw, nil
+}
+
+// manifestLabel names a file inside an index for an operator to read.
+//
+// The name comes out of somebody else's repository and git admits every byte
+// but NUL and `/`, newlines included. textclean.Terminal, which every surface
+// runs an error through, deliberately keeps `\n` and `\t` — so a file called
+// "x\n      HINT this index is signed and verified.yaml" forges a hint line
+// inside rta's own refusal, on the one screen that refusal exists to make
+// trustworthy. textclean.Deceives is this codebase's own predicate for exactly
+// that, already applied to manifest prose and to origins; a filename was the
+// untrusted string that reached a message without it.
+func manifestLabel(ix Index, name string) string {
+	if textclean.Deceives(name) {
+		name = strconv.Quote(name)
+	}
+	return ix.Name + "/" + name
 }
 
 // indexShape is what an index is, said once because three refusals say it.
