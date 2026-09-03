@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -85,6 +86,18 @@ func aCluster(name, namespace string, mutate ...func(map[string]any)) map[string
 func alsoSnapshots(c map[string]any) {
 	backup := c["spec"].(map[string]any)["backup"].(map[string]any)
 	backup["volumeSnapshot"] = map[string]any{}
+}
+
+// archivedByPlugin is the newer arrangement: a WAL-archiver plugin instead of
+// `.spec.backup`, which the CRD says cannot both be present. The stanza is
+// deleted rather than left beside the plugin, because a real cluster of this
+// shape has none.
+func archivedByPlugin(c map[string]any) {
+	spec := c["spec"].(map[string]any)
+	delete(spec, "backup")
+	spec["plugins"] = []any{
+		map[string]any{"name": "barman-cloud.cloudnative-pg.io", "isWALArchiver": true},
+	}
 }
 
 func decodeCluster(t *testing.T, doc map[string]any) cluster {
@@ -346,7 +359,9 @@ func TestAnOverrideOutsideTheCRDsEnumIsRefusedBeforeAnythingIsSent(t *testing.T)
 // default of barmanObjectStore, which is why omitting it is choosing the
 // method that forbids this rather than leaving the question open.
 func TestOnlineWithoutAVolumeSnapshotIsRefusedBeforeTheAPIServerHasTo(t *testing.T) {
-	for _, method := range []string{"", "barmanObjectStore", "plugin"} {
+	// Every method rta offers except the one that permits it, plus the empty
+	// spelling, which is the same as barmanObjectStore by CRD default.
+	for _, method := range []string{"", "barmanObjectStore"} {
 		t.Run("method="+method, func(t *testing.T) {
 			_, stdin := recordingKubectl(t, mustJSON(t, aCluster("shop", "prod")))
 			values := map[string]any{"cluster": "shop", "namespace": "prod", "online": "true"}
@@ -412,6 +427,93 @@ func TestAClusterThatCannotTakeTheDefaultMethodIsRefusedRatherThanSentOne(t *tes
 	}
 }
 
+// The ordinary call — no --method — against the newer arrangement.
+//
+// This is the one the pre-flight was blind to, and it is the likeliest call
+// there is. `canTake` used to pass every method on a cluster naming a
+// WAL-archiver plugin, on the reasoning that rta cannot read that plugin's own
+// configuration. But the method it was letting through was CloudNativePG's
+// fixed default, barmanObjectStore, and a cluster of this shape has no
+// `.spec.backup` at all — the CRD says the two cannot coexist. So the Backup
+// was created, accepted, and failed minutes later where nobody looks, with
+// rta's receipt already saying it had checked the cluster could take it.
+func TestTheDefaultMethodIsRefusedForAClusterThatArchivesThroughAPlugin(t *testing.T) {
+	_, stdin := recordingKubectl(t, mustJSON(t, aCluster("shop", "prod", archivedByPlugin)))
+
+	_, err := runBackupRequest(context.Background(),
+		req(map[string]any{"cluster": "shop", "namespace": "prod"}))
+
+	verr := asViewError(t, err)
+	if verr.Code != "cnpg.backup.method.unconfigured" {
+		t.Fatalf("code = %q, want cnpg.backup.method.unconfigured", verr.Code)
+	}
+	if !strings.Contains(verr.Hint, "barman-cloud.cloudnative-pg.io") {
+		t.Errorf("the hint is %q, and does not name what does archive this cluster", verr.Hint)
+	}
+	if body := strings.TrimSpace(stdin()); body != "" {
+		t.Errorf("a backup the cluster cannot perform was sent anyway: %q", body)
+	}
+}
+
+// The refusal names no flag, because there is no flag that works.
+//
+// A plugin-method Backup needs a `spec.pluginConfiguration` rta does not
+// build — the operator's own webhook says so, put to a running one with
+// `kubectl create --dry-run=server`: "spec.pluginConfiguration: Invalid value:
+// null: cannot be empty when the backup method is plugin". So sending somebody
+// to `--method plugin` would be a second dead end one round trip further on,
+// which is the same failure as the first one with an extra step.
+func TestThePluginArchivedRefusalDoesNotSendSomebodyToAFlagThatFailsToo(t *testing.T) {
+	_, stdin := recordingKubectl(t, mustJSON(t, aCluster("shop", "prod", archivedByPlugin)))
+
+	_, err := runBackupRequest(context.Background(),
+		req(map[string]any{"cluster": "shop", "namespace": "prod"}))
+
+	verr := asViewError(t, err)
+	if strings.Contains(verr.Hint, "--method plugin") {
+		t.Errorf("the hint sends them to a flag rta cannot fulfil: %q", verr.Hint)
+	}
+	if !strings.Contains(verr.Hint, "pluginConfiguration") {
+		t.Errorf("the hint is %q, and does not say what rta is missing", verr.Hint)
+	}
+	if body := strings.TrimSpace(stdin()); body != "" {
+		t.Errorf("a backup the cluster cannot perform was sent anyway: %q", body)
+	}
+}
+
+// `plugin` is not an offered method, so asking for it is refused by rta with
+// the list in hand rather than by the API server with a schema error — which
+// is what the three overrides carrying the CRD's enums are for.
+func TestThePluginMethodIsNotOffered(t *testing.T) {
+	if slices.Contains(backupMethods, "plugin") {
+		t.Fatal("plugin is offered, and every document rta builds for it is incomplete")
+	}
+	_, stdin := recordingKubectl(t, mustJSON(t, aCluster("shop", "prod")))
+	_, err := runBackupRequest(context.Background(), req(map[string]any{
+		"cluster": "shop", "namespace": "prod", "method": "plugin",
+	}))
+	if verr := asViewError(t, err); verr.Code != "cnpg.backup.method.invalid" {
+		t.Fatalf("code = %q, want the value refused by rta", verr.Code)
+	}
+	if body := strings.TrimSpace(stdin()); body != "" {
+		t.Errorf("a document was sent for a method rta cannot complete: %q", body)
+	}
+}
+
+// A method rta does not recognise is still the API server's call, which is the
+// half of the generosity that was right: refusing a legitimate backup is worse
+// than letting the server have the last word, which it has either way.
+func TestAMethodRtaDoesNotKnowIsLeftToTheAPIServer(t *testing.T) {
+	c := decodeCluster(t, aCluster("shop", "prod", archivedByPlugin))
+	if !c.canTake("somethingNewInTheCRD") {
+		t.Error("an unrecognised method was refused locally rather than by the server")
+	}
+	barman := decodeCluster(t, aCluster("shop", "prod"))
+	if barman.canTake("volumeSnapshot") {
+		t.Error("a snapshot was allowed on a cluster whose .spec.backup states none")
+	}
+}
+
 // A `.spec.backup` naming no mechanism has a message of its own, and does not
 // take the plugin down producing it.
 //
@@ -433,31 +535,6 @@ func TestABackupStanzaNamingNoMechanismIsExplainedAndDoesNotPanic(t *testing.T) 
 	}
 	if !strings.Contains(verr.Hint, "names no mechanism") {
 		t.Errorf("the hint is %q, and does not say the stanza is empty", verr.Hint)
-	}
-}
-
-// A cluster on a WAL-archiver plugin gets no opinion from here.
-//
-// Its configuration lives in an ObjectStore resource this plugin does not
-// read, so refusing on a model it cannot see would block a legitimate backup
-// — a worse failure than letting the API server have the last word, which it
-// has either way.
-func TestAPluginArchivedClusterIsNotSecondGuessed(t *testing.T) {
-	plugged := aCluster("shop", "prod", func(c map[string]any) {
-		spec := c["spec"].(map[string]any)
-		delete(spec, "backup")
-		spec["plugins"] = []any{
-			map[string]any{"name": "barman-cloud.cloudnative-pg.io", "isWALArchiver": true},
-		}
-	})
-	_, stdin := recordingKubectl(t, mustJSON(t, plugged))
-
-	if _, err := runBackupRequest(context.Background(),
-		req(map[string]any{"cluster": "shop", "namespace": "prod"})); err != nil {
-		t.Fatalf("a plugin-archived cluster was refused: %v", err)
-	}
-	if strings.TrimSpace(stdin()) == "" {
-		t.Error("nothing was sent")
 	}
 }
 

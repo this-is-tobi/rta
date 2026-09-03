@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -222,13 +223,23 @@ func TestLiveBackupTheOfferedOptionsMatchTheCRDsEnums(t *testing.T) {
 			offered[f.Name] = f.Options
 		}
 	}
-	for field, want := range map[string][]string{
-		"method": offered["method"],
-		"target": offered["target"],
-	} {
-		got := props[field].Enum
-		if strings.Join(got, ",") != strings.Join(want, ",") {
-			t.Errorf("%s: the CRD admits %v and rta offers %v", field, got, want)
+	// target must match exactly. method is allowed to be a subset, and is one:
+	// `plugin` is in the CRD and not in rta's list, because a plugin-method
+	// Backup needs a `spec.pluginConfiguration` rta does not build and this
+	// same operator refuses the document without it. What is checked is the
+	// direction that matters — nothing rta offers may be outside the enum,
+	// which is the error the enums were carried here to prevent.
+	if got, want := props["target"].Enum, offered["target"]; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("target: the CRD admits %v and rta offers %v", got, want)
+	}
+	for _, m := range offered["method"] {
+		if !slices.Contains(props["method"].Enum, m) {
+			t.Errorf("rta offers method %q, which this CRD does not admit: %v",
+				m, props["method"].Enum)
 		}
+	}
+	if slices.Contains(offered["method"], "plugin") {
+		t.Error("plugin is offered again — every document rta builds for it is " +
+			"missing the pluginConfiguration this operator requires")
 	}
 }

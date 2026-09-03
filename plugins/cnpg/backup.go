@@ -314,7 +314,7 @@ func backupRequestCapability() plugin.Capability {
 		// refused by rta with the list in hand rather than by the API server
 		// with a schema error.
 		plugin.Field{Name: "method", Type: plugin.String,
-			Options: []string{"barmanObjectStore", "volumeSnapshot", "plugin"},
+			Options: backupMethods,
 			Help:    "how to take it — the cluster's own choice when omitted"},
 		plugin.Field{Name: "target", Type: plugin.String,
 			Options: []string{"primary", "prefer-standby"},
@@ -356,6 +356,26 @@ type backupRequest struct {
 // where "which agent, under which grant" is answered, and copying an identity
 // into a cluster object would put it somewhere with different readers and no
 // expiry.
+// backupMethods are the methods rta can build a whole Backup for, which is not
+// the same list as the ones the CRD accepts — and the difference is stated
+// once so the declaration and the check cannot drift.
+//
+// **`plugin` is the CRD's third value and is deliberately absent.** A
+// plugin-method Backup must carry a `spec.pluginConfiguration`, and the
+// operator's own webhook says so rather than guessing — put to a running one
+// with `kubectl create --dry-run=server`:
+//
+//	spec.pluginConfiguration: Invalid value: null: cannot be empty when the
+//	backup method is plugin
+//
+// rta declares no such input and assembles no such stanza, so offering it
+// would be offering an option that cannot ever succeed: the operator picks it
+// off rta's own list, rta sends a document it already knows is incomplete, and
+// the webhook refuses it one round trip later. Being generous about what rta
+// cannot see is the rule everywhere else in this file; this is something rta
+// knows.
+var backupMethods = []string{"barmanObjectStore", "volumeSnapshot"}
+
 const requestedBy = "app.kubernetes.io/created-by"
 
 func runBackupRequest(ctx context.Context, req plugin.Request) (view.View, error) {
@@ -425,18 +445,35 @@ func runBackupRequest(ctx context.Context, req plugin.Request) (view.View, error
 // slice and takes the plugin down. Found by a fixture that turned out to be
 // shaped exactly like it.
 func methodRefusal(c cluster, asked string) *view.Error {
-	named := asked
-	if named == "" {
-		named = defaultBackupMethod + ", CloudNativePG's default for a Backup that says nothing"
+	named := asked + " backup"
+	if asked == "" {
+		named = defaultBackupMethod + " backup, which is what CloudNativePG gives a " +
+			"Backup that names no method"
 	}
 	verr := view.Errorf("cnpg.backup.method.unconfigured",
-		"%s is not set up to take a %s backup",
+		"%s is not set up to take a %s",
 		c.Metadata.Namespace+"/"+c.Metadata.Name, named)
 	have := c.configuredMethods()
-	if len(have) == 0 {
+	switch {
+	case len(have) == 0:
 		return verr.WithHint("its `.spec.backup` names no mechanism — it needs a " +
 			"`barmanObjectStore` or a `volumeSnapshot` stanza under it before anything " +
 			"can take a backup")
+	case len(have) == 1 && have[0] == "plugin":
+		// Unreachable until canTake stopped letting every method through on a
+		// WAL-archiver cluster's account, which is the arrangement that gets
+		// here now: no `.spec.backup` to name a mechanism, and the default
+		// method is one this cluster has no way to perform.
+		//
+		// And there is no flag to suggest, which is the honest half. See
+		// backupMethods: a plugin-method Backup needs a pluginConfiguration
+		// rta does not build, so sending somebody to `--method plugin` would
+		// be a second dead end one round trip further on.
+		return verr.WithHint("this cluster archives through the " + c.walArchiverPlugin() +
+			" plugin, the newer arrangement, which replaces `.spec.backup` rather than " +
+			"joining it. rta cannot ask for a plugin backup — CloudNativePG wants a " +
+			"`spec.pluginConfiguration` with it, and rta builds none — so this one is " +
+			"`kubectl cnpg backup`'s to take")
 	}
 	return verr.WithHint("this cluster configures " + strings.Join(have, " and ") +
 		" — pass `--method " + have[0] + "`")
@@ -462,7 +499,7 @@ func buildBackupRequest(req plugin.Request, c cluster, s selection) ([]byte, bac
 	b.Spec.Cluster.Name = c.Metadata.Name
 
 	method := strings.TrimSpace(req.String("method"))
-	if verr := oneOf("method", method, "barmanObjectStore", "volumeSnapshot", "plugin"); verr != nil {
+	if verr := oneOf("method", method, backupMethods...); verr != nil {
 		return nil, b, verr
 	}
 	b.Spec.Method = method

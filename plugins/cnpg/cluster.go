@@ -234,17 +234,35 @@ func (c cluster) configuredMethods() []string {
 }
 
 // canTake reports whether a backup by this method is something the cluster is
-// set up to perform, and is deliberately generous about what it does not
-// know: an unrecognised method, or any method at all on a cluster using a
-// WAL-archiver plugin, passes.
+// set up to perform. It is deliberately generous about what it cannot see, and
+// only about that.
+//
+// **The generosity used to be keyed on the cluster and it needed to be keyed
+// on the method.** "A WAL-archiver plugin is configured, so allow anything"
+// let the *ordinary* call through — no `--method`, which CloudNativePG
+// defaults to barmanObjectStore — against precisely the clusters that cannot
+// perform one: a cluster archiving through a plugin has no `.spec.backup` at
+// all, because the CRD says the two cannot coexist. The Backup was created,
+// accepted, and failed minutes later in a place nobody is looking, with rta's
+// receipt already saying it had checked. That is the exact failure this
+// pre-flight exists to prevent, so the one arrangement it was blind to was the
+// newer of the two ways to back a cluster up.
+//
+// What rta can see is `.spec.backup`: barmanObjectStore and volumeSnapshot are
+// stanzas in the resource just fetched, so a cluster stating neither cannot
+// take either and saying so is a fact rather than a guess. Everything else —
+// `plugin`, whose configuration lives in an ObjectStore resource this plugin
+// does not read, and any method a future CRD adds — is left to the API server,
+// because refusing a legitimate backup is a worse failure than letting the
+// server have the last word, which it has either way.
 func (c cluster) canTake(method string) bool {
 	if method == "" {
 		method = defaultBackupMethod
 	}
-	if c.walArchiverPlugin() != "" || method == "plugin" {
+	if slices.Contains(c.configuredMethods(), method) {
 		return true
 	}
-	return slices.Contains(c.configuredMethods(), method)
+	return method != defaultBackupMethod && method != "volumeSnapshot"
 }
 
 type instanceState struct {
