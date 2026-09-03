@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.4.0](https://github.com/this-is-tobi/rule-them-all/compare/v0.3.0...v0.4.0) (2026-09-03)
+
+
+### Features
+
+* **agentlog:** split the code from the sentence - stable event codes on every row ([da55cb2](https://github.com/this-is-tobi/rule-them-all/commit/da55cb2b86cf0d8e7fe7fa0806e47f90563cdcc9))
+* **kube:** provision grants logs, workloads, services and rollout - and the input completes ([5f9a64f](https://github.com/this-is-tobi/rule-them-all/commit/5f9a64f600819a07646f362d1f1ff09e8d646ab2))
+* **mysql,mariadb:** dump and restore a database, for a person at a terminal ([3eb384a](https://github.com/this-is-tobi/rule-them-all/commit/3eb384a9518557dc6e34d70f86416dcbef6a157a))
+* **operator:** roster rows take expires= - a departure date the clock enforces ([e1040ae](https://github.com/this-is-tobi/rule-them-all/commit/e1040ae2087c6f991d0e1c4ca45bc3750c9fd32b))
+* **qdrant:** dump and restore a collection as a snapshot file, for a person at a terminal ([67a68d4](https://github.com/this-is-tobi/rule-them-all/commit/67a68d45df31c8c6b5f15e2ad117a3c7612c1b8e))
+* **s3:** upload a directory into a bucket - bucket.download's other half ([33671f8](https://github.com/this-is-tobi/rule-them-all/commit/33671f8994f5aa54425fc99723907247332ae169))
+* **vault:** restore a snapshot into a Vault, for a person at a terminal ([b538929](https://github.com/this-is-tobi/rule-them-all/commit/b538929dec0178755381afb2c00b1551b130513e))
+
+
+### Bug Fixes
+
+* **agentlog,operator,grant:** close the branch review findings ([3f86d61](https://github.com/this-is-tobi/rule-them-all/commit/3f86d61801b257d0b5d05e074d582e0c2eab9c0f))
+* **image:** rta-full carries a MariaDB client, so its dump and restore run ([e994d97](https://github.com/this-is-tobi/rule-them-all/commit/e994d97f496bce4fad4949d158a749e29747100b))
+* **mcp,plugin:** ledger a handler's policy gate as refused, not failed ([87d148d](https://github.com/this-is-tobi/rule-them-all/commit/87d148d6304e9086895e6025fc30128277e40090))
+
 ## [0.3.0](https://github.com/this-is-tobi/rule-them-all/compare/v0.2.0...v0.3.0) (2026-09-02)
 
 
