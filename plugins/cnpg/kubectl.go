@@ -280,12 +280,13 @@ func getJSON(ctx context.Context, s selection, name string, out any) *view.Error
 // the name and the selection flags after that is the shape args() documents at
 // length, and a second hand-assembled call is where `--all-namespaces` lands
 // before the verb again.
-func getResource(ctx context.Context, s selection, resource, name string, out any) *view.Error {
+func getResource(ctx context.Context, s selection, resource, name string, out any, extra ...string) *view.Error {
 	args := []string{"get", resource}
 	if name != "" {
 		args = append(args, name)
 	}
 	args = append(args, "-o", "json")
+	args = append(args, extra...)
 	raw, verr := run(ctx, s.args(args...)...)
 	if verr != nil {
 		return verr
