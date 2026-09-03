@@ -99,6 +99,12 @@ func TestSafetyClassesMatchWhatEachCapabilityDiscloses(t *testing.T) {
 		// WHERE clause is a place a value hides.
 		"mysql.query":    plugin.Write,
 		"mysql.activity": plugin.Write,
+		// The dump/restore pair refuses MCP outright instead of taking a
+		// grant (a whole database has no blast radius a grant could name);
+		// the restore is Destructive besides — mysqldump's own DROP TABLE
+		// statements run first, and the class buys the --yes gate.
+		"mysql.dump":    plugin.Write,
+		"mysql.restore": plugin.Destructive,
 	}
 	seen := map[string]bool{}
 	for _, c := range Plugin().Capabilities {

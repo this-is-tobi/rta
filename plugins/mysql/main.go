@@ -91,6 +91,8 @@ func Plugin() plugin.Plugin {
 			schemaCapability(),
 			queryCapability(),
 			activityCapability(),
+			dumpCapability(),
+			restoreCapability(),
 		},
 	}
 }
