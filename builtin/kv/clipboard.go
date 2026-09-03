@@ -39,7 +39,7 @@ func copyToClipboard(value []byte) *view.Error {
 // spent answering a question that was always going to be no.
 func runCopy(_ context.Context, req plugin.Request) (view.View, error) {
 	if req.Surface() == plugin.SurfaceMCP {
-		return nil, view.Errorf("kv.copy.noclipboard", "the clipboard belongs to whoever is at the machine").
+		return nil, view.Refusef("kv.copy.noclipboard", "the clipboard belongs to whoever is at the machine").
 			WithHint("nothing you copy there comes back to you — ask for the value itself with kv.get, " +
 				"which needs the same grant and at least returns something you can use")
 	}

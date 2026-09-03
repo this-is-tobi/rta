@@ -76,7 +76,7 @@ func humanOnly(req plugin.Request, id string) *view.Error {
 	if req.Surface() != plugin.SurfaceMCP {
 		return nil
 	}
-	return view.Errorf("vault.human", "%s can only be run by a person at a terminal", id).
+	return view.Refusef("vault.human", "%s can only be run by a person at a terminal", id).
 		WithHint("a snapshot of the whole Vault has no blast radius a grant could name — its " +
 			"one authorized use is everything. Ask for the path you need with vault.kv.get, " +
 			"which takes a grant naming that path")

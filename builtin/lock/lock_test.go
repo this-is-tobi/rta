@@ -68,8 +68,8 @@ func TestNoLockCapabilityIsReachableOverMCP(t *testing.T) {
 			plugin.NewRequest(map[string]any{"kind": "agent", "name": "x"}, false, true).
 				WithSurface(plugin.SurfaceMCP))
 		verr, ok := err.(*view.Error)
-		if !ok || verr.Code != "lock.human" {
-			t.Fatalf("%s over MCP: %v, want lock.human", c.ID, err)
+		if !ok || verr.Code != "lock.human" || !verr.Refusal {
+			t.Fatalf("%s over MCP: %v, want lock.human marked a refusal", c.ID, err)
 		}
 	}
 }

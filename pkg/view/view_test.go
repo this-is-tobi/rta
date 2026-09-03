@@ -51,6 +51,25 @@ func TestErrorContract(t *testing.T) {
 	if err.Error() != "connection refused to db:5432" {
 		t.Errorf("Error() = %q", err.Error())
 	}
+	if e.Refusal {
+		t.Error("Errorf must not mark a refusal — only the author's explicit choice does")
+	}
+}
+
+func TestRefusefMarksAPolicyRefusal(t *testing.T) {
+	e := Refusef("keys.human", "%s is for the person at the terminal", "keys.backup").
+		WithHint("ask the operator")
+	if !e.Refusal {
+		t.Fatalf("Refusef must mark the error a refusal: %+v", e)
+	}
+	// WithHint copies; a copy that dropped the flag would silently turn the
+	// gate's no back into "the work broke" in the ledger.
+	if e.Code != "keys.human" || e.Hint != "ask the operator" {
+		t.Fatalf("unexpected error: %+v", e)
+	}
+	if e.Message != "keys.backup is for the person at the terminal" {
+		t.Fatalf("unexpected message: %q", e.Message)
+	}
 }
 
 func TestAsError(t *testing.T) {

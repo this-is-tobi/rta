@@ -559,6 +559,35 @@ func TestTheLedgerRecordsEveryCallIncludingRefusals(t *testing.T) {
 	}
 }
 
+func TestAHandlersOwnPolicyGateLedgersAsRefusedNotFailed(t *testing.T) {
+	// The localOnly/humanOnly shape: the authority layer allows the call (an
+	// open read), and the handler's own gate says no. That no used to be
+	// sealed as Outcome=Failed — "the work broke" — which is exactly the row
+	// an operator grepping outcome=refused during an incident would miss.
+	s := connect(t, Options{})
+	res := callTool(t, s, "demo_item_humanonly", nil)
+	if !res.IsError {
+		t.Fatal("the policy gate let the call through")
+	}
+	entries, err := agentlog.Read(0)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("read: %v, %d entries", err, len(entries))
+	}
+	e := entries[0]
+	if e.Outcome != agentlog.Refused {
+		t.Fatalf("a refusal-marked error should read as refused, got %+v", e)
+	}
+	if !strings.Contains(e.Reason, "demo.human") {
+		t.Fatalf("the reason should carry the gate's code: %+v", e)
+	}
+	// Auth deliberately keeps what the call earned. Blocked would say the
+	// call never cleared the authority gate, and it did: open + refused is
+	// the pair that tells a reader the handler's own policy said no.
+	if e.Auth != agentlog.Open {
+		t.Fatalf("the refusal should keep the authorization the call earned, got %+v", e)
+	}
+}
+
 func TestTheLedgerNeverRecordsASecret(t *testing.T) {
 	s := connect(t, Options{AllowWrite: []string{"demo"}})
 	callTool(t, s, "demo_item_token", map[string]any{"token": "hunter2-in-the-log"})

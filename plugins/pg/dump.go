@@ -129,7 +129,7 @@ func resolveRelation(ctx context.Context, q querier, req plugin.Request) (relati
 	schema, name, qualified := strings.Cut(raw, ".")
 	if !qualified {
 		if req.Surface() == plugin.SurfaceMCP {
-			return relation{}, view.Errorf("pg.table.unqualified",
+			return relation{}, view.Refusef("pg.table.unqualified",
 				"name the table as schema.table, not %q", raw).
 				WithHint("a grant for this name will not help — grants are matched exactly, so " +
 					"an unqualified one would follow whichever schema resolves first. Issue it " +

@@ -42,8 +42,8 @@ func TestAuditingARepositoryURLIsRefusedOverMCP(t *testing.T) {
 			if !ok {
 				t.Fatalf("want a view.Error, got %T", err)
 			}
-			if verr.Code != "git.remote.mcp" {
-				t.Errorf("refused for a different reason: %s — %s", verr.Code, verr.Message)
+			if verr.Code != "git.remote.mcp" || !verr.Refusal {
+				t.Errorf("refused for a different reason, or unmarked: %s — %s", verr.Code, verr.Message)
 			}
 			if strings.Contains(verr.Message+verr.Hint, "127.0.0.1") {
 				t.Errorf("the caller's URL was echoed back: %s / %s", verr.Message, verr.Hint)

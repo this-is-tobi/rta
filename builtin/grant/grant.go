@@ -474,7 +474,7 @@ func profileHint(cfg config.Config, ns string) string {
 func runAllow(_ context.Context, req plugin.Request, catalog func() []plugin.Capability) (view.View, error) {
 	// An agent granting itself access would be no gate at all.
 	if req.Surface() == plugin.SurfaceMCP {
-		return nil, view.Errorf("grant.human", "grants can only be issued by a person").
+		return nil, view.Refusef("grant.human", "grants can only be issued by a person").
 			WithHint("ask the operator to run: rta grant allow <capability> --ttl 15m")
 	}
 	if server := req.String("server"); server != "" {
@@ -734,7 +734,7 @@ func describe(g core.Grant) string {
 // hour at a time.
 func runRenew(_ context.Context, req plugin.Request) (view.View, error) {
 	if req.Surface() == plugin.SurfaceMCP {
-		return nil, view.Errorf("grant.human", "grants can only be renewed by a person").
+		return nil, view.Refusef("grant.human", "grants can only be renewed by a person").
 			WithHint("ask the operator to run: rta grant renew")
 	}
 	target := core.Normalize(req.String("target"))
@@ -873,7 +873,7 @@ func runList(ctx context.Context, req plugin.Request, catalog func() []plugin.Ca
 	// this is the file consent state belongs to whoever is deciding it, not
 	// to whoever is currently allowed or denied.
 	if req.Surface() == plugin.SurfaceMCP {
-		return nil, view.Errorf("grant.human", "the grant roster is for the person deciding it, not the agents it is about").
+		return nil, view.Refusef("grant.human", "the grant roster is for the person deciding it, not the agents it is about").
 			WithHint("ask the operator to run: rta grant list")
 	}
 	if server := req.String("server"); server != "" {
@@ -1156,7 +1156,7 @@ func runRevoke(_ context.Context, req plugin.Request) (view.View, error) {
 	// can rewrite. Consent state belongs to the person at the terminal in
 	// both directions, not to whoever is currently being granted or denied.
 	if req.Surface() == plugin.SurfaceMCP {
-		return nil, view.Errorf("grant.human", "grants can only be revoked by a person").
+		return nil, view.Refusef("grant.human", "grants can only be revoked by a person").
 			WithHint("ask the operator to run: rta grant revoke <capability>")
 	}
 	if server := req.String("server"); server != "" {

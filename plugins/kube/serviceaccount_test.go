@@ -166,8 +166,8 @@ func TestProvisionRefusesOverMCP(t *testing.T) {
 		"capability": []string{"kube.pod.list"}, "ttl": "15m",
 	}))
 	ve := view.AsError(err, "x")
-	if ve == nil || ve.Code != "kube.serviceaccount.mcp" {
-		t.Errorf("want kube.serviceaccount.mcp, got %v", err)
+	if ve == nil || ve.Code != "kube.serviceaccount.mcp" || !ve.Refusal {
+		t.Errorf("want kube.serviceaccount.mcp marked a refusal, got %v", err)
 	}
 }
 

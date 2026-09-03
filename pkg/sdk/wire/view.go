@@ -80,6 +80,7 @@ func ErrorToProto(e *view.Error) *rtav1.Error {
 		Message:   e.Message,
 		Hint:      e.Hint,
 		Retryable: e.Retryable,
+		Refusal:   e.Refusal,
 	}
 }
 
@@ -93,6 +94,7 @@ func ErrorFromProto(e *rtav1.Error) *view.Error {
 		Message:   e.GetMessage(),
 		Hint:      e.GetHint(),
 		Retryable: e.GetRetryable(),
+		Refusal:   e.GetRefusal(),
 	}
 }
 

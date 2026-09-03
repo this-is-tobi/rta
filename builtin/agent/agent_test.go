@@ -79,8 +79,8 @@ func TestNothingHereAnswersAnAgent(t *testing.T) {
 			t.Fatalf("%s answered an MCP caller with %v", c.ID, v)
 		}
 		ve, ok := err.(*view.Error)
-		if !ok || ve.Code != "agent.surface" {
-			t.Fatalf("%s refused with %v, want the surface refusal", c.ID, err)
+		if !ok || ve.Code != "agent.surface" || !ve.Refusal {
+			t.Fatalf("%s refused with %v, want the surface refusal, marked one", c.ID, err)
 		}
 	}
 }

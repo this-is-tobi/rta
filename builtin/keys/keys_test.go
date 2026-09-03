@@ -602,6 +602,9 @@ func TestBackupRefusesSurfaceMCP(t *testing.T) {
 	if errCode(err) != "keys.human" {
 		t.Errorf("code = %q, want keys.human", errCode(err))
 	}
+	if ve, ok := err.(*view.Error); !ok || !ve.Refusal {
+		t.Errorf("the surface gate must mark its no a refusal: %v", err)
+	}
 }
 
 func TestRestoreRefusesSurfaceMCP(t *testing.T) {

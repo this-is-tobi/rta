@@ -147,7 +147,7 @@ func fixPage(r *agentReport) view.View {
 
 func runAgents(ctx context.Context, req plugin.Request) (view.View, error) {
 	if req.Surface() == plugin.SurfaceMCP {
-		return nil, view.Errorf("audit.agents.mcp",
+		return nil, view.Refusef("audit.agents.mcp",
 			"this audit is about the agent asking for it, so it does not answer over MCP").
 			WithHint("run `rta audit agents` yourself — the findings are a map of what the " +
 				"agent may reach, and reading it out to the agent is the thing they are for")

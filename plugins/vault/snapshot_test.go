@@ -137,8 +137,8 @@ func TestTheSnapshotRefusesMCP(t *testing.T) {
 	_, err := runSnapshot(context.Background(),
 		snapshotReq(t, srv, path).WithSurface(plugin.SurfaceMCP))
 	var verr *view.Error
-	if !errors.As(err, &verr) || verr.Code != "vault.human" {
-		t.Fatalf("err = %v, want vault.human", err)
+	if !errors.As(err, &verr) || verr.Code != "vault.human" || !verr.Refusal {
+		t.Fatalf("err = %v, want vault.human marked a refusal", err)
 	}
 	if !strings.Contains(verr.Hint, "vault.kv.get") {
 		t.Errorf("hint = %q, want it to name the capability that does take a grant", verr.Hint)

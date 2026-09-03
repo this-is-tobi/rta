@@ -57,7 +57,7 @@ func humanOnly(req plugin.Request, id, hint string) *view.Error {
 	if req.Surface() != plugin.SurfaceMCP {
 		return nil
 	}
-	return view.Errorf("pg.human", "%s can only be run by a person at a terminal", id).
+	return view.Refusef("pg.human", "%s can only be run by a person at a terminal", id).
 		WithHint(hint)
 }
 

@@ -193,8 +193,8 @@ func TestAgentsCannotIssueGrants(t *testing.T) {
 	if !asError(err, &verr) {
 		t.Fatalf("err = %v, want a refusal", err)
 	}
-	if verr.Code != "grant.human" {
-		t.Errorf("code = %s", verr.Code)
+	if verr.Code != "grant.human" || !verr.Refusal {
+		t.Errorf("want grant.human marked a refusal, got %+v", verr)
 	}
 	grants, _ := core.Load()
 	if len(grants) != 0 {
@@ -215,8 +215,8 @@ func TestAgentsCannotListTheRoster(t *testing.T) {
 	if !asError(err, &verr) {
 		t.Fatalf("err = %v, want a refusal", err)
 	}
-	if verr.Code != "grant.human" {
-		t.Errorf("code = %s", verr.Code)
+	if verr.Code != "grant.human" || !verr.Refusal {
+		t.Errorf("want grant.human marked a refusal, got %+v", verr)
 	}
 
 	// The same call from a human surface still works — this is a caller
@@ -575,8 +575,8 @@ func TestAgentsCannotRevokeGrants(t *testing.T) {
 	_, err := runRevoke(context.Background(),
 		plugin.NewRequest(map[string]any{"target": "kv.get"}, false, true).WithSurface(plugin.SurfaceMCP))
 	var verr *view.Error
-	if !asError(err, &verr) || verr.Code != "grant.human" {
-		t.Fatalf("err = %v, want a refusal", err)
+	if !asError(err, &verr) || verr.Code != "grant.human" || !verr.Refusal {
+		t.Fatalf("err = %v, want a marked refusal", err)
 	}
 	if grants, _ := core.Load(); len(grants) != 1 {
 		t.Errorf("the refused revoke changed grant state anyway: %+v", grants)

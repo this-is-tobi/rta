@@ -85,8 +85,8 @@ func TestTheOperatorNamespaceRefusesMCP(t *testing.T) {
 		_, err := capability(t, capID).Run(context.Background(),
 			plugin.NewRequest(nil, false, true).WithSurface(plugin.SurfaceMCP))
 		verr, ok := err.(*view.Error)
-		if !ok || verr.Code != "operator.surface" {
-			t.Fatalf("%s over MCP: %v, want operator.surface", capID, err)
+		if !ok || verr.Code != "operator.surface" || !verr.Refusal {
+			t.Fatalf("%s over MCP: %v, want operator.surface marked a refusal", capID, err)
 		}
 	}
 }

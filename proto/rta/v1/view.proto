@@ -33,6 +33,10 @@ message Error {
   string message = 2;
   string hint = 3;
   bool retryable = 4;
+  // A policy gate saying no to the caller's standing — not the work
+  // breaking. The host's audit trail records a refusal and a failure as
+  // different outcomes, and only the plugin knows which one it returned.
+  bool refusal = 5;
 }
 
 // Text is free-form text, optionally markdown for the host to render.

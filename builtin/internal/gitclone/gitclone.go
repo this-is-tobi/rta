@@ -174,7 +174,7 @@ func RefuseOverMCP(req plugin.Request, what string) *view.Error {
 	if req.Surface() != plugin.SurfaceMCP {
 		return nil
 	}
-	return view.Errorf("git.remote.mcp", "reading a remote %s is not available over MCP", what).
+	return view.Refusef("git.remote.mcp", "reading a remote %s is not available over MCP", what).
 		WithHint("clone it locally and pass the checkout, so the fetch is something " +
 			"you did rather than something a call did")
 }

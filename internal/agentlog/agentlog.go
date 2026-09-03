@@ -173,7 +173,12 @@ const (
 	// Failed: the handler ran and returned an error — the call was allowed,
 	// the work did not succeed.
 	Failed Outcome = "failed"
-	// Refused: rta would not make the call. Reason carries which gate.
+	// Refused: a gate would not let the call through. Reason carries which
+	// one, and Auth carries where in the stack it stood: blocked means the
+	// call never cleared the authority gate, while open or grant on a
+	// refused row means authority allowed it and the handler's own policy
+	// gate (a localOnly capability probed over MCP, a credential-minting
+	// verb refusing agents) still said no.
 	Refused Outcome = "refused"
 )
 

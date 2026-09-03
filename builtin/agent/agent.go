@@ -260,7 +260,7 @@ func runReanchor(_ context.Context, req plugin.Request) (view.View, error) {
 func localOnly(h plugin.Handler) plugin.Handler {
 	return func(ctx context.Context, req plugin.Request) (view.View, error) {
 		if req.Surface() == plugin.SurfaceMCP {
-			return nil, view.Errorf("agent.surface",
+			return nil, view.Refusef("agent.surface",
 				"the agent namespace is for the person at the terminal, not for a caller over MCP").
 				WithHint("consent and its record are about you deciding; ask the operator to run `rta agent pending`")
 		}
