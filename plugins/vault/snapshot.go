@@ -71,19 +71,22 @@ func snapshotCapability() plugin.Capability {
 // humanOnly is this plugin's copy of the gate builtin/keys opens with, and
 // pg.dump repeats. It comes first, before a client is built, so an agent's
 // call never spends the operator's token on a question that was always going
-// to be answered no.
-func humanOnly(req plugin.Request, id string) *view.Error {
+// to be answered no. The hint is the caller's, because the snapshot and the
+// restore refuse for mirrored reasons — everything leaving, everything
+// arriving — and one blended hint would explain neither.
+func humanOnly(req plugin.Request, id, hint string) *view.Error {
 	if req.Surface() != plugin.SurfaceMCP {
 		return nil
 	}
 	return view.Refusef("vault.human", "%s can only be run by a person at a terminal", id).
-		WithHint("a snapshot of the whole Vault has no blast radius a grant could name — its " +
-			"one authorized use is everything. Ask for the path you need with vault.kv.get, " +
-			"which takes a grant naming that path")
+		WithHint(hint)
 }
 
 func runSnapshot(ctx context.Context, req plugin.Request) (view.View, error) {
-	if verr := humanOnly(req, "vault.snapshot"); verr != nil {
+	if verr := humanOnly(req, "vault.snapshot",
+		"a snapshot of the whole Vault has no blast radius a grant could name — its "+
+			"one authorized use is everything. Ask for the path you need with vault.kv.get, "+
+			"which takes a grant naming that path"); verr != nil {
 		return nil, verr
 	}
 

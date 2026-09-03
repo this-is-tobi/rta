@@ -82,6 +82,7 @@ func Plugin() plugin.Plugin {
 			wrapSetCapability(),
 			wrapGetCapability(),
 			snapshotCapability(),
+			restoreCapability(),
 		},
 	}
 }
