@@ -165,6 +165,7 @@ func Plugin() plugin.Plugin {
 			}),
 			backupListCapability(),
 			backupRequestCapability(),
+			storageCapability(),
 		},
 	}
 }
@@ -270,6 +271,12 @@ func statusView(c cluster) view.View {
 		view.Pair{Key: "Timeline", Value: strconv.Itoa(c.Status.TimelineID)},
 		view.Pair{Key: "Backup", Value: backupLine(c)},
 	)
+	// Beside the backup row, because it is the half that decides what a backup
+	// is worth: a base backup recovers to the moment it was taken, and
+	// everything after that comes from archived WAL.
+	if line := c.archivingLine(); line != "" {
+		overview = append(overview, view.Pair{Key: "WAL archiving", Value: line})
+	}
 	if name, at, ok := c.soonestCert(); ok {
 		v := "soonest expires in " + until(at) + " (" + name + ")"
 		if time.Until(at) <= 0 {
@@ -295,10 +302,51 @@ func statusView(c cluster) view.View {
 		{Title: "Cluster", View: view.KeyValue{Pairs: overview}},
 		{Title: "Instances", View: instances},
 	}
+	// Both settings sections come out of the read that already happened.
+	// **This capability still makes exactly one GET**, which is the property
+	// its own doc comment claims and the reason it works where `kubectl cnpg
+	// status` does not — so what a cluster states about itself belongs here,
+	// and what needs a second resource (its volumes, its backups) is its own
+	// capability rather than a second round trip hidden inside this one.
+	if s := settingsTable(c, walSettings); len(s.Rows) > 0 {
+		sections = append(sections, view.Section{
+			Title: "Write-ahead log and recovery", View: s})
+	}
+	if s := settingsTable(c, serverSettings); len(s.Rows) > 0 {
+		sections = append(sections, view.Section{Title: "Server settings", View: s})
+	}
 	if problems := problemTable(c); len(problems.Rows) > 0 {
 		sections = append(sections, view.Section{Title: "Needs attention", View: problems})
 	}
 	return view.Sections{Items: sections}
+}
+
+// settingsTable renders the parameters a cluster states from one of the
+// curated lists, and says what it left to CloudNativePG.
+//
+// The unstated half is a row rather than an omission, because "max_connections
+// is CloudNativePG's default" and "max_connections is 100" are different
+// answers and only the first is one rta can stand behind — the CRD publishes
+// no defaults, and somebody sizing a connection pool against a number this
+// page made up would be sizing against nothing.
+func settingsTable(c cluster, want []struct{ key, means string }) view.Table {
+	t := view.Table{Columns: []view.Column{
+		{Name: "Setting"}, {Name: "Value"}, {Name: "What it decides"},
+	}}
+	for _, row := range c.settings(want) {
+		t.Rows = append(t.Rows, []string{row.key, row.value, row.means})
+	}
+	if len(t.Rows) == 0 {
+		return t
+	}
+	if unstated := c.unstatedSettings(want); len(unstated) > 0 {
+		t.Rows = append(t.Rows, []string{
+			"not stated", strings.Join(unstated, ", "),
+			"left at CloudNativePG's own defaults, which the resource does not publish",
+		})
+	}
+	t.Total = len(t.Rows)
+	return t
 }
 
 // certWarnDays mirrors builtin/internal/x509check.DefaultWarnDays — restated
@@ -338,6 +386,24 @@ func problemTable(c cluster) view.Table {
 	}
 	if c.singleNode() {
 		add("topology", "warn", "every instance is on one node, so nothing survives losing it")
+	}
+	// **Divergence rather than lag, and the difference is the finding.** An
+	// instance on another timeline is not behind and will not catch up: it
+	// followed a history the cluster has abandoned, which is what a promotion
+	// an instance missed leaves behind. Live replication lag is not in this
+	// resource at all — see settings.go for why this plugin does not go and
+	// get it — so this is the desync question the single read can answer, and
+	// it happens to be the one that does not resolve itself.
+	if diverged := c.divergedInstances(); len(diverged) > 0 {
+		add("timeline", "fail", strings.Join(diverged, ", ")+" reports a timeline other "+
+			"than the cluster's "+strconv.Itoa(c.Status.TimelineID)+
+			" — a diverged instance does not catch up")
+	}
+	// Archiving off is not a backup finding: a cluster can have a perfectly
+	// good base backup and still only recover to the instant it was taken.
+	if c.Spec.PostgreSQL.Parameters["archive_mode"] == "off" && c.backupConfigured() {
+		add("WAL archiving", "warn", "off, while a backup is configured — a restore "+
+			"recovers to the backup's own instant and no further")
 	}
 	// Three backup findings, one row: "nothing is configured", "configured
 	// and never once worked", and "worked before, failing now" are different

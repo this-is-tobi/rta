@@ -71,6 +71,19 @@ type cluster struct {
 			Requests map[string]string `json:"requests"`
 			Limits   map[string]string `json:"limits"`
 		} `json:"resources"`
+		// PostgreSQL.Parameters is the server configuration this cluster
+		// states, and the reason to read it is that half of what an operator
+		// wants to know about replication and recovery is a setting rather
+		// than a status field.
+		//
+		// **A parameter that is absent is not a parameter that is off**: it
+		// is at whatever CloudNativePG defaults it to, and the CRD does not
+		// say what that is. So nothing here fills a blank with a number —
+		// absent is reported as absent, which is the only honest reading and
+		// the one that stays true across operator versions.
+		PostgreSQL struct {
+			Parameters map[string]string `json:"parameters"`
+		} `json:"postgresql"`
 		MinSyncReplicas int `json:"minSyncReplicas"`
 		MaxSyncReplicas int `json:"maxSyncReplicas"`
 		// A pointer because absent and false mean different things: the
