@@ -29,13 +29,24 @@ import (
 // is somebody who could say yes.
 
 // refusedBy marks the entry refused, naming the gate in rta's own
-// vocabulary — the code as well as the message, because the code is what a
-// later reader greps for and the message is what they understand.
+// vocabulary — the code and the message in their own fields, because the
+// code is what a later reader (or a SIEM rule) matches exactly and the
+// message is what a person understands, and gluing them into one string
+// made matching the stable half depend on the wording of the other.
 func refusedBy(e *agentlog.Entry, verr *view.Error) {
 	if e == nil || verr == nil {
 		return
 	}
-	e.Outcome, e.Reason = agentlog.Refused, verr.Code+": "+verr.Message
+	e.Outcome, e.Code, e.Reason = agentlog.Refused, verr.Code, verr.Message
+}
+
+// failedBy is refusedBy's sibling for the other outcome: the call was
+// allowed and the work broke.
+func failedBy(e *agentlog.Entry, verr *view.Error) {
+	if e == nil || verr == nil {
+		return
+	}
+	e.Outcome, e.Code, e.Reason = agentlog.Failed, verr.Code, verr.Message
 }
 
 // maxClientName bounds what a caller may write into every one of its own
@@ -261,12 +272,17 @@ func askConsent(ctx context.Context, c plugin.Capability, opts Options, values m
 		rec.Auth = agentlog.Live
 		return true, true
 	case answer.Answered:
+		// These two answers are the ledger's own events, not any gate's, so
+		// they carry their own codes: before the split they were the only
+		// refusals with no stable name at all — one bare prose, one wearing
+		// core.grant.required, the code of the question rather than of what
+		// became of it.
 		rec.Outcome, rec.Auth = agentlog.Refused, agentlog.Denied
-		rec.Reason = "the operator declined it"
+		rec.Code, rec.Reason = "core.consent.declined", "the operator declined it"
 		return false, true
 	default:
 		rec.Outcome, rec.Auth = agentlog.Refused, agentlog.Blocked
-		rec.Reason = "core.grant.required: nobody answered before the request expired"
+		rec.Code, rec.Reason = "core.consent.expired", "nobody answered before the request expired"
 		return false, true
 	}
 }

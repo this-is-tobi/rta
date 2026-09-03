@@ -546,6 +546,53 @@ func TestTheLogShowsCallsAndVerifiesItsOwnChain(t *testing.T) {
 	}
 }
 
+func TestTheLogShowsTheCodeAsItsOwnColumn(t *testing.T) {
+	isolate(t)
+	for _, e := range []agentlog.Entry{
+		{Cap: "sys.cpu", Outcome: agentlog.Ran, Auth: agentlog.Open},
+		{Cap: "kv.get", Outcome: agentlog.Refused, Auth: agentlog.Blocked,
+			Code: "core.grant.required", Reason: "no active grant"},
+	} {
+		if err := agentlog.Append(e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	v, err := run(t, "agent.log", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	table := v.(view.Table)
+	if got := cell(t, table, 0, "code"); got != "core.grant.required" {
+		t.Fatalf("code column = %q, want the dotted code alone", got)
+	}
+	if got := cell(t, table, 0, "why"); got != "no active grant" {
+		t.Fatalf("why column = %q, want the sentence without the code", got)
+	}
+	// Blank rather than an em dash on the row where nothing went wrong,
+	// matching why: code and why are the two halves of one cause, and a
+	// clean row has neither.
+	if got := cell(t, table, 1, "code"); got != "" {
+		t.Fatalf("code column on a clean row = %q, want blank", got)
+	}
+
+	// Same rule as agent and credential: a record with no coded row — one
+	// written before the code/reason split, or one where nothing has gone
+	// wrong — grows no column at all.
+	isolate(t)
+	if err := agentlog.Append(agentlog.Entry{Cap: "sys.cpu", Outcome: agentlog.Ran, Auth: agentlog.Open}); err != nil {
+		t.Fatal(err)
+	}
+	v, err = run(t, "agent.log", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range v.(view.Table).Columns {
+		if c.Name == "code" {
+			t.Fatal("code column appeared with nothing to fill it")
+		}
+	}
+}
+
 func TestTheLogShowsWhichCredentialAuthenticatedEachCall(t *testing.T) {
 	isolate(t)
 	for _, e := range []agentlog.Entry{
