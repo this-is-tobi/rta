@@ -25,6 +25,12 @@ func TestPluginPassesTheConformanceSuite(t *testing.T) {
 			// cluster in a test anyway: kubectl is not on the path this
 			// resolves, and the failure it produces is the one being checked.
 			"cnpg.status": {"name": "absent"},
+			// The same, for the one capability that writes — and here the
+			// dry run is worth driving for its own sake rather than only to
+			// satisfy the rule: it reads the cluster before it decides
+			// anything, so a name nothing answers for exercises the refusal
+			// path rather than the create path.
+			"cnpg.backup.request": {"cluster": "absent"},
 		}
 	}))
 }
@@ -183,7 +189,7 @@ func TestEachProblemIsFoundFromItsOwnField(t *testing.T) {
 		}, "backup", "not configured"},
 		{"backup configured but never once succeeded", func(c *cluster) {
 			c.Status.LastSuccessfulBackup = ""
-			c.Spec.Backup = &struct{}{}
+			c.Spec.Backup = &clusterBackup{BarmanObjectStore: &struct{}{}}
 			c.Status.LastFailedBackup = time.Now().Add(-30 * time.Minute).Format(time.RFC3339)
 		}, "backup", "no backup has ever succeeded"},
 		{"a backup failing after an earlier success", func(c *cluster) {
@@ -410,10 +416,36 @@ func TestAValueThatWouldBeReadAsAFlagIsRefused(t *testing.T) {
 
 // Nothing here can change a database. The capability model says so, and this
 // asserts it rather than trusting a reviewer to notice a Safety that drifted.
-func TestEveryCapabilityIsReadOnly(t *testing.T) {
+// Exactly one capability writes, and the gates on it are stated here rather
+// than only in its declaration.
+//
+// The blanket "everything is Read" this used to assert was the plugin's whole
+// safety story, and replacing it with a table is the point: the property that
+// survives is not "nothing changes" but "the one thing that changes is off the
+// default MCP surface and needs a grant naming the cluster". A capability
+// added later that quietly reaches Write without both is what this now fails
+// on.
+func TestOnlyTheBackupRequestWritesAndItIsGatedTwice(t *testing.T) {
 	for _, c := range Plugin().Capabilities {
+		if c.ID == "cnpg.backup.request" {
+			switch {
+			case c.Safety != plugin.Write:
+				t.Errorf("%s is %v, want Write — Read would put it on the default MCP surface",
+					c.ID, c.Safety)
+			case !c.NeedsGrant:
+				t.Errorf("%s does not need a grant, so --allow-write cnpg would be the "+
+					"whole decision, made once and never expiring", c.ID)
+			case c.Scope != "cluster":
+				t.Errorf("%s is scoped to %q, want the cluster — otherwise a grant to back "+
+					"up one database is a grant to back up every one the kubeconfig reaches",
+					c.ID, c.Scope)
+			case c.Idempotent:
+				t.Errorf("%s claims idempotence, but two calls are two backups", c.ID)
+			}
+			continue
+		}
 		if c.Safety != plugin.Read {
-			t.Errorf("%s is %v — this plugin reads one custom resource and nothing else",
+			t.Errorf("%s is %v — everything but the backup request reads and nothing else",
 				c.ID, c.Safety)
 		}
 	}

@@ -253,7 +253,7 @@ Read them in this order and each one adds exactly one idea:
 | [`examples/plugin-hello`](../../examples/plugin-hello/main.go) | The whole shape in one file — and the fixture rta's own host tests run against | 2 |
 | [`plugins/eol`](../../plugins/eol/) | The smallest real one: a single capability over a public API, nothing to configure | 1 |
 | [`plugins/kube`](../../plugins/kube/) | Shelling out to a tool the operator already has (`kubectl`) instead of linking its client library, and why | 19 |
-| [`plugins/cnpg`](../../plugins/cnpg/) | The opposite choice from `kube`: one plain API read against a Custom Resource instead of a shell-out, and declaring a credential [`Need`](#if-your-plugin-needs-a-credential-location) rather than assuming one | 2 |
+| [`plugins/cnpg`](../../plugins/cnpg/) | The opposite choice from `kube`: one plain API read against a Custom Resource instead of a shell-out, and declaring a credential [`Need`](#if-your-plugin-needs-a-credential-location) rather than assuming one. Also a single `Write` among reads, and what it costs to add one | 4 |
 | [`plugins/mysql`](../../plugins/mysql/) | A connection: declared inputs, a `Secret` a profile fills, an endpoint role a tunnel can fill | 9 |
 | [`plugins/mariadb`](../../plugins/mariadb/) | Two plugins over one service family without either becoming a fork of the other | 11 |
 | [`plugins/pg`](../../plugins/pg/) | Safety classes doing real work — three dumps graded by what a grant can name, two refusing MCP outright | 10 |

@@ -23,14 +23,35 @@
 //
 // # What it deliberately does not do
 //
-// No switchover, no promotion, no restart, no backup trigger, no destroy.
-// Every one of those is an operation on a production database, and this
+// No switchover, no promotion, no restart, no destroy. Every one of those is
+// an operation on a production database that can take it down, and this
 // plugin holds the line plugins/kube holds against `kubectl`'s mutating half:
 // a read-first fast path is a different thing from a control plane, and the
-// tool that already does it well is one command away. **Read-only in the
-// strongest sense the capability model has** — every capability here is
-// Safety: Read, so an agent granted this can describe a database cluster and
-// can change nothing about it.
+// tool that already does it well is one command away.
+//
+// # The one thing it writes
+//
+// This list once ended "no backup trigger", and said every capability here
+// was Safety: Read. `cnpg.backup.request` ends that, so the reasoning is
+// written out rather than quietly dropped.
+//
+// A backup is the one member of that list whose failure mode is not an
+// outage. Switchover, promotion, restart and destroy can all take a database
+// away; a backup costs I/O and object-store space. More to the point, it is
+// the one that **chooses nothing**: a Backup object carries a cluster
+// reference and no destination, so where the bytes go is whatever that
+// cluster's own configuration already said. Every gate elsewhere in rta
+// exists because a caller could name a place — `net.probe` and `cert.expiry`
+// were closed for exactly that — and here there is no place to name.
+//
+// It is still gated twice over. Safety: Write keeps it off the default MCP
+// surface entirely, so an agent sees it only after an operator passes
+// `--allow-write cnpg`; NeedsGrant then makes each call a decision that
+// names the cluster and expires on its own. The blanket claim that used to
+// stand here — "an agent granted this can change nothing" — was a simpler
+// sentence than the boundary's actual answer, and the actual answer is the
+// one that holds: nothing reaches an agent that an operator did not turn on
+// and then grant.
 package main
 
 import (
@@ -142,6 +163,8 @@ func Plugin() plugin.Plugin {
 				},
 				Run: runStatus,
 			}),
+			backupListCapability(),
+			backupRequestCapability(),
 		},
 	}
 }
@@ -324,7 +347,7 @@ func problemTable(c cluster) view.Table {
 	success, ever := c.lastSuccessfulBackup()
 	lastFail, failedOnce := parseWhen(c.Status.LastFailedBackup)
 	switch {
-	case !ever && c.Spec.Backup == nil:
+	case !ever && !c.backupConfigured():
 		add("backup", "warn", "not configured — nothing backs this cluster up")
 	case !ever:
 		msg := "configured, but no backup has ever succeeded"

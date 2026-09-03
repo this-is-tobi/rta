@@ -18,7 +18,7 @@ Eleven plugins ship in this repository. They are the proof the contract works, a
 | `s3` | S3-compatible object storage |
 | `vault` | HashiCorp Vault |
 | `kube` | Kubernetes |
-| `cnpg` | CloudNativePG: which PostgreSQL clusters exist, and what one will tell you about its own health, replication, backups and storage |
+| `cnpg` | CloudNativePG: which PostgreSQL clusters exist, what one will tell you about its own health, replication, backups and storage, and asking for a backup now |
 | `docker` | containers and images |
 | `eol` | end-of-life checks against endoflife.date |
 
@@ -99,7 +99,7 @@ You can only allow what the artifact asked for. A location a plugin never declar
 A plugin whose need is not granted still runs. It fails at the call that wanted the file, which is the honest outcome — and `rta doctor` names it as a decision rather than leaving you to read someone else's "operation not permitted":
 
 ```
-plugin cnpg   warn   ~/.local/bin/rta-plugin-cnpg (2 capabilities, e1a4fcaacd73)
+plugin cnpg   warn   ~/.local/bin/rta-plugin-cnpg (4 capabilities, e1a4fcaacd73)
                      — asks to read kubeconfig and has not been allowed to;
                      calls that need it fail. `rta plugin allow cnpg`
 ```
@@ -107,7 +107,7 @@ plugin cnpg   warn   ~/.local/bin/rta-plugin-cnpg (2 capabilities, e1a4fcaacd73)
 It names the granted side too, because a standing permission is the thing worth being able to point at:
 
 ```
-plugin cnpg   ok   ~/.local/bin/rta-plugin-cnpg (2 capabilities, 24757826bbf5)
+plugin cnpg   ok   ~/.local/bin/rta-plugin-cnpg (4 capabilities, 24757826bbf5)
                    — allowed to read kubeconfig;
                    `rta plugin disallow cnpg` takes it back
 ```
