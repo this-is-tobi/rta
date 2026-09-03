@@ -135,6 +135,8 @@ my-index/
 
 Each manifest is generated from the plugin binary rather than written: `rta plugin manifest` reads the artifact's own declaration, so an entry cannot disagree with the plugin it describes. [Publishing a plugin](./20-writing-a-plugin.md#publishing-it) is the whole path — and an index of your own is a repository with that one directory in it, attached by the same command as anybody else's.
 
+**A plugin's source repository is not an index**, even though that is where the plugins are, and the two look alike from outside: a source tree's `plugins/` holds a directory per plugin where an index holds a manifest per plugin. `rta plugin index add` reads what it cloned before calling the attach a success, and refuses one that carries no manifest — naming what it found instead. Nothing is left behind when it does, so the name is free for the next attempt. Build the index this repository's own manifests belong in with `make index`, described in [Installation](../10-getting-started/10-installation.md#installing-plugins-from-an-index).
+
 ```bash
 rta plugin search postgres
 ```
