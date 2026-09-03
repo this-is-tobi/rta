@@ -355,7 +355,7 @@ rta doctor
 
 ## Back up a datastore, and put the backup somewhere else
 
-Five plugins carry a dump and the restore that reads it back, and the shape is deliberately the same in each — `--out <file>` on the way out, the file as the first argument on the way in. Only `vault` spells the first half differently, because `snapshot` is what Vault itself calls the thing:
+Six plugins write a backup, and the shape is deliberately the same in each — `--out <file>` on the way out and, where rta has the other half, the file as the first argument on the way in. `vault` and `etcd` spell the first half `snapshot`, because that is the word each of them uses for it:
 
 ```bash
 rta pg dump      --profile shop-prod --out shop-$(date +%F).dump
@@ -363,9 +363,12 @@ rta mysql dump   --profile shop-prod --out shop-$(date +%F).sql
 rta mariadb dump --profile shop-prod --out shop-$(date +%F).sql
 rta vault snapshot   --profile vault-prod --out vault-$(date +%F).snap
 rta qdrant dump  docs --profile search-prod --out docs-$(date +%F).snapshot
+rta etcd snapshot    --profile coord-prod --out etcd-$(date +%F).snap
 ```
 
-Every one of them writes `0600`, refuses to overwrite a file that already exists, removes what it made if the run fails, and prints the restore command for the file it just wrote. That last line is the point: a backup nobody knows how to restore is a belief about a backup.
+Every one of them writes `0600`, refuses to overwrite a file that already exists, removes what it made if the run fails, and prints how to restore the file it just wrote. That last line is the point: a backup nobody knows how to restore is a belief about a backup.
+
+**Five of the six have an `rta` restore. `etcd` does not, and that is etcd rather than rta.** Its v3 protocol streams a snapshot out and takes nothing back in — no service in it carries a restore RPC — so restoring is `etcdutl snapshot restore`, which builds a data directory with etcd stopped, on every member, from the same file. `etcd.snapshot`'s own receipt prints that sequence at the moment you take the backup. rta ships no `etcd restore` rather than a command that would take the name of the thing you need and then not do it.
 
 **All of them refuse over MCP**, and that is not a gap to be granted around. A whole datastore has no blast radius a grant could name, so the refusal is the answer rather than a missing feature — an agent that needs rows still has `pg.query` or `mysql.query`, bounded per call. Restores are `Destructive`, so a person types through `--yes` before a file replaces a database.
 
@@ -393,6 +396,7 @@ Two gated commands rather than one capability reaching into two services, which 
 | `mysql.dump`, `mariadb.dump` | users and grants — a single-database dump carries no `mysql.user` rows | the `mysql` database, dumped separately |
 | `qdrant.dump` | aliases — the snapshot restores the collection, not the name pointing at it | the alias API |
 | `vault.snapshot` | the unseal keys, and the snapshot is **sealed with the source cluster's** — a restore without them is a file you cannot open | wherever `operator init` output was stashed, never Vault itself |
+| `etcd.snapshot` | the cluster's own identity — membership, peer URLs and TLS material. The restore mints a new cluster ID and takes the topology from its own flags | your etcd configuration, wherever that is kept |
 
 ## Next
 

@@ -259,7 +259,7 @@ Read them in this order and each one adds exactly one idea:
 | [`plugins/pg`](../../plugins/pg/) | Safety classes doing real work — three dumps graded by what a grant can name, two refusing MCP outright | 10 |
 | [`plugins/s3`](../../plugins/s3/) | `Live` completion from the service itself, and a download that refuses any object key landing outside the directory you named | 14 |
 | [`plugins/vault`](../../plugins/vault/) | A plugin where almost everything is a secret, and what that does to every declaration | 16 |
-| [`plugins/etcd`](../../plugins/etcd/) · [`plugins/qdrant`](../../plugins/qdrant/) | Tree views, and a plugin whose whole subject is a keyspace | 6 · 7 |
+| [`plugins/etcd`](../../plugins/etcd/) · [`plugins/qdrant`](../../plugins/qdrant/) | Tree views, and a plugin whose whole subject is a keyspace | 7 · 7 |
 | [`plugins/docker`](../../plugins/docker/) | A local daemon socket rather than a network endpoint | 7 |
 
 `rta plugin new <name>` scaffolds one that builds, passes its conformance suite and runs, so none of these is where you start — they are where you look when your plugin needs the thing they already do.

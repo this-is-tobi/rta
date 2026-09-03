@@ -1,6 +1,6 @@
 // Command rta-plugin-etcd talks to an etcd v3 cluster: whether it is healthy,
 // who is in it, what shape its keyspace has, and — behind the write tier —
-// what a key holds.
+// what a key holds and the whole keyspace as a file.
 //
 // # What this is for, and what it is not
 //
@@ -97,6 +97,7 @@ func Plugin() plugin.Plugin {
 			kvListCapability(),
 			kvTreeCapability(),
 			kvGetCapability(),
+			snapshotCapability(),
 		},
 	}
 }
