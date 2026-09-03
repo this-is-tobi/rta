@@ -18,12 +18,25 @@ import (
 // The suite this plugin is held to as a stranger's plugin, before anything
 // specific to CloudNativePG.
 func TestPluginPassesTheConformanceSuite(t *testing.T) {
+	// Pointed at a script, because the suite drives the capabilities for real.
+	//
+	// The comment here used to say "kubectl is not on the path this resolves",
+	// and that was false for exactly this plugin's audience: kubectlBin is the
+	// bare name, so on any machine with kubectl and a kubeconfig — a developer
+	// running `make ci`, and every CI image that installs one — running
+	// `go test` issued `kubectl get clusters.postgresql.cnpg.io absent`
+	// against whatever context happened to be current. Measured, not assumed:
+	// a logging kubectl placed on PATH recorded that call. No write ever
+	// followed it, since the refusal comes first, but a test suite that
+	// reaches somebody's production cluster to find out what it is testing is
+	// wrong however harmless the request.
+	fakeKubectl(t, `echo '{"kind":"Status","status":"Failure","reason":"NotFound"}' >&2; exit 1`)
 	sdktest.Check(t, Plugin(), sdktest.WithInputs(func(string) map[string]map[string]any {
 		return map[string]map[string]any{
 			// A name nothing is called, so the dry-run rule drives the
-			// capability without needing a cluster to exist. There is no
-			// cluster in a test anyway: kubectl is not on the path this
-			// resolves, and the failure it produces is the one being checked.
+			// capability without needing a cluster to exist — and the fake
+			// above answers for it, so the failure being checked is produced
+			// without leaving this machine.
 			"cnpg.status": {"name": "absent"},
 			// The same, for the one capability that writes — and here the
 			// dry run is worth driving for its own sake rather than only to

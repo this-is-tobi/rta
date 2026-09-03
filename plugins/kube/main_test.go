@@ -18,7 +18,20 @@ import (
 // The named context does not exist, so on a machine with a kubeconfig the
 // answer is a refusal and on a machine without one it is a different refusal.
 // Neither is a mutation, which is the property under test.
+//
+// **kubectl is faked, because "a machine with a kubeconfig" turned out to mean
+// the suite reaching that machine's cluster.** kubectlBin is the bare name, so
+// `go test ./plugins/kube` on a developer's laptop ran `kubectl config view -o
+// json` — the operator's whole kubeconfig, every context in it — and `kubectl
+// get serviceaccount rta-conformance-does-not-exist` against whichever context
+// was current. Measured with a logging kubectl on PATH, not assumed. Nothing
+// was written, because the refusals come first, but a suite that reads
+// somebody's kubeconfig and dials their production cluster to find out what it
+// is testing is wrong however harmless each individual call is — and this is
+// the plugin whose own design note says reaching a cluster is the thing to be
+// careful about.
 func TestConformance(t *testing.T) {
+	withFixtureKubectl(t, `{"contexts":[],"clusters":[],"users":[]}`)
 	sdktest.Check(t, Plugin(), sdktest.WithInputs(conformanceInputs))
 }
 
