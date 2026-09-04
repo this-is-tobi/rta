@@ -73,7 +73,7 @@ func TestAPluginsSourceRepositoryIsRefusedAsAnIndex(t *testing.T) {
 	testData(t)
 	repo := sourceRepoFixture(t, "cnpg", "kube", "vault")
 
-	verr := AddIndex(context.Background(), "official", repo)
+	verr := AddIndex(context.Background(), "source", repo)
 	if verr == nil {
 		t.Fatal("a repository of plugin source attached as an index")
 	}
@@ -99,13 +99,13 @@ func TestARefusedAttachLeavesNoIndexBehind(t *testing.T) {
 	testData(t)
 	repo := sourceRepoFixture(t, "vault")
 
-	if verr := AddIndex(context.Background(), "official", repo); verr == nil {
+	if verr := AddIndex(context.Background(), "source", repo); verr == nil {
 		t.Fatal("want a refusal")
 	}
 	if got := Indexes(); len(got) != 0 {
 		t.Fatalf("attached indexes after a refusal = %v", got)
 	}
-	if _, err := os.Stat(filepath.Join(indexesDir(), "official")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(indexesDir(), "source")); !os.IsNotExist(err) {
 		t.Fatalf("the clone is still on disk: %v", err)
 	}
 }
@@ -163,13 +163,13 @@ func TestAnEmptyPluginsDirectoryIsNotAnEmptyCatalogue(t *testing.T) {
 // index there was no catalogue to make it about.
 func TestSearchReportsTheIndexItCouldNotRead(t *testing.T) {
 	testData(t)
-	placeIndex(t, "official", nil)
+	placeIndex(t, "source", nil)
 
 	rows, bad := Search("vault", "")
 	if len(rows) != 0 {
 		t.Fatalf("rows = %v", rows)
 	}
-	if len(bad) != 1 || !strings.Contains(bad[0].Message, "official") {
+	if len(bad) != 1 || !strings.Contains(bad[0].Message, "source") {
 		t.Fatalf("problems = %v, want the index named", bad)
 	}
 }
@@ -180,13 +180,13 @@ func TestSearchReportsTheIndexItCouldNotRead(t *testing.T) {
 func TestASoundIndexAnswersBesideABrokenOne(t *testing.T) {
 	testData(t)
 	placeIndex(t, "lab", map[string]string{"pg": goodManifest})
-	placeIndex(t, "official", nil)
+	placeIndex(t, "source", nil)
 
 	rows, bad := Search("", "")
 	if len(rows) != 1 || rows[0].Name != "pg" || rows[0].Index != "lab" {
 		t.Fatalf("rows = %v, want the sound index's claim", rows)
 	}
-	if len(bad) != 1 || !strings.Contains(bad[0].Message, "official") {
+	if len(bad) != 1 || !strings.Contains(bad[0].Message, "source") {
 		t.Fatalf("problems = %v, want the broken index named", bad)
 	}
 }

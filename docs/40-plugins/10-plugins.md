@@ -117,12 +117,13 @@ plugin cnpg   ok   ~/.local/bin/rta-plugin-cnpg (5 capabilities, 24757826bbf5)
 An index is a git repository of `plugins/<name>.yaml` manifests — claims about plugins, searchable without downloading anything.
 
 ```bash
+rta plugin index add official        # the first-party index, known by name
 rta plugin index add community https://github.com/someone/rta-plugins
 rta plugin index list
 rta plugin index update
 ```
 
-**There is no default index.** The first one you attach is your decision, not one rta made for you. rta shells out to your `git`, so your remotes, proxies and credentials keep working — with two exceptions rta owns: a repository may not be a `<transport>::<argument>` remote helper (`ext::` takes a command line, so such a URL is an execution), and it may not be fetched over `http://` or `git://`, since an index states the checksums every install verifies against.
+**Nothing is attached until you say so**, and `official` is the one name rta knows: it resolves to [rta-plugins](https://github.com/this-is-tobi/rta-plugins), where the first-party plugins are built and released, and it is reserved for that repository — `rta plugin index add official <elsewhere>` is refused, so the word means the same thing on every machine. Any other index is attached by name and URL. rta shells out to your `git`, so your remotes, proxies and credentials keep working — with two exceptions rta owns: a repository may not be a `<transport>::<argument>` remote helper (`ext::` takes a command line, so such a URL is an execution), and it may not be fetched over `http://` or `git://`, since an index states the checksums every install verifies against.
 
 An index is a directory of manifests and nothing else:
 
