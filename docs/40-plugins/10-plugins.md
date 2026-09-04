@@ -6,7 +6,7 @@ A plugin is a program that returns a declaration and serves it over gRPC. rta la
 rta plugin list
 ```
 
-Eleven plugins ship in this repository. They are the proof the contract works, and each is a separate binary you install only if you want it — none of them is linked into `rta` itself, so the ones you skip cost you nothing.
+Eleven first-party plugins live in [rta-plugins](https://github.com/this-is-tobi/rta-plugins). They are the proof the contract works, and each is a separate binary you install only if you want it — none of them is linked into `rta` itself, so the ones you skip cost you nothing.
 
 | Plugin | Service |
 | --- | --- |
@@ -24,17 +24,14 @@ Eleven plugins ship in this repository. They are the proof the contract works, a
 
 Every one of them draws the same line in the same place: the read tier describes the thing, and anything that returns a value somebody stored is a write. `mysql.schema` tells you a database's shape and `mysql.query` returns its rows; `etcd.kv.list` gives you key names and `etcd.kv.get` gives you what a key holds. That is what makes read worth granting.
 
-## Building the ones that ship here
-
-Each is a separate module, so `go install` from the repository root does not build any of them. The Makefile does:
+## Getting the first-party ones
 
 ```bash
-make plugins-install              # every one, into the same directory as rta
-make plugins-install PLUGIN=pg    # just that one
-make plugins-list                 # what is available to build
+rta plugin index add official
+rta plugin install pg
 ```
 
-That puts `rta-plugin-<name>` beside your `rta`, which is the whole of the installation. It approves nothing — which is the next section.
+That is the whole path — [Indexes](#indexes) and [Installing](#installing) below are what happens inside it. Building from source instead is `make install` in [rta-plugins](https://github.com/this-is-tobi/rta-plugins), which puts `rta-plugin-<name>` beside your `rta` and approves nothing — which is the next section.
 
 ## Trust
 
@@ -136,7 +133,7 @@ my-index/
 
 Each manifest is generated from the plugin binary rather than written: `rta plugin manifest` reads the artifact's own declaration, so an entry cannot disagree with the plugin it describes. [Publishing a plugin](./20-writing-a-plugin.md#publishing-it) is the whole path — and an index of your own is a repository with that one directory in it, attached by the same command as anybody else's.
 
-**A plugin's source repository is not an index**, even though that is where the plugins are, and the two look alike from outside: a source tree's `plugins/` holds a directory per plugin where an index holds a manifest per plugin. `rta plugin index add` reads what it cloned before calling the attach a success, and refuses one that carries no manifest — naming what it found instead. Nothing is left behind when it does, so the name is free for the next attempt. Build the index this repository's own manifests belong in with `make index`, described in [Installation](../10-getting-started/10-installation.md#installing-plugins-from-an-index).
+**A `plugins/` directory with no manifest in it is not an index**, even when that is where the plugins are: a source tree's `plugins/` holds a directory per plugin, an index holds a manifest per plugin, and rta reads the manifests and skips the directories — which is how [rta-plugins](https://github.com/this-is-tobi/rta-plugins) can be both, each plugin's directory sitting beside the manifest its release generated. `rta plugin index add` reads what it cloned before calling the attach a success, and refuses one that carries no manifest — naming what it found instead. Nothing is left behind when it does, so the name is free for the next attempt.
 
 ```bash
 rta plugin search postgres
