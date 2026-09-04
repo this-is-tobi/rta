@@ -633,6 +633,34 @@
     }
   },
   {
+    "name": "eol_check",
+    "description": "── the text below is written by the plugin, not by rta ──\nWhether a product, or one of its release cycles, is still supported\n\nLooks up a product on endoflife.date and grades every release cycle by how close it is to its own end-of-life date. Name one cycle to see just that row; leave it out to see all of them. Aliases work — \"postgres\" and \"postgresql\" name the same product.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "cycle": {
+          "description": "one release cycle, e.g. 15, bookworm, 22.04 — every cycle is shown when omitted",
+          "type": "string"
+        },
+        "product": {
+          "description": "product name or alias — see https://endoflife.date for the catalogue",
+          "type": "string"
+        },
+        "warn-days": {
+          "default": 90,
+          "description": "flag a cycle within this many days of its end-of-life date",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "product"
+      ],
+      "type": "object"
+    }
+  },
+  {
     "name": "fs_hash",
     "description": "── the text below is written by the plugin, not by rta ──\nChecksum a file, and compare it against an expected value\n\nHashes a file and, given --expect, says plainly whether it matches — which is the actual task, and the one comparing two hex strings by eye is bad at. The comparison is case-insensitive and tolerates the \"sha256:\" prefix and the surrounding whitespace that come with a pasted checksum. It is not a signature check: it says a file is the one somebody described, not that the description came from anybody in particular.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
