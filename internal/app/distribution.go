@@ -37,6 +37,27 @@ func renderView(cmd *cobra.Command, opts *globalOpts, v view.View) error {
 // A partial catalogue that renders like a whole one is the same failure
 // Sections.Warnings was added for: nothing distinguishes "no index carries
 // that plugin" from "the index carrying it could not be read".
+// withOthers refuses with the first problem and says how many followed it.
+//
+// A count rather than a composite message: the individual problems each have
+// their own message and their own hint, and `plugin index list` prints all of
+// them, so the thing worth adding here is that there are more and where to see
+// them. An operator who fixes one index and re-runs to discover the next is
+// being handed the same answer in instalments.
+func withOthers(problems []*view.Error) *view.Error {
+	verr := problems[0]
+	if len(problems) == 1 {
+		return verr
+	}
+	hint := fmt.Sprintf("%d more attached %s could not be read either — "+
+		"`rta plugin index list` shows every one", len(problems)-1,
+		plural(len(problems)-1, "index", "indexes"))
+	if verr.Hint != "" {
+		hint = verr.Hint + ". " + hint
+	}
+	return verr.WithHint(hint)
+}
+
 func asWarnings(errs []*view.Error) []view.Error {
 	out := make([]view.Error, 0, len(errs))
 	for _, e := range errs {
@@ -289,8 +310,17 @@ func newPluginSearchCommand(opts *globalOpts) *cobra.Command {
 				// attached index unreadable there is nothing to match against,
 				// and saying so names something the operator can fix instead
 				// of something they would go on retyping.
+				//
+				// The first problem carries the refusal, and the hint says how
+				// many more there are rather than pretending it was the only
+				// one — fixing an index and re-running to be told about the
+				// next is the same answer paid for twice. Not a composite
+				// error: `plugin index list` already prints every one of them
+				// with its own message, so the useful thing to hand over is
+				// the command that does, and the exit code stays 1 however
+				// many indexes are broken.
 				if len(problems) > 0 {
-					return problems[0]
+					return withOthers(problems)
 				}
 				return renderView(cmd, opts, view.Text{Body: "nothing matches"})
 			}
