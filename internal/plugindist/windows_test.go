@@ -1,0 +1,130 @@
+package plugindist
+
+import (
+	"errors"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"testing"
+
+	"github.com/this-is-tobi/rule-them-all/internal/pluginhost"
+)
+
+// The three things that made a plugin unloadable on Windows, held down from a
+// machine that is not one. Two of them are pure data — a manifest's claim
+// about a platform, and a name — so they test honestly here. The third needs
+// a symlink to fail, which is what the `symlink` var is for.
+//
+// None of this replaces running rta on Windows, and the CI leg that does is
+// the point of the exercise; these are what fail first and locally when
+// somebody reintroduces one of the three.
+
+// A manifest describes six platforms from whichever one generated it, so the
+// member to extract out of a Windows archive is decided by the entry's own os
+// and never by the host's. GoReleaser puts rta-plugin-<name>.exe in there;
+// claiming rta-plugin-<name> fails at a stranger's install with a message
+// about the index, and only on Windows, so nobody developing on Linux or
+// macOS would ever have seen it.
+func TestAWindowsEntryNamesTheExeInsideItsArchive(t *testing.T) {
+	testData(t)
+	bin := hello(t)
+	_, m := generate(t, GenerateRequest{
+		Binary: bin,
+		Platforms: []PlatformSource{
+			{OS: "windows", Arch: "amd64", URL: "https://example.com/hello_windows_amd64.tar.gz"},
+			{OS: "linux", Arch: "amd64", URL: "https://example.com/hello_linux_amd64.tar.gz"},
+		},
+		Checksums: map[string]string{
+			"hello_windows_amd64.tar.gz": strings.Repeat("a", 64),
+			"hello_linux_amd64.tar.gz":   strings.Repeat("b", 64),
+		},
+	})
+	for _, p := range m.Platforms {
+		want := "rta-plugin-hello"
+		if p.OS == "windows" {
+			want += ".exe"
+		}
+		if p.Bin != want {
+			t.Fatalf("%s/%s bin = %q, want %q", p.OS, p.Arch, p.Bin, want)
+		}
+	}
+}
+
+// The name discovery looks for carries the platform's executable suffix, and
+// the namespace it reports must not. Trimming only the prefix on Windows
+// yields "pg.exe", which disagrees with everything the binary declares about
+// itself — so the plugin is refused, for a reason that was really this.
+func TestANamespaceIsTheFilenameWithoutWhatThePlatformAdded(t *testing.T) {
+	name := pluginhost.BinaryName("pg")
+	if runtime.GOOS == "windows" && !strings.HasSuffix(name, ".exe") {
+		t.Fatalf("BinaryName = %q, want the .exe this platform needs", name)
+	}
+	got, ok := pluginhost.Namespace(name)
+	if !ok || got != "pg" {
+		t.Fatalf("Namespace(%q) = %q %v, want pg", name, got, ok)
+	}
+	if _, ok := pluginhost.Namespace("rta-something-else"); ok {
+		t.Fatal("a name without the plugin prefix announced a namespace")
+	}
+}
+
+// Windows refuses an unprivileged symlink unless Developer Mode is on, and
+// this is the last step of an install — after the fetch, the hash, the launch
+// and the approval. It must not be where the install dies.
+//
+// The copy has to keep what the link stated: bin/ holds the current version,
+// and CurrentDigest still answers which one from the layout rather than from
+// the lockfile. It answers by hashing, which is the stronger claim.
+func TestAnInstallSurvivesAPlatformThatWillNotSymlink(t *testing.T) {
+	testData(t)
+	original := symlink
+	symlink = func(string, string) error { return errors.New("a privilege is not held by the client") }
+	t.Cleanup(func() { symlink = original })
+
+	staged := filepath.Join(t.TempDir(), "staged")
+	body := []byte("#!/bin/sh\nexit 0\n")
+	if err := os.WriteFile(staged, body, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	digest, verr := digestFile(staged)
+	if verr != nil {
+		t.Fatal(verr)
+	}
+	if _, verr := place("hello", digest, staged); verr != nil {
+		t.Fatalf("place: %v", verr)
+	}
+
+	current := filepath.Join(BinDir(), binaryName("hello"))
+	info, err := os.Lstat(current)
+	if err != nil {
+		t.Fatalf("nothing landed in bin/: %v", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		t.Fatal("bin/ holds a symlink, so the fallback never ran and this proves nothing")
+	}
+	if got, err := os.ReadFile(current); err != nil || string(got) != string(body) {
+		t.Fatalf("bin/ = %q (%v), want the artifact's own bytes", got, err)
+	}
+	got, ok := CurrentDigest("hello")
+	if !ok || got != digest {
+		t.Fatalf("CurrentDigest = %q %v, want %s read back off a copy", got, ok, digest)
+	}
+}
+
+// A digest that is not in the store is not "current" — otherwise anything
+// dropped into bin/ by hand claims to be the installed version, which is the
+// one question CurrentDigest exists to answer independently of the lockfile.
+func TestAStrangerInBinIsNotTheCurrentVersion(t *testing.T) {
+	testData(t)
+	if err := os.MkdirAll(BinDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(BinDir(), binaryName("hello")),
+		[]byte("not from the store"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := CurrentDigest("hello"); ok {
+		t.Fatalf("CurrentDigest = %q, want no answer for a file the store never placed", got)
+	}
+}
