@@ -40,7 +40,10 @@ func fetchArtifact(ctx context.Context, rawURL string, dst *os.File) (string, *v
 	if err != nil {
 		return "", view.Errorf("plugin.install.fetch", "%q does not parse as a URL", rawURL)
 	}
-	var body io.ReadCloser
+	var (
+		body           io.ReadCloser
+		registryDigest string
+	)
 	switch u.Scheme {
 	case "https":
 		ctx, cancel := context.WithTimeout(ctx, fetchTimeout)
@@ -65,12 +68,20 @@ func fetchArtifact(ctx context.Context, rawURL string, dst *os.File) (string, *v
 		}
 		body = f
 	case "oci":
-		return "", view.Errorf("plugin.install.oci",
-			"%s names an oci:// artifact, and that transport is not built yet", rawURL).
-			WithHint("an index may claim an oci:// artifact, but rta cannot fetch one yet; " +
-				"ask the index for an https or file URL until the transport lands")
+		ctx, cancel := context.WithTimeout(ctx, fetchTimeout)
+		defer cancel()
+		var verr *view.Error
+		// The registry's own claim about these bytes, kept for the comparison
+		// below. It is not the index's claim and not rta's measurement — a
+		// third statement about the same artifact, from the party actually
+		// serving it.
+		body, registryDigest, verr = ociBlob(ctx, rawURL)
+		if verr != nil {
+			return "", verr
+		}
 	default:
-		return "", view.Errorf("plugin.install.fetch", "%q: the schemes are https and file", rawURL)
+		return "", view.Errorf("plugin.install.fetch",
+			"%q: the schemes are https, file and oci", rawURL)
 	}
 	defer body.Close()
 
@@ -86,7 +97,15 @@ func fetchArtifact(ctx context.Context, rawURL string, dst *os.File) (string, *v
 	if n == 0 {
 		return "", view.Errorf("plugin.install.fetch", "%s is empty", rawURL)
 	}
-	return hex.EncodeToString(h.Sum(nil)), nil
+	sum := hex.EncodeToString(h.Sum(nil))
+	// Checked here rather than left to the caller's comparison against the
+	// index. The caller catches an index that lied; this catches a registry
+	// serving something its own manifest does not describe, and the two are
+	// different failures with different people able to fix them.
+	if registryDigest != "" && registryDigest != sum {
+		return "", ociMismatch(rawURL, registryDigest, sum)
+	}
+	return sum, nil
 }
 
 // extractMember streams exactly one named member out of a .tar.gz into dst.
