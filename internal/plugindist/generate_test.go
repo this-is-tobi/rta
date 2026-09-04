@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -36,7 +37,11 @@ func TestAGeneratedManifestInstalls(t *testing.T) {
 	bin := hello(t)
 	doc, m := generate(t, GenerateRequest{Binary: bin, Platforms: hostPlatform("file://" + bin)})
 
-	if m.Name != "hello" || m.Version != "0.1.0" {
+	// "dev" is what an unstamped build honestly is: hello() builds with a
+	// plain `go build`, so nothing set main.version, and the declaration says
+	// so rather than naming a release nobody cut. The stamped half is
+	// TestABuildStampIsWhatTheManifestClaims below.
+	if m.Name != "hello" || m.Version != "dev" {
 		t.Fatalf("manifest = %q %q, want the declaration's own", m.Name, m.Version)
 	}
 	if m.Summary != "A worked example of an rta plugin" {
@@ -92,6 +97,29 @@ func TestRegeneratingAnUnchangedPluginChangesNothing(t *testing.T) {
 
 // The generator is held to the grammar it generates for: whatever it returns
 // has already been through the parser an index will hold it to.
+// The version a manifest states is a fact about a release, and the only way
+// that fact reaches the artifact is the linker. Every plugin in this
+// repository declares `Version: version` against a `var version = "dev"`, so
+// this is the whole chain the release depends on — ldflag, declaration,
+// generated manifest — and nothing else in the tree exercises it end to end.
+//
+// The eleven plugins here each claimed a hand-written "0.1.0" until this
+// existed, four minor versions behind the rta they shipped beside, which is
+// what a number nobody's build sets does on its own.
+func TestABuildStampIsWhatTheManifestClaims(t *testing.T) {
+	bin := filepath.Join(t.TempDir(), "rta-plugin-hello")
+	build := exec.Command("go", "build",
+		"-ldflags", "-X main.version=v9.9.9-stamped",
+		"-o", bin, "../../examples/plugin-hello")
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("building a stamped hello: %v: %s", err, out)
+	}
+	_, m := generate(t, GenerateRequest{Binary: bin, Platforms: hostPlatform("file://" + bin)})
+	if m.Version != "v9.9.9-stamped" {
+		t.Fatalf("version = %q, want the one the linker stamped", m.Version)
+	}
+}
+
 func TestWhatComesOutParsesBackIn(t *testing.T) {
 	bin := hello(t)
 	doc, m := generate(t, GenerateRequest{

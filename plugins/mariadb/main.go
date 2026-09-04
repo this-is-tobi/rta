@@ -90,11 +90,18 @@ func cap(c plugin.Capability, own ...plugin.Field) plugin.Capability {
 	return c
 }
 
+// version is what this build claims to be, stamped by whatever built it:
+// `-X main.version=`, which is the Makefile's flag and GoReleaser's own
+// default. A build nobody stamped says "dev" rather than claiming a release
+// number that was never cut — an index entry carries this verbatim, and a
+// version is a fact about a release, not about the source it came from.
+var version = "dev"
+
 func Plugin() plugin.Plugin {
 	return plugin.Plugin{
 		Name:    "mariadb",
 		Summary: "MariaDB: connection health, schema, rows, activity and cluster state",
-		Version: "0.1.0",
+		Version: version,
 		Capabilities: []plugin.Capability{
 			dumpCapability(),
 			restoreCapability(),

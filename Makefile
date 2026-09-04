@@ -72,8 +72,18 @@ VERSION ?= $(shell git describe --tags --dirty 2>/dev/null || echo dev)
 # variable used to hold applied `-w` alone and left the symbol table in. It
 # cost nothing only because nothing referenced the variable either — the two
 # build lines spelled the flags out correctly by hand.
+#
+# The plugins take the same version as the core, and that is a claim rather
+# than a shortcut: each one is a separate module, but it is built from this
+# tree against this SDK and released by this repository's own pipeline, so a
+# release genuinely produces eleven new artifacts. `rta plugin trust` binds to
+# a digest, so a rebuild is a new artifact needing a new approval — a plugin
+# that reported an unchanged version across a release would be denying exactly
+# the event rta makes an operator look at. Nothing in the distribution path
+# compares versions semantically (plugindist.Outdated is a string `!=`), so
+# per-plugin numbering later is a different value passed here, not a migration.
 GOBUILD_CORE   := go build -trimpath -ldflags "-s -w -X main.version=$(VERSION)"
-GOBUILD_PLUGIN := go build -trimpath -ldflags "-s -w"
+GOBUILD_PLUGIN := go build -trimpath -ldflags "-s -w -X main.version=$(VERSION)"
 
 # The trees that make up the root module.
 #

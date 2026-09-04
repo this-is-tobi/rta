@@ -51,7 +51,8 @@ RUN set -eux; \
     for dir in plugins/*/; do \
       name="$(basename "$dir")"; \
       ( cd "$dir" && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build \
-          -trimpath -ldflags "-s -w" -o "/out/rta-plugin-$name" . ); \
+          -trimpath -ldflags "-s -w -X main.version=${VERSION}" \
+          -o "/out/rta-plugin-$name" . ); \
     done
 
 # Alpine rather than the primary image's distroless base, and that is forced

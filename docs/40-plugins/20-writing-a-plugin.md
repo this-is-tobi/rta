@@ -230,7 +230,13 @@ rta runs your binary the way a load does — sandboxed — and writes down what 
 Two things to know before you publish:
 
 - **`.tar.gz`, or a bare binary.** rta extracts a single member from a gzipped tar and has no zip reader at all, so a `.zip` artifact cannot be installed — including on Windows, where GoReleaser's default format is zip. `rta plugin manifest` refuses one rather than letting it become a failed install somewhere else.
-- **The version is yours to state.** `--version` claims your release tag. Without it the manifest claims whatever `Version` your declaration carries, which is a fact about the source rather than about the release.
+- **Stamp the version at build time, don't type it.** A version is a fact about a release, and a literal in your source is a fact about nothing — it stays at `0.1.0` through every release you cut, because bumping it is a step nobody's build performs. `rta plugin new` scaffolds the pattern instead: a `var version = "dev"` the declaration reads, set by the linker.
+
+  ```bash
+  go build -ldflags "-X main.version=$(git describe --tags)" .
+  ```
+
+  That is GoReleaser's own default ldflag, so a release stamps it for free, and an unstamped build says `dev` rather than claiming a version that was never cut. `--version` still overrides, for the case where the tag and the artifact genuinely disagree.
 
 Then attach your own index and take the round trip yourself, before anybody else does:
 

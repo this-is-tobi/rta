@@ -41,12 +41,19 @@ var languages = map[string]string{
 	"ja": "こんにちは",
 }
 
+// version is what this build claims to be, stamped by whatever built it:
+// `-X main.version=`, which is the Makefile's flag and GoReleaser's own
+// default. A build nobody stamped says "dev" rather than claiming a release
+// number that was never cut — an index entry carries this verbatim, and a
+// version is a fact about a release, not about the source it came from.
+var version = "dev"
+
 // Plugin returns the declaration. This is the entire contract with rta.
 func Plugin() plugin.Plugin {
 	return plugin.Plugin{
 		Name:    "hello",
 		Summary: "A worked example of an rta plugin",
-		Version: "0.1.0",
+		Version: version,
 		Capabilities: []plugin.Capability{
 			{
 				ID:      "hello.greet",
