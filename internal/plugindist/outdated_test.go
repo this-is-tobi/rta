@@ -61,7 +61,7 @@ func TestOutdatedNamesThePluginTheIndexNoLongerCarries(t *testing.T) {
 	}
 
 	// The upstream index drops the manifest this plugin was installed from.
-	if err := os.Remove(filepath.Join(repo, "plugins", "redis.yaml")); err != nil {
+	if err := os.Remove(filepath.Join(repo, "index", "redis.yaml")); err != nil {
 		t.Fatal(err)
 	}
 	commitAll(t, repo, "drop redis")

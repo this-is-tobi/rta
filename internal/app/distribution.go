@@ -394,7 +394,7 @@ func newPluginIndexCommand(opts *globalOpts) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "index",
 		Short: "Attach, refresh and detach plugin indexes",
-		Long: "An index is a git repository of plugins/<name>.yaml manifests — claims\n" +
+		Long: "An index is a git repository of index/<name>.yaml manifests — claims\n" +
 			"about plugins, searchable without downloading anything. rta shells out\n" +
 			"to your git, so your remotes, proxies and credentials keep working —\n" +
 			"except that a repository may not name a remote helper (`ext::` runs a\n" +
@@ -594,7 +594,7 @@ func newPluginManifestCommand(opts *globalOpts) *cobra.Command {
 				// command produces a document that goes into a git repository
 				// and whose name is load-bearing; a caller redirecting it is
 				// doing the ordinary thing, and a view wrapper would make
-				// `> plugins/pg.yaml` write something an index refuses.
+				// `> index/pg.yaml` write something an index refuses.
 				_, err := cmd.OutOrStdout().Write(doc)
 				return err
 			}
@@ -632,7 +632,7 @@ func newPluginManifestCommand(opts *globalOpts) *cobra.Command {
 	cmd.Flags().StringVar(&binMember, "bin", "",
 		"where the binary sits inside a .tar.gz artifact (default: rta-plugin-<name>)")
 	cmd.Flags().StringVar(&indexDir, "index", "",
-		"index directory to write plugins/<name>.yaml into, instead of printing")
+		"index directory to write index/<name>.yaml into, instead of printing")
 	return cmd
 }
 

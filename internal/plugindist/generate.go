@@ -170,7 +170,7 @@ func Generate(ctx context.Context, req GenerateRequest, stderr io.Writer) ([]byt
 // FileName is where a manifest belongs inside an index. The index's layout is
 // the operator-visible claim about a plugin's name, so this is not a
 // suggestion — Manifests refuses a file whose name and content disagree.
-func FileName(m Manifest) string { return path.Join("plugins", m.Name+".yaml") }
+func FileName(m Manifest) string { return path.Join("index", m.Name+".yaml") }
 
 func header(name string) string {
 	return "# " + artifactName(name) + ", as rta read it out of the binary.\n" +

@@ -21,7 +21,7 @@ import (
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
 
-// An index is a git repository holding plugins/<name>.yaml manifests — Krew's
+// An index is a git repository holding index/<name>.yaml manifests — Krew's
 // shape, adopted with its reasons: git buys partial updates,
 // signed commits, blame and rollback, and every author already knows how to
 // open a pull request against one. rta shells out to git the way tunnels
@@ -524,15 +524,13 @@ type Listed struct {
 // operator the rest of the catalogue — the LoadInto rule, applied to claims.
 //
 // A directory holding no manifest at all is reported the same way a missing
-// plugins/ is, and notAnIndex says why that is not the same as an empty
+// index/ is, and notAnIndex says why that is not the same as an empty
 // catalogue.
 func Manifests(ix Index) ([]Listed, []*view.Error) {
-	dir := filepath.Join(ix.Dir, "plugins")
-	entries, derr := readPluginsDir(dir)
+	dir := filepath.Join(ix.Dir, "index")
+	entries, derr := readIndexDir(dir)
 	if derr != nil {
-		return nil, []*view.Error{view.Errorf("plugin.index.empty",
-			"%s has no plugins/ directory — it is not an index", ix.Name).
-			WithHint(indexShape)}
+		return nil, []*view.Error{noIndexDir(ix)}
 	}
 	var (
 		out  []Listed
@@ -579,17 +577,17 @@ func Manifests(ix Index) ([]Listed, []*view.Error) {
 	return out, bad
 }
 
-// readPluginsDir lists an index's plugins/, and refuses one that is not a
+// readIndexDir lists an index's index/, and refuses one that is not a
 // directory in its own right.
 //
 // os.ReadDir resolves a symlink, and an index is somebody else's repository:
 // git stores a symlink with whatever target its author committed, absolute
-// ones included. So `plugins -> /home/you/.config` is a directory rta would
+// ones included. So `index -> /home/you/.config` is a directory rta would
 // enumerate and read every .yaml out of, having been told to attach an index.
 // The archive extractor already refuses a symlinked member for this reason —
 // "no symlink or hardlink is ever followed", fetch.go — and this is the same
 // rule on the other input an index controls.
-func readPluginsDir(dir string) ([]os.DirEntry, error) {
+func readIndexDir(dir string) ([]os.DirEntry, error) {
 	fi, err := os.Lstat(dir)
 	if err != nil {
 		return nil, err
@@ -659,23 +657,42 @@ func manifestLabel(ix Index, name string) string {
 }
 
 // indexShape is what an index is, said once because three refusals say it.
-const indexShape = "an index is a repository of plugins/<name>.yaml manifests, each " +
+const indexShape = "an index is a repository of index/<name>.yaml manifests, each " +
 	"written by `rta plugin manifest` from the binary it describes — a plugin's " +
 	"source repository is not one, even though that is where the plugins are"
 
-// notAnIndex explains a plugins/ directory that holds no manifest at all.
+// noIndexDir explains a clone with no index/ directory at all.
 //
-// Whether plugins/ *existed* used to be the whole test, and there is one shape
-// it gets exactly wrong: a plugin's own source repository, whose plugins/
-// holds a directory per plugin rather than a manifest per plugin. That is also
-// the likeliest thing anybody points `rta plugin index add` at, because it is
-// where the plugins are — rta's own repository attached without complaint,
-// listed as "0 plugins, 0 problems", and answered every search against it with
-// "nothing matches", which reads as a fact about the plugin somebody searched
-// for rather than about the attachment.
-//
-// So what the directory does hold goes in the sentence. "no manifest" and "12
-// directories and no manifest" send an operator to different places.
+// The likeliest thing anybody points `rta plugin index add` at is a plugin's
+// own source repository, because that is where the plugins are — and a source
+// tree has a plugins/ full of directories and no index/. Before the manifests
+// moved out of plugins/, whether that directory *existed* was the whole test,
+// and rta's own repository attached without complaint, listed as "0 plugins,
+// 0 problems", and answered every search with "nothing matches". Counting
+// what plugins/ holds into the sentence is what tells the operator which
+// mistake they made: "no index/" alone reads like an index somebody has not
+// filled in yet.
+func noIndexDir(ix Index) *view.Error {
+	msg := ix.Name + " has no index/ directory — it is not an index"
+	if entries, err := os.ReadDir(filepath.Join(ix.Dir, "plugins")); err == nil {
+		dirs := 0
+		for _, e := range entries {
+			if e.IsDir() {
+				dirs++
+			}
+		}
+		if dirs > 0 {
+			msg += "; its plugins/ holds " + strconv.Itoa(dirs) + " " +
+				plural(dirs, "directory", "directories") + ", which is what a plugin's source repository looks like"
+		}
+	}
+	return view.Errorf("plugin.index.empty", "%s", msg).WithHint(indexShape)
+}
+
+// notAnIndex explains an index/ directory that holds no manifest at all —
+// the same refusal as a missing one, with what the directory does hold in the
+// sentence, because "no manifest" and "12 directories and no manifest" send an
+// operator to different places.
 func notAnIndex(ix Index, entries []os.DirEntry) *view.Error {
 	dirs := 0
 	for _, e := range entries {
@@ -689,7 +706,7 @@ func notAnIndex(ix Index, entries []os.DirEntry) *view.Error {
 			" and no manifest"
 	}
 	return view.Errorf("plugin.index.empty",
-		"%s is not an index — its plugins/ directory holds %s", ix.Name, held).
+		"%s is not an index — its index/ directory holds %s", ix.Name, held).
 		WithHint(indexShape)
 }
 
@@ -727,7 +744,7 @@ func Resolve(spec string) (Listed, *view.Error) {
 
 	var found []Listed
 	for _, ix := range search {
-		raw, err := os.ReadFile(filepath.Join(ix.Dir, "plugins", name+".yaml"))
+		raw, err := os.ReadFile(filepath.Join(ix.Dir, "index", name+".yaml"))
 		if err != nil {
 			continue
 		}
