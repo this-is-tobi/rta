@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.5.0](https://github.com/this-is-tobi/rule-them-all/compare/v0.4.0...v0.5.0) (2026-09-04)
+
+
+### Features
+
+* **cnpg:** read the Backup objects, and ask for one using the cluster's own configuration ([2698c90](https://github.com/this-is-tobi/rule-them-all/commit/2698c902c943554060906579776f69bb0d998ce4))
+* **cnpg:** recovery settings on the status page, and the volumes a cluster actually got ([8a8c0ad](https://github.com/this-is-tobi/rule-them-all/commit/8a8c0ad96df34e510d7717c9ec931e12e3e31928))
+* **etcd:** back up the whole keyspace, and say why nothing restores it ([bb8508f](https://github.com/this-is-tobi/rule-them-all/commit/bb8508f7053487a61299359cb16f13d99bcdd910))
+* **net:** net.listen — what this machine has open, and which process holds it ([ce82155](https://github.com/this-is-tobi/rule-them-all/commit/ce82155f804e7e6990fe5045661f14974c06c55c))
+* **pg,mysql,mariadb,qdrant,vault:** say on the receipt what each backup leaves behind ([2ddd72e](https://github.com/this-is-tobi/rule-them-all/commit/2ddd72ece2fb9c6dfb51bf3568e933ef63af37e6))
+* **profile,cli,tui:** mark an environment with a colour, and say which one you are in ([12a8f30](https://github.com/this-is-tobi/rule-them-all/commit/12a8f30d30df77b7fb4ba7855d99e24803a8527e))
+* **time,codec,agent:** read an instant, and date the claims a JWT states as numbers ([c3b0165](https://github.com/this-is-tobi/rule-them-all/commit/c3b0165a12ab8460f92adafd9482557595abb349))
+* **tui:** band the plugin inventory by where its bytes came from ([32ac5ee](https://github.com/this-is-tobi/rule-them-all/commit/32ac5ee964f3203a9636bd52e0d943074297e05f))
+* **tui:** say which stored entry an environment fills a box from ([a6f5b9f](https://github.com/this-is-tobi/rule-them-all/commit/a6f5b9f9604feb4e50c2e00fa0ba694061986d5f))
+* **view,cli,kube,sys:** grade a usage percentage green, amber or red ([f69c3c4](https://github.com/this-is-tobi/rule-them-all/commit/f69c3c467f5619de094419adac7f085371a4903b))
+
+
+### Bug Fixes
+
+* **cnpg:** the backup pre-flight was blind to the arrangement it was written for ([c6967f5](https://github.com/this-is-tobi/rule-them-all/commit/c6967f5aba41dd78563d01e53b22cd73b00b18f1))
+* **plugin:** a repository that is not an index is refused, not attached empty ([5ab0259](https://github.com/this-is-tobi/rule-them-all/commit/5ab025948a749893a81c486f9a245faa258b3ffb))
+* **plugin:** an index is somebody else's repository, and Manifests read it like it was not ([279c30b](https://github.com/this-is-tobi/rule-them-all/commit/279c30b8d3599410ac7f6e5d3c46a87d81536870))
+* **plugin:** search named one unreadable index and stopped ([93f608a](https://github.com/this-is-tobi/rule-them-all/commit/93f608a952777fabf28951a61ec1a9d322548f96))
+* **profile:** two profile names could derive the same credential variable ([e0c776e](https://github.com/this-is-tobi/rule-them-all/commit/e0c776e2e2fd1381d81e0e74b2e826fdda0c3d34))
+* **theme:** a usage cell rta could not read was painted green ([68034ce](https://github.com/this-is-tobi/rule-them-all/commit/68034ce7c6361b465a2184de4b2ebde76ed99b15))
+* **tui:** the plugin inventory said "1 capabilities" ([634253b](https://github.com/this-is-tobi/rule-them-all/commit/634253bed2434b5d2ca7d9c2a53ec215b5ad9a75))
+
 ## [0.4.0](https://github.com/this-is-tobi/rule-them-all/compare/v0.3.0...v0.4.0) (2026-09-03)
 
 
