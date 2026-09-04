@@ -2,6 +2,7 @@ package plugindist
 
 import (
 	"errors"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -126,5 +127,35 @@ func TestAStrangerInBinIsNotTheCurrentVersion(t *testing.T) {
 	}
 	if got, ok := CurrentDigest("hello"); ok {
 		t.Fatalf("CurrentDigest = %q, want no answer for a file the store never placed", got)
+	}
+}
+
+// **A file:// artifact could not be installed on Windows at all**, which is
+// the scheme a local index naming a local artifact depends on.
+//
+// A URL path is slash-separated and always begins with "/", so on Unix it is
+// already the filesystem path and os.Open took it unchanged. The absolute
+// Windows form file:///C:/dir/x has the path /C:/dir/x — a slash in front of
+// a drive letter — and Windows refuses it: "The filename, directory name, or
+// volume label syntax is incorrect."
+//
+// Both spellings are checked from whatever machine runs this, because the
+// conversion is about the URL rather than about the host: a drive-letter path
+// is wrong to hand to os.Open everywhere, and being able to say so here is
+// what stopped this needing a Windows runner to notice a second time.
+func TestAFileURLBecomesThePathThisSystemOpens(t *testing.T) {
+	for _, tc := range []struct{ raw, want string }{
+		{"file:///C:/dir/x", `C:/dir/x`},
+		{"file:///c:/dir/x", `c:/dir/x`},
+		{"file:///srv/index/x", "/srv/index/x"},
+		{"file:///x", "/x"},
+	} {
+		u, err := url.Parse(tc.raw)
+		if err != nil {
+			t.Fatalf("parsing %q: %v", tc.raw, err)
+		}
+		if got := localPath(u); got != filepath.FromSlash(tc.want) {
+			t.Errorf("localPath(%q) = %q, want %q", tc.raw, got, filepath.FromSlash(tc.want))
+		}
 	}
 }
