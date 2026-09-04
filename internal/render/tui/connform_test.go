@@ -477,3 +477,73 @@ func TestEditingAnEntryDoesNotDivertToTheCredential(t *testing.T) {
 		t.Error("editing an entry took the operator somewhere they did not ask to go")
 	}
 }
+
+// **The two ways a key changes without the plugin changing**, both of which
+// read as "a different plugin" to a comparison of whole keys, and both of
+// which therefore threw away the `set:` block of the plugin still named.
+//
+// The damage is not the cleared box. A set. field with nothing in conn.Set is
+// marked derived — a display of the plugin's declared default — and
+// saveConnForm rebuilds conn.Set from the boxes that answered, so the next
+// submit deletes from the file what the form had quietly stopped showing.
+//
+// Re-pinning is the first, and it is the ordinary move after an upgrade: the
+// plugin box completes to the artifact that is installed now, which is a
+// different string from the one the entry was written under.
+func TestARepinKeepsWhatTheEntryAlreadyConfigured(t *testing.T) {
+	noHistory(t)
+	m := twoPluginModel(t)
+	if err := m.reg.Register(kubectlPlugin()); err != nil {
+		t.Fatal(err)
+	}
+	m.plugins = pluginRows(m.reg, config.Dashboard{}, nil)
+	if err := config.Write(config.Config{Profiles: map[string]config.Profile{
+		"staging": {Plugins: map[string]config.Connection{
+			"clusters@000000000000": {Set: map[string]any{"context": "homelab"}},
+		}},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	m.profiles = m.profileRows()
+
+	next, _ := m.connForm("clusters@000000000000", "clusters@1a2b3c4d5e6f", nil)
+	nm := next.(Model)
+	box, offered := nm.form.bindings[profileSetPrefix+"context"]
+	if !offered {
+		t.Fatal("no context box on the form")
+	}
+	if *box != "homelab" {
+		t.Errorf("context box = %q after a repin, want the value the entry already held", *box)
+	}
+}
+
+// An instance label is the second, and it is worse: the plugin box carries the
+// base key and the completion never produces a labeled one, so a labeled entry
+// read as a different plugin on *every* rebuild, whatever the operator was
+// actually editing.
+func TestALabeledEntryKeepsItsConfigAcrossARebuild(t *testing.T) {
+	noHistory(t)
+	m := twoPluginModel(t)
+	if err := m.reg.Register(kubectlPlugin()); err != nil {
+		t.Fatal(err)
+	}
+	m.plugins = pluginRows(m.reg, config.Dashboard{}, nil)
+	if err := config.Write(config.Config{Profiles: map[string]config.Profile{
+		"staging": {Plugins: map[string]config.Connection{
+			"clusters/analytics": {Set: map[string]any{"context": "homelab"}},
+		}},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	m.profiles = m.profileRows()
+
+	next, _ := m.connForm("clusters/analytics", "clusters", nil)
+	nm := next.(Model)
+	box, offered := nm.form.bindings[profileSetPrefix+"context"]
+	if !offered {
+		t.Fatal("no context box on the form")
+	}
+	if *box != "homelab" {
+		t.Errorf("context box = %q for a labeled entry, want the value it already held", *box)
+	}
+}
