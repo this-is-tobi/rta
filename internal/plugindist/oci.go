@@ -174,9 +174,9 @@ type ociLayer struct {
 }
 
 // IsArchive reports whether the layer is a gzipped tar, which decides whether
-// a manifest needs a `bin:` naming the member to extract. rta publishes the
-// same .tar.gz GoReleaser produces, and the OCI layer media type for one is
-// the same string every registry uses.
+// a manifest needs a `bin:` naming the member to extract. The ordinary shape
+// is the .tar.gz a release would have carried, pushed as one layer, and the
+// media type for that is the same string every registry uses.
 func (l ociLayer) IsArchive() bool { return strings.Contains(l.MediaType, "tar+gzip") }
 
 // ociResolve reads the manifest and returns its single layer, fetching none

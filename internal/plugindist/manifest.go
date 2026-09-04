@@ -265,8 +265,8 @@ func (p Platform) check(name string) *view.Error {
 
 // checkArtifactURL admits the schemes an artifact may be fetched over.
 // file:// exists for local indexes — `make index` builds one — and for tests;
-// oci:// names a registry artifact and is how this repository's own plugins
-// are published, 66 of them being more than a release page should carry.
+// oci:// names one layer of a registry manifest, which is what an index
+// reaches for when a release page is the wrong place to put an artifact.
 func checkArtifactURL(name, what, raw string) *view.Error {
 	u, err := url.Parse(raw)
 	if err != nil {
