@@ -329,6 +329,14 @@ func TestHostSpecificCoversExactlyTheKnownHostDescribingCapabilities(t *testing.
 		"keys.list": true,
 		"net.info":  true, "net.hosts.list": true, "net.hosts.add": true, "net.hosts.toggle": true,
 		"net.hosts.rm": true, "net.resolver.list": true, "net.resolver.set": true,
+		// net.listen is the sharpest case on this list rather than a
+		// borderline one: it is a map of what this machine has open and which
+		// process holds each port, which is the first thing anybody enumerates
+		// before attacking a host. Answered over a remote transport it would
+		// describe the server rather than anything the caller asked about, and
+		// hand them reconnaissance for the box in the bargain. Hidden for the
+		// same reason sys.ps is, only more so.
+		"net.listen": true,
 		// Not sys/fs/git/net, but the same shape: a caller-supplied path
 		// defaulting to "." (audit.deps, audit.why — exactly fs.tree's
 		// pattern) or a report of the server's own local store, never the
