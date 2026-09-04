@@ -57,6 +57,8 @@ func Plugin() plugin.Plugin {
 				},
 				Run: runCheck,
 			},
+			watchCapability(),
+			productsCapability(),
 		},
 	}
 }
