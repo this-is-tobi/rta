@@ -769,8 +769,10 @@ func buildPlugin(ctx context.Context, dir string, keep bool, stderr any) (string
 		return "", noop, view.Errorf("plugin.dev.build", "%v", err)
 	}
 	// Named with the plugin prefix so anything reading the process list, or a
-	// crash report, says what it is.
-	binary := filepath.Join(out, pluginhost.Prefix+"dev")
+	// crash report, says what it is — and with the platform's own executable
+	// suffix, because `go build -o` writes the name it is given and Windows
+	// will not run one without `.exe`.
+	binary := filepath.Join(out, pluginhost.BinaryName("dev"))
 
 	build := exec.CommandContext(ctx, "go", "build", "-o", binary, ".")
 	build.Dir = abs

@@ -135,7 +135,7 @@ func Generate(ctx context.Context, req GenerateRequest, stderr io.Writer) ([]byt
 		})
 	}
 	for _, src := range req.Platforms {
-		plat, verr := req.platform(src, binaryName(declared.Name))
+		plat, verr := req.platform(src, artifactName(declared.Name))
 		if verr != nil {
 			return nil, Manifest{}, verr
 		}
@@ -173,7 +173,7 @@ func Generate(ctx context.Context, req GenerateRequest, stderr io.Writer) ([]byt
 func FileName(m Manifest) string { return path.Join("plugins", m.Name+".yaml") }
 
 func header(name string) string {
-	return "# " + binaryName(name) + ", as rta read it out of the binary.\n" +
+	return "# " + artifactName(name) + ", as rta read it out of the binary.\n" +
 		"#\n" +
 		"# Everything here except the platform URLs came from the artifact's own\n" +
 		"# declaration, so this file cannot disagree with the plugin it describes.\n" +
@@ -208,6 +208,16 @@ func (req GenerateRequest) platform(src PlatformSource, member string) (Platform
 	plat := Platform{OS: src.OS, Arch: src.Arch, URL: src.URL, Bin: src.Bin}
 	if plat.Bin == "" && strings.HasSuffix(base, ".tar.gz") {
 		plat.Bin = member
+		// Per platform, never per host. A Windows archive holds
+		// rta-plugin-pg.exe — the Go toolchain and GoReleaser both put it
+		// there, and nothing on Windows would run it under any other name —
+		// so the member to extract differs by the OS the entry describes and
+		// not by the OS generating the manifest. Getting this from the host
+		// would produce a manifest that is right for whoever ran the command
+		// and wrong for the other five platforms.
+		if src.OS == "windows" {
+			plat.Bin += ".exe"
+		}
 	}
 
 	local := ""

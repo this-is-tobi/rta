@@ -1,6 +1,7 @@
 package plugindist
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -34,8 +35,19 @@ func StoreDir() string { return filepath.Join(paths.Data(), "plugins", "store") 
 // pluginhost's, because discovery lives there and the import runs this way.
 func BinDir() string { return pluginhost.ManagedBin() }
 
-// binaryName is the on-disk name for a namespace.
-func binaryName(name string) string { return pluginhost.Prefix + name }
+// binaryName is the on-disk name for a namespace on this machine — with
+// `.exe` on Windows, because that is what discovery looks for and what the OS
+// will run.
+func binaryName(name string) string { return pluginhost.BinaryName(name) }
+
+// symlink is os.Symlink, overridable so a test can make it fail the way
+// Windows does without Developer Mode. See place.
+var symlink = os.Symlink
+
+// artifactName is what an index calls the same binary, and it is deliberately
+// not binaryName: a manifest describes six platforms from whichever one
+// generated it, so the host's own suffix has no business in any of them.
+func artifactName(name string) string { return pluginhost.Prefix + name }
 
 // place moves a staged, verified binary into the store and points the bin/
 // symlink at it. The rename is atomic on one filesystem — staging lives under
@@ -61,8 +73,23 @@ func place(name, digest, staged string) (string, *view.Error) {
 	target := filepath.Join("..", "store", name, digest, binaryName(name))
 	tmp := filepath.Join(BinDir(), "."+binaryName(name)+".swap")
 	_ = os.Remove(tmp)
-	if err := os.Symlink(target, tmp); err != nil {
-		return "", view.Errorf("plugin.install.place", "%v", err)
+	// A symlink where the OS will make one, a copy where it will not.
+	//
+	// Windows refuses an unprivileged symlink unless Developer Mode is on —
+	// ERROR_PRIVILEGE_NOT_HELD — so on a stock machine this is the step that
+	// ends the install, after the artifact has been fetched, hashed, launched
+	// and approved. Falling back costs a second copy of the binary and keeps
+	// every property the link had: bin/ still holds exactly one current
+	// version, the store still holds the rest for rollback, and CurrentDigest
+	// still reads which from the layout — by hashing it, which is a stronger
+	// answer than a link target anyway, since a target is a claim and a hash
+	// is the thing itself.
+	// A var so a test can take the fallback on a machine that symlinks
+	// happily; there is no Windows in reach to prove it the honest way.
+	if err := symlink(target, tmp); err != nil {
+		if verr := copyFile(dest, tmp); verr != nil {
+			return "", verr
+		}
 	}
 	if err := os.Rename(tmp, filepath.Join(BinDir(), binaryName(name))); err != nil {
 		_ = os.Remove(tmp)
@@ -71,13 +98,42 @@ func place(name, digest, staged string) (string, *view.Error) {
 	return dest, nil
 }
 
+// copyFile writes src to dst, executable, replacing whatever was there.
+func copyFile(src, dst string) *view.Error {
+	in, err := os.Open(src)
+	if err != nil {
+		return view.Errorf("plugin.install.place", "%v", err)
+	}
+	defer in.Close()
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o755)
+	if err != nil {
+		return view.Errorf("plugin.install.place", "%v", err)
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		_ = os.Remove(dst)
+		return view.Errorf("plugin.install.place", "%v", err)
+	}
+	if err := out.Close(); err != nil {
+		_ = os.Remove(dst)
+		return view.Errorf("plugin.install.place", "%v", err)
+	}
+	return nil
+}
+
 // CurrentDigest reads which digest the bin/ symlink points at — the store's
 // own statement of "current", read from the layout rather than from the
 // lockfile, so the two can be compared instead of one asserting both.
 func CurrentDigest(name string) (string, bool) {
-	target, err := os.Readlink(filepath.Join(BinDir(), binaryName(name)))
+	current := filepath.Join(BinDir(), binaryName(name))
+	target, err := os.Readlink(current)
 	if err != nil {
-		return "", false
+		// Not a link: place fell back to a copy, which is the ordinary case
+		// on a Windows without Developer Mode. Hash it and see which stored
+		// version it is. Slower — it reads the whole binary — and a better
+		// answer than a link target, which only ever said what somebody
+		// intended; this says what is there.
+		return storedDigestOf(name, current)
 	}
 	parts := strings.Split(filepath.ToSlash(target), "/")
 	// ../store/<name>/<digest>/<binary>
@@ -85,6 +141,23 @@ func CurrentDigest(name string) (string, bool) {
 		return "", false
 	}
 	return parts[3], true
+}
+
+// storedDigestOf hashes the current binary and returns the stored digest it
+// matches. A digest that is not in the store is not "current" — it is a file
+// somebody put in bin/ by hand, and answering with it would let anything
+// dropped there claim to be the installed version.
+func storedDigestOf(name, path string) (string, bool) {
+	sum, verr := digestFile(path)
+	if verr != nil {
+		return "", false
+	}
+	for _, held := range StoredDigests(name) {
+		if held == sum {
+			return sum, true
+		}
+	}
+	return "", false
 }
 
 // StoredDigests lists the digests the store holds for one plugin, sorted —

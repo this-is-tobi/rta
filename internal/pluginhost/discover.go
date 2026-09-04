@@ -30,6 +30,26 @@ import (
 // understands is how a plugin ecosystem fails to start.
 const Prefix = "rta-plugin-"
 
+// BinaryName is what a plugin's artifact is called on *this* machine — the
+// name to build, to install, and to look for. Not what an index calls it: a
+// manifest describes six platforms and only one of them is this one.
+func BinaryName(name string) string { return Prefix + name + ExeSuffix }
+
+// Namespace is the plugin name a filename announces, and false when it
+// announces none.
+//
+// The suffix half is inert on Unix (ExeSuffix is empty, so every name has it)
+// and load-bearing on Windows, where the artifact is `rta-plugin-pg.exe`.
+// Trimming only the prefix there yields the namespace "pg.exe", which then
+// disagrees with everything the binary declares about itself — and LoadInto
+// would refuse the plugin, correctly, for a reason that was really here.
+func Namespace(filename string) (string, bool) {
+	if !strings.HasPrefix(filename, Prefix) || !strings.HasSuffix(filename, ExeSuffix) {
+		return "", false
+	}
+	return strings.TrimSuffix(strings.TrimPrefix(filename, Prefix), ExeSuffix), true
+}
+
 // Found is a discovered plugin binary, before anything has been launched.
 type Found struct {
 	// Name is what comes after the prefix, and it is what the namespace must
@@ -110,12 +130,13 @@ func Discover() []Found {
 		// on every machine.
 		sort.Strings(names)
 		for _, name := range names {
-			if !strings.HasPrefix(name, Prefix) {
+			namespace, isPlugin := Namespace(name)
+			if !isPlugin {
 				continue
 			}
 			full := filepath.Join(dir, name)
 			info, err := os.Stat(full)
-			if err != nil || info.IsDir() || info.Mode()&0o111 == 0 {
+			if err != nil || info.IsDir() || !runnable(info) {
 				continue
 			}
 			if i, dup := at[name]; dup {
@@ -123,7 +144,7 @@ func Discover() []Found {
 				continue
 			}
 			at[name] = len(out)
-			out = append(out, Found{Name: strings.TrimPrefix(name, Prefix), Path: full})
+			out = append(out, Found{Name: namespace, Path: full})
 		}
 	}
 	return out
