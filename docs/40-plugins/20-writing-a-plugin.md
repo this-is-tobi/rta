@@ -254,23 +254,23 @@ Install is where claims meet evidence: rta fetches the artifact, hashes it, laun
 
 ## Worked examples, in the order worth reading them
 
-Eleven plugins ship in this repository, and they are not a showcase — they are the proof the contract works, written against the same public SDK you have. Every one is a separate module that cannot reach into rta's internals, so anything they do, you can do.
+Eleven first-party plugins live in [rta-plugins](https://github.com/this-is-tobi/rta-plugins), and they are not a showcase — they are the proof the contract works, written against the same public SDK you have, from the same released rta. Every one is a separate module that cannot reach into rta's internals, so anything they do, you can do.
 
 Read them in this order and each one adds exactly one idea:
 
-| Plugin | Read it for | Capabilities |
-| --- | --- | --- |
-| [`examples/plugin-hello`](../../examples/plugin-hello/main.go) | The whole shape in one file — and the fixture rta's own host tests run against | 2 |
-| [`plugins/eol`](../../plugins/eol/) | The smallest real one: a single capability over a public API, nothing to configure | 1 |
-| [`plugins/kube`](../../plugins/kube/) | Shelling out to a tool the operator already has (`kubectl`) instead of linking its client library, and why | 19 |
-| [`plugins/cnpg`](../../plugins/cnpg/) | The opposite choice from `kube`: one plain API read against a Custom Resource instead of a shell-out, and declaring a credential [`Need`](#if-your-plugin-needs-a-credential-location) rather than assuming one. Also a single `Write` among reads, and what it costs to add one | 5 |
-| [`plugins/mysql`](../../plugins/mysql/) | A connection: declared inputs, a `Secret` a profile fills, an endpoint role a tunnel can fill | 9 |
-| [`plugins/mariadb`](../../plugins/mariadb/) | Two plugins over one service family without either becoming a fork of the other | 11 |
-| [`plugins/pg`](../../plugins/pg/) | Safety classes doing real work — three dumps graded by what a grant can name, two refusing MCP outright | 10 |
-| [`plugins/s3`](../../plugins/s3/) | `Live` completion from the service itself, and a download that refuses any object key landing outside the directory you named | 14 |
-| [`plugins/vault`](../../plugins/vault/) | A plugin where almost everything is a secret, and what that does to every declaration | 16 |
-| [`plugins/etcd`](../../plugins/etcd/) · [`plugins/qdrant`](../../plugins/qdrant/) | Tree views, and a plugin whose whole subject is a keyspace | 7 · 7 |
-| [`plugins/docker`](../../plugins/docker/) | A local daemon socket rather than a network endpoint | 7 |
+| Plugin | Read it for |
+| --- | --- |
+| [`examples/plugin-hello`](../../examples/plugin-hello/main.go) | The whole shape in one file — and the fixture rta's own host tests run against |
+| [`eol`](https://github.com/this-is-tobi/rta-plugins/tree/main/plugins/eol) | The smallest real one: a single capability over a public API, nothing to configure |
+| [`kube`](https://github.com/this-is-tobi/rta-plugins/tree/main/plugins/kube) | Shelling out to a tool the operator already has (`kubectl`) instead of linking its client library, and why |
+| [`cnpg`](https://github.com/this-is-tobi/rta-plugins/tree/main/plugins/cnpg) | The opposite choice from `kube`: one plain API read against a Custom Resource instead of a shell-out, and declaring a credential [`Need`](#if-your-plugin-needs-a-credential-location) rather than assuming one. Also a single `Write` among reads, and what it costs to add one |
+| [`mysql`](https://github.com/this-is-tobi/rta-plugins/tree/main/plugins/mysql) | A connection: declared inputs, a `Secret` a profile fills, an endpoint role a tunnel can fill |
+| [`mariadb`](https://github.com/this-is-tobi/rta-plugins/tree/main/plugins/mariadb) | Two plugins over one service family without either becoming a fork of the other |
+| [`pg`](https://github.com/this-is-tobi/rta-plugins/tree/main/plugins/pg) | Safety classes doing real work — three dumps graded by what a grant can name, two refusing MCP outright |
+| [`s3`](https://github.com/this-is-tobi/rta-plugins/tree/main/plugins/s3) | `Live` completion from the service itself, and a download that refuses any object key landing outside the directory you named |
+| [`vault`](https://github.com/this-is-tobi/rta-plugins/tree/main/plugins/vault) | A plugin where almost everything is a secret, and what that does to every declaration |
+| [`etcd`](https://github.com/this-is-tobi/rta-plugins/tree/main/plugins/etcd) · [`qdrant`](https://github.com/this-is-tobi/rta-plugins/tree/main/plugins/qdrant) | Tree views, and a plugin whose whole subject is a keyspace |
+| [`docker`](https://github.com/this-is-tobi/rta-plugins/tree/main/plugins/docker) | A local daemon socket rather than a network endpoint |
 
 `rta plugin new <name>` scaffolds one that builds, passes its conformance suite and runs, so none of these is where you start — they are where you look when your plugin needs the thing they already do.
 
