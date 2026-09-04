@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"sort"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -145,16 +146,6 @@ func (m Model) saveConfigForm() (tea.Model, tea.Cmd) {
 		if cfg.Plugins == nil {
 			cfg.Plugins = map[string]map[string]any{}
 		}
-		// Migrate rather than accumulate: any other heading already naming this
-		// namespace — most often the stale pin this form was seeded from — is
-		// replaced by the one just confirmed, so saving does not leave an old
-		// pin and a new one both making a claim about the same plugin, which
-		// `rta doctor` would then report as if the operator meant both.
-		for section := range cfg.Plugins {
-			if ns, _, _ := strings.Cut(section, "@"); ns == namespace && section != heading {
-				delete(cfg.Plugins, section)
-			}
-		}
 		// The form owns the keys it showed, and nothing else. Assigning `values`
 		// over the whole section replaced it, so every key this editor did not
 		// collect was deleted by the act of saving an unrelated field — a key for
@@ -167,11 +158,43 @@ func (m Model) saveConfigForm() (tea.Model, tea.Cmd) {
 		// Declared keys are therefore taken from the form even when absent —
 		// absent means cleared — and only undeclared ones are carried forward.
 		merged := map[string]any{}
-		for k, v := range cfg.Plugins[heading] {
-			if !declared[k] {
-				merged[k] = v
+		carry := func(section map[string]any) {
+			for k, v := range section {
+				if !declared[k] {
+					merged[k] = v
+				}
 			}
 		}
+		// Migrate rather than accumulate: any other heading already naming this
+		// namespace — most often the stale pin this form was seeded from — is
+		// replaced by the one just confirmed, so saving does not leave an old
+		// pin and a new one both making a claim about the same plugin, which
+		// `rta doctor` would then report as if the operator meant both.
+		//
+		// **Carried from, not merely deleted.** The carry-forward above used to
+		// read the heading being written, which on a migration is a section that
+		// does not exist yet — so fixing a stale pin, the one job this screen
+		// exists for, silently dropped every key the form had not shown. The
+		// values the operator confirmed moved across and their neighbours did
+		// not, which is worse than leaving the stale heading alone: the file
+		// after the save looks deliberate.
+		//
+		// Sorted, and the heading last, so the winner is decided the same way
+		// twice running: RawSection seeds the form from the lexicographically
+		// last section naming this namespace, and a key stated under two stale
+		// headings resolves here to the same one it was displayed from.
+		stale := make([]string, 0, len(cfg.Plugins))
+		for section := range cfg.Plugins {
+			if ns, _, _ := strings.Cut(section, "@"); ns == namespace && section != heading {
+				stale = append(stale, section)
+			}
+		}
+		sort.Strings(stale)
+		for _, section := range stale {
+			carry(cfg.Plugins[section])
+			delete(cfg.Plugins, section)
+		}
+		carry(cfg.Plugins[heading])
 		for k, v := range values {
 			merged[k] = v
 		}
