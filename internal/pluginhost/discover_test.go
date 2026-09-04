@@ -52,6 +52,10 @@ func touch(t *testing.T, path string, mode os.FileMode) {
 // matching rta-* is the exec tier. A binary counted under both would be
 // reported twice with two different sets of guarantees.
 func TestDiscoveryTakesSdkPluginsAndLeavesTheExecTierAlone(t *testing.T) {
+	// Discovery also reads the managed store under the data dir, and this
+	// machine has real plugins installed there; isolated so the test sees
+	// only what it planted.
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
 	dir := t.TempDir()
 	touch(t, filepath.Join(dir, "rta-plugin-hello"), 0o755)
 	touch(t, filepath.Join(dir, "rta-plugin-pg"), 0o755)
@@ -89,6 +93,10 @@ func TestDiscoveryTakesSdkPluginsAndLeavesTheExecTierAlone(t *testing.T) {
 // $PATH order decides, the way a shell decides, so a user build shadowing a
 // packaged one behaves the way `which` says it will.
 func TestTheFirstMatchOnPathWins(t *testing.T) {
+	// Discovery also reads the managed store under the data dir, and this
+	// machine has real plugins installed there; isolated so the test sees
+	// only what it planted.
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
 	first, second := t.TempDir(), t.TempDir()
 	touch(t, filepath.Join(first, "rta-plugin-hello"), 0o755)
 	touch(t, filepath.Join(second, "rta-plugin-hello"), 0o755)
@@ -106,6 +114,10 @@ func TestTheFirstMatchOnPathWins(t *testing.T) {
 // A missing or unreadable $PATH entry is ordinary — stale entries are in
 // everybody's shell profile — and must not stop discovery of the rest.
 func TestAnUnreadablePathEntryIsSkipped(t *testing.T) {
+	// Discovery also reads the managed store under the data dir, and this
+	// machine has real plugins installed there; isolated so the test sees
+	// only what it planted.
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
 	good := t.TempDir()
 	touch(t, filepath.Join(good, "rta-plugin-hello"), 0o755)
 	t.Setenv("PATH", filepath.Join(t.TempDir(), "does-not-exist")+
@@ -365,6 +377,10 @@ func TestAPluginInstalledUnderItsOwnNamespaceLoads(t *testing.T) {
 // changed is that the loser is recorded instead of dropped, because "why is
 // it still running the old one" is otherwise an afternoon with `which -a`.
 func TestShadowedCopiesAreRecordedOnTheWinner(t *testing.T) {
+	// Discovery also reads the managed store under the data dir, and this
+	// machine has real plugins installed there; isolated so the test sees
+	// only what it planted.
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
 	first, second := t.TempDir(), t.TempDir()
 	installAs(t, first, "rta-plugin-hello")
 	installAs(t, second, "rta-plugin-hello")
