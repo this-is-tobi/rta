@@ -386,6 +386,23 @@ func doctorReport(reg *registry.Registry) view.View {
 		for _, p := range problems {
 			add("profile", "warn", p.String())
 		}
+		// Two names that derive the same variables. `rta profile set` refuses
+		// to create the second one, so a pair here came in before that check
+		// existed or was written into the file by hand — and the failure is
+		// quiet in the worst way: the credential is found, it is simply the
+		// other connection's. Reported once per pair, on the name that sorts
+		// first, because saying it twice does not make it two problems.
+		for _, name := range cfg.ProfileNames() {
+			for _, other := range cfg.AmbiguousEnvNames(name) {
+				if name > other {
+					continue
+				}
+				add("profile", "warn", fmt.Sprintf(
+					"%s and %s derive the same RTA_PROFILE_* variables, so a credential "+
+						"exported for one is read by the other — rename one, or carry it "+
+						"as a `secrets:` reference", name, other))
+			}
+		}
 		bad := map[string]bool{}
 		for _, p := range problems {
 			bad[p.Name] = true
