@@ -64,7 +64,7 @@ make build      # ./rta
 
 ## Installing plugins from an index
 
-`rta` is one binary and every plugin is a separate module, so neither `go install` nor a release archive brings them along. An **index** is how one arrives: a git repository of `plugins/<name>.yaml` manifests, each generated from a plugin binary's own declaration. Attach one, search it, install from it.
+`rta` is one binary and every plugin is a separate module, so neither `go install` nor a release archive brings them along. An **index** is how one arrives: a git repository of `index/<name>.yaml` manifests, each generated from a plugin binary's own declaration. Attach one, search it, install from it.
 
 ```bash
 rta plugin index add official
@@ -74,7 +74,7 @@ rta plugin install vault
 
 Install is where the claim meets the evidence: rta fetches the artifact, hashes it, launches it in the same sandbox any load uses, and refuses it if what it declares is not what the index said — naming the index that got it wrong. Installing *is* the trust decision, so there is no separate approval step afterwards.
 
-**Nothing is attached until you say so.** `official` is the one index rta knows by name — [rta-plugins](https://github.com/this-is-tobi/rta-plugins), where the first-party plugins are built, released and described — and the name is reserved for it, so `rta plugin index add official <elsewhere>` is refused. Any other index is `rta plugin index add <name> <repository>`, and a source repository is not one: a source tree's `plugins/` holds a directory per plugin, an index holds a manifest per plugin, and `rta plugin index add` reads what it cloned and says so rather than attaching something that would answer every search with silence.
+**Nothing is attached until you say so.** `official` is the one index rta knows by name — [rta-plugins](https://github.com/this-is-tobi/rta-plugins), where the first-party plugins are built, released and described — and the name is reserved for it, so `rta plugin index add official <elsewhere>` is refused. Any other index is `rta plugin index add <name> <repository>`, and a repository with no `index/` is not one — a source tree keeps a directory per plugin under `plugins/`, an index keeps a manifest per plugin under `index/` — so `rta plugin index add` reads what it cloned and says so rather than attaching something that would answer every search with silence.
 
 Two ways to skip the index entirely. **From source**, `make install` in [rta-plugins](https://github.com/this-is-tobi/rta-plugins) puts `rta-plugin-<name>` beside your `rta` and `make trust` there approves the ones built — a binary on your `$PATH` is not consent, and [Trust](../40-plugins/10-plugins.md#trust) is why. **Already in an image**, `ghcr.io/this-is-tobi/rta-full` carries every first-party plugin already trusted; [Container image](#container-image) has the tradeoff.
 

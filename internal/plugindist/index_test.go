@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// gitFixture makes a real repository holding the given plugins/<name>.yaml
+// gitFixture makes a real repository holding the given index/<name>.yaml
 // files. Real git rather than a directory pretending, because AddIndex is a
 // clone and UpdateIndex is a pull — the operations under test are git's, so
 // the fixture must be something git recognises.
@@ -38,11 +38,11 @@ func gitFixture(t *testing.T, manifests map[string]string) string {
 
 func writeManifests(t *testing.T, repo string, manifests map[string]string) {
 	t.Helper()
-	if err := os.MkdirAll(filepath.Join(repo, "plugins"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(repo, "index"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	for name, doc := range manifests {
-		if err := os.WriteFile(filepath.Join(repo, "plugins", name+".yaml"),
+		if err := os.WriteFile(filepath.Join(repo, "index", name+".yaml"),
 			[]byte(doc), 0o644); err != nil {
 			t.Fatal(err)
 		}

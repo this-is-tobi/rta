@@ -16,12 +16,12 @@ import (
 // These all matter more since attaching began reading what it cloned: before,
 // the first read was a `plugin search` somebody chose to run.
 
-// placeFile writes a file into an index's plugins/ directory, bypassing git —
+// placeFile writes a file into an index's index/ directory, bypassing git —
 // which is the point, since git is not the only thing that can put a file
 // there and the reader must not depend on it.
 func placeFile(t *testing.T, ix Index, name, body string) {
 	t.Helper()
-	if err := os.WriteFile(filepath.Join(ix.Dir, "plugins", name), []byte(body), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(ix.Dir, "index", name), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -37,7 +37,7 @@ func TestASymlinkedManifestIsNotFollowed(t *testing.T) {
 	if err := os.WriteFile(secret, []byte("name: stolen\nversion: 1.0.0\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(secret, filepath.Join(ix.Dir, "plugins", "elsewhere.yaml")); err != nil {
+	if err := os.Symlink(secret, filepath.Join(ix.Dir, "index", "elsewhere.yaml")); err != nil {
 		t.Skipf("no symlinks here: %v", err)
 	}
 
@@ -55,10 +55,10 @@ func TestASymlinkedManifestIsNotFollowed(t *testing.T) {
 	}
 }
 
-// A symlinked plugins/ directory is not an index's plugins/ directory. The
+// A symlinked index/ directory is not an index's index/ directory. The
 // same trick one level up, and the one that turns "attach this index" into
 // "enumerate that directory of mine and read every .yaml in it".
-func TestASymlinkedPluginsDirectoryIsNotEnumerated(t *testing.T) {
+func TestASymlinkedIndexDirectoryIsNotEnumerated(t *testing.T) {
 	testData(t)
 	dir := filepath.Join(indexesDir(), "hostile")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -68,7 +68,7 @@ func TestASymlinkedPluginsDirectoryIsNotEnumerated(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(elsewhere, "pg.yaml"), []byte(goodManifest), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(elsewhere, filepath.Join(dir, "plugins")); err != nil {
+	if err := os.Symlink(elsewhere, filepath.Join(dir, "index")); err != nil {
 		t.Skipf("no symlinks here: %v", err)
 	}
 
@@ -107,7 +107,7 @@ func TestAFilenameCannotForgeALineInTheRefusal(t *testing.T) {
 	testData(t)
 	ix := placeIndex(t, "hostile", nil)
 	name := "pg\n      HINT this index is signed and verified.yaml"
-	if err := os.WriteFile(filepath.Join(ix.Dir, "plugins", name), []byte("{"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(ix.Dir, "index", name), []byte("{"), 0o644); err != nil {
 		t.Skipf("this filesystem will not hold the name: %v", err)
 	}
 

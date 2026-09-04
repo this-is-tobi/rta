@@ -114,7 +114,7 @@ plugin cnpg   ok   ~/.local/bin/rta-plugin-cnpg (5 capabilities, 24757826bbf5)
 
 ## Indexes
 
-An index is a git repository of `plugins/<name>.yaml` manifests — claims about plugins, searchable without downloading anything.
+An index is a git repository of `index/<name>.yaml` manifests — claims about plugins, searchable without downloading anything.
 
 ```bash
 rta plugin index add official        # the first-party index, known by name
@@ -129,14 +129,14 @@ An index is a directory of manifests and nothing else:
 
 ```
 my-index/
-└── plugins/
+└── index/
     ├── pg.yaml
     └── kube.yaml
 ```
 
 Each manifest is generated from the plugin binary rather than written: `rta plugin manifest` reads the artifact's own declaration, so an entry cannot disagree with the plugin it describes. [Publishing a plugin](./20-writing-a-plugin.md#publishing-it) is the whole path — and an index of your own is a repository with that one directory in it, attached by the same command as anybody else's.
 
-**A `plugins/` directory with no manifest in it is not an index**, even when that is where the plugins are: a source tree's `plugins/` holds a directory per plugin, an index holds a manifest per plugin, and rta reads the manifests and skips the directories — which is how [rta-plugins](https://github.com/this-is-tobi/rta-plugins) can be both, each plugin's directory sitting beside the manifest its release generated. `rta plugin index add` reads what it cloned before calling the attach a success, and refuses one that carries no manifest — naming what it found instead. Nothing is left behind when it does, so the name is free for the next attempt.
+**A repository with no `index/` is not an index**, even when that is where the plugins are: a source tree keeps a directory per plugin under `plugins/`, an index keeps a manifest per plugin under `index/`, each folder its purpose — [rta-plugins](https://github.com/this-is-tobi/rta-plugins) carries both. `rta plugin index add` reads what it cloned before calling the attach a success, and refuses one that carries no manifest — naming what it found instead, a `plugins/` full of directories included. Nothing is left behind when it does, so the name is free for the next attempt.
 
 ```bash
 rta plugin search postgres

@@ -82,7 +82,7 @@ func TestAGeneratedManifestInstalls(t *testing.T) {
 	if m.Platforms[0].SHA256 != sha256Of(t, bin) {
 		t.Fatalf("sha256 = %s, want the artifact's own", m.Platforms[0].SHA256)
 	}
-	if FileName(m) != "plugins/hello.yaml" {
+	if FileName(m) != "index/hello.yaml" {
 		t.Fatalf("FileName = %q", FileName(m))
 	}
 

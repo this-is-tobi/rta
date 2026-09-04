@@ -58,11 +58,11 @@ func sourceRepoFixture(t *testing.T, plugins ...string) string {
 func placeIndex(t *testing.T, name string, manifests map[string]string) Index {
 	t.Helper()
 	dir := filepath.Join(indexesDir(), name)
-	if err := os.MkdirAll(filepath.Join(dir, "plugins"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "index"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	for n, doc := range manifests {
-		if err := os.WriteFile(filepath.Join(dir, "plugins", n+".yaml"), []byte(doc), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, "index", n+".yaml"), []byte(doc), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -142,10 +142,10 @@ func TestAnIndexWhoseEveryManifestIsMalformedIsNotAttached(t *testing.T) {
 	}
 }
 
-// The check is on what plugins/ holds, not on whether it exists. Those read
+// The check is on what index/ holds, not on whether it exists. Those read
 // the same for a directory of manifests and differently for everything else,
 // which is the whole defect.
-func TestAnEmptyPluginsDirectoryIsNotAnEmptyCatalogue(t *testing.T) {
+func TestAnEmptyIndexDirectoryIsNotAnEmptyCatalogue(t *testing.T) {
 	testData(t)
 	ix := placeIndex(t, "hollow", nil)
 

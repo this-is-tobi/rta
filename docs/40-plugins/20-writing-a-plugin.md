@@ -202,11 +202,11 @@ It is optional — `Put` and `Add` work, and `Key()` falls back to the title —
 
 ## Publishing it
 
-An **index** is a git repository holding one `plugins/<name>.yaml` manifest per plugin. That is the entire format. rta clones it with your own `git`, so your remotes, proxies and credentials keep working — over `https`, `ssh`, or a path on this machine; a `<transport>::<argument>` remote helper and cleartext `http://`/`git://` are refused — and it answers `rta plugin search` from the manifests alone without fetching or running anything.
+An **index** is a git repository holding one `index/<name>.yaml` manifest per plugin. That is the entire format. rta clones it with your own `git`, so your remotes, proxies and credentials keep working — over `https`, `ssh`, or a path on this machine; a `<transport>::<argument>` remote helper and cleartext `http://`/`git://` are refused — and it answers `rta plugin search` from the manifests alone without fetching or running anything.
 
 ```
 my-index/
-└── plugins/
+└── index/
     ├── mytool.yaml
     └── othertool.yaml
 ```
