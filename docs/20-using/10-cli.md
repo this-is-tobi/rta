@@ -151,12 +151,14 @@ See [Installation](../10-getting-started/10-installation.md#shell-completion) to
 
 ## Piping in
 
-Capabilities taking a body read piped stdin:
+No capability input reads stdin, and nothing infers one from a pipe. What every `Path` input accepts is `/dev/stdin`:
 
 ```bash
-cat notes.md | rta note add "meeting" 
-echo '{"a":1}' | rta codec jwt decode
+echo -n hello | rta fs hash /dev/stdin
+kubectl get secret db -o jsonpath='{.data.password}' | base64 -d | rta kv set db-password --file /dev/stdin
 ```
+
+The second line is the one that matters: it is how a credential reaches the store without ever being an argument in `ps` or in your shell history.
 
 ## Scripting notes
 
