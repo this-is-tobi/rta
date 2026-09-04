@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.6.0](https://github.com/this-is-tobi/rule-them-all/compare/v0.5.0...v0.6.0) (2026-09-04)
+
+
+### Features
+
+* **plugins:** a plugin's version is stamped by the build, not typed into it ([01479b1](https://github.com/this-is-tobi/rule-them-all/commit/01479b1bcac1b51730d68cf74454a567d1065247))
+* **plugins:** install a plugin from an OCI registry ([de0b30f](https://github.com/this-is-tobi/rule-them-all/commit/de0b30f0de848e3e3fb1fe8f1e628761244f40ae))
+
+
+### Bug Fixes
+
+* **plugins:** a file:// artifact could not be installed on Windows ([7a5c666](https://github.com/this-is-tobi/rule-them-all/commit/7a5c666c3a4a7cedbcfbf33290364c5565d53007))
+* **plugins:** an install could fail on Windows because it had just run the artifact ([2aa6bfd](https://github.com/this-is-tobi/rule-them-all/commit/2aa6bfd300a29393fcbde79ca77005f5af69fa4b))
+* **plugins:** no plugin could launch on Windows, whatever else was fixed ([90fcbd6](https://github.com/this-is-tobi/rule-them-all/commit/90fcbd6b433fa95d354d4fbd16e657001391a225))
+* **plugins:** rta could not load a plugin on Windows at all ([779c126](https://github.com/this-is-tobi/rule-them-all/commit/779c126a2c21b2c1c92c099bb6f7ea7c3e8fd9d3))
+* **tui:** fixing a stale pin dropped every key the form did not show ([8a48e2a](https://github.com/this-is-tobi/rule-them-all/commit/8a48e2ac900983a46b39365b31afb7ddab92b5ea))
+* **tui:** re-pinning or labelling a connection erased what it configured ([b9e7ad7](https://github.com/this-is-tobi/rule-them-all/commit/b9e7ad73e1b18a4399522f594276409597e4a5b0))
+
 ## [0.5.0](https://github.com/this-is-tobi/rule-them-all/compare/v0.4.0...v0.5.0) (2026-09-04)
 
 
