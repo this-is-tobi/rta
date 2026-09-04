@@ -48,6 +48,37 @@ func Plugin() plugin.Plugin {
 				Run: runInfo,
 			},
 			{
+				ID:      "net.listen",
+				Summary: "What this machine is listening on, and which process owns it",
+				// The other half of net.port, pointed inward: that one asks
+				// what a host answers from outside, this one asks what this
+				// host is offering — and nothing in rta joined a port to the
+				// process holding it. sys.ps knows the processes and net.info
+				// knows the interfaces; the socket in between had no reader.
+				Safety:       plugin.Read,
+				HostSpecific: true,
+				Idempotent:   true,
+				Description: "Every TCP and UDP socket this machine has open for business, with the " +
+					"address it is bound to, how far that reaches (loopback, one address, or all " +
+					"interfaces) and the process behind it.\n\n" +
+					"Two honest limits. **UDP has no listening state** — a bound UDP socket is in no " +
+					"state at all — so a socket with a port and no peer is shown whether it is a " +
+					"server waiting or a resolver with a query in flight; the kernel does not tell " +
+					"them apart and neither does netstat. And **the answer is only as complete as " +
+					"the caller's privileges**, differently on each platform: Linux reads the whole " +
+					"socket table from /proc but can only name the process behind sockets it may " +
+					"look into, so the Process column empties; macOS reads through lsof, which shows " +
+					"only what the caller may see, so the row is absent entirely. Neither platform " +
+					"silently substitutes one for the other.",
+				Inputs: []plugin.Field{
+					{Name: "port", Type: plugin.Int, Min: 1, Max: 65535,
+						Help: "only this port — the \"who has 8080\" question"},
+					{Name: "proto", Type: plugin.String, Options: []string{"tcp", "udp"},
+						Help: "only this protocol (tcp covers tcp6, udp covers udp6)"},
+				},
+				Run: runListen,
+			},
+			{
 				ID:         "net.ping",
 				Summary:    "Ping a host and report latency statistics",
 				Safety:     plugin.Read,

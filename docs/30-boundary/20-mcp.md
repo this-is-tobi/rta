@@ -373,7 +373,7 @@ Locking an operator freezes the key, not what it already signed — pair it with
 ```
 rta mcp server listening on http://127.0.0.1:8443
 rta: every request needs a bearer token; TLS is not this process's job — put a reverse proxy, ingress or service mesh in front of it
-rta: remote transport hides 27 capabilities that describe this machine: audit.deps, audit.why, fs.hash, fs.tree, … (27 total)
+rta: remote transport hides 28 capabilities that describe this machine: audit.deps, audit.why, fs.hash, fs.tree, … (28 total)
 ```
 
 Everything else in `net` — `ping`, `dns`, `trace`, `probe`, `send`, `port` — stays reachable, since those describe a caller-named target rather than this host. A result still reflects the vantage point of wherever rta is actually running, which is worth knowing rather than assuming.
