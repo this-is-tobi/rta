@@ -248,7 +248,7 @@ func (req GenerateRequest) platform(ctx context.Context, src PlatformSource, mem
 
 	local := ""
 	if u.Scheme == "file" {
-		local = u.Path
+		local = localPath(u)
 	}
 	if local != "" {
 		sum, verr := digestFile(local)

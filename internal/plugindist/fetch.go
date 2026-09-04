@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -62,7 +63,7 @@ func fetchArtifact(ctx context.Context, rawURL string, dst *os.File) (string, *v
 		}
 		body = resp.Body
 	case "file":
-		f, err := os.Open(u.Path)
+		f, err := os.Open(localPath(u))
 		if err != nil {
 			return "", view.Errorf("plugin.install.fetch", "%v", err)
 		}
@@ -152,6 +153,33 @@ func extractMember(archive io.Reader, member string, dst io.Writer) (int64, *vie
 		}
 		return n, nil
 	}
+}
+
+// localPath is the file a file:// URL names, in the spelling this operating
+// system opens.
+//
+// **A URL path is not a filesystem path, and only one platform lets you
+// pretend otherwise.** A file URL's path is always slash-separated and always
+// starts with "/", so on Unix it happens to be the path already and `u.Path`
+// was passed to os.Open unchanged. The absolute form on Windows is
+// `file:///C:/dir/x`, whose path parses as `/C:/dir/x` — a leading slash in
+// front of a drive letter, which Windows rejects outright: "The filename,
+// directory name, or volume label syntax is incorrect."
+//
+// So `file://` — a scheme checkArtifactURL admits, and the one a local index
+// naming a local artifact depends on — could not install anything at all on
+// Windows. It was invisible from here because the only tests that exercised
+// it built their URLs by concatenation and were refused a step earlier, for a
+// different reason, on that platform alone.
+//
+// FromSlash after trimming, rather than trimming alone, so the result is
+// separated the way the rest of this package spells a path.
+func localPath(u *url.URL) string {
+	p := u.Path
+	if len(p) > 2 && p[0] == '/' && p[2] == ':' {
+		p = p[1:]
+	}
+	return filepath.FromSlash(p)
 }
 
 // digestFile is rta's own hash of a file on disk — the value everything pins
