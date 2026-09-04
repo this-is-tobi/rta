@@ -6,7 +6,7 @@ A plugin is a program that returns a declaration and serves it over gRPC. rta la
 rta plugin list
 ```
 
-Eleven first-party plugins live in [rta-plugins](https://github.com/this-is-tobi/rta-plugins). They are the proof the contract works, and each is a separate binary you install only if you want it — none of them is linked into `rta` itself, so the ones you skip cost you nothing.
+Ten first-party plugins live in [rta-plugins](https://github.com/this-is-tobi/rta-plugins). They are the proof the contract works, and each is a separate binary you install only if you want it — none of them is linked into `rta` itself, so the ones you skip cost you nothing.
 
 | Plugin | Service |
 | --- | --- |
@@ -20,9 +20,12 @@ Eleven first-party plugins live in [rta-plugins](https://github.com/this-is-tobi
 | `kube` | Kubernetes |
 | `cnpg` | CloudNativePG: which PostgreSQL clusters exist, what one will tell you about its own health, replication, recovery settings, backups and volumes, and asking for a backup now |
 | `docker` | containers and images |
-| `eol` | end-of-life checks against endoflife.date |
 
 Every one of them draws the same line in the same place: the read tier describes the thing, and anything that returns a value somebody stored is a write. `mysql.schema` tells you a database's shape and `mysql.query` returns its rows; `etcd.kv.list` gives you key names and `etcd.kv.get` gives you what a key holds. That is what makes read worth granting.
+
+## Built in, or a plugin
+
+A capability ships built into `rta` when it needs no credential and no configuration, brings nothing outside the standard library, and reaches either nothing or one fixed public host that no input can redirect — `eol.check` asks endoflife.date, the `audit` plugin asks OSV, and neither can be pointed anywhere else. It is a plugin the moment any of that stops being true: a client library the people who never use it should not carry, a credential location it has to declare, or a destination the caller chooses, which is the line `http.get` sits behind a grant for. Every plugin in rta-plugins fails at least one of those tests, and that is what put it there; `eol` passed all of them, and that is what brought it here.
 
 ## Getting the first-party ones
 

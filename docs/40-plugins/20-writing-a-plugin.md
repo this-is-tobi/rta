@@ -254,14 +254,14 @@ Install is where claims meet evidence: rta fetches the artifact, hashes it, laun
 
 ## Worked examples, in the order worth reading them
 
-Eleven first-party plugins live in [rta-plugins](https://github.com/this-is-tobi/rta-plugins), and they are not a showcase — they are the proof the contract works, written against the same public SDK you have, from the same released rta. Every one is a separate module that cannot reach into rta's internals, so anything they do, you can do.
+Ten first-party plugins live in [rta-plugins](https://github.com/this-is-tobi/rta-plugins), and they are not a showcase — they are the proof the contract works, written against the same public SDK you have, from the same released rta. Every one is a separate module that cannot reach into rta's internals, so anything they do, you can do.
 
 Read them in this order and each one adds exactly one idea:
 
 | Plugin | Read it for |
 | --- | --- |
 | [`examples/plugin-hello`](../../examples/plugin-hello/main.go) | The whole shape in one file — and the fixture rta's own host tests run against |
-| [`eol`](https://github.com/this-is-tobi/rta-plugins/tree/main/plugins/eol) | The smallest real one: a single capability over a public API, nothing to configure |
+| [`builtin/eol`](../../builtin/eol/eol.go) | The smallest real one: a single capability over a public API, nothing to configure — built in, and the same declaration a plugin would make |
 | [`kube`](https://github.com/this-is-tobi/rta-plugins/tree/main/plugins/kube) | Shelling out to a tool the operator already has (`kubectl`) instead of linking its client library, and why |
 | [`cnpg`](https://github.com/this-is-tobi/rta-plugins/tree/main/plugins/cnpg) | The opposite choice from `kube`: one plain API read against a Custom Resource instead of a shell-out, and declaring a credential [`Need`](#if-your-plugin-needs-a-credential-location) rather than assuming one. Also a single `Write` among reads, and what it costs to add one |
 | [`mysql`](https://github.com/this-is-tobi/rta-plugins/tree/main/plugins/mysql) | A connection: declared inputs, a `Secret` a profile fills, an endpoint role a tunnel can fill |

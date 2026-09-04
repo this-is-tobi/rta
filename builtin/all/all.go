@@ -14,6 +14,7 @@ import (
 	"github.com/this-is-tobi/rule-them-all/builtin/cert"
 	"github.com/this-is-tobi/rule-them-all/builtin/codec"
 	rtadebug "github.com/this-is-tobi/rule-them-all/builtin/debug"
+	"github.com/this-is-tobi/rule-them-all/builtin/eol"
 	rtafs "github.com/this-is-tobi/rule-them-all/builtin/fs"
 	"github.com/this-is-tobi/rule-them-all/builtin/gen"
 	rtagit "github.com/this-is-tobi/rule-them-all/builtin/git"
@@ -48,6 +49,7 @@ func Registry(conf func(plugin.Capability) map[string]any) (*registry.Registry, 
 		rtanet.Plugin(),
 		rtahttp.Plugin(),
 		audit.Plugin(),
+		eol.Plugin(),
 		rtafs.Plugin(),
 		rtagit.Plugin(),
 		todo.Plugin(),

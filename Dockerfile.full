@@ -54,7 +54,7 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build \
 # the stage runs on the target platform (build-docker.yml builds each
 # architecture on its own runner), and `go install` refuses GOBIN when
 # cross-compiling.
-ARG PLUGINS="cnpg/v0.1.0 docker/v0.1.0 eol/v0.1.0 etcd/v0.1.0 kube/v0.1.0 mariadb/v0.1.0 mysql/v0.1.0 pg/v0.1.0 qdrant/v0.1.0 s3/v0.1.0 vault/v0.1.0"
+ARG PLUGINS="cnpg/v0.1.0 docker/v0.1.0 etcd/v0.1.0 kube/v0.1.0 mariadb/v0.1.0 mysql/v0.1.0 pg/v0.1.0 qdrant/v0.1.0 s3/v0.1.0 vault/v0.1.0"
 RUN set -eux; \
     mkdir -p /out; \
     for spec in $PLUGINS; do \
