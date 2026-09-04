@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	"github.com/this-is-tobi/rule-them-all/internal/config"
+	"github.com/this-is-tobi/rule-them-all/internal/pluginhost"
 	"github.com/this-is-tobi/rule-them-all/internal/plugintrust"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 )
@@ -39,7 +40,11 @@ func hello(t *testing.T) string {
 			helloErr = err
 			return
 		}
-		helloPath = filepath.Join(dir, "rta-plugin-hello")
+		// pluginhost.BinaryName, for the reason its twin in that package
+		// carries: a fixture standing in for an installed plugin has to be
+		// named the way one is named, and on Windows that means the .exe
+		// without which nothing will execute it.
+		helloPath = filepath.Join(dir, pluginhost.BinaryName("hello"))
 		cmd := exec.Command("go", "build", "-o", helloPath, "../../examples/plugin-hello")
 		if out, err := cmd.CombinedOutput(); err != nil {
 			helloErr = fmt.Errorf("%v: %s", err, out)
@@ -75,9 +80,9 @@ summary: the example plugin
 platforms:
   - os: %s
     arch: %s
-    url: file://%s
+    url: %s
     sha256: %s
-`, runtimeGOOS(), runtimeGOARCH(), artifact, sha256Of(t, artifact))
+`, runtimeGOOS(), runtimeGOARCH(), fileURL(artifact), sha256Of(t, artifact))
 	if bin != "" {
 		doc += "    bin: " + bin + "\n"
 	}
@@ -215,16 +220,19 @@ func TestInstallVerifiesPlacesTrustsAndRecords(t *testing.T) {
 			}
 
 			// The store holds the bytes where the layout says, executable.
-			placed := filepath.Join(StoreDir(), "hello", wantDigest, "rta-plugin-hello")
+			placed := filepath.Join(StoreDir(), "hello", wantDigest, binaryName("hello"))
 			info, err := os.Stat(placed)
-			if err != nil || info.Mode()&0o111 == 0 {
+			// The execute bit only where there is one: Go derives a Windows
+			// FileMode from the read-only attribute, so this is 0 for every
+			// file there and asserting it would fail on a correct install.
+			if err != nil || (pluginhost.ExeSuffix == "" && info.Mode()&0o111 == 0) {
 				t.Fatalf("stored binary: %v, mode %v", err, info)
 			}
 			if got, ok := CurrentDigest("hello"); !ok || got != wantDigest {
 				t.Fatalf("CurrentDigest = %q, %v", got, ok)
 			}
 			// The bin/ link resolves to the stored file.
-			link := filepath.Join(BinDir(), "rta-plugin-hello")
+			link := filepath.Join(BinDir(), binaryName("hello"))
 			if resolved, err := filepath.EvalSymlinks(link); err != nil ||
 				sha256Of(t, resolved) != wantDigest {
 				t.Fatalf("bin link resolves to %q (%v)", resolved, err)
@@ -377,7 +385,7 @@ func TestRemoveUninstallsAndNamesOrphans(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(StoreDir(), "hello")); err == nil {
 		t.Error("the store entry survived remove")
 	}
-	if _, err := os.Readlink(filepath.Join(BinDir(), "rta-plugin-hello")); err == nil {
+	if _, err := os.Readlink(filepath.Join(BinDir(), binaryName("hello"))); err == nil {
 		t.Error("the bin link survived remove")
 	}
 	if _, held := LockedFor("hello"); held {
@@ -418,7 +426,7 @@ func TestUpgradeMovesKeepsRollbackAndReportsUpToDate(t *testing.T) {
 	// The upstream ships different bytes: the same source built with the
 	// linker stripping symbols — a different artifact, the same declaration.
 	dir := t.TempDir()
-	rebuilt := filepath.Join(dir, "rta-plugin-hello")
+	rebuilt := filepath.Join(dir, binaryName("hello"))
 	cmd := exec.Command("go", "build", "-ldflags=-s -w", "-o", rebuilt, "../../examples/plugin-hello")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("rebuilding: %v: %s", err, out)
@@ -502,14 +510,23 @@ func TestSignatureOutcomesAreRecordedNeverRequired(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		return fmt.Sprintf("signature:\n  sig: file://%s/artifact.sig\n  key: file://%s/key.pub\n",
-			dir, dir)
+		return fmt.Sprintf("signature:\n  sig: %s\n  key: %s\n",
+			fileURL(filepath.Join(dir, "artifact.sig")), fileURL(filepath.Join(dir, "key.pub")))
 	}
-	fakeCosign := func(t *testing.T, body string) {
+	// A cosign that decides, without cosign being installed. The stub is a
+	// shell script, which is the one thing here that is not portable: Windows
+	// will not execute a file with a shebang, and a .bat is not something
+	// CreateProcess starts either. What these two cases check — that rta
+	// records the outcome it was handed rather than gating the install on it —
+	// has nothing to do with the platform, and it runs on the other three.
+	fakeCosign := func(t *testing.T, exit int) {
 		t.Helper()
-		dir := t.TempDir()
-		path := filepath.Join(dir, "cosign")
-		if err := os.WriteFile(path, []byte("#!/bin/sh\n"+body), 0o755); err != nil {
+		if pluginhost.ExeSuffix != "" {
+			t.Skip("the cosign stub is a shell script; the outcome recording it drives is platform-independent")
+		}
+		path := filepath.Join(t.TempDir(), "cosign")
+		if err := os.WriteFile(path,
+			[]byte(fmt.Sprintf("#!/bin/sh\nexit %d\n", exit)), 0o755); err != nil {
 			t.Fatal(err)
 		}
 		saved := cosignBin
@@ -530,11 +547,11 @@ func TestSignatureOutcomesAreRecordedNeverRequired(t *testing.T) {
 			return sigBlock(t.TempDir())
 		}, "not checked (cosign not installed)"},
 		{"verified", func(t *testing.T) string {
-			fakeCosign(t, "exit 0\n")
+			fakeCosign(t, 0)
 			return sigBlock(t.TempDir())
 		}, "verified"},
 		{"failed", func(t *testing.T) string {
-			fakeCosign(t, "exit 1\n")
+			fakeCosign(t, 1)
 			return sigBlock(t.TempDir())
 		}, "FAILED verification"},
 	}
@@ -574,12 +591,12 @@ summary: too big
 platforms:
   - os: %s
     arch: %s
-    url: file://%s
+    url: %s
     sha256: %s
 capabilities:
   - id: hello.greet
     safety: read
-`, runtimeGOOS(), runtimeGOARCH(), big, sha256Of(t, big))
+`, runtimeGOOS(), runtimeGOARCH(), fileURL(big), sha256Of(t, big))
 	attach(t, doc)
 	_, verr := Install(context.Background(), "hello", io.Discard)
 	if verr == nil || !strings.Contains(verr.Message, "cap") {

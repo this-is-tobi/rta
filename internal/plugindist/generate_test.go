@@ -3,6 +3,7 @@ package plugindist
 import (
 	"context"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/this-is-tobi/rule-them-all/internal/pluginhost"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
@@ -18,6 +20,25 @@ import (
 // reading a declaration means running the binary.
 func hostPlatform(url string) []PlatformSource {
 	return []PlatformSource{{OS: runtime.GOOS, Arch: runtime.GOARCH, URL: url}}
+}
+
+// fileURL is the file:// URL naming a local path, which is not the scheme
+// concatenated with the path on every platform — the form these tests used
+// everywhere.
+//
+// On Unix a path already begins with "/", so the concatenation happens to
+// produce the three slashes a file URL needs. A Windows path begins with a
+// drive letter and separates with backslashes, so it produced
+// `file://C:\Users\...`, where "C:" parses as the host and the backslashes are
+// not legal in a path — checkArtifactURL refused it before any test reached
+// what it meant to test.
+func fileURL(path string) string {
+	p := filepath.ToSlash(path)
+	if !strings.HasPrefix(p, "/") {
+		// C:/Users/… → /C:/Users/…, which is what file:///C:/Users/… means.
+		p = "/" + p
+	}
+	return (&url.URL{Scheme: "file", Path: p}).String()
 }
 
 func generate(t *testing.T, req GenerateRequest) ([]byte, Manifest) {
@@ -35,7 +56,7 @@ func generate(t *testing.T, req GenerateRequest) ([]byte, Manifest) {
 func TestAGeneratedManifestInstalls(t *testing.T) {
 	testData(t)
 	bin := hello(t)
-	doc, m := generate(t, GenerateRequest{Binary: bin, Platforms: hostPlatform("file://" + bin)})
+	doc, m := generate(t, GenerateRequest{Binary: bin, Platforms: hostPlatform(fileURL(bin))})
 
 	// "dev" is what an unstamped build honestly is: hello() builds with a
 	// plain `go build`, so nothing set main.version, and the declaration says
@@ -61,7 +82,7 @@ func TestAGeneratedManifestInstalls(t *testing.T) {
 	if m.Platforms[0].SHA256 != sha256Of(t, bin) {
 		t.Fatalf("sha256 = %s, want the artifact's own", m.Platforms[0].SHA256)
 	}
-	if FileName(m) != filepath.Join("plugins", "hello.yaml") {
+	if FileName(m) != "plugins/hello.yaml" {
 		t.Fatalf("FileName = %q", FileName(m))
 	}
 
@@ -80,9 +101,9 @@ func TestAGeneratedManifestInstalls(t *testing.T) {
 func TestRegeneratingAnUnchangedPluginChangesNothing(t *testing.T) {
 	bin := hello(t)
 	req := GenerateRequest{Binary: bin, Platforms: []PlatformSource{
-		{OS: "linux", Arch: "arm64", URL: "file://" + bin},
-		{OS: "darwin", Arch: "arm64", URL: "file://" + bin},
-		{OS: "linux", Arch: "amd64", URL: "file://" + bin},
+		{OS: "linux", Arch: "arm64", URL: fileURL(bin)},
+		{OS: "darwin", Arch: "arm64", URL: fileURL(bin)},
+		{OS: "linux", Arch: "amd64", URL: fileURL(bin)},
 	}}
 	first, m := generate(t, req)
 	second, _ := generate(t, req)
@@ -107,14 +128,14 @@ func TestRegeneratingAnUnchangedPluginChangesNothing(t *testing.T) {
 // existed, four minor versions behind the rta they shipped beside, which is
 // what a number nobody's build sets does on its own.
 func TestABuildStampIsWhatTheManifestClaims(t *testing.T) {
-	bin := filepath.Join(t.TempDir(), "rta-plugin-hello")
+	bin := filepath.Join(t.TempDir(), pluginhost.BinaryName("hello"))
 	build := exec.Command("go", "build",
 		"-ldflags", "-X main.version=v9.9.9-stamped",
 		"-o", bin, "../../examples/plugin-hello")
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("building a stamped hello: %v: %s", err, out)
 	}
-	_, m := generate(t, GenerateRequest{Binary: bin, Platforms: hostPlatform("file://" + bin)})
+	_, m := generate(t, GenerateRequest{Binary: bin, Platforms: hostPlatform(fileURL(bin))})
 	if m.Version != "v9.9.9-stamped" {
 		t.Fatalf("version = %q, want the one the linker stamped", m.Version)
 	}
@@ -126,7 +147,7 @@ func TestWhatComesOutParsesBackIn(t *testing.T) {
 		Binary:    bin,
 		Version:   "v9.9.9",
 		Homepage:  "https://example.com/hello",
-		Platforms: hostPlatform("file://" + bin),
+		Platforms: hostPlatform(fileURL(bin)),
 	})
 	reparsed, verr := ParseManifest(doc)
 	if verr != nil {
@@ -197,7 +218,7 @@ func TestTheGeneratorRefusesWhatWouldFailAtSomebodyElsesInstall(t *testing.T) {
 			"plugin.manifest.platform", "nothing states the sha256"},
 		{"a bin: the archive does not hold",
 			GenerateRequest{Binary: bin, Platforms: []PlatformSource{
-				{OS: "linux", Arch: "amd64", URL: "file://" + archive, Bin: "wrong/place"}}},
+				{OS: "linux", Arch: "amd64", URL: fileURL(archive), Bin: "wrong/place"}}},
 			"plugin.manifest.platform", "holds no \"wrong/place\""},
 		{"a file that is not there",
 			GenerateRequest{Binary: bin,
@@ -209,12 +230,12 @@ func TestTheGeneratorRefusesWhatWouldFailAtSomebodyElsesInstall(t *testing.T) {
 		// typed. These name the flag instead.
 		{"a homepage that is not https",
 			GenerateRequest{Binary: bin, Homepage: "http://example.com",
-				Platforms: hostPlatform("file://" + bin)},
+				Platforms: hostPlatform(fileURL(bin))},
 			"plugin.manifest.homepage", "is not an https URL"},
 		{"one platform stated twice",
 			GenerateRequest{Binary: bin, Platforms: []PlatformSource{
-				{OS: "linux", Arch: "amd64", URL: "file://" + bin},
-				{OS: "linux", Arch: "amd64", URL: "file://" + bin}}},
+				{OS: "linux", Arch: "amd64", URL: fileURL(bin)},
+				{OS: "linux", Arch: "amd64", URL: fileURL(bin)}}},
 			"plugin.manifest.platform", "given twice"},
 	}
 	for _, c := range cases {
@@ -240,11 +261,11 @@ func TestABinClaimIsProvedWhileTheArchiveIsInReach(t *testing.T) {
 	// The default guess is the plain binary name, which this archive does not
 	// hold — and saying so here is the whole point.
 	if _, _, verr := Generate(context.Background(), GenerateRequest{
-		Binary: bin, Platforms: hostPlatform("file://" + archive)}, io.Discard); verr == nil {
+		Binary: bin, Platforms: hostPlatform(fileURL(archive))}, io.Discard); verr == nil {
 		t.Fatal("a bin: nothing checked was written down as a claim")
 	}
 	_, m := generate(t, GenerateRequest{Binary: bin, Platforms: []PlatformSource{
-		{OS: runtime.GOOS, Arch: runtime.GOARCH, URL: "file://" + archive,
+		{OS: runtime.GOOS, Arch: runtime.GOARCH, URL: fileURL(archive),
 			Bin: "somewhere/inside/rta-plugin-hello"}}})
 	if m.Platforms[0].Bin != "somewhere/inside/rta-plugin-hello" {
 		t.Fatalf("bin = %q", m.Platforms[0].Bin)
@@ -274,7 +295,7 @@ func TestAPluginThatCannotBePublishedSaysWhichPartIsMissing(t *testing.T) {
 	bin := hello(t)
 	_, _, verr := Generate(context.Background(), GenerateRequest{
 		Binary:    bin,
-		Platforms: hostPlatform("file://" + bin),
+		Platforms: hostPlatform(fileURL(bin)),
 		Version:   strings.Repeat("v", 41),
 	}, io.Discard)
 	if verr == nil || verr.Code != "plugin.manifest.write" {
@@ -291,7 +312,7 @@ func TestAPluginThatCannotBePublishedSaysWhichPartIsMissing(t *testing.T) {
 func TestAGeneratedManifestLandsWhereTheIndexLooksForIt(t *testing.T) {
 	testData(t)
 	bin := hello(t)
-	doc, m := generate(t, GenerateRequest{Binary: bin, Platforms: hostPlatform("file://" + bin)})
+	doc, m := generate(t, GenerateRequest{Binary: bin, Platforms: hostPlatform(fileURL(bin))})
 
 	dir := t.TempDir()
 	dest := filepath.Join(dir, FileName(m))

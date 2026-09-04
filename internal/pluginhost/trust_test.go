@@ -2,36 +2,103 @@ package pluginhost
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/this-is-tobi/rule-them-all/internal/plugintrust"
 	"github.com/this-is-tobi/rule-them-all/internal/registry"
 )
 
-// canary installs a "plugin" whose only behaviour is to prove it ran.
+// canarySource is a "plugin" whose only behaviour is to prove it ran.
 //
-// A shell script rather than a real plugin, deliberately: it cannot complete
-// the handshake, so if trust lets it through the load *fails* — and the file
-// it leaves behind is the only evidence that matters. What is being tested is
-// not whether an untrusted plugin registers, which any check would get right.
-// It is whether a stranger's code executes at all, and the only honest way to
-// ask that is to give it something to do and look for the trace.
+// It cannot complete the handshake, so if trust lets it through the load
+// *fails* — and the file it leaves behind is the only evidence that matters.
+// What is being tested is not whether an untrusted plugin registers, which any
+// check would get right. It is whether a stranger's code executes at all, and
+// the only honest way to ask that is to give it something to do and look for
+// the trace.
+//
+// **A compiled binary rather than a shell script**, which is what this was.
+// Windows executes neither a shebang nor a .bat through CreateProcess, so on
+// the one platform where rta's plugin loading had just been found broken in
+// three separate ways, the test that asks "does a stranger's code run"
+// answered no because *nothing* could run. That is a pass for the wrong
+// reason, on a security property, which is worse than a skip — a skip at
+// least says so.
+//
+// It writes beside its own executable rather than to a path baked in at build
+// time, so one build serves every test: each copies it into a directory of its
+// own and reads back its own trace.
+const canarySource = `package main
+
+import "os"
+
+func main() {
+	if exe, err := os.Executable(); err == nil {
+		_ = os.WriteFile(exe+".ran", nil, 0o644)
+	}
+	os.Exit(1)
+}
+`
+
+var (
+	canaryOnce sync.Once
+	canaryBin  string
+	canaryErr  error
+)
+
+// canaryBinary builds the canary once for the package, the way hello does, and
+// for the same reason: the spawn path is the thing under test and a fixture
+// that cannot be spawned tests nothing.
+//
+// A single file with no go.mod, which `go build` accepts for a program that
+// imports only the standard library — so this needs no committed source and
+// no module of its own.
+func canaryBinary(t *testing.T) string {
+	t.Helper()
+	canaryOnce.Do(func() {
+		dir, err := os.MkdirTemp("", "rta-canary-*")
+		if err != nil {
+			canaryErr = err
+			return
+		}
+		src := filepath.Join(dir, "main.go")
+		if err := os.WriteFile(src, []byte(canarySource), 0o644); err != nil {
+			canaryErr = err
+			return
+		}
+		canaryBin = filepath.Join(dir, BinaryName("canary"))
+		build := exec.Command("go", "build", "-o", canaryBin, src)
+		if out, err := build.CombinedOutput(); err != nil {
+			canaryErr = fmt.Errorf("%v: %s", err, out)
+		}
+	})
+	if canaryErr != nil {
+		t.Fatalf("building the canary: %v", canaryErr)
+	}
+	return canaryBin
+}
+
 func canary(t *testing.T) (dir, trace string, digest string) {
 	t.Helper()
 	dir = t.TempDir()
-	trace = filepath.Join(dir, "it-ran")
-	script := "#!/bin/sh\n: > " + trace + "\nexit 1\n"
-	path := filepath.Join(dir, Prefix+"canary")
-	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+	body, err := os.ReadFile(canaryBinary(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, BinaryName("canary"))
+	if err := os.WriteFile(path, body, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	id, err := Identify(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return dir, trace, id.Digest
+	return dir, path + ".ran", id.Digest
 }
 
 func ran(t *testing.T, trace string) bool {
@@ -105,9 +172,16 @@ func TestTrustDoesNotSurviveTheArtifactChanging(t *testing.T) {
 		t.Fatal(verr)
 	}
 
-	// Same path, same name, different bytes.
-	path := filepath.Join(dir, Prefix+"canary")
-	if err := os.WriteFile(path, []byte("#!/bin/sh\n: > "+trace+"\nexit 1\n# changed\n"), 0o755); err != nil {
+	// Same path, same name, different bytes — the real canary with a byte
+	// appended, so the replacement is still something that would leave a
+	// trace if it were allowed to run. A replacement that could not execute
+	// would pass this test without the trust check doing anything.
+	path := filepath.Join(dir, BinaryName("canary"))
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, append(body, '\n'), 0o755); err != nil {
 		t.Fatal(err)
 	}
 

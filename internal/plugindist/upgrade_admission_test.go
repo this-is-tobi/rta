@@ -37,7 +37,11 @@ func installHello(t *testing.T) Report {
 func TestUpgradeRefusesStoreBytesThatAreNotTheLockedDigest(t *testing.T) {
 	first := installHello(t)
 
-	stored := filepath.Join(StoreDir(), "hello", first.Digest, "rta-plugin-hello")
+	// binaryName, not the literal: the store spells it with the platform's
+	// suffix, so writing to the bare name left the real artifact untouched and
+	// the upgrade correctly succeeded — reported here as "an upgrade ran bytes
+	// nobody had approved", which is the alarming way a fixture can lie.
+	stored := filepath.Join(StoreDir(), "hello", first.Digest, binaryName("hello"))
 	// Not a plugin at all: if this runs, the handshake fails and the test
 	// would report plugin.upgrade.old — the point is that it is never asked.
 	//
@@ -98,7 +102,7 @@ func TestUpgradeRefusesALockfileDigestThatIsAPath(t *testing.T) {
 
 	elsewhere := t.TempDir()
 	marker := filepath.Join(elsewhere, "ran")
-	planted := filepath.Join(elsewhere, "rta-plugin-hello")
+	planted := filepath.Join(elsewhere, binaryName("hello"))
 	if err := os.WriteFile(planted, []byte("#!/bin/sh\ntouch "+marker+"\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}

@@ -14,11 +14,11 @@ import (
 // TestAManagedStoreSymlinkSpawns.
 func TestIdentifyResolvesSymlinks(t *testing.T) {
 	dir := t.TempDir()
-	real := filepath.Join(dir, "rta-plugin-real")
+	real := filepath.Join(dir, BinaryName("real"))
 	if err := os.WriteFile(real, []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	link := filepath.Join(dir, "rta-plugin-link")
+	link := filepath.Join(dir, BinaryName("link"))
 	if err := os.Symlink(real, link); err != nil {
 		t.Fatal(err)
 	}

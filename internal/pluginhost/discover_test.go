@@ -32,9 +32,17 @@ func trustHello(t *testing.T) {
 	}
 }
 
+// touch writes a file that stands in for something on $PATH, named the way
+// that platform names an executable.
+//
+// ExeSuffix here rather than at each call site: every one of these is a file
+// discovery is meant to look at, and on Windows a file with no extension is
+// not one Discover should find — Namespace refuses it, correctly. Without the
+// suffix the fixtures were all invisible and every discovery test read "found
+// nothing", which is indistinguishable from the scan being broken.
 func touch(t *testing.T, path string, mode os.FileMode) {
 	t.Helper()
-	if err := os.WriteFile(path, []byte("#!/bin/sh\n"), mode); err != nil {
+	if err := os.WriteFile(path+ExeSuffix, []byte("#!/bin/sh\n"), mode); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -50,14 +58,21 @@ func TestDiscoveryTakesSdkPluginsAndLeavesTheExecTierAlone(t *testing.T) {
 	touch(t, filepath.Join(dir, "rta-legacy"), 0o755)  // exec tier
 	touch(t, filepath.Join(dir, "rtaplugin-x"), 0o755) // no separator: not ours
 	touch(t, filepath.Join(dir, "unrelated"), 0o755)
-	touch(t, filepath.Join(dir, "rta-plugin-notexec"), 0o644) // not executable
 	if err := os.Mkdir(filepath.Join(dir, "rta-plugin-dir"), 0o755); err != nil {
 		t.Fatal(err)
+	}
+	want := map[string]bool{"hello": true, "pg": true}
+	// "not executable" is a question only a platform with an execute bit can
+	// be asked. Go derives a Windows FileMode from the read-only attribute, so
+	// 0o644 there is an ordinary readable file and runnable() says yes to
+	// every one — which is why runnable is per-platform rather than a mode
+	// test that quietly matched nothing (exename_windows.go).
+	if ExeSuffix == "" {
+		touch(t, filepath.Join(dir, "rta-plugin-notexec"), 0o644)
 	}
 	t.Setenv("PATH", dir)
 
 	got := Discover()
-	want := map[string]bool{"hello": true, "pg": true}
 	if len(got) != len(want) {
 		t.Fatalf("discovered %v, want exactly %v", names(got), want)
 	}
@@ -119,7 +134,7 @@ func TestACollidingPluginIsRefusedWithoutTakingDownTheRegistry(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	linked := filepath.Join(dir, "rta-plugin-hello")
+	linked := filepath.Join(dir, BinaryName("hello"))
 	if err := os.Symlink(hello(t), linked); err != nil {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
@@ -152,7 +167,7 @@ func TestACollidingPluginIsRefusedWithoutTakingDownTheRegistry(t *testing.T) {
 // becomes capabilities in the registry, with working handlers.
 func TestADiscoveredPluginBecomesUsableCapabilities(t *testing.T) {
 	dir := t.TempDir()
-	linked := filepath.Join(dir, "rta-plugin-hello")
+	linked := filepath.Join(dir, BinaryName("hello"))
 	if err := os.Symlink(hello(t), linked); err != nil {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
@@ -213,7 +228,7 @@ func TestASecondNameForOneBinaryDoesNotUnregisterTheFirst(t *testing.T) {
 		t.Fatal(err)
 	}
 	dir := t.TempDir()
-	for _, name := range []string{Prefix + "hello", Prefix + "hellotwin"} {
+	for _, name := range []string{BinaryName("hello"), BinaryName("hellotwin")} {
 		if err := os.WriteFile(filepath.Join(dir, name), src, 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -262,7 +277,7 @@ func installAs(t *testing.T, dir, filename string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	out := filepath.Join(dir, filename)
+	out := filepath.Join(dir, filename+ExeSuffix)
 	if err := os.WriteFile(out, body, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -375,7 +390,7 @@ func TestShadowedCopiesAreRecordedOnTheWinner(t *testing.T) {
 // used", followed by one path, listed twice.
 func TestADirectoryTwiceOnPathIsNotAPluginTwice(t *testing.T) {
 	dir := t.TempDir()
-	bin := filepath.Join(dir, Prefix+"dup")
+	bin := filepath.Join(dir, BinaryName("dup"))
 	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -414,7 +429,7 @@ func TestTheManagedStoreIsDiscoveredLast(t *testing.T) {
 	// Alone, the managed copy is found.
 	t.Setenv("PATH", t.TempDir())
 	found := Discover()
-	if len(found) != 1 || found[0].Path != filepath.Join(managed, "rta-plugin-hello") {
+	if len(found) != 1 || found[0].Path != filepath.Join(managed, BinaryName("hello")) {
 		t.Fatalf("found = %+v, want the managed copy", found)
 	}
 
@@ -424,10 +439,10 @@ func TestTheManagedStoreIsDiscoveredLast(t *testing.T) {
 	touch(t, filepath.Join(dir, "rta-plugin-hello"), 0o755)
 	t.Setenv("PATH", dir)
 	found = Discover()
-	if len(found) != 1 || found[0].Path != filepath.Join(dir, "rta-plugin-hello") {
+	if len(found) != 1 || found[0].Path != filepath.Join(dir, BinaryName("hello")) {
 		t.Fatalf("found = %+v, want the $PATH copy first", found)
 	}
-	if len(found[0].Shadowed) != 1 || found[0].Shadowed[0] != filepath.Join(managed, "rta-plugin-hello") {
+	if len(found[0].Shadowed) != 1 || found[0].Shadowed[0] != filepath.Join(managed, BinaryName("hello")) {
 		t.Fatalf("shadowed = %v, want the managed copy reported", found[0].Shadowed)
 	}
 }
