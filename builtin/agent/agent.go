@@ -30,6 +30,7 @@ import (
 
 	"golang.org/x/term"
 
+	"github.com/this-is-tobi/rule-them-all/builtin/internal/timefmt"
 	"github.com/this-is-tobi/rule-them-all/internal/agentlog"
 	"github.com/this-is-tobi/rule-them-all/internal/consent"
 	"github.com/this-is-tobi/rule-them-all/internal/grant"
@@ -981,10 +982,8 @@ func parseSince(raw string) (time.Time, *view.Error) {
 		}
 		return time.Now().Add(-d), nil
 	}
-	for _, layout := range []string{time.RFC3339, "2006-01-02 15:04:05", "2006-01-02 15:04", "2006-01-02"} {
-		if t, err := time.ParseInLocation(layout, raw, time.Local); err == nil {
-			return t, nil
-		}
+	if t, ok := timefmt.ParseInstant(raw, time.Local); ok {
+		return t, nil
 	}
 	return time.Time{}, view.Errorf("agent.log.since",
 		"%q is not a time this understands", raw).

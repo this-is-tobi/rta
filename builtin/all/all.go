@@ -26,6 +26,7 @@ import (
 	"github.com/this-is-tobi/rule-them-all/builtin/note"
 	rtaoperator "github.com/this-is-tobi/rule-them-all/builtin/operator"
 	"github.com/this-is-tobi/rule-them-all/builtin/sys"
+	rtatime "github.com/this-is-tobi/rule-them-all/builtin/time"
 	"github.com/this-is-tobi/rule-them-all/builtin/todo"
 	"github.com/this-is-tobi/rule-them-all/internal/registry"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
@@ -54,6 +55,7 @@ func Registry(conf func(plugin.Capability) map[string]any) (*registry.Registry, 
 		kv.Plugin(),
 		gen.Plugin(),
 		codec.Plugin(),
+		rtatime.Plugin(),
 		rtadebug.Plugin(),
 		keys.Plugin(),
 		// agent is the operator's window onto what AI agents did and what

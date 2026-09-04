@@ -1665,6 +1665,27 @@
     }
   },
   {
+    "name": "time_at",
+    "description": "── the text below is written by the plugin, not by rta ──\nConvert an instant between epoch, UTC, local time and a named zone\n\nTakes an instant in whatever form you have it — an epoch number at any precision, an RFC3339 stamp, a plain date, or a duration either side of now (`90m ago`, `in 2h`, `+90m`) — and shows it as UTC, as local time, as epoch seconds and milliseconds, and as how long ago or away it is. With --zone, in a third timezone too.\n\nA bare number carries no unit, so the unit is chosen by magnitude and then stated back to you in the `read-as` row: between 1970 and 1973 the ranges genuinely overlap and no rule can resolve that, which makes saying what was assumed part of the answer rather than a footnote.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "when": {
+          "default": "now",
+          "description": "an instant: now, an epoch number, 2026-09-04T12:00:00Z, 2026-09-04, or a relative duration like \"90m ago\"",
+          "type": "string"
+        },
+        "zone": {
+          "description": "also show it in this IANA timezone (Europe/Paris)",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
     "name": "todo_list",
     "description": "── the text below is written by the plugin, not by rta ──\nList tasks\n\nShows top-level tasks by default; pass --parent to list one task's sub-tasks. With --detail: adds creation date and a body preview.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,

@@ -139,6 +139,10 @@ func TestJWTDecodesHeaderAndClaims(t *testing.T) {
 // A JSON number decodes to float64, and fmt.Sprint on a large whole float64
 // prints scientific notation (1.516239022e+09) — unreadable for exactly the
 // claim (iat/exp/nbf) every real JWT carries.
+//
+// A prefix rather than the whole value: the row now carries the decoded date
+// after the number (see jwtdate_test.go). The number itself still has to be
+// there, in full and in figures, which is what this test has always been about.
 func TestJWTNumericClaimsAreNotScientificNotation(t *testing.T) {
 	token := buildJWT(t, `{"alg":"HS256"}`, `{"iat":1516239022}`)
 	v, err := runJWT(context.Background(), req(map[string]any{"token": token}))
@@ -146,8 +150,8 @@ func TestJWTNumericClaimsAreNotScientificNotation(t *testing.T) {
 		t.Fatal(err)
 	}
 	claims := v.(view.Sections).Items[1].View.(view.KeyValue)
-	if !pairsHave(claims, "iat", "1516239022") {
-		t.Errorf("claims = %+v, want iat = 1516239022", claims.Pairs)
+	if !strings.HasPrefix(pairValue(claims, "iat"), "1516239022") {
+		t.Errorf("claims = %+v, want iat to start with 1516239022", claims.Pairs)
 	}
 }
 
@@ -164,4 +168,15 @@ func pairsHave(kv view.KeyValue, key, value string) bool {
 		}
 	}
 	return false
+}
+
+// pairValue returns one pair's rendered value, or "" when the key is absent —
+// for the assertions that check part of a value rather than all of it.
+func pairValue(kv view.KeyValue, key string) string {
+	for _, p := range kv.Pairs {
+		if p.Key == key {
+			return p.Value
+		}
+	}
+	return ""
 }
