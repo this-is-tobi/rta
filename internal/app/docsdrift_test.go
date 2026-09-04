@@ -7,8 +7,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-
-	"github.com/this-is-tobi/rule-them-all/internal/mcp"
 )
 
 // The docs state two numbers that nothing generates: how many built-in plugins
@@ -84,187 +82,21 @@ func TestTheDocsNameEveryBuiltInPlugin(t *testing.T) {
 	}
 }
 
-// docs/40-plugins/20-writing-a-plugin.md tells a plugin author which of the eleven shipped
-// plugins to read, in order, and states how many capabilities each carries so
-// the reader knows what they are opening. Seven of the eleven were stale at
-// once — kube said 7 and had 19 — because every feature PR since has grown a
-// plugin without touching a table in a different chapter.
-//
-// Counted from the source rather than from a built binary on purpose: the
-// plugins are separate modules, and `rta plugin list` reports whatever the
-// operator happens to have installed, which on a development machine is
-// routinely an older build than the tree. The declaration is the truth here.
-func TestTheWorkedExamplesTableCountsEveryPluginsCapabilities(t *testing.T) {
-	root := repoRoot(t)
-	body := readDoc(t, root, "docs/40-plugins/20-writing-a-plugin.md")
-
-	// | [`plugins/kube`](../plugins/kube/) | … | 19 |
-	row := regexp.MustCompile(`\[` + "`" + `plugins/([a-z0-9]+)` + "`" + `\]\([^)]*\)[^|]*\|[^|]*\|\s*([0-9 ·]+?)\s*\|`)
-	stated := map[string]int{}
-	for _, m := range row.FindAllStringSubmatch(body, -1) {
-		// A row may pair two plugins and state "6 · 7"; the counts are in the
-		// same order the links are, so pair them up by position.
-		names := regexp.MustCompile(`\[`+"`"+`plugins/([a-z0-9]+)`+"`"+`\]`).
-			FindAllStringSubmatch(m[0], -1)
-		counts := strings.Split(m[2], "·")
-		if len(names) != len(counts) {
-			t.Errorf("row %q pairs %d plugins with %d counts", m[0], len(names), len(counts))
-			continue
-		}
-		for i, n := range names {
-			c, err := strconv.Atoi(strings.TrimSpace(counts[i]))
-			if err != nil {
-				t.Errorf("row for %s states a non-numeric count %q", n[1], counts[i])
-				continue
-			}
-			stated[n[1]] = c
-		}
-	}
-
-	for name, want := range declaredCapabilityCounts(t, root) {
-		got, listed := stated[name]
-		if !listed {
-			t.Errorf("docs/40-plugins/20-writing-a-plugin.md never lists plugins/%s, which ships in this "+
-				"repository — a plugin author reading that table would not know it exists", name)
-			continue
-		}
-		if got != want {
-			t.Errorf("docs/40-plugins/20-writing-a-plugin.md says plugins/%s has %d capabilities; it declares %d",
-				name, got, want)
-		}
-	}
+// The whole-store backups the first-party plugins declare, listed by hand now
+// that their source lives in rta-plugins and cannot be read from this tree.
+// The other half of the old check — that each receipt carries a `does not
+// carry` row — is enforced there, by that repository's `make docs-check`. A
+// plugin that ships a new <plugin>.dump or <plugin>.snapshot is added here,
+// and this test then fails until the recipes table plans for it.
+var wholeStoreBackups = []string{
+	"etcd.snapshot",
+	"mariadb.dump",
+	"mysql.dump",
+	"pg.dump",
+	"qdrant.dump",
+	"vault.snapshot",
 }
 
-// declaredCapabilityCounts reads each plugin module's own source for the
-// capability IDs it declares. A plugin is a separate module and cannot be
-// imported from here, and building eleven binaries to count them would make
-// this the slowest test in the package for an answer the text already holds.
-func declaredCapabilityCounts(t *testing.T, root string) map[string]int {
-	t.Helper()
-	// ID: "mysql.dump" — the dotted form, which is what a capability ID is and
-	// what nothing else in these files looks like.
-	id := regexp.MustCompile(`\bID:\s*"([a-z0-9]+(?:\.[a-z0-9]+)+)"`)
-
-	dirs, err := os.ReadDir(filepath.Join(root, "plugins"))
-	if err != nil {
-		t.Fatalf("reading plugins/: %v", err)
-	}
-
-	counts := map[string]int{}
-	for _, d := range dirs {
-		if !d.IsDir() {
-			continue
-		}
-		seen := map[string]bool{}
-		modDir := filepath.Join(root, "plugins", d.Name())
-		files, err := os.ReadDir(modDir)
-		if err != nil {
-			t.Fatalf("reading %s: %v", modDir, err)
-		}
-		for _, f := range files {
-			n := f.Name()
-			if !strings.HasSuffix(n, ".go") || strings.HasSuffix(n, "_test.go") {
-				continue
-			}
-			src, err := os.ReadFile(filepath.Join(modDir, n))
-			if err != nil {
-				t.Fatalf("reading %s: %v", n, err)
-			}
-			for _, m := range id.FindAllStringSubmatch(string(src), -1) {
-				seen[m[1]] = true
-			}
-		}
-		if len(seen) > 0 {
-			counts[d.Name()] = len(seen)
-		}
-	}
-	if len(counts) == 0 {
-		t.Fatal("found no plugin modules under plugins/, which cannot be right")
-	}
-	return counts
-}
-
-// Every external tool a capability shells out to has to be in the installation
-// chapter's table, because that table is the only place a user is told to
-// install it — and it is also the list Dockerfile.full's own comment says it
-// tracks. mysql and mariadb grew dump/restore pairs that shell out, and both
-// the table and that Dockerfile still said those plugins shelled out to
-// nothing, so the full image shipped four capabilities that could not run.
-func TestTheInstallationTableNamesEveryToolACapabilityShellsOutTo(t *testing.T) {
-	root := repoRoot(t)
-	body := readDoc(t, root, "docs/10-getting-started/10-installation.md")
-
-	// Each entry is a tool the plugin looks up at run time and refuses by name
-	// when it is absent. Adding a shell-out without adding a row here is the
-	// mistake this pins.
-	for _, tool := range []string{
-		"pg_dump", "pg_restore", "psql",
-		"mysqldump", "mysql",
-		"mariadb-dump", "mariadb",
-		"kubectl", "docker", "git", "ssh", "cosign",
-	} {
-		if !strings.Contains(body, "`"+tool+"`") {
-			t.Errorf("docs/10-getting-started/10-installation.md's external-tools table never names %q, which a "+
-				"capability shells out to; a user has no way to learn they need it", tool)
-		}
-	}
-}
-
-// docs/30-boundary/20-mcp.md reproduces what `rta mcp serve --http` prints at startup,
-// including the count of capabilities the locality gate hides from a remote
-// caller. It said 28 and the answer is 27, which is the same rot as the rest
-// of this file with a sharper edge: the whole paragraph is teaching an
-// operator what a remote agent can and cannot see, so a reader checking their
-// own startup line against the doc finds a number that does not match and has
-// no way to tell which one is wrong.
-func TestTheMCPChapterCountsTheRemoteHiddenCapabilities(t *testing.T) {
-	reg, err := NewRegistry()
-	if err != nil {
-		t.Fatalf("building the built-in registry: %v", err)
-	}
-	want := len(mcp.Options{Remote: true}.RemoteBlocked(reg))
-
-	body := readDoc(t, repoRoot(t), "docs/30-boundary/20-mcp.md")
-	line := regexp.MustCompile(`remote transport hides (\d+) capabilities`)
-	m := line.FindStringSubmatch(body)
-	if m == nil {
-		t.Fatal("docs/30-boundary/20-mcp.md no longer shows the remote-transport startup line; " +
-			"if it moved, move this test with it")
-	}
-	if got, _ := strconv.Atoi(m[1]); got != want {
-		t.Errorf("docs/30-boundary/20-mcp.md says remote transport hides %d capabilities; it hides %d", got, want)
-	}
-	// The line prints the count twice — "hides N … (N total)" — and a
-	// half-updated sample is worse than a stale one, because the two halves
-	// disagreeing reads as a bug in rta rather than in the doc.
-	if !strings.Contains(body, "("+m[1]+" total)") {
-		t.Errorf("docs/30-boundary/20-mcp.md's sample says %s in one half of the line and something else in "+
-			"the other; both halves print the same number", m[1])
-	}
-}
-
-// **A backup that does not say what it leaves behind is not yet a backup.**
-// Every one of these writes a file that restores into something short of what
-// was backed up, and the missing half is different in each: pg leaves the
-// cluster's roles behind, mysql and mariadb leave the accounts that could read
-// the data, qdrant leaves the alias pointing at the collection, vault leaves
-// the keys that open the file it just wrote, and etcd leaves the cluster's own
-// identity. None of that is discoverable from the file, and all of it is
-// discovered on the day somebody needs the restore.
-//
-// So it is written in two places on purpose — the recipes chapter, where a
-// backup strategy gets planned, and the capability's own receipt, where one
-// gets taken — and this fails when a new whole-store backup ships with neither.
-//
-// The set is capabilities whose ID is exactly <plugin>.dump or
-// <plugin>.snapshot. That two-segment form is the whole test: pg.table.dump
-// and pg.schema.dump back up a named part, which is a different question with
-// a different answer, and s3.bucket.download is not a dump at all.
-//
-// The receipt half is checked against the module rather than the handler,
-// which is loose in exactly one way worth naming: a module that grew a second
-// whole-store backup would pass on the first one's row. No module has two, and
-// the day one does is the day to tighten this.
 func TestEveryWholeStoreBackupNamesWhatItLeavesBehind(t *testing.T) {
 	root := repoRoot(t)
 	body := readDoc(t, root, "docs/90-recipes/01-readme.md")
@@ -275,67 +107,12 @@ func TestEveryWholeStoreBackupNamesWhatItLeavesBehind(t *testing.T) {
 			" table; if it moved, move this test with it")
 	}
 
-	for capID, src := range wholeStoreBackups(t, root) {
-		if !strings.Contains(src, `"does not carry"`) {
-			t.Errorf("%s backs up a whole datastore and its receipt has no `does not carry` "+
-				"row, so the one moment somebody is looking at the backup passes without "+
-				"telling them what it is missing", capID)
-		}
+	for _, capID := range wholeStoreBackups {
 		if !strings.Contains(table, "`"+capID+"`") {
 			t.Errorf("%s is absent from the %q table in docs/90-recipes/01-readme.md, which is "+
 				"where a backup strategy gets planned", capID, heading)
 		}
 	}
-}
-
-// wholeStoreBackups maps each whole-store backup capability to the source of
-// the module that declares it. Same reasoning as declaredCapabilityCounts for
-// reading the declaration rather than a built binary: the plugins are separate
-// modules, and what an operator happens to have installed is routinely older
-// than the tree.
-func wholeStoreBackups(t *testing.T, root string) map[string]string {
-	t.Helper()
-	id := regexp.MustCompile(`\bID:\s*"([a-z0-9]+\.(?:dump|snapshot))"`)
-
-	dirs, err := os.ReadDir(filepath.Join(root, "plugins"))
-	if err != nil {
-		t.Fatalf("reading plugins/: %v", err)
-	}
-
-	found := map[string]string{}
-	for _, d := range dirs {
-		if !d.IsDir() {
-			continue
-		}
-		modDir := filepath.Join(root, "plugins", d.Name())
-		files, err := os.ReadDir(modDir)
-		if err != nil {
-			t.Fatalf("reading %s: %v", modDir, err)
-		}
-		var src strings.Builder
-		for _, f := range files {
-			n := f.Name()
-			if !strings.HasSuffix(n, ".go") || strings.HasSuffix(n, "_test.go") {
-				continue
-			}
-			b, err := os.ReadFile(filepath.Join(modDir, n))
-			if err != nil {
-				t.Fatalf("reading %s: %v", n, err)
-			}
-			src.Write(b)
-		}
-		for _, m := range id.FindAllStringSubmatch(src.String(), -1) {
-			// Namespaced by its own plugin, so a mention of another plugin's
-			// capability in a comment or a hint cannot enrol this module.
-			if strings.HasPrefix(m[1], d.Name()+".") {
-				found[m[1]] = src.String()
-			}
-		}
-	}
-	if len(found) == 0 {
-		t.Fatal("found no whole-store backup capabilities under plugins/, which cannot be right")
-	}
-	return found
 }
 
 func readDoc(t *testing.T, root, rel string) string {
