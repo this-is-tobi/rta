@@ -611,6 +611,30 @@ var profileName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 // ValidName reports whether name is a legal profile name.
 func ValidName(name string) bool { return profileName.MatchString(name) }
 
+// AmbiguousEnvNames lists the configured profiles whose names make name's
+// RTA_PROFILE_* variables ambiguous, sorted.
+//
+// plugin.ProfileEnvAmbiguous carries the reasoning; this is the question asked
+// of a real config, which is the only place it has an answer. A profile called
+// `staging-db` is unremarkable until a `staging` exists beside it, and then a
+// credential exported for one is read into the other.
+//
+// Named rather than resolved, and never disabling the channel quietly: the
+// config file is the operator's, the variable is theirs, and rta silently
+// ignoring an export it derived the name for would be a worse failure than the
+// one being reported. `rta profile set` refuses to create the second name and
+// `rta doctor` names a pair that is already there.
+func (c Config) AmbiguousEnvNames(name string) []string {
+	var out []string
+	for other := range c.Profiles {
+		if plugin.ProfileEnvAmbiguous(name, other) {
+			out = append(out, other)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 // ProfileNames lists the configured profiles, sorted.
 func (c Config) ProfileNames() []string {
 	out := make([]string, 0, len(c.Profiles))

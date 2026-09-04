@@ -107,14 +107,57 @@ func profilable(inputs []Field, scope string) bool {
 // Strictly narrower than LocalEnvVar's RTA_<NS>_<INPUT>, which is the point.
 // A namespace-wide variable is bound to the plugin, so it follows the
 // connection wherever a profile points it; exporting this one is the
-// operator's statement that this credential belongs to *this* connection, so
-// it can never be paired with a different one. Resolve switches the
-// namespace-wide layer off entirely whenever a profile is active.
+// operator's statement that this credential belongs to *this* connection.
+// Resolve switches the namespace-wide layer off entirely whenever a profile is
+// active.
 //
 // "profile" is a reserved namespace, so no plugin can produce a colliding
 // LocalEnvVar.
+//
+// **One connection, unless two profile names make the boundary ambiguous**,
+// and this comment used to claim otherwise — "it can never be paired with a
+// different one", which is false and ProfileEnvAmbiguous says exactly when.
 func ProfileEnvVar(profile, input string) string {
 	return "RTA_PROFILE_" + envToken(profile) + "_" + envToken(input)
+}
+
+// ProfileEnvAmbiguous reports whether two profile names make each other's
+// ProfileEnvVar spellings ambiguous.
+//
+// **No flat encoding of two dash-bearing names into one identifier can be
+// injective, and this one is not.** The segments are joined with `_` and a
+// dash inside either becomes `_` as well — the documented spelling, `ssl-mode`
+// reading as SSL_MODE — so the separator is a character both segments produce
+// and the boundary is not recoverable:
+//
+//	profile "staging-db", input "password"    → RTA_PROFILE_STAGING_DB_PASSWORD
+//	profile "staging",    input "db-password" → RTA_PROFILE_STAGING_DB_PASSWORD
+//
+// Bind derives that name for both, so a credential exported for one connection
+// is read into another. It is the same "repoint by spelling" Bind already
+// refuses instance labels over, arriving through the other segment — and the
+// reason it is detected here rather than encoded around is that there is no
+// encoding to reach for. A wider separator does not help (`staging--db`
+// produces `__` too), nor does a third segment; the only characters envToken
+// cannot emit are lowercase, and a variable an operator has to type in mixed
+// case is a worse answer than naming the two profiles that disagree.
+//
+// So the ambiguity is reported exactly, and only between names that actually
+// coexist. `staging-db` on its own is a fine profile: it is `staging` arriving
+// beside it that creates the question, which is why this takes two names and
+// callers ask it of the configured set.
+//
+// The rule is lexical and needs no plugin, because the split can only fall in
+// two places when one name's token plus a separator begins the other's. Two
+// distinct legal names cannot share a token — envToken maps `-` to `_` and
+// leaves the rest of the alphabet alone, which is one-to-one over
+// `[a-z0-9-]` — so equality is not a case to handle.
+func ProfileEnvAmbiguous(a, b string) bool {
+	if a == b {
+		return false
+	}
+	ta, tb := envToken(a), envToken(b)
+	return strings.HasPrefix(tb, ta+"_") || strings.HasPrefix(ta, tb+"_")
 }
 
 // envToken renders one segment of a derived variable name, and guarantees the

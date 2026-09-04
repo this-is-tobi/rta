@@ -246,6 +246,25 @@ func runProfileSet(cmd *cobra.Command, name string, reg *registry.Registry) (vie
 				WithHint("pick another — a profile name and a namespace share a command line")
 		}
 	}
+	// Two profile names can make each other's RTA_PROFILE_* variables
+	// ambiguous, and the moment to say so is the one where a different word is
+	// still free: `staging-db`'s password variable is spelled exactly like
+	// `staging`'s `db-password` one, so whichever arrives second would start
+	// reading a credential exported for the other. Refused at the keystroke
+	// rather than at the read, because at the read there is nothing left to
+	// choose — see plugin.ProfileEnvAmbiguous for why it cannot simply be
+	// encoded away.
+	if cfg, err := config.LoadFile(); err == nil {
+		if clash := cfg.AmbiguousEnvNames(name); len(clash) > 0 {
+			return nil, view.Errorf("core.profile.envclash",
+				"%q and %q derive the same RTA_PROFILE_* variables",
+				name, clash[0]).
+				WithHint("a dash in a profile name and a dash in an input name both become " +
+					"`_`, so the boundary between them is not recoverable — pick a name that " +
+					"is not " + clash[0] + " plus a dash, or carry the credential as a " +
+					"`secrets:` reference, where nothing is derived from a string")
+		}
+	}
 
 	// Under the lock, and the whole load-mutate-write inside it. This
 	// command is built to be scripted, and a script that states four
