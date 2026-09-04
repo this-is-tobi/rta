@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -73,45 +74,62 @@ type productEnvelope struct {
 // catalogue's own example — `rta eol check postgres 15` — needs no
 // client-side alias table.
 func fetchProduct(ctx context.Context, client *http.Client, base, product string) (*productResult, *view.Error) {
-	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
-	defer cancel()
-
 	// PathEscape rather than plain concatenation: a product string carrying
 	// its own "/" would otherwise change which path is requested instead of
 	// failing as the unknown product it is.
 	reqURL := base + "/products/" + url.PathEscape(strings.ToLower(product))
+	var env productEnvelope
+	status, verr := getJSON(ctx, client, reqURL, strconv.Quote(product), &env)
+	if verr != nil {
+		return nil, verr
+	}
+	// A 404 here is always HTML (the site's own not-found page), for an
+	// unknown product and an unknown cycle alike — checked by status code
+	// alone, before anything tries to decode the body as JSON, so the
+	// failure is "no such product" rather than "invalid character '<'".
+	if status == http.StatusNotFound {
+		return nil, view.Errorf("eol.product.notfound", "no product named %q", product).
+			WithHint("see https://endoflife.date for the full catalogue of names and aliases — " +
+				"`rta eol products <term>` searches it")
+	}
+	if status != http.StatusOK {
+		return nil, view.Errorf("eol.request.status", "endoflife.date returned %d for %q", status, product)
+	}
+	return &env.Result, nil
+}
+
+// getJSON performs one GET against the API and decodes a 200 into out. It
+// returns the status rather than judging it, because a 404 means "no such
+// product" on one path and "the API moved" on another, and only the caller
+// knows which. what names the thing being asked about in every error, so
+// "asking endoflife.date about \"postgresql\"" and "… about the catalogue"
+// read the same way.
+func getJSON(ctx context.Context, client *http.Client, reqURL, what string, out any) (int, *view.Error) {
+	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
+	defer cancel()
+
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
-		return nil, view.Errorf("eol.request.invalid", "building request for %q: %v", product, err)
+		return 0, view.Errorf("eol.request.invalid", "building request for %s: %v", what, err)
 	}
 	httpReq.Header.Set("Accept", "application/json")
 
 	resp, err := client.Do(httpReq)
 	if err != nil {
-		return nil, view.Errorf("eol.request.failed", "asking endoflife.date about %q: %v", product, err).
+		return 0, view.Errorf("eol.request.failed", "asking endoflife.date about %s: %v", what, err).
 			WithHint("check network access — endoflife.date must be reachable")
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	// A 404 here is always HTML (the site's own not-found page), for an
-	// unknown product and an unknown cycle alike — checked by status code
-	// alone, before anything tries to decode the body as JSON, so the
-	// failure is "no such product" rather than "invalid character '<'".
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, view.Errorf("eol.product.notfound", "no product named %q", product).
-			WithHint("see https://endoflife.date for the full catalogue of names and aliases")
-	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, view.Errorf("eol.request.status", "endoflife.date returned %s for %q", resp.Status, product)
+		return resp.StatusCode, nil
 	}
-
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
 	if err != nil {
-		return nil, view.Errorf("eol.response.read", "reading the response for %q: %v", product, err)
+		return resp.StatusCode, view.Errorf("eol.response.read", "reading the response for %s: %v", what, err)
 	}
-	var env productEnvelope
-	if err := json.Unmarshal(body, &env); err != nil {
-		return nil, view.Errorf("eol.response.invalid", "decoding the response for %q: %v", product, err)
+	if err := json.Unmarshal(body, out); err != nil {
+		return resp.StatusCode, view.Errorf("eol.response.invalid", "decoding the response for %s: %v", what, err)
 	}
-	return &env.Result, nil
+	return resp.StatusCode, nil
 }

@@ -611,6 +611,50 @@
     }
   },
   {
+    "name": "eol_products",
+    "description": "── the text below is written by the plugin, not by rta ──\nSearch the endoflife.date catalogue: names, aliases and categories\n\nLists the products endoflife.date tracks, with the aliases eol.check and eol.watch accept for each. A term narrows the list to products whose name, label or alias contains it; leave it out to see the whole catalogue.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "category": {
+          "description": "only this category — database, os, framework, lang, …",
+          "type": "string"
+        },
+        "term": {
+          "description": "part of a name, label or alias — postgres, kube, ubuntu",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "eol_watch",
+    "description": "── the text below is written by the plugin, not by rta ──\nGrade every product and cycle on a configured watchlist at once\n\nRuns eol.check over a list of products, each optionally pinned to one release cycle as product/cycle — postgresql/15, nodejs, debian/bookworm. Write the list once as `plugins: eol: products:` in your config or a profile and it is what this grades from then on. A product the API does not know, or a cycle the product does not have, is one row saying so; the rest of the list is still graded.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "products": {
+          "description": "product or product/cycle, repeatable — usually from `plugins: eol: products:` in your config",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "warn-days": {
+          "default": 90,
+          "description": "flag a cycle within this many days of its end-of-life date",
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
     "name": "fs_hash",
     "description": "── the text below is written by the plugin, not by rta ──\nChecksum a file, and compare it against an expected value\n\nHashes a file and, given --expect, says plainly whether it matches — which is the actual task, and the one comparing two hex strings by eye is bad at. The comparison is case-insensitive and tolerates the \"sha256:\" prefix and the surrounding whitespace that come with a pasted checksum. It is not a signature check: it says a file is the one somebody described, not that the description came from anybody in particular.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
