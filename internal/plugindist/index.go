@@ -29,11 +29,11 @@ import (
 // credentials keep working, and rta adopts none of their maintenance — with
 // three named exceptions it does own, and gitHardening says which and why.
 //
-// There is no default index. The official one is a repository that does not
-// exist until the module is published, and hardcoding its future URL
-// would make rta reach for a name nobody controls yet on the day somebody
-// registers it. `rta plugin index add` is the whole story, and the first
-// index attached is a decision the operator makes by name.
+// There is no default index, and one known one. rta attaches nothing on its
+// own; `rta plugin index add official` attaches the first-party index by a
+// name rta reserves for it (known.go), and `rta plugin index add <name>
+// <repository>` attaches any other. The first index attached is still a
+// decision the operator makes by name — it is just one line long now.
 
 // indexName bounds what an index may be called: it becomes a directory under
 // rta's data dir and a prefix in `index/plugin` specs, so the grammar is the
@@ -217,12 +217,28 @@ func OriginForDisplay(origin string) string {
 }
 
 // AddIndex clones url as the index called name. The url may be anything git
-// clone accepts — https, ssh, or a local path, which is the only kind that
-// can exist before the module is published and the kind every test uses.
+// clone accepts — https, ssh, or a local path, which is the kind every test
+// uses — or empty for a name rta knows (known.go), which resolves to the one
+// repository that name is reserved for.
 func AddIndex(ctx context.Context, name, url string) *view.Error {
 	if !indexName.MatchString(name) {
 		return view.Errorf("plugin.index.name", "%q is not an index name", name).
 			WithHint("lowercase letters, digits and dashes, up to 32")
+	}
+	// A known name resolves its own repository, and resolves nothing else:
+	// see known.go for why the name is reserved rather than merely defaulted.
+	if known, ok := KnownIndexURL(name); ok {
+		switch url {
+		case "", known:
+			url = known
+		default:
+			return view.Errorf("plugin.index.reserved", "%q is reserved for %s", name, known).
+				WithHint("attach " + OriginForDisplay(url) + " under another name")
+		}
+	} else if url == "" {
+		return view.Errorf("plugin.index.url",
+			"no repository given, and %q is not an index rta knows by name", name).
+			WithHint(knownIndexHint())
 	}
 	if _, verr := classifyGitURL(url); verr != nil {
 		return verr
@@ -444,8 +460,7 @@ func UpdateIndex(ctx context.Context, name string) *view.Error {
 		targets = []Index{ix}
 	}
 	if len(targets) == 0 {
-		return view.Errorf("plugin.index.none", "no index is attached").
-			WithHint("`rta plugin index add <name> <repository>` attaches one")
+		return NoIndexAttached()
 	}
 	for _, ix := range targets {
 		cmd := gitCommand(ctx, "-C", ix.Dir, "pull", "--quiet", "--ff-only")
@@ -495,7 +510,7 @@ func noSuchIndex(name string) *view.Error {
 		}
 		return verr.WithHint("attached: " + strings.Join(names, ", "))
 	}
-	return verr.WithHint("`rta plugin index add <name> <repository>` attaches one")
+	return verr.WithHint(knownIndexHint())
 }
 
 // Listed is one manifest found in one index.
@@ -707,8 +722,7 @@ func Resolve(spec string) (Listed, *view.Error) {
 		search = []Index{ix}
 	}
 	if len(search) == 0 {
-		return Listed{}, view.Errorf("plugin.index.none", "no index is attached").
-			WithHint("`rta plugin index add <name> <repository>` attaches one")
+		return Listed{}, NoIndexAttached()
 	}
 
 	var found []Listed

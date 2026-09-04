@@ -302,8 +302,7 @@ func newPluginSearchCommand(opts *globalOpts) *cobra.Command {
 			rows, problems := plugindist.Search(term, safety)
 			if len(rows) == 0 {
 				if len(plugindist.Indexes()) == 0 {
-					return view.Errorf("plugin.index.none", "no index is attached").
-						WithHint("`rta plugin index add <name> <repository>` attaches one")
+					return plugindist.NoIndexAttached()
 				}
 				// "nothing matches" is a claim about the catalogue, and it is
 				// only true when there was a catalogue to search. With every
@@ -400,16 +399,27 @@ func newPluginIndexCommand(opts *globalOpts) *cobra.Command {
 			"to your git, so your remotes, proxies and credentials keep working —\n" +
 			"except that a repository may not name a remote helper (`ext::` runs a\n" +
 			"command line) and may not be fetched in cleartext.\n" +
-			"There is no default index: the first one attached is your decision.",
+			"Nothing is attached until you say so. `rta plugin index add official`\n" +
+			"attaches the first-party index, the one name rta knows.",
 		RunE: groupRunE,
 	}
 	root.AddCommand(&cobra.Command{
-		Use:   "add <name> <repository>",
+		Use:   "add <name> [repository]",
 		Short: "Attach an index by cloning it",
-		Args:  cobra.ExactArgs(2),
+		Long: "Clones repository as the index called name. `official` needs no\n" +
+			"repository: it is the first-party index rta knows by name, and the\n" +
+			"name is reserved for it.",
+		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if verr := plugindist.AddIndex(cmd.Context(), args[0], args[1]); verr != nil {
+			repository := ""
+			if len(args) == 2 {
+				repository = args[1]
+			}
+			if verr := plugindist.AddIndex(cmd.Context(), args[0], repository); verr != nil {
 				return verr
+			}
+			if repository == "" {
+				repository, _ = plugindist.KnownIndexURL(args[0])
 			}
 			ix, _ := plugindist.IndexByName(args[0])
 			listed, bad := plugindist.Manifests(ix)
@@ -418,7 +428,7 @@ func newPluginIndexCommand(opts *globalOpts) *cobra.Command {
 			// terminal scrollback. A URL with no userinfo comes back
 			// unchanged, so the ordinary line is unaffected.
 			pairs := []view.Pair{
-				{Key: "attached", Value: args[0] + " (" + plugindist.OriginForDisplay(args[1]) + ")"},
+				{Key: "attached", Value: args[0] + " (" + plugindist.OriginForDisplay(repository) + ")"},
 				{Key: "claims", Value: fmt.Sprintf("%d plugins", len(listed))},
 			}
 			for _, verr := range bad {
