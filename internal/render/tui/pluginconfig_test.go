@@ -319,6 +319,41 @@ func TestSaveConfigFormMigratesAStalePinToTheInstalledDigest(t *testing.T) {
 	}
 }
 
+// …and the keys the form never showed come with it. The carry-forward read
+// the heading being written, which on a migration is a section that does not
+// exist yet — so the one job this screen exists for, fixing a stale pin,
+// silently dropped every neighbouring key while moving the values the operator
+// had just confirmed. The file that results looks deliberate, which is what
+// makes it worse than leaving the stale heading in place.
+func TestSaveConfigFormCarriesUnshownKeysAcrossThePinMigration(t *testing.T) {
+	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
+	installed := registry.Origin{Path: "/usr/local/bin/rta-plugin-db", Digest: "1a2b3c4d5e6f"}
+	if err := config.Write(config.Config{Plugins: map[string]map[string]any{
+		"db@000000000000": {"host": "stale.example", "from-a-future": "keep me"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	reg := registry.New()
+	m := New(reg, config.Dashboard{}, nil)
+	next, _ := m.startConfigForm(pluginRow{plugin: dbPlugin(), origin: installed})
+	nm := next.(Model)
+	*nm.form.bindings["host"] = "fixed.example"
+	next, _ = nm.saveConfigForm()
+
+	onDisk, err := config.LoadFile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	section := onDisk.Plugins["db@1a2b3c4d5e6f"]
+	if section["from-a-future"] != "keep me" {
+		t.Errorf("the migration dropped a key the form never showed; section = %v", section)
+	}
+	if section["host"] != "fixed.example" {
+		t.Errorf("host = %v, want the edited value", section["host"])
+	}
+}
+
 // The plugin config editor reuses capForm (it is the same modeForm, driven
 // by the same afterFormUpdate), so shift+enter should already reach it —
 // but nothing had ever driven it end to end through the real event loop to
