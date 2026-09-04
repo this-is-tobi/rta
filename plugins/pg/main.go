@@ -98,7 +98,9 @@ func cap(c plugin.Capability, own ...plugin.Field) plugin.Capability {
 // statusView answers "can I reach it, as whom, and what is it" — the shared
 // query behind pg.status and the lead section of pg.overview.
 func statusView(ctx context.Context, conn *pgx.Conn, req plugin.Request) (view.View, error) {
-	var version, db, user, size string
+	// server, not version: this is PostgreSQL's own banner, and the package
+	// now has a `version` of its own that this would shadow.
+	var server, db, user, size string
 	// pg_size_pretty rather than a raw count. Every producer formats its own
 	// numbers — view.ColumnKind aligns and does not render — so the only
 	// question is whose vocabulary, and PostgreSQL's own is the one an
@@ -107,12 +109,12 @@ func statusView(ctx context.Context, conn *pgx.Conn, req plugin.Request) (view.V
 	err := conn.QueryRow(ctx,
 		`select version(), current_database(), current_user,
 		        pg_size_pretty(pg_database_size(current_database()))`).
-		Scan(&version, &db, &user, &size)
+		Scan(&server, &db, &user, &size)
 	if err != nil {
 		return nil, classify(err, req)
 	}
 	return view.KeyValue{Pairs: []view.Pair{
-		{Key: "server", Value: version},
+		{Key: "server", Value: server},
 		{Key: "database", Value: db},
 		{Key: "connected as", Value: user},
 		{Key: "size", Value: size},
@@ -232,11 +234,18 @@ func activityView(ctx context.Context, conn *pgx.Conn, req plugin.Request, withQ
 	return t, nil
 }
 
+// version is what this build claims to be, stamped by whatever built it:
+// `-X main.version=`, which is the Makefile's flag and GoReleaser's own
+// default. A build nobody stamped says "dev" rather than claiming a release
+// number that was never cut — an index entry carries this verbatim, and a
+// version is a fact about a release, not about the source it came from.
+var version = "dev"
+
 func Plugin() plugin.Plugin {
 	return plugin.Plugin{
 		Name:    "pg",
 		Summary: "PostgreSQL: connection health, schema, rows and activity",
-		Version: "0.1.0",
+		Version: version,
 		Capabilities: []plugin.Capability{
 			cap(plugin.Capability{
 				ID:         "pg.status",

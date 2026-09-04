@@ -228,6 +228,16 @@ import (
 
 func main() { sdk.Serve(Plugin()) }
 
+// version is what this build claims to be, and an index entry carries it
+// verbatim. Stamp it from your release rather than editing this line:
+//
+//	go build -ldflags "-X main.version=$(git describe --tags)" .
+//
+// which is also GoReleaser's own default, so a release stamps it for free.
+// A build nobody stamped says "dev" instead of claiming a version that was
+// never cut.
+var version = "dev"
+
 // Plugin returns the declaration. This is the whole contract with rta: you
 // return data, and rta renders it as a CLI command, a TUI form, an MCP tool
 // and JSON. Nothing below mentions which one is asking.
@@ -235,7 +245,7 @@ func Plugin() plugin.Plugin {
 	return plugin.Plugin{
 		Name:    "{{.Name}}",
 		Summary: "TODO: one line on what this plugin is for",
-		Version: "0.1.0",
+		Version: version,
 		Capabilities: []plugin.Capability{
 			{
 				ID:      "{{.Name}}.greet",
