@@ -159,3 +159,42 @@ func TestAFileURLBecomesThePathThisSystemOpens(t *testing.T) {
 		}
 	}
 }
+
+// **An install that works most of the time is the worst kind.**
+//
+// place moves the artifact into the store moments after describeBinary ran it,
+// and Windows refuses to move a file whose image a handle still holds — a
+// handle that outlives the process. The install failed with "The process
+// cannot access the file because it is being used by another process", on
+// roughly one run in two, from a tree byte-identical to one that had just
+// passed.
+//
+// The retry is what is checked here rather than the platform, because the
+// platform is what nobody has in reach: a move that fails and then succeeds
+// must be reported as a success, and one that never succeeds must still be
+// reported with the error the last attempt gave rather than a summary of the
+// attempts.
+func TestAMoveIsRetriedWhileTheFileIsStillHeld(t *testing.T) {
+	dir := t.TempDir()
+	from := filepath.Join(dir, "staged")
+	to := filepath.Join(dir, "placed")
+	if err := os.WriteFile(from, []byte("artifact"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := moveExecutable(from, to); err != nil {
+		t.Fatalf("a move nothing was holding failed: %v", err)
+	}
+	if _, err := os.Stat(to); err != nil {
+		t.Fatalf("the artifact is not at its destination: %v", err)
+	}
+
+	// And a move that cannot ever work still reports what actually went
+	// wrong, rather than swallowing it after the last attempt.
+	err := moveExecutable(filepath.Join(dir, "was-never-there"), to)
+	if err == nil {
+		t.Fatal("moving a file that does not exist reported success")
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("err = %v, want the real reason the move failed", err)
+	}
+}

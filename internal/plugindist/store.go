@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/this-is-tobi/rule-them-all/internal/paths"
 	"github.com/this-is-tobi/rule-them-all/internal/pluginhost"
@@ -53,13 +54,58 @@ func artifactName(name string) string { return pluginhost.Prefix + name }
 // symlink at it. The rename is atomic on one filesystem — staging lives under
 // the same data dir for exactly that — and the symlink swap goes through a
 // temporary name so no reader ever sees a missing or half-written link.
+// moveExecutable renames a file that something has just finished running.
+//
+// **Install runs the artifact before it stores it.** describeBinary launches
+// the staged binary to read its declaration, verifyClaims checks that against
+// the index, and only then does place move it into the store — so the rename
+// is always issued moments after a process holding that image exited.
+//
+// Windows refuses to move a file whose image a handle still holds, and the
+// handle outlives the process: the move fails with "The process cannot access
+// the file because it is being used by another process". Nothing is wrong when
+// that happens, and it does not happen every time — which makes it the worst
+// shape of bug to leave in an install path, one that fails a few percent of
+// the time on somebody else's machine and works on every retry.
+//
+// This is the same physics the upgrade admission test already documents from
+// the other side: Linux refuses open(O_WRONLY) on a mapped executable with
+// ETXTBSY, measured there at around 20ms past the wait() that reaped the
+// process. Windows expresses it as a sharing violation on the move instead.
+//
+// Waiting rather than asking, because there is nothing to ask: the handle
+// belongs to the kernel, not to a process rta can wait on. The budget is far
+// longer than the window that has ever been measured, and what it reports on
+// giving up is the real error rather than a claim that the install worked.
+//
+// Every error is retried, not just the sharing violation, because naming that
+// error means naming a platform's error numbers in a path that runs on all of
+// them. A permanent failure costs the caller under a second before it is
+// reported unchanged.
+func moveExecutable(from, to string) error {
+	var err error
+	for _, wait := range []time.Duration{
+		0, 5 * time.Millisecond, 10 * time.Millisecond, 20 * time.Millisecond,
+		50 * time.Millisecond, 100 * time.Millisecond, 200 * time.Millisecond,
+		400 * time.Millisecond,
+	} {
+		if wait > 0 {
+			time.Sleep(wait)
+		}
+		if err = os.Rename(from, to); err == nil {
+			return nil
+		}
+	}
+	return err
+}
+
 func place(name, digest, staged string) (string, *view.Error) {
 	dir := filepath.Join(StoreDir(), name, digest)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", view.Errorf("plugin.install.place", "%v", err)
 	}
 	dest := filepath.Join(dir, binaryName(name))
-	if err := os.Rename(staged, dest); err != nil {
+	if err := moveExecutable(staged, dest); err != nil {
 		return "", view.Errorf("plugin.install.place", "%v", err)
 	}
 	if err := os.Chmod(dest, 0o755); err != nil {
@@ -91,7 +137,10 @@ func place(name, digest, staged string) (string, *view.Error) {
 			return "", verr
 		}
 	}
-	if err := os.Rename(tmp, filepath.Join(BinDir(), binaryName(name))); err != nil {
+	// moveExecutable again, and for the destination this time: bin/ holds the
+	// version that is current, so on an upgrade this replaces a file another
+	// rta may have running.
+	if err := moveExecutable(tmp, filepath.Join(BinDir(), binaryName(name))); err != nil {
 		_ = os.Remove(tmp)
 		return "", view.Errorf("plugin.install.place", "%v", err)
 	}
