@@ -219,7 +219,28 @@ func (m Model) connForm(key, chosen string, seed map[string]any) (tea.Model, tea
 	// `set:` block: those keys belonged to the plugin that is no longer named,
 	// and carrying them over would offer one plugin's configuration under
 	// another's name.
-	if chosen != key {
+	//
+	// **By namespace, because a key is not an identity.** This compared the
+	// whole key, and a key carries two things that change without the plugin
+	// changing at all. Re-pinning an entry to the artifact that is actually
+	// installed — the ordinary move after an upgrade, and the one the plugin
+	// box completes to — reads as `pg@old` becoming `pg@new`, and a labeled
+	// entry reads as a different plugin on *every* rebuild, because the box
+	// completes to `pg@digest` and never to `pg/analytics@digest`. Both
+	// wiped the `set:` block of the plugin still named.
+	//
+	// It did not merely clear the boxes. Every set. field then had no value
+	// in conn.Set, so all of them were marked derived below, which makes them
+	// displays of the plugin's declared defaults — and saveConnForm rebuilds
+	// conn.Set from the boxes that answered, so submitting deleted from the
+	// file what the form had stopped showing. One completion, and an
+	// environment's whole configuration for that plugin was gone.
+	//
+	// A pin names a different build of the same plugin, whose declarations
+	// may genuinely have moved; that case is already handled where it belongs,
+	// at save, which reports every carried key no declared field offers a box
+	// for rather than dropping it silently.
+	if config.PluginNamespace(chosen) != config.PluginNamespace(key) {
 		conn.Set = nil
 	}
 
