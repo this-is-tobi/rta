@@ -20,7 +20,6 @@ func TestAPathThatCouldCloseAPolicyFormIsRefused(t *testing.T) {
 		`/tmp/quote"here`,
 		"/tmp/paren(here",
 		"/tmp/paren)here",
-		"/tmp/back\\slash",
 		"/tmp/new\nline",
 		"/tmp/carriage\rreturn",
 	} {
@@ -38,6 +37,40 @@ func TestAPathThatCouldCloseAPolicyFormIsRefused(t *testing.T) {
 	} {
 		if err := validate([]string{ok}); err != nil {
 			t.Errorf("%q was refused: %v", ok, err)
+		}
+	}
+}
+
+// The separator is the one character whose answer is platform knowledge, and
+// both answers are checked from whatever machine runs this — the property the
+// runtime.GOOS branch exists for, since a build tag would leave one of them
+// untested everywhere except the platform it is for.
+//
+// **This was total on Windows.** Every path there contains a backslash, so a
+// machine-derived deny set had one in its first entry, ResolveAllowing
+// returned the refusal, and Host.OpenAllowing passed it back to its caller:
+// no plugin could launch at all. The policy it was protecting is never
+// rendered off darwin — profile() returns "" and wrap() is the identity — so
+// the check was failing closed over a file that does not exist.
+func TestTheSeparatorIsRefusedOnlyWhereItIsAnAnomaly(t *testing.T) {
+	if strings.ContainsRune(forbiddenIn("windows"), '\\') {
+		t.Error("a backslash is refused on Windows, where it is the path separator — " +
+			"no plugin could ever launch")
+	}
+	if !strings.ContainsRune(forbiddenIn("darwin"), '\\') {
+		t.Error("a backslash reaches a rendered SBPL policy on darwin")
+	}
+	if !strings.ContainsRune(forbiddenIn("linux"), '\\') {
+		t.Error("a backslash is accepted on linux, so the darwin renderer can still meet one")
+	}
+	// The characters that are anomalies anywhere stay refused everywhere,
+	// which is the half of the original rule that platform knowledge does
+	// not touch.
+	for _, goos := range []string{"windows", "darwin", "linux"} {
+		for _, bad := range []string{`"`, "\n", "\r", "(", ")"} {
+			if !strings.Contains(forbiddenIn(goos), bad) {
+				t.Errorf("%q is accepted on %s", bad, goos)
+			}
 		}
 	}
 }
