@@ -69,10 +69,13 @@ type Manifest struct {
 type Platform struct {
 	OS   string `yaml:"os"`
 	Arch string `yaml:"arch"`
-	// URL is https:// or file:// (oci:// parses as a claim but the transport
-	// is not built; install says so). Never http: a plugin binary fetched in
-	// cleartext is an install-time code injection waiting for a coffee-shop
-	// network.
+	// URL is https://, oci:// or file://. Never http: a plugin binary fetched
+	// in cleartext is an install-time code injection waiting for a
+	// coffee-shop network.
+	//
+	// An oci:// artifact is one layer of a registry manifest, fetched
+	// anonymously — see oci.go. Its digest is stated twice, by the registry
+	// and by SHA256 below, and rta computes a third from the bytes.
 	URL string `yaml:"url"`
 	// SHA256 is the index's claim about the artifact bytes — the download,
 	// which for an archive is not the binary. rta checks it after fetching
@@ -261,9 +264,9 @@ func (p Platform) check(name string) *view.Error {
 }
 
 // checkArtifactURL admits the schemes an artifact may be fetched over.
-// file:// exists for local indexes — the only kind until the module is
-// published — and for tests; oci:// is a legal claim whose
-// transport install refuses until it is built.
+// file:// exists for local indexes — `make index` builds one — and for tests;
+// oci:// names a registry artifact and is how this repository's own plugins
+// are published, 66 of them being more than a release page should carry.
 func checkArtifactURL(name, what, raw string) *view.Error {
 	u, err := url.Parse(raw)
 	if err != nil {

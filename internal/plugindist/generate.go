@@ -135,7 +135,7 @@ func Generate(ctx context.Context, req GenerateRequest, stderr io.Writer) ([]byt
 		})
 	}
 	for _, src := range req.Platforms {
-		plat, verr := req.platform(src, artifactName(declared.Name))
+		plat, verr := req.platform(ctx, src, artifactName(declared.Name))
 		if verr != nil {
 			return nil, Manifest{}, verr
 		}
@@ -185,7 +185,7 @@ func header(name string) string {
 
 // platform resolves one source into a claim: the checksum of the artifact,
 // and the member to extract when it is an archive.
-func (req GenerateRequest) platform(src PlatformSource, member string) (Platform, *view.Error) {
+func (req GenerateRequest) platform(ctx context.Context, src PlatformSource, member string) (Platform, *view.Error) {
 	bad := func(format string, args ...any) *view.Error {
 		return view.Errorf("plugin.manifest.platform", format, args...)
 	}
@@ -206,6 +206,32 @@ func (req GenerateRequest) platform(src PlatformSource, member string) (Platform
 	}
 
 	plat := Platform{OS: src.OS, Arch: src.Arch, URL: src.URL, Bin: src.Bin}
+
+	// An OCI reference answers both questions a checksums file was invented
+	// to answer, and answers them better: the registry that will serve these
+	// bytes states their digest, and its media type says whether they are an
+	// archive or a bare binary. So no `--checksums` for an oci:// entry, and
+	// the digest recorded is the one the serving registry published rather
+	// than one copied out of a file beside the build.
+	//
+	// It costs one small request per platform, which is the trade the https
+	// path deliberately does not make — there the alternative is downloading
+	// the whole artifact, and here it is a few hundred bytes of JSON.
+	if u.Scheme == "oci" {
+		layer, verr := ociResolve(ctx, src.URL)
+		if verr != nil {
+			return Platform{}, verr
+		}
+		plat.SHA256 = strings.TrimPrefix(layer.Digest, "sha256:")
+		if plat.Bin == "" && layer.IsArchive() {
+			plat.Bin = member
+			if src.OS == "windows" {
+				plat.Bin += ".exe"
+			}
+		}
+		return plat, nil
+	}
+
 	if plat.Bin == "" && strings.HasSuffix(base, ".tar.gz") {
 		plat.Bin = member
 		// Per platform, never per host. A Windows archive holds

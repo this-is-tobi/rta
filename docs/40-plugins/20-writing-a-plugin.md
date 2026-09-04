@@ -230,6 +230,10 @@ rta runs your binary the way a load does — sandboxed — and writes down what 
 Two things to know before you publish:
 
 - **`.tar.gz`, or a bare binary.** rta extracts a single member from a gzipped tar and has no zip reader at all, so a `.zip` artifact cannot be installed — including on Windows, where GoReleaser's default format is zip. `rta plugin manifest` refuses one rather than letting it become a failed install somewhere else.
+
+- **A registry works too, and needs no checksums file.** `--platform linux/amd64=oci://ghcr.io/you/rta-plugin-mytool:1.2.0-linux-amd64` names an OCI artifact — one layer, pushed with `oras push` or anything that speaks the distribution spec. rta reads the digest and the media type from the registry that will serve the bytes, which is a better source than a file sitting beside your build, so `--checksums` is for `https://` artifacts only.
+
+  Pulls are **anonymous**: rta sends no credential to any registry, so the artifact has to be publicly readable. A package on ghcr is private until you make it public, and until you do, install refuses with *"ghcr.io will not serve … anonymously"*. This is also how rta's own plugins are published — 66 archives is more than a release page should carry.
 - **Stamp the version at build time, don't type it.** A version is a fact about a release, and a literal in your source is a fact about nothing — it stays at `0.1.0` through every release you cut, because bumping it is a step nobody's build performs. `rta plugin new` scaffolds the pattern instead: a `var version = "dev"` the declaration reads, set by the linker.
 
   ```bash
