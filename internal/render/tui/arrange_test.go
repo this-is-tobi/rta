@@ -303,6 +303,12 @@ func TestTheShippedDashboardIsTheOneWeThinkItIs(t *testing.T) {
 		"fs.tree",
 		"gen.overview",
 		"git.overview",
+		// time.at is the one tile that reports nothing about this machine's
+		// state, and it earns the slot anyway: it shows UTC beside local
+		// time, which is the conversion an operator does by hand all day
+		// reading logs written in one and lived in the other. Every OS
+		// already shows a clock; none of them shows that pair.
+		"time.at",
 	}
 	got := tileIDs(buildTiles(reg, config.Dashboard{}))
 	if !slices.Equal(got, want) {
@@ -1241,9 +1247,15 @@ func TestEveryBuiltinTileHasAFullScreenView(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Capabilities whose compact view is already the whole answer. Empty on
-	// purpose: add an entry with the reason, do not delete the test.
-	sameAtAnySize := map[string]string{}
+	// Capabilities whose compact view is already the whole answer. Add an
+	// entry with the reason, do not delete the test.
+	sameAtAnySize := map[string]string{
+		// One instant rendered six ways. There is no seventh way worth a
+		// screen: a detail page would have to invent rows — the ISO week, the
+		// day of the year — that nobody opened it for, which is padding
+		// dressed as depth. The tile is the answer at any size.
+		"time.at": "one instant in every form there is; a bigger pane holds the same six rows",
+	}
 
 	for _, ti := range buildTiles(reg, config.Dashboard{}) {
 		if ti.search {

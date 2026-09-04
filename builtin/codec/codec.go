@@ -20,7 +20,9 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/this-is-tobi/rule-them-all/builtin/internal/timefmt"
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 	"github.com/this-is-tobi/rule-them-all/pkg/view"
 )
@@ -147,14 +149,53 @@ func runJWT(_ context.Context, req plugin.Request) (view.View, error) {
 	if err != nil {
 		return nil, view.Errorf("codec.jwt.invalid", "decoding claims: %v", err)
 	}
+	body := "NOT VERIFIED — the signature was not checked. This is a debugging view of what the " +
+		"token claims, not proof of who issued it."
+	if w := window(claims); w != "" {
+		body += "\n\n" + w
+	}
 	return view.Sections{Items: []view.Section{
 		{ID: "header", Title: "header", View: keyValueOf(header)},
 		{ID: "claims", Title: "claims", View: keyValueOf(claims)},
-		{ID: "verification", Title: "verification", View: view.Text{
-			Body: "NOT VERIFIED — the signature was not checked. This is a debugging view of what the " +
-				"token claims, not proof of who issued it.",
-		}},
+		{ID: "verification", Title: "verification", View: view.Text{Body: body}},
 	}}, nil
+}
+
+// window states what the token's own dates say about whether it is live right
+// now. That is the question somebody decoding a token in a hurry actually has,
+// and a column of ten-digit integers answers it worse than anything else on
+// the screen — the reader has to know today's epoch to subtract from.
+//
+// Phrased throughout as what the token says rather than what is so. These
+// dates are exactly as unverified as the rest of it: anybody can mint a token
+// claiming to be valid until 2099, and this sentence renders directly beneath
+// the line saying nobody checked. A reader who takes "still valid" as
+// authentication has been told otherwise twice in the same paragraph.
+func window(claims map[string]any) string {
+	exp, hasExp := numericDate(claims, "exp")
+	nbf, hasNbf := numericDate(claims, "nbf")
+	now := time.Now()
+	switch {
+	// RFC 7519 §4.1.4: the current time must be *before* exp, so an instant
+	// equal to it is already too late.
+	case hasExp && !now.Before(exp):
+		return "Its own dates say it is expired: exp is " + timefmt.Stamp(exp) + "."
+	case hasNbf && now.Before(nbf):
+		return "Its own dates say it is not usable yet: nbf is " + timefmt.Stamp(nbf) + "."
+	case hasExp:
+		return "Its own dates say it is unexpired: exp is " + timefmt.Stamp(exp) + "."
+	}
+	return ""
+}
+
+// numericDate reads one claim as an instant, or reports that it is not one —
+// missing, the wrong JSON type, or a number too large to be a date.
+func numericDate(claims map[string]any, key string) (time.Time, bool) {
+	v, ok := claims[key].(float64)
+	if !ok {
+		return time.Time{}, false
+	}
+	return timefmt.FromSeconds(v)
 }
 
 // decodeJSONSegment reads one base64url-encoded, unpadded JWT segment (per
@@ -182,10 +223,21 @@ func keyValueOf(m map[string]any) view.KeyValue {
 	sort.Strings(keys)
 	kv := view.KeyValue{}
 	for _, k := range keys {
-		kv.Pairs = append(kv.Pairs, view.Pair{Key: k, Value: formatClaim(m[k])})
+		kv.Pairs = append(kv.Pairs, view.Pair{Key: k, Value: formatClaim(k, m[k])})
 	}
 	return kv
 }
+
+// numericDateClaims are the claims RFC 7519 §4.1 defines as a NumericDate —
+// seconds since the epoch — and so the only ones whose units the specification
+// settles rather than the issuer. A number under any other name could be a
+// version, a tenant, a key id or a sequence number, and rendering one of those
+// as a date would invent a fact rather than surface one.
+//
+// Deliberately not auth_time or updated_at: both are NumericDate too, but in
+// OpenID Connect rather than here, and a JWT is not necessarily an ID token.
+// Adding either is one line the day something needs it.
+var numericDateClaims = map[string]bool{"exp": true, "nbf": true, "iat": true}
 
 // formatClaim renders one decoded JSON value for display. json.Unmarshal
 // hands every number back as float64, and fmt.Sprint on that prints large
@@ -193,10 +245,24 @@ func keyValueOf(m map[string]any) view.KeyValue {
 // notation (1.516239022e+09), which is worse than useless for a claim
 // that's supposed to be read as a Unix time. FormatFloat with 'f' avoids it
 // for numbers of any size without rounding a genuine fraction.
-func formatClaim(v any) string {
+//
+// Which left the claim readable and still unread: `exp 1516242622` is a
+// correctly printed integer that nobody can date without arithmetic. A claim
+// the specification defines as a time gets rendered as one, beside the raw
+// number rather than instead of it — the number is what the token contains and
+// what a bug report has to quote.
+func formatClaim(key string, v any) string {
 	switch t := v.(type) {
 	case float64:
-		return strconv.FormatFloat(t, 'f', -1, 64)
+		raw := strconv.FormatFloat(t, 'f', -1, 64)
+		if !numericDateClaims[key] {
+			return raw
+		}
+		at, ok := timefmt.FromSeconds(t)
+		if !ok {
+			return raw
+		}
+		return raw + "  " + timefmt.Stamp(at)
 	case string, bool, nil:
 		return fmt.Sprint(t)
 	default:

@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -367,19 +368,32 @@ func TestPressingCOnTheRealGenTileEndToEnd(t *testing.T) {
 	// Tall enough for the whole shipped dashboard: this test is about what
 	// `c` does on the gen tile, and a terminal that cannot show that tile
 	// makes it fail for a reason that has nothing to do with copying.
-	tm := teatest.NewTestModel(t, New(mustRegistry(t), config.Dashboard{}, nil), teatest.WithInitialTermSize(120, 60))
+	reg := mustRegistry(t)
+	tm := teatest.NewTestModel(t, New(reg, config.Dashboard{}, nil), teatest.WithInitialTermSize(120, 60))
 	waitFor(t, tm, "gen.overview")
 	// Move onto the gen tile: right along the bottom-right area of the
 	// grid a few times is more robust than counting exact columns, since
 	// arrange.go's own layout decides span per tile. moveSelection clamps
-	// rather than wraps, so this overshoots onto the last tile (git.overview,
-	// alphabetically after gen among the unranked plugins) and one left
-	// lands back on gen — still not a hardcoded column, just one fixed point
-	// short of the same clamp.
+	// rather than wraps, so this overshoots onto the last tile whatever it
+	// is, and then steps back by however far gen sits from the end.
+	//
+	// Derived rather than counted. This used to press left exactly once,
+	// with a comment naming git.overview as the tile it was stepping off —
+	// true until a built-in was added that sorted after it, at which point
+	// the fixed point moved and the failure was about copying, which is not
+	// what changed. Left and right walk the tiles in order (grid.go), so the
+	// order is the only fact needed and the tile list already states it.
+	ids := tileIDs(buildTiles(reg, config.Dashboard{}))
+	back := len(ids) - 1 - slices.Index(ids, "gen.overview")
+	if back < 0 {
+		t.Fatalf("gen.overview is not on the dashboard: %v", ids)
+	}
 	for range 12 {
 		tm.Send(tea.KeyPressMsg{Code: tea.KeyRight})
 	}
-	tm.Send(tea.KeyPressMsg{Code: tea.KeyLeft})
+	for range back {
+		tm.Send(tea.KeyPressMsg{Code: tea.KeyLeft})
+	}
 	tm.Send(tea.KeyPressMsg{Code: 'c', Text: "c"})
 	waitFor(t, tm, "copy which value?")
 
