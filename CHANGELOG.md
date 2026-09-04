@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.7.0](https://github.com/this-is-tobi/rule-them-all/compare/v0.6.0...v0.7.0) (2026-09-04)
+
+
+### Features
+
+* **eol:** a watchlist graded in one call, and a search over the catalogue ([ac87fbc](https://github.com/this-is-tobi/rule-them-all/commit/ac87fbcd3a8cbacbd8143177cf5a621bdfa526dd))
+* **eol:** end-of-life checks are built in ([4a58644](https://github.com/this-is-tobi/rule-them-all/commit/4a586449d58712d75d9a981eab31e5c15995b7f6))
+* **plugins:** an index keeps its manifests under index/, not plugins/ ([27619b4](https://github.com/this-is-tobi/rule-them-all/commit/27619b406820fd60994091c9fc63b383d5d2de2b))
+* **plugins:** the first-party index is known by name ([f5ec863](https://github.com/this-is-tobi/rule-them-all/commit/f5ec863774ee172e0332f8081d5a8bd54814aaea))
+
+
+### Code Refactoring
+
+* **plugins:** the eleven first-party plugins move to rta-plugins ([fbd2950](https://github.com/this-is-tobi/rule-them-all/commit/fbd2950d997e6936c1474348a20734fbe42b07ea))
+
+
+### Dependencies
+
+* **docker:** the full image installs each plugin's own release ([498b176](https://github.com/this-is-tobi/rule-them-all/commit/498b176ceceb6707753cd7fb5442cdc486820283))
+
 ## [0.6.0](https://github.com/this-is-tobi/rule-them-all/compare/v0.5.0...v0.6.0) (2026-09-04)
 
 
