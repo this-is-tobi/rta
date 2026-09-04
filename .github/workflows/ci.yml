@@ -151,6 +151,39 @@ jobs:
       # reads as untested without this.
       COVERAGE_PACKAGES: ./...
 
+  # The fourth runner the job above argues for, at a tenth of its scope.
+  #
+  # Two packages, not `./...`, and that is a statement about the suite rather
+  # than about Windows: much of it assumes Unix paths, modes and sandboxing,
+  # and making all of it Windows-clean is its own piece of work. These two are
+  # where the platform is actually load-bearing, so these two run.
+  #
+  # It exists because `cross` proving the code compiles for windows/amd64 hid
+  # three separate bugs that made a plugin unloadable there, none of which a
+  # compiler can see: discovery tested files for the execute bit, which
+  # Windows reports on none of them, so nothing was ever discovered; the
+  # namespace was the filename minus the prefix, which on Windows is "pg.exe";
+  # and the store pointed bin/ at a symlink, which an unprivileged Windows
+  # refuses outright, ending every install at its last step. rta ships for
+  # Windows, so it has to be able to say those stay fixed — and whoever
+  # publishes the plugin archives, only a Windows machine can say it.
+  #
+  # No race detector: it needs a C toolchain on Windows, and this leg is about
+  # filenames, modes and links. Concurrency is covered by the three runners
+  # above, which do run under -race.
+  test-windows:
+    name: Test the plugin store on Windows
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
+    uses: this-is-tobi/github-workflows/.github/workflows/test-go.yml@v0
+    permissions:
+      contents: read
+    with:
+      PACKAGES: ./internal/plugindist/... ./internal/pluginhost/...
+      RUNNERS: '[["windows-latest"]]'
+      SHUFFLE: true
+      COUNT: "1"
+
   # Every target a release ships, built the way a release builds it. This runs
   # GoReleaser's own configuration, so it fails on a change that breaks
   # packaging and not only on one that breaks compiling — which the plain cross
@@ -495,6 +528,7 @@ jobs:
     - lint
     - lint-proto
     - test
+    - test-windows
     - build
     - build-docker
     - test-docker

@@ -37,7 +37,13 @@ func hello(t *testing.T) string {
 			helloErr = err
 			return
 		}
-		helloPath = filepath.Join(dir, "rta-plugin-hello")
+		// BinaryName rather than the literal, so the fixture is named the
+		// way the thing it stands in for is named. Without the .exe every
+		// test that opens a real plugin failed on Windows with "executable
+		// file not found in %PATH%" — the fixture was unrunnable — and
+		// every discovery test found nothing, because Namespace refuses a
+		// file without the suffix, correctly.
+		helloPath = filepath.Join(dir, BinaryName("hello"))
 		cmd := exec.Command("go", "build", "-o", helloPath, "../../examples/plugin-hello")
 		if out, err := cmd.CombinedOutput(); err != nil {
 			helloErr = err
@@ -262,7 +268,7 @@ func TestIdentityIsContentAddressed(t *testing.T) {
 	}
 
 	// Same bytes at another path: same identity.
-	copied := filepath.Join(t.TempDir(), "renamed")
+	copied := filepath.Join(t.TempDir(), BinaryName("renamed"))
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -282,7 +288,7 @@ func TestIdentityIsContentAddressed(t *testing.T) {
 	}
 
 	// One byte different: different identity.
-	changed := filepath.Join(t.TempDir(), "changed")
+	changed := filepath.Join(t.TempDir(), BinaryName("changed"))
 	if err := os.WriteFile(changed, append(data, '\n'), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -432,7 +438,7 @@ func TestACrashedPluginIsRestartedForTheNextCall(t *testing.T) {
 // exists — the exact condition describe validates against at startup.
 func TestAChangedBinaryIsNotSilentlyRestarted(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "rta-plugin-hello")
+	path := filepath.Join(dir, BinaryName("hello"))
 	data, err := os.ReadFile(hello(t))
 	if err != nil {
 		t.Fatal(err)
@@ -618,12 +624,12 @@ func TestAManagedStoreSymlinkSpawns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	real := filepath.Join(store, "rta-plugin-hello")
+	real := filepath.Join(store, BinaryName("hello"))
 	if err := os.WriteFile(real, raw, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	link := filepath.Join(bin, "rta-plugin-hello")
-	if err := os.Symlink(filepath.Join("..", "store", "hello", "d1", "rta-plugin-hello"), link); err != nil {
+	link := filepath.Join(bin, BinaryName("hello"))
+	if err := os.Symlink(filepath.Join("..", "store", "hello", "d1", BinaryName("hello")), link); err != nil {
 		t.Fatal(err)
 	}
 
