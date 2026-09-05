@@ -36,6 +36,7 @@ const (
 	profileNameField   = "profile-name"
 	profileNoteField   = "profile-note"
 	profileTTLField    = "profile-ttl"
+	profileColorField  = "profile-color"
 	profilePluginField = "profile-plugin"
 	// The instance label rides in its own box rather than inside the plugin
 	// one, because the plugin box is completed to `name@digest` and a label
@@ -93,6 +94,11 @@ func (m Model) startProfileForm(name string) (tea.Model, tea.Cmd) {
 			Help: "why this environment exists — shown wherever it is listed"},
 		{Name: profileTTLField, Type: plugin.String, Options: options, Default: ttl,
 			Help: "how long switching to it lasts before it lapses on its own"},
+		// The badge colour, offered here because a profile's colour is the
+		// thing that makes "which environment am I in" legible, and a field
+		// the editor does not offer is a field people never learn exists.
+		{Name: profileColorField, Type: plugin.String,
+			Help: "badge colour every command prints while it is on — #rrggbb, empty for none"},
 	}
 	synth := plugin.Capability{
 		ID:      "profile.edit",
@@ -103,9 +109,10 @@ func (m Model) startProfileForm(name string) (tea.Model, tea.Cmd) {
 	m.current = synth
 	m.trail = nil
 	m.form = newCapForm(synth, fields, map[string]any{
-		profileNameField: name,
-		profileNoteField: p.Note,
-		profileTTLField:  ttl,
+		profileNameField:  name,
+		profileNoteField:  p.Note,
+		profileTTLField:   ttl,
+		profileColorField: p.Color,
 	}, true, nil)
 	m.form.profileTarget = name
 	m.form.profileEditing = true
@@ -131,6 +138,7 @@ func (m Model) saveProfileForm() (tea.Model, tea.Cmd) {
 		m.flash = "not a valid profile name: lowercase letters, digits and dashes"
 		return m.closeToOrigin()
 	}
+	badColor := ""
 
 	if err := config.Mutate(func(cfg config.Config) (config.Config, bool) {
 		if cfg.Profiles == nil {
@@ -141,6 +149,11 @@ func (m Model) saveProfileForm() (tea.Model, tea.Cmd) {
 		// empty it in a single keystroke.
 		p := cfg.Profiles[was]
 		p.Note = strings.TrimSpace(str(values[profileNoteField]))
+		p.Color = strings.TrimSpace(str(values[profileColorField]))
+		if (config.Profile{Color: p.Color}).BadColor() {
+			badColor = p.Color
+			return cfg, false
+		}
 		p.TTL = ""
 		if ttl := strings.TrimSpace(str(values[profileTTLField])); ttl != "" && ttl != profileTTLNone {
 			p.TTL = ttl
@@ -161,6 +174,10 @@ func (m Model) saveProfileForm() (tea.Model, tea.Cmd) {
 		return cfg, true
 	}); err != nil {
 		m.flash = "config not saved: " + err.Error()
+		return m.closeToOrigin()
+	}
+	if badColor != "" {
+		m.flash = "not saved: " + badColor + " is not a colour — write it as #rrggbb, or leave it empty"
 		return m.closeToOrigin()
 	}
 	m.profiles = m.profileRows()

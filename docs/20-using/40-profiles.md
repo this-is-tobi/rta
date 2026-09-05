@@ -214,7 +214,7 @@ plugins:
 `rta profile set` states a profile from flags. Nothing about it needs a terminal, which is the point: before it existed the only alternatives were a TTY form and hand-written YAML, and a team that cannot script its setup ships the YAML — the path where nothing checks the block until something tries to use it.
 
 ```bash
-rta profile set <name> [--note ...] [--ttl 8h|none]
+rta profile set <name> [--note ...] [--ttl 8h|none] [--color "#dd3333"|none]
                        [--plugin <name> [--set k=v ...] [--secret input=kv:entry ...]
                                         [--kube ...] [--ssh ...] [--direct] [--tunnel-tls]]
 rta profile rm  <name> [--plugin <name>]

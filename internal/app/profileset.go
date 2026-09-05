@@ -88,6 +88,7 @@ func profileSetCommand(reg *registry.Registry, render renderFn) *cobra.Command {
 	}
 	cmd.Flags().String("note", "", "why this environment exists")
 	cmd.Flags().String("ttl", "", "how long a switch to it lasts (`30m`, `8h`, or `none`)")
+	cmd.Flags().String("color", "", "badge colour every command prints while it is on (`#rrggbb`, or `none`)")
 	cmd.Flags().String("plugin", "", "which plugin the connection flags below are about — "+
 		"`pg`, or `pg/analytics` to state one of several connections to it")
 	// StringArray, never StringSlice: StringSlice splits its argument on
@@ -313,6 +314,18 @@ func runProfileSet(cmd *cobra.Command, name string, reg *registry.Registry) (vie
 				return cfg, false
 			}
 			p.TTL = ttl
+		}
+		if cmd.Flags().Changed("color") {
+			color := strings.TrimSpace(mustString(cmd, "color"))
+			if color == "none" {
+				color = ""
+			}
+			if (config.Profile{Color: color}).BadColor() {
+				verr = view.Errorf("core.profile.color", "%q is not a colour", color).
+					WithHint("write it as `#rrggbb` — `#dd3333` red for production is the usual one — or `none` to drop it")
+				return cfg, false
+			}
+			p.Color = color
 		}
 
 		key, receipts, verr = applyConnectionFlags(cmd, name, &p, reg)
