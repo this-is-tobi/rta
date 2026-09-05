@@ -110,7 +110,7 @@ func contextField() plugin.Field {
 // somebody already chose, which is what Scope means everywhere else in rta.
 // plugins/kube draws the same line between its own two fields.
 func namespaceField() plugin.Field {
-	return plugin.Field{Name: "namespace", Type: plugin.String, Positional: true,
+	return plugin.Field{Name: "namespace", Type: plugin.String, Config: "namespace",
 		Help: "audit one namespace instead of the whole cluster"}
 }
 
