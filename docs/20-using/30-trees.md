@@ -65,7 +65,7 @@ rta fs tree / --detail
 ## `s3 object tree`
 
 ```bash
-rta s3 object tree build-artifacts
+rta s3 object tree --bucket build-artifacts
 ```
 
 ```
@@ -82,7 +82,7 @@ Every prefix carries its **recursive object count and total size**, which is the
 This costs one request however deep the result goes. S3 keys are flat — the folders are a fiction the `/` delimiter creates — so rta reads the prefix once with a recursive listing and builds the levels on this side. The bound is therefore on how much of that stream is read (`--limit`), not on round trips.
 
 ```bash
-rta s3 object tree build-artifacts --prefix releases/ --depth 3
+rta s3 object tree --bucket build-artifacts --prefix releases/ --depth 3
 ```
 
 ## `vault kv tree`

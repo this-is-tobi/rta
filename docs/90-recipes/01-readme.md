@@ -362,7 +362,7 @@ rta pg dump      --profile shop-prod --out shop-$(date +%F).dump
 rta mysql dump   --profile shop-prod --out shop-$(date +%F).sql
 rta mariadb dump --profile shop-prod --out shop-$(date +%F).sql
 rta vault snapshot   --profile vault-prod --out vault-$(date +%F).snap
-rta qdrant dump  docs --profile search-prod --out docs-$(date +%F).snapshot
+rta qdrant dump  --profile search-prod --collection docs --out docs-$(date +%F).snapshot
 rta etcd snapshot    --profile coord-prod --out etcd-$(date +%F).snap
 ```
 
@@ -391,8 +391,8 @@ Two gated commands rather than one capability reaching into two services, which 
 **`cnpg` is the exception, and it is a different shape on purpose.** A CloudNativePG cluster already knows where its backups go — an object store, or a volume snapshot class, configured on the cluster itself — so there is no file for rta to write and no destination for it to choose:
 
 ```bash
-rta cnpg backup request shop-prod-db     # ask the operator to take one now
-rta cnpg backup list shop-prod-db        # what it did, and where it went
+rta cnpg backup request --cluster shop-prod-db   # ask the operator to take one now
+rta cnpg backup list --cluster shop-prod-db      # what it did, and where it went
 ```
 
 The request carries a cluster reference and nothing else. Destination, credentials, retention and encryption all come from the cluster, which is what makes this the one mutating capability in an otherwise read-only plugin: there is no place for a caller to point it at. It is `Write`, so it is off the default MCP surface until you pass `--allow-write cnpg`, and it needs a grant that names the cluster on top of that.
