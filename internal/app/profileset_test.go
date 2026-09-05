@@ -973,3 +973,29 @@ func TestNothingIsReportedWhenNothingIsDropped(t *testing.T) {
 		t.Errorf("a run that lost nothing reported a loss:\n%s", out)
 	}
 }
+
+// The badge colour is one of the three things a profile carries beside its
+// connections, and the two surfaces that edit a profile both offer it: the
+// flag here, the field in the TUI form. `none` drops it, and a value that is
+// not a colour is refused by name rather than written for `rta profile list`
+// to complain about later.
+func TestSetColorIsOfferedValidatedAndDroppable(t *testing.T) {
+	reg := setRegistry(t)
+	if _, errOut, err := runWith(t, reg, "", "profile", "set", "prod", "--color", "#dd3333",
+		"--plugin", "db", "--set", "host=db.internal"); err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	if !strings.Contains(configOf(t), "color: \"#dd3333\"") && !strings.Contains(configOf(t), "color: '#dd3333'") {
+		t.Errorf("colour not written:\n%s", configOf(t))
+	}
+	body, _ := os.ReadFile(config.Path())
+	if _, errOut, err := runWith(t, reg, string(body), "profile", "set", "prod", "--color", "red"); err == nil || !strings.Contains(errOut, "core.profile.color") {
+		t.Errorf("a non-colour was accepted: %v %q", err, errOut)
+	}
+	if _, errOut, err := runWith(t, reg, string(body), "profile", "set", "prod", "--color", "none"); err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	if strings.Contains(configOf(t), "color:") {
+		t.Errorf("`none` did not drop the colour:\n%s", configOf(t))
+	}
+}
