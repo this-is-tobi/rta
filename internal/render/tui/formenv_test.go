@@ -469,3 +469,91 @@ func TestTheEditorsKeepUntouchedValues(t *testing.T) {
 		t.Errorf("plugin = %v, want db", v)
 	}
 }
+
+// Under a tunnelled environment the host and port boxes are dropped, because
+// the forward answers them per call — and the picker's help line is where the
+// screen says so. It names the forward's coordinate, not just its existence:
+// the profile's value is the one thing the operator picked the environment
+// for, and a form that hid the box and said only "a tunnel" left them with no
+// way to see where the run was going.
+func TestThePickerNamesTheForwardThatFillsTheBoxes(t *testing.T) {
+	m := profileModel(t, config.Config{Profiles: map[string]config.Profile{
+		"homelab": {Plugins: map[string]config.Connection{
+			"db": {Kube: "homelab/databases/svc/postgres:5432"},
+		}},
+	}})
+	switchOn(t, &m, "homelab")
+
+	c := plugin.Capability{
+		ID: "db.status", Summary: "status", Safety: plugin.Read,
+		Inputs: []plugin.Field{
+			{Name: "host", Type: plugin.String, Default: "localhost", Config: "host",
+				Local: true, Endpoint: plugin.EndpointHost, Help: "host"},
+			{Name: "port", Type: plugin.Int, Default: 5432, Config: "port",
+				Local: true, Endpoint: plugin.EndpointPort, Min: 1, Max: 65535, Help: "port"},
+		},
+		Run: func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "ok"}, nil },
+	}
+	model, _ := m.startForm(c, nil)
+	form := model.(Model).form
+	if form == nil || len(form.fields) == 0 || form.fields[0].Name != profileInput {
+		t.Fatalf("the picker is not the first field: %+v", form)
+	}
+	help := form.fields[0].Help
+	if !strings.Contains(help, "homelab/databases/svc/postgres:5432") || !strings.Contains(help, "host, port") {
+		t.Errorf("picker help = %q, want the kube coordinate and the boxes it fills", help)
+	}
+	if got := *form.bindings["host"]; got != "kube:homelab/databases/svc/postgres" {
+		t.Errorf("host box = %q, want the coordinate itself on display", got)
+	}
+	// Untouched, the display is not an answer: the forward fills it.
+	if v, given := form.values()["host"]; given {
+		t.Errorf("an untouched coordinate display came back as a caller value: %v", v)
+	}
+}
+
+// Typing over the coordinate is the override: the run goes straight to what
+// was typed and no forward is opened — the way out of a profile whose
+// coordinate is wrong without leaving the form to fix it first.
+func TestTypingOverTheCoordinateConnectsDirectly(t *testing.T) {
+	m := profileModel(t, config.Config{Profiles: map[string]config.Profile{
+		"homelab": {Plugins: map[string]config.Connection{
+			"db": {Kube: "homelab/databases/svc/postgres:5432"},
+		}},
+	}})
+	switchOn(t, &m, "homelab")
+	var reached string
+	c := plugin.Capability{
+		ID: "db.status", Summary: "status", Safety: plugin.Read,
+		Inputs: []plugin.Field{
+			{Name: "host", Type: plugin.String, Default: "localhost", Config: "host",
+				Local: true, Endpoint: plugin.EndpointHost, Help: "host"},
+			{Name: "port", Type: plugin.Int, Default: 5432, Config: "port",
+				Local: true, Endpoint: plugin.EndpointPort, Min: 1, Max: 65535, Help: "port"},
+		},
+		Run: func(_ context.Context, req plugin.Request) (view.View, error) {
+			reached = req.String("host")
+			return view.Text{Body: "ok"}, nil
+		},
+	}
+	model, _ := m.startForm(c, nil)
+	nm := model.(Model)
+	*nm.form.bindings["host"] = "db.direct.internal"
+	values := nm.form.values()
+	if values["host"] != "db.direct.internal" {
+		t.Fatalf("the typed host is not a caller value: %v", values)
+	}
+	name, filled, conn, verr := nm.resolveProfile(c, values)
+	if verr != nil {
+		t.Fatal(verr.Message)
+	}
+	// No fake forward is listening: if Dial tried to open one this would
+	// fail, and the typed host is what must arrive.
+	msg := runCmd(context.Background(), 1, c, withoutPicker(c, values), false, nm.configFor(c), name, filled, conn)()
+	if rm := msg.(resultMsg); rm.err != nil {
+		t.Fatalf("run: %s", rm.err.Message)
+	}
+	if reached != "db.direct.internal" {
+		t.Errorf("the run reached %q, want the typed host with no forward in the way", reached)
+	}
+}

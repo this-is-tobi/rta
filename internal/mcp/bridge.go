@@ -400,7 +400,7 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 			// tears down the forward and must run always, which is why it is
 			// deferred and release is not. A forward left open is a hole in a
 			// cluster's network boundary with nobody watching.
-			dialled, closeTunnel, verr3 := profile.Dial(ctx, profileName, conn, c)
+			dialled, closeTunnel, verr3 := profile.Dial(ctx, profileName, conn, c, nil)
 			defer closeTunnel()
 			if verr3 != nil {
 				release()

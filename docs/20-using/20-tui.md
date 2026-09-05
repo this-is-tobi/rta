@@ -84,7 +84,7 @@ A capability with inputs opens a form built from its declaration:
 
 ### Which environment the run goes to
 
-A capability a profile can fill opens with the environment picker first, defaulted to whatever is switched on. It is first because it changes what every other answer means — a host typed under one environment is not the same value under another — and moving it rebuilds the form on the environment it now names, rather than leaving one environment's values on screen under another one's name.
+A capability a profile can fill opens with the environment picker first, defaulted to whatever is switched on. Under an environment that reaches its service through a forward, the host and port boxes show the forward's own coordinate — `kube:homelab/databases/svc/postgres` in the host box, `5432` in the port box — and the picker's help line says the same: `runs through the kube forward to homelab/databases/svc/postgres:5432, which fills host, port`. Leave them and the forward answers per call. Type over one and the run connects directly to what you typed, without opening the forward — the way out of a coordinate that is wrong without leaving the form to fix the profile first. It is first because it changes what every other answer means — a host typed under one environment is not the same value under another — and moving it rebuilds the form on the environment it now names, rather than leaving one environment's values on screen under another one's name.
 
 Boxes that environment fills open showing its values, and you can still type over them. A credential is the exception: it opens empty, because seeding a masked box paints your passphrase's length in dots. So the box says where the value comes from instead:
 

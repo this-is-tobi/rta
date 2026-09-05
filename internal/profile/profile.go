@@ -620,16 +620,24 @@ func Fill(ctx context.Context, name string, conn config.Connection, c plugin.Cap
 // in a way nobody can read. Measured at 54 ms median to open
 // against a real cluster, which is the cost that has to stay worth it.
 //
-// No `caller` argument, and that is not an omission: plugin.Resolve already
-// applies Caller above Profile, so a host somebody typed wins over this
-// without anything here checking. What these values do override is the
-// plugin's own default and the operator's `set:` — which is right, because a
-// `set:` host beside a `kube:` coordinate is two statements about where the
-// call goes and the forward is the one that exists.
+// **A caller who names the endpoint connects directly, and no forward is
+// opened.** plugin.Resolve applies Caller above Profile, so a typed host
+// would win over the forward's address either way — but a forward opened
+// and then ignored is a hole in a cluster's network boundary that nothing
+// uses, and the operator who typed a host under a misconfigured coordinate
+// wanted exactly not to go through it. So the override is decided here, on
+// the capability's own endpoint-role inputs: any of them present among the
+// caller's values means "this once, straight to where I said". Over MCP the
+// endpoint inputs are Local and never arrive from a caller, so an agent
+// cannot take this exit. What the forward's values do override, when it is
+// opened, is the plugin's own default and the operator's `set:` — which is
+// right, because a `set:` host beside a `kube:` coordinate is two statements
+// about where the call goes and the forward is the one that exists.
 func Dial(ctx context.Context, name string, conn config.Connection, c plugin.Capability,
+	caller map[string]any,
 ) (map[string]any, func(), *view.Error) {
 	noop := func() {}
-	if !conn.Tunnelled() {
+	if !conn.Tunnelled() || callerNamedEndpoint(c, caller) {
 		return nil, noop, nil
 	}
 	tun, verr := tunnel.Open(ctx, name, target(conn))
@@ -1099,6 +1107,20 @@ func checkSecretRefs(name, key string, conn config.Connection, ns string, inst I
 func slicesContains(options []string, v string) bool {
 	for _, o := range options {
 		if o == v {
+			return true
+		}
+	}
+	return false
+}
+
+// callerNamedEndpoint reports whether the caller supplied any of the inputs a
+// forward would fill — the host, the port, the address or the TLS switch.
+func callerNamedEndpoint(c plugin.Capability, caller map[string]any) bool {
+	for _, f := range c.Inputs {
+		if f.Endpoint == plugin.EndpointNone {
+			continue
+		}
+		if _, given := caller[f.Name]; given {
 			return true
 		}
 	}

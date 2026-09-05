@@ -21,23 +21,20 @@ import (
 
 const sshEditorTarget = "tobi@bastion.internal:2222/postgres.internal:5432"
 
-// Under an ssh connection the endpoint boxes are not asked, exactly as under
-// a coordinate: the tunnel fills them per call, and the picker's one line
-// says so.
-func TestEndpointFieldsUnderAnSSHConnectionAreNotAsked(t *testing.T) {
+// Under an ssh connection the endpoint boxes show the tunnel's own target,
+// exactly as under a coordinate: the tunnel fills them per call, the boxes
+// display where, and the picker's one line says so.
+func TestEndpointFieldsUnderAnSSHConnectionShowTheTarget(t *testing.T) {
 	m := endpointEditorModel(t, config.Connection{SSH: sshEditorTarget})
 	switchOn(t, &m, "staging")
 	c := m.plugins[0].plugin.Capabilities[0]
 
 	model, _ := m.startForm(c, nil)
 	nm := model.(Model)
-	for _, name := range []string{"host", "port", "sslmode"} {
-		if _, asked := nm.form.bindings[name]; asked {
-			t.Errorf("%s has a box under an ssh connection — the tunnel fills it, "+
-				"and an empty box is a question", name)
-		}
+	if got := *nm.form.bindings["host"]; got != "ssh:tobi@bastion.internal:2222/postgres.internal" {
+		t.Errorf("host box = %q, want the tunnel's own target on display", got)
 	}
-	if picker := nm.form.fields[0]; !strings.Contains(picker.Help, "tunnel, which fills host, port, sslmode") {
+	if picker := nm.form.fields[0]; !strings.Contains(picker.Help, "ssh forward via tobi@bastion.internal:2222/postgres.internal:5432, which fills host, port, sslmode") {
 		t.Errorf("picker help = %q — nothing on screen says where the endpoint went", picker.Help)
 	}
 }

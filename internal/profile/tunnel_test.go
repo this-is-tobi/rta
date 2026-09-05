@@ -342,7 +342,7 @@ func TestDialFillsFromAForwardThatAnswers(t *testing.T) {
 		"echo 'Forwarding from 127.0.0.1:%d -> 5432'\nwhile true; do sleep 1; done\n", port))
 
 	conn := config.Connection{Kube: kubeCoord}
-	got, closeTunnel, verr := Dial(context.Background(), "homelab", conn, tunnelCap())
+	got, closeTunnel, verr := Dial(context.Background(), "homelab", conn, tunnelCap(), nil)
 	if verr != nil {
 		t.Fatalf("dial: %v", verr)
 	}
@@ -368,7 +368,7 @@ func TestDialFillsFromAForwardThatAnswers(t *testing.T) {
 func TestDialWithoutACoordinateOpensNothingAndStillReturnsACloser(t *testing.T) {
 	fakeKubectl(t, "echo 'a kubectl that must never be run' >&2\nexit 1\n")
 
-	got, closeTunnel, verr := Dial(context.Background(), "base", config.Connection{}, tunnelCap())
+	got, closeTunnel, verr := Dial(context.Background(), "base", config.Connection{}, tunnelCap(), nil)
 	if verr != nil {
 		t.Fatalf("dial: %v", verr)
 	}
@@ -391,7 +391,7 @@ func TestDialWithoutACoordinateOpensNothingAndStillReturnsACloser(t *testing.T) 
 func TestAForwardThatCannotBeOpenedRefusesRatherThanFallingBack(t *testing.T) {
 	fakeKubectl(t, "echo 'Error from server (NotFound): services \"postgres\" not found' >&2\nexit 1\n")
 
-	got, closeTunnel, verr := Dial(context.Background(), "homelab", config.Connection{Kube: kubeCoord}, tunnelCap())
+	got, closeTunnel, verr := Dial(context.Background(), "homelab", config.Connection{Kube: kubeCoord}, tunnelCap(), nil)
 	defer closeTunnel()
 	if verr == nil {
 		t.Fatalf("a failed forward resolved, filling %v", got)
@@ -486,5 +486,19 @@ profiles:
 	}
 	if _, verr := Lookup(cfg, tunnelCap(), "homelab", tunnelledRegistry(t)); verr != nil {
 		t.Errorf("a well-formed coordinate was refused: %v", verr)
+	}
+}
+
+// A caller who names the endpoint connects directly, and no forward is
+// opened: the coordinate may be wrong, and typing a host is the way past it.
+func TestDialSkipsTheForwardWhenTheCallerNamedTheEndpoint(t *testing.T) {
+	conn := config.Connection{Kube: "homelab/databases/svc/postgres:5432"}
+	got, closeTunnel, verr := Dial(context.Background(), "homelab", conn, tunnelCap(), map[string]any{"host": "db.direct.internal"})
+	closeTunnel()
+	if verr != nil {
+		t.Fatalf("a named endpoint must not try the forward: %s", verr.Message)
+	}
+	if len(got) != 0 {
+		t.Errorf("Dial filled %v under a caller-named endpoint; it must fill nothing", got)
 	}
 }
