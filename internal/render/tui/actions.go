@@ -102,6 +102,16 @@ var capActionSpecs = map[string][]struct {
 	"audit.deps": {
 		{"w", "why", "audit.why", srcRow, false},
 	},
+	// The package table is where somebody decides to take an upgrade, so
+	// taking it is one key from the row. Columns `target` and `package` are
+	// named for pkg.upgrade's inputs, so both halves seed from the row and
+	// the form only opens for the destructive confirmation.
+	"pkg.outdated": {
+		{"u", "upgrade", "pkg.upgrade", srcRow, false},
+	},
+	"pkg.tools": {
+		{"u", "upgrade", "pkg.upgrade", srcRow, false},
+	},
 	// A stale grant is something you notice on the dashboard, so taking it
 	// back has to be possible from there and not only from a shell. `n`
 	// re-issues the grant under the cursor, which is what "it expired while I

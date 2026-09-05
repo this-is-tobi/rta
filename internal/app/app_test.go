@@ -465,6 +465,7 @@ func conformanceInputs(dir string) map[string]map[string]any {
 		"note.done":   {"id": 1},
 		"note.reopen": {"id": 1},
 		"note.toggle": {"id": 1},
+		"pkg.upgrade": {"target": "absent-manager"},
 		"note.add":    {"title": "conformance"},
 		"grant.allow": {"target": "sys.cpu", "ttl": "1m"},
 

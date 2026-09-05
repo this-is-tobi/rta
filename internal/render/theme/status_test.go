@@ -45,6 +45,9 @@ func TestEveryStatusWordTheBuiltinsUseIsColoured(t *testing.T) {
 		"warn": StatusWarn,
 		"fail": StatusBad,
 		"info": StatusMuted,
+		// pkg
+		"outdated":       StatusWarn,
+		"pending reboot": StatusWarn,
 		// profiles and the panes
 		"invalid":  StatusBad,
 		"disabled": StatusMuted,
