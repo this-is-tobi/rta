@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // decode runs a token through runJWT and hands back its three sections.

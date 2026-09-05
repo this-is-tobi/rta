@@ -5,13 +5,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/this-is-tobi/rule-them-all/internal/config"
-	core "github.com/this-is-tobi/rule-them-all/internal/grant"
-	"github.com/this-is-tobi/rule-them-all/internal/guard"
-	operatorid "github.com/this-is-tobi/rule-them-all/internal/operator"
-	profiles "github.com/this-is-tobi/rule-them-all/internal/profile"
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/internal/config"
+	core "github.com/this-is-tobi/rta/internal/grant"
+	"github.com/this-is-tobi/rta/internal/guard"
+	operatorid "github.com/this-is-tobi/rta/internal/operator"
+	profiles "github.com/this-is-tobi/rta/internal/profile"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // One validation path for both ways a grant gets asked for: the local

@@ -8,8 +8,8 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/this-is-tobi/rule-them-all/internal/render/theme"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/internal/render/theme"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // usageTable is one row per band, so a single render exercises all three.

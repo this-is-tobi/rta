@@ -11,10 +11,10 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/this-is-tobi/rule-them-all/internal/stdio"
-	"github.com/this-is-tobi/rule-them-all/pkg/format"
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/internal/stdio"
+	"github.com/this-is-tobi/rta/pkg/format"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // shmDir is Linux's RAM-backed temporary filesystem. A secret written there

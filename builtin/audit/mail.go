@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // "Can somebody send mail as us?" is a question with an awkward manual

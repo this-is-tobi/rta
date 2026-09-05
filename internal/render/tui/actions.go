@@ -1,8 +1,8 @@
 package tui
 
 import (
-	"github.com/this-is-tobi/rule-them-all/internal/registry"
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
+	"github.com/this-is-tobi/rta/internal/registry"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
 // The one-key actions and view toggles a capability's result offers, and

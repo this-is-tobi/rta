@@ -8,8 +8,8 @@ import (
 	huh "charm.land/huh/v2"
 	"charm.land/lipgloss/v2"
 
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // Driving a capability's form from the model's side: which fields a form

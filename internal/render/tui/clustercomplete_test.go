@@ -10,7 +10,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	huh "charm.land/huh/v2"
 
-	"github.com/this-is-tobi/rule-them-all/internal/config"
+	"github.com/this-is-tobi/rta/internal/config"
 )
 
 // Cluster completion, driven the way a person drives it: tab — the app's one

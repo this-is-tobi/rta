@@ -16,7 +16,7 @@
 package fs
 
 import (
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
 // pathField is the same input everywhere: what to look at, defaulting to

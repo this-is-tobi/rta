@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // A KindUsage cell is graded from the text a producer wrote, because that is

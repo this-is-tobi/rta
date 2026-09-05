@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // fixBodies runs the audit with --fix and returns every section's title and

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
 // colorPattern is the grammar a profile's `color:` must match — the same one

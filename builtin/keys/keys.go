@@ -30,9 +30,9 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"github.com/this-is-tobi/rule-them-all/builtin/internal/sshkeys"
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/builtin/internal/sshkeys"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // Plugin returns the keys plugin declaration.

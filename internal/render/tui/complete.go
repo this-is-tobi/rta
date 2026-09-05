@@ -9,10 +9,10 @@ import (
 	tea "charm.land/bubbletea/v2"
 	huh "charm.land/huh/v2"
 
-	"github.com/this-is-tobi/rule-them-all/internal/textclean"
-	"github.com/this-is-tobi/rule-them-all/internal/tunnel"
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/internal/textclean"
+	"github.com/this-is-tobi/rta/internal/tunnel"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // Completing a coordinate or a Secret reference from the cluster, on tab.

@@ -7,7 +7,7 @@ import (
 
 	yaml "github.com/goccy/go-yaml"
 
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // **Every json and yaml output has to parse, whatever is in the data.**

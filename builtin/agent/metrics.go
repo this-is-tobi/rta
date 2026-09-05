@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/this-is-tobi/rule-them-all/internal/agentlog"
-	"github.com/this-is-tobi/rule-them-all/internal/consent"
-	"github.com/this-is-tobi/rule-them-all/internal/grant"
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/internal/agentlog"
+	"github.com/this-is-tobi/rta/internal/consent"
+	"github.com/this-is-tobi/rta/internal/grant"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // The record, as numbers a dashboard already knows how to draw.

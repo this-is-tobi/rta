@@ -10,7 +10,7 @@ import (
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/this-is-tobi/rule-them-all/internal/mcp"
+	"github.com/this-is-tobi/rta/internal/mcp"
 )
 
 // The MCP surface, written down.

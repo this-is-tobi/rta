@@ -6,11 +6,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/this-is-tobi/rule-them-all/internal/config"
-	"github.com/this-is-tobi/rule-them-all/internal/plugintrust"
-	"github.com/this-is-tobi/rule-them-all/internal/registry"
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/internal/plugintrust"
+	"github.com/this-is-tobi/rta/internal/registry"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // paneWithNeeds builds the pane around a plugin that declares it needs to read

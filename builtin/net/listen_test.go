@@ -7,7 +7,7 @@ import (
 
 	psnet "github.com/shirou/gopsutil/v4/net"
 
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 func tcp(status, ip string, port uint32) psnet.ConnectionStat {

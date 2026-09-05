@@ -8,9 +8,9 @@ import (
 
 	"charm.land/lipgloss/v2"
 
-	"github.com/this-is-tobi/rule-them-all/internal/render/cli"
-	"github.com/this-is-tobi/rule-them-all/internal/render/theme"
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
+	"github.com/this-is-tobi/rta/internal/render/cli"
+	"github.com/this-is-tobi/rta/internal/render/theme"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
 // Laying the dashboard out and painting it: how tiles become rows and

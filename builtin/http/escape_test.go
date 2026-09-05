@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/this-is-tobi/rule-them-all/internal/render/cli"
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
+	"github.com/this-is-tobi/rta/internal/render/cli"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
 // A hostile server, the shipped capability, the shipped renderer, nothing

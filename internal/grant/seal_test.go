@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
 // The attack this exists for, end to end. A writer that cannot read the data

@@ -12,13 +12,13 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/this-is-tobi/rule-them-all/internal/pluginhost"
-	"github.com/this-is-tobi/rule-them-all/internal/plugintrust"
-	"github.com/this-is-tobi/rule-them-all/internal/registry"
-	"github.com/this-is-tobi/rule-them-all/internal/render/cli"
-	"github.com/this-is-tobi/rule-them-all/internal/render/tui"
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/internal/pluginhost"
+	"github.com/this-is-tobi/rta/internal/plugintrust"
+	"github.com/this-is-tobi/rta/internal/registry"
+	"github.com/this-is-tobi/rta/internal/render/cli"
+	"github.com/this-is-tobi/rta/internal/render/tui"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // newPluginCommand is everything to do with plugins: the inventory, and the

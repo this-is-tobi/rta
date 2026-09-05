@@ -3,7 +3,7 @@ package toolcall
 import (
 	"strings"
 
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
 // Name converts a capability ID to an MCP-safe tool name

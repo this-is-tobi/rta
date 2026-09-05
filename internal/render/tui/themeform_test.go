@@ -5,8 +5,8 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/this-is-tobi/rule-them-all/internal/config"
-	"github.com/this-is-tobi/rule-them-all/internal/render/theme"
+	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/internal/render/theme"
 )
 
 // resetTheme restores the built-in palette after a test that calls

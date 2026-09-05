@@ -12,9 +12,9 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	"github.com/this-is-tobi/rule-them-all/internal/paths"
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	rtav1 "github.com/this-is-tobi/rule-them-all/proto/rta/v1"
+	"github.com/this-is-tobi/rta/internal/paths"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	rtav1 "github.com/this-is-tobi/rta/proto/rta/v1"
 )
 
 // The point of the cache: Open answers what a plugin declares without

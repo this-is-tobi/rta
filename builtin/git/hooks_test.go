@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/this-is-tobi/rule-them-all/builtin/internal/gitclone"
+	"github.com/this-is-tobi/rta/builtin/internal/gitclone"
 )
 
 func writeHook(t *testing.T, dir, name string, executable bool) {

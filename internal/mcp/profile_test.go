@@ -10,13 +10,13 @@ import (
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/this-is-tobi/rule-them-all/internal/config"
-	"github.com/this-is-tobi/rule-them-all/internal/grant"
-	"github.com/this-is-tobi/rule-them-all/internal/pluginconf"
-	"github.com/this-is-tobi/rule-them-all/internal/profile"
-	"github.com/this-is-tobi/rule-them-all/internal/registry"
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/internal/grant"
+	"github.com/this-is-tobi/rta/internal/pluginconf"
+	"github.com/this-is-tobi/rta/internal/profile"
+	"github.com/this-is-tobi/rta/internal/registry"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // profileFixture builds a registry and an Options shaped like a real install

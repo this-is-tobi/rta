@@ -19,10 +19,10 @@ import (
 
 	"github.com/goccy/go-yaml"
 
-	"github.com/this-is-tobi/rule-them-all/internal/textclean"
-	"github.com/this-is-tobi/rule-them-all/internal/yamlguard"
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/internal/textclean"
+	"github.com/this-is-tobi/rta/internal/yamlguard"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // Manifest is one plugin's entry in an index: claims about an artifact,

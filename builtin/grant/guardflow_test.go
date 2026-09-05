@@ -5,10 +5,10 @@ import (
 	"strings"
 	"testing"
 
-	core "github.com/this-is-tobi/rule-them-all/internal/grant"
-	"github.com/this-is-tobi/rule-them-all/internal/guard"
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	core "github.com/this-is-tobi/rta/internal/grant"
+	"github.com/this-is-tobi/rta/internal/guard"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // reqTUI is req through the TUI's masked form — the surface that may carry

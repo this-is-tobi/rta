@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/this-is-tobi/rule-them-all/internal/paths"
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/internal/paths"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 func setup(t *testing.T) {

@@ -7,10 +7,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/this-is-tobi/rule-them-all/builtin/internal/itemstore"
-	"github.com/this-is-tobi/rule-them-all/pkg/format"
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/builtin/internal/itemstore"
+	"github.com/this-is-tobi/rta/pkg/format"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // maxRevisions is how much of its past an entry keeps.

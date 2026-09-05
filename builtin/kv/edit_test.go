@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // stubEditor stands in for the person and their editor: it reports what the

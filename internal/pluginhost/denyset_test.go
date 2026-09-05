@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
 // The injection the validator exists for. SBPL is last-match-wins, so a path

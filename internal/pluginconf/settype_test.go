@@ -5,10 +5,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/this-is-tobi/rule-them-all/internal/config"
-	"github.com/this-is-tobi/rule-them-all/internal/registry"
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/internal/registry"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // The same failure `internal/profile` reports about a `set:` block, in the

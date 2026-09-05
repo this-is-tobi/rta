@@ -16,8 +16,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // Holding a call to the schema it was shown: every argument an agent sent

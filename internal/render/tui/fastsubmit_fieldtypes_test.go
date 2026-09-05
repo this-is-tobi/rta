@@ -8,9 +8,9 @@ import (
 	tea "charm.land/bubbletea/v2"
 	teatest "github.com/charmbracelet/x/exp/teatest/v2"
 
-	"github.com/this-is-tobi/rule-them-all/internal/config"
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // fastsubmit_test.go proves the mechanism against String/Int fields, a

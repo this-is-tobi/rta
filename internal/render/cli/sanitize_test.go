@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // payloads are the sequences worth naming individually, because each one

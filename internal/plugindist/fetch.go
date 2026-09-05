@@ -17,7 +17,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // artifactCap bounds a download. The largest plugin this repo builds is

@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/this-is-tobi/rule-them-all/internal/grant"
-	"github.com/this-is-tobi/rule-them-all/internal/guard"
-	"github.com/this-is-tobi/rule-them-all/internal/operator"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/internal/grant"
+	"github.com/this-is-tobi/rta/internal/guard"
+	"github.com/this-is-tobi/rta/internal/operator"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // These tests drive the operator channel over the real Serve stack — the

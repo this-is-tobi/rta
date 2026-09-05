@@ -7,8 +7,8 @@ import (
 
 	gitconfig "github.com/go-git/go-git/v5/config"
 
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 func configCapability() plugin.Capability {

@@ -7,14 +7,14 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/this-is-tobi/rule-them-all/internal/config"
-	"github.com/this-is-tobi/rule-them-all/internal/grant"
-	"github.com/this-is-tobi/rule-them-all/internal/guard"
-	"github.com/this-is-tobi/rule-them-all/internal/lockdown"
-	"github.com/this-is-tobi/rule-them-all/internal/pathguard"
-	"github.com/this-is-tobi/rule-them-all/internal/profile"
-	"github.com/this-is-tobi/rule-them-all/internal/registry"
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
+	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/internal/grant"
+	"github.com/this-is-tobi/rta/internal/guard"
+	"github.com/this-is-tobi/rta/internal/lockdown"
+	"github.com/this-is-tobi/rta/internal/pathguard"
+	"github.com/this-is-tobi/rta/internal/profile"
+	"github.com/this-is-tobi/rta/internal/registry"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
 // Options is the operator's policy for one MCP session: which capabilities

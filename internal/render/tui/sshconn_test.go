@@ -10,7 +10,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	huh "charm.land/huh/v2"
 
-	"github.com/this-is-tobi/rule-them-all/internal/config"
+	"github.com/this-is-tobi/rta/internal/config"
 )
 
 // The editor and run-form rules about a forward were written under `kube:`

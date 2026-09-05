@@ -6,9 +6,9 @@ import (
 	huh "charm.land/huh/v2"
 	"github.com/spf13/cobra"
 
-	"github.com/this-is-tobi/rule-them-all/internal/config"
-	"github.com/this-is-tobi/rule-them-all/internal/registry"
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
+	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/internal/registry"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
 // newInitCommand implements `rta init`: an interactive wizard that writes

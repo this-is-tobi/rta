@@ -7,8 +7,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/this-is-tobi/rule-them-all/internal/atomicfile"
-	"github.com/this-is-tobi/rule-them-all/internal/paths"
+	"github.com/this-is-tobi/rta/internal/atomicfile"
+	"github.com/this-is-tobi/rta/internal/paths"
 )
 
 // The cache is sealed because an unsealed one defeats the digest.

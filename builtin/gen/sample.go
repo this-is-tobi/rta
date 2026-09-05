@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // A generator is only half of what somebody reaching for one needs. The

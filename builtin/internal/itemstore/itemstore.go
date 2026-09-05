@@ -15,10 +15,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/this-is-tobi/rule-them-all/internal/atomicfile"
-	"github.com/this-is-tobi/rule-them-all/internal/filelock"
-	"github.com/this-is-tobi/rule-them-all/internal/paths"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/internal/atomicfile"
+	"github.com/this-is-tobi/rta/internal/filelock"
+	"github.com/this-is-tobi/rta/internal/paths"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // Item is one stored record. Tags, parents and due dates are what turn a

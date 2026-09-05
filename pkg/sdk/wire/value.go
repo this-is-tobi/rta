@@ -14,7 +14,7 @@
 package wire
 
 import (
-	rtav1 "github.com/this-is-tobi/rule-them-all/proto/rta/v1"
+	rtav1 "github.com/this-is-tobi/rta/proto/rta/v1"
 )
 
 // ValueToProto encodes one request value, declared default, or bound.

@@ -11,8 +11,8 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/this-is-tobi/rule-them-all/builtin/all"
-	"github.com/this-is-tobi/rule-them-all/internal/pathguard"
+	"github.com/this-is-tobi/rta/builtin/all"
+	"github.com/this-is-tobi/rta/internal/pathguard"
 )
 
 // checkPaths walks a capability's declared inputs, which is every path a

@@ -7,10 +7,10 @@ import (
 	"sort"
 	"time"
 
-	"github.com/this-is-tobi/rule-them-all/internal/atomicfile"
-	"github.com/this-is-tobi/rule-them-all/internal/filelock"
-	"github.com/this-is-tobi/rule-them-all/internal/paths"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/internal/atomicfile"
+	"github.com/this-is-tobi/rta/internal/filelock"
+	"github.com/this-is-tobi/rta/internal/paths"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // rta.lock records what rta computed, per installed plugin — never what a

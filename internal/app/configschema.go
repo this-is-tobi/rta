@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/this-is-tobi/rule-them-all/internal/config"
+	"github.com/this-is-tobi/rta/internal/config"
 )
 
 // newConfigCommand groups the commands about the config file itself, as

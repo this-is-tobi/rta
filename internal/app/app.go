@@ -17,16 +17,16 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
-	"github.com/this-is-tobi/rule-them-all/builtin/all"
-	"github.com/this-is-tobi/rule-them-all/internal/config"
-	"github.com/this-is-tobi/rule-them-all/internal/pluginhost"
-	"github.com/this-is-tobi/rule-them-all/internal/profile"
-	"github.com/this-is-tobi/rule-them-all/internal/recent"
-	"github.com/this-is-tobi/rule-them-all/internal/registry"
-	"github.com/this-is-tobi/rule-them-all/internal/render/cli"
-	"github.com/this-is-tobi/rule-them-all/internal/render/tui"
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/builtin/all"
+	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/internal/pluginhost"
+	"github.com/this-is-tobi/rta/internal/profile"
+	"github.com/this-is-tobi/rta/internal/recent"
+	"github.com/this-is-tobi/rta/internal/registry"
+	"github.com/this-is-tobi/rta/internal/render/cli"
+	"github.com/this-is-tobi/rta/internal/render/tui"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // ExitCode maps an error returned by Execute to the fixed exit-code contract:

@@ -5,7 +5,7 @@
 Every release ships prebuilt binaries for Linux, macOS and Windows on both `amd64` and `arm64`, as `rta_<version>_<os>_<arch>.tar.gz` (`.zip` on Windows), plus `.deb`/`.rpm`/`.apk` packages for Linux. With the [gh CLI](https://cli.github.com):
 
 ```bash
-gh release download --repo this-is-tobi/rule-them-all \
+gh release download --repo this-is-tobi/rta \
     --pattern "rta_*_$(uname -s | tr A-Z a-z)_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" \
     --pattern checksums.txt
 ```
@@ -13,10 +13,10 @@ gh release download --repo this-is-tobi/rule-them-all \
 Or with nothing but curl — the asset names carry the version, so ask the API which one is latest first:
 
 ```bash
-tag=$(curl -s https://api.github.com/repos/this-is-tobi/rule-them-all/releases/latest | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p')
+tag=$(curl -s https://api.github.com/repos/this-is-tobi/rta/releases/latest | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p')
 os=$(uname -s | tr A-Z a-z); arch=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
-curl -fsSLO "https://github.com/this-is-tobi/rule-them-all/releases/download/v${tag}/rta_${tag}_${os}_${arch}.tar.gz"
-curl -fsSLO "https://github.com/this-is-tobi/rule-them-all/releases/download/v${tag}/checksums.txt"
+curl -fsSLO "https://github.com/this-is-tobi/rta/releases/download/v${tag}/rta_${tag}_${os}_${arch}.tar.gz"
+curl -fsSLO "https://github.com/this-is-tobi/rta/releases/download/v${tag}/checksums.txt"
 ```
 
 **Verify before you extract.** The checksum proves the download is intact; the attestation proves the archive was built by this repository's release workflow from the tagged commit — provenance, not just integrity:
@@ -43,8 +43,8 @@ Upgrading is the same download again — the new binary replaces the old one, an
 You need Go 1.26 or newer.
 
 ```bash
-git clone https://github.com/this-is-tobi/rule-them-all.git
-cd rule-them-all
+git clone https://github.com/this-is-tobi/rta.git
+cd rta
 make install
 ```
 

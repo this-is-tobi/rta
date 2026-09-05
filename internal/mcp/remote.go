@@ -18,7 +18,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/auth"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/this-is-tobi/rule-them-all/internal/grant"
+	"github.com/this-is-tobi/rta/internal/grant"
 )
 
 // The HTTP transport: a caller proves who it is over the wire, instead of

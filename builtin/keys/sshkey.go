@@ -17,12 +17,12 @@ import (
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/term"
 
-	"github.com/this-is-tobi/rule-them-all/builtin/internal/sshkeys"
+	"github.com/this-is-tobi/rta/builtin/internal/sshkeys"
 
-	"github.com/this-is-tobi/rule-them-all/internal/atomicfile"
-	"github.com/this-is-tobi/rule-them-all/internal/stdio"
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/internal/atomicfile"
+	"github.com/this-is-tobi/rta/internal/stdio"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // expandHome resolves a leading ~ the shell would have, for a Path input the

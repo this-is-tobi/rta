@@ -16,8 +16,8 @@ import (
 	"github.com/tyler-smith/go-bip39"
 	"golang.org/x/crypto/ssh"
 
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // capabilityByID looks one up by name rather than by position. The index

@@ -18,10 +18,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/this-is-tobi/rule-them-all/builtin/internal/x509check"
-	"github.com/this-is-tobi/rule-them-all/internal/atomicfile"
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/builtin/internal/x509check"
+	"github.com/this-is-tobi/rta/internal/atomicfile"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // defaultTimeoutSeconds bounds every dial cert makes. Ten seconds is

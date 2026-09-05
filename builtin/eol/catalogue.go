@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // catalogueEntry is one product as the API's /products list describes it.

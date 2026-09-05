@@ -10,9 +10,9 @@ import (
 
 	"github.com/go-git/go-billy/v5/helper/iofs"
 
-	"github.com/this-is-tobi/rule-them-all/builtin/internal/gitclone"
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/builtin/internal/gitclone"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // What a dependency audit is pointed at, resolved once.

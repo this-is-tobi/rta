@@ -2,19 +2,19 @@ package app
 
 import (
 	"fmt"
-	"github.com/this-is-tobi/rule-them-all/internal/config"
+	"github.com/this-is-tobi/rta/internal/config"
 	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
 
-	"github.com/this-is-tobi/rule-them-all/internal/grant"
-	"github.com/this-is-tobi/rule-them-all/internal/mcp"
-	"github.com/this-is-tobi/rule-them-all/internal/registry"
-	"github.com/this-is-tobi/rule-them-all/internal/render/cli"
-	"github.com/this-is-tobi/rule-them-all/internal/toolcall"
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/internal/grant"
+	"github.com/this-is-tobi/rta/internal/mcp"
+	"github.com/this-is-tobi/rta/internal/registry"
+	"github.com/this-is-tobi/rta/internal/render/cli"
+	"github.com/this-is-tobi/rta/internal/toolcall"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // newExplainCommand implements `rta explain [capability]`: the capability

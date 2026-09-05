@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/this-is-tobi/rule-them-all/internal/render/cli"
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
+	"github.com/this-is-tobi/rta/internal/render/cli"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
 // leavesTheMachine names the namespaces whose capabilities reach off the box.

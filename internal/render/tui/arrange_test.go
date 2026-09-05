@@ -11,13 +11,13 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/this-is-tobi/rule-them-all/builtin/all"
-	"github.com/this-is-tobi/rule-them-all/internal/config"
-	"github.com/this-is-tobi/rule-them-all/internal/pluginhost"
-	"github.com/this-is-tobi/rule-them-all/internal/plugintrust"
-	"github.com/this-is-tobi/rule-them-all/internal/registry"
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/builtin/all"
+	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/internal/pluginhost"
+	"github.com/this-is-tobi/rta/internal/plugintrust"
+	"github.com/this-is-tobi/rta/internal/registry"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // multiRegistry mirrors the real shape of the built-ins: some plugins can

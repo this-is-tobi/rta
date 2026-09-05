@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/this-is-tobi/rule-them-all/internal/guard"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/internal/guard"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // What the guard signs, and what it deliberately does not.

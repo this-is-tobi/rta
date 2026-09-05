@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/this-is-tobi/rule-them-all/builtin/internal/x509check"
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/builtin/internal/x509check"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // corsProbeOrigin is sent as the request's Origin header so the audit can

@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	core "github.com/this-is-tobi/rule-them-all/internal/grant"
-	"github.com/this-is-tobi/rule-them-all/internal/policy"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	core "github.com/this-is-tobi/rta/internal/grant"
+	"github.com/this-is-tobi/rta/internal/policy"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // withPolicy puts a team ceiling above the working directory.

@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/this-is-tobi/rule-them-all/internal/config"
-	"github.com/this-is-tobi/rule-them-all/internal/profile"
+	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/internal/profile"
 )
 
 // on switches an environment on for the duration of one test.

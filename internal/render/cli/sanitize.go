@@ -1,8 +1,8 @@
 package cli
 
 import (
-	"github.com/this-is-tobi/rule-them-all/internal/textclean"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/internal/textclean"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // sanitize removes terminal control sequences from every string a

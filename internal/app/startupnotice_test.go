@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/this-is-tobi/rule-them-all/internal/pluginhost"
+	"github.com/this-is-tobi/rta/internal/pluginhost"
 )
 
 // **A sentence of English above somebody's JSON is a sentence they have to

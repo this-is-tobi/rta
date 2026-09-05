@@ -5,9 +5,9 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
-	rtav1 "github.com/this-is-tobi/rule-them-all/proto/rta/v1"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
+	rtav1 "github.com/this-is-tobi/rta/proto/rta/v1"
 	"google.golang.org/protobuf/proto"
 )
 

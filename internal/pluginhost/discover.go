@@ -9,9 +9,9 @@ import (
 
 	"strings"
 
-	"github.com/this-is-tobi/rule-them-all/internal/paths"
-	"github.com/this-is-tobi/rule-them-all/internal/plugintrust"
-	"github.com/this-is-tobi/rule-them-all/internal/registry"
+	"github.com/this-is-tobi/rta/internal/paths"
+	"github.com/this-is-tobi/rta/internal/plugintrust"
+	"github.com/this-is-tobi/rta/internal/registry"
 )
 
 // Prefix is how an SDK plugin announces itself on $PATH.

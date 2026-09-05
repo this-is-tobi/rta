@@ -15,9 +15,9 @@ import (
 	"context"
 	"fmt"
 
-	id "github.com/this-is-tobi/rule-them-all/internal/operator"
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	id "github.com/this-is-tobi/rta/internal/operator"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // Plugin returns the operator plugin declaration.

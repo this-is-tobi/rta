@@ -45,12 +45,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/this-is-tobi/rule-them-all/internal/atomicfile"
-	"github.com/this-is-tobi/rule-them-all/internal/filelock"
-	"github.com/this-is-tobi/rule-them-all/internal/grant"
-	"github.com/this-is-tobi/rule-them-all/internal/seal"
-	"github.com/this-is-tobi/rule-them-all/internal/textclean"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/internal/atomicfile"
+	"github.com/this-is-tobi/rta/internal/filelock"
+	"github.com/this-is-tobi/rta/internal/grant"
+	"github.com/this-is-tobi/rta/internal/seal"
+	"github.com/this-is-tobi/rta/internal/textclean"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // Kind names which verified identity a lock freezes.

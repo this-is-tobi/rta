@@ -15,16 +15,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/this-is-tobi/rule-them-all/internal/config"
-	core "github.com/this-is-tobi/rule-them-all/internal/grant"
-	"github.com/this-is-tobi/rule-them-all/internal/guard"
-	operatorid "github.com/this-is-tobi/rule-them-all/internal/operator"
-	profiles "github.com/this-is-tobi/rule-them-all/internal/profile"
+	"github.com/this-is-tobi/rta/internal/config"
+	core "github.com/this-is-tobi/rta/internal/grant"
+	"github.com/this-is-tobi/rta/internal/guard"
+	operatorid "github.com/this-is-tobi/rta/internal/operator"
+	profiles "github.com/this-is-tobi/rta/internal/profile"
 	"golang.org/x/term"
 
-	"github.com/this-is-tobi/rule-them-all/internal/stdio"
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/internal/stdio"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // Plugin returns the grant plugin declaration.

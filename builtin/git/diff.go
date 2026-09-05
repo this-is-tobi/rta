@@ -14,8 +14,8 @@ import (
 	godiff "github.com/go-git/go-git/v5/utils/diff"
 	"github.com/sergi/go-diff/diffmatchpatch"
 
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 func diffCapability() plugin.Capability {

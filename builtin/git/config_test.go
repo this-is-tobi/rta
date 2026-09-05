@@ -6,7 +6,7 @@ import (
 
 	gitconfig "github.com/go-git/go-git/v5/config"
 
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // addConfigRows is exercised directly against a hand-built Config, so the

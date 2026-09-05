@@ -8,8 +8,8 @@ import (
 
 	"github.com/goccy/go-yaml"
 
-	"github.com/this-is-tobi/rule-them-all/internal/config"
-	"github.com/this-is-tobi/rule-them-all/internal/registry"
+	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/internal/registry"
 )
 
 // origins builds the lookup Resolve takes, from a map of namespace to origin.

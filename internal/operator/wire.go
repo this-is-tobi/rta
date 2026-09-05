@@ -4,9 +4,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/this-is-tobi/rule-them-all/internal/consent"
-	"github.com/this-is-tobi/rule-them-all/internal/grant"
-	"github.com/this-is-tobi/rule-them-all/internal/lockdown"
+	"github.com/this-is-tobi/rta/internal/consent"
+	"github.com/this-is-tobi/rta/internal/grant"
+	"github.com/this-is-tobi/rta/internal/lockdown"
 )
 
 // The verbs a server dispatches, and each verb's result shape. They landed

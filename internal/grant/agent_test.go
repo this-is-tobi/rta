@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
 // The matcher's own table. internal/mcp proves what an agent actually gets;

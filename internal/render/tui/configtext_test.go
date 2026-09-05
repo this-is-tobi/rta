@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/this-is-tobi/rule-them-all/internal/config"
+	"github.com/this-is-tobi/rta/internal/config"
 )
 
 // **The config file's own strings are data from somewhere else, and they were

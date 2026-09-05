@@ -16,10 +16,10 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/this-is-tobi/rule-them-all/internal/config"
-	"github.com/this-is-tobi/rule-them-all/internal/pluginhost"
-	"github.com/this-is-tobi/rule-them-all/internal/plugintrust"
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
+	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/internal/pluginhost"
+	"github.com/this-is-tobi/rta/internal/plugintrust"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
 // helloOnce builds examples/plugin-hello once for the package — pluginhost's

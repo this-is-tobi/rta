@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // maxWatch bounds one call. endoflife.date has no batch endpoint, so a

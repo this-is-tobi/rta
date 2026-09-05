@@ -22,7 +22,7 @@ syntax = "proto3";
 //     an existing one is v2.
 package rta.v1;
 
-option go_package = "github.com/this-is-tobi/rule-them-all/proto/rta/v1;rtav1";
+option go_package = "github.com/this-is-tobi/rta/proto/rta/v1;rtav1";
 
 // Error is the first-class error contract. Renderers show Message and Hint;
 // an agent branches on Code.

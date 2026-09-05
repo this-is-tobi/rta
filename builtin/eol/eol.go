@@ -16,8 +16,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // defaultWarnDays is further out than cert.expiry's 30 (builtin/cert):

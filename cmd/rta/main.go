@@ -13,12 +13,12 @@ import (
 	"charm.land/fang/v2"
 	"github.com/spf13/cobra"
 
-	"github.com/this-is-tobi/rule-them-all/internal/app"
-	"github.com/this-is-tobi/rule-them-all/internal/config"
-	"github.com/this-is-tobi/rule-them-all/internal/pluginconf"
-	"github.com/this-is-tobi/rule-them-all/internal/pluginhost"
-	"github.com/this-is-tobi/rule-them-all/internal/render/theme"
-	"github.com/this-is-tobi/rule-them-all/internal/stdio"
+	"github.com/this-is-tobi/rta/internal/app"
+	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/internal/pluginconf"
+	"github.com/this-is-tobi/rta/internal/pluginhost"
+	"github.com/this-is-tobi/rta/internal/render/theme"
+	"github.com/this-is-tobi/rta/internal/stdio"
 )
 
 // version and commit are set by the linker at release time

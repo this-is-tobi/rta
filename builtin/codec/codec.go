@@ -22,9 +22,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/this-is-tobi/rule-them-all/builtin/internal/timefmt"
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/builtin/internal/timefmt"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // Plugin returns the codec plugin declaration.

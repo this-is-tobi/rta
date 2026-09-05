@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/this-is-tobi/rule-them-all/internal/seal"
+	"github.com/this-is-tobi/rta/internal/seal"
 )
 
 // legacyEntry is Entry as the binary before the code/reason split marshalled

@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	"github.com/this-is-tobi/rule-them-all/pkg/sdk/wire"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
-	rtav1 "github.com/this-is-tobi/rule-them-all/proto/rta/v1"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/sdk/wire"
+	"github.com/this-is-tobi/rta/pkg/view"
+	rtav1 "github.com/this-is-tobi/rta/proto/rta/v1"
 )
 
 // server is the plugin side of PluginService: the four RPCs, each one a thin

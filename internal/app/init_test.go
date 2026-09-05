@@ -5,7 +5,7 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/this-is-tobi/rule-them-all/internal/config"
+	"github.com/this-is-tobi/rta/internal/config"
 )
 
 // initOwns names the parts of the file `rta init` decides. initCarries names

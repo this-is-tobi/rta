@@ -30,7 +30,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // Built-in palette, as hex — the one place each value is written down.

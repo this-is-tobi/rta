@@ -6,9 +6,9 @@ import (
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/this-is-tobi/rule-them-all/internal/grant"
-	"github.com/this-is-tobi/rule-them-all/internal/toolcall"
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
+	"github.com/this-is-tobi/rta/internal/grant"
+	"github.com/this-is-tobi/rta/internal/toolcall"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
 // What an agent is shown: the tool name a capability maps onto, the text

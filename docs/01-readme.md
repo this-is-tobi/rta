@@ -1,4 +1,4 @@
-# Rule them all :ring:
+# rta :ring:
 
 **Rule them all** — `rta` on the command line — is one binary over the tools you already juggle: databases, object storage, secrets, networking, certificates, host telemetry, HTTP APIs. Every capability is written once and rendered on three surfaces: a scriptable CLI, an interactive TUI, and an MCP server for AI agents.
 

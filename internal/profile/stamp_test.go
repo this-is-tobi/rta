@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/this-is-tobi/rule-them-all/internal/config"
+	"github.com/this-is-tobi/rta/internal/config"
 )
 
 func profileWith(set map[string]any, secrets map[string]string, ttl string) config.Profile {

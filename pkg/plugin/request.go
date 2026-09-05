@@ -3,7 +3,7 @@ package plugin
 import (
 	"fmt"
 
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // Request is what a handler runs with, and the accessors it reads inputs

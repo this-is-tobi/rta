@@ -21,10 +21,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/this-is-tobi/rule-them-all/internal/lockdown"
-	operatorid "github.com/this-is-tobi/rule-them-all/internal/operator"
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/internal/lockdown"
+	operatorid "github.com/this-is-tobi/rta/internal/operator"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // Plugin returns the lock plugin declaration.

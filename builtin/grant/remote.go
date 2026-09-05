@@ -5,10 +5,10 @@ import (
 	"strings"
 	"time"
 
-	core "github.com/this-is-tobi/rule-them-all/internal/grant"
-	operatorid "github.com/this-is-tobi/rule-them-all/internal/operator"
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	core "github.com/this-is-tobi/rta/internal/grant"
+	operatorid "github.com/this-is-tobi/rta/internal/operator"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // remoteList is `grant list --server <name>`: the same roster question asked

@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/this-is-tobi/rule-them-all/builtin/internal/x509check"
-	"github.com/this-is-tobi/rule-them-all/internal/pathguard"
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/builtin/internal/x509check"
+	"github.com/this-is-tobi/rta/internal/pathguard"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // blackhole is a listener that accepts a TCP connection and then says

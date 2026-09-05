@@ -1,10 +1,10 @@
 package agent
 
 import (
-	"github.com/this-is-tobi/rule-them-all/internal/consent"
-	"github.com/this-is-tobi/rule-them-all/internal/grant"
-	operatorid "github.com/this-is-tobi/rule-them-all/internal/operator"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/internal/consent"
+	"github.com/this-is-tobi/rta/internal/grant"
+	operatorid "github.com/this-is-tobi/rta/internal/operator"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // The server half of remote consent: the two functions the app layer wires

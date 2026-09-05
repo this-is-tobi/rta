@@ -7,7 +7,7 @@ import (
 
 	"github.com/go-git/go-git/v5/config"
 
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // "which branch am I on" only half answers where the work is going. Three

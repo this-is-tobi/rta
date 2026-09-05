@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/this-is-tobi/rule-them-all/internal/atomicfile"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/internal/atomicfile"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // storeVersion is stamped on every store this build writes. Its only job is

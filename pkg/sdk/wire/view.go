@@ -1,8 +1,8 @@
 package wire
 
 import (
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
-	rtav1 "github.com/this-is-tobi/rule-them-all/proto/rta/v1"
+	"github.com/this-is-tobi/rta/pkg/view"
+	rtav1 "github.com/this-is-tobi/rta/proto/rta/v1"
 )
 
 // columnKinds is the whole ColumnKind mapping, in one place and in both

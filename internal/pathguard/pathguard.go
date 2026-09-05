@@ -34,8 +34,8 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/this-is-tobi/rule-them-all/internal/paths"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/internal/paths"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // Guard answers whether a caller-supplied path is in bounds.

@@ -23,7 +23,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/this-is-tobi/rule-them-all/internal/atomicfile"
+	"github.com/this-is-tobi/rta/internal/atomicfile"
 )
 
 // Defaults match what internal/grant used before this package existed.

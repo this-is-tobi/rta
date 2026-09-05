@@ -8,8 +8,8 @@ import (
 	goplugin "github.com/hashicorp/go-plugin"
 	"google.golang.org/grpc"
 
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	rtav1 "github.com/this-is-tobi/rule-them-all/proto/rta/v1"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	rtav1 "github.com/this-is-tobi/rta/proto/rta/v1"
 )
 
 // Serve runs p as an rta plugin and does not return until the host

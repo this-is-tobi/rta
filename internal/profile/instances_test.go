@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/this-is-tobi/rule-them-all/internal/config"
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
+	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
 // instanced is staging with two pg databases — a default and analytics —

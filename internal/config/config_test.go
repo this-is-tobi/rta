@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 func setPath(t *testing.T) string {

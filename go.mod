@@ -1,4 +1,4 @@
-module github.com/this-is-tobi/rule-them-all
+module github.com/this-is-tobi/rta
 
 go 1.26.6
 
