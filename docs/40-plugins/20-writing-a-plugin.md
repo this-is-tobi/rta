@@ -231,6 +231,14 @@ rta plugin manifest bin/rta-plugin-mytool \
 
 rta runs your binary the way a load does — sandboxed — and writes down what it declares. You supply the one thing the binary cannot know: where its bytes will live. `--checksums` reads the `<sha256>  <filename>` lines your release already publishes and matches them by filename; a `--platform` pointing at a file on your machine is hashed on the spot instead, and its archive is opened to prove the `bin:` claim while it is still in reach.
 
+The reference page is generated the same way, for the same reason — a page written by hand goes stale on the first commit that touches a capability, and nobody notices, because the commit is about something else:
+
+```bash
+rta plugin doc bin/rta-plugin-mytool > README.md
+```
+
+One markdown page from the declaration: the capability table, every config key the plugin reads and which capabilities read it, and one section per capability holding the same card `rta explain` prints. Regenerate it in CI and fail when the committed copy differs, and the page cannot lie about the binary beside it.
+
 Two things to know before you publish:
 
 - **`.tar.gz`, or a bare binary.** rta extracts a single member from a gzipped tar and has no zip reader at all, so a `.zip` artifact cannot be installed — including on Windows, where GoReleaser's default format is zip. `rta plugin manifest` refuses one rather than letting it become a failed install somewhere else.

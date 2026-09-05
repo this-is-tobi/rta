@@ -10,16 +10,16 @@ Ten first-party plugins live in [rta-plugins](https://github.com/this-is-tobi/rt
 
 | Plugin | Service |
 | --- | --- |
-| `pg` | PostgreSQL |
-| `mysql` | MySQL. It reaches a MariaDB server for the capabilities that connect in-process, but not for `dump`/`restore`, which pass MySQL 8's own flags to a client that has them |
-| `mariadb` | MariaDB, adding Galera cluster state, replica status, and a `dump`/`restore` pair spelled the way that client spells it |
-| `etcd` | etcd v3: cluster health, members, leases, the keyspace, and a snapshot of the whole backend — the one datastore here whose backup has no restore beside it, because etcd's own API has none |
-| `qdrant` | Qdrant: collections, their configuration and index health |
-| `s3` | S3-compatible object storage |
-| `vault` | HashiCorp Vault |
-| `kube` | Kubernetes |
-| `cnpg` | CloudNativePG: which PostgreSQL clusters exist, what one will tell you about its own health, replication, recovery settings, backups and volumes, and asking for a backup now |
-| `docker` | containers and images |
+| [`pg`](https://github.com/this-is-tobi/rta-plugins/tree/main/plugins/pg) | PostgreSQL |
+| [`mysql`](https://github.com/this-is-tobi/rta-plugins/tree/main/plugins/mysql) | MySQL. It reaches a MariaDB server for the capabilities that connect in-process, but not for `dump`/`restore`, which pass MySQL 8's own flags to a client that has them |
+| [`mariadb`](https://github.com/this-is-tobi/rta-plugins/tree/main/plugins/mariadb) | MariaDB, adding Galera cluster state, replica status, and a `dump`/`restore` pair spelled the way that client spells it |
+| [`etcd`](https://github.com/this-is-tobi/rta-plugins/tree/main/plugins/etcd) | etcd v3: cluster health, members, leases, the keyspace, and a snapshot of the whole backend — the one datastore here whose backup has no restore beside it, because etcd's own API has none |
+| [`qdrant`](https://github.com/this-is-tobi/rta-plugins/tree/main/plugins/qdrant) | Qdrant: collections, their configuration and index health |
+| [`s3`](https://github.com/this-is-tobi/rta-plugins/tree/main/plugins/s3) | S3-compatible object storage |
+| [`vault`](https://github.com/this-is-tobi/rta-plugins/tree/main/plugins/vault) | HashiCorp Vault |
+| [`kube`](https://github.com/this-is-tobi/rta-plugins/tree/main/plugins/kube) | Kubernetes |
+| [`cnpg`](https://github.com/this-is-tobi/rta-plugins/tree/main/plugins/cnpg) | CloudNativePG: which PostgreSQL clusters exist, what one will tell you about its own health, replication, recovery settings, backups and volumes, and asking for a backup now |
+| [`docker`](https://github.com/this-is-tobi/rta-plugins/tree/main/plugins/docker) | containers and images |
 
 Every one of them draws the same line in the same place: the read tier describes the thing, and anything that returns a value somebody stored is a write. `mysql.schema` tells you a database's shape and `mysql.query` returns its rows; `etcd.kv.list` gives you key names and `etcd.kv.get` gives you what a key holds. That is what makes read worth granting.
 
