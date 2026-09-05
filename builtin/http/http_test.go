@@ -56,7 +56,7 @@ func TestPluginIsValid(t *testing.T) {
 func TestSafetyClasses(t *testing.T) {
 	for _, c := range Plugin().Capabilities {
 		switch c.ID {
-		case "http.get", "http.head":
+		case "http.get", "http.head", "http.status":
 			if c.Safety != plugin.Read {
 				t.Errorf("%s should be read", c.ID)
 			}
@@ -302,5 +302,54 @@ func TestDryRunMasksCredentials(t *testing.T) {
 	}
 	if strings.Contains(string(raw), "s3cr3t") {
 		t.Fatalf("the dry run echoed the credential: %s", raw)
+	}
+}
+
+// The status reference is the one capability here that opens no socket: a
+// card for a code, a table for a class or a range, and a coded refusal for
+// anything else — with the text the standard uses, not a paraphrase.
+func TestStatusReferenceIsOfflineAndComplete(t *testing.T) {
+	v, err := runStatus(context.Background(), plugin.NewRequest(map[string]any{"code": "404"}, false, false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	card := v.(view.KeyValue)
+	got := map[string]string{}
+	for _, p := range card.Pairs {
+		got[p.Key] = p.Value
+	}
+	if got["text"] != "Not Found" || !strings.Contains(got["class"], "4xx") || !strings.Contains(got["defined in"], "RFC 9110") {
+		t.Errorf("404 card = %v", got)
+	}
+
+	v, err = runStatus(context.Background(), plugin.NewRequest(map[string]any{"code": "5xx"}, false, false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tbl := v.(view.Table)
+	if len(tbl.Rows) == 0 || tbl.Rows[0][0] != "500" {
+		t.Errorf("5xx table = %v", tbl.Rows)
+	}
+	for _, r := range tbl.Rows {
+		if !strings.HasPrefix(r[0], "5") {
+			t.Errorf("5xx table carries %v", r)
+		}
+	}
+
+	v, err = runStatus(context.Background(), plugin.NewRequest(nil, false, false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if all := v.(view.Table); all.Total < 60 {
+		t.Errorf("every code: %d rows, want the whole of net/http's list", all.Total)
+	}
+
+	_, err = runStatus(context.Background(), plugin.NewRequest(map[string]any{"code": "teapot"}, false, false))
+	if ve := view.AsError(err, "x"); ve.Code != "http.status.badcode" || ve.Hint == "" {
+		t.Errorf("bad input = %+v", ve)
+	}
+	_, err = runStatus(context.Background(), plugin.NewRequest(map[string]any{"code": "299"}, false, false))
+	if ve := view.AsError(err, "x"); ve.Code != "http.status.unknown" {
+		t.Errorf("unknown code = %+v", ve)
 	}
 }
