@@ -66,6 +66,8 @@ type capForm struct {
 	// which is the inconsistency somebody notices as "tab works on some
 	// fields and not others".
 	fetchedFor map[string]string
+	// browsed is the candidate the arrows last placed in each box (browse.go).
+	browsed map[string]browsed
 	// liveGot is what a live fetch last brought back per field, behind its
 	// own lock: applyCompletion writes it on the event loop, and suggestion
 	// functions read it off the loop — the same split syncs exists for, on
@@ -373,6 +375,7 @@ func newCapForm(c plugin.Capability, fs []plugin.Field, defaults map[string]any,
 		offers:     map[string]func() []string{},
 		suggested:  map[string][]string{},
 		fetchedFor: map[string]string{},
+		browsed:    map[string]browsed{},
 		syncs:      map[string]*syncString{},
 		used:       recent.Load(),
 	}
@@ -572,7 +575,7 @@ func completionHint(f plugin.Field, desc string) string {
 	if f.Suggest == nil {
 		return desc
 	}
-	return desc + " — tab completes"
+	return browseHint(desc + " — tab completes")
 }
 
 // defaultString renders a field's default the way its widget shows it.

@@ -289,3 +289,115 @@ func TestWhatTheFieldDeclaresComesFirst(t *testing.T) {
 		t.Errorf("candidates = %v, want the remembered value last", got)
 	}
 }
+
+// The arrows browse the offer from an empty box, which tab could only list.
+//
+// bubbles cycles suggestions on up and down already, but only among the
+// matches of non-empty text, so on the box somebody arrives at first the
+// arrows did nothing and the answer was "type the first letter". Down puts
+// the first candidate in the box, the next down its neighbour, up walks the
+// other way and wraps; typing over what was placed hands the arrows back to
+// the widget.
+func TestArrowsBrowseTheOfferFromAnEmptyBox(t *testing.T) {
+	noHistory(t)
+	c := completingCap()
+	cf := newCapForm(c, c.Inputs, nil, true, nil)
+	m := formModel(t, cf)
+
+	m = pressKey(t, m, downKey)
+	if got := *cf.bindings["target"]; got != "kv.get" {
+		t.Fatalf("after down on an empty box, target = %q, want kv.get", got)
+	}
+	if !strings.HasPrefix(m.flash, "1 of 2") {
+		t.Errorf("flash = %q, want the position in the offer", m.flash)
+	}
+	m = pressKey(t, m, downKey)
+	if got := *cf.bindings["target"]; got != "net.send" {
+		t.Fatalf("second down, target = %q, want net.send", got)
+	}
+	m = pressKey(t, m, downKey)
+	if got := *cf.bindings["target"]; got != "kv.get" {
+		t.Fatalf("down past the end must wrap, target = %q", got)
+	}
+	m = pressKey(t, m, upKey)
+	if got := *cf.bindings["target"]; got != "net.send" {
+		t.Fatalf("up from the first must wrap to the last, target = %q", got)
+	}
+	if m.form.form.GetFocusedField() != huh.Field(cf.inputs["target"]) {
+		t.Error("browsing left the box")
+	}
+}
+
+func TestUpOnAnEmptyBoxStartsFromTheEnd(t *testing.T) {
+	noHistory(t)
+	c := completingCap()
+	cf := newCapForm(c, c.Inputs, nil, true, nil)
+	m := formModel(t, cf)
+	m = pressKey(t, m, upKey)
+	if got := *cf.bindings["target"]; got != "net.send" {
+		t.Errorf("up on an empty box, target = %q, want the last candidate", got)
+	}
+}
+
+func TestTypingOverABrowsedCandidateHandsTheArrowsBack(t *testing.T) {
+	noHistory(t)
+	c := completingCap()
+	cf := newCapForm(c, c.Inputs, nil, true, nil)
+	m := formModel(t, cf)
+	m = pressKey(t, m, downKey)
+	m.form.form = typeInto(m.form.form, "x")
+	before := *cf.bindings["target"]
+	m = pressKey(t, m, downKey)
+	if got := *cf.bindings["target"]; got != before {
+		t.Errorf("down on typed text replaced it: %q -> %q", before, got)
+	}
+}
+
+func TestBrowseOnIsTheWholeRule(t *testing.T) {
+	offered := []string{"a", "b", "c"}
+	cases := []struct {
+		typed string
+		last  browsed
+		down  bool
+		at    int
+		ok    bool
+	}{
+		{"", browsed{}, true, 0, true},
+		{"", browsed{}, false, 2, true},
+		{"a", browsed{"a", 0}, true, 1, true},
+		{"c", browsed{"c", 2}, true, 0, true},
+		{"a", browsed{"a", 0}, false, 2, true},
+		{"ab", browsed{"a", 0}, true, 0, false},
+		{"a", browsed{}, true, 0, false},
+	}
+	for _, tc := range cases {
+		at, ok := browseOn(tc.typed, tc.last, offered, tc.down)
+		if at != tc.at || ok != tc.ok {
+			t.Errorf("browseOn(%q, %v, down=%v) = %d,%v want %d,%v", tc.typed, tc.last, tc.down, at, ok, tc.at, tc.ok)
+		}
+	}
+	if _, ok := browseOn("", browsed{}, nil, true); ok {
+		t.Error("nothing on offer must hand the key to the widget")
+	}
+}
+
+var (
+	downKey = tea.KeyPressMsg{Code: tea.KeyDown}
+	upKey   = tea.KeyPressMsg{Code: tea.KeyUp}
+)
+
+// pressKey drives one key the way pressTab does: into the model, then
+// whatever it asked the loop to do next.
+func pressKey(t *testing.T, m Model, k tea.KeyPressMsg) Model {
+	t.Helper()
+	next, cmd := m.Update(k)
+	nm := next.(Model)
+	if cmd == nil {
+		return nm
+	}
+	if msg := cmd(); msg != nil {
+		next, _ = nm.Update(msg)
+		nm = next.(Model)
+	}
+	return nm
+}

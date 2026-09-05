@@ -69,6 +69,8 @@ type themeForm struct {
 	inputs map[string]*huh.Input
 	offers map[string][]string
 	listed map[string]bool
+	// browsed is the candidate the arrows last placed in each box (offerbrowse.go).
+	browsed map[string]browsed
 }
 
 func newThemeForm(existing map[string]string) *themeForm {
@@ -77,6 +79,7 @@ func newThemeForm(existing map[string]string) *themeForm {
 		inputs:   map[string]*huh.Input{},
 		offers:   map[string][]string{},
 		listed:   map[string]bool{},
+		browsed:  map[string]browsed{},
 	}
 	live := theme.Current()
 	var fields []huh.Field
@@ -86,7 +89,7 @@ func newThemeForm(existing map[string]string) *themeForm {
 		tf.offers[key] = paletteFor(key, live)
 		in := huh.NewInput().
 			Title(key).
-			Description(fmt.Sprintf("%s (currently %s) — tab completes",
+			Description(fmt.Sprintf("%s (currently %s) — tab completes, ↑↓ browse",
 				themeFieldHelp[key], live[key])).
 			Suggestions(tf.offers[key]).
 			Value(&v).
