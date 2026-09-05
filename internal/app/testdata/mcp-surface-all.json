@@ -951,12 +951,16 @@
   },
   {
     "name": "git_branches",
-    "description": "── the text below is written by the plugin, not by rta ──\nLocal branches, and which one is checked out\n\nEvery local branch, alphabetically, with the checked-out one marked. A detached HEAD — checked out at a commit rather than a branch — is reported as its own row rather than left for the caller to notice no branch was marked.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nLocal branches, what each tracks, and which one is checked out\n\nEvery local branch, alphabetically, with the checked-out one marked, the remote branch it tracks, and how far the two have drifted as of the last fetch. `gone` in Status means the branch is configured to track a remote branch this repository no longer has a ref for — what `git fetch --prune` leaves behind once the remote side was deleted, and the usual sign a merged branch can go. With `--all`, the remote-tracking branches follow, spelled `remotes/\u003cremote\u003e/\u003cname\u003e` the way `git branch -a` spells them. Nothing here touches the network: a remote is reported as it stood the last time this repository fetched it. A detached HEAD — checked out at a commit rather than a branch — is reported as its own row rather than left for the caller to notice no branch was marked.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
       "additionalProperties": false,
       "properties": {
+        "all": {
+          "description": "include remote-tracking branches",
+          "type": "boolean"
+        },
         "path": {
           "default": ".",
           "description": "repository path, or a subdirectory of one — or, from a terminal, a remote URL (https://, ssh://, git@host:path) cloned in memory; not over MCP (a path on the machine running rta)",
