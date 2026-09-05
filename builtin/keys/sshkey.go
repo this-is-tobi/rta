@@ -82,7 +82,7 @@ var promptWords = func() (string, error) {
 
 // readPipedWords returns "" — not an error — whenever there is nothing to
 // read rather than something merely absent: a non-CLI surface (moot today,
-// since keys.restore refuses SurfaceMCP and the TUI never reaches this
+// since keys.restore is HumanOnly and the TUI never reaches this
 // function through its own masked form field) or a CLI call with a real
 // terminal behind it, where reading would block on a person who is never
 // going to send EOF. Mirrors builtin/debug's readPipedStdin.
@@ -104,7 +104,7 @@ func readPipedWords(req plugin.Request) (string, *view.Error) {
 // canPrompt reports whether this request can reach a person at a terminal —
 // mirrors builtin/kv's function of the same name. Only a CLI request can:
 // MCP has no terminal at the other end (moot here regardless, since every
-// capability in this package refuses SurfaceMCP outright), and the TUI owns
+// capability in this package is HumanOnly), and the TUI owns
 // the screen and asks through a masked form field instead.
 // A var, like builtin/kv's canPrompt, so a test can force the prompt path
 // deterministically rather than depend on whether `go test` itself has a

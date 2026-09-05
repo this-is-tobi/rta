@@ -78,7 +78,7 @@ func cardView(reg *registry.Registry, c plugin.Capability) view.View {
 		{Key: "safety", Value: string(c.Safety)},
 		{Key: "idempotent", Value: fmt.Sprintf("%t", c.Idempotent)},
 		{Key: "cli", Value: cliForm(c)},
-		{Key: "mcp-tool", Value: toolcall.Name(c.ID)},
+		{Key: "mcp-tool", Value: toolName(c)},
 	}
 	// What it takes for an agent to reach this at all, before any grant: the
 	// operator's flag, spelled out. An external plugin's destructive
@@ -253,6 +253,14 @@ func capabilityNotFound(reg *registry.Registry, id string) *view.Error {
 		return e.WithHint("did you mean: " + strings.Join(ids, ", "))
 	}
 	return e.WithHint("run `rta explain` to list all capabilities")
+}
+
+// toolName is what an agent would call this by, or the reason it cannot.
+func toolName(c plugin.Capability) string {
+	if c.HumanOnly {
+		return "none — for the person at the terminal, never an agent"
+	}
+	return toolcall.Name(c.ID)
 }
 
 // similarity is a cheap shared-segment score, good enough for suggestions.

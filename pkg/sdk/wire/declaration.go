@@ -238,6 +238,7 @@ func CapabilityToProto(c plugin.Capability) *rtav1.Capability {
 		Scope:        c.Scope,
 		HasPrefill:   c.Prefill != nil,
 		HostSpecific: c.HostSpecific,
+		HumanOnly:    c.HumanOnly,
 	}
 }
 
@@ -282,6 +283,7 @@ func CapabilityFromProto(c *rtav1.Capability) (plugin.Capability, []string) {
 		NeedsGrant:   c.GetNeedsGrant(),
 		Scope:        c.GetScope(),
 		HostSpecific: c.GetHostSpecific(),
+		HumanOnly:    c.GetHumanOnly(),
 	}, unknown
 }
 

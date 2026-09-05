@@ -34,8 +34,8 @@
 //
 // # None of it is reachable by an agent
 //
-// Every capability here refuses the MCP surface outright, reads included,
-// the way builtin/agent and builtin/lock do. The reads are the reason as
+// Every capability here is HumanOnly — never an MCP tool, reads included —
+// the way builtin/agent and builtin/lock are. The reads are the reason as
 // much as the upgrade: a table of what is installed on this host, with the
 // versions that are behind, is the vulnerability map an attacker builds
 // first, and an agent that could read it could hand it out. The upgrade is
@@ -124,26 +124,15 @@ func firstLine(s, fallback string) string {
 	return s
 }
 
-// host marks a capability as describing this machine and closes it to the
-// MCP surface. HostSpecific hides it from a remote-transport server; the
-// wrapper refuses a local one too, because the inventory of what is installed
-// here is not for an agent on any transport.
+// host marks a capability as describing this machine and closes it to
+// agents: HostSpecific for the remote transport's own rule, HumanOnly for
+// every transport, because the inventory of what is installed here is not
+// for an agent on any of them.
 func host(c plugin.Capability) plugin.Capability {
 	c.HostSpecific = true
+	c.HumanOnly = true
 	c.NoPreview = true
-	c.Run = humanOnly(c.Run)
 	return c
-}
-
-func humanOnly(h plugin.Handler) plugin.Handler {
-	return func(ctx context.Context, req plugin.Request) (view.View, error) {
-		if req.Surface() == plugin.SurfaceMCP {
-			return nil, view.Refusef("pkg.human",
-				"what is installed on this machine, and upgrading it, belong to the person at the terminal, not to a caller over MCP").
-				WithHint("ask the operator to run `rta pkg overview`")
-		}
-		return h(ctx, req)
-	}
 }
 
 // Plugin returns the pkg plugin declaration.

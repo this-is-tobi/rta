@@ -185,6 +185,14 @@ func (c Capability) validate(ns string) error {
 	if c.Run == nil {
 		return fmt.Errorf("capability %q: nil handler", c.ID)
 	}
+	// A grant is consent for a call an agent may legitimately make; HumanOnly
+	// says there is no such call. Declaring both would put a standing entry
+	// in `grant list` that means nothing, so it is refused where the author
+	// is rather than puzzled over where the operator is.
+	if c.HumanOnly && c.NeedsGrant {
+		return fmt.Errorf("capability %q: declares NeedsGrant and HumanOnly; a capability that is never a tool "+
+			"has no call for a grant to cover", c.ID)
+	}
 	scoped := c.Scope == ""
 	seenInputs := map[string]bool{}
 	for _, f := range c.Inputs {

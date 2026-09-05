@@ -280,6 +280,7 @@ func fullDeclaration() plugin.Plugin {
 			NeedsGrant:   true,
 			Scope:        "key",
 			HostSpecific: true,
+			HumanOnly:    true,
 			Inputs: []plugin.Field{
 				{
 					Name: "key", Type: plugin.String, Help: "which thing",

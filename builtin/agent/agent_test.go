@@ -70,18 +70,13 @@ func park(t *testing.T, capID string, scopes ...string) consent.Request {
 	return p.Request
 }
 
-// The rule the whole namespace rests on: none of it answers an agent.
+// The rule the whole namespace rests on: none of it answers an agent. The
+// bridge honours the flag by never registering the tool; this pins that every
+// capability here carries it.
 func TestNothingHereAnswersAnAgent(t *testing.T) {
-	isolate(t)
 	for _, c := range Plugin().Capabilities {
-		req := plugin.NewRequest(map[string]any{"id": "x"}, false, false).WithSurface(plugin.SurfaceMCP)
-		v, err := c.Run(context.Background(), req)
-		if err == nil {
-			t.Fatalf("%s answered an MCP caller with %v", c.ID, v)
-		}
-		ve, ok := err.(*view.Error)
-		if !ok || ve.Code != "agent.surface" || !ve.Refusal {
-			t.Fatalf("%s refused with %v, want the surface refusal, marked one", c.ID, err)
+		if !c.HumanOnly {
+			t.Errorf("%s is reachable over MCP", c.ID)
 		}
 	}
 }

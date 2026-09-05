@@ -1,125 +1,5 @@
 [
   {
-    "name": "agent_log",
-    "description": "── the text below is written by the plugin, not by rta ──\nThe record of what agents did — one line per call, refusals included\n\nEvery call that arrived over MCP: the capability, the arguments (secrets masked), the profile, what happened, and how it was authorized — no grant needed, a standing grant, or you answering live. The file is chained, so an edited or missing line is visible: --detail verifies it and says where it breaks. This is history and not policy; `rta grant list` is what may happen next.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
-    "read_only_hint": true,
-    "idempotent_hint": true,
-    "input_schema": {
-      "additionalProperties": false,
-      "properties": {
-        "after": {
-          "description": "only calls after this `seq` — an exact cursor, for shipping the record somewhere",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "detail": {
-          "default": false,
-          "description": "return the full detailed view instead of the compact summary",
-          "type": "boolean"
-        },
-        "limit": {
-          "default": 30,
-          "description": "how many of the most recent calls to show",
-          "maximum": 500,
-          "minimum": 1,
-          "type": "integer"
-        },
-        "refused": {
-          "description": "only the calls rta would not make",
-          "type": "boolean"
-        },
-        "session": {
-          "description": "only one server's calls — the id `rta agent overview` shows beside each connected client",
-          "type": "string"
-        },
-        "since": {
-          "description": "only calls after this: a duration like `2h`, or a date like 2026-08-30",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    }
-  },
-  {
-    "name": "agent_metrics",
-    "description": "── the text below is written by the plugin, not by rta ──\nThe record as Prometheus metrics, for a dashboard and an alert\n\nOne command, the standard text exposition format, no listener and no port: `rta agent metrics \u003e /var/lib/node_exporter/textfile_collector/rta.prom` on a timer is the whole integration. Calls by capability, agent, outcome and how they were authorized; grants in force; calls parked waiting for you; and whether the record's hash chain still verifies — which is the one worth an alert, because a record that stops verifying is either a bug or somebody editing it. Nothing is kept: every number is derived from the ledger, so it is a number you could recompute. The Grafana stack's other half needs nothing here — `agent log --after \u003cseq\u003e -o json` is already a cursor over an append-only record, which is what a log shipper wants.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
-    "read_only_hint": true,
-    "idempotent_hint": true,
-    "input_schema": {
-      "additionalProperties": false,
-      "properties": {},
-      "type": "object"
-    }
-  },
-  {
-    "name": "agent_overview",
-    "description": "── the text below is written by the plugin, not by rta ──\nAgent activity at a glance: recent calls, refusals, anything waiting\n\nThe last hour of calls that arrived over MCP, how many were refused, and how many requests are parked waiting for you to answer right now. With --detail: the chain's integrity, where the ledger lives and how big it is.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
-    "read_only_hint": true,
-    "idempotent_hint": true,
-    "input_schema": {
-      "additionalProperties": false,
-      "properties": {
-        "detail": {
-          "default": false,
-          "description": "return the full detailed view instead of the compact summary",
-          "type": "boolean"
-        }
-      },
-      "type": "object"
-    }
-  },
-  {
-    "name": "agent_pending",
-    "description": "── the text below is written by the plugin, not by rta ──\nCalls parked right now, waiting for you to allow or deny\n\nWith `rta mcp serve --consent`, a call that needs a grant nobody issued is parked instead of refused, and waits for you. Each row is one such call: its id, what it wants, against which connection, and how long it will keep waiting. Answer with `rta agent allow \u003cid\u003e` or `rta agent deny \u003cid\u003e`. With --server \u003cname\u003e (a server from remotes.yaml): the same queue read from a remote rta server as a signed operator call, your operator key's passphrase asked first.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
-    "read_only_hint": true,
-    "idempotent_hint": true,
-    "input_schema": {
-      "additionalProperties": false,
-      "properties": {},
-      "type": "object"
-    }
-  },
-  {
-    "name": "agent_show",
-    "description": "── the text below is written by the plugin, not by rta ──\nEverything about one parked call, including what it would do\n\nThe request in full: which capability, which record, against which connection, every argument, and — for a destructive call rta could preview — what running it would actually do, taken from the capability's own --dry-run. That last part is the difference between approving an intention and approving an outcome. Answer with `rta agent allow \u003cid\u003e` or `rta agent deny \u003cid\u003e`.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
-    "read_only_hint": true,
-    "idempotent_hint": true,
-    "input_schema": {
-      "additionalProperties": false,
-      "properties": {
-        "id": {
-          "description": "the request id from `rta agent pending`",
-          "type": "string"
-        }
-      },
-      "required": [
-        "id"
-      ],
-      "type": "object"
-    }
-  },
-  {
-    "name": "audit_agents",
-    "description": "── the text below is written by the plugin, not by rta ──\nAudit the AI agents configured on this machine — tools, servers, credentials\n\nAn agent's configuration decides more about a machine's exposure than most of what this plugin grades, and nothing reads it. This does: which tools the model may run, which MCP servers launch with it, whether any of them is handed a credential in plain text, whether one is fetched from a registry at launch rather than pinned, whether the files are readable by anybody else, and whether the endpoint every prompt is sent to is the one you expect. **It reads and never writes** — that file is what grants an agent access to your secrets, and the change is yours to make. Credential *names* are reported and values never are. It also states the boundary out loud: an agent that can run commands can run rta directly, so rta bounds an agent without a shell and is hygiene rather than containment for one with. Refused over MCP, because the subject of this audit is the agent asking. Cites A01:2025 Broken Access Control and A02:2025 Security Misconfiguration. `--fix` prints the exact edit for each finding that has one — a chmod, a pinned version, a scoped shell allowlist, a deny list for rta's own authority-expanding commands — and still writes nothing: the change stays yours to make.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
-    "read_only_hint": true,
-    "idempotent_hint": true,
-    "input_schema": {
-      "additionalProperties": false,
-      "properties": {
-        "detail": {
-          "default": false,
-          "description": "return the full detailed view instead of the compact summary",
-          "type": "boolean"
-        },
-        "fix": {
-          "description": "print the exact edit for each finding that has one, instead of the grades",
-          "type": "boolean"
-        }
-      },
-      "type": "object"
-    }
-  },
-  {
     "name": "audit_deps",
     "description": "── the text below is written by the plugin, not by rta ──\nCheck declared dependencies against the OSV vulnerability database\n\nReads what a project already declares — go.mod, any of the four JavaScript lockfiles (npm, pnpm, yarn, bun), uv.lock, poetry.lock, Pipfile.lock, requirements.txt, Cargo.lock, composer.lock, Gemfile.lock, or a CycloneDX/SPDX SBOM sitting beside them — and asks osv.dev once about every pinned dependency, reporting which are named in an advisory. Nothing is resolved, built or crawled: a lockfile is a list a package manager already committed, and reading it is not scanning. Each advisory it finds is then read for its severity and the versions that fix it — a second question asked only about findings, so a project with nothing wrong asks nothing extra — and the records every database publishes for one vulnerability are collapsed onto it, since a package can otherwise be counted twice under a GHSA and a GO identifier for the same CVE. It still points at osv-scanner, trivy or grype for the depth this does not have: whether your code reaches the vulnerable function at all, which no advisory can say. Components whose ecosystem OSV does not recognise are counted and named rather than dropped. --offline inventories without asking anything. --recursive walks a monorepo, skipping node_modules, vendor and build output, which is what a polyglot repository needs: one lockfile per service and no single file that knows about the others. From a terminal --path also takes a repository URL, read shallowly in memory and never written to disk, which is how you audit a repository you have not checked out — refused over MCP, since a URL a caller composes is a request rta makes on its behalf. Cites A03:2025 Software Supply Chain Failures and CWE-1395.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
@@ -1064,34 +944,6 @@
     }
   },
   {
-    "name": "grant_guard_status",
-    "description": "── the text below is written by the plugin, not by rta ──\nWhether grant issuance requires the passphrase\n\nOn or off, since when, the verification key's fingerprint, and how many grants are held under it. Refused over MCP like every grant surface: whether the guard stands is part of the map of what an agent could reach.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
-    "read_only_hint": true,
-    "idempotent_hint": true,
-    "input_schema": {
-      "additionalProperties": false,
-      "properties": {},
-      "type": "object"
-    }
-  },
-  {
-    "name": "grant_list",
-    "description": "── the text below is written by the plugin, not by rta ──\nList what AI agents are currently allowed to do\n\nReadable without unlocking anything, so the question stays answerable in a hurry. Expired grants are dropped on read. With --detail: what is currently allowed, then everything an agent can reach with no grant at all, and everything that would need one — because \"what did I allow\" is only half of \"what can it do\". With --server \u003cname\u003e (a server from remotes.yaml): the same roster read from a remote rta server as a signed operator call, your operator key's passphrase asked first. Can only be run by a person at a terminal, the same as grant.allow/renew/revoke: the roster names every agent by name, which is exactly the cross-agent visibility an agent asking about itself must not get.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
-    "read_only_hint": true,
-    "idempotent_hint": true,
-    "input_schema": {
-      "additionalProperties": false,
-      "properties": {
-        "detail": {
-          "default": false,
-          "description": "return the full detailed view instead of the compact summary",
-          "type": "boolean"
-        }
-      },
-      "type": "object"
-    }
-  },
-  {
     "name": "http_get",
     "description": "── the text below is written by the plugin, not by rta ──\nGET a URL and show status, timing and body\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"url\"). You cannot issue one yourself — ask the operator to run `rta grant allow http.get`.",
     "read_only_hint": true,
@@ -1307,17 +1159,6 @@
   {
     "name": "kv_tree",
     "description": "── the text below is written by the plugin, not by rta ──\nThe store as a tree of the folders its keys share\n\nKeys named with slashes — `staging/db/password`, `prod/deploy-key` — are drawn as the folders they share, each leaf labelled with its kind. Names only, never values, the same line `kv list` draws. `rta grant allow kv.get staging/` is how one of those folders becomes a grant's scope, so this is also the map of what such a grant covers.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
-    "read_only_hint": true,
-    "idempotent_hint": true,
-    "input_schema": {
-      "additionalProperties": false,
-      "properties": {},
-      "type": "object"
-    }
-  },
-  {
-    "name": "lock_list",
-    "description": "── the text below is written by the plugin, not by rta ──\nWho is frozen right now, and why\n\nThe live locks: kind, principal, the note the locked party is shown, who placed it and until when. With --server \u003cname\u003e: reads a remote server's locks as a signed operator call. Never reachable over MCP — who an operator has frozen is incident state, and not an agent's to enumerate.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -1683,89 +1524,6 @@
   {
     "name": "note_tags",
     "description": "── the text below is written by the plugin, not by rta ──\nList tags in use and how many notes carry each\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
-    "read_only_hint": true,
-    "idempotent_hint": true,
-    "input_schema": {
-      "additionalProperties": false,
-      "properties": {},
-      "type": "object"
-    }
-  },
-  {
-    "name": "operator_status",
-    "description": "── the text below is written by the plugin, not by rta ──\nYour operator key at a glance — or a remote server's, with --server\n\nWithout --server: whether this machine holds an operator key, its fingerprint, and the exact line to paste into a server's --operators roster. With --server \u003cname\u003e (from remotes.yaml, beside your config): asks that server who it is — version, agent name, guard state, enrolled operators — as a signed call, so it also proves your enrollment end to end.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
-    "read_only_hint": true,
-    "idempotent_hint": true,
-    "input_schema": {
-      "additionalProperties": false,
-      "properties": {
-        "label": {
-          "default": "operator",
-          "description": "the label to print in the roster line",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    }
-  },
-  {
-    "name": "pkg_managers",
-    "description": "── the text below is written by the plugin, not by rta ──\nWhich package managers this machine has, with version and path — and which of the ones pkg knows are not here\n\nOne row per manager pkg knows, present or not. Detection is a $PATH lookup and the version is the manager's own `--version`, so this answers in a moment where pkg overview asks every manager what is behind first. An absent row is the diagnostic: a manager installed in a shell whose $PATH this process does not share shows up here as absent, and that is why pkg overview finds nothing.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
-    "read_only_hint": true,
-    "idempotent_hint": true,
-    "input_schema": {
-      "additionalProperties": false,
-      "properties": {},
-      "type": "object"
-    }
-  },
-  {
-    "name": "pkg_os",
-    "description": "── the text below is written by the plugin, not by rta ──\nThe OS's own pending updates, whether a reboot is owed, and the kernel gap\n\nOn macOS, what `softwareupdate --list` offers and whether any of it restarts the machine. On Linux, whether the system says a reboot is required (/var/run/reboot-required on Debian, needs-restarting on RHEL) and the running kernel against the newest installed one — a machine that was upgraded and never rebooted runs the old kernel with the new one on disk, and nothing but this row says so.\n\nNothing here installs or reboots. Installing OS updates needs root and is `sudo softwareupdate --install --all` or the OS manager's own upgrade; rebooting is yours.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
-    "read_only_hint": true,
-    "idempotent_hint": true,
-    "input_schema": {
-      "additionalProperties": false,
-      "properties": {},
-      "type": "object"
-    }
-  },
-  {
-    "name": "pkg_outdated",
-    "description": "── the text below is written by the plugin, not by rta ──\nEvery package behind its latest, across every manager on this machine, with the command that fixes each\n\nOne table across whichever of brew, apt, dnf, apk, pacman, mise, pipx, uv, npm, bun, cargo, gem and go are installed here. Managers that can say what is behind are asked; the ones that only list what is installed are compared against their registry, with the names taken from the machine and never from a caller. Every row carries the exact upgrade command, with sudo in front where the manager needs root — rta prints it and never runs sudo itself. A manager that failed to answer is a row too.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
-    "read_only_hint": true,
-    "idempotent_hint": true,
-    "input_schema": {
-      "additionalProperties": false,
-      "properties": {
-        "manager": {
-          "description": "only this manager (brew, apt, mise, npm, go, …); every detected one when omitted",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    }
-  },
-  {
-    "name": "pkg_overview",
-    "description": "── the text below is written by the plugin, not by rta ──\nIs this machine up to date: every manager's outdated count, your own binaries, the OS and the kernel\n\nThe glance: which package managers are here and how many packages each has behind, how many of your GitHub-release binaries have a newer release, whether the OS offers updates, whether a reboot is owed, and the kernel gap. --detail adds the tables themselves.\n\nNot on the automatic dashboard: this runs a dozen tools and asks four registries. Name it in `dashboard: tiles:` once you have decided that is fine every few seconds — most people want it once a morning, which is `rta pkg overview`.\n\nNothing in pkg is reachable over MCP, reads included: what is installed here and what is behind is the map an attacker draws first, and it is not an agent's to read.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
-    "read_only_hint": true,
-    "idempotent_hint": true,
-    "input_schema": {
-      "additionalProperties": false,
-      "properties": {
-        "detail": {
-          "default": false,
-          "description": "return the full detailed view instead of the compact summary",
-          "type": "boolean"
-        }
-      },
-      "type": "object"
-    }
-  },
-  {
-    "name": "pkg_tools",
-    "description": "── the text below is written by the plugin, not by rta ──\nYour own binaries — from GitHub releases and go install — against their latest release\n\nThe binaries no package manager knows about. Each entry in `plugins: pkg: tools:` names a binary on $PATH and the GitHub repository that releases it; the installed version is what the binary says with --version, the latest is the repository's latest release. Binaries placed by `go install` need no entry — they carry their module path, and the Go module proxy knows the latest; they are listed under the go manager in pkg.outdated.\n\nSources come from configuration only, never from a caller: a network destination somebody else chose is not a free read.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {

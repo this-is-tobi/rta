@@ -133,7 +133,7 @@ func Prompt(req plugin.Request, confirm bool, text PromptText) (string, *view.Er
 	// invariant that no MCP caller can supply one holds locally rather than
 	// by the grace of every capability that declares the field. Today three
 	// independent layers already make this unreachable — the field is Local,
-	// has no env fallback, and every caller refuses MCP first — and a fourth
+	// has no env fallback, and every caller is HumanOnly, never a tool — and a fourth
 	// caller added without a gate must meet a wall here, not a channel.
 	if req.Surface() == plugin.SurfaceMCP {
 		return "", view.Refusef(text.Codes+".surface",

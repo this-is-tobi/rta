@@ -80,6 +80,10 @@ rta mcp serve --allow-destructive hello.wipe@5dae737f8845
 
 So the authorisation attaches to an artifact rather than to a name a replacement would inherit.
 
+### Never a tool
+
+A few capabilities are not on offer at any price. `grant`, `agent`, `lock`, `operator` and `pkg` — every verb in each — plus `audit agents`, `kv copy`, `kv edit` and the `keys` verbs that move key material answer to the person at the terminal and to nobody else. They are absent from `tools/list` on every transport, whatever the flags: an agent that could issue itself a grant, lift its own lock, or read the roster of what your other agents may do would make the rest of this chapter theatre. A call naming one anyway is answered as an unknown tool and written to [the record](./40-audit-trail.md) like any other probe. `rta explain` lists them under *never a tool*.
+
 ### The path gate
 
 Every path argument must sit under a **root**. The default root is the directory the server was started in; widen it with `--root`, which is repeatable.

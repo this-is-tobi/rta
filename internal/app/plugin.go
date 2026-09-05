@@ -862,6 +862,8 @@ func devReport(reg *registry.Registry, c *pluginhost.Client) view.View {
 func agentReach(reg *registry.Registry, c plugin.Capability) string {
 	flag := mcpOptionsForExplain(reg).AllowFlag(c)
 	switch {
+	case c.HumanOnly:
+		return "no — for the person at the terminal, never an agent"
 	case flag == "":
 		return "yes, by default"
 	case c.NeedsGrant || c.Safety == plugin.Destructive:

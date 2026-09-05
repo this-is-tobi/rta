@@ -530,6 +530,28 @@ type Capability struct {
 	// registration-time treatment Safety already gets. There is no override
 	// flag: an operator who wants sys.cpu from the box rta runs on has SSH.
 	HostSpecific bool
+	// HumanOnly marks a capability that answers to the person at the
+	// terminal and to nobody else: it is never registered as an MCP tool, on
+	// any transport, whatever the operator allowed.
+	//
+	// It replaces a check every one of these handlers used to open with —
+	// `if req.Surface() == SurfaceMCP { refuse }` — copied across five
+	// packages under four names for the same rule, and a rule that lives in
+	// nine places is a rule the tenth capability forgets. Registration is
+	// the one place that cannot be skipped: a capability marked here is
+	// absent from tools/list rather than advertised and refused, so an agent
+	// never sees grant_allow as something to try, and a call by name anyway
+	// is answered as unknown and written to the record like any other probe.
+	//
+	// It is stronger than NeedsGrant on purpose. A grant is consent for a
+	// call an agent may legitimately make; these are calls an agent must not
+	// make at all — issuing itself a grant, lifting its own lock, reading the
+	// roster of what every other agent may do, listing which package on this
+	// host is behind — where "with permission" is the wrong answer and "not
+	// here" is the right one. Absent means not gated: a HumanOnly capability
+	// needs no grant, is never parked for consent, and `rta explain` lists it
+	// under its own heading rather than under a safety class.
+	HumanOnly bool
 }
 
 // Plugin is a unit of distribution and a namespace.

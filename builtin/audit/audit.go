@@ -184,6 +184,7 @@ func Plugin() plugin.Plugin {
 				// would be a tile listing where each of them keeps its
 				// credential, redrawn every few seconds.
 				NoPreview: true,
+				HumanOnly: true,
 				Description: "An agent's configuration decides more about a machine's exposure than " +
 					"most of what this plugin grades, and nothing reads it. This does: which tools " +
 					"the model may run, which MCP servers launch with it, whether any of them is " +
@@ -194,7 +195,7 @@ func Plugin() plugin.Plugin {
 					"your secrets, and the change is yours to make. Credential *names* are reported " +
 					"and values never are. It also states the boundary out loud: an agent that can " +
 					"run commands can run rta directly, so rta bounds an agent without a shell and " +
-					"is hygiene rather than containment for one with. Refused over MCP, because the " +
+					"is hygiene rather than containment for one with. Never an MCP tool, because the " +
 					"subject of this audit is the agent asking. Cites A01:2025 Broken Access " +
 					"Control and A02:2025 Security Misconfiguration. `--fix` prints the exact edit " +
 					"for each finding that has one — a chmod, a pinned version, a scoped shell " +

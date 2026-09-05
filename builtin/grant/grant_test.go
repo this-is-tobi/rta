@@ -184,45 +184,14 @@ func TestUnscopedGrantSaysAny(t *testing.T) {
 }
 
 // An agent that could grant itself access would make the whole mechanism
-// theatre.
-func TestAgentsCannotIssueGrants(t *testing.T) {
-	setup(t)
-	_, err := allowH(context.Background(),
-		plugin.NewRequest(map[string]any{"target": "kv.get"}, false, true).WithSurface(plugin.SurfaceMCP))
-	var verr *view.Error
-	if !asError(err, &verr) {
-		t.Fatalf("err = %v, want a refusal", err)
-	}
-	if verr.Code != "grant.human" || !verr.Refusal {
-		t.Errorf("want grant.human marked a refusal, got %+v", verr)
-	}
-	grants, _ := core.Load()
-	if len(grants) != 0 {
-		t.Errorf("the refused grant was written anyway: %+v", grants)
-	}
-}
-
-// The roster names every agent's grants by name — exactly the cross-agent
-// visibility an agent asking about itself must not get, and exactly the
-// same rule its allow/renew/revoke siblings already follow.
-func TestAgentsCannotListTheRoster(t *testing.T) {
-	setup(t)
-	run(t, allowH, map[string]any{"target": "kv.get", "agent": "other-agent"})
-
-	_, err := listH(context.Background(),
-		plugin.NewRequest(nil, false, true).WithSurface(plugin.SurfaceMCP))
-	var verr *view.Error
-	if !asError(err, &verr) {
-		t.Fatalf("err = %v, want a refusal", err)
-	}
-	if verr.Code != "grant.human" || !verr.Refusal {
-		t.Errorf("want grant.human marked a refusal, got %+v", verr)
-	}
-
-	// The same call from a human surface still works — this is a caller
-	// restriction, not a capability withdrawn from everyone.
-	if tbl, ok := run(t, listH, nil).(view.Table); !ok || len(tbl.Rows) != 1 {
-		t.Errorf("a human caller could not list the roster it is meant for: %v", tbl)
+// theatre, and one that could read the roster would learn what every other
+// agent may do. Nothing in this namespace is a tool — the guard verbs
+// included, since whether the guard stands is part of that map.
+func TestNothingHereAnswersAnAgent(t *testing.T) {
+	for _, c := range Plugin(nil).Capabilities {
+		if !c.HumanOnly {
+			t.Errorf("%s is reachable over MCP", c.ID)
+		}
 	}
 }
 
@@ -565,21 +534,6 @@ func TestMaxUsesGrantIsSpentAfterASuccessfulCall(t *testing.T) {
 	}
 	if _, verr := core.Reserve(c, values, core.Caller{}); verr == nil {
 		t.Fatal("a one-time grant still authorized a second call")
-	}
-}
-
-func TestAgentsCannotRevokeGrants(t *testing.T) {
-	setup(t)
-	run(t, allowH, map[string]any{"target": "kv.get", "scope": "a"})
-
-	_, err := runRevoke(context.Background(),
-		plugin.NewRequest(map[string]any{"target": "kv.get"}, false, true).WithSurface(plugin.SurfaceMCP))
-	var verr *view.Error
-	if !asError(err, &verr) || verr.Code != "grant.human" || !verr.Refusal {
-		t.Fatalf("err = %v, want a marked refusal", err)
-	}
-	if grants, _ := core.Load(); len(grants) != 1 {
-		t.Errorf("the refused revoke changed grant state anyway: %+v", grants)
 	}
 }
 

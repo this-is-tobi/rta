@@ -586,6 +586,11 @@ func plural(n int, singular string) string {
 
 // exposed reports whether a capability passes the safety gate.
 func (o Options) exposed(c plugin.Capability) bool {
+	// Before the safety class, and no flag opens it: a capability for the
+	// person at the terminal is not a tool whatever the operator allowed.
+	if c.HumanOnly {
+		return false
+	}
 	switch c.Safety {
 	case plugin.Read:
 		return true

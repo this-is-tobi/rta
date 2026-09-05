@@ -43,7 +43,8 @@ func Plugin() plugin.Plugin {
 					{Name: "label", Type: plugin.String, Default: "operator",
 						Help: "how server rosters and audit lines will name you (e.g. your handle)"},
 				},
-				Run: humanOnly(runInit),
+				HumanOnly: true,
+				Run:       runInit,
 			},
 			{
 				ID:      "operator.status",
@@ -63,22 +64,10 @@ func Plugin() plugin.Plugin {
 						Help: "ask this server from remotes.yaml instead of describing the local key"},
 					id.PassphraseField,
 				},
-				Run: humanOnly(runStatus),
+				HumanOnly: true,
+				Run:       runStatus,
 			},
 		},
-	}
-}
-
-// humanOnly refuses MCP, like builtin/agent's localOnly: the operator
-// namespace is about the person, and every question it answers is theirs.
-func humanOnly(h plugin.Handler) plugin.Handler {
-	return func(ctx context.Context, req plugin.Request) (view.View, error) {
-		if req.Surface() == plugin.SurfaceMCP {
-			return nil, view.Refusef("operator.surface",
-				"the operator identity belongs to the person at the terminal, not to a caller over MCP").
-				WithHint("ask the operator to run `rta operator status`")
-		}
-		return h(ctx, req)
 	}
 }
 

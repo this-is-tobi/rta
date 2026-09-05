@@ -16,9 +16,6 @@ import (
 )
 
 func runGuardOn(_ context.Context, req plugin.Request) (view.View, error) {
-	if req.Surface() == plugin.SurfaceMCP {
-		return nil, view.Refusef("grant.human", "the guard can only be enabled by a person")
-	}
 	if guard.Enabled() {
 		return nil, view.Errorf("core.guard.exists", "the guard is already enabled").
 			WithHint("`rta grant guard off` first, if you mean to rotate the passphrase")
@@ -75,9 +72,6 @@ func runGuardOn(_ context.Context, req plugin.Request) (view.View, error) {
 }
 
 func runGuardOff(_ context.Context, req plugin.Request) (view.View, error) {
-	if req.Surface() == plugin.SurfaceMCP {
-		return nil, view.Refusef("grant.human", "the guard can only be disabled by a person")
-	}
 	if !guard.Enabled() {
 		return nil, view.Errorf("core.guard.off", "the guard is not enabled")
 	}
@@ -152,9 +146,6 @@ func runGuardOff(_ context.Context, req plugin.Request) (view.View, error) {
 // becomes the roster's public keys, and nothing else, ever. It shares
 // guard-on's ordering — clear first, enable second — and its crash story.
 func runGuardRemote(_ context.Context, req plugin.Request) (view.View, error) {
-	if req.Surface() == plugin.SurfaceMCP {
-		return nil, view.Refusef("grant.human", "the guard can only be enabled by a person")
-	}
 	if guard.Enabled() {
 		return nil, view.Errorf("core.guard.exists", "the guard is already enabled").
 			WithHint("`rta grant guard off` first, if you mean to change what it trusts")
@@ -241,9 +232,6 @@ func runGuardRemote(_ context.Context, req plugin.Request) (view.View, error) {
 }
 
 func runGuardStatus(_ context.Context, req plugin.Request) (view.View, error) {
-	if req.Surface() == plugin.SurfaceMCP {
-		return nil, view.Refusef("grant.human", "the guard's status is for the person at the terminal")
-	}
 	held, verr := core.Load()
 	// The one state worth seeing first: the guard's own file is gone and
 	// signed grants remain. Every issuing and listing path refuses it as

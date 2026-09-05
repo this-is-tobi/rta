@@ -265,7 +265,7 @@ func drive(t reporter, p plugin.Plugin, cfg config, dir string, inputs map[strin
 
 		// SurfaceCLI, not SurfaceUnknown: the suite stands in for a person at
 		// a terminal running --dry-run, and a capability that refuses a
-		// surface (grant.allow refuses MCP) must be asked as the surface it
+		// surface (git's remote reads refuse MCP) must be asked as the surface it
 		// is meant to serve.
 		req := plugin.NewRequest(values, mutating, false).WithSurface(plugin.SurfaceCLI)
 

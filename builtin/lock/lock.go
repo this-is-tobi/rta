@@ -63,7 +63,8 @@ func Plugin() plugin.Plugin {
 						Help: "place the lock on this remote server (a name from remotes.yaml)"},
 					operatorid.PassphraseField,
 				},
-				Run: localOnly(runAdd),
+				HumanOnly: true,
+				Run:       runAdd,
 			},
 			{
 				ID:      "lock.list",
@@ -80,7 +81,8 @@ func Plugin() plugin.Plugin {
 						Help: "read this remote server's locks (a name from remotes.yaml)"},
 					operatorid.PassphraseField,
 				},
-				Run: localOnly(runList),
+				HumanOnly: true,
+				Run:       runList,
 			},
 			{
 				ID:      "lock.rm",
@@ -101,23 +103,10 @@ func Plugin() plugin.Plugin {
 						Help: "lift the lock on this remote server (a name from remotes.yaml)"},
 					operatorid.PassphraseField,
 				},
-				Run: localOnly(runRm),
+				HumanOnly: true,
+				Run:       runRm,
 			},
 		},
-	}
-}
-
-// localOnly refuses the MCP surface, in one place — builtin/agent's helper,
-// for builtin/agent's reason, with lock.rm sharpening it: an agent that
-// could lift a lock would be unfreezing itself.
-func localOnly(h plugin.Handler) plugin.Handler {
-	return func(ctx context.Context, req plugin.Request) (view.View, error) {
-		if req.Surface() == plugin.SurfaceMCP {
-			return nil, view.Refusef("lock.human",
-				"locks belong to the person at the terminal, not to a caller over MCP").
-				WithHint("ask the operator to run `rta lock list`")
-		}
-		return h(ctx, req)
 	}
 }
 

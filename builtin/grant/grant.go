@@ -75,7 +75,8 @@ func Plugin(catalog func() []plugin.Capability) plugin.Plugin {
 		Capabilities: []plugin.Capability{
 			{
 				ID: "grant.allow", Summary: "Allow AI agents to use one capability, temporarily",
-				Safety: plugin.Write, Idempotent: true,
+				HumanOnly: true,
+				Safety:    plugin.Write, Idempotent: true,
 				Description: "Grants expire (15m by default, 24h maximum) and can only be issued by " +
 					"a person at a terminal — an agent that could grant itself access would be no " +
 					"gate at all. The target is a capability ID (kv.get) or a plugin name (kv), " +
@@ -120,7 +121,8 @@ func Plugin(catalog func() []plugin.Capability) plugin.Plugin {
 			},
 			{
 				ID: "grant.renew", Summary: "Push out the deadline on grants you already have",
-				Safety: plugin.Write, Idempotent: true,
+				HumanOnly: true,
+				Safety:    plugin.Write, Idempotent: true,
 				Description: "Renew extends time and nothing else. Scope, profile, use limit, uses " +
 					"already spent and note are all carried forward from the stored grant — so a " +
 					"renewal can never turn a one-time grant into an unlimited one, which is what " +
@@ -146,7 +148,8 @@ func Plugin(catalog func() []plugin.Capability) plugin.Plugin {
 			},
 			{
 				ID: "grant.list", Summary: "List what AI agents are currently allowed to do",
-				Safety: plugin.Read, Idempotent: true,
+				HumanOnly: true,
+				Safety:    plugin.Read, Idempotent: true,
 				Detailed: true,
 				Description: "Readable without unlocking anything, so the question stays answerable " +
 					"in a hurry. Expired grants are dropped on read. With --detail: what is currently " +
@@ -168,6 +171,7 @@ func Plugin(catalog func() []plugin.Capability) plugin.Plugin {
 			},
 			{
 				ID: "grant.revoke", Summary: "Take an agent's access back", Safety: plugin.Write, Idempotent: true,
+				HumanOnly: true,
 				Description: "Can only be run by a person at a terminal, the same as grant.allow and " +
 					"for the same reason: consent state belongs to whoever is deciding it, not to " +
 					"whoever is currently being granted or denied.",
@@ -190,7 +194,8 @@ func Plugin(catalog func() []plugin.Capability) plugin.Plugin {
 			},
 			{
 				ID: "grant.guard.on", Summary: "Require a passphrase to issue or renew a grant",
-				Safety: plugin.Write, Idempotent: true,
+				HumanOnly: true,
+				Safety:    plugin.Write, Idempotent: true,
 				Description: "Turns issuance from something any process running as you can do into " +
 					"something that needs a secret only you hold: every grant is signed with a key " +
 					"that exists only encrypted under the passphrase, and a grant without that " +
@@ -207,7 +212,8 @@ func Plugin(catalog func() []plugin.Capability) plugin.Plugin {
 			},
 			{
 				ID: "grant.guard.off", Summary: "Stop requiring the guard passphrase",
-				Safety: plugin.Destructive, Idempotent: true,
+				HumanOnly: true,
+				Safety:    plugin.Destructive, Idempotent: true,
 				Description: "Proves the passphrase first — turning the guard off is exactly what " +
 					"an agent would want, so the legitimate way off costs what turning it on " +
 					"promised. Clears the grants the guard signed, mirroring enable: signatures " +
@@ -218,7 +224,8 @@ func Plugin(catalog func() []plugin.Capability) plugin.Plugin {
 			},
 			{
 				ID: "grant.guard.remote", Summary: "Trust remote operators to sign grants — and nothing on this machine",
-				Safety: plugin.Write, Idempotent: true,
+				HumanOnly: true,
+				Safety:    plugin.Write, Idempotent: true,
 				Description: "The guard for a server whose humans are elsewhere: enrolls the public " +
 					"keys from an operators roster file (the same file `rta mcp serve --operators` " +
 					"reads), after which a grant is honoured only if signed by one of them — issued " +
@@ -238,13 +245,14 @@ func Plugin(catalog func() []plugin.Capability) plugin.Plugin {
 			},
 			{
 				ID: "grant.guard.status", Summary: "Whether grant issuance requires the passphrase",
-				Safety: plugin.Read, Idempotent: true,
+				HumanOnly: true,
+				Safety:    plugin.Read, Idempotent: true,
 				// Not on a dashboard tile redrawing on a timer: the status
 				// names the verification key's fingerprint, which is worth a
 				// deliberate look rather than ambient display.
 				NoPreview: true,
 				Description: "On or off, since when, the verification key's fingerprint, and how " +
-					"many grants are held under it. Refused over MCP like every grant surface: " +
+					"many grants are held under it. Never an MCP tool, like every grant surface: " +
 					"whether the guard stands is part of the map of what an agent could reach.",
 				Run: runGuardStatus,
 			},
@@ -472,11 +480,6 @@ func profileHint(cfg config.Config, ns string) string {
 }
 
 func runAllow(_ context.Context, req plugin.Request, catalog func() []plugin.Capability) (view.View, error) {
-	// An agent granting itself access would be no gate at all.
-	if req.Surface() == plugin.SurfaceMCP {
-		return nil, view.Refusef("grant.human", "grants can only be issued by a person").
-			WithHint("ask the operator to run: rta grant allow <capability> --ttl 15m")
-	}
 	if server := req.String("server"); server != "" {
 		return remoteAllow(req, server)
 	}
@@ -738,10 +741,6 @@ func describe(g core.Grant) string {
 // ceiling survives for free, and consent cannot be made perpetual one quarter
 // hour at a time.
 func runRenew(_ context.Context, req plugin.Request) (view.View, error) {
-	if req.Surface() == plugin.SurfaceMCP {
-		return nil, view.Refusef("grant.human", "grants can only be renewed by a person").
-			WithHint("ask the operator to run: rta grant renew")
-	}
 	target := core.Normalize(req.String("target"))
 	scope := strings.TrimSpace(req.String("scope"))
 	profile := strings.TrimSpace(req.String("profile"))
@@ -883,18 +882,14 @@ func runRenew(_ context.Context, req plugin.Request) (view.View, error) {
 	return view.Text{Body: body}, nil
 }
 
+// The roster is HumanOnly like its allow/renew/revoke siblings, for the
+// reading side of the same rule: it names every agent's grants, by name,
+// which is exactly the cross-caller visibility an agent must not get from
+// asking — a handler has no notion of "which agent is calling" to filter it
+// down to (Request carries a Surface, not an identity), and this is the file
+// consent state belongs to whoever is deciding it, not to whoever is
+// currently allowed or denied.
 func runList(ctx context.Context, req plugin.Request, catalog func() []plugin.Capability) (view.View, error) {
-	// The same rule grant.allow/renew/revoke already follow, for the reading
-	// side of it: the roster names every agent's grants, by name, which is
-	// exactly the cross-caller visibility an agent must not get from asking —
-	// a capability handler has no notion of "which agent is calling" to
-	// filter it down to (Request carries a Surface, not an identity), and
-	// this is the file consent state belongs to whoever is deciding it, not
-	// to whoever is currently allowed or denied.
-	if req.Surface() == plugin.SurfaceMCP {
-		return nil, view.Refusef("grant.human", "the grant roster is for the person deciding it, not the agents it is about").
-			WithHint("ask the operator to run: rta grant list")
-	}
 	if server := req.String("server"); server != "" {
 		return remoteList(req, server)
 	}
@@ -918,12 +913,13 @@ func runList(ctx context.Context, req plugin.Request, catalog func() []plugin.Ca
 	return p.View(), nil
 }
 
-// reachTiers name the three ways an agent's access is decided, in widening
-// order of what it takes to get there. They are distinct gates, not degrees
-// of one: --allow-write is an operator's decision made once when the server
-// is launched, a grant is a person's decision made per record and per
-// quarter-hour. Folding them into one "not granted" bucket would read as if
-// a write were as freely reachable as a read.
+// reachTiers name the ways an agent's access is decided, in widening order
+// of what it takes to get there. They are distinct gates, not degrees of
+// one: --allow-write is an operator's decision made once when the server is
+// launched, a grant is a person's decision made per record and per
+// quarter-hour, and a HumanOnly capability is not on offer at any price.
+// Folding them into one "not granted" bucket would read as if a write were
+// as freely reachable as a read.
 var reachTiers = []struct {
 	// id is what a script or an agent addresses the section by; title is
 	// what a person reads. One string doing both jobs made every wording
@@ -933,13 +929,16 @@ var reachTiers = []struct {
 	holds     func(plugin.Capability) bool
 }{
 	{"default", "reachable by default", func(c plugin.Capability) bool {
-		return !core.Required(c, "") && c.Safety == plugin.Read
+		return !c.HumanOnly && !core.Required(c, "") && c.Safety == plugin.Read
 	}},
 	{"allow-write", "needs --allow-write on the server", func(c plugin.Capability) bool {
-		return !core.Required(c, "") && c.Safety != plugin.Read
+		return !c.HumanOnly && !core.Required(c, "") && c.Safety != plugin.Read
 	}},
 	{"grant", "needs a grant a person issues", func(c plugin.Capability) bool {
-		return core.Required(c, "")
+		return !c.HumanOnly && core.Required(c, "")
+	}},
+	{"human", "never a tool — for the person at the terminal", func(c plugin.Capability) bool {
+		return c.HumanOnly
 	}},
 }
 
@@ -1167,17 +1166,13 @@ func budgetLeft(g core.Grant, now time.Time) string {
 	return strings.Join(parts, ", ")
 }
 
+// HumanOnly for the same reason as grant.allow, the other direction: an
+// agent that could erase grants could silently take back its own
+// restriction, or somebody else's mid-task — and the operator's `grant list`
+// is supposed to be a reliable record of what they decided, not something an
+// agent can rewrite. Consent state belongs to the person at the terminal in
+// both directions, not to whoever is currently being granted or denied.
 func runRevoke(_ context.Context, req plugin.Request) (view.View, error) {
-	// The same reasoning as runAllow's, the other direction: an agent that
-	// can freely erase grants can silently take back its own restriction, or
-	// somebody else's mid-task — and the operator's `grant list` is supposed
-	// to be a reliable record of what they decided, not something an agent
-	// can rewrite. Consent state belongs to the person at the terminal in
-	// both directions, not to whoever is currently being granted or denied.
-	if req.Surface() == plugin.SurfaceMCP {
-		return nil, view.Refusef("grant.human", "grants can only be revoked by a person").
-			WithHint("ask the operator to run: rta grant revoke <capability>")
-	}
 	if server := req.String("server"); server != "" {
 		return remoteRevoke(req, server)
 	}

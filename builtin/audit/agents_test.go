@@ -107,26 +107,11 @@ func TestTheCredentialValueIsNeverPrinted(t *testing.T) {
 // The findings are "your shell is unrestricted", "this server holds a token",
 // "here is where each one keeps its credential" — a map of the machine, read
 // out to the thing it is a map of.
-func TestTheAgentAuditIsRefusedOverMCP(t *testing.T) {
-	fakeHome(t, map[string]struct {
-		body string
-		mode os.FileMode
-	}{".cursor/mcp.json": {configWithToken(), 0o600}})
-
-	_, err := runAgents(t.Context(), req(map[string]any{}).WithSurface(plugin.SurfaceMCP))
-	if err == nil {
-		t.Fatal("an agent read its own configuration audit")
-	}
-	verr, ok := err.(*view.Error)
-	if !ok {
-		t.Fatalf("want a view.Error, got %T", err)
-	}
-	if verr.Code != "audit.agents.mcp" || !verr.Refusal {
-		t.Errorf("want audit.agents.mcp marked a refusal, got %+v", verr)
-	}
-	// …and a person still gets it.
-	if rows := agentRows(t, plugin.SurfaceCLI); len(rows) == 0 {
-		t.Error("the refusal took the capability away from the operator too")
+func TestTheAgentAuditIsNeverATool(t *testing.T) {
+	for _, c := range Plugin().Capabilities {
+		if c.ID == "audit.agents" && !c.HumanOnly {
+			t.Fatal("audit.agents is reachable over MCP")
+		}
 	}
 }
 

@@ -632,7 +632,7 @@ func Find(id string) (Request, bool) {
 // Decide writes the sealed answer to one request.
 //
 // by names the surface that answered, for the ledger. Only human surfaces
-// ever call this — builtin/agent refuses SurfaceMCP outright — and that
+// ever call this — builtin/agent is HumanOnly, never a tool — and that
 // refusal is the mechanism, not this parameter.
 func Decide(id string, allow bool, by string) error {
 	return decide(id, "", allow, by)
