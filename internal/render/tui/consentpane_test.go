@@ -28,8 +28,8 @@ func realRegistry(t *testing.T) *registry.Registry {
 func TestTheConsentQueueCanBeAnsweredFromTheTUI(t *testing.T) {
 	reg := realRegistry(t)
 	acts := capActions(reg, "agent.pending")
-	if len(acts) != 3 {
-		t.Fatalf("agent.pending offers %d actions, want show, allow and deny", len(acts))
+	if len(acts) != 4 {
+		t.Fatalf("agent.pending offers %d actions, want show, allow, deny and lock", len(acts))
 	}
 	byKey := map[string]capAction{}
 	for _, a := range acts {
@@ -44,6 +44,12 @@ func TestTheConsentQueueCanBeAnsweredFromTheTUI(t *testing.T) {
 		t.Fatalf("d = %+v, want agent.deny", deny)
 	}
 	for _, a := range acts {
+		// The lock is the one action here that is not an answer to the
+		// parked call: it names a principal the row does not carry in the
+		// spelling the gate verifies, so it opens its own form.
+		if a.cap.ID == "lock.add" {
+			continue
+		}
 		if a.src != srcRow {
 			t.Fatalf("%s does not act on the row under the cursor", a.cap.ID)
 		}
@@ -58,6 +64,9 @@ func TestTheConsentQueueCanBeAnsweredFromTheTUI(t *testing.T) {
 	from := map[string]string{}
 	for _, a := range capActions(reg, "agent.show") {
 		from[a.key] = a.cap.ID
+		if a.cap.ID == "lock.add" {
+			continue
+		}
 		if a.src != srcSelf {
 			t.Fatalf("%s on the detail page does not act on the request it is showing", a.cap.ID)
 		}
@@ -213,7 +222,7 @@ func TestTheOverviewTileLeadsToTheQueueAndTheRecord(t *testing.T) {
 			t.Fatalf("%s asks for a row on a tile that has none", a.cap.ID)
 		}
 	}
-	want := "w=agent.pending g=agent.log"
+	want := "w=agent.pending g=agent.log L=lock.add"
 	if strings.Join(got, " ") != want {
 		t.Fatalf("overview actions = %q, want %q", strings.Join(got, " "), want)
 	}

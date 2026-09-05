@@ -214,7 +214,11 @@ func lockTable(locks []lockdown.Lock) view.View {
 		rows = append(rows, []string{string(l.Kind), l.Name, l.Note, l.By, until})
 	}
 	return view.Table{
-		Columns: []view.Column{{Name: "kind"}, {Name: "principal"}, {Name: "note"}, {Name: "by"}, {Name: "stands"}},
+		// kind and name are spelled exactly as lock.rm's inputs are, so a TUI
+		// row action can lift the lock under the cursor without a form: the
+		// row carries both halves of the principal, and the surface matches
+		// columns to inputs by name.
+		Columns: []view.Column{{Name: "kind"}, {Name: "name"}, {Name: "note"}, {Name: "by"}, {Name: "stands"}},
 		Rows:    rows,
 	}
 }
