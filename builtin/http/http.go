@@ -58,7 +58,7 @@ func Plugin() plugin.Plugin {
 		// authorization for it, which is what Local would take away.
 		{Name: "bearer", Type: plugin.Secret, Help: "bearer token (Authorization: Bearer ...)"},
 		{Name: "basic", Type: plugin.Secret, Help: "basic auth as user:password"},
-		{Name: "timeout", Type: plugin.Int, Default: 30, Min: 1, Max: 600, Help: "request timeout in seconds"},
+		{Name: "timeout", Type: plugin.Int, Config: "timeout", Default: 30, Min: 1, Max: 600, Help: "request timeout in seconds"},
 	}
 	withBody := append([]plugin.Field{}, common...)
 	withBody = append(withBody, plugin.Field{

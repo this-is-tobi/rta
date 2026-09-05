@@ -52,8 +52,8 @@ func Plugin() plugin.Plugin {
 					"no filesystem boundary, so a scan cannot loop or wander onto a network mount.",
 				Inputs: []plugin.Field{
 					pathField("directory to measure"),
-					{Name: "limit", Type: plugin.Int, Default: 20, Min: 1, Max: 1000, Help: "how many entries to rank"},
-					{Name: "depth", Type: plugin.Int, Default: 0,
+					{Name: "limit", Type: plugin.Int, Config: "limit", Default: 20, Min: 1, Max: 1000, Help: "how many entries to rank"},
+					{Name: "depth", Type: plugin.Int, Config: "depth", Default: 0,
 						Help: "how deep to descend when totalling (0 = no limit)"},
 				},
 				Run: runUsage,
@@ -79,9 +79,9 @@ func Plugin() plugin.Plugin {
 					"through the branches they happened in.",
 				Inputs: []plugin.Field{
 					pathField("directory to show"),
-					{Name: "depth", Type: plugin.Int, Default: 2, Min: 1, Max: 12, Help: "how many levels to show"},
-					{Name: "limit", Type: plugin.Int, Default: 12, Min: 1, Max: 500, Help: "entries to show per directory"},
-					{Name: "all", Type: plugin.Bool, Help: "include hidden entries"},
+					{Name: "depth", Type: plugin.Int, Config: "depth", Default: 2, Min: 1, Max: 12, Help: "how many levels to show"},
+					{Name: "limit", Type: plugin.Int, Config: "limit", Default: 12, Min: 1, Max: 500, Help: "entries to show per directory"},
+					{Name: "all", Type: plugin.Bool, Config: "all", Help: "include hidden entries"},
 				},
 				Run: runTree,
 			},
@@ -99,7 +99,7 @@ func Plugin() plugin.Plugin {
 					"description came from anybody in particular.",
 				Inputs: []plugin.Field{
 					{Name: "path", Type: plugin.Path, Positional: true, Required: true, Help: "file to hash"},
-					{Name: "algo", Type: plugin.String, Default: "sha256", Options: []string{"sha256", "sha512", "sha1", "md5"},
+					{Name: "algo", Type: plugin.String, Config: "algo", Default: "sha256", Options: []string{"sha256", "sha512", "sha1", "md5"},
 						Help: "hash algorithm"},
 					{Name: "expect", Type: plugin.String, Help: "checksum to compare against"},
 				},

@@ -86,6 +86,10 @@ plugins:
 
 `rta doctor` prints the exact line, digest included, and says so again if you upgrade and the pin goes stale. **`Config` is refused on a `Secret` or `SecretSlice` input** — configuration is a plaintext file read on every invocation, and a `Secret`'s default is published in your MCP tool schema. Use `Local: true` and let the host resolve it from its own environment.
 
+**Declare it generously.** Anything a person would set once and keep — the scope a call works in (a cluster, a namespace, a bucket, a collection), a limit, a depth, a parallelism, a TTL convention, a storage class, a dump format — wants a key, because every one of them is a thing an operator otherwise retypes on every call and gets wrong on one. The caller always wins, so a configured value is a default, never a lock. Three kinds of input do not get one: a **selector of one record** (a key, a path, a container, a backup name — there is no sensible default), a **cursor** (`--after`, `--offset`), and a **destructive switch** (`--force`, `--overwrite`, `--replace`, `--clean`): a default that skips a safety check, in a file nobody is watching, is exactly the footgun the check exists to prevent.
+
+**The scope is a flag, the record is the argument.** A config-backed input cannot be positional — arguments bind left to right, so a config-filled first argument would change what a typed one means — which is why `--cluster`, `--namespace` and `--bucket` are flags with keys while the pod, the object and the backup stay positional. kubectl draws the same line with `-n`.
+
 ## Safety is a claim, not a label
 
 Every capability declares exactly one of `plugin.Read`, `plugin.Write` or `plugin.Destructive` — it is one value, not a set of flags.

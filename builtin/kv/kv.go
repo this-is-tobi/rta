@@ -175,8 +175,8 @@ func Plugin() plugin.Plugin {
 				Inputs: unlockFields([]plugin.Field{
 					{Name: "key", Type: plugin.StringSlice, Positional: true, Help: "keys to export (default: all)",
 						Suggest: suggestKeys},
-					{Name: "prefix", Type: plugin.String, Help: "prepend this to every variable name, e.g. APP_"},
-					{Name: "format", Type: plugin.String, Default: "export", Options: []string{"export", "dotenv"},
+					{Name: "prefix", Type: plugin.String, Config: "env.prefix", Help: "prepend this to every variable name, e.g. APP_"},
+					{Name: "format", Type: plugin.String, Config: "env.format", Default: "export", Options: []string{"export", "dotenv"},
 						Help: "shell exports, or .env syntax"},
 				}...),
 				Run: runEnv,

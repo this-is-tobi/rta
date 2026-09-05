@@ -118,7 +118,7 @@ func Plugin() plugin.Plugin {
 					"PEM back in the response.",
 				Inputs: []plugin.Field{
 					targetField,
-					{Name: "include", Type: plugin.String, Default: "chain",
+					{Name: "include", Type: plugin.String, Config: "include", Default: "chain",
 						Options: []string{"chain", "issuers", "leaf"},
 						Help:    "which certificates to print"},
 					// Local, the same rule --out follows everywhere: a
@@ -155,7 +155,7 @@ func Plugin() plugin.Plugin {
 				Inputs: []plugin.Field{
 					{Name: "targets", Type: plugin.StringSlice, Positional: true, Required: true,
 						Help: "hosts to check (host[:port])"},
-					{Name: "warn-days", Type: plugin.Int, Default: x509check.DefaultWarnDays,
+					{Name: "warn-days", Type: plugin.Int, Config: "warn-days", Default: x509check.DefaultWarnDays,
 						Help: "flag certificates expiring within this many days"},
 					timeoutField,
 				},

@@ -46,9 +46,9 @@ func watchCapability() plugin.Capability {
 			"rest of the list is still graded.",
 		NoPreview: true,
 		Inputs: []plugin.Field{
-			{Name: "products", Type: plugin.StringSlice,
+			{Name: "products", Type: plugin.StringSlice, Config: "products",
 				Help: "product or product/cycle, repeatable — usually from `plugins: eol: products:` in your config"},
-			{Name: "warn-days", Type: plugin.Int, Default: defaultWarnDays,
+			{Name: "warn-days", Type: plugin.Int, Config: "warn-days", Default: defaultWarnDays,
 				Help: "flag a cycle within this many days of its end-of-life date"},
 		},
 		Run: runWatch,
