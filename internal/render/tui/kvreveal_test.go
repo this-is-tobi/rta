@@ -3,8 +3,8 @@ package tui
 import (
 	"testing"
 
-	"github.com/this-is-tobi/rule-them-all/internal/config"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // `v` on the secret list reveals the entry under the cursor.

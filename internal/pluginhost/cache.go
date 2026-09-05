@@ -9,8 +9,8 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	"github.com/this-is-tobi/rule-them-all/internal/paths"
-	rtav1 "github.com/this-is-tobi/rule-them-all/proto/rta/v1"
+	"github.com/this-is-tobi/rta/internal/paths"
+	rtav1 "github.com/this-is-tobi/rta/proto/rta/v1"
 )
 
 // A plugin's declaration is cached on disk so that rta does not launch every

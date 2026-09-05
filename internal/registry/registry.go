@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
 // Origin is where a plugin came from: the binary on disk and the digest of

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // quotedIPv4 builds the payload an ICMP error carries: the IP header of the

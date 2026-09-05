@@ -9,8 +9,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // entry is one thing under the scanned path, with everything beneath it

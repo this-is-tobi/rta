@@ -106,7 +106,7 @@ nfpms:
       telemetry and HTTP APIs behind one capability model, rendered as a
       scriptable CLI, an interactive TUI and an MCP server with per-capability,
       time-boxed consent.
-    homepage: https://github.com/this-is-tobi/rule-them-all
+    homepage: https://github.com/this-is-tobi/rta
     license: Apache-2.0
     section: utils
     # No dependencies, no scriptlets and no conffiles: the binary is static

@@ -6,7 +6,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // kv.Store is the TUI's credential action — "save this into the store so the

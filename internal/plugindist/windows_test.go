@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/this-is-tobi/rule-them-all/internal/pluginhost"
+	"github.com/this-is-tobi/rta/internal/pluginhost"
 )
 
 // The three things that made a plugin unloadable on Windows, held down from a

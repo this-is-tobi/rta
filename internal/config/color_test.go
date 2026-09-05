@@ -3,7 +3,7 @@ package config
 import (
 	"testing"
 
-	"github.com/this-is-tobi/rule-them-all/internal/render/theme"
+	"github.com/this-is-tobi/rta/internal/render/theme"
 )
 
 // **The colour grammar is written down three times, and it has to mean one

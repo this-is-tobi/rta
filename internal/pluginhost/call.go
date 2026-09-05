@@ -7,10 +7,10 @@ import (
 	goplugin "github.com/hashicorp/go-plugin"
 	"google.golang.org/grpc"
 
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	"github.com/this-is-tobi/rule-them-all/pkg/sdk/wire"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
-	rtav1 "github.com/this-is-tobi/rule-them-all/proto/rta/v1"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/sdk/wire"
+	"github.com/this-is-tobi/rta/pkg/view"
+	rtav1 "github.com/this-is-tobi/rta/proto/rta/v1"
 )
 
 // noDispense satisfies go-plugin's PluginSet without providing a client.

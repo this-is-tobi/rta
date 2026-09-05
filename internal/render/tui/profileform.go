@@ -10,13 +10,13 @@ import (
 	tea "charm.land/bubbletea/v2"
 	huh "charm.land/huh/v2"
 
-	"github.com/this-is-tobi/rule-them-all/builtin/kv"
-	"github.com/this-is-tobi/rule-them-all/internal/clipboard"
-	"github.com/this-is-tobi/rule-them-all/internal/config"
-	"github.com/this-is-tobi/rule-them-all/internal/grant"
-	"github.com/this-is-tobi/rule-them-all/internal/profile"
-	"github.com/this-is-tobi/rule-them-all/internal/tunnel"
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
+	"github.com/this-is-tobi/rta/builtin/kv"
+	"github.com/this-is-tobi/rta/internal/clipboard"
+	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/internal/grant"
+	"github.com/this-is-tobi/rta/internal/profile"
+	"github.com/this-is-tobi/rta/internal/tunnel"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
 // Creating and editing environments, the plugins inside them, where each

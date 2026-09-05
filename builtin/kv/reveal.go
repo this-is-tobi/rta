@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // Reveal returns one entry's value, unlocking the store from the host's own

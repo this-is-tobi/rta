@@ -13,12 +13,12 @@ import (
 	"filippo.io/age"
 	"golang.org/x/term"
 
-	"github.com/this-is-tobi/rule-them-all/builtin/internal/itemstore"
-	"github.com/this-is-tobi/rule-them-all/internal/atomicfile"
-	"github.com/this-is-tobi/rule-them-all/internal/filelock"
-	"github.com/this-is-tobi/rule-them-all/internal/stdio"
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/builtin/internal/itemstore"
+	"github.com/this-is-tobi/rta/internal/atomicfile"
+	"github.com/this-is-tobi/rta/internal/filelock"
+	"github.com/this-is-tobi/rta/internal/stdio"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // The store on disk: one encrypted file, loaded whole and saved atomically

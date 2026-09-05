@@ -15,8 +15,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 func runTree(ctx context.Context, req plugin.Request) (view.View, error) {

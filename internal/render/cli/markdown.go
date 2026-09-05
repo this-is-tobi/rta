@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // Markdown output exists because a finding is only worth as much as the

@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/this-is-tobi/rule-them-all/internal/config"
+	"github.com/this-is-tobi/rta/internal/config"
 )
 
 // Rearranging the dashboard from inside the dashboard.

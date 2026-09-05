@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/this-is-tobi/rule-them-all/internal/textclean"
+	"github.com/this-is-tobi/rta/internal/textclean"
 )
 
 // Completing a path in a form.

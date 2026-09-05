@@ -8,8 +8,8 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/this-is-tobi/rule-them-all/internal/pluginhost"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/internal/pluginhost"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // The scaffold is what a stranger's first fifteen minutes actually consist
@@ -49,7 +49,7 @@ type scaffold struct {
 	RtaMod  string // rta's module path
 }
 
-const rtaModule = "github.com/this-is-tobi/rule-them-all"
+const rtaModule = "github.com/this-is-tobi/rta"
 
 // write renders the scaffold into dir, refusing to overwrite anything.
 func (s scaffold) write(dir string) error {
@@ -297,7 +297,7 @@ require {{.RtaMod}} v0.0.0
 
 const readmeTemplate = `# {{.Binary}}
 
-An [rta](https://github.com/this-is-tobi/rule-them-all) plugin.
+An [rta](https://github.com/this-is-tobi/rta) plugin.
 
 ## Try it
 

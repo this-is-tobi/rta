@@ -9,8 +9,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/this-is-tobi/rule-them-all/internal/plugintrust"
-	"github.com/this-is-tobi/rule-them-all/internal/registry"
+	"github.com/this-is-tobi/rta/internal/plugintrust"
+	"github.com/this-is-tobi/rta/internal/registry"
 )
 
 // canarySource is a "plugin" whose only behaviour is to prove it ran.

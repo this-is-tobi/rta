@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/this-is-tobi/rule-them-all/internal/seal"
+	"github.com/this-is-tobi/rta/internal/seal"
 )
 
 // What a writer that cannot read can do to the record by *creating* files.

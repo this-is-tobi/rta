@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/this-is-tobi/rule-them-all/internal/config"
+	"github.com/this-is-tobi/rta/internal/config"
 )
 
 // Stamp fingerprints everything about an environment that a resolution of it

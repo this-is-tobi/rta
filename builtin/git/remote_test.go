@@ -8,7 +8,7 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 
-	"github.com/this-is-tobi/rule-them-all/builtin/internal/gitclone"
+	"github.com/this-is-tobi/rta/builtin/internal/gitclone"
 )
 
 // bareRepo builds a real bare repository on the local disk, pushed to from a

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // apiBase is the one endpoint this plugin ever calls: a public,

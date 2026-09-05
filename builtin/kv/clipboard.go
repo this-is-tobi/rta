@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/this-is-tobi/rule-them-all/internal/clipboard"
-	"github.com/this-is-tobi/rule-them-all/pkg/format"
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/internal/clipboard"
+	"github.com/this-is-tobi/rta/pkg/format"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // copyToClipboard hands the value to the first clipboard program installed,

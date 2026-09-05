@@ -4,7 +4,7 @@ package rta.v1;
 
 import "rta/v1/view.proto";
 
-option go_package = "github.com/this-is-tobi/rule-them-all/proto/rta/v1;rtav1";
+option go_package = "github.com/this-is-tobi/rta/proto/rta/v1;rtav1";
 
 // Value is one request value or declared bound.
 //

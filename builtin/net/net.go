@@ -17,9 +17,9 @@ import (
 	probing "github.com/prometheus-community/pro-bing"
 	gnet "github.com/shirou/gopsutil/v4/net"
 
-	"github.com/this-is-tobi/rule-them-all/pkg/format"
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/pkg/format"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // hostsFile and resolvConf are vars so tests can point them at fixtures.

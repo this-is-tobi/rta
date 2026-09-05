@@ -6,8 +6,8 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/this-is-tobi/rule-them-all/internal/render/theme"
-	"github.com/this-is-tobi/rule-them-all/internal/textclean"
+	"github.com/this-is-tobi/rta/internal/render/theme"
+	"github.com/this-is-tobi/rta/internal/textclean"
 )
 
 // panelHead is what goes in a panel's top border.

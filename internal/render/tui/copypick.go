@@ -7,8 +7,8 @@ import (
 	huh "charm.land/huh/v2"
 	"charm.land/lipgloss/v2"
 
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // The copy picker: when copySpecs names a value that exists in more than

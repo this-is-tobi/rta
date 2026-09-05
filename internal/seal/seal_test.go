@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/this-is-tobi/rule-them-all/internal/paths"
+	"github.com/this-is-tobi/rta/internal/paths"
 )
 
 // Direct tests for the primitive itself, rather than only through

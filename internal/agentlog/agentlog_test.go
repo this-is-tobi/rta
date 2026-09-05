@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/this-is-tobi/rule-them-all/internal/seal"
+	"github.com/this-is-tobi/rta/internal/seal"
 )
 
 // isolate points the data directory at a fresh temp dir, so a test never

@@ -20,7 +20,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/this-is-tobi/rule-them-all/pkg/format"
+	"github.com/this-is-tobi/rta/pkg/format"
 )
 
 // layouts are the exact spellings somebody types or pastes. RFC3339 is what a

@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/this-is-tobi/rule-them-all/internal/guard"
+	"github.com/this-is-tobi/rta/internal/guard"
 )
 
 // enableGuard turns the guard on in this test's data directory and returns

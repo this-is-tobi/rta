@@ -13,7 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/this-is-tobi/rule-them-all/internal/grant"
+	"github.com/this-is-tobi/rta/internal/grant"
 )
 
 // Registering rta with an MCP client, and the line it will not cross.

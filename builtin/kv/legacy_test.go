@@ -10,7 +10,7 @@ import (
 
 	"filippo.io/age"
 
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // The stamp sits in the same JSON document as the values, so a stamped store

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // Page builds the full-page view a Detailed capability returns when it owns

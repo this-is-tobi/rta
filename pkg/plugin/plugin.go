@@ -11,7 +11,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // Safety classifies the blast radius of a capability. The host enforces

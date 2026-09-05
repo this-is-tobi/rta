@@ -15,7 +15,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/auth"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/this-is-tobi/rule-them-all/internal/agentlog"
+	"github.com/this-is-tobi/rta/internal/agentlog"
 )
 
 func TestStaticTokenVerifierAcceptsAndRejects(t *testing.T) {

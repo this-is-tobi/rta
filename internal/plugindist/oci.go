@@ -10,7 +10,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // Fetching a plugin artifact out of an OCI registry, by hand and over plain

@@ -40,8 +40,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/this-is-tobi/rule-them-all/internal/atomicfile"
-	"github.com/this-is-tobi/rule-them-all/internal/paths"
+	"github.com/this-is-tobi/rta/internal/atomicfile"
+	"github.com/this-is-tobi/rta/internal/paths"
 )
 
 // The two conditions a caller has to be able to tell apart, because they

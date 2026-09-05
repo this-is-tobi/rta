@@ -15,10 +15,10 @@ import (
 
 	"github.com/goccy/go-yaml"
 
-	"github.com/this-is-tobi/rule-them-all/internal/atomicfile"
-	"github.com/this-is-tobi/rule-them-all/internal/filelock"
-	"github.com/this-is-tobi/rule-them-all/internal/yamlguard"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/internal/atomicfile"
+	"github.com/this-is-tobi/rta/internal/filelock"
+	"github.com/this-is-tobi/rta/internal/yamlguard"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // Tile configures one dashboard pane: a capability and optional inputs.

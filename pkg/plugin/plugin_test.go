@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 func noop(context.Context, Request) (view.View, error) { return view.Text{Body: "ok"}, nil }

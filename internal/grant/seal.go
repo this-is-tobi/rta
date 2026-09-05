@@ -7,9 +7,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/this-is-tobi/rule-them-all/internal/atomicfile"
-	"github.com/this-is-tobi/rule-them-all/internal/seal"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/internal/atomicfile"
+	"github.com/this-is-tobi/rta/internal/seal"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // The grant file's authority came from its location and nothing else: loadAll

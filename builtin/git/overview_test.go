@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 func kvValue(t *testing.T, kv view.KeyValue, key string) string {

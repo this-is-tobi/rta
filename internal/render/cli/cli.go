@@ -18,8 +18,8 @@ import (
 	"github.com/goccy/go-yaml"
 	"github.com/guptarohit/asciigraph"
 
-	"github.com/this-is-tobi/rule-them-all/internal/render/theme"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/internal/render/theme"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // Format selects an output encoding.

@@ -22,7 +22,7 @@
 package audit
 
 import (
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
 // Plugin returns the audit plugin declaration.

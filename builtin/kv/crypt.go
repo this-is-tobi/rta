@@ -31,12 +31,12 @@ import (
 	"filippo.io/age/agessh"
 	"golang.org/x/crypto/ssh"
 
-	"github.com/this-is-tobi/rule-them-all/builtin/internal/itemstore"
-	"github.com/this-is-tobi/rule-them-all/builtin/internal/sshkeys"
-	"github.com/this-is-tobi/rule-them-all/internal/atomicfile"
-	"github.com/this-is-tobi/rule-them-all/internal/config"
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
-	"github.com/this-is-tobi/rule-them-all/pkg/view"
+	"github.com/this-is-tobi/rta/builtin/internal/itemstore"
+	"github.com/this-is-tobi/rta/builtin/internal/sshkeys"
+	"github.com/this-is-tobi/rta/internal/atomicfile"
+	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // recipientsFile records who can decrypt the store. It is plaintext by

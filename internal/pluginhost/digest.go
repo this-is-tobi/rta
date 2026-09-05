@@ -9,7 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/this-is-tobi/rule-them-all/internal/registry"
+	"github.com/this-is-tobi/rta/internal/registry"
 )
 
 // Identity is what rta believes it is about to run: the resolved binary and

@@ -1,6 +1,6 @@
 package plugindist
 
-import "github.com/this-is-tobi/rule-them-all/pkg/view"
+import "github.com/this-is-tobi/rta/pkg/view"
 
 // The first-party index, known by name.
 //

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
 // A capability shaped like plugins/pg's: Safety Read, no NeedsGrant, and a
