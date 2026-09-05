@@ -265,7 +265,7 @@ func gemManager() manager {
 // config, because the binary already says where it came from.
 func goManager() manager {
 	return manager{
-		name: "go", bin: "go",
+		name: "go", bin: "go", version: []string{"go", "version"},
 		list: func(ctx context.Context, c *registryClient) ([]outdated, *view.Error) {
 			dir, verr := goBinDir(ctx)
 			if verr != nil {

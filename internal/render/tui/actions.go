@@ -112,6 +112,12 @@ var capActionSpecs = map[string][]struct {
 	"pkg.tools": {
 		{"u", "upgrade", "pkg.upgrade", srcRow, false},
 	},
+	// The managers table is where somebody learns which managers rta sees;
+	// the next question is what one of them has behind, and the column is
+	// named for pkg.outdated's input so the row answers it.
+	"pkg.managers": {
+		{"o", "outdated", "pkg.outdated", srcRow, false},
+	},
 	// A stale grant is something you notice on the dashboard, so taking it
 	// back has to be possible from there and not only from a shell. `n`
 	// re-issues the grant under the cursor, which is what "it expired while I

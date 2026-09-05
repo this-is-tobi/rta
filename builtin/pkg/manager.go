@@ -37,6 +37,9 @@ type manager struct {
 	// the manager has behind) up to date. nil for "" means the manager has
 	// no whole-set upgrade and a package must be named.
 	upgrade func(pkg string) []string
+	// version is the argv that prints the manager's version, when it is
+	// not `<bin> --version`. Only go spells it differently.
+	version []string
 	// note is the one line the outdated table says under the manager's
 	// name when something about it needs saying — that it needs root, or
 	// that it cannot upgrade everything at once.

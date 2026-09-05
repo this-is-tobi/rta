@@ -153,6 +153,7 @@ func Plugin() plugin.Plugin {
 		Summary: "What is outdated on this machine — every package manager, your own binaries, the OS — and one upgrade at a time",
 		Capabilities: []plugin.Capability{
 			overviewCapability(),
+			managersCapability(),
 			outdatedCapability(),
 			toolsCapability(),
 			osCapability(),
