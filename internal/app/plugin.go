@@ -58,6 +58,7 @@ func newPluginCommand(reg *registry.Registry, version string, opts *globalOpts) 
 	root.AddCommand(newPluginRemoveCommand(opts))
 	root.AddCommand(newPluginSearchCommand(opts))
 	root.AddCommand(newPluginManifestCommand(opts))
+	root.AddCommand(newPluginDocCommand(opts))
 	root.AddCommand(newPluginIndexCommand(opts))
 	return root
 }

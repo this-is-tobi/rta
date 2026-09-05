@@ -73,7 +73,7 @@ func Generate(ctx context.Context, req GenerateRequest, stderr io.Writer) ([]byt
 			"a manifest with no platform describes a plugin nobody can install").
 			WithHint("`--platform <os>/<arch>=<url>`, once per artifact you publish")
 	}
-	declared, verr := describeBinary(ctx, req.Binary, stderr)
+	declared, verr := Describe(ctx, req.Binary, stderr)
 	if verr != nil {
 		return nil, Manifest{}, verr
 	}

@@ -148,7 +148,7 @@ func installFrom(ctx context.Context, listed Listed, stderr io.Writer) (Report, 
 		return Report{}, verr
 	}
 
-	declared, verr := describeBinary(ctx, staged, stderr)
+	declared, verr := Describe(ctx, staged, stderr)
 	if verr != nil {
 		return Report{}, verr
 	}
@@ -182,11 +182,13 @@ func installFrom(ctx context.Context, listed Listed, stderr io.Writer) (Report, 
 	}, nil
 }
 
-// describeBinary launches one explicit binary — sandboxed, exactly as a load
+// Describe launches one explicit binary — sandboxed, exactly as a load
 // would — and returns what it declares. The plugin dev path, reused: an
 // install verification that skipped confinement would run somebody else's
-// fresh download with fewer guards than the plugin it is vetting.
-func describeBinary(ctx context.Context, path string, stderr io.Writer) (plugin.Plugin, *view.Error) {
+// fresh download with fewer guards than the plugin it is vetting. The one way
+// rta learns anything about a plugin, whether to check an index's claims,
+// write a manifest, or document it.
+func Describe(ctx context.Context, path string, stderr io.Writer) (plugin.Plugin, *view.Error) {
 	host := pluginhost.New(stderr)
 	defer host.CloseAll()
 	client, err := host.Open(ctx, path)
