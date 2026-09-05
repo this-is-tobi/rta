@@ -151,6 +151,7 @@ func Plugin() plugin.Plugin {
 				Inputs: common,
 				Run:    runMethod(stdhttp.MethodDelete),
 			},
+			statusCapability(),
 		},
 	}
 }

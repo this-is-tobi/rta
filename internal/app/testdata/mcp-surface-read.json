@@ -1170,6 +1170,22 @@
     }
   },
   {
+    "name": "http_status",
+    "description": "── the text below is written by the plugin, not by rta ──\nWhat an HTTP status code means, and where it is defined\n\nA code prints its card; a class (`4xx`, `500-599`) or nothing prints the table. Offline: the text is the standard's, and every code net/http knows is here.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "description": "a code (404), a class (4xx) or a range (500-599); every code when omitted",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
     "name": "keys_list",
     "description": "── the text below is written by the plugin, not by rta ──\nList the SSH private keys in ~/.ssh, how protected each is, and whether it can be backed up\n\nFinds keys by their PEM preamble rather than by an id_* name, so a key called work_ed25519 — or symlinked in from a dotfiles repository under any name at all — is listed, and a stray file that was never a key is not. Reads only public data: a key's .pub sibling for its type, fingerprint and comment, and whether the private key itself is passphrase-protected — the same check `rta doctor` uses, which parses far enough to see a key is locked without ever supplying a passphrase. Never decrypts anything. Backup-eligible means ed25519: `keys.backup` has nothing to encode as words for an RSA or ECDSA key, which carries no single seed. An Exposed column appears only when some key's permissions let another account on this machine read it, which is both a credential exposure and the reason ssh has stopped accepting that key.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
