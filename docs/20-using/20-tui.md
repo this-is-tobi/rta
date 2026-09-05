@@ -155,7 +155,7 @@ A stock install is entirely built in, so no bands are drawn at all — one band 
 | `d` | Delete |
 | `esc` | Leave a slow run |
 
-Views are actionable rather than static. In the notebook, `t` turns a note into a to-do or back, `d` checks one off and `x` removes — from the list *and* from a record's own page, refreshing as it goes. Detail pages are composed from other capabilities' views rather than rebuilt, so a record page shows metadata, prose and relations as separate sections.
+Views are actionable rather than static. In the notebook, `t` turns a note into a to-do or back, `d` checks one off and `x` removes; on the consent queue, `L` opens the lock form beside the call that made you want it, and on the lock list `x` lifts the lock under the cursor — from the list *and* from a record's own page, refreshing as it goes. Detail pages are composed from other capabilities' views rather than rebuilt, so a record page shows metadata, prose and relations as separate sections.
 
 ## Profiles
 

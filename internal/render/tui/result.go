@@ -231,11 +231,24 @@ func (m Model) runAction(a capAction, tbl view.Table) (tea.Model, tea.Cmd) {
 		if len(row) == 0 {
 			return m, nil
 		}
-		v, err := rowKey(keys[0], row[0])
-		if err != nil {
-			return m, nil
+		// Every key input a column is named for, and the first column for
+		// the first key otherwise. A record is not always one value: a lock
+		// is a kind and a name, and a row that carries both should not open
+		// a form asking for the half it is already showing.
+		for i, f := range keys {
+			raw, found := cellNamed(tbl, row, f.Name)
+			if !found {
+				if i != 0 {
+					continue
+				}
+				raw = row[0]
+			}
+			v, err := rowKey(f, raw)
+			if err != nil {
+				return m, nil
+			}
+			base[f.Name] = v
 		}
-		base[keys[0].Name] = v
 	case srcSelf:
 		// The page already knows its subject: reuse the identity it ran with.
 		for _, f := range keys {
@@ -278,6 +291,18 @@ func (m Model) runAction(a capAction, tbl view.Table) (tea.Model, tea.Cmd) {
 }
 
 // rowKey parses the selected row's identity cell to the key field's type.
+// cellNamed returns the row's cell under the column whose header matches an
+// input's name, case-insensitively — the convention that lets a producer
+// mark which column is which identity without a second declaration.
+func cellNamed(tbl view.Table, row []string, name string) (string, bool) {
+	for i, c := range tbl.Columns {
+		if i < len(row) && strings.EqualFold(c.Name, name) {
+			return row[i], true
+		}
+	}
+	return "", false
+}
+
 func rowKey(f plugin.Field, raw string) (any, error) {
 	switch f.Type {
 	case plugin.Int:

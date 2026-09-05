@@ -15,7 +15,7 @@ type actionSource int
 
 const (
 	srcNone actionSource = iota // no subject: "add" needs nobody's id
-	srcRow                      // the selected table row (its first column)
+	srcRow                      // the selected table row: the columns named for the keys, else its first column
 	srcSelf                     // the record the current view is already about
 )
 
@@ -140,12 +140,26 @@ var capActionSpecs = map[string][]struct {
 		{key: "enter", label: "show", id: "agent.show", src: srcRow, bare: true},
 		{key: "a", label: "allow", id: "agent.allow", src: srcRow},
 		{key: "d", label: "deny", id: "agent.deny", src: srcRow, bare: true},
+		{key: "L", label: "lock", id: "lock.add", src: srcNone},
 	},
 	// And the two answers again from the detail page, so reading it does not
 	// mean going back to the list to act on what you read.
 	"agent.show": {
 		{key: "a", label: "allow", id: "agent.allow", src: srcSelf},
 		{key: "d", label: "deny", id: "agent.deny", src: srcSelf, bare: true},
+		{key: "L", label: "lock", id: "lock.add", src: srcNone},
+	},
+	// The instant no, from the screens where you notice you need it. `L`
+	// rather than `l` — l is navigation — and the form it opens is the whole
+	// point: a lock names a kind and a principal, and neither is on the row
+	// of a parked call in the spelling the gate verifies, so the operator
+	// types both while looking at the call that made them want to. Lifting
+	// one is a row action on the lock list itself, where both halves of the
+	// principal are on the row and the surface matches them to lock.rm's
+	// inputs by column name.
+	"lock.list": {
+		{"a", "lock", "lock.add", srcNone, false},
+		{"x", "lift", "lock.rm", srcRow, false},
 	},
 	// The tile says how many calls are waiting; these are the two places to
 	// go from there. `g` because l is navigation and every other letter in
@@ -155,6 +169,7 @@ var capActionSpecs = map[string][]struct {
 	"agent.overview": {
 		{key: "w", label: "waiting", id: "agent.pending", src: srcNone, bare: true},
 		{key: "g", label: "log", id: "agent.log", src: srcNone},
+		{key: "L", label: "lock", id: "lock.add", src: srcNone},
 	},
 	// `v` reveals, and the argument for it is the argument that was originally
 	// made against it, followed through.
