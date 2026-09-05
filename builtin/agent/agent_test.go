@@ -14,6 +14,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/consent"
 	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/policy"
+	"github.com/this-is-tobi/rta/internal/session"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -702,8 +703,13 @@ func TestTheDetailedOverviewReportsABrokenChain(t *testing.T) {
 		t.Fatal(err)
 	}
 	ledger := ""
-	for _, p := range v.(view.Sections).Items[1].View.(view.KeyValue).Pairs {
-		ledger += p.Key + "=" + p.Value + ";"
+	for _, sec := range v.(view.Sections).Items {
+		if sec.ID != "ledger" {
+			continue
+		}
+		for _, p := range sec.View.(view.KeyValue).Pairs {
+			ledger += p.Key + "=" + p.Value + ";"
+		}
 	}
 	// The same words the page uses: the tile and `agent log --detail` share
 	// one description of the record, so they cannot come to disagree about
@@ -808,5 +814,95 @@ func cell(t *testing.T, tbl view.Table, row int, column string) string {
 		}
 	}
 	t.Fatalf("no column %q in %v", column, tbl.Columns)
+	return ""
+}
+
+// Presence is the row the ledger cannot fill: a client attached and not
+// calling looks like nothing until something says it is there.
+func TestTheOverviewNamesWhoIsConnectedNow(t *testing.T) {
+	isolate(t)
+	v, err := run(t, "agent.overview", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := overviewPair(t, v, "connected now"); !strings.HasPrefix(got, "none") {
+		t.Fatalf("connected now with nothing open = %q", got)
+	}
+	id := session.NewID()
+	if err := session.Start(session.Record{ID: id, Agent: "claude", Client: "Claude Code 2.1", Since: time.Now(), PID: os.Getpid()}); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if err := agentlog.Append(agentlog.Entry{Cap: "sys.cpu", Outcome: agentlog.Ran, Auth: agentlog.Open, Agent: "claude", Session: id}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	v, err = run(t, "agent.overview", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := overviewPair(t, v, "connected now"); got != "1 — claude (2 calls)" {
+		t.Errorf("connected now = %q", got)
+	}
+	// The detail page carries what the tile leaves out.
+	v, err = run(t, "agent.overview", map[string]any{"detail": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, s := range v.(view.Sections).Items {
+		if s.ID != "connected" {
+			continue
+		}
+		found = true
+		table := s.View.(view.Table)
+		if len(table.Rows) != 1 || cell(t, table, 0, "client") != "Claude Code 2.1" || cell(t, table, 0, "session") != id || cell(t, table, 0, "calls") != "2" {
+			t.Errorf("connected table = %v", table.Rows)
+		}
+	}
+	if !found {
+		t.Error("no Connected now section on the detail page")
+	}
+}
+
+func TestTheLogNarrowsToOneSession(t *testing.T) {
+	isolate(t)
+	for _, e := range []agentlog.Entry{
+		{Cap: "sys.cpu", Outcome: agentlog.Ran, Auth: agentlog.Open, Agent: "claude", Session: "aaaa0001"},
+		{Cap: "kv.get", Outcome: agentlog.Ran, Auth: agentlog.Open, Agent: "claude", Session: "bbbb0002"},
+		{Cap: "sys.mem", Outcome: agentlog.Ran, Auth: agentlog.Open, Agent: "claude", Session: "aaaa0001"},
+	} {
+		if err := agentlog.Append(e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	v, err := run(t, "agent.log", map[string]any{"session": "aaaa0001"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	table := v.(view.Table)
+	if len(table.Rows) != 2 {
+		t.Fatalf("rows = %v, want the two calls of that session", table.Rows)
+	}
+	if got := cell(t, table, 0, "session"); got != "aaaa0001" {
+		t.Errorf("session column = %q", got)
+	}
+	if got := cell(t, table, 0, "capability"); got != "sys.mem" {
+		t.Errorf("newest first: capability = %q", got)
+	}
+}
+
+func overviewPair(t *testing.T, v view.View, key string) string {
+	t.Helper()
+	kv, ok := v.(view.KeyValue)
+	if !ok {
+		t.Fatalf("overview is %T, want a KeyValue", v)
+	}
+	for _, p := range kv.Pairs {
+		if p.Key == key {
+			return p.Value
+		}
+	}
+	t.Fatalf("no %q row in %v", key, kv.Pairs)
 	return ""
 }

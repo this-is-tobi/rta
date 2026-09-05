@@ -902,6 +902,11 @@ func doctorReport(reg *registry.Registry) view.View {
 	} else {
 		add("claude CLI", "info", "not found — `rta mcp serve` still works with any MCP client")
 	}
+	// Presence and registration, right after the CLI they are about.
+	_, claudeInstalled := exec.LookPath("claude")
+	for _, r := range clientRows(claudeInstalled == nil) {
+		add(r[0], r[1], r[2])
+	}
 
 	t.Total = len(t.Rows)
 	return t

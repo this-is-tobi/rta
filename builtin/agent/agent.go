@@ -36,6 +36,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/guard"
 	operatorid "github.com/this-is-tobi/rta/internal/operator"
+	"github.com/this-is-tobi/rta/internal/session"
 	"github.com/this-is-tobi/rta/internal/stdio"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -79,6 +80,16 @@ func Plugin() plugin.Plugin {
 					{Name: "limit", Type: plugin.Int, Default: 30, Min: 1, Max: maxRows,
 						Help: "how many of the most recent calls to show"},
 					{Name: "refused", Type: plugin.Bool, Help: "only the calls rta would not make"},
+					{Name: "session", Type: plugin.String,
+						Help: "only one server's calls — the id `rta agent overview` shows beside each connected client",
+						Suggest: func(context.Context, plugin.Request) []string {
+							open, _ := session.List()
+							out := make([]string, 0, len(open))
+							for _, s := range open {
+								out = append(out, s.ID+"\t"+s.Agent+" "+s.Client)
+							}
+							return out
+						}},
 					{Name: "since", Type: plugin.String,
 						Help: "only calls after this: a duration like `2h`, or a date like 2026-08-30"},
 					{Name: "after", Type: plugin.Int, Min: 0,
@@ -281,6 +292,73 @@ func suggestPending(context.Context, plugin.Request) []string {
 	return out
 }
 
+// Connected is one short line naming every server a client has open right
+// now — its --as name and how many calls it has made — and how many there
+// are. Short on purpose: it sits on a dashboard tile forty cells wide, and
+// a glance wants "claude is attached and has called twice", not a
+// paragraph. What the client called itself, since when, and the session id
+// are the detail page's table (connectedTable) and `rta agent log`'s column.
+// Shared with `rta doctor`, so the two never describe presence in different
+// words.
+func Connected() (string, int) {
+	open, calls := openSessions()
+	if len(open) == 0 {
+		return "", 0
+	}
+	parts := make([]string, 0, len(open))
+	for _, s := range open {
+		parts = append(parts, fmt.Sprintf("%s (%d %s)", agentOf(s), calls[s.ID], plural(calls[s.ID], "call", "calls")))
+	}
+	return fmt.Sprintf("%d — %s", len(open), strings.Join(parts, "; ")), len(open)
+}
+
+func openSessions() ([]session.Record, map[string]int) {
+	open, err := session.List()
+	if err != nil {
+		return nil, nil
+	}
+	calls := map[string]int{}
+	if entries, err := agentlog.Read(maxRows); err == nil {
+		for _, e := range entries {
+			if e.Session != "" {
+				calls[e.Session]++
+			}
+		}
+	}
+	return open, calls
+}
+
+func agentOf(s session.Record) string {
+	if s.Agent == "" {
+		return "(unnamed)"
+	}
+	return s.Agent
+}
+
+// connectedTable is presence in full, one row per open server. The record
+// column is the file that server writes to: when it is not the one this
+// process reads, that is the whole explanation for an empty log.
+func connectedTable() view.Table {
+	open, calls := openSessions()
+	t := view.Table{Columns: []view.Column{
+		{Name: "agent"}, {Name: "client"}, {Name: "since", Kind: view.KindTimestamp},
+		{Name: "calls"}, {Name: "session"}, {Name: "directory"}, {Name: "record"},
+	}}
+	for _, s := range open {
+		t.Rows = append(t.Rows, []string{agentOf(s), s.Client, format.Ago(s.Since),
+			strconv.Itoa(calls[s.ID]), s.ID, s.Dir, s.Ledger})
+	}
+	t.Total = len(t.Rows)
+	return t
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
+}
+
 func runOverview(_ context.Context, req plugin.Request) (view.View, error) {
 	entries, err := agentlog.Read(maxRows)
 	if err != nil {
@@ -311,8 +389,15 @@ func runOverview(_ context.Context, req plugin.Request) (view.View, error) {
 	if len(waiting) > 0 {
 		nowWaiting += " — press w to answer"
 	}
+	// Presence before activity: "is anything attached" is the question
+	// every zero below raises, and it is the one the ledger cannot answer.
+	connected, n := Connected()
+	if n == 0 {
+		connected = "none — no client has an rta server open; `rta mcp install claude`, then restart the client"
+	}
 	pairs := []view.Pair{
 		{Key: "waiting on you", Value: nowWaiting},
+		{Key: "connected now", Value: connected},
 		{Key: "calls in the last hour", Value: fmt.Sprintf("%d", recent)},
 		{Key: "refused", Value: fmt.Sprintf("%d", refused)},
 		{Key: "you approved live", Value: fmt.Sprintf("%d", approved)},
@@ -331,6 +416,7 @@ func runOverview(_ context.Context, req plugin.Request) (view.View, error) {
 	rep, verr := agentlog.Verify()
 	return view.Sections{Items: []view.Section{
 		{ID: "activity", Title: "Activity", View: view.KeyValue{Pairs: pairs}},
+		{ID: "connected", Title: "Connected now", View: connectedTable()},
 		{ID: "ledger", Title: "The record", View: view.KeyValue{Pairs: recordPairs(rep, verr)}},
 		{ID: "waiting", Title: "Waiting on you", View: pendingTable(waiting)},
 	}}, nil
@@ -387,6 +473,7 @@ func runLog(_ context.Context, req plugin.Request) (view.View, error) {
 	if sinceErr != nil {
 		return nil, sinceErr
 	}
+	sess := strings.TrimSpace(req.String("session"))
 	// Read more than asked for when filtering, so `--refused --limit 10`
 	// answers with ten refusals rather than the refusals among the last ten
 	// calls — which is the same number for a quiet server and nothing at
@@ -399,7 +486,7 @@ func runLog(_ context.Context, req plugin.Request) (view.View, error) {
 	// hundred were read to find them. --refused keeps a scattered subset,
 	// which is the only one of the three that can come up short.
 	want := limit
-	if onlyRefused {
+	if onlyRefused || sess != "" {
 		want = maxRows
 	}
 	entries, err := agentlog.Read(want)
@@ -410,10 +497,16 @@ func runLog(_ context.Context, req plugin.Request) (view.View, error) {
 	// written before agents were named — or before rta could serve over
 	// HTTP at all — is never, and a column of em dashes on the screen an
 	// operator opens in a hurry is a column they learn to skip.
-	named, namedCred, coded := false, false, false
+	named, namedCred, coded, sessioned := false, false, false, false
 	for _, e := range entries {
 		if e.Agent != "" || e.Client != "" {
 			named = true
+		}
+		// Same rule again: a record from before servers had ids shows no
+		// session column, and one where they do shows which of several
+		// same-named clients each call came from.
+		if e.Session != "" {
+			sessioned = true
 		}
 		if e.Credential != "" {
 			namedCred = true
@@ -435,6 +528,7 @@ func runLog(_ context.Context, req plugin.Request) (view.View, error) {
 		e := entries[i]
 		switch {
 		case onlyRefused && e.Outcome != agentlog.Refused:
+		case sess != "" && e.Session != sess:
 		case e.Seq <= after:
 		case !since.IsZero() && e.At.Before(since):
 		default:
@@ -467,6 +561,9 @@ func runLog(_ context.Context, req plugin.Request) (view.View, error) {
 			}
 			row = slices.Insert(row, pos, credentialCell(e))
 		}
+		if sessioned {
+			row = slices.Insert(row, whoColumns(named, namedCred), sessionCell(e))
+		}
 		rows = append(rows, row)
 	}
 	// seq is first because it is the join key and the cursor: `--after` takes
@@ -491,6 +588,9 @@ func runLog(_ context.Context, req plugin.Request) (view.View, error) {
 			pos = 4
 		}
 		cols = slices.Insert(cols, pos, view.Column{Name: "credential"})
+	}
+	if sessioned {
+		cols = slices.Insert(cols, whoColumns(named, namedCred), view.Column{Name: "session"})
 	}
 	table := view.Table{Columns: cols, Rows: rows, Total: len(entries)}
 	if !req.Bool("detail") {
@@ -566,6 +666,26 @@ func pendingTable(reqs []consent.Request) view.Table {
 // name only the client asserts is printed in parentheses — the parentheses mean
 // "nobody checked this". Printing them the same way would be the more readable
 // table and the dishonest one.
+// whoColumns is where the session column goes: after whichever of the
+// agent and credential columns are on screen, and before the arguments.
+func whoColumns(named, namedCred bool) int {
+	pos := 3
+	if named {
+		pos++
+	}
+	if namedCred {
+		pos++
+	}
+	return pos
+}
+
+func sessionCell(e agentlog.Entry) string {
+	if e.Session == "" {
+		return "—"
+	}
+	return e.Session
+}
+
 func whoCalled(e agentlog.Entry) string {
 	switch {
 	case e.Agent != "":

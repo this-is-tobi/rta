@@ -45,6 +45,13 @@ type Options struct {
 	// config `rta mcp install claude` writes had issued a permanent,
 	// registry-wide, update-transitive authorisation, and nothing about the
 	// flag said so.
+	// Session is the id this process stamps on every ledger entry, and
+	// Connected is told the client's announced name once the MCP handshake
+	// completes — wired by the command that starts the server, so that
+	// "this server records its presence" is a line somebody typed.
+	Session   string
+	Connected func(client string)
+
 	AllowWrite []string
 	// AllowDestructive lists destructive capabilities the operator has
 	// allowed, each optionally pinned to the plugin artifact it came from:

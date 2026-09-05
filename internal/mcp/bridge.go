@@ -64,7 +64,22 @@ func NewServer(reg *registry.Registry, version string, opts Options) *sdk.Server
 		Name:    "rta",
 		Title:   "Rule Them All",
 		Version: version,
-	}, nil)
+	}, &sdk.ServerOptions{
+		// The handshake is the moment a client exists: before it there is
+		// a process nobody has spoken to, after it an agent that may call.
+		InitializedHandler: func(_ context.Context, req *sdk.InitializedRequest) {
+			if opts.Connected == nil {
+				return
+			}
+			var info *sdk.Implementation
+			if req != nil && req.Session != nil {
+				if p := req.Session.InitializeParams(); p != nil {
+					info = p.ClientInfo
+				}
+			}
+			opts.Connected(implementationName(info))
+		},
+	})
 
 	for _, c := range reg.Capabilities() {
 		if !opts.exposed(c) || !opts.remoteExposed(c) {
@@ -89,6 +104,7 @@ func handler(c plugin.Capability, opts Options, reg *registry.Registry) sdk.Tool
 			Cap: c.ID, Tool: toolcall.Name(c.ID),
 			Outcome: agentlog.Refused, Auth: agentlog.Blocked,
 			Agent: opts.Agent, Client: clientName(req), Credential: credentialName(ctx),
+			Session: opts.Session,
 		}
 		// A panic anywhere in call() — in a capability's own Run, or in this
 		// package — must cost this one call, not every other agent and tool
