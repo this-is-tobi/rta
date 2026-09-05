@@ -262,7 +262,7 @@ user=       role to connect as
 
 ### Adding a forward to an existing connection
 
-A forward fills the endpoint inputs itself, so a stated host beside a coordinate is a line no run reads. `--kube` on a connection that already sets one drops the keys it replaces and says so:
+A forward fills the endpoint inputs itself, so a stated host beside a coordinate is a line no run reads. A host given *on the call* — typed into the form, or passed as a flag — is different: it connects directly and no forward is opened, which is the override for a coordinate that is wrong. `--kube` on a connection that already sets one drops the keys it replaces and says so:
 
 ```
 removed  set.host, set.port — the forward fills those, so nothing read them

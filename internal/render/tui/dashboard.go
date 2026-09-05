@@ -369,7 +369,7 @@ func tileCmd(idx int, t tile, cfg map[string]any, profileName string,
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
 		defer cancel()
-		dialled, closeTunnel, verr := profile.Dial(ctx, profileName, conn, t.cap)
+		dialled, closeTunnel, verr := profile.Dial(ctx, profileName, conn, t.cap, t.values)
 		defer closeTunnel()
 		if verr != nil {
 			// Reported, never fallen back from. A tile is where a fallback

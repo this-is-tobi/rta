@@ -167,7 +167,7 @@ func (m Model) pickedProfile(c plugin.Capability, base map[string]any) string {
 // capabilities: the plugin-config and profile editors reuse capForm over
 // synthetic capabilities whose fields carry Config keys, so an unguarded rule
 // would offer to pick an environment while editing the environment itself.
-func (m Model) withPicker(c plugin.Capability, fs []plugin.Field, on string, forwarded []string) []plugin.Field {
+func (m Model) withPicker(c plugin.Capability, fs []plugin.Field, on string, forwarded []string, conn config.Connection) []plugin.Field {
 	picker := m.profilePicker(c, on)
 	if picker == nil {
 		return fs
@@ -176,8 +176,12 @@ func (m Model) withPicker(c plugin.Capability, fs []plugin.Field, on string, for
 	// ask about (forwardFilled), and the picker is where that is said: it is
 	// the field that made it true, and one help line here costs less screen
 	// than the boxes it explains away did.
+	//
+	// The forward's own coordinate is named here and shown in the boxes it
+	// fills (forwardDisplays); the two say the same thing so that a screen
+	// scrolled to either still tells where the run is going.
 	if len(forwarded) > 0 {
-		picker.Help = "runs through a tunnel, which fills " + strings.Join(forwarded, ", ")
+		picker.Help = "runs through " + tunnelText(conn) + ", which fills " + strings.Join(forwarded, ", ")
 	}
 	// First, because it changes what every other answer means: a host typed
 	// under one environment is not the same value under another, and a picker
@@ -833,4 +837,16 @@ func connDetail(c connRow) string {
 		parts = append(parts, theme.Faded.Render(text))
 	}
 	return strings.Join(parts, theme.Subtle.Render(" · "))
+}
+
+// tunnelText names a connection's forward the way its profile states it:
+// "the kube forward to prod/svc/db:5432", "the ssh forward via bastion".
+func tunnelText(conn config.Connection) string {
+	switch conn.TunnelKey() {
+	case "kube":
+		return "the kube forward to " + conn.Kube
+	case "ssh":
+		return "the ssh forward via " + conn.SSH
+	}
+	return "a tunnel"
 }

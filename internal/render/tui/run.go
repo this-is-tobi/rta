@@ -3,6 +3,8 @@ package tui
 import (
 	"context"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -46,7 +48,7 @@ const runTimeout = 30 * time.Second
 // run uses when the picker moves.
 // The third return is the environment the seed came from, which runForm needs
 // twice over: a connection that tunnels fills the endpoint fields per call and
-// is not asked about at all (forwardFilled), and one that references
+// shows its coordinate in them (forwardDisplays), and one that references
 // credentials answers boxes the seed had to leave empty (environmentNotes).
 func (m Model) formSeed(c plugin.Capability, defaults map[string]any, on string) (map[string]any, map[string]bool, formEnv) {
 	name, filled, conn := m.profileSeed(c, on)
@@ -83,10 +85,15 @@ func (m Model) runForm(c plugin.Capability, fs []plugin.Field, defaults, base ma
 	shown := fs
 	var forwarded []string
 	if env.conn.Tunnelled() {
-		shown, forwarded = forwardFilled(c, fs, defaults)
+		var shows map[string]any
+		shown, shows, forwarded = forwardDisplays(c, fs, defaults, env.conn)
+		for name, v := range shows {
+			seed[name] = v
+			derived[name] = true
+		}
 	}
 	shown = environmentNotes(c, shown, seed, env.name, env.conn)
-	cf := newCapForm(c, m.withPicker(c, shown, on, forwarded), seed, true, base)
+	cf := newCapForm(c, m.withPicker(c, shown, on, forwarded, env.conn), seed, true, base)
 	cf.derived = derived
 	cf.offered = fs
 	if b, ok := cf.bindings[profileInput]; ok {
@@ -125,35 +132,82 @@ func (m Model) reseedOnPickerMove() (tea.Model, tea.Cmd, bool) {
 	return m, m.form.form.Init(), true
 }
 
-// forwardFilled drops the endpoint-role fields a forward fills per call, and
-// returns their names for the picker's help to own.
+// forwardDisplays is what the endpoint boxes show under a connection that
+// tunnels: the forward's own coordinate, in the box, as a display.
 //
-// Dropped rather than shown empty with a hint, which is what this did first:
-// an empty box is a question, and three questions the operator must not
-// answer outweigh three lines of help saying so. What the boxes displayed is
-// not lost — the run's values are provably the same, because an empty
-// derived box already contributed nothing and Dial lays host, port and the
-// TLS off value at the Profile layer either way. What IS given up is typing
-// a host here to bypass the forward this once, deliberately: that path opens
-// a forward and then ignores it, and picking the base configuration — or a
-// CLI flag — says "connect directly" without the contradiction.
+// The forward fills host, port and the TLS switch per call, and for a while
+// this dropped those boxes — an empty box is a question, and three questions
+// the operator must not answer outweighed three lines of help. What that gave
+// up was the override: under a coordinate that is wrong, the only way to
+// reach the service was to leave the form, fix the profile, and come back.
+// The boxes are back, and they show where the run is going in the profile's
+// own words — `kube:homelab/databases/svc/postgres` in the host box, `5432`
+// in the port box, the coordinate split at its port so nothing is shown
+// twice — marked derived, so an untouched
+// box is a display that values() drops and the forward answers; a box
+// somebody typed over is a caller value, which Dial reads as "straight to
+// where I said, no forward". A value the caller already gave keeps its
+// field and its value, because Resolve gives the caller precedence and a
+// winning answer must stay on screen to be seen and edited.
 //
-// A value the caller already gave keeps its field, because Resolve gives the
-// caller precedence and a winning answer must stay on screen to be seen and
-// edited.
-func forwardFilled(c plugin.Capability, fs []plugin.Field, given map[string]any) ([]plugin.Field, []string) {
+// The TLS switch is a picker and gets the note only: a picker entered
+// through is choosing what it shows, so there is no display to drop.
+func forwardDisplays(c plugin.Capability, fs []plugin.Field, given map[string]any, conn config.Connection) ([]plugin.Field, map[string]any, []string) {
 	out := make([]plugin.Field, 0, len(fs))
-	var dropped []string
+	shows := map[string]any{}
+	var filled []string
+	port := coordinatePort(conn)
+	target := tunnelCoordinate(conn)
+	if port != 0 {
+		target = strings.TrimSuffix(target, ":"+strconv.Itoa(port))
+	}
+	coordinate := conn.TunnelKey() + ":" + target
 	for _, f := range fs {
 		if f.Endpoint != plugin.EndpointNone && plugin.ProfileFillable(c, f) {
 			if _, ok := given[f.Name]; !ok {
-				dropped = append(dropped, f.Name)
-				continue
+				switch f.Endpoint {
+				case plugin.EndpointHost, plugin.EndpointAddress, plugin.EndpointURL:
+					shows[f.Name] = coordinate
+				case plugin.EndpointPort:
+					if port != 0 {
+						shows[f.Name] = port
+					}
+				}
+				f.Help = strings.TrimSpace(f.Help + " — filled by " + tunnelText(conn) +
+					"; type over it to connect directly, without the forward")
+				filled = append(filled, f.Name)
 			}
 		}
 		out = append(out, f)
 	}
-	return out, dropped
+	return out, shows, filled
+}
+
+// tunnelCoordinate is the profile's own spelling of the target.
+func tunnelCoordinate(conn config.Connection) string {
+	if conn.Kube != "" {
+		return conn.Kube
+	}
+	return conn.SSH
+}
+
+// coordinatePort is the target port at the end of a coordinate — the
+// service's port, which is what a person expects to see in the port box even
+// though the forward's local port is what the call dials.
+func coordinatePort(conn config.Connection) int {
+	coord := tunnelCoordinate(conn)
+	i := strings.LastIndexByte(coord, ':')
+	if i < 0 {
+		return 0
+	}
+	n := 0
+	for _, ch := range coord[i+1:] {
+		if ch < '0' || ch > '9' {
+			return 0
+		}
+		n = n*10 + int(ch-'0')
+	}
+	return n
 }
 
 // configFor is the operator's stated values for the plugin a capability
@@ -189,7 +243,7 @@ func runCmd(ctx context.Context, seq int, c plugin.Capability, values map[string
 	// and the environment over it.
 	collected := values
 	return func() tea.Msg {
-		dialled, closeTunnel, verr := profile.Dial(ctx, profileName, conn, c)
+		dialled, closeTunnel, verr := profile.Dial(ctx, profileName, conn, c, collected)
 		defer closeTunnel()
 		if verr != nil {
 			return resultMsg{cap: c, err: verr, seq: seq}

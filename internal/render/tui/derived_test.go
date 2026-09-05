@@ -220,17 +220,22 @@ func TestEndpointFieldsUnderAClusterConnectionAreNotAsked(t *testing.T) {
 
 	model, _ := m.startForm(c, nil)
 	nm := model.(Model)
+	if got := *nm.form.bindings["host"]; got != "kube:homelab/databases/svc/postgres" {
+		t.Errorf("host box = %q, want the forward's own coordinate on display", got)
+	}
+	if got := *nm.form.bindings["port"]; got != "5432" {
+		t.Errorf("port box = %q, want the coordinate's port on display", got)
+	}
 	for _, name := range []string{"host", "port", "sslmode"} {
-		if _, asked := nm.form.bindings[name]; asked {
-			t.Errorf("%s has a box under a cluster connection — the forward fills it, "+
-				"and an empty box is a question", name)
+		if !nm.form.derived[name] && name != "sslmode" {
+			t.Errorf("%s is not marked derived — an untouched box would come back as a caller value", name)
 		}
 	}
 	picker := nm.form.fields[0]
 	if picker.Name != profileInput {
 		t.Fatalf("fields[0] = %s, want the picker", picker.Name)
 	}
-	if !strings.Contains(picker.Help, "tunnel, which fills host, port, sslmode") {
+	if !strings.Contains(picker.Help, "forward to homelab/databases/svc/postgres:5432, which fills host, port, sslmode") {
 		t.Errorf("picker help = %q — nothing on screen says where the endpoint went", picker.Help)
 	}
 	// None of it comes back as an answer.
@@ -240,14 +245,14 @@ func TestEndpointFieldsUnderAClusterConnectionAreNotAsked(t *testing.T) {
 			t.Errorf("%s = %v came back as a caller value from a form that never asked", name, v)
 		}
 	}
-	// A value the person gave keeps its field and its value; the rest stay
-	// dropped, and the help names only what the forward still fills.
+	// A value the person gave keeps its field and its value; the rest show
+	// the coordinate, and the help names only what the forward still fills.
 	model, _ = m.startForm(c, map[string]any{"host": "db.internal"})
 	nm = model.(Model)
 	if got := *nm.form.bindings["host"]; got != "db.internal" {
 		t.Errorf("host box = %q, want the value the person gave kept on screen", got)
 	}
-	if _, asked := nm.form.bindings["port"]; asked {
+	if got := *nm.form.bindings["port"]; got != "5432" {
 		t.Error("port is asked about while only host was given")
 	}
 	if help := nm.form.fields[0].Help; !strings.Contains(help, "fills port, sslmode") ||
@@ -582,11 +587,10 @@ func TestMovingThePickerReseedsTheForm(t *testing.T) {
 	// and the same keypress rebuilds the form on it.
 	model, _ = nm.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	nm = model.(Model)
-	if _, asked := nm.form.bindings["host"]; asked {
-		t.Error("host still has a box under homelab's coordinate — the rebuild did not re-decide " +
-			"what is asked")
+	if got := *nm.form.bindings["host"]; got != "kube:homelab/databases/svc/postgres" {
+		t.Errorf("host box = %q under homelab's coordinate — the rebuild did not re-decide what is shown", got)
 	}
-	if help := nm.form.fields[0].Help; !strings.Contains(help, "tunnel, which fills host") {
+	if help := nm.form.fields[0].Help; !strings.Contains(help, "forward to homelab/databases/svc/postgres:5432, which fills host") {
 		t.Errorf("picker help = %q, want it naming what the forward fills", help)
 	}
 	if got := *nm.form.bindings["database"]; got != "mydb" {

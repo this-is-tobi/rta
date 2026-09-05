@@ -75,9 +75,9 @@ type capForm struct {
 	liveMu  sync.Mutex
 	liveGot map[string][]string
 	// offered is the field list this run form was asked to collect, before
-	// forwardFilled dropped what a forward answers — what a rebuild on the
-	// environment the picker now names must start from, since the drop is
-	// exactly what changes with the pick (reseedOnPickerMove).
+	// forwardDisplays showed a forward's coordinate in what it answers — what a
+	// rebuild on the environment the picker now names must start from, since
+	// that is exactly what changes with the pick (reseedOnPickerMove).
 	offered []plugin.Field
 	// builtOn is the picker binding's value when the form was built, which
 	// is what "the picker moved" is measured against.
