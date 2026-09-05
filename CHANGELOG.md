@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.10.0](https://github.com/this-is-tobi/rta/compare/v0.9.0...v0.10.0) (2026-09-05)
+
+
+### Features
+
+* **http:** a status code explains itself, offline ([df1ca22](https://github.com/this-is-tobi/rta/commit/df1ca22dde9f74f4828656355ed14ded0841a894))
+* **pkg:** what is outdated on this machine, and one upgrade at a time ([072df88](https://github.com/this-is-tobi/rta/commit/072df8861ef76ec96706fbd0ca8a07b6f9bceec0))
+* **profile:** the badge colour is offered where a profile is edited ([84202d7](https://github.com/this-is-tobi/rta/commit/84202d792bbd07c48a1f79a0fda4f5e72fe14670))
+* **tui:** the forward's coordinate is in the boxes, and typing over it goes around the forward ([474ee80](https://github.com/this-is-tobi/rta/commit/474ee80b5318e01eec988947d47e9ba18fe91a0a))
+* **tui:** the instant no is one key away from the screen that makes you want it ([b76b012](https://github.com/this-is-tobi/rta/commit/b76b012d6bb29cd7b29f1040786b1b2e3ea7e7de))
+
 ## [0.9.0](https://github.com/this-is-tobi/rta/compare/v0.8.0...v0.9.0) (2026-09-05)
 
 
