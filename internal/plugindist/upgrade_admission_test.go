@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/this-is-tobi/rta/internal/atomicfile"
 	"github.com/this-is-tobi/rta/internal/plugintrust"
 )
 
@@ -51,10 +50,19 @@ func TestUpgradeRefusesStoreBytesThatAreNotTheLockedDigest(t *testing.T) {
 	// measured at ~20ms during which /proc holds no process to blame. So
 	// os.WriteFile here failed with ETXTBSY on Linux and never once on macOS,
 	// which does not enforce the rule at all. A rename puts a new inode at the
-	// path without ever asking for write access on the executed one, which is
-	// also how the store itself installs (store.go's place): the test now
-	// reaches the path the way the code under test does.
-	if err := atomicfile.Write(stored, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	// path without ever asking for write access on the executed one.
+	//
+	// And the rename goes through moveExecutable, not a bare os.Rename: on
+	// Windows the handle on a just-run image outlives the process and a move
+	// issued in that window fails with "access is denied" — seen once in CI
+	// here, in the store's own path never, because the store retries
+	// (store.go). The test reaches the path exactly the way the code under
+	// test does, retry included.
+	staged := filepath.Join(filepath.Dir(stored), ".replacement")
+	if err := os.WriteFile(staged, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := moveExecutable(staged, stored); err != nil {
 		t.Fatal(err)
 	}
 
