@@ -411,3 +411,35 @@ func TestTabStillAdvancesAPicker(t *testing.T) {
 		t.Errorf("note = %q — the cursor did not land on the box below the picker", got)
 	}
 }
+
+// The theme editor answers the arrows by the same rule (browseOn), over its
+// palette: every box starts empty, so without this the palette could be
+// listed by tab and never walked.
+func TestArrowsBrowseThePaletteInTheThemeEditor(t *testing.T) {
+	noHistory(t)
+	m := New(registry.New(), config.Dashboard{}, nil)
+	m.width, m.height = 100, 40
+	m.mode = modeTheme
+	m.themeForm = newThemeForm(nil)
+	m.themeForm.form = startedHuhForm(m.themeForm.form)
+	name, ok := m.themeForm.focusedInput()
+	if !ok {
+		t.Fatal("no focused box")
+	}
+	offered := m.themeForm.offers[name]
+	m = pressKey(t, m, downKey)
+	if got := *m.themeForm.bindings[name]; got != offered[0] {
+		t.Fatalf("down on an empty palette box = %q, want %q", got, offered[0])
+	}
+	m = pressKey(t, m, downKey)
+	if got := *m.themeForm.bindings[name]; got != offered[1] {
+		t.Fatalf("second down = %q, want %q", got, offered[1])
+	}
+	m = pressKey(t, m, upKey)
+	if got := *m.themeForm.bindings[name]; got != offered[0] {
+		t.Fatalf("up = %q, want %q", got, offered[0])
+	}
+	if n, _ := m.themeForm.focusedInput(); n != name {
+		t.Error("browsing left the box")
+	}
+}

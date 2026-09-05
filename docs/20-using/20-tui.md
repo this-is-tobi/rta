@@ -108,6 +108,8 @@ password for the role — staging fills it from kv:staging-db-password (secret)
 
 `shift+tab` is the previous field and `enter` is the next one, whatever the box holds. A field that completes says so under itself, because the footer speaks for the screen rather than for the box under the cursor.
 
+`↓` and `↑` browse the offer from an empty box: down puts the first candidate in the box, the next down its neighbour, up walks the other way, and both wrap. Type over what was placed and the box is yours again — the arrows then cycle the matches of what you typed, which is what they always did once a letter was in.
+
 Destructive capabilities confirm before acting, the same as on the CLI.
 
 ## The plugin inventory

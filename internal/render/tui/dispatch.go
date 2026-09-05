@@ -405,6 +405,11 @@ func (m Model) formKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		// before the case existed.
 		nm, cmd := m.completeFromCluster(msg)
 		return nm, cmd, true
+	case "up", "down":
+		// The arrows browse the offer from an empty box (browse.go); on a
+		// box somebody typed in they are the widget's, cycling its matches.
+		nm, cmd := m.browseOffers(msg, msg.String() == "down")
+		return nm, cmd, true
 	}
 	return m, nil, false
 }
@@ -425,6 +430,9 @@ func (m Model) themeKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		// there is to complete, say what is on offer to a box too empty to
 		// show a ghost, and otherwise move on.
 		nm, cmd := m.tabInTheme(msg)
+		return nm, cmd, true
+	case "up", "down":
+		nm, cmd := m.browseInTheme(msg, msg.String() == "down")
 		return nm, cmd, true
 	}
 	return m, nil, false
