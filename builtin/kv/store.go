@@ -62,6 +62,11 @@ type entry struct {
 	Origin  string    `json:"origin,omitempty"`
 	Created time.Time `json:"created"`
 	Updated time.Time `json:"updated"`
+	// Previous is what this key held before each write over it, most recent
+	// first, capped at maxRevisions (history.go). Inside the same encrypted
+	// document as the live value, so keeping a past is no more exposure than
+	// keeping a present.
+	Previous []revision `json:"previous,omitempty"`
 }
 
 // Origin reports where an entry came from, for the surfaces.
@@ -100,6 +105,12 @@ type store struct {
 	// written before this field existed — nothing to check yet, and the
 	// next ordinary write starts one.
 	Recipients []string `json:"recipients,omitempty"`
+	// Removed is what `kv rm` set aside: one entry per name, whole, until
+	// `kv restore` brings it back or `kv rm --purge` destroys it. Beside
+	// Entries rather than a flag on an entry, so that every read of the
+	// store keeps treating Entries as the store and nothing has to remember
+	// to skip a tombstone.
+	Removed map[string]removedEntry `json:"removed,omitempty"`
 }
 
 func storePath() string { return filepath.Join(itemstore.DataDir(), storeFile) }

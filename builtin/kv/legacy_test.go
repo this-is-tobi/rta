@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -111,7 +112,7 @@ func TestAnUpgradingWriteBacksUpTheOriginalCiphertextFirst(t *testing.T) {
 		t.Fatalf("upgrading write: %v", err)
 	}
 
-	backup := storePath() + ".pre-v2.bak"
+	backup := storePath() + ".pre-v" + strconv.Itoa(storeVersion) + ".bak"
 	got, err := os.ReadFile(backup)
 	if err != nil {
 		t.Fatalf("no backup was written: %v", err)

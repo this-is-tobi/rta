@@ -34,6 +34,9 @@ func runList(_ context.Context, req plugin.Request) (view.View, error) {
 	// and not from `prod-deploy-key`.
 	match := strings.ToLower(strings.TrimSpace(req.String("match")))
 	detail := req.Bool("detail")
+	if req.Bool("removed") {
+		return removedTable(s), nil
+	}
 
 	names := make([]string, 0, len(s.Entries))
 	for k, e := range s.Entries {
@@ -128,6 +131,9 @@ func runShow(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 	if o := e.origin(); o != "" {
 		pairs = append(pairs, view.Pair{Key: "source", Value: o})
+	}
+	if n := len(e.Previous); n > 0 {
+		pairs = append(pairs, view.Pair{Key: "history", Value: plural(n, "earlier value") + " — rta kv history " + key})
 	}
 	// The same join kv.list makes, for one entry — and withheld over MCP for
 	// the same reason, argued at runList.
@@ -452,6 +458,7 @@ func runSet(_ context.Context, req plugin.Request) (view.View, error) {
 		}
 		if existed {
 			e.Created = previous.Created
+			e.Previous = previous.retired(now)
 			// An edit that says nothing about the description keeps the old one:
 			// re-setting a rotated token should not silently erase what it is for.
 			if e.Description == "" {
@@ -556,18 +563,49 @@ func runRemove(_ context.Context, req plugin.Request) (view.View, error) {
 		return nil, verr
 	}
 	key := req.String("key")
+	purge := req.Bool("purge")
 	e, ok := s.Entries[key]
 	if !ok {
+		// --purge also finishes off something removed earlier, which is the
+		// one case a key can be absent from the listing and still be here.
+		if r, removed := s.Removed[key]; removed && purge {
+			if req.DryRun {
+				return view.Text{Body: fmt.Sprintf("would purge the removed %q (%s)", key, r.Kind)}, nil
+			}
+			delete(s.Removed, key)
+			if verr := save(req, s); verr != nil {
+				return nil, verr
+			}
+			return view.Text{Body: fmt.Sprintf("purged %q — it was removed %s, and is gone now", key,
+				itemstore.Age(r.RemovedAt))}, nil
+		}
 		return nil, notFound(key)
 	}
 	if req.DryRun {
-		return view.Text{Body: fmt.Sprintf("would remove %q (%s)", key, e.Kind)}, nil
+		if purge {
+			return view.Text{Body: fmt.Sprintf("would purge %q (%s) — no restore", key, e.Kind)}, nil
+		}
+		return view.Text{Body: fmt.Sprintf("would remove %q (%s) — restorable with `rta kv restore %s`", key, e.Kind, key)}, nil
 	}
 	delete(s.Entries, key)
+	if purge {
+		delete(s.Removed, key)
+	} else {
+		if s.Removed == nil {
+			s.Removed = map[string]removedEntry{}
+		}
+		// A second removal of a reused name replaces the first: one slot per
+		// name is the whole promise, and the earlier one has had its chance.
+		s.Removed[key] = removedEntry{entry: e, RemovedAt: time.Now()}
+	}
 	if verr := save(req, s); verr != nil {
 		return nil, verr
 	}
-	return view.Text{Body: fmt.Sprintf("removed %q", key)}, nil
+	if purge {
+		return view.Text{Body: fmt.Sprintf("purged %q — the value and its history are gone", key)}, nil
+	}
+	return view.Text{Body: fmt.Sprintf("removed %q — `rta kv restore %s` brings it back; `rta kv rm --purge %s` would not have",
+		key, key, key)}, nil
 }
 
 // runInit chooses how the store is locked, once.

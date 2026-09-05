@@ -261,6 +261,7 @@ func runEdit(_ context.Context, req plugin.Request) (view.View, error) {
 			WithHint("nothing was changed — re-run `rta kv edit " + key +
 				"` to start from the current value")
 	}
+	current.Previous = current.retired(time.Now())
 	current.Value = edited
 	// A pinned kind is one that disagrees with what detection would have said
 	// about the value being replaced: nothing but `--kind` could have put it

@@ -12,7 +12,15 @@ import (
 
 // storeVersion is stamped on every store this build writes. Its only job is
 // to make the question below answerable without guessing, from here on.
-const storeVersion = 2
+const storeVersion = 3
+
+// firstStampedVersion is the format that introduced the stamp. Every version
+// since shares the JSON shape — v3 added fields, all omitempty — so a store
+// stamped at any of them parses as the current struct, and the stamp's job is
+// only to tell a stamped store from an unstamped one. Comparing against
+// storeVersion instead sent a v2 store down the legacy path the moment v3
+// existed, and reported its errors as a v1 store's.
+const firstStampedVersion = 2
 
 // An entry's Value became []byte so that binary values survive a round trip
 // (see the field's own comment). encoding/json writes a []byte as base64 and
@@ -51,7 +59,7 @@ func decodeStore(plaintext []byte) (store, *view.Error) {
 	}
 	_ = json.Unmarshal(plaintext, &stamp)
 
-	if stamp.Version >= storeVersion {
+	if stamp.Version >= firstStampedVersion {
 		var s store
 		if err := json.Unmarshal(plaintext, &s); err != nil {
 			return store{}, view.Errorf("kv.store.corrupt",

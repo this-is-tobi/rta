@@ -456,6 +456,8 @@ func conformanceInputs(dir string) map[string]map[string]any {
 		"kv.rm":       {"key": "absent"},
 		"kv.set":      {"key": "demo", "value": "s3cret"},
 		"kv.show":     {"key": "absent"},
+		"kv.history":  {"key": "absent"},
+		"kv.restore":  {"key": "absent"},
 		"note.edit":   {"id": 1, "title": "t"},
 		"note.rm":     {"id": 1},
 		"note.search": {"query": "x"},
