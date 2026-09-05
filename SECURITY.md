@@ -14,6 +14,6 @@ The project is pre-1.0 and under active development. Only the latest release is 
 
 ## Scope
 
-In scope: the `rta` binary and its built-in capabilities, the plugin trust and confinement model, and the MCP server. See [docs/19-the-boundary.md](docs/19-the-boundary.md) for what rta claims to guarantee and [docs/20-mcp.md](docs/20-mcp.md) for the MCP-specific trust model — a report that a documented tradeoff behaves as documented isn't a vulnerability, but a gap between what's documented and what actually happens is.
+In scope: the `rta` binary and its built-in capabilities, the plugin trust and confinement model, and the MCP server. See [docs/30-boundary/10-the-boundary.md](docs/30-boundary/10-the-boundary.md) for what rta claims to guarantee and [docs/30-boundary/20-mcp.md](docs/30-boundary/20-mcp.md) for the MCP-specific trust model — a report that a documented tradeoff behaves as documented isn't a vulnerability, but a gap between what's documented and what actually happens is.
 
 A third-party plugin is outside this repository's scope unless the issue is in rta's own verification of it (digest checking, declaration checking, confinement).

@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Guidance for AI coding agents (and anyone using one) working in this repository — rta, a security boundary for AI agents: one binary exposing capabilities (databases, storage, secrets, networking, git, host info…) over a CLI, a TUI, and an MCP server, each gated by per-capability consent, scoping, and an audit trail. Read [docs/19-the-boundary.md](docs/19-the-boundary.md) and [docs/20-mcp.md](docs/20-mcp.md) before touching anything MCP- or capability-related — they carry the design reasoning a diff alone won't show.
+Guidance for AI coding agents (and anyone using one) working in this repository — rta, a security boundary for AI agents: one binary exposing capabilities (databases, storage, secrets, networking, git, host info…) over a CLI, a TUI, and an MCP server, each gated by per-capability consent, scoping, and an audit trail. Read [docs/30-boundary/10-the-boundary.md](docs/30-boundary/10-the-boundary.md) and [docs/30-boundary/20-mcp.md](docs/30-boundary/20-mcp.md) before touching anything MCP- or capability-related — they carry the design reasoning a diff alone won't show.
 
 ## Priority order
 
