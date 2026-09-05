@@ -148,7 +148,7 @@ func TestShiftEnterAcceptsAPathFieldsCurrentDefault(t *testing.T) {
 	quit(t, tm)
 }
 
-// The one real risk in the bunch: todo.add/note.add/note.edit's own body
+// The one real risk in the bunch: note.add/note.add/note.edit's own body
 // field is exactly this shape (huh.NewText, multi-line, ExternalEditor), and
 // a plain Enter in a text area is a newline in most editors. huh's own
 // TextKeyMap says otherwise — plain "enter" is bound to Next/Submit, and

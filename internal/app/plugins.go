@@ -22,7 +22,7 @@ import (
 //
 // It was `rta plugins` until it moved here, and the move is the app applying
 // its own rule to itself. Every listing in rta is `<namespace> list` —
-// grant.list, kv.list, note.list, todo.list, net.hosts.list — and sdktest
+// grant.list, kv.list, note.list, net.hosts.list — and sdktest
 // warns a plugin author who invents a verb outside that vocabulary. A
 // top-level bare plural was the one place rta did not follow the convention
 // it enforces on everybody else, and it sat one letter from `rta plugin` in

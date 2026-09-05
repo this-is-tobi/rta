@@ -53,7 +53,7 @@ func TestNoInputBehavesLikeAFileWithoutBeingDeclaredOne(t *testing.T) {
 	//
 	// The first version of this used two different paths, one existing and
 	// one not, and reported four capabilities immediately — every one a false
-	// positive. `todo.search` answers `No tasks match "<value>"`, so the
+	// positive. `note.search` answers `No notes match "<value>"`, so the
 	// output differed because the *string* differed, not because anything was
 	// read. Holding the value fixed and moving only the file makes the
 	// filesystem the sole variable, which is what the question actually is.

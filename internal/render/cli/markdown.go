@@ -17,7 +17,7 @@ import (
 //
 // It is a *format*, not an audit feature, which is the whole point. Every one
 // of the catalogue's capabilities gets it for free — `sys overview` into an
-// incident write-up, `kv status` into a runbook, `todo list` into a stand-up
+// incident write-up, `kv status` into a runbook, `note list` into a stand-up
 // note — and no capability has to grow a --markdown flag of its own or learn
 // what a table looks like in a second syntax.
 //

@@ -40,7 +40,7 @@ dashboard:
   - git.overview
   order:
   - sys.overview
-  - todo.list
+  - note.list
   columns: 3
 ```
 
@@ -50,7 +50,7 @@ dashboard:
 dashboard:
   tiles:
   - id: kube.overview
-  - id: todo.list
+  - id: note.list
     span: 2
   - id: pg.overview
     with:
@@ -155,7 +155,7 @@ A stock install is entirely built in, so no bands are drawn at all — one band 
 | `d` | Delete |
 | `esc` | Leave a slow run |
 
-Views are actionable rather than static. In a task list, `d` marks done and `x` removes — from the list *and* from a record's own page, refreshing as it goes. Detail pages are composed from other capabilities' views rather than rebuilt, so a record page shows metadata, prose and relations as separate sections.
+Views are actionable rather than static. In the notebook, `t` turns a note into a to-do or back, `d` checks one off and `x` removes — from the list *and* from a record's own page, refreshing as it goes. Detail pages are composed from other capabilities' views rather than rebuilt, so a record page shows metadata, prose and relations as separate sections.
 
 ## Profiles
 

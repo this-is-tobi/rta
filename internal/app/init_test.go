@@ -57,7 +57,7 @@ func TestInitKeepsEveryPartOfTheFileItDoesNotOwn(t *testing.T) {
 		Output: "yaml",
 		Dashboard: config.Dashboard{
 			Hidden:  []string{"net.info"},
-			Order:   []string{"todo.list"},
+			Order:   []string{"note.list"},
 			Columns: 3,
 		},
 		Plugins: map[string]map[string]any{
@@ -84,7 +84,7 @@ func TestInitKeepsEveryPartOfTheFileItDoesNotOwn(t *testing.T) {
 	}
 
 	// And the fixed-set path.
-	got = initConfig(current, "pretty", []string{"todo.list"})
+	got = initConfig(current, "pretty", []string{"note.list"})
 	if !reflect.DeepEqual(got.Plugins, current.Plugins) {
 		t.Errorf("plugins lost on the fixed-tiles path: %v", got.Plugins)
 	}
@@ -92,7 +92,7 @@ func TestInitKeepsEveryPartOfTheFileItDoesNotOwn(t *testing.T) {
 		t.Errorf("output = %q, want empty — pretty is what an absent key already means",
 			got.Output)
 	}
-	if len(got.Dashboard.Tiles) != 1 || got.Dashboard.Tiles[0].ID != "todo.list" {
+	if len(got.Dashboard.Tiles) != 1 || got.Dashboard.Tiles[0].ID != "note.list" {
 		t.Errorf("tiles = %v, want the chosen set", got.Dashboard.Tiles)
 	}
 }

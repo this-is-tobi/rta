@@ -85,7 +85,7 @@ Exit codes make the loop safe to write, and they are the next thing worth knowin
 Code `3` is the one worth handling in scripts. It means the command was destructive and nobody confirmed — not that anything failed.
 
 ```bash
-rta todo rm 4 || case $? in
+rta note rm 4 || case $? in
   3) echo "needs --yes" ;;
   1) echo "refused or failed" ;;
 esac
@@ -109,17 +109,17 @@ Reports what would happen without doing it, on any capability that changes somet
 
 ```bash
 rta net hosts add 10.0.0.5 db.local --dry-run
-rta todo rm 4 --dry-run
+rta note rm 4 --dry-run
 ```
 
-This is not only a convenience for you — it is what rta shows an operator on a [parked agent call](../30-boundary/40-audit-trail.md#parked-calls), which turns "may this agent call `todo.rm`" into "may it remove **this task**".
+This is not only a convenience for you — it is what rta shows an operator on a [parked agent call](../30-boundary/40-audit-trail.md#parked-calls), which turns "may this agent call `note.rm`" into "may it remove **this note**".
 
 ## `--yes`
 
 Skips confirmation prompts. Destructive capabilities ask before acting when a human is present; `--yes` (or `-y`) is how a script says it means it.
 
 ```bash
-rta todo rm 4 --yes
+rta note rm 4 --yes
 ```
 
 ## `rta explain`

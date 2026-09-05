@@ -1,7 +1,8 @@
-// Package itemstore is the shared local store behind the todo and note
-// built-ins: numbered items with a title and an optional markdown body, kept
-// as plain JSON under the XDG data dir, written atomically. One store, two
-// plugins — todos add a done status on top, notes do not.
+// Package itemstore is the local store behind the note built-in: numbered
+// items with a title and an optional markdown body, kept as plain JSON under
+// the XDG data dir, written atomically. It predates the merge of the todo and
+// note built-ins, which is why it is its own package rather than a file in
+// note — and a second built-in over the same shape is still one import away.
 package itemstore
 
 import (
@@ -30,8 +31,12 @@ type Item struct {
 	Tags  []string `json:"tags,omitempty"`
 	// Parent is the enclosing item's ID, 0 for top level. Sub-items let a
 	// task be broken down without inventing a second store.
-	Parent  int        `json:"parent,omitempty"`
-	Due     *time.Time `json:"due,omitempty"`
+	Parent int        `json:"parent,omitempty"`
+	Due    *time.Time `json:"due,omitempty"`
+	// Todo is the checkbox: a note with one is something to do, and Done is
+	// whether it has been. A note without one is just a note — never done,
+	// never hidden, and a toggle away from becoming a task.
+	Todo    bool       `json:"todo,omitempty"`
 	Done    bool       `json:"done,omitempty"`
 	Created time.Time  `json:"created"`
 	DoneAt  *time.Time `json:"doneAt,omitempty"`
@@ -81,8 +86,8 @@ func DataDir() string { return dataDir() }
 
 func dataDir() string { return paths.Data() }
 
-// Load reads the store in file (e.g. "todo.json"). ns namespaces error codes
-// ("todo" → todo.store.corrupt).
+// Load reads the store in file (e.g. "notes.json"). ns namespaces error codes
+// ("note" → note.store.corrupt).
 func Load(file, ns string) (Store, error) {
 	path := filepath.Join(dataDir(), file)
 	var s Store
@@ -165,8 +170,8 @@ func NormalizeTag(tag string) string {
 }
 
 // refRe matches a cross-reference to another item: "#12". Deliberately plain
-// digits only — no namespace — since todo and note share one ID space per
-// store file and a reference is always "the other item with this number".
+// digits only — no namespace — since every item in a store shares one ID
+// space and a reference is always "the other item with this number".
 var refRe = regexp.MustCompile(`#(\d+)`)
 
 // References extracts the item IDs mentioned in text ("see #12 for context"),

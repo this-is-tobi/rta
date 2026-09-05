@@ -31,7 +31,7 @@ import (
 // It answers the other question in the same breath: which plugins do I
 // actually have? A tile grid cannot say, because plugins with nothing
 // glanceable have no tile — so this is the one screen where `cert` and `http`
-// are as visible as `todo`, and it says why they are not on the dashboard
+// are as visible as `note`, and it says why they are not on the dashboard
 // rather than leaving you to wonder.
 //
 // It also says where each plugin came from, which it could not before
@@ -458,7 +458,7 @@ const pluginGroupHeight = 2
 // clampPluginScroll keeps the selected plugin on screen.
 //
 // The pane had no scroll at all and simply clipped, which at 80x24 — the
-// default terminal since forever — hid `todo` entirely while `j` still
+// default terminal since forever — hid `note` entirely while `j` still
 // selected it. Toggling a tile you cannot see is the kind of thing that reads
 // as the app being broken rather than as a pane being short.
 func (m *Model) clampPluginScroll(bodyHeight int) {

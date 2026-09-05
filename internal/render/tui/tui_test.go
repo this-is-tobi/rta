@@ -436,28 +436,28 @@ func TestFormValueConversion(t *testing.T) {
 	}
 }
 
-// todoRegistry mimics the todo plugin's shape so the static tile-action
+// noteRegistry mimics the note plugin's shape so the static tile-action
 // specs resolve without importing the real built-in.
-func todoRegistry(t *testing.T) *registry.Registry {
+func noteRegistry(t *testing.T) *registry.Registry {
 	t.Helper()
 	reg := registry.New()
 	noop := func(context.Context, plugin.Request) (view.View, error) {
 		return view.Text{Body: "ok"}, nil
 	}
 	err := reg.Register(plugin.Plugin{
-		Name: "todo", Summary: "tasks",
+		Name: "note", Summary: "tasks",
 		Capabilities: []plugin.Capability{
-			{ID: "todo.list", Summary: "list", Safety: plugin.Read, Idempotent: true, Run: noop},
-			{ID: "todo.add", Summary: "add", Safety: plugin.Write,
+			{ID: "note.list", Summary: "list", Safety: plugin.Read, Idempotent: true, Run: noop},
+			{ID: "note.add", Summary: "add", Safety: plugin.Write,
 				Inputs: []plugin.Field{
 					{Name: "title", Type: plugin.String, Positional: true, Required: true, Help: "t"},
 					{Name: "body", Type: plugin.Text, Help: "b"},
 				}, Run: noop},
-			{ID: "todo.edit", Summary: "edit", Safety: plugin.Write,
+			{ID: "note.edit", Summary: "edit", Safety: plugin.Write,
 				Inputs: []plugin.Field{
 					{Name: "id", Type: plugin.Int, Positional: true, Required: true, Help: "i"},
 				}, Run: noop},
-			{ID: "todo.done", Summary: "done", Safety: plugin.Write,
+			{ID: "note.done", Summary: "done", Safety: plugin.Write,
 				Inputs: []plugin.Field{
 					{Name: "id", Type: plugin.Int, Positional: true, Required: true, Help: "i"},
 				}, Run: noop},
@@ -469,21 +469,21 @@ func todoRegistry(t *testing.T) *registry.Registry {
 	return reg
 }
 
-// TestDashboardTileActionsOpenForm drives the todo tile's `a` shortcut at the
+// TestDashboardTileActionsOpenForm drives the note tile's `a` shortcut at the
 // model level: it must open the add form with the dashboard as origin, and
 // esc must land back on the dashboard.
 func TestDashboardTileActionsOpenForm(t *testing.T) {
-	m := New(todoRegistry(t), config.Dashboard{Tiles: []config.Tile{{ID: "todo.list"}}}, nil)
+	m := New(noteRegistry(t), config.Dashboard{Tiles: []config.Tile{{ID: "note.list"}}}, nil)
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
-	// Tile 0 is search; tile 1 is todo.list with actions attached.
+	// Tile 0 is search; tile 1 is note.list with actions attached.
 	sel, _ := sized.(Model).Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	if got := sel.(Model).tiles[1].actions; len(got) != 3 {
-		t.Fatalf("todo tile actions = %d, want 3", len(got))
+		t.Fatalf("note tile actions = %d, want 3", len(got))
 	}
 
 	formed, _ := sel.(Model).Update(tea.KeyPressMsg{Code: 'a', Text: "a"})
 	fm := formed.(Model)
-	if fm.mode != modeForm || fm.current.ID != "todo.add" || fm.origin != modeDashboard {
+	if fm.mode != modeForm || fm.current.ID != "note.add" || fm.origin != modeDashboard {
 		t.Fatalf("a: mode=%v current=%s origin=%v", fm.mode, fm.current.ID, fm.origin)
 	}
 
@@ -496,7 +496,7 @@ func TestDashboardTileActionsOpenForm(t *testing.T) {
 // TestDashboardActionKeysDoNotFireOnOtherTiles: the search tile has no
 // actions, so `a` is inert there.
 func TestDashboardActionKeysDoNotFireOnOtherTiles(t *testing.T) {
-	m := New(todoRegistry(t), config.Dashboard{Tiles: []config.Tile{{ID: "todo.list"}}}, nil)
+	m := New(noteRegistry(t), config.Dashboard{Tiles: []config.Tile{{ID: "note.list"}}}, nil)
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
 	same, _ := sized.(Model).Update(tea.KeyPressMsg{Code: 'a', Text: "a"}) // selection on search tile
 	if same.(Model).mode != modeDashboard {
@@ -507,10 +507,10 @@ func TestDashboardActionKeysDoNotFireOnOtherTiles(t *testing.T) {
 // TestDashboardScrollFollowsSelection: on a short terminal the grid windows
 // itself and the selection drags the window along.
 func TestDashboardScrollFollowsSelection(t *testing.T) {
-	reg := todoRegistry(t)
-	tiles := []config.Tile{{ID: "todo.list"}, {ID: "todo.list"}, {ID: "todo.list"}, {ID: "todo.list"}, {ID: "todo.list"}}
+	reg := noteRegistry(t)
+	tiles := []config.Tile{{ID: "note.list"}, {ID: "note.list"}, {ID: "note.list"}, {ID: "note.list"}, {ID: "note.list"}}
 	m := New(reg, config.Dashboard{Tiles: tiles}, nil)
-	// 60 cols -> 1 column grid. todo.list's content here is one line ("ok"),
+	// 60 cols -> 1 column grid. note.list's content here is one line ("ok"),
 	// so each row shrinks to tileMinHeight; height 15 -> one visible tile row
 	// at that floor (avail 7, one 6-row band fits and a second does not).
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 60, Height: 15})
@@ -588,15 +588,15 @@ func TestPrefillTwoStageForm(t *testing.T) {
 	quit(t, tm)
 }
 
-// listRegistry builds a todo-shaped plugin whose list returns a live table,
+// listRegistry builds a note-shaped plugin whose list returns a live table,
 // so the interactive-list machinery is exercised against real specs.
 func listRegistry(t *testing.T, doneLog *[]int) *registry.Registry {
 	t.Helper()
 	reg := registry.New()
 	err := reg.Register(plugin.Plugin{
-		Name: "todo", Summary: "tasks",
+		Name: "note", Summary: "tasks",
 		Capabilities: []plugin.Capability{
-			{ID: "todo.list", Summary: "list", Safety: plugin.Read, Idempotent: true,
+			{ID: "note.list", Summary: "list", Safety: plugin.Read, Idempotent: true,
 				Run: func(context.Context, plugin.Request) (view.View, error) {
 					return view.Table{
 						Columns: []view.Column{{Name: "ID", Kind: view.KindNumber}, {Name: "Task"}},
@@ -604,17 +604,17 @@ func listRegistry(t *testing.T, doneLog *[]int) *registry.Registry {
 						Total:   2,
 					}, nil
 				}},
-			{ID: "todo.show", Summary: "show", Safety: plugin.Read, Idempotent: true,
+			{ID: "note.show", Summary: "show", Safety: plugin.Read, Idempotent: true,
 				Inputs: []plugin.Field{{Name: "id", Type: plugin.Int, Positional: true, Required: true, Help: "i"}},
 				Run: func(_ context.Context, req plugin.Request) (view.View, error) {
 					return view.Text{Body: fmt.Sprintf("SHOW-%d", req.Int("id"))}, nil
 				}},
-			{ID: "todo.add", Summary: "add", Safety: plugin.Write,
+			{ID: "note.add", Summary: "add", Safety: plugin.Write,
 				Inputs: []plugin.Field{{Name: "title", Type: plugin.String, Positional: true, Required: true, Help: "t"}},
 				Run: func(context.Context, plugin.Request) (view.View, error) {
 					return view.Text{Body: "added"}, nil
 				}},
-			{ID: "todo.edit", Summary: "edit", Safety: plugin.Write, Idempotent: true,
+			{ID: "note.edit", Summary: "edit", Safety: plugin.Write, Idempotent: true,
 				Inputs: []plugin.Field{
 					{Name: "id", Type: plugin.Int, Positional: true, Required: true, Help: "i"},
 					{Name: "title", Type: plugin.String, Help: "t"},
@@ -625,13 +625,13 @@ func listRegistry(t *testing.T, doneLog *[]int) *registry.Registry {
 				Run: func(context.Context, plugin.Request) (view.View, error) {
 					return view.Text{Body: "edited"}, nil
 				}},
-			{ID: "todo.done", Summary: "done", Safety: plugin.Write, Idempotent: true,
+			{ID: "note.done", Summary: "done", Safety: plugin.Write, Idempotent: true,
 				Inputs: []plugin.Field{{Name: "id", Type: plugin.Int, Positional: true, Required: true, Help: "i"}},
 				Run: func(_ context.Context, req plugin.Request) (view.View, error) {
 					*doneLog = append(*doneLog, req.Int("id"))
 					return view.Text{Body: fmt.Sprintf("done: %d", req.Int("id"))}, nil
 				}},
-			{ID: "todo.rm", Summary: "remove", Safety: plugin.Destructive,
+			{ID: "note.rm", Summary: "remove", Safety: plugin.Destructive,
 				Inputs: []plugin.Field{{Name: "id", Type: plugin.Int, Positional: true, Required: true, Help: "i"}},
 				Run: func(context.Context, plugin.Request) (view.View, error) {
 					return view.Text{Body: "removed"}, nil
@@ -644,12 +644,12 @@ func listRegistry(t *testing.T, doneLog *[]int) *registry.Registry {
 	return reg
 }
 
-// listResult drives the model to an interactive todo.list result.
+// listResult drives the model to an interactive note.list result.
 func listResult(t *testing.T, reg *registry.Registry) Model {
 	t.Helper()
-	m := New(reg, config.Dashboard{Tiles: []config.Tile{{ID: "todo.list"}}}, nil)
+	m := New(reg, config.Dashboard{Tiles: []config.Tile{{ID: "note.list"}}}, nil)
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
-	c, _ := reg.Capability("todo.list")
+	c, _ := reg.Capability("note.list")
 	v, err := c.Run(context.Background(), plugin.NewRequest(nil, false, false))
 	if err != nil {
 		t.Fatal(err)
@@ -657,12 +657,12 @@ func listResult(t *testing.T, reg *registry.Registry) Model {
 	withRes, _ := sized.(Model).Update(resultMsg{cap: c, view: v})
 	rm := withRes.(Model)
 	if !rm.interactive() {
-		t.Fatal("todo.list result did not become an interactive list")
+		t.Fatal("note.list result did not become an interactive list")
 	}
 	return rm
 }
 
-// TestListRowNavigationAndDirectAction: ↑↓ move the row; `d` runs todo.done
+// TestListRowNavigationAndDirectAction: ↑↓ move the row; `d` runs note.done
 // with the selected row's id and schedules a list refresh.
 func TestListRowNavigationAndDirectAction(t *testing.T) {
 	var doneLog []int
@@ -675,7 +675,7 @@ func TestListRowNavigationAndDirectAction(t *testing.T) {
 
 	acted, cmd := moved.(Model).Update(tea.KeyPressMsg{Code: 'd', Text: "d"})
 	am := acted.(Model)
-	if am.mode != modeRunning || am.current.ID != "todo.done" || !am.refreshPending {
+	if am.mode != modeRunning || am.current.ID != "note.done" || !am.refreshPending {
 		t.Fatalf("d: mode=%v current=%s refresh=%v", am.mode, am.current.ID, am.refreshPending)
 	}
 	drain(t, cmd)
@@ -693,18 +693,18 @@ func TestListEnterShowsRowAndEscReturns(t *testing.T) {
 
 	shown, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	sm := shown.(Model)
-	if sm.mode != modeRunning || sm.current.ID != "todo.show" {
+	if sm.mode != modeRunning || sm.current.ID != "note.show" {
 		t.Fatalf("enter: mode=%v current=%s", sm.mode, sm.current.ID)
 	}
 	if sm.refreshPending {
 		t.Fatal("show is a read: it must not schedule a refresh")
 	}
 	// Deliver show's result, then esc must re-open the list.
-	c, _ := reg.Capability("todo.show")
+	c, _ := reg.Capability("note.show")
 	withShow, _ := sm.Update(resultMsg{cap: c, view: view.Text{Body: "SHOW-1"}})
 	back, cmd2 := withShow.(Model).Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	bm := back.(Model)
-	if bm.mode != modeRunning || bm.current.ID != "todo.list" {
+	if bm.mode != modeRunning || bm.current.ID != "note.list" {
 		t.Fatalf("esc from row detail: mode=%v current=%s", bm.mode, bm.current.ID)
 	}
 	_ = cmd
@@ -719,7 +719,7 @@ func TestListEditOpensPrefilledForm(t *testing.T) {
 
 	edited, _ := m.Update(tea.KeyPressMsg{Code: 'u', Text: "u"})
 	em := edited.(Model)
-	if em.mode != modeForm || em.current.ID != "todo.edit" {
+	if em.mode != modeForm || em.current.ID != "note.edit" {
 		t.Fatalf("u: mode=%v current=%s", em.mode, em.current.ID)
 	}
 	if em.form.base["id"] != 1 {
@@ -732,7 +732,7 @@ func TestListEditOpensPrefilledForm(t *testing.T) {
 
 // resultKeys checks capActionSpecs before its own generic "edit inputs"
 // case, so a capability declaring its own "e" action used to make the
-// generic case unreachable — todo.list's own action is "u" precisely so
+// generic case unreachable — note.list's own action is "u" precisely so
 // both stay reachable. This is the other half of
 // TestListEditOpensPrefilledForm: that test is "u" reaches the row action;
 // this one is "e" now reaches the generic form instead of being swallowed
@@ -740,9 +740,9 @@ func TestListEditOpensPrefilledForm(t *testing.T) {
 func TestGenericEditInputsIsReachableOnACapabilityWithItsOwnAction(t *testing.T) {
 	reg := registry.New()
 	err := reg.Register(plugin.Plugin{
-		Name: "todo", Summary: "tasks",
+		Name: "note", Summary: "tasks",
 		Capabilities: []plugin.Capability{
-			{ID: "todo.list", Summary: "list", Safety: plugin.Read, Idempotent: true,
+			{ID: "note.list", Summary: "list", Safety: plugin.Read, Idempotent: true,
 				Inputs: []plugin.Field{{Name: "all", Type: plugin.Bool, Help: "show done too"}},
 				Run: func(context.Context, plugin.Request) (view.View, error) {
 					return view.Table{
@@ -751,7 +751,7 @@ func TestGenericEditInputsIsReachableOnACapabilityWithItsOwnAction(t *testing.T)
 						Total:   1,
 					}, nil
 				}},
-			{ID: "todo.edit", Summary: "edit", Safety: plugin.Write, Idempotent: true,
+			{ID: "note.edit", Summary: "edit", Safety: plugin.Write, Idempotent: true,
 				Inputs: []plugin.Field{
 					{Name: "id", Type: plugin.Int, Positional: true, Required: true, Help: "i"},
 					{Name: "title", Type: plugin.String, Help: "t"},
@@ -768,20 +768,20 @@ func TestGenericEditInputsIsReachableOnACapabilityWithItsOwnAction(t *testing.T)
 
 	// "u" still reaches the row action.
 	viaU, _ := m.Update(tea.KeyPressMsg{Code: 'u', Text: "u"})
-	if um := viaU.(Model); um.mode != modeForm || um.current.ID != "todo.edit" {
-		t.Fatalf("u: mode=%v current=%s, want todo.edit", um.mode, um.current.ID)
+	if um := viaU.(Model); um.mode != modeForm || um.current.ID != "note.edit" {
+		t.Fatalf("u: mode=%v current=%s, want note.edit", um.mode, um.current.ID)
 	}
 
 	// "e" now reaches the generic edit-inputs case instead of being
-	// swallowed by capActionSpecs — before the fix, todo.list declaring no
+	// swallowed by capActionSpecs — before the fix, note.list declaring no
 	// "e" entry of its own meant this already worked; the real regression
-	// coverage is that renaming todo.list's OWN action away from "e" is
+	// coverage is that renaming note.list's OWN action away from "e" is
 	// what makes this assertion meaningful for capabilities that used to
-	// collide (todo.list among them, in production).
+	// collide (note.list among them, in production).
 	viaE, _ := m.Update(tea.KeyPressMsg{Code: 'e', Text: "e"})
 	em := viaE.(Model)
-	if em.mode != modeForm || em.current.ID != "todo.list" {
-		t.Fatalf("e: mode=%v current=%s, want the generic edit-inputs form on todo.list itself", em.mode, em.current.ID)
+	if em.mode != modeForm || em.current.ID != "note.list" {
+		t.Fatalf("e: mode=%v current=%s, want the generic edit-inputs form on note.list itself", em.mode, em.current.ID)
 	}
 }
 
@@ -835,12 +835,12 @@ func TestListRemoveAsksConfirmation(t *testing.T) {
 
 	removed, _ := m.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
 	rm := removed.(Model)
-	if rm.mode != modeForm || rm.current.ID != "todo.rm" || rm.form.confirm == nil {
+	if rm.mode != modeForm || rm.current.ID != "note.rm" || rm.form.confirm == nil {
 		t.Fatalf("x: mode=%v current=%s confirm=%v", rm.mode, rm.current.ID, rm.form.confirm)
 	}
 	back, _ := rm.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	bm := back.(Model)
-	if bm.mode != modeRunning || bm.current.ID != "todo.list" {
+	if bm.mode != modeRunning || bm.current.ID != "note.list" {
 		t.Fatalf("esc from confirm: mode=%v current=%s", bm.mode, bm.current.ID)
 	}
 }
@@ -850,10 +850,10 @@ func TestListRemoveAsksConfirmation(t *testing.T) {
 func detailPage(t *testing.T, reg *registry.Registry, m Model) Model {
 	t.Helper()
 	shown, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	c, _ := reg.Capability("todo.show")
+	c, _ := reg.Capability("note.show")
 	withShow, _ := shown.(Model).Update(resultMsg{cap: c, view: view.Text{Body: "SHOW-1"}})
 	dm := withShow.(Model)
-	if !dm.atTop() || dm.current.ID != "todo.show" {
+	if !dm.atTop() || dm.current.ID != "note.show" {
 		t.Fatalf("detail page is not actionable: current=%s trail=%d", dm.current.ID, len(dm.trail))
 	}
 	return dm
@@ -869,7 +869,7 @@ func TestDetailPageActsOnItsOwnSubject(t *testing.T) {
 
 	acted, cmd := m.Update(tea.KeyPressMsg{Code: 'd', Text: "d"})
 	am := acted.(Model)
-	if am.mode != modeRunning || am.current.ID != "todo.done" || !am.refreshPending {
+	if am.mode != modeRunning || am.current.ID != "note.done" || !am.refreshPending {
 		t.Fatalf("d on detail: mode=%v current=%s refresh=%v", am.mode, am.current.ID, am.refreshPending)
 	}
 	drain(t, cmd)
@@ -887,7 +887,7 @@ func TestDetailPageEditIsPrefilled(t *testing.T) {
 
 	edited, _ := m.Update(tea.KeyPressMsg{Code: 'u', Text: "u"})
 	em := edited.(Model)
-	if em.mode != modeForm || em.current.ID != "todo.edit" {
+	if em.mode != modeForm || em.current.ID != "note.edit" {
 		t.Fatalf("u on detail: mode=%v current=%s", em.mode, em.current.ID)
 	}
 	if em.form.base["id"] != 1 {
@@ -906,10 +906,10 @@ func TestDetailPageEditReturnsToTheSamePage(t *testing.T) {
 	m := detailPage(t, reg, listResult(t, reg))
 
 	acted, _ := m.Update(tea.KeyPressMsg{Code: 'd', Text: "d"})
-	done, _ := reg.Capability("todo.done")
+	done, _ := reg.Capability("note.done")
 	back, _ := acted.(Model).Update(resultMsg{cap: done, view: view.Text{Body: "done: 1"}})
 	bm := back.(Model)
-	if bm.mode != modeRunning || bm.current.ID != "todo.show" {
+	if bm.mode != modeRunning || bm.current.ID != "note.show" {
 		t.Fatalf("after done: mode=%v current=%s, want the page reloaded", bm.mode, bm.current.ID)
 	}
 	if bm.flash == "" {
@@ -927,16 +927,16 @@ func TestDetailPageRemoveReturnsToTheList(t *testing.T) {
 
 	removed, _ := m.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
 	rm := removed.(Model)
-	if rm.mode != modeForm || rm.current.ID != "todo.rm" {
+	if rm.mode != modeForm || rm.current.ID != "note.rm" {
 		t.Fatalf("x on detail: mode=%v current=%s", rm.mode, rm.current.ID)
 	}
 	if !rm.subjectGone {
 		t.Fatal("removing the page's own subject must be recorded as destroying it")
 	}
-	rmCap, _ := reg.Capability("todo.rm")
+	rmCap, _ := reg.Capability("note.rm")
 	back, _ := rm.Update(resultMsg{cap: rmCap, view: view.Text{Body: "removed"}})
 	bm := back.(Model)
-	if bm.mode != modeRunning || bm.current.ID != "todo.list" {
+	if bm.mode != modeRunning || bm.current.ID != "note.list" {
 		t.Fatalf("after remove: mode=%v current=%s, want the list", bm.mode, bm.current.ID)
 	}
 	if len(bm.trail) != 1 {
@@ -950,9 +950,9 @@ func TestDetailPageRemoveReturnsToTheList(t *testing.T) {
 func TestEmptyListStillOffersAdd(t *testing.T) {
 	var doneLog []int
 	reg := listRegistry(t, &doneLog)
-	m := New(reg, config.Dashboard{Tiles: []config.Tile{{ID: "todo.list"}}}, nil)
+	m := New(reg, config.Dashboard{Tiles: []config.Tile{{ID: "note.list"}}}, nil)
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
-	c, _ := reg.Capability("todo.list")
+	c, _ := reg.Capability("note.list")
 	empty, _ := sized.(Model).Update(resultMsg{cap: c, view: view.Text{Body: "Nothing to do"}})
 	em := empty.(Model)
 
@@ -963,12 +963,12 @@ func TestEmptyListStillOffersAdd(t *testing.T) {
 		t.Fatal("an empty list is still a view you can act from")
 	}
 	added, _ := em.Update(tea.KeyPressMsg{Code: 'a', Text: "a"})
-	if am := added.(Model); am.mode != modeForm || am.current.ID != "todo.add" {
+	if am := added.(Model); am.mode != modeForm || am.current.ID != "note.add" {
 		t.Fatalf("a on empty list: mode=%v current=%s", am.mode, am.current.ID)
 	}
 	// A row action has no row to act on and must stay inert.
 	inert, _ := em.Update(tea.KeyPressMsg{Code: 'd', Text: "d"})
-	if got := inert.(Model).current.ID; got == "todo.done" {
+	if got := inert.(Model).current.ID; got == "note.done" {
 		t.Error("a row action fired with no row selected")
 	}
 }
@@ -1228,7 +1228,7 @@ func TestRowActionOnAnOptionalPositional(t *testing.T) {
 	sm.row = 1
 	tbl := view.Table{
 		Columns: []view.Column{{Name: "Capability"}},
-		Rows:    [][]string{{"kv.get"}, {"todo.rm"}},
+		Rows:    [][]string{{"kv.get"}, {"note.rm"}},
 	}
 	acted, _ := sm.runAction(capAction{key: "x", label: "revoke", cap: revoke, src: srcRow}, tbl)
 	am := acted.(Model)
@@ -1237,7 +1237,7 @@ func TestRowActionOnAnOptionalPositional(t *testing.T) {
 	if am.mode != modeForm {
 		t.Fatalf("mode = %v, want a seeded form", am.mode)
 	}
-	if am.form.base["target"] != "todo.rm" {
+	if am.form.base["target"] != "note.rm" {
 		t.Errorf("form seeded with %v, want the selected row", am.form.base)
 	}
 	_ = got
@@ -1482,12 +1482,12 @@ func TestCancellingARunReleasesTheHandler(t *testing.T) {
 }
 
 // A capability that hides part of its own data by default owes the surface a
-// way to ask for the rest: `todo.list` hides completed tasks, so without the
+// way to ask for the rest: `note.list` hides completed tasks, so without the
 // toggle the re-open action could never find a row to act on.
 func TestToggleReRunsTheViewWithTheFlagFlipped(t *testing.T) {
 	var sawAll []bool
 	list := plugin.Capability{
-		ID: "todo.list", Summary: "list tasks", Safety: plugin.Read,
+		ID: "note.list", Summary: "list tasks", Safety: plugin.Read,
 		Inputs: []plugin.Field{{Name: "all", Type: plugin.Bool}},
 		Run: func(_ context.Context, req plugin.Request) (view.View, error) {
 			sawAll = append(sawAll, req.Bool("all"))
@@ -2004,13 +2004,13 @@ func TestEditingInputsKeepsAnExplicitDetailPreference(t *testing.T) {
 
 // A capability opened fresh starts from its own defaults. unasked exists to
 // keep one run's toggles, not to leak them into the next capability — a
-// detail preference set on kv.list must not arrive pre-set on todo.add.
+// detail preference set on kv.list must not arrive pre-set on note.add.
 func TestOpeningAFreshCapabilityCarriesNothing(t *testing.T) {
 	var doneLog []int
 	reg := listRegistry(t, &doneLog)
-	c, _ := reg.Capability("todo.add")
+	c, _ := reg.Capability("note.add")
 
-	m := New(reg, config.Dashboard{Tiles: []config.Tile{{ID: "todo.list"}}}, nil)
+	m := New(reg, config.Dashboard{Tiles: []config.Tile{{ID: "note.list"}}}, nil)
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
 	sm := sized.(Model)
 	sm.lastValues = map[string]any{"detail": false, "stale": "from the last run"}
@@ -2043,9 +2043,9 @@ func TestNothingTheTUIDrawsCarriesAnEscape(t *testing.T) {
 	const evil = "safe\x1b]8;;mailto:pay@evil.example\x07LOOKS-FINE\x1b]8;;\x07\rOVERWRITE"
 	reg := registry.New()
 	err := reg.Register(plugin.Plugin{
-		Name: "todo", Summary: "tasks",
+		Name: "note", Summary: "tasks",
 		Capabilities: []plugin.Capability{
-			{ID: "todo.list", Summary: "list", Safety: plugin.Read, Idempotent: true,
+			{ID: "note.list", Summary: "list", Safety: plugin.Read, Idempotent: true,
 				Run: func(context.Context, plugin.Request) (view.View, error) {
 					return view.Sections{
 						// A title beside a table, which is the composed detail
@@ -2062,7 +2062,7 @@ func TestNothingTheTUIDrawsCarriesAnEscape(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, _ := reg.Capability("todo.list")
+	c, _ := reg.Capability("note.list")
 	v, _ := c.Run(context.Background(), plugin.NewRequest(nil, false, false))
 
 	m := New(reg, config.Dashboard{}, nil)

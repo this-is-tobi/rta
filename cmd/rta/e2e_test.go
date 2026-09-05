@@ -156,14 +156,14 @@ func TestUnknownCommandIsAUsageError(t *testing.T) {
 // 1: the capability ran and refused. The code and hint go to stderr, and
 // stdout stays empty — `rta kv get x > secret` must not write an error there.
 func TestCapabilityErrorIsOneAndKeepsStdoutClean(t *testing.T) {
-	r := run(t, "todo", "show", "999")
+	r := run(t, "note", "show", "999")
 	if r.code != 1 {
 		t.Fatalf("exit = %d, want 1 (stderr: %s)", r.code, r.stderr)
 	}
 	if strings.TrimSpace(r.stdout) != "" {
 		t.Errorf("stdout got %q, want nothing", r.stdout)
 	}
-	if !strings.Contains(r.stderr, "todo.notfound") {
+	if !strings.Contains(r.stderr, "note.notfound") {
 		t.Errorf("stderr = %q, want the error code", r.stderr)
 	}
 }
@@ -171,7 +171,7 @@ func TestCapabilityErrorIsOneAndKeepsStdoutClean(t *testing.T) {
 // 3: a destructive capability refused for want of confirmation — its own
 // exit code, so a script can tell "you must confirm" from "it failed".
 func TestConfirmationDeclinedIsThree(t *testing.T) {
-	r := run(t, "todo", "rm", "1")
+	r := run(t, "note", "rm", "1")
 	if r.code != 3 {
 		t.Errorf("exit = %d, want 3 (stderr: %s)", r.code, r.stderr)
 	}
@@ -183,10 +183,10 @@ func TestConfirmationDeclinedIsThree(t *testing.T) {
 // The round trip a person actually performs, through the binary, with the
 // store on disk between the two calls.
 func TestWriteThenReadThroughTheBinary(t *testing.T) {
-	if r := run(t, "todo", "add", "ship the release", "--tag", "work"); r.code != 0 {
+	if r := run(t, "note", "add", "ship the release", "--tag", "work"); r.code != 0 {
 		t.Fatalf("add: exit %d, %s", r.code, r.stderr)
 	}
-	env := envelope(t, run(t, "todo", "list", "-o", "json"))
+	env := envelope(t, run(t, "note", "list", "-o", "json"))
 	rows, _ := env["rows"].([]any)
 	if len(rows) != 1 {
 		t.Fatalf("rows = %v", env["rows"])
@@ -206,22 +206,22 @@ func TestWriteThenReadThroughTheBinary(t *testing.T) {
 
 // --dry-run is a promise: it must change nothing on disk.
 func TestDryRunChangesNothing(t *testing.T) {
-	if r := run(t, "todo", "add", "real", "--dry-run"); r.code != 0 {
+	if r := run(t, "note", "add", "real", "--dry-run"); r.code != 0 {
 		t.Fatalf("dry-run add: exit %d, %s", r.code, r.stderr)
 	}
-	env := envelope(t, run(t, "todo", "list", "-o", "json"))
+	env := envelope(t, run(t, "note", "list", "-o", "json"))
 	if rows, _ := env["rows"].([]any); len(rows) != 0 {
-		t.Errorf("dry-run wrote a task: %v", rows)
+		t.Errorf("dry-run wrote a note: %v", rows)
 	}
 }
 
 // Machine-readable formats have to stay machine-readable: csv for a table,
 // yaml for anything.
 func TestAlternateFormatsAreClean(t *testing.T) {
-	if r := run(t, "todo", "add", "one"); r.code != 0 {
+	if r := run(t, "note", "add", "one"); r.code != 0 {
 		t.Fatal(r.stderr)
 	}
-	csv := run(t, "todo", "list", "-o", "csv")
+	csv := run(t, "note", "list", "-o", "csv")
 	if csv.code != 0 || !strings.HasPrefix(csv.stdout, "ID,Status") {
 		t.Errorf("csv = %q (exit %d)", csv.stdout, csv.code)
 	}
