@@ -28,7 +28,6 @@ import (
 	rtaoperator "github.com/this-is-tobi/rta/builtin/operator"
 	"github.com/this-is-tobi/rta/builtin/sys"
 	rtatime "github.com/this-is-tobi/rta/builtin/time"
-	"github.com/this-is-tobi/rta/builtin/todo"
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 )
@@ -52,7 +51,6 @@ func Registry(conf func(plugin.Capability) map[string]any) (*registry.Registry, 
 		eol.Plugin(),
 		rtafs.Plugin(),
 		rtagit.Plugin(),
-		todo.Plugin(),
 		note.Plugin(),
 		kv.Plugin(),
 		gen.Plugin(),

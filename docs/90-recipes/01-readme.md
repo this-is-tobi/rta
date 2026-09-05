@@ -184,7 +184,7 @@ rta mcp serve --as sandbox --root ~/projects --root /tmp/scratch
 ## Be asked instead of refused, while you are at the machine
 
 ```bash
-rta mcp serve --as claude --consent --consent-notify --allow-write todo
+rta mcp serve --as claude --consent --consent-notify --allow-write note
 ```
 
 A call needing a grant nobody issued parks rather than failing:

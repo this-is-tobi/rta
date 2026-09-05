@@ -112,7 +112,7 @@ func Schema() map[string]any {
 				"required":             []any{"id"},
 				"properties": map[string]any{
 					"id": map[string]any{
-						"description": "The capability this tile runs, e.g. todo.list.",
+						"description": "The capability this tile runs, e.g. note.list.",
 						"type":        "string",
 					},
 					"with": map[string]any{

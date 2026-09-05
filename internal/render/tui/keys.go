@@ -172,7 +172,7 @@ func item(b binding) hintItem {
 	return hintItem{display: b.display, label: b.label, rank: b.rank, keys: b.keys}
 }
 
-// action is a per-capability shortcut — `a add` on the todo tile. It outranks
+// action is a per-capability shortcut — `a add` on the note tile. It outranks
 // everything: it is the one thing on the screen that cannot be guessed from
 // any other screen, so it is the last thing that should be dropped.
 func action(key, label string) hintItem {

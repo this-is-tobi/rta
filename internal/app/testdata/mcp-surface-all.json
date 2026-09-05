@@ -2414,7 +2414,7 @@
   },
   {
     "name": "note_add",
-    "description": "── the text below is written by the plugin, not by rta ──\nAdd a note\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nAdd a note\n\nA title is enough. --todo (or a due date, which implies it) makes it something to do; a parent makes it part of something bigger; markdown in the body is rendered on human surfaces.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
     "destructive_hint": false,
     "input_schema": {
       "additionalProperties": false,
@@ -2423,8 +2423,16 @@
           "description": "note content, markdown supported",
           "type": "string"
         },
+        "due": {
+          "description": "due date: today, tomorrow, a weekday, or 2006-01-02",
+          "type": "string"
+        },
+        "parent": {
+          "description": "make this a sub-note of the given note id",
+          "type": "integer"
+        },
         "tag": {
-          "description": "tags, repeatable (--tag recipe --tag italian)",
+          "description": "tags, repeatable (--tag backend --tag urgent)",
           "items": {
             "type": "string"
           },
@@ -2433,6 +2441,10 @@
         "title": {
           "description": "note title",
           "type": "string"
+        },
+        "todo": {
+          "description": "make it a to-do: something to check off",
+          "type": "boolean"
         }
       },
       "required": [
@@ -2442,8 +2454,27 @@
     }
   },
   {
+    "name": "note_done",
+    "description": "── the text below is written by the plugin, not by rta ──\nCheck a note off\n\nDone for a task, filed for a note: either way it leaves the default list and stays findable under --all and in search.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
+    "destructive_hint": false,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "note id",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    }
+  },
+  {
     "name": "note_edit",
-    "description": "── the text below is written by the plugin, not by rta ──\nEdit a note's title, body or tags\n\nEmpty fields keep their current value. --tag - clears all tags.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nEdit a note's title, body, tags, due date or parent\n\nEmpty fields keep their current value. --tag - clears all tags; --due none clears the due date.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
     "destructive_hint": false,
     "idempotent_hint": true,
     "input_schema": {
@@ -2453,12 +2484,21 @@
           "description": "new body, markdown supported (empty keeps the current one)",
           "type": "string"
         },
+        "due": {
+          "description": "due date: today, tomorrow, a weekday, or 2006-01-02",
+          "type": "string"
+        },
         "id": {
           "description": "note id",
           "type": "integer"
         },
+        "parent": {
+          "default": -1,
+          "description": "re-parent to this note id (0 makes it top-level)",
+          "type": "integer"
+        },
         "tag": {
-          "description": "tags, repeatable (--tag recipe --tag italian)",
+          "description": "tags, repeatable (--tag backend --tag urgent)",
           "items": {
             "type": "string"
           },
@@ -2477,16 +2517,25 @@
   },
   {
     "name": "note_list",
-    "description": "── the text below is written by the plugin, not by rta ──\nList notes\n\nWith --detail: adds creation date and a preview of each note's body.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nList notes\n\nOpen notes, the ones with a due date first — soonest on top — then the rest in the order they were written. Checked-off notes are hidden until --all. Shows top-level notes by default; pass --parent to list one note's sub-notes. With --detail: adds creation date and a body preview.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
       "additionalProperties": false,
       "properties": {
+        "all": {
+          "description": "include checked-off notes",
+          "type": "boolean"
+        },
         "detail": {
           "default": false,
           "description": "return the full detailed view instead of the compact summary",
           "type": "boolean"
+        },
+        "parent": {
+          "default": 0,
+          "description": "list sub-notes of this note id instead of top-level notes",
+          "type": "integer"
         },
         "tag": {
           "description": "only notes with any of these tags",
@@ -2500,8 +2549,27 @@
     }
   },
   {
+    "name": "note_reopen",
+    "description": "── the text below is written by the plugin, not by rta ──\nUn-check a note\n\nThe undo for `note done`. Checking off the wrong note is a one-keystroke mistake, and a list you cannot take something back out of is a list people stop trusting. Re-opening an already-open note is a no-op, not an error.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
+    "destructive_hint": false,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "note id",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    }
+  },
+  {
     "name": "note_rm",
-    "description": "── the text below is written by the plugin, not by rta ──\nRemove a note permanently\n── end of plugin-written text ──\n\nSafety: destructive. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"id\"). You cannot issue one yourself — ask the operator to run `rta grant allow note.rm`.",
+    "description": "── the text below is written by the plugin, not by rta ──\nRemove a note permanently\n\nSub-notes are re-parented to the removed note's parent, never deleted silently.\n── end of plugin-written text ──\n\nSafety: destructive. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"id\"). You cannot issue one yourself — ask the operator to run `rta grant allow note.rm`.",
     "destructive_hint": true,
     "input_schema": {
       "additionalProperties": false,
@@ -2519,7 +2587,7 @@
   },
   {
     "name": "note_search",
-    "description": "── the text below is written by the plugin, not by rta ──\nSearch notes by title, body or tag\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nSearch notes by title, body or tag\n\nSearches every note regardless of parent/child, done or open.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -2538,7 +2606,7 @@
   },
   {
     "name": "note_show",
-    "description": "── the text below is written by the plugin, not by rta ──\nShow one note: metadata, content, references\n\nMetadata (tags, size, age) stays separate from the markdown content, which is rendered richly on human surfaces. Cross-references (\"#12\" in a body) resolve both ways.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nShow one note: metadata, content, sub-notes, references\n\nA composed page rather than one blob: structured metadata (status, due, tags, parent, progress) stays separate from the markdown content, so both stay readable and machine callers can read a due date without parsing prose. Sub-notes and cross-references (\"#12\" in a body, resolved both ways) follow.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -2563,6 +2631,24 @@
     "input_schema": {
       "additionalProperties": false,
       "properties": {},
+      "type": "object"
+    }
+  },
+  {
+    "name": "note_toggle",
+    "description": "── the text below is written by the plugin, not by rta ──\nTurn a note into a to-do, or a to-do back into a note\n\nThe switch between the two kinds of thing in the notebook. A note becomes an open to-do; a to-do becomes a note and forgets whether it was done, which is the point — a note has nothing to be done about.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
+    "destructive_hint": false,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "note id",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id"
+      ],
       "type": "object"
     }
   },
@@ -2738,224 +2824,6 @@
           "type": "string"
         }
       },
-      "type": "object"
-    }
-  },
-  {
-    "name": "todo_add",
-    "description": "── the text below is written by the plugin, not by rta ──\nAdd a task\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
-    "destructive_hint": false,
-    "input_schema": {
-      "additionalProperties": false,
-      "properties": {
-        "body": {
-          "description": "longer description, markdown supported",
-          "type": "string"
-        },
-        "due": {
-          "description": "due date: today, tomorrow, a weekday, or 2006-01-02",
-          "type": "string"
-        },
-        "parent": {
-          "description": "make this a sub-task of the given task id",
-          "type": "integer"
-        },
-        "tag": {
-          "description": "tags, repeatable (--tag backend --tag urgent)",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "title": {
-          "description": "task title",
-          "type": "string"
-        }
-      },
-      "required": [
-        "title"
-      ],
-      "type": "object"
-    }
-  },
-  {
-    "name": "todo_done",
-    "description": "── the text below is written by the plugin, not by rta ──\nMark a task as done\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
-    "destructive_hint": false,
-    "idempotent_hint": true,
-    "input_schema": {
-      "additionalProperties": false,
-      "properties": {
-        "id": {
-          "description": "task id",
-          "type": "integer"
-        }
-      },
-      "required": [
-        "id"
-      ],
-      "type": "object"
-    }
-  },
-  {
-    "name": "todo_edit",
-    "description": "── the text below is written by the plugin, not by rta ──\nEdit a task's title, body, tags or due date\n\nEmpty fields keep their current value. --tag - clears all tags; --due none clears the due date.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
-    "destructive_hint": false,
-    "idempotent_hint": true,
-    "input_schema": {
-      "additionalProperties": false,
-      "properties": {
-        "body": {
-          "description": "new body, markdown supported (empty keeps the current one)",
-          "type": "string"
-        },
-        "due": {
-          "description": "due date: today, tomorrow, a weekday, or 2006-01-02",
-          "type": "string"
-        },
-        "id": {
-          "description": "task id",
-          "type": "integer"
-        },
-        "parent": {
-          "default": -1,
-          "description": "re-parent to this task id (0 makes it top-level)",
-          "type": "integer"
-        },
-        "tag": {
-          "description": "tags, repeatable (--tag backend --tag urgent)",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "title": {
-          "description": "new title (empty keeps the current one)",
-          "type": "string"
-        }
-      },
-      "required": [
-        "id"
-      ],
-      "type": "object"
-    }
-  },
-  {
-    "name": "todo_list",
-    "description": "── the text below is written by the plugin, not by rta ──\nList tasks\n\nShows top-level tasks by default; pass --parent to list one task's sub-tasks. With --detail: adds creation date and a body preview.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
-    "read_only_hint": true,
-    "idempotent_hint": true,
-    "input_schema": {
-      "additionalProperties": false,
-      "properties": {
-        "all": {
-          "description": "include completed tasks",
-          "type": "boolean"
-        },
-        "detail": {
-          "default": false,
-          "description": "return the full detailed view instead of the compact summary",
-          "type": "boolean"
-        },
-        "parent": {
-          "default": 0,
-          "description": "list sub-tasks of this task id instead of top-level tasks",
-          "type": "integer"
-        },
-        "tag": {
-          "description": "only tasks with any of these tags",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
-      "type": "object"
-    }
-  },
-  {
-    "name": "todo_reopen",
-    "description": "── the text below is written by the plugin, not by rta ──\nUn-complete a task\n\nThe undo for `todo done`. Marking the wrong task complete is a one-keystroke mistake, and a list you cannot take something back out of is a list people stop trusting. Completing an already-open task is a no-op, not an error.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
-    "destructive_hint": false,
-    "idempotent_hint": true,
-    "input_schema": {
-      "additionalProperties": false,
-      "properties": {
-        "id": {
-          "description": "task id",
-          "type": "integer"
-        }
-      },
-      "required": [
-        "id"
-      ],
-      "type": "object"
-    }
-  },
-  {
-    "name": "todo_rm",
-    "description": "── the text below is written by the plugin, not by rta ──\nRemove a task permanently\n\nSub-tasks are re-parented to the removed task's parent, never deleted silently.\n── end of plugin-written text ──\n\nSafety: destructive. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"id\"). You cannot issue one yourself — ask the operator to run `rta grant allow todo.rm`.",
-    "destructive_hint": true,
-    "input_schema": {
-      "additionalProperties": false,
-      "properties": {
-        "id": {
-          "description": "task id",
-          "type": "integer"
-        }
-      },
-      "required": [
-        "id"
-      ],
-      "type": "object"
-    }
-  },
-  {
-    "name": "todo_search",
-    "description": "── the text below is written by the plugin, not by rta ──\nSearch tasks by title, body or tag\n\nSearches every task regardless of parent/child, done or open.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
-    "read_only_hint": true,
-    "idempotent_hint": true,
-    "input_schema": {
-      "additionalProperties": false,
-      "properties": {
-        "query": {
-          "description": "search terms",
-          "type": "string"
-        }
-      },
-      "required": [
-        "query"
-      ],
-      "type": "object"
-    }
-  },
-  {
-    "name": "todo_show",
-    "description": "── the text below is written by the plugin, not by rta ──\nShow one task: metadata, description, sub-tasks, references\n\nA composed page rather than one blob: structured metadata (status, due, tags, parent, progress) stays separate from the markdown description, so both stay readable and machine callers can read a due date without parsing prose. Sub-tasks and cross-references (\"#12\" in a body, resolved both ways) follow.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
-    "read_only_hint": true,
-    "idempotent_hint": true,
-    "input_schema": {
-      "additionalProperties": false,
-      "properties": {
-        "id": {
-          "description": "task id",
-          "type": "integer"
-        }
-      },
-      "required": [
-        "id"
-      ],
-      "type": "object"
-    }
-  },
-  {
-    "name": "todo_tags",
-    "description": "── the text below is written by the plugin, not by rta ──\nList tags in use and how many tasks carry each\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
-    "read_only_hint": true,
-    "idempotent_hint": true,
-    "input_schema": {
-      "additionalProperties": false,
-      "properties": {},
       "type": "object"
     }
   }

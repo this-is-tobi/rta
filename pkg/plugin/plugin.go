@@ -496,7 +496,7 @@ type Capability struct {
 	NoPreview bool
 	// Prefill, when set, lets interactive surfaces edit-in-place: given the
 	// required positional inputs (the record's identity), it returns current
-	// values for the remaining fields — a todo edit form opens with today's
+	// values for the remaining fields — a note edit form opens with today's
 	// title and body, like editing an issue. Optional; CLI and MCP callers
 	// pass explicit values and never need it.
 	Prefill func(ctx context.Context, req Request) (map[string]any, error)
@@ -506,7 +506,7 @@ type Capability struct {
 	// class does not already catch: kv.get mutates nothing and is a leak.
 	NeedsGrant bool
 	// Scope names the input identifying the record this capability acts on —
-	// "key" for kv.get, "id" for todo.rm. It lets a grant be narrowed to one
+	// "key" for kv.get, "id" for note.rm. It lets a grant be narrowed to one
 	// record instead of the whole capability, so "read the staging token"
 	// does not have to mean "read every secret I own".
 	Scope string

@@ -126,7 +126,7 @@ func (m Model) dashboardKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		return m, nil, true
 	default:
 		// Selected-tile actions: one key opens a sibling capability
-		// (e.g. `a` on the todo tile opens the add form). A bare Read
+		// (e.g. `a` on the note tile opens the add form). A bare Read
 		// action skips open's form and runs on its defaults — openTile's
 		// own fast path, for the tile promise that names it: "press w to
 		// answer" has to land on the queue, not on a form for the optional

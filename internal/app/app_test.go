@@ -462,14 +462,10 @@ func conformanceInputs(dir string) map[string]map[string]any {
 		"note.rm":     {"id": 1},
 		"note.search": {"query": "x"},
 		"note.show":   {"id": 1},
-		"todo.done":   {"id": 1},
-		"todo.edit":   {"id": 1, "title": "t"},
-		"todo.reopen": {"id": 1},
-		"todo.rm":     {"id": 1},
-		"todo.search": {"query": "x"},
-		"todo.show":   {"id": 1},
+		"note.done":   {"id": 1},
+		"note.reopen": {"id": 1},
+		"note.toggle": {"id": 1},
 		"note.add":    {"title": "conformance"},
-		"todo.add":    {"title": "conformance"},
 		"grant.allow": {"target": "sys.cpu", "ttl": "1m"},
 
 		// Ids nothing is parked under: the dry-run rule watches the directory,
@@ -855,13 +851,13 @@ func TestAPositionalPassedAsAFlagSaysSo(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// todo.add declares `title` positional and `body` as a flag.
-	_, _, runErr := run(t, reg, "todo", "add", "--title", "x")
+	// note.add declares `title` positional and `body` as a flag.
+	_, _, runErr := run(t, reg, "note", "add", "--title", "x")
 	if runErr == nil {
 		t.Fatal("--title was accepted for a positional input")
 	}
 	msg := runErr.Error()
-	for _, want := range []string{"title", "argument", "rta todo add <title>"} {
+	for _, want := range []string{"title", "argument", "rta note add <title>"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("error %q does not contain %q", msg, want)
 		}
@@ -874,7 +870,7 @@ func TestAPositionalPassedAsAFlagSaysSo(t *testing.T) {
 
 	// A flag that is not an input at all keeps pflag's own wording — there is
 	// nothing better to say about a name the capability never declared.
-	_, _, runErr = run(t, reg, "todo", "add", "x", "--definitely-not-declared")
+	_, _, runErr = run(t, reg, "note", "add", "x", "--definitely-not-declared")
 	if runErr == nil {
 		t.Fatal("an undeclared flag was accepted")
 	}
@@ -883,7 +879,7 @@ func TestAPositionalPassedAsAFlagSaysSo(t *testing.T) {
 	}
 
 	// And a real flag still works, so the hook did not swallow parsing.
-	if _, _, err := run(t, reg, "todo", "add", "buy milk", "--body", "from the shop"); err != nil {
+	if _, _, err := run(t, reg, "note", "add", "buy milk", "--body", "from the shop"); err != nil {
 		t.Errorf("a declared flag stopped working: %v", err)
 	}
 }
@@ -909,7 +905,7 @@ func TestThePositionalHintDoesNotStartWithTheInputName(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, runErr := run(t, reg, "todo", "add", "--title", "x")
+	_, _, runErr := run(t, reg, "note", "add", "--title", "x")
 	if runErr == nil {
 		t.Fatal("--title was accepted")
 	}

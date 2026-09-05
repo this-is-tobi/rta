@@ -750,7 +750,7 @@ func runCapability(ctx context.Context, cmd *cobra.Command, c plugin.Capability,
 		}
 		// Rendered here, like every other capability error: main suppresses
 		// view.Errors on the assumption the runner has already shown them, so
-		// returning this one unrendered made `rta todo rm 1` exit 3 in
+		// returning this one unrendered made `rta note rm 1` exit 3 in
 		// silence — the right code, and not one word about how to proceed.
 		_ = cli.RenderError(cmd.ErrOrStderr(), verr, renderOpts)
 		return Rendered(verr)

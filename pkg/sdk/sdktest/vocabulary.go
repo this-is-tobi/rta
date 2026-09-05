@@ -7,7 +7,7 @@ import "slices"
 // namespace. It is derived from the built-in catalogue rather than invented —
 // every entry is a word at least one shipped capability ends in.
 //
-// The line drawn is between a *shared operation* and a *subject*. `todo.list`
+// The line drawn is between a *shared operation* and a *subject*. `note.list`
 // and `kv.list` and `net.hosts.list` are the same act on three different
 // things, so `list` is vocabulary. `sys.cpu` and `codec.b64` are not acts at
 // all: the last segment names what the capability is about, which the ID

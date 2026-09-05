@@ -204,7 +204,7 @@ func prettyRecords(w io.Writer, t view.Table, headers []string, rows [][]string,
 		//
 		// Most first columns are the record's identity in words — a check, an
 		// entry, a capability — and repeating "check" above every one of them is
-		// noise. A *kinded* first column is not that: `todo list` leads with a
+		// noise. A *kinded* first column is not that: `note list` leads with a
 		// number, and a bare "2" heading a block reads as a stray figure where
 		// "ID │ 2" under a heading never could.
 		if len(t.Columns) > 0 && t.Columns[0].Kind != view.KindText {

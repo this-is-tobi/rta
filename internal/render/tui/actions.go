@@ -66,21 +66,21 @@ var capActionSpecs = map[string][]struct {
 	src            actionSource
 	bare           bool
 }{
-	"todo.list": {
-		{"enter", "show", "todo.show", srcRow, false},
-		{"a", "add", "todo.add", srcNone, false},
-		{"u", "update", "todo.edit", srcRow, false},
-		{"d", "done", "todo.done", srcRow, false},
-		// The undo for `d`, one key away from it: marking the wrong task
-		// complete is a one-keystroke mistake and should cost one keystroke
-		// to take back.
-		{"o", "re-open", "todo.reopen", srcRow, false},
-		{"x", "remove", "todo.rm", srcRow, false},
-	},
+	// One notebook, two kinds of thing in it, and `t` is the switch between
+	// them: a note becomes a to-do with a checkbox, a to-do goes back to being
+	// a note. Not bare — a one-key mutation is reserved for the fail-safe
+	// direction — but its only input is the id the row supplies, so nothing is
+	// left to ask and it runs on the keypress all the same.
 	"note.list": {
 		{"enter", "show", "note.show", srcRow, false},
 		{"a", "add", "note.add", srcNone, false},
 		{"u", "update", "note.edit", srcRow, false},
+		{"t", "to-do/note", "note.toggle", srcRow, false},
+		{"d", "done", "note.done", srcRow, false},
+		// The undo for `d`, one key away from it: checking off the wrong
+		// note is a one-keystroke mistake and should cost one keystroke to
+		// take back.
+		{"o", "re-open", "note.reopen", srcRow, false},
 		{"x", "remove", "note.rm", srcRow, false},
 	},
 	// The hosts file is a list you manage, not just read: park an override
@@ -214,15 +214,11 @@ var capActionSpecs = map[string][]struct {
 		{"a", "add", "kv.set", srcNone, false},
 	},
 	// The detail pages act on the record they are already showing.
-	"todo.show": {
-		{"u", "update", "todo.edit", srcSelf, false},
-		{"d", "done", "todo.done", srcSelf, false},
-		{"o", "re-open", "todo.reopen", srcSelf, false},
-		{"x", "remove", "todo.rm", srcSelf, false},
-		{"a", "add", "todo.add", srcNone, false},
-	},
 	"note.show": {
 		{"u", "update", "note.edit", srcSelf, false},
+		{"t", "to-do/note", "note.toggle", srcSelf, false},
+		{"d", "done", "note.done", srcSelf, false},
+		{"o", "re-open", "note.reopen", srcSelf, false},
 		{"x", "remove", "note.rm", srcSelf, false},
 		{"a", "add", "note.add", srcNone, false},
 	},
@@ -232,7 +228,7 @@ var capActionSpecs = map[string][]struct {
 //
 // It is not an action: nothing else runs and nowhere else opens. It is the
 // filter on the list in front of you, which is a different thing and needs a
-// different mechanism — `todo.list` hides completed tasks, so without this
+// different mechanism — `note.list` hides checked-off to-dos, so without this
 // the re-open action could never find a row to act on. A capability that
 // hides part of its own data by default owes the surface a way to ask for
 // the rest.
@@ -241,7 +237,7 @@ type viewToggle struct {
 }
 
 var viewToggleSpecs = map[string][]viewToggle{
-	"todo.list": {{key: "A", label: "show done", field: "all"}},
+	"note.list": {{key: "A", label: "show done", field: "all"}},
 	"kv.list":   {{key: "D", label: "detail", field: "detail"}},
 }
 

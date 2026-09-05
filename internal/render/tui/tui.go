@@ -182,7 +182,7 @@ type Model struct {
 	tickGen int
 
 	// Actionable-view state. trail is the chain of views the user walked
-	// into (todo.list → todo.show); actions run against its last entry and
+	// into (note.list → note.show); actions run against its last entry and
 	// esc pops back up it.
 	trail          []runRef
 	row            int  // selected table row of the current list

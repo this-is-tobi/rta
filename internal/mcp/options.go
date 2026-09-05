@@ -41,7 +41,7 @@ type Options struct {
 	// boolean was one decision, taken once at launch, for every Write
 	// capability in the registry — including every one that arrives later,
 	// from a plugin installed next month. An operator who enabled it for a
-	// good reason (they wanted `todo add`) and pasted the result into the
+	// good reason (they wanted `note add`) and pasted the result into the
 	// config `rta mcp install claude` writes had issued a permanent,
 	// registry-wide, update-transitive authorisation, and nothing about the
 	// flag said so.

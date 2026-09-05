@@ -126,7 +126,7 @@ func Plugin() plugin.Plugin {
 			// They need the grant for every reason GET does and one more: a
 			// body. Leaving them ungated while GET is gated would have been
 			// backwards — --allow-write is one switch for the whole registry,
-			// so an operator who turned it on for `todo add` would have handed
+			// so an operator who turned it on for `note add` would have handed
 			// an agent an unlimited, unlogged POST to anywhere, which is a
 			// larger egress channel than the one two capabilities above are
 			// gated for.

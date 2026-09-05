@@ -7,7 +7,7 @@
 // and a second writer is told it lost rather than overwriting.
 //
 // Five places in rta persist state a user would be upset to lose — the
-// todo/note store, the encrypted kv store, the grant file, /etc/hosts and
+// note store, the encrypted kv store, the grant file, /etc/hosts and
 // friends, and the config file — and four of them had grown their own copy of
 // this same twelve lines. The fifth, config, had not: it used os.WriteFile,
 // which truncates the target and then writes, and it is on the hottest write

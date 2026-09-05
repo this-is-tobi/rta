@@ -416,10 +416,10 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringSliceVar(&allowWrite, "allow-write", nil,
-		"plugins whose write capabilities are exposed (repeatable, e.g. todo)")
+		"plugins whose write capabilities are exposed (repeatable, e.g. note)")
 	cmd.Flags().StringSliceVar(&allowDestructive, "allow-destructive", nil,
 		"destructive capabilities to allow; external plugins must be pinned "+
-			"to their digest (e.g. todo.rm, hello.wipe@5dae737f8845)")
+			"to their digest (e.g. note.rm, hello.wipe@5dae737f8845)")
 	// Named, because until it is there is exactly one principal on this
 	// machine: every MCP client the operator wires up reads the same grant
 	// file, so consent given while talking to one follows all the others.
@@ -460,7 +460,7 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 		"also ring this machine's desktop notification when a call is parked")
 	// On by default, unlike the two above: it costs one extra run of rta's
 	// own handler in --dry-run and it changes the question from "may this
-	// agent call todo.rm" to "may it remove *this task*". The off switch is
+	// agent call note.rm" to "may it remove *this note*". The off switch is
 	// for a capability whose dry run is expensive, which is a thing an
 	// operator discovers rather than something rta can know.
 	cmd.Flags().BoolVar(&consentPreview, "consent-preview", true,

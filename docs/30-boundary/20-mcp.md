@@ -66,8 +66,8 @@ You will see both in the record: the agent name plainly, the client's self-repor
 | `destructive` | ❌ no | `--allow-destructive <capability-id>` |
 
 ```bash
-rta mcp serve --allow-write todo
-rta mcp serve --allow-destructive todo.rm
+rta mcp serve --allow-write note
+rta mcp serve --allow-destructive note.rm
 ```
 
 Writes open **one namespace at a time** rather than registry-wide. Destructive capabilities are named individually — there is no wildcard, on purpose.
@@ -99,7 +99,7 @@ path arguments confined to: /Users/you/projects, /tmp/scratch
 
 ### Two gates, different jobs
 
-The `--allow-*` switches are decided **once**, when the server starts, for every call it will ever make. That is the coarse gate, and it is the right shape for "this agent works on todos".
+The `--allow-*` switches are decided **once**, when the server starts, for every call it will ever make. That is the coarse gate, and it is the right shape for "this agent works on notes".
 
 [Grants](./30-grants.md) are the other half: consent for one capability, optionally one record, expiring on its own. That is the fine gate, and it is what you reach for when the answer is "this once".
 
@@ -120,7 +120,7 @@ rta agent allow 3
 rta agent deny 3
 ```
 
-`--consent-preview` (on by default) runs the capability's own `--dry-run` and shows the result on the parked request, which changes the question from *"may this agent call `todo.rm`"* to *"may it remove **this task**"*.
+`--consent-preview` (on by default) runs the capability's own `--dry-run` and shows the result on the parked request, which changes the question from *"may this agent call `note.rm`"* to *"may it remove **this note**"*.
 
 `--consent-wait` bounds how long a call waits before it is refused anyway (default 90s).
 

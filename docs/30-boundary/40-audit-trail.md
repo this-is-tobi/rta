@@ -78,7 +78,7 @@ rta agent allow 3
 rta agent deny 3
 ```
 
-`rta agent show` includes what the call **would do** — rta runs the capability's own `--dry-run` and puts the result on the parked request. That changes the question from *"may this agent call `todo.rm`"* to *"may it remove **this task**"*, which is the question you can actually answer.
+`rta agent show` includes what the call **would do** — rta runs the capability's own `--dry-run` and puts the result on the parked request. That changes the question from *"may this agent call `note.rm`"* to *"may it remove **this note**"*, which is the question you can actually answer.
 
 Preview is on by default (`--consent-preview`). Turn it off for a capability whose dry run is expensive — something an operator discovers, not something rta can know in advance.
 

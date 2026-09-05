@@ -119,7 +119,7 @@ For a machine whose humans are not at its terminal — an `rta mcp serve --http`
 
 ## What a grant does not do
 
-- **It does not open a safety class.** If `todo.rm` is destructive and the server was started without `--allow-destructive todo.rm`, no grant makes it reachable. The startup gate is upstream of grants and is not negotiable at run time.
+- **It does not open a safety class.** If `note.rm` is destructive and the server was started without `--allow-destructive note.rm`, no grant makes it reachable. The startup gate is upstream of grants and is not negotiable at run time.
 - **It does not widen a path root.** Path confinement is checked separately, on every path argument.
 - **It does not survive a ceiling.** If a `.rta-policy.yaml` says `maxTTL: 15m`, a `--ttl 2h` grant is clamped to 15m and told so.
 - **It does not authorize a profile you have not configured.** `--profile staging` matches the connection named `staging`, exactly.

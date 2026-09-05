@@ -33,7 +33,7 @@ type tile struct {
 	// registry, always first.
 	search bool
 	// actions are one-key shortcuts offered while this tile is selected —
-	// the dashboard's buttons (add/edit/done on the todo tile).
+	// the dashboard's buttons (add/edit/done on the note tile).
 	actions []capAction
 }
 
@@ -69,7 +69,7 @@ const (
 // time rather than after the request has expired.
 // Plugins not named here follow, alphabetically — a plugin installed later
 // lands on the dashboard without anyone editing this list.
-var pluginOrder = []string{"todo", "note", "sys", "net", "kv", "grant", "agent"}
+var pluginOrder = []string{"note", "sys", "net", "kv", "grant", "agent"}
 
 // preferredTile overrides the tile convention for a plugin whose best glance
 // is not the one the convention lands on.

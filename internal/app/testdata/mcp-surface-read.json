@@ -1587,16 +1587,25 @@
   },
   {
     "name": "note_list",
-    "description": "── the text below is written by the plugin, not by rta ──\nList notes\n\nWith --detail: adds creation date and a preview of each note's body.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nList notes\n\nOpen notes, the ones with a due date first — soonest on top — then the rest in the order they were written. Checked-off notes are hidden until --all. Shows top-level notes by default; pass --parent to list one note's sub-notes. With --detail: adds creation date and a body preview.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
       "additionalProperties": false,
       "properties": {
+        "all": {
+          "description": "include checked-off notes",
+          "type": "boolean"
+        },
         "detail": {
           "default": false,
           "description": "return the full detailed view instead of the compact summary",
           "type": "boolean"
+        },
+        "parent": {
+          "default": 0,
+          "description": "list sub-notes of this note id instead of top-level notes",
+          "type": "integer"
         },
         "tag": {
           "description": "only notes with any of these tags",
@@ -1611,7 +1620,7 @@
   },
   {
     "name": "note_search",
-    "description": "── the text below is written by the plugin, not by rta ──\nSearch notes by title, body or tag\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nSearch notes by title, body or tag\n\nSearches every note regardless of parent/child, done or open.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -1630,7 +1639,7 @@
   },
   {
     "name": "note_show",
-    "description": "── the text below is written by the plugin, not by rta ──\nShow one note: metadata, content, references\n\nMetadata (tags, size, age) stays separate from the markdown content, which is rendered richly on human surfaces. Cross-references (\"#12\" in a body) resolve both ways.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nShow one note: metadata, content, sub-notes, references\n\nA composed page rather than one blob: structured metadata (status, due, tags, parent, progress) stays separate from the markdown content, so both stay readable and machine callers can read a due date without parsing prose. Sub-notes and cross-references (\"#12\" in a body, resolved both ways) follow.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -1814,88 +1823,6 @@
           "type": "string"
         }
       },
-      "type": "object"
-    }
-  },
-  {
-    "name": "todo_list",
-    "description": "── the text below is written by the plugin, not by rta ──\nList tasks\n\nShows top-level tasks by default; pass --parent to list one task's sub-tasks. With --detail: adds creation date and a body preview.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
-    "read_only_hint": true,
-    "idempotent_hint": true,
-    "input_schema": {
-      "additionalProperties": false,
-      "properties": {
-        "all": {
-          "description": "include completed tasks",
-          "type": "boolean"
-        },
-        "detail": {
-          "default": false,
-          "description": "return the full detailed view instead of the compact summary",
-          "type": "boolean"
-        },
-        "parent": {
-          "default": 0,
-          "description": "list sub-tasks of this task id instead of top-level tasks",
-          "type": "integer"
-        },
-        "tag": {
-          "description": "only tasks with any of these tags",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
-      "type": "object"
-    }
-  },
-  {
-    "name": "todo_search",
-    "description": "── the text below is written by the plugin, not by rta ──\nSearch tasks by title, body or tag\n\nSearches every task regardless of parent/child, done or open.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
-    "read_only_hint": true,
-    "idempotent_hint": true,
-    "input_schema": {
-      "additionalProperties": false,
-      "properties": {
-        "query": {
-          "description": "search terms",
-          "type": "string"
-        }
-      },
-      "required": [
-        "query"
-      ],
-      "type": "object"
-    }
-  },
-  {
-    "name": "todo_show",
-    "description": "── the text below is written by the plugin, not by rta ──\nShow one task: metadata, description, sub-tasks, references\n\nA composed page rather than one blob: structured metadata (status, due, tags, parent, progress) stays separate from the markdown description, so both stay readable and machine callers can read a due date without parsing prose. Sub-tasks and cross-references (\"#12\" in a body, resolved both ways) follow.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
-    "read_only_hint": true,
-    "idempotent_hint": true,
-    "input_schema": {
-      "additionalProperties": false,
-      "properties": {
-        "id": {
-          "description": "task id",
-          "type": "integer"
-        }
-      },
-      "required": [
-        "id"
-      ],
-      "type": "object"
-    }
-  },
-  {
-    "name": "todo_tags",
-    "description": "── the text below is written by the plugin, not by rta ──\nList tags in use and how many tasks carry each\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
-    "read_only_hint": true,
-    "idempotent_hint": true,
-    "input_schema": {
-      "additionalProperties": false,
-      "properties": {},
       "type": "object"
     }
   }

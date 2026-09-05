@@ -1040,9 +1040,9 @@ func scopes(c plugin.Capability, values map[string]any) []string {
 }
 
 // numericScope renders a non-string scope value (an Int-typed Scope field,
-// e.g. todo.rm's id) the way an operator would type it, not the way Go's
+// e.g. note.rm's id) the way an operator would type it, not the way Go's
 // %v verb does — fmt.Sprint(float64(1000000)) is "1e+06", which a grant
-// issued for the operator-typed string "1000000" (rta grant allow todo.rm
+// issued for the operator-typed string "1000000" (rta grant allow note.rm
 // 1000000) would never match. An MCP call's JSON number always decodes to
 // float64 before it reaches here (internal/mcp/bridge.go calls Reserve on
 // the raw decoded values, before plugin.Resolve's numeric coercion), so this
