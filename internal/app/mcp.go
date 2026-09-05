@@ -10,6 +10,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/auth"
@@ -19,6 +20,7 @@ import (
 	agentcap "github.com/this-is-tobi/rta/builtin/agent"
 	grantcap "github.com/this-is-tobi/rta/builtin/grant"
 	"github.com/this-is-tobi/rta/builtin/kv"
+	"github.com/this-is-tobi/rta/internal/agentlog"
 	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/consent"
 	"github.com/this-is-tobi/rta/internal/grant"
@@ -28,6 +30,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/operator"
 	"github.com/this-is-tobi/rta/internal/pathguard"
 	"github.com/this-is-tobi/rta/internal/registry"
+	agentsession "github.com/this-is-tobi/rta/internal/session"
 	"github.com/this-is-tobi/rta/internal/stdio"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 )
@@ -312,8 +315,27 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 						canonical, strings.Join(rows, ", "))
 				}
 			}
+			sessionID := agentsession.NewID()
+			// Presence is recorded at the handshake, not at start, and
+			// removed on every exit path below: a server nobody ever spoke
+			// to is not an agent, and a file left behind by a crash is
+			// dropped by session.List the first time somebody looks.
+			var connectedOnce sync.Once
+			defer func() { _ = agentsession.End(sessionID) }()
 			opts := mcp.Options{
-				Agent:            agentName,
+				Agent:   agentName,
+				Session: sessionID,
+				Connected: func(client string) {
+					connectedOnce.Do(func() {
+						wd, _ := os.Getwd()
+						if err := agentsession.Start(agentsession.Record{
+							ID: sessionID, Agent: agentName, Client: client, Since: time.Now(),
+							PID: os.Getpid(), Dir: wd, Ledger: agentlog.Path(),
+						}); err != nil {
+							fmt.Fprintln(cmd.ErrOrStderr(), "rta: could not record this session:", err)
+						}
+					})
+				},
 				AllowWrite:       allowWrite,
 				AllowDestructive: allowDestructive,
 				Consent:          consentOn,
@@ -363,6 +385,11 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 			// from an agent reporting that a file it can see does not exist.
 			fmt.Fprintf(cmd.ErrOrStderr(), "path arguments confined to: %s\n",
 				strings.Join(guard.Roots(), ", "))
+			// The record and the session, named at the start: a server
+			// writing to one data directory while the TUI reads another is
+			// the first thing to rule out when nothing shows up, and it is
+			// only visible if both sides say which file they mean.
+			fmt.Fprintf(cmd.ErrOrStderr(), "record: %s (session %s)\n", agentlog.Path(), sessionID)
 			// What Remote hides, named rather than left for an agent to notice
 			// as a shorter tool list: see plugin.Capability.HostSpecific.
 			if blocked := opts.RemoteBlocked(reg); len(blocked) > 0 {

@@ -67,8 +67,11 @@ const maxClientName = 64
 // reason for the record to be readable afterwards.
 //
 // It authorizes nothing. See agentlog.Entry.Client.
-func clientName(req *sdk.CallToolRequest) string {
-	info := req.ClientInfo()
+func clientName(req *sdk.CallToolRequest) string { return implementationName(req.ClientInfo()) }
+
+// implementationName is the client's announced name and version, cleaned for
+// a terminal and bounded, from the handshake or from a call.
+func implementationName(info *sdk.Implementation) string {
 	if info == nil {
 		return ""
 	}

@@ -251,10 +251,17 @@ type Entry struct {
 	// identical Agent. This is the field that tells them apart after the
 	// fact, which Agent alone cannot once more than one credential is valid
 	// for it.
-	Credential string        `json:"credential,omitempty"`
-	Profile    string        `json:"profile,omitempty"`
-	Outcome    Outcome       `json:"outcome"`
-	Auth       Authorization `json:"auth"`
+	Credential string `json:"credential,omitempty"`
+	// Session is the short id of the server process that wrote this entry
+	// (internal/session). Three Claude Code windows registered under the
+	// same --as name are three servers and one principal; grants and the
+	// ceiling apply to the principal, and this is what tells the three
+	// apart when reading the record back. Provenance, like Client: nothing
+	// decides on it.
+	Session string        `json:"session,omitempty"`
+	Profile string        `json:"profile,omitempty"`
+	Outcome Outcome       `json:"outcome"`
+	Auth    Authorization `json:"auth"`
 	// Code is the machine's half of what went wrong: the dotted, stable
 	// code of the refusal or the error ("core.grant.required"), alone. It
 	// used to ride Reason as a "code: message" prefix, which made every jq

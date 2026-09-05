@@ -28,6 +28,10 @@
           "description": "only the calls rta would not make",
           "type": "boolean"
         },
+        "session": {
+          "description": "only one server's calls — the id `rta agent overview` shows beside each connected client",
+          "type": "string"
+        },
         "since": {
           "description": "only calls after this: a duration like `2h`, or a date like 2026-08-30",
           "type": "string"
