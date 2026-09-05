@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.9.0](https://github.com/this-is-tobi/rta/compare/v0.8.0...v0.9.0) (2026-09-05)
+
+
+### Features
+
+* **git:** a branch says what it tracks and whether that still exists ([c9a1ca3](https://github.com/this-is-tobi/rta/commit/c9a1ca3334bed7ed13e25b812e783c552e481a5e))
+* **plugin:** a plugin's reference page is written from its declaration ([51125d5](https://github.com/this-is-tobi/rta/commit/51125d5c584a72d5187b8dae63ea0ea4dfdb3e39))
+
+
+### Code Refactoring
+
+* **note:** a to-do is a note with a checkbox, and one key flips it ([b97fe77](https://github.com/this-is-tobi/rta/commit/b97fe772ca1323ab2565ec5218abd4010e0d5840))
+
 ## [0.8.0](https://github.com/this-is-tobi/rta/compare/v0.7.0...v0.8.0) (2026-09-05)
 
 
