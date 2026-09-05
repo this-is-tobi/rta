@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.8.0](https://github.com/this-is-tobi/rta/compare/v0.7.0...v0.8.0) (2026-09-05)
+
+
+### Features
+
+* **audit:** the namespace an audit narrows to is a flag a profile can carry ([a21f32f](https://github.com/this-is-tobi/rta/commit/a21f32fd33458984b0b2602f37fec1d1c029f7b5))
+* every preference an operator would set once is a config key ([0ac3ff6](https://github.com/this-is-tobi/rta/commit/0ac3ff6fa15ac1466075a0deced21f1d55314495))
+* **kv:** a mistake is undone by name, and the store has a shape ([36a139d](https://github.com/this-is-tobi/rta/commit/36a139dd4d39757fbbeab0f0394c5bd34972e9cc))
+
+
+### Code Refactoring
+
+* the repository is rta, the name the binary has always had ([cf9a973](https://github.com/this-is-tobi/rta/commit/cf9a9731ccd4130a0c91cc37b70a1e7b2598e0db))
+
 ## [0.7.0](https://github.com/this-is-tobi/rule-them-all/compare/v0.6.0...v0.7.0) (2026-09-04)
 
 
