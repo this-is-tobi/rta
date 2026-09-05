@@ -1,6 +1,6 @@
 # Seeing the shape of things
 
-Four capabilities across rta answer the same question about four different stores: **what is in here, and how is it arranged?** They exist because the alternative is running a listing, reading it, picking a name, and running the listing again one level deeper — which is how somebody who does not already know where things are gives up and asks a colleague.
+Five capabilities across rta answer the same question about four different stores: **what is in here, and how is it arranged?** They exist because the alternative is running a listing, reading it, picking a name, and running the listing again one level deeper — which is how somebody who does not already know where things are gives up and asks a colleague.
 
 | Command | What it maps |
 | --- | --- |
@@ -8,8 +8,9 @@ Four capabilities across rta answer the same question about four different store
 | `rta s3 object tree` | a bucket, with objects and bytes per prefix |
 | `rta vault kv tree` | a KV mount |
 | `rta etcd kv tree` | an etcd keyspace |
+| `rta kv tree` | your own secret store, by the folders its names share |
 
-All four are **reads that return names, never values**. That is not a coincidence and it is not a coincidence they are all bounded either — both fall out of the same two rules, below.
+All five are **reads that return names, never values**. That is not a coincidence and it is not a coincidence they are all bounded either — both fall out of the same two rules, below.
 
 ## Names are a read; contents are not
 

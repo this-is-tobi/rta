@@ -55,12 +55,19 @@ eval "$(rta kv env --prefix APP_)"
 rta kv env --format dotenv > .env
 ```
 
+## Undoing a mistake
+
+
+
+Every write over an existing key keeps what it replaced — the last five values, inside the same encrypted store — and `kv rm` keeps the whole entry aside rather than destroying it. A paste over the wrong key, a rotation that broke something, a mis-click on the wrong row: each is undone by name. A restore pushes the value it replaces into the history in turn, so a restore is undoable by the same command. `--purge` is the one removal that is final, and it also finishes off a key removed earlier.
+
 ## Seeing the store without opening it
 
 ```bash
 rta kv status
 rta kv list
 rta kv show db-password     # everything about it except the value
+rta kv tree                 # the store by the folders its names share
 rta kv recipients           # which public keys can decrypt this store
 ```
 

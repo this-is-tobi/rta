@@ -46,6 +46,7 @@ package kv
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/this-is-tobi/rule-them-all/pkg/plugin"
 )
@@ -102,6 +103,8 @@ func Plugin() plugin.Plugin {
 						Help: "only entries of this kind"},
 					{Name: "match", Type: plugin.String,
 						Help: "only keys whose name or description contains this (case-insensitive)"},
+					{Name: "removed", Type: plugin.Bool,
+						Help: "list what `kv rm` set aside instead — restorable until purged"},
 				}...),
 				Run: runList,
 			},
@@ -192,12 +195,12 @@ func Plugin() plugin.Plugin {
 					"exists, leaving the secret and both timestamps untouched — so correcting what " +
 					"something is for does not mean fetching and re-typing the secret itself, and " +
 					"does not reset the age `kv list` reports for it.\n\n" +
-					"Setting a key that already exists replaces the secret in it, and nothing keeps " +
-					"the old one — no history, no backup, no undo. That is the same loss as `kv rm`, " +
-					"which an agent may only reach with --allow-destructive and a per-key grant, so " +
-					"this asks a person the same question rather than a cheaper one for the same " +
-					"damage. CLI and TUI are unaffected: grants gate MCP calls, and at a terminal " +
-					"the person is already there.",
+					"Setting a key that already exists replaces the secret in it and keeps the old " +
+					"one — the last " + strconv.Itoa(maxRevisions) + " values stay behind the key, " +
+					"listed by `kv history` and brought back by `kv restore --revision`. So a paste " +
+					"over the wrong key is a mistake you undo, not one you re-type from memory. Over " +
+					"MCP it still needs a per-key grant: an agent that can overwrite a secret can " +
+					"still break what reads it, undo or not.",
 				Inputs: unlockFields([]plugin.Field{
 					{Name: "key", Type: plugin.String, Positional: true, Required: true, Help: "key to set",
 						Suggest: suggestKeys},
@@ -262,20 +265,29 @@ func Plugin() plugin.Plugin {
 				Run: runRename,
 			},
 			{
-				ID: "kv.rm", Summary: "Remove a stored key permanently", Safety: plugin.Destructive,
+				ID: "kv.rm", Summary: "Remove a stored key, keeping it restorable until purged", Safety: plugin.Destructive,
 				Scope: "key",
-				Description: "The entry and its value are gone when this returns. There is no history, " +
-					"no backup and no undo — a store keeps one version of each secret, which is the " +
-					"whole reason overwriting one with `kv set` asks the same question this does.\n\n" +
-					"Who can open the store does not change: removing the last entry leaves an empty " +
-					"store locked to the same keys, not an unlocked one. To rename rather than " +
-					"replace, `kv rename` moves an entry without its value ever leaving memory.",
+				Description: "The key leaves the listing and every read of it, but the entry is kept " +
+					"aside whole — value, history and all — inside the same encrypted store, where " +
+					"`kv list --removed` shows it and `kv restore` brings it back. That is the undo a " +
+					"mis-click needs. --purge is the removal that has none: the entry and everything it " +
+					"ever held are gone when it returns, and it also finishes off a key removed " +
+					"earlier.\n\n" +
+					"Destructive either way, because a removed key is still a key nothing can read until " +
+					"somebody notices. Who can open the store does not change: removing the last entry " +
+					"leaves an empty store locked to the same keys, not an unlocked one. To rename " +
+					"rather than replace, `kv rename` moves an entry without its value ever leaving memory.",
 				Inputs: unlockFields([]plugin.Field{
 					{Name: "key", Type: plugin.String, Positional: true, Required: true, Help: "key to remove",
 						Suggest: suggestKeys},
+					{Name: "purge", Type: plugin.Bool,
+						Help: "destroy it, history included — no restore"},
 				}...),
 				Run: runRemove,
 			},
+			historyCapability(),
+			restoreCapability(),
+			treeCapability(),
 			{
 				ID: "kv.show", Summary: "Show everything about one entry except its value",
 				Safety: plugin.Read, Idempotent: true,

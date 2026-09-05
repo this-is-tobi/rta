@@ -113,6 +113,9 @@ func TestSafetyClasses(t *testing.T) {
 		"kv.show":       plugin.Read,
 		"kv.init":       plugin.Write,
 		"kv.rekey":      plugin.Destructive, // it can take every reader's access away at once
+		"kv.history":    plugin.Read,        // metadata of past values, never the values
+		"kv.restore":    plugin.Write,       // puts a value back where something reads it
+		"kv.tree":       plugin.Read,
 	}
 	seen := map[string]bool{}
 	for _, c := range Plugin().Capabilities {

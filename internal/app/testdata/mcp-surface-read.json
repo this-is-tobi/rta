@@ -1177,6 +1177,25 @@
     }
   },
   {
+    "name": "kv_history",
+    "description": "── the text below is written by the plugin, not by rta ──\nWhat a key held before, and when each value was replaced\n\nEvery write over an existing key keeps what it replaced — the last 5 values, inside the same encrypted store — and `kv rm` keeps the whole entry aside rather than destroying it. This lists that past: kind, size, description, when each value was set and when it was replaced. Never the values themselves, which is what keeps it a Read; `kv restore` brings one back.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "description": "key to look back on",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "type": "object"
+    }
+  },
+  {
     "name": "kv_list",
     "description": "── the text below is written by the plugin, not by rta ──\nList stored keys (names and metadata only, never values)\n\nNever returns a value or a preview of one — only key names, what kind of thing each is, its size, its description and when it changed. With --detail: the source filename of anything stored from disk.\n\n--match is the \"which one was it called?\" filter: a substring of the name or the description, case-insensitive, so `kv list --match aws` finds `prod-deploy-key` when the description is the only place the word AWS appears.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
@@ -1205,6 +1224,10 @@
         "match": {
           "description": "only keys whose name or description contains this (case-insensitive)",
           "type": "string"
+        },
+        "removed": {
+          "description": "list what `kv rm` set aside instead — restorable until purged",
+          "type": "boolean"
         }
       },
       "type": "object"
@@ -1254,6 +1277,17 @@
           "type": "boolean"
         }
       },
+      "type": "object"
+    }
+  },
+  {
+    "name": "kv_tree",
+    "description": "── the text below is written by the plugin, not by rta ──\nThe store as a tree of the folders its keys share\n\nKeys named with slashes — `staging/db/password`, `prod/deploy-key` — are drawn as the folders they share, each leaf labelled with its kind. Names only, never values, the same line `kv list` draws. `rta grant allow kv.get staging/` is how one of those folders becomes a grant's scope, so this is also the map of what such a grant covers.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {},
       "type": "object"
     }
   },
