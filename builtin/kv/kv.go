@@ -144,8 +144,7 @@ func Plugin() plugin.Plugin {
 			},
 			{
 				ID: "kv.copy", Summary: "Copy a value to the clipboard without displaying it",
-				Safety: plugin.Write, Idempotent: true,
-				NeedsGrant: true, Scope: "key",
+				Safety: plugin.Write, Idempotent: true, HumanOnly: true,
 				Description: "The value goes to this machine's clipboard and nowhere else: not to the " +
 					"screen, not into scrollback, not into shell history — because getting a secret " +
 					"somewhere is nearly always a paste rather than a read, and the reading is the " +
@@ -224,7 +223,7 @@ func Plugin() plugin.Plugin {
 			},
 			{
 				ID: "kv.edit", Summary: "Open a stored value in $EDITOR and re-encrypt it on save",
-				Safety: plugin.Write, NeedsGrant: true, Scope: "key",
+				Safety: plugin.Write, HumanOnly: true,
 				Description: "For changing a secret you have to look at while you change it: one line " +
 					"of a kubeconfig, one field of a JSON credential, a certificate chain gaining an " +
 					"intermediate. `kv set` can do all of that too, and puts the entire new value in " +

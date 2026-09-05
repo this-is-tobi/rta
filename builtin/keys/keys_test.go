@@ -596,22 +596,15 @@ func TestReadPipedWordsNeverTouchesStdinOnANonCliSurface(t *testing.T) {
 
 // --- MCP refusal -----------------------------------------------------------
 
-func TestBackupRefusesSurfaceMCP(t *testing.T) {
-	r := req(map[string]any{"key": "irrelevant"}).WithSurface(plugin.SurfaceMCP)
-	_, err := runBackup(context.Background(), r)
-	if errCode(err) != "keys.human" {
-		t.Errorf("code = %q, want keys.human", errCode(err))
-	}
-	if ve, ok := err.(*view.Error); !ok || !ve.Refusal {
-		t.Errorf("the surface gate must mark its no a refusal: %v", err)
-	}
-}
-
-func TestRestoreRefusesSurfaceMCP(t *testing.T) {
-	r := req(map[string]any{"out": "irrelevant", "words": "irrelevant"}).WithSurface(plugin.SurfaceMCP)
-	_, err := runRestore(context.Background(), r)
-	if errCode(err) != "keys.human" {
-		t.Errorf("code = %q, want keys.human", errCode(err))
+// Key material leaving this machine as words has no revocation and no
+// per-call log, and a key an agent generated is a credential nobody watched
+// being made: none of the three is a tool. keys.list stays one.
+func TestKeyMaterialNeverMovesForAnAgent(t *testing.T) {
+	want := map[string]bool{"keys.backup": true, "keys.add": true, "keys.restore": true}
+	for _, c := range Plugin().Capabilities {
+		if c.HumanOnly != want[c.ID] {
+			t.Errorf("%s: HumanOnly = %t, want %t", c.ID, c.HumanOnly, want[c.ID])
+		}
 	}
 }
 
@@ -1323,20 +1316,6 @@ func TestANewKeyNeverOverwritesAnything(t *testing.T) {
 	}
 	if _, statErr := os.Stat(fresh); statErr == nil {
 		t.Error("the private key was written beside a .pub that was already there")
-	}
-}
-
-// The same gate keys.backup and keys.restore set: a key an agent generated is
-// a credential nobody watched being made.
-func TestGeneratingAKeyIsRefusedOverMCP(t *testing.T) {
-	out := filepath.Join(t.TempDir(), "id_new")
-	_, err := runAdd(context.Background(),
-		req(map[string]any{"out": out}).WithSurface(plugin.SurfaceMCP))
-	if errCode(err) != "keys.human" {
-		t.Fatalf("code = %q, want keys.human", errCode(err))
-	}
-	if _, statErr := os.Stat(out); statErr == nil {
-		t.Error("a refused generation still wrote a key")
 	}
 }
 

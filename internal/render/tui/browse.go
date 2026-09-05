@@ -266,6 +266,9 @@ func cell(s string, w int) string {
 // column is measured against.
 func permissionText(c plugin.Capability) string {
 	s := string(c.Safety)
+	if c.HumanOnly {
+		return s + " · not for agents"
+	}
 	// The unprofiled picture: what an agent needs to reach this against the
 	// operator's base connection. Naming a profile always needs a grant on top,
 	// which the profile picker says at the point of choosing one rather than

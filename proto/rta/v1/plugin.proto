@@ -232,6 +232,11 @@ message Capability {
   // configured remote service or a pure computation. A remote-transport MCP
   // server hides a capability that sets this; nothing else reads it.
   bool host_specific = 13;
+  // Never an MCP tool, on any transport: this capability answers to the
+  // person at the terminal and to nobody else. Absent from tools/list rather
+  // than advertised and refused, so the rule is enforced at registration,
+  // where no handler can forget it.
+  bool human_only = 14;
 }
 
 // Plugin is a unit of distribution and a namespace.

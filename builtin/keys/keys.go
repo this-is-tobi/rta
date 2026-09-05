@@ -69,11 +69,11 @@ func Plugin() plugin.Plugin {
 			},
 			{
 				ID: "keys.backup", Summary: "Back up an SSH private key as 24 BIP39 seed words",
-				Safety: plugin.Write, Idempotent: true,
+				Safety: plugin.Write, Idempotent: true, HumanOnly: true,
 				Description: "The words ARE the private key — anyone holding them can restore it and use it " +
 					"exactly as if they had the file, with no passphrase of their own to guess. Classified as " +
 					"a write for the same reason `kv get` is: revealing key material is the sensitive act, not " +
-					"changing anything. Refuses SurfaceMCP outright rather than only requiring a grant — the " +
+					"changing anything. Never an MCP tool rather than only requiring a grant — the " +
 					"same precedent grant.allow/grant.revoke set, for the same reason `share.secret.set/get` " +
 					"will: once melted, the words work forever until the underlying key is rotated, with no " +
 					"per-call log and nothing a grant's expiry can take back. ed25519 only: the algorithm has " +
@@ -90,7 +90,7 @@ func Plugin() plugin.Plugin {
 			},
 			{
 				ID: "keys.add", Summary: "Generate an ed25519 SSH key, ready to back up",
-				Safety: plugin.Write, Idempotent: true,
+				Safety: plugin.Write, Idempotent: true, HumanOnly: true,
 				Description: "ed25519 and nothing else, which is the same rule keys.backup " +
 					"already enforces from the other end: a key generated here can always be " +
 					"melted into words, and one that could not would be a key this plugin " +
@@ -101,7 +101,7 @@ func Plugin() plugin.Plugin {
 					"--passphrase encrypts the key being written and is always typed, never read " +
 					"from the environment, for keys.restore's --new-passphrase reason: generating " +
 					"a key is a one-off act, not a standing credential for the session. " +
-					"Refuses SurfaceMCP outright, the same gate keys.backup and keys.restore set: " +
+					"Never an MCP tool, the same rule keys.backup and keys.restore follow: " +
 					"a key an agent generated is a credential nobody watched being made. " +
 					"There is deliberately no keys.rm — deleting a key file is irreversible loss " +
 					"of access, `rm` is a command everybody already has, and the shell they run " +
@@ -119,7 +119,7 @@ func Plugin() plugin.Plugin {
 			},
 			{
 				ID: "keys.restore", Summary: "Reconstruct an SSH private key from its BIP39 seed words",
-				Safety: plugin.Write, Idempotent: true,
+				Safety: plugin.Write, Idempotent: true, HumanOnly: true,
 				Description: "Writes <out> and <out>.pub, refusing to touch either if it already exists — a " +
 					"restored key is never written over an existing one, the same discipline `kv init " +
 					"--generate` uses for a fresh identity. Deterministic: an ed25519 private key is entirely " +
@@ -135,7 +135,7 @@ func Plugin() plugin.Plugin {
 					"read from the environment: a restore is a one-off action, not a standing credential for " +
 					"the session, so this always has to be typed explicitly rather than inherited from " +
 					"whatever a scripted backup earlier in the same shell happened to leave set. " +
-					"Refuses SurfaceMCP outright, the same gate keys.backup sets and for the same reason.",
+					"Never an MCP tool, the same rule keys.backup follows and for the same reason.",
 				Inputs: []plugin.Field{
 					{Name: "out", Type: plugin.Path, Positional: true, Required: true,
 						Help: "where to write the restored private key (and <out>.pub)"},
@@ -152,20 +152,6 @@ func Plugin() plugin.Plugin {
 			},
 		},
 	}
-}
-
-// refuseMCP is the gate keys.backup and keys.restore both open with —
-// mirrors builtin/grant's runAllow/runRevoke exactly, including leaving
-// NeedsGrant unset: a grant that could never be exercised over the one
-// surface a grant exists to gate would be a standing entry in `grant list`
-// that means nothing.
-func refuseMCP(req plugin.Request, id string) *view.Error {
-	if req.Surface() != plugin.SurfaceMCP {
-		return nil
-	}
-	return view.Refusef("keys.human", "%s can only be run by a person at a terminal", id).
-		WithHint("SSH key material leaving this machine as words has no revocation and no per-call log — " +
-			"ask the operator to run it themselves")
 }
 
 func runList(_ context.Context, _ plugin.Request) (view.View, error) {
@@ -253,9 +239,6 @@ func exposure(path string) string {
 }
 
 func runBackup(_ context.Context, req plugin.Request) (view.View, error) {
-	if verr := refuseMCP(req, "keys.backup"); verr != nil {
-		return nil, verr
-	}
 	path := req.String("key")
 	full := expandHome(path)
 	data, err := os.ReadFile(full)
@@ -319,9 +302,6 @@ func runBackup(_ context.Context, req plugin.Request) (view.View, error) {
 // refusing to overwrite, 0600, the .pub sibling, the fingerprint to compare
 // against later — is publishRestoredKey's, unchanged.
 func runAdd(_ context.Context, req plugin.Request) (view.View, error) {
-	if verr := refuseMCP(req, "keys.add"); verr != nil {
-		return nil, verr
-	}
 	out := expandHome(req.String("out"))
 	pub := out + ".pub"
 	// Both checked before anything is generated, and the message says what is
@@ -356,9 +336,6 @@ func runAdd(_ context.Context, req plugin.Request) (view.View, error) {
 }
 
 func runRestore(_ context.Context, req plugin.Request) (view.View, error) {
-	if verr := refuseMCP(req, "keys.restore"); verr != nil {
-		return nil, verr
-	}
 	out := expandHome(req.String("out"))
 	pub := out + ".pub"
 	if fileExists(out) {

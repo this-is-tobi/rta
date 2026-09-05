@@ -14,7 +14,6 @@ import (
 	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/mcp"
 	"github.com/this-is-tobi/rta/internal/registry"
-	"github.com/this-is-tobi/rta/internal/toolcall"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
@@ -254,40 +253,22 @@ func TestSetFileCannotBeChosenOverMCP(t *testing.T) {
 // A grant is permission to reveal a value, not permission to reach the
 // operator's desk.
 //
-// kv.copy carries kv.get's classification because a value on a clipboard has
-// been revealed, and that alone would have made it an agent's tool the moment
-// --allow-write was on. But the clipboard is not a return value: the caller
-// cannot read back what it wrote there, so the capability offers an agent
-// nothing kv.get does not, while offering it the ability to silently replace
-// the address somebody copied a second ago. Same for kv.edit, which needs a
-// terminal that over MCP belongs to nobody. Both are refused with the grant
-// already issued, so the refusal is the capability's own and not the gate's.
-func TestCopyAndEditAreRefusedOverMCPEvenWithAGrant(t *testing.T) {
+// kv.copy and kv.edit are never tools. The clipboard is not a return value:
+// an agent cannot read back what it wrote there, so the capability offers it
+// nothing kv.get does not while offering the ability to silently replace the
+// address somebody copied a second ago. kv.edit needs a terminal that over
+// MCP belongs to nobody. Absent from tools/list, whatever the operator
+// allowed and whatever grants stand.
+func TestCopyAndEditAreNeverTools(t *testing.T) {
 	setup(t)
-	text(t, runSet, map[string]any{"key": "db-password", "value": "s3cret"}, false)
-	t.Setenv(passphraseEnv, "correct horse battery staple")
 	session := mcpSession(t, mcp.Options{AllowWrite: []string{"kv"}})
-	for _, capID := range []string{"kv.copy", "kv.edit"} {
-		// One at a time: grant.Save writes the whole set, so issuing both up
-		// front would leave only the second.
-		grantFor(t, capID, "db-password")
-		tool := toolcall.Name(capID)
-		res, err := session.CallTool(context.Background(), &sdk.CallToolParams{
-			Name:      tool,
-			Arguments: map[string]any{"key": "db-password"},
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !res.IsError {
-			t.Errorf("%s went through over MCP", tool)
-			continue
-		}
-		// The refusal has to say what to do instead, or a model retries it
-		// until the context runs out.
-		if got := res.Content[0].(*sdk.TextContent).Text; !strings.Contains(got, "kv.get") &&
-			!strings.Contains(got, "kv.set") {
-			t.Errorf("%s refusal offers no way forward: %q", tool, got)
+	res, err := session.ListTools(context.Background(), &sdk.ListToolsParams{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range res.Tools {
+		if tool.Name == "kv_copy" || tool.Name == "kv_edit" {
+			t.Errorf("%s is advertised to agents", tool.Name)
 		}
 	}
 }

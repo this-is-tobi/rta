@@ -34,15 +34,13 @@ func copyToClipboard(value []byte) *view.Error {
 
 // runCopy puts one value on the clipboard and says nothing about what it is.
 //
-// The MCP refusal comes before the store is opened, so an agent's call never
-// causes a decryption — the passphrase in the server's environment is not
-// spent answering a question that was always going to be no.
+// The clipboard belongs to whoever is at the machine, which is why kv.copy is
+// HumanOnly rather than granted: nothing an agent copied there would come
+// back to it, while what it replaced — the address somebody copied a second
+// ago — would be gone. Never a tool means an agent's call never opens the
+// store either, so the passphrase in a server's environment is not spent on
+// a question that was always going to be no.
 func runCopy(_ context.Context, req plugin.Request) (view.View, error) {
-	if req.Surface() == plugin.SurfaceMCP {
-		return nil, view.Refusef("kv.copy.noclipboard", "the clipboard belongs to whoever is at the machine").
-			WithHint("nothing you copy there comes back to you — ask for the value itself with kv.get, " +
-				"which needs the same grant and at least returns something you can use")
-	}
 	key := req.String("key")
 	s, verr := load(req)
 	if verr != nil {

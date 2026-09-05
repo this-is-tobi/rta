@@ -16,6 +16,7 @@ import (
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/this-is-tobi/rta/builtin/all"
+	"github.com/this-is-tobi/rta/internal/agentlog"
 	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/pathguard"
 	"github.com/this-is-tobi/rta/internal/registry"
@@ -51,6 +52,13 @@ func testRegistry(t *testing.T) *registry.Registry {
 				},
 				Run: func(_ context.Context, req plugin.Request) (view.View, error) {
 					return view.Text{Body: fmt.Sprintf("listed %s limit=%d", req.String("name"), req.Int("limit"))}, nil
+				},
+			},
+			{
+				ID: "demo.item.human", Summary: "for the person at the terminal", Safety: plugin.Read,
+				Idempotent: true, HumanOnly: true,
+				Run: func(context.Context, plugin.Request) (view.View, error) {
+					return view.Text{Body: "human"}, nil
 				},
 			},
 			{
@@ -261,6 +269,28 @@ func listTools(t *testing.T, s *sdk.ClientSession) map[string]*sdk.Tool {
 		tools[tool.Name] = tool
 	}
 	return tools
+}
+
+// A capability for the person at the terminal is not a tool, whatever the
+// operator allowed: absent from tools/list rather than advertised and
+// refused, so an agent never sees it as something to try — and a call by
+// name anyway is answered as unknown and written down like any other probe.
+func TestAHumanOnlyCapabilityIsNotATool(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	s := connect(t, Options{})
+	if _, ok := listTools(t, s)["demo_item_human"]; ok {
+		t.Fatal("a HumanOnly capability was advertised as a tool")
+	}
+	if _, err := s.CallTool(context.Background(), &sdk.CallToolParams{Name: "demo_item_human"}); err == nil {
+		t.Fatal("a HumanOnly capability answered a call by name")
+	}
+	entries, err := agentlog.Read(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Tool != "demo_item_human" || entries[0].Code != "core.mcp.unknown" {
+		t.Fatalf("the probe left no row: %+v", entries)
+	}
 }
 
 func TestDefaultExposesOnlyRead(t *testing.T) {

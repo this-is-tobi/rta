@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/this-is-tobi/rta/internal/agentlog"
-	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -140,12 +139,9 @@ func TestABrokenChainIsReportedAsZero(t *testing.T) {
 }
 
 // The agent namespace is for the person at the terminal, and the numbers are
-// about the caller's own behaviour.
+// about the caller's own behaviour — so the scrape target is never a tool.
 func TestMetricsAreNotServedOverMCP(t *testing.T) {
-	t.Setenv("RTA_DATA_DIR", t.TempDir())
-	c := capability(t, "agent.metrics")
-	_, err := c.Run(t.Context(), plugin.NewRequest(nil, false, false).WithSurface(plugin.SurfaceMCP))
-	if err == nil {
-		t.Fatal("agent.metrics answered over MCP")
+	if !capability(t, "agent.metrics").HumanOnly {
+		t.Fatal("agent.metrics is reachable over MCP")
 	}
 }

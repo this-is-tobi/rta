@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -41,27 +40,15 @@ func fakeClipboard(t *testing.T) (stdin, argv string) {
 	return stdin, argv
 }
 
-// The refusal is decided before the store is opened, so an agent's call never
-// spends the passphrase the MCP server was launched with on a question that
-// was always going to be no. A passphrase that could not possibly work is how
-// that ordering is visible: reaching load() would report kv.wrongpass instead.
-func TestCopyIsRefusedOverMCPBeforeAnythingIsDecrypted(t *testing.T) {
-	setup(t)
-	stdin, _ := fakeClipboard(t)
-	text(t, runSet, map[string]any{"key": "db-password", "value": "s3cr3t"}, false)
-
-	_, err := runCopy(context.Background(), plugin.NewRequest(
-		map[string]any{"key": "db-password", "passphrase": "not the passphrase"}, false, true).
-		WithSurface(plugin.SurfaceMCP))
-	ve := view.AsError(err, "z")
-	if ve.Code != "kv.copy.noclipboard" || !ve.Refusal {
-		t.Fatalf("MCP copy = %+v, want a marked refusal", ve)
-	}
-	if ve.Hint == "" {
-		t.Error("a refusal an agent cannot act on is a retry loop")
-	}
-	if _, err := os.Stat(stdin); err == nil {
-		t.Error("the refused call still reached the clipboard")
+// The clipboard belongs to whoever is at the machine, so kv.copy is never a
+// tool — which also means an agent's call never opens the store, and the
+// passphrase a server was launched with is not spent on a question that was
+// always going to be no.
+func TestCopyIsForThePersonAtTheMachine(t *testing.T) {
+	for _, c := range Plugin().Capabilities {
+		if c.ID == "kv.copy" && !c.HumanOnly {
+			t.Fatal("kv.copy is reachable over MCP")
+		}
 	}
 }
 

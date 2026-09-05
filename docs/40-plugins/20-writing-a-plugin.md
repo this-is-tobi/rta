@@ -106,6 +106,8 @@ The rule that catches people: **a capability that reveals a secret's plaintext i
 
 Set `NeedsGrant: true` when the class understates it, and `Scope: "city"` to name the input a grant can be narrowed to — then a person can allow one record rather than the capability.
 
+Set `HumanOnly: true` for a capability that answers to the person at the terminal and to nobody else — one that would hand an agent authority, lift a restriction, or read out the map of what every other agent may reach. It is never registered as an MCP tool, on any transport: absent from `tools/list` rather than advertised and refused, so there is no per-call surface check for your handler to forget. rta's own `grant`, `agent`, `lock`, `operator` and `pkg` namespaces declare it, and so do `kv copy`, `kv edit`, `audit agents` and the three `keys` verbs that move key material. It is stronger than `NeedsGrant`, and the two do not combine: a grant is consent for a call an agent may legitimately make, and these are calls it must not make at all.
+
 Set `HostSpecific: true` if what a capability returns describes the machine your plugin's process happens to run on — its own filesystem, its own network configuration — rather than a configured remote service or a pure computation. A remote, HTTP-transport `rta mcp serve` hides a capability marked this way from `tools/list` entirely, since a caller on another machine is never the one it would be describing. Most plugins reach somewhere the operator configured (a database, a cluster) or compute from their own arguments, and never need this — it exists for the same reason rta's own `sys`, `fs` and `git` built-ins declare it themselves.
 
 ## If your plugin needs a credential location

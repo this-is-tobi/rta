@@ -59,17 +59,13 @@ func TestLockAddListRmAtTheTerminal(t *testing.T) {
 	}
 }
 
-// Both directions of the MCP refusal matter: add would let an agent deny
-// service to its operator's other agents, rm would let it unfreeze itself.
+// Both directions matter: add would let an agent deny service to its
+// operator's other agents, rm would let it unfreeze itself. Neither is a
+// tool.
 func TestNoLockCapabilityIsReachableOverMCP(t *testing.T) {
-	t.Setenv("RTA_DATA_DIR", t.TempDir())
 	for _, c := range Plugin().Capabilities {
-		_, err := c.Run(context.Background(),
-			plugin.NewRequest(map[string]any{"kind": "agent", "name": "x"}, false, true).
-				WithSurface(plugin.SurfaceMCP))
-		verr, ok := err.(*view.Error)
-		if !ok || verr.Code != "lock.human" || !verr.Refusal {
-			t.Fatalf("%s over MCP: %v, want lock.human marked a refusal", c.ID, err)
+		if !c.HumanOnly {
+			t.Errorf("%s is reachable over MCP", c.ID)
 		}
 	}
 }

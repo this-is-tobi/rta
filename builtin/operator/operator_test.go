@@ -79,14 +79,10 @@ func TestInitMintsAndStatusPrintsTheSameKey(t *testing.T) {
 	}
 }
 
-func TestTheOperatorNamespaceRefusesMCP(t *testing.T) {
-	t.Setenv("RTA_DATA_DIR", t.TempDir())
+func TestTheOperatorNamespaceIsNeverATool(t *testing.T) {
 	for _, capID := range []string{"operator.init", "operator.status"} {
-		_, err := capability(t, capID).Run(context.Background(),
-			plugin.NewRequest(nil, false, true).WithSurface(plugin.SurfaceMCP))
-		verr, ok := err.(*view.Error)
-		if !ok || verr.Code != "operator.surface" || !verr.Refusal {
-			t.Fatalf("%s over MCP: %v, want operator.surface marked a refusal", capID, err)
+		if !capability(t, capID).HumanOnly {
+			t.Errorf("%s is reachable over MCP", capID)
 		}
 	}
 }

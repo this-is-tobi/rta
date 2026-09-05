@@ -2,9 +2,9 @@
 // rta: what they asked for and got (the ledger), what they are asking for
 // right now (parked requests), and the answer.
 //
-// **None of it is reachable by an agent.** Every capability here refuses
-// SurfaceMCP outright, reads included, and that is stronger than NeedsGrant
-// on purpose. An agent that could approve its own parked request would make
+// **None of it is reachable by an agent.** Every capability here is
+// HumanOnly — never registered as an MCP tool, reads included — and that is
+// stronger than NeedsGrant on purpose. An agent that could approve its own parked request would make
 // the mechanism theatre — the precedent grant.allow/grant.revoke already
 // set — and one that could read the ledger could enumerate the operator's
 // other agents, their profiles and their records, which is the inventory
@@ -61,7 +61,8 @@ func Plugin() plugin.Plugin {
 				Safety:     plugin.Read,
 				Idempotent: true,
 				Detailed:   true,
-				Run:        localOnly(runOverview),
+				HumanOnly:  true,
+				Run:        runOverview,
 			},
 			{
 				ID:      "agent.log",
@@ -94,7 +95,8 @@ func Plugin() plugin.Plugin {
 					{Name: "after", Type: plugin.Int, Min: 0,
 						Help: "only calls after this `seq` — an exact cursor, for shipping the record somewhere"},
 				},
-				Run: localOnly(runLog),
+				HumanOnly: true,
+				Run:       runLog,
 			},
 			{
 				ID:      "agent.metrics",
@@ -112,7 +114,8 @@ func Plugin() plugin.Plugin {
 				Safety:     plugin.Read,
 				Idempotent: true,
 				NoPreview:  true, // a full pass over the record is not a tile
-				Run:        localOnly(runMetrics),
+				HumanOnly:  true,
+				Run:        runMetrics,
 			},
 			{
 				ID:      "agent.pending",
@@ -131,7 +134,8 @@ func Plugin() plugin.Plugin {
 						Help: "read a remote server's parked queue instead of this machine's (a name from remotes.yaml)"},
 					operatorid.PassphraseField,
 				},
-				Run: localOnly(runPending),
+				HumanOnly: true,
+				Run:       runPending,
 			},
 			{
 				ID:      "agent.show",
@@ -150,7 +154,8 @@ func Plugin() plugin.Plugin {
 						Help: "the request is parked on this remote server (a name from remotes.yaml)"},
 					operatorid.PassphraseField,
 				},
-				Run: localOnly(runShow),
+				HumanOnly: true,
+				Run:       runShow,
 			},
 			{
 				ID:      "agent.allow",
@@ -178,7 +183,8 @@ func Plugin() plugin.Plugin {
 					{Name: "server", Type: plugin.String, Local: true,
 						Help: "the request is parked on this remote server (a name from remotes.yaml)"},
 				},
-				Run: localOnly(runAllow),
+				HumanOnly: true,
+				Run:       runAllow,
 			},
 			{
 				ID:      "agent.deny",
@@ -196,26 +202,10 @@ func Plugin() plugin.Plugin {
 						Help: "the request is parked on this remote server (a name from remotes.yaml)"},
 					operatorid.PassphraseField,
 				},
-				Run: localOnly(runDeny),
+				HumanOnly: true,
+				Run:       runDeny,
 			},
 		},
-	}
-}
-
-// localOnly refuses the MCP surface, in one place so that adding a
-// capability here cannot forget it.
-//
-// The refusal names the reason rather than pretending the capability does
-// not exist: a model that reads "not from here" stops, while one that reads
-// "unknown tool" tries a different spelling.
-func localOnly(h plugin.Handler) plugin.Handler {
-	return func(ctx context.Context, req plugin.Request) (view.View, error) {
-		if req.Surface() == plugin.SurfaceMCP {
-			return nil, view.Refusef("agent.surface",
-				"the agent namespace is for the person at the terminal, not for a caller over MCP").
-				WithHint("consent and its record are about you deciding; ask the operator to run `rta agent pending`")
-		}
-		return h(ctx, req)
 	}
 }
 

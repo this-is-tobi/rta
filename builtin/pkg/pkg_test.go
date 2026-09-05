@@ -112,22 +112,13 @@ func TestTheShapeOfTheNamespace(t *testing.T) {
 }
 
 // None of it is reachable by an agent: every capability, the reads
-// included, refuses the MCP surface with a marked refusal — and before it
-// runs anything, which is what the empty fake proves.
-func TestEveryCapabilityRefusesMCP(t *testing.T) {
-	f := &fake{bins: map[string]bool{"brew": true}}
-	install(t, f)
+// included, is for the person at the terminal — never a tool, so nothing an
+// agent sends can run anything here.
+func TestEveryCapabilityIsForThePersonAtTheTerminal(t *testing.T) {
 	for _, c := range Plugin().Capabilities {
-		r := plugin.NewRequest(plugin.Resolve(c, plugin.Inputs{Caller: map[string]any{"target": "brew"}}), false, false).
-			WithSurface(plugin.SurfaceMCP)
-		_, err := c.Run(context.Background(), r)
-		ve := view.AsError(err, "x")
-		if ve.Code != "pkg.human" || !ve.Refusal {
-			t.Errorf("%s over MCP: %+v", c.ID, ve)
+		if !c.HumanOnly {
+			t.Errorf("%s is reachable over MCP", c.ID)
 		}
-	}
-	if len(f.ran) != 0 || len(f.upgrade) != 0 {
-		t.Errorf("an MCP call ran something: %v %v", f.ran, f.upgrade)
 	}
 }
 
