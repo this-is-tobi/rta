@@ -2706,6 +2706,17 @@
     }
   },
   {
+    "name": "pkg_managers",
+    "description": "── the text below is written by the plugin, not by rta ──\nWhich package managers this machine has, with version and path — and which of the ones pkg knows are not here\n\nOne row per manager pkg knows, present or not. Detection is a $PATH lookup and the version is the manager's own `--version`, so this answers in a moment where pkg overview asks every manager what is behind first. An absent row is the diagnostic: a manager installed in a shell whose $PATH this process does not share shows up here as absent, and that is why pkg overview finds nothing.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    }
+  },
+  {
     "name": "pkg_os",
     "description": "── the text below is written by the plugin, not by rta ──\nThe OS's own pending updates, whether a reboot is owed, and the kernel gap\n\nOn macOS, what `softwareupdate --list` offers and whether any of it restarts the machine. On Linux, whether the system says a reboot is required (/var/run/reboot-required on Debian, needs-restarting on RHEL) and the running kernel against the newest installed one — a machine that was upgraded and never rebooted runs the old kernel with the new one on disk, and nothing but this row says so.\n\nNothing here installs or reboots. Installing OS updates needs root and is `sudo softwareupdate --install --all` or the OS manager's own upgrade; rebooting is yours.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,

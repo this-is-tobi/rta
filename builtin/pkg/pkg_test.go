@@ -418,3 +418,62 @@ func TestSemverLess(t *testing.T) {
 		}
 	}
 }
+
+func TestManagersListsPresentAndAbsentWithVersions(t *testing.T) {
+	f := &fake{
+		bins: map[string]bool{"brew": true, "go": true, "apt-get": true, "pacman": true},
+		answers: map[string]fakeAnswer{
+			"brew --version":    {out: "Homebrew 4.3.10\n"},
+			"go version":        {out: "go version go1.23.0 darwin/arm64\n"},
+			"apt-get --version": {out: "apt 2.7.14 (amd64)\nSupported modules:\n"},
+			"pacman --version":  {out: "\n .--.                  Pacman v6.1.0 - libalpm v14.0.0\n"},
+		},
+	}
+	install(t, f)
+	v, err := managersCapability().Run(context.Background(), req(t, "pkg.managers", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tbl := v.(view.Table)
+	if len(tbl.Rows) != len(managers()) {
+		t.Fatalf("rows = %d, want one per known manager", len(tbl.Rows))
+	}
+	got := map[string][]string{}
+	for _, r := range tbl.Rows {
+		got[r[0]] = r
+	}
+	for name, want := range map[string][]string{
+		"brew":   {"brew", "/usr/local/bin/brew", "4.3.10", "-", "ok"},
+		"go":     {"go", "/usr/local/bin/go", "1.23.0", "-", "ok"},
+		"apt":    {"apt-get", "/usr/local/bin/apt-get", "2.7.14", "yes", "ok"},
+		"pacman": {"pacman", "/usr/local/bin/pacman", "6.1.0", "yes", "ok"},
+		"npm":    {"npm", "-", "-", "-", "absent"},
+		"dnf":    {"dnf", "-", "-", "yes", "absent"},
+	} {
+		r := got[name]
+		if r == nil || r[1] != want[0] || r[2] != want[1] || r[3] != want[2] || r[4] != want[3] || r[5] != want[4] {
+			t.Errorf("%s: row %v, want %v", name, r, want)
+		}
+	}
+	for _, ran := range f.ran {
+		if strings.HasPrefix(ran, "npm ") || strings.HasPrefix(ran, "dnf ") {
+			t.Errorf("an absent manager was asked: %s", ran)
+		}
+	}
+}
+
+func TestParseVersionReadsTheFirstThingThatLooksLikeOne(t *testing.T) {
+	for in, want := range map[string]string{
+		"10.8.2\n":                                 "10.8.2",
+		"uv 0.4.0 (Homebrew 2024-08-20)\n":         "0.4.0",
+		"apk-tools 2.14.0, compiled for x86_64.\n": "2.14.0",
+		"mise 2024.9.0 macos-arm64\n":              "2024.9.0",
+		"cargo 1.80.0 (376290515 2024-07-16)\n":    "1.80.0",
+		"nothing here\n":                           "-",
+		"":                                         "-",
+	} {
+		if got := parseVersion(in); got != want {
+			t.Errorf("parseVersion(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

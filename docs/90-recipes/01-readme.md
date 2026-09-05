@@ -78,6 +78,7 @@ rta doctor
 Once a week, the machine itself:
 
 ```bash
+rta pkg managers          # which managers this machine has, version and path — and which it does not
 rta pkg overview          # every package manager's outdated count, the OS, the kernel, a reboot owed
 rta pkg outdated          # the packages, with the exact upgrade command on every row
 rta pkg upgrade brew      # one manager at a time, never everything; apt and friends print the sudo command instead

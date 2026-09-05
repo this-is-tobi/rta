@@ -89,7 +89,7 @@ func outdatedCapability() plugin.Capability {
 
 func unknownManager(name string) *view.Error {
 	return view.Errorf("pkg.manager.unknown", "%q is not a manager pkg knows", name).
-		WithHint("one of " + strings.Join(allManagerNames(), ", ") + "; `rta pkg overview` shows which are on this machine")
+		WithHint("one of " + strings.Join(allManagerNames(), ", ") + "; `rta pkg managers` shows which are on this machine")
 }
 
 func allManagerNames() []string {
