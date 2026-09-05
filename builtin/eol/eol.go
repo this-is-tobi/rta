@@ -52,7 +52,7 @@ func Plugin() plugin.Plugin {
 						Help: "product name or alias — see https://endoflife.date for the catalogue"},
 					{Name: "cycle", Type: plugin.String, Positional: true,
 						Help: "one release cycle, e.g. 15, bookworm, 22.04 — every cycle is shown when omitted"},
-					{Name: "warn-days", Type: plugin.Int, Default: defaultWarnDays,
+					{Name: "warn-days", Type: plugin.Int, Config: "warn-days", Default: defaultWarnDays,
 						Help: "flag a cycle within this many days of its end-of-life date"},
 				},
 				Run: runCheck,

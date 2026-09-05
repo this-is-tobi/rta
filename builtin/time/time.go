@@ -68,7 +68,7 @@ func Plugin() plugin.Plugin {
 				Inputs: []plugin.Field{
 					{Name: "when", Type: plugin.String, Positional: true, Default: "now",
 						Help: "an instant: now, an epoch number, 2026-09-04T12:00:00Z, 2026-09-04, or a relative duration like \"90m ago\""},
-					{Name: "zone", Type: plugin.String,
+					{Name: "zone", Type: plugin.String, Config: "zone",
 						Help: "also show it in this IANA timezone (Europe/Paris)"},
 				},
 				Run: runAt,

@@ -52,7 +52,7 @@ func Plugin() plugin.Plugin {
 				HostSpecific: true,
 				Idempotent:   true,
 				Inputs: []plugin.Field{
-					{Name: "cores", Type: plugin.Bool, Help: "per-core usage as a bar chart"},
+					{Name: "cores", Type: plugin.Bool, Config: "cpu.cores", Help: "per-core usage as a bar chart"},
 				},
 				Run: runCPU,
 			},
@@ -71,7 +71,7 @@ func Plugin() plugin.Plugin {
 				HostSpecific: true,
 				Idempotent:   true,
 				Inputs: []plugin.Field{
-					{Name: "all", Type: plugin.Bool, Help: "include pseudo, duplicate and zero-size filesystems"},
+					{Name: "all", Type: plugin.Bool, Config: "disk.all", Help: "include pseudo, duplicate and zero-size filesystems"},
 				},
 				Run: runDisk,
 			},
@@ -98,8 +98,8 @@ func Plugin() plugin.Plugin {
 				HostSpecific: true,
 				Idempotent:   true,
 				Inputs: []plugin.Field{
-					{Name: "limit", Type: plugin.Int, Help: "maximum processes to list", Default: 15, Min: 1, Max: 1000},
-					{Name: "sort", Type: plugin.String, Help: "sort by", Default: "cpu",
+					{Name: "limit", Type: plugin.Int, Config: "ps.limit", Help: "maximum processes to list", Default: 15, Min: 1, Max: 1000},
+					{Name: "sort", Type: plugin.String, Config: "ps.sort", Help: "sort by", Default: "cpu",
 						Options: []string{"cpu", "mem"}},
 				},
 				Run: runPS,

@@ -123,6 +123,28 @@ func TestWatchReportsACycleTheProductDoesNotHave(t *testing.T) {
 	}
 }
 
+// The list the help text and the docs point at — `plugins: eol: products:` —
+// reaches the capability through the same Config path as every other
+// config-backed input. It did not, once: the input never declared a key, so
+// a configured list was silently ignored and the call refused as empty.
+func TestWatchReadsTheListFromTheConfigWhenNobodyPassedOne(t *testing.T) {
+	srv := newCatalogueServer(t)
+	var c plugin.Capability
+	for _, cap := range Plugin().Capabilities {
+		if cap.ID == "eol.watch" {
+			c = cap
+		}
+	}
+	req := plugin.NewRequest(plugin.Resolve(c, plugin.Inputs{
+		Config: map[string]any{"products": []any{"postgresql/18"}},
+	}), false, false)
+	v, err := runWatchAt(context.Background(), req, srv.URL)
+	tbl := asTable(t, v, err)
+	if len(tbl.Rows) != 1 || tbl.Rows[0][0] != "postgresql" {
+		t.Errorf("rows = %v, want the configured product graded", tbl.Rows)
+	}
+}
+
 func TestWatchRefusesAnEmptyListWithTheConfigHint(t *testing.T) {
 	srv := newCatalogueServer(t)
 	_, err := runWatchAt(context.Background(), reqFor(t, "eol.watch", nil), srv.URL)

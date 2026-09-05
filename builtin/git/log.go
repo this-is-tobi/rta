@@ -28,7 +28,7 @@ func logCapability() plugin.Capability {
 			"`git log -- <path>`.",
 		Inputs: []plugin.Field{
 			pathField("repository path, or a subdirectory of one"),
-			{Name: "limit", Type: plugin.Int, Default: defaultLogLimit, Min: 1, Max: 500,
+			{Name: "limit", Type: plugin.Int, Config: "log.limit", Default: defaultLogLimit, Min: 1, Max: 500,
 				Help: "how many of the most recent commits to show"},
 			{Name: "file", Type: plugin.Path, Help: "limit to commits that touched this path"},
 		},

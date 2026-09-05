@@ -108,7 +108,7 @@ func Plugin() plugin.Plugin {
 				Description: "Shows top-level tasks by default; pass --parent to list one task's " +
 					"sub-tasks. With --detail: adds creation date and a body preview.",
 				Inputs: []plugin.Field{
-					{Name: "all", Type: plugin.Bool, Help: "include completed tasks"},
+					{Name: "all", Type: plugin.Bool, Config: "all", Help: "include completed tasks"},
 					{Name: "tag", Type: plugin.StringSlice, Help: "only tasks with any of these tags",
 						Suggest: suggestTags},
 					{Name: "parent", Type: plugin.Int, Default: 0, Help: "list sub-tasks of this task id instead of top-level tasks",
