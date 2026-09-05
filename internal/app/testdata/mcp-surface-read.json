@@ -1705,6 +1705,61 @@
     }
   },
   {
+    "name": "pkg_os",
+    "description": "── the text below is written by the plugin, not by rta ──\nThe OS's own pending updates, whether a reboot is owed, and the kernel gap\n\nOn macOS, what `softwareupdate --list` offers and whether any of it restarts the machine. On Linux, whether the system says a reboot is required (/var/run/reboot-required on Debian, needs-restarting on RHEL) and the running kernel against the newest installed one — a machine that was upgraded and never rebooted runs the old kernel with the new one on disk, and nothing but this row says so.\n\nNothing here installs or reboots. Installing OS updates needs root and is `sudo softwareupdate --install --all` or the OS manager's own upgrade; rebooting is yours.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    }
+  },
+  {
+    "name": "pkg_outdated",
+    "description": "── the text below is written by the plugin, not by rta ──\nEvery package behind its latest, across every manager on this machine, with the command that fixes each\n\nOne table across whichever of brew, apt, dnf, apk, pacman, mise, pipx, uv, npm, bun, cargo, gem and go are installed here. Managers that can say what is behind are asked; the ones that only list what is installed are compared against their registry, with the names taken from the machine and never from a caller. Every row carries the exact upgrade command, with sudo in front where the manager needs root — rta prints it and never runs sudo itself. A manager that failed to answer is a row too.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "manager": {
+          "description": "only this manager (brew, apt, mise, npm, go, …); every detected one when omitted",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "pkg_overview",
+    "description": "── the text below is written by the plugin, not by rta ──\nIs this machine up to date: every manager's outdated count, your own binaries, the OS and the kernel\n\nThe glance: which package managers are here and how many packages each has behind, how many of your GitHub-release binaries have a newer release, whether the OS offers updates, whether a reboot is owed, and the kernel gap. --detail adds the tables themselves.\n\nNot on the automatic dashboard: this runs a dozen tools and asks four registries. Name it in `dashboard: tiles:` once you have decided that is fine every few seconds — most people want it once a morning, which is `rta pkg overview`.\n\nNothing in pkg is reachable over MCP, reads included: what is installed here and what is behind is the map an attacker draws first, and it is not an agent's to read.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "default": false,
+          "description": "return the full detailed view instead of the compact summary",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "pkg_tools",
+    "description": "── the text below is written by the plugin, not by rta ──\nYour own binaries — from GitHub releases and go install — against their latest release\n\nThe binaries no package manager knows about. Each entry in `plugins: pkg: tools:` names a binary on $PATH and the GitHub repository that releases it; the installed version is what the binary says with --version, the latest is the repository's latest release. Binaries placed by `go install` need no entry — they carry their module path, and the Go module proxy knows the latest; they are listed under the go manager in pkg.outdated.\n\nSources come from configuration only, never from a caller: a network destination somebody else chose is not a free read.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    }
+  },
+  {
     "name": "sys_cpu",
     "description": "── the text below is written by the plugin, not by rta ──\nShow CPU model, core count and current usage\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,

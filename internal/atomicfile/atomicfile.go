@@ -65,6 +65,35 @@ func ReadCapped(path string, max int) ([]byte, error) {
 	return buf[:n], nil
 }
 
+// WriteFrom is Write for a stream: the same temporary-file-then-rename in
+// the target's own directory, the same enforced perm, without holding the
+// whole payload in memory. A release binary can be a hundred megabytes, and
+// buffering one to place it is the wrong shape for a file that is already a
+// stream on the way in.
+func WriteFrom(path string, r io.Reader, perm fs.FileMode) error {
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+"-*.tmp")
+	if err != nil {
+		return fmt.Errorf("creating a temporary file in %s: %w", dir, err)
+	}
+	defer os.Remove(tmp.Name())
+
+	if _, err := io.Copy(tmp, r); err != nil {
+		tmp.Close()
+		return fmt.Errorf("writing %s: %w", tmp.Name(), err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("closing %s: %w", tmp.Name(), err)
+	}
+	if err := os.Chmod(tmp.Name(), perm); err != nil {
+		return fmt.Errorf("setting permissions on %s: %w", tmp.Name(), err)
+	}
+	if err := os.Rename(tmp.Name(), path); err != nil {
+		return fmt.Errorf("replacing %s: %w", path, err)
+	}
+	return nil
+}
+
 // Write replaces path with data, atomically, at exactly perm.
 //
 // The temporary file is created in the target's own directory rather than in

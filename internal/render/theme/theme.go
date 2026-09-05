@@ -288,6 +288,10 @@ func ClassifyStatus(s string) StatusKind {
 		return StatusGood
 	case strings.HasPrefix(v, "warn") || strings.HasPrefix(v, "write") ||
 		strings.HasPrefix(v, "pending") || strings.HasPrefix(v, "busy") ||
+		// pkg's one word for a package behind its latest. Amber, not red:
+		// nothing is broken, an upgrade is available, and the table is the
+		// place somebody looks to decide whether to take it.
+		strings.HasPrefix(v, "outdated") ||
 		// A plugin found on $PATH and not run. Amber rather than red: nothing
 		// is wrong, a decision is outstanding — and rather than neutral,
 		// because "installed and doing nothing" is the state a trust gate has

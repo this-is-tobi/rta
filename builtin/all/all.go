@@ -26,6 +26,7 @@ import (
 	rtanet "github.com/this-is-tobi/rta/builtin/net"
 	"github.com/this-is-tobi/rta/builtin/note"
 	rtaoperator "github.com/this-is-tobi/rta/builtin/operator"
+	"github.com/this-is-tobi/rta/builtin/pkg"
 	"github.com/this-is-tobi/rta/builtin/sys"
 	rtatime "github.com/this-is-tobi/rta/builtin/time"
 	"github.com/this-is-tobi/rta/internal/registry"
@@ -70,6 +71,7 @@ func Registry(conf func(plugin.Capability) map[string]any) (*registry.Registry, 
 		// lock is the emergency brake beside both: freeze one principal
 		// across the network surfaces now, without restarting anything.
 		rtalock.Plugin(),
+		pkg.Plugin(),
 	} {
 		if err := reg.Register(p); err != nil {
 			return nil, err

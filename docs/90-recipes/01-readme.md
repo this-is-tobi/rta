@@ -75,6 +75,16 @@ rta doctor
 
 `sys overview` is host health grouped rather than seven commands. `agent overview` is the last hour of agent calls, how many were refused, and anything parked waiting on you. `doctor` is what rta can reach — read the `info` rows, not just the failures.
 
+Once a week, the machine itself:
+
+```bash
+rta pkg overview          # every package manager's outdated count, the OS, the kernel, a reboot owed
+rta pkg outdated          # the packages, with the exact upgrade command on every row
+rta pkg upgrade brew      # one manager at a time, never everything; apt and friends print the sudo command instead
+```
+
+Binaries you installed from GitHub releases have no manager; list them once under `plugins: pkg: tools:` as `- gh=github:cli/cli` and `rta pkg tools` compares each against its latest release, and `rta pkg upgrade gh` installs it in place — fetched, hashed, checked against the digest the release publishes, swapped in atomically. Binaries from `go install` need no entry: they carry their module path, and appear under the go manager.
+
 Then the detail on whatever looked wrong:
 
 ```bash

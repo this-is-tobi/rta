@@ -18,9 +18,9 @@ After that the chapters stand alone, with one exception worth stating because a 
 
 ## What is in it
 
-**19 built-in plugins, 118 capabilities** in the default build, and `rta plugin list` is the inventory:
+**20 built-in plugins, 123 capabilities** in the default build, and `rta plugin list` is the inventory:
 
-`sys` · `net` · `http` · `cert` · `fs` · `kv` · `note` · `gen` · `codec` · `time` · `audit` · `grant` · `agent` · `operator` · `lock` · `debug` · `keys` · `git` · `eol`
+`sys` · `net` · `http` · `cert` · `fs` · `kv` · `note` · `gen` · `codec` · `time` · `audit` · `grant` · `agent` · `operator` · `lock` · `pkg` · `debug` · `keys` · `git` · `eol`
 
 Plus anything you install. Ten first-party plugins live in [rta-plugins](https://github.com/this-is-tobi/rta-plugins) as proof the contract works — `pg`, `mysql`, `mariadb`, `etcd`, `qdrant`, `s3`, `vault`, `kube`, `cnpg` and `docker` — each a separate binary from a separate module, so the ones you skip cost you nothing, and `rta plugin index add official` is how they arrive.
 

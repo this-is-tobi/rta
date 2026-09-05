@@ -326,6 +326,11 @@ func TestHostSpecificCoversExactlyTheKnownHostDescribingCapabilities(t *testing.
 		"fs.usage": true, "fs.tree": true, "fs.hash": true,
 		"git.overview": true, "git.status": true, "git.log": true, "git.diff": true,
 		"git.branches": true, "git.blame": true, "git.remotes": true, "git.config": true, "git.hooks": true,
+		// pkg is the inventory of what is installed on this host and what is
+		// behind — the map an attacker draws first. Hidden here from a remote
+		// transport, and refused by the namespace itself on every transport;
+		// this list is the second wall.
+		"pkg.overview": true, "pkg.outdated": true, "pkg.tools": true, "pkg.os": true, "pkg.upgrade": true,
 		"keys.list": true,
 		"net.info":  true, "net.hosts.list": true, "net.hosts.add": true, "net.hosts.toggle": true,
 		"net.hosts.rm": true, "net.resolver.list": true, "net.resolver.set": true,
