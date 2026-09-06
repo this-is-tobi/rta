@@ -63,7 +63,7 @@ rta grant revoke kv                  # or all of it
 
 `grant list` shows the target, the scope, what remains of each bound, the agent and profile it is narrowed to, and your `--note`. It is the answer to "what can an agent do right now", and it is the one screen worth checking before you walk away from a machine with a server running.
 
-Revoking takes back what grants gave — it does not touch the ungated read tools an agent's token still opens. When the need is "this agent makes no call of any kind until I say so", that is a [lock](./20-mcp.md#locks-the-instant-no): `rta lock add agent <name>`, effective on its next call, no restart.
+Revoking takes back what grants gave — it does not touch the ungated read tools an agent's token still opens. When the need is "this agent makes no call of any kind until I say so", that is a [lock](./20-mcp.md#locks-the-instant-no): `rta lock add <name>`, effective on its next call, no restart.
 
 ## Live consent, when you would rather be asked
 
