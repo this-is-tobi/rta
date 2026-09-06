@@ -191,6 +191,12 @@ type Model struct {
 	subjectGone    bool // …and that action destroyed that view's subject
 }
 
+// liveViews change while nobody presses anything — a call parks, another
+// expires — and are re-run every tileRefreshInterval while they are the
+// view on screen. The queue used to be current only as a dashboard tile:
+// opened, it showed the moment it was opened until `r`.
+var liveViews = map[string]bool{"agent.pending": true}
+
 // New builds the shell over a registry. dash configures the dashboard; its
 // zero value is the automatic one-tile-per-plugin arrangement.
 // New builds the shell. pluginCfg answers what the operator stated for a
@@ -410,6 +416,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tickMsg:
+		// A live view under the reader is re-run in place — no spinner, the
+		// old rows stay until the new ones land — on the same chain rule as
+		// the dashboard's below.
+		if m.mode == modeResult && msg.gen == m.tickGen && liveViews[m.current.ID] {
+			m.tickGen++
+			return m, m.refreshInPlace(m.current, m.lastValues, m.lastYes)
+		}
 		// Refresh only while the dashboard is visible, and only the chain
 		// currently in force — anything else is a return trip's predecessor,
 		// left ticking after a later visit already restarted it, and letting
@@ -489,6 +502,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport.GotoBottom()
 		} else {
 			m.viewport.GotoTop()
+		}
+		if liveViews[msg.cap.ID] {
+			m.tickGen++
+			gen := m.tickGen
+			return m, tea.Tick(tileRefreshInterval, func(time.Time) tea.Msg { return tickMsg{gen: gen} })
 		}
 		return m, nil
 

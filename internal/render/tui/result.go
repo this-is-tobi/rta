@@ -213,6 +213,73 @@ func (m Model) selectedAction(key string) (capAction, bool) {
 // afterwards; anything still missing — edit content, a destructive
 // confirmation — opens a form first.
 func (m Model) runAction(a capAction, tbl view.Table) (tea.Model, tea.Cmd) {
+	base, ok := m.actionSeed(a, tbl)
+	if !ok {
+		return m, nil
+	}
+	// What the action opens is the capability without the inputs that point
+	// it at another machine — see hereOnly.
+	cap := a.cap
+	cap.Inputs = hereOnly(cap.Inputs)
+	m.refreshPending = cap.Safety != plugin.Read
+	// Removing the very record this page is about destroys the page: the
+	// reload afterwards has to land one level further back.
+	m.subjectGone = a.src == srcSelf && cap.Safety == plugin.Destructive
+	// Read before m.current moves: an action carries on from the view it was
+	// pressed in, so the form has to open on that view's inputs and not on
+	// the declared defaults of the capability replacing it.
+	prev := m.continuing(cap)
+	// The environment travels with it, and it is not one of those inputs:
+	// `profile` is reserved on a capability a profile can fill, so `asked`
+	// filters it out by construction. Without this, a row from a listing run
+	// against prod opened its removal form on whatever happened to be switched
+	// on — the row identity from one connection, the call aimed at another —
+	// and the non-form branch below erased the answer from lastValues as well,
+	// re-aiming the next `r` too.
+	if plugin.Profilable(cap) {
+		if picked, ok := m.lastValues[profileInput]; ok {
+			base[profileInput] = picked
+		}
+	}
+	m.current = cap
+	// A bare action waives only the optional-field form — never the
+	// destructive confirmation, which is checked first on purpose.
+	if cap.Safety == plugin.Destructive || (!a.bare && len(fieldsAfter(cap, base)) > 0) {
+		return m.startFormWith(cap, base, prev)
+	}
+	m.lastValues, m.lastYes = base, false
+	return m, m.startRun(cap, base, false)
+}
+
+// hereOnly drops the inputs that point a call at another machine, and the
+// ones only read beside them, from a form an action opens: the queue under
+// the cursor is this machine's, so a box for the server it might instead be
+// parked on is a box for a different call. Typing the capability's name in
+// the catalogue still offers every input.
+func hereOnly(fields []plugin.Field) []plugin.Field {
+	remote := map[string]bool{}
+	for _, f := range fields {
+		if f.Remote {
+			remote[f.Name] = true
+		}
+	}
+	if len(remote) == 0 {
+		return fields
+	}
+	out := make([]plugin.Field, 0, len(fields))
+	for _, f := range fields {
+		if remote[f.Name] || remote[f.With] {
+			continue
+		}
+		out = append(out, f)
+	}
+	return out
+}
+
+// actionSeed is the identity an action acts on, read from the selected row,
+// from the record the page is already about, or from nowhere at all (add).
+// ok is false when the screen has nothing to act on.
+func (m Model) actionSeed(a capAction, tbl view.Table) (map[string]any, bool) {
 	base := map[string]any{}
 	keys, _ := keyFields(a.cap)
 	switch a.src {
@@ -225,19 +292,26 @@ func (m Model) runAction(a capAction, tbl view.Table) (tea.Model, tea.Cmd) {
 			keys = firstPositional(a.cap)
 		}
 		if len(tbl.Rows) == 0 || len(keys) == 0 {
-			return m, nil
+			return nil, false
 		}
 		row := tbl.Rows[min(m.row, len(tbl.Rows)-1)]
 		if len(row) == 0 {
-			return m, nil
+			return nil, false
 		}
 		// Every key input a column is named for, and the first column for
 		// the first key otherwise. A record is not always one value: a lock
 		// is a kind and a name, and a row that carries both should not open
-		// a form asking for the half it is already showing.
+		// a form asking for the half it is already showing. A seeded key
+		// reads its own column, and is left for the form when the row has
+		// none: the first column is an id, and an id is the wrong lock name.
 		for i, f := range keys {
-			raw, found := cellNamed(tbl, row, f.Name)
-			if !found {
+			var raw string
+			var found bool
+			if col := a.seed[f.Name]; col != "" {
+				if raw, found = cellNamed(tbl, row, col); !found || strings.TrimSpace(raw) == "" {
+					continue
+				}
+			} else if raw, found = cellNamed(tbl, row, f.Name); !found {
 				if i != 0 {
 					continue
 				}
@@ -245,7 +319,7 @@ func (m Model) runAction(a capAction, tbl view.Table) (tea.Model, tea.Cmd) {
 			}
 			v, err := rowKey(f, raw)
 			if err != nil {
-				return m, nil
+				return nil, false
 			}
 			base[f.Name] = v
 		}
@@ -270,44 +344,41 @@ func (m Model) runAction(a capAction, tbl view.Table) (tea.Model, tea.Cmd) {
 			}
 		}
 	case srcSelf:
-		// The page already knows its subject: reuse the identity it ran with.
+		// The page already knows its subject: a seeded key from the line the
+		// page shows under that name, the rest from the identity it ran with.
+		if kv, ok := m.result.view.(view.KeyValue); ok {
+			for _, f := range keys {
+				if key := a.seed[f.Name]; key != "" {
+					if raw := pairNamed(kv, key); raw != "" {
+						if v, err := rowKey(f, raw); err == nil {
+							base[f.Name] = v
+						}
+					}
+				}
+			}
+		}
 		for _, f := range keys {
+			if _, done := base[f.Name]; done {
+				continue
+			}
 			if v, ok := m.lastValues[f.Name]; ok {
 				base[f.Name] = v
 			}
 		}
 		if len(base) != len(keys) {
-			return m, nil
+			return nil, false
 		}
 	}
-	m.refreshPending = a.cap.Safety != plugin.Read
-	// Removing the very record this page is about destroys the page: the
-	// reload afterwards has to land one level further back.
-	m.subjectGone = a.src == srcSelf && a.cap.Safety == plugin.Destructive
-	// Read before m.current moves: an action carries on from the view it was
-	// pressed in, so the form has to open on that view's inputs and not on
-	// the declared defaults of the capability replacing it.
-	prev := m.continuing(a.cap)
-	// The environment travels with it, and it is not one of those inputs:
-	// `profile` is reserved on a capability a profile can fill, so `asked`
-	// filters it out by construction. Without this, a row from a listing run
-	// against prod opened its removal form on whatever happened to be switched
-	// on — the row identity from one connection, the call aimed at another —
-	// and the non-form branch below erased the answer from lastValues as well,
-	// re-aiming the next `r` too.
-	if plugin.Profilable(a.cap) {
-		if picked, ok := m.lastValues[profileInput]; ok {
-			base[profileInput] = picked
+	return base, true
+}
+
+func pairNamed(kv view.KeyValue, key string) string {
+	for _, p := range kv.Pairs {
+		if strings.EqualFold(p.Key, key) {
+			return strings.TrimSpace(p.Value)
 		}
 	}
-	m.current = a.cap
-	// A bare action waives only the optional-field form — never the
-	// destructive confirmation, which is checked first on purpose.
-	if a.cap.Safety == plugin.Destructive || (!a.bare && len(fieldsAfter(a.cap, base)) > 0) {
-		return m.startFormWith(a.cap, base, prev)
-	}
-	m.lastValues, m.lastYes = base, false
-	return m, m.startRun(a.cap, base, false)
+	return ""
 }
 
 // rowKey parses the selected row's identity cell to the key field's type.

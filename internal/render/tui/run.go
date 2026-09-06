@@ -297,6 +297,25 @@ func runCmd(ctx context.Context, seq int, c plugin.Capability, values map[string
 	}
 }
 
+// refreshInPlace re-runs the view under the reader without taking the
+// screen away: no running state, no spinner, the result already shown stays
+// until the new one lands. The run is sequenced and cancellable exactly as
+// startRun's, so a result from a refresh the reader walked away from is
+// dropped the same way.
+func (m *Model) refreshInPlace(c plugin.Capability, values map[string]any, yes bool) tea.Cmd {
+	if m.cancelRun != nil {
+		m.cancelRun()
+	}
+	name, filled, conn, verr := m.resolveProfile(c, values)
+	if verr != nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
+	m.cancelRun = cancel
+	m.runSeq++
+	return runCmd(ctx, m.runSeq, c, withoutPicker(c, values), yes, m.configFor(c), name, filled, conn)
+}
+
 // startRun launches a capability and puts the shell in its running state.
 //
 // The run gets a cancellable context and a sequence number, which is what
