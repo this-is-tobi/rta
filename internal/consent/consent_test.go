@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -22,6 +23,23 @@ func aCall() Call {
 	return Call{
 		Cap: "kv.get", Safety: "write", Scopes: []string{"db-password"},
 		Args: map[string]any{"key": "db-password"}, Why: "no active grant for kv.get db-password",
+	}
+}
+
+// distinct hands out calls that differ in the record they name, for the
+// tests about slots: an identical retry joins the question already parked
+// and takes no slot of its own.
+func distinct() func() Call {
+	var mu sync.Mutex
+	n := 0
+	return func() Call {
+		mu.Lock()
+		defer mu.Unlock()
+		n++
+		c := aCall()
+		c.Scopes = []string{fmt.Sprintf("record-%d", n)}
+		c.Args = map[string]any{"key": c.Scopes[0]}
+		return c
 	}
 }
 
@@ -276,9 +294,10 @@ func TestAFloodOfQuestionsIsCappedRatherThanQueued(t *testing.T) {
 	// nobody can read is a queue that gets cleared, and every answer after
 	// that is a reflex. The cap is what keeps the list readable.
 	isolate(t)
+	next := distinct()
 	var parked []*Parked
 	for i := 0; i < MaxParked; i++ {
-		p, err := Ask(aCall(), time.Minute)
+		p, err := Ask(next(), time.Minute)
 		if err != nil {
 			t.Fatalf("request %d of %d was refused: %v", i+1, MaxParked, err)
 		}
@@ -289,14 +308,14 @@ func TestAFloodOfQuestionsIsCappedRatherThanQueued(t *testing.T) {
 			p.Close()
 		}
 	}()
-	if _, err := Ask(aCall(), time.Minute); !errors.Is(err, ErrTooMany) {
+	if _, err := Ask(next(), time.Minute); !errors.Is(err, ErrTooMany) {
 		t.Fatalf("the %dth request was accepted: %v", MaxParked+1, err)
 	}
 	// Answering one makes room for the next: the cap bounds the queue, and
 	// does not lock the operator out of a server they are keeping up with.
 	parked[0].Close()
 	parked = parked[1:]
-	p, err := Ask(aCall(), time.Minute)
+	p, err := Ask(next(), time.Minute)
 	if err != nil {
 		t.Fatalf("a closed slot was not reused: %v", err)
 	}
@@ -311,6 +330,7 @@ func TestABurstCannotOutrunTheCap(t *testing.T) {
 	// is the same shape as grant.Reserve's, and it is the shape a queue cap
 	// has to be tested in.
 	isolate(t)
+	next := distinct()
 	const burst = MaxParked * 3
 	var (
 		mu     sync.Mutex
@@ -324,7 +344,7 @@ func TestABurstCannotOutrunTheCap(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			p, err := Ask(aCall(), time.Minute)
+			p, err := Ask(next(), time.Minute)
 			mu.Lock()
 			defer mu.Unlock()
 			switch {
@@ -367,8 +387,9 @@ func TestAnExpiredRequestDoesNotHoldASlot(t *testing.T) {
 	// inside Pending's grace period, keeping the queue full for the one
 	// call the operator is actually waiting to approve.
 	isolate(t)
+	next := distinct()
 	for i := 0; i < MaxParked; i++ {
-		p, err := Ask(aCall(), time.Minute)
+		p, err := Ask(next(), time.Minute)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -385,7 +406,7 @@ func TestAnExpiredRequestDoesNotHoldASlot(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	p, err := Ask(aCall(), time.Minute)
+	p, err := Ask(next(), time.Minute)
 	if err != nil {
 		t.Fatalf("expired requests held the queue shut: %v", err)
 	}
