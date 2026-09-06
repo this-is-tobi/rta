@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/this-is-tobi/rta/internal/paths"
 	"github.com/this-is-tobi/rta/internal/pluginhost"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -28,7 +27,7 @@ import (
 // build.
 
 // StoreDir is where installed artifacts live, by name then digest.
-func StoreDir() string { return filepath.Join(paths.Data(), "plugins", "store") }
+func StoreDir() string { return pluginhost.ManagedStore() }
 
 // BinDir is the directory of current-version symlinks. It is what discovery
 // scans (appended after $PATH) and what an operator adds to their own $PATH
