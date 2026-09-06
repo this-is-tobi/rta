@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.11.0](https://github.com/this-is-tobi/rta/compare/v0.10.0...v0.11.0) (2026-09-06)
+
+
+### Features
+
+* **agent:** a connected client is visible before it makes a call ([16a6b34](https://github.com/this-is-tobi/rta/commit/16a6b3455e920e7b3e4ae88d7b99ca0a58c774d3))
+* **agent:** the log ends on the latest call, and a table can say its newest row is last ([a084c67](https://github.com/this-is-tobi/rta/commit/a084c675d5be58c60fc518ef2eb572513af7a4ff))
+* **grant:** a grant is the only allow, and it binds to the artifact ([5379c61](https://github.com/this-is-tobi/rta/commit/5379c61cd3a6efee5db19f5092455d4eb95b7cea))
+* **mcp:** every agent has a name, and a grant knows whose it is ([3bdab34](https://github.com/this-is-tobi/rta/commit/3bdab34e5e5adeab79744f95e5ad6af0b1be16ef))
+* **pkg:** which managers the machine has is a table that answers in a moment ([5029ea8](https://github.com/this-is-tobi/rta/commit/5029ea8265ef2026e4bc9117cb712868bf7063b5))
+* **plugin:** a capability can say it is for the person at the terminal ([bf0eff4](https://github.com/this-is-tobi/rta/commit/bf0eff4ffb9ee404690771b93f59eb5e6ba71170))
+* **tui:** the arrows browse a box's offer before anything is typed ([fde9e1a](https://github.com/this-is-tobi/rta/commit/fde9e1afdfba80f4e6beb43e843aff6fc6cd732c))
+
+
+### Bug Fixes
+
+* **agent:** a live answer with --ttl names the record it granted ([38172be](https://github.com/this-is-tobi/rta/commit/38172be11ee2abc07b85b3fd0c108ea80543da40))
+* **agentlog:** a lost end mark is admitted in the chain, and a key is never minted over a record ([66a8930](https://github.com/this-is-tobi/rta/commit/66a89307d571b8afd24789fd51cf31be7177f522))
+* **agentlog:** one oversized row can no longer end the record ([6a86217](https://github.com/this-is-tobi/rta/commit/6a86217c27ad3a90fe94f8a50a860730a55ed8e8))
+* **agent:** the queue and the overview say what stands, and an answer says when it releases nothing ([d10d23a](https://github.com/this-is-tobi/rta/commit/d10d23a70758c3357330b2e848455327d28bbd6c))
+* **agent:** the record ships from its cursor forward, counts by time, and names unknown tools ([3be9c68](https://github.com/this-is-tobi/rta/commit/3be9c68bf42cd6de55540ddbd89b693c4af18adf))
+* **app:** a noun's help names its verbs, and no help line opens with a word the renderer mangles ([278d5ab](https://github.com/this-is-tobi/rta/commit/278d5abc4f0c4071409fb3dc19c42b4374fbd11b))
+* **grant:** a grant nothing could spend is refused, and the rest is said in a person's words ([42a9abb](https://github.com/this-is-tobi/rta/commit/42a9abbd541cd2816bade2643e65560bbd95433f))
+* **grant:** one write for the guard, one screen for its state, renew like revoke, rows seed ([0571fcf](https://github.com/this-is-tobi/rta/commit/0571fcf093c72fd83dbc69e00530924d648f070c))
+* **lockdown:** a locked agent is not handed its own unlock command ([5977101](https://github.com/this-is-tobi/rta/commit/5977101837b6e0cbcdedfdd41106689d89520cc4))
+* **lock:** who placed a lock is measured, not assumed ([b075221](https://github.com/this-is-tobi/rta/commit/b075221b54e875b2b75f2e86225635fcab515d34))
+* **mcp:** a failed call spends its use, a declined call says so, and the hint names the agent ([6b6cb0b](https://github.com/this-is-tobi/rta/commit/6b6cb0b50d1e5b150ae072b3ff9319c5bbd50786))
+* **mcp:** a machine that requires a repository policy refuses to serve without one ([4d7f04e](https://github.com/this-is-tobi/rta/commit/4d7f04e76aaf7c16cae941819dbcac640edd6ba8))
+* **mcp:** a short token is refused, an exposed bind is announced, and startup says what it means ([158aa48](https://github.com/this-is-tobi/rta/commit/158aa48c6ccac1b93ea857a7e8ca4d7d39991fd6))
+* the data directory is created for its owner alone ([aada406](https://github.com/this-is-tobi/rta/commit/aada406ee049d4fdadf092a6c88ee91898ccdaad))
+
+
+### Code Refactoring
+
+* **agentlog:** the record says which files are its own ([0fd5d8c](https://github.com/this-is-tobi/rta/commit/0fd5d8ceb67946782bf506b29c0e245d11d9d00a))
+* **session:** an open server says so, instead of being guessed at ([460f1cb](https://github.com/this-is-tobi/rta/commit/460f1cb8df5bba51a37ae42938cea47f20765198))
+* trim the surfaces the deep check found saying too much ([58a6947](https://github.com/this-is-tobi/rta/commit/58a69475706d4382ffd3feb869693e833db4d634))
+
 ## [0.10.0](https://github.com/this-is-tobi/rta/compare/v0.9.0...v0.10.0) (2026-09-05)
 
 
