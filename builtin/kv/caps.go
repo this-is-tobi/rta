@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -68,11 +69,13 @@ func runList(_ context.Context, req plugin.Request) (view.View, error) {
 			usedBy = cfg.KVUsers()
 		}
 	}
-	withUsers := false
+	withUsers, withHistory := false, false
 	for _, k := range names {
 		if len(usedBy[k]) > 0 {
 			withUsers = true
-			break
+		}
+		if len(s.Entries[k].Previous) > 0 {
+			withHistory = true
 		}
 	}
 
@@ -82,6 +85,13 @@ func runList(_ context.Context, req plugin.Request) (view.View, error) {
 		{Name: "Size", Kind: view.KindBytes},
 		{Name: "Description"},
 		{Name: "Updated", Kind: view.KindDuration},
+	}
+	// How many earlier values each entry still keeps — the column that tells
+	// a rotated key from one only ever set, without `kv show` on each. On the
+	// same rule as Used by: only once some listed entry keeps one, because a
+	// column of blanks names a concept the listing has no use for yet.
+	if withHistory {
+		cols = append(cols, view.Column{Name: "History"})
 	}
 	// Only when some listed entry has a user: a column of blanks would name
 	// a concept this store does not otherwise have, on every listing, for
@@ -96,6 +106,9 @@ func runList(_ context.Context, req plugin.Request) (view.View, error) {
 	for _, k := range names {
 		e := s.Entries[k]
 		row := []string{k, e.Kind, format.Bytes(uint64(len(e.Value))), e.Description, itemstore.Age(e.Updated)}
+		if withHistory {
+			row = append(row, historyCell(len(e.Previous)))
+		}
 		if withUsers {
 			row = append(row, strings.Join(usedBy[k], ", "))
 		}
@@ -106,6 +119,16 @@ func runList(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 	t.Total = len(t.Rows)
 	return t, nil
+}
+
+// historyCell is the count of earlier values, blank for none — a zero in
+// every row would read as a fact about each entry rather than the absence
+// of one.
+func historyCell(n int) string {
+	if n == 0 {
+		return ""
+	}
+	return strconv.Itoa(n)
 }
 
 // runShow describes one entry without revealing it. Size is the closest it
