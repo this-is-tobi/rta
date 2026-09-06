@@ -498,6 +498,9 @@ func Scan() (Queue, error) {
 		}
 	}
 	now := time.Now()
+	// The key, for telling an answered request from a waiting one. Missing
+	// means nothing has ever answered on this machine, so nothing is.
+	key, keyErr := seal.Key(keyFile, false)
 	for _, e := range entries {
 		name := e.Name()
 		// A decision without its request is an orphan: decide racing
@@ -554,6 +557,17 @@ func Scan() (Queue, error) {
 		if !r.Honest() {
 			q.Tampered = append(q.Tampered, id)
 			continue
+		}
+		// Answered is not waiting. The asker removes both files a poll
+		// interval after it reads the decision, and until then the request
+		// sat in this list looking answerable — a second `agent allow` in
+		// that window "succeeded" too. Only a decision that verifies counts:
+		// a forged one is ignored here exactly as Wait ignores it, so it
+		// cannot hide a question from the person it is aimed at.
+		if keyErr == nil {
+			if _, answered := readDecision(key, id); answered {
+				continue
+			}
 		}
 		q.Waiting = append(q.Waiting, r)
 	}
@@ -688,6 +702,9 @@ func decide(id, digest string, allow bool, by string) error {
 	key, err := seal.Key(keyFile, true)
 	if err != nil {
 		return fmt.Errorf("consent key: %w", err)
+	}
+	if _, answered := readDecision(key, id); answered {
+		return fmt.Errorf("request %q was already answered — the caller collects the answer on its next poll", id)
 	}
 	d := decision{
 		// Derived from what was displayed, never copied from the file. Equal
