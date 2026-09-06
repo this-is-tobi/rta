@@ -636,13 +636,25 @@ func doctorReport(reg *registry.Registry) view.View {
 	} else {
 		named := make([]string, 0, len(grants))
 		var stale, unwatched []string
+		// A role's grants are named once, as the role: "dev for claude (2)"
+		// is what the operator issued, and the roster says which lines.
+		roles := map[string]int{}
+		var roleOrder []string
 		// Loaded here rather than reused from the profile section above, which
 		// scopes its own: an unreadable config leaves stale empty, and the row
 		// below simply does not appear. Every other reader of the file has
 		// already said so by the time this runs.
 		grantCfg, grantCfgErr := config.Load()
 		for _, g := range grants {
-			named = append(named, strings.TrimSpace(g.Target+" "+g.Scope))
+			if g.Role != "" {
+				k := g.Role + " for " + g.Agent
+				if roles[k] == 0 {
+					roleOrder = append(roleOrder, k)
+				}
+				roles[k]++
+			} else {
+				named = append(named, strings.TrimSpace(g.Target+" "+g.Scope))
+			}
 			// Issued with nobody at the terminal. All three things that do
 			// that — a provisioning script, a CI job, an agent's own shell
 			// tool — are legitimate, and only the operator knows which of
@@ -668,6 +680,9 @@ func doctorReport(reg *registry.Registry) view.View {
 			if g.Stale(profile.ConnStampFor(grantCfg, g.Profile, grant.Namespace(g.Target))) {
 				stale = append(stale, strings.TrimSpace(g.Target+" on "+g.Profile))
 			}
+		}
+		for _, k := range roleOrder {
+			named = append([]string{fmt.Sprintf("role %s (%d)", k, roles[k])}, named...)
 		}
 		add("agent grants", "info", fmt.Sprintf("%d active: %s (`rta grant list`)",
 			len(grants), strings.Join(named, ", ")))

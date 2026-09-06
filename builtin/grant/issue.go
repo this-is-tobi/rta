@@ -139,6 +139,27 @@ func windowWords(r role.Source) string {
 	return fmt.Sprintf("%s, capped to %s by %s", format.Duration(asked), format.Duration(effective), by)
 }
 
+// RolesInForce is one line per role and agent among the grants standing,
+// for the overview and doctor — the same words the roster prints above
+// its rows. Empty when no grant carries a role.
+func RolesInForce() string {
+	grants, verr := core.Load()
+	if verr != nil {
+		return ""
+	}
+	return rolesInForce(grants)
+}
+
+// IssueRole is the issue flow for another built-in: agent.allow answers a
+// parked call with the whole role its line belongs to. Same lines printed,
+// same ceiling per line, same one passphrase, same team-role rule.
+func IssueRole(req plugin.Request, catalog func() []plugin.Capability, artifact func(string) (string, bool)) (view.View, error) {
+	return runIssue(req, catalog, artifact)
+}
+
+// SuggestRoles completes a role name, for agent.allow's --role.
+func SuggestRoles(ctx context.Context, req plugin.Request) []string { return suggestRoles(ctx, req) }
+
 // EffectiveWindow is windowWords for doctor's roles row.
 func EffectiveWindow(r role.Source) string { return windowWords(r) }
 
@@ -160,7 +181,14 @@ func runIssue(req plugin.Request, catalog func() []plugin.Capability, artifact f
 		return nil, view.Errorf("grant.role.team", "role %q comes from %s, and a team's role is issued at the command line, where its lines are shown first", src.Name, src.From).
 			WithHint("`rta grant roles " + src.Name + "` shows the lines; `rta grant issue " + src.Name + "` issues them")
 	}
-	agent, verr := resolveAgent(req.String("agent"))
+	// --agent, else the agent the operator's own role names, else the one
+	// this machine knows. A default for a command a person still runs
+	// under the guard: it picks who receives the list, never what is in it.
+	asked := strings.TrimSpace(req.String("agent"))
+	if asked == "" && !src.Team {
+		asked = strings.TrimSpace(src.Role.Agent)
+	}
+	agent, verr := resolveAgent(asked)
 	if verr != nil {
 		return nil, verr
 	}
@@ -397,10 +425,10 @@ func runRoles(_ context.Context, req plugin.Request) (view.View, error) {
 			"roles:\n  dev:\n    ttl: 8h\n    grants:\n      - kv.get db-password\n      - pg.query --profile staging"}, nil
 	}
 	t := view.Table{Columns: []view.Column{
-		{Name: "role"}, {Name: "from"}, {Name: "ttl"}, {Name: "grants"},
+		{Name: "role"}, {Name: "from"}, {Name: "agent"}, {Name: "ttl"}, {Name: "grants"},
 	}}
 	for _, s := range all {
-		t.Rows = append(t.Rows, []string{s.Name, sourceWord(s), windowWords(s), strings.Join(s.Role.Grants, "\n")})
+		t.Rows = append(t.Rows, []string{s.Name, sourceWord(s), dash(s.Role.Agent), windowWords(s), strings.Join(s.Role.Grants, "\n")})
 	}
 	t.Total = len(t.Rows)
 	return t, nil

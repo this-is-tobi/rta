@@ -1103,14 +1103,68 @@ func heldTable(role string) (view.View, *view.Error) {
 	// being looked for is not, and nothing on the screen accounts for it.
 	// A partial suppression is the confusing one: some rows are here, the one
 	// being looked for is not, and nothing on the screen accounts for it.
-	if n := core.Suppressed(); n > 0 {
-		return view.Sections{Items: []view.Section{
-			{ID: "grants", Title: "Allowed", View: t},
-			{ID: "policy", Title: "Your team's policy",
-				View: view.Text{Body: strings.TrimPrefix(suppressedNote(n), "\n\n")}},
-		}}, nil
+	// The roles in force above the rows, where the docs send people before
+	// they walk away from a machine: one line per role and agent, with the
+	// suppression count carried in so a summary never claims authority the
+	// gate would not honour.
+	var items []view.Section
+	if force := rolesInForce(grants); force != "" {
+		items = append(items, view.Section{ID: "roles", Title: "Roles in force", View: view.Text{Body: force}})
 	}
-	return t, nil
+	n := core.Suppressed()
+	if len(items) == 0 && n == 0 {
+		return t, nil
+	}
+	items = append(items, view.Section{ID: "grants", Title: "Allowed", View: t})
+	if n > 0 {
+		items = append(items, view.Section{ID: "policy", Title: "Your team's policy",
+			View: view.Text{Body: strings.TrimPrefix(suppressedNote(n), "\n\n")}})
+	}
+	return view.Sections{Items: items}, nil
+}
+
+// rolesInForce is one line per role and agent among the grants standing:
+// how many, since when, until when. Empty when no grant carries a role.
+func rolesInForce(grants []core.Grant) string {
+	type key struct{ role, agent string }
+	type force struct {
+		n              int
+		started, until time.Time
+	}
+	by := map[key]*force{}
+	var order []key
+	for _, g := range grants {
+		if g.Role == "" {
+			continue
+		}
+		k := key{g.Role, g.Agent}
+		f := by[k]
+		if f == nil {
+			f = &force{started: g.Issued, until: g.Expires}
+			by[k] = f
+			order = append(order, k)
+		}
+		f.n++
+		if g.Issued.Before(f.started) {
+			f.started = g.Issued
+		}
+		if g.Expires.After(f.until) {
+			f.until = g.Expires
+		}
+	}
+	sort.Slice(order, func(i, j int) bool {
+		if order[i].role != order[j].role {
+			return order[i].role < order[j].role
+		}
+		return order[i].agent < order[j].agent
+	})
+	lines := make([]string, 0, len(order))
+	for _, k := range order {
+		f := by[k]
+		lines = append(lines, fmt.Sprintf("%s for %s — %d %s, issued %s, expires in %s",
+			k.role, k.agent, f.n, plural(f.n, "grant", "grants"), format.Ago(f.started), format.Duration(time.Until(f.until))))
+	}
+	return strings.Join(lines, "\n")
 }
 
 // grantsTable renders grant rows, wherever they came from — this machine's

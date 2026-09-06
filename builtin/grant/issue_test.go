@@ -292,7 +292,7 @@ func TestRolesSayTheWindowEachWillReallyGet(t *testing.T) {
 	ownRole(t, configDir, "  dev:\n    ttl: 8h\n    grants: [kv.env]\n  quick:\n    ttl: 30m\n    grants: [kv.env]\n")
 	v := run(t, runRoles, nil)
 	rows := v.(view.Table).Rows
-	if len(rows) != 2 || !strings.HasPrefix(rows[0][2], "8h, capped to 1h by ") || rows[1][2] != "30m" {
+	if len(rows) != 2 || !strings.HasPrefix(rows[0][3], "8h, capped to 1h by ") || rows[1][3] != "30m" {
 		t.Fatalf("roles = %+v", rows)
 	}
 	one := run(t, runRoles, map[string]any{"role": "quick"})
