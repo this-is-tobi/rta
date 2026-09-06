@@ -19,10 +19,10 @@ import (
 )
 
 func TestStaticTokenVerifierAcceptsAndRejects(t *testing.T) {
-	v := StaticTokenVerifier(map[string]string{"tok-a": "alice", "tok-b": "bob"})
+	v := StaticTokenVerifier(map[string]string{"tok-a-0123456789abcdef": "alice", "tok-b-0123456789abcdef": "bob"})
 	ctx := context.Background()
 
-	info, err := v(ctx, "tok-a", nil)
+	info, err := v(ctx, "tok-a-0123456789abcdef", nil)
 	if err != nil {
 		t.Fatalf("valid token refused: %v", err)
 	}
@@ -39,17 +39,17 @@ func TestStaticTokenVerifierAcceptsAndRejects(t *testing.T) {
 }
 
 func TestComposeTriesEachAndFailsGenerically(t *testing.T) {
-	first := StaticTokenVerifier(map[string]string{"tok-a": "alice"})
-	second := StaticTokenVerifier(map[string]string{"tok-b": "bob"})
+	first := StaticTokenVerifier(map[string]string{"tok-a-0123456789abcdef": "alice"})
+	second := StaticTokenVerifier(map[string]string{"tok-b-0123456789abcdef": "bob"})
 	var stderr strings.Builder
 	v := Compose(&stderr, first, second)
 	ctx := context.Background()
 
 	// Second verifier's token succeeds even though the first rejects it —
 	// composition is OR, not "the first configured mechanism wins".
-	info, err := v(ctx, "tok-b", nil)
+	info, err := v(ctx, "tok-b-0123456789abcdef", nil)
 	if err != nil || info.UserID != "bob" {
-		t.Fatalf("tok-b: info=%v err=%v, want bob/nil", info, err)
+		t.Fatalf("tok-b-0123456789abcdef: info=%v err=%v, want bob/nil", info, err)
 	}
 
 	// Every mechanism failing folds into one generic error — never which
@@ -83,7 +83,7 @@ func writeTokenFile(t *testing.T, mode os.FileMode, body string) string {
 
 func TestLoadTokenFile(t *testing.T) {
 	t.Run("valid file", func(t *testing.T) {
-		path := writeTokenFile(t, 0o600, "# comment\n\nalice tok-a\nbob tok-b\n")
+		path := writeTokenFile(t, 0o600, "# comment\n\nalice tok-a-0123456789abcdef\nbob tok-b-0123456789abcdef\n")
 		tokens, groupReadable, err := LoadTokenFile(path)
 		if err != nil {
 			t.Fatal(err)
@@ -91,7 +91,7 @@ func TestLoadTokenFile(t *testing.T) {
 		if groupReadable {
 			t.Error("0600 file reported group-readable")
 		}
-		if tokens["tok-a"] != "alice" || tokens["tok-b"] != "bob" {
+		if tokens["tok-a-0123456789abcdef"] != "alice" || tokens["tok-b-0123456789abcdef"] != "bob" {
 			t.Errorf("tokens = %v", tokens)
 		}
 	})
@@ -99,7 +99,7 @@ func TestLoadTokenFile(t *testing.T) {
 		if runtime.GOOS == "windows" {
 			t.Skip("POSIX permission bits do not apply")
 		}
-		path := writeTokenFile(t, 0o644, "alice tok-a\n")
+		path := writeTokenFile(t, 0o644, "alice tok-a-0123456789abcdef\n")
 		if _, _, err := LoadTokenFile(path); err == nil {
 			t.Fatal("world-readable token file was accepted")
 		}
@@ -110,14 +110,14 @@ func TestLoadTokenFile(t *testing.T) {
 	// they like. Group read stays a warning (below); group write is a
 	// refusal.
 	t.Run("group-writable refuses", func(t *testing.T) {
-		path := writeTokenFile(t, 0o620, "alice tok-a\n")
+		path := writeTokenFile(t, 0o620, "alice tok-a-0123456789abcdef\n")
 		if _, _, err := LoadTokenFile(path); err == nil {
 			t.Error("a group-writable token file was accepted")
 		}
 	})
 
 	t.Run("group-executable refuses", func(t *testing.T) {
-		path := writeTokenFile(t, 0o610, "alice tok-a\n")
+		path := writeTokenFile(t, 0o610, "alice tok-a-0123456789abcdef\n")
 		if _, _, err := LoadTokenFile(path); err == nil {
 			t.Error("a group-executable token file was accepted")
 		}
@@ -127,7 +127,7 @@ func TestLoadTokenFile(t *testing.T) {
 		if runtime.GOOS == "windows" {
 			t.Skip("POSIX permission bits do not apply")
 		}
-		path := writeTokenFile(t, 0o640, "alice tok-a\n")
+		path := writeTokenFile(t, 0o640, "alice tok-a-0123456789abcdef\n")
 		tokens, groupReadable, err := LoadTokenFile(path)
 		if err != nil {
 			t.Fatal(err)
@@ -140,13 +140,22 @@ func TestLoadTokenFile(t *testing.T) {
 		}
 	})
 	t.Run("malformed line", func(t *testing.T) {
-		path := writeTokenFile(t, 0o600, "alice tok-a extra\n")
+		path := writeTokenFile(t, 0o600, "alice tok-a-0123456789abcdef extra\n")
 		if _, _, err := LoadTokenFile(path); err == nil {
 			t.Fatal("a three-field line was accepted")
 		}
 	})
+	t.Run("short token", func(t *testing.T) {
+		// A one-character token started the listener once. On this
+		// transport the token is the entire credential.
+		path := writeTokenFile(t, 0o600, "alice x\n")
+		_, _, err := LoadTokenFile(path)
+		if err == nil || !strings.Contains(err.Error(), "too short") {
+			t.Fatalf("a one-character token: %v, want a refusal naming the floor", err)
+		}
+	})
 	t.Run("duplicate token", func(t *testing.T) {
-		path := writeTokenFile(t, 0o600, "alice tok-a\nbob tok-a\n")
+		path := writeTokenFile(t, 0o600, "alice tok-a-0123456789abcdef\nbob tok-a-0123456789abcdef\n")
 		if _, _, err := LoadTokenFile(path); err == nil {
 			t.Fatal("the same token assigned to two labels was accepted")
 		}
@@ -156,7 +165,7 @@ func TestLoadTokenFile(t *testing.T) {
 		// but is refused by grant.CheckAgent for exactly that reason — two
 		// fields, so this exercises the charset check rather than the
 		// field-count one.
-		path := writeTokenFile(t, 0o600, "ali‑ce tok-a\n")
+		path := writeTokenFile(t, 0o600, "ali‑ce tok-a-0123456789abcdef\n")
 		if _, _, err := LoadTokenFile(path); err == nil {
 			t.Fatal("a label with a non-breaking hyphen (U+2011) was accepted")
 		}
@@ -231,7 +240,7 @@ func startRemote(t *testing.T, opts Options, verifier auth.TokenVerifier) string
 }
 
 func TestHTTPTransportRequiresABearerToken(t *testing.T) {
-	addr := startRemote(t, Options{}, StaticTokenVerifier(map[string]string{"tok-a": "alice"}))
+	addr := startRemote(t, Options{}, StaticTokenVerifier(map[string]string{"tok-a-0123456789abcdef": "alice"}))
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -251,12 +260,12 @@ func TestHTTPTransportRequiresABearerToken(t *testing.T) {
 // http.Request at all, so they cannot exercise this.
 func TestHTTPTransportRecordsWhichCredentialCalled(t *testing.T) {
 	addr := startRemote(t, Options{},
-		Compose(nil, StaticTokenVerifier(map[string]string{"tok-a": "alice"})))
+		Compose(nil, StaticTokenVerifier(map[string]string{"tok-a-0123456789abcdef": "alice"})))
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	client := sdk.NewClient(&sdk.Implementation{Name: "test-client", Version: "0"}, nil)
-	transport := &sdk.StreamableClientTransport{Endpoint: "http://" + addr, HTTPClient: authedClient("tok-a")}
+	transport := &sdk.StreamableClientTransport{Endpoint: "http://" + addr, HTTPClient: authedClient("tok-a-0123456789abcdef")}
 	session, err := client.Connect(ctx, transport, nil)
 	if err != nil {
 		t.Fatalf("valid token was refused: %v", err)

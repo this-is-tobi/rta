@@ -130,7 +130,7 @@ func TestHTTPRefusesAnUnreadableTokenFile(t *testing.T) {
 		t.Skip("POSIX permission bits do not apply")
 	}
 	path := filepath.Join(t.TempDir(), "tokens")
-	if err := os.WriteFile(path, []byte("alice tok-a\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("alice tok-a-0123456789abcdef\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	cmd := NewRoot(registry.New(), "test")
@@ -152,7 +152,7 @@ func TestHTTPRefusesAnUnreadableTokenFile(t *testing.T) {
 func TestHTTPRefusesAGarbledOperatorsFile(t *testing.T) {
 	dir := t.TempDir()
 	tokens := filepath.Join(dir, "tokens")
-	if err := os.WriteFile(tokens, []byte("alice tok-a\n"), 0o600); err != nil {
+	if err := os.WriteFile(tokens, []byte("alice tok-a-0123456789abcdef\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	roster := filepath.Join(dir, "operators")
@@ -180,7 +180,7 @@ func TestHTTPRefusesAGarbledOperatorsFile(t *testing.T) {
 func TestHTTPOperatorsRequiresACanonicalURL(t *testing.T) {
 	dir := t.TempDir()
 	tokens := filepath.Join(dir, "tokens")
-	if err := os.WriteFile(tokens, []byte("alice tok-a\n"), 0o600); err != nil {
+	if err := os.WriteFile(tokens, []byte("alice tok-a-0123456789abcdef\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	roster := filepath.Join(dir, "operators")

@@ -229,6 +229,15 @@ func StaticTokenVerifier(tokens map[string]string) auth.TokenVerifier {
 // same way elsewhere in this codebase), internal/app/mcp.go prints an
 // explicit warning on Windows instead of silently claiming a guarantee this
 // function cannot give there.
+// minTokenLen is the shortest bearer token the file may hold. A one-character
+// token started the listener once; on a transport where the token is the
+// entire credential, that is a door with no lock. Sixteen characters of
+// anything `rta gen token` produces is past what an online guess reaches;
+// the floor is on length rather than on a measured entropy because the
+// file is written by the operator, and refusing a token as "not random
+// enough" is a judgement rta cannot make honestly from the bytes alone.
+const minTokenLen = 16
+
 func LoadTokenFile(path string) (tokens map[string]string, groupReadable bool, err error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -277,6 +286,11 @@ func LoadTokenFile(path string) (tokens map[string]string, groupReadable bool, e
 			return nil, groupReadable, fmt.Errorf("%s:%d: expected \"label token\", got %q", path, i+1, line)
 		}
 		label, token := fields[0], fields[1]
+		if len(token) < minTokenLen {
+			return nil, groupReadable, fmt.Errorf("%s:%d: the token for %q is too short at %d characters — a bearer token is "+
+				"the whole credential on this transport, and one shorter than %d is guessable; `rta gen token` makes one",
+				path, i+1, label, len(token), minTokenLen)
+		}
 		if verr := grant.CheckAgent(label); verr != nil || label == "" {
 			return nil, groupReadable, fmt.Errorf("%s:%d: label %q is not a valid token label", path, i+1, label)
 		}
