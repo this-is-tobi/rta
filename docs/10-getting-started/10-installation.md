@@ -22,6 +22,7 @@ curl -fsSLO "https://github.com/this-is-tobi/rta/releases/download/v${tag}/check
 **Verify before you extract.** The checksum proves the download is intact; the attestation proves the archive was built by this repository's release workflow from the tagged commit — provenance, not just integrity:
 
 ```bash
+os=$(uname -s | tr A-Z a-z); arch=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
 shasum -a 256 -c checksums.txt --ignore-missing     # sha256sum on Linux
 gh attestation verify rta_*_"${os}"_"${arch}".tar.gz --owner this-is-tobi
 ```
@@ -144,17 +145,17 @@ The binary is self-contained and the core needs nothing. Some capabilities shell
 
 Nothing here is required to install or run rta. A missing tool costs you exactly the capabilities that use it, and the refusal names the tool.
 
-| Tool | Needed for | If it is missing |
-| --- | --- | --- |
-| `git` | `rta plugin index add/update`, the `git.*` capabilities | Indexes cannot be attached; `git.*` is unavailable |
-| `kubectl` | the `kube` and `cnpg` plugins, `audit.kube.*`, and `kube:` tunnel targets | Those capabilities refuse, naming kubectl |
-| `pg_dump` | `pg.dump` only — `pg.query` and the rest of the `pg` plugin connect in-process and need nothing | `pg.dump` refuses; every other `pg.*` capability is unaffected |
-| `pg_restore`, `psql` | `pg.restore` — `pg_restore` reads custom and directory dumps, `psql` replays plain SQL | `pg.restore` refuses, naming whichever one the dump's format needs |
-| `mysqldump`, `mysql` | `mysql.dump` and `mysql.restore` only — every other `mysql.*` capability connects in-process | Those two refuse; the rest of the plugin is unaffected |
-| `mariadb-dump`, `mariadb` | `mariadb.dump` and `mariadb.restore`, same split. The legacy `mysqldump`/`mysql` symlinks every distribution still ships are accepted too | Those two refuse, naming both spellings |
-| `docker` | the `docker` plugin | Those capabilities refuse |
-| `ssh` | `ssh:` tunnel targets | Those targets cannot be resolved |
-| `cosign` | verifying a plugin artifact's signature, when an index states one | The outcome is recorded as unverifiable; **an install is never blocked, because a signature is recorded and never required** |
+| Tool                      | Needed for                                                                                                                                | If it is missing                                                                                                             |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `git`                     | `rta plugin index add/update`, the `git.*` capabilities                                                                                   | Indexes cannot be attached; `git.*` is unavailable                                                                           |
+| `kubectl`                 | the `kube` and `cnpg` plugins, `audit.kube.*`, and `kube:` tunnel targets                                                                 | Those capabilities refuse, naming kubectl                                                                                    |
+| `pg_dump`                 | `pg.dump` only — `pg.query` and the rest of the `pg` plugin connect in-process and need nothing                                           | `pg.dump` refuses; every other `pg.*` capability is unaffected                                                               |
+| `pg_restore`, `psql`      | `pg.restore` — `pg_restore` reads custom and directory dumps, `psql` replays plain SQL                                                    | `pg.restore` refuses, naming whichever one the dump's format needs                                                           |
+| `mysqldump`, `mysql`      | `mysql.dump` and `mysql.restore` only — every other `mysql.*` capability connects in-process                                              | Those two refuse; the rest of the plugin is unaffected                                                                       |
+| `mariadb-dump`, `mariadb` | `mariadb.dump` and `mariadb.restore`, same split. The legacy `mysqldump`/`mysql` symlinks every distribution still ships are accepted too | Those two refuse, naming both spellings                                                                                      |
+| `docker`                  | the `docker` plugin                                                                                                                       | Those capabilities refuse                                                                                                    |
+| `ssh`                     | `ssh:` tunnel targets                                                                                                                     | Those targets cannot be resolved                                                                                             |
+| `cosign`                  | verifying a plugin artifact's signature, when an index states one                                                                         | The outcome is recorded as unverifiable; **an install is never blocked, because a signature is recorded and never required** |
 
 Version policy is the same for all of them: rta uses what is on your `$PATH` and adopts none of their maintenance. There is no preflight check — a capability looks its tool up when you run it, and refuses by name if it is not there.
 
@@ -191,13 +192,13 @@ Nothing in the config grants anything. It holds connection profiles, dashboard p
 
 ## Where rta keeps things
 
-| What | Where | Notes |
-| --- | --- | --- |
-| Config | `~/.config/rta/config.yaml` | `RTA_CONFIG` overrides |
-| Encrypted store | beside the config | [Secrets](../20-using/50-secrets.md) |
-| Grants | `~/.local/share/rta/grants.json` | Sealed against tampering |
-| Agent record | beside the grants | Hash-chained; [The record](../30-boundary/40-audit-trail.md) |
-| Team policy | `.rta-policy.yaml`, walking up from the working directory | [Team policy](../30-boundary/50-team-policy.md) |
+| What            | Where                                                     | Notes                                                        |
+| --------------- | --------------------------------------------------------- | ------------------------------------------------------------ |
+| Config          | `~/.config/rta/config.yaml`                               | `RTA_CONFIG` overrides                                       |
+| Encrypted store | beside the config                                         | [Secrets](../20-using/50-secrets.md)                         |
+| Grants          | `~/.local/share/rta/grants.json`                          | Sealed against tampering                                     |
+| Agent record    | beside the grants                                         | Hash-chained; [The record](../30-boundary/40-audit-trail.md) |
+| Team policy     | `.rta-policy.yaml`, walking up from the working directory | [Team policy](../30-boundary/50-team-policy.md)              |
 
 Exact paths differ per platform. `rta doctor` prints the real ones rather than the documented ones, which is the answer to use when they disagree.
 

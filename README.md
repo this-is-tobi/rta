@@ -12,7 +12,7 @@ Which is why the security chapters below are not an appendix, and why every one 
 
 ## Documentation
 
-**Website:** <https://this-is-tobi.com/rule-them-all/introduction>
+**Website:** <https://this-is-tobi.com/rta/introduction>
 
 **Table of Contents** *- md sources*:
 
