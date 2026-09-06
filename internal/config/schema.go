@@ -127,6 +127,11 @@ func Schema() map[string]any {
 						"description": "How long the role's grants last unless --ttl says: 8h, 12h (the default).",
 						"type":        "string",
 					},
+					"agent": map[string]any{
+						"description": "Which agent `rta grant issue` issues this role to when --agent is not given. " +
+							"Your config only; a policy file naming an agent is refused.",
+						"type": "string",
+					},
 				},
 			},
 			"tile": map[string]any{

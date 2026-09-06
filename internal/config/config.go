@@ -126,6 +126,12 @@ type Config struct {
 type Role struct {
 	Grants []string `yaml:"grants" json:"grants"`
 	TTL    string   `yaml:"ttl,omitempty" json:"ttl,omitempty"`
+	// Agent is who this role is issued to when `grant issue` is not told:
+	// the morning's --agent, written once. Honoured from the operator's own
+	// config only — a policy file naming a principal is refused, because
+	// which agent receives a list is the one allow-shaped decision a
+	// repository edit must not make.
+	Agent string `yaml:"agent,omitempty" json:"agent,omitempty"`
 }
 
 // Trusted reports whether this configuration came from a path somebody named.

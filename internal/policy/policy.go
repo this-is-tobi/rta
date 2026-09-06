@@ -402,6 +402,14 @@ func read(path string, mustExist bool) (Ceiling, *view.Error) {
 	}
 	c.From = []string{path}
 	for name, r := range c.RawRoles {
+		// Which principal receives a list is the one allow-shaped decision
+		// a file on this path must not make: the ceiling's whole argument
+		// is that an edit here can only subtract, and a role that picked
+		// its own agent would be an edit that chooses who gets authority.
+		if r.Agent != "" {
+			return Ceiling{}, view.Errorf("policy.roleagent", "%s: role %q names an agent, and a policy file may not", path, name).
+				WithHint("the agent is the operator's to give — `rta grant issue " + name + " --agent <name>`, or `agent:` on a role in their own config")
+		}
 		c.Roles = append(c.Roles, NamedRole{Name: name, Role: r, From: path})
 	}
 	c.RawRoles = nil
