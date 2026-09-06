@@ -45,7 +45,7 @@ return nil, view.Errorf("weather.nosuchcity", "no station for %q", city).
 
 The code is stable enough for a script to branch on, and the hint is what the person does next. Both are lost by `fmt.Errorf`.
 
-One error is not like the others: a **policy gate** — your handler declining a call over who is asking, not over what went wrong, like a capability that refuses the MCP surface outright. Build that one with `view.Refusef` instead of `view.Errorf`. The host's audit trail records refusals and failures as different outcomes, and only your handler knows which one it returned — an unmarked gate ledgers on the operator's machine as your plugin breaking.
+One error is not like the others: a **policy gate** — your handler declining a call over who is asking, not over what went wrong, like a capability that refuses the MCP surface outright. Build that one with `view.Refusef` instead of `view.Errorf`. The host's audit trail records refusals and failures as different outcomes, and only your handler knows which one it returned — an unmarked gate is recorded on the operator's machine as your plugin breaking.
 
 ## Declaring inputs
 

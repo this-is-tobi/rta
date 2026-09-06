@@ -23,7 +23,7 @@ rta vault kv tree                 # ungated: the shape of the mount
 rta vault kv get staging-db-password   # needs a grant naming it
 ```
 
-What the tree *does* change is your record. Two hundred listings become one line in the ledger, so an operator reading what an agent did sees "mapped the mount" rather than a wall of individual calls — which is the more honest summary of what happened.
+What the tree *does* change is your record. Two hundred listings become one line in the record, so an operator reading what an agent did sees "mapped the mount" rather than a wall of individual calls — which is the more honest summary of what happened.
 
 ## Every one of them is bounded, and says so
 

@@ -28,7 +28,7 @@ The grant is issued. The record says nothing — neither that the grant was issu
 
 Two more facts from the same run, both by design and both worth knowing:
 
-- **Capability calls made through the CLI are not recorded at all.** The ledger is the record of what arrived *over MCP*. `rta kv get db-password` in a terminal writes nothing, which is right for a person and is also the path an agent with a shell would take.
+- **Capability calls made through the CLI are not recorded at all.** The record is what arrived *over MCP*. `rta kv get db-password` in a terminal writes nothing, which is right for a person and is also the path an agent with a shell would take.
 - **`rta grant allow` is refused over MCP and allowed from a shell.** The refusal is real and it is the right rule; a shell is a human surface, and rta cannot tell an operator's shell from an agent's.
 
 ## So what does MCP buy?
@@ -38,7 +38,7 @@ Three things, all of them real, and all of them conditional on the agent going t
 | What MCP buys | Why |
 | --- | --- |
 | **A narrower interface** | With no flags, an MCP client sees read capabilities and nothing else. The same agent at a shell has everything you have. The tool list *is* the smaller surface |
-| **A record** | Every call over MCP is written to a chained, sealed ledger — arguments, outcome, and how it was authorized. Nothing else in rta writes to it |
+| **A record** | Every call over MCP is written to a chained, sealed record — arguments, outcome, and how it was authorized. Nothing else in rta writes to it |
 | **Consent** | Grants, scopes, deadlines, budgets, rates, `rta use`, live consent and dry-run previews are all enforced in the MCP bridge. They exist nowhere else |
 
 Read that list again as a sentence about *cooperative* agents and it is exactly right: rta makes the safe path the easy path. The typed tool with a schema is easier for a model to call correctly than a shell command, it needs no credential handling, and it leaves a record.
@@ -58,7 +58,7 @@ flowchart TD
 
 **World A — an unrestricted shell.** rta is hygiene and visibility. It reduces mistakes, gives you a record of what came through the front door, and takes credentials out of the agent's context. It does not contain anything. Most people setting up an agent for the first time are here and do not know it.
 
-**World B — restricted tools.** The agent's tool list is the MCP server plus whatever else you allowed, and `Bash` is not on it. Now every gate in the next three chapters is load-bearing: a grant is the reach, a deadline is the deadline, and the ledger is complete. **This is achievable today** — it is a setting in your agent, not a feature request in rta.
+**World B — restricted tools.** The agent's tool list is the MCP server plus whatever else you allowed, and `Bash` is not on it. Now every gate in the next three chapters is load-bearing: a grant is the reach, a deadline is the deadline, and the record is complete. **This is achievable today** — it is a setting in your agent, not a feature request in rta.
 
 **World C — somewhere else entirely.** The agent runs in a container or on another machine, with no credentials of its own, and reaches your environments only through rta. Containment by construction, because there is no other route to take.
 
@@ -93,7 +93,7 @@ But the *instinct* behind it is right, and it is World C. If team members' agent
 
 The way to get there today is [one instance per person from a shared image](./20-mcp.md#a-team-share-the-configuration-not-the-process): the profiles are baked in, the credentials are `kube:` references resolved with each person's own RBAC, and the agent's container holds nothing.
 
-**A remote server, one per person, is stronger still, and [`rta mcp serve --http`](./20-mcp.md#remote-hosting-http) is that shape.** Grants live on the server's disk; an agent with a shell on its own machine can run `rta grant allow` all it likes and be writing to a file the server never reads. There is no shell on the server, so the only way in is the protocol, and `grant allow` refuses over MCP. That closes the seam this whole chapter is about — and it closes the other one too, because with no local CLI there is no unrecorded path: every call is an MCP call, and every MCP call is in the ledger.
+**A remote server, one per person, is stronger still, and [`rta mcp serve --http`](./20-mcp.md#remote-hosting-http) is that shape.** Grants live on the server's disk; an agent with a shell on its own machine can run `rta grant allow` all it likes and be writing to a file the server never reads. There is no shell on the server, so the only way in is the protocol, and `grant allow` refuses over MCP. That closes the seam this whole chapter is about — and it closes the other one too, because with no local CLI there is no unrecorded path: every call is an MCP call, and every MCP call is in the record.
 
 It is not free, and the costs are worth naming rather than glossing over:
 
@@ -112,7 +112,7 @@ Stated here rather than left implied, because the gap is the interesting part of
 
 - **The CLI writes nothing to the record.** That is right for an operator and it is also the seam an agent with a shell walks through. Recording every CLI call would drown the agent record in your own work, so what is recorded instead is the one event that matters — see below.
 
-Detection rather than prevention, which is what the ledger's hash chain already is, and for the same reason: against something running as you, visible is the most that is honest — with one measured exception. A secret that is not on disk is different in kind from a check, which is what the kv store's passphrase already proved, and [the grant guard](./30-grants.md#the-guard-a-passphrase-in-front-of-issuance) applies the same fact to issuance: the ordinary self-grant is prevented outright, and only file tampering remains in the detection regime, where it fails closed and loudly.
+Detection rather than prevention, which is what the record's hash chain already is, and for the same reason: against something running as you, visible is the most that is honest — with one measured exception. A secret that is not on disk is different in kind from a check, which is what the kv store's passphrase already proved, and [the grant guard](./30-grants.md#the-guard-a-passphrase-in-front-of-issuance) applies the same fact to issuance: the ordinary self-grant is prevented outright, and only file tampering remains in the detection regime, where it fails closed and loudly.
 
 ## What a grant says about where it came from
 

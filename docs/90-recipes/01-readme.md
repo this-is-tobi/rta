@@ -212,7 +212,7 @@ Answering `allow` runs that one call and creates no standing grant.
 
 ## Ship the record somewhere durable
 
-Every row carries the sequence number the ledger assigned it, and `--after` takes one, so an append picks up exactly where the last one stopped:
+Every row carries the sequence number the record assigned it, and `--after` takes one, so an append picks up exactly where the last one stopped:
 
 ```bash
 ARCHIVE=~/audit/rta.jsonl
