@@ -288,6 +288,26 @@ func connectedTable() view.Table {
 	return t
 }
 
+const nothingWaiting = "nothing is waiting — a parked call appears here, and `rta agent allow <id>` releases it"
+
+// connectedView and waitingView are the overview's sections, which are a
+// sentence when empty for the reason `agent pending` is: an empty bordered
+// table under a heading reads as a screen that failed to load.
+func connectedView() view.View {
+	t := connectedTable()
+	if len(t.Rows) == 0 {
+		return view.Text{Body: "nothing is connected — a client with an rta server open appears here"}
+	}
+	return t
+}
+
+func waitingView(reqs []consent.Request) view.View {
+	if len(reqs) == 0 {
+		return view.Text{Body: nothingWaiting}
+	}
+	return pendingTable(reqs)
+}
+
 func plural(n int, one, many string) string {
 	if n == 1 {
 		return one
@@ -351,9 +371,9 @@ func runOverview(_ context.Context, req plugin.Request) (view.View, error) {
 	rep, verr := agentlog.Verify()
 	return view.Sections{Items: []view.Section{
 		{ID: "activity", Title: "Activity", View: view.KeyValue{Pairs: pairs}},
-		{ID: "connected", Title: "Connected now", View: connectedTable()},
+		{ID: "connected", Title: "Connected now", View: connectedView()},
 		{ID: "record", Title: "The record", View: view.KeyValue{Pairs: recordPairs(rep, verr)}},
-		{ID: "waiting", Title: "Waiting on you", View: pendingTable(waiting)},
+		{ID: "waiting", Title: "Waiting on you", View: waitingView(waiting)},
 	}}, nil
 }
 
@@ -627,7 +647,7 @@ func runPending(_ context.Context, req plugin.Request) (view.View, error) {
 		// A sentence, not an empty bordered table: `lock list` says
 		// "nothing is locked" for the same reason, and the queue is the
 		// screen `press w to answer` lands on.
-		return view.Text{Body: "nothing is waiting — a parked call appears here, and `rta agent allow <id>` releases it"}, nil
+		return view.Text{Body: nothingWaiting}, nil
 	}
 	return pendingTable(reqs), nil
 }
