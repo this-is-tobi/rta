@@ -196,7 +196,16 @@ type Grant struct {
 	// canonical() is json.Marshal over the parsed []Grant, so a field that is
 	// the zero string on every stored grant is omitted, re-encodes
 	// byte-identically, and every existing seal still verifies.
-	Digest  string    `json:"digest,omitempty"`
+	Digest string `json:"digest,omitempty"`
+	// Role names the role `rta grant issue` issued this grant under, so
+	// `grant list` can show the bundle and `grant revoke --role` take it
+	// back as one. Bookkeeping, not a bound: the gate never reads it, and
+	// the bundle has no id of its own — the role and the agent name it,
+	// because Issue keeps one row per target, record, connection and agent.
+	// Inside the signed bytes all the same, so a guard-signed grant cannot
+	// be re-filed under a role it was not issued under. omitempty, for the
+	// seal's reason Digest gives.
+	Role    string    `json:"role,omitempty"`
 	Issued  time.Time `json:"issued"`
 	Expires time.Time `json:"expires"`
 	// From is where this grant was issued: a form, a terminal with somebody
@@ -915,12 +924,24 @@ func Save(grants []Grant) *view.Error {
 // operator would have typed — and two implementations of "what counts as
 // the same grant" is how the two come to disagree.
 func Issue(g Grant, write bool) *view.Error {
+	_, verr := IssueReplacing(g, write)
+	return verr
+}
+
+// IssueReplacing is Issue, handing back the standing grant the new one
+// replaced — same target, record, connection and agent — so the caller can
+// say so. A hand-issued grant with an hour left that a role line re-files
+// under the role's twelve is a widening the operator did not type, and
+// the one place to see it is the receipt. Captured inside the locked
+// callback: a row found by a Load beforehand is advisory, because an
+// issue or a revoke can land between the two reads.
+func IssueReplacing(g Grant, write bool) (*Grant, *view.Error) {
 	// Refused where somebody is standing and can fix it. Load already stops a
 	// forbidden grant authorizing anything, so this is not the enforcement —
 	// it is the difference between a grant that never works and never says
 	// why, and a refusal naming the rule and the file it came from.
 	if verr := CheckCeiling(g.Target, g.Scope, g.Profile); verr != nil {
-		return verr
+		return nil, verr
 	}
 	// Only when something will be written: a preview mints nothing, so it
 	// must not demand the passphrase a real issuance would — the dry run is
@@ -930,6 +951,8 @@ func Issue(g Grant, write bool) *view.Error {
 	// check and the write would persist an unsigned row the next read then
 	// refuses as forgery — a false alarm this ordering is cheaper than.
 	var guardErr *view.Error
+	var replaced *Grant
+	now := time.Now()
 	verr := Mutate(func(stored []Grant) ([]Grant, bool) {
 		if write {
 			if verr := guardIssuable(g); verr != nil {
@@ -948,14 +971,24 @@ func Issue(g Grant, write bool) *view.Error {
 			if existing.Target != g.Target || existing.Scope != g.Scope ||
 				existing.Profile != g.Profile || existing.Agent != g.Agent {
 				kept = append(kept, existing)
+				continue
+			}
+			// Only a row that still authorizes something is a replacement
+			// worth a word; an expired one dropping out is housekeeping.
+			if existing.Active(now) {
+				old := existing
+				replaced = &old
 			}
 		}
 		return append(kept, g), write
 	})
 	if guardErr != nil {
-		return guardErr
+		return nil, guardErr
 	}
-	return verr
+	if verr != nil {
+		return nil, verr
+	}
+	return replaced, nil
 }
 
 // Mutate rewrites the grant file under the lock: it hands f every stored

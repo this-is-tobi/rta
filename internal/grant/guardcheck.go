@@ -49,6 +49,11 @@ type authority struct {
 	// Server is inside the signed bytes so a signature cannot travel: see
 	// Grant.Server for the transplant it forbids.
 	Server string `json:"server,omitempty"`
+	// Role: bookkeeping the gate never reads, signed so a signed grant
+	// cannot be re-filed under a role it was not issued under. Empty on
+	// every grant from before it existed, and omitted, so those bytes are
+	// unchanged.
+	Role string `json:"role,omitempty"`
 }
 
 // AuthorityBytes is the byte form a guard signature covers for g.
@@ -61,6 +66,7 @@ func AuthorityBytes(g Grant) []byte {
 		From: g.From, Note: g.Note, TTL: g.TTL,
 		MaxUses: g.MaxUses, RateMax: g.RateMax, RateWindow: g.RateWindow,
 		Server: g.Server,
+		Role:   g.Role,
 	})
 	if err != nil {
 		// Strings, ints and times through MarshalJSON cannot fail; if this
