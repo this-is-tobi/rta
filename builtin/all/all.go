@@ -31,6 +31,7 @@ import (
 	rtatime "github.com/this-is-tobi/rta/builtin/time"
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // Registry returns every built-in plugin, registered and indexed.
@@ -41,14 +42,30 @@ import (
 // runs *other* capabilities: the ai plugin's tool bridge hands each tool
 // call the same config every surface would, and a parameter rather than
 // package state is what keeps two registries in one test process apart.
+// Registry is RegistryWith and no environment report, for the surfaces and
+// tests that need the catalogue alone; audit.doctor says it is unwired there.
 func Registry(conf func(plugin.Capability) map[string]any) (*registry.Registry, error) {
+	return RegistryWith(conf, nil)
+}
+
+// RegistryWith builds the catalogue, handing report the registry it will
+// describe. The report is internal/app's doctor, which reads state the
+// command tree sets up at startup and so cannot be built here; passing it in
+// is what makes `rta doctor` a capability rather than a command apart.
+func RegistryWith(conf func(plugin.Capability) map[string]any,
+	report func(*registry.Registry) view.View,
+) (*registry.Registry, error) {
 	reg := registry.New()
+	var doctor func() view.View
+	if report != nil {
+		doctor = func() view.View { return report(reg) }
+	}
 	for _, p := range []plugin.Plugin{
 		sys.Plugin(),
 		cert.Plugin(),
 		rtanet.Plugin(),
 		rtahttp.Plugin(),
-		audit.Plugin(reg.Capabilities),
+		audit.Plugin(reg.Capabilities, doctor),
 		eol.Plugin(),
 		rtafs.Plugin(),
 		rtagit.Plugin(),

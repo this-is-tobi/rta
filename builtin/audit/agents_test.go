@@ -108,7 +108,7 @@ func TestTheCredentialValueIsNeverPrinted(t *testing.T) {
 // "here is where each one keeps its credential" — a map of the machine, read
 // out to the thing it is a map of.
 func TestTheAgentAuditIsNeverATool(t *testing.T) {
-	for _, c := range Plugin(testCatalog).Capabilities {
+	for _, c := range Plugin(testCatalog, nil).Capabilities {
 		if c.ID == "audit.clients" && !c.HumanOnly {
 			t.Fatal("audit.clients is reachable over MCP")
 		}

@@ -526,7 +526,7 @@ func expiringTLSServer(t *testing.T, notAfter time.Time) *httptest.Server {
 }
 
 func TestAuditIsReadIdempotent(t *testing.T) {
-	for _, c := range Plugin(testCatalog).Capabilities {
+	for _, c := range Plugin(testCatalog, nil).Capabilities {
 		if c.Safety != plugin.Read || !c.Idempotent {
 			t.Errorf("%s must be read + idempotent — the audit toolbox only ever inspects", c.ID)
 		}
@@ -534,7 +534,7 @@ func TestAuditIsReadIdempotent(t *testing.T) {
 }
 
 func TestWebIsRegistered(t *testing.T) {
-	for _, c := range Plugin(testCatalog).Capabilities {
+	for _, c := range Plugin(testCatalog, nil).Capabilities {
 		if c.ID == "audit.web" {
 			return
 		}

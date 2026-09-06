@@ -567,12 +567,38 @@ func HumanOnlyPlugins(catalog func() []plugin.Capability) []string {
 	return out
 }
 
-// handDenied are the verbs of mixed plugins an agent's shell must not reach
-// either: the store's own reads, and the three that admit a plugin.
+// HumanOnlyVerbs is the other half of the same derivation: the verbs of the
+// plugins that mix which are for the person at the terminal — `audit doctor`
+// for audit.doctor, spelled as the shell would run them — leaving out any
+// plugin the block already names whole. Kept by hand this list was
+// `audit clients` alone and had already missed the keys verbs; a verb marked
+// HumanOnly tomorrow is on the block the day it lands.
+func HumanOnlyVerbs(catalog func() []plugin.Capability) []string {
+	if catalog == nil {
+		return nil
+	}
+	whole := map[string]bool{}
+	for _, ns := range append(HumanOnlyPlugins(catalog), handDenied...) {
+		whole[ns] = true
+	}
+	var out []string
+	for _, c := range catalog() {
+		if !c.HumanOnly || whole[plugin.Namespace(c.ID)] {
+			continue
+		}
+		out = append(out, strings.Join(c.Words(), " "))
+	}
+	sort.Strings(out)
+	return out
+}
+
+// handDenied is what the shell must not reach and no declaration marks: the
+// store whole, because its listing alone is reconnaissance, and the three
+// verbs that admit a plugin, which are commands rather than capabilities.
 var handDenied = []string{"kv", "plugin trust", "plugin allow", "plugin install"}
 
 func denyBlock(catalog func() []plugin.Capability) string {
-	names := append(HumanOnlyPlugins(catalog), handDenied...)
+	names := append(append(HumanOnlyPlugins(catalog), handDenied...), HumanOnlyVerbs(catalog)...)
 	lines := make([]string, 0, len(names))
 	for _, n := range names {
 		lines = append(lines, "      \"Bash(rta "+n+":*)\"")
