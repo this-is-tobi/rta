@@ -627,7 +627,7 @@ func pendingTable(reqs []consent.Request) view.Table {
 		}
 		row := []string{
 			r.ID, r.Cap, strings.Join(r.Scopes, " "), r.Safety, r.Profile,
-			clip(what), left.String(),
+			clip(what), format.Duration(left),
 		}
 		if asking {
 			row = slices.Insert(row, 1, r.Agent)
@@ -736,7 +736,7 @@ func showView(r consent.Request) view.View {
 	pairs = append(pairs,
 		view.Pair{Key: "why you are being asked", Value: r.Why},
 		view.Pair{Key: "asked", Value: format.Ago(r.AskedAt)},
-		view.Pair{Key: "expires in", Value: left.String()},
+		view.Pair{Key: "expires in", Value: format.Duration(left)},
 	)
 	sections := []view.Section{
 		{ID: "request", Title: "The request", View: view.KeyValue{Pairs: pairs}},
@@ -940,15 +940,25 @@ func alsoGrant(r consent.Request, ttl, from string, signer *guard.Signer) (strin
 	if verr := grant.Issue(g, true); verr != nil {
 		return "", verr
 	}
-	note := fmt.Sprintf("this call, and %s for the next %s", r.Cap, d)
+	// Named as narrowly as the grant is: "note.rm 6 for the next 15m", not
+	// "note.rm for the next 15m", which promised the next note.rm too — and
+	// that one parked and expired, to an operator who had just been told
+	// it would not.
+	what := r.Cap
+	if scope != "" {
+		what += " " + scope
+	}
+	note := fmt.Sprintf("this call, and %s for the next %s", what, format.Duration(d))
 	if d < asked {
 		// Which ceiling bit, the same distinction grant.allow's own message
 		// makes: "capped" with no source sends the operator to change a flag
 		// that was never the problem.
 		if byPolicy {
-			note += fmt.Sprintf("; capped at %s by your team's policy (you asked for %s) — %s", d, asked, where)
+			note += fmt.Sprintf("; capped at %s by your team's policy (you asked for %s) — %s",
+				format.Duration(d), format.Duration(asked), where)
 		} else {
-			note += fmt.Sprintf("; capped at the %s maximum (you asked for %s)", grant.MaxTTL, asked)
+			note += fmt.Sprintf("; capped at the %s maximum (you asked for %s)",
+				format.Duration(grant.MaxTTL), format.Duration(asked))
 		}
 	}
 	return note, nil
