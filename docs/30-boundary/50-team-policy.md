@@ -18,7 +18,7 @@ requireScope:
 
 **A policy can only ever subtract.**
 
-There is no `allow:` key and there never will be. Every axis in the file removes something an operator could otherwise have done: caps a duration, forbids a target, forbids a connection, or demands that a grant name one record instead of covering everything.
+There is no `allow:` key. Every axis in the file removes something an operator could otherwise have done: caps a duration, forbids a target, forbids a connection, or demands that a grant name one record instead of covering everything. The one block that is not an axis, [`roles:`](#roles-what-a-session-issues), is not an allow key either: a role grants nothing by being in the file.
 
 That single property is what makes this shareable. Consider what it takes to trust the two files:
 
@@ -84,6 +84,23 @@ Now the repository can tighten those and cannot loosen them, and if `.rta-policy
 | `requireScope` | Targets that may only be granted against a named record, never wholesale |
 
 `requireScope` is the subtle one and the most useful. `rta grant allow kv.get` covers the entire store; `rta grant allow kv.get db-password` covers one key. Listing `kv.get` under `requireScope` makes the first form an error, so a hurried grant cannot accidentally be the broad one.
+
+## Roles: what a session issues
+
+Beside the ceiling, the file may name the bundles a person issues under it:
+
+```yaml
+roles:
+  dev:
+    ttl: 8h
+    grants:
+      - kv.get db-password
+      - pg.query --profile staging
+```
+
+`rta grant issue dev --agent claude` issues every line, under one passphrase, and every line is capped by the ceiling above it — a role cannot exceed the policy it sits in, by construction; `rta grant roles` says what window each role will really get under it, since the starter file's one-hour `maxTTL` caps an eight-hour role to one. See [roles](./30-grants.md#roles-a-days-grants-under-one-word) for the commands.
+
+This is the one block in the file that a hostile edit could use to widen something rather than narrow it: not by granting — nothing here grants — but by changing the list a person issues with one word. So a role from this file is issued at the command line only: `grant issue` prints the lines before the guard's passphrase asks for them, and with the guard off it wants `--yes`, after `rta grant roles <name>`. A role in your own config or policy file, or in a file you named with `RTA_POLICY`, asks nothing extra. The same name in two files is refused, not resolved by precedence. And a key the file does not have — `nevr:` for `never:` — refuses the whole file rather than silently dropping a bound.
 
 ## Where the file is found
 
@@ -182,7 +199,7 @@ If that line reads `none in force`, the policy you committed is not the one boun
 
 **It is not a substitute for the startup gate.** A policy cannot expose a write capability, and cannot widen a path root. It only ever narrows what a grant may say.
 
-**It is not RBAC.** There are no roles, no subjects and no allow rules, and that is a deliberate refusal. A policy engine that can grant has to be trusted, distributed and verified; one that can only refuse needs none of that. The cost is that it cannot express "these five people may do this" — and the benefit is everything in the table at the top of this page.
+**It is not RBAC.** There are no subjects and no allow rules, and that is a deliberate refusal: a role here is a list a person issues, under the ceiling, never a rule that grants. A policy engine that can grant has to be trusted, distributed and verified; one that can only refuse needs none of that. The cost is that it cannot express "these five people may do this" — and the benefit is everything in the table at the top of this page.
 
 **It is not a control over a machine somebody else owns.** An operator owns their binary, their config and their filesystem, so they can always unset `requireRepoPolicy` and delete the file. Saying so is the point rather than a caveat: a bound that reports itself without being enforced is worse than no bound at all.
 
