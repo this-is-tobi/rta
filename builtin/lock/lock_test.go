@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/lockdown"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -32,7 +33,7 @@ func TestLockAddListRmAtTheTerminal(t *testing.T) {
 		t.Fatal(err)
 	}
 	locks, verr := lockdown.Load()
-	if verr != nil || len(locks) != 1 || locks[0].By != "terminal" {
+	if verr != nil || len(locks) != 1 || locks[0].By != grant.FromCommand {
 		t.Fatalf("the placed lock: %+v, %v", locks, verr)
 	}
 	v, err := capByID(t, "lock.list").Run(context.Background(), req(nil))
