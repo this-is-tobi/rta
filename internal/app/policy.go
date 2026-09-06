@@ -159,10 +159,12 @@ func yesNo(b bool) string {
 // never tighten; a file that already names its four axes is one they edit.
 const starterPolicy = `# The ceiling no grant in this repository may exceed.
 #
-# This file can only ever SUBTRACT authority. There is no allow key and there
-# never will be, which is why it needs no signature and can be committed like
-# any other file: the worst a hostile edit achieves is that rta refuses more
-# than you wanted.
+# This file can only ever SUBTRACT authority. There is no allow key, which is
+# why it needs no signature and can be committed like any other file: the
+# worst a hostile edit achieves is that rta refuses more than you wanted.
+# ` + "`roles:`" + ` below is not one either — a role grants nothing by being
+# here; a person issues it, sees its lines first, and the ceiling above caps
+# every one of them.
 #
 # A subdirectory may add its own and tighten this further. It cannot loosen it.
 
@@ -185,6 +187,19 @@ neverProfile: []
 requireScope: []
 #  - kv.get
 #  - s3.object.get
+
+# Roles ` + "`rta grant issue <role>`" + ` issues whole, under one passphrase:
+# grant lines in the grammar ` + "`rta grant allow`" + ` takes, and how long the
+# grants last (12h unless said). Every line is capped by the ceiling above —
+# under the 1h maxTTL up there, an 8h role stands for one hour, and
+# ` + "`rta grant roles`" + ` says so before you issue it.
+# roles:
+#   dev:
+#     ttl: 8h
+#     grants:
+#       - kv.get db-password
+#       - pg.query --profile staging
+#       - note
 `
 
 func policyInitCommand() *cobra.Command {

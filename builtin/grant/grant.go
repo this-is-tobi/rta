@@ -126,6 +126,48 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 				},
 			},
 			{
+				ID: "grant.issue", Summary: "Issue every grant of a role to one agent, under one passphrase",
+				HumanOnly: true,
+				Safety:    plugin.Write,
+				Description: "A role is a named list of grant lines — `kv.get db-password`, `pg.query --profile " +
+					"staging --ttl 1h` — under `roles:` in the team's .rta-policy.yaml, your own policy file, " +
+					"or your config. Every line is built and checked exactly as `rta grant allow` builds one, " +
+					"the team ceiling caps each, and with the guard on the passphrase is asked once for all. " +
+					"The grants last --ttl, else the role's `ttl:`, else " + DefaultRoleTTL + "; a line with its " +
+					"own --ttl keeps the shorter. What a line replaces — a grant issued by hand with time left " +
+					"— is shown before anything is signed. A role from a repository's file is somebody else's " +
+					"list: it is issued at the command line only, and with the guard off wants --yes after " +
+					"`rta grant roles <name>`. Take it back with `rta grant revoke --role <name>`.",
+				Inputs: []plugin.Field{
+					{Name: "role", Type: plugin.String, Positional: true, Required: true, Suggest: suggestRoles,
+						Help: "the role to issue — `rta grant roles` lists them"},
+					{Name: "agent", Type: plugin.String, Suggest: suggestHeldAgents,
+						Help: "which agent it is for — the name `rta mcp serve --as` uses; omit only when this machine knows exactly one"},
+					{Name: "ttl", Type: plugin.String, Suggest: suggestRoleTTL,
+						Help: "how long the grants last: 4h, 12h (the role's ttl, else " + DefaultRoleTTL + ")"},
+					guard.PassphraseField,
+				},
+				Run: func(_ context.Context, req plugin.Request) (view.View, error) {
+					return runIssue(req, catalog, artifact)
+				},
+			},
+			{
+				ID: "grant.roles", Summary: "The roles this machine can issue, every line of each, and how long each will really stand",
+				HumanOnly: true,
+				Safety:    plugin.Read, Idempotent: true,
+				// Not a dashboard tile: two files that never change on a timer,
+				// and grant.list is the tile that shows what stands.
+				NoPreview: true,
+				Description: "The team's roles from the policy files and yours from your config, each naming its " +
+					"file, with the window its grants will actually get under the ceiling. With a role name, " +
+					"only that one — worth a look before issuing a role somebody else wrote.",
+				Inputs: []plugin.Field{
+					{Name: "role", Type: plugin.String, Positional: true, Suggest: suggestRoles,
+						Help: "show one role's lines"},
+				},
+				Run: runRoles,
+			},
+			{
 				ID: "grant.renew", Summary: "Push out the deadline on grants you already have",
 				HumanOnly: true,
 				Safety:    plugin.Write, Idempotent: true,
@@ -146,6 +188,8 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 						Help: "only grants on this connection"},
 					{Name: "agent", Type: plugin.String, Suggest: suggestHeldAgents,
 						Help: "only grants for this named agent"},
+					{Name: "role", Type: plugin.String, Suggest: suggestStandingRoles,
+						Help: "only the grants `rta grant issue` issued under this role — a whole role, one passphrase"},
 					{Name: "ttl", Type: plugin.String, Suggest: suggestTTL,
 						Help: "how much longer — defaults to the window the grant was issued with"},
 					guard.PassphraseField,
@@ -167,6 +211,8 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 					"the roster names every agent by name, which is exactly the cross-agent visibility an " +
 					"agent asking about itself must not get.",
 				Inputs: []plugin.Field{
+					{Name: "role", Type: plugin.String, Suggest: suggestStandingRoles,
+						Help: "only the grants `rta grant issue` issued under this role"},
 					{Name: "server", Type: plugin.String, Local: true, Remote: true,
 						Help: "read a remote server's roster instead of this machine's (a name from remotes.yaml)"},
 					operatorid.PassphraseField,
@@ -190,6 +236,8 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 						Help: "only the grant for this connection"},
 					{Name: "agent", Type: plugin.String, Suggest: suggestHeldAgents,
 						Help: "only the grant for this named agent"},
+					{Name: "role", Type: plugin.String, Suggest: suggestStandingRoles,
+						Help: "every grant `rta grant issue` issued under this role — the whole bundle back"},
 					{Name: "all", Type: plugin.Bool, Help: "revoke every grant"},
 					{Name: "server", Type: plugin.String, Local: true, Remote: true,
 						Help: "revoke on a remote server instead (a name from remotes.yaml), as a " +
@@ -765,6 +813,7 @@ func runRenew(_ context.Context, req plugin.Request) (view.View, error) {
 	scope := strings.TrimSpace(req.String("scope"))
 	profile := strings.TrimSpace(req.String("profile"))
 	agent := strings.TrimSpace(req.String("agent"))
+	role := strings.TrimSpace(req.String("role"))
 	askedTTL := strings.TrimSpace(req.String("ttl"))
 
 	var ttl time.Duration
@@ -825,6 +874,9 @@ func runRenew(_ context.Context, req plugin.Request) (view.View, error) {
 				continue
 			}
 			if agent != "" && g.Agent != agent {
+				continue
+			}
+			if role != "" && g.Role != role {
 				continue
 			}
 			window := ttl
@@ -896,8 +948,15 @@ func runRenew(_ context.Context, req plugin.Request) (view.View, error) {
 			len(stale), strings.Join(stale, ", "))
 	}
 	if capped {
-		body += fmt.Sprintf("\ncapped at the %s maximum from first consent — "+
-			"`rta grant allow` starts a new window, which is a fresh decision", format.Duration(core.MaxTTL))
+		// Named by the rule that did the capping: the team's ceiling when it
+		// is the lower one, and the file it came from, since "the 24h maximum"
+		// on a two-hour cap sent people looking for the wrong rule.
+		cap, by := core.MaxTTL, "maximum"
+		if teamCeiling.MaxTTL > 0 && teamCeiling.MaxTTL < cap {
+			cap, by = teamCeiling.MaxTTL, "ceiling of your team's policy ("+teamCeiling.Where()+")"
+		}
+		body += fmt.Sprintf("\ncapped at the %s %s from first consent — "+
+			"`rta grant allow` starts a new window, which is a fresh decision", format.Duration(cap), by)
 	}
 	return view.Text{Body: body}, nil
 }
@@ -913,7 +972,7 @@ func runList(ctx context.Context, req plugin.Request, catalog func() []plugin.Ca
 	if server := req.String("server"); server != "" {
 		return remoteList(req, server)
 	}
-	held, verr := heldTable()
+	held, verr := heldTable(strings.TrimSpace(req.String("role")))
 	if verr != nil {
 		return nil, verr
 	}
@@ -983,8 +1042,18 @@ func reachTable(caps []plugin.Capability, holds func(plugin.Capability) bool) vi
 	return t
 }
 
-func heldTable() (view.View, *view.Error) {
+// heldTable is the roster, or one role's part of it.
+func heldTable(role string) (view.View, *view.Error) {
 	grants, verr := core.Load()
+	if verr == nil && role != "" {
+		kept := grants[:0]
+		for _, g := range grants {
+			if g.Role == role {
+				kept = append(kept, g)
+			}
+		}
+		grants = kept
+	}
 	if verr != nil {
 		// The orphaned state is a screen rather than an error: it is what
 		// `grant list` exists to show, and refusing here would send somebody
@@ -1073,6 +1142,13 @@ func grantsTable(grants []core.Grant, stale func(core.Grant) bool) view.Table {
 	// Not a warning, because all three of the things that issue one
 	// unattended — a provisioning script, a CI job, an agent's shell tool —
 	// are legitimate, and only the operator knows which of them ran.
+	roled := false
+	for _, g := range grants {
+		if g.Role != "" {
+			roled = true
+			break
+		}
+	}
 	unwatched := false
 	for _, g := range grants {
 		if g.From == core.FromCommand || strings.HasPrefix(g.From, core.FromOperatorPrefix) {
@@ -1095,6 +1171,9 @@ func grantsTable(grants []core.Grant, stale func(core.Grant) bool) view.Table {
 	}}
 	if unwatched {
 		t.Columns = slices.Insert(t.Columns, 3, view.Column{Name: "Origin"})
+	}
+	if roled {
+		t.Columns = slices.Insert(t.Columns, 2, view.Column{Name: "Role"})
 	}
 	if named {
 		t.Columns = slices.Insert(t.Columns, 2, view.Column{Name: "Agent"})
@@ -1133,6 +1212,9 @@ func grantsTable(grants []core.Grant, stale func(core.Grant) bool) view.Table {
 		}
 		if unwatched {
 			row = slices.Insert(row, 3, originLabel(g))
+		}
+		if roled {
+			row = slices.Insert(row, 2, dash(g.Role))
 		}
 		if named {
 			// An em dash for the same reason the Profile column uses one: an
@@ -1209,8 +1291,9 @@ func runRevoke(_ context.Context, req plugin.Request) (view.View, error) {
 		Scope:   strings.TrimSpace(req.String("scope")),
 		Profile: strings.TrimSpace(req.String("profile")),
 		Agent:   strings.TrimSpace(req.String("agent")),
+		Role:    strings.TrimSpace(req.String("role")),
 	}
-	if !spec.All && spec.Target == "" && spec.Profile == "" && spec.Agent == "" {
+	if !spec.All && spec.Target == "" && spec.Profile == "" && spec.Agent == "" && spec.Role == "" {
 		return nil, view.Errorf("grant.notarget", "name a capability, or pass --all").
 			WithHint("run `rta grant list` to see what is currently allowed")
 	}
@@ -1221,7 +1304,37 @@ func runRevoke(_ context.Context, req plugin.Request) (view.View, error) {
 	if verr != nil {
 		return nil, verr
 	}
-	return view.Text{Body: revokeBody(spec.Target, out, req.DryRun)}, nil
+	body := revokeBody(spec.Target, out, req.DryRun)
+	if spec.Role != "" && !req.DryRun {
+		body += "\n" + stillStanding(spec.Agent)
+	}
+	return view.Text{Body: body}, nil
+}
+
+// stillStanding is what a revoked role leaves for its agent, computed
+// rather than asserted: a role line that had replaced a hand-issued grant
+// took that grant with it when the role went, and a sentence claiming
+// hand grants survive would be false exactly then.
+func stillStanding(agent string) string {
+	grants, verr := core.Load()
+	if verr != nil {
+		return ""
+	}
+	var names []string
+	for _, g := range grants {
+		if agent != "" && g.Agent != agent {
+			continue
+		}
+		names = append(names, strings.TrimSpace(g.Target+" "+g.Scope))
+	}
+	who := ""
+	if agent != "" {
+		who = " for " + agent
+	}
+	if len(names) == 0 {
+		return "nothing else stands" + who
+	}
+	return fmt.Sprintf("still standing%s: %s (`rta grant list`)", who, strings.Join(names, ", "))
 }
 
 // originLabel is how a grant says where it came from.

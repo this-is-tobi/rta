@@ -387,6 +387,9 @@ func revokeOutcome(spec operatorid.RevokeSpec, write bool) (operatorid.RevokeOut
 			if match && spec.Agent != "" && g.Agent != spec.Agent {
 				match = false
 			}
+			if match && spec.Role != "" && g.Role != spec.Role {
+				match = false
+			}
 			active := g.Active(now)
 			if match {
 				if active {
