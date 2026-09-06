@@ -119,6 +119,12 @@ type Ceiling struct {
 // Empty reports whether this ceiling constrains nothing, which is the answer
 // on a machine with no policy file — and the answer that must leave every
 // existing behaviour exactly as it was.
+// policyKeys is every top-level key a policy file may carry.
+var policyKeys = map[string]bool{
+	"maxTTL": true, "never": true, "neverProfile": true, "requireScope": true,
+	"requireRepoPolicy": true,
+}
+
 func (c Ceiling) Empty() bool {
 	return c.MaxTTL == 0 && len(c.Never) == 0 &&
 		len(c.NeverProfile) == 0 && len(c.RequireScope) == 0 && !c.RequireRepo
@@ -345,6 +351,22 @@ func read(path string, mustExist bool) (Ceiling, *view.Error) {
 		return Ceiling{}, view.Errorf("policy.malformed", "%s: %v", path, err).
 			WithHint("a policy that cannot be parsed is not a policy — fix it, or " +
 				"remove it and say so to whoever shares it")
+	}
+	// A key nothing claims is refused, not dropped. goccy drops an
+	// unrecognised key without a word, and here that is the one failure
+	// this package exists to prevent: `nevr:` for `never:` deleted a bound
+	// while the file still looked like it constrained — the vanishing
+	// ceiling requireRepoPolicy was written against, arriving by typo. A
+	// file with a stray key refuses every gated call until fixed, which is
+	// loud, local and recoverable.
+	var raw map[string]any
+	_ = yaml.Unmarshal(data, &raw)
+	for key := range raw {
+		if !policyKeys[key] {
+			return Ceiling{}, view.Errorf("policy.unknownkey", "%s: %q is not a key a policy file has", path, key).
+				WithHint("maxTTL, never, neverProfile, requireScope, requireRepoPolicy, roles — a key rta does not read " +
+					"would be a bound that is not there")
+		}
 	}
 	if c.RawTTL != "" {
 		d, err := time.ParseDuration(c.RawTTL)
