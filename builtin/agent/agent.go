@@ -352,7 +352,7 @@ func runOverview(_ context.Context, req plugin.Request) (view.View, error) {
 	return view.Sections{Items: []view.Section{
 		{ID: "activity", Title: "Activity", View: view.KeyValue{Pairs: pairs}},
 		{ID: "connected", Title: "Connected now", View: connectedTable()},
-		{ID: "ledger", Title: "The record", View: view.KeyValue{Pairs: recordPairs(rep, verr)}},
+		{ID: "record", Title: "The record", View: view.KeyValue{Pairs: recordPairs(rep, verr)}},
 		{ID: "waiting", Title: "Waiting on you", View: pendingTable(waiting)},
 	}}, nil
 }
