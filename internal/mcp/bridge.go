@@ -369,7 +369,7 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 			refusedBy(rec, verr)
 			return errResult(verr), nil
 		}
-		release, verr := grant.Reserve(c, values, grant.Caller{
+		release, covering, verr := grant.ReserveNaming(c, values, grant.Caller{
 			Agent:   opts.Agent,
 			Profile: profileName,
 			Pin:     opts.connStamp(profileName, grant.Namespace(c.ID)),
@@ -407,6 +407,7 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 			release = func() {}
 		} else if grant.Required(c, profileName) {
 			rec.Auth = agentlog.Standing
+			rec.Role, rec.RoleIssued = roleOf(covering)
 		} else {
 			rec.Auth = agentlog.Open
 		}

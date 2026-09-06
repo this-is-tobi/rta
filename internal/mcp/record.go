@@ -160,6 +160,30 @@ func credentialName(ctx context.Context) string {
 // could not be written would be rta breaking the operator's tooling to
 // protect its own bookkeeping. The note goes to stderr, which under
 // `mcp serve` is the server's log rather than the agent's channel.
+// roleOf is what the record says about the grants that covered a call:
+// their role, and when it was issued — the issuance being what tells a
+// morning's dev apart from an afternoon's. Several grants covering one
+// call under different roles are named together; the issuance is given
+// only when one grant answers for it.
+func roleOf(covering []grant.Grant) (role, issued string) {
+	var names []string
+	seen := map[string]bool{}
+	for _, g := range covering {
+		if g.Role == "" || seen[g.Role] {
+			continue
+		}
+		seen[g.Role] = true
+		names = append(names, g.Role)
+	}
+	if len(names) == 0 {
+		return "", ""
+	}
+	if len(covering) == 1 {
+		issued = covering[0].Issued.UTC().Truncate(time.Second).Format(time.RFC3339)
+	}
+	return strings.Join(names, ", "), issued
+}
+
 func record(e agentlog.Entry) {
 	if err := agentlog.Append(e); err != nil {
 		fmt.Fprintln(os.Stderr, "rta: could not record this call:", err)
