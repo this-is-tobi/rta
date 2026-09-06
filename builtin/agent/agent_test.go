@@ -41,7 +41,7 @@ func isolate(t *testing.T) {
 
 func capability(t *testing.T, id string) plugin.Capability {
 	t.Helper()
-	for _, c := range Plugin().Capabilities {
+	for _, c := range Plugin(catalog, builtIn).Capabilities {
 		if c.ID == id {
 			return c
 		}
@@ -74,7 +74,7 @@ func park(t *testing.T, capID string, scopes ...string) consent.Request {
 // bridge honours the flag by never registering the tool; this pins that every
 // capability here carries it.
 func TestNothingHereAnswersAnAgent(t *testing.T) {
-	for _, c := range Plugin().Capabilities {
+	for _, c := range Plugin(catalog, builtIn).Capabilities {
 		if !c.HumanOnly {
 			t.Errorf("%s is reachable over MCP", c.ID)
 		}

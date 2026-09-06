@@ -29,6 +29,7 @@ import (
 
 	"golang.org/x/term"
 
+	rtagrant "github.com/this-is-tobi/rta/builtin/grant"
 	"github.com/this-is-tobi/rta/builtin/internal/timefmt"
 	"github.com/this-is-tobi/rta/internal/agentlog"
 	"github.com/this-is-tobi/rta/internal/consent"
@@ -48,7 +49,9 @@ import (
 const maxRows = 500
 
 // Plugin returns the agent plugin declaration.
-func Plugin() plugin.Plugin {
+// Plugin takes the catalogue and the artifact lookup for one verb: answering
+// a parked call with a whole role goes through grant's own issue flow.
+func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, bool)) plugin.Plugin {
 	return plugin.Plugin{
 		Name:    "agent",
 		Summary: "What AI agents asked rta for, what they got, and what is waiting on you",
@@ -81,6 +84,8 @@ func Plugin() plugin.Plugin {
 					{Name: "limit", Type: plugin.Int, Default: 30, Min: 1, Max: maxRows,
 						Help: "how many of the most recent calls to show"},
 					{Name: "refused", Type: plugin.Bool, Help: "only the calls rta would not make"},
+					{Name: "role", Type: plugin.String,
+						Help: "only calls a grant of this role covered — what the dev role did today"},
 					{Name: "session", Type: plugin.String,
 						Help: "only one server's calls — the id `rta agent overview` shows beside each connected client",
 						Suggest: func(context.Context, plugin.Request) []string {
@@ -177,6 +182,8 @@ func Plugin() plugin.Plugin {
 						Help: "the request id from `rta agent pending`", Suggest: suggestPending},
 					{Name: "ttl", Type: plugin.String,
 						Help: "also issue a standing grant for this long, e.g. 15m (max 24h)"},
+					{Name: "role", Type: plugin.String, Suggest: rtagrant.SuggestRoles,
+						Help: "also issue this whole role to the asking agent — the day's grants under one passphrase, then this call"},
 					// One passphrase field serves both gates that can ask: the
 					// local guard's (with --ttl), and — with --server — the
 					// operator key's. Same name, same channels, same argv refusal.
@@ -185,7 +192,9 @@ func Plugin() plugin.Plugin {
 						Help: "the request is parked on this remote server (a name from remotes.yaml)"},
 				},
 				HumanOnly: true,
-				Run:       runAllow,
+				Run: func(_ context.Context, req plugin.Request) (view.View, error) {
+					return runAllow(req, catalog, artifact)
+				},
 			},
 			{
 				ID:      "agent.deny",
@@ -361,6 +370,7 @@ func runOverview(_ context.Context, req plugin.Request) (view.View, error) {
 		{Key: "waiting on you", Value: nowWaiting},
 		{Key: "connected now", Value: connected},
 		{Key: "locked", Value: lockedLine()},
+		{Key: "roles in force", Value: rolesLine()},
 		{Key: "calls in the last hour", Value: fmt.Sprintf("%d", recent)},
 		{Key: "refused", Value: fmt.Sprintf("%d", refused)},
 		{Key: "you approved live", Value: fmt.Sprintf("%d", approved)},
@@ -388,6 +398,16 @@ func runOverview(_ context.Context, req plugin.Request) (view.View, error) {
 // operator glances at. A lock used to be visible on `lock list` and nowhere
 // else, so an agent frozen during an incident and forgotten stayed frozen
 // with nothing on the dashboard saying so.
+// rolesLine is which roles stand for which agents, the way the roster
+// says it — the overview is the screen the dashboard tile opens onto, and
+// "is dev still issued to claude" belongs beside connected and locked.
+func rolesLine() string {
+	if force := rtagrant.RolesInForce(); force != "" {
+		return strings.ReplaceAll(force, "\n", "; ")
+	}
+	return "none"
+}
+
 func lockedLine() string {
 	locks, verr := lockdown.Load()
 	if verr != nil {
@@ -487,6 +507,7 @@ func runLog(_ context.Context, req plugin.Request) (view.View, error) {
 		return nil, sinceErr
 	}
 	sess := strings.TrimSpace(req.String("session"))
+	roleWant := strings.TrimSpace(req.String("role"))
 	// Read more than asked for when filtering, so `--refused --limit 10`
 	// answers with ten refusals rather than the refusals among the last ten
 	// calls — which is the same number for a quiet server and nothing at
@@ -506,7 +527,7 @@ func runLog(_ context.Context, req plugin.Request) (view.View, error) {
 	// latest call and the eye walks up into the past, and the TUI opens on
 	// the last row for the same reason (view.Table.Tail).
 	want := limit
-	if onlyRefused || sess != "" {
+	if onlyRefused || sess != "" || roleWant != "" {
 		want = maxRows
 	}
 	var entries []agentlog.Entry
@@ -523,12 +544,12 @@ func runLog(_ context.Context, req plugin.Request) (view.View, error) {
 	if err != nil {
 		return nil, view.Errorf("agent.log.unreadable", "%v", err)
 	}
-	filtered := onlyRefused || sess != "" || after > 0 || !since.IsZero()
+	filtered := onlyRefused || sess != "" || roleWant != "" || after > 0 || !since.IsZero()
 	// Both columns appear only once a row can fill them, which for a record
 	// written before agents were named — or before rta could serve over
 	// HTTP at all — is never, and a column of em dashes on the screen an
 	// operator opens in a hurry is a column they learn to skip.
-	named, namedCred, coded, sessioned := false, false, false, false
+	named, namedCred, coded, sessioned, roled := false, false, false, false, false
 	for _, e := range entries {
 		if e.Agent != "" || e.Client != "" {
 			named = true
@@ -538,6 +559,9 @@ func runLog(_ context.Context, req plugin.Request) (view.View, error) {
 		// same-named clients each call came from.
 		if e.Session != "" {
 			sessioned = true
+		}
+		if e.Role != "" {
+			roled = true
 		}
 		if e.Credential != "" {
 			namedCred = true
@@ -560,6 +584,7 @@ func runLog(_ context.Context, req plugin.Request) (view.View, error) {
 		switch {
 		case onlyRefused && e.Outcome != agentlog.Refused:
 		case sess != "" && e.Session != sess:
+		case roleWant != "" && !roleCovers(e.Role, roleWant):
 		case e.Seq <= after:
 		case !since.IsZero() && e.At.Before(since):
 		default:
@@ -596,6 +621,9 @@ func runLog(_ context.Context, req plugin.Request) (view.View, error) {
 		if sessioned {
 			row = slices.Insert(row, whoColumns(named, namedCred), sessionCell(e))
 		}
+		if roled {
+			row = slices.Insert(row, roleColumn(named, namedCred, sessioned), dashed(e.Role))
+		}
 		rows = append(rows, row)
 	}
 	// seq is first because it is the join key and the cursor: `--after` takes
@@ -623,6 +651,9 @@ func runLog(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 	if sessioned {
 		cols = slices.Insert(cols, whoColumns(named, namedCred), view.Column{Name: "session"})
+	}
+	if roled {
+		cols = slices.Insert(cols, roleColumn(named, namedCred, sessioned), view.Column{Name: "role"})
 	}
 	// Total is what the rows were chosen from; under a filter that is the
 	// rows themselves — `0 of 500 rows` under --refused read as five
@@ -724,6 +755,34 @@ func whoColumns(named, namedCred bool) int {
 	return pos
 }
 
+// roleColumn is where the role sits: after whoever called and the session
+// that carried the call, before what was called.
+func roleColumn(named, namedCred, sessioned bool) int {
+	pos := whoColumns(named, namedCred)
+	if sessioned {
+		pos++
+	}
+	return pos
+}
+
+// roleCovers reports whether a row's role column names the role asked
+// for — one of several, when several grants covered one call.
+func roleCovers(cell, want string) bool {
+	for _, r := range strings.Split(cell, ",") {
+		if strings.TrimSpace(r) == want {
+			return true
+		}
+	}
+	return false
+}
+
+func dashed(s string) string {
+	if s == "" {
+		return "—"
+	}
+	return s
+}
+
 func sessionCell(e agentlog.Entry) string {
 	if e.Session == "" {
 		return "—"
@@ -791,6 +850,9 @@ func showView(r consent.Request) view.View {
 	if r.Agent != "" {
 		pairs = append(pairs, view.Pair{Key: "agent", Value: r.Agent})
 	}
+	if hint := roleHint(r); hint != "" {
+		pairs = append(pairs, view.Pair{Key: "role", Value: hint})
+	}
 	pairs = append(pairs,
 		view.Pair{Key: "why you are being asked", Value: r.Why},
 		view.Pair{Key: "asked", Value: format.Ago(r.AskedAt)},
@@ -851,7 +913,7 @@ func answeredBy(req plugin.Request) string {
 	return grant.Origin(req.Surface(), term.IsTerminal(int(stdio.Real().Fd())))
 }
 
-func runAllow(_ context.Context, req plugin.Request) (view.View, error) {
+func runAllow(req plugin.Request, catalog func() []plugin.Capability, artifact func(string) (string, bool)) (view.View, error) {
 	id := strings.TrimSpace(req.String("id"))
 	if server := strings.TrimSpace(req.String("server")); server != "" {
 		return remoteAnswer(req, server, id, true)
@@ -860,7 +922,29 @@ func runAllow(_ context.Context, req plugin.Request) (view.View, error) {
 	if !ok {
 		return nil, unknownRequest(id)
 	}
+	// The whole role the call's line belongs to, issued through grant's own
+	// flow — lines printed, ceiling per line, one passphrase, the team-role
+	// rule — and then this call decided. Explicit, never a default: a
+	// question about one call must not quietly become a day's authority.
+	roleName := strings.TrimSpace(req.String("role"))
+	if roleName != "" && strings.TrimSpace(req.String("ttl")) != "" {
+		return nil, view.Errorf("agent.allow.either", "--role issues the whole role; --ttl issues this one line — pick one")
+	}
+	var issued view.View
+	if roleName != "" {
+		sub := plugin.NewRequest(map[string]any{
+			"role": roleName, "agent": r.Agent, "passphrase": req.String("passphrase"),
+		}, req.DryRun, req.Yes).WithSurface(req.Surface())
+		v, err := rtagrant.IssueRole(sub, catalog, artifact)
+		if err != nil {
+			return nil, err
+		}
+		issued = v
+	}
 	if req.DryRun {
+		if issued != nil {
+			return issued, nil
+		}
 		return view.Text{Body: fmt.Sprintf("would allow %s (%s) for the agent waiting on request %s",
 			r.Cap, strings.Join(r.Scopes, " "), id)}, nil
 	}
@@ -927,6 +1011,14 @@ func runAllow(_ context.Context, req plugin.Request) (view.View, error) {
 			return view.KeyValue{Pairs: pairs}, nil
 		}
 		pairs[1] = view.Pair{Key: "for", Value: note}
+	}
+	if issued != nil {
+		pairs[1] = view.Pair{Key: "for", Value: "this call, and the whole of role " + roleName + " issued to " + r.Agent}
+		items := []view.Section{{ID: "answer", Title: "Answered", View: view.KeyValue{Pairs: pairs}}}
+		if s, ok := issued.(view.Sections); ok {
+			items = append(items, s.Items...)
+		}
+		return view.Sections{Items: items}, nil
 	}
 	return view.KeyValue{Pairs: pairs}, nil
 }

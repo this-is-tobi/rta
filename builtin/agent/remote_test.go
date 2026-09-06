@@ -26,7 +26,7 @@ import (
 
 func remoteCap(t *testing.T, id string) plugin.Capability {
 	t.Helper()
-	for _, c := range Plugin().Capabilities {
+	for _, c := range Plugin(catalog, builtIn).Capabilities {
 		if c.ID == id {
 			return c
 		}
