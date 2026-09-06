@@ -145,6 +145,29 @@ type DenySet struct {
 	// most of what a plugin legitimately does — so what is denied is the
 	// literal directory entry, leaving everything inside it alone.
 	NoMove []string
+	// Own is the launched artifact's own directory, readable again under the
+	// denial that covers it. Empty for a plugin found anywhere but the store.
+	//
+	// **On macOS a process that cannot read its own directory cannot verify
+	// a TLS certificate.** Proven with a plain Go binary under
+	// /usr/bin/sandbox-exec rather than reasoned about: executed from a
+	// read-denied directory, every HTTPS request fails with
+	// `SecPolicyCreateSSL error: 0`, and the same binary a directory over
+	// succeeds — the Security framework initialises from the main
+	// executable's location, and it wants the directory, not the file
+	// (allowing the executable alone changes nothing). Installed artifacts
+	// live in <data>/plugins/store/<name>/<digest>, inside the tree tier1
+	// denies both verbs, so every managed plugin was unable to reach any
+	// https:// address — while the same plugin built locally and found on
+	// $PATH worked, which is why no test and no development machine saw it.
+	//
+	// Reads only, of exactly that directory, and only for an artifact rta
+	// placed there. The directory holds the binary and nothing else, and the
+	// process already is that binary; the rest of the data directory stays
+	// denied, the write half of the rule stays as it was, and a plugin
+	// anywhere else gains nothing — the carve-out is for the layout rta
+	// chose, not for wherever an executable happens to sit.
+	Own []string
 }
 
 // Resolve builds the deny set for this machine.
@@ -201,6 +224,35 @@ func ResolveAllowing(granted []plugin.Need) (DenySet, error) {
 		return DenySet{}, err
 	}
 	return d, nil
+}
+
+// Launching is d for one launch: the artifact's own directory readable when
+// it lies inside the managed store, and d unchanged otherwise. See Own.
+//
+// Validated like every other entry, because it is rendered into the same
+// policy string — and refused rather than dropped for the same reason
+// ResolveAllowing refuses: a rule silently left out is a policy nobody
+// noticed shrinking, in either direction.
+func (d DenySet) Launching(exe string) (DenySet, error) {
+	dir := filepath.Dir(exe)
+	for _, store := range withTarget(ManagedStore()) {
+		if !inside(dir, store) {
+			continue
+		}
+		own := dedupe(withTarget(dir))
+		if err := validate(own); err != nil {
+			return DenySet{}, err
+		}
+		d.Own = own
+		return d, nil
+	}
+	return d, nil
+}
+
+// inside reports whether p is root or lies below it, by path components —
+// a prefix test on the string alone would put /data-old inside /data.
+func inside(p, root string) bool {
+	return p == root || strings.HasPrefix(p, root+string(filepath.Separator))
 }
 
 // ancestors is every directory above each path, up to the root.

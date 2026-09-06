@@ -65,6 +65,17 @@ func profile(d DenySet) string {
 		}
 		b.WriteString(")\n")
 	}
+	// Last, because SBPL is last-match-wins and this one has to win over the
+	// tier1 denial above it: reads of the artifact's own directory, and
+	// nothing else — the write verbs are not named, so those denials stand.
+	// DenySet.Own says why a process needs this at all.
+	if len(d.Own) > 0 {
+		b.WriteString("(allow file-read*\n")
+		for _, p := range d.Own {
+			fmt.Fprintf(&b, "  (subpath %q)\n", p)
+		}
+		b.WriteString(")\n")
+	}
 	return b.String()
 }
 

@@ -79,6 +79,12 @@ type Found struct {
 // so the layout still has one home.
 func ManagedBin() string { return filepath.Join(paths.Data(), "plugins", "bin") }
 
+// ManagedStore is where installed artifacts live — <data>/plugins/store, by
+// name then digest. Here for the same reason ManagedBin is: the deny set has
+// to know which directory an artifact may read its own way out of, and
+// plugindist.StoreDir delegates.
+func ManagedStore() string { return filepath.Join(paths.Data(), "plugins", "store") }
+
 // Discover lists SDK plugin binaries on $PATH, then in the managed store.
 //
 // First match wins, in $PATH order, which is what a shell does and therefore

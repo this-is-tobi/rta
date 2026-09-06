@@ -410,6 +410,12 @@ func (h *Host) OpenAllowing(ctx context.Context, name string, allowed []plugin.N
 }
 
 func (h *Host) openIdentified(ctx context.Context, id Identity, deny DenySet, args []string) (*Client, error) {
+	// Here and not in buildCmd, so the cache key, the launch and the restart
+	// (which relaunches under c.deny) all see the same policy.
+	deny, err := deny.Launching(id.Path)
+	if err != nil {
+		return nil, err
+	}
 	key := cacheKey(id, deny, args)
 
 	if c := h.cached(key); c != nil {

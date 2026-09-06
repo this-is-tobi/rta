@@ -106,6 +106,7 @@ func specHash(d DenySet) string {
 	write("noaccess", d.NoAccess)
 	write("noread", d.NoRead)
 	write("nomove", d.NoMove)
+	write("own", d.Own)
 	return hex.EncodeToString(h.Sum(nil))
 }
 

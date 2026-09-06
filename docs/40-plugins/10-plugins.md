@@ -80,6 +80,8 @@ plugin confinement   ok   sandbox-exec: 2 paths denied read+write (rta's own sta
 
 Read that row rather than assuming it. It states what is denied on *this* machine, and it is honest about platforms where confinement is weaker.
 
+One place inside rta's own state is readable to a plugin, and only readable: the installed artifact's own directory under the store. On macOS a process that cannot read its own directory cannot verify a TLS certificate — the Security framework initialises from the executable's location — so without that carve-out no managed plugin could reach an `https://` address, while a copy of the same plugin on `$PATH` could.
+
 ### When a plugin needs one of those locations
 
 Some plugins exist to use a credential location. `kube` and `cnpg` shell out to `kubectl`, and `kubectl` cannot reach any cluster without `~/.kube/config` — so for them the denial is not caution, it is the plugin being unable to do the one thing it is for.
