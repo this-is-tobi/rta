@@ -60,11 +60,11 @@ func newPolicyCommand(opts *globalOpts) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "policy",
 		Short: "The ceiling no grant on this machine may exceed",
-		Long: "A grant is one person's decision. A policy is the boundary that decision has to\n" +
-			"fit inside — and it can only ever subtract, which is what makes it safe to commit\n" +
-			"to a repository with no seal and no key distribution.\n\n" +
-			"The one thing a file cannot defend itself against is not being there. `rta policy\n" +
-			"require` is the answer to that, and it is stored outside the repository on purpose.",
+		Long: "A grant is one person's decision. A policy is the boundary that decision has to" +
+			" fit inside — and it can only ever subtract, which is what makes it safe to commit" +
+			" to a repository with no seal and no key distribution.\n\n" +
+			"The one thing a file cannot defend itself against is not being there. `rta policy" +
+			" require` is the answer to that, and it is stored outside the repository on purpose.",
 		RunE: groupRunE,
 	}
 
@@ -194,8 +194,8 @@ func policyInitCommand() *cobra.Command {
 		Short:             "Write a starter " + policy.RepoFile + " in this directory",
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
-		Long: "Writes a commented " + policy.RepoFile + " with every axis named and one of them\n" +
-			"active, so tightening it later is an edit rather than a trip to the documentation.\n\n" +
+		Long: "Writes a commented " + policy.RepoFile + " with every axis named and one of them" +
+			" active, so tightening it later is an edit rather than a trip to the documentation.\n\n" +
 			"Commit it. It needs no seal — it can only subtract.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			path := policy.RepoFile
@@ -233,13 +233,13 @@ func policyRequireCommand() *cobra.Command {
 		Short:             "Refuse to run in a directory with no " + policy.RepoFile,
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
-		Long: "Records, in your own policy file rather than in any repository, that a\n" +
-			"repository policy must be found. Without it a deleted " + policy.RepoFile + " is\n" +
-			"indistinguishable from a machine that never had one: rta runs with no ceiling\n" +
-			"and nothing anywhere says so.\n\n" +
-			"With it, that becomes a refusal naming the directory rta searched from — which\n" +
-			"also catches the case nobody expects, where an MCP client launched rta somewhere\n" +
-			"other than the repository you thought you were protecting.",
+		Long: "Records, in your own policy file rather than in any repository, that a" +
+			" repository policy must be found. Without it a deleted " + policy.RepoFile + " is" +
+			" indistinguishable from a machine that never had one: rta runs with no ceiling" +
+			" and nothing anywhere says so.\n\n" +
+			"With it, that becomes a refusal naming the directory rta searched from — which" +
+			" also catches the case nobody expects, where an MCP client launched rta somewhere" +
+			" other than the repository you thought you were protecting.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			path, err := operatorPolicyPath()
 			if err != nil {
