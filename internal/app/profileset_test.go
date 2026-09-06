@@ -33,7 +33,7 @@ func setRegistry(t *testing.T) *registry.Registry {
 	// The grant built-in rides along, because one test has to check that
 	// removing an environment takes its grants with it — and a grant is
 	// issued by a capability, not by an app command.
-	if err := reg.Register(grantbuiltin.Plugin(reg.Capabilities)); err != nil {
+	if err := reg.Register(grantbuiltin.Plugin(reg.Capabilities, reg.Artifact)); err != nil {
 		t.Fatal(err)
 	}
 	if err := reg.Register(plugin.Plugin{

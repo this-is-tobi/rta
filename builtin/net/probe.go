@@ -177,7 +177,7 @@ func probe(ctx context.Context, req plugin.Request, send string) (view.View, err
 		// process shutdown — so without this, a peer that accepts the TCP
 		// connection and then never sends a TLS record hangs
 		// HandshakeContext forever, holding a goroutine and a socket open
-		// with no grant needed and none of --allow-write's gating involved,
+		// with no grant needed and no gating at all,
 		// since this capability is Read. timeout already bounds the dial
 		// above; it bounds the handshake the same way.
 		hctx, cancel := context.WithTimeout(ctx, timeout)

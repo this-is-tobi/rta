@@ -28,7 +28,7 @@ func withPolicy(t *testing.T, body string) {
 // allowing runs grant.allow the way a person does, returning what they read.
 func allowing(t *testing.T, values map[string]any) (string, *view.Error) {
 	t.Helper()
-	v, err := runAllow(context.Background(), req(values), catalog)
+	v, err := runAllow(context.Background(), req(values), catalog, builtIn)
 	if err != nil {
 		verr, ok := err.(*view.Error)
 		if !ok {
@@ -267,7 +267,7 @@ func TestDetailedListHandlesHeldTableReturningSections(t *testing.T) {
 	// The reach tiers beside it have to survive too — a page that lost them
 	// the moment "granted" became a Sections would answer only half of
 	// "what can an agent do here".
-	for _, id := range []string{"default", "allow-write", "grant"} {
+	for _, id := range []string{"default", "grant", "human"} {
 		found := false
 		for _, item := range page.Items {
 			if item.Key() == id {

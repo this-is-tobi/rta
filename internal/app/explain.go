@@ -80,17 +80,6 @@ func cardView(reg *registry.Registry, c plugin.Capability) view.View {
 		{Key: "cli", Value: cliForm(c)},
 		{Key: "mcp-tool", Value: toolName(c)},
 	}
-	// What it takes for an agent to reach this at all, before any grant: the
-	// operator's flag, spelled out. An external plugin's destructive
-	// capability is pinned to that binary's digest, and a control whose
-	// correct invocation has to be computed from a hash is a control people
-	// turn off — so it is printed rather than described.
-	if flag := mcpOptionsForExplain(reg).AllowFlag(c); flag != "" {
-		pairs = append(pairs, view.Pair{
-			Key:   "mcp exposure",
-			Value: "off by default — `rta mcp serve " + flag + "`",
-		})
-	}
 	if grant.Required(c, "") {
 		// The safety class alone no longer says what an agent may do, so the
 		// card has to say the rest of it.
@@ -281,7 +270,7 @@ func similarity(a, b string) int {
 // configSection names the config block this capability's plugin reads,
 // spelled the way an operator has to write it: bare for a built-in, and
 // pinned to the artifact for anything found on $PATH — the same grammar
-// --allow-destructive uses, and the same reason.
+// `rta plugin trust` uses, and the same reason.
 func configSection(reg *registry.Registry, c plugin.Capability) string {
 	words := c.Words()
 	if len(words) == 0 {

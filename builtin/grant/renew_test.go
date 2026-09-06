@@ -15,7 +15,7 @@ import (
 
 func renewCap(t *testing.T) plugin.Capability {
 	t.Helper()
-	for _, c := range Plugin(func() []plugin.Capability { return nil }).Capabilities {
+	for _, c := range Plugin(func() []plugin.Capability { return nil }, builtIn).Capabilities {
 		if c.ID == "grant.renew" {
 			return c
 		}
@@ -211,7 +211,7 @@ profiles:
 	allow := func(profile string) {
 		t.Helper()
 		var c plugin.Capability
-		for _, cap := range Plugin(catalog).Capabilities {
+		for _, cap := range Plugin(catalog, builtIn).Capabilities {
 			if cap.ID == "grant.allow" {
 				c = cap
 			}

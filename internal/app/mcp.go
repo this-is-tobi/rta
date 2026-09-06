@@ -32,7 +32,6 @@ import (
 	"github.com/this-is-tobi/rta/internal/registry"
 	agentsession "github.com/this-is-tobi/rta/internal/session"
 	"github.com/this-is-tobi/rta/internal/stdio"
-	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
 // newMCPCommand wires the MCP surface: serve (stdio) and install helpers.
@@ -49,30 +48,28 @@ func newMCPCommand(reg *registry.Registry, version string) *cobra.Command {
 
 func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 	var (
-		consentOn        bool
-		consentWait      time.Duration
-		consentNotify    bool
-		consentPreview   bool
-		allowWrite       []string
-		allowDestructive []string
-		agentName        string
-		roots            []string
-		httpAddr         string
-		tokenFile        string
-		oidcIssuer       string
-		oidcAudience     string
-		oidcSubjects     []string
-		operatorsFile    string
-		operatorsURL     string
+		consentOn      bool
+		consentWait    time.Duration
+		consentNotify  bool
+		consentPreview bool
+		agentName      string
+		roots          []string
+		httpAddr       string
+		tokenFile      string
+		oidcIssuer     string
+		oidcAudience   string
+		oidcSubjects   []string
+		operatorsFile  string
+		operatorsURL   string
 	)
 	cmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Serve capabilities as MCP tools, over stdio or HTTP",
 		Long: "Serve every registered capability as an MCP tool, over stdio by default\n" +
 			"or over HTTP with --http.\n\n" +
-			"Safety gate: only read capabilities are exposed by default.\n" +
-			"Use --allow-write for write capabilities, and --allow-destructive\n" +
-			"with explicit capability IDs for destructive ones.\n\n" +
+			"One gate: a read is free, and every capability that changes\n" +
+			"anything needs a grant a person issued — `rta grant allow`.\n" +
+			"There is no flag that stands in for one.\n\n" +
 			"Path gate: every path argument must be under a root, including a\n" +
 			"capability's own declared default. The default root is the directory\n" +
 			"the server was started in; widen it with --root, which is repeatable.\n" +
@@ -300,7 +297,7 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 						// Secrets: kv.Reveal is below. Preparation
 						// additionally requires the machine's guard in remote
 						// mode, checked per call.
-						Prepare: grantcap.PrepareRemote(reg.Capabilities),
+						Prepare: grantcap.PrepareRemote(reg.Capabilities, reg.Artifact),
 						Revoke:  grantcap.RevokeRemote,
 						Pending: agentcap.PendingRemote(agentName),
 						Answer:  agentcap.AnswerRemote(agentName),
@@ -336,15 +333,13 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 						}
 					})
 				},
-				AllowWrite:       allowWrite,
-				AllowDestructive: allowDestructive,
-				Consent:          consentOn,
-				ConsentWait:      consentWait,
-				ConsentNotify:    consentNotify,
-				ConsentPreview:   consentPreview,
-				Origin:           reg.Origin,
-				Config:           pluginConfig.For,
-				Profiles:         profileCfg,
+				Consent:        consentOn,
+				ConsentWait:    consentWait,
+				ConsentNotify:  consentNotify,
+				ConsentPreview: consentPreview,
+				Origin:         reg.Origin,
+				Config:         pluginConfig.For,
+				Profiles:       profileCfg,
 				// The schema above is a snapshot; what a call resolves through
 				// is the file as it is now, so an environment the operator
 				// edits takes effect without a restart — and the grant they
@@ -450,16 +445,11 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 			return err
 		},
 	}
-	cmd.Flags().StringSliceVar(&allowWrite, "allow-write", nil,
-		"plugins whose write capabilities are exposed (repeatable, e.g. note)")
-	cmd.Flags().StringSliceVar(&allowDestructive, "allow-destructive", nil,
-		"destructive capabilities to allow; external plugins must be pinned "+
-			"to their digest (e.g. note.rm, hello.wipe@5dae737f8845)")
 	// Named, because until it is there is exactly one principal on this
 	// machine: every MCP client the operator wires up reads the same grant
 	// file, so consent given while talking to one follows all the others.
 	// The name is the operator's own word, written where they wire the client
-	// up, and trusted exactly as much as --allow-write beside it.
+	// up, and trusted exactly as much as --root beside it.
 	cmd.Flags().StringVar(&agentName, "as", "",
 		"name this agent, so grants and the record can tell it from your other clients")
 	cmd.Flags().StringSliceVar(&roots, "root", nil,
@@ -500,16 +490,6 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 	// operator discovers rather than something rta can know.
 	cmd.Flags().BoolVar(&consentPreview, "consent-preview", true,
 		"show what a destructive call would do (its own --dry-run) on the parked request")
-	// The two flags whose values nobody can be expected to type. A pinned
-	// capability ID is a digest an operator would otherwise have to go and
-	// look up, and a control that costs a lookup is one that gets left off.
-	allowing := func(safety plugin.Safety) func(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
-		return func(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
-			return mcp.Options{Origin: reg.Origin}.AllowValues(reg, safety), cobra.ShellCompDirectiveNoFileComp
-		}
-	}
-	_ = cmd.RegisterFlagCompletionFunc("allow-write", allowing(plugin.Write))
-	_ = cmd.RegisterFlagCompletionFunc("allow-destructive", allowing(plugin.Destructive))
 	// A root is a directory, and the shell has the list.
 	_ = cmd.RegisterFlagCompletionFunc("root",
 		func(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {

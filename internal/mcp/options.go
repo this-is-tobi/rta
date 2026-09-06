@@ -5,10 +5,8 @@ import (
 
 	"fmt"
 	"sort"
-	"strings"
 
 	"github.com/this-is-tobi/rta/internal/config"
-	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/guard"
 	"github.com/this-is-tobi/rta/internal/lockdown"
 	"github.com/this-is-tobi/rta/internal/pathguard"
@@ -17,11 +15,13 @@ import (
 	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
-// Options is the operator's policy for one MCP session: which capabilities
-// are exposed, which writes and destructive calls are allowed, which
-// environment bounds the reach — and every question the bridge asks it.
-
-// Options configures which capabilities are exposed.
+// Options is the operator's policy for one MCP session: which environment
+// bounds the reach, which roots confine a path, who is on the other end —
+// and every question the bridge asks it.
+//
+// What is *not* here any more is an exposure allowlist. A capability that
+// changes anything costs a grant a person issued (internal/grant.Required),
+// and there is no flag that stands in for one.
 type Options struct {
 	// guardPin is the guard state NewServer observed at startup, checked
 	// before any grant is honoured — see the comment beside grant.Reserve in
@@ -34,17 +34,6 @@ type Options struct {
 	// call(). Unexported for guardPin's reason; set by NewServer.
 	locks *lockdown.Pin
 
-	// AllowWrite names the plugins whose write-class capabilities are
-	// exposed. Empty means none.
-	//
-	// A list of namespaces rather than the boolean this used to be. The
-	// boolean was one decision, taken once at launch, for every Write
-	// capability in the registry — including every one that arrives later,
-	// from a plugin installed next month. An operator who enabled it for a
-	// good reason (they wanted `note add`) and pasted the result into the
-	// config `rta mcp install claude` writes had issued a permanent,
-	// registry-wide, update-transitive authorisation, and nothing about the
-	// flag said so.
 	// Session is the id this process stamps on every ledger entry, and
 	// Connected is told the client's announced name once the MCP handshake
 	// completes — wired by the command that starts the server, so that
@@ -52,21 +41,6 @@ type Options struct {
 	Session   string
 	Connected func(client string)
 
-	AllowWrite []string
-	// AllowDestructive lists destructive capabilities the operator has
-	// allowed, each optionally pinned to the plugin artifact it came from:
-	// "kv.rm", or "hello.wipe@5dae737f8845".
-	//
-	// A pin is REQUIRED for a capability from an external plugin and refused
-	// for a built-in, because the two have different artifacts. A built-in's
-	// artifact is the rta binary the operator chose to run; there is nothing
-	// to pin it to that they have not already decided. An external plugin is
-	// a separate file that can be replaced under the same name, and an
-	// authorisation attached to the name would be inherited by whatever
-	// replaces it — which is the one place in rta where a permission would
-	// attach to a name rather than to an artifact, on the surface with no
-	// human present.
-	AllowDestructive []string
 	// Consent turns on just-in-time consent: a call the grant
 	// gate refuses for want of a grant is parked, the operator is asked,
 	// and it proceeds or is refused with the answer they gave.
@@ -77,10 +51,9 @@ type Options struct {
 	// nobody to ask. With it off, every refusal is exactly what it is
 	// today.
 	//
-	// It never widens the surface. A capability the operator did not expose
-	// with AllowWrite or AllowDestructive is not a tool at all, and no
-	// amount of asking makes it one; this answers the grant question and
-	// nothing else.
+	// It never widens the surface. A HumanOnly capability is not a tool at
+	// all, and no amount of asking makes it one; this answers the grant
+	// question and nothing else.
 	Consent bool
 	// ConsentWait bounds how long a parked call waits. Zero means
 	// consent.DefaultWait.
@@ -111,9 +84,11 @@ type Options struct {
 	// dropping out of the plugin host's bookkeeping was read here as a
 	// built-in, and a built-in needs no digest pin.
 	//
-	// nil means every namespace is treated as unknown, which destructiveAllowed
-	// refuses. That is the right zero value for a security gate: a caller who
-	// forgets to wire it exposes nothing rather than everything.
+	// nil means every namespace is treated as unknown, which artifact reads
+	// as "no digest" — so a grant issued against a real artifact stops
+	// covering the call. That is the right zero for a security gate: a
+	// caller who forgets to wire it authorizes nothing rather than
+	// everything.
 	Origin func(namespace string) (registry.Origin, bool)
 	// Config answers what the operator stated for a namespace, already
 	// matched to the artifact by internal/pluginconf. nil means nothing is
@@ -195,8 +170,8 @@ type Options struct {
 	// a name for itself in the initialize handshake and rta records that too
 	// — beside this, never instead of it, because a name a thing chooses for
 	// itself is not an identity. This one is typed where the operator
-	// wired the client up, in the same argv as --allow-write, and is trusted
-	// exactly as much as those flags are.
+	// wired the client up, in the same argv as --root, and is trusted exactly
+	// as much as that flag is.
 	//
 	// It reaches the gate as grant.Caller.Agent, where it can only subtract:
 	// a named server matches only grants issued to that name, and an unnamed
@@ -250,68 +225,6 @@ func (o Options) profiles() config.Config {
 	return o.Reload()
 }
 
-// entryMatches reports whether one allowlist entry names the artifact behind
-// ns, in the `name@digest-prefix` grammar trust already uses.
-//
-// Shared by --allow-write and --allow-destructive so the two cannot drift
-// into different grammars, which they had: --allow-destructive *required* a
-// pin, and --allow-write compared the whole entry as one string and therefore
-// did not understand the grammar at all. An operator who learned `id@digest`
-// from the flag that demands it — and whose refusal hands over the exact
-// string to type — and then applied it to the other flag silently switched
-// the capability off. Stating a stricter policy must never be the thing that
-// turns a control off, and it must never do it in silence; Problems reports
-// what could not be honoured.
-//
-// bareOK is the one deliberate difference between the two, not an accident.
-// --allow-destructive refuses a bare entry because a destructive capability
-// is exactly where "whatever binary currently answers to this name" is not
-// good enough. --allow-write accepts one because namespace
-// granularity there on purpose: a pin is a tightening available to an
-// operator who wants it, not homework demanded of everyone.
-func (o Options) entryMatches(entry, want, ns string, bareOK bool) bool {
-	id, pin, pinned := strings.Cut(entry, "@")
-	if id != want {
-		return false
-	}
-	origin, known := o.origin(ns)
-	if !known {
-		// Neither a built-in nor a plugin this registry knows. Refused rather
-		// than assumed harmless: the two things absence could mean are "built
-		// in" and "never heard of it", and only the first is safe.
-		return false
-	}
-	switch {
-	case !origin.External():
-		// Built-in. A pin would name an artifact that has no separate
-		// identity, so accepting one would imply a check that is not
-		// happening.
-		return !pinned
-	case !pinned:
-		return bareOK
-	default:
-		// Prefix match, so an operator can paste the short digest rta prints
-		// (always the full 12-char Origin.Short()). The 8-char floor mirrors
-		// internal/plugintrust's identical digest-prefix match: below it, a
-		// hand-typed or truncated pin is cheap enough to grind that it
-		// degrades pinning back into "whatever replaces this name" — the one
-		// thing pinning an artifact instead of a name exists to prevent.
-		return len(pin) >= 8 && strings.HasPrefix(origin.Digest, pin)
-	}
-}
-
-// writeAllowed reports whether this operator opened up writes for the plugin
-// a capability belongs to.
-func (o Options) writeAllowed(capID string) bool {
-	ns := grant.Namespace(capID)
-	for _, entry := range o.AllowWrite {
-		if o.entryMatches(entry, ns, ns, true) {
-			return true
-		}
-	}
-	return false
-}
-
 // origin resolves a namespace, treating an unwired lookup as "nothing is
 // known", which is the fail-closed direction.
 func (o Options) origin(ns string) (registry.Origin, bool) {
@@ -346,50 +259,21 @@ func (o Options) pluginConfig(c plugin.Capability) map[string]any {
 	return o.Config(words[0])
 }
 
-// destructiveAllowed reports whether this operator allowed this exact
-// destructive capability, from this exact artifact.
-func (o Options) destructiveAllowed(capID string) bool {
-	for _, entry := range o.AllowDestructive {
-		if o.entryMatches(entry, capID, grant.Namespace(capID), false) {
-			return true
-		}
-	}
-	return false
-}
-
-// Problems reports allowlist entries that authorize nothing, and why.
-//
-// The gate is a set of string comparisons, so every way of getting one wrong
-// — a typo, a namespace that is not installed, a pin left behind by an
-// upgrade, a pin on a built-in — has the same outcome as deciding not to
-// allow it: the capability is simply absent from tools/list. An operator who
-// meant to enable something and sees nothing has no way to tell "refused"
-// from "misspelled", and the agent on the other end reports only that the
-// tool does not exist.
+// Problems reports what this server could not honour, and why.
 //
 // Reported rather than fatal, and at startup rather than per call: the
 // operator is present at `rta mcp serve` and is the only one who can act on
-// it. An entry that names a plugin installed on another machine is an
-// ordinary state for a shared MCP client config, exactly as it is for the
-// plugins section of the config file (internal/pluginconf).
+// it. A plugin installed on another machine is an ordinary state for a
+// shared MCP client config, exactly as it is for the plugins section of the
+// config file (internal/pluginconf).
 func (o Options) Problems(reg *registry.Registry) []string {
 	if reg == nil {
 		return nil
 	}
 	var out []string
-	writable := map[string]bool{}
-	byID := map[string]plugin.Capability{}
-	for _, c := range reg.Capabilities() {
-		byID[c.ID] = c
-		if c.Safety == plugin.Write {
-			writable[grant.Namespace(c.ID)] = true
-		}
-	}
-
-	// The refused artifacts themselves, first: an allowlist entry naming one
-	// is a consequence, and the operator wants the cause. Reported even when
-	// no flag mentions them, because this is the only place `rta mcp serve`
-	// can say it.
+	// An artifact discovery found and declined to launch. This is the only
+	// place `rta mcp serve` can say it: an agent reporting "no such tool" is
+	// indistinguishable from a plugin that was never installed.
 	for _, ns := range o.Untrusted {
 		// A name something already answers to is a different problem, and
 		// saying "none of its capabilities are exposed" about it would be
@@ -406,39 +290,6 @@ func (o Options) Problems(reg *registry.Registry) []string {
 				" — `rta plugin trust %s` approves it, and the next server start loads it", ns, ns))
 	}
 
-	for _, entry := range o.AllowWrite {
-		ns, _, _ := strings.Cut(entry, "@")
-		switch {
-		case !o.knows(ns):
-			out = append(out, fmt.Sprintf("--allow-write %s: %s", entry, o.absent(ns)))
-		case !o.entryMatches(entry, ns, ns, true):
-			out = append(out, fmt.Sprintf("--allow-write %s: %s", entry, o.pinReason(ns)))
-		case !writable[ns]:
-			out = append(out, fmt.Sprintf("--allow-write %s: %q has no write capabilities, so this allows nothing", entry, ns))
-		}
-	}
-	for _, entry := range o.AllowDestructive {
-		id, _, _ := strings.Cut(entry, "@")
-		c, ok := byID[id]
-		ns := grant.Namespace(id)
-		switch {
-		case !ok:
-			// rta never launched an untrusted artifact, so it genuinely does
-			// not know whether the capability exists — but reporting that as
-			// an unknown capability names the wrong cause, and the operator's
-			// pin is correct.
-			if o.refused(ns) {
-				out = append(out, fmt.Sprintf("--allow-destructive %s: %s", entry, o.absent(ns)))
-				break
-			}
-			out = append(out, fmt.Sprintf("--allow-destructive %s: no capability named %q exists", entry, id))
-		case c.Safety != plugin.Destructive:
-			out = append(out, fmt.Sprintf("--allow-destructive %s: %q is %s, not destructive, so this allows nothing",
-				entry, id, c.Safety))
-		case !o.entryMatches(entry, id, ns, false):
-			out = append(out, fmt.Sprintf("--allow-destructive %s: %s", entry, o.pinReason(ns)))
-		}
-	}
 	return out
 }
 
@@ -476,131 +327,30 @@ func (o Options) refused(ns string) bool {
 	return false
 }
 
-// pinReason explains why a well-formed entry did not match, in the terms the
-// operator has to act on: the string to type.
-func (o Options) pinReason(ns string) string {
-	origin, known := o.origin(ns)
-	switch {
-	case !known:
-		return o.absent(ns)
-	case !origin.External():
-		return fmt.Sprintf("%q is built in and has no artifact to pin; drop the @digest", ns)
-	case origin.Digest == "":
-		return fmt.Sprintf("%q has no recorded digest, so no pin can match it", ns)
-	default:
-		return "this pin does not match the installed artifact; it is @" + origin.Short()
-	}
+// exposed reports whether a capability is a tool on this server at all.
+//
+// One question now, where there used to be two. A capability for the person
+// at the terminal is never a tool; everything else is, and what it costs to
+// *call* is a grant (internal/grant.Required) rather than a flag typed once
+// into a client's config file. The safety class still decides that price —
+// a read is free, a write is not — it just no longer decides visibility.
+func (o Options) exposed(c plugin.Capability) bool {
+	return !c.HumanOnly
 }
 
-// AllowFlag returns the `rta mcp serve` flag an operator needs in order to
-// expose c, or "" for a capability that needs none.
+// artifact is the digest of the plugin behind a namespace, empty for a
+// built-in — what a grant issued against this namespace has to match.
 //
-// It exists because the artifact pin is only tolerable if the string to type
-// is handed over rather than computed. A digest an operator has to go and
-// look up is a control that gets turned off, so `rta explain` prints this
-// verbatim and the answer is copy-pasteable.
-//
-// Deliberately not named DestructiveHint, which was the first name and was a
-// bad one: the MCP SDK's ToolAnnotations has a *bool field by that exact
-// name, set a few lines below, and two different things called the same
-// thing in one file is how the wrong one gets used.
-func (o Options) AllowFlag(c plugin.Capability) string {
-	switch c.Safety {
-	case plugin.Write:
-		return "--allow-write " + o.allowValue(c)
-	case plugin.Destructive:
-		return "--allow-destructive " + o.allowValue(c)
-	default:
+// A namespace this registry does not know also answers empty, and that is
+// fail-closed rather than a hole: a grant issued while the plugin *was*
+// known carries its digest, so the mismatch refuses the call. The reverse
+// drift refuses too. See grant.Grant.Digest.
+func (o Options) artifact(ns string) string {
+	origin, known := o.origin(ns)
+	if !known || !origin.External() {
 		return ""
 	}
-}
-
-// allowValue is the value half of AllowFlag: what the operator types after the
-// flag, pinned wherever the gate requires a pin.
-func (o Options) allowValue(c plugin.Capability) string {
-	if c.Safety == plugin.Write {
-		// Bare, because writeAllowed accepts a bare namespace (entryMatches
-		// with bareOK). A pin is offered for destructive only, where the
-		// artifact identity is the whole point of the gate.
-		return grant.Namespace(c.ID)
-	}
-	if origin, known := o.origin(grant.Namespace(c.ID)); known && origin.External() {
-		return c.ID + "@" + origin.Short()
-	}
-	return c.ID
-}
-
-// AllowValues lists everything --allow-write or --allow-destructive accepts
-// for the capabilities reg holds, in the exact form the flag requires, each
-// with a tab-separated description — the same shape Field.Suggest returns.
-//
-// Exported for one caller: shell completion for those two flags. Trust pins
-// an external plugin's destructive capability to its artifact digest, and a
-// digest somebody has to go and look up is a control that gets turned off.
-// `rta explain` already hands the whole line over after the fact; this hands
-// over the value at the moment the flag is being typed.
-func (o Options) AllowValues(reg *registry.Registry, safety plugin.Safety) []string {
-	if reg == nil {
-		return nil
-	}
-	// Counted rather than named for --allow-write, because its value is a
-	// namespace and the useful thing to know at that moment is how much the
-	// entry opens up. --allow-destructive names one capability, so its own
-	// summary is the right description.
-	count := map[string]int{}
-	summary := map[string]string{}
-	var order []string
-	for _, c := range reg.Capabilities() {
-		if c.Safety != safety {
-			continue
-		}
-		value := o.allowValue(c)
-		if value == "" {
-			continue
-		}
-		if count[value] == 0 {
-			order = append(order, value)
-			summary[value] = c.Summary
-		}
-		count[value]++
-	}
-	out := make([]string, 0, len(order))
-	for _, value := range order {
-		desc := summary[value]
-		if safety == plugin.Write {
-			desc = plural(count[value], "write capability")
-		}
-		out = append(out, value+"\t"+desc)
-	}
-	sort.Strings(out)
-	return out
-}
-
-// plural counts a thing whose plural is not formed by adding an s.
-func plural(n int, singular string) string {
-	if n == 1 {
-		return "1 " + singular
-	}
-	return fmt.Sprintf("%d %s", n, strings.Replace(singular, "capability", "capabilities", 1))
-}
-
-// exposed reports whether a capability passes the safety gate.
-func (o Options) exposed(c plugin.Capability) bool {
-	// Before the safety class, and no flag opens it: a capability for the
-	// person at the terminal is not a tool whatever the operator allowed.
-	if c.HumanOnly {
-		return false
-	}
-	switch c.Safety {
-	case plugin.Read:
-		return true
-	case plugin.Write:
-		return o.writeAllowed(c.ID)
-	case plugin.Destructive:
-		return o.destructiveAllowed(c.ID)
-	default:
-		return false
-	}
+	return origin.Digest
 }
 
 // remoteExposed reports whether a capability passes the locality gate: a

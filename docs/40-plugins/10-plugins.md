@@ -59,13 +59,14 @@ plugin pg      ok   ~/.local/bin/rta-plugin-pg (9 capabilities, 685186a7c11a)
 plugin trust   ok   8 artifacts approved to run
 ```
 
-The same digest is what pins a destructive capability at the MCP boundary:
+The same digest is recorded on every grant issued against that plugin:
 
 ```bash
-rta mcp serve --allow-destructive hello.wipe@5dae737f8845
+rta grant allow hello.wipe --ttl 5m
+rta grant list --detail          # shows the artifact the grant was issued against
 ```
 
-So an authorisation attaches to an artifact rather than to a name a replacement would inherit.
+So an authorisation attaches to an artifact rather than to a name a replacement would inherit — replace the binary and the grant stops covering anything.
 
 ## Confinement
 
@@ -181,7 +182,7 @@ Lists what changed without upgrading anything: for each installed plugin, the ve
 | Runs before you approve its digest | ❌ |
 | Bypasses grants, path roots or the safety gate | ❌ — all enforced host-side |
 
-A plugin's write capabilities are opened one namespace at a time (`--allow-write pg`), and its destructive ones individually and by digest. Nothing about being a plugin buys extra reach.
+A plugin's write and destructive capabilities cost a grant, exactly like a built-in's, and that grant is pinned to the plugin's artifact. Nothing about being a plugin buys extra reach.
 
 ## Configuring one
 

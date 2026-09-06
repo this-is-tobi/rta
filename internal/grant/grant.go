@@ -1,13 +1,18 @@
 // Package grant is consent for AI agents: which capabilities an MCP caller
 // may invoke, on which records, until when.
 //
-// The safety class an operator opts into (`--allow-write`, an allowlist of
-// destructive IDs) is a decision taken once, when the server is launched, for
-// every call it will ever make. That is the coarse half. A grant is the fine
-// half: it names one capability — optionally one record — carries a deadline,
-// and can only be issued by a person at a terminal. An agent that could grant
-// itself access would make the whole mechanism theatre, so the capabilities
-// that issue grants refuse to run over MCP.
+// It is the whole of the authorisation model rather than half of it. A read
+// is free; anything that changes something costs a grant, which names one
+// capability — optionally one record — carries a deadline, and can only be
+// issued by a person at a terminal. An agent that could grant itself access
+// would make the whole mechanism theatre, so the capabilities that issue
+// grants are never MCP tools at all (plugin.Capability.HumanOnly).
+//
+// There used to be a second, coarser gate beside this one: `--allow-write`
+// and an allowlist of destructive IDs, decided once when the server was
+// launched, for every call it would ever make. Two vocabularies answering one
+// question is what made the documented quickstart grant do nothing — see
+// Required.
 //
 // This started as a kv-only feature, because a leaked password is the most
 // obvious harm. It is not the only one: an agent that empties a task list or
@@ -98,9 +103,9 @@ type Grant struct {
 	// out of that cluster.
 	//
 	// It is the same rule the rest of rta already follows for artifacts:
-	// `--allow-destructive <id>@<digest>` and `plugins.<ns>@<digest>`
-	// bind an authorization to a thing rather than to a label. This
-	// binds it to a *connection* for the same reason and by the same means.
+	// Digest below and `plugins.<ns>@<digest>` bind an authorization to a
+	// thing rather than to a label. This binds it to a *connection* for the
+	// same reason and by the same means.
 	//
 	// **Required exactly when Profile is set.** An unprofiled grant keeps an
 	// empty profile and an empty pin and is untouched, which is also what
@@ -155,7 +160,7 @@ type Grant struct {
 	//
 	// **What it is not is authentication.** The name is the operator's own
 	// word, written where they wired the client up, and it is trusted exactly
-	// as much as `--allow-write` beside it in the same argv. The name a client
+	// as much as `--root` beside it in the same argv. The name a client
 	// asserts for *itself* over the wire is a different thing and never
 	// reaches this field: a name a thing chooses for itself is not an
 	// identity. See agentlog.Entry.Client, which records the claim as
@@ -165,7 +170,35 @@ type Grant struct {
 	// canonical() is json.Marshal over the parsed []Grant, so a field that is
 	// the zero string on every stored grant is omitted, re-encodes
 	// byte-identically, and every existing seal still verifies.
-	Agent   string    `json:"agent,omitempty"`
+	Agent string `json:"agent,omitempty"`
+	// Digest is the artifact behind this grant's plugin when it was issued:
+	// the registry's recorded digest for an external plugin, empty for a
+	// built-in, which has no separate artifact to name.
+	//
+	// **Because a plugin is a file that can be replaced under the same
+	// name.** This is the rule `--allow-destructive <id>@<digest>` used to
+	// carry, moved to the thing that now does the authorizing. Without it,
+	// deleting a trusted `rta-plugin-hello` and dropping another binary in
+	// its place would inherit every grant standing on the name — the one
+	// place in rta where a permission would attach to a name rather than to
+	// an artifact, on the surface with no human present.
+	//
+	// Exact in both directions, with no wildcard, for Profile's and Agent's
+	// reason one field along: a grant that was issued when the namespace was
+	// built in carries no digest and covers a built-in, and a grant issued
+	// against an artifact covers that artifact. Both directions of drift —
+	// the registry losing track of a plugin's provenance, or gaining it —
+	// end in a refusal rather than in an inherited authorization.
+	//
+	// The cost is that upgrading a plugin invalidates the grants standing on
+	// it. That is the same cost `--allow-destructive` charged, bounded the
+	// same way: MaxTTL is a day, and re-consenting is one command.
+	//
+	// omitempty is load-bearing for the seal, exactly as Profile documents:
+	// canonical() is json.Marshal over the parsed []Grant, so a field that is
+	// the zero string on every stored grant is omitted, re-encodes
+	// byte-identically, and every existing seal still verifies.
+	Digest  string    `json:"digest,omitempty"`
 	Issued  time.Time `json:"issued"`
 	Expires time.Time `json:"expires"`
 	// From is where this grant was issued: a form, a terminal with somebody
@@ -423,6 +456,11 @@ type Caller struct {
 	// filled from, so a grant issued against a different one for the same
 	// *name* stops covering it.
 	Pin string
+	// Digest is the artifact behind the capability's own plugin right now,
+	// empty for a built-in. Compared exactly against Grant.Digest, so a
+	// grant stops covering a plugin binary that has been replaced since it
+	// was issued.
+	Digest string
 	// Active is the environment the operator has switched on, empty when they
 	// have not switched. While they are working in one place, a grant naming
 	// any other profile does not count.
@@ -440,6 +478,12 @@ func (g Grant) covers(capID, scope string, by Caller) bool {
 	// was named authorizes the unnamed server it was issued to, and does not
 	// widen to cover an agent added afterwards.
 	if g.Agent != by.Agent {
+		return false
+	}
+	// The artifact, exactly, in both directions and with no wildcard. See
+	// the field: authority in rta binds to a thing, never to a label a
+	// replacement would inherit.
+	if g.Digest != by.Digest {
 		return false
 	}
 	// Exact, in both directions, with no g.Profile == "" escape hatch. A grant
@@ -963,10 +1007,27 @@ func Mutate(f func([]Grant) ([]Grant, bool)) *view.Error {
 // Required reports whether a capability needs a grant before an agent may
 // call it, given the profile the call names.
 //
-// Destructive is implicit: a capability that permanently removes something is
-// exactly what a standing allowlist should not be enough for. Everything else
-// opts in, which is how kv.get — a read by the letter of the safety model,
-// a leak in practice — ends up here too.
+// **Reads are free and everything else costs a grant.** That is the whole
+// authorisation model, and it used to be two: a `--allow-write` /
+// `--allow-destructive` allowlist decided once at startup for every call a
+// server would ever make, and a grant decided per record and per quarter
+// hour. Two vocabularies competing to answer one question is what made the
+// quickstart's own grant do nothing — `rta grant allow kv.get db-password`
+// issued a perfectly good row for a capability the server had never exposed,
+// and the agent was told the tool did not exist. Whichever gate an operator
+// had learned, the other one was the one refusing them.
+//
+// Collapsing them is strictly stronger rather than a relaxation, which is
+// the part worth stating plainly. A write used to be reachable for a whole
+// server's lifetime on the strength of one flag typed into a client's config
+// file months ago, with nothing per call and no expiry; now it costs a grant
+// a person issued, which the guard can price, the team ceiling can cap, the
+// record shows being spent, and the clock takes back. What is lost is the
+// standing allowlist, and a standing allowlist is precisely what consent
+// should not be.
+//
+// NeedsGrant still exists for the case the safety class understates: kv.get
+// is a read by the letter of the model and a leak in practice.
 //
 // **Naming a profile is itself enough**, and that clause is the whole of the
 // profiles feature. plugins/pg declares no NeedsGrant and all six of its
@@ -981,8 +1042,18 @@ func Mutate(f func([]Grant) ([]Grant, bool)) *view.Error {
 // machine. The requirement belongs to the connection, not to the capability —
 // so the zero-config path stays exactly as frictionless as it is today, and
 // consent is required at precisely the moment a call reaches somewhere else.
+// **A grant naming a plugin covers every capability in it, destructive ones
+// included**, and that is deliberate rather than an oversight of the
+// collapse. `--allow-destructive` refused a wildcard because it was a
+// permanent, per-server switch with no deadline and nothing in the record
+// when it was spent; `rta grant allow kv --ttl 15m` is a different object —
+// a person typed it, it names a deadline, every call against it is a line in
+// the record, and the guard can price it. The alternative would be a grant
+// that `grant list` shows and the gate silently ignores for one class of
+// capability, which is exactly the "granted but still refused" dead end this
+// change exists to remove. An operator who wants less names the capability.
 func Required(c plugin.Capability, profile string) bool {
-	return profile != "" || c.NeedsGrant || c.Safety == plugin.Destructive
+	return profile != "" || c.NeedsGrant || c.Safety != plugin.Read
 }
 
 // scopes reads the records a call names, from the input the capability

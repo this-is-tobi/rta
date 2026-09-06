@@ -195,7 +195,7 @@ rta mcp serve --as sandbox --root ~/projects --root /tmp/scratch
 ## Be asked instead of refused, while you are at the machine
 
 ```bash
-rta mcp serve --as claude --consent --consent-notify --allow-write note
+rta mcp serve --as claude --consent --consent-notify
 ```
 
 A call needing a grant nobody issued parks rather than failing:
@@ -406,7 +406,7 @@ rta cnpg backup request --cluster shop-prod-db   # ask the operator to take one 
 rta cnpg backup list --cluster shop-prod-db      # what it did, and where it went
 ```
 
-The request carries a cluster reference and nothing else. Destination, credentials, retention and encryption all come from the cluster, which is what makes this the one mutating capability in an otherwise read-only plugin: there is no place for a caller to point it at. It is `Write`, so it is off the default MCP surface until you pass `--allow-write cnpg`, and it needs a grant that names the cluster on top of that.
+The request carries a cluster reference and nothing else. Destination, credentials, retention and encryption all come from the cluster, which is what makes this the one mutating capability in an otherwise read-only plugin: there is no place for a caller to point it at. It is `Write`, so an agent needs a grant for it — one that names the cluster, so consent is about *this* database rather than about the plugin.
 
 It is refused outright for a cluster that configures no backup. CloudNativePG accepts such a request and fails it minutes later, in a place nobody is watching — so rta reads the cluster first and tells you now.
 

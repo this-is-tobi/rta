@@ -24,7 +24,7 @@ func reqTUI(values map[string]any) plugin.Request {
 // handler the declaration could drift from.
 func guardCap(t *testing.T, id string) plugin.Capability {
 	t.Helper()
-	for _, c := range Plugin(catalog).Capabilities {
+	for _, c := range Plugin(catalog, builtIn).Capabilities {
 		if c.ID == id {
 			return c
 		}

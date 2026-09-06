@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/pluginhost"
 	"github.com/this-is-tobi/rta/internal/plugintrust"
 	"github.com/this-is-tobi/rta/internal/registry"
@@ -859,17 +860,14 @@ func devReport(reg *registry.Registry, c *pluginhost.Client) view.View {
 // which is the part authors most often get wrong — Safety is a claim about
 // blast radius and it is easy to write Read for something that reveals a
 // secret.
-func agentReach(reg *registry.Registry, c plugin.Capability) string {
-	flag := mcpOptionsForExplain(reg).AllowFlag(c)
+func agentReach(_ *registry.Registry, c plugin.Capability) string {
 	switch {
 	case c.HumanOnly:
 		return "no — for the person at the terminal, never an agent"
-	case flag == "":
-		return "yes, by default"
-	case c.NeedsGrant || c.Safety == plugin.Destructive:
-		return flag + ", plus a grant a person issues"
+	case grant.Required(c, ""):
+		return "with a grant a person issues"
 	default:
-		return flag
+		return "yes, by default"
 	}
 }
 

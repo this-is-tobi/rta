@@ -31,7 +31,8 @@ type buildNotes struct {
 // buildGrant validates one issuance request and constructs the grant
 // exactly as it would be stored — unsigned; signing is the caller's step,
 // because who signs is precisely what differs between the flows.
-func buildGrant(catalog func() []plugin.Capability, spec operatorid.IssueSpec, from string) (core.Grant, buildNotes, *view.Error) {
+func buildGrant(catalog func() []plugin.Capability, artifact func(string) (string, bool),
+	spec operatorid.IssueSpec, from string) (core.Grant, buildNotes, *view.Error) {
 	var notes buildNotes
 	target := core.Normalize(spec.Target)
 	if target == "" {
@@ -45,6 +46,16 @@ func buildGrant(catalog func() []plugin.Capability, spec operatorid.IssueSpec, f
 	if !targetExists(catalog, target) {
 		return core.Grant{}, notes, view.Errorf("grant.unknowntarget", "%q does not name a registered capability or plugin", target).
 			WithHint("rta explain lists capability IDs, rta plugin list lists plugin names — check for a typo")
+	}
+	// The artifact behind the plugin this target names, recorded now so the
+	// grant binds to the binary the operator is consenting about rather than
+	// to the name a replacement would answer to. Empty for a built-in, which
+	// has no artifact separate from the rta the operator chose to run.
+	digest, known := artifact(core.Namespace(target))
+	if !known {
+		return core.Grant{}, notes, view.Errorf("grant.unknownplugin",
+			"%q is registered but rta cannot say which binary answers for it", core.Namespace(target)).
+			WithHint("`rta doctor` reports a plugin whose provenance went missing; a grant must name an artifact")
 	}
 	profile, pin, verr := checkProfile(target, spec.Profile)
 	if verr != nil {
@@ -81,6 +92,10 @@ func buildGrant(catalog func() []plugin.Capability, spec operatorid.IssueSpec, f
 		// of quietly following the name to wherever it now points.
 		Profile:    profile,
 		ProfilePin: pin,
+		// The artifact this authority is about. See core.Grant.Digest: it is
+		// what `--allow-destructive <id>@<digest>` used to carry, moved onto
+		// the thing that now does the authorizing.
+		Digest: digest,
 		// Who may spend it. Empty is not "anybody": it is the server the
 		// operator launched without a name, which is the only caller a grant
 		// issued before agents were named has ever had.
@@ -127,9 +142,10 @@ func inactiveProfileNote(g core.Grant) string {
 // grants" is a line somebody typed, never a transitive import). label is
 // the enrolled operator the envelope verified; it lands in the grant's From
 // as attribution the roster promised — one label, one person.
-func PrepareRemote(catalog func() []plugin.Capability) func(spec operatorid.IssueSpec, label string) (operatorid.Prepared, *view.Error) {
+func PrepareRemote(catalog func() []plugin.Capability,
+	artifact func(string) (string, bool)) func(spec operatorid.IssueSpec, label string) (operatorid.Prepared, *view.Error) {
 	return func(spec operatorid.IssueSpec, label string) (operatorid.Prepared, *view.Error) {
-		g, notes, verr := buildGrant(catalog, spec, core.FromOperatorPrefix+label)
+		g, notes, verr := buildGrant(catalog, artifact, spec, core.FromOperatorPrefix+label)
 		if verr != nil {
 			return operatorid.Prepared{}, verr
 		}

@@ -94,7 +94,7 @@ func TestOutCannotBeAimedAtAnArbitraryFileOverMCP(t *testing.T) {
 	t.Setenv(passphraseEnv, "correct horse battery staple")
 	grantFor(t, "kv.get", "db-password")
 
-	session := mcpSession(t, mcp.Options{AllowWrite: []string{"kv"}})
+	session := mcpSession(t, mcp.Options{})
 	if _, offered := toolProperties(t, session, "kv_get")["out"]; offered {
 		t.Fatal("out is offered in the kv_get tool schema — an agent can be told to ask for it")
 	}
@@ -148,7 +148,7 @@ func TestOutIsNeverFilledFromTheHostEnvironmentOverMCP(t *testing.T) {
 	victim := filepath.Join(t.TempDir(), "exfil")
 	t.Setenv(plugin.LocalEnvVar("kv.get", "out"), victim)
 
-	session := mcpSession(t, mcp.Options{AllowWrite: []string{"kv"}})
+	session := mcpSession(t, mcp.Options{})
 	res, err := session.CallTool(context.Background(), &sdk.CallToolParams{
 		Name:      "kv_get",
 		Arguments: map[string]any{"key": "db-password"},
@@ -180,7 +180,7 @@ func TestSetCannotOverwriteAStoredSecretWithoutAGrant(t *testing.T) {
 	text(t, runSet, map[string]any{"key": "db-password", "value": "s3cret"}, false)
 	t.Setenv(passphraseEnv, "correct horse battery staple")
 
-	session := mcpSession(t, mcp.Options{AllowWrite: []string{"kv"}})
+	session := mcpSession(t, mcp.Options{})
 	overwrite := &sdk.CallToolParams{
 		Name:      "kv_set",
 		Arguments: map[string]any{"key": "db-password", "value": "overwritten"},
@@ -223,7 +223,7 @@ func TestSetFileCannotBeChosenOverMCP(t *testing.T) {
 	t.Setenv(passphraseEnv, "correct horse battery staple")
 	grantFor(t, "kv.set", "note")
 
-	session := mcpSession(t, mcp.Options{AllowWrite: []string{"kv"}})
+	session := mcpSession(t, mcp.Options{})
 	if _, offered := toolProperties(t, session, "kv_set")["file"]; offered {
 		t.Fatal("file is offered in the kv_set tool schema — an agent can be told to ask for it")
 	}
@@ -261,7 +261,7 @@ func TestSetFileCannotBeChosenOverMCP(t *testing.T) {
 // allowed and whatever grants stand.
 func TestCopyAndEditAreNeverTools(t *testing.T) {
 	setup(t)
-	session := mcpSession(t, mcp.Options{AllowWrite: []string{"kv"}})
+	session := mcpSession(t, mcp.Options{})
 	res, err := session.ListTools(context.Background(), &sdk.ListToolsParams{})
 	if err != nil {
 		t.Fatal(err)
@@ -288,7 +288,8 @@ func TestInitRecipientCannotBeSuppliedOverMCP(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	session := mcpSession(t, mcp.Options{AllowWrite: []string{"kv"}})
+	grantFor(t, "kv.init", "")
+	session := mcpSession(t, mcp.Options{})
 	if _, offered := toolProperties(t, session, "kv_init")["recipient"]; offered {
 		t.Fatal("recipient is offered in the kv_init tool schema — an agent can be told to ask for it")
 	}
@@ -333,7 +334,7 @@ func TestRekeyRecipientCannotBeSuppliedOverMCP(t *testing.T) {
 	}
 	grantFor(t, "kv.rekey", "")
 
-	session := mcpSession(t, mcp.Options{AllowDestructive: []string{"kv.rekey"}})
+	session := mcpSession(t, mcp.Options{})
 	if _, offered := toolProperties(t, session, "kv_rekey")["recipient"]; offered {
 		t.Fatal("recipient is offered in the kv_rekey tool schema — an agent can be told to ask for it")
 	}
@@ -369,7 +370,7 @@ func TestRmNeedsAGrantForTheKeyItRemoves(t *testing.T) {
 	text(t, runSet, map[string]any{"key": "db-password", "value": "s3cret"}, false)
 	t.Setenv(passphraseEnv, "correct horse battery staple")
 
-	session := mcpSession(t, mcp.Options{AllowDestructive: []string{"kv.rm"}})
+	session := mcpSession(t, mcp.Options{})
 	call := &sdk.CallToolParams{
 		Name:      "kv_rm",
 		Arguments: map[string]any{"key": "db-password"},
@@ -408,7 +409,7 @@ func TestRenameNeedsAGrantForTheKeyItMoves(t *testing.T) {
 	text(t, runSet, map[string]any{"key": "prod-db-password", "value": "s3cret"}, false)
 	t.Setenv(passphraseEnv, "correct horse battery staple")
 
-	session := mcpSession(t, mcp.Options{AllowWrite: []string{"kv"}})
+	session := mcpSession(t, mcp.Options{})
 	call := &sdk.CallToolParams{
 		Name:      "kv_rename",
 		Arguments: map[string]any{"key": "prod-db-password", "new-name": "x"},

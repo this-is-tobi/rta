@@ -50,7 +50,7 @@ func TestAGrantForOneAgentDoesNotAuthorizeAnother(t *testing.T) {
 	t.Setenv("RTA_DATA_DIR", t.TempDir())
 	reg := testRegistry(t)
 	opts := func(name string) Options {
-		return Options{AllowWrite: []string{"demo"}, Agent: name}
+		return Options{Agent: name}
 	}
 
 	// Consent given while talking to one agent.
@@ -96,14 +96,14 @@ func TestAnUnnamedGrantCoversTheUnnamedServerAndNoOtherAgent(t *testing.T) {
 		t.Fatal(verr)
 	}
 
-	unnamed := asAgent(t, reg, Options{AllowWrite: []string{"demo"}}, "some-client")
+	unnamed := asAgent(t, reg, Options{}, "some-client")
 	if res := callTool(t, unnamed, "demo_item_reveal",
 		map[string]any{"key": "prod/db-password"}); res.IsError {
 		t.Fatalf("a grant issued before anybody was named stopped covering the "+
 			"unnamed server it was issued to: %s", res.Content[0].(*sdk.TextContent).Text)
 	}
 
-	named := asAgent(t, reg, Options{AllowWrite: []string{"demo"}, Agent: "ci"}, "some-client")
+	named := asAgent(t, reg, Options{Agent: "ci"}, "some-client")
 	if res := callTool(t, named, "demo_item_reveal",
 		map[string]any{"key": "prod/db-password"}); !res.IsError {
 		t.Fatal("an unnamed grant widened to cover a named agent — which is what " +
@@ -118,7 +118,7 @@ func TestTheRecordSaysWhoCalledAndWhoTheyClaimedToBe(t *testing.T) {
 	t.Setenv("RTA_DATA_DIR", t.TempDir())
 	reg := testRegistry(t)
 
-	s := asAgent(t, reg, Options{AllowWrite: []string{"demo"}, Agent: "desktop"}, "totally-vault")
+	s := asAgent(t, reg, Options{Agent: "desktop"}, "totally-vault")
 	callTool(t, s, "demo_item_list", map[string]any{"name": "x"})
 
 	entries, err := agentlog.Read(10)
@@ -149,7 +149,7 @@ func TestAHostileClientNameIsCleanedAndBounded(t *testing.T) {
 	reg := testRegistry(t)
 
 	hostile := "\x1b]8;;http://evil\x07vault\x1b]8;;\x07" + strings.Repeat("é", 200)
-	s := asAgent(t, reg, Options{AllowWrite: []string{"demo"}}, hostile)
+	s := asAgent(t, reg, Options{}, hostile)
 	if res := callTool(t, s, "demo_item_list", map[string]any{"name": "x"}); res.IsError {
 		t.Fatal("a call failed because of what its client called itself")
 	}

@@ -250,7 +250,7 @@ func TestHTTPTransportRequiresABearerToken(t *testing.T) {
 // other test in this package uses — connect()/asAgent() never touch an
 // http.Request at all, so they cannot exercise this.
 func TestHTTPTransportRecordsWhichCredentialCalled(t *testing.T) {
-	addr := startRemote(t, Options{AllowWrite: []string{"demo"}},
+	addr := startRemote(t, Options{},
 		Compose(nil, StaticTokenVerifier(map[string]string{"tok-a": "alice"})))
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

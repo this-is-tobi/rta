@@ -19,9 +19,9 @@ import (
 // and handed separately to the MCP gate, and the two fell out of step exactly
 // once, which was enough: a plugin that stayed registered while dropping out
 // of the host's bookkeeping was read by the gate as a built-in, and a
-// built-in needs no digest pin on --allow-destructive. The artifact binding
-// was defeated not by a flaw in the check but by the check
-// asking a different component what it was looking at.
+// built-in's authorization carries no digest to check. The artifact binding
+// was defeated not by a flaw in the check but by the check asking a
+// different component what it was looking at.
 //
 // It is set by the caller that did the loading and cannot be declared by a
 // plugin: pkg/plugin has no field for it, because a value a plugin could
@@ -36,12 +36,26 @@ type Origin struct {
 func (o Origin) External() bool { return o.Path != "" }
 
 // Short is the digest abbreviated for display, and for the prefix match an
-// operator's --allow-destructive pin is compared against.
+// operator's `plugins.<ns>@<digest>` pin is compared against.
 func (o Origin) Short() string {
 	if len(o.Digest) > 12 {
 		return o.Digest[:12]
 	}
 	return o.Digest
+}
+
+// Artifact is the digest of the binary behind a namespace, empty for a
+// built-in, and known=false for a namespace this registry has never heard
+// of. It is what a grant records so its authority binds to a file rather
+// than to a name — see grant.Grant.Digest — and it reads the same map the
+// MCP gate compares against, so the two cannot disagree about what they are
+// looking at.
+func (r *Registry) Artifact(namespace string) (string, bool) {
+	origin, known := r.Origin(namespace)
+	if !known || !origin.External() {
+		return "", known
+	}
+	return origin.Digest, true
 }
 
 // Registry indexes plugins and their capabilities by ID.

@@ -149,7 +149,7 @@ func InMemory(ctx context.Context, url string, opts Options) (*git.Repository, *
 //
 // The capabilities that reach for this are Read with no grant, which is the
 // class that costs nothing to reach: read capabilities go onto every `rta mcp
-// serve` with no --allow-write, no grant and read_only_hint: true. The
+// serve` with no grant at all and read_only_hint: true. The
 // catalogue already decided what may be in that class — http.get carries
 // NeedsGrant with Scope "url" because a caller-chosen URL is an outbound
 // channel on the way there and a model's context on the way back, and

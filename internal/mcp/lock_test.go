@@ -53,7 +53,6 @@ func TestALockedAgentIsRefusedEverythingUntilLifted(t *testing.T) {
 // operator who just locked it.
 func TestALockedAgentsCallIsNeverParked(t *testing.T) {
 	s := connect(t, Options{
-		AllowWrite:  []string{"demo"},
 		Consent:     true,
 		ConsentWait: 5 * time.Second,
 		Agent:       "claude",
@@ -172,7 +171,6 @@ func TestACredentialLockCanNameEverythingTheBridgePresents(t *testing.T) {
 // of consent — an approval races a lock, the lock wins.
 func TestALockPlacedWhileParkedPoisonsTheApproval(t *testing.T) {
 	s := connect(t, Options{
-		AllowWrite:  []string{"demo"},
 		Consent:     true,
 		ConsentWait: 20 * time.Second,
 		Agent:       "claude",

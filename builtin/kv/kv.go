@@ -21,9 +21,9 @@
 // model is read as "blast radius" rather than "does it mutate". It has no
 // side effects, so the letter of the model would make it Read — exposed to
 // any MCP client by default. But its whole purpose is revealing a secret,
-// and from an AI-safety standpoint "read" there means "leak". Write makes an
-// operator's --allow-write a precondition; a grant (internal/grant) then
-// makes it per-key and time-boxed. kv.list stays Read because it is genuinely safe:
+// and from an AI-safety standpoint "read" there means "leak". Write makes a
+// grant (internal/grant) the precondition, and a scope makes that grant
+// per-key. kv.list stays Read because it is genuinely safe:
 // it returns names, kinds, sizes and descriptions, never a value nor a
 // preview of one.
 //
@@ -120,7 +120,7 @@ func Plugin() plugin.Plugin {
 					"scrollback. To use a secret without seeing it at all, `kv copy` puts it on the " +
 					"clipboard and prints nothing.\n\n" +
 					"Classified as a write because revealing a secret is the sensitive act. An MCP " +
-					"agent therefore needs --allow-write, and on top of that a per-key grant issued " +
+					"agent therefore needs a grant, and one that names the key it may read, issued " +
 					"by a person (`rta grant allow kv.get <key> --ttl 15m`). --out is a person's flag " +
 					"only, since a grant authorizes revealing a value, not choosing where on this " +
 					"machine it gets written; an MCP caller always gets the value back in the response.",

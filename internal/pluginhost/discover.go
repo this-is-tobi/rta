@@ -180,9 +180,9 @@ func (h *Host) LoadInto(ctx context.Context, reg *registry.Registry) []error {
 	// refuses the namespace, and the client it then closed and forgot was the
 	// incumbent. The plugin stayed registered and callable while vanishing
 	// from h.running, which is a worse state than either outcome. Loaded()
-	// went empty, so PluginOrigins() lost the namespace, so the MCP gate read
-	// it as built-in and accepted an *unpinned* --allow-destructive for a
-	// binary on $PATH: an authorization binds to an artifact, not to a name.
+	// went empty, so PluginOrigins() lost the namespace, so the gate read it
+	// as built-in and honoured an unpinned authorization for a binary on
+	// $PATH: an authorization binds to an artifact, not to a name.
 	// And CloseAll could no longer see the process, so the one Client.live
 	// relaunched on the next call outlived rta.
 	//

@@ -2,10 +2,9 @@
 // server. Every capability becomes an MCP tool generated from the same
 // declared inputs the CLI uses — zero per-capability work.
 //
-// Safety gate: only read capabilities are exposed by default. Write requires
-// an explicit opt-in; destructive requires a per-capability allowlist. The
-// gate is enforced host-side — annotations are advisory for clients, never
-// our enforcement mechanism.
+// One gate: reads are free, and everything else needs a grant a person
+// issued (internal/grant). It is enforced host-side — annotations are
+// advisory for clients, never our enforcement mechanism.
 package mcp
 
 import (
@@ -106,8 +105,15 @@ func recordUnknownTools(known map[string]bool, opts Options) sdk.Middleware {
 			if method == "tools/call" {
 				if r, ok := req.(*sdk.CallToolRequest); ok && r.Params != nil && !known[r.Params.Name] {
 					name := cut(textclean.Terminal(r.Params.Name), maxClientName)
+					// Cap as well as Tool: every surface shows the
+					// capability column, so a row with only the wire name
+					// reads as a call to nothing at all — and this row exists
+					// precisely so an operator grepping outcome=refused can
+					// see what was reached for. There is no capability ID to
+					// map it back to, so the name the caller chose is the
+					// most honest thing to put there.
 					rec := agentlog.Entry{
-						Tool: name, Outcome: agentlog.Refused, Auth: agentlog.Blocked,
+						Cap: name, Tool: name, Outcome: agentlog.Refused, Auth: agentlog.Blocked,
 						Agent: opts.Agent, Client: clientName(r), Credential: credentialName(ctx),
 						Session: opts.Session, Code: "core.mcp.unknown", Reason: "no such tool on this server",
 					}
@@ -358,6 +364,7 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 			Agent:   opts.Agent,
 			Profile: profileName,
 			Pin:     opts.connStamp(profileName, grant.Namespace(c.ID)),
+			Digest:  opts.artifact(grant.Namespace(c.ID)),
 			Active:  opts.active(),
 		})
 		if verr != nil {

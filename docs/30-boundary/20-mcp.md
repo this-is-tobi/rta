@@ -59,26 +59,30 @@ You will see both in the record: the agent name plainly, the client's self-repor
 
 **Only read capabilities.** That is the default, and it holds with no flags, no config and no decisions.
 
-| Safety class | Exposed over MCP by default | How to open it |
-| --- | --- | --- |
-| `read` | ✅ yes | — |
-| `write` | ❌ no | `--allow-write <plugin>` |
-| `destructive` | ❌ no | `--allow-destructive <capability-id>` |
+| Safety class | What an agent needs |
+| --- | --- |
+| `read` | nothing |
+| `write` | a grant a person issued |
+| `destructive` | a grant a person issued |
 
 ```bash
-rta mcp serve --allow-write note
-rta mcp serve --allow-destructive note.rm
+rta grant allow note --ttl 30m           # every write in the note plugin, for half an hour
+rta grant allow note.rm --ttl 5m         # one destructive capability, for five minutes
 ```
 
-Writes open **one namespace at a time** rather than registry-wide. Destructive capabilities are named individually — there is no wildcard, on purpose.
+**One gate, and a grant is it.** There used to be a second: `--allow-write` and `--allow-destructive` switches on `rta mcp serve`, decided once at startup for every call the server would ever make. Two vocabularies competing to answer one question is what made the quickstart's own grant do nothing — the grant was issued, correctly, for a capability the server had never exposed, and the agent was told the tool did not exist. Whichever gate you had learned about, the other one was the one refusing you.
 
-A destructive capability from an external plugin must be pinned to that binary's digest:
+Collapsing them is stronger rather than looser, and it is worth being plain about why. A write used to be reachable for a whole server's lifetime on the strength of one flag typed into a client's config file months earlier, with nothing per call and no expiry. Now it costs a grant a person issued, which [the guard](./30-grants.md#the-guard-a-passphrase-in-front-of-issuance) can price, a [team ceiling](./50-team-policy.md) can cap, [the record](./40-audit-trail.md) shows being spent, and the clock takes back. What was lost is a standing allowlist, and a standing allowlist is precisely what consent should not be.
+
+An agent can now *see* every capability that is not [reserved for you](#never-a-tool), and call none that changes anything. That is deliberate: a tool it can see and is refused produces a refusal naming the exact command you would run, and a tool that is simply absent produces a model guessing at a different spelling.
+
+A grant on a plugin's capability binds to that plugin's **artifact**, not to its name:
 
 ```bash
-rta mcp serve --allow-destructive hello.wipe@5dae737f8845
+rta grant list --detail
 ```
 
-So the authorisation attaches to an artifact rather than to a name a replacement would inherit.
+shows the digest each grant was issued against. Replace the binary behind a plugin and the grants standing on it stop covering anything, which is the rule `--allow-destructive hello.wipe@5dae737f8845` used to carry, moved onto the thing that now does the authorizing. Built-ins have no separate artifact to pin — the rta binary you chose to run is the artifact — so their grants carry no digest.
 
 ### Never a tool
 
@@ -101,11 +105,9 @@ rta mcp server listening on stdio
 path arguments confined to: /Users/you/projects, /tmp/scratch
 ```
 
-### Two gates, different jobs
+### One gate
 
-The `--allow-*` switches are decided **once**, when the server starts, for every call it will ever make. That is the coarse gate, and it is the right shape for "this agent works on notes".
-
-[Grants](./30-grants.md) are the other half: consent for one capability, optionally one record, expiring on its own. That is the fine gate, and it is what you reach for when the answer is "this once".
+[Grants](./30-grants.md) are the whole of it: consent for one capability or one plugin, optionally one record, narrowed to one agent and one connection, expiring on its own. `rta grant allow note --ttl 8h` is the shape for "this agent works on notes today"; `rta grant allow kv.get deploy-key --ttl 5m --max-uses 1` is the shape for "this once".
 
 ## Live consent
 

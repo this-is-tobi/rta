@@ -35,7 +35,7 @@ func TestTheServerRefusesWhenTheGuardItStartedUnderVanishes(t *testing.T) {
 		t.Fatal(verr)
 	}
 
-	s := connectWith(t, testRegistry(t), Options{AllowWrite: []string{"demo"}})
+	s := connectWith(t, testRegistry(t), Options{})
 
 	res := callTool(t, s, "demo_item_reveal", map[string]any{"key": "db-password"})
 	if res.IsError {

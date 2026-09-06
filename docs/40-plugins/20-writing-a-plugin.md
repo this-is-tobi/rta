@@ -99,8 +99,8 @@ It decides what an AI agent can reach without a human, so it is a statement abou
 | Class | Meaning | What an agent needs |
 |---|---|---|
 | `Read` | changes nothing, reveals nothing sensitive | nothing |
-| `Write` | changes something, **or reveals a secret** | `--allow-write <your-plugin>` |
-| `Destructive` | removes something with no undo | an explicit per-capability allowlist **and** a grant a person issued |
+| `Write` | changes something, **or reveals a secret** | a grant a person issued |
+| `Destructive` | removes something with no undo | a grant a person issued, naming the capability |
 
 The rule that catches people: **a capability that reveals a secret's plaintext is `Write`, even though it mutates nothing.** `kv get` is the canonical case. If yours prints a token, signs with a private key, or dumps an environment, it is not `Read`.
 

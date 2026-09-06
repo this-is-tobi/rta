@@ -22,7 +22,7 @@ import (
 // would pass the first assertion alone, and that is precisely the failure this
 // feature could introduce.
 func TestAFolderGrantAuthorizesInsideItAndRefusesOutside(t *testing.T) {
-	s := connect(t, Options{AllowWrite: []string{"demo"}})
+	s := connect(t, Options{})
 	if verr := grant.Issue(grant.Grant{
 		Target: "demo.item.reveal", Scope: "prod/",
 		Issued: time.Now(), Expires: time.Now().Add(time.Hour),
@@ -49,7 +49,7 @@ func TestAFolderGrantAuthorizesInsideItAndRefusesOutside(t *testing.T) {
 // server. `prod-adjacent` merely starts with the same letters, and the folder's
 // own name is not a record in it.
 func TestAFolderGrantDoesNotCoverANeighbourThatMerelyStartsTheSame(t *testing.T) {
-	s := connect(t, Options{AllowWrite: []string{"demo"}})
+	s := connect(t, Options{})
 	if verr := grant.Issue(grant.Grant{
 		Target: "demo.item.reveal", Scope: "prod/",
 		Issued: time.Now(), Expires: time.Now().Add(time.Hour),
@@ -69,7 +69,7 @@ func TestAFolderGrantDoesNotCoverANeighbourThatMerelyStartsTheSame(t *testing.T)
 func TestATraversalIsRefusedByTheFolderAndAllowedByAnExactGrant(t *testing.T) {
 	const weird = "prod/../staging/db-password"
 
-	s := connect(t, Options{AllowWrite: []string{"demo"}})
+	s := connect(t, Options{})
 	if verr := grant.Issue(grant.Grant{
 		Target: "demo.item.reveal", Scope: "prod/",
 		Issued: time.Now(), Expires: time.Now().Add(time.Hour),

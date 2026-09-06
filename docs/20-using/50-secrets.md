@@ -87,7 +87,7 @@ rta kv rekey --only --recipient age1me...            # drop every other reader
 
 This is the part to read before connecting an MCP client.
 
-**`kv.get` is classified as a write**, even though it only reads the store — revealing a secret is the sensitive act, not the lookup. An MCP agent needs `--allow-write kv` before it can even attempt the call, and on top of that the store still has to open, which is a separate question from calling the capability.
+**`kv.get` is classified as a write**, even though it only reads the store — revealing a secret is the sensitive act, not the lookup. An MCP agent needs a grant naming `kv.get` — and ideally the one key it should read — before the call goes anywhere, and on top of that the store still has to open, which is a separate question from calling the capability.
 
 ```bash
 rta doctor

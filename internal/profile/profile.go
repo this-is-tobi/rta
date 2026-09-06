@@ -335,8 +335,8 @@ func checkPin(key string, inst Installed) *view.Error {
 			WithHint("write it as `" + ns + "@" + o.Short() + ":`")
 	case len(pin) < minPinLen:
 		// Below the floor every other digest-prefix match in the codebase
-		// shares (internal/plugintrust, internal/mcp's --allow-destructive
-		// pin): short enough to be cheap to grind, which turns "survives a
+		// shares (internal/plugintrust): short enough to be cheap to grind,
+		// which turns "survives a
 		// rebuild without silently re-trusting a different artifact" —
 		// pinning's whole point — back into trusting whatever currently
 		// answers to the name. Every writer of a profile entry

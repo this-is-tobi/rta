@@ -83,7 +83,7 @@ rta mcp install cursor --show
 
 ### What the agent can do now
 
-**Read-only. Everything else is refused.** The agent can call `sys.cpu`, `net.dns`, `git status` and every other read capability. It cannot write, cannot delete, and cannot read your secret store.
+**Reads, and nothing else.** The agent can call `sys.cpu`, `net.dns`, `git status` and every other read capability. It can *see* the rest — writes and deletes are listed as tools — and every one of them is refused until you allow it. It cannot write, cannot delete, and cannot read your secret store.
 
 That is the default with no configuration, no flags, and no decisions from you.
 
