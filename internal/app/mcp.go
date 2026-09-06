@@ -87,7 +87,7 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 			// Required, not defaulted. Every MCP client on this machine reads
 			// the same grant file, so an unnamed server is one that shares
 			// every grant with every other client — and, worse, one nobody
-			// can stop: `rta lock add agent <name>` matches on the name, and
+			// can stop: `rta lock add <name>` matches on the name, and
 			// lockdown.match refuses to match an empty one, so the emergency
 			// brake had no handle to pull. Defaulting it would pick a name on
 			// the operator's behalf and attach their consent to it, which is
@@ -97,7 +97,7 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				return view.Errorf("core.mcp.unnamed", "name this agent with --as").
 					WithHint("`rta mcp install <client>` writes it for you; by hand it is " +
 						"`rta mcp serve --as claude` — the name is what grants are issued to " +
-						"and what `rta lock add agent` freezes")
+						"and what `rta lock add` freezes")
 			}
 			if verr := grant.CheckAgent(agentName); verr != nil {
 				return verr
@@ -480,7 +480,7 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 	// without one every MCP client on the machine is a single principal
 	// sharing one grant file, and no lock can name it.
 	cmd.Flags().StringVar(&agentName, "as", "",
-		"name this agent — required; grants are issued to it and `rta lock add agent` freezes it")
+		"name this agent — required; grants are issued to it and `rta lock add` freezes it")
 	cmd.Flags().StringSliceVar(&roots, "root", nil,
 		"directory a caller may name in a path argument (repeatable; default: the working directory)")
 	cmd.Flags().StringVar(&httpAddr, "http", "",
