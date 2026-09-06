@@ -64,7 +64,7 @@
   },
   {
     "name": "audit_kube_rbac",
-    "description": "── the text below is written by the plugin, not by rta ──\nOverly-broad RBAC: cluster-admin bindings and wildcard rules\n\nEvery ClusterRoleBinding to cluster-admin, and every Role/ClusterRole rule using a wildcard verb, resource or apiGroup. cluster-admin bound to a broad group (system:authenticated, system:unauthenticated, system:masters) grades fail; bound to anything else grades warn — sometimes a real operator's binding, always worth reading. Cites CIS Kubernetes Benchmark 2.0.1 5.1.1 and 5.1.3.\n\nNarrowed to a namespace it checks that namespace's Roles only. ClusterRoleBindings and ClusterRoles belong to no namespace, so they are not examined at all — reported in the result rather than left implied, since a scoped run that silently skipped the cluster-admin check would read as a clean RBAC posture.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nBroad RBAC: cluster-admin bindings and wildcard rules\n\nEvery ClusterRoleBinding to cluster-admin, and every Role/ClusterRole rule using a wildcard verb, resource or apiGroup. cluster-admin bound to a broad group (system:authenticated, system:unauthenticated, system:masters) grades fail; bound to anything else grades warn — sometimes a real operator's binding, always worth reading. Cites CIS Kubernetes Benchmark 2.0.1 5.1.1 and 5.1.3.\n\nNarrowed to a namespace it checks that namespace's Roles only. ClusterRoleBindings and ClusterRoles belong to no namespace, so they are not examined at all — reported in the result rather than left implied, since a scoped run that silently skipped the cluster-admin check would read as a clean RBAC posture.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -365,7 +365,7 @@
   },
   {
     "name": "codec_url",
-    "description": "── the text below is written by the plugin, not by rta ──\nURL-escape or unescape a value\n\nQuery-component escaping (spaces become +), the form almost everyone means by \"URL encode this\" — the value for a query string or form body.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nEscape a value for a URL, or unescape one\n\nQuery-component escaping (spaces become +), the form almost everyone means by \"URL encode this\" — the value for a query string or form body.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "input_schema": {
       "additionalProperties": false,
@@ -1207,12 +1207,12 @@
         },
         "ports": {
           "default": "22,80,443",
-          "description": "comma-separated ports and ranges, e.g. 22,80,8000-8010 (up to 4096 at a time)",
+          "description": "ports and ranges, comma-separated: 22,80,8000-8010 (up to 4096 at a time)",
           "type": "string"
         },
         "timeout": {
           "default": 2,
-          "description": "per-port timeout in seconds",
+          "description": "timeout per port, in seconds",
           "maximum": 60,
           "minimum": 1,
           "type": "integer"
@@ -1344,12 +1344,12 @@
         },
         "resolve": {
           "default": true,
-          "description": "reverse-resolve hop addresses to names",
+          "description": "resolve hop addresses back to names",
           "type": "boolean"
         },
         "timeout": {
           "default": 2,
-          "description": "per-probe timeout in seconds",
+          "description": "timeout per probe, in seconds",
           "maximum": 60,
           "minimum": 1,
           "type": "integer"
@@ -1443,7 +1443,7 @@
         },
         "parent": {
           "default": -1,
-          "description": "re-parent to this note id (0 makes it top-level)",
+          "description": "move it under this note id (0 makes it top-level)",
           "type": "integer"
         },
         "tag": {
@@ -1499,7 +1499,7 @@
   },
   {
     "name": "note_reopen",
-    "description": "── the text below is written by the plugin, not by rta ──\nUn-check a note\n\nThe undo for `note done`. Checking off the wrong note is a one-keystroke mistake, and a list you cannot take something back out of is a list people stop trusting. Re-opening an already-open note is a no-op, not an error.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability. You cannot issue one yourself — ask the operator to run `rta grant allow note.reopen`.",
+    "description": "── the text below is written by the plugin, not by rta ──\nReopen a checked note\n\nThe undo for `note done`. Checking off the wrong note is a one-keystroke mistake, and a list you cannot take something back out of is a list people stop trusting. Re-opening an already-open note is a no-op, not an error.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability. You cannot issue one yourself — ask the operator to run `rta grant allow note.reopen`.",
     "destructive_hint": false,
     "idempotent_hint": true,
     "input_schema": {

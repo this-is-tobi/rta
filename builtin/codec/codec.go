@@ -56,7 +56,7 @@ func Plugin() plugin.Plugin {
 			},
 			{
 				ID:      "codec.url",
-				Summary: "URL-escape or unescape a value",
+				Summary: "Escape a value for a URL, or unescape one",
 				Description: "Query-component escaping (spaces become +), the form almost everyone " +
 					"means by \"URL encode this\" — the value for a query string or form body.",
 				Safety: plugin.Read,

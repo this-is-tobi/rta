@@ -179,7 +179,7 @@ func Plugin() plugin.Plugin {
 					{Name: "title", Type: plugin.String, Help: "new title (empty keeps the current one)"},
 					{Name: "body", Type: plugin.Text, Help: "new body, markdown supported (empty keeps the current one)"},
 					{Name: "parent", Type: plugin.Int, Default: noParentChange, Suggest: suggestOpenIDs,
-						Help: "re-parent to this note id (0 makes it top-level)"},
+						Help: "move it under this note id (0 makes it top-level)"},
 				}, tagField, dueField),
 				Run:     runEdit,
 				Prefill: prefillEdit,
@@ -197,7 +197,7 @@ func Plugin() plugin.Plugin {
 				Run: runDone,
 			},
 			{
-				ID: "note.reopen", Summary: "Un-check a note", Safety: plugin.Write, Idempotent: true,
+				ID: "note.reopen", Summary: "Reopen a checked note", Safety: plugin.Write, Idempotent: true,
 				Description: "The undo for `note done`. Checking off the wrong note is a " +
 					"one-keystroke mistake, and a list you cannot take something back out of is a " +
 					"list people stop trusting. Re-opening an already-open note is a no-op, not an " +
