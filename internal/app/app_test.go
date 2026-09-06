@@ -468,6 +468,7 @@ func conformanceInputs(dir string) map[string]map[string]any {
 		"pkg.upgrade": {"target": "absent-manager"},
 		"note.add":    {"title": "conformance"},
 		"grant.allow": {"target": "sys.cpu", "ttl": "1m"},
+		"grant.issue": {"role": "conformance"},
 
 		// Ids nothing is parked under: the dry-run rule watches the directory,
 		// and a request that does not exist still has to leave it alone.

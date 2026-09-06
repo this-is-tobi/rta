@@ -112,7 +112,7 @@ func listTable(t *testing.T, grants []core.Grant) view.Table {
 	if verr := core.Save(grants); verr != nil {
 		t.Fatal(verr)
 	}
-	v, verr := heldTable()
+	v, verr := heldTable("")
 	if verr != nil {
 		t.Fatal(verr)
 	}

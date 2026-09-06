@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	rtagrant "github.com/this-is-tobi/rta/builtin/grant"
 	"github.com/this-is-tobi/rta/builtin/kv"
 	"github.com/this-is-tobi/rta/internal/agentlog"
 	"github.com/this-is-tobi/rta/internal/config"
@@ -32,6 +33,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/internal/render/cli"
 	"github.com/this-is-tobi/rta/internal/render/theme"
+	"github.com/this-is-tobi/rta/internal/role"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -559,7 +561,7 @@ func doctorReport(reg *registry.Registry) view.View {
 	} else if !ceiling.Empty() {
 		limits := make([]string, 0, 4)
 		if ceiling.MaxTTL > 0 {
-			limits = append(limits, "no grant may last longer than "+ceiling.MaxTTL.String())
+			limits = append(limits, "no grant may last longer than "+format.Duration(ceiling.MaxTTL))
 		}
 		if n := len(ceiling.Never); n > 0 {
 			limits = append(limits, fmt.Sprintf("%d target(s) not grantable", n))
@@ -586,6 +588,38 @@ func doctorReport(reg *registry.Registry) view.View {
 		add("team policy", "info", "none in force — no "+policy.RepoFile+
 			" found from "+ceiling.SearchedFrom+", and no policy beside your config. "+
 			"`rta policy require` makes a missing one an error instead of silence")
+	}
+
+	// The roles `grant issue` can issue, whether every line of each one
+	// parses, and how long each will really stand under the ceiling — a
+	// role that fails at issue fails when somebody is in a hurry, and a
+	// role whose eight hours are one under the starter policy's cap is a
+	// morning of re-issuing; both are findings this row moves out of that
+	// moment.
+	if roles, verr := role.Available(); verr != nil {
+		add("roles", "error", verr.Message)
+	} else if len(roles) == 0 {
+		add("roles", "info", "none defined — a `roles:` block in your config or a policy file names what `rta grant issue` issues")
+	} else {
+		var names, broken []string
+		seen := map[string]int{}
+		for _, r := range roles {
+			seen[r.Name]++
+			names = append(names, r.Name+" ("+rtagrant.EffectiveWindow(r)+")")
+			if _, err := r.Lines(); err != nil {
+				broken = append(broken, err.Error())
+			}
+		}
+		for name, n := range seen {
+			if n > 1 {
+				broken = append(broken, fmt.Sprintf("%q is defined in %d files, and `grant issue` refuses to pick", name, n))
+			}
+		}
+		if len(broken) > 0 {
+			add("roles", "error", strings.Join(broken, "; "))
+		} else {
+			add("roles", "ok", fmt.Sprintf("%d: %s (`rta grant roles`)", len(roles), strings.Join(names, ", ")))
+		}
 	}
 
 	// Standing agent permissions. Worth a line of its own: a grant issued

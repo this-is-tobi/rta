@@ -159,7 +159,7 @@ func TestHeldTableEmptyStateNotesCeilingSuppressedGrants(t *testing.T) {
 		t.Fatal(verr)
 	}
 
-	v, verr := heldTable()
+	v, verr := heldTable("")
 	if verr != nil {
 		t.Fatal(verr)
 	}
@@ -196,7 +196,7 @@ func TestHeldTablePartialSuppressionSplitsAllowedFromSuppressed(t *testing.T) {
 		t.Fatal(verr)
 	}
 
-	v, verr := heldTable()
+	v, verr := heldTable("")
 	if verr != nil {
 		t.Fatal(verr)
 	}
