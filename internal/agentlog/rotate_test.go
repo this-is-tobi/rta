@@ -321,24 +321,20 @@ func TestRotationSurvivesAnEmptyActiveFile(t *testing.T) {
 	small(t, 1<<10, 40)
 	fill(t, 10)
 	// The state a crash between the rename and the next write leaves: the
-	// entries are all in segments and nothing is being written to yet.
-	// Through the same two steps rta takes, in the same order — the sealed
-	// segment number goes up before the rename, so a crash here leaves a
-	// record whose newest file rta still recognises as its own.
+	// entries are all in segments and nothing is being written to yet. The
+	// rename is the only step, and the renamed file is recognised because
+	// its last entry verifies.
 	key, err := seal.Key(keyFile, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	nums, _, err := rolled(bounds())
+	nums, _, _, err := rolled(key)
 	if err != nil {
 		t.Fatal(err)
 	}
 	next := 1
 	if len(nums) > 0 {
 		next = nums[len(nums)-1] + 1
-	}
-	if err := bumpSegment(key, next); err != nil {
-		t.Fatal(err)
 	}
 	if err := os.Rename(Path(), segmentPath(next)); err != nil {
 		t.Fatal(err)

@@ -362,6 +362,15 @@ func runOverview(_ context.Context, req plugin.Request) (view.View, error) {
 // not know that history was dropped will read "no calls before the 14th" as
 // "nothing happened before the 14th", which is the one misreading a log
 // must not invite.
+// plural2 picks the verb form for a count, for the sentences that need one
+// beside plural's noun.
+func plural2(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
+}
+
 func recordPairs(rep agentlog.Report, verr error) []view.Pair {
 	pairs := []view.Pair{
 		{Key: "file", Value: agentlog.Path()},
@@ -381,6 +390,20 @@ func recordPairs(rep agentlog.Report, verr error) []view.Pair {
 		pairs = append(pairs, view.Pair{Key: "end mark",
 			Value: fmt.Sprintf("was missing before %s %s — anything removed from the end before then cannot be detected; everything after can",
 				plural(len(rep.MarkLost), "entry", "entries"), joinSeqs(rep.MarkLost))})
+	}
+	if len(rep.Foreign) > 0 {
+		// Named here and not only in `rta doctor`, because this is the
+		// screen somebody opens to ask whether the record is sound. A file
+		// sitting in the data directory under a segment name whose last
+		// entry does not verify is not part of the record and is not treated
+		// as one — but something put it there, and that is worth knowing
+		// whatever it failed to achieve.
+		pairs = append(pairs, view.Pair{Key: "not rta's",
+			Value: fmt.Sprintf("%s in the data directory %s named like the record and %s not written by rta: %s",
+				plural(len(rep.Foreign), "file", "files"),
+				plural2(len(rep.Foreign), "is", "are"),
+				plural2(len(rep.Foreign), "was", "were"),
+				strings.Join(rep.Foreign, ", "))})
 	}
 	if rep.Retired > 0 {
 		pairs = append(pairs, view.Pair{Key: "retired",
