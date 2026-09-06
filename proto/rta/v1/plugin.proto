@@ -152,6 +152,14 @@ message Field {
   // get; the per-keystroke channel never calls it and carries none. Requires
   // has_suggest, refused beside options, and the input must be a string.
   bool live = 15;
+  // Points the call at another machine — the server a queue is parked
+  // on. A form the TUI opens by acting on one of this machine's own
+  // records omits it, and every input declared `with` it.
+  bool remote = 18;
+  // The sibling input this one is only read beside: the passphrase that
+  // signs a request to `server`. Must name another input of the same
+  // capability.
+  string with = 19;
   // Marks an input — a CA bundle, a client cert, a client key — that only
   // affects the connection once this capability's own EndpointTLS input
   // actually negotiates TLS. It carries no endpoint role itself: the host

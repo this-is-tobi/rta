@@ -131,9 +131,9 @@ func Plugin() plugin.Plugin {
 				Safety:     plugin.Read,
 				Idempotent: true,
 				Inputs: []plugin.Field{
-					{Name: "server", Type: plugin.String, Local: true,
+					{Name: "server", Type: plugin.String, Local: true, Remote: true,
 						Help: "read a remote server's parked queue instead of this machine's (a name from remotes.yaml)"},
-					operatorid.PassphraseField,
+					operatorid.PassphraseField.OnlyWith("server"),
 				},
 				HumanOnly: true,
 				Run:       runPending,
@@ -151,9 +151,9 @@ func Plugin() plugin.Plugin {
 				Inputs: []plugin.Field{
 					{Name: "id", Type: plugin.String, Positional: true, Required: true,
 						Help: "the request id from `rta agent pending`", Suggest: suggestPending},
-					{Name: "server", Type: plugin.String, Local: true,
+					{Name: "server", Type: plugin.String, Local: true, Remote: true,
 						Help: "the request is parked on this remote server (a name from remotes.yaml)"},
-					operatorid.PassphraseField,
+					operatorid.PassphraseField.OnlyWith("server"),
 				},
 				HumanOnly: true,
 				Run:       runShow,
@@ -181,7 +181,7 @@ func Plugin() plugin.Plugin {
 					// local guard's (with --ttl), and — with --server — the
 					// operator key's. Same name, same channels, same argv refusal.
 					guard.PassphraseField,
-					{Name: "server", Type: plugin.String, Local: true,
+					{Name: "server", Type: plugin.String, Local: true, Remote: true,
 						Help: "the request is parked on this remote server (a name from remotes.yaml)"},
 				},
 				HumanOnly: true,
@@ -199,9 +199,9 @@ func Plugin() plugin.Plugin {
 				Inputs: []plugin.Field{
 					{Name: "id", Type: plugin.String, Positional: true, Required: true,
 						Help: "the request id from `rta agent pending`", Suggest: suggestPending},
-					{Name: "server", Type: plugin.String, Local: true,
+					{Name: "server", Type: plugin.String, Local: true, Remote: true,
 						Help: "the request is parked on this remote server (a name from remotes.yaml)"},
-					operatorid.PassphraseField,
+					operatorid.PassphraseField.OnlyWith("server"),
 				},
 				HumanOnly: true,
 				Run:       runDeny,

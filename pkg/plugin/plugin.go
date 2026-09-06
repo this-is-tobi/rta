@@ -255,6 +255,17 @@ type Field struct {
 	// them, a person still passes them, and the one surface that must not
 	// choose them no longer can.
 	Local bool
+	// Remote marks an input that points the call at another machine — the
+	// `server` a queue is parked on, or a roster is read from. A form the
+	// TUI opens by acting on one of this machine's own records omits it,
+	// together with every input With it: a box for a remote server on the
+	// screen answering the local queue is a box for a different call. Typing
+	// the capability's name still offers every input.
+	Remote bool
+	// With names a sibling input this one is only read beside — the operator
+	// passphrase that signs a request to `server`. The TUI form omits it
+	// wherever it omits the sibling, and the card says "only with".
+	With string
 	// EnvFallback lets a Local field also be resolved from this plugin's own
 	// environment (RTA_<NAMESPACE>_<FIELD>) when nothing else supplied a
 	// value — the passphrase or identity that unlocks a store, handed to an
@@ -431,6 +442,14 @@ type Field struct {
 
 // Handler executes a capability. Implementations must honor ctx cancellation.
 type Handler func(ctx context.Context, req Request) (view.View, error)
+
+// OnlyWith is f, read only beside the named sibling — see Field.With. A
+// method because the fields it is applied to are shared declarations, and
+// the dependency is the declaring capability's to state, not theirs.
+func (f Field) OnlyWith(name string) Field {
+	f.With = name
+	return f
+}
 
 // Capability is the atom of the system: one operation, one stable ID.
 type Capability struct {

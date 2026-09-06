@@ -213,6 +213,19 @@ func (c Capability) validate(ns string) error {
 		if seenInputs[f.Name] {
 			return fmt.Errorf("capability %q declares input %q twice", c.ID, f.Name)
 		}
+		if f.With != "" {
+			if f.With == f.Name {
+				return fmt.Errorf("capability %q: input %q is declared With itself", c.ID, f.Name)
+			}
+			sibling := false
+			for _, o := range c.Inputs {
+				sibling = sibling || o.Name == f.With
+			}
+			if !sibling {
+				return fmt.Errorf("capability %q: input %q is declared With %q, which it does not declare",
+					c.ID, f.Name, f.With)
+			}
+		}
 		seenInputs[f.Name] = true
 		if why, reserved := reservedInputs[f.Name]; reserved {
 			return fmt.Errorf("capability %q: input %q is reserved by the host (%s); rename it",

@@ -60,9 +60,9 @@ func Plugin() plugin.Plugin {
 				Inputs: []plugin.Field{
 					{Name: "label", Type: plugin.String, Default: "operator",
 						Help: "the label to print in the roster line"},
-					{Name: "server", Type: plugin.String, Local: true,
+					{Name: "server", Type: plugin.String, Local: true, Remote: true,
 						Help: "ask this server from remotes.yaml instead of describing the local key"},
-					id.PassphraseField,
+					id.PassphraseField.OnlyWith("server"),
 				},
 				HumanOnly: true,
 				Run:       runStatus,
