@@ -37,7 +37,7 @@ rta kv set tls-cert --file server.pem
 rta kv set db-password --description "staging replica"
 ```
 
-rta detects what kind of thing it is — string, JSON, certificate, private key, SSH key, file — and `kv list` shows the kind and description without ever showing a value. `--kind` overrides the detection.
+rta detects what kind of thing it is — string, JSON, certificate, private key, SSH key, file — and `kv list` shows the kind and description without ever showing a value — and, once a value has been replaced, how many earlier ones `kv history` still keeps. `--kind` overrides the detection.
 
 ## Getting them back
 

@@ -93,8 +93,9 @@ func Plugin() plugin.Plugin {
 				Safety: plugin.Read, Idempotent: true,
 				Detailed: true,
 				Description: "Never returns a value or a preview of one — only key names, what kind of " +
-					"thing each is, its size, its description and when it changed. With --detail: " +
-					"the source filename of anything stored from disk.\n\n" +
+					"thing each is, its size, its description, when it changed and — once any " +
+					"value has been replaced — how many earlier values `kv history` still keeps " +
+					"for each. With --detail: the source filename of anything stored from disk.\n\n" +
 					"--match is the \"which one was it called?\" filter: a substring of the name or " +
 					"the description, case-insensitive, so `kv list --match aws` finds " +
 					"`prod-deploy-key` when the description is the only place the word AWS appears.",
