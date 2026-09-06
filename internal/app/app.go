@@ -659,10 +659,24 @@ func positionalArgsValidator(fields []plugin.Field) cobra.PositionalArgs {
 			variadic = true // a slice positional swallows all remaining args
 		}
 	}
-	if variadic {
-		return cobra.MinimumNArgs(required)
+	// cobra's own sentence was "requires at least 1 arg(s), only received 0"
+	// — the one refusal in rta that named neither the thing missing nor the
+	// command to type. Every field here is positional, in order, so the
+	// first required one at or past what was given is the one missing.
+	return func(cmd *cobra.Command, args []string) error {
+		if len(args) < required {
+			for i, f := range fields {
+				if i >= len(args) && f.Required {
+					return fmt.Errorf("missing <%s> — usage: %s", f.Name, cmd.UseLine())
+				}
+			}
+		}
+		if !variadic && len(args) > len(fields) {
+			return fmt.Errorf("one argument too many, %q — usage: %s",
+				args[len(fields)], cmd.UseLine())
+		}
+		return nil
 	}
-	return cobra.MatchAll(cobra.MinimumNArgs(required), cobra.MaximumNArgs(len(fields)))
 }
 
 func declareFlags(cmd *cobra.Command, c plugin.Capability) {
