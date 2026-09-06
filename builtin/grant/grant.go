@@ -23,6 +23,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/this-is-tobi/rta/internal/stdio"
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -215,12 +216,14 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 			{
 				ID: "grant.guard.off", Summary: "Stop requiring the guard passphrase",
 				HumanOnly: true,
-				Safety:    plugin.Destructive, Idempotent: true,
+				Safety:    plugin.Write, Idempotent: true,
 				Description: "Proves the passphrase first — turning the guard off is exactly what " +
 					"an agent would want, so the legitimate way off costs what turning it on " +
 					"promised. Clears the grants the guard signed, mirroring enable: signatures " +
-					"without a guard beside them read as tampering, by design. Destructive " +
-					"because it removes a protection: the confirmation is the point.",
+					"without a guard beside them read as tampering, by design. A Write and not " +
+					"Destructive, although it removes a protection: the passphrase is the " +
+					"confirmation, and a --yes demanded before the prompt was a second gate " +
+					"in front of the real one.",
 				Inputs: []plugin.Field{guard.PassphraseField},
 				Run:    runGuardOff,
 			},
@@ -508,6 +511,14 @@ func runAllow(_ context.Context, req plugin.Request, catalog func() []plugin.Cap
 	if verr := core.CheckCeiling(g.Target, g.Scope, g.Profile); verr != nil {
 		return nil, verr
 	}
+	// A passphrase on argv is refused whether or not the guard would read
+	// it. With the guard on, the prompt refuses it; with the guard off,
+	// nothing read the flag and the command succeeded — leaving the value
+	// in shell history and the operator with the habit.
+	if verr := guard.RefuseArgv(req); verr != nil {
+		return nil, verr
+	}
+	known := knownAgents()
 	// The guard, before anything is written: prove the passphrase, sign the
 	// authority. After the Grant is fully built — the signature covers the
 	// struct as issued, and signing a draft that a later field-set would
@@ -526,27 +537,30 @@ func runAllow(_ context.Context, req plugin.Request, catalog func() []plugin.Cap
 	if verr := core.Issue(g, !req.DryRun); verr != nil {
 		return nil, verr
 	}
+	var msg string
 	if req.DryRun {
 		note := ""
 		if guard.Enabled() {
 			note = " — the guard will ask for its passphrase"
 		}
-		return view.Text{Body: fmt.Sprintf("would allow agents to %s for %s%s%s%s",
-			describe(g), ttl, usesSuffix(g.MaxUses), rateSuffix(g), note)}, nil
+		msg = fmt.Sprintf("would allow agents to %s for %s%s%s%s",
+			describe(g), format.Duration(ttl), usesSuffix(g.MaxUses), rateSuffix(g), note)
+	} else {
+		msg = fmt.Sprintf("agents may %s for %s (until %s)%s%s",
+			describe(g), format.Duration(ttl), format.Clock(g.Expires), usesSuffix(g.MaxUses), rateSuffix(g))
 	}
-	msg := fmt.Sprintf("agents may %s for %s (until %s)%s%s",
-		describe(g), ttl, g.Expires.Format("15:04:05"), usesSuffix(g.MaxUses), rateSuffix(g))
-	// Which ceiling bit, and whether the environment this names is even
-	// switched on: worded by cappedNote and inactiveProfileNote, shared with
-	// the operator channel's prepare verb so the remote flow warns in the
-	// same sentences. Said here because the operator has just spent a
-	// command — the clock is running, and a 15-minute grant issued and then
-	// noticed is most of a grant wasted.
-	if n := cappedNote(notes); n != "" {
-		msg += "\n" + n
-	}
-	if n := inactiveProfileNote(g); n != "" {
-		msg += "\n" + n
+	// Which ceiling bit, whether the environment this names is even
+	// switched on, and whether the agent is one this machine has seen:
+	// worded by cappedNote and inactiveProfileNote, shared with the operator
+	// channel's prepare verb so the remote flow warns in the same sentences.
+	// Said here because the operator has just spent a command — the clock
+	// is running, and a 15-minute grant issued and then noticed is most of a
+	// grant wasted. Said on a dry run too: finding this out is what the dry
+	// run was for.
+	for _, n := range []string{cappedNote(notes), inactiveProfileNote(g), unknownAgentNote(known, g.Agent)} {
+		if n != "" {
+			msg += "\n" + n
+		}
 	}
 	return view.Text{Body: msg}, nil
 }
@@ -840,7 +854,7 @@ func runRenew(_ context.Context, req plugin.Request) (view.View, error) {
 			if signer != nil {
 				core.SignWith(*signer, &stored[i])
 			}
-			renewed = append(renewed, fmt.Sprintf("  %-24s until %s", describe(g), expires.Format("15:04:05")))
+			renewed = append(renewed, fmt.Sprintf("  %-24s until %s", describe(g), format.Clock(expires)))
 			// A renewal is the only person-facing surface that reports
 			// per-grant success, and it was the only one silent about a grant
 			// whose connection has been repointed: `grant list` marks it
@@ -875,7 +889,7 @@ func runRenew(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 	if capped {
 		body += fmt.Sprintf("\ncapped at the %s maximum from first consent — "+
-			"`rta grant allow` starts a new window, which is a fresh decision", core.MaxTTL)
+			"`rta grant allow` starts a new window, which is a fresh decision", format.Duration(core.MaxTTL))
 	}
 	return view.Text{Body: body}, nil
 }
@@ -1105,7 +1119,7 @@ func grantsTable(grants []core.Grant, stale func(core.Grant) bool) view.Table {
 			g.Target,
 			connection,
 			record,
-			g.Expires.Sub(now).Round(time.Second).String(),
+			format.Duration(g.Expires.Sub(now)),
 			budgetLeft(g, now),
 			g.Note,
 		}
