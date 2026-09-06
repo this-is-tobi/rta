@@ -11,7 +11,7 @@
 // `lock add` from an agent would let it deny service to its operator's
 // other agents, and `lock rm` would let it unfreeze itself — the second
 // being the same authority-expanding shape that puts `rta lock` on the
-// harness deny list `rta audit agents --fix` prints. The local CLI and
+// harness deny list `rta audit clients --fix` prints. The local CLI and
 // TUI are never gated by locks either way: the person at the terminal is
 // the authority locks answer to, not a party they restrain.
 package lock
@@ -29,9 +29,16 @@ import (
 
 // Plugin returns the lock plugin declaration.
 func Plugin() plugin.Plugin {
-	kindHelp := "what to freeze: agent (a server's --as name), credential (a bearer identity, " +
-		"exactly as the ledger's credential column shows it), or operator (a roster label on " +
-		"the operator channel)"
+	// A flag with a default, not a positional, and both halves matter. One
+	// of the three kinds is the answer almost every time — an incident is an
+	// agent misbehaving, and the other two exist for a remote server's
+	// bearer identities and roster labels — so `rta lock add claude` should
+	// be the whole command. As a leading positional it could not be: the
+	// name would land in it. The name is what a person reaching for the
+	// emergency brake actually knows, so the name is the positional.
+	kindHelp := "what to freeze: agent (a server's --as name, the default), credential (a bearer " +
+		"identity, exactly as the ledger's credential column shows it), or operator (a roster " +
+		"label on the operator channel)"
 	return plugin.Plugin{
 		Name:    "lock",
 		Summary: "Freeze one principal now — the instant path when revoking and restarting are too slow",
@@ -52,7 +59,8 @@ func Plugin() plugin.Plugin {
 				Idempotent: true,
 				Scope:      "name",
 				Inputs: []plugin.Field{
-					{Name: "kind", Type: plugin.String, Positional: true, Required: true, Help: kindHelp},
+					{Name: "kind", Type: plugin.String,
+						Default: string(lockdown.KindAgent), Options: kindNames(), Help: kindHelp},
 					{Name: "name", Type: plugin.String, Positional: true, Required: true,
 						Help: "the principal to freeze, exactly as the surface verifies it"},
 					{Name: "note", Type: plugin.String,
@@ -89,14 +97,15 @@ func Plugin() plugin.Plugin {
 				Summary: "Lift one lock",
 				Description: "Removes a lock so the principal's next call is judged by the ordinary " +
 					"gates again. This is the expanding direction — the one an agent must never " +
-					"hold, which is why the harness deny list from `rta audit agents --fix` covers " +
+					"hold, which is why the harness deny list from `rta audit clients --fix` covers " +
 					"`rta lock` and why this is never reachable over MCP. With --server <name>: " +
 					"lifts a lock on a remote server, as a signed operator call.",
 				Safety:     plugin.Write,
 				Idempotent: true,
 				Scope:      "name",
 				Inputs: []plugin.Field{
-					{Name: "kind", Type: plugin.String, Positional: true, Required: true, Help: kindHelp},
+					{Name: "kind", Type: plugin.String,
+						Default: string(lockdown.KindAgent), Options: kindNames(), Help: kindHelp},
 					{Name: "name", Type: plugin.String, Positional: true, Required: true,
 						Help: "the principal to unfreeze"},
 					{Name: "server", Type: plugin.String, Local: true,
@@ -108,6 +117,28 @@ func Plugin() plugin.Plugin {
 			},
 		},
 	}
+}
+
+// kindFlag is the --kind a command needs to name this lock again, empty for
+// the default. A hint has to be the command somebody can paste, and pasting
+// `--kind agent` back would teach a flag nobody needs.
+func kindFlag(k lockdown.Kind) string {
+	if k == lockdown.KindAgent {
+		return ""
+	}
+	return " --kind " + string(k)
+}
+
+// kindNames is the closed set a kind may be, so the surfaces offer it and a
+// typo is refused with the list rather than accepted as a principal nothing
+// will ever match.
+func kindNames() []string {
+	kinds := lockdown.Kinds()
+	out := make([]string, 0, len(kinds))
+	for _, k := range kinds {
+		out = append(out, string(k))
+	}
+	return out
 }
 
 func runAdd(_ context.Context, req plugin.Request) (view.View, error) {
@@ -173,7 +204,7 @@ func lockedView(l lockdown.Lock, where string) view.View {
 		pairs = append(pairs, view.Pair{Key: "lifts itself", Value: l.Expires.Local().Format("2006-01-02 15:04")})
 	} else {
 		pairs = append(pairs, view.Pair{Key: "until", Value: "somebody runs `rta lock rm " +
-			string(l.Kind) + " " + l.Name + "`"})
+			l.Name + kindFlag(l.Kind) + "`"})
 	}
 	return view.KeyValue{Pairs: pairs}
 }

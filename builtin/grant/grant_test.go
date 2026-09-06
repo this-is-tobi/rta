@@ -22,6 +22,25 @@ func builtIn(string) (string, bool) { return "", true }
 // setup is a machine with one client wired up, which is what every rta
 // install looks like: `rta mcp serve` requires --as, so an agent is always
 // named, and `grant allow` fills that one name in rather than asking.
+// listed is the grant rows out of what `grant list` returns: the flat table
+// the dashboard tile refreshes, or the Allowed section of the page a
+// ceiling-suppressed grant turns it into.
+func listed(t *testing.T, v view.View) view.Table {
+	t.Helper()
+	switch got := v.(type) {
+	case view.Table:
+		return got
+	case view.Sections:
+		for _, item := range got.Items {
+			if tbl, ok := item.View.(view.Table); ok && item.Title == "Allowed" {
+				return tbl
+			}
+		}
+	}
+	t.Fatalf("no grant rows in %s", view.TypeOf(v))
+	return view.Table{}
+}
+
 func setup(t *testing.T) {
 	t.Helper()
 	t.Setenv("RTA_DATA_DIR", t.TempDir())
@@ -168,11 +187,7 @@ func TestAllowThenList(t *testing.T) {
 	setup(t)
 	run(t, allowH, map[string]any{"target": "kv.get", "scope": "db-password", "ttl": "1h", "note": "deploy"})
 
-	v := run(t, listH, nil)
-	tbl, ok := v.(view.Table)
-	if !ok {
-		t.Fatalf("list = %s", view.TypeOf(v))
-	}
+	tbl := listed(t, run(t, listH, nil))
 	if len(tbl.Rows) != 1 || cell(t, tbl, 0, "Capability") != "kv.get" ||
 		cell(t, tbl, 0, "Record") != "db-password" {
 		t.Fatalf("rows = %v", tbl.Rows)
@@ -190,7 +205,7 @@ func TestAllowThenList(t *testing.T) {
 func TestUnscopedGrantSaysAny(t *testing.T) {
 	setup(t)
 	run(t, allowH, map[string]any{"target": "todo"})
-	tbl := run(t, listH, nil).(view.Table)
+	tbl := listed(t, run(t, listH, nil))
 	if got := cell(t, tbl, 0, "Record"); got != "any" {
 		t.Errorf("record = %q, want \"any\"", got)
 	}
@@ -453,7 +468,7 @@ func TestMaxUsesIsRecordedAndShownInList(t *testing.T) {
 	if len(grants) != 1 || grants[0].MaxUses != 1 {
 		t.Fatalf("grants = %+v, want MaxUses 1", grants)
 	}
-	tbl := run(t, listH, nil).(view.Table)
+	tbl := listed(t, run(t, listH, nil))
 	if got := cell(t, tbl, 0, "Budget Left"); got != "1 of 1 uses" {
 		t.Errorf("budget left = %q, want the count and the cap", got)
 	}
@@ -469,7 +484,7 @@ func TestARateIsRecordedAndShownInList(t *testing.T) {
 	if len(grants) != 1 || grants[0].RateMax != 10 || grants[0].RateWindow != "1h" {
 		t.Fatalf("grants = %+v", grants)
 	}
-	tbl := run(t, listH, nil).(view.Table)
+	tbl := listed(t, run(t, listH, nil))
 	if got := cell(t, tbl, 0, "Budget Left"); got != "10 of 10 per 1h" {
 		t.Errorf("budget left = %q", got)
 	}

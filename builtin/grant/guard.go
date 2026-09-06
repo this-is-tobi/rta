@@ -231,39 +231,61 @@ func runGuardRemote(_ context.Context, req plugin.Request) (view.View, error) {
 	return view.KeyValue{Pairs: pairs}, nil
 }
 
-func runGuardStatus(_ context.Context, req plugin.Request) (view.View, error) {
-	held, verr := core.Load()
-	// The one state worth seeing first: the guard's own file is gone and
-	// signed grants remain. Every issuing and listing path refuses it as
-	// orphaned; this screen used to say "off" and offer to enable it.
+// guardLine is the guard's state in one sentence, for the top of `rta grant
+// list`.
+//
+// It used to be a command of its own, `rta grant guard status`. Two screens
+// answered "is my guard on" — that one and `rta doctor` — and neither was
+// the one an operator actually opens, which is the roster of what agents may
+// do right now. Whether a grant needs a passphrase to exist is a fact about
+// every row in that table, so it belongs above them.
+//
+// held is what core.Load returned, error included: the orphaned state is
+// only visible from that error, and it is the state worth seeing first.
+func guardLine(held []core.Grant, verr *view.Error) string {
 	if verr != nil && verr.Code == "core.grant.guard.orphaned" {
-		return view.KeyValue{Pairs: []view.Pair{
-			{Key: "guard", Value: "ORPHANED — grants.json holds guard-signed grants and " + guard.Path() + " is gone; nothing is honoured"},
-			{Key: "fix", Value: "rm " + core.Path() + ", then rta grant guard on"},
-		}}, nil
+		return "guard  ORPHANED — " + core.Path() + " holds guard-signed grants and " +
+			guard.Path() + " is gone, so nothing in it is honoured\n" +
+			"       rm " + core.Path() + ", then rta grant guard on"
 	}
 	if !guard.Enabled() {
-		return view.KeyValue{Pairs: []view.Pair{
-			{Key: "guard", Value: "off — any process running as you can issue a grant"},
-			{Key: "enable", Value: "rta grant guard on"},
-		}}, nil
+		return "guard  off — any process running as you can issue a grant (rta grant guard on)"
 	}
-	if verr != nil {
+	since := guard.Created().Local().Format("2006-01-02 15:04")
+	if guard.Remote() {
+		return fmt.Sprintf("guard  remote since %s, key %s — a grant is honoured only when one of %s signed it",
+			since, guard.Fingerprint(), strings.Join(guard.OperatorLabels(), ", "))
+	}
+	return fmt.Sprintf("guard  on since %s, key %s — issuing or renewing a grant asks for the passphrase",
+		since, guard.Fingerprint())
+}
+
+// runGuardStatus is the guard in full: the line above, plus what a person
+// checking on it deliberately wants — since when, under which key, and how
+// much is held under it.
+//
+// The one-line form is what `rta grant list --detail` and `rta doctor`
+// carry, because that is where somebody is already looking; this is the
+// command for when the guard itself is the question.
+func runGuardStatus(_ context.Context, req plugin.Request) (view.View, error) {
+	held, verr := core.Load()
+	pairs := []view.Pair{{Key: "guard", Value: guardLine(held, verr)}}
+	switch {
+	case verr != nil && verr.Code == "core.grant.guard.orphaned":
+		return view.KeyValue{Pairs: pairs}, nil
+	case !guard.Enabled():
+		return view.KeyValue{Pairs: pairs}, nil
+	case verr != nil:
 		return nil, verr
 	}
+	pairs = append(pairs,
+		view.Pair{Key: "since", Value: guard.Created().Local().Format("2006-01-02 15:04")},
+		view.Pair{Key: "key", Value: guard.Fingerprint()})
 	if guard.Remote() {
-		return view.KeyValue{Pairs: []view.Pair{
-			{Key: "guard", Value: "remote — a grant is honoured only when an enrolled operator signed it"},
-			{Key: "since", Value: guard.Created().Local().Format("2006-01-02 15:04")},
-			{Key: "operators", Value: strings.Join(guard.OperatorLabels(), ", ")},
-			{Key: "key", Value: guard.Fingerprint()},
-			{Key: "grants", Value: fmt.Sprintf("%d held, all operator-signed", len(held))},
-		}}, nil
+		pairs = append(pairs, view.Pair{Key: "operators", Value: strings.Join(guard.OperatorLabels(), ", ")})
+		return view.KeyValue{Pairs: append(pairs, view.Pair{Key: "grants",
+			Value: fmt.Sprintf("%d held, all operator-signed", len(held))})}, nil
 	}
-	return view.KeyValue{Pairs: []view.Pair{
-		{Key: "guard", Value: "on — issuing or renewing a grant asks for the passphrase"},
-		{Key: "since", Value: guard.Created().Local().Format("2006-01-02 15:04")},
-		{Key: "key", Value: guard.Fingerprint()},
-		{Key: "grants", Value: fmt.Sprintf("%d held, all guard-signed", len(held))},
-	}}, nil
+	return view.KeyValue{Pairs: append(pairs, view.Pair{Key: "grants",
+		Value: fmt.Sprintf("%d held, all guard-signed", len(held))})}, nil
 }

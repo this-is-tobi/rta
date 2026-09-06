@@ -209,9 +209,8 @@ func TestAFullQueueRefusesAtOnceInsteadOfAskingAgain(t *testing.T) {
 
 func TestADestructiveRequestCarriesWhatItWouldDo(t *testing.T) {
 	s := connect(t, Options{
-		Consent:        true,
-		ConsentPreview: true,
-		ConsentWait:    20 * time.Second,
+		Consent:     true,
+		ConsentWait: 20 * time.Second,
 	})
 	seen := answerWhenAsked(t, false)
 	callTool(t, s, "demo_item_rm", map[string]any{"name": "invoices"})
@@ -248,9 +247,8 @@ func TestOnlyDestructiveCallsArePreviewed(t *testing.T) {
 	// A preview is an extra invocation of the handler, worth it where the
 	// answer is irreversible and not otherwise.
 	s := connect(t, Options{
-		Consent:        true,
-		ConsentPreview: true,
-		ConsentWait:    20 * time.Second,
+		Consent:     true,
+		ConsentWait: 20 * time.Second,
 	})
 	seen := answerWhenAsked(t, false)
 	callTool(t, s, "demo_item_reveal", map[string]any{"key": "db-password"})
@@ -264,49 +262,42 @@ func TestOnlyDestructiveCallsArePreviewed(t *testing.T) {
 	}
 }
 
-func TestWithPreviewOffNothingRunsBeforeTheAnswer(t *testing.T) {
-	// The off switch has to mean it: with --consent-preview=false the
-	// handler is not touched until the operator says yes.
-	for _, tc := range []struct {
-		name     string
-		preview  bool
-		wantRuns int32
-	}{
-		{"off", false, 0},
-		{"on", true, 1},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			var dryRuns atomic.Int32
-			reg := registry.New()
-			if err := reg.Register(plugin.Plugin{
-				Name: "demo", Summary: "counts its own dry runs",
-				Capabilities: []plugin.Capability{{
-					ID: "demo.item.rm", Summary: "remove item", Safety: plugin.Destructive,
-					Scope:  "name",
-					Inputs: []plugin.Field{{Name: "name", Type: plugin.String, Help: "which item"}},
-					Run: func(_ context.Context, req plugin.Request) (view.View, error) {
-						if req.DryRun {
-							dryRuns.Add(1)
-							return view.Text{Body: "would remove " + req.String("name")}, nil
-						}
-						return view.Text{Body: "removed"}, nil
-					},
-				}},
-			}); err != nil {
-				t.Fatal(err)
-			}
-			t.Setenv("RTA_DATA_DIR", t.TempDir())
-			s := connectWith(t, reg, Options{
-				Consent:        true,
-				ConsentPreview: tc.preview,
-				ConsentWait:    500 * time.Millisecond,
-			})
-			callTool(t, s, "demo_item_rm", map[string]any{"name": "invoices"})
-			if got := dryRuns.Load(); got != tc.wantRuns {
-				t.Fatalf("the handler was dry-run %d times with preview %v, want %d",
-					got, tc.preview, tc.wantRuns)
-			}
-		})
+func TestADestructiveCallIsPreviewedExactlyOnceBeforeTheAnswer(t *testing.T) {
+	// The preview is what turns "may this agent call demo.item.rm" into "may
+	// it remove *this* item", and it is not optional any more: the switch
+	// that turned it off existed for a capability whose dry run is
+	// expensive, and previews are bounded to built-ins whose dry runs are
+	// cheap by test. What still has to hold is that the handler is touched
+	// exactly once, in dry-run, and not at all for the real call until the
+	// operator says yes.
+	var dryRuns, real atomic.Int32
+	reg := registry.New()
+	if err := reg.Register(plugin.Plugin{
+		Name: "demo", Summary: "counts its own dry runs",
+		Capabilities: []plugin.Capability{{
+			ID: "demo.item.rm", Summary: "remove item", Safety: plugin.Destructive,
+			Scope:  "name",
+			Inputs: []plugin.Field{{Name: "name", Type: plugin.String, Help: "which item"}},
+			Run: func(_ context.Context, req plugin.Request) (view.View, error) {
+				if req.DryRun {
+					dryRuns.Add(1)
+					return view.Text{Body: "would remove " + req.String("name")}, nil
+				}
+				real.Add(1)
+				return view.Text{Body: "removed"}, nil
+			},
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	s := connectWith(t, reg, Options{Consent: true, ConsentWait: 500 * time.Millisecond})
+	callTool(t, s, "demo_item_rm", map[string]any{"name": "invoices"})
+	if got := dryRuns.Load(); got != 1 {
+		t.Fatalf("the handler was dry-run %d times, want exactly one preview", got)
+	}
+	if got := real.Load(); got != 0 {
+		t.Fatalf("the call ran %d times without an answer", got)
 	}
 }
 
@@ -341,10 +332,9 @@ func TestAnExternalPluginIsNeverRunToProduceAPreview(t *testing.T) {
 	t.Setenv("RTA_DATA_DIR", t.TempDir())
 	s := connectWith(t, reg, Options{
 		// The digest pin an external destructive capability requires.
-		Origin:         reg.Origin,
-		Consent:        true,
-		ConsentPreview: true,
-		ConsentWait:    600 * time.Millisecond,
+		Origin:      reg.Origin,
+		Consent:     true,
+		ConsentWait: 600 * time.Millisecond,
 	})
 	seen := make(chan consent.Request, 1)
 	go func() {
@@ -412,13 +402,12 @@ func TestAProfiledCallIsNotPreviewedAgainstTheWrongPlace(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := connectWith(t, reg, Options{
-		Origin:         reg.Origin,
-		Profiles:       cfg,
-		Reload:         func() config.Config { return cfg },
-		Active:         func() string { return "" },
-		Consent:        true,
-		ConsentPreview: true,
-		ConsentWait:    600 * time.Millisecond,
+		Origin:      reg.Origin,
+		Profiles:    cfg,
+		Reload:      func() config.Config { return cfg },
+		Active:      func() string { return "" },
+		Consent:     true,
+		ConsentWait: 600 * time.Millisecond,
 	})
 	seen := make(chan consent.Request, 1)
 	go func() {

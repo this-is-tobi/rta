@@ -175,8 +175,8 @@ func Plugin() plugin.Plugin {
 				Run: runWhy,
 			},
 			{
-				ID:         "audit.agents",
-				Summary:    "Audit the AI agents configured on this machine — tools, servers, credentials",
+				ID:         "audit.clients",
+				Summary:    "Audit the AI clients configured on this machine — tools, servers, credentials",
 				Safety:     plugin.Read,
 				Idempotent: true,
 				Detailed:   true,
@@ -205,7 +205,7 @@ func Plugin() plugin.Plugin {
 					{Name: "fix", Type: plugin.Bool,
 						Help: "print the exact edit for each finding that has one, instead of the grades"},
 				},
-				Run: runAgents,
+				Run: runClients,
 			},
 			{
 				ID:         "audit.kube.rbac",

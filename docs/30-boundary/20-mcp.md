@@ -88,7 +88,7 @@ shows the digest each grant was issued against. Replace the binary behind a plug
 
 ### Never a tool
 
-A few capabilities are not on offer at any price. `grant`, `agent`, `lock`, `operator` and `pkg` — every verb in each — plus `audit agents`, `kv copy`, `kv edit` and the `keys` verbs that move key material answer to the person at the terminal and to nobody else. They are absent from `tools/list` on every transport, whatever the flags: an agent that could issue itself a grant, lift its own lock, or read the roster of what your other agents may do would make the rest of this chapter theatre. A call naming one anyway is answered as an unknown tool and written to [the record](./40-audit-trail.md) like any other probe. `rta explain` lists them under *never a tool*.
+A few capabilities are not on offer at any price. `grant`, `agent`, `lock`, `operator` and `pkg` — every verb in each — plus `audit clients`, `kv copy`, `kv edit` and the `keys` verbs that move key material answer to the person at the terminal and to nobody else. They are absent from `tools/list` on every transport, whatever the flags: an agent that could issue itself a grant, lift its own lock, or read the roster of what your other agents may do would make the rest of this chapter theatre. A call naming one anyway is answered as an unknown tool and written to [the record](./40-audit-trail.md) like any other probe. `rta explain` lists them under *never a tool*.
 
 ### The path gate
 
@@ -128,7 +128,7 @@ rta agent allow 5473aa62
 rta agent deny 5473aa62
 ```
 
-`--consent-preview` (on by default) runs the capability's own `--dry-run` and shows the result on the parked request, which changes the question from *"may this agent call `note.rm`"* to *"may it remove **this note**"*.
+A destructive call is previewed before it parks: rta runs the capability's own `--dry-run` and shows the result on the request, which changes the question from *"may this agent call `note.rm`"* to *"may it remove **this note**"*.
 
 `--consent-wait` bounds how long a call waits before it is refused anyway (default 90s).
 
@@ -364,17 +364,17 @@ A roster line is `label base64-pubkey` — the exact line `rta operator status` 
 Expiry and revocation both leave a gap that only shows during an incident: revoking every grant still leaves a misbehaving agent's bearer token opening the ungated read tools, and a compromised operator key stays enrolled until someone edits the roster and restarts — the roster is deliberately read once. A **lock** is the instant path:
 
 ```bash
-rta lock add agent claude --note "runaway loop, ping me"   # on the machine
-rta lock add operator dash --server work                    # or from your machine, signed
+rta lock add claude --note "runaway loop, ping me"       # on the machine
+rta lock add dash --kind operator --server work          # or from your machine, signed
 rta lock list
-rta lock rm agent claude
+rta lock rm claude
 ```
 
 A locked *agent* or *credential* is refused on every tool call before any other gate (the protocol's own handshake and catalogue listing still answer — nothing executes through them) — never parked as a consent question, because a lock is the "stop asking me" control — and a locked *operator* label gets no verb on the channel at all. Running servers pick a lock up on their next request, no restart, and the note travels to the locked party on every refusal. Locks only subtract, so placing one asks for no passphrase: revoking never asks, and an incident is the wrong moment to demand a secret. `--ttl 2h` makes one lift itself; without it a lock stands until `rta lock rm`.
 
 Two edges worth knowing before you need them. First lock wins: a locked operator cannot unlock anyone, themselves included, so a fully locked-out roster is recovered at the machine's own terminal — where `rta lock` always works, because the person standing there is the authority locks answer to. And the lock file is sealed like the grant file, with the guard's failure direction: a running server that saw locks keeps enforcing them even if the file is deleted out from under it, so the `rm` that would quietly restore access restores nothing for the process the attacker is talking through. Lifting a lock is `rta lock rm`, on the machine or as a signed operator call — never a file deletion.
 
-Locking an operator freezes the key, not what it already signed — pair it with `rta grant revoke` for anything that key issued. It silences the key's verbs, not its ink: a locked key's mutation attempts keep landing in [the record](./40-audit-trail.md) as refusals, which is the evidence trail working — and also why a key you believe compromised is one to remove from the roster (edit the `--operators` file, restart), not merely to lock forever: enrollment is what lets it make the server write anything at all. And `rta lock` is on the harness deny list `rta audit agents --fix` prints, for the expanding half: an agent that could run `lock rm` would be unfreezing itself.
+Locking an operator freezes the key, not what it already signed — pair it with `rta grant revoke` for anything that key issued. It silences the key's verbs, not its ink: a locked key's mutation attempts keep landing in [the record](./40-audit-trail.md) as refusals, which is the evidence trail working — and also why a key you believe compromised is one to remove from the roster (edit the `--operators` file, restart), not merely to lock forever: enrollment is what lets it make the server write anything at all. And `rta lock` is on the harness deny list `rta audit clients --fix` prints, for the expanding half: an agent that could run `lock rm` would be unfreezing itself.
 
 `sys`, `fs`, `git`, `keys.list`, `kv.status`, the two `audit` checks that grade a project on this disk (`audit.deps`, `audit.why`), and the parts of `net` that read or change this host's own network configuration (`net.info`, `net.hosts.*`, `net.resolver.*`) answer for the machine rta happens to run on. Over HTTP those are never registered as tools at all — absent from `tools/list`, not refused when called — because a remote caller is never this machine. `rta mcp serve --http` says so at startup:
 

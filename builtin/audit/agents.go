@@ -132,7 +132,7 @@ func (r *agentReport) addFix(id, title, body string) {
 func fixPage(r *agentReport) view.View {
 	if len(r.fixes) == 0 {
 		return view.Text{Body: "nothing to paste — no finding on this machine has a mechanical fix. " +
-			"`rta audit agents` has the grades themselves."}
+			"`rta audit clients` has the grades themselves."}
 	}
 	s := view.Sections{}
 	for i, f := range r.fixes {
@@ -145,10 +145,10 @@ func fixPage(r *agentReport) view.View {
 	return s
 }
 
-func runAgents(ctx context.Context, req plugin.Request) (view.View, error) {
+func runClients(ctx context.Context, req plugin.Request) (view.View, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return nil, view.Errorf("audit.agents.home", "finding your home directory: %v", err)
+		return nil, view.Errorf("audit.clients.home", "finding your home directory: %v", err)
 	}
 	wd, _ := os.Getwd()
 

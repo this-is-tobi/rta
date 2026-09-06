@@ -254,7 +254,9 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 				// deliberate look rather than ambient display.
 				NoPreview: true,
 				Description: "On or off, since when, the verification key's fingerprint, and how " +
-					"many grants are held under it. Never an MCP tool, like every grant surface: " +
+					"many grants are held under it. The same state's one-line form leads " +
+					"`rta grant list --detail` and `rta doctor`, which is where somebody is " +
+					"usually already looking. Never an MCP tool, like every grant surface: " +
 					"whether the guard stands is part of the map of what an agent could reach.",
 				Run: runGuardStatus,
 			},
@@ -902,6 +904,11 @@ func runList(ctx context.Context, req plugin.Request, catalog func() []plugin.Ca
 	// a list maintained by hand goes stale exactly when a capability is
 	// added, which is the moment somebody most wants to read it.
 	p := plugin.NewPage(ctx, req)
+	// The guard leads, because whether a grant needs a passphrase to exist
+	// is a fact about every row below it. The compact view stays the flat
+	// table it has to be — it is what the dashboard tile refreshes.
+	stored, storedErr := core.Load()
+	p.PutAs("guard", "the guard", view.Text{Body: guardLine(stored, storedErr)})
 	p.PutAs("granted", "granted", held)
 	for _, tier := range reachTiers {
 		p.PutAs(tier.id, tier.title, reachTable(catalog(), tier.holds))
@@ -957,16 +964,23 @@ func reachTable(caps []plugin.Capability, holds func(plugin.Capability) bool) vi
 func heldTable() (view.View, *view.Error) {
 	grants, verr := core.Load()
 	if verr != nil {
+		// The orphaned state is a screen rather than an error: it is what
+		// `grant list` exists to show, and refusing here would send somebody
+		// to a command that no longer exists to find out.
+		if verr.Code == "core.grant.guard.orphaned" {
+			return view.Text{Body: guardLine(nil, verr)}, nil
+		}
 		return nil, verr
 	}
 	if len(grants) == 0 {
-		body := "No active grants — AI agents can only read.\n" +
+		body := guardLine(grants, nil) + "\n\n" +
+			"No grant is standing — agents reach only what needs none.\n" +
 			"Allow one with: rta grant allow <capability> --ttl 15m"
 		// An empty list is the ordinary answer and a dropped file is not, so
 		// the difference has to be visible here: this is the one screen where
 		// somebody looking for a grant they issued will come looking for it.
 		if core.Legacy() {
-			body = "No active grants — AI agents can only read.\n\n" +
+			body = guardLine(grants, nil) + "\n\n" +
 				"Grants are now sealed against tampering, and " + core.Path() + " predates\n" +
 				"the seal, so nothing in it is honoured. Any grant it held is gone; re-issue\n" +
 				"what you still need. Removing the file clears this notice:\n" +
@@ -994,6 +1008,8 @@ func heldTable() (view.View, *view.Error) {
 		// has to be able to find out here instead.
 		return cfgErr == nil && g.Stale(profiles.ConnStampFor(cfg, g.Profile, core.Namespace(g.Target)))
 	})
+	// A partial suppression is the confusing one: some rows are here, the one
+	// being looked for is not, and nothing on the screen accounts for it.
 	// A partial suppression is the confusing one: some rows are here, the one
 	// being looked for is not, and nothing on the screen accounts for it.
 	if n := core.Suppressed(); n > 0 {

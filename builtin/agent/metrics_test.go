@@ -99,7 +99,7 @@ func TestAFamilyWithNothingInItStillDeclaresItself(t *testing.T) {
 	for _, want := range []string{
 		"# TYPE rta_grants_active gauge",
 		"# TYPE rta_agent_calls_recorded_total counter",
-		"# TYPE rta_ledger_intact gauge",
+		"# TYPE rta_record_intact gauge",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("missing %q from an empty record:\n%s", want, body)
@@ -117,7 +117,7 @@ func TestABrokenChainIsReportedAsZero(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(metricsBody(t), "rta_ledger_intact 1") {
+	if !strings.Contains(metricsBody(t), "rta_record_intact 1") {
 		t.Fatal("an untouched record does not verify")
 	}
 	segs, err := agentlog.Segments()
@@ -133,7 +133,7 @@ func TestABrokenChainIsReportedAsZero(t *testing.T) {
 	if err := os.WriteFile(segs[0], []byte(strings.Replace(string(raw), "sys.cpu", "sys.mem", 1)), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(metricsBody(t), "rta_ledger_intact 0") {
+	if !strings.Contains(metricsBody(t), "rta_record_intact 0") {
 		t.Errorf("an edited record still reports as intact:\n%s", metricsBody(t))
 	}
 }

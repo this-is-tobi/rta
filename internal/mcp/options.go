@@ -68,15 +68,6 @@ type Options struct {
 	// interrupted. What it shows is rta's own words only — see
 	// ringDoorbell.
 	ConsentNotify bool
-	// ConsentPreview runs a destructive call's own --dry-run before parking
-	// it, so the operator answers a question about an outcome rather than
-	// about an intention.
-	//
-	// On by default where consent is on, and bounded to built-in
-	// capabilities: see propose. A dry run is an extra invocation of the
-	// handler, so it rests on the handler being honest about DryRun — true
-	// of rta's own by test, a claim for anybody else's.
-	ConsentPreview bool
 	// Origin answers where a namespace came from. It is the registry's
 	// method, passed in rather than a map built beside it, so the gate and
 	// the catalogue cannot disagree about what is registered — which they
