@@ -124,7 +124,7 @@ func SaveSelection(s Selection) *view.Error {
 	if err != nil {
 		return view.Errorf("core.profile.write", "encoding the selection: %v", err)
 	}
-	if err := os.MkdirAll(paths.Data(), 0o755); err != nil {
+	if err := os.MkdirAll(paths.Data(), 0o700); err != nil {
 		return view.Errorf("core.profile.write", "creating %s: %v", paths.Data(), err)
 	}
 	// 0600, like the grant file. It bounds what agents may reach, and it names

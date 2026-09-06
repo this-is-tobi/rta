@@ -159,7 +159,7 @@ func Record(surface plugin.Surface, c plugin.Capability, values map[string]any) 
 	if err != nil {
 		return
 	}
-	if err := os.MkdirAll(paths.Data(), 0o755); err != nil {
+	if err := os.MkdirAll(paths.Data(), 0o700); err != nil {
 		return
 	}
 	// 0600, like the selection and the grant file. It names the buckets,

@@ -89,7 +89,7 @@ func Key(name string, create bool) ([]byte, error) {
 	if _, err := rand.Read(key); err != nil {
 		return nil, fmt.Errorf("generating a seal key: %w", err)
 	}
-	if err := os.MkdirAll(paths.Data(), 0o755); err != nil {
+	if err := os.MkdirAll(paths.Data(), 0o700); err != nil {
 		return nil, fmt.Errorf("creating %s: %w", paths.Data(), err)
 	}
 	// 0600, and written before whatever it authenticates, so there is never
