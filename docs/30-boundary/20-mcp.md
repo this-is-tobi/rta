@@ -307,6 +307,8 @@ A caller now has to prove who it is over the wire, since there is no parent proc
 | `--token-file <path>` | A static, operator-issued token — one `label token` pair per line in a file only the operator can read; world-readable files are refused, and so is a token shorter than 16 characters (`rta gen token` makes one) |
 | `--oidc-issuer`, `--oidc-audience`, `--oidc-subject` | A real identity provider's token, for one of the named subjects. An issuer and audience alone identify an application, not a person, so at least one `--oidc-subject` is required |
 
+A rejected token is answered slower from the same address after five failures in a minute, doubling up to two seconds: a guess a second becomes a guess every two, and an operator who mistyped once never notices. Behind a reverse proxy every client shares the address, so a guessing attacker slows the operators beside it for as long as the guessing lasts — that trade is taken rather than trusting a `Forwarded` header the attacker writes.
+
 `--http` refuses to start with neither configured. `--consent` over `--http` additionally requires `--operators` — a parked call waits for a person, enrolled operators answering over [the operator channel](#the-operator-channel) are the only people positioned to be that person, and a control nobody can exercise must not be allowed to pretend it works.
 
 TLS is not this process's job. Bind to a private address and put a reverse proxy, ingress or service mesh in front of it for termination. A bind that other machines can reach — `0.0.0.0`, `:8443`, an interface address — is announced at startup, because on that transport the token is the whole credential and it crosses the wire as it is.

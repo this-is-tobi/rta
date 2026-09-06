@@ -59,6 +59,9 @@ func NewServer(reg *registry.Registry, version string, opts Options) *sdk.Server
 	// the file is not an unlock for the process an attacker is talking
 	// through. One pin per server, shared by every handler.
 	opts.locks = lockdown.NewPin()
+	if opts.refusals == nil {
+		opts.refusals = newBackoff(refusalFree, refusalWindow, refusalStep, refusalMax)
+	}
 	server := sdk.NewServer(&sdk.Implementation{
 		Name:    "rta",
 		Title:   "Rule Them All",
@@ -118,6 +121,7 @@ func recordUnknownTools(known map[string]bool, opts Options) sdk.Middleware {
 						Session: opts.Session, Code: "core.mcp.unknown", Reason: "no such tool on this server",
 					}
 					record(rec)
+					opts.refusals.hold(ctx, refusalKey(ctx, opts))
 				}
 			}
 			return next(ctx, method, req)
@@ -159,6 +163,11 @@ func handler(c plugin.Capability, opts Options, reg *registry.Registry) sdk.Tool
 				res, err = errResult(verr), nil
 			}
 			record(rec)
+			// After the row is written, never before: a caller that hangs up
+			// during the wait still left its trace.
+			if rec.Outcome == agentlog.Refused {
+				opts.refusals.hold(ctx, refusalKey(ctx, opts))
+			}
 		}()
 		res, err = call(ctx, c, opts, reg, req, &rec)
 		return res, err
