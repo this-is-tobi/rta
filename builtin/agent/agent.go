@@ -278,11 +278,18 @@ func connectedTable() view.Table {
 	open, calls := openSessions()
 	t := view.Table{Columns: []view.Column{
 		{Name: "agent"}, {Name: "client"}, {Name: "since", Kind: view.KindTimestamp},
-		{Name: "calls"}, {Name: "session"}, {Name: "directory"}, {Name: "record"},
+		{Name: "calls"}, {Name: "no grant"}, {Name: "roots"}, {Name: "session"},
+		{Name: "directory"}, {Name: "record"},
 	}}
 	for _, s := range open {
+		// "asks" or "refuses" is the whole answer to "why did that call not
+		// park", and it was in the client's config file and nowhere rta showed.
+		missing := "refuses"
+		if s.Consent {
+			missing = "asks"
+		}
 		t.Rows = append(t.Rows, []string{agentOf(s), s.Client, format.Ago(s.Since),
-			strconv.Itoa(calls[s.ID]), s.ID, s.Dir, s.Ledger})
+			strconv.Itoa(calls[s.ID]), missing, strings.Join(s.Roots, ", "), s.ID, s.Dir, s.Ledger})
 	}
 	t.Total = len(t.Rows)
 	return t
