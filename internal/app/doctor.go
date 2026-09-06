@@ -779,10 +779,18 @@ func doctorReport(reg *registry.Registry) view.View {
 			" — plugins run with this user's full access; process groups and the "+
 			"environment allowlist still apply")
 	default:
+		// The carve-out is named here and not only in the chapter, because
+		// this row is what that chapter tells people to read instead of
+		// assuming — a report that states a denial the launch then relaxes
+		// is the page-versus-run drift this codebase keeps finding, in the
+		// direction that overstates what is protected.
 		add("plugin confinement", "ok", fmt.Sprintf(
 			"sandbox-exec: %d paths denied read+write (rta's own state), %d denied read "+
 				"(credential locations), %d directories pinned in place so a rename cannot "+
-				"move either out of its rule; everything else is readable",
+				"move either out of its rule; everything else is readable, and so is an "+
+				"installed plugin's own directory under the store — reads only, the one "+
+				"place inside rta's state that is, because a process that cannot read its "+
+				"own directory cannot verify a certificate",
 			len(deny.NoAccess), len(deny.NoRead), len(deny.NoMove)))
 	}
 

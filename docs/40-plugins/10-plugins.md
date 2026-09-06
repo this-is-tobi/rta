@@ -74,13 +74,17 @@ Plugins run in a sandbox. On macOS that is `sandbox-exec`; `rta doctor` reports 
 
 ```
 plugin confinement   ok   sandbox-exec: 2 paths denied read+write (rta's own state),
-                          10 denied read (credential locations), 8 directories pinned
-                          in place so a rename cannot move either out of its rule
+                          10 denied read (credential locations), 9 directories pinned
+                          in place so a rename cannot move either out of its rule;
+                          everything else is readable, and so is an installed plugin's
+                          own directory under the store — reads only, the one place
+                          inside rta's state that is, because a process that cannot
+                          read its own directory cannot verify a certificate
 ```
 
 Read that row rather than assuming it. It states what is denied on *this* machine, and it is honest about platforms where confinement is weaker.
 
-One place inside rta's own state is readable to a plugin, and only readable: the installed artifact's own directory under the store. On macOS a process that cannot read its own directory cannot verify a TLS certificate — the Security framework initialises from the executable's location — so without that carve-out no managed plugin could reach an `https://` address, while a copy of the same plugin on `$PATH` could.
+That last clause is the one exception, and it is there because of what macOS does rather than because a plugin was trusted with something: the Security framework initialises from the main executable's location, so a process that cannot read its own directory cannot verify a TLS certificate at all. Without the carve-out no managed plugin could reach an `https://` address, while a copy of the same plugin on `$PATH` could. It is reads only, of that one directory, and only for an artifact rta installed there.
 
 ### When a plugin needs one of those locations
 
