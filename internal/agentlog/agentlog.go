@@ -263,10 +263,19 @@ type Entry struct {
 	// ceiling apply to the principal, and this is what tells the three
 	// apart when reading the record back. Provenance, like Client: nothing
 	// decides on it.
-	Session string        `json:"session,omitempty"`
-	Profile string        `json:"profile,omitempty"`
-	Outcome Outcome       `json:"outcome"`
-	Auth    Authorization `json:"auth"`
+	Session string `json:"session,omitempty"`
+	// Role names the role the covering grant was issued under, and
+	// RoleIssued when that grant was issued, so a role issued at 09:00 and
+	// re-issued at 14:00 read apart. Provenance, like Session: written
+	// after the gate has answered, and nothing decides on it. RoleIssued is
+	// a string for the seal's sake — omitempty does not omit a zero
+	// time.Time, and a field that appeared on every old row re-marshalled
+	// would read as every old row edited.
+	Role       string        `json:"role,omitempty"`
+	RoleIssued string        `json:"roleIssued,omitempty"`
+	Profile    string        `json:"profile,omitempty"`
+	Outcome    Outcome       `json:"outcome"`
+	Auth       Authorization `json:"auth"`
 	// Code is the machine's half of what went wrong: the dotted, stable
 	// code of the refusal or the error ("core.grant.required"), alone. It
 	// used to ride Reason as a "code: message" prefix, which made every jq

@@ -1179,8 +1179,9 @@ func numericScope(v any) string {
 // was capped at blown past in a call that never touched the lock twice.
 // Sharing one walk and one tally is what keeps the authorization decision
 // and the spend decision looking at the same arithmetic.
-func allocate(c plugin.Capability, values map[string]any, grants []Grant, by Caller) (tally map[int]int, missing []string, throttled *Grant) {
+func allocate(c plugin.Capability, values map[string]any, grants []Grant, by Caller) (tally map[int]int, covering []int, missing []string, throttled *Grant) {
 	tally = map[int]int{}
+	seen := map[int]bool{}
 	now := time.Now()
 	// Whether every scope this call could not get covers *has* a grant that
 	// merely ran out of pace, versus at least one scope nothing covers at
@@ -1212,6 +1213,13 @@ func allocate(c plugin.Capability, values map[string]any, grants []Grant, by Cal
 			if g.counted() {
 				tally[i]++
 			}
+			// Named whether or not it is counted: an unlimited grant covers a
+			// call as much as a metered one does, and the record wants its
+			// role either way.
+			if !seen[i] {
+				seen[i] = true
+				covering = append(covering, i)
+			}
 			covered = true
 			break
 		}
@@ -1229,7 +1237,7 @@ func allocate(c plugin.Capability, values map[string]any, grants []Grant, by Cal
 	if len(missing) == 0 || !allThrottled {
 		throttled = nil
 	}
-	return tally, missing, throttled
+	return tally, covering, missing, throttled
 }
 
 // checkAgainst answers "is this call authorized" against a set of grants
@@ -1248,7 +1256,7 @@ func allocate(c plugin.Capability, values map[string]any, grants []Grant, by Cal
 // the weaker of the two. A gate reachable only through the function that
 // spends the use cannot drift from it.
 func checkAgainst(c plugin.Capability, values map[string]any, grants []Grant, by Caller) *view.Error {
-	_, missing, throttled := allocate(c, values, grants, by)
+	_, _, missing, throttled := allocate(c, values, grants, by)
 	if len(missing) == 0 {
 		return nil
 	}
@@ -1625,12 +1633,22 @@ func describe(capID string, scopes []string) string {
 // pin is the connection this call resolves through. Both only ever subtract —
 // see reachable().
 func Reserve(c plugin.Capability, values map[string]any, by Caller) (release func(), verr *view.Error) {
+	release, _, verr = ReserveNaming(c, values, by)
+	return release, verr
+}
+
+// ReserveNaming is Reserve, naming the grants that covered the call. The
+// bridge writes their role on the record row, so "what did the dev role
+// do today" is one column rather than a join of the roster against the
+// record across a time window. Provenance only: the answer is exactly
+// Reserve's, and nothing decides on the names.
+func ReserveNaming(c plugin.Capability, values map[string]any, by Caller) (release func(), covering []Grant, verr *view.Error) {
 	if !Required(c, by.Profile) {
-		return func() {}, nil
+		return func() {}, nil, nil
 	}
 	grants, verr := Load()
 	if verr != nil {
-		return nil, verr
+		return nil, nil, verr
 	}
 	view, _ := reachable(grants, by)
 	if !anyLimited(view) {
@@ -1645,12 +1663,16 @@ func Reserve(c plugin.Capability, values map[string]any, by Caller) (release fun
 		// the authorization decision, makes that impossible: whatever this
 		// call is authorized against is exactly what it already knows has
 		// nothing to spend.
-		return func() {}, checkAgainst(c, values, view, by)
+		if verr := checkAgainst(c, values, view, by); verr != nil {
+			return nil, nil, verr
+		}
+		_, covered, _, _ := allocate(c, values, view, by)
+		return func() {}, pick(view, covered), nil
 	}
 
 	unlock, verr := acquireLock()
 	if verr != nil {
-		return nil, verr
+		return nil, nil, verr
 	}
 	defer unlock()
 
@@ -1662,26 +1684,27 @@ func Reserve(c plugin.Capability, values map[string]any, by Caller) (release fun
 	// comment for the incident that made this the rule.
 	all, verr := loadAll()
 	if verr != nil {
-		return nil, verr
+		return nil, nil, verr
 	}
 	ceiling, verr := Ceiling()
 	if verr != nil {
-		return nil, verr
+		return nil, nil, verr
 	}
 	view, at := reachableNow(all, ceiling, time.Now(), by)
 	if verr := checkAgainst(c, values, view, by); verr != nil {
-		return nil, verr
+		return nil, nil, verr
 	}
 	// The tally is over the view; the write is over everything loadAll
 	// returned. Saving the view instead — or a view whose positions were
 	// computed against anything less than the full file — is how one call
 	// came to erase the operator's other grants; see reachableNow.
-	tally, missing, _ := allocate(c, values, view, by)
+	tally, covered, missing, _ := allocate(c, values, view, by)
+	covering = pick(view, covered)
 	if len(missing) > 0 || len(tally) == 0 {
 		// checkAgainst just approved every scope, so missing is unreachable
 		// here; a scope that could not be covered must not silently spend the
 		// ones that could.
-		return func() {}, nil
+		return func() {}, covering, nil
 	}
 	now := time.Now()
 	spent := make([]spentUse, 0, len(tally))
@@ -1691,9 +1714,17 @@ func Reserve(c plugin.Capability, values map[string]any, by Caller) (release fun
 		spent = append(spent, spentUse{who: all[at[i]].identity(), n: n})
 	}
 	if verr := Save(all); verr != nil {
-		return nil, verr
+		return nil, nil, verr
 	}
-	return func() { _ = refund(spent) }, nil
+	return func() { _ = refund(spent) }, covering, nil
+}
+
+func pick(grants []Grant, idx []int) []Grant {
+	out := make([]Grant, 0, len(idx))
+	for _, i := range idx {
+		out = append(out, grants[i])
+	}
+	return out
 }
 
 // refund gives back the uses a call spent, for a call that then failed.
