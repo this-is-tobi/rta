@@ -231,8 +231,9 @@ func runGuardRemote(_ context.Context, req plugin.Request) (view.View, error) {
 	return view.KeyValue{Pairs: pairs}, nil
 }
 
-// guardLine is the guard's state in one sentence, for the top of `rta grant
-// list`.
+// guardLine is the guard's state in one sentence, without the word "guard":
+// `rta grant list` prints it under that word and `grant guard status` beside
+// it as a key, and the line carrying its own key read "guard  guard  off".
 //
 // It used to be a command of its own, `rta grant guard status`. Two screens
 // answered "is my guard on" — that one and `rta doctor` — and neither was
@@ -244,19 +245,19 @@ func runGuardRemote(_ context.Context, req plugin.Request) (view.View, error) {
 // only visible from that error, and it is the state worth seeing first.
 func guardLine(held []core.Grant, verr *view.Error) string {
 	if verr != nil && verr.Code == "core.grant.guard.orphaned" {
-		return "guard  ORPHANED — " + core.Path() + " holds guard-signed grants and " +
-			guard.Path() + " is gone, so nothing in it is honoured\n" +
-			"       rm " + core.Path() + ", then rta grant guard on"
+		return "ORPHANED — " + core.Path() + " holds guard-signed grants and " +
+			guard.Path() + " is gone, so nothing in it is honoured; rm " + core.Path() +
+			", then rta grant guard on"
 	}
 	if !guard.Enabled() {
-		return "guard  off — any process running as you can issue a grant (rta grant guard on)"
+		return "off — any process running as you can issue a grant (rta grant guard on)"
 	}
 	since := guard.Created().Local().Format("2006-01-02 15:04")
 	if guard.Remote() {
-		return fmt.Sprintf("guard  remote since %s, key %s — a grant is honoured only when one of %s signed it",
+		return fmt.Sprintf("remote since %s, key %s — a grant is honoured only when one of %s signed it",
 			since, guard.Fingerprint(), strings.Join(guard.OperatorLabels(), ", "))
 	}
-	return fmt.Sprintf("guard  on since %s, key %s — issuing or renewing a grant asks for the passphrase",
+	return fmt.Sprintf("on since %s, key %s — issuing or renewing a grant asks for the passphrase",
 		since, guard.Fingerprint())
 }
 

@@ -154,7 +154,7 @@ func TestRemoteAllowThenRevokeEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := v.(view.Text).Body
-	if !strings.Contains(body, "agents on lab may call kv.get") {
+	if !strings.Contains(body, "lab-agent on lab may call kv.get for 15m") {
 		t.Fatalf("allow said: %s", body)
 	}
 

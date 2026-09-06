@@ -7,6 +7,7 @@ import (
 
 	core "github.com/this-is-tobi/rta/internal/grant"
 	operatorid "github.com/this-is-tobi/rta/internal/operator"
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -133,9 +134,9 @@ func remoteAllow(req plugin.Request, server string) (view.View, error) {
 	if verr := client.Call(operatorid.VerbGrantIssue, g, &issued); verr != nil {
 		return nil, verr
 	}
-	msg := fmt.Sprintf("agents on %s may %s for %s (until %s)%s%s",
-		server, describe(issued), issued.Expires.Sub(issued.Issued),
-		issued.Expires.Format("15:04:05"), usesSuffix(issued.MaxUses), rateSuffix(issued))
+	msg := fmt.Sprintf("%s on %s may %s for %s (until %s)%s%s",
+		subject(issued), server, describe(issued), format.Duration(issued.Expires.Sub(issued.Issued)),
+		format.Clock(issued.Expires), usesSuffix(issued.MaxUses), rateSuffix(issued))
 	// The server's own notes — a clamped TTL, an environment that is not
 	// switched on — worded by the machine that knows.
 	for _, n := range prepared.Notes {

@@ -18,7 +18,7 @@ Not argued — run, on a scratch data directory, with the guard off, which is th
 
 ```bash
 rta grant allow kv.get --ttl 1h --agent claude
-# agents may call kv.get, as agent claude for 1h
+# claude may call kv.get for 1h
 
 rta agent log
 # (empty)

@@ -100,7 +100,7 @@ func TestADryRunSaysWhenTheWindowWasCapped(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := v.(view.Text).Body
-	if !strings.HasPrefix(body, "would allow") {
+	if !strings.HasPrefix(body, "would let") {
 		t.Fatalf("body = %q, want a dry run", body)
 	}
 	if grants, _ := core.Load(); len(grants) != 0 {
