@@ -171,7 +171,7 @@ Over stdio, the default, there is no daemon, no port and nothing to start. `rta 
 flowchart LR
     C1["Claude Code"] -->|stdio| S1["rta mcp serve<br/>--as claude"]
     C2["Cursor"] -->|stdio| S2["rta mcp serve<br/>--as cursor"]
-    S1 --> G[("~/.local/share/rta<br/>grants · ledger")]
+    S1 --> G[("~/.local/share/rta<br/>grants · record")]
     S2 --> G
 ```
 
@@ -222,7 +222,7 @@ What each part is doing, since a hardening flag nobody can explain is a hardenin
 | `-i` | stdio is the transport; without it the client and the server never meet |
 | `--read-only`, `--cap-drop ALL`, `--security-opt no-new-privileges` | The server needs none of it, so it gets none of it |
 | `--network none` | The strongest setting, and it turns off every capability that reaches the network — `audit web`, `net dns`, `pg` against anything remote. Drop it when you want those |
-| `-v rta-home:/rta-home` | Grants and the ledger have to outlive the container, or every restart is a machine with no memory of what you allowed |
+| `-v rta-home:/rta-home` | Grants and the record have to outlive the container, or every restart is a machine with no memory of what you allowed |
 | `-e RTA_CONFIG`, `-e RTA_DATA_DIR` | **Not optional.** With no config directory the config path falls back to `./.rta.yaml`, and a working-directory file is not honoured — `profiles:`, `plugins:` and `dashboard:` are all ignored, so a plugin would run with its declared defaults |
 | `-w /work` + `--root /work` | The path root defaults to the working directory, which in a container is `/` unless you say otherwise |
 
@@ -272,7 +272,7 @@ secrets:
 
 So the image is safe to publish to your internal registry. The credential is read at call time from the cluster, **with the caller's own kubeconfig and their own RBAC** — the access control your organisation already runs keeps applying, per person, unchanged. The same is true of the `kube:` forward: reaching the database at all requires that member's cluster access.
 
-That is the whole of "without any config", and everything else stays where it belongs. Grants are theirs. The ledger says what *they* did. `rta use` bounds *their* agents. Nothing is shared that a person has to be accountable for.
+That is the whole of "without any config", and everything else stays where it belongs. Grants are theirs. The record says what *they* did. `rta use` bounds *their* agents. Nothing is shared that a person has to be accountable for.
 
 Add [`.rta-policy.yaml`](./50-team-policy.md) to the repositories they work in and the team also gets a ceiling — committed, travelling with a clone, needing no seal because it can only ever subtract.
 
@@ -351,7 +351,7 @@ The server *prepares* the grant — validation, TTL clamping against its policy,
 
 What makes this channel one an agent cannot ride: every call is an ed25519 signature over the server's canonical URL, a single-use nonce the server just issued, the verb and its payload — and the signing key exists on your machine only inside a passphrase, the [guard](./30-grants.md)'s own mechanics pointed outward. The passphrase arrives through a prompt or the TUI's masked field, never from the environment, and is refused on the command line; so an agent that reads every file you own still cannot sign, a captured request replays nowhere and verifies on no other server, and an agent's bearer token opens nothing here — the two mechanisms never meet. The server, for its part, holds only public keys: compromising it forges no operator's hand.
 
-Everything the channel *changes* is written into [the record](./40-audit-trail.md) beside the agent's own calls: a revocation, an issued grant, an answered consent, a lock placed or lifted — one line each, `operator.` in front of the verb, attributed `operator:<label>` in the credential column, refusals included. The record that shows a parked call `approved` therefore also shows who approved it, from which enrolled key. Reads stay off the record: a watching dashboard polls `status` every few seconds, and recording polls would churn real history out of the ledger's retention.
+Everything the channel *changes* is written into [the record](./40-audit-trail.md) beside the agent's own calls: a revocation, an issued grant, an answered consent, a lock placed or lifted — one line each, `operator.` in front of the verb, attributed `operator:<label>` in the credential column, refusals included. The record that shows a parked call `approved` therefore also shows who approved it, from which enrolled key. Reads stay off the record: a watching dashboard polls `status` every few seconds, and recording polls would churn real history out of the record's retention.
 
 The roster is the token file's kind of trust anchor and gets the same treatment: rta never writes it, weak permissions refuse startup, and it is read once — a rewrite behind a running server's back changes nothing until the next deliberate restart. Plain `http://` in `remotes.yaml` is refused for anything but loopback, and for the OIDC issuer's reason: the signature protects what you send, TLS protects what you *read* — a grant listing rewritten in transit is decisions made on a lie.
 
