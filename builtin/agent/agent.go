@@ -34,6 +34,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/consent"
 	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/guard"
+	"github.com/this-is-tobi/rta/internal/lockdown"
 	operatorid "github.com/this-is-tobi/rta/internal/operator"
 	"github.com/this-is-tobi/rta/internal/session"
 	"github.com/this-is-tobi/rta/internal/stdio"
@@ -57,7 +58,7 @@ func Plugin() plugin.Plugin {
 				Summary: "Agent activity at a glance: recent calls, refusals, anything waiting",
 				Description: "The last hour of calls that arrived over MCP, how many were refused, " +
 					"and how many requests are parked waiting for you to answer right now. With " +
-					"--detail: the chain's integrity, where the ledger lives and how big it is.",
+					"--detail: the chain's integrity, where the record lives and how big it is.",
 				Safety:     plugin.Read,
 				Idempotent: true,
 				Detailed:   true,
@@ -107,7 +108,7 @@ func Plugin() plugin.Plugin {
 					"how they were authorized; grants in force; calls parked waiting for you; and " +
 					"whether the record's hash chain still verifies — which is the one worth an " +
 					"alert, because a record that stops verifying is either a bug or somebody " +
-					"editing it. Nothing is kept: every number is derived from the ledger, so it " +
+					"editing it. Nothing is kept: every number is derived from the record, so it " +
 					"is a number you could recompute. The Grafana stack's other half needs nothing " +
 					"here — `agent log --after <seq> -o json` is already a cursor over an " +
 					"append-only record, which is what a log shipper wants.",
@@ -332,6 +333,7 @@ func runOverview(_ context.Context, req plugin.Request) (view.View, error) {
 	pairs := []view.Pair{
 		{Key: "waiting on you", Value: nowWaiting},
 		{Key: "connected now", Value: connected},
+		{Key: "locked", Value: lockedLine()},
 		{Key: "calls in the last hour", Value: fmt.Sprintf("%d", recent)},
 		{Key: "refused", Value: fmt.Sprintf("%d", refused)},
 		{Key: "you approved live", Value: fmt.Sprintf("%d", approved)},
@@ -353,6 +355,29 @@ func runOverview(_ context.Context, req plugin.Request) (view.View, error) {
 		{ID: "ledger", Title: "The record", View: view.KeyValue{Pairs: recordPairs(rep, verr)}},
 		{ID: "waiting", Title: "Waiting on you", View: pendingTable(waiting)},
 	}}, nil
+}
+
+// lockedLine says which principals are frozen, on the one screen an
+// operator glances at. A lock used to be visible on `lock list` and nowhere
+// else, so an agent frozen during an incident and forgotten stayed frozen
+// with nothing on the dashboard saying so.
+func lockedLine() string {
+	locks, verr := lockdown.Load()
+	if verr != nil {
+		return "unreadable — " + verr.Message
+	}
+	if len(locks) == 0 {
+		return "nothing"
+	}
+	names := make([]string, 0, len(locks))
+	for _, l := range locks {
+		name := l.Name
+		if l.Kind != lockdown.KindAgent {
+			name += " (" + string(l.Kind) + ")"
+		}
+		names = append(names, name)
+	}
+	return strings.Join(names, ", ") + " — `rta lock list` says why"
 }
 
 // recordPairs describes the record itself: where it is, how much of it
@@ -597,6 +622,12 @@ func runPending(_ context.Context, req plugin.Request) (view.View, error) {
 	reqs, err := consent.Pending()
 	if err != nil {
 		return nil, view.Errorf("agent.pending.unreadable", "%v", err)
+	}
+	if len(reqs) == 0 {
+		// A sentence, not an empty bordered table: `lock list` says
+		// "nothing is locked" for the same reason, and the queue is the
+		// screen `press w to answer` lands on.
+		return view.Text{Body: "nothing is waiting — a parked call appears here, and `rta agent allow <id>` releases it"}, nil
 	}
 	return pendingTable(reqs), nil
 }
@@ -848,6 +879,14 @@ func runAllow(_ context.Context, req plugin.Request) (view.View, error) {
 	pairs := []view.Pair{
 		{Key: "allowed", Value: strings.TrimSpace(r.Cap + " " + strings.Join(r.Scopes, " "))},
 		{Key: "for", Value: "this call only"},
+	}
+	// The bridge refuses a frozen agent before any other gate, so this
+	// answer releases nothing while the lock stands — said here, because
+	// "allowed" on the operator's screen and "refused" on the agent's is
+	// the one disagreement between the two that nothing else explains.
+	if l, _ := lockdown.NewPin().Frozen(lockdown.KindAgent, r.Agent); l != nil {
+		pairs = append(pairs, view.Pair{Key: "but", Value: fmt.Sprintf(
+			"agent %s is locked, so the call is refused anyway until `rta lock rm %s`", r.Agent, r.Agent)})
 	}
 	if ttl := strings.TrimSpace(req.String("ttl")); ttl != "" {
 		// Measured here rather than inside alsoGrant because the surface is
