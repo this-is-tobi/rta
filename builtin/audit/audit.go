@@ -32,7 +32,16 @@ import (
 // the harness deny list names every plugin whose capabilities are all for
 // the person at the terminal, and a list kept by hand went stale each
 // time such a plugin was added.
-func Plugin(catalog func() []plugin.Capability) plugin.Plugin {
+//
+// It takes the environment report for a different reason: the report reads
+// state the command tree sets up at startup — which plugins loaded, which
+// were withheld, what the config resolver could not honour — and lives
+// beside that state in internal/app, which this package cannot import.
+// Injected, it is one capability on every surface; wired here as a plain
+// command it was on the CLI alone, and "why can't I run doctor from the
+// TUI" had no answer better than "nobody had". nil is the surface that did
+// not wire it, and the capability says so rather than reporting nothing.
+func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.Plugin {
 	return plugin.Plugin{
 		Name:    "audit",
 		Summary: "Security hardening checks, each graded against a named OWASP/CWE control",
@@ -179,6 +188,36 @@ func Plugin(catalog func() []plugin.Capability) plugin.Plugin {
 						Help: "walk subdirectories too, for a monorepo with a manifest per package"},
 				},
 				Run: runWhy,
+			},
+			{
+				ID:         "audit.doctor",
+				Summary:    "Check rta's environment and report actionable findings",
+				Safety:     plugin.Read,
+				Idempotent: true,
+				Detailed:   true,
+				// Not a tile: a report about paths, seals and trust redrawn
+				// every few seconds is noise, and half its rows cost a probe.
+				NoPreview: true,
+				// It names where credentials and keys live, what can open the
+				// store and which agent is attached — an inventory of the
+				// machine's exposure, for the person whose machine it is.
+				HumanOnly: true,
+				Description: "The same report as `rta doctor`, as a capability so it is on every " +
+					"surface at once: the TUI, `rta explain`, the dashboard's command list. Every " +
+					"row is a check with a status and the sentence that says what to do about it — " +
+					"where state and config live, whether the data directory is listable by other " +
+					"accounts, which profile is switched on and what it still needs, the team " +
+					"policy in force, the roles defined and the grants standing, locks, the guard, " +
+					"how the store unlocks, what confinement actually applies on this machine, and " +
+					"every plugin with its path, its digest and its trust. It reads and never writes.",
+				Run: func(context.Context, plugin.Request) (view.View, error) {
+					if report == nil {
+						return nil, view.Errorf("audit.doctor.unwired",
+							"this surface did not wire the environment check").
+							WithHint("`rta doctor` at a terminal reports the same thing")
+					}
+					return report(), nil
+				},
 			},
 			{
 				ID:         "audit.clients",

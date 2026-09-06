@@ -149,7 +149,7 @@ func asViewError(err error, target **view.Error) bool {
 // NewRegistry builds the registry of built-in plugins. The catalogue itself
 // lives in builtin/all, where nothing downstream of it can be an import
 // cycle away from asking what is in it.
-func NewRegistry() (*registry.Registry, error) { return all.Registry(PluginConfig) }
+func NewRegistry() (*registry.Registry, error) { return all.RegistryWith(PluginConfig, doctorReport) }
 
 // LoadPlugins adds every SDK plugin found on $PATH to reg and returns the
 // host that owns their processes, plus whatever went wrong.

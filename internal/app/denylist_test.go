@@ -35,4 +35,19 @@ func TestTheDocsNameEveryHumanOnlyPlugin(t *testing.T) {
 			}
 		}
 	}
+	// The verbs of the mixed plugins are on the block for the same reason and
+	// are named the same way, in the chapter that explains the block.
+	body, err := os.ReadFile("../../docs/30-boundary/10-the-boundary.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	verbs := audit.HumanOnlyVerbs(reg.Capabilities)
+	if len(verbs) < 2 {
+		t.Fatalf("derived only %v verbs; the block would miss the mixed plugins", verbs)
+	}
+	for _, v := range verbs {
+		if want := "`rta " + v + "`"; !strings.Contains(string(body), want) {
+			t.Errorf("the boundary chapter never names %s, which is for the person at the terminal", want)
+		}
+	}
 }
