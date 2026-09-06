@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.14.0](https://github.com/this-is-tobi/rta/compare/v0.13.0...v0.14.0) (2026-09-06)
+
+
+### Features
+
+* **audit:** the environment check is a capability, so doctor is on every surface ([8b19594](https://github.com/this-is-tobi/rta/commit/8b195941829e3f91076f6a715d8663a2676a9acb))
+* **kv:** the listing says how many earlier values each entry keeps ([163af18](https://github.com/this-is-tobi/rta/commit/163af18fce72d686376c52e86ce2d88ab3f4b5b5))
+
+
+### Bug Fixes
+
+* **doctor:** the confinement row names the one readable place inside rta state ([47a4789](https://github.com/this-is-tobi/rta/commit/47a478920f5c728ff4f6e8a910cd900100837fff))
+* **pluginhost:** an installed plugin can read its own directory, so it can verify a certificate ([043051c](https://github.com/this-is-tobi/rta/commit/043051c8c2b114748d986eda5359414f744fb173))
+* **profile:** a picked instance seeds the form it was picked on ([ad2a430](https://github.com/this-is-tobi/rta/commit/ad2a4303dcfb2bfe63899046c463e88d6e0c7ecb))
+
 ## [0.13.0](https://github.com/this-is-tobi/rta/compare/v0.12.0...v0.13.0) (2026-09-06)
 
 
