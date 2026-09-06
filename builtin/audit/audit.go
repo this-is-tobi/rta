@@ -22,11 +22,17 @@
 package audit
 
 import (
+	"context"
 	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // Plugin returns the audit plugin declaration.
-func Plugin() plugin.Plugin {
+// Plugin takes the catalogue because one of its fixes is derived from it:
+// the harness deny list names every plugin whose capabilities are all for
+// the person at the terminal, and a list kept by hand went stale each
+// time such a plugin was added.
+func Plugin(catalog func() []plugin.Capability) plugin.Plugin {
 	return plugin.Plugin{
 		Name:    "audit",
 		Summary: "Security hardening checks, each graded against a named OWASP/CWE control",
@@ -205,7 +211,9 @@ func Plugin() plugin.Plugin {
 					{Name: "fix", Type: plugin.Bool,
 						Help: "print the exact edit for each finding that has one, instead of the grades"},
 				},
-				Run: runClients,
+				Run: func(ctx context.Context, req plugin.Request) (view.View, error) {
+					return runClients(ctx, req, catalog)
+				},
 			},
 			{
 				ID:         "audit.kube.rbac",

@@ -40,7 +40,7 @@ func fakeHome(t *testing.T, files map[string]struct {
 
 func agentRows(t *testing.T, surface plugin.Surface) map[string][]string {
 	t.Helper()
-	v, err := runClients(t.Context(), req(map[string]any{}).WithSurface(surface))
+	v, err := runClients(t.Context(), req(map[string]any{}).WithSurface(surface), testCatalog)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +85,7 @@ func TestTheCredentialValueIsNeverPrinted(t *testing.T) {
 	}{".cursor/mcp.json": {configWithToken(), 0o600}})
 
 	for _, detail := range []bool{false, true} {
-		v, err := runClients(t.Context(), req(map[string]any{"detail": detail}).WithSurface(plugin.SurfaceCLI))
+		v, err := runClients(t.Context(), req(map[string]any{"detail": detail}).WithSurface(plugin.SurfaceCLI), testCatalog)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -108,7 +108,7 @@ func TestTheCredentialValueIsNeverPrinted(t *testing.T) {
 // "here is where each one keeps its credential" — a map of the machine, read
 // out to the thing it is a map of.
 func TestTheAgentAuditIsNeverATool(t *testing.T) {
-	for _, c := range Plugin().Capabilities {
+	for _, c := range Plugin(testCatalog).Capabilities {
 		if c.ID == "audit.clients" && !c.HumanOnly {
 			t.Fatal("audit.clients is reachable over MCP")
 		}

@@ -145,7 +145,7 @@ func fixPage(r *agentReport) view.View {
 	return s
 }
 
-func runClients(ctx context.Context, req plugin.Request) (view.View, error) {
+func runClients(ctx context.Context, req plugin.Request, catalog func() []plugin.Capability) (view.View, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, view.Errorf("audit.clients.home", "finding your home directory: %v", err)
@@ -174,7 +174,7 @@ func runClients(ctx context.Context, req plugin.Request) (view.View, error) {
 			"no agent configuration found in the usual places — nothing to grade", reference{})
 	}
 	auditModelEndpoint(&r.report)
-	auditRtaReach(r, claudeSeen)
+	auditRtaReach(r, claudeSeen, catalog)
 
 	if req.Bool("fix") {
 		return fixPage(r), nil
@@ -500,7 +500,7 @@ func auditModelEndpoint(r *report) {
 //
 // What it can do is stop the misunderstanding, which is the one that makes
 // people trust a boundary further than it goes.
-func auditRtaReach(r *agentReport, claudeSeen bool) {
+func auditRtaReach(r *agentReport, claudeSeen bool, catalog func() []plugin.Capability) {
 	// The path is last and the point is first, because the compact table
 	// clips: "an agent that can run commands can run /very/long/path…" would
 	// spend the whole row on a path and lose the sentence it is there for.
@@ -527,23 +527,57 @@ func auditRtaReach(r *agentReport, claudeSeen bool) {
 			"The ordinary shape of an agent reaching past rta's gates is a handful of its own "+
 				"commands: issuing itself a grant, answering its own parked request, reading the "+
 				"store, trusting a plugin. Deny them by name, in ~/.claude/settings.json:\n\n"+
-				"  \"permissions\": {\n"+
-				"    \"deny\": [\n"+
-				"      \"Bash(rta grant:*)\",\n"+
-				"      \"Bash(rta agent:*)\",\n"+
-				"      \"Bash(rta kv:*)\",\n"+
-				"      \"Bash(rta lock:*)\",\n"+
-				"      \"Bash(rta plugin trust:*)\",\n"+
-				"      \"Bash(rta plugin allow:*)\",\n"+
-				"      \"Bash(rta plugin install:*)\"\n"+
-				"    ]\n"+
-				"  }\n\n"+
+				denyBlock(catalog)+
 				"A string match is a seatbelt and not a wall — a shell can reach the same commands "+
 				"other ways, and rta's own gates stay where they are precisely because of that. "+
 				"What it refuses is the ordinary reach, and the ordinary reach is what happens. "+
 				"The agent keeps every capability you granted it over MCP, where calls are "+
 				"consented, bounded and recorded.")
 	}
+}
+
+// HumanOnlyPlugins is every plugin whose capabilities all answer to the
+// person at the terminal — the ones an agent's shell must not reach
+// either. Derived, because a list kept by hand went stale each time such a
+// plugin was added: it named grant, agent, kv and lock, and missed
+// operator and pkg. The predicate is "all of them" on purpose: a plugin
+// that mixes human-only verbs with tools for agents drops out and keeps
+// its hand-written line below, where somebody has to say which verbs.
+func HumanOnlyPlugins(catalog func() []plugin.Capability) []string {
+	if catalog == nil {
+		return nil
+	}
+	all := map[string]bool{}
+	for _, c := range catalog() {
+		ns := plugin.Namespace(c.ID)
+		if _, seen := all[ns]; !seen {
+			all[ns] = true
+		}
+		if !c.HumanOnly {
+			all[ns] = false
+		}
+	}
+	var out []string
+	for ns, every := range all {
+		if every {
+			out = append(out, ns)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// handDenied are the verbs of mixed plugins an agent's shell must not reach
+// either: the store's own reads, and the three that admit a plugin.
+var handDenied = []string{"kv", "plugin trust", "plugin allow", "plugin install"}
+
+func denyBlock(catalog func() []plugin.Capability) string {
+	names := append(HumanOnlyPlugins(catalog), handDenied...)
+	lines := make([]string, 0, len(names))
+	for _, n := range names {
+		lines = append(lines, "      \"Bash(rta "+n+":*)\"")
+	}
+	return "  \"permissions\": {\n    \"deny\": [\n" + strings.Join(lines, ",\n") + "\n    ]\n  }\n\n"
 }
 
 // shortPath puts ~ back, so a finding names a path the reader recognises and
