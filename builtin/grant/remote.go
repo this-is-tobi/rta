@@ -77,6 +77,15 @@ func remoteSuppressedNote(server string, n int) string {
 // key and the human are here — what gets signed is byte-for-byte what the
 // server said it would store, which is the review step made structural.
 func remoteAllow(req plugin.Request, server string) (view.View, error) {
+	// Named here, and never filled in for you: the agents this machine knows
+	// are this machine's, and the grant is for one on the server. Refused
+	// locally rather than after the round trip, since the answer would be
+	// the same and the passphrase would have been typed for nothing.
+	if strings.TrimSpace(req.String("agent")) == "" {
+		return nil, view.Errorf("grant.noagent",
+			"name the agent this is for on %s, with --agent", server).
+			WithHint("`rta operator status --server " + server + "` says what that server runs as")
+	}
 	spec := operatorid.IssueSpec{
 		Target:  req.String("target"),
 		Scope:   req.String("scope"),

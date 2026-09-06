@@ -145,18 +145,16 @@ type Grant struct {
 	// allow kv.get prod/db-password` was thinking of the agent in front of
 	// them; what they got was every agent.
 	//
-	// Empty means the call must come from a server launched with NO name.
 	// **It is not a wildcard, and there is no wildcard** — Profile's rule,
 	// one field along, for Profile's reasons. Under "empty means any agent"
 	// every grant already on disk would silently widen to cover each agent
-	// added later, which is the hole this closes arriving from the other
-	// side; and it would make the empty field the default a blind-writing
-	// attacker produces. Under this reading they keep covering exactly the
-	// unnamed calls they cover today and gain nothing.
+	// added later; and it would make the empty field the default a
+	// blind-writing attacker produces.
 	//
-	// The cost is a real one and it is bounded: an operator who starts naming
-	// their agents invalidates the grants they already hold, and re-consents
-	// once. Fail-closed, self-healing within one TTL, because MaxTTL is a day.
+	// Empty therefore authorizes nothing at all, and cannot be issued: `rta
+	// mcp serve` requires --as, so there is no unnamed server for such a
+	// grant to cover, and `rta grant allow` fills the name in when this
+	// machine knows exactly one agent and asks when it does not.
 	//
 	// **What it is not is authentication.** The name is the operator's own
 	// word, written where they wired the client up, and it is trusted exactly

@@ -101,7 +101,8 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 						Help: "narrow it to one configured connection — name/instance when an " +
 							"environment holds several for this plugin"},
 					{Name: "agent", Type: plugin.String, Suggest: suggestHeldAgents,
-						Help: "narrow it to one named agent — the name `rta mcp serve --as` uses"},
+						Help: "which agent it is for — the name `rta mcp serve --as` uses; " +
+							"omit only when this machine knows exactly one"},
 					{Name: "ttl", Type: plugin.String, Default: "15m", Suggest: suggestTTL,
 						Help: "how long it lasts: 30s, 15m, 2h"},
 					{Name: "max-uses", Type: plugin.Int, Help: "expire after this many successful calls (0 = unlimited)"},
@@ -337,23 +338,7 @@ func suggestHeldProfiles(context.Context, plugin.Request) []string {
 // completes what has been used and never claims to enumerate what exists. The
 // first grant for a new agent is typed in full, which is the honest behaviour
 // for a name only the operator knows.
-func suggestHeldAgents(context.Context, plugin.Request) []string {
-	grants, verr := core.Load()
-	if verr != nil {
-		return nil
-	}
-	seen := map[string]bool{}
-	var out []string
-	for _, g := range grants {
-		if g.Agent == "" || seen[g.Agent] {
-			continue
-		}
-		seen[g.Agent] = true
-		out = append(out, g.Agent)
-	}
-	sort.Strings(out)
-	return out
-}
+func suggestHeldAgents(context.Context, plugin.Request) []string { return knownAgents() }
 
 // suggestConfiguredProfiles completes from the operator's own config, which is
 // the set `grant allow` can issue against — unlike revoke and renew, which act
@@ -494,11 +479,19 @@ func runAllow(_ context.Context, req plugin.Request, catalog func() []plugin.Cap
 	// reason builtin/kv records — after main takes fd 0 away from the
 	// plugins it spawns, os.Stdin is /dev/null and every run would read as
 	// unattended.
+	// Resolved here rather than in the shared builder: this is the flow with
+	// a person at the machine, so an omitted --agent can be filled in from
+	// what this machine knows. The operator channel's flow cannot — see
+	// buildGrant.
+	agent, verr := resolveAgent(req.String("agent"))
+	if verr != nil {
+		return nil, verr
+	}
 	g, notes, verr := buildGrant(catalog, artifact, operatorid.IssueSpec{
 		Target:  req.String("target"),
 		Scope:   req.String("scope"),
 		Profile: req.String("profile"),
-		Agent:   req.String("agent"),
+		Agent:   agent,
 		TTL:     req.String("ttl"),
 		Note:    req.String("note"),
 		MaxUses: req.Int("max-uses"),

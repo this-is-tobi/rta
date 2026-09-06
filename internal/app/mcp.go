@@ -32,6 +32,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/registry"
 	agentsession "github.com/this-is-tobi/rta/internal/session"
 	"github.com/this-is-tobi/rta/internal/stdio"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // newMCPCommand wires the MCP surface: serve (stdio) and install helpers.
@@ -84,6 +85,24 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			// Required, not defaulted. Every MCP client on this machine reads
+			// the same grant file, so an unnamed server is one that shares
+			// every grant with every other client — and, worse, one nobody
+			// can stop: `rta lock add agent <name>` matches on the name, and
+			// lockdown.match refuses to match an empty one, so the emergency
+			// brake had no handle to pull. Defaulting it would pick a name on
+			// the operator's behalf and attach their consent to it, which is
+			// the one thing a name must not be.
+			agentName = strings.TrimSpace(agentName)
+			if agentName == "" {
+				return view.Errorf("core.mcp.unnamed", "name this agent with --as").
+					WithHint("`rta mcp install <client>` writes it for you; by hand it is " +
+						"`rta mcp serve --as claude` — the name is what grants are issued to " +
+						"and what `rta lock add agent` freezes")
+			}
+			if verr := grant.CheckAgent(agentName); verr != nil {
+				return verr
+			}
 			// Both of these are said once, at startup, on stderr — which under
 			// a client is the server's log. A flag that silently does nothing
 			// is worse than a missing feature: the operator believes they are
@@ -445,13 +464,12 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 			return err
 		},
 	}
-	// Named, because until it is there is exactly one principal on this
-	// machine: every MCP client the operator wires up reads the same grant
-	// file, so consent given while talking to one follows all the others.
-	// The name is the operator's own word, written where they wire the client
-	// up, and trusted exactly as much as --root beside it.
+	// Required. The name is the operator's own word, written where they wire
+	// the client up, and trusted exactly as much as --root beside it — but
+	// without one every MCP client on the machine is a single principal
+	// sharing one grant file, and no lock can name it.
 	cmd.Flags().StringVar(&agentName, "as", "",
-		"name this agent, so grants and the record can tell it from your other clients")
+		"name this agent — required; grants are issued to it and `rta lock add agent` freezes it")
 	cmd.Flags().StringSliceVar(&roots, "root", nil,
 		"directory a caller may name in a path argument (repeatable; default: the working directory)")
 	cmd.Flags().StringVar(&httpAddr, "http", "",

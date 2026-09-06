@@ -20,7 +20,7 @@ import (
 // clear what the operators signed — no passphrase at either end, because
 // in remote mode there is none on this machine to ask for.
 func TestGuardRemoteClosesLocalIssuance(t *testing.T) {
-	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	setup(t)
 	operatorid.ScryptWorkFactor = 10
 	if _, verr := operatorid.Init("correct horse"); verr != nil {
 		t.Fatal(verr)
@@ -77,7 +77,7 @@ func TestGuardRemoteClosesLocalIssuance(t *testing.T) {
 // of an agent's command tool — is refused: rta must not be a quieter
 // teardown than the rm it cannot prevent.
 func TestRemoteGuardOffNeedsATerminal(t *testing.T) {
-	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	setup(t)
 	operatorid.ScryptWorkFactor = 10
 	if _, verr := operatorid.Init("p"); verr != nil {
 		t.Fatal(verr)
@@ -108,7 +108,7 @@ func TestRemoteGuardOffNeedsATerminal(t *testing.T) {
 // who stayed out, so the read-only rows are a decision on the record, not
 // a silent drop.
 func TestGuardRemoteNeedsASigner(t *testing.T) {
-	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	setup(t)
 	operatorid.ScryptWorkFactor = 10
 	if _, verr := operatorid.Init("one"); verr != nil {
 		t.Fatal(verr)

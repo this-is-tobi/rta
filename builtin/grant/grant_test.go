@@ -10,6 +10,7 @@ import (
 	"time"
 
 	core "github.com/this-is-tobi/rta/internal/grant"
+	"github.com/this-is-tobi/rta/internal/session"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -18,9 +19,17 @@ import (
 // inside the rta binary: registered, with no separate artifact to pin.
 func builtIn(string) (string, bool) { return "", true }
 
+// setup is a machine with one client wired up, which is what every rta
+// install looks like: `rta mcp serve` requires --as, so an agent is always
+// named, and `grant allow` fills that one name in rather than asking.
 func setup(t *testing.T) {
 	t.Helper()
 	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	if err := session.Start(session.Record{
+		ID: session.NewID(), Agent: "test", Since: time.Now(), PID: os.Getpid(),
+	}); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // req builds a request from a human surface unless told otherwise.
@@ -533,10 +542,10 @@ func TestMaxUsesGrantIsSpentAfterASuccessfulCall(t *testing.T) {
 
 	// Reserve, the way the bridge calls it: authorize and spend in one step,
 	// keeping the use because the call succeeded.
-	if _, verr := core.Reserve(c, values, core.Caller{}); verr != nil {
+	if _, verr := core.Reserve(c, values, core.Caller{Agent: "test"}); verr != nil {
 		t.Fatalf("the fresh grant was refused: %v", verr)
 	}
-	if _, verr := core.Reserve(c, values, core.Caller{}); verr == nil {
+	if _, verr := core.Reserve(c, values, core.Caller{Agent: "test"}); verr == nil {
 		t.Fatal("a one-time grant still authorized a second call")
 	}
 }

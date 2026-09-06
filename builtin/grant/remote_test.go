@@ -26,7 +26,7 @@ import (
 // resolution, the passphrase field, the envelope, the roster check, and the
 // rows rendering through the same grantsTable the local listing uses.
 func TestRemoteListReadsTheServersRoster(t *testing.T) {
-	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	setup(t)
 	operatorid.ScryptWorkFactor = 10
 	if _, verr := operatorid.Init("correct horse"); verr != nil {
 		t.Fatal(verr)
@@ -105,7 +105,7 @@ func listCap(t *testing.T) plugin.Capability {
 // here and issues; the row lands attributed to the operator; revoke
 // --server takes it back.
 func TestRemoteAllowThenRevokeEndToEnd(t *testing.T) {
-	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	setup(t)
 	operatorid.ScryptWorkFactor = 10
 	if _, verr := operatorid.Init("correct horse"); verr != nil {
 		t.Fatal(verr)
@@ -147,7 +147,7 @@ func TestRemoteAllowThenRevokeEndToEnd(t *testing.T) {
 	}
 
 	v, err := guardCap(t, "grant.allow").Run(context.Background(), reqTUI(map[string]any{
-		"target": "kv.get", "ttl": "15m", "note": "remote e2e",
+		"target": "kv.get", "ttl": "15m", "note": "remote e2e", "agent": "lab-agent",
 		"server": "lab", "passphrase": "correct horse",
 	}))
 	if err != nil {
@@ -197,7 +197,7 @@ func TestRemoteAllowThenRevokeEndToEnd(t *testing.T) {
 // signed: the client checks every spec-controlled field before the key
 // touches anything, and the issue verb is never reached.
 func TestAHostilePrepareIsNotASigningOracle(t *testing.T) {
-	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	setup(t)
 	operatorid.ScryptWorkFactor = 10
 	if _, verr := operatorid.Init("correct horse"); verr != nil {
 		t.Fatal(verr)
@@ -233,7 +233,8 @@ func TestAHostilePrepareIsNotASigningOracle(t *testing.T) {
 	}
 
 	_, err := guardCap(t, "grant.allow").Run(context.Background(), reqTUI(map[string]any{
-		"target": "kv.get", "ttl": "15m", "server": "evil", "passphrase": "correct horse",
+		"target": "kv.get", "ttl": "15m", "agent": "lab-agent",
+		"server": "evil", "passphrase": "correct horse",
 	}))
 	verr, ok := err.(*view.Error)
 	if !ok || verr.Code != "core.operator.prepare.mismatch" {

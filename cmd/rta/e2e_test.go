@@ -238,7 +238,7 @@ func TestMCPServeKeepsStdoutForTheProtocol(t *testing.T) {
 	if testing.Short() {
 		t.Skip("e2e builds the binary")
 	}
-	cmd := exec.Command(binary, "mcp", "serve")
+	cmd := exec.Command(binary, "mcp", "serve", "--as", "probe")
 	cmd.Env = append(os.Environ(), "RTA_DATA_DIR="+t.TempDir(), "NO_COLOR=1")
 	stdin, err := cmd.StdinPipe()
 	if err != nil {

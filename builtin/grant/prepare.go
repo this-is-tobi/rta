@@ -2,6 +2,7 @@ package grant
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/guard"
 	operatorid "github.com/this-is-tobi/rta/internal/operator"
 	profiles "github.com/this-is-tobi/rta/internal/profile"
+	"github.com/this-is-tobi/rta/internal/session"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -78,7 +80,19 @@ func buildGrant(catalog func() []plugin.Capability, artifact func(string) (strin
 	if verr := core.CheckScope(scope); verr != nil {
 		return core.Grant{}, notes, verr
 	}
+	// Named, never inferred here. `rta grant allow` resolves an omitted
+	// --agent from this machine's own known agents before it builds a spec
+	// (resolveAgent); the operator channel deliberately does not, because a
+	// server that filled the name in would be choosing who an operator's
+	// signature authorizes — and checkPrepared would refuse the draft for
+	// exactly that reason.
 	agent := strings.TrimSpace(spec.Agent)
+	if agent == "" {
+		return core.Grant{}, notes, view.Errorf("grant.noagent",
+			"name the agent this is for, with --agent").
+			WithHint("the name is the one from `rta mcp serve --as`, which " +
+				"`rta mcp install <client>` sets to the client's name")
+	}
 	if verr := core.CheckAgent(agent); verr != nil {
 		return core.Grant{}, notes, verr
 	}
@@ -109,6 +123,95 @@ func buildGrant(catalog func() []plugin.Capability, artifact func(string) (strin
 		RateMax:    rateMax,
 		RateWindow: rateWindow,
 	}, notes, nil
+}
+
+// stillCovering answers, after a revoke, whether anything left in the file
+// still authorizes the target — for *whoever* holds it.
+//
+// Asked once per surviving grant, against that grant's own identity, rather
+// than once against the revoke's selectors. The selectors are narrowing
+// filters: `rta grant revoke kv.get` with no --agent takes the capability
+// back from every agent, so "is anything still covering it" has to be asked
+// the same way. Asking it once with an empty caller answers "does an unnamed
+// server still reach this", and there are no unnamed servers — so the
+// warning that exists to stop `revoke` reporting success while a wider grant
+// survives would never fire again.
+func stillCovering(live []core.Grant, spec operatorid.RevokeSpec) *core.Grant {
+	for i := range live {
+		g := live[i]
+		if spec.Agent != "" && g.Agent != spec.Agent {
+			continue
+		}
+		if spec.Profile != "" && g.Profile != spec.Profile {
+			continue
+		}
+		by := core.Caller{Agent: g.Agent, Profile: g.Profile, Pin: g.ProfilePin, Digest: g.Digest}
+		if found := core.Covering(live[i:i+1], spec.Target, spec.Scope, by); found != nil {
+			return &live[i]
+		}
+	}
+	return nil
+}
+
+// resolveAgent decides who a grant is for when the operator did not say.
+//
+// Every server is named (`rta mcp serve --as`), and Grant.Agent matches
+// exactly with no wildcard, so a grant naming nobody authorizes nothing —
+// it would be a row `grant list` shows and the gate ignores, which is the
+// dead end the one-gate change exists to remove. Refusing outright would
+// mean typing `--agent claude` on every grant for the overwhelmingly common
+// machine that has exactly one, so: one known agent is the answer, several
+// is a question, none is a setup problem worth naming.
+//
+// Known means connected right now, or holding a grant already. Those are
+// the two populations an operator could be thinking of, and a name from
+// either is one they have already used.
+func resolveAgent(asked string) (string, *view.Error) {
+	if agent := strings.TrimSpace(asked); agent != "" {
+		return agent, nil
+	}
+	known := knownAgents()
+	switch len(known) {
+	case 1:
+		return known[0], nil
+	case 0:
+		return "", view.Errorf("grant.noagent", "name the agent this is for, with --agent").
+			WithHint("no agent has connected or holds a grant yet — the name is the one from " +
+				"`rta mcp serve --as`, which `rta mcp install <client>` sets to the client's name")
+	default:
+		return "", view.Errorf("grant.whichagent",
+			"name the agent this is for, with --agent — this machine knows %s",
+			strings.Join(known, ", ")).
+			WithHint("a grant matches one agent exactly, so issuing it to the wrong one " +
+				"is a grant that silently authorizes nothing")
+	}
+}
+
+// knownAgents is every agent name this machine has seen: connected now, or
+// holding a grant. Sorted and deduplicated, so the refusal above reads the
+// same way twice.
+func knownAgents() []string {
+	seen := map[string]bool{}
+	if open, err := session.List(); err == nil {
+		for _, s := range open {
+			if s.Agent != "" {
+				seen[s.Agent] = true
+			}
+		}
+	}
+	if grants, verr := core.Load(); verr == nil {
+		for _, g := range grants {
+			if g.Agent != "" {
+				seen[g.Agent] = true
+			}
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for name := range seen {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // cappedNote words a TTL that came back shorter than asked, naming which
@@ -237,8 +340,7 @@ func revokeOutcome(spec operatorid.RevokeSpec, write bool) (operatorid.RevokeOut
 		// still reachable through something wider, is how a namespace grant on
 		// kv survived `rta grant revoke kv.get` while the operator was told
 		// there was nothing to revoke — true of the row, false of the access.
-		out.Still = core.Covering(live, spec.Target, spec.Scope,
-			core.Caller{Agent: spec.Agent, Profile: spec.Profile})
+		out.Still = stillCovering(live, spec)
 		out.Revoked = revoked
 		if revoked == 0 || !write {
 			return nil, false
