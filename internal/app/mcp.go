@@ -114,6 +114,10 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				fmt.Fprintln(cmd.ErrOrStderr(),
 					"rta: no desktop notifier here, so parked calls will only appear in `rta agent pending`")
 			}
+			if consentWait > consent.MaxWait {
+				fmt.Fprintln(cmd.ErrOrStderr(),
+					"rta: --consent-wait is above the ten-minute maximum, so a parked call waits ten minutes and not longer")
+			}
 			if len(roots) == 0 {
 				// The directory the operator started the server in. It is what
 				// an MCP client passes as cwd, so it is the project the agent
@@ -188,12 +192,12 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				// can exercise must not be allowed to pretend it works (the
 				// same rule ConsentNotify follows one flag over).
 				if consentOn && operatorsFile == "" {
-					return fmt.Errorf("--consent over --http needs --operators: a parked call waits " +
+					return fmt.Errorf("consent over --http needs --operators: a parked call waits " +
 						"for a person, and enrolled operators answering with `rta agent allow --server` " +
 						"are the only people positioned to; see \"The operator channel\" in docs/30-boundary/20-mcp.md")
 				}
 				if tokenFile == "" && oidcIssuer == "" {
-					return fmt.Errorf("--http needs a way to verify who is calling: pass --token-file or --oidc-issuer")
+					return fmt.Errorf("serving over --http needs a way to verify who is calling: pass --token-file or --oidc-issuer")
 				}
 				// Bound before anything else that follows does real I/O of its
 				// own — reading the token file, an OIDC discovery round trip to
@@ -205,7 +209,7 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				var err error
 				ln, err = net.Listen("tcp", httpAddr)
 				if err != nil {
-					return fmt.Errorf("--http: %w", err)
+					return fmt.Errorf("listening on the --http address: %w", err)
 				}
 				// net/http's Serve always closes the listener it is handed, so
 				// this is a no-op on the path that reaches it below — it exists
@@ -216,7 +220,7 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				if tokenFile != "" {
 					tokens, groupReadable, err := mcp.LoadTokenFile(tokenFile)
 					if err != nil {
-						return fmt.Errorf("--token-file: %w", err)
+						return fmt.Errorf("reading --token-file: %w", err)
 					}
 					if groupReadable {
 						fmt.Fprintf(cmd.ErrOrStderr(),
@@ -233,15 +237,15 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				}
 				if oidcIssuer != "" {
 					if oidcAudience == "" {
-						return fmt.Errorf("--oidc-issuer needs --oidc-audience")
+						return fmt.Errorf("an --oidc-issuer needs --oidc-audience")
 					}
 					if len(oidcSubjects) == 0 {
-						return fmt.Errorf("--oidc-issuer needs at least one --oidc-subject — " +
+						return fmt.Errorf("an --oidc-issuer needs at least one --oidc-subject — " +
 							"an issuer and audience alone identify an application, not a person")
 					}
 					oidcVerifier, err := mcp.OIDCVerifier(cmd.Context(), oidcIssuer, oidcAudience, oidcSubjects, cmd.ErrOrStderr())
 					if err != nil {
-						return fmt.Errorf("--oidc-issuer: %w", err)
+						return fmt.Errorf("reaching the --oidc-issuer: %w", err)
 					}
 					verifiers = append(verifiers, oidcVerifier)
 				}
@@ -255,13 +259,13 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 					// must carry the same string; that agreement is the
 					// anti-relay binding.
 					if operatorsURL == "" {
-						return fmt.Errorf("--operators needs --operators-url: the exact URL operators " +
+						return fmt.Errorf("an --operators roster needs --operators-url: the exact URL operators " +
 							"put in their remotes.yaml, signed into every operator request so a call " +
 							"meant for this server verifies nowhere else")
 					}
 					canonical, verr := operator.CanonicalServerURL("--operators-url", operatorsURL)
 					if verr != nil {
-						return fmt.Errorf("--operators-url: %s", verr.Message)
+						return fmt.Errorf("the --operators-url: %s", verr.Message)
 					}
 					// The guard's bound URL and this flag must agree, or every
 					// remote issuance dies on a binding mismatch the operator
@@ -269,14 +273,14 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 					// who can fix it is watching the process start.
 					if grantguard.Remote() {
 						if bound := grantguard.BoundServer(); bound != canonical {
-							return fmt.Errorf("--operators-url is %q but this machine's guard is bound to %q — "+
+							return fmt.Errorf("the --operators-url is %q but this machine's guard is bound to %q — "+
 								"remote issuance would refuse every grant; re-enroll the guard with --url %s, "+
 								"or fix the flag", canonical, bound, canonical)
 						}
 					}
 					roster, groupReadable, err := operator.LoadRoster(operatorsFile)
 					if err != nil {
-						return fmt.Errorf("--operators: %w", err)
+						return fmt.Errorf("reading --operators: %w", err)
 					}
 					// A warning and not a refusal: adding an operator to the
 					// roster without re-enrolling the guard leaves a server
@@ -410,6 +414,12 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				fmt.Fprintln(cmd.ErrOrStderr(),
 					"rta: every request needs a bearer token; TLS is not this process's job — "+
 						"put a reverse proxy, ingress or service mesh in front of it")
+				if exposedBind(ln.Addr()) {
+					fmt.Fprintln(cmd.ErrOrStderr(),
+						"rta: that address answers to other machines — every peer on the network can try "+
+							"the bearer wall, and the tokens they present cross the wire in the clear; "+
+							"bind 127.0.0.1 unless a TLS proxy stands in front")
+				}
 			} else {
 				fmt.Fprintln(cmd.ErrOrStderr(), "rta mcp server listening on stdio")
 			}
@@ -490,7 +500,7 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 		"bearer tokens allowed to connect, one \"label token\" pair per line; required with --http "+
 			"unless --oidc-issuer is set")
 	cmd.Flags().StringVar(&oidcIssuer, "oidc-issuer", "",
-		"OpenID Connect issuer URL to verify bearer tokens against; required with --http "+
+		"issuer URL of the OpenID Connect provider bearer tokens are verified against; required with --http "+
 			"unless --token-file is set")
 	cmd.Flags().StringVar(&oidcAudience, "oidc-audience", "",
 		"required audience for tokens verified against --oidc-issuer")
