@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.13.0](https://github.com/this-is-tobi/rta/compare/v0.12.0...v0.13.0) (2026-09-06)
+
+
+### Features
+
+* **agent:** the log filters by role, the overview names the roles standing, and allow takes --role ([16a240d](https://github.com/this-is-tobi/rta/commit/16a240d301ab97dd8d5174ea630f178a269bda01))
+* **audit:** the harness deny list is derived from the catalogue ([59c6060](https://github.com/this-is-tobi/rta/commit/59c60606234de562edb888ad7b6e92751e0d962d))
+* **config:** a role is a named list of grant lines, in your config or the team's policy file ([42fb56e](https://github.com/this-is-tobi/rta/commit/42fb56e836ef54b006f7340c913acdbc584f3a79))
+* **grant:** a grant remembers its role, and Issue says what it replaced ([411d7b3](https://github.com/this-is-tobi/rta/commit/411d7b3571557a065d4348e1f4e3956ce260babc))
+* **grant:** a role is issued whole under one passphrase — grant issue, grant roles, --role ([ae9e6dd](https://github.com/this-is-tobi/rta/commit/ae9e6dde34f17a15fb6f6ffbdddff0e315ff4af5))
+* **grant:** roles in force on the roster, and an own role may name its agent ([b3ba407](https://github.com/this-is-tobi/rta/commit/b3ba407b2ebdcf7afc0b7b00dbdbfc42712e850a))
+* **record:** a row names the role the covering grant was issued under ([cf8f4c7](https://github.com/this-is-tobi/rta/commit/cf8f4c7da7cfdc5bdb03a86957b377fb25f709e1))
+
+
+### Bug Fixes
+
+* **policy:** a key the file does not have refuses the file ([5ad448c](https://github.com/this-is-tobi/rta/commit/5ad448cdb3f188555930351ce835ab931183326e))
+
 ## [0.12.0](https://github.com/this-is-tobi/rta/compare/v0.11.0...v0.12.0) (2026-09-06)
 
 
