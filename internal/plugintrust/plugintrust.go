@@ -20,8 +20,8 @@
 //
 // # Keyed on the digest, because a name is not an artifact
 //
-// The same rule `--allow-destructive <id>@<digest>` and
-// `plugins.<ns>@<digest>` already follow. Trusting a *name* would
+// The same rule a grant's recorded digest and `plugins.<ns>@<digest>`
+// already follow. Trusting a *name* would
 // trust whatever is called that tomorrow, which is exactly the substitution
 // the check exists to notice. Rebuilding a plugin therefore requires trusting
 // it again — the same friction pnpm has on a version bump, and it is the

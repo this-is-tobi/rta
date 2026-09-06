@@ -357,7 +357,7 @@ func doctorReport(reg *registry.Registry) view.View {
 	// That is the failure this row exists for, and it is why the message
 	// hands over the pin to paste rather than making somebody look it up: a
 	// control that costs a lookup is a control that gets turned off, which is
-	// the argument Options.AllowFlag already makes for --allow-destructive.
+	// the argument a grant's own artifact pin already makes.
 	if cfg, err := config.LoadFile(); err == nil && len(cfg.Plugins) > 0 {
 		resolver, problems := pluginconf.Resolve(cfg, reg.Origin)
 		problems = append(problems, resolver.Check(reg)...)

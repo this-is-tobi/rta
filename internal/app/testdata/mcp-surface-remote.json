@@ -848,7 +848,7 @@
   },
   {
     "name": "kv_get",
-    "description": "── the text below is written by the plugin, not by rta ──\nReveal a stored value\n\nWrites the value to stdout with no quoting and no framing, so `rta kv get gh-token | gh auth login --with-token` is a pipe and not a transformation. The pretty renderer terminates the line, so a value stored without a trailing newline gains one on the way out; for the byte-exact copy use --out, which writes the stored bytes to a file with 0600 instead, and is how a certificate or key goes back to disk without passing through your scrollback. To use a secret without seeing it at all, `kv copy` puts it on the clipboard and prints nothing.\n\nClassified as a write because revealing a secret is the sensitive act. An MCP agent therefore needs --allow-write, and on top of that a per-key grant issued by a person (`rta grant allow kv.get \u003ckey\u003e --ttl 15m`). --out is a person's flag only, since a grant authorizes revealing a value, not choosing where on this machine it gets written; an MCP caller always gets the value back in the response.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"key\"). You cannot issue one yourself — ask the operator to run `rta grant allow kv.get`.",
+    "description": "── the text below is written by the plugin, not by rta ──\nReveal a stored value\n\nWrites the value to stdout with no quoting and no framing, so `rta kv get gh-token | gh auth login --with-token` is a pipe and not a transformation. The pretty renderer terminates the line, so a value stored without a trailing newline gains one on the way out; for the byte-exact copy use --out, which writes the stored bytes to a file with 0600 instead, and is how a certificate or key goes back to disk without passing through your scrollback. To use a secret without seeing it at all, `kv copy` puts it on the clipboard and prints nothing.\n\nClassified as a write because revealing a secret is the sensitive act. An MCP agent therefore needs a grant, and one that names the key it may read, issued by a person (`rta grant allow kv.get \u003ckey\u003e --ttl 15m`). --out is a person's flag only, since a grant authorizes revealing a value, not choosing where on this machine it gets written; an MCP caller always gets the value back in the response.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"key\"). You cannot issue one yourself — ask the operator to run `rta grant allow kv.get`.",
     "destructive_hint": false,
     "idempotent_hint": true,
     "input_schema": {
@@ -886,7 +886,7 @@
   },
   {
     "name": "kv_init",
-    "description": "── the text below is written by the plugin, not by rta ──\nSet up how the store is encrypted\n\nChooses the lock once, so nothing has to be repeated afterwards. --generate makes a dedicated age key for this store and uses it: no passphrase to type, no flags to remember, and — unlike your SSH login key — a key whose loss costs you this store and nothing else. --identity locks it to a key you already have (age or SSH). --recipient adds other readers.\n\nA passphrase store needs no init: that is what you get by default.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nSet up how the store is encrypted\n\nChooses the lock once, so nothing has to be repeated afterwards. --generate makes a dedicated age key for this store and uses it: no passphrase to type, no flags to remember, and — unlike your SSH login key — a key whose loss costs you this store and nothing else. --identity locks it to a key you already have (age or SSH). --recipient adds other readers.\n\nA passphrase store needs no init: that is what you get by default.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability. You cannot issue one yourself — ask the operator to run `rta grant allow kv.init`.",
     "destructive_hint": false,
     "idempotent_hint": true,
     "input_schema": {
@@ -1363,7 +1363,7 @@
   },
   {
     "name": "note_add",
-    "description": "── the text below is written by the plugin, not by rta ──\nAdd a note\n\nA title is enough. --todo (or a due date, which implies it) makes it something to do; a parent makes it part of something bigger; markdown in the body is rendered on human surfaces.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nAdd a note\n\nA title is enough. --todo (or a due date, which implies it) makes it something to do; a parent makes it part of something bigger; markdown in the body is rendered on human surfaces.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability. You cannot issue one yourself — ask the operator to run `rta grant allow note.add`.",
     "destructive_hint": false,
     "input_schema": {
       "additionalProperties": false,
@@ -1404,7 +1404,7 @@
   },
   {
     "name": "note_done",
-    "description": "── the text below is written by the plugin, not by rta ──\nCheck a note off\n\nDone for a task, filed for a note: either way it leaves the default list and stays findable under --all and in search.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nCheck a note off\n\nDone for a task, filed for a note: either way it leaves the default list and stays findable under --all and in search.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability. You cannot issue one yourself — ask the operator to run `rta grant allow note.done`.",
     "destructive_hint": false,
     "idempotent_hint": true,
     "input_schema": {
@@ -1423,7 +1423,7 @@
   },
   {
     "name": "note_edit",
-    "description": "── the text below is written by the plugin, not by rta ──\nEdit a note's title, body, tags, due date or parent\n\nEmpty fields keep their current value. --tag - clears all tags; --due none clears the due date.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nEdit a note's title, body, tags, due date or parent\n\nEmpty fields keep their current value. --tag - clears all tags; --due none clears the due date.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability. You cannot issue one yourself — ask the operator to run `rta grant allow note.edit`.",
     "destructive_hint": false,
     "idempotent_hint": true,
     "input_schema": {
@@ -1499,7 +1499,7 @@
   },
   {
     "name": "note_reopen",
-    "description": "── the text below is written by the plugin, not by rta ──\nUn-check a note\n\nThe undo for `note done`. Checking off the wrong note is a one-keystroke mistake, and a list you cannot take something back out of is a list people stop trusting. Re-opening an already-open note is a no-op, not an error.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nUn-check a note\n\nThe undo for `note done`. Checking off the wrong note is a one-keystroke mistake, and a list you cannot take something back out of is a list people stop trusting. Re-opening an already-open note is a no-op, not an error.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability. You cannot issue one yourself — ask the operator to run `rta grant allow note.reopen`.",
     "destructive_hint": false,
     "idempotent_hint": true,
     "input_schema": {
@@ -1585,7 +1585,7 @@
   },
   {
     "name": "note_toggle",
-    "description": "── the text below is written by the plugin, not by rta ──\nTurn a note into a to-do, or a to-do back into a note\n\nThe switch between the two kinds of thing in the notebook. A note becomes an open to-do; a to-do becomes a note and forgets whether it was done, which is the point — a note has nothing to be done about.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nTurn a note into a to-do, or a to-do back into a note\n\nThe switch between the two kinds of thing in the notebook. A note becomes an open to-do; a to-do becomes a note and forgets whether it was done, which is the point — a note has nothing to be done about.\n── end of plugin-written text ──\n\nSafety: write. Returns a JSON view envelope discriminated by \"type\".\n\nRequires a grant a person issued for this capability. You cannot issue one yourself — ask the operator to run `rta grant allow note.toggle`.",
     "destructive_hint": false,
     "input_schema": {
       "additionalProperties": false,

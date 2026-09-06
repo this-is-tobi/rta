@@ -33,7 +33,7 @@ func withPolicy(t *testing.T, body string) {
 }
 
 func TestAPolicyStopsAGrantThatIsAlreadyOnDisk(t *testing.T) {
-	s := connect(t, Options{AllowWrite: []string{"demo"}})
+	s := connect(t, Options{})
 	if verr := grant.Issue(grant.Grant{
 		Target: "demo.item.reveal", Scope: "prod/db-password",
 		Issued: time.Now(), Expires: time.Now().Add(time.Hour),
@@ -60,7 +60,7 @@ func TestAPolicyStopsAGrantThatIsAlreadyOnDisk(t *testing.T) {
 // fail: a policy narrows and does not black out the surface.
 func TestAPolicyLeavesEverythingItDoesNotName(t *testing.T) {
 	withPolicy(t, "never: [pg.dump]\nneverProfile: [prod]\n")
-	s := connect(t, Options{AllowWrite: []string{"demo"}})
+	s := connect(t, Options{})
 	if verr := grant.Issue(grant.Grant{
 		Target: "demo.item.reveal", Scope: "prod/db-password",
 		Issued: time.Now(), Expires: time.Now().Add(time.Hour),
@@ -78,7 +78,7 @@ func TestAPolicyLeavesEverythingItDoesNotName(t *testing.T) {
 // grant's own Expires says — the same reasoning MaxTTL's own check gives for
 // a hand-written grant claiming to expire in 2099.
 func TestAPolicyMaxTTLExpiresAGrantIssuedForLonger(t *testing.T) {
-	s := connect(t, Options{AllowWrite: []string{"demo"}})
+	s := connect(t, Options{})
 	// Issued two hours ago for four hours: comfortably live by its own terms.
 	issued := time.Now().Add(-2 * time.Hour)
 	if verr := grant.Issue(grant.Grant{
@@ -104,7 +104,7 @@ func TestAPolicyMaxTTLExpiresAGrantIssuedForLonger(t *testing.T) {
 // record authorizes the whole store, which is the pressure folder scopes
 // exist to relieve — a team can now decide it is not available.
 func TestRequireScopeRefusesTheEverythingGrantAndKeepsTheScopedOne(t *testing.T) {
-	s := connect(t, Options{AllowWrite: []string{"demo"}})
+	s := connect(t, Options{})
 	now := time.Now()
 	// Both issued before the policy exists — which is also the only way to
 	// get the unscoped one onto disk, because Issue refuses it once the
@@ -144,7 +144,7 @@ func TestRequireScopeRefusesTheEverythingGrantAndKeepsTheScopedOne(t *testing.T)
 // ceiling — but neither may it be readable as "allowed". Refusing on the
 // authorization path is the fail-closed direction.
 func TestAMalformedPolicyDoesNotSilentlyBecomeNoCeiling(t *testing.T) {
-	s := connect(t, Options{AllowWrite: []string{"demo"}})
+	s := connect(t, Options{})
 	if verr := grant.Issue(grant.Grant{
 		Target: "demo.item.reveal", Scope: "prod/db-password",
 		Issued: time.Now(), Expires: time.Now().Add(time.Hour),

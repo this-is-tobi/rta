@@ -290,7 +290,7 @@ func TestHostsAddCannotBeAimedAtAnArbitraryFileOverMCP(t *testing.T) {
 	if err := reg.Register(Plugin()); err != nil {
 		t.Fatal(err)
 	}
-	server := mcp.NewServer(reg, "test", mcp.Options{AllowDestructive: []string{"net.hosts.add"}})
+	server := mcp.NewServer(reg, "test", mcp.Options{})
 	st, ct := sdk.NewInMemoryTransports()
 	ctx := context.Background()
 	if _, err := server.Connect(ctx, st, nil); err != nil {

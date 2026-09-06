@@ -251,9 +251,9 @@ func Plugin() plugin.Plugin {
 				ID:      "{{.Name}}.greet",
 				Summary: "Greet somebody",
 				// Read means this changes nothing. It is what decides
-				// whether an AI agent may call it without an operator's
-				// --allow-write, so it is a claim about blast radius rather
-				// than a label. Write and Destructive are the others.
+				// whether an AI agent may call it without a person's grant,
+				// so it is a claim about blast radius rather than a label.
+				// Write and Destructive are the others.
 				Safety:     plugin.Read,
 				Idempotent: true,
 				Description: "Replace this with what the capability actually does. This text is " +
@@ -323,9 +323,9 @@ One declaration in ` + "`" + `main.go` + "`" + ` becomes:
 
 ## Rules worth knowing
 
-- **` + "`" + `Safety` + "`" + ` is a claim about blast radius**, not a label. ` + "`" + `Read` + "`" + ` is exposed to
-  agents by default; ` + "`" + `Write` + "`" + ` needs the operator's ` + "`" + `--allow-write {{.Name}}` + "`" + `;
-  ` + "`" + `Destructive` + "`" + ` needs an explicit per-capability allowlist and a human-issued grant.
+- **` + "`" + `Safety` + "`" + ` is a claim about blast radius**, not a label. ` + "`" + `Read` + "`" + ` is free for
+  agents; ` + "`" + `Write` + "`" + ` and ` + "`" + `Destructive` + "`" + ` each cost a grant a person issued
+  (` + "`" + `rta grant allow {{.Name}} --ttl 30m` + "`" + `), pinned to your plugin's digest.
 - **Return a ` + "`" + `view.Error` + "`" + `, not a bare error**, when you can. The code is stable
   enough to branch on and the hint is what the person does next.
 - **Your process is confined on macOS.** It cannot read or write rta's own data

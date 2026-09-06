@@ -25,8 +25,7 @@ import (
 // flipped hello.greet from Read to Destructive and replaced its summary with
 // attacker-chosen text, and rta served both. The dangerous direction is the
 // other one — Destructive to Read is the same write, and it puts a capability
-// that needs --allow-destructive and a human-issued grant in front of an
-// agent with neither. The declaration also carries Summary, Description and
+// that needs a human-issued grant in front of an agent that has none. The declaration also carries Summary, Description and
 // Options, which go to models verbatim, so the same write is a
 // prompt-injection channel that survives restarts.
 //

@@ -14,6 +14,10 @@ import (
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
+// builtIn answers the way the registry does for a namespace that ships
+// inside the rta binary: registered, with no separate artifact to pin.
+func builtIn(string) (string, bool) { return "", true }
+
 func setup(t *testing.T) {
 	t.Helper()
 	t.Setenv("RTA_DATA_DIR", t.TempDir())
@@ -72,11 +76,11 @@ func listH(ctx context.Context, req plugin.Request) (view.View, error) {
 // lookup in this package) to the plugin.Handler shape the rest of this file
 // drives its capabilities through.
 func allowH(ctx context.Context, req plugin.Request) (view.View, error) {
-	return runAllow(ctx, req, catalog)
+	return runAllow(ctx, req, catalog, builtIn)
 }
 
 func TestPluginValidates(t *testing.T) {
-	if err := Plugin(catalog).Validate(); err != nil {
+	if err := Plugin(catalog, builtIn).Validate(); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -137,7 +141,7 @@ func TestRevokeCompletesFromHeldGrants(t *testing.T) {
 
 func inputOf(t *testing.T, capID, field string) plugin.Field {
 	t.Helper()
-	for _, c := range Plugin(catalog).Capabilities {
+	for _, c := range Plugin(catalog, builtIn).Capabilities {
 		if c.ID != capID {
 			continue
 		}
@@ -188,7 +192,7 @@ func TestUnscopedGrantSaysAny(t *testing.T) {
 // agent may do. Nothing in this namespace is a tool — the guard verbs
 // included, since whether the guard stands is part of that map.
 func TestNothingHereAnswersAnAgent(t *testing.T) {
-	for _, c := range Plugin(nil).Capabilities {
+	for _, c := range Plugin(nil, builtIn).Capabilities {
 		if !c.HumanOnly {
 			t.Errorf("%s is reachable over MCP", c.ID)
 		}

@@ -40,7 +40,7 @@ func Plugin() plugin.Plugin {
 				// **The same primitive http.get is gated for, under a
 				// different name.** The lesson is that `Read` is the
 				// class that costs nothing to reach — read capabilities go
-				// onto every `rta mcp serve` with no --allow-write, no grant
+				// onto every `rta mcp serve` with no grant
 				// and read_only_hint: true — so a capability that fetches a
 				// caller-chosen URL and returns what came back cannot be one.
 				//

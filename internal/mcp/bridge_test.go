@@ -288,34 +288,18 @@ func TestAHumanOnlyCapabilityIsNotATool(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 1 || entries[0].Tool != "demo_item_human" || entries[0].Code != "core.mcp.unknown" {
+	if len(entries) != 1 || entries[0].Tool != "demo_item_human" ||
+		entries[0].Cap != "demo_item_human" || entries[0].Code != "core.mcp.unknown" {
 		t.Fatalf("the probe left no row: %+v", entries)
 	}
 }
 
-func TestDefaultExposesOnlyRead(t *testing.T) {
+func TestEveryCapabilityIsAdvertisedAndTheGrantDecidesTheCall(t *testing.T) {
 	tools := listTools(t, connect(t, Options{}))
-	if _, ok := tools["demo_item_list"]; !ok {
-		t.Error("read capability missing")
-	}
-	if _, ok := tools["demo_item_set"]; ok {
-		t.Error("write capability exposed without opt-in")
-	}
-	if _, ok := tools["demo_item_rm"]; ok {
-		t.Error("destructive capability exposed without allowlist")
-	}
-}
-
-func TestOptInExposure(t *testing.T) {
-	tools := listTools(t, connect(t, Options{
-		AllowWrite:       []string{"demo"},
-		AllowDestructive: []string{"demo.item.rm"},
-	}))
-	if _, ok := tools["demo_item_set"]; !ok {
-		t.Error("write capability missing despite AllowWrite")
-	}
-	if _, ok := tools["demo_item_rm"]; !ok {
-		t.Error("allowlisted destructive capability missing")
+	for _, name := range []string{"demo_item_list", "demo_item_set", "demo_item_rm"} {
+		if _, ok := tools[name]; !ok {
+			t.Errorf("%s is not advertised", name)
+		}
 	}
 }
 
@@ -402,10 +386,7 @@ func TestHostSpecificCoversExactlyTheKnownHostDescribingCapabilities(t *testing.
 }
 
 func TestAnnotationsMapping(t *testing.T) {
-	tools := listTools(t, connect(t, Options{
-		AllowWrite:       []string{"demo"},
-		AllowDestructive: []string{"demo.item.rm"},
-	}))
+	tools := listTools(t, connect(t, Options{}))
 
 	read := tools["demo_item_list"].Annotations
 	if !read.ReadOnlyHint || !read.IdempotentHint {
@@ -535,7 +516,7 @@ func TestValueOutsideDeclaredOptionsIsRejected(t *testing.T) {
 // exporting the whole store (the gate read the scalar as one record while
 // the handler, unable to see it as a list at all, read it as none).
 func TestStringSliceAcceptsAScalarButNotOtherShapes(t *testing.T) {
-	s := connect(t, Options{AllowWrite: []string{"demo"}})
+	s := connect(t, Options{})
 	allow(t, "demo.item.export", "a")
 
 	res := callTool(t, s, "demo_item_export", map[string]any{"key": "a"})
@@ -886,7 +867,7 @@ func callTool(t *testing.T, s *sdk.ClientSession, name string, args map[string]a
 // The allowlist says this agent may in principle delete things. A grant says
 // a person allowed this one, now. Passing the first gate is not passing both.
 func TestDestructiveCallNeedsAGrant(t *testing.T) {
-	s := connect(t, Options{AllowDestructive: []string{"demo.item.rm"}})
+	s := connect(t, Options{})
 
 	res := callTool(t, s, "demo_item_rm", nil)
 	if !res.IsError {
@@ -912,7 +893,7 @@ func TestDestructiveCallNeedsAGrant(t *testing.T) {
 // next — proving Consume is actually reached from the handler, not just
 // exercised directly against internal/grant.
 func TestOneTimeGrantIsSpentAfterOneRealCall(t *testing.T) {
-	s := connect(t, Options{AllowWrite: []string{"demo"}})
+	s := connect(t, Options{})
 	grants, verr := grant.Load()
 	if verr != nil {
 		t.Fatal(verr)
@@ -952,7 +933,7 @@ func TestOneTimeGrantIsSpentAfterOneRealCall(t *testing.T) {
 // observe the disclosure: it never calls Check and never runs a handler. This
 // counts successful CallTool results, which is the number that matters.
 func TestAOneTimeGrantAuthorizesExactlyOneConcurrentCall(t *testing.T) {
-	s := connect(t, Options{AllowWrite: []string{"demo"}})
+	s := connect(t, Options{})
 	grants, verr := grant.Load()
 	if verr != nil {
 		t.Fatal(verr)
@@ -995,7 +976,7 @@ func TestAOneTimeGrantAuthorizesExactlyOneConcurrentCall(t *testing.T) {
 // nothing for the capabilities that carry NeedsGrant because their failure
 // is the information: a port map is a list of "connection refused".
 func TestOneTimeGrantIsSpentByAFailedCall(t *testing.T) {
-	s := connect(t, Options{AllowWrite: []string{"demo"}})
+	s := connect(t, Options{})
 	grants, verr := grant.Load()
 	if verr != nil {
 		t.Fatal(verr)
@@ -1026,7 +1007,7 @@ func TestOneTimeGrantIsSpentByAFailedCall(t *testing.T) {
 
 // A grant names one record, and covers exactly that one.
 func TestGrantNarrowsToOneRecord(t *testing.T) {
-	s := connect(t, Options{AllowWrite: []string{"demo"}})
+	s := connect(t, Options{})
 	allow(t, "demo.item.reveal", "staging")
 
 	if res := callTool(t, s, "demo_item_reveal", map[string]any{"key": "staging"}); res.IsError {
@@ -1049,7 +1030,7 @@ func TestGrantNarrowsToOneRecord(t *testing.T) {
 // model over the network, ending in disclosure of everything a wider grant
 // was never issued for.
 func TestScalarScopeCannotWidenAGrantedCall(t *testing.T) {
-	s := connect(t, Options{AllowWrite: []string{"demo"}})
+	s := connect(t, Options{})
 	allow(t, "demo.item.export", "a")
 
 	// The array form: this is what the grant is supposed to cover.
@@ -1080,7 +1061,7 @@ func TestScalarScopeCannotWidenAGrantedCall(t *testing.T) {
 // The gate has to be visible in the tool description too: a model that reads
 // "requires a grant" asks the operator instead of retrying the call.
 func TestGrantRequirementIsDescribed(t *testing.T) {
-	s := connect(t, Options{AllowWrite: []string{"demo"}, AllowDestructive: []string{"demo.item.rm"}})
+	s := connect(t, Options{})
 	tools := listTools(t, s)
 
 	for _, name := range []string{"demo_item_reveal", "demo_item_rm"} {
@@ -1088,8 +1069,12 @@ func TestGrantRequirementIsDescribed(t *testing.T) {
 			t.Errorf("%s does not mention the grant it needs: %s", name, tools[name].Description)
 		}
 	}
-	if strings.Contains(tools["demo_item_set"].Description, "grant") {
-		t.Error("an ordinary write should not claim to need a grant")
+	// Every write says so now, since every write costs one.
+	if !strings.Contains(tools["demo_item_set"].Description, "grant") {
+		t.Error("a write does not mention the grant it needs")
+	}
+	if strings.Contains(tools["demo_item_list"].Description, "grant") {
+		t.Error("a free read claims to need a grant")
 	}
 }
 
@@ -1435,192 +1420,106 @@ func TestACallerSuppliedPathIsCheckedEvenWhenItMatchesTheDefault(t *testing.T) {
 	}
 }
 
-// --allow-write used to be one boolean consulted for every Write capability
-// in the registry, including capabilities from plugins installed after the
-// decision was taken. An operator who enabled it because they wanted one
-// namespace had authorised all of them, permanently, in a config that gets
-// pasted into an MCP client.
-func TestAllowWriteIsScopedToTheNamedPlugins(t *testing.T) {
-	// Origin has to be wired, and that is a property rather than test setup:
-	// the gate resolves the artifact behind a namespace, so an Options nobody
-	// filled in knows nothing and therefore allows nothing. NewServer wires it
-	// from the registry it was handed, so the only way to get an unwired gate
-	// is to build one by hand on purpose — see TestAnUnwiredGateAllowsNoWrite.
-	o := Options{AllowWrite: []string{"demo"}, Origin: builtInOrigin("demo")}
-	if !o.exposed(plugin.Capability{ID: "demo.item.set", Safety: plugin.Write}) {
-		t.Error("a named plugin's write was not exposed")
-	}
-	// A different plugin, and — the case that matters — one that did not
-	// exist when the operator decided.
-	for _, id := range []string{"kv.set", "todo.add", "installed-later.wipe"} {
-		if o.exposed(plugin.Capability{ID: id, Safety: plugin.Write}) {
-			t.Errorf("%s was exposed by a decision that named only demo", id)
+// One gate, and this is it: everything that is not for the person at the
+// terminal is a tool, and what it costs to call is a grant rather than a
+// flag. There used to be a second vocabulary here — an exposure allowlist
+// decided once at startup — and two vocabularies answering one question is
+// what made the quickstart's own grant do nothing.
+func TestEveryCapabilityIsATooLAndAWriteCostsAGrant(t *testing.T) {
+	o := Options{Origin: builtInOrigin("demo")}
+	for _, c := range []plugin.Capability{
+		{ID: "demo.item.list", Safety: plugin.Read},
+		{ID: "demo.item.set", Safety: plugin.Write},
+		{ID: "demo.item.rm", Safety: plugin.Destructive},
+	} {
+		if !o.exposed(c) {
+			t.Errorf("%s is not a tool", c.ID)
 		}
 	}
-	// Naming nothing exposes nothing, rather than everything.
-	if (Options{Origin: builtInOrigin("demo")}).exposed(
-		plugin.Capability{ID: "demo.item.set", Safety: plugin.Write}) {
-		t.Error("an empty allow list exposed a write")
+	if o.exposed(plugin.Capability{ID: "demo.item.human", Safety: plugin.Read, HumanOnly: true}) {
+		t.Error("a capability for the person at the terminal was advertised")
 	}
-	// Reads are unaffected, which is the whole default surface.
-	if !(Options{}).exposed(plugin.Capability{ID: "demo.item.list", Safety: plugin.Read}) {
-		t.Error("a read stopped being exposed by default")
+	// And the price, which is where the safety class still decides.
+	if grant.Required(plugin.Capability{ID: "demo.item.list", Safety: plugin.Read}, "") {
+		t.Error("a read costs a grant")
+	}
+	for _, c := range []plugin.Capability{
+		{ID: "demo.item.set", Safety: plugin.Write},
+		{ID: "demo.item.rm", Safety: plugin.Destructive},
+	} {
+		if !grant.Required(c, "") {
+			t.Errorf("%s is free", c.ID)
+		}
 	}
 }
 
-// A built-in's artifact is the rta binary the operator chose to run. There is
-// nothing further to pin it to, so accepting a pin would imply a check that
-// is not happening.
-func TestABuiltInDestructiveTakesNoPin(t *testing.T) {
-	// kv is registered with the zero Origin, which is what "compiled into
-	// this binary" is. Stated here because these tests call the gate
-	// directly; NewServer defaults the lookup to the registry it is given, so
-	// no real caller says this.
-	builtins := originLookup(map[string]registry.Origin{"kv": {}})
-	o := Options{AllowDestructive: []string{"kv.rm"}, Origin: builtins}
-	if !o.exposed(plugin.Capability{ID: "kv.rm", Safety: plugin.Destructive}) {
-		t.Error("an allowed built-in destructive was not exposed")
+// A write is advertised and refused until somebody allows it, which is the
+// whole shape of the one gate: the agent can see what exists, and can call
+// nothing that changes anything until a person says so.
+func TestAWriteIsRefusedUntilAGrantExistsAndThenRuns(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	s := connect(t, Options{})
+	if _, ok := listTools(t, s)["demo_item_set"]; !ok {
+		t.Fatal("a write is not advertised")
 	}
-	if o.exposed(plugin.Capability{ID: "kv.rename", Safety: plugin.Destructive}) {
-		t.Error("a capability nobody named was exposed")
+	res := callTool(t, s, "demo_item_set", nil)
+	if !res.IsError {
+		t.Fatal("a write ran with no grant")
 	}
-	pinned := Options{AllowDestructive: []string{"kv.rm@abc123"}, Origin: builtins}
-	if pinned.exposed(plugin.Capability{ID: "kv.rm", Safety: plugin.Destructive}) {
-		t.Error("a pin on a built-in was accepted, implying a verification that does not happen")
+	if text := res.Content[0].(*sdk.TextContent).Text; !strings.Contains(text, "core.grant.required") {
+		t.Errorf("refused, but not for want of a grant: %s", text)
+	}
+	if verr := grant.Issue(grant.Grant{
+		Target: "demo.item.set", Issued: time.Now(), Expires: time.Now().Add(time.Hour),
+	}, true); verr != nil {
+		t.Fatal(verr)
+	}
+	if res := callTool(t, s, "demo_item_set", nil); res.IsError {
+		t.Fatalf("the granted write was still refused: %+v", res.Content)
 	}
 }
 
 // The one place in rta where a permission would otherwise attach to a name
 // rather than to an artifact, on the surface with no human present: a
 // malicious update keeping the capability ID would inherit the operator's
-// decision.
-func TestAnExternalDestructiveMustBePinnedToItsArtifact(t *testing.T) {
+// decision. The pin used to ride on --allow-destructive; it now rides on the
+// grant, which is the thing that does the authorizing.
+func TestAGrantBindsToTheArtifactAndNotToThePluginName(t *testing.T) {
 	const digest = "5dae737f8845aabbccddeeff00112233445566778899aabbccddeeff00112233"
-	origins := originLookup(map[string]registry.Origin{
+	external := originLookup(map[string]registry.Origin{
 		"hello": {Path: "/somewhere/rta-plugin-hello", Digest: digest},
 	})
-	cap := plugin.Capability{ID: "hello.wipe", Safety: plugin.Destructive}
-
-	for _, tc := range []struct {
-		name  string
-		entry string
-		want  bool
-	}{
-		{"unpinned is refused", "hello.wipe", false},
-		{"correct short pin", "hello.wipe@5dae737f8845", true},
-		{"correct full pin", "hello.wipe@" + digest, true},
-		{"wrong pin", "hello.wipe@000000000000", false},
-		{"empty pin is a missing decision, not a wildcard", "hello.wipe@", false},
-		{"pin belonging to another capability", "hello.other@5dae737f8845", false},
-		// Below the 8-char floor (matching internal/plugintrust's identical
-		// check), a matching prefix is refused rather than accepted — cheap
-		// enough to grind that it degrades pinning back into trusting
-		// whatever replaces this name, which is the one thing pinning an
-		// artifact instead of a name exists to prevent.
-		{"pin below the 8-char floor is refused even though it matches", "hello.wipe@5dae7", false},
-		{"pin at exactly the 8-char floor is accepted", "hello.wipe@5dae737f", true},
-	} {
-		o := Options{AllowDestructive: []string{tc.entry}, Origin: origins}
-		if got := o.exposed(cap); got != tc.want {
-			t.Errorf("%s: %q exposed = %v, want %v", tc.name, tc.entry, got, tc.want)
-		}
+	if got := (Options{Origin: external}).artifact("hello"); got != digest {
+		t.Errorf("artifact = %q, want the recorded digest", got)
+	}
+	// A built-in has no artifact separate from the rta binary the operator
+	// chose to run, so there is nothing to pin and a grant carries none.
+	if got := (Options{Origin: builtInOrigin("kv")}).artifact("kv"); got != "" {
+		t.Errorf("a built-in reported an artifact: %q", got)
 	}
 
+	c := plugin.Capability{ID: "hello.wipe", Safety: plugin.Destructive}
+	issued := grant.Grant{Target: "hello.wipe", Digest: digest,
+		Issued: time.Now(), Expires: time.Now().Add(time.Hour)}
+	matching := grant.Caller{Digest: (Options{Origin: external}).artifact("hello")}
+	if grant.Covering([]grant.Grant{issued}, c.ID, "", matching) == nil {
+		t.Fatal("the grant did not cover the artifact it was issued against")
+	}
 	// The same binary replaced under the same name loses the authorisation,
 	// which is the entire point.
-	o := Options{AllowDestructive: []string{"hello.wipe@5dae737f8845"}, Origin: origins}
-	if !o.exposed(cap) {
-		t.Fatal("the pinned capability was not exposed to begin with")
+	swapped := originLookup(map[string]registry.Origin{
+		"hello": {Path: "/somewhere/rta-plugin-hello", Digest: "9999999999999999" + digest[16:]},
+	})
+	after := grant.Caller{Digest: (Options{Origin: swapped}).artifact("hello")}
+	if grant.Covering([]grant.Grant{issued}, c.ID, "", after) != nil {
+		t.Error("a replaced binary inherited the previous one's grant")
 	}
-	swapped := Options{
-		AllowDestructive: []string{"hello.wipe@5dae737f8845"},
-		Origin: originLookup(map[string]registry.Origin{
-			"hello": {Path: "/somewhere/rta-plugin-hello", Digest: "9999999999999999" + digest[16:]},
-		}),
-	}
-	if swapped.exposed(cap) {
-		t.Error("a replaced binary inherited the previous one's authorisation")
-	}
-}
-
-// A pin requirement is only tolerable if the operator is handed the string to
-// type rather than sent to look up a digest.
-func TestTheRefusalNamesWhatToType(t *testing.T) {
-	const digest = "5dae737f8845aabbccddeeff0011223344556677"
-	o := Options{Origin: originLookup(map[string]registry.Origin{
-		"hello": {Path: "/somewhere/rta-plugin-hello", Digest: digest},
-		"kv":    {}, // built in: no path, no digest, nothing to pin to
-		"todo":  {},
-	})}
-	external := plugin.Capability{ID: "hello.wipe", Safety: plugin.Destructive}
-	builtin := plugin.Capability{ID: "kv.rm", Safety: plugin.Destructive}
-	if got := o.AllowFlag(external); got != "--allow-destructive hello.wipe@5dae737f8845" {
-		t.Errorf("external flag = %q", got)
-	}
-	if got := o.AllowFlag(builtin); got != "--allow-destructive kv.rm" {
-		t.Errorf("built-in flag = %q", got)
-	}
-	// And whatever it prints has to be a string that actually works.
-	for _, c := range []plugin.Capability{external, builtin} {
-		flag := strings.TrimPrefix(o.AllowFlag(c), "--allow-destructive ")
-		if !(Options{AllowDestructive: []string{flag}, Origin: o.Origin}).exposed(c) {
-			t.Errorf("the flag printed for %s does not expose it: %q", c.ID, flag)
-		}
-	}
-	// Writes name the plugin, since that is the unit the flag takes.
-	w := plugin.Capability{ID: "todo.add", Safety: plugin.Write}
-	if got := o.AllowFlag(w); got != "--allow-write todo" {
-		t.Errorf("write flag = %q", got)
-	}
-	if got := o.AllowFlag(plugin.Capability{ID: "todo.list", Safety: plugin.Read}); got != "" {
-		t.Errorf("a read asked for a flag: %q", got)
-	}
-}
-
-// originLookup adapts a map to the lookup Options.Origin takes.
-//
-// Presence in the map is what "this namespace is registered" means, and the
-// zero Origin is a built-in. Real callers pass registry.Origin directly, so
-// they cannot get this wrong — a plugin is external because its registration
-// says so. Only tests that build capabilities outside a registry have to say
-// it by hand, which is the right place for the burden to land.
-func originLookup(m map[string]registry.Origin) func(string) (registry.Origin, bool) {
-	return func(ns string) (registry.Origin, bool) {
-		o, ok := m[ns]
-		return o, ok
-	}
-}
-
-// A namespace the catalogue does not know is refused, not assumed built in.
-//
-// This is the fail-open the twin-binary bug reached. Origins was a side map
-// built from the plugin host's process cache and handed to the gate
-// separately, so when a plugin stayed registered while dropping out of that
-// cache, the gate saw no entry for its namespace and read absence as "built
-// in" — and a built-in needs no digest pin on --allow-destructive. The
-// artifact binding was defeated without any flaw in the check
-// itself: the check was asking a different component what it was looking at.
-//
-// It now asks the registry, which is where the registration happened, so the
-// two cannot disagree. Absence means the namespace is not registered at all,
-// and that is refused.
-func TestAnUnknownNamespaceIsRefusedRatherThanTreatedAsBuiltIn(t *testing.T) {
-	nothing := originLookup(map[string]registry.Origin{})
-	cap := plugin.Capability{ID: "ghost.wipe", Safety: plugin.Destructive}
-
-	for _, entry := range []string{"ghost.wipe", "ghost.wipe@abc123", "ghost.wipe@"} {
-		o := Options{AllowDestructive: []string{entry}, Origin: nothing}
-		if o.exposed(cap) {
-			t.Errorf("%q exposed a capability from a namespace the registry does not know", entry)
-		}
-	}
-
-	// And an unwired gate exposes nothing destructive, rather than everything
-	// unpinned. NewServer defaults Origin to the registry so this cannot
-	// happen in the app; the zero value is fail-closed regardless.
-	if (Options{AllowDestructive: []string{"kv.rm"}}).exposed(
-		plugin.Capability{ID: "kv.rm", Safety: plugin.Destructive}) {
-		t.Error("a gate with no origin lookup exposed a destructive capability")
+	// And the drift the registry itself can suffer — a plugin that stays
+	// registered while its provenance goes missing — refuses rather than
+	// reading as a built-in, which is the direction that used to fail open.
+	lost := grant.Caller{Digest: (Options{Origin: originLookup(map[string]registry.Origin{})}).artifact("hello")}
+	if grant.Covering([]grant.Grant{issued}, c.ID, "", lost) != nil {
+		t.Error("a namespace whose provenance went missing inherited the grant")
 	}
 }
 
@@ -1638,7 +1537,7 @@ func TestNewServerDefaultsTheGateToItsRegistry(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("RTA_DATA_DIR", t.TempDir())
-	server := NewServer(reg, "test", Options{AllowDestructive: []string{"kv.rm"}})
+	server := NewServer(reg, "test", Options{})
 	st, ct := sdk.NewInMemoryTransports()
 	ctx := context.Background()
 	if _, err := server.Connect(ctx, st, nil); err != nil {
@@ -1783,144 +1682,26 @@ func TestNoRemoteInputSmellsLikeAPathWithoutBeingOne(t *testing.T) {
 	}
 }
 
+// originLookup adapts a map to the lookup Options.Origin takes.
+//
+// Presence in the map is what "this namespace is registered" means, and the
+// zero Origin is a built-in. Real callers pass registry.Origin directly, so
+// they cannot get this wrong — a plugin is external because its registration
+// says so. Only tests that build capabilities outside a registry have to say
+// it by hand, which is the right place for the burden to land.
+func originLookup(m map[string]registry.Origin) func(string) (registry.Origin, bool) {
+	return func(ns string) (registry.Origin, bool) {
+		o, ok := m[ns]
+		return o, ok
+	}
+}
+
 // builtInOrigin is a lookup that knows the named namespaces and reports each
 // as a built-in, which is the shape registry.Registry.Origin has for anything
 // compiled into rta.
 func builtInOrigin(known ...string) func(string) (registry.Origin, bool) {
 	return func(ns string) (registry.Origin, bool) {
 		return registry.Origin{}, slices.Contains(known, ns)
-	}
-}
-
-// externalOrigin reports the named namespace as an installed plugin with a
-// digest, which is what makes a pin meaningful.
-func externalOrigin(ns, digest string) func(string) (registry.Origin, bool) {
-	return func(got string) (registry.Origin, bool) {
-		if got != ns {
-			return registry.Origin{}, false
-		}
-		return registry.Origin{Path: "/usr/local/bin/rta-plugin-" + ns, Digest: digest}, true
-	}
-}
-
-// --allow-write and --allow-destructive had drifted into two grammars.
-// --allow-destructive requires `id@digest` and its refusal hands the operator
-// the exact string to type; --allow-write compared the whole entry as one
-// string, so the same grammar applied there matched nothing and the capability
-// silently stopped being exposed. Stating the *stricter* policy was the thing
-// that turned the control off, with nothing said anywhere.
-func TestBothAllowFlagsSpeakOnePinGrammar(t *testing.T) {
-	const digest = "1a2b3c4d5e6f7890aabbccddeeff00112233445566778899aabbccddeeff0011"
-	pgWrite := plugin.Capability{ID: "pg.insert", Safety: plugin.Write}
-
-	for _, tc := range []struct {
-		entry string
-		want  bool
-		why   string
-	}{
-		{"pg", true, "a bare namespace still works: that is the granularity writes are opened at"},
-		{"pg@1a2b3c4d5e6f", true, "the pin an operator pastes from `rta explain` is honoured"},
-		{"pg@" + digest, true, "the full digest is a prefix of itself"},
-		{"pg@deadbeef", false, "a pin naming another artifact authorizes nothing"},
-		{"pg@", false, "an empty pin is a missing decision, not a prefix of everything"},
-		{"other", false, "a different namespace"},
-	} {
-		o := Options{AllowWrite: []string{tc.entry}, Origin: externalOrigin("pg", digest)}
-		if got := o.exposed(pgWrite); got != tc.want {
-			t.Errorf("--allow-write %q exposed=%v, want %v (%s)", tc.entry, got, tc.want, tc.why)
-		}
-	}
-
-	// A built-in has no artifact of its own, so a pin implies a check that is
-	// not happening — the same rule destructiveAllowed already applied.
-	kvWrite := plugin.Capability{ID: "kv.set", Safety: plugin.Write}
-	if !(Options{AllowWrite: []string{"kv"}, Origin: builtInOrigin("kv")}).exposed(kvWrite) {
-		t.Error("a built-in's bare namespace was refused")
-	}
-	if (Options{AllowWrite: []string{"kv@abc"}, Origin: builtInOrigin("kv")}).exposed(kvWrite) {
-		t.Error("a pinned built-in was accepted; there is no artifact to pin")
-	}
-}
-
-// The gate resolves provenance, so a lookup nobody wired knows nothing — and
-// "nothing known" must mean "nothing allowed". This already held for
-// destructive and did not for write, which compared bare strings.
-func TestAnUnwiredGateAllowsNoWrite(t *testing.T) {
-	o := Options{AllowWrite: []string{"demo"}, AllowDestructive: []string{"demo.wipe"}}
-	if o.exposed(plugin.Capability{ID: "demo.item.set", Safety: plugin.Write}) {
-		t.Error("an unwired gate exposed a write")
-	}
-	if o.exposed(plugin.Capability{ID: "demo.wipe", Safety: plugin.Destructive}) {
-		t.Error("an unwired gate exposed a destructive")
-	}
-}
-
-// Every way of getting an allowlist entry wrong had the same outcome as
-// deciding not to write it: the capability is absent from tools/list, and the
-// agent reports only that the tool does not exist. An operator cannot tell
-// "refused" from "misspelled", and the strictest thing they could type — a
-// pin — was the one most likely to be wrong.
-func TestUnhonourableAllowlistEntriesAreReported(t *testing.T) {
-	const digest = "1a2b3c4d5e6f7890aabbccddeeff00112233445566778899aabbccddeeff0011"
-	reg := testRegistry(t)
-
-	cases := []struct {
-		name string
-		opts Options
-		want string
-	}{
-		{"a namespace that is not installed",
-			Options{AllowWrite: []string{"nope"}, Origin: builtInOrigin("demo")},
-			`no plugin named "nope" is installed`},
-		{"a pin on a built-in, which has no artifact",
-			Options{AllowWrite: []string{"demo@abc"}, Origin: builtInOrigin("demo")},
-			"built in and has no artifact to pin"},
-		{"a pin that names another artifact",
-			Options{AllowWrite: []string{"demo@deadbeef"}, Origin: externalOrigin("demo", digest)},
-			"does not match the installed artifact"},
-		{"an empty pin, which is a missing decision",
-			Options{AllowWrite: []string{"demo@"}, Origin: externalOrigin("demo", digest)},
-			"does not match the installed artifact"},
-		{"a capability that does not exist",
-			Options{AllowDestructive: []string{"demo.nope"}, Origin: builtInOrigin("demo")},
-			`no capability named "demo.nope" exists`},
-		{"a capability that is not destructive",
-			Options{AllowDestructive: []string{"demo.item.list"}, Origin: builtInOrigin("demo")},
-			"not destructive, so this allows nothing"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			problems := tc.opts.Problems(reg)
-			if len(problems) != 1 {
-				t.Fatalf("problems = %v, want exactly one", problems)
-			}
-			if !strings.Contains(problems[0], tc.want) {
-				t.Errorf("problem = %q, want it to mention %q", problems[0], tc.want)
-			}
-		})
-	}
-
-	// And the entries that DO authorize something say nothing, or the report
-	// becomes noise an operator learns to scroll past.
-	for _, o := range []Options{
-		{AllowWrite: []string{"demo"}, Origin: builtInOrigin("demo")},
-		{AllowWrite: []string{"demo@1a2b3c4d"}, Origin: externalOrigin("demo", digest)},
-		{},
-	} {
-		if got := o.Problems(reg); len(got) != 0 {
-			t.Errorf("a working configuration reported %v", got)
-		}
-	}
-}
-
-// The message has to carry the string to type, or the operator is sent to
-// compute a digest, which is how a control gets turned off.
-func TestAStalePinReportsTheInstalledDigest(t *testing.T) {
-	const digest = "1a2b3c4d5e6f7890aabbccddeeff00112233445566778899aabbccddeeff0011"
-	o := Options{AllowWrite: []string{"demo@deadbeef"}, Origin: externalOrigin("demo", digest)}
-	problems := o.Problems(testRegistry(t))
-	if len(problems) != 1 || !strings.Contains(problems[0], "@1a2b3c4d5e6f") {
-		t.Fatalf("problems = %v, want one naming the installed short digest", problems)
 	}
 }
 
@@ -1936,10 +1717,15 @@ func TestAStalePinReportsTheInstalledDigest(t *testing.T) {
 // Problems is the channel that already exists for exactly this shape — an
 // operator is present at the command that starts the server, and is the only
 // one who can act on it.
+//
+// It is the last thing Problems reports. The rest of what it used to say was
+// about allowlist entries that authorized nothing, and there is no allowlist
+// any more: what a capability costs is a grant, and a grant that authorizes
+// nothing is a row `rta grant list` shows.
 func TestRefusedArtifactsAreReportedAtServerStartup(t *testing.T) {
 	reg := testRegistry(t)
 
-	t.Run("reported even when no flag mentions them", func(t *testing.T) {
+	t.Run("named at startup", func(t *testing.T) {
 		o := Options{Untrusted: []string{"weather"}, Origin: builtInOrigin("demo")}
 		problems := o.Problems(reg)
 		if len(problems) != 1 {
@@ -1952,48 +1738,13 @@ func TestRefusedArtifactsAreReportedAtServerStartup(t *testing.T) {
 		}
 	})
 
-	// An allowlist entry naming one is a consequence of the same fact, and it
-	// used to state the opposite of it: "no plugin named %q is installed", for
-	// a plugin rta can see, has hashed, and is deliberately declining to run —
-	// with the digest the operator pinned appearing, correctly, in the same
-	// sentence.
-	t.Run("an allowlist entry names the real cause", func(t *testing.T) {
-		for _, tc := range []struct {
-			name string
-			opts Options
-		}{
-			{"--allow-write", Options{AllowWrite: []string{"weather"},
-				Untrusted: []string{"weather"}, Origin: builtInOrigin("demo")}},
-			{"--allow-destructive", Options{AllowDestructive: []string{"weather.wipe@abcd1234"},
-				Untrusted: []string{"weather"}, Origin: builtInOrigin("demo")}},
-		} {
-			t.Run(tc.name, func(t *testing.T) {
-				problems := tc.opts.Problems(reg)
-				if len(problems) != 2 {
-					t.Fatalf("problems = %v, want the artifact and the entry", problems)
-				}
-				entry := problems[1]
-				if strings.Contains(entry, "is installed") && !strings.Contains(entry, "and has not been run") {
-					t.Errorf("entry says the plugin is not installed: %q", entry)
-				}
-				if !strings.Contains(entry, "has not been run") {
-					t.Errorf("entry = %q, want it to name the real cause", entry)
-				}
-			})
-		}
-	})
-
-	// A namespace that really is absent keeps the older sentence: the whole
-	// point is that there are two causes.
-	t.Run("a genuinely absent plugin is unchanged", func(t *testing.T) {
-		o := Options{AllowWrite: []string{"nope"}, Untrusted: []string{"weather"},
-			Origin: builtInOrigin("demo")}
+	// The artifact is named whether or not anything else mentions it, because
+	// this is the only place the fact can be said.
+	t.Run("a namespace something else already answers to", func(t *testing.T) {
+		o := Options{Untrusted: []string{"demo"}, Origin: builtInOrigin("demo")}
 		problems := o.Problems(reg)
-		if len(problems) != 2 {
-			t.Fatalf("problems = %v, want the artifact and the entry", problems)
-		}
-		if !strings.Contains(problems[1], `no plugin named "nope" is installed`) {
-			t.Errorf("entry = %q, want the not-installed wording", problems[1])
+		if len(problems) != 1 || !strings.Contains(problems[0], "would collide") {
+			t.Fatalf("problems = %v, want the collision named", problems)
 		}
 	})
 }

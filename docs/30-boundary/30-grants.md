@@ -2,7 +2,7 @@
 
 A grant is permission for **one capability**, optionally **one record**, that **expires on its own**.
 
-It is the fine-grained half of the model. The `--allow-write` and `--allow-destructive` switches on `rta mcp serve` are decided once, at startup, for every call the server will ever make. A grant is decided when you need it, for as little as you need, and then stops being true without anybody remembering to revoke it.
+It is the whole of the model. Reads are free; **everything that changes anything costs a grant**, and there is no flag that stands in for one. A grant is decided when you need it, for as little as you need, and then stops being true without anybody remembering to revoke it.
 
 ## Issuing one
 
@@ -14,7 +14,7 @@ That reads as: allow `kv.get`, but only the key `db-password`, for thirty minute
 
 | Part | What it means |
 | --- | --- |
-| `<target>` | A capability ID (`kv.get`) or a plugin name (`kv`, covering all of it) |
+| `<target>` | A capability ID (`kv.get`) or a plugin name (`kv`, covering all of it, destructive capabilities included) |
 | `[scope]` | One record — a key, a table, a bucket. Omit to cover the whole capability |
 | `--ttl` | How long: `30s`, `15m`, `2h`. **Default 15m, maximum 24h** |
 | `--agent` | Narrow to one named agent — the name `rta mcp serve --as` uses |
@@ -119,7 +119,7 @@ For a machine whose humans are not at its terminal — an `rta mcp serve --http`
 
 ## What a grant does not do
 
-- **It does not open a safety class.** If `note.rm` is destructive and the server was started without `--allow-destructive note.rm`, no grant makes it reachable. The startup gate is upstream of grants and is not negotiable at run time.
+- **It does not survive the plugin it names being replaced.** A grant on a plugin's capability records that plugin's artifact digest, so swapping the binary under the same name stops it covering anything. Built-ins have no separate artifact and carry no digest; `rta grant list --detail` shows which is which.
 - **It does not widen a path root.** Path confinement is checked separately, on every path argument.
 - **It does not survive a ceiling.** If a `.rta-policy.yaml` says `maxTTL: 15m`, a `--ttl 2h` grant is clamped to 15m and told so.
 - **It does not authorize a profile you have not configured.** `--profile staging` matches the connection named `staging`, exactly.

@@ -32,9 +32,10 @@ import (
 // It takes the catalogue it governs, because this is the one plugin that is
 // about the others: what may be granted is whatever the registry holds that
 // needs a grant, and a hand-maintained list would be wrong the day a plugin
-// is added. The accessor is lazy — the registry is still being filled when
-// this is called.
-func Plugin(catalog func() []plugin.Capability) plugin.Plugin {
+// is added. It takes the artifact lookup beside it because a grant binds to
+// a binary and not to a name — see core.Grant.Digest. Both accessors are
+// lazy: the registry is still being filled when this is called.
+func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, bool)) plugin.Plugin {
 	suggestGatedTargets := func(context.Context, plugin.Request) []string {
 		var out []string
 		seen := map[string]bool{}
@@ -116,7 +117,7 @@ func Plugin(catalog func() []plugin.Capability) plugin.Plugin {
 							"the grant under its own policy, you sign it with your operator key"},
 				},
 				Run: func(ctx context.Context, req plugin.Request) (view.View, error) {
-					return runAllow(ctx, req, catalog)
+					return runAllow(ctx, req, catalog, artifact)
 				},
 			},
 			{
@@ -479,7 +480,9 @@ func profileHint(cfg config.Config, ns string) string {
 	return "no profiles are configured — see `rta profile list`"
 }
 
-func runAllow(_ context.Context, req plugin.Request, catalog func() []plugin.Capability) (view.View, error) {
+func runAllow(_ context.Context, req plugin.Request, catalog func() []plugin.Capability,
+	artifact func(string) (string, bool),
+) (view.View, error) {
 	if server := req.String("server"); server != "" {
 		return remoteAllow(req, server)
 	}
@@ -491,7 +494,7 @@ func runAllow(_ context.Context, req plugin.Request, catalog func() []plugin.Cap
 	// reason builtin/kv records — after main takes fd 0 away from the
 	// plugins it spawns, os.Stdin is /dev/null and every run would read as
 	// unattended.
-	g, notes, verr := buildGrant(catalog, operatorid.IssueSpec{
+	g, notes, verr := buildGrant(catalog, artifact, operatorid.IssueSpec{
 		Target:  req.String("target"),
 		Scope:   req.String("scope"),
 		Profile: req.String("profile"),
@@ -914,12 +917,8 @@ func runList(ctx context.Context, req plugin.Request, catalog func() []plugin.Ca
 }
 
 // reachTiers name the ways an agent's access is decided, in widening order
-// of what it takes to get there. They are distinct gates, not degrees of
-// one: --allow-write is an operator's decision made once when the server is
-// launched, a grant is a person's decision made per record and per
-// quarter-hour, and a HumanOnly capability is not on offer at any price.
-// Folding them into one "not granted" bucket would read as if a write were
-// as freely reachable as a read.
+// of what it takes to get there: free, a person's decision per record and
+// per quarter-hour, or not on offer at any price.
 var reachTiers = []struct {
 	// id is what a script or an agent addresses the section by; title is
 	// what a person reads. One string doing both jobs made every wording
@@ -930,9 +929,6 @@ var reachTiers = []struct {
 }{
 	{"default", "reachable by default", func(c plugin.Capability) bool {
 		return !c.HumanOnly && !core.Required(c, "") && c.Safety == plugin.Read
-	}},
-	{"allow-write", "needs --allow-write on the server", func(c plugin.Capability) bool {
-		return !c.HumanOnly && !core.Required(c, "") && c.Safety != plugin.Read
 	}},
 	{"grant", "needs a grant a person issues", func(c plugin.Capability) bool {
 		return !c.HumanOnly && core.Required(c, "")

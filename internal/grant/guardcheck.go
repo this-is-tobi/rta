@@ -30,6 +30,11 @@ type authority struct {
 	Profile    string `json:"profile,omitempty"`
 	ProfilePin string `json:"profilePin,omitempty"`
 	Agent      string `json:"agent,omitempty"`
+	// Digest binds this authority to the plugin artifact it was issued
+	// against. Signed like every other bound: unsigned, a same-uid attacker
+	// could point a guard-signed grant at a binary they had just dropped in,
+	// which is the whole thing Grant.Digest exists to stop.
+	Digest string `json:"digest,omitempty"`
 	// time.Time marshals as RFC3339Nano wall-clock: the monotonic reading a
 	// fresh time.Now() carries never reaches JSON, so the bytes signed at
 	// issuance and the bytes verified after a reload are identical.
@@ -51,6 +56,7 @@ func AuthorityBytes(g Grant) []byte {
 	b, err := json.Marshal(authority{
 		Target: g.Target, Scope: g.Scope,
 		Profile: g.Profile, ProfilePin: g.ProfilePin, Agent: g.Agent,
+		Digest: g.Digest,
 		Issued: g.Issued, Expires: g.Expires,
 		From: g.From, Note: g.Note, TTL: g.TTL,
 		MaxUses: g.MaxUses, RateMax: g.RateMax, RateWindow: g.RateWindow,

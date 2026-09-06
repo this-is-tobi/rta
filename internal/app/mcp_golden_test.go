@@ -10,7 +10,10 @@ import (
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/mcp"
+	"github.com/this-is-tobi/rta/internal/toolcall"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
 // The MCP surface, written down.
@@ -116,68 +119,53 @@ func golden(t *testing.T, name string, got any) {
 	}
 }
 
-// What an agent sees with no flags at all: the read-only surface, which is
-// the one most people will ever expose.
-func TestGoldenReadOnlySurface(t *testing.T) {
-	golden(t, "mcp-surface-read.json", surface(t, mcp.Options{}))
+// What an agent sees, which is now one surface rather than three: every
+// capability that is not for the person at the terminal is a tool, and what
+// a call costs is a grant rather than a flag. A capability newly marked
+// HumanOnly — or un-marked — shows up here as a diff in review.
+func TestGoldenSurface(t *testing.T) {
+	golden(t, "mcp-surface.json", surface(t, mcp.Options{}))
 }
 
-// …and everything an operator can turn on, so the write and destructive
-// tiers are pinned too — those are the ones a grant stands between.
-func TestGoldenFullSurface(t *testing.T) {
-	reg, err := NewRegistry()
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Every namespace and every destructive ID, spelled out. --allow-write is
-	// a list of plugins rather than one boolean, so "the whole surface" is
-	// now something a test has to enumerate — which is the point of the
-	// change: there is no longer a single value that means "and everything
-	// installed later, too".
-	var destructive, namespaces []string
-	for _, c := range reg.Capabilities() {
-		if c.Safety == "destructive" {
-			destructive = append(destructive, c.ID)
-		}
-	}
-	for _, p := range reg.Plugins() {
-		namespaces = append(namespaces, p.Name)
-	}
-	golden(t, "mcp-surface-all.json", surface(t, mcp.Options{
-		AllowWrite: namespaces, AllowDestructive: destructive,
-	}))
-}
-
-// …and the same full surface again, over HTTP transport, so the locality
-// gate's effect on the real registry is pinned exactly like the safety
-// gate's is above: every plugin.Capability.HostSpecific capability should be
-// missing from this file and from no other, and a capability newly marked
-// HostSpecific — or un-marked — shows up here as a diff in review.
+// …and the same surface over HTTP transport, so the locality gate's effect
+// on the real registry is pinned too: every plugin.Capability.HostSpecific
+// capability should be missing from this file and from no other.
 func TestGoldenRemoteSurface(t *testing.T) {
+	golden(t, "mcp-surface-remote.json", surface(t, mcp.Options{Remote: true}))
+}
+
+// The gate is the load-bearing part, and there is one of it: everything an
+// agent can see is either free to call or costs a grant a person issued.
+// Nothing is reachable on the strength of a flag, and nothing that changes
+// anything is free.
+//
+// Asserted over the real registry rather than a fixture, because the failure
+// this catches is a capability shipped with the wrong safety class — a write
+// declared Read is reachable by every agent forever, and that mistake is
+// made in a plugin, not here.
+func TestNothingThatChangesAnythingIsFree(t *testing.T) {
 	reg, err := NewRegistry()
 	if err != nil {
 		t.Fatal(err)
 	}
-	var destructive, namespaces []string
+	byName := map[string]plugin.Capability{}
 	for _, c := range reg.Capabilities() {
-		if c.Safety == "destructive" {
-			destructive = append(destructive, c.ID)
-		}
+		byName[toolcall.Name(c.ID)] = c
 	}
-	for _, p := range reg.Plugins() {
-		namespaces = append(namespaces, p.Name)
-	}
-	golden(t, "mcp-surface-remote.json", surface(t, mcp.Options{
-		AllowWrite: namespaces, AllowDestructive: destructive, Remote: true,
-	}))
-}
-
-// The safety gate is the load-bearing part: nothing that can write or destroy
-// may appear on the default surface, whatever anybody edits.
-func TestDefaultSurfaceIsReadOnly(t *testing.T) {
 	for _, tl := range surface(t, mcp.Options{}) {
-		if !tl.ReadOnly {
-			t.Errorf("%s is exposed by default without a read-only annotation", tl.Name)
+		c, ok := byName[tl.Name]
+		if !ok {
+			t.Errorf("%s is advertised and is in no catalogue", tl.Name)
+			continue
+		}
+		if c.HumanOnly {
+			t.Errorf("%s is for the person at the terminal and was advertised", tl.Name)
+		}
+		if !tl.ReadOnly && !grant.Required(c, "") {
+			t.Errorf("%s can change something and costs no grant", tl.Name)
+		}
+		if tl.ReadOnly && grant.Required(c, "") && !c.NeedsGrant {
+			t.Errorf("%s is annotated read-only and costs a grant for no declared reason", tl.Name)
 		}
 	}
 }

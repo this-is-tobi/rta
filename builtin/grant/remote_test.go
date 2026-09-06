@@ -91,7 +91,7 @@ func TestRemoteListRefusesDetail(t *testing.T) {
 
 func listCap(t *testing.T) plugin.Capability {
 	t.Helper()
-	for _, c := range Plugin(func() []plugin.Capability { return nil }).Capabilities {
+	for _, c := range Plugin(func() []plugin.Capability { return nil }, builtIn).Capabilities {
 		if c.ID == "grant.list" {
 			return c
 		}
@@ -132,7 +132,7 @@ func TestRemoteAllowThenRevokeEndToEnd(t *testing.T) {
 	}
 	srv := httptest.NewUnstartedServer(mcp.NewOperatorHandler(mcp.OperatorConfig{
 		Roster: roster, URL: base,
-		Prepare: PrepareRemote(catalog),
+		Prepare: PrepareRemote(catalog, builtIn),
 		Revoke:  RevokeRemote,
 	}))
 	srv.Listener.Close()

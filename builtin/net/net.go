@@ -248,7 +248,7 @@ func Plugin() plugin.Plugin {
 					"Classified destructive rather than write: this rewrites a root-owned file that " +
 					"governs name resolution for every process on the machine, and a wrong entry " +
 					"silently reroutes traffic instead of failing. Over MCP that means a per-capability " +
-					"allowlist, not just --allow-write.",
+					"grant naming this capability, or the net plugin, with a deadline on it.",
 				Inputs: []plugin.Field{
 					{Name: "ip", Type: plugin.String, Positional: true, Required: true,
 						Suggest: suggestAddresses, Help: "address to point at"},

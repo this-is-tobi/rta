@@ -274,8 +274,8 @@ func permissionText(c plugin.Capability) string {
 	// which the profile picker says at the point of choosing one rather than
 	// here, where it would read as a property of the capability.
 	if grant.Required(c, "") {
-		// The second half of the answer: an operator's --allow-write is not
-		// enough for this one, a person has to allow it at the time.
+		// The second half of the answer: a person has to allow this one at
+		// the time, and it stops being allowed on its own.
 		s += " · grant"
 	}
 	return s

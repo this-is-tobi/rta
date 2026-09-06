@@ -60,7 +60,7 @@ func Plugin() plugin.Plugin {
 				Summary: "Greet somebody, in a language of your choosing",
 				// Read is the claim that this changes nothing. It is what
 				// decides whether an agent may call this without an
-				// operator's --allow-write, so it is a promise about blast
+				// person's grant, so it is a promise about blast
 				// radius rather than a label.
 				Safety:     plugin.Read,
 				Idempotent: true,

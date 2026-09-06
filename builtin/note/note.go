@@ -12,7 +12,7 @@
 // model for real: write capabilities, a destructive remove, and honest
 // --dry-run support. Editing prefills the current content on interactive
 // surfaces (Capability.Prefill), like editing an issue. Every capability is
-// exposed over MCP — `rta mcp serve --allow-write note` lets an agent capture
+// exposed over MCP — `rta grant allow note --ttl 8h` lets an agent capture
 // and complete notes for you.
 package note
 

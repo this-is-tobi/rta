@@ -616,8 +616,8 @@ func (m Model) pluginsView() string {
 // something else entirely about a binary that appeared on $PATH.
 //
 // The digest is shown short. It is the identity every authorisation in rta is
-// bound to, so it is worth being able to see it here and compare it
-// against what `--allow-destructive` was pinned to, without running doctor.
+// bound to, so it is worth being able to see it here and compare it against
+// what a grant was issued against, without running doctor.
 // pluginOrigin is the provenance half of the detail line: the artifact, and —
 // for one rta placed itself — what it recorded about placing it.
 //

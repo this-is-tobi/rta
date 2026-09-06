@@ -836,8 +836,7 @@ func wrap(s string, width int, cont string) string {
 	// renderer actually shows. `rta explain s3.object.get` wrapped its own
 	// command line as "[--" / "endpoint <string>]", which is a line nobody can
 	// copy and a flag that reads as two things; `proj1-staging` and
-	// `--allow-destructive` break the same way wherever they land near the
-	// margin. Every hyphen in this tool is inside an identifier somebody may
+	// `--max-uses` break the same way wherever they land near the margin. Every hyphen in this tool is inside an identifier somebody may
 	// be about to paste.
 	lines := hardBreakOverlong(ansi.Wordwrap(shieldHyphens(s), budget, ""), budget)
 	for i, line := range lines {

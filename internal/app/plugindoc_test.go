@@ -103,8 +103,8 @@ func TestPluginDocIsOnePageFromTheDeclaration(t *testing.T) {
 	if got := pairValue(card, "cli"); got != "rta shelf burn <title> [--room <string>]" {
 		t.Errorf("cli form = %q", got)
 	}
-	if got := pairValue(card, "mcp exposure"); !strings.Contains(got, "--allow-destructive shelf.burn`") {
-		t.Errorf("mcp exposure = %q", got)
+	if got := pairValue(card, "grant required (mcp)"); !strings.Contains(got, "rta grant allow shelf.burn") {
+		t.Errorf("grant required = %q", got)
 	}
 
 	doc := renderDoc(t, docFixture())

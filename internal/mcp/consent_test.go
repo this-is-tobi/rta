@@ -51,7 +51,6 @@ func answerWhenAsked(t *testing.T, allow bool) chan consent.Request {
 
 func TestAParkedCallProceedsOnTheOperatorsWord(t *testing.T) {
 	s := connect(t, Options{
-		AllowWrite:  []string{"demo"},
 		Consent:     true,
 		ConsentWait: 20 * time.Second,
 	})
@@ -97,7 +96,6 @@ func TestAParkedCallProceedsOnTheOperatorsWord(t *testing.T) {
 
 func TestADeclinedCallIsRefusedWithTheOperatorsAnswer(t *testing.T) {
 	s := connect(t, Options{
-		AllowWrite:  []string{"demo"},
 		Consent:     true,
 		ConsentWait: 20 * time.Second,
 	})
@@ -128,7 +126,6 @@ func TestNobodyAnsweringRefusesExactlyAsBefore(t *testing.T) {
 	// The degradation promise: with consent on and nobody there, the agent
 	// gets the same refusal it would have got with consent off.
 	s := connect(t, Options{
-		AllowWrite:  []string{"demo"},
 		Consent:     true,
 		ConsentWait: 300 * time.Millisecond,
 	})
@@ -163,7 +160,6 @@ func TestAFullQueueRefusesAtOnceInsteadOfAskingAgain(t *testing.T) {
 	// gets the refusal it would have got with consent off — immediately,
 	// without adding a ninth question to a list nobody can read any more.
 	s := connect(t, Options{
-		AllowWrite:  []string{"demo"},
 		Consent:     true,
 		ConsentWait: 30 * time.Second,
 	})
@@ -213,10 +209,9 @@ func TestAFullQueueRefusesAtOnceInsteadOfAskingAgain(t *testing.T) {
 
 func TestADestructiveRequestCarriesWhatItWouldDo(t *testing.T) {
 	s := connect(t, Options{
-		AllowDestructive: []string{"demo.item.rm"},
-		Consent:          true,
-		ConsentPreview:   true,
-		ConsentWait:      20 * time.Second,
+		Consent:        true,
+		ConsentPreview: true,
+		ConsentWait:    20 * time.Second,
 	})
 	seen := answerWhenAsked(t, false)
 	callTool(t, s, "demo_item_rm", map[string]any{"name": "invoices"})
@@ -253,7 +248,6 @@ func TestOnlyDestructiveCallsArePreviewed(t *testing.T) {
 	// A preview is an extra invocation of the handler, worth it where the
 	// answer is irreversible and not otherwise.
 	s := connect(t, Options{
-		AllowWrite:     []string{"demo"},
 		Consent:        true,
 		ConsentPreview: true,
 		ConsentWait:    20 * time.Second,
@@ -303,10 +297,9 @@ func TestWithPreviewOffNothingRunsBeforeTheAnswer(t *testing.T) {
 			}
 			t.Setenv("RTA_DATA_DIR", t.TempDir())
 			s := connectWith(t, reg, Options{
-				AllowDestructive: []string{"demo.item.rm"},
-				Consent:          true,
-				ConsentPreview:   tc.preview,
-				ConsentWait:      500 * time.Millisecond,
+				Consent:        true,
+				ConsentPreview: tc.preview,
+				ConsentWait:    500 * time.Millisecond,
 			})
 			callTool(t, s, "demo_item_rm", map[string]any{"name": "invoices"})
 			if got := dryRuns.Load(); got != tc.wantRuns {
@@ -348,11 +341,10 @@ func TestAnExternalPluginIsNeverRunToProduceAPreview(t *testing.T) {
 	t.Setenv("RTA_DATA_DIR", t.TempDir())
 	s := connectWith(t, reg, Options{
 		// The digest pin an external destructive capability requires.
-		AllowDestructive: []string{"hello.wipe@5dae737f8845"},
-		Origin:           reg.Origin,
-		Consent:          true,
-		ConsentPreview:   true,
-		ConsentWait:      600 * time.Millisecond,
+		Origin:         reg.Origin,
+		Consent:        true,
+		ConsentPreview: true,
+		ConsentWait:    600 * time.Millisecond,
 	})
 	seen := make(chan consent.Request, 1)
 	go func() {
@@ -420,14 +412,13 @@ func TestAProfiledCallIsNotPreviewedAgainstTheWrongPlace(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := connectWith(t, reg, Options{
-		AllowDestructive: []string{"pg.drop"},
-		Origin:           reg.Origin,
-		Profiles:         cfg,
-		Reload:           func() config.Config { return cfg },
-		Active:           func() string { return "" },
-		Consent:          true,
-		ConsentPreview:   true,
-		ConsentWait:      600 * time.Millisecond,
+		Origin:         reg.Origin,
+		Profiles:       cfg,
+		Reload:         func() config.Config { return cfg },
+		Active:         func() string { return "" },
+		Consent:        true,
+		ConsentPreview: true,
+		ConsentWait:    600 * time.Millisecond,
 	})
 	seen := make(chan consent.Request, 1)
 	go func() {
@@ -465,7 +456,6 @@ func TestAPacedGrantIsNotAConsentQuestion(t *testing.T) {
 	// answer the same prompt ten more times. That is the consent-fatigue
 	// attack the queue cap already guards from the other side.
 	s := connect(t, Options{
-		AllowWrite:  []string{"demo"},
 		Consent:     true,
 		ConsentWait: 20 * time.Second,
 	})
@@ -502,7 +492,6 @@ func TestAPacedGrantIsNotAConsentQuestion(t *testing.T) {
 
 func TestConsentIsNotAskedForWhatIsNotAPermissionQuestion(t *testing.T) {
 	s := connect(t, Options{
-		AllowWrite:  []string{"demo"},
 		Consent:     true,
 		ConsentWait: 20 * time.Second,
 	})
@@ -519,15 +508,13 @@ func TestConsentIsNotAskedForWhatIsNotAPermissionQuestion(t *testing.T) {
 }
 
 func TestConsentNeverWidensTheSurface(t *testing.T) {
-	// A capability the operator did not expose is not a tool, and no amount
-	// of asking makes it one.
+	// Consent answers the grant question and nothing else. A capability for
+	// the person at the terminal is not a tool, and no amount of asking
+	// makes it one.
 	s := connect(t, Options{Consent: true, ConsentWait: 20 * time.Second})
 	tools := listTools(t, s)
-	if _, ok := tools["demo_item_reveal"]; ok {
-		t.Fatal("consent put a write capability on the read-only surface")
-	}
-	if _, ok := tools["demo_item_rm"]; ok {
-		t.Fatal("consent put a destructive capability on the surface")
+	if _, ok := tools["demo_item_human"]; ok {
+		t.Fatal("consent put a human-only capability on the surface")
 	}
 	if pending, _ := consent.Pending(); len(pending) != 0 {
 		t.Fatal("something was parked for a tool that does not exist")
@@ -535,7 +522,7 @@ func TestConsentNeverWidensTheSurface(t *testing.T) {
 }
 
 func TestWithConsentOffNothingIsEverParked(t *testing.T) {
-	s := connect(t, Options{AllowWrite: []string{"demo"}})
+	s := connect(t, Options{})
 	res := callTool(t, s, "demo_item_reveal", map[string]any{"key": "db-password"})
 	if !res.IsError {
 		t.Fatal("the gate let a destructive call through")
@@ -546,7 +533,7 @@ func TestWithConsentOffNothingIsEverParked(t *testing.T) {
 }
 
 func TestTheLedgerRecordsEveryCallIncludingRefusals(t *testing.T) {
-	s := connect(t, Options{AllowWrite: []string{"demo"}})
+	s := connect(t, Options{})
 
 	callTool(t, s, "demo_item_list", map[string]any{"name": "x"})   // read, open
 	callTool(t, s, "demo_item_reveal", map[string]any{"key": "db"}) // refused: needs a grant
@@ -608,7 +595,7 @@ func TestAHandlersOwnPolicyGateLedgersAsRefusedNotFailed(t *testing.T) {
 }
 
 func TestTheLedgerNeverRecordsASecret(t *testing.T) {
-	s := connect(t, Options{AllowWrite: []string{"demo"}})
+	s := connect(t, Options{})
 	callTool(t, s, "demo_item_token", map[string]any{"token": "hunter2-in-the-log"})
 
 	entries, err := agentlog.Read(0)
@@ -622,7 +609,7 @@ func TestTheLedgerNeverRecordsASecret(t *testing.T) {
 }
 
 func TestTheLedgerRecordsWhatAStandingGrantAuthorized(t *testing.T) {
-	s := connect(t, Options{AllowWrite: []string{"demo"}})
+	s := connect(t, Options{})
 	allow(t, "demo.item.reveal", "")
 	if res := callTool(t, s, "demo_item_reveal", map[string]any{"key": "db-password"}); res.IsError {
 		t.Fatalf("granted call refused: %s", res.Content[0].(*sdk.TextContent).Text)
@@ -639,7 +626,6 @@ func TestTheLedgerRecordsWhatAStandingGrantAuthorized(t *testing.T) {
 // to answer into the void.
 func TestACancelledCallStopsWaiting(t *testing.T) {
 	s := connect(t, Options{
-		AllowWrite:  []string{"demo"},
 		Consent:     true,
 		ConsentWait: 30 * time.Second,
 	})
