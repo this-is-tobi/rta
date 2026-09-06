@@ -22,7 +22,7 @@ var (
 	// dashboard; a connection is something an operator writes deliberately,
 	// and losing one to a re-run of the wizard would silently repoint every
 	// grant that names it.
-	initCarries = []string{"Plugins", "Profiles", "Theme"}
+	initCarries = []string{"Plugins", "Profiles", "Roles", "Theme"}
 	// initDerives names fields that are not part of the file at all: the
 	// loader computes them, no YAML tag writes them, and the wizard neither
 	// decides nor carries them because there is nothing on disk to carry.
@@ -63,10 +63,14 @@ func TestInitKeepsEveryPartOfTheFileItDoesNotOwn(t *testing.T) {
 		Plugins: map[string]map[string]any{
 			"pg@919b9ed08761": {"host": "db.internal", "port": 15433},
 		},
+		Roles: map[string]config.Role{"dev": {Grants: []string{"kv.get db-password"}, TTL: "8h"}},
 	}
 
 	// The automatic-dashboard path, which is the one most people take.
 	got := initConfig(current, "json", nil)
+	if !reflect.DeepEqual(got.Roles, current.Roles) {
+		t.Errorf("roles = %v, want %v — a role is written deliberately, and re-running the wizard must keep it", got.Roles, current.Roles)
+	}
 	if !reflect.DeepEqual(got.Plugins, current.Plugins) {
 		t.Errorf("plugins = %v, want %v — `rta init` must not touch a block it does "+
 			"not ask about", got.Plugins, current.Plugins)

@@ -96,6 +96,12 @@ type Config struct {
 	// before anything has decided whether this run even has a renderer to
 	// color, and read by `rta mcp serve` too, which colors nothing at all.
 	Theme map[string]string `yaml:"theme,omitempty" json:"theme,omitempty"`
+	// Roles are the operator's own bundles for `rta grant issue`: a name,
+	// a list of grant lines, a default duration. A role here is the
+	// operator's word for something they would otherwise type line by
+	// line; the team's live in the policy file beside the ceiling that
+	// bounds them. See internal/role.
+	Roles map[string]Role `yaml:"roles,omitempty" json:"roles,omitempty"`
 
 	// trusted records that this file is one somebody named, rather than the
 	// ./.rta.yaml fallback. Unexported and set by the loader, exactly as
@@ -110,6 +116,16 @@ type Config struct {
 	// below). Stamping each block separately is how the second one came to be
 	// forgotten for a whole release.
 	trusted bool
+}
+
+// Role is what one `rta grant issue` issues: grant lines in the grammar
+// `rta grant allow` parses, and how long the grants last unless the
+// operator says otherwise. Adding one to a file grants nothing — a person
+// issues it, under the guard where there is one, and the ceiling caps each
+// line; what it saves is one prompt per line.
+type Role struct {
+	Grants []string `yaml:"grants" json:"grants"`
+	TTL    string   `yaml:"ttl,omitempty" json:"ttl,omitempty"`
 }
 
 // Trusted reports whether this configuration came from a path somebody named.
