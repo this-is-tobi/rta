@@ -41,7 +41,10 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 		var out []string
 		seen := map[string]bool{}
 		for _, c := range catalog() {
-			if !core.Required(c, "") {
+			// Only what a grant can cover: a read needs none, and a
+			// capability for the person at the terminal is never a tool, so
+			// offering either hands over a command that refuses as needless.
+			if !core.Required(c, "") || c.HumanOnly {
 				continue
 			}
 			out = append(out, c.ID+"\t"+c.Summary)
@@ -543,11 +546,11 @@ func runAllow(_ context.Context, req plugin.Request, catalog func() []plugin.Cap
 		if guard.Enabled() {
 			note = " — the guard will ask for its passphrase"
 		}
-		msg = fmt.Sprintf("would allow agents to %s for %s%s%s%s",
-			describe(g), format.Duration(ttl), usesSuffix(g.MaxUses), rateSuffix(g), note)
+		msg = fmt.Sprintf("would let %s %s for %s%s%s%s",
+			subject(g), describe(g), format.Duration(ttl), usesSuffix(g.MaxUses), rateSuffix(g), note)
 	} else {
-		msg = fmt.Sprintf("agents may %s for %s (until %s)%s%s",
-			describe(g), format.Duration(ttl), format.Clock(g.Expires), usesSuffix(g.MaxUses), rateSuffix(g))
+		msg = fmt.Sprintf("%s may %s for %s (until %s)%s%s",
+			subject(g), describe(g), format.Duration(ttl), format.Clock(g.Expires), usesSuffix(g.MaxUses), rateSuffix(g))
 	}
 	// Which ceiling bit, whether the environment this names is even
 	// switched on, and whether the agent is one this machine has seen:
@@ -726,15 +729,20 @@ func describe(g core.Grant) string {
 	if g.Profile != "" {
 		s += " via profile " + g.Profile
 	}
-	// Last, because it is the subject rather than the object: the sentence
-	// reads "call kv.get on prod/ via profile staging, as agent ci". Said at
-	// all because a grant that names an agent authorizes strictly less than
-	// one that does not, and an operator re-reading their own consent has to
-	// be able to see which they gave.
-	if g.Agent != "" {
-		s += ", as agent " + g.Agent
-	}
 	return s
+}
+
+// subject is who a grant is for, as the sentence's subject: "claude may call
+// kv.get". It used to trail describe as ", as agent claude" after a sentence
+// that began "agents may", which named the agent twice and the wrong one
+// first. A grant with no agent cannot be issued any more, but one from
+// before --as was required can still be on disk, and "agents" is what it
+// meant.
+func subject(g core.Grant) string {
+	if g.Agent != "" {
+		return g.Agent
+	}
+	return "agents"
 }
 
 // runRenew extends the deadline on grants that already exist, and changes
@@ -854,7 +862,7 @@ func runRenew(_ context.Context, req plugin.Request) (view.View, error) {
 			if signer != nil {
 				core.SignWith(*signer, &stored[i])
 			}
-			renewed = append(renewed, fmt.Sprintf("  %-24s until %s", describe(g), format.Clock(expires)))
+			renewed = append(renewed, fmt.Sprintf("  %s may %s until %s", subject(g), describe(g), format.Clock(expires)))
 			// A renewal is the only person-facing surface that reports
 			// per-grant success, and it was the only one silent about a grant
 			// whose connection has been repointed: `grant list` marks it
@@ -922,7 +930,7 @@ func runList(ctx context.Context, req plugin.Request, catalog func() []plugin.Ca
 	// is a fact about every row below it. The compact view stays the flat
 	// table it has to be — it is what the dashboard tile refreshes.
 	stored, storedErr := core.Load()
-	p.PutAs("guard", "the guard", view.Text{Body: guardLine(stored, storedErr)})
+	p.PutAs("guard", "the guard", view.Text{Body: "guard  " + guardLine(stored, storedErr)})
 	p.PutAs("granted", "granted", held)
 	for _, tier := range reachTiers {
 		p.PutAs(tier.id, tier.title, reachTable(catalog(), tier.holds))
@@ -982,19 +990,19 @@ func heldTable() (view.View, *view.Error) {
 		// `grant list` exists to show, and refusing here would send somebody
 		// to a command that no longer exists to find out.
 		if verr.Code == "core.grant.guard.orphaned" {
-			return view.Text{Body: guardLine(nil, verr)}, nil
+			return view.Text{Body: "guard  " + guardLine(nil, verr)}, nil
 		}
 		return nil, verr
 	}
 	if len(grants) == 0 {
-		body := guardLine(grants, nil) + "\n\n" +
+		body := "guard  " + guardLine(grants, nil) + "\n\n" +
 			"No grant is standing — agents reach only what needs none.\n" +
 			"Allow one with: rta grant allow <capability> --ttl 15m"
 		// An empty list is the ordinary answer and a dropped file is not, so
 		// the difference has to be visible here: this is the one screen where
 		// somebody looking for a grant they issued will come looking for it.
 		if core.Legacy() {
-			body = guardLine(grants, nil) + "\n\n" +
+			body = "guard  " + guardLine(grants, nil) + "\n\n" +
 				"Grants are now sealed against tampering, and " + core.Path() + " predates\n" +
 				"the seal, so nothing in it is honoured. Any grant it held is gone; re-issue\n" +
 				"what you still need. Removing the file clears this notice:\n" +
