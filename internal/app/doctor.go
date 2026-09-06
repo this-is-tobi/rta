@@ -19,6 +19,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/consent"
 	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/guard"
+	"github.com/this-is-tobi/rta/internal/lockdown"
 	"github.com/this-is-tobi/rta/internal/paths"
 	"github.com/this-is-tobi/rta/internal/pluginconf"
 	"github.com/this-is-tobi/rta/internal/plugindist"
@@ -650,6 +651,27 @@ func doctorReport(reg *registry.Registry) view.View {
 					"(`rta grant renew` moves the deadline and deliberately does not)",
 				len(stale), strings.Join(stale, ", ")))
 		}
+	}
+
+	// A lock overrides every grant above it, and it used to be visible on
+	// `rta lock list` and nowhere else. It belongs here for the reason the
+	// grants do: one placed during an incident and forgotten is exactly what
+	// a health check exists to surface, and the answer is usually "none".
+	if locks, verr := lockdown.Load(); verr != nil {
+		add("locks", "error", verr.Message)
+	} else if len(locks) == 0 {
+		add("locks", "ok", "none — nothing is frozen")
+	} else {
+		named := make([]string, 0, len(locks))
+		for _, l := range locks {
+			name := l.Name
+			if l.Kind != lockdown.KindAgent {
+				name += " (" + string(l.Kind) + ")"
+			}
+			named = append(named, name)
+		}
+		add("locks", "info", fmt.Sprintf("%d standing: %s — every call from each is refused, "+
+			"whatever it holds (`rta lock list` says why)", len(locks), strings.Join(named, ", ")))
 	}
 
 	// Whether issuing a grant costs a secret an agent cannot inherit. An info
