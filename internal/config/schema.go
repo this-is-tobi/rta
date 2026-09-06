@@ -104,8 +104,31 @@ func Schema() map[string]any {
 				"type":                 "object",
 				"additionalProperties": map[string]any{"type": "string", "pattern": schemaColor},
 			},
+			"roles": map[string]any{
+				"description": "Bundles `rta grant issue <role>` issues whole, under one passphrase: " +
+					"grant lines in the grammar `rta grant allow` takes, and how long the grants last.",
+				"type":                 "object",
+				"additionalProperties": map[string]any{"$ref": "#/$defs/role"},
+			},
 		},
 		"$defs": map[string]any{
+			"role": map[string]any{
+				"type":                 "object",
+				"additionalProperties": false,
+				"required":             []any{"grants"},
+				"properties": map[string]any{
+					"grants": map[string]any{
+						"description": "One grant per line: a target, an optional record, and --profile, " +
+							"--ttl, --max-uses, --rate or --note. The agent is the session's.",
+						"type":  "array",
+						"items": map[string]any{"type": "string"},
+					},
+					"ttl": map[string]any{
+						"description": "How long the role's grants last unless --ttl says: 8h, 12h (the default).",
+						"type":        "string",
+					},
+				},
+			},
 			"tile": map[string]any{
 				"type":                 "object",
 				"additionalProperties": false,

@@ -102,6 +102,15 @@ type Ceiling struct {
 	// It only ever causes more refusals, so it keeps the property that makes
 	// the rest of this package safe.
 	RequireRepo bool `yaml:"requireRepoPolicy,omitempty"`
+	// RawRoles is the file's `roles:` block; Roles is the same list with
+	// each role naming its file, which is what a session shows before it
+	// issues one. Not a ceiling axis and not an allow key: a role grants
+	// nothing by being here. It names what a person may issue with one
+	// word, after seeing the list, under the ceiling this same file sets —
+	// and internal/role refuses a name two files both define rather than
+	// letting either win.
+	RawRoles map[string]config.Role `yaml:"roles,omitempty"`
+	Roles    []NamedRole            `yaml:"-"`
 	// From names the files this ceiling was assembled from, nearest first, so
 	// a refusal can say which one to go and edit.
 	From []string `yaml:"-"`
@@ -122,7 +131,18 @@ type Ceiling struct {
 // policyKeys is every top-level key a policy file may carry.
 var policyKeys = map[string]bool{
 	"maxTTL": true, "never": true, "neverProfile": true, "requireScope": true,
-	"requireRepoPolicy": true,
+	"requireRepoPolicy": true, "roles": true,
+}
+
+// NamedRole is one role and the file it came from. Team says the file was
+// found by the walk up from the working directory — a repository's, which
+// somebody other than the operator may have edited. A file the operator
+// named with RTA_POLICY, and their own beside the config, are theirs.
+type NamedRole struct {
+	Name string
+	Role config.Role
+	From string
+	Team bool
 }
 
 func (c Ceiling) Empty() bool {
@@ -229,6 +249,9 @@ func Load() (Ceiling, *view.Error) {
 					return Ceiling{}, verr
 				}
 				repoFound = true
+				for i := range c.Roles {
+					c.Roles[i].Team = true
+				}
 				// Presence is not the same as a ceiling. A file holding `{}`
 				// parses, is found, and constrains nothing — so checking only
 				// that something is there would make the quietest edit the
@@ -378,6 +401,10 @@ func read(path string, mustExist bool) (Ceiling, *view.Error) {
 		c.MaxTTL = d
 	}
 	c.From = []string{path}
+	for name, r := range c.RawRoles {
+		c.Roles = append(c.Roles, NamedRole{Name: name, Role: r, From: path})
+	}
+	c.RawRoles = nil
 	return c, nil
 }
 
@@ -392,6 +419,9 @@ func intersect(all []Ceiling) Ceiling {
 		out.Never = append(out.Never, c.Never...)
 		out.NeverProfile = append(out.NeverProfile, c.NeverProfile...)
 		out.RequireScope = append(out.RequireScope, c.RequireScope...)
+		// Roles are collected, not intersected: nothing about them is a
+		// bound to take the strictest of.
+		out.Roles = append(out.Roles, c.Roles...)
 		for _, f := range c.From {
 			if !seen[f] {
 				seen[f] = true
