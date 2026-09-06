@@ -29,7 +29,7 @@ const defaultWarnDays = 90
 func Plugin() plugin.Plugin {
 	return plugin.Plugin{
 		Name:    "eol",
-		Summary: "End-of-life and support-window checks via endoflife.date",
+		Summary: "Support windows and end-of-life dates, via endoflife.date",
 		Capabilities: []plugin.Capability{
 			{
 				ID:         "eol.check",

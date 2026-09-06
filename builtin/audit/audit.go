@@ -209,7 +209,7 @@ func Plugin() plugin.Plugin {
 			},
 			{
 				ID:         "audit.kube.rbac",
-				Summary:    "Overly-broad RBAC: cluster-admin bindings and wildcard rules",
+				Summary:    "Broad RBAC: cluster-admin bindings and wildcard rules",
 				Safety:     plugin.Read,
 				Idempotent: true,
 				Detailed:   true,

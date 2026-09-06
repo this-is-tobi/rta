@@ -308,7 +308,28 @@ func NewRoot(reg *registry.Registry, version string) *cobra.Command {
 	root.AddCommand(newPolicyCommand(opts))
 	root.AddCommand(newProfileCommand(reg, opts))
 	root.AddCommand(newConfigCommand())
+	describeGroups(root)
 	return root
+}
+
+// describeGroups gives every noun command the summary findOrCreate could
+// not: a noun exists before its verbs do, so it is named after them here,
+// once the tree is complete. `rta grant guard --help` used to open with
+// "guard operations", which says the word twice and the verbs never.
+func describeGroups(cmd *cobra.Command) {
+	for _, sub := range cmd.Commands() {
+		describeGroups(sub)
+		if sub.Short != sub.Name()+" operations" || !sub.HasSubCommands() {
+			continue
+		}
+		verbs := make([]string, 0, len(sub.Commands()))
+		for _, v := range sub.Commands() {
+			if !v.Hidden {
+				verbs = append(verbs, v.Name())
+			}
+		}
+		sub.Short = sub.Name() + ": " + strings.Join(verbs, ", ")
+	}
 }
 
 // attach materializes one capability as a (possibly nested) cobra command.

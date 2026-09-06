@@ -487,7 +487,7 @@ func newPluginIndexCommand(opts *globalOpts) *cobra.Command {
 	})
 	root.AddCommand(&cobra.Command{
 		Use:   "update [name]",
-		Short: "Fast-forward one index, or every one",
+		Short: "Bring one index up to date, or every one",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := ""

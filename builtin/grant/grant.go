@@ -73,7 +73,7 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 	}
 	return plugin.Plugin{
 		Name:    "grant",
-		Summary: "Time-boxed permissions for AI agents",
+		Summary: "Permissions for AI agents that expire on their own",
 		Capabilities: []plugin.Capability{
 			{
 				ID: "grant.allow", Summary: "Allow AI agents to use one capability, temporarily",
