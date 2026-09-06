@@ -58,7 +58,7 @@ func code(t *testing.T, err error) string {
 // at, which is exactly what an agent's shell looks like — and with it, the
 // grant issues signed and loads.
 func TestGuardOnGatesGrantAllow(t *testing.T) {
-	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	setup(t)
 	guardOn(t, "correct horse")
 	allow := guardCap(t, "grant.allow")
 
@@ -90,7 +90,7 @@ func TestGuardOnGatesGrantAllow(t *testing.T) {
 // A wrong passphrase is refused by the unlock, not by a failed signature
 // three layers down — the operator is told the actual problem.
 func TestAWrongPassphraseIsNamedAsSuch(t *testing.T) {
-	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	setup(t)
 	guardOn(t, "correct horse")
 	_, err := guardCap(t, "grant.allow").Run(context.Background(),
 		reqTUI(map[string]any{"target": "kv.get", "ttl": "15m", "passphrase": "wrong horse"}))
@@ -106,7 +106,7 @@ func TestAWrongPassphraseIsNamedAsSuch(t *testing.T) {
 // TUI previews the grant before anyone commits — and it says the guard will
 // ask, so the prompt that follows is never a surprise.
 func TestADryRunNeedsNoPassphraseAndSaysTheGuardWill(t *testing.T) {
-	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	setup(t)
 	guardOn(t, "correct horse")
 	c := guardCap(t, "grant.allow")
 	v, err := c.Run(context.Background(), plugin.NewRequest(
@@ -124,7 +124,7 @@ func TestADryRunNeedsNoPassphraseAndSaysTheGuardWill(t *testing.T) {
 // does — and the extended grant re-verifies, or loadAll would refuse the
 // whole file as forged on the read after the renewal.
 func TestRenewUnderTheGuardCostsThePassphraseAndResigns(t *testing.T) {
-	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	setup(t)
 	guardOn(t, "correct horse")
 	allow, renew := guardCap(t, "grant.allow"), guardCap(t, "grant.renew")
 	if _, err := allow.Run(context.Background(),
@@ -152,7 +152,7 @@ func TestRenewUnderTheGuardCostsThePassphraseAndResigns(t *testing.T) {
 // Revoking stays passphrase-free: taking authority away is the fail-safe
 // direction, and an incident is the wrong moment to demand a secret.
 func TestRevokeNeedsNoPassphrase(t *testing.T) {
-	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	setup(t)
 	guardOn(t, "correct horse")
 	if _, err := guardCap(t, "grant.allow").Run(context.Background(),
 		reqTUI(map[string]any{"target": "kv.get", "ttl": "15m", "passphrase": "correct horse"})); err != nil {
@@ -170,7 +170,7 @@ func TestRevokeNeedsNoPassphrase(t *testing.T) {
 // The way off costs what turning it on promised; a wrong passphrase costs
 // nothing, especially not the grants.
 func TestGuardOffProvesThePassphraseAndClears(t *testing.T) {
-	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	setup(t)
 	guardOn(t, "correct horse")
 	if _, err := guardCap(t, "grant.allow").Run(context.Background(),
 		reqTUI(map[string]any{"target": "kv.get", "ttl": "15m", "passphrase": "correct horse"})); err != nil {
@@ -201,7 +201,7 @@ func TestGuardOffProvesThePassphraseAndClears(t *testing.T) {
 // Enabling clears what was issued without a passphrase — blessing it
 // wholesale would launder exactly what the guard exists to pin.
 func TestEnablingClearsPreGuardGrants(t *testing.T) {
-	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	setup(t)
 	if _, err := guardCap(t, "grant.allow").Run(context.Background(),
 		req(map[string]any{"target": "kv.get", "ttl": "15m"})); err != nil {
 		t.Fatal(err)
@@ -217,7 +217,7 @@ func TestEnablingClearsPreGuardGrants(t *testing.T) {
 // warning about it. The TUI's masked field, exercised by every other test
 // here, is the surface that may carry the value.
 func TestThePassphraseFlagIsRefusedOnTheCLI(t *testing.T) {
-	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	setup(t)
 	guardOn(t, "correct horse")
 	_, err := guardCap(t, "grant.allow").Run(context.Background(),
 		req(map[string]any{"target": "kv.get", "ttl": "15m", "passphrase": "correct horse"}))
@@ -236,7 +236,7 @@ func TestThePassphraseFlagIsRefusedOnTheCLI(t *testing.T) {
 // own file was gone and signed grants remained — the one state every
 // issuing and listing path already refuses as orphaned.
 func TestGuardStatusSaysOrphanedWhenTheGuardFileIsGone(t *testing.T) {
-	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	setup(t)
 	guardOn(t, "correct horse")
 	if _, err := guardCap(t, "grant.allow").Run(context.Background(),
 		reqTUI(map[string]any{"target": "kv.get", "ttl": "15m", "passphrase": "correct horse"})); err != nil {
@@ -258,7 +258,7 @@ func TestGuardStatusSaysOrphanedWhenTheGuardFileIsGone(t *testing.T) {
 // A target the team forbids is refused before the passphrase is asked for,
 // not after it was typed.
 func TestTheCeilingIsCheckedBeforeThePassphrase(t *testing.T) {
-	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	setup(t)
 	withPolicy(t, "never: [kv.get]\n")
 	guardOn(t, "correct horse")
 	// No passphrase supplied: with the ceiling checked first, the refusal

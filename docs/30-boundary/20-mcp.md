@@ -49,7 +49,9 @@ This is deliberate, and there are three reasons in descending order of importanc
 rta mcp install claude --as work-laptop
 ```
 
-Without a name, every MCP client on your machine is **one principal**: consent given while talking to one follows all the others. `--as` is what keeps an agent's grants its own, and `rta mcp install` always passes it — the default is the client's name.
+**Every server is named.** `rta mcp serve` refuses to start without `--as`, and `rta mcp install` always passes it — the default is the client's name. Without one, every MCP client on your machine would be a single principal sharing one grant file, and worse, one nothing could stop: [a lock](#locks-the-instant-no) freezes an agent *by name*, so an unnamed server had no handle to pull during an incident.
+
+`rta grant allow` fills the name in when this machine knows exactly one agent, and asks you which when it knows several.
 
 The name is your word, not the agent's. A client announces itself in the protocol handshake, and rta records that claim, but it does not authorize on it — *a name a thing chooses for itself is not an identity*. What authorizes is the name you typed when you wired the client up.
 

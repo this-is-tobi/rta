@@ -15,7 +15,7 @@ import (
 
 func TestHTTPRefusesConsentWithoutOperators(t *testing.T) {
 	cmd := NewRoot(registry.New(), "test")
-	cmd.SetArgs([]string{"mcp", "serve", "--http", "127.0.0.1:0", "--consent"})
+	cmd.SetArgs([]string{"mcp", "serve", "--as", "probe", "--http", "127.0.0.1:0", "--consent"})
 	cmd.SetOut(new(strings.Builder))
 	cmd.SetErr(new(strings.Builder))
 	err := cmd.Execute()
@@ -34,7 +34,7 @@ func TestHTTPRefusesConsentWithoutOperators(t *testing.T) {
 // gate answered.
 func TestHTTPConsentWithOperatorsClearsTheConsentGate(t *testing.T) {
 	cmd := NewRoot(registry.New(), "test")
-	cmd.SetArgs([]string{"mcp", "serve", "--http", "127.0.0.1:0", "--consent",
+	cmd.SetArgs([]string{"mcp", "serve", "--as", "probe", "--http", "127.0.0.1:0", "--consent",
 		"--operators", "does-not-matter-yet", "--operators-url", "https://rta.example.com"})
 	cmd.SetOut(new(strings.Builder))
 	cmd.SetErr(new(strings.Builder))
@@ -52,7 +52,7 @@ func TestHTTPConsentWithOperatorsClearsTheConsentGate(t *testing.T) {
 
 func TestHTTPRequiresATokenFile(t *testing.T) {
 	cmd := NewRoot(registry.New(), "test")
-	cmd.SetArgs([]string{"mcp", "serve", "--http", "127.0.0.1:0"})
+	cmd.SetArgs([]string{"mcp", "serve", "--as", "probe", "--http", "127.0.0.1:0"})
 	cmd.SetOut(new(strings.Builder))
 	cmd.SetErr(new(strings.Builder))
 	err := cmd.Execute()
@@ -70,7 +70,7 @@ func TestHTTPRequiresATokenFile(t *testing.T) {
 // would still refuse.
 func TestHTTPConsentIsCheckedBeforeTokenFile(t *testing.T) {
 	cmd := NewRoot(registry.New(), "test")
-	cmd.SetArgs([]string{"mcp", "serve", "--http", "127.0.0.1:0", "--consent"})
+	cmd.SetArgs([]string{"mcp", "serve", "--as", "probe", "--http", "127.0.0.1:0", "--consent"})
 	cmd.SetOut(new(strings.Builder))
 	cmd.SetErr(new(strings.Builder))
 	err := cmd.Execute()
@@ -81,7 +81,7 @@ func TestHTTPConsentIsCheckedBeforeTokenFile(t *testing.T) {
 
 func TestHTTPOIDCIssuerRequiresAudience(t *testing.T) {
 	cmd := NewRoot(registry.New(), "test")
-	cmd.SetArgs([]string{"mcp", "serve", "--http", "127.0.0.1:0", "--oidc-issuer", "https://idp.example"})
+	cmd.SetArgs([]string{"mcp", "serve", "--as", "probe", "--http", "127.0.0.1:0", "--oidc-issuer", "https://idp.example"})
 	cmd.SetOut(new(strings.Builder))
 	cmd.SetErr(new(strings.Builder))
 	err := cmd.Execute()
@@ -95,7 +95,7 @@ func TestHTTPOIDCIssuerRequiresAudience(t *testing.T) {
 
 func TestHTTPOIDCIssuerRequiresASubject(t *testing.T) {
 	cmd := NewRoot(registry.New(), "test")
-	cmd.SetArgs([]string{"mcp", "serve", "--http", "127.0.0.1:0",
+	cmd.SetArgs([]string{"mcp", "serve", "--as", "probe", "--http", "127.0.0.1:0",
 		"--oidc-issuer", "https://idp.example", "--oidc-audience", "rta"})
 	cmd.SetOut(new(strings.Builder))
 	cmd.SetErr(new(strings.Builder))
@@ -112,7 +112,7 @@ func TestHTTPOIDCIssuerRequiresASubject(t *testing.T) {
 // command's own clear error, not several layers down inside net/http.
 func TestHTTPOIDCDiscoveryFailureIsRefusedAtStartup(t *testing.T) {
 	cmd := NewRoot(registry.New(), "test")
-	cmd.SetArgs([]string{"mcp", "serve", "--http", "127.0.0.1:0",
+	cmd.SetArgs([]string{"mcp", "serve", "--as", "probe", "--http", "127.0.0.1:0",
 		"--oidc-issuer", "http://127.0.0.1:1", "--oidc-audience", "rta", "--oidc-subject", "alice"})
 	cmd.SetOut(new(strings.Builder))
 	cmd.SetErr(new(strings.Builder))
@@ -134,7 +134,7 @@ func TestHTTPRefusesAnUnreadableTokenFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	cmd := NewRoot(registry.New(), "test")
-	cmd.SetArgs([]string{"mcp", "serve", "--http", "127.0.0.1:0", "--token-file", path})
+	cmd.SetArgs([]string{"mcp", "serve", "--as", "probe", "--http", "127.0.0.1:0", "--token-file", path})
 	cmd.SetOut(new(strings.Builder))
 	cmd.SetErr(new(strings.Builder))
 	err := cmd.Execute()
@@ -160,7 +160,7 @@ func TestHTTPRefusesAGarbledOperatorsFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	cmd := NewRoot(registry.New(), "test")
-	cmd.SetArgs([]string{"mcp", "serve", "--http", "127.0.0.1:0",
+	cmd.SetArgs([]string{"mcp", "serve", "--as", "probe", "--http", "127.0.0.1:0",
 		"--token-file", tokens, "--operators", roster,
 		"--operators-url", "https://rta.example.com"})
 	cmd.SetOut(new(strings.Builder))
@@ -188,7 +188,7 @@ func TestHTTPOperatorsRequiresACanonicalURL(t *testing.T) {
 		t.Fatal(err)
 	}
 	cmd := NewRoot(registry.New(), "test")
-	cmd.SetArgs([]string{"mcp", "serve", "--http", "127.0.0.1:0",
+	cmd.SetArgs([]string{"mcp", "serve", "--as", "probe", "--http", "127.0.0.1:0",
 		"--token-file", tokens, "--operators", roster})
 	cmd.SetOut(new(strings.Builder))
 	cmd.SetErr(new(strings.Builder))

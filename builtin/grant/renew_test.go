@@ -42,7 +42,7 @@ func renew(t *testing.T, values map[string]any) (view.View, error) {
 // secret once could then reveal it again, and again, and `grant list` showed a
 // perfectly healthy row throughout.
 func TestRenewExtendsTimeAndNothingElse(t *testing.T) {
-	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	setup(t)
 	now := time.Now()
 	if verr := core.Save([]core.Grant{{
 		Target: "kv.get", Scope: "db-password", Profile: "staging",
@@ -93,7 +93,7 @@ func TestRenewExtendsTimeAndNothingElse(t *testing.T) {
 // quarter hour at a time, which is the one thing a time-boxed permission must
 // not permit.
 func TestRenewingRepeatedlyCannotOutliveTheCeiling(t *testing.T) {
-	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	setup(t)
 	firstConsent := time.Now().Add(-23 * time.Hour)
 	if verr := core.Save([]core.Grant{{
 		Target: "pg", Profile: "staging",
@@ -130,7 +130,7 @@ func TestRenewingRepeatedlyCannotOutliveTheCeiling(t *testing.T) {
 // Renew only touches grants that are still standing. A spent or expired one is
 // a fresh decision, which is `grant allow`.
 func TestRenewLeavesASpentGrantSpent(t *testing.T) {
-	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	setup(t)
 	now := time.Now()
 	if verr := core.Save([]core.Grant{{
 		Target: "kv.get", Issued: now, Expires: now.Add(time.Hour), MaxUses: 1, Uses: 1,
@@ -148,7 +148,7 @@ func TestRenewLeavesASpentGrantSpent(t *testing.T) {
 
 // Renewing one connection does not touch another.
 func TestRenewNarrowsToTheProfileNamed(t *testing.T) {
-	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	setup(t)
 	now := time.Now()
 	soon := now.Add(time.Minute)
 	if verr := core.Save([]core.Grant{
@@ -186,7 +186,7 @@ func TestRenewNarrowsToTheProfileNamed(t *testing.T) {
 // been allowed — a silent revocation nobody asked for, visible only by reading
 // `grant list` afterwards.
 func TestAllowingASecondConnectionKeepsTheFirst(t *testing.T) {
-	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	setup(t)
 	cfg := t.TempDir() + "/config.yaml"
 	if err := writeConfig(cfg, `
 profiles:
@@ -249,7 +249,7 @@ func writeConfig(path, body string) error {
 // The same selector as revoke: a plugin name takes every grant inside it.
 // `renew kv` used to match nothing while `revoke kv` took them all.
 func TestRenewOfAPluginTakesEveryGrantInsideIt(t *testing.T) {
-	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	setup(t)
 	now := time.Now()
 	if verr := core.Save([]core.Grant{
 		{Target: "kv.get", Scope: "a", Issued: now.Add(-time.Minute), Expires: now.Add(time.Minute), TTL: "2m"},
