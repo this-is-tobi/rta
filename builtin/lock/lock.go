@@ -21,8 +21,12 @@ import (
 	"fmt"
 	"strings"
 
+	"golang.org/x/term"
+
+	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/lockdown"
 	operatorid "github.com/this-is-tobi/rta/internal/operator"
+	"github.com/this-is-tobi/rta/internal/stdio"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -37,7 +41,7 @@ func Plugin() plugin.Plugin {
 	// name would land in it. The name is what a person reaching for the
 	// emergency brake actually knows, so the name is the positional.
 	kindHelp := "what to freeze: agent (a server's --as name, the default), credential (a bearer " +
-		"identity, exactly as the ledger's credential column shows it), or operator (a roster " +
+		"identity, exactly as the record's credential column shows it), or operator (a roster " +
 		"label on the operator channel)"
 	return plugin.Plugin{
 		Name:    "lock",
@@ -66,7 +70,7 @@ func Plugin() plugin.Plugin {
 					{Name: "note", Type: plugin.String,
 						Help: "shown to the locked party on every refusal — write it for them"},
 					{Name: "ttl", Type: plugin.String,
-						Help: "auto-lift after this window (30m, 2h); omit for a lock that stands until removed"},
+						Help: "lift itself after this window (30m, 2h); omit for a lock that stands until removed"},
 					{Name: "server", Type: plugin.String, Local: true,
 						Help: "place the lock on this remote server (a name from remotes.yaml)"},
 					operatorid.PassphraseField,
@@ -146,7 +150,11 @@ func runAdd(_ context.Context, req plugin.Request) (view.View, error) {
 	if server := req.String("server"); server != "" {
 		return remoteAdd(req, server, kind, name)
 	}
-	l, verr := lockdown.Build(kind, name, req.String("note"), req.String("ttl"), "terminal")
+	// Measured the way a grant's origin is, not assumed: `rta lock add`
+	// runs from any shell, and a lock placed by a script reads differently
+	// from one a person typed during an incident.
+	l, verr := lockdown.Build(kind, name, req.String("note"), req.String("ttl"),
+		grant.Origin(req.Surface(), term.IsTerminal(int(stdio.Real().Fd()))))
 	if verr != nil {
 		return nil, verr
 	}
