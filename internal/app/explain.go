@@ -80,9 +80,12 @@ func cardView(reg *registry.Registry, c plugin.Capability) view.View {
 		{Key: "cli", Value: cliForm(c)},
 		{Key: "mcp-tool", Value: toolName(c)},
 	}
-	if grant.Required(c, "") {
-		// The safety class alone no longer says what an agent may do, so the
-		// card has to say the rest of it.
+	// The safety class alone no longer says what an agent may do, so the
+	// card has to say the rest of it. Not for a capability that is never a
+	// tool: what a grant would cost an agent is not a fact about it, and a
+	// row saying "a person must run rta grant allow" under a tool row saying
+	// "none" sent readers to a command that refuses that grant as needless.
+	if !c.HumanOnly && grant.Required(c, "") {
 		need := "yes — a person must run `rta grant allow " + c.ID + "`"
 		if c.Scope != "" {
 			need += ", optionally naming one " + c.Scope
@@ -95,11 +98,12 @@ func cardView(reg *registry.Registry, c plugin.Capability) view.View {
 	// up "how do I invoke this" will see it, since that is the same page they
 	// consult to find out why an agent was refused.
 	if plugin.Profilable(c) {
-		pairs = append(pairs, view.Pair{
-			Key: "profiles",
-			Value: "--profile <name> runs this against a configured connection; over MCP that " +
-				"always needs `rta grant allow " + plugin.Namespace(c.ID) + " --profile <name>`",
-		})
+		profiles := "--profile <name> runs this against a configured connection"
+		if !c.HumanOnly {
+			profiles += "; over MCP that always needs `rta grant allow " +
+				plugin.Namespace(c.ID) + " --profile <name>`"
+		}
+		pairs = append(pairs, view.Pair{Key: "profiles", Value: profiles})
 	}
 	if c.Description != "" {
 		pairs = append(pairs, view.Pair{Key: "description", Value: c.Description})
