@@ -63,7 +63,7 @@ func Registry(conf func(plugin.Capability) map[string]any) (*registry.Registry, 
 		// they are asking for; grant is the standing policy beside it, and
 		// is handed the catalogue so what can be granted is derived from
 		// what is registered, never listed twice.
-		rtaagent.Plugin(),
+		rtaagent.Plugin(reg.Capabilities, reg.Artifact),
 		grant.Plugin(reg.Capabilities, reg.Artifact),
 		// operator is the person's other half of the same story: the identity
 		// with which they manage rta servers that are not this machine.
