@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -164,8 +165,11 @@ func TestAFullQueueRefusesAtOnceInsteadOfAskingAgain(t *testing.T) {
 		ConsentWait: 30 * time.Second,
 	})
 	var filled []*consent.Parked
+	// Distinct questions: an identical retry joins the one already parked
+	// and takes no slot, which is the other half of consent fatigue.
 	for i := 0; i < consent.MaxParked; i++ {
-		p, err := consent.Ask(consent.Call{Cap: "demo.item.reveal", Safety: "write"}, time.Minute)
+		p, err := consent.Ask(consent.Call{Cap: "demo.item.reveal", Safety: "write",
+			Scopes: []string{fmt.Sprintf("record-%d", i)}}, time.Minute)
 		if err != nil {
 			t.Fatalf("filling the queue: %v", err)
 		}

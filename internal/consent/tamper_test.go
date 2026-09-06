@@ -168,7 +168,7 @@ func TestAnEnormousRequestFileIsNotReadIntoMemory(t *testing.T) {
 	// bound exists, so a test built on them passes against code that has
 	// none. This one is real JSON, agrees with its own digest, and is
 	// therefore offered by any version of Scan that will read it.
-	second, err := Ask(aCall(), 5*time.Second)
+	second, err := Ask(distinct()(), 5*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -222,7 +222,7 @@ func TestAnUnparsableRequestIsSweptRatherThanAccumulating(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer parked.Close()
-	oversized, err := Ask(aCall(), 5*time.Second)
+	oversized, err := Ask(distinct()(), 5*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}

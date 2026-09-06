@@ -47,6 +47,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/this-is-tobi/rta/internal/atomicfile"
@@ -243,7 +244,53 @@ func decisionPath(id string) string { return filepath.Join(Dir(), id+".decision.
 // Parked is a request that has been written and is waiting for an answer.
 type Parked struct {
 	Request Request
+	// refs counts the callers waiting on this one request — see shared.
+	refs int
 }
+
+// shared is every request this process is waiting on, by digest, so that
+// an agent retrying the same call while its first attempt is still parked
+// joins that question instead of asking it again. The queue holds eight
+// questions, so five identical retries used to be five rows on the
+// operator's screen and three fewer slots for everybody else; one answer
+// now releases every attempt, and the retries never touch the disk.
+//
+// One process only, on purpose. Two servers parking the same call would
+// need the second to wait on a request file the first one removes when
+// its own wait ends, and Scan sweeps a decision whose request is gone —
+// so a cross-process join would lose its answer in the window between the
+// two. Two servers for one agent is the rare shape; one agent retrying
+// inside one server is the flood this closes.
+var (
+	sharedMu sync.Mutex
+	shared   = map[string]*Parked{}
+)
+
+// join hands back the request this process is already waiting on for the
+// same call, if there is one still inside its deadline.
+func join(digest string) *Parked {
+	sharedMu.Lock()
+	defer sharedMu.Unlock()
+	p := shared[sharedKey(digest)]
+	if p == nil || !time.Now().Before(p.Request.Deadline) {
+		return nil
+	}
+	p.refs++
+	return p
+}
+
+func park(req Request) *Parked {
+	sharedMu.Lock()
+	defer sharedMu.Unlock()
+	p := &Parked{Request: req, refs: 1}
+	shared[sharedKey(req.Digest)] = p
+	return p
+}
+
+// sharedKey scopes the join to the queue directory: the files a Parked
+// names live under one data directory, and a process that changes it —
+// every test does — must not hand back a request from the other one.
+func sharedKey(digest string) string { return Dir() + "\x00" + digest }
 
 // Ask writes the request. The caller must Close it.
 func Ask(c Call, wait time.Duration) (*Parked, error) {
@@ -252,6 +299,10 @@ func Ask(c Call, wait time.Duration) (*Parked, error) {
 	}
 	if wait > MaxWait {
 		wait = MaxWait
+	}
+	digest := c.Digest()
+	if p := join(digest); p != nil {
+		return p, nil
 	}
 	// Counting and writing happen under one lock, and that is not
 	// bookkeeping tidiness. A first version counted first and wrote after,
@@ -294,7 +345,7 @@ func Ask(c Call, wait time.Duration) (*Parked, error) {
 	}
 	now := time.Now()
 	req := Request{
-		ID: id, Digest: c.Digest(), Cap: c.Cap, Safety: c.Safety,
+		ID: id, Digest: digest, Cap: c.Cap, Safety: c.Safety,
 		Scopes: c.Scopes, Profile: c.Profile, Pin: c.Pin, Agent: c.Agent, Args: c.Args, Why: c.Why,
 		Preview: c.Preview,
 		AskedAt: now.UTC().Truncate(time.Second),
@@ -309,7 +360,7 @@ func Ask(c Call, wait time.Duration) (*Parked, error) {
 	if err := atomicfile.Write(requestPath(id), body, 0o600); err != nil {
 		return nil, err
 	}
-	return &Parked{Request: req}, nil
+	return park(req), nil
 }
 
 // ErrTooBig means the call cannot be described inside one request file.
@@ -375,6 +426,18 @@ func fit(req *Request) ([]byte, error) {
 // stopped waiting long ago.
 func (p *Parked) Close() {
 	if p == nil {
+		return
+	}
+	// The last caller out removes the files; until then another attempt
+	// is still polling for the answer they carry.
+	sharedMu.Lock()
+	p.refs--
+	last := p.refs <= 0
+	if last && shared[sharedKey(p.Request.Digest)] == p {
+		delete(shared, sharedKey(p.Request.Digest))
+	}
+	sharedMu.Unlock()
+	if !last {
 		return
 	}
 	_ = os.Remove(requestPath(p.Request.ID))
