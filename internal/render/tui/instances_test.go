@@ -113,6 +113,34 @@ func TestThePickerOffersInstanceRefs(t *testing.T) {
 	}
 }
 
+// Picking an instance seeds the form from it. The picker offers
+// `staging/analytics` exactly when a bare name would be refused, and the seed
+// looked that ref up as a profile name and found nothing — so the boxes
+// opened on the base configuration under a picker naming the instance, while
+// the run went through Lookup and reached it.
+func TestPickingAnInstanceSeedsTheFormFromIt(t *testing.T) {
+	m := profileModel(t, config.Config{Profiles: map[string]config.Profile{
+		"staging": {Plugins: map[string]config.Connection{
+			"db/main":      {Set: map[string]any{"host": "main.internal"}},
+			"db/analytics": {Set: map[string]any{"host": "analytics.internal"}},
+		}},
+	}})
+	c := dbPlugin().Capabilities[0]
+	name, seeded, _ := m.profileSeed(c, "staging/analytics")
+	if name != "staging/analytics" || seeded["host"] != "analytics.internal" {
+		t.Fatalf("seed = %q %v, want the analytics instance's host", name, seeded)
+	}
+	// And through the form itself, which is what the picker rebuilds on a
+	// move: the box shows the instance's host, marked as the environment's.
+	cf := m.runForm(c, c.Inputs, map[string]any{}, map[string]any{profileInput: "staging/analytics"})
+	if got := *cf.bindings["host"]; got != "analytics.internal" {
+		t.Errorf("the host box opened on %q under a picker naming staging/analytics", got)
+	}
+	if !cf.derived["host"] {
+		t.Error("the seeded host is not marked as the environment's, so it would outrank the layer it came from")
+	}
+}
+
 // A labeled instance's credential has no environment channel: the pane says
 // to use a `secrets:` reference, and the export-line copy offers nothing —
 // a pasted export that fills the default instead is the confident wrong
