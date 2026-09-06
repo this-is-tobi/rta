@@ -19,6 +19,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/consent"
 	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/guard"
+	"github.com/this-is-tobi/rta/internal/paths"
 	"github.com/this-is-tobi/rta/internal/pluginconf"
 	"github.com/this-is-tobi/rta/internal/plugindist"
 	"golang.org/x/term"
@@ -316,6 +317,24 @@ func doctorReport(reg *registry.Registry) view.View {
 		detail += fmt.Sprintf(" (%d built in, %d from $PATH)", len(reg.Plugins())-external, external)
 	}
 	add("capabilities", "ok", detail)
+
+	// Where the state lives, and who else on this machine can list it. Every
+	// file inside — grants, the record and its key, consent requests, the
+	// presence files — is written owner-only, but the directory itself was
+	// created 0755 until 0.11.0, and creating it tighter only helps a machine
+	// that has not run rta yet. On one that has, the names of every session,
+	// parked request and record segment are listable by any account, and
+	// this row is the only thing that says so.
+	dataDir := paths.Data()
+	switch info, err := os.Stat(dataDir); {
+	case err != nil:
+		add("data", "info", dataDir+" (nothing written yet)")
+	case runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0:
+		add("data", "warn", fmt.Sprintf("%s is mode %04o — other accounts on this machine can list "+
+			"what is in it; chmod 700 %s", dataDir, info.Mode().Perm(), dataDir))
+	default:
+		add("data", "ok", dataDir)
+	}
 
 	// Terminal.
 	if isTTY() {
