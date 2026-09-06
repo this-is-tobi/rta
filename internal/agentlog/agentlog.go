@@ -293,8 +293,13 @@ type Entry struct {
 	MarkLost bool `json:"markLost,omitempty"`
 	// Prev is the previous entry's MAC, and Seal this entry's. Together they
 	// are the chain — across files as well as within one.
+	//
+	// Seal is last in this struct and omitempty, and both matter: the seal
+	// covers the line's own bytes up to it, so it has to be the field the
+	// line ends with and has to vanish from the bytes being sealed. See
+	// sealedLine.
 	Prev string `json:"prev"`
-	Seal string `json:"seal"`
+	Seal string `json:"seal,omitempty"`
 }
 
 // Path is where the record being written lives. The full record is this
@@ -331,136 +336,86 @@ func segmentNumber(name string) (int, bool) {
 	return n, true
 }
 
-// rolled lists the full segments rta itself rolled, oldest first.
+// rolled sorts the numbered files in the data directory into the ones that
+// are part of this record and the ones that are not, and reads each own
+// segment's last entry on the way — which is the same read that decides.
 //
 // # Why this is not simply "what is in the directory"
 //
 // It was, and that made the retention policy something anybody who could
-// create a file could drive. The threat model this package states is a writer
-// that cannot read, and creating a file is the cheapest write there is: the
-// segment naming scheme is in this source, so `agent-log.90000.jsonl` is a
+// create a file could drive. The threat model this package states is a
+// writer that cannot read, and creating a file is the cheapest write there
+// is: the naming scheme is in this source, so `agent-log.90000.jsonl` is a
 // name anybody can produce, and eight of them made rta count far too many
 // segments at the next rotation and retire the oldest — which are the real
 // ones. It anchored each on the way out, so afterwards the record verified
 // clean and reported the loss as rta's own retention. The same write aimed
-// low instead of high stopped the record being written at all: a foreign
-// file is the first thing retire reaches for, reading its last entry fails,
-// and the failure propagates out through rotate to Append.
+// low instead of high stopped the record being written at all.
 //
-// So the bound is sealed rather than observed. `limit` is the highest segment
-// number rta has rolled, kept in the high-water mark under the ledger's own
-// key, and anything above it was not written by rta. Numbers at or below it
-// name files rta actually created — overwriting one of those is a *modify*,
-// which is what the chain has always caught.
+// # Why the answer is the file's own tail
 //
-// limit <= 0 means no mark has been written yet, which is a record from
-// before this existed. It falls back to trusting the directory for exactly as
-// long as that is true: the next Append seals a mark, and Append is the only
-// thing that creates segments.
-func rolled(b bound) (own, foreign []int, err error) {
+// A segment rta wrote ends in an entry rta sealed, and sealing needs the key
+// that the writer in the threat model cannot read. So the file answers the
+// question itself: verify its last line and the file has said whether it is
+// part of this record.
+//
+// This replaced a sealed high-water mark on segment numbers — one more
+// number in the head file, a settle() upgrade path for records written
+// before it, and an invariant that the mark had to be raised *before* the
+// rename that used it, on pain of rta disowning its own newest segment
+// after a crash in between. All of that existed to answer a question the
+// bytes on disk could answer. It also closes what the mark could not: a
+// planted file numbered *below* the mark was "rta's own", so a parseable
+// one under a retired number made rta report its own record as broken at
+// entry 1.
+func rolled(key []byte) (own []int, ends map[int]Entry, foreign []int, err error) {
 	entries, err := os.ReadDir(paths.Data())
 	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil, nil
+		return nil, nil, nil, nil
 	}
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
+	ends = map[int]Entry{}
 	for _, e := range entries {
 		n, ok := segmentNumber(e.Name())
 		if !ok {
 			continue
 		}
-		if b.foreign(n) {
+		last, verified := tailOf(key, segmentPath(n))
+		if !verified {
 			foreign = append(foreign, n)
 			continue
 		}
 		own = append(own, n)
+		ends[n] = last
 	}
 	sort.Ints(own)
 	sort.Ints(foreign)
-	return own, foreign, nil
+	return own, ends, foreign, nil
 }
 
-// bound is the sealed answer to "which segment numbers are rta's own".
+// tailOf reads a file's last entry and says whether it verifies — the one
+// question that decides whether the file is part of this record.
 //
-// One number, and deliberately only one. limit is the highest segment rta has
-// ever rolled, so anything above it is a file rta never created. Numbers at
-// or below it name files rta did create — writing over one of those is a
-// *modify*, which is what the chain has always caught.
-//
-// A second half was tried and taken back out: excluding numbers whose
-// retirement is recorded in an anchor, so that a file reappearing under a
-// retired name would be disowned. It reads well and it breaks a real case.
-// retire writes the anchor *before* removing the file, on purpose — a crash
-// the other way round would leave a gap with nothing recording it — so an
-// anchor for a file that is still present is the ordinary evidence of a crash
-// mid-retirement, and disowning that file makes rta report history as retired
-// while it is sitting on disk still chained to the rest. The attack that half
-// was aimed at is closed where it actually lives instead, in what retire
-// counts: see countable().
-// known is false only for a record whose mark predates the field, where the
-// directory is trusted exactly once — see settle().
-type bound struct {
-	limit int
-	known bool
-}
-
-func (b bound) foreign(n int) bool { return b.known && n > b.limit }
-
-// settle turns an unknown bound into a sealed one, by trusting the directory
-// the single time there is nothing better to trust.
-//
-// This is the upgrade from a record written before segment numbers were
-// sealed. Its existing segments are rta's own — the old binary had no bound
-// at all, so believing them is exactly the position the record was already
-// in, and refusing them would make rta disown files it wrote itself. What it
-// buys is that the trust is spent once: from the next line on, the answer is
-// sealed and a file appearing above it is somebody else's.
-func (b bound) settle() (bound, error) {
-	if b.known {
-		return b, nil
+// An unreadable file is not ours, and that is the safe direction on both
+// counts: it is not counted toward retention, so a file rta cannot read
+// never costs a real segment of history, and it is not walked as part of the
+// chain, so it cannot make rta accuse itself.
+func tailOf(key []byte, path string) (Entry, bool) {
+	line, e, err := lastLineIn(path)
+	if err != nil || e.Seq <= 0 || len(key) == 0 {
+		return Entry{}, false
 	}
-	nums, _, err := rolled(b)
+	return e, verifies(key, line, e)
+}
+
+// segments is every file the record is spread over, oldest first, with the
+// one being written last — and the numbered files that are not part of it.
+func segments(key []byte) (files []string, ends map[int]Entry, foreign []int, err error) {
+	nums, ends, foreign, err := rolled(key)
 	if err != nil {
-		return b, err
-	}
-	b.known = true
-	if len(nums) > 0 {
-		b.limit = nums[len(nums)-1]
-	}
-	return b, nil
-}
-
-// bounds reads the sealed bound, or returns one that permits everything when
-// there is no key to check it against.
-//
-// Permissive is the right zero here and is not a fail-open: with no key there
-// is no record either, because the key is created the first time anything is
-// appended. It is also what carries a ledger written before this existed —
-// its mark has no segment number, so limit is 0 and the directory is trusted
-// for exactly as long as it takes the next roll to seal one.
-func bounds() bound {
-	key, err := seal.Key(keyFile, false)
-	if err != nil {
-		return bound{}
-	}
-	if h, ok := readHead(key); ok && h.Seg != nil {
-		return bound{limit: *h.Seg, known: true}
-	}
-	return bound{}
-}
-
-// Segments returns every file the record is spread over, oldest first, with
-// the one being written last. Only files that exist are named.
-func Segments() ([]string, error) {
-	files, _, err := segments(bounds())
-	return files, err
-}
-
-func segments(b bound) (files []string, foreign []int, err error) {
-	nums, foreign, err := rolled(b)
-	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	files = make([]string, 0, len(nums)+1)
 	for _, n := range nums {
@@ -469,7 +424,27 @@ func segments(b bound) (files []string, foreign []int, err error) {
 	if _, err := os.Stat(Path()); err == nil {
 		files = append(files, Path())
 	}
-	return files, foreign, nil
+	return files, ends, foreign, nil
+}
+
+// Segments returns every file the record is spread over, oldest first, with
+// the one being written last. Only files that exist are named.
+func Segments() ([]string, error) {
+	key, err := seal.Key(keyFile, false)
+	if errors.Is(err, seal.ErrMissing) {
+		// No key means no record rta wrote, so no numbered file is one of
+		// its segments. The active file is still named if it is there, so a
+		// caller sees exactly what it can honestly be shown.
+		if _, statErr := os.Stat(Path()); statErr == nil {
+			return []string{Path()}, nil
+		}
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	files, _, _, err := segments(key)
+	return files, err
 }
 
 // anchor records the end of a segment rta retired: what the surviving chain
@@ -585,21 +560,7 @@ type head struct {
 	Seq  int64     `json:"seq"`
 	Seal string    `json:"seal"`
 	At   time.Time `json:"at"`
-	// Seg is the highest segment number rta has rolled, which is what makes
-	// "which files are the record" a sealed answer rather than a directory
-	// listing. See rolled() for the two attacks that needed it.
-	//
-	// **A pointer, because zero is a real answer and absent is a different
-	// one.** Zero means rta has rolled nothing, so every file named like a
-	// segment is somebody else's — which is the state of a fresh install and
-	// exactly when the bound most needs to hold. Absent means the mark was
-	// written before this field existed, where the only safe reading is to
-	// trust the directory once and seal an answer. Collapsing them into a
-	// plain int made a fresh record permissive until its first rotation,
-	// which on the shipped policy is about twenty-eight thousand calls away
-	// and for most machines is never.
-	Seg *int   `json:"segment,omitempty"`
-	MAC string `json:"mac"`
+	MAC  string    `json:"mac"`
 }
 
 func headPath() string { return filepath.Join(paths.Data(), headFile) }
@@ -615,8 +576,8 @@ func headMAC(key []byte, h head) (string, error) {
 
 // writeHead records the new end of the record, atomically so that a crash
 // leaves the old mark rather than half of a new one.
-func writeHead(key []byte, e Entry, seg int) error {
-	h := head{Seq: e.Seq, Seal: e.Seal, At: time.Now().UTC().Truncate(time.Second), Seg: &seg}
+func writeHead(key []byte, e Entry) error {
+	h := head{Seq: e.Seq, Seal: e.Seal, At: time.Now().UTC().Truncate(time.Second)}
 	mac, err := headMAC(key, h)
 	if err != nil {
 		return err
@@ -704,22 +665,14 @@ func Append(e Entry) (err error) {
 	// through: rotate may raise it, and the mark written at the end has to
 	// record whatever it ends up being.
 	//
-	// **Raised before lastEntry, not after.** A roll creates a segment
-	// numbered one above the old high-water, so reading the record's end
-	// against the *old* bound would skip the file this very call just made —
-	// the chain would resume from the segment before it and hand out sequence
-	// numbers that are already in use. Caught by every rotation test at once,
-	// which is what those tests are for.
-	b, err := bounds().settle()
-	if err != nil {
+	// Rotation first, then the read: a roll renames the active file to a
+	// numbered one, and the entry this call is about to write has to chain
+	// to whatever ended up last — which after a roll is the tail of the file
+	// that was just renamed.
+	if err := rotate(key); err != nil {
 		return err
 	}
-	seg, err := rotate(key, b)
-	if err != nil {
-		return err
-	}
-	b.limit = seg
-	last, err := lastEntry(b)
+	last, err := lastEntry(key)
 	if err != nil {
 		return err
 	}
@@ -764,11 +717,11 @@ func Append(e Entry) (err error) {
 			return err
 		}
 	}
-	e.Seal = seal.MAC(key, append([]byte(e.Prev), body...))
-	line, err := json.Marshal(e)
-	if err != nil {
-		return err
+	line, mac := sealedLine(key, e, body)
+	if line == nil {
+		return fmt.Errorf("sealing the entry")
 	}
+	e.Seal = mac
 	f, err := os.OpenFile(Path(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
@@ -784,7 +737,7 @@ func Append(e Entry) (err error) {
 	// by its entry would report a record that had been rolled back, which is
 	// the alarm this exists to raise — so the crash window is one entry of
 	// *under*-reporting rather than a false accusation.
-	return writeHead(key, e, seg)
+	return writeHead(key, e)
 }
 
 // rotate rolls the active file aside once it is full and retires the oldest
@@ -796,77 +749,36 @@ func Append(e Entry) (err error) {
 // roll whose number never reaches the mark is a segment rta would refuse to
 // recognise on the next call — the record would appear to lose its most
 // recent file.
-func rotate(key []byte, b bound) (int, error) {
+func rotate(key []byte) error {
 	info, err := os.Stat(Path())
 	if errors.Is(err, os.ErrNotExist) {
-		return b.limit, nil
+		return nil
 	}
 	if err != nil {
-		return b.limit, err
+		return err
 	}
 	if info.Size() < maxSegment {
-		return b.limit, nil
+		return nil
 	}
-	nums, _, err := rolled(b)
-	if err != nil {
-		return b.limit, err
+	// One past the highest number on disk, ours or not. Skipping over a file
+	// rta does not recognise costs nothing — the record has never needed its
+	// segment numbers to be contiguous — and reusing one would overwrite
+	// whatever is there, which for a segment that fails to verify is the
+	// evidence that it does.
+	next := 1
+	entries, err := os.ReadDir(paths.Data())
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
 	}
-	// The next number is one past the highest rta has *ever* used, not one
-	// past the highest still on disk: retirement removes from the low end, so
-	// those agree, and taking the max of both is what keeps them agreeing if
-	// they ever stop.
-	next := b.limit + 1
-	if len(nums) > 0 && nums[len(nums)-1] >= next {
-		next = nums[len(nums)-1] + 1
-	}
-	if next < 1 {
-		next = 1
-	}
-	// **Sealed before the rename, not after**, and the ordering is the whole
-	// correctness of the bound. The mark is what says which numbers are rta's;
-	// raising it after the rename leaves a window in which rta's own freshly
-	// rolled segment is numbered above its own high-water — so a crash there
-	// would leave the newest segment looking foreign, the chain would resume
-	// from the segment before it, and the sequence numbers would collide with
-	// ones already written. Raising it first cannot fail that way: a crash
-	// between the two leaves a number nothing uses, and a skipped number costs
-	// nothing because the record has never needed them to be contiguous.
-	if err := bumpSegment(key, next); err != nil {
-		return b.limit, err
+	for _, e := range entries {
+		if n, ok := segmentNumber(e.Name()); ok && n >= next {
+			next = n + 1
+		}
 	}
 	if err := os.Rename(Path(), segmentPath(next)); err != nil {
-		return next, err
-	}
-	b.limit = next
-	return next, retire(key, b)
-}
-
-// bumpSegment raises the sealed high-water on segment numbers, leaving where
-// the record ends untouched.
-func bumpSegment(key []byte, n int) error {
-	h, ok := readHead(key)
-	if !ok {
-		// No mark yet, or one that does not verify. The record's end comes
-		// from the file itself, which is what Verify would fall back to
-		// anyway — and writing a mark that claims a sequence rta cannot see
-		// would be an accusation rather than a bound.
-		last, err := lastEntry(bound{limit: n})
-		if err != nil {
-			return err
-		}
-		h = head{Seq: last.Seq, Seal: last.Seal}
-	}
-	h.Seg, h.At = &n, time.Now().UTC().Truncate(time.Second)
-	mac, err := headMAC(key, h)
-	if err != nil {
 		return err
 	}
-	h.MAC = mac
-	body, err := json.Marshal(h)
-	if err != nil {
-		return err
-	}
-	return atomicfile.Write(headPath(), body, 0o600)
+	return retire(key)
 }
 
 // retire drops the oldest segments past keepSegments, anchoring each before
@@ -878,12 +790,11 @@ func bumpSegment(key []byte, n int) error {
 // it can actually see and never consults an anchor it does not need. The
 // other order would leave a gap with nothing recording it, which is exactly
 // what this mechanism exists to distinguish from tampering.
-func retire(key []byte, b bound) error {
-	all, _, err := rolled(b)
+func retire(key []byte) error {
+	nums, ends, _, err := rolled(key)
 	if err != nil {
 		return err
 	}
-	nums, ends := countable(all)
 	for len(nums) > keepSegments {
 		p, last := segmentPath(nums[0]), ends[nums[0]]
 		nums = nums[1:]
@@ -904,45 +815,6 @@ func retire(key []byte, b bound) error {
 	return nil
 }
 
-// countable is the segments retention is allowed to count, with each one's
-// last entry, which retire needs anyway to anchor it.
-//
-// **A file whose end cannot be read is neither counted nor deleted**, and
-// both halves of that are load-bearing.
-//
-// Not deleted, because the anchor that would record its retirement is derived
-// from the last entry that cannot be read — and removing a segment without an
-// anchor is precisely the gap this whole mechanism exists to distinguish from
-// tampering. The first version returned the error instead, which put the
-// entire record at the mercy of one unreadable file: retire runs inside
-// rotate, which runs inside Append, so it came back out as "this call could
-// not be recorded" for every call after the next roll. Retention is
-// housekeeping and must never be the reason a call goes unrecorded.
-//
-// Not counted, because a file with no readable entry is not part of the chain
-// and must not be able to push a file that *is* out of it. Skipping it while
-// still counting it is what the version before this did, and it left a
-// standing cost: one file dropped into the directory under a segment name is
-// unreadable forever, so the count sits permanently one above the policy and
-// rta retires one more file of real history to compensate. Counting only what
-// could actually be retired makes an unreadable file cost nothing at all.
-func countable(all []int) ([]int, map[int]Entry) {
-	nums := make([]int, 0, len(all))
-	ends := make(map[int]Entry, len(all))
-	for _, n := range all {
-		last, err := lastEntryIn(segmentPath(n))
-		if err != nil {
-			fmt.Fprintf(os.Stderr,
-				"rta: %s is not counted as part of the record — its last entry cannot be read (%v)\n",
-				segmentPath(n), err)
-			continue
-		}
-		nums = append(nums, n)
-		ends[n] = last
-	}
-	return nums, ends
-}
-
 // sealOf recomputes an entry's MAC: the entry as it was marshalled with an
 // empty Seal, prefixed by its predecessor's.
 //
@@ -960,14 +832,90 @@ func sealOf(key []byte, e Entry) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return seal.MAC(key, append([]byte(prev), body...)), nil
+	// The writer this reproduces marshalled Seal unconditionally, so the
+	// bytes it sealed ended in an empty seal field. Rebuilt here rather than
+	// held in place by a struct tag, so the shape rta writes today is free
+	// to change without dragging the old one along with it.
+	legacy := make([]byte, 0, len(body)+11)
+	legacy = append(legacy, body[:len(body)-1]...)
+	legacy = append(legacy, `,"seal":""}`...)
+	return seal.MAC(key, append([]byte(prev), legacy...)), nil
+}
+
+// sealedLine renders one entry as the bytes that go on disk: its own JSON,
+// with the seal spliced in as the last field, computed over everything
+// before it.
+//
+// **The seal covers the line, not the struct it was parsed from**, and that
+// is the difference between a record that survives this program changing and
+// one that does not. sealOf re-marshals a *parsed* Entry, so verification
+// only agrees with the writer while marshal(parse(line)) reproduces the
+// original bytes — which makes every field's json tag, omitempty and
+// position load-bearing forever, and any change to Entry read as every
+// existing record having been tampered with. One such change already needed
+// a dedicated test to prove it had not broken anything (legacy_test.go), and
+// that test is a warning rather than a solution: the next change would need
+// another, and the one after that would have to be refused.
+//
+// Sealing the bytes also covers fields this binary does not know about. A
+// record written by a newer rta keeps verifying here rather than silently
+// losing whatever the parse dropped.
+func sealedLine(key []byte, e Entry, body []byte) ([]byte, string) {
+	mac := seal.MAC(key, append([]byte(e.Prev), body...))
+	quoted, err := json.Marshal(mac)
+	if err != nil {
+		return nil, ""
+	}
+	line := make([]byte, 0, len(body)+len(quoted)+9)
+	line = append(line, body[:len(body)-1]...)
+	line = append(line, `,"seal":`...)
+	line = append(line, quoted...)
+	return append(line, '}'), mac
+}
+
+// unsealed splits a stored line back into the bytes its seal covers and the
+// seal itself. ok is false for a line that does not end in a seal field,
+// which is every line rta did not write.
+func unsealed(line []byte, sealed string) ([]byte, bool) {
+	quoted, err := json.Marshal(sealed)
+	if err != nil {
+		return nil, false
+	}
+	suffix := append([]byte(`,"seal":`), quoted...)
+	suffix = append(suffix, '}')
+	if !bytes.HasSuffix(line, suffix) {
+		return nil, false
+	}
+	body := make([]byte, 0, len(line)-len(suffix)+1)
+	body = append(body, line[:len(line)-len(suffix)]...)
+	return append(body, '}'), true
+}
+
+// verifies reports whether one stored line carries the seal rta would have
+// written for it.
+//
+// Two forms are accepted, and the second is a bridge rather than a policy. A
+// line rta writes today is sealed over its own bytes (sealedLine). A line
+// written before that was sealed over the re-marshalled struct, and the only
+// alternative to still accepting those is telling every operator who
+// upgrades that their audit record has been tampered with — which is a false
+// alarm, and a false alarm on this particular screen is worse than the
+// duplication here. Both forms need the key, so neither weakens anything.
+func verifies(key []byte, line []byte, e Entry) bool {
+	if body, ok := unsealed(line, e.Seal); ok {
+		if seal.Equal(e.Seal, seal.MAC(key, append([]byte(e.Prev), body...))) {
+			return true
+		}
+	}
+	want, err := sealOf(key, e)
+	return err == nil && seal.Equal(e.Seal, want)
 }
 
 // lastEntry reads the final entry of the record: the active file's last
 // line, or — in the moment after a roll, when the active file does not yet
 // exist — the last line of the newest segment. Getting that fallback wrong
 // would start a second chain at every rotation.
-func lastEntry(b bound) (Entry, error) {
+func lastEntry(key []byte) (Entry, error) {
 	e, err := lastEntryIn(Path())
 	if err != nil {
 		return Entry{}, err
@@ -975,30 +923,37 @@ func lastEntry(b bound) (Entry, error) {
 	if e.Seq > 0 {
 		return e, nil
 	}
-	nums, _, err := rolled(b)
+	nums, ends, _, err := rolled(key)
 	if err != nil || len(nums) == 0 {
 		return Entry{}, err
 	}
-	return lastEntryIn(segmentPath(nums[len(nums)-1]))
+	return ends[nums[len(nums)-1]], nil
 }
 
 // lastEntryIn reads one file's final entry without reading the whole file.
 func lastEntryIn(path string) (Entry, error) {
+	_, e, err := lastLineIn(path)
+	return e, err
+}
+
+// lastLineIn reads one file's final entry and the bytes it was stored as,
+// which is what verifying its seal needs.
+func lastLineIn(path string) ([]byte, Entry, error) {
 	f, err := os.Open(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return Entry{}, nil
+		return nil, Entry{}, nil
 	}
 	if err != nil {
-		return Entry{}, err
+		return nil, Entry{}, err
 	}
 	defer f.Close()
 	info, err := f.Stat()
 	if err != nil {
-		return Entry{}, err
+		return nil, Entry{}, err
 	}
 	size := info.Size()
 	if size == 0 {
-		return Entry{}, nil
+		return nil, Entry{}, nil
 	}
 	// The window grows until a line parses or the whole file has been
 	// read: a row larger than the window — written before rows were
@@ -1010,13 +965,13 @@ func lastEntryIn(path string) (Entry, error) {
 		}
 		buf := make([]byte, size-start)
 		if _, err := f.ReadAt(buf, start); err != nil && !errors.Is(err, io.EOF) {
-			return Entry{}, err
+			return nil, Entry{}, err
 		}
 		lines := bytes.Split(bytes.TrimRight(buf, "\n"), []byte("\n"))
 		for i := len(lines) - 1; i >= 0; i-- {
 			var e Entry
 			if json.Unmarshal(lines[i], &e) == nil && e.Seq > 0 {
-				return e, nil
+				return bytes.TrimSpace(lines[i]), e, nil
 			}
 		}
 		if start == 0 {
@@ -1025,7 +980,7 @@ func lastEntryIn(path string) (Entry, error) {
 	}
 	// A file that holds no parseable entry at all: appending with a zero
 	// predecessor would silently start a second chain, so say so instead.
-	return Entry{}, fmt.Errorf("%s holds no readable entry", path)
+	return nil, Entry{}, fmt.Errorf("%s holds no readable entry", path)
 }
 
 // Read returns the most recent entries, newest last, at most limit of them.
@@ -1229,19 +1184,15 @@ func Verify() (Report, error) {
 	}
 	defer release()
 
-	// .settle(), not plain bounds(), matching the call Append always makes
-	// before trusting the directory listing — settle is a no-op once the
-	// bound is already known (its own first line), so this only changes
-	// anything during the narrow, one-time upgrade window before any real
-	// Append has ever settled it, and even then it is a one-call answer:
-	// settle never writes anything, so it buys this call the same
-	// trust-the-directory-once reasoning Append gets, not a persisted
-	// decision later calls can rely on.
-	b, err := bounds().settle()
-	if err != nil {
-		return rep, err
+	// Read before the file list, because the file list is decided by it: a
+	// numbered file is part of this record when its last entry verifies
+	// under this key. Missing is handled below, where "there is no key" and
+	// "there is no record" are told apart.
+	key, keyErr := seal.Key(keyFile, false)
+	if keyErr != nil && !errors.Is(keyErr, seal.ErrMissing) {
+		return rep, keyErr
 	}
-	files, foreign, err := segments(b)
+	files, _, foreign, err := segments(key)
 	if err != nil {
 		return rep, err
 	}
@@ -1253,12 +1204,8 @@ func Verify() (Report, error) {
 		// called, or one whose record was removed wholesale — and with no
 		// chain left to break, the high-water mark is the only thing that can
 		// tell them apart.
-		key, err := seal.Key(keyFile, false)
-		if errors.Is(err, seal.ErrMissing) {
+		if keyErr != nil {
 			return rep, nil
-		}
-		if err != nil {
-			return rep, err
 		}
 		if h, ok := readHead(key); ok && h.Seq > 0 {
 			rep.Broken = 1
@@ -1273,12 +1220,8 @@ func Verify() (Report, error) {
 			rep.Size += info.Size()
 		}
 	}
-	key, err := seal.Key(keyFile, false)
-	if errors.Is(err, seal.ErrMissing) {
+	if keyErr != nil {
 		return rep, fmt.Errorf("%s exists with no seal key beside it, so it was not written by rta", Path())
-	}
-	if err != nil {
-		return rep, err
 	}
 	anchors, badAnchors, err := readAnchors(key)
 	if err != nil {
@@ -1340,12 +1283,7 @@ func Verify() (Report, error) {
 			case e.Prev != prev:
 				rep.Broken, rep.Why = e.Seq, "it does not follow the entry before it"
 			default:
-				want, err := sealOf(key, e)
-				if err != nil {
-					f.Close()
-					return rep, err
-				}
-				if !seal.Equal(e.Seal, want) {
+				if !verifies(key, []byte(line), e) {
 					rep.Broken, rep.Why = e.Seq, "its contents do not match its seal"
 				}
 			}

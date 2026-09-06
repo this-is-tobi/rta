@@ -96,3 +96,48 @@ func TestARecordWrittenBeforeTheCodeSplitStillVerifies(t *testing.T) {
 		t.Fatalf("the new row does not chain to the old one: %q vs %q", entries[1].Prev, old.Seal)
 	}
 }
+
+// The point of sealing the line rather than the struct: a record written by
+// a binary that knows a field this one does not must still verify, and must
+// not have that field quietly dropped from what was checked.
+//
+// The old scheme could not do this. It re-marshalled the parsed entry, so an
+// unknown field vanished from the bytes being MACed and every such line read
+// as tampered — which is the same failure an operator would see after
+// downgrading, or after any future change to Entry.
+func TestALineFromANewerRTAStillVerifies(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	key, err := seal.Key(keyFile, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Exactly what a newer binary would write: this entry's fields, plus one
+	// it invented, with the seal last and computed over all of it.
+	body := []byte(`{"seq":1,"at":"2026-08-01T12:00:00Z","capability":"sys.cpu",` +
+		`"outcome":"ran","auth":"open","prev":"","future":"a field this rta has never heard of"}`)
+	mac := seal.MAC(key, body)
+	quoted, err := json.Marshal(mac)
+	if err != nil {
+		t.Fatal(err)
+	}
+	line := append(body[:len(body)-1:len(body)-1], `,"seal":`...)
+	line = append(line, quoted...)
+	line = append(line, '}', '\n')
+	if err := os.WriteFile(Path(), line, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Append(Entry{Cap: "sys.mem", Outcome: Ran, Auth: Open}); err != nil {
+		t.Fatal(err)
+	}
+	rep, err := Verify()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Broken != 0 {
+		t.Fatalf("a line carrying an unknown field read as tampered: %+v", rep)
+	}
+	if rep.Entries != 2 {
+		t.Fatalf("entries = %d, want both", rep.Entries)
+	}
+}

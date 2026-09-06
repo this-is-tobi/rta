@@ -65,25 +65,20 @@ func TestFilesRtaNeverWroteCannotDriveItsRetention(t *testing.T) {
 	// afterwards the record verifies clean and reports the loss as rta's own
 	// retention: history erased, and the erasure laundered.
 	//
-	// Aimed both high and low, because the two are excluded by different
-	// halves of the bound: above the sealed high-water is a number rta has
-	// never rolled, and a number it rolled and retired names a file it
-	// deleted.
+	// Aimed both high and low. Under the sealed high-water these were two
+	// different exclusions and only the high one could be named; the file's
+	// own tail answers both the same way, so rta now says so either way —
+	// which is worth having, because a file pretending to be part of the
+	// record is worth looking into whatever it failed to achieve.
 	control := workload(t, 3, nil)
 
 	for _, tc := range []struct {
 		name  string
 		first int
-		// named is how many of the eight Verify should call out. The two
-		// halves are closed by different mechanisms and only one of them can
-		// name what it excluded: a number above the sealed high-water is
-		// provably not rta's, while a number at or below it is one rta did
-		// once use, so the file is refused on the ground that it holds no
-		// entry rather than on the ground of its name.
 		named int
 	}{
 		{"above anything rta has rolled", 90000, 8},
-		{"over numbers rta has already retired", 1, 0},
+		{"over numbers rta has already retired", 1, 8},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := workload(t, 3, func(t *testing.T) {
@@ -148,109 +143,136 @@ func TestTheBoundHoldsBeforeTheFirstRotation(t *testing.T) {
 	}
 }
 
-func TestARecordFromBeforeTheBoundIsAdoptedRatherThanDisowned(t *testing.T) {
-	// The upgrade. A mark written before segment numbers were sealed has none,
-	// and the segments beside it are rta's own — the binary that wrote them
-	// had no bound at all, so believing them is the position the record is
-	// already in, and refusing them would make rta disown files it wrote.
-	// The trust is spent once: the next append seals an answer.
+// A record written by an older rta — whose mark carried a sealed segment
+// high-water this build no longer reads, and whose entries were sealed over
+// the re-marshalled struct rather than the line — is still rta's own record.
+//
+// It is adopted because its files say so: every segment ends in an entry
+// this key verifies, which is the whole of the question now. Nothing has to
+// be trusted once and sealed afterwards, which is what the upgrade path this
+// replaced existed to do.
+func TestARecordFromAnOlderRTAIsStillItsOwn(t *testing.T) {
 	isolate(t)
 	small(t, 1<<10, 40)
 	fill(t, 20)
-	own, _, err := rolled(bounds())
+	key := recordKey(t)
+	own, _, _, err := rolled(key)
 	if err != nil || len(own) < 2 {
 		t.Fatalf("need a rolled record: %v %v", err, own)
 	}
 
-	// Strip the segment number, the way a mark from the older build carries
-	// none, and re-seal it so it still verifies.
-	key, err := seal.Key(keyFile, false)
-	if err != nil {
-		t.Fatal(err)
-	}
+	// The mark as the older build wrote it: a segment number this build does
+	// not read, and no idea that it should not be there.
 	h, ok := readHead(key)
 	if !ok {
 		t.Fatal("no mark to age")
 	}
-	h.Seg, h.MAC = nil, ""
-	mac, err := headMAC(key, h)
+	aged := map[string]any{"seq": h.Seq, "seal": h.Seal, "at": h.At, "segment": own[len(own)-1]}
+	body, err := json.Marshal(aged)
 	if err != nil {
 		t.Fatal(err)
 	}
-	h.MAC = mac
-	body, _ := json.Marshal(h)
+	var replayed head
+	if err := json.Unmarshal(body, &replayed); err != nil {
+		t.Fatal(err)
+	}
+	mac, err := headMAC(key, replayed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayed.MAC = mac
+	body, _ = json.Marshal(replayed)
 	if err := os.WriteFile(headPath(), body, 0o600); err != nil {
 		t.Fatal(err)
 	}
 
 	before, err := Verify()
 	if err != nil || before.Broken != 0 {
-		t.Fatalf("an aged mark broke the record it belongs to: %v %+v", err, before)
+		t.Fatalf("an older mark broke the record it belongs to: %v %+v", err, before)
 	}
 	if before.Entries != 20 {
 		t.Fatalf("the inherited record holds %d entries, wrote 20", before.Entries)
 	}
-	// One append settles it, and the segments rta already had are still its
-	// own afterwards.
 	if err := Append(pad()); err != nil {
 		t.Fatal(err)
 	}
-	if b := bounds(); !b.known || b.limit != own[len(own)-1] {
-		t.Fatalf("bound = %+v, want it settled at the highest segment already on disk (%d)",
-			b, own[len(own)-1])
-	}
 	after, err := Verify()
 	if err != nil || after.Broken != 0 || after.Entries != 21 {
-		t.Fatalf("settling the bound cost the record: %v %+v", err, after)
+		t.Fatalf("appending to an inherited record cost it: %v %+v", err, after)
 	}
-	// And from here on a planted file is somebody else's.
+	if len(after.Foreign) != 0 {
+		t.Fatalf("rta disowned its own segments: %v", after.Foreign)
+	}
+	// And a planted file is still somebody else's — including a *parseable*
+	// one, which is the case the sealed high-water could not reach: a number
+	// at or below the mark was "rta's own", so a planted file that looked
+	// like an entry made rta report its own record as broken at entry 1.
 	forge(t, own[len(own)-1]+50, "not a record\n")
+	forge(t, own[len(own)-1]+51,
+		`{"seq":1,"at":"2026-08-01T12:00:00Z","capability":"kv.get","outcome":"ran","auth":"open","prev":"","seal":"deadbeef"}`+"\n")
 	rep, _ := Verify()
-	if len(rep.Foreign) != 1 {
-		t.Fatalf("after settling, a planted file is still counted as rta's own: %+v", rep.Foreign)
+	if len(rep.Foreign) != 2 {
+		t.Fatalf("a planted file was counted as rta's own: %+v", rep.Foreign)
+	}
+	if rep.Broken != 0 {
+		t.Fatalf("a planted file made rta accuse itself: %+v", rep)
 	}
 }
 
-func TestNoSegmentIsRolledThatCouldNotBeSealedFirst(t *testing.T) {
-	// The ordering inside rotate, which a probe found untested: the segment
-	// number is sealed *before* the rename.
-	//
-	// Sealing after would leave a window holding rta's own freshly rolled
-	// segment above rta's own bound — so the next append would not see it,
-	// would take the record's end from the segment before it, and would hand
-	// out sequence numbers already in use. Sealing first cannot fail that
-	// way: the worst it leaves is a number nothing uses.
-	//
-	// Made testable by taking the seal away. A directory where the mark
-	// belongs is a write that cannot succeed, so this asserts the thing the
-	// ordering exists for — a roll rta could not record is a roll rta does
-	// not make.
+// recordKey is the key this record is sealed under, for the tests that ask
+// the ownership question directly.
+func recordKey(t *testing.T) []byte {
+	t.Helper()
+	key, err := seal.Key(keyFile, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return key
+}
+
+// A roll used to need its segment number sealed into the mark *before* the
+// rename, or a crash in between left rta's own newest segment looking like
+// somebody else's — the trickiest invariant in this package, and one nothing
+// in the rename could enforce.
+//
+// There is nothing to seal now, so the crash window is gone rather than
+// narrow: the renamed file is recognised because its last entry verifies,
+// which was already true the moment it was written. This is that state,
+// reached the only way a crash could reach it.
+func TestARollThatCrashedBeforeAnythingElseIsStillTheRecord(t *testing.T) {
 	isolate(t)
 	small(t, 1<<10, 40)
 	fill(t, 20)
-	before, _, err := rolled(bounds())
+	key := recordKey(t)
+	own, _, _, err := rolled(key)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	if err := os.Remove(headPath()); err != nil {
+	next := 1
+	if len(own) > 0 {
+		next = own[len(own)-1] + 1
+	}
+	// The rename, and then nothing: no mark written, no entry appended.
+	if err := os.Rename(Path(), segmentPath(next)); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Mkdir(headPath(), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	// Enough to be well past the roll threshold, so this is a rotation that
-	// wants to happen and cannot be sealed.
-	for i := 0; i < 20; i++ {
-		_ = Append(pad())
-	}
-	after, _, err := rolled(bound{})
+	after, _, foreign, err := rolled(key)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(after) != len(before) {
-		t.Fatalf("rta rolled %d segments it could not seal a number for (had %d, now %d)",
-			len(after)-len(before), len(before), len(after))
+	if len(foreign) != 0 {
+		t.Fatalf("rta disowned the segment it had just rolled: %v", foreign)
+	}
+	if len(after) != len(own)+1 {
+		t.Fatalf("segments = %v, want the rolled one included", after)
+	}
+	// And the record goes on from there, at the right sequence.
+	if err := Append(pad()); err != nil {
+		t.Fatal(err)
+	}
+	rep, err := Verify()
+	if err != nil || rep.Broken != 0 || rep.Entries != 21 {
+		t.Fatalf("appending after the interrupted roll: %v %+v", err, rep)
 	}
 }
 
@@ -287,7 +309,7 @@ func TestACorruptSegmentIsLeftAloneRatherThanEndingTheRecord(t *testing.T) {
 	small(t, 1<<10, 2)
 	fill(t, 30)
 
-	own, _, err := rolled(bounds())
+	own, _, _, err := rolled(recordKey(t))
 	if err != nil || len(own) == 0 {
 		t.Fatalf("no segments to damage: %v %v", err, own)
 	}
