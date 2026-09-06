@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.12.0](https://github.com/this-is-tobi/rta/compare/v0.11.0...v0.12.0) (2026-09-06)
+
+
+### Features
+
+* **agent:** presence says whether a server asks, and where its paths are confined ([c92ba63](https://github.com/this-is-tobi/rta/commit/c92ba6376504f694ac4a2c0a9ff40fb832484609))
+* **consent:** a retry of a parked call joins the same question ([92bc4bf](https://github.com/this-is-tobi/rta/commit/92bc4bff67dcaa1fd8e74fcaa320df10b3ba637e))
+* **doctor:** standing locks are a row ([32cf950](https://github.com/this-is-tobi/rta/commit/32cf950c534cb67ad1951d879013fa4df971d1ae))
+* **doctor:** the data directory's mode is a row ([9716083](https://github.com/this-is-tobi/rta/commit/97160836e05743f8dd6f1a74dac7a733d8d0b114))
+* **mcp:** a caller that keeps being refused is answered slower, and so is a rejected bearer ([bbd1970](https://github.com/this-is-tobi/rta/commit/bbd1970c302a4730f9e6c80c204aaaef8c763caa))
+* **plugin:** an input can say it points at another machine, or is only read beside one ([972d09b](https://github.com/this-is-tobi/rta/commit/972d09b904140e135e04d55fac226cc3a1787f56))
+* **tui:** the lock key fills the agent in, the queue refreshes, and a row's form stays local ([b332fd6](https://github.com/this-is-tobi/rta/commit/b332fd66fe6e1e063ad466ec4ff41ea61b40c165))
+
+
+### Bug Fixes
+
+* **agent:** the detailed overview's empty sections are sentences ([0e8538c](https://github.com/this-is-tobi/rta/commit/0e8538cfe8dfa4a941b18e28fad635ac953d698a))
+* **agent:** the record's section is addressed as record ([1f0507b](https://github.com/this-is-tobi/rta/commit/1f0507bb655c3c9a654a9e0a0b5e78df57817318))
+* **app:** a missing argument is named, with the line to type ([994a59f](https://github.com/this-is-tobi/rta/commit/994a59f53206e9aa6143758e9e1476dd3ba18be9))
+* **app:** long helps flow to the terminal's width ([deb2e62](https://github.com/this-is-tobi/rta/commit/deb2e62d8a5b3a33f7e0f9f520b6d56968dfa3fa))
+* **explain:** a human-only card no longer prices a grant it would refuse ([18e0a0c](https://github.com/this-is-tobi/rta/commit/18e0a0ced0c01da42be0e0ebdf53c5b8e2e6a68d))
+* **grant:** completion, the guard line and the allow sentence say only what is true ([dac1c52](https://github.com/this-is-tobi/rta/commit/dac1c523a713ca9744f8c9aba64ed846d2600a1a))
+* **http:** a summary the help renderer keeps as written ([6bc7ab0](https://github.com/this-is-tobi/rta/commit/6bc7ab04747795add4810861a5eadcfcdb29e826))
+
 ## [0.11.0](https://github.com/this-is-tobi/rta/compare/v0.10.0...v0.11.0) (2026-09-06)
 
 
