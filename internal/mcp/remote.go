@@ -77,7 +77,8 @@ func Serve(ctx context.Context, server *sdk.Server, ln net.Listener, opts Remote
 		grace = defaultShutdownGrace
 	}
 	handler := sdk.NewStreamableHTTPHandler(func(*http.Request) *sdk.Server { return server }, nil)
-	authed := auth.RequireBearerToken(opts.Verifier, &auth.RequireBearerTokenOptions{
+	verifier := slowFailures(opts.Verifier, newBackoff(bearerFree, bearerWindow, bearerStep, bearerMax))
+	authed := auth.RequireBearerToken(verifier, &auth.RequireBearerTokenOptions{
 		// Static tokens have no per-token expiry of their own — they are
 		// valid until the operator rewrites the file — so nothing here
 		// synthesizes one. A real exp claim (OIDC) is still enforced: this

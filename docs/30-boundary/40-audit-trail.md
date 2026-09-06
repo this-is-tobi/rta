@@ -57,6 +57,8 @@ agent log   warn   the record breaks at entry 24 — nothing records where this
 
 The record keeps about 64 MB — eight files of 8 MB — and drops the oldest past that, recording what it dropped as a sealed `retired` note the chain still verifies across. A day with no rows before a certain hour is not a day where nothing happened; it is where retention starts, and the recipe above is how you keep more.
 
+A refusal is a row too, so a caller looping on a tool that refuses it would be writing that history away. Past twenty refusals in a minute, each further one from the same caller is answered slower, doubling up to five seconds — which turns minutes of churn into weeks, and costs a caller that reads its refusals nothing.
+
 ## History, not policy
 
 The distinction is worth keeping straight:

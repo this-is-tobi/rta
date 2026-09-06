@@ -33,6 +33,9 @@ type Options struct {
 	// before every other gate on every call — see the comment at the top of
 	// call(). Unexported for guardPin's reason; set by NewServer.
 	locks *lockdown.Pin
+	// refusals slows a caller that keeps being refused — see backoff. Set
+	// by NewServer unless a test supplied one; unexported for locks' reason.
+	refusals *backoff
 
 	// Session is the id this process stamps on every ledger entry, and
 	// Connected is told the client's announced name once the MCP handshake
