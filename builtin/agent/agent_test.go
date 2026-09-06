@@ -702,7 +702,7 @@ func TestTheDetailedOverviewReportsABrokenChain(t *testing.T) {
 	}
 	ledger := ""
 	for _, sec := range v.(view.Sections).Items {
-		if sec.ID != "ledger" {
+		if sec.ID != "record" {
 			continue
 		}
 		for _, p := range sec.View.(view.KeyValue).Pairs {
