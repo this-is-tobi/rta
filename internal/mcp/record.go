@@ -352,7 +352,7 @@ const previewWait = 5 * time.Second
 // arguments.
 func propose(ctx context.Context, c plugin.Capability, opts Options,
 	values map[string]any, profileName string) string {
-	if !opts.ConsentPreview || c.Safety != plugin.Destructive || c.Run == nil {
+	if c.Safety != plugin.Destructive || c.Run == nil {
 		return ""
 	}
 	// A profiled call is not previewable here, and silence is the only safe

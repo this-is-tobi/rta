@@ -29,7 +29,7 @@
 // under disappears or changes key — the attacker talks *through* that
 // process, so its memory is the one place a same-uid rm cannot reach. Across
 // restarts, no on-disk defense exists; the harness-side deny list
-// (`rta audit agents --fix`) and the operator noticing a guard they enabled
+// (`rta audit clients --fix`) and the operator noticing a guard they enabled
 // reading "off" are what remain, and the docs say so.
 //
 // **No environment channel, by design.** The kv store accepts its passphrase

@@ -62,7 +62,7 @@ flowchart TD
 
 **World C — somewhere else entirely.** The agent runs in a container or on another machine, with no credentials of its own, and reaches your environments only through rta. Containment by construction, because there is no other route to take.
 
-`rta audit agents` tells you which one you are in:
+`rta audit clients` tells you which one you are in:
 
 ```
 shell       fail   `Bash` is allowed unrestricted in ~/.claude/settings.json — the agent can
@@ -78,10 +78,10 @@ You cannot deny it, and chasing that is the wrong shape. rta is a binary on a ma
 What actually moves you from World A to World B is upstream of rta:
 
 - **Take `Bash` off the allowlist**, or scope it (`Bash(git status:*)` is a decision; `Bash` is the absence of one).
-- **Never `bypassPermissions`.** It is every gate below it turned off at once, and `audit agents` grades it as a failure for that reason.
+- **Never `bypassPermissions`.** It is every gate below it turned off at once, and `audit clients` grades it as a failure for that reason.
 - **Give the agent no credentials of its own.** rta's strongest posture is a secret store the MCP server cannot open — then `kv get` fails whatever grants exist.
 
-`rta audit agents --fix` prints those edits rather than describing them: the scoped allowlist shape, a `chmod` for a config other accounts can read, a pinned version for a server fetched at launch — and a deny list for rta's own authority-expanding commands (`rta grant`, `rta agent`, `rta kv`, `rta plugin trust`), so the ordinary reach for self-granting is refused by the agent's own harness before rta ever sees it. It prints and never writes, for the reason the audit itself states: the file that grants an agent access to your secrets changes by your hand. And a string match is a seatbelt, not a wall — none of rta's own gates relax because it exists.
+`rta audit clients --fix` prints those edits rather than describing them: the scoped allowlist shape, a `chmod` for a config other accounts can read, a pinned version for a server fetched at launch — and a deny list for rta's own authority-expanding commands (`rta grant`, `rta agent`, `rta kv`, `rta plugin trust`), so the ordinary reach for self-granting is refused by the agent's own harness before rta ever sees it. It prints and never writes, for the reason the audit itself states: the file that grants an agent access to your secrets changes by your hand. And a string match is a seatbelt, not a wall — none of rta's own gates relax because it exists.
 
 That is the honest hierarchy: your agent's permission settings are the outer boundary, and rta is what shapes reach *inside* it.
 

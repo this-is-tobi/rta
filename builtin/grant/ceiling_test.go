@@ -167,8 +167,11 @@ func TestHeldTableEmptyStateNotesCeilingSuppressedGrants(t *testing.T) {
 	if !ok {
 		t.Fatalf("held table = %s, want the empty-state Text", view.TypeOf(v))
 	}
-	if !strings.Contains(body.Body, "No active grants") {
-		t.Errorf("body = %q, want the ordinary empty-state message first", body.Body)
+	if !strings.Contains(body.Body, "No grant is standing") {
+		t.Errorf("body = %q, want the ordinary empty-state message", body.Body)
+	}
+	if !strings.Contains(body.Body, "guard  off") {
+		t.Errorf("body = %q, want the guard's state above it", body.Body)
 	}
 	if !strings.Contains(body.Body, "1 grant(s) on disk are suppressed by your team's policy") {
 		t.Errorf("body = %q, want the suppression note naming the count", body.Body)

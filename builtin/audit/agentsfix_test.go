@@ -14,7 +14,7 @@ import (
 // body joined, so a test asserts on what the operator would actually read.
 func fixBodies(t *testing.T) (view.View, string) {
 	t.Helper()
-	v, err := runAgents(t.Context(), req(map[string]any{"fix": true}).WithSurface(plugin.SurfaceCLI))
+	v, err := runClients(t.Context(), req(map[string]any{"fix": true}).WithSurface(plugin.SurfaceCLI))
 	if err != nil {
 		t.Fatal(err)
 	}

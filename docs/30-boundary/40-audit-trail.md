@@ -82,7 +82,7 @@ rta agent deny 5473aa62
 
 `rta agent show` includes what the call **would do** — rta runs the capability's own `--dry-run` and puts the result on the parked request. That changes the question from *"may this agent call `note.rm`"* to *"may it remove **this note**"*, which is the question you can actually answer.
 
-Preview is on by default (`--consent-preview`). Turn it off for a capability whose dry run is expensive — something an operator discovers, not something rta can know in advance.
+Preview is not optional. It is bounded to built-in capabilities, whose dry runs are cheap and honest about `DryRun` by test — a plugin's handler is never run to answer a question about it.
 
 Answering `allow` runs that one call and creates no standing grant. Ask again, get asked again.
 

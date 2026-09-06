@@ -249,14 +249,14 @@ Write-then-rename because the collector reads the file whenever it likes, and ha
 | `rta_agent_calls_retired_total` | what retention dropped, so the gap between the two above is visible rather than merely handled |
 | `rta_grants_active{capability,agent}` | reach in force right now |
 | `rta_agent_pending` | calls parked, waiting for a person |
-| `rta_ledger_intact` | 1 while the hash chain verifies end to end |
-| `rta_ledger_bytes`, `rta_ledger_segments` | the record's own size |
+| `rta_record_intact` | 1 while the hash chain verifies end to end |
+| `rta_record_bytes`, `rta_record_segments` | the record's own size |
 
-**`rta_ledger_intact == 0` is the alert worth having.** A record that stops verifying is either a bug or somebody editing it, and both are things to hear about in minutes rather than at the next review:
+**`rta_record_intact == 0` is the alert worth having.** A record that stops verifying is either a bug or somebody editing it, and both are things to hear about in minutes rather than at the next review:
 
 ```yaml
 - alert: RtaLedgerBroken
-  expr: rta_ledger_intact == 0
+  expr: rta_record_intact == 0
   for: 1m
   annotations:
     summary: "rta's agent record no longer verifies — run `rta agent log --detail`"

@@ -85,13 +85,13 @@ func runMetrics(_ context.Context, _ plugin.Request) (view.View, error) {
 	if verifyErr != nil || rep.Broken != 0 {
 		intact = 0
 	}
-	metric(&b, "rta_ledger_intact", "gauge",
+	metric(&b, "rta_record_intact", "gauge",
 		"1 when the record's hash chain verifies end to end, 0 when it does not.",
 		[]sample{{value: intact}})
-	metric(&b, "rta_ledger_bytes", "gauge",
+	metric(&b, "rta_record_bytes", "gauge",
 		"Size of the record on disk, across every segment.",
 		[]sample{{value: float64(rep.Size)}})
-	metric(&b, "rta_ledger_segments", "gauge",
+	metric(&b, "rta_record_segments", "gauge",
 		"How many files the record is spread over.",
 		[]sample{{value: float64(rep.Files)}})
 

@@ -49,19 +49,18 @@ func newMCPCommand(reg *registry.Registry, version string) *cobra.Command {
 
 func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 	var (
-		consentOn      bool
-		consentWait    time.Duration
-		consentNotify  bool
-		consentPreview bool
-		agentName      string
-		roots          []string
-		httpAddr       string
-		tokenFile      string
-		oidcIssuer     string
-		oidcAudience   string
-		oidcSubjects   []string
-		operatorsFile  string
-		operatorsURL   string
+		consentOn     bool
+		consentWait   time.Duration
+		consentNotify bool
+		agentName     string
+		roots         []string
+		httpAddr      string
+		tokenFile     string
+		oidcIssuer    string
+		oidcAudience  string
+		oidcSubjects  []string
+		operatorsFile string
+		operatorsURL  string
 	)
 	cmd := &cobra.Command{
 		Use:   "serve",
@@ -365,13 +364,12 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 						}
 					})
 				},
-				Consent:        consentOn,
-				ConsentWait:    consentWait,
-				ConsentNotify:  consentNotify,
-				ConsentPreview: consentPreview,
-				Origin:         reg.Origin,
-				Config:         pluginConfig.For,
-				Profiles:       profileCfg,
+				Consent:       consentOn,
+				ConsentWait:   consentWait,
+				ConsentNotify: consentNotify,
+				Origin:        reg.Origin,
+				Config:        pluginConfig.For,
+				Profiles:      profileCfg,
 				// The schema above is a snapshot; what a call resolves through
 				// is the file as it is now, so an environment the operator
 				// edits takes effect without a restart — and the grant they
@@ -514,13 +512,6 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 		"how long a parked call waits for your answer before it is refused")
 	cmd.Flags().BoolVar(&consentNotify, "consent-notify", false,
 		"also ring this machine's desktop notification when a call is parked")
-	// On by default, unlike the two above: it costs one extra run of rta's
-	// own handler in --dry-run and it changes the question from "may this
-	// agent call note.rm" to "may it remove *this note*". The off switch is
-	// for a capability whose dry run is expensive, which is a thing an
-	// operator discovers rather than something rta can know.
-	cmd.Flags().BoolVar(&consentPreview, "consent-preview", true,
-		"show what a destructive call would do (its own --dry-run) on the parked request")
 	// A root is a directory, and the shell has the list.
 	_ = cmd.RegisterFlagCompletionFunc("root",
 		func(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
