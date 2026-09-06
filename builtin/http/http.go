@@ -85,7 +85,7 @@ func Plugin() plugin.Plugin {
 	})
 	return plugin.Plugin{
 		Name:    "http",
-		Summary: "REST client: request endpoints, inspect responses",
+		Summary: "Request any endpoint and inspect the response — a REST client",
 		Capabilities: []plugin.Capability{
 			// GET and HEAD read: they mutate nothing, and the safety class is
 			// right. They still need a grant, which is the same correction
