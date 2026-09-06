@@ -39,6 +39,8 @@ type capAction struct {
 	// the counterexample that keeps this per-action (kv.list's own comment
 	// tells that story).
 	bare bool
+	// seed is the spec's column-to-input mapping; see capActionSpecs.
+	seed map[string]string
 }
 
 // capActionSpecs declares which capabilities each view can reach in one key.
@@ -65,6 +67,12 @@ var capActionSpecs = map[string][]struct {
 	key, label, id string
 	src            actionSource
 	bare           bool
+	// seed names the column (or the detail page's key) an input is read
+	// from when it is not the column of the same name — lock.add's `name`
+	// is the queue's `agent`. A seeded key that the row does not carry is
+	// left for the form rather than taken from the first column, which is
+	// an id and the wrong lock name.
+	seed map[string]string
 }{
 	// One notebook, two kinds of thing in it, and `t` is the switch between
 	// them: a note becomes a to-do with a checkbox, a to-do goes back to being
@@ -72,25 +80,25 @@ var capActionSpecs = map[string][]struct {
 	// direction — but its only input is the id the row supplies, so nothing is
 	// left to ask and it runs on the keypress all the same.
 	"note.list": {
-		{"enter", "show", "note.show", srcRow, false},
-		{"a", "add", "note.add", srcNone, false},
-		{"u", "update", "note.edit", srcRow, false},
-		{"t", "to-do/note", "note.toggle", srcRow, false},
-		{"d", "done", "note.done", srcRow, false},
+		{"enter", "show", "note.show", srcRow, false, nil},
+		{"a", "add", "note.add", srcNone, false, nil},
+		{"u", "update", "note.edit", srcRow, false, nil},
+		{"t", "to-do/note", "note.toggle", srcRow, false, nil},
+		{"d", "done", "note.done", srcRow, false, nil},
 		// The undo for `d`, one key away from it: checking off the wrong
 		// note is a one-keystroke mistake and should cost one keystroke to
 		// take back.
-		{"o", "re-open", "note.reopen", srcRow, false},
-		{"x", "remove", "note.rm", srcRow, false},
+		{"o", "re-open", "note.reopen", srcRow, false, nil},
+		{"x", "remove", "note.rm", srcRow, false, nil},
 	},
 	// The hosts file is a list you manage, not just read: park an override
 	// with `t`, drop it with `x`. `t` rather than `d` — d is "done" on the
 	// task lists, and a key that means two things across two screens is a
 	// key you hesitate over.
 	"net.hosts.list": {
-		{"a", "add", "net.hosts.add", srcNone, false},
-		{"t", "toggle", "net.hosts.toggle", srcRow, false},
-		{"x", "remove", "net.hosts.rm", srcRow, false},
+		{"a", "add", "net.hosts.add", srcNone, false, nil},
+		{"t", "toggle", "net.hosts.toggle", srcRow, false, nil},
+		{"x", "remove", "net.hosts.rm", srcRow, false, nil},
 	},
 	// A finding names a package, and the question it raises second is what
 	// pulled that package in — which decides whether the fix is a version bump
@@ -100,23 +108,23 @@ var capActionSpecs = map[string][]struct {
 	// The form it opens is seeded with the path the listing ran against, so the
 	// answer is about the project on screen rather than the working directory.
 	"audit.deps": {
-		{"w", "why", "audit.why", srcRow, false},
+		{"w", "why", "audit.why", srcRow, false, nil},
 	},
 	// The package table is where somebody decides to take an upgrade, so
 	// taking it is one key from the row. Columns `target` and `package` are
 	// named for pkg.upgrade's inputs, so both halves seed from the row and
 	// the form only opens for the destructive confirmation.
 	"pkg.outdated": {
-		{"u", "upgrade", "pkg.upgrade", srcRow, false},
+		{"u", "upgrade", "pkg.upgrade", srcRow, false, nil},
 	},
 	"pkg.tools": {
-		{"u", "upgrade", "pkg.upgrade", srcRow, false},
+		{"u", "upgrade", "pkg.upgrade", srcRow, false, nil},
 	},
 	// The managers table is where somebody learns which managers rta sees;
 	// the next question is what one of them has behind, and the column is
 	// named for pkg.outdated's input so the row answers it.
 	"pkg.managers": {
-		{"o", "outdated", "pkg.outdated", srcRow, false},
+		{"o", "outdated", "pkg.outdated", srcRow, false, nil},
 	},
 	// A stale grant is something you notice on the dashboard, so taking it
 	// back has to be possible from there and not only from a shell. `n`
@@ -124,9 +132,9 @@ var capActionSpecs = map[string][]struct {
 	// re-issue path is the one `grant renew --help` warns turns a one-time
 	// grant into an unlimited one.
 	"grant.list": {
-		{"a", "allow", "grant.allow", srcNone, false},
-		{"n", "renew", "grant.renew", srcRow, false},
-		{"x", "revoke", "grant.revoke", srcRow, false},
+		{"a", "allow", "grant.allow", srcNone, false, nil},
+		{"n", "renew", "grant.renew", srcRow, false, nil},
+		{"x", "revoke", "grant.revoke", srcRow, false, nil},
 	},
 	// The consent queue, answerable from the screen the operator is already
 	// looking at: a parked call is a question with exactly two
@@ -157,26 +165,26 @@ var capActionSpecs = map[string][]struct {
 		{key: "enter", label: "show", id: "agent.show", src: srcRow, bare: true},
 		{key: "a", label: "allow", id: "agent.allow", src: srcRow},
 		{key: "d", label: "deny", id: "agent.deny", src: srcRow, bare: true},
-		{key: "L", label: "lock", id: "lock.add", src: srcNone},
+		{key: "L", label: "lock", id: "lock.add", src: srcRow, seed: map[string]string{"name": "agent"}},
 	},
 	// And the two answers again from the detail page, so reading it does not
 	// mean going back to the list to act on what you read.
 	"agent.show": {
 		{key: "a", label: "allow", id: "agent.allow", src: srcSelf},
 		{key: "d", label: "deny", id: "agent.deny", src: srcSelf, bare: true},
-		{key: "L", label: "lock", id: "lock.add", src: srcNone},
+		{key: "L", label: "lock", id: "lock.add", src: srcSelf, seed: map[string]string{"name": "agent"}},
 	},
 	// The instant no, from the screens where you notice you need it. `L`
-	// rather than `l` — l is navigation — and the form it opens is the whole
-	// point: a lock names a kind and a principal, and neither is on the row
-	// of a parked call in the spelling the gate verifies, so the operator
-	// types both while looking at the call that made them want to. Lifting
+	// rather than `l` — l is navigation — and it opens the lock form beside
+	// the call that made you want it, the agent filled in from the queue's
+	// own column (or the detail page's line) so the name the gate verifies is
+	// the one the call carried, not one retyped under pressure. Lifting
 	// one is a row action on the lock list itself, where both halves of the
 	// principal are on the row and the surface matches them to lock.rm's
 	// inputs by column name.
 	"lock.list": {
-		{"a", "lock", "lock.add", srcNone, false},
-		{"x", "lift", "lock.rm", srcRow, false},
+		{"a", "lock", "lock.add", srcNone, false, nil},
+		{"x", "lift", "lock.rm", srcRow, false, nil},
 	},
 	// The tile says how many calls are waiting; these are the two places to
 	// go from there. `g` because l is navigation and every other letter in
@@ -222,37 +230,37 @@ var capActionSpecs = map[string][]struct {
 	// kv.edit is still absent, for an unrelated reason: it hands the terminal
 	// to $EDITOR, and the terminal is what this program is drawing on.
 	"kv.list": {
-		{"enter", "show", "kv.show", srcRow, false},
-		{"v", "reveal", "kv.get", srcRow, false},
-		{"c", "copy", "kv.copy", srcRow, false},
-		{"a", "add", "kv.set", srcNone, false},
-		{"s", "set", "kv.set", srcRow, false},
-		{"m", "rename", "kv.rename", srcRow, false},
-		{"x", "remove", "kv.rm", srcRow, false},
+		{"enter", "show", "kv.show", srcRow, false, nil},
+		{"v", "reveal", "kv.get", srcRow, false, nil},
+		{"c", "copy", "kv.copy", srcRow, false, nil},
+		{"a", "add", "kv.set", srcNone, false, nil},
+		{"s", "set", "kv.set", srcRow, false, nil},
+		{"m", "rename", "kv.rename", srcRow, false, nil},
+		{"x", "remove", "kv.rm", srcRow, false, nil},
 	},
 	// The kv tile is `kv status`, which is about the store rather than any
 	// entry — so its actions are the two things you want from there: the
 	// list, and a new secret.
 	"kv.status": {
-		{"s", "secrets", "kv.list", srcNone, false},
-		{"a", "add", "kv.set", srcNone, false},
+		{"s", "secrets", "kv.list", srcNone, false, nil},
+		{"a", "add", "kv.set", srcNone, false, nil},
 	},
 	"kv.show": {
-		{"v", "reveal", "kv.get", srcSelf, false},
-		{"c", "copy", "kv.copy", srcSelf, false},
-		{"s", "set", "kv.set", srcSelf, false},
-		{"m", "rename", "kv.rename", srcSelf, false},
-		{"x", "remove", "kv.rm", srcSelf, false},
-		{"a", "add", "kv.set", srcNone, false},
+		{"v", "reveal", "kv.get", srcSelf, false, nil},
+		{"c", "copy", "kv.copy", srcSelf, false, nil},
+		{"s", "set", "kv.set", srcSelf, false, nil},
+		{"m", "rename", "kv.rename", srcSelf, false, nil},
+		{"x", "remove", "kv.rm", srcSelf, false, nil},
+		{"a", "add", "kv.set", srcNone, false, nil},
 	},
 	// The detail pages act on the record they are already showing.
 	"note.show": {
-		{"u", "update", "note.edit", srcSelf, false},
-		{"t", "to-do/note", "note.toggle", srcSelf, false},
-		{"d", "done", "note.done", srcSelf, false},
-		{"o", "re-open", "note.reopen", srcSelf, false},
-		{"x", "remove", "note.rm", srcSelf, false},
-		{"a", "add", "note.add", srcNone, false},
+		{"u", "update", "note.edit", srcSelf, false, nil},
+		{"t", "to-do/note", "note.toggle", srcSelf, false, nil},
+		{"d", "done", "note.done", srcSelf, false, nil},
+		{"o", "re-open", "note.reopen", srcSelf, false, nil},
+		{"x", "remove", "note.rm", srcSelf, false, nil},
+		{"a", "add", "note.add", srcNone, false, nil},
 	},
 }
 
@@ -289,7 +297,7 @@ func capActions(reg *registry.Registry, capID string) []capAction {
 	var out []capAction
 	for _, spec := range capActionSpecs[capID] {
 		if c, ok := reg.Capability(spec.id); ok {
-			out = append(out, capAction{key: spec.key, label: spec.label, cap: c, src: spec.src, bare: spec.bare})
+			out = append(out, capAction{key: spec.key, label: spec.label, cap: c, src: spec.src, bare: spec.bare, seed: spec.seed})
 		}
 	}
 	return out
