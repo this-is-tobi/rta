@@ -227,7 +227,7 @@ const (
 )
 
 func lock() (func(), *view.Error) {
-	if err := os.MkdirAll(paths.Data(), 0o755); err != nil {
+	if err := os.MkdirAll(paths.Data(), 0o700); err != nil {
 		return nil, view.Errorf("plugin.trust.mkdir", "creating %s: %v", paths.Data(), err)
 	}
 	release, err := filelock.Acquire(filepath.Join(paths.Data(), "trusted.lock"),
@@ -499,7 +499,7 @@ func write(f file) *view.Error {
 	if err != nil {
 		return view.Errorf("plugin.trust.encode", "encoding %s: %v", Path(), err)
 	}
-	if err := os.MkdirAll(paths.Data(), 0o755); err != nil {
+	if err := os.MkdirAll(paths.Data(), 0o700); err != nil {
 		return view.Errorf("plugin.trust.mkdir", "creating %s: %v", paths.Data(), err)
 	}
 	// 0600, like the grant file. It is not a secret, and it is a list of what

@@ -67,7 +67,7 @@ func sealKey(create bool) []byte {
 	if _, err := rand.Read(key); err != nil {
 		return nil
 	}
-	if err := os.MkdirAll(paths.Data(), 0o755); err != nil {
+	if err := os.MkdirAll(paths.Data(), 0o700); err != nil {
 		return nil
 	}
 	// Published rather than written, so the path either does not exist or

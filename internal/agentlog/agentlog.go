@@ -648,7 +648,7 @@ func Append(e Entry) (err error) {
 	if err != nil {
 		return fmt.Errorf("agent log key %s: %w — restore it, or move the record aside to start a new one", keyPath, err)
 	}
-	if err := os.MkdirAll(paths.Data(), 0o755); err != nil {
+	if err := os.MkdirAll(paths.Data(), 0o700); err != nil {
 		return err
 	}
 	// One writer at a time: the chain is read-then-append, and two servers

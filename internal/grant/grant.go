@@ -871,7 +871,7 @@ func loadAll() ([]Grant, *view.Error) {
 // complete grants, or the new ones, never a half-written one.
 func Save(grants []Grant) *view.Error {
 	dir := paths.Data()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return view.Errorf("core.grant.write", "creating %s: %v", dir, err)
 	}
 	canon, err := canonical(grants)
