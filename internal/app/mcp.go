@@ -65,22 +65,22 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Serve capabilities as MCP tools, over stdio or HTTP",
-		Long: "Serve every registered capability as an MCP tool, over stdio by default\n" +
-			"or over HTTP with --http.\n\n" +
-			"One gate: a read is free, and every capability that changes\n" +
-			"anything needs a grant a person issued — `rta grant allow`.\n" +
-			"There is no flag that stands in for one.\n\n" +
-			"Path gate: every path argument must be under a root, including a\n" +
-			"capability's own declared default. The default root is the directory\n" +
-			"the server was started in; widen it with --root, which is repeatable.\n" +
-			"The gate governs path arguments only: a capability that opens a fixed\n" +
-			"file of its own — `net hosts list` and /etc/hosts — is unaffected,\n" +
-			"because that path is never an argument for anyone to send.\n\n" +
-			"Locality gate, --http only: capabilities that describe the machine\n" +
-			"this runs on (sys, fs, git, keys.list, net's host-identity and\n" +
-			"host-mutation calls) are absent from tools/list — a remote caller is\n" +
-			"never this machine. --http also requires --token-file or --oidc-issuer\n" +
-			"(or both), since there is no stdio parent process left to trust instead.",
+		Long: "Serve every registered capability as an MCP tool, over stdio by default" +
+			" or over HTTP with --http.\n\n" +
+			"One gate: a read is free, and every capability that changes" +
+			" anything needs a grant a person issued — `rta grant allow`." +
+			" There is no flag that stands in for one.\n\n" +
+			"Path gate: every path argument must be under a root, including a" +
+			" capability's own declared default. The default root is the directory" +
+			" the server was started in; widen it with --root, which is repeatable." +
+			" The gate governs path arguments only: a capability that opens a fixed" +
+			" file of its own — `net hosts list` and /etc/hosts — is unaffected," +
+			" because that path is never an argument for anyone to send.\n\n" +
+			"Locality gate, --http only: capabilities that describe the machine" +
+			" this runs on (sys, fs, git, keys.list, net's host-identity and" +
+			" host-mutation calls) are absent from tools/list — a remote caller is" +
+			" never this machine. --http also requires --token-file or --oidc-issuer" +
+			" (or both), since there is no stdio parent process left to trust instead.",
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, _ []string) error {

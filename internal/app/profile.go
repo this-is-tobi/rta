@@ -201,15 +201,15 @@ func newUseCommand(opts *globalOpts) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "use [profile]",
 		Short: "Switch this machine to a configured environment",
-		Long: "With a profile name, switches to it: every later command for a plugin that\n" +
-			"profile covers runs against it, with no --profile at all.\n\n" +
-			"--for gives the switch a deadline, and a profile carrying `ttl:` brings its own.\n" +
-			"When it lapses everything falls back to the base configuration on its own — a\n" +
-			"deadline that depends on a process staying alive is not a deadline.\n\n" +
+		Long: "With a profile name, switches to it: every later command for a plugin that" +
+			" profile covers runs against it, with no --profile at all.\n\n" +
+			"--for gives the switch a deadline, and a profile carrying `ttl:` brings its own." +
+			" When it lapses everything falls back to the base configuration on its own — a" +
+			" deadline that depends on a process staying alive is not a deadline.\n\n" +
 			"With no arguments, prints what is on. --off switches it back off.\n\n" +
-			"Switching authorizes nothing. While a profile is on, `rta mcp serve` refuses\n" +
-			"every profile but that one, so this is also the fastest way to take an\n" +
-			"environment away from an agent — but it can only take away, never give.",
+			"Switching authorizes nothing. While a profile is on, `rta mcp serve` refuses" +
+			" every profile but that one, so this is also the fastest way to take an" +
+			" environment away from an agent — but it can only take away, never give.",
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeProfiles,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -399,10 +399,10 @@ func newProfileCommand(reg *registry.Registry, opts *globalOpts) *cobra.Command 
 	cmd := &cobra.Command{
 		Use:   "profile",
 		Short: "The environments you have configured",
-		Long: "A profile is a named environment across every plugin that has something in it:\n" +
-			"`rta use proj1-staging` points pg, s3 and vault at staging at once, and\n" +
-			"`rta grant allow pg.query --profile proj1-staging --ttl 1h` lets an agent reach\n" +
-			"that one for an hour. Both halves name the same thing on purpose.",
+		Long: "A profile is a named environment across every plugin that has something in it:" +
+			" `rta use proj1-staging` points pg, s3 and vault at staging at once, and" +
+			" `rta grant allow pg.query --profile proj1-staging --ttl 1h` lets an agent reach" +
+			" that one for an hour. Both halves name the same thing on purpose.",
 		RunE: groupRunE,
 	}
 	list := &cobra.Command{
