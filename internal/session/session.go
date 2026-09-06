@@ -11,11 +11,26 @@
 // be told apart from it.
 //
 // One file per server process, written when a client completes the MCP
-// handshake and removed when the server exits. It is presence, not audit —
-// nothing decides anything on it, so it is a plain JSON file and not a link
-// in the hash chain. A server that died without cleaning up leaves a file
-// naming a pid that no longer exists; List drops those and removes them, so
-// a stale file never reads as a live agent.
+// handshake, kept fresh while the server runs, and removed when it exits. It
+// is presence, not audit — nothing decides anything on it, so it is a plain
+// JSON file and not a link in the hash chain.
+//
+// # Liveness is a heartbeat, not a pid
+//
+// A server that dies without cleaning up leaves its file behind, and List
+// has to tell that from a server that is simply quiet. Asking the OS whether
+// the recorded pid still exists answers instantly and answers wrong often
+// enough to matter: pids are reused, so a recycled number makes a dead
+// session read as live for as long as the file sits there — which on the one
+// screen an operator checks to answer "is anything even attached" is the
+// failure that costs the most. It also took two platform-specific files to
+// ask, one of which could only really answer "does a handle open".
+//
+// So an open server touches its own file every Beat, and List disbelieves
+// anything older than stale. The cost is bounded and stated: a crashed
+// server can linger for up to stale before it disappears. The benefit is
+// that a live server is one that said so recently, which is the actual
+// question, on every platform, in one file.
 package session
 
 import (
@@ -44,7 +59,10 @@ type Record struct {
 	Agent  string    `json:"agent,omitempty"`
 	Client string    `json:"client,omitempty"`
 	Since  time.Time `json:"since"`
-	PID    int       `json:"pid"`
+	// PID is recorded for a person reading the file or hunting a process.
+	// Nothing decides on it — see the package comment on why liveness is a
+	// heartbeat instead.
+	PID int `json:"pid"`
 	// Dir is where the server was started, which for a client that
 	// registers rta per project is the project.
 	Dir string `json:"dir,omitempty"`
@@ -65,6 +83,29 @@ func NewID() string {
 		return "00000000"
 	}
 	return hex.EncodeToString(b[:])
+}
+
+// Beat is how often an open server refreshes its record, and stale is how
+// long List keeps believing one that has not. Three beats of slack, so an
+// ordinary scheduling hiccup on a loaded machine never evicts a live server.
+const (
+	Beat  = 30 * time.Second
+	stale = 3 * Beat
+)
+
+// Touch refreshes this server's record so List keeps counting it. A record
+// that is gone is not recreated: End removed it, or an operator cleared the
+// directory, and either way this server is on its way out.
+func Touch(id string) error {
+	if id == "" {
+		return nil
+	}
+	now := time.Now()
+	err := os.Chtimes(path(id), now, now)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	return err
 }
 
 // Start records this server as open.
@@ -92,9 +133,9 @@ func End(id string) error {
 	return nil
 }
 
-// List is every server open right now, oldest first. A record whose process
-// is gone is removed on the way, so a crash never leaves a ghost agent on
-// the dashboard.
+// List is every server open right now, oldest first. A record nobody has
+// touched within stale is removed on the way, so a crash never leaves a
+// ghost agent on the dashboard.
 func List() ([]Record, error) {
 	entries, err := os.ReadDir(Dir())
 	if err != nil {
@@ -109,16 +150,21 @@ func List() ([]Record, error) {
 			continue
 		}
 		p := filepath.Join(Dir(), e.Name())
+		// The heartbeat is the file's own modification time, so keeping a
+		// record fresh costs one Chtimes rather than a rewrite of the JSON
+		// every half minute — and a reader that cannot stat it is a reader
+		// that cannot read it either.
+		info, err := e.Info()
+		if err != nil || time.Since(info.ModTime()) > stale {
+			_ = os.Remove(p)
+			continue
+		}
 		body, err := os.ReadFile(p)
 		if err != nil {
 			continue
 		}
 		var r Record
 		if json.Unmarshal(body, &r) != nil || r.ID == "" {
-			_ = os.Remove(p)
-			continue
-		}
-		if !alive(r.PID) {
 			_ = os.Remove(p)
 			continue
 		}

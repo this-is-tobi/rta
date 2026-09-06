@@ -12,9 +12,14 @@ func TestAnOpenServerIsListedAndADeadOneIsForgotten(t *testing.T) {
 	if err := Start(live); err != nil {
 		t.Fatal(err)
 	}
-	// A pid the OS will not have handed out again in the life of this test.
+	// A server that died without cleaning up: its record is there and
+	// nothing has touched it since well before the staleness window.
 	dead := Record{ID: NewID(), Agent: "cursor", Since: time.Now().Add(-time.Hour), PID: 1 << 30}
 	if err := Start(dead); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(path(dead.ID), old, old); err != nil {
 		t.Fatal(err)
 	}
 	got, err := List()
@@ -26,6 +31,20 @@ func TestAnOpenServerIsListedAndADeadOneIsForgotten(t *testing.T) {
 	}
 	if _, err := os.Stat(path(dead.ID)); !os.IsNotExist(err) {
 		t.Error("the dead server's file was not removed")
+	}
+	// A beat keeps a record that would otherwise have gone stale.
+	stale := time.Now().Add(-2 * stale)
+	if err := os.Chtimes(path(live.ID), stale, stale); err != nil {
+		t.Fatal(err)
+	}
+	if err := Touch(live.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := List(); len(got) != 1 {
+		t.Errorf("a touched record was dropped: %+v", got)
+	}
+	if err := Touch("never-started"); err != nil {
+		t.Errorf("touching a record that is gone must be quiet: %v", err)
 	}
 	if err := End(live.ID); err != nil {
 		t.Fatal(err)
