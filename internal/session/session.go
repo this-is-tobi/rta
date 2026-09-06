@@ -69,6 +69,13 @@ type Record struct {
 	// Ledger is the record this server writes to, so a mismatch with the
 	// one the TUI reads is visible from the TUI's side.
 	Ledger string `json:"ledger,omitempty"`
+	// Consent says whether this server parks a call that needs a grant
+	// nobody issued, or refuses it; Roots is where its path arguments are
+	// confined. Both are the server's own flags, recorded so the screen an
+	// operator opens to ask "why did that call not park" can answer without
+	// a trip to the client's config file.
+	Consent bool     `json:"consent,omitempty"`
+	Roots   []string `json:"roots,omitempty"`
 }
 
 func Dir() string { return filepath.Join(paths.Data(), "sessions") }

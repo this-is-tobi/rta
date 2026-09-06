@@ -180,7 +180,7 @@ Every call is there with the name you registered the client under. If the agent 
 
 ### Nothing shows up
 
-`rta agent overview` has a `connected now` row, and it is the one to read first: it names every client that has an rta server open right now, by the name it was registered under, with how many calls each has made. `--detail` adds a table with what the client called itself, since when, its session id, the directory it started in and the record file it writes to. From there the silence is one of three things:
+`rta agent overview` has a `connected now` row, and it is the one to read first: it names every client that has an rta server open right now, by the name it was registered under, with how many calls each has made. `--detail` adds a table with what the client called itself, since when, whether a call that needs a grant nobody issued is parked for you (`asks`) or refused (`refuses`), the roots its path arguments are confined to, its session id, the directory it started in and the record file it writes to. From there the silence is one of three things:
 
 - **Connected, zero calls.** The wiring is fine and the agent has not chosen an rta tool yet. Clients with many servers attached pick by tool description, and one that already has a Kubernetes or database server will often reach for that one first. Ask for something only rta answers — `rta agent overview` itself, or a capability under a profile — and the calls appear.
 - **Not connected.** Claude Code's `claude mcp add` registers rta for the current directory by default, so a session opened in another directory has no rta server at all. `rta doctor` says which it is — `every project`, `this project`, or `this directory only` — and prints the `--scope user` command that makes it global.
