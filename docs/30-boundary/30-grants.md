@@ -65,6 +65,37 @@ rta grant revoke kv                  # or all of it
 
 Revoking takes back what grants gave — it does not touch the ungated read tools an agent's token still opens. When the need is "this agent makes no call of any kind until I say so", that is a [lock](./20-mcp.md#locks-the-instant-no): `rta lock add <name>`, effective on its next call, no restart.
 
+## Roles: a day's grants under one word
+
+A grant is one target. A day of work is a dozen, and with the guard on that was a dozen passphrases. A **role** is the list, written once, and `grant issue` is that list issued to one agent under one prompt:
+
+```yaml
+# ~/.config/rta/config.yaml — yours
+roles:
+  dev:
+    ttl: 8h
+    grants:
+      - kv.get db-password
+      - pg.query --profile staging --rate 100/1h
+      - note
+```
+
+```bash
+rta grant roles                      # what this machine can issue, every line of each, and the window each will really get
+rta grant issue dev --agent claude   # every line, one passphrase
+rta grant list --role dev            # what stands under it
+rta grant renew --role dev           # move the whole bundle's deadline, one passphrase
+rta grant revoke --role dev          # take the whole bundle back
+```
+
+Each line is in the grammar `rta grant allow` takes — a target, an optional record, and `--profile`, `--ttl`, `--max-uses`, `--rate` or `--note` — and is built and checked exactly as a typed grant is: the target has to exist and need a grant, the [ceiling](./50-team-policy.md) caps and forbids each line, the guard signs each grant, a [lock](./20-mcp.md#locks-the-instant-no) still overrides all of them. The grants last `--ttl`, else the role's `ttl:`, else twelve hours; a line with its own `--ttl` keeps the shorter. `grant list` shows the role on each row.
+
+**The bundle has no id of its own.** It is "role dev, issued to claude", and that pair already names it: the grant file keeps one row per target, record, connection and agent, so issuing a role whose lines already stand refreshes them rather than doubling them. A line that replaces a grant you issued by hand — with an hour left, say, under the role's twelve — is a widening you did not type, so the receipt says what each line replaced, before the passphrase asks for anything. `revoke --role` says what still stands afterwards, computed rather than promised.
+
+**A role is not something an agent holds.** The agent still presents its `--as` name and the gate still reads grants; the role name on a grant is your bookkeeping, signed with the rest so a grant cannot be re-filed under a role it was not issued under. Revoking a role is not a lock: the agent may be granted things again a minute later.
+
+**A role from the team's file is somebody else's list.** `.rta-policy.yaml` may carry `roles:` beside the ceiling that bounds them, so a team shares the bundle and the limit in one committed file. That file grants nothing by existing — a person issues the role, at a terminal — but an edit could widen a role a person then issues with one word. So a team's role is issued at the command line only, where its lines are printed before the passphrase asks for them, and with the guard off it wants `--yes` after `rta grant roles <name>` has been read. Your own roles, in your config or your policy file or a file you named with `RTA_POLICY`, ask nothing extra: you wrote them. The same name in two files is refused rather than resolved by precedence, and `rta doctor` says so ahead of time.
+
 ## Live consent, when you would rather be asked
 
 With `rta mcp serve --consent`, a call that needs a grant nobody issued is **parked** rather than refused:
