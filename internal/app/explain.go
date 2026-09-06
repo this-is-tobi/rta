@@ -121,6 +121,9 @@ func cardView(reg *registry.Registry, c plugin.Capability) view.View {
 		} else if f.Suggest != nil {
 			detail += ", completes"
 		}
+		if f.With != "" {
+			detail += ", only with --" + f.With
+		}
 		if f.Local {
 			// Worth stating plainly: this input exists here and not over MCP,
 			// which is otherwise a surprising asymmetry to discover by hand.

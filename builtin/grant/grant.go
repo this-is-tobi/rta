@@ -117,7 +117,7 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 					// local guard's, and — with --server — the operator key's.
 					// Same name, same channels, same argv refusal.
 					guard.PassphraseField,
-					{Name: "server", Type: plugin.String, Local: true,
+					{Name: "server", Type: plugin.String, Local: true, Remote: true,
 						Help: "issue on a remote server instead (a name from remotes.yaml): it prepares " +
 							"the grant under its own policy, you sign it with your operator key"},
 				},
@@ -167,7 +167,7 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 					"the roster names every agent by name, which is exactly the cross-agent visibility an " +
 					"agent asking about itself must not get.",
 				Inputs: []plugin.Field{
-					{Name: "server", Type: plugin.String, Local: true,
+					{Name: "server", Type: plugin.String, Local: true, Remote: true,
 						Help: "read a remote server's roster instead of this machine's (a name from remotes.yaml)"},
 					operatorid.PassphraseField,
 				},
@@ -191,7 +191,7 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 					{Name: "agent", Type: plugin.String, Suggest: suggestHeldAgents,
 						Help: "only the grant for this named agent"},
 					{Name: "all", Type: plugin.Bool, Help: "revoke every grant"},
-					{Name: "server", Type: plugin.String, Local: true,
+					{Name: "server", Type: plugin.String, Local: true, Remote: true,
 						Help: "revoke on a remote server instead (a name from remotes.yaml), as a " +
 							"signed operator call"},
 					operatorid.PassphraseField,

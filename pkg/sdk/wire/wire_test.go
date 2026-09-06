@@ -308,6 +308,10 @@ func fullDeclaration() plugin.Plugin {
 				// declared here: addr already carries a non-zero Endpoint, and
 				// TLSAdjacent's own contract is that it carries none.
 				{Name: "ca-file", Type: plugin.String, Help: "ca", Local: true, TLSAdjacent: true},
+				// Remote and With cross as data: a host that lost either would
+				// put the remote server's box back on every local form.
+				{Name: "server", Type: plugin.String, Help: "server", Local: true, Remote: true},
+				{Name: "passphrase", Type: plugin.Secret, Help: "pass", Local: true, With: "server"},
 			},
 		}},
 	}
