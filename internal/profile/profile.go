@@ -370,19 +370,29 @@ func checkPin(key string, inst Installed) *view.Error {
 // on. A profile that says something *broken* about it still fails, because that
 // is a statement, and running somewhere else instead is the wrong answer
 // delivered confidently.
-func Ambient(cfg config.Config, c plugin.Capability, name string, inst Installed) (string, config.Connection, *view.Error) {
-	if name == "" || !plugin.Profilable(c) {
+//
+// A reference, not only a name — `staging/analytics` as well as `staging` —
+// split the way Lookup splits it. A switch is always a bare name (`rta use`
+// refuses an instance), but the TUI's picker offers the refs a call would
+// accept, and it offers `staging/analytics` exactly when the bare name is
+// what Lookup refuses: several labeled entries and no default. Looking the
+// whole ref up as a profile name found nothing, so a picked instance was
+// silence — the form opened on the base configuration under a picker
+// naming the instance, while the run itself went through Lookup and reached
+// it. The screen and the call disagreeing, in the direction that hides it.
+func Ambient(cfg config.Config, c plugin.Capability, ref string, inst Installed) (string, config.Connection, *view.Error) {
+	if ref == "" || !plugin.Profilable(c) {
 		return "", config.Connection{}, nil
 	}
-	p, known := cfg.Profiles[name]
+	p, known := cfg.Profiles[config.RefName(ref)]
 	if !known || !p.Covers(plugin.Namespace(c.ID)) {
 		return "", config.Connection{}, nil
 	}
-	conn, verr := Lookup(cfg, c, name, inst)
+	conn, verr := Lookup(cfg, c, ref, inst)
 	if verr != nil {
 		return "", config.Connection{}, verr
 	}
-	return name, conn, nil
+	return ref, conn, nil
 }
 
 // originOf and capabilitiesOf read an Installed that may be nil, which is the

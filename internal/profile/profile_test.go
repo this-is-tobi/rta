@@ -201,6 +201,42 @@ profiles:
 	}
 }
 
+// The refs the TUI's picker offers resolve through Ambient the way they do
+// through Lookup: `staging/analytics` is the analytics entry, silence for a
+// plugin the profile says nothing about, and the bare name over two labeled
+// entries stays the refusal it is — never silence, which would send the call
+// to the base configuration under a picker naming the profile.
+func TestAmbientAcceptsTheInstanceRefsThePickerOffers(t *testing.T) {
+	cfg := load(t, `
+profiles:
+  staging:
+    plugins:
+      pg/main:
+        set:
+          host: main.internal
+      pg/analytics:
+        set:
+          host: analytics.internal
+`)
+	reg := pgRegistry(t)
+
+	name, conn, verr := Ambient(cfg, pgCap(), "staging/analytics", reg)
+	if verr != nil {
+		t.Fatal(verr)
+	}
+	if name != "staging/analytics" || conn.Set["host"] != "analytics.internal" {
+		t.Errorf("staging/analytics resolved to %q %v, want the analytics entry", name, conn.Set)
+	}
+
+	if name, _, verr := Ambient(cfg, s3Cap(), "staging/analytics", reg); verr != nil || name != "" {
+		t.Errorf("an instance ref on a plugin the profile is silent about = %q, %v", name, verr)
+	}
+
+	if _, _, verr := Ambient(cfg, pgCap(), "staging", reg); verr == nil || verr.Code != "core.profile.instance.required" {
+		t.Errorf("the bare name over two labeled entries = %v, want core.profile.instance.required", verr)
+	}
+}
+
 // A profile may fill where a call goes, and never what it reads or where it
 // writes.
 func TestAProfileMayNotFillAPathOrTheScope(t *testing.T) {
