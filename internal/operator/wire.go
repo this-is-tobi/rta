@@ -105,7 +105,11 @@ type RevokeSpec struct {
 	Scope   string `json:"scope,omitempty"`
 	Profile string `json:"profile,omitempty"`
 	Agent   string `json:"agent,omitempty"`
-	DryRun  bool   `json:"dryRun,omitempty"`
+	// Role narrows to the grants one `grant issue` issued, the way the
+	// other selectors narrow: `--role dev` alone takes dev back from every
+	// agent, `--role dev --agent claude` from one.
+	Role   string `json:"role,omitempty"`
+	DryRun bool   `json:"dryRun,omitempty"`
 }
 
 // RevokeOutcome is what one revocation decided, computed under the store's
