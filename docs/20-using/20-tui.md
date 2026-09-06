@@ -161,6 +161,22 @@ A log — `agent log`, or any table that declares its newest row last — opens 
 
 Views are actionable rather than static. In the notebook, `t` turns a note into a to-do or back, `d` checks one off and `x` removes; on the consent queue, `L` opens the lock form beside the call that made you want it, and on the lock list `x` lifts the lock under the cursor — from the list *and* from a record's own page, refreshing as it goes. Detail pages are composed from other capabilities' views rather than rebuilt, so a record page shows metadata, prose and relations as separate sections.
 
+## Answering agents
+
+The agent tile says how many calls are waiting on you. From it, and from the queue it opens:
+
+| Key | What it does |
+| --- | --- |
+| `w` | The queue of parked calls |
+| `g` | The record of what agents did |
+| `enter` | Everything about the call under the cursor, including what it would do |
+| `a` | Allow it — stops to confirm |
+| `d` | Deny it — one key, no form |
+| `L` | Lock the agent that asked, its name already filled in from the row |
+| `x` | On the lock list: lift the lock under the cursor |
+
+The queue refreshes itself every few seconds while it is on screen, so a call that parks while you are reading appears, and one that expires leaves. A form opened from one of these screens asks only about this machine: the `--server` box that aims the same command at a remote queue, and the operator passphrase that signs it, are offered when you type the command's name, not when you act on a row.
+
 ## Profiles
 
 `f` opens the profiles pane — your configured environments, which one is on, and what each covers. `n` creates one and `c` edits it, which is the shortest way to define a profile: the form is generated from each plugin's declared inputs, and it knows which of them are secrets, so a credential lands in `secrets:` as a reference instead of in `set:` as a value.
