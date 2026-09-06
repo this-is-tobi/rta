@@ -338,6 +338,19 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 			// dropped by session.List the first time somebody looks.
 			var connectedOnce sync.Once
 			defer func() { _ = agentsession.End(sessionID) }()
+			// The heartbeat that makes this server count as open. Started
+			// with the server and stopped with it, so a crash stops the
+			// beating too — which is the whole signal. Its own goroutine
+			// rather than something hung off a call, because a server that
+			// is attached and idle is exactly the state presence exists to
+			// show.
+			beat := time.NewTicker(agentsession.Beat)
+			defer beat.Stop()
+			go func() {
+				for range beat.C {
+					_ = agentsession.Touch(sessionID)
+				}
+			}()
 			opts := mcp.Options{
 				Agent:   agentName,
 				Session: sessionID,
