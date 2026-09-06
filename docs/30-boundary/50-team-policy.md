@@ -149,7 +149,7 @@ rta policy show
 searched from      /home/you/project
 repository policy  /home/you/project/.rta-policy.yaml
 your own policy    /home/you/.config/rta/policy.yaml
-maxTTL             15m0s
+maxTTL             15m
 never              pg.dump, vault.snapshot
 requireRepoPolicy  yes
 ```

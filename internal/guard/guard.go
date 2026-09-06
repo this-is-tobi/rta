@@ -443,6 +443,14 @@ func PromptSecret(req plugin.Request, confirm bool) (string, *view.Error) {
 	})
 }
 
+// RefuseArgv is PromptSecret's command-line rule for the runs where the
+// guard would not have prompted at all: with it off nothing reads
+// --passphrase, and a value nobody reads is still a value in shell history.
+// The issuing commands call it before they check whether the guard is on.
+func RefuseArgv(req plugin.Request) *view.Error {
+	return passkey.Argv(req, "core.guard.passphrase")
+}
+
 // Enable generates the keypair, wraps the private half under passphrase, and
 // writes the state. It returns the Signer so the enabling command can sign
 // in the same breath, without a second prompt.

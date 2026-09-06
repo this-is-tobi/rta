@@ -127,6 +127,23 @@ type PromptText struct {
 // travelled on argv, which every process running as you can read while the
 // command runs and which shell history keeps when it ends. The TUI's masked
 // field and the prompt are the channels that land nowhere.
+// Argv refuses a passphrase that arrived on the command line, whether or
+// not anything would go on to read it. Prompt applies it when a passphrase
+// is wanted; this is also for the callers that want none right now — the
+// guard is off, so nothing reads the flag — where a value nobody reads is
+// still a value in shell history, and a command that accepted it in silence
+// taught the habit the guard then has to break. codes is the caller's error
+// code prefix, the same one Prompt takes.
+func Argv(req plugin.Request, codes string) *view.Error {
+	if req.Surface() != plugin.SurfaceCLI || strings.TrimSpace(req.String("passphrase")) == "" {
+		return nil
+	}
+	return view.Errorf(codes+".argv",
+		"the passphrase must not travel on the command line — argv is readable by "+
+			"every process you run, and shell history keeps it").
+		WithHint("run again without --passphrase and answer the prompt")
+}
+
 func Prompt(req plugin.Request, confirm bool, text PromptText) (string, *view.Error) {
 	// Refused here and not only by the callers' surface gates: this package
 	// is the stated single home of "how the passphrase arrives", so the
@@ -140,11 +157,8 @@ func Prompt(req plugin.Request, confirm bool, text PromptText) (string, *view.Er
 			"a passphrase can only come from the person at the terminal")
 	}
 	if p := req.String("passphrase"); strings.TrimSpace(p) != "" {
-		if req.Surface() == plugin.SurfaceCLI {
-			return "", view.Errorf(text.Codes+".argv",
-				"the passphrase must not travel on the command line — argv is readable by "+
-					"every process you run, and shell history keeps it").
-				WithHint("run again without --passphrase and answer the prompt")
+		if verr := Argv(req, text.Codes); verr != nil {
+			return "", verr
 		}
 		return p, nil
 	}

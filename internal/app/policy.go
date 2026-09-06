@@ -12,6 +12,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/policy"
 	"github.com/this-is-tobi/rta/internal/render/cli"
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -109,7 +110,7 @@ func policyShowCommand(render func(*cobra.Command, view.View, *view.Error) error
 			}
 
 			if ceiling.MaxTTL > 0 {
-				pairs = append(pairs, view.Pair{Key: "maxTTL", Value: ceiling.MaxTTL.String()})
+				pairs = append(pairs, view.Pair{Key: "maxTTL", Value: format.Duration(ceiling.MaxTTL)})
 			}
 			if len(ceiling.Never) > 0 {
 				pairs = append(pairs, view.Pair{Key: "never", Value: strings.Join(ceiling.Never, ", ")})

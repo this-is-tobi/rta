@@ -2,6 +2,7 @@ package grant
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -12,6 +13,7 @@ import (
 	operatorid "github.com/this-is-tobi/rta/internal/operator"
 	profiles "github.com/this-is-tobi/rta/internal/profile"
 	"github.com/this-is-tobi/rta/internal/session"
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -48,6 +50,9 @@ func buildGrant(catalog func() []plugin.Capability, artifact func(string) (strin
 	if !targetExists(catalog, target) {
 		return core.Grant{}, notes, view.Errorf("grant.unknowntarget", "%q does not name a registered capability or plugin", target).
 			WithHint("rta explain lists capability IDs, rta plugin list lists plugin names — check for a typo")
+	}
+	if verr := grantNeeded(catalog, target, spec.Profile); verr != nil {
+		return core.Grant{}, notes, verr
 	}
 	// The artifact behind the plugin this target names, recorded now so the
 	// grant binds to the binary the operator is consenting about rather than
@@ -214,6 +219,70 @@ func knownAgents() []string {
 	return out
 }
 
+// grantNeeded refuses a grant that could never be spent. Reads are free —
+// core.Required is the one gate, and a Read on the base connection passes it
+// without a row — so a grant on one is a row `grant list` shows as live that
+// the gate never consults; and a capability reserved for the person at the
+// terminal is never a tool, so no call could ever reach the grant. Both used
+// to succeed, and read back as "done" — the same dead end a typo'd target
+// is refused for above, reached by a correct spelling.
+//
+// A plugin name is asked the same question of everything in it: `grant allow
+// sys` on a plugin of reads is the same nothing, spelled wider.
+func grantNeeded(catalog func() []plugin.Capability, target, profile string) *view.Error {
+	var caps []plugin.Capability
+	for _, c := range catalog() {
+		if c.ID == target || core.Namespace(c.ID) == target {
+			caps = append(caps, c)
+		}
+	}
+	human := 0
+	for _, c := range caps {
+		if c.HumanOnly {
+			human++
+			continue
+		}
+		if core.Required(c, profile) {
+			return nil
+		}
+	}
+	hint := "rta grant list --detail shows what needs a grant, what needs none, and what is never a tool"
+	switch {
+	case human == len(caps) && len(caps) == 1:
+		return view.Errorf("grant.needless",
+			"%s is never a tool — only the person at the terminal runs it, so no call could spend a grant on it", target).
+			WithHint(hint)
+	case human == len(caps):
+		return view.Errorf("grant.needless",
+			"%s has nothing an agent can call — everything in it is for the person at the terminal", target).
+			WithHint(hint)
+	case len(caps) == 1:
+		return view.Errorf("grant.needless",
+			"%s needs no grant — it is a read, and agents can already call it", target).
+			WithHint(hint)
+	default:
+		return view.Errorf("grant.needless",
+			"%s needs no grant — everything in it is a read, and agents can already call those", target).
+			WithHint(hint)
+	}
+}
+
+// unknownAgentNote says when a grant names an agent this machine has never
+// seen, beside the names it has. Not a refusal: the first grant on a fresh
+// machine is issued before the client has ever connected, and the name on
+// it is the one `rta mcp install` just wrote. But a grant matches its agent
+// exactly, so `--agent cluade` is a row that authorizes nothing and looks
+// live, and the moment to say so is while the operator is still looking.
+// Measured before the row is written, because afterwards the name on it is
+// one this machine knows.
+func unknownAgentNote(known []string, agent string) string {
+	if len(known) == 0 || slices.Contains(known, agent) {
+		return ""
+	}
+	return fmt.Sprintf("note: no agent named %q has connected or holds a grant — this machine knows %s",
+		agent, strings.Join(known, ", "))
+}
+
 // cappedNote words a TTL that came back shorter than asked, naming which
 // ceiling bit — byPolicy and capWhere are parseTTL's own verdict, not
 // re-derived here a second time.
@@ -223,9 +292,9 @@ func cappedNote(n buildNotes) string {
 	}
 	if n.byPolicy {
 		return fmt.Sprintf("capped at %s by your team's policy (you asked for %s) — %s",
-			n.ttl, n.asked, n.capWhere)
+			format.Duration(n.ttl), format.Duration(n.asked), n.capWhere)
 	}
-	return fmt.Sprintf("capped at the %s maximum (you asked for %s)", core.MaxTTL, n.asked)
+	return fmt.Sprintf("capped at the %s maximum (you asked for %s)", format.Duration(core.MaxTTL), format.Duration(n.asked))
 }
 
 // inactiveProfileNote warns when a grant names an environment that is not
