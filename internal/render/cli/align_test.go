@@ -74,28 +74,35 @@ func TestBarsShareABaseline(t *testing.T) {
 	allSame(t, "bars", columns(buf.String(), "█"), buf.String())
 }
 
-// A cell with no column is not drawn at all.
+// A cell with no column is not drawn at all, in any format.
 //
-// view.Redact masks by column name and says so: "a cell with no column cannot
-// be named, so it cannot be masked". The markdown renderer already drops the
-// extras; pretty drew them, in a nameless column, unmasked — so a table whose
-// rows outrun their headers leaked exactly the value redaction exists to hide,
-// and the two renderers disagreed about the same data.
+// view.Redact now truncates a row longer than Columns itself. Before that
+// fix, pretty and markdown each dropped the extra cell on their own, while
+// csv, json and yaml wrote it verbatim — so a table whose rows outran their
+// headers leaked exactly the value redaction exists to hide through three
+// of the five output formats, and only there. All five have to agree, and
+// the only way that holds is deciding it once, in view.Redact, rather than
+// separately in each renderer — which is what this checks across all of
+// them rather than pretty alone.
 func TestACellWithNoColumnIsNotDrawn(t *testing.T) {
 	v := view.Table{
 		Columns:  []view.Column{{Name: "Name"}, {Name: "Token"}},
 		Redacted: []string{"Token"},
 		Rows:     [][]string{{"one", "s3cret", "LEAKED-BY-BEING-EXTRA"}},
 	}
-	var buf bytes.Buffer
-	if err := Render(&buf, view.Redact(v), Options{Format: Pretty, NoColor: true}); err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(buf.String(), "LEAKED-BY-BEING-EXTRA") {
-		t.Errorf("a cell with no column reached the screen:\n%s", buf.String())
-	}
-	if strings.Contains(buf.String(), "s3cret") {
-		t.Errorf("the named column was not masked:\n%s", buf.String())
+	for _, format := range []Format{Pretty, Markdown, CSV, JSON, YAML} {
+		t.Run(string(format), func(t *testing.T) {
+			var buf bytes.Buffer
+			if err := Render(&buf, v, Options{Format: format, NoColor: true}); err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(buf.String(), "LEAKED-BY-BEING-EXTRA") {
+				t.Errorf("a cell with no column reached the output:\n%s", buf.String())
+			}
+			if strings.Contains(buf.String(), "s3cret") {
+				t.Errorf("the named column was not masked:\n%s", buf.String())
+			}
+		})
 	}
 }
 
