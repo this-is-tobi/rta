@@ -36,14 +36,14 @@ import (
 )
 
 // newMCPCommand wires the MCP surface: serve (stdio) and install helpers.
-func newMCPCommand(reg *registry.Registry, version string) *cobra.Command {
+func newMCPCommand(reg *registry.Registry, version string, opts *globalOpts) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "mcp",
 		Short: "Expose capabilities to AI agents over the Model Context Protocol",
 		RunE:  groupRunE,
 	}
 	root.AddCommand(newMCPServeCommand(reg, version))
-	root.AddCommand(newMCPInstallCommand())
+	root.AddCommand(newMCPInstallCommand(opts))
 	return root
 }
 

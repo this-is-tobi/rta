@@ -299,7 +299,7 @@ func NewRoot(reg *registry.Registry, version string) *cobra.Command {
 	// streams, while its subcommands stay ordinary capability commands. In
 	// a binary built without the AI engine there is no such namespace, and
 	// this is where `rta ai` still gets an answer worth reading.
-	root.AddCommand(newMCPCommand(reg, version))
+	root.AddCommand(newMCPCommand(reg, version, opts))
 	root.AddCommand(newExplainCommand(reg, opts))
 	root.AddCommand(newPluginCommand(reg, version, opts))
 	root.AddCommand(newDoctorCommand(reg, opts))
