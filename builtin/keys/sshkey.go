@@ -60,6 +60,17 @@ func isLocked(err error) bool {
 // up, the same count builtin/kv allows for a store's own identity.
 const keyPassphraseTries = 3
 
+// maxSSHKeyFile bounds Publish's fallback read when it loses the race to
+// write a restored key: an ed25519 private key in OpenSSH PEM, encrypted or
+// not, plus a comment, and its one-line public counterpart are both a
+// handful of hundred bytes. len(privBytes)/len(pubBytes) — this call's own
+// size — would refuse to read back a concurrent winner's legitimately
+// different-length key (a different comment, say) as anything but "too
+// large", turning a clean "already exists" into an opaque read error. A
+// fixed, generous cap the same shape as internal/seal's maxKeyFile fixes
+// that without opening the file up to an unbounded read.
+const maxSSHKeyFile = 4 << 10
+
 // promptKeyPassphrase asks for a private key's own passphrase at the
 // terminal, naming the file. Overridable in tests.
 var promptKeyPassphrase = func(path string) (string, error) {
@@ -379,7 +390,7 @@ func publishRestoredKey(privPath string, priv ed25519.PrivateKey, passphrase []b
 	}
 	pubBytes := []byte(line + "\n")
 
-	written, err := atomicfile.Publish(privPath, privBytes, 0o600, len(privBytes))
+	written, err := atomicfile.Publish(privPath, privBytes, 0o600, maxSSHKeyFile)
 	if err != nil {
 		return "", view.Errorf("keys.restore.write", "writing %s: %v", privPath, err)
 	}
@@ -388,7 +399,7 @@ func publishRestoredKey(privPath string, priv ed25519.PrivateKey, passphrase []b
 	}
 
 	pubPath := privPath + ".pub"
-	writtenPub, err := atomicfile.Publish(pubPath, pubBytes, 0o644, len(pubBytes))
+	writtenPub, err := atomicfile.Publish(pubPath, pubBytes, 0o644, maxSSHKeyFile)
 	if err != nil {
 		return "", view.Errorf("keys.restore.write", "writing %s: %v", pubPath, err)
 	}

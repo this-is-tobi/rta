@@ -1229,6 +1229,40 @@ func TestPublishRestoredKeyDetectsAPubCollisionAfterThePrivateKeyIsAlreadyWritte
 	}
 }
 
+// A collision file longer than this key's own PEM bytes must still resolve
+// to the clean keys.restore.exists error — not an opaque atomicfile read
+// failure. Publish's fallback read used to be capped at len(privBytes), this
+// call's own size, so a legitimately longer file at the same path (a
+// concurrent restore's key, with a longer comment, say) could not be read
+// back for the bytes.Equal check at all: ReadCapped refused it as "larger
+// than anything rta writes there" and the caller saw that read error
+// instead of the intended, actionable "already exists".
+func TestPublishRestoredKeyDetectsACollisionLongerThanItsOwnKey(t *testing.T) {
+	dir := t.TempDir()
+	out := filepath.Join(dir, "out")
+	longer := strings.Repeat("x", 3000) // well past an ed25519 PEM, under maxSSHKeyFile
+	if err := os.WriteFile(out, []byte(longer), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, verr := publishRestoredKey(out, priv, nil, "")
+	if verr == nil || verr.Code != "keys.restore.exists" {
+		t.Fatalf("code = %v, want keys.restore.exists — a longer file at the path must read back for "+
+			"comparison, not fail with an unrelated read error", verr)
+	}
+	data, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != longer {
+		t.Errorf("the pre-existing file was overwritten")
+	}
+}
+
 // keys.add: a key that can always be melted, written where nothing was.
 
 // **Generated here means backupable here.** ed25519 and nothing else, which
