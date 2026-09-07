@@ -87,6 +87,31 @@ func TestDryRunTouchesNothing(t *testing.T) {
 	}
 }
 
+// suggestLockedNames offers what lock.rm can actually lift, narrowed to the
+// kind already chosen — an agent lock does not belong on a list offered
+// under --kind credential, where it cannot match anything.
+func TestSuggestLockedNamesIsFilteredByKind(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	if _, err := capByID(t, "lock.add").Run(context.Background(),
+		req(map[string]any{"kind": "agent", "name": "claude"})); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := capByID(t, "lock.add").Run(context.Background(),
+		req(map[string]any{"kind": "credential", "name": "svc-token"})); err != nil {
+		t.Fatal(err)
+	}
+	if got := suggestLockedNames(context.Background(), req(map[string]any{"kind": "agent"})); len(got) != 1 || got[0] != "claude" {
+		t.Errorf("agent suggestions = %v, want [claude]", got)
+	}
+	if got := suggestLockedNames(context.Background(), req(map[string]any{"kind": "credential"})); len(got) != 1 || got[0] != "svc-token" {
+		t.Errorf("credential suggestions = %v, want [svc-token]", got)
+	}
+	// A typo in kind is silent, per the Suggest contract, not a crash.
+	if got := suggestLockedNames(context.Background(), req(map[string]any{"kind": "agnet"})); got != nil {
+		t.Errorf("suggestions for a bad kind = %v, want nil", got)
+	}
+}
+
 func TestATypodKindIsRefusedBeforeAnythingElse(t *testing.T) {
 	t.Setenv("RTA_DATA_DIR", t.TempDir())
 	_, err := capByID(t, "lock.add").Run(context.Background(),
