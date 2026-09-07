@@ -69,8 +69,8 @@ func newPolicyCommand(opts *globalOpts) *cobra.Command {
 	}
 
 	cmd.AddCommand(policyShowCommand(render))
-	cmd.AddCommand(policyInitCommand())
-	cmd.AddCommand(policyRequireCommand())
+	cmd.AddCommand(policyInitCommand(opts))
+	cmd.AddCommand(policyRequireCommand(opts))
 	return cmd
 }
 
@@ -202,7 +202,7 @@ requireScope: []
 #       - note
 `
 
-func policyInitCommand() *cobra.Command {
+func policyInitCommand(opts *globalOpts) *cobra.Command {
 	var force bool
 	cmd := &cobra.Command{
 		Use:               "init",
@@ -220,6 +220,10 @@ func policyInitCommand() *cobra.Command {
 				// was run twice is the kind of help nobody asked for.
 				return fmt.Errorf("%s already exists — `rta policy show` says what it does, "+
 					"or pass --force to replace it", path)
+			}
+			if opts.dryRun {
+				fmt.Fprintf(cmd.OutOrStdout(), "would write %s\n", path)
+				return nil
 			}
 			if err := atomicfile.Write(path, []byte(starterPolicy), 0o644); err != nil {
 				return err
@@ -241,7 +245,7 @@ func policyInitCommand() *cobra.Command {
 // The demand goes in the operator's own policy file, never in the repository.
 // A repository policy demanding a repository policy is removed along with its
 // own demand, so it would be a check that passes exactly when it is not needed.
-func policyRequireCommand() *cobra.Command {
+func policyRequireCommand(opts *globalOpts) *cobra.Command {
 	var off bool
 	cmd := &cobra.Command{
 		Use:               "require",
@@ -268,6 +272,10 @@ func policyRequireCommand() *cobra.Command {
 			updated, changed := setRequireRepo(string(existing), !off)
 			if !changed {
 				fmt.Fprintf(cmd.OutOrStdout(), "already %s in %s\n", yesNo(!off), path)
+				return nil
+			}
+			if opts.dryRun {
+				fmt.Fprintf(cmd.OutOrStdout(), "would set requireRepoPolicy: %t in %s\n", !off, path)
 				return nil
 			}
 			if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
