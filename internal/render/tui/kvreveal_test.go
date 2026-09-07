@@ -1,9 +1,11 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -90,5 +92,79 @@ func TestRevealingOpensTheUnlockFormRatherThanTheValue(t *testing.T) {
 	}
 	if _, asked := next.form.bindings["key"]; asked {
 		t.Error("the form asks for the key again, which is not what it is there for")
+	}
+}
+
+// The run this test used to stop short of: what happens once the unlock
+// form is behind the caller and the value actually comes back. runAction's
+// refreshPending decision, made before the form ever opens, is what decides
+// it — kv.get is Write, the same class every mutating row action here is,
+// and the resultMsg handler in tui.go used to fold any refreshPending
+// result that was not m.isTop into a flash-and-reload: the secret became
+// the footer text on the very list it was revealed from, in a screen-share-
+// and scrollback-visible line, exactly where kv.list's own comment above
+// promises it will not be.
+func TestRevealingLandsOnItsOwnPageRatherThanFlashingTheValue(t *testing.T) {
+	reg := realRegistry(t)
+	list, ok := reg.Capability("kv.list")
+	if !ok {
+		t.Fatal("kv.list is not registered")
+	}
+	get, ok := reg.Capability("kv.get")
+	if !ok {
+		t.Fatal("kv.get is not registered")
+	}
+	t.Setenv("RTA_CONFIG", t.TempDir()+"/config.yaml")
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	m := New(reg, config.Dashboard{}, nil)
+	m.width, m.height = 100, 40
+	m.current = list
+	m.lastValues = map[string]any{}
+	m.row = 1
+
+	tbl := view.Table{
+		Columns: []view.Column{{Name: "Key"}, {Name: "Kind"}},
+		Rows:    [][]string{{"api-token", "token"}, {"db-password", "password"}},
+	}
+	model, _ := m.runAction(capAction{key: "v", label: "reveal", cap: get, src: srcRow}, tbl)
+	next := model.(Model)
+	if next.refreshPending {
+		t.Fatal("refreshPending is true for kv.get — its result would take the flash-and-reload " +
+			"branch instead of landing on its own page")
+	}
+
+	// The unlock form is behind us now; this is the run it opened for,
+	// completing with the value db-password holds.
+	const secret = "hunter2-the-actual-value"
+	final, _ := next.Update(resultMsg{cap: get, view: view.Text{Body: secret}})
+	fm := final.(Model)
+	if fm.mode != modeResult {
+		t.Errorf("mode = %v, want modeResult — the value did not land on its own page", fm.mode)
+	}
+	if strings.Contains(fm.flash, secret) {
+		t.Errorf("the secret reached the flash line: %q", fm.flash)
+	}
+}
+
+// flashText's second layer, for a capability alwaysOwnPage does not happen
+// to name: a Text result that is not actually a one-liner — multiple lines,
+// or just long — falls back to the generic "<capability> done" rather than
+// being drawn as itself.
+func TestFlashTextFallsBackForAnythingThatIsNotAOneLiner(t *testing.T) {
+	get := plugin.Capability{ID: "kv.get"}
+	for name, v := range map[string]view.Text{
+		"multi-line": {Body: "line one\nline two"},
+		"too long":   {Body: strings.Repeat("x", maxFlashLen+1)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := flashText(resultMsg{cap: get, view: v})
+			if got != "kv.get done" {
+				t.Errorf("flashText = %q, want the generic fallback", got)
+			}
+		})
+	}
+	// The control: an ordinary short confirmation still draws as itself.
+	if got := flashText(resultMsg{cap: get, view: view.Text{Body: "copied to clipboard"}}); got != "copied to clipboard" {
+		t.Errorf("flashText = %q, want the one-liner drawn as itself", got)
 	}
 }

@@ -43,6 +43,22 @@ type capAction struct {
 	seed map[string]string
 }
 
+// alwaysOwnPage is every capability whose result must land on its own
+// result page, never folded into runAction's flash-and-reload — the
+// mutating-action shortcut every other Write/Destructive capability here
+// takes. kv.get is Write for what it discloses, not because it mutates
+// anything, so runAction's Safety-based refreshPending check could not tell
+// it apart from an actual mutation: the value it returns became the flash
+// text painted onto whatever list the reveal was pressed from, in a
+// screen-shareable, scrollback-persisting cell — kv.list's own comment
+// above promises the opposite, that a value "arrives on its own result
+// page... rather than in a cell of a list somebody was scrolling". kv.copy
+// is deliberately not here: its result is a plain confirmation with no
+// value in it, so the flash-and-reload it already gets is correct as is.
+var alwaysOwnPage = map[string]bool{
+	"kv.get": true,
+}
+
 // capActionSpecs declares which capabilities each view can reach in one key.
 // One table drives every surface: dashboard tile buttons (minus "enter",
 // which opens the tile), row actions inside result tables, and the actions
