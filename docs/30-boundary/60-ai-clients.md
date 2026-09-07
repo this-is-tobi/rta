@@ -31,6 +31,8 @@ The "verified" column is honest rather than reassuring. Two of these commands we
 rta mcp install codex --show
 ```
 
+`--global` installs for every project instead of just the one rta happens to run in, where the client actually supports the distinction — Claude Code does, and rta passes its own `--scope user` through. Where a client's own command is declared but not verified (codex, gemini), `--global` refuses rather than guess a flag on a command nobody has confirmed against the real CLI; `--show` still prints the block, and picking user versus project scope is then the same manual step it always was. VS Code has no such distinction to make — every install already lands in its one user-level file, so `--global` changes nothing there and is accepted as a no-op.
+
 ## rta will not write another tool's config file
 
 Where a client ships its own command, rta runs that. Where it does not, rta prints and stops. Three reasons, in the order that decides it:
@@ -47,10 +49,11 @@ rta mcp install claude
 
 This runs `claude mcp add rta -- /path/to/rta mcp serve --as claude`. The `--` matters and rta always passes it: without the separator, `claude` reads `--as` as one of its own flags.
 
-Scope is Claude Code's decision, not rta's. `claude mcp add` writes to the project's `.mcp.json` by default; `--scope user` puts it in `~/.claude.json` for every project. Pass it through:
+Scope is Claude Code's decision, not rta's. `claude mcp add` writes to the project's `.mcp.json` by default; `--scope user` puts it in `~/.claude.json` for every project. `rta mcp install claude --global` passes that flag through:
 
 ```bash
-claude mcp add --scope user rta -- /usr/local/bin/rta mcp serve --as claude
+rta mcp install claude --global
+# runs: claude mcp add rta --scope user -- /usr/local/bin/rta mcp serve --as claude
 ```
 
 Confirm it connected:
@@ -99,7 +102,7 @@ rta mcp install cursor
 }
 ```
 
-Put it in `~/.cursor/mcp.json` for every project, or `.cursor/mcp.json` for one. The per-project file is worth preferring — it means the grants an agent holds are scoped to the repository you were working in when you issued them.
+Put it in `~/.cursor/mcp.json` for every project, or `.cursor/mcp.json` for one. The per-project file is worth preferring — it means the grants an agent holds are scoped to the repository you were working in when you issued them. `rta mcp install cursor --global` names only the user-level file, for the times every-project really is what you want.
 
 ## GitHub Copilot CLI
 
