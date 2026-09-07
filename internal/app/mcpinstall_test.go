@@ -85,6 +85,31 @@ func TestInstallRunsTheClientsOwnCommand(t *testing.T) {
 	}
 }
 
+// D3: --dry-run used to be silently ignored here too — `rta mcp install
+// claude --dry-run` ran claude's own registration command for real, the
+// one command in this file that touches a config file rta does not own.
+func TestInstallDryRunDoesNotRunTheClientsOwnCommand(t *testing.T) {
+	argv := fakeClient(t, "claude", 0)
+	out, _, err := run(t, testRegistry(t), "mcp", "install", "claude", "--dry-run")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, statErr := os.Stat(argv); statErr == nil {
+		t.Fatal("--dry-run ran the client's own command anyway")
+	}
+	if !strings.Contains(out, "would run") || !strings.Contains(out, "claude") {
+		t.Errorf("dry-run output does not preview the command: %q", out)
+	}
+
+	// The real run still works afterwards.
+	if _, _, err := run(t, testRegistry(t), "mcp", "install", "claude"); err != nil {
+		t.Fatal(err)
+	}
+	if _, statErr := os.Stat(argv); statErr != nil {
+		t.Error("the real run did not run the client's own command")
+	}
+}
+
 func TestTheAgentNameDefaultsToTheClientAndIsOverridable(t *testing.T) {
 	argv := fakeClient(t, "claude", 0)
 	if _, _, err := run(t, testRegistry(t),

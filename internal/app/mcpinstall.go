@@ -172,7 +172,7 @@ func findClient(name string) (mcpClient, bool) {
 	return mcpClient{}, false
 }
 
-func newMCPInstallCommand() *cobra.Command {
+func newMCPInstallCommand(opts *globalOpts) *cobra.Command {
 	var as string
 	var show bool
 
@@ -228,6 +228,10 @@ func newMCPInstallCommand() *cobra.Command {
 			out := cmd.OutOrStdout()
 			if !show && client.bin != "" {
 				if bin, err := exec.LookPath(client.bin); err == nil {
+					if opts.dryRun {
+						fmt.Fprintf(out, "would run: %s %s\n", bin, strings.Join(client.args(self, name), " "))
+						return nil
+					}
 					run := exec.CommandContext(cmd.Context(), bin, client.args(self, name)...)
 					run.Stdout, run.Stderr = out, cmd.ErrOrStderr()
 					if err := run.Run(); err != nil {
