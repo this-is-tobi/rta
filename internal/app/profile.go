@@ -444,7 +444,8 @@ func newProfileCommand(reg *registry.Registry, opts *globalOpts) *cobra.Command 
 			return render(cmd, profileCard(args[0], p, reg), nil)
 		},
 	}
-	cmd.AddCommand(list, show, profileSetCommand(reg, render, opts), profileRemoveCommand(reg, render, opts))
+	cmd.AddCommand(list, show, profileSetCommand(reg, render, opts), profileRemoveCommand(reg, render, opts),
+		profileRepinCommand(reg, render, opts))
 	return cmd
 }
 
