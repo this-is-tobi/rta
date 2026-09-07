@@ -665,7 +665,32 @@ func readManifestFile(dir string, e os.DirEntry) ([]byte, *view.Error) {
 			"not a regular file — a manifest is a file, and rta does not follow "+
 				"what an index points at")
 	}
-	f, err := os.Open(filepath.Join(dir, e.Name()))
+	return readManifestAt(filepath.Join(dir, e.Name()))
+}
+
+// readManifestAt is readManifestFile's path-based sibling — the same
+// regular-file check and the same capped read, for a caller that names a
+// manifest directly (Resolve, building `index/<name>.yaml` from a spec)
+// rather than one already walking a directory listing's own os.DirEntry
+// values. Before this, Resolve read the path with a plain os.ReadFile: no
+// symlink check and no cap, the identical gap readManifestFile's own
+// listing-side reader was written to close, just reachable from the other
+// direction — `rta plugin install`/`upgrade` OOM-killed on exactly the
+// planted `index/pg.yaml -> /dev/zero` that `rta plugin search`, going
+// through readManifestFile, already refused correctly. One rule, in one
+// function, is what keeps the two readers from disagreeing about what an
+// index may make rta open.
+func readManifestAt(path string) ([]byte, *view.Error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, view.Errorf("plugin.index.manifest", "%v", err)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, view.Errorf("plugin.index.manifest",
+			"not a regular file — a manifest is a file, and rta does not follow "+
+				"what an index points at")
+	}
+	f, err := os.Open(path)
 	if err != nil {
 		return nil, view.Errorf("plugin.index.manifest", "%v", err)
 	}
@@ -786,8 +811,13 @@ func Resolve(spec string) (Listed, *view.Error) {
 
 	var found []Listed
 	for _, ix := range search {
-		raw, err := os.ReadFile(filepath.Join(ix.Dir, "index", name+".yaml"))
-		if err != nil {
+		raw, verr := readManifestAt(filepath.Join(ix.Dir, "index", name+".yaml"))
+		if verr != nil {
+			// Absent, a symlink, a fifo, or over the cap: every one of these
+			// means this index does not carry a usable manifest under this
+			// name, which is the same "keep looking" answer a genuinely
+			// missing file gets — readManifestAt is what makes that
+			// judgement safely, not what changes what Resolve does with it.
 			continue
 		}
 		m, verr := ParseManifest(raw)
