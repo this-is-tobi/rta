@@ -154,6 +154,19 @@ func maskURLCredentials(s string) string {
 	for _, m := range urlUserinfo.FindAllStringSubmatch(s, -1) {
 		out = strings.Replace(out, m[0], m[1]+m[2]+":"+view.Mask+"@", 1)
 	}
+	// A second, independent pass for the colon-free spelling: GitHub's own
+	// documented form for a PAT in a remote URL is `https://<token>@host/...`
+	// — no colon, so urlUserinfo's pattern never matches it, and the token
+	// reached an MCP agent in the clear. There is no way to tell that spelling
+	// apart from an ordinary bare username from the string alone, so — the
+	// same trade maskProxy already takes for a proxy URL — the whole userinfo
+	// is masked rather than guessed at: `https://alice@github.com/...` shows
+	// a masked username too. Runs after urlUserinfo on purpose, over its
+	// output: anything that pass already replaced now carries the colon this
+	// pattern requires to be absent, so it is not masked a second time.
+	for _, m := range urlBareUserinfo.FindAllStringSubmatch(out, -1) {
+		out = strings.Replace(out, m[0], m[1]+view.Mask+"@", 1)
+	}
 	return out
 }
 
@@ -161,3 +174,11 @@ func maskURLCredentials(s string) string {
 // gets replaced. Deliberately requires the colon: `ssh://git@host` names a
 // user and no secret, and masking it would hide something that is not one.
 var urlUserinfo = regexp.MustCompile(`([a-zA-Z][a-zA-Z0-9+.-]*://)([^/:@\s]+):[^@/\s]+@`)
+
+// urlBareUserinfo matches http(s)://user@ with no colon at all — GitHub's
+// PAT-as-username spelling, and an ordinary bare username the same shape.
+// Restricted to http(s), unlike urlUserinfo above: ssh://git@host names the
+// conventional SSH user and no secret, and the SCP-like git@host:path form
+// has no "://" for this pattern to anchor on in the first place — both are
+// left alone, same as urlUserinfo already leaves them.
+var urlBareUserinfo = regexp.MustCompile(`(https?://)([^/:@\s]+)@`)

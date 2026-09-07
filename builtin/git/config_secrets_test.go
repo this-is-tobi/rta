@@ -48,6 +48,15 @@ func TestCredentialsInConfigAreMasked(t *testing.T) {
 			value:    "https://bob:hunter2@git.internal/team/repo.git",
 			wantGone: "hunter2",
 		},
+		{
+			// GitHub's own documented spelling: a PAT as bare userinfo, no
+			// colon — the shape urlUserinfo's colon requirement never
+			// matched, so this reached an MCP agent in the clear.
+			name:     "a PAT as bare userinfo, GitHub's own spelling",
+			key:      "remote.origin.url",
+			value:    "https://ghp_REALLYSECRETTOKEN@github.com/owner/repo.git",
+			wantGone: "ghp_REALLYSECRETTOKEN",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := maskConfigValue(tc.key, tc.value)
@@ -93,6 +102,29 @@ func TestTheUsernameSurvivesMaskingButThePasswordDoesNot(t *testing.T) {
 	}
 	if strings.Contains(got, "glpat-abc") {
 		t.Errorf("the token survived: %s", got)
+	}
+}
+
+// The colon-free spelling: there is no way to tell a PAT-as-username apart
+// from an ordinary bare username from the string alone, so the whole
+// userinfo is masked rather than guessed at — the same trade maskProxy
+// already takes. ssh and the SCP-like git@host:path form are left alone:
+// neither is http(s), and both name the conventional SSH user, not a
+// secret.
+func TestBareUserinfoIsMaskedForHTTPSOnly(t *testing.T) {
+	if got := maskURLCredentials("https://ghp_abc123@github.com/owner/repo.git"); strings.Contains(got, "ghp_abc123") {
+		t.Errorf("the bare-userinfo token survived: %s", got)
+	} else if !strings.Contains(got, view.Mask) {
+		t.Errorf("nothing was masked, so nothing tells the reader something is hidden: %s", got)
+	}
+
+	for _, unchanged := range []string{
+		"ssh://git@git.internal/team/repo.git",
+		"git@github.com:owner/repo.git",
+	} {
+		if got := maskURLCredentials(unchanged); got != unchanged {
+			t.Errorf("%q became %q — a plain SSH user is not a secret", unchanged, got)
+		}
 	}
 }
 
