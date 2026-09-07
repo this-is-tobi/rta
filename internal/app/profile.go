@@ -218,7 +218,7 @@ func newUseCommand(opts *globalOpts) *cobra.Command {
 				return err
 			}
 			renderOpts := cli.Options{Format: format, NoColor: opts.noColor || !isTTY(), Width: termWidth()}
-			v, verr := runUse(cmd, args)
+			v, verr := runUse(cmd, args, opts.dryRun)
 			if verr != nil {
 				_ = cli.RenderError(cmd.ErrOrStderr(), verr, renderOpts)
 				return Rendered(verr)
@@ -282,7 +282,7 @@ func completeProfiles(*cobra.Command, []string, string) ([]cobra.Completion, cob
 	return out, cobra.ShellCompDirectiveNoFileComp
 }
 
-func runUse(cmd *cobra.Command, args []string) (view.View, *view.Error) {
+func runUse(cmd *cobra.Command, args []string, dryRun bool) (view.View, *view.Error) {
 	cfg, err := config.Load()
 	if err != nil {
 		return nil, view.AsError(err, "core.profile.config")
@@ -293,6 +293,12 @@ func runUse(cmd *cobra.Command, args []string) (view.View, *view.Error) {
 
 	switch {
 	case off:
+		if dryRun {
+			// currentView takes the selection as a value, never re-reading
+			// it from disk, so the empty one below previews exactly what
+			// switching off would leave without SaveSelection ever running.
+			return currentView(cfg, profile.Selection{}, now), nil
+		}
 		if verr := profile.SaveSelection(profile.Selection{}); verr != nil {
 			return nil, verr
 		}
@@ -356,6 +362,9 @@ func runUse(cmd *cobra.Command, args []string) (view.View, *view.Error) {
 		if window > 0 {
 			until := now.Add(window)
 			s.Until = &until
+		}
+		if dryRun {
+			return currentView(cfg, s, now), nil
 		}
 		if verr := profile.SaveSelection(s); verr != nil {
 			return nil, verr

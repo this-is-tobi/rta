@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/internal/profile"
 )
 
 // `--plugin pg/analytics` states one of several connections to a plugin, in
@@ -106,5 +107,48 @@ func TestUseRefusesAnInstanceRef(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "whole environment") || !strings.Contains(stderr, "--profile staging/analytics") {
 		t.Errorf("refusal does not teach the per-call form: %q", stderr)
+	}
+}
+
+// D3: --dry-run used to be silently ignored here too — `rta use staging
+// --dry-run` switched to staging for real, the same silent-write shape
+// profile rm and set had.
+func TestUseDryRunDoesNotSwitch(t *testing.T) {
+	run := session(t, setRegistry(t))
+	if _, stderr, err := run("profile", "set", "staging",
+		"--plugin", "db", "--set", "host=staging.internal"); err != nil {
+		t.Fatalf("set: %v\n%s", err, stderr)
+	}
+
+	out, stderr, err := run("use", "staging", "--dry-run")
+	if err != nil {
+		t.Fatalf("use --dry-run: %v\n%s", err, stderr)
+	}
+	if !strings.Contains(out, "staging") {
+		t.Errorf("dry-run output does not name the environment: %q", out)
+	}
+	if got := profile.LoadSelection(); got.Active != "" {
+		t.Errorf("active selection = %q, want none — --dry-run switched for real", got.Active)
+	}
+
+	// Real, without --dry-run, still switches — the flag is not the only
+	// path that works.
+	if _, stderr, err := run("use", "staging"); err != nil {
+		t.Fatalf("use: %v\n%s", err, stderr)
+	}
+	if got := profile.LoadSelection(); got.Active != "staging" {
+		t.Errorf("active selection = %q, want staging", got.Active)
+	}
+
+	// And switching off previews the same way.
+	out, stderr, err = run("use", "--off", "--dry-run")
+	if err != nil {
+		t.Fatalf("use --off --dry-run: %v\n%s", err, stderr)
+	}
+	if !strings.Contains(out, "Nothing switched on") {
+		t.Errorf("dry-run --off output = %q, want the switched-off preview", out)
+	}
+	if got := profile.LoadSelection(); got.Active != "staging" {
+		t.Errorf("active selection = %q, want staging — --off --dry-run switched off for real", got.Active)
 	}
 }
