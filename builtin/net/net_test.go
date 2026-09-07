@@ -73,26 +73,36 @@ func TestOnlyTheWritingFileCapabilitiesHideTheirPathFromMCP(t *testing.T) {
 // future capability that dials a caller-chosen destination has to make the
 // same choice on purpose, the same reason net.hosts's Local split is pinned
 // above.
-func TestHostReachingCapabilitiesNeedAGrantScopedToHost(t *testing.T) {
-	want := map[string]bool{"net.probe": true, "net.send": true, "net.port": true}
-	seen := map[string]bool{}
+// destinationFields is every input name this plugin uses to spell "the
+// remote address the caller is choosing" — every capability here that
+// declares one of them is naming a destination, not describing this
+// machine. Written as a positive assertion over the declaration rather than
+// a list of capability IDs, so a capability added later that reaches for
+// "host" or "name" the same way net.probe and net.dns already do is checked
+// the day it ships, instead of shipping ungated the way net.dns, net.trace
+// and net.ping once did while net.probe sat right beside them, gated.
+var destinationFields = map[string]bool{"host": true, "name": true}
+
+func TestEveryCallerChosenDestinationNeedsAGrantScopedToItself(t *testing.T) {
+	found := 0
 	for _, c := range Plugin().Capabilities {
-		needsGrant, classified := want[c.ID]
-		if !classified {
-			continue
-		}
-		seen[c.ID] = true
-		if c.NeedsGrant != needsGrant {
-			t.Errorf("%s.NeedsGrant = %v, want %v", c.ID, c.NeedsGrant, needsGrant)
-		}
-		if c.Scope != "host" {
-			t.Errorf("%s.Scope = %q, want %q", c.ID, c.Scope, "host")
+		for _, f := range c.Inputs {
+			if !destinationFields[f.Name] || f.Local || !f.Required {
+				continue
+			}
+			found++
+			if !c.NeedsGrant {
+				t.Errorf("%s: input %q is a caller-chosen destination but the capability declares no NeedsGrant",
+					c.ID, f.Name)
+			}
+			if c.Scope != f.Name {
+				t.Errorf("%s.Scope = %q, want %q — the destination field itself", c.ID, c.Scope, f.Name)
+			}
 		}
 	}
-	for id := range want {
-		if !seen[id] {
-			t.Errorf("%s no longer exists", id)
-		}
+	if found < 5 {
+		t.Fatalf("found only %d destination fields — this plugin has fewer capabilities than expected, "+
+			"or the field-name convention changed and this test no longer sees them", found)
 	}
 }
 
