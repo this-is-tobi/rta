@@ -97,6 +97,99 @@ func configOf(t *testing.T) string {
 	return string(data)
 }
 
+// D3: --dry-run is a persistent root flag inherited by every command, but
+// this hand-written one used to ignore it silently and write for real —
+// `--set`'s own refusals above are a different guarantee (a shape that
+// cannot be written) from this one (a flag that says not to write at all).
+func TestProfileSetDryRunWritesNothing(t *testing.T) {
+	reg := setRegistry(t)
+	run := session(t, reg)
+	if _, errOut, err := run("profile", "set", "staging", "--plugin", "db",
+		"--set", "host=db.internal", "--dry-run"); err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	if _, err := os.Stat(config.Path()); err == nil {
+		t.Fatalf("--dry-run wrote %s anyway", config.Path())
+	} else if !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+
+	out, errOut, err := run("profile", "set", "staging", "--plugin", "db",
+		"--set", "host=db.internal", "--dry-run")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	if !strings.Contains(out, "would") {
+		t.Errorf("dry-run output does not say would: %q", out)
+	}
+}
+
+// The mirror case: a real run (no --dry-run) after the dry run above still
+// writes, so --dry-run is not accidentally the only path that works.
+func TestProfileSetWithoutDryRunWrites(t *testing.T) {
+	reg := setRegistry(t)
+	run := session(t, reg)
+	if _, errOut, err := run("profile", "set", "staging", "--plugin", "db",
+		"--set", "host=db.internal"); err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	if !strings.Contains(configOf(t), "db.internal") {
+		t.Errorf("the real run did not write: %s", configOf(t))
+	}
+}
+
+// D3, the destructive half: removing a whole environment also revokes
+// every grant naming it, which is exactly why this must not run on a bare
+// `rta profile rm staging` the way it used to.
+func TestProfileRemoveWithoutConfirmationRefuses(t *testing.T) {
+	run := session(t, setRegistry(t))
+	if _, errOut, err := run("profile", "set", "staging", "--plugin", "db",
+		"--set", "host=db.internal"); err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	before := configOf(t)
+
+	_, errOut, err := run("profile", "rm", "staging")
+	if err == nil {
+		t.Fatal("profile rm ran with no --yes and no --dry-run")
+	}
+	if !strings.Contains(errOut, CodeConfirmRequired) {
+		t.Errorf("errOut = %q, want %s", errOut, CodeConfirmRequired)
+	}
+	if configOf(t) != before {
+		t.Error("the profile was removed despite the refusal")
+	}
+}
+
+// --dry-run previews the same removal with no confirmation needed — a
+// preview is not the action it is previewing.
+func TestProfileRemoveDryRunPreviewsWithoutConfirmation(t *testing.T) {
+	run := session(t, setRegistry(t))
+	if _, errOut, err := run("profile", "set", "staging", "--plugin", "db",
+		"--set", "host=db.internal"); err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	if _, errOut, err := run("grant", "allow", "db.status", "--profile", "staging",
+		"--agent", "claude", "--ttl", "1h"); err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	before := configOf(t)
+
+	out, errOut, err := run("profile", "rm", "staging", "--dry-run")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	if configOf(t) != before {
+		t.Error("--dry-run removed the profile anyway")
+	}
+	if !strings.Contains(out, "would remove") {
+		t.Errorf("output does not preview the removal: %q", out)
+	}
+	if !strings.Contains(out, "would revoke") {
+		t.Errorf("output does not preview the grant revocation: %q", out)
+	}
+}
+
 // **A credential cannot be stated with `--set`.** This is the mistake the
 // command exists to make impossible: `secrets:` holds a reference and `set:`
 // holds a value, so a password in the wrong block is inert — and it is inert
@@ -549,7 +642,7 @@ func TestRemovingAProfileRevokesTheGrantsNamingIt(t *testing.T) {
 		t.Fatalf("%v %q", err, errOut)
 	}
 
-	out, errOut, err := run("profile", "rm", "staging")
+	out, errOut, err := run("profile", "rm", "staging", "--yes")
 	if err != nil {
 		t.Fatalf("%v %q", err, errOut)
 	}

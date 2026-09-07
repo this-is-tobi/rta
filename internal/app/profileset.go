@@ -59,7 +59,7 @@ import (
 // reading under which running it twice and running it once are the same.
 
 // profileSetCommand implements `rta profile set`.
-func profileSetCommand(reg *registry.Registry, render renderFn) *cobra.Command {
+func profileSetCommand(reg *registry.Registry, render renderFn, opts *globalOpts) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "set <profile>",
 		Short: "Create or update an environment without a terminal",
@@ -82,7 +82,7 @@ func profileSetCommand(reg *registry.Registry, render renderFn) *cobra.Command {
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeProfiles,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			v, verr := runProfileSet(cmd, args[0], reg)
+			v, verr := runProfileSet(cmd, args[0], reg, opts.dryRun)
 			return render(cmd, v, verr)
 		},
 	}
@@ -203,7 +203,7 @@ func completeSecretInputs(cmd *cobra.Command, _ []string, prefix string) ([]cobr
 }
 
 // profileRemoveCommand implements `rta profile rm`.
-func profileRemoveCommand(reg *registry.Registry, render renderFn) *cobra.Command {
+func profileRemoveCommand(reg *registry.Registry, render renderFn, opts *globalOpts) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "rm <profile>",
 		Aliases: []string{"remove"},
@@ -217,7 +217,7 @@ func profileRemoveCommand(reg *registry.Registry, render renderFn) *cobra.Comman
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeProfiles,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			v, verr := runProfileRemove(cmd, args[0], reg)
+			v, verr := runProfileRemove(cmd, args[0], reg, opts.dryRun, opts.yes)
 			return render(cmd, v, verr)
 		},
 	}
@@ -227,7 +227,7 @@ func profileRemoveCommand(reg *registry.Registry, render renderFn) *cobra.Comman
 	return cmd
 }
 
-func runProfileSet(cmd *cobra.Command, name string, reg *registry.Registry) (view.View, *view.Error) {
+func runProfileSet(cmd *cobra.Command, name string, reg *registry.Registry, dryRun bool) (view.View, *view.Error) {
 	if !config.ValidName(name) {
 		return nil, view.Errorf("core.profile.name", "%q is not a valid profile name", name).
 			WithHint("lowercase letters, digits and dashes, starting with a letter or digit — " +
@@ -283,6 +283,10 @@ func runProfileSet(cmd *cobra.Command, name string, reg *registry.Registry) (vie
 		// unchanged is a run that asked for a state the profile is already
 		// in: not a refusal, and not a write either.
 		unchanged bool
+		// finalProfile is what would have been written, captured for a dry
+		// run to report against — the closure below returns false rather
+		// than committing it, so there is nothing on disk to read back.
+		finalProfile config.Profile
 	)
 	if err := config.Mutate(func(cfg config.Config) (config.Config, bool) {
 		if cfg.Profiles == nil {
@@ -354,6 +358,10 @@ func runProfileSet(cmd *cobra.Command, name string, reg *registry.Registry) (vie
 			unchanged = true
 			return cfg, false
 		}
+		finalProfile = p
+		if dryRun {
+			return cfg, false
+		}
 		cfg.Profiles[name] = p
 		return cfg, true
 	}); err != nil {
@@ -363,25 +371,40 @@ func runProfileSet(cmd *cobra.Command, name string, reg *registry.Registry) (vie
 		return nil, verr
 	}
 
-	// Read back what a later run will read, rather than reporting the value
-	// this function built. The profile card is `rta profile show`'s renderer,
-	// so what this prints on success and what that prints afterwards are the
-	// same page — including its redaction and its problem rows.
-	after, err := config.LoadFile()
-	if err != nil {
-		return nil, view.AsError(err, "core.profile.config")
+	// A dry run has nothing on disk to read back — config.Mutate returned
+	// false above precisely so nothing was written — so the card is built
+	// from finalProfile, the same value that branch would have committed,
+	// rather than from config.LoadFile's answer.
+	written := finalProfile
+	if !dryRun {
+		// Read back what a later run will read, rather than reporting the
+		// value this function built. The profile card is `rta profile
+		// show`'s renderer, so what this prints on success and what that
+		// prints afterwards are the same page — including its redaction
+		// and its problem rows.
+		after, err := config.LoadFile()
+		if err != nil {
+			return nil, view.AsError(err, "core.profile.config")
+		}
+		written = after.Profiles[name]
 	}
-	written := after.Profiles[name]
 	card := profileCard(name, written, reg)
 	verb := "updated"
 	if !existed {
 		verb = "created"
 	}
+	if dryRun && !unchanged {
+		verb = "would " + verb
+	}
 	what := verb + " " + name
 	if key != "" {
 		what += " — " + key
 	}
-	head := []view.Pair{{Key: "wrote", Value: what + " in " + config.Path()}}
+	label := "wrote"
+	if dryRun {
+		label = "would write"
+	}
+	head := []view.Pair{{Key: label, Value: what + " in " + config.Path()}}
 	if unchanged {
 		already := name + " already reads this way"
 		if key != "" {
@@ -872,14 +895,15 @@ func pinKey(want string, inst profile.Installed) string {
 	return want
 }
 
-func runProfileRemove(cmd *cobra.Command, name string, reg *registry.Registry) (view.View, *view.Error) {
+func runProfileRemove(cmd *cobra.Command, name string, reg *registry.Registry, dryRun, yes bool) (view.View, *view.Error) {
 	if verr := refuseUnhonouredConfig(); verr != nil {
 		return nil, verr
 	}
 	want := strings.TrimSpace(mustString(cmd, "plugin"))
 	var (
-		verr *view.Error
-		key  string
+		verr    *view.Error
+		key     string
+		current config.Profile
 	)
 	if err := config.Mutate(func(cfg config.Config) (config.Config, bool) {
 		p, known := cfg.Profiles[name]
@@ -888,6 +912,21 @@ func runProfileRemove(cmd *cobra.Command, name string, reg *registry.Registry) (
 			return cfg, false
 		}
 		if want == "" {
+			current = p
+			if dryRun {
+				return cfg, false
+			}
+			// Removing the whole environment also switches it off if it was
+			// on and revokes every grant naming it — a wider blast radius
+			// than the --plugin form below, which only drops one map entry.
+			if !yes {
+				verr = &view.Error{
+					Code:    CodeConfirmRequired,
+					Message: "removing " + name + " also revokes every grant naming it and needs confirmation",
+					Hint:    "re-run with --yes to confirm, or --dry-run to preview",
+				}
+				return cfg, false
+			}
 			delete(cfg.Profiles, name)
 			return cfg, true
 		}
@@ -902,6 +941,10 @@ func runProfileRemove(cmd *cobra.Command, name string, reg *registry.Registry) (
 			return cfg, false
 		}
 		delete(p.Plugins, key)
+		current = p
+		if dryRun {
+			return cfg, false
+		}
 		cfg.Profiles[name] = p
 		return cfg, true
 	}); err != nil {
@@ -911,33 +954,69 @@ func runProfileRemove(cmd *cobra.Command, name string, reg *registry.Registry) (
 		return nil, verr
 	}
 
+	removeLabel := "removed"
+	if dryRun {
+		removeLabel = "would remove"
+	}
 	if want != "" {
-		after, err := config.LoadFile()
-		if err != nil {
-			return nil, view.AsError(err, "core.profile.config")
+		written := current
+		if !dryRun {
+			after, err := config.LoadFile()
+			if err != nil {
+				return nil, view.AsError(err, "core.profile.config")
+			}
+			written = after.Profiles[name]
 		}
-		card := profileCard(name, after.Profiles[name], reg)
+		card := profileCard(name, written, reg)
 		card.Pairs = append([]view.Pair{
-			{Key: "removed", Value: key + " from " + name}}, card.Pairs...)
+			{Key: removeLabel, Value: key + " from " + name}}, card.Pairs...)
 		return card, nil
 	}
 
-	pairs := []view.Pair{{Key: "removed", Value: "profile " + name + " from " + config.Path()}}
+	pairs := []view.Pair{{Key: removeLabel, Value: "profile " + name + " from " + config.Path()}}
 	// The switch follows, or this machine stays switched on to a name nothing
 	// can look up — and because the selection also bounds agents, every agent
 	// call would then be refused against it.
 	if sel := profile.LoadSelection(); sel.Active == name {
-		if verr := profile.SaveSelection(profile.Selection{}); verr != nil {
-			return nil, verr
+		if dryRun {
+			pairs = append(pairs, view.Pair{Key: "would switch off",
+				Value: "it is on — commands would fall back to the base configuration"})
+		} else {
+			if verr := profile.SaveSelection(profile.Selection{}); verr != nil {
+				return nil, verr
+			}
+			pairs = append(pairs, view.Pair{Key: "switched off",
+				Value: "it was on — commands run against the base configuration"})
 		}
-		pairs = append(pairs, view.Pair{Key: "switched off",
-			Value: "it was on — commands run against the base configuration"})
 	}
-	if n := grant.RevokeProfile(name, time.Now()); n > 0 {
+	if dryRun {
+		if n := countActiveGrantsFor(name); n > 0 {
+			pairs = append(pairs, view.Pair{Key: "would revoke",
+				Value: plural(n, "grant", "grants") + " naming it, which would then authorize nothing"})
+		}
+	} else if n := grant.RevokeProfile(name, time.Now()); n > 0 {
 		pairs = append(pairs, view.Pair{Key: "revoked",
 			Value: plural(n, "grant", "grants") + " naming it, which would have authorized nothing"})
 	}
 	return view.KeyValue{Pairs: pairs}, nil
+}
+
+// countActiveGrantsFor previews grant.RevokeProfile's own count without
+// writing anything — the same filter (by the name half: an instance like
+// "staging/analytics" counts under "staging"), read-only.
+func countActiveGrantsFor(name string) int {
+	stored, verr := grant.Load()
+	if verr != nil {
+		return 0
+	}
+	now := time.Now()
+	n := 0
+	for _, g := range stored {
+		if config.RefName(g.Profile) == name && g.Active(now) {
+			n++
+		}
+	}
+	return n
 }
 
 // refuseUnhonouredConfig stops a write that would land in a file nothing
