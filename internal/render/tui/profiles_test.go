@@ -406,17 +406,59 @@ func TestTheHeaderBadgeTakesTheEnvironmentsOwnColourWhenItHasOne(t *testing.T) {
 func TestTilesRunAgainstTheSwitchedOnEnvironment(t *testing.T) {
 	m := profileModel(t, twoProfileConfig())
 	c := dbPlugin().Capabilities[0]
-	if name, _, _ := m.profileFor(c); name != "" {
+	if name, _, _, _ := m.profileFor(c); name != "" {
 		t.Errorf("a tile was bound to %q with nothing switched on", name)
 	}
 	m.useSelectedProfile() // prod
 	applySwitch(t, &m)
-	name, filled, _ := m.profileFor(c)
+	name, filled, _, _ := m.profileFor(c)
 	if name != "prod" {
 		t.Fatalf("tile profile = %q, want prod", name)
 	}
 	if filled["host"] != "prod.internal" {
 		t.Errorf("tile values = %v, want the environment's host", filled)
+	}
+}
+
+// D1. A capability the environment names, whose bind failed — a locked
+// secrets store is the ordinary way, since bindCmd runs off the update loop
+// where no passphrase can be asked for — must refuse, not read as an
+// environment silent about that plugin. Silent is what every caller here
+// reads as "run against the base configuration", so before this fix a
+// broken pg binding ran every pg tile, and any interactive pg call made
+// while the binding was active, against localhost — with the header badge
+// still reading the environment's name throughout.
+func TestABrokenBindingRefusesRatherThanFallingBackToTheBaseConnection(t *testing.T) {
+	m := profileModel(t, twoProfileConfig())
+	m.useSelectedProfile() // prod
+	applySwitch(t, &m)
+	c := dbPlugin().Capabilities[0]
+
+	failure := view.Errorf("core.secrets.locked", "the store is locked")
+	m.bound[c.ID] = envBind{err: failure}
+
+	if name, filled, _, verr := m.profileFor(c); verr != failure || name != "" || filled != nil {
+		t.Errorf("profileFor = (%q, %v, err=%v), want (\"\", nil, %v)", name, filled, verr, failure)
+	}
+
+	if _, _, _, verr := m.resolveProfile(c, map[string]any{}); verr != failure {
+		t.Errorf("resolveProfile's verr = %v, want the recorded failure — an interactive call would "+
+			"have run against the base connection under the environment's own badge", verr)
+	}
+
+	// profileSeed takes a different route on purpose (Ambient, not Fill: a
+	// form never shows a secret's value, so the failed reveal is not a
+	// reason to seed it as if no environment were switched on either) —
+	// but it must take that route by falling through, not by reading the
+	// failed entry's empty values as a real, if unprofiled, answer.
+	name, _, conn := m.profileSeed(c, m.active)
+	if name != "prod" {
+		t.Errorf("profileSeed = %q, want prod — the fallback exists precisely so the box and the "+
+			"picker still agree while the secret itself stays unrevealed", name)
+	}
+	if conn.Set["host"] != "prod.internal" {
+		t.Errorf("profileSeed's connection = %+v, want prod's own host — read straight from the "+
+			"failed entry's empty values instead of falling through", conn)
 	}
 }
 

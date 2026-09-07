@@ -410,7 +410,7 @@ func tileCmd(idx int, t tile, cfg map[string]any, profileName string,
 // tiles fill from staging, because those are the connections that environment
 // names. nil is the same as nothing switched on.
 func refreshTiles(tiles []tile, gen int, pluginCfg func(string) map[string]any,
-	forProfile func(plugin.Capability) (string, map[string]any, config.Connection)) tea.Cmd {
+	forProfile func(plugin.Capability) (string, map[string]any, config.Connection, *view.Error)) tea.Cmd {
 	cmds := make([]tea.Cmd, 0, len(tiles)+1)
 	for i, t := range tiles {
 		if t.search {
@@ -424,9 +424,20 @@ func refreshTiles(tiles []tile, gen int, pluginCfg func(string) map[string]any,
 			name   string
 			filled map[string]any
 			conn   config.Connection
+			verr   *view.Error
 		)
 		if forProfile != nil {
-			name, filled, conn = forProfile(t.cap)
+			name, filled, conn, verr = forProfile(t.cap)
+		}
+		if verr != nil {
+			// Reported the same way a dial failure already is below, in
+			// tileCmd: a tile is where a fallback to the base configuration
+			// would be least visible, since nobody typed a command to go
+			// and look at, and the number on screen would simply be
+			// somebody else's.
+			idx, id := i, t.cap.ID
+			cmds = append(cmds, func() tea.Msg { return tileMsg{id: id, idx: idx, err: verr} })
+			continue
 		}
 		cmds = append(cmds, tileCmd(i, t, cfg, name, filled, conn))
 	}

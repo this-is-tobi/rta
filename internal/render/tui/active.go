@@ -47,6 +47,18 @@ type boundMsg struct {
 type envBind struct {
 	values map[string]any
 	conn   config.Connection
+	// err is set instead of values/conn when the environment names this
+	// capability but resolving it failed — a `secrets:` reference against a
+	// store nothing has unlocked is the ordinary way, since bindCmd runs off
+	// the update loop where no passphrase can be asked for. A capability
+	// this failed for used to be dropped from the map entirely, which made
+	// it indistinguishable from one the environment never mentioned: absent
+	// either way, and "absent" is read everywhere else in this file as
+	// "run against the base configuration" — so a broken `pg` binding
+	// silently ran every pg tile, and any interactive pg call made while
+	// the binding was active, against localhost instead of refusing, with
+	// the header badge still reading the environment's name throughout.
+	err *view.Error
 }
 
 // syncActive re-reads the switch and returns the command that binds it, or nil
@@ -142,9 +154,15 @@ func environmentStamp(name string) string {
 // and runs against the base configuration — the same fall-through the CLI does,
 // for the same reason: an environment does not have to contain every plugin.
 //
-// Failures are dropped rather than surfaced. This runs while painting a switch,
-// not while running a command, and the tile that needs the credential reports
-// the failure itself, in the place somebody can act on it.
+// A failure is recorded, not dropped — see envBind.err — because an absent
+// entry already means something else (the environment says nothing about
+// this plugin), and the two must not read the same: reaching a caller as
+// "no profile" ran a call or a tile against the base configuration while
+// the header kept naming the environment that was supposed to be in force.
+// This runs while painting a switch, not while running a command, so the
+// failure surfaces where a caller reaching for this capability's binding
+// asks for it — a tile through refreshTiles, an interactive run through
+// resolveProfile — each in the place somebody can act on it.
 //
 // **Fill and not Dial, so no forward is opened here.** This loop covers every
 // capability the environment mentions — `pg` alone has six — so dialling would
@@ -180,10 +198,22 @@ func bindCmd(reg *registry.Registry, name, stamp string) tea.Cmd {
 			}
 			conn, verr := profile.Lookup(cfg, c, name, reg)
 			if verr != nil {
+				// Same reasoning as Fill's own failure below: the environment
+				// names this capability, so a coordinate that fails to
+				// resolve — an instance the environment refers to that is
+				// not declared, the ordinary way — is recorded rather than
+				// left indistinguishable from a plugin this environment
+				// never mentioned.
+				out[c.ID] = envBind{err: verr}
 				continue
 			}
 			filled, verr := profile.Fill(ctx, name, conn, c, nil, os.LookupEnv, read)
 			if verr != nil {
+				// Recorded rather than dropped — see envBind.err — so a
+				// caller reading the cache can tell "this environment says
+				// nothing about this capability" apart from "it does, and
+				// resolving it failed", which an absent map entry cannot.
+				out[c.ID] = envBind{err: verr}
 				continue
 			}
 			out[c.ID] = envBind{values: filled, conn: conn}
@@ -212,7 +242,9 @@ func memoRead(read profile.Reader) profile.Reader {
 }
 
 // profileFor is what the active environment contributes to one capability: its
-// name, and the values, or "" and nil when it is silent about that plugin.
+// name, and the values, or "" and nil when it is silent about that plugin —
+// and a refusal, never silently absorbed, when the environment names this
+// capability but resolving it failed (envBind.err).
 //
 // Reads the cache directly rather than through currentBind. A tile refresh is
 // a display on a five-second timer, and the two answers available when the
@@ -223,12 +255,15 @@ func memoRead(read profile.Reader) profile.Reader {
 // closeToOrigin syncing on the way out of every editor — and the paths where
 // the answer becomes a command the operator asked for go through currentBind,
 // which is exact.
-func (m Model) profileFor(c plugin.Capability) (string, map[string]any, config.Connection) {
+func (m Model) profileFor(c plugin.Capability) (string, map[string]any, config.Connection, *view.Error) {
 	b, ok := m.bound[c.ID]
 	if !ok {
-		return "", nil, config.Connection{}
+		return "", nil, config.Connection{}, nil
 	}
-	return m.active, b.values, b.conn
+	if b.err != nil {
+		return "", nil, config.Connection{}, b.err
+	}
+	return m.active, b.values, b.conn, nil
 }
 
 // currentBind is the resolved environment, or nil when what is cached no
@@ -311,7 +346,12 @@ func (m Model) profileSeed(c plugin.Capability, on string) (string, map[string]a
 		// Ambient is silent about the first and answers the second, so what
 		// the environment *states* is on screen either way and
 		// environmentNotes can name the reference that is about to be needed.
-		if filled, covered := bound[c.ID]; covered {
+		// covered alone used to be the whole check, back when a failed bind
+		// was dropped from the map rather than recorded in it (envBind.err)
+		// — now a covered entry can still be the failure this fallback
+		// exists to re-ask about, so it takes the same path an absent entry
+		// always did.
+		if filled, covered := bound[c.ID]; covered && filled.err == nil {
 			return on, withoutSecrets(c, filled.values), filled.conn
 		}
 	}
