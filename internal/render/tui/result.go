@@ -155,12 +155,25 @@ func pageWarnings(v view.View) []view.Error {
 }
 
 // flashText condenses an action result into a one-line footer notice.
+//
+// Only a genuine one-liner is drawn as itself; anything else falls back to
+// the generic "<capability> done" — the second layer against the shape C4
+// found, alongside alwaysOwnPage: a capability whose flash-eligible result
+// happens to be several lines or unusually long must not have all of it
+// painted onto the footer of whatever list the action ran from, whether or
+// not this file remembered to name it there too.
 func flashText(msg resultMsg) string {
-	if t, ok := msg.view.(view.Text); ok {
+	if t, ok := msg.view.(view.Text); ok && !strings.Contains(t.Body, "\n") && len(t.Body) <= maxFlashLen {
 		return t.Body
 	}
 	return msg.cap.ID + " done"
 }
+
+// maxFlashLen bounds a flashed one-liner. Generous for an ordinary
+// confirmation ("copied gh-token to the clipboard"), tight enough that a
+// capability whose Text result turns out to hold something longer — a
+// value, not a verdict — cannot fill the footer with it.
+const maxFlashLen = 120
 
 // toggleOn reports what a toggle is currently showing, which is not always
 // what its field holds: runCmd turns `detail` on for a Detailed capability
@@ -221,7 +234,15 @@ func (m Model) runAction(a capAction, tbl view.Table) (tea.Model, tea.Cmd) {
 	// it at another machine — see hereOnly.
 	cap := a.cap
 	cap.Inputs = hereOnly(cap.Inputs)
-	m.refreshPending = cap.Safety != plugin.Read
+	// Safety != Read is the wrong proxy on its own: kv.get is Write for what
+	// it discloses, not because it changes anything, and refreshPending
+	// existing at all is "a mutation happened, reload the list it came
+	// from" — which kv.get is not. Left as Safety alone, its result took the
+	// flash-and-reload branch in tui.go's resultMsg handler: the value
+	// became the flash text, painted onto the list pane instead of arriving
+	// on its own result page the way kv.list's own comment promises. See
+	// alwaysOwnPage for the capabilities this excludes and why.
+	m.refreshPending = cap.Safety != plugin.Read && !alwaysOwnPage[cap.ID]
 	// Removing the very record this page is about destroys the page: the
 	// reload afterwards has to land one level further back.
 	m.subjectGone = a.src == srcSelf && cap.Safety == plugin.Destructive
