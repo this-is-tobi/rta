@@ -13,6 +13,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -49,9 +50,13 @@ func Plugin() plugin.Plugin {
 				NoPreview: true,
 				Inputs: []plugin.Field{
 					{Name: "product", Type: plugin.String, Positional: true, Required: true,
-						Help: "product name or alias — see https://endoflife.date for the catalogue"},
+						Help:    "product name or alias — see https://endoflife.date for the catalogue",
+						Live:    true,
+						Suggest: suggestProducts},
 					{Name: "cycle", Type: plugin.String, Positional: true,
-						Help: "one release cycle, e.g. 15, bookworm, 22.04 — every cycle is shown when omitted"},
+						Help:    "one release cycle, e.g. 15, bookworm, 22.04 — every cycle is shown when omitted",
+						Live:    true,
+						Suggest: suggestCycles},
 					{Name: "warn-days", Type: plugin.Int, Config: "warn-days", Default: defaultWarnDays,
 						Help: "flag a cycle within this many days of its end-of-life date"},
 				},
@@ -125,6 +130,64 @@ func cycleNames(releases []release) string {
 		names[i] = r.Name
 	}
 	return strings.Join(names, ", ")
+}
+
+// suggestProducts is suggestProductsAt against the real API — the same
+// split runCheck/runCheckAt uses, so a test can point it at a server that
+// answers wrongly on purpose instead of the real endoflife.date.
+func suggestProducts(ctx context.Context, req plugin.Request) []string {
+	return suggestProductsAt(ctx, req, apiBase)
+}
+
+// suggestProductsAt offers the catalogue's names and aliases together — a
+// caller reaching for eol.check usually knows "postgres", not the canonical
+// "postgresql", and aliases working interchangeably is the entire point
+// eol.products documents. Live: this is the one request fetchCatalogue's
+// own comment already treats as cheap enough to pay on every call, run here
+// on a deliberate completion press rather than every keystroke.
+func suggestProductsAt(ctx context.Context, _ plugin.Request, base string) []string {
+	entries, verr := fetchCatalogue(ctx, http.DefaultClient, base)
+	if verr != nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, e := range entries {
+		for _, name := range append([]string{e.Name}, e.Aliases...) {
+			if name == "" || seen[name] {
+				continue
+			}
+			seen[name] = true
+			out = append(out, name)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// suggestCycles is suggestCyclesAt against the real API; see suggestProducts.
+func suggestCycles(ctx context.Context, req plugin.Request) []string {
+	return suggestCyclesAt(ctx, req, apiBase)
+}
+
+// suggestCyclesAt offers the release cycles of the product already named:
+// there is nothing to offer before that, since a product is looked up one
+// at a time. Live for the same reason suggestProductsAt is — one request
+// against the fixed public API, not a local computation.
+func suggestCyclesAt(ctx context.Context, req plugin.Request, base string) []string {
+	product := strings.TrimSpace(req.String("product"))
+	if product == "" {
+		return nil
+	}
+	result, verr := fetchProduct(ctx, http.DefaultClient, base, product)
+	if verr != nil {
+		return nil
+	}
+	out := make([]string, len(result.Releases))
+	for i, r := range result.Releases {
+		out[i] = r.Name
+	}
+	return out
 }
 
 // gradeRow turns one release into a row, trusting the API's own isEol

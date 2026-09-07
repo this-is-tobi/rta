@@ -221,6 +221,51 @@ func TestProductsSaysWhenNothingMatches(t *testing.T) {
 	}
 }
 
+// --- eol.check completion ---
+
+func TestSuggestProductsOffersNamesAndAliasesTogether(t *testing.T) {
+	srv := newCatalogueServer(t)
+	got := suggestProductsAt(context.Background(), plugin.Request{}, srv.URL)
+	want := map[string]bool{
+		"postgresql": true, "postgres": true, "pg": true,
+		"nodejs": true, "node": true,
+		"debian": true,
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want exactly %v", got, want)
+	}
+	for _, name := range got {
+		if !want[name] {
+			t.Errorf("unexpected suggestion %q", name)
+		}
+	}
+}
+
+func TestSuggestProductsIsSilentWhenTheCatalogueCannotBeFetched(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	defer srv.Close()
+	if got := suggestProductsAt(context.Background(), plugin.Request{}, srv.URL); got != nil {
+		t.Errorf("got %v, want nil — a completion that cannot answer must not error", got)
+	}
+}
+
+func TestSuggestCyclesOffersTheNamedProductsOwnReleases(t *testing.T) {
+	srv := newCatalogueServer(t)
+	got := suggestCyclesAt(context.Background(), reqFor(t, "eol.check", map[string]any{"product": "postgresql"}), srv.URL)
+	if len(got) != 2 || got[0] != "18" || got[1] != "13" {
+		t.Errorf("got %v, want [18 13] — postgresql's own releases, in the API's order", got)
+	}
+}
+
+func TestSuggestCyclesIsSilentWithoutAProductChosenYet(t *testing.T) {
+	srv := newCatalogueServer(t)
+	if got := suggestCyclesAt(context.Background(), reqFor(t, "eol.check", nil), srv.URL); got != nil {
+		t.Errorf("got %v, want nil — nothing to look up before a product is named", got)
+	}
+}
+
 func TestFetchCatalogueReportsAnUnexpectedStatus(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadGateway)
