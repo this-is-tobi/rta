@@ -59,6 +59,34 @@ var alwaysOwnPage = map[string]bool{
 	"kv.get": true,
 }
 
+// flashSafe is every capActionSpecs capability whose result, once run
+// through runAction, is safe for flashText to draw verbatim on a list's
+// footer: a fixed confirmation shape ("removed x", "upgraded y") rather
+// than the value the call acted on. Audited once, by reading each handler
+// below rather than guessing from Safety or NeedsGrant — both are shared by
+// kv.set (confirms a write, flash-safe) and kv.get (returns the secret
+// itself, not here) alike, so neither tells the two apart on its own.
+//
+// This is the other direction from alwaysOwnPage: that map says which
+// capabilities must never take the flash-and-reload path at all; this one
+// says which of the ones that do take it may have their result shown as
+// text rather than folded to the generic "<capability> done". A capability
+// in neither is not an oversight flashText quietly resolves in its favor —
+// TestEveryFlashableActionIsClassified fails the build until a human reads
+// its handler and puts it in one map or the other, which is the point: the
+// default for anything unclassified is the generic fallback, not the raw
+// value.
+var flashSafe = map[string]bool{
+	"note.add": true, "note.edit": true, "note.toggle": true,
+	"note.done": true, "note.reopen": true, "note.rm": true,
+	"net.hosts.add": true, "net.hosts.toggle": true, "net.hosts.rm": true,
+	"pkg.upgrade": true,
+	"grant.allow": true, "grant.renew": true, "grant.revoke": true,
+	"agent.allow": true, "agent.deny": true,
+	"lock.add": true, "lock.rm": true,
+	"kv.copy": true, "kv.set": true, "kv.rename": true, "kv.rm": true,
+}
+
 // capActionSpecs declares which capabilities each view can reach in one key.
 // One table drives every surface: dashboard tile buttons (minus "enter",
 // which opens the tile), row actions inside result tables, and the actions
