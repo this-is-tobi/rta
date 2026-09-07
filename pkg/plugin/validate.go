@@ -493,6 +493,28 @@ func (c Capability) validate(ns string) error {
 	if !scoped {
 		return fmt.Errorf("capability %q: scope %q names no input", c.ID, c.Scope)
 	}
+	// The other direction of the same mistake, caught one step earlier: a
+	// gated capability that never declares a Scope at all, when one of its
+	// own inputs plainly could be one. Every grant issued against it then
+	// covers the whole capability with no way to narrow it — a namespace
+	// wide open the moment nobody notices the Scope line was never added.
+	// A field only counts as a candidate if a grant could actually be
+	// checked against it: caller-supplied (Required, so it is never
+	// missing), not Local (a field the host itself resolves is not a
+	// record the caller named), and not a credential (Scope on a Secret is
+	// refused above for the same reason wrapping-token above opts out —
+	// authors who deliberately have nothing to scope on, like
+	// vault.wrap.set/get wrapping arbitrary caller data rather than acting
+	// on an existing record, say so in a comment instead).
+	if c.NeedsGrant && c.Scope == "" {
+		for _, f := range c.Inputs {
+			if f.Required && !f.Local && !f.Type.Sensitive() {
+				return fmt.Errorf("capability %q: NeedsGrant with no Scope, but input %q looks like "+
+					"the record this call names; declare Scope: %q or, if nothing here should ever "+
+					"be narrowed, say why in a comment", c.ID, f.Name, f.Name)
+			}
+		}
+	}
 	if err := checkEndpoints(c); err != nil {
 		return err
 	}
