@@ -293,21 +293,32 @@ func Redact(v View) View {
 		t.Pairs = pairs
 		return t
 	case Table:
-		if len(t.Redacted) == 0 {
-			return v
-		}
 		mask := make([]bool, len(t.Columns))
 		for i, c := range t.Columns {
 			mask[i] = t.IsRedacted(c.Name)
 		}
 		rows := make([][]string, len(t.Rows))
 		for i, row := range t.Rows {
-			cells := make([]string, len(row))
-			copy(cells, row)
-			// Rows are allowed to be shorter or longer than the column list;
-			// a cell with no column cannot be named, so it cannot be masked.
+			// Truncated to the column list here, unconditionally — not left
+			// for each renderer to decide on its own. A row longer than
+			// Columns is a shape the contract tolerates (a third-party
+			// plugin's own row, arriving over pkg/sdk/wire), and a cell past
+			// the last column has no name to mask it by — but "cannot be
+			// masked" used to mean "written in clear": pretty and md
+			// silently dropped the extra cell while csv, json and yaml
+			// emitted it verbatim, so whether a redacted value survived
+			// depended on which renderer happened to run. Every renderer
+			// reads Redact's output, so deciding it once here is the only
+			// version of this rule that actually holds everywhere,
+			// including MCP.
+			n := len(row)
+			if n > len(mask) {
+				n = len(mask)
+			}
+			cells := make([]string, n)
+			copy(cells, row[:n])
 			for j := range cells {
-				if j < len(mask) && mask[j] {
+				if mask[j] {
 					cells[j] = Mask
 				}
 			}

@@ -372,17 +372,12 @@ func prettyTable(w io.Writer, t view.Table, st styles, highlight int) error {
 			statusCol[i] = true
 		}
 	}
-	// Exactly one cell per declared column, which is a redaction rule and not
-	// a layout one.
-	//
-	// view.Redact masks by column name and says so in its own comment: "a cell
-	// with no column cannot be named, so it cannot be masked". This renderer
-	// drew those cells anyway, in a nameless extra column — so a table whose
-	// rows outran their headers put the one value redaction exists to hide on
-	// the screen, beside the dots covering its named neighbour. The markdown
-	// renderer already drops them (markdown.go's writeMarkdownGrid), so the
-	// two disagreed about the same data, which is the shape of a rule that
-	// lives in one renderer instead of in the view.
+	// Exactly one cell per declared column. view.Redact now truncates a row
+	// longer than Columns itself (a cell past the last one has no name to
+	// mask it by, and used to reach every renderer in clear regardless), so
+	// row here is never longer than t.Columns — this copy's remaining job is
+	// padding a row that came back shorter, which view.Redact leaves alone
+	// since a missing cell is not a redaction question.
 	//
 	// Ahead of the layout decision below, so the record layout inherits it: the
 	// rule is about what may be drawn, not about how it is arranged.

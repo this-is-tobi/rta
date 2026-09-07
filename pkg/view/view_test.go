@@ -273,9 +273,13 @@ func TestRedactToleratesRaggedRows(t *testing.T) {
 		t.Errorf("well-formed row not masked: %v", got.Rows[1])
 	}
 	// A cell past the last column has no name, so nothing can declare it
-	// secret — it is passed through rather than guessed at.
-	if got.Rows[2][1] != Mask || got.Rows[2][2] != "extra" {
-		t.Errorf("over-long row mishandled: %v", got.Rows[2])
+	// secret by name — but "cannot be named" used to mean "written in
+	// clear" for csv, json and yaml, which never applied the truncation
+	// pretty and md did on their own. Dropped here instead, so every
+	// renderer agrees and a redacted value has no unnamed column left to
+	// hide behind.
+	if len(got.Rows[2]) != 2 || got.Rows[2][1] != Mask {
+		t.Errorf("over-long row not truncated to the column list: %v", got.Rows[2])
 	}
 	if len(got.Rows[3]) != 0 {
 		t.Errorf("empty row mangled: %v", got.Rows[3])
