@@ -15,6 +15,7 @@ import (
 
 	"github.com/this-is-tobi/rta/builtin/all"
 	"github.com/this-is-tobi/rta/internal/pluginhost"
+	"github.com/this-is-tobi/rta/internal/plugintrust"
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/internal/render/cli"
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -45,7 +46,7 @@ func TestTheScaffoldBuildsAndLoads(t *testing.T) {
 		RtaMod:  rtaModule,
 		RtaPath: root,
 	}
-	if err := s.write(dir); err != nil {
+	if _, err := s.write(dir, false); err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range []string{"main.go", "main_test.go", "go.mod", "README.md", ".gitignore"} {
@@ -111,7 +112,7 @@ func TestScaffoldingRefusesRatherThanOverwrites(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := scaffold{Name: "x", Binary: "rta-plugin-x", Module: "rta-plugin-x", RtaMod: rtaModule}
-	err := s.write(dir)
+	_, err := s.write(dir, false)
 	if err == nil {
 		t.Fatal("an existing main.go was overwritten")
 	}
@@ -140,7 +141,7 @@ func TestScaffoldingRefusesRatherThanOverwrites(t *testing.T) {
 func TestScaffoldedGitignoreCoversBothBuildArtifactNames(t *testing.T) {
 	dir := t.TempDir()
 	s := scaffold{Name: "eol", Binary: "rta-plugin-eol", Module: "rta-plugin-eol", RtaMod: rtaModule}
-	if err := s.write(dir); err != nil {
+	if _, err := s.write(dir, false); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
@@ -186,7 +187,7 @@ func TestPluginNamesAreCheckedAgainstWhatTheyBecome(t *testing.T) {
 func TestTheReplaceDirectiveIsOnlyEmittedWhenItPointsSomewhere(t *testing.T) {
 	with := scaffold{Name: "x", Binary: "rta-plugin-x", Module: "m", RtaMod: rtaModule, RtaPath: "/somewhere/rta"}
 	dir := t.TempDir()
-	if err := with.write(dir); err != nil {
+	if _, err := with.write(dir, false); err != nil {
 		t.Fatal(err)
 	}
 	mod, err := os.ReadFile(filepath.Join(dir, "go.mod"))
@@ -200,7 +201,7 @@ func TestTheReplaceDirectiveIsOnlyEmittedWhenItPointsSomewhere(t *testing.T) {
 	without := with
 	without.RtaPath = ""
 	other := t.TempDir()
-	if err := without.write(other); err != nil {
+	if _, err := without.write(other, false); err != nil {
 		t.Fatal(err)
 	}
 	mod, err = os.ReadFile(filepath.Join(other, "go.mod"))
@@ -588,5 +589,84 @@ func TestMergedAllowWithNothingPreviouslyAllowed(t *testing.T) {
 
 	if len(got) != 2 || !slices.Contains(got, "kv.file") || !slices.Contains(got, "net.hosts") {
 		t.Errorf("mergedAllow(nil, %v) = %v, want exactly the two requested", want, got)
+	}
+}
+
+// D3: --dry-run used to be silently ignored by every hand-written plugin
+// command — `rta plugin trust weather --dry-run` trusted it for real.
+func TestPluginTrustDryRunDoesNotTrust(t *testing.T) {
+	run := session(t, registry.New())
+	binDir := t.TempDir()
+	binPath := filepath.Join(binDir, pluginhost.Prefix+"probe")
+	if err := os.WriteFile(binPath, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir)
+
+	out, errOut, err := run("plugin", "trust", "probe", "--dry-run")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	if !strings.Contains(out, "would trust") {
+		t.Errorf("output does not say would trust: %q", out)
+	}
+	if len(plugintrust.Load().Entries()) != 0 {
+		t.Error("--dry-run trusted the artifact anyway")
+	}
+
+	if _, errOut, err := run("plugin", "trust", "probe"); err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	if len(plugintrust.Load().Entries()) != 1 {
+		t.Error("the real run did not trust the artifact")
+	}
+}
+
+// The withdrawal side, previewed through PreviewRemove: matches Remove's
+// own count without touching the trust store.
+func TestPluginUntrustDryRunDoesNotWithdraw(t *testing.T) {
+	run := session(t, registry.New())
+	if verr := plugintrust.Add(strings.Repeat("ab", 32), "probe", "/usr/local/bin/rta-plugin-probe"); verr != nil {
+		t.Fatal(verr)
+	}
+
+	out, errOut, err := run("plugin", "untrust", "probe", "--dry-run")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	if !strings.Contains(out, "would withdraw") {
+		t.Errorf("output does not say would withdraw: %q", out)
+	}
+	if !plugintrust.Load().Trusts(strings.Repeat("ab", 32)) {
+		t.Error("--dry-run withdrew trust anyway")
+	}
+
+	if _, errOut, err := run("plugin", "untrust", "probe"); err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	if plugintrust.Load().Trusts(strings.Repeat("ab", 32)) {
+		t.Error("the real run did not withdraw trust")
+	}
+}
+
+// plugin new: a --dry-run must not create the directory at all, and must
+// list exactly what a real run would write.
+func TestPluginNewDryRunWritesNothing(t *testing.T) {
+	run := session(t, registry.New())
+	dir := filepath.Join(t.TempDir(), "rta-plugin-probe")
+
+	out, errOut, err := run("plugin", "new", "probe", "--dir", dir, "--dry-run")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	if _, statErr := os.Stat(dir); statErr == nil {
+		t.Fatalf("--dry-run created %s anyway", dir)
+	} else if !os.IsNotExist(statErr) {
+		t.Fatal(statErr)
+	}
+	for _, want := range []string{"main.go", "go.mod", "README.md"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("dry-run output does not list %s: %q", want, out)
+		}
 	}
 }

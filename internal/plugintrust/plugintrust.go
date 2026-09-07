@@ -423,6 +423,46 @@ func Remove(which string) (int, *view.Error) {
 	if verr != nil {
 		return 0, verr
 	}
+	kept, removed, verr := matchRemove(f, which)
+	if verr != nil {
+		return 0, verr
+	}
+	if removed == 0 {
+		return 0, nil
+	}
+	if verr := write(file{Trusted: kept}); verr != nil {
+		return 0, verr
+	}
+	return removed, nil
+}
+
+// PreviewRemove answers what Remove would do — the same matching, the same
+// ambiguity refusal — without writing anything, for `rta plugin untrust
+// --dry-run`. Still under the lock: a preview reading a file mid-write by
+// something else would report a count that the write which follows,
+// moments later, might not match.
+func PreviewRemove(which string) (int, *view.Error) {
+	if strings.TrimSpace(which) == "" {
+		return 0, view.Errorf("plugin.untrust.empty", "nothing named")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	release, verr := lock()
+	if verr != nil {
+		return 0, verr
+	}
+	defer release()
+	f, verr := read()
+	if verr != nil {
+		return 0, verr
+	}
+	_, removed, verr := matchRemove(f, which)
+	return removed, verr
+}
+
+// matchRemove is Remove's matching rule, shared with PreviewRemove so the
+// two can never drift into disagreeing about what "removed" would mean.
+func matchRemove(f file, which string) (kept []Entry, removed int, verr *view.Error) {
 	if len(which) >= minDigestPrefix && len(which) < fullDigestLen {
 		var matches []string
 		for _, e := range f.Trusted {
@@ -431,13 +471,11 @@ func Remove(which string) (int, *view.Error) {
 			}
 		}
 		if len(matches) > 1 {
-			return 0, view.Errorf("plugin.untrust.ambiguous",
+			return nil, 0, view.Errorf("plugin.untrust.ambiguous",
 				"%q matches %d trusted artifacts, not one", which, len(matches)).
 				WithHint("name one: " + strings.Join(matches, ", "))
 		}
 	}
-	var kept []Entry
-	removed := 0
 	for _, e := range f.Trusted {
 		// Any name it has ever been trusted under, not just the most recent:
 		// the operator is withdrawing a plugin, and every name it has carried
@@ -449,13 +487,7 @@ func Remove(which string) (int, *view.Error) {
 		}
 		kept = append(kept, e)
 	}
-	if removed == 0 {
-		return 0, nil
-	}
-	if verr := write(file{Trusted: kept}); verr != nil {
-		return 0, verr
-	}
-	return removed, nil
+	return kept, removed, nil
 }
 
 // read loads the file for a read-modify-write.
