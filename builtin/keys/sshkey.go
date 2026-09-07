@@ -379,7 +379,7 @@ func publishRestoredKey(privPath string, priv ed25519.PrivateKey, passphrase []b
 	}
 	pubBytes := []byte(line + "\n")
 
-	written, err := atomicfile.Publish(privPath, privBytes, 0o600)
+	written, err := atomicfile.Publish(privPath, privBytes, 0o600, len(privBytes))
 	if err != nil {
 		return "", view.Errorf("keys.restore.write", "writing %s: %v", privPath, err)
 	}
@@ -388,7 +388,7 @@ func publishRestoredKey(privPath string, priv ed25519.PrivateKey, passphrase []b
 	}
 
 	pubPath := privPath + ".pub"
-	writtenPub, err := atomicfile.Publish(pubPath, pubBytes, 0o644)
+	writtenPub, err := atomicfile.Publish(pubPath, pubBytes, 0o644, len(pubBytes))
 	if err != nil {
 		return "", view.Errorf("keys.restore.write", "writing %s: %v", pubPath, err)
 	}

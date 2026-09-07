@@ -106,7 +106,7 @@ func Key(name string, create bool) ([]byte, error) {
 	// key silently replacing the first invalidates everything sealed with
 	// the first, so the loser adopts the winner's key instead of
 	// overwriting it.
-	stored, err := atomicfile.Publish(Path(name), key, 0o600)
+	stored, err := atomicfile.Publish(Path(name), key, 0o600, maxKeyFile)
 	if err != nil {
 		return nil, fmt.Errorf("writing %s: %w", Path(name), err)
 	}

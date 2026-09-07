@@ -69,7 +69,7 @@ func BenchmarkPublishAndRelease(b *testing.B) {
 	target := filepath.Join(b.TempDir(), "grants.json.lock")
 	token := []byte("12345 6f1b3c9d2e8a4b70\n")
 	for b.Loop() {
-		if _, err := Publish(target, token, 0o600); err != nil {
+		if _, err := Publish(target, token, 0o600, 64); err != nil {
 			b.Fatal(err)
 		}
 		os.Remove(target)

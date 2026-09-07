@@ -31,6 +31,14 @@ var stateReaders = []string{
 	"internal/agentlog",
 	"internal/profile",
 	"internal/plugintrust",
+	// atomicfile and filelock define this rule rather than merely follow
+	// it — Publish's own fallback read and filelock's lock-sentinel reads
+	// were exactly the gap a security sweep found (grants.lock, read once
+	// per retry, unbounded) — so they belong on the list they police, not
+	// only exempted from it as the packages that happen to implement
+	// ReadCapped.
+	"internal/atomicfile",
+	"internal/filelock",
 }
 
 // The read half of TestPersistentStateIsNotWrittenWithOsWriteFile, and it
