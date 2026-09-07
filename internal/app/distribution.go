@@ -79,18 +79,22 @@ func newPluginInstallCommand(opts *globalOpts) *cobra.Command {
 			"needed for a plugin installed this way.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			rep, verr := plugindist.Install(cmd.Context(), args[0], cmd.ErrOrStderr())
+			install := plugindist.Install
+			if opts.dryRun {
+				install = plugindist.PreviewInstall
+			}
+			rep, verr := install(cmd.Context(), args[0], cmd.ErrOrStderr())
 			if verr != nil {
 				return verr
 			}
-			return renderView(cmd, opts, installView(rep))
+			return renderView(cmd, opts, installView(rep, opts.dryRun))
 		},
 	}
 }
 
 // installView renders the install sequence as a KeyValue page: what was
 // claimed, what was fetched, what it hashed to, and what it declared.
-func installView(rep plugindist.Report) view.View {
+func installView(rep plugindist.Report, dryRun bool) view.View {
 	pin := rep.Name + "@" + shortDigest(rep.Digest)
 	pairs := []view.Pair{
 		{Key: "from", Value: rep.Index + " → " + rep.URL},
@@ -117,10 +121,16 @@ func installView(rep plugindist.Report) view.View {
 			Value: strings.Join(asks, ", ") + " — not granted by installing; " +
 				"`rta plugin allow " + rep.Name + "` decides"})
 	}
+	installedLabel, configureLabel := "installed", "to configure it"
+	configureNote := "plugins." + pin + ": — `rta explain " + firstCapability(rep.Declared) + "` lists its keys"
+	if dryRun {
+		installedLabel = "would install to"
+		configureLabel = "once installed"
+		configureNote = "run without --dry-run to fetch it and land it — nothing was written"
+	}
 	pairs = append(pairs, []view.Pair{
-		{Key: "installed", Value: rep.Path},
-		{Key: "to configure it", Value: "plugins." + pin + ": — `rta explain " +
-			firstCapability(rep.Declared) + "` lists its keys"},
+		{Key: installedLabel, Value: rep.Path},
+		{Key: configureLabel, Value: configureNote},
 	}...)
 	if creds := credentialVars(rep.Declared); len(creds) > 0 {
 		// Named, not spelled as a command. `export A, B` reads like a line to
@@ -221,13 +231,28 @@ func newPluginRemoveCommand(opts *globalOpts) *cobra.Command {
 			"and `rta doctor` keeps reporting the orphans until you decide.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			removed, verr := plugindist.Remove(args[0])
+			if !opts.dryRun && !opts.yes {
+				return &view.Error{
+					Code:    CodeConfirmRequired,
+					Message: "removing " + args[0] + " withdraws trust from every stored artifact and needs confirmation",
+					Hint:    "re-run with --yes to confirm, or --dry-run to preview",
+				}
+			}
+			remove := plugindist.Remove
+			if opts.dryRun {
+				remove = plugindist.PreviewRemove
+			}
+			removed, verr := remove(args[0])
 			if verr != nil {
 				return verr
 			}
+			removedLabel, artifactsNote := "removed", "(trust withdrawn from each)"
+			if opts.dryRun {
+				removedLabel, artifactsNote = "would remove", "(trust would be withdrawn from each)"
+			}
 			pairs := []view.Pair{
-				{Key: "removed", Value: removed.Name},
-				{Key: "artifacts", Value: fmt.Sprintf("%d (trust withdrawn from each)", len(removed.Digests))},
+				{Key: removedLabel, Value: removed.Name},
+				{Key: "artifacts", Value: fmt.Sprintf("%d %s", len(removed.Digests), artifactsNote)},
 			}
 			if len(removed.Orphans) > 0 {
 				pairs = append(pairs, view.Pair{Key: "still states it",
@@ -250,7 +275,11 @@ func newPluginUpgradeCommand(opts *globalOpts) *cobra.Command {
 			"a re-install away, not a re-download.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			up, verr := plugindist.Upgrade(cmd.Context(), args[0], cmd.ErrOrStderr())
+			upgrade := plugindist.Upgrade
+			if opts.dryRun {
+				upgrade = plugindist.PreviewUpgrade
+			}
+			up, verr := upgrade(cmd.Context(), args[0], cmd.ErrOrStderr())
 			if verr != nil {
 				return verr
 			}
@@ -260,8 +289,12 @@ func newPluginUpgradeCommand(opts *globalOpts) *cobra.Command {
 						shortDigest(up.FromDigest) + ")"},
 				}})
 			}
+			upgradedLabel := "upgraded"
+			if opts.dryRun {
+				upgradedLabel = "would upgrade"
+			}
 			pairs := []view.Pair{
-				{Key: "upgraded", Value: fmt.Sprintf("%s %s → %s", up.Name, up.FromVersion, up.Version)},
+				{Key: upgradedLabel, Value: fmt.Sprintf("%s %s → %s", up.Name, up.FromVersion, up.Version)},
 				{Key: "digest", Value: shortDigest(up.FromDigest) + " → " + shortDigest(up.Digest)},
 				{Key: "signature", Value: up.Signature},
 			}
@@ -271,10 +304,13 @@ func newPluginUpgradeCommand(opts *globalOpts) *cobra.Command {
 			for _, line := range up.Diff {
 				pairs = append(pairs, view.Pair{Key: "declaration", Value: line})
 			}
-			pairs = append(pairs,
-				view.Pair{Key: "your pin", Value: "plugins." + up.Name + "@" +
-					shortDigest(up.FromDigest) + " no longer applies; the new pin is " +
-					up.Name + "@" + shortDigest(up.Digest)})
+			pin := "plugins." + up.Name + "@" + shortDigest(up.FromDigest)
+			newPin := up.Name + "@" + shortDigest(up.Digest)
+			pinNote := pin + " no longer applies; the new pin is " + newPin
+			if opts.dryRun {
+				pinNote = pin + " still applies — run without --dry-run to move it to " + newPin
+			}
+			pairs = append(pairs, view.Pair{Key: "your pin", Value: pinNote})
 			return renderView(cmd, opts, view.KeyValue{Pairs: pairs})
 		},
 	}
@@ -415,11 +451,21 @@ func newPluginIndexCommand(opts *globalOpts) *cobra.Command {
 			if len(args) == 2 {
 				repository = args[1]
 			}
-			if verr := plugindist.AddIndex(cmd.Context(), args[0], repository); verr != nil {
+			addIndex := plugindist.AddIndex
+			if opts.dryRun {
+				addIndex = plugindist.PreviewAddIndex
+			}
+			if verr := addIndex(cmd.Context(), args[0], repository); verr != nil {
 				return verr
 			}
 			if repository == "" {
 				repository, _ = plugindist.KnownIndexURL(args[0])
+			}
+			if opts.dryRun {
+				return renderView(cmd, opts, view.KeyValue{Pairs: []view.Pair{
+					{Key: "would attach", Value: args[0] + " (" + plugindist.OriginForDisplay(repository) + ")"},
+					{Key: "not yet known", Value: "how many plugins it claims — that needs the clone this did not make"},
+				}})
 			}
 			ix, _ := plugindist.IndexByName(args[0])
 			listed, bad := plugindist.Manifests(ix)
@@ -494,10 +540,16 @@ func newPluginIndexCommand(opts *globalOpts) *cobra.Command {
 			if len(args) == 1 {
 				name = args[0]
 			}
-			if verr := plugindist.UpdateIndex(cmd.Context(), name); verr != nil {
+			updateIndex := plugindist.UpdateIndex
+			body := "updated"
+			if opts.dryRun {
+				updateIndex = plugindist.PreviewUpdateIndex
+				body = "would update"
+			}
+			if verr := updateIndex(cmd.Context(), name); verr != nil {
 				return verr
 			}
-			return renderView(cmd, opts, view.Text{Body: "updated"})
+			return renderView(cmd, opts, view.Text{Body: body})
 		},
 	})
 	root.AddCommand(&cobra.Command{
@@ -508,10 +560,16 @@ func newPluginIndexCommand(opts *globalOpts) *cobra.Command {
 			"answer would leave the question standing.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if verr := plugindist.RemoveIndex(args[0]); verr != nil {
+			removeIndex := plugindist.RemoveIndex
+			body := "detached " + args[0]
+			if opts.dryRun {
+				removeIndex = plugindist.PreviewRemoveIndex
+				body = "would detach " + args[0]
+			}
+			if verr := removeIndex(args[0]); verr != nil {
 				return verr
 			}
-			return renderView(cmd, opts, view.Text{Body: "detached " + args[0]})
+			return renderView(cmd, opts, view.Text{Body: body})
 		},
 	})
 	return root

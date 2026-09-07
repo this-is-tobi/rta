@@ -221,6 +221,19 @@ func OriginForDisplay(origin string) string {
 // uses — or empty for a name rta knows (known.go), which resolves to the one
 // repository that name is reserved for.
 func AddIndex(ctx context.Context, name, url string) *view.Error {
+	return addIndex(ctx, name, url, false)
+}
+
+// PreviewAddIndex runs every check AddIndex makes before it clones anything
+// — the name, the reserved-name/URL agreement, the URL scheme, whether the
+// name is already attached, whether git is available — and stops there.
+// What it cannot verify without the network is the one thing only a real
+// clone would prove: that the repository exists and answers.
+func PreviewAddIndex(ctx context.Context, name, url string) *view.Error {
+	return addIndex(ctx, name, url, true)
+}
+
+func addIndex(ctx context.Context, name, url string, dryRun bool) *view.Error {
 	if !indexName.MatchString(name) {
 		return view.Errorf("plugin.index.name", "%q is not an index name", name).
 			WithHint("lowercase letters, digits and dashes, up to 32")
@@ -251,6 +264,9 @@ func AddIndex(ctx context.Context, name, url string) *view.Error {
 	}
 	if verr := requireGit("attaching an index"); verr != nil {
 		return verr
+	}
+	if dryRun {
+		return nil
 	}
 	if err := os.MkdirAll(indexesDir(), 0o755); err != nil {
 		return view.Errorf("plugin.index.add", "%v", err)
@@ -451,6 +467,16 @@ func classifyGitURL(raw string) (gitURLKind, *view.Error) {
 // empty. Fast-forward only: an index whose history was rewritten is a fact
 // the operator should see, not one a pull should paper over.
 func UpdateIndex(ctx context.Context, name string) *view.Error {
+	return updateIndex(ctx, name, false)
+}
+
+// PreviewUpdateIndex checks the same targets UpdateIndex would fetch — that
+// the named index (or at least one) is attached — without running git.
+func PreviewUpdateIndex(ctx context.Context, name string) *view.Error {
+	return updateIndex(ctx, name, true)
+}
+
+func updateIndex(ctx context.Context, name string, dryRun bool) *view.Error {
 	targets := Indexes()
 	if name != "" {
 		ix, ok := IndexByName(name)
@@ -461,6 +487,9 @@ func UpdateIndex(ctx context.Context, name string) *view.Error {
 	}
 	if len(targets) == 0 {
 		return NoIndexAttached()
+	}
+	if dryRun {
+		return nil
 	}
 	for _, ix := range targets {
 		cmd := gitCommand(ctx, "-C", ix.Dir, "pull", "--quiet", "--ff-only")
@@ -479,6 +508,16 @@ func UpdateIndex(ctx context.Context, name string) *view.Error {
 // there, and "where did this binary come from" is the question the lockfile
 // exists to answer.
 func RemoveIndex(name string) *view.Error {
+	return removeIndex(name, false)
+}
+
+// PreviewRemoveIndex runs RemoveIndex's own checks — attached, not held by
+// an installed plugin's provenance — without deleting the clone.
+func PreviewRemoveIndex(name string) *view.Error {
+	return removeIndex(name, true)
+}
+
+func removeIndex(name string, dryRun bool) *view.Error {
 	ix, ok := IndexByName(name)
 	if !ok {
 		return noSuchIndex(name)
@@ -494,6 +533,9 @@ func RemoveIndex(name string) *view.Error {
 		return view.Errorf("plugin.index.held",
 			"%s installed %s from this index", strings.Join(held, ", "), name).
 			WithHint("`rta plugin remove <name>` first, or leave the index attached")
+	}
+	if dryRun {
+		return nil
 	}
 	if err := os.RemoveAll(ix.Dir); err != nil {
 		return view.Errorf("plugin.index.remove", "%v", err)

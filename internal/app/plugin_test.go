@@ -649,6 +649,43 @@ func TestPluginUntrustDryRunDoesNotWithdraw(t *testing.T) {
 	}
 }
 
+// D3: plugin remove is destructive (it withdraws trust from every stored
+// artifact) and now needs --yes the same way a Destructive capability does
+// — checked before plugindist.Remove ever runs, so even a name nothing has
+// installed hits the confirmation gate first.
+func TestPluginRemoveWithoutConfirmationRefuses(t *testing.T) {
+	run := session(t, registry.New())
+	_, _, err := run("plugin", "remove", "probe")
+	if err == nil {
+		t.Fatal("plugin remove ran with no --yes and no --dry-run")
+	}
+	verr, ok := err.(*view.Error)
+	if !ok || verr.Code != CodeConfirmRequired {
+		t.Errorf("err = %v, want %s", err, CodeConfirmRequired)
+	}
+}
+
+// --dry-run needs no confirmation — a preview is not the action it
+// previews — and reaches plugindist's own refusal for a name nothing has
+// installed.
+func TestPluginRemoveDryRunNeedsNoConfirmation(t *testing.T) {
+	run := session(t, registry.New())
+	_, _, err := run("plugin", "remove", "probe", "--dry-run")
+	if err == nil {
+		t.Fatal("removing an uninstalled plugin reported success")
+	}
+	verr, ok := err.(*view.Error)
+	if !ok {
+		t.Fatalf("err = %v, want a *view.Error", err)
+	}
+	if verr.Code == CodeConfirmRequired {
+		t.Errorf("--dry-run still hit the confirmation gate: %v", verr)
+	}
+	if verr.Code != "plugin.remove.unknown" {
+		t.Errorf("code = %q, want plugin.remove.unknown", verr.Code)
+	}
+}
+
 // plugin new: a --dry-run must not create the directory at all, and must
 // list exactly what a real run would write.
 func TestPluginNewDryRunWritesNothing(t *testing.T) {
