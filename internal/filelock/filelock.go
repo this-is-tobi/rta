@@ -83,8 +83,18 @@ func Acquire(path string, stale, retry, timeout time.Duration) (release func(), 
 			return func() { beat.stop(); releaseLock(path, mine) }, nil
 		}
 		if info, statErr := os.Stat(path); statErr == nil && time.Since(info.ModTime()) > stale {
-			breakStale(filepath.Dir(path), path, info)
-			continue
+			// A confirmed-dead lock rta cannot remove is refused immediately
+			// rather than retried: nothing about that condition changes
+			// between attempts, so looping on it — the bug this replaced —
+			// spun at 100% CPU forever, never reaching the deadline check
+			// below because the old code continued straight past it.
+			if err := breakStale(filepath.Dir(path), path, info); err != nil {
+				return nil, err
+			}
+			// Not continue: a lock breakStale did clear (or found already
+			// cleared) still has to be re-published, and that happens by
+			// falling through to the same deadline check and retry pace
+			// every other iteration of this loop gets.
 		}
 		if time.Now().After(deadline) {
 			return nil, fmt.Errorf("timed out waiting for another call to finish using %s", path)
@@ -205,6 +215,19 @@ func (h *heartbeat) stop() {
 // that has gone quiet for a whole lease is evidence of death rather than of
 // slowness — and only that lock.
 //
+// Returns nil once path is no longer this stale lock — whether because this
+// call removed it, or because it discovers along the way that somebody
+// else already has (a concurrent waiter, or the holder's own clean
+// release, both surfacing as Link's ordinary ENOENT): both are Acquire's
+// ordinary retry case, not a problem. A non-nil error means the opposite of
+// "not broken yet": the file is confirmed still there and the OS itself is
+// refusing to let it go — `chflags uchg` needs only file ownership and no
+// root, and leaves link(2) and unlink(2) both returning EPERM forever, so
+// nothing about that failure changes on a second attempt, whichever of the
+// two calls below hits it first. Acquire refuses immediately on this one
+// rather than retrying it: retrying costs a Link, two Stats and a Remove
+// every time, for a condition no number of attempts resolves.
+//
 // Link, not Rename, is what takes the reference to examine. Rename would
 // make path briefly not exist, and any waiter — including one in another
 // process — that checks path in that window finds nothing there and
@@ -235,10 +258,10 @@ func (h *heartbeat) stop() {
 // bargain renew's own doc comment already makes about a pathologically
 // paused holder — not eliminated, but too small to be worth flock(2)'s
 // platform-dependent behaviour to close.
-func breakStale(dir, path string, judged os.FileInfo) {
+func breakStale(dir, path string, judged os.FileInfo) error {
 	tmp, err := os.CreateTemp(dir, ".lock-stale-*")
 	if err != nil {
-		return
+		return nil // transient — the ordinary retry loop gets another try
 	}
 	name := tmp.Name()
 	_ = tmp.Close()
@@ -249,11 +272,24 @@ func breakStale(dir, path string, judged os.FileInfo) {
 	defer os.Remove(name)
 
 	if err := os.Link(path, name); err != nil {
-		return // the holder already released it, or another waiter's ahead of us
+		// Permission-denied is not "gone" — chflags uchg (or an ACL) blocks
+		// link(2) on the file itself the same way it blocks unlink(2)
+		// below, and the file is still sitting at path the whole time. Every
+		// other Link failure is ENOENT: the holder already released it, or
+		// another waiter is ahead of us, both the ordinary retry case.
+		if os.IsPermission(err) {
+			return fmt.Errorf("lock %s has been stale since %s and cannot be broken: %w",
+				path, judged.ModTime().Format(time.RFC3339), err)
+		}
+		return nil
 	}
 	after, err := os.Stat(name)
 	if err != nil || !os.SameFile(judged, after) || after.ModTime().After(judged.ModTime()) {
-		return // replaced, or renewed since judged — leave path exactly as it is
+		return nil // replaced, or renewed since judged — leave path exactly as it is
 	}
-	_ = os.Remove(path)
+	if err := os.Remove(path); err != nil {
+		return fmt.Errorf("lock %s has been stale since %s and cannot be removed: %w",
+			path, judged.ModTime().Format(time.RFC3339), err)
+	}
+	return nil
 }
