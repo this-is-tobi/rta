@@ -195,6 +195,24 @@ func doRequest(ctx context.Context, method string, req plugin.Request) (view.Vie
 		httpReq.SetBasicAuth(user, pass)
 	}
 
+	// Checked before anything picks a route, proxy or not — see ssrf.go's
+	// checkDestination for why a proxy makes this the only check the real
+	// destination ever gets, and withTrustedProxy for the other half: the
+	// proxy itself, once, is not the caller's choice and must not be
+	// refused as if it were.
+	if err := checkDestination(ctx, httpReq.URL); err != nil {
+		var blocked *blockedAddrError
+		if errors.As(err, &blocked) {
+			return nil, view.Errorf("http.request.blocked", "%s %s: %v", method, url, err).
+				WithHint("the destination resolves to a loopback, private, or link-local address " +
+					"(this includes cloud metadata endpoints) — rta refuses to connect there even " +
+					"though the grant named this URL")
+		}
+		return nil, view.Errorf("http.request.failed", "%s %s: %v", method, url, err).
+			WithHint("check the URL is reachable; use --timeout to extend the deadline")
+	}
+	httpReq = withTrustedProxy(httpReq)
+
 	// A dry run must not reach the network. POST, PUT and DELETE are writes
 	// on somebody else's system, and a --dry-run that sends the request
 	// anyway is worse than none at all: it reports what "would" happen after
