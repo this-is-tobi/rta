@@ -2,14 +2,27 @@ package http
 
 import (
 	"context"
+	"errors"
 	stdnet "net"
 	stdhttp "net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
 	"github.com/this-is-tobi/rta/pkg/view"
 )
+
+// withProxy points proxyFunc at a fixed URL for one test — the seam that
+// lets a proxy decision be tested without relying on HTTP_PROXY/HTTPS_PROXY
+// env vars, which net/http caches process-wide behind a sync.Once the
+// moment any request has gone through stdhttp.ProxyFromEnvironment once.
+func withProxy(t *testing.T, proxyURL *url.URL) {
+	t.Helper()
+	saved := proxyFunc
+	proxyFunc = func(*stdhttp.Request) (*url.URL, error) { return proxyURL, nil }
+	t.Cleanup(func() { proxyFunc = saved })
+}
 
 // useRealBlocklist restores the real address policy for one test, undoing
 // TestMain's blanket relaxation. Every test in this file needs it: it is
@@ -146,5 +159,100 @@ func TestOrdinaryRequestsStillReachTheServer(t *testing.T) {
 	pairs := pairsOf(t, v)
 	if !strings.HasPrefix(pairs["status"], "200") {
 		t.Errorf("status = %q", pairs["status"])
+	}
+}
+
+// A configured proxy used to turn the whole blocklist off: Transport dials
+// the proxy's address, not the target's, so dialGuarded validated the
+// wrong end of the connection and the real destination — inside the
+// CONNECT line — went unchecked. checkDestination runs before doRequest
+// ever asks whether a proxy applies, so this must still be refused with a
+// proxy configured to reach anywhere at all.
+func TestAConfiguredProxyDoesNotBypassTheDestinationCheck(t *testing.T) {
+	useRealBlocklist(t)
+
+	var proxyHit bool
+	proxy := httptest.NewServer(stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, _ *stdhttp.Request) {
+		proxyHit = true
+		w.WriteHeader(stdhttp.StatusOK)
+	}))
+	defer proxy.Close()
+	proxyURL, err := url.Parse(proxy.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	withProxy(t, proxyURL)
+
+	_, err = doRequest(context.Background(), "GET",
+		req(map[string]any{"url": "http://169.254.169.254/latest/meta-data/iam/security-credentials/role"}))
+	if err == nil {
+		t.Fatal("want an error, got nil")
+	}
+	ve := view.AsError(err, "x")
+	if ve.Code != "http.request.blocked" {
+		t.Errorf("code = %q, want http.request.blocked (message: %s)", ve.Code, ve.Message)
+	}
+	if proxyHit {
+		t.Fatal("the proxy was asked to reach the blocked destination — a proxy bypassed the SSRF check")
+	}
+}
+
+// The other half, and the one that fails a different way: a proxy that
+// happens to sit on loopback (an mitmproxy, a corporate egress) is not the
+// caller's choice and must not be refused as if it were, merely because
+// dialGuarded is about to connect to a loopback address.
+func TestALoopbackProxyIsNotRefusedForBeingLoopback(t *testing.T) {
+	useRealBlocklist(t)
+
+	var gotRequestURI string
+	proxy := httptest.NewServer(stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+		gotRequestURI = r.RequestURI
+		w.Write([]byte("ok"))
+	}))
+	defer proxy.Close()
+	proxyURL, err := url.Parse(proxy.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	withProxy(t, proxyURL)
+
+	// A literal public-looking IP, so checkDestination's lookup needs no
+	// real DNS query (LookupIPAddr short-circuits a parseable literal) and
+	// the test has no network dependency — the point here is not whether
+	// this address is reachable, it never is, only that the proxy (not
+	// this address) is what actually gets dialed.
+	const target = "http://93.184.216.34/widget"
+	v, err := doRequest(context.Background(), "GET", req(map[string]any{"url": target}))
+	if err != nil {
+		t.Fatalf("a request through a loopback proxy was refused: %v", err)
+	}
+	pairs := pairsOf(t, v)
+	if !strings.HasPrefix(pairs["status"], "200") {
+		t.Errorf("status = %q", pairs["status"])
+	}
+	if !strings.Contains(gotRequestURI, "93.184.216.34") {
+		t.Errorf("the proxy never saw the original target: RequestURI = %q", gotRequestURI)
+	}
+}
+
+// dialGuarded's own two halves, isolated from the request layer above: a
+// dial to the address withTrustedProxy marked is let through whatever it
+// is, and every other dial still goes through the real blocklist.
+func TestDialGuardedTrustsOnlyTheMarkedAddress(t *testing.T) {
+	useRealBlocklist(t)
+
+	ctx := context.WithValue(context.Background(), trustedProxyKey{}, "127.0.0.1:1")
+	_, err := dialGuarded(ctx, "tcp", "127.0.0.1:1")
+	var blocked *blockedAddrError
+	if errors.As(err, &blocked) {
+		t.Fatalf("a dial to the marked proxy address was refused as blocked: %v", err)
+	}
+	if err == nil {
+		t.Fatal("want a connection error (nothing listens on port 1), got nil")
+	}
+
+	_, err = dialGuarded(context.Background(), "tcp", "127.0.0.1:1")
+	if !errors.As(err, &blocked) {
+		t.Fatalf("an unmarked loopback dial was not refused as blocked: %v", err)
 	}
 }
