@@ -249,6 +249,19 @@ Neither credential refusal echoes the value it was given. If you did pass a real
 
 `--plugin pg` is enough; the artifact pin is filled in from what is installed. A digest is not something anyone should type, and typing one wrong is exactly the failure the pin exists to prevent.
 
+### Repinning after a plugin rebuild
+
+Trust binds to the artifact's digest, never to a name or a version — see [the boundary](../30-boundary/10-the-boundary.md) — so `rta plugin upgrade pg` changes what "pg" pins to, and every profile still naming the old digest starts refusing with `this profile's pin does not match the installed "pg"` the next time it is resolved. `rta profile set staging --plugin pg` fixes one profile at a time, resolving the new digest itself rather than asking for one typed in. `rta profile repin` makes the same rewrite across every profile at once, touching nothing else stored beside the entry — the `set:`, `secrets:`, `kube:` and `ssh:` blocks all come along unchanged.
+
+```bash
+rta plugin upgrade pg
+rta profile repin --all --plugin pg               # every profile with a pg entry
+rta profile repin staging --plugin pg             # just one profile
+rta profile repin staging --plugin pg/analytics   # just one instance of it
+```
+
+Name a profile, or pass `--all` — one or the other is required, so a repin's scope is always stated rather than assumed. `--dry-run` reports what would change without writing it. An entry already pinned to what is installed is reported and left alone.
+
 **Tab completion knows the keys.** With `--plugin` on the line, `--set <tab>` offers exactly what that plugin reads, with its help text and — for a closed set — its accepted values. `--secret <tab>` offers the inputs a mapping may target, marking which of them are credentials. A credential never appears under `--set`, because it cannot be a config key at all:
 
 ```
