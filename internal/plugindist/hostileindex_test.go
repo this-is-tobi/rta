@@ -1,6 +1,7 @@
 package plugindist
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,6 +30,73 @@ func placeFile(t *testing.T, ix Index, name, body string) {
 // A symlink named <name>.yaml is not a manifest. os.ReadDir does not resolve
 // one, so it arrives with IsDir() false looking exactly like a file — and
 // os.ReadFile would have resolved it.
+// E3. Resolve — install and upgrade's own lookup — used to read the
+// manifest path with a plain os.ReadFile, bypassing the symlink and size
+// checks readManifestFile enforces for the identical shape reached from a
+// directory listing: `index/pg.yaml -> /dev/zero` OOM-killed `plugin
+// install`/`upgrade` while `plugin search`, going through
+// readManifestFile, already refused the same file correctly. Reused here
+// through readManifestAt, the two readers' shared rule, so a symlink
+// cannot be followed from either direction.
+func TestResolveDoesNotFollowASymlinkedManifest(t *testing.T) {
+	testData(t)
+	repo := gitFixture(t, map[string]string{"pg": goodManifest})
+	if verr := AddIndex(context.Background(), "hostile", repo); verr != nil {
+		t.Fatal(verr)
+	}
+	ix, ok := IndexByName("hostile")
+	if !ok {
+		t.Fatal("the index was not attached")
+	}
+
+	secret := filepath.Join(t.TempDir(), "kubeconfig")
+	if err := os.WriteFile(secret, []byte("name: elsewhere\nversion: 1.0.0\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(secret, filepath.Join(ix.Dir, "index", "elsewhere.yaml")); err != nil {
+		t.Skipf("no symlinks here: %v", err)
+	}
+
+	// The real manifest beside it still resolves normally.
+	if _, verr := Resolve("hostile/pg"); verr != nil {
+		t.Fatalf("a real manifest beside a symlink was refused: %v", verr)
+	}
+	// The symlinked one must read as though nothing were there — the same
+	// answer a genuinely missing file gets — never as a manifest actually
+	// materializing from a file Resolve was never supposed to open.
+	_, verr := Resolve("hostile/elsewhere")
+	if verr == nil {
+		t.Fatal("Resolve followed a symlinked manifest")
+	}
+	if verr.Code != "plugin.install.unknown" {
+		t.Errorf("code = %q, want plugin.install.unknown", verr.Code)
+	}
+}
+
+// The same reader's other half: a manifest over the cap must not be read
+// in full either, reached through Resolve rather than through a directory
+// listing.
+func TestResolveRefusesAnOversizedManifest(t *testing.T) {
+	testData(t)
+	repo := gitFixture(t, map[string]string{"pg": goodManifest})
+	if verr := AddIndex(context.Background(), "hostile", repo); verr != nil {
+		t.Fatal(verr)
+	}
+	ix, ok := IndexByName("hostile")
+	if !ok {
+		t.Fatal("the index was not attached")
+	}
+	placeFile(t, ix, "huge.yaml", strings.Repeat("x", manifestCap+1))
+
+	_, verr := Resolve("hostile/huge")
+	if verr == nil {
+		t.Fatal("Resolve read an over-cap manifest in full")
+	}
+	if verr.Code != "plugin.install.unknown" {
+		t.Errorf("code = %q, want plugin.install.unknown", verr.Code)
+	}
+}
+
 func TestASymlinkedManifestIsNotFollowed(t *testing.T) {
 	testData(t)
 	ix := placeIndex(t, "hostile", map[string]string{"pg": goodManifest})
