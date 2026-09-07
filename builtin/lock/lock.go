@@ -111,7 +111,7 @@ func Plugin() plugin.Plugin {
 					{Name: "kind", Type: plugin.String,
 						Default: string(lockdown.KindAgent), Options: kindNames(), Help: kindHelp},
 					{Name: "name", Type: plugin.String, Positional: true, Required: true,
-						Help: "the principal to unfreeze"},
+						Help: "the principal to unfreeze", Suggest: suggestLockedNames},
 					{Name: "server", Type: plugin.String, Local: true, Remote: true,
 						Help: "lift the lock on this remote server (a name from remotes.yaml)"},
 					operatorid.PassphraseField.OnlyWith("server"),
@@ -177,6 +177,29 @@ func runList(_ context.Context, req plugin.Request) (view.View, error) {
 		return nil, verr
 	}
 	return lockTable(locks), nil
+}
+
+// suggestLockedNames completes from the principals actually frozen right
+// now — the set lock.rm can act on — filtered to the kind already chosen,
+// the same way suggestHeldScopes narrows by the target already typed:
+// offering an agent's name under --kind credential would offer a lift that
+// cannot match anything.
+func suggestLockedNames(_ context.Context, req plugin.Request) []string {
+	locks, verr := lockdown.Load()
+	if verr != nil {
+		return nil
+	}
+	kind, kerr := lockdown.CheckKind(req.String("kind"))
+	if kerr != nil {
+		return nil
+	}
+	var out []string
+	for _, l := range locks {
+		if l.Kind == kind {
+			out = append(out, l.Name)
+		}
+	}
+	return out
 }
 
 func runRm(_ context.Context, req plugin.Request) (view.View, error) {
