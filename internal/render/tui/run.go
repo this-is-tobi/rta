@@ -308,7 +308,20 @@ func (m *Model) refreshInPlace(c plugin.Capability, values map[string]any, yes b
 	}
 	name, filled, conn, verr := m.resolveProfile(c, values)
 	if verr != nil {
-		return nil
+		// The next tick is normally scheduled from a completed run's own
+		// resultMsg (tui.go), which returning nil here — no run launched —
+		// means never arrives: a resolve failure on one tick used to stop a
+		// live view refreshing forever, silently, until the reader left and
+		// came back. Rescheduled by hand instead, so a transient failure
+		// costs one missed refresh and not the rest of the session, and
+		// flashed rather than replacing what is on screen: a live view's
+		// own promise is that the result already shown stays until a new
+		// one lands, which a resolve failure is not a reason to break on
+		// top of everything else.
+		m.flash = verr.Message
+		m.tickGen++
+		gen := m.tickGen
+		return tea.Tick(tileRefreshInterval, func(time.Time) tea.Msg { return tickMsg{gen: gen} })
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
 	m.cancelRun = cancel
@@ -343,6 +356,13 @@ func (m *Model) startRun(c plugin.Capability, values map[string]any, yes bool) t
 		m.runSeq++
 		m.mode = modeResult
 		m.result = resultMsg{cap: c, err: verr, seq: m.runSeq}
+		// Without this, m.result held the refusal but View() kept drawing
+		// whatever renderResult last produced — the previous run's body under
+		// this one's title, or a blank one on a session's first run — because
+		// setting m.result is not what puts anything on screen; renderResult
+		// is. formError (formflow.go) already pairs the two the same way.
+		m.renderResult()
+		m.viewport.GotoTop()
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
