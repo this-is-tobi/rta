@@ -44,6 +44,20 @@ type Report struct {
 
 // Install resolves spec ("name" or "index/name"), verifies, and places.
 func Install(ctx context.Context, spec string, stderr io.Writer) (Report, *view.Error) {
+	return install(ctx, spec, stderr, false)
+}
+
+// PreviewInstall runs everything Install does — resolve, fetch, verify the
+// checksum, launch sandboxed, check the declaration against the index's
+// claims — but stops before any of the three durable writes: the managed
+// store, the trust entry, rta.lock. For `rta plugin install --dry-run`,
+// where the point is finding out whether an install would succeed without
+// yet deciding to trust the artifact.
+func PreviewInstall(ctx context.Context, spec string, stderr io.Writer) (Report, *view.Error) {
+	return install(ctx, spec, stderr, true)
+}
+
+func install(ctx context.Context, spec string, stderr io.Writer, dryRun bool) (Report, *view.Error) {
 	listed, verr := Resolve(spec)
 	if verr != nil {
 		return Report{}, verr
@@ -54,12 +68,14 @@ func Install(ctx context.Context, spec string, stderr io.Writer) (Report, *view.
 			WithHint("`rta plugin upgrade " + m.Name + "` moves it; " +
 				"`rta plugin remove " + m.Name + "` takes it out")
 	}
-	return installFrom(ctx, listed, stderr)
+	return installFrom(ctx, listed, stderr, dryRun)
 }
 
 // installFrom is the shared half of Install and Upgrade: everything after
-// "which manifest", up to and including the durable writes.
-func installFrom(ctx context.Context, listed Listed, stderr io.Writer) (Report, *view.Error) {
+// "which manifest", up to and including the durable writes — skipped, with
+// dest computed the same way place would name it, when dryRun says to stop
+// short of them.
+func installFrom(ctx context.Context, listed Listed, stderr io.Writer, dryRun bool) (Report, *view.Error) {
 	m := listed.Manifest
 	plat, ok := m.PlatformFor(runtime.GOOS, runtime.GOARCH)
 	if !ok {
@@ -157,6 +173,17 @@ func installFrom(ctx context.Context, listed Listed, stderr io.Writer) (Report, 
 	}
 
 	sig := checkSignature(ctx, m, staged, stderr)
+
+	if dryRun {
+		// Named the same way place would, without moving anything there —
+		// the path is a deterministic function of name and digest, both
+		// already in hand.
+		dest := filepath.Join(StoreDir(), m.Name, digest, binaryName(m.Name))
+		return Report{
+			Name: m.Name, Version: m.Version, Index: listed.Index, URL: plat.URL,
+			Digest: digest, Signature: sig, Path: dest, Declared: declared,
+		}, nil
+	}
 
 	dest, verr := place(m.Name, digest, staged)
 	if verr != nil {
@@ -442,6 +469,17 @@ type Removed struct {
 // Remove uninstalls a managed plugin: the store, the trust entries for every
 // stored digest, and the lockfile record.
 func Remove(name string) (Removed, *view.Error) {
+	return remove(name, false)
+}
+
+// PreviewRemove answers what Remove would report — the same validation, the
+// same digests and orphans — without withdrawing trust or touching the
+// store or the lockfile, for `rta plugin remove --dry-run`.
+func PreviewRemove(name string) (Removed, *view.Error) {
+	return remove(name, true)
+}
+
+func remove(name string, dryRun bool) (Removed, *view.Error) {
 	if !plugin.ValidName(name) {
 		return Removed{}, view.Errorf("plugin.remove.spec", "%q is not a plugin name", name)
 	}
@@ -451,6 +489,9 @@ func Remove(name string) (Removed, *view.Error) {
 		return Removed{}, view.Errorf("plugin.remove.unknown", "%s is not managed by rta", name).
 			WithHint("`rta plugin list` shows what is loadable; a plugin you copied onto " +
 				"$PATH yourself is yours to remove the same way")
+	}
+	if dryRun {
+		return Removed{Name: name, Digests: digests, Orphans: orphanedConfig(name)}, nil
 	}
 	// By digest, never by name: untrusting by name would also revoke an
 	// unmanaged same-named binary the operator trusted deliberately.
@@ -484,6 +525,16 @@ type Upgraded struct {
 // with it, because the operator's approval named that artifact and the
 // artifact has not changed.
 func Upgrade(ctx context.Context, name string, stderr io.Writer) (Upgraded, *view.Error) {
+	return upgrade(ctx, name, stderr, false)
+}
+
+// PreviewUpgrade is Upgrade without the durable writes — see PreviewInstall,
+// which it shares installFrom's dryRun branch with.
+func PreviewUpgrade(ctx context.Context, name string, stderr io.Writer) (Upgraded, *view.Error) {
+	return upgrade(ctx, name, stderr, true)
+}
+
+func upgrade(ctx context.Context, name string, stderr io.Writer, dryRun bool) (Upgraded, *view.Error) {
 	locked, held := LockedFor(name)
 	if !held {
 		return Upgraded{}, view.Errorf("plugin.upgrade.unknown", "%s is not managed by rta", name).
@@ -507,7 +558,7 @@ func Upgrade(ctx context.Context, name string, stderr io.Writer) (Upgraded, *vie
 		return Upgraded{}, verr
 	}
 
-	report, verr := installFrom(ctx, listed, stderr)
+	report, verr := installFrom(ctx, listed, stderr, dryRun)
 	if verr != nil {
 		return Upgraded{}, verr
 	}

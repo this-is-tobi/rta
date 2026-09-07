@@ -119,6 +119,34 @@ func TestAnIndexIsAttachedUpdatedAndDetached(t *testing.T) {
 	}
 }
 
+// D3: PreviewAddIndex runs the same name/URL/reserved-name checks AddIndex
+// does, without cloning anything.
+func TestPreviewAddIndexClonesNothing(t *testing.T) {
+	testData(t)
+	repo := gitFixture(t, map[string]string{"pg": goodManifest})
+	ctx := context.Background()
+
+	if verr := PreviewAddIndex(ctx, "lab", repo); verr != nil {
+		t.Fatalf("preview add: %v", verr)
+	}
+	if _, ok := IndexByName("lab"); ok {
+		t.Fatal("--dry-run attached the index anyway")
+	}
+
+	// The refusal a real add would hit is still caught by the preview.
+	if verr := PreviewAddIndex(ctx, "Bad_Name", repo); verr == nil || verr.Code != "plugin.index.name" {
+		t.Fatalf("preview add with a bad name: %v, want plugin.index.name", verr)
+	}
+
+	// And the real add still works afterwards.
+	if verr := AddIndex(ctx, "lab", repo); verr != nil {
+		t.Fatalf("add after preview: %v", verr)
+	}
+	if _, ok := IndexByName("lab"); !ok {
+		t.Fatal("the real add after a preview did not attach the index")
+	}
+}
+
 // git's idea of a repository argument is wider than "somewhere to clone
 // from", and `<transport>::<argument>` is the part that matters:
 // git-remote-ext takes a command line. git refuses ext by default, so this

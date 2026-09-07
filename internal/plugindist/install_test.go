@@ -259,6 +259,45 @@ func TestInstallVerifiesPlacesTrustsAndRecords(t *testing.T) {
 	}
 }
 
+// D3: PreviewInstall must report the same digest and declaration a real
+// install would — the whole point is finding out whether it would succeed —
+// while leaving none of the three durable writes behind.
+func TestPreviewInstallWritesNothing(t *testing.T) {
+	testData(t)
+	bin := hello(t)
+	attach(t, helloManifest(t, bin, ""))
+
+	rep, verr := PreviewInstall(context.Background(), "hello", io.Discard)
+	if verr != nil {
+		t.Fatalf("preview install: %v", verr)
+	}
+	wantDigest := sha256Of(t, bin)
+	if rep.Digest != wantDigest {
+		t.Fatalf("digest = %s, want %s", rep.Digest, wantDigest)
+	}
+	if rep.Declared.Name != "hello" || len(rep.Declared.Capabilities) != 2 {
+		t.Fatalf("declared = %+v", rep.Declared)
+	}
+	if _, err := os.Stat(filepath.Join(StoreDir(), "hello")); err == nil {
+		t.Error("the store entry was created despite --dry-run")
+	}
+	if plugintrust.Load().Trusts(wantDigest) {
+		t.Error("the digest was trusted despite --dry-run")
+	}
+	if _, held := LockedFor("hello"); held {
+		t.Error("rta.lock recorded the install despite --dry-run")
+	}
+
+	// The real install still works afterwards — the preview left nothing
+	// behind that a later install would trip over.
+	if _, verr := Install(context.Background(), "hello", io.Discard); verr != nil {
+		t.Fatalf("install after preview: %v", verr)
+	}
+	if !plugintrust.Load().Trusts(wantDigest) {
+		t.Error("the real install after a preview did not trust the digest")
+	}
+}
+
 // A checksum that does not match the bytes is the index lying or the
 // transport rewriting; either way the bytes are refused, the index is named,
 // and nothing durable happens.
@@ -398,6 +437,43 @@ func TestRemoveUninstallsAndNamesOrphans(t *testing.T) {
 
 	if _, verr := Remove("hello"); verr == nil || verr.Code != "plugin.remove.unknown" {
 		t.Fatalf("removing what is not there: %v", verr)
+	}
+}
+
+// D3: PreviewRemove answers the same digests and orphans Remove would,
+// without withdrawing trust or touching the store or the lockfile.
+func TestPreviewRemoveWithdrawsNothing(t *testing.T) {
+	testData(t)
+	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
+	bin := hello(t)
+	attach(t, helloManifest(t, bin, ""))
+	rep, verr := Install(context.Background(), "hello", io.Discard)
+	if verr != nil {
+		t.Fatal(verr)
+	}
+
+	removed, verr := PreviewRemove("hello")
+	if verr != nil {
+		t.Fatalf("preview remove: %v", verr)
+	}
+	if len(removed.Digests) != 1 || removed.Digests[0] != rep.Digest {
+		t.Fatalf("removed digests = %v", removed.Digests)
+	}
+	if !plugintrust.Load().Trusts(rep.Digest) {
+		t.Error("--dry-run withdrew trust anyway")
+	}
+	if _, err := os.Stat(filepath.Join(StoreDir(), "hello")); err != nil {
+		t.Error("--dry-run removed the store entry anyway")
+	}
+	if _, held := LockedFor("hello"); !held {
+		t.Error("--dry-run removed the lock entry anyway")
+	}
+
+	if _, verr := Remove("hello"); verr != nil {
+		t.Fatalf("remove after preview: %v", verr)
+	}
+	if plugintrust.Load().Trusts(rep.Digest) {
+		t.Error("the real remove after a preview did not withdraw trust")
 	}
 }
 
