@@ -147,7 +147,11 @@ func backupUnstamped() {
 	// was the worse outcome by far: it looks like a backup to the guard, so
 	// it permanently prevented a real one from ever being taken.
 	backup := path + ".pre-v" + strconv.Itoa(storeVersion) + ".bak"
-	_, _ = atomicfile.Publish(backup, data, 0o600)
+	// len(data): this run's own store is the only size Publish needs to
+	// accept back if it loses a race to another writer taking the identical
+	// backup at the same moment — anything else at that path is not a
+	// backup this process would recognise as one anyway.
+	_, _ = atomicfile.Publish(backup, data, 0o600, len(data))
 }
 
 // stamped reports whether the store on disk already declares its format, so

@@ -172,14 +172,14 @@ func TestAShorterWriteReplacesTheWholeFile(t *testing.T) {
 // made with the first, so the second writer has to be told it lost.
 func TestPublishNeverOverwrites(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "seal.key")
-	first, err := Publish(path, []byte("first-writer"), 0o600)
+	first, err := Publish(path, []byte("first-writer"), 0o600, 64)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if string(first) != "first-writer" {
 		t.Fatalf("creator got %q back, want its own bytes", first)
 	}
-	second, err := Publish(path, []byte("second-writer"), 0o600)
+	second, err := Publish(path, []byte("second-writer"), 0o600, 64)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,6 +192,27 @@ func TestPublishNeverOverwrites(t *testing.T) {
 	}
 	if string(onDisk) != "first-writer" {
 		t.Errorf("file holds %q — the second writer overwrote the first", onDisk)
+	}
+}
+
+// E2. Publish's own fallback — reading back what a winning racer left
+// behind — used to be a plain os.ReadFile with no size limit: a caller that
+// lost the race to a planted, oversized file read the whole thing into
+// memory before anything examined it. max is the same bound ReadCapped
+// takes directly, threaded through so Publish inherits it rather than
+// reopening the unbounded read one call up.
+func TestPublishRefusesAnOversizedExistingFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "grants.json.lock")
+	if err := os.WriteFile(path, make([]byte, 4096), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := Publish(path, []byte("mine"), 0o600, 64)
+	if err == nil {
+		t.Fatal("an oversized existing file was read in full and handed back")
+	}
+	if os.IsNotExist(err) {
+		t.Errorf("err = %v, want the size refusal, not not-exist", err)
 	}
 }
 
@@ -215,7 +236,7 @@ func TestPublishRefusesASymlinkAtTheTargetPath(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := Publish(path, []byte(strings.Repeat("y", 32)), 0o600)
+	got, err := Publish(path, []byte(strings.Repeat("y", 32)), 0o600, 64)
 	if err == nil {
 		t.Fatalf("Publish through a symlink returned %q with no error — a foreign file was accepted as a prior publication", got)
 	}
@@ -237,7 +258,7 @@ func TestPublishRefusesADanglingSymlinkAtTheTargetPath(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := Publish(path, []byte(strings.Repeat("y", 32)), 0o600)
+	_, err := Publish(path, []byte(strings.Repeat("y", 32)), 0o600, 64)
 	if err == nil {
 		t.Fatal("Publish through a dangling symlink returned no error")
 	}
@@ -263,7 +284,7 @@ func TestRacingPublishersAllReturnTheWinnersBytes(t *testing.T) {
 			defer wg.Done()
 			// Distinct payloads, so "they all agree" cannot be true by
 			// accident the way it would be with identical ones.
-			b, err := Publish(path, []byte(strings.Repeat(string(rune('a'+i)), 32)), 0o600)
+			b, err := Publish(path, []byte(strings.Repeat(string(rune('a'+i)), 32)), 0o600, 64)
 			if err != nil {
 				t.Error(err)
 				return
@@ -306,7 +327,7 @@ func TestAPublishedFileIsNeverObservablyPartial(t *testing.T) {
 		defer wg.Done()
 		for range 300 {
 			_ = os.Remove(path)
-			if _, err := Publish(path, body, 0o600); err != nil {
+			if _, err := Publish(path, body, 0o600, len(body)); err != nil {
 				t.Error(err)
 				break
 			}
@@ -355,14 +376,14 @@ func TestPublishSurvivesTheWinnerLettingGo(t *testing.T) {
 				return
 			default:
 			}
-			if held, err := Publish(path, token, 0o600); err == nil && bytes.Equal(held, token) {
+			if held, err := Publish(path, token, 0o600, 64); err == nil && bytes.Equal(held, token) {
 				_ = os.Remove(path)
 			}
 		}
 	}()
 
 	for range 2000 {
-		if _, err := Publish(path, []byte("contender"), 0o600); err != nil {
+		if _, err := Publish(path, []byte("contender"), 0o600, 64); err != nil {
 			close(stop)
 			wg.Wait()
 			t.Fatalf("a contended publish failed rather than retrying: %v", err)

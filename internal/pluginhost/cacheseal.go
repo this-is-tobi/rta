@@ -47,6 +47,10 @@ const cacheKeyFile = "plugin-cache.key"
 
 func cacheKeyPath() string { return filepath.Join(paths.Data(), cacheKeyFile) }
 
+// maxCacheKeyFile bounds a read of the cache key: it is always exactly 32
+// bytes, generous room for a less careful past or future writer.
+const maxCacheKeyFile = 4 << 10
+
 // sealKey loads the cache key, creating it on first use.
 //
 // It returns nil rather than an error, and every caller treats nil as "no
@@ -75,7 +79,7 @@ func sealKey(create bool) []byte {
 	// winner's key instead of overwriting it — see atomicfile.Publish, which
 	// carries the reasoning and which the grant seal key now shares. That was
 	// two copies of this function, and only this one had been got right.
-	stored, err := atomicfile.Publish(cacheKeyPath(), key, 0o600)
+	stored, err := atomicfile.Publish(cacheKeyPath(), key, 0o600, maxCacheKeyFile)
 	if err != nil || len(stored) < 32 {
 		return nil
 	}

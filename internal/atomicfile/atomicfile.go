@@ -179,7 +179,13 @@ func Write(path string, data []byte, perm fs.FileMode) error {
 //
 // Callers validate what comes back. Publish is byte-agnostic and will hand
 // back a two-byte file that some earlier, less careful writer left behind.
-func Publish(path string, data []byte, perm fs.FileMode) ([]byte, error) {
+//
+// max bounds the read this function falls back to when Link loses the
+// race and it has to hand back whatever the winner published instead — see
+// ReadCapped, which it uses for exactly the reason ReadCapped exists: path
+// sits under paths.Data(), and a caller that lost the race is reading a
+// file it did not write.
+func Publish(path string, data []byte, perm fs.FileMode, max int) ([]byte, error) {
 	dir := filepath.Dir(path)
 	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+"-*.tmp")
 	if err != nil {
@@ -231,7 +237,7 @@ func Publish(path string, data []byte, perm fs.FileMode) ([]byte, error) {
 			return nil, fmt.Errorf("publishing %s: refusing a symlink where a published file belongs", path)
 		} else if !info.Mode().IsRegular() {
 			return nil, fmt.Errorf("publishing %s: refusing a non-regular file where a published file belongs", path)
-		} else if existing, rerr := os.ReadFile(path); rerr == nil {
+		} else if existing, rerr := ReadCapped(path, max); rerr == nil {
 			return existing, nil
 		} else if !os.IsNotExist(rerr) {
 			return nil, fmt.Errorf("reading %s: %w", path, rerr)

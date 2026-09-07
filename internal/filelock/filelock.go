@@ -38,6 +38,17 @@ var (
 	DefaultTimeout = 2 * time.Second
 )
 
+// maxToken bounds every read of the sentinel: a token is a pid, a space, 32
+// hex characters and a newline — comfortably under 64 bytes even for an
+// implausible pid, so this is generous rather than tight. The sentinel
+// sits under paths.Data(), which every gated MCP tool call reads before
+// the call it guards ever runs, and whose own threat model
+// (internal/consent) is "a directory whose whole threat model is that
+// somebody else can write there" — an unbounded read on this exact path
+// measured 2.03 GiB peak RSS from a 1 GiB sparse file that cost the
+// attacker nothing to create.
+const maxToken = 1 << 10
+
 // Acquire takes the lock at path, creating path's directory if needed.
 // path is the sentinel file itself (e.g. filepath.Join(dir, "store.lock")),
 // never the resource it protects — Acquire never touches that.
@@ -74,7 +85,7 @@ func Acquire(path string, stale, retry, timeout time.Duration) (release func(), 
 		// Publish is create-once and reports the contents that ended up
 		// there, which is the whole of an acquire: our token back means we
 		// created it, anything else names the holder that beat us.
-		held, err := atomicfile.Publish(path, mine, 0o600)
+		held, err := atomicfile.Publish(path, mine, 0o600, maxToken)
 		if err != nil {
 			return nil, fmt.Errorf("acquiring lock: %w", err)
 		}
@@ -117,7 +128,7 @@ func token() ([]byte, error) {
 // the file by name on the way out would delete its successor's lock and leave
 // that successor inside a critical section it believes it has to itself.
 func releaseLock(path string, mine []byte) {
-	if held, err := os.ReadFile(path); err != nil || !bytes.Equal(held, mine) {
+	if held, err := atomicfile.ReadCapped(path, maxToken); err != nil || !bytes.Equal(held, mine) {
 		return
 	}
 	_ = os.Remove(path)
@@ -188,7 +199,7 @@ func (h *heartbeat) beat() {
 	if h.stopped {
 		return
 	}
-	if held, err := os.ReadFile(h.path); err != nil || !bytes.Equal(held, h.mine) {
+	if held, err := atomicfile.ReadCapped(h.path, maxToken); err != nil || !bytes.Equal(held, h.mine) {
 		return
 	}
 	now := time.Now()
