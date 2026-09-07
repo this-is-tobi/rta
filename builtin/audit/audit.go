@@ -96,6 +96,20 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 				Safety:     plugin.Read,
 				Idempotent: true,
 				Detailed:   true,
+				// Same reasoning as audit.web, three lines above: a caller-
+				// chosen domain drives a handful of DNS lookups whose
+				// answers — including a DKIM TXT record at a caller-chosen
+				// selector — return straight into an agent's context, on
+				// the default MCP surface, with no consent. --selector
+				// widens this from "any name under the domain" to "any
+				// name at all": dkimName is selector + "._domainkey." +
+				// domain with no validation beyond trimming, so an
+				// unscoped caller could name selector and domain to send a
+				// DNS query — and read back the answer — for a name of
+				// their choosing, on an authoritative server of the
+				// domain's choosing.
+				NeedsGrant: true,
+				Scope:      "domain",
 				Description: "Answers \"can somebody send mail as this domain\" from the records the " +
 					"domain publishes: SPF (present, singular, how it ends, and how close it is to " +
 					"RFC 7208's ten-lookup limit past which it silently stops applying), DMARC (policy, " +

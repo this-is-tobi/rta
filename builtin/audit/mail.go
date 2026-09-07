@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	stdnet "net"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -46,6 +47,10 @@ func runMail(ctx context.Context, req plugin.Request) (view.View, error) {
 	if err != nil {
 		return nil, err
 	}
+	selector := strings.TrimSpace(req.String("selector"))
+	if verr := checkSelector(selector); verr != nil {
+		return nil, verr
+	}
 	timeout := time.Duration(req.Int("timeout")) * time.Second
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -54,7 +59,7 @@ func runMail(ctx context.Context, req plugin.Request) (view.View, error) {
 	if err := requireDomain(ctx, res, domain); err != nil {
 		return nil, err
 	}
-	r := gradeMail(lookupMail(ctx, res, domain, strings.TrimSpace(req.String("selector"))))
+	r := gradeMail(lookupMail(ctx, res, domain, selector))
 
 	if req.Bool("detail") {
 		summary := append([]view.Pair{{Key: "domain", Value: domain}}, r.grade()...)
@@ -83,6 +88,27 @@ func mailDomain(raw string) (string, *view.Error) {
 			WithHint("pass a domain like example.com, or an address at it")
 	}
 	return strings.ToLower(d), nil
+}
+
+// selectorRe is a DKIM selector's shape: one or more RFC 1035 labels,
+// dot-separated — "google", "selector1", "20161025", or a hierarchical one
+// like "foo.bar" (RFC 6376 §3.6.2.1 allows the selector itself to be
+// multi-label). Letters, digits and hyphens only, the same character set
+// mailDomain already reduces the domain half of this same name to.
+var selectorRe = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$`)
+
+// checkSelector refuses a selector that is not a usable DNS label sequence
+// before it is concatenated into dkimName — "only trimmed" before this,
+// unlike domain, which mailDomain already holds to its own character set.
+func checkSelector(v string) *view.Error {
+	if v == "" {
+		return nil
+	}
+	if len(v) > 253 || !selectorRe.MatchString(v) {
+		return view.Errorf("audit.mail.badselector", "%q is not a usable DKIM selector", v).
+			WithHint("selectors are letters, digits, hyphens and dots — the s= tag of a DKIM-Signature header")
+	}
+	return nil
 }
 
 // mailFacts is everything the audit read out of DNS, gathered in one place so
