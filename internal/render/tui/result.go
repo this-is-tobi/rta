@@ -156,15 +156,22 @@ func pageWarnings(v view.View) []view.Error {
 
 // flashText condenses an action result into a one-line footer notice.
 //
-// Only a genuine one-liner is drawn as itself; anything else falls back to
-// the generic "<capability> done" — the second layer against the shape C4
-// found, alongside alwaysOwnPage: a capability whose flash-eligible result
-// happens to be several lines or unusually long must not have all of it
-// painted onto the footer of whatever list the action ran from, whether or
-// not this file remembered to name it there too.
+// Only a capability flashSafe has vouched for, with a genuine one-liner
+// result, is drawn as itself; everything else — an unclassified capability,
+// or a classified one whose result happens to run long — falls back to the
+// generic "<capability> done". The length/line check alone was the shape C4
+// found: it stops a long or multi-line value from filling the footer, but a
+// short one-line secret from a future capability nobody added to
+// alwaysOwnPage would still have sailed through unmarked as a "genuine
+// one-liner". Gating on flashSafe first closes that: the default for a
+// capability neither map has an opinion on is the generic fallback, not the
+// raw value, and TestEveryFlashableActionIsClassified enforces that every
+// capability reachable this way has one.
 func flashText(msg resultMsg) string {
-	if t, ok := msg.view.(view.Text); ok && !strings.Contains(t.Body, "\n") && len(t.Body) <= maxFlashLen {
-		return t.Body
+	if flashSafe[msg.cap.ID] {
+		if t, ok := msg.view.(view.Text); ok && !strings.Contains(t.Body, "\n") && len(t.Body) <= maxFlashLen {
+			return t.Body
+		}
 	}
 	return msg.cap.ID + " done"
 }
