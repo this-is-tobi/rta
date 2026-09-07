@@ -48,10 +48,10 @@ func newPluginCommand(reg *registry.Registry, version string, opts *globalOpts) 
 	}
 	root.AddCommand(newPluginListCommand(reg, opts))
 	root.AddCommand(newPluginTrustCommand(opts))
-	root.AddCommand(newPluginUntrustCommand())
+	root.AddCommand(newPluginUntrustCommand(opts))
 	root.AddCommand(newPluginAllowCommand(opts))
 	root.AddCommand(newPluginDisallowCommand(opts))
-	root.AddCommand(newPluginNewCommand())
+	root.AddCommand(newPluginNewCommand(opts))
 	root.AddCommand(newPluginDevCommand(reg, version, opts))
 	root.AddCommand(newPluginInstallCommand(opts))
 	root.AddCommand(newPluginUpgradeCommand(opts))
@@ -134,19 +134,21 @@ func newPluginAllowCommand(opts *globalOpts) *cobra.Command {
 				return verr
 			}
 			union := mergedAllow(plugintrust.Load().Allowed(c.Identity.Digest), want)
-			if verr := plugintrust.Allow(c.Identity.Digest, union); verr != nil {
+			allowLabel, next := "allowed", "it applies on your next `rta` command — the plugin is "+
+				"relaunched with that location left out of its sandbox"
+			if opts.dryRun {
+				allowLabel, next = "would allow", "run without --dry-run to actually allow it"
+			} else if verr := plugintrust.Allow(c.Identity.Digest, union); verr != nil {
 				return verr
 			}
 			pairs := []view.Pair{
-				{Key: "allowed", Value: c.Declared.Name},
+				{Key: allowLabel, Value: c.Declared.Name},
 				{Key: "digest", Value: c.Identity.Digest},
 			}
 			for _, loc := range union {
 				pairs = append(pairs, view.Pair{Key: "may read", Value: needLine(plugin.Need(loc))})
 			}
-			pairs = append(pairs, view.Pair{Key: "next",
-				Value: "it applies on your next `rta` command — the plugin is relaunched with " +
-					"that location left out of its sandbox"})
+			pairs = append(pairs, view.Pair{Key: "next", Value: next})
 			return render(view.KeyValue{Pairs: pairs})
 		},
 		ValidArgsFunction: func(_ *cobra.Command, args []string, _ string) ([]cobra.Completion, cobra.ShellCompDirective) {
@@ -206,14 +208,17 @@ func newPluginDisallowCommand(opts *globalOpts) *cobra.Command {
 					"%s is not allowed any credential location", args[0]).
 					WithHint("nothing to withdraw")
 			}
-			if verr := plugintrust.Allow(c.Identity.Digest, nil); verr != nil {
+			withdrawnLabel, next := "withdrawn", "it applies on your next `rta` command"
+			if opts.dryRun {
+				withdrawnLabel, next = "would withdraw", "run without --dry-run to actually withdraw it"
+			} else if verr := plugintrust.Allow(c.Identity.Digest, nil); verr != nil {
 				return verr
 			}
 			return cli.Render(cmd.OutOrStdout(), view.KeyValue{Pairs: []view.Pair{
-				{Key: "withdrawn", Value: c.Declared.Name},
+				{Key: withdrawnLabel, Value: c.Declared.Name},
 				{Key: "digest", Value: c.Identity.Digest},
 				{Key: "no longer reads", Value: strings.Join(had, ", ")},
-				{Key: "next", Value: "it applies on your next `rta` command"},
+				{Key: "next", Value: next},
 			}}, cli.Options{Format: format, NoColor: opts.noColor || !isTTY(), Width: termWidth()})
 		},
 		ValidArgsFunction: func(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
@@ -397,11 +402,14 @@ func newPluginTrustCommand(opts *globalOpts) *cobra.Command {
 			if verr != nil {
 				return verr
 			}
-			if verr := plugintrust.Add(found.Digest, found.Name, found.Path); verr != nil {
+			trustedLabel := "trusted"
+			if opts.dryRun {
+				trustedLabel = "would trust"
+			} else if verr := plugintrust.Add(found.Digest, found.Name, found.Path); verr != nil {
 				return verr
 			}
 			pairs := []view.Pair{
-				{Key: "trusted", Value: found.Name},
+				{Key: trustedLabel, Value: found.Name},
 				{Key: "artifact", Value: found.Path},
 				{Key: "digest", Value: found.Digest},
 			}
@@ -410,8 +418,11 @@ func newPluginTrustCommand(opts *globalOpts) *cobra.Command {
 					view.Pair{Key: "size", Value: humanBytes(info.Size())},
 					view.Pair{Key: "modified", Value: info.ModTime().Format(time.RFC3339)})
 			}
-			pairs = append(pairs, view.Pair{Key: "next",
-				Value: "it loads on your next `rta` command — `rta plugin list` shows what it declares"})
+			next := "it loads on your next `rta` command — `rta plugin list` shows what it declares"
+			if opts.dryRun {
+				next = "run without --dry-run to actually trust it"
+			}
+			pairs = append(pairs, view.Pair{Key: "next", Value: next})
 			return render(view.KeyValue{Pairs: pairs})
 		},
 		ValidArgsFunction: func(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
@@ -432,7 +443,7 @@ func newPluginTrustCommand(opts *globalOpts) *cobra.Command {
 // By name as well as by digest, because that is how somebody reaches for it in
 // the moment they want it: an operator taking a plugin back has a name in
 // their head, and every digest that name ever had is a thing they want gone.
-func newPluginUntrustCommand() *cobra.Command {
+func newPluginUntrustCommand(opts *globalOpts) *cobra.Command {
 	return &cobra.Command{
 		Use:   "untrust <name|digest>",
 		Short: "Withdraw approval from a plugin artifact",
@@ -444,7 +455,15 @@ func newPluginUntrustCommand() *cobra.Command {
 			"serve` or the TUI to be rid of it.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			n, verr := plugintrust.Remove(args[0])
+			var (
+				n    int
+				verr *view.Error
+			)
+			if opts.dryRun {
+				n, verr = plugintrust.PreviewRemove(args[0])
+			} else {
+				n, verr = plugintrust.Remove(args[0])
+			}
 			if verr != nil {
 				return verr
 			}
@@ -454,9 +473,11 @@ func newPluginUntrustCommand() *cobra.Command {
 					WithHint("`rta plugin trust` with no argument lists what is waiting; " +
 						"`rta doctor` lists what is trusted")
 			}
-			fmt.Fprintf(cmd.OutOrStdout(),
-				"withdrew %s — it will not load again; a session already running keeps what it loaded\n",
-				plural(n, "approval", "approvals"))
+			verb, tail := "withdrew", "it will not load again; a session already running keeps what it loaded"
+			if opts.dryRun {
+				verb, tail = "would withdraw", "it would not load again"
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "%s %s — %s\n", verb, plural(n, "approval", "approvals"), tail)
 			return nil
 		},
 		ValidArgsFunction: func(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
@@ -554,7 +575,7 @@ func trustInventory() view.View {
 	return t
 }
 
-func newPluginNewCommand() *cobra.Command {
+func newPluginNewCommand(opts *globalOpts) *cobra.Command {
 	var dir, module, rtaSource string
 	cmd := &cobra.Command{
 		Use:   "new <name>",
@@ -592,8 +613,16 @@ func newPluginNewCommand() *cobra.Command {
 				}
 				s.RtaPath = replacePath(abs, dir)
 			}
-			if err := s.write(dir); err != nil {
+			names, err := s.write(dir, opts.dryRun)
+			if err != nil {
 				return err
+			}
+			if opts.dryRun {
+				fmt.Fprintf(cmd.OutOrStdout(), "would write %s in %s:\n", plural(len(names), "file", "files"), dir)
+				for _, n := range names {
+					fmt.Fprintf(cmd.OutOrStdout(), "  %s\n", n)
+				}
+				return nil
 			}
 			// Resolve the module graph now, so the very first `go build` the
 			// author runs succeeds. Without it the scaffold is a directory

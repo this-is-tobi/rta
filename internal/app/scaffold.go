@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"text/template"
 
@@ -51,42 +52,57 @@ type scaffold struct {
 
 const rtaModule = "github.com/this-is-tobi/rta"
 
-// write renders the scaffold into dir, refusing to overwrite anything.
-func (s scaffold) write(dir string) error {
-	files := map[string]string{
+// scaffoldFiles is the fixed shape returned by write's --dry-run preview
+// and rendered by write itself — named once so the two cannot disagree
+// about which files a scaffold consists of.
+func scaffoldFiles() map[string]string {
+	return map[string]string{
 		"main.go":      mainTemplate,
 		"main_test.go": testTemplate,
 		"go.mod":       goModTemplate,
 		"README.md":    readmeTemplate,
 		".gitignore":   binaryIgnoreTemplate,
 	}
+}
+
+// write renders the scaffold into dir, refusing to overwrite anything. With
+// dryRun it runs every check a real write would and returns the files it
+// would have created, sorted, without creating dir or writing any of them.
+func (s scaffold) write(dir string, dryRun bool) ([]string, error) {
+	files := scaffoldFiles()
 	// Every file is checked before any is written. A scaffold that creates
 	// three files and then refuses on the fourth leaves a directory that is
 	// neither empty nor a plugin, and the author has to work out which half
 	// is theirs.
+	names := make([]string, 0, len(files))
 	for name := range files {
 		if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
-			return view.Errorf("plugin.exists", "%s already exists", filepath.Join(dir, name)).
+			return nil, view.Errorf("plugin.exists", "%s already exists", filepath.Join(dir, name)).
 				WithHint("nothing was written; pass --dir to scaffold somewhere else")
 		}
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	if dryRun {
+		return names, nil
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return view.Errorf("plugin.write", "creating %s: %v", dir, err)
+		return nil, view.Errorf("plugin.write", "creating %s: %v", dir, err)
 	}
 	for name, text := range files {
 		tmpl, err := template.New(name).Parse(text)
 		if err != nil {
-			return view.Errorf("plugin.template", "%s: %v", name, err)
+			return nil, view.Errorf("plugin.template", "%s: %v", name, err)
 		}
 		var b strings.Builder
 		if err := tmpl.Execute(&b, s); err != nil {
-			return view.Errorf("plugin.template", "%s: %v", name, err)
+			return nil, view.Errorf("plugin.template", "%s: %v", name, err)
 		}
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(b.String()), 0o644); err != nil {
-			return view.Errorf("plugin.write", "writing %s: %v", name, err)
+			return nil, view.Errorf("plugin.write", "writing %s: %v", name, err)
 		}
 	}
-	return nil
+	return names, nil
 }
 
 // localRta finds an rta source tree to point a `replace` directive at.
