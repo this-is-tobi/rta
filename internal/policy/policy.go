@@ -171,7 +171,12 @@ func (c Ceiling) Forbids(target, scope, profile string) string {
 		// A namespace in the file covers every capability in it, the same
 		// widening a grant target already has: "pg" in `never` means no
 		// grant on pg at all, not a grant on something literally named pg.
-		if t == target || t == plugin.Namespace(target) {
+		// The reverse containment matters just as much: a namespace grant
+		// like "pg" reaches "pg.dump" too, so a `never: [pg.dump]` entry
+		// must forbid the namespace grant that would authorize it, or the
+		// ceiling is bypassable by asking for the whole plugin instead of
+		// the one capability it named.
+		if t == target || t == plugin.Namespace(target) || plugin.Namespace(t) == target {
 			return fmt.Sprintf("%q is not grantable here", t)
 		}
 	}
@@ -188,7 +193,11 @@ func (c Ceiling) Forbids(target, scope, profile string) string {
 	}
 	if scope == "" {
 		for _, t := range c.RequireScope {
-			if t == target || t == plugin.Namespace(target) {
+			// Same containment in both directions as Never above: a
+			// namespace grant on "kv" reaches "kv.get", so
+			// `requireScope: [kv.get]` must forbid the unscoped namespace
+			// grant too, not only an unscoped "kv.get" grant.
+			if t == target || t == plugin.Namespace(target) || plugin.Namespace(t) == target {
 				return fmt.Sprintf("a grant on %q must name a record", t)
 			}
 		}
