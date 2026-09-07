@@ -454,6 +454,13 @@ func (m Model) pickedConn(c plugin.Capability, values map[string]any,
 			if !covered {
 				return "", none, nil, nil
 			}
+			// A covered entry can be the failure itself — see envBind.err —
+			// and answering that with "no profile" ran the call against the
+			// base configuration while the picker and the header still read
+			// the environment's name.
+			if b.err != nil {
+				return "", none, nil, b.err
+			}
 			return m.active, b.conn, b.values, nil
 		default:
 			// Switched on but not bound yet — the bind runs off the update loop
