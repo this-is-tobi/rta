@@ -147,6 +147,11 @@ func TestBreakingAStaleLockDoesReclaimIt(t *testing.T) {
 	}
 }
 
+// E1's reproduction — a lock confirmed dead that still cannot be removed —
+// needs chflags uchg on the file itself (a directory permission blocks
+// creating the temporary link CreateTemp needs too, which is a different,
+// earlier failure) and lives in filelock_darwin_test.go for that reason.
+
 // A renewal that lands between the stat that judged a lock stale and the
 // break that acts on it must save it, the same as an outright replacement
 // does — even though, unlike a replacement, it never changes the file's
