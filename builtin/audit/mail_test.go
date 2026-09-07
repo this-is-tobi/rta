@@ -63,6 +63,31 @@ func TestMailDomainAcceptsWhatPeopleHaveToHand(t *testing.T) {
 	}
 }
 
+// selector used to be only trimmed before reaching dkimName — held here to
+// the same DNS-label discipline mailDomain already applies to the other
+// half of that name.
+func TestCheckSelectorAcceptsRealShapesAndRefusesTheRest(t *testing.T) {
+	for _, good := range []string{"", "google", "selector1", "20161025", "foo.bar", "s-1.dkim"} {
+		if verr := checkSelector(good); verr != nil {
+			t.Errorf("checkSelector(%q) = %v, want nil", good, verr)
+		}
+	}
+	for _, bad := range []string{
+		" ",
+		"has spaces",
+		"has/slash",
+		"has@at",
+		".leadingdot",
+		"trailingdot.",
+		"double..dot",
+		strings.Repeat("a", 254),
+	} {
+		if verr := checkSelector(bad); verr == nil {
+			t.Errorf("checkSelector(%q) accepted it", bad)
+		}
+	}
+}
+
 // The all mechanism is the whole point of an SPF record: everything before it
 // says who may send, and it alone says what to do about everybody else.
 func TestSPFGradedByHowItEnds(t *testing.T) {
