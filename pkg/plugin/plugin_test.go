@@ -203,6 +203,57 @@ func TestScopeMustNameADeclaredInput(t *testing.T) {
 	}
 }
 
+// The reverse mistake from TestScopeMustNameADeclaredInput above: a gated
+// capability that never declares a Scope at all, though it takes an input
+// that plainly could be one — the "etcd.kv.get shipped with no Scope"
+// finding, caught at registration instead of by someone noticing their
+// grant matches nothing.
+func TestNeedsGrantWithAPlausibleScopeAndNoneDeclaredIsRejected(t *testing.T) {
+	p := validPlugin()
+	p.Capabilities[0].NeedsGrant = true
+	p.Capabilities[0].Inputs = []Field{{Name: "key", Type: String, Required: true, Help: "key to read"}}
+
+	err := p.Validate()
+	if err == nil {
+		t.Fatal("NeedsGrant with an unscoped, plausible input was accepted")
+	}
+	if !strings.Contains(err.Error(), `input "key"`) {
+		t.Errorf("the error should name the candidate field: %v", err)
+	}
+
+	// Declaring Scope on it is the fix, and must be accepted.
+	p.Capabilities[0].Scope = "key"
+	if err := p.Validate(); err != nil {
+		t.Errorf("a gated capability that scoped on its candidate input was rejected: %v", err)
+	}
+}
+
+// Three escape hatches, none of them a bypass of the rule above: a field a
+// remote caller can never supply (Local), a credential (Sensitive — Scope
+// on one is refused by a different rule entirely, so there is genuinely
+// nothing to name), and one that is not Required, so a call may name no
+// record at all and the capability covers itself the way an unscoped grant
+// already would.
+func TestNeedsGrantWithNoPlausibleScopeIsAccepted(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		f    Field
+	}{
+		{"local", Field{Name: "mount", Type: String, Required: true, Config: "mount", Local: true}},
+		{"secret", Field{Name: "wrapping-token", Type: Secret, Required: true}},
+		{"optional", Field{Name: "filter", Type: String}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := validPlugin()
+			p.Capabilities[0].NeedsGrant = true
+			p.Capabilities[0].Inputs = []Field{tc.f}
+			if err := p.Validate(); err != nil {
+				t.Errorf("declaring only a %s input was rejected: %v", tc.name, err)
+			}
+		})
+	}
+}
+
 // Field.Type was validated nowhere, and every surface switches on it with a
 // default branch meaning "string". So a capability declaring Type: "integer" —
 // JSON Schema's spelling, and the obvious thing to reach for — got a string

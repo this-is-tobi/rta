@@ -55,6 +55,28 @@ func TestAGrantNothingCouldSpendIsRefusedWhateverItNames(t *testing.T) {
 	}
 }
 
+// kv.env needs a grant but declares no Scope, so scopes() derives an empty
+// record from every call to it — a stored scope would compare against ""
+// forever and never match, the same dead end a needless grant is refused
+// for above, one field over.
+func TestAScopeOnAnUnscopableTargetIsRefused(t *testing.T) {
+	setup(t)
+	_, err := allowH(context.Background(), req(map[string]any{"target": "kv.env", "scope": "prod"}))
+	var verr *view.Error
+	if !asError(err, &verr) || verr.Code != "grant.scope.unscoped" {
+		t.Fatalf("err = %v, want grant.scope.unscoped", err)
+	}
+	if grants, _ := core.Load(); len(grants) != 0 {
+		t.Errorf("the unscopable grant was written anyway: %+v", grants)
+	}
+	// A namespace grant is a different question: "kv" also reaches kv.get,
+	// which does scope on "key", so a scope naming a kv.get record is
+	// meaningful even though kv.env itself ignores it.
+	if _, err := allowH(context.Background(), req(map[string]any{"target": "kv", "scope": "db-password"})); err != nil {
+		t.Errorf("a namespace reaching a scoped capability was refused: %v", err)
+	}
+}
+
 // Not a refusal — the first grant on a fresh machine names a client that has
 // not connected yet — but said, beside the names this machine has seen, so
 // a grant to "cluade" is not a row that looks live and matches nobody.

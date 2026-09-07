@@ -708,6 +708,20 @@ func targetExists(catalog func() []plugin.Capability, target string) bool {
 	return false
 }
 
+// scopable reports whether target reaches at least one capability that
+// declares a Scope — the field internal/grant's scopes() reads a record's
+// name from. A namespace grant may cover several capabilities that scope on
+// different fields, or a mix of scoped and unscoped ones, and a non-empty
+// scope is meaningful the moment any one of them could match it.
+func scopable(catalog func() []plugin.Capability, target string) bool {
+	for _, c := range catalog() {
+		if (c.ID == target || core.Namespace(c.ID) == target) && c.Scope != "" {
+			return true
+		}
+	}
+	return false
+}
+
 // parseTTL reads the requested lifetime and caps it.
 //
 // byPolicy and where are core.ClampTTL's own verdict, computed here against

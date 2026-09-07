@@ -85,6 +85,18 @@ func buildGrant(catalog func() []plugin.Capability, artifact func(string) (strin
 	if verr := core.CheckScope(scope); verr != nil {
 		return core.Grant{}, notes, verr
 	}
+	// A scope only ever narrows a grant by matching the record a call names
+	// through the capability's own Scope field. If nothing under target
+	// declares one, scopes() derives an empty record from every call it
+	// makes, and a non-empty stored scope would then compare a value the
+	// operator wrote against "" forever — a row `grant list` shows looking
+	// narrowed that the gate can never satisfy. The same dead end
+	// grantNeeded above refuses for a target nothing could ever spend.
+	if scope != "" && !scopable(catalog, target) {
+		return core.Grant{}, notes, view.Errorf("grant.scope.unscoped",
+			"%s has no scoped input — every capability it reaches takes no record, so a scope here would never match a call", target).
+			WithHint("omit --scope to grant the whole target")
+	}
 	// Named, never inferred here. `rta grant allow` resolves an omitted
 	// --agent from this machine's own known agents before it builds a spec
 	// (resolveAgent); the operator channel deliberately does not, because a
