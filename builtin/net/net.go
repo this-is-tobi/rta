@@ -83,6 +83,12 @@ func Plugin() plugin.Plugin {
 				Summary:    "Ping a host and report latency statistics",
 				Safety:     plugin.Read,
 				Idempotent: true,
+				// The same reasoning net.probe states for itself: the host is
+				// the caller's choice, so this is reconnaissance and a
+				// connect/timeout oracle for an address the caller may not
+				// otherwise be able to name, not a harmless read.
+				NeedsGrant: true,
+				Scope:      "host",
 				Inputs: []plugin.Field{
 					{Name: "host", Type: plugin.String, Positional: true, Required: true,
 						Suggest: suggestHostnames, Help: "host to ping"},
@@ -98,6 +104,18 @@ func Plugin() plugin.Plugin {
 				Safety:     plugin.Read,
 				Idempotent: true,
 				Detailed:   true,
+				// The name is the same caller-chosen destination net.probe
+				// needs a grant for — the answer, including whatever a TXT
+				// record holds, arrives straight into an agent's context. The
+				// resolver is a second, sharper edge on top: unscoped it
+				// would let a caller send an arbitrary query to a resolver of
+				// their own choosing and read back the reply, which is a
+				// small oracle over anything that resolver can reach — so
+				// --server stays a person's flag (Local) rather than a
+				// caller-settable target, the same way `dns.server` already
+				// configures it.
+				NeedsGrant: true,
+				Scope:      "name",
 				Description: "--type auto (the default) asks the question you usually mean: A, AAAA and " +
 					"CNAME for a name, PTR for an address. --server sends the query to a specific " +
 					"resolver instead of the system one, which is how you tell \"the record is wrong\" " +
@@ -109,7 +127,7 @@ func Plugin() plugin.Plugin {
 					{Name: "type", Type: plugin.String, Default: "auto",
 						Options: append([]string{"auto"}, dnsTypes...),
 						Help:    "which record type to ask for"},
-					{Name: "server", Type: plugin.String, Config: "dns.server", Suggest: suggestResolvers,
+					{Name: "server", Type: plugin.String, Config: "dns.server", Local: true, Suggest: suggestResolvers,
 						Help: "resolver to query, e.g. 1.1.1.1 or 9.9.9.9:53 (default: the system resolver)"},
 					{Name: "timeout", Type: plugin.Int, Config: "timeout", Default: 5, Min: 1, Max: 120, Help: "query timeout in seconds"},
 				},
@@ -120,6 +138,11 @@ func Plugin() plugin.Plugin {
 				Summary:    "Trace the route to a host, hop by hop",
 				Safety:     plugin.Read,
 				Idempotent: true,
+				// Same reasoning as net.probe and net.ping: the host is the
+				// caller's choice, and the hop-by-hop answer is reconnaissance
+				// of whatever this machine can reach, not a harmless read.
+				NeedsGrant: true,
+				Scope:      "host",
 				Description: "ICMP echo probes with a rising TTL: each hop that expires one reports " +
 					"itself. Answers the question ping cannot — not just \"is it reachable\" but " +
 					"\"where does it stop\". Silent hops show as *; that is a router declining to " +
