@@ -135,6 +135,98 @@ func TestAnUnusableAgentNameIsRefusedBeforeAnythingIsRegistered(t *testing.T) {
 	}
 }
 
+// --global passes claude's own --scope user, the one client this file has
+// verified the flag against — see docs/30-boundary/60-ai-clients.md.
+func TestInstallGlobalPassesClaudesScopeFlag(t *testing.T) {
+	argv := fakeClient(t, "claude", 0)
+	if _, _, err := run(t, testRegistry(t), "mcp", "install", "claude", "--global"); err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Join(argvOf(t, argv), " ")
+	if !strings.Contains(got, "--scope user") {
+		t.Errorf("argv = %q, want --scope user", got)
+	}
+	// Without --global, the ordinary project-scoped command runs — the flag
+	// must not leak into every install.
+	argv2 := fakeClient(t, "claude", 0)
+	if _, _, err := run(t, testRegistry(t), "mcp", "install", "claude"); err != nil {
+		t.Fatal(err)
+	}
+	if got2 := strings.Join(argvOf(t, argv2), " "); strings.Contains(got2, "--scope") {
+		t.Errorf("argv = %q, --scope leaked into a run that never asked for it", got2)
+	}
+}
+
+func TestInstallGlobalDryRunPreviewsTheScopeFlag(t *testing.T) {
+	fakeClient(t, "claude", 0)
+	out, _, err := run(t, testRegistry(t), "mcp", "install", "claude", "--global", "--dry-run")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "--scope user") {
+		t.Errorf("dry-run output does not preview the scope flag: %q", out)
+	}
+}
+
+// codex and gemini are declared but not verified against their real CLIs —
+// see the "verified" column in docs/30-boundary/60-ai-clients.md — so
+// --global refuses rather than guessing a scope flag on top of an already
+// unverified command.
+func TestInstallGlobalRefusesForAnUnverifiedClient(t *testing.T) {
+	argv := fakeClient(t, "codex", 0)
+	_, _, err := run(t, testRegistry(t), "mcp", "install", "codex", "--global")
+	if err == nil {
+		t.Fatal("want a refusal — rta does not know codex's global-scope flag")
+	}
+	if _, statErr := os.Stat(argv); statErr == nil {
+		t.Error("codex was run despite rta not knowing the right flag to pass it")
+	}
+}
+
+// VS Code's own command already writes to the one user-level file it has —
+// --global changes nothing about what runs, and must not be refused as
+// though it asked for something rta cannot do.
+func TestInstallGlobalIsANoOpForVSCode(t *testing.T) {
+	argv := fakeClient(t, "code", 0)
+	if _, _, err := run(t, testRegistry(t), "mcp", "install", "vscode", "--global"); err != nil {
+		t.Fatal(err)
+	}
+	withGlobal := argvOf(t, argv)
+
+	argv2 := fakeClient(t, "code", 0)
+	if _, _, err := run(t, testRegistry(t), "mcp", "install", "vscode"); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := strings.Join(argvOf(t, argv2), " "), strings.Join(withGlobal, " "); got != want {
+		t.Errorf("--global changed vscode's command: %q vs %q", got, want)
+	}
+}
+
+// Cursor has no command, so --global steers which file rta recommends
+// instead of which command it runs.
+func TestInstallGlobalPicksTheUserPathForCursor(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	out, _, err := run(t, testRegistry(t), "mcp", "install", "cursor", "--global")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "~/.cursor/mcp.json") {
+		t.Errorf("output does not name the user path: %q", out)
+	}
+	if strings.Contains(out, "for one project") {
+		t.Errorf("output still mentions the project path under --global: %q", out)
+	}
+
+	// Without --global, the existing combined recommendation is unchanged.
+	out2, _, err := run(t, testRegistry(t), "mcp", "install", "cursor")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out2, "for one project") {
+		t.Errorf("the default recommendation regressed: %q", out2)
+	}
+}
+
 // A client that is not installed is the ordinary case, not an error: the
 // operator gets the block to paste rather than a failure.
 func TestAMissingClientFallsBackToShowingTheConfig(t *testing.T) {

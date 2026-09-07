@@ -51,11 +51,23 @@ type mcpClient struct {
 	// only ever show what to add.
 	bin  string
 	args func(self, as string) []string
+	// globalArgs is args, but with the client's own flag for registering at
+	// the user level rather than wherever rta happens to be run from — nil
+	// for a client with no verified global-scope command. --global refuses
+	// outright rather than guessing one, the same caution the "verified"
+	// column above already states: a wrong flag here is a wrong command run
+	// against a file that grants an agent access to secrets.
+	globalArgs func(self, as string) []string
+	// alwaysGlobal marks a client whose ordinary command already writes to a
+	// single, user-level location: --global changes nothing about what
+	// runs, only that it is accepted rather than refused as unsupported.
+	alwaysGlobal bool
 	// file is where this client keeps its MCP configuration, and block is
 	// what to put in it. Both are used when there is no command, and when
-	// there is one but it is not installed.
-	file  string
-	block func(self, as string) string
+	// there is one but it is not installed. globalFile is what --global
+	// prints instead, "" when file already names the one relevant path.
+	file, globalFile string
+	block            func(self, as string) string
 	// note is anything the operator needs beyond the block itself.
 	note string
 }
@@ -94,6 +106,13 @@ func mcpClients() []mcpClient {
 			args: func(self, as string) []string {
 				return append([]string{"mcp", "add", "rta", "--", self}, serveArgs(as)...)
 			},
+			// --scope user is claude's own flag, already documented in
+			// docs/30-boundary/60-ai-clients.md and confirmed there against
+			// the real CLI — the one client this file can say that about
+			// rather than only claim it.
+			globalArgs: func(self, as string) []string {
+				return append([]string{"mcp", "add", "rta", "--scope", "user", "--", self}, serveArgs(as)...)
+			},
 			file:  ".mcp.json (or ~/.claude.json)",
 			block: func(self, as string) string { return jsonBlock("mcpServers", self, as) },
 		},
@@ -111,8 +130,11 @@ func mcpClients() []mcpClient {
 				}{Name: "rta", stdioServer: stdioServer{Command: self, Args: serveArgs(as)}})
 				return []string{"--add-mcp", string(spec)}
 			},
-			file:  "VS Code's user mcp.json",
-			block: func(self, as string) string { return jsonBlock("servers", self, as) },
+			// VS Code's own CLI exposes no project-scoped variant — every
+			// run already lands in the user config --global would ask for.
+			alwaysGlobal: true,
+			file:         "VS Code's user mcp.json",
+			block:        func(self, as string) string { return jsonBlock("servers", self, as) },
 		},
 		{
 			name: "codex", label: "OpenAI Codex CLI",
@@ -149,8 +171,13 @@ func mcpClients() []mcpClient {
 		{
 			name: "cursor", label: "Cursor",
 			// No command: Cursor is configured by editing the file.
-			file:  "~/.cursor/mcp.json (or .cursor/mcp.json for one project)",
-			block: func(self, as string) string { return jsonBlock("mcpServers", self, as) },
+			file: "~/.cursor/mcp.json (or .cursor/mcp.json for one project)",
+			// --global picks the one path rather than naming both — the
+			// project file mentioned above is rta's own default
+			// recommendation (docs/30-boundary/60-ai-clients.md: grants an
+			// agent holds then scope to the repository), not this one.
+			globalFile: "~/.cursor/mcp.json",
+			block:      func(self, as string) string { return jsonBlock("mcpServers", self, as) },
 		},
 		{
 			name: "copilot", label: "GitHub Copilot CLI",
@@ -174,7 +201,7 @@ func findClient(name string) (mcpClient, bool) {
 
 func newMCPInstallCommand(opts *globalOpts) *cobra.Command {
 	var as string
-	var show bool
+	var show, global bool
 
 	all := mcpClients()
 	valid := make([]cobra.Completion, 0, len(all))
@@ -225,14 +252,38 @@ func newMCPInstallCommand(opts *globalOpts) *cobra.Command {
 				return verr
 			}
 
+			// The args to run, resolved once so every branch below —
+			// dry-run, real run, the failure fallback — agrees on what
+			// "this command" means.
+			argsFn := client.args
+			if global {
+				switch {
+				case client.globalArgs != nil:
+					argsFn = client.globalArgs
+				case client.alwaysGlobal, client.bin == "":
+					// Already what --global asked for (vscode), or nothing
+					// runs at all (print-only clients) — global steers
+					// describeClient below instead.
+				default:
+					// codex and gemini's own base commands are declared but
+					// not verified against the real CLI; guessing a scope
+					// flag on top of that is a wrong command run against a
+					// file that grants an agent access to secrets, not a
+					// smaller version of the right one.
+					return fmt.Errorf("rta does not know %s's flag for installing at the user level — "+
+						"try `rta mcp install %s --show` and add it yourself, or check %s's own --help",
+						client.label, client.name, client.bin)
+				}
+			}
+
 			out := cmd.OutOrStdout()
 			if !show && client.bin != "" {
 				if bin, err := exec.LookPath(client.bin); err == nil {
 					if opts.dryRun {
-						fmt.Fprintf(out, "would run: %s %s\n", bin, strings.Join(client.args(self, name), " "))
+						fmt.Fprintf(out, "would run: %s %s\n", bin, strings.Join(argsFn(self, name), " "))
 						return nil
 					}
-					run := exec.CommandContext(cmd.Context(), bin, client.args(self, name)...)
+					run := exec.CommandContext(cmd.Context(), bin, argsFn(self, name)...)
 					run.Stdout, run.Stderr = out, cmd.ErrOrStderr()
 					if err := run.Run(); err != nil {
 						// Not fatal. A client whose command moved on is
@@ -241,7 +292,7 @@ func newMCPInstallCommand(opts *globalOpts) *cobra.Command {
 						fmt.Fprintf(cmd.ErrOrStderr(),
 							"rta: %s could not register it (%v) — here is what to add instead\n\n",
 							client.bin, err)
-						describeClient(out, client, self, name)
+						describeClient(out, client, self, name, global)
 						return nil
 					}
 					fmt.Fprintf(out, "✓ registered with %s as %q\n", client.label, name)
@@ -250,7 +301,7 @@ func newMCPInstallCommand(opts *globalOpts) *cobra.Command {
 					return nil
 				}
 			}
-			describeClient(out, client, self, name)
+			describeClient(out, client, self, name, global)
 			return nil
 		},
 	}
@@ -258,13 +309,19 @@ func newMCPInstallCommand(opts *globalOpts) *cobra.Command {
 		"name to register this agent under (default: the client's name)")
 	cmd.Flags().BoolVar(&show, "show", false,
 		"print what to add without running the client's own command")
+	cmd.Flags().BoolVar(&global, "global", false,
+		"install for every project instead of just this one, where the client supports it")
 	return cmd
 }
 
 // describeClient prints what to add and where, which is all rta does for a
 // client that cannot configure itself.
-func describeClient(out io.Writer, c mcpClient, self, as string) {
-	fmt.Fprintf(out, "Add this to %s:\n\n%s\n", c.file, c.block(self, as))
+func describeClient(out io.Writer, c mcpClient, self, as string, global bool) {
+	file := c.file
+	if global && c.globalFile != "" {
+		file = c.globalFile
+	}
+	fmt.Fprintf(out, "Add this to %s:\n\n%s\n", file, c.block(self, as))
 	if c.note != "" {
 		fmt.Fprintf(out, "\n%s\n", c.note)
 	}
