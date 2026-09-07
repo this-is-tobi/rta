@@ -137,6 +137,10 @@ func TestForbidsCoversTheAxesItClaims(t *testing.T) {
 		{"a forbidden capability", "pg.dump", "", "", true},
 		{"a capability inside a forbidden namespace", "vault.kv.get", "x", "", true},
 		{"a namespace grant on a forbidden namespace", "vault", "", "", true},
+		// The reverse containment: "pg" is not itself in Never, but it
+		// reaches "pg.dump", which is — a namespace grant must not walk
+		// through a forbidden capability inside it.
+		{"a namespace grant containing a forbidden capability", "pg", "", "", true},
 		{"an ordinary capability", "kv.set", "k", "", false},
 		{"a forbidden connection", "pg.query", "", "prod", true},
 		// The ceiling names the environment, and an instance is inside it:
@@ -150,6 +154,9 @@ func TestForbidsCoversTheAxesItClaims(t *testing.T) {
 		{"an unscoped grant where a record is required", "kv.get", "", "", true},
 		{"the same grant with a record", "kv.get", "db-password", "", false},
 		{"the same grant with a folder", "kv.get", "prod/", "", false},
+		// The reverse containment for requireScope: an unscoped namespace
+		// grant on "kv" also reaches "kv.get", so it must be refused too.
+		{"a namespace grant containing a scope-required capability", "kv", "", "", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			why := c.Forbids(tc.target, tc.scope, tc.profile)
