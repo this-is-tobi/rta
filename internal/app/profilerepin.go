@@ -89,10 +89,12 @@ func runProfileRepin(cmd *cobra.Command, only string, all bool, reg *registry.Re
 			"%q is not a valid instance label", wantInstance).
 			WithHint("lowercase letters, digits and dashes, starting with a letter")
 	}
-	// The same three checks checkPin makes, made here before anything is
-	// touched: repinning to an artifact that is not installed, or not
-	// external, is not a smaller version of the operation, it is a
-	// different and wrong one.
+	// The two gates checkPin opens with, made here before anything is touched:
+	// repinning to an artifact that is not installed, or to a namespace that
+	// has no artifact at all, is not a smaller version of the operation, it is
+	// a different and wrong one. Its remaining cases all ask whether an entry's
+	// pin matches what is installed — which is the thing this command exists to
+	// rewrite, so asking it here would refuse every entry worth repinning.
 	var (
 		o     registry.Origin
 		known bool
@@ -101,6 +103,17 @@ func runProfileRepin(cmd *cobra.Command, only string, all bool, reg *registry.Re
 		o, known = installed.Origin(ns)
 	}
 	if !known {
+		// Installed-and-unapproved told apart from missing, the distinction
+		// checkPin draws and for a reason that lands hardest right here: trust
+		// is keyed on the digest, so a rebuild drops the approval, and repin is
+		// the command somebody runs *after* a rebuild. Told "not a registered
+		// plugin", they go looking for an install that is already on the disk.
+		if w, ok := installed.(interface{ Untrusted(string) bool }); ok && w.Untrusted(ns) {
+			return nil, view.Errorf("core.profile.untrustedplugin",
+				"%q is installed and has not been run", ns).
+				WithHint("`rta plugin trust " + ns + "` approves the artifact; rebuilding a " +
+					"plugin changes it, so it needs approving again")
+		}
 		return nil, view.Errorf("core.profile.unknownplugin",
 			"%q is not a registered plugin", ns).
 			WithHint("`rta plugin list` shows what is installed, including anything found and not run")
@@ -112,9 +125,30 @@ func runProfileRepin(cmd *cobra.Command, only string, all bool, reg *registry.Re
 	}
 	newPin := o.Short()
 
-	var rows []repinRow
+	// The one place a key is measured against what was asked for, so the
+	// collision scan and the rewrite below cannot drift on what "matching"
+	// means — and the one place the target key is spelled, so they cannot
+	// drift on that either.
+	matches := func(key string) (string, string, bool) {
+		keyNs, instance, pin := config.SplitKey(key)
+		if keyNs != ns || (wantInstance != "" && instance != wantInstance) {
+			return "", "", false
+		}
+		return instance, pin, true
+	}
+	named := func(instance string) string {
+		if instance == "" {
+			return ns
+		}
+		return ns + "/" + instance
+	}
+
+	var (
+		rows []repinRow
+		verr *view.Error
+	)
 	if err := config.Mutate(func(cfg config.Config) (config.Config, bool) {
-		rows = nil
+		rows, verr = nil, nil
 		wrote := false
 		names := cfg.ProfileNames()
 		if only != "" {
@@ -125,20 +159,47 @@ func runProfileRepin(cmd *cobra.Command, only string, all bool, reg *registry.Re
 		}
 		for _, name := range names {
 			p := cfg.Profiles[name]
-			for _, key := range p.PluginKeys() {
-				keyNs, instance, pin := config.SplitKey(key)
-				if keyNs != ns || (wantInstance != "" && instance != wantInstance) {
+			keys := p.PluginKeys()
+			// Every matching entry rewrites to one key per instance, so two of
+			// them under the same label land on top of each other: the second
+			// assignment wins, the first entry's set:/secrets: block goes with
+			// it, and both are reported as repinned. `profile set` keeps a
+			// profile from reaching that state — applyConnectionFlags re-pins
+			// in place rather than adding a second entry, and says so in the
+			// receipt — but this file is meant to be hand-editable, and a
+			// merge of two machines' configs can hold both.
+			//
+			// Refused before anything is written, and for the whole run rather
+			// than the one profile: Mutate commits the file in one piece, so a
+			// run that repaired nine profiles and quietly flattened the tenth
+			// is not a smaller version of this. Which block survives is the
+			// operator's answer to give, not a race between map keys.
+			claimed := map[string]string{}
+			for _, key := range keys {
+				instance, _, ok := matches(key)
+				if !ok {
+					continue
+				}
+				if first, dup := claimed[instance]; dup {
+					verr = view.Errorf("core.profile.repin.collision",
+						"%s holds two entries for %q — %s and %s — and repinning would fold one onto the other",
+						name, named(instance), first, key).
+						WithHint("keep the one whose set:/secrets: block you want by removing the other from " +
+							config.Path() + ", then repin — nothing was written")
+					return cfg, false
+				}
+				claimed[instance] = key
+			}
+			for _, key := range keys {
+				instance, pin, ok := matches(key)
+				if !ok {
 					continue
 				}
 				if pin == newPin {
 					rows = append(rows, repinRow{name, key, "already pinned"})
 					continue
 				}
-				newKey := ns
-				if instance != "" {
-					newKey += "/" + instance
-				}
-				newKey += "@" + newPin
+				newKey := named(instance) + "@" + newPin
 				status := "repinned to " + newKey
 				if dryRun {
 					status = "would repin to " + newKey
@@ -155,6 +216,9 @@ func runProfileRepin(cmd *cobra.Command, only string, all bool, reg *registry.Re
 		return cfg, wrote
 	}); err != nil {
 		return nil, view.AsError(err, "core.profile.write")
+	}
+	if verr != nil {
+		return nil, verr
 	}
 	if only != "" {
 		if cfg, err := config.LoadFile(); err == nil {
