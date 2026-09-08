@@ -252,33 +252,38 @@ func newMCPInstallCommand(opts *globalOpts) *cobra.Command {
 				return verr
 			}
 
-			// The args to run, resolved once so every branch below —
-			// dry-run, real run, the failure fallback — agrees on what
-			// "this command" means.
-			argsFn := client.args
-			if global {
-				switch {
-				case client.globalArgs != nil:
-					argsFn = client.globalArgs
-				case client.alwaysGlobal, client.bin == "":
-					// Already what --global asked for (vscode), or nothing
-					// runs at all (print-only clients) — global steers
-					// describeClient below instead.
-				default:
-					// codex and gemini's own base commands are declared but
-					// not verified against the real CLI; guessing a scope
-					// flag on top of that is a wrong command run against a
-					// file that grants an agent access to secrets, not a
-					// smaller version of the right one.
-					return fmt.Errorf("rta does not know %s's flag for installing at the user level — "+
-						"try `rta mcp install %s --show` and add it yourself, or check %s's own --help",
-						client.label, client.name, client.bin)
-				}
-			}
-
 			out := cmd.OutOrStdout()
 			if !show && client.bin != "" {
 				if bin, err := exec.LookPath(client.bin); err == nil {
+					// Resolved here, inside the one branch that runs the
+					// client's own command, because that is the only thing
+					// --global can be refused *about*. Asked with --show, or
+					// for a client that is not installed, nothing is going to
+					// run and the operator is getting the block to paste
+					// either way — refusing there sent them to `--show` in a
+					// message they had already passed `--show` to read.
+					// What --global steers on that path is the block's own
+					// path, which describeClient below reads.
+					argsFn := client.args
+					if global {
+						switch {
+						case client.globalArgs != nil:
+							argsFn = client.globalArgs
+						case client.alwaysGlobal:
+							// Already what --global asked for: VS Code's own
+							// command writes to its single user-level file.
+						default:
+							// codex and gemini's own base commands are
+							// declared but not verified against the real CLI;
+							// guessing a scope flag on top of that is a wrong
+							// command run against a file that grants an agent
+							// access to secrets, not a smaller version of the
+							// right one.
+							return fmt.Errorf("rta does not know %s's flag for installing at the user level — "+
+								"try `rta mcp install %s --show` and add it yourself, or check %s's own --help",
+								client.label, client.name, client.bin)
+						}
+					}
 					if opts.dryRun {
 						fmt.Fprintf(out, "would run: %s %s\n", bin, strings.Join(argsFn(self, name), " "))
 						return nil
