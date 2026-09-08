@@ -183,6 +183,33 @@ func TestInstallGlobalRefusesForAnUnverifiedClient(t *testing.T) {
 	}
 }
 
+// --show never runs anything, so there is no command for --global to be
+// refused about: the refusal used to fire anyway, telling the operator to pass
+// the flag they had just passed.
+func TestInstallGlobalShowStillPrintsTheBlock(t *testing.T) {
+	fakeClient(t, "codex", 0)
+	out, _, err := run(t, testRegistry(t), "mcp", "install", "codex", "--global", "--show")
+	if err != nil {
+		t.Fatalf("--show with --global was refused: %v", err)
+	}
+	if !strings.Contains(out, "mcp_servers.rta") {
+		t.Errorf("output does not carry the block to paste: %q", out)
+	}
+}
+
+// Nothing runs for a client that is not installed either — the operator gets
+// the block, the same as without --global.
+func TestInstallGlobalFallsBackWhenTheClientIsNotInstalled(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	out, _, err := run(t, testRegistry(t), "mcp", "install", "codex", "--global")
+	if err != nil {
+		t.Fatalf("--global was refused for a client that cannot run at all: %v", err)
+	}
+	if !strings.Contains(out, "~/.codex/config.toml") {
+		t.Errorf("output does not name the file to edit: %q", out)
+	}
+}
+
 // VS Code's own command already writes to the one user-level file it has —
 // --global changes nothing about what runs, and must not be refused as
 // though it asked for something rta cannot do.
