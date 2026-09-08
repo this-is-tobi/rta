@@ -1,0 +1,70 @@
+name: Full Docker image
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to build with, and to tag with when publishing
+        required: false
+        default: dev
+        type: string
+      push:
+        description: Publish to ghcr.io (off builds it and throws it away)
+        required: false
+        default: false
+        type: boolean
+      latest:
+        description: Also move :latest and the major/minor tags — a real release version only
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  build:
+    name: Build full Docker image
+    uses: this-is-tobi/github-workflows/.github/workflows/build-docker.yml@v0
+    permissions:
+      packages: write
+      contents: read
+    with:
+      IMAGE_NAME: ghcr.io/this-is-tobi/rta-full
+      IMAGE_TAG: ${{ inputs.version }}
+      IMAGE_CONTEXT: ./
+      IMAGE_DOCKERFILE: ./Dockerfile.full
+      PUSH: ${{ inputs.push }}
+      LATEST_TAG: ${{ inputs.latest }}
+      TAG_MAJOR_AND_MINOR: ${{ inputs.latest }}
+      BUILD_AMD64: true
+      BUILD_ARM64: true
+      BUILD_ARGS: |
+        VERSION=${{ inputs.version }}
+        COMMIT=${{ github.sha }}
+
+  test:
+    name: Test full Docker image (arm64)
+    needs: [build]
+    if: ${{ !inputs.push }}
+    uses: this-is-tobi/github-workflows/.github/workflows/test-docker.yml@v0
+    permissions:
+      contents: read
+      packages: read
+    with:
+      IMAGE_ARTIFACT: ${{ needs.build.outputs.artifact-prefix }}-arm64
+      COMMAND: --version
+      RUNS_ON: '["ubuntu-24.04-arm"]'
+
+  attest:
+    name: Attest full Docker image
+    needs: [build]
+    if: ${{ inputs.push }}
+    uses: this-is-tobi/github-workflows/.github/workflows/attest-docker.yml@v0
+    permissions:
+      packages: write
+      id-token: write
+      attestations: write
+    with:
+      IMAGE_NAME: ${{ needs.build.outputs.image }}
+      DIGEST: ${{ needs.build.outputs.digest }}
+      PROVENANCE: true
+      SBOM: true
+      SIGN: true
