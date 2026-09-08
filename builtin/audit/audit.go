@@ -247,7 +247,9 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 				Description: "An agent's configuration decides more about a machine's exposure than " +
 					"most of what this plugin grades, and nothing reads it. This does: which tools " +
 					"the model may run, which MCP servers launch with it, whether any of them is " +
-					"handed a credential in plain text, whether one is fetched from a registry at " +
+					"handed a credential in plain text — in its environment or, for one declared as " +
+					"a url to call rather than a binary to launch, in its headers — whether a remote " +
+					"one is reached over plain http, whether one is fetched from a registry at " +
 					"launch rather than pinned, whether the files are readable by anybody else, and " +
 					"whether the endpoint every prompt is sent to is the one you expect. " +
 					"**It reads and never writes** — that file is what grants an agent access to " +
@@ -257,9 +259,10 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 					"is hygiene rather than containment for one with. Never an MCP tool, because the " +
 					"subject of this audit is the agent asking. Cites A01:2025 Broken Access " +
 					"Control and A02:2025 Security Misconfiguration. `--fix` prints the exact edit " +
-					"for each finding that has one — a chmod, a pinned version, a scoped shell " +
-					"allowlist, a deny list for rta's own authority-expanding commands — and still " +
-					"writes nothing: the change stays yours to make.",
+					"for each finding that has one — a chmod, a credential moved out of the file " +
+					"carrying it, a pinned version, an https endpoint for one being called in " +
+					"clear, a scoped shell allowlist, a deny list for rta's own authority-expanding " +
+					"commands — and still writes nothing: the change stays yours to make.",
 				Inputs: []plugin.Field{
 					{Name: "fix", Type: plugin.Bool,
 						Help: "print the exact edit for each finding that has one, instead of the grades"},
