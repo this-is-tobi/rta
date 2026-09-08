@@ -122,9 +122,28 @@ Skips confirmation prompts. Destructive capabilities ask before acting when a hu
 rta note rm 4 --yes
 ```
 
+## `--help`
+
+Every command's `--help` describes what it does, the arguments it takes, and the flags it accepts.
+
+```bash
+rta cert expiry --help
+```
+
+```
+  Arguments:
+    targets  hosts to check (host[:port])
+
+  USAGE
+
+    rta cert expiry <targets> [--flags]
+```
+
+The arguments are read from the same declaration as the flags below them, so a capability cannot take one without documenting it — `<targets>` alone would never tell you it accepts a port.
+
 ## `rta explain`
 
-The authoritative reference for anything:
+The authoritative reference for anything, and the one that goes deeper than `--help`: types, defaults, which config key fills an input, and whether an MCP caller may supply it at all.
 
 ```bash
 rta explain              # every capability

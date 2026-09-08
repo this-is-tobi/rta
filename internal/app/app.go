@@ -309,6 +309,7 @@ func NewRoot(reg *registry.Registry, version string) *cobra.Command {
 	root.AddCommand(newProfileCommand(reg, opts))
 	root.AddCommand(newConfigCommand())
 	describeGroups(root)
+	documentArguments(root)
 	return root
 }
 
@@ -360,8 +361,11 @@ func attach(parent *cobra.Command, c plugin.Capability, opts *globalOpts) {
 	cmd := &cobra.Command{
 		Use:   use,
 		Short: c.Summary,
-		Long:  strings.TrimSpace(c.Summary + "\n\n" + c.Description),
-		Args:  positionalArgsValidator(positionals),
+		Long: withArguments(
+			strings.TrimSpace(c.Summary+"\n\n"+c.Description),
+			capabilityArgs(positionals),
+		),
+		Args: positionalArgsValidator(positionals),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCapability(cmd.Context(), cmd, c, args, opts)
 		},
