@@ -148,6 +148,31 @@ size: build ## Build rta and report what it weighs
 	@ls -l rta | awk '{ printf "%-26s %7.2f MB\n", $$NF, $$5/1048576 }'
 	@printf "\nEvery plugin is a separate binary from rta-plugins, so the ones nobody installs cost nothing.\n\n"
 
+# Rewrites the pins. Deciding *what* they should be is deliberately not this
+# target's job: which rta-plugins tag is newest is a question for whoever runs
+# it — `gh release list --repo this-is-tobi/rta-plugins` answers it — and
+# keeping that lookup out of here is what lets the rewrite stay mechanical
+# enough to trust. Never adds or removes a name: PLUGINS is meant to be built
+# from the line already in the file, one entry bumped per entry, so widening
+# the image's plugin allowlist stays the deliberate, by-hand edit
+# Dockerfile.full's own comment describes.
+#
+# Through the environment rather than `$(PLUGINS)` in the recipe, because make
+# expands a recipe's variables as *text* into the line it hands /bin/sh: with
+# the value spelled inline, PLUGINS='pg/v9.9.9"; curl …|sh; "' closes awk's
+# quote and runs. Nothing feeds this but a person today, which is exactly when
+# the habit is cheap to keep: a version string is the kind of value that later
+# arrives from somewhere else, and a git tag may legally contain `$`, a
+# backtick, a quote or a semicolon — git forbids spaces and `:` `?` `*` `~`
+# `^`, not those. So it stays a value the shell expands rather than a string
+# the shell parses, and awk takes it with -v for the same reason: never
+# spliced into the program text.
+bump-plugins: export BUMP_PLUGINS := $(PLUGINS)
+bump-plugins: ## Rewrite Dockerfile.full's plugin pins to PLUGINS (e.g. PLUGINS="pg/v0.3.3 s3/v0.2.0")
+	@test -n "$$BUMP_PLUGINS" || { echo "bump-plugins needs PLUGINS=\"name/vX.Y.Z ...\""; exit 1; }
+	@awk -v plugins="$$BUMP_PLUGINS" '{ if ($$0 ~ /^ARG PLUGINS="/) print "ARG PLUGINS=\"" plugins "\""; else print }' \
+		Dockerfile.full > Dockerfile.full.tmp && mv Dockerfile.full.tmp Dockerfile.full
+
 ##@ Test
 
 test: ## Run the root module's tests
@@ -217,6 +242,6 @@ clean: ## Remove build output and coverage artifacts
 # make would find it up to date and report success for a target that ran
 # nothing.
 .PHONY: help setup download tidy fmt build install \
-	cross snapshot size test hard vet check \
+	cross snapshot size bump-plugins test hard vet check \
 	fmt-check coverage coverage-html ci proto proto-lint proto-check \
 	clean
