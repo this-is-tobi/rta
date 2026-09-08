@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -246,6 +248,45 @@ type serverDecl struct {
 	command string
 	args    []string
 	env     map[string]string
+	// url and headers are the remote form of the same declaration: nothing to
+	// launch, an endpoint to call and what to call it with. A server declared
+	// this way used to be invisible here — collectServers recognised an object
+	// by its `command`, so the audit read a file, walked past a live bearer
+	// token in `headers`, and failed the same file for a token in `env`.
+	url     string
+	headers map[string]string
+}
+
+// remoteTransports are the `type` values a client writes for the remote form.
+// Spellings differ per client and per version, which is the usual reason this
+// file matches shapes rather than schemas; these are the ones that mean "call
+// this URL" rather than "launch this binary".
+var remoteTransports = map[string]bool{
+	"http": true, "sse": true, "streamable-http": true, "streamablehttp": true, "streamable_http": true,
+}
+
+// remoteServer reports whether an object is the remote form of a declaration,
+// and it is deliberately stricter than the `command` rule above it.
+//
+// The two failure modes are not symmetric. A server this misses is the bug
+// being fixed — a credential nobody graded. A server this invents is a false
+// finding in a security report, which is worse, because it is the failure that
+// teaches people to stop reading the output. `url` is an ordinary key in
+// ordinary JSON and .claude.json is a large file of it, so a url alone is not
+// enough: it takes a transport type or a headers object beside it to mean a
+// server.
+func remoteServer(obj map[string]any) (string, bool) {
+	raw, ok := obj["url"].(string)
+	if !ok || raw == "" {
+		return "", false
+	}
+	if t, ok := obj["type"].(string); ok && remoteTransports[strings.ToLower(strings.TrimSpace(t))] {
+		return raw, true
+	}
+	if _, ok := obj["headers"].(map[string]any); ok {
+		return raw, true
+	}
+	return "", false
 }
 
 // collectServers walks any JSON for objects shaped like a server declaration.
@@ -261,6 +302,13 @@ func collectServers(node any, out map[string]serverDecl) {
 				collectServers(child, out)
 				continue
 			}
+			// command wins if a url and headers also sit on the same object.
+			// No client observed writes that hybrid shape, and a declaration
+			// that already says what to launch has no use for a transport
+			// the way a url-only one does — so this is a choice not to build
+			// for a shape nobody writes, not a credential quietly dropped for
+			// one that exists. Worth another look if that ever stops being
+			// true.
 			if cmd, isServer := obj["command"].(string); isServer {
 				d := serverDecl{command: cmd, env: map[string]string{}}
 				if raw, ok := obj["args"].([]any); ok {
@@ -274,6 +322,18 @@ func collectServers(node any, out map[string]serverDecl) {
 					for k, val := range raw {
 						if s, ok := val.(string); ok {
 							d.env[k] = s
+						}
+					}
+				}
+				out[key] = d
+				continue
+			}
+			if remoteURL, isServer := remoteServer(obj); isServer {
+				d := serverDecl{url: remoteURL, env: map[string]string{}, headers: map[string]string{}}
+				if raw, ok := obj["headers"].(map[string]any); ok {
+					for k, val := range raw {
+						if s, ok := val.(string); ok {
+							d.headers[k] = s
 						}
 					}
 				}
@@ -329,6 +389,34 @@ func gradeServers(r *agentReport, f agentFile, servers map[string]serverDecl) {
 					"config names the secret and never holds it. Then rotate the value that sat in "+
 					"the file: it has been readable by every process you ran since it was written.")
 		}
+		var sent []string
+		for k, v := range d.headers {
+			if v != "" && credentialKey.MatchString(k) {
+				sent = append(sent, k)
+			}
+		}
+		sort.Strings(sent)
+		if len(sent) > 0 {
+			r.add(grpAgentServers, name, stFail,
+				"called with "+strings.Join(sent, ", ")+" in its headers block, in plain text in "+
+					shortPath(f.path)+" — a file every process you run can read", refCredExposed)
+			r.addFix("credential", name+" — move "+strings.Join(sent, ", ")+" out of "+shortPath(f.path),
+				"A header is the whole credential on this transport, and the file holding it is read "+
+					"by every process you run. Move it to the environment that launches the client, or "+
+					"to the client's own credential helper where it has one. Then rotate the value that "+
+					"sat in the file: it has been readable since it was written, and unlike a launch "+
+					"token it is one a remote server already accepts.")
+		}
+		if host, plaintext := plaintextEndpoint(d.url); plaintext {
+			r.add(grpAgentServers, name, stFail,
+				"called over plain http:// at "+host+" — on this transport the header is the entire "+
+					"credential and it crosses the network exactly as it is written", refCleartext)
+			r.addFix("plaintext", name+" — stop sending its credential in clear",
+				"Point "+name+" at the same host over https:// in "+shortPath(f.path)+", or bind it to "+
+					"loopback if it is meant to be a server running beside you. Until then every hop "+
+					"between here and "+host+" sees the header, so the credential should be treated as "+
+					"already disclosed and rotated once the endpoint is fixed.")
+		}
 		if fetch := fetchOnLaunch(d); fetch != "" {
 			r.add(grpAgentServers, name, stWarn,
 				"launched with `"+fetch+"`, which fetches and runs whatever the registry serves "+
@@ -337,6 +425,32 @@ func gradeServers(r *agentReport, f agentFile, servers map[string]serverDecl) {
 				pinFix(fetch, f))
 		}
 	}
+}
+
+// plaintextEndpoint reports a remote server reached over http:// across a
+// network, and names the host so the row says where.
+//
+// Loopback is excluded rather than graded leniently: `rta mcp serve --http
+// 127.0.0.1:8443` is the documented shape of a server running beside you, and
+// there is no wire for anything to read. Failing it would put a row nobody
+// should act on next to one everybody should, which is how a report stops
+// being read. rta's own remotes.yaml draws the line in exactly this place.
+func plaintextEndpoint(raw string) (string, bool) {
+	if raw == "" {
+		return "", false
+	}
+	u, err := url.Parse(raw)
+	if err != nil || !strings.EqualFold(u.Scheme, "http") {
+		return "", false
+	}
+	host := u.Hostname()
+	if host == "localhost" || host == "::1" {
+		return "", false
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+		return "", false
+	}
+	return u.Host, true
 }
 
 // fetchOnLaunch reports the package-fetching runner a server is started
