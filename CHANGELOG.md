@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.15.0](https://github.com/this-is-tobi/rta/compare/v0.14.0...v0.15.0) (2026-09-08)
+
+
+### Features
+
+* **app:** add --global to `rta mcp install` ([6f2ce9a](https://github.com/this-is-tobi/rta/commit/6f2ce9af533471c0b262b9d8cb7957172cdd5df3))
+* **app:** add `rta profile repin` to re-key stale plugin pins in bulk ([5ffc3f5](https://github.com/this-is-tobi/rta/commit/5ffc3f5e06a7d6f924593f9613b3ed94739a5139))
+* **eol:** suggest a product's names and its own release cycles ([095fc27](https://github.com/this-is-tobi/rta/commit/095fc27c49df17c2b933b24a5ecbbec4489522be))
+* **lock:** suggest currently-frozen names on lock.rm ([b526860](https://github.com/this-is-tobi/rta/commit/b526860fb5c99522af577fb4d00c58d888aa36c0))
+
+
+### Bug Fixes
+
+* **app:** --global refuses only where a command would actually run ([e3f9f54](https://github.com/this-is-tobi/rta/commit/e3f9f544c0b12b47effd5b4d12ea6b8f48793e02))
+* **app:** mcp install honours --dry-run ([8872026](https://github.com/this-is-tobi/rta/commit/8872026d6e79e37a82741fd229ea2c00ef908f82))
+* **app:** plugin install/remove/upgrade/index honour --dry-run ([687f9fe](https://github.com/this-is-tobi/rta/commit/687f9fe1bbd0bfbebf42b727d737b7ec4a1ac393))
+* **app:** plugin trust/untrust/allow/disallow/new honour --dry-run ([86690e3](https://github.com/this-is-tobi/rta/commit/86690e35e763eb37525ac5fd2c58d2aabd66f9da))
+* **app:** profile set/rm and policy init/require honour --dry-run ([b567bd6](https://github.com/this-is-tobi/rta/commit/b567bd68f7fab9b77f79f7306c1caea66c5f51ba))
+* **app:** refuse a profile repin that would fold two entries into one ([e962b1b](https://github.com/this-is-tobi/rta/commit/e962b1b0eeda2e42fc3d9e8e12b5d95ef252c04a))
+* **app:** rta use honours --dry-run ([238dc65](https://github.com/this-is-tobi/rta/commit/238dc65ae3c300dcce96a9cf0e969598710219ba))
+* **atomicfile:** cap Publish's fallback read, the same as ReadCapped ([1cb2efb](https://github.com/this-is-tobi/rta/commit/1cb2efb532fea4e331cbbd72119ad6864994b9e4))
+* **audit:** gate audit.mail the way audit.web already is ([ad7e429](https://github.com/this-is-tobi/rta/commit/ad7e42926d32afb384896992fdb37039d0f15221))
+* **filelock:** a stale lock rta cannot remove refuses instead of spinning ([e0c8ac5](https://github.com/this-is-tobi/rta/commit/e0c8ac5e6f5c3f6d5d2bb224b6641eff99378aea))
+* **git:** mask a bare-userinfo PAT in a remote URL ([35a7f19](https://github.com/this-is-tobi/rta/commit/35a7f19080dba1b8cae356bba3e884025ff89cdc))
+* **grant,plugin:** close the dead-grant scope class at both ends ([c554ae0](https://github.com/this-is-tobi/rta/commit/c554ae0b6371060d6e7cf333c80d1c0c4feebd3c))
+* **http:** check the real destination before a proxy can hide it ([8a3f097](https://github.com/this-is-tobi/rta/commit/8a3f09706cd1b09833b86232d6039640ac630687))
+* **keys:** cap Publish's fallback read on restored keys, not len(this write) ([525467b](https://github.com/this-is-tobi/rta/commit/525467b046a109002c237886ee171c23157c3b86))
+* **net:** gate dns, trace and ping the way probe already is ([594eb3e](https://github.com/this-is-tobi/rta/commit/594eb3e3d136f4758814af4813565027ea917997))
+* **plugindist:** resolve reads a manifest through the same guard search uses ([8284257](https://github.com/this-is-tobi/rta/commit/8284257568facd05bd6881ad0ac25aa9bd9190a9))
+* **policy:** forbid a namespace grant that contains a forbidden capability ([0d462f5](https://github.com/this-is-tobi/rta/commit/0d462f5be7303655d9325545d3d20a22cbe0fb4a))
+* **tui:** a broken profile binding refuses instead of running unprofiled ([1c871f1](https://github.com/this-is-tobi/rta/commit/1c871f1ab761e1bb3169128806a0e1c01247286c))
+* **tui:** a run refused by profile resolution renders its refusal ([7101a48](https://github.com/this-is-tobi/rta/commit/7101a48ce31aa37cf35c67eb70783f8bc3c27ec1))
+* **tui:** flashText defaults to the generic fallback, not the raw value ([2657af0](https://github.com/this-is-tobi/rta/commit/2657af0190d3bef332e187856c3e4ef574a129a8))
+* **tui:** kv.get's reveal lands on its own page, not the flash line ([8509a9e](https://github.com/this-is-tobi/rta/commit/8509a9e3d5759d958254aecd696bb4213c69d856))
+* **view:** truncate an over-long table row in Redact, not per-renderer ([d12bcd5](https://github.com/this-is-tobi/rta/commit/d12bcd5960a2ff493bcaf11b35a5ad471de70cc0))
+
+
+### Dependencies
+
+* **docker:** add make bump-plugins to rewrite the full image's pins ([841e6a2](https://github.com/this-is-tobi/rta/commit/841e6a21c40eed9feabdee1a6267499a91695ec9))
+
 ## [0.14.0](https://github.com/this-is-tobi/rta/compare/v0.13.0...v0.14.0) (2026-09-06)
 
 
