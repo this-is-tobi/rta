@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.16.0](https://github.com/this-is-tobi/rta/compare/v0.15.0...v0.16.0) (2026-09-09)
+
+
+### Features
+
+* **audit:** grade a containerised rta against the documented recipe ([ad91296](https://github.com/this-is-tobi/rta/commit/ad91296adf89bc0f474c13c2c987cf99b102e765))
+* **mcp:** probes and counters on a second listener, with --observe ([3d629c9](https://github.com/this-is-tobi/rta/commit/3d629c915fae24dca3e77e1c69042f07c73320f4))
+
+
+### Bug Fixes
+
+* **app:** --help documents the arguments a command takes ([c2e01d8](https://github.com/this-is-tobi/rta/commit/c2e01d82e078a771a928aa52114c83bcd5f5f90c))
+* **audit:** grade a remote MCP server's credential like a local one ([d47984d](https://github.com/this-is-tobi/rta/commit/d47984df421b060173039b770cfd01239b17c7fe))
+* **audit:** the same config file is never audited twice ([46bd529](https://github.com/this-is-tobi/rta/commit/46bd529b3881c4d659ccf47562ee3e0ed97f91a5))
+
 ## [0.15.0](https://github.com/this-is-tobi/rta/compare/v0.14.0...v0.15.0) (2026-09-08)
 
 
