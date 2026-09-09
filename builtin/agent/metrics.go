@@ -36,9 +36,32 @@ import (
 // counter. Retention bounds that at eight segments of eight megabytes, and
 // this is a command a timer runs rather than an endpoint anybody scrapes.
 func runMetrics(_ context.Context, _ plugin.Request) (view.View, error) {
+	body, err := Exposition()
+	if err != nil {
+		return nil, err
+	}
+	return view.Text{Body: body}, nil
+}
+
+// Exposition renders the same text runMetrics prints, for a caller that needs
+// the bytes rather than a view.
+//
+// **The comment above says "no listener, no port, no scrape endpoint in a
+// process that can read your secret store", and that argument has not been
+// abandoned — it has been given the one place it does not reach.** In a pod
+// there is no node_exporter and no textfile collector to write into, so the
+// recipe above is not a smaller version of scraping; it is nothing at all.
+// `rta mcp serve --observe` answers that, and it answers it on a *second*
+// listener that the MCP port never becomes: bound separately so an operator
+// can keep it off the Service entirely, and with /metrics behind the same
+// bearer wall as MCP, because these counters are a map of which agent called
+// what and how often it was refused. The original sentence was about not
+// putting a scrape endpoint on the port that speaks to agents. It still is not
+// there.
+func Exposition() (string, error) {
 	entries, err := agentlog.Read(0)
 	if err != nil {
-		return nil, view.Errorf("agent.metrics.unreadable", "%v", err)
+		return "", view.Errorf("agent.metrics.unreadable", "%v", err)
 	}
 	rep, verifyErr := agentlog.Verify()
 
@@ -95,7 +118,7 @@ func runMetrics(_ context.Context, _ plugin.Request) (view.View, error) {
 		"How many files the record is spread over.",
 		[]sample{{value: float64(rep.Files)}})
 
-	return view.Text{Body: b.String()}, nil
+	return b.String(), nil
 }
 
 // sample is one series: its labels and its value.
