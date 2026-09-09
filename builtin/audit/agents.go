@@ -65,8 +65,25 @@ type agentFile struct {
 // worse to keep this shorter.
 func agentFiles(home, wd string) []agentFile {
 	var out []agentFile
+	// The home list and the project list overlap whenever the audit runs from
+	// the home directory: `.cursor/mcp.json`, `.claude/settings.json` and
+	// `.claude/settings.local.json` are the same relative name under both
+	// roots. Listed twice, every check ran on the file twice and every finding
+	// arrived twice — two rows for one weak permission, two for one credential.
+	// A duplicated finding is worse than a noisy one, because a reader cannot
+	// tell whether the second row is a second problem or the same one again.
+	//
+	// First label wins, so a shared path is reported as the user-scope config
+	// it is rather than as "(this project)", which would be true only by
+	// accident of where the command was run.
+	seen := map[string]bool{}
 	add := func(label string, parts ...string) {
-		out = append(out, agentFile{label: label, path: filepath.Join(parts...)})
+		path := filepath.Join(parts...)
+		if seen[path] {
+			return
+		}
+		seen[path] = true
+		out = append(out, agentFile{label: label, path: path})
 	}
 	add("Claude Code", home, ".claude", "settings.json")
 	add("Claude Code", home, ".claude", "settings.local.json")
@@ -417,6 +434,7 @@ func gradeServers(r *agentReport, f agentFile, servers map[string]serverDecl) {
 					"between here and "+host+" sees the header, so the credential should be treated as "+
 					"already disclosed and rotated once the endpoint is fixed.")
 		}
+		gradeContainer(r, f, name, d)
 		if fetch := fetchOnLaunch(d); fetch != "" {
 			r.add(grpAgentServers, name, stWarn,
 				"launched with `"+fetch+"`, which fetches and runs whatever the registry serves "+
