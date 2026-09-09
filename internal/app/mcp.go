@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -29,6 +30,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/notify"
 	"github.com/this-is-tobi/rta/internal/operator"
 	"github.com/this-is-tobi/rta/internal/pathguard"
+	"github.com/this-is-tobi/rta/internal/paths"
 	"github.com/this-is-tobi/rta/internal/registry"
 	agentsession "github.com/this-is-tobi/rta/internal/session"
 	"github.com/this-is-tobi/rta/internal/stdio"
@@ -47,6 +49,43 @@ func newMCPCommand(reg *registry.Registry, version string, opts *globalOpts) *co
 	return root
 }
 
+// recordWritable is the readiness question, and it is deliberately a write.
+//
+// What makes this server useful is that every call an agent makes lands in the
+// record. A data directory that has gone read-only under it — a detached
+// volume, a full disk, a filesystem remounted after an error — leaves a
+// process that still accepts connections and still authenticates callers while
+// silently failing at the one thing it is for. That is precisely the state
+// readiness exists to describe, and it is not visible from a stat: permission
+// bits can be perfect on a filesystem that will refuse the next write.
+//
+// So the probe writes. It costs one create-and-remove of an empty file at
+// whatever interval the orchestrator polls, against the alternative of
+// reporting ready while the record is being lost.
+//
+// It also creates the directory, which is not a probe overstepping but the
+// only way this question has a useful answer. rta creates the data directory
+// lazily, on the first record write — which is the first call an agent makes.
+// Without the MkdirAll a freshly started server reports not ready forever: the
+// orchestrator withholds traffic, no agent calls, no call creates the
+// directory, and nothing ever changes. The mode matches the one agentlog
+// creates it with, because a directory left at 0755 here is one `rta doctor`
+// reports on later.
+func recordWritable() error {
+	dir := paths.Data()
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("the data directory could not be created, so nothing an agent does can be recorded (%s): %v", dir, err)
+	}
+	probe := filepath.Join(dir, ".readyz")
+	f, err := os.OpenFile(probe, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return fmt.Errorf("the data directory is not writable, so nothing an agent does can be recorded (%s): %v", dir, err)
+	}
+	_ = f.Close()
+	_ = os.Remove(probe)
+	return nil
+}
+
 func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 	var (
 		consentOn     bool
@@ -60,6 +99,7 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 		oidcAudience  string
 		oidcSubjects  []string
 		operatorsFile string
+		observeAddr   string
 		operatorsURL  string
 	)
 	cmd := &cobra.Command{
@@ -167,6 +207,13 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				fmt.Fprintln(cmd.ErrOrStderr(),
 					"rta: --operators does nothing without --http — at this terminal you already are the operator")
 			}
+			if httpAddr == "" && observeAddr != "" {
+				// Worded so the sentence does not open with the flag name:
+				// fang capitalises the first letter of an error, and
+				// "--Observe" is not a flag anybody can type.
+				return fmt.Errorf("the probes and the counters describe a hosted server, so " +
+					"--observe needs --http — a stdio server has no orchestrator asking whether it is ready")
+			}
 			if oidcIssuer == "" && (oidcAudience != "" || len(oidcSubjects) > 0) {
 				fmt.Fprintln(cmd.ErrOrStderr(),
 					"rta: --oidc-audience/--oidc-subject do nothing without --oidc-issuer, since there is no token to verify them against")
@@ -181,6 +228,7 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 			var (
 				verifier        auth.TokenVerifier
 				ln              net.Listener
+				observeLn       net.Listener
 				operatorHandler http.Handler
 			)
 			if httpAddr != "" {
@@ -216,6 +264,19 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				// for every path that returns before then, once the bind above
 				// has already succeeded.
 				defer func() { _ = ln.Close() }()
+				if observeAddr != "" {
+					// Bound here for the same reason the MCP listener is: a
+					// taken port should be the first thing an operator sees,
+					// not something discovered after an OIDC round trip. It is
+					// a hard failure rather than a warning — an operator who
+					// asked for probes and silently got none would find out
+					// from an orchestrator that never marked the pod ready.
+					observeLn, err = net.Listen("tcp", observeAddr)
+					if err != nil {
+						return fmt.Errorf("listening on the --observe address: %w", err)
+					}
+					defer func() { _ = observeLn.Close() }()
+				}
 				var verifiers []auth.TokenVerifier
 				if tokenFile != "" {
 					tokens, groupReadable, err := mcp.LoadTokenFile(tokenFile)
@@ -460,9 +521,22 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 			if httpAddr != "" {
 				// Bearer-authenticated and cross-origin-protected inside
 				// Serve, unconditionally — see internal/mcp/remote.go.
+				var observeHandler http.Handler
+				if observeLn != nil {
+					observeHandler = mcp.NewObserveHandler(mcp.ObserveConfig{
+						Verifier: verifier,
+						Ready:    recordWritable,
+						Metrics:  agentcap.Exposition,
+					})
+					fmt.Fprintf(cmd.ErrOrStderr(),
+						"observing on %s: /livez /readyz /healthz open, /metrics behind the same bearer check\n",
+						observeLn.Addr())
+				}
 				err = mcp.Serve(cmd.Context(), server, ln, mcp.RemoteOptions{
 					Verifier: verifier, Stderr: cmd.ErrOrStderr(),
-					Operator: operatorHandler,
+					Operator:        operatorHandler,
+					ObserveListener: observeLn,
+					ObserveHandler:  observeHandler,
 				})
 			} else {
 				// fd 0 here is the agent's request stream. main() has already
@@ -497,6 +571,9 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 	cmd.Flags().StringVar(&httpAddr, "http", "",
 		"serve over HTTP instead of stdio, listening on this address (e.g. 127.0.0.1:8443) — "+
 			"TLS and network exposure are the operator's job, not this flag's")
+	cmd.Flags().StringVar(&observeAddr, "observe", "",
+		"serve liveness, readiness and Prometheus counters on this second address (e.g. 127.0.0.1:9090) — "+
+			"never the --http one: probes answer without a credential, /metrics needs the same bearer token MCP does")
 	cmd.Flags().StringVar(&tokenFile, "token-file", "",
 		"bearer tokens allowed to connect, one \"label token\" pair per line; required with --http "+
 			"unless --oidc-issuer is set")

@@ -49,6 +49,20 @@ type RemoteOptions struct {
 	// the MCP handler and its bearer refusal, indistinguishable from a server
 	// that never heard of operators.
 	Operator http.Handler
+	// ObserveListener and ObserveHandler, when both are set, run the probes
+	// and the counters (NewObserveHandler) on a second address for the
+	// lifetime of this Serve call.
+	//
+	// A second listener rather than more paths here, because the sentence
+	// above — bearer authentication wraps the whole protocol handler, and
+	// neither check is optional — has to keep being true. Open probe paths on
+	// this listener would make its security a property of route matching
+	// instead of a property of the wrapper, and every handler added here
+	// afterwards a chance to match wrongly. Apart, the invariant is structural
+	// and an operator can bind the observation address somewhere the
+	// agent-facing one is not.
+	ObserveListener net.Listener
+	ObserveHandler  http.Handler
 }
 
 // Serve runs server over the Streamable HTTP transport on ln, blocking
@@ -109,8 +123,42 @@ func Serve(ctx context.Context, server *sdk.Server, ln net.Listener, opts Remote
 		// that stops making progress.
 	}
 
+	// The observation listener's own timeouts are ordinary, unlike the MCP
+	// one's: nothing here streams, so a write deadline is a straightforward
+	// guard rather than something that would cut a long tool call in half.
+	var observeServer *http.Server
+	if opts.ObserveListener != nil && opts.ObserveHandler != nil {
+		observeServer = &http.Server{
+			Handler:           opts.ObserveHandler,
+			ReadHeaderTimeout: 10 * time.Second,
+			ReadTimeout:       30 * time.Second,
+			WriteTimeout:      30 * time.Second,
+			IdleTimeout:       120 * time.Second,
+		}
+		go func() {
+			// Reported, never fatal. A dead observation listener is a pod that
+			// stops answering probes and gets restarted on its own schedule —
+			// which is the orchestrator's decision to make. Taking the MCP
+			// server down here would turn a monitoring fault into an outage.
+			if err := observeServer.Serve(opts.ObserveListener); err != nil &&
+				!errors.Is(err, http.ErrServerClosed) && opts.Stderr != nil {
+				fmt.Fprintf(opts.Stderr, "rta: observation listener stopped: %v\n", err)
+			}
+		}()
+	}
+
 	errCh := make(chan error, 1)
 	go func() { errCh <- httpServer.Serve(ln) }()
+
+	if observeServer != nil {
+		defer func() {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), grace)
+			defer cancel()
+			if err := observeServer.Shutdown(shutdownCtx); err != nil {
+				_ = observeServer.Close()
+			}
+		}()
+	}
 
 	select {
 	case err := <-errCh:

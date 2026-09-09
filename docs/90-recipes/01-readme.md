@@ -228,7 +228,7 @@ The date appears on a row exactly when the rows are not all from today, so a liv
 
 ## Put it on a dashboard
 
-The Grafana stack takes this in two halves, and rta meets both without a listener or a port.
+The Grafana stack takes this in two halves. On a machine, rta meets both without a listener or a port; in a pod, where there is no node_exporter to write into, `rta mcp serve --observe` is the answer instead — see below.
 
 **Loki takes the lines.** The cursor above is already what a log shipper wants — an append-only record with a sequence number — so point Promtail or Alloy at the JSONL file the recipe above writes, or run the same loop into `logger`/`vector`.
 
@@ -241,6 +241,16 @@ rta agent metrics > /var/lib/node_exporter/textfile_collector/rta.prom.$$ \
 ```
 
 Write-then-rename because the collector reads the file whenever it likes, and half a file is a parse error that drops every series in it. A timer every minute is plenty; nothing here changes faster than that.
+
+**In a pod there is no textfile collector**, so a hosted server exposes the same numbers itself:
+
+```bash
+rta mcp serve --as work --http :8443 --token-file tokens.txt --observe :9090
+```
+
+`--observe` is a *second* listener and never the `--http` one. `/livez` and `/readyz` answer without a credential — a liveness probe that needs a token is one more thing to get wrong at three in the morning — and `/healthz` answers as readiness for tooling that asks by that name. `/metrics` sits behind the same bearer check MCP does, because these counters name which agent called what and how often it was refused, and "the port is only bound internally" is the assumption that goes wrong. Point a `ServiceMonitor` at it with a `bearerTokenSecret` holding one of the tokens from `--token-file`.
+
+The two probes mean different things, which is the only reason there are two. `/livez` consults nothing and says the process is still serving: restart me if this stops answering. `/readyz` writes to the data directory and reports whether the record can actually be written — a detached volume or a full disk leaves a server that still accepts connections and still authenticates callers while silently failing at the one thing it is for, and that is the state that should take a pod out of rotation rather than restart it.
 
 | Series | What it counts |
 | --- | --- |

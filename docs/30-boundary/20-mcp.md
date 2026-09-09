@@ -319,6 +319,25 @@ TLS is not this process's job. Bind to a private address and put a reverse proxy
 
 Every request's verified identity is recorded a third way, beside `--as` and the client's own self-report: `rta agent log` shows which credential actually authenticated each call — a token's label, an OIDC subject — so more than one credential valid for an instance stays distinguishable instead of collapsing into one indistinguishable principal.
 
+### Probes and counters, on a second listener
+
+A hosted server needs to tell an orchestrator whether it is alive and whether it is ready, and a monitoring stack in the same cluster has no node_exporter to read [the counters](../90-recipes/01-readme.md#put-it-on-a-dashboard) out of a file with. `--observe` binds a second address for both:
+
+```bash
+rta mcp serve --as work --http :8443 --token-file tokens.txt --observe :9090
+```
+
+It is deliberately not more paths on the `--http` listener. Bearer authentication wraps that one whole, and adding open paths beside the protocol handler would turn a property of the wrapper into a property of route matching — where every handler added later is a chance to match wrongly. Kept apart, an operator can also bind this where the agent-facing port is not: loopback, or a pod port the Service never publishes.
+
+| Path | Credential | Says |
+| --- | --- | --- |
+| `/livez` | none | the process is serving. It consults nothing on purpose — a liveness probe wired to the store asks for a restart that meets the same broken volume |
+| `/readyz` | none | the record can actually be written. A detached volume or a full disk leaves a server that still accepts connections and authenticates callers while failing at the one thing it is for |
+| `/healthz` | none | the same as `/readyz`, for tooling that asks by that name |
+| `/metrics` | **the same bearer token as MCP** | the exposition format `rta agent metrics` prints |
+
+`/metrics` is authenticated because the counters name which agent called what, and how often it was refused — a map of the machine's activity, not a health signal. Binding it somewhere private is the outer control and the token is the inner one; a Prometheus scrape config carries a bearer token without complaint, so keeping both costs nothing.
+
 ### The operator channel
 
 A remote server closes the agent out of `grant allow` — and closes you out with it: its grant roster lived behind whatever infrastructure access reaches the machine. The operator channel is the way back in that an agent cannot use.
