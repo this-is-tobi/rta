@@ -1,0 +1,38 @@
+{{- if .Values.enabled }}
+{{- range $name, $entry := .Values.servers }}
+{{- $s := include "rta.server.values" (dict "root" $ "server" $entry) | fromYaml }}
+{{- if and $s.enabled $s.httpRoute.enabled }}
+{{- $fullname := include "rta.serverFullname" (dict "root" $ "name" $name) }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ $fullname }}
+  labels: {{- include "rta.labels" (dict "root" $ "name" $name) | nindent 4 }}
+    {{- with $s.httpRoute.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with $s.httpRoute.annotations }}
+  annotations: {{- tpl (toYaml .) $ | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with $s.httpRoute.parentRefs }}
+  parentRefs: {{- toYaml . | nindent 2 }}
+  {{- end }}
+  hostnames:
+  - {{ $s.host | quote }}
+  {{- if $s.httpRoute.rules }}
+  rules: {{- toYaml $s.httpRoute.rules | nindent 2 }}
+  {{- else }}
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: "/"
+    backendRefs:
+    - name: {{ $fullname }}
+      port: {{ $s.service.port }}
+  {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

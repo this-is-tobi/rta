@@ -1,0 +1,63 @@
+# Values used by `ct install` in a Kind cluster, and the fastest local smoke test:
+#
+#   helm template rta charts/rta-chart -f charts/rta-chart/test-values.yaml
+#
+# Deliberately exercises the awkward combinations rather than the pretty ones: two instances that
+# inherit different halves of serverDefaults, both credentials at once on one of them, the operator
+# channel with a dashboard key, and consent - which is the pairing rta refuses if the chart gets it
+# wrong. No ingress, since a Kind cluster has no controller for one.
+serverDefaults:
+  roots:
+  - "/tmp/work"
+  persistence:
+    size: "128Mi"
+  resources:
+    requests:
+      memory: "32Mi"
+      cpu: "10m"
+    limits:
+      memory: "128Mi"
+      cpu: "200m"
+
+servers:
+  alice:
+    host: "rta-alice.example.com"
+    auth:
+      tokens:
+        enabled: true
+        entries:
+          cli: "test-token-for-ci-only-alice"
+    operators:
+      enabled: true
+      # Real ed25519 public keys, throwaway pairs generated for this fixture. They have to be real:
+      # 32 random bytes are not a public key, they are 32 bytes that decode to the right length and
+      # then fail to be a point on the curve - which rta refuses at startup, and which a values
+      # schema checking the base64 shape cannot catch.
+      keys:
+        alice:
+          publicKey: "pQ1UgkLkWAd8ui8eeyreiX4C7x4HamRDxRCSB6F14Qs="
+      dashboard:
+        publicKey: "rB5CXAQcpxblNgTZ80enqG15lcJwu5mkjhf8+vkOw2E="
+        expires: "2030-01-01"
+    consent:
+      enabled: true
+      wait: "30s"
+
+  bob:
+    host: "rta-bob.example.com"
+    roots:
+    - "/tmp/bob"
+    - "/tmp/shared"
+    auth:
+      tokens:
+        enabled: true
+        entries:
+          cli: "test-token-for-ci-only-bob00"
+          prometheus: "test-token-for-ci-only-scrape"
+    observability:
+      metrics:
+        enabled: true
+      serviceMonitor:
+        # The Prometheus Operator CRDs are not installed in a bare Kind cluster, so this stays off
+        # for `ct install`; `helm template` still renders it when flipped on by hand.
+        enabled: false

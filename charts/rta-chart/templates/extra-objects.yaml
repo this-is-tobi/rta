@@ -1,0 +1,6 @@
+{{- if .Values.enabled }}
+{{- range $key, $object := .Values.extraObjects }}
+---
+{{- tpl (toYaml $object) $ | nindent 0 }}
+{{- end }}
+{{- end }}

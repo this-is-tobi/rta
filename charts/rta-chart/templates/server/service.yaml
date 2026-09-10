@@ -1,0 +1,47 @@
+{{- if .Values.enabled }}
+{{- range $name, $entry := .Values.servers }}
+{{- $s := include "rta.server.values" (dict "root" $ "server" $entry) | fromYaml }}
+{{- if $s.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "rta.serverFullname" (dict "root" $ "name" $name) }}
+  labels: {{- include "rta.labels" (dict "root" $ "name" $name) | nindent 4 }}
+  {{- with $s.service.annotations }}
+  annotations: {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ $s.service.type }}
+  {{- /* The MCP port only. The observation listener is deliberately absent: keeping it off the
+  Service is what replaces binding it to loopback, which probes cannot reach. Publishing it takes
+  the separate metrics Service, which observability.metrics.enabled creates on purpose. */}}
+  ports:
+  - port: {{ $s.service.port }}
+    targetPort: mcp
+    protocol: TCP
+    name: mcp
+  selector: {{- include "rta.selectorLabels" (dict "root" $ "name" $name) | nindent 4 }}
+{{- if and $s.observability.enabled $s.observability.metrics.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ printf "%s-metrics" (include "rta.serverFullname" (dict "root" $ "name" $name)) }}
+  labels: {{- include "rta.labels" (dict "root" $ "name" $name) | nindent 4 }}
+    rta.this-is-tobi.com/service: metrics
+  {{- with $s.observability.metrics.annotations }}
+  annotations: {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: ClusterIP
+  ports:
+  - port: {{ $s.observability.port }}
+    targetPort: observe
+    protocol: TCP
+    name: metrics
+  selector: {{- include "rta.selectorLabels" (dict "root" $ "name" $name) | nindent 4 }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

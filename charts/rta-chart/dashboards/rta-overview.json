@@ -1,0 +1,352 @@
+{
+  "title": "rta — agents, authority and the record",
+  "uid": "rta-overview",
+  "tags": ["rta", "mcp", "security"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "editable": true,
+  "time": { "from": "now-6h", "to": "now" },
+  "description": "One row per question an operator actually asks: is the record trustworthy, what are agents doing, and what authorised it. Counters here are read out of rta's own record, so per-label series step down when retention drops a segment - Prometheus reads that as a counter reset, which is why rate() is used throughout rather than increase() over long windows.",
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Data source",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {},
+        "hide": 0
+      },
+      {
+        "name": "namespace",
+        "label": "Namespace",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "query": { "query": "label_values(rta_record_intact, namespace)", "refId": "namespace" },
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "current": { "text": "All", "value": "$__all" }
+      },
+      {
+        "name": "server",
+        "label": "Instance",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "query": {
+          "query": "label_values(rta_record_intact{namespace=~\"$namespace\"}, service)",
+          "refId": "server"
+        },
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "current": { "text": "All", "value": "$__all" }
+      },
+      {
+        "name": "agent",
+        "label": "Agent",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "query": {
+          "query": "label_values(rta_agent_calls_recorded_total{namespace=~\"$namespace\",service=~\"$server\"}, agent)",
+          "refId": "agent"
+        },
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "current": { "text": "All", "value": "$__all" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "Is the record trustworthy",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "collapsed": false
+    },
+    {
+      "type": "stat",
+      "title": "Record intact",
+      "description": "1 when the hash chain verifies end to end. A record that stops verifying is either a bug or somebody editing it, and both are worth finding out about within minutes. This is the series to alert on.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 1 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "min(rta_record_intact{namespace=~\"$namespace\",service=~\"$server\"})",
+          "legendFormat": "intact"
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "BROKEN", "color": "red", "index": 0 } } },
+            { "type": "value", "options": { "1": { "text": "intact", "color": "green", "index": 1 } } }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Parked, waiting for a person",
+      "description": "Calls held by live consent right now. A number that stays above zero means somebody is not answering, and the caller is blocked until --consent-wait runs out.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 1 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rta_agent_pending{namespace=~\"$namespace\",service=~\"$server\"})",
+          "legendFormat": "pending"
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "background",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "orange", "value": 5 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Calls ever",
+      "description": "Includes calls retention has since dropped, so it does not fall when a segment rotates.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 1 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rta_agent_calls_total{namespace=~\"$namespace\",service=~\"$server\"})",
+          "legendFormat": "calls"
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": { "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Record on disk",
+      "description": "Size across every segment, and how many files it is spread over. Growth here is what fills the data volume.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 1 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rta_record_bytes{namespace=~\"$namespace\",service=~\"$server\"})",
+          "legendFormat": "bytes"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rta_record_segments{namespace=~\"$namespace\",service=~\"$server\"})",
+          "legendFormat": "segments"
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "graphMode": "none",
+        "textMode": "value_and_name"
+      },
+      "fieldConfig": {
+        "defaults": { "unit": "decbytes", "thresholds": { "mode": "absolute", "steps": [{ "color": "text", "value": null }] } },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "segments" },
+            "properties": [{ "id": "unit", "value": "short" }]
+          }
+        ]
+      }
+    },
+    {
+      "type": "row",
+      "title": "What agents are doing",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 6 },
+      "collapsed": false
+    },
+    {
+      "type": "timeseries",
+      "title": "Calls by outcome",
+      "description": "ran: the handler ran and returned. failed: it was allowed and did not succeed. refused: a gate would not let it through — that is the line to watch, not an error rate.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 7 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (outcome) (rate(rta_agent_calls_recorded_total{namespace=~\"$namespace\",service=~\"$server\",agent=~\"$agent\"}[$__rate_interval]))",
+          "legendFormat": "{{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "fillOpacity": 20, "stacking": { "mode": "normal", "group": "A" }, "showPoints": "never" }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "refused" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }] },
+          { "matcher": { "id": "byName", "options": "failed" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } }] },
+          { "matcher": { "id": "byName", "options": "ran" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }] }
+        ]
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Refusals by capability",
+      "description": "Where the boundary is actually biting. A capability climbing here is either an agent trying something it should not, or a grant somebody needs and does not have — the record tells you which.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 7 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (capability) (rate(rta_agent_calls_recorded_total{namespace=~\"$namespace\",service=~\"$server\",agent=~\"$agent\",outcome=\"refused\"}[$__rate_interval]))",
+          "legendFormat": "{{capability}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "reqps", "custom": { "fillOpacity": 10, "showPoints": "never" } },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } }
+    },
+    {
+      "type": "bargauge",
+      "title": "Busiest capabilities",
+      "description": "Over the retained record, not the whole history.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "topk(10, sum by (capability) (rta_agent_calls_recorded_total{namespace=~\"$namespace\",service=~\"$server\",agent=~\"$agent\"}))",
+          "legendFormat": "{{capability}}",
+          "instant": true
+        }
+      ],
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Calls by agent",
+      "description": "One line per --as identity. In a release deploying one instance per person, a line appearing where you did not expect one is the interesting event.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (agent) (rate(rta_agent_calls_recorded_total{namespace=~\"$namespace\",service=~\"$server\",agent=~\"$agent\"}[$__rate_interval]))",
+          "legendFormat": "{{agent}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "reqps", "custom": { "fillOpacity": 10, "showPoints": "never" } },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } }
+    },
+    {
+      "type": "row",
+      "title": "What authorised it",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
+      "collapsed": false
+    },
+    {
+      "type": "timeseries",
+      "title": "Calls by authorization",
+      "description": "open: no grant needed. grant: a standing grant covered it. approved / declined: a person answered a parked request. blocked: refused before any question could be asked. operator: a roster-enrolled key's signed call over the operator channel.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (authorized) (rate(rta_agent_calls_recorded_total{namespace=~\"$namespace\",service=~\"$server\",agent=~\"$agent\"}[$__rate_interval]))",
+          "legendFormat": "{{authorized}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "fillOpacity": 20, "stacking": { "mode": "normal", "group": "A" }, "showPoints": "never" }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "blocked" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }] },
+          { "matcher": { "id": "byName", "options": "declined" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } }] },
+          { "matcher": { "id": "byName", "options": "approved" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "blue" } }] },
+          { "matcher": { "id": "byName", "options": "operator" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "purple" } }] },
+          { "matcher": { "id": "byName", "options": "grant" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }] },
+          { "matcher": { "id": "byName", "options": "open" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "text" } }] }
+        ]
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } }
+    },
+    {
+      "type": "table",
+      "title": "Grants in force right now",
+      "description": "What is currently allowed without anybody being asked again. This is the table to read down before a review, and the one that should be shorter than you expect.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rta_grants_active{namespace=~\"$namespace\",service=~\"$server\",agent=~\"$agent\"} > 0",
+          "format": "table",
+          "instant": true
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": { "Time": true, "__name__": true, "endpoint": true, "container": true, "job": true, "instance": true, "pod": true },
+            "renameByName": { "Value": "grants", "service": "instance" }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "auto" } },
+        "overrides": []
+      },
+      "options": { "showHeader": true }
+    }
+  ]
+}

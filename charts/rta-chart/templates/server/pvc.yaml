@@ -1,0 +1,30 @@
+{{- if .Values.enabled }}
+{{- range $name, $entry := .Values.servers }}
+{{- $s := include "rta.server.values" (dict "root" $ "server" $entry) | fromYaml }}
+{{- if and $s.enabled (not $s.persistence.existingClaim) }}
+---
+{{- /* One PVC per instance, and no switch to turn it into an emptyDir.
+
+The grants and the record live here. A restart without them is a machine with no memory of what
+you allowed and no answer to what was done - which is not a degraded rta, it is a different
+product. So persistence is a constraint the chart holds rather than a default it suggests;
+existingClaim is the only way to point it elsewhere. */}}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ printf "%s-data" (include "rta.serverFullname" (dict "root" $ "name" $name)) }}
+  labels: {{- include "rta.labels" (dict "root" $ "name" $name) | nindent 4 }}
+  {{- with $s.persistence.annotations }}
+  annotations: {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  accessModes: {{- toYaml $s.persistence.accessModes | nindent 2 }}
+  {{- if $s.persistence.storageClass }}
+  storageClassName: {{ $s.persistence.storageClass | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ $s.persistence.size | quote }}
+{{- end }}
+{{- end }}
+{{- end }}

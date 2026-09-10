@@ -1,0 +1,27 @@
+apiVersion: v2
+name: rta-chart
+type: application
+version: 0.1.0
+appVersion: "0.16.0"
+description: Deploy rta MCP servers into Kubernetes, one instance per person.
+# Floor set by the core APIs the chart renders. The Gateway API resources
+# additionally need the gateway.networking.k8s.io CRDs installed in the cluster,
+# and the ServiceMonitor needs the Prometheus Operator's.
+kubeVersion: ">=1.25.0-0"
+home: https://this-is-tobi.github.io/rta
+deprecated: false
+annotations:
+  artifacthub.io/category: security
+  artifacthub.io/license: Apache-2.0
+keywords:
+- rta
+- mcp
+- security
+- ai-agents
+dependencies: []
+sources:
+- https://github.com/this-is-tobi/rta
+maintainers:
+- name: this-is-tobi
+  email: this-is-tobi@proton.me
+  url: https://this-is-tobi.com

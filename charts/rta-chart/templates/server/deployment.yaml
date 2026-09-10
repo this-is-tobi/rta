@@ -1,0 +1,29 @@
+{{- if .Values.enabled }}
+{{- range $name, $entry := .Values.servers }}
+{{- $s := include "rta.server.values" (dict "root" $ "server" $entry) | fromYaml }}
+{{- if $s.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "rta.serverFullname" (dict "root" $ "name" $name) }}
+  labels: {{- include "rta.labels" (dict "root" $ "name" $name) | nindent 4 }}
+spec:
+  {{- /* One replica and Recreate are constraints, not defaults, which is why neither is a value.
+
+  Two pods on one ReadWriteOnce volume cannot co-mount it. Two pods on separate volumes hold
+  divergent grant rosters and split the record, so a grant issued over the operator channel lands
+  on one of them and the audit trail answers questions wrongly rather than not at all - which is
+  worse than not answering. And a rolling update on a single RWO volume deadlocks: the new pod
+  waits for a volume the old pod has not released. Every one of those points the same way. */}}
+  replicas: 1
+  revisionHistoryLimit: {{ $s.revisionHistoryLimit }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: {{- include "rta.selectorLabels" (dict "root" $ "name" $name) | nindent 6 }}
+  template:
+    {{- include "rta.server.podTemplate" (dict "root" $ "name" $name "server" $s) | nindent 4 }}
+{{- end }}
+{{- end }}
+{{- end }}

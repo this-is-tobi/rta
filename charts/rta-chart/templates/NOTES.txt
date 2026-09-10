@@ -1,0 +1,53 @@
+{{- if not .Values.enabled }}
+This release is rendered with `enabled: false`, so it deployed nothing.
+{{- else }}
+{{ .Chart.Name }} {{ .Chart.Version }} deployed {{ len .Values.servers }} rta instance(s) in namespace {{ .Release.Namespace }}.
+
+{{- range $name, $entry := .Values.servers }}
+{{- $s := include "rta.server.values" (dict "root" $ "server" $entry) | fromYaml }}
+{{- if $s.enabled }}
+
+── {{ $name }} ──────────────────────────────────────────────
+  Identity in the record   {{ $s.agentName | default $name }}
+  In-cluster address       {{ include "rta.serverFullname" (dict "root" $ "name" $name) }}.{{ $.Release.Namespace }}.svc:{{ $s.service.port }}
+  {{- if $s.host }}
+  Public address           https://{{ $s.host }}
+  {{- end }}
+  Path roots               {{ join ", " $s.roots }}
+  Authenticates callers by {{ if and $s.auth.oidc.enabled $s.auth.tokens.enabled }}OIDC and static token{{ else if $s.auth.oidc.enabled }}OIDC{{ else }}static token{{ end }}
+  {{- if $s.operators.enabled }}
+  Operator URL             {{ include "rta.server.operatorsURL" (dict "server" $s) }}
+  {{- end }}
+{{- end }}
+{{- end }}
+
+Two things in the logs that look like problems and are not:
+
+  "... is group-readable — anyone in that group can authenticate as every label
+  it holds" on every start. Kubernetes writes Secret files owned by root, the
+  container runs as a non-root user, and the group is how the process is given
+  the credential at all. rta leaves group read outside its refusal mask for
+  exactly this case; it warns and starts.
+
+  `rta doctor` reporting the data directory's permissions. fsGroup makes the
+  volume group-writable, which is what makes it writable by the container at
+  all. It is a doctor finding, not a startup refusal.
+
+What is NOT picked up by editing values alone: nothing, but it is worth knowing
+why. The roster and the token file are read once at startup, so the chart puts a
+checksum of each in the pod annotations and a change restarts the pod. The one
+exception is an operator key's `expires=`, which is checked per call against the
+running clock - removing an expired key needs no restart, and restarting will
+not be what evicted it.
+{{- range $name, $entry := .Values.servers }}
+{{- $s := include "rta.server.values" (dict "root" $ "server" $entry) | fromYaml }}
+{{- if and $s.enabled (not $s.ingress.enabled) (not $s.httpRoute.enabled) }}
+
+Instance {{ $name | quote }} has no Ingress or HTTPRoute, so nothing outside the
+cluster reaches it yet. TLS terminates there, not in rta - `--http` binds plain
+TCP by design - and for the operator channel the hostname is not merely an
+address: it is signed into every operator request as this server's identity, so
+it has to match what operators put in their remotes.yaml.
+{{- end }}
+{{- end }}
+{{- end }}

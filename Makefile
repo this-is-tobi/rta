@@ -100,7 +100,7 @@ endif
 help: ## Print this help
 	@awk 'BEGIN {FS = ":.*##"} \
 		/^##@/ { printf "\n$(BOLD)%s$(RESET)\n", substr($$0, 5); next } \
-		/^[a-zA-Z0-9_-]+:.*##/ { printf "  $(CYAN)%-16s$(RESET) %s\n", $$1, $$2 }' \
+		/^[a-zA-Z0-9_-]+:.*##/ { printf "  $(CYAN)%-20s$(RESET) %s\n", $$1, $$2 }' \
 		$(MAKEFILE_LIST)
 	@printf "\n$(BOLD)Notes$(RESET)\n"
 	@printf "  Installed here:                          %s\n" "$(BINDIR)"
@@ -232,6 +232,86 @@ proto-lint: ## Lint the .proto files
 proto-check: ## Refuse a change that breaks a plugin already compiled against v1
 	cd proto && $(BUF) breaking --against '../.git#branch=main,subdir=proto'
 
+##@ Chart
+
+CHART_DIR ?= charts/rta-chart
+
+# The chart's values schema does not restate what a config file may hold — it
+# embeds the schema rta already publishes.
+#
+# Without this there would be two hand-maintained descriptions of the same
+# shape, in this repository and in the chart beside it, and they would drift the
+# first time a config key was added and only one of them was updated. The
+# failure that drift produces is the quiet kind: `helm install` accepts a values
+# file whose config block rta will reject, or refuses one rta would have been
+# happy with, and either way the message names the wrong thing.
+#
+# What is embedded is the envelope. A `plugins:` section holds keys each plugin
+# declares about itself, and those stay open objects here exactly as they are
+# there — `rta doctor` remains the deep validator, and the Kind-cluster install
+# is where it gets to run against what the chart rendered.
+#
+# The `$$ref`s are rewritten because rta's schema refers to its own definitions
+# from the document root (`#/$$defs/profile`), and nested under this chart's
+# `rtaConfig` that path resolves against the chart's root instead — silently, to
+# nothing, leaving those subtrees unvalidated rather than erroring.
+define CHART_SCHEMA_PY
+import json, pathlib, sys
+
+check = "--check" in sys.argv
+chart = pathlib.Path(sys.argv[1])
+config = json.loads(pathlib.Path(sys.argv[2]).read_text())
+
+config.pop("$$schema", None)
+
+
+def rewrite(node):
+    if isinstance(node, dict):
+        ref = node.get("$$ref")
+        if isinstance(ref, str) and ref.startswith("#/$$defs/"):
+            node["$$ref"] = ref.replace("#/$$defs/", "#/$$defs/rtaConfig/$$defs/", 1)
+        for value in node.values():
+            rewrite(value)
+    elif isinstance(node, list):
+        for value in node:
+            rewrite(value)
+
+
+rewrite(config)
+
+values = json.loads(chart.read_text())
+if check:
+    if values["$$defs"]["rtaConfig"] != config:
+        sys.exit(
+            "chart values schema is stale: its embedded config schema no longer "
+            "matches `rta config schema`. Run `make chart-schema`."
+        )
+    print("chart-schema-check: the embedded config schema matches `rta config schema`.")
+else:
+    values["$$defs"]["rtaConfig"] = config
+    chart.write_text(json.dumps(values, indent=2) + "\n")
+    print("wrote", chart)
+endef
+export CHART_SCHEMA_PY
+
+chart-schema: ## Embed `rta config schema` into the chart's values schema
+	@mkdir -p $(BUILDDIR)
+	@go run ./cmd/rta config schema > $(BUILDDIR)/config.schema.json
+	@python3 -c "$$CHART_SCHEMA_PY" $(CHART_DIR)/values.schema.json $(BUILDDIR)/config.schema.json
+
+chart-schema-check: ## Fail if the chart's embedded config schema has drifted
+	@mkdir -p $(BUILDDIR)
+	@go run ./cmd/rta config schema > $(BUILDDIR)/config.schema.json
+	@python3 -c "$$CHART_SCHEMA_PY" $(CHART_DIR)/values.schema.json $(BUILDDIR)/config.schema.json --check
+
+chart-lint: chart-schema-check ## Lint the chart and validate values.yaml against its schema
+	helm lint $(CHART_DIR) --values $(CHART_DIR)/test-values.yaml
+	helm template rta $(CHART_DIR) --values $(CHART_DIR)/test-values.yaml >/dev/null
+
+chart-docs: ## Regenerate the chart's README from values.yaml
+	docker run --rm --volume "$(PWD)/charts:/helm-docs" -u "$$(id -u):$$(id -g)" \
+	  docker.io/jnorwood/helm-docs:v1.14.2
+
 ##@ Housekeeping
 
 clean: ## Remove build output and coverage artifacts
@@ -244,4 +324,5 @@ clean: ## Remove build output and coverage artifacts
 .PHONY: help setup download tidy fmt build install \
 	cross snapshot size bump-plugins test hard vet check \
 	fmt-check coverage coverage-html ci proto proto-lint proto-check \
+	chart-schema chart-schema-check chart-lint chart-docs \
 	clean

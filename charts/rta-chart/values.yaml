@@ -1,0 +1,725 @@
+# -- Master switch for the whole chart. When `false`, every template renders nothing - use this to
+# keep a release/namespace registered with a deployment system (e.g. an ArgoCD Application that is
+# always generated for every app/env combination) without deploying any resource into it.
+# @section -- General
+enabled: true
+# -- Provide a name in place of the default chart name.
+# @section -- General
+nameOverride: ""
+# -- String to fully override the default fully-qualified name.
+# @section -- General
+fullnameOverride: ""
+# -- Labels added to every resource the chart deploys.
+# @section -- General
+commonLabels: {}
+
+global:
+  # -- Global container image registry, overriding `image.registry` for every pod in the chart.
+  # @section -- Global
+  imageRegistry: ""
+  # -- Image pull secrets applied to every pod.
+  # @section -- Global
+  imagePullSecrets: []
+  # - name: "pullsecret-name"
+
+openShift:
+  # -- Render for OpenShift, which means dropping `runAsUser`, `runAsGroup` and `fsGroup` from the
+  # security contexts rather than setting them.
+  #
+  # The `restricted-v2` SCC assigns a UID from the namespace's own range and refuses a pod asking
+  # for one outside it, so the 65532 both official images run as - correct on every other
+  # distribution - is what stops the pod being admitted here. Removed, SCC admission fills all
+  # three in, and the two properties the chart depends on still hold: the mounted Secret files stay
+  # readable through the group the process actually runs with, and SCC's own fsGroup strategy
+  # chowns the data volume.
+  #
+  # Left as an explicit switch rather than detected from `.Capabilities`, because the rendering
+  # must be the same whether it happens in a cluster, in `helm template`, or in Argo CD - a chart
+  # that quietly renders two different pod specs depending on where it ran is one whose diff cannot
+  # be reviewed.
+  # @section -- Global
+  enabled: false
+
+image:
+  # -- Registry the rta image is pulled from.
+  # @section -- Image
+  registry: "ghcr.io"
+  # -- Repository of the rta image. Defaults to the narrow image, which is the boundary: it carries
+  # rta and nothing else, so the set of plugins baked into it is the set of capabilities an agent
+  # reaching this server can ever use. See `allowFullImage` before pointing this at `rta-full`.
+  # @section -- Image
+  repository: "this-is-tobi/rta"
+  # -- Image pull policy.
+  # @section -- Image
+  pullPolicy: "IfNotPresent"
+  # -- Image tag. Defaults to the chart's appVersion.
+  # @section -- Image
+  tag: ""
+  # -- Image digest (`sha256:...`). Takes precedence over `tag`, pinning exact image content so a
+  # release can never resolve to a different build. Preferred over a mutable tag - it is the same
+  # reason `rta plugin trust` binds to a digest and never to a name.
+  # @section -- Image
+  digest: ""
+  # -- Permit `ghcr.io/this-is-tobi/rta-full`, which the chart otherwise refuses.
+  #
+  # The full image carries every first-party plugin and every external tool, which makes it the
+  # widest reach rta has - the documentation is explicit that it is the wrong thing to point an
+  # agent at, because the image IS the plugin allowlist and this one allows everything. For a
+  # person driving a console, or for a homelab where the point is to exercise `kube`, `cnpg` and
+  # the rest against real infrastructure, it is the honest choice; for an instance an agent talks
+  # to unattended, build a narrow image with the plugins that job needs.
+  #
+  # Setting this to `true` has three effects: it lifts the refusal, it requires
+  # `serverDefaults.persistence.seedFromImage` (the full image bakes plugin *trust* into its own
+  # data directory, which the data volume would otherwise mask), and it makes
+  # `serverDefaults.plugins.allow` meaningful, since only that image's entrypoint reads it.
+  #
+  # The seeding requirement is keyed off `repository` actually naming the published full image
+  # (matched by path, so a registry mirror is still recognised), not off this flag directly - a
+  # renamed image built from the full one would not be caught by that check even with this set.
+  # @section -- Image
+  allowFullImage: false
+
+# -- Values every entry in `servers` inherits, deep-merged under it. This is what keeps adding a
+# person to one values entry: the platform team states storage class, ingress class, resources,
+# OIDC issuer and the rest once here, and a person's own entry carries only what is actually
+# theirs - their name, their host, their subject, their roots.
+# @section -- Server defaults
+serverDefaults:
+  # -- Render this instance. Set `false` on one entry to retire a person's server without deleting
+  # the values that describe it.
+  # @section -- Server defaults
+  enabled: true
+  # -- The identity passed to `--as`, which every line of the record is written against. Defaults
+  # to the entry's key in `servers`. 1-64 characters of `[A-Za-z0-9._-]`.
+  # @section -- Server defaults
+  agentName: ""
+  # -- The public hostname this instance is served on. It is both the Ingress/HTTPRoute host and,
+  # unless `operators.url` overrides it, the `--operators-url` identity - so it is the exact string
+  # operators write in their `remotes.yaml`, never an in-cluster Service name.
+  # @section -- Server defaults
+  host: ""
+  # -- Paths this instance's filesystem capabilities may reach, passed as `--root` (repeatable).
+  # Required: rta's path root otherwise defaults to the working directory, which in a container is
+  # `/`, so an instance that states nothing here reaches the whole container.
+  # @section -- Server defaults
+  roots: []
+  # - "/work"
+  # -- Port the MCP listener binds inside the pod.
+  # @section -- Server defaults
+  containerPort: 8080
+  # -- The contents of `config.yaml` - profiles, plugins, dashboard. Rendered into a ConfigMap and
+  # pointed at by `RTA_CONFIG`. Validated against rta's own config schema (see
+  # `values.schema.json`, whose `config` block is generated by `rta config schema`), which states
+  # the envelope; `rta doctor` remains the deep validator for what a plugin section may hold.
+  # A connection's `secrets:` map takes a reference, never a value (`kv:<entry>` or
+  # `kube:<secret>/<key>`) - this renders into a ConfigMap, not a Secret, so anything pasted here
+  # literally lands in plain text in the values file and the Helm release object.
+  # @section -- Server defaults
+  config: {}
+  # -- Take `config.yaml` from a ConfigMap managed outside this chart instead of rendering one.
+  # The key must be `config.yaml`. The pod's `checksum/config` annotation is computed from
+  # `config`, so it cannot see an edit to an externally-managed ConfigMap - restart the pod
+  # yourself when its content changes.
+  # @section -- Server defaults
+  existingConfigMap: ""
+  # -- Extra arguments appended to `rta mcp serve`.
+  # @section -- Server defaults
+  extraArgs: []
+  paths:
+    # -- Where the data volume is mounted, and the value of `RTA_DATA_DIR`. The grants, the record,
+    # the sessions and plugin trust all live here.
+    # @section -- Server defaults
+    dataDir: "/rta-home"
+    # -- Where the config ConfigMap is mounted. `RTA_CONFIG` points at `config.yaml` inside it.
+    # Deliberately outside `dataDir`, unlike the single-volume container recipe in the docs: a
+    # ConfigMap cannot be mounted inside a PersistentVolumeClaim.
+    # @section -- Server defaults
+    configDir: "/etc/rta/config"
+    # -- Where the token Secret is mounted.
+    # @section -- Server defaults
+    tokenDir: "/etc/rta/tokens"
+    # -- Where the roster Secret is mounted.
+    # @section -- Server defaults
+    rosterDir: "/etc/rta/roster"
+  ## How a caller proves who they are. `rta mcp serve --http` refuses to start with neither
+  ## mechanism configured, and the two are usable together - which is what lets an OIDC instance
+  ## still hold one static token for a scraper.
+  auth:
+    oidc:
+      # -- Authenticate callers against an OIDC issuer. This is what makes "authenticating as that
+      # person" real, rather than "whoever holds this string".
+      # @section -- Server defaults
+      enabled: false
+      # -- Issuer URL. Required when `enabled`.
+      # @section -- Server defaults
+      issuer: ""
+      # -- Expected audience. Required when `enabled` - rta refuses an issuer with no audience,
+      # because a token minted for some other service would otherwise authenticate here.
+      # @section -- Server defaults
+      audience: ""
+      # -- Accepted subjects. At least one is required when `enabled`: an issuer with no subject
+      # accepts every identity that IdP will ever mint.
+      # @section -- Server defaults
+      subjects: []
+      # - "person@example.com"
+    tokens:
+      # -- Authenticate callers with static bearer tokens. Honest for a CI or bot instance, and for
+      # anyone without an IdP; a token names whoever holds it, not a person.
+      # @section -- Server defaults
+      enabled: false
+      # -- Use a Secret managed outside this chart for the token file instead of rendering one from
+      # `entries`. It must hold the file under the `key` below, one `label token` per line. The
+      # pod's `checksum/tokens` annotation is computed from `entries`, so it cannot see an edit to
+      # an externally-managed Secret - restart the pod yourself when its content changes.
+      # @section -- Server defaults
+      existingSecret: ""
+      # -- Key inside the token Secret holding the token file.
+      # @section -- Server defaults
+      key: "tokens"
+      # -- Map of `label: token`. Each label is an identity in the record; tokens must be at least
+      # 16 characters (`rta gen token` makes one). These land in the values file AND in the Helm
+      # release secret in plain text - for anything you would not paste in a pull request, use
+      # `existingSecret` and have your secret manager materialise it.
+      # @section -- Server defaults
+      entries: {}
+      # ci: "a-token-of-at-least-16-chars"
+  consent:
+    # -- Park a call and wait for a person to answer it. Over HTTP this requires `operators`, since
+    # the enrolled operators are the only people positioned to be that person.
+    # @section -- Server defaults
+    enabled: false
+    # -- How long a parked call waits (`--consent-wait`). rta's own default is 90s and it clamps
+    # anything above 10m.
+    # @section -- Server defaults
+    wait: ""
+  operators:
+    # -- Enable the operator channel, mounting `/operator/v1` beside the MCP handler.
+    # @section -- Server defaults
+    enabled: false
+    # -- Overrides the `--operators-url` derived from `host`. It is signed into every operator
+    # request as this server's identity and is the anti-relay binding, so it must be the exact URL
+    # in operators' `remotes.yaml` and must be `https://`.
+    # @section -- Server defaults
+    url: ""
+    # -- Use a Secret managed outside this chart for the roster instead of rendering one. The
+    # pod's `checksum/roster` annotation is computed from `keys`/`dashboard`, so it cannot see an
+    # edit to an externally-managed Secret - restart the pod yourself when its content changes.
+    # @section -- Server defaults
+    existingSecret: ""
+    # -- Key inside the roster Secret holding the roster file.
+    # @section -- Server defaults
+    key: "roster"
+    # -- Enrolled operator keys, as `label: {publicKey, role, expires}`. A bare entry is a full
+    # operator - enrolment is itself the trust decision, and the annotations only subtract. Editing
+    # this restarts the pod on purpose: the roster is read once at startup, so without that a key
+    # removed in Git would keep working. `expires` is the exception, checked per call against the
+    # running clock.
+    # @section -- Server defaults
+    keys: {}
+    # alice:
+    #   publicKey: "AAAAC3NzaC1lZDI1NTE5AAAAI..."
+    #   role: "full"
+    #   expires: "2027-01-01"
+    dashboard:
+      # -- Roster label for the dashboard key.
+      # @section -- Server defaults
+      label: "dashboard"
+      # -- Public key of a component that watches this server - a status page, a dashboard - rather
+      # than a person who answers. It is always enrolled `role=read`: status, grant.list,
+      # consent.list and lock.list, the verbs that change nothing. That is not a shorthand for a
+      # `keys` entry you could write yourself; the schema pins the role here, so the block naming a
+      # machine occupant cannot become a full operator through a values override or a copy-paste.
+      # @section -- Server defaults
+      publicKey: ""
+      # -- Expiry for the dashboard key, `YYYY-MM-DD`. Checked per call, so it needs no restart.
+      # @section -- Server defaults
+      expires: ""
+  plugins:
+    # -- Plugins to allow at startup, rendered as `RTA_ALLOW_PLUGINS`. Only an image using rta's
+    # `docker-entrypoint.sh` reads this - the full image does, the narrow image's entrypoint is rta
+    # itself and never sees it. This answers `allow` (may this plugin read a credential location),
+    # never `trust` (may this artifact run at all), which is baked into the full image and carried
+    # across restarts by the data volume.
+    # @section -- Server defaults
+    allow: []
+    # - "kube"
+    # - "cnpg"
+  observability:
+    # -- Bind the second listener (`--observe`) carrying `/livez`, `/readyz`, `/healthz` and
+    # `/metrics`. The probes are open and answer with a status code and a word; `/metrics` sits
+    # behind the same bearer check MCP does. Turning this off falls back to `tcpSocket` probes,
+    # which prove the listener accepts connections and nothing more.
+    # @section -- Server defaults
+    enabled: true
+    # -- Port the observation listener binds inside the pod. It is bound on 0.0.0.0 rather than
+    # loopback because a kubelet probe reaches the pod IP and cannot reach the pod's loopback; what
+    # keeps it private instead is that the main Service does not publish it.
+    # @section -- Server defaults
+    port: 9090
+    metrics:
+      # -- Create a second, metrics-only Service publishing the observation port. Without it that
+      # port is reachable only by the kubelet's probes.
+      # @section -- Server defaults
+      enabled: false
+      # -- Annotations for the metrics Service.
+      # @section -- Server defaults
+      annotations: {}
+    serviceMonitor:
+      # -- Create a Prometheus Operator ServiceMonitor for `/metrics`.
+      # @section -- Server defaults
+      enabled: false
+      # -- Label in `auth.tokens.entries` whose token Prometheus should scrape with. The chart
+      # points `bearerTokenSecret` at that token's own key in the token Secret.
+      #
+      # Worth being plain about what this credential is: there is one verifier, so a token that can
+      # read `/metrics` is a token that can call MCP. Binding the observation port privately is the
+      # outer control and the token is the inner one - keep Prometheus off the MCP port with a
+      # NetworkPolicy rather than assuming this token is metrics-only.
+      # @section -- Server defaults
+      tokenLabel: "prometheus"
+      bearerTokenSecret:
+        # -- Secret Prometheus reads its bearer token from, when it is not the chart's own token
+        # Secret. Required if `tokenLabel` names nothing in `auth.tokens.entries` - an OIDC-only
+        # instance has no static credential for a scraper to present.
+        # @section -- Server defaults
+        name: ""
+        # -- Key inside that Secret.
+        # @section -- Server defaults
+        key: ""
+      # -- Scrape interval.
+      # @section -- Server defaults
+      interval: "30s"
+      # -- Scrape timeout.
+      # @section -- Server defaults
+      scrapeTimeout: "10s"
+      # -- Additional ServiceMonitor labels (e.g. the label your Prometheus selects on).
+      # @section -- Server defaults
+      labels: {}
+      # -- Additional ServiceMonitor annotations.
+      # @section -- Server defaults
+      annotations: {}
+      # -- Prometheus relabel configs applied before scraping.
+      # @section -- Server defaults
+      relabelings: []
+      # -- Prometheus relabel configs applied before ingestion.
+      # @section -- Server defaults
+      metricRelabelings: []
+  ## Probes, rendered verbatim via `toYaml`, so any `Probe` field is accepted. Set one to `null` to
+  ## disable it. They target the observation port and are only used when `observability.enabled`.
+  probes:
+    startupProbe:
+      httpGet:
+        # -- Startup probe path. `/readyz` writes to the data directory and reports whether the
+        # record can be written at all.
+        # @section -- Server defaults
+        path: "/readyz"
+        # -- Startup probe port.
+        # @section -- Server defaults
+        port: "observe"
+      # -- Consecutive failures tolerated before the container is restarted.
+      # @section -- Server defaults
+      failureThreshold: 30
+      # -- How often the startup probe runs.
+      # @section -- Server defaults
+      periodSeconds: 2
+    readinessProbe:
+      httpGet:
+        # -- Readiness probe path. A volume that went read-only under a running server leaves it
+        # accepting connections and authenticating callers while failing at the one thing it is
+        # for, and this is what notices.
+        # @section -- Server defaults
+        path: "/readyz"
+        # -- Readiness probe port.
+        # @section -- Server defaults
+        port: "observe"
+      # -- How often the readiness probe runs.
+      # @section -- Server defaults
+      periodSeconds: 10
+      # -- Readiness probe timeout.
+      # @section -- Server defaults
+      timeoutSeconds: 3
+    livenessProbe:
+      httpGet:
+        # -- Liveness probe path. `/livez` consults nothing on purpose: a liveness probe wired to
+        # the store would ask for a restart that comes back to the same detached volume.
+        # @section -- Server defaults
+        path: "/livez"
+        # -- Liveness probe port.
+        # @section -- Server defaults
+        port: "observe"
+      # -- How often the liveness probe runs.
+      # @section -- Server defaults
+      periodSeconds: 30
+      # -- Liveness probe timeout.
+      # @section -- Server defaults
+      timeoutSeconds: 3
+      # -- Consecutive failures tolerated before the container is restarted.
+      # @section -- Server defaults
+      failureThreshold: 3
+  persistence:
+    # -- Size of this instance's data volume.
+    # @section -- Server defaults
+    size: "1Gi"
+    # -- StorageClass for the data volume. Empty uses the cluster default.
+    # @section -- Server defaults
+    storageClass: ""
+    # -- Access modes for the data volume. Single-writer only: `ReadWriteMany` is refused at render
+    # time, because this instance runs one replica on purpose and a shared-writer volume implies a
+    # scaling story that does not exist - two rta processes on one data directory split the record.
+    # If RWX is the only storage class you have, set `existingClaim` instead.
+    # @section -- Server defaults
+    accessModes:
+    - "ReadWriteOnce"
+    # -- Use an existing PersistentVolumeClaim instead of creating one. There is deliberately no
+    # switch for running without a volume: the grants and the record live there, and a restart
+    # without them is a machine with no memory of what you allowed.
+    # @section -- Server defaults
+    existingClaim: ""
+    # -- Annotations for the created PersistentVolumeClaim.
+    # @section -- Server defaults
+    annotations: {}
+    # -- Path inside the image the seed init container copies from. This is a property of the
+    # image, not of `paths.dataDir`: both official images bake their state at /rta-home whatever
+    # the chart later mounts where.
+    # @section -- Server defaults
+    seedSourcePath: "/rta-home"
+    # -- Seed the data volume from the image's own data directory on first start, with an init
+    # container. Required with `image.allowFullImage`, and for any derived image that bakes plugin
+    # trust: that trust is recorded inside the image's data directory, which this volume mounts
+    # over and therefore hides - the plugins would be present and untrusted, which looks like the
+    # image being broken. Impossible on the narrow distroless image, which has no shell to run the
+    # copy, and unnecessary there, since it bakes nothing.
+    # @section -- Server defaults
+    seedFromImage: false
+  serviceAccount:
+    # -- Create a ServiceAccount for this instance. One per instance, never one shared by the
+    # release: in a pod there is no caller's kubeconfig, so the pod's identity is the one a
+    # profile's Kubernetes secret reads happen under, and an instance that can read every Secret in
+    # the namespace has rebuilt the shared server this chart's shape exists to avoid.
+    # @section -- Server defaults
+    create: true
+    # -- Name of the ServiceAccount. Defaults to the instance's fully-qualified name.
+    # @section -- Server defaults
+    name: ""
+    # -- Annotations for the ServiceAccount (e.g. a workload-identity binding).
+    # @section -- Server defaults
+    annotations: {}
+    # -- Mount the ServiceAccount token into the pod. Defaults to false, because the narrow image
+    # cannot use it: rta resolves a `kube:` secret reference by shelling out to `kubectl` against a
+    # kubeconfig naming a context, and the distroless image has neither. Enable it alongside
+    # `secretRefs` only on an image that ships kubectl and a kubeconfig.
+    # @section -- Server defaults
+    automountServiceAccountToken: false
+  # -- Secrets this instance's profiles read, which become the `resourceNames` of its Role. Read
+  # `serviceAccount.automountServiceAccountToken` first: on the default image these rules grant
+  # something nothing in the pod can use.
+  # @section -- Server defaults
+  secretRefs: []
+  # - "postgres-creds"
+  # -- Additional rules appended to this instance's Role. Rendered verbatim, with no validation of
+  # verbs or resources - unlike `secretRefs`, which is pinned to `get` on named Secrets by name.
+  # Still namespace-scoped only, since this chart never renders a ClusterRole: the worst an entry
+  # here can do is widen what this one instance's ServiceAccount reaches inside its own namespace.
+  # @section -- Server defaults
+  extraRules: []
+  service:
+    # -- Type of the MCP Service.
+    # @section -- Server defaults
+    type: "ClusterIP"
+    # -- Port the MCP Service listens on.
+    # @section -- Server defaults
+    port: 80
+    # -- Annotations for the MCP Service.
+    # @section -- Server defaults
+    annotations: {}
+  ingress:
+    # -- Create an Ingress for this instance. TLS is terminated here: `rta mcp serve --http` binds
+    # plain TCP by design, and putting the certificate in front of it is the chart's job. Refused
+    # at render time with neither `tls` nor `tlsSecretName` set, since an Ingress with no TLS
+    # block would ship a bearer token or an OIDC flow across the wire in clear.
+    # @section -- Server defaults
+    enabled: false
+    # -- Ingress class.
+    # @section -- Server defaults
+    className: ""
+    # -- Ingress annotations.
+    # @section -- Server defaults
+    annotations: {}
+    # -- Additional Ingress labels.
+    # @section -- Server defaults
+    labels: {}
+    # -- Ingress path.
+    # @section -- Server defaults
+    path: "/"
+    # -- Ingress path type.
+    # @section -- Server defaults
+    pathType: "Prefix"
+    # -- TLS blocks. Left empty with `tlsSecretName` unset, no TLS block is rendered - which is
+    # almost never what you want, since the operator URL must be `https://`.
+    # @section -- Server defaults
+    tls: []
+    # -- Shorthand for a single TLS block covering `host` with this secret.
+    # @section -- Server defaults
+    tlsSecretName: ""
+  httpRoute:
+    # -- Create a Gateway API HTTPRoute for this instance, as an alternative to `ingress`.
+    # @section -- Server defaults
+    enabled: false
+    # -- Annotations for the HTTPRoute.
+    # @section -- Server defaults
+    annotations: {}
+    # -- Additional HTTPRoute labels.
+    # @section -- Server defaults
+    labels: {}
+    # -- Gateways to attach the HTTPRoute to.
+    # @section -- Server defaults
+    parentRefs: []
+    # - name: "my-gateway"
+    #   namespace: "gateway-system"
+    #   sectionName: "https"
+    # -- Rules for the HTTPRoute. Left empty, one rule is generated routing `/` to this instance's
+    # Service.
+    # @section -- Server defaults
+    rules: []
+  networkPolicy:
+    # -- Create a NetworkPolicy for this instance. Off by default: the rules that matter are the
+    # egress ones, and only you know which databases this person's profiles reach - a chart that
+    # guessed would either allow everything, which is no policy, or cut the server off from its own
+    # capabilities in a way that surfaces as unexplained timeouts. The commented block below is the
+    # recommended posture; fill in the destinations and turn it on.
+    # @section -- Server defaults
+    create: false
+    # -- Labels for the NetworkPolicy.
+    # @section -- Server defaults
+    labels: {}
+    # -- Annotations for the NetworkPolicy.
+    # @section -- Server defaults
+    annotations: {}
+    # -- Policy types.
+    # @section -- Server defaults
+    policyTypes:
+    - "Ingress"
+    # -- Ingress rules. Left empty, one rule is generated allowing the MCP port from anywhere in
+    # the cluster, plus the observation port when `observability.metrics` is on. Naming the ingress
+    # controller and the monitoring namespace explicitly is stricter and better.
+    # @section -- Server defaults
+    ingress: []
+    # - from:
+    #   - namespaceSelector:
+    #       matchLabels:
+    #         kubernetes.io/metadata.name: "ingress-nginx"
+    #   ports:
+    #   - protocol: TCP
+    #     port: 8080
+    # - from:
+    #   - namespaceSelector:
+    #       matchLabels:
+    #         kubernetes.io/metadata.name: "monitoring"
+    #   ports:
+    #   - protocol: TCP
+    #     port: 9090
+    # -- Egress rules. With `policyTypes` including `Egress` and this empty, the pod reaches
+    # nothing - not even DNS. Add the DNS rule first, then one rule per destination this instance's
+    # profiles actually name.
+    # @section -- Server defaults
+    egress: []
+    # - to:
+    #   - namespaceSelector: {}
+    #     podSelector:
+    #       matchLabels:
+    #         k8s-app: "kube-dns"
+    #   ports:
+    #   - protocol: UDP
+    #     port: 53
+    #   - protocol: TCP
+    #     port: 53
+  podDisruptionBudget:
+    # -- Create a PodDisruptionBudget for this instance.
+    # @section -- Server defaults
+    enabled: false
+    # -- Pods that may be unavailable after eviction. This is the field that makes sense here:
+    # `minAvailable: 1` over a single-replica workload makes the pod unevictable, so a node drain
+    # hangs forever - validation refuses that value rather than letting it stall an upgrade.
+    # @section -- Server defaults
+    maxUnavailable: 1
+    # -- Pods that must remain available after eviction. Has lower precedence than
+    # `maxUnavailable`, and `1` is refused; see above.
+    # @section -- Server defaults
+    minAvailable: ""
+    # -- Annotations for the PodDisruptionBudget.
+    # @section -- Server defaults
+    annotations: {}
+  # -- Image pull secrets for this instance's pod, in addition to `global.imagePullSecrets`.
+  # @section -- Server defaults
+  imagePullSecrets: []
+  # -- Resource requests and limits.
+  # @section -- Server defaults
+  resources:
+    requests:
+      memory: "64Mi"
+      cpu: "50m"
+    limits:
+      memory: "256Mi"
+      cpu: "500m"
+  # -- Pod-level security context. `fsGroup: 65532` is doing two jobs and neither is optional: it
+  # makes the data volume writable, because the image's own `chown` applies to the image layer and
+  # not to a volume mounted over it, and it makes the root-owned Secret files readable by the
+  # nonroot process through the group. Both official images run as 65532.
+  # @section -- Server defaults
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+    fsGroup: 65532
+    fsGroupChangePolicy: "OnRootMismatch"
+    seccompProfile:
+      type: "RuntimeDefault"
+  # -- Container-level security context. `readOnlyRootFilesystem` holds because everything rta
+  # writes goes to the data volume or to /tmp.
+  # @section -- Server defaults
+  securityContext:
+    allowPrivilegeEscalation: false
+    privileged: false
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+    capabilities:
+      drop:
+      - "ALL"
+  # -- Environment variables for the rta container, in native Kubernetes list form. `RTA_CONFIG`
+  # and `RTA_DATA_DIR` are set by the chart and are not overridable here - with no config path rta
+  # falls back to a file it does not honour, and profiles, plugins and dashboard would be silently
+  # ignored.
+  # @section -- Server defaults
+  env: []
+  # - name: "HTTPS_PROXY"
+  #   value: "http://proxy.internal:3128"
+  # -- ConfigMap/Secret references loaded into the container's environment.
+  # @section -- Server defaults
+  envFrom: []
+  # -- Additional init containers.
+  # @section -- Server defaults
+  initContainers: []
+  # -- Additional sidecar containers.
+  # @section -- Server defaults
+  extraContainers: []
+  # -- Additional volumes.
+  # @section -- Server defaults
+  extraVolumes: []
+  # -- Additional volume mounts for the rta container.
+  # @section -- Server defaults
+  extraVolumeMounts: []
+  # -- Annotations for the pod. The chart adds its own `checksum/*` annotations over the roster,
+  # the token file and the config, which are load-bearing rather than cosmetic: all three are read
+  # once at startup, so without them editing a key in Git would appear to do nothing.
+  # @section -- Server defaults
+  podAnnotations: {}
+  # -- Labels for the pod.
+  # @section -- Server defaults
+  podLabels: {}
+  # -- Node selector for the pod.
+  # @section -- Server defaults
+  nodeSelector: {}
+  # -- Tolerations for the pod.
+  # @section -- Server defaults
+  tolerations: []
+  # -- Affinity for the pod.
+  # @section -- Server defaults
+  affinity: {}
+  # -- Topology spread constraints for the pod.
+  # @section -- Server defaults
+  topologySpreadConstraints: []
+  # -- Host aliases injected into the pod's /etc/hosts. Useful when a profile names an internal
+  # host the cluster's DNS does not resolve.
+  # @section -- Server defaults
+  hostAliases: []
+  # - ip: "10.1.2.3"
+  #   hostnames:
+  #   - "db.internal"
+  # -- Pod DNS policy. Empty leaves the Kubernetes default (`ClusterFirst`).
+  # @section -- Server defaults
+  dnsPolicy: ""
+  # -- Pod DNS configuration, merged with `dnsPolicy` by the kubelet.
+  # @section -- Server defaults
+  dnsConfig: {}
+  # -- PriorityClass for the pod.
+  # @section -- Server defaults
+  priorityClassName: ""
+  # -- (int) Grace period, in seconds, before the pod is killed.
+  # @section -- Server defaults
+  # @default -- `null` (Kubernetes default of 30)
+  terminationGracePeriodSeconds: null
+  # -- Revision history limit for the Deployment.
+  # @section -- Server defaults
+  revisionHistoryLimit: 10
+
+# -- The instances this release deploys, one entry per person. Each key names the instance and, by
+# default, the identity it authenticates as; each entry is layered over `serverDefaults`.
+#
+# One server for everyone is what this shape exists to avoid. A shared instance costs per-person
+# access control, a record that can say who did what, live consent that reaches the right person,
+# `rta use`, and blast radius - so the unit here is the instance, not the release. A platform team
+# owns one release; adding a person is one entry.
+# @section -- General
+servers: {}
+# tobi:
+#   host: "rta-tobi.example.com"
+#   roots:
+#   - "/work"
+#   auth:
+#     oidc:
+#       enabled: true
+#       issuer: "https://id.example.com"
+#       audience: "rta"
+#       subjects:
+#       - "tobi@example.com"
+#   consent:
+#     enabled: true
+#   operators:
+#     enabled: true
+#     keys:
+#       tobi:
+#         publicKey: "AAAAC3NzaC1lZDI1NTE5AAAAI..."
+#   ingress:
+#     enabled: true
+#     className: "nginx"
+#     tlsSecretName: "rta-tobi-tls"
+#   persistence:
+#     size: "1Gi"
+
+grafanaDashboard:
+  # -- Ship the bundled Grafana dashboard as a ConfigMap for a dashboard sidecar to pick up.
+  #
+  # One dashboard for the whole release rather than one per instance: it carries a `server` variable
+  # built from the metrics' own `service` label, so every instance in the release is a selection
+  # rather than a separate copy to keep in step.
+  #
+  # It needs the metrics to be reaching Prometheus, which means `observability.metrics.enabled` and
+  # `observability.serviceMonitor.enabled` on the instances you want to see - and those in turn need
+  # a token, since `/metrics` is authenticated.
+  # @section -- General
+  enabled: false
+  # -- Label a dashboard sidecar watches for. The default is what kube-prometheus-stack and the
+  # Grafana chart use.
+  # @section -- General
+  label: "grafana_dashboard"
+  # -- Value of that label.
+  # @section -- General
+  labelValue: "1"
+  # -- Namespace to place the ConfigMap in. Empty uses the release namespace; set it when Grafana's
+  # sidecar only watches its own.
+  # @section -- General
+  namespace: ""
+  # -- Grafana folder to file the dashboard under, via the `grafana_folder` annotation.
+  # @section -- General
+  folder: ""
+  # -- Extra annotations for the dashboard ConfigMap.
+  # @section -- General
+  annotations: {}
+
+# -- Map of extra manifests to deploy with the release. Each key is an arbitrary name, used only so
+# a values override can add or remove a single entry by key instead of restating the whole list.
+# @section -- General
+extraObjects: {}

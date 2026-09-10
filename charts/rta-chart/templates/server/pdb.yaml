@@ -1,0 +1,31 @@
+{{- if .Values.enabled }}
+{{- range $name, $entry := .Values.servers }}
+{{- $s := include "rta.server.values" (dict "root" $ "server" $entry) | fromYaml }}
+{{- if and $s.enabled $s.podDisruptionBudget.enabled }}
+---
+{{- /* A disruption budget over a deliberately single-replica workload is a sharp tool.
+
+`minAvailable: 1` here does not protect availability - it makes the pod unevictable, so a node
+drain hangs forever and the cluster upgrade behind it stalls. What a budget can honestly express
+for this workload is `maxUnavailable: 1`: the eviction is allowed, and the instance is briefly
+down, which is what a single replica on one volume means whatever the budget says. That is why the
+default below is maxUnavailable and why validation refuses a budget with neither field set. */}}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "rta.serverFullname" (dict "root" $ "name" $name) }}
+  labels: {{- include "rta.labels" (dict "root" $ "name" $name) | nindent 4 }}
+  {{- with $s.podDisruptionBudget.annotations }}
+  annotations: {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  selector:
+    matchLabels: {{- include "rta.selectorLabels" (dict "root" $ "name" $name) | nindent 6 }}
+  {{- if ne (toString $s.podDisruptionBudget.maxUnavailable) "" }}
+  maxUnavailable: {{ $s.podDisruptionBudget.maxUnavailable }}
+  {{- else }}
+  minAvailable: {{ $s.podDisruptionBudget.minAvailable }}
+  {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

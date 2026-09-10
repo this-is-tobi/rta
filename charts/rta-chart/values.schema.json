@@ -1,0 +1,952 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "rta-chart values",
+  "description": "Shape and enum validation for this chart's values. Deliberately permissive: every object allows additionalProperties and nothing is required, because a `servers` entry is a partial layered over `serverDefaults` and a schema that demanded a complete instance there would reject every correct values file. What this schema cannot express - which values require which other values - is enforced at render time by `rta.server.validate` in templates/_helpers.tpl, which fails with the values key to fix. The `rtaConfig` definition is not hand-written: `make chart-schema` replaces it with the output of `rta config schema`, so the config block a person writes here is validated against the same schema rta itself publishes, and `make chart-schema-check` fails when the two drift.",
+  "type": "object",
+  "additionalProperties": true,
+  "$defs": {
+    "rtaConfig": {
+      "$defs": {
+        "connection": {
+          "additionalProperties": false,
+          "properties": {
+            "kube": {
+              "description": "Port-forward coordinate, context/namespace/kind/name:port. The call runs through a forward the host raises and tears down; kube: Secrets are read from its namespace.",
+              "pattern": "^[^/]+/[^/]+/[^/]+/[^/:]+:[0-9]+$",
+              "type": "string"
+            },
+            "secrets": {
+              "additionalProperties": {
+                "pattern": "^(kv|kube):.+$",
+                "type": "string"
+              },
+              "description": "Where each credential input's value comes from \u2014 a reference, never a value: kv:<entry> for the local store, kube:<secret>/<key> for a cluster Secret.",
+              "type": "object"
+            },
+            "secrets-from": {
+              "description": "Which cluster and namespace kube: secret references are read from, as context/namespace, for a connection that reaches its service directly and opens no forward. With kube: present the Secrets already come from its namespace, so state at most one of the two.",
+              "pattern": "^[^/]+/[^/]+$",
+              "type": "string"
+            },
+            "set": {
+              "description": "Overlays the plugin's own configuration; keys are the same Field.Config keys legal under plugins.<ns>.",
+              "type": "object"
+            },
+            "ssh": {
+              "description": "Jump-host target, [user@]host[:port]/desthost:destport \u2014 the head is an ~/.ssh/config alias or hostname. States at most one of kube: and ssh:.",
+              "type": "string"
+            },
+            "tunnelTLS": {
+              "description": "The far side of this connection's forward terminates TLS itself, so URL-role inputs are filled with https. A statement about the destination, never the hop; the certificate is still verified.",
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "profile": {
+          "additionalProperties": false,
+          "properties": {
+            "color": {
+              "description": "Marks this environment, so which one is switched on is legible before the command runs. Paints the profile's own name and nothing else \u2014 never the palette, which would put this colour beside the ones that mean ok, warn and failed.",
+              "pattern": "^#[0-9a-fA-F]{6}$",
+              "type": "string"
+            },
+            "note": {
+              "description": "Why this environment exists \u2014 printed by `rta profile list`, `rta use` and `rta doctor`.",
+              "type": "string"
+            },
+            "plugins": {
+              "additionalProperties": {
+                "$ref": "#/$defs/rtaConfig/$defs/connection"
+              },
+              "description": "What this environment is: the connections, keyed the way the top-level plugins: section is keyed \u2014 pinned (pg@1a2b3c4d) for anything on $PATH, so a PATH impostor cannot inherit the stated connection \u2014 plus an optional instance label (pg/analytics@1a2b3c4d) when one environment holds several connections to the same plugin. A bare key is the default instance; a call names a labeled one as --profile <name>/<instance>.",
+              "propertyNames": {
+                "pattern": "^[a-z][a-z0-9-]*(/[a-z][a-z0-9-]*)?(@[0-9a-f]+)?$"
+              },
+              "type": "object"
+            },
+            "ttl": {
+              "description": "How long an activation lasts by default (2h, 30m); empty means no deadline. `rta use --for` overrides it.",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|\u00b5s|ms|s|m|h))+$",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "role": {
+          "additionalProperties": false,
+          "properties": {
+            "agent": {
+              "description": "Which agent `rta grant issue` issues this role to when --agent is not given. Your config only; a policy file naming an agent is refused.",
+              "type": "string"
+            },
+            "grants": {
+              "description": "One grant per line: a target, an optional record, and --profile, --ttl, --max-uses, --rate or --note. The agent is the session's.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "ttl": {
+              "description": "How long the role's grants last unless --ttl says: 8h, 12h (the default).",
+              "type": "string"
+            }
+          },
+          "required": [
+            "grants"
+          ],
+          "type": "object"
+        },
+        "tile": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "description": "The capability this tile runs, e.g. note.list.",
+              "type": "string"
+            },
+            "span": {
+              "description": "How many grid columns this tile occupies; 0 leaves the decision to the capability.",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "with": {
+              "description": "Inputs for the run, keyed the way the capability declares them.",
+              "type": "object"
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "description": "rta's config file. Zero config is a valid config: everything here is optional, and rta works without the file existing at all.",
+      "properties": {
+        "dashboard": {
+          "additionalProperties": false,
+          "description": "The TUI's landing screen. With nothing set it builds itself, one tile per registered plugin, and plugins installed later still appear.",
+          "properties": {
+            "columns": {
+              "description": "Fixes the grid width instead of deriving it from the terminal; 0 means automatic.",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "hidden": {
+              "description": "Capability IDs to leave out of the automatic set.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "order": {
+              "description": "Capability IDs to place first, in this order; anything not named keeps its natural position after them.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "tiles": {
+              "description": "States the dashboard exactly, replacing the automatic set; hidden and order are then not consulted. Only Read capabilities run as tiles.",
+              "items": {
+                "$ref": "#/$defs/rtaConfig/$defs/tile"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "output": {
+          "description": "Default --output format when the flag is not given.",
+          "enum": [
+            "pretty",
+            "json",
+            "yaml",
+            "csv",
+            "md"
+          ],
+          "type": "string"
+        },
+        "plugins": {
+          "additionalProperties": {
+            "type": "object"
+          },
+          "description": "Each plugin's own settings, stated once instead of retyped per invocation. The key is a namespace for a built-in and namespace@digest for anything on $PATH. What the keys inside a section mean is each plugin's declaration \u2014 `rta explain <ns>` lists them, and `rta doctor` reports the ones nothing reads.",
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9-]*(@[0-9a-f]+)?$"
+          },
+          "type": "object"
+        },
+        "profiles": {
+          "additionalProperties": {
+            "$ref": "#/$defs/rtaConfig/$defs/profile"
+          },
+          "description": "Named environments switched between with `rta use` or --profile, and the unit an agent grant names.",
+          "propertyNames": {
+            "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"
+          },
+          "type": "object"
+        },
+        "roles": {
+          "additionalProperties": {
+            "$ref": "#/$defs/rtaConfig/$defs/role"
+          },
+          "description": "Bundles `rta grant issue <role>` issues whole, under one passphrase: grant lines in the grammar `rta grant allow` takes, and how long the grants last.",
+          "type": "object"
+        },
+        "theme": {
+          "additionalProperties": {
+            "pattern": "^#[0-9a-fA-F]{6}$",
+            "type": "string"
+          },
+          "description": "Overrides the built-in palette. Keys are the names `rta theme` lists (primary, good, label, \u2026), each a #rrggbb string.",
+          "type": "object"
+        }
+      },
+      "title": "rta configuration",
+      "type": "object"
+    },
+    "duration": {
+      "type": "string",
+      "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|\u00b5s|ms|s|m|h))+$"
+    },
+    "identityLabel": {
+      "description": "An identity written into the record: an agent name, a token label, a roster label.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]{1,64}$"
+    },
+    "ed25519PublicKey": {
+      "description": "A base64-encoded ed25519 public key: 32 bytes, so 44 base64 characters.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9+/]{43}=$"
+    },
+    "expiryDate": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+    "operatorKey": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "publicKey": {
+          "$ref": "#/$defs/ed25519PublicKey"
+        },
+        "role": {
+          "description": "A bare entry is a full operator; role only ever subtracts.",
+          "type": "string",
+          "enum": [
+            "full",
+            "read"
+          ]
+        },
+        "expires": {
+          "$ref": "#/$defs/expiryDate"
+        }
+      }
+    },
+    "serverEntry": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "agentName": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/identityLabel"
+            },
+            {
+              "type": "string",
+              "maxLength": 0
+            }
+          ]
+        },
+        "host": {
+          "type": "string"
+        },
+        "roots": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "containerPort": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "config": {
+          "$ref": "#/$defs/rtaConfig"
+        },
+        "existingConfigMap": {
+          "type": "string"
+        },
+        "extraArgs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "paths": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "dataDir": {
+              "type": "string",
+              "pattern": "^/"
+            },
+            "configDir": {
+              "type": "string",
+              "pattern": "^/"
+            },
+            "tokenDir": {
+              "type": "string",
+              "pattern": "^/"
+            },
+            "rosterDir": {
+              "type": "string",
+              "pattern": "^/"
+            }
+          }
+        },
+        "auth": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "oidc": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "issuer": {
+                  "type": "string"
+                },
+                "audience": {
+                  "type": "string"
+                },
+                "subjects": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "tokens": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "existingSecret": {
+                  "type": "string"
+                },
+                "key": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "entries": {
+                  "type": "object",
+                  "propertyNames": {
+                    "$ref": "#/$defs/identityLabel"
+                  },
+                  "additionalProperties": {
+                    "description": "rta refuses a bearer token shorter than 16 characters; `rta gen token` makes one.",
+                    "type": "string",
+                    "minLength": 16
+                  }
+                }
+              }
+            }
+          }
+        },
+        "consent": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "wait": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/duration"
+                },
+                {
+                  "type": "string",
+                  "maxLength": 0
+                }
+              ]
+            }
+          }
+        },
+        "operators": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "url": {
+              "description": "Signed into every operator request as this server's identity, so it must be https - remotes.yaml refuses plain http for anything but loopback.",
+              "type": "string",
+              "pattern": "^$|^https://"
+            },
+            "existingSecret": {
+              "type": "string"
+            },
+            "key": {
+              "type": "string",
+              "minLength": 1
+            },
+            "keys": {
+              "type": "object",
+              "propertyNames": {
+                "$ref": "#/$defs/identityLabel"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/operatorKey"
+              }
+            },
+            "dashboard": {
+              "description": "A component that watches rather than a person who answers. The role is not a property here: this key is always enrolled read-only, so the block naming a machine occupant cannot be turned into a full operator by a values override.",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "label": {
+                  "$ref": "#/$defs/identityLabel"
+                },
+                "publicKey": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/ed25519PublicKey"
+                    },
+                    {
+                      "type": "string",
+                      "maxLength": 0
+                    }
+                  ]
+                },
+                "expires": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/expiryDate"
+                    },
+                    {
+                      "type": "string",
+                      "maxLength": 0
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "plugins": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "allow": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "observability": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "port": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            },
+            "metrics": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "annotations": {
+                  "type": "object"
+                }
+              }
+            },
+            "serviceMonitor": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "tokenLabel": {
+                  "$ref": "#/$defs/identityLabel"
+                },
+                "bearerTokenSecret": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "key": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "interval": {
+                  "$ref": "#/$defs/duration"
+                },
+                "scrapeTimeout": {
+                  "$ref": "#/$defs/duration"
+                },
+                "labels": {
+                  "type": "object"
+                },
+                "annotations": {
+                  "type": "object"
+                },
+                "relabelings": {
+                  "type": "array"
+                },
+                "metricRelabelings": {
+                  "type": "array"
+                }
+              }
+            }
+          }
+        },
+        "probes": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "startupProbe": {
+              "type": [
+                "object",
+                "null"
+              ]
+            },
+            "readinessProbe": {
+              "type": [
+                "object",
+                "null"
+              ]
+            },
+            "livenessProbe": {
+              "type": [
+                "object",
+                "null"
+              ]
+            }
+          }
+        },
+        "persistence": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "size": {
+              "type": "string",
+              "pattern": "^[0-9]+(\\.[0-9]+)?(E|P|T|G|M|k|Ei|Pi|Ti|Gi|Mi|Ki)?$"
+            },
+            "storageClass": {
+              "type": "string"
+            },
+            "accessModes": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "description": "Single-writer only. ReadWriteMany is refused at render time: one replica is deliberate, so a shared-writer volume buys nothing and implies scaling that is not available.",
+                "type": "string",
+                "enum": [
+                  "ReadWriteOnce",
+                  "ReadWriteOncePod"
+                ]
+              }
+            },
+            "existingClaim": {
+              "type": "string"
+            },
+            "annotations": {
+              "type": "object"
+            },
+            "seedFromImage": {
+              "type": "boolean"
+            },
+            "seedSourcePath": {
+              "type": "string",
+              "pattern": "^/"
+            }
+          }
+        },
+        "serviceAccount": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "create": {
+              "type": "boolean"
+            },
+            "name": {
+              "type": "string"
+            },
+            "annotations": {
+              "type": "object"
+            },
+            "automountServiceAccountToken": {
+              "type": "boolean"
+            }
+          }
+        },
+        "secretRefs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "extraRules": {
+          "type": "array"
+        },
+        "service": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "ClusterIP",
+                "NodePort",
+                "LoadBalancer",
+                "ExternalName"
+              ]
+            },
+            "port": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            },
+            "annotations": {
+              "type": "object"
+            }
+          }
+        },
+        "ingress": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "className": {
+              "type": "string"
+            },
+            "annotations": {
+              "type": "object"
+            },
+            "labels": {
+              "type": "object"
+            },
+            "path": {
+              "type": "string"
+            },
+            "pathType": {
+              "type": "string",
+              "enum": [
+                "Exact",
+                "Prefix",
+                "ImplementationSpecific"
+              ]
+            },
+            "tls": {
+              "type": "array"
+            },
+            "tlsSecretName": {
+              "type": "string"
+            }
+          }
+        },
+        "httpRoute": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "annotations": {
+              "type": "object"
+            },
+            "labels": {
+              "type": "object"
+            },
+            "parentRefs": {
+              "type": "array"
+            },
+            "rules": {
+              "type": "array"
+            }
+          }
+        },
+        "networkPolicy": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "create": {
+              "type": "boolean"
+            },
+            "labels": {
+              "type": "object"
+            },
+            "annotations": {
+              "type": "object"
+            },
+            "policyTypes": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "Ingress",
+                  "Egress"
+                ]
+              }
+            },
+            "ingress": {
+              "type": "array"
+            },
+            "egress": {
+              "type": "array"
+            }
+          }
+        },
+        "podDisruptionBudget": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "maxUnavailable": {
+              "type": [
+                "integer",
+                "string",
+                "null"
+              ]
+            },
+            "minAvailable": {
+              "type": [
+                "integer",
+                "string",
+                "null"
+              ]
+            },
+            "annotations": {
+              "type": "object"
+            }
+          }
+        },
+        "imagePullSecrets": {
+          "type": "array"
+        },
+        "resources": {
+          "type": "object"
+        },
+        "podSecurityContext": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "securityContext": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "env": {
+          "type": "array"
+        },
+        "envFrom": {
+          "type": "array"
+        },
+        "initContainers": {
+          "type": "array"
+        },
+        "extraContainers": {
+          "type": "array"
+        },
+        "extraVolumes": {
+          "type": "array"
+        },
+        "extraVolumeMounts": {
+          "type": "array"
+        },
+        "podAnnotations": {
+          "type": "object"
+        },
+        "podLabels": {
+          "type": "object"
+        },
+        "nodeSelector": {
+          "type": "object"
+        },
+        "tolerations": {
+          "type": "array"
+        },
+        "affinity": {
+          "type": "object"
+        },
+        "topologySpreadConstraints": {
+          "type": "array"
+        },
+        "hostAliases": {
+          "type": "array"
+        },
+        "dnsPolicy": {
+          "type": "string",
+          "enum": [
+            "",
+            "ClusterFirst",
+            "ClusterFirstWithHostNet",
+            "Default",
+            "None"
+          ]
+        },
+        "dnsConfig": {
+          "type": "object"
+        },
+        "priorityClassName": {
+          "type": "string"
+        },
+        "terminationGracePeriodSeconds": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "revisionHistoryLimit": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  },
+  "properties": {
+    "enabled": {
+      "type": "boolean"
+    },
+    "nameOverride": {
+      "type": "string"
+    },
+    "fullnameOverride": {
+      "type": "string"
+    },
+    "commonLabels": {
+      "type": "object"
+    },
+    "global": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "imageRegistry": {
+          "type": "string"
+        },
+        "imagePullSecrets": {
+          "type": "array"
+        }
+      }
+    },
+    "openShift": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    "image": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "registry": {
+          "type": "string"
+        },
+        "repository": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pullPolicy": {
+          "type": "string",
+          "enum": [
+            "Always",
+            "IfNotPresent",
+            "Never"
+          ]
+        },
+        "tag": {
+          "type": [
+            "string",
+            "number"
+          ]
+        },
+        "digest": {
+          "description": "Full content digest, e.g. sha256:<hex>. Takes precedence over tag.",
+          "type": "string",
+          "pattern": "^$|^[a-z0-9]+:[a-fA-F0-9]{32,}$"
+        },
+        "allowFullImage": {
+          "type": "boolean"
+        }
+      }
+    },
+    "serverDefaults": {
+      "$ref": "#/$defs/serverEntry"
+    },
+    "servers": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "propertyNames": {
+        "$ref": "#/$defs/identityLabel"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/serverEntry"
+      }
+    },
+    "grafanaDashboard": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "label": {
+          "type": "string"
+        },
+        "labelValue": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "folder": {
+          "type": "string"
+        },
+        "annotations": {
+          "type": "object"
+        }
+      }
+    },
+    "extraObjects": {
+      "type": "object"
+    }
+  }
+}
