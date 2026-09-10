@@ -304,12 +304,14 @@ rta mcp serve --http 127.0.0.1:8443 --token-file tokens.txt --as work
 
 A second transport, opt-in: the server listens on TCP instead of speaking stdio to a parent process, which is what running it somewhere other than your own machine — the shape the previous section argues for — actually needs.
 
+Putting that somewhere is its own subject: [Kubernetes](./80-kubernetes.md) is the deployment, with a chart whose unit is the instance rather than the release.
+
 A caller now has to prove who it is over the wire, since there is no parent process left to trust instead. Two mechanisms, usable together:
 
 | Flag | Proves |
 | --- | --- |
 | `--token-file <path>` | A static, operator-issued token — one `label token` pair per line in a file only the operator can read; world-readable files are refused, and so is a token shorter than 16 characters (`rta gen token` makes one) |
-| `--oidc-issuer`, `--oidc-audience`, `--oidc-subject` | A real identity provider's token, for one of the named subjects. An issuer and audience alone identify an application, not a person, so at least one `--oidc-subject` is required |
+| `--oidc-issuer`, `--oidc-audience`, `--oidc-subject` | A real identity provider's token, for one of the named subjects. An issuer and audience alone identify an application, not a person, so at least one `--oidc-subject` is required — [OIDC](./70-oidc.md) is the full setup, including the Keycloak audience mapper without which every token is rejected |
 
 A rejected token is answered slower from the same address after five failures in a minute, doubling up to two seconds: a guess a second becomes a guess every two, and an operator who mistyped once never notices. Behind a reverse proxy every client shares the address, so a guessing attacker slows the operators beside it for as long as the guessing lasts — that trade is taken rather than trusting a `Forwarded` header the attacker writes.
 
