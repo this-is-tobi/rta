@@ -1,0 +1,17 @@
+{{- /*
+Values validation only - this template intentionally renders no resource. It exists so
+`rta.server.validate` runs on every `helm template`/`helm lint`/`helm install`, including for
+combinations where the workload templates themselves would render nothing, and so the message
+names the values key to fix rather than arriving later as a CrashLoopBackOff.
+*/ -}}
+{{- if .Values.enabled }}
+{{- if not .Values.servers }}
+{{- fail "servers is empty - this chart's unit is the instance, not the release: one entry per person, each authenticating as that person. A release with no servers deploys nothing." }}
+{{- end }}
+{{- range $name, $entry := .Values.servers }}
+{{- $s := include "rta.server.values" (dict "root" $ "server" $entry) | fromYaml }}
+{{- if $s.enabled }}
+{{- include "rta.server.validate" (dict "root" $ "name" $name "server" $s) }}
+{{- end }}
+{{- end }}
+{{- end }}

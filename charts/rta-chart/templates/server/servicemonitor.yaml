@@ -1,0 +1,62 @@
+{{- if .Values.enabled }}
+{{- range $name, $entry := .Values.servers }}
+{{- $s := include "rta.server.values" (dict "root" $ "server" $entry) | fromYaml }}
+{{- if and $s.enabled $s.observability.enabled $s.observability.serviceMonitor.enabled }}
+{{- $fullname := include "rta.serverFullname" (dict "root" $ "name" $name) }}
+{{- $sm := $s.observability.serviceMonitor }}
+{{- $bts := $sm.bearerTokenSecret | default dict }}
+---
+{{- /* `/metrics` is authenticated, so a ServiceMonitor without a credential would be accepted by
+the API server and then fail every scrape with a 401 - which is why validation refuses that case
+rather than rendering this and leaving a silent gap in the dashboards.
+
+The credential defaults to the chart's own token Secret, at the per-label key it writes for exactly
+this. It is worth being plain that this is a full MCP credential: there is one verifier, and a
+token that reads the counters is a token that can call the protocol. Binding the observation port
+privately is the outer control, this token is the inner one, and a NetworkPolicy keeping the
+scraper off the MCP port is what stops the outer one being decorative. */}}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ $fullname }}
+  labels: {{- include "rta.labels" (dict "root" $ "name" $name) | nindent 4 }}
+    {{- with $sm.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with $sm.annotations }}
+  annotations: {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  namespaceSelector:
+    matchNames:
+    - {{ $.Release.Namespace | quote }}
+  selector:
+    matchLabels:
+      {{- include "rta.selectorLabels" (dict "root" $ "name" $name) | nindent 6 }}
+      rta.this-is-tobi.com/service: metrics
+  endpoints:
+  - port: metrics
+    path: /metrics
+    {{- with $sm.interval }}
+    interval: {{ . }}
+    {{- end }}
+    {{- with $sm.scrapeTimeout }}
+    scrapeTimeout: {{ . }}
+    {{- end }}
+    bearerTokenSecret:
+      {{- if and $bts.name $bts.key }}
+      name: {{ $bts.name | quote }}
+      key: {{ $bts.key | quote }}
+      {{- else }}
+      name: {{ include "rta.server.tokenSecretName" (dict "root" $ "name" $name "server" $s) | quote }}
+      key: {{ printf "token-%s" $sm.tokenLabel | quote }}
+      {{- end }}
+    {{- with $sm.relabelings }}
+    relabelings: {{- toYaml . | nindent 4 }}
+    {{- end }}
+    {{- with $sm.metricRelabelings }}
+    metricRelabelings: {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

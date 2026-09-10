@@ -1,0 +1,29 @@
+{{- if and .Values.enabled .Values.grafanaDashboard.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ printf "%s-dashboard" (include "rta.fullname" .) }}
+  {{- with .Values.grafanaDashboard.namespace }}
+  namespace: {{ . }}
+  {{- end }}
+  labels:
+    {{- include "rta.commonLabels" . | nindent 4 }}
+    {{- /* The sidecar in kube-prometheus-stack and the Grafana chart watches for this label rather
+    than for a name or a namespace, which is why it is a value: the label and its value are the
+    operator's convention, not this chart's, and a cluster that renamed them would otherwise need
+    the ConfigMap rewritten by hand. */}}
+    {{ .Values.grafanaDashboard.label }}: {{ .Values.grafanaDashboard.labelValue | quote }}
+  annotations:
+    {{- with .Values.grafanaDashboard.folder }}
+    grafana_folder: {{ . | quote }}
+    {{- end }}
+    {{- with .Values.grafanaDashboard.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+data:
+  {{- /* Read from a file rather than written inline, because Grafana's legend syntax is `{{ "{{" }}label{{ "}}" }}`
+  and Helm would try to evaluate every one of them. `.Files.Get` does not template what it returns,
+  so the dashboard stays valid JSON that can be linted, imported and edited in Grafana on its own. */}}
+  rta-overview.json: |
+{{ .Files.Get "dashboards/rta-overview.json" | indent 4 }}
+{{- end }}

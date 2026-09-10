@@ -1,0 +1,120 @@
+{{ template "chart.header" . }}
+
+{{ template "chart.description" . }}
+
+{{ template "chart.versionBadge" . }}{{ template "chart.typeBadge" . }}{{ template "chart.appVersionBadge" . }}
+
+## What this deploys
+
+rta's documentation names three worlds. In the first, the agent runs on your machine as you. In the second, it runs on your machine as something narrower. In the third it runs somewhere else entirely, with no credentials of its own, reaching your environments only through rta. The first two are a setting in the agent. The third is a deployment, and this chart is it.
+
+Its unit is the **instance, not the release**. One server for everyone is what the design rejects: a shared instance costs per-person access control, a record that can say who did what, live consent that reaches the right person, `rta use`, and blast radius. So a platform team owns one release, and adding a person is one entry under `servers`, layered over `serverDefaults`.
+
+Per instance: a Deployment, a Service, a ServiceAccount, a PersistentVolumeClaim, a ConfigMap, the token and roster Secrets, and optionally RBAC, an Ingress or HTTPRoute, a NetworkPolicy, a metrics Service and a ServiceMonitor.
+
+**This README is the values reference.** The decisions to make before setting any of them, the posture worth deploying, how to give an instance access to the cluster it runs in, and what changes on day two are in [Kubernetes](https://github.com/this-is-tobi/rta/blob/main/docs/30-boundary/80-kubernetes.md).
+
+## Quickstart
+
+```bash
+helm install rta oci://ghcr.io/this-is-tobi/rta/rta-chart \
+  --namespace rta --create-namespace \
+  --values my-values.yaml
+```
+
+A minimal `my-values.yaml` for one person authenticating through an IdP:
+
+```yaml
+servers:
+  tobi:
+    host: rta-tobi.example.com     # the Ingress host AND the operator identity
+    roots: ["/work"]               # required: the path root otherwise defaults to "/"
+    auth:
+      oidc:
+        enabled: true
+        issuer: https://id.example.com
+        audience: rta
+        subjects: ["tobi@example.com"]
+    operators:
+      enabled: true
+      keys:
+        tobi:
+          publicKey: "…"           # `rta operator status` prints the line to paste
+    consent:
+      enabled: true
+    ingress:
+      enabled: true
+      className: nginx
+      tlsSecretName: rta-tobi-tls
+```
+
+Values combinations that rta would refuse at startup are refused at render time instead, naming the key to fix — an OIDC issuer with no audience, `consent` without `operators`, an empty `roots`, a token under 16 characters, an operator URL that is not `https://`.
+
+Setting up the identity provider is its own subject, including the Keycloak audience mapper without which every token is rejected: see [OIDC](https://github.com/this-is-tobi/rta/blob/main/docs/30-boundary/70-oidc.md).
+
+## Two things in the logs that look wrong and are not
+
+**`… is group-readable — anyone in that group can authenticate as every label it holds`, on every start.** This is the chart working. Kubernetes writes Secret volume files owned by `root`; the container runs as a non-root user. The obvious fix, `defaultMode: 0400`, is the wrong one: an owner-only file owned by root is one the process cannot open at all, trading a permission refusal for a missing credential. The chart mounts `0440` with an `fsGroup`, and rta leaves group-read outside its refusal mask precisely so a shared-group file can hand a credential to a service account. It warns and starts.
+
+**`rta doctor` reporting the data directory's permissions.** `fsGroup` makes the volume group-writable, and that is what makes it writable by the container at all. A doctor finding, not a startup refusal.
+
+## Storage, replicas and access modes
+
+`replicas: 1` and `strategy: Recreate` are not defaults — they are not values at all.
+
+Two pods on one ReadWriteOnce volume cannot co-mount it. Two pods on separate volumes hold divergent grant rosters and split the record, so a grant issued over the operator channel lands on one of them and the audit trail answers questions *wrongly* rather than not at all. And a rolling update on a single RWO volume deadlocks, because the new pod waits for a volume the old one has not released.
+
+**ReadWriteMany is refused.** It would remove the deadlock and change none of the rest: two rta processes on one data directory still split the record. A shared-writer volume here makes a claim about the workload that is not true, and invites the conclusion that replicas can be raised — which this chart cannot catch, because `replicas` is not a value it reads. If RWX is the only storage class you have, set `persistence.existingClaim` to a claim you made yourself; that keeps the decision with the person who knows their storage.
+
+There is deliberately no switch for running without a volume either. The grants and the record live there, and a restart without them is a machine with no memory of what you allowed.
+
+## OpenShift
+
+Set `openShift.enabled: true`. The chart then omits `runAsUser`, `runAsGroup` and `fsGroup` rather than setting them: the `restricted-v2` SCC assigns a UID from the namespace's own range and refuses a pod asking for one outside it, so the 65532 both official images run as — correct on every other distribution — is what would stop the pod being admitted. With the fields removed, SCC admission fills all three in, the Secret files stay readable through the group the process actually runs with, and the SCC's own `fsGroup` strategy chowns the data volume.
+
+The Ingress is turned into a Route by the ingress operator, so no separate template is needed.
+
+## Observability
+
+`--observe` binds a **second listener** carrying `/livez`, `/readyz`, `/healthz` and `/metrics`. It is separate from the MCP listener on purpose: bearer authentication wraps the whole protocol handler there, and open paths beside it would turn a structural property into a matter of route matching. On the MCP port every path answers `401`, including `/livez`.
+
+The probes are open and target that second port. `/livez` consults nothing — a liveness probe wired to the store would ask for a restart that comes back to the same detached volume. `/readyz` writes to the data directory and reports whether the record can be written at all, which is what notices a volume that went read-only under a running server.
+
+`/metrics` sits behind the **same bearer check MCP does**. Be plain about what that means: there is one verifier, so a token that can read the counters is a token that can call the protocol. Binding the observation port privately is the outer control and the token is the inner one — keep the scraper off the MCP port with a NetworkPolicy rather than assuming this credential is metrics-only. With `observability.serviceMonitor.enabled`, the chart points `bearerTokenSecret` at the token labelled `observability.serviceMonitor.tokenLabel`, and refuses to render a ServiceMonitor that has nowhere to read a credential from.
+
+### The bundled dashboard
+
+`grafanaDashboard.enabled` ships a Grafana dashboard as a ConfigMap for a sidecar to pick up — one for the whole release, with an instance variable rather than a copy per server. Three rows, in the order an operator actually asks them:
+
+- **Is the record trustworthy** — `rta_record_intact` is the series to alert on. A record that stops verifying is either a bug or somebody editing it. Beside it: calls parked waiting for a person, and what the record weighs on disk.
+- **What agents are doing** — calls by outcome (`ran` / `failed` / `refused`), refusals by capability, busiest capabilities, calls by agent. `refused` is the boundary biting, not an error rate.
+- **What authorised it** — calls by `open` / `grant` / `approved` / `declined` / `blocked` / `operator`, and the grants in force right now. That last table is the one to read before a review, and it should be shorter than you expect.
+
+It needs the metrics to actually reach Prometheus, so `observability.metrics.enabled` and `observability.serviceMonitor.enabled` too — and those need a token, because `/metrics` is authenticated.
+
+## The full image
+
+`ghcr.io/this-is-tobi/rta-full` carries every first-party plugin and every external tool, which makes it the widest reach rta has — the image *is* the plugin allowlist, and that one allows everything. For an instance an agent talks to unattended, build a narrow image with the plugins that job needs. For a homelab exercising `kube`, `cnpg` and the rest against real infrastructure, it is the honest choice, and `image.allowFullImage: true` lifts the refusal.
+
+It also requires `persistence.seedFromImage`. The full image records plugin **trust** inside its own data directory, and this chart's volume mounts over that path — without seeding, every plugin comes up `untrusted`, `rta cnpg list` answers `Unknown command "cnpg"`, and it reads as a broken image rather than a hidden file. An init container copies the image's data directory into the volume once, on first start.
+
+`plugins.allow` renders `RTA_ALLOW_PLUGINS`, which answers a different question: whether a plugin may reach a credential location. Only an image using rta's `docker-entrypoint.sh` reads it.
+
+## Kubernetes secret references
+
+`serviceAccount.automountServiceAccountToken` defaults to `false`, and `secretRefs` — which narrows the instance's Role to named secrets — does nothing on the default image. rta resolves a `kube:<secret>/<key>` reference by shelling out to `kubectl` against a kubeconfig naming a context; the published narrow image is distroless and has neither. Those values earn their place on a derived image that ships `kubectl` and a kubeconfig, where they are what keeps one instance from reading another person's credentials.
+
+## Values
+
+{{ template "chart.valuesSection" . }}
+
+{{ template "chart.maintainersSection" . }}
+
+## Sources
+
+{{ template "chart.homepageLine" . }}
+
+**Source code:**
+{{ template "chart.sourcesList" . }}
+
+{{ template "helm-docs.versionFooter" . }}

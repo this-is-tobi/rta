@@ -1,0 +1,28 @@
+{{- if .Values.enabled }}
+{{- range $name, $entry := .Values.servers }}
+{{- $s := include "rta.server.values" (dict "root" $ "server" $entry) | fromYaml }}
+{{- if and $s.enabled (not $s.existingConfigMap) }}
+---
+{{- /* config.yaml, rendered from values.
+
+The alternative - taking an existingConfigMap only - would have avoided describing rta's config
+shape twice, once in this chart's values schema and once in rta's own. Both are offered instead,
+and the duplication is avoided a different way: `rta config schema` prints the config file's JSON
+Schema, generated beside the structs and kept honest by a test that walks them in both directions,
+and hack/sync-config-schema.sh embeds that output under this key in values.schema.json. The schema
+here is a copy, but it is a copy nothing edits by hand, and CI fails when it stops matching.
+
+What that schema states is the envelope. A `plugins:` section holds keys each plugin declares
+about itself, so those stay open objects - `rta doctor` and `rta explain` remain the deep
+validators, and the Kind-cluster install test is where they get to run against what this renders. */}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "rta.serverFullname" (dict "root" $ "name" $name) }}
+  labels: {{- include "rta.labels" (dict "root" $ "name" $name) | nindent 4 }}
+data:
+  config.yaml: |
+    {{- toYaml $s.config | nindent 4 }}
+{{- end }}
+{{- end }}
+{{- end }}

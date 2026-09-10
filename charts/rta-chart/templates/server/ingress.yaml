@@ -1,0 +1,52 @@
+{{- if .Values.enabled }}
+{{- range $name, $entry := .Values.servers }}
+{{- $s := include "rta.server.values" (dict "root" $ "server" $entry) | fromYaml }}
+{{- if and $s.enabled $s.ingress.enabled }}
+{{- $fullname := include "rta.serverFullname" (dict "root" $ "name" $name) }}
+---
+{{- /* TLS terminates here. `rta mcp serve --http` binds plain TCP by design - network exposure is
+the operator's job, not the flag's - so the certificate in front of it is this resource.
+
+The host is the same string as `--operators-url`, which is not a coincidence to tidy up later: that
+URL is signed into every operator request as this server's identity, so if the two ever disagree,
+operators are verifying against a server that is not the one answering.
+
+On OpenShift this Ingress is turned into a Route by the ingress operator, so no separate template
+is needed there. */}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $fullname }}
+  labels: {{- include "rta.labels" (dict "root" $ "name" $name) | nindent 4 }}
+    {{- with $s.ingress.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with $s.ingress.annotations }}
+  annotations: {{- tpl (toYaml .) $ | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with $s.ingress.className }}
+  ingressClassName: {{ . | quote }}
+  {{- end }}
+  {{- if $s.ingress.tls }}
+  tls: {{- toYaml $s.ingress.tls | nindent 2 }}
+  {{- else if $s.ingress.tlsSecretName }}
+  tls:
+  - hosts:
+    - {{ $s.host | quote }}
+    secretName: {{ $s.ingress.tlsSecretName | quote }}
+  {{- end }}
+  rules:
+  - host: {{ $s.host | quote }}
+    http:
+      paths:
+      - path: {{ $s.ingress.path }}
+        pathType: {{ $s.ingress.pathType }}
+        backend:
+          service:
+            name: {{ $fullname }}
+            port:
+              number: {{ $s.service.port }}
+{{- end }}
+{{- end }}
+{{- end }}

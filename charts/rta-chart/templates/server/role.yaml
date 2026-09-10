@@ -1,0 +1,35 @@
+{{- if .Values.enabled }}
+{{- range $name, $entry := .Values.servers }}
+{{- $s := include "rta.server.values" (dict "root" $ "server" $entry) | fromYaml }}
+{{- if and $s.enabled (or $s.secretRefs $s.extraRules) }}
+---
+{{- /* Narrowed to the named secrets this instance's profiles actually read, never `secrets: ["*"]`.
+
+Read the caveat before enabling this. rta resolves a `kube:<secret>/<key>` reference by shelling
+out to `kubectl`, against a kubeconfig with a named context - it does not talk to the API server
+directly and does not pick up an in-cluster ServiceAccount token on its own. The published narrow
+image is distroless: no shell, no kubectl. So on the default image these rules grant something
+nothing in the pod can use, and the mounted token is exposure without a purpose - which is why
+serviceAccount.automountServiceAccountToken defaults to false.
+
+They earn their place on a derived image that ships kubectl and a kubeconfig naming a context (the
+"share the image" recipe builds exactly that kind of image). Setting secretRefs there is what keeps
+one instance from reading another person's credentials. */}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "rta.serverFullname" (dict "root" $ "name" $name) }}
+  labels: {{- include "rta.labels" (dict "root" $ "name" $name) | nindent 4 }}
+rules:
+{{- with $s.secretRefs }}
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get"]
+  resourceNames: {{- toYaml . | nindent 2 }}
+{{- end }}
+{{- with $s.extraRules }}
+{{- toYaml . | nindent 0 }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
