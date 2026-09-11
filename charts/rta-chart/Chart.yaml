@@ -1,8 +1,8 @@
 apiVersion: v2
 name: rta-chart
 type: application
-version: 0.1.0
-appVersion: "0.16.0"
+version: 0.2.0
+appVersion: "0.17.0"
 description: Deploy rta MCP servers into Kubernetes, one instance per person.
 # Floor set by the core APIs the chart renders. The Gateway API resources
 # additionally need the gateway.networking.k8s.io CRDs installed in the cluster,
@@ -14,10 +14,10 @@ annotations:
   artifacthub.io/category: security
   artifacthub.io/license: Apache-2.0
 keywords:
-- rta
-- mcp
-- security
-- ai-agents
+  - rta
+  - mcp
+  - security
+  - ai-agents
 # No `dependencies:` key, not even an empty one. Helm treats its mere presence as something to
 # resolve: `helm dependency update` then writes a Chart.lock holding `dependencies: []` and a
 # timestamp, and both chart-testing and release-helm-local.yml (which greps Chart.yaml for the key
@@ -25,8 +25,8 @@ keywords:
 # dependencies. This chart renders only its own templates; when it gains a real dependency, the key
 # comes back with that dependency in it.
 sources:
-- https://github.com/this-is-tobi/rta
+  - https://github.com/this-is-tobi/rta
 maintainers:
-- name: this-is-tobi
-  email: this-is-tobi@proton.me
-  url: https://this-is-tobi.com
+  - name: this-is-tobi
+    email: this-is-tobi@proton.me
+    url: https://this-is-tobi.com
