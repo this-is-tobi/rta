@@ -69,6 +69,7 @@ jobs:
       pull-requests: read
     outputs:
       code: ${{ steps.diff.outputs.code }}
+      chart: ${{ steps.diff.outputs.chart }}
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -77,15 +78,26 @@ jobs:
       run: |-
         files=$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" --paginate --jq '.[].filename')
         code=false
+        chart=false
         while IFS= read -r f; do
           [ -z "$f" ] && continue
           case "$f" in
             docs/*|*.md|LICENSE|NOTICE) ;;
             *) code=true ;;
           esac
+          # Its own classification rather than a branch of the one above: the
+          # chart's README is generated from values.yaml, so a *.md change
+          # under charts/ is docs-only for the Go pipeline and very much not
+          # docs-only for helm-docs, which fails on exactly that file being
+          # stale. The two answers are allowed to disagree.
+          case "$f" in
+            charts/*|.github/ct.yaml) chart=true ;;
+          esac
         done <<< "$files"
         echo "changed files are docs-only: $([ "$code" = false ] && echo yes || echo no)"
+        echo "chart touched: $chart"
         echo "code=$code" >> "$GITHUB_OUTPUT"
+        echo "chart=$chart" >> "$GITHUB_OUTPUT"
 
   lint:
     name: Lint
@@ -300,6 +312,93 @@ jobs:
     - name: Cross-compile
       run: make cross
 
+  # The chart deploys the boundary, so a chart that renders wrong is a boundary
+  # that is wrong — and until now nothing checked it anywhere except a Makefile
+  # target somebody had to remember to run. `ct lint` renders and lints it
+  # against the fixtures in charts/rta-chart/ci/; the docs half of the same
+  # workflow re-runs helm-docs against a read-only mount, so a values.yaml
+  # change never reflected in the chart's README fails here instead of shipping
+  # a values table that lies.
+  lint-chart:
+    name: Lint chart
+    needs: changes
+    if: ${{ needs.changes.outputs.chart == 'true' }}
+    uses: this-is-tobi/github-workflows/.github/workflows/lint-helm.yml@v0
+    permissions:
+      contents: read
+    with:
+      CT_CONF_PATH: .github/ct.yaml
+      CHARTS_DIR: charts
+
+  # values.schema.json is what turns a bad value into a refusal at `helm
+  # install` time rather than a CrashLoopBackOff twenty seconds later, which
+  # only holds while the schema and the values files actually agree. Both are
+  # checked: values.yaml because it is what a consumer starts from, and the ci
+  # fixture because it is what the other two gates render and install.
+  lint-chart-schema:
+    name: Lint chart schema
+    needs: changes
+    if: ${{ needs.changes.outputs.chart == 'true' }}
+    uses: this-is-tobi/github-workflows/.github/workflows/lint-helm-schema.yml@v0
+    permissions:
+      contents: read
+    with:
+      CHART_PATH: charts/rta-chart
+      VALUES_FILES: values.yaml,ci/test-values.yaml
+
+  # The half of the schema no reusable workflow can check. values.schema.json
+  # embeds `rta config schema`, so a new config field or a changed type in the
+  # Go source quietly turns the chart's schema into a description of an older
+  # rta — and lint-chart-schema above, which validates values *against* that
+  # schema, stays green the entire time. Hence the `code` half of the
+  # condition: this is the one chart gate a pull request that never touches
+  # charts/ can break.
+  #
+  # Inline rather than a workflow call because there is nothing to call: the
+  # check regenerates the schema from this module, so it needs a checkout and a
+  # Go toolchain. Both actions are pinned by commit, the way the reusable
+  # workflows pin theirs — rta has no Renovate, so these do not float on their
+  # own and are moved by hand when they need moving.
+  chart-schema-drift:
+    name: Check chart schema drift
+    needs: changes
+    if: ${{ needs.changes.outputs.chart == 'true' || needs.changes.outputs.code == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+    - name: Checks-out repository
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+    - name: Set up Go
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version-file: go.mod
+
+    - name: Check the embedded config schema
+      run: make chart-schema-check
+
+  # Rendering is not installing. `ct lint` catches a template that will not
+  # render and says nothing about one that renders into manifests the API
+  # server rejects, or into a pod that never becomes Ready — which is where a
+  # chart that got rta's own config wrong would land, since rta refuses a bad
+  # config at startup rather than limping on with it. This installs the
+  # fixture's two instances into a throwaway Kind cluster and waits for them.
+  #
+  # It installs the *released* image, since the fixture leaves image.tag at the
+  # chart's appVersion: this gate answers "does the chart work", not "does this
+  # pull request's rta work" — build-docker and test-docker above own that
+  # half.
+  test-chart:
+    name: Test chart
+    needs: changes
+    if: ${{ needs.changes.outputs.chart == 'true' }}
+    uses: this-is-tobi/github-workflows/.github/workflows/test-helm.yml@v0
+    permissions:
+      contents: read
+    with:
+      CT_CONF_PATH: .github/ct.yaml
+
   # rta is a security tool. A credential in its own history would be the kind
   # of thing it exists to find in yours.
   scan-secrets:
@@ -349,6 +448,10 @@ jobs:
     - test-docker
     - test-docker-arm64
     - cross
+    - lint-chart
+    - lint-chart-schema
+    - chart-schema-drift
+    - test-chart
     - scan-secrets
     - scan-deps
     steps:

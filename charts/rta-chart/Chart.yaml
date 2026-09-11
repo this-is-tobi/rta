@@ -18,7 +18,12 @@ keywords:
 - mcp
 - security
 - ai-agents
-dependencies: []
+# No `dependencies:` key, not even an empty one. Helm treats its mere presence as something to
+# resolve: `helm dependency update` then writes a Chart.lock holding `dependencies: []` and a
+# timestamp, and both chart-testing and release-helm-local.yml (which greps Chart.yaml for the key
+# before deciding whether to resolve) would do that work on every lint and every publish, for zero
+# dependencies. This chart renders only its own templates; when it gains a real dependency, the key
+# comes back with that dependency in it.
 sources:
 - https://github.com/this-is-tobi/rta
 maintainers:

@@ -1,0 +1,22 @@
+# Configuration for chart-testing (https://github.com/helm/chart-testing), which drives both chart
+# gates in ci.yml: `ct lint` and `ct install` against a throwaway Kind cluster.
+#
+# ct lints and installs each chart with the values files it finds in `charts/rta-chart/ci/`, in
+# place of the chart's own values.yaml. That indirection is load-bearing here rather than
+# incidental: values.yaml ships `servers: {}`, and templates/validation.yaml fails deliberately on
+# it, because this chart's unit is the instance and a release with no servers deploys nothing. Run
+# against the defaults, both gates would report the chart broken.
+target-branch: main
+chart-dirs:
+- charts
+helm-extra-args: --timeout 600s
+
+# The chart's version is bumped by CD, not by hand: update-helm-chart derives it from the app
+# release and commits it (see .github/workflows/cd.yml). Demanding a manual bump in the pull request
+# that changes a template would put a second version brain in the loop, disagreeing with the first.
+check-version-increment: false
+
+# One unauthenticated GitHub API lookup per maintainer, from a runner whose IP is shared with
+# everybody else's jobs. When it rate-limits, the gate fails for a reason that has nothing to do
+# with the chart, and says nothing about whether the chart is correct.
+validate-maintainers: false
