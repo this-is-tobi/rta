@@ -34,6 +34,8 @@ Which is why the security chapters below are not an appendix, and why every one 
 - [The record](./docs/30-boundary/40-audit-trail.md) *- What agents asked for, what they got, and what is waiting on you*
 - [Team policy](./docs/30-boundary/50-team-policy.md) *- A ceiling a repository can commit, which can only ever subtract*
 - [Connecting your AI tool](./docs/30-boundary/60-ai-clients.md) *- Claude Code, VS Code, Cursor, Codex, Gemini, Copilot, and anything else that speaks MCP*
+- [OIDC](./docs/30-boundary/70-oidc.md) *- Naming the person behind a call with the identity provider you already have: what rta verifies, a Keycloak walkthrough, and where the failure messages go*
+- [Kubernetes](./docs/30-boundary/80-kubernetes.md) *- Deploying the boundary as a chart, one instance per person: the decisions to make before setting a value, the posture worth choosing, and day two*
 
 *Plugins*
 - [Using plugins](./docs/40-plugins/10-plugins.md) *- Discovery, trust, indexes, install and upgrade*
