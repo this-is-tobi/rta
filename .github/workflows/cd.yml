@@ -140,3 +140,82 @@ jobs:
   # produced this, and what is in it" is a longer answer somebody is more
   # likely to want. A push from there is attested exactly as a push from here
   # was; what changed is who decides when it happens.
+
+  # The chart ships on its own version stream, not the app's. Its unit of
+  # change is a different thing: a values default, a template fix or a new
+  # option is a chart release with no new rta in it, and pinning the two
+  # together would mean either inventing app releases for chart fixes or
+  # stranding chart fixes until the next one. update-helm-chart is the version
+  # brain — UPGRADE_TYPE defaults to 'auto', which mirrors the app's own level
+  # off the appVersion delta, so an app minor moves the chart's minor — and it
+  # commits the bump, which is what keeps Chart.yaml in git saying what was
+  # actually published.
+  #
+  # RUN_MODE local commits straight onto main instead of opening a pull
+  # request. Pushed with the App token, that commit re-triggers this workflow,
+  # which is harmless: release-please sees a lone `chore` commit, reports
+  # release-created false, and all three jobs here skip. The alternative — a
+  # pull request nobody is waiting on, gating a release that already happened —
+  # is the worse end of that trade.
+  bump-chart:
+    name: Bump chart version
+    needs: [release]
+    if: ${{ needs.release.outputs.release-created == 'true' }}
+    uses: this-is-tobi/github-workflows/.github/workflows/update-helm-chart.yml@v0
+    permissions:
+      contents: write
+      # Granted and unused, exactly as `packages: write` is on `binaries`
+      # above: update-helm-chart's job declares it for the pull request
+      # RUN_MODE 'called' opens, a permissions block cannot be conditional, and
+      # GitHub refuses to start a workflow whose nested job requests more than
+      # its caller grants. Local mode never opens one.
+      pull-requests: write
+    with:
+      RUN_MODE: local
+      CHART_DIR: charts
+      CHART_NAME: rta-chart
+      APP_VERSION: ${{ needs.release.outputs.version }}
+    secrets:
+      APP_CLIENT_ID: ${{ secrets.APP_CLIENT_ID }}
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+
+  # REGISTRY and REPOSITORY are left at their defaults — ghcr.io and
+  # github.repository — because those already resolve to
+  # ghcr.io/this-is-tobi/rta/rta-chart, the address docs/30-boundary/80-kubernetes.md
+  # and the chart's own README tell people to `helm install` from. Restating
+  # them here would be a second place for that to drift.
+  chart:
+    name: Release Helm chart
+    needs: [bump-chart]
+    uses: this-is-tobi/github-workflows/.github/workflows/release-helm-local.yml@v0
+    permissions:
+      contents: read
+      packages: write
+    with:
+      CHARTS_DIR: ./charts
+      CHART_NAME: rta-chart
+      # The bump commit, not the commit that triggered this run. Packaging the
+      # latter would publish whatever version Chart.yaml held *before*
+      # bump-chart wrote to it, leaving the registry and git disagreeing about
+      # what a given rta-chart version contains.
+      CHECKOUT_REF: ${{ needs.bump-chart.outputs.commit-sha }}
+
+  # Same reasoning as attest-binaries and attest-docker, for the artifact that
+  # decides what the other two become at runtime: a chart names the image, the
+  # roots, the token and operator keys and the consent posture of every
+  # instance it deploys, so "which pipeline built this, from which commit" is
+  # at least as worth answering here as for a binary. Bound to the digest
+  # release-helm-local read back out of `helm push`, never to the tag — see
+  # attest-helm.yml's own notes for why a tag would defeat the point.
+  attest-chart:
+    name: Attest Helm chart
+    needs: [chart]
+    uses: this-is-tobi/github-workflows/.github/workflows/attest-helm.yml@v0
+    permissions:
+      packages: write
+      id-token: write
+      attestations: write
+    with:
+      CHARTS: ${{ needs.chart.outputs.published-charts }}
+      PROVENANCE: true
+      SIGN: true
