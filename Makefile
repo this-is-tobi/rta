@@ -305,8 +305,8 @@ chart-schema-check: ## Fail if the chart's embedded config schema has drifted
 	@python3 -c "$$CHART_SCHEMA_PY" $(CHART_DIR)/values.schema.json $(BUILDDIR)/config.schema.json --check
 
 chart-lint: chart-schema-check ## Lint the chart and validate values.yaml against its schema
-	helm lint $(CHART_DIR) --values $(CHART_DIR)/test-values.yaml
-	helm template rta $(CHART_DIR) --values $(CHART_DIR)/test-values.yaml >/dev/null
+	helm lint $(CHART_DIR) --values $(CHART_DIR)/ci/test-values.yaml
+	helm template rta $(CHART_DIR) --values $(CHART_DIR)/ci/test-values.yaml >/dev/null
 
 chart-docs: ## Regenerate the chart's README from values.yaml
 	docker run --rm --volume "$(PWD)/charts:/helm-docs" -u "$$(id -u):$$(id -g)" \

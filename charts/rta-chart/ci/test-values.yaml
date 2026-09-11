@@ -1,6 +1,12 @@
-# Values used by `ct install` in a Kind cluster, and the fastest local smoke test:
+# Values used by `ct lint` and `ct install` in a Kind cluster, and the fastest local smoke test:
 #
-#   helm template rta charts/rta-chart -f charts/rta-chart/test-values.yaml
+#   helm template rta charts/rta-chart -f charts/rta-chart/ci/test-values.yaml
+#
+# The `ci/` directory is not decoration: chart-testing looks for `ci/*-values.yaml` under the chart
+# and, finding any, runs each of them *instead of* the chart's own values.yaml. That is what this
+# file needs to be reachable at all - values.yaml ships `servers: {}`, which templates/validation.yaml
+# deliberately fails on, so a ct run that never found this file would report the chart broken rather
+# than untested. Renaming it out of that glob silently disables both gates.
 #
 # Deliberately exercises the awkward combinations rather than the pretty ones: two instances that
 # inherit different halves of serverDefaults, both credentials at once on one of them, the operator
