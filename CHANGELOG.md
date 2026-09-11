@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.17.0](https://github.com/this-is-tobi/rta/compare/v0.16.0...v0.17.0) (2026-09-11)
+
+
+### Features
+
+* **cd:** publish and attest the chart on every release ([06c9e42](https://github.com/this-is-tobi/rta/commit/06c9e4202f3f1c65cd7a3fea543c49368aa1851b))
+* **chart:** a Helm chart for rta MCP servers, one instance per person ([e59ccb7](https://github.com/this-is-tobi/rta/commit/e59ccb7cd50427da178d3c9c49030286ef331b87))
+
 ## [0.16.0](https://github.com/this-is-tobi/rta/compare/v0.15.0...v0.16.0) (2026-09-09)
 
 
