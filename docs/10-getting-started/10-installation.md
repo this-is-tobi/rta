@@ -98,6 +98,22 @@ Two shapes of use:
 - **An MCP server** — [In a container, for a hardened server](../30-boundary/20-mcp.md#in-a-container-for-a-hardened-server) has the full `docker run` recipe: read-only root, dropped capabilities, no network by default.
 - **A one-shot command**, anywhere `docker run` reaches, including inside a cluster: `kubectl run --rm -it rta-debug --image=ghcr.io/this-is-tobi/rta:latest -- net probe db.internal:5432`.
 
+## Kubernetes
+
+```bash
+helm install rta oci://ghcr.io/this-is-tobi/rta/rta-chart \
+  --namespace rta --create-namespace \
+  --values rta-values.yaml
+```
+
+The chart deploys rta as an MCP server that other machines reach — one instance per person, each authenticating as that person. It is published the way the image is: with every release, to the same registry, with SLSA provenance and a cosign signature bound to its digest. It moves on its own version stream, and the rta it deploys is its `appVersion`. Verify it the way you verify the image:
+
+```bash
+gh attestation verify oci://ghcr.io/this-is-tobi/rta/rta-chart:<version> --owner this-is-tobi
+```
+
+This is the third of the three worlds [What rta actually bounds](../30-boundary/10-the-boundary.md) describes — the agent runs somewhere else, holds no credentials of its own, and reaches your environments only through rta — and unlike the other two it is a deployment rather than a setting. [Kubernetes](../30-boundary/80-kubernetes.md) is that deployment: the decisions to make before setting any value, the posture worth deploying, and what changes on day two. The chart's own README is the values reference.
+
 ## Verify
 
 ```bash
@@ -206,3 +222,4 @@ Exact paths differ per platform. `rta doctor` prints the real ones rather than t
 
 - [Quick start](./20-quickstart.md) — the first ten minutes
 - [MCP and the safety gate](../30-boundary/20-mcp.md) — if you came here to connect an agent
+- [Kubernetes](../30-boundary/80-kubernetes.md) — if the agent runs somewhere else and reaches you only through rta
