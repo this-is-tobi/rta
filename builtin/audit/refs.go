@@ -9,6 +9,12 @@ import "github.com/this-is-tobi/rta/pkg/findings"
 // the source checked was a secondary mirror instead. A hardening tool that
 // cites the wrong control is worse than one that cites none, because the
 // wrong one still reads as authoritative.
+
+// The one Source/Control citation here with a public page to link. CIS
+// gates its benchmark and the NSA/CISA guidance is a PDF whose location has
+// moved between versions, so those two keep an empty Link on purpose.
+const podSecurityStandards = "https://kubernetes.io/docs/concepts/security/pod-security-standards/"
+
 var (
 	refCleartext      = findings.Reference{OWASP: findings.OWASPCrypto, CWE: "CWE-319", Title: "Cleartext Transmission of Sensitive Information"}
 	refWeakCrypto     = findings.Reference{OWASP: findings.OWASPCrypto, CWE: "CWE-327", Title: "Use of a Broken or Risky Cryptographic Algorithm"}
@@ -51,9 +57,9 @@ var (
 	refRBACWildcard = findings.Reference{Source: "CIS Kubernetes Benchmark 2.0.1", Control: "5.1.3",
 		Title: "Minimize wildcard use in Roles and ClusterRoles"}
 	refPodSecurityHostNS = findings.Reference{Source: "Kubernetes Pod Security Standards (Baseline)", Control: "Host Namespaces",
-		Title: "hostNetwork, hostPID and hostIPC must not be true"}
+		Title: "hostNetwork, hostPID and hostIPC must not be true", Link: podSecurityStandards}
 	refPodSecurityNonRoot = findings.Reference{Source: "Kubernetes Pod Security Standards (Restricted)", Control: "Running as Non-root",
-		Title: "runAsNonRoot must be true, or the effective runAsUser must not be 0"}
+		Title: "runAsNonRoot must be true, or the effective runAsUser must not be 0", Link: podSecurityStandards}
 	refResourcePolicies = findings.Reference{Source: "NSA/CISA Kubernetes Hardening Guidance v1.0", Control: "Resource policies",
 		Title: "LimitRange and ResourceQuota limit per-namespace resource usage; CIS Kubernetes " +
 			"Benchmark 2.0.1 has no numbered control for this — confirmed absent by reading every " +

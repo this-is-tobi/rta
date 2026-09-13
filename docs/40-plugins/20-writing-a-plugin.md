@@ -207,7 +207,7 @@ p.AddAs("stations", "nearby stations", listStations, nil)
 
 It is optional — `Put` and `Add` work, and `Key()` falls back to the title — but then rewording a heading silently renames the handle. `sdktest` says so.
 
-If your plugin **grades** something — a realm's authentication settings, a repository's release hygiene — build the result with [`pkg/findings`](../../pkg/findings/) rather than a table of your own. A `findings.Report` collects one finding per check, each carrying a status, a group and the control it cites (an OWASP Top 10:2025 category with its CWE, or a named framework and control), and renders the same two ways `rta audit` does: `Table(true)` for the compact view and the tile, `Page` for the sectioned detail page with the references at the end. A reader who has run one audit can read yours, and the citation discipline comes with the type: verify every reference against its primary source before shipping it, because a wrong control reads as authoritative.
+If your plugin **grades** something — a realm's authentication settings, a repository's release hygiene — build the result with [`pkg/findings`](../../pkg/findings/) rather than a table of your own. A `findings.Report` collects one finding per check, each carrying a status, a group and the control it cites (an OWASP Top 10:2025 category with its CWE, or a named framework and control with a link to where it is read), and renders the same two ways `rta audit` does: `Table(true)` for the compact view and the tile, `Page` for the sectioned detail page with the references at the end. A reader who has run one audit can read yours, and the citation discipline comes with the type: verify every reference against its primary source before shipping it, because a wrong control reads as authoritative.
 
 ## Publishing it
 
@@ -288,6 +288,7 @@ Read them in this order and each one adds exactly one idea:
 | [`vault`](https://github.com/this-is-tobi/rta-plugins/tree/main/plugins/vault) | A plugin where almost everything is a secret, and what that does to every declaration |
 | [`etcd`](https://github.com/this-is-tobi/rta-plugins/tree/main/plugins/etcd) · [`qdrant`](https://github.com/this-is-tobi/rta-plugins/tree/main/plugins/qdrant) | Tree views, and a plugin whose whole subject is a keyspace |
 | [`docker`](https://github.com/this-is-tobi/rta-plugins/tree/main/plugins/docker) | A local daemon socket rather than a network endpoint |
+| [`redis`](https://github.com/this-is-tobi/rta-plugins/tree/main/plugins/redis) | Speaking a wire protocol in-package when the client library would triple the binary |
 
 `rta plugin new <name>` scaffolds one that builds, passes its conformance suite and runs, so none of these is where you start — they are where you look when your plugin needs the thing they already do.
 
