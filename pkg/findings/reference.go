@@ -32,6 +32,15 @@ type Reference struct {
 	Control string
 
 	Title string // what the cited control actually says
+
+	// Link is where the control is read, for the Source/Control shape: an
+	// RFC section, a guide's heading. A CWE needs none — every weakness has
+	// one stable page and URL derives it — and a framework whose text sits
+	// behind a registration gate (a CIS Benchmark) leaves it empty rather
+	// than pointing at a mirror that goes stale or, worse, at the wrong
+	// version. Verify it the way the citation itself was verified: a link
+	// that lands somewhere else is a wrong citation with a click attached.
+	Link string
 }
 
 // String is the compact citation shown in a findings row.
@@ -45,15 +54,18 @@ func (r Reference) String() string {
 	return ""
 }
 
-// URL points at the reference's own lookup page. CWEs have one stable public
-// URL per weakness; a CIS Benchmark control does not (the benchmark itself
-// sits behind cisecurity.org's registration gate) and reports empty rather
-// than a link that goes stale or, worse, points at the wrong version.
+// URL points at the reference's own lookup page: Link when the citation
+// carries one, the weakness's page on cwe.mitre.org for a CWE, and empty
+// otherwise — a report with no link in a cell is better than one with a
+// link that lands somewhere else.
 func (r Reference) URL() string {
-	if r.CWE == "" {
-		return ""
+	switch {
+	case r.Link != "":
+		return r.Link
+	case r.CWE != "":
+		return "https://cwe.mitre.org/data/definitions/" + strings.TrimPrefix(r.CWE, "CWE-") + ".html"
 	}
-	return "https://cwe.mitre.org/data/definitions/" + strings.TrimPrefix(r.CWE, "CWE-") + ".html"
+	return ""
 }
 
 // The OWASP Top 10:2025 categories, titled as the edition titles them and

@@ -40,6 +40,19 @@ func TestReferenceURLOnlyForCWE(t *testing.T) {
 	}
 }
 
+// A Source/Control citation links where its text says so — an RFC section,
+// a guide's heading — and a CWE keeps deriving its own page, so a Link is
+// never needed where it could only be a copy of that.
+func TestALinkIsTheLookupWhenTheCitationCarriesOne(t *testing.T) {
+	rfc := Reference{Source: "RFC 9700", Control: "§2.4", Link: "https://www.rfc-editor.org/rfc/rfc9700.html#section-2.4"}
+	if got := rfc.URL(); got != rfc.Link {
+		t.Errorf("URL() = %q, want the link", got)
+	}
+	if got := (Reference{CWE: "CWE-319", Link: "https://example.test/override"}).URL(); got != "https://example.test/override" {
+		t.Errorf("an explicit link loses to the derived CWE page: %q", got)
+	}
+}
+
 // References dedupes on the rendered citation, not the CWE field — a report
 // mixing both shapes must not drop the CIS ones for having an empty CWE, and
 // must still collapse a control cited twice. A finding that cites nothing
