@@ -289,6 +289,7 @@ Read them in this order and each one adds exactly one idea:
 | [`etcd`](https://github.com/this-is-tobi/rta-plugins/tree/main/plugins/etcd) · [`qdrant`](https://github.com/this-is-tobi/rta-plugins/tree/main/plugins/qdrant) | Tree views, and a plugin whose whole subject is a keyspace |
 | [`docker`](https://github.com/this-is-tobi/rta-plugins/tree/main/plugins/docker) | A local daemon socket rather than a network endpoint |
 | [`redis`](https://github.com/this-is-tobi/rta-plugins/tree/main/plugins/redis) | Speaking a wire protocol in-package when the client library would triple the binary |
+| [`keycloak`](https://github.com/this-is-tobi/rta-plugins/tree/main/plugins/keycloak) | A plugin whose whole reason to exist is an audit: `pkg/findings` from a plugin, a representation decoded into a shape that has no field for the secret it carries, and a credential exchanged for a five-minute token on every call |
 
 `rta plugin new <name>` scaffolds one that builds, passes its conformance suite and runs, so none of these is where you start — they are where you look when your plugin needs the thing they already do.
 
