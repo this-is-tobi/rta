@@ -3,6 +3,8 @@ package audit
 import (
 	"path/filepath"
 	"strings"
+
+	"github.com/this-is-tobi/rta/pkg/findings"
 )
 
 // Grading a containerised rta against the recipe it was copied from.
@@ -217,13 +219,13 @@ func gradeContainer(r *agentReport, f agentFile, name string, d serverDecl) {
 		// deployment rather than a suspicious one. So it is told what to check
 		// and never accused of a misconfiguration rta cannot see.
 		if isOfficialNarrow(image) {
-			r.add(grpAgentServers, name, stFail,
+			r.Add(grpAgentServers, name, findings.Fail,
 				"containerised without "+strings.Join(missing, " and ")+", and the published image "+
 					"sets neither — with no config directory the path falls back to a "+
 					"working-directory file that is not honoured, so every profile, plugin and "+
 					"dashboard setting is silently ignored", refMisconfig)
 		} else {
-			r.add(grpAgentServers, name, stInfo,
+			r.Add(grpAgentServers, name, findings.Info,
 				"does not pass "+strings.Join(missing, " or ")+", so this depends on "+
 					orElseImage(image)+" setting them itself — if it does not, the config path "+
 					"falls back to a working-directory file that is not honoured and every profile "+
@@ -244,7 +246,7 @@ func gradeContainer(r *agentReport, f agentFile, name string, d serverDecl) {
 	// credential in the clear. With rta-full every gate still works. What
 	// changes is how much sits behind none of them.
 	if isOfficialFull(image) {
-		r.add(grpAgentServers, name, stWarn,
+		r.Add(grpAgentServers, name, findings.Warn,
 			"points the agent at rta-full, where every bundled plugin is trusted at build time "+
 				"and a read needs no grant — so a dozen plugins' read capabilities are reachable "+
 				"with no consent step, and the tool list an injected prompt can choose from is "+
@@ -259,7 +261,7 @@ func gradeContainer(r *agentReport, f agentFile, name string, d serverDecl) {
 	}
 
 	if dir := env["RTA_DATA_DIR"]; dir != "" && !mounted(runtimeArgs, dir) {
-		r.add(grpAgentServers, name, stWarn,
+		r.Add(grpAgentServers, name, findings.Warn,
 			"keeps its state at "+dir+" with nothing mounted there, so grants and the record are "+
 				"lost with the container — every restart is a machine with no memory of what you "+
 				"allowed", refMisconfig)
@@ -281,7 +283,7 @@ func gradeContainer(r *agentReport, f agentFile, name string, d serverDecl) {
 		absent = append(absent, "--security-opt no-new-privileges")
 	}
 	if len(absent) > 0 {
-		r.add(grpAgentServers, name, stWarn,
+		r.Add(grpAgentServers, name, findings.Warn,
 			"containerised without "+strings.Join(absent, ", ")+" — the documented recipe drops "+
 				"all of it because the server needs none of it", refExcessivePriv)
 		r.addFix("container-hardening", name+" — apply the hardening the recipe specifies",
@@ -293,7 +295,7 @@ func gradeContainer(r *agentReport, f agentFile, name string, d serverDecl) {
 	}
 
 	if len(flagValues(rtaArgs, "--root")) == 0 {
-		r.add(grpAgentServers, name, stWarn,
+		r.Add(grpAgentServers, name, findings.Warn,
 			"runs `mcp serve` with no --root, and the path root defaults to the working "+
 				"directory — which in a container is / unless the declaration says otherwise",
 			refExcessivePriv)
@@ -316,7 +318,7 @@ func gradeContainer(r *agentReport, f agentFile, name string, d serverDecl) {
 	// trains people to skim past it. Saying so when somebody did close the
 	// network costs nothing and is worth confirming.
 	if hasValue(runtimeArgs, "--network", "none") {
-		r.add(grpAgentServers, name, stOK,
+		r.Add(grpAgentServers, name, findings.OK,
 			"containerised with the network closed — the strongest setting, and it means every "+
 				"capability that reaches the network is off for this server", refExcessivePriv)
 	}

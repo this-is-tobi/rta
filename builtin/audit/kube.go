@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/this-is-tobi/rta/pkg/findings"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -18,13 +19,13 @@ import (
 // for a verb kubectl already has.
 
 var (
-	grpKubeRBAC     = group{"rbac", "rbac"}
-	grpKubePod      = group{"pod-security", "pod security"}
-	grpKubeQuota    = group{"resource-policy", "resource policy"}
-	grpKubeNetwork  = group{"network-policy", "network policy"}
-	kubeGroupOrder1 = []group{grpKubeRBAC}
-	kubeGroupOrder2 = []group{grpKubeQuota}
-	kubeGroupOrder3 = []group{grpKubeNetwork}
+	grpKubeRBAC     = findings.Group{ID: "rbac", Title: "rbac"}
+	grpKubePod      = findings.Group{ID: "pod-security", Title: "pod security"}
+	grpKubeQuota    = findings.Group{ID: "resource-policy", Title: "resource policy"}
+	grpKubeNetwork  = findings.Group{ID: "network-policy", Title: "network policy"}
+	kubeGroupOrder1 = []findings.Group{grpKubeRBAC}
+	kubeGroupOrder2 = []findings.Group{grpKubeQuota}
+	kubeGroupOrder3 = []findings.Group{grpKubeNetwork}
 )
 
 // systemNamespaces are excluded from the per-namespace checks (quotas,
@@ -80,7 +81,7 @@ func runKubeRBAC(ctx context.Context, req plugin.Request) (view.View, error) {
 	if verr != nil {
 		return nil, verr
 	}
-	r := &report{}
+	r := &findings.Report{}
 
 	// **Narrowing this audit means dropping half its subject, and the half it
 	// drops has to be said out loud.** Two of the three things checked here —
@@ -97,13 +98,13 @@ func runKubeRBAC(ctx context.Context, req plugin.Request) (view.View, error) {
 	// result will see it rather than buried in the capability's description
 	// where they will not.
 	if ns != "" {
-		r.add(grpKubeRBAC, "cluster-scoped RBAC not examined", stInfo,
+		r.Add(grpKubeRBAC, "cluster-scoped RBAC not examined", findings.Info,
 			"narrowed to namespace "+ns+", so ClusterRoleBindings to cluster-admin and wildcard "+
 				"ClusterRoles were not checked — they belong to no namespace. Run without a "+
 				"namespace to include them.", refRBACClusterAdmin)
 	}
 	// Everything added from here on is a real finding about what was examined.
-	examined := len(r.findings)
+	examined := len(r.Findings)
 
 	var crb list[bindingItem]
 	if ns == "" {
@@ -129,18 +130,18 @@ func runKubeRBAC(ctx context.Context, req plugin.Request) (view.View, error) {
 			continue
 		}
 		names := subjectNames(b.Subjects)
-		status := stWarn
+		status := findings.Warn
 		switch {
 		case isDefaultClusterAdminBinding(b):
-			status = stInfo
+			status = findings.Info
 		default:
 			for _, s := range b.Subjects {
 				if dangerousSubjects[s.Name] {
-					status = stFail
+					status = findings.Fail
 				}
 			}
 		}
-		r.add(grpKubeRBAC, "cluster-admin binding: "+b.Metadata.Name, status,
+		r.Add(grpKubeRBAC, "cluster-admin binding: "+b.Metadata.Name, status,
 			"bound to "+names, refRBACClusterAdmin)
 	}
 
@@ -154,24 +155,24 @@ func runKubeRBAC(ctx context.Context, req plugin.Request) (view.View, error) {
 			if ro.Metadata.Namespace != "" {
 				label = ro.Metadata.Namespace + "/" + ro.Metadata.Name
 			}
-			r.add(grpKubeRBAC, "wildcard rule: "+label, stWarn, wild, refRBACWildcard)
+			r.Add(grpKubeRBAC, "wildcard rule: "+label, findings.Warn, wild, refRBACWildcard)
 		}
 	}
 
 	// Counted from the mark rather than from zero, because a narrowed run has
 	// already added the "cluster-scoped RBAC not examined" note above — and
-	// `len(r.findings) == 0` would then be false on a perfectly clean
+	// `len(r.Findings) == 0` would then be false on a perfectly clean
 	// namespace, so the clean result would silently stop being reported for
 	// exactly the runs that added the note.
-	if len(r.findings) == examined {
-		r.add(grpKubeRBAC, "cluster-admin and wildcard rules", stOK,
+	if len(r.Findings) == examined {
+		r.Add(grpKubeRBAC, "cluster-admin and wildcard rules", findings.OK,
 			rbacClean(ns), refRBACClusterAdmin)
 	}
 
 	if !req.Bool("detail") {
-		return r.table(true), nil
+		return r.Table(true), nil
 	}
-	return detailPage(ctx, req, r, kubeGroupOrder1, r.table(true)), nil
+	return r.Page(ctx, req, kubeGroupOrder1, r.Table(true)), nil
 }
 
 // isDefaultClusterAdminBinding matches the exact shape every distribution's
@@ -285,35 +286,35 @@ func runKubePodSecurity(ctx context.Context, req plugin.Request) (view.View, err
 		return nil, verr
 	}
 
-	r := &report{}
+	r := &findings.Report{}
 	for _, p := range pods.Items {
 		label := p.Metadata.Namespace + "/" + p.Metadata.Name
 		if p.Spec.HostNetwork || p.Spec.HostPID || p.Spec.HostIPC {
-			r.add(grpKubePod, "host namespace: "+label, stFail,
+			r.Add(grpKubePod, "host namespace: "+label, findings.Fail,
 				hostNamespaceDetail(p), refPodSecurityHostNS)
 		}
 		for _, c := range p.Spec.Containers {
 			if c.SecurityContext.Privileged != nil && *c.SecurityContext.Privileged {
-				r.add(grpKubePod, "privileged container: "+label+"/"+c.Name, stFail,
+				r.Add(grpKubePod, "privileged container: "+label+"/"+c.Name, findings.Fail,
 					"securityContext.privileged is true", refExcessivePriv)
 			}
 		}
 		if !assertsNonRoot(p) {
-			r.add(grpKubePod, "root not excluded: "+label, stWarn,
+			r.Add(grpKubePod, "root not excluded: "+label, findings.Warn,
 				"neither the pod nor any container sets runAsNonRoot or a non-zero runAsUser",
 				refPodSecurityNonRoot)
 		}
 	}
-	if len(r.findings) == 0 {
-		r.add(grpKubePod, "host namespaces, privileged containers, non-root", stOK,
+	if len(r.Findings) == 0 {
+		r.Add(grpKubePod, "host namespaces, privileged containers, non-root", findings.OK,
 			"no pod "+within(ns)+" uses a host namespace, runs privileged, or leaves root unexcluded",
 			refPodSecurityHostNS)
 	}
 
 	if !req.Bool("detail") {
-		return r.table(true), nil
+		return r.Table(true), nil
 	}
-	return detailPage(ctx, req, r, []group{grpKubePod}, r.table(true)), nil
+	return r.Page(ctx, req, []findings.Group{grpKubePod}, r.Table(true)), nil
 }
 
 func hostNamespaceDetail(p podSecurityItem) string {
@@ -432,20 +433,20 @@ func runKubeQuotas(ctx context.Context, req plugin.Request) (view.View, error) {
 		return nil, verr
 	}
 
-	r := &report{}
+	r := &findings.Report{}
 	for _, ns := range missing {
-		r.add(grpKubeQuota, "no ResourceQuota: "+ns, stWarn,
+		r.Add(grpKubeQuota, "no ResourceQuota: "+ns, findings.Warn,
 			"namespace has no ResourceQuota, so it can consume unbounded cluster resources", refResourcePolicies)
 	}
 	if len(missing) == 0 {
-		r.add(grpKubeQuota, "ResourceQuota coverage", stOK,
+		r.Add(grpKubeQuota, "ResourceQuota coverage", findings.OK,
 			coverageClean(ns, "ResourceQuota"), refResourcePolicies)
 	}
 
 	if !req.Bool("detail") {
-		return r.table(true), nil
+		return r.Table(true), nil
 	}
-	return detailPage(ctx, req, r, kubeGroupOrder2, r.table(true)), nil
+	return r.Page(ctx, req, kubeGroupOrder2, r.Table(true)), nil
 }
 
 // ---- audit.kube.netpol ----
@@ -461,18 +462,18 @@ func runKubeNetworkPolicy(ctx context.Context, req plugin.Request) (view.View, e
 		return nil, verr
 	}
 
-	r := &report{}
+	r := &findings.Report{}
 	for _, ns := range missing {
-		r.add(grpKubeNetwork, "no NetworkPolicy: "+ns, stWarn,
+		r.Add(grpKubeNetwork, "no NetworkPolicy: "+ns, findings.Warn,
 			"namespace has no NetworkPolicy, so pod-to-pod traffic is unrestricted by default", refNetworkPolicy)
 	}
 	if len(missing) == 0 {
-		r.add(grpKubeNetwork, "NetworkPolicy coverage", stOK,
+		r.Add(grpKubeNetwork, "NetworkPolicy coverage", findings.OK,
 			coverageClean(ns, "NetworkPolicy"), refNetworkPolicy)
 	}
 
 	if !req.Bool("detail") {
-		return r.table(true), nil
+		return r.Table(true), nil
 	}
-	return detailPage(ctx, req, r, kubeGroupOrder3, r.table(true)), nil
+	return r.Page(ctx, req, kubeGroupOrder3, r.Table(true)), nil
 }

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/this-is-tobi/rta/pkg/findings"
 )
 
 // Each fixture is a cut-down copy of what the tool actually writes, keeping
@@ -658,30 +660,30 @@ func TestProvenanceReachesTheFinding(t *testing.T) {
 	if len(inv.all) != 4 {
 		t.Fatalf("read %d components, want 4: %+v", len(inv.all), inv.all)
 	}
-	r := &report{}
+	r := &findings.Report{}
 	gradeDeps(r, inv, map[string][]string{
 		"npm/qs@6.7.0":             {"GHSA-qs"},
 		"Go/github.com/c/d@v2.0.0": {"GHSA-cd"},
 	}, nil, false, false)
 
 	qs := mustFind(t, r, "qs")
-	if !strings.Contains(qs.detail, "indirect, pulled in by express") {
-		t.Errorf("qs finding does not say where it came from: %q", qs.detail)
+	if !strings.Contains(qs.Detail, "indirect, pulled in by express") {
+		t.Errorf("qs finding does not say where it came from: %q", qs.Detail)
 	}
 	// go.mod states the split and records no edges, so this is the half-answer
 	// case reaching a real report.
 	cd := mustFind(t, r, "github.com/c/d")
-	if !strings.Contains(cd.detail, "indirect") || strings.Contains(cd.detail, "pulled in by") {
-		t.Errorf("a go.mod indirect should be stated without an invented chain: %q", cd.detail)
+	if !strings.Contains(cd.Detail, "indirect") || strings.Contains(cd.Detail, "pulled in by") {
+		t.Errorf("a go.mod indirect should be stated without an invented chain: %q", cd.Detail)
 	}
 	// And the report says so, with the command that does have the chain.
 	prov := mustFind(t, r, "provenance")
-	if !strings.Contains(prov.detail, "go mod why -m github.com/c/d") {
-		t.Errorf("provenance finding does not hand over the command: %q", prov.detail)
+	if !strings.Contains(prov.Detail, "go mod why -m github.com/c/d") {
+		t.Errorf("provenance finding does not hand over the command: %q", prov.Detail)
 	}
 	count := mustFind(t, r, "dependencies")
-	if !strings.Contains(count.detail, "2 asked for by name, 2 pulled in") {
-		t.Errorf("inventory line does not split the count: %q", count.detail)
+	if !strings.Contains(count.Detail, "2 asked for by name, 2 pulled in") {
+		t.Errorf("inventory line does not split the count: %q", count.Detail)
 	}
 }
 

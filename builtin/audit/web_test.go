@@ -18,6 +18,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/this-is-tobi/rta/builtin/internal/x509check"
+	"github.com/this-is-tobi/rta/pkg/findings"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -219,7 +220,7 @@ func TestGradersSurviveMalformedHeaderValues(t *testing.T) {
 			gradeHSTS(v)
 			hstsMaxAge(strings.ToLower(v))
 			gradeFraming(v, v)
-			clip(v)
+			findings.Clip(v)
 			normalizeURL(v)
 		}()
 	}
@@ -395,14 +396,14 @@ func TestAuditDetailIsASectionedPage(t *testing.T) {
 	for _, s := range detailSections(t, srv).Items {
 		got[s.Key()] = true
 	}
-	for _, want := range []string{"summary", grpTransport.id, grpHeaders.id, grpCookies.id, grpExposure.id, "references"} {
+	for _, want := range []string{"summary", grpTransport.ID, grpHeaders.ID, grpCookies.ID, grpExposure.ID, "references"} {
 		if !got[want] {
 			t.Errorf("detail page is missing the %q section: have %v", want, got)
 		}
 	}
 	// Nothing set a CORS header, so that section has no subject at all — an
 	// empty heading would read as a check that failed to run.
-	if got[grpCORS.id] {
+	if got[grpCORS.ID] {
 		t.Error("cross-origin section rendered with no CORS findings")
 	}
 }
@@ -436,7 +437,7 @@ func TestReferenceTableIsDeduplicatedAndLinkable(t *testing.T) {
 }
 
 func TestReferenceURLPointsAtTheCitedCWE(t *testing.T) {
-	if got := refClickjacking.url(); got != "https://cwe.mitre.org/data/definitions/1021.html" {
+	if got := refClickjacking.URL(); got != "https://cwe.mitre.org/data/definitions/1021.html" {
 		t.Errorf("url = %q", got)
 	}
 	if got := refCleartext.String(); got != "A04:2025 Cryptographic Failures · CWE-319" {
@@ -454,12 +455,12 @@ func TestAuditBadHostIsCoded(t *testing.T) {
 
 func TestClipCollapsesAndTruncates(t *testing.T) {
 	long := strings.Repeat("policy ", 40)
-	got := clip(long)
+	got := findings.Clip(long)
 	if utf8.RuneCountInString(got) > 96 || !strings.HasSuffix(got, "…") {
 		t.Errorf("clip did not truncate: runes=%d", utf8.RuneCountInString(got))
 	}
-	if clip("a\n  b\tc") != "a b c" {
-		t.Errorf("clip did not collapse whitespace: %q", clip("a\n  b\tc"))
+	if findings.Clip("a\n  b\tc") != "a b c" {
+		t.Errorf("clip did not collapse whitespace: %q", findings.Clip("a\n  b\tc"))
 	}
 }
 
@@ -474,8 +475,8 @@ func TestCertExpiryWarnsOnTheSharedWindow(t *testing.T) {
 	if !ok {
 		t.Fatal("no cert-expiry finding")
 	}
-	if r[1] != stWarn {
-		t.Errorf("a certificate 20 days from expiry graded %q (%s), want %s", r[1], r[2], stWarn)
+	if r[1] != findings.Warn {
+		t.Errorf("a certificate 20 days from expiry graded %q (%s), want %s", r[1], r[2], findings.Warn)
 	}
 	if !strings.Contains(r[2], fmt.Sprintf("<%dd", x509check.DefaultWarnDays)) {
 		t.Errorf("detail %q does not name the shared %d-day window", r[2], x509check.DefaultWarnDays)
@@ -486,8 +487,8 @@ func TestCertExpiryWarnsOnTheSharedWindow(t *testing.T) {
 // above would pass just as well on a threshold that warns about everything.
 func TestCertExpiryStaysQuietOutsideTheWindow(t *testing.T) {
 	srv := expiringTLSServer(t, time.Now().Add(90*24*time.Hour))
-	if r := auditRows(t, srv)["cert-expiry"]; r[1] != stOK {
-		t.Errorf("a certificate 90 days from expiry graded %q (%s), want %s", r[1], r[2], stOK)
+	if r := auditRows(t, srv)["cert-expiry"]; r[1] != findings.OK {
+		t.Errorf("a certificate 90 days from expiry graded %q (%s), want %s", r[1], r[2], findings.OK)
 	}
 }
 

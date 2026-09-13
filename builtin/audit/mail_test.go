@@ -7,28 +7,29 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/this-is-tobi/rta/pkg/findings"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // find returns the finding for a check, so a test can say what it means
 // rather than indexing into a slice whose order is not the point.
-func find(r *report, check string) (finding, bool) {
-	for _, f := range r.findings {
-		if f.check == check {
+func find(r *findings.Report, check string) (findings.Finding, bool) {
+	for _, f := range r.Findings {
+		if f.Check == check {
 			return f, true
 		}
 	}
-	return finding{}, false
+	return findings.Finding{}, false
 }
 
-func mustFind(t *testing.T, r *report, check string) finding {
+func mustFind(t *testing.T, r *findings.Report, check string) findings.Finding {
 	t.Helper()
 	f, ok := find(r, check)
 	if !ok {
 		var got []string
-		for _, f := range r.findings {
-			got = append(got, f.check)
+		for _, f := range r.Findings {
+			got = append(got, f.Check)
 		}
 		t.Fatalf("no %q finding; got %v", check, got)
 	}
@@ -97,14 +98,14 @@ func TestSPFGradedByHowItEnds(t *testing.T) {
 		status string
 		says   string
 	}{
-		{"hard fail", "v=spf1 include:_spf.example.com -all", stOK, "-all"},
-		{"soft fail", "v=spf1 mx ~all", stOK, "~all"},
-		{"neutral", "v=spf1 mx ?all", stWarn, "neutral"},
-		{"pass all", "v=spf1 +all", stFail, "entire internet"},
-		{"bare all", "v=spf1 mx all", stFail, "entire internet"},
-		{"no all at all", "v=spf1 ip4:192.0.2.0/24", stWarn, "no all mechanism"},
-		{"redirect", "v=spf1 redirect=_spf.example.com", stInfo, "redirect="},
-		{"case is not significant", "V=SPF1 MX -ALL", stOK, "-all"},
+		{"hard fail", "v=spf1 include:_spf.example.com -all", findings.OK, "-all"},
+		{"soft fail", "v=spf1 mx ~all", findings.OK, "~all"},
+		{"neutral", "v=spf1 mx ?all", findings.Warn, "neutral"},
+		{"pass all", "v=spf1 +all", findings.Fail, "entire internet"},
+		{"bare all", "v=spf1 mx all", findings.Fail, "entire internet"},
+		{"no all at all", "v=spf1 ip4:192.0.2.0/24", findings.Warn, "no all mechanism"},
+		{"redirect", "v=spf1 redirect=_spf.example.com", findings.Info, "redirect="},
+		{"case is not significant", "V=SPF1 MX -ALL", findings.OK, "-all"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -128,7 +129,7 @@ func TestBareAllIsGradedAsPassNotAsMissing(t *testing.T) {
 	if bare != plus {
 		t.Errorf("bare all graded %q but +all graded %q — they mean the same thing", bare, plus)
 	}
-	if bare != stFail {
+	if bare != findings.Fail {
 		t.Errorf("an unqualified all should be a failure, got %q", bare)
 	}
 }
@@ -156,8 +157,8 @@ func TestSPFLookupsAreCounted(t *testing.T) {
 
 	over := "v=spf1 " + strings.Repeat("include:x.com ", 11) + "-all"
 	r := gradeMail(mailFacts{domain: "d.test", apexTXT: []string{over}})
-	if f := mustFind(t, r, "spf-lookups"); f.status != stFail {
-		t.Errorf("11 lookups graded %q, want %q", f.status, stFail)
+	if f := mustFind(t, r, "spf-lookups"); f.Status != findings.Fail {
+		t.Errorf("11 lookups graded %q, want %q", f.Status, findings.Fail)
 	}
 }
 
@@ -169,11 +170,11 @@ func TestTwoSPFRecordsAreAFailure(t *testing.T) {
 		"v=spf1 include:b.com -all",
 	}})
 	f := mustFind(t, r, "spf")
-	if f.status != stFail {
-		t.Errorf("two SPF records graded %q, want %q", f.status, stFail)
+	if f.Status != findings.Fail {
+		t.Errorf("two SPF records graded %q, want %q", f.Status, findings.Fail)
 	}
-	if !strings.Contains(f.detail, "permanent error") {
-		t.Errorf("detail should say why two is worse than one: %q", f.detail)
+	if !strings.Contains(f.Detail, "permanent error") {
+		t.Errorf("detail should say why two is worse than one: %q", f.Detail)
 	}
 	// And it must not go on to grade the disposition of a record that will
 	// never be evaluated.
@@ -192,7 +193,7 @@ func TestUnrelatedTXTRecordsAreIgnored(t *testing.T) {
 		"v=spf1 mx -all",
 		"atlassian-domain-verification=xyz",
 	}})
-	if f := mustFind(t, r, "spf"); f.status != stOK {
+	if f := mustFind(t, r, "spf"); f.Status != findings.OK {
 		t.Errorf("SPF lost among unrelated TXT records: %+v", f)
 	}
 }
@@ -203,25 +204,25 @@ func TestDMARCPolicyGrading(t *testing.T) {
 		record string
 		status string
 	}{
-		{"reject", "v=DMARC1; p=reject; rua=mailto:a@d.test", stOK},
-		{"quarantine", "v=DMARC1; p=quarantine; rua=mailto:a@d.test", stWarn},
-		{"none", "v=DMARC1; p=none; rua=mailto:a@d.test", stFail},
-		{"no policy tag", "v=DMARC1; rua=mailto:a@d.test", stFail},
-		{"case insensitive", "v=DMARC1; P=Reject; rua=mailto:a@d.test", stOK},
+		{"reject", "v=DMARC1; p=reject; rua=mailto:a@d.test", findings.OK},
+		{"quarantine", "v=DMARC1; p=quarantine; rua=mailto:a@d.test", findings.Warn},
+		{"none", "v=DMARC1; p=none; rua=mailto:a@d.test", findings.Fail},
+		{"no policy tag", "v=DMARC1; rua=mailto:a@d.test", findings.Fail},
+		{"case insensitive", "v=DMARC1; P=Reject; rua=mailto:a@d.test", findings.OK},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			r := gradeMail(mailFacts{domain: "d.test", dmarc: []string{tc.record}})
-			if f := mustFind(t, r, "dmarc"); f.status != tc.status {
-				t.Errorf("graded %q as %q, want %q (%s)", tc.record, f.status, tc.status, f.detail)
+			if f := mustFind(t, r, "dmarc"); f.Status != tc.status {
+				t.Errorf("graded %q as %q, want %q (%s)", tc.record, f.Status, tc.status, f.Detail)
 			}
 		})
 	}
 
 	// A missing record is the failure the whole capability exists to catch.
 	r := gradeMail(mailFacts{domain: "d.test"})
-	if f := mustFind(t, r, "dmarc"); f.status != stFail {
-		t.Errorf("a missing DMARC record graded %q", f.status)
+	if f := mustFind(t, r, "dmarc"); f.Status != findings.Fail {
+		t.Errorf("a missing DMARC record graded %q", f.Status)
 	}
 }
 
@@ -230,7 +231,7 @@ func TestDMARCPolicyGrading(t *testing.T) {
 func TestDMARCPartialRolloutIsCalledOut(t *testing.T) {
 	r := gradeMail(mailFacts{domain: "d.test", dmarc: []string{"v=DMARC1; p=reject; pct=10; rua=mailto:a@d.test"}})
 	f := mustFind(t, r, "dmarc-coverage")
-	if f.status != stWarn || !strings.Contains(f.detail, "pct=10") {
+	if f.Status != findings.Warn || !strings.Contains(f.Detail, "pct=10") {
 		t.Errorf("pct=10 not reported as partial coverage: %+v", f)
 	}
 	full := gradeMail(mailFacts{domain: "d.test", dmarc: []string{"v=DMARC1; p=reject; pct=100; rua=mailto:a@d.test"}})
@@ -241,8 +242,8 @@ func TestDMARCPartialRolloutIsCalledOut(t *testing.T) {
 
 func TestDMARCWithoutReportingIsAWarning(t *testing.T) {
 	r := gradeMail(mailFacts{domain: "d.test", dmarc: []string{"v=DMARC1; p=reject"}})
-	if f := mustFind(t, r, "dmarc-reporting"); f.status != stWarn {
-		t.Errorf("a policy nobody reports on graded %q", f.status)
+	if f := mustFind(t, r, "dmarc-reporting"); f.Status != findings.Warn {
+		t.Errorf("a policy nobody reports on graded %q", f.Status)
 	}
 	with := gradeMail(mailFacts{domain: "d.test", dmarc: []string{"v=DMARC1; p=reject; rua=mailto:a@d.test"}})
 	if _, ok := find(with, "dmarc-reporting"); ok {
@@ -255,11 +256,11 @@ func TestDMARCWithoutReportingIsAWarning(t *testing.T) {
 // names I tried" — a confident lie, and enumeration besides.
 func TestDKIMWithoutASelectorSaysSoRatherThanGuessing(t *testing.T) {
 	f := mustFind(t, gradeMail(mailFacts{domain: "d.test"}), "dkim")
-	if f.status != stInfo {
-		t.Errorf("an unchecked selector graded %q, want %q", f.status, stInfo)
+	if f.Status != findings.Info {
+		t.Errorf("an unchecked selector graded %q, want %q", f.Status, findings.Info)
 	}
-	if !strings.Contains(f.detail, "--selector") {
-		t.Errorf("the finding should say how to check it: %q", f.detail)
+	if !strings.Contains(f.Detail, "--selector") {
+		t.Errorf("the finding should say how to check it: %q", f.Detail)
 	}
 }
 
@@ -267,14 +268,14 @@ func TestDKIMKeyGrading(t *testing.T) {
 	base := mailFacts{domain: "d.test", selector: "s1", dkimName: "s1._domainkey.d.test"}
 
 	missing := base
-	if f := mustFind(t, gradeMail(missing), "dkim"); f.status != stFail {
-		t.Errorf("a missing key graded %q", f.status)
+	if f := mustFind(t, gradeMail(missing), "dkim"); f.Status != findings.Fail {
+		t.Errorf("a missing key graded %q", f.Status)
 	}
 
 	good := base
 	good.dkim = []string{"v=DKIM1; k=rsa; p=MIGfMA0GCSq"}
-	if f := mustFind(t, gradeMail(good), "dkim"); f.status != stOK {
-		t.Errorf("a published key graded %q: %s", f.status, f.detail)
+	if f := mustFind(t, gradeMail(good), "dkim"); f.Status != findings.OK {
+		t.Errorf("a published key graded %q: %s", f.Status, f.Detail)
 	}
 
 	// RFC 6376 §3.6.1: an empty p= revokes the key. The record is present and
@@ -282,14 +283,14 @@ func TestDKIMKeyGrading(t *testing.T) {
 	revoked := base
 	revoked.dkim = []string{"v=DKIM1; k=rsa; p="}
 	f := mustFind(t, gradeMail(revoked), "dkim")
-	if f.status != stFail || !strings.Contains(f.detail, "revoke") {
+	if f.Status != findings.Fail || !strings.Contains(f.Detail, "revoke") {
 		t.Errorf("a revoked key was not caught: %+v", f)
 	}
 
 	// Resolvers hand back a long record as several strings meant to be joined.
 	split := base
 	split.dkim = []string{"v=DKIM1; k=rsa; ", "p=MIGfMA0GCSq"}
-	if f := mustFind(t, gradeMail(split), "dkim"); f.status != stOK {
+	if f := mustFind(t, gradeMail(split), "dkim"); f.Status != findings.OK {
 		t.Errorf("a split key was not reassembled: %+v", f)
 	}
 }
@@ -300,7 +301,7 @@ func TestDKIMKeyGrading(t *testing.T) {
 func TestNullMXIsGradedAsHardening(t *testing.T) {
 	r := gradeMail(mailFacts{domain: "d.test", mx: []*stdnet.MX{{Host: "."}}})
 	f := mustFind(t, r, "mx")
-	if f.status != stOK || !strings.Contains(f.detail, "7505") {
+	if f.Status != findings.OK || !strings.Contains(f.Detail, "7505") {
 		t.Errorf("null MX not recognised: %+v", f)
 	}
 }
@@ -315,14 +316,14 @@ func TestFailedLookupsAreNotGradedAsFindings(t *testing.T) {
 	})
 	for _, check := range []string{"spf", "dmarc", "dkim", "mta-sts", "tls-rpt"} {
 		f := mustFind(t, r, check)
-		if f.status != stInfo {
-			t.Errorf("%s: a failed lookup graded %q, want %q", check, f.status, stInfo)
+		if f.Status != findings.Info {
+			t.Errorf("%s: a failed lookup graded %q, want %q", check, f.Status, findings.Info)
 		}
-		if !strings.Contains(f.detail, "failed") {
-			t.Errorf("%s: detail should say the lookup failed: %q", check, f.detail)
+		if !strings.Contains(f.Detail, "failed") {
+			t.Errorf("%s: detail should say the lookup failed: %q", check, f.Detail)
 		}
 	}
-	if status, _ := r.worst(); status != stOK {
+	if status, _ := r.Worst(); status != findings.OK {
 		t.Errorf("a run where every lookup failed graded the domain %q", status)
 	}
 }
@@ -330,7 +331,7 @@ func TestFailedLookupsAreNotGradedAsFindings(t *testing.T) {
 // Every finding has to land in a section the detail page renders, or it is
 // computed, counted in the tally, and then silently dropped from the page.
 func TestEveryMailFindingLandsInADeclaredGroup(t *testing.T) {
-	declared := map[group]bool{}
+	declared := map[findings.Group]bool{}
 	for _, g := range mailGroupOrder {
 		declared[g] = true
 	}
@@ -344,13 +345,13 @@ func TestEveryMailFindingLandsInADeclaredGroup(t *testing.T) {
 			dkim: []string{"v=DKIM1; p=abc"}, mx: []*stdnet.MX{{Host: "mx.d.test."}}},
 		{domain: "d.test", apexTXT: []string{"v=spf1 -all", "v=spf1 ~all"}},
 	} {
-		for _, got := range gradeMail(f).findings {
-			if !declared[got.group] {
+		for _, got := range gradeMail(f).Findings {
+			if !declared[got.Group] {
 				t.Errorf("finding %q is in group %q, which the detail page never renders",
-					got.check, got.group)
+					got.Check, got.Group)
 			}
-			if got.ref.cwe == "" {
-				t.Errorf("finding %q cites no control", got.check)
+			if got.Ref.CWE == "" {
+				t.Errorf("finding %q cites no control", got.Check)
 			}
 		}
 	}
@@ -375,10 +376,10 @@ func TestMailGradersSurviveMalformedRecords(t *testing.T) {
 			mx: []*stdnet.MX{{Host: j}},
 		}
 		r := gradeMail(f) // must not panic
-		if len(r.findings) == 0 {
+		if len(r.Findings) == 0 {
 			t.Errorf("record %q produced no findings at all", j)
 		}
-		if _, _ = r.worst(); false {
+		if _, _ = r.Worst(); false {
 			t.Fatal("unreachable")
 		}
 	}
@@ -395,8 +396,8 @@ func TestMailDetailIsASectionedPage(t *testing.T) {
 		mx:      []*stdnet.MX{{Host: "mx.d.test."}},
 	}
 	r := gradeMail(f)
-	page, ok := detailPage(context.Background(), plugin.Request{}, r, mailGroupOrder,
-		view.KeyValue{Pairs: append([]view.Pair{{Key: "domain", Value: "d.test"}}, r.grade()...)}).(view.Sections)
+	page, ok := r.Page(context.Background(), plugin.Request{}, mailGroupOrder,
+		view.KeyValue{Pairs: append([]view.Pair{{Key: "domain", Value: "d.test"}}, r.Grade()...)}).(view.Sections)
 	if !ok {
 		t.Fatal("the detail view is not a sectioned page")
 	}
@@ -406,16 +407,16 @@ func TestMailDetailIsASectionedPage(t *testing.T) {
 	for _, item := range page.Items {
 		ids = append(ids, item.Key())
 	}
-	for _, want := range []string{"summary", grpSenderAuth.id, grpRouting.id, "references"} {
+	for _, want := range []string{"summary", grpSenderAuth.ID, grpRouting.ID, "references"} {
 		if !contains(ids, want) {
 			t.Errorf("the page has no %q section; got %v", want, ids)
 		}
 	}
 	// An empty group gets no heading: a section with nothing under it reads
 	// as a check that failed to run rather than one with no subject.
-	if contains(ids, grpMailTLS.id) {
+	if contains(ids, grpMailTLS.ID) {
 		for _, item := range page.Items {
-			if item.Key() == grpMailTLS.id {
+			if item.Key() == grpMailTLS.ID {
 				if tbl, ok := item.View.(view.Table); ok && len(tbl.Rows) == 0 {
 					t.Error("an empty group was given a heading")
 				}

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/this-is-tobi/rta/pkg/findings"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -29,12 +30,12 @@ import (
 
 // Groups order the detail page and name its sections.
 var (
-	grpSenderAuth = group{"sender-auth", "sender authentication"}
-	grpMailTLS    = group{"transport", "transport security"}
-	grpRouting    = group{"routing", "routing"}
+	grpSenderAuth = findings.Group{ID: "sender-auth", Title: "sender authentication"}
+	grpMailTLS    = findings.Group{ID: "transport", Title: "transport security"}
+	grpRouting    = findings.Group{ID: "routing", Title: "routing"}
 )
 
-var mailGroupOrder = []group{grpSenderAuth, grpMailTLS, grpRouting}
+var mailGroupOrder = []findings.Group{grpSenderAuth, grpMailTLS, grpRouting}
 
 // spfLookupLimit is RFC 7208 §4.6.4's cap on DNS-querying mechanisms in one
 // SPF evaluation. Past it, evaluation returns permerror and the policy stops
@@ -62,11 +63,11 @@ func runMail(ctx context.Context, req plugin.Request) (view.View, error) {
 	r := gradeMail(lookupMail(ctx, res, domain, selector))
 
 	if req.Bool("detail") {
-		summary := append([]view.Pair{{Key: "domain", Value: domain}}, r.grade()...)
+		summary := append([]view.Pair{{Key: "domain", Value: domain}}, r.Grade()...)
 		summary = append(summary, mailDeeper(domain)...)
-		return detailPage(ctx, req, r, mailGroupOrder, view.KeyValue{Pairs: summary}), nil
+		return r.Page(ctx, req, mailGroupOrder, view.KeyValue{Pairs: summary}), nil
 	}
-	return r.table(true), nil
+	return r.Table(true), nil
 }
 
 // mailDomain accepts what people have to hand: a domain, an address they were
@@ -160,8 +161,8 @@ func lookupMail(ctx context.Context, res *stdnet.Resolver, domain, selector stri
 
 // gradeMail turns the facts into findings. Pure: same records in, same report
 // out, no clock and no network.
-func gradeMail(f mailFacts) *report {
-	r := &report{}
+func gradeMail(f mailFacts) *findings.Report {
+	r := &findings.Report{}
 	auditSPF(r, f)
 	auditDKIM(r, f)
 	auditDMARC(r, f)
@@ -198,15 +199,15 @@ func pick(records []string, prefix string) []string {
 	return out
 }
 
-func auditSPF(r *report, f mailFacts) {
+func auditSPF(r *findings.Report, f mailFacts) {
 	if f.apexErr != nil {
-		r.add(grpSenderAuth, "spf", stInfo, "lookup failed: "+f.apexErr.Error(), refSpoofing)
+		r.Add(grpSenderAuth, "spf", findings.Info, "lookup failed: "+f.apexErr.Error(), refSpoofing)
 		return
 	}
 	spf := pick(f.apexTXT, "v=spf1")
 	switch {
 	case len(spf) == 0:
-		r.add(grpSenderAuth, "spf", stFail,
+		r.Add(grpSenderAuth, "spf", findings.Fail,
 			"no SPF record — any host on the internet can send mail claiming to be this domain",
 			refSpoofing)
 		return
@@ -214,15 +215,15 @@ func auditSPF(r *report, f mailFacts) {
 		// RFC 7208 §4.5: more than one is a permerror, and a permerror means
 		// receivers apply no policy at all. Two "correct" records are worse
 		// than one, and worse than none, because they look like protection.
-		r.add(grpSenderAuth, "spf", stFail,
-			plural(len(spf), "SPF record")+" published — RFC 7208 makes this a permanent error, "+
+		r.Add(grpSenderAuth, "spf", findings.Fail,
+			findings.Plural(len(spf), "SPF record")+" published — RFC 7208 makes this a permanent error, "+
 				"so receivers apply no SPF policy at all", refSpoofing)
 		return
 	}
 
 	record := spf[0]
 	status, detail := gradeSPFAll(record)
-	r.add(grpSenderAuth, "spf", status, detail, refSpoofing)
+	r.Add(grpSenderAuth, "spf", status, detail, refSpoofing)
 
 	// The lookup cap is counted over the mechanisms this record states
 	// directly. Anything reached through an include: adds its own, which is
@@ -230,12 +231,12 @@ func auditSPF(r *report, f mailFacts) {
 	// cannot see without walking the tree — and walking it would make this a
 	// crawler, which the plugin does not do.
 	if n := spfLookups(record); n > spfLookupLimit {
-		r.add(grpSenderAuth, "spf-lookups", stFail,
+		r.Add(grpSenderAuth, "spf-lookups", findings.Fail,
 			"at least "+strconv.Itoa(n)+" DNS-querying mechanisms, over RFC 7208's limit of "+
 				strconv.Itoa(spfLookupLimit)+" — evaluation returns permerror and the policy is not applied",
 			refSpoofing)
 	} else if n > spfLookupLimit-3 {
-		r.add(grpSenderAuth, "spf-lookups", stWarn,
+		r.Add(grpSenderAuth, "spf-lookups", findings.Warn,
 			"at least "+strconv.Itoa(n)+" of RFC 7208's "+strconv.Itoa(spfLookupLimit)+
 				" DNS-querying mechanisms used directly; each include: adds its own",
 			refSpoofing)
@@ -248,20 +249,20 @@ func auditSPF(r *report, f mailFacts) {
 func gradeSPFAll(record string) (string, string) {
 	switch {
 	case spfHasMechanism(record, "+all"), spfHasMechanism(record, "all") && !spfHasQualifiedAll(record):
-		return stFail, "ends in +all — this authorises the entire internet to send as the domain, " +
-			"which is worse than publishing nothing: " + clip(record)
+		return findings.Fail, "ends in +all — this authorises the entire internet to send as the domain, " +
+			"which is worse than publishing nothing: " + findings.Clip(record)
 	case spfHasMechanism(record, "-all"):
-		return stOK, "ends in -all (hard fail): " + clip(record)
+		return findings.OK, "ends in -all (hard fail): " + findings.Clip(record)
 	case spfHasMechanism(record, "~all"):
-		return stOK, "ends in ~all (soft fail) — fine alongside an enforcing DMARC policy: " + clip(record)
+		return findings.OK, "ends in ~all (soft fail) — fine alongside an enforcing DMARC policy: " + findings.Clip(record)
 	case spfHasMechanism(record, "?all"):
-		return stWarn, "ends in ?all (neutral), which asks receivers to treat unlisted senders " +
-			"exactly as if no SPF record existed: " + clip(record)
+		return findings.Warn, "ends in ?all (neutral), which asks receivers to treat unlisted senders " +
+			"exactly as if no SPF record existed: " + findings.Clip(record)
 	case strings.Contains(strings.ToLower(record), "redirect="):
-		return stInfo, "delegates its policy with redirect=: " + clip(record)
+		return findings.Info, "delegates its policy with redirect=: " + findings.Clip(record)
 	}
-	return stWarn, "no all mechanism — unlisted senders get no verdict, which receivers treat as neutral: " +
-		clip(record)
+	return findings.Warn, "no all mechanism — unlisted senders get no verdict, which receivers treat as neutral: " +
+		findings.Clip(record)
 }
 
 func spfHasMechanism(record, mech string) bool {
@@ -302,9 +303,9 @@ func spfLookups(record string) int {
 // Guessing at a list of popular selectors would be enumeration, which this
 // plugin does not do — and a miss would be reported as "no DKIM" when the
 // truth is "not at the names I tried", which is a confident lie.
-func auditDKIM(r *report, f mailFacts) {
+func auditDKIM(r *findings.Report, f mailFacts) {
 	if f.selector == "" {
-		r.add(grpSenderAuth, "dkim", stInfo,
+		r.Add(grpSenderAuth, "dkim", findings.Info,
 			"not checked — DKIM selectors cannot be discovered from the domain; "+
 				"pass --selector, taking the s= tag from a DKIM-Signature header on a message you received",
 			refSpoofing)
@@ -312,12 +313,12 @@ func auditDKIM(r *report, f mailFacts) {
 	}
 	name := f.dkimName
 	if f.dkimErr != nil {
-		r.add(grpSenderAuth, "dkim", stInfo, "lookup of "+name+" failed: "+f.dkimErr.Error(), refSpoofing)
+		r.Add(grpSenderAuth, "dkim", findings.Info, "lookup of "+name+" failed: "+f.dkimErr.Error(), refSpoofing)
 		return
 	}
 	records := f.dkim
 	if len(records) == 0 {
-		r.add(grpSenderAuth, "dkim", stFail,
+		r.Add(grpSenderAuth, "dkim", findings.Fail,
 			"no DKIM key at "+name+" — messages signed with this selector cannot be verified", refSpoofing)
 		return
 	}
@@ -325,19 +326,19 @@ func auditDKIM(r *report, f mailFacts) {
 	// separately and they are meant to be concatenated.
 	joined := strings.Join(records, "")
 	if !strings.Contains(strings.ToLower(joined), "v=dkim1") && !strings.Contains(joined, "p=") {
-		r.add(grpSenderAuth, "dkim", stWarn,
+		r.Add(grpSenderAuth, "dkim", findings.Warn,
 			"a TXT record exists at "+name+" but does not look like a DKIM key", refSpoofing)
 		return
 	}
 	// An empty p= is the documented way to revoke a key (RFC 6376 §3.6.1),
 	// so a record can be present and still mean "this key is dead".
 	if p := dkimTag(joined, "p"); p == "" {
-		r.add(grpSenderAuth, "dkim", stFail,
+		r.Add(grpSenderAuth, "dkim", findings.Fail,
 			"the key at "+name+" has an empty p= tag, which revokes it — signatures made with it will not verify",
 			refSpoofing)
 		return
 	}
-	r.add(grpSenderAuth, "dkim", stOK, "public key published at "+name, refSpoofing)
+	r.Add(grpSenderAuth, "dkim", findings.OK, "public key published at "+name, refSpoofing)
 }
 
 func dkimTag(record, tag string) string {
@@ -350,22 +351,22 @@ func dkimTag(record, tag string) string {
 	return ""
 }
 
-func auditDMARC(r *report, f mailFacts) {
+func auditDMARC(r *findings.Report, f mailFacts) {
 	name := "_dmarc." + f.domain
 	if f.dmarcErr != nil {
-		r.add(grpSenderAuth, "dmarc", stInfo, "lookup of "+name+" failed: "+f.dmarcErr.Error(), refSpoofing)
+		r.Add(grpSenderAuth, "dmarc", findings.Info, "lookup of "+name+" failed: "+f.dmarcErr.Error(), refSpoofing)
 		return
 	}
 	dmarc := pick(f.dmarc, "v=dmarc1")
 	if len(dmarc) == 0 {
-		r.add(grpSenderAuth, "dmarc", stFail,
+		r.Add(grpSenderAuth, "dmarc", findings.Fail,
 			"no DMARC record at "+name+" — receivers have no instruction for mail that fails SPF and DKIM, "+
 				"and SPF alone does not cover the address a reader actually sees", refSpoofing)
 		return
 	}
 	if len(dmarc) > 1 {
-		r.add(grpSenderAuth, "dmarc", stFail,
-			plural(len(dmarc), "DMARC record")+" at "+name+" — RFC 7489 requires receivers to ignore "+
+		r.Add(grpSenderAuth, "dmarc", findings.Fail,
+			findings.Plural(len(dmarc), "DMARC record")+" at "+name+" — RFC 7489 requires receivers to ignore "+
 				"the domain's policy entirely when more than one is published", refSpoofing)
 		return
 	}
@@ -373,29 +374,29 @@ func auditDMARC(r *report, f mailFacts) {
 	record := dmarc[0]
 	switch policy := strings.ToLower(dkimTag(record, "p")); policy {
 	case "reject":
-		r.add(grpSenderAuth, "dmarc", stOK, "p=reject — failing mail is refused: "+clip(record), refSpoofing)
+		r.Add(grpSenderAuth, "dmarc", findings.OK, "p=reject — failing mail is refused: "+findings.Clip(record), refSpoofing)
 	case "quarantine":
-		r.add(grpSenderAuth, "dmarc", stWarn,
-			"p=quarantine — failing mail is delivered to spam rather than refused: "+clip(record), refSpoofing)
+		r.Add(grpSenderAuth, "dmarc", findings.Warn,
+			"p=quarantine — failing mail is delivered to spam rather than refused: "+findings.Clip(record), refSpoofing)
 	case "none":
-		r.add(grpSenderAuth, "dmarc", stFail,
-			"p=none — monitoring only, so spoofed mail is still delivered to the inbox: "+clip(record),
+		r.Add(grpSenderAuth, "dmarc", findings.Fail,
+			"p=none — monitoring only, so spoofed mail is still delivered to the inbox: "+findings.Clip(record),
 			refSpoofing)
 	default:
-		r.add(grpSenderAuth, "dmarc", stFail,
-			"no usable p= tag, which makes the record invalid: "+clip(record), refSpoofing)
+		r.Add(grpSenderAuth, "dmarc", findings.Fail,
+			"no usable p= tag, which makes the record invalid: "+findings.Clip(record), refSpoofing)
 	}
 
 	// pct= applies the policy to a sample. It exists for staged rollouts, and
 	// a rollout left half-finished is the common way a domain ends up
 	// believing it is protected while most spoofed mail still lands.
 	if pct := dkimTag(record, "pct"); pct != "" && pct != "100" {
-		r.add(grpSenderAuth, "dmarc-coverage", stWarn,
+		r.Add(grpSenderAuth, "dmarc-coverage", findings.Warn,
 			"pct="+pct+" — the policy is applied to that percentage of mail; the rest is delivered as if "+
 				"there were no policy", refSpoofing)
 	}
 	if dkimTag(record, "rua") == "" {
-		r.add(grpSenderAuth, "dmarc-reporting", stWarn,
+		r.Add(grpSenderAuth, "dmarc-reporting", findings.Warn,
 			"no rua= address — nothing reports back, so a policy that is breaking legitimate mail "+
 				"or failing to stop spoofing looks identical to one that is working", refSpoofing)
 	}
@@ -404,27 +405,27 @@ func auditDMARC(r *report, f mailFacts) {
 // MTA-STS and TLS-RPT are about the hop between mail servers. Without them,
 // SMTP's opportunistic TLS can be stripped by anything on the path, and the
 // sending server has no way to know it was supposed to insist.
-func auditMailTransport(r *report, f mailFacts) {
+func auditMailTransport(r *findings.Report, f mailFacts) {
 	switch {
 	case f.stsErr != nil:
-		r.add(grpMailTLS, "mta-sts", stInfo, "lookup failed: "+f.stsErr.Error(), refCleartext)
+		r.Add(grpMailTLS, "mta-sts", findings.Info, "lookup failed: "+f.stsErr.Error(), refCleartext)
 	case len(pick(f.sts, "v=stsv1")) == 0:
-		r.add(grpMailTLS, "mta-sts", stWarn,
+		r.Add(grpMailTLS, "mta-sts", findings.Warn,
 			"no MTA-STS policy — a sending server has no instruction to require TLS, so an attacker on "+
 				"the path can strip it and the mail is delivered in the clear", refCleartext)
 	default:
-		r.add(grpMailTLS, "mta-sts", stOK, "policy published — senders are told to require TLS", refCleartext)
+		r.Add(grpMailTLS, "mta-sts", findings.OK, "policy published — senders are told to require TLS", refCleartext)
 	}
 
 	switch {
 	case f.rptErr != nil:
-		r.add(grpMailTLS, "tls-rpt", stInfo, "lookup failed: "+f.rptErr.Error(), refCleartext)
+		r.Add(grpMailTLS, "tls-rpt", findings.Info, "lookup failed: "+f.rptErr.Error(), refCleartext)
 	case len(pick(f.rpt, "v=tlsrptv1")) == 0:
-		r.add(grpMailTLS, "tls-rpt", stInfo,
+		r.Add(grpMailTLS, "tls-rpt", findings.Info,
 			"no TLS-RPT record — failed TLS deliveries to this domain are not reported to anybody",
 			refCleartext)
 	default:
-		r.add(grpMailTLS, "tls-rpt", stOK, "senders report TLS delivery failures", refCleartext)
+		r.Add(grpMailTLS, "tls-rpt", findings.OK, "senders report TLS delivery failures", refCleartext)
 	}
 }
 
@@ -461,17 +462,17 @@ func notFound(err error) bool {
 	return errors.As(err, &dnsErr) && dnsErr.IsNotFound
 }
 
-func auditMailRouting(r *report, f mailFacts) {
+func auditMailRouting(r *findings.Report, f mailFacts) {
 	mx := f.mx
 	if f.mxErr != nil || len(mx) == 0 {
-		r.add(grpRouting, "mx", stInfo, "no MX records — this domain does not receive mail", refSpoofing)
+		r.Add(grpRouting, "mx", findings.Info, "no MX records — this domain does not receive mail", refSpoofing)
 		return
 	}
 	// RFC 7505: a single "." host is the explicit statement that a domain
 	// accepts no mail. It is a hardening measure, not an omission, and
 	// grading it as one would train people to undo it.
 	if len(mx) == 1 && strings.TrimSuffix(mx[0].Host, ".") == "" {
-		r.add(grpRouting, "mx", stOK,
+		r.Add(grpRouting, "mx", findings.OK,
 			"null MX (RFC 7505) — the domain states explicitly that it accepts no mail", refSpoofing)
 		return
 	}
@@ -479,6 +480,6 @@ func auditMailRouting(r *report, f mailFacts) {
 	for _, m := range mx {
 		hosts = append(hosts, strings.TrimSuffix(m.Host, "."))
 	}
-	r.add(grpRouting, "mx", stInfo, plural(len(hosts), "mail exchanger")+": "+strings.Join(hosts, ", "),
+	r.Add(grpRouting, "mx", findings.Info, findings.Plural(len(hosts), "mail exchanger")+": "+strings.Join(hosts, ", "),
 		refSpoofing)
 }

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/this-is-tobi/rta/builtin/internal/x509check"
+	"github.com/this-is-tobi/rta/pkg/findings"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -33,14 +34,14 @@ const hstsPreloadMinAge = 31536000 // 1 year
 // Groups order the detail page and name its sections. A check belongs to
 // exactly one, decided where the check is written rather than inferred.
 var (
-	grpTransport = group{"transport", "transport & tls"}
-	grpHeaders   = group{"headers", "security headers"}
-	grpCORS      = group{"cors", "cross-origin"}
-	grpCookies   = group{"cookies", "cookies"}
-	grpExposure  = group{"exposure", "information exposure"}
+	grpTransport = findings.Group{ID: "transport", Title: "transport & tls"}
+	grpHeaders   = findings.Group{ID: "headers", Title: "security headers"}
+	grpCORS      = findings.Group{ID: "cors", Title: "cross-origin"}
+	grpCookies   = findings.Group{ID: "cookies", Title: "cookies"}
+	grpExposure  = findings.Group{ID: "exposure", Title: "information exposure"}
 )
 
-var groupOrder = []group{grpTransport, grpHeaders, grpCORS, grpCookies, grpExposure}
+var groupOrder = []findings.Group{grpTransport, grpHeaders, grpCORS, grpCookies, grpExposure}
 
 // runWeb performs a single HTTPS request and grades what the host reveals.
 // One round trip yields the response headers, the negotiated TLS state and
@@ -111,7 +112,7 @@ func runWeb(ctx context.Context, req plugin.Request) (view.View, error) {
 	}
 	defer resp.Body.Close()
 
-	r := &report{}
+	r := &findings.Report{}
 	// Every check below reads the response that came back, so the hostname
 	// they are told about has to be the one it came from. Reading the
 	// certificate against the URL that was *asked for* is how a valid
@@ -135,7 +136,7 @@ func runWeb(ctx context.Context, req plugin.Request) (view.View, error) {
 	if req.Bool("detail") {
 		return detailedWeb(ctx, req, r, u, resp)
 	}
-	return r.table(true), nil
+	return r.Table(true), nil
 }
 
 // detailedWeb is the full-page report: the same findings, grouped into the
@@ -143,7 +144,7 @@ func runWeb(ctx context.Context, req plugin.Request) (view.View, error) {
 // controls they cite. Nothing is recomputed — a detail page is an
 // arrangement of what the compact view already found, which is what keeps
 // the two from ever disagreeing.
-func detailedWeb(ctx context.Context, req plugin.Request, r *report, requested *url.URL, resp *stdhttp.Response) (view.View, error) {
+func detailedWeb(ctx context.Context, req plugin.Request, r *findings.Report, requested *url.URL, resp *stdhttp.Response) (view.View, error) {
 	landed := resp.Request.URL
 	pairs := []view.Pair{{Key: "target", Value: landed.String()}}
 	if landed.String() != requested.String() {
@@ -152,7 +153,7 @@ func detailedWeb(ctx context.Context, req plugin.Request, r *report, requested *
 		// produced it.
 		pairs = append(pairs, view.Pair{Key: "requested", Value: requested.String()})
 	}
-	pairs = append(pairs, r.grade()...)
+	pairs = append(pairs, r.Grade()...)
 	if resp.TLS != nil {
 		pairs = append(pairs, view.Pair{Key: "tls", Value: tls.VersionName(resp.TLS.Version) +
 			" · " + tls.CipherSuiteName(resp.TLS.CipherSuite)})
@@ -164,7 +165,7 @@ func detailedWeb(ctx context.Context, req plugin.Request, r *report, requested *
 	// enough, and a list of other people's tools is not a finding.
 	pairs = append(pairs, webDeeper(landed.Host)...)
 
-	return detailPage(ctx, req, r, groupOrder, view.KeyValue{Pairs: pairs}), nil
+	return r.Page(ctx, req, groupOrder, view.KeyValue{Pairs: pairs}), nil
 }
 
 // normalizeURL defaults a bare host to HTTPS — the audit is about how a host
@@ -191,18 +192,18 @@ func normalizeURL(host string) string {
 // plaintext used to reach the same "plaintext HTTP" row as a site that was
 // never encrypted at all, and the two are not the same finding: one has no
 // certificate, the other has one and sends you past it.
-func auditTransport(r *report, requested *url.URL, resp *stdhttp.Response) {
+func auditTransport(r *findings.Report, requested *url.URL, resp *stdhttp.Response) {
 	landed := resp.Request.URL
 	switch {
 	case resp.TLS != nil && landed.Scheme == "https":
 		if requested.Scheme == "http" {
-			r.add(grpTransport, "transport", stOK,
+			r.Add(grpTransport, "transport", findings.OK,
 				"HTTPS — the plaintext URL redirects here, which is the upgrade to want", refCleartext)
 			return
 		}
-		r.add(grpTransport, "transport", stOK, "HTTPS", refCleartext)
+		r.Add(grpTransport, "transport", findings.OK, "HTTPS", refCleartext)
 	case requested.Scheme == "https":
-		r.add(grpTransport, "transport", stFail,
+		r.Add(grpTransport, "transport", findings.Fail,
 			"downgraded to plaintext — "+requested.String()+" redirects to "+landed.String()+
 				", so traffic that started encrypted does not stay that way", refCleartext)
 	default:
@@ -212,33 +213,33 @@ func auditTransport(r *report, requested *url.URL, resp *stdhttp.Response) {
 			// the redirect row is what says where it goes.
 			detail += ", and nothing redirects to HTTPS"
 		}
-		r.add(grpTransport, "transport", stFail, detail, refCleartext)
+		r.Add(grpTransport, "transport", findings.Fail, detail, refCleartext)
 	}
 }
 
-func auditTLS(r *report, state *tls.ConnectionState, host string) {
+func auditTLS(r *findings.Report, state *tls.ConnectionState, host string) {
 	if state == nil {
 		return
 	}
 	switch state.Version {
 	case tls.VersionTLS13:
-		r.add(grpTransport, "tls-version", stOK, "TLS 1.3", refWeakCrypto)
+		r.Add(grpTransport, "tls-version", findings.OK, "TLS 1.3", refWeakCrypto)
 	case tls.VersionTLS12:
-		r.add(grpTransport, "tls-version", stOK, "TLS 1.2", refWeakCrypto)
+		r.Add(grpTransport, "tls-version", findings.OK, "TLS 1.2", refWeakCrypto)
 	default:
-		r.add(grpTransport, "tls-version", stFail, tls.VersionName(state.Version)+" — deprecated, upgrade to TLS 1.2+", refWeakCrypto)
+		r.Add(grpTransport, "tls-version", findings.Fail, tls.VersionName(state.Version)+" — deprecated, upgrade to TLS 1.2+", refWeakCrypto)
 	}
-	r.add(grpTransport, "tls-cipher", cipherGrade(state.CipherSuite), tls.CipherSuiteName(state.CipherSuite), refWeakCrypto)
+	r.Add(grpTransport, "tls-cipher", cipherGrade(state.CipherSuite), tls.CipherSuiteName(state.CipherSuite), refWeakCrypto)
 
 	if len(state.PeerCertificates) == 0 {
-		r.add(grpTransport, "certificate", stFail, "no certificate presented", refCertValidation)
+		r.Add(grpTransport, "certificate", findings.Fail, "no certificate presented", refCertValidation)
 		return
 	}
 	leaf := state.PeerCertificates[0]
 	if s := x509check.Chain(state.PeerCertificates, host); s != "" {
-		r.add(grpTransport, "cert-chain", stFail, s, refCertValidation)
+		r.Add(grpTransport, "cert-chain", findings.Fail, s, refCertValidation)
 	} else {
-		r.add(grpTransport, "cert-chain", stOK, "valid for "+host, refCertValidation)
+		r.Add(grpTransport, "cert-chain", findings.OK, "valid for "+host, refCertValidation)
 	}
 	// The warning window is the shared default rather than a number local to
 	// this file. It used to be 15 days here against `cert expiry`'s 30, so a
@@ -246,15 +247,15 @@ func auditTLS(r *report, state *tls.ConnectionState, host string) {
 	// the cert check — same host, same minute, two answers.
 	switch {
 	case time.Now().After(leaf.NotAfter):
-		r.add(grpTransport, "cert-expiry", stFail, "expired "+leaf.NotAfter.Format("2006-01-02"), refCertValidation)
+		r.Add(grpTransport, "cert-expiry", findings.Fail, "expired "+leaf.NotAfter.Format("2006-01-02"), refCertValidation)
 	case x509check.Expiring(leaf.NotAfter, x509check.DefaultWarnDays):
-		r.add(grpTransport, "cert-expiry", stWarn, fmt.Sprintf("expires %s (<%dd)",
+		r.Add(grpTransport, "cert-expiry", findings.Warn, fmt.Sprintf("expires %s (<%dd)",
 			leaf.NotAfter.Format("2006-01-02"), x509check.DefaultWarnDays), refCertValidation)
 	default:
-		r.add(grpTransport, "cert-expiry", stOK, fmt.Sprintf("valid until %s (%dd)",
+		r.Add(grpTransport, "cert-expiry", findings.OK, fmt.Sprintf("valid until %s (%dd)",
 			leaf.NotAfter.Format("2006-01-02"), int(time.Until(leaf.NotAfter).Hours())/24), refCertValidation)
 	}
-	r.add(grpTransport, "cert-signature", sigAlgGrade(leaf.SignatureAlgorithm), leaf.SignatureAlgorithm.String(), refWeakCrypto)
+	r.Add(grpTransport, "cert-signature", sigAlgGrade(leaf.SignatureAlgorithm), leaf.SignatureAlgorithm.String(), refWeakCrypto)
 }
 
 // cipherGrade favors AEAD suites (GCM, ChaCha20-Poly1305) — TLS 1.3 offers
@@ -263,9 +264,9 @@ func auditTLS(r *report, state *tls.ConnectionState, host string) {
 func cipherGrade(id uint16) string {
 	name := tls.CipherSuiteName(id)
 	if strings.Contains(name, "GCM") || strings.Contains(name, "CHACHA20_POLY1305") {
-		return stOK
+		return findings.OK
 	}
-	return stWarn
+	return findings.Warn
 }
 
 // sigAlgGrade flags a certificate signed with a broken or deprecated hash —
@@ -273,9 +274,9 @@ func cipherGrade(id uint16) string {
 func sigAlgGrade(alg x509.SignatureAlgorithm) string {
 	switch alg {
 	case x509.MD2WithRSA, x509.MD5WithRSA, x509.SHA1WithRSA, x509.DSAWithSHA1, x509.ECDSAWithSHA1:
-		return stFail
+		return findings.Fail
 	default:
-		return stOK
+		return findings.OK
 	}
 }
 
@@ -284,7 +285,7 @@ func sigAlgGrade(alg x509.SignatureAlgorithm) string {
 // response rather than a single already-extracted value.
 type headerCheck struct {
 	label string
-	ref   reference
+	ref   findings.Reference
 	grade func(h stdhttp.Header) (status, detail string)
 }
 
@@ -292,9 +293,9 @@ type headerCheck struct {
 func presence(name, missing string) func(stdhttp.Header) (string, string) {
 	return func(h stdhttp.Header) (string, string) {
 		if v := h.Get(name); v != "" {
-			return stOK, v
+			return findings.OK, v
 		}
-		return stWarn, missing
+		return findings.Warn, missing
 	}
 }
 
@@ -303,9 +304,9 @@ func presence(name, missing string) func(stdhttp.Header) (string, string) {
 func info(name, missing string) func(stdhttp.Header) (string, string) {
 	return func(h stdhttp.Header) (string, string) {
 		if v := h.Get(name); v != "" {
-			return stOK, v
+			return findings.OK, v
 		}
-		return stInfo, missing
+		return findings.Info, missing
 	}
 }
 
@@ -330,12 +331,12 @@ var documentHeaders = []headerCheck{
 	{"x-content-type-options", refMisconfig, func(h stdhttp.Header) (string, string) {
 		v := h.Get("X-Content-Type-Options")
 		if strings.EqualFold(strings.TrimSpace(v), "nosniff") {
-			return stOK, "nosniff"
+			return findings.OK, "nosniff"
 		}
 		if v == "" {
-			return stWarn, "missing — set to nosniff"
+			return findings.Warn, "missing — set to nosniff"
 		}
-		return stWarn, "unexpected value: " + v
+		return findings.Warn, "unexpected value: " + v
 	}},
 	{"x-frame-options", refClickjacking, func(h stdhttp.Header) (string, string) {
 		return gradeFraming(h.Get("X-Frame-Options"), h.Get("Content-Security-Policy"))
@@ -350,14 +351,14 @@ var documentHeaders = []headerCheck{
 	{"corp", refMisconfig, info("Cross-Origin-Resource-Policy", "not set — this response can be embedded cross-origin")},
 }
 
-func auditSecurityHeaders(r *report, h stdhttp.Header) { gradeHeaders(r, h, securityHeaders) }
+func auditSecurityHeaders(r *findings.Report, h stdhttp.Header) { gradeHeaders(r, h, securityHeaders) }
 
-func auditDocumentHeaders(r *report, h stdhttp.Header) { gradeHeaders(r, h, documentHeaders) }
+func auditDocumentHeaders(r *findings.Report, h stdhttp.Header) { gradeHeaders(r, h, documentHeaders) }
 
-func gradeHeaders(r *report, h stdhttp.Header, checks []headerCheck) {
+func gradeHeaders(r *findings.Report, h stdhttp.Header, checks []headerCheck) {
 	for _, hc := range checks {
 		status, detail := hc.grade(h)
-		r.add(grpHeaders, hc.label, status, detail, hc.ref)
+		r.Add(grpHeaders, hc.label, status, detail, hc.ref)
 	}
 }
 
@@ -368,19 +369,19 @@ func gradeHeaders(r *report, h stdhttp.Header, checks []headerCheck) {
 // an attacker waiting it out.
 func gradeHSTS(v string) (string, string) {
 	if v == "" {
-		return stFail, "missing — no HSTS, downgrade attacks possible"
+		return findings.Fail, "missing — no HSTS, downgrade attacks possible"
 	}
 	lower := strings.ToLower(v)
 	maxAge := hstsMaxAge(lower)
 	switch {
 	case maxAge <= 0:
-		return stWarn, "present but max-age<=0 — disables HSTS, effectively missing: " + v
+		return findings.Warn, "present but max-age<=0 — disables HSTS, effectively missing: " + v
 	case maxAge < hstsPreloadMinAge:
-		return stWarn, fmt.Sprintf("max-age too short for preload eligibility (%ds < 1y): %s", maxAge, v)
+		return findings.Warn, fmt.Sprintf("max-age too short for preload eligibility (%ds < 1y): %s", maxAge, v)
 	case !strings.Contains(lower, "includesubdomains"):
-		return stWarn, "no includeSubDomains — sibling subdomains stay exposed: " + v
+		return findings.Warn, "no includeSubDomains — sibling subdomains stay exposed: " + v
 	default:
-		return stOK, v
+		return findings.OK, v
 	}
 }
 
@@ -408,7 +409,7 @@ func hstsMaxAge(lowerHeaderValue string) int {
 // no XSS defense at all, and "CSP present" alone would have said it did.
 func gradeCSP(v string) (string, string) {
 	if v == "" {
-		return stWarn, "missing — no CSP, weaker XSS defense"
+		return findings.Warn, "missing — no CSP, weaker XSS defense"
 	}
 	lower := strings.ToLower(v)
 	var weak []string
@@ -427,9 +428,9 @@ func gradeCSP(v string) (string, string) {
 		}
 	}
 	if len(weak) == 0 {
-		return stOK, v
+		return findings.OK, v
 	}
-	return stWarn, "weak: " + strings.Join(weak, ", ")
+	return findings.Warn, "weak: " + strings.Join(weak, ", ")
 }
 
 // cspHasWildcardSource reports whether any directive names a bare "*" as one
@@ -464,13 +465,13 @@ func gradeFraming(xfo, csp string) (string, string) {
 	hasFrameAncestors := strings.Contains(strings.ToLower(csp), "frame-ancestors")
 	switch {
 	case hasXFO && hasFrameAncestors:
-		return stOK, xfo + " (+ CSP frame-ancestors)"
+		return findings.OK, xfo + " (+ CSP frame-ancestors)"
 	case hasFrameAncestors:
-		return stOK, "no X-Frame-Options, but CSP frame-ancestors covers it"
+		return findings.OK, "no X-Frame-Options, but CSP frame-ancestors covers it"
 	case hasXFO:
-		return stOK, xfo
+		return findings.OK, xfo
 	default:
-		return stFail, "no X-Frame-Options and no CSP frame-ancestors — clickjacking is not defended against"
+		return findings.Fail, "no X-Frame-Options and no CSP frame-ancestors — clickjacking is not defended against"
 	}
 }
 
@@ -480,7 +481,7 @@ func gradeFraming(xfo, csp string) (string, string) {
 // authenticated API into one any other site can call on a victim's behalf.
 // Silent when the response carries no CORS headers at all: most sites
 // legitimately don't, and that is not itself a finding.
-func auditCORS(r *report, h stdhttp.Header) {
+func auditCORS(r *findings.Report, h stdhttp.Header) {
 	allowOrigin := h.Get("Access-Control-Allow-Origin")
 	if allowOrigin == "" {
 		return
@@ -488,15 +489,15 @@ func auditCORS(r *report, h stdhttp.Header) {
 	creds := strings.EqualFold(strings.TrimSpace(h.Get("Access-Control-Allow-Credentials")), "true")
 	switch {
 	case allowOrigin == corsProbeOrigin && creds:
-		r.add(grpCORS, "cors", stFail, "reflects an arbitrary Origin with credentials allowed — cross-origin account takeover risk", refCORS)
+		r.Add(grpCORS, "cors", findings.Fail, "reflects an arbitrary Origin with credentials allowed — cross-origin account takeover risk", refCORS)
 	case allowOrigin == corsProbeOrigin:
-		r.add(grpCORS, "cors", stWarn, "reflects an arbitrary Origin ("+corsProbeOrigin+") — confirm this is intentional", refCORS)
+		r.Add(grpCORS, "cors", findings.Warn, "reflects an arbitrary Origin ("+corsProbeOrigin+") — confirm this is intentional", refCORS)
 	case allowOrigin == "*" && creds:
-		r.add(grpCORS, "cors", stWarn, "wildcard origin with credentials allowed — browsers reject this combination, but it signals a misconfiguration", refCORS)
+		r.Add(grpCORS, "cors", findings.Warn, "wildcard origin with credentials allowed — browsers reject this combination, but it signals a misconfiguration", refCORS)
 	case allowOrigin == "*":
-		r.add(grpCORS, "cors", stInfo, "open to all origins (*) — fine for public, unauthenticated resources", refCORS)
+		r.Add(grpCORS, "cors", findings.Info, "open to all origins (*) — fine for public, unauthenticated resources", refCORS)
 	default:
-		r.add(grpCORS, "cors", stOK, "restricted to: "+allowOrigin, refCORS)
+		r.Add(grpCORS, "cors", findings.OK, "restricted to: "+allowOrigin, refCORS)
 	}
 }
 
@@ -510,26 +511,26 @@ var exposureHeaders = []struct{ name, label string }{
 	{"Via", "via"},
 }
 
-func auditExposure(r *report, h stdhttp.Header) {
+func auditExposure(r *findings.Report, h stdhttp.Header) {
 	for _, e := range exposureHeaders {
 		v := h.Get(e.name)
 		if v == "" {
 			continue
 		}
-		status := stInfo
+		status := findings.Info
 		// A version number in the banner is the real risk: it hands an
 		// attacker a CVE shortlist.
 		if strings.ContainsAny(v, "0123456789") {
-			status = stWarn
+			status = findings.Warn
 		}
-		r.add(grpExposure, e.label, status, "discloses: "+v, refInfoExposure)
+		r.Add(grpExposure, e.label, status, "discloses: "+v, refInfoExposure)
 	}
 	// X-XSS-Protection is legacy: modern guidance (including OWASP's own) is
 	// that CSP supersedes it and the header itself has been the source of
 	// browser-specific XSS bugs in the past — worth naming when present so a
 	// hardening pass knows it is inherited config, not something to add.
 	if v := h.Get("X-XSS-Protection"); v != "" {
-		r.add(grpExposure, "x-xss-protection", stInfo, "present but deprecated — superseded by CSP: "+v, refMisconfig)
+		r.Add(grpExposure, "x-xss-protection", findings.Info, "present but deprecated — superseded by CSP: "+v, refMisconfig)
 	}
 }
 
@@ -538,7 +539,7 @@ func auditExposure(r *report, h stdhttp.Header) {
 // cookies are missing HttpOnly" is the question a fix is organized around.
 var cookieAttrs = []struct {
 	check   string
-	ref     reference
+	ref     findings.Reference
 	missing func(*stdhttp.Cookie) bool
 	why     string
 }{
@@ -551,7 +552,7 @@ var cookieAttrs = []struct {
 	}, "attached to cross-site requests, the precondition for CSRF"},
 }
 
-func auditCookies(r *report, resp *stdhttp.Response) {
+func auditCookies(r *findings.Report, resp *stdhttp.Response) {
 	cookies := resp.Cookies()
 	if len(cookies) == 0 {
 		return
@@ -564,11 +565,11 @@ func auditCookies(r *report, resp *stdhttp.Response) {
 			}
 		}
 		if len(weak) == 0 {
-			r.add(grpCookies, attr.check, stOK, fmt.Sprintf("all %d cookie(s) set", len(cookies)), attr.ref)
+			r.Add(grpCookies, attr.check, findings.OK, fmt.Sprintf("all %d cookie(s) set", len(cookies)), attr.ref)
 			continue
 		}
 		sort.Strings(weak)
-		r.add(grpCookies, attr.check, stWarn,
+		r.Add(grpCookies, attr.check, findings.Warn,
 			strings.Join(weak, ", ")+" — "+attr.why, attr.ref)
 	}
 }

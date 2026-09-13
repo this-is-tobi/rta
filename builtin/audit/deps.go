@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/this-is-tobi/rta/builtin/internal/gitclone"
+	"github.com/this-is-tobi/rta/pkg/findings"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -28,11 +29,11 @@ import (
 
 // Groups order the detail page and name its sections.
 var (
-	grpVulnerable = group{"vulnerabilities", "known vulnerabilities"}
-	grpInventory  = group{"inventory", "inventory"}
+	grpVulnerable = findings.Group{ID: "vulnerabilities", Title: "known vulnerabilities"}
+	grpInventory  = findings.Group{ID: "inventory", Title: "inventory"}
 )
 
-var depsGroupOrder = []group{grpVulnerable, grpInventory}
+var depsGroupOrder = []findings.Group{grpVulnerable, grpInventory}
 
 func runDeps(ctx context.Context, req plugin.Request) (view.View, error) {
 	path := strings.TrimSpace(req.String("path"))
@@ -65,7 +66,7 @@ func runDeps(ctx context.Context, req plugin.Request) (view.View, error) {
 
 	inv := read(proj.fsys, names, shown)
 
-	r := &report{}
+	r := &findings.Report{}
 	offline := req.Bool("offline")
 	var (
 		vulns   map[string][]string
@@ -93,13 +94,13 @@ func runDeps(ctx context.Context, req plugin.Request) (view.View, error) {
 
 	gradeDeps(r, inv, vulns, records, capped, offline)
 	if truncated {
-		r.add(grpInventory, "scan", stWarn,
+		r.Add(grpInventory, "scan", findings.Warn,
 			"stopped at "+strconv.Itoa(maxManifests)+" manifests or "+strconv.Itoa(maxScanDepth)+
 				" directory levels, so this covers part of the tree — narrow the path to audit the rest",
 			refVulnerableDep)
 	}
 	if inv.truncated {
-		r.add(grpInventory, "scan", stWarn,
+		r.Add(grpInventory, "scan", findings.Warn,
 			"one manifest declared more components than this reads at once, so the inventory covers "+
 				"part of it — narrow the path to audit the rest",
 			refVulnerableDep)
@@ -110,11 +111,11 @@ func runDeps(ctx context.Context, req plugin.Request) (view.View, error) {
 			{Key: "path", Value: remoteLabel(path)},
 			{Key: "manifests", Value: manifestSummary(path, shown)},
 			{Key: "dependencies", Value: strconv.Itoa(len(inv.all))},
-		}, r.grade()...)
+		}, r.Grade()...)
 		summary = append(summary, depsDeeper(remoteLabel(path), gitclone.IsRemote(path), shown)...)
-		return detailPage(ctx, req, r, depsGroupOrder, view.KeyValue{Pairs: summary}), nil
+		return r.Page(ctx, req, depsGroupOrder, view.KeyValue{Pairs: summary}), nil
 	}
-	return r.table(true), nil
+	return r.Table(true), nil
 }
 
 // How much of a chain is worth printing. Three explanations, eight links: a
@@ -214,10 +215,10 @@ func renderChains(chains [][]string) string {
 // manager's job, and every package manager already ships the command. So the
 // report answers what the file states, and hands over the exact invocation —
 // with the affected package already in it — for the rest.
-func gradeProvenance(r *report, affected []component, inv inventory) {
+func gradeProvenance(r *findings.Report, affected []component, inv inventory) {
 	g := inv.structure
 	if g.truncated {
-		r.add(grpInventory, "structure", stWarn,
+		r.Add(grpInventory, "structure", findings.Warn,
 			"the dependency structure was larger than this reads, so a chain above may stop short of "+
 				"the package that actually pulled it in", refVulnerableDep)
 	}
@@ -250,12 +251,12 @@ func gradeProvenance(r *report, affected []component, inv inventory) {
 	if len(unexplained) > 1 {
 		subject = "them"
 	}
-	detail := plural(len(unexplained), "affected package") + " could not be traced to what pulled " +
+	detail := findings.Plural(len(unexplained), "affected package") + " could not be traced to what pulled " +
 		subject + " in, because " + filepath.Base(c.source) + " does not record that"
 	if cmd := whyCommand(c); cmd != "" {
 		detail += " — `" + cmd + "` prints it"
 	}
-	r.add(grpInventory, "provenance", stInfo, detail, refVulnerableDep)
+	r.Add(grpInventory, "provenance", findings.Info, detail, refVulnerableDep)
 }
 
 // whyCommand is the native invocation that answers "why is this here", with
@@ -383,7 +384,7 @@ func read(fsys fs.FS, names, shown []string) inventory {
 		got, g, err := parseManifest(fsys, m, shown[i])
 		if err != nil {
 			inv.unreadable = append(inv.unreadable,
-				unreadableManifest{path: shown[i], reason: clip(err.Error())})
+				unreadableManifest{path: shown[i], reason: findings.Clip(err.Error())})
 			continue
 		}
 		if room := maxComponents - len(comps); len(got) > room {
@@ -441,16 +442,16 @@ func everyAdvisory(vulns map[string][]string) []string {
 	return out
 }
 
-func gradeDeps(r *report, inv inventory, vulns map[string][]string,
+func gradeDeps(r *findings.Report, inv inventory, vulns map[string][]string,
 	records map[string]osvRecord, capped, offline bool) {
 	for _, m := range inv.unreadable {
-		r.add(grpInventory, "manifest", stWarn,
+		r.Add(grpInventory, "manifest", findings.Warn,
 			m.path+" could not be read, so nothing in it was checked: "+m.reason, refVulnerableDep)
 	}
 
 	if len(inv.all) == 0 {
-		r.add(grpInventory, "dependencies", stWarn,
-			"found "+plural(len(inv.manifests), "manifest")+" but no pinned dependencies in them — "+
+		r.Add(grpInventory, "dependencies", findings.Warn,
+			"found "+findings.Plural(len(inv.manifests), "manifest")+" but no pinned dependencies in them — "+
 				"a requirements.txt of ranges names no version to check", refUnpinnedDep)
 		return
 	}
@@ -472,28 +473,28 @@ func gradeDeps(r *report, inv inventory, vulns map[string][]string,
 		detail += " — " + advisoryLine(c, classes)
 		// Linked to the worst rather than the first: classify sorts by grade,
 		// so the page this opens is the one that says how bad this is.
-		r.addLinked(grpVulnerable, c.name, stFail, detail, refVulnerableDep, osvURL(classes[0].id))
+		r.AddLinked(grpVulnerable, c.name, findings.Fail, detail, refVulnerableDep, osvURL(classes[0].id))
 	}
 	switch {
 	case offline:
-		r.add(grpInventory, "advisories", stInfo,
+		r.Add(grpInventory, "advisories", findings.Info,
 			"not checked — --offline inventories the dependencies without asking osv.dev about them",
 			refVulnerableDep)
 	case len(affected) == 0 && len(inv.queryable) > 0:
-		r.add(grpInventory, "advisories", stOK,
+		r.Add(grpInventory, "advisories", findings.OK,
 			"none of the "+strconv.Itoa(len(inv.queryable))+" checked dependencies is named in an OSV advisory",
 			refVulnerableDep)
 	case len(affected) > 0 && capped:
 		// Never silently: a capped or timed-out detail pass leaves some rows
 		// ungraded, and a blank severity that means "not asked" reads exactly
 		// like one that means "nobody published a grade".
-		r.add(grpInventory, "grading", stWarn,
+		r.Add(grpInventory, "grading", findings.Warn,
 			"stopped after "+strconv.Itoa(osvDetailMax)+" advisories or at the --timeout, so some rows "+
 				"below are counted but not graded — raise --timeout, or run osv-scanner, trivy or grype "+
 				"for a full pass",
 			refVulnerableDep)
 	case len(affected) > 0:
-		r.add(grpInventory, "next step", stInfo,
+		r.Add(grpInventory, "next step", findings.Info,
 			"severity and fixed versions come from osv.dev's own records. Run osv-scanner, trivy or "+
 				"grype against this project for reachability — whether your code calls the vulnerable "+
 				"function at all, which no advisory can say",
@@ -512,8 +513,8 @@ func gradeDeps(r *report, inv inventory, vulns map[string][]string,
 		ecos = append(ecos, e+" "+strconv.Itoa(byEco[e]))
 	}
 	sort.Strings(ecos)
-	r.add(grpInventory, "dependencies", stInfo,
-		strconv.Itoa(len(inv.all))+" declared across "+plural(len(inv.manifests), "manifest")+
+	r.Add(grpInventory, "dependencies", findings.Info,
+		strconv.Itoa(len(inv.all))+" declared across "+findings.Plural(len(inv.manifests), "manifest")+
 			": "+strings.Join(ecos, ", ")+structureSummary(inv), refVulnerableDep)
 
 	if len(inv.unknown) > 0 {
@@ -521,8 +522,8 @@ func gradeDeps(r *report, inv inventory, vulns map[string][]string,
 		for _, c := range inv.unknown {
 			names = append(names, c.name)
 		}
-		r.add(grpInventory, "unchecked", stWarn,
-			plural(len(inv.unknown), "component")+" declare no ecosystem OSV recognises, so nothing was "+
+		r.Add(grpInventory, "unchecked", findings.Warn,
+			findings.Plural(len(inv.unknown), "component")+" declare no ecosystem OSV recognises, so nothing was "+
 				"asked about them: "+strings.Join(names, ", "), refVulnerableDep)
 	}
 }

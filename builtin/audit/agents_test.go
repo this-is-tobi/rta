@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/this-is-tobi/rta/pkg/findings"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -128,7 +129,7 @@ func TestAnUnrestrictedShellIsAFailingFinding(t *testing.T) {
 	if !ok {
 		t.Fatalf("unrestricted Bash produced no finding: %v", rows)
 	}
-	if shell[1] != stFail {
+	if shell[1] != findings.Fail {
 		t.Errorf("graded %q, want fail: %s", shell[1], shell[2])
 	}
 }
@@ -159,7 +160,7 @@ func TestBypassModeIsReportedInsteadOfTheRules(t *testing.T) {
 	if !ok {
 		t.Fatalf("bypassPermissions produced no finding: %v", rows)
 	}
-	if mode[1] != stFail {
+	if mode[1] != findings.Fail {
 		t.Errorf("graded %q, want fail", mode[1])
 	}
 }
@@ -191,7 +192,7 @@ func TestFilePermissionsAreGraded(t *testing.T) {
 
 	var worldReadable bool
 	for _, row := range agentRows(t, plugin.SurfaceCLI) {
-		if strings.Contains(row[2], "world-readable") && row[1] == stFail {
+		if strings.Contains(row[2], "world-readable") && row[1] == findings.Fail {
 			worldReadable = true
 		}
 	}

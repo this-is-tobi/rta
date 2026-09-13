@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/this-is-tobi/rta/pkg/findings"
 )
 
 // The second question to OSV: what are these advisories, actually.
@@ -409,7 +411,7 @@ func (u *unionFind) union(a, b string) {
 // bad advisory or a pattern — including how many nobody graded, because a
 // number that does not add up to the total is a number people stop trusting.
 func advisoryLine(c component, classes []vulnClass) string {
-	count := plural(len(classes), "advisory")
+	count := findings.Plural(len(classes), "advisory")
 	if counts := gradeCounts(classes); counts != "" {
 		count += " (" + counts + ")"
 	}
