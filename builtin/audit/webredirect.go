@@ -5,6 +5,8 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/this-is-tobi/rta/pkg/findings"
 )
 
 // Where a web audit is allowed to go, and how it says where it went.
@@ -74,24 +76,24 @@ func redirectTarget(resp *stdhttp.Response) *url.URL {
 // failure that hides is not a smaller truth but a different host's report
 // under the wrong name: `audit web example.com` graded www.example.com's
 // headers, cookies and certificate while the row above said example.com.
-func auditRedirect(r *report, requested *url.URL, resp *stdhttp.Response) {
+func auditRedirect(r *findings.Report, requested *url.URL, resp *stdhttp.Response) {
 	landed := resp.Request.URL
 	to := redirectTarget(resp)
 	switch {
 	case to != nil && !sameHost(requested, to):
-		r.add(grpTransport, "redirect", stWarn,
+		r.Add(grpTransport, "redirect", findings.Warn,
 			"not followed — "+to.String()+" is a different host, so the checks below grade this "+
 				"redirect and not the page it points at. `rta audit web "+to.String()+
 				"` audits that; the request stops at the host you named because a grant on this "+
-				"capability names one host", reference{})
+				"capability names one host", findings.Reference{})
 	case to != nil:
 		// Same host and still redirecting: the hop bound is the only way here.
-		r.add(grpTransport, "redirect", stWarn,
-			"still redirecting after "+plural(maxRedirects, "hop")+" — "+landed.String()+" → "+
-				to.String()+", so the checks below grade a redirect rather than a page", reference{})
+		r.Add(grpTransport, "redirect", findings.Warn,
+			"still redirecting after "+findings.Plural(maxRedirects, "hop")+" — "+landed.String()+" → "+
+				to.String()+", so the checks below grade a redirect rather than a page", findings.Reference{})
 	case landed.String() != requested.String():
-		r.add(grpTransport, "redirect", stInfo,
+		r.Add(grpTransport, "redirect", findings.Info,
 			requested.String()+" → "+landed.String()+" ("+strconv.Itoa(resp.StatusCode)+
-				") — same host, followed", reference{})
+				") — same host, followed", findings.Reference{})
 	}
 }

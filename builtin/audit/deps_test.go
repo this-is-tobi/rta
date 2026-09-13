@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+
+	"github.com/this-is-tobi/rta/pkg/findings"
 )
 
 func TestParseGoMod(t *testing.T) {
@@ -498,33 +500,33 @@ func TestDepsGradesAffectedPackages(t *testing.T) {
 	}
 	vulns := map[string][]string{comps[1].key(): {"GHSA-zzz", "GHSA-aaa"}}
 
-	r := &report{}
+	r := &findings.Report{}
 	gradeDeps(r, inventory{all: comps, queryable: comps, manifests: []string{"go.mod"},
 		structure: newGraph()}, vulns, nil, false, false)
 
 	f := mustFind(t, r, "example.com/bad")
-	if f.status != stFail {
-		t.Errorf("an affected package graded %q", f.status)
+	if f.Status != findings.Fail {
+		t.Errorf("an affected package graded %q", f.Status)
 	}
 	// Sorted, so the same run reads the same way twice.
-	if !strings.Contains(f.detail, "GHSA-aaa, GHSA-zzz") {
-		t.Errorf("advisory list not sorted: %q", f.detail)
+	if !strings.Contains(f.Detail, "GHSA-aaa, GHSA-zzz") {
+		t.Errorf("advisory list not sorted: %q", f.Detail)
 	}
 	// Followable through a field of its own. The URL used to be the tail of
-	// detail, which is the half clip() cuts.
-	if f.link != "https://osv.dev/vulnerability/GHSA-aaa" {
-		t.Errorf("the finding should be followable: link %q", f.link)
+	// detail, which is the half findings.Clip() cuts.
+	if f.Link != "https://osv.dev/vulnerability/GHSA-aaa" {
+		t.Errorf("the finding should be followable: link %q", f.Link)
 	}
-	if strings.Contains(f.detail, "http") {
-		t.Errorf("a URL inside clippable prose does not survive: %q", f.detail)
+	if strings.Contains(f.Detail, "http") {
+		t.Errorf("a URL inside clippable prose does not survive: %q", f.Detail)
 	}
 	if _, ok := find(r, "example.com/clean"); ok {
 		t.Error("a package with no advisories got a finding of its own")
 	}
 	// A hit has to name what goes deeper — that is the plugin's first rule.
 	next := mustFind(t, r, "next step")
-	if !strings.Contains(next.detail, "trivy") {
-		t.Errorf("no scanner named for the depth this does not have: %q", next.detail)
+	if !strings.Contains(next.Detail, "trivy") {
+		t.Errorf("no scanner named for the depth this does not have: %q", next.Detail)
 	}
 }
 
@@ -532,7 +534,7 @@ func TestDepsSaysWhatItCouldNotCheck(t *testing.T) {
 	known := []component{{ecosystem: "Go", name: "a", version: "v1"}}
 	unknown := []component{{name: "mystery", version: "1.0"}}
 
-	r := &report{}
+	r := &findings.Report{}
 	gradeDeps(r, inventory{
 		all: append(known, unknown...), queryable: known, unknown: unknown,
 		unreadable: []unreadableManifest{{path: "weird.json", reason: "invalid character"}},
@@ -542,30 +544,30 @@ func TestDepsSaysWhatItCouldNotCheck(t *testing.T) {
 	// Silent partial coverage is the failure mode that matters: a report that
 	// looks complete and is not.
 	unchecked := mustFind(t, r, "unchecked")
-	if unchecked.status != stWarn || !strings.Contains(unchecked.detail, "mystery") {
+	if unchecked.Status != findings.Warn || !strings.Contains(unchecked.Detail, "mystery") {
 		t.Errorf("unrecognised components not declared: %+v", unchecked)
 	}
 	bad := mustFind(t, r, "manifest")
-	if bad.status != stWarn || !strings.Contains(bad.detail, "weird.json") {
+	if bad.Status != findings.Warn || !strings.Contains(bad.Detail, "weird.json") {
 		t.Errorf("an unparseable manifest was not declared: %+v", bad)
 	}
 }
 
 func TestDepsOfflineDoesNotClaimAnAllClear(t *testing.T) {
 	comps := []component{{ecosystem: "Go", name: "a", version: "v1"}}
-	r := &report{}
+	r := &findings.Report{}
 	gradeDeps(r, inventory{all: comps, queryable: comps, manifests: []string{"go.mod"},
 		structure: newGraph()}, nil, nil, false, true)
 
 	f := mustFind(t, r, "advisories")
-	if f.status != stInfo {
-		t.Errorf("offline graded %q — it must not read as a clean bill of health", f.status)
+	if f.Status != findings.Info {
+		t.Errorf("offline graded %q — it must not read as a clean bill of health", f.Status)
 	}
-	if status, _ := r.worst(); status != stOK {
+	if status, _ := r.Worst(); status != findings.OK {
 		t.Errorf("an offline inventory graded the project %q", status)
 	}
-	if !strings.Contains(f.detail, "--offline") {
-		t.Errorf("the finding should say why nothing was checked: %q", f.detail)
+	if !strings.Contains(f.Detail, "--offline") {
+		t.Errorf("the finding should say why nothing was checked: %q", f.Detail)
 	}
 }
 
@@ -595,24 +597,24 @@ func TestReadCapsTheComponentListAndSaysSo(t *testing.T) {
 }
 
 func TestEveryDepsFindingLandsInADeclaredGroup(t *testing.T) {
-	declared := map[group]bool{}
+	declared := map[findings.Group]bool{}
 	for _, g := range depsGroupOrder {
 		declared[g] = true
 	}
 	comps := []component{{ecosystem: "Go", name: "a", version: "v1"}, {name: "b", version: "2"}}
 	for _, offline := range []bool{true, false} {
-		r := &report{}
+		r := &findings.Report{}
 		gradeDeps(r, inventory{
 			all: comps, queryable: comps[:1], unknown: comps[1:],
 			unreadable: []unreadableManifest{{path: "x.json", reason: "unexpected end of JSON input"}},
 			manifests:  []string{"go.mod"}, structure: newGraph(),
 		}, map[string][]string{comps[0].key(): {"GHSA-1"}}, nil, false, offline)
-		for _, f := range r.findings {
-			if !declared[f.group] {
-				t.Errorf("finding %q is in group %q, which the detail page never renders", f.check, f.group)
+		for _, f := range r.Findings {
+			if !declared[f.Group] {
+				t.Errorf("finding %q is in group %q, which the detail page never renders", f.Check, f.Group)
 			}
-			if f.ref.cwe == "" {
-				t.Errorf("finding %q cites no control", f.check)
+			if f.Ref.CWE == "" {
+				t.Errorf("finding %q cites no control", f.Check)
 			}
 		}
 	}

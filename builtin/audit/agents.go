@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/this-is-tobi/rta/internal/guard"
+	"github.com/this-is-tobi/rta/pkg/findings"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -109,13 +110,13 @@ func agentFiles(home, wd string) []agentFile {
 
 // Groups order the detail page.
 var (
-	grpAgentTools   = group{"tools", "what the agent may run"}
-	grpAgentServers = group{"servers", "mcp servers"}
-	grpAgentModel   = group{"model", "where prompts go"}
-	grpAgentFiles   = group{"files", "the files themselves"}
+	grpAgentTools   = findings.Group{ID: "tools", Title: "what the agent may run"}
+	grpAgentServers = findings.Group{ID: "servers", Title: "mcp servers"}
+	grpAgentModel   = findings.Group{ID: "model", Title: "where prompts go"}
+	grpAgentFiles   = findings.Group{ID: "files", Title: "the files themselves"}
 )
 
-var agentsGroupOrder = []group{grpAgentTools, grpAgentServers, grpAgentModel, grpAgentFiles}
+var agentsGroupOrder = []findings.Group{grpAgentTools, grpAgentServers, grpAgentModel, grpAgentFiles}
 
 // agentReport carries the ordinary findings plus the edits that answer them.
 //
@@ -126,7 +127,7 @@ var agentsGroupOrder = []group{grpAgentTools, grpAgentServers, grpAgentModel, gr
 // cost of composing a string nobody asked for is nothing, and the alternative
 // is two walks over the same files that can disagree.
 type agentReport struct {
-	report
+	findings.Report
 	fixes []agentFix
 }
 
@@ -189,10 +190,10 @@ func runClients(ctx context.Context, req plugin.Request, catalog func() []plugin
 		}
 	}
 	if found == 0 {
-		r.add(grpAgentFiles, "config", stInfo,
-			"no agent configuration found in the usual places — nothing to grade", reference{})
+		r.Add(grpAgentFiles, "config", findings.Info,
+			"no agent configuration found in the usual places — nothing to grade", findings.Reference{})
 	}
-	auditModelEndpoint(&r.report)
+	auditModelEndpoint(&r.Report)
 	auditRtaReach(r, claudeSeen, catalog)
 
 	if req.Bool("fix") {
@@ -200,11 +201,11 @@ func runClients(ctx context.Context, req plugin.Request, catalog func() []plugin
 	}
 	if req.Bool("detail") {
 		summary := append([]view.Pair{
-			{Key: "files read", Value: plural(found, "file")},
-		}, r.grade()...)
-		return detailPage(ctx, req, &r.report, agentsGroupOrder, view.KeyValue{Pairs: summary}), nil
+			{Key: "files read", Value: findings.Plural(found, "file")},
+		}, r.Grade()...)
+		return r.Page(ctx, req, agentsGroupOrder, view.KeyValue{Pairs: summary}), nil
 	}
-	return r.table(true), nil
+	return r.Table(true), nil
 }
 
 // auditFileMode grades who else on this machine can read the file.
@@ -224,14 +225,14 @@ func auditFileMode(r *agentReport, f agentFile, mode os.FileMode) {
 	}
 	switch {
 	case mode&0o007 != 0:
-		r.add(grpAgentFiles, shortPath(f.path), stFail,
+		r.Add(grpAgentFiles, shortPath(f.path), findings.Fail,
 			f.label+" config is world-readable ("+mode.String()+") — every account on this "+
 				"machine can read what it holds", refCredExposed)
 	case mode&0o070 != 0:
-		r.add(grpAgentFiles, shortPath(f.path), stWarn,
+		r.Add(grpAgentFiles, shortPath(f.path), findings.Warn,
 			f.label+" config is group-readable ("+mode.String()+")", refCredExposed)
 	default:
-		r.add(grpAgentFiles, shortPath(f.path), stOK, f.label+" config is yours alone ("+mode.String()+")",
+		r.Add(grpAgentFiles, shortPath(f.path), findings.OK, f.label+" config is yours alone ("+mode.String()+")",
 			refCredExposed)
 	}
 }
@@ -240,17 +241,17 @@ func auditFileMode(r *agentReport, f agentFile, mode os.FileMode) {
 func auditAgentJSON(r *agentReport, f agentFile) {
 	data, err := os.ReadFile(f.path)
 	if err != nil {
-		r.add(grpAgentFiles, shortPath(f.path), stWarn,
-			f.label+" config could not be read: "+clip(err.Error()), reference{})
+		r.Add(grpAgentFiles, shortPath(f.path), findings.Warn,
+			f.label+" config could not be read: "+findings.Clip(err.Error()), findings.Reference{})
 		return
 	}
 	var doc any
 	if json.Unmarshal(data, &doc) != nil {
 		// Not a failure worth grading: several of these files are JSONC, and
 		// a comment is not a security finding.
-		r.add(grpAgentFiles, shortPath(f.path), stInfo,
+		r.Add(grpAgentFiles, shortPath(f.path), findings.Info,
 			f.label+" config is not plain JSON (comments are allowed in some of these), "+
-				"so only its permissions were graded", reference{})
+				"so only its permissions were graded", findings.Reference{})
 		return
 	}
 	servers := map[string]serverDecl{}
@@ -393,7 +394,7 @@ func gradeServers(r *agentReport, f agentFile, servers map[string]serverDecl) {
 			// pasted into an issue and piped somewhere, and the point of the
 			// finding is that the value is in a file — putting it on a screen
 			// as well would be the tool doing the thing it is warning about.
-			r.add(grpAgentServers, name, stFail,
+			r.Add(grpAgentServers, name, findings.Fail,
 				"launched with "+strings.Join(holds, ", ")+" in its env block, in plain text in "+
 					shortPath(f.path)+" — a file every process you run can read", refCredExposed)
 			// Prose and no snippet, deliberately: there is no syntax for this
@@ -414,7 +415,7 @@ func gradeServers(r *agentReport, f agentFile, servers map[string]serverDecl) {
 		}
 		sort.Strings(sent)
 		if len(sent) > 0 {
-			r.add(grpAgentServers, name, stFail,
+			r.Add(grpAgentServers, name, findings.Fail,
 				"called with "+strings.Join(sent, ", ")+" in its headers block, in plain text in "+
 					shortPath(f.path)+" — a file every process you run can read", refCredExposed)
 			r.addFix("credential", name+" — move "+strings.Join(sent, ", ")+" out of "+shortPath(f.path),
@@ -425,7 +426,7 @@ func gradeServers(r *agentReport, f agentFile, servers map[string]serverDecl) {
 					"token it is one a remote server already accepts.")
 		}
 		if host, plaintext := plaintextEndpoint(d.url); plaintext {
-			r.add(grpAgentServers, name, stFail,
+			r.Add(grpAgentServers, name, findings.Fail,
 				"called over plain http:// at "+host+" — on this transport the header is the entire "+
 					"credential and it crosses the network exactly as it is written", refCleartext)
 			r.addFix("plaintext", name+" — stop sending its credential in clear",
@@ -436,7 +437,7 @@ func gradeServers(r *agentReport, f agentFile, servers map[string]serverDecl) {
 		}
 		gradeContainer(r, f, name, d)
 		if fetch := fetchOnLaunch(d); fetch != "" {
-			r.add(grpAgentServers, name, stWarn,
+			r.Add(grpAgentServers, name, findings.Warn,
 				"launched with `"+fetch+"`, which fetches and runs whatever the registry serves "+
 					"at that moment — no version pinned, no digest checked", refUnpinnedDep)
 			r.addFix("pin", name+" — pin what launches with your editor",
@@ -515,7 +516,7 @@ func gradePermissions(r *agentReport, f agentFile, doc any) {
 		return
 	}
 	if mode, ok := perms["defaultMode"].(string); ok && strings.EqualFold(mode, "bypassPermissions") {
-		r.add(grpAgentTools, "permission mode", stFail,
+		r.Add(grpAgentTools, "permission mode", findings.Fail,
 			"defaultMode is bypassPermissions in "+shortPath(f.path)+
 				" — every tool runs without asking, which is every gate below it turned off",
 			refExcessivePriv)
@@ -537,7 +538,7 @@ func gradePermissions(r *agentReport, f agentFile, doc any) {
 		// `Bash` with no bracketed pattern is every command. `Bash(git
 		// status:*)` is a decision; `Bash` is the absence of one.
 		if strings.EqualFold(strings.TrimSpace(rule), "bash") {
-			r.add(grpAgentTools, "shell", stFail,
+			r.Add(grpAgentTools, "shell", findings.Fail,
 				"`Bash` is allowed unrestricted in "+shortPath(f.path)+
 					" — the agent can run any command, which includes every tool that reaches "+
 					"the things rta gates", refExcessivePriv)
@@ -601,20 +602,20 @@ func orElse(s, fallback string) string {
 // channel and a prompt-injection channel at once.
 //
 // Reported and never judged: rta cannot know whose gateway that is.
-func auditModelEndpoint(r *report) {
+func auditModelEndpoint(r *findings.Report) {
 	for _, key := range []string{"ANTHROPIC_BASE_URL", "ANTHROPIC_API_URL", "OPENAI_BASE_URL", "OPENAI_API_BASE"} {
 		v := strings.TrimSpace(os.Getenv(key))
 		if v == "" {
 			continue
 		}
-		r.add(grpAgentModel, "endpoint", stWarn,
+		r.Add(grpAgentModel, "endpoint", findings.Warn,
 			key+" points this shell's agents at "+v+
 				" — every prompt goes there, and what comes back is what the agent acts on. "+
 				"Deliberate if it is your gateway; worth knowing either way", refInfoExposure)
 	}
 	for _, key := range []string{"ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY", "OPENAI_API_KEY"} {
 		if os.Getenv(key) != "" {
-			r.add(grpAgentModel, "model credential", stInfo,
+			r.Add(grpAgentModel, "model credential", findings.Info,
 				key+" is set in this shell, so anything you launch from it inherits the key",
 				refCredExposed)
 		}
@@ -649,7 +650,7 @@ func auditRtaReach(r *agentReport, claudeSeen bool, catalog func() []plugin.Capa
 	if self, err := os.Executable(); err == nil {
 		detail += " (" + shortPath(self) + ")"
 	}
-	r.add(grpAgentTools, "rta itself", stInfo, detail, refExcessivePriv)
+	r.Add(grpAgentTools, "rta itself", findings.Info, detail, refExcessivePriv)
 	// Only where there is a file for the paste to land in: Claude Code is the
 	// one client whose permission rules live somewhere this audit reads, and
 	// handing another client's user an edit for a file they do not have is a

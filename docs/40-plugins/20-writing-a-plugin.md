@@ -207,6 +207,8 @@ p.AddAs("stations", "nearby stations", listStations, nil)
 
 It is optional — `Put` and `Add` work, and `Key()` falls back to the title — but then rewording a heading silently renames the handle. `sdktest` says so.
 
+If your plugin **grades** something — a realm's authentication settings, a repository's release hygiene — build the result with [`pkg/findings`](../../pkg/findings/) rather than a table of your own. A `findings.Report` collects one finding per check, each carrying a status, a group and the control it cites (an OWASP Top 10:2025 category with its CWE, or a named framework and control), and renders the same two ways `rta audit` does: `Table(true)` for the compact view and the tile, `Page` for the sectioned detail page with the references at the end. A reader who has run one audit can read yours, and the citation discipline comes with the type: verify every reference against its primary source before shipping it, because a wrong control reads as authoritative.
+
 ## Publishing it
 
 An **index** is a git repository holding one `index/<name>.yaml` manifest per plugin. That is the entire format. rta clones it with your own `git`, so your remotes, proxies and credentials keep working — over `https`, `ssh`, or a path on this machine; a `<transport>::<argument>` remote helper and cleartext `http://`/`git://` are refused — and it answers `rta plugin search` from the manifests alone without fetching or running anything.
@@ -293,4 +295,5 @@ Read them in this order and each one adds exactly one idea:
 
 - [`rta explain <capability>`](../20-using/10-cli.md#rta-explain) — the authoritative card for any capability, generated from the declaration itself. The fastest way to check what rta made of yours.
 - [`pkg/plugin`](../../pkg/plugin/) and [`pkg/view`](../../pkg/view/) — the contract in code, with the reasoning in the doc comments.
+- [`pkg/findings`](../../pkg/findings/) — the graded-check report an audit returns, rendered the way `rta audit` renders its own.
 - [`pkg/sdk/sdktest`](../../pkg/sdk/sdktest/) — the conformance suite your plugin should pass.

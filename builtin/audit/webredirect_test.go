@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/this-is-tobi/rta/pkg/findings"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -116,12 +117,12 @@ func TestAStoppedRedirectHandsOverTheNextCommand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := &report{}
+	r := &findings.Report{}
 	auditRedirect(r, u, fetch(t, u))
-	if len(r.findings) != 1 {
-		t.Fatalf("want one redirect finding, got %d", len(r.findings))
+	if len(r.Findings) != 1 {
+		t.Fatalf("want one redirect finding, got %d", len(r.Findings))
 	}
-	got := r.findings[0].detail
+	got := r.Findings[0].Detail
 	if !strings.Contains(got, "rta audit web ") {
 		t.Errorf("no follow-up command in the redirect finding: %q", got)
 	}
@@ -130,8 +131,8 @@ func TestAStoppedRedirectHandsOverTheNextCommand(t *testing.T) {
 	}
 	// Clipped, the destination must still be there — it is the one fact the
 	// row exists to carry.
-	if !strings.Contains(clip(got), target) {
-		t.Errorf("the destination is lost to the compact clip: %q", clip(got))
+	if !strings.Contains(findings.Clip(got), target) {
+		t.Errorf("the destination is lost to the compact clip: %q", findings.Clip(got))
 	}
 }
 
@@ -158,7 +159,7 @@ func TestAnUpgradeToHTTPSIsNotGradedAsPlaintext(t *testing.T) {
 	if transport == nil {
 		t.Fatal("no transport row")
 	}
-	if transport[1] != stOK {
+	if transport[1] != findings.OK {
 		t.Errorf("an http→https upgrade graded %q: %q", transport[1], transport[2])
 	}
 	if !strings.Contains(transport[2], "redirects here") {
@@ -190,7 +191,7 @@ func TestADowngradeToPlaintextIsReported(t *testing.T) {
 	if transport == nil {
 		t.Fatal("no transport row")
 	}
-	if transport[1] != stFail {
+	if transport[1] != findings.Fail {
 		t.Errorf("a downgrade to plaintext graded %q: %q", transport[1], transport[2])
 	}
 	if !strings.Contains(transport[2], "downgraded") {
@@ -207,7 +208,7 @@ func TestPlaintextWithNoRedirectSaysNothingUpgradesIt(t *testing.T) {
 	defer plain.Close()
 
 	transport := rows(t, plain.URL)["transport"]
-	if transport == nil || transport[1] != stFail {
+	if transport == nil || transport[1] != findings.Fail {
 		t.Fatalf("plaintext not graded as a failure: %v", transport)
 	}
 	if !strings.Contains(transport[2], "nothing redirects to HTTPS") {
