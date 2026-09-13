@@ -58,7 +58,7 @@ func Reveal(key string) (string, *view.Error) {
 	// asking for one. canPrompt requires SurfaceCLI, so nothing here can stop
 	// to ask a question nobody is present to answer.
 	req := plugin.NewRequest(map[string]any{
-		"passphrase": os.Getenv(passphraseEnv),
+		"passphrase": hostPassphrase(),
 		"identity":   os.Getenv(identityEnv),
 	}, false, true)
 
@@ -92,7 +92,7 @@ func Reveal(key string) (string, *view.Error) {
 // to "which of your entries" when the answer is "none I can see from here".
 func Names() []string {
 	req := plugin.NewRequest(map[string]any{
-		"passphrase": os.Getenv(passphraseEnv),
+		"passphrase": hostPassphrase(),
 		"identity":   os.Getenv(identityEnv),
 	}, false, true)
 	s, verr := load(req)
@@ -120,7 +120,7 @@ func Store(name, value, description, origin string) *view.Error {
 		return view.Errorf("kv.key.empty", "no entry named")
 	}
 	req := plugin.NewRequest(map[string]any{
-		"passphrase": os.Getenv(passphraseEnv),
+		"passphrase": hostPassphrase(),
 		"identity":   os.Getenv(identityEnv),
 	}, false, true)
 	// **Under the store lock, like every other writer.** This is a

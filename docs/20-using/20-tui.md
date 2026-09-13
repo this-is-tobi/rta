@@ -96,6 +96,8 @@ password for the role — staging fills it from kv:staging-db-password (secret)
 
 **The reference, never the value.** `kv:staging-db-password` is the name of an entry — something you wrote, in a file you can read — and naming it answers the question an empty masked box could not: whether you have to type this at all. An exported `RTA_PROFILE_STAGING_PASSWORD` is named the same way, and named as the winner, because that is the one the run will actually use. A box under an environment that supplies nothing says nothing, and you type it.
 
+**The store asks once per sitting.** A passphrase store unlocked from a TUI form stays open in this TUI for fifteen minutes past its last use — the header reads `◐ store unlocked · 14m` while it does — so the next kv action runs without the unlock form, and a profile's `kv:` reference is filled instead of failing because nothing on the update loop could ask. It lives in this process's memory and nowhere else: no file, no environment variable, nothing a plugin or an agent started from here inherits, and closing the TUI ends it. A wrong passphrase ends it, and so does a rekey. What it never covers is the reveal itself: `v` and `c` still open the unlock form, because the unlock is what makes showing a secret a deliberate act rather than a slip on a list.
+
 ### Tab means one thing on every field
 
 **Take me forward.** What that is depends only on what the box under the cursor can still be completed to, never on which field it is:

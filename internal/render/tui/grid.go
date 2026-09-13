@@ -525,6 +525,11 @@ func (m Model) dashboardView() string {
 	if badge := m.activeBadge(); badge != "" {
 		header += " " + m.paintBadge(badge)
 	}
+	// And whether the secret store is open in this process — the other fact
+	// about "where am I" that changes what the next keystroke can reach.
+	if badge := m.storeBadge(); badge != "" {
+		header += " " + badge
+	}
 	footer := m.dashFooter()
 	if len(m.tiles) == 0 {
 		return header + "\n\n" + theme.Subtle.Render("  no tiles available") + "\n" + footer

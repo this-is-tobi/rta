@@ -813,6 +813,10 @@ func runRekey(_ context.Context, req plugin.Request) (view.View, error) {
 	if verr := saveTo(s, recipients, want); verr != nil {
 		return nil, verr
 	}
+	// What opens the store just changed; a session remembering the old
+	// answer would fail on its next use, and that is not a wrong-passphrase
+	// message an operator should have to decode after a rekey they asked for.
+	forgetSession()
 	return view.Text{Body: rekeySummary(generated, want, stored)}, nil
 }
 

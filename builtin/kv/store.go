@@ -265,11 +265,26 @@ func load(req plugin.Request) (store, *view.Error) {
 	if s.Entries == nil {
 		s.Entries = map[string]entry{}
 	}
+	// A passphrase that just opened the store, typed into the TUI's masked
+	// form, starts the store session (session.go). Only the TUI, only a
+	// passphrase — an identity-mode open is the key file's business — and
+	// only after the decrypt above succeeded, so what is remembered is known
+	// to be the store's.
+	if req.Surface() == plugin.SurfaceTUI && identityPath(req) == "" {
+		if p := req.String("passphrase"); p != "" {
+			rememberSession(p)
+		}
+	}
 	return s, nil
 }
 
 // wrongKey names the failure in terms of whatever the caller actually tried.
 func wrongKey(req plugin.Request) *view.Error {
+	// Whichever request carried the wrong secret, what the session holds is
+	// not the store's passphrase any more — or never was. Ending it here,
+	// at the one place "this did not open the store" is named, means a
+	// stale session is re-asked rather than retried until its deadline.
+	forgetSession()
 	if identityPath(req) != "" {
 		return view.Errorf("kv.wrongkey", "that key cannot decrypt the store").
 			WithHint("`rta kv recipients` lists the public keys it was encrypted to")

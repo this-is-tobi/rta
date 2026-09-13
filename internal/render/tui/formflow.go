@@ -44,6 +44,11 @@ func (m Model) startForm(c plugin.Capability, prev map[string]any) (tea.Model, t
 	// form to point at instead.
 	prev = withoutSecrets(c, prev)
 	carry, shown := unasked(c, prev), asked(c, prev)
+	// A kv capability typed into the search bar takes its unlock pair from
+	// the store session the same way a row action does (result.go), and the
+	// two boxes leave the form below rather than being asked with the
+	// answer already behind them.
+	carry = withStoreSession(c, carry)
 	keys, rest := keyFields(c)
 	switch {
 	case c.Prefill != nil && len(keys) > 0 && len(rest) > 0:
@@ -60,9 +65,9 @@ func (m Model) startForm(c plugin.Capability, prev map[string]any) (tea.Model, t
 		if err != nil {
 			return m.formError(c, err)
 		}
-		m.form = m.runForm(c, c.Inputs, over(shown, defaults), carry)
+		m.form = m.runForm(c, withoutSessionUnlock(c, c.Inputs, carry), over(shown, defaults), carry)
 	default:
-		m.form = m.runForm(c, c.Inputs, shown, carry)
+		m.form = m.runForm(c, withoutSessionUnlock(c, c.Inputs, carry), shown, carry)
 	}
 	m.fitForm()
 	m.mode = modeForm
