@@ -270,6 +270,11 @@ func (m Model) runAction(a capAction, tbl view.Table) (tea.Model, tea.Cmd) {
 		}
 	}
 	m.current = cap
+	// The store session answers the unlock pair before the form question is
+	// asked, so a kv action in an already-unlocked TUI runs where it used
+	// to open a form holding nothing but the passphrase box. Disclosing
+	// capabilities are left out inside — see kvsession.go.
+	base = withStoreSession(cap, base)
 	// A bare action waives only the optional-field form — never the
 	// destructive confirmation, which is checked first on purpose.
 	if cap.Safety == plugin.Destructive || (!a.bare && len(fieldsAfter(cap, base)) > 0) {
