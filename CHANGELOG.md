@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.18.0](https://github.com/this-is-tobi/rta/compare/v0.17.0...v0.18.0) (2026-09-13)
+
+
+### Features
+
+* **findings:** a citation links to where its text is read ([4e18a51](https://github.com/this-is-tobi/rta/commit/4e18a518c654223b9ad46c717c1bcadcaaeb182c))
+* **tui:** the store asks for its passphrase once per sitting ([b04a2b6](https://github.com/this-is-tobi/rta/commit/b04a2b68aec8f16354f80be0482609366e844982))
+
+
+### Code Refactoring
+
+* **audit:** lift the findings report into pkg/findings ([6d599d5](https://github.com/this-is-tobi/rta/commit/6d599d52e4cda5b8cf04516f2eea60da60bacd38))
+
 ## [0.17.0](https://github.com/this-is-tobi/rta/compare/v0.16.0...v0.17.0) (2026-09-11)
 
 
