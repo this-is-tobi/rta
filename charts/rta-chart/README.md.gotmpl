@@ -96,7 +96,7 @@ It needs the metrics to actually reach Prometheus, so `observability.metrics.ena
 
 `ghcr.io/this-is-tobi/rta-full` carries every first-party plugin and every external tool, which makes it the widest reach rta has — the image *is* the plugin allowlist, and that one allows everything. For an instance an agent talks to unattended, build a narrow image with the plugins that job needs. For a homelab exercising `kube`, `cnpg` and the rest against real infrastructure, it is the honest choice, and `image.allowFullImage: true` lifts the refusal.
 
-It also requires `persistence.seedFromImage`. The full image records plugin **trust** inside its own data directory, and this chart's volume mounts over that path — without seeding, every plugin comes up `untrusted`, `rta cnpg list` answers `Unknown command "cnpg"`, and it reads as a broken image rather than a hidden file. An init container copies the image's data directory into the volume once, on first start.
+Nothing else is needed for its plugins to load. The image keeps them, with their **trust**, in its read-only system root at `/usr/local/lib/rta`, which this chart's data volume never touches — so a fresh volume on `/rta-home` hides nothing, and `rta plugin list` in the pod shows every plugin trusted by the image on first start.
 
 `plugins.allow` renders `RTA_ALLOW_PLUGINS`, which answers a different question: whether a plugin may reach a credential location. Only an image using rta's `docker-entrypoint.sh` reads it.
 

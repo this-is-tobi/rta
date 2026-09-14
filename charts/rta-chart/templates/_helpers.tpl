@@ -161,52 +161,6 @@ Parameters:
 
 
 {{/*
-The init container that seeds an empty data volume from the image's own data directory.
-
-The full image runs `rta plugin trust` at build time, and trust is recorded in the data directory -
-so the image ships a populated one, and mounting a fresh volume over that path hides it. The pod
-then starts with every plugin present and none of them trusted, which presents as a broken image
-rather than as a hidden file. Copying once, on first start, is what makes the volume the thing that
-carries trust forward across restarts, which is where it belongs anyway.
-
-Idempotent by marker file rather than by emptiness: a freshly provisioned volume is not reliably
-empty (ext4 leaves lost+found), and re-copying over a live data directory on every restart would
-overwrite grants and the record with the image's build-time state.
-Parameters:
-- root: The root context.
-- server: The server's resolved values.
-*/}}
-{{- define "rta.server.seedInitContainer" -}}
-{{- $root := .root -}}
-{{- $s := .server -}}
-- name: seed-data
-  image: {{ include "rta.image" (dict "root" $root) | quote }}
-  imagePullPolicy: {{ $root.Values.image.pullPolicy | quote }}
-  command:
-  - /bin/sh
-  - -c
-  - |
-    set -eu
-    if [ -f /rta-seed/.rta-seeded ]; then
-      echo "data volume already seeded, leaving it alone"
-      exit 0
-    fi
-    if [ -d {{ $s.persistence.seedSourcePath }} ]; then
-      cp -a {{ $s.persistence.seedSourcePath }}/. /rta-seed/ 2>/dev/null || true
-    fi
-    touch /rta-seed/.rta-seeded
-    echo "seeded the data volume from {{ $s.persistence.seedSourcePath }}"
-  {{- with include "rta.server.securityContext" (dict "root" $root "server" $s) }}
-  securityContext: {{- . | nindent 4 }}
-  {{- end }}
-  resources: {{- toYaml $s.resources | nindent 4 }}
-  volumeMounts:
-  - name: data
-    mountPath: /rta-seed
-{{- end -}}
-
-
-{{/*
 Common labels.
 */}}
 {{- define "rta.commonLabels" -}}
@@ -454,18 +408,12 @@ nobody arrives at the widest reach rta has by editing one line and not noticing 
 {{- fail (printf "image.repository is %q. The full image carries every first-party plugin and every external tool, which makes it the widest reach rta has - the opposite of what an agent-facing instance is for, since the image IS the plugin allowlist. Set image.allowFullImage=true if that is deliberate, or build a narrow image with the plugins this job needs." $root.Values.image.repository) -}}
 {{- end -}}
 
-{{- /* The full image records plugin *trust* inside its own data directory, which the data volume
-mounts over. Without seeding, the plugins are present and untrusted, `rta plugin list` says so, and
-it reads as the image being broken rather than as the volume hiding half of it. */ -}}
-{{- if and (include "rta.isFullImage" $root) (not $s.persistence.seedFromImage) -}}
-{{- fail (printf "%s.persistence.seedFromImage must be true with the full image: its plugin trust is baked into the image's data directory, and this instance's volume mounts over that path - the plugins would start up present but untrusted." $prefix) -}}
-{{- end -}}
-
-{{- /* The reverse of the check above: the narrow image has no shell to run the seed init
-container's copy, and nothing baked into it worth seeding in the first place. Refused here rather
-than left to CrashLoopBackOff the init container. */ -}}
-{{- if and $s.persistence.seedFromImage (include "rta.isNarrowImage" $root) -}}
-{{- fail (printf "%s.persistence.seedFromImage is true against the narrow image, which has no shell to run the copy and bakes no plugin trust to seed - the init container would crash instead of starting. Drop it, or point image.repository at an image that actually needs seeding." $prefix) -}}
+{{- /* The key that used to copy the image's data directory into the volume. It is gone because the
+reason is gone - the full image keeps its plugins and their trust in a read-only system root the
+volume never touches - and the schema lets unknown keys under persistence through, so a values
+file still carrying it would render, do nothing, and leave whoever wrote it believing it did. */ -}}
+{{- if hasKey $s.persistence "seedFromImage" -}}
+{{- fail (printf "%s.persistence.seedFromImage no longer exists: the full image keeps its plugins and their trust in /usr/local/lib/rta, outside the data volume, so nothing needs copying into it. Drop the key (and seedSourcePath if set)." $prefix) -}}
 {{- end -}}
 
 {{- /* RTA_ALLOW_PLUGINS is read by rta's docker-entrypoint.sh, which the narrow image does not
@@ -696,14 +644,9 @@ spec:
   {{- with $s.hostAliases }}
   hostAliases: {{- toYaml . | nindent 2 }}
   {{- end }}
-  {{- if or $s.persistence.seedFromImage $s.initContainers }}
-  initContainers:
-  {{- if $s.persistence.seedFromImage }}
-  {{- include "rta.server.seedInitContainer" (dict "root" $root "server" $s) | nindent 2 }}
-  {{- end }}
   {{- with $s.initContainers }}
+  initContainers:
   {{- tpl (toYaml .) $root | nindent 2 }}
-  {{- end }}
   {{- end }}
   containers:
   - name: rta
