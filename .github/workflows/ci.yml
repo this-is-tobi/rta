@@ -112,6 +112,10 @@ jobs:
       # single directory nothing formatted. It is also the first Go a plugin
       # author reads.
       FORMAT_PATHS: ./builtin ./cmd ./examples ./internal ./pkg
+      # golangci-lint runs because .golangci.yml exists; the version is the
+      # one `make lint` pins (GOLANGCI in the Makefile), so a finding here is
+      # a finding there and neither is a surprise about the tool's version.
+      GOLANGCI_LINT_VERSION: v2.13.2
 
   # proto/v1 is frozen: a plugin compiled against it must keep working. Nothing
   # enforced that for a while — `proto-check` existed, `make ci` did not call
@@ -311,6 +315,14 @@ jobs:
 
     - name: Cross-compile
       run: make cross
+
+    # Binary size is a stated constraint (AGENTS.md), and this is the gate
+    # that makes it one: the linux/amd64 release binary, stripped the way a
+    # release strips it, against the ceiling the Makefile states. Here rather
+    # than in its own job because it is one more build on a runner that just
+    # built every target.
+    - name: Check the binary size
+      run: make size-check
 
   # The chart deploys the boundary, so a chart that renders wrong is a boundary
   # that is wrong — and until now nothing checked it anywhere except a Makefile
