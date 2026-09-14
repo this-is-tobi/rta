@@ -48,7 +48,10 @@ rta discovers anything named `rta-plugin-*` on your `$PATH`, and it loads a plug
 rta plugin trust             # what was found and not run
 rta plugin trust pg          # approve this artifact
 rta plugin untrust pg        # withdraw approval
+rta plugin untrust --all     # withdraw every approval you have recorded
 ```
+
+There is deliberately no `rta plugin trust --all`. Approving is the decision the whole boundary exists to make somebody take one artifact at a time, and a flag that approved everything discovered on a `$PATH` would approve whatever appeared there this morning. The withdrawing direction has no such problem, which is why `--all` exists on that side alone — the same reason `rta plugin allow` has no bulk form either.
 
 **Trust attaches to the artifact's content digest, not its name.** Rebuilding or replacing a plugin needs approving again. That is the feature, not friction: a plugin's bytes changing under a name you already approved is precisely the event worth stopping for.
 
@@ -183,6 +186,22 @@ rta plugin outdated
 ```
 
 Lists what changed without upgrading anything: for each installed plugin, the version recorded at install time against what its index claims now. Cheap like search — nothing is fetched — so it is a hint worth a look, never a verdict. `rta plugin upgrade <name>` is what actually re-verifies against the bytes; a plugin respun under an unchanged version number is invisible to `outdated` for the same reason it would be invisible to a signature.
+
+### Upgrading everything at once
+
+```bash
+rta plugin upgrade --all --dry-run     # rehearse it
+rta plugin upgrade --all               # sweep every installed plugin
+rta plugin upgrade --all --index official
+rta plugin outdated --index official
+rta plugin remove --all --yes          # uninstall every managed plugin
+```
+
+A sweep visits every plugin in `rta.lock`, not the ones `outdated` lists — a respin under an unchanged version number is invisible to a manifest comparison, and skipping it would skip the one event upgrading re-verifies for. `--index` narrows the sweep to plugins installed from one index, so the supply chain you trust most can be upgraded without pulling from the one you trust least.
+
+**A sweep holds back any plugin whose new declaration would hand it more than you last approved** — a capability appearing that is not an ungated read, a safety class rising, a capability that stops needing a grant, a new credential location asked for. Those plugins keep their pin, their bytes are never placed, and the report names the change that stopped each one. Everything else upgrades, one unreachable index does not cost you the rest of the run, and the command exits non-zero if anything was held back or failed.
+
+This is the point of the guard rather than an obstacle to route around: nobody reads a declaration diff scrolling past in a sweep, so the diff stops the sweep instead. Naming the plugin — `rta plugin upgrade pg` — upgrades it once you have read what changed, which is the same command you would have run anyway.
 
 ## What a plugin can and cannot do
 

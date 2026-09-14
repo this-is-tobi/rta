@@ -445,32 +445,39 @@ func newPluginTrustCommand(opts *globalOpts) *cobra.Command {
 // the moment they want it: an operator taking a plugin back has a name in
 // their head, and every digest that name ever had is a thing they want gone.
 func newPluginUntrustCommand(opts *globalOpts) *cobra.Command {
-	return &cobra.Command{
-		Use:   "untrust <name|digest>",
+	var all bool
+	cmd := &cobra.Command{
+		Use:   "untrust <name|digest> | --all",
 		Short: "Withdraw approval from a plugin artifact",
 		Long: "Removes every approval recorded under a name, or the one matching a\n" +
 			"digest prefix. The binary is left exactly where it is, because deleting\n" +
 			"somebody's file is not what \"I no longer trust this\" asked for.\n\n" +
 			"Trust is checked once per process, before anything is launched, so a\n" +
 			"session already running keeps the plugin it loaded — restart `rta mcp\n" +
-			"serve` or the TUI to be rid of it.",
-		Args: cobra.ExactArgs(1),
+			"serve` or the TUI to be rid of it.\n\n" +
+			"`--all` withdraws every approval you have recorded. Anything trusted by\n" +
+			"the system root is left alone: rta reads that file and never writes it.",
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			var (
-				n    int
-				verr *view.Error
-			)
+			which, verr := bulkScope(args, all, "plugin.untrust.scope", "untrust")
+			if verr != nil {
+				return verr
+			}
+			if all {
+				return runPluginUntrustAll(cmd, opts)
+			}
+			var n int
 			if opts.dryRun {
-				n, verr = plugintrust.PreviewRemove(args[0])
+				n, verr = plugintrust.PreviewRemove(which)
 			} else {
-				n, verr = plugintrust.Remove(args[0])
+				n, verr = plugintrust.Remove(which)
 			}
 			if verr != nil {
 				return verr
 			}
 			if n == 0 {
 				return view.Errorf("plugin.untrust.unknown",
-					"nothing trusted is called %q", args[0]).
+					"nothing trusted is called %q", which).
 					WithHint("`rta plugin trust` with no argument lists what is waiting; " +
 						"`rta doctor` lists what is trusted")
 			}
@@ -495,6 +502,8 @@ func newPluginUntrustCommand(opts *globalOpts) *cobra.Command {
 			return out, cobra.ShellCompDirectiveNoFileComp
 		},
 	}
+	cmd.Flags().BoolVar(&all, "all", false, "withdraw every approval you have recorded")
+	return cmd
 }
 
 // humanBytes is a file size a person reads without counting digits. Local to
