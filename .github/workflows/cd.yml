@@ -107,13 +107,13 @@ jobs:
   # every tool is a deliberate second choice, not an upgrade of the first. See
   # Dockerfile.full for the whole argument.
   #
-  # Publishing it is deliberate too, now: docker-full.yml builds and pushes it
-  # on demand, with the version to tag stated by whoever runs it. Its pins move
-  # only by hand, on nobody's schedule but the operator's, so a release that
-  # republished it unchanged was mostly re-tagging the same eleven plugins. The
-  # cost of the split is that `rta-full:latest` no longer follows `rta:latest`
-  # on its own — after a release that matters to the full image, that run is
-  # the step that makes it true.
+  # And it does not ship at release time on purpose: the plugins in it are
+  # rebuilt against a new rta by rta-plugins within the hour, the index
+  # moves, and bump-plugins.yml opens the pull request that pins the image to
+  # it. docker-full.yml publishes when that merges — Dockerfile.full changed
+  # on main — so the full image for a release appears once, after its plugins
+  # caught up, rather than twice with the old plugins first. `rta-full:latest`
+  # follows `rta:latest` by that route, one merge behind.
 
   # Same reasoning as attest-binaries, against the pushed image digest
   # instead of a release asset — see attest-docker.yml's own notes for why

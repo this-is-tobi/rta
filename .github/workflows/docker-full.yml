@@ -1,12 +1,33 @@
+# The batteries-included image, published when what it ships changes.
+#
+# It builds from main whenever Dockerfile.full changes there, which is a
+# merged plugin bump from bump-plugins.yml or a deliberate edit, and never
+# on an rta release itself: at release time the plugins have not been
+# rebuilt against the new rta yet — rta-plugins does that within the hour,
+# the index moves, the bump follows — so an image built at the release would
+# pair the new binary with the old plugins and be replaced as soon as the
+# bump merged. One image per cycle, built after the plugins caught up, the
+# same image CI built on the bump's pull request. It carries the latest rta
+# release's version, since that is the rta inside it, and moves :latest and
+# the major/minor tags: the version names the rta, and the plugins in it are
+# the official index's at the last build, which is what the digest and its
+# attestation pin exactly. docs/10-getting-started/10-installation.md says
+# so to whoever pulls it.
+#
+# workflow_dispatch remains for a rehearsal (push off) or a rebuild at a
+# stated version.
 name: Full Docker image
 
 on:
+  push:
+    branches: [main]
+    paths: [Dockerfile.full]
   workflow_dispatch:
     inputs:
       version:
-        description: Version to build with, and to tag with when publishing
+        description: Version to build with, and to tag with when publishing (default the latest release)
         required: false
-        default: dev
+        default: ""
         type: string
       push:
         description: Publish to ghcr.io (off builds it and throws it away)
@@ -19,31 +40,78 @@ on:
         default: false
         type: boolean
 
+# One publish at a time: two bumps merged minutes apart, or a bump and a
+# dispatch, would otherwise race for the same tags with different content.
+concurrency:
+  group: docker-full
+  cancel-in-progress: false
+
 jobs:
+  # What to build and whether to publish: a push to main publishes at the
+  # latest release's version with the moving tags; a dispatch does what its
+  # inputs say, with the version defaulting to the latest release.
+  resolve:
+    name: Resolve version and intent
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.pick.outputs.version }}
+      push: ${{ steps.pick.outputs.push }}
+      latest: ${{ steps.pick.outputs.latest }}
+    steps:
+    - name: Pick
+      id: pick
+      env:
+        GH_TOKEN: ${{ github.token }}
+        EVENT: ${{ github.event_name }}
+        IN_VERSION: ${{ inputs.version }}
+        IN_PUSH: ${{ inputs.push }}
+        IN_LATEST: ${{ inputs.latest }}
+      run: |
+        set -euo pipefail
+        version="$IN_VERSION"
+        if [ -z "$version" ]; then
+          version=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)
+          version="${version#v}"
+        fi
+        if [ "$EVENT" = "push" ]; then
+          push=true; latest=true
+        else
+          push="$IN_PUSH"; latest="$IN_LATEST"
+        fi
+        echo "version=$version push=$push latest=$latest"
+        {
+          echo "version=$version"
+          echo "push=$push"
+          echo "latest=$latest"
+        } >> "$GITHUB_OUTPUT"
+
   build:
     name: Build full Docker image
+    needs: [resolve]
     uses: this-is-tobi/github-workflows/.github/workflows/build-docker.yml@v0
     permissions:
       packages: write
       contents: read
     with:
       IMAGE_NAME: ghcr.io/this-is-tobi/rta-full
-      IMAGE_TAG: ${{ inputs.version }}
+      IMAGE_TAG: ${{ needs.resolve.outputs.version }}
       IMAGE_CONTEXT: ./
       IMAGE_DOCKERFILE: ./Dockerfile.full
-      PUSH: ${{ inputs.push }}
-      LATEST_TAG: ${{ inputs.latest }}
-      TAG_MAJOR_AND_MINOR: ${{ inputs.latest }}
+      PUSH: ${{ needs.resolve.outputs.push == 'true' }}
+      LATEST_TAG: ${{ needs.resolve.outputs.latest == 'true' }}
+      TAG_MAJOR_AND_MINOR: ${{ needs.resolve.outputs.latest == 'true' }}
       BUILD_AMD64: true
       BUILD_ARM64: true
       BUILD_ARGS: |
-        VERSION=${{ inputs.version }}
+        VERSION=${{ needs.resolve.outputs.version }}
         COMMIT=${{ github.sha }}
 
   test:
     name: Test full Docker image (arm64)
-    needs: [build]
-    if: ${{ !inputs.push }}
+    needs: [resolve, build]
+    if: ${{ needs.resolve.outputs.push != 'true' }}
     uses: this-is-tobi/github-workflows/.github/workflows/test-docker.yml@v0
     permissions:
       contents: read
@@ -55,8 +123,8 @@ jobs:
 
   attest:
     name: Attest full Docker image
-    needs: [build]
-    if: ${{ inputs.push }}
+    needs: [resolve, build]
+    if: ${{ needs.resolve.outputs.push == 'true' }}
     uses: this-is-tobi/github-workflows/.github/workflows/attest-docker.yml@v0
     permissions:
       packages: write
