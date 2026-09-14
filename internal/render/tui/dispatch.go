@@ -654,6 +654,13 @@ func (m Model) updateSearch(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		c := results[min(m.searchSel, len(results)-1)]
 		m.searchEditing = false
+		// Cleared on launch, so the next `/` starts empty. It used to stay:
+		// open net.dns from the bar, come back, press `/` and type note.add,
+		// and the bar read `net.dnsnote.add` — the old query was still there
+		// with the cursor at its end, and nothing on screen said so until
+		// "no matches". A launcher's query is spent by launching; the result
+		// screen already names what was picked.
+		m.query, m.searchSel = "", 0
 		m.origin = modeDashboard
 		m.trail = nil
 		return m.open(c)
