@@ -1,24 +1,22 @@
-# Dockerfile.full's ARG PLUGINS pins each first-party plugin to its own
-# rta-plugins release tag by hand — see the comment above that line for why
-# that is deliberate: the image is the plugin allowlist, and a plugin joins
-# it by somebody writing its line here. What was never deliberate is the
-# version staying still after rta-plugins ships a newer one: nothing bumped
-# it, so the pin only ever drifted further behind.
+# Dockerfile.full installs its plugins from the official index at one stated
+# commit — the `official@<commit>` entry on its RTA_INDEXES line — so what
+# the image ships is always a named state of the index, never "whatever main
+# was". Nothing else moved that commit: rta-plugins releases a plugin, its
+# manifest changes, and the image kept building from the older claims until
+# somebody noticed.
 #
 # This closes that the same direction rta-plugins' own bump-rta.yml closes
 # the opposite one: poll, diff, open a pull request, let CI be the review.
-# The names come from the official index — index/<name>.yaml in rta-plugins,
-# the manifests `rta plugin index add official` reads — so a plugin that
-# enters the index joins this image on the next run, at the version its
-# manifest names, and one already here follows its releases. A name on the
-# line that the index does not know is kept exactly as written: an image
-# built from this file may carry more than the official set, and that
-# addition is somebody's to make and to maintain. Nothing leaves the line but
-# by hand — a name that dropped out of the index is kept and called out,
-# because a fetch that came back short must not narrow the image on its own.
+# When the index's newest commit is not the one pinned, the pin moves to it
+# and the pull request says what changed between the two: which plugins
+# joined, which versions moved, which left. A plugin that left the index
+# leaves the image at that build, and the body says so first — that is a
+# decision the index made and the reviewer confirms, not one this workflow
+# takes quietly. Other entries on the line are somebody's own indexes and
+# are never touched.
 #
 # Polling, on purpose, and the same reasoning as bump-rta.yml: reading
-# rta-plugins' public releases needs no credential at all, and a push from
+# rta-plugins' public commits needs no credential at all, and a push from
 # rta-plugins' own release workflow would need a token here that could act on
 # this repository — which is a credential this repository otherwise has no
 # reason to hand out. workflow_dispatch is the zero-delay path when somebody
@@ -34,10 +32,10 @@
 # A merged bump is not an rta release: release-please-config.json excludes
 # commits that touch only Dockerfile.full. It has to. An rta release makes
 # rta-plugins' bump-rta.yml release every plugin against it, a plugin release
-# makes this workflow move the pins, and if that bump cut a release the two
-# repositories would release each other forever. The full image is published
-# from docker-full.yml at the version somebody states, and a bump merged
-# between releases is picked up by the next run of it.
+# changes the index, and if that bump cut a release the two repositories
+# would release each other forever. The full image is published from
+# docker-full.yml at the version somebody states, and a bump merged between
+# releases is picked up by the next run of it.
 name: Bump plugins
 
 on:
@@ -57,7 +55,7 @@ concurrency:
 
 jobs:
   bump:
-    name: Open a pull request for any outdated plugin pin
+    name: Open a pull request when the official index moved
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -67,100 +65,109 @@ jobs:
       with:
         persist-credentials: false
 
-    - name: Build the line from the official index and what is already there
+    - name: Find the index commit the image should build from
       id: target
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
         set -euo pipefail
-        current=$(awk -F'"' '/^ARG PLUGINS="/ { print $2; exit }' Dockerfile.full)
-        if [ -z "$current" ]; then
-          echo "ARG PLUGINS not found in Dockerfile.full" >&2; exit 1
-        fi
-        echo "current: $current"
-
-        # One manifest per plugin, one call each; the index is a dozen files
-        # and this runs twice an hour. The version is the one the manifest
-        # names, which is the tag the plugin released under; the pin resolves
-        # through that git tag, never through anything else the manifest
-        # claims.
-        declare -A want=()
-        for name in $(gh api repos/this-is-tobi/rta-plugins/contents/index --jq '.[].name' | sed -n 's/\.yaml$//p'); do
-          version=$(gh api "repos/this-is-tobi/rta-plugins/contents/index/${name}.yaml" --jq .content \
-            | base64 -d | awk '$1 == "version:" { gsub(/"/, "", $2); print $2; exit }')
-          if [ -z "$version" ]; then
-            echo "::warning::index/${name}.yaml names no version — left out of this run"; continue
-          fi
-          want[$name]="v${version}"
+        line=$(awk -F'"' '/^ARG RTA_INDEXES="/ { print $2; exit }' Dockerfile.full)
+        pinned=""
+        for entry in $line; do
+          case "$entry" in
+            official@*) pinned="${entry#official@}" ;;
+            official)   pinned="" ;;
+          esac
         done
-        if [ "${#want[@]}" = "0" ]; then
-          echo "the official index came back empty; the line is not touched on that evidence" >&2; exit 1
+        echo "pinned: ${pinned:-none}"
+
+        # The newest commit that touched index/, not the tip of main: a
+        # commit that changed nothing under index/ changes nothing the image
+        # installs, and a pull request for it would build the same image
+        # twice.
+        newest=$(gh api "repos/this-is-tobi/rta-plugins/commits?path=index&per_page=1" --jq '.[0].sha')
+        if [ -z "$newest" ]; then
+          echo "could not read the index's newest commit; nothing moved" >&2; exit 1
+        fi
+        echo "newest: $newest"
+        if [ "$newest" = "$pinned" ]; then
+          echo "the image already builds from the index's newest commit"; exit 0
         fi
 
-        declare -A have=()
-        for spec in $current; do
-          have["${spec%%/*}"]="${spec#*/}"
-        done
-
+        # What changed between the two, from the manifests themselves. Each
+        # manifest names its plugin's version; a file added is a plugin that
+        # joined, a file gone is one that left, a version that differs is a
+        # bump. With no previous pin every plugin reads as joined, which is
+        # also true.
+        versions() {
+          gh api "repos/this-is-tobi/rta-plugins/contents/index?ref=$1" --jq '.[].name' \
+            | sed -n 's/\.yaml$//p' | while read -r name; do
+              v=$(gh api "repos/this-is-tobi/rta-plugins/contents/index/${name}.yaml?ref=$1" --jq .content \
+                | base64 -d | awk '$1 == "version:" && !seen { gsub(/"/, "", $2); print $2; seen = 1 }')
+              echo "$name $v"
+            done
+        }
+        after=$(versions "$newest")
+        before=""
+        if [ -n "$pinned" ]; then before=$(versions "$pinned"); fi
         nl=$'\n'
-        joined=""; bumped=""; kept=""
-        new_line=""
-        for name in $(printf '%s\n' "${!want[@]}" "${!have[@]}" | sort -u); do
-          if [ -n "${want[$name]:-}" ]; then
-            tag="${want[$name]}"
-            if [ -z "${have[$name]:-}" ]; then
-              echo "$name: joins at $tag"
-              joined="${joined}- ${name}: joins at \`${tag}\`${nl}"
-            elif [ "${have[$name]}" != "$tag" ]; then
-              echo "$name: ${have[$name]} -> $tag"
-              bumped="${bumped}- ${name}: \`${have[$name]}\` → \`${tag}\`${nl}"
-            fi
-          else
-            tag="${have[$name]}"
-            echo "$name: $tag, not in the official index, kept as written"
-            kept="${kept}- ${name}: \`${tag}\`, not in the official index, kept as written${nl}"
+        joined=""; bumped=""; left=""
+        while read -r name v; do
+          [ -z "$name" ] && continue
+          old=$(printf '%s\n' "$before" | awk -v n="$name" '$1 == n { print $2 }')
+          if [ -z "$old" ]; then
+            joined="${joined}- ${name}: joins at \`v${v}\`${nl}"
+          elif [ "$old" != "$v" ]; then
+            bumped="${bumped}- ${name}: \`v${old}\` → \`v${v}\`${nl}"
           fi
-          new_line="${new_line}${name}/${tag} "
-        done
-        new_line="${new_line% }"
+        done <<< "$after"
+        while read -r name v; do
+          [ -z "$name" ] && continue
+          if ! printf '%s\n' "$after" | awk -v n="$name" '$1 == n { found = 1 } END { exit !found }'; then
+            left="${left}- ${name}: \`v${v}\` is no longer in the index and leaves the image${nl}"
+          fi
+        done <<< "$before"
 
-        if [ "$new_line" = "$current" ]; then
-          echo "the line already matches the official index"; exit 0
+        report="Pins the official index at [\`${newest:0:12}\`](https://github.com/this-is-tobi/rta-plugins/commit/${newest})"
+        if [ -n "$pinned" ]; then
+          report="${report}, from [\`${pinned:0:12}\`](https://github.com/this-is-tobi/rta-plugins/compare/${pinned}...${newest})"
         fi
-        report=""
+        report="${report}.${nl}${nl}"
+        if [ -n "$left" ]; then
+          report="${report}**Leaves the image** — the index dropped these; merging confirms it:${nl}${left}${nl}"
+        fi
         if [ -n "$joined" ]; then
           report="${report}**Joins the image** — a plugin may shell out to a tool; check the package list in Dockerfile.full before merging:${nl}${joined}${nl}"
         fi
         if [ -n "$bumped" ]; then
           report="${report}**Bumped:**${nl}${bumped}${nl}"
         fi
-        if [ -n "$kept" ]; then
-          report="${report}**Kept, not in the official index:**${nl}${kept}${nl}"
+        if [ -z "$left$joined$bumped" ]; then
+          report="${report}No manifest changed its version between the two commits; the index's other files did.${nl}"
         fi
+        printf '%s' "$report"
 
         # One branch and one pull request, rewritten in place, the way
-        # release-please keeps a single release pull request current. A
-        # branch per combination was tried first and opened a second pull
-        # request the moment rta-plugins released again — which it does
-        # within the hour of every rta release, since every plugin follows
-        # the SDK — leaving the first one open and already behind. Now a
-        # later combination replaces the earlier one on the same branch, and
-        # the pull request's body says what it holds today. A run that
-        # computes the line the open pull request already carries does
-        # nothing.
+        # release-please keeps a single release pull request current: a
+        # later commit replaces the earlier one on the same branch, and the
+        # pull request's body says what it holds today. A run that finds the
+        # commit the open pull request already pins does nothing.
         branch="bump-plugins"
         open_pr=$(gh pr list --head "$branch" --state open --json number --jq '.[0].number // empty')
         if [ -n "$open_pr" ]; then
+          # awk reads to the end rather than exiting on the match: an early
+          # exit closes the pipe under base64, and under pipefail its write
+          # error fails the step.
           on_pr=$(gh api "repos/${GITHUB_REPOSITORY}/contents/Dockerfile.full?ref=${branch}" --jq .content \
-            | base64 -d | awk -F'"' '/^ARG PLUGINS="/ { print $2; exit }')
-          if [ "$on_pr" = "$new_line" ]; then
-            echo "pull request #$open_pr already carries this line"; exit 0
-          fi
+            | base64 -d | awk -F'"' '/^ARG RTA_INDEXES="/ && !seen { print $2; seen = 1 }')
+          case " $on_pr " in
+            *" official@${newest} "*) echo "pull request #$open_pr already pins $newest"; exit 0 ;;
+          esac
           echo "pull request #$open_pr is behind; it will be rewritten"
         fi
 
         {
-          echo "line=$new_line"
+          echo "ref=$newest"
           echo "branch=$branch"
           echo "pr=$open_pr"
           echo "report<<BUMP_PLUGINS_REPORT_EOF"
@@ -168,12 +175,14 @@ jobs:
           echo "BUMP_PLUGINS_REPORT_EOF"
         } >> "$GITHUB_OUTPUT"
 
-    - name: Rewrite the pins
-      if: steps.target.outputs.line != ''
-      run: make bump-plugins PLUGINS="${{ steps.target.outputs.line }}"
+    - name: Move the pin
+      if: steps.target.outputs.ref != ''
+      env:
+        REF: ${{ steps.target.outputs.ref }}
+      run: make bump-index REF="$REF"
 
     - name: Mint the App token
-      if: steps.target.outputs.line != ''
+      if: steps.target.outputs.ref != ''
       id: app-token
       uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
       with:
@@ -187,7 +196,7 @@ jobs:
         permission-pull-requests: write
 
     - name: Commit, push and open or rewrite the pull request
-      if: steps.target.outputs.line != ''
+      if: steps.target.outputs.ref != ''
       env:
         GH_TOKEN: ${{ steps.app-token.outputs.token }}
         BRANCH: ${{ steps.target.outputs.branch }}
@@ -199,7 +208,7 @@ jobs:
         git config user.email github-actions[bot]@users.noreply.github.com
         git checkout -b "$BRANCH"
         git add Dockerfile.full
-        git commit -m "build(docker): bump the full image's plugin pins" \
+        git commit -m "build(docker): the full image builds from the index's newest commit" \
           -m "$REPORT"
         # Forced, because the branch is the workflow's own and its previous
         # tip was superseded, never reviewed and kept: the pull request has
@@ -212,11 +221,11 @@ jobs:
         git push --force-with-lease="refs/heads/$BRANCH:$expected" "$remote" "$BRANCH"
         body="$(printf '%s\n\n%s' \
           "$REPORT" \
-          "Opened by the bump workflow, and rewritten by it whenever the official index moves again before this merges. CI is the review: a red check here means the image no longer builds against one of these releases. Nothing is ever removed here; a name that left the index stays on the line until a person takes it off.")"
+          "Opened by the bump workflow, and rewritten by it whenever the official index moves again before this merges. CI builds and starts the full image on this pull request: a red check means the image no longer builds from this state of the index.")"
         if [ -n "$PR" ]; then
           gh pr edit "$PR" --body "$body"
         else
           gh pr create --base main --head "$BRANCH" \
-            --title "build(docker): bump the full image's plugin pins" \
+            --title "build(docker): the full image builds from the index's newest commit" \
             --body "$body"
         fi
