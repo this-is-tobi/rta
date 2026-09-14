@@ -1,0 +1,166 @@
+# Dockerfile.full's ARG PLUGINS pins each first-party plugin to its own
+# rta-plugins release tag by hand — see the comment above that line for why
+# that is deliberate: the image is the plugin allowlist, and a plugin joins
+# it by somebody writing its line here. What was never deliberate is the
+# version staying still after rta-plugins ships a newer one: nothing bumped
+# it, so the pin only ever drifted further behind.
+#
+# This closes that the same direction rta-plugins' own bump-rta.yml closes
+# the opposite one: poll, diff, open a pull request, let CI be the review.
+# It only ever rewrites a version already named on the line — never adds a
+# plugin that is not already there, never removes one that is. Widening the
+# allowlist stays the by-hand edit the Dockerfile's own comment describes;
+# this just stops the versions already on it from going stale for want of
+# anyone remembering to look.
+#
+# Polling, on purpose, and the same reasoning as bump-rta.yml: reading
+# rta-plugins' public releases needs no credential at all, and a push from
+# rta-plugins' own release workflow would need a token here that could act on
+# this repository — which is a credential this repository otherwise has no
+# reason to hand out. workflow_dispatch is the zero-delay path when somebody
+# is watching.
+#
+# The pull request is opened as the App rather than with GITHUB_TOKEN: a pull
+# request GITHUB_TOKEN opens gets no CI run on it, and an image built from a
+# pin nobody has actually built is exactly the change that must not merge on
+# trust. ci.yml builds the full image for a pull request that touches
+# Dockerfile.full — this one, and hardly any other — so the check is the
+# build itself, not a proxy for it.
+#
+# A merged bump is not an rta release: release-please-config.json excludes
+# commits that touch only Dockerfile.full. It has to. An rta release makes
+# rta-plugins' bump-rta.yml release every plugin against it, a plugin release
+# makes this workflow move the pins, and if that bump cut a release the two
+# repositories would release each other forever. The full image is published
+# from docker-full.yml at the version somebody states, and a bump merged
+# between releases is picked up by the next run of it.
+name: Bump plugins
+
+on:
+  schedule:
+  - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bump:
+    name: Open a pull request for any outdated plugin pin
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+    - name: Checks-out repository
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+
+    - name: Find every plugin behind its newest rta-plugins release
+      id: target
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        current=$(awk -F'"' '/^ARG PLUGINS="/ { print $2; exit }' Dockerfile.full)
+        if [ -z "$current" ]; then
+          echo "ARG PLUGINS not found in Dockerfile.full" >&2; exit 1
+        fi
+        echo "current: $current"
+
+        # One fetch covering every plugin, rather than one API call each —
+        # rta-plugins tags every release plugins/<name>/vX.Y.Z, so grouping
+        # by name and taking the highest with sort -V is a local operation
+        # once the list is in hand.
+        all_tags=$(gh api repos/this-is-tobi/rta-plugins/releases --paginate --jq '.[].tag_name')
+
+        nl=$'\n'
+        changed=0
+        new_line=""
+        report=""
+        for spec in $current; do
+          name="${spec%%/*}"
+          tag="${spec#*/}"
+          latest=$(printf '%s\n' "$all_tags" \
+            | grep "^plugins/${name}/v" \
+            | sed "s#^plugins/${name}/##" \
+            | sort -V | tail -1)
+          if [ -z "$latest" ]; then
+            # Nothing found for this name — left exactly as it was rather
+            # than dropped. A plugin missing from this run's fetch (a rename,
+            # an API hiccup) is not evidence it should leave the allowlist.
+            echo "::warning::no rta-plugins release found for $name — leaving $tag"
+            new_line="${new_line}${name}/${tag} "
+            continue
+          fi
+          if [ "$latest" != "$tag" ]; then
+            echo "$name: $tag -> $latest"
+            report="${report}- ${name}: \`${tag}\` → \`${latest}\`${nl}"
+            changed=1
+            new_line="${new_line}${name}/${latest} "
+          else
+            new_line="${new_line}${name}/${tag} "
+          fi
+        done
+        new_line="${new_line% }"
+
+        if [ "$changed" = "0" ]; then
+          echo "every pin is already current"; exit 0
+        fi
+
+        # A deterministic branch name per exact combination, the same
+        # dedup shape bump-rta.yml uses per version: a run that finds
+        # nothing new since the last one opens no second pull request for
+        # it, and a run that finds something genuinely different gets its
+        # own branch rather than overwriting one still under review.
+        branch="bump-plugins-$(printf '%s' "$new_line" | sha256sum | cut -c1-12)"
+        if [ -n "$(gh pr list --head "$branch" --state all --json number --jq '.[].number')" ]; then
+          echo "a pull request for this exact combination already exists"; exit 0
+        fi
+
+        {
+          echo "line=$new_line"
+          echo "branch=$branch"
+          echo "report<<BUMP_PLUGINS_REPORT_EOF"
+          printf '%s' "$report"
+          echo "BUMP_PLUGINS_REPORT_EOF"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Rewrite the pins
+      if: steps.target.outputs.line != ''
+      run: make bump-plugins PLUGINS="${{ steps.target.outputs.line }}"
+
+    - name: Mint the App token
+      if: steps.target.outputs.line != ''
+      id: app-token
+      uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+      with:
+        client-id: ${{ secrets.APP_CLIENT_ID }}
+        private-key: ${{ secrets.APP_PRIVATE_KEY }}
+        # Contents and pull requests, and nothing about workflows: this
+        # workflow never touches a file under .github/workflows/, and an App
+        # token cannot without a permission that would apply to every
+        # repository the App is installed on.
+        permission-contents: write
+        permission-pull-requests: write
+
+    - name: Commit, push and open the pull request
+      if: steps.target.outputs.line != ''
+      env:
+        GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        BRANCH: ${{ steps.target.outputs.branch }}
+        REPORT: ${{ steps.target.outputs.report }}
+      run: |
+        set -euo pipefail
+        git config user.name github-actions[bot]
+        git config user.email github-actions[bot]@users.noreply.github.com
+        git checkout -b "$BRANCH"
+        git add Dockerfile.full
+        git commit -m "build(docker): bump the full image's plugin pins" \
+          -m "$REPORT"
+        git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$BRANCH"
+        gh pr create --base main --head "$BRANCH" \
+          --title "build(docker): bump the full image's plugin pins" \
+          --body "$(printf '%s\n\n%s' \
+            "$REPORT" \
+            "Opened by the bump workflow. CI is the review: a red check here means the image no longer builds against one of these releases. Nothing was added to or removed from the allowlist — every name on this line was already there.")"
