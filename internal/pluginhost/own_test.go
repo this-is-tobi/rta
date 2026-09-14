@@ -80,3 +80,32 @@ func TestACarveOutThatCouldCloseThePolicyFormIsRefused(t *testing.T) {
 		t.Error("a directory name that closes a form was rendered into the policy")
 	}
 }
+
+// An artifact the image installed is launched with its own directory
+// readable, the same carve-out the operator's store gets and for the same
+// reason: the system root is a store, at a different path, that a different
+// party filled.
+func TestAnImageInstalledArtifactMayReadItsOwnDirectory(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	t.Setenv("RTA_SYSTEM_DIR", t.TempDir())
+	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "cfg", "config.yaml"))
+	d, err := Resolve()
+	if err != nil {
+		t.Fatal(err)
+	}
+	own := filepath.Join(SystemStore(), "kube", "abc123", "rta-plugin-kube")
+	launched, err := d.Launching(own)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsPath(launched.Own, filepath.Dir(own)) {
+		t.Errorf("the image-installed artifact's directory is not readable to it: %v", launched.Own)
+	}
+	l, err := d.Launching(filepath.Join(SystemBin(), "rta-plugin-kube"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(l.Own) != 0 {
+		t.Errorf("the system root's bin/ got a carve-out: %v", l.Own)
+	}
+}

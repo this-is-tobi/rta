@@ -57,12 +57,33 @@ type lockDoc struct {
 // LockPath is where the record lives, beside the store it describes.
 func LockPath() string { return filepath.Join(paths.Data(), "plugins", "rta.lock") }
 
+// SystemLockPath is the same record under the system root (paths.System):
+// what an image or a package installed at build time, read by `doctor` and
+// never written after. "" when there is no system root.
+func SystemLockPath() string {
+	if root := paths.System(); root != "" {
+		return filepath.Join(root, "plugins", "rta.lock")
+	}
+	return ""
+}
+
+// ReadSystemLock is the system root's record, empty when there is none.
+func ReadSystemLock() []LockEntry {
+	p := SystemLockPath()
+	if p == "" {
+		return nil
+	}
+	return readLockAt(p)
+}
+
 // ReadLock lists what is recorded, sorted by name. Every failure answers the
 // empty list: the lock is provenance, and a plugin whose record cannot be
 // read shows up as "found on $PATH and not ours" rather than blocking
 // anything — the informational direction of plugintrust.Load's fail-closed.
-func ReadLock() []LockEntry {
-	raw, err := os.ReadFile(LockPath())
+func ReadLock() []LockEntry { return readLockAt(LockPath()) }
+
+func readLockAt(path string) []LockEntry {
+	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil
 	}

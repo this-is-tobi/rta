@@ -1,6 +1,7 @@
 package plugintrust
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"sync"
@@ -22,6 +23,7 @@ const (
 // read or write the developer's own list of what may run on their machine.
 func isolated(t *testing.T) {
 	t.Helper()
+	t.Setenv("RTA_SYSTEM_DIR", "")
 	t.Setenv("RTA_DATA_DIR", t.TempDir())
 }
 
@@ -479,5 +481,115 @@ func TestAllowReplacesRatherThanAccumulates(t *testing.T) {
 	}
 	if got := Load().Allowed(digestA); len(got) != 0 {
 		t.Errorf("Allowed = %v after withdrawing everything", got)
+	}
+}
+
+// systemRecord writes a trusted.json the way an image build leaves one: under
+// the system root, one entry per installed artifact, and points rta at it.
+func systemRecord(t *testing.T, entries ...Entry) string {
+	t.Helper()
+	root := t.TempDir()
+	t.Setenv("RTA_SYSTEM_DIR", root)
+	data, err := json.Marshal(file{Trusted: entries})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "trusted.json"), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
+// What the image trusted runs, what the operator trusted runs, and each
+// entry says which of the two said so. The operator's record is never
+// written by reading the image's.
+func TestTheSystemRecordIsReadUnderTheOperators(t *testing.T) {
+	isolated(t)
+	systemRecord(t, Entry{Digest: digestA, Name: "kube", Path: "/usr/local/lib/rta/plugins/bin/rta-plugin-kube"})
+	if verr := Add(digestB, "pg", "/home/me/bin/rta-plugin-pg"); verr != nil {
+		t.Fatal(verr)
+	}
+	s := Load()
+	if !s.Trusts(digestA) || !s.Trusts(digestB) {
+		t.Fatalf("trusts A=%v B=%v, want both", s.Trusts(digestA), s.Trusts(digestB))
+	}
+	for _, e := range s.Entries() {
+		if (e.Digest == digestA) != e.System {
+			t.Errorf("entry %s System=%v, want the image's marked and the operator's not", e.Short(), e.System)
+		}
+	}
+	f, verr := read()
+	if verr != nil {
+		t.Fatal(verr)
+	}
+	if len(f.Trusted) != 1 || f.Trusted[0].Digest != digestB {
+		t.Fatalf("the operator's record holds %+v, want only what the operator trusted", f.Trusted)
+	}
+}
+
+// An unreadable system record costs the image's plugins and nothing of the
+// operator's — each file fails closed on its own.
+func TestABrokenSystemRecordCostsOnlyTheImagesPlugins(t *testing.T) {
+	isolated(t)
+	root := systemRecord(t)
+	if err := os.WriteFile(filepath.Join(root, "trusted.json"), []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if verr := Add(digestB, "pg", "/home/me/bin/rta-plugin-pg"); verr != nil {
+		t.Fatal(verr)
+	}
+	if s := Load(); s.Trusts(digestA) || !s.Trusts(digestB) {
+		t.Fatalf("trusts A=%v B=%v, want only the operator's", s.Trusts(digestA), s.Trusts(digestB))
+	}
+}
+
+// A credential grant is the operator's decision and lives in the operator's
+// record: allowing an image-trusted artifact copies its entry there with the
+// grant on it, so disallow and untrust can find it later, and the image's
+// record is not touched.
+func TestAllowingAnImageTrustedArtifactWritesTheOperatorsRecord(t *testing.T) {
+	isolated(t)
+	root := systemRecord(t, Entry{Digest: digestA, Name: "kube"})
+	before, _ := os.ReadFile(filepath.Join(root, "trusted.json"))
+	if verr := Allow(digestA, []string{"kubeconfig"}); verr != nil {
+		t.Fatal(verr)
+	}
+	s := Load()
+	if got := s.Allowed(digestA); len(got) != 1 || got[0] != "kubeconfig" {
+		t.Fatalf("Allowed = %v, want the grant", got)
+	}
+	for _, e := range s.Entries() {
+		if e.Digest == digestA && e.System {
+			t.Error("the allowed entry still reads as the image's; the operator's copy should win")
+		}
+	}
+	after, _ := os.ReadFile(filepath.Join(root, "trusted.json"))
+	if string(before) != string(after) {
+		t.Error("allowing rewrote the system record")
+	}
+	if verr := Allow(digestB, []string{"kubeconfig"}); verr == nil || verr.Code != "plugin.allow.untrusted" {
+		t.Fatalf("allowing an artifact nobody trusted: %v, want plugin.allow.untrusted", verr)
+	}
+}
+
+// The image's trust is the image's to withdraw: untrust names it as such
+// instead of reporting that nothing matched, and preview says the same.
+// A name nobody holds is still not an error.
+func TestUntrustOfAnImageTrustedArtifactIsRefused(t *testing.T) {
+	isolated(t)
+	systemRecord(t, Entry{Digest: digestA, Name: "kube"})
+	for _, which := range []string{"kube", digestA, digestA[:12]} {
+		if _, verr := Remove(which); verr == nil || verr.Code != "plugin.untrust.system" {
+			t.Errorf("Remove(%q): %v, want plugin.untrust.system", which, verr)
+		}
+		if _, verr := PreviewRemove(which); verr == nil || verr.Code != "plugin.untrust.system" {
+			t.Errorf("PreviewRemove(%q): %v, want plugin.untrust.system", which, verr)
+		}
+	}
+	if n, verr := Remove("nobody"); verr != nil || n != 0 {
+		t.Fatalf("Remove of a name nobody holds: %d, %v — want 0 and no error", n, verr)
+	}
+	if s := Load(); !s.Trusts(digestA) {
+		t.Fatal("a refused untrust still took the trust away")
 	}
 }

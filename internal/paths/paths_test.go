@@ -108,3 +108,33 @@ func TestEnsureDataLeavesAnExistingDirectoryAlone(t *testing.T) {
 		t.Errorf("EnsureData changed an existing directory to %04o", perm)
 	}
 }
+
+// The system root is an explicit override first, and "set but empty" is the
+// one spelling that means "there is none" — the difference between an
+// operator who never heard of it and one who turned it off.
+func TestSystemIsTheOverrideAndSetEmptyMeansNone(t *testing.T) {
+	t.Setenv("RTA_SYSTEM_DIR", "/opt/rta")
+	if got := System(); got != "/opt/rta" {
+		t.Fatalf("System() = %q, want the override", got)
+	}
+	t.Setenv("RTA_SYSTEM_DIR", "")
+	if got := System(); got != "" {
+		t.Fatalf("System() = %q with RTA_SYSTEM_DIR set empty, want none", got)
+	}
+}
+
+// Unset, the root exists on Linux only: that is where images and packages
+// put things, and a default on every platform would have discovery reading a
+// directory nothing on a Mac or Windows machine fills.
+func TestSystemDefaultsOnLinuxOnly(t *testing.T) {
+	os.Unsetenv("RTA_SYSTEM_DIR")
+	t.Setenv("RTA_SYSTEM_DIR", "x")
+	os.Unsetenv("RTA_SYSTEM_DIR")
+	got := System()
+	if runtime.GOOS == "linux" && got != "/usr/local/lib/rta" {
+		t.Fatalf("System() = %q on linux, want /usr/local/lib/rta", got)
+	}
+	if runtime.GOOS != "linux" && got != "" {
+		t.Fatalf("System() = %q on %s, want none", got, runtime.GOOS)
+	}
+}
