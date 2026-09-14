@@ -68,14 +68,21 @@ func install(ctx context.Context, spec string, stderr io.Writer, dryRun bool) (R
 			WithHint("`rta plugin upgrade " + m.Name + "` moves it; " +
 				"`rta plugin remove " + m.Name + "` takes it out")
 	}
-	return installFrom(ctx, listed, stderr, dryRun)
+	return installFrom(ctx, listed, stderr, dryRun, nil)
 }
 
 // installFrom is the shared half of Install and Upgrade: everything after
 // "which manifest", up to and including the durable writes — skipped, with
 // dest computed the same way place would name it, when dryRun says to stop
 // short of them.
-func installFrom(ctx context.Context, listed Listed, stderr io.Writer, dryRun bool) (Report, *view.Error) {
+// installFrom fetches, verifies and lands one plugin. gate, when not nil, is
+// asked about the declaration rta just read out of the artifact, at the one
+// moment both halves of the question are answerable: the bytes are staged and
+// launched, so what they declare is known, and nothing durable has happened
+// yet, so a refusal costs the operator nothing. Install passes nil — an
+// operator naming a plugin has nothing to compare it against.
+func installFrom(ctx context.Context, listed Listed, stderr io.Writer, dryRun bool,
+	gate func(declared plugin.Plugin) *view.Error) (Report, *view.Error) {
 	m := listed.Manifest
 	plat, ok := m.PlatformFor(runtime.GOOS, runtime.GOARCH)
 	if !ok {
@@ -173,6 +180,11 @@ func installFrom(ctx context.Context, listed Listed, stderr io.Writer, dryRun bo
 	}
 	if verr := verifyClaims(listed, declared); verr != nil {
 		return Report{}, verr
+	}
+	if gate != nil {
+		if verr := gate(declared); verr != nil {
+			return Report{}, verr
+		}
 	}
 
 	sig := checkSignature(ctx, m, staged, stderr)
@@ -520,6 +532,10 @@ type Upgraded struct {
 	FromDigest  string
 	FromVersion string
 	Diff        []string
+	// Widenings is the subset of Diff that hands the plugin authority the
+	// operator has not weighed. Only a guarded upgrade fills it, and when it
+	// is non-empty the upgrade was refused before anything landed.
+	Widenings []string
 }
 
 // Upgrade moves one installed plugin to what its index now claims, printing
@@ -528,16 +544,20 @@ type Upgraded struct {
 // with it, because the operator's approval named that artifact and the
 // artifact has not changed.
 func Upgrade(ctx context.Context, name string, stderr io.Writer) (Upgraded, *view.Error) {
-	return upgrade(ctx, name, stderr, false)
+	return upgrade(ctx, name, stderr, false, false)
 }
 
 // PreviewUpgrade is Upgrade without the durable writes — see PreviewInstall,
 // which it shares installFrom's dryRun branch with.
 func PreviewUpgrade(ctx context.Context, name string, stderr io.Writer) (Upgraded, *view.Error) {
-	return upgrade(ctx, name, stderr, true)
+	return upgrade(ctx, name, stderr, true, false)
 }
 
-func upgrade(ctx context.Context, name string, stderr io.Writer, dryRun bool) (Upgraded, *view.Error) {
+// upgrade is Upgrade's body. guard asks it to refuse, before anything lands,
+// when the new declaration hands the plugin more than the old one had — what a
+// sweep needs and what an operator naming a single plugin does not, since they
+// are already reading the diff this would be protecting them from.
+func upgrade(ctx context.Context, name string, stderr io.Writer, dryRun, guard bool) (Upgraded, *view.Error) {
 	locked, held := LockedFor(name)
 	if !held {
 		return Upgraded{}, view.Errorf("plugin.upgrade.unknown", "%s is not managed by rta", name).
@@ -561,9 +581,37 @@ func upgrade(ctx context.Context, name string, stderr io.Writer, dryRun bool) (U
 		return Upgraded{}, verr
 	}
 
-	report, verr := installFrom(ctx, listed, stderr, dryRun)
+	var grew []string
+	var gate func(plugin.Plugin) *view.Error
+	if guard {
+		gate = func(declared plugin.Plugin) *view.Error {
+			grew = widenings(oldDecl, declared)
+			if len(grew) == 0 {
+				return nil
+			}
+			return view.Errorf("plugin.upgrade.authority",
+				"%s would gain what your last approval did not cover", name).
+				WithHint("`rta plugin upgrade " + name + "` upgrades it once you have read the change; " +
+					"`--dry-run` shows the whole declaration diff first")
+		}
+	}
+
+	report, verr := installFrom(ctx, listed, stderr, dryRun, gate)
 	if verr != nil {
-		return Upgraded{}, verr
+		if len(grew) == 0 {
+			return Upgraded{}, verr
+		}
+		// A refusal still has to be reportable. What the operator needs from a
+		// held-back row is what they still have and what they declined to move
+		// to — so the pin that stands comes from the lock and the version from
+		// the index's claim. There is no new digest to name: those bytes were
+		// never placed, which is the point.
+		return Upgraded{
+			Report: Report{Name: name, Version: listed.Manifest.Version,
+				Index: listed.Index, Declared: oldDecl},
+			FromDigest: locked.Digest, FromVersion: locked.Version,
+			Widenings: grew,
+		}, verr
 	}
 	if report.Digest == locked.Digest {
 		return Upgraded{Report: report, UpToDate: true,
@@ -573,46 +621,6 @@ func upgrade(ctx context.Context, name string, stderr io.Writer, dryRun bool) (U
 		Report: report, FromDigest: locked.Digest, FromVersion: locked.Version,
 		Diff: declarationDiff(oldDecl, report.Declared),
 	}, nil
-}
-
-// declarationDiff lists what changed between two declarations, in the three
-// dimensions an authorization hangs off. A capability changing safety class,
-// or a destructive one appearing, is the supply-chain event that matters —
-// and precisely what a signature does not tell you.
-func declarationDiff(old, new plugin.Plugin) []string {
-	was := map[string]plugin.Capability{}
-	for _, c := range old.Capabilities {
-		was[c.ID] = c
-	}
-	var lines []string
-	for _, c := range new.Capabilities {
-		prev, existed := was[c.ID]
-		if !existed {
-			line := "+ " + c.ID + "  " + string(c.Safety)
-			if c.NeedsGrant {
-				line += ", needs a grant"
-			}
-			lines = append(lines, line)
-			continue
-		}
-		if prev.Safety != c.Safety {
-			lines = append(lines, "! "+c.ID+"  "+string(prev.Safety)+" → "+string(c.Safety))
-		}
-		if !prev.NeedsGrant && c.NeedsGrant {
-			lines = append(lines, "! "+c.ID+"  now needs a grant")
-		}
-		if prev.NeedsGrant && !c.NeedsGrant {
-			lines = append(lines, "! "+c.ID+"  no longer needs a grant")
-		}
-		delete(was, c.ID)
-	}
-	removed := make([]string, 0, len(was))
-	for id := range was {
-		removed = append(removed, "- "+id)
-	}
-	sort.Strings(removed)
-	sort.Strings(lines)
-	return append(lines, removed...)
 }
 
 // namesLocalFile reports whether one manifest URL will be read off this
