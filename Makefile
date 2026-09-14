@@ -230,6 +230,25 @@ lint: $(GOLANGCI) ## golangci-lint, with .golangci.yml's linters, as the host an
 	$(GOLANGCI) run ./...
 	GOOS=linux $(GOLANGCI) run ./...
 
+# The parsers that read hostile bytes — terminal and model text cleaning, the
+# path gate, an index's OCI reference, the token file, the roster, the YAML
+# anchor check — each with a Fuzz target beside its tests. `go test` runs
+# their seed corpora on every ordinary run; this is the mutating run, which
+# a pull request does not pay for and the scheduled scan does. FUZZTIME is
+# per target.
+FUZZTIME ?= 20s
+FUZZ_TARGETS := internal/textclean:FuzzTerminal internal/textclean:FuzzModel \
+	internal/pathguard:FuzzCheck internal/plugindist:FuzzParseOCIRef \
+	internal/mcp:FuzzLoadTokenFile internal/operator:FuzzLoadRoster \
+	internal/yamlguard:FuzzRefuseAnchors
+
+fuzz: ## Fuzz every hostile-input parser for FUZZTIME each
+	@for t in $(FUZZ_TARGETS); do \
+		pkg=$${t%%:*}; name=$${t#*:}; \
+		echo "==> $$pkg $$name"; \
+		go test ./$$pkg -run '^$$' -fuzz="^$$name\$$" -fuzztime=$(FUZZTIME) || exit 1; \
+	done
+
 check: vet hard ## vet, then the hard test run
 
 fmt-check: ## Fail if anything is unformatted — `make fmt` fixes it
