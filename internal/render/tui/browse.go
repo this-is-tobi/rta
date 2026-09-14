@@ -117,12 +117,19 @@ func (capDelegate) Update(tea.Msg, *list.Model) tea.Cmd { return nil }
 // and permission columns get what they measured; the summary takes the rest
 // and is the only one that gives ground, because a truncated summary still
 // reads and a truncated ID is not something you can type.
+//
+// The permission column is the last to go, not the first. It used to be
+// dropped as soon as the summary fell under a comfortable sentence, on the
+// grounds that its values are a closed set learned once — and at eighty
+// columns, the width this pane is most often opened at, that dropped the one
+// column the pane's own opening comment says it is for: "what could an agent
+// do here?" is answered by looking down it. So the summary gives way first,
+// down to a floor where a truncated one still starts a sentence, and only
+// below that does the permission go.
 func (d capDelegate) columns(width int) (id, perm, summary int) {
 	id, perm = d.idW, d.permW
 	summary = width - marker - id - gutter - perm - gutter
 	if summary < minSummary {
-		// Out of room: the permission column goes first. It is the one whose
-		// values are a closed set of five words somebody learns once.
 		perm = 0
 		summary = width - marker - id - gutter
 	}
@@ -132,7 +139,7 @@ func (d capDelegate) columns(width int) (id, perm, summary int) {
 const (
 	marker     = 4  // "  ❯ " / "    "
 	gutter     = 2  // between columns
-	minSummary = 24 // below this a summary stops being a sentence
+	minSummary = 16 // below this even the start of a summary stops reading
 
 	// The headings, named once so the column widths and the header line
 	// cannot disagree about how much room a heading needs.
