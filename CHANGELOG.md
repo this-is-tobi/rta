@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.20.0](https://github.com/this-is-tobi/rta/compare/v0.19.0...v0.20.0) (2026-09-14)
+
+
+### Features
+
+* **chart:** the full image needs nothing copied into the data volume ([27f78c5](https://github.com/this-is-tobi/rta/commit/27f78c53a875fb3d2ade1021871397a4410a100c))
+* **docker:** the full image installs its plugins from the official index ([2905e53](https://github.com/this-is-tobi/rta/commit/2905e53a17ed47b71c9ec86c8cebee970023fc70))
+* **plugin:** a read-only system root for what an image or a package installed ([b753415](https://github.com/this-is-tobi/rta/commit/b753415958c4759678b0230a0506e7bfb1fe6d07))
+* **plugin:** an index attaches pinned at a ref ([ef72f9d](https://github.com/this-is-tobi/rta/commit/ef72f9ddad86126446ae2046d5a43c7776adf4a3))
+
 ## [0.19.0](https://github.com/this-is-tobi/rta/compare/v0.18.0...v0.19.0) (2026-09-14)
 
 
