@@ -33,7 +33,7 @@ var stateReaders = []string{
 	"internal/plugintrust",
 	// atomicfile and filelock define this rule rather than merely follow
 	// it — Publish's own fallback read and filelock's lock-sentinel reads
-	// were exactly the gap a security sweep found (grants.lock, read once
+	// were exactly the gap (grants.lock, read once
 	// per retry, unbounded) — so they belong on the list they police, not
 	// only exempted from it as the packages that happen to implement
 	// ReadCapped.

@@ -413,7 +413,7 @@ func TestIntScopedGrantMatchesTheOperatorTypedNumber(t *testing.T) {
 	}
 }
 
-// A coverage test for a real gap review found: Reserve is,
+// A coverage test for a real gap: Reserve is,
 // by its own doc comment, the whole gate a use-limited grant passes
 // through, and its Load()/acquireLock()/Save() failure branches — the
 // difference between failing closed and silently authorizing an

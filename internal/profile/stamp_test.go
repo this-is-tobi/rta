@@ -133,7 +133,7 @@ func TestConnStampDistinguishesWhatAGrantMustNotConflate(t *testing.T) {
 			Set:     map[string]any{"host": "staging.internal"},
 			Secrets: map[string]string{"password": "kv:staging-db"},
 		}},
-		// The gap a docs sweep found the day ssh: shipped: the field was in
+		// The gap the day ssh: shipped: the field was in
 		// the file, resolved by every call, and absent from this stamp — so a
 		// repointed tunnel kept a standing grant's pin matching.
 		{"an ssh target added", "pg@1b6093cf90ce", config.Connection{

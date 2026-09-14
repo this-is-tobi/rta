@@ -177,7 +177,7 @@ func TestProbeClosedPortIsCoded(t *testing.T) {
 	}
 }
 
-// A regression test for a real bug review found: the TLS
+// A regression test for a real bug: the TLS
 // handshake was never bounded by the documented timeout field — only the
 // TCP dial was — so a peer that accepts the connection and then never sends
 // a single TLS record hung HandshakeContext forever.
@@ -218,7 +218,7 @@ func TestProbeTLSHandshakeRespectsTimeout(t *testing.T) {
 	}
 }
 
-// A regression test for a real bug review found: every
+// A regression test for a real bug: every
 // read after the first got a fresh 200ms deadline no matter how long the
 // call had already run, so a peer trickling one byte at a time — fully
 // within its control, since host/port are caller-supplied — could hold the

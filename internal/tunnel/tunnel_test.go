@@ -296,7 +296,7 @@ func TestAForwardThatNeverComesUpTimesOut(t *testing.T) {
 	}
 }
 
-// A regression test for a real bug review found: Open had
+// A regression test for a real bug: Open had
 // no fallback ceiling of its own, so a caller passing a context with no
 // deadline — context.Background(), which every call site in this package's
 // own tests used until this one — combined with a kubectl that neither
