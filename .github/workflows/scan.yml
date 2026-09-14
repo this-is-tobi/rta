@@ -1,0 +1,79 @@
+# What a pull request cannot see: a vulnerability published after the last
+# merge. ci.yml runs govulncheck and gitleaks on every pull request and
+# nothing ran between pull requests, so a CVE disclosed against a module
+# already on main — or a credential that slipped into history — waited for
+# the next code change to be noticed. This is the same three scans the
+# catalogue already offers, on a clock, against main and the released
+# image, reporting to the repository's security tab.
+#
+# Weekly rather than daily: govulncheck reports only what this module's own
+# code reaches, so the signal is rare and worth a look when it fires; a
+# daily run would be a daily green tick nobody reads.
+name: Scan
+
+on:
+  schedule:
+  - cron: "23 6 * * 1"
+  workflow_dispatch:
+
+# Every job below narrows this further; nothing here writes to the tree.
+permissions:
+  contents: read
+
+jobs:
+  scan-deps:
+    name: Scan dependencies
+    uses: this-is-tobi/github-workflows/.github/workflows/scan-govulncheck.yml@v0
+    permissions:
+      contents: read
+      security-events: write
+    with:
+      GITHUB_SECURITY_TAB: true
+
+  scan-secrets:
+    name: Scan secrets
+    uses: this-is-tobi/github-workflows/.github/workflows/scan-gitleaks.yml@v0
+    permissions:
+      contents: read
+      security-events: write
+    with:
+      GITHUB_SECURITY_TAB: true
+
+  # The parsers that read hostile bytes, fuzzed for real. A pull request runs
+  # only each target's seed corpus; the mutating run costs minutes and finds
+  # what a seed cannot, so it lives on the schedule. `make fuzz` is the list
+  # of targets, so a parser gaining one joins this without a change here.
+  fuzz:
+    name: Fuzz the hostile-input parsers
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+    - name: Checks-out repository
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+
+    - name: Setup Go
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version-file: go.mod
+        cache: true
+
+    - name: Fuzz
+      run: make fuzz FUZZTIME=90s
+
+  # The image people actually pull, as it is on the registry: base-image
+  # advisories land here, and they land on a schedule of their own that no
+  # pull request in this repository follows.
+  scan-image:
+    name: Scan the released image
+    uses: this-is-tobi/github-workflows/.github/workflows/scan-trivy.yml@v0
+    permissions:
+      contents: read
+      packages: read
+      security-events: write
+    with:
+      IMAGE: ghcr.io/this-is-tobi/rta:latest
+      GITHUB_SECURITY_TAB: true
+      FAIL_ON_ERROR: true
