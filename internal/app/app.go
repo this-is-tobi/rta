@@ -6,6 +6,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -204,7 +205,22 @@ func groupRunE(cmd *cobra.Command, args []string) error {
 	if len(args) == 0 {
 		return cmd.Help()
 	}
-	return fmt.Errorf("unknown command %q for %q", args[0], cmd.CommandPath())
+	// With cobra's own "Did you mean this?", which the root command gets for
+	// free and every group below it lost the moment it grew a RunE: `rta sy
+	// cpu` suggested `sys` while `rta sys cpuu` only said unknown. The
+	// suggestion is what turns a typo into a one-keystroke fix instead of a
+	// trip through --help.
+	msg := fmt.Sprintf("unknown command %q for %q", args[0], cmd.CommandPath())
+	// cobra sets the distance on the root alone, inside Execute, and leaves
+	// every subcommand at zero — where SuggestionsFor matches on prefix only
+	// and `lst` earns no `list`. The root's own value, applied here.
+	if cmd.SuggestionsMinimumDistance <= 0 {
+		cmd.SuggestionsMinimumDistance = 2
+	}
+	if suggestions := cmd.SuggestionsFor(args[0]); len(suggestions) > 0 {
+		msg += "\n\nDid you mean this?\n\t" + strings.Join(suggestions, "\n\t")
+	}
+	return errors.New(msg)
 }
 
 // NewRoot builds the root cobra command over the given registry.
