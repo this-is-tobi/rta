@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"text/template"
@@ -48,6 +50,16 @@ type scaffold struct {
 	Module  string // go module path
 	RtaPath string // local rta source for a replace directive, or ""
 	RtaMod  string // rta's module path
+	// RtaVersion is the released rta module the plugin requires when no
+	// checkout is in play: the version of the rta that scaffolded it, so the
+	// SDK it builds against is the one whose host will load it. "" means
+	// unknown — a build nobody stamped — and `go mod tidy` then resolves the
+	// import to the latest release on its own.
+	RtaVersion string
+	// GoVersion is the go directive, the running toolchain's own version:
+	// what `go mod init` would write, and never older than what the rta
+	// module itself requires, since that toolchain built this rta.
+	GoVersion string
 }
 
 const rtaModule = "github.com/this-is-tobi/rta"
@@ -86,6 +98,9 @@ func (s scaffold) write(dir string, dryRun bool) ([]string, error) {
 	if dryRun {
 		return names, nil
 	}
+	if s.GoVersion == "" {
+		s.GoVersion = toolchainVersion()
+	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, view.Errorf("plugin.write", "creating %s: %v", dir, err)
 	}
@@ -107,15 +122,12 @@ func (s scaffold) write(dir string, dryRun bool) ([]string, error) {
 
 // localRta finds an rta source tree to point a `replace` directive at.
 //
-// It exists because rta is not published yet: `go mod tidy` in a scaffolded
-// plugin cannot resolve the module, so a go.mod without a replace produces a
-// plugin that does not build — which would be the first thing a stranger
-// hits, in the fifteen minutes the milestone is measured on.
-//
-// Walking up from the working directory finds it when somebody scaffolds
-// inside or beside the rta checkout, which is the case that exists today. It
-// returns "" otherwise, and the caller says what to do rather than emitting a
-// replace pointing at a path that is not there.
+// A plugin scaffolded inside or beside an rta checkout — the way this
+// repository's own example is written — should build against the tree it
+// sits in rather than the last release, or an SDK change and the plugin
+// exercising it could never land together. Everywhere else the released
+// module is the right target, and this returns "" so the caller requires
+// that instead of emitting a replace pointing at a path that is not there.
 func localRta(start string) string {
 	dir, err := filepath.Abs(start)
 	if err != nil {
@@ -219,12 +231,57 @@ func nextSteps(s scaffold, dir string) string {
 	fmt.Fprintf(&b, "  go build -o %s/%s .\n\n", install, s.Binary)
 	fmt.Fprintf(&b, "Anything named %s* on $PATH is a plugin; the part after the\n", pluginhost.Prefix)
 	fmt.Fprintf(&b, "prefix is only a filename — the namespace comes from what the plugin declares.\n")
-	if s.RtaPath == "" {
-		fmt.Fprintf(&b, "\nNote: rta is not published yet and no local checkout was found, so\n")
-		fmt.Fprintf(&b, "go.mod has no `replace` for %s and the build\n", rtaModule)
-		fmt.Fprintf(&b, "will fail. Re-run with --rta-source <path-to-your-rta-checkout>.\n")
+	switch {
+	case s.RtaPath != "":
+		fmt.Fprintf(&b, "\ngo.mod builds against the rta checkout at %s (a `replace` line);\n", s.RtaPath)
+		fmt.Fprintf(&b, "drop that line to build against the released module instead.\n")
+	case s.RtaVersion != "":
+		fmt.Fprintf(&b, "\ngo.mod requires %s %s — the rta that scaffolded this, so the SDK\n", rtaModule, s.RtaVersion)
+		fmt.Fprintf(&b, "it builds against is the one whose host will load it.\n")
+	default:
+		fmt.Fprintf(&b, "\nThis rta carries no release version, so go.mod names none and `go mod tidy`\n")
+		fmt.Fprintf(&b, "picked the latest %s. Pin it with `go get %s@<version>`.\n", rtaModule, rtaModule)
 	}
 	return b.String()
+}
+
+// releasedVersion is the rta module version a scaffold should require, from
+// the version this binary states about itself: the release stamp first, the
+// module version the Go toolchain recorded otherwise — `go install
+// …@v0.18.0` stamps nothing and knows exactly what it built — and "" for a
+// build that is neither, where a guess would be a version the author never
+// chose.
+func releasedVersion(stamp string) string {
+	if v := semverOf(stamp); v != "" {
+		return v
+	}
+	if info, ok := debug.ReadBuildInfo(); ok {
+		return semverOf(info.Main.Version)
+	}
+	return ""
+}
+
+// semver is a release version, with or without its v: what the stamp carries
+// ("0.18.0") and what a module version carries ("v0.18.0"). A pseudo-version
+// or "(devel)" is not one.
+var semver = regexp.MustCompile(`^v?(\d+\.\d+\.\d+)$`)
+
+func semverOf(s string) string {
+	m := semver.FindStringSubmatch(strings.TrimSpace(s))
+	if m == nil {
+		return ""
+	}
+	return "v" + m[1]
+}
+
+// toolchainVersion is the go directive for a fresh go.mod: the running
+// toolchain's version, as `go mod init` writes it, with a floor for a
+// toolchain that reports something other than a release.
+func toolchainVersion() string {
+	if m := regexp.MustCompile(`^go(\d+\.\d+(?:\.\d+)?)`).FindStringSubmatch(runtime.Version()); m != nil {
+		return m[1]
+	}
+	return "1.26"
 }
 
 const mainTemplate = `// Command {{.Binary}} is an rta plugin.
@@ -302,14 +359,16 @@ func greet(_ context.Context, req plugin.Request) (view.View, error) {
 
 const goModTemplate = `module {{.Module}}
 
-go 1.25
+go {{.GoVersion}}
 {{if .RtaPath}}
-// rta is not published yet, so this points at your local checkout.
-// Remove it once you are building against a released version.
+// Built against a local rta checkout rather than a release. Remove this line
+// to build against the released module instead.
 replace {{.RtaMod}} => {{.RtaPath}}
-{{end}}
+
 require {{.RtaMod}} v0.0.0
-`
+{{else if .RtaVersion}}
+require {{.RtaMod}} {{.RtaVersion}}
+{{end}}`
 
 const readmeTemplate = `# {{.Binary}}
 
