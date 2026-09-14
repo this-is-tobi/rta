@@ -196,7 +196,8 @@ func TestTheActivationWindowMovesTheProfileStampAndNotTheConnectionStamp(t *test
 	if Stamp(short) == Stamp(long) {
 		t.Error("the TUI cannot see an activation window change")
 	}
-	if ConnStamp("pg@abcd", conn) != ConnStamp("pg@abcd", conn) {
+	first, second := ConnStamp("pg@abcd", conn), ConnStamp("pg@abcd", conn)
+	if first != second {
 		t.Error("ConnStamp is not deterministic")
 	}
 	// Which is the property that matters: the same connection under either

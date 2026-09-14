@@ -21,7 +21,7 @@ import (
 func TestMapStringsHandlesEveryViewType(t *testing.T) {
 	union := map[string]bool{}
 	fset := token.NewFileSet()
-	pkgs, err := parser.ParseDir(fset, ".", nil, 0)
+	pkgs, err := parser.ParseDir(fset, ".", nil, 0) //nolint:staticcheck // build tags do not matter to a drift test over one package, and x/tools would be a dependency for it
 	if err != nil {
 		t.Fatal(err)
 	}

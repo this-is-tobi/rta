@@ -135,7 +135,7 @@ func (t *tracer) probe(ctx context.Context, ttl, seq int, timeout time.Duration)
 		}
 		n, peer, err := t.conn.ReadFrom(buf)
 		if err != nil {
-			return probeResult{}, nil // deadline: a silent hop
+			return probeResult{}, nil //nolint:nilerr // a deadline is a silent hop, which is a result and not a failure
 		}
 		m, perr := icmp.ParseMessage(t.proto, buf[:n])
 		if perr != nil {
@@ -237,7 +237,7 @@ func runTrace(ctx context.Context, req plugin.Request) (view.View, error) {
 		return nil, view.Errorf("net.trace.socket", "opening an ICMP socket: %v", err).
 			WithHint("on Linux, unprivileged ICMP may need: sysctl -w net.ipv4.ping_group_range=\"0 2147483647\"")
 	}
-	defer tr.Close()
+	defer func() { _ = tr.Close() }()
 
 	var hops []hop
 	seq := 0
@@ -252,8 +252,8 @@ func runTrace(ctx context.Context, req plugin.Request) (view.View, error) {
 			if err != nil {
 				return nil, view.Errorf("net.trace.failed", "probing hop %d: %v", ttl, err)
 			}
-			switch {
-			case res.addr == "":
+			switch res.addr {
+			case "":
 				h.lost++
 			default:
 				h.addr = res.addr

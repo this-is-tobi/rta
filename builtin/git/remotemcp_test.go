@@ -1,6 +1,7 @@
 package git
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -51,7 +52,8 @@ func TestARemoteRepositoryIsNotReachableOverMCP(t *testing.T) {
 			if err == nil {
 				t.Fatalf("%s allowed a remote URL over MCP", tc.name)
 			}
-			verr, ok := err.(*view.Error)
+			var verr *view.Error
+			ok := errors.As(err, &verr)
 			if !ok {
 				t.Fatalf("%s: want a view.Error, got %T", tc.name, err)
 			}

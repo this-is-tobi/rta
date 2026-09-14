@@ -113,7 +113,7 @@ func queryOSVAt(ctx context.Context, client *stdhttp.Client, endpoint string, co
 		for i, res := range parsed.Results {
 			for _, v := range res.Vulns {
 				if v.ID != "" {
-					found[batch[i].key()] = append(found[batch[i].key()], v.ID)
+					found[batch[i].key()] = append(found[batch[i].key()], v.ID) //nolint:gosec // len(parsed.Results) == len(batch) is checked above
 				}
 			}
 		}

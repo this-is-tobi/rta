@@ -2,6 +2,7 @@ package time
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	stdtime "time"
@@ -189,7 +190,8 @@ func TestAZoneThisMachineCannotLoadIsRefused(t *testing.T) {
 	if err == nil {
 		t.Fatal("an unknown zone was accepted")
 	}
-	verr, ok := err.(*view.Error)
+	var verr *view.Error
+	ok := errors.As(err, &verr)
 	if !ok {
 		t.Fatalf("error is %T, want *view.Error", err)
 	}

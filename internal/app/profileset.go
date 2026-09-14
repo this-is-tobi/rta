@@ -404,7 +404,8 @@ func runProfileSet(cmd *cobra.Command, name string, reg *registry.Registry, dryR
 	if dryRun {
 		label = "would write"
 	}
-	head := []view.Pair{{Key: label, Value: what + " in " + config.Path()}}
+	head := make([]view.Pair, 0, 1+len(receipts)+len(card.Pairs))
+	head = append(head, view.Pair{Key: label, Value: what + " in " + config.Path()})
 	if unchanged {
 		already := name + " already reads this way"
 		if key != "" {
@@ -1054,7 +1055,7 @@ func completeInstalledPlugins(*cobra.Command, []string, string) ([]cobra.Complet
 		seen[ns] = true
 		// The bare namespace, because pinKey resolves it. Offering a digest
 		// to type would be offering the mistake back.
-		out = append(out, cobra.Completion(ns))
+		out = append(out, ns)
 	}
 	sort.Strings(out)
 	return out, cobra.ShellCompDirectiveNoFileComp

@@ -74,7 +74,7 @@ func canaryBinary(t *testing.T) string {
 		canaryBin = filepath.Join(dir, BinaryName("canary"))
 		build := exec.Command("go", "build", "-o", canaryBin, src)
 		if out, err := build.CombinedOutput(); err != nil {
-			canaryErr = fmt.Errorf("%v: %s", err, out)
+			canaryErr = fmt.Errorf("%w: %s", err, out)
 		}
 	})
 	if canaryErr != nil {

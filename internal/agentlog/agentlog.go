@@ -551,7 +551,7 @@ func writeAnchor(key []byte, a anchor) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	_, err = f.Write(append(line, '\n'))
 	return err
 }
@@ -736,7 +736,7 @@ func Append(e Entry) (err error) {
 		return err
 	}
 	if _, err := f.Write(append(line, '\n')); err != nil {
-		f.Close()
+		_ = f.Close()
 		return err
 	}
 	if err := f.Close(); err != nil {
@@ -955,7 +955,7 @@ func lastLineIn(path string) ([]byte, Entry, error) {
 	if err != nil {
 		return nil, Entry{}, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	info, err := f.Stat()
 	if err != nil {
 		return nil, Entry{}, err
@@ -1050,7 +1050,7 @@ func tailLines(path string, want int) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	info, err := f.Stat()
 	if err != nil {
 		return nil, err
@@ -1092,7 +1092,7 @@ func entriesIn(path string) ([]Entry, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	var out []Entry
 	sc := newLineReader(f)
 	for sc.Scan() {
@@ -1271,7 +1271,7 @@ func Verify() (Report, error) {
 				if e.Seq != 1 {
 					a, ok := anchors[e.Seq-1]
 					if !ok {
-						f.Close()
+						_ = f.Close()
 						rep.Broken = e.Seq
 						rep.Why = fmt.Sprintf(
 							"the record starts at entry %d and nothing records entries 1-%d as retired",
@@ -1297,14 +1297,14 @@ func Verify() (Report, error) {
 				}
 			}
 			if rep.Broken != 0 {
-				f.Close()
+				_ = f.Close()
 				return rep, nil
 			}
 			prev = e.Seal
 			seq = e.Seq
 		}
 		err = sc.Err()
-		f.Close()
+		_ = f.Close()
 		if err != nil {
 			return rep, err
 		}

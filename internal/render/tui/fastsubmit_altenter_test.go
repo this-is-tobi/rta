@@ -29,7 +29,7 @@ func TestAltEnterIsWhatEscThenCarriageReturnDecodesTo(t *testing.T) {
 	if !ok {
 		t.Fatalf("event = %T, want a KeyPressEvent", ev)
 	}
-	got := tea.KeyPressMsg{Code: kp.Code, Mod: tea.KeyMod(kp.Mod)}.String()
+	got := tea.KeyPressMsg{Code: kp.Code, Mod: kp.Mod}.String()
 	if got != "alt+enter" {
 		t.Errorf("ESC+CR decoded to %q, want %q", got, "alt+enter")
 	}

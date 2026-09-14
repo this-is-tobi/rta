@@ -121,7 +121,7 @@ func extractMember(archive io.Reader, member string, dst io.Writer) (int64, *vie
 	if err != nil {
 		return 0, view.Errorf("plugin.install.archive", "not a gzip archive: %v", err)
 	}
-	defer gz.Close()
+	defer func() { _ = gz.Close() }()
 	tr := tar.NewReader(gz)
 	want := path.Clean(member)
 	for {
@@ -189,7 +189,7 @@ func digestFile(path string) (string, *view.Error) {
 	if err != nil {
 		return "", view.Errorf("plugin.install.digest", "%v", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
 		return "", view.Errorf("plugin.install.digest", "%v", err)

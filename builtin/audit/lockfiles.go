@@ -169,7 +169,7 @@ func parseTOMLLock(text, source, ecosystem string, localWhenSourceless bool) []c
 	var name, version string
 	hasSource, local := false, false
 	flush := func() {
-		if name != "" && version != "" && !local && !(localWhenSourceless && !hasSource) {
+		if name != "" && version != "" && !local && (!localWhenSourceless || hasSource) {
 			out = append(out, component{ecosystem: ecosystem, name: name, version: version, source: source})
 		}
 		name, version, hasSource, local = "", "", false, false
@@ -334,7 +334,7 @@ func stripJSONC(data []byte) []byte {
 			}
 			out = append(out, '\n')
 		case c == '/' && i+1 < len(data) && data[i+1] == '*':
-			for i += 2; i+1 < len(data) && !(data[i] == '*' && data[i+1] == '/'); i++ {
+			for i += 2; i+1 < len(data) && (data[i] != '*' || data[i+1] != '/'); i++ {
 			}
 			i++
 		case c == ',':

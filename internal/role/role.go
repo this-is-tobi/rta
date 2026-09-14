@@ -97,7 +97,7 @@ func (s Source) Lines() ([]Line, error) {
 	for _, raw := range s.Role.Grants {
 		l, err := Parse(raw)
 		if err != nil {
-			return nil, fmt.Errorf("role %q in %s: %v", s.Name, s.From, err)
+			return nil, fmt.Errorf("role %q in %s: %w", s.Name, s.From, err)
 		}
 		out = append(out, l)
 	}

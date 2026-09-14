@@ -78,7 +78,7 @@ func recordWritable() error {
 	probe := filepath.Join(dir, ".readyz")
 	f, err := os.OpenFile(probe, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
-		return fmt.Errorf("the data directory is not writable, so nothing an agent does can be recorded (%s): %v", dir, err)
+		return fmt.Errorf("the data directory is not writable, so nothing an agent does can be recorded (%s): %w", dir, err)
 	}
 	_ = f.Close()
 	_ = os.Remove(probe)

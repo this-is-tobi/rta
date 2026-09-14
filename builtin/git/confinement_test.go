@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -120,7 +121,8 @@ func TestAURLIsRefusedRatherThanTurnedIntoALocalPath(t *testing.T) {
 }
 
 func errCode(err error) string {
-	if ve, ok := err.(*view.Error); ok {
+	var ve *view.Error
+	if errors.As(err, &ve) {
 		return ve.Code
 	}
 	return err.Error()

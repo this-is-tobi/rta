@@ -172,7 +172,8 @@ func bindProfile(cmd *cobra.Command, c plugin.Capability) (string, map[string]an
 	if err != nil {
 		return "", nil
 	}
-	name, conn := explicit, config.Connection{}
+	name := explicit
+	var conn config.Connection
 	var verr *view.Error
 	if explicit != "" {
 		conn, verr = profile.Lookup(cfg, c, explicit, installed)

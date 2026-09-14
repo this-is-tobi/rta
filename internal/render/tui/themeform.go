@@ -82,7 +82,7 @@ func newThemeForm(existing map[string]string) *themeForm {
 		browsed:  map[string]browsed{},
 	}
 	live := theme.Current()
-	var fields []huh.Field
+	fields := make([]huh.Field, 0, len(themeFieldOrder))
 	for _, key := range themeFieldOrder {
 		v := existing[key] // "" when this field has no override on disk
 		tf.bindings[key] = &v

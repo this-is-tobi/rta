@@ -109,7 +109,7 @@ func Serve(ctx context.Context, server *sdk.Server, ln net.Listener, opts Remote
 		// when set.
 		AllowMissingExpiration: true,
 	})(handler)
-	var root http.Handler = authed
+	root := authed
 	if opts.Operator != nil {
 		mux := http.NewServeMux()
 		mux.Handle("/operator/v1/", opts.Operator)
@@ -301,7 +301,7 @@ func LoadTokenFile(path string) (tokens map[string]string, groupReadable bool, e
 	if err != nil {
 		return nil, false, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	// Stat the open handle, not the path a second time: checking permissions
 	// and reading content through the same fd closes the window between
 	// them — a check against the path and a read against the path again

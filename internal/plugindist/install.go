@@ -142,11 +142,11 @@ func installFrom(ctx context.Context, listed Listed, stderr io.Writer, dryRun bo
 		}
 		out, err := os.OpenFile(staged, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755)
 		if err != nil {
-			archive.Close()
+			_ = archive.Close()
 			return Report{}, view.Errorf("plugin.install.place", "%v", err)
 		}
 		_, verr = extractMember(archive, plat.Bin, out)
-		archive.Close()
+		_ = archive.Close()
 		if cerr := out.Close(); verr == nil && cerr != nil {
 			verr = view.Errorf("plugin.install.place", "%v", cerr)
 		}

@@ -155,7 +155,7 @@ func probe(ctx context.Context, req plugin.Request, send string) (view.View, err
 		return nil, view.Errorf("net.probe.unreachable", "connecting to %s: %v", address, err).
 			WithHint("the port may be closed or filtered — `rta net port " + host + "` scans a range")
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	connected := time.Since(start)
 
 	pairs := []view.Pair{
@@ -165,7 +165,7 @@ func probe(ctx context.Context, req plugin.Request, send string) (view.View, err
 		{Key: "local", Value: conn.LocalAddr().String()},
 	}
 
-	var stream stdnet.Conn = conn
+	stream := conn
 	if req.Bool("tls") {
 		handshake := time.Now()
 		// InsecureSkipVerify: this is a diagnostic. Reporting what a host

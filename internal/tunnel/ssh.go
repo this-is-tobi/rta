@@ -255,7 +255,7 @@ func (t *Tunnel) acceptSSH(ctx context.Context, spec sshSpec) {
 // copies — so rta never buffers or inspects the bytes.
 func (t *Tunnel) spliceSSH(ctx context.Context, spec sshSpec, conn net.Conn) {
 	defer t.served.Done()
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	cmd := exec.CommandContext(ctx, sshBin, sshArgs(spec)...)
 	// Pipes rather than `cmd.Stdin = conn; cmd.Stdout = conn`, and WaitDelay
 	// is not an alternative here: when it fires it closes os/exec's own pipes

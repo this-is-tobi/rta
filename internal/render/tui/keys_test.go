@@ -250,12 +250,10 @@ func everyKey() []string {
 	for c := 'a'; c <= 'z'; c++ {
 		out = append(out, string(c), strings.ToUpper(string(c)))
 	}
-	for _, k := range []string{
+	out = append(out,
 		"[", "]", "<", ">", "/", ":", ".", ",", "-", "=", "?", "!", "@", "#", "$", "%",
 		"up", "down", "left", "right", "enter", "esc", "tab", " ", "ctrl+c",
-	} {
-		out = append(out, k)
-	}
+	)
 	return out
 }
 
@@ -430,7 +428,7 @@ func TestQuitWorksFromEveryScreen(t *testing.T) {
 
 func press(t *testing.T, m Model, key string) Model {
 	t.Helper()
-	msg := tea.KeyPressMsg{Text: key}
+	var msg tea.KeyPressMsg
 	switch key {
 	case "up", "down", "left", "right", "enter", "esc", "tab":
 		msg = tea.KeyPressMsg{Code: keyCodeFor(key)}

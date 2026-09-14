@@ -130,7 +130,7 @@ func writeCache(digest string, p *rtav1.Plugin) {
 	}
 	defer os.Remove(tmp.Name()) // no-op once the rename succeeds
 	if _, err := tmp.Write(append(sealFor(key, digest, data), data...)); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return
 	}
 	if err := tmp.Close(); err != nil {

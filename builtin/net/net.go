@@ -691,7 +691,7 @@ func runPort(ctx context.Context, req plugin.Request) (view.View, error) {
 				conn, err := dialer.DialContext(ctx, "tcp",
 					stdnet.JoinHostPort(host, strconv.Itoa(ports[i])))
 				if err == nil {
-					conn.Close()
+					_ = conn.Close()
 				}
 				// Written by index, so the rows keep the caller's port order
 				// without a sort and without a lock.
