@@ -180,29 +180,32 @@ size-check: ## Fail if the linux/amd64 release binary exceeds SIZE_LIMIT_MB
 	  echo "size-check: the binary exceeds SIZE_LIMIT_MB; raise the ceiling deliberately or drop what grew it"; exit 1; \
 	fi
 
-# Rewrites the pins. Deciding *what* they should be is deliberately not this
-# target's job: which rta-plugins tag is newest is a question for whoever runs
-# it — `gh release list --repo this-is-tobi/rta-plugins` answers it — and
-# keeping that lookup out of here is what lets the rewrite stay mechanical
-# enough to trust. Writes the whole line as given: bump-plugins.yml builds it
-# from the official index plus whatever the line already carries, and a
-# person widens it with an entry the index does not know.
+# Rewrites the official index's pin in Dockerfile.full's RTA_INDEXES line.
+# Deciding *what* it should be is deliberately not this target's job — which
+# commit of rta-plugins is newest is a question for whoever runs it, or for
+# bump-plugins.yml, which asks GitHub — and keeping that lookup out of here
+# is what lets the rewrite stay mechanical enough to trust. Only the official
+# entry's ref moves; every other entry on the line is somebody's own and is
+# left exactly as written.
 #
-# Through the environment rather than `$(PLUGINS)` in the recipe, because make
-# expands a recipe's variables as *text* into the line it hands /bin/sh: with
-# the value spelled inline, PLUGINS='pg/v9.9.9"; curl …|sh; "' closes awk's
-# quote and runs. Nothing feeds this but a person today, which is exactly when
-# the habit is cheap to keep: a version string is the kind of value that later
-# arrives from somewhere else, and a git tag may legally contain `$`, a
-# backtick, a quote or a semicolon — git forbids spaces and `:` `?` `*` `~`
-# `^`, not those. So it stays a value the shell expands rather than a string
-# the shell parses, and awk takes it with -v for the same reason: never
-# spliced into the program text.
-bump-plugins: export BUMP_PLUGINS := $(PLUGINS)
-bump-plugins: ## Rewrite Dockerfile.full's plugin pins to PLUGINS (e.g. PLUGINS="pg/v0.3.3 s3/v0.2.0")
-	@test -n "$$BUMP_PLUGINS" || { echo "bump-plugins needs PLUGINS=\"name/vX.Y.Z ...\""; exit 1; }
-	@awk -v plugins="$$BUMP_PLUGINS" '{ if ($$0 ~ /^ARG PLUGINS="/) print "ARG PLUGINS=\"" plugins "\""; else print }' \
-		Dockerfile.full > Dockerfile.full.tmp && mv Dockerfile.full.tmp Dockerfile.full
+# Through the environment rather than `$(REF)` in the recipe, because make
+# expands a recipe's variables as *text* into the line it hands /bin/sh: a
+# value spelled inline could close awk's quote and run. So it stays a value
+# the shell expands rather than a string the shell parses, and awk takes it
+# with -v for the same reason: never spliced into the program text.
+bump-index: export BUMP_INDEX_REF := $(REF)
+bump-index: ## Pin Dockerfile.full's official index at REF (a commit of rta-plugins)
+	@test -n "$$BUMP_INDEX_REF" || { echo "bump-index needs REF=<commit>"; exit 1; }
+	@awk -v ref="$$BUMP_INDEX_REF" '{ \
+	  if ($$0 ~ /^ARG RTA_INDEXES="/) { \
+	    n = split(substr($$0, 18, length($$0) - 18), entries, " "); line = ""; \
+	    for (i = 1; i <= n; i++) { \
+	      e = entries[i]; \
+	      if (e ~ /^official(@|$$)/) e = "official@" ref; \
+	      line = line (i > 1 ? " " : "") e; \
+	    } \
+	    print "ARG RTA_INDEXES=\"" line "\""; \
+	  } else print }' Dockerfile.full > Dockerfile.full.tmp && mv Dockerfile.full.tmp Dockerfile.full
 
 ##@ Test
 
@@ -383,7 +386,7 @@ clean: ## Remove build output and coverage artifacts
 # make would find it up to date and report success for a target that ran
 # nothing.
 .PHONY: help setup download tidy fmt build install \
-	cross snapshot size size-check bump-plugins test hard vet lint check \
+	cross snapshot size size-check bump-index test hard vet lint check \
 	fmt-check coverage coverage-html ci proto proto-lint proto-check \
 	chart-schema chart-schema-check chart-lint chart-docs \
 	clean
