@@ -199,6 +199,17 @@ func TestEveryKeyAScreenAnswersToIsAdvertised(t *testing.T) {
 			m.mode = modeProfilePlugins
 			return m, modeProfilePlugins
 		},
+		// The destructive gate: enter runs, e reopens the inputs, esc
+		// cancels — reached here as `x` on a list reaches it, with the dry
+		// run fed back in as the confirmation body.
+		"confirm": func(t *testing.T) (Model, mode) {
+			var doneLog []int
+			m := listResult(t, listRegistry(t, &doneLog))
+			removed, _ := m.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
+			rm := removed.(Model)
+			shown, _ := rm.Update(previewMsg{cap: rm.current, view: view.Text{Body: "would remove"}, seq: rm.runSeq})
+			return shown.(Model), modeConfirm
+		},
 	}
 	for name, build := range screens {
 		t.Run(name, func(t *testing.T) {

@@ -200,7 +200,8 @@ func TestBareIsDeclaredOnlyWhereItIsSafe(t *testing.T) {
 
 // The other half of the invariant, pinned on the code rather than the
 // table: whatever the table says, bare must never waive the destructive
-// confirmation, because runAction consults Destructive first.
+// gate. bare waives the form; the confirmation screen comes after the form
+// and is reached with or without one.
 func TestBareNeverWaivesTheDestructiveConfirmation(t *testing.T) {
 	reg := realRegistry(t)
 	m := Model{reg: reg}
@@ -208,7 +209,7 @@ func TestBareNeverWaivesTheDestructiveConfirmation(t *testing.T) {
 		Inputs: []plugin.Field{{Name: "id", Type: plugin.String, Positional: true, Required: true}}}
 	tbl := view.Table{Columns: []view.Column{{Name: "id"}}, Rows: [][]string{{"a1"}}}
 	next, _ := m.runAction(capAction{key: "x", label: "rm", cap: c, src: srcRow, bare: true}, tbl)
-	if nm := next.(Model); nm.mode != modeForm {
+	if nm := next.(Model); nm.mode != modeConfirm {
 		t.Fatalf("a bare destructive action skipped its confirmation (mode %v)", nm.mode)
 	}
 }

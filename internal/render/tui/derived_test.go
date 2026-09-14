@@ -84,7 +84,7 @@ func TestAnUntouchedRunFormDoesNotOutrunTheForward(t *testing.T) {
 		t.Fatalf("resolve: %s", verr.Message)
 	}
 	msg := runCmd(context.Background(), 1, c, withoutPicker(c, values), false,
-		nm.configFor(c), name, filled, conn)()
+		nm.configFor(c), name, filled, conn, false)()
 	if rm := msg.(resultMsg); rm.err != nil {
 		t.Fatalf("run: %s", rm.err.Message)
 	}

@@ -348,19 +348,17 @@ func (m Model) afterFormUpdate(cmd tea.Cmd) (tea.Model, tea.Cmd) {
 			m.fitForm()
 			return m, m.form.form.Init()
 		}
-		if !m.form.confirmed() {
-			// Destructive run declined: back to where we came from, nothing
-			// happened. Fast-submitting a destructive form lands here too,
-			// not on the run below — a Confirm field's own default is the
-			// negative, so racing through it without touching it declines,
-			// the same as leaving it alone and pressing enter would.
-			m.flash = ""
-			return m.closeForm()
-		}
-		m.lastValues = m.form.values()
-		m.lastYes = m.form.confirmed() && m.current.Safety == plugin.Destructive
+		values := m.form.values()
 		m.form = nil
-		return m, m.startRun(m.current, m.lastValues, m.lastYes)
+		if m.current.Safety == plugin.Destructive {
+			// The form collected the inputs; the confirmation screen shows
+			// what the call would do with them and takes the consent. Fast
+			// submit lands there too — racing through a form is a way to
+			// accept its defaults, never a way past the gate.
+			return m, m.startConfirm(m.current, values)
+		}
+		m.lastValues, m.lastYes = values, false
+		return m, m.startRun(m.current, values, false)
 	case huh.StateAborted:
 		return m.closeForm()
 	}

@@ -112,7 +112,7 @@ rta net hosts add 10.0.0.5 db.local --dry-run
 rta note rm 4 --dry-run
 ```
 
-This is not only a convenience for you — it is what rta shows an operator on a [parked agent call](../30-boundary/40-audit-trail.md#parked-calls), which turns "may this agent call `note.rm`" into "may it remove **this note**".
+This is not only a convenience for you — it is what rta shows an operator on a [parked agent call](../30-boundary/40-audit-trail.md#parked-calls), which turns "may this agent call `note.rm`" into "may it remove **this note**", and it is what [the TUI](./20-tui.md#running-something) shows you before a destructive run, for the same reason.
 
 ## `--yes`
 

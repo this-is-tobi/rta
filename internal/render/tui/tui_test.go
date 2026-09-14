@@ -99,7 +99,10 @@ func testRegistry(t *testing.T) *registry.Registry {
 			},
 			{
 				ID: "demo.boom", Summary: "destroy things", Safety: plugin.Destructive,
-				Run: func(context.Context, plugin.Request) (view.View, error) {
+				Run: func(_ context.Context, req plugin.Request) (view.View, error) {
+					if req.DryRun {
+						return view.Text{Body: "WOULD-BOOM"}, nil
+					}
 					return view.Text{Body: "BOOM-EXECUTED"}, nil
 				},
 			},
@@ -309,9 +312,10 @@ func TestDestructiveRequiresConfirm(t *testing.T) {
 	tm := newTest(t)
 	waitFor(t, tm, "demo.boom")
 	tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter}) // boom is first (sorted)
-	waitFor(t, tm, "destructive — run it?")
-	// Decline: confirm defaults to the negative option.
-	tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
+	// The dry run, on the confirmation screen, before anything happens.
+	waitFor(t, tm, "nothing has run yet", "WOULD-BOOM")
+	// Decline: esc leaves without running.
+	tm.Send(tea.KeyPressMsg{Code: tea.KeyEscape})
 	waitFor(t, tm, "capabilities") // back to browse, nothing ran
 	tm.Send(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
 	tm.WaitFinished(t, teatest.WithFinalTimeout(framePatience))
@@ -326,9 +330,8 @@ func TestDestructiveConfirmedRuns(t *testing.T) {
 	tm := newTest(t)
 	waitFor(t, tm, "demo.boom")
 	tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
-	waitFor(t, tm, "destructive — run it?")
-	// Approve: 'y' selects the affirmative in huh confirms.
-	tm.Send(tea.KeyPressMsg{Code: 'y', Text: "y"})
+	waitFor(t, tm, "nothing has run yet", "WOULD-BOOM")
+	// Approve: enter on the preview is the consent.
 	tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
 	waitFor(t, tm, "BOOM-EXECUTED")
 	quit(t, tm)
@@ -827,18 +830,27 @@ func TestTileIndexForDisambiguatesTwoTilesOfTheSameCapability(t *testing.T) {
 	}
 }
 
-// TestListRemoveAsksConfirmation: `x` on a row opens a confirm-only form for
-// the destructive remove; declining returns to the list.
+// TestListRemoveAsksConfirmation: `x` on a row has nothing left to ask — the
+// row supplied the id — so it goes straight to the dry run, which lands as
+// the confirmation screen; declining returns to the list.
 func TestListRemoveAsksConfirmation(t *testing.T) {
 	var doneLog []int
 	m := listResult(t, listRegistry(t, &doneLog))
 
-	removed, _ := m.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
+	removed, cmd := m.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
 	rm := removed.(Model)
-	if rm.mode != modeForm || rm.current.ID != "note.rm" || rm.form.confirm == nil {
-		t.Fatalf("x: mode=%v current=%s confirm=%v", rm.mode, rm.current.ID, rm.form.confirm)
+	if rm.mode != modeRunning || rm.current.ID != "note.rm" || !rm.previewing || cmd == nil {
+		t.Fatalf("x: mode=%v current=%s previewing=%v", rm.mode, rm.current.ID, rm.previewing)
 	}
-	back, _ := rm.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	shown, _ := rm.Update(previewMsg{cap: rm.current, view: view.Text{Body: "would remove 1"}, seq: rm.runSeq})
+	sm := shown.(Model)
+	if sm.mode != modeConfirm {
+		t.Fatalf("the dry run did not become the confirmation screen: mode=%v", sm.mode)
+	}
+	if body := plain(sm.confirmView()); !strings.Contains(body, "would remove 1") || !strings.Contains(body, "nothing has run yet") {
+		t.Fatalf("the confirmation does not show the dry run:\n%s", body)
+	}
+	back, _ := sm.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	bm := back.(Model)
 	if bm.mode != modeRunning || bm.current.ID != "note.list" {
 		t.Fatalf("esc from confirm: mode=%v current=%s", bm.mode, bm.current.ID)
@@ -927,14 +939,23 @@ func TestDetailPageRemoveReturnsToTheList(t *testing.T) {
 
 	removed, _ := m.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
 	rm := removed.(Model)
-	if rm.mode != modeForm || rm.current.ID != "note.rm" {
-		t.Fatalf("x on detail: mode=%v current=%s", rm.mode, rm.current.ID)
+	// The id came from the page, so nothing is left to ask: the dry run
+	// goes straight to the confirmation screen, and the fact that this
+	// destroys the page's own subject travels with it through the consent.
+	if rm.mode != modeRunning || !rm.previewing || rm.current.ID != "note.rm" {
+		t.Fatalf("x on detail: mode=%v previewing=%v current=%s", rm.mode, rm.previewing, rm.current.ID)
 	}
 	if !rm.subjectGone {
 		t.Fatal("removing the page's own subject must be recorded as destroying it")
 	}
 	rmCap, _ := reg.Capability("note.rm")
-	back, _ := rm.Update(resultMsg{cap: rmCap, view: view.Text{Body: "removed"}})
+	shown, _ := rm.Update(previewMsg{cap: rmCap, view: view.Text{Body: "would remove 1"}, seq: rm.runSeq})
+	consented, _ := shown.(Model).Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	cm := consented.(Model)
+	if cm.mode != modeRunning || !cm.lastYes || !cm.subjectGone {
+		t.Fatalf("enter on the confirmation: mode=%v yes=%v subjectGone=%v", cm.mode, cm.lastYes, cm.subjectGone)
+	}
+	back, _ := cm.Update(resultMsg{cap: rmCap, view: view.Text{Body: "removed"}, seq: cm.runSeq})
 	bm := back.(Model)
 	if bm.mode != modeRunning || bm.current.ID != "note.list" {
 		t.Fatalf("after remove: mode=%v current=%s, want the list", bm.mode, bm.current.ID)
@@ -1322,12 +1343,13 @@ func TestRowActionSuppliesAStringSliceScopeAsOneRecord(t *testing.T) {
 	}
 	acted, _ := sm.runAction(capAction{key: "x", label: "remove", cap: rm, src: srcRow}, tbl)
 	am := acted.(Model)
-	// Destructive: it opens a confirmation form seeded with the row's
-	// identity, rather than firing blind.
-	if am.mode != modeForm {
-		t.Fatalf("mode = %v, want a seeded confirmation form", am.mode)
+	// Destructive with nothing left to ask: it goes to the dry run for the
+	// confirmation screen, seeded with the row's identity, rather than
+	// firing blind.
+	if am.mode != modeRunning || !am.previewing {
+		t.Fatalf("mode = %v previewing = %v, want the dry run for a confirmation", am.mode, am.previewing)
 	}
-	got := plugin.NewRequest(am.form.base, false, false).StringSlice("hostname")
+	got := plugin.NewRequest(am.lastValues, false, false).StringSlice("hostname")
 	if len(got) != 1 || got[0] != "myhost.local" {
 		t.Errorf("StringSlice(hostname) = %v, want exactly [myhost.local]", got)
 	}
@@ -1466,7 +1488,7 @@ func TestCancellingARunReleasesTheHandler(t *testing.T) {
 		},
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	cmd := runCmd(ctx, 1, slow, nil, false, nil, "", nil, config.Connection{})
+	cmd := runCmd(ctx, 1, slow, nil, false, nil, "", nil, config.Connection{}, false)
 
 	done := make(chan tea.Msg, 1)
 	go func() { done <- cmd() }()
@@ -1723,7 +1745,7 @@ func TestExplicitDetailPreferenceReachesTheHandler(t *testing.T) {
 	}
 	ran := func(values map[string]any) string {
 		var got string
-		collect(t, runCmd(context.Background(), 0, c, values, false, nil, "", nil, config.Connection{}), func(msg tea.Msg) {
+		collect(t, runCmd(context.Background(), 0, c, values, false, nil, "", nil, config.Connection{}, false), func(msg tea.Msg) {
 			if r, ok := msg.(resultMsg); ok {
 				got = r.view.(view.Text).Body
 			}

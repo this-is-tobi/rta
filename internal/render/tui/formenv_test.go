@@ -549,7 +549,7 @@ func TestTypingOverTheCoordinateConnectsDirectly(t *testing.T) {
 	}
 	// No fake forward is listening: if Dial tried to open one this would
 	// fail, and the typed host is what must arrive.
-	msg := runCmd(context.Background(), 1, c, withoutPicker(c, values), false, nm.configFor(c), name, filled, conn)()
+	msg := runCmd(context.Background(), 1, c, withoutPicker(c, values), false, nm.configFor(c), name, filled, conn, false)()
 	if rm := msg.(resultMsg); rm.err != nil {
 		t.Fatalf("run: %s", rm.err.Message)
 	}

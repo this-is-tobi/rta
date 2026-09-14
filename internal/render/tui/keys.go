@@ -369,6 +369,8 @@ func (m Model) footerItems(screen mode) []hintItem {
 			alias(labelled(bindBack, "leave it running"), "q"),
 			action("ctrl+c", "quit"),
 		}
+	case modeConfirm:
+		return m.confirmFooterItems()
 	}
 	return nil
 }
