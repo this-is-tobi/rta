@@ -222,19 +222,28 @@ func credentialVars(p plugin.Plugin) []string {
 }
 
 func newPluginRemoveCommand(opts *globalOpts) *cobra.Command {
-	return &cobra.Command{
-		Use:   "remove <name>",
+	var all bool
+	cmd := &cobra.Command{
+		Use:   "remove <name> | --all",
 		Short: "Uninstall a managed plugin",
 		Long: "Removes the store entry, the bin/ link, the trust for every stored\n" +
 			"digest, and the rta.lock record — and names the config statements that\n" +
 			"now point at nothing, without touching them: the config file is yours,\n" +
-			"and `rta doctor` keeps reporting the orphans until you decide.",
-		Args: cobra.ExactArgs(1),
+			"and `rta doctor` keeps reporting the orphans until you decide.\n\n" +
+			"`--all` does that for every managed plugin.",
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			name, verr := bulkScope(args, all, "plugin.remove.scope", "remove")
+			if verr != nil {
+				return verr
+			}
+			if all {
+				return runPluginRemoveAll(cmd, opts)
+			}
 			if !opts.dryRun && !opts.yes {
 				return &view.Error{
 					Code:    CodeConfirmRequired,
-					Message: "removing " + args[0] + " withdraws trust from every stored artifact and needs confirmation",
+					Message: "removing " + name + " withdraws trust from every stored artifact and needs confirmation",
 					Hint:    "re-run with --yes to confirm, or --dry-run to preview",
 				}
 			}
@@ -242,7 +251,7 @@ func newPluginRemoveCommand(opts *globalOpts) *cobra.Command {
 			if opts.dryRun {
 				remove = plugindist.PreviewRemove
 			}
-			removed, verr := remove(args[0])
+			removed, verr := remove(name)
 			if verr != nil {
 				return verr
 			}
@@ -261,25 +270,51 @@ func newPluginRemoveCommand(opts *globalOpts) *cobra.Command {
 			return renderView(cmd, opts, view.KeyValue{Pairs: pairs})
 		},
 	}
+	cmd.Flags().BoolVar(&all, "all", false, "uninstall every managed plugin")
+	return cmd
 }
 
 func newPluginUpgradeCommand(opts *globalOpts) *cobra.Command {
-	return &cobra.Command{
-		Use:   "upgrade <name>",
+	var (
+		all   bool
+		index string
+	)
+	cmd := &cobra.Command{
+		Use:   "upgrade <name> | --all",
 		Short: "Move a managed plugin to what its index now claims",
 		Long: "Re-verifies exactly like an install, then prints the declaration diff —\n" +
 			"a capability changing safety class, or a destructive one appearing, is\n" +
 			"the supply-chain event that matters, and precisely what a signature\n" +
 			"does not tell you: the same publisher signing a worse plugin verifies\n" +
 			"perfectly. The previous artifact stays in the store, so rolling back is\n" +
-			"a re-install away, not a re-download.",
-		Args: cobra.ExactArgs(1),
+			"a re-install away, not a re-download.\n\n" +
+			"`--all` sweeps every installed plugin, and holds back any whose new\n" +
+			"declaration would hand it more than you last approved — nobody reads a\n" +
+			"diff going past in a sweep, so the diff stops the sweep instead. Name\n" +
+			"the plugin to upgrade it anyway once you have read what changed.",
+		Example: "  rta plugin upgrade pg\n" +
+			"  rta plugin upgrade --all --dry-run\n" +
+			"  rta plugin upgrade --all --index official",
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			name, verr := bulkScope(args, all, "plugin.upgrade.scope", "upgrade")
+			if verr != nil {
+				return verr
+			}
+			if index != "" && !all {
+				return view.Errorf("plugin.upgrade.scope",
+					"--index narrows a sweep, and this command names one plugin").
+					WithHint("rta.lock already records which index " + name + " came from; " +
+						"`rta plugin upgrade --all --index " + index + "` is the sweep")
+			}
+			if all {
+				return runPluginUpgradeAll(cmd, opts, index)
+			}
 			upgrade := plugindist.Upgrade
 			if opts.dryRun {
 				upgrade = plugindist.PreviewUpgrade
 			}
-			up, verr := upgrade(cmd.Context(), args[0], cmd.ErrOrStderr())
+			up, verr := upgrade(cmd.Context(), name, cmd.ErrOrStderr())
 			if verr != nil {
 				return verr
 			}
@@ -314,6 +349,12 @@ func newPluginUpgradeCommand(opts *globalOpts) *cobra.Command {
 			return renderView(cmd, opts, view.KeyValue{Pairs: pairs})
 		},
 	}
+	cmd.Flags().BoolVar(&all, "all", false,
+		"upgrade every installed plugin, holding back any that would gain authority")
+	cmd.Flags().StringVar(&index, "index", "",
+		"with --all, sweep only the plugins installed from this index")
+	_ = cmd.RegisterFlagCompletionFunc("index", completeAttachedIndexes)
+	return cmd
 }
 
 func newPluginSearchCommand(opts *globalOpts) *cobra.Command {
@@ -393,7 +434,8 @@ func newPluginSearchCommand(opts *globalOpts) *cobra.Command {
 // "answers from the manifests alone" restraint, scoped to what is installed
 // and turned into a comparison instead of a listing.
 func newPluginOutdatedCommand(opts *globalOpts) *cobra.Command {
-	return &cobra.Command{
+	var index string
+	cmd := &cobra.Command{
 		Use:   "outdated",
 		Short: "List installed plugins whose index no longer agrees with what is installed",
 		Long: "Compares each installed plugin's recorded version against what its index\n" +
@@ -401,16 +443,30 @@ func newPluginOutdatedCommand(opts *globalOpts) *cobra.Command {
 			"hint worth a look, not a verdict: `rta plugin upgrade <name>` is what\n" +
 			"actually re-verifies against the bytes and reports whether anything a\n" +
 			"grant hangs off changed. A respin under an unchanged version number is\n" +
-			"invisible here for the same reason it is invisible to a signature.",
+			"invisible here for the same reason it is invisible to a signature.\n\n" +
+			"`--index` asks the same question of one supply chain, the same name\n" +
+			"`rta plugin upgrade --all --index` sweeps.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(plugindist.ReadLock()) == 0 {
 				return renderView(cmd, opts, view.Text{Body: "no plugin is installed"})
 			}
 			rows := plugindist.Outdated()
+			if index != "" {
+				kept := rows[:0]
+				for _, r := range rows {
+					if r.Index == index {
+						kept = append(kept, r)
+					}
+				}
+				rows = kept
+			}
 			if len(rows) == 0 {
-				return renderView(cmd, opts, view.Text{
-					Body: "every installed plugin matches what its index claims"})
+				body := "every installed plugin matches what its index claims"
+				if index != "" {
+					body = "every plugin installed from " + index + " matches what it claims"
+				}
+				return renderView(cmd, opts, view.Text{Body: body})
 			}
 			t := view.Table{Columns: []view.Column{{Name: "Plugin"}, {Name: "Installed"},
 				{Name: "Available"}, {Name: "Index"}}}
@@ -424,6 +480,10 @@ func newPluginOutdatedCommand(opts *globalOpts) *cobra.Command {
 			return renderView(cmd, opts, t)
 		},
 	}
+	cmd.Flags().StringVar(&index, "index", "",
+		"only the plugins installed from this index")
+	_ = cmd.RegisterFlagCompletionFunc("index", completeAttachedIndexes)
+	return cmd
 }
 
 func newPluginIndexCommand(opts *globalOpts) *cobra.Command {
