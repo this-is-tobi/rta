@@ -2,6 +2,7 @@ package operator
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -64,7 +65,7 @@ func ServerURL(name string) (string, *view.Error) {
 			"no server list at %s", RemotesPath()).
 			WithHint("create it with your servers:\n  servers:\n    prod:\n      url: https://rta.example.com")
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	info, err := f.Stat()
 	if err != nil {
 		return "", view.Errorf("core.operator.remotes", "reading %s: %v", RemotesPath(), err)
@@ -152,6 +153,16 @@ type Client struct {
 	HTTP *http.Client
 }
 
+// post is one JSON POST under ctx, through the client's own transport rules.
+func (c Client) post(ctx context.Context, url string, body io.Reader) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	return c.http().Do(req)
+}
+
 func (c Client) http() *http.Client {
 	if c.HTTP != nil {
 		return c.HTTP
@@ -172,7 +183,9 @@ func (c Client) http() *http.Client {
 }
 
 // Call signs one verb and decodes the answer into out. payload may be nil.
-func (c Client) Call(verb string, payload, out any) *view.Error {
+// ctx is the calling command's: a signal mid-call cancels the round trip
+// instead of leaving it to the client's own timeout.
+func (c Client) Call(ctx context.Context, verb string, payload, out any) *view.Error {
 	var raw []byte
 	if payload != nil {
 		var err error
@@ -180,7 +193,7 @@ func (c Client) Call(verb string, payload, out any) *view.Error {
 			return view.Errorf("core.operator.encode", "encoding the %s payload: %v", verb, err)
 		}
 	}
-	res, err := c.http().Post(c.URL+"/operator/v1/challenge", "application/json", nil)
+	res, err := c.post(ctx, c.URL+"/operator/v1/challenge", nil)
 	if err != nil {
 		return unreachable(c.URL, err)
 	}
@@ -188,7 +201,7 @@ func (c Client) Call(verb string, payload, out any) *view.Error {
 		Nonce string `json:"nonce"`
 	}
 	decodeErr := json.NewDecoder(bounded(res.Body)).Decode(&challenge)
-	res.Body.Close()
+	_ = res.Body.Close()
 	if res.StatusCode != http.StatusOK || decodeErr != nil || challenge.Nonce == "" {
 		return view.Errorf("core.operator.protocol",
 			"%s did not answer a challenge (HTTP %d) — is it an rta mcp server started with --operators?",
@@ -198,7 +211,7 @@ func (c Client) Call(verb string, payload, out any) *view.Error {
 	if err != nil {
 		return view.Errorf("core.operator.encode", "encoding the envelope: %v", err)
 	}
-	res, err = c.http().Post(c.URL+"/operator/v1/call", "application/json", bytes.NewReader(body))
+	res, err = c.post(ctx, c.URL+"/operator/v1/call", bytes.NewReader(body))
 	if err != nil {
 		return unreachable(c.URL, err)
 	}

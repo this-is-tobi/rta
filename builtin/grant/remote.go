@@ -1,6 +1,7 @@
 package grant
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -19,7 +20,7 @@ import (
 // staleness is the server's config's business, and the suppressed count and
 // empty-case hints arrive from the server's own store rather than being
 // recomputed against files that describe this machine.
-func remoteList(req plugin.Request, server string) (view.View, error) {
+func remoteList(ctx context.Context, req plugin.Request, server string) (view.View, error) {
 	if req.Bool("detail") {
 		return nil, view.Errorf("grant.remote.detail",
 			"--detail describes this machine's catalogue, not %s's", server).
@@ -43,7 +44,7 @@ func remoteList(req plugin.Request, server string) (view.View, error) {
 		return nil, verr
 	}
 	var gl operatorid.GrantList
-	if verr := (operatorid.Client{URL: base, Signer: signer}).Call(operatorid.VerbGrantList, nil, &gl); verr != nil {
+	if verr := (operatorid.Client{URL: base, Signer: signer}).Call(ctx, operatorid.VerbGrantList, nil, &gl); verr != nil {
 		return nil, verr
 	}
 	if len(gl.Grants) == 0 {
@@ -77,7 +78,7 @@ func remoteSuppressedNote(server string, n int) string {
 // catalogue are the ones that bind; the signature happens here because the
 // key and the human are here — what gets signed is byte-for-byte what the
 // server said it would store, which is the review step made structural.
-func remoteAllow(req plugin.Request, server string) (view.View, error) {
+func remoteAllow(ctx context.Context, req plugin.Request, server string) (view.View, error) {
 	// Named here, and never filled in for you: the agents this machine knows
 	// are this machine's, and the grant is for one on the server. Refused
 	// locally rather than after the round trip, since the answer would be
@@ -115,7 +116,7 @@ func remoteAllow(req plugin.Request, server string) (view.View, error) {
 	}
 	client := operatorid.Client{URL: base, Signer: signer}
 	var prepared operatorid.Prepared
-	if verr := client.Call(operatorid.VerbGrantPrepare, spec, &prepared); verr != nil {
+	if verr := client.Call(ctx, operatorid.VerbGrantPrepare, spec, &prepared); verr != nil {
 		return nil, verr
 	}
 	// The review-before-signing step, for real: a compromised server that
@@ -131,7 +132,7 @@ func remoteAllow(req plugin.Request, server string) (view.View, error) {
 	g := prepared.Grant
 	core.SignWith(signer.GrantSigner(), &g)
 	var issued core.Grant
-	if verr := client.Call(operatorid.VerbGrantIssue, g, &issued); verr != nil {
+	if verr := client.Call(ctx, operatorid.VerbGrantIssue, g, &issued); verr != nil {
 		return nil, verr
 	}
 	msg := fmt.Sprintf("%s on %s may %s for %s (until %s)%s%s",
@@ -221,7 +222,7 @@ func checkPrepared(spec operatorid.IssueSpec, server string, g core.Grant) *view
 // remoteRevoke is `grant revoke --server <name>`. A dry run still crosses
 // the network with write off — see operator.RevokeSpec.DryRun — so the
 // preview is the server's truth, not this machine's guess.
-func remoteRevoke(req plugin.Request, server string) (view.View, error) {
+func remoteRevoke(ctx context.Context, req plugin.Request, server string) (view.View, error) {
 	spec := operatorid.RevokeSpec{
 		All:     req.Bool("all"),
 		Target:  strings.TrimSpace(req.String("target")),
@@ -243,7 +244,7 @@ func remoteRevoke(req plugin.Request, server string) (view.View, error) {
 		return nil, verr
 	}
 	var out operatorid.RevokeOutcome
-	if verr := (operatorid.Client{URL: base, Signer: signer}).Call(operatorid.VerbGrantRevoke, spec, &out); verr != nil {
+	if verr := (operatorid.Client{URL: base, Signer: signer}).Call(ctx, operatorid.VerbGrantRevoke, spec, &out); verr != nil {
 		return nil, verr
 	}
 	return view.Text{Body: revokeBody(spec.Target, out, req.DryRun)}, nil

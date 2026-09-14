@@ -192,8 +192,8 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 						Help: "the request is parked on this remote server (a name from remotes.yaml)"},
 				},
 				HumanOnly: true,
-				Run: func(_ context.Context, req plugin.Request) (view.View, error) {
-					return runAllow(req, catalog, artifact)
+				Run: func(ctx context.Context, req plugin.Request) (view.View, error) {
+					return runAllow(ctx, req, catalog, artifact)
 				},
 			},
 			{
@@ -673,9 +673,9 @@ func runLog(_ context.Context, req plugin.Request) (view.View, error) {
 	}}, nil
 }
 
-func runPending(_ context.Context, req plugin.Request) (view.View, error) {
+func runPending(ctx context.Context, req plugin.Request) (view.View, error) {
 	if server := strings.TrimSpace(req.String("server")); server != "" {
-		return remotePending(req, server)
+		return remotePending(ctx, req, server)
 	}
 	reqs, err := consent.Pending()
 	if err != nil {
@@ -814,10 +814,10 @@ func credentialCell(e agentlog.Entry) string {
 	return e.Credential
 }
 
-func runShow(_ context.Context, req plugin.Request) (view.View, error) {
+func runShow(ctx context.Context, req plugin.Request) (view.View, error) {
 	id := strings.TrimSpace(req.String("id"))
 	if server := strings.TrimSpace(req.String("server")); server != "" {
-		return remoteShow(req, server, id)
+		return remoteShow(ctx, req, server, id)
 	}
 	r, ok := consent.Find(id)
 	if !ok {
@@ -913,10 +913,10 @@ func answeredBy(req plugin.Request) string {
 	return grant.Origin(req.Surface(), term.IsTerminal(int(stdio.Real().Fd())))
 }
 
-func runAllow(req plugin.Request, catalog func() []plugin.Capability, artifact func(string) (string, bool)) (view.View, error) {
+func runAllow(ctx context.Context, req plugin.Request, catalog func() []plugin.Capability, artifact func(string) (string, bool)) (view.View, error) {
 	id := strings.TrimSpace(req.String("id"))
 	if server := strings.TrimSpace(req.String("server")); server != "" {
-		return remoteAnswer(req, server, id, true)
+		return remoteAnswer(ctx, req, server, id, true)
 	}
 	r, ok := consent.Find(id)
 	if !ok {
@@ -1008,7 +1008,7 @@ func runAllow(req plugin.Request, catalog func() []plugin.Capability, artifact f
 			// The call is already allowed; a bad --ttl must not read as if
 			// nothing happened.
 			pairs = append(pairs, view.Pair{Key: "grant", Value: "not issued: " + verr.Message})
-			return view.KeyValue{Pairs: pairs}, nil
+			return view.KeyValue{Pairs: pairs}, nil //nolint:nilerr // the call is already allowed; the grant that failed is reported in the answer, not as one
 		}
 		pairs[1] = view.Pair{Key: "for", Value: note}
 	}
@@ -1122,10 +1122,10 @@ func alsoGrant(r consent.Request, ttl, from string, signer *guard.Signer) (strin
 	return note, nil
 }
 
-func runDeny(_ context.Context, req plugin.Request) (view.View, error) {
+func runDeny(ctx context.Context, req plugin.Request) (view.View, error) {
 	id := strings.TrimSpace(req.String("id"))
 	if server := strings.TrimSpace(req.String("server")); server != "" {
-		return remoteAnswer(req, server, id, false)
+		return remoteAnswer(ctx, req, server, id, false)
 	}
 	r, ok := consent.Find(id)
 	if !ok {
