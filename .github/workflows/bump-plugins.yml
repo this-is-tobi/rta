@@ -87,7 +87,7 @@ jobs:
         declare -A want=()
         for name in $(gh api repos/this-is-tobi/rta-plugins/contents/index --jq '.[].name' | sed -n 's/\.yaml$//p'); do
           version=$(gh api "repos/this-is-tobi/rta-plugins/contents/index/${name}.yaml" --jq .content \
-            | base64 -d | awk '$1 == "version:" { gsub(/"/, "", $2); print $2; exit }')
+            | base64 -d | awk '$1 == "version:" && !seen { gsub(/"/, "", $2); print $2; seen = 1 }')
           if [ -z "$version" ]; then
             echo "::warning::index/${name}.yaml names no version — left out of this run"; continue
           fi
@@ -151,8 +151,12 @@ jobs:
         branch="bump-plugins"
         open_pr=$(gh pr list --head "$branch" --state open --json number --jq '.[0].number // empty')
         if [ -n "$open_pr" ]; then
+          # awk reads to the end rather than exiting on the match: an early
+          # exit closes the pipe under base64, and under pipefail its write
+          # error fails the step — which is how this step died the first time
+          # a pull request was open, on the first file long enough to show it.
           on_pr=$(gh api "repos/${GITHUB_REPOSITORY}/contents/Dockerfile.full?ref=${branch}" --jq .content \
-            | base64 -d | awk -F'"' '/^ARG PLUGINS="/ { print $2; exit }')
+            | base64 -d | awk -F'"' '/^ARG PLUGINS="/ && !seen { print $2; seen = 1 }')
           if [ "$on_pr" = "$new_line" ]; then
             echo "pull request #$open_pr already carries this line"; exit 0
           fi
