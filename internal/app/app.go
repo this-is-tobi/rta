@@ -325,9 +325,59 @@ func NewRoot(reg *registry.Registry, version string) *cobra.Command {
 	root.AddCommand(newPolicyCommand(opts))
 	root.AddCommand(newProfileCommand(reg, opts))
 	root.AddCommand(newConfigCommand())
+	groupRoot(root, reg)
 	describeGroups(root)
 	documentArguments(root)
 	return root
+}
+
+// The root help's three headings. `rta --help` used to be one alphabetical
+// list of thirty-odd entries, `agent` beside `audit` beside `cert`, with
+// nothing saying that a third of them are the product's second half — the
+// commands that decide what an agent may reach — and another third are
+// setup. The docs tell the story in three parts; the help now does too.
+const (
+	groupCapabilities = "capabilities"
+	groupAgents       = "agents"
+	groupSetup        = "setup"
+)
+
+// agentCommands are the root commands about agents and consent: the built-in
+// namespaces whose every verb answers to the person at the terminal, the
+// server that exposes everything else to an agent, and the ceiling over the
+// grants. Named here rather than derived, because this is rta's own
+// vocabulary — a plugin installed tomorrow is a capability by definition.
+var agentCommands = map[string]bool{
+	"mcp": true, "grant": true, "agent": true, "lock": true, "operator": true, "policy": true,
+}
+
+// groupRoot files every root command under one of the three headings:
+// registry namespaces are capabilities unless they are about agents, and
+// everything rta adds itself is setup. cobra's own help and completion
+// commands are setup too; they are attached at Execute, so they are named by
+// their group id here rather than by command.
+func groupRoot(root *cobra.Command, reg *registry.Registry) {
+	root.AddGroup(
+		&cobra.Group{ID: groupCapabilities, Title: "capabilities"},
+		&cobra.Group{ID: groupAgents, Title: "agents and consent"},
+		&cobra.Group{ID: groupSetup, Title: "setup"},
+	)
+	namespaces := map[string]bool{}
+	for _, p := range reg.Plugins() {
+		namespaces[p.Name] = true
+	}
+	for _, c := range root.Commands() {
+		switch name := c.Name(); {
+		case agentCommands[name]:
+			c.GroupID = groupAgents
+		case namespaces[name]:
+			c.GroupID = groupCapabilities
+		default:
+			c.GroupID = groupSetup
+		}
+	}
+	root.SetHelpCommandGroupID(groupSetup)
+	root.SetCompletionCommandGroupID(groupSetup)
 }
 
 // describeGroups gives every noun command the summary findOrCreate could
