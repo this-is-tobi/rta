@@ -68,7 +68,7 @@ func newFakeRegistry(t *testing.T, blob []byte) *fakeRegistry {
 		if req.Header.Get("Authorization") == "" {
 			w.Header().Set("Www-Authenticate", fmt.Sprintf(
 				`Bearer realm="%s/token",service="fake",scope="repository:%s:pull"`,
-				r.Server.URL, r.repo))
+				r.URL, r.repo))
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
@@ -101,13 +101,13 @@ func newFakeRegistry(t *testing.T, blob []byte) *fakeRegistry {
 			w.WriteHeader(http.StatusNotFound)
 		}
 	}))
-	t.Cleanup(r.Server.Close)
+	t.Cleanup(r.Close)
 	return r
 }
 
 // ref is the oci:// URL naming this registry's artifact.
 func (r *fakeRegistry) ref() string {
-	return "oci://" + strings.TrimPrefix(r.Server.URL, "http://") + "/" + r.repo + ":1.0.0"
+	return "oci://" + strings.TrimPrefix(r.URL, "http://") + "/" + r.repo + ":1.0.0"
 }
 
 // overHTTP points the client at the fake registry, which has no certificate.
@@ -319,7 +319,7 @@ func TestAnOCIPlatformTakesItsDigestFromTheRegistry(t *testing.T) {
 	overHTTP(t)
 	testData(t)
 	reg := newFakeRegistry(t, []byte("a plugin archive"))
-	host := strings.TrimPrefix(reg.Server.URL, "http://")
+	host := strings.TrimPrefix(reg.URL, "http://")
 
 	_, m := generate(t, GenerateRequest{
 		Binary: hello(t),

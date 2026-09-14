@@ -2,6 +2,7 @@
 /rta
 /dist/
 /bin/
+/.tools/
 
 # Test artifacts
 coverage.out

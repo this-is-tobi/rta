@@ -66,12 +66,13 @@ func Commands() []Command {
 	case "windows":
 		return []Command{{Name: "clip"}}
 	}
-	rest := []Command{
-		{Name: "xclip", args: []string{"-selection", "clipboard"}},
-		{Name: "xsel", args: []string{"--clipboard", "--input"}},
-		{Name: "clip.exe"},
-		{Name: "termux-clipboard-set"},
-	}
+	rest := make([]Command, 0, 5)
+	rest = append(rest,
+		Command{Name: "xclip", args: []string{"-selection", "clipboard"}},
+		Command{Name: "xsel", args: []string{"--clipboard", "--input"}},
+		Command{Name: "clip.exe"},
+		Command{Name: "termux-clipboard-set"},
+	)
 	wayland := Command{Name: "wl-copy"}
 	if os.Getenv("WAYLAND_DISPLAY") != "" {
 		return append([]Command{wayland}, rest...)

@@ -469,11 +469,11 @@ func loginHint(spec string) string {
 		return "authenticate to the cluster again — `kubectl get ns --context …` fails the same way"
 	}
 	helper, args := credentialHelper(kctx)
-	switch {
-	case helper == "":
+	switch helper {
+	case "":
 		return "authenticate to the cluster again — `kubectl get ns --context " + kctx +
 			"` fails the same way, and succeeds once you have"
-	case helper == "tsh":
+	case "tsh":
 		if cluster := flagValue(args, "--kube-cluster"); cluster != "" {
 			return "this context authenticates through Teleport — `tsh kube login " + cluster +
 				"` renews it, and `tsh status` says when it expired"
@@ -488,7 +488,12 @@ func loginHint(spec string) string {
 // credentialHelper is the exec plugin a context authenticates with, and its
 // arguments — empty when the context uses none, or when kubectl cannot say.
 func credentialHelper(kctx string) (string, []string) {
-	out, err := exec.Command(kubectl, "config", "view", "--minify",
+	// Bounded on its own: this runs while composing a hint about a failure,
+	// and a kubectl that hangs reading a broken kubeconfig would otherwise
+	// hang the message about it.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, kubectl, "config", "view", "--minify",
 		"--context="+kctx, "-o", "jsonpath={.users[0].user.exec.command} {.users[0].user.exec.args}").Output()
 	if err != nil {
 		return "", nil

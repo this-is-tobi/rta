@@ -16,10 +16,10 @@ var displayAttacks = map[string]string{
 	"bare cr overwrite": "safe\rEVIL",
 	// CSI in 8-bit form: not preceded by ESC, so an escape-sequence parser
 	// does not see an introducer at all.
-	"c1 csi": "list2J",
+	"c1 csi": "list\u009b2J",
 	// Trojan Source. Displays in an order it is not stored in, with every
 	// character individually valid.
-	"bidi override": "list files‮",
+	"bidi override": "list files\u202e",
 }
 
 func inputPlugin() Plugin {
@@ -206,7 +206,7 @@ func TestRightToLeftScriptIsNotAnAttack(t *testing.T) {
 	if err := p.Validate(); err != nil {
 		t.Errorf("Arabic text was rejected: %v", err)
 	}
-	p.Capabilities[0].Summary = "قائمة‮المفاتيح"
+	p.Capabilities[0].Summary = "قائمة\u202eالمفاتيح"
 	if err := p.Validate(); err == nil {
 		t.Error("an explicit right-to-left override was accepted")
 	}
@@ -254,9 +254,9 @@ func TestInvisibleInstructionsCannotBeSmuggledIntoADeclaration(t *testing.T) {
 func TestTheInvisibleRuleDoesNotRejectRealText(t *testing.T) {
 	fine := map[string]string{
 		"emoji with variation selector": "mark it ❤️",
-		"emoji zwj family":              "shared with 👨‍👩‍👧‍👦",
-		"devanagari with zwj":           "क्‍ष is one letter",
-		"persian with zwnj":             "می‌روم",
+		"emoji zwj family":              "shared with 👨\u200d👩\u200d👧\u200d👦",
+		"devanagari with zwj":           "क्\u200dष is one letter",
+		"persian with zwnj":             "می\u200cروم",
 	}
 	for name, s := range fine {
 		p := validPlugin()

@@ -71,7 +71,7 @@ type cappedStorage struct {
 }
 
 func newCappedStorage() *cappedStorage {
-	remaining := int64(maxObjectBytes)
+	remaining := maxObjectBytes
 	return &cappedStorage{Storer: memory.NewStorage(), remaining: &remaining}
 }
 

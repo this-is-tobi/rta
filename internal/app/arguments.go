@@ -108,8 +108,9 @@ func documentArgs(cmd *cobra.Command, args ...argDoc) {
 // against each other. TestEveryCommandWithAnArgumentDocumentsIt fails when a
 // new command with an argument is not in it.
 func documentArguments(root *cobra.Command) {
-	clients := make([]string, 0)
-	for _, c := range mcpClients() {
+	known := mcpClients()
+	clients := make([]string, 0, len(known))
+	for _, c := range known {
 		clients = append(clients, c.name)
 	}
 	sort.Strings(clients)

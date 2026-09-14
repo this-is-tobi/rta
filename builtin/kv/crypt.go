@@ -161,7 +161,7 @@ func publicHalf(path, firstLine string) (string, error) {
 	if strings.HasPrefix(firstLine, "AGE-SECRET-KEY-") {
 		id, err := age.ParseX25519Identity(firstLine)
 		if err != nil {
-			return "", fmt.Errorf("%s: %v", path, err)
+			return "", fmt.Errorf("%s: %w", path, err)
 		}
 		return id.Recipient().String(), nil
 	}

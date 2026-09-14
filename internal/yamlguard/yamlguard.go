@@ -54,7 +54,7 @@ func RefuseAnchors(data []byte) error {
 	if err != nil {
 		// The decoder will hit and report the identical parse failure with
 		// its own message, which names the line; this just isn't it.
-		return nil
+		return nil //nolint:nilerr // see above: the decoder's message is the one worth reading
 	}
 	v := &anchorVisitor{}
 	for _, doc := range file.Docs {

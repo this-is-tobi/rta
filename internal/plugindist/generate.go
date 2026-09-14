@@ -283,7 +283,7 @@ func memberExists(archive, member string) *view.Error {
 	if err != nil {
 		return view.Errorf("plugin.manifest.platform", "%v", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	if _, verr := extractMember(f, member, io.Discard); verr != nil {
 		return view.Errorf("plugin.manifest.platform", "%s: %s", path.Base(archive), verr.Message).
 			WithHint("checked while the artifact is in reach, so it cannot fail at " +

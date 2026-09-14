@@ -106,7 +106,7 @@ func TestOnlyStdioNamesOsStdin(t *testing.T) {
 func TestSilenceIsGone(t *testing.T) {
 	root := repoRoot(t)
 	fset := token.NewFileSet()
-	pkg, err := parser.ParseDir(fset, filepath.Join(root, "internal", "stdio"), nil, 0)
+	pkg, err := parser.ParseDir(fset, filepath.Join(root, "internal", "stdio"), nil, 0) //nolint:staticcheck // build tags do not matter to a drift test over one package, and x/tools would be a dependency for it
 	if err != nil {
 		t.Fatal(err)
 	}

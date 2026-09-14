@@ -226,7 +226,7 @@ func newPluginDisallowCommand(opts *globalOpts) *cobra.Command {
 			set := plugintrust.Load()
 			for _, c := range loadedPlugins {
 				if len(set.Allowed(c.Identity.Digest)) > 0 {
-					out = append(out, cobra.Completion(c.Declared.Name))
+					out = append(out, c.Declared.Name)
 				}
 			}
 			return out, cobra.ShellCompDirectiveNoFileComp
@@ -428,8 +428,9 @@ func newPluginTrustCommand(opts *globalOpts) *cobra.Command {
 		ValidArgsFunction: func(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
 			// Only the ones that are actually waiting: completing a plugin
 			// that is already trusted offers a keystroke that does nothing.
-			var out []cobra.Completion
-			for _, u := range untrustedPlugins() {
+			waiting := untrustedPlugins()
+			out := make([]cobra.Completion, 0, len(waiting))
+			for _, u := range waiting {
 				out = append(out, cobra.CompletionWithDesc(u.Name, u.Short()+" — "+u.Path))
 			}
 			return out, cobra.ShellCompDirectiveNoFileComp
@@ -812,7 +813,7 @@ func buildPlugin(ctx context.Context, dir string, keep bool, stderr any) (string
 	build := exec.CommandContext(ctx, "go", "build", "-o", binary, ".")
 	build.Dir = abs
 	if combined, err := build.CombinedOutput(); err != nil {
-		os.RemoveAll(out)
+		_ = os.RemoveAll(out)
 		// The compiler's own output, verbatim and unwrapped. An author
 		// looking at a build failure wants the file and line, not rta's
 		// opinion about it.
@@ -822,7 +823,7 @@ func buildPlugin(ctx context.Context, dir string, keep bool, stderr any) (string
 	if keep {
 		return binary, noop, nil
 	}
-	return binary, func() { os.RemoveAll(out) }, nil
+	return binary, func() { _ = os.RemoveAll(out) }, nil
 }
 
 // devReport is what an author sees when they run `rta plugin dev` with no
@@ -880,7 +881,7 @@ func devReport(reg *registry.Registry, c *pluginhost.Client) view.View {
 		{ID: "capabilities", Title: "capabilities", View: caps},
 	}
 
-	var warnings []view.Error
+	warnings := make([]view.Error, 0, len(c.Unknown))
 	for id, fields := range c.Unknown {
 		warnings = append(warnings, *view.Errorf("plugin.dev.unknown",
 			"%s declares %s, which this rta does not understand", id, strings.Join(fields, ", ")).

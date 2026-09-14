@@ -2,8 +2,8 @@ package fs
 
 import (
 	"context"
-	"crypto/md5"
-	"crypto/sha1"
+	"crypto/md5"  //nolint:gosec // a hash column for a listing, never a security decision
+	"crypto/sha1" //nolint:gosec // same: fs.hash offers the algorithms people compare against, md5 and sha1 included
 	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/hex"
@@ -255,7 +255,7 @@ func runHash(ctx context.Context, req plugin.Request) (view.View, error) {
 	if err != nil {
 		return nil, pathError("fs.hash", path, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	h := newHash()
 	if _, err := io.Copy(h, readerWithContext(ctx, f)); err != nil {

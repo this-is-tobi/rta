@@ -273,7 +273,7 @@ func goManager() manager {
 			}
 			entries, err := os.ReadDir(dir)
 			if err != nil {
-				return nil, nil
+				return nil, nil //nolint:nilerr // no go bin directory means no go-installed tools, which is an answer and not a failure
 			}
 			var rows []outdated
 			for _, e := range entries {

@@ -275,13 +275,17 @@ func expectedDigest(ctx context.Context, c *registryClient, rel release, assetNa
 			return "", view.Errorf("pkg.tool.fetch", "%v", err)
 		}
 		_, verr := plugindist.Fetch(ctx, u, tmp)
-		tmp.Close()
+		closeErr := tmp.Close()
 		if verr != nil {
-			os.Remove(tmp.Name())
+			_ = os.Remove(tmp.Name())
 			return "", view.Errorf("pkg.tool.fetch", "%s", verr.Message)
 		}
+		if closeErr != nil {
+			_ = os.Remove(tmp.Name())
+			return "", view.Errorf("pkg.tool.fetch", "%v", closeErr)
+		}
 		raw, err := os.ReadFile(tmp.Name())
-		os.Remove(tmp.Name())
+		_ = os.Remove(tmp.Name())
 		if err != nil {
 			return "", view.Errorf("pkg.tool.fetch", "%v", err)
 		}
@@ -365,7 +369,7 @@ func installTool(ctx context.Context, c *registryClient, t tool, unverified, dry
 	if err != nil {
 		return nil, view.Errorf("pkg.tool.place", "%v", err)
 	}
-	defer archive.Close()
+	defer func() { _ = archive.Close() }()
 	if strings.HasSuffix(strings.ToLower(assetName), ".tar.gz") {
 		member, verr := memberNamed(archive, t.Bin)
 		if verr != nil {
@@ -379,15 +383,18 @@ func installTool(ctx context.Context, c *registryClient, t tool, unverified, dry
 			return nil, view.Errorf("pkg.tool.place", "%v", err)
 		}
 		if _, verr := plugindist.ExtractMember(archive, member, extracted); verr != nil {
-			extracted.Close()
+			_ = extracted.Close()
 			return nil, view.Errorf("pkg.tool.archive", "%s", verr.Message)
 		}
-		extracted.Close()
+		// A written file: its close is where a full disk reports itself.
+		if err := extracted.Close(); err != nil {
+			return nil, view.Errorf("pkg.tool.place", "%v", err)
+		}
 		f, err := os.Open(extracted.Name())
 		if err != nil {
 			return nil, view.Errorf("pkg.tool.place", "%v", err)
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		binary = f
 	} else {
 		binary = archive
@@ -438,7 +445,7 @@ func memberNamed(archive io.Reader, bin string) (string, *view.Error) {
 	if err != nil {
 		return "", view.Errorf("pkg.tool.archive", "not a gzip archive: %v", err)
 	}
-	defer gz.Close()
+	defer func() { _ = gz.Close() }()
 	tr := tar.NewReader(gz)
 	for {
 		hdr, err := tr.Next()

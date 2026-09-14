@@ -1,6 +1,7 @@
 package seal
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -49,7 +50,7 @@ func TestCreateWritesAThirtyTwoByteKeyAtModeSixHundred(t *testing.T) {
 
 func TestReadWithNoKeyReturnsErrMissing(t *testing.T) {
 	isolate(t)
-	if _, err := Key("probe.key", false); err != ErrMissing {
+	if _, err := Key("probe.key", false); !errors.Is(err, ErrMissing) {
 		t.Errorf("err = %v, want ErrMissing", err)
 	}
 }
@@ -85,10 +86,10 @@ func TestReadWithATruncatedKeyReturnsErrShortNotErrMissing(t *testing.T) {
 	if err == nil {
 		t.Fatal("a 9-byte file was accepted as a key")
 	}
-	if err == ErrMissing {
+	if errors.Is(err, ErrMissing) {
 		t.Fatal("a truncated key was reported as ErrMissing — indistinguishable from no key at all")
 	}
-	if err != ErrShort {
+	if !errors.Is(err, ErrShort) {
 		t.Errorf("err = %v, want ErrShort", err)
 	}
 }
@@ -105,7 +106,7 @@ func TestCreateWithATruncatedKeyRefusesRatherThanReplacingIt(t *testing.T) {
 	if err := os.WriteFile(Path("probe.key"), []byte("too-short"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Key("probe.key", true); err != ErrShort {
+	if _, err := Key("probe.key", true); !errors.Is(err, ErrShort) {
 		t.Errorf("err = %v, want ErrShort — a short key must never be silently regenerated", err)
 	}
 	// And it is left exactly as found, not overwritten by the failed attempt.

@@ -56,7 +56,7 @@ func TestComposeTriesEachAndFailsGenerically(t *testing.T) {
 	// mechanism almost worked, since that text reaches an unauthenticated
 	// caller's HTTP response body via auth.RequireBearerToken.
 	_, err = v(ctx, "tok-neither", nil)
-	if err != auth.ErrInvalidToken {
+	if !errors.Is(err, auth.ErrInvalidToken) {
 		t.Errorf("err = %v, want the exact sentinel auth.ErrInvalidToken (nothing wrapped in, nothing appended)", err)
 	}
 	if stderr.Len() == 0 {

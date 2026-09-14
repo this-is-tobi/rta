@@ -245,9 +245,9 @@ func clipTo(s string, max int) string {
 	return s
 }
 
-// Plural counts a noun. English is not worth modelling, but "2 advisorys" in
-// a security report reads as carelessness about everything else in it, and
-// the -y rule is the one that comes up.
+// Plural counts a noun. English is not worth modelling, but a botched plural
+// in a security report reads as carelessness about everything else in it, and
+// the -y rule (advisory, advisories) is the one that comes up.
 func Plural(n int, noun string) string {
 	if n == 1 {
 		return "1 " + noun

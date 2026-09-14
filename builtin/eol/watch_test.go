@@ -2,6 +2,7 @@ package eol
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -148,7 +149,8 @@ func TestWatchReadsTheListFromTheConfigWhenNobodyPassedOne(t *testing.T) {
 func TestWatchRefusesAnEmptyListWithTheConfigHint(t *testing.T) {
 	srv := newCatalogueServer(t)
 	_, err := runWatchAt(context.Background(), reqFor(t, "eol.watch", nil), srv.URL)
-	verr, ok := err.(*view.Error)
+	var verr *view.Error
+	ok := errors.As(err, &verr)
 	if !ok || verr.Code != "eol.watch.empty" {
 		t.Fatalf("err = %v, want eol.watch.empty", err)
 	}
@@ -164,7 +166,8 @@ func TestWatchCapsTheListAndSaysSo(t *testing.T) {
 		many = append(many, "postgresql")
 	}
 	_, err := runWatchAt(context.Background(), reqFor(t, "eol.watch", map[string]any{"products": many}), srv.URL)
-	verr, ok := err.(*view.Error)
+	var verr *view.Error
+	ok := errors.As(err, &verr)
 	if !ok || verr.Code != "eol.watch.toomany" {
 		t.Fatalf("err = %v, want eol.watch.toomany", err)
 	}
@@ -177,7 +180,8 @@ func TestWatchFailsTheWholeCallWhenTheAPIIsDown(t *testing.T) {
 	defer srv.Close()
 	_, err := runWatchAt(context.Background(),
 		reqFor(t, "eol.watch", map[string]any{"products": []any{"postgresql"}}), srv.URL)
-	verr, ok := err.(*view.Error)
+	var verr *view.Error
+	ok := errors.As(err, &verr)
 	if !ok || verr.Code != "eol.request.status" {
 		t.Fatalf("err = %v, want eol.request.status — a 500 is about the call, not one product", err)
 	}
@@ -215,7 +219,8 @@ func TestProductsNarrowsByCategory(t *testing.T) {
 func TestProductsSaysWhenNothingMatches(t *testing.T) {
 	srv := newCatalogueServer(t)
 	_, err := runProductsAt(context.Background(), reqFor(t, "eol.products", map[string]any{"term": "zzz"}), srv.URL)
-	verr, ok := err.(*view.Error)
+	var verr *view.Error
+	ok := errors.As(err, &verr)
 	if !ok || verr.Code != "eol.products.none" {
 		t.Fatalf("err = %v, want eol.products.none", err)
 	}

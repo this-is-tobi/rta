@@ -394,7 +394,7 @@ func prefillSet(_ context.Context, req plugin.Request) (map[string]any, error) {
 	}
 	s, verr := load(req)
 	if verr != nil {
-		return map[string]any{}, nil
+		return map[string]any{}, nil //nolint:nilerr // Prefill is a convenience: an unreadable store opens an empty form, and the run then refuses with the real message
 	}
 	e, ok := s.Entries[key]
 	if !ok {

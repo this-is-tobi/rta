@@ -697,7 +697,7 @@ func readManifestAt(path string) ([]byte, *view.Error) {
 	if err != nil {
 		return nil, view.Errorf("plugin.index.manifest", "%v", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	raw, err := io.ReadAll(io.LimitReader(f, manifestCap+1))
 	if err != nil {
 		return nil, view.Errorf("plugin.index.manifest", "%v", err)

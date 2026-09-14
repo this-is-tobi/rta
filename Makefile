@@ -83,6 +83,17 @@ ifeq ($(GORELEASER),)
 GORELEASER := go run github.com/goreleaser/goreleaser/v2@v2.18.0
 endif
 
+# The linter, at the version CI's reusable lint workflow is told to install
+# (GOLANGCI_LINT_VERSION in ci.yml), so a finding here is a finding there and
+# neither is a surprise about the tool's version. Installed under .tools on
+# first use rather than run through `go run`: `make lint` also lints the tree
+# as linux, and `go run` under GOOS=linux cross-builds the linter itself into
+# a binary this machine cannot execute. Override GOLANGCI with a path to use
+# another build.
+GOLANGCI_VERSION := v2.13.2
+TOOLS := $(CURDIR)/.tools
+GOLANGCI ?= $(TOOLS)/golangci-lint-$(GOLANGCI_VERSION)
+
 # Colours, unless the caller said not to. NO_COLOR is the convention, and
 # `make help | tee NOTES` should not paste escape codes into somebody's notes.
 ifdef NO_COLOR
@@ -208,6 +219,17 @@ hard: ## Run them with no cache, shuffled, under the race detector
 vet: ## go vet the root module
 	go vet ./...
 
+$(TOOLS)/golangci-lint-%:
+	GOBIN=$(TOOLS) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$*
+	mv $(TOOLS)/golangci-lint $@
+
+# CI lints on linux and most of the work here happens on macOS. A conversion
+# that one port's syscall types need and another's do not is a finding on
+# exactly one of them, so the tree is linted as the host and as linux both.
+lint: $(GOLANGCI) ## golangci-lint, with .golangci.yml's linters, as the host and as linux
+	$(GOLANGCI) run ./...
+	GOOS=linux $(GOLANGCI) run ./...
+
 check: vet hard ## vet, then the hard test run
 
 fmt-check: ## Fail if anything is unformatted — `make fmt` fixes it
@@ -234,7 +256,7 @@ coverage-html: coverage ## ... and write coverage.html to open in a browser
 # fmt-check runs first now rather than last. Learning that a file is
 # unformatted after the whole race suite has run is learning it ten minutes
 # too late.
-ci: fmt-check vet hard coverage proto-lint proto-check cross size-check ## Everything CI runs
+ci: fmt-check vet lint hard coverage proto-lint proto-check cross size-check ## Everything CI runs
 	@printf "\nci: green — every gate the pipeline runs.\n\n"
 
 ##@ Protocol
@@ -343,7 +365,7 @@ clean: ## Remove build output and coverage artifacts
 # make would find it up to date and report success for a target that ran
 # nothing.
 .PHONY: help setup download tidy fmt build install \
-	cross snapshot size size-check bump-plugins test hard vet check \
+	cross snapshot size size-check bump-plugins test hard vet lint check \
 	fmt-check coverage coverage-html ci proto proto-lint proto-check \
 	chart-schema chart-schema-check chart-lint chart-docs \
 	clean
