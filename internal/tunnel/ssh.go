@@ -162,7 +162,7 @@ func openSSH(ctx context.Context, name string, t Target) (*Tunnel, *view.Error) 
 	// tcp4 loopback to match the shape every kube endpoint already has; the
 	// port is the kernel's answer to :0 on a socket rta keeps holding, which
 	// is what makes it race-free where bind-then-release is not.
-	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	ln, err := (&net.ListenConfig{}).Listen(ctx, "tcp4", "127.0.0.1:0")
 	if err != nil {
 		return tun, view.Errorf("tunnel.open.failed", "%v", err)
 	}
