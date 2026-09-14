@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.19.0](https://github.com/this-is-tobi/rta/compare/v0.18.0...v0.19.0) (2026-09-14)
+
+
+### Features
+
+* **cli:** group the root help by what a command is for ([e33392c](https://github.com/this-is-tobi/rta/commit/e33392ca164bbee0895d8181dd34231e56cd81a8))
+* **tui:** a destructive run is confirmed on what it would do ([8c8b724](https://github.com/this-is-tobi/rta/commit/8c8b7245bed2205a14d143a0e095e9a3047cbb1b))
+
+
+### Bug Fixes
+
+* **cli:** find a view error through wrapping ([05aaa3e](https://github.com/this-is-tobi/rta/commit/05aaa3e694401d974e3c4c7958ebf025a77ad9f5))
+* **cli:** suggest the nearest verb below the root too ([e3b5b88](https://github.com/this-is-tobi/rta/commit/e3b5b8855e62e184da38d7d0d5b51d488423e7af))
+* **mcp:** state the request body limit, and bind listeners under the command's context ([f93e852](https://github.com/this-is-tobi/rta/commit/f93e85220853cbbbc677dfb6637bf8f4e9f98808))
+* **mcp:** the path gate covers rta's configuration as it covers its state ([547923b](https://github.com/this-is-tobi/rta/commit/547923bad7d787fcd528b8bfd94b2f873dac437c))
+* **paths:** create the data directory owner-only, from one place ([ed661b9](https://github.com/this-is-tobi/rta/commit/ed661b99a17bd69d8b8f75d42b50da467ae8f5cc))
+* **plugin:** scaffold against the released SDK, not a checkout ([af8eeb2](https://github.com/this-is-tobi/rta/commit/af8eeb230ea4200511a450f8fdede6a59ea2a802))
+* **sys:** read cpu usage from the per-core counters, never a frozen total ([2363200](https://github.com/this-is-tobi/rta/commit/2363200514e3f6d60297b22aaba9d3b2dd040e54))
+* **tui:** a launched search does not follow you back ([5f33b9c](https://github.com/this-is-tobi/rta/commit/5f33b9c983dcffe2ecc0cc175891844759c40345))
+* **tui:** one help bar per form, and it says why a field refused ([03475dc](https://github.com/this-is-tobi/rta/commit/03475dc80bf492aa22cfb0f07eee25f1d41c37c4))
+* **tui:** the catalogue keeps its permission column at eighty columns ([d7e7233](https://github.com/this-is-tobi/rta/commit/d7e723378c990fff0afe49218e7c2599f63f5504))
+
+
+### Code Refactoring
+
+* **doctor:** one function per group of rows ([dbcabe9](https://github.com/this-is-tobi/rta/commit/dbcabe987fe73fd6fec9f4200b88d86859911533))
+* **operator:** a remote call carries the command's context ([7e87900](https://github.com/this-is-tobi/rta/commit/7e87900bff2a4ca0196fc2720dcedf7c5e8a8670))
+* remove code nothing calls, and comments about milestones that shipped ([cffc6bc](https://github.com/this-is-tobi/rta/commit/cffc6bc0bcd0fa3cd113767c881abc120898bb2f))
+
+
+### Dependencies
+
+* a size ceiling the build refuses to exceed ([b61c69a](https://github.com/this-is-tobi/rta/commit/b61c69a58072e046da11010db0cd6e592414ece9))
+
 ## [0.18.0](https://github.com/this-is-tobi/rta/compare/v0.17.0...v0.18.0) (2026-09-13)
 
 
