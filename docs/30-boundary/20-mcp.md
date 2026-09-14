@@ -240,15 +240,16 @@ The trade is real and worth stating: a containerized server sees the container's
 
 The want is real and worth stating plainly: a team has environments — dev and staging for app A, staging and production for app B — everyone has their own agent, and nobody wants to configure the same six profiles on eight laptops. What people reach for is one shared MCP server everyone points at.
 
-**Share the image instead.** A profile is written by a command, so it can be baked in at build time, and every member starts with the environments already there and nothing to configure:
+**Share the image instead.** A profile is written by a command, so it can be baked in at build time, and every member starts with the environments already there and nothing to configure. Two things go into the image and neither goes under the state volume: the plugins with their trust, into rta's read-only system root, and the profiles, into a config file the image carries. The state volume each member mounts on `/rta-home` then holds only what is theirs — grants and the record — and hides nothing the image put there:
 
 ```dockerfile
 FROM alpine:3.20 AS setup
 COPY --from=ghcr.io/this-is-tobi/rta:latest /usr/local/bin/rta /usr/local/bin/rta
 COPY rta-plugin-pg /usr/local/bin/
-ENV RTA_CONFIG=/rta-home/config.yaml RTA_DATA_DIR=/rta-home
-RUN mkdir -p /rta-home && \
-    rta plugin trust pg --yes && \
+ENV RTA_CONFIG=/etc/rta/config.yaml
+RUN mkdir -p /etc/rta && install -d -m 0700 -o 65532 -g 65532 /rta-home && \
+    RTA_DATA_DIR=/usr/local/lib/rta rta plugin trust pg --yes && \
+    chmod -R a+rX /usr/local/lib/rta && \
     rta profile set app-a-staging --note "app A, staging" --ttl 8h \
       --plugin pg --set database=app-a \
       --kube staging/app-a/svc/postgres:5432 \
@@ -260,12 +261,14 @@ RUN mkdir -p /rta-home && \
 
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=setup /usr/local/bin/ /usr/local/bin/
-COPY --from=setup /rta-home /rta-home
-ENV RTA_CONFIG=/rta-home/config.yaml RTA_DATA_DIR=/rta-home PATH=/usr/local/bin
+COPY --from=setup /usr/local/lib/rta /usr/local/lib/rta
+COPY --from=setup /etc/rta /etc/rta
+COPY --from=setup --chown=65532:65532 /rta-home /rta-home
+ENV RTA_CONFIG=/etc/rta/config.yaml RTA_DATA_DIR=/rta-home RTA_SYSTEM_DIR=/usr/local/lib/rta PATH=/usr/local/bin
 ENTRYPOINT ["/usr/local/bin/rta"]
 ```
 
-The `setup` stage needs Alpine's shell to run `rta plugin trust`/`rta profile set` at build time — it never ships. The final stage starts over from the same distroless base the published image uses, for the same reason: `pg` over TLS needs a CA bundle to verify against, same as the primary recipe above.
+The `setup` stage needs Alpine's shell to run `rta plugin trust`/`rta profile set` at build time — it never ships. `rta plugin trust` writes into whatever `RTA_DATA_DIR` names, so pointing it at `/usr/local/lib/rta` for that one command is what puts the trust record beside the plugin, in the root the run time reads as `RTA_SYSTEM_DIR` and a volume cannot mask. `/rta-home` ships empty and owned by `nonroot`, so a fresh named volume mounted there starts out writable by rta, the same way the published images arrange it. The final stage starts over from the same distroless base the published image uses, for the same reason: `pg` over TLS needs a CA bundle to verify against, same as the primary recipe above. The full image, `ghcr.io/this-is-tobi/rta-full`, is built this way too — every first-party plugin installed from the official index into that same root.
 
 Each member wires their client to `docker run` on that image, exactly as in the recipe above, mounting their own `~/.kube` and their own state volume. What the image carries is a *reference*, never a value:
 
