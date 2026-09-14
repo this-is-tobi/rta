@@ -54,6 +54,9 @@ const (
 	modeProfilePlugins
 	modeTheme
 	modeCopyPick
+	// modeConfirm is the destructive gate: a dry run on screen, and enter is
+	// the consent (confirm.go).
+	modeConfirm
 )
 
 // capItem adapts a capability to the bubbles list.
@@ -169,6 +172,9 @@ type Model struct {
 	// result apart from one the user has already walked away from.
 	cancelRun context.CancelFunc
 	runSeq    int
+	// previewing says the run in flight is a dry run for the confirmation
+	// screen, so the running screen can say so rather than "running".
+	previewing bool
 
 	// tickGen names the current dashboard refresh chain. Every return to the
 	// dashboard restarts refreshing (a tile can be stale after any amount of
@@ -440,6 +446,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case previewMsg:
+		// Dropped on the same rule as a result: a dry run the user walked
+		// away from must not become a confirmation over what they walked to.
+		if msg.seq != 0 && msg.seq != m.runSeq {
+			return m, nil
+		}
+		m.showConfirm(resultMsg{cap: msg.cap, view: msg.view, err: msg.err, elapsed: msg.elapsed, seq: msg.seq})
+		return m, nil
+
 	case resultMsg:
 		// A result the user walked away from must not paint over what they
 		// walked to.
@@ -534,7 +549,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateThemeForm(msg)
 	case modeCopyPick:
 		return m.updateCopyPick(msg)
-	case modeResult:
+	case modeResult, modeConfirm:
 		m.viewport, cmd = m.viewport.Update(msg)
 	}
 	return m, cmd
@@ -589,8 +604,13 @@ func (m Model) open(c plugin.Capability) (tea.Model, tea.Cmd) {
 	m.trail = nil
 	m.row = 0
 	m.refreshPending = false
-	if hasInputs(c) || c.Safety == plugin.Destructive {
+	if hasInputs(c) {
 		return m.startForm(c, nil)
+	}
+	if c.Safety == plugin.Destructive {
+		// Nothing to ask, and still nothing runs unseen: the confirmation
+		// screen is the gate, with the dry run on it.
+		return m, m.startConfirm(c, nil)
 	}
 	m.lastValues, m.lastYes = nil, false
 	return m, m.startRun(c, nil, false)
@@ -605,8 +625,12 @@ func (m Model) View() tea.View {
 	case modeForm:
 		v = tea.NewView(m.formView())
 	case modeRunning:
-		body := fmt.Sprintf("%s running %s …\n\n%s",
-			m.spinner.View(), theme.Key.Render(m.current.ID), m.footerFor(modeRunning))
+		verb := "running"
+		if m.previewing {
+			verb = "previewing"
+		}
+		body := fmt.Sprintf("%s %s %s …\n\n%s",
+			m.spinner.View(), verb, theme.Key.Render(m.current.ID), m.footerFor(modeRunning))
 		if m.width > 0 && m.height > 0 {
 			body = lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, body)
 		}
@@ -624,6 +648,9 @@ func (m Model) View() tea.View {
 	case modeResult:
 		v = tea.NewView(m.resultView())
 		v.MouseMode = tea.MouseModeCellMotion // wheel scrolls long output
+	case modeConfirm:
+		v = tea.NewView(m.confirmView())
+		v.MouseMode = tea.MouseModeCellMotion
 	case modeBrowse:
 		v = tea.NewView(m.browseView())
 		v.MouseMode = tea.MouseModeCellMotion

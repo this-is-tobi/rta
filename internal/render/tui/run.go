@@ -237,8 +237,14 @@ func (m Model) configFor(c plugin.Capability) map[string]any {
 // visible stall if it happens on a keypress — and because "as long as the
 // call" is the tunnel's whole lifetime rule, which is exactly
 // the scope of this function.
+//
+// dryRun asks the capability what it would do instead of doing it, and hands
+// the answer back as a previewMsg for the confirmation screen (confirm.go)
+// rather than as a result: same resolution, same forward, same request shape
+// with DryRun set — so what is previewed is what would run — and nothing
+// remembered, because a dry run is not a choice anybody made.
 func runCmd(ctx context.Context, seq int, c plugin.Capability, values map[string]any, yes bool,
-	cfg map[string]any, profileName string, filled map[string]any, conn config.Connection) tea.Cmd {
+	cfg map[string]any, profileName string, filled map[string]any, conn config.Connection, dryRun bool) tea.Cmd {
 	// What the form actually collected, before Resolve lays defaults, config
 	// and the environment over it.
 	collected := values
@@ -246,6 +252,9 @@ func runCmd(ctx context.Context, seq int, c plugin.Capability, values map[string
 		dialled, closeTunnel, verr := profile.Dial(ctx, profileName, conn, c, collected)
 		defer closeTunnel()
 		if verr != nil {
+			if dryRun {
+				return previewMsg{cap: c, err: verr, seq: seq}
+			}
 			return resultMsg{cap: c, err: verr, seq: seq}
 		}
 		if len(dialled) > 0 {
@@ -283,8 +292,15 @@ func runCmd(ctx context.Context, seq int, c plugin.Capability, values map[string
 			values = full
 		}
 		start := time.Now()
-		v, err := c.Run(ctx, plugin.NewRequest(values, false, yes).WithSurface(plugin.SurfaceTUI))
+		v, err := c.Run(ctx, plugin.NewRequest(values, dryRun, yes).WithSurface(plugin.SurfaceTUI))
 		elapsed := time.Since(start)
+		if dryRun {
+			var verr *view.Error
+			if err != nil {
+				verr = view.AsError(err, c.ID+".failed")
+			}
+			return previewMsg{cap: c, view: v, err: verr, elapsed: elapsed, seq: seq}
+		}
 		if err != nil {
 			return resultMsg{cap: c, elapsed: elapsed, err: view.AsError(err, c.ID+".failed"), seq: seq}
 		}
@@ -326,7 +342,7 @@ func (m *Model) refreshInPlace(c plugin.Capability, values map[string]any, yes b
 	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
 	m.cancelRun = cancel
 	m.runSeq++
-	return runCmd(ctx, m.runSeq, c, withoutPicker(c, values), yes, m.configFor(c), name, filled, conn)
+	return runCmd(ctx, m.runSeq, c, withoutPicker(c, values), yes, m.configFor(c), name, filled, conn, false)
 }
 
 // startRun launches a capability and puts the shell in its running state.
@@ -369,8 +385,9 @@ func (m *Model) startRun(c plugin.Capability, values map[string]any, yes bool) t
 	m.cancelRun = cancel
 	m.runSeq++
 	m.mode = modeRunning
+	m.previewing = false
 	return tea.Batch(m.spinner.Tick,
-		runCmd(ctx, m.runSeq, c, withoutPicker(c, values), yes, m.configFor(c), name, filled, conn))
+		runCmd(ctx, m.runSeq, c, withoutPicker(c, values), yes, m.configFor(c), name, filled, conn, false))
 }
 
 // resolveProfile takes the picker's answer out of values and binds it.

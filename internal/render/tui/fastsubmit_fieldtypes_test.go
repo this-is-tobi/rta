@@ -178,11 +178,10 @@ func TestShiftEnterAcceptsAMultilineTextFieldsCurrentDefault(t *testing.T) {
 // The existing destructive-decline test (TestShiftEnterDeclinesADestructiveCapabilityByDefault)
 // uses a capability with no Inputs of its own — just the trailing confirm
 // field, kv.rekey's actual shape has real fields ahead of it (Bool +
-// StringSlice). One shift+enter races through every field including the
-// confirm one — huh.NewConfirm treats a plain Enter as Submit regardless of
-// whether Toggle/Accept/Reject ever touched it (field_confirm.go), so there
-// is no intermediate stop to wait for; the whole form completes declined in
-// a single press, the same as the no-Inputs case.
+// StringSlice). One shift+enter races through every field and lands on the
+// confirmation screen with the dry run on it — accepting the defaults is
+// what the shortcut is for, and the gate after them is not a field it can
+// race through. Nothing runs until enter is pressed there.
 func TestShiftEnterDeclinesADestructiveCapabilityWithRealInputsAheadOfTheConfirm(t *testing.T) {
 	c := plugin.Capability{
 		ID: "demo.destructive", Summary: "s", Safety: plugin.Destructive,
@@ -190,7 +189,10 @@ func TestShiftEnterDeclinesADestructiveCapabilityWithRealInputsAheadOfTheConfirm
 			{Name: "generate", Type: plugin.Bool, Default: true},
 			{Name: "recipient", Type: plugin.StringSlice, Default: []string{"r1"}},
 		},
-		Run: func(context.Context, plugin.Request) (view.View, error) {
+		Run: func(_ context.Context, req plugin.Request) (view.View, error) {
+			if req.DryRun {
+				return view.Text{Body: "DESTRUCTIVE-PREVIEW"}, nil
+			}
 			return view.Text{Body: "DESTRUCTIVE-EXECUTED"}, nil
 		},
 	}
@@ -201,7 +203,9 @@ func TestShiftEnterDeclinesADestructiveCapabilityWithRealInputsAheadOfTheConfirm
 	waitFor(t, tm, "generate")
 
 	tm.Send(shiftEnter)
-	waitFor(t, tm, "capabilities") // declined, back to browse — no intermediate stop
+	waitFor(t, tm, "nothing has run yet", "DESTRUCTIVE-PREVIEW") // the gate, not a run
+	tm.Send(tea.KeyPressMsg{Code: tea.KeyEscape})
+	waitFor(t, tm, "capabilities") // declined, back to browse
 
 	tm.Send(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
 	tm.WaitFinished(t, teatest.WithFinalTimeout(framePatience))

@@ -44,6 +44,8 @@ func (m Model) keyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		return m.resultKeys(msg)
 	case modeRunning:
 		return m.runningKeys(msg)
+	case modeConfirm:
+		return m.confirmKeys(msg)
 	}
 	return m, nil, false
 }
@@ -553,6 +555,7 @@ func (m Model) runningKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		}
 		m.runSeq++ // whatever arrives now belongs to nobody
 		m.refreshPending, m.subjectGone = false, false
+		m.previewing = false
 		m.flash = "cancelled"
 		if len(m.trail) > 0 {
 			nm, cmd := m.reopenTop()
@@ -578,7 +581,7 @@ func (m Model) wheel(msg tea.MouseWheelMsg) (tea.Model, tea.Cmd) {
 			m.scroll = min(m.scroll+1, max(0, m.dashRows()-m.dashRowsVisible()))
 		}
 		return m, nil
-	case modeResult:
+	case modeResult, modeConfirm:
 		switch msg.Button {
 		case tea.MouseWheelUp:
 			m.viewport.ScrollUp(3)

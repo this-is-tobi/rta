@@ -254,16 +254,17 @@ func TestShiftEnterDoesNotRunWithARequiredFieldBlank(t *testing.T) {
 	}
 }
 
-// The property that matters most: fast-submitting a destructive
-// capability's form must not confirm it. huh.NewConfirm's own Next/Submit
-// handling (field_confirm.go) never touches the bound value on plain
-// Enter — only explicit Toggle/Accept/Reject do — so a Confirm nobody
-// answered stays at its bound zero value, which capForm seeds false
-// (declined) for exactly this field (form.go's `ok := false`).
+// The property that matters most: no shortcut runs a destructive
+// capability. A destructive capability with nothing to ask opens straight
+// on its confirmation screen, where shift+enter is not a key at all — the
+// screen has no form to race through, and only enter is the consent.
 func TestShiftEnterDeclinesADestructiveCapabilityByDefault(t *testing.T) {
 	c := plugin.Capability{
 		ID: "demo.boom", Summary: "s", Safety: plugin.Destructive,
-		Run: func(context.Context, plugin.Request) (view.View, error) {
+		Run: func(_ context.Context, req plugin.Request) (view.View, error) {
+			if req.DryRun {
+				return view.Text{Body: "BOOM-PREVIEW"}, nil
+			}
 			return view.Text{Body: "BOOM-EXECUTED"}, nil
 		},
 	}
@@ -271,10 +272,11 @@ func TestShiftEnterDeclinesADestructiveCapabilityByDefault(t *testing.T) {
 	tm.Send(tea.KeyPressMsg{Code: 'b', Text: "b"})
 	waitFor(t, tm, "demo.boom")
 	tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
-	waitFor(t, tm, "destructive — run it?")
+	waitFor(t, tm, "nothing has run yet", "BOOM-PREVIEW")
 
-	tm.Send(shiftEnter)
-	waitFor(t, tm, "capabilities") // declined by default, back to browse
+	tm.Send(shiftEnter) // nothing to accept here
+	tm.Send(tea.KeyPressMsg{Code: tea.KeyEscape})
+	waitFor(t, tm, "capabilities") // declined, back to browse
 
 	tm.Send(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
 	tm.WaitFinished(t, teatest.WithFinalTimeout(framePatience))

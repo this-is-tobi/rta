@@ -90,8 +90,7 @@ type capForm struct {
 	kubeCoord string
 	// syncs is the same string bindings behind their locks, for the one thing
 	// that reads them off the event loop: computing a suggestion. See bind.
-	syncs   map[string]*syncString
-	confirm *bool // non-nil when a destructive confirmation gates the run
+	syncs map[string]*syncString
 	// configTarget is non-empty when completing this form writes a
 	// plugins.<section> block instead of running a capability — the plugin
 	// config editor (internal/render/tui/pluginconfig.go). It reuses capForm
@@ -351,8 +350,10 @@ func seedString(v any) string {
 func hasInputs(c plugin.Capability) bool { return len(c.Inputs) > 0 }
 
 // newCapForm builds the huh form for a subset of a capability's inputs.
-// defaults (from Prefill) override declared field defaults. Destructive
-// capabilities get a trailing explicit confirmation on their final stage.
+// defaults (from Prefill) override declared field defaults. A destructive
+// capability's final stage is followed by the confirmation screen
+// (confirm.go), which shows the dry run and takes the consent — never by a
+// field of its own.
 //
 // base is everything the request already carries that this form will not ask
 // about — a previous stage's answers, and the reserved inputs no field can
@@ -486,15 +487,6 @@ func newCapForm(c plugin.Capability, fs []plugin.Field, defaults map[string]any,
 				Accessor(typed).
 				Validate(validatorFor(f)), f, typed, wholeBox)))
 		}
-	}
-	if final && c.Safety == plugin.Destructive {
-		ok := false
-		cf.confirm = &ok
-		fields = append(fields, huh.NewConfirm().
-			Title(fmt.Sprintf("%s is destructive — run it?", c.ID)).
-			Description("This cannot be undone.").
-			Affirmative("run").Negative("cancel").
-			Value(&ok))
 	}
 	// After the bindings exist, because a condition reads one of them.
 	for _, opt := range opts {
@@ -1163,6 +1155,3 @@ func typedValue(f plugin.Field, raw string) any {
 		return raw
 	}
 }
-
-// confirmed reports whether a destructive run was explicitly approved.
-func (cf *capForm) confirmed() bool { return cf.confirm == nil || *cf.confirm }

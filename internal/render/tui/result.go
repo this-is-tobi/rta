@@ -276,9 +276,15 @@ func (m Model) runAction(a capAction, tbl view.Table) (tea.Model, tea.Cmd) {
 	// capabilities are left out inside — see kvsession.go.
 	base = withStoreSession(cap, base)
 	// A bare action waives only the optional-field form — never the
-	// destructive confirmation, which is checked first on purpose.
-	if cap.Safety == plugin.Destructive || (!a.bare && len(fieldsAfter(cap, base)) > 0) {
+	// destructive gate, which is the confirmation screen and is reached
+	// whether or not a form came first: with inputs still to ask, the form
+	// collects them and hands over; with nothing left to ask, the screen
+	// opens directly on what the call would do.
+	if !a.bare && len(fieldsAfter(cap, base)) > 0 {
 		return m.startFormWith(cap, base, prev)
+	}
+	if cap.Safety == plugin.Destructive {
+		return m, m.startConfirm(cap, base)
 	}
 	m.lastValues, m.lastYes = base, false
 	return m, m.startRun(cap, base, false)
