@@ -29,11 +29,17 @@
 # Dockerfile.full — this one, and hardly any other — so the check is the
 # build itself, not a proxy for it.
 #
-# A merged bump is not an rta release: release-please-config.json excludes
-# commits that touch only Dockerfile.full. It has to. An rta release makes
-# rta-plugins' bump-rta.yml release every plugin against it, a plugin release
-# changes the index, and if that bump cut a release the two repositories
-# would release each other forever. The full image is published from
+# A merged bump is not an rta release, and the commit type below is what
+# makes that true: `chore` is a hidden type in release-please-config.json,
+# and release-please opens a release pull request only for commits whose
+# type is visible there — its log says "No user facing commits found" and
+# stops for a push of hidden types alone. It has to be this way. An rta
+# release makes rta-plugins' bump-rta.yml release every plugin against it, a
+# plugin release changes the index, and this workflow then moves the pin; if
+# that bump cut a release, the two repositories would release each other
+# forever — which they did once, for one turn, while the bump was typed
+# `build`. Excluding Dockerfile.full through release-please's exclude-paths
+# was tried first and did not exclude it. The full image is published from
 # docker-full.yml at the version somebody states, and a bump merged between
 # releases is picked up by the next run of it.
 name: Bump plugins
@@ -208,7 +214,7 @@ jobs:
         git config user.email github-actions[bot]@users.noreply.github.com
         git checkout -b "$BRANCH"
         git add Dockerfile.full
-        git commit -m "build(docker): the full image builds from the index's newest commit" \
+        git commit -m "chore(docker): the full image builds from the index's newest commit" \
           -m "$REPORT"
         # Forced, because the branch is the workflow's own and its previous
         # tip was superseded, never reviewed and kept: the pull request has
@@ -226,6 +232,6 @@ jobs:
           gh pr edit "$PR" --body "$body"
         else
           gh pr create --base main --head "$BRANCH" \
-            --title "build(docker): the full image builds from the index's newest commit" \
+            --title "chore(docker): the full image builds from the index's newest commit" \
             --body "$body"
         fi
