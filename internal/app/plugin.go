@@ -51,7 +51,7 @@ func newPluginCommand(reg *registry.Registry, version string, opts *globalOpts) 
 	root.AddCommand(newPluginUntrustCommand(opts))
 	root.AddCommand(newPluginAllowCommand(opts))
 	root.AddCommand(newPluginDisallowCommand(opts))
-	root.AddCommand(newPluginNewCommand(opts))
+	root.AddCommand(newPluginNewCommand(version, opts))
 	root.AddCommand(newPluginDevCommand(reg, version, opts))
 	root.AddCommand(newPluginInstallCommand(opts))
 	root.AddCommand(newPluginUpgradeCommand(opts))
@@ -575,7 +575,7 @@ func trustInventory() view.View {
 	return t
 }
 
-func newPluginNewCommand(opts *globalOpts) *cobra.Command {
+func newPluginNewCommand(version string, opts *globalOpts) *cobra.Command {
 	var dir, module, rtaSource string
 	cmd := &cobra.Command{
 		Use:   "new <name>",
@@ -612,6 +612,10 @@ func newPluginNewCommand(opts *globalOpts) *cobra.Command {
 					return view.Errorf("plugin.badsource", "resolving %q: %v", rtaSource, err)
 				}
 				s.RtaPath = replacePath(abs, dir)
+			} else {
+				// The released module, at this rta's own version — a stranger
+				// with a release binary needs no checkout of anything.
+				s.RtaVersion = releasedVersion(version)
 			}
 			names, err := s.write(dir, opts.dryRun)
 			if err != nil {
@@ -647,8 +651,8 @@ func newPluginNewCommand(opts *globalOpts) *cobra.Command {
 	cmd.Flags().StringVar(&dir, "dir", "", "where to write it (default: the binary name)")
 	cmd.Flags().StringVar(&module, "module", "", "go module path (default: the binary name)")
 	cmd.Flags().StringVar(&rtaSource, "rta-source", "",
-		"local rta checkout to `replace` with, since rta is not published yet "+
-			"(default: found by walking up from here)")
+		"build against this rta checkout (a `replace`) instead of the released module "+
+			"(default: a checkout found by walking up from here or from the rta binary, if any)")
 	// Both name a directory, so the shell does the listing. --rta-source also
 	// offers the answer this command would compute for itself, because on most
 	// machines there is exactly one and it is already known.

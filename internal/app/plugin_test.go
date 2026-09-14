@@ -198,10 +198,14 @@ func TestTheReplaceDirectiveIsOnlyEmittedWhenItPointsSomewhere(t *testing.T) {
 		t.Errorf("go.mod has no replace:\n%s", mod)
 	}
 
-	without := with
-	without.RtaPath = ""
+	// Without a checkout the plugin requires the released module at the
+	// scaffolding rta's own version: a stranger with a release binary needs
+	// no source tree of anything. This used to demand --rta-source on the
+	// stale premise that the module was unpublished.
+	released := with
+	released.RtaPath, released.RtaVersion = "", "v0.18.0"
 	other := t.TempDir()
-	if _, err := without.write(other, false); err != nil {
+	if _, err := released.write(other, false); err != nil {
 		t.Fatal(err)
 	}
 	mod, err = os.ReadFile(filepath.Join(other, "go.mod"))
@@ -211,10 +215,59 @@ func TestTheReplaceDirectiveIsOnlyEmittedWhenItPointsSomewhere(t *testing.T) {
 	if strings.Contains(string(mod), "replace") {
 		t.Errorf("a replace was emitted with nothing to point at:\n%s", mod)
 	}
-	// And the author is told, rather than left to read a build error.
-	steps := nextSteps(without, other)
-	if !strings.Contains(steps, "--rta-source") {
-		t.Errorf("the next steps do not say how to fix it:\n%s", steps)
+	if !strings.Contains(string(mod), "require "+rtaModule+" v0.18.0") {
+		t.Errorf("go.mod does not require the released module:\n%s", mod)
+	}
+	if !strings.Contains(string(mod), "go "+toolchainVersion()) {
+		t.Errorf("go.mod does not carry the toolchain's go directive:\n%s", mod)
+	}
+	steps := nextSteps(released, other)
+	if strings.Contains(steps, "--rta-source") || !strings.Contains(steps, "v0.18.0") {
+		t.Errorf("the next steps should name the required release, not a missing checkout:\n%s", steps)
+	}
+
+	// A build that knows no version names none, and says `go mod tidy` will
+	// pick the latest — rather than inventing one.
+	unknown := released
+	unknown.RtaVersion = ""
+	third := t.TempDir()
+	if _, err := unknown.write(third, false); err != nil {
+		t.Fatal(err)
+	}
+	mod, err = os.ReadFile(filepath.Join(third, "go.mod"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(mod), rtaModule) {
+		t.Errorf("an unknown version produced a require line anyway:\n%s", mod)
+	}
+	if steps := nextSteps(unknown, third); !strings.Contains(steps, "latest") {
+		t.Errorf("the next steps do not say the latest release is what tidy picks:\n%s", steps)
+	}
+}
+
+// The version a scaffold requires is the one this binary states about
+// itself: the release stamp, or the module version the toolchain recorded
+// for a `go install …@vX` build, and nothing for a build that is neither.
+func TestReleasedVersionComesFromTheStampOrNotAtAll(t *testing.T) {
+	for stamp, want := range map[string]string{
+		"0.18.0":  "v0.18.0",
+		"v0.18.0": "v0.18.0",
+		" 1.2.3 ": "v1.2.3",
+	} {
+		if got := releasedVersion(stamp); got != want {
+			t.Errorf("releasedVersion(%q) = %q, want %q", stamp, got, want)
+		}
+	}
+	// Under `go test` the main module's version is (devel), so a "dev" stamp
+	// has nothing to fall back on.
+	if got := releasedVersion("dev"); got != "" {
+		t.Errorf("releasedVersion(dev) = %q, want nothing", got)
+	}
+	for _, notAVersion := range []string{"(devel)", "v0.18.1-0.20260901120000-abcdef123456", "pr-12", ""} {
+		if got := semverOf(notAVersion); got != "" {
+			t.Errorf("semverOf(%q) = %q, want nothing", notAVersion, got)
+		}
 	}
 }
 

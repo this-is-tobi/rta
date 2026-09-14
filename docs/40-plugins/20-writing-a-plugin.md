@@ -22,7 +22,7 @@ Your inner loop does not need it at all: `rta plugin dev` compiles from a direct
 
 **Your binary's name is your namespace.** `rta-plugin-weather` declares `Name: "weather"`, and rta refuses it otherwise — the name an operator gave the file by installing it wins over the name the file gives itself, because anything on `$PATH` can claim to be anything — the same reason the artifact needs trusting before it runs at all. `rta plugin new` gets this right for you; `rta plugin dev` is exempt from both, so your inner loop does not care what the temporary binary is called.
 
-> A scaffolded plugin needs a `replace` directive pointing at your rta checkout, so its `go.mod` can resolve `pkg/sdk`. `rta plugin new` adds one automatically when it can find one by walking up from your working directory or from the rta binary; otherwise pass `--rta-source <path>`. It tells you which happened.
+> A scaffolded plugin requires the released rta module at the version of the rta that scaffolded it, so `go mod tidy` resolves `pkg/sdk` from the module proxy like any other dependency and the SDK it builds against is the one whose host will load it. Inside an rta checkout — or anywhere, with `--rta-source <path>` — `rta plugin new` points a `replace` at the tree instead, for building against unreleased changes. It tells you which happened.
 
 ## The one thing to understand
 
