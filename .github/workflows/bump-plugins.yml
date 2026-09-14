@@ -44,6 +44,13 @@ on:
 permissions:
   contents: read
 
+# One run at a time: the scheduled run and a dispatched one landing together
+# would each read the open pull request, each decide it is behind, and race
+# to push the same branch. The later one waits instead.
+concurrency:
+  group: bump-plugins
+  cancel-in-progress: false
+
 jobs:
   bump:
     name: Open a pull request for any outdated plugin pin
@@ -108,19 +115,31 @@ jobs:
           echo "every pin is already current"; exit 0
         fi
 
-        # A deterministic branch name per exact combination, the same
-        # dedup shape bump-rta.yml uses per version: a run that finds
-        # nothing new since the last one opens no second pull request for
-        # it, and a run that finds something genuinely different gets its
-        # own branch rather than overwriting one still under review.
-        branch="bump-plugins-$(printf '%s' "$new_line" | sha256sum | cut -c1-12)"
-        if [ -n "$(gh pr list --head "$branch" --state all --json number --jq '.[].number')" ]; then
-          echo "a pull request for this exact combination already exists"; exit 0
+        # One branch and one pull request, rewritten in place, the way
+        # release-please keeps a single release pull request current. A
+        # branch per combination was tried first and opened a second pull
+        # request the moment rta-plugins released again — which it does
+        # within the hour of every rta release, since every plugin follows
+        # the SDK — leaving the first one open and already behind. Now a
+        # later combination replaces the earlier one on the same branch, and
+        # the pull request's body says what it holds today. A run that
+        # computes the line the open pull request already carries does
+        # nothing.
+        branch="bump-plugins"
+        open_pr=$(gh pr list --head "$branch" --state open --json number --jq '.[0].number // empty')
+        if [ -n "$open_pr" ]; then
+          on_pr=$(gh api "repos/${GITHUB_REPOSITORY}/contents/Dockerfile.full?ref=${branch}" --jq .content \
+            | base64 -d | awk -F'"' '/^ARG PLUGINS="/ { print $2; exit }')
+          if [ "$on_pr" = "$new_line" ]; then
+            echo "pull request #$open_pr already carries this line"; exit 0
+          fi
+          echo "pull request #$open_pr is behind; it will be rewritten"
         fi
 
         {
           echo "line=$new_line"
           echo "branch=$branch"
+          echo "pr=$open_pr"
           echo "report<<BUMP_PLUGINS_REPORT_EOF"
           printf '%s' "$report"
           echo "BUMP_PLUGINS_REPORT_EOF"
@@ -144,11 +163,12 @@ jobs:
         permission-contents: write
         permission-pull-requests: write
 
-    - name: Commit, push and open the pull request
+    - name: Commit, push and open or rewrite the pull request
       if: steps.target.outputs.line != ''
       env:
         GH_TOKEN: ${{ steps.app-token.outputs.token }}
         BRANCH: ${{ steps.target.outputs.branch }}
+        PR: ${{ steps.target.outputs.pr }}
         REPORT: ${{ steps.target.outputs.report }}
       run: |
         set -euo pipefail
@@ -158,9 +178,22 @@ jobs:
         git add Dockerfile.full
         git commit -m "build(docker): bump the full image's plugin pins" \
           -m "$REPORT"
-        git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$BRANCH"
-        gh pr create --base main --head "$BRANCH" \
-          --title "build(docker): bump the full image's plugin pins" \
-          --body "$(printf '%s\n\n%s' \
-            "$REPORT" \
-            "Opened by the bump workflow. CI is the review: a red check here means the image no longer builds against one of these releases. Nothing was added to or removed from the allowlist — every name on this line was already there.")"
+        # Forced, because the branch is the workflow's own and its previous
+        # tip was superseded, never reviewed and kept: the pull request has
+        # exactly one commit, from main, every time. Forced with a lease on
+        # the tip read just now — an empty tip meaning the branch must not
+        # exist yet — so a push nobody here has seen is refused rather than
+        # overwritten, and the run fails loudly instead of rewriting it.
+        remote="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+        expected=$(git ls-remote "$remote" "refs/heads/$BRANCH" | cut -f1)
+        git push --force-with-lease="refs/heads/$BRANCH:$expected" "$remote" "$BRANCH"
+        body="$(printf '%s\n\n%s' \
+          "$REPORT" \
+          "Opened by the bump workflow, and rewritten by it whenever rta-plugins releases again before this merges. CI is the review: a red check here means the image no longer builds against one of these releases. Nothing was added to or removed from the allowlist — every name on this line was already there.")"
+        if [ -n "$PR" ]; then
+          gh pr edit "$PR" --body "$body"
+        else
+          gh pr create --base main --head "$BRANCH" \
+            --title "build(docker): bump the full image's plugin pins" \
+            --body "$body"
+        fi
