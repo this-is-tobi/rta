@@ -48,3 +48,35 @@ func EnsureData() (string, error) {
 	dir := Data()
 	return dir, os.MkdirAll(dir, 0o700)
 }
+
+// ConfigFile resolves the config file: RTA_CONFIG overrides (tests, portable
+// setups), otherwise config.yaml in rta's own directory under the user's
+// config directory, otherwise ./.rta.yaml for a machine with no such
+// directory at all.
+//
+// Here rather than in internal/config, which used to own it, because the MCP
+// path gate needs the same answer and cannot import config without a cycle:
+// what a caller may never name has to be decided from the same resolution
+// the file is read with, or the two drift apart on the day one of them
+// learns a new environment variable.
+func ConfigFile() string {
+	if p := os.Getenv("RTA_CONFIG"); p != "" {
+		return p
+	}
+	if dir := OwnConfigDir(); dir != "" {
+		return filepath.Join(dir, "config.yaml")
+	}
+	return filepath.Join(".", ".rta.yaml")
+}
+
+// OwnConfigDir is rta's directory under the user's config directory —
+// ~/.config/rta, ~/Library/Application Support/rta — or "" when the platform
+// has no such directory. Everything in it is rta's: config.yaml, and the
+// remotes.yaml the operator channel reads beside it.
+func OwnConfigDir() string {
+	base, err := os.UserConfigDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(base, "rta")
+}
