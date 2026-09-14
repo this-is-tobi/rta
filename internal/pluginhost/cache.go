@@ -113,8 +113,11 @@ func writeCache(digest string, p *rtav1.Plugin) {
 		// something readCache is now guaranteed to reject.
 		return
 	}
+	if _, err := paths.EnsureData(); err != nil {
+		return
+	}
 	dir := filepath.Join(paths.Data(), cacheDir)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return
 	}
 	// Written to a temp file and renamed, so a reader never sees a partial

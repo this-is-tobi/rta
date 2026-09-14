@@ -3,7 +3,6 @@ package profile
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -124,8 +123,8 @@ func SaveSelection(s Selection) *view.Error {
 	if err != nil {
 		return view.Errorf("core.profile.write", "encoding the selection: %v", err)
 	}
-	if err := os.MkdirAll(paths.Data(), 0o700); err != nil {
-		return view.Errorf("core.profile.write", "creating %s: %v", paths.Data(), err)
+	if dir, err := paths.EnsureData(); err != nil {
+		return view.Errorf("core.profile.write", "creating %s: %v", dir, err)
 	}
 	// 0600, like the grant file. It bounds what agents may reach, and it names
 	// which environment somebody is working in — neither is another local

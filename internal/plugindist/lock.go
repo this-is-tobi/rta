@@ -95,7 +95,10 @@ func LockedFor(name string) (LockEntry, bool) {
 // lock for plugintrust's reason — the dangerous direction is a lost removal.
 func mutateLock(fn func([]LockEntry) []LockEntry) *view.Error {
 	dir := filepath.Dir(LockPath())
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if _, err := paths.EnsureData(); err != nil {
+		return view.Errorf("plugin.lock.write", "%v", err)
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return view.Errorf("plugin.lock.write", "%v", err)
 	}
 	release, err := filelock.Acquire(filepath.Join(dir, "rta.lock.lock"),

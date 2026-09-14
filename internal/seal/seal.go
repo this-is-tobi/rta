@@ -37,7 +37,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"github.com/this-is-tobi/rta/internal/atomicfile"
@@ -89,8 +88,8 @@ func Key(name string, create bool) ([]byte, error) {
 	if _, err := rand.Read(key); err != nil {
 		return nil, fmt.Errorf("generating a seal key: %w", err)
 	}
-	if err := os.MkdirAll(paths.Data(), 0o700); err != nil {
-		return nil, fmt.Errorf("creating %s: %w", paths.Data(), err)
+	if dir, err := paths.EnsureData(); err != nil {
+		return nil, fmt.Errorf("creating %s: %w", dir, err)
 	}
 	// 0600, and written before whatever it authenticates, so there is never
 	// a moment where a sealed file exists with no key to check it.

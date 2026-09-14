@@ -1,7 +1,9 @@
 package paths
 
 import (
+	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -48,5 +50,61 @@ func TestDataFallsBackToHomeWhenNeitherIsSet(t *testing.T) {
 	want := filepath.Join("/home/someone", ".local", "share", "rta")
 	if got := Data(); got != want {
 		t.Errorf("Data() = %q, want %q", got, want)
+	}
+}
+
+// The directory holds the grant file and its seal key, the record, the store
+// and every parked request, all written 0600 — and until EnsureData was the
+// one creator, six writers created the directory itself 0755 through
+// MkdirAll's parent creation, so its mode depended on which command a
+// machine happened to run first. Owner-only here, or every one of those
+// filenames is listable by any account.
+func TestEnsureDataCreatesTheDirectoryOwnerOnly(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission bits do not apply")
+	}
+	clear(t)
+	nested := filepath.Join(t.TempDir(), "xdg", "rta")
+	t.Setenv("RTA_DATA_DIR", nested)
+
+	dir, err := EnsureData()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dir != nested {
+		t.Fatalf("EnsureData() = %q, want %q", dir, nested)
+	}
+	for _, p := range []string{nested, filepath.Dir(nested)} {
+		info, err := os.Stat(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if perm := info.Mode().Perm(); perm != 0o700 {
+			t.Errorf("%s is mode %04o, want 0700", p, perm)
+		}
+	}
+}
+
+// An existing directory is the operator's: its mode is reported by `rta
+// doctor`, never rewritten behind their back.
+func TestEnsureDataLeavesAnExistingDirectoryAlone(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission bits do not apply")
+	}
+	clear(t)
+	dir := filepath.Join(t.TempDir(), "rta")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("RTA_DATA_DIR", dir)
+	if _, err := EnsureData(); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o755 {
+		t.Errorf("EnsureData changed an existing directory to %04o", perm)
 	}
 }

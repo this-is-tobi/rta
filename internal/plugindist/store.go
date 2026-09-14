@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/this-is-tobi/rta/internal/paths"
 	"github.com/this-is-tobi/rta/internal/pluginhost"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -100,7 +101,10 @@ func moveExecutable(from, to string) error {
 
 func place(name, digest, staged string) (string, *view.Error) {
 	dir := filepath.Join(StoreDir(), name, digest)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if _, err := paths.EnsureData(); err != nil {
+		return "", view.Errorf("plugin.install.place", "%v", err)
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", view.Errorf("plugin.install.place", "%v", err)
 	}
 	dest := filepath.Join(dir, binaryName(name))
@@ -110,7 +114,7 @@ func place(name, digest, staged string) (string, *view.Error) {
 	if err := os.Chmod(dest, 0o755); err != nil {
 		return "", view.Errorf("plugin.install.place", "%v", err)
 	}
-	if err := os.MkdirAll(BinDir(), 0o755); err != nil {
+	if err := os.MkdirAll(BinDir(), 0o700); err != nil {
 		return "", view.Errorf("plugin.install.place", "%v", err)
 	}
 	// Relative, so the whole data dir can move — a backup restored under

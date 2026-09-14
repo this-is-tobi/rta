@@ -879,8 +879,8 @@ func loadAll() ([]Grant, *view.Error) {
 // A reader that races a torn file sees valid JSON either way: the old
 // complete grants, or the new ones, never a half-written one.
 func Save(grants []Grant) *view.Error {
-	dir := paths.Data()
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	dir, err := paths.EnsureData()
+	if err != nil {
 		return view.Errorf("core.grant.write", "creating %s: %v", dir, err)
 	}
 	canon, err := canonical(grants)

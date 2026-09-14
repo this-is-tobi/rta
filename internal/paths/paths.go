@@ -27,3 +27,24 @@ func Data() string {
 	}
 	return filepath.Join(home, ".local", "share", "rta")
 }
+
+// EnsureData creates the data directory if it is missing and returns it.
+//
+// **This is the only place the directory is created, and it is created
+// owner-only.** Everything inside it — the grant file and its seal key, the
+// record, the store, parked consent requests, the presence files — is written
+// 0600, and `rta doctor` warns when the directory itself lets other accounts
+// list those names. For two releases the warning could be about a mode rta
+// had chosen: ten writers created the directory with 0700 and six others
+// (the notebook, the store's recipients file, the plugin store, the index
+// clones, the describe cache) with 0755 through MkdirAll's parent creation,
+// so the mode depended on which command a machine happened to run first.
+// One creator with one mode is what makes the doctor row a statement about
+// the operator's machine rather than about rta's own inconsistency.
+//
+// An existing directory is left exactly as found: a mode the operator chose
+// is theirs to change, and the doctor row is where they are told.
+func EnsureData() (string, error) {
+	dir := Data()
+	return dir, os.MkdirAll(dir, 0o700)
+}
