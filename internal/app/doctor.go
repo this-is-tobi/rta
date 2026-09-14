@@ -297,13 +297,44 @@ func doctorReport(reg *registry.Registry) view.View {
 		t.Rows = append(t.Rows, []string{check, status, detail})
 	}
 
-	// Registry health.
-	//
-	// External plugins register into the same registry as built-ins — that is
-	// the design, and it is why no renderer knows the difference. It does
-	// mean this row cannot call the total "built-ins" without lying the
-	// moment somebody installs one, so the external share is named when there
-	// is one.
+	// One function per group of rows, in the order a person reads the
+	// report: what is installed and where it lives, what is configured, what
+	// agents may do, what they did, and the clients that could connect. Each
+	// is a function so it can be read and tested on its own; the single
+	// seven-hundred-line body this replaced could only be tested whole.
+	doctorCatalogue(reg, add)
+	doctorDataDir(add)
+	doctorTerminal(add)
+	doctorConfig(add)
+	doctorPluginConfig(reg, add)
+	doctorProfiles(reg, add)
+	doctorTheme(add)
+	doctorShadowedPlugins(add)
+	doctorPolicy(add)
+	doctorRoles(add)
+	doctorGrants(add)
+	doctorLocks(add)
+	doctorGuard(add)
+	doctorStore(add)
+	doctorConfinement(add)
+	doctorLoadedPlugins(add)
+	doctorUntrustedPlugins(add)
+	doctorRecord(add)
+	doctorConsent(add)
+	doctorManagedPlugins(add)
+	doctorClients(add)
+	t.Total = len(t.Rows)
+	return t
+}
+
+// Registry health.
+//
+// External plugins register into the same registry as built-ins — that is
+// the design, and it is why no renderer knows the difference. It does
+// mean this row cannot call the total "built-ins" without lying the
+// moment somebody installs one, so the external share is named when there
+// is one.
+func doctorCatalogue(reg *registry.Registry, add func(check, status, detail string)) {
 	caps := reg.Capabilities()
 	// Counted from the registry, which is where provenance lives now: a
 	// plugin is external because its registration says so, not because the
@@ -319,18 +350,20 @@ func doctorReport(reg *registry.Registry) view.View {
 		detail += fmt.Sprintf(" (%d built in, %d from $PATH)", len(reg.Plugins())-external, external)
 	}
 	add("capabilities", "ok", detail)
+}
 
-	// Where the state lives, and who else on this machine can list it. Every
-	// file inside — grants, the record and its key, consent requests, the
-	// presence files — is written owner-only, and paths.EnsureData creates
-	// the directory 0700. It did not always: six writers created it 0755
-	// through MkdirAll's parent creation until EnsureData became the one
-	// creator, so a machine whose first rta command was `note add` or `kv
-	// init` has a wider directory than one that started with a grant, and
-	// tightening the creator only helps a machine that has not run rta yet.
-	// On one that has, the names of every session, parked request and record
-	// segment are listable by any account, and this row is the only thing
-	// that says so.
+// Where the state lives, and who else on this machine can list it. Every
+// file inside — grants, the record and its key, consent requests, the
+// presence files — is written owner-only, and paths.EnsureData creates
+// the directory 0700. It did not always: six writers created it 0755
+// through MkdirAll's parent creation until EnsureData became the one
+// creator, so a machine whose first rta command was `note add` or `kv
+// init` has a wider directory than one that started with a grant, and
+// tightening the creator only helps a machine that has not run rta yet.
+// On one that has, the names of every session, parked request and record
+// segment are listable by any account, and this row is the only thing
+// that says so.
+func doctorDataDir(add func(check, status, detail string)) {
 	dataDir := paths.Data()
 	switch info, err := os.Stat(dataDir); {
 	case err != nil:
@@ -341,15 +374,19 @@ func doctorReport(reg *registry.Registry) view.View {
 	default:
 		add("data", "ok", dataDir)
 	}
+}
 
-	// Terminal.
+// Terminal.
+func doctorTerminal(add func(check, status, detail string)) {
 	if isTTY() {
 		add("terminal", "ok", "stdout is a TTY — styled output enabled")
 	} else {
 		add("terminal", "info", "stdout is piped — plain output")
 	}
+}
 
-	// Config: zero-config is healthy; a broken file is an actionable error.
+// Config: zero-config is healthy; a broken file is an actionable error.
+func doctorConfig(add func(check, status, detail string)) {
 	cfgPath := config.Path()
 	if _, statErr := os.Stat(cfgPath); statErr != nil {
 		add("config", "info", "no config file — zero-config mode (`rta init` creates "+cfgPath+")")
@@ -371,18 +408,20 @@ func doctorReport(reg *registry.Registry) view.View {
 		}
 		add("config", "ok", detail)
 	}
+}
 
-	// Per-plugin configuration, and specifically the ways it can silently
-	// stop applying.
-	//
-	// A section is matched to the artifact it names, so upgrading a plugin
-	// changes its digest and the operator's stated values quietly stop
-	// reaching it — the capability still runs, with its declared defaults,
-	// and nothing anywhere says why the host it used to connect to is gone.
-	// That is the failure this row exists for, and it is why the message
-	// hands over the pin to paste rather than making somebody look it up: a
-	// control that costs a lookup is a control that gets turned off, which is
-	// the argument a grant's own artifact pin already makes.
+// Per-plugin configuration, and specifically the ways it can silently
+// stop applying.
+//
+// A section is matched to the artifact it names, so upgrading a plugin
+// changes its digest and the operator's stated values quietly stop
+// reaching it — the capability still runs, with its declared defaults,
+// and nothing anywhere says why the host it used to connect to is gone.
+// That is the failure this row exists for, and it is why the message
+// hands over the pin to paste rather than making somebody look it up: a
+// control that costs a lookup is a control that gets turned off, which is
+// the argument a grant's own artifact pin already makes.
+func doctorPluginConfig(reg *registry.Registry, add func(check, status, detail string)) {
 	if cfg, err := config.LoadFile(); err == nil && len(cfg.Plugins) > 0 {
 		resolver, problems := pluginconf.Resolve(cfg, reg.Origin)
 		problems = append(problems, resolver.Check(reg)...)
@@ -395,17 +434,19 @@ func doctorReport(reg *registry.Registry) view.View {
 			}
 		}
 	}
+}
 
-	// Profiles: whether each configured connection is usable, and — for the
-	// ones that are — whether the credential they need is actually present.
-	//
-	// The second half is the one people get wrong. A profile carries no secret
-	// (Config is refused on a Secret input), so the only way a
-	// credential reaches a connection is $RTA_PROFILE_<NAME>_<INPUT>, and a
-	// profile with the destination right and that variable unset fails as an
-	// authentication error naming the role — three steps from the cause.
-	// Saying it here means an operator finds out before the call rather than
-	// from it.
+// Profiles: whether each configured connection is usable, and — for the
+// ones that are — whether the credential they need is actually present.
+//
+// The second half is the one people get wrong. A profile carries no secret
+// (Config is refused on a Secret input), so the only way a
+// credential reaches a connection is $RTA_PROFILE_<NAME>_<INPUT>, and a
+// profile with the destination right and that variable unset fails as an
+// authentication error naming the role — three steps from the cause.
+// Saying it here means an operator finds out before the call rather than
+// from it.
+func doctorProfiles(reg *registry.Registry, add func(check, status, detail string)) {
 	if cfg, err := config.Load(); err == nil && len(cfg.Profiles) > 0 {
 		problems := profile.Check(cfg, reg)
 		for _, p := range problems {
@@ -523,24 +564,28 @@ func doctorReport(reg *registry.Registry) view.View {
 			}
 		}
 	}
+}
 
-	// Theme overrides that could not be honoured — an unknown field, a
-	// malformed hex. theme.Apply already fell back to the built-in for each
-	// one before this row is even reached; what this says is why the color
-	// on screen is not the one written down. Nothing configured, or
-	// everything applied, earns no row at all — the same quiet-by-default
-	// the plugin config row above does not get, because that one also has
-	// something to say when it is entirely healthy.
+// Theme overrides that could not be honoured — an unknown field, a
+// malformed hex. theme.Apply already fell back to the built-in for each
+// one before this row is even reached; what this says is why the color
+// on screen is not the one written down. Nothing configured, or
+// everything applied, earns no row at all — the same quiet-by-default
+// the plugin config row above does not get, because that one also has
+// something to say when it is entirely healthy.
+func doctorTheme(add func(check, status, detail string)) {
 	for _, p := range themeProblems {
 		add("theme", "warn", p.String())
 	}
+}
 
-	// Which binary a plugin name actually resolved to, when more than one
-	// answered to it. Not an error — a local build in front of a packaged one
-	// is the ordinary reason, and $PATH order is what a shell would do too —
-	// but ordinary and invisible is how "why is it still running the old one"
-	// becomes an afternoon. Named here rather than on every command, for the
-	// same reason everything else about an installation is.
+// Which binary a plugin name actually resolved to, when more than one
+// answered to it. Not an error — a local build in front of a packaged one
+// is the ordinary reason, and $PATH order is what a shell would do too —
+// but ordinary and invisible is how "why is it still running the old one"
+// becomes an afternoon. Named here rather than on every command, for the
+// same reason everything else about an installation is.
+func doctorShadowedPlugins(add func(check, status, detail string)) {
 	for _, f := range pluginhost.Discover() {
 		if len(f.Shadowed) == 0 {
 			continue
@@ -552,13 +597,15 @@ func doctorReport(reg *registry.Registry) view.View {
 		add("plugin "+f.Name, "info", fmt.Sprintf("using %s; %d further %s on $PATH not used: %s",
 			f.Path, len(f.Shadowed), copies, strings.Join(f.Shadowed, ", ")))
 	}
+}
 
-	// The team's ceiling, before the grants it constrains — because a grant
-	// that has quietly stopped working is exactly what somebody runs this
-	// command about, and "your team's policy forbids it" is the answer they
-	// will not otherwise find. A malformed policy is reported as an error
-	// rather than as an absence, for the reason internal/policy is written
-	// around: a bound that reports itself without running is worse than none.
+// The team's ceiling, before the grants it constrains — because a grant
+// that has quietly stopped working is exactly what somebody runs this
+// command about, and "your team's policy forbids it" is the answer they
+// will not otherwise find. A malformed policy is reported as an error
+// rather than as an absence, for the reason internal/policy is written
+// around: a bound that reports itself without running is worse than none.
+func doctorPolicy(add func(check, status, detail string)) {
 	if ceiling, verr := grant.Ceiling(); verr != nil {
 		add("team policy", "error", verr.Message)
 	} else if !ceiling.Empty() {
@@ -592,19 +639,22 @@ func doctorReport(reg *registry.Registry) view.View {
 			" found from "+ceiling.SearchedFrom+", and no policy beside your config. "+
 			"`rta policy require` makes a missing one an error instead of silence")
 	}
+}
 
-	// The roles `grant issue` can issue, whether every line of each one
-	// parses, and how long each will really stand under the ceiling — a
-	// role that fails at issue fails when somebody is in a hurry, and a
-	// role whose eight hours are one under the starter policy's cap is a
-	// morning of re-issuing; both are findings this row moves out of that
-	// moment.
+// The roles `grant issue` can issue, whether every line of each one
+// parses, and how long each will really stand under the ceiling — a
+// role that fails at issue fails when somebody is in a hurry, and a
+// role whose eight hours are one under the starter policy's cap is a
+// morning of re-issuing; both are findings this row moves out of that
+// moment.
+func doctorRoles(add func(check, status, detail string)) {
 	if roles, verr := role.Available(); verr != nil {
 		add("roles", "error", verr.Message)
 	} else if len(roles) == 0 {
 		add("roles", "info", "none defined — a `roles:` block in your config or a policy file names what `rta grant issue` issues")
 	} else {
-		var names, broken []string
+		names := make([]string, 0, len(roles))
+		var broken []string
 		seen := map[string]int{}
 		for _, r := range roles {
 			seen[r.Name]++
@@ -624,10 +674,12 @@ func doctorReport(reg *registry.Registry) view.View {
 			add("roles", "ok", fmt.Sprintf("%d: %s (`rta grant roles`)", len(roles), strings.Join(names, ", ")))
 		}
 	}
+}
 
-	// Standing agent permissions. Worth a line of its own: a grant issued
-	// yesterday and forgotten is exactly the thing a health check should
-	// surface, and the answer is usually "none".
+// Standing agent permissions. Worth a line of its own: a grant issued
+// yesterday and forgotten is exactly the thing a health check should
+// surface, and the answer is usually "none".
+func doctorGrants(add func(check, status, detail string)) {
 	if grants, verr := grant.Load(); verr != nil {
 		add("agent grants", "error", verr.Message)
 	} else if len(grants) == 0 && grant.Legacy() {
@@ -704,11 +756,13 @@ func doctorReport(reg *registry.Registry) view.View {
 				len(stale), strings.Join(stale, ", ")))
 		}
 	}
+}
 
-	// A lock overrides every grant above it, and it used to be visible on
-	// `rta lock list` and nowhere else. It belongs here for the reason the
-	// grants do: one placed during an incident and forgotten is exactly what
-	// a health check exists to surface, and the answer is usually "none".
+// A lock overrides every grant above it, and it used to be visible on
+// `rta lock list` and nowhere else. It belongs here for the reason the
+// grants do: one placed during an incident and forgotten is exactly what
+// a health check exists to surface, and the answer is usually "none".
+func doctorLocks(add func(check, status, detail string)) {
 	if locks, verr := lockdown.Load(); verr != nil {
 		add("locks", "error", verr.Message)
 	} else if len(locks) == 0 {
@@ -725,11 +779,13 @@ func doctorReport(reg *registry.Registry) view.View {
 		add("locks", "info", fmt.Sprintf("%d standing: %s — every call from each is refused, "+
 			"whatever it holds (`rta lock list` says why)", len(locks), strings.Join(named, ", ")))
 	}
+}
 
-	// Whether issuing a grant costs a secret an agent cannot inherit. An info
-	// row when off rather than a warn: ungated issuance is the default and a
-	// legitimate posture — the row exists so the stronger one is discoverable
-	// exactly where an operator already reads about grants.
+// Whether issuing a grant costs a secret an agent cannot inherit. An info
+// row when off rather than a warn: ungated issuance is the default and a
+// legitimate posture — the row exists so the stronger one is discoverable
+// exactly where an operator already reads about grants.
+func doctorGuard(add func(check, status, detail string)) {
 	if guard.Enabled() && guard.Fingerprint() == "" {
 		// Enabled is a stat, Fingerprint needs a parse: together they mean
 		// the state file exists and does not read. Authorization already
@@ -748,11 +804,13 @@ func doctorReport(reg *registry.Registry) view.View {
 		add("grant guard", "info", "off — anything that can run commands as you can issue a grant; "+
 			"`rta grant guard on` puts a passphrase in front of that")
 	}
+}
 
-	// What an MCP server launched from this shell would inherit. The store is
-	// encrypted, but encryption only helps while the key is somewhere the
-	// reader is not — and a server started from here starts with this
-	// environment.
+// What an MCP server launched from this shell would inherit. The store is
+// encrypted, but encryption only helps while the key is somewhere the
+// reader is not — and a server started from here starts with this
+// environment.
+func doctorStore(add func(check, status, detail string)) {
 	if unlockable, from := kv.Unlockable(); from == "no store" {
 		add("kv store", "ok", "none yet — `rta kv init --generate` sets one up")
 	} else if unlockable {
@@ -764,15 +822,17 @@ func doctorReport(reg *registry.Registry) view.View {
 	} else {
 		add("kv store", "ok", "no key material here — an MCP server started from this shell could not open it")
 	}
+}
 
-	// Plugin confinement. ONE row, naming the deny set and its scope.
-	//
-	// A count with a scope and an explicit "everything else is readable" is a
-	// fact somebody can act on; a per-plugin green tick would be the same
-	// information dressed as an assurance it does not carry. The confinement
-	// contract is
-	// blunt about the bound, and so is this: every attack found in the
-	// confinement review succeeds identically on a confined macOS host.
+// Plugin confinement. ONE row, naming the deny set and its scope.
+//
+// A count with a scope and an explicit "everything else is readable" is a
+// fact somebody can act on; a per-plugin green tick would be the same
+// information dressed as an assurance it does not carry. The confinement
+// contract is
+// blunt about the bound, and so is this: every attack found in the
+// confinement review succeeds identically on a confined macOS host.
+func doctorConfinement(add func(check, status, detail string)) {
 	deny, denyErr := pluginhost.Resolve()
 	switch {
 	case denyErr != nil:
@@ -796,9 +856,11 @@ func doctorReport(reg *registry.Registry) view.View {
 				"own directory cannot verify a certificate",
 			len(deny.NoAccess), len(deny.NoRead), len(deny.NoMove)))
 	}
+}
 
-	// SDK plugins actually loaded, and anything about them worth knowing but
-	// not worth printing before every command.
+// SDK plugins actually loaded, and anything about them worth knowing but
+// not worth printing before every command.
+func doctorLoadedPlugins(add func(check, status, detail string)) {
 	if plugins := loadedPlugins; len(plugins) > 0 {
 		trust := plugintrust.Load()
 		for _, p := range plugins {
@@ -839,10 +901,12 @@ func doctorReport(reg *registry.Registry) view.View {
 			add("plugin "+p.Declared.Name, status, detail)
 		}
 	}
+}
 
-	// Found on $PATH and not run, because nothing said this artifact may.
-	// A warning rather than info: it is a plugin the operator installed and
-	// is not getting, and the fix is one command.
+// Found on $PATH and not run, because nothing said this artifact may.
+// A warning rather than info: it is a plugin the operator installed and
+// is not getting, and the fix is one command.
+func doctorUntrustedPlugins(add func(check, status, detail string)) {
 	for _, u := range untrustedPluginsFound {
 		if u.Taken {
 			add("plugin "+u.Name, "warn", fmt.Sprintf(
@@ -860,10 +924,12 @@ func doctorReport(reg *registry.Registry) view.View {
 		add("plugin trust", "ok", plural(n, "artifact", "artifacts")+
 			" approved to run — `rta plugin untrust <name>` takes one back")
 	}
+}
 
-	// What agents have been doing, and whether the record of it is intact.
-	// A ledger is a promise, and an unverified promise is the
-	// kind of thing somebody builds a policy on.
+// What agents have been doing, and whether the record of it is intact.
+// A ledger is a promise, and an unverified promise is the
+// kind of thing somebody builds a policy on.
+func doctorRecord(add func(check, status, detail string)) {
 	rep, lerr := agentlog.Verify()
 	// Its own row, whatever else the record says about itself. A file carrying
 	// a segment's name and a number rta has never rolled was put there by
@@ -909,9 +975,12 @@ func doctorReport(reg *registry.Registry) view.View {
 		}
 		add("agent log", "ok", note+" — `rta agent log` reads it")
 	}
-	// And what is waiting on the operator right now. This is the one check
-	// with a clock on it: a parked call expires, so a person who learns
-	// about it from a health check has minutes, not days.
+}
+
+// And what is waiting on the operator right now. This is the one check
+// with a clock on it: a parked call expires, so a person who learns
+// about it from a health check has minutes, not days.
+func doctorConsent(add func(check, status, detail string)) {
 	if q, cerr := consent.Scan(); cerr == nil {
 		if waiting := q.Waiting; len(waiting) > 0 {
 			soonest := waiting[0]
@@ -941,11 +1010,13 @@ func doctorReport(reg *registry.Registry) view.View {
 				plural(n, "request", "requests"), verb, strings.Join(q.Tampered, ", ")))
 		}
 	}
+}
 
-	// Provenance for managed plugins: what rta.lock recorded
-	// against what the store and the loaded processes actually say. Every
-	// mismatch here is a fact about drift, stated rather than repaired —
-	// the lockfile records, it never authorizes.
+// Provenance for managed plugins: what rta.lock recorded
+// against what the store and the loaded processes actually say. Every
+// mismatch here is a fact about drift, stated rather than repaired —
+// the lockfile records, it never authorizes.
+func doctorManagedPlugins(add func(check, status, detail string)) {
 	for _, e := range plugindist.ReadLock() {
 		short := e.Digest
 		if len(short) > 12 {
@@ -983,8 +1054,10 @@ func doctorReport(reg *registry.Registry) view.View {
 		}
 		add(name, status, detail)
 	}
+}
 
-	// MCP clients we can install into.
+// MCP clients we can install into.
+func doctorClients(add func(check, status, detail string)) {
 	if _, err := exec.LookPath("claude"); err == nil {
 		add("claude CLI", "ok", "found — `rta mcp install claude` available")
 	} else {
@@ -995,9 +1068,6 @@ func doctorReport(reg *registry.Registry) view.View {
 	for _, r := range clientRows(claudeInstalled == nil) {
 		add(r[0], r[1], r[2])
 	}
-
-	t.Total = len(t.Rows)
-	return t
 }
 
 // pick is plural without the count, for the second and third agreement in a
