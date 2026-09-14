@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.1](https://github.com/this-is-tobi/rta/compare/v0.20.0...v0.20.1) (2026-09-14)
+
+
+### Dependencies
+
+* **docker:** the full image builds from the index's newest commit ([6c648a1](https://github.com/this-is-tobi/rta/commit/6c648a160a5601e233cfce4f7a850f623aac8003))
+
 ## [0.20.0](https://github.com/this-is-tobi/rta/compare/v0.19.0...v0.20.0) (2026-09-14)
 
 
