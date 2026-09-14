@@ -7,11 +7,15 @@
 #
 # This closes that the same direction rta-plugins' own bump-rta.yml closes
 # the opposite one: poll, diff, open a pull request, let CI be the review.
-# It only ever rewrites a version already named on the line — never adds a
-# plugin that is not already there, never removes one that is. Widening the
-# allowlist stays the by-hand edit the Dockerfile's own comment describes;
-# this just stops the versions already on it from going stale for want of
-# anyone remembering to look.
+# The names come from the official index — index/<name>.yaml in rta-plugins,
+# the manifests `rta plugin index add official` reads — so a plugin that
+# enters the index joins this image on the next run, at the version its
+# manifest names, and one already here follows its releases. A name on the
+# line that the index does not know is kept exactly as written: an image
+# built from this file may carry more than the official set, and that
+# addition is somebody's to make and to maintain. Nothing leaves the line but
+# by hand — a name that dropped out of the index is kept and called out,
+# because a fetch that came back short must not narrow the image on its own.
 #
 # Polling, on purpose, and the same reasoning as bump-rta.yml: reading
 # rta-plugins' public releases needs no credential at all, and a push from
@@ -63,7 +67,7 @@ jobs:
       with:
         persist-credentials: false
 
-    - name: Find every plugin behind its newest rta-plugins release
+    - name: Build the line from the official index and what is already there
       id: target
       env:
         GH_TOKEN: ${{ github.token }}
@@ -75,44 +79,63 @@ jobs:
         fi
         echo "current: $current"
 
-        # One fetch covering every plugin, rather than one API call each —
-        # rta-plugins tags every release plugins/<name>/vX.Y.Z, so grouping
-        # by name and taking the highest with sort -V is a local operation
-        # once the list is in hand.
-        all_tags=$(gh api repos/this-is-tobi/rta-plugins/releases --paginate --jq '.[].tag_name')
+        # One manifest per plugin, one call each; the index is a dozen files
+        # and this runs twice an hour. The version is the one the manifest
+        # names, which is the tag the plugin released under; the pin resolves
+        # through that git tag, never through anything else the manifest
+        # claims.
+        declare -A want=()
+        for name in $(gh api repos/this-is-tobi/rta-plugins/contents/index --jq '.[].name' | sed -n 's/\.yaml$//p'); do
+          version=$(gh api "repos/this-is-tobi/rta-plugins/contents/index/${name}.yaml" --jq .content \
+            | base64 -d | awk '$1 == "version:" { gsub(/"/, "", $2); print $2; exit }')
+          if [ -z "$version" ]; then
+            echo "::warning::index/${name}.yaml names no version — left out of this run"; continue
+          fi
+          want[$name]="v${version}"
+        done
+        if [ "${#want[@]}" = "0" ]; then
+          echo "the official index came back empty; the line is not touched on that evidence" >&2; exit 1
+        fi
+
+        declare -A have=()
+        for spec in $current; do
+          have["${spec%%/*}"]="${spec#*/}"
+        done
 
         nl=$'\n'
-        changed=0
+        joined=""; bumped=""; kept=""
         new_line=""
-        report=""
-        for spec in $current; do
-          name="${spec%%/*}"
-          tag="${spec#*/}"
-          latest=$(printf '%s\n' "$all_tags" \
-            | grep "^plugins/${name}/v" \
-            | sed "s#^plugins/${name}/##" \
-            | sort -V | tail -1)
-          if [ -z "$latest" ]; then
-            # Nothing found for this name — left exactly as it was rather
-            # than dropped. A plugin missing from this run's fetch (a rename,
-            # an API hiccup) is not evidence it should leave the allowlist.
-            echo "::warning::no rta-plugins release found for $name — leaving $tag"
-            new_line="${new_line}${name}/${tag} "
-            continue
-          fi
-          if [ "$latest" != "$tag" ]; then
-            echo "$name: $tag -> $latest"
-            report="${report}- ${name}: \`${tag}\` → \`${latest}\`${nl}"
-            changed=1
-            new_line="${new_line}${name}/${latest} "
+        for name in $(printf '%s\n' "${!want[@]}" "${!have[@]}" | sort -u); do
+          if [ -n "${want[$name]:-}" ]; then
+            tag="${want[$name]}"
+            if [ -z "${have[$name]:-}" ]; then
+              echo "$name: joins at $tag"
+              joined="${joined}- ${name}: joins at \`${tag}\`${nl}"
+            elif [ "${have[$name]}" != "$tag" ]; then
+              echo "$name: ${have[$name]} -> $tag"
+              bumped="${bumped}- ${name}: \`${have[$name]}\` → \`${tag}\`${nl}"
+            fi
           else
-            new_line="${new_line}${name}/${tag} "
+            tag="${have[$name]}"
+            echo "$name: $tag, not in the official index, kept as written"
+            kept="${kept}- ${name}: \`${tag}\`, not in the official index, kept as written${nl}"
           fi
+          new_line="${new_line}${name}/${tag} "
         done
         new_line="${new_line% }"
 
-        if [ "$changed" = "0" ]; then
-          echo "every pin is already current"; exit 0
+        if [ "$new_line" = "$current" ]; then
+          echo "the line already matches the official index"; exit 0
+        fi
+        report=""
+        if [ -n "$joined" ]; then
+          report="${report}**Joins the image** — a plugin may shell out to a tool; check the package list in Dockerfile.full before merging:${nl}${joined}${nl}"
+        fi
+        if [ -n "$bumped" ]; then
+          report="${report}**Bumped:**${nl}${bumped}${nl}"
+        fi
+        if [ -n "$kept" ]; then
+          report="${report}**Kept, not in the official index:**${nl}${kept}${nl}"
         fi
 
         # One branch and one pull request, rewritten in place, the way
@@ -189,7 +212,7 @@ jobs:
         git push --force-with-lease="refs/heads/$BRANCH:$expected" "$remote" "$BRANCH"
         body="$(printf '%s\n\n%s' \
           "$REPORT" \
-          "Opened by the bump workflow, and rewritten by it whenever rta-plugins releases again before this merges. CI is the review: a red check here means the image no longer builds against one of these releases. Nothing was added to or removed from the allowlist — every name on this line was already there.")"
+          "Opened by the bump workflow, and rewritten by it whenever the official index moves again before this merges. CI is the review: a red check here means the image no longer builds against one of these releases. Nothing is ever removed here; a name that left the index stays on the line until a person takes it off.")"
         if [ -n "$PR" ]; then
           gh pr edit "$PR" --body "$body"
         else

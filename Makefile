@@ -184,10 +184,9 @@ size-check: ## Fail if the linux/amd64 release binary exceeds SIZE_LIMIT_MB
 # target's job: which rta-plugins tag is newest is a question for whoever runs
 # it — `gh release list --repo this-is-tobi/rta-plugins` answers it — and
 # keeping that lookup out of here is what lets the rewrite stay mechanical
-# enough to trust. Never adds or removes a name: PLUGINS is meant to be built
-# from the line already in the file, one entry bumped per entry, so widening
-# the image's plugin allowlist stays the deliberate, by-hand edit
-# Dockerfile.full's own comment describes.
+# enough to trust. Writes the whole line as given: bump-plugins.yml builds it
+# from the official index plus whatever the line already carries, and a
+# person widens it with an entry the index does not know.
 #
 # Through the environment rather than `$(PLUGINS)` in the recipe, because make
 # expands a recipe's variables as *text* into the line it hands /bin/sh: with

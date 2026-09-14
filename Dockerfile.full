@@ -40,13 +40,17 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build \
     ./cmd/rta
 
 # Every plugin is a release of github.com/this-is-tobi/rta-plugins, pinned
-# here by its own tag. This was a loop over the source tree while the plugins
-# lived beside rta; now that they release on their own, the list is the
-# decision. docs/30-boundary/20-mcp.md calls the image the plugin allowlist —
-# a plugin joins this image by somebody writing its line here, which is the
-# right amount of ceremony for widening what an agent can reach. Bumped by
-# hand; a pin that no longer resolves fails the image build in CI, not on
-# release day.
+# here by its own tag. The names are the official index — index/<name>.yaml
+# in that repository, the manifests `rta plugin index add official` reads —
+# and bump-plugins.yml keeps this line at it: a plugin that enters the index
+# joins on the next run, a version that moves is bumped, and a name written
+# here that the index does not know is kept exactly as written, so an image
+# built from this file may carry more than the official set. Nothing leaves
+# this line but by hand. docs/30-boundary/20-mcp.md calls the image the
+# plugin allowlist; for this one the allowlist is the official index, which
+# is what "every first-party plugin" above means, and the narrow image is the
+# one whose list a person writes. A pin that no longer resolves fails the
+# image build in CI, not on release day.
 #
 # `go install` names the binary after the package directory, so each is
 # renamed to the rta-plugin-<name> that discovery looks for. The stamp is the
