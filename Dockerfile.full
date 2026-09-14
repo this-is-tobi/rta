@@ -39,35 +39,72 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build \
     -o /out/rta \
     ./cmd/rta
 
-# Every plugin is a release of github.com/this-is-tobi/rta-plugins, pinned
-# here by its own tag. The names are the official index — index/<name>.yaml
-# in that repository, the manifests `rta plugin index add official` reads —
-# and bump-plugins.yml keeps this line at it: a plugin that enters the index
-# joins on the next run, a version that moves is bumped, and a name written
-# here that the index does not know is kept exactly as written, so an image
-# built from this file may carry more than the official set. Nothing leaves
-# this line but by hand. docs/30-boundary/20-mcp.md calls the image the
-# plugin allowlist; for this one the allowlist is the official index, which
-# is what "every first-party plugin" above means, and the narrow image is the
-# one whose list a person writes. A pin that no longer resolves fails the
-# image build in CI, not on release day.
+# The plugins come from indexes, installed the way anybody installs one:
+# `rta plugin index add`, then `rta plugin install`, which fetches the
+# artifact an index claims, checks its sha256 against the manifest, launches
+# it once to verify what it declares, and records the digest it computed as
+# the trust decision. The image consumes the same artifacts a person
+# downloads and verifies them the same way — no compile from source, no
+# separate trust step, nothing this file has to know about a plugin beyond
+# its name.
 #
-# `go install` names the binary after the package directory, so each is
-# renamed to the rta-plugin-<name> that discovery looks for. The stamp is the
-# tag's own version, the same value the release stamped. No GOOS/GOARCH here:
-# the stage runs on the target platform (build-docker.yml builds each
-# architecture on its own runner), and `go install` refuses GOBIN when
-# cross-compiling.
-ARG PLUGINS="cnpg/v0.1.0 docker/v0.1.0 etcd/v0.1.0 kube/v0.1.0 mariadb/v0.1.0 mysql/v0.1.0 pg/v0.1.0 qdrant/v0.1.0 s3/v0.1.0 vault/v0.1.0"
+# RTA_INDEXES is the list of indexes, space-separated, each `name[=url][@ref]`.
+# `official` needs no url, as it needs none at the command line; a ref pins
+# the index at a commit, a tag or a branch, and no ref means the tip of the
+# default branch at build time. The official entry below is pinned at a
+# commit and bump-plugins.yml moves it whenever the index changes, opening
+# the pull request that builds this image with the new state — so what ships
+# is always a stated commit of the index, never "whatever main was".
+#
+# RTA_PLUGINS narrows an index to some of its plugins: `index:name,name`,
+# space-separated per index. An index not named there contributes every
+# manifest it lists — which for the official index is what "every first-party
+# plugin" on the first line of this file means. A derived image adds an
+# index of its own, or narrows this one, with two build arguments and gets
+# the same verification path.
+#
+# Everything lands under /usr/local/lib/rta, which is RTA_DATA_DIR for this
+# stage only. At run time it is RTA_SYSTEM_DIR: the read-only root rta scans
+# after $PATH, whose trusted.json counts, and which no volume mounted over
+# /rta-home can hide. What the copy carries is the store, its bin links,
+# trusted.json and rta.lock. The clones are dropped — run-time rta reads
+# indexes from the data directory, not from here — and so are the describe
+# cache `rta plugin list` wrote and its seal key: the cache is per data
+# directory and would never be read from here, and a seal key is nothing to
+# ship world-readable. The rest is made world-readable, since the build runs
+# as root and the container does not.
+#
+# The plugins run once during this stage, so it has to execute on the
+# architecture it builds for: build-docker.yml builds each architecture on
+# its own runner.
+ARG RTA_INDEXES="official@a03c1b379563347bb1856b31cb98344fdd8fdaf4"
+ARG RTA_PLUGINS=""
 RUN set -eux; \
-    mkdir -p /out; \
-    for spec in $PLUGINS; do \
-      name="${spec%%/*}"; tag="${spec#*/}"; version="${tag#v}"; \
-      GOBIN=/out CGO_ENABLED=0 go install \
-        -trimpath -ldflags "-s -w -X main.version=${version}" \
-        "github.com/this-is-tobi/rta-plugins/plugins/${name}@${tag}"; \
-      mv "/out/${name}" "/out/rta-plugin-${name}"; \
-    done
+    export RTA_DATA_DIR=/usr/local/lib/rta RTA_CONFIG=/nonexistent/config.yaml; \
+    export PATH="/out:$PATH"; \
+    for entry in $RTA_INDEXES; do \
+      name="${entry%%[=@]*}"; rest="${entry#"$name"}"; url=""; ref=""; \
+      case "$rest" in \
+        =*@*) url="${rest#=}"; ref="${url##*@}"; url="${url%@*}" ;; \
+        =*)   url="${rest#=}" ;; \
+        @*)   ref="${rest#@}" ;; \
+        "")   ;; \
+        *)    echo "RTA_INDEXES: cannot read '$entry' (want name[=url][@ref])" >&2; exit 1 ;; \
+      esac; \
+      if [ -n "$ref" ]; then rta plugin index add "$name" $url --ref "$ref" --yes; \
+      else rta plugin index add "$name" $url --yes; fi; \
+      wanted=""; \
+      for spec in $RTA_PLUGINS; do \
+        case "$spec" in "$name":*) wanted="${spec#*:}" ;; esac; \
+      done; \
+      if [ -n "$wanted" ]; then names=$(printf '%s' "$wanted" | tr ',' ' '); \
+      else names=$(ls "$RTA_DATA_DIR/indexes/$name/index" | sed -n 's/\.yaml$//p'); fi; \
+      for plugin in $names; do rta plugin install "$name/$plugin" --yes; done; \
+    done; \
+    rta plugin list; \
+    rm -rf "$RTA_DATA_DIR/indexes" "$RTA_DATA_DIR/plugin-cache" "$RTA_DATA_DIR/plugin-cache.key" \
+      "$RTA_DATA_DIR/trusted.lock" "$RTA_DATA_DIR/plugins/rta.lock.lock"; \
+    chmod -R a+rX "$RTA_DATA_DIR"
 
 # Alpine rather than the primary image's distroless base, and that is forced
 # rather than preferred: distroless has no package manager and no shell, and
@@ -110,15 +147,20 @@ RUN apk add --no-cache \
       openssh-client \
       postgresql-client
 
-COPY --from=build /out/ /usr/local/bin/
+COPY --from=build /out/rta /usr/local/bin/rta
+COPY --from=build /usr/local/lib/rta /usr/local/lib/rta
 
 # 65532:65532 to match the primary image's nonroot user, so a state volume
 # populated by one is readable by the other and the two images can share it.
 RUN addgroup -g 65532 -S nonroot && \
     adduser -u 65532 -S -G nonroot -h /rta-home nonroot
 
+# RTA_SYSTEM_DIR is Linux's default and is stated anyway: it is the one line
+# that says where this image keeps what it installed, and why a volume on
+# /rta-home takes nothing away.
 ENV RTA_CONFIG=/rta-home/config.yaml \
     RTA_DATA_DIR=/rta-home \
+    RTA_SYSTEM_DIR=/usr/local/lib/rta \
     PATH=/usr/local/bin:/usr/bin:/bin:/sbin:/usr/sbin
 
 # Trust is baked; permission to read a credential is not, and the asymmetry is
@@ -126,10 +168,12 @@ ENV RTA_CONFIG=/rta-home/config.yaml \
 #
 # rta makes two separate decisions about a plugin (docs/40-plugins/10-plugins.md): `trust`
 # says an artifact may run, `allow` says it may read a credential location such
-# as ~/.kube/config. Trust is answered here because it is answerable here —
-# these binaries were built from this source in the stage above, and the digest
-# it pins is theirs. Nobody gains anything by being asked to re-approve an
-# artifact they just pulled as one image.
+# as ~/.kube/config. Trust was answered in the stage above, by the install
+# itself: each artifact was fetched from the index this image names, checked
+# against the index's sha256, launched once, and recorded by the digest rta
+# computed. Nobody gains anything by being asked to re-approve an artifact
+# they just pulled as one image, and the record lives in the system root,
+# where a state volume cannot hide it.
 #
 # `allow` is deliberately left alone. Whether a plugin may read *your* cluster
 # credentials is a question about your machine, not about this image, and
@@ -141,11 +185,12 @@ ENV RTA_CONFIG=/rta-home/config.yaml \
 # For the ephemeral case where no volume is mounted and the answer cannot
 # stick, docker-entrypoint.sh takes RTA_ALLOW_PLUGINS — opt-in, never on by
 # default, see that file for why the two decisions are split this way.
+#
+# `rta plugin list` here is the smoke test: every installed plugin launched
+# once more, on this base image rather than the build stage's, with the
+# system root read the way the container will read it.
 RUN set -eux; \
-    mkdir -p /rta-home; \
-    for bin in /usr/local/bin/rta-plugin-*; do \
-      rta plugin trust "${bin#/usr/local/bin/rta-plugin-}" --yes; \
-    done; \
+    install -d -m 0700 -o 65532 -g 65532 /rta-home; \
     rta plugin list; \
     chown -R 65532:65532 /rta-home
 

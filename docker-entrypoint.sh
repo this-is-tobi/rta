@@ -50,8 +50,8 @@ if [ -n "$allow" ]; then
 		every=yes
 		# Derived from what is actually in the image rather than a list
 		# repeated here, so a plugin added to the build joins this by existing.
-		names=$(find /usr/local/bin -name 'rta-plugin-*' -type f 2>/dev/null |
-			sed 's|.*/rta-plugin-||' | sort)
+		names=$(find "${RTA_SYSTEM_DIR:-/usr/local/lib/rta}/plugins/bin" -name 'rta-plugin-*' \
+			\( -type f -o -type l \) 2>/dev/null | sed 's|.*/rta-plugin-||' | sort)
 		;;
 	*)
 		names=$(printf '%s' "$allow" | tr ',' ' ')
