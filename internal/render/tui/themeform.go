@@ -97,7 +97,10 @@ func newThemeForm(existing map[string]string) *themeForm {
 		tf.inputs[key] = in
 		fields = append(fields, in)
 	}
-	tf.form = huh.NewForm(huh.NewGroup(fields...)).WithKeyMap(formKeyMap())
+	// huh's help line is off here as on every form: the footer speaks for
+	// the focused field (fieldHints), in the app's one vocabulary.
+	tf.form = huh.NewForm(huh.NewGroup(fields...)).WithKeyMap(formKeyMap()).
+		WithShowHelp(false).WithShowErrors(false)
 	return tf
 }
 

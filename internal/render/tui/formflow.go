@@ -269,8 +269,9 @@ func (m *Model) fitForm() {
 	}
 	if m.height > 0 {
 		// Panel border (2) + the blank lead-in line (1) + footer (1) + a row
-		// of slack, since huh sizes its own help line. The floor keeps a very
-		// short terminal usable rather than empty.
+		// of slack. huh draws neither help nor errors of its own here — both
+		// live in the footer — so what it is given is what the fields get.
+		// The floor keeps a very short terminal usable rather than empty.
 		m.form.form = m.form.form.WithHeight(max(m.height-5, 6))
 	}
 }

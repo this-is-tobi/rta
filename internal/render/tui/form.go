@@ -500,7 +500,17 @@ func newCapForm(c plugin.Capability, fs []plugin.Field, defaults map[string]any,
 	for _, opt := range opts {
 		opt(cf)
 	}
-	cf.form = huh.NewForm(cf.groups(fields, names)...).WithKeyMap(formKeyMap())
+	// huh's own help line is off: the footer under the frame speaks for the
+	// focused field instead (fieldHints), in the one vocabulary every other
+	// screen uses. Its error line is off with it, and not only for the
+	// vocabulary: huh reserves no footer row once help is off, so a
+	// validation message appearing under the fields grew the form by two
+	// lines into a panel drawn at a fixed height, which clipped it — a
+	// required box left blank refused the run and nothing on screen said
+	// why. The footer carries the message now (footerFor), where the height
+	// is already budgeted.
+	cf.form = huh.NewForm(cf.groups(fields, names)...).WithKeyMap(formKeyMap()).
+		WithShowHelp(false).WithShowErrors(false)
 	return cf
 }
 
