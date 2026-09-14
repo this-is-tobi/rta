@@ -1,6 +1,9 @@
 package itemstore
 
 import (
+	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -172,5 +175,27 @@ func TestNormalizeTag(t *testing.T) {
 		if got := NormalizeTag(in); got != want {
 			t.Errorf("NormalizeTag(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// The notebook is a plausible first command on a new machine, and its save
+// used to create the data directory 0755 — the directory that then holds the
+// grant file, the seal key and the record. Owner-only, through
+// paths.EnsureData, whatever writes first.
+func TestSaveCreatesAnOwnerOnlyDataDirectory(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission bits do not apply")
+	}
+	data := filepath.Join(t.TempDir(), "share", "rta")
+	t.Setenv("RTA_DATA_DIR", data)
+	if err := Save("probe.json", "probe", Store{}); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o700 {
+		t.Errorf("Save created %s with mode %04o, want 0700", data, perm)
 	}
 }

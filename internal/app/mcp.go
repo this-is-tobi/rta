@@ -68,13 +68,12 @@ func newMCPCommand(reg *registry.Registry, version string, opts *globalOpts) *co
 // lazily, on the first record write — which is the first call an agent makes.
 // Without the MkdirAll a freshly started server reports not ready forever: the
 // orchestrator withholds traffic, no agent calls, no call creates the
-// directory, and nothing ever changes. The mode matches the one agentlog
-// creates it with, because a directory left at 0755 here is one `rta doctor`
-// reports on later.
+// directory, and nothing ever changes. paths.EnsureData is the one creator,
+// so the mode is the same one every other writer would have used.
 func recordWritable() error {
-	dir := paths.Data()
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("the data directory could not be created, so nothing an agent does can be recorded (%s): %v", dir, err)
+	dir, err := paths.EnsureData()
+	if err != nil {
+		return fmt.Errorf("the data directory could not be created, so nothing an agent does can be recorded (%s): %w", dir, err)
 	}
 	probe := filepath.Join(dir, ".readyz")
 	f, err := os.OpenFile(probe, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)

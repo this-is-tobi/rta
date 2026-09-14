@@ -268,7 +268,10 @@ func addIndex(ctx context.Context, name, url string, dryRun bool) *view.Error {
 	if dryRun {
 		return nil
 	}
-	if err := os.MkdirAll(indexesDir(), 0o755); err != nil {
+	if _, err := paths.EnsureData(); err != nil {
+		return view.Errorf("plugin.index.add", "%v", err)
+	}
+	if err := os.MkdirAll(indexesDir(), 0o700); err != nil {
 		return view.Errorf("plugin.index.add", "%v", err)
 	}
 	cmd := gitCommand(ctx, "clone", "--quiet", "--", url, dir)

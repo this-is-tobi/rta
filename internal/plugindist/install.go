@@ -96,7 +96,10 @@ func installFrom(ctx context.Context, listed Listed, stderr io.Writer, dryRun bo
 	// Staging lives beside the store so the final rename is atomic — and in a
 	// dot-directory so a crash leaves nothing a directory listing mistakes
 	// for an installed plugin.
-	if err := os.MkdirAll(filepath.Join(paths.Data(), "plugins"), 0o755); err != nil {
+	if _, err := paths.EnsureData(); err != nil {
+		return Report{}, view.Errorf("plugin.install.place", "%v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(paths.Data(), "plugins"), 0o700); err != nil {
 		return Report{}, view.Errorf("plugin.install.place", "%v", err)
 	}
 	staging, err := os.MkdirTemp(filepath.Join(paths.Data(), "plugins"), ".staging-*")

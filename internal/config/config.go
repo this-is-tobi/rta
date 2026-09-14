@@ -360,7 +360,12 @@ func Write(cfg Config) error {
 // `config.invalid` on every subsequent run.
 func write(cfg Config) error {
 	path := Path()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	// Owner-only, the same as the data directory: this directory holds the
+	// names of every environment, the `secrets:` references that point at
+	// them, and remotes.yaml beside it — and plugin confinement already
+	// denies it to plugins for exactly that reason (internal/pluginhost's
+	// tier1). An existing directory keeps whatever mode it has.
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return view.Errorf("config.mkdir", "creating %s: %v", filepath.Dir(path), err)
 	}
 	data, err := yaml.Marshal(cfg)

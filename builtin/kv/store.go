@@ -16,6 +16,7 @@ import (
 	"github.com/this-is-tobi/rta/builtin/internal/itemstore"
 	"github.com/this-is-tobi/rta/internal/atomicfile"
 	"github.com/this-is-tobi/rta/internal/filelock"
+	"github.com/this-is-tobi/rta/internal/paths"
 	"github.com/this-is-tobi/rta/internal/stdio"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -360,8 +361,7 @@ func saveTo(s store, recipients []age.Recipient, specs []string) *view.Error {
 }
 
 func writeAtomic(data []byte) *view.Error {
-	dir := itemstore.DataDir()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if dir, err := paths.EnsureData(); err != nil {
 		return view.Errorf("kv.store.mkdir", "creating %s: %v", dir, err)
 	}
 	// 0600, applied before the file exists under its real name: the

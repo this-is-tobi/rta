@@ -149,8 +149,8 @@ func Lock(file string) (release func(), err error) {
 // Save writes the store atomically, so a crash mid-write cannot leave a
 // half-written task list behind. 0600: it is one user's notes.
 func Save(file, ns string, s Store) error {
-	dir := dataDir()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	dir, err := paths.EnsureData()
+	if err != nil {
 		return view.Errorf(ns+".store.mkdir", "creating %s: %v", dir, err)
 	}
 	data, err := json.MarshalIndent(s, "", "  ")

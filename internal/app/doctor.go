@@ -323,11 +323,15 @@ func doctorReport(reg *registry.Registry) view.View {
 
 	// Where the state lives, and who else on this machine can list it. Every
 	// file inside — grants, the record and its key, consent requests, the
-	// presence files — is written owner-only, but the directory itself was
-	// created 0755 until 0.11.0, and creating it tighter only helps a machine
-	// that has not run rta yet. On one that has, the names of every session,
-	// parked request and record segment are listable by any account, and
-	// this row is the only thing that says so.
+	// presence files — is written owner-only, and paths.EnsureData creates
+	// the directory 0700. It did not always: six writers created it 0755
+	// through MkdirAll's parent creation until EnsureData became the one
+	// creator, so a machine whose first rta command was `note add` or `kv
+	// init` has a wider directory than one that started with a grant, and
+	// tightening the creator only helps a machine that has not run rta yet.
+	// On one that has, the names of every session, parked request and record
+	// segment are listable by any account, and this row is the only thing
+	// that says so.
 	dataDir := paths.Data()
 	switch info, err := os.Stat(dataDir); {
 	case err != nil:

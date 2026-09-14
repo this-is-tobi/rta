@@ -73,7 +73,13 @@ const maxToken = 1 << 10
 // willing to queue: reaching it is an honest failure — somebody else is
 // working — where breaking in would be a silently lost write.
 func Acquire(path string, stale, retry, timeout time.Duration) (release func(), err error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	// 0700, not 0755: a lock lives beside the file it protects, and every
+	// file this package guards is rta's own — the data directory, the config
+	// directory. When the lock is the first thing to create that directory
+	// (the notebook takes its lock before its first save), this line decides
+	// the directory's mode for the life of the machine, and it used to decide
+	// it wider than paths.EnsureData does.
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, fmt.Errorf("creating %s: %w", filepath.Dir(path), err)
 	}
 	mine, err := token()
