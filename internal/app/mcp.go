@@ -254,7 +254,7 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				// address actually bound, which is the real one rather than the
 				// ":0" an operator or a test asked for.
 				var err error
-				ln, err = net.Listen("tcp", httpAddr)
+				ln, err = (&net.ListenConfig{}).Listen(cmd.Context(), "tcp", httpAddr)
 				if err != nil {
 					return fmt.Errorf("listening on the --http address: %w", err)
 				}
@@ -270,7 +270,7 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 					// a hard failure rather than a warning — an operator who
 					// asked for probes and silently got none would find out
 					// from an orchestrator that never marked the pod ready.
-					observeLn, err = net.Listen("tcp", observeAddr)
+					observeLn, err = (&net.ListenConfig{}).Listen(cmd.Context(), "tcp", observeAddr)
 					if err != nil {
 						return fmt.Errorf("listening on the --observe address: %w", err)
 					}

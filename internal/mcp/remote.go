@@ -82,6 +82,14 @@ type RemoteOptions struct {
 // defaultShutdownGrace is RemoteOptions.ShutdownGrace's value when unset.
 const defaultShutdownGrace = 10 * time.Second
 
+// maxRequestBody bounds one request on the MCP listener. It is the SDK's own
+// default, stated here rather than inherited: a tool call's arguments are a
+// JSON object a schema already bounds in shape, and 4 MiB is past anything a
+// legitimate call carries — a default a future SDK release could widen for
+// its own reasons should not widen this listener's exposure without a line
+// in this file changing.
+const maxRequestBody = 4 << 20
+
 func Serve(ctx context.Context, server *sdk.Server, ln net.Listener, opts RemoteOptions) error {
 	if opts.Verifier == nil {
 		return errors.New("mcp: Serve requires a Verifier — refusing to open an unauthenticated listener")
@@ -90,7 +98,8 @@ func Serve(ctx context.Context, server *sdk.Server, ln net.Listener, opts Remote
 	if grace <= 0 {
 		grace = defaultShutdownGrace
 	}
-	handler := sdk.NewStreamableHTTPHandler(func(*http.Request) *sdk.Server { return server }, nil)
+	handler := sdk.NewStreamableHTTPHandler(func(*http.Request) *sdk.Server { return server },
+		&sdk.StreamableHTTPOptions{MaxRequestBodyBytes: maxRequestBody})
 	verifier := slowFailures(opts.Verifier, newBackoff(bearerFree, bearerWindow, bearerStep, bearerMax))
 	authed := auth.RequireBearerToken(verifier, &auth.RequireBearerTokenOptions{
 		// Static tokens have no per-token expiry of their own — they are
