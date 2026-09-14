@@ -17,6 +17,7 @@ import (
 
 	"github.com/this-is-tobi/rta/internal/atomicfile"
 	"github.com/this-is-tobi/rta/internal/filelock"
+	"github.com/this-is-tobi/rta/internal/paths"
 	"github.com/this-is-tobi/rta/internal/yamlguard"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -160,15 +161,7 @@ func (c Config) TrustedDashboard() Dashboard {
 
 // Path returns the config file location. RTA_CONFIG overrides it (tests,
 // portable setups).
-func Path() string {
-	if p := os.Getenv("RTA_CONFIG"); p != "" {
-		return p
-	}
-	if base, err := os.UserConfigDir(); err == nil {
-		return filepath.Join(base, "rta", "config.yaml")
-	}
-	return filepath.Join(".", ".rta.yaml")
-}
+func Path() string { return paths.ConfigFile() }
 
 // parseHint turns the YAML parser's own message into a next step.
 //

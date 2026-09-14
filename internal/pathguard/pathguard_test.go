@@ -1,6 +1,7 @@
 package pathguard
 
 import (
+	"github.com/this-is-tobi/rta/internal/paths"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -493,5 +494,84 @@ func TestAPathThatDoesNotExistYetStillResolves(t *testing.T) {
 	}
 	if _, verr := g.Check("out", filepath.Join(root, "nope", "deeper", "report.md")); verr != nil {
 		t.Errorf("a path that does not exist yet was refused: %v", verr)
+	}
+}
+
+// rta's own configuration is denied with its state. config.yaml names every
+// environment an operator has, remotes.yaml beside it every server they
+// operate, and plugin confinement has denied both to plugins from the start
+// — this gate denied only the data directory, so an operator serving from
+// their home directory had put the inventory an ungranted agent is refused
+// one fs_tree away.
+func TestRtasOwnConfigDirectoryIsRefused(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("RTA_DATA_DIR", filepath.Join(t.TempDir(), "data"))
+	t.Setenv("RTA_CONFIG", "")
+	// The user's config directory, under the root: XDG for Linux, HOME for
+	// the platforms that derive it from there.
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(root, "xdg"))
+	t.Setenv("HOME", root)
+	own := paths.OwnConfigDir()
+	if own == "" || !strings.HasPrefix(own, root) {
+		t.Skipf("the user's config directory (%q) did not land under the root on this platform", own)
+	}
+	if err := os.MkdirAll(own, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"config.yaml", "remotes.yaml"} {
+		if err := os.WriteFile(filepath.Join(own, name), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	elsewhere := filepath.Join(root, "notes.txt")
+	if err := os.WriteFile(elsewhere, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	g, err := New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"config.yaml", "remotes.yaml"} {
+		if _, verr := g.Check("path", filepath.Join(own, name)); verr == nil || verr.Code != "core.mcp.path.protected" {
+			t.Errorf("%s in rta's config directory was allowed (%v)", name, verr)
+		}
+	}
+	if _, verr := g.Check("path", elsewhere); verr != nil {
+		t.Errorf("a file beside the config directory was refused: %v", verr)
+	}
+}
+
+// A config file named by RTA_CONFIG can sit anywhere, including inside the
+// root — the container recipe puts it in the data directory, a project might
+// carry one — so its directory is not denied: that could be the root itself,
+// and a gate that refuses every path is a server nobody can use. The file
+// is, and so is the remotes.yaml rta reads beside it.
+func TestAnExplicitConfigFileIsRefusedWithoutTakingItsDirectory(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("RTA_DATA_DIR", filepath.Join(t.TempDir(), "data"))
+	proj := filepath.Join(root, "proj")
+	if err := os.MkdirAll(proj, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"rta.yaml", "remotes.yaml", "README.md"} {
+		if err := os.WriteFile(filepath.Join(proj, name), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("RTA_CONFIG", filepath.Join(proj, "rta.yaml"))
+	g, err := New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"rta.yaml", "remotes.yaml"} {
+		if _, verr := g.Check("path", filepath.Join(proj, name)); verr == nil || verr.Code != "core.mcp.path.protected" {
+			t.Errorf("%s was allowed (%v)", name, verr)
+		}
+	}
+	if _, verr := g.Check("path", filepath.Join(proj, "README.md")); verr != nil {
+		t.Errorf("a sibling of the config file was refused with it: %v", verr)
+	}
+	if _, verr := g.Check("path", proj); verr != nil {
+		t.Errorf("the config file's directory was refused with it: %v", verr)
 	}
 }

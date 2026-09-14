@@ -54,13 +54,21 @@ type Guard struct {
 // /var/x on macOS is /private/var/x underneath, and comparing a resolved
 // candidate against an unresolved root would refuse everything.
 //
-// paths.Data() is refused even when it sits inside a root, and that is the
-// one denylist entry. It holds the age identity that unlocks the store, and
-// no argument a caller sends should ever name it — a `read` capability that
-// hashes it or reports its size is answering a question about the key to
-// every secret on the machine. It is not covered by the root rule because an
-// operator who starts the server from their home directory has, without
-// meaning to, put it back in scope.
+// paths.Data() is refused even when it sits inside a root. It holds the age
+// identity that unlocks the store, and no argument a caller sends should
+// ever name it — a `read` capability that hashes it or reports its size is
+// answering a question about the key to every secret on the machine. It is
+// not covered by the root rule because an operator who starts the server
+// from their home directory has, without meaning to, put it back in scope.
+//
+// rta's configuration is refused with it (configDenied). Plugin confinement
+// has denied both to plugins from its first commit (internal/pluginhost's
+// tier1) and this gate denied only the first: config.yaml names every
+// environment an operator has and the `secrets:` references that point at
+// them, remotes.yaml beside it names every server they operate, and the
+// refusal that keeps an agent from learning a profile name by being refused
+// (internal/mcp's ungranted) was one `fs_tree ~/.config` away from being
+// undone.
 func New(roots ...string) (*Guard, error) {
 	g := &Guard{}
 	for _, r := range roots {
@@ -73,10 +81,30 @@ func New(roots ...string) (*Guard, error) {
 	if len(g.roots) == 0 {
 		return nil, fmt.Errorf("a guard needs at least one root")
 	}
-	if d, err := resolve(paths.Data()); err == nil {
-		g.denied = append(g.denied, d)
+	for _, own := range append([]string{paths.Data()}, configDenied()...) {
+		if d, err := resolve(own); err == nil {
+			g.denied = append(g.denied, d)
+		}
 	}
 	return g, nil
+}
+
+// configDenied is what of rta's configuration a caller may never name, and
+// the shape follows where the file is.
+//
+// rta's own directory under the user's config directory is denied whole:
+// everything in it is rta's. A file named by RTA_CONFIG can sit anywhere —
+// inside a project that is also the root, in the container recipe's data
+// directory — so denying its directory could deny the root itself and refuse
+// every path; the file and the remotes.yaml rta reads beside it are denied
+// instead. The ./.rta.yaml fallback gets the same file-level treatment, for
+// the same reason: its directory is the working directory.
+func configDenied() []string {
+	file := paths.ConfigFile()
+	if own := paths.OwnConfigDir(); own != "" && within(own, file) {
+		return []string{own}
+	}
+	return []string{file, filepath.Join(filepath.Dir(file), "remotes.yaml")}
 }
 
 // Roots reports what this guard allows, for a message that has to say so.
@@ -119,9 +147,10 @@ func (g *Guard) Check(field, raw string) (string, *view.Error) {
 	for _, d := range g.denied {
 		if inside(d, abs) {
 			return "", view.Errorf("core.mcp.path.protected",
-				"%s: %q is inside rta's own data directory", field, raw).
-				WithHint("that is where the key to the secret store lives; nothing reachable " +
-					"from an agent may name it, whatever the capability would have done with it")
+				"%s: %q is rta's own state or configuration", field, raw).
+				WithHint("the data directory holds the key to the secret store and the configuration " +
+					"names every environment and server; nothing reachable from an agent may name " +
+					"either, whatever the capability would have done with it")
 		}
 	}
 	for _, r := range g.roots {
