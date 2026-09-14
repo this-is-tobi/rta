@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 
+	huh "charm.land/huh/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
@@ -338,17 +339,31 @@ func (m Model) footerItems(screen mode) []hintItem {
 			item(bindBack), item(bindQuit),
 		}
 	case modeForm:
-		return []hintItem{
+		var hints []hintItem
+		if m.form != nil {
+			hints = fieldHints(m.form.form, len(m.form.fields), m.form.completes)
+		}
+		return append(hints,
 			labelled(bindOpen, "next"), item(bindFastSubmit), labelled(bindBack, "cancel"),
-		}
+		)
 	case modeTheme:
-		return []hintItem{
+		var hints []hintItem
+		if m.themeForm != nil {
+			// Every box in the theme editor completes — the palette names
+			// and the current values — so the predicate is a constant.
+			hints = fieldHints(m.themeForm.form, len(themeFieldOrder), func(*huh.Input) bool { return true })
+		}
+		return append(hints,
 			labelled(bindOpen, "next/save"), item(bindFastSubmit), labelled(bindBack, "cancel"),
-		}
+		)
 	case modeCopyPick:
-		return []hintItem{
-			labelled(bindOpen, "copy"), item(bindFastSubmit), labelled(bindBack, "cancel"),
+		var hints []hintItem
+		if m.copyPick != nil {
+			hints = fieldHints(m.copyPick.form, 1, nil)
 		}
+		return append(hints,
+			labelled(bindOpen, "copy"), item(bindFastSubmit), labelled(bindBack, "cancel"),
+		)
 	case modeRunning:
 		return []hintItem{
 			alias(labelled(bindBack, "leave it running"), "q"),
@@ -394,6 +409,21 @@ func (m Model) footerFor(screen mode) string {
 		)
 	}
 	items := m.footerItems(screen)
+	// A form's validation errors, in the bar rather than under the fields.
+	// huh's own error line is off (form.go says why: it grew the form into a
+	// clipped panel), and this is where the message lands instead — beside
+	// the key that was just pressed, styled as the refusal it is, and never
+	// moving the fields it is about.
+	if screen == m.mode {
+		bad := theme.BadText
+		for _, err := range m.formErrors(screen) {
+			label := err.Error()
+			if m.width > 0 {
+				label = ansi.Truncate(label, max(m.width-3, 8), "…")
+			}
+			items = append(items, hintItem{display: "✗", label: label, rank: rankAction, style: &bad})
+		}
+	}
 	if m.flash != "" {
 		// Packed with everything else rather than appended after it, which is
 		// the whole fix: it used to be glued on past the width fitHintBar had
@@ -418,4 +448,24 @@ func (m Model) footerFor(screen mode) string {
 		items = append(items, hintItem{display: "✓", label: flash, rank: rankAction, style: &good})
 	}
 	return fitHintBar(m.width, footerMaxLines, items...)
+}
+
+// formErrors is what the form on screen refuses to accept right now: huh's
+// per-field validation messages, for the footer to show.
+func (m Model) formErrors(screen mode) []error {
+	switch screen {
+	case modeForm:
+		if m.form != nil && m.form.form != nil {
+			return m.form.form.Errors()
+		}
+	case modeTheme:
+		if m.themeForm != nil && m.themeForm.form != nil {
+			return m.themeForm.form.Errors()
+		}
+	case modeCopyPick:
+		if m.copyPick != nil && m.copyPick.form != nil {
+			return m.copyPick.form.Errors()
+		}
+	}
+	return nil
 }
