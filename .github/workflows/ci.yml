@@ -284,16 +284,16 @@ jobs:
       RUNS_ON: '["ubuntu-24.04-arm"]'
 
   # **The full image, built only when it changed.** It is a different build
-  # of a different thing: eleven plugin releases installed from rta-plugins
-  # by pinned tag, an Alpine base with real packages on it, and a `plugin
-  # trust` per plugin at build time. build-docker above exercises none of
-  # that, so a break in it — a pin that no longer resolves, above all — can
-  # only be caught by building it.
+  # of a different thing: every plugin the official index lists, installed
+  # from the index at a pinned commit with `rta plugin install`, on an Alpine
+  # base with real packages on it. build-docker above exercises none of
+  # that, so a break in it — an artifact the index claims that no longer
+  # verifies, above all — can only be caught by building it.
   #
   # Building it on every pull request cost eleven module builds per
   # architecture to catch a change almost none of them make, so for a while
   # nothing built it and whoever moved a pin owed a docker-full.yml run by
-  # hand. Now bump-plugins.yml moves the pins on a schedule, and a pull
+  # hand. Now bump-plugins.yml moves the pin on a schedule, and a pull
   # request nobody built must not merge on trust, so the build is back for
   # exactly the pull requests that touch Dockerfile.full — the `changes` job
   # says which — and skipped, at no cost, for every other.
