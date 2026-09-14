@@ -14,12 +14,12 @@ cores  14 physical, 14 logical
 usage  62.5%
 ```
 
-Every capability works the same way, and there are 101 of them in the default build:
+Every capability works the same way — `rta explain` lists all of them:
 
 ```bash
 rta sys overview            # grouped host health
 rta net dns github.com      # DNS, with --type auto
-rta cert check example.com  # TLS chain and expiry
+rta cert expiry example.com # when its TLS certificate runs out
 rta fs usage ~/Downloads    # what is using space
 rta git status              # a repository's state, structured
 rta audit web example.com   # TLS, headers, cookies, exposure — graded
