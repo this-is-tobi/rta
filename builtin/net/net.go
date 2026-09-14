@@ -526,7 +526,8 @@ func runDNS(ctx context.Context, req plugin.Request) (view.View, error) {
 	for _, rt := range types {
 		if err := lookup(ctx, resolver, rt, name, add); err != nil {
 			// An unknown type is a usage error whatever else happens.
-			if ve, ok := err.(*view.Error); ok {
+			var ve *view.Error
+			if errors.As(err, &ve) {
 				return nil, ve
 			}
 			lastErr = err
