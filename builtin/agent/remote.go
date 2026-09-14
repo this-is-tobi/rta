@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -23,7 +24,7 @@ import (
 // remoteQueue dials one server for its parked queue, unlocking the
 // operator key first. The unlocked client comes back with it so an answer
 // can ride the same unlock — one passphrase, however many envelopes.
-func remoteQueue(req plugin.Request, server string) (operatorid.ConsentList, operatorid.Client, *view.Error) {
+func remoteQueue(ctx context.Context, req plugin.Request, server string) (operatorid.ConsentList, operatorid.Client, *view.Error) {
 	base, verr := operatorid.ServerURL(server)
 	if verr != nil {
 		return operatorid.ConsentList{}, operatorid.Client{}, verr
@@ -38,7 +39,7 @@ func remoteQueue(req plugin.Request, server string) (operatorid.ConsentList, ope
 	}
 	client := operatorid.Client{URL: base, Signer: signer}
 	var cl operatorid.ConsentList
-	if verr := client.Call(operatorid.VerbConsentList, nil, &cl); verr != nil {
+	if verr := client.Call(ctx, operatorid.VerbConsentList, nil, &cl); verr != nil {
 		return operatorid.ConsentList{}, operatorid.Client{}, verr
 	}
 	return cl, client, nil
@@ -47,12 +48,12 @@ func remoteQueue(req plugin.Request, server string) (operatorid.ConsentList, ope
 // remotePending is `agent pending --server <name>`: the server's queue,
 // rendered through the same table the local listing uses — the operator is
 // about to make the same decisions about the same rows.
-func remotePending(req plugin.Request, server string) (view.View, error) {
+func remotePending(ctx context.Context, req plugin.Request, server string) (view.View, error) {
 	if req.DryRun {
 		return view.Text{Body: "would read the parked queue from " + server + " as a signed " +
 			"operator call — the passphrase is asked first"}, nil
 	}
-	cl, _, verr := remoteQueue(req, server)
+	cl, _, verr := remoteQueue(ctx, req, server)
 	if verr != nil {
 		return nil, verr
 	}
@@ -71,12 +72,12 @@ func remotePending(req plugin.Request, server string) (view.View, error) {
 
 // remoteShow is `agent show <id> --server <name>`: the request in full, so
 // approving an outcome rather than an intention survives the distance.
-func remoteShow(req plugin.Request, server, id string) (view.View, error) {
+func remoteShow(ctx context.Context, req plugin.Request, server, id string) (view.View, error) {
 	if req.DryRun {
 		return view.Text{Body: "would read request " + id + " from " + server + " as a signed " +
 			"operator call — the passphrase is asked first"}, nil
 	}
-	cl, _, verr := remoteQueue(req, server)
+	cl, _, verr := remoteQueue(ctx, req, server)
 	if verr != nil {
 		return nil, verr
 	}
@@ -90,7 +91,7 @@ func remoteShow(req plugin.Request, server, id string) (view.View, error) {
 // remoteAnswer is `agent allow <id> --server` and `agent deny <id>
 // --server`: fetch the request, derive the digest from what this machine
 // read, and send the answer inside the signed envelope.
-func remoteAnswer(req plugin.Request, server, id string, allow bool) (view.View, error) {
+func remoteAnswer(ctx context.Context, req plugin.Request, server, id string, allow bool) (view.View, error) {
 	verb := "deny"
 	if allow {
 		verb = "allow"
@@ -109,7 +110,7 @@ func remoteAnswer(req plugin.Request, server, id string, allow bool) (view.View,
 		return view.Text{Body: "would fetch request " + id + " from " + server + " and " + verb +
 			" it as a signed operator call — the passphrase is asked first"}, nil
 	}
-	cl, client, verr := remoteQueue(req, server)
+	cl, client, verr := remoteQueue(ctx, req, server)
 	if verr != nil {
 		return nil, verr
 	}
@@ -131,7 +132,7 @@ func remoteAnswer(req plugin.Request, server, id string, allow bool) (view.View,
 	}
 	var out operatorid.AnswerOutcome
 	spec := operatorid.AnswerSpec{ID: id, Digest: digest, Allow: allow}
-	if verr := client.Call(operatorid.VerbConsentAnswer, spec, &out); verr != nil {
+	if verr := client.Call(ctx, operatorid.VerbConsentAnswer, spec, &out); verr != nil {
 		return nil, verr
 	}
 	what := strings.TrimSpace(out.Cap + " " + strings.Join(out.Scopes, " "))

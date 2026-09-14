@@ -2,6 +2,7 @@ package operator
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
@@ -251,7 +252,7 @@ func TestTheClientRefusesRedirects(t *testing.T) {
 		http.Redirect(w, r, "http://127.0.0.1:1/operator/v1/challenge", http.StatusTemporaryRedirect)
 	}))
 	defer srv.Close()
-	verr = Client{URL: srv.URL, Signer: s}.Call(VerbStatus, nil, nil)
+	verr = Client{URL: srv.URL, Signer: s}.Call(context.Background(), VerbStatus, nil, nil)
 	if verr == nil {
 		t.Fatal("a redirecting server was followed")
 	}

@@ -521,11 +521,11 @@ func profileHint(cfg config.Config, ns string) string {
 	return "no profiles are configured — see `rta profile list`"
 }
 
-func runAllow(_ context.Context, req plugin.Request, catalog func() []plugin.Capability,
+func runAllow(ctx context.Context, req plugin.Request, catalog func() []plugin.Capability,
 	artifact func(string) (string, bool),
 ) (view.View, error) {
 	if server := req.String("server"); server != "" {
-		return remoteAllow(req, server)
+		return remoteAllow(ctx, req, server)
 	}
 	// Validation and construction live in buildGrant, shared with the
 	// operator channel's prepare verb — the machine whose config, policy and
@@ -984,7 +984,7 @@ func runRenew(_ context.Context, req plugin.Request) (view.View, error) {
 // currently allowed or denied.
 func runList(ctx context.Context, req plugin.Request, catalog func() []plugin.Capability) (view.View, error) {
 	if server := req.String("server"); server != "" {
-		return remoteList(req, server)
+		return remoteList(ctx, req, server)
 	}
 	held, verr := heldTable(strings.TrimSpace(req.String("role")))
 	if verr != nil {
@@ -1349,9 +1349,9 @@ func budgetLeft(g core.Grant, now time.Time) string {
 // is supposed to be a reliable record of what they decided, not something an
 // agent can rewrite. Consent state belongs to the person at the terminal in
 // both directions, not to whoever is currently being granted or denied.
-func runRevoke(_ context.Context, req plugin.Request) (view.View, error) {
+func runRevoke(ctx context.Context, req plugin.Request) (view.View, error) {
 	if server := req.String("server"); server != "" {
-		return remoteRevoke(req, server)
+		return remoteRevoke(ctx, req, server)
 	}
 	spec := operatorid.RevokeSpec{
 		All:     req.Bool("all"),

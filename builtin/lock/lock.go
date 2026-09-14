@@ -145,10 +145,10 @@ func kindNames() []string {
 	return out
 }
 
-func runAdd(_ context.Context, req plugin.Request) (view.View, error) {
+func runAdd(ctx context.Context, req plugin.Request) (view.View, error) {
 	kind, name := req.String("kind"), req.String("name")
 	if server := req.String("server"); server != "" {
-		return remoteAdd(req, server, kind, name)
+		return remoteAdd(ctx, req, server, kind, name)
 	}
 	// Measured the way a grant's origin is, not assumed: `rta lock add`
 	// runs from any shell, and a lock placed by a script reads differently
@@ -168,9 +168,9 @@ func runAdd(_ context.Context, req plugin.Request) (view.View, error) {
 	return lockedView(l, ""), nil
 }
 
-func runList(_ context.Context, req plugin.Request) (view.View, error) {
+func runList(ctx context.Context, req plugin.Request) (view.View, error) {
 	if server := req.String("server"); server != "" {
-		return remoteList(req, server)
+		return remoteList(ctx, req, server)
 	}
 	locks, verr := lockdown.Load()
 	if verr != nil {
@@ -202,10 +202,10 @@ func suggestLockedNames(_ context.Context, req plugin.Request) []string {
 	return out
 }
 
-func runRm(_ context.Context, req plugin.Request) (view.View, error) {
+func runRm(ctx context.Context, req plugin.Request) (view.View, error) {
 	kindRaw, name := req.String("kind"), req.String("name")
 	if server := req.String("server"); server != "" {
-		return remoteRm(req, server, kindRaw, name)
+		return remoteRm(ctx, req, server, kindRaw, name)
 	}
 	kind, verr := lockdown.CheckKind(kindRaw)
 	if verr != nil {
@@ -299,7 +299,7 @@ func remoteClient(req plugin.Request, server string) (operatorid.Client, *view.E
 	return operatorid.Client{URL: base, Signer: signer}, nil
 }
 
-func remoteAdd(req plugin.Request, server, kind, name string) (view.View, error) {
+func remoteAdd(ctx context.Context, req plugin.Request, server, kind, name string) (view.View, error) {
 	// The kind is checked before the passphrase is asked: a typo should
 	// cost a retype, not an unlock.
 	if _, verr := lockdown.CheckKind(kind); verr != nil {
@@ -316,13 +316,13 @@ func remoteAdd(req plugin.Request, server, kind, name string) (view.View, error)
 	spec := operatorid.LockSpec{Kind: kind, Name: name,
 		Note: req.String("note"), TTL: strings.TrimSpace(req.String("ttl"))}
 	var placed lockdown.Lock
-	if verr := client.Call(operatorid.VerbLockAdd, spec, &placed); verr != nil {
+	if verr := client.Call(ctx, operatorid.VerbLockAdd, spec, &placed); verr != nil {
 		return nil, verr
 	}
 	return lockedView(placed, " on "+server), nil
 }
 
-func remoteList(req plugin.Request, server string) (view.View, error) {
+func remoteList(ctx context.Context, req plugin.Request, server string) (view.View, error) {
 	if req.DryRun {
 		return view.Text{Body: "would read " + server + "'s locks as a signed operator call — " +
 			"the passphrase is asked first"}, nil
@@ -332,13 +332,13 @@ func remoteList(req plugin.Request, server string) (view.View, error) {
 		return nil, verr
 	}
 	var list operatorid.LockList
-	if verr := client.Call(operatorid.VerbLockList, nil, &list); verr != nil {
+	if verr := client.Call(ctx, operatorid.VerbLockList, nil, &list); verr != nil {
 		return nil, verr
 	}
 	return lockTable(list.Locks), nil
 }
 
-func remoteRm(req plugin.Request, server, kindRaw, name string) (view.View, error) {
+func remoteRm(ctx context.Context, req plugin.Request, server, kindRaw, name string) (view.View, error) {
 	kind, verr := lockdown.CheckKind(kindRaw)
 	if verr != nil {
 		return nil, verr
@@ -352,7 +352,7 @@ func remoteRm(req plugin.Request, server, kindRaw, name string) (view.View, erro
 		return nil, verr
 	}
 	var out operatorid.LockRmOutcome
-	if verr := client.Call(operatorid.VerbLockRm, operatorid.LockRmSpec{Kind: kindRaw, Name: name}, &out); verr != nil {
+	if verr := client.Call(ctx, operatorid.VerbLockRm, operatorid.LockRmSpec{Kind: kindRaw, Name: name}, &out); verr != nil {
 		return nil, verr
 	}
 	return rmView(kind, name, out.Removed, " on "+server), nil

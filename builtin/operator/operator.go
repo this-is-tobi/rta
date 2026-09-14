@@ -105,9 +105,9 @@ func runInit(_ context.Context, req plugin.Request) (view.View, error) {
 	}}, nil
 }
 
-func runStatus(_ context.Context, req plugin.Request) (view.View, error) {
+func runStatus(ctx context.Context, req plugin.Request) (view.View, error) {
 	if server := req.String("server"); server != "" {
-		return remoteStatus(req, server)
+		return remoteStatus(ctx, req, server)
 	}
 	if !id.Exists() {
 		return view.KeyValue{Pairs: []view.Pair{
@@ -131,7 +131,7 @@ func runStatus(_ context.Context, req plugin.Request) (view.View, error) {
 	}}, nil
 }
 
-func remoteStatus(req plugin.Request, server string) (view.View, error) {
+func remoteStatus(ctx context.Context, req plugin.Request, server string) (view.View, error) {
 	base, verr := id.ServerURL(server)
 	if verr != nil {
 		return nil, verr
@@ -149,7 +149,7 @@ func remoteStatus(req plugin.Request, server string) (view.View, error) {
 		return nil, verr
 	}
 	var st id.Status
-	if verr := (id.Client{URL: base, Signer: signer}).Call(id.VerbStatus, nil, &st); verr != nil {
+	if verr := (id.Client{URL: base, Signer: signer}).Call(ctx, id.VerbStatus, nil, &st); verr != nil {
 		return nil, verr
 	}
 	guardCell := "off — anything that can run commands on that machine can issue a grant there"
