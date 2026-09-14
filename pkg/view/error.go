@@ -1,6 +1,9 @@
 package view
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
 
 // Error is the first-class error contract. Renderers show Message and a
 // styled Hint; JSON output emits it structurally; AI agents get a stable
@@ -57,7 +60,11 @@ func AsError(err error, fallbackCode string) *Error {
 	if err == nil {
 		return nil
 	}
-	if ve, ok := err.(*Error); ok {
+	// Through wrapping: a handler that annotates a view.Error with %w on its
+	// way out still returned a coded error, and a caller branching on the
+	// code must see it rather than the fallback.
+	var ve *Error
+	if errors.As(err, &ve) {
 		return ve
 	}
 	return &Error{Code: fallbackCode, Message: err.Error()}

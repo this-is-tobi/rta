@@ -69,11 +69,19 @@ func RenderTopLevelError(w io.Writer, root *cobra.Command, err error) bool {
 	}
 	// Already on the terminal — printing it again is how one problem reads as
 	// two, in two slightly different layouts.
-	if _, ok := err.(RenderedError); ok {
+	//
+	// errors.As rather than a type assertion, here and in asViewError: the
+	// exit-code contract is documented as stable, and a direct assertion made
+	// it hold only for as long as nobody wrapped a view.Error with %w on its
+	// way up — a wrapped one exited 2 and was styled by fang as a usage
+	// mistake. Nothing wraps one today; the contract should not depend on
+	// that staying true.
+	var rendered RenderedError
+	if errors.As(err, &rendered) {
 		return true
 	}
-	ve, ok := err.(*view.Error)
-	if !ok {
+	var ve *view.Error
+	if !errors.As(err, &ve) {
 		return false
 	}
 	return cli.RenderError(w, ve, topLevelRenderOptions(root)) == nil
@@ -133,18 +141,11 @@ func (e RenderedError) Error() string { return e.Err.Error() }
 func (e RenderedError) Unwrap() error { return e.Err }
 
 // asViewError unwraps to the view.Error inside err, through the Rendered
-// marker if there is one — so the exit-code contract does not depend on
-// whether a command happened to print its own error first.
+// marker and any %w wrapping on the way — so the exit-code contract does not
+// depend on whether a command happened to print its own error first, or on
+// what it wrapped it in.
 func asViewError(err error, target **view.Error) bool {
-	if r, ok := err.(RenderedError); ok {
-		*target = r.Err
-		return true
-	}
-	ve, ok := err.(*view.Error)
-	if ok {
-		*target = ve
-	}
-	return ok
+	return errors.As(err, target)
 }
 
 // NewRegistry builds the registry of built-in plugins. The catalogue itself

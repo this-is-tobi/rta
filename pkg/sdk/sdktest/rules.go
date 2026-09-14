@@ -1,6 +1,7 @@
 package sdktest
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -169,7 +170,8 @@ func checkViews(t reporter, seen []observed, cfg config) {
 			// it with whichever generic one the host reached for. A warning,
 			// because a handler is allowed to return an error from a library
 			// it does not control; it should just not hand that error on.
-			if _, ok := o.err.(*view.Error); !ok {
+			var coded *view.Error
+			if !errors.As(o.err, &coded) {
 				t.Logf("sdktest: %s: %s returned a plain error (%v); return view.Errorf so callers get a stable code",
 					RuleViews, o.cap.ID, o.err)
 			}
