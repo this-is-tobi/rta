@@ -439,7 +439,8 @@ func newPluginIndexCommand(opts *globalOpts) *cobra.Command {
 			"attaches the first-party index, the one name rta knows.",
 		RunE: groupRunE,
 	}
-	root.AddCommand(&cobra.Command{
+	var ref string
+	add := &cobra.Command{
 		Use:   "add <name> [repository]",
 		Short: "Attach an index by cloning it",
 		Long: "Clones repository as the index called name. `official` needs no\n" +
@@ -451,11 +452,11 @@ func newPluginIndexCommand(opts *globalOpts) *cobra.Command {
 			if len(args) == 2 {
 				repository = args[1]
 			}
-			addIndex := plugindist.AddIndex
+			addIndex := plugindist.AddIndexAt
 			if opts.dryRun {
-				addIndex = plugindist.PreviewAddIndex
+				addIndex = plugindist.PreviewAddIndexAt
 			}
-			if verr := addIndex(cmd.Context(), args[0], repository); verr != nil {
+			if verr := addIndex(cmd.Context(), args[0], repository, ref); verr != nil {
 				return verr
 			}
 			if repository == "" {
@@ -477,12 +478,18 @@ func newPluginIndexCommand(opts *globalOpts) *cobra.Command {
 				{Key: "attached", Value: args[0] + " (" + plugindist.OriginForDisplay(repository) + ")"},
 				{Key: "claims", Value: fmt.Sprintf("%d plugins", len(listed))},
 			}
+			if ref != "" {
+				pairs = append(pairs, view.Pair{Key: "pinned at", Value: ref + " — `index update` leaves it there"})
+			}
 			for _, verr := range bad {
 				pairs = append(pairs, view.Pair{Key: "problem", Value: verr.Message})
 			}
 			return renderView(cmd, opts, view.KeyValue{Pairs: pairs})
 		},
-	})
+	}
+	add.Flags().StringVar(&ref, "ref", "",
+		"pin the index at this commit, tag or branch; absent, it follows its default branch and `index update` moves it")
+	root.AddCommand(add)
 	root.AddCommand(&cobra.Command{
 		Use:   "list",
 		Short: "List attached indexes",
@@ -503,7 +510,7 @@ func newPluginIndexCommand(opts *globalOpts) *cobra.Command {
 			// Masked on the way out — an origin can carry a token, and a
 			// table is also `--output json` and terminal scrollback.
 			t := view.Table{Columns: []view.Column{{Name: "Index"}, {Name: "Origin"},
-				{Name: "Plugins"}, {Name: "Problems"}}}
+				{Name: "Pinned"}, {Name: "Plugins"}, {Name: "Problems"}}}
 			var problems []*view.Error
 			for _, ix := range indexes {
 				listed, bad := plugindist.Manifests(ix)
@@ -516,7 +523,11 @@ func newPluginIndexCommand(opts *globalOpts) *cobra.Command {
 					// answer than the odd one.
 					shown = "unknown"
 				}
-				t.Rows = append(t.Rows, []string{ix.Name, shown,
+				pinned := plugindist.IndexPin(cmd.Context(), ix)
+				if pinned == "" {
+					pinned = "—"
+				}
+				t.Rows = append(t.Rows, []string{ix.Name, shown, pinned,
 					fmt.Sprint(len(listed)), fmt.Sprint(len(bad))})
 			}
 			if len(problems) == 0 {
@@ -548,6 +559,21 @@ func newPluginIndexCommand(opts *globalOpts) *cobra.Command {
 			}
 			if verr := updateIndex(cmd.Context(), name); verr != nil {
 				return verr
+			}
+			// A pinned index was left where it was attached, and "updated"
+			// alone would read as "current" for it. Named here, with the ref,
+			// so nobody waits for a pin to move.
+			var pinned []string
+			for _, ix := range plugindist.Indexes() {
+				if name != "" && ix.Name != name {
+					continue
+				}
+				if ref := plugindist.IndexPin(cmd.Context(), ix); ref != "" {
+					pinned = append(pinned, ix.Name+" (pinned at "+ref+", left there)")
+				}
+			}
+			if len(pinned) > 0 {
+				body += "; " + strings.Join(pinned, ", ")
 			}
 			return renderView(cmd, opts, view.Text{Body: body})
 		},

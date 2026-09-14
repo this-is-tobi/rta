@@ -221,7 +221,16 @@ func OriginForDisplay(origin string) string {
 // uses — or empty for a name rta knows (known.go), which resolves to the one
 // repository that name is reserved for.
 func AddIndex(ctx context.Context, name, url string) *view.Error {
-	return addIndex(ctx, name, url, false)
+	return addIndex(ctx, name, url, "", false)
+}
+
+// AddIndexAt is AddIndex with the clone left at ref — a commit, a tag or a
+// branch — and recorded as pinned there: `index update` leaves it alone,
+// `index list` shows the ref. A pin says which claims were consulted, which
+// is what a reproducible build needs to state; trust still binds to the
+// digest an install computed, never to the ref.
+func AddIndexAt(ctx context.Context, name, url, ref string) *view.Error {
+	return addIndex(ctx, name, url, ref, false)
 }
 
 // PreviewAddIndex runs every check AddIndex makes before it clones anything
@@ -230,13 +239,29 @@ func AddIndex(ctx context.Context, name, url string) *view.Error {
 // What it cannot verify without the network is the one thing only a real
 // clone would prove: that the repository exists and answers.
 func PreviewAddIndex(ctx context.Context, name, url string) *view.Error {
-	return addIndex(ctx, name, url, true)
+	return addIndex(ctx, name, url, "", true)
 }
 
-func addIndex(ctx context.Context, name, url string, dryRun bool) *view.Error {
+// PreviewAddIndexAt is PreviewAddIndex for a pinned attach: the ref's
+// spelling is checked, its existence is not — only the clone knows.
+func PreviewAddIndexAt(ctx context.Context, name, url, ref string) *view.Error {
+	return addIndex(ctx, name, url, ref, true)
+}
+
+// pinRef is what a ref may look like on the way to `git checkout`: a commit,
+// a tag or a branch name, never something git would read as an option — a
+// leading dash is refused for that reason alone — and never a path
+// separator run or whitespace that would make the recorded value ambiguous.
+var pinRef = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$`)
+
+func addIndex(ctx context.Context, name, url, ref string, dryRun bool) *view.Error {
 	if !indexName.MatchString(name) {
 		return view.Errorf("plugin.index.name", "%q is not an index name", name).
 			WithHint("lowercase letters, digits and dashes, up to 32")
+	}
+	if ref != "" && !pinRef.MatchString(ref) {
+		return view.Errorf("plugin.index.ref", "%q is not a commit, tag or branch name", ref).
+			WithHint("letters, digits, dots, dashes and slashes, not starting with a dash")
 	}
 	// A known name resolves its own repository, and resolves nothing else:
 	// see known.go for why the name is reserved rather than merely defaulted.
@@ -291,6 +316,22 @@ func addIndex(ctx context.Context, name, url string, dryRun bool) *view.Error {
 		return view.Errorf("plugin.index.add", "cloning %s: %s", shown,
 			firstLine(string(out), err.Error())).
 			WithHint(gitHint("clone", "--", shown, dir) + " by hand shows the whole exchange")
+	}
+	if ref != "" {
+		// Detached rather than a branch checkout, so an `index update` that
+		// slipped past the pin check could not move it either: there is no
+		// upstream to pull. The ref is kept in the clone's own config, which
+		// travels with the directory and goes when it goes.
+		if out, err := gitCommand(ctx, "-C", dir, "checkout", "--quiet", "--detach", ref).CombinedOutput(); err != nil {
+			_ = os.RemoveAll(dir)
+			return view.Errorf("plugin.index.ref", "%s has no commit, tag or branch %q: %s",
+				OriginForDisplay(url), ref, firstLine(string(out), err.Error())).
+				WithHint("`git ls-remote " + OriginForDisplay(url) + "` lists what it has")
+		}
+		if out, err := gitCommand(ctx, "-C", dir, "config", "rta.pin", ref).CombinedOutput(); err != nil {
+			_ = os.RemoveAll(dir)
+			return view.Errorf("plugin.index.ref", "recording the pin: %s", firstLine(string(out), err.Error()))
+		}
 	}
 	// Attaching is the moment the operator typed the URL and can still fix it.
 	// Everything downstream answers a clone that is not an index in the
@@ -479,6 +520,17 @@ func PreviewUpdateIndex(ctx context.Context, name string) *view.Error {
 	return updateIndex(ctx, name, true)
 }
 
+// IndexPin is the ref an index was attached at with AddIndexAt, and "" for
+// one that follows its default branch. Read from the clone's own config,
+// where the attach recorded it.
+func IndexPin(ctx context.Context, ix Index) string {
+	out, err := gitCommand(ctx, "-C", ix.Dir, "config", "--get", "rta.pin").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
 func updateIndex(ctx context.Context, name string, dryRun bool) *view.Error {
 	targets := Indexes()
 	if name != "" {
@@ -495,6 +547,13 @@ func updateIndex(ctx context.Context, name string, dryRun bool) *view.Error {
 		return nil
 	}
 	for _, ix := range targets {
+		// A pinned index is left exactly where it was attached: the pin is
+		// the point, and moving it is a re-attach with another --ref. The
+		// command reports which ones it left, so "updated" never reads as
+		// "current" for an index that was never going to move.
+		if IndexPin(ctx, ix) != "" {
+			continue
+		}
 		cmd := gitCommand(ctx, "-C", ix.Dir, "pull", "--quiet", "--ff-only")
 		if out, err := cmd.CombinedOutput(); err != nil {
 			return view.Errorf("plugin.index.update", "updating %s: %s", ix.Name,

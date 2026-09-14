@@ -368,3 +368,73 @@ func TestSearchAnswersFromClaims(t *testing.T) {
 		t.Fatalf("safety filter = %v, want none destructive", got)
 	}
 }
+
+// A pinned index stays where it was attached: the upstream moves, `update`
+// runs, and the clone still answers with the manifests the pin named. An
+// unpinned index attached beside it moves as it always did, so the pin is a
+// property of one attach and not of updating.
+func TestAPinnedIndexStaysAtItsRefThroughUpdate(t *testing.T) {
+	testData(t)
+	repo := gitFixture(t, map[string]string{"pg": goodManifest})
+	ctx := context.Background()
+	out, err := exec.Command("git", "-C", repo, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := strings.TrimSpace(string(out))
+	writeManifests(t, repo, map[string]string{"redis": named(goodManifest, "redis")})
+	commitAll(t, repo, "add redis")
+
+	if verr := AddIndexAt(ctx, "frozen", repo, first); verr != nil {
+		t.Fatalf("add --ref: %v", verr)
+	}
+	if verr := AddIndex(ctx, "moving", repo); verr != nil {
+		t.Fatalf("add: %v", verr)
+	}
+	frozen, _ := IndexByName("frozen")
+	moving, _ := IndexByName("moving")
+	if got := IndexPin(ctx, frozen); got != first {
+		t.Fatalf("IndexPin(frozen) = %q, want %s", got, first)
+	}
+	if got := IndexPin(ctx, moving); got != "" {
+		t.Fatalf("IndexPin(moving) = %q, want none", got)
+	}
+	if listed, _ := Manifests(frozen); len(listed) != 1 {
+		t.Fatalf("the pinned clone lists %d manifests, want the one the ref had", len(listed))
+	}
+	if verr := UpdateIndex(ctx, ""); verr != nil {
+		t.Fatalf("update: %v", verr)
+	}
+	if listed, _ := Manifests(frozen); len(listed) != 1 {
+		t.Errorf("update moved the pinned index: %d manifests", len(listed))
+	}
+	if listed, _ := Manifests(moving); len(listed) != 2 {
+		t.Errorf("update did not move the unpinned index: %d manifests", len(listed))
+	}
+}
+
+// A ref the repository does not have attaches nothing, and a ref spelled
+// like an option never reaches git at all.
+func TestAPinAtNothingAttachesNothing(t *testing.T) {
+	testData(t)
+	repo := gitFixture(t, map[string]string{"pg": goodManifest})
+	ctx := context.Background()
+	if verr := AddIndexAt(ctx, "lab", repo, "no-such-ref"); verr == nil || verr.Code != "plugin.index.ref" {
+		t.Fatalf("attaching at a missing ref: %v, want plugin.index.ref", verr)
+	}
+	if _, attached := IndexByName("lab"); attached {
+		t.Fatal("a failed pinned attach left the index behind")
+	}
+	for _, bad := range []string{"--orphan", "-x", "a b", ""} {
+		verr := PreviewAddIndexAt(ctx, "lab", repo, bad)
+		if bad == "" {
+			if verr != nil {
+				t.Errorf("an empty ref is no pin, got %v", verr)
+			}
+			continue
+		}
+		if verr == nil || verr.Code != "plugin.index.ref" {
+			t.Errorf("ref %q: %v, want plugin.index.ref before any clone", bad, verr)
+		}
+	}
+}

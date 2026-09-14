@@ -128,9 +128,12 @@ An index is a git repository of `index/<name>.yaml` manifests — claims about p
 ```bash
 rta plugin index add official        # the first-party index, known by name
 rta plugin index add community https://github.com/someone/rta-plugins
+rta plugin index add frozen https://github.com/someone/rta-plugins --ref 3f2a9c1
 rta plugin index list
 rta plugin index update
 ```
+
+An index follows its default branch, and `rta plugin index update` moves it. `--ref` pins one at a commit, a tag or a branch instead: `update` leaves it where it was attached and `index list` shows the ref, so a build that must say which claims it consulted can. A pin is about the claims, not about trust — what an install records is the digest of the bytes it verified, and that binds to nothing a ref could change.
 
 **Nothing is attached until you say so**, and `official` is the one name rta knows: it resolves to [rta-plugins](https://github.com/this-is-tobi/rta-plugins), where the first-party plugins are built and released, and it is reserved for that repository — `rta plugin index add official <elsewhere>` is refused, so the word means the same thing on every machine. Any other index is attached by name and URL. rta shells out to your `git`, so your remotes, proxies and credentials keep working — with two exceptions rta owns: a repository may not be a `<transport>::<argument>` remote helper (`ext::` takes a command line, so such a URL is an execution), and it may not be fetched over `http://` or `git://`, since an index states the checksums every install verifies against.
 
