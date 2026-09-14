@@ -21,14 +21,35 @@ permissions:
   contents: read
 
 jobs:
+  # Each `uses:` below has to grant `pull-requests: write`, and none of them
+  # spends it. GitHub validates a called workflow's jobs against the calling
+  # job's grant when it sets the run up — before any `if:` is evaluated —
+  # and all three of these catalogue workflows end in a `scan-notif` job
+  # that declares `pull-requests: write` at the job level unconditionally.
+  # Without the grant the whole run ends in startup_failure: no jobs, no
+  # log, no annotation anybody reads, silently, every Monday. actionlint
+  # cannot see this — it does not resolve a remote reusable workflow's
+  # permission requests — and ci.yml carries the same grant for the same
+  # reason — cc2431e fixed the identical regression there.
+  # scan-notif is skipped outright for the two Go scans (their `if:` tests
+  # PR_NUMBER, which a scheduled run never has) and runs with every step
+  # skipped for the image scan, so the scope is granted and never spent.
+  #
+  # scan-deps carries no GITHUB_SECURITY_TAB: the callee only uploads a
+  # SARIF file when FORMAT == 'sarif', govulncheck's default FORMAT here is
+  # 'text', and govulncheck exits 0 in sarif/json mode even against a
+  # reachable vulnerability — verified directly against golang.org/x/text
+  # v0.3.0's CVE-2020-14040. Setting FORMAT: sarif to reach the Security tab
+  # would trade the weekly job's pass/fail gate for a summary that always
+  # says clean. A red weekly job is the honest signal until the catalogue
+  # runs govulncheck twice, the way rta-plugins' inline scan-deps job does.
   scan-deps:
     name: Scan dependencies
     uses: this-is-tobi/github-workflows/.github/workflows/scan-govulncheck.yml@v0
     permissions:
       contents: read
       security-events: write
-    with:
-      GITHUB_SECURITY_TAB: true
+      pull-requests: write
 
   scan-secrets:
     name: Scan secrets
@@ -36,6 +57,7 @@ jobs:
     permissions:
       contents: read
       security-events: write
+      pull-requests: write
     with:
       GITHUB_SECURITY_TAB: true
 
@@ -73,6 +95,7 @@ jobs:
       contents: read
       packages: read
       security-events: write
+      pull-requests: write
     with:
       IMAGE: ghcr.io/this-is-tobi/rta:latest
       GITHUB_SECURITY_TAB: true
