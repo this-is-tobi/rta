@@ -578,13 +578,6 @@
             },
             "annotations": {
               "type": "object"
-            },
-            "seedFromImage": {
-              "type": "boolean"
-            },
-            "seedSourcePath": {
-              "type": "string",
-              "pattern": "^/"
             }
           }
         },

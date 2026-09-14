@@ -69,14 +69,10 @@ image:
   # the rest against real infrastructure, it is the honest choice; for an instance an agent talks
   # to unattended, build a narrow image with the plugins that job needs.
   #
-  # Setting this to `true` has three effects: it lifts the refusal, it requires
-  # `serverDefaults.persistence.seedFromImage` (the full image bakes plugin *trust* into its own
-  # data directory, which the data volume would otherwise mask), and it makes
-  # `serverDefaults.plugins.allow` meaningful, since only that image's entrypoint reads it.
-  #
-  # The seeding requirement is keyed off `repository` actually naming the published full image
-  # (matched by path, so a registry mirror is still recognised), not off this flag directly - a
-  # renamed image built from the full one would not be caught by that check even with this set.
+  # Setting this to `true` has two effects: it lifts the refusal, and it makes
+  # `serverDefaults.plugins.allow` meaningful, since only that image's entrypoint reads it. The
+  # image's plugins and their trust live in its read-only system root, /usr/local/lib/rta, which
+  # the data volume never touches - nothing needs copying into the volume for them to load.
   # @section -- Image
   allowFullImage: false
 
@@ -239,8 +235,9 @@ serverDefaults:
     # -- Plugins to allow at startup, rendered as `RTA_ALLOW_PLUGINS`. Only an image using rta's
     # `docker-entrypoint.sh` reads this - the full image does, the narrow image's entrypoint is rta
     # itself and never sees it. This answers `allow` (may this plugin read a credential location),
-    # never `trust` (may this artifact run at all), which is baked into the full image and carried
-    # across restarts by the data volume.
+    # never `trust` (may this artifact run at all), which the full image carries in its read-only
+    # system root, outside the data volume. What `allow` records lands in the data volume and is
+    # carried across restarts by it.
     # @section -- Server defaults
     allow: []
     # - "kube"
@@ -379,19 +376,6 @@ serverDefaults:
     # -- Annotations for the created PersistentVolumeClaim.
     # @section -- Server defaults
     annotations: {}
-    # -- Path inside the image the seed init container copies from. This is a property of the
-    # image, not of `paths.dataDir`: both official images bake their state at /rta-home whatever
-    # the chart later mounts where.
-    # @section -- Server defaults
-    seedSourcePath: "/rta-home"
-    # -- Seed the data volume from the image's own data directory on first start, with an init
-    # container. Required with `image.allowFullImage`, and for any derived image that bakes plugin
-    # trust: that trust is recorded inside the image's data directory, which this volume mounts
-    # over and therefore hides - the plugins would be present and untrusted, which looks like the
-    # image being broken. Impossible on the narrow distroless image, which has no shell to run the
-    # copy, and unnecessary there, since it bakes nothing.
-    # @section -- Server defaults
-    seedFromImage: false
   serviceAccount:
     # -- Create a ServiceAccount for this instance. One per instance, never one shared by the
     # release: in a pod there is no caller's kubeconfig, so the pod's identity is the one a
