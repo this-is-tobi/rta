@@ -118,12 +118,6 @@ func isInt(v any) bool {
 	return false
 }
 
-func toF(v any) float64 {
-	var f float64
-	_, _ = fmt.Sscanf(fmt.Sprint(v), "%g", &f)
-	return f
-}
-
 func contains(list []string, s string) bool {
 	for _, e := range list {
 		if e == s {

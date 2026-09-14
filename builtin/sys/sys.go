@@ -1,7 +1,7 @@
 // Package sys is the built-in host telemetry plugin: CPU, memory, disk,
 // load, host info and processes. It needs zero configuration, which makes it
-// the first-contact experience and the M0 proof that one
-// capability serves every renderer.
+// the first-contact experience and the proof that one capability serves every
+// renderer.
 package sys
 
 import (
@@ -230,7 +230,7 @@ func realPartitions(ctx context.Context) ([]disk.PartitionStat, error) {
 	// is paid for exactly where it buys something.
 	all, err := disk.PartitionsWithContext(ctx, true)
 	if err != nil {
-		return kept, nil
+		return kept, nil //nolint:nilerr // the filtered list is a partial answer, and better than none for a root that vanished mid-read
 	}
 	return withRoot(kept, all), nil
 }

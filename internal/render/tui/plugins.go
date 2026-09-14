@@ -710,14 +710,6 @@ func reachLabel(row pluginRow, text string) string {
 	}
 }
 
-// pad right-pads a styled string to width, measuring the plain text.
-func pad(styled, plain string, width int) string {
-	if n := width - len(plain); n > 0 {
-		return styled + strings.Repeat(" ", n)
-	}
-	return styled + " "
-}
-
 // trustSelected takes the trust decision the pane is showing, without leaving
 // it.
 //

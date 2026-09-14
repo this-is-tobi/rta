@@ -112,9 +112,11 @@ func topLevelRenderOptions(root *cobra.Command) cli.Options {
 	}
 }
 
-// CodeConfirmRequired is returned when a destructive capability runs without
-// confirmation. Interactive confirmation (huh) lands in M1; until then --yes
-// is the only way through.
+// CodeConfirmRequired is returned when a destructive capability runs on the
+// CLI without --yes. There is no prompt on this surface, by design: a script
+// says it means it with the flag and exits 3 otherwise, which is a question
+// and not a failure (docs/20-using/10-cli.md). The TUI confirms on the
+// capability's own dry run instead (internal/render/tui/confirm.go).
 const CodeConfirmRequired = "core.confirm.required"
 
 // RenderedError marks a *view.Error that has already been printed, so the
@@ -175,21 +177,6 @@ type globalOpts struct {
 	yes     bool
 	dryRun  bool
 }
-
-// yieldsToPlugin marks a root command that deliberately steps aside when a
-// plugin claims its namespace, which is what makes it safe for that name to
-// be unreserved.
-//
-// Exactly one command wears it: the `rta ai` explainer a binary built
-// without the AI engine registers, and only when no plugin holds the name.
-// The reservation rule exists so that a hostile plugin cannot mask a
-// command whose absence matters — `rta doctor` is the case it was written
-// for. A message saying "this feature is not in this build" is the
-// opposite: a real ai plugin taking that word is the feature arriving, and
-// it should win. TestTheCLIReservesEveryTopLevelCommandItOwns reads this
-// annotation, so the exemption is stated here rather than special-cased
-// there.
-const yieldsToPlugin = "rta.yields-to-plugin"
 
 // groupRunE is what a command that only groups other commands does with its
 // arguments: nothing shows help, anything else is a usage error.
@@ -312,10 +299,6 @@ func NewRoot(reg *registry.Registry, version string) *cobra.Command {
 	for _, c := range reg.Capabilities() {
 		attach(nsCmds[c.Words()[0]], c, opts)
 	}
-	// The one namespace with a bare form of its own: `rta ai "question"`
-	// streams, while its subcommands stay ordinary capability commands. In
-	// a binary built without the AI engine there is no such namespace, and
-	// this is where `rta ai` still gets an answer worth reading.
 	root.AddCommand(newMCPCommand(reg, version, opts))
 	root.AddCommand(newExplainCommand(reg, opts))
 	root.AddCommand(newPluginCommand(reg, version, opts))
@@ -846,8 +829,10 @@ func runCapability(ctx context.Context, cmd *cobra.Command, c plugin.Capability,
 		Width: termWidth(), Notes: cmd.ErrOrStderr(),
 	}
 
-	// Safety gate. Interactive confirmation lands in M1;
-	// in M0 destructive capabilities require an explicit --yes.
+	// Safety gate: on this surface a destructive capability runs only with
+	// --yes, and exits 3 otherwise — a question, not a failure, and a script
+	// answers it with the flag. The TUI confirms on the dry run instead
+	// (internal/render/tui/confirm.go).
 	if c.Safety == plugin.Destructive && !opts.yes && !opts.dryRun {
 		verr := &view.Error{
 			Code:    CodeConfirmRequired,

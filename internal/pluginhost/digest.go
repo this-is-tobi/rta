@@ -75,7 +75,7 @@ func Identify(name string) (Identity, error) {
 	if err != nil {
 		return Identity{}, fmt.Errorf("reading plugin %q: %w", abs, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
@@ -88,7 +88,7 @@ func Identify(name string) (Identity, error) {
 //
 // A running plugin may serve only calls whose spec hash matches the one it
 // started with; anything else spawns a new process. Under the current deny set
-// the spec is argument-independent, so this will fire zero times at M2 — every
+// the spec is argument-independent, so today this fires zero times — every
 // call to a given plugin hashes identically. It is encoded anyway because it
 // is a *cache-key shape*, and a cache key is precisely the thing that cannot
 // be widened later without auditing every call site that ever read it.

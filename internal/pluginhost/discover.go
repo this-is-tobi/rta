@@ -168,13 +168,12 @@ func Discover() []Found {
 // third-party plugin can brick the tool, which is a thing users learn once
 // and then never install a plugin again.
 //
-// Every plugin is launched to be described, because a declaration is what the
-// registry indexes and only the process knows it. That is a process spawn per
-// installed plugin per rta invocation, which is fine at nought or one and is
-// the obvious thing to cache on the digest once somebody has ten. The cache
-// is deliberately not built yet: it is a correctness-preserving optimisation
-// with a stale-entry failure mode, and it should be added against a measured
-// startup time rather than an imagined one.
+// A plugin is launched to be described, because a declaration is what the
+// registry indexes and only the process knows it — once per artifact: the
+// declaration is cached by digest (cache.go), sealed so a rewrite is noticed,
+// and a trusted plugin costs a process only the first time its bytes are
+// seen. Ten trusted plugins on $PATH add about fifty milliseconds to an
+// invocation, measured.
 func (h *Host) LoadInto(ctx context.Context, reg *registry.Registry) []error {
 	var problems []error
 	// Which clients this loop actually registered. Open is a cache keyed on

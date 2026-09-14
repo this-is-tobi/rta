@@ -30,7 +30,7 @@ import (
 // So the profile is `(allow default)` plus a deny set, and the deny set is
 // scoped to two things: what rta owns, and the credentials that are not any
 // plugin's business. What that does not buy is said plainly — the honest
-// headline is that every attack found during the pre-M2 review succeeds
+// headline is that every attack found during the confinement review succeeds
 // identically on a fully confined macOS host. This raises the floor; it is not
 // a boundary.
 

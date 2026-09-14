@@ -181,7 +181,7 @@ func TestSaveConfigFormKeepsKeysTheFormNeverShowed(t *testing.T) {
 	next, _ := m.startConfigForm(pluginRow{plugin: dbPlugin(), origin: installed})
 	nm := next.(Model)
 	*nm.form.bindings["host"] = "new.example"
-	next, _ = nm.saveConfigForm()
+	_, _ = nm.saveConfigForm()
 
 	onDisk, err := config.LoadFile()
 	if err != nil {
@@ -216,7 +216,7 @@ func TestSaveConfigFormLetsAShownFieldBeCleared(t *testing.T) {
 	// schema declares no default, so emptying it is the operator saying
 	// "remove this".
 	*nm.form.bindings["schema"] = ""
-	next, _ = nm.saveConfigForm()
+	_, _ = nm.saveConfigForm()
 
 	onDisk, err := config.LoadFile()
 	if err != nil {
@@ -227,12 +227,12 @@ func TestSaveConfigFormLetsAShownFieldBeCleared(t *testing.T) {
 	}
 }
 
-func TestConfigurableIsFalseForAPluginWithNoConfigFields(t *testing.T) {
-	if configurable(plainPlugin()) {
-		t.Error("a plugin with no Config-bearing input was reported configurable")
+func TestConfigFieldsAreEmptyForAPluginWithNoConfigInputs(t *testing.T) {
+	if n := len(configFields(plainPlugin())); n != 0 {
+		t.Errorf("a plugin with no Config-bearing input offers %d config fields", n)
 	}
-	if !configurable(dbPlugin()) {
-		t.Error("dbPlugin declares Config fields and was reported not configurable")
+	if len(configFields(dbPlugin())) == 0 {
+		t.Error("dbPlugin declares Config fields and offers none")
 	}
 }
 
@@ -339,7 +339,7 @@ func TestSaveConfigFormCarriesUnshownKeysAcrossThePinMigration(t *testing.T) {
 	next, _ := m.startConfigForm(pluginRow{plugin: dbPlugin(), origin: installed})
 	nm := next.(Model)
 	*nm.form.bindings["host"] = "fixed.example"
-	next, _ = nm.saveConfigForm()
+	_, _ = nm.saveConfigForm()
 
 	onDisk, err := config.LoadFile()
 	if err != nil {

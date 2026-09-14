@@ -2,10 +2,13 @@
 // that hosts every plugin's views. Capabilities never own the screen — the
 // shell browses the registry, runs capabilities, and renders their Views.
 //
-// v0 scope: filterable capability browser (the proto command palette),
-// direct execution of capabilities without required inputs, results in a
-// scrollable pane with re-run and copy-as-JSON. Forms for required inputs
-// (huh) and the dashboard land in the next M1 iteration.
+// What it hosts: a dashboard of tiles refreshed on a timer with a live
+// search bar over the catalogue, the catalogue itself, forms built from each
+// capability's declared inputs with completion and an environment picker,
+// results with row actions and detail pages composed from other views, the
+// dry-run confirmation every destructive run passes through, and the panes
+// for plugins, profiles and the theme. One key vocabulary (keys.go) and one
+// footer teach all of it.
 package tui
 
 import (

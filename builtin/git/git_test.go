@@ -29,8 +29,6 @@ func signature() *object.Signature {
 	return &object.Signature{Name: "Ada Lovelace", Email: "ada@example.com", When: time.Now()}
 }
 
-var testAuthor = signature()
-
 // testRepo initializes a real, on-disk repository in a temp directory —
 // every capability here opens a real *git.Repository, so a fixture built
 // from anything less would only prove the fixture, not the plugin.

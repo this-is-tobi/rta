@@ -62,10 +62,6 @@ func configFields(p plugin.Plugin) []plugin.Field {
 	return out
 }
 
-// configurable reports whether a plugin has anything an operator could put
-// in config at all.
-func configurable(p plugin.Plugin) bool { return len(configFields(p)) > 0 }
-
 // startConfigForm opens the editor for row: every Config-bearing input
 // across its capabilities, seeded from whatever is already on disk for it —
 // including a section left behind by a stale pin, so fixing one after an

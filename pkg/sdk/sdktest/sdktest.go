@@ -57,7 +57,7 @@ import (
 // It exists so that sdktest's own tests can assert that a broken plugin is
 // *caught* — a conformance suite nobody has watched fail is a conformance
 // suite that passes everything, and this one has to be trustworthy before
-// M2 tells strangers to depend on it.
+// strangers are told to depend on it.
 type reporter interface {
 	Helper()
 	Errorf(format string, args ...any)
@@ -351,7 +351,7 @@ func snap(root string) (snapshot, error) {
 		// Content, not mtime: a handler that rewrites a file with identical
 		// bytes has still not changed anything, and a suite that failed on
 		// that would teach authors to distrust it.
-		b, rerr := os.ReadFile(path)
+		b, rerr := os.ReadFile(path) //nolint:gosec // the walk is over a directory this suite created and owns
 		if rerr != nil {
 			return rerr
 		}
