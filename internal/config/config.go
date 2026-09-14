@@ -1,10 +1,12 @@
 // Package config loads rta's configuration. Zero config is a valid config:
-// everything works without a file, and rta init writes
-// one interactively when the user wants persistent choices.
+// everything works without a file, and rta init writes one interactively when
+// the user wants persistent choices.
 //
-// v0 keeps loading deliberately small (goccy-yaml, already a dependency,
-// plus one env override). When profiles land (M2) the internals move to
-// koanf layering behind this same API.
+// Loading is deliberately small — goccy-yaml, already a dependency, plus the
+// RTA_* environment overrides — and stays so on purpose: the file's shape is
+// the product's own, its precedence rules are stated in this package where a
+// reader can check them, and a layering framework would decide those rules
+// for it.
 package config
 
 import (

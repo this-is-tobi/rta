@@ -97,8 +97,3 @@ func panel(h panelHead, body string, width, height int, focus bool) string {
 func hint(key, label string) string {
 	return lipgloss.NewStyle().Foreground(theme.Primary).Render(key) + " " + theme.Subtle.Render(label)
 }
-
-// hintBar joins hints with muted separators into a footer line.
-func hintBar(items ...string) string {
-	return " " + strings.Join(items, theme.Subtle.Render(" · "))
-}

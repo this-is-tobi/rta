@@ -45,8 +45,6 @@ const (
 	// truncates with "… enter for details" — unchanged from before rows grew
 	// responsive, so nothing that used to fit fully still doesn't.
 	tileHeight = 11
-	// tilePreviewLines is the tile body capacity at the maximum height.
-	tilePreviewLines = tileHeight - 2
 	// tileMinHeight is the floor a row shrinks to when every tile in it is
 	// short: small enough to reclaim real space from a one-line KeyValue or
 	// "nothing active" message, tall enough that a panel still reads as a

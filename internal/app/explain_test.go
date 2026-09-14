@@ -108,7 +108,7 @@ func TestDoctorReport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"capabilities", "config", "exec-tier"} {
+	for _, want := range []string{"capabilities", "config", "kv store"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("doctor missing %q:\n%s", want, out)
 		}

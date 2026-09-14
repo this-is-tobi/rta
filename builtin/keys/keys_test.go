@@ -7,6 +7,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -1385,4 +1386,12 @@ func TestThereIsNoCapabilityThatDeletesAKey(t *testing.T) {
 			t.Errorf("%s is destructive — this plugin exists to make keys recoverable", c.ID)
 		}
 	}
+}
+
+// isLocked reports whether a key failed to parse only because it is
+// passphrase-protected — builtin/kv/crypt.go's predicate, for the one test
+// that asserts a restored key came back locked.
+func isLocked(err error) bool {
+	var locked *ssh.PassphraseMissingError
+	return errors.As(err, &locked)
 }

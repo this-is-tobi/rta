@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"sort"
 	"strings"
 	"time"
 
@@ -469,8 +468,8 @@ func doctorReport(reg *registry.Registry) view.View {
 		// somewhere the operator is not.
 		if sel := profile.LoadSelection(); sel.Active != "" {
 			now := time.Now()
-			switch name := sel.Name(now); {
-			case name == "":
+			switch name := sel.Name(now); name {
+			case "":
 				add("profile", "info", sel.Active+" has lapsed — commands run against the "+
 					"base configuration, and agents may name any profile a grant covers")
 			default:
@@ -772,8 +771,8 @@ func doctorReport(reg *registry.Registry) view.View {
 	// fact somebody can act on; a per-plugin green tick would be the same
 	// information dressed as an assurance it does not carry. The confinement
 	// contract is
-	// blunt about the bound, and so is this: every attack found in the pre-M2
-	// review succeeds identically on a confined macOS host.
+	// blunt about the bound, and so is this: every attack found in the
+	// confinement review succeeds identically on a confined macOS host.
 	deny, denyErr := pluginhost.Resolve()
 	switch {
 	case denyErr != nil:
@@ -985,19 +984,6 @@ func doctorReport(reg *registry.Registry) view.View {
 		add(name, status, detail)
 	}
 
-	// Exec-tier plugins on $PATH (rta-<name>), discovery convention only for
-	// now — execution support lands with the plugin host (M3).
-	// Named for what it scans, because the row above already said "1 from
-	// $PATH" and this one used to answer "none found on $PATH" in the same
-	// report. Both were true — they look for different filenames, one tier
-	// apart — and nothing on the page said so, which makes a reader distrust
-	// whichever they read second.
-	if found := execPlugins(); len(found) > 0 {
-		add("exec-tier (rta-*)", "info", strings.Join(found, ", ")+" (execution support lands in M3)")
-	} else {
-		add("exec-tier (rta-*)", "ok", "none found — this is the M3 tier, separate from the rta-plugin-* above")
-	}
-
 	// MCP clients we can install into.
 	if _, err := exec.LookPath("claude"); err == nil {
 		add("claude CLI", "ok", "found — `rta mcp install claude` available")
@@ -1012,35 +998,6 @@ func doctorReport(reg *registry.Registry) view.View {
 
 	t.Total = len(t.Rows)
 	return t
-}
-
-// execPlugins scans $PATH for rta-* binaries (kubectl/gh convention).
-func execPlugins() []string {
-	seen := map[string]bool{}
-	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			continue
-		}
-		for _, e := range entries {
-			name := e.Name()
-			// rta-plugin-* is the SDK tier, discovered and launched by
-			// internal/pluginhost. Counting it here too would report one
-			// binary under two tiers with two different sets of guarantees.
-			if !strings.HasPrefix(name, "rta-") || strings.HasPrefix(name, pluginhost.Prefix) || e.IsDir() {
-				continue
-			}
-			if info, err := e.Info(); err == nil && info.Mode()&0o111 != 0 {
-				seen[name] = true
-			}
-		}
-	}
-	names := make([]string, 0, len(seen))
-	for n := range seen {
-		names = append(names, n)
-	}
-	sort.Strings(names)
-	return names
 }
 
 // pick is plural without the count, for the second and third agreement in a

@@ -9,7 +9,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/this-is-tobi/rta/internal/grant"
-	"github.com/this-is-tobi/rta/internal/mcp"
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/internal/render/cli"
 	"github.com/this-is-tobi/rta/internal/toolcall"
@@ -29,8 +28,9 @@ func newExplainCommand(reg *registry.Registry, opts *globalOpts) *cobra.Command 
 			"summary, safety class, inputs, and CLI/MCP invocation forms.",
 		Args: cobra.MaximumNArgs(1),
 		ValidArgsFunction: func(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
-			var ids []cobra.Completion
-			for _, c := range reg.Capabilities() {
+			caps := reg.Capabilities()
+			ids := make([]cobra.Completion, 0, len(caps))
+			for _, c := range caps {
 				ids = append(ids, cobra.CompletionWithDesc(c.ID, c.Summary))
 			}
 			return ids, cobra.ShellCompDirectiveNoFileComp
@@ -288,18 +288,4 @@ func configSection(reg *registry.Registry, c plugin.Capability) string {
 		return "plugins." + ns + "@" + o.Short()
 	}
 	return "plugins." + ns
-}
-
-// mcpOptionsForExplain is the gate as it would be configured right now, used
-// only to ask it what flag a capability needs. One helper rather than two
-// literals, so `rta explain` and `rta plugin dev` cannot disagree about what
-// it takes to reach the same capability.
-//
-// It takes the registry because the gate reads provenance from it. That is
-// also why this stopped being callable from anywhere: what flag a capability
-// needs depends on where the capability came from, and a helper that could
-// answer without being told which catalogue it was talking about was
-// answering from a package-level variable.
-func mcpOptionsForExplain(reg *registry.Registry) mcp.Options {
-	return mcp.Options{Origin: reg.Origin}
 }

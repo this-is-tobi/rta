@@ -33,7 +33,6 @@ type resolverConfig struct {
 	nameservers []string
 	search      []string
 	options     []string
-	managedBy   string
 }
 
 func parseResolv(lines []string) resolverConfig {

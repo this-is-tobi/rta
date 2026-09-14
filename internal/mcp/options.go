@@ -292,35 +292,6 @@ func (o Options) knows(ns string) bool {
 	return known
 }
 
-// absent explains why a namespace is not registered, telling "not installed"
-// apart from "installed and not run".
-//
-// The distinction is the difference between two afternoons: one is a missing
-// install to chase, the other is a one-line approval. Told the wrong one, an
-// operator goes to check their spelling, their $PATH and their install for a
-// plugin rta can see, has hashed, and is deliberately declining to run — with
-// the digest they pinned appearing, correctly, in rta's own "not installed"
-// message.
-func (o Options) absent(ns string) string {
-	// knows(ns) is false on every path that reaches here, so a refused
-	// artifact whose name is taken cannot be reported by this function.
-	if o.refused(ns) {
-		return fmt.Sprintf("%q is installed and has not been run; `rta plugin trust %s` approves it", ns, ns)
-	}
-	return fmt.Sprintf("no plugin named %q is installed", ns)
-}
-
-// refused reports whether this namespace names an artifact discovery found and
-// declined to launch.
-func (o Options) refused(ns string) bool {
-	for _, u := range o.Untrusted {
-		if u == ns {
-			return true
-		}
-	}
-	return false
-}
-
 // exposed reports whether a capability is a tool on this server at all.
 //
 // One question now, where there used to be two. A capability for the person

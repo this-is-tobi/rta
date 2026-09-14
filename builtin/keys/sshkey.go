@@ -48,14 +48,6 @@ func fileExists(path string) bool {
 	return err == nil && !info.IsDir()
 }
 
-// isLocked reports whether a key failed to parse only because it is
-// passphrase-protected — mirrors builtin/kv/crypt.go's function of the same
-// name and the same reasoning.
-func isLocked(err error) bool {
-	var locked *ssh.PassphraseMissingError
-	return errors.As(err, &locked)
-}
-
 // keyPassphraseTries is how many attempts a person gets before this gives
 // up, the same count builtin/kv allows for a store's own identity.
 const keyPassphraseTries = 3
@@ -297,10 +289,10 @@ func describeKey(path string) []string {
 		keyType, fp = probed.Type(), ssh.FingerprintSHA256(probed)
 	}
 	eligible := "no"
-	switch {
-	case keyType == ssh.KeyAlgoED25519:
+	switch keyType {
+	case ssh.KeyAlgoED25519:
 		eligible = "yes"
-	case keyType == "":
+	case "":
 		eligible = "unknown"
 	}
 	lockedCell := "no"

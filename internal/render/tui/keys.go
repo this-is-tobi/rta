@@ -138,19 +138,6 @@ var (
 	}
 )
 
-// matches reports whether a key press triggers this binding.
-func (b binding) matches(key string) bool {
-	for _, k := range b.keys {
-		if k == key {
-			return true
-		}
-	}
-	return false
-}
-
-// hint renders the binding for the footer.
-func (b binding) hint() string { return hint(b.display, b.label) }
-
 // hintItem is one entry in a footer: a binding, or an ad-hoc pair for the
 // per-capability actions, whose keys and words come from the capability
 // rather than from the vocabulary.
