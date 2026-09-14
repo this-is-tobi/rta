@@ -1320,7 +1320,7 @@ func TestANonPathArgumentIsNotConfined(t *testing.T) {
 	}
 }
 
-// A regression/coverage test for a real gap review found:
+// A regression/coverage test for a real gap:
 // checkPaths' own defensive branch for a non-string value in a declared
 // Path field — the line its own comment calls out as "the line that turns
 // it into an unconfined read rather than an error" if it ever became

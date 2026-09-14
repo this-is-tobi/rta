@@ -670,8 +670,8 @@ func TestListReportsAnRSAKeyAsNotEligible(t *testing.T) {
 // stored in carries its own public key in cleartext
 // (ssh.PassphraseMissingError.PublicKey), and probeKey uses exactly that.
 // Found by review — the original version of this test
-// asserted "unknown" as the correct answer, on a premise (verified false by
-// the review) that no public data was available here at all.
+// asserted "unknown" as the correct answer, on a false premise: that no
+// public data was available here at all.
 func TestListReportsALockedKeyAsLockedButStillIdentifiesItFromTheContainersOwnPublicKey(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -883,8 +883,8 @@ func freshWords(t *testing.T) string {
 // --- gaps a review pass found --------------------------
 
 // The interactive word prompt (keys.restore's analogue of keys.backup's
-// promptKeyPassphrase, tested above) had no test at all before this one —
-// review found it via coverage profiling, not by reading the test names.
+// promptKeyPassphrase, tested above) had no test at all before this one;
+// the coverage profile showed it where the test names did not.
 func TestResolveWordsPromptsAtATerminalWhenNothingElseIsSupplied(t *testing.T) {
 	old := canPrompt
 	canPrompt = func(plugin.Request) bool { return true }
@@ -1137,9 +1137,8 @@ func TestListFallsBackToThePrivateKeyWhenThePubSiblingIsCorrupt(t *testing.T) {
 
 // asEd25519 has two branches: *ed25519.PrivateKey (OpenSSH-format keys,
 // exercised everywhere else in this file) and ed25519.PrivateKey, the value
-// shape only a PKCS8 "PRIVATE KEY" block produces. Untested before this —
-// review found the gap by noting every fixture in this file only ever
-// produces the OpenSSH format.
+// shape only a PKCS8 "PRIVATE KEY" block produces. Untested before this:
+// every fixture in this file only ever produces the OpenSSH format.
 func TestAsEd25519HandlesThePkcs8ValueTypeBranch(t *testing.T) {
 	_, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {

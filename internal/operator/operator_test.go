@@ -490,7 +490,7 @@ func TestARoleAllowsItsVerbsAndNothingElse(t *testing.T) {
 
 // Base64 is not injective by default: the char before a 32-byte key's
 // padding carries two bits the lenient decoder ignores, so four spellings
-// name one key. The review that caught this drew the full attack: the same
+// name one key. The full attack: the same
 // key enrolled twice through an alias spelling — once role=read, once
 // bare — would answer as a full operator and cross into the guard's
 // signing set. One spelling per key, and one label per key by decoded

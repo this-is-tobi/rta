@@ -176,7 +176,7 @@ func TestSetGetRoundTrip(t *testing.T) {
 	}
 }
 
-// A regression test for a real bug review found: kv's
+// A regression test for a real bug: kv's
 // write handlers (set, rename, remove, rekey) decrypt the whole store,
 // mutate one entry in memory, and write the whole thing back, with nothing
 // between the load and the save stopping a second writer from doing the
@@ -618,7 +618,7 @@ func TestEnvName(t *testing.T) {
 	}
 }
 
-// A regression test for a real, reproduced vulnerability review found:
+// A regression test for a real, reproduced vulnerability:
 // --prefix was concatenated into `kv env`'s output with
 // no filtering, unlike key (character-whitelisted) and value
 // (shell-quoted). A prefix containing a newline broke the output into

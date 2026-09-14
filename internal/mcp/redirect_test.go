@@ -13,7 +13,7 @@ import (
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
-// A regression test for a real, live hole a design review found:
+// A regression test for a real, live hole:
 // a service plugin declares the connection it talks to as
 // ordinary inputs so config can fill them, and "ordinary" also meant
 // published in the MCP tool schema and accepted from a caller. Since

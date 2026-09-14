@@ -790,7 +790,7 @@ func TestGenericEditInputsIsReachableOnACapabilityWithItsOwnAction(t *testing.T)
 
 // A dashboard config can watch the same capability twice against two
 // different `with:` targets (buildTiles does not deduplicate by ID) —
-// reproduced exactly as the reviewer who found this did: two tiles, same
+// reproduced exactly as first seen: two tiles, same
 // capability, different host. tileIndexFor used to match by capability ID
 // alone, always finding the first of the two, so the second tile's own
 // results were silently painted into the first tile's slot.
