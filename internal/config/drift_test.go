@@ -45,7 +45,7 @@ func TestEveryConfigWriterReadsThroughLoadFile(t *testing.T) {
 		}
 		file, perr := parser.ParseFile(fset, path, nil, 0)
 		if perr != nil {
-			return nil // not this test's business
+			return nil //nolint:nilerr // a file that does not parse is the compiler's finding, not this test's
 		}
 		rel, _ := filepath.Rel(root, path)
 		// The config package itself defines both, and is where the rule is

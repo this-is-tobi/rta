@@ -58,12 +58,12 @@ func TestModelDoesEverythingTerminalDoes(t *testing.T) {
 }
 
 func TestModelStripsInvisibleCharactersTerminalLeavesAlone(t *testing.T) {
-	s := "safe​word" // zero width space
-	if got := Terminal(s); !strings.Contains(got, "​") {
+	s := "safe\u200bword" // zero width space
+	if got := Terminal(s); !strings.Contains(got, "\u200b") {
 		t.Errorf("Terminal(%q) = %q, want it to leave an invisible character alone — that is Model's job", s, got)
 	}
 	got := Model(s)
-	if strings.Contains(got, "​") {
+	if strings.Contains(got, "\u200b") {
 		t.Errorf("Model(%q) = %q, the zero width space survived", s, got)
 	}
 	if got != "safeword" {
@@ -113,7 +113,7 @@ func TestDeceivesFlagsWhatItWouldChange(t *testing.T) {
 		{"tab", "a\tb"},
 		{"ANSI escape", "\x1b[31mred\x1b[0m"},
 		{"control byte", "a\x07b"},
-		{"invisible rune", "safe​word"},
+		{"invisible rune", "safe\u200bword"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if !Deceives(tc.s) {

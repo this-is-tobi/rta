@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -115,7 +116,7 @@ func TestOIDCVerifierRejectsWrongAudience(t *testing.T) {
 	claims := validClaims(issuer)
 	claims.Audience = jwt.Audience{"somebody-elses-app"}
 
-	if _, err := v(context.Background(), sign(claims), nil); err != auth.ErrInvalidToken {
+	if _, err := v(context.Background(), sign(claims), nil); !errors.Is(err, auth.ErrInvalidToken) {
 		t.Errorf("err = %v, want the bare auth.ErrInvalidToken sentinel", err)
 	}
 }
@@ -125,7 +126,7 @@ func TestOIDCVerifierRejectsWrongIssuer(t *testing.T) {
 	v := newOIDCVerifier(t, issuer, []string{testSubject})
 	claims := validClaims("https://not-the-configured-issuer.example")
 
-	if _, err := v(context.Background(), sign(claims), nil); err != auth.ErrInvalidToken {
+	if _, err := v(context.Background(), sign(claims), nil); !errors.Is(err, auth.ErrInvalidToken) {
 		t.Errorf("err = %v, want auth.ErrInvalidToken", err)
 	}
 }
@@ -137,7 +138,7 @@ func TestOIDCVerifierRejectsAnExpiredToken(t *testing.T) {
 	claims.Expiry = jwt.NewNumericDate(time.Now().Add(-time.Hour))
 	claims.IssuedAt = jwt.NewNumericDate(time.Now().Add(-2 * time.Hour))
 
-	if _, err := v(context.Background(), sign(claims), nil); err != auth.ErrInvalidToken {
+	if _, err := v(context.Background(), sign(claims), nil); !errors.Is(err, auth.ErrInvalidToken) {
 		t.Errorf("err = %v, want auth.ErrInvalidToken", err)
 	}
 }
@@ -163,7 +164,7 @@ func TestOIDCVerifierRejectsABadSignature(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := v(context.Background(), tok, nil); err != auth.ErrInvalidToken {
+	if _, err := v(context.Background(), tok, nil); !errors.Is(err, auth.ErrInvalidToken) {
 		t.Errorf("err = %v, want auth.ErrInvalidToken", err)
 	}
 }
@@ -180,7 +181,7 @@ func TestOIDCVerifierRejectsAlgorithmConfusion(t *testing.T) {
 	v := newOIDCVerifier(t, issuer, []string{testSubject})
 	_ = sign
 
-	hmacSecret := key.PublicKey.N.Bytes()
+	hmacSecret := key.N.Bytes()
 	hmacSigner, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.HS256, Key: hmacSecret}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -190,7 +191,7 @@ func TestOIDCVerifierRejectsAlgorithmConfusion(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := v(context.Background(), tok, nil); err != auth.ErrInvalidToken {
+	if _, err := v(context.Background(), tok, nil); !errors.Is(err, auth.ErrInvalidToken) {
 		t.Errorf("an HS256 token signed with the RSA public key's modulus as the HMAC secret was accepted: %v", err)
 	}
 }
@@ -200,7 +201,7 @@ func TestOIDCVerifierRejectsASubjectOutsideTheAllowlist(t *testing.T) {
 	v := newOIDCVerifier(t, issuer, []string{"somebody-else@example.com"})
 	claims := validClaims(issuer) // subject is testSubject, not on the allowlist above
 
-	if _, err := v(context.Background(), sign(claims), nil); err != auth.ErrInvalidToken {
+	if _, err := v(context.Background(), sign(claims), nil); !errors.Is(err, auth.ErrInvalidToken) {
 		t.Errorf("err = %v, want auth.ErrInvalidToken", err)
 	}
 }

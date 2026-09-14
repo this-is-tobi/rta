@@ -1,0 +1,85 @@
+# golangci-lint, the linters the tree already meets plus the ones cheap to
+# keep meeting. `make lint` runs it locally; the reusable lint workflow runs
+# it in CI whenever this file exists.
+#
+# What is excluded is stated, because an exclusion nobody can explain is
+# one somebody removes and then silences per site with `nolint` forever.
+version: "2"
+
+run:
+  timeout: 10m
+
+# Every finding, every time: the defaults cap the output per linter and per
+# identical message, which turns one run into several rounds of surprise.
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - unused
+    - ineffassign
+    - unconvert
+    - misspell
+    - errorlint
+    - nilerr
+    - noctx
+    - prealloc
+    - bodyclose
+    - gosec
+  settings:
+    errcheck:
+      exclude-functions:
+        # Writes to a terminal or a buffer, where a failed write has no
+        # caller left to tell; deferred closes on the read side; and the
+        # cleanup of a temp file that was going to be replaced anyway.
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - (io.Closer).Close
+        - os.Remove
+        - os.RemoveAll
+    gosec:
+      excludes:
+        # A "credential" it finds is a field name (profileform's list of
+        # secret-shaped inputs, kv's own key file); gitleaks scans for the
+        # real thing in CI.
+        - G101
+        # Every release target is 64-bit. The narrowing conversions that
+        # remain pack a length into bytes or carry a size that cannot be
+        # negative; reviewed 2026-09-14.
+        - G115
+        # Every subprocess is an operator-named tool — kubectl, a package
+        # manager, $EDITOR, the notifier, the plugin binary itself — never a
+        # string a caller composed.
+        - G204
+        # Directory and file modes are chosen per site and documented there;
+        # rta's own state goes through paths.EnsureData at 0700.
+        - G301
+        - G302
+        - G306
+        # Opening a file whose path came from the operator is the product.
+        - G304
+        # Taint tracking over the same paths.
+        - G703
+  exclusions:
+    generated: lax
+    paths:
+      - proto/
+    rules:
+      # A test may ignore a Close, shell out without a context, read a file
+      # by a name it just wrote, and build a slice without sizing it. And it
+      # asserts on the exact error the call it made returned — wrapping is a
+      # concern between layers, not between a test and the function under it.
+      - path: _test\.go
+        linters:
+          - errcheck
+          - gosec
+          - noctx
+          - bodyclose
+          - prealloc
+          - errorlint

@@ -93,8 +93,9 @@ func unknownManager(name string) *view.Error {
 }
 
 func allManagerNames() []string {
-	var out []string
-	for _, m := range managers() {
+	ms := managers()
+	out := make([]string, 0, len(ms))
+	for _, m := range ms {
 		out = append(out, m.name)
 	}
 	return out
@@ -196,9 +197,7 @@ func runOverview(ctx context.Context, req plugin.Request) (view.View, error) {
 	default:
 		kv.Pairs = append(kv.Pairs, view.Pair{Key: "tools", Value: fmt.Sprintf("outdated %d of %d", behind, len(tools))})
 	}
-	for _, p := range osStatePairs(st).Pairs {
-		kv.Pairs = append(kv.Pairs, p)
-	}
+	kv.Pairs = append(kv.Pairs, osStatePairs(st).Pairs...)
 	kv.Pairs = append(kv.Pairs, view.Pair{Key: "total behind", Value: fmt.Sprintf("%d packages, %d tools", total, behind)})
 
 	if !req.Bool("detail") {

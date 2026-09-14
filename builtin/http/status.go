@@ -40,8 +40,10 @@ func statusCapability() plugin.Capability {
 }
 
 func suggestStatusCodes(context.Context, plugin.Request) []string {
-	out := []string{"2xx\tsuccess", "3xx\tredirection", "4xx\tclient error", "5xx\tserver error"}
-	for _, c := range knownStatusCodes() {
+	codes := knownStatusCodes()
+	out := make([]string, 0, 4+len(codes))
+	out = append(out, "2xx\tsuccess", "3xx\tredirection", "4xx\tclient error", "5xx\tserver error")
+	for _, c := range codes {
 		out = append(out, strconv.Itoa(c)+"\t"+stdhttp.StatusText(c))
 	}
 	return out

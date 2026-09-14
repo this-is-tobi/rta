@@ -143,7 +143,7 @@ func TestADerivedVariableNameIsAlwaysAnIdentifier(t *testing.T) {
 		LocalEnvVar("pg.query", "password"),
 	} {
 		for _, r := range name {
-			if !((r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_') {
+			if (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '_' {
 				t.Errorf("%q holds %q, which a shell will not read as part of a name", name, r)
 			}
 		}

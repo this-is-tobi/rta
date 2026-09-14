@@ -197,7 +197,7 @@ func TestEnterStillMovesToTheNextField(t *testing.T) {
 	cf := newCapForm(c, c.Inputs, nil, true, nil)
 	f := typeInto(startedForm(cf), "net.send")
 	f = settleForm(f, tea.KeyPressMsg{Code: tea.KeyEnter})
-	f = typeInto(f, "x")
+	_ = typeInto(f, "x")
 	if got := *cf.bindings["scope"]; got != "x" {
 		t.Errorf("scope = %q — enter did not move the cursor onto it", got)
 	}
@@ -333,7 +333,7 @@ func TestUpOnAnEmptyBoxStartsFromTheEnd(t *testing.T) {
 	c := completingCap()
 	cf := newCapForm(c, c.Inputs, nil, true, nil)
 	m := formModel(t, cf)
-	m = pressKey(t, m, upKey)
+	_ = pressKey(t, m, upKey)
 	if got := *cf.bindings["target"]; got != "net.send" {
 		t.Errorf("up on an empty box, target = %q, want the last candidate", got)
 	}

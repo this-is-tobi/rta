@@ -77,8 +77,9 @@ func managerByName(name string) (manager, bool) {
 }
 
 func managerNames() []string {
-	var out []string
-	for _, m := range detected() {
+	ms := detected()
+	out := make([]string, 0, len(ms))
+	for _, m := range ms {
 		out = append(out, m.name)
 	}
 	return out
@@ -135,8 +136,9 @@ func versionParts(v string) []int {
 	if i := strings.IndexByte(v, '+'); i >= 0 {
 		v = v[:i]
 	}
-	var out []int
-	for _, p := range strings.FieldsFunc(v, func(r rune) bool { return r == '.' || r == '-' }) {
+	parts := strings.FieldsFunc(v, func(r rune) bool { return r == '.' || r == '-' })
+	out := make([]int, 0, len(parts))
+	for _, p := range parts {
 		n := 0
 		for _, ch := range p {
 			if ch < '0' || ch > '9' {

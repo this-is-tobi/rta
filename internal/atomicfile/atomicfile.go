@@ -53,7 +53,7 @@ func ReadCapped(path string, max int) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	buf := make([]byte, max+1)
 	n, err := io.ReadFull(f, buf)
 	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
@@ -79,7 +79,7 @@ func WriteFrom(path string, r io.Reader, perm fs.FileMode) error {
 	defer os.Remove(tmp.Name())
 
 	if _, err := io.Copy(tmp, r); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return fmt.Errorf("writing %s: %w", tmp.Name(), err)
 	}
 	if err := tmp.Close(); err != nil {
@@ -125,7 +125,7 @@ func Write(path string, data []byte, perm fs.FileMode) error {
 	defer os.Remove(tmp.Name())
 
 	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return fmt.Errorf("writing %s: %w", tmp.Name(), err)
 	}
 	if err := tmp.Close(); err != nil {
@@ -194,11 +194,11 @@ func Publish(path string, data []byte, perm fs.FileMode, max int) ([]byte, error
 	defer os.Remove(tmp.Name())
 
 	if err := tmp.Chmod(perm); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return nil, fmt.Errorf("setting permissions on %s: %w", tmp.Name(), err)
 	}
 	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return nil, fmt.Errorf("writing %s: %w", tmp.Name(), err)
 	}
 	if err := tmp.Close(); err != nil {

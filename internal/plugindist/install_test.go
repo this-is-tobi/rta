@@ -47,7 +47,7 @@ func hello(t *testing.T) string {
 		helloPath = filepath.Join(dir, pluginhost.BinaryName("hello"))
 		cmd := exec.Command("go", "build", "-o", helloPath, "../../examples/plugin-hello")
 		if out, err := cmd.CombinedOutput(); err != nil {
-			helloErr = fmt.Errorf("%v: %s", err, out)
+			helloErr = fmt.Errorf("%w: %s", err, out)
 		}
 	})
 	if helloErr != nil {

@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -268,8 +269,8 @@ func TestAllowIsRefusedWhenTheTeamCeilingForbidsTheTarget(t *testing.T) {
 	if err == nil {
 		t.Fatal("a ceiling-forbidden target was allowed")
 	}
-	ve, ok := err.(*view.Error)
-	if !ok || ve.Code != "grant.policy.refused" {
+	var ve *view.Error
+	if !errors.As(err, &ve) || ve.Code != "grant.policy.refused" {
 		t.Fatalf("refused with %v, want the policy refusal", err)
 	}
 
@@ -337,8 +338,8 @@ func TestAnswerAnUnknownRequestNamesWhatIsWaiting(t *testing.T) {
 	isolate(t)
 	r := park(t, "kv.get", "db-password")
 	_, err := run(t, "agent.allow", map[string]any{"id": "nosuch"})
-	ve, ok := err.(*view.Error)
-	if !ok || ve.Code != "agent.request.unknown" {
+	var ve *view.Error
+	if !errors.As(err, &ve) || ve.Code != "agent.request.unknown" {
 		t.Fatalf("err = %v", err)
 	}
 	if !strings.Contains(ve.Hint, r.ID) {
@@ -388,8 +389,8 @@ func TestARewrittenRequestIsRefusedAsOneRatherThanAsAStaleID(t *testing.T) {
 	})
 	for _, id := range []string{"agent.show", "agent.allow", "agent.deny"} {
 		_, err := run(t, id, map[string]any{"id": r.ID})
-		ve, ok := err.(*view.Error)
-		if !ok || ve.Code != "agent.request.tampered" {
+		var ve *view.Error
+		if !errors.As(err, &ve) || ve.Code != "agent.request.tampered" {
 			t.Fatalf("%s answered a rewritten request with %v", id, err)
 		}
 		if !strings.Contains(ve.Hint, "rewrote it") {
@@ -413,8 +414,8 @@ func TestAnUnknownIDIsStillJustAnUnknownID(t *testing.T) {
 	isolate(t)
 	park(t, "kv.get", "db-password")
 	_, err := run(t, "agent.allow", map[string]any{"id": "nosuch"})
-	ve, ok := err.(*view.Error)
-	if !ok || ve.Code != "agent.request.unknown" {
+	var ve *view.Error
+	if !errors.As(err, &ve) || ve.Code != "agent.request.unknown" {
 		t.Fatalf("err = %v, want the plain unknown-id refusal", err)
 	}
 }

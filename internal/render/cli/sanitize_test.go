@@ -29,7 +29,7 @@ var payloads = map[string]string{
 	"bel": "ok\a",
 	// CSI in its 8-bit form. ansi.Strip does not treat it as an introducer,
 	// so it is the case that needs the C1 range and not just the parser.
-	"c1 csi": "ok2J",
+	"c1 csi": "ok\u009b2J",
 }
 
 // escaped reports whether anything in out could still be acted on by a

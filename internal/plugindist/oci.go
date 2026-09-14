@@ -193,7 +193,7 @@ func ociResolve(ctx context.Context, raw string) (ociLayer, *view.Error) {
 		return ociLayer{}, verr
 	}
 	doc, err := io.ReadAll(io.LimitReader(body, ociManifestCap+1))
-	body.Close()
+	_ = body.Close()
 	if err != nil {
 		return ociLayer{}, view.Errorf("plugin.install.oci", "reading %s: %v", raw, err)
 	}
@@ -274,7 +274,7 @@ func ociGet(ctx context.Context, target, accept string, ref ociRef) (io.ReadClos
 		return ociBody(resp, target, ref)
 	}
 	challenge := resp.Header.Get("Www-Authenticate")
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	token, verr := ociToken(ctx, challenge, ref)
 	if verr != nil {
 		return nil, verr
@@ -341,7 +341,7 @@ func ociBody(resp *http.Response, target string, ref ociRef) (io.ReadCloser, *vi
 	if resp.StatusCode == http.StatusOK {
 		return resp.Body, nil
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	switch resp.StatusCode {
 	case http.StatusUnauthorized, http.StatusForbidden:
 		return nil, view.Errorf("plugin.install.oci",

@@ -122,7 +122,7 @@ func TestTheExportLineIsAShellCommandWithNoValueInIt(t *testing.T) {
 	}
 	line := "export " + env + "=…"
 	for _, r := range env {
-		if !((r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_') {
+		if (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '_' {
 			t.Fatalf("%q is not something a shell will accept after `export`", env)
 		}
 	}

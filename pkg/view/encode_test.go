@@ -57,8 +57,8 @@ func TestASectionKeepsItsIDThroughJSON(t *testing.T) {
 // Reproduced exactly this way before the fix. It is the worst kind of leak
 // available here: every individual component behaved as documented.
 func TestRedactionSurvivesCleaning(t *testing.T) {
-	const key = "pass​word" // zero-width space
-	strip := func(s string) string { return strings.ReplaceAll(s, "​", "") }
+	const key = "pass\u200bword" // zero-width space
+	strip := func(s string) string { return strings.ReplaceAll(s, "\u200b", "") }
 
 	kv := KeyValue{
 		Pairs:    []Pair{{Key: key, Value: "hunter2"}},

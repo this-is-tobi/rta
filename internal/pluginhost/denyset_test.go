@@ -189,8 +189,9 @@ func TestAMissingPathWithNoSymlinkAncestorResolvesToItself(t *testing.T) {
 // a process launched under a different policy.
 func TestTheSpecHashTracksThePolicy(t *testing.T) {
 	a := DenySet{NoAccess: []string{"/one"}, NoRead: []string{"/two"}}
-	if specHash(a) != specHash(a) {
-		t.Error("the same policy hashed twice gave two answers")
+	same := DenySet{NoAccess: []string{"/one"}, NoRead: []string{"/two"}}
+	if specHash(a) != specHash(same) {
+		t.Error("two equal policies hashed to two answers")
 	}
 	if specHash(a) == specHash(DenySet{NoAccess: []string{"/one"}}) {
 		t.Error("dropping a tier did not change the hash")

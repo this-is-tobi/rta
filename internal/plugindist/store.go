@@ -156,13 +156,13 @@ func copyFile(src, dst string) *view.Error {
 	if err != nil {
 		return view.Errorf("plugin.install.place", "%v", err)
 	}
-	defer in.Close()
+	defer func() { _ = in.Close() }()
 	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o755)
 	if err != nil {
 		return view.Errorf("plugin.install.place", "%v", err)
 	}
 	if _, err := io.Copy(out, in); err != nil {
-		out.Close()
+		_ = out.Close()
 		_ = os.Remove(dst)
 		return view.Errorf("plugin.install.place", "%v", err)
 	}

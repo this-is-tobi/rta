@@ -529,7 +529,7 @@ func (h *Host) CloseAll() {
 // its own copy of the code rather than about what runs.
 func buildCmd(id Identity, deny DenySet, args []string) *exec.Cmd {
 	name, argv := wrap(deny, id.Path, args)
-	cmd := exec.Command(name, argv...)
+	cmd := exec.Command(name, argv...) //nolint:noctx // see below: the process outlives any one call
 	// Not exec.CommandContext: the process outlives one call by design, and
 	// binding its lifetime to the ctx of whichever call happened to spawn it
 	// would kill it the moment that call returned.

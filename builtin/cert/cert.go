@@ -230,7 +230,7 @@ func dialCerts(ctx context.Context, target string, timeout time.Duration) ([]*x5
 		return nil, nil, view.Errorf("cert.dial.failed", "connecting to %s: %v", addr, err).
 			WithHint("check the host is reachable and speaks TLS on this port")
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	state := conn.(*tls.Conn).ConnectionState()
 	if len(state.PeerCertificates) == 0 {
 		return nil, nil, view.Errorf("cert.none", "no certificates presented by %s", addr)

@@ -194,7 +194,7 @@ func TestEditingAProfileKeepsTheRestOfTheFile(t *testing.T) {
 	next, _ := m.startProfileForm("staging")
 	nm := next.(Model)
 	*nm.form.bindings[profileNoteField] = "edited note"
-	next, _ = nm.saveProfileForm()
+	_, _ = nm.saveProfileForm()
 
 	onDisk, err := config.LoadFile()
 	if err != nil {
@@ -232,7 +232,7 @@ func TestEditingAConnectionKeepsItsCredentialMapping(t *testing.T) {
 	next, _ := m.startConnForm("db")
 	nm := next.(Model)
 	*nm.form.bindings[profileSetPrefix+"host"] = "moved.internal"
-	next, _ = nm.saveConnForm()
+	_, _ = nm.saveConnForm()
 
 	onDisk, err := config.LoadFile()
 	if err != nil {
@@ -260,7 +260,7 @@ func TestRenamingAProfileMovesTheSwitch(t *testing.T) {
 	next, _ := m.startProfileForm("staging")
 	nm := next.(Model)
 	*nm.form.bindings[profileNameField] = "staging-2"
-	next, _ = nm.saveProfileForm()
+	_, _ = nm.saveProfileForm()
 
 	onDisk, err := config.LoadFile()
 	if err != nil {

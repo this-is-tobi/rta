@@ -1525,7 +1525,7 @@ func TestATileResultLandsOnItsOwnTileAfterAReorder(t *testing.T) {
 		t.Fatalf("only %d tiles", len(m.tiles))
 	}
 	// Find two capability tiles (skip the static search tile at 0).
-	var a, b int = -1, -1
+	a, b := -1, -1
 	for i, tl := range m.tiles {
 		if tl.cap.ID == "" {
 			continue
