@@ -10,6 +10,7 @@ package paths
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 )
 
 // Data resolves where local state lives: RTA_DATA_DIR overrides (tests,
@@ -26,6 +27,30 @@ func Data() string {
 		return "."
 	}
 	return filepath.Join(home, ".local", "share", "rta")
+}
+
+// System resolves the read-only plugin root: what a container image or a
+// package filled at build time and rta only ever reads. RTA_SYSTEM_DIR
+// overrides — set but empty means there is none — otherwise /usr/local/lib/rta
+// on Linux and nothing elsewhere. Every reader treats "" as "no such root".
+//
+// A second root rather than a second data directory, because the data
+// directory is the operator's: mounted, backed up, mode 0700, written by
+// every command. A container image that installed its plugins there baked
+// them under the very path a volume then masks, and the chart grew a step
+// that copied the image's data directory into the volume before the mount
+// hid it. What an image ships belongs where the image's other binaries are,
+// outside anything a user mounts, and it is read the way /usr/lib is read: by
+// everyone, written by nobody at run time. Discovery scans it after $PATH and
+// before the operator's own store; trust from it is read and never written.
+func System() string {
+	if d, set := os.LookupEnv("RTA_SYSTEM_DIR"); set {
+		return d
+	}
+	if runtime.GOOS == "linux" {
+		return "/usr/local/lib/rta"
+	}
+	return ""
 }
 
 // EnsureData creates the data directory if it is missing and returns it.

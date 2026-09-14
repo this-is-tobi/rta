@@ -227,7 +227,8 @@ func ResolveAllowing(granted []plugin.Need) (DenySet, error) {
 }
 
 // Launching is d for one launch: the artifact's own directory readable when
-// it lies inside the managed store, and d unchanged otherwise. See Own.
+// it lies inside the managed store or the system root's, and d unchanged
+// otherwise. See Own.
 //
 // Validated like every other entry, because it is rendered into the same
 // policy string — and refused rather than dropped for the same reason
@@ -235,7 +236,11 @@ func ResolveAllowing(granted []plugin.Need) (DenySet, error) {
 // noticed shrinking, in either direction.
 func (d DenySet) Launching(exe string) (DenySet, error) {
 	dir := filepath.Dir(exe)
-	for _, store := range withTarget(ManagedStore()) {
+	stores := withTarget(ManagedStore())
+	if system := SystemStore(); system != "" {
+		stores = append(stores, withTarget(system)...)
+	}
+	for _, store := range stores {
 		if !inside(dir, store) {
 			continue
 		}

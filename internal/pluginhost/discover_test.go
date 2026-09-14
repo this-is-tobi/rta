@@ -462,3 +462,54 @@ func TestTheManagedStoreIsDiscoveredLast(t *testing.T) {
 		t.Fatalf("shadowed = %v, want the managed copy reported", found[0].Shadowed)
 	}
 }
+
+// The system root's bin/ is scanned after $PATH and before the operator's
+// store: what an image installed is the platform the operator's installs add
+// to, and a copy the operator put on $PATH still outranks both. Shadows are
+// recorded across all three the way they are across $PATH entries.
+func TestTheSystemRootComesAfterPathAndBeforeTheStore(t *testing.T) {
+	onPath, system, data := t.TempDir(), t.TempDir(), t.TempDir()
+	t.Setenv("PATH", onPath)
+	t.Setenv("RTA_SYSTEM_DIR", system)
+	t.Setenv("RTA_DATA_DIR", data)
+	for _, d := range []string{SystemBin(), ManagedBin()} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	touch(t, filepath.Join(onPath, Prefix+"a"), 0o755)
+	touch(t, filepath.Join(SystemBin(), Prefix+"a"), 0o755)
+	touch(t, filepath.Join(SystemBin(), Prefix+"b"), 0o755)
+	touch(t, filepath.Join(ManagedBin(), Prefix+"b"), 0o755)
+	touch(t, filepath.Join(ManagedBin(), Prefix+"c"), 0o755)
+
+	found := Discover()
+	where := map[string]Found{}
+	for _, f := range found {
+		where[f.Name] = f
+	}
+	if len(found) != 3 {
+		t.Fatalf("found %d plugins, want a, b and c once each: %+v", len(found), found)
+	}
+	if got := where["a"].Path; !strings.HasPrefix(got, onPath) {
+		t.Errorf("a runs from %s, want the $PATH copy", got)
+	}
+	if got := where["b"].Path; !strings.HasPrefix(got, SystemBin()) {
+		t.Errorf("b runs from %s, want the system root's copy", got)
+	}
+	if got := where["c"].Path; !strings.HasPrefix(got, ManagedBin()) {
+		t.Errorf("c runs from %s, want the store's copy", got)
+	}
+	if len(where["a"].Shadowed) != 1 || len(where["b"].Shadowed) != 1 {
+		t.Errorf("shadows a=%v b=%v, want one each", where["a"].Shadowed, where["b"].Shadowed)
+	}
+}
+
+// No system root, nothing scanned: RTA_SYSTEM_DIR set empty is the spelling
+// for "read none", and discovery must not fall back to a default behind it.
+func TestAnEmptySystemRootIsNoRoot(t *testing.T) {
+	t.Setenv("RTA_SYSTEM_DIR", "")
+	if got := SystemBin(); got != "" {
+		t.Fatalf("SystemBin() = %q, want none", got)
+	}
+}

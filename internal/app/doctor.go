@@ -304,6 +304,7 @@ func doctorReport(reg *registry.Registry) view.View {
 	// seven-hundred-line body this replaced could only be tested whole.
 	doctorCatalogue(reg, add)
 	doctorDataDir(add)
+	doctorSystemRoot(add)
 	doctorTerminal(add)
 	doctorConfig(add)
 	doctorPluginConfig(reg, add)
@@ -322,6 +323,7 @@ func doctorReport(reg *registry.Registry) view.View {
 	doctorRecord(add)
 	doctorConsent(add)
 	doctorManagedPlugins(add)
+	doctorSystemPlugins(add)
 	doctorClients(add)
 	t.Total = len(t.Rows)
 	return t
@@ -373,6 +375,32 @@ func doctorDataDir(add func(check, status, detail string)) {
 			"what is in it; chmod 700 %s", dataDir, info.Mode().Perm(), dataDir))
 	default:
 		add("data", "ok", dataDir)
+	}
+}
+
+// The system root: what an image or a package installed, read-only. A row
+// only when there is something to say — the Linux default is a directory
+// most machines do not have, and "no system root" on every laptop would be
+// a line nobody reads. An explicit RTA_SYSTEM_DIR that names nothing is
+// worth a warning, because somebody typed it expecting plugins from it.
+func doctorSystemRoot(add func(check, status, detail string)) {
+	root := paths.System()
+	if root == "" {
+		return
+	}
+	_, explicit := os.LookupEnv("RTA_SYSTEM_DIR")
+	info, err := os.Stat(root)
+	switch {
+	case err != nil && explicit:
+		add("system", "warn", "RTA_SYSTEM_DIR names "+root+", which does not exist")
+	case err != nil:
+		return
+	case !info.IsDir():
+		add("system", "warn", root+" is not a directory")
+	default:
+		n := len(plugindist.ReadSystemLock())
+		add("system", "ok", fmt.Sprintf("%s — %s installed by the image or the package, read-only",
+			root, plural(n, "plugin", "plugins")))
 	}
 }
 
@@ -1053,6 +1081,29 @@ func doctorManagedPlugins(add func(check, status, detail string)) {
 			}
 		}
 		add(name, status, detail)
+	}
+}
+
+// What the image installed, from the system root's own record: the version,
+// the index it was installed from and the digest, with the binary checked to
+// still be where the record says. Nothing here is the operator's to fix by
+// hand — a missing binary in a read-only root is a broken image — so the row
+// says so rather than suggesting a command.
+func doctorSystemPlugins(add func(check, status, detail string)) {
+	for _, e := range plugindist.ReadSystemLock() {
+		short := e.Digest
+		if len(short) > 12 {
+			short = short[:12]
+		}
+		detail := fmt.Sprintf("%s from index %q (%s), installed by the image or the package",
+			e.Version, e.Index, short)
+		bin := filepath.Join(pluginhost.SystemBin(), pluginhost.BinaryName(e.Name))
+		if _, err := os.Stat(bin); err != nil {
+			add("image "+e.Name, "warn", detail+" — "+bin+" is missing: the root's record and its "+
+				"binaries disagree, which is a broken image or package rather than anything to repair here")
+			continue
+		}
+		add("image "+e.Name, "ok", detail)
 	}
 }
 

@@ -111,6 +111,11 @@ type Entry struct {
 	// worth stopping for, and it is the more so when what was allowed is a
 	// credential store.
 	Allow []string `json:"allow,omitempty"`
+	// System marks an entry read from the system root's record (paths.System)
+	// rather than the operator's: trusted by whoever built the image or the
+	// package, read by rta and never written by it. Not serialised — it is a
+	// fact about where the entry was read from, and the two files never mix.
+	System bool `json:"-"`
 }
 
 // Short is the digest as a person quotes it.
@@ -208,6 +213,16 @@ type file struct {
 // Path is where the record lives.
 func Path() string { return filepath.Join(paths.Data(), "trusted.json") }
 
+// systemPath is the system root's record, or "" when there is no system
+// root. Read by Load and by the two writers that need to know whether a
+// digest is trusted at all; never written.
+func systemPath() string {
+	if root := paths.System(); root != "" {
+		return filepath.Join(root, "trusted.json")
+	}
+	return ""
+}
+
 // mu serialises this process's writes, and a file lock serialises everybody
 // else's — the same mechanism internal/grant and builtin/kv use, for the same
 // reason and with the same durations.
@@ -258,21 +273,57 @@ const maxTrustFile = 256 << 10
 
 func Load() Set {
 	s := Set{entries: map[string]Entry{}}
-	data, err := atomicfile.ReadCapped(Path(), maxTrustFile)
+	for _, e := range readQuietly(Path()) {
+		s.entries[e.Digest] = e
+	}
+	// The system root's record joins underneath the operator's: an entry the
+	// operator also holds is the operator's — it may carry an Allow the
+	// image's cannot — and one only the image holds is trusted because the
+	// image said so, marked as such for anything that shows where trust came
+	// from. Each file fails closed on its own, so an unreadable system record
+	// costs the image's plugins and nothing of the operator's.
+	for digest, e := range loadSystem() {
+		if _, held := s.entries[digest]; !held {
+			s.entries[digest] = e
+		}
+	}
+	return s
+}
+
+// readQuietly is Load's reading of one record: every failure is the empty
+// list, entries without a digest are dropped, the rest normalised.
+func readQuietly(path string) []Entry {
+	data, err := atomicfile.ReadCapped(path, maxTrustFile)
 	if err != nil {
-		return s
+		return nil
 	}
 	var f file
 	if err := json.Unmarshal(data, &f); err != nil {
-		return s
+		return nil
 	}
+	out := make([]Entry, 0, len(f.Trusted))
 	for _, e := range f.Trusted {
 		if e.Digest == "" {
 			continue
 		}
-		s.entries[e.Digest] = e.normalize()
+		out = append(out, e.normalize())
 	}
-	return s
+	return out
+}
+
+// loadSystem is the system root's record by digest, every entry marked
+// System, and empty when there is no root or no record.
+func loadSystem() map[string]Entry {
+	out := map[string]Entry{}
+	p := systemPath()
+	if p == "" {
+		return out
+	}
+	for _, e := range readQuietly(p) {
+		e.System = true
+		out[e.Digest] = e
+	}
+	return out
 }
 
 // Add records an artifact as trusted. Trusting one already trusted refreshes
@@ -378,10 +429,24 @@ func Allow(digest string, locations []string) *view.Error {
 		out = append(out, e)
 	}
 	if !found {
-		return view.Errorf("plugin.allow.untrusted",
-			"that artifact is not trusted, so there is nothing to allow it").
-			WithHint("`rta plugin trust <name>` first — running it at all is the decision " +
-				"that comes before reading anything")
+		// Trusted by the image, not yet by the operator: the grant is the
+		// operator's decision and lives in the operator's record, so the
+		// system entry is copied there with the grant on it. Trust is not
+		// changed by this — the digest was already allowed to run — and the
+		// copy is what lets `disallow` and `untrust` find it later.
+		sys, ok := loadSystem()[digest]
+		if !ok {
+			return view.Errorf("plugin.allow.untrusted",
+				"that artifact is not trusted, so there is nothing to allow it").
+				WithHint("`rta plugin trust <name>` first — running it at all is the decision " +
+					"that comes before reading anything")
+		}
+		sys.System = false
+		sys.Allow = append([]string{}, locations...)
+		if len(sys.Allow) == 0 {
+			sys.Allow = nil
+		}
+		out = append(out, sys)
 	}
 	return write(file{Trusted: out})
 }
@@ -428,12 +493,35 @@ func Remove(which string) (int, *view.Error) {
 		return 0, verr
 	}
 	if removed == 0 {
-		return 0, nil
+		return 0, systemOnly(which)
 	}
 	if verr := write(file{Trusted: kept}); verr != nil {
 		return 0, verr
 	}
 	return removed, nil
+}
+
+// systemOnly is the refusal for a withdrawal that would only ever match the
+// system root's record, which rta does not write. Nothing matched at all is
+// not an error — the operator's own record simply does not hold it — so the
+// refusal is raised only when the name or digest is really there, on the
+// other side of the line.
+func systemOnly(which string) *view.Error {
+	sys := loadSystem()
+	if len(sys) == 0 {
+		return nil
+	}
+	f := file{Trusted: make([]Entry, 0, len(sys))}
+	for _, e := range sys {
+		f.Trusted = append(f.Trusted, e)
+	}
+	if _, matched, verr := matchRemove(f, which); verr != nil || matched == 0 {
+		return verr
+	}
+	return view.Errorf("plugin.untrust.system",
+		"%s is trusted by the system root at %s, which rta reads and does not write", which, paths.System()).
+		WithHint("that trust is the image's or the package's decision: build one without the plugin, " +
+			"or run with RTA_SYSTEM_DIR set to an empty value to read no system root at all")
 }
 
 // PreviewRemove answers what Remove would do — the same matching, the same
@@ -457,6 +545,9 @@ func PreviewRemove(which string) (int, *view.Error) {
 		return 0, verr
 	}
 	_, removed, verr := matchRemove(f, which)
+	if verr == nil && removed == 0 {
+		verr = systemOnly(which)
+	}
 	return removed, verr
 }
 

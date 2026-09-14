@@ -85,7 +85,27 @@ func ManagedBin() string { return filepath.Join(paths.Data(), "plugins", "bin") 
 // plugindist.StoreDir delegates.
 func ManagedStore() string { return filepath.Join(paths.Data(), "plugins", "store") }
 
-// Discover lists SDK plugin binaries on $PATH, then in the managed store.
+// SystemBin and SystemStore are the same two directories under the system
+// root (paths.System): what an image or a package installed at build time,
+// read-only at run time. Both are "" when there is no system root, and every
+// caller skips an empty one.
+func SystemBin() string {
+	if root := paths.System(); root != "" {
+		return filepath.Join(root, "plugins", "bin")
+	}
+	return ""
+}
+
+// SystemStore is the system root's store — see SystemBin.
+func SystemStore() string {
+	if root := paths.System(); root != "" {
+		return filepath.Join(root, "plugins", "store")
+	}
+	return ""
+}
+
+// Discover lists SDK plugin binaries on $PATH, then in the system root's
+// bin/, then in the managed store's.
 //
 // First match wins, in $PATH order, which is what a shell does and therefore
 // what a user predicts. A later duplicate does not change that and is not an
@@ -94,9 +114,12 @@ func ManagedStore() string { return filepath.Join(paths.Data(), "plugins", "stor
 // on the winner rather than dropped, so `rta doctor` can answer "which one is
 // this actually running" without anybody reaching for `which -a`.
 //
-// The managed store's bin/ comes after every $PATH entry, deliberately last:
-// $PATH is the operator's own statement and the store is rta's, so a copy the
-// operator put on $PATH shadows the managed one the ordinary, reported way —
+// The system root's bin/ comes after every $PATH entry and before the
+// operator's own store: what an image or a package installed is the platform
+// the operator's installs add to, and a copy the operator put on $PATH still
+// shadows both. The managed store's bin/ is deliberately last: $PATH is the
+// operator's own statement and the store is rta's, so a copy the operator put
+// on $PATH shadows the managed one the ordinary, reported way —
 // rather than rta's store silently outranking a deliberate local build. An
 // operator who wants managed plugins visible to other tools adds the dir to
 // their $PATH themselves, and the walked-dedup below keeps that from reading
@@ -116,7 +139,11 @@ func Discover() []Found {
 	// which shadows exist rather than which are reported twice.
 	walked := map[string]bool{}
 	var out []Found
-	dirs := append(filepath.SplitList(os.Getenv("PATH")), ManagedBin())
+	dirs := filepath.SplitList(os.Getenv("PATH"))
+	if system := SystemBin(); system != "" {
+		dirs = append(dirs, system)
+	}
+	dirs = append(dirs, ManagedBin())
 	for _, dir := range dirs {
 		if clean := filepath.Clean(dir); walked[clean] {
 			continue
