@@ -148,6 +148,27 @@ size: build ## Build rta and report what it weighs
 	@ls -l rta | awk '{ printf "%-26s %7.2f MB\n", $$NF, $$5/1048576 }'
 	@printf "\nEvery plugin is a separate binary from rta-plugins, so the ones nobody installs cost nothing.\n\n"
 
+# Binary size is a stated constraint (AGENTS.md), and until now it was a
+# constraint nobody could fail: `make size` reports, it does not refuse. This
+# does. The ceiling is on the linux/amd64 release binary, stripped the way a
+# release strips it, because that is the one that ships in the image and the
+# one most people download — measured 35.5 MB at v0.18.0 with 20 built-in
+# plugins, so 40 MB is room for a release or two of ordinary growth and not
+# for a dependency that brings a second runtime with it. Raise it here, on
+# purpose, with the dependency that needed it named in the commit.
+SIZE_LIMIT_MB ?= 40
+
+size-check: ## Fail if the linux/amd64 release binary exceeds SIZE_LIMIT_MB
+	@mkdir -p $(BUILDDIR)
+	@GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(GOBUILD_CORE) -o $(BUILDDIR)/rta-size-probe ./cmd/rta
+	@size=$$(wc -c < $(BUILDDIR)/rta-size-probe | tr -d ' '); \
+	limit=$$(( $(SIZE_LIMIT_MB) * 1048576 )); \
+	printf "linux/amd64 stripped: %d.%02d MB (ceiling %d MB)\n" $$((size/1048576)) $$((size%1048576*100/1048576)) $(SIZE_LIMIT_MB); \
+	rm -f $(BUILDDIR)/rta-size-probe; \
+	if [ "$$size" -gt "$$limit" ]; then \
+	  echo "size-check: the binary exceeds SIZE_LIMIT_MB; raise the ceiling deliberately or drop what grew it"; exit 1; \
+	fi
+
 # Rewrites the pins. Deciding *what* they should be is deliberately not this
 # target's job: which rta-plugins tag is newest is a question for whoever runs
 # it — `gh release list --repo this-is-tobi/rta-plugins` answers it — and
@@ -213,7 +234,7 @@ coverage-html: coverage ## ... and write coverage.html to open in a browser
 # fmt-check runs first now rather than last. Learning that a file is
 # unformatted after the whole race suite has run is learning it ten minutes
 # too late.
-ci: fmt-check vet hard coverage proto-lint proto-check cross ## Everything CI runs
+ci: fmt-check vet hard coverage proto-lint proto-check cross size-check ## Everything CI runs
 	@printf "\nci: green — every gate the pipeline runs.\n\n"
 
 ##@ Protocol
@@ -322,7 +343,7 @@ clean: ## Remove build output and coverage artifacts
 # make would find it up to date and report success for a target that ran
 # nothing.
 .PHONY: help setup download tidy fmt build install \
-	cross snapshot size bump-plugins test hard vet check \
+	cross snapshot size size-check bump-plugins test hard vet check \
 	fmt-check coverage coverage-html ci proto proto-lint proto-check \
 	chart-schema chart-schema-check chart-lint chart-docs \
 	clean
