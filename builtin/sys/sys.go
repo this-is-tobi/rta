@@ -6,7 +6,9 @@ package sys
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"math"
 	stdnet "net"
 	"sort"
 	"strconv"
@@ -136,8 +138,8 @@ func runOverview(ctx context.Context, req plugin.Request) (view.View, error) {
 			humanDuration(time.Duration(info.Uptime)*time.Second)))
 	}
 	cores, _ := cpu.CountsWithContext(ctx, true)
-	if percs, err := cpu.PercentWithContext(ctx, 200*time.Millisecond, false); err == nil && len(percs) > 0 {
-		add("cpu", fmt.Sprintf("%.1f%% of %d cores", percs[0], cores))
+	if s, err := sampleCPU(ctx); err == nil {
+		add("cpu", fmt.Sprintf("%.1f%% of %d cores", s.total, cores))
 	}
 	if vm, err := mem.VirtualMemoryWithContext(ctx); err == nil {
 		add("mem", fmt.Sprintf("%s / %s (%.1f%%)", format.Bytes(vm.Used), format.Bytes(vm.Total), vm.UsedPercent))
@@ -301,12 +303,12 @@ func fullestDisk(ctx context.Context) string {
 func runCPU(ctx context.Context, req plugin.Request) (view.View, error) {
 	if req.Bool("cores") {
 		// Per-core view: one bar per core, fixed 0-100 scale.
-		percs, err := cpu.PercentWithContext(ctx, 200*time.Millisecond, true)
+		s, err := sampleCPU(ctx)
 		if err != nil {
 			return nil, view.Errorf("sys.cpu.usage", "reading per-core usage: %v", err)
 		}
 		chart := view.Chart{Kind: view.ChartBar, Unit: "%", Max: 100}
-		for i, p := range percs {
+		for i, p := range s.perCore {
 			chart.Series = append(chart.Series, view.Series{
 				Name: fmt.Sprintf("core%d", i), Points: []float64{p},
 			})
@@ -317,8 +319,7 @@ func runCPU(ctx context.Context, req plugin.Request) (view.View, error) {
 	if err != nil {
 		return nil, view.Errorf("sys.cpu.info", "reading CPU info: %v", err)
 	}
-	// Sampling interval: long enough to be meaningful, short enough for a CLI.
-	percs, err := cpu.PercentWithContext(ctx, 200*time.Millisecond, false)
+	s, err := sampleCPU(ctx)
 	if err != nil {
 		return nil, view.Errorf("sys.cpu.usage", "reading CPU usage: %v", err)
 	}
@@ -333,11 +334,134 @@ func runCPU(ctx context.Context, req plugin.Request) (view.View, error) {
 	}
 	kv.Pairs = append(kv.Pairs,
 		view.Pair{Key: "cores", Value: fmt.Sprintf("%d physical, %d logical", physical, logical)},
+		view.Pair{Key: "usage", Value: fmt.Sprintf("%.1f%%", s.total)},
 	)
-	if len(percs) > 0 {
-		kv.Pairs = append(kv.Pairs, view.Pair{Key: "usage", Value: fmt.Sprintf("%.1f%%", percs[0])})
-	}
 	return kv, nil
+}
+
+// cpuWindow is the interval every usage figure sys reports is measured over:
+// long enough to be meaningful, short enough for a CLI.
+const cpuWindow = 200 * time.Millisecond
+
+// cpuPatience bounds how much longer than cpuWindow sampleCPU keeps waiting
+// for counters that have not moved. One macOS refresh period plus margin —
+// see sampleCPU for why that period exists at all.
+const cpuPatience = 1500 * time.Millisecond
+
+// cpuSample is one measured window: the host-wide busy share and each core's.
+type cpuSample struct {
+	total   float64
+	perCore []float64
+}
+
+// errCPUFrozen is a window over which no counter advanced: a frozen read, not
+// an idle machine — an idle core still accrues idle ticks.
+var errCPUFrozen = errors.New("the CPU counters did not advance")
+
+// sampleCPU measures usage over cpuWindow from the per-core counters, never the
+// host-wide one, and reports an error rather than a number when they did not
+// move.
+//
+// **On macOS the host-wide counter is refreshed about once a second, so a 200ms
+// window read from it is frozen roughly half the time.** Measured on macOS 26.5
+// (Darwin 25.5, M3 Max): HOST_CPU_LOAD_INFO advances for ~80ms after each
+// one-second boundary and then returns the same ticks for the next ~920ms,
+// while the per-processor counters behind host_processor_info advance every
+// 10ms, like /proc/stat does on Linux. gopsutil's cpu.Percent computes busy
+// from two reads of the host-wide counter, and when the two reads are identical
+// it returns 0 — not an error, not "no data", a usage of 0.0% — so `rta sys cpu`
+// printed 0.0% on 8 runs out of 15 and `rta sys overview` on 3 out of 10, on a
+// machine whose load line in the same output said 43% per core.
+//
+// Summing the per-core deltas is the same arithmetic over the same ticks — the
+// host-wide counter is nothing but that sum, cached — so the figure is the one
+// cpu.Percent would have produced on a kernel that keeps it fresh, and the
+// --cores chart comes from the same two reads rather than a third and fourth.
+// If even the per-core counters have not moved after cpuWindow the read is
+// retried every 50ms up to cpuPatience before being called unreadable; that is
+// the only path costing more than 200ms, and no platform rta ships on has been
+// seen to take it.
+func sampleCPU(ctx context.Context) (cpuSample, error) {
+	return sampleCPUWith(ctx, func(ctx context.Context) ([]cpu.TimesStat, error) {
+		return cpu.TimesWithContext(ctx, true)
+	}, cpuWindow, cpuPatience)
+}
+
+func sampleCPUWith(ctx context.Context, read func(context.Context) ([]cpu.TimesStat, error),
+	window, patience time.Duration) (cpuSample, error) {
+	first, err := read(ctx)
+	if err != nil {
+		return cpuSample{}, err
+	}
+	deadline := time.Now().Add(patience)
+	wait := window
+	for {
+		if err := sleep(ctx, wait); err != nil {
+			return cpuSample{}, err
+		}
+		second, err := read(ctx)
+		if err != nil {
+			return cpuSample{}, err
+		}
+		if s, ok := busyShares(first, second); ok {
+			return s, nil
+		}
+		if time.Now().After(deadline) {
+			return cpuSample{}, errCPUFrozen
+		}
+		wait = 50 * time.Millisecond
+	}
+}
+
+func sleep(ctx context.Context, d time.Duration) error {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
+}
+
+// busyShares turns two reads of the per-core counters into usage shares. ok is
+// false when nothing advanced between them — the frozen case sampleCPU exists
+// for — or when the two reads do not describe the same set of cores.
+func busyShares(t1, t2 []cpu.TimesStat) (cpuSample, bool) {
+	if len(t1) == 0 || len(t1) != len(t2) {
+		return cpuSample{}, false
+	}
+	s := cpuSample{perCore: make([]float64, len(t1))}
+	var allSum, busySum float64
+	for i := range t1 {
+		all1, busy1 := allBusy(t1[i])
+		all2, busy2 := allBusy(t2[i])
+		allSum += all2 - all1
+		busySum += busy2 - busy1
+		s.perCore[i] = share(busy2-busy1, all2-all1)
+	}
+	if allSum <= 0 {
+		return cpuSample{}, false
+	}
+	s.total = share(busySum, allSum)
+	return s, true
+}
+
+// allBusy is gopsutil's own split of a TimesStat, kept identical so the figure
+// matches what cpu.Percent reports where it works. Guest and GuestNice are left
+// out: only Linux fills them, and there the kernel has already folded guest
+// time into User, so counting it again would inflate the total. (TimesStat has
+// a Total method that adds them in, deprecated for exactly that reason.)
+func allBusy(t cpu.TimesStat) (all, busy float64) {
+	all = t.User + t.System + t.Nice + t.Idle + t.Iowait + t.Irq + t.Softirq + t.Steal
+	return all, all - t.Idle - t.Iowait
+}
+
+func share(busy, all float64) float64 {
+	if all <= 0 {
+		return 0
+	}
+	return math.Min(100, math.Max(0, busy/all*100))
 }
 
 // cpuModel names the processor as well as the platform allows.
