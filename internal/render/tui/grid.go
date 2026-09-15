@@ -489,22 +489,66 @@ func (m Model) dashFooterItems() []hintItem {
 	items := []hintItem{}
 	if m.selected > 0 && m.selected < len(m.tiles) {
 		t := m.tiles[m.selected]
-		for _, a := range t.actions {
-			if a.key == "enter" {
-				continue // enter opens the tile itself
-			}
+		for _, a := range m.offeredTileActions(m.selected) {
 			items = append(items, action(a.key, a.label))
 		}
 		if hint, ok := copyHint(t.cap.ID, t.view); ok {
 			items = append(items, hint)
 		}
 	}
-	return append(items,
+	return append(items, dashOwnItems()...)
+}
+
+// dashOwnItems are the keys the dashboard answers to whatever is selected:
+// moving around, the panes, and the ways out. Separate from dashFooterItems
+// because the claimed-key set in offeredTileActions has to be exactly these
+// and not the tile actions standing beside them.
+func dashOwnItems() []hintItem {
+	return []hintItem{
 		item(bindSelect), labelled(bindOpen, "details"),
 		item(bindProfile), item(bindPlugin), item(bindTheme),
 		item(bindMove), item(bindHide),
 		item(bindBrowse), item(bindSearch), item(bindQuit),
-	)
+	}
+}
+
+// offeredTileActions are the selected tile's actions the dashboard can
+// actually run, which is not all of the ones it declares.
+//
+// dashboardKeys answers `t`, `f`, `p` and the rest of the pane keys in its own
+// switch and returns handled, so the `default:` branch that consults
+// selectedAction is never reached for them. note.list declares `t to-do/note`
+// and the dashboard claims `t` for the theme form, and the bar used to print
+// both — `t to-do/note` among the tile's actions and `t theme` among the pane
+// keys, two verbs for one key on two lines of the same footer, with only the
+// theme form ever opening.
+//
+// The action is not lost, only the tile's one-key shortcut to it: `enter`
+// opens the tile and the same action is there on the result pane, which claims
+// no pane keys of its own. Filtering here rather than moving note.list's key
+// off `t` keeps the note toggle spelled the same way in the list and on a
+// note's own page, which is the point of one table driving every surface.
+//
+// The claimed set is derived from dashOwnItems rather than listed again here,
+// so it cannot drift from the bar when a pane key moves.
+func (m Model) offeredTileActions(i int) []capAction {
+	claimed := map[string]bool{}
+	for _, h := range dashOwnItems() {
+		for _, k := range h.keys {
+			claimed[k] = true
+		}
+	}
+	var offered []capAction
+	for _, a := range m.tiles[i].actions {
+		if a.key == "enter" {
+			continue // enter opens the tile itself
+		}
+		if claimed[a.key] {
+			continue
+		}
+		offered = append(offered, a)
+	}
+	return offered
 }
 
 // dashFooter renders it.

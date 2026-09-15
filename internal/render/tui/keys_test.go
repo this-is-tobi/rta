@@ -84,10 +84,11 @@ func TestATilesOwnActionsSurviveANarrowFooter(t *testing.T) {
 	for _, width := range []int{200, 120, 90, 60, 40} {
 		m.width = width
 		footer := footerOf(m.dashboardView(), footerMaxLines)
-		for _, a := range m.tiles[idx].actions {
-			if a.key == "enter" {
-				continue
-			}
+		// The actions the dashboard actually offers, not every action the
+		// capability declares: one whose key a pane key already claims is
+		// deliberately absent, because pressing it opens the pane instead.
+		// TestNoScreenAdvertisesOneKeyAsTwoVerbs is what holds that line.
+		for _, a := range m.offeredTileActions(idx) {
 			if !strings.Contains(footer, a.label) {
 				t.Errorf("width %d: action %q (%s) was dropped before navigation\n  %s",
 					width, a.label, a.key, footer)
@@ -144,24 +145,15 @@ func TestATruncatedFooterSaysSo(t *testing.T) {
 	}
 }
 
-// The reported bug, in the reporter's words: "I don't see the profile action".
+// advertisedScreens are the screens whose keys rta writes itself, shared by
+// the two tests that hold a footer to what its screen does.
 //
-// `f` opened the profiles pane from the day it was written and the dashboard's
-// footer never learned to say so, because each screen built its own bar at the
-// place it painted it and a new pane touched neither. A key nobody can see is a
-// key nobody has.
-//
-// So this is the general form rather than an assertion about `f`: put the model
-// in a screen, press everything a keyboard offers, and fail on anything that
-// does something the footer never mentions. The next pane to arrive gets the
-// same treatment for free.
-func TestEveryKeyAScreenAnswersToIsAdvertised(t *testing.T) {
-	// Only the screens whose keys rta writes itself. The form-driven modes —
-	// modeForm, modeTheme, modeCopyPick, modeBrowse-while-filtering — hand
-	// every key to huh or to the bubbles list, which answer to the whole
-	// alphabet by typing it into a field; advertising that is not a thing a
-	// footer can do or should try to.
-	screens := map[string]func(*testing.T) (Model, mode){
+// The form-driven modes — modeForm, modeTheme, modeCopyPick,
+// modeBrowse-while-filtering — hand every key to huh or to the bubbles list,
+// which answer to the whole alphabet by typing it into a field; advertising
+// that is not a thing a footer can do or should try to.
+func advertisedScreens() map[string]func(*testing.T) (Model, mode) {
+	return map[string]func(*testing.T) (Model, mode){
 		"dashboard": func(t *testing.T) (Model, mode) {
 			m, _ := realModel(t, 120, 40)
 			m.selected = 1 // a real tile, so its own actions are in play
@@ -211,7 +203,21 @@ func TestEveryKeyAScreenAnswersToIsAdvertised(t *testing.T) {
 			return shown.(Model), modeConfirm
 		},
 	}
-	for name, build := range screens {
+}
+
+// The reported bug, in the reporter's words: "I don't see the profile action".
+//
+// `f` opened the profiles pane from the day it was written and the dashboard's
+// footer never learned to say so, because each screen built its own bar at the
+// place it painted it and a new pane touched neither. A key nobody can see is a
+// key nobody has.
+//
+// So this is the general form rather than an assertion about `f`: put the model
+// in a screen, press everything a keyboard offers, and fail on anything that
+// does something the footer never mentions. The next pane to arrive gets the
+// same treatment for free.
+func TestEveryKeyAScreenAnswersToIsAdvertised(t *testing.T) {
+	for name, build := range advertisedScreens() {
 		t.Run(name, func(t *testing.T) {
 			base, screen := build(t)
 			advertised := map[string]bool{}
@@ -238,6 +244,38 @@ func TestEveryKeyAScreenAnswersToIsAdvertised(t *testing.T) {
 				}
 				t.Errorf("%s answers to %q but its footer never says so:\n  %s",
 					name, key, plain(fitHintBar(0, footerMaxLines, base.footerItems(screen)...)))
+			}
+		})
+	}
+}
+
+// The converse of the test above: a key the footer explains twice.
+//
+// A hint bar can hide a collision when the two entries land eight slots and a
+// line-wrap apart, and only one of them runs. The dashboard printed `t
+// to-do/note` among the note tile's actions and `t theme` among its own pane
+// keys, on two lines of the same bar — and dashboardKeys answers `t` in its
+// own switch and returns handled, so the theme form opened and the tile's
+// declared action was unreachable. One key, two verbs on screen, one of them
+// a lie.
+//
+// Over the same screens as the advertisement test, because a collision is
+// only a collision on a screen that shows both halves.
+func TestNoScreenAdvertisesOneKeyAsTwoVerbs(t *testing.T) {
+	for name, build := range advertisedScreens() {
+		t.Run(name, func(t *testing.T) {
+			m, screen := build(t)
+			verbs := map[string]string{}
+			for _, it := range m.footerItems(screen) {
+				for _, k := range it.keys {
+					if prev, seen := verbs[k]; seen && prev != it.label {
+						t.Errorf("%s advertises %q as both %q and %q:\n  %s",
+							name, k, prev, it.label,
+							plain(fitHintBar(0, footerMaxLines, m.footerItems(screen)...)))
+						continue
+					}
+					verbs[k] = it.label
+				}
 			}
 		})
 	}
