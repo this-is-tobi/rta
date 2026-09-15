@@ -55,22 +55,19 @@ func TestTheScaffoldBuildsAndLoads(t *testing.T) {
 		}
 	}
 
-	tidy := exec.Command("go", "mod", "tidy")
-	tidy.Dir = dir
+	tidy := goFromCache(dir, "mod", "tidy")
 	if out, err := tidy.CombinedOutput(); err != nil {
 		t.Fatalf("go mod tidy on a fresh scaffold failed:\n%s", out)
 	}
 	binary := filepath.Join(dir, s.Binary)
-	build := exec.Command("go", "build", "-o", binary, ".")
-	build.Dir = dir
+	build := goFromCache(dir, "build", "-o", binary, ".")
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("the scaffold does not compile:\n%s", out)
 	}
 
 	// The scaffold ships a conformance test, so it had better pass. An author
 	// whose first `go test` fails on generated code learns to ignore it.
-	suite := exec.Command("go", "test", "./...")
-	suite.Dir = dir
+	suite := goFromCache(dir, "test", "./...")
 	if out, err := suite.CombinedOutput(); err != nil {
 		t.Fatalf("the scaffold fails its own conformance suite:\n%s", out)
 	}
@@ -308,6 +305,56 @@ func repoRoot(t *testing.T) string {
 		t.Fatalf("cannot find the rta checkout at %s: %v", dir, err)
 	}
 	return dir
+}
+
+// goFromCache is a go(1) run whose dependencies come from the module cache and
+// nowhere else.
+//
+// This test was a network test, and nothing about what it checks needed to
+// be. A scaffold is a new module, so its go.sum starts empty, and cmd/go
+// records a checksum it does not already hold by asking the checksum database
+// first — useSumDB is GOSUMDB != "off", and a module sitting in the cache
+// does not change that answer. So each of the sixty-odd hashes a fresh `go
+// mod tidy` writes is a lookup against sum.golang.org, and nothing else in
+// this repository ever asks it anything: every other `go` command here runs
+// inside a module whose go.sum is committed and complete, so it never adds a
+// line and never fills the on-disk lookup cache that would answer offline. On
+// a runner that has only ever built rta that cache is empty and this tidy is
+// the only thing in the job that touches the network at all — which is how a
+// 30-second DNS timeout on "verifying module: github.com/hashicorp/go-plugin@v1.8.0"
+// came to fail a release.
+//
+// GOSUMDB=off is what removes the call, and it gives up nothing. Every module
+// the template can reach is one this test binary is already linked against,
+// downloaded and verified against rta's own committed go.sum on the way in;
+// the hashes tidy then writes into a temp directory it deletes are a
+// restatement of hashes this checkout already pins.
+//
+// GOPROXY is deliberately left alone. A brand-new go.mod has none of the
+// //indirect completeness a tidied one carries, so `go mod tidy` on it falls
+// back to Go's pre-1.17 eager graph loading — which, unlike a build, walks
+// the *test* imports of every module in the graph to establish the pruned
+// form. Measured directly: with a cold GOMODCACHE and GOPROXY=off, tidy fails
+// on golang.org/x/exp/maps — a test-only dependency of a dependency four
+// hops down (xo/terminfo, via glamour) — that `go mod graph` in rta's own,
+// already-tidy checkout never touches, because rta's pruned graph has no
+// reason to load it either. Nothing here can warm that offline: the set is a
+// property of eager loading on an untidy module, not of what rta happens to
+// import. So GOSUMDB=off carries the whole fix by itself, exactly as it did
+// before GOPROXY=off was added on top: it removes the one call the original
+// failure actually made (a sumdb lookup, routed through the proxy, is what
+// timed out — "verifying module: … Get https://proxy.golang.org/sumdb/…"),
+// and everything tidy still needs to fetch keeps using the ambient GOPROXY,
+// the same one every other `go get`/`go mod tidy` on this machine or on a
+// GitHub-hosted runner already resolves.
+//
+// Appended rather than prepended: os/exec keeps the last value for a repeated
+// key, so this wins over whatever the machine running the suite has set.
+func goFromCache(dir string, args ...string) *exec.Cmd {
+	cmd := exec.Command("go", args...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GOSUMDB=off")
+	return cmd
 }
 
 // An error a command returns without printing it must reach the user.
