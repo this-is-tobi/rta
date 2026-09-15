@@ -72,6 +72,7 @@ func runMail(ctx context.Context, req plugin.Request) (view.View, error) {
 
 // mailDomain accepts what people have to hand: a domain, an address they were
 // looking at, or a URL they copied from the browser.
+//
 // The order of the cuts is the whole correctness of this function, and it
 // used to be wrong in a way that mattered beyond this file.
 //
@@ -279,53 +280,73 @@ func auditSPF(r *findings.Report, f mailFacts) {
 	}
 }
 
+// spfAll is the qualifier of the first all mechanism a receiver reaches, and
+// whether there is one at all.
+//
+// The first one is the only one that matters, and grading by membership got
+// this wrong in the direction that hides the worst record there is: SPF
+// evaluates mechanisms left to right and all matches every host, so
+// `v=spf1 all -all` is decided by the bare all — which carries the default +
+// qualifier per RFC 7208 §4.6.2 and authorises the entire internet. Asking
+// whether "-all" appeared anywhere graded exactly that record ok, "ends in
+// -all (hard fail)", and appending -all to a record that already ended in
+// all is an ordinary editing mistake rather than an exotic one.
+func spfAll(record string) (string, bool) {
+	for _, f := range strings.Fields(strings.ToLower(record)) {
+		qualifier := "+"
+		if len(f) > 0 && strings.ContainsRune("+-~?", rune(f[0])) {
+			qualifier, f = f[:1], f[1:]
+		}
+		if f == "all" {
+			return qualifier, true
+		}
+	}
+	return "", false
+}
+
 // gradeSPFAll grades the record's final disposition — the part that decides
 // what a receiver does with mail from an unlisted host. Everything before it
 // only says who is allowed.
 func gradeSPFAll(record string) (string, string) {
-	switch {
-	case spfHasMechanism(record, "+all"), spfHasMechanism(record, "all") && !spfHasQualifiedAll(record):
-		return findings.Fail, "ends in +all — this authorises the entire internet to send as the domain, " +
-			"which is worse than publishing nothing: " + findings.Clip(record)
-	case spfHasMechanism(record, "-all"):
+	qualifier, found := spfAll(record)
+	if !found {
+		if strings.Contains(strings.ToLower(record), "redirect=") {
+			return findings.Info, "delegates its policy with redirect=: " + findings.Clip(record)
+		}
+		return findings.Warn, "no all mechanism — unlisted senders get no verdict, which receivers treat as neutral: " +
+			findings.Clip(record)
+	}
+	switch qualifier {
+	case "+":
+		return findings.Fail, "the first all mechanism a receiver reaches is +all — this authorises the " +
+			"entire internet to send as the domain, which is worse than publishing nothing: " + findings.Clip(record)
+	case "-":
 		return findings.OK, "ends in -all (hard fail): " + findings.Clip(record)
-	case spfHasMechanism(record, "~all"):
+	case "~":
 		return findings.OK, "ends in ~all (soft fail) — fine alongside an enforcing DMARC policy: " + findings.Clip(record)
-	case spfHasMechanism(record, "?all"):
-		return findings.Warn, "ends in ?all (neutral), which asks receivers to treat unlisted senders " +
-			"exactly as if no SPF record existed: " + findings.Clip(record)
-	case strings.Contains(strings.ToLower(record), "redirect="):
-		return findings.Info, "delegates its policy with redirect=: " + findings.Clip(record)
 	}
-	return findings.Warn, "no all mechanism — unlisted senders get no verdict, which receivers treat as neutral: " +
-		findings.Clip(record)
-}
-
-func spfHasMechanism(record, mech string) bool {
-	for _, f := range strings.Fields(strings.ToLower(record)) {
-		if f == mech {
-			return true
-		}
-	}
-	return false
-}
-
-func spfHasQualifiedAll(record string) bool {
-	for _, q := range []string{"-all", "~all", "?all", "+all"} {
-		if spfHasMechanism(record, q) {
-			return true
-		}
-	}
-	return false
+	return findings.Warn, "ends in ?all (neutral), which asks receivers to treat unlisted senders " +
+		"exactly as if no SPF record existed: " + findings.Clip(record)
 }
 
 // spfLookups counts the mechanisms that cost a DNS query, per RFC 7208 §4.6.4.
+//
+// It stops at the first all for the reason gradeSPFAll grades on it: nothing
+// past it is ever evaluated, so nothing past it can cost a lookup. The cut at
+// "/" is for the CIDR-only forms the grammar allows — a/24, mx/24, a//64 —
+// which used to leave the name as "a/24" and miss the table, undercounting in
+// the direction that suppresses the finding: past ten querying mechanisms
+// evaluation is a permerror and no policy is applied at all.
 func spfLookups(record string) int {
 	n := 0
 	for _, f := range strings.Fields(strings.ToLower(record)) {
 		f = strings.TrimLeft(f, "+-~?")
+		if f == "all" {
+			break
+		}
 		name, _, _ := strings.Cut(f, ":")
 		name, _, _ = strings.Cut(name, "=")
+		name, _, _ = strings.Cut(name, "/")
 		switch name {
 		case "include", "a", "mx", "ptr", "exists", "redirect":
 			n++
@@ -387,6 +408,25 @@ func dkimTag(record, tag string) string {
 	return ""
 }
 
+// dmarcPct is the percentage of mail a DMARC policy is applied to, and
+// whether the tag is usable at all.
+//
+// Absent means 100 per RFC 7489 §6.3, which is the common case and the one
+// that must not read as zero. A value that is not an integer in 0-100 is a
+// syntax error, and the RFC has a receiver discard a record it cannot parse
+// rather than apply a default — so "usable" is a distinct answer from "100".
+func dmarcPct(record string) (int, bool) {
+	raw := dkimTag(record, "pct")
+	if raw == "" {
+		return 100, true
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 0 || n > 100 {
+		return 0, false
+	}
+	return n, true
+}
+
 func auditDMARC(r *findings.Report, f mailFacts) {
 	name := "_dmarc." + f.domain
 	if f.dmarcErr != nil {
@@ -408,8 +448,39 @@ func auditDMARC(r *findings.Report, f mailFacts) {
 	}
 
 	record := dmarc[0]
-	switch policy := strings.ToLower(dkimTag(record, "p")); policy {
+
+	// pct= decides how much of the domain's mail the policy is applied to at
+	// all, so it belongs in the policy verdict rather than only beside it. It
+	// used to be compared as a string and never folded in, which graded
+	// `p=reject; pct=0` ok, "failing mail is refused" — for a domain whose
+	// policy is applied to none of its mail. That is p=none by another
+	// spelling, and p=none is graded fail a few lines down, so the record
+	// with the misleading tag scored better than the honest one. An abandoned
+	// staged rollout leaves domains in exactly that state.
+	pct, pctOK := dmarcPct(record)
+	if !pctOK {
+		r.Add(grpSenderAuth, "dmarc", findings.Fail,
+			"pct="+dkimTag(record, "pct")+" is not a percentage, and RFC 7489 has receivers discard a "+
+				"record they cannot parse — so this domain has no policy at all: "+findings.Clip(record),
+			refSpoofing)
+		return
+	}
+
+	policy := strings.ToLower(dkimTag(record, "p"))
+	if pct == 0 && (policy == "reject" || policy == "quarantine") {
+		r.Add(grpSenderAuth, "dmarc", findings.Fail,
+			"p="+policy+" with pct=0 — the policy is applied to none of the domain's mail, which is "+
+				"p=none written the long way: "+findings.Clip(record), refSpoofing)
+		return
+	}
+
+	switch policy {
 	case "reject":
+		if pct < 100 {
+			r.Add(grpSenderAuth, "dmarc", findings.Warn,
+				"p=reject, but pct="+strconv.Itoa(pct)+" applies it to a sample: "+findings.Clip(record), refSpoofing)
+			break
+		}
 		r.Add(grpSenderAuth, "dmarc", findings.OK, "p=reject — failing mail is refused: "+findings.Clip(record), refSpoofing)
 	case "quarantine":
 		r.Add(grpSenderAuth, "dmarc", findings.Warn,
@@ -426,9 +497,9 @@ func auditDMARC(r *findings.Report, f mailFacts) {
 	// pct= applies the policy to a sample. It exists for staged rollouts, and
 	// a rollout left half-finished is the common way a domain ends up
 	// believing it is protected while most spoofed mail still lands.
-	if pct := dkimTag(record, "pct"); pct != "" && pct != "100" {
+	if pct < 100 {
 		r.Add(grpSenderAuth, "dmarc-coverage", findings.Warn,
-			"pct="+pct+" — the policy is applied to that percentage of mail; the rest is delivered as if "+
+			"pct="+strconv.Itoa(pct)+" — the policy is applied to that percentage of mail; the rest is delivered as if "+
 				"there were no policy", refSpoofing)
 	}
 	if dkimTag(record, "rua") == "" {
@@ -500,7 +571,17 @@ func notFound(err error) bool {
 
 func auditMailRouting(r *findings.Report, f mailFacts) {
 	mx := f.mx
-	if f.mxErr != nil || len(mx) == 0 {
+	// A lookup that failed is not an answer about the domain. lookupMail
+	// already nils mxErr for the not-found case, so a non-nil one here is a
+	// SERVFAIL, a refused query, or the deadline expiring partway through the
+	// six-to-nine sequential lookups — and reporting it as "this domain does
+	// not receive mail" is the confident lie mailFacts' own doc warns about.
+	// Every other lookup in this file already says so; mx was the one left.
+	if f.mxErr != nil {
+		r.Add(grpRouting, "mx", findings.Info, "lookup failed: "+f.mxErr.Error(), refSpoofing)
+		return
+	}
+	if len(mx) == 0 {
 		r.Add(grpRouting, "mx", findings.Info, "no MX records — this domain does not receive mail", refSpoofing)
 		return
 	}

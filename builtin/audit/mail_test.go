@@ -145,6 +145,13 @@ func TestSPFGradedByHowItEnds(t *testing.T) {
 		{"no all at all", "v=spf1 ip4:192.0.2.0/24", findings.Warn, "no all mechanism"},
 		{"redirect", "v=spf1 redirect=_spf.example.com", findings.Info, "redirect="},
 		{"case is not significant", "V=SPF1 MX -ALL", findings.OK, "-all"},
+		// SPF is evaluated left to right and all matches every host, so a
+		// bare all decides the record however it ends. Grading by asking
+		// whether "-all" appeared anywhere reported each of these ok.
+		{"bare all before a hard fail", "v=spf1 all -all", findings.Fail, "entire internet"},
+		{"bare all before a soft fail", "v=spf1 mx all ~all", findings.Fail, "entire internet"},
+		{"neutral before a hard fail", "v=spf1 ?all -all", findings.Warn, "neutral"},
+		{"an explicit pass before a hard fail", "v=spf1 +all -all", findings.Fail, "entire internet"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -175,6 +182,27 @@ func TestBareAllIsGradedAsPassNotAsMissing(t *testing.T) {
 
 // Past ten DNS-querying mechanisms the whole evaluation is a permerror, which
 // means the record is published, looks right, and is not applied at all.
+// Nothing past the first all is ever evaluated, and the CIDR-only forms the
+// grammar allows used to miss the table entirely — both undercounts, in the
+// direction that suppresses the finding.
+func TestSPFLookupsStopAtTheFirstAllAndCountCIDRForms(t *testing.T) {
+	for _, tc := range []struct {
+		record string
+		want   int
+	}{
+		{"v=spf1 a/24 -all", 1},
+		{"v=spf1 mx/24 -all", 1},
+		{"v=spf1 a//64 -all", 1},
+		{"v=spf1 mx/24//64 -all", 1},
+		{"v=spf1 -all include:ignored.example.com", 0},
+		{"v=spf1 mx all include:ignored.example.com", 1},
+	} {
+		if got := spfLookups(tc.record); got != tc.want {
+			t.Errorf("spfLookups(%q) = %d, want %d", tc.record, got, tc.want)
+		}
+	}
+}
+
 func TestSPFLookupsAreCounted(t *testing.T) {
 	cases := []struct {
 		record string
@@ -279,6 +307,44 @@ func TestDMARCPartialRolloutIsCalledOut(t *testing.T) {
 	}
 }
 
+// pct= decides how much mail the policy touches, so it has to reach the
+// policy verdict. It was compared as a string and never folded in, which
+// graded `p=reject; pct=0` ok, "failing mail is refused" — a better grade
+// than the p=none four lines below it, for exactly the same protection.
+func TestDMARCAppliedToNoMailIsNotAPolicy(t *testing.T) {
+	for _, record := range []string{
+		"v=DMARC1; p=reject; pct=0; rua=mailto:a@d.test",
+		"v=DMARC1; p=quarantine; pct=0; rua=mailto:a@d.test",
+	} {
+		r := gradeMail(mailFacts{domain: "d.test", dmarc: []string{record}})
+		f := mustFind(t, r, "dmarc")
+		if f.Status != findings.Fail {
+			t.Errorf("%q graded %q, want fail — the policy applies to no mail: %s", record, f.Status, f.Detail)
+		}
+	}
+	// And a reject applied to a sample is not a clean bill of health either.
+	r := gradeMail(mailFacts{domain: "d.test", dmarc: []string{"v=DMARC1; p=reject; pct=10; rua=mailto:a@d.test"}})
+	if f := mustFind(t, r, "dmarc"); f.Status != findings.Warn {
+		t.Errorf("p=reject pct=10 graded %q, want warn: %s", f.Status, f.Detail)
+	}
+}
+
+// RFC 7489 has a receiver discard a record it cannot parse, so a malformed
+// pct= means no policy at all — not "the policy is applied to abc percent".
+func TestDMARCWithAnUnparseablePercentageHasNoPolicy(t *testing.T) {
+	for _, record := range []string{
+		"v=DMARC1; p=reject; pct=abc",
+		"v=DMARC1; p=reject; pct=140",
+		"v=DMARC1; p=reject; pct=-1",
+	} {
+		r := gradeMail(mailFacts{domain: "d.test", dmarc: []string{record}})
+		f := mustFind(t, r, "dmarc")
+		if f.Status != findings.Fail {
+			t.Errorf("%q graded %q, want fail: %s", record, f.Status, f.Detail)
+		}
+	}
+}
+
 func TestDMARCWithoutReportingIsAWarning(t *testing.T) {
 	r := gradeMail(mailFacts{domain: "d.test", dmarc: []string{"v=DMARC1; p=reject"}})
 	if f := mustFind(t, r, "dmarc-reporting"); f.Status != findings.Warn {
@@ -351,9 +417,9 @@ func TestFailedLookupsAreNotGradedAsFindings(t *testing.T) {
 	boom := errors.New("server misbehaving")
 	r := gradeMail(mailFacts{
 		domain: "d.test", selector: "s1", dkimName: "s1._domainkey.d.test",
-		apexErr: boom, dmarcErr: boom, dkimErr: boom, stsErr: boom, rptErr: boom,
+		apexErr: boom, dmarcErr: boom, dkimErr: boom, stsErr: boom, rptErr: boom, mxErr: boom,
 	})
-	for _, check := range []string{"spf", "dmarc", "dkim", "mta-sts", "tls-rpt"} {
+	for _, check := range []string{"spf", "dmarc", "dkim", "mta-sts", "tls-rpt", "mx"} {
 		f := mustFind(t, r, check)
 		if f.Status != findings.Info {
 			t.Errorf("%s: a failed lookup graded %q, want %q", check, f.Status, findings.Info)
