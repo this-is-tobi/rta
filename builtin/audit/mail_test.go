@@ -64,6 +64,45 @@ func TestMailDomainAcceptsWhatPeopleHaveToHand(t *testing.T) {
 	}
 }
 
+// The domain that gets audited has to be the domain that got approved.
+//
+// `@` used to be taken first, with LastIndex over the whole argument and
+// before the path was cut, so the host came off the end of a path or query.
+// The gate does not re-derive it: internal/mcp reserves the grant, asks for
+// consent and writes the ledger row from the caller's argument verbatim, so a
+// value whose host is not where a reader thinks it is makes the boundary
+// record one destination and query another. A folder scope makes it worse —
+// `example.com/` covers `example.com/x@evil.internal`.
+func TestTheAuditedDomainIsTheOneTheArgumentReadsAs(t *testing.T) {
+	// A host hidden behind a path or a query is not the host.
+	for _, tc := range []struct{ in, want string }{
+		{"http://good.com/x@evil.internal", "good.com"},
+		{"https://example.com/blog?ref=x@internal.corp", "example.com"},
+		{"https://example.com/a@b/c@d", "example.com"},
+		{"example.com/x@evil.internal", "example.com"},
+	} {
+		got, verr := mailDomain(tc.in)
+		if verr != nil {
+			t.Errorf("mailDomain(%q): %v", tc.in, verr)
+			continue
+		}
+		if got != tc.want {
+			t.Errorf("mailDomain(%q) = %q, want %q — the audit would go somewhere the argument does not name",
+				tc.in, got, tc.want)
+		}
+	}
+	// Credentials in front of a host are refused, not trimmed: the value
+	// reads as example.com and resolves to evil.internal.
+	for _, bad := range []string{
+		"https://example.com@evil.internal",
+		"https://user:pass@evil.internal",
+	} {
+		if got, verr := mailDomain(bad); verr == nil {
+			t.Errorf("mailDomain(%q) accepted it as %q — it reads as a different host than it audits", bad, got)
+		}
+	}
+}
+
 // selector used to be only trimmed before reaching dkimName — held here to
 // the same DNS-label discipline mailDomain already applies to the other
 // half of that name.
