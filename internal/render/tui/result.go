@@ -238,9 +238,35 @@ func (m Model) runAction(a capAction, tbl view.Table) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	// What the action opens is the capability without the inputs that point
-	// it at another machine — see hereOnly.
+	// it at another machine — see hereOnly — unless the view it was pressed
+	// in was itself pointed at one.
+	//
+	// That exception is the whole of a real bug. A listing run with
+	// `--server prod` has rows that are prod's state, and hereOnly used to
+	// drop the aim from the action launched off one of them: `x` on a row of
+	// `lock list --server prod` ran `lock rm` *here*, on the kind and name
+	// the row seeded, with no form and no confirmation — lock.rm is Write
+	// rather than Destructive, and the row supplies both inputs hereOnly
+	// left, so fieldsAfter came back empty and startRun fired on one
+	// keypress. So a remote server chose which local principal an operator
+	// unlocked. The same shape reached grant.revoke from grant.list, and
+	// agent.allow/agent.deny from agent.pending. The `profile` case just
+	// below is this bug already found once and fixed for one input: "the row
+	// identity from one connection, the call aimed at another".
+	//
+	// The aim travels, and the passphrase deliberately does not. Leaving the
+	// secret unseeded keeps it in fieldsAfter, so the form opens and a signed
+	// write to another machine is something the operator authorises, rather
+	// than something one keypress does with a passphrase that was typed to
+	// read a list.
 	cap := a.cap
-	cap.Inputs = hereOnly(cap.Inputs)
+	aim := m.aimedElsewhere(cap)
+	if len(aim) == 0 {
+		cap.Inputs = hereOnly(cap.Inputs)
+	}
+	for name, v := range aim {
+		base[name] = v
+	}
 	// Safety != Read is the wrong proxy on its own: kv.get is Write for what
 	// it discloses, not because it changes anything, and refreshPending
 	// existing at all is "a mutation happened, reload the list it came
@@ -295,6 +321,31 @@ func (m Model) runAction(a capAction, tbl view.Table) (tea.Model, tea.Cmd) {
 // the cursor is this machine's, so a box for the server it might instead be
 // parked on is a box for a different call. Typing the capability's name in
 // the catalogue still offers every input.
+// aimedElsewhere are the values that point the view on screen at another
+// machine, read off the call that produced it — `server` on the lock, grant
+// and agent listings, which all spell it the same way.
+//
+// Empty for a listing of this machine's own state, which is what keeps
+// hereOnly's shape for the common case: an action off a local queue does not
+// grow a box for a server nobody named.
+func (m Model) aimedElsewhere(cap plugin.Capability) map[string]any {
+	aim := map[string]any{}
+	for _, f := range cap.Inputs {
+		if !f.Remote {
+			continue
+		}
+		v, ok := m.lastValues[f.Name]
+		if !ok {
+			continue
+		}
+		if s, isString := v.(string); isString && s == "" {
+			continue
+		}
+		aim[f.Name] = v
+	}
+	return aim
+}
+
 func hereOnly(fields []plugin.Field) []plugin.Field {
 	remote := map[string]bool{}
 	for _, f := range fields {

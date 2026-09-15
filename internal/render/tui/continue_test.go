@@ -45,6 +45,50 @@ func storePlugin() plugin.Plugin {
 	}
 }
 
+// remoteStorePlugin is storePlugin with the shape the lock, grant and agent
+// listings actually have: an input that aims the call at another machine, a
+// passphrase only read beside it, and a removal that is Write rather than
+// Destructive — so nothing but the form stands between a keypress and the
+// write, which is what made the aim worth carrying.
+func remoteStorePlugin() plugin.Plugin {
+	run := func(context.Context, plugin.Request) (view.View, error) {
+		return view.Table{
+			Columns: []view.Column{{Name: "Name"}},
+			Rows:    [][]string{{"one"}, {"two"}},
+		}, nil
+	}
+	where := plugin.Field{Name: "bucket", Type: plugin.String, Help: "which store"}
+	server := plugin.Field{Name: "server", Type: plugin.String, Local: true, Remote: true,
+		Help: "read this remote server's state"}
+	pass := plugin.Field{Name: "passphrase", Type: plugin.Secret, With: "server",
+		Help: "the key that signs a request to server"}
+	return plugin.Plugin{
+		Name: "store", Summary: "a store that can be read over the wire",
+		Capabilities: []plugin.Capability{
+			{ID: "store.list", Summary: "list", Safety: plugin.Read,
+				Inputs: []plugin.Field{where, server, pass}, Run: run},
+			{ID: "store.rm", Summary: "remove", Safety: plugin.Write,
+				Inputs: []plugin.Field{
+					{Name: "name", Type: plugin.String, Positional: true, Required: true, Help: "what to remove"},
+					where, server, pass},
+				Run: run},
+		},
+	}
+}
+
+func remoteStoreModel(t *testing.T) Model {
+	t.Helper()
+	t.Setenv("RTA_CONFIG", t.TempDir()+"/config.yaml")
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	reg := registry.New()
+	if err := reg.Register(remoteStorePlugin()); err != nil {
+		t.Fatal(err)
+	}
+	m := New(reg, config.Dashboard{}, nil)
+	m.width, m.height = 100, 40
+	return m
+}
+
 func storeModel(t *testing.T) Model {
 	t.Helper()
 	t.Setenv("RTA_CONFIG", t.TempDir()+"/config.yaml")
@@ -116,6 +160,68 @@ func TestARowActionActsOnTheListingItWasPressedIn(t *testing.T) {
 	// An input the removal does not declare is not smuggled in.
 	if _, carried := next.form.values()["prefix"]; carried {
 		t.Error("an input store.rm does not declare was carried into its request")
+	}
+}
+
+// The same bug one layer up: not the wrong bucket, the wrong machine.
+//
+// `lock list --server prod` shows prod's locks. hereOnly dropped `server` and
+// the passphrase bound to it from the lock.rm a row action opens, and both of
+// lock.rm's remaining inputs come off the row — so fieldsAfter was empty, and
+// lock.rm is Write rather than Destructive, so `x` ran a local `lock rm` on
+// one keypress against a principal the remote server had named. grant.revoke
+// off grant.list and agent.allow/deny off agent.pending are the same shape.
+//
+// Two halves to the fix, and this asserts both: the aim travels, so the call
+// stays pointed at the machine whose rows are on screen; the passphrase does
+// not, so the form opens instead of a secret typed to read a list silently
+// authorising a write.
+func TestARowActionFromARemoteListingKeepsItsAim(t *testing.T) {
+	m := remoteStoreModel(t)
+	list, _ := m.reg.Capability("store.list")
+	rm, _ := m.reg.Capability("store.rm")
+	m.current = list
+	m.lastValues = map[string]any{"server": "prod", "passphrase": "typed-to-read", "bucket": "mine"}
+	m.row = 0
+
+	tbl := view.Table{Columns: []view.Column{{Name: "Name"}}, Rows: [][]string{{"one"}}}
+	model, _ := m.runAction(capAction{key: "x", label: "remove", cap: rm, src: srcRow}, tbl)
+	next := model.(Model)
+	if next.form == nil {
+		t.Fatal("x on another machine's listing ran without a form — the passphrase must be asked for")
+	}
+	// No box for the server, because it is already answered — carried from
+	// the listing rather than asked again, which is the aim travelling.
+	if got := next.form.values()["server"]; got != "prod" {
+		t.Errorf("server = %v, want prod — the write must stay aimed at the listing's machine", got)
+	}
+	// A box for the passphrase, empty: the form opened *because* of it.
+	bound, asked := next.form.bindings["passphrase"]
+	if !asked {
+		t.Fatal("the passphrase was not asked for — a signed write must be authorised, not inferred")
+	}
+	if *bound != "" {
+		t.Errorf("passphrase box = %q, want empty — a secret typed to read a list is not authority to write", *bound)
+	}
+}
+
+// And a listing of this machine's own state keeps hereOnly's shape: no box
+// for a server nobody named.
+func TestARowActionFromALocalListingAsksForNoServer(t *testing.T) {
+	m := remoteStoreModel(t)
+	list, _ := m.reg.Capability("store.list")
+	rm, _ := m.reg.Capability("store.rm")
+	m.current = list
+	m.lastValues = map[string]any{"bucket": "mine"}
+	m.row = 0
+
+	tbl := view.Table{Columns: []view.Column{{Name: "Name"}}, Rows: [][]string{{"one"}}}
+	model, _ := m.runAction(capAction{key: "x", label: "remove", cap: rm, src: srcRow}, tbl)
+	next := model.(Model)
+	if next.form != nil {
+		if _, asked := next.form.bindings["server"]; asked {
+			t.Error("a local listing's row action grew a box for a server nobody named")
+		}
 	}
 }
 
