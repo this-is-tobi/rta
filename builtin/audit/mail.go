@@ -72,18 +72,54 @@ func runMail(ctx context.Context, req plugin.Request) (view.View, error) {
 
 // mailDomain accepts what people have to hand: a domain, an address they were
 // looking at, or a URL they copied from the browser.
+// The order of the cuts is the whole correctness of this function, and it
+// used to be wrong in a way that mattered beyond this file.
+//
+// `@` was taken first, with LastIndex over the entire argument, before the
+// path was cut — so `http://good.com/x@evil.internal` audited evil.internal.
+// That is not a parsing curiosity: the grant gate, the consent prompt and the
+// ledger row all name the caller's argument verbatim (internal/mcp's
+// ReserveNaming runs on the undecoded values, and the same values reach
+// plugin.Resolve afterwards), while the lookups went to whatever came out
+// here. The boundary recorded one destination and queried another, and
+// because a scope ending in "/" covers any prefix under it, a grant for
+// `example.com/` covered `example.com/x@evil.internal` and so authorised an
+// audit of evil.internal.
+//
+// So: scheme, then authority, then userinfo strictly inside that authority,
+// then port — URL order, which is the order a reader of the string applies
+// too. audit.web does not have this bug because url.Parse ends the authority
+// at the first `/` for it.
 func mailDomain(raw string) (string, *view.Error) {
 	d := strings.TrimSpace(raw)
-	if i := strings.LastIndex(d, "@"); i >= 0 {
-		d = d[i+1:]
-	}
+	scheme := false
 	if i := strings.Index(d, "://"); i >= 0 {
-		d = d[i+3:]
+		d, scheme = d[i+3:], true
 	}
-	d = strings.TrimSuffix(strings.TrimSpace(strings.Trim(d, ".")), "/")
-	if i := strings.IndexAny(d, "/:"); i >= 0 {
+	// The authority ends at the first `/`, `?` or `#`; everything after it is
+	// path or query and cannot name the host.
+	if i := strings.IndexAny(d, "/?#"); i >= 0 {
 		d = d[:i]
 	}
+	// Only now can an `@` be userinfo. A credential in front of the host is
+	// refused rather than trimmed: `https://example.com@evil.internal` reads
+	// as example.com to whoever approves it, and a value that has to be read
+	// twice to find its host has no business being the thing a grant names.
+	if i := strings.LastIndex(d, "@"); i >= 0 {
+		if scheme {
+			return "", view.Errorf("audit.mail.baddomain",
+				"%q carries credentials before the host, so the domain it audits is not the one it reads as", raw).
+				WithHint("pass the domain itself — the part after the @ — or an address at it")
+		}
+		d = d[i+1:]
+	}
+	// A bracketed IPv6 literal keeps its colons; anything else is host:port.
+	if !strings.HasPrefix(d, "[") {
+		if i := strings.Index(d, ":"); i >= 0 {
+			d = d[:i]
+		}
+	}
+	d = strings.Trim(strings.TrimSpace(d), ".")
 	if d == "" || !strings.Contains(d, ".") {
 		return "", view.Errorf("audit.mail.baddomain", "not a domain: %q", raw).
 			WithHint("pass a domain like example.com, or an address at it")
