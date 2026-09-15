@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.21.0](https://github.com/this-is-tobi/rta/compare/v0.20.0...v0.21.0) (2026-09-15)
+
+
+### Features
+
+* **plugin:** refuse an upgrade that widens what a plugin may do ([093189b](https://github.com/this-is-tobi/rta/commit/093189b0d734a7e0d6abc216db1f2f709bfcd925))
+* **plugin:** sweep every plugin with --all on upgrade, untrust and remove ([7d08b67](https://github.com/this-is-tobi/rta/commit/7d08b6713f19567658f55c245d46a2705fd3cf2f))
+
+
+### Dependencies
+
+* **docker:** the full image builds from the index's newest commit ([6c648a1](https://github.com/this-is-tobi/rta/commit/6c648a160a5601e233cfce4f7a850f623aac8003))
+
 ## [0.20.0](https://github.com/this-is-tobi/rta/compare/v0.19.0...v0.20.0) (2026-09-14)
 
 
