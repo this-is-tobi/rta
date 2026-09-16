@@ -77,7 +77,7 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build \
 # The plugins run once during this stage, so it has to execute on the
 # architecture it builds for: build-docker.yml builds each architecture on
 # its own runner.
-ARG RTA_INDEXES="official@e3b598d64fc0bdc50138400a286ea9cdc5b59d1b"
+ARG RTA_INDEXES="official@2df67aaf2f5a02e6b92db6947cdfead5043cba32"
 ARG RTA_PLUGINS=""
 RUN set -eux; \
     export RTA_DATA_DIR=/usr/local/lib/rta RTA_CONFIG=/nonexistent/config.yaml; \
