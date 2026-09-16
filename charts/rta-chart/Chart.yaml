@@ -1,8 +1,8 @@
 apiVersion: v2
 name: rta-chart
 type: application
-version: 0.5.0
-appVersion: "0.20.0"
+version: 0.6.0
+appVersion: "0.21.0"
 description: Deploy rta MCP servers into Kubernetes, one instance per person.
 # Floor set by the core APIs the chart renders. The Gateway API resources
 # additionally need the gateway.networking.k8s.io CRDs installed in the cluster,
