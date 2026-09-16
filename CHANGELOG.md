@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.21.1](https://github.com/this-is-tobi/rta/compare/v0.21.0...v0.21.1) (2026-09-16)
+
+
+### Bug Fixes
+
+* **audit:** audit.mail queries the domain its argument reads as ([584bf12](https://github.com/this-is-tobi/rta/commit/584bf126bc0dffbc832801fd56d68f38cc976ed1))
+* **audit:** audit.mail stops reporting three false all-clears ([62afdee](https://github.com/this-is-tobi/rta/commit/62afdee41806d138707ecf7b57b46af9fc336c36))
+* **deps:** bump grpc-go past the HIGH severity CVE-2026-84445 ([413c690](https://github.com/this-is-tobi/rta/commit/413c6903c5ebda30f279283a61d7609d57ce1955))
+* **tui:** a row action keeps the aim of the listing it was pressed in ([bbc8912](https://github.com/this-is-tobi/rta/commit/bbc89129157d1419afaa2f9acc8eb2eb89d0b297))
+* **tui:** the dashboard stops advertising a tile action its own keys shadow ([420cdf6](https://github.com/this-is-tobi/rta/commit/420cdf625aef1b3a7bfd29a37eb7bde9fd1a1f24))
+
 ## [0.21.0](https://github.com/this-is-tobi/rta/compare/v0.20.0...v0.21.0) (2026-09-15)
 
 
