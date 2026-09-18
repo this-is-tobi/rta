@@ -198,3 +198,36 @@ func TestADashboardTileThatMissesItsDeadlineNamesTheDeadlineAndTheWayOut(t *test
 		t.Errorf("the hint should name the way out: %q", msg.err.Hint)
 	}
 }
+
+// The running screen's footer said "esc  leave it running", and esc has
+// never done that: runningKeys cancels the context and flashes "cancelled".
+// With no deadline on an asked-for run the wrong verb matters more — the
+// key that ends a hung run is the one the bar has to name correctly.
+func TestTheRunningFooterOffersToStopTheRunRatherThanLeaveIt(t *testing.T) {
+	m, _ := realModel(t, 120, 40)
+	m.mode = modeRunning
+	var stop *hintItem
+	for i, it := range m.footerItems(modeRunning) {
+		for _, k := range it.keys {
+			if k == "esc" {
+				stop = &m.footerItems(modeRunning)[i]
+			}
+		}
+	}
+	if stop == nil {
+		t.Fatal("the running screen advertises nothing on esc")
+	}
+	if strings.Contains(stop.label, "leave") || !strings.Contains(stop.label, "stop") {
+		t.Errorf("esc is labelled %q, and what it does is stop the run", stop.label)
+	}
+	// The binding it advertises is the one runningKeys acts on: pressing it
+	// with a run in flight cancels that run.
+	c := deadlineCap()
+	c.Inputs = nil
+	started, _ := m.open(c)
+	sm := started.(Model)
+	after, _ := sm.Update(keyMsg("esc"))
+	if after.(Model).mode == modeRunning || after.(Model).flash != "cancelled" {
+		t.Errorf("esc on the running screen: mode %v, flash %q — want the run cancelled", after.(Model).mode, after.(Model).flash)
+	}
+}

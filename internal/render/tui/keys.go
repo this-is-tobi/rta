@@ -352,8 +352,13 @@ func (m Model) footerItems(screen mode) []hintItem {
 			labelled(bindOpen, "copy"), item(bindFastSubmit), labelled(bindBack, "cancel"),
 		)
 	case modeRunning:
+		// "stop it" over "cancel": cancel is already this binding's label
+		// on the form screens, where it means "discard what I typed", and
+		// what is stopped here is a call that may already have reached the
+		// far end. "leave it running" was the old label, and esc never did
+		// that — runningKeys cancels the context and flashes "cancelled".
 		return []hintItem{
-			alias(labelled(bindBack, "leave it running"), "q"),
+			alias(labelled(bindBack, "stop it"), "q"),
 			action("ctrl+c", "quit"),
 		}
 	case modeConfirm:
