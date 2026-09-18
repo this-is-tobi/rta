@@ -545,6 +545,17 @@ func (m Model) resultKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 func (m Model) runningKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 	switch msg.String() {
 	case "ctrl+c":
+		// Cancelled on the way out, because quitting used to leave the
+		// run's context alive: the program ended, and a tunnelled run's
+		// kubectl — in its own process group, so that it outlives a parent
+		// that merely dies — was orphaned with nothing left to end the
+		// context that would have killed it. Best effort, since the process
+		// is leaving and the kill runs on a goroutine the exit races; it is
+		// still the only thing that makes the forward's teardown reachable
+		// from this key at all.
+		if m.cancelRun != nil {
+			m.cancelRun()
+		}
 		return m, tea.Quit, true
 	case "esc", "q":
 		// Leaving a slow run has to be possible without leaving the

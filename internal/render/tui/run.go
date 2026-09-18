@@ -25,6 +25,23 @@ import (
 // runTimeout bounds a single capability execution inside the TUI.
 const runTimeout = 30 * time.Second
 
+// forwardCeiling bounds a run that opened a port-forward, and only such a
+// run.
+//
+// The run's context is the forward's lifetime: internal/tunnel starts
+// kubectl under it, so whatever ends the context ends the hole into the
+// operator's cluster. The running screen is modal to the keyboard, not to
+// the clock — a person can leave the room — and an external plugin whose
+// handler never returns (pluginhost adds no deadline of its own) would
+// otherwise hold that forward open until somebody came back and pressed
+// esc. This bounds how long a forward can stay open with nobody watching,
+// which is a number rta can know, unlike a ceiling on how long a
+// capability may run, which it cannot (see startRun). Generous, because it
+// is not bounding anybody's patience: fifteen minutes is longer than any
+// built-in lets a caller state and short enough that an abandoned forward
+// closes within the hour.
+const forwardCeiling = 15 * time.Minute
+
 // formSeed is what a form opens showing: declared defaults, the operator's
 // configuration over them, the environment named by on over that, and whatever
 // the caller already had on top.
@@ -258,6 +275,13 @@ func runCmd(ctx context.Context, seq int, c plugin.Capability, values map[string
 			return resultMsg{cap: c, err: verr, seq: seq}
 		}
 		if len(dialled) > 0 {
+			// A forward is open: from here the context is also its lifetime,
+			// and gets the ceiling forwardCeiling explains. Derived here, at
+			// the one point that knows a forward opened, rather than on every
+			// run — a run with no forward has nothing to bound.
+			var cancelForward context.CancelFunc
+			ctx, cancelForward = context.WithTimeout(ctx, forwardCeiling)
+			defer cancelForward()
 			// Copied rather than written through: filled is the environment
 			// bind, which is cached and shared across every run made while
 			// that environment stands. Writing this call's endpoint into it
