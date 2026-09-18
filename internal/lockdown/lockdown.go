@@ -204,6 +204,13 @@ type sealed struct {
 	Locks []Lock `json:"locks"`
 }
 
+// canonical is what the seal covers: the parsed rows, re-marshalled, so
+// the MAC binds what the rows say rather than the bytes they were written
+// in. A re-indented file, or one a newer rta wrote with a top-level key
+// this one does not know, still verifies; only a change inside a row is a
+// forgery. A "simplification" to MAC the raw file bytes would start
+// rejecting every re-indented file as forged, which is why the property is
+// pinned by a test rather than left to be rediscovered.
 func canonical(locks []Lock) ([]byte, error) { return json.Marshal(locks) }
 
 func sealKey(create bool) ([]byte, *view.Error) {

@@ -3,9 +3,12 @@ package lockdown
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -315,5 +318,192 @@ func TestRemovingNothingWritesNothing(t *testing.T) {
 		if _, err := os.Stat(f); !errors.Is(err, os.ErrNotExist) {
 			t.Errorf("%s exists after a remove that matched nothing", f)
 		}
+	}
+}
+
+// No test ever called Remove with a lock that should survive: every case
+// stored exactly one, so the branch that keeps the other rows had no
+// coverage, and a Remove that dropped every row — or matched on name
+// alone — would have passed the suite while `rta lock rm claude` unfroze
+// every other principal mid-incident. The same-name-different-kind row is
+// the one a name-only match would eat.
+func TestRemoveLiftsOnlyTheNamedLock(t *testing.T) {
+	fresh(t)
+	mustAdd(t, "agent", "claude", "crashlooping", "")
+	mustAdd(t, "agent", "codex", "flooding", "")
+	mustAdd(t, "credential", "claude", "leaked", "")
+	removed, verr := Remove(KindAgent, "claude")
+	if verr != nil || !removed {
+		t.Fatalf("Remove = %v, %v", removed, verr)
+	}
+	locks, _ := Load()
+	if len(locks) != 2 {
+		t.Fatalf("locks after removing one of three: %+v", locks)
+	}
+	notes := map[string]string{}
+	for _, l := range locks {
+		notes[string(l.Kind)+" "+l.Name] = l.Note
+	}
+	if notes["agent codex"] != "flooding" || notes["credential claude"] != "leaked" {
+		t.Errorf("the other locks did not survive intact: %v", notes)
+	}
+}
+
+// Two ways a file stops being rta's: bytes that do not parse, and bytes that
+// parse but do not carry the seal. TestATamperedFileFailsClosedAndIsNotBuiltUpon
+// covers the second; this is the first, which is its own branch.
+func TestAnUnparseableLockFileIsRefusedLikeAForgedOne(t *testing.T) {
+	fresh(t)
+	mustAdd(t, "agent", "claude", "", "")
+	if err := os.WriteFile(Path(), []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, verr := Load(); verr == nil || verr.Code != "core.lock.forged" {
+		t.Fatalf("an unparseable file loaded: %v", verr)
+	}
+	if verr := Add(Lock{Kind: KindAgent, Name: "other", At: time.Now()}); verr == nil || verr.Code != "core.lock.forged" {
+		t.Fatalf("Add built on an unparseable file: %v", verr)
+	}
+}
+
+// A file that cannot be read is not an unlock either: the pin keeps the set
+// it last verified, the way it does for a file that vanished.
+func TestAnUnreadableLockFileIsNotAnUnlock(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("file modes do not deny the owner here")
+	}
+	fresh(t)
+	mustAdd(t, "agent", "claude", "", "")
+	p := NewPin()
+	if l, _ := p.Frozen(KindAgent, "claude"); l == nil {
+		t.Fatal("the lock did not take")
+	}
+	if err := os.Chmod(Path(), 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(Path(), 0o600) })
+	if _, verr := Load(); verr == nil || verr.Code != "core.lock.read" {
+		t.Fatalf("an unreadable file: %v, want core.lock.read", verr)
+	}
+	l, alarm := p.Frozen(KindAgent, "claude")
+	if l == nil || alarm == "" {
+		t.Fatalf("an unreadable file unlocked the agent for a process that saw the lock (lock=%+v alarm=%q)", l, alarm)
+	}
+	if _, again := p.Frozen(KindAgent, "claude"); again != "" {
+		t.Fatal("the alarm repeats every call instead of once per incident")
+	}
+}
+
+// grant.CheckAgent accepts an empty name, so Add's own check is the only
+// wall against a row that reads as protection and can match nothing —
+// match() treats "" as no principal. `rta lock add ""` reaches it: the
+// positional validator counts arguments and never checks emptiness.
+func TestALockWithNoPrincipalIsRefused(t *testing.T) {
+	fresh(t)
+	for _, name := range []string{"", "\t "} {
+		if verr := Add(Lock{Kind: KindAgent, Name: name, At: time.Now()}); verr == nil || verr.Code != "core.lock.name" {
+			t.Errorf("Add with name %q: %v, want core.lock.name", name, verr)
+		}
+	}
+	if locks, _ := Load(); len(locks) != 0 {
+		t.Errorf("an empty-named row was stored: %+v", locks)
+	}
+}
+
+// Build checks the kind, and so does Add, for a Lock handed to it directly
+// — the shape the operator channel's handler uses.
+func TestAddRefusesAKindItWasHandedDirectly(t *testing.T) {
+	fresh(t)
+	if verr := Add(Lock{Kind: Kind("root"), Name: "x", At: time.Now()}); verr == nil || verr.Code != "core.lock.kind" {
+		t.Fatalf("Add with an unknown kind: %v, want core.lock.kind", verr)
+	}
+}
+
+// load() drops expired rows on every read, but a pin holding the last
+// verified set — because the file vanished — never reads again, so match()
+// has to re-check expiry on the set it holds. Only that second check keeps
+// a TTL'd lock in a held set from outliving its window.
+func TestAnExpiredLockInAHeldSetIsNotALock(t *testing.T) {
+	fresh(t)
+	l, verr := Build("agent", "claude", "", "1h", "terminal")
+	if verr != nil {
+		t.Fatal(verr)
+	}
+	l.Expires = time.Now().Add(80 * time.Millisecond)
+	if verr := Add(l); verr != nil {
+		t.Fatal(verr)
+	}
+	p := NewPin()
+	if held, _ := p.Frozen(KindAgent, "claude"); held == nil {
+		t.Fatal("the lock did not take")
+	}
+	if err := os.Remove(Path()); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(150 * time.Millisecond)
+	if held, _ := p.Frozen(KindAgent, "claude"); held != nil {
+		t.Fatal("an expired lock in the held set still freezes")
+	}
+}
+
+// Adds are serialised by the file lock, which serialises goroutines as well
+// as processes because the sentinel is a create-once file. Twelve at once
+// all land; a lost write here is the class grant.Mutate's comment describes.
+func TestConcurrentAddsAllLand(t *testing.T) {
+	fresh(t)
+	var wg sync.WaitGroup
+	errs := make(chan error, 12)
+	for i := range 12 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			l, verr := Build("agent", fmt.Sprintf("agent-%d", i), "", "", "terminal")
+			if verr != nil {
+				errs <- verr
+				return
+			}
+			if verr := Add(l); verr != nil {
+				errs <- verr
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Error(err)
+	}
+	if locks, _ := Load(); len(locks) != 12 {
+		t.Fatalf("%d of 12 concurrent adds landed", len(locks))
+	}
+}
+
+// canonical re-marshals the parsed rows, so the seal binds what the rows
+// say rather than the bytes they were written in: a re-indented file with
+// an unrelated top-level key still verifies, and only a change inside a
+// row is a forgery (TestATamperedFileFailsClosedAndIsNotBuiltUpon). A
+// "simplification" to MAC the raw file bytes would start rejecting every
+// re-indented file as forged, which is why the property is pinned.
+func TestTheSealBindsTheRowsAndNotTheBytes(t *testing.T) {
+	fresh(t)
+	mustAdd(t, "agent", "claude", "incident", "")
+	data, err := os.ReadFile(Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatal(err)
+	}
+	doc["written-by"] = "a newer rta"
+	reshaped, err := json.MarshalIndent(doc, "", "\t")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(Path(), reshaped, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	locks, verr := Load()
+	if verr != nil || len(locks) != 1 || locks[0].Note != "incident" {
+		t.Fatalf("a re-indented file with an extra key: %+v, %v", locks, verr)
 	}
 }
