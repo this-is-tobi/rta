@@ -5,6 +5,8 @@ import (
 	"crypto/rand"
 	"errors"
 	"testing"
+
+	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
 // The scrypt default is the point in production and a tax here; 10 is the
@@ -55,5 +57,23 @@ func TestMangledCiphertextIsNotAPassphraseError(t *testing.T) {
 	}
 	if errors.Is(err, ErrPassphrase) {
 		t.Fatal("an encoding failure reads as a wrong passphrase")
+	}
+}
+
+// Prompt's own comment makes its MCP check a wall a fourth caller must
+// meet, not a channel: the invariant that no MCP caller can supply a
+// passphrase holds there rather than by the grace of every capability that
+// declares the field — and its refusal was the one surface wall in the tree
+// nothing exercised. Both of Prompt's callers, the grant guard and the
+// operator key, sit behind it; a value in the request must not get past it
+// either, since a value is exactly what a tool call would carry.
+func TestAPassphraseIsNeverAskedOnTheMCPSurface(t *testing.T) {
+	text := PromptText{Subject: "the key", Prompt: "p: ", Codes: "test.passphrase", Empty: "e"}
+	for _, values := range []map[string]any{{"passphrase": "x"}, nil} {
+		req := plugin.NewRequest(values, false, true).WithSurface(plugin.SurfaceMCP)
+		got, verr := Prompt(req, false, text)
+		if verr == nil || verr.Code != "test.passphrase.surface" || !verr.Refusal || got != "" {
+			t.Fatalf("Prompt on MCP with %v = %q, %v — want an empty answer and a surface refusal", values, got, verr)
+		}
 	}
 }
