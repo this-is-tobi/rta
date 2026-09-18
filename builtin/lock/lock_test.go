@@ -2,6 +2,7 @@ package lock
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -112,21 +113,43 @@ func TestSuggestLockedNamesIsFilteredByKind(t *testing.T) {
 	}
 }
 
-func TestATypodKindIsRefusedBeforeAnythingElse(t *testing.T) {
+// The remote flow checks what it can before the passphrase is asked, so a
+// typo costs a retype rather than an unlock and a round trip — the server
+// would refuse the same thing, but only after both. Every refusal Build can
+// produce is a typo of this kind: the kind, the principal's grammar, an
+// over-long note, a ttl that is not a window. Pinned by the error arriving
+// with no operator key and no remotes.yaml on this machine at all: anything
+// attempted first would fail for one of those reasons instead.
+func TestATypoIsRefusedBeforeAnythingElse(t *testing.T) {
 	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml")) // never the machine's own remotes.yaml
 	_, err := capByID(t, "lock.add").Run(context.Background(),
 		req(map[string]any{"kind": "agnet", "name": "claude"}))
 	verr, ok := err.(*view.Error)
 	if !ok || verr.Code != "core.lock.kind" {
 		t.Fatalf("err = %v, want core.lock.kind", err)
 	}
-	// The remote flow checks the kind before the passphrase is asked, so a
-	// typo costs a retype, not an unlock — pinned by the error arriving
-	// with no operator key on this machine at all.
-	_, err = capByID(t, "lock.add").Run(context.Background(),
-		req(map[string]any{"kind": "agnet", "name": "claude", "server": "work"}))
-	verr, ok = err.(*view.Error)
-	if !ok || verr.Code != "core.lock.kind" {
-		t.Fatalf("remote err = %v, want core.lock.kind before any unlock", err)
+	for _, tc := range []struct {
+		name   string
+		values map[string]any
+		code   string
+	}{
+		{"kind", map[string]any{"kind": "agnet", "name": "claude", "server": "work"}, "core.lock.kind"},
+		{"ttl", map[string]any{"kind": "agent", "name": "claude", "ttl": "soon", "server": "work"}, "core.lock.ttl"},
+		{"note", map[string]any{"kind": "agent", "name": "claude", "note": strings.Repeat("n", 300), "server": "work"}, "core.lock.note"},
+		{"name", map[string]any{"kind": "agent", "name": "not a name", "server": "work"}, "grant.agent.charset"},
+	} {
+		_, err := capByID(t, "lock.add").Run(context.Background(), req(tc.values))
+		verr, ok := err.(*view.Error)
+		if !ok || verr.Code != tc.code {
+			t.Errorf("a bad %s with --server: %v, want %s before any unlock", tc.name, err, tc.code)
+		}
+	}
+	// A dry run aimed at a server says "would lock" only for a lock the
+	// server would take.
+	dry := plugin.NewRequest(map[string]any{"kind": "agent", "name": "not a name", "server": "work"}, true, true).
+		WithSurface(plugin.SurfaceCLI)
+	if v, err := capByID(t, "lock.add").Run(context.Background(), dry); err == nil {
+		t.Errorf("a dry run with --server answered %+v for a name the real call refuses", v)
 	}
 }

@@ -300,9 +300,16 @@ func remoteClient(req plugin.Request, server string) (operatorid.Client, *view.E
 }
 
 func remoteAdd(ctx context.Context, req plugin.Request, server, kind, name string) (view.View, error) {
-	// The kind is checked before the passphrase is asked: a typo should
-	// cost a retype, not an unlock.
-	if _, verr := lockdown.CheckKind(kind); verr != nil {
+	// Built and thrown away: every refusal Build can produce — the kind,
+	// the principal's grammar, an over-long note, a ttl that is not a
+	// window — is a typo, and a typo should cost a retype rather than an
+	// unlock and a round trip. The server refuses the same things, but only
+	// after both. Only the refusals are wanted here; the Lock itself is not
+	// sent, because the At and Expires this clock mints are not the ones
+	// the server stores. The known cost: a server running a newer rta with
+	// a looser grammar has a valid lock refused client-side, which the kind
+	// check here already accepted for the kind alone.
+	if _, verr := lockdown.Build(kind, name, req.String("note"), req.String("ttl"), ""); verr != nil {
 		return nil, verr
 	}
 	if req.DryRun {
