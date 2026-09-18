@@ -27,6 +27,14 @@ endif
 # which `snapshot` empties.
 BUILDDIR ?= bin
 
+# The helm-docs that regenerates the chart's README, pinned by digest for the
+# reason both Dockerfiles give — trust binds to bytes, not to a name — and
+# because CI runs this same image through github-workflows' lint-helm and
+# update-helm-chart: a tag that moved under one and not the other turns a
+# README regeneration into a diff nobody asked for. v1.14.2, resolved with
+# `docker buildx imagetools inspect`.
+HELM_DOCS_IMAGE ?= docker.io/jnorwood/helm-docs@sha256:7e562b49ab6b1dbc50c3da8f2dd6ffa8a5c6bba327b1c6335cc15ce29267979c
+
 # `--tags` without `--always`: with no tag in reach this fails and the version
 # stays `dev`, which is the honest answer for a build off a branch. The commit
 # is reported separately — the Go toolchain records it in every binary built
@@ -196,6 +204,8 @@ size-check: ## Fail if the linux/amd64 release binary exceeds SIZE_LIMIT_MB
 bump-index: export BUMP_INDEX_REF := $(REF)
 bump-index: ## Pin Dockerfile.full's official index at REF (a commit of rta-plugins)
 	@test -n "$$BUMP_INDEX_REF" || { echo "bump-index needs REF=<commit>"; exit 1; }
+	@printf '%s' "$$BUMP_INDEX_REF" | grep -qE '^[0-9a-f]{40}$$' || \
+	  { echo "bump-index needs REF to be a 40-character commit sha, got '$$BUMP_INDEX_REF' — RTA_INDEXES is space-separated, so anything else in it would add an index rather than break the pin"; exit 1; }
 	@awk -v ref="$$BUMP_INDEX_REF" '{ \
 	  if ($$0 ~ /^ARG RTA_INDEXES="/) { \
 	    n = split(substr($$0, 18, length($$0) - 18), entries, " "); line = ""; \
@@ -372,9 +382,11 @@ chart-lint: chart-schema-check ## Lint the chart and validate values.yaml agains
 	helm lint $(CHART_DIR) --values $(CHART_DIR)/ci/test-values.yaml
 	helm template rta $(CHART_DIR) --values $(CHART_DIR)/ci/test-values.yaml >/dev/null
 
+# --network none: helm-docs reads a chart and writes a README, and needs
+# nothing from anywhere.
 chart-docs: ## Regenerate the chart's README from values.yaml
-	docker run --rm --volume "$(PWD)/charts:/helm-docs" -u "$$(id -u):$$(id -g)" \
-	  docker.io/jnorwood/helm-docs:v1.14.2
+	docker run --rm --network none --volume "$(PWD)/charts:/helm-docs" -u "$$(id -u):$$(id -g)" \
+	  "$(HELM_DOCS_IMAGE)"
 
 ##@ Housekeeping
 
