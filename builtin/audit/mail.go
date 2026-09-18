@@ -715,14 +715,24 @@ func auditMailTransport(r *findings.Report, f mailFacts) {
 				"is in the policy file, which this does not fetch", refCleartext)
 	}
 
+	rpt := pick(f.rpt, "v=tlsrptv1")
 	switch {
 	case f.rptErr != nil:
 		r.Add(grpMailTLS, "tls-rpt", findings.Info, "lookup failed: "+f.rptErr.Error(), refCleartext)
-	case len(pick(f.rpt, "v=tlsrptv1")) == 0:
+	case len(rpt) == 0:
 		r.Add(grpMailTLS, "tls-rpt", findings.Info,
 			"no TLS-RPT record — failed TLS deliveries to this domain are not reported to anybody",
 			refCleartext)
 	default:
+		// RFC 8460 §3 makes rua= required: a record without it names nowhere
+		// to send a report, so it is the marker of a policy with no effect —
+		// the same check dmarc-reporting makes, for the same reason.
+		if rua, _ := recordTag(rpt[0], "rua"); rua == "" {
+			r.Add(grpMailTLS, "tls-rpt", findings.Warn,
+				"a TLS-RPT record with no rua= address — it names nowhere to send a report, so failed "+
+					"TLS deliveries are reported to nobody", refCleartext)
+			break
+		}
 		r.Add(grpMailTLS, "tls-rpt", findings.OK, "senders report TLS delivery failures", refCleartext)
 	}
 }
