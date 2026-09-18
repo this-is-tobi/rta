@@ -441,6 +441,29 @@ func TestDKIMKeyGrading(t *testing.T) {
 	}
 }
 
+// RFC 8461 splits MTA-STS in two: the _mta-sts TXT record is a version and
+// an id, and the policy — mode enforce, testing, or none, which is how it is
+// switched off — lives in a file this never fetches. "ok, senders are told
+// to require TLS" was an assertion about a document nobody read, and it read
+// as ok for a domain whose policy says mode: none.
+func TestMTASTSIsNotGradedOKFromTheTXTRecordAlone(t *testing.T) {
+	r := gradeMail(mailFacts{domain: "d.test", sts: []string{"v=STSv1; id=20240101"}})
+	f := mustFind(t, r, "mta-sts")
+	if f.Status != findings.Info {
+		t.Errorf("a marker record graded %q, want %q: %s", f.Status, findings.Info, f.Detail)
+	}
+	if !strings.Contains(f.Detail, "not fetch") || !strings.Contains(f.Detail, "mode") {
+		t.Errorf("the finding should say the policy file, where the mode lives, was not read: %q", f.Detail)
+	}
+	// Absence stays a warning — the one way transport security still reaches
+	// the report's grade — but it no longer asserts that nothing tells a
+	// sender to require TLS: DANE does, and Go's resolver cannot ask for it.
+	none := mustFind(t, gradeMail(mailFacts{domain: "d.test"}), "mta-sts")
+	if none.Status != findings.Warn || !strings.Contains(none.Detail, "DANE") {
+		t.Errorf("no MTA-STS record: %+v — want warn, naming DANE as the check this cannot make", none)
+	}
+}
+
 // RFC 7505's null MX is a domain stating that it accepts no mail. It is a
 // hardening measure, and grading it as an omission would teach people to
 // undo it.
