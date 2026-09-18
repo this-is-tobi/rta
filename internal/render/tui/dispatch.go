@@ -558,8 +558,10 @@ func (m Model) runningKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		}
 		return m, tea.Quit, true
 	case "esc", "q":
-		// Leaving a slow run has to be possible without leaving the
-		// app: a traceroute is thirty hops of two seconds.
+		// Stopping a slow run has to be possible without leaving the app:
+		// a traceroute is thirty hops of two seconds, and since an
+		// asked-for run carries no deadline (startRun) this is the only
+		// thing that ends one short of quitting.
 		if m.cancelRun != nil {
 			m.cancelRun()
 			m.cancelRun = nil

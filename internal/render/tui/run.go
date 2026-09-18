@@ -20,10 +20,7 @@ import (
 
 // Executing a capability: the seed a run form opens on, the pipeline a
 // submitted one goes down — resolve the environment, open the forward, lay
-// the layers, run the handler — and the timeout that bounds it.
-
-// runTimeout bounds a single capability execution inside the TUI.
-const runTimeout = 30 * time.Second
+// the layers, run the handler — and what bounds it.
 
 // forwardCeiling bounds a run that opened a port-forward, and only such a
 // run.
@@ -363,7 +360,7 @@ func (m *Model) refreshInPlace(c plugin.Capability, values map[string]any, yes b
 		gen := m.tickGen
 		return tea.Tick(tileRefreshInterval, func(time.Time) tea.Msg { return tickMsg{gen: gen} })
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), refreshTimeout)
 	m.cancelRun = cancel
 	m.runSeq++
 	return runCmd(ctx, m.runSeq, c, withoutPicker(c, values), yes, m.configFor(c), name, filled, conn, false)
@@ -378,6 +375,23 @@ func (m *Model) refreshInPlace(c plugin.Capability, values map[string]any, yes b
 // so the result that eventually arrives is recognised as belonging to a run
 // nobody is waiting for any more, and is dropped instead of painted over
 // whatever the user moved on to.
+//
+// Cancellable and *not* bounded, which is the CLI's contract and MCP's: a
+// capability's deadline is the capability's own. This used to be
+// WithTimeout(30s), and thirty seconds is shorter than several capabilities'
+// own declared, host-validated budgets — net.trace's defaults are thirty
+// hops times three probes times two seconds, and http.* lets a caller state
+// six hundred — so the host was cutting runs off at a number the operator
+// had already overruled and reporting it as "context deadline exceeded".
+// Picking a bigger number does not fix that: the ceiling would have to
+// exceed the largest timeout any capability lets a caller state, and with
+// third-party plugins in the registry that number is not ours to know. What
+// bounds a run here is what bounds it everywhere else — the capability's
+// own timeout input, its own internal deadlines — plus esc, which the
+// running screen advertises and which the modal keymap (runningKeys) makes
+// the only way off that screen short of quitting. Two exceptions keep a
+// deadline, each for a reason written where it lives: a run that opened a
+// port-forward (forwardCeiling), and the refresh paths (refreshTimeout).
 func (m *Model) startRun(c plugin.Capability, values map[string]any, yes bool) tea.Cmd {
 	if m.cancelRun != nil {
 		m.cancelRun()
@@ -405,7 +419,7 @@ func (m *Model) startRun(c plugin.Capability, values map[string]any, yes bool) t
 		m.viewport.GotoTop()
 		return nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
+	ctx, cancel := context.WithCancel(context.Background())
 	m.cancelRun = cancel
 	m.runSeq++
 	m.mode = modeRunning

@@ -34,10 +34,31 @@ import (
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
+// refreshTimeout bounds a run nobody asked for: a dashboard tile, or a live
+// view re-running under the reader.
+//
+// This is the whole of what used to be a deadline on every run, kept here
+// because here it is the only terminator. A tile's cancel is deferred inside
+// tileCmd's own closure, never stored on the Model and bound to no key, so
+// nothing a person can press ends a tile that has stopped answering — and a
+// tunnelled tile holds a kubectl port-forward for the length of its call.
+// The dashboard's tick does not wait for the previous round either (tickMsg
+// → refreshTiles): it fires every tile every tileRefreshInterval regardless,
+// so a tile stuck for the whole of this deadline has six of itself in flight
+// and six forwards open. That is the pre-existing shape; this deadline is
+// what stops it growing without limit. For a live view the deadline does a
+// second job: the next tick is armed only from the completed run's own
+// resultMsg, so a refresh that never lands is a live view that silently
+// stops being live.
+//
+// A var only for the tests, which move it — see completeTimeout for the
+// same reason spelled out at length.
+var refreshTimeout = 30 * time.Second
+
 // bindTimeout bounds resolving what an environment contributes, which since
 // `kube:` secrets can mean a cluster read rather than only a local store.
 //
-// Shorter than runTimeout because nobody asked for it: this runs while
+// Shorter than refreshTimeout because nobody asked for it: this runs while
 // painting a switch, and an environment that cannot be resolved should leave
 // the operator at a dashboard reporting so rather than at one that never
 // finishes switching. Failures here are already dropped — the tile that needs
@@ -337,6 +358,19 @@ func (m *Model) enterTrail(c plugin.Capability, values map[string]any) {
 
 // reopenTop re-runs the actionable view the trail points at, so it reflects
 // whatever the action that just ran changed.
+// releaseRun lets go of a run that has landed. Called only after the
+// sequence check — a stale result must not cancel the run the person moved
+// on to. An asked-for run's context carries no deadline (startRun), so
+// nothing else would ever end it: cancelling here is what releases the
+// forward-ceiling timer a tunnelled run armed, and what keeps a finished
+// run from being held until the next one replaces it.
+func (m *Model) releaseRun() {
+	if m.cancelRun != nil {
+		m.cancelRun()
+		m.cancelRun = nil
+	}
+}
+
 func (m Model) reopenTop() (tea.Model, tea.Cmd) {
 	t := m.trail[len(m.trail)-1]
 	m.current = t.cap
@@ -455,6 +489,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.seq != 0 && msg.seq != m.runSeq {
 			return m, nil
 		}
+		m.releaseRun()
 		m.showConfirm(resultMsg{cap: msg.cap, view: msg.view, err: msg.err, elapsed: msg.elapsed, seq: msg.seq})
 		return m, nil
 
@@ -464,6 +499,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.seq != 0 && msg.seq != m.runSeq {
 			return m, nil
 		}
+		m.releaseRun()
 		// Cleaned once, at the top, rather than at each place a string is
 		// drawn — and above every branch below, because the flash path returns
 		// early and would otherwise draw a raw one-liner.
