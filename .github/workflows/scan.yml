@@ -88,6 +88,13 @@ jobs:
   # The image people actually pull, as it is on the registry: base-image
   # advisories land here, and they land on a schedule of their own that no
   # pull request in this repository follows.
+  #
+  # CATEGORY on both image legs, because it is what keeps them from erasing
+  # each other: scan-trivy.yml uploads SARIF under it, and uploads sharing a
+  # category replace one another, leaving only whichever finished last. This
+  # leg's earlier uploads went up with none, so the uncategorised analysis
+  # they left in the Security tab has to be deleted by hand once the
+  # categorised ones land.
   scan-image:
     name: Scan the released image
     uses: this-is-tobi/github-workflows/.github/workflows/scan-trivy.yml@v0
@@ -100,3 +107,28 @@ jobs:
       IMAGE: ghcr.io/this-is-tobi/rta:latest
       GITHUB_SECURITY_TAB: true
       FAIL_ON_ERROR: true
+      CATEGORY: trivy-rta
+
+  # The batteries-included image, which is where the advisory surface is: an
+  # Alpine base with docker-cli, kubectl, git, openssh-client and three
+  # database clients, plus eleven plugin binaries, where the narrow image is
+  # distroless with one binary in it. It was never scanned, at release time
+  # or on a clock. TIMEOUT above Trivy's five-minute default, because that
+  # default's failure is total — the scan aborts and writes no report at all
+  # — and eleven statically linked Go binaries on one image is the case
+  # scan-trivy.yml's own input describes. The callee ignores advisories with
+  # no fix, so a red run here is one somebody can act on.
+  scan-image-full:
+    name: Scan the released full image
+    uses: this-is-tobi/github-workflows/.github/workflows/scan-trivy.yml@v0
+    permissions:
+      contents: read
+      packages: read
+      security-events: write
+      pull-requests: write
+    with:
+      IMAGE: ghcr.io/this-is-tobi/rta-full:latest
+      GITHUB_SECURITY_TAB: true
+      FAIL_ON_ERROR: true
+      CATEGORY: trivy-rta-full
+      TIMEOUT: 20m
