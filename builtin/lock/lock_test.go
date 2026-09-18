@@ -138,6 +138,7 @@ func TestATypoIsRefusedBeforeAnythingElse(t *testing.T) {
 		{"ttl", map[string]any{"kind": "agent", "name": "claude", "ttl": "soon", "server": "work"}, "core.lock.ttl"},
 		{"note", map[string]any{"kind": "agent", "name": "claude", "note": strings.Repeat("n", 300), "server": "work"}, "core.lock.note"},
 		{"name", map[string]any{"kind": "agent", "name": "not a name", "server": "work"}, "grant.agent.charset"},
+		{"empty name", map[string]any{"kind": "agent", "name": " ", "server": "work"}, "core.lock.name"},
 	} {
 		_, err := capByID(t, "lock.add").Run(context.Background(), req(tc.values))
 		verr, ok := err.(*view.Error)
@@ -178,17 +179,7 @@ func TestATTLdLockSaysWhenItLifts(t *testing.T) {
 		t.Fatalf("the stored lock: %+v, %v", locks, verr)
 	}
 	when := locks[0].Expires.Local().Format("2006-01-02 15:04")
-	kv, ok := v.(view.KeyValue)
-	if !ok {
-		t.Fatalf("add = %+v", v)
-	}
-	lifts := ""
-	for _, p := range kv.Pairs {
-		if p.Key == "lifts itself" {
-			lifts = p.Value
-		}
-	}
-	if lifts != when {
+	if lifts := pairValue(t, v, "lifts itself"); lifts != when {
 		t.Errorf("the confirmation says it lifts at %q, want %q", lifts, when)
 	}
 	v, err = capByID(t, "lock.list").Run(context.Background(), req(nil))

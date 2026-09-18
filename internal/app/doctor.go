@@ -800,9 +800,10 @@ func doctorLocks(add func(check, status, detail string)) {
 		// writing the key, and so does a key truncated before anything was
 		// sealed. What all three have in common is that "ok — none" was a
 		// clean bill of health for a machine with something to look at.
-		add("locks", "info", "a seal key is here with no lockdown.json beside it — either locks were "+
-			"removed (the documented recovery) or a save failed after writing the key; `rta lock add` "+
-			"says which, and `rm -f` on both starts clean")
+		add("locks", "info", "a seal key is here with no lockdown.json beside it — locks were removed "+
+			"(the documented recovery), a save failed after writing the key, or the key is truncated; "+
+			"`rta lock add` refuses the last and re-seals cleanly over the other two, and deleting "+
+			"both starts clean")
 	} else if len(locks) == 0 {
 		add("locks", "ok", "none — nothing is frozen")
 	} else {

@@ -263,8 +263,8 @@ func TestATruncatedSealKeyNamesTheFileThatFixesIt(t *testing.T) {
 	if !strings.Contains(verr.Message, key) || strings.Contains(verr.Message, Path()) {
 		t.Errorf("the message names the wrong file: %q — the key is the broken one, and lockdown.json is not there", verr.Message)
 	}
-	if !strings.Contains(verr.Hint, "rm -f "+key) {
-		t.Errorf("the hint does not name the file that fixes it, in a form that cannot error on the one that is absent: %q", verr.Hint)
+	if !strings.Contains(verr.Hint, "delete "+key) {
+		t.Errorf("the hint does not name the file that fixes it: %q", verr.Hint)
 	}
 	// The hint's recovery, followed: the key goes, and the next add works.
 	if err := os.Remove(key); err != nil {
