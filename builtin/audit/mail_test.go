@@ -433,11 +433,39 @@ func TestDKIMKeyGrading(t *testing.T) {
 		t.Errorf("a revoked key was not caught: %+v", f)
 	}
 
-	// Resolvers hand back a long record as several strings meant to be joined.
-	split := base
-	split.dkim = []string{"v=DKIM1; k=rsa; ", "p=MIGfMA0GCSq"}
-	if f := mustFind(t, gradeMail(split), "dkim"); f.Status != findings.OK {
-		t.Errorf("a split key was not reassembled: %+v", f)
+	// A record with no p= at all is incomplete, which is a different fact
+	// from a revoked key and must not cite RFC 6376's revocation about it.
+	absent := base
+	absent.dkim = []string{"v=DKIM1; k=rsa"}
+	f = mustFind(t, gradeMail(absent), "dkim")
+	if f.Status != findings.Fail || strings.Contains(f.Detail, "revoke") || !strings.Contains(f.Detail, "no p=") {
+		t.Errorf("a record with no p= tag: %+v — want a failure naming the missing tag, not a revocation", f)
+	}
+}
+
+// One slice entry is one TXT record: net.Resolver.LookupTXT already joins
+// the character-strings a long key is published across, so gluing entries
+// together only ever concatenated distinct records. The case that broke was
+// key rotation — an old revoked key beside a new one joined into a record
+// whose first p= was the good one, and the selector graded ok. RFC 6376
+// §3.6.2.2 makes the result undefined when a selector holds more than one
+// record, which SPF and DMARC already grade and DKIM alone hid.
+func TestTwoDKIMRecordsAreNotOneJoinedKey(t *testing.T) {
+	base := mailFacts{domain: "d.test", selector: "s1", dkimName: "s1._domainkey.d.test"}
+	two := base
+	two.dkim = []string{"v=DKIM1; k=rsa; p=", "v=DKIM1; k=rsa; p=MIGfMA0GCSq"}
+	f := mustFind(t, gradeMail(two), "dkim")
+	if f.Status != findings.Warn {
+		t.Errorf("two records at one selector graded %q, want %q: %s", f.Status, findings.Warn, f.Detail)
+	}
+	if !strings.Contains(f.Detail, "2 TXT records") || !strings.Contains(f.Detail, "undefined") {
+		t.Errorf("the finding should count the records and say the outcome is undefined: %q", f.Detail)
+	}
+	// The reverse order must not grade differently: the point is that no
+	// order is the one a verifier reads.
+	two.dkim = []string{two.dkim[1], two.dkim[0]}
+	if g := mustFind(t, gradeMail(two), "dkim"); g.Status != f.Status {
+		t.Errorf("record order changed the grade: %q then %q", f.Status, g.Status)
 	}
 }
 
