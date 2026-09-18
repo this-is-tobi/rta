@@ -319,6 +319,20 @@ func remoteAdd(ctx context.Context, req plugin.Request, server, kind, name strin
 	if verr := client.Call(ctx, operatorid.VerbLockAdd, spec, &placed); verr != nil {
 		return nil, verr
 	}
+	// The principal comes back from what the operator typed, never from the
+	// answer — remoteRm already reads only `removed` off the wire and spells
+	// the principal itself. A confirmation is the one line that must not be
+	// the server's to write: "locked agent claude" over a lock that named
+	// something else is a false all-clear with nothing on the operator's
+	// screen to check it against. A server that lies here already decides
+	// whether any lock is enforced, so no authority changes hands; what is
+	// closed is the sentence. Expires stays the server's, because the
+	// server is the clock the window runs on — and that is a remaining
+	// limit, not a closed one: with no --ttl sent, a server that stored a
+	// sixty-second lock can answer with a zero Expires and this prints
+	// "until somebody runs rta lock rm". The principal is the operator's
+	// word now; the window is still the server's.
+	placed.Kind, placed.Name, placed.Note = lockdown.Kind(kind), name, strings.TrimSpace(spec.Note)
 	return lockedView(placed, " on "+server), nil
 }
 
