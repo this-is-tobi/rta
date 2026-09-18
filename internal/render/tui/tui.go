@@ -356,8 +356,6 @@ func (m *Model) enterTrail(c plugin.Capability, values map[string]any) {
 	m.trail = append(m.trail, runRef{cap: c, values: values})
 }
 
-// reopenTop re-runs the actionable view the trail points at, so it reflects
-// whatever the action that just ran changed.
 // releaseRun lets go of a run that has landed. Called only after the
 // sequence check — a stale result must not cancel the run the person moved
 // on to. An asked-for run's context carries no deadline (startRun), so
@@ -371,6 +369,8 @@ func (m *Model) releaseRun() {
 	}
 }
 
+// reopenTop re-runs the actionable view the trail points at, so it reflects
+// whatever the action that just ran changed.
 func (m Model) reopenTop() (tea.Model, tea.Cmd) {
 	t := m.trail[len(m.trail)-1]
 	m.current = t.cap
