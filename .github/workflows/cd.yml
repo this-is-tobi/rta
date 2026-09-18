@@ -24,6 +24,29 @@ on:
   push:
     branches: [main]
 
+# One release run at a time, and never cancelled. This pipeline re-enters
+# itself on purpose — bump-chart commits to main with the App token (see its
+# comment below), which starts a second CD run while the first is still
+# attaching assets — and it pushes moving tags: `latest` and the major/minor
+# pair. Two runs overlapping would have two release-please invocations racing
+# for the same release pull request and two `imagetools create` calls racing
+# for the same tag, which build-docker.yml's own digest check catches by
+# failing one of them rather than by getting it right (its "does not resolve
+# to the image this run pushed" error is what says to group the caller).
+#
+# cancel-in-progress stays false, unlike ci.yml's: a superseded CI run is
+# wasted work, a cancelled release run is a half-published release — a tag
+# and published notes with no binaries under them. This is not a guarantee
+# either: GitHub keeps one pending run per group and cancels an older pending
+# one when a newer arrives, so a third push in quick succession can still
+# drop a queued run before it starts. What makes that recoverable is
+# release-please's own bookkeeping — the merged release pull request keeps
+# its label, so the next run cuts the release it was going to cut. What the
+# group buys is that two runs never push the same moving tag at once.
+concurrency:
+  group: cd
+  cancel-in-progress: false
+
 jobs:
   release:
     name: Release please
