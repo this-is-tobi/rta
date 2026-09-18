@@ -244,7 +244,8 @@ lint: $(GOLANGCI) ## golangci-lint, with .golangci.yml's linters, as the host an
 
 # The parsers that read hostile bytes — terminal and model text cleaning, the
 # path gate, an index's OCI reference, the token file, the roster, the YAML
-# anchor check — each with a Fuzz target beside its tests. `go test` runs
+# anchor check, the mail domain a grant is written from and the mail grader
+# that reads a third party's zone — each with a Fuzz target beside its tests. `go test` runs
 # their seed corpora on every ordinary run; this is the mutating run, which
 # a pull request does not pay for and the scheduled scan does. FUZZTIME is
 # per target.
@@ -252,7 +253,8 @@ FUZZTIME ?= 20s
 FUZZ_TARGETS := internal/textclean:FuzzTerminal internal/textclean:FuzzModel \
 	internal/pathguard:FuzzCheck internal/plugindist:FuzzParseOCIRef \
 	internal/mcp:FuzzLoadTokenFile internal/operator:FuzzLoadRoster \
-	internal/yamlguard:FuzzRefuseAnchors
+	internal/yamlguard:FuzzRefuseAnchors \
+	builtin/audit:FuzzGradeMail builtin/audit:FuzzMailDomain
 
 fuzz: ## Fuzz every hostile-input parser for FUZZTIME each
 	@for t in $(FUZZ_TARGETS); do \
