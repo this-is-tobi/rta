@@ -7,13 +7,17 @@
 # name; a release that could not be checked the same way would be
 # holding its own users to a standard it does not meet.
 #
-# **No SBOM, and named rather than assumed.** This comment used to list one
-# among the things a release ships, and no `sboms:` block has ever been here.
-# GoReleaser generates them by shelling out to syft, an external binary the
-# release machine has to have — which makes it a decision about the release
-# environment rather than a line of configuration, and an unmade decision
-# should not read as a shipped feature. Same failure as `-X main.date` below,
-# in prose instead of a flag.
+# **The SBOM ships, and not from here.** cd.yml sets SBOM on the attest-go
+# call, which generates sbom.spdx.json from the module with syft, attests it
+# against the checksums file and attaches it to the release — so a release
+# does carry one. No `sboms:` block in this file, on purpose: GoReleaser's
+# generates them by shelling out to syft on the release machine, which makes
+# it a decision about the release environment rather than a line of
+# configuration, and the attestation workflow is where that environment is
+# already decided and where the result can be attested in the same breath.
+# This paragraph used to say no SBOM shipped at all, and kept saying it after
+# the pipeline had started shipping one — in the one file whose stated
+# purpose is honesty about provenance, which is the failure it warned about.
 version: 2
 
 project_name: rta
@@ -170,6 +174,12 @@ release:
   # below when it attaches the binaries. replace would discard release-please's
   # notes silently on every release.
   mode: keep-existing
+  # Never published by cd.yml: keep-existing leaves release-please's notes as
+  # the whole body, so this footer only ever reaches a release built outside
+  # the pipeline — the manual `goreleaser release` the draft backstop above is
+  # for. It teaches the checksum alone on purpose, since such a release has no
+  # attestations and no signature to verify; the pipeline's releases are
+  # verified the way docs/10-getting-started/10-installation.md says.
   footer: |
     ## Verifying what you just downloaded
 
