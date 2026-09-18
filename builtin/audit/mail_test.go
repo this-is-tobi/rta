@@ -80,6 +80,9 @@ func TestTheAuditedDomainIsTheOneTheArgumentReadsAs(t *testing.T) {
 		{"https://example.com/blog?ref=x@internal.corp", "example.com"},
 		{"https://example.com/a@b/c@d", "example.com"},
 		{"example.com/x@evil.internal", "example.com"},
+		// A backslash ends the authority too: browsers read it as a slash
+		// in every special scheme, so a reader of the string does as well.
+		{"example.com\\@evil.internal", "example.com"},
 	} {
 		got, verr := mailDomain(tc.in)
 		if verr != nil {
@@ -100,6 +103,44 @@ func TestTheAuditedDomainIsTheOneTheArgumentReadsAs(t *testing.T) {
 		if got, verr := mailDomain(bad); verr == nil {
 			t.Errorf("mailDomain(%q) accepted it as %q — it reads as a different host than it audits", bad, got)
 		}
+	}
+}
+
+// The domain half of the DKIM name used to be validated to "contains a dot"
+// while the selector half was held to a label grammar, so an IP literal was
+// graded as a mail domain and an internationalised name came back as "does
+// not exist" when the truth was that rta never asked.
+func TestMailDomainRefusesWhatIsNotADNSName(t *testing.T) {
+	for _, bad := range []string{
+		"192.0.2.1",
+		"[2001:db8::1]",
+		"https://[2001:db8::1]:8443/",
+		strings.Repeat("a", 64) + ".example.com",  // a label past 63
+		strings.Repeat("abcdefghij.", 25) + "com", // a name past 253
+		"b\u00fccher.de",
+		"a.\x1b[31m",
+		"has space.com",
+		"-leading.com",
+		"trailing-.com",
+		"double..dot.com",
+		"under_score.com",
+	} {
+		got, verr := mailDomain(bad)
+		if verr == nil {
+			t.Errorf("mailDomain(%q) accepted it as %q — it would reach the resolver", bad, got)
+			continue
+		}
+		if verr.Code != "audit.mail.baddomain" {
+			t.Errorf("mailDomain(%q) refused with %s, want audit.mail.baddomain", bad, verr.Code)
+		}
+	}
+	// An address is refused as an address, not as a character-set problem.
+	if _, verr := mailDomain("192.0.2.1"); verr == nil || !strings.Contains(verr.Hint, "address") {
+		t.Errorf("an IP literal's refusal should say it is an address: %v", verr)
+	}
+	// The selector is held to the same grammar, with its own code.
+	if verr := checkSelector(strings.Repeat("a", 64)); verr == nil || verr.Code != "audit.mail.badselector" {
+		t.Errorf("a 64-character selector label: %v", verr)
 	}
 }
 
