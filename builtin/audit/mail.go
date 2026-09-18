@@ -795,7 +795,7 @@ func auditMailRouting(r *findings.Report, f mailFacts) {
 	// A lookup that failed is not an answer about the domain. lookupMail
 	// already nils mxErr for the not-found case, so a non-nil one here is a
 	// SERVFAIL, a refused query, or the deadline expiring partway through the
-	// six-to-nine sequential lookups — and reporting it as "this domain does
+	// five or six sequential lookups before it — and reporting it as "this domain does
 	// not receive mail" is the confident lie mailFacts' own doc warns about.
 	// Every other lookup in this file already says so; mx was the one left.
 	if f.mxErr != nil {
