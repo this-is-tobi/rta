@@ -334,6 +334,26 @@ func TestDMARCPolicyGrading(t *testing.T) {
 	}
 }
 
+// RFC 7489 §6.6.3 sends a receiver that finds nothing at _dmarc.<subdomain>
+// to the organizational domain's record, where sp= decides what applies —
+// so "no DMARC record, receivers have no instruction" was a fail reported
+// about a correctly protected subdomain of a p=reject domain. The row says
+// so now. What it must not do is soften itself on a label count: without
+// the Public Suffix List, example.co.uk and mail.corp.example.com are the
+// same shape, and telling the first it might be covered is a false
+// all-clear.
+func TestAMissingDMARCRecordNamesTheParentPolicyItMayInherit(t *testing.T) {
+	for _, domain := range []string{"mail.corp.example.com", "example.co.uk", "example.com"} {
+		f := mustFind(t, gradeMail(mailFacts{domain: domain}), "dmarc")
+		if f.Status != findings.Fail {
+			t.Errorf("%s: a missing record graded %q, want fail", domain, f.Status)
+		}
+		if !strings.Contains(f.Detail, "sp=") || !strings.Contains(f.Detail, "organizational") {
+			t.Errorf("%s: the finding should name the inheritance it did not check: %q", domain, f.Detail)
+		}
+	}
+}
+
 // A rollout left half-finished is the common way a domain ends up believing
 // it is protected while most spoofed mail still lands.
 func TestDMARCPartialRolloutIsCalledOut(t *testing.T) {

@@ -591,9 +591,26 @@ func auditDMARC(r *findings.Report, f mailFacts) {
 	}
 	dmarc := pick(f.dmarc, "v=dmarc1")
 	if len(dmarc) == 0 {
+		// Kept at fail, with the inheritance named rather than guessed at.
+		// RFC 7489 §6.6.3 sends a receiver that finds nothing at
+		// _dmarc.<subdomain> to the organizational domain's record, where
+		// sp= (or p=, when there is no sp=) decides what applies here — so
+		// this row has to say so, or a correctly protected subdomain of a
+		// p=reject domain reads as unprotected. What it must not do is
+		// soften itself on a label count: "more than two labels" reads
+		// example.co.uk, corp.com.au and x.com.br as subdomains of
+		// something, and they are organizational domains with nothing to
+		// inherit. Telling those they might be covered is the false
+		// all-clear this file exists to remove, and telling the two cases
+		// apart needs the Public Suffix List — a table too large and too
+		// perishable to carry in this binary for one row. Nor is the parent
+		// queried: walking up sends queries for names outside the domain
+		// the grant named.
 		r.Add(grpSenderAuth, "dmarc", findings.Fail,
 			"no DMARC record at "+name+" — receivers have no instruction for mail that fails SPF and DKIM, "+
-				"and SPF alone does not cover the address a reader actually sees", refSpoofing)
+				"and SPF alone does not cover the address a reader actually sees; if this is a subdomain, "+
+				"its organizational domain's sp= (or p=) applies instead, a lookup this did not make",
+			refSpoofing)
 		return
 	}
 	if len(dmarc) > 1 {
