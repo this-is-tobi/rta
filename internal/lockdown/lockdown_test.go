@@ -270,3 +270,30 @@ func TestATruncatedSealKeyNamesTheFileThatFixesIt(t *testing.T) {
 		t.Fatalf("Add after removing the truncated key: %v", verr)
 	}
 }
+
+// The one trace deletion leaves: save writes the seal key before the file it
+// authenticates and rta never removes it, so a key with no lockdown.json
+// beside it is a sealed file that existed and is gone — or a save that
+// failed after writing the key, or a key truncated with nothing sealed yet.
+// Every one of those is worth a line in doctor, and none of them is a clean
+// machine, which is what the absence of the file used to read as.
+func TestAKeyLeftWithoutItsFileIsTheTraceDeletionLeaves(t *testing.T) {
+	fresh(t)
+	if KeyWithoutFile() {
+		t.Fatal("a clean machine reads as one that lost its lock file")
+	}
+	mustAdd(t, "agent", "claude", "", "")
+	if KeyWithoutFile() {
+		t.Fatal("a machine with its lock file in place reads as one that lost it")
+	}
+	if err := os.Remove(Path()); err != nil {
+		t.Fatal(err)
+	}
+	if !KeyWithoutFile() {
+		t.Fatal("the key left behind by a removed lock file went unnoticed")
+	}
+	mustAdd(t, "agent", "claude", "", "")
+	if KeyWithoutFile() {
+		t.Fatal("re-placing a lock did not clear the signal")
+	}
+}

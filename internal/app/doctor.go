@@ -793,6 +793,16 @@ func doctorGrants(add func(check, status, detail string)) {
 func doctorLocks(add func(check, status, detail string)) {
 	if locks, verr := lockdown.Load(); verr != nil {
 		add("locks", "error", verr.Message)
+	} else if lockdown.KeyWithoutFile() {
+		// Info, not warn, and never a gate: the documented recovery from an
+		// unreadable store is to remove the sealed file by hand, which
+		// leaves exactly this footprint — so does a save that failed after
+		// writing the key, and so does a key truncated before anything was
+		// sealed. What all three have in common is that "ok — none" was a
+		// clean bill of health for a machine with something to look at.
+		add("locks", "info", "a seal key is here with no lockdown.json beside it — either locks were "+
+			"removed (the documented recovery) or a save failed after writing the key; `rta lock add` "+
+			"says which, and `rm -f` on both starts clean")
 	} else if len(locks) == 0 {
 		add("locks", "ok", "none — nothing is frozen")
 	} else {

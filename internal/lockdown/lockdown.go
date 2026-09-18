@@ -29,7 +29,9 @@
 // were seen changes nothing for the process that remembers, and is
 // reported. Across restarts, on-disk deletion wins; that is the same
 // documented detection regime as every other same-uid rollback, and the
-// boundary chapter owns what remains. The seal's own bound applies here
+// boundary chapter owns what remains — though a deletion is not quite
+// traceless, because it leaves the seal key behind, and `rta doctor` names
+// that (KeyWithoutFile). The seal's own bound applies here
 // too and is worth restating: a writer who can also *read* this directory
 // reads the key, re-seals an empty file, and unlocks silently — the same
 // attacker the grant seal concedes, and the reason the honest sentence is
@@ -152,6 +154,23 @@ func Path() string { return seal.Path(fileName) }
 // absent one are different accidents with different fixes, and only one of
 // them is fixed by touching lockdown.json — see sealKey.
 func keyPath() string { return seal.Path(keyFile) }
+
+// KeyWithoutFile is the one piece of evidence deletion leaves behind: save
+// writes the seal key before the file it authenticates and rta never
+// removes it, so a key with no lockdown.json beside it is a sealed file that
+// existed and is gone. A save that failed after writing the key, and a key
+// truncated before anything was sealed, leave the same footprint, and none
+// of the three is the clean machine the absence of the file used to read
+// as. Reported, never enforced — recoveryHint tells operators to remove the
+// sealed file themselves, so refusing calls on this signal would turn
+// documented recovery into an outage.
+func KeyWithoutFile() bool {
+	if _, err := os.Stat(Path()); !errors.Is(err, os.ErrNotExist) {
+		return false
+	}
+	_, err := os.Stat(keyPath())
+	return err == nil
+}
 
 // shortKeyHint is the recovery a truncated key needs, and naming the key
 // file is the whole point of it. seal.Key regenerates nothing over bytes
