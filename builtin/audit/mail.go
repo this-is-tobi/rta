@@ -478,9 +478,12 @@ func recordTag(record, tag string) (value string, present bool) {
 // that must not read as zero. A value that is not an integer in 0-100 is a
 // syntax error, and the RFC has a receiver discard a record it cannot parse
 // rather than apply a default — so "usable" is a distinct answer from "100".
+// An empty pct= is the syntax error, not the default: the grammar wants one
+// to three digits, and reading `pct=` as 100 handed a record the RFC
+// discards the best grade it can get.
 func dmarcPct(record string) (int, bool) {
-	raw, _ := recordTag(record, "pct")
-	if raw == "" {
+	raw, present := recordTag(record, "pct")
+	if !present {
 		return 100, true
 	}
 	n, err := strconv.Atoi(raw)
