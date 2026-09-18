@@ -179,13 +179,14 @@ func KeyWithoutFile() bool {
 // truncation fail identically forever. recoveryHint cannot serve this case:
 // it says "`rm` the file", and the file a reader takes that to mean is the
 // one the message named, which on the write path is lockdown.json and may
-// not exist at all. -f, because that is exactly the shape here: the key is
-// always there and the sealed file often is not, and a pasted recovery must
-// not error on the file that was never the problem.
+// not exist at all. Named as files to delete rather than as a command,
+// because the hint is shown on Windows too, where no shell takes `rm -f`,
+// and because the sealed file is often not there — "if it is there" says so
+// where a pasted command would only complain.
 func shortKeyHint() string {
-	return "at the machine's terminal: `rm -f " + keyPath() + " " + Path() + "`, then re-place " +
-		"the locks you mean with `rta lock add` — running servers keep enforcing the set they " +
-		"last verified until a fresh sealed file replaces it"
+	return "at the machine's terminal, delete " + keyPath() + " and, if it is there, " + Path() +
+		", then re-place the locks you mean with `rta lock add` — running servers keep enforcing " +
+		"the set they last verified until a fresh sealed file replaces it"
 }
 
 // recoveryHint is the one story every unreadable-store refusal tells, and
@@ -339,6 +340,13 @@ func Build(kind, name, note, ttl, by string) (Lock, *view.Error) {
 	k, verr := CheckKind(kind)
 	if verr != nil {
 		return Lock{}, verr
+	}
+	// Here as well as in Add, so the CLI's local path, the remote
+	// pre-check and the server handler share one wall: grant.CheckAgent
+	// accepts "", and match() treats "" as no principal, so nothing else
+	// stops a row that reads as protection and can match nothing.
+	if strings.TrimSpace(name) == "" {
+		return Lock{}, view.Errorf("core.lock.name", "a lock needs the principal's name")
 	}
 	if verr := checkName(k, name); verr != nil {
 		return Lock{}, verr
