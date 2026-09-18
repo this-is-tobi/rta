@@ -298,7 +298,12 @@ func save(locks []Lock) *view.Error {
 	return nil
 }
 
-func mutate(f func([]Lock) []Lock) *view.Error {
+// mutate rewrites the store under its lock. f's second return says whether
+// anything changed — grant.Mutate's shape, for its reason: what the person
+// is told is decided under the same lock as the write it declines, so the
+// message and the file cannot disagree. A no-op used to save anyway, which
+// minted a sealed file and a seal key on a machine that never had a lock.
+func mutate(f func([]Lock) ([]Lock, bool)) *view.Error {
 	release, err := filelock.Acquire(Path()+".lock", 10*time.Second, 25*time.Millisecond, 5*time.Second)
 	if err != nil {
 		return view.Errorf("core.lock.busy", "another rta is changing the locks: %v", err)
@@ -311,7 +316,11 @@ func mutate(f func([]Lock) []Lock) *view.Error {
 		// them. The operator clears it first, loudly.
 		return verr
 	}
-	return save(f(stored))
+	next, write := f(stored)
+	if !write {
+		return nil
+	}
+	return save(next)
 }
 
 // Build assembles one lock from the raw strings a surface collected — the
@@ -361,14 +370,14 @@ func Add(l Lock) *view.Error {
 	if verr := checkName(l.Kind, l.Name); verr != nil {
 		return verr
 	}
-	return mutate(func(stored []Lock) []Lock {
+	return mutate(func(stored []Lock) ([]Lock, bool) {
 		out := stored[:0]
 		for _, s := range stored {
 			if s.Kind != l.Kind || s.Name != l.Name {
 				out = append(out, s)
 			}
 		}
-		return append(out, l)
+		return append(out, l), true
 	})
 }
 
@@ -376,7 +385,7 @@ func Add(l Lock) *view.Error {
 // "nothing was locked" and "unlocked" are different sentences.
 func Remove(kind Kind, name string) (bool, *view.Error) {
 	found := false
-	verr := mutate(func(stored []Lock) []Lock {
+	verr := mutate(func(stored []Lock) ([]Lock, bool) {
 		out := stored[:0]
 		for _, s := range stored {
 			if s.Kind == kind && s.Name == name {
@@ -385,7 +394,14 @@ func Remove(kind Kind, name string) (bool, *view.Error) {
 			}
 			out = append(out, s)
 		}
-		return out
+		// Declining when nothing matched, for grant.Mutate's reason: a
+		// `lock rm` naming nothing must not be what mints a sealed file and
+		// a seal key on a machine that never had a lock. The data directory
+		// is still created — filelock.Acquire makes it before this decision
+		// is reachable — which is the cheap half. It also leaves any
+		// already-expired rows on disk until the next Add, and that costs
+		// nothing: load() drops them on every read and match() re-checks.
+		return out, found
 	})
 	return found, verr
 }

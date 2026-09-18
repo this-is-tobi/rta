@@ -2,6 +2,7 @@ package lockdown
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -295,5 +296,24 @@ func TestAKeyLeftWithoutItsFileIsTheTraceDeletionLeaves(t *testing.T) {
 	mustAdd(t, "agent", "claude", "", "")
 	if KeyWithoutFile() {
 		t.Fatal("re-placing a lock did not clear the signal")
+	}
+}
+
+// mutate used to save whatever f returned, so `rta lock rm nosuchagent` on a
+// clean machine minted both lockdown.json and lockdown.key for nothing —
+// and a seal key minted for nothing is one more way into the truncation
+// window. grant.Mutate already declines a write that changes nothing, with
+// its reasoning written out; two shapes for one decision is what this
+// repository avoids.
+func TestRemovingNothingWritesNothing(t *testing.T) {
+	fresh(t)
+	removed, verr := Remove(KindAgent, "nobody")
+	if verr != nil || removed {
+		t.Fatalf("Remove of nothing = %v, %v", removed, verr)
+	}
+	for _, f := range []string{Path(), keyPath()} {
+		if _, err := os.Stat(f); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("%s exists after a remove that matched nothing", f)
+		}
 	}
 }
