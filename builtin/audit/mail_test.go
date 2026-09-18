@@ -564,6 +564,20 @@ func TestDKIMTestingModeAndAShortKeyAreNotAPass(t *testing.T) {
 	}
 }
 
+// RFC 8460 makes rua= required: without it the record names nowhere to send
+// a report, so nobody is told anything — the same claim-without-measurement
+// the MTA-STS row had, and the same check the DMARC grading already makes.
+func TestATLSRPTRecordWithNoReportAddressReportsToNobody(t *testing.T) {
+	f := mustFind(t, gradeMail(mailFacts{domain: "d.test", rpt: []string{"v=TLSRPTv1"}}), "tls-rpt")
+	if f.Status != findings.Warn || !strings.Contains(f.Detail, "rua=") {
+		t.Errorf("a TLS-RPT record with no rua=: %+v — want warn, naming the missing tag", f)
+	}
+	with := mustFind(t, gradeMail(mailFacts{domain: "d.test", rpt: []string{"v=TLSRPTv1; rua=mailto:tls@d.test"}}), "tls-rpt")
+	if with.Status != findings.OK {
+		t.Errorf("a complete TLS-RPT record graded %q: %s", with.Status, with.Detail)
+	}
+}
+
 // RFC 7505's null MX is a domain stating that it accepts no mail. It is a
 // hardening measure, and grading it as an omission would teach people to
 // undo it.
