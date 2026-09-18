@@ -507,3 +507,27 @@ func TestTheSealBindsTheRowsAndNotTheBytes(t *testing.T) {
 		t.Fatalf("a re-indented file with an extra key: %+v, %v", locks, verr)
 	}
 }
+
+// seal.Key answered ErrMissing for every read failure but a short file, so a
+// key made unreadable — a chmod, a directory in its place — was reported as
+// "lockdown.json exists with no seal key beside it, so it was not written by
+// rta", with the hint to remove the sealed file: a wrong diagnosis with a
+// destructive recovery, over a key that was intact.
+func TestAnUnreadableSealKeyIsNotAMissingOne(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("file modes do not deny the owner here")
+	}
+	fresh(t)
+	mustAdd(t, "agent", "claude", "", "")
+	if err := os.Chmod(keyPath(), 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(keyPath(), 0o600) })
+	_, verr := Load()
+	if verr == nil || verr.Code != "core.lock.read" {
+		t.Fatalf("an unreadable key: %v, want core.lock.read", verr)
+	}
+	if strings.Contains(verr.Message, "not written by rta") || verr.Hint != "" {
+		t.Errorf("an unreadable key was diagnosed as a forgery with a removal hint: %v", verr)
+	}
+}
