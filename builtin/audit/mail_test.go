@@ -578,6 +578,32 @@ func TestATLSRPTRecordWithNoReportAddressReportsToNobody(t *testing.T) {
 	}
 }
 
+// Whether a domain exists used to be asked up front — an address, then MX,
+// then TXT at the apex — and the audit then asked for the apex TXT and the
+// MX again. The facts the audit gathers already answer it for any domain
+// that publishes mail records, and a lookup that failed is not an absent
+// name: existence is settled by a successful answer or by a failure the
+// rows will report themselves, and only an empty, successful pair leaves
+// the question open for one address lookup.
+func TestExistenceIsSettledByTheFactsAlreadyGathered(t *testing.T) {
+	boom := errors.New("server misbehaving")
+	for _, tc := range []struct {
+		name    string
+		facts   mailFacts
+		settled bool
+	}{
+		{"nothing at all", mailFacts{domain: "d.test"}, false},
+		{"an SPF record", mailFacts{domain: "d.test", apexTXT: []string{"v=spf1 -all"}}, true},
+		{"a mail exchanger", mailFacts{domain: "d.test", mx: []*stdnet.MX{{Host: "mx.d.test."}}}, true},
+		{"a failed apex lookup", mailFacts{domain: "d.test", apexErr: boom}, true},
+		{"a failed MX lookup", mailFacts{domain: "d.test", mxErr: boom}, true},
+	} {
+		if got := tc.facts.settled(); got != tc.settled {
+			t.Errorf("%s: settled = %v, want %v", tc.name, got, tc.settled)
+		}
+	}
+}
+
 // RFC 7505's null MX is a domain stating that it accepts no mail. It is a
 // hardening measure, and grading it as an omission would teach people to
 // undo it.

@@ -61,10 +61,11 @@ func runMail(ctx context.Context, req plugin.Request) (view.View, error) {
 	defer cancel()
 
 	res := &stdnet.Resolver{}
-	if err := requireDomain(ctx, res, domain); err != nil {
-		return nil, err
+	f := lookupMail(ctx, res, domain, selector)
+	if verr := requireDomain(ctx, res, f); verr != nil {
+		return nil, verr
 	}
-	r := gradeMail(lookupMail(ctx, res, domain, selector))
+	r := gradeMail(f)
 
 	if req.Bool("detail") {
 		summary := append([]view.Pair{{Key: "domain", Value: domain}}, r.Grade()...)
@@ -212,6 +213,16 @@ type mailFacts struct {
 	rptErr   error
 	mx       []*stdnet.MX
 	mxErr    error
+}
+
+// settled reports whether the facts already answer "does this domain
+// exist" — or show that the question cannot be answered from here. A
+// successful answer at the apex or an MX settles it; so does a failed
+// lookup of either, because a failure is not an absent name and the rows
+// report it as what it is, the rule txt was written for. Only an empty,
+// successful pair leaves the question open.
+func (f mailFacts) settled() bool {
+	return f.apexErr != nil || f.mxErr != nil || len(f.apexTXT) > 0 || len(f.mx) > 0
 }
 
 // lookupMail performs every query the audit makes: one TXT at the apex, one
@@ -747,21 +758,30 @@ func auditMailTransport(r *findings.Report, f mailFacts) {
 // a mail exchanger, or a TXT record. Mail-only domains have no address
 // records and would fail a naive resolve, and a domain with no mail is
 // precisely the case the audit still has something to say about.
-func requireDomain(ctx context.Context, res *stdnet.Resolver, domain string) *view.Error {
-	if _, err := res.LookupHost(ctx, domain); err == nil {
+//
+// Decided from the facts the audit already gathered, with one address
+// lookup only when they leave it open. It used to run first — an address,
+// then MX, then the apex TXT — and lookupMail then asked for the apex TXT
+// and the MX again: up to nine queries where six suffice, against a third
+// party's authoritative servers, for a capability whose Description
+// promises a handful of lookups. This optimises the ordinary path: a real
+// domain now costs its six queries and no more. A typo pays six empty
+// answers before its refusal where it used to pay three, and a typo is the
+// rare case.
+func requireDomain(ctx context.Context, res *stdnet.Resolver, f mailFacts) *view.Error {
+	if f.settled() {
 		return nil
-	} else if !notFound(err) {
-		return view.Errorf("audit.mail.resolver", "resolving %s: %v", domain, err).
+	}
+	_, err := res.LookupHost(ctx, f.domain)
+	switch {
+	case err == nil:
+		return nil
+	case !notFound(err):
+		return view.Errorf("audit.mail.resolver", "resolving %q: %v", f.domain, err).
 			WithHint("the lookup failed rather than coming back empty — check your resolver, or --timeout")
 	}
-	if mx, err := res.LookupMX(ctx, domain); err == nil && len(mx) > 0 {
-		return nil
-	}
-	if recs, err := res.LookupTXT(ctx, domain); err == nil && len(recs) > 0 {
-		return nil
-	}
-	return view.Errorf("audit.mail.nxdomain", "%s does not exist in DNS", domain).
-		WithHint("check the spelling — every check below would otherwise report its record as missing")
+	return view.Errorf("audit.mail.nxdomain", "%q does not exist in DNS", f.domain).
+		WithHint("check the spelling — every check would otherwise report its record as missing")
 }
 
 // notFound distinguishes an empty answer from a broken lookup.
