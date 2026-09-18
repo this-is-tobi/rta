@@ -148,6 +148,27 @@ func checkName(kind Kind, name string) *view.Error {
 // Path is where the locks live.
 func Path() string { return seal.Path(fileName) }
 
+// keyPath is the seal key's own name, needed because a truncated key and an
+// absent one are different accidents with different fixes, and only one of
+// them is fixed by touching lockdown.json — see sealKey.
+func keyPath() string { return seal.Path(keyFile) }
+
+// shortKeyHint is the recovery a truncated key needs, and naming the key
+// file is the whole point of it. seal.Key regenerates nothing over bytes
+// that are already there — atomicfile.Publish hands back what it found, so
+// a short key stays short — which makes every `rta lock add` after a
+// truncation fail identically forever. recoveryHint cannot serve this case:
+// it says "`rm` the file", and the file a reader takes that to mean is the
+// one the message named, which on the write path is lockdown.json and may
+// not exist at all. -f, because that is exactly the shape here: the key is
+// always there and the sealed file often is not, and a pasted recovery must
+// not error on the file that was never the problem.
+func shortKeyHint() string {
+	return "at the machine's terminal: `rm -f " + keyPath() + " " + Path() + "`, then re-place " +
+		"the locks you mean with `rta lock add` — running servers keep enforcing the set they " +
+		"last verified until a fresh sealed file replaces it"
+}
+
 // recoveryHint is the one story every unreadable-store refusal tells, and
 // its wording is load-bearing: `rm` alone is NOT the fix for a running
 // server, because the Pin — correctly — keeps enforcing the set it last
@@ -171,10 +192,23 @@ func sealKey(create bool) ([]byte, *view.Error) {
 	switch {
 	case err == nil:
 		return key, nil
-	case errors.Is(err, seal.ErrMissing), errors.Is(err, seal.ErrShort):
+	case errors.Is(err, seal.ErrMissing):
+		// Only reachable from the read path with a lock file already in
+		// hand: load() returns before any key is wanted when there is no
+		// file, so this really is "something else wrote it".
 		return nil, view.Errorf("core.lock.unsealed",
-			"%s exists with no usable seal key beside it, so it was not written by rta", Path()).
+			"%s exists with no seal key beside it, so it was not written by rta", Path()).
 			WithHint(recoveryHint)
+	case errors.Is(err, seal.ErrShort):
+		// Kept apart from the missing key, as internal/seal's own doc
+		// insists and internal/grant already does: this is a truncation,
+		// the sealed file beside it may or may not exist, and the fix is
+		// the key. The two used to share one sentence naming lockdown.json,
+		// which sent an operator mid-incident to remove a file that was
+		// not there and re-run the command that had just refused.
+		return nil, view.Errorf("core.lock.unsealed",
+			"%s is too short to be a seal key, so no lock can be sealed or checked against it", keyPath()).
+			WithHint(shortKeyHint())
 	default:
 		return nil, view.Errorf("core.lock.write", "%v", err)
 	}
