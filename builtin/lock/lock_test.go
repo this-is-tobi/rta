@@ -153,3 +153,49 @@ func TestATypoIsRefusedBeforeAnythingElse(t *testing.T) {
 		t.Errorf("a dry run with --server answered %+v for a name the real call refuses", v)
 	}
 }
+
+// A TTL'd lock says when it lifts, on every surface the window reaches: the
+// confirmation, the listing, and the dry run. Computed from the stored
+// window rather than typed, so the assertion does not carry a zone.
+func TestATTLdLockSaysWhenItLifts(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	dry := plugin.NewRequest(map[string]any{"kind": "agent", "name": "claude", "ttl": "90m"}, true, true).
+		WithSurface(plugin.SurfaceCLI)
+	v, err := capByID(t, "lock.add").Run(context.Background(), dry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if txt, ok := v.(view.Text); !ok || !strings.Contains(txt.Body, "lifting itself at") {
+		t.Errorf("the dry run does not name the window: %+v", v)
+	}
+	v, err = capByID(t, "lock.add").Run(context.Background(),
+		req(map[string]any{"kind": "agent", "name": "claude", "ttl": "90m"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	locks, verr := lockdown.Load()
+	if verr != nil || len(locks) != 1 || locks[0].Expires.IsZero() {
+		t.Fatalf("the stored lock: %+v, %v", locks, verr)
+	}
+	when := locks[0].Expires.Local().Format("2006-01-02 15:04")
+	kv, ok := v.(view.KeyValue)
+	if !ok {
+		t.Fatalf("add = %+v", v)
+	}
+	lifts := ""
+	for _, p := range kv.Pairs {
+		if p.Key == "lifts itself" {
+			lifts = p.Value
+		}
+	}
+	if lifts != when {
+		t.Errorf("the confirmation says it lifts at %q, want %q", lifts, when)
+	}
+	v, err = capByID(t, "lock.list").Run(context.Background(), req(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if table, ok := v.(view.Table); !ok || len(table.Rows) != 1 || table.Rows[0][4] != "until "+when {
+		t.Errorf("the listing's stands cell: %+v", v)
+	}
+}
