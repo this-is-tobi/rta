@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"sort"
 	"time"
 
@@ -367,9 +368,28 @@ func tileCmd(idx int, t tile, cfg map[string]any, profileName string,
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), refreshTimeout)
 		defer cancel()
+		// Checked on the context rather than on the error, and before it:
+		// a handler that returns ctx.Err() verbatim (builtin/net/trace.go
+		// does) and a forward that died mid-open both reach the tile in
+		// somebody else's words — "<cap>.failed  context deadline exceeded"
+		// — naming neither the deadline that fired nor the fact that
+		// opening the tile on its own screen has none. Hoisted above both
+		// error branches so the forward's timeout and the handler's get the
+		// same sentence.
+		deadlineHit := func() *view.Error {
+			if !errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				return nil
+			}
+			return view.Errorf("tui.refresh.timeout",
+				"%s did not answer within %s", t.cap.ID, refreshTimeout).
+				WithHint("enter opens it on its own screen, where a run is not on the dashboard's clock")
+		}
 		dialled, closeTunnel, verr := profile.Dial(ctx, profileName, conn, t.cap, t.values)
 		defer closeTunnel()
 		if verr != nil {
+			if timed := deadlineHit(); timed != nil {
+				return tileMsg{id: t.cap.ID, idx: idx, err: timed}
+			}
 			// Reported, never fallen back from. A tile is where a fallback
 			// would be least visible: nobody typed a command to go and look
 			// at, so the number on screen would simply be somebody else's.
@@ -392,6 +412,9 @@ func tileCmd(idx int, t tile, cfg map[string]any, profileName string,
 			Caller: t.values, Profile: filled, ProfileName: profileName, Config: cfg,
 		}), false, false).WithSurface(plugin.SurfaceTUI))
 		if err != nil {
+			if timed := deadlineHit(); timed != nil {
+				return tileMsg{id: t.cap.ID, idx: idx, err: timed}
+			}
 			return tileMsg{id: t.cap.ID, idx: idx, err: view.AsError(err, t.cap.ID+".failed")}
 		}
 		return tileMsg{id: t.cap.ID, idx: idx, v: v}

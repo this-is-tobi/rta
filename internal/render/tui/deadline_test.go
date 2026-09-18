@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -162,5 +163,38 @@ func TestAFinishedRunReleasesItsContext(t *testing.T) {
 	stale, _ := am.Update(resultMsg{cap: c, view: view.Text{Body: "late"}, seq: sm.runSeq})
 	if stale.(Model).cancelRun == nil {
 		t.Error("a stale result released the current run's context")
+	}
+}
+
+// A tile's deadline is the dashboard's, and it used to fire in the handler's
+// own words: a capability that returns ctx.Err() verbatim reached the tile
+// as "<cap>.failed  context deadline exceeded", which names neither the
+// deadline that fired nor the fact that opening the tile on its own screen
+// has none. Lowered rather than waited for, saved and restored the way
+// fetchFromCluster moves completeTimeout — and no t.Parallel, since it is a
+// package-level value.
+func TestADashboardTileThatMissesItsDeadlineNamesTheDeadlineAndTheWayOut(t *testing.T) {
+	saved := refreshTimeout
+	refreshTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { refreshTimeout = saved })
+	stuck := tile{cap: plugin.Capability{
+		ID: "demo.stuck", Summary: "never answers", Safety: plugin.Read,
+		Run: func(ctx context.Context, _ plugin.Request) (view.View, error) {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+	}}
+	msg := tileCmd(0, stuck, nil, "", nil, config.Connection{})().(tileMsg)
+	if msg.err == nil {
+		t.Fatal("a tile that never answered reported success")
+	}
+	if msg.err.Code != "tui.refresh.timeout" {
+		t.Errorf("code = %s, want tui.refresh.timeout: %s", msg.err.Code, msg.err.Message)
+	}
+	if !strings.Contains(msg.err.Message, refreshTimeout.String()) {
+		t.Errorf("the message should name the deadline that fired: %q", msg.err.Message)
+	}
+	if !strings.Contains(msg.err.Hint, "enter") {
+		t.Errorf("the hint should name the way out: %q", msg.err.Hint)
 	}
 }
