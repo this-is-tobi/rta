@@ -157,7 +157,7 @@ A stock install is entirely built in, so no bands are drawn at all — one band 
 | `r` | Re-run |
 | `y` | Copy as JSON |
 | `d` | Delete |
-| `esc` | Leave a slow run |
+| `esc` | Stop a run that is still going; on a result, go back |
 
 A log — `agent log`, or any table that declares its newest row last — opens on that row, scrolled to the end, so what just happened is under the cursor and the past is a key up.
 
