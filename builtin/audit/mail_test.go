@@ -423,7 +423,7 @@ func TestDKIMKeyGrading(t *testing.T) {
 	}
 
 	good := base
-	good.dkim = []string{"v=DKIM1; k=rsa; p=MIGfMA0GCSq"}
+	good.dkim = []string{"v=DKIM1; k=rsa; p=" + dkimRSA2048}
 	if f := mustFind(t, gradeMail(good), "dkim"); f.Status != findings.OK {
 		t.Errorf("a published key graded %q: %s", f.Status, f.Detail)
 	}
@@ -493,6 +493,54 @@ func TestMTASTSIsNotGradedOKFromTheTXTRecordAlone(t *testing.T) {
 	none := mustFind(t, gradeMail(mailFacts{domain: "d.test"}), "mta-sts")
 	if none.Status != findings.Warn || !strings.Contains(none.Detail, "DANE") {
 		t.Errorf("no MTA-STS record: %+v — want warn, naming DANE as the check this cannot make", none)
+	}
+}
+
+// Public keys as a zone would publish them, generated once with openssl and
+// pasted: a 2048-bit RSA key is what RFC 8301 has signers use, 1024 is its
+// floor, 512 has been factored, and the Ed25519 key is RFC 8463's raw
+// 32-byte form rather than an SPKI.
+const (
+	dkimRSA512  = "MFwwDQYJKoZIhvcNAQEBBQADSwAwSAJBALCdF7x2XhjkX7Xmbjjat3DGDp9nAMzf1X1HXqHj+LBgQk3Ya6J9kk/cvAFHf0U81VnfMHj9Tq4b3VgWaFtUxyMCAwEAAQ=="
+	dkimRSA1024 = "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDcI70vquxhKp8pw1QWeaaVidqnQi6N03ZXfufwSDO43Em9dpy+XKOWhzgeKXx5Nij2Ob0e2ImFOpEilLw/t1Za9QveusOduguCL1EVvMnbdTA5W8PurJtCR2WWjB3AVbzk4a4k1qrl0lHlEdIE/Bf+LWUORg7id/oz+vVHCKllYwIDAQAB"
+	dkimRSA2048 = "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuXr55gZII37aBB5V7M5/ZUGnuPJhNNcAeC8CbkZArPpA1OWkVnvZYugOOoDNFgo8H/HrofwG6tyXeMZk/x/Arle7oK9bWCyKb/VlmCFmF+u8BwxMkFXfSYVq/aZ4Opw5Ast4t2uuwnvzvocywZRiZxuSiyyuulVeJ3DebfVdRAOBtPByWJjOmCBmz4bEmSqslPV0S5VfDd+CaugqVkEZmyaV3Qol8Lw1pcr411umH65EYf3Ov8VW1ct3najyFHs/o82Z6yVN7DlQ5AXFmehOGbwacjrAP+Q2MZ2cLjskZSpbbsTfPk5SsU7j/mxAVyOyA8Id+Fy4/zr0c8AsCfDtKwIDAQAB"
+	dkimEd25519 = "1gncM9lsi4RS0gn7M4ilOZ+o8NV6hRT48m8GheTMSoM="
+)
+
+// Presence is not protection. A record carrying t=y is RFC 6376 §3.6.1's
+// testing flag — verifiers treat its mail exactly as unsigned, even when
+// the signature fails — and a short RSA key is one RFC 8301 has verifiers
+// refuse and that can be factored besides. Both used to grade ok, "public
+// key published", which is the state this capability exists to name: a
+// record that is published, reads as correct, and protects nothing.
+func TestDKIMTestingModeAndAShortKeyAreNotAPass(t *testing.T) {
+	base := mailFacts{domain: "d.test", selector: "s1", dkimName: "s1._domainkey.d.test"}
+	for _, tc := range []struct {
+		name, record, status, says string
+	}{
+		{"2048-bit rsa", "v=DKIM1; k=rsa; p=" + dkimRSA2048, findings.OK, "2048"},
+		{"k= defaults to rsa", "v=DKIM1; p=" + dkimRSA2048, findings.OK, "2048"},
+		{"a key hand-wrapped across lines", "v=DKIM1; p=" + dkimRSA2048[:100] + " \n\t" + dkimRSA2048[100:], findings.OK, "2048"},
+		{"ed25519", "v=DKIM1; k=ed25519; p=" + dkimEd25519, findings.OK, "ed25519"},
+		{"1024-bit rsa is the floor", "v=DKIM1; k=rsa; p=" + dkimRSA1024, findings.Warn, "1024"},
+		{"512-bit rsa can be forged", "v=DKIM1; k=rsa; p=" + dkimRSA512, findings.Fail, "512"},
+		{"testing flag", "v=DKIM1; k=rsa; t=y; p=" + dkimRSA2048, findings.Fail, "unsigned"},
+		{"testing flag in a list", "v=DKIM1; t=s:y; p=" + dkimRSA2048, findings.Fail, "unsigned"},
+		{"not a key", "v=DKIM1; k=rsa; p=MIGfMA0GCSq", findings.Warn, "not decode"},
+		{"an rsa key under k=ed25519", "v=DKIM1; k=ed25519; p=" + dkimRSA2048, findings.Warn, "not decode"},
+		{"a key type this does not read", "v=DKIM1; k=dsa; p=" + dkimRSA2048, findings.Warn, "k=dsa"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := base
+			f.dkim = []string{tc.record}
+			got := mustFind(t, gradeMail(f), "dkim")
+			if got.Status != tc.status {
+				t.Errorf("graded %q, want %q: %s", got.Status, tc.status, got.Detail)
+			}
+			if !strings.Contains(got.Detail, tc.says) {
+				t.Errorf("detail does not say %q: %q", tc.says, got.Detail)
+			}
+		})
 	}
 }
 
