@@ -377,6 +377,10 @@ func TestDMARCWithAnUnparseablePercentageHasNoPolicy(t *testing.T) {
 		"v=DMARC1; p=reject; pct=abc",
 		"v=DMARC1; p=reject; pct=140",
 		"v=DMARC1; p=reject; pct=-1",
+		// An empty pct= is a syntax error under RFC 7489's grammar, which
+		// wants one to three digits — not the absent tag whose default is
+		// 100, which is what it used to be read as.
+		"v=DMARC1; p=reject; pct=",
 	} {
 		r := gradeMail(mailFacts{domain: "d.test", dmarc: []string{record}})
 		f := mustFind(t, r, "dmarc")
