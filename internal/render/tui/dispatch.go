@@ -395,7 +395,7 @@ func (m Model) formKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		nm, cmd := m.closeForm()
 		return nm, cmd, true
 	case "ctrl+c":
-		return m, tea.Quit, true
+		return m.quit()
 	case "shift+enter", "alt+enter":
 		nm, cmd := m.fastSubmitForm()
 		return nm, cmd, true
@@ -423,7 +423,7 @@ func (m Model) themeKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		m.mode = modeDashboard
 		return m, nil, true
 	case "ctrl+c":
-		return m, tea.Quit, true
+		return m.quit()
 	case "shift+enter", "alt+enter":
 		nm, cmd := m.fastSubmitThemeForm()
 		return nm, cmd, true
@@ -446,7 +446,7 @@ func (m Model) copyPickKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		nm, cmd := m.closeCopyPick()
 		return nm, cmd, true
 	case "ctrl+c":
-		return m, tea.Quit, true
+		return m.quit()
 	case "shift+enter", "alt+enter":
 		nm, cmd := m.fastSubmitCopyPick()
 		return nm, cmd, true
@@ -537,26 +537,32 @@ func (m Model) resultKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 			return nm, cmd, true
 		}
 	case "ctrl+c":
-		return m, tea.Quit, true
+		return m.quit()
 	}
 	return m, nil, false
+}
+
+// quit ends the program, cancelling whatever run is in flight first.
+// Quitting used to leave the run's context alive: the program ended, and a
+// tunnelled run's kubectl — in its own process group, so that it outlives a
+// parent that merely dies — was orphaned with nothing left to end the
+// context that would have killed it. Best effort, since the process is
+// leaving and the kill runs on a goroutine the exit races; it is still the
+// only thing that makes the forward's teardown reachable from ctrl+c at
+// all. One helper for every screen rather than a line in runningKeys: a
+// live view refreshes under the result screen, so a run can be in flight
+// there too.
+func (m Model) quit() (tea.Model, tea.Cmd, bool) {
+	if m.cancelRun != nil {
+		m.cancelRun()
+	}
+	return m, tea.Quit, true
 }
 
 func (m Model) runningKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 	switch msg.String() {
 	case "ctrl+c":
-		// Cancelled on the way out, because quitting used to leave the
-		// run's context alive: the program ended, and a tunnelled run's
-		// kubectl — in its own process group, so that it outlives a parent
-		// that merely dies — was orphaned with nothing left to end the
-		// context that would have killed it. Best effort, since the process
-		// is leaving and the kill runs on a goroutine the exit races; it is
-		// still the only thing that makes the forward's teardown reachable
-		// from this key at all.
-		if m.cancelRun != nil {
-			m.cancelRun()
-		}
-		return m, tea.Quit, true
+		return m.quit()
 	case "esc", "q":
 		// Stopping a slow run has to be possible without leaving the app:
 		// a traceroute is thirty hops of two seconds, and since an

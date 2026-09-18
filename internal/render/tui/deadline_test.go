@@ -2,6 +2,8 @@ package tui
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -229,5 +231,70 @@ func TestTheRunningFooterOffersToStopTheRunRatherThanLeaveIt(t *testing.T) {
 	after, _ := sm.Update(keyMsg("esc"))
 	if after.(Model).mode == modeRunning || after.(Model).flash != "cancelled" {
 		t.Errorf("esc on the running screen: mode %v, flash %q — want the run cancelled", after.(Model).mode, after.(Model).flash)
+	}
+}
+
+// A live view refreshes under the result screen, so a run can be in flight
+// there too: quit cancels it from every screen, not only the running one.
+func TestQuittingFromAResultReleasesTheRefreshInFlight(t *testing.T) {
+	m := New(testRegistry(t), config.Dashboard{}, nil)
+	sized, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	sm := sized.(Model)
+	sm.mode = modeResult
+	released := false
+	sm.cancelRun = func() { released = true }
+	sm.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	if !released {
+		t.Fatal("ctrl+c on the result screen left the refresh in flight running")
+	}
+}
+
+// The dry run that previews a destructive run is unbounded on the same
+// reasoning as the run, and reaches its context through startConfirm rather
+// than startRun.
+func TestAPreviewCarriesNoDeadlineEither(t *testing.T) {
+	m := New(testRegistry(t), config.Dashboard{}, nil)
+	sized, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	c := deadlineCap()
+	c.Inputs = nil
+	c.Safety = plugin.Destructive
+	_, cmd := sized.(Model).open(c)
+	for _, msg := range messagesOf(cmd) {
+		p, isPreview := msg.(previewMsg)
+		if !isPreview {
+			continue
+		}
+		if p.err != nil {
+			t.Fatal(p.err)
+		}
+		if body := p.view.(view.Text).Body; body != "unbounded" {
+			t.Fatalf("the preview ran under a deadline: %s", body)
+		}
+		return
+	}
+	t.Fatal("the dry run produced no preview")
+}
+
+// The forward's own expiry reaches the tile in the dashboard's words too: the
+// check sits above both error branches, and this is the Dial one. A kubectl
+// that never reports a forward is what makes Dial wait out the deadline.
+func TestATileWhoseForwardNeverComesUpNamesTheDashboardsDeadline(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "kubectl"),
+		[]byte("#!/bin/sh\nwhile true; do sleep 1; done\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	saved := refreshTimeout
+	refreshTimeout = 150 * time.Millisecond
+	t.Cleanup(func() { refreshTimeout = saved })
+	var seen string
+	ti := reachedTile(t, &seen)
+	msg := tileCmd(0, ti, nil, "homelab", nil, config.Connection{Kube: "homelab/databases/svc/postgres:5432"})().(tileMsg)
+	if msg.err == nil || msg.err.Code != "tui.refresh.timeout" {
+		t.Fatalf("a forward that never came up: %v, want tui.refresh.timeout", msg.err)
+	}
+	if seen != "" {
+		t.Errorf("the handler ran anyway, against %s", seen)
 	}
 }
