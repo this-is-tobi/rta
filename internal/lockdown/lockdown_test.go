@@ -3,9 +3,12 @@ package lockdown
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/this-is-tobi/rta/internal/seal"
 )
 
 func fresh(t *testing.T) {
@@ -226,5 +229,44 @@ func TestANoteIsASentenceNotADocument(t *testing.T) {
 	}
 	if _, verr := Build("agent", "claude", strings.Repeat("n", maxNote), "", "terminal"); verr != nil {
 		t.Fatalf("a note at the bound refused: %v", verr)
+	}
+}
+
+// A truncated lockdown.key makes every `rta lock add` fail forever —
+// seal.Key regenerates nothing over bytes that are already there — and the
+// refusal used to say lockdown.json exists with no usable key beside it,
+// with a hint to rm that file and re-place the locks. Following it exactly
+// looped: the file it meant may not exist at all on the write path, and the
+// key it never named is the one thing that needs removing. Measured end to
+// end before this was fixed: `rm lockdown.key` was the only recovery.
+func TestATruncatedSealKeyNamesTheFileThatFixesIt(t *testing.T) {
+	fresh(t)
+	key := seal.Path(keyFile)
+	if err := os.MkdirAll(filepath.Dir(key), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(key, []byte("short"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	l, verr := Build("agent", "claude", "incident", "", "terminal")
+	if verr != nil {
+		t.Fatal(verr)
+	}
+	verr = Add(l)
+	if verr == nil || verr.Code != "core.lock.unsealed" {
+		t.Fatalf("Add over a truncated key: %v, want core.lock.unsealed", verr)
+	}
+	if !strings.Contains(verr.Message, key) || strings.Contains(verr.Message, Path()) {
+		t.Errorf("the message names the wrong file: %q — the key is the broken one, and lockdown.json is not there", verr.Message)
+	}
+	if !strings.Contains(verr.Hint, "rm -f "+key) {
+		t.Errorf("the hint does not name the file that fixes it, in a form that cannot error on the one that is absent: %q", verr.Hint)
+	}
+	// The hint's recovery, followed: the key goes, and the next add works.
+	if err := os.Remove(key); err != nil {
+		t.Fatal(err)
+	}
+	if verr := Add(l); verr != nil {
+		t.Fatalf("Add after removing the truncated key: %v", verr)
 	}
 }
