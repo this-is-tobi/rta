@@ -97,9 +97,11 @@ func mailDomain(raw string) (string, *view.Error) {
 	if i := strings.Index(d, "://"); i >= 0 {
 		d, scheme = d[i+3:], true
 	}
-	// The authority ends at the first `/`, `?` or `#`; everything after it is
-	// path or query and cannot name the host.
-	if i := strings.IndexAny(d, "/?#"); i >= 0 {
+	// The authority ends at the first `/`, `?`, `#` or `\`; everything after
+	// it is path or query and cannot name the host. The backslash is there
+	// because browsers read it as a slash in every special scheme, so it is
+	// where a reader of the string stops too.
+	if i := strings.IndexAny(d, "/?#\\"); i >= 0 {
 		d = d[:i]
 	}
 	// Only now can an `@` be userinfo. A credential in front of the host is
@@ -120,29 +122,61 @@ func mailDomain(raw string) (string, *view.Error) {
 			d = d[:i]
 		}
 	}
-	d = strings.Trim(strings.TrimSpace(d), ".")
-	if d == "" || !strings.Contains(d, ".") {
-		return "", view.Errorf("audit.mail.baddomain", "not a domain: %q", raw).
-			WithHint("pass a domain like example.com, or an address at it")
-	}
-	return strings.ToLower(d), nil
+	return checkDomain(strings.ToLower(strings.Trim(strings.TrimSpace(d), ".")), raw)
 }
 
-// selectorRe is a DKIM selector's shape: one or more RFC 1035 labels,
-// dot-separated — "google", "selector1", "20161025", or a hierarchical one
+// A domain and a DKIM selector are the two halves of one DNS name and have
+// the same shape: dot-separated RFC 1035 labels, letters, digits and hyphens,
+// none over 63 — "google", "selector1", "20161025", or a hierarchical one
 // like "foo.bar" (RFC 6376 §3.6.2.1 allows the selector itself to be
-// multi-label). Letters, digits and hyphens only, the same character set
-// mailDomain already reduces the domain half of this same name to.
-var selectorRe = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$`)
+// multi-label). One grammar for both halves, so they cannot drift apart
+// again: the selector was held to it and the domain to "contains a dot",
+// which is how an IP literal got graded as a mail domain and an
+// internationalised name got reported as one that does not exist rather
+// than one rta declined to ask about.
+var labelSeqRe = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$`)
+
+// checkDomain is the domain half's grammar, applied to what mailDomain cut
+// out of the argument. raw is the argument as typed, for the message: the
+// value a person recognises is the one they handed over, not the piece
+// that failed.
+func checkDomain(d, raw string) (string, *view.Error) {
+	bad := func(hint string) (string, *view.Error) {
+		return "", view.Errorf("audit.mail.baddomain", "not a domain: %q", raw).WithHint(hint)
+	}
+	switch {
+	case d == "" || !strings.Contains(d, "."):
+		return bad("pass a domain like example.com, or an address at it")
+	case stdnet.ParseIP(strings.Trim(d, "[]")) != nil:
+		// Before the grammar, on purpose: 192.0.2.1 is four labels of
+		// digits and passes it, and would then be graded as a mail domain
+		// — "no SPF record, anyone can send as this domain" about an
+		// address. A bracketed IPv6 literal fails the grammar on its own
+		// and would get the character-set answer, which is the wrong one.
+		return bad("an address is not a mail domain — pass the name it is published under")
+	case len(d) > 253:
+		return bad("a DNS name is at most 253 characters")
+	case !labelSeqRe.MatchString(d):
+		// No IDNA: golang.org/x/net/idna would pull x/text's tables into
+		// the binary to improve one message, and the punycode form is what
+		// the zone is published under anyway. A label over 63 characters
+		// lands here too, which the hint states rather than re-stating as
+		// a character-set problem.
+		return bad("dot-separated labels of letters, digits and hyphens, each at most 63 — " +
+			"for an internationalised domain, pass its xn-- form")
+	}
+	return d, nil
+}
 
 // checkSelector refuses a selector that is not a usable DNS label sequence
-// before it is concatenated into dkimName — "only trimmed" before this,
-// unlike domain, which mailDomain already holds to its own character set.
+// before it is concatenated into dkimName. Same grammar as the domain half,
+// its own code: the two halves arrive as two inputs and the refusal names
+// the one that was wrong.
 func checkSelector(v string) *view.Error {
 	if v == "" {
 		return nil
 	}
-	if len(v) > 253 || !selectorRe.MatchString(v) {
+	if len(v) > 253 || !labelSeqRe.MatchString(v) {
 		return view.Errorf("audit.mail.badselector", "%q is not a usable DKIM selector", v).
 			WithHint("selectors are letters, digits, hyphens and dots — the s= tag of a DKIM-Signature header")
 	}
