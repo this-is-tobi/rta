@@ -98,16 +98,18 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 				Detailed:   true,
 				// Same reasoning as audit.web, three lines above: a caller-
 				// chosen domain drives a handful of DNS lookups whose
-				// answers — including a DKIM TXT record at a caller-chosen
-				// selector — return straight into an agent's context, on
-				// the default MCP surface, with no consent. --selector
-				// widens this from "any name under the domain" to "any
-				// name at all": dkimName is selector + "._domainkey." +
-				// domain with no validation beyond trimming, so an
-				// unscoped caller could name selector and domain to send a
-				// DNS query — and read back the answer — for a name of
-				// their choosing, on an authoritative server of the
-				// domain's choosing.
+				// answers — a DKIM TXT record at a caller-chosen selector
+				// included — return straight into an agent's context, on
+				// the default MCP surface, with no consent. That is what
+				// the grant and the scope are for. The selector does not
+				// widen the query past <selector>._domainkey.<domain>: both
+				// halves of the name are held to the same DNS label
+				// grammar (mail.go's labelSeqRe), so no dot-play reaches a
+				// name outside the domain. This comment used to say the
+				// selector was "only trimmed", which was true once and
+				// overstated the risk for as long as it survived the fix —
+				// the answer landing in a model is the reason the grant
+				// stays, and it needs no second one.
 				NeedsGrant: true,
 				Scope:      "domain",
 				Description: "Answers \"can somebody send mail as this domain\" from the records the " +
