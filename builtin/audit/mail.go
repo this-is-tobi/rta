@@ -413,17 +413,42 @@ func auditDKIM(r *findings.Report, f mailFacts) {
 			"no DKIM key at "+name+" — messages signed with this selector cannot be verified", refSpoofing)
 		return
 	}
-	// A DKIM record may be split across strings; the resolver hands them back
-	// separately and they are meant to be concatenated.
-	joined := strings.Join(records, "")
-	if !strings.Contains(strings.ToLower(joined), "v=dkim1") && !strings.Contains(joined, "p=") {
+	// One entry is one TXT record. This used to join them, on the belief
+	// that the resolver hands a long key back as several strings — it does
+	// not: net.Resolver.LookupTXT concatenates the character-strings of one
+	// record itself, so the join only ever glued distinct records together.
+	// The case that broke was key rotation, an old revoked key beside a new
+	// one: joined, the first p= was the good one and the selector graded
+	// ok. RFC 6376 §3.6.2.2 makes the result undefined when a selector
+	// holds more than one record, which SPF and DMARC already grade and
+	// DKIM alone hid. Warn rather than fail: undefined is not broken, and a
+	// rotation passes through this state on purpose.
+	if len(records) > 1 {
+		r.Add(grpSenderAuth, "dkim", findings.Warn,
+			findings.Plural(len(records), "TXT record")+" at "+name+" — RFC 6376 makes the result "+
+				"undefined when a selector holds more than one, so which key a verifier reads is not "+
+				"something this can predict", refSpoofing)
+		return
+	}
+	record := records[0]
+	if !strings.Contains(strings.ToLower(record), "v=dkim1") && !strings.Contains(record, "p=") {
 		r.Add(grpSenderAuth, "dkim", findings.Warn,
 			"a TXT record exists at "+name+" but does not look like a DKIM key", refSpoofing)
 		return
 	}
 	// An empty p= is the documented way to revoke a key (RFC 6376 §3.6.1),
-	// so a record can be present and still mean "this key is dead".
-	if p := dkimTag(joined, "p"); p == "" {
+	// so a record can be present and still mean "this key is dead". A
+	// record with no p= at all is merely incomplete, and citing the
+	// revocation mechanism about it would be a specific claim applied to
+	// the wrong condition.
+	p, present := recordTag(record, "p")
+	switch {
+	case !present:
+		r.Add(grpSenderAuth, "dkim", findings.Fail,
+			"the record at "+name+" has no p= tag, which makes it unusable — there is no key in it to verify with",
+			refSpoofing)
+		return
+	case p == "":
 		r.Add(grpSenderAuth, "dkim", findings.Fail,
 			"the key at "+name+" has an empty p= tag, which revokes it — signatures made with it will not verify",
 			refSpoofing)
@@ -432,14 +457,18 @@ func auditDKIM(r *findings.Report, f mailFacts) {
 	r.Add(grpSenderAuth, "dkim", findings.OK, "public key published at "+name, refSpoofing)
 }
 
-func dkimTag(record, tag string) string {
+// recordTag reads one tag out of a `tag=value;` list — DKIM, DMARC and
+// TLS-RPT records share the grammar. present tells an absent tag from an
+// empty one, which for p= is the difference between an incomplete record
+// and a revoked key.
+func recordTag(record, tag string) (value string, present bool) {
 	for _, part := range strings.Split(record, ";") {
 		k, v, ok := strings.Cut(strings.TrimSpace(part), "=")
 		if ok && strings.EqualFold(strings.TrimSpace(k), tag) {
-			return strings.TrimSpace(v)
+			return strings.TrimSpace(v), true
 		}
 	}
-	return ""
+	return "", false
 }
 
 // dmarcPct is the percentage of mail a DMARC policy is applied to, and
@@ -450,7 +479,7 @@ func dkimTag(record, tag string) string {
 // syntax error, and the RFC has a receiver discard a record it cannot parse
 // rather than apply a default — so "usable" is a distinct answer from "100".
 func dmarcPct(record string) (int, bool) {
-	raw := dkimTag(record, "pct")
+	raw, _ := recordTag(record, "pct")
 	if raw == "" {
 		return 100, true
 	}
@@ -493,14 +522,16 @@ func auditDMARC(r *findings.Report, f mailFacts) {
 	// staged rollout leaves domains in exactly that state.
 	pct, pctOK := dmarcPct(record)
 	if !pctOK {
+		pctRaw, _ := recordTag(record, "pct")
 		r.Add(grpSenderAuth, "dmarc", findings.Fail,
-			"pct="+dkimTag(record, "pct")+" is not a percentage, and RFC 7489 has receivers discard a "+
+			"pct="+pctRaw+" is not a percentage, and RFC 7489 has receivers discard a "+
 				"record they cannot parse — so this domain has no policy at all: "+findings.Clip(record),
 			refSpoofing)
 		return
 	}
 
-	policy := strings.ToLower(dkimTag(record, "p"))
+	policy, _ := recordTag(record, "p")
+	policy = strings.ToLower(policy)
 	if pct == 0 && (policy == "reject" || policy == "quarantine") {
 		r.Add(grpSenderAuth, "dmarc", findings.Fail,
 			"p="+policy+" with pct=0 — the policy is applied to none of the domain's mail, which is "+
@@ -536,7 +567,7 @@ func auditDMARC(r *findings.Report, f mailFacts) {
 			"pct="+strconv.Itoa(pct)+" — the policy is applied to that percentage of mail; the rest is delivered as if "+
 				"there were no policy", refSpoofing)
 	}
-	if dkimTag(record, "rua") == "" {
+	if rua, _ := recordTag(record, "rua"); rua == "" {
 		r.Add(grpSenderAuth, "dmarc-reporting", findings.Warn,
 			"no rua= address — nothing reports back, so a policy that is breaking legitimate mail "+
 				"or failing to stop spoofing looks identical to one that is working", refSpoofing)
