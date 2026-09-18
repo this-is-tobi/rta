@@ -551,11 +551,27 @@ func auditMailTransport(r *findings.Report, f mailFacts) {
 	case f.stsErr != nil:
 		r.Add(grpMailTLS, "mta-sts", findings.Info, "lookup failed: "+f.stsErr.Error(), refCleartext)
 	case len(pick(f.sts, "v=stsv1")) == 0:
+		// DANE (RFC 7672) is the other standard answer to the same problem,
+		// and Go's resolver has no way to ask for a TLSA record, so its
+		// absence is named as unchecked rather than asserted.
 		r.Add(grpMailTLS, "mta-sts", findings.Warn,
-			"no MTA-STS policy — a sending server has no instruction to require TLS, so an attacker on "+
-				"the path can strip it and the mail is delivered in the clear", refCleartext)
+			"no MTA-STS policy — unless the domain publishes DANE TLSA records, which this cannot "+
+				"query, a sending server has no instruction to require TLS, so an attacker on the path "+
+				"can strip it and the mail is delivered in the clear", refCleartext)
 	default:
-		r.Add(grpMailTLS, "mta-sts", findings.OK, "policy published — senders are told to require TLS", refCleartext)
+		// The TXT record is a marker, not the policy. RFC 8461 puts the mode
+		// (enforce, testing, or none — which is how MTA-STS is switched off),
+		// the mx patterns and max_age in a file at
+		// https://mta-sts.<domain>/.well-known/mta-sts.txt, which this does
+		// not fetch: that would be the first body this capability reads from
+		// a caller-influenced host, the line audit.web draws against
+		// http.get, and it is a decision of its own. So "ok, senders are
+		// told to require TLS" was an assertion about a document nobody
+		// read, and it read as ok for a domain whose policy says mode:
+		// none. Info is what a marker earns.
+		r.Add(grpMailTLS, "mta-sts", findings.Info,
+			"a policy is advertised at _mta-sts."+f.domain+" — its mode (enforce, testing or none) "+
+				"is in the policy file, which this does not fetch", refCleartext)
 	}
 
 	switch {

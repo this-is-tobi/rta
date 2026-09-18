@@ -114,7 +114,9 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 					"domain publishes: SPF (present, singular, how it ends, and how close it is to " +
 					"RFC 7208's ten-lookup limit past which it silently stops applying), DMARC (policy, " +
 					"rollout percentage, whether anything reports back), DKIM for a given selector, " +
-					"MTA-STS and TLS-RPT for the server-to-server hop, and MX — including RFC 7505's " +
+					"MTA-STS and TLS-RPT for the server-to-server hop (the MTA-STS policy file, which " +
+					"carries its mode, is not fetched — only the TXT record that advertises it is read), " +
+					"and MX — including RFC 7505's " +
 					"null MX, which is a hardening measure rather than an omission. Every finding cites " +
 					"an OWASP Top 10:2025 category and a MITRE CWE. With --detail: one section per area " +
 					"plus the cited references with lookup URLs. Read-only, a handful of lookups of " +
