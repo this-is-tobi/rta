@@ -2,6 +2,10 @@ package audit
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/base64"
 	"errors"
 	stdnet "net"
 	"regexp"
@@ -454,7 +458,93 @@ func auditDKIM(r *findings.Report, f mailFacts) {
 			refSpoofing)
 		return
 	}
-	r.Add(grpSenderAuth, "dkim", findings.OK, "public key published at "+name, refSpoofing)
+	// A key in testing mode authenticates nothing: RFC 6376 §3.6.1 has
+	// verifiers treat a testing signer's mail no differently from unsigned
+	// mail, even when the signature fails. It is DKIM's p=none, and it is
+	// checked before the key itself because no key size rescues it.
+	if flags, _ := recordTag(record, "t"); dkimFlag(flags, "y") {
+		r.Add(grpSenderAuth, "dkim", findings.Fail,
+			"the key at "+name+" carries t=y, the testing flag — verifiers treat mail signed with it "+
+				"exactly as unsigned, even when the signature fails, so it protects nothing until the "+
+				"flag is dropped", refSpoofing)
+		return
+	}
+	bits, alg, ok := dkimKeyBits(record)
+	switch {
+	case alg != "rsa" && alg != "ed25519":
+		r.Add(grpSenderAuth, "dkim", findings.Warn,
+			"the key at "+name+" declares k="+alg+", which is not a key type this reads (rsa and "+
+				"ed25519 are) — a verifier that does not know it either treats the mail as unsigned",
+			refSpoofing)
+	case !ok:
+		r.Add(grpSenderAuth, "dkim", findings.Warn,
+			"the p= at "+name+" does not decode as an "+alg+" key, so a verifier cannot use it",
+			refSpoofing)
+	case alg == "rsa" && bits < 1024:
+		r.Add(grpSenderAuth, "dkim", findings.Fail,
+			strconv.Itoa(bits)+"-bit RSA key at "+name+" — RFC 8301 has verifiers refuse signatures "+
+				"under 1024 bits, and a key this short can be factored: it is published, reads as "+
+				"correct, and can be forged", refSpoofing)
+	case alg == "rsa" && bits < 2048:
+		r.Add(grpSenderAuth, "dkim", findings.Warn,
+			strconv.Itoa(bits)+"-bit RSA key at "+name+" — RFC 8301's floor, below the 2048 it has "+
+				"signers use", refSpoofing)
+	default:
+		r.Add(grpSenderAuth, "dkim", findings.OK,
+			strconv.Itoa(bits)+"-bit "+alg+" key published at "+name, refSpoofing)
+	}
+}
+
+// dkimFlag reports whether a t= tag carries one flag: a colon-separated
+// list per RFC 6376 §3.6.1, "y" alone or "y:s".
+func dkimFlag(flags, want string) bool {
+	for _, f := range strings.Split(flags, ":") {
+		if strings.EqualFold(strings.TrimSpace(f), want) {
+			return true
+		}
+	}
+	return false
+}
+
+// dkimKeyBits reads the key out of p= and reports its size, because
+// presence is not protection: RFC 8301 §3.2 is the bar, and a 512-bit key
+// is a record that is published, reads as correct, and can be forged — the
+// state this whole capability exists to name.
+//
+// Two encodings, because DKIM has two. RFC 6376 §3.6.1's RSA p= is a base64
+// SubjectPublicKeyInfo, so crypto/x509 reads it — the same parse a
+// certificate's key gets, already linked by audit.web. RFC 8463 §4.2's
+// Ed25519 p= is the raw 32-octet key with no ASN.1 around it, so
+// ParsePKIXPublicKey refuses every valid one, and parsing it as SPKI would
+// grade the newest correct thing a signer can publish as a record that does
+// not decode. Whitespace is stripped first: a long key is published across
+// character-strings and operators hand-wrap it. alg comes back even when
+// the key does not, so the finding can name what it tried to read it as.
+func dkimKeyBits(record string) (bits int, alg string, ok bool) {
+	alg = "rsa" // RFC 6376 §3.6.1: k= is optional and defaults to rsa
+	if k, present := recordTag(record, "k"); present && k != "" {
+		alg = strings.ToLower(k)
+	}
+	p, _ := recordTag(record, "p")
+	raw, err := base64.StdEncoding.DecodeString(strings.Join(strings.Fields(p), ""))
+	if err != nil {
+		return 0, alg, false
+	}
+	switch alg {
+	case "ed25519":
+		return 256, alg, len(raw) == ed25519.PublicKeySize
+	case "rsa":
+		key, err := x509.ParsePKIXPublicKey(raw)
+		if err != nil {
+			return 0, alg, false
+		}
+		rsaKey, isRSA := key.(*rsa.PublicKey)
+		if !isRSA {
+			return 0, alg, false
+		}
+		return rsaKey.N.BitLen(), alg, true
+	}
+	return 0, alg, false
 }
 
 // recordTag reads one tag out of a `tag=value;` list — DKIM, DMARC and
