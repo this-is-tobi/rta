@@ -27,6 +27,14 @@ shasum -a 256 -c checksums.txt --ignore-missing     # sha256sum on Linux
 gh attestation verify rta_*_"${os}"_"${arch}".tar.gz --owner this-is-tobi
 ```
 
+The release also carries a keyless cosign signature over `checksums.txt`, whose sha256 lines are what tie every archive to it. It is bound to the workflow that made it, and that workflow is the reusable attestation step in [this-is-tobi/github-workflows](https://github.com/this-is-tobi/github-workflows) at its `v0` tag — the certificate names the workflow that ran the signing step, not the repository that called it — which is why the identity below names that repository rather than this one:
+
+```bash
+cosign verify-blob checksums.txt --bundle checksums.txt.cosign.bundle \
+  --certificate-identity-regexp '^https://github.com/this-is-tobi/github-workflows/\.github/workflows/attest-go\.yml@refs/tags/v0$' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
 Then put the binary on your `$PATH`:
 
 ```bash
@@ -93,6 +101,14 @@ Distroless, non-root, multi-arch (`amd64`/`arm64`), published with every release
 gh attestation verify oci://ghcr.io/this-is-tobi/rta:latest --owner this-is-tobi
 ```
 
+The cosign signature is the one an admission controller can enforce. It is bound to the reusable attestation workflow that signed the digest, at its `v0` tag, for the reason the binaries section gives:
+
+```bash
+cosign verify ghcr.io/this-is-tobi/rta:latest \
+  --certificate-identity-regexp '^https://github.com/this-is-tobi/github-workflows/\.github/workflows/attest-docker\.yml@refs/tags/v0$' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
 Two shapes of use:
 
 - **An MCP server** — [In a container, for a hardened server](../30-boundary/20-mcp.md#in-a-container-for-a-hardened-server) has the full `docker run` recipe: read-only root, dropped capabilities, no network by default.
@@ -110,6 +126,14 @@ The chart deploys rta as an MCP server that other machines reach — one instanc
 
 ```bash
 gh attestation verify oci://ghcr.io/this-is-tobi/rta/rta-chart:<version> --owner this-is-tobi
+```
+
+And its cosign signature, bound to the chart attestation workflow the same way:
+
+```bash
+cosign verify ghcr.io/this-is-tobi/rta/rta-chart:<version> \
+  --certificate-identity-regexp '^https://github.com/this-is-tobi/github-workflows/\.github/workflows/attest-helm\.yml@refs/tags/v0$' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
 This is the third of the three worlds [What rta actually bounds](../30-boundary/10-the-boundary.md) describes — the agent runs somewhere else, holds no credentials of its own, and reaches your environments only through rta — and unlike the other two it is a deployment rather than a setting. [Kubernetes](../30-boundary/80-kubernetes.md) is that deployment: the decisions to make before setting any value, the posture worth deploying, and what changes on day two. The chart's own README is the values reference.
