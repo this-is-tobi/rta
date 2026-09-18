@@ -68,7 +68,13 @@ func sealKey(create bool) ([]byte, *view.Error) {
 			WithHint("`rm " + keyPath() + " " + Path() + "` clears every grant and starts clean; " +
 				"any that were legitimate can be re-issued")
 	default:
-		return nil, view.Errorf("core.grant.write", "%v", err)
+		// On the read path this is an unreadable key, or a directory in its
+		// place — a read failure, named as one and given no removal hint.
+		code := "core.grant.write"
+		if !create {
+			code = "core.grant.read"
+		}
+		return nil, view.Errorf(code, "%v", err)
 	}
 }
 

@@ -237,7 +237,14 @@ func sealKey(create bool) ([]byte, *view.Error) {
 			"%s is too short to be a seal key, so no lock can be sealed or checked against it", keyPath()).
 			WithHint(shortKeyHint())
 	default:
-		return nil, view.Errorf("core.lock.write", "%v", err)
+		// On the read path this is an unreadable key, or a directory in its
+		// place: a read failure, named as one and given no recovery hint,
+		// since the key may be intact and merely unreadable to this user.
+		code := "core.lock.write"
+		if !create {
+			code = "core.lock.read"
+		}
+		return nil, view.Errorf(code, "%v", err)
 	}
 }
 

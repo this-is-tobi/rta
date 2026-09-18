@@ -37,6 +37,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/this-is-tobi/rta/internal/atomicfile"
@@ -82,7 +83,16 @@ func Key(name string, create bool) ([]byte, error) {
 			// collapse into the same answer.
 			return nil, ErrShort
 		}
-		return nil, ErrMissing
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, ErrMissing
+		}
+		// Unreadable, a directory in its place, or larger than a key can
+		// be: not absent, and not a truncation either. Reported as the read
+		// failure it is, because ErrMissing's callers tell the operator the
+		// sealed file "was not written by rta" and hand them a removal — a
+		// wrong diagnosis with a destructive hint, over a key that may be
+		// intact and merely unreadable to this user.
+		return nil, fmt.Errorf("reading %s: %w", Path(name), err)
 	}
 	key := make([]byte, 32)
 	if _, err := rand.Read(key); err != nil {
