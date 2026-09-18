@@ -107,3 +107,60 @@ func TestQuittingMidRunReleasesTheHandler(t *testing.T) {
 		t.Fatal("the handler kept running after ctrl+c — a forward it held would stay open past the program")
 	}
 }
+
+// The thirty-second deadline was a TUI-only invention: the CLI runs a
+// capability under a context with no deadline, MCP runs it under the
+// request's, and only the TUI cut runs off — at a number several
+// capabilities' own validated inputs exceed. net.trace's defaults are thirty
+// hops of three probes of two seconds; http.* lets a caller state six
+// hundred. Picking a bigger number does not fix it, because the ceiling
+// would have to exceed the largest timeout any plugin in the registry lets
+// a caller state, and that number is not rta's to know. What bounds a run
+// asked for from a form is what bounds it on the CLI: the capability's own
+// timeout input, its own budgets, and esc.
+func TestAnAskedForRunCarriesNoDeadline(t *testing.T) {
+	m := New(testRegistry(t), config.Dashboard{}, nil)
+	sized, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	c := deadlineCap()
+	c.Inputs = nil // a form would open otherwise, and the deadline is the point
+	_, cmd := sized.(Model).open(c)
+	for _, msg := range messagesOf(cmd) {
+		if _, isResult := msg.(resultMsg); !isResult {
+			continue
+		}
+		if d, bounded := deadlineOf(t, msg); bounded {
+			t.Fatalf("an asked-for run is cut off at %v — the operator never set that", time.Until(d).Round(time.Second))
+		}
+		return
+	}
+	t.Fatal("the run produced no result")
+}
+
+// A cancellable context with no deadline has nothing that releases it when
+// the run lands, where the thirty-second timer used to fire and clean up
+// after itself. The result's arrival is what ends the run, so it is what
+// releases the context — after the sequence check, since a stale result
+// must not cancel the run the person moved on to.
+func TestAFinishedRunReleasesItsContext(t *testing.T) {
+	m := New(testRegistry(t), config.Dashboard{}, nil)
+	sized, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	c := deadlineCap()
+	c.Inputs = nil
+	started, _ := sized.(Model).open(c)
+	sm := started.(Model)
+	if sm.cancelRun == nil {
+		t.Fatal("no cancel recorded for the run in flight")
+	}
+	landed, _ := sm.Update(resultMsg{cap: c, view: view.Text{Body: "done"}, seq: sm.runSeq})
+	if landed.(Model).cancelRun != nil {
+		t.Error("the run landed and its context is still held")
+	}
+	// A stale result belongs to nobody and must not touch the current run:
+	// a second run replaces the first, and the first's result arrives late.
+	again, _ := sm.open(c)
+	am := again.(Model)
+	stale, _ := am.Update(resultMsg{cap: c, view: view.Text{Body: "late"}, seq: sm.runSeq})
+	if stale.(Model).cancelRun == nil {
+		t.Error("a stale result released the current run's context")
+	}
+}

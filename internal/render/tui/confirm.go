@@ -75,7 +75,11 @@ func (m *Model) startConfirm(c plugin.Capability, values map[string]any) tea.Cmd
 		m.viewport.GotoTop()
 		return nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
+	// Unbounded on the same reasoning as the run it previews (startRun): a
+	// plugin's dry run can have to look at the remote to describe what it
+	// would do, and esc is on this screen too. MCP bounds its preview at
+	// previewWait and should — nobody is there to press anything.
+	ctx, cancel := context.WithCancel(context.Background())
 	m.cancelRun = cancel
 	m.runSeq++
 	m.mode = modeRunning

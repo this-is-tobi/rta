@@ -365,7 +365,7 @@ func tileCmd(idx int, t tile, cfg map[string]any, profileName string,
 			// Static tiles keep their content.
 			return tileMsg{id: t.cap.ID, idx: idx, v: t.view}
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), refreshTimeout)
 		defer cancel()
 		dialled, closeTunnel, verr := profile.Dial(ctx, profileName, conn, t.cap, t.values)
 		defer closeTunnel()
