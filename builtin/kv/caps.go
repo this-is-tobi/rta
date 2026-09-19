@@ -974,6 +974,24 @@ func unlockAvailability(req plugin.Request, mode keyMode) string {
 }
 
 func runRecipients(_ context.Context, _ plugin.Request) (view.View, error) {
+	// Before the recipients list, because an empty one means two different
+	// things and only one of them was being said. With no store on disk this
+	// announced "The store is encrypted with a passphrase, not keys." — a
+	// flat claim about a file that does not exist — and then offered two
+	// `kv rekey` lines, both of which rekey refuses with kv.rekey.nostore.
+	// Three commands deep before anything said the store had never been
+	// created, and the first two read like a working system.
+	//
+	// `kv status` and `kv rekey` both already knew this state by name; the
+	// phrase is theirs. Every command offered here is one that works from
+	// here, which is what the two it replaces were not.
+	if !fileExists(storePath()) {
+		return view.Text{Body: "No store yet — nothing to read, and nothing locking it.\n\n" +
+			"What it is locked with is decided when it is created:\n" +
+			"  rta kv init --generate                     a key made for this store\n" +
+			"  rta kv init --identity ~/.ssh/id_ed25519   a key you already hold\n" +
+			"  rta kv set <key> <value>                   a passphrase, if you never run init"}, nil
+	}
 	specs, verr := loadRecipients()
 	if verr != nil {
 		return nil, verr
