@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/this-is-tobi/rta/internal/pathguard"
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -226,14 +227,15 @@ func usageDetail(ctx context.Context, req plugin.Request, path string,
 	summary := []view.Pair{
 		{Key: "path", Value: path},
 		{Key: "total", Value: humanBytes(total)},
-		{Key: "contents", Value: fmt.Sprintf("%d entries · %d files beneath · %d directories", len(entries), files, dirs)},
+		{Key: "contents", Value: format.CountOf(len(entries), "entry") + " · " +
+			format.CountOf(files, "file") + " beneath · " + format.CountOf(dirs, "directory")},
 	}
 	if s.skipped > 0 {
 		// Never silently. A total computed over an unknown fraction of a tree
 		// looks exactly like a correct one.
 		summary = append(summary, view.Pair{
 			Key:   "skipped",
-			Value: fmt.Sprintf("%d entries — unreadable, or on another filesystem", s.skipped),
+			Value: format.CountOf(s.skipped, "entry") + " — unreadable, or on another filesystem",
 		})
 	}
 

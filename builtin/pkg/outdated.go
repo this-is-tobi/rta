@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -203,7 +204,8 @@ func runOverview(ctx context.Context, req plugin.Request) (view.View, error) {
 		kv.Pairs = append(kv.Pairs, view.Pair{Key: "tools", Value: fmt.Sprintf("outdated %d of %d", behind, len(tools))})
 	}
 	kv.Pairs = append(kv.Pairs, osStatePairs(st).Pairs...)
-	kv.Pairs = append(kv.Pairs, view.Pair{Key: "total behind", Value: fmt.Sprintf("%d packages, %d tools", total, behind)})
+	kv.Pairs = append(kv.Pairs, view.Pair{Key: "total behind",
+		Value: format.CountOf(total, "package") + ", " + format.CountOf(behind, "tool")})
 
 	if !req.Bool("detail") {
 		return kv, nil

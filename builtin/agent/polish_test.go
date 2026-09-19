@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/this-is-tobi/rta/internal/agentlog"
 	"github.com/this-is-tobi/rta/internal/consent"
 	"github.com/this-is-tobi/rta/internal/lockdown"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -21,6 +22,43 @@ func TestAnEmptyQueueIsASentence(t *testing.T) {
 	text, ok := v.(view.Text)
 	if !ok || !strings.Contains(text.Body, "nothing is waiting") {
 		t.Fatalf("empty queue = %+v, want a sentence", v)
+	}
+}
+
+// One lost call reads as one.
+//
+// These are the two numbers on the record's own summary that say the ledger
+// is not whole — the count rta could not write down, and the count its
+// retention dropped — and one is the commonest value either takes: a single
+// call missed during one bad moment. "1 calls rta could not write down" on
+// the screen an operator opens to decide whether the audit trail can be
+// trusted reads as a fault in the tool doing the counting.
+//
+// The entry note below them had the rule and these two did not, in the same
+// file: it spelled the singular out in a two-branch if, which is the shape
+// the counting vocabulary in pkg/format exists to stop being written again.
+func TestOneMissedCallIsNotOneCalls(t *testing.T) {
+	isolate(t)
+	pairs := recordPairs(agentlog.Report{
+		Entries: 4, Missed: 1, Retired: 1, RetiredAt: time.Now(),
+	}, nil)
+	kv := view.KeyValue{Pairs: pairs}
+	for _, c := range []struct{ key, want string }{
+		{"not recorded", "1 call rta could not write down"},
+		{"retired", "the first 1 call, dropped"},
+	} {
+		if got := pairValue(kv, c.key); !strings.HasPrefix(got, c.want) {
+			t.Errorf("%s = %q, want it to start %q", c.key, got, c.want)
+		}
+	}
+
+	pairs = recordPairs(agentlog.Report{Entries: 9, Missed: 2, Retired: 3, RetiredAt: time.Now()}, nil)
+	kv = view.KeyValue{Pairs: pairs}
+	if got := pairValue(kv, "not recorded"); !strings.HasPrefix(got, "2 calls") {
+		t.Errorf("two missed calls = %q", got)
+	}
+	if got := pairValue(kv, "retired"); !strings.HasPrefix(got, "the first 3 calls") {
+		t.Errorf("three retired calls = %q", got)
 	}
 }
 

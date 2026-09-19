@@ -91,7 +91,7 @@ func (m Model) resultMeta() string {
 			parts = append(parts, theme.Subtle.Render(fmt.Sprintf("row %d/%d", m.row+1, n)))
 		}
 	case view.KeyValue:
-		parts = append(parts, theme.Subtle.Render(fmt.Sprintf("%d fields", len(v.Pairs))))
+		parts = append(parts, theme.Subtle.Render(format.CountOf(len(v.Pairs), "field")))
 	case view.Chart:
 		parts = append(parts, theme.Subtle.Render(fmt.Sprintf("%d series", len(v.Series))))
 	case view.Text:
