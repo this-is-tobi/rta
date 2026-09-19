@@ -24,6 +24,25 @@
 // and seal their own file. What sealing adds is that the two cases are now
 // different, where before there was one case and it was lost.
 //
+// # Which platforms actually supply the first case
+//
+// Only the ones that confine a plugin, which today means macOS —
+// pluginhost.Confined is the authority, and internal/pluginhost's
+// confine_other.go has the whole reason Linux has no sandbox (a deliberate
+// removal, not an omission) and Windows never had one. On those platforms a
+// plugin is an ordinary process at the operator's uid: it can read this
+// directory, so it can read the key, so the writer-that-cannot-read case
+// this was built for does not arise there at all.
+//
+// Sealing is still worth its cost on every platform, and it is worth being
+// exact about why rather than letting the paragraph above read as a promise
+// it does not keep off macOS. What survives everywhere is the weaker half:
+// a file that does not verify was not written by rta, which catches the
+// accident, the half-finished write and the hand-edit, and which is the
+// property every caller of this package actually reads it for. What is
+// macOS-only is the strong half — an attacker who is *prevented* from
+// reading, rather than one who simply did not.
+//
 // A MAC and not encryption, because the files it protects are meant to be
 // readable — "what is this agent allowed to do" and "what did it do" are
 // questions worth answering without unlocking anything. A plaintext file

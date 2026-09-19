@@ -23,7 +23,9 @@ import (
 // cannot read (a confined plugin blind-overwriting grants.json, reproduced
 // end to end: a refused kv.get became the secret after an 82-byte write),
 // and it stops nothing that can read this directory, because that attacker
-// reads the key and seals their own file.
+// reads the key and seals their own file. That reproduction was on macOS,
+// which is the only platform confining a plugin today — see internal/seal
+// on what the seal is still worth where nothing is confined.
 //
 // The precedent is one directory over: builtin/kv/crypt.go's writeKeys
 // already refuses when kv.recipients disagrees with the recipient list
