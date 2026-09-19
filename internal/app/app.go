@@ -26,6 +26,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/internal/render/cli"
 	"github.com/this-is-tobi/rta/internal/render/tui"
+	agentsession "github.com/this-is-tobi/rta/internal/session"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -218,9 +219,10 @@ func NewRoot(reg *registry.Registry, version string) *cobra.Command {
 	// cobra RunE that has the capability and nothing else, and this is the
 	// registry the whole tree is being built from.
 	SetInstalled(withTrust{reg})
-	// Same reasoning, one line along: the doctor capability compares an open
-	// server's build against this one and is handed no version either.
-	selfVersion = version
+	// Same reasoning, one line along: the doctor capability and `grant allow`
+	// both compare an open server's build against this one, and both are
+	// reached with a request and nothing else.
+	agentsession.SetSelf(version)
 	// Config is optional; a broken file must not brick the CLI — doctor and
 	// init both diagnose it, so they need the binary to still run.
 	cfg, cfgErr := config.Load()

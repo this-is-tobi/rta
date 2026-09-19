@@ -99,6 +99,58 @@ type Record struct {
 
 func Dir() string { return filepath.Join(paths.Data(), "sessions") }
 
+// self is the build this process is running, recorded once when the command
+// tree is built.
+//
+// Package state, for the reason internal/app's own `installed` documents: it
+// is fixed at startup, and the surfaces that need it — the doctor
+// capability, `grant allow` — are reached through the registry with a
+// request and nothing else, so threading a version to them would be a wide
+// change for a narrow need. Empty is the right zero: OtherBuilds says
+// nothing at all, which is what a comparison with no second operand should
+// do.
+var self string
+
+// SetSelf records the build this process is running.
+func SetSelf(v string) { self = v }
+
+// Self is that build, empty when nobody recorded one.
+func Self() string { return self }
+
+// OtherBuilds is every open server running something other than version,
+// and nothing when version is empty.
+//
+// **Because a process keeps the code it started with.** A client holds an
+// rta server open for days, so `rta upgrade` — or a `go install` while
+// developing — replaces the binary underneath servers that go on answering
+// calls by the old rules, while every surface a person reads is a fresh
+// process on the new build. The two then disagree about the same files with
+// nothing saying so, and the disagreement that costs the most is silent by
+// design: a grant issued against a connection an old server never knew is
+// listed healthy everywhere a person looks and refused by that server under
+// the sentence an ungranted call gets.
+//
+// The comparison is the build string itself, so it is exact — no version
+// arithmetic, nothing inferred from file times, and nothing said on the
+// ordinary case where every server is current. A record with no version
+// predates the field, which makes it older still.
+func OtherBuilds(version string) []Record {
+	if version == "" {
+		return nil
+	}
+	open, err := List()
+	if err != nil {
+		return nil
+	}
+	var out []Record
+	for _, r := range open {
+		if r.Version != version {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
 func path(id string) string { return filepath.Join(Dir(), id+".json") }
 
 // NewID is eight hex characters from the system's randomness: short enough
