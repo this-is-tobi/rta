@@ -369,13 +369,14 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 			refusedBy(rec, verr)
 			return errResult(verr), nil
 		}
-		release, covering, verr := grant.ReserveNaming(c, values, grant.Caller{
+		by := grant.Caller{
 			Agent:   opts.Agent,
 			Profile: profileName,
 			Pin:     opts.connStamp(profileName, grant.Namespace(c.ID)),
 			Digest:  opts.artifact(grant.Namespace(c.ID)),
 			Active:  opts.active(),
-		})
+		}
+		release, covering, verr := grant.ReserveNaming(c, values, by)
 		if verr != nil {
 			// Nobody pre-authorized it. With consent enabled, that is a
 			// question rather than an answer: park the call, ask the
@@ -387,6 +388,17 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 				if decided == nil {
 					// Never asked: the refusal is the gate's own.
 					refusedBy(rec, verr)
+					// And on the record only, what the sentence above will
+					// not say: whether a grant covers this call and was
+					// issued against a connection that has since moved. The
+					// agent hears the same words either way — see
+					// grant.RefusedStale — but the two are fixed
+					// differently, and the person who has to fix it reads
+					// this file.
+					if verr.Code == "core.grant.required" && grant.RefusedStale(c, values, by) {
+						rec.Note = "a grant covers this call but names a connection " +
+							"that is not the one it now resolves to — `rta doctor`"
+					}
 					return errResult(verr), nil
 				}
 				return errResult(decided), nil

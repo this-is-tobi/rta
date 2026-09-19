@@ -10,6 +10,7 @@ import (
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/this-is-tobi/rta/internal/agentlog"
 	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/pluginconf"
@@ -814,5 +815,65 @@ profiles:
 	}
 	if loaded[0].Stale(profile.ConnStampFor(fresh, "staging", "pg")) {
 		t.Error("`rta grant list` would mark a grant the server honours as (changed)")
+	}
+}
+
+// A grant whose connection has moved and a grant nobody ever issued are one
+// sentence to an agent, deliberately: naming the profile would disclose that
+// it exists and that consent was once given for it, which is the inventory
+// the refusal will not hand out one call at a time.
+//
+// The person reading the record afterwards needs the difference, and the
+// record is theirs. Without it the two are indistinguishable everywhere a
+// person looks: `grant list` shows the row healthy, `doctor` agrees, and the
+// only visible fact is a call refused for "no active grant" — so the remedy
+// they reach for is to issue the grant they already have, which changes
+// nothing and sends them looking somewhere else.
+func TestTheRecordSaysWhenARefusalWasARepointedConnection(t *testing.T) {
+	f := newProfileFixture(t, twoProfiles)
+	now := time.Now()
+	if verr := grant.Save([]grant.Grant{{
+		Target: "pg", Profile: "staging", ProfilePin: "stamped-against-another-connection",
+		Issued: now, Expires: now.Add(time.Hour),
+	}}); verr != nil {
+		t.Fatal(verr)
+	}
+
+	res := f.call(t, map[string]any{"profile": "staging", "sql": "select 1"})
+	if !res.IsError {
+		t.Fatal("a grant stamped against another connection authorized the call")
+	}
+	assertCode(t, res, "core.grant.required")
+	saidToTheAgent := contentText(t, res)
+
+	entries, err := agentlog.Read(1)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("Read = %v, %v", entries, err)
+	}
+	if entries[0].Note == "" {
+		t.Fatal("the record does not say the refusal was about a connection that moved")
+	}
+	if !strings.Contains(entries[0].Note, "connection") {
+		t.Errorf("note = %q, want it to name the connection", entries[0].Note)
+	}
+
+	// And with nothing granted at all: the agent hears the same words, the
+	// record says nothing extra, because there is nothing extra to know.
+	if verr := grant.Save(nil); verr != nil {
+		t.Fatal(verr)
+	}
+	res = f.call(t, map[string]any{"profile": "staging", "sql": "select 1"})
+	if !res.IsError {
+		t.Fatal("an ungranted call was allowed")
+	}
+	if got := contentText(t, res); got != saidToTheAgent {
+		t.Errorf("the two refusals read differently to an agent:\n stale: %s\n none:  %s", saidToTheAgent, got)
+	}
+	entries, err = agentlog.Read(1)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("Read = %v, %v", entries, err)
+	}
+	if entries[0].Note != "" {
+		t.Errorf("a call nothing ever granted was annotated: %q", entries[0].Note)
 	}
 }
