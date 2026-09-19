@@ -3,6 +3,7 @@ package net
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	stdnet "net"
 	"os"
@@ -34,7 +35,23 @@ type tracer struct {
 	id       int
 }
 
-func newTracer(ip stdnet.IP) (*tracer, error) {
+// prober is what runTrace needs from a tracer: one probe at a time, and a
+// close. It is the seam a test fakes a route through, since a real one
+// needs an ICMP socket and a network with more than one hop on it.
+type prober interface {
+	probe(ctx context.Context, ttl, seq int, timeout time.Duration) (probeResult, error)
+	Close() error
+}
+
+var newTracer = func(ip stdnet.IP) (prober, error) {
+	t, err := openTracer(ip)
+	if err != nil {
+		return nil, err
+	}
+	return t, nil
+}
+
+func openTracer(ip stdnet.IP) (*tracer, error) {
 	id := os.Getpid() & 0xffff
 	if ip4 := ip.To4(); ip4 != nil {
 		conn, err := icmp.ListenPacket("udp4", "0.0.0.0")
@@ -239,19 +256,33 @@ func runTrace(ctx context.Context, req plugin.Request) (view.View, error) {
 	}
 	defer func() { _ = tr.Close() }()
 
+	// A stopped run keeps the hops it collected. esc in the TUI, a tile's
+	// refresh deadline and ctrl+c all end the context between two probes,
+	// and the routers that answered before that are the answer the person
+	// was waiting for — a partial route with a note saying where it stopped,
+	// not the error alone with the work thrown away. The hop in progress
+	// keeps the probes it had sent: fewer timings than asked for is still
+	// what that router said.
 	var hops []hop
+	var stopped error
 	seq := 0
+probing:
 	for ttl := 1; ttl <= maxHops; ttl++ {
 		h := hop{ttl: ttl}
+		sent := 0
 		for range probes {
-			if ctx.Err() != nil {
-				return nil, ctx.Err()
+			if stopped = ctx.Err(); stopped != nil {
+				if sent > 0 {
+					hops = append(hops, h)
+				}
+				break probing
 			}
 			seq = (seq + 1) & 0xffff
 			res, err := tr.probe(ctx, ttl, seq, timeout)
 			if err != nil {
 				return nil, view.Errorf("net.trace.failed", "probing hop %d: %v", ttl, err)
 			}
+			sent++
 			switch res.addr {
 			case "":
 				h.lost++
@@ -265,6 +296,9 @@ func runTrace(ctx context.Context, req plugin.Request) (view.View, error) {
 		if h.final {
 			break
 		}
+	}
+	if stopped != nil && len(hops) == 0 {
+		return nil, view.Errorf("net.trace.stopped", "stopped before the first probe went out: %s", stopReason(stopped))
 	}
 	if req.Bool("resolve") {
 		resolveHops(ctx, hops)
@@ -293,7 +327,11 @@ func runTrace(ctx context.Context, req plugin.Request) (view.View, error) {
 		{Key: "probes", Value: fmt.Sprintf("%d per hop, %s timeout", probes, timeout)},
 		{Key: "reached", Value: map[bool]string{true: "yes", false: "no"}[reached]},
 	}}
-	if !reached {
+	switch {
+	case stopped != nil:
+		summary.Pairs = append(summary.Pairs, view.Pair{Key: "note",
+			Value: fmt.Sprintf("stopped after %d hops: %s", len(hops), stopReason(stopped))})
+	case !reached:
 		summary.Pairs = append(summary.Pairs, view.Pair{Key: "note",
 			Value: fmt.Sprintf("stopped after %d hops without reaching the target", len(hops))})
 	}
@@ -301,4 +339,13 @@ func runTrace(ctx context.Context, req plugin.Request) (view.View, error) {
 		{ID: "trace", Title: "trace", View: summary},
 		{ID: "route", Title: "route", View: t},
 	}}, nil
+}
+
+// stopReason names why a run ended early in the words of whoever ended it:
+// esc and ctrl+c cancel, a tile's refresh has a deadline.
+func stopReason(err error) string {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "the deadline passed"
+	}
+	return "the run was cancelled"
 }

@@ -3,6 +3,8 @@ package net
 import (
 	"context"
 	"encoding/binary"
+	"fmt"
+	stdnet "net"
 	"strings"
 	"testing"
 	"time"
@@ -127,5 +129,73 @@ func TestTraceLoopbackReachesTargetInOneHop(t *testing.T) {
 	last := route.Rows[0]
 	if last[1] != "127.0.0.1" || last[4] != "target" {
 		t.Errorf("hop = %v, want the loopback marked as the target", last)
+	}
+}
+
+// route is a fake tracer: every TTL answers from a router of its own, never
+// the target, and the router at cancelAt cancels the run as it answers — the
+// way esc in the TUI, a tile's deadline or ctrl+c interrupts a real trace
+// between two hops.
+type route struct {
+	cancelAt int
+	cancel   context.CancelFunc
+}
+
+func (r *route) probe(_ context.Context, ttl, _ int, _ time.Duration) (probeResult, error) {
+	if ttl == r.cancelAt {
+		r.cancel()
+	}
+	return probeResult{addr: fmt.Sprintf("10.0.0.%d", ttl), rtt: time.Millisecond}, nil
+}
+
+func (r *route) Close() error { return nil }
+
+func withRoute(t *testing.T, r *route) {
+	t.Helper()
+	old := newTracer
+	newTracer = func(stdnet.IP) (prober, error) { return r, nil }
+	t.Cleanup(func() { newTracer = old })
+}
+
+// A run stopped between hops keeps the hops it collected. Three routers
+// answered before the cancel — the third with one of its two probes — and
+// that is the route, with the summary saying where and why it stopped,
+// rather than the error alone with the work thrown away.
+func TestTraceStoppedMidwayKeepsTheHopsItCollected(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	withRoute(t, &route{cancelAt: 3, cancel: cancel})
+	v, err := runTrace(ctx, req(map[string]any{
+		"host": "127.0.0.1", "max-hops": 10, "probes": 2, "timeout": 1, "resolve": false,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, ok := v.(view.Sections)
+	if !ok {
+		t.Fatalf("want Sections, got %s", view.TypeOf(v))
+	}
+	hops := s.Items[1].View.(view.Table)
+	if len(hops.Rows) != 3 || hops.Rows[2][1] != "10.0.0.3" || hops.Rows[2][3] != "1.0 ms" {
+		t.Fatalf("route = %v, want the three hops that answered, the last with its one probe", hops.Rows)
+	}
+	summary := pairs(t, s.Items[0].View)
+	if summary["reached"] != "no" || summary["hops"] != "3" {
+		t.Errorf("summary = %v", summary)
+	}
+	if note := summary["note"]; !strings.Contains(note, "stopped after 3 hops") || !strings.Contains(note, "cancelled") {
+		t.Errorf("note = %q, want where the trace stopped and why", note)
+	}
+}
+
+// Stopped before the first probe went out there is no route to show, and
+// the error says the run was stopped rather than that the trace failed.
+func TestTraceStoppedBeforeTheFirstHopIsCoded(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	withRoute(t, &route{})
+	_, err := runTrace(ctx, req(map[string]any{"host": "127.0.0.1", "max-hops": 3, "probes": 1, "timeout": 1}))
+	if ve := view.AsError(err, "x"); ve.Code != "net.trace.stopped" {
+		t.Errorf("want net.trace.stopped, got %+v", ve)
 	}
 }
