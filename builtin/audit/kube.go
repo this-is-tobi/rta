@@ -258,11 +258,13 @@ type podSecurityContext struct {
 // one without repeating the anonymous struct's exact shape at every call
 // site — Go requires that repetition for an unnamed struct literal.
 type podSecuritySpec struct {
-	HostNetwork     bool               `json:"hostNetwork"`
-	HostPID         bool               `json:"hostPID"`
-	HostIPC         bool               `json:"hostIPC"`
-	SecurityContext podSecurityContext `json:"securityContext"`
-	Containers      []podSecurityCtn   `json:"containers"`
+	HostNetwork         bool               `json:"hostNetwork"`
+	HostPID             bool               `json:"hostPID"`
+	HostIPC             bool               `json:"hostIPC"`
+	SecurityContext     podSecurityContext `json:"securityContext"`
+	Containers          []podSecurityCtn   `json:"containers"`
+	InitContainers      []podSecurityCtn   `json:"initContainers"`
+	EphemeralContainers []podSecurityCtn   `json:"ephemeralContainers"`
 }
 
 type podSecurityItem struct {
@@ -273,6 +275,42 @@ type podSecurityItem struct {
 type podSecurityCtn struct {
 	Name            string             `json:"name"`
 	SecurityContext podSecurityContext `json:"securityContext"`
+}
+
+// gradedCtn is one container with the suffix its row carries: nothing for a
+// main container, " (init)" or " (ephemeral)" for the other two lists — which
+// is what tells a reader why `kubectl describe pod` lists the name under its
+// own Init Containers or Ephemeral Containers heading rather than among the
+// pod's Containers.
+type gradedCtn struct {
+	podSecurityCtn
+	suffix string
+}
+
+// everyContainer walks the three lists Pod Security Admission walks.
+//
+// **Reading spec.containers alone is a wrong answer, not a shortcut.** Both
+// controls this audit grades per container name spec.containers[*],
+// spec.initContainers[*] and spec.ephemeralContainers[*] as their restricted
+// fields, the three alike — the Baseline profile's "Privileged Containers",
+// and the Restricted profile's "Running as Non-root" with its "Running as
+// Non-root user" companion. A pod whose only privileged container is an
+// init container (the Elasticsearch chart's sysctl init container is the
+// everyday case) is therefore rejected by admission at baseline, and a check
+// that read only spec.containers graded exactly that pod clean: a compliance
+// report saying the cluster passes where admission would say it does not.
+func (s podSecuritySpec) everyContainer() []gradedCtn {
+	out := make([]gradedCtn, 0, len(s.Containers)+len(s.InitContainers)+len(s.EphemeralContainers))
+	for _, c := range s.Containers {
+		out = append(out, gradedCtn{c, ""})
+	}
+	for _, c := range s.InitContainers {
+		out = append(out, gradedCtn{c, " (init)"})
+	}
+	for _, c := range s.EphemeralContainers {
+		out = append(out, gradedCtn{c, " (ephemeral)"})
+	}
+	return out
 }
 
 func runKubePodSecurity(ctx context.Context, req plugin.Request) (view.View, error) {
@@ -293,9 +331,9 @@ func runKubePodSecurity(ctx context.Context, req plugin.Request) (view.View, err
 			r.Add(grpKubePod, "host namespace: "+label, findings.Fail,
 				hostNamespaceDetail(p), refPodSecurityHostNS)
 		}
-		for _, c := range p.Spec.Containers {
+		for _, c := range p.Spec.everyContainer() {
 			if c.SecurityContext.Privileged != nil && *c.SecurityContext.Privileged {
-				r.Add(grpKubePod, "privileged container: "+label+"/"+c.Name, findings.Fail,
+				r.Add(grpKubePod, "privileged container: "+label+"/"+c.Name+c.suffix, findings.Fail,
 					"securityContext.privileged is true", refExcessivePriv)
 			}
 		}
@@ -339,11 +377,24 @@ func hostNamespaceDetail(p podSecurityItem) string {
 // flagged, which is the common, correct case; one relying on an image's own
 // non-root USER with no Kubernetes-level assertion at all is, which is the
 // gap Pod Security Standards' "Restricted" level exists to close.
+//
+// "Any container" is any of the three lists, not spec.containers alone. The
+// Restricted profile's "Running as Non-root" control lists
+// spec.containers[*], spec.initContainers[*] and
+// spec.ephemeralContainers[*].securityContext.runAsNonRoot as its restricted
+// fields with true the only allowed value, and its "Running as Non-root user"
+// control lists the same three runAsUser fields with zero forbidden — an init
+// container is held to the rule exactly as a main one is, so its assertion is
+// a Kubernetes-level assertion here too. The approximation's limit is
+// unchanged by that: a container with no assertion of its own beside a
+// sibling that has one is not flagged whichever list either is in, because
+// this asks whether the spec asserts anything, not whether every container
+// does.
 func assertsNonRoot(p podSecurityItem) bool {
 	if nonRootAsserted(p.Spec.SecurityContext) {
 		return true
 	}
-	for _, c := range p.Spec.Containers {
+	for _, c := range p.Spec.everyContainer() {
 		if nonRootAsserted(c.SecurityContext) {
 			return true
 		}
