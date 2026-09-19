@@ -768,17 +768,6 @@ func TestFromMnemonicRejectsGarbage(t *testing.T) {
 
 // --- sshkey.go: small helpers --------------------------------------------
 
-func TestExpandHomeExpandsATildePath(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	if got := expandHome("~/id_ed25519"); got != filepath.Join(home, "id_ed25519") {
-		t.Errorf("got %q", got)
-	}
-	if got := expandHome("/already/absolute"); got != "/already/absolute" {
-		t.Errorf("got %q, want it unchanged", got)
-	}
-}
-
 func TestFingerprintMatchesForTheSameKeyEveryTime(t *testing.T) {
 	_, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {

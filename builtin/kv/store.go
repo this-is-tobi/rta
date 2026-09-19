@@ -16,6 +16,7 @@ import (
 	"github.com/this-is-tobi/rta/builtin/internal/itemstore"
 	"github.com/this-is-tobi/rta/internal/atomicfile"
 	"github.com/this-is-tobi/rta/internal/filelock"
+	"github.com/this-is-tobi/rta/internal/pathguard"
 	"github.com/this-is-tobi/rta/internal/paths"
 	"github.com/this-is-tobi/rta/internal/stdio"
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -417,7 +418,7 @@ func Unlockable() (bool, string) {
 		// kv.identity.unreadable. Found by review; mirrors
 		// the guard LockedIdentity, two functions below, already had.
 		if p := os.Getenv(identityEnv); p != "" {
-			if !fileExists(expandHome(p)) {
+			if !fileExists(pathguard.ExpandTilde(p)) {
 				return false, identityEnv
 			}
 			return usable(p), identityEnv
@@ -448,7 +449,7 @@ func LockedIdentity() string {
 		return ""
 	}
 	for _, p := range []string{os.Getenv(identityEnv), defaultIdentity()} {
-		if p != "" && fileExists(expandHome(p)) && lockedKey(p) {
+		if p != "" && fileExists(pathguard.ExpandTilde(p)) && lockedKey(p) {
 			return p
 		}
 	}

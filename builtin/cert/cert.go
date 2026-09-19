@@ -20,6 +20,7 @@ import (
 
 	"github.com/this-is-tobi/rta/builtin/internal/x509check"
 	"github.com/this-is-tobi/rta/internal/atomicfile"
+	"github.com/this-is-tobi/rta/internal/pathguard"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -360,7 +361,7 @@ func runPEM(ctx context.Context, req plugin.Request) (view.View, error) {
 		return view.Text{Body: fmt.Sprintf("would write %s from %s to %s",
 			format.Count(len(chosen), "certificate", "certificates"), target, out)}, nil
 	}
-	path := expandHome(out)
+	path := pathguard.ExpandTilde(out)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, view.Errorf("cert.out.unwritable", "creating %s: %v", filepath.Dir(path), err)
 	}
@@ -408,20 +409,6 @@ func encodePEM(certs []*x509.Certificate) (string, *view.Error) {
 		}
 	}
 	return b.String(), nil
-}
-
-// expandHome resolves a leading ~/ in a path a person typed. The shell does it
-// for an unquoted argument and not for a quoted one, and --out is exactly the
-// flag somebody quotes.
-func expandHome(path string) string {
-	if !strings.HasPrefix(path, "~/") {
-		return path
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return path
-	}
-	return filepath.Join(home, path[2:])
 }
 
 func runExpiry(ctx context.Context, req plugin.Request) (view.View, error) {

@@ -14,6 +14,7 @@ import (
 	"github.com/this-is-tobi/rta/builtin/internal/itemstore"
 	"github.com/this-is-tobi/rta/internal/atomicfile"
 	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/internal/pathguard"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -206,7 +207,7 @@ func runGet(_ context.Context, req plugin.Request) (view.View, error) {
 	// itself, which also makes the write atomic. Exactly the bytes that were
 	// stored, too: a round trip, not an editorial pass deciding whether
 	// something needed a trailing newline.
-	if verr := writeOut(expandHome(out), e.Value); verr != nil {
+	if verr := writeOut(pathguard.ExpandTilde(out), e.Value); verr != nil {
 		return nil, verr
 	}
 	return view.Text{Body: fmt.Sprintf("wrote %q to %s (%s, mode 0600)", key, out, format.Bytes(uint64(len(e.Value))))}, nil
@@ -314,7 +315,7 @@ func runEnv(_ context.Context, req plugin.Request) (view.View, error) {
 // already exists and whether any metadata was named.
 func valueToStore(req plugin.Request) (value []byte, filename string, given bool, err error) {
 	if path := req.String("file"); path != "" {
-		data, err := os.ReadFile(expandHome(path))
+		data, err := os.ReadFile(pathguard.ExpandTilde(path))
 		if err != nil {
 			return nil, "", false, view.Errorf("kv.file.unreadable", "reading %s: %v", path, err)
 		}

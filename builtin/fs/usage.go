@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/this-is-tobi/rta/internal/pathguard"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -286,12 +287,7 @@ func resolvePath(raw string) (string, *view.Error) {
 	if p == "" {
 		p = "."
 	}
-	if p == "~" || strings.HasPrefix(p, "~/") {
-		home, err := os.UserHomeDir()
-		if err == nil {
-			p = filepath.Join(home, strings.TrimPrefix(strings.TrimPrefix(p, "~"), "/"))
-		}
-	}
+	p = pathguard.ExpandTilde(p)
 	abs, err := filepath.Abs(p)
 	if err != nil {
 		return "", view.Errorf("fs.path", "resolving %q: %v", raw, err)
