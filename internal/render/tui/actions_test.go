@@ -14,7 +14,7 @@ import (
 func TestTheShellsOwnKeysAreReservedToPlugins(t *testing.T) {
 	reserved := plugin.ReservedActionKeys()
 	for _, b := range []binding{
-		bindQuit, bindBack, bindOpen, bindRerun, bindEdit, bindCopy,
+		bindQuit, bindHelp, bindBack, bindOpen, bindRerun, bindEdit, bindCopy,
 		bindBrowse, bindSearch, bindSelect, bindScroll, bindColumn,
 	} {
 		for _, k := range b.keys {
