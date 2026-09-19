@@ -33,6 +33,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/render/cli"
 	"github.com/this-is-tobi/rta/internal/render/theme"
 	"github.com/this-is-tobi/rta/internal/role"
+	agentsession "github.com/this-is-tobi/rta/internal/session"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -1127,7 +1128,7 @@ func doctorClients(add func(check, status, detail string)) {
 	}
 	// Presence and registration, right after the CLI they are about.
 	_, claudeInstalled := exec.LookPath("claude")
-	for _, r := range clientRows(claudeInstalled == nil, selfVersion) {
+	for _, r := range clientRows(claudeInstalled == nil, agentsession.Self()) {
 		add(r[0], r[1], r[2])
 	}
 }

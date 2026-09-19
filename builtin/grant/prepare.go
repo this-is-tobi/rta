@@ -295,6 +295,41 @@ func unknownAgentNote(known []string, agent string) string {
 		agent, strings.Join(known, ", "))
 }
 
+// olderServerNote warns when a server that is open right now is running a
+// build this one is not, because that server is the one that will be asked
+// to honour what was just issued.
+//
+// **A process keeps the code it started with**, and these stay open for
+// days. A grant is stamped here from the config file as it is now; a server
+// started before an upgrade decides by the rules it was built with, and when
+// the two disagree the call is refused under the sentence an ungranted call
+// gets — so nothing on screen connects the refusal to the grant that was
+// just issued, and the remedy reached for is to issue it again.
+//
+// Beside the notes above and for their reason: the clock on a 15-minute
+// grant is already running, and this is the moment the operator is still
+// looking. Said for every open server on another build rather than only the
+// ones named by this grant — a grant names one agent, a client can hold
+// several servers open under it, and which of them takes the next call is
+// not something this can know.
+func olderServerNote() string {
+	others := session.OtherBuilds(session.Self())
+	if len(others) == 0 {
+		return ""
+	}
+	named := make([]string, 0, len(others))
+	for _, s := range others {
+		who := s.Agent
+		if who == "" {
+			who = "unnamed"
+		}
+		named = append(named, fmt.Sprintf("%s (pid %d)", who, s.PID))
+	}
+	return fmt.Sprintf("note: %s open on another build of rta — reconnect the client, or this grant "+
+		"can be refused by a server deciding from the build it started with: %s",
+		plural(len(others), "is", "are"), strings.Join(named, ", "))
+}
+
 // cappedNote words a TTL that came back shorter than asked, naming which
 // ceiling bit — byPolicy and capWhere are parseTTL's own verdict, not
 // re-derived here a second time.

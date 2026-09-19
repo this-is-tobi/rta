@@ -790,3 +790,41 @@ func TestTheOfferedWindowsMatchTheRealBounds(t *testing.T) {
 		t.Errorf("the entry called the maximum is %s, want %s", got, core.MaxTTL)
 	}
 }
+
+// A grant is stamped from the config file; the server asked to honour it is
+// a process that may have started days earlier, and a process keeps the code
+// it started with. When the two are different builds the grant can be listed
+// healthy here and refused there under the words an ungranted call gets —
+// which sends the operator back to issue the grant they already hold.
+//
+// Said at issue time for the reason the notes beside it are: the clock on a
+// 15-minute grant is already running, and finding this out afterwards is
+// most of the grant gone.
+func TestAllowSaysWhenAnOpenServerIsOnAnotherBuild(t *testing.T) {
+	setup(t) // its one open server recorded no version, so it is not this build
+	session.SetSelf("v0.22.0")
+	t.Cleanup(func() { session.SetSelf("") })
+
+	body := run(t, allowH, map[string]any{"target": "kv.get"}).(view.Text).Body
+	if !strings.Contains(body, "reconnect") {
+		t.Errorf("issuing said nothing about the server that will refuse it: %q", body)
+	}
+}
+
+// And says nothing when every open server is this build, because a note on
+// the ordinary case is one people stop reading.
+func TestAllowIsQuietWhenTheOpenServerIsThisBuild(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	if err := session.Start(session.Record{
+		ID: session.NewID(), Agent: "test", Since: time.Now(), PID: os.Getpid(), Version: "v0.22.0",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	session.SetSelf("v0.22.0")
+	t.Cleanup(func() { session.SetSelf("") })
+
+	body := run(t, allowH, map[string]any{"target": "kv.get"}).(view.Text).Body
+	if strings.Contains(body, "reconnect") {
+		t.Errorf("warned about a server on this very build: %q", body)
+	}
+}
