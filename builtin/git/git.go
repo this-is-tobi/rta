@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/go-git/go-git/v5"
 
@@ -144,6 +145,42 @@ func repoRoot(req plugin.Request, path string) (string, *view.Error) {
 		}
 		cur = parent
 	}
+}
+
+// repoRelative is a file input the way go-git wants it: relative to the
+// repository root, with forward slashes.
+//
+// **The boundary substitutes a Path input rather than merely approving it.**
+// What a handler receives on a confined surface is the judged form —
+// absolute, symlinks resolved — whatever the caller spelled, while the help
+// text's "relative to the repository root" is the one form go-git's tree
+// lookup knows. Handed the absolute form, blame found no such file and told
+// the caller to send exactly what it had just sent, and log's --file matched
+// no commit: a well-formed empty table an agent reads as "nobody ever touched
+// this file". So the absolute form is turned back into the relative one here,
+// against the working tree go-git opened — the same directory the guard
+// judged the path inside — and a file that is not under it is refused by
+// name rather than looked up as a path go-git could never find.
+//
+// A relative spelling is kept as it is: on an unconfined surface the
+// operator typed it the way the help says, and it is already what go-git
+// wants.
+func repoRelative(repo *git.Repository, file string) (string, *view.Error) {
+	if !filepath.IsAbs(file) {
+		return filepath.ToSlash(file), nil
+	}
+	wt, err := repo.Worktree()
+	if err != nil {
+		return "", view.Errorf("git.file.outside", "%s: a bare repository has no working tree to place it under", file).
+			WithHint("name the file relative to the repository root")
+	}
+	root := wt.Filesystem.Root()
+	rel, err := filepath.Rel(root, file)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", view.Errorf("git.file.outside", "%s is not inside the repository at %s", file, root).
+			WithHint("name a file under the repository root")
+	}
+	return filepath.ToSlash(rel), nil
 }
 
 // shortHash is the 7-character abbreviation `git log --oneline` and
