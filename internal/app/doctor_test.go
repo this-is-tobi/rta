@@ -185,6 +185,56 @@ func TestDoctorNamesACredentialLocationGrantedAndWithheld(t *testing.T) {
 	}
 }
 
+// Doctor says a thing once.
+//
+// A config naming plugins this build does not have is an ordinary state —
+// one file carried between machines, or plugins not installed yet — and the
+// check emitted a row per profile entry. Six missing plugins across two
+// profiles filled the table with thirty-four rows of the same sentence,
+// which pushed every other check off the top of the screen: the row warning
+// that the data directory was mode 0755 scrolled past behind them.
+//
+// Problem.Plugin exists so a screen can group these without parsing a
+// sentence back apart, and the ambiguous-name check a few lines below in
+// doctorProfiles already says the rule out loud — reported once, "because
+// saying it twice does not make it two problems".
+func TestDoctorSaysARepeatedProfileProblemOnce(t *testing.T) {
+	_, configDir := isolate(t)
+	const cfg = `profiles:
+  one:
+    plugins:
+      nosuch:
+        set: {a: b}
+      nosuch/second:
+        set: {a: b}
+  two:
+    plugins:
+      nosuch/third:
+        set: {a: b}
+`
+	if err := os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	tbl := doctorReport(testRegistry(t)).(view.Table)
+	var profileRows []string
+	for _, r := range tbl.Rows {
+		if r[0] == "profile" {
+			profileRows = append(profileRows, r[2])
+		}
+	}
+	if len(profileRows) != 1 {
+		t.Fatalf("one missing plugin, three entries naming it, %d rows:\n%s",
+			len(profileRows), strings.Join(profileRows, "\n"))
+	}
+	row := profileRows[0]
+	for _, want := range []string{`"nosuch"`, "3 entries", "one", "two"} {
+		if !strings.Contains(row, want) {
+			t.Errorf("the row does not carry %q: %s", want, row)
+		}
+	}
+}
+
 // An unreadable config is the actionable case: zero-config is fine, a broken
 // file is not, and doctor must not present the second as the first.
 func TestDoctorFlagsABrokenConfig(t *testing.T) {
