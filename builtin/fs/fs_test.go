@@ -200,6 +200,44 @@ func TestUsageDetailIsASectionedPage(t *testing.T) {
 	}
 }
 
+// One of something reads as one.
+//
+// `rta fs tree <dir> --depth 1` printed "1 entries" against a directory it
+// stopped at — proven at a prompt, not deduced. These counts are computed at
+// the moment of printing, so they land on one as readily as on five, and
+// every one of them sits on a line a person is reading in order to decide
+// whether to believe the tool's arithmetic. The vocabulary in pkg/format is
+// there so that no caller has to decide again how to say it.
+func TestACountOfOneIsSingularInTreeAndUsage(t *testing.T) {
+	root := fixture(t, map[string]int{"sub/only.txt": 3})
+
+	tr := run(t, runTree, map[string]any{"path": root, "depth": 1, "limit": 12}).(view.Tree)
+	var stopped string
+	for _, n := range tr.Roots[0].Children {
+		if n.Label == "sub/" {
+			stopped = n.Detail
+		}
+	}
+	if stopped != "1 entry" {
+		t.Errorf("a directory holding one entry, not descended into, reads %q", stopped)
+	}
+
+	page := run(t, runUsage, map[string]any{"path": root, "limit": 20, "detail": true}).(view.Sections)
+	var contents string
+	for _, item := range page.Items {
+		if kv, ok := item.View.(view.KeyValue); ok {
+			for _, p := range kv.Pairs {
+				if p.Key == "contents" {
+					contents = p.Value
+				}
+			}
+		}
+	}
+	if contents != "1 entry · 1 file beneath · 1 directory" {
+		t.Errorf("a tree of one directory holding one file reads %q", contents)
+	}
+}
+
 func TestTreeShowsDirectoriesFirstThenNames(t *testing.T) {
 	root := fixture(t, map[string]int{
 		"zeta.txt": 1, "alpha.txt": 1, "zdir/x": 1, "adir/y": 1,

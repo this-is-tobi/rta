@@ -537,7 +537,7 @@ func newPluginIndexCommand(opts *globalOpts) *cobra.Command {
 			// unchanged, so the ordinary line is unaffected.
 			pairs := []view.Pair{
 				{Key: "attached", Value: args[0] + " (" + plugindist.OriginForDisplay(repository) + ")"},
-				{Key: "claims", Value: fmt.Sprintf("%d plugins", len(listed))},
+				{Key: "claims", Value: format.CountOf(len(listed), "plugin")},
 			}
 			if ref != "" {
 				pairs = append(pairs, view.Pair{Key: "pinned at", Value: ref + " — `index update` leaves it there"})

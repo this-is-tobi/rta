@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -163,7 +164,7 @@ func (b *treeBuilder) children(ctx context.Context, dir string, depth int) []vie
 				if n := countEntries(full, b.hidden); n > 0 {
 					b.stats.notDescended++
 					b.stats.beyond += n
-					node.Detail = fmt.Sprintf("%d entries", n)
+					node.Detail = format.CountOf(n, "entry")
 				}
 			default:
 				node.Children = b.children(ctx, full, depth+1)
@@ -357,55 +358,51 @@ func (c *ctxReader) Read(p []byte) (int, error) {
 func treeDetail(ctx context.Context, req plugin.Request, path string, tree view.Tree, b *treeBuilder) view.View {
 	s := b.stats
 
-	shown := fmt.Sprintf("%d directories · %d files", s.dirs, s.files)
+	shown := format.CountOf(s.dirs, "directory") + " · " + format.CountOf(s.files, "file")
 	if s.links > 0 {
-		shown += fmt.Sprintf(" · %d symlinks", s.links)
+		shown += " · " + format.CountOf(s.links, "symlink")
 	}
 	limit := "all entries"
 	if b.limit > 0 {
-		limit = fmt.Sprintf("up to %d entries", b.limit)
+		limit = "up to " + format.CountOf(b.limit, "entry")
 	}
 	summary := []view.Pair{
 		{Key: "path", Value: path},
 		{Key: "showing", Value: shown},
-		{Key: "bounded by", Value: fmt.Sprintf("%s, %s per directory", levels(b.maxDepth), limit)},
+		{Key: "bounded by", Value: fmt.Sprintf("%s, %s per directory", format.CountOf(b.maxDepth, "level"), limit)},
 	}
 
 	var missing []view.Pair
 	if s.beyond > 0 {
 		missing = append(missing, view.Pair{
 			Key: "below --depth",
-			Value: fmt.Sprintf("%d entries in %d directories the walk stopped at",
-				s.beyond, s.notDescended),
+			Value: fmt.Sprintf("%s in %s the walk stopped at",
+				format.CountOf(s.beyond, "entry"), format.CountOf(s.notDescended, "directory")),
 		})
 	}
 	if s.truncated > 0 {
 		missing = append(missing, view.Pair{
 			Key:   "past --limit",
-			Value: fmt.Sprintf("%d entries trimmed from the directories that hold more", s.truncated),
+			Value: format.CountOf(s.truncated, "entry") + " trimmed from the directories that hold more",
 		})
 	}
 	if s.hidden > 0 {
-		noun := "dotfiles"
-		if s.hidden == 1 {
-			noun = "dotfile"
-		}
 		missing = append(missing, view.Pair{
 			Key:   "hidden",
-			Value: fmt.Sprintf("%d %s — pass --all to include them", s.hidden, noun),
+			Value: format.CountOf(s.hidden, "dotfile") + " — pass --all to include them",
 		})
 	}
 	if s.otherFS > 0 {
 		missing = append(missing, view.Pair{
 			Key: "another filesystem",
-			Value: fmt.Sprintf("%d mount points, not crossed — so a scan cannot wander onto a network mount",
-				s.otherFS),
+			Value: format.CountOf(s.otherFS, "mount point") +
+				", not crossed — so a scan cannot wander onto a network mount",
 		})
 	}
 	if s.unreadable > 0 {
 		missing = append(missing, view.Pair{
 			Key:   "unreadable",
-			Value: fmt.Sprintf("%d entries this user cannot read", s.unreadable),
+			Value: format.CountOf(s.unreadable, "entry") + " this user cannot read",
 		})
 	}
 
@@ -439,10 +436,3 @@ func treeDetail(ctx context.Context, req plugin.Request, path string, tree view.
 // detailUsageTop bounds the biggest-entries section: enough to show where the
 // space went, short enough that the tree above it stays on the page.
 const detailUsageTop = 10
-
-func levels(n int) string {
-	if n == 1 {
-		return "1 level"
-	}
-	return fmt.Sprintf("%d levels", n)
-}

@@ -494,8 +494,8 @@ func recordPairs(rep agentlog.Report, verr error) []view.Pair {
 	}
 	if rep.Missed > 0 {
 		pairs = append(pairs, view.Pair{Key: "not recorded",
-			Value: fmt.Sprintf("%d calls rta could not write down — the entries after them say where",
-				rep.Missed)})
+			Value: format.CountOf(int(rep.Missed), "call") +
+				" rta could not write down — the entries after them say where"})
 	}
 	if len(rep.MarkLost) > 0 {
 		pairs = append(pairs, view.Pair{Key: "end mark",
@@ -518,8 +518,8 @@ func recordPairs(rep agentlog.Report, verr error) []view.Pair {
 	}
 	if rep.Retired > 0 {
 		pairs = append(pairs, view.Pair{Key: "retired",
-			Value: fmt.Sprintf("the first %d calls, dropped %s — the chain still verifies across the gap",
-				rep.Retired, rep.RetiredAt.Local().Format("2006-01-02 15:04"))})
+			Value: fmt.Sprintf("the first %s, dropped %s — the chain still verifies across the gap",
+				format.CountOf(int(rep.Retired), "call"), rep.RetiredAt.Local().Format("2006-01-02 15:04"))})
 	}
 	switch {
 	case verr != nil:
@@ -1229,10 +1229,7 @@ func whyLine(e agentlog.Entry) string {
 	if e.Missed == 0 {
 		return e.Reason
 	}
-	note := fmt.Sprintf("(%d call before this one could not be recorded)", e.Missed)
-	if e.Missed > 1 {
-		note = fmt.Sprintf("(%d calls before this one could not be recorded)", e.Missed)
-	}
+	note := "(" + format.CountOf(int(e.Missed), "call") + " before this one could not be recorded)"
 	if e.Reason == "" {
 		return note
 	}

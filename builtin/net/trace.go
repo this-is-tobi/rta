@@ -16,6 +16,7 @@ import (
 	"golang.org/x/net/ipv4"
 	"golang.org/x/net/ipv6"
 
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -330,10 +331,10 @@ probing:
 	switch {
 	case stopped != nil:
 		summary.Pairs = append(summary.Pairs, view.Pair{Key: "note",
-			Value: fmt.Sprintf("stopped after %d hops: %s", len(hops), stopReason(stopped))})
+			Value: fmt.Sprintf("stopped after %s: %s", format.CountOf(len(hops), "hop"), stopReason(stopped))})
 	case !reached:
 		summary.Pairs = append(summary.Pairs, view.Pair{Key: "note",
-			Value: fmt.Sprintf("stopped after %d hops without reaching the target", len(hops))})
+			Value: "stopped after " + format.CountOf(len(hops), "hop") + " without reaching the target"})
 	}
 	return view.Sections{Items: []view.Section{
 		{ID: "trace", Title: "trace", View: summary},

@@ -281,7 +281,8 @@ func (m Model) saveTheme() (tea.Model, tea.Cmd) {
 	case len(problems) == 1:
 		m.flash = "saved, but " + problems[0].String()
 	case len(problems) > 1:
-		m.flash = fmt.Sprintf("saved, but %d fields could not be applied — see `rta doctor`", len(problems))
+		m.flash = "saved, but " + format.CountOf(len(problems), "field") +
+			" could not be applied — see `rta doctor`"
 	case len(overrides) == 0:
 		m.flash = "reset to the built-in theme"
 	default:
