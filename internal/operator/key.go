@@ -219,10 +219,14 @@ func Unlock(passphrase string) (Signer, *view.Error) {
 // passphrase can arrive through the TUI's masked form field. Local, Secret,
 // and with no EnvFallback, for the guard's reason verbatim: nothing an
 // agent's environment inherits may satisfy it.
+//
+// Help is the noun and nothing else, for guard.PassphraseField's reason: the
+// prompt-instead advice it used to carry described a flag passkey.Argv
+// refuses on the CLI unconditionally, and was read out under the masked box
+// in the TUI form. passkey.Argv's own Hint says it on the run that tried it.
 var PassphraseField = plugin.Field{
 	Name: "passphrase", Type: plugin.Secret, Local: true,
-	Help: "the operator key's passphrase — omit it at a terminal and answer the prompt instead: " +
-		"a flag lands in shell history, a prompt lands nowhere",
+	Help: "the operator key's passphrase",
 }
 
 // PromptSecret reads the operator passphrase — the shared passkey flow with

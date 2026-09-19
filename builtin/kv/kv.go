@@ -45,7 +45,6 @@
 package kv
 
 import (
-	"fmt"
 	"strconv"
 
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -66,11 +65,11 @@ const (
 var (
 	passphraseField = plugin.Field{
 		Name: "passphrase", Type: plugin.Secret, Local: true, EnvFallback: true,
-		Help: fmt.Sprintf("store passphrase (or set %s — preferred, keeps it out of shell history)", passphraseEnv),
+		Help: "the passphrase this store is locked with",
 	}
 	identityField = plugin.Field{
 		Name: "identity", Type: plugin.Path, Local: true, EnvFallback: true,
-		Help: fmt.Sprintf("private key to unlock with, e.g. ~/.ssh/id_ed25519 (or set %s)", identityEnv),
+		Help: "private key to unlock with, e.g. ~/.ssh/id_ed25519",
 		// The keys this machine has, offered before the filesystem is walked
 		// for them: one of these is nearly always the answer.
 		Suggest: suggestIdentities,

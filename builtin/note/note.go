@@ -46,7 +46,7 @@ const (
 // forms worth remembering, not the grammar.
 var (
 	tagField = plugin.Field{Name: "tag", Type: plugin.StringSlice,
-		Help:    "tags, repeatable (--tag backend --tag urgent)",
+		Help:    "tags — one per entry",
 		Suggest: suggestTags}
 	dueField = plugin.Field{Name: "due", Type: plugin.String,
 		Help:    "due date: today, tomorrow, a weekday, or 2006-01-02",
