@@ -163,7 +163,7 @@ A stock install is entirely built in, so no bands are drawn at all — one band 
 
 A log — `agent log`, or any table that declares its newest row last — opens on that row, scrolled to the end, so what just happened is under the cursor and the past is a key up.
 
-Views are actionable rather than static. In the notebook, `t` turns a note into a to-do or back, `d` checks one off and `x` removes; on the consent queue, `L` opens the lock form beside the call that made you want it, and on the lock list `x` lifts the lock under the cursor — from the list *and* from a record's own page, refreshing as it goes. Detail pages are composed from other capabilities' views rather than rebuilt, so a record page shows metadata, prose and relations as separate sections.
+Views are actionable rather than static, and what a view offers is the plugin's own declaration rather than a list the TUI keeps: each capability says which keys its result answers, what they open and what they read off the row, and `rta explain <capability>` prints the same. In the notebook, `t` turns a note into a to-do or back, `d` checks one off and `x` removes; on the consent queue, `L` opens the lock form beside the call that made you want it, and on the lock list `x` lifts the lock under the cursor — from the list *and* from a record's own page, refreshing as it goes. A third-party plugin's list gets exactly the same treatment for exactly the same declaration. Detail pages are composed from other capabilities' views rather than rebuilt, so a record page shows metadata, prose and relations as separate sections.
 
 ## Answering agents
 

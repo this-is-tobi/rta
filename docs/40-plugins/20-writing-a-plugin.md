@@ -196,6 +196,27 @@ One of those words carries extra weight. **`<your-plugin>.overview` becomes your
 
 A tile runs on load and then every few seconds with nobody watching, so it has to be `Read`, answerable from its defaults alone, and cheap enough to repeat. If your overview is none of those, set `NoPreview: true` on it — rta will tile something else rather than put it on a timer, and `overview` still means to a reader what it means everywhere else.
 
+**Say what the TUI may do with a result.** A list is more than a table when its rows answer keys, and those keys are yours to declare — the same way rta's own `note.list` does, with no table inside the TUI to get into:
+
+```go
+{
+	ID: "acme.station.list", Summary: "List stations", Safety: plugin.Read,
+	Inputs: []plugin.Field{{Name: "all", Type: plugin.Bool, Help: "closed stations too"}},
+	Actions: []plugin.Action{
+		{Key: "enter", Label: "show", Target: "acme.station.show", Source: plugin.ActionRow},
+		{Key: "a", Label: "add", Target: "acme.station.add"},
+		{Key: "x", Label: "close", Target: "acme.station.close", Source: plugin.ActionRow},
+	},
+	Toggles: []plugin.Toggle{{Key: "A", Label: "show closed", Input: "all"}},
+	Live:    true,
+	Run:     listStations,
+}
+```
+
+An `Action` opens a sibling capability with the row (or, on a record's own page, the page's pairs) read into its inputs by name — `Seed` maps an input to a differently named column — and the form opens for whatever is still unfilled. `Bare` skips that form for a target that needs nothing more; it never skips a destructive target's confirmation. A `Toggle` flips one of your own `Bool` inputs and runs the view again. `Copy` names the column or key that `c` copies — a generated password, a token. `Live` re-runs a `Read` view on the dashboard's interval while it is on screen. `Flash` marks a mutation whose result is a confirmation sentence, so a view that launched it shows the sentence on its footer and reloads instead of opening a page.
+
+Validate admits all of it at registration: the keys every screen owns (`q`, `r`, `e`, `y`, `hjkl`, `b`, `/`, `?`, `tab`, `esc`) are refused, a target in your own namespace has to exist, `Bare` is refused onto a destructive target or one with a required input nothing seeds, and a target in another plugin is allowed but never bare. `rta explain <capability>` prints what you declared, and `sdktest` checks that `Copy` names a column the view really has.
+
 Name a capability for the **question it answers**, not the mechanism. `audit mail` is DNS lookups underneath, but nobody reaches for `net dns` while hardening a domain.
 
 Give a detail page's sections an id. `view.Section` carries both an `ID` and a `Title` because they are different jobs: the title is what a person reads and should improve over time, while the id is what a script pulling one section out of your page — or an agent citing where a fact came from — addresses it by. `plugin.Page` spells them `PutAs` and `AddAs`:

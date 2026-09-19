@@ -186,6 +186,38 @@ func cardView(reg *registry.Registry, c plugin.Capability) view.View {
 			break
 		}
 	}
+	// What the TUI does with a result of this capability, read back from the
+	// declaration: the card is the authoritative reference, so a key a plugin
+	// declares has to be findable here without opening the TUI, and an
+	// author sees their own declaration the way an operator meets it.
+	for _, a := range c.Actions {
+		detail := a.Label + " → " + a.Target
+		switch a.Source {
+		case plugin.ActionRow:
+			detail += ", from the row"
+		case plugin.ActionSelf:
+			detail += ", from this record"
+		}
+		if a.Bare {
+			detail += ", without a form"
+		}
+		for input, column := range a.Seed {
+			detail += fmt.Sprintf(", %s read from %q", input, column)
+		}
+		pairs = append(pairs, view.Pair{Key: "action:" + a.Key, Value: detail})
+	}
+	for _, tg := range c.Toggles {
+		pairs = append(pairs, view.Pair{Key: "toggle:" + tg.Key, Value: tg.Label + " — flips --" + tg.Input + " and runs again"})
+	}
+	if c.Copy != "" {
+		pairs = append(pairs, view.Pair{Key: "copy", Value: "c copies " + c.Copy})
+	}
+	if c.Live {
+		pairs = append(pairs, view.Pair{Key: "live", Value: "re-run on screen every few seconds while it is open"})
+	}
+	if c.Flash {
+		pairs = append(pairs, view.Pair{Key: "flash", Value: "answers with a confirmation the launching view shows on its footer"})
+	}
 	if c.Detailed {
 		// The card is the third surface that has to agree about --detail. The
 		// tool description advertises it in CLI syntax and the MCP schema
