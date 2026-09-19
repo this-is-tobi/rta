@@ -3,6 +3,7 @@ package pkg
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -23,6 +24,12 @@ type fake struct {
 	answers map[string]fakeAnswer
 	ran     []string
 	upgrade [][]string
+	// What the scripted upgrade writes as the manager's own output, whether
+	// it fails, and whether that output went to the terminal (os.Stderr) or
+	// somewhere the caller could read back.
+	upgradeOut        string
+	upgradeErr        error
+	upgradeToTerminal bool
 }
 
 type fakeAnswer struct {
@@ -54,9 +61,11 @@ func install(t *testing.T, f *fake) {
 		}
 		return "", exec.ErrNotFound
 	}
-	runUpgrade = func(_ context.Context, argv []string) error {
+	runUpgrade = func(_ context.Context, argv []string, out io.Writer) error {
 		f.upgrade = append(f.upgrade, argv)
-		return nil
+		f.upgradeToTerminal = out == os.Stderr
+		_, _ = io.WriteString(out, f.upgradeOut)
+		return f.upgradeErr
 	}
 	isRoot = func() bool { return false }
 	t.Cleanup(func() { runCommand, lookPath, runUpgrade, isRoot = oldRun, oldLook, oldUp, oldRoot })
@@ -269,6 +278,61 @@ func TestUpgradeDryRunRunsNothing(t *testing.T) {
 	}
 	if !strings.HasPrefix(v.(view.Text).Body, "would run: brew upgrade") || len(f.upgrade) != 0 {
 		t.Errorf("dry run: %v ran %v", v, f.upgrade)
+	}
+}
+
+// The TUI reaches pkg.upgrade from the outdated and tools rows, and it owns
+// the terminal for as long as the run takes: a manager streaming to stderr
+// draws over the screen. Under that surface the output stays off the
+// terminal, the result keeps the fixed shape the footer flashes, and a
+// failure carries the manager's last words in its hint — there is no
+// "above" to point at.
+func TestUpgradeUnderTheTUIKeepsTheManagerOffTheScreen(t *testing.T) {
+	f := &fake{bins: map[string]bool{"brew": true}, upgradeOut: "==> Upgrading jq\njq 1.7.1 installed\n"}
+	install(t, f)
+	r := req(t, "pkg.upgrade", map[string]any{"target": "brew", "package": "jq"}).WithSurface(plugin.SurfaceTUI)
+
+	v, err := runUpgradeCapability(context.Background(), r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.upgradeToTerminal {
+		t.Fatal("the manager wrote to the terminal the TUI is drawing on")
+	}
+	if body := v.(view.Text).Body; body != "ran: brew upgrade jq" {
+		t.Errorf("body = %q, want the fixed confirmation the footer flashes", body)
+	}
+
+	f.upgradeOut, f.upgradeErr = "==> Upgrading jq\nError: jq: no bottle available\n", fakeExit(1)
+	_, err = runUpgradeCapability(context.Background(), r)
+	ve := view.AsError(err, "x")
+	if ve.Code != "pkg.upgrade.failed" || !strings.Contains(ve.Hint, "Error: jq: no bottle available") || strings.Contains(ve.Hint, "above") {
+		t.Errorf("failure under the TUI = %+v, want the manager's last words in the hint", ve)
+	}
+}
+
+// From a shell the output scrolls past as it happens, which is the point of
+// watching an upgrade, and a failure's hint can point at it.
+func TestUpgradeFromTheShellStreamsToTheTerminal(t *testing.T) {
+	f := &fake{bins: map[string]bool{"brew": true}, upgradeOut: "==> Upgrading jq\n"}
+	install(t, f)
+	r := req(t, "pkg.upgrade", map[string]any{"target": "brew", "package": "jq"}).WithSurface(plugin.SurfaceCLI)
+
+	v, err := runUpgradeCapability(context.Background(), r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !f.upgradeToTerminal {
+		t.Fatal("a shell run buffered the output a person was meant to watch")
+	}
+	if body := v.(view.Text).Body; body != "ran: brew upgrade jq" {
+		t.Errorf("body = %q", body)
+	}
+
+	f.upgradeErr = fakeExit(1)
+	_, err = runUpgradeCapability(context.Background(), r)
+	if ve := view.AsError(err, "x"); ve.Code != "pkg.upgrade.failed" || !strings.Contains(ve.Hint, "above") {
+		t.Errorf("failure from the shell = %+v, want the hint to point at the output above", ve)
 	}
 }
 

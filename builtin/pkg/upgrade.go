@@ -2,6 +2,7 @@ package pkg
 
 import (
 	"context"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -19,11 +20,11 @@ const upgradeTimeout = 20 * time.Minute
 // runUpgrade is the seam for the one mutating exec: tests record what would
 // have run, and the real one streams the manager's own output to the
 // terminal, because an upgrade's progress is something to watch.
-var runUpgrade = func(ctx context.Context, argv []string) error {
+var runUpgrade = func(ctx context.Context, argv []string, out io.Writer) error {
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Stdin = nil
-	cmd.Stdout = os.Stderr
-	cmd.Stderr = os.Stderr
+	cmd.Stdout = out
+	cmd.Stderr = out
 	return cmd.Run()
 }
 
@@ -129,9 +130,40 @@ func upgradeManager(ctx context.Context, req plugin.Request, m manager, pkg stri
 	}
 	ctx, cancel := context.WithTimeout(ctx, upgradeTimeout)
 	defer cancel()
-	if err := runUpgrade(ctx, argv); err != nil {
-		return nil, view.Errorf("pkg.upgrade.failed", "%s: %v", cmd, err).
-			WithHint("the manager's own output above says why")
+	// From a shell the manager's output streams to the terminal as it
+	// happens, because an upgrade's progress is something to watch. The TUI
+	// owns that terminal for as long as the run takes — the outdated and
+	// tools rows reach this handler from it — and a manager writing to
+	// stderr underneath bubbletea draws over the screen. There the output is
+	// kept instead and shown only when the manager fails: a success is the
+	// fixed confirmation the launching view flashes on its footer, and a
+	// failure has no "above" to point at, so its hint carries the manager's
+	// last words.
+	fromTUI := req.Surface() == plugin.SurfaceTUI
+	var captured strings.Builder
+	var out io.Writer = os.Stderr
+	if fromTUI {
+		out = &captured
+	}
+	if err := runUpgrade(ctx, argv, out); err != nil {
+		hint := "the manager's own output above says why"
+		if fromTUI {
+			hint = lastLines(captured.String(), 10)
+		}
+		return nil, view.Errorf("pkg.upgrade.failed", "%s: %v", cmd, err).WithHint(hint)
 	}
 	return view.Text{Body: "ran: " + cmd}, nil
+}
+
+// lastLines is the tail of a manager's output — where it says what went
+// wrong — or a sentence when it said nothing at all.
+func lastLines(output string, n int) string {
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	if len(lines) == 1 && lines[0] == "" {
+		return "the manager printed nothing before it failed"
+	}
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return strings.Join(lines, "\n")
 }
