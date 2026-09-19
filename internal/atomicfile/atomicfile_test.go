@@ -2,6 +2,7 @@ package atomicfile
 
 import (
 	"bytes"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -284,7 +285,7 @@ func TestRacingPublishersAllReturnTheWinnersBytes(t *testing.T) {
 			defer wg.Done()
 			// Distinct payloads, so "they all agree" cannot be true by
 			// accident the way it would be with identical ones.
-			b, err := Publish(path, []byte(strings.Repeat(string(rune('a'+i)), 32)), 0o600, 64)
+			b, err := Publish(path, []byte(strings.Repeat(fmt.Sprintf("%c", 'a'+i), 32)), 0o600, 64)
 			if err != nil {
 				t.Error(err)
 				return

@@ -885,7 +885,7 @@ func runStatus(ctx context.Context, req plugin.Request) (view.View, error) {
 		return nil, view.Errorf("kv.store.unreadable", "reading %s: %v", path, err)
 	}
 	pairs = append(pairs,
-		view.Pair{Key: "size", Value: format.Bytes(uint64(info.Size()))},
+		view.Pair{Key: "size", Value: format.Bytes(uint64(info.Size()))}, //nolint:gosec // a file size is never negative
 		view.Pair{Key: "changed", Value: itemstore.Age(info.ModTime())},
 	)
 

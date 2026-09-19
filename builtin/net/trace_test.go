@@ -14,12 +14,12 @@ import (
 
 // quotedIPv4 builds the payload an ICMP error carries: the IP header of the
 // packet that caused it, plus the first 8 bytes of that packet's own header.
-func quotedIPv4(ihlWords, seq int) []byte {
-	header := make([]byte, ihlWords*4)
-	header[0] = byte(0x40 | ihlWords) // version 4, IHL in 32-bit words
+func quotedIPv4(ihlWords byte, seq uint16) []byte {
+	header := make([]byte, int(ihlWords)*4)
+	header[0] = 0x40 | ihlWords // version 4, IHL in 32-bit words
 	icmpHeader := make([]byte, 8)
 	binary.BigEndian.PutUint16(icmpHeader[4:6], 0xbeef) // id: kernel-chosen, ignored
-	binary.BigEndian.PutUint16(icmpHeader[6:8], uint16(seq))
+	binary.BigEndian.PutUint16(icmpHeader[6:8], seq)
 	return append(header, icmpHeader...)
 }
 
@@ -28,7 +28,7 @@ func quotedIPv4(ihlWords, seq int) []byte {
 // unprivileged sockets this runs on, since the kernel picks it.
 func TestQuotedSeqRecoversTheProbe(t *testing.T) {
 	// A plain 20-byte header, and one carrying options (24 bytes).
-	for _, ihl := range []int{5, 6} {
+	for _, ihl := range []byte{5, 6} {
 		got, ok := quotedSeq(quotedIPv4(ihl, 4242), true)
 		if !ok || got != 4242 {
 			t.Errorf("ihl=%d: quotedSeq = %d, ok=%v, want 4242", ihl, got, ok)

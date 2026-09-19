@@ -3,6 +3,7 @@ package plugin
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"strings"
 )
@@ -216,7 +217,7 @@ func toInt(v any) (int, bool) {
 	case int64:
 		return int(n), true
 	case uint:
-		return int(n), true
+		return toInt(uint64(n))
 	case uint8:
 		return int(n), true
 	case uint16:
@@ -224,10 +225,22 @@ func toInt(v any) (int, bool) {
 	case uint32:
 		return int(n), true
 	case uint64:
+		// Past what int holds the conversion wraps negative, and a bound
+		// check would then read a YAML literal of 2^64-1 as "below the
+		// minimum". Refused instead, like a value that is not a number.
+		if n > math.MaxInt {
+			return 0, false
+		}
 		return int(n), true
 	case float32:
-		return int(n), true
+		return toInt(float64(n))
 	case float64:
+		// The same wall for JSON, which hands every number over as a
+		// float64: outside int's range the conversion is whatever the CPU
+		// does with it, and NaN converts to a confident zero.
+		if math.IsNaN(n) || n < math.MinInt || n >= math.MaxInt {
+			return 0, false
+		}
 		return int(n), true
 	case json.Number:
 		if i, err := n.Int64(); err == nil {

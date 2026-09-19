@@ -49,10 +49,6 @@ linters:
         # secret-shaped inputs, kv's own key file); gitleaks scans for the
         # real thing in CI.
         - G101
-        # Every release target is 64-bit. The narrowing conversions that
-        # remain pack a length into bytes or carry a size that cannot be
-        # negative; each site was read before this exclusion was added.
-        - G115
         # Every subprocess is an operator-named tool — kubectl, a package
         # manager, $EDITOR, the notifier, the plugin binary itself — never a
         # string a caller composed.

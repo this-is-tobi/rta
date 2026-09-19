@@ -998,7 +998,7 @@ func doctorRecord(add func(check, status, detail string)) {
 		note := fmt.Sprintf("%s recorded, chain intact",
 			plural(rep.Entries, "agent call", "agent calls"))
 		if rep.Files > 1 {
-			note += fmt.Sprintf(" across %d files (%s)", rep.Files, format.Bytes(uint64(rep.Size)))
+			note += fmt.Sprintf(" across %d files (%s)", rep.Files, format.Bytes(uint64(rep.Size))) //nolint:gosec // a sum of file sizes is never negative
 		}
 		if rep.Missed > 0 {
 			// A record with a hole in it is a warn, not an ok, whatever else

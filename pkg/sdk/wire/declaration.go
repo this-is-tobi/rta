@@ -235,7 +235,7 @@ func CapabilityToProto(c plugin.Capability) *rtav1.Capability {
 		Safety:       SafetyToProto(c.Safety),
 		Idempotent:   c.Idempotent,
 		Inputs:       mapSlice(c.Inputs, FieldToProto),
-		MinWidth:     int32(c.MinWidth),
+		MinWidth:     int32Of(c.MinWidth),
 		Detailed:     c.Detailed,
 		NoPreview:    c.NoPreview,
 		NeedsGrant:   c.NeedsGrant,

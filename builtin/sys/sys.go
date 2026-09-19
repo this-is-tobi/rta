@@ -135,7 +135,7 @@ func runOverview(ctx context.Context, req plugin.Request) (view.View, error) {
 	if info, err := host.InfoWithContext(ctx); err == nil {
 		add("host", fmt.Sprintf("%s · %s %s (%s) · up %s",
 			info.Hostname, info.Platform, info.PlatformVersion, info.KernelArch,
-			humanDuration(time.Duration(info.Uptime)*time.Second)))
+			humanDuration(uptimeOf(info.Uptime))))
 	}
 	cores, _ := cpu.CountsWithContext(ctx, true)
 	if s, err := sampleCPU(ctx); err == nil {
@@ -647,12 +647,25 @@ func runLoad(ctx context.Context, _ plugin.Request) (view.View, error) {
 	}}, nil
 }
 
+// uptimeOf turns gopsutil's seconds since boot into a Duration. The seconds
+// are a uint64 and a Duration is nanoseconds in an int64, so past 2^63/1e9
+// of them — 292 years — the product wraps negative; a machine claiming to be
+// up that long is capped there rather than reported as booting in the
+// future.
+func uptimeOf(secs uint64) time.Duration {
+	const most = uint64(math.MaxInt64 / int64(time.Second))
+	if secs > most {
+		secs = most
+	}
+	return time.Duration(secs) * time.Second
+}
+
 func runHost(ctx context.Context, _ plugin.Request) (view.View, error) {
 	info, err := host.InfoWithContext(ctx)
 	if err != nil {
 		return nil, view.Errorf("sys.host.read", "reading host info: %v", err)
 	}
-	uptime := time.Duration(info.Uptime) * time.Second
+	uptime := uptimeOf(info.Uptime)
 	pairs := []view.Pair{
 		{Key: "hostname", Value: info.Hostname},
 		{Key: "os", Value: fmt.Sprintf("%s %s (%s)", info.Platform, info.PlatformVersion, info.KernelArch)},
