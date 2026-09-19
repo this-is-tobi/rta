@@ -286,6 +286,30 @@ type Entry struct {
 	Code string `json:"code,omitempty"`
 	// Reason is the person's half: the message, without the code.
 	Reason string `json:"reason,omitempty"`
+	// Note is what the host knew about a refusal and deliberately did not
+	// say to the agent.
+	//
+	// **Because two different failures share one sentence, on purpose.** A
+	// call refused for "no active grant" may have nothing granted at all, or
+	// it may be covered by a grant whose connection has since been repointed
+	// — and the refusal says the same thing either way, because naming the
+	// profile would disclose that it exists and that consent was once given
+	// for it (see grant.refuseMissing, and the ordering comment in the
+	// bridge that makes an unknown profile and an ungranted one
+	// indistinguishable). That silence is right for the agent and wrong for
+	// everyone else: the operator sees the grant listed healthy, `doctor`
+	// agrees, and the only visible fact is a refusal whose remedy is to
+	// issue a grant they already have.
+	//
+	// So the difference is written down here, where only a person reads it.
+	// Provenance, like Session and Role: written after the gate has
+	// answered, and nothing decides on it.
+	//
+	// omitempty, and that is load-bearing for the seal rather than
+	// decoration — canonical() is json.Marshal over the parsed Entry, so a
+	// field absent from every old row re-encodes byte-identically and every
+	// seal written before it existed still verifies.
+	Note string `json:"note,omitempty"`
 	// Millis is how long the handler took, absent for calls that never ran.
 	Millis int64 `json:"ms,omitempty"`
 	// Missed counts the calls immediately before this one that rta could not

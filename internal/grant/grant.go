@@ -1387,18 +1387,65 @@ func reachable(grants []Grant, by Caller) (view []Grant, at []int) {
 // see reachableNow for why that chaining is exactly the hazard this
 // function's sibling exists to avoid.
 func callerReachable(g Grant, by Caller) bool {
-	// By the name half: the switch is the whole environment, so an active
-	// `staging` keeps a grant naming `staging/analytics` reachable — the
-	// instance is inside the place the operator switched on, and dropping it
-	// would make activating an environment revoke consent for its own
-	// databases.
-	if by.Active != "" && g.Profile != "" && config.RefName(g.Profile) != by.Active {
+	if !insideActive(g, by) {
 		return false
 	}
 	if by.Profile != "" && g.Profile == by.Profile && !samePin(g.ProfilePin, by.Pin) {
 		return false
 	}
 	return true
+}
+
+// insideActive is callerReachable's fence half, split out so RefusedStale
+// can apply everything the gate applies except the pin.
+//
+// By the name half: the switch is the whole environment, so an active
+// `staging` keeps a grant naming `staging/analytics` reachable — the
+// instance is inside the place the operator switched on, and dropping it
+// would make activating an environment revoke consent for its own
+// databases.
+func insideActive(g Grant, by Caller) bool {
+	return by.Active == "" || g.Profile == "" || config.RefName(g.Profile) == by.Active
+}
+
+// RefusedStale reports whether a refusal this call just received was caused
+// by a grant that covers it and was issued against a different connection.
+//
+// **Two failures share one sentence, and only one of them is fixed by
+// issuing a grant.** refuseMissing says "no active grant" whether nothing
+// was ever granted or a live grant's ProfilePin no longer matches the
+// connection this server resolves, and that sameness is deliberate: the
+// refusal tells an agent nothing about the operator's configuration, so it
+// cannot be used to enumerate which profiles exist or which were once
+// consented to. What it costs is that the operator's own screens cannot tell
+// the two apart either — `grant list` shows the row, `doctor` calls it
+// healthy, and the call keeps being refused — so the remedy they reach for
+// is to re-issue a grant they already hold.
+//
+// This answers the question for the surfaces where a person is reading: the
+// record the bridge writes. It is the same filter the gate just applied,
+// minus the pin, so it cannot call a refusal stale that the gate refused for
+// some other reason — a scope, an agent name, an artifact digest.
+//
+// False on anything it cannot establish, including a grant file it fails to
+// read: this decides nothing, it only explains, and an explanation that
+// guesses is worse than none.
+func RefusedStale(c plugin.Capability, values map[string]any, by Caller) bool {
+	if by.Profile == "" {
+		return false
+	}
+	grants, verr := Load()
+	if verr != nil {
+		return false
+	}
+	var ignoringPin []Grant
+	for _, g := range grants {
+		if insideActive(g, by) {
+			ignoringPin = append(ignoringPin, g)
+		}
+	}
+	_, _, missing, _ := allocate(c, values, ignoringPin, by)
+	return len(missing) == 0
 }
 
 // reachableNow is reachable(Load(), by) — but computed in one pass over
