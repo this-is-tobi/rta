@@ -1,6 +1,11 @@
 package audit
 
-import "testing"
+import (
+	"strings"
+	"testing"
+
+	"github.com/this-is-tobi/rta/pkg/findings"
+)
 
 // The shape confirmed against a real k3s cluster's own cluster-admin
 // binding while writing this check.
@@ -87,6 +92,12 @@ func TestAssertsNonRoot(t *testing.T) {
 			Containers: []podSecurityCtn{{SecurityContext: podSecurityContext{RunAsUser: &nonZero}}}}}, true},
 		{"runAsUser explicitly zero", podSecurityItem{Spec: podSecuritySpec{
 			SecurityContext: podSecurityContext{RunAsUser: &zero}}}, false},
+		// The Restricted profile holds init and ephemeral containers to the
+		// same rule as the main ones, so an assertion on either counts as one.
+		{"init container runAsNonRoot", podSecurityItem{Spec: podSecuritySpec{
+			InitContainers: []podSecurityCtn{{SecurityContext: podSecurityContext{RunAsNonRoot: &yes}}}}}, true},
+		{"ephemeral container runAsUser nonzero", podSecurityItem{Spec: podSecuritySpec{
+			EphemeralContainers: []podSecurityCtn{{SecurityContext: podSecurityContext{RunAsUser: &nonZero}}}}}, true},
 		{"nothing set", podSecurityItem{}, false},
 	}
 	for _, c := range cases {
@@ -104,5 +115,51 @@ func TestHostNamespaceDetail(t *testing.T) {
 	p.Spec.HostPID = true
 	if got := hostNamespaceDetail(p); got != "hostNetwork, hostPID is true" {
 		t.Errorf("hostNamespaceDetail = %q", got)
+	}
+}
+
+// Pod Security Admission grades every container list a pod has: the Baseline
+// profile's "Privileged Containers" control names spec.containers[*],
+// spec.initContainers[*] and spec.ephemeralContainers[*].securityContext.privileged
+// as its restricted fields, all three alike. A check that reads spec.containers
+// alone grades a pod whose only privileged container is an init container — the
+// Elasticsearch chart's sysctl init container is the everyday example — as
+// clean, and that is a compliance report saying the cluster passes baseline
+// where admission would reject the pod.
+func TestPrivilegedInitAndEphemeralContainersAreGraded(t *testing.T) {
+	fakeKubectl(t, map[string]string{
+		"pods": `{"items":[
+			{"metadata":{"namespace":"logging","name":"es-0"},
+			 "spec":{"securityContext":{"runAsNonRoot":true},
+			         "initContainers":[{"name":"sysctl","securityContext":{"privileged":true}}],
+			         "containers":[{"name":"elasticsearch"}]}},
+			{"metadata":{"namespace":"debug","name":"web-0"},
+			 "spec":{"securityContext":{"runAsNonRoot":true},
+			         "containers":[{"name":"web"}],
+			         "ephemeralContainers":[{"name":"shell","securityContext":{"privileged":true}}]}},
+			{"metadata":{"namespace":"infra","name":"agent-0"},
+			 "spec":{"securityContext":{"runAsNonRoot":true},
+			         "containers":[{"name":"agent","securityContext":{"privileged":true}}]}}
+		]}`,
+	})
+
+	out, err := runKubePodSecurity(t.Context(), newScopedRequest(""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered := renderText(t, out)
+	for _, want := range []string{
+		"privileged container: logging/es-0/sysctl (init) | " + findings.Fail,
+		"privileged container: debug/web-0/shell (ephemeral) | " + findings.Fail,
+		// A main container's row is exactly what it was: the kind is said
+		// only where kubectl describe would list the name elsewhere.
+		"privileged container: infra/agent-0/agent | " + findings.Fail,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Errorf("missing %q in:\n%s", want, rendered)
+		}
+	}
+	if strings.Contains(rendered, "no pod") {
+		t.Errorf("a pod running privileged graded clean:\n%s", rendered)
 	}
 }

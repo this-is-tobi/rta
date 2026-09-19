@@ -316,7 +316,9 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 				Description: "Every pod cluster-wide, checked against three Pod Security Standards " +
 					"controls: a privileged container (fail), hostNetwork/hostPID/hostIPC (fail), and " +
 					"whether anything in the pod asserts non-root — neither the pod nor any container " +
-					"sets runAsNonRoot or a non-zero runAsUser (warn). The non-root check approximates " +
+					"sets runAsNonRoot or a non-zero runAsUser (warn). Init and ephemeral containers are " +
+					"graded exactly as main ones, because the standards' restricted fields name all three " +
+					"lists; a row for one says so. The non-root check approximates " +
 					"Kubernetes' own securityContext merge rather than fully simulating it: a pod that " +
 					"asserts non-root at the pod level and never overrides it per container is not " +
 					"flagged, which is the common, correct case; one relying only on an image's own " +
