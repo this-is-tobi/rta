@@ -23,6 +23,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // ReadCapped reads a file rta wrote, refusing one larger than rta writes.
@@ -65,6 +66,52 @@ func ReadCapped(path string, max int) ([]byte, error) {
 	return buf[:n], nil
 }
 
+// rename is os.Rename, overridable so a test can refuse a replace the way
+// Windows refuses one while the target is open — see Replace.
+var rename = os.Rename
+
+// replaceWaits paces a rename the platform may refuse for a reason that is
+// nobody's fault, and a var rather than a literal only so a test can shrink it.
+var replaceWaits = []time.Duration{
+	0, 5 * time.Millisecond, 10 * time.Millisecond, 20 * time.Millisecond,
+	50 * time.Millisecond, 100 * time.Millisecond, 200 * time.Millisecond,
+	400 * time.Millisecond,
+}
+
+// Replace renames from onto to, waiting out a platform that will not let go.
+//
+// os.Rename on Windows is MoveFileEx with MOVEFILE_REPLACE_EXISTING, which
+// has to delete the destination to put something else in its place — and
+// every handle os.Open takes shares read and write but not delete
+// (syscall.Open's share mode), so anything with the target open refuses the
+// replace outright: rta's own reader, a virus scanner that opened the file a
+// millisecond after the last write, a backup agent, the search indexer.
+// Nothing is wrong when that happens and it does not happen every time,
+// which is the worst shape a bug can have on somebody else's machine — and
+// it sat on the two paths this package's own doc names as the hottest, the
+// config file on every dashboard keystroke and the grant lock on every gated
+// call. internal/plugindist met the same refusal placing a binary a process
+// had just finished running, and waited it out; this is that wait, for every
+// replace rta makes.
+//
+// Every error is retried, not only the sharing violation, because naming
+// that error means naming a platform's error numbers in a path that runs on
+// all of them. A permanent failure costs under a second before it is
+// reported unchanged, and the temporary file is still sitting there
+// untouched the whole time, so a retry can never make things worse.
+func Replace(from, to string) error {
+	var err error
+	for _, wait := range replaceWaits {
+		if wait > 0 {
+			time.Sleep(wait)
+		}
+		if err = rename(from, to); err == nil {
+			return nil
+		}
+	}
+	return err
+}
+
 // WriteFrom is Write for a stream: the same temporary-file-then-rename in
 // the target's own directory, the same enforced perm, without holding the
 // whole payload in memory. A release binary can be a hundred megabytes, and
@@ -88,7 +135,7 @@ func WriteFrom(path string, r io.Reader, perm fs.FileMode) error {
 	if err := os.Chmod(tmp.Name(), perm); err != nil {
 		return fmt.Errorf("setting permissions on %s: %w", tmp.Name(), err)
 	}
-	if err := os.Rename(tmp.Name(), path); err != nil {
+	if err := Replace(tmp.Name(), path); err != nil {
 		return fmt.Errorf("replacing %s: %w", path, err)
 	}
 	return nil
@@ -134,7 +181,7 @@ func Write(path string, data []byte, perm fs.FileMode) error {
 	if err := os.Chmod(tmp.Name(), perm); err != nil {
 		return fmt.Errorf("setting permissions on %s: %w", tmp.Name(), err)
 	}
-	if err := os.Rename(tmp.Name(), path); err != nil {
+	if err := Replace(tmp.Name(), path); err != nil {
 		return fmt.Errorf("replacing %s: %w", path, err)
 	}
 	return nil

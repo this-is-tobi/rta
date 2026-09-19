@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 
+	"github.com/this-is-tobi/rta/internal/atomicfile"
 	"github.com/this-is-tobi/rta/internal/paths"
 	"github.com/this-is-tobi/rta/internal/pluginhost"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -74,29 +74,13 @@ func artifactName(name string) string { return pluginhost.Prefix + name }
 // process. Windows expresses it as a sharing violation on the move instead.
 //
 // Waiting rather than asking, because there is nothing to ask: the handle
-// belongs to the kernel, not to a process rta can wait on. The budget is far
-// longer than the window that has ever been measured, and what it reports on
-// giving up is the real error rather than a claim that the install worked.
-//
-// Every error is retried, not just the sharing violation, because naming that
-// error means naming a platform's error numbers in a path that runs on all of
-// them. A permanent failure costs the caller under a second before it is
-// reported unchanged.
+// belongs to the kernel, not to a process rta can wait on. The wait itself is
+// atomicfile.Replace's — the same refusal meets every replace rta makes, a
+// reader being enough to trigger it where an exited process is enough here —
+// and what it reports on giving up is the real error rather than a claim
+// that the install worked.
 func moveExecutable(from, to string) error {
-	var err error
-	for _, wait := range []time.Duration{
-		0, 5 * time.Millisecond, 10 * time.Millisecond, 20 * time.Millisecond,
-		50 * time.Millisecond, 100 * time.Millisecond, 200 * time.Millisecond,
-		400 * time.Millisecond,
-	} {
-		if wait > 0 {
-			time.Sleep(wait)
-		}
-		if err = os.Rename(from, to); err == nil {
-			return nil
-		}
-	}
-	return err
+	return atomicfile.Replace(from, to)
 }
 
 func place(name, digest, staged string) (string, *view.Error) {

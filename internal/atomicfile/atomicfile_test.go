@@ -2,12 +2,14 @@ package atomicfile
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 )
 
@@ -433,4 +435,57 @@ func TestReadCappedPassesNotExistThrough(t *testing.T) {
 	if !os.IsNotExist(err) {
 		t.Errorf("err = %v, want it to satisfy os.IsNotExist", err)
 	}
+}
+
+// A replace refused once still lands, through either writer.
+//
+// os.Rename on Windows is MoveFileEx with MOVEFILE_REPLACE_EXISTING, which
+// has to delete the destination to put something else in its place, and
+// every handle os.Open takes shares read and write but not delete — so
+// anything with the target open refuses the replace outright: rta's own
+// reader, a virus scanner that opened the file a millisecond after the last
+// write, the search indexer. Nothing is wrong when that happens, and the
+// write was reported as failed when nothing was wrong with it, on the two
+// paths this package's own doc names as the hottest: the config file on
+// every dashboard keystroke, and the grant lock on every gated call.
+func TestAReplaceRefusedOnceStillLands(t *testing.T) {
+	for name, write := range map[string]func(path string) error{
+		"Write": func(path string) error { return Write(path, []byte("fresh"), 0o600) },
+		"WriteFrom": func(path string) error {
+			return WriteFrom(path, strings.NewReader("fresh"), 0o600)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			refuseOneRename(t)
+			path := filepath.Join(t.TempDir(), "state.yaml")
+			if err := write(path); err != nil {
+				t.Fatalf("a write whose first replace was refused failed: %v", err)
+			}
+			got, err := os.ReadFile(path)
+			if err != nil || string(got) != "fresh" {
+				t.Fatalf("contents = %q, %v; want the write to have landed", got, err)
+			}
+		})
+	}
+}
+
+// refuseOneRename makes the next replace fail the way a Windows sharing
+// violation does and every later one succeed, and fails the test if nothing
+// ever asked.
+func refuseOneRename(t *testing.T) {
+	t.Helper()
+	original := rename
+	var refused atomic.Int32
+	rename = func(from, to string) error {
+		if refused.CompareAndSwap(0, 1) {
+			return errors.New("the process cannot access the file because it is being used by another process")
+		}
+		return original(from, to)
+	}
+	t.Cleanup(func() {
+		rename = original
+		if refused.Load() == 0 {
+			t.Error("no replace was refused, so this proved nothing about a refused one")
+		}
+	})
 }
