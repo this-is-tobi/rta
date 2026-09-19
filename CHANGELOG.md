@@ -1,5 +1,68 @@
 # Changelog
 
+## [0.22.0](https://github.com/this-is-tobi/rta/compare/v0.21.1...v0.22.0) (2026-09-19)
+
+
+### Features
+
+* **audit:** grade a DKIM key's strength and its testing flag ([395a7e2](https://github.com/this-is-tobi/rta/commit/395a7e2bc33957e53f9e07f9c634b9595fe1eea4))
+* **plugin:** a capability declares what the TUI may do with its result ([529dd9b](https://github.com/this-is-tobi/rta/commit/529dd9b9fc498805a862c321f92d65caf5d7c013))
+* **plugin:** explain prints the declared actions, and sdktest checks Copy against the view ([72fe9e5](https://github.com/this-is-tobi/rta/commit/72fe9e5f6c0eae80b0563219bdb36577fc2f854e))
+* **tui:** ? lists every key the screen answers ([aa6bac4](https://github.com/this-is-tobi/rta/commit/aa6bac4657a29d6a143073ce64c320c8b76c0aca))
+* **tui:** row actions, toggles, copy and live refresh come from the declaration ([dba0c65](https://github.com/this-is-tobi/rta/commit/dba0c65f7242c0cb2498fc2c3fb6d51a76cf2b64))
+
+
+### Bug Fixes
+
+* **atomicfile:** a link that could not be made is not a lost race ([06f7dc8](https://github.com/this-is-tobi/rta/commit/06f7dc8f6013fa63ae732a47ff8901a22b20d93b))
+* **atomicfile:** wait out a platform that will not let a file be replaced ([00ec023](https://github.com/this-is-tobi/rta/commit/00ec02305fb26e59cfefff078fea803f663d29b1))
+* **audit:** a missing DMARC record names the parent policy it may inherit ([d287753](https://github.com/this-is-tobi/rta/commit/d287753dd69ba8cc7ea9ae06f812193a069dd383))
+* **audit:** a TLS-RPT record with no rua= reports to nobody ([a3afc63](https://github.com/this-is-tobi/rta/commit/a3afc63bb220d4244a1eb53a0f0298e5b2af85b3))
+* **audit:** an empty DMARC pct= is a syntax error, not the default ([c6bbf7d](https://github.com/this-is-tobi/rta/commit/c6bbf7d174d4b2e0cf9f9986f1b7499e7e2ee0d7))
+* **audit:** an MTA-STS TXT record advertises a policy it does not prove ([2862604](https://github.com/this-is-tobi/rta/commit/28626049dfd8ee504cd0f404c12d1e12c61fdd22))
+* **audit:** hold a mail domain to the same DNS label grammar as its selector ([71b042c](https://github.com/this-is-tobi/rta/commit/71b042cbdb335d8b43728ef92bcb7a26ddfe0aa7))
+* **audit:** podsecurity grades init and ephemeral containers too ([66e83f1](https://github.com/this-is-tobi/rta/commit/66e83f168505b615cb53e411a3a4a5091b8ae680))
+* **audit:** read one DKIM key per TXT record, and say when a selector holds two ([ef1fe03](https://github.com/this-is-tobi/rta/commit/ef1fe03c1e6ea35779865a1b43d3715e5c22b5c1))
+* **cli:** name a credential's environment variable from the declaration ([975241e](https://github.com/this-is-tobi/rta/commit/975241ec0a11efee0321223cf4f154d7037bdeac))
+* **docker:** the full image's Alpine base moves to 3.22.6, which patches openssl ([8311461](https://github.com/this-is-tobi/rta/commit/8311461bdd5a313d900bb73ce6bdb90eb116fcd1))
+* **doctor:** name a seal key left with no lock file beside it ([8016153](https://github.com/this-is-tobi/rta/commit/80161531c619b8ffe9836839124964bef4fe21b9))
+* **filelock:** a missed beat costs a beat, not the lease ([84c65b1](https://github.com/this-is-tobi/rta/commit/84c65b12fc466a3227603d7fff246690dc7c1f43))
+* **filelock:** wait out a platform that will not let a lock go ([9d29127](https://github.com/this-is-tobi/rta/commit/9d291276c1f32b6d722c60af5cc2a85d39985f7d))
+* **git:** blame and log take a file the way the boundary hands it, relative to the repository ([ddcbe88](https://github.com/this-is-tobi/rta/commit/ddcbe8866be69cd248d7b039d2750499f2436486))
+* **kv:** notepad is the editor Windows guarantees ([536e783](https://github.com/this-is-tobi/rta/commit/536e7837bbbec5bd9cf6ca48699e66c28e92bdca))
+* **lock:** a mutation that changes nothing writes nothing ([ec36b5d](https://github.com/this-is-tobi/rta/commit/ec36b5df832916670ff66a8c0c2cba51512a4c6a))
+* **lock:** a remote add confirms what the operator typed, not the server's answer ([d021306](https://github.com/this-is-tobi/rta/commit/d021306dbefabecee9896290c2d1d89fd2c41da4))
+* **lock:** a remote typo is refused before the passphrase ([b5b2f25](https://github.com/this-is-tobi/rta/commit/b5b2f250edb6c0118182d1b19e0db340b671fba0))
+* **lock:** a truncated seal key names the file that fixes it ([0e0c9b9](https://github.com/this-is-tobi/rta/commit/0e0c9b9b43758deb8fc2132bd5b1600e54f36302))
+* **lock:** the recovery hints paste on Windows, and an empty principal is refused early ([d44ce68](https://github.com/this-is-tobi/rta/commit/d44ce68fe6ee71c5c1019d947a86241681566d82))
+* **net:** net.trace keeps the hops it collected when the run is stopped ([2b3ea3e](https://github.com/this-is-tobi/rta/commit/2b3ea3e85ab40eaa046bf46b059269c84a892090))
+* **pkg:** pkg.upgrade keeps the manager's output off the screen the TUI draws on ([adcd53b](https://github.com/this-is-tobi/rta/commit/adcd53b03a600fb4b43fca788ab1d7b3c355df1d))
+* **plugin:** an integer past what fits is refused, and every narrowing conversion is bounded ([e09e23f](https://github.com/this-is-tobi/rta/commit/e09e23f6dea234fc2f729915a907926f51e97ce6))
+* **plugin:** state an input's help without naming the surface it arrives on ([a2875b4](https://github.com/this-is-tobi/rta/commit/a2875b4d52609534d3ede854136472a84684b0ba))
+* **render:** break a long identifier after a separator, not mid-group ([5f23392](https://github.com/this-is-tobi/rta/commit/5f233926e259d51e4f7855cffdd905abac38746a))
+* **seal:** an unreadable seal key is a read failure, not a missing key ([7bb7875](https://github.com/this-is-tobi/rta/commit/7bb7875981b0552fa04c7b369b12cab74b051acd))
+* **tui:** a row taller than the screen is drawn at the height that fits ([ce0c002](https://github.com/this-is-tobi/rta/commit/ce0c00260983547d2bdfe750b86204d8436d4194))
+* **tui:** keep a ceiling on a run that opened a port-forward ([05b6dd0](https://github.com/this-is-tobi/rta/commit/05b6dd0f820330187631e83fac5cc95e01b90934))
+* **tui:** name the dashboard's own deadline when a tile stops answering ([a2c07a1](https://github.com/this-is-tobi/rta/commit/a2c07a195e376cb9c596555422292e691db5288d))
+* **tui:** paint nothing until the terminal size is known ([a140a66](https://github.com/this-is-tobi/rta/commit/a140a66ff7e05a0086f98d44dc4b4899eb06c9eb))
+* **tui:** path completion splits on either separator on Windows ([85d3b7a](https://github.com/this-is-tobi/rta/commit/85d3b7a44f126899547c8c23b6442e6df6d9fbb4))
+* **tui:** quit cancels the run from every screen, and the deadline paths are pinned ([b86ebb4](https://github.com/this-is-tobi/rta/commit/b86ebb457f36e0869ae0d817b311b8c8fc7df066))
+* **tui:** re-window the dashboard when a tile's answer changes its row height ([c82a966](https://github.com/this-is-tobi/rta/commit/c82a96613e61c462e4a355fe88fcb75f203e6007))
+* **tui:** stop cutting an asked-for capability run off at thirty seconds ([4337a19](https://github.com/this-is-tobi/rta/commit/4337a19dc9e710db94263dfcc9995d26282c89ea))
+* **tui:** stop promising that esc leaves a run running ([93fd98b](https://github.com/this-is-tobi/rta/commit/93fd98bbb383148bbdbe459c2f437107734c15bd))
+
+
+### Code Refactoring
+
+* **audit:** decide a mail domain exists from the lookups already made ([1a4a95e](https://github.com/this-is-tobi/rta/commit/1a4a95e3ec0a5bb4ad185aa47b8270f59b73d927))
+
+
+### Dependencies
+
+* **goreleaser:** the release does ship an SBOM, and the footer says when it applies ([5ca78c2](https://github.com/this-is-tobi/rta/commit/5ca78c250dac1421f0abcdad233124e3253f3cf9))
+* **make:** chart-docs runs a helm-docs built from source at a pinned version ([92cb637](https://github.com/this-is-tobi/rta/commit/92cb637ac5b4b2444409afe0b1ac6c3ee7499826))
+* **make:** guard bump-index's ref, and pin chart-docs to the helm-docs digest ([557ac27](https://github.com/this-is-tobi/rta/commit/557ac27ab4e08536479fe6fa69828b23b93ee473))
+
 ## [0.21.1](https://github.com/this-is-tobi/rta/compare/v0.21.0...v0.21.1) (2026-09-16)
 
 
