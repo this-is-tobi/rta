@@ -413,7 +413,7 @@ func attach(parent *cobra.Command, c plugin.Capability, opts *globalOpts) {
 		Short: c.Summary,
 		Long: withArguments(
 			strings.TrimSpace(c.Summary+"\n\n"+c.Description),
-			capabilityArgs(positionals),
+			capabilityArgs(c, positionals),
 		),
 		Args: positionalArgsValidator(positionals),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -738,7 +738,7 @@ func declareFlags(cmd *cobra.Command, c plugin.Capability) {
 		if f.Positional {
 			continue
 		}
-		usage := flagUsage(f)
+		usage := flagUsage(c, f)
 		switch f.Type {
 		case plugin.Int:
 			def, _ := f.Default.(int)
@@ -799,19 +799,43 @@ func requireResolved(c plugin.Capability, values map[string]any) *view.Error {
 	return nil
 }
 
-// flagUsage renders a field's help for `--help`, appending its closed set.
-// The list is generated from the declaration so it cannot drift from what the
-// completion and the MCP schema offer, and so nobody has to keep a copy of it
-// in prose.
-func flagUsage(f plugin.Field) string {
-	if len(f.Options) == 0 {
-		return f.Help
+// flagUsage renders a field's help for `--help`, appending what the host adds
+// rather than what each declaration remembers to write down.
+//
+// The closed set, so nobody keeps a copy of it in prose and it cannot drift
+// from the completion or the MCP schema.
+//
+// And the environment variable a credential may arrive in, for the same
+// reason and with a sharper one behind it: three built-in declarations wrote
+// "(or set RTA_KV_PASSPHRASE)" into Help by hand, one of them by calling
+// LocalEnvVar itself, and `rta explain` prints the same variable from the
+// declaration two clauses earlier — so the page describing an input named it
+// twice. Every credential field in the plugin catalogue writes a bare noun
+// phrase and got no mention at all. Generated here, the CLI is the one
+// surface that says it, it says it for every EnvFallback input including a
+// plugin's, and it cannot disagree with what Resolve actually reads.
+//
+// The shell-history clause goes here too and only here. It is true of argv
+// and of nothing else: a TUI form has no history and an MCP caller has no
+// argv, and it was being read out under a masked box.
+func flagUsage(c plugin.Capability, f plugin.Field) string {
+	usage := f.Help
+	if len(f.Options) > 0 {
+		set := "one of: " + strings.Join(f.Options, "|")
+		if usage == "" {
+			usage = set
+		} else {
+			usage += " (" + set + ")"
+		}
 	}
-	set := "one of: " + strings.Join(f.Options, "|")
-	if f.Help == "" {
-		return set
+	if f.Local && f.EnvFallback {
+		env := "or set $" + plugin.LocalEnvVar(c.ID, f.Name) + ", which keeps it out of shell history"
+		if usage == "" {
+			return env
+		}
+		usage += " (" + env + ")"
 	}
-	return f.Help + " (" + set + ")"
+	return usage
 }
 
 func runCapability(ctx context.Context, cmd *cobra.Command, c plugin.Capability, args []string, opts *globalOpts) error {
