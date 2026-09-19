@@ -144,7 +144,7 @@ func (p Plugin) Validate() error {
 		}
 		seen[c.ID] = true
 	}
-	return nil
+	return p.checkActions()
 }
 
 // needList renders the accepted needs for an error message, so a rejected

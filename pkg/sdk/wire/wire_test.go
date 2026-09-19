@@ -102,6 +102,25 @@ func TestEveryEndpointRoleOnTheWireHasAMapping(t *testing.T) {
 	}
 }
 
+// A source this host does not know decodes to none: the target's form opens
+// and asks, which is visible, where a wrong seed would act on the wrong row.
+func TestEveryActionSourceOnTheWireHasAMapping(t *testing.T) {
+	for v, name := range rtav1.ActionSource_name {
+		got := ActionSourceFromProto(rtav1.ActionSource(v))
+		if back := ActionSourceToProto(got); back != rtav1.ActionSource(v) {
+			t.Errorf("%s round-tripped to %s", name, back)
+		}
+	}
+	for _, s := range []plugin.ActionSource{plugin.ActionRow, plugin.ActionSelf} {
+		if ActionSourceToProto(s) == rtav1.ActionSource_ACTION_SOURCE_UNSPECIFIED {
+			t.Errorf("plugin.ActionSource %q has no wire form, so it would cross as none", s)
+		}
+	}
+	if got := ActionSourceFromProto(rtav1.ActionSource(99)); got != plugin.ActionNone {
+		t.Errorf("an unknown source decoded to %q, want none", got)
+	}
+}
+
 func TestEverySurfaceOnTheWireHasAMapping(t *testing.T) {
 	for v, name := range rtav1.Surface_name {
 		if rtav1.Surface(v) == rtav1.Surface_SURFACE_UNSPECIFIED {
@@ -281,6 +300,19 @@ func fullDeclaration() plugin.Plugin {
 			Scope:        "key",
 			HostSpecific: true,
 			HumanOnly:    true,
+			// What the TUI may do with the result crosses as data: a host
+			// that lost it would show a third-party list with no row
+			// actions, which is the second-class plugin the fields exist to
+			// end. Two actions so that Seed and Bare are each set somewhere.
+			Actions: []plugin.Action{
+				{Key: "enter", Label: "show", Target: "demo.thing.get", Source: plugin.ActionRow, Bare: true},
+				{Key: "x", Label: "remove", Target: "demo.thing.get", Source: plugin.ActionSelf,
+					Seed: map[string]string{"key": "name"}},
+			},
+			Toggles: []plugin.Toggle{{Key: "A", Label: "show all", Input: "force"}},
+			Copy:    "name",
+			Live:    true,
+			Flash:   true,
 			Inputs: []plugin.Field{
 				{
 					Name: "key", Type: plugin.String, Help: "which thing",
@@ -380,6 +412,8 @@ func TestEveryDeclarationFieldIsCarried(t *testing.T) {
 	checkAcross("Field", p.Capabilities[0].Inputs, map[string]string{
 		"Suggest": "a handler; has_suggest crosses instead",
 	}, t)
+	checkAcross("Action", p.Capabilities[0].Actions, nil, t)
+	checkAcross("Toggle", p.Capabilities[0].Toggles, nil, t)
 }
 
 // checkAcross asserts every exported field is non-zero on at least one

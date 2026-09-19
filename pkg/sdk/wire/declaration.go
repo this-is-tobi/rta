@@ -77,6 +77,78 @@ func EndpointRoleFromProto(r rtav1.EndpointRole) plugin.EndpointRole {
 	return plugin.EndpointNone
 }
 
+var actionSources = []struct {
+	go_ plugin.ActionSource
+	pb  rtav1.ActionSource
+}{
+	{plugin.ActionNone, rtav1.ActionSource_ACTION_SOURCE_UNSPECIFIED},
+	{plugin.ActionRow, rtav1.ActionSource_ACTION_SOURCE_ROW},
+	{plugin.ActionSelf, rtav1.ActionSource_ACTION_SOURCE_SELF},
+}
+
+// ActionSourceToProto encodes what an action acts on.
+func ActionSourceToProto(s plugin.ActionSource) rtav1.ActionSource {
+	for _, m := range actionSources {
+		if m.go_ == s {
+			return m.pb
+		}
+	}
+	return rtav1.ActionSource_ACTION_SOURCE_UNSPECIFIED
+}
+
+// ActionSourceFromProto decodes it, and a source this host does not know
+// decodes to ActionNone — the safe direction, as with EndpointRole: an
+// action that seeds nothing opens the target's form and asks, which is
+// visible and costs a keystroke, where refusing the whole plugin over one
+// key would cost every capability it declares.
+func ActionSourceFromProto(s rtav1.ActionSource) plugin.ActionSource {
+	for _, m := range actionSources {
+		if m.pb == s {
+			return m.go_
+		}
+	}
+	return plugin.ActionNone
+}
+
+// ActionToProto encodes one key a result offers.
+func ActionToProto(a plugin.Action) *rtav1.Action {
+	return &rtav1.Action{
+		Key:    a.Key,
+		Label:  a.Label,
+		Target: a.Target,
+		Source: ActionSourceToProto(a.Source),
+		Bare:   a.Bare,
+		Seed:   a.Seed,
+	}
+}
+
+// ActionFromProto decodes one. An empty seed map comes back nil so that a
+// declaration round-trips equal to what its author wrote.
+func ActionFromProto(a *rtav1.Action) plugin.Action {
+	var seed map[string]string
+	if len(a.GetSeed()) > 0 {
+		seed = a.GetSeed()
+	}
+	return plugin.Action{
+		Key:    a.GetKey(),
+		Label:  a.GetLabel(),
+		Target: a.GetTarget(),
+		Source: ActionSourceFromProto(a.GetSource()),
+		Bare:   a.GetBare(),
+		Seed:   seed,
+	}
+}
+
+// ToggleToProto encodes one filter key.
+func ToggleToProto(t plugin.Toggle) *rtav1.Toggle {
+	return &rtav1.Toggle{Key: t.Key, Label: t.Label, Input: t.Input}
+}
+
+// ToggleFromProto decodes one.
+func ToggleFromProto(t *rtav1.Toggle) plugin.Toggle {
+	return plugin.Toggle{Key: t.GetKey(), Label: t.GetLabel(), Input: t.GetInput()}
+}
+
 var surfaces = []struct {
 	go_ plugin.Surface
 	pb  rtav1.Surface
@@ -243,6 +315,11 @@ func CapabilityToProto(c plugin.Capability) *rtav1.Capability {
 		HasPrefill:   c.Prefill != nil,
 		HostSpecific: c.HostSpecific,
 		HumanOnly:    c.HumanOnly,
+		Actions:      mapSlice(c.Actions, ActionToProto),
+		Toggles:      mapSlice(c.Toggles, ToggleToProto),
+		Copy:         c.Copy,
+		Live:         c.Live,
+		Flash:        c.Flash,
 	}
 }
 
@@ -288,6 +365,11 @@ func CapabilityFromProto(c *rtav1.Capability) (plugin.Capability, []string) {
 		Scope:        c.GetScope(),
 		HostSpecific: c.GetHostSpecific(),
 		HumanOnly:    c.GetHumanOnly(),
+		Actions:      mapSlice(c.GetActions(), ActionFromProto),
+		Toggles:      mapSlice(c.GetToggles(), ToggleFromProto),
+		Copy:         c.GetCopy(),
+		Live:         c.GetLive(),
+		Flash:        c.GetFlash(),
 	}, unknown
 }
 

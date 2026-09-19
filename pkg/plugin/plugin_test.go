@@ -32,6 +32,94 @@ func TestValidateOK(t *testing.T) {
 	}
 }
 
+// actionable is a plugin declaring what the TUI may do with its results:
+// a list with a detail page, an add, a removal and a filter toggle.
+func actionable() Plugin {
+	return Plugin{
+		Name:    "demo",
+		Summary: "demo plugin",
+		Capabilities: []Capability{
+			{ID: "demo.item.list", Summary: "list items", Safety: Read, Run: noop,
+				Inputs: []Field{{Name: "all", Type: Bool, Help: "checked-off items too"}},
+				Actions: []Action{
+					{Key: "enter", Label: "show", Target: "demo.item.show", Source: ActionRow, Bare: true},
+					{Key: "a", Label: "add", Target: "demo.item.add"},
+					{Key: "x", Label: "remove", Target: "demo.item.rm", Source: ActionRow},
+					{Key: "L", Label: "lock", Target: "demo.item.add", Source: ActionRow, Seed: map[string]string{"title": "name"}},
+				},
+				Toggles: []Toggle{{Key: "A", Label: "show done", Input: "all"}},
+				Live:    true,
+			},
+			{ID: "demo.item.show", Summary: "show one item", Safety: Read, Run: noop,
+				Inputs: []Field{{Name: "id", Type: String, Help: "the item", Required: true, Positional: true}},
+				Copy:   "name"},
+			{ID: "demo.item.add", Summary: "add an item", Safety: Write, Run: noop, Flash: true,
+				Inputs: []Field{{Name: "title", Type: String, Help: "the title"}}},
+			{ID: "demo.item.rm", Summary: "remove an item", Safety: Destructive, Run: noop, Flash: true,
+				Inputs: []Field{{Name: "id", Type: String, Help: "the item", Required: true, Positional: true}}},
+		},
+	}
+}
+
+// What a plugin declares the TUI may do with its results is admitted at
+// registration, where the author is, rather than discovered on a screen:
+// every rule here used to be a test on the host's own tables, and a table a
+// plugin cannot reach is a rule a plugin cannot break — or follow.
+func TestDeclaredActionsAreAdmitted(t *testing.T) {
+	if err := actionable().Validate(); err != nil {
+		t.Fatalf("an actionable plugin was refused: %v", err)
+	}
+	list := func(p *Plugin) *Capability { return &p.Capabilities[0] }
+	tests := []struct {
+		name    string
+		mutate  func(*Plugin)
+		wantSub string
+	}{
+		{"a key every screen owns", func(p *Plugin) { list(p).Actions[1].Key = "j" }, "every screen already uses for down"},
+		{"a key nobody can press", func(p *Plugin) { list(p).Actions[1].Key = "ctrl+a" }, "one printable character"},
+		{"a blank key", func(p *Plugin) { list(p).Actions[1].Key = " " }, "one printable character"},
+		{"enter off a row", func(p *Plugin) { list(p).Actions[1].Key = "enter" }, "enter opens a row's own page"},
+		{"one key twice", func(p *Plugin) { list(p).Actions[1].Key = "x" }, "binds \"x\" twice"},
+		{"a toggle on an action's key", func(p *Plugin) { list(p).Toggles[0].Key = "a" }, "binds \"a\" twice"},
+		{"no label", func(p *Plugin) { list(p).Actions[1].Label = "" }, "label"},
+		{"a target this plugin lacks", func(p *Plugin) { list(p).Actions[1].Target = "demo.item.nope" }, "does not declare"},
+		{"a target in another plugin", func(p *Plugin) { list(p).Actions[1].Target = "other.item.add" }, "does not declare"},
+		{"a source that is not one", func(p *Plugin) { list(p).Actions[1].Source = "column" }, "source"},
+		{"bare onto a destructive target", func(p *Plugin) { list(p).Actions[2].Bare = true }, "bare"},
+		{"bare with a required input nothing seeds", func(p *Plugin) {
+			list(p).Actions[1] = Action{Key: "a", Label: "show", Target: "demo.item.show", Bare: true}
+		}, "requires \"id\""},
+		{"bare with a required flag", func(p *Plugin) {
+			p.Capabilities[1].Inputs = append(p.Capabilities[1].Inputs, Field{Name: "format", Type: String, Help: "f", Required: true})
+		}, "requires \"format\""},
+		{"a seed from nothing", func(p *Plugin) { list(p).Actions[3].Source = ActionNone }, "seeds"},
+		{"a seed for an input the target lacks", func(p *Plugin) { list(p).Actions[3].Seed = map[string]string{"nope": "name"} }, "does not declare input \"nope\""},
+		{"a seed from nowhere", func(p *Plugin) { list(p).Actions[3].Seed = map[string]string{"title": ""} }, "empty"},
+		{"a toggle on a non-bool", func(p *Plugin) {
+			list(p).Inputs = []Field{{Name: "all", Type: String, Help: "s"}}
+		}, "Bool"},
+		{"a toggle on an input the capability lacks", func(p *Plugin) { list(p).Toggles[0].Input = "done" }, "does not declare input \"done\""},
+		{"live on a write", func(p *Plugin) { p.Capabilities[2].Live = true }, "Live"},
+		{"flash on a read", func(p *Plugin) { p.Capabilities[1].Flash = true }, "Flash"},
+		{"c bound beside Copy", func(p *Plugin) {
+			p.Capabilities[1].Actions = []Action{{Key: "c", Label: "copy", Target: "demo.item.add"}}
+		}, "copies"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			p := actionable()
+			tc.mutate(&p)
+			err := p.Validate()
+			if err == nil {
+				t.Fatalf("accepted; want an error mentioning %q", tc.wantSub)
+			}
+			if !strings.Contains(err.Error(), tc.wantSub) {
+				t.Errorf("error %q does not mention %q", err, tc.wantSub)
+			}
+		})
+	}
+}
+
 func TestValidateFailures(t *testing.T) {
 	tests := []struct {
 		name    string
