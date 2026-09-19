@@ -489,3 +489,30 @@ func refuseOneRename(t *testing.T) {
 		}
 	})
 }
+
+// A link that could not be made is not a lost race.
+//
+// Publish treated every failed Link as "somebody else got there first". On a
+// filesystem with no hard links — exFAT removable media, some network mounts
+// — Link fails for its own reason, the path stays absent, and the loop went
+// round ten times to report a race against a process that does not exist.
+// That message reached the operator from every seal-key creation and every
+// lock acquire, about the disk their data directory was on.
+func TestPublishNamesWhyItCouldNotLinkRatherThanBlamingARace(t *testing.T) {
+	original := link
+	link = func(oldname, newname string) error {
+		return &os.LinkError{Op: "link", Old: oldname, New: newname, Err: errors.New("operation not supported")}
+	}
+	t.Cleanup(func() { link = original })
+	path := filepath.Join(t.TempDir(), "seal.key")
+	_, err := Publish(path, []byte("k"), 0o600, 64)
+	if err == nil {
+		t.Fatal("a publish that could not link reported success")
+	}
+	if !strings.Contains(err.Error(), "operation not supported") {
+		t.Errorf("err = %v, want the filesystem's own reason", err)
+	}
+	if strings.Contains(err.Error(), "race") {
+		t.Errorf("err = %v, blames a race that never happened", err)
+	}
+}
