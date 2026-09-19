@@ -27,14 +27,6 @@ endif
 # which `snapshot` empties.
 BUILDDIR ?= bin
 
-# The helm-docs that regenerates the chart's README, pinned by digest for the
-# reason both Dockerfiles give — trust binds to bytes, not to a name — and
-# because CI runs this same image through github-workflows' lint-helm and
-# update-helm-chart: a tag that moved under one and not the other turns a
-# README regeneration into a diff nobody asked for. v1.14.2, resolved with
-# `docker buildx imagetools inspect`.
-HELM_DOCS_IMAGE ?= docker.io/jnorwood/helm-docs@sha256:7e562b49ab6b1dbc50c3da8f2dd6ffa8a5c6bba327b1c6335cc15ce29267979c
-
 # `--tags` without `--always`: with no tag in reach this fails and the version
 # stays `dev`, which is the honest answer for a build off a branch. The commit
 # is reported separately — the Go toolchain records it in every binary built
@@ -101,6 +93,17 @@ endif
 GOLANGCI_VERSION := v2.13.2
 TOOLS := $(CURDIR)/.tools
 GOLANGCI ?= $(TOOLS)/golangci-lint-$(GOLANGCI_VERSION)
+
+# helm-docs, the same way: built from source at the release CI's lint-helm
+# and update-helm-chart workflows build it at, so a README regenerated here
+# is the README CI compares against. `go install` verifies the module
+# against the Go checksum database, which is what a container image pulled
+# by tag never was, and needs no Docker daemon. The footer of every README
+# names the version, and a bare `go install` leaves that stamp empty — so
+# the build carries the same -X main.version the upstream release does, or
+# every regeneration would drop the last line.
+HELM_DOCS_VERSION := v1.14.2
+HELM_DOCS ?= $(TOOLS)/helm-docs-$(HELM_DOCS_VERSION)
 
 # Colours, unless the caller said not to. NO_COLOR is the convention, and
 # `make help | tee NOTES` should not paste escape codes into somebody's notes.
@@ -234,6 +237,11 @@ vet: ## go vet the root module
 $(TOOLS)/golangci-lint-%:
 	GOBIN=$(TOOLS) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$*
 	mv $(TOOLS)/golangci-lint $@
+
+$(TOOLS)/helm-docs-%:
+	GOBIN=$(TOOLS) go install -trimpath -ldflags "-s -w -X main.version=$(patsubst v%,%,$*)" \
+	  github.com/norwoodj/helm-docs/cmd/helm-docs@$*
+	mv $(TOOLS)/helm-docs $@
 
 # CI lints on linux and most of the work here happens on macOS. A conversion
 # that one port's syscall types need and another's do not is a finding on
@@ -384,11 +392,8 @@ chart-lint: chart-schema-check ## Lint the chart and validate values.yaml agains
 	helm lint $(CHART_DIR) --values $(CHART_DIR)/ci/test-values.yaml
 	helm template rta $(CHART_DIR) --values $(CHART_DIR)/ci/test-values.yaml >/dev/null
 
-# --network none: helm-docs reads a chart and writes a README, and needs
-# nothing from anywhere.
-chart-docs: ## Regenerate the chart's README from values.yaml
-	docker run --rm --network none --volume "$(PWD)/charts:/helm-docs" -u "$$(id -u):$$(id -g)" \
-	  "$(HELM_DOCS_IMAGE)"
+chart-docs: $(HELM_DOCS) ## Regenerate the chart's README from values.yaml
+	$(HELM_DOCS) --chart-search-root charts
 
 ##@ Housekeeping
 
