@@ -27,6 +27,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/render/cli"
 	"github.com/this-is-tobi/rta/internal/render/tui"
 	agentsession "github.com/this-is-tobi/rta/internal/session"
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -194,22 +195,54 @@ func groupRunE(cmd *cobra.Command, args []string) error {
 	if len(args) == 0 {
 		return cmd.Help()
 	}
-	// With cobra's own "Did you mean this?", which the root command gets for
-	// free and every group below it lost the moment it grew a RunE: `rta sy
-	// cpu` suggested `sys` while `rta sys cpuu` only said unknown. The
-	// suggestion is what turns a typo into a one-keystroke fix instead of a
-	// trip through --help.
-	msg := fmt.Sprintf("unknown command %q for %q", args[0], cmd.CommandPath())
+	return unknownCommand(cmd, args[0])
+}
+
+// unknownCommand is what rta says about a name that is not a command, at
+// every depth of the tree.
+//
+// One function because there were two, and only one of them knew what its
+// message would be rendered with. cobra's legacyArgs answers the root and
+// this answers every group below it, and cobra's wording is a block: a blank
+// line, "Did you mean this?", the candidates one per line, and a trailing
+// newline. fang renders a usage error as err.Error() plus a full stop, so
+// that block put the stop on a command name one level down —
+//
+//	Did you mean this?
+//	    get
+//	    set.
+//
+// — and on a line of its own at the root. The suggestion is the useful half
+// of the message and it was the half the stray character landed on.
+//
+// So a near miss is one sentence, which is both what the renderer can
+// punctuate and what a reader takes in at a glance. Unpunctuated on purpose:
+// the terminator belongs to whoever is rendering, and adding one here would
+// print two.
+func unknownCommand(cmd *cobra.Command, arg string) error {
+	msg := fmt.Sprintf("unknown command %q for %q", arg, cmd.CommandPath())
+	if cmd.DisableSuggestions {
+		return errors.New(msg)
+	}
 	// cobra sets the distance on the root alone, inside Execute, and leaves
 	// every subcommand at zero — where SuggestionsFor matches on prefix only
 	// and `lst` earns no `list`. The root's own value, applied here.
 	if cmd.SuggestionsMinimumDistance <= 0 {
 		cmd.SuggestionsMinimumDistance = 2
 	}
-	if suggestions := cmd.SuggestionsFor(args[0]); len(suggestions) > 0 {
-		msg += "\n\nDid you mean this?\n\t" + strings.Join(suggestions, "\n\t")
+	// The suggestion is what turns a typo into a one-keystroke fix instead of
+	// a trip through --help: `rta sy cpu` suggested `sys` while `rta sys
+	// cpuu` only said unknown, until every group came through here.
+	near := cmd.SuggestionsFor(arg)
+	if len(near) == 0 {
+		return errors.New(msg)
 	}
-	return errors.New(msg)
+	quoted := make([]string, len(near))
+	for i, n := range near {
+		quoted[i] = strconv.Quote(n)
+	}
+	return fmt.Errorf("%s — the closest %s %s", msg,
+		format.Plural(len(near), "match is", "matches are"), strings.Join(quoted, ", "))
 }
 
 // NewRoot builds the root cobra command over the given registry.
@@ -259,6 +292,17 @@ func NewRoot(reg *registry.Registry, version string) *cobra.Command {
 		Long:          "rta is a single extendable binary offering one consistent interface\nover the tools you juggle daily — scriptable CLI, TUI, and MCP for AI agents.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		// Rather than cobra's legacyArgs, which is the same refusal in a
+		// shape the error renderer cannot punctuate — see unknownCommand.
+		// Without this the root and every group below it answer an identical
+		// mistake in two different wordings, which is how only one of them
+		// got fixed the first time.
+		Args: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				return nil
+			}
+			return unknownCommand(cmd, args[0])
+		},
 		// Bare `rta` on a TTY opens the interactive shell; in a pipe it
 		// prints help so scripts never hang on an invisible TUI.
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -730,9 +774,20 @@ func positionalArgsValidator(fields []plugin.Field) cobra.PositionalArgs {
 				}
 			}
 		}
+		// Every one of them named, not just the first. The sentence was
+		// "one argument too many, %q" — a count spelled as a word, so three
+		// extra arguments were reported as one, and the two the reader still
+		// had to hunt for went unmentioned. What is useful here is which
+		// words to delete, and the word/number agreement comes from the one
+		// counting vocabulary rather than from this line's own idea of it.
 		if !variadic && len(args) > len(fields) {
-			return fmt.Errorf("one argument too many, %q — usage: %s",
-				args[len(fields)], cmd.UseLine())
+			extra := args[len(fields):]
+			quoted := make([]string, len(extra))
+			for i, a := range extra {
+				quoted[i] = strconv.Quote(a)
+			}
+			return fmt.Errorf("unexpected %s %s — usage: %s",
+				format.PluralOf(len(extra), "argument"), strings.Join(quoted, ", "), cmd.UseLine())
 		}
 		return nil
 	}
