@@ -18,6 +18,7 @@ import (
 	"filippo.io/age"
 	"golang.org/x/crypto/ssh"
 
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -2395,12 +2396,12 @@ func TestNothingCountsWithParenthesisedPlurals(t *testing.T) {
 	if got := pairValue(v.(view.KeyValue), "locked to"); !strings.HasPrefix(got, "1 key —") {
 		t.Errorf("locked to = %q", got)
 	}
-	if got := plural(2, "reader"); got != "2 readers" {
-		t.Errorf("plural(2, reader) = %q", got)
+	if got := format.CountOf(2, "reader"); got != "2 readers" {
+		t.Errorf("format.CountOf(2, reader) = %q", got)
 	}
 	// The -y rule, the only one that comes up.
-	if got := plural(2, "identity"); got != "2 identities" {
-		t.Errorf("plural(2, identity) = %q", got)
+	if got := format.CountOf(2, "identity"); got != "2 identities" {
+		t.Errorf("format.CountOf(2, identity) = %q", got)
 	}
 }
 

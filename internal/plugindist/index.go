@@ -17,6 +17,7 @@ import (
 
 	"github.com/this-is-tobi/rta/internal/paths"
 	"github.com/this-is-tobi/rta/internal/textclean"
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -812,7 +813,7 @@ func noIndexDir(ix Index) *view.Error {
 		}
 		if dirs > 0 {
 			msg += "; its plugins/ holds " + strconv.Itoa(dirs) + " " +
-				plural(dirs, "directory", "directories") + ", which is what a plugin's source repository looks like"
+				format.Plural(dirs, "directory", "directories") + ", which is what a plugin's source repository looks like"
 		}
 	}
 	return view.Errorf("plugin.index.empty", "%s", msg).WithHint(indexShape)
@@ -831,19 +832,12 @@ func notAnIndex(ix Index, entries []os.DirEntry) *view.Error {
 	}
 	held := "no manifest"
 	if dirs > 0 {
-		held = strconv.Itoa(dirs) + " " + plural(dirs, "directory", "directories") +
+		held = strconv.Itoa(dirs) + " " + format.Plural(dirs, "directory", "directories") +
 			" and no manifest"
 	}
 	return view.Errorf("plugin.index.empty",
 		"%s is not an index — its index/ directory holds %s", ix.Name, held).
 		WithHint(indexShape)
-}
-
-func plural(n int, one, many string) string {
-	if n == 1 {
-		return one
-	}
-	return many
 }
 
 // Resolve finds the manifest a spec names. A bare name searches every

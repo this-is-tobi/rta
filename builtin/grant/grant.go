@@ -689,14 +689,7 @@ func rateSuffix(g core.Grant) string {
 		return ""
 	}
 	return fmt.Sprintf(", no faster than %d %s per %s",
-		g.RateMax, plural(g.RateMax, "call", "calls"), g.RateWindow)
-}
-
-func plural(n int, one, many string) string {
-	if n == 1 {
-		return one
-	}
-	return many
+		g.RateMax, format.Plural(g.RateMax, "call", "calls"), g.RateWindow)
 }
 
 // suggestRate offers the paces worth typing, rather than leaving somebody to
@@ -1190,7 +1183,7 @@ func rolesInForce(grants []core.Grant) string {
 	for _, k := range order {
 		f := by[k]
 		lines = append(lines, fmt.Sprintf("%s for %s — %d %s, issued %s, expires in %s",
-			k.role, k.agent, f.n, plural(f.n, "grant", "grants"), format.Ago(f.started), format.Duration(time.Until(f.until))))
+			k.role, k.agent, f.n, format.Plural(f.n, "grant", "grants"), format.Ago(f.started), format.Duration(time.Until(f.until))))
 	}
 	return strings.Join(lines, "\n")
 }

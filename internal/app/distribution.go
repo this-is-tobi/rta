@@ -12,6 +12,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/atomicfile"
 	"github.com/this-is-tobi/rta/internal/plugindist"
 	"github.com/this-is-tobi/rta/internal/render/cli"
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -51,7 +52,7 @@ func withOthers(problems []*view.Error) *view.Error {
 	}
 	hint := fmt.Sprintf("%d more attached %s could not be read either — "+
 		"`rta plugin index list` shows every one", len(problems)-1,
-		plural(len(problems)-1, "index", "indexes"))
+		format.Count(len(problems)-1, "index", "indexes"))
 	if verr.Hint != "" {
 		hint = verr.Hint + ". " + hint
 	}
@@ -757,7 +758,7 @@ func newPluginManifestCommand(opts *globalOpts) *cobra.Command {
 			return renderView(cmd, opts, view.KeyValue{Pairs: []view.Pair{
 				{Key: "wrote", Value: dest},
 				{Key: "version", Value: m.Version},
-				{Key: "claims", Value: plural(len(m.Capabilities), "capability", "capabilities") +
+				{Key: "claims", Value: format.Count(len(m.Capabilities), "capability", "capabilities") +
 					" — " + m.SafetyLine()},
 				{Key: "platforms", Value: m.Offered()},
 			}})

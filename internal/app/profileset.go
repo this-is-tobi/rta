@@ -14,6 +14,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/profile"
 	"github.com/this-is-tobi/rta/internal/registry"
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -993,11 +994,11 @@ func runProfileRemove(cmd *cobra.Command, name string, reg *registry.Registry, d
 	if dryRun {
 		if n := countActiveGrantsFor(name); n > 0 {
 			pairs = append(pairs, view.Pair{Key: "would revoke",
-				Value: plural(n, "grant", "grants") + " naming it, which would then authorize nothing"})
+				Value: format.Count(n, "grant", "grants") + " naming it, which would then authorize nothing"})
 		}
 	} else if n := grant.RevokeProfile(name, time.Now()); n > 0 {
 		pairs = append(pairs, view.Pair{Key: "revoked",
-			Value: plural(n, "grant", "grants") + " naming it, which would have authorized nothing"})
+			Value: format.Count(n, "grant", "grants") + " naming it, which would have authorized nothing"})
 	}
 	return view.KeyValue{Pairs: pairs}, nil
 }

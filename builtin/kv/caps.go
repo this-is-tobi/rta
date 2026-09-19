@@ -156,7 +156,7 @@ func runShow(_ context.Context, req plugin.Request) (view.View, error) {
 		pairs = append(pairs, view.Pair{Key: "source", Value: o})
 	}
 	if n := len(e.Previous); n > 0 {
-		pairs = append(pairs, view.Pair{Key: "history", Value: plural(n, "earlier value") + " — rta kv history " + key})
+		pairs = append(pairs, view.Pair{Key: "history", Value: format.CountOf(n, "earlier value") + " — rta kv history " + key})
 	}
 	// The same join kv.list makes, for one entry — and withheld over MCP for
 	// the same reason, argued at runList.
@@ -832,29 +832,29 @@ func dropped(want, stored []string) []string {
 }
 
 func rekeyPreview(generate, only bool, want, stored []string) string {
-	body := "would re-encrypt the store to " + plural(len(want)+boolToInt(generate), "key")
+	body := "would re-encrypt the store to " + format.CountOf(len(want)+boolToInt(generate), "key")
 	if generate {
 		body += "\ngenerating a key at " + defaultIdentity()
 	}
 	if only {
 		if gone := dropped(want, stored); len(gone) > 0 && !generate {
-			body += "\ndropping " + plural(len(gone), "reader") + " — they could no longer open it"
+			body += "\ndropping " + format.CountOf(len(gone), "reader") + " — they could no longer open it"
 		} else if len(stored) > 0 && generate {
-			body += "\ndropping " + plural(len(stored), "reader") + " — only the new key would open it"
+			body += "\ndropping " + format.CountOf(len(stored), "reader") + " — only the new key would open it"
 		}
 	}
 	return body
 }
 
 func rekeySummary(generated string, want, stored []string) string {
-	body := plural(len(want), "key") + " can open the store — `rta kv recipients` lists them"
+	body := format.CountOf(len(want), "key") + " can open the store — `rta kv recipients` lists them"
 	if generated != "" {
 		body += "\n\ngenerated a key at " + generated + " (mode 0600)\n" +
 			"back it up: losing it loses every secret it is the only key to\n" +
 			"it is found automatically, so nothing needs a flag"
 	}
 	if gone := dropped(want, stored); len(gone) > 0 {
-		body += "\n\ndropped " + plural(len(gone), "reader") + ": they cannot open the store from now on.\n" +
+		body += "\n\ndropped " + format.CountOf(len(gone), "reader") + ": they cannot open the store from now on.\n" +
 			"copies made before now are unaffected — re-keying changes the lock, not the backups."
 	}
 	return body
@@ -895,7 +895,7 @@ func runStatus(ctx context.Context, req plugin.Request) (view.View, error) {
 	}
 	if mode == modeKeys {
 		pairs = append(pairs, view.Pair{Key: "locked to",
-			Value: plural(len(specs), "key") + " — see `rta kv recipients`"})
+			Value: format.CountOf(len(specs), "key") + " — see `rta kv recipients`"})
 	} else {
 		pairs = append(pairs, view.Pair{Key: "locked with", Value: "a passphrase"})
 	}
@@ -1063,20 +1063,5 @@ func emptyList(stored int, kind, match string) string {
 		narrowed = append(narrowed, fmt.Sprintf("matching %q", match))
 	}
 	return fmt.Sprintf("No key %s. The store holds %s — `rta kv list` shows every one.",
-		strings.Join(narrowed, " "), plural(stored, "key"))
-}
-
-// plural counts a noun, matching builtin/audit's helper of the same name.
-// "locked to 2 key(s)" is the shape of message that gets written once and
-// read every day, and a store whose status line cannot count is not the
-// thing to look careless about.
-func plural(n int, noun string) string {
-	if n == 1 {
-		return "1 " + noun
-	}
-	if len(noun) > 1 && strings.HasSuffix(noun, "y") &&
-		!strings.ContainsRune("aeiou", rune(noun[len(noun)-2])) {
-		return fmt.Sprintf("%d %sies", n, noun[:len(noun)-1])
-	}
-	return fmt.Sprintf("%d %ss", n, noun)
+		strings.Join(narrowed, " "), format.CountOf(stored, "key"))
 }

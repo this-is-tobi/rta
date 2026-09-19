@@ -70,6 +70,13 @@ func TestAConnectedServerOnAnotherBuildIsCalledOut(t *testing.T) {
 	if warn == "" {
 		t.Fatal("no warning about the servers running another build")
 	}
+	// The count and its verb, in a sentence. This read "2 are on running a
+	// build this is not" until format.Count and format.Plural were told
+	// apart: internal/app's own plural printed the number and builtin/grant's
+	// did not, under one name and one signature.
+	if !strings.HasPrefix(warn, "2 servers are running a build this is not") {
+		t.Errorf("the warning does not open as a sentence: %s", warn)
+	}
 	for _, want := range []string{"17188", "v0.21.1", "22451"} {
 		if !strings.Contains(warn, want) {
 			t.Errorf("the warning does not name %q: %s", want, warn)

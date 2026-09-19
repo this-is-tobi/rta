@@ -55,7 +55,7 @@ func suggestRoles(context.Context, plugin.Request) []string {
 	out := make([]string, 0, len(all))
 	for _, s := range all {
 		out = append(out, s.Name+"\t"+fmt.Sprintf("%d %s, %s", len(s.Role.Grants),
-			plural(len(s.Role.Grants), "grant", "grants"), sourceWord(s)))
+			format.Plural(len(s.Role.Grants), "grant", "grants"), sourceWord(s)))
 	}
 	return out
 }
@@ -258,14 +258,14 @@ func runIssue(req plugin.Request, catalog func() []plugin.Capability, artifact f
 		return view.Sections{Items: []view.Section{
 			{ID: "role", Title: "Role", View: view.Text{Body: fmt.Sprintf(
 				"would issue %s to %s: %d %s for %s", src.Name, agent, len(prepared),
-				plural(len(prepared), "grant", "grants"), format.Duration(window)) + noteLines(notes)}},
+				format.Plural(len(prepared), "grant", "grants"), format.Duration(window)) + noteLines(notes)}},
 			{ID: "grants", Title: "Grants", View: plan},
 		}}, nil
 	}
 	if guard.Enabled() {
 		if req.Surface() == plugin.SurfaceCLI {
 			fmt.Fprintf(os.Stderr, "rta: role %s would issue %s to %s:\n", src.Name,
-				plural(len(prepared), "one grant", fmt.Sprintf("%d grants", len(prepared))), agent)
+				format.Plural(len(prepared), "one grant", fmt.Sprintf("%d grants", len(prepared))), agent)
 			for i, g := range prepared {
 				line := "  " + issueLine(g)
 				if replaces[i] != "" {
@@ -283,7 +283,7 @@ func runIssue(req plugin.Request, catalog func() []plugin.Capability, artifact f
 		}
 	} else if src.Team && !req.Yes {
 		return nil, view.Errorf("grant.role.unread", "role %q comes from %s, and no passphrase stands between its %d %s and the grant file",
-			src.Name, src.From, len(prepared), plural(len(prepared), "line", "lines")).
+			src.Name, src.From, len(prepared), format.Plural(len(prepared), "line", "lines")).
 			WithHint("`rta grant roles " + src.Name + "` shows the lines; run again with --yes once read, " +
 				"or `rta grant guard on` to be asked every time")
 	}
@@ -320,7 +320,7 @@ func runIssue(req plugin.Request, catalog func() []plugin.Capability, artifact f
 	}
 	switch {
 	case replaced == issued && sameRole:
-		pairs = append(pairs, view.Pair{Key: "replaced", Value: fmt.Sprintf("the %s already standing — %s is refreshed, not doubled", plural(issued, "grant", "grants"), src.Name)})
+		pairs = append(pairs, view.Pair{Key: "replaced", Value: fmt.Sprintf("the %s already standing — %s is refreshed, not doubled", format.Plural(issued, "grant", "grants"), src.Name)})
 	case replaced > 0:
 		pairs = append(pairs, view.Pair{Key: "replaced", Value: fmt.Sprintf("%d — the grants column says which", replaced)})
 	}

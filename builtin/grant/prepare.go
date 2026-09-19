@@ -327,7 +327,7 @@ func olderServerNote() string {
 	}
 	return fmt.Sprintf("note: %s open on another build of rta — reconnect the client, or this grant "+
 		"can be refused by a server deciding from the build it started with: %s",
-		plural(len(others), "is", "are"), strings.Join(named, ", "))
+		format.Count(len(others), "server is", "servers are"), strings.Join(named, ", "))
 }
 
 // cappedNote words a TTL that came back shorter than asked, naming which

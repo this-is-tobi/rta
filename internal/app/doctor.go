@@ -401,7 +401,7 @@ func doctorSystemRoot(add func(check, status, detail string)) {
 	default:
 		n := len(plugindist.ReadSystemLock())
 		add("system", "ok", fmt.Sprintf("%s — %s installed by the image or the package, read-only",
-			root, plural(n, "plugin", "plugins")))
+			root, format.Count(n, "plugin", "plugins")))
 	}
 }
 
@@ -905,7 +905,7 @@ func doctorLoadedPlugins(add func(check, status, detail string)) {
 		trust := plugintrust.Load()
 		for _, p := range plugins {
 			detail := fmt.Sprintf("%s (%s, %s)",
-				p.Identity.Path, plural(len(p.Declared.Capabilities), "capability", "capabilities"),
+				p.Identity.Path, format.Count(len(p.Declared.Capabilities), "capability", "capabilities"),
 				p.Identity.Short())
 			status := "ok"
 			for id, fields := range p.Unknown {
@@ -961,7 +961,7 @@ func doctorUntrustedPlugins(add func(check, status, detail string)) {
 			u.Path, u.Short(), u.Name))
 	}
 	if n := plugintrust.Load().Len(); n > 0 {
-		add("plugin trust", "ok", plural(n, "artifact", "artifacts")+
+		add("plugin trust", "ok", format.Count(n, "artifact", "artifacts")+
 			" approved to run — `rta plugin untrust <name>` takes one back")
 	}
 }
@@ -980,7 +980,7 @@ func doctorRecord(add func(check, status, detail string)) {
 		add("agent log", "warn", fmt.Sprintf(
 			"%s in the data directory %s named like part of the record and %s not written by rta, "+
 				"so %s excluded from it (%s)",
-			plural(len(rep.Foreign), "file is", "files are"),
+			format.Count(len(rep.Foreign), "file is", "files are"),
 			pick(len(rep.Foreign), "is", "are"), pick(len(rep.Foreign), "was", "were"),
 			pick(len(rep.Foreign), "it is", "they are"), strings.Join(rep.Foreign, ", ")))
 	}
@@ -997,7 +997,7 @@ func doctorRecord(add func(check, status, detail string)) {
 		// answer to a growing file, and what an operator needs to know is
 		// how far back the record they are about to read actually goes.
 		note := fmt.Sprintf("%s recorded, chain intact",
-			plural(rep.Entries, "agent call", "agent calls"))
+			format.Count(rep.Entries, "agent call", "agent calls"))
 		if rep.Files > 1 {
 			note += fmt.Sprintf(" across %d files (%s)", rep.Files, format.Bytes(uint64(rep.Size))) //nolint:gosec // a sum of file sizes is never negative
 		}
@@ -1007,11 +1007,11 @@ func doctorRecord(add func(check, status, detail string)) {
 			// to "what did it touch" is incomplete.
 			add("agent log", "warn", fmt.Sprintf(
 				"%s could not be written to the record — `rta agent log --detail` shows where; "+
-					"the rest of it verifies", plural(int(rep.Missed), "agent call", "agent calls")))
+					"the rest of it verifies", format.Count(int(rep.Missed), "agent call", "agent calls")))
 		}
 		if rep.Retired > 0 {
 			note += fmt.Sprintf("; the %s before it were retired %s",
-				plural(int(rep.Retired), "call", "calls"), rep.RetiredAt.Local().Format("2006-01-02"))
+				format.Count(int(rep.Retired), "call", "calls"), rep.RetiredAt.Local().Format("2006-01-02"))
 		}
 		add("agent log", "ok", note+" — `rta agent log` reads it")
 	}
@@ -1031,7 +1031,7 @@ func doctorConsent(add func(check, status, detail string)) {
 			}
 			add("agent consent", "warn", fmt.Sprintf(
 				"%s waiting for you — the next expires in %s; `rta agent pending` lists them",
-				plural(len(waiting), "call is", "calls are"),
+				format.Count(len(waiting), "call is", "calls are"),
 				time.Until(soonest.Deadline).Truncate(time.Second)))
 		}
 		// Its own row, and the loudest sentence in this function. A request
@@ -1047,7 +1047,7 @@ func doctorConsent(add func(check, status, detail string)) {
 			add("agent consent", "warn", fmt.Sprintf(
 				"%s on the consent queue %s not describe the call it is bound to — something rewrote "+
 					"it after rta parked it, and it will not be offered or answered (%s)",
-				plural(n, "request", "requests"), verb, strings.Join(q.Tampered, ", ")))
+				format.Count(n, "request", "requests"), verb, strings.Join(q.Tampered, ", ")))
 		}
 	}
 }
@@ -1140,13 +1140,4 @@ func pick(n int, one, many string) string {
 		return one
 	}
 	return many
-}
-
-// plural formats a count with the right noun, so a report never says
-// "1 capabilities" to somebody deciding whether to trust what it says.
-func plural(n int, one, many string) string {
-	if n == 1 {
-		return fmt.Sprintf("%d %s", n, one)
-	}
-	return fmt.Sprintf("%d %s", n, many)
 }

@@ -10,6 +10,7 @@ import (
 
 	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/render/theme"
+	"github.com/this-is-tobi/rta/pkg/format"
 )
 
 // The theme editor: every palette field theme.Fields() names, an empty box
@@ -284,7 +285,7 @@ func (m Model) saveTheme() (tea.Model, tea.Cmd) {
 	case len(overrides) == 0:
 		m.flash = "reset to the built-in theme"
 	default:
-		m.flash = fmt.Sprintf("saved %d theme %s", len(overrides), pluralNoun(len(overrides), "override"))
+		m.flash = fmt.Sprintf("saved %d theme %s", len(overrides), format.PluralOf(len(overrides), "override"))
 	}
 	m.tickGen++
 	return m, refreshTiles(m.tiles, m.tickGen, m.pluginCfg, m.profileFor)

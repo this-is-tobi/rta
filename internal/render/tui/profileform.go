@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -16,6 +15,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/profile"
 	"github.com/this-is-tobi/rta/internal/tunnel"
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
@@ -867,7 +867,7 @@ func (m *Model) deleteSelectedProfile() string {
 	}
 	note := "deleted profile " + row.name
 	if n := grant.RevokeProfile(row.name, time.Now()); n > 0 {
-		note += ", and revoked " + plural(n, "grant") + " naming it"
+		note += ", and revoked " + format.CountOf(n, "grant") + " naming it"
 	}
 	return note
 }
@@ -945,7 +945,7 @@ func (m *Model) copyExportLine() string {
 	if ok, _, _ := clipboard.Copy([]byte(strings.Join(missing, "\n") + "\n")); !ok {
 		return "no clipboard here — " + strings.Join(missing, "; ")
 	}
-	return "copied " + plural(len(missing), "export line") + " — fill in the value and run it"
+	return "copied " + format.CountOf(len(missing), "export line") + " — fill in the value and run it"
 }
 
 // firstSetField names the first config box, which is where the second heading
@@ -969,13 +969,6 @@ func str(v any) string {
 		return s
 	}
 	return ""
-}
-
-func plural(n int, word string) string {
-	if n == 1 {
-		return "1 " + word
-	}
-	return strconv.Itoa(n) + " " + word + "s"
 }
 
 func containsString(list []string, want string) bool {

@@ -43,6 +43,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/paths"
 	"github.com/this-is-tobi/rta/internal/policy"
 	"github.com/this-is-tobi/rta/internal/seal"
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -1614,7 +1615,7 @@ func refuseThrottled(c plugin.Capability, g Grant) *view.Error {
 	_, next, _ := g.rateRoom(time.Now())
 	e := view.Errorf("core.grant.rate",
 		"the grant for %s allows %d %s per %s and that is spent",
-		g.Target, g.RateMax, plural(g.RateMax, "call", "calls"), g.RateWindow)
+		g.Target, g.RateMax, format.Plural(g.RateMax, "call", "calls"), g.RateWindow)
 	if next.IsZero() {
 		// A window that would not parse: the grant cannot say when, and
 		// guessing would be worse than admitting it.
@@ -1625,14 +1626,6 @@ func refuseThrottled(c plugin.Capability, g Grant) *view.Error {
 		wait = time.Second
 	}
 	return e.WithHint(fmt.Sprintf("try again in %s — this is a pace the operator set, not a missing permission", wait))
-}
-
-// plural is one word or two, for the sentences above.
-func plural(n int, one, many string) string {
-	if n == 1 {
-		return one
-	}
-	return many
 }
 
 // describe names what was refused the way the person issuing the grant will

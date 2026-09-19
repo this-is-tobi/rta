@@ -18,6 +18,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/internal/render/cli"
 	"github.com/this-is-tobi/rta/internal/render/tui"
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -485,7 +486,7 @@ func newPluginUntrustCommand(opts *globalOpts) *cobra.Command {
 			if opts.dryRun {
 				verb, tail = "would withdraw", "it would not load again"
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s %s — %s\n", verb, plural(n, "approval", "approvals"), tail)
+			fmt.Fprintf(cmd.OutOrStdout(), "%s %s — %s\n", verb, format.Count(n, "approval", "approvals"), tail)
 			return nil
 		},
 		ValidArgsFunction: func(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
@@ -569,7 +570,7 @@ func trustInventory() view.View {
 		n := plugintrust.Load().Len()
 		return view.KeyValue{Pairs: []view.Pair{
 			{Key: "waiting", Value: "nothing — every plugin found on $PATH is one you have approved"},
-			{Key: "trusted", Value: plural(n, "artifact", "artifacts")},
+			{Key: "trusted", Value: format.Count(n, "artifact", "artifacts")},
 		}}
 	}
 	t := view.Table{Columns: []view.Column{
@@ -632,7 +633,7 @@ func newPluginNewCommand(version string, opts *globalOpts) *cobra.Command {
 				return err
 			}
 			if opts.dryRun {
-				fmt.Fprintf(cmd.OutOrStdout(), "would write %s in %s:\n", plural(len(names), "file", "files"), dir)
+				fmt.Fprintf(cmd.OutOrStdout(), "would write %s in %s:\n", format.Count(len(names), "file", "files"), dir)
 				for _, n := range names {
 					fmt.Fprintf(cmd.OutOrStdout(), "  %s\n", n)
 				}

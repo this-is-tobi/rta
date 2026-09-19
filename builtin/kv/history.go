@@ -185,7 +185,7 @@ func runRestore(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 	if n < 0 || n > len(e.Previous) {
 		return nil, view.Errorf("kv.restore.norevision", "%q has %s, not a revision %d", key,
-			plural(len(e.Previous), "earlier value"), n).
+			format.CountOf(len(e.Previous), "earlier value"), n).
 			WithHint("`rta kv history " + key + "` numbers them")
 	}
 	r := e.Previous[n-1]

@@ -20,6 +20,7 @@ import (
 
 	"github.com/this-is-tobi/rta/builtin/internal/x509check"
 	"github.com/this-is-tobi/rta/internal/atomicfile"
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -357,7 +358,7 @@ func runPEM(ctx context.Context, req plugin.Request) (view.View, error) {
 	}
 	if req.DryRun {
 		return view.Text{Body: fmt.Sprintf("would write %s from %s to %s",
-			plural(len(chosen), "certificate", "certificates"), target, out)}, nil
+			format.Count(len(chosen), "certificate", "certificates"), target, out)}, nil
 	}
 	path := expandHome(out)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -371,7 +372,7 @@ func runPEM(ctx context.Context, req plugin.Request) (view.View, error) {
 		return nil, view.Errorf("cert.out.unwritable", "writing %s: %v", path, err)
 	}
 	return view.Text{Body: fmt.Sprintf("wrote %s from %s to %s (%d bytes, mode 0644)",
-		plural(len(chosen), "certificate", "certificates"), target, out, len(body))}, nil
+		format.Count(len(chosen), "certificate", "certificates"), target, out, len(body))}, nil
 }
 
 // include narrows a presented chain to what was asked for.
@@ -407,13 +408,6 @@ func encodePEM(certs []*x509.Certificate) (string, *view.Error) {
 		}
 	}
 	return b.String(), nil
-}
-
-func plural(n int, one, many string) string {
-	if n == 1 {
-		return fmt.Sprintf("%d %s", n, one)
-	}
-	return fmt.Sprintf("%d %s", n, many)
 }
 
 // expandHome resolves a leading ~/ in a path a person typed. The shell does it

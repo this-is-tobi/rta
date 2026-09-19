@@ -14,6 +14,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/profile"
 	"github.com/this-is-tobi/rta/internal/render/theme"
 	"github.com/this-is-tobi/rta/internal/textclean"
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
@@ -743,10 +744,10 @@ func profileDetail(row profileRow) string {
 	case needed == 0:
 		return theme.Faded.Render("no credential needed")
 	case unset == 0:
-		return theme.Faded.Render(plural(needed, "credential") + " resolved")
+		return theme.Faded.Render(format.CountOf(needed, "credential") + " resolved")
 	default:
 		return theme.WarnText.Render(fmt.Sprintf("%s · %d not set",
-			plural(needed, "credential"), unset))
+			format.CountOf(needed, "credential"), unset))
 	}
 }
 
