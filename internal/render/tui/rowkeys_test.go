@@ -24,6 +24,7 @@ func TestRowActionSeedsEveryKeyAColumnIsNamedFor(t *testing.T) {
 		Name: "lock", Summary: "locks",
 		Capabilities: []plugin.Capability{
 			{ID: "lock.list", Summary: "list", Safety: plugin.Read, Idempotent: true,
+				Actions: []plugin.Action{{Key: "x", Label: "lift", Target: "lock.rm", Source: plugin.ActionRow}},
 				Run: func(context.Context, plugin.Request) (view.View, error) {
 					return view.Table{
 						Columns: []view.Column{{Name: "kind"}, {Name: "name"}, {Name: "note"}},

@@ -211,7 +211,7 @@ func TestPressingCThenEnterCopiesTheDefaultChoice(t *testing.T) {
 		Name: "gen", Summary: "gen",
 		Capabilities: []plugin.Capability{
 			{
-				ID: "gen.password", Summary: "generate a password", Safety: plugin.Read,
+				ID: "gen.password", Summary: "generate a password", Safety: plugin.Read, Copy: "Password",
 				Run: func(context.Context, plugin.Request) (view.View, error) {
 					return view.Table{
 						Columns: []view.Column{{Name: "Password"}},
@@ -316,7 +316,7 @@ func TestConfirmingATilePickerReturnsToTheDashboardAndRestartsRefresh(t *testing
 	}
 }
 
-// A tile with no copySpecs entry: "c" is inert, not a crash — and does not
+// A tile whose capability declares no Copy: "c" is inert, not a crash — and does not
 // fall through to selectedAction's own key matching for a capability that
 // happens to declare something else under "c".
 func TestPressingCOnATileWithNoCopySpecDoesNothing(t *testing.T) {
@@ -329,7 +329,7 @@ func TestPressingCOnATileWithNoCopySpecDoesNothing(t *testing.T) {
 		t.Errorf("mode = %v, want modeDashboard unchanged", after.mode)
 	}
 	if after.copyPick != nil {
-		t.Error("a picker opened for a tile with no copySpecs entry")
+		t.Error("a picker opened for a tile whose capability declares no Copy")
 	}
 }
 
@@ -350,7 +350,7 @@ func TestDashFooterOffersCopyOnlyWhenTheSelectedTileHasSomethingToCopy(t *testin
 	j := tileIndex(t, base, "sys.overview")
 	base.selected = j
 	if got := base.dashFooter(); strings.Contains(plain(got), "copy value") || strings.Contains(plain(got), "copy which value?") {
-		t.Error("footer offers a copy hint for a tile with no copySpecs entry")
+		t.Error("footer offers a copy hint for a tile whose capability declares no Copy")
 	}
 }
 

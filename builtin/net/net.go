@@ -255,10 +255,20 @@ func Plugin() plugin.Plugin {
 				Inputs: []plugin.Field{
 					{Name: "file", Type: plugin.Path, Help: "operate on this file instead of the system one (a container's, a chroot's)"},
 				},
+				// The hosts file is a list you manage, not just read: park an override
+				// with `t`, drop it with `x`. `t` rather than `d` — d is "done" on the
+				// task lists, and a key that means two things across two screens is a key
+				// you hesitate over.
+				Actions: []plugin.Action{
+					{Key: "a", Label: "add", Target: "net.hosts.add"},
+					{Key: "t", Label: "toggle", Target: "net.hosts.toggle", Source: plugin.ActionRow},
+					{Key: "x", Label: "remove", Target: "net.hosts.rm", Source: plugin.ActionRow},
+				},
 				Run: runHostsList,
 			},
 			{
 				ID:           "net.hosts.add",
+				Flash:        true,
 				Summary:      "Point a hostname at an address in the hosts file",
 				Safety:       plugin.Destructive,
 				HostSpecific: true,
@@ -293,6 +303,7 @@ func Plugin() plugin.Plugin {
 			},
 			{
 				ID:           "net.hosts.toggle",
+				Flash:        true,
 				Summary:      "Enable or disable a hosts-file entry without deleting it",
 				Safety:       plugin.Destructive,
 				HostSpecific: true,
@@ -309,6 +320,7 @@ func Plugin() plugin.Plugin {
 			},
 			{
 				ID:           "net.hosts.rm",
+				Flash:        true,
 				Summary:      "Remove hostnames from the hosts file",
 				Safety:       plugin.Destructive,
 				HostSpecific: true,

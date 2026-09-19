@@ -80,6 +80,7 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 		Capabilities: []plugin.Capability{
 			{
 				ID: "grant.allow", Summary: "Allow AI agents to use one capability, temporarily",
+				Flash:     true,
 				HumanOnly: true,
 				Safety:    plugin.Write, Idempotent: true,
 				Description: "Grants expire (15m by default, 24h maximum) and can only be issued by " +
@@ -169,6 +170,7 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 			},
 			{
 				ID: "grant.renew", Summary: "Push out the deadline on grants you already have",
+				Flash:     true,
 				HumanOnly: true,
 				Safety:    plugin.Write, Idempotent: true,
 				Description: "Renew extends time and nothing else. Scope, profile, use limit, uses " +
@@ -217,12 +219,23 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 						Help: "read a remote server's roster instead of this machine's (a name from remotes.yaml)"},
 					operatorid.PassphraseField,
 				},
+				// A stale grant is something you notice on the dashboard, so taking it
+				// back has to be possible from there and not only from a shell. `n` renews
+				// the grant under the cursor — renew, not a fresh allow: the re-issue path
+				// is the one `grant renew --help` warns turns a one-time grant into an
+				// unlimited one.
+				Actions: []plugin.Action{
+					{Key: "a", Label: "allow", Target: "grant.allow"},
+					{Key: "n", Label: "renew", Target: "grant.renew", Source: plugin.ActionRow},
+					{Key: "x", Label: "revoke", Target: "grant.revoke", Source: plugin.ActionRow},
+				},
 				Run: func(ctx context.Context, req plugin.Request) (view.View, error) {
 					return runList(ctx, req, catalog)
 				},
 			},
 			{
 				ID: "grant.revoke", Summary: "Take an agent's access back", Safety: plugin.Write, Idempotent: true,
+				Flash:     true,
 				HumanOnly: true,
 				Description: "Can only be run by a person at a terminal, the same as grant.allow and " +
 					"for the same reason: consent state belongs to whoever is deciding it, not to " +

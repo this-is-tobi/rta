@@ -115,12 +115,12 @@ func (m Model) dashboardKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		m.flash = m.moveSelected(1)
 		return m, nil, true
 	case "c":
-		// A tile's own copySpecs value, straight off its current
+		// A tile's own declared Copy value, straight off its current
 		// preview — the same "c" a result already open answers to
 		// (resultKeys), reached here without opening the tile first.
 		if m.selected > 0 && m.selected < len(m.tiles) {
 			t := m.tiles[m.selected]
-			if spec, ok := copySpecs[t.cap.ID]; ok {
+			if spec, ok := copySpecFor(t.cap); ok {
 				nm, cmd := m.copyOrPick(spec, t.cap, t.view, modeDashboard)
 				return nm, cmd, true
 			}
@@ -478,7 +478,7 @@ func (m Model) resultKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 				return nm, cmd, true
 			}
 		}
-		if t, ok := toggleFor(m.current.ID, msg.String()); ok {
+		if t, ok := m.toggleFor(msg.String()); ok {
 			nm, cmd := m.toggleView(t)
 			return nm, cmd, true
 		}
@@ -530,9 +530,9 @@ func (m Model) resultKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		}
 	case "c":
 		// Unlike "y", this is not available everywhere — only a
-		// capability named in copySpecs, with a result shaped the way
+		// capability that declares Copy, with a result shaped the way
 		// it declares, has a value to copy at all.
-		if spec, ok := copySpecs[m.current.ID]; ok {
+		if spec, ok := copySpecFor(m.current); ok {
 			nm, cmd := m.copyOrPick(spec, m.current, m.result.view, modeResult)
 			return nm, cmd, true
 		}

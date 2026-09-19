@@ -98,7 +98,10 @@ func toolsCapability() plugin.Capability {
 			"Sources come from configuration only, never from a caller: a network " +
 			"destination somebody else chose is not a free read.",
 		Inputs: []plugin.Field{toolsField()},
-		Run:    runTools,
+		// The same key as the package table: a binary behind its release is one
+		// `u` from up to date.
+		Actions: []plugin.Action{{Key: "u", Label: "upgrade", Target: "pkg.upgrade", Source: plugin.ActionRow}},
+		Run:     runTools,
 	})
 }
 

@@ -116,7 +116,26 @@ func Plugin() plugin.Plugin {
 					{Name: "parent", Type: plugin.Int, Default: 0, Help: "list sub-notes of this note id instead of top-level notes",
 						Suggest: suggestAnyID},
 				},
-				Run: runList,
+				// One notebook, two kinds of thing in it, and `t` is the switch between
+				// them: a note becomes a to-do with a checkbox, a to-do goes back to being
+				// a note. Not bare — a one-key mutation is reserved for the fail-safe
+				// direction — but its only input is the id the row supplies, so nothing is
+				// left to ask and it runs on the keypress all the same. `o` is the undo for
+				// `d`, one key away from it: checking off the wrong note is a one-keystroke
+				// mistake and should cost one keystroke to take back. `A` shows the
+				// checked-off notes the list hides, without which `o` could never find a
+				// row to act on.
+				Actions: []plugin.Action{
+					{Key: "enter", Label: "show", Target: "note.show", Source: plugin.ActionRow},
+					{Key: "a", Label: "add", Target: "note.add"},
+					{Key: "u", Label: "update", Target: "note.edit", Source: plugin.ActionRow},
+					{Key: "t", Label: "to-do/note", Target: "note.toggle", Source: plugin.ActionRow},
+					{Key: "d", Label: "done", Target: "note.done", Source: plugin.ActionRow},
+					{Key: "o", Label: "re-open", Target: "note.reopen", Source: plugin.ActionRow},
+					{Key: "x", Label: "remove", Target: "note.rm", Source: plugin.ActionRow},
+				},
+				Toggles: []plugin.Toggle{{Key: "A", Label: "show done", Input: "all"}},
+				Run:     runList,
 			},
 			{
 				ID: "note.show", Summary: "Show one note: metadata, content, sub-notes, references",
@@ -128,6 +147,15 @@ func Plugin() plugin.Plugin {
 				Inputs: []plugin.Field{
 					{Name: "id", Type: plugin.Int, Positional: true, Required: true, Help: "note id",
 						Suggest: suggestAnyID},
+				},
+				// The detail page acts on the note it is already showing.
+				Actions: []plugin.Action{
+					{Key: "u", Label: "update", Target: "note.edit", Source: plugin.ActionSelf},
+					{Key: "t", Label: "to-do/note", Target: "note.toggle", Source: plugin.ActionSelf},
+					{Key: "d", Label: "done", Target: "note.done", Source: plugin.ActionSelf},
+					{Key: "o", Label: "re-open", Target: "note.reopen", Source: plugin.ActionSelf},
+					{Key: "x", Label: "remove", Target: "note.rm", Source: plugin.ActionSelf},
+					{Key: "a", Label: "add", Target: "note.add"},
 				},
 				Run: runShow,
 			},
@@ -145,6 +173,7 @@ func Plugin() plugin.Plugin {
 			},
 			{
 				ID: "note.add", Summary: "Add a note", Safety: plugin.Write,
+				Flash: true,
 				Description: "A title is enough. --todo (or a due date, which implies it) makes it " +
 					"something to do; a parent makes it part of something bigger; markdown in the " +
 					"body is rendered on human surfaces.",
@@ -159,6 +188,7 @@ func Plugin() plugin.Plugin {
 			},
 			{
 				ID: "note.toggle", Summary: "Turn a note into a to-do, or a to-do back into a note",
+				Flash:  true,
 				Safety: plugin.Write,
 				Description: "The switch between the two kinds of thing in the notebook. A note " +
 					"becomes an open to-do; a to-do becomes a note and forgets whether it was done, " +
@@ -171,6 +201,7 @@ func Plugin() plugin.Plugin {
 			},
 			{
 				ID: "note.edit", Summary: "Edit a note's title, body, tags, due date or parent", Safety: plugin.Write, Idempotent: true,
+				Flash: true,
 				Description: "Empty fields keep their current value. --tag - clears all tags; " +
 					"--due none clears the due date.",
 				Inputs: append([]plugin.Field{
@@ -186,6 +217,7 @@ func Plugin() plugin.Plugin {
 			},
 			{
 				ID: "note.done", Summary: "Check a note off", Safety: plugin.Write, Idempotent: true,
+				Flash: true,
 				Description: "Done for a task, filed for a note: either way it leaves the default " +
 					"list and stays findable under --all and in search.",
 				Inputs: []plugin.Field{
@@ -198,6 +230,7 @@ func Plugin() plugin.Plugin {
 			},
 			{
 				ID: "note.reopen", Summary: "Reopen a checked note", Safety: plugin.Write, Idempotent: true,
+				Flash: true,
 				Description: "The undo for `note done`. Checking off the wrong note is a " +
 					"one-keystroke mistake, and a list you cannot take something back out of is a " +
 					"list people stop trusting. Re-opening an already-open note is a no-op, not an " +
@@ -210,6 +243,7 @@ func Plugin() plugin.Plugin {
 			},
 			{
 				ID: "note.rm", Summary: "Remove a note permanently", Safety: plugin.Destructive,
+				Flash:       true,
 				Scope:       "id",
 				Description: "Sub-notes are re-parented to the removed note's parent, never deleted silently.",
 				Inputs: []plugin.Field{

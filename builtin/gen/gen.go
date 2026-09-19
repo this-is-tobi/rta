@@ -82,7 +82,13 @@ func Plugin() plugin.Plugin {
 				Safety:     plugin.Read,
 				Idempotent: false, // fresh randomness every call, by design
 				Detailed:   true,
-				Run:        runOverview,
+				// The compact table (sample.go) always names its generated cell "Value",
+				// whether that is a password, a key or a UUID — one column shared by every
+				// recipe, which is what lets one Copy cover a table mixing all three. It
+				// never has exactly one row (five recipes, always), so every `c` against
+				// it reaches the picker, never the direct single-value copy.
+				Copy: "Value",
+				Run:  runOverview,
 			},
 			{
 				ID:      "gen.password",
@@ -100,7 +106,10 @@ func Plugin() plugin.Plugin {
 					{Name: "exclude-ambiguous", Type: plugin.Bool, Config: "password.exclude-ambiguous", Help: "drop look-alike characters: " + ambiguousChars},
 					{Name: "count", Type: plugin.Int, Default: 1, Help: "how many to generate"},
 				},
-				Run: runPassword,
+				// A generated value exists only in the result on screen — there is no
+				// store to re-read it from — so `c` copies it from there.
+				Copy: "Password",
+				Run:  runPassword,
 			},
 			{
 				ID:      "gen.token",
@@ -113,7 +122,8 @@ func Plugin() plugin.Plugin {
 					{Name: "encoding", Type: plugin.String, Config: "encoding", Default: "hex",
 						Options: []string{"hex", "base64", "base64url", "base32"}, Help: "output encoding"},
 				},
-				Run: runToken,
+				Copy: "token",
+				Run:  runToken,
 			},
 			{
 				ID:      "gen.uuid",
@@ -127,7 +137,8 @@ func Plugin() plugin.Plugin {
 					{Name: "version", Type: plugin.String, Default: "4", Options: []string{"4", "7"}, Help: "UUID version"},
 					{Name: "count", Type: plugin.Int, Default: 1, Help: "how many to generate"},
 				},
-				Run: runUUID,
+				Copy: "UUID",
+				Run:  runUUID,
 			},
 		},
 	}

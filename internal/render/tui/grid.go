@@ -492,7 +492,7 @@ func (m Model) dashFooterItems() []hintItem {
 		for _, a := range m.offeredTileActions(m.selected) {
 			items = append(items, action(a.key, a.label))
 		}
-		if hint, ok := copyHint(t.cap.ID, t.view); ok {
+		if hint, ok := copyHint(t.cap, t.view); ok {
 			items = append(items, hint)
 		}
 	}

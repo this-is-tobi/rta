@@ -43,7 +43,7 @@ func genPasswordCap(rows ...[]string) plugin.Capability {
 		rows = [][]string{{"qT8!vN2vX9!fL3jRb@Yz", "94.2"}}
 	}
 	return plugin.Capability{
-		ID: "gen.password", Summary: "generate a password", Safety: plugin.Read,
+		ID: "gen.password", Summary: "generate a password", Safety: plugin.Read, Copy: "Password",
 		Run: func(context.Context, plugin.Request) (view.View, error) {
 			return view.Table{
 				Columns: []view.Column{{Name: "Password"}, {Name: "Entropy (bits)", Kind: view.KindNumber}},
@@ -56,7 +56,7 @@ func genPasswordCap(rows ...[]string) plugin.Capability {
 
 func genTokenCap() plugin.Capability {
 	return plugin.Capability{
-		ID: "gen.token", Summary: "generate a token", Safety: plugin.Read,
+		ID: "gen.token", Summary: "generate a token", Safety: plugin.Read, Copy: "token",
 		Run: func(context.Context, plugin.Request) (view.View, error) {
 			return view.KeyValue{Pairs: []view.Pair{
 				{Key: "token", Value: "9f86d081884c7d659a2feaa0c55ad015"},
@@ -67,11 +67,11 @@ func genTokenCap() plugin.Capability {
 }
 
 // gen.overview always has more than one row — five recipes, always
-// (builtin/gen/sample.go) — so its copySpecs entry can never resolve
-// through copyValue, only copyChoices: every "c" against it reaches the
-// picker. Column name is "Value", shared by every recipe regardless of
-// what it generates, which is what lets one copySpec cover a table mixing
-// passwords, keys and a UUID.
+// (builtin/gen/sample.go) — so its Copy can never resolve through
+// copyValue, only copyChoices: every "c" against it reaches the picker.
+// Column name is "Value", shared by every recipe regardless of what it
+// generates, which is what lets one Copy cover a table mixing passwords,
+// keys and a UUID.
 func TestGenOverviewsCopySpecMatchesItsActualCompactTableShape(t *testing.T) {
 	compact := view.Table{
 		Columns: []view.Column{{Name: "For"}, {Name: "Value"}, {Name: "Bits"}},
@@ -83,9 +83,9 @@ func TestGenOverviewsCopySpecMatchesItsActualCompactTableShape(t *testing.T) {
 			{"random ids", "550e8400-e29b-41d4-a716-446655440000", "122"},
 		},
 	}
-	spec, ok := copySpecs["gen.overview"]
+	spec, ok := copySpecFor(mustCap(t, realRegistry(t), "gen.overview"))
 	if !ok {
-		t.Fatal("no copySpecs entry for gen.overview")
+		t.Fatal("gen.overview declares no Copy")
 	}
 	if _, ok := copyValue(spec, compact); ok {
 		t.Error("copyValue resolved gen.overview's compact table directly — it should always be ambiguous")
@@ -175,23 +175,6 @@ func TestCopyValueRefusesAViewShapeItHasNoSpecFor(t *testing.T) {
 	}
 }
 
-// Every capActionSpecs entry keyed "c" and every copySpecs entry name a
-// capability that must not appear in the other — capActionSpecs is checked
-// first in the Update loop, so a capability declared in both would have its
-// copySpecs hint shown (this file) and then silently never fire (dashboard.go).
-func TestNoCapabilityDeclaresBothARowCopyActionAndACopySpec(t *testing.T) {
-	for id, spec := range capActionSpecs {
-		for _, a := range spec {
-			if a.key != "c" {
-				continue
-			}
-			if _, clash := copySpecs[id]; clash {
-				t.Errorf("%q has both a capActionSpecs %q row action and a copySpecs entry", id, a.key)
-			}
-		}
-	}
-}
-
 // Model-level: "c" actually copies through internal/clipboard when pressed.
 
 func TestPressingCCopiesTheGeneratedValue(t *testing.T) {
@@ -273,7 +256,7 @@ func TestPressingCOpensThePickerWhenMultipleValuesWereGenerated(t *testing.T) {
 	}
 }
 
-// A capability with no copySpecs entry: "c" is inert, not a crash.
+// A capability that declares no Copy: "c" is inert, not a crash.
 func TestPressingCOnACapabilityWithNoCopySpecDoesNothing(t *testing.T) {
 	fakeClipboard(t)
 	m := New(registry.New(), config.Dashboard{}, nil)
@@ -348,6 +331,6 @@ func TestResultFooterOffersCopyOnlyWhenThereIsSomethingToCopy(t *testing.T) {
 	})
 	got := withoutSpec.(Model).resultView()
 	if strings.Contains(got, "copy value") || strings.Contains(got, "copy which value?") {
-		t.Error("footer offers a copy hint for a capability with no copySpecs entry")
+		t.Error("footer offers a copy hint for a capability that declares no Copy")
 	}
 }

@@ -450,7 +450,12 @@ func noteRegistry(t *testing.T) *registry.Registry {
 	err := reg.Register(plugin.Plugin{
 		Name: "note", Summary: "tasks",
 		Capabilities: []plugin.Capability{
-			{ID: "note.list", Summary: "list", Safety: plugin.Read, Idempotent: true, Run: noop},
+			{ID: "note.list", Summary: "list", Safety: plugin.Read, Idempotent: true, Run: noop,
+				Actions: []plugin.Action{
+					{Key: "a", Label: "add", Target: "note.add"},
+					{Key: "u", Label: "update", Target: "note.edit", Source: plugin.ActionRow},
+					{Key: "d", Label: "done", Target: "note.done", Source: plugin.ActionRow},
+				}},
 			{ID: "note.add", Summary: "add", Safety: plugin.Write,
 				Inputs: []plugin.Field{
 					{Name: "title", Type: plugin.String, Positional: true, Required: true, Help: "t"},
@@ -600,6 +605,16 @@ func listRegistry(t *testing.T, doneLog *[]int) *registry.Registry {
 		Name: "note", Summary: "tasks",
 		Capabilities: []plugin.Capability{
 			{ID: "note.list", Summary: "list", Safety: plugin.Read, Idempotent: true,
+				// The real note.list's actions, minus the two whose targets this
+				// fixture does not declare, so the row-action tests drive the
+				// same keys production does.
+				Actions: []plugin.Action{
+					{Key: "enter", Label: "show", Target: "note.show", Source: plugin.ActionRow},
+					{Key: "a", Label: "add", Target: "note.add"},
+					{Key: "u", Label: "update", Target: "note.edit", Source: plugin.ActionRow},
+					{Key: "d", Label: "done", Target: "note.done", Source: plugin.ActionRow},
+					{Key: "x", Label: "remove", Target: "note.rm", Source: plugin.ActionRow},
+				},
 				Run: func(context.Context, plugin.Request) (view.View, error) {
 					return view.Table{
 						Columns: []view.Column{{Name: "ID", Kind: view.KindNumber}, {Name: "Task"}},
@@ -609,15 +624,21 @@ func listRegistry(t *testing.T, doneLog *[]int) *registry.Registry {
 				}},
 			{ID: "note.show", Summary: "show", Safety: plugin.Read, Idempotent: true,
 				Inputs: []plugin.Field{{Name: "id", Type: plugin.Int, Positional: true, Required: true, Help: "i"}},
+				Actions: []plugin.Action{
+					{Key: "u", Label: "update", Target: "note.edit", Source: plugin.ActionSelf},
+					{Key: "d", Label: "done", Target: "note.done", Source: plugin.ActionSelf},
+					{Key: "x", Label: "remove", Target: "note.rm", Source: plugin.ActionSelf},
+					{Key: "a", Label: "add", Target: "note.add"},
+				},
 				Run: func(_ context.Context, req plugin.Request) (view.View, error) {
 					return view.Text{Body: fmt.Sprintf("SHOW-%d", req.Int("id"))}, nil
 				}},
-			{ID: "note.add", Summary: "add", Safety: plugin.Write,
+			{ID: "note.add", Summary: "add", Safety: plugin.Write, Flash: true,
 				Inputs: []plugin.Field{{Name: "title", Type: plugin.String, Positional: true, Required: true, Help: "t"}},
 				Run: func(context.Context, plugin.Request) (view.View, error) {
 					return view.Text{Body: "added"}, nil
 				}},
-			{ID: "note.edit", Summary: "edit", Safety: plugin.Write, Idempotent: true,
+			{ID: "note.edit", Summary: "edit", Safety: plugin.Write, Idempotent: true, Flash: true,
 				Inputs: []plugin.Field{
 					{Name: "id", Type: plugin.Int, Positional: true, Required: true, Help: "i"},
 					{Name: "title", Type: plugin.String, Help: "t"},
@@ -628,13 +649,13 @@ func listRegistry(t *testing.T, doneLog *[]int) *registry.Registry {
 				Run: func(context.Context, plugin.Request) (view.View, error) {
 					return view.Text{Body: "edited"}, nil
 				}},
-			{ID: "note.done", Summary: "done", Safety: plugin.Write, Idempotent: true,
+			{ID: "note.done", Summary: "done", Safety: plugin.Write, Idempotent: true, Flash: true,
 				Inputs: []plugin.Field{{Name: "id", Type: plugin.Int, Positional: true, Required: true, Help: "i"}},
 				Run: func(_ context.Context, req plugin.Request) (view.View, error) {
 					*doneLog = append(*doneLog, req.Int("id"))
 					return view.Text{Body: fmt.Sprintf("done: %d", req.Int("id"))}, nil
 				}},
-			{ID: "note.rm", Summary: "remove", Safety: plugin.Destructive,
+			{ID: "note.rm", Summary: "remove", Safety: plugin.Destructive, Flash: true,
 				Inputs: []plugin.Field{{Name: "id", Type: plugin.Int, Positional: true, Required: true, Help: "i"}},
 				Run: func(context.Context, plugin.Request) (view.View, error) {
 					return view.Text{Body: "removed"}, nil
@@ -733,7 +754,7 @@ func TestListEditOpensPrefilledForm(t *testing.T) {
 	}
 }
 
-// resultKeys checks capActionSpecs before its own generic "edit inputs"
+// resultKeys checks the declared actions before its own generic "edit inputs"
 // case, so a capability declaring its own "e" action used to make the
 // generic case unreachable — note.list's own action is "u" precisely so
 // both stay reachable. This is the other half of
@@ -746,7 +767,8 @@ func TestGenericEditInputsIsReachableOnACapabilityWithItsOwnAction(t *testing.T)
 		Name: "note", Summary: "tasks",
 		Capabilities: []plugin.Capability{
 			{ID: "note.list", Summary: "list", Safety: plugin.Read, Idempotent: true,
-				Inputs: []plugin.Field{{Name: "all", Type: plugin.Bool, Help: "show done too"}},
+				Inputs:  []plugin.Field{{Name: "all", Type: plugin.Bool, Help: "show done too"}},
+				Actions: []plugin.Action{{Key: "u", Label: "update", Target: "note.edit", Source: plugin.ActionRow}},
 				Run: func(context.Context, plugin.Request) (view.View, error) {
 					return view.Table{
 						Columns: []view.Column{{Name: "ID", Kind: view.KindNumber}, {Name: "Task"}},
@@ -776,7 +798,7 @@ func TestGenericEditInputsIsReachableOnACapabilityWithItsOwnAction(t *testing.T)
 	}
 
 	// "e" now reaches the generic edit-inputs case instead of being
-	// swallowed by capActionSpecs — before the fix, note.list declaring no
+	// swallowed by a declared action — before the fix, note.list declaring no
 	// "e" entry of its own meant this already worked; the real regression
 	// coverage is that renaming note.list's OWN action away from "e" is
 	// what makes this assertion meaningful for capabilities that used to
@@ -1510,7 +1532,8 @@ func TestToggleReRunsTheViewWithTheFlagFlipped(t *testing.T) {
 	var sawAll []bool
 	list := plugin.Capability{
 		ID: "note.list", Summary: "list tasks", Safety: plugin.Read,
-		Inputs: []plugin.Field{{Name: "all", Type: plugin.Bool}},
+		Inputs:  []plugin.Field{{Name: "all", Type: plugin.Bool}},
+		Toggles: []plugin.Toggle{{Key: "A", Label: "show done", Input: "all"}},
 		Run: func(_ context.Context, req plugin.Request) (view.View, error) {
 			sawAll = append(sawAll, req.Bool("all"))
 			return view.Table{Columns: []view.Column{{Name: "ID"}}, Rows: [][]string{{"1"}}}, nil
@@ -1770,10 +1793,11 @@ func TestExplicitDetailPreferenceReachesTheHandler(t *testing.T) {
 // first press "turned on" a page that was already on.
 func TestDetailToggleTurnsTheDetailPageOff(t *testing.T) {
 	var saw []bool
-	// kv.list is the ID viewToggleSpecs binds D to, so this is the real
-	// keymap rather than a fixture that only resembles it.
+	// The toggle kv.list itself declares, so this is the real keymap rather
+	// than a fixture that only resembles it.
 	list := plugin.Capability{
 		ID: "kv.list", Summary: "list keys", Safety: plugin.Read, Detailed: true,
+		Toggles: []plugin.Toggle{{Key: "D", Label: "detail", Input: "detail"}},
 		Run: func(_ context.Context, req plugin.Request) (view.View, error) {
 			saw = append(saw, req.Bool("detail"))
 			return view.Text{Body: "keys"}, nil
@@ -1981,7 +2005,8 @@ func TestEditingInputsKeepsAnExplicitDetailPreference(t *testing.T) {
 		Name: "kv", Summary: "secrets",
 		Capabilities: []plugin.Capability{
 			{ID: "kv.list", Summary: "list", Safety: plugin.Read, Idempotent: true, Detailed: true,
-				Inputs: []plugin.Field{{Name: "match", Type: plugin.String, Help: "filter"}},
+				Toggles: []plugin.Toggle{{Key: "D", Label: "detail", Input: "detail"}},
+				Inputs:  []plugin.Field{{Name: "match", Type: plugin.String, Help: "filter"}},
 				Run: func(_ context.Context, req plugin.Request) (view.View, error) {
 					return view.Text{Body: fmt.Sprintf("detail=%t", req.Bool("detail"))}, nil
 				}},

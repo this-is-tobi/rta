@@ -10,33 +10,27 @@ import (
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
-// copySpecs names, per capability, the one field of its result meant to be
-// copied to the clipboard verbatim — a generated password, a token, a
-// UUID — as opposed to the whole view `y` copies as indented JSON.
+// copySpecFor is the one field of a capability's result meant to be copied
+// to the clipboard verbatim — a generated password, a token, a UUID — as
+// opposed to the whole view `y` copies as indented JSON. It is the
+// declaration's Copy, read as a column when the result is a Table and as a
+// key when it is a KeyValue.
 //
 // There is no generic way to guess which cell of an arbitrary table or
 // which pair of an arbitrary KeyValue is "the value": kv.list's own first
 // column is a key *name*, never the secret, which is exactly why kv reaches
-// its value a different way — kv.copy, a row action declared in
-// capActionSpecs (dashboard.go) that re-reads the value from the store by
-// key. gen has no store to re-read: a generated password exists only in the
-// result already on screen, so its capabilities are declared here instead,
-// against the value already in memory rather than by re-running anything.
-//
-// A capability must not appear both here and in capActionSpecs under the
-// key "c" — capActionSpecs is checked first and would claim every "c"
-// press, leaving an entry here dead code with a hint that never fires.
-var copySpecs = map[string]copySpec{
-	"gen.password": {column: "Password"},
-	"gen.token":    {pair: "token"},
-	"gen.uuid":     {column: "UUID"},
-	// gen.overview's compact table (builtin/gen/sample.go) always names its
-	// generated cell "Value", whether that is a password, a key or a UUID —
-	// one column shared by every recipe, which is what lets one copySpec
-	// cover a table mixing all three. It never has exactly one row (five
-	// recipes, always), so every "c" against it reaches the picker, never
-	// the direct single-value copy.
-	"gen.overview": {column: "Value"},
+// its value a different way — kv.copy, a row action that re-reads the value
+// from the store by key. gen has no store to re-read: a generated password
+// exists only in the result already on screen, so its capabilities declare
+// Copy instead, against the value already in memory rather than by
+// re-running anything. Validate refuses Copy beside an action bound to "c":
+// the action is checked first and would claim every press, leaving the copy
+// dead with a hint that never fires.
+func copySpecFor(c plugin.Capability) (copySpec, bool) {
+	if c.Copy == "" {
+		return copySpec{}, false
+	}
+	return copySpec{column: c.Copy, pair: c.Copy}, true
 }
 
 type copySpec struct {
@@ -121,13 +115,14 @@ func copyChoices(spec copySpec, v view.View) (values []string, ok bool) {
 	return values, len(values) > 0
 }
 
-// copyHint returns the footer hint copySpecs offers for v, if any — shared
-// between resultView (a result on screen) and dashFooter (a tile's own,
-// without opening it): "copy value" when exactly one value is addressable,
-// "copy which value?" when there is more than one and the picker is what
-// "c" opens instead, and ok false when there is nothing to copy at all.
-func copyHint(specID string, v view.View) (hintItem, bool) {
-	spec, ok := copySpecs[specID]
+// copyHint returns the footer hint a capability's Copy offers for v, if any
+// — shared between resultView (a result on screen) and dashFooter (a tile's
+// own, without opening it): "copy value" when exactly one value is
+// addressable, "copy which value?" when there is more than one and the
+// picker is what "c" opens instead, and ok false when there is nothing to
+// copy at all.
+func copyHint(c plugin.Capability, v view.View) (hintItem, bool) {
+	spec, ok := copySpecFor(c)
 	if !ok {
 		return hintItem{}, false
 	}

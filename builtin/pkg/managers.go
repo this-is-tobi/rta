@@ -19,6 +19,10 @@ func managersCapability() plugin.Capability {
 			"where pkg overview asks every manager what is behind first. An absent row is " +
 			"the diagnostic: a manager installed in a shell whose $PATH this process does " +
 			"not share shows up here as absent, and that is why pkg overview finds nothing.",
+		// The managers table is where somebody learns which managers rta sees; the
+		// next question is what one of them has behind, and the column is named
+		// for pkg.outdated's input so the row answers it.
+		Actions: []plugin.Action{{Key: "o", Label: "outdated", Target: "pkg.outdated", Source: plugin.ActionRow}},
 		Run: func(ctx context.Context, req plugin.Request) (view.View, error) {
 			if verr := supported(); verr != nil {
 				return nil, verr

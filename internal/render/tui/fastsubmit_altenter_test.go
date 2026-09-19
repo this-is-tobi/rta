@@ -79,7 +79,7 @@ func TestAltEnterOnTheCopyPickerAcceptsTheDefaultChoice(t *testing.T) {
 	// not, and passed only where pbcopy exists.
 	fakeClipboard(t)
 	c := plugin.Capability{
-		ID: "gen.password", Summary: "s", Safety: plugin.Read,
+		ID: "gen.password", Summary: "s", Safety: plugin.Read, Copy: "Password",
 		Run: func(context.Context, plugin.Request) (view.View, error) {
 			return view.Table{
 				Columns: []view.Column{{Name: "Password"}},
