@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/this-is-tobi/rta/internal/pathguard"
 	"github.com/this-is-tobi/rta/internal/textclean"
 )
 
@@ -86,21 +87,15 @@ func pathSuggestions(typed string, declared []string) []string {
 	return out
 }
 
-// expandHome resolves a leading ~/ for reading. It is only ever used to *look*
-// at the filesystem; what the caller typed is what gets submitted, since a
-// path expanded behind somebody's back is a path they can no longer edit.
+// expandHome is pathguard.ExpandTilde plus this box's own empty default, and
+// it is only ever used to *look* at the filesystem: what the caller typed is
+// what gets submitted, since a path expanded behind somebody's back is a
+// path they can no longer edit.
 func expandHome(path string) string {
 	if path == "" {
 		return "."
 	}
-	if !strings.HasPrefix(path, "~/") && path != "~" {
-		return path
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return path
-	}
-	return filepath.Join(home, strings.TrimPrefix(path, "~"))
+	return pathguard.ExpandTilde(path)
 }
 
 // pathSeparators is what may end a directory in a typed path. Windows

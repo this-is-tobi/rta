@@ -25,24 +25,6 @@ import (
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
-// expandHome resolves a leading ~ the shell would have, for a Path input the
-// host does not shell-expand on the caller's behalf. Duplicated from
-// builtin/kv/crypt.go's function of the same name rather than shared: two
-// built-ins, ten lines, no third caller yet to justify the seam.
-func expandHome(path string) string {
-	if path != "~" && !strings.HasPrefix(path, "~/") {
-		return path
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return path
-	}
-	if path == "~" {
-		return home
-	}
-	return filepath.Join(home, path[2:])
-}
-
 func fileExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && !info.IsDir()
