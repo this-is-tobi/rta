@@ -363,11 +363,12 @@ func hanging(indent string, width int) string {
 
 // unbreakable reports whether a value is one token with nowhere to wrap.
 //
-// Whitespace is the only break wrap() will take: hyphens are shielded (every
-// hyphen in this tool is inside an identifier somebody may be about to paste)
-// and nothing else is a break point. So a value with no space in it either
-// fits on a line or gets cut mid-token, and there is no third outcome to hope
-// for.
+// Whitespace is the only break wrap() will *choose*: hyphens are shielded
+// (every hyphen in this tool is inside an identifier somebody may be about to
+// paste) and nothing else is a word boundary. A value with no space in it
+// either fits on a line, or is cut by hardBreakOverlong — after a separator
+// when one sits late enough in the budget, mid-token when none does — so it
+// is still worth giving the whole width to.
 func unbreakable(s string) bool { return !strings.ContainsAny(s, " \t") }
 
 // usedColumn reports whether any row has something to say in this column. A
