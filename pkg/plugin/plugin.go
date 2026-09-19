@@ -571,6 +571,36 @@ type Capability struct {
 	// needs no grant, is never parked for consent, and `rta explain` lists it
 	// under its own heading rather than under a safety class.
 	HumanOnly bool
+
+	// Actions are the keys a result of this capability offers: a sibling
+	// capability opened from a row, from the record's own page, or from the
+	// dashboard tile. Declared here rather than known to the TUI so that a
+	// third-party list is as actionable as a built-in one; actions.go has
+	// the reasoning and Validate the rules.
+	Actions []Action
+	// Toggles are keys that flip one Bool input of this capability and run
+	// it again: the filter on the list in front of you.
+	Toggles []Toggle
+	// Copy names the column (of a Table) or the key (of a KeyValue) whose
+	// value `c` copies from a result of this capability — the password a
+	// generator made, the token. A value every renderer masks is never
+	// copied whole, whatever this says. Refused beside an action bound to
+	// `c`: one key, one meaning on one screen.
+	Copy string
+	// Live says the view changes while nobody presses anything — a queue of
+	// parked calls — and is re-run under the reader on the dashboard's own
+	// interval for as long as it is on screen. Read only: a mutation on a
+	// timer is not a view.
+	Live bool
+	// Flash says a run of this capability launched from another view
+	// answers with a fixed confirmation — "removed x", "ran: brew upgrade
+	// jq" — safe to draw on that view's footer, after which the view
+	// reloads. Without it the result opens as its own page, which is right
+	// for anything whose answer is or could become the value acted on:
+	// kv.get returns the secret, and a secret on a list's footer is a secret
+	// shown by accident. A Read capability's result is always a page, so
+	// Flash is refused on one.
+	Flash bool
 }
 
 // Plugin is a unit of distribution and a namespace.

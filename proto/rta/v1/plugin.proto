@@ -245,6 +245,59 @@ message Capability {
   // than advertised and refused, so the rule is enforced at registration,
   // where no handler can forget it.
   bool human_only = 14;
+  // What the TUI may do with a result of this capability, declared here so
+  // that a third-party list is as actionable as a built-in one. The host
+  // admits these at registration against its own rules — a key every screen
+  // owns, a target outside the plugin, bare onto a destructive target — and
+  // honours what passes. See the matching fields on plugin.Capability.
+  repeated Action actions = 15;
+  repeated Toggle toggles = 16;
+  // The column of a Table, or the key of a KeyValue, whose value `c` copies.
+  string copy = 17;
+  // The view changes while nobody presses anything, and is re-run under the
+  // reader on the host's own interval while it is on screen. Read only.
+  bool live = 18;
+  // A run launched from another view answers with a fixed confirmation the
+  // host may draw on that view's footer, rather than a value that needs a
+  // page of its own.
+  bool flash = 19;
+}
+
+// ActionSource says what an action acts on.
+enum ActionSource {
+  // Nothing: the target needs nobody's identity, like "add" from a list.
+  ACTION_SOURCE_UNSPECIFIED = 0;
+  // The selected row of the table on screen.
+  ACTION_SOURCE_ROW = 1;
+  // The record the page on screen is about.
+  ACTION_SOURCE_SELF = 2;
+}
+
+// Action is one key a result offers: press it and the target opens, seeded
+// from what was on screen.
+message Action {
+  // One printable character, or "enter" for a row's own detail page.
+  string key = 1;
+  // The verb the footer shows beside the key.
+  string label = 2;
+  // The capability that opens, one of the same plugin's.
+  string target = 3;
+  ActionSource source = 4;
+  // Run with what the source seeded and ask for nothing more. Waives only
+  // the optional-field form, never a destructive target's confirmation.
+  bool bare = 5;
+  // Input name of the target → the column (or the page's key) it is read
+  // from, when that is not the column of the same name.
+  map<string, string> seed = 6;
+}
+
+// Toggle is a key that flips one Bool input of the capability whose result
+// is on screen and runs it again.
+message Toggle {
+  string key = 1;
+  string label = 2;
+  // The Bool input flipped, one of the capability's own.
+  string input = 3;
 }
 
 // Plugin is a unit of distribution and a namespace.
