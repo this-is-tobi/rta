@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"sort"
 	"strings"
 
@@ -66,7 +67,7 @@ func checkInputs(t reporter, c plugin.Capability) {
 			// A closed set the default is not in makes the capability
 			// unrunnable without an explicit flag, while --help advertises
 			// the default as if it worked.
-			if d := fmt.Sprint(f.Default); !contains(f.Options, d) {
+			if d := fmt.Sprint(f.Default); !slices.Contains(f.Options, d) {
 				t.Errorf("sdktest: %s: %s input %q defaults to %q, which is not one of its options %v",
 					RuleDeclaration, c.ID, f.Name, d, f.Options)
 			}
@@ -114,15 +115,6 @@ func isInt(v any) bool {
 	switch v.(type) {
 	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
 		return true
-	}
-	return false
-}
-
-func contains(list []string, s string) bool {
-	for _, e := range list {
-		if e == s {
-			return true
-		}
 	}
 	return false
 }
@@ -309,7 +301,7 @@ func checkVerbs(t reporter, p plugin.Plugin, cfg config) {
 		}
 		words := c.Words()
 		verb := words[len(words)-1]
-		if contains(vocabulary, verb) {
+		if slices.Contains(vocabulary, verb) {
 			continue
 		}
 		if std, dup := synonyms[verb]; dup {
@@ -399,7 +391,7 @@ func checkRedaction(t reporter, seen []observed, cfg config) {
 func reportUnmatched(t reporter, c plugin.Capability, kind string, redacted, present []string) {
 	t.Helper()
 	for _, name := range redacted {
-		if !contains(present, name) {
+		if !slices.Contains(present, name) {
 			t.Errorf("sdktest: %s: %s redacts %s %q, which the view does not contain (has: %s); "+
 				"the value is printed in full",
 				RuleRedaction, c.ID, kind, name, strings.Join(present, ", "))
@@ -449,7 +441,7 @@ func checkActions(t reporter, seen []observed, cfg config) {
 			for _, col := range v.Columns {
 				names = append(names, col.Name)
 			}
-			if !contains(names, c.Copy) {
+			if !slices.Contains(names, c.Copy) {
 				t.Errorf("sdktest: %s: %s declares Copy %q, and its table has no such column (columns: %s)",
 					RuleActions, c.ID, c.Copy, strings.Join(names, ", "))
 			}

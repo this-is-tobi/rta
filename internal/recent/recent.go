@@ -39,6 +39,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -334,19 +335,10 @@ func prune(f *file) {
 		f.Order = f.Order[1:]
 	}
 	for k := range f.Inputs {
-		if !contains(f.Order, k) {
+		if !slices.Contains(f.Order, k) {
 			delete(f.Inputs, k)
 		}
 	}
-}
-
-func contains(list []string, want string) bool {
-	for _, s := range list {
-		if s == want {
-			return true
-		}
-	}
-	return false
 }
 
 func sortedKeys(m map[string][]string) []string {

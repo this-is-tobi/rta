@@ -1,6 +1,7 @@
 package grant
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -55,7 +56,7 @@ func TestTheOriginColumnAppearsOnlyWhenAGrantWasUnwatched(t *testing.T) {
 		{Target: "kv.get", Issued: now, Expires: now.Add(time.Hour), From: core.FromTerminal},
 		{Target: "todo.rm", Issued: now, Expires: now.Add(time.Hour), From: core.FromForm},
 	}
-	if names := columnNames(listTable(t, watched)); contains(names, "Origin") {
+	if names := columnNames(listTable(t, watched)); slices.Contains(names, "Origin") {
 		t.Errorf("the column appeared with nothing to report: %v", names)
 	}
 
@@ -63,7 +64,7 @@ func TestTheOriginColumnAppearsOnlyWhenAGrantWasUnwatched(t *testing.T) {
 		Target: "pg.query", Issued: now, Expires: now.Add(time.Hour), From: core.FromCommand,
 	})
 	tbl := listTable(t, mixed)
-	if names := columnNames(tbl); !contains(names, "Origin") {
+	if names := columnNames(tbl); !slices.Contains(names, "Origin") {
 		t.Fatalf("a grant issued unwatched produced no column: %v", names)
 	}
 	var sawCommand, sawTerminal bool
@@ -129,13 +130,4 @@ func columnNames(t view.Table) []string {
 		out = append(out, c.Name)
 	}
 	return out
-}
-
-func contains(all []string, want string) bool {
-	for _, s := range all {
-		if s == want {
-			return true
-		}
-	}
-	return false
 }

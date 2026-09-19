@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -80,7 +81,7 @@ func (m Model) startProfileForm(name string) (tea.Model, tea.Cmd) {
 		ttl = p.TTL
 	}
 	options := profileTTLOptions
-	if !containsString(options, ttl) {
+	if !slices.Contains(options, ttl) {
 		// Whatever is in the file stays offered, so opening the editor on a
 		// hand-written `ttl: 90m` and pressing enter does not quietly round it
 		// to something rta happened to list.
@@ -969,15 +970,6 @@ func str(v any) string {
 		return s
 	}
 	return ""
-}
-
-func containsString(list []string, want string) bool {
-	for _, s := range list {
-		if s == want {
-			return true
-		}
-	}
-	return false
 }
 
 // The credential form's field names.

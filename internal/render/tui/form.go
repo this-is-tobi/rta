@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -844,22 +845,13 @@ func (cf *capForm) multiSelect(f plugin.Field) huh.Field {
 
 	opts := make([]huh.Option[string], 0, len(f.Options))
 	for _, o := range f.Options {
-		opts = append(opts, huh.NewOption(o, o).Selected(contains(v, o)))
+		opts = append(opts, huh.NewOption(o, o).Selected(slices.Contains(v, o)))
 	}
 	return huh.NewMultiSelect[string]().
 		Title(fieldTitle(f.Name)).
 		Description(fieldDescription(f) + " (space to toggle)").
 		Options(opts...).
 		Value(&v)
-}
-
-func contains(list []string, want string) bool {
-	for _, s := range list {
-		if s == want {
-			return true
-		}
-	}
-	return false
 }
 
 // fieldTitle is what a field's box is headed with — f.Name for a capability's
