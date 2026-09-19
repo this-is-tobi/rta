@@ -414,8 +414,7 @@ func runRoles(_ context.Context, req plugin.Request) (view.View, error) {
 			}
 		}
 		if len(hits) == 0 {
-			return nil, view.Errorf("role.unknown", "no role named %q", want).
-				WithHint("`rta grant roles` lists them")
+			return nil, role.Unknown(want)
 		}
 		all = hits
 	}
