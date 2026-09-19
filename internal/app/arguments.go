@@ -167,11 +167,13 @@ func documentArguments(root *cobra.Command) {
 // capabilityArgs describes a capability's positionals from what it already
 // declared. flagUsage, rather than Field.Help directly, so a positional with a
 // closed set reads "one of: a|b|c" exactly as the same input would if it were
-// a flag.
-func capabilityArgs(positionals []plugin.Field) []argDoc {
+// a flag. A positional cannot realistically be Local && EnvFallback, but
+// taking c keeps flagUsage to one function rather than two — the same shape
+// declareCompletion(cmd, c, positionals) already takes.
+func capabilityArgs(c plugin.Capability, positionals []plugin.Field) []argDoc {
 	out := make([]argDoc, 0, len(positionals))
 	for _, f := range positionals {
-		out = append(out, argDoc{Name: f.Name, Help: flagUsage(f)})
+		out = append(out, argDoc{Name: f.Name, Help: flagUsage(c, f)})
 	}
 	return out
 }
