@@ -1127,7 +1127,7 @@ func doctorClients(add func(check, status, detail string)) {
 	}
 	// Presence and registration, right after the CLI they are about.
 	_, claudeInstalled := exec.LookPath("claude")
-	for _, r := range clientRows(claudeInstalled == nil) {
+	for _, r := range clientRows(claudeInstalled == nil, selfVersion) {
 		add(r[0], r[1], r[2])
 	}
 }

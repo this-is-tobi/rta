@@ -423,7 +423,7 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 						if err := agentsession.Start(agentsession.Record{
 							ID: sessionID, Agent: agentName, Client: client, Since: time.Now(),
 							PID: os.Getpid(), Dir: wd, Ledger: agentlog.Path(),
-							Consent: consentOn, Roots: guard.Roots(),
+							Version: version, Consent: consentOn, Roots: guard.Roots(),
 						}); err != nil {
 							fmt.Fprintln(cmd.ErrOrStderr(), "rta: could not record this session:", err)
 						}

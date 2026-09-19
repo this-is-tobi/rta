@@ -66,6 +66,25 @@ type Record struct {
 	// Dir is where the server was started, which for a client that
 	// registers rta per project is the project.
 	Dir string `json:"dir,omitempty"`
+	// Version is the build this server is running, which is not always the
+	// build the operator has installed.
+	//
+	// **A process keeps the code it started with, and these are long-lived.**
+	// A Claude Code window holds its server open for days, so `rta upgrade`
+	// replaces the binary underneath a server that goes on answering calls
+	// by the old rules. Every other surface — `grant list`, `doctor`, the
+	// TUI — is a fresh process reading the current build, so the two can
+	// disagree about the same file with nothing on screen to say so: a grant
+	// the file authorizes, listed as healthy, refused by a server whose
+	// notion of the connection predates it, under the same sentence a call
+	// with no grant at all gets. Recorded so the surfaces a person reads can
+	// name the difference instead of leaving them to re-issue a grant they
+	// already had.
+	//
+	// Empty on a record written before this field existed, which is itself
+	// the answer it would have given: that server is running something older
+	// than the build that would have recorded it.
+	Version string `json:"version,omitempty"`
 	// Ledger is the record this server writes to, so a mismatch with the
 	// one the TUI reads is visible from the TUI's side.
 	Ledger string `json:"ledger,omitempty"`
