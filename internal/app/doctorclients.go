@@ -2,11 +2,13 @@ package app
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
 	agentcap "github.com/this-is-tobi/rta/builtin/agent"
+	agentsession "github.com/this-is-tobi/rta/internal/session"
 )
 
 // The doctor's rows about AI clients: is any agent attached right now, and
@@ -62,6 +64,67 @@ func rtaEntry(servers any) (string, bool) {
 	return "", false
 }
 
+// selfVersion is this process's build stamp, recorded when the command tree
+// is built.
+//
+// Package state, for the reason profile.go's `installed` already documents:
+// it is fixed once at startup, and the one reader is the doctor capability,
+// which runs through the registry and is handed a registry and nothing else.
+// Empty — in a test, or under a caller that never built a root — makes
+// olderBuilds say nothing, which is the right zero for a row whose whole
+// claim is "these two differ".
+var selfVersion string
+
+// olderBuilds names the open servers running something other than this
+// build, or "" when every one of them is on it.
+//
+// **A process keeps the code it started with.** Claude Code holds an rta
+// server open for days, so `rta upgrade` — or a `go install` during
+// development — replaces the binary underneath servers that go on answering.
+// Every surface a person reads is a fresh process on the new build, so the
+// two disagree about the same files with nothing saying so. The shape that
+// costs an afternoon: a grant issued from the config, listed healthy by
+// `grant list` and by this page, and refused by an old server whose notion
+// of the connection predates it — under the sentence a call with no grant at
+// all gets, because the refusal deliberately tells an agent nothing about
+// the operator's configuration (see refuseMissing). The remedy belongs on a
+// person's screen, and this is the screen.
+//
+// The comparison is the build string and not a timestamp, so it is exact:
+// no version arithmetic, no guessing from mtimes, and nothing to say on the
+// ordinary case where every server is current. An empty version is the
+// server that predates the field, which is older still.
+func olderBuilds(version string) string {
+	open, err := agentsession.List()
+	if err != nil || version == "" {
+		return ""
+	}
+	var named []string
+	for _, s := range open {
+		if s.Version == version {
+			continue
+		}
+		was := s.Version
+		if was == "" {
+			was = "a build from before rta recorded it"
+		}
+		who := s.Agent
+		if who == "" {
+			who = "unnamed"
+		}
+		named = append(named, fmt.Sprintf("%s (pid %d, %s)", who, s.PID, was))
+	}
+	if len(named) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%s running a build this is not (%s): %s — a server keeps the code it "+
+		"started with, so one started before an upgrade decides by the old rules while this page, "+
+		"`rta grant list` and the TUI read the new ones. A grant can be listed healthy here and "+
+		"refused there, with the same words an ungranted call gets. Reconnect the client to pick "+
+		"this build up",
+		plural(len(named), "is on", "are on"), version, strings.Join(named, ", "))
+}
+
 // claudeRegistrations reads where Claude Code starts rta from, for the
 // working directory. home and dir are parameters so a test can point them
 // at a fixture.
@@ -103,7 +166,7 @@ func claudeRegistrations(home, dir string) []claudeRegistration {
 
 // clientRows is what the doctor says about agents: who is attached now, and
 // how Claude Code is registered when it is.
-func clientRows(claudeInstalled bool) [][3]string {
+func clientRows(claudeInstalled bool, version string) [][3]string {
 	var rows [][3]string
 	connected, n := agentcap.Connected()
 	if n == 0 {
@@ -111,6 +174,9 @@ func clientRows(claudeInstalled bool) [][3]string {
 			"a client that is registered but not running, or running in a directory it was not registered for, looks exactly like this"})
 	} else {
 		rows = append(rows, [3]string{"agents connected", "ok", connected + " (`rta agent overview`)"})
+		if older := olderBuilds(version); older != "" {
+			rows = append(rows, [3]string{"agents connected", "warn", older})
+		}
 	}
 
 	home, _ := os.UserHomeDir()
