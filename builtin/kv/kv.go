@@ -107,7 +107,50 @@ func Plugin() plugin.Plugin {
 					{Name: "removed", Type: plugin.Bool,
 						Help: "list what `kv rm` set aside instead — restorable until purged"},
 				}...),
-				Run: runList,
+				// `v` reveals, and the argument for it is the argument that was originally
+				// made against it, followed through.
+				//
+				// This list used to offer no reveal, because "a secret shown because a key
+				// was pressed on a list is a secret shown by accident" — `kv get` asks for
+				// it by name, which is the point at which you meant to. The reasoning is
+				// right and the conclusion did not follow, because it measured the wrong
+				// thing. **The friction that makes a reveal deliberate is not the typing;
+				// it is the unlock.** Every kv action opens the unlock form on the way —
+				// the passphrase and identity are inputs like any other, so there is
+				// always something left to ask — and an operator who pressed `v` by
+				// accident is looking at a form naming the entry, not at its value. The
+				// value then arrives on its own result page, titled with the entry it
+				// belongs to, rather than in a cell of a list somebody was scrolling —
+				// which is why kv.get declares no Flash.
+				//
+				// `c` was the tell. Copying is the same act with a smaller audience — the
+				// catalogue classifies it identically for exactly that reason, "a value on
+				// the clipboard has been revealed" — and it has been a row action here
+				// since the beginning. The old argument (no scrollback, no screen share,
+				// undone by the next copy) is real; what it does not support is making the
+				// *other* half unreachable from the screen an operator is already on,
+				// which sent people to a second terminal for a secret they had already
+				// unlocked the store for.
+				//
+				// What stays refused is the thing actually worth refusing: nothing on this
+				// screen puts a value in a row. `kv list` shows names, kinds and
+				// descriptions, and the entry's page shows its metadata; a value appears
+				// only where somebody asked for that one entry.
+				//
+				// kv.edit is still absent, for an unrelated reason: it hands the terminal
+				// to $EDITOR, and the terminal is what the TUI is drawing on. `D` unfolds
+				// the detail columns the list keeps compact.
+				Actions: []plugin.Action{
+					{Key: "enter", Label: "show", Target: "kv.show", Source: plugin.ActionRow},
+					{Key: "v", Label: "reveal", Target: "kv.get", Source: plugin.ActionRow},
+					{Key: "c", Label: "copy", Target: "kv.copy", Source: plugin.ActionRow},
+					{Key: "a", Label: "add", Target: "kv.set"},
+					{Key: "s", Label: "set", Target: "kv.set", Source: plugin.ActionRow},
+					{Key: "m", Label: "rename", Target: "kv.rename", Source: plugin.ActionRow},
+					{Key: "x", Label: "remove", Target: "kv.rm", Source: plugin.ActionRow},
+				},
+				Toggles: []plugin.Toggle{{Key: "D", Label: "detail", Input: "detail"}},
+				Run:     runList,
 			},
 			{
 				ID: "kv.get", Summary: "Reveal a stored value", Safety: plugin.Write, Idempotent: true,
@@ -145,6 +188,7 @@ func Plugin() plugin.Plugin {
 			},
 			{
 				ID: "kv.copy", Summary: "Copy a value to the clipboard without displaying it",
+				Flash:  true,
 				Safety: plugin.Write, Idempotent: true, HumanOnly: true,
 				Description: "The value goes to this machine's clipboard and nowhere else: not to the " +
 					"screen, not into scrollback, not into shell history — because getting a secret " +
@@ -186,6 +230,7 @@ func Plugin() plugin.Plugin {
 			},
 			{
 				ID: "kv.set", Summary: "Set (or overwrite) a stored value", Safety: plugin.Write, Idempotent: true,
+				Flash:      true,
 				NeedsGrant: true, Scope: "key",
 				Description: "The value comes from the argument or from --file. The kind (certificate, " +
 					"private key, json, file, string) is detected from the content unless --kind says " +
@@ -248,6 +293,7 @@ func Plugin() plugin.Plugin {
 			},
 			{
 				ID: "kv.rename", Summary: "Rename a key, keeping its value and its history",
+				Flash:  true,
 				Safety: plugin.Write, NeedsGrant: true, Scope: "key",
 				Description: "Renaming used to mean `kv get` piped into `kv set` and then `kv rm`: two " +
 					"grants for an operation that reveals nothing, and the secret itself sitting in " +
@@ -266,6 +312,7 @@ func Plugin() plugin.Plugin {
 			},
 			{
 				ID: "kv.rm", Summary: "Remove a stored key, keeping it restorable until purged", Safety: plugin.Destructive,
+				Flash: true,
 				Scope: "key",
 				Description: "The key leaves the listing and every read of it, but the entry is kept " +
 					"aside whole — value, history and all — inside the same encrypted store, where " +
@@ -300,6 +347,15 @@ func Plugin() plugin.Plugin {
 					{Name: "key", Type: plugin.String, Positional: true, Required: true, Help: "key to describe",
 						Suggest: suggestKeys},
 				}...),
+				// The detail page acts on the entry it is already showing.
+				Actions: []plugin.Action{
+					{Key: "v", Label: "reveal", Target: "kv.get", Source: plugin.ActionSelf},
+					{Key: "c", Label: "copy", Target: "kv.copy", Source: plugin.ActionSelf},
+					{Key: "s", Label: "set", Target: "kv.set", Source: plugin.ActionSelf},
+					{Key: "m", Label: "rename", Target: "kv.rename", Source: plugin.ActionSelf},
+					{Key: "x", Label: "remove", Target: "kv.rm", Source: plugin.ActionSelf},
+					{Key: "a", Label: "add", Target: "kv.set"},
+				},
 				Run: runShow,
 			},
 			{
@@ -389,7 +445,14 @@ func Plugin() plugin.Plugin {
 					"key is already at hand; when none is, it says so instead of asking, so the " +
 					"compact answer never turns into a passphrase prompt nobody expected.",
 				Inputs: unlockFields(),
-				Run:    runStatus,
+				// The kv tile is `kv status`, which is about the store rather than any
+				// entry — so its actions are the two things you want from there: the
+				// list, and a new secret.
+				Actions: []plugin.Action{
+					{Key: "s", Label: "secrets", Target: "kv.list"},
+					{Key: "a", Label: "add", Target: "kv.set"},
+				},
+				Run: runStatus,
 			},
 		},
 	}

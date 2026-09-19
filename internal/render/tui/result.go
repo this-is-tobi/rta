@@ -156,19 +156,16 @@ func pageWarnings(v view.View) []view.Error {
 
 // flashText condenses an action result into a one-line footer notice.
 //
-// Only a capability flashSafe has vouched for, with a genuine one-liner
-// result, is drawn as itself; everything else — an unclassified capability,
-// or a classified one whose result happens to run long — falls back to the
-// generic "<capability> done". The length/line check alone was the shape C4
-// found: it stops a long or multi-line value from filling the footer, but a
-// short one-line secret from a future capability nobody added to
-// alwaysOwnPage would still have sailed through unmarked as a "genuine
-// one-liner". Gating on flashSafe first closes that: the default for a
-// capability neither map has an opinion on is the generic fallback, not the
-// raw value, and TestEveryFlashableActionIsClassified enforces that every
-// capability reachable this way has one.
+// Only a capability that declares Flash, with a genuine one-liner Text, is
+// drawn as itself; anything else folds to "<capability> done". The
+// declaration is checked first, because the shape alone is the wrong test:
+// a revealed secret is a short Text too, and gating on the shape would have
+// painted it onto the list the moment a reveal happened to fit. Flash is a
+// claim about the capability — "my result is a confirmation, never the
+// value acted on" — and a Read capability cannot make it (Validate refuses),
+// which is what keeps kv.get's answer on a page of its own.
 func flashText(msg resultMsg) string {
-	if flashSafe[msg.cap.ID] {
+	if msg.cap.Flash {
 		if t, ok := msg.view.(view.Text); ok && !strings.Contains(t.Body, "\n") && len(t.Body) <= maxFlashLen {
 			return t.Body
 		}
@@ -273,9 +270,11 @@ func (m Model) runAction(a capAction, tbl view.Table) (tea.Model, tea.Cmd) {
 	// from" — which kv.get is not. Left as Safety alone, its result took the
 	// flash-and-reload branch in tui.go's resultMsg handler: the value
 	// became the flash text, painted onto the list pane instead of arriving
-	// on its own result page the way kv.list's own comment promises. See
-	// alwaysOwnPage for the capabilities this excludes and why.
-	m.refreshPending = cap.Safety != plugin.Read && !alwaysOwnPage[cap.ID]
+	// on its own result page the way kv.list's own comment promises. Flash
+	// is the declaration's word for it: a mutation that answers with a
+	// confirmation flashes and reloads, and anything else — a reveal, a
+	// result somebody has to read — gets its own page.
+	m.refreshPending = cap.Safety != plugin.Read && cap.Flash
 	// Removing the very record this page is about destroys the page: the
 	// reload afterwards has to land one level further back.
 	m.subjectGone = a.src == srcSelf && cap.Safety == plugin.Destructive
@@ -525,7 +524,7 @@ func (m Model) resultFooterItems() []hintItem {
 			}
 			keys = append(keys, action(a.key, a.label))
 		}
-		for _, t := range viewToggleSpecs[m.current.ID] {
+		for _, t := range m.toggles() {
 			// A toggle says which way it is pointing, or half the time it
 			// reads as a thing you already did.
 			label := t.label
@@ -551,7 +550,7 @@ func (m Model) resultFooterItems() []hintItem {
 	if m.result.view != nil {
 		keys = append(keys, item(bindCopy))
 	}
-	if hint, ok := copyHint(m.current.ID, m.result.view); ok {
+	if hint, ok := copyHint(m.current, m.result.view); ok {
 		keys = append(keys, hint)
 	}
 	return append(keys, item(bindBack), item(bindQuit))

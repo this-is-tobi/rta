@@ -68,6 +68,11 @@ func outdatedCapability() plugin.Capability {
 			"front where the manager needs root — rta prints it and never runs sudo " +
 			"itself. A manager that failed to answer is a row too.",
 		Inputs: []plugin.Field{managerField()},
+		// The package table is where somebody decides to take an upgrade, so
+		// taking it is one key from the row. Columns `target` and `package` are
+		// named for pkg.upgrade's inputs, so both halves seed from the row and the
+		// form only opens for the destructive confirmation.
+		Actions: []plugin.Action{{Key: "u", Label: "upgrade", Target: "pkg.upgrade", Source: plugin.ActionRow}},
 		Run: func(ctx context.Context, req plugin.Request) (view.View, error) {
 			if verr := supported(); verr != nil {
 				return nil, verr

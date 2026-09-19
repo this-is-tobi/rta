@@ -33,6 +33,7 @@ var isRoot = func() bool { return os.Geteuid() == 0 }
 func upgradeCapability() plugin.Capability {
 	return host(plugin.Capability{
 		ID:      "pkg.upgrade",
+		Flash:   true,
 		Summary: "Bring one manager's packages, one package, or one of your own binaries up to date",
 		// Destructive, and off the MCP surface with the rest of the
 		// namespace (host's wrapper). It mutates the host — replaces binaries

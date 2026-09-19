@@ -70,6 +70,17 @@ func TestDeclaredActionsAreAdmitted(t *testing.T) {
 		t.Fatalf("an actionable plugin was refused: %v", err)
 	}
 	list := func(p *Plugin) *Capability { return &p.Capabilities[0] }
+	// Another plugin's capability may be a target — the consent queue opens
+	// the host's lock form — as long as the action is not bare, and the
+	// host's own detail flag may be toggled on a page that opens detailed.
+	across := actionable()
+	list(&across).Actions = append(list(&across).Actions, Action{Key: "K", Label: "lock", Target: "lock.add", Source: ActionRow,
+		Seed: map[string]string{"name": "agent"}})
+	list(&across).Detailed = true
+	list(&across).Toggles = append(list(&across).Toggles, Toggle{Key: "D", Label: "detail", Input: "detail"})
+	if err := across.Validate(); err != nil {
+		t.Fatalf("an action onto another plugin, or a toggle on detail, was refused: %v", err)
+	}
 	tests := []struct {
 		name    string
 		mutate  func(*Plugin)
@@ -83,7 +94,13 @@ func TestDeclaredActionsAreAdmitted(t *testing.T) {
 		{"a toggle on an action's key", func(p *Plugin) { list(p).Toggles[0].Key = "a" }, "binds \"a\" twice"},
 		{"no label", func(p *Plugin) { list(p).Actions[1].Label = "" }, "label"},
 		{"a target this plugin lacks", func(p *Plugin) { list(p).Actions[1].Target = "demo.item.nope" }, "does not declare"},
-		{"a target in another plugin", func(p *Plugin) { list(p).Actions[1].Target = "other.item.add" }, "does not declare"},
+		{"a target that is not an ID", func(p *Plugin) { list(p).Actions[1].Target = "Other!" }, "not a capability ID"},
+		{"bare onto another plugin", func(p *Plugin) {
+			list(p).Actions[1] = Action{Key: "a", Label: "lock", Target: "lock.add", Bare: true}
+		}, "another plugin"},
+		{"a toggle on detail without a detail page", func(p *Plugin) {
+			list(p).Toggles = []Toggle{{Key: "D", Label: "detail", Input: "detail"}}
+		}, "does not declare input \"detail\""},
 		{"a source that is not one", func(p *Plugin) { list(p).Actions[1].Source = "column" }, "source"},
 		{"bare onto a destructive target", func(p *Plugin) { list(p).Actions[2].Bare = true }, "bare"},
 		{"bare with a required input nothing seeds", func(p *Plugin) {

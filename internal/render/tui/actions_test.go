@@ -6,36 +6,38 @@ import (
 	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
-// Every capability capActionSpecs can reach with a keypress is either Read
-// (nothing to flash — runAction never sets refreshPending for it), or must
-// be accounted for in exactly one of alwaysOwnPage and flashSafe. A
-// capability left out of both does not fail closed on its own: flashText's
-// default without this test would have been to draw its result as a
-// one-liner whenever it happened to look like one, which is the shape C4
-// found and flashSafe exists to stop. This test is what actually stops it —
-// a capability added to capActionSpecs tomorrow without an opinion recorded
-// here fails the build instead of shipping unclassified.
-func TestEveryFlashableActionIsClassified(t *testing.T) {
+// The keys every screen answers itself are the ones Validate refuses to a
+// plugin's actions, and the two lists have to agree: a key the shell claims
+// tomorrow that pkg/plugin does not know would be handed to a plugin the same
+// day, and a row action shadows the screen's own binding of the same key.
+// The shell's vocabulary is the source; pkg/plugin's set is held to it.
+func TestTheShellsOwnKeysAreReservedToPlugins(t *testing.T) {
+	reserved := plugin.ReservedActionKeys()
+	for _, b := range []binding{
+		bindQuit, bindBack, bindOpen, bindRerun, bindEdit, bindCopy,
+		bindBrowse, bindSearch, bindSelect, bindScroll, bindColumn,
+	} {
+		for _, k := range b.keys {
+			if len([]rune(k)) != 1 && k != "enter" && k != "esc" && k != "tab" {
+				continue // ctrl+c, the arrows: nothing an action could bind anyway
+			}
+			if _, ok := reserved[k]; !ok {
+				t.Errorf("%q (%s) is a key every screen answers, and plugin.ReservedActionKeys does not name it", k, b.label)
+			}
+		}
+	}
+}
+
+// Every action a built-in declares opens something the registry has. The
+// built-ins pass the same admission a third party would — the same
+// Validate, at registration — and this is the one thing Validate cannot
+// see: a target in another built-in, which only the registry resolves.
+func TestEveryBuiltInActionResolves(t *testing.T) {
 	reg := realRegistry(t)
-	seen := map[string]bool{}
-	for capID := range capActionSpecs {
-		for _, a := range capActions(reg, capID) {
-			if seen[a.cap.ID] {
-				continue
-			}
-			seen[a.cap.ID] = true
-			if a.cap.Safety == plugin.Read {
-				continue
-			}
-			own, safe := alwaysOwnPage[a.cap.ID], flashSafe[a.cap.ID]
-			if own && safe {
-				t.Errorf("%s is in both alwaysOwnPage and flashSafe — pick one", a.cap.ID)
-			}
-			if !own && !safe {
-				t.Errorf("%s is reachable from a list action, is not Read, and is classified in "+
-					"neither alwaysOwnPage nor flashSafe — read runSet/runAdd/whatever backs it and "+
-					"say which: alwaysOwnPage if its result is (or could become) the value acted on, "+
-					"flashSafe if it is always a fixed confirmation", a.cap.ID)
+	for _, c := range reg.Capabilities() {
+		for _, a := range c.Actions {
+			if _, ok := reg.Capability(a.Target); !ok {
+				t.Errorf("%s %s opens %q, which the registry does not have", c.ID, a.Key, a.Target)
 			}
 		}
 	}

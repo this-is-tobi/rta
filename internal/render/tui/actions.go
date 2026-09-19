@@ -5,8 +5,18 @@ import (
 	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
-// The one-key actions and view toggles a capability's result offers, and
-// the tables that declare them per capability.
+// The one-key actions and view toggles a capability's result offers.
+//
+// They come from the declaration — plugin.Capability's Actions and Toggles,
+// admitted by Validate against the rules this file used to enforce on tables
+// of its own (a key every screen owns, bare onto a destructive target, a
+// copy key beside Copy). The tables named built-ins only, so a third-party
+// list was a table nobody could act on; now a plugin's pg.table.list opens
+// pg.table.show on enter exactly as note.list opens note.show, and the shell
+// has no opinion about which plugin wrote either. What stays here is the
+// shell's own reading of a declaration: which row column seeds which input,
+// which keys the dashboard claims for itself (offeredTileActions), what a
+// bare action may skip (runAction).
 
 // actionSource says where an action gets the identity of the record it acts
 // on — the one thing that differs between acting from a list and acting from
@@ -18,6 +28,16 @@ const (
 	srcRow                      // the selected table row: the columns named for the keys, else its first column
 	srcSelf                     // the record the current view is already about
 )
+
+func sourceOf(s plugin.ActionSource) actionSource {
+	switch s {
+	case plugin.ActionRow:
+		return srcRow
+	case plugin.ActionSelf:
+		return srcSelf
+	}
+	return srcNone
+}
 
 // capAction opens a sibling capability from the view you are looking at: a
 // button on a dashboard tile, a row action inside a result table, or an
@@ -36,276 +56,11 @@ type capAction struct {
 	// required field is still safe under bare — the run refuses without it —
 	// so what bare actually waives is the optional-field form, per action
 	// and on purpose rather than by a global rule: kv.get's unlock form is
-	// the counterexample that keeps this per-action (kv.list's own comment
-	// tells that story).
+	// the counterexample that keeps this per-action (kv.list's own
+	// declaration tells that story).
 	bare bool
-	// seed is the spec's column-to-input mapping; see capActionSpecs.
+	// seed is the declaration's input-to-column mapping; see plugin.Action.
 	seed map[string]string
-}
-
-// alwaysOwnPage is every capability whose result must land on its own
-// result page, never folded into runAction's flash-and-reload — the
-// mutating-action shortcut every other Write/Destructive capability here
-// takes. kv.get is Write for what it discloses, not because it mutates
-// anything, so runAction's Safety-based refreshPending check could not tell
-// it apart from an actual mutation: the value it returns became the flash
-// text painted onto whatever list the reveal was pressed from, in a
-// screen-shareable, scrollback-persisting cell — kv.list's own comment
-// above promises the opposite, that a value "arrives on its own result
-// page... rather than in a cell of a list somebody was scrolling". kv.copy
-// is deliberately not here: its result is a plain confirmation with no
-// value in it, so the flash-and-reload it already gets is correct as is.
-var alwaysOwnPage = map[string]bool{
-	"kv.get": true,
-}
-
-// flashSafe is every capActionSpecs capability whose result, once run
-// through runAction, is safe for flashText to draw verbatim on a list's
-// footer: a fixed confirmation shape ("removed x", "upgraded y") rather
-// than the value the call acted on. Audited once, by reading each handler
-// below rather than guessing from Safety or NeedsGrant — both are shared by
-// kv.set (confirms a write, flash-safe) and kv.get (returns the secret
-// itself, not here) alike, so neither tells the two apart on its own.
-//
-// This is the other direction from alwaysOwnPage: that map says which
-// capabilities must never take the flash-and-reload path at all; this one
-// says which of the ones that do take it may have their result shown as
-// text rather than folded to the generic "<capability> done". A capability
-// in neither is not an oversight flashText quietly resolves in its favor —
-// TestEveryFlashableActionIsClassified fails the build until a human reads
-// its handler and puts it in one map or the other, which is the point: the
-// default for anything unclassified is the generic fallback, not the raw
-// value.
-var flashSafe = map[string]bool{
-	"note.add": true, "note.edit": true, "note.toggle": true,
-	"note.done": true, "note.reopen": true, "note.rm": true,
-	"net.hosts.add": true, "net.hosts.toggle": true, "net.hosts.rm": true,
-	"pkg.upgrade": true,
-	"grant.allow": true, "grant.renew": true, "grant.revoke": true,
-	"agent.allow": true, "agent.deny": true,
-	"lock.add": true, "lock.rm": true,
-	"kv.copy": true, "kv.set": true, "kv.rename": true, "kv.rm": true,
-}
-
-// capActionSpecs declares which capabilities each view can reach in one key.
-// One table drives every surface: dashboard tile buttons (minus "enter",
-// which opens the tile), row actions inside result tables, and the actions
-// on a record's own page — so a note is as editable as a task, wherever you
-// happen to be looking at it. Keys must not collide with navigation
-// (hjkl/arrows, tab, b, :, /, q), result keys (r, y, c), or "e" — "c" here
-// means this table's own row-action copy (kv.list/kv.show → kv.copy); it is
-// also the key copyvalue.go's copySpecs uses for a capability with no
-// sibling action to copy through, checked both on a result already open
-// (resultView) and directly against a tile's own preview (dashFooter,
-// tui.go's modeDashboard "c" case). "e" is resultKeys' own generic "edit
-// inputs" (dispatch.go) — reopen the form this result ran with, seeded —
-// and resultKeys checks this table first, so an entry declaring "e" for
-// itself would silently make edit-inputs unreachable for that capability
-// rather than share the key: this table's own loop returns before the
-// generic case is ever reached. A capability must not appear in both
-// tables, or whichever one this loop or that case reaches first shadows
-// the other's hint silently — today that would require a capability that
-// both backs a tile (its own "overview") and declares a capActionSpecs "c"
-// entry for itself, which none currently does.
-var capActionSpecs = map[string][]struct {
-	key, label, id string
-	src            actionSource
-	bare           bool
-	// seed names the column (or the detail page's key) an input is read
-	// from when it is not the column of the same name — lock.add's `name`
-	// is the queue's `agent`. A seeded key that the row does not carry is
-	// left for the form rather than taken from the first column, which is
-	// an id and the wrong lock name.
-	seed map[string]string
-}{
-	// One notebook, two kinds of thing in it, and `t` is the switch between
-	// them: a note becomes a to-do with a checkbox, a to-do goes back to being
-	// a note. Not bare — a one-key mutation is reserved for the fail-safe
-	// direction — but its only input is the id the row supplies, so nothing is
-	// left to ask and it runs on the keypress all the same.
-	"note.list": {
-		{"enter", "show", "note.show", srcRow, false, nil},
-		{"a", "add", "note.add", srcNone, false, nil},
-		{"u", "update", "note.edit", srcRow, false, nil},
-		{"t", "to-do/note", "note.toggle", srcRow, false, nil},
-		{"d", "done", "note.done", srcRow, false, nil},
-		// The undo for `d`, one key away from it: checking off the wrong
-		// note is a one-keystroke mistake and should cost one keystroke to
-		// take back.
-		{"o", "re-open", "note.reopen", srcRow, false, nil},
-		{"x", "remove", "note.rm", srcRow, false, nil},
-	},
-	// The hosts file is a list you manage, not just read: park an override
-	// with `t`, drop it with `x`. `t` rather than `d` — d is "done" on the
-	// task lists, and a key that means two things across two screens is a
-	// key you hesitate over.
-	"net.hosts.list": {
-		{"a", "add", "net.hosts.add", srcNone, false, nil},
-		{"t", "toggle", "net.hosts.toggle", srcRow, false, nil},
-		{"x", "remove", "net.hosts.rm", srcRow, false, nil},
-	},
-	// A finding names a package, and the question it raises second is what
-	// pulled that package in — which decides whether the fix is a version bump
-	// in a file you own or somebody else's release. `w` rather than a letter
-	// already spoken for, and the same word every package manager uses for it.
-	//
-	// The form it opens is seeded with the path the listing ran against, so the
-	// answer is about the project on screen rather than the working directory.
-	"audit.deps": {
-		{"w", "why", "audit.why", srcRow, false, nil},
-	},
-	// The package table is where somebody decides to take an upgrade, so
-	// taking it is one key from the row. Columns `target` and `package` are
-	// named for pkg.upgrade's inputs, so both halves seed from the row and
-	// the form only opens for the destructive confirmation.
-	"pkg.outdated": {
-		{"u", "upgrade", "pkg.upgrade", srcRow, false, nil},
-	},
-	"pkg.tools": {
-		{"u", "upgrade", "pkg.upgrade", srcRow, false, nil},
-	},
-	// The managers table is where somebody learns which managers rta sees;
-	// the next question is what one of them has behind, and the column is
-	// named for pkg.outdated's input so the row answers it.
-	"pkg.managers": {
-		{"o", "outdated", "pkg.outdated", srcRow, false, nil},
-	},
-	// A stale grant is something you notice on the dashboard, so taking it
-	// back has to be possible from there and not only from a shell. `n`
-	// renews the grant under the cursor — renew, not a fresh allow: the
-	// re-issue path is the one `grant renew --help` warns turns a one-time
-	// grant into an unlimited one.
-	"grant.list": {
-		{"a", "allow", "grant.allow", srcNone, false, nil},
-		{"n", "renew", "grant.renew", srcRow, false, nil},
-		{"x", "revoke", "grant.revoke", srcRow, false, nil},
-	},
-	// The consent queue, answerable from the screen the operator is already
-	// looking at: a parked call is a question with exactly two
-	// answers, and until now both of them lived in another terminal.
-	//
-	// `a` and `d` are the verbs' own initials, and the asymmetry between them
-	// is the point. Deny is bare, so it runs on the keypress — the safe
-	// answer is one key, and a denial the operator did not mean costs the
-	// agent a retry. Allow is not, so runAction opens its form (--ttl above
-	// all): granting access stops for a confirmation, which is the direction
-	// that cannot be taken back once a secret has been read. The asymmetry
-	// used to fall out of the declarations alone — deny had no second input
-	// — until the remote consent flow gave deny `--server` and a passphrase;
-	// now it is declared here and pinned by consentpane_test.
-	//
-	// `d` also means "done" on the task lists, and net.hosts.list avoided
-	// exactly that overlap. It is deliberate here: this screen is a security
-	// prompt rather than another list, both keys spell their own verb, and
-	// the mistake the overlap could produce — denying a call meant to be
-	// allowed — is the recoverable one.
-	"agent.pending": {
-		// enter is "show" on every list in this table, and a parked call has
-		// more to show than a row can hold — what it would actually do, most
-		// of all. Reading before answering is the point, so the key that
-		// opens the detail is the one already in everybody's fingers — and
-		// bare, because a form between the list and the reading would teach
-		// people to answer without the reading.
-		{key: "enter", label: "show", id: "agent.show", src: srcRow, bare: true},
-		{key: "a", label: "allow", id: "agent.allow", src: srcRow},
-		{key: "d", label: "deny", id: "agent.deny", src: srcRow, bare: true},
-		{key: "L", label: "lock", id: "lock.add", src: srcRow, seed: map[string]string{"name": "agent"}},
-	},
-	// And the two answers again from the detail page, so reading it does not
-	// mean going back to the list to act on what you read.
-	"agent.show": {
-		{key: "a", label: "allow", id: "agent.allow", src: srcSelf},
-		{key: "d", label: "deny", id: "agent.deny", src: srcSelf, bare: true},
-		{key: "L", label: "lock", id: "lock.add", src: srcSelf, seed: map[string]string{"name": "agent"}},
-	},
-	// The instant no, from the screens where you notice you need it. `L`
-	// rather than `l` — l is navigation — and it opens the lock form beside
-	// the call that made you want it, the agent filled in from the queue's
-	// own column (or the detail page's line) so the name the gate verifies is
-	// the one the call carried, not one retyped under pressure. Lifting
-	// one is a row action on the lock list itself, where both halves of the
-	// principal are on the row and the surface matches them to lock.rm's
-	// inputs by column name.
-	"lock.list": {
-		{"a", "lock", "lock.add", srcNone, false, nil},
-		{"x", "lift", "lock.rm", srcRow, false, nil},
-	},
-	// The tile says how many calls are waiting; these are the two places to
-	// go from there. `g` because l is navigation and every other letter in
-	// "log" is spoken for. `w` is bare for the tile's own promise — "press w
-	// to answer" has to land on the queue, not on a form asking which remote
-	// server this machine's own waiting calls are on.
-	"agent.overview": {
-		{key: "w", label: "waiting", id: "agent.pending", src: srcNone, bare: true},
-		{key: "g", label: "log", id: "agent.log", src: srcNone},
-		{key: "L", label: "lock", id: "lock.add", src: srcNone},
-	},
-	// `v` reveals, and the argument for it is the argument that was originally
-	// made against it, followed through.
-	//
-	// This table used to say: no reveal action, because "a secret shown
-	// because a key was pressed on a list is a secret shown by accident" —
-	// `kv get` asks for it by name, which is the point at which you meant to.
-	// The reasoning is right and the conclusion did not follow, because it
-	// measured the wrong thing. **The friction that makes a reveal deliberate
-	// is not the typing; it is the unlock.** Every kv action opens the unlock
-	// form on the way — the passphrase and identity are inputs like any other,
-	// so `fieldsAfter` always has something left to ask — and an operator who
-	// pressed `v` by accident is looking at a form naming the entry, not at
-	// its value. The value then arrives on its own result page, titled with
-	// the entry it belongs to, rather than in a cell of a list somebody was
-	// scrolling.
-	//
-	// `c` was the tell. Copying is the same act with a smaller audience —
-	// The catalogue classifies it identically for exactly that reason, "a value on
-	// the clipboard has been revealed" — and it has been a row action here
-	// since the beginning. The old comment argued the difference (no
-	// scrollback, no screen share, undone by the next copy), and that
-	// difference is real; what it does not support is making the *other* half
-	// unreachable from the screen an operator is already on, which sent people
-	// to a second terminal for a secret they had already unlocked the store
-	// for.
-	//
-	// What stays refused is the thing actually worth refusing: nothing on this
-	// screen puts a value in a row. `kv list` shows names, kinds and
-	// descriptions, and the entry's page shows its metadata; a value appears
-	// only where somebody asked for that one entry.
-	//
-	// kv.edit is still absent, for an unrelated reason: it hands the terminal
-	// to $EDITOR, and the terminal is what this program is drawing on.
-	"kv.list": {
-		{"enter", "show", "kv.show", srcRow, false, nil},
-		{"v", "reveal", "kv.get", srcRow, false, nil},
-		{"c", "copy", "kv.copy", srcRow, false, nil},
-		{"a", "add", "kv.set", srcNone, false, nil},
-		{"s", "set", "kv.set", srcRow, false, nil},
-		{"m", "rename", "kv.rename", srcRow, false, nil},
-		{"x", "remove", "kv.rm", srcRow, false, nil},
-	},
-	// The kv tile is `kv status`, which is about the store rather than any
-	// entry — so its actions are the two things you want from there: the
-	// list, and a new secret.
-	"kv.status": {
-		{"s", "secrets", "kv.list", srcNone, false, nil},
-		{"a", "add", "kv.set", srcNone, false, nil},
-	},
-	"kv.show": {
-		{"v", "reveal", "kv.get", srcSelf, false, nil},
-		{"c", "copy", "kv.copy", srcSelf, false, nil},
-		{"s", "set", "kv.set", srcSelf, false, nil},
-		{"m", "rename", "kv.rename", srcSelf, false, nil},
-		{"x", "remove", "kv.rm", srcSelf, false, nil},
-		{"a", "add", "kv.set", srcNone, false, nil},
-	},
-	// The detail pages act on the record they are already showing.
-	"note.show": {
-		{"u", "update", "note.edit", srcSelf, false, nil},
-		{"t", "to-do/note", "note.toggle", srcSelf, false, nil},
-		{"d", "done", "note.done", srcSelf, false, nil},
-		{"o", "re-open", "note.reopen", srcSelf, false, nil},
-		{"x", "remove", "note.rm", srcSelf, false, nil},
-		{"a", "add", "note.add", srcNone, false, nil},
-	},
 }
 
 // viewToggle flips one boolean input of the view you are already looking at.
@@ -315,19 +70,23 @@ var capActionSpecs = map[string][]struct {
 // different mechanism — `note.list` hides checked-off to-dos, so without this
 // the re-open action could never find a row to act on. A capability that
 // hides part of its own data by default owes the surface a way to ask for
-// the rest.
+// the rest, and declares it as a plugin.Toggle.
 type viewToggle struct {
 	key, label, field string
 }
 
-var viewToggleSpecs = map[string][]viewToggle{
-	"note.list": {{key: "A", label: "show done", field: "all"}},
-	"kv.list":   {{key: "D", label: "detail", field: "detail"}},
+// toggles are the current view's declared toggles, in the shell's shape.
+func (m Model) toggles() []viewToggle {
+	out := make([]viewToggle, 0, len(m.current.Toggles))
+	for _, t := range m.current.Toggles {
+		out = append(out, viewToggle{key: t.Key, label: t.Label, field: t.Input})
+	}
+	return out
 }
 
-// toggleFor resolves a key to a toggle declared for this capability.
-func toggleFor(capID, key string) (viewToggle, bool) {
-	for _, t := range viewToggleSpecs[capID] {
+// toggleFor resolves a key to a toggle the current view declares.
+func (m Model) toggleFor(key string) (viewToggle, bool) {
+	for _, t := range m.toggles() {
 		if t.key == key {
 			return t, true
 		}
@@ -335,14 +94,27 @@ func toggleFor(capID, key string) (viewToggle, bool) {
 	return viewToggle{}, false
 }
 
-// capActions resolves the declared actions for a capability against the
-// registry. Unknown IDs simply do not appear.
+// capActions resolves a capability's declared actions against the registry.
+//
+// Validate admits a target only when the same plugin declares it, so a
+// target the registry cannot find is a capability the host refused after
+// the declaration was read — its action simply does not appear, the way a
+// tile for a refused capability does not.
 func capActions(reg *registry.Registry, capID string) []capAction {
+	c, ok := reg.Capability(capID)
+	if !ok {
+		return nil
+	}
 	var out []capAction
-	for _, spec := range capActionSpecs[capID] {
-		if c, ok := reg.Capability(spec.id); ok {
-			out = append(out, capAction{key: spec.key, label: spec.label, cap: c, src: spec.src, bare: spec.bare, seed: spec.seed})
+	for _, a := range c.Actions {
+		target, ok := reg.Capability(a.Target)
+		if !ok {
+			continue
 		}
+		out = append(out, capAction{
+			key: a.Key, label: a.Label, cap: target,
+			src: sourceOf(a.Source), bare: a.Bare, seed: a.Seed,
+		})
 	}
 	return out
 }

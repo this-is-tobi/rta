@@ -174,7 +174,15 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 					{Name: "offline", Type: plugin.Bool, Config: "offline", Help: "inventory the dependencies without querying osv.dev"},
 					{Name: "timeout", Type: plugin.Int, Config: "timeout", Default: 30, Min: 1, Max: 300, Help: "query timeout in seconds"},
 				},
-				Run: runDeps,
+				// A finding names a package, and the question it raises second is what
+				// pulled that package in — which decides whether the fix is a version bump
+				// in a file you own or somebody else's release. `w` rather than a letter
+				// already spoken for, and the same word every package manager uses for it.
+				// The form it opens is seeded with the path the listing ran against, so
+				// the answer is about the project on screen rather than the working
+				// directory.
+				Actions: []plugin.Action{{Key: "w", Label: "why", Target: "audit.why", Source: plugin.ActionRow}},
+				Run:     runDeps,
 			},
 			{
 				ID:           "audit.why",

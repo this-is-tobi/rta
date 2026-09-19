@@ -20,8 +20,8 @@ import (
 // keyboard, and for those the session is exactly the convenience it is
 // meant to be.
 //
-// Audited by reading each handler, the same way alwaysOwnPage and flashSafe
-// (actions.go) were, and pinned by a test so a new disclosing capability
+// Audited by reading each handler, the same way each built-in's Flash was
+// decided, and pinned by a test so a new disclosing capability
 // is a conscious addition here rather than one the session silently covers.
 var discloses = map[string]bool{
 	"kv.get":  true,

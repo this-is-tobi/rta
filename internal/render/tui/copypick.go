@@ -11,7 +11,7 @@ import (
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
-// The copy picker: when copySpecs names a value that exists in more than
+// The copy picker: when a capability's Copy names a value that exists in more than
 // one row of a result — gen.password --count 5, or gen.overview's five
 // recipes side by side — "c" opens this instead of doing nothing. There is
 // no row-selection UI to point at one of the several another way: that

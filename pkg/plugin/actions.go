@@ -3,6 +3,7 @@ package plugin
 import (
 	"fmt"
 	"maps"
+	"strings"
 	"unicode"
 	"unicode/utf8"
 )
@@ -136,9 +137,26 @@ func (p Plugin) checkActions() error {
 			if err := checkLine(where+" label", a.Label, maxLabel); err != nil {
 				return err
 			}
-			target, ok := caps[a.Target]
-			if !ok {
-				return fmt.Errorf("%s targets %q, which this plugin does not declare; an action opens a sibling capability",
+			// A target is usually a sibling, and a sibling is resolved here,
+			// against the plugin's own list. Another plugin's capability is
+			// allowed too — the consent queue offers the host's lock.add from
+			// the row of the call that made you want it — and is resolved by
+			// the host at run time, since only the host knows what else is
+			// installed; an action onto something absent simply does not
+			// appear. What is never allowed across plugins is bare: what
+			// another plugin runs is always on a form the operator reads
+			// first, seeded values and all, so a list cannot dress up a
+			// keypress on its own row as "show" and have it run somebody
+			// else's capability on values the row chose.
+			target, sibling := caps[a.Target]
+			switch {
+			case sibling:
+			case !idRe.MatchString(a.Target):
+				return fmt.Errorf("%s targets %q, which is not a capability ID", where, a.Target)
+			case strings.HasPrefix(a.Target, p.Name+"."):
+				return fmt.Errorf("%s targets %q, which this plugin does not declare", where, a.Target)
+			case a.Bare:
+				return fmt.Errorf("%s is bare onto %q, another plugin's capability; what another plugin runs is always on a form",
 					where, a.Target)
 			}
 			switch a.Source {
@@ -179,7 +197,7 @@ func (p Plugin) checkActions() error {
 					return fmt.Errorf("%s seeds %q from a source it does not have; a seed reads the row or the page",
 						where, input)
 				}
-				if _, declared := inputOf(target, input); !declared {
+				if _, declared := inputOf(target, input); sibling && !declared {
 					return fmt.Errorf("%s seeds %q, but %q does not declare input %q", where, input, a.Target, input)
 				}
 				if column == "" {
@@ -197,6 +215,12 @@ func (p Plugin) checkActions() error {
 			}
 			if err := checkLine(where+" label", tg.Label, maxLabel); err != nil {
 				return err
+			}
+			// "detail" is the host's own input on a Detailed capability —
+			// never declared, always a Bool — and a page that opens detailed
+			// is one a toggle may fold, which is what `D` does on kv.list.
+			if tg.Input == "detail" && c.Detailed {
+				continue
 			}
 			f, ok := inputOf(c, tg.Input)
 			if !ok {

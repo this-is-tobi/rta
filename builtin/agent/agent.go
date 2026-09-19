@@ -66,7 +66,20 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 				Idempotent: true,
 				Detailed:   true,
 				HumanOnly:  true,
-				Run:        runOverview,
+				// The tile says how many calls are waiting; these are the places to go
+				// from there. `g` because l is navigation and every other letter in "log"
+				// is spoken for. `w` is bare for the tile's own promise — "press w to
+				// answer" has to land on the queue, not on a form asking which remote
+				// server this machine's own waiting calls are on. `L` opens the lock form
+				// from the same screen you notice you need it on: another plugin's
+				// capability, which is why it is never bare — what another plugin runs is
+				// always on a form the operator reads first.
+				Actions: []plugin.Action{
+					{Key: "w", Label: "waiting", Target: "agent.pending", Bare: true},
+					{Key: "g", Label: "log", Target: "agent.log"},
+					{Key: "L", Label: "lock", Target: "lock.add"},
+				},
+				Run: runOverview,
 			},
 			{
 				ID:      "agent.log",
@@ -141,7 +154,47 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 					operatorid.PassphraseField.OnlyWith("server"),
 				},
 				HumanOnly: true,
-				Run:       runPending,
+				// The consent queue, answerable from the screen the operator is already
+				// looking at: a parked call is a question with exactly two answers, and
+				// until now both of them lived in another terminal.
+				//
+				// `a` and `d` are the verbs' own initials, and the asymmetry between them
+				// is the point. Deny is bare, so it runs on the keypress — the safe answer
+				// is one key, and a denial the operator did not mean costs the agent a
+				// retry. Allow is not, so the TUI opens its form (--ttl above all):
+				// granting access stops for a confirmation, which is the direction that
+				// cannot be taken back once a secret has been read. The asymmetry used to
+				// fall out of the declarations alone — deny had no second input — until the
+				// remote consent flow gave deny `--server` and a passphrase; now it is
+				// declared here and pinned by the TUI's consent tests.
+				//
+				// `d` also means "done" on the task lists, and net.hosts.list avoided
+				// exactly that overlap. It is deliberate here: this screen is a security
+				// prompt rather than another list, both keys spell their own verb, and the
+				// mistake the overlap could produce — denying a call meant to be allowed —
+				// is the recoverable one.
+				//
+				// enter is "show" on every list, and a parked call has more to show than a
+				// row can hold — what it would actually do, most of all. Reading before
+				// answering is the point, so the key that opens the detail is the one
+				// already in everybody's fingers — and bare, because a form between the
+				// list and the reading would teach people to answer without the reading.
+				// `L` is the instant no: it opens the lock form beside the call that made
+				// you want it, the agent filled in from the queue's own column so the name
+				// the gate verifies is the one the call carried, not one retyped under
+				// pressure.
+				//
+				// Live: a call parks, another expires, and the queue used to be current
+				// only as a dashboard tile — opened, it showed the moment it was opened
+				// until `r`.
+				Actions: []plugin.Action{
+					{Key: "enter", Label: "show", Target: "agent.show", Source: plugin.ActionRow, Bare: true},
+					{Key: "a", Label: "allow", Target: "agent.allow", Source: plugin.ActionRow},
+					{Key: "d", Label: "deny", Target: "agent.deny", Source: plugin.ActionRow, Bare: true},
+					{Key: "L", Label: "lock", Target: "lock.add", Source: plugin.ActionRow, Seed: map[string]string{"name": "agent"}},
+				},
+				Live: true,
+				Run:  runPending,
 			},
 			{
 				ID:      "agent.show",
@@ -161,10 +214,18 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 					operatorid.PassphraseField.OnlyWith("server"),
 				},
 				HumanOnly: true,
-				Run:       runShow,
+				// The two answers again from the detail page, so reading it does not mean
+				// going back to the list to act on what you read.
+				Actions: []plugin.Action{
+					{Key: "a", Label: "allow", Target: "agent.allow", Source: plugin.ActionSelf},
+					{Key: "d", Label: "deny", Target: "agent.deny", Source: plugin.ActionSelf, Bare: true},
+					{Key: "L", Label: "lock", Target: "lock.add", Source: plugin.ActionSelf, Seed: map[string]string{"name": "agent"}},
+				},
+				Run: runShow,
 			},
 			{
 				ID:      "agent.allow",
+				Flash:   true,
 				Summary: "Allow one parked call",
 				Description: "Authorizes exactly the call the request names, and nothing else — " +
 					"the agent's call proceeds, and no standing state is created. With --ttl it " +
@@ -198,6 +259,7 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 			},
 			{
 				ID:      "agent.deny",
+				Flash:   true,
 				Summary: "Deny one parked call",
 				Description: "The agent's call is refused with your answer rather than with a " +
 					"timeout, which is the difference between a model that stops and one that " +

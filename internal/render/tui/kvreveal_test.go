@@ -146,12 +146,12 @@ func TestRevealingLandsOnItsOwnPageRatherThanFlashingTheValue(t *testing.T) {
 	}
 }
 
-// flashText's second layer, for a capability flashSafe has vouched for: a
-// Text result that is not actually a one-liner — multiple lines, or just
-// long — falls back to the generic "<capability> done" rather than being
-// drawn as itself, even though flashSafe cleared it to be shown at all.
+// flashText's second layer, for a capability that declares Flash: a Text
+// result that is not actually a one-liner — multiple lines, or just long —
+// falls back to the generic "<capability> done" rather than being drawn as
+// itself, even though the declaration cleared it to be shown at all.
 func TestFlashTextFallsBackForAnythingThatIsNotAOneLiner(t *testing.T) {
-	set := plugin.Capability{ID: "kv.set"} // flashSafe: true, unlike kv.get
+	set := plugin.Capability{ID: "kv.set", Flash: true} // a confirmation, unlike kv.get
 	for name, v := range map[string]view.Text{
 		"multi-line": {Body: "line one\nline two"},
 		"too long":   {Body: strings.Repeat("x", maxFlashLen+1)},
@@ -169,16 +169,17 @@ func TestFlashTextFallsBackForAnythingThatIsNotAOneLiner(t *testing.T) {
 	}
 }
 
-// The first layer: a capability neither map has an opinion on — or one
-// alwaysOwnPage claims — never has its result drawn as itself, whatever its
-// shape, because flashText never reaches runAction's own-page capabilities
-// in practice but must still fail safe if it ever did.
-func TestFlashTextFallsBackForAnyCapabilityFlashSafeDoesNotName(t *testing.T) {
-	get := plugin.Capability{ID: "kv.get"} // alwaysOwnPage: true, not flashSafe
+// The first layer: a capability that declares no Flash — because its result
+// is the value acted on, or because nobody recorded an opinion — never has
+// its result drawn as itself, whatever its shape, because flashText never
+// reaches runAction's own-page capabilities in practice but must still fail
+// safe if it ever did.
+func TestFlashTextFallsBackForAnyCapabilityWithoutFlash(t *testing.T) {
+	get := plugin.Capability{ID: "kv.get"} // no Flash: the value acted on
 	if got := flashText(resultMsg{cap: get, view: view.Text{Body: "hunter2"}}); got != "kv.get done" {
-		t.Errorf("flashText = %q, want the generic fallback for a capability flashSafe does not name", got)
+		t.Errorf("flashText = %q, want the generic fallback for a capability without Flash", got)
 	}
-	unknown := plugin.Capability{ID: "future.reveal"} // in neither map
+	unknown := plugin.Capability{ID: "future.reveal"} // no opinion recorded
 	if got := flashText(resultMsg{cap: unknown, view: view.Text{Body: "s3cr3t"}}); got != "future.reveal done" {
 		t.Errorf("flashText = %q, want the generic fallback for an unclassified capability", got)
 	}

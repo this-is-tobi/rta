@@ -49,6 +49,7 @@ func Plugin() plugin.Plugin {
 		Capabilities: []plugin.Capability{
 			{
 				ID:      "lock.add",
+				Flash:   true,
 				Summary: "Lock one principal out of the network surfaces, effective on its next call",
 				Description: "Freezes an agent name, a credential, or an operator label: every tool " +
 					"call from a locked agent or credential is refused before any other gate — the " +
@@ -94,10 +95,18 @@ func Plugin() plugin.Plugin {
 					operatorid.PassphraseField.OnlyWith("server"),
 				},
 				HumanOnly: true,
-				Run:       runList,
+				// Lifting a lock is a row action on the list itself, where both halves of
+				// the principal are on the row and the surface matches them to lock.rm's
+				// inputs by column name; `a` places one from the same screen.
+				Actions: []plugin.Action{
+					{Key: "a", Label: "lock", Target: "lock.add"},
+					{Key: "x", Label: "lift", Target: "lock.rm", Source: plugin.ActionRow},
+				},
+				Run: runList,
 			},
 			{
 				ID:      "lock.rm",
+				Flash:   true,
 				Summary: "Lift one lock",
 				Description: "Removes a lock so the principal's next call is judged by the ordinary " +
 					"gates again. This is the expanding direction — the one an agent must never " +

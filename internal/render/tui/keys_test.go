@@ -433,7 +433,7 @@ func TestEscapeGoesBackFromEveryScreenThatHasABack(t *testing.T) {
 	// dashboard — unlike the screens above, it is reached from modeResult,
 	// never from base directly.
 	withResult, _ := base.Update(resultMsg{
-		cap: plugin.Capability{ID: "gen.password", Safety: plugin.Read},
+		cap: plugin.Capability{ID: "gen.password", Safety: plugin.Read, Copy: "Password"},
 		view: view.Table{
 			Columns: []view.Column{{Name: "Password"}},
 			Rows:    [][]string{{"a"}, {"b"}},
