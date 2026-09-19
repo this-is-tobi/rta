@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -465,6 +466,74 @@ func doctorPluginConfig(reg *registry.Registry, add func(check, status, detail s
 	}
 }
 
+// groupedProblems says each distinct problem once, naming everywhere it
+// applies rather than repeating itself per entry.
+//
+// Problem.Plugin is carried, in its own words, "so a screen can group
+// problems under the plugin they belong to without parsing a sentence back
+// apart" — and the ambiguous-name check in doctorProfiles states the rule
+// outright: reported once, because saying it twice does not make it two
+// problems. This row did say it twice. A config naming six plugins the
+// running build does not have — the ordinary state of one config file
+// carried between machines, and precisely the state doctor exists to
+// explain — printed thirty-four rows of six sentences, and what that costs
+// is the rest of the report: the warning that the data directory was
+// world-listable sat under thirty-four copies of a line about plugins.
+//
+// The TUI already grouped these. Doctor was the surface that did not.
+func groupedProblems(problems []profile.Problem) []string {
+	type group struct {
+		first    profile.Problem
+		profiles []string
+		places   int
+		// whole stays true while every member is about a profile rather than
+		// one of its entries, which is the difference between "2 profiles"
+		// and "2 entries" — and a group never mixes the two, since the
+		// reason a whole profile is refused is never a reason one entry is.
+		whole bool
+	}
+	var order []string
+	groups := map[string]*group{}
+	for _, p := range problems {
+		key := p.Reason + "\x00" + p.Hint
+		g, seen := groups[key]
+		if !seen {
+			g = &group{first: p, whole: true}
+			groups[key] = g
+			order = append(order, key)
+		}
+		g.places++
+		if p.Plugin != "" {
+			g.whole = false
+		}
+		if !slices.Contains(g.profiles, p.Name) {
+			g.profiles = append(g.profiles, p.Name)
+		}
+	}
+
+	lines := make([]string, 0, len(order))
+	for _, key := range order {
+		g := groups[key]
+		// One place keeps the sentence it always had, naming the exact entry.
+		// That is the case an operator can act on directly, and it is the
+		// common one.
+		if g.places == 1 {
+			lines = append(lines, g.first.String())
+			continue
+		}
+		where := format.CountOf(g.places, "entry") + " in " + format.CountOf(len(g.profiles), "profile")
+		if g.whole {
+			where = format.CountOf(g.places, "profile")
+		}
+		line := fmt.Sprintf("%s (%s): %s", where, strings.Join(g.profiles, ", "), g.first.Reason)
+		if g.first.Hint != "" {
+			line += " (" + g.first.Hint + ")"
+		}
+		lines = append(lines, line)
+	}
+	return lines
+}
+
 // Profiles: whether each configured connection is usable, and — for the
 // ones that are — whether the credential they need is actually present.
 //
@@ -478,8 +547,8 @@ func doctorPluginConfig(reg *registry.Registry, add func(check, status, detail s
 func doctorProfiles(reg *registry.Registry, add func(check, status, detail string)) {
 	if cfg, err := config.Load(); err == nil && len(cfg.Profiles) > 0 {
 		problems := profile.Check(cfg, reg)
-		for _, p := range problems {
-			add("profile", "warn", p.String())
+		for _, line := range groupedProblems(problems) {
+			add("profile", "warn", line)
 		}
 		// Two names that derive the same variables. `rta profile set` refuses
 		// to create the second one, so a pair here came in before that check
