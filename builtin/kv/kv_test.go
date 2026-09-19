@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -475,6 +476,9 @@ func TestSetBadKindIsCoded(t *testing.T) {
 // --- Getting a value back onto disk -----------------------------------------
 
 func TestGetWritesFileWithTightPermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission bits do not apply")
+	}
 	setup(t)
 	body := "-----BEGIN CERTIFICATE-----\nMIIabc\n-----END CERTIFICATE-----"
 	text(t, runSet, map[string]any{"key": "cert", "value": body}, false)
@@ -565,6 +569,9 @@ func TestFileValuesPreserveTrailingBytes(t *testing.T) {
 // over an existing world-readable file left it world-readable while the
 // message printed "mode 0600" beside it.
 func TestGetOutFixesPermissionsOnAnExistingFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission bits do not apply")
+	}
 	setup(t)
 	text(t, runSet, map[string]any{"key": "k", "value": "s3cr3t"}, false)
 
@@ -869,7 +876,9 @@ func TestStoreFileIsNotPlaintext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if perm := info.Mode().Perm(); perm != 0o600 {
+	// Not on Windows, where every writable file stats 0666; the ciphertext
+	// property above is the half of this test that holds there.
+	if perm := info.Mode().Perm(); runtime.GOOS != "windows" && perm != 0o600 {
 		t.Errorf("store mode = %v, want 0600", perm)
 	}
 }
@@ -1351,7 +1360,9 @@ func TestInitGeneratesAKeyAndNeedsNoFlagsAfterwards(t *testing.T) {
 	if err != nil {
 		t.Fatalf("no key generated: %v", err)
 	}
-	if info.Mode().Perm() != 0o600 {
+	// Not on Windows, where every writable file stats 0666; the no-flags
+	// flow below is the half of this test that holds there.
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Errorf("key mode = %v, want 0600", info.Mode().Perm())
 	}
 
