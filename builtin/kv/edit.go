@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -41,6 +42,15 @@ func editorCommand() []string {
 	// vi, not nano: POSIX requires it, so it is the one editor that is
 	// certainly installed, and refusing to run until somebody exports a
 	// variable is a worse answer than an unfamiliar editor.
+	//
+	// Windows guarantees none of that and ships no vi, and $EDITOR is not a
+	// convention there, so the same argument lands on notepad: present on
+	// every installation, and it blocks until it is closed, which is the
+	// only property launchEditor needs. Without this, the one editor a
+	// Windows user got by default was "executable file not found in %PATH%".
+	if runtime.GOOS == "windows" {
+		return []string{"notepad"}
+	}
 	return []string{"vi"}
 }
 

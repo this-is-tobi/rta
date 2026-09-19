@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -320,8 +321,12 @@ func TestEditorCommandKeepsTheFlagsPeopleHaveInTheirEnvironment(t *testing.T) {
 	}
 	t.Setenv("VISUAL", "")
 	t.Setenv("EDITOR", "")
-	if got := editorCommand(); got[0] != "vi" {
-		t.Errorf("editorCommand() = %q, want the editor POSIX guarantees", got)
+	want := "vi"
+	if runtime.GOOS == "windows" {
+		want = "notepad"
+	}
+	if got := editorCommand(); got[0] != want {
+		t.Errorf("editorCommand() = %q, want %s, the editor the platform guarantees", got, want)
 	}
 }
 
