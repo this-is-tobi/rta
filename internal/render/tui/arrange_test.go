@@ -383,9 +383,10 @@ func TestEveryPreferredTileIsActuallyUsableAsATile(t *testing.T) {
 	}
 }
 
-// heightRegistry has one plugin whose content is a single short line and one
-// whose content overflows any reasonable tile height, for exercising
-// responsive row heights.
+// heightRegistry has one plugin whose content is a single short line, one
+// whose content overflows any reasonable tile height, and one in between
+// that lands on a row height of its own, for exercising responsive row
+// heights.
 func heightRegistry(t *testing.T) *registry.Registry {
 	t.Helper()
 	reg := registry.New()
@@ -393,6 +394,12 @@ func heightRegistry(t *testing.T) *registry.Registry {
 		ID: "short.info", Summary: "short", Safety: plugin.Read,
 		Run: func(context.Context, plugin.Request) (view.View, error) {
 			return view.Text{Body: "one line"}, nil
+		},
+	}
+	mid := plugin.Capability{
+		ID: "mid.info", Summary: "mid", Safety: plugin.Read,
+		Run: func(context.Context, plugin.Request) (view.View, error) {
+			return view.Text{Body: strings.Repeat("line\n", 6)}, nil
 		},
 	}
 	long := plugin.Capability{
@@ -403,6 +410,7 @@ func heightRegistry(t *testing.T) *registry.Registry {
 	}
 	for _, p := range []plugin.Plugin{
 		{Name: "short", Summary: "short", Capabilities: []plugin.Capability{short}},
+		{Name: "mid", Summary: "mid", Capabilities: []plugin.Capability{mid}},
 		{Name: "tall", Summary: "tall", Capabilities: []plugin.Capability{long}},
 	} {
 		if err := reg.Register(p); err != nil {
