@@ -1150,16 +1150,46 @@ func TestSuggestedMigrationCommandActuallyWorks(t *testing.T) {
 	}
 }
 
+// `kv recipients` on a machine that has never run `kv set` answered "The
+// store is encrypted with a passphrase, not keys." — a flat statement about
+// a file that does not exist — and then offered two commands to switch the
+// lock, both of which `kv rekey` refuses with kv.rekey.nostore. Three
+// commands deep before anything said the store had never been created, and
+// the first two read like a working system.
+//
+// `kv status` and `kv rekey` both already knew this state by name. It is the
+// same question — what is this store locked with — reaching three capabilities
+// and getting two true answers and one invention.
+func TestRecipientsSaysWhenThereIsNoStoreToRead(t *testing.T) {
+	setup(t)
+	body := text(t, runRecipients, nil, false)
+	if !strings.Contains(strings.ToLower(body), "no store yet") {
+		t.Errorf("recipients with no store on disk reads:\n%s", body)
+	}
+	// The dead end itself: every command printed here has to be one that
+	// works from this state, and rekey is not.
+	if strings.Contains(body, "kv rekey") {
+		t.Errorf("recipients sends the reader to `kv rekey`, which answers kv.rekey.nostore:\n%s", body)
+	}
+}
+
+// A store that exists and is locked with a passphrase: no recipients to
+// list, and the answer names the lock it does have.
+//
+// The store is created first on purpose. This assertion used to run with
+// nothing on disk at all, which made it a test of the missing-store case
+// wearing this one's name — and it is what kept the invented sentence above
+// looking correct for as long as it did.
+func TestRecipientsNamesThePassphraseLockWhenThereAreNoKeys(t *testing.T) {
+	setup(t)
+	text(t, runSet, map[string]any{"key": "first", "value": "v"}, false)
+	if body := text(t, runRecipients, nil, false); !strings.Contains(body, "passphrase") {
+		t.Errorf("a store locked with a passphrase reads:\n%s", body)
+	}
+}
+
 func TestRecipientsListsWhoCanRead(t *testing.T) {
 	setup(t)
-	v, err := runRecipients(context.Background(), req(nil, false))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(v.(view.Text).Body, "passphrase") {
-		t.Errorf("no recipients yet = %v", v)
-	}
-
 	keys := t.TempDir()
 	private, _ := writeSSHKeypair(t, keys, "id_ed25519")
 	text(t, runSet, map[string]any{"key": "k", "value": "v", "identity": private}, false)
