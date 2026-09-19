@@ -1,0 +1,61 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "semanticCommits": "enabled",
+  "timezone": "Europe/Paris",
+  "schedule": ["before 6am on monday"],
+  "osvVulnerabilityAlerts": true,
+  "postUpdateOptions": ["gomodTidy"],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Bump the Go tools the Makefile builds under .tools, each marked with a 'renovate:' comment on the line above its pin. Go module tags carry the v the Makefile writes, so the matched value is reused as is.",
+      "managerFilePatterns": ["/^Makefile$/"],
+      "matchStrings": [
+        "# renovate: datasource=go depName=(?<depName>[^\\s]+)\\n[A-Z_]+ := (?<currentValue>v\\d+\\.\\d+\\.\\d+)"
+      ],
+      "datasourceTemplate": "go"
+    },
+    {
+      "customType": "regex",
+      "description": "The linter version ci.yml hands the reusable lint workflow. Matched on the input's own name rather than a marker comment so the workflow file stays untouched, and grouped with the Makefile pin below so the two never disagree.",
+      "managerFilePatterns": ["/^\\.github/workflows/ci\\.ya?ml$/"],
+      "matchStrings": [
+        "GOLANGCI_LINT_VERSION: (?<currentValue>v\\d+\\.\\d+\\.\\d+)"
+      ],
+      "depNameTemplate": "github.com/golangci/golangci-lint/v2",
+      "datasourceTemplate": "go"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Every bump lands as 'build' so it appears under the Dependencies changelog section, which release-please treats as releasable: a bumped module, action or base image is a new binary or image, and it reaches nobody without a release.",
+      "matchManagers": ["gomod", "github-actions", "dockerfile", "custom.regex"],
+      "semanticCommitType": "build",
+      "commitMessageTopic": "{{depName}}"
+    },
+    {
+      "description": "Non-major Go module bumps land together: one commit and one patch release a week rather than one per module. A vulnerable module skips both the grouping and the schedule through the OSV alerts above.",
+      "matchManagers": ["gomod"],
+      "matchUpdateTypes": ["minor", "patch", "digest"],
+      "groupName": "Go modules"
+    },
+    {
+      "description": "The linter is pinned twice on purpose - the Makefile for `make lint`, ci.yml for the reusable workflow - so a finding here is a finding there. One pull request moves both.",
+      "matchDepNames": ["github.com/golangci/golangci-lint/v2"],
+      "groupName": "golangci-lint"
+    },
+    {
+      "description": "The Go toolchain is the go directive in go.mod, which CI reads through go-version-file, and the golang image both Dockerfiles build in. One pull request moves both.",
+      "matchDepNames": ["go", "golang"],
+      "groupName": "Go toolchain"
+    },
+    {
+      "description": "Reusable workflows are called at the moving v0 major tag on purpose until github-workflows reaches v1 - don't pin or bump them.",
+      "matchDepNames": ["this-is-tobi/github-workflows"],
+      "enabled": false
+    }
+  ]
+}
