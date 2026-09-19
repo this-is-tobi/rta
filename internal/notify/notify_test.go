@@ -3,6 +3,7 @@ package notify
 import (
 	"context"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -165,7 +166,7 @@ func TestTheTTLBecomesAnExpiryTheDesktopUnderstands(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !contains(args, "--expire-time=90000") {
+	if !slices.Contains(args, "--expire-time=90000") {
 		t.Fatalf("no expiry in %q", args)
 	}
 }
@@ -182,13 +183,4 @@ func TestAnExpiryIsAlwaysSomethingADaemonWillAccept(t *testing.T) {
 	if got := durationMillis(90 * time.Second); got != "90000" {
 		t.Fatalf("90s became %q", got)
 	}
-}
-
-func contains(ss []string, want string) bool {
-	for _, s := range ss {
-		if s == want {
-			return true
-		}
-	}
-	return false
 }

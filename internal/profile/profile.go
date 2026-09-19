@@ -996,7 +996,7 @@ func checkSet(name, key string, conn config.Connection, ns string, inst Installe
 			continue
 		}
 		if len(f.Options) > 0 {
-			if s, isStr := conn.Set[k].(string); isStr && !slicesContains(f.Options, s) {
+			if s, isStr := conn.Set[k].(string); isStr && !slices.Contains(f.Options, s) {
 				problems = append(problems, Problem{Name: name, Plugin: key,
 					Reason: fmt.Sprintf("%q is not a value %s accepts", s, k),
 					Hint:   "one of: " + strings.Join(f.Options, "|")})
@@ -1112,15 +1112,6 @@ func checkSecretRefs(name, key string, conn config.Connection, ns string, inst I
 		}
 	}
 	return problems
-}
-
-func slicesContains(options []string, v string) bool {
-	for _, o := range options {
-		if o == v {
-			return true
-		}
-	}
-	return false
 }
 
 // callerNamedEndpoint reports whether the caller supplied any of the inputs a

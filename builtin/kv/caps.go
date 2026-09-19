@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -421,7 +422,7 @@ func runSet(_ context.Context, req plugin.Request) (view.View, error) {
 		return nil, err
 	}
 	kind := strings.TrimSpace(req.String("kind"))
-	if kind != "" && !contains(kinds, kind) {
+	if kind != "" && !slices.Contains(kinds, kind) {
 		return nil, view.Errorf("kv.set.badkind", "unknown kind %q", kind).
 			WithHint("use one of: " + strings.Join(kinds, ", "))
 	}

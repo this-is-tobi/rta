@@ -366,7 +366,7 @@ func (m *Model) toggleShown(idx int) string {
 
 	if row.shown {
 		m.dash.Hidden = withoutID(m.dash.Hidden, row.tile)
-	} else if !containsID(m.dash.Hidden, row.tile) {
+	} else if !slices.Contains(m.dash.Hidden, row.tile) {
 		m.dash.Hidden = append(m.dash.Hidden, row.tile)
 		// An explicit tile list has no notion of "hidden": edit it in place,
 		// or the tile reappears next run and the hide looks broken.
@@ -388,15 +388,6 @@ func (m *Model) toggleShown(idx int) string {
 		return note + " (this session only: " + err.Error() + ")"
 	}
 	return note
-}
-
-func containsID(list []string, id string) bool {
-	for _, s := range list {
-		if s == id {
-			return true
-		}
-	}
-	return false
 }
 
 func withoutID(list []string, id string) []string {

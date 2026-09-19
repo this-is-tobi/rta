@@ -29,6 +29,7 @@ package pluginconf
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -274,7 +275,7 @@ func (r *Resolver) Check(reg *registry.Registry) []Problem {
 				continue
 			}
 			got := fmt.Sprint(v)
-			if !contains(f.Options, got) {
+			if !slices.Contains(f.Options, got) {
 				problems = append(problems, Problem{Section: ns,
 					Reason: fmt.Sprintf("%s = %q is not one of the values %q accepts", key, got, f.Name),
 					Hint:   "one of: " + strings.Join(f.Options, ", ")})
@@ -327,13 +328,4 @@ func lookup(m map[string]any, key string) (any, bool) {
 		}
 	}
 	return cur, true
-}
-
-func contains(options []string, v string) bool {
-	for _, o := range options {
-		if o == v {
-			return true
-		}
-	}
-	return false
 }

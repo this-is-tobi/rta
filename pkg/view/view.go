@@ -9,6 +9,8 @@
 //   - Secrets are marked Redacted by the producer and masked by the host.
 package view
 
+import "slices"
+
 // View is the closed union of result types a capability can return.
 //
 // A nil View is legal everywhere one is accepted: a handler may return
@@ -236,19 +238,10 @@ func (Sections) isView() {}
 const Mask = "••••••"
 
 // IsRedacted reports whether the given key is marked redacted.
-func (kv KeyValue) IsRedacted(key string) bool { return named(kv.Redacted, key) }
+func (kv KeyValue) IsRedacted(key string) bool { return slices.Contains(kv.Redacted, key) }
 
 // IsRedacted reports whether the named column is marked redacted.
-func (t Table) IsRedacted(column string) bool { return named(t.Redacted, column) }
-
-func named(list []string, name string) bool {
-	for _, n := range list {
-		if n == name {
-			return true
-		}
-	}
-	return false
-}
+func (t Table) IsRedacted(column string) bool { return slices.Contains(t.Redacted, column) }
 
 // Redact returns a copy of v with redacted values masked. It is the single
 // enforcement point for the contract's redaction promise — the host masks

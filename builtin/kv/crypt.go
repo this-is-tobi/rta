@@ -803,15 +803,6 @@ func sameKey(a, b string) bool {
 	return keyOf(a) == keyOf(b)
 }
 
-func contains(list []string, s string) bool {
-	for _, e := range list {
-		if e == s {
-			return true
-		}
-	}
-	return false
-}
-
 func equal(a, b []string) bool {
 	if len(a) != len(b) {
 		return false

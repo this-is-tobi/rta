@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	stdnet "net"
+	"slices"
 	"strings"
 	"testing"
 
@@ -717,13 +718,13 @@ func TestMailDetailIsASectionedPage(t *testing.T) {
 		ids = append(ids, item.Key())
 	}
 	for _, want := range []string{"summary", grpSenderAuth.ID, grpRouting.ID, "references"} {
-		if !contains(ids, want) {
+		if !slices.Contains(ids, want) {
 			t.Errorf("the page has no %q section; got %v", want, ids)
 		}
 	}
 	// An empty group gets no heading: a section with nothing under it reads
 	// as a check that failed to run rather than one with no subject.
-	if contains(ids, grpMailTLS.ID) {
+	if slices.Contains(ids, grpMailTLS.ID) {
 		for _, item := range page.Items {
 			if item.Key() == grpMailTLS.ID {
 				if tbl, ok := item.View.(view.Table); ok && len(tbl.Rows) == 0 {
@@ -732,13 +733,4 @@ func TestMailDetailIsASectionedPage(t *testing.T) {
 			}
 		}
 	}
-}
-
-func contains(list []string, s string) bool {
-	for _, v := range list {
-		if v == s {
-			return true
-		}
-	}
-	return false
 }

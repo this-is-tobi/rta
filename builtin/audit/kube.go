@@ -2,6 +2,7 @@ package audit
 
 import (
 	"context"
+	"slices"
 	"sort"
 	"strings"
 
@@ -226,24 +227,15 @@ func fetchAllRules(ctx context.Context, kubeContext, ns string) ([]roleItem, *vi
 func wildcardRule(rules []policyRule) string {
 	for _, ru := range rules {
 		switch {
-		case slicesContain(ru.APIGroups, "*"):
+		case slices.Contains(ru.APIGroups, "*"):
 			return "apiGroups: [\"*\"]"
-		case slicesContain(ru.Resources, "*"):
+		case slices.Contains(ru.Resources, "*"):
 			return "resources: [\"*\"]"
-		case slicesContain(ru.Verbs, "*"):
+		case slices.Contains(ru.Verbs, "*"):
 			return "verbs: [\"*\"]"
 		}
 	}
 	return ""
-}
-
-func slicesContain(s []string, v string) bool {
-	for _, x := range s {
-		if x == v {
-			return true
-		}
-	}
-	return false
 }
 
 // ---- audit.kube.podsecurity ----
