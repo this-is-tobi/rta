@@ -8,6 +8,7 @@ import (
 
 	"github.com/this-is-tobi/rta/internal/plugindist"
 	"github.com/this-is-tobi/rta/internal/plugintrust"
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -118,11 +119,11 @@ func upgradeAllView(outcomes []plugindist.UpgradeOutcome, dryRun bool) (view.Vie
 	var parts []string
 	if len(heldNames) > 0 {
 		parts = append(parts, fmt.Sprintf("%s held back (%s)",
-			plural(len(heldNames), "plugin", "plugins"), strings.Join(heldNames, ", ")))
+			format.Count(len(heldNames), "plugin", "plugins"), strings.Join(heldNames, ", ")))
 	}
 	if len(failedNames) > 0 {
 		parts = append(parts, fmt.Sprintf("%s failed (%s)",
-			plural(len(failedNames), "plugin", "plugins"), strings.Join(failedNames, ", ")))
+			format.Count(len(failedNames), "plugin", "plugins"), strings.Join(failedNames, ", ")))
 	}
 	return v, view.Errorf("plugin.upgrade.incomplete", "%s", strings.Join(parts, ", ")).
 		WithHint("every other plugin was upgraded; the warnings above say what stopped these")
@@ -178,7 +179,7 @@ func runPluginUntrustAll(cmd *cobra.Command, opts *globalOpts) error {
 	if opts.dryRun {
 		verb, tail = "would withdraw", "none of them would load again"
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "%s %s — %s\n", verb, plural(total, "approval", "approvals"), tail)
+	fmt.Fprintf(cmd.OutOrStdout(), "%s %s — %s\n", verb, format.Count(total, "approval", "approvals"), tail)
 	return nil
 }
 
@@ -226,7 +227,7 @@ func runPluginRemoveAll(cmd *cobra.Command, opts *globalOpts) error {
 	}
 
 	body := fmt.Sprintf("%s %s — %s", removedLabel,
-		plural(len(t.Rows), "plugin", "plugins"), artifactsNote)
+		format.Count(len(t.Rows), "plugin", "plugins"), artifactsNote)
 	if orphaned {
 		// Named rather than cleaned, the same as the single-name form: the
 		// config file is the operator's, and `rta doctor` keeps reporting the

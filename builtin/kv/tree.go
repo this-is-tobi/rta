@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -87,7 +88,7 @@ func (n *treeNode) render() []view.Node {
 		node := view.Node{Label: c.label, Detail: c.kind}
 		if len(c.children) > 0 {
 			node.Label += "/"
-			node.Detail = plural(c.leaves(), "key")
+			node.Detail = format.CountOf(c.leaves(), "key")
 			node.Children = c.render()
 		}
 		out = append(out, node)

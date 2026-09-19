@@ -308,7 +308,7 @@ func Connected() (string, int) {
 	}
 	parts := make([]string, 0, len(open))
 	for _, s := range open {
-		parts = append(parts, fmt.Sprintf("%s (%d %s)", agentOf(s), calls[s.ID], plural(calls[s.ID], "call", "calls")))
+		parts = append(parts, fmt.Sprintf("%s (%d %s)", agentOf(s), calls[s.ID], format.Plural(calls[s.ID], "call", "calls")))
 	}
 	return fmt.Sprintf("%d — %s", len(open), strings.Join(parts, "; ")), len(open)
 }
@@ -384,13 +384,6 @@ func waitingView(reqs []consent.Request) view.View {
 		return view.Text{Body: nothingWaiting}
 	}
 	return pendingTable(reqs)
-}
-
-func plural(n int, one, many string) string {
-	if n == 1 {
-		return one
-	}
-	return many
 }
 
 func runOverview(_ context.Context, req plugin.Request) (view.View, error) {
@@ -489,22 +482,6 @@ func lockedLine() string {
 	return strings.Join(names, ", ") + " — `rta lock list` says why"
 }
 
-// recordPairs describes the record itself: where it is, how much of it
-// there is, how far back it goes, and whether it is intact.
-//
-// Retention is stated rather than left to be inferred. A reader who does
-// not know that history was dropped will read "no calls before the 14th" as
-// "nothing happened before the 14th", which is the one misreading a log
-// must not invite.
-// plural2 picks the verb form for a count, for the sentences that need one
-// beside plural's noun.
-func plural2(n int, one, many string) string {
-	if n == 1 {
-		return one
-	}
-	return many
-}
-
 func recordPairs(rep agentlog.Report, verr error) []view.Pair {
 	pairs := []view.Pair{
 		{Key: "file", Value: agentlog.Path()},
@@ -523,7 +500,7 @@ func recordPairs(rep agentlog.Report, verr error) []view.Pair {
 	if len(rep.MarkLost) > 0 {
 		pairs = append(pairs, view.Pair{Key: "end mark",
 			Value: fmt.Sprintf("was missing before %s %s — anything removed from the end before then cannot be detected; everything after can",
-				plural(len(rep.MarkLost), "entry", "entries"), joinSeqs(rep.MarkLost))})
+				format.Plural(len(rep.MarkLost), "entry", "entries"), joinSeqs(rep.MarkLost))})
 	}
 	if len(rep.Foreign) > 0 {
 		// Named here and not only in `rta doctor`, because this is the
@@ -534,9 +511,9 @@ func recordPairs(rep agentlog.Report, verr error) []view.Pair {
 		// whatever it failed to achieve.
 		pairs = append(pairs, view.Pair{Key: "not rta's",
 			Value: fmt.Sprintf("%s in the data directory %s named like the record and %s not written by rta: %s",
-				plural(len(rep.Foreign), "file", "files"),
-				plural2(len(rep.Foreign), "is", "are"),
-				plural2(len(rep.Foreign), "was", "were"),
+				format.Plural(len(rep.Foreign), "file", "files"),
+				format.Plural(len(rep.Foreign), "is", "are"),
+				format.Plural(len(rep.Foreign), "was", "were"),
 				strings.Join(rep.Foreign, ", "))})
 	}
 	if rep.Retired > 0 {

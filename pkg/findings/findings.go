@@ -23,6 +23,7 @@ package findings
 import (
 	"context"
 	"fmt"
+	"github.com/this-is-tobi/rta/pkg/format"
 	"strconv"
 	"strings"
 
@@ -245,16 +246,11 @@ func clipTo(s string, max int) string {
 	return s
 }
 
-// Plural counts a noun. English is not worth modelling, but a botched plural
-// in a security report reads as carelessness about everything else in it, and
-// the -y rule (advisory, advisories) is the one that comes up.
-func Plural(n int, noun string) string {
-	if n == 1 {
-		return "1 " + noun
-	}
-	if len(noun) > 1 && strings.HasSuffix(noun, "y") &&
-		!strings.ContainsRune("aeiou", rune(noun[len(noun)-2])) {
-		return fmt.Sprintf("%d %sies", n, noun[:len(noun)-1])
-	}
-	return fmt.Sprintf("%d %ss", n, noun)
-}
+// Plural counts a noun: Plural(2, "advisory") is "2 advisories".
+//
+// format.CountOf is the implementation and the place to add to. This stays
+// because it is published — a plugin's report is written against it — and
+// because a findings producer should not have to reach for a second package
+// to count what it found. The rule itself lived here and in three other
+// packages, one of which had it wrong.
+func Plural(n int, noun string) string { return format.CountOf(n, noun) }

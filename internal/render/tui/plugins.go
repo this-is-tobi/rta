@@ -17,6 +17,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/plugintrust"
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/internal/render/theme"
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
@@ -672,7 +673,7 @@ func pluginDetail(row pluginRow) string {
 		return origin + " · press t to approve it — it loads when rta restarts"
 	}
 	detail := origin + " · " + fmt.Sprintf("%d %s", len(row.plugin.Capabilities),
-		pluralNoun(len(row.plugin.Capabilities), "capability"))
+		format.PluralOf(len(row.plugin.Capabilities), "capability"))
 	// What this binary has actually been handed, named on the row rather than
 	// implied by the absence of a warning. A plugin reading a kubeconfig and
 	// one reading nothing at all were previously the same line.

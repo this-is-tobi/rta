@@ -99,6 +99,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/filelock"
 	"github.com/this-is-tobi/rta/internal/paths"
 	"github.com/this-is-tobi/rta/internal/seal"
+	"github.com/this-is-tobi/rta/pkg/format"
 )
 
 const (
@@ -1357,7 +1358,7 @@ func Verify() (Report, error) {
 	case ok && h.Seq > seq:
 		rep.Broken = seq + 1
 		rep.Why = fmt.Sprintf("the record stops at entry %d and rta last wrote entry %d, so %s been removed from the end",
-			seq, h.Seq, plural(h.Seq-seq, "entry has", "entries have"))
+			seq, h.Seq, format.Count(int(h.Seq-seq), "entry has", "entries have")) //nolint:gosec // a gap in the ledger, counted in entries, never past an int
 	}
 	// Deliberately not also comparing the mark's seal against the last
 	// entry's. A probe removed that comparison and broke no test, which was
@@ -1371,13 +1372,6 @@ func Verify() (Report, error) {
 
 // plural keeps the two truncation messages readable without pulling a
 // dependency in for one sentence.
-func plural(n int64, one, many string) string {
-	if n == 1 {
-		return fmt.Sprintf("%d %s", n, one)
-	}
-	return fmt.Sprintf("%d %s", n, many)
-}
-
 // lineReader walks a file line by line with no ceiling on a line's length.
 // bufio.Scanner stops at its buffer with "token too long", and a record
 // holding one oversized row — written before rows were bounded — would

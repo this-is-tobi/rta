@@ -1933,40 +1933,6 @@ func TestCompletePageSaysNothingAboutWarnings(t *testing.T) {
 	}
 }
 
-// TestPluralNounPicksTheNounForm pins the copy: "1 warnings" reads as a bug
-// in the tool, not a typo in the string.
-func TestPluralNounPicksTheNounForm(t *testing.T) {
-	for n, want := range map[int]string{0: "warnings", 1: "warning", 2: "warnings"} {
-		if got := pluralNoun(n, "warning"); got != want {
-			t.Errorf("pluralNoun(%d) = %q, want %q", n, got, want)
-		}
-	}
-}
-
-// The -y words, because "1 capabilities" was on the plugin inventory for every
-// plugin declaring exactly one — `debug` does — and that pane is asking to be
-// read carefully.
-//
-// A consonant before the y is the whole rule: "key" and "day" keep their y and
-// take an s, and getting that backwards would trade one wrong plural for
-// another in a codebase that counts keys.
-func TestPluralNounKnowsTheYWords(t *testing.T) {
-	for word, want := range map[string]string{
-		"capability": "capabilities",
-		"entry":      "entries",
-		"key":        "keys",
-		"day":        "days",
-		"warning":    "warnings",
-	} {
-		if got := pluralNoun(2, word); got != want {
-			t.Errorf("pluralNoun(2, %q) = %q, want %q", word, got, want)
-		}
-		if got := pluralNoun(1, word); got != word {
-			t.Errorf("pluralNoun(1, %q) = %q, want it unchanged", word, got)
-		}
-	}
-}
-
 // The catalogue was the one pane that asked the terminal for mouse reporting
 // and then had no case for the events it got. Spinning the wheel over
 // eighty-five rows did nothing, and the terminal could not fall back to its

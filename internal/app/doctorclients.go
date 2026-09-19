@@ -3,6 +3,7 @@ package app
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/this-is-tobi/rta/pkg/format"
 	"os"
 	"path/filepath"
 	"strings"
@@ -94,7 +95,7 @@ func olderBuilds(version string) string {
 		"`rta grant list` and the TUI read the new ones. A grant can be listed healthy here and "+
 		"refused there, with the same words an ungranted call gets. Reconnect the client to pick "+
 		"this build up",
-		plural(len(named), "is on", "are on"), version, strings.Join(named, ", "))
+		format.Count(len(named), "server is", "servers are"), version, strings.Join(named, ", "))
 }
 
 // claudeRegistrations reads where Claude Code starts rta from, for the
