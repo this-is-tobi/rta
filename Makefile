@@ -90,6 +90,7 @@ endif
 # as linux, and `go run` under GOOS=linux cross-builds the linter itself into
 # a binary this machine cannot execute. Override GOLANGCI with a path to use
 # another build.
+# renovate: datasource=go depName=github.com/golangci/golangci-lint/v2
 GOLANGCI_VERSION := v2.13.2
 TOOLS := $(CURDIR)/.tools
 GOLANGCI ?= $(TOOLS)/golangci-lint-$(GOLANGCI_VERSION)
@@ -102,6 +103,7 @@ GOLANGCI ?= $(TOOLS)/golangci-lint-$(GOLANGCI_VERSION)
 # names the version, and a bare `go install` leaves that stamp empty — so
 # the build carries the same -X main.version the upstream release does, or
 # every regeneration would drop the last line.
+# renovate: datasource=go depName=github.com/norwoodj/helm-docs
 HELM_DOCS_VERSION := v1.14.2
 HELM_DOCS ?= $(TOOLS)/helm-docs-$(HELM_DOCS_VERSION)
 
