@@ -78,7 +78,7 @@ func newCappedStorage() *cappedStorage {
 func (s *cappedStorage) SetEncodedObject(o plumbing.EncodedObject) (plumbing.Hash, error) {
 	if o.Size() > *s.remaining {
 		return plumbing.ZeroHash, fmt.Errorf(
-			"remote repository exceeds the %s object size limit", format.Bytes(uint64(maxObjectBytes)))
+			"remote repository exceeds the %s object size limit", format.Bytes(uint64(maxObjectBytes))) //nolint:gosec // a positive limit: tests shrink it, nothing makes it negative
 	}
 	*s.remaining -= o.Size()
 	return s.Storer.SetEncodedObject(o)

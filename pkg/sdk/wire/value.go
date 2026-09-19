@@ -15,6 +15,7 @@ package wire
 
 import (
 	rtav1 "github.com/this-is-tobi/rta/proto/rta/v1"
+	"math"
 )
 
 // ValueToProto encodes one request value, declared default, or bound.
@@ -27,7 +28,9 @@ import (
 // An unknown type encodes as nil rather than as its Go formatting. Something
 // no Field.Type can describe has no business crossing: rendering it as a
 // string would hand the handler a value its declared type says is impossible,
-// which is the failure mode Field.Type was closed to prevent.
+// which is the failure mode Field.Type was closed to prevent. A uint64 past
+// what int64 holds is the same case: no wire integer holds it, so it crosses
+// as not given rather than as the negative number int64(n) makes of it.
 func ValueToProto(v any) *rtav1.Value {
 	switch n := v.(type) {
 	case nil:
@@ -47,7 +50,7 @@ func ValueToProto(v any) *rtav1.Value {
 	case int64:
 		return intValue(n)
 	case uint:
-		return intValue(int64(n))
+		return ValueToProto(uint64(n))
 	case uint8:
 		return intValue(int64(n))
 	case uint16:
@@ -55,6 +58,9 @@ func ValueToProto(v any) *rtav1.Value {
 	case uint32:
 		return intValue(int64(n))
 	case uint64:
+		if n > math.MaxInt64 {
+			return nil
+		}
 		return intValue(int64(n))
 	case float32:
 		return floatValue(float64(n))
@@ -82,6 +88,20 @@ func ValueToProto(v any) *rtav1.Value {
 		}}
 	}
 	return nil
+}
+
+// int32Of narrows a count or a width to the proto's int32, saturating rather
+// than wrapping: a table with more rows than int32 holds, or a declared
+// width past it, has no terminal to be true on, and 2^31-1 reads as "more
+// than any" where a wrapped negative reads as nonsense.
+func int32Of(n int) int32 {
+	if n > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	if n < math.MinInt32 {
+		return math.MinInt32
+	}
+	return int32(n)
 }
 
 func intValue(n int64) *rtav1.Value {

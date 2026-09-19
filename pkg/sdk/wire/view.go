@@ -128,7 +128,7 @@ func ViewToProto(v view.View) *rtav1.View {
 			Rows: mapSlice(t.Rows, func(r []string) *rtav1.Row {
 				return &rtav1.Row{Cells: r}
 			}),
-			Total:    int32(t.Total),
+			Total:    int32Of(t.Total),
 			Redacted: t.Redacted,
 			Tail:     t.Tail,
 		}

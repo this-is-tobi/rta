@@ -3,6 +3,7 @@ package plugin
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"strings"
 	"testing"
 
@@ -73,6 +74,25 @@ func TestResolveNormalisesEveryShapeAnIntegerArrivesIn(t *testing.T) {
 	got := Resolve(numeric(), Inputs{Caller: map[string]any{"limit": "not a number"}})
 	if got["limit"] != "not a number" {
 		t.Errorf("a non-numeric value was rewritten: %v", got["limit"])
+	}
+}
+
+// An integer that does not fit is refused rather than wrapped. YAML hands a
+// literal past 2^63 over as a uint64, JSON hands 1e300 over as a float64,
+// and int(n) on either is a large negative number — which a bound check
+// then reads as "below the minimum" and a handler as a count that cannot
+// be.
+func TestResolveRefusesAnIntegerThatDoesNotFit(t *testing.T) {
+	for _, v := range []any{
+		uint64(math.MaxUint64), uint64(math.MaxInt64) + 1,
+		float64(math.MaxUint64), 1e300, -1e300, math.Inf(1), math.NaN(),
+	} {
+		if got, ok := toInt(v); ok {
+			t.Errorf("%T(%v) was accepted as %d", v, v, got)
+		}
+	}
+	if got, ok := toInt(uint64(math.MaxInt64)); !ok || got != math.MaxInt64 {
+		t.Errorf("the largest int was refused: %d, %v", got, ok)
 	}
 }
 

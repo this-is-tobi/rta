@@ -113,7 +113,7 @@ func sealFor(key []byte, digest string, body []byte) []byte {
 
 func putLen(b *[8]byte, n int) {
 	for i := 7; i >= 0; i-- {
-		b[i] = byte(n)
+		b[i] = byte(n & 0xff)
 		n >>= 8
 	}
 }

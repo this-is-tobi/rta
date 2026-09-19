@@ -139,7 +139,7 @@ func ParseEpoch(raw string) (time.Time, Unit, bool) {
 // largest nanosecond timestamp there is as a second count.
 func magnitude(n int64) uint64 {
 	if n < 0 {
-		return uint64(-(n + 1)) + 1
+		return uint64(-(n + 1)) + 1 //nolint:gosec // n < 0 here, so -(n + 1) is 0 or more
 	}
 	return uint64(n)
 }

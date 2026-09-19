@@ -16,5 +16,5 @@ func deviceOfInfo(info os.FileInfo) (uint64, bool) {
 	if !ok {
 		return 0, false
 	}
-	return uint64(st.Dev), true //nolint:unconvert // Dev is int32 on darwin and uint64 on linux/amd64; the conversion is what builds on both, and redundant on the one CI lints
+	return uint64(st.Dev), true //nolint:unconvert,gosec // Dev is int32 on darwin and uint64 on linux/amd64; the conversion is what builds on both, and redundant on the one CI lints — and Dev is an identity compared for equality, never arithmetic, so a sign-wrapped darwin value is as unique as the original.
 }

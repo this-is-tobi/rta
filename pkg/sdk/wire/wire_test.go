@@ -2,6 +2,7 @@ package wire
 
 import (
 	"context"
+	"math"
 	"reflect"
 	"testing"
 
@@ -488,6 +489,21 @@ func TestEveryIntegerWidthCrossesAsOneInteger(t *testing.T) {
 	const big = int64(1)<<53 + 1
 	if got := ValueFromProto(ValueToProto(big)); got != big {
 		t.Errorf("%d came back as %v — the wire is lossy above 2^53", big, got)
+	}
+}
+
+// A uint64 past what int64 holds has no wire integer to cross as, and it
+// used to cross as a negative one. It crosses as nil — not given — which is
+// what the wire says about anything it cannot describe, and the last int64
+// still crosses whole.
+func TestAnIntegerTheWireCannotHoldIsNotGiven(t *testing.T) {
+	for _, v := range []any{uint64(math.MaxUint64), uint64(math.MaxInt64) + 1, uint(math.MaxUint64)} {
+		if got := ValueToProto(v); got != nil {
+			t.Errorf("%T(%v) crossed as %v", v, v, ValueFromProto(got))
+		}
+	}
+	if got := ValueFromProto(ValueToProto(uint64(math.MaxInt64))); got != int64(math.MaxInt64) {
+		t.Errorf("the largest int64 did not survive the wire: %v", got)
 	}
 }
 
