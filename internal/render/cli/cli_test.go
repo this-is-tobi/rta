@@ -659,3 +659,100 @@ func TestATokenLongerThanTheWidthIsStillBroken(t *testing.T) {
 		}
 	}
 }
+
+// renderLines is the Pretty rendering of v at width, one entry per line.
+func renderLines(t *testing.T, v view.View, width int) []string {
+	t.Helper()
+	var buf bytes.Buffer
+	if err := Render(&buf, v, Options{Format: Pretty, NoColor: true, Width: width}); err != nil {
+		t.Fatal(err)
+	}
+	return strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+}
+
+// An over-long token is finished after a separator when one sits late enough
+// in the budget, not at the exact cell the budget ran out. An IPv6 address in
+// a 36-cell tile used to render as "2a01:e0a:b23:68c0:14cd:1" / "a1e:1cea:bc2f"
+// — "1" and "a1e" read as hextets that do not exist, and nothing on the screen
+// says whether a ":" was consumed at the join. Broken after a colon the
+// separator is still there at the end of the first line and there is nothing
+// to guess.
+func TestAnIPv6AddressBreaksAfterAGroupSeparator(t *testing.T) {
+	const addr = "2a01:e0a:b23:68c0:14cd:1a1e:1cea:bc2f"
+	for _, width := range []int{20, 24} {
+		lines := renderLines(t, view.Text{Body: addr}, width)
+		if len(lines) < 2 {
+			t.Fatalf("width %d: nothing wrapped, so nothing is under test: %q", width, lines)
+		}
+		for i, line := range lines {
+			if w := lipgloss.Width(line); w > width {
+				t.Errorf("width %d: line is %d cells wide: %q", width, w, line)
+			}
+			if i < len(lines)-1 && !strings.HasSuffix(line, ":") {
+				t.Errorf("width %d: line %d breaks mid-group rather than after a ':': %q", width, i, line)
+			}
+		}
+		if got := strings.Join(lines, ""); got != addr {
+			t.Errorf("width %d: the halves do not rejoin to the address: %q", width, got)
+		}
+	}
+	// The tile shape the defect was found in: a KeyValue whose key column
+	// leaves the value the 24-cell budget above.
+	lines := renderLines(t, view.KeyValue{Pairs: []view.Pair{{Key: "addresses", Value: addr}}}, 35)
+	if len(lines) != 2 || !strings.HasSuffix(lines[0], ":") {
+		t.Errorf("KeyValue at 35 did not break after a group separator:\n%s", strings.Join(lines, "\n"))
+	}
+}
+
+// The break must apply only to a token the word wrap already gave up on.
+// ansi.Wordwrap's breakpoints argument looks like the place for ":", and is
+// not: a breakpoint there is a break opportunity taken as soon as the next
+// word would overflow, so it wraps "https://example.com/abc" to "https:" /
+// "//example.com/abc" — a six-cell line and a scheme severed from its URL,
+// the defect this renderer already fought once. Stated as a test so the
+// one-line version of this fix cannot come back.
+func TestASchemeIsNeverSeveredFromItsURL(t *testing.T) {
+	lines := renderLines(t, view.Text{Body: "https://example.com/abc"}, 20)
+	for _, line := range lines {
+		if line == "https:" || line == "http:" {
+			t.Fatalf("the scheme was severed from its URL:\n%s", strings.Join(lines, "\n"))
+		}
+	}
+	if want := []string{"https://example.com/", "abc"}; strings.Join(lines, "\n") != strings.Join(want, "\n") {
+		t.Errorf("got\n%s\nwant\n%s", strings.Join(lines, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+// The floor is what keeps the separator break from wasting more line than
+// the mid-token break costs. Two anchors pin it, so a future change to the
+// fraction has to argue with both: the last "/" of an advisory URL sits at
+// cell 30 of a 40-cell budget and is worth taking; a path whose only
+// separators sit before the floor keeps the hard break, byte for byte.
+func TestASeparatorBreakIsTakenOnlyLateInTheBudget(t *testing.T) {
+	cases := []struct {
+		name  string
+		body  string
+		first string
+	}{
+		{"advisory URL", "https://osv.dev/vulnerability/GHSA-29mw-wpgm-hmr9",
+			"https://osv.dev/vulnerability/"},
+		{"no separator late enough", "https://example.com/" + strings.Repeat("a-very-long-path-segment/", 6),
+			"https://example.com/a-very-long-path-seg"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			lines := renderLines(t, view.Text{Body: tc.body}, 40)
+			if lines[0] != tc.first {
+				t.Errorf("first line = %q, want %q", lines[0], tc.first)
+			}
+			for _, line := range lines {
+				if w := lipgloss.Width(line); w > 40 {
+					t.Errorf("line is %d cells wide: %q", w, line)
+				}
+			}
+			if got := strings.Join(lines, ""); got != tc.body {
+				t.Errorf("the pieces do not rejoin to the token: %q", got)
+			}
+		})
+	}
+}

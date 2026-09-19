@@ -864,9 +864,42 @@ func restoreHyphens(s string) string {
 	return strings.ReplaceAll(s, nonBreakingHyphen, "-")
 }
 
-// hardBreakOverlong splits only the lines a word wrap could not fit — a single
-// token longer than the whole budget. Everything else is left exactly as the
-// word wrap produced it.
+// tokenBreaks are the characters a mid-token break may land after.
+//
+// This is the same argument shieldHyphens makes, pointed the other way. A
+// hyphen is not a break point because every hyphen in this tool is inside an
+// identifier somebody may be about to paste; a colon or a slash inside an
+// over-long identifier *is* a place a reader can rejoin the halves, because
+// the separator is still on the screen at the end of the first line. An IPv6
+// address in a tile broke as "2a01:e0a:b23:68c0:14" / "cd:1a1e:1cea:bc2f",
+// where "14" and "cd" read as two groups that do not exist; broken after a
+// colon there is nothing to guess.
+//
+// Deliberately NOT ansi.Wordwrap's breakpoints argument, which is where this
+// looks like it belongs. A breakpoint there is a break *opportunity* taken as
+// soon as the following word would overflow, so ":" wraps
+// "https://example.com/abc" to "https:" / "//example.com/abc" — a six-cell
+// line and a scheme severed from its URL, which is the URL defect this
+// renderer already fought once. Here it applies only to a token the word wrap
+// gave up on, so the worst it can produce is the hard break it replaced.
+//
+// "." is left out on purpose. The commonest long token in this tool's output
+// is a dotted identifier — a capability ID, a config key, a filename — and
+// breaking `pg.table.dump` after a dot reads as two identifiers the same way
+// `--max-uses` read as two flags.
+const tokenBreaks = ":/"
+
+// tokenBreakFloor is how much of the budget a separator break must still
+// use. Below it the break wastes more line than the mid-token break costs:
+// the last "/" in "https://osv.dev/vulnerability/GHSA-29mw-wpgm-hmr9" sits at
+// cell 30 of a 40-cell budget and is worth taking, while the "/" in
+// "https://" sits at cell 8 and is not — and taking that one is the six-cell
+// line above.
+func tokenBreakFloor(budget int) int { return budget - budget/4 }
+
+// hardBreakOverlong splits only the lines a word wrap could not fit — a
+// single token longer than the whole budget. Everything else is left exactly
+// as the word wrap produced it.
 func hardBreakOverlong(wrapped string, budget int) []string {
 	lines := strings.Split(wrapped, "\n")
 	out := make([]string, 0, len(lines))
@@ -875,10 +908,65 @@ func hardBreakOverlong(wrapped string, budget int) []string {
 			out = append(out, line)
 			continue
 		}
-		out = append(out, strings.Split(ansi.Hardwrap(line, budget, false), "\n")...)
+		out = append(out, breakToken(line, budget)...)
 	}
 	return out
 }
+
+// breakToken splits one over-budget token, preferring a separator late in the
+// budget and falling back to the hard break that has always finished the job.
+//
+// A token carrying an escape sequence keeps the hard break. The search below
+// is over bytes, and SGR has an ITU colon-separated form (ESC[38:2:r:g:bm)
+// that this renderer does not emit today and cannot promise never to — a ":"
+// found inside one would be cut in half. The values that reach here are
+// URLs, hashes and addresses; the only styling this renderer puts on a value
+// is the status/usage grading (prettyKeyValue, prettyRecords), whose
+// vocabulary is short words that never reach this function.
+func breakToken(line string, budget int) []string {
+	if strings.ContainsRune(line, ansiEscape) {
+		return strings.Split(ansi.Hardwrap(line, budget, false), "\n")
+	}
+	var out []string
+	for ansi.StringWidth(line) > budget {
+		cut := separatorCut(line, budget)
+		if cut == 0 {
+			return append(out, strings.Split(ansi.Hardwrap(line, budget, false), "\n")...)
+		}
+		out = append(out, line[:cut])
+		line = line[cut:]
+	}
+	if line != "" {
+		out = append(out, line)
+	}
+	return out
+}
+
+// separatorCut reports the byte after the last separator that sits inside the
+// budget and no earlier than its floor, or 0 when there is none.
+//
+// Byte indices against a cell budget: a separator is ASCII, and every
+// continuation byte of a multi-byte rune is >= 0x80, so no non-ASCII
+// character can be mistaken for one — including the U+2011 shieldHyphens has
+// already put in place of every "-". The width is measured on the prefix, so
+// a wide rune earlier in the token is charged correctly.
+func separatorCut(line string, budget int) int {
+	cut, floor := 0, tokenBreakFloor(budget)
+	for i := 0; i < len(line); i++ {
+		if !strings.ContainsRune(tokenBreaks, rune(line[i])) {
+			continue
+		}
+		switch w := ansi.StringWidth(line[:i+1]); {
+		case w > budget:
+			return cut
+		case w >= floor:
+			cut = i + 1
+		}
+	}
+	return cut
+}
+
+const ansiEscape = 0x1b
 
 // styles resolves the theme for one render call; color=false collapses
 // everything to plain text (pipes, --no-color).
