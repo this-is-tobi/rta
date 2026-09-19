@@ -652,6 +652,34 @@ func (m Model) open(c plugin.Capability) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) View() tea.View {
+	// Bubble Tea paints the initial model before it delivers the first
+	// WindowSizeMsg — the size goes out from a goroutine and the first view
+	// is rendered synchronously right after — so every run has at least one
+	// frame where this model does not know how big the terminal is. Nothing
+	// below degrades gracefully at zero: panel hands the body back unframed
+	// under ten cells, cli.Render reads a non-positive width as "no limit",
+	// and dashRowsVisible answers "everything" when the height is unknown, so
+	// the dashboard's zero-size frame is an unframed, unwrapped,
+	// screen-height-ignoring dump of every tile, one per row.
+	//
+	// Emitting it costs more than the frame itself. The renderer paints each
+	// frame as a difference against the one before, and in the alt screen it
+	// may realise a vertical move as an insert-line or a scroll region and
+	// then record the moved lines as needing no repaint. A garbage first
+	// frame is a near-miss vertical match for the real one — exactly what
+	// that optimisation looks for — so one tile's body can land inside
+	// another tile's border and stay there until something repaints the
+	// screen whole.
+	//
+	// An empty frame has the opposite effect: the renderer sizes its buffer
+	// to the content, so the first frame that does have a size is a different
+	// shape and forces a full repaint from an erased screen. Nothing can be
+	// laid out honestly without a size, so nothing is.
+	if m.width <= 0 || m.height <= 0 {
+		v := tea.NewView("")
+		v.AltScreen = true
+		return v
+	}
 	var v tea.View
 	if m.help {
 		v = tea.NewView(m.helpView())
@@ -669,11 +697,9 @@ func (m Model) View() tea.View {
 		if m.previewing {
 			verb = "previewing"
 		}
-		body := fmt.Sprintf("%s %s %s …\n\n%s",
-			m.spinner.View(), verb, theme.Key.Render(m.current.ID), m.footerFor(modeRunning))
-		if m.width > 0 && m.height > 0 {
-			body = lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, body)
-		}
+		body := lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center,
+			fmt.Sprintf("%s %s %s …\n\n%s",
+				m.spinner.View(), verb, theme.Key.Render(m.current.ID), m.footerFor(modeRunning)))
 		v = tea.NewView(body)
 	case modePlugins:
 		v = tea.NewView(m.pluginsView())

@@ -257,7 +257,12 @@ func (m Model) tileAt(x, y int) int {
 // starting from the current scroll position.
 func (m Model) dashRowsVisible() int {
 	if m.height <= 0 {
-		return 1 << 30 // size unknown yet: render everything
+		// Size unknown. Model.View paints nothing in that state, but this is
+		// still reached: clampScroll asks the same question, and a keypress
+		// can land before the first WindowSizeMsg does, since both arrive
+		// from goroutines. Everything rather than an arbitrary window, which
+		// makes clampScroll's min a no-op instead of a guess.
+		return 1 << 30
 	}
 	avail := m.height - 1 - lipgloss.Height(m.dashFooter()) - searchTileHeight
 	return visibleRowCount(m.rowHeights(), m.scroll, avail)
