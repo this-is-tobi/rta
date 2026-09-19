@@ -364,7 +364,7 @@ func TestShiftEnterSavesThePluginConfigForm(t *testing.T) {
 	if err := reg.Register(dbPlugin()); err != nil {
 		t.Fatal(err)
 	}
-	tm := teatest.NewTestModel(t, New(reg, config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
+	tm := newTestModel(t, New(reg, config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
 	tm.Send(tea.KeyPressMsg{Code: 'p', Text: "p"})
 	waitFor(t, tm, "db")
 	tm.Send(tea.KeyPressMsg{Code: 'c', Text: "c"})

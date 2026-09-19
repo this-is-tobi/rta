@@ -223,7 +223,7 @@ func TestPressingCThenEnterCopiesTheDefaultChoice(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	tm := teatest.NewTestModel(t, New(reg, config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
+	tm := newTestModel(t, New(reg, config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
 	tm.Send(tea.KeyPressMsg{Code: 'b', Text: "b"})
 	waitFor(t, tm, "gen.password")
 	tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
@@ -369,7 +369,7 @@ func TestPressingCOnTheRealGenTileEndToEnd(t *testing.T) {
 	// `c` does on the gen tile, and a terminal that cannot show that tile
 	// makes it fail for a reason that has nothing to do with copying.
 	reg := mustRegistry(t)
-	tm := teatest.NewTestModel(t, New(reg, config.Dashboard{}, nil), teatest.WithInitialTermSize(120, 60))
+	tm := newTestModel(t, New(reg, config.Dashboard{}, nil), teatest.WithInitialTermSize(120, 60))
 	waitFor(t, tm, "gen.overview")
 	// Move onto the gen tile: right along the bottom-right area of the
 	// grid a few times is more robust than counting exact columns, since

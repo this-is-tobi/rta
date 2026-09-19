@@ -606,7 +606,7 @@ func TestTheProfilesPanesOpenFromTheDashboard(t *testing.T) {
 	if err := reg.Register(dbPlugin()); err != nil {
 		t.Fatal(err)
 	}
-	tm := teatest.NewTestModel(t, New(reg, config.Dashboard{}, nil),
+	tm := newTestModel(t, New(reg, config.Dashboard{}, nil),
 		teatest.WithInitialTermSize(100, 40))
 	tm.Send(tea.KeyPressMsg{Code: 'f', Text: "f"})
 	waitFor(t, tm, "STAGING")

@@ -213,7 +213,7 @@ func TestShiftEnterRunsACapabilityWithCurrentDefaults(t *testing.T) {
 			return view.Text{Body: "QUICK-SUBMIT-RAN"}, nil
 		},
 	}
-	tm := teatest.NewTestModel(t, New(fastFormRegistry(t, c), config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
+	tm := newTestModel(t, New(fastFormRegistry(t, c), config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
 	tm.Send(tea.KeyPressMsg{Code: 'b', Text: "b"})
 	waitFor(t, tm, "demo.quick")
 	tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
@@ -236,7 +236,7 @@ func TestShiftEnterDoesNotRunWithARequiredFieldBlank(t *testing.T) {
 			return view.Text{Body: "SHOULD-NOT-RUN"}, nil
 		},
 	}
-	tm := teatest.NewTestModel(t, New(fastFormRegistry(t, c), config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
+	tm := newTestModel(t, New(fastFormRegistry(t, c), config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
 	tm.Send(tea.KeyPressMsg{Code: 'b', Text: "b"})
 	waitFor(t, tm, "demo.needstarget")
 	tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
@@ -268,7 +268,7 @@ func TestShiftEnterDeclinesADestructiveCapabilityByDefault(t *testing.T) {
 			return view.Text{Body: "BOOM-EXECUTED"}, nil
 		},
 	}
-	tm := teatest.NewTestModel(t, New(fastFormRegistry(t, c), config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
+	tm := newTestModel(t, New(fastFormRegistry(t, c), config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
 	tm.Send(tea.KeyPressMsg{Code: 'b', Text: "b"})
 	waitFor(t, tm, "demo.boom")
 	tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
@@ -307,7 +307,7 @@ func TestShiftEnterStopsAtATwoStagePrefillBoundary(t *testing.T) {
 			return view.Text{Body: "EDIT-RAN"}, nil
 		},
 	}
-	tm := teatest.NewTestModel(t, New(fastFormRegistry(t, c), config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
+	tm := newTestModel(t, New(fastFormRegistry(t, c), config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
 	tm.Send(tea.KeyPressMsg{Code: 'b', Text: "b"})
 	waitFor(t, tm, "demo.edit")
 	tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
@@ -328,7 +328,7 @@ func TestShiftEnterStopsAtATwoStagePrefillBoundary(t *testing.T) {
 // overrides".
 func TestShiftEnterOnAnEmptyThemeFormSavesNoOverrides(t *testing.T) {
 	t.Setenv("RTA_CONFIG", t.TempDir()+"/config.yaml")
-	tm := teatest.NewTestModel(t, New(registry.New(), config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
+	tm := newTestModel(t, New(registry.New(), config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
 	tm.Send(tea.KeyPressMsg{Code: 't', Text: "t"})
 	waitFor(t, tm, "primary")
 
@@ -363,7 +363,7 @@ func TestShiftEnterOnTheCopyPickerAcceptsTheDefaultChoice(t *testing.T) {
 	if err := reg.Register(plugin.Plugin{Name: "gen", Summary: "gen", Capabilities: []plugin.Capability{c}}); err != nil {
 		t.Fatal(err)
 	}
-	tm := teatest.NewTestModel(t, New(reg, config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
+	tm := newTestModel(t, New(reg, config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
 	tm.Send(tea.KeyPressMsg{Code: 'b', Text: "b"})
 	waitFor(t, tm, "gen.password")
 	tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter})

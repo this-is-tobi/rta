@@ -36,7 +36,7 @@ func TestShiftEnterAcceptsABoolFieldsCurrentDefault(t *testing.T) {
 			return view.Text{Body: "BOOL-RAN"}, nil
 		},
 	}
-	tm := teatest.NewTestModel(t, New(fastFormRegistry(t, c), config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
+	tm := newTestModel(t, New(fastFormRegistry(t, c), config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
 	tm.Send(tea.KeyPressMsg{Code: 'b', Text: "b"})
 	waitFor(t, tm, "demo.bool")
 	tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
@@ -56,7 +56,7 @@ func TestShiftEnterAcceptsAClosedSetSelectFieldsCurrentDefault(t *testing.T) {
 			return view.Text{Body: "SELECT-RAN"}, nil
 		},
 	}
-	tm := teatest.NewTestModel(t, New(fastFormRegistry(t, c), config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
+	tm := newTestModel(t, New(fastFormRegistry(t, c), config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
 	tm.Send(tea.KeyPressMsg{Code: 'b', Text: "b"})
 	waitFor(t, tm, "demo.select")
 	tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
@@ -76,7 +76,7 @@ func TestShiftEnterAcceptsAClosedSetMultiSelectFieldsCurrentDefault(t *testing.T
 			return view.Text{Body: "MULTISELECT-RAN"}, nil
 		},
 	}
-	tm := teatest.NewTestModel(t, New(fastFormRegistry(t, c), config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
+	tm := newTestModel(t, New(fastFormRegistry(t, c), config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
 	tm.Send(tea.KeyPressMsg{Code: 'b', Text: "b"})
 	waitFor(t, tm, "demo.multiselect")
 	tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
@@ -96,7 +96,7 @@ func TestShiftEnterAcceptsAFreeformStringSliceFieldsCurrentDefault(t *testing.T)
 			return view.Text{Body: "SLICE-RAN"}, nil
 		},
 	}
-	tm := teatest.NewTestModel(t, New(fastFormRegistry(t, c), config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
+	tm := newTestModel(t, New(fastFormRegistry(t, c), config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
 	tm.Send(tea.KeyPressMsg{Code: 'b', Text: "b"})
 	waitFor(t, tm, "demo.slice")
 	tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
@@ -116,7 +116,7 @@ func TestShiftEnterAcceptsASecretFieldsCurrentDefault(t *testing.T) {
 			return view.Text{Body: "SECRET-RAN"}, nil
 		},
 	}
-	tm := teatest.NewTestModel(t, New(fastFormRegistry(t, c), config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
+	tm := newTestModel(t, New(fastFormRegistry(t, c), config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
 	tm.Send(tea.KeyPressMsg{Code: 'b', Text: "b"})
 	waitFor(t, tm, "demo.secret")
 	tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
@@ -136,7 +136,7 @@ func TestShiftEnterAcceptsAPathFieldsCurrentDefault(t *testing.T) {
 			return view.Text{Body: "PATH-RAN"}, nil
 		},
 	}
-	tm := teatest.NewTestModel(t, New(fastFormRegistry(t, c), config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
+	tm := newTestModel(t, New(fastFormRegistry(t, c), config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
 	tm.Send(tea.KeyPressMsg{Code: 'b', Text: "b"})
 	waitFor(t, tm, "demo.path")
 	tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
@@ -163,7 +163,7 @@ func TestShiftEnterAcceptsAMultilineTextFieldsCurrentDefault(t *testing.T) {
 			return view.Text{Body: "TEXT-RAN"}, nil
 		},
 	}
-	tm := teatest.NewTestModel(t, New(fastFormRegistry(t, c), config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
+	tm := newTestModel(t, New(fastFormRegistry(t, c), config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
 	tm.Send(tea.KeyPressMsg{Code: 'b', Text: "b"})
 	waitFor(t, tm, "demo.text")
 	tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
@@ -196,7 +196,7 @@ func TestShiftEnterDeclinesADestructiveCapabilityWithRealInputsAheadOfTheConfirm
 			return view.Text{Body: "DESTRUCTIVE-EXECUTED"}, nil
 		},
 	}
-	tm := teatest.NewTestModel(t, New(fastFormRegistry(t, c), config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
+	tm := newTestModel(t, New(fastFormRegistry(t, c), config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
 	tm.Send(tea.KeyPressMsg{Code: 'b', Text: "b"})
 	waitFor(t, tm, "demo.destructive")
 	tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
@@ -228,7 +228,7 @@ func TestShiftEnterRunsAPlainWriteCapabilityDirectly(t *testing.T) {
 			return view.Text{Body: "WRITE-RAN"}, nil
 		},
 	}
-	tm := teatest.NewTestModel(t, New(fastFormRegistry(t, c), config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
+	tm := newTestModel(t, New(fastFormRegistry(t, c), config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
 	tm.Send(tea.KeyPressMsg{Code: 'b', Text: "b"})
 	waitFor(t, tm, "demo.write")
 	tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter})

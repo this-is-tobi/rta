@@ -46,7 +46,7 @@ func TestAltEnterRunsACapabilityWithCurrentDefaults(t *testing.T) {
 			return view.Text{Body: "ALT-QUICK-SUBMIT-RAN"}, nil
 		},
 	}
-	tm := teatest.NewTestModel(t, New(fastFormRegistry(t, c), config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
+	tm := newTestModel(t, New(fastFormRegistry(t, c), config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
 	tm.Send(tea.KeyPressMsg{Code: 'b', Text: "b"})
 	waitFor(t, tm, "demo.quick")
 	tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
@@ -60,7 +60,7 @@ func TestAltEnterRunsACapabilityWithCurrentDefaults(t *testing.T) {
 
 func TestAltEnterOnAnEmptyThemeFormSavesNoOverrides(t *testing.T) {
 	t.Setenv("RTA_CONFIG", t.TempDir()+"/config.yaml")
-	tm := teatest.NewTestModel(t, New(registry.New(), config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
+	tm := newTestModel(t, New(registry.New(), config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
 	tm.Send(tea.KeyPressMsg{Code: 't', Text: "t"})
 	waitFor(t, tm, "primary")
 
@@ -91,7 +91,7 @@ func TestAltEnterOnTheCopyPickerAcceptsTheDefaultChoice(t *testing.T) {
 	if err := reg.Register(plugin.Plugin{Name: "gen", Summary: "gen", Capabilities: []plugin.Capability{c}}); err != nil {
 		t.Fatal(err)
 	}
-	tm := teatest.NewTestModel(t, New(reg, config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
+	tm := newTestModel(t, New(reg, config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
 	tm.Send(tea.KeyPressMsg{Code: 'b', Text: "b"})
 	waitFor(t, tm, "gen.password")
 	tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
