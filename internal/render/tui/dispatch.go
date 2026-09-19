@@ -23,6 +23,16 @@ import (
 
 // keyPress routes one key press to the open pane's handler.
 func (m Model) keyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
+	if m.help {
+		return m.helpKeys(msg)
+	}
+	// Before the pane's own handler, and after the delete gate's claim on
+	// every key: while a removal is armed any key but `y` disarms it, and
+	// `?` is any key. helpOffered is the same predicate the footer asks.
+	if msg.String() == "?" && m.armedDelete == "" && m.helpOffered(m.mode) {
+		m.help = true
+		return m, nil, true
+	}
 	switch m.mode {
 	case modeDashboard:
 		return m.dashboardKeys(msg)

@@ -18,6 +18,7 @@ A search bar across the top, and one tile per plugin that has something to show 
 | `enter` | Open |
 | `esc` | Back |
 | `q` or `ctrl+c` | Quit |
+| `?` | Every key the screen answers, aliases included — what the footer had no room for |
 | `[` `]` | Move a tile |
 | `H` | Hide a tile |
 | `p` | Plugin inventory — where a hidden tile comes back |
@@ -158,6 +159,7 @@ A stock install is entirely built in, so no bands are drawn at all — one band 
 | `y` | Copy as JSON |
 | `d` | Delete |
 | `esc` | Stop a run that is still going; on a result, go back |
+| `?` | Every key the screen answers — on any screen where a key is a command rather than text |
 
 A log — `agent log`, or any table that declares its newest row last — opens on that row, scrolled to the end, so what just happened is under the cursor and the past is a key up.
 
