@@ -31,6 +31,7 @@ import (
 	"runtime"
 
 	"github.com/this-is-tobi/rta/builtin/internal/sshkeys"
+	"github.com/this-is-tobi/rta/internal/pathguard"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -239,7 +240,7 @@ func exposure(path string) string {
 
 func runBackup(_ context.Context, req plugin.Request) (view.View, error) {
 	path := req.String("key")
-	full := expandHome(path)
+	full := pathguard.ExpandTilde(path)
 	data, err := os.ReadFile(full)
 	if err != nil {
 		return nil, view.Errorf("keys.backup.unreadable", "reading %s: %v", path, err).
@@ -301,7 +302,7 @@ func runBackup(_ context.Context, req plugin.Request) (view.View, error) {
 // refusing to overwrite, 0600, the .pub sibling, the fingerprint to compare
 // against later — is publishRestoredKey's, unchanged.
 func runAdd(_ context.Context, req plugin.Request) (view.View, error) {
-	out := expandHome(req.String("out"))
+	out := pathguard.ExpandTilde(req.String("out"))
 	pub := out + ".pub"
 	// Both checked before anything is generated, and the message says what is
 	// at stake: unlike a restore, there is nothing to recover an overwritten
@@ -335,7 +336,7 @@ func runAdd(_ context.Context, req plugin.Request) (view.View, error) {
 }
 
 func runRestore(_ context.Context, req plugin.Request) (view.View, error) {
-	out := expandHome(req.String("out"))
+	out := pathguard.ExpandTilde(req.String("out"))
 	pub := out + ".pub"
 	if fileExists(out) {
 		return nil, view.Errorf("keys.restore.exists", "%s already exists", out).

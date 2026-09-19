@@ -35,6 +35,7 @@ import (
 	"github.com/this-is-tobi/rta/builtin/internal/sshkeys"
 	"github.com/this-is-tobi/rta/internal/atomicfile"
 	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/internal/pathguard"
 	"github.com/this-is-tobi/rta/internal/paths"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -92,7 +93,7 @@ func parseRecipient(spec string) (age.Recipient, string, error) {
 		return nil, "", errors.New("empty recipient")
 	}
 	// A path: read it and retry on its contents.
-	if data, err := os.ReadFile(expandHome(spec)); err == nil {
+	if data, err := os.ReadFile(pathguard.ExpandTilde(spec)); err == nil {
 		line := firstMeaningfulLine(string(data))
 		if line == "" {
 			return nil, "", fmt.Errorf("%s holds no public key", spec)
@@ -165,7 +166,7 @@ func publicHalf(path, firstLine string) (string, error) {
 		}
 		return id.Recipient().String(), nil
 	}
-	data, err := os.ReadFile(expandHome(path) + ".pub")
+	data, err := os.ReadFile(pathguard.ExpandTilde(path) + ".pub")
 	if err != nil {
 		return "", fmt.Errorf("%s is a private key and has no .pub beside it — name the public key instead", path)
 	}
@@ -194,7 +195,7 @@ type identity struct {
 // after it: a store actually protected by the second key in the file
 // reported kv.wrongkey with the correct key sitting right there on disk.
 func parseIdentities(req plugin.Request, path string) ([]identity, *view.Error) {
-	data, err := os.ReadFile(expandHome(path))
+	data, err := os.ReadFile(pathguard.ExpandTilde(path))
 	if err != nil {
 		return nil, view.Errorf("kv.identity.unreadable", "reading %s: %v", path, err).
 			WithHint("--identity takes a private key file, e.g. ~/.ssh/id_ed25519")
@@ -246,7 +247,7 @@ func parseIdentities(req plugin.Request, path string) ([]identity, *view.Error) 
 	// The .pub sibling carries the comment ("me@laptop"), which is the only
 	// human-readable part of a key and the one thing `kv recipients` can show
 	// a person who is trying to work out whose key is whose.
-	if data, err := os.ReadFile(expandHome(path) + ".pub"); err == nil {
+	if data, err := os.ReadFile(pathguard.ExpandTilde(path) + ".pub"); err == nil {
 		if line := firstMeaningfulLine(string(data)); sameKey(line, spec) {
 			spec = line
 		}
@@ -434,7 +435,7 @@ func suggestIdentities(_ context.Context, _ plugin.Request) []string {
 // `rta doctor` reporting what an MCP server inherits, and `kv status` saying
 // whether this shell can open the store without a question.
 func lockedKey(path string) bool {
-	data, err := os.ReadFile(expandHome(path))
+	data, err := os.ReadFile(pathguard.ExpandTilde(path))
 	if err != nil {
 		return false // unreadable is a different problem, reported elsewhere
 	}
@@ -749,7 +750,7 @@ func refuseSilentIdentity(req plugin.Request) *view.Error {
 // privateKeyFile reports whether a spec is a path to a private key on this
 // machine — the file itself, not a public half of it.
 func privateKeyFile(spec string) bool {
-	data, err := os.ReadFile(expandHome(strings.TrimSpace(spec)))
+	data, err := os.ReadFile(pathguard.ExpandTilde(strings.TrimSpace(spec)))
 	return err == nil && isPrivateKey(firstMeaningfulLine(string(data)))
 }
 
@@ -820,17 +821,6 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "…"
-}
-
-func expandHome(path string) string {
-	if !strings.HasPrefix(path, "~/") {
-		return path
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return path
-	}
-	return filepath.Join(home, path[2:])
 }
 
 func firstMeaningfulLine(s string) string {
