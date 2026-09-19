@@ -70,6 +70,10 @@ func ReadCapped(path string, max int) ([]byte, error) {
 // Windows refuses one while the target is open — see Replace.
 var rename = os.Rename
 
+// link is os.Link, overridable so a test can make a publish fail for a reason
+// of the filesystem's own rather than for a race — see Publish.
+var link = os.Link
+
 // replaceWaits paces a rename the platform may refuse for a reason that is
 // nobody's fault, and a var rather than a literal only so a test can shrink it.
 var replaceWaits = []time.Duration{
@@ -257,7 +261,8 @@ func Publish(path string, data []byte, perm fs.FileMode, max int) ([]byte, error
 	// Read after it; needing that many in a row is not contention, it is
 	// something wrong, and spinning on it forever would hide that.
 	for range 10 {
-		if err := os.Link(tmp.Name(), path); err == nil {
+		lerr := link(tmp.Name(), path)
+		if lerr == nil {
 			return data, nil
 		}
 		// Somebody else got there first, or something was already there —
@@ -277,6 +282,19 @@ func Publish(path string, data []byte, perm fs.FileMode, max int) ([]byte, error
 		if serr != nil {
 			if !os.IsNotExist(serr) {
 				return nil, fmt.Errorf("checking %s: %w", path, serr)
+			}
+			// Link failed and nothing is at the path, so nothing ever
+			// occupied it. Unless Link's own complaint was "the name is
+			// taken", this is not contention and no number of retries turns
+			// it into a publication: a filesystem with no hard links (exFAT,
+			// some network mounts) reached the retry-exhaustion message below
+			// instead, which told the operator about a race against a process
+			// that does not exist rather than about the disk their data
+			// directory is on. fs.ErrExist is what Link's error answers to on
+			// every platform rta ships for, EEXIST and ERROR_ALREADY_EXISTS
+			// alike.
+			if !errors.Is(lerr, fs.ErrExist) {
+				return nil, fmt.Errorf("publishing %s: %w", path, lerr)
 			}
 			// Gone already — same "go round again" as a Read that races the
 			// same gap; fall through to the retry below.
