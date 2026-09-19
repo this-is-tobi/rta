@@ -198,6 +198,11 @@ func (m Model) rowHeights() []int {
 // given each row's own height — the shared arithmetic tileAt, dashRowsVisible
 // and dashboardView all need to agree on, now that a row's height is no
 // longer one constant they could each compute independently.
+//
+// One row is the floor even when that row does not fit: a dashboard that
+// draws nothing is worse than one whose tallest row is clipped. The clipping
+// is drawnHeights' job — handed to the renderer at its full height, that row
+// overflowed the terminal and the footer was the part that fell off.
 func visibleRowCount(heights []int, from, avail int) int {
 	count, used := 0, 0
 	for i := from; i < len(heights); i++ {
@@ -221,17 +226,21 @@ func (m Model) tileAt(x, y int) int {
 		return 0
 	}
 	rows := m.tileRows()
-	heights := m.rowHeights()
+	if len(rows) == 0 {
+		return -1
+	}
+	first, last := m.rowWindow(len(rows))
+	heights := m.drawnHeights(first, last)
 	yy := y - 1 - searchTileHeight
 	row := -1
-	for i := m.scroll; i < len(heights); i++ {
-		if yy < heights[i] {
-			row = i - m.scroll
+	for r, h := range heights {
+		if yy < h {
+			row = first + r
 			break
 		}
-		yy -= heights[i]
+		yy -= h
 	}
-	if row < 0 || row >= m.dashRowsVisible() {
+	if row < 0 {
 		return -1 // footer area below the last visible tile row
 	}
 	// Walk the row by drawn width. Dividing x by one column width only ever
@@ -239,7 +248,7 @@ func (m Model) tileAt(x, y int) int {
 	// a single full-width tile was that assumption's one exception rather
 	// than a rule — a two-column tile beside a one-column one landed every
 	// click in the row on the wrong tile.
-	cells := rows[row+m.scroll]
+	cells := rows[row]
 	for _, i := range cells {
 		w := m.tileWidth(i)
 		if x < w {
@@ -264,8 +273,33 @@ func (m Model) dashRowsVisible() int {
 		// makes clampScroll's min a no-op instead of a guess.
 		return 1 << 30
 	}
-	avail := m.height - 1 - lipgloss.Height(m.dashFooter()) - searchTileHeight
-	return visibleRowCount(m.rowHeights(), m.scroll, avail)
+	return visibleRowCount(m.rowHeights(), m.scroll, m.dashRowBudget())
+}
+
+// dashRowBudget is how many lines the tile rows have between the header with
+// the search bar under it and the footer.
+func (m Model) dashRowBudget() int {
+	return m.height - 1 - lipgloss.Height(m.dashFooter()) - searchTileHeight
+}
+
+// rowWindow is the half-open range of tile rows on screen: from the scroll
+// offset, as many as dashRowsVisible admits.
+func (m Model) rowWindow(rows int) (first, last int) {
+	first = min(m.scroll, rows-1)
+	return first, min(first+m.dashRowsVisible(), rows)
+}
+
+// drawnHeights is what the rows in [first, last) are drawn at, and what tileAt
+// walks, so a click lands where the paint did. Each row's own height, except
+// the one row visibleRowCount admits without the room for it, which is drawn
+// at the room there is — never less than its borders and the line that says
+// there is more.
+func (m Model) drawnHeights(first, last int) []int {
+	heights := m.rowHeights()[first:last]
+	if budget := m.dashRowBudget(); m.height > 0 && len(heights) == 1 && heights[0] > budget {
+		heights[0] = max(budget, tileClipHeight)
+	}
+	return heights
 }
 
 // dashRows is the total number of capability-tile rows at the current width.
@@ -587,35 +621,34 @@ func (m Model) dashboardView() string {
 	search := m.renderSearchTile(m.width, m.selected == 0)
 
 	rows := m.tileRows()
-	heights := m.rowHeights()
-	rendered := make([]string, 0, len(rows))
-	for r, cells := range rows {
-		parts := make([]string, 0, 2*len(cells))
-		for _, i := range cells {
+	if len(rows) == 0 {
+		return header + "\n" + search + "\n" + footer
+	}
+
+	// Window the rows to the screen; the selection-driven scroll offset is
+	// maintained by clampScroll. Markers show there is more above/below.
+	first, last := m.rowWindow(len(rows))
+	heights := m.drawnHeights(first, last)
+	rendered := make([]string, 0, last-first)
+	for r := first; r < last; r++ {
+		parts := make([]string, 0, 2*len(rows[r]))
+		for _, i := range rows[r] {
 			if len(parts) > 0 {
 				// A one-cell gap column between tiles — the same gap tileAt
 				// divides by.
 				parts = append(parts, " ")
 			}
-			parts = append(parts, renderTile(m.tiles[i], m.tileWidth(i), heights[r], i == m.selected))
+			parts = append(parts, renderTile(m.tiles[i], m.tileWidth(i), heights[r-first], i == m.selected))
 		}
 		rendered = append(rendered, lipgloss.JoinHorizontal(lipgloss.Top, parts...))
 	}
-
-	// Window the rows to the screen; the selection-driven scroll offset is
-	// maintained by clampScroll. Markers show there is more above/below.
-	first := min(m.scroll, max(0, len(rendered)-1))
-	last := min(first+m.dashRowsVisible(), len(rendered))
-	if len(rendered) == 0 {
-		return header + "\n" + search + "\n" + footer
-	}
 	switch {
-	case first > 0 && last < len(rendered):
+	case first > 0 && last < len(rows):
 		header += theme.Subtle.Render("  ↕ more")
 	case first > 0:
 		header += theme.Subtle.Render("  ↑ more")
-	case last < len(rendered):
+	case last < len(rows):
 		header += theme.Subtle.Render("  ↓ more")
 	}
-	return header + "\n" + search + "\n" + strings.Join(rendered[first:last], "\n") + "\n" + footer
+	return header + "\n" + search + "\n" + strings.Join(rendered, "\n") + "\n" + footer
 }

@@ -52,6 +52,11 @@ const (
 	// panel next to a taller row rather than a sliver. Tiles within one row
 	// always share that row's height — this only ever varies row to row.
 	tileMinHeight = 6
+	// tileClipHeight is the least a row is drawn at when it is the one row
+	// the screen admits without the room for it: the two borders and the
+	// line that says there is more. Anything shorter is a box with nothing
+	// in it, on a terminal too short for its own footer.
+	tileClipHeight = 3
 	// searchMatches is how many live results the search bar shows at once.
 	// The list itself is not cut to this: it scrolls, because a query that
 	// matches eleven capabilities should not silently become three.
