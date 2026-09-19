@@ -3,7 +3,40 @@ package app
 import (
 	"strings"
 	"testing"
+
+	"github.com/this-is-tobi/rta/pkg/plugin"
 )
+
+// TestNoInputHelpRepeatsWhatTheHostAlreadyPrints walks the built-in
+// catalogue and refuses a Help string that names its own environment
+// variable.
+//
+// `rta explain` prints ", from $RTA_KV_PASSPHRASE" from EnvFallback
+// (explain.go), and flagUsage appends the same variable to --help. Three
+// declarations wrote it into Help as well, one of them by calling
+// LocalEnvVar itself, so the explain card named the variable twice in one
+// line. There is no way to notice that by reading a declaration — the
+// duplicate is two hundred lines away in another package — which is what
+// makes it a drift test rather than a review note.
+func TestNoInputHelpRepeatsWhatTheHostAlreadyPrints(t *testing.T) {
+	reg, err := NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range reg.Capabilities() {
+		for _, f := range c.Inputs {
+			if !f.EnvFallback {
+				continue
+			}
+			if env := plugin.LocalEnvVar(c.ID, f.Name); strings.Contains(f.Help, env) {
+				t.Errorf("%s input %q names %s in its Help; the host already prints it "+
+					"from EnvFallback — in `rta explain` and in --help — so the card says it twice. "+
+					"State what the value is and let the surface say where it comes from.",
+					c.ID, f.Name, env)
+			}
+		}
+	}
+}
 
 // The environment variable a credential may arrive in is the host's to name
 // on --help, generated from the declaration the way `rta explain` already
