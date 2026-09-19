@@ -414,10 +414,16 @@ func Verify(msg []byte, sig string) bool {
 // exists so that nothing an agent's environment inherits can satisfy it.
 // Beside PromptSecret because the two are one contract: the prompt reads
 // exactly the field this declares.
+//
+// Help is the noun and nothing else. It used to say "omit it at a terminal
+// and answer the prompt instead: a flag lands in shell history, a prompt
+// lands nowhere" — an instruction about a flag passkey.Argv refuses on the
+// CLI unconditionally, read out under the masked box in the TUI form, which
+// is the surface this field exists for. The advice is where it can be acted
+// on: passkey.Argv's own Hint, on the run that tried it.
 var PassphraseField = plugin.Field{
 	Name: "passphrase", Type: plugin.Secret, Local: true,
-	Help: "the guard passphrase — omit it at a terminal and answer the prompt instead: " +
-		"a flag lands in shell history, a prompt lands nowhere",
+	Help: "the guard passphrase",
 }
 
 // PromptSecret reads the passphrase for a guard-gated capability: the

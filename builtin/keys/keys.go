@@ -83,8 +83,7 @@ func Plugin() plugin.Plugin {
 						Help:    "private key to back up, e.g. ~/.ssh/id_ed25519",
 						Suggest: suggestPrivateKeys},
 					{Name: "passphrase", Type: plugin.Secret, Local: true, EnvFallback: true,
-						Help: fmt.Sprintf("passphrase for the key, if it has one (or set %s)",
-							plugin.LocalEnvVar("keys.backup", "passphrase"))},
+						Help: "passphrase for the key, if it has one"},
 				},
 				Run: runBackup,
 			},
@@ -140,7 +139,7 @@ func Plugin() plugin.Plugin {
 					{Name: "out", Type: plugin.Path, Positional: true, Required: true,
 						Help: "where to write the restored private key (and <out>.pub)"},
 					{Name: "words", Type: plugin.Secret,
-						Help: "24 BIP39 seed words, space-separated — omit to paste at a masked prompt, or pipe them in"},
+						Help: "24 BIP39 seed words, space-separated"},
 					{Name: "new-passphrase", Type: plugin.Secret, Local: true,
 						Help: "encrypt the restored key with this passphrase; omit for none — " +
 							"typed explicitly every time, not read from the environment, since a restore is a " +

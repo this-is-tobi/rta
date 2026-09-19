@@ -387,14 +387,14 @@
   },
   {
     "name": "debug_ansi",
-    "description": "── the text below is written by the plugin, not by rta ──\nBreak down the ANSI escape sequences in a string, byte by byte\n\nWalks the input the way a terminal would, one printable run or control/escape sequence at a time, and names what each one does — SGR colors and attributes, cursor movement, screen/line erase, and the OSC sequences most worth knowing about on sight: window title, hyperlink target, and the system clipboard write (decoded, not left as base64). Never prints a raw control byte back at the terminal it is running in — the whole point is seeing what a sequence does without it happening.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nBreak down the ANSI escape sequences in a string, byte by byte\n\nWalks the input the way a terminal would, one printable run or control/escape sequence at a time, and names what each one does — SGR colors and attributes, cursor movement, screen/line erase, and the OSC sequences most worth knowing about on sight: window title, hyperlink target, and the system clipboard write (decoded, not left as base64). Never prints a raw control byte back at the terminal it is running in — the whole point is seeing what a sequence does without it happening. Given no input, reads the text from standard input.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
       "additionalProperties": false,
       "properties": {
         "input": {
-          "description": "text containing escape sequences; reads piped stdin when omitted",
+          "description": "text containing escape sequences",
           "type": "string"
         }
       },
@@ -1377,7 +1377,7 @@
           "type": "integer"
         },
         "tag": {
-          "description": "tags, repeatable (--tag backend --tag urgent)",
+          "description": "tags — one per entry",
           "items": {
             "type": "string"
           },
@@ -1443,7 +1443,7 @@
           "type": "integer"
         },
         "tag": {
-          "description": "tags, repeatable (--tag backend --tag urgent)",
+          "description": "tags — one per entry",
           "items": {
             "type": "string"
           },

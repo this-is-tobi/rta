@@ -43,7 +43,8 @@ func Plugin() plugin.Plugin {
 					"sequences most worth knowing about on sight: window title, hyperlink " +
 					"target, and the system clipboard write (decoded, not left as base64). " +
 					"Never prints a raw control byte back at the terminal it is running in — " +
-					"the whole point is seeing what a sequence does without it happening.",
+					"the whole point is seeing what a sequence does without it happening. " +
+					"Given no input, reads the text from standard input.",
 				Safety:     plugin.Read,
 				Idempotent: true,
 				// input is Positional but not Required — stdin can supply
@@ -56,7 +57,7 @@ func Plugin() plugin.Plugin {
 				NoPreview: true,
 				Inputs: []plugin.Field{
 					{Name: "input", Type: plugin.Text, Positional: true,
-						Help: "text containing escape sequences; reads piped stdin when omitted"},
+						Help: "text containing escape sequences"},
 				},
 				Run: runAnsi,
 			},
