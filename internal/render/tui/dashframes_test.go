@@ -229,7 +229,7 @@ func answeringRegistry(t *testing.T, names ...string) *registry.Registry {
 func TestDashboardTilesArriveWithoutEscapingTheirPanels(t *testing.T) {
 	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
 	names := []string{"alpha", "beta", "gamma"} // one full row at 120 cells, see sentinel
-	tm := teatest.NewTestModel(t, New(answeringRegistry(t, names...), config.Dashboard{}, nil),
+	tm := newTestModel(t, New(answeringRegistry(t, names...), config.Dashboard{}, nil),
 		teatest.WithInitialTermSize(120, 36))
 	var escaped string
 	teatest.WaitFor(t, tm.Output(), func(bts []byte) bool {

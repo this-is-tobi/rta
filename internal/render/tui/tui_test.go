@@ -114,6 +114,36 @@ func testRegistry(t *testing.T) *registry.Registry {
 	return reg
 }
 
+// newTestModel is teatest.NewTestModel plus the one thing teatest does not
+// do: stop the program when the test that started it ends.
+//
+// Every program in this package is started here, because the leak is only
+// visible from somewhere else. teatest runs a real Bubble Tea program in a
+// goroutine and registers no cleanup, so a test that fails before it reaches
+// quit() leaves that program rendering for the rest of the binary, into
+// another test's theme.Apply — see
+// TestAProgramIsStoppedEvenWhenItsTestNeverQuitsIt for the whole shape of
+// it.
+//
+// Quit and not Kill: Kill makes Run return ErrProgramKilled, and teatest's
+// own goroutine turns any Run error into tb.Fatalf — a cleanup that failed
+// every test it tidied up after. Quit is documented as a no-op on a program
+// that already exited, and teatest guards WaitFinished with a sync.Once, so
+// a test that quit cleanly pays nothing here.
+func newTestModel(t *testing.T, m tea.Model, opts ...teatest.TestOption) *teatest.TestModel {
+	t.Helper()
+	tm := teatest.NewTestModel(t, m, opts...)
+	t.Cleanup(func() {
+		_ = tm.Quit()
+		tm.WaitFinished(t, teatest.WithFinalTimeout(framePatience),
+			teatest.WithTimeoutFn(func(tb testing.TB) {
+				tb.Error("the TUI program did not stop when asked to; it is still rendering, " +
+					"and whatever runs next in this binary shares the theme styles it reads")
+			}))
+	})
+	return tm
+}
+
 // newTest starts the shell and navigates from the dashboard into browse,
 // where most interaction tests live.
 func newTest(t *testing.T) *teatest.TestModel {
@@ -126,7 +156,7 @@ func newTest(t *testing.T) *teatest.TestModel {
 // newDashboard starts the shell on its landing dashboard.
 func newDashboard(t *testing.T) *teatest.TestModel {
 	t.Helper()
-	return teatest.NewTestModel(t, New(testRegistry(t), config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
+	return newTestModel(t, New(testRegistry(t), config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
 }
 
 // framePatience is how long a test waits for the TUI to paint what it is
@@ -577,7 +607,7 @@ func TestPrefillTwoStageForm(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tm := teatest.NewTestModel(t, New(reg, config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
+	tm := newTestModel(t, New(reg, config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
 	tm.Send(tea.KeyPressMsg{Code: 'b', Text: "b"})
 	waitFor(t, tm, "rec.edit")
 	// Sorted: demo.boom, demo.hello, demo.needy, rec.edit.
