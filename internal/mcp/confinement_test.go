@@ -83,6 +83,68 @@ func TestAHandlerCannotDeriveAPathOutOfTheRoot(t *testing.T) {
 	}
 }
 
+// The substitution checkPaths makes has a second reader: a handler whose
+// library wants the path in another form. builtin/git's file input reaches
+// go-git, which knows a file only by its path relative to the repository —
+// and the judged form the bridge hands over is absolute. Refusing an escape
+// and confining an allowed path must leave the allowed one usable, or git_blame
+// is a tool the catalogue lists and no agent can call.
+func TestAFileInsideTheRootIsUsableByGitBlameAndLog(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+
+	dir := t.TempDir()
+	repo, err := gogit.PlainInit(dir, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("one line\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	wt, err := repo.Worktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := wt.Add("a.txt"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := wt.Commit("touches a", &gogit.CommitOptions{
+		Author: &object.Signature{Name: "Ada Lovelace", Email: "ada@example.com"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	guard, err := pathguard.New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg, err := all.Registry(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := connectWith(t, reg, Options{Paths: guard})
+
+	for _, tool := range []string{"git_blame", "git_log"} {
+		res, err := s.CallTool(context.Background(), &sdk.CallToolParams{
+			Name:      tool,
+			Arguments: map[string]any{"path": dir, "file": filepath.Join(dir, "a.txt")},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := res.Content[0].(*sdk.TextContent).Text
+		if res.IsError {
+			t.Fatalf("%s refused a file inside the root: %s", tool, text)
+		}
+		m, ok := res.StructuredContent.(map[string]any)
+		if !ok {
+			t.Fatalf("%s: structured content = %T", tool, res.StructuredContent)
+		}
+		if rows, _ := m["rows"].([]any); len(rows) != 1 {
+			t.Errorf("%s: rows = %v, want one — the file has one line and one commit", tool, m["rows"])
+		}
+	}
+}
+
 // The other half of the same plumbing: a URL is refused rather than quietly
 // rewritten into a local path.
 //

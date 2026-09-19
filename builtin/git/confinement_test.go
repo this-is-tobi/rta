@@ -120,6 +120,43 @@ func TestAURLIsRefusedRatherThanTurnedIntoALocalPath(t *testing.T) {
 	}
 }
 
+// The boundary substitutes a Path input rather than merely approving it:
+// what a handler receives is the judged form, absolute and symlink-resolved,
+// whatever the caller spelled (internal/mcp's checkPaths). So a file input
+// never arrives the way its help describes it, relative to the repository
+// root — and that relative form is the only one go-git's tree lookup knows.
+// Handed the absolute form, blame found no such file, with a hint telling the
+// caller to send what it had just sent, and log's --file matched no commit: a
+// well-formed empty table an agent reads as "nobody ever touched this file".
+func TestAFileInsideTheRootIsHandedToGitRepositoryRelative(t *testing.T) {
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "a.txt", "a\n", "touches a")
+	commitFile(t, repo, dir, "sub/b.txt", "b\n", "touches b")
+
+	g, err := pathguard.New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, verr := g.Check("file", filepath.Join(dir, "sub", "b.txt"))
+	if verr != nil {
+		t.Fatal(verr)
+	}
+	r := req(t, dir, map[string]any{"file": file, "limit": defaultLogLimit}).WithConfinement(g.Check)
+
+	t.Run("blame", func(t *testing.T) {
+		blame := table(t, runBlame, r)
+		if len(blame.Rows) != 1 || blame.Rows[0][4] != "b" {
+			t.Fatalf("blame rows = %v, want the file's one line", blame.Rows)
+		}
+	})
+	t.Run("log", func(t *testing.T) {
+		history := table(t, runLog, r)
+		if len(history.Rows) != 1 || history.Rows[0][3] != "touches b" {
+			t.Fatalf("log rows = %v, want the one commit that touched the file", history.Rows)
+		}
+	})
+}
+
 func errCode(err error) string {
 	var ve *view.Error
 	if errors.As(err, &ve) {
