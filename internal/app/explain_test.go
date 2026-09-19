@@ -41,6 +41,36 @@ func TestExplainCard(t *testing.T) {
 	}
 }
 
+// The card is the authoritative reference, so what the TUI can do with a
+// result is on it: a plugin author reads their own declaration back, and an
+// operator learns which key does what without opening the TUI to find out.
+func TestExplainCardListsWhatTheTUICanDoWithTheResult(t *testing.T) {
+	reg, _ := NewRegistry()
+	out, _, err := run(t, reg, "explain", "note.list")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"action:x", "remove → note.rm", "from the row", "toggle:A", "show done", "--all"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("note.list's card is missing %q:\n%s", want, out)
+		}
+	}
+	out, _, err = run(t, reg, "explain", "gen.password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "copy") || !strings.Contains(out, "Password") {
+		t.Errorf("gen.password's card does not say what c copies:\n%s", out)
+	}
+	out, _, err = run(t, reg, "explain", "agent.pending")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "live") {
+		t.Errorf("agent.pending's card does not say it is live:\n%s", out)
+	}
+}
+
 // The card is where a person or an agent is sent to find out how to invoke a
 // capability, and it was the one surface that never mentioned --detail: the
 // tool description advertises it in CLI syntax and the MCP schema publishes

@@ -83,6 +83,10 @@ const (
 	// RuleRedaction: a view that declares a redacted field names one that
 	// exists, and a capability that handles secrets declares one at all.
 	RuleRedaction Rule = "redaction"
+	// RuleActions: what a capability declares the TUI may do with its result
+	// holds against the result it returns — Copy names a column or key the
+	// view has. The rest of that declaration is Validate's.
+	RuleActions Rule = "actions"
 )
 
 // runTimeout bounds one capability. A handler that ignores ctx would
@@ -175,6 +179,7 @@ func Check(t *testing.T, p plugin.Plugin, opts ...Option) {
 	seen := drive(t, p, cfg, dir, inputs)
 	checkViews(t, seen, cfg)
 	checkRedaction(t, seen, cfg)
+	checkActions(t, seen, cfg)
 }
 
 // skipLines renders the declared opt-outs in a stable order, because test

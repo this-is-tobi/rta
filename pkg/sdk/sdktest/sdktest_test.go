@@ -59,8 +59,32 @@ func TestACorrectPluginPassesEveryRule(t *testing.T) {
 	seen := drive(rec, p, noConfig(), t.TempDir(), nil)
 	checkViews(rec, seen, noConfig())
 	checkRedaction(rec, seen, noConfig())
+	checkActions(rec, seen, noConfig())
 	if len(rec.errs) > 0 {
 		t.Fatalf("a correct plugin was rejected:\n%s", rec.errText())
+	}
+}
+
+// Copy names the column `c` copies from a result, and only a run can say
+// whether the column is there: Validate sees a well-formed name, and a name
+// that misses the view is a copy key that hints on the footer and never
+// fires.
+func TestACopyNamingAColumnTheViewLacksIsRejected(t *testing.T) {
+	c := ok()
+	c.Copy = "nope"
+	p := plugin.Plugin{Name: "demo", Summary: "demo", Capabilities: []plugin.Capability{c}}
+	rec := &recorder{}
+	checkActions(rec, drive(rec, p, noConfig(), t.TempDir(), nil), noConfig())
+	if !strings.Contains(rec.errText(), `Copy "nope"`) || !strings.Contains(rec.errText(), string(RuleActions)) {
+		t.Fatalf("a Copy naming a missing column was not rejected under %s:\n%s", RuleActions, rec.errText())
+	}
+
+	c.Copy = "name"
+	p.Capabilities[0] = c
+	rec = &recorder{}
+	checkActions(rec, drive(rec, p, noConfig(), t.TempDir(), nil), noConfig())
+	if len(rec.errs) > 0 {
+		t.Fatalf("a Copy naming a real column was rejected:\n%s", rec.errText())
 	}
 }
 

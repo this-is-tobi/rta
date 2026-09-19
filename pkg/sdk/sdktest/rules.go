@@ -425,3 +425,45 @@ func secretReason(c plugin.Capability) string {
 	}
 	return "takes a secret input"
 }
+
+// --- (f) actions ----------------------------------------------------------
+
+// checkActions holds the one declared TUI behaviour Validate cannot see
+// without a run: Copy names a column of the Table, or a key of the KeyValue,
+// the capability actually returns. Validate sees a well-formed name; a name
+// that misses the view is a copy key that hints on the footer and never
+// fires, which is exactly the shape a conformance suite exists to catch.
+// The rest of the declaration — keys, targets, bare, toggles, live, flash —
+// is admitted by Validate, which checkDeclaration already runs.
+func checkActions(t reporter, seen []observed, cfg config) {
+	t.Helper()
+
+	for _, o := range seen {
+		c := o.cap
+		if c.Copy == "" || o.err != nil || cfg.skipped(RuleActions, c.ID) {
+			continue
+		}
+		switch v := o.view.(type) {
+		case view.Table:
+			names := make([]string, 0, len(v.Columns))
+			for _, col := range v.Columns {
+				names = append(names, col.Name)
+			}
+			if !contains(names, c.Copy) {
+				t.Errorf("sdktest: %s: %s declares Copy %q, and its table has no such column (columns: %s)",
+					RuleActions, c.ID, c.Copy, strings.Join(names, ", "))
+			}
+		case view.KeyValue:
+			found := false
+			for _, pair := range v.Pairs {
+				found = found || pair.Key == c.Copy
+			}
+			if !found {
+				t.Errorf("sdktest: %s: %s declares Copy %q, and its pairs carry no such key", RuleActions, c.ID, c.Copy)
+			}
+		default:
+			t.Errorf("sdktest: %s: %s declares Copy %q, but returns a %s; c copies a Table's column or a KeyValue's key",
+				RuleActions, c.ID, c.Copy, view.TypeOf(v))
+		}
+	}
+}
