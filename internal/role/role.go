@@ -146,6 +146,20 @@ func Available() ([]Source, *view.Error) {
 	return out, nil
 }
 
+// Unknown is what every surface says when a name matches no role.
+//
+// One function rather than one sentence per caller, because the sentence is
+// the useful half and it is long. `grant roles <name>` had its own copy that
+// had shrunk to "`rta grant roles` lists them" — offered by `rta grant
+// roles` itself, so it named the command the operator had just run and
+// answered a question they had not asked. What they need is where a role
+// would have come from, which is three files and worth spelling out.
+func Unknown(name string) *view.Error {
+	return view.Errorf("role.unknown", "no role named %q", name).
+		WithHint("`rta grant roles` with no argument lists what this machine can issue; a role " +
+			"is a `roles:` entry in " + policy.RepoFile + ", in your policy file, or in your config")
+}
+
 // Find is the one role `grant issue` issues under this name.
 func Find(name string) (Source, *view.Error) {
 	all, verr := Available()
@@ -162,9 +176,7 @@ func Find(name string) (Source, *view.Error) {
 	case 1:
 		return hits[0], nil
 	case 0:
-		return Source{}, view.Errorf("role.unknown", "no role named %q", name).
-			WithHint("`rta grant roles` lists what this machine can issue; a role is a `roles:` entry " +
-				"in " + policy.RepoFile + ", in your policy file, or in your config")
+		return Source{}, Unknown(name)
 	default:
 		files := make([]string, 0, len(hits))
 		for _, h := range hits {
