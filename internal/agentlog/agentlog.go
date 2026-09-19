@@ -577,9 +577,16 @@ func writeAnchor(key []byte, a anchor) error {
 	if err != nil {
 		return err
 	}
-	defer func() { _ = f.Close() }()
-	_, err = f.Write(append(line, '\n'))
-	return err
+	// Closed where its error can be read, the way Append's own write does it.
+	// An anchor is the whole difference between a segment rta retired and a
+	// segment somebody deleted, so one that failed to reach the disk while
+	// reporting success turns the next verification into the accusation this
+	// record exists to prevent.
+	_, werr := f.Write(append(line, '\n'))
+	if cerr := f.Close(); werr == nil {
+		werr = cerr
+	}
+	return werr
 }
 
 // head marks where the record is supposed to end.
