@@ -21,6 +21,8 @@
 // That is tamper-evidence against accident and against confined code, never
 // proof against a determined local attacker — and saying so is the point,
 // because a log that claims more than it delivers is worse than no log.
+// Confined code is macOS-only, so off it the first half is empty and only
+// the accident half is left; internal/seal names the platforms.
 //
 // # Rotation, and why the chain survives it
 //

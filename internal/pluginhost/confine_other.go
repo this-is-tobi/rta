@@ -17,7 +17,6 @@ package pluginhost
 // What Linux does get is in host.go and applies on every platform: the
 // environment allowlist, process-group reaping, PR_SET_DUMPABLE=0, mTLS, and
 // the descriptor handling. Those are the parts that were load-bearing anyway.
-
 //
 // Windows gets CREATE_NEW_PROCESS_GROUP (procattr_windows.go) — one handle,
 // one kill, no orphans — documented there as lifetime control and not as
