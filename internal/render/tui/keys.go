@@ -52,7 +52,10 @@ const (
 
 // The vocabulary. One entry per idea, not per screen.
 var (
-	bindQuit   = binding{display: "q", keys: []string{"q", "ctrl+c"}, label: "quit", rank: rankExit}
+	bindQuit = binding{display: "q", keys: []string{"q", "ctrl+c"}, label: "quit", rank: rankExit}
+	// rankExtra: the overlay is the fallback for a bar that had to drop
+	// something, so it is the first thing to go when the bar is short.
+	bindHelp   = binding{display: "?", keys: []string{"?"}, label: "help", rank: rankExtra}
 	bindBack   = binding{display: "esc", keys: []string{"esc"}, label: "back", rank: rankExit}
 	bindOpen   = binding{display: "enter", keys: []string{"enter"}, label: "open", rank: rankPrimary}
 	bindRerun  = binding{display: "r", keys: []string{"r"}, label: "re-run", rank: rankPrimary}
@@ -299,6 +302,18 @@ const footerMaxLines = 2
 // fail on anything that does something without appearing here — which is the
 // only way this stops drifting again the next time a pane gains an action.
 func (m Model) footerItems(screen mode) []hintItem {
+	items := m.screenItems(screen)
+	// The overlay's key is advertised on exactly the screens that answer it
+	// (help.go), last so the bar drops it first: it is the fallback for a
+	// bar that had to drop something, not a thing to keep at their expense.
+	if m.helpOffered(screen) {
+		items = append(items, item(bindHelp))
+	}
+	return items
+}
+
+// screenItems is one screen's own vocabulary, before the overlay's key.
+func (m Model) screenItems(screen mode) []hintItem {
 	switch screen {
 	case modeDashboard:
 		return m.dashFooterItems()

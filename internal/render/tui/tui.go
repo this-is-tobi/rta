@@ -132,8 +132,10 @@ type Model struct {
 	// confirmation stage. Holds the profile name in modeProfiles and the
 	// plugin key in modeProfilePlugins; "" when nothing is armed.
 	armedDelete string
-	width       int
-	height      int
+	// help is the key overlay (help.go), open over whatever m.mode is.
+	help   bool
+	width  int
+	height int
 
 	// Live search bar state (dashboard tile 0).
 	searchEditing bool
@@ -657,6 +659,11 @@ func (m Model) open(c plugin.Capability) (tea.Model, tea.Cmd) {
 
 func (m Model) View() tea.View {
 	var v tea.View
+	if m.help {
+		v = tea.NewView(m.helpView())
+		v.AltScreen = true
+		return v
+	}
 	switch m.mode {
 	case modeDashboard:
 		v = tea.NewView(m.dashboardView())
