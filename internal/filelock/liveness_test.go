@@ -1,7 +1,9 @@
 package filelock
 
 import (
+	"errors"
 	"os"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -128,5 +130,49 @@ func TestReleasingStopsTheRenewal(t *testing.T) {
 
 	if got := mtime(t, path); got.After(planted) {
 		t.Fatal("a released holder is still renewing the lock file, which now belongs to somebody else")
+	}
+}
+
+// A beat that fails costs a beat, not the lease.
+//
+// beats is five so that "the holder has to miss every one of them before a
+// waiter is entitled to conclude it is gone" — but the first stamp to fail
+// used to be the last one ever armed, so a single refused beat *was* the
+// lease: the sentinel froze at its last stamp, the holder went on working, and
+// after `stale` a waiter was entitled to break its lock and run the same
+// read-modify-write beside it.
+//
+// The refusal is injected because nothing on Unix makes Chtimes fail in
+// practice; Windows does it structurally — os.Chtimes opens the file sharing
+// write but not read, and a waiter reading the sentinel holds a read handle,
+// so every beat that lands while a waiter is inside its poll is refused.
+func TestAMissedBeatCostsABeatNotTheLease(t *testing.T) {
+	path := lockPath(t)
+	original := chtimes
+	var refused atomic.Int32
+	chtimes = func(name string, atime, mtime time.Time) error {
+		if refused.CompareAndSwap(0, 1) {
+			return errors.New("the process cannot access the file because it is being used by another process")
+		}
+		return original(name, atime, mtime)
+	}
+	t.Cleanup(func() { chtimes = original })
+
+	release, err := Acquire(path, testLease, DefaultRetry, DefaultTimeout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+
+	created := mtime(t, path)
+	// Long enough for the refused beat and several after it.
+	time.Sleep(testLease + testLease/2)
+
+	if refused.Load() == 0 {
+		t.Fatal("no beat was refused, so this proves nothing about a missed one")
+	}
+	if last := mtime(t, path); !last.After(created) {
+		t.Fatalf("the lock's timestamp never moved after one refused beat (%v): the first "+
+			"missed beat ended the lease, and a waiter may now break a live holder's lock", last)
 	}
 }

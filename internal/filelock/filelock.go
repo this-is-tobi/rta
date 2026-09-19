@@ -193,24 +193,48 @@ type heartbeat struct {
 	stopped bool
 }
 
-// beat restamps the sentinel and arms the next one — but only while the
+// chtimes is os.Chtimes, overridable so a test can make one beat fail the way
+// Windows makes them fail — see beat.
+var chtimes = os.Chtimes
+
+// beat restamps the sentinel and arms the next one — for as long as the
 // sentinel is still this call's own lock. A holder that was broken as stale
 // has been replaced, and going on stamping the file would hold somebody else's
-// lease open on their behalf. Any error is the end of it: the lock reverts to
-// being judged by its last stamp, which is exactly the behaviour that existed
-// before there were any.
+// lease open on their behalf; a sentinel that is gone has nothing left to
+// renew and nothing will bring it back. Those two are the only ends of the
+// renewal short of stop.
+//
+// Every other outcome, a refused stamp included, arms the next beat anyway.
+// That is what `beats` has always claimed — a holder has to miss five in a row
+// before a waiter may call it dead — and for a while it was not what this did:
+// the first beat to fail was the last one ever armed, so one hiccup cost the
+// whole lease. A beat is not a syscall that either works or ends the lease. On
+// Windows every one of them is refused outright while a waiter has the
+// sentinel open, because os.Chtimes opens the file sharing write but not read
+// and a reader holds a read handle, which the share check refuses in both
+// directions — so a holder doing slow work under contention froze at its last
+// stamp, a waiter broke its lock at `stale`, and two writers ran the
+// read-modify-write this package exists to serialize. Unix is one EINTR away
+// from the same thing.
+//
+// Re-arming on failure means a lasting condition keeps a timer alive for as
+// long as the lock is held; stop takes the mutex and cancels whichever timer
+// is armed, so release still ends it.
 func (h *heartbeat) beat() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.stopped {
 		return
 	}
-	if held, err := atomicfile.ReadCapped(h.path, maxToken); err != nil || !bytes.Equal(held, h.mine) {
+	held, err := atomicfile.ReadCapped(h.path, maxToken)
+	switch {
+	case err == nil && !bytes.Equal(held, h.mine):
 		return
-	}
-	now := time.Now()
-	if err := os.Chtimes(h.path, now, now); err != nil {
+	case os.IsNotExist(err):
 		return
+	case err == nil:
+		now := time.Now()
+		_ = chtimes(h.path, now, now)
 	}
 	h.timer = time.AfterFunc(h.every, h.beat)
 }
