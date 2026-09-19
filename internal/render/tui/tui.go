@@ -423,6 +423,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// attached; the second reader is a matter of time.
 			m.tiles[idx].view = view.MapStrings(msg.v, textclean.Terminal)
 			m.tiles[idx].err = view.MapErrorStrings(msg.err, textclean.Terminal)
+			// An answer sets its row's height, which sets how many rows fit —
+			// the one thing clampScroll exists to keep honest, and the one
+			// mutation of it that used to skip the call. Unconditional:
+			// clampScroll is idempotent, and asking first whether the height
+			// moved costs a cli.Render per tile on the row, in the update
+			// loop, on a five-second timer.
+			m.clampScroll()
 		}
 		return m, nil
 

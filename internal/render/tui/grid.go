@@ -305,11 +305,33 @@ func (m Model) drawnHeights(first, last int) []int {
 // dashRows is the total number of capability-tile rows at the current width.
 func (m Model) dashRows() int { return len(m.tileRows()) }
 
+// maxScroll is the furthest the window may start: the first row from which
+// everything to the end fits, so that scrolling to the end fills the screen
+// instead of leaving the last row alone above dead space. Rows have their own
+// heights, so this is a walk back from the end rather than dashRows minus a
+// constant — the two agree while every row is the same height, and only the
+// walk stays right when a tile's answer changes its row. When not even the
+// last row fits by itself, the last row is where the end is.
+func (m Model) maxScroll() int {
+	if m.height <= 0 {
+		return 0 // size unknown: dashRowsVisible admits everything from the top
+	}
+	heights := m.rowHeights()
+	budget, used := m.dashRowBudget(), 0
+	for s := len(heights) - 1; s >= 0; s-- {
+		used += heights[s]
+		if used > budget {
+			return min(s+1, len(heights)-1)
+		}
+	}
+	return 0
+}
+
 // clampScroll keeps the selected tile visible and the offset in bounds. The
 // search bar never scrolls; capability tiles window selection-driven.
 func (m *Model) clampScroll() {
+	m.scroll = min(m.scroll, m.maxScroll())
 	visible := m.dashRowsVisible()
-	m.scroll = min(m.scroll, max(0, m.dashRows()-visible))
 	if m.selected == 0 {
 		return
 	}

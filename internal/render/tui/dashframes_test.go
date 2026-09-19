@@ -9,7 +9,41 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
+
+// A tile's answer sets its row's height, which sets how many rows fit — and
+// the refresh was the one mutation of that arithmetic that never re-windowed.
+// Scrolled to the end of six tall rows, six short answers left the window on
+// the last row alone above dead space, the header still saying there was
+// more above, when two rows fit.
+func TestATileThatShrinksPullsTheWindowBackToFillTheScreen(t *testing.T) {
+	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
+	tiles := make([]config.Tile, 6)
+	for i := range tiles {
+		tiles[i] = config.Tile{ID: "tall.info"}
+	}
+	m := New(heightRegistry(t), config.Dashboard{Tiles: tiles}, nil)
+	// At sixty cells the grid is one column, so six rows of tileHeight, and
+	// the height leaves room for one of them — or for two at tileMinHeight.
+	m = filled(t, m, 60, 30)
+	m = filled(t, m, 60, 1+lipgloss.Height(m.dashFooter())+searchTileHeight+tileHeight+2)
+	m.selected = 6
+	m.clampScroll()
+	if m.scroll != 5 {
+		t.Fatalf("scroll = %d before the answers, want the last row", m.scroll)
+	}
+	for i := 1; i <= 6; i++ {
+		next, _ := m.Update(tileMsg{id: "tall.info", idx: i, v: view.Text{Body: "one line"}})
+		m = next.(Model)
+	}
+	if m.scroll != 4 {
+		t.Errorf("scroll = %d after every row shrank, want 4 so both rows that fit are on screen", m.scroll)
+	}
+	if got := plain(m.View().Content); strings.Count(got, "╭") != 3 { // the search bar and two tiles
+		t.Errorf("the frame does not show the two rows that fit:\n%s", got)
+	}
+}
 
 // Bubble Tea renders the initial model before it delivers a window size, so
 // this is the first frame of every run. It has to be nothing: a dashboard laid
