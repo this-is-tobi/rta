@@ -95,6 +95,10 @@ func runWatchAt(ctx context.Context, req plugin.Request, base string) (view.View
 	parsed := make([]watchEntry, 0, len(entries))
 	for _, entry := range entries {
 		product, cycle, _ := strings.Cut(strings.TrimSpace(entry), "@")
+		// Trimmed on its own too: "postgresql @15" is one space from
+		// right, and untrimmed the space travels into the request path and
+		// comes back as a product nobody has heard of.
+		product = strings.TrimSpace(product)
 		if product == "" {
 			return nil, view.Errorf("eol.watch.entry", "%q names no product", entry).
 				WithHint("an entry is product or product@cycle — postgresql@15, postgresql@13..16, nodejs")
