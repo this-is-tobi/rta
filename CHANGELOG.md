@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.24.0](https://github.com/this-is-tobi/rta/compare/v0.23.0...v0.24.0) (2026-09-20)
+
+
+### ⚠ BREAKING CHANGES
+
+* **eol:** eol.watch entries are product@cycle, and product/cycle, which earlier releases accepted, is refused with the entry named. A `plugins: eol: products:` list needs its slashes replaced by @.
+
+### Features
+
+* **audit:** audit.kube.eol grades a cluster's versions against endoflife.date ([b014d83](https://github.com/this-is-tobi/rta/commit/b014d83d966742c2ee6d0317154f637b82f04ad6))
+* **eol:** a cycle can be a range, and a watch entry is product@cycle ([ba5a84f](https://github.com/this-is-tobi/rta/commit/ba5a84fa1e60499f6d4c3d323f9d0b2356c711f8))
+* **explain:** the card says what the dashboard does with a capability ([be12236](https://github.com/this-is-tobi/rta/commit/be1223688fe69311a7b4283e2d9caa5a9f0f390b))
+* **tui:** a capability declares how often its dashboard tile re-runs ([1d13e15](https://github.com/this-is-tobi/rta/commit/1d13e15e671730a77b82d29cf965004e398d66e6))
+
+
+### Bug Fixes
+
+* **audit:** an end-of-life date already behind us is said as such ([cca907a](https://github.com/this-is-tobi/rta/commit/cca907a37f78b021c5b861009ac6acfbb1d00c0e))
+* **audit:** audit.kube.eol grades every row it reads, floating variants included ([b05a5cd](https://github.com/this-is-tobi/rta/commit/b05a5cd65c1de12bdfc813855cc8c59fb2d1f856))
+* **cli:** a go-installed rta reports the module version, not dev ([01fb844](https://github.com/this-is-tobi/rta/commit/01fb8444074f9ffabaed5560a1707c59e857f61a))
+* **cli:** a go-installed version compares equal to the archive's stamp ([6192cbb](https://github.com/this-is-tobi/rta/commit/6192cbbc6e689b24eb420e2b40e3ea33cfa32a26))
+* **eol:** a cycle can be named by its codename ([7eaae64](https://github.com/this-is-tobi/rta/commit/7eaae644a3f311d6ddf8a5339e53ed06b0b88af3))
+* **eol:** a watch entry in the old product/cycle spelling is refused, naming the new one ([20af09d](https://github.com/this-is-tobi/rta/commit/20af09d7157167132bd9edbe7bdd67418b4bbe7e))
+* **eol:** eol check takes product@cycle, and a watch entry's product is trimmed ([03a4a97](https://github.com/this-is-tobi/rta/commit/03a4a9789353087aa25fa2944c59b87ca63e3a03))
+
+
+### Code Refactoring
+
+* **eol:** the endoflife.date client moves to a shared builtin package ([dc60325](https://github.com/this-is-tobi/rta/commit/dc60325ade339c5c7d0592ce85c0a734dbffdc1c))
+
 ## [0.23.0](https://github.com/this-is-tobi/rta/compare/v0.22.0...v0.23.0) (2026-09-20)
 
 
