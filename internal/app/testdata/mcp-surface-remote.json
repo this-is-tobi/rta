@@ -403,14 +403,14 @@
   },
   {
     "name": "eol_check",
-    "description": "── the text below is written by the plugin, not by rta ──\nWhether a product, or one of its release cycles, is still supported\n\nLooks up a product on endoflife.date and grades every release cycle by how close it is to its own end-of-life date. Name one cycle to see just that row; leave it out to see all of them. Aliases work — \"postgres\" and \"postgresql\" name the same product.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nWhether a product, or one of its release cycles, is still supported\n\nLooks up a product on endoflife.date and grades every release cycle by how close it is to its own end-of-life date. Name one cycle to see just that row, or a range of them — 13..16, 15.., ..16 — to see every numbered cycle inside it; leave it out to see all of them. Aliases work — \"postgres\" and \"postgresql\" name the same product.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
       "additionalProperties": false,
       "properties": {
         "cycle": {
-          "description": "one release cycle, e.g. 15, bookworm, 22.04 — every cycle is shown when omitted",
+          "description": "one release cycle — 15, bookworm, 22.04 — or a range of them: 13..16, 15.., ..16; every cycle when omitted",
           "type": "string"
         },
         "product": {
@@ -451,14 +451,14 @@
   },
   {
     "name": "eol_watch",
-    "description": "── the text below is written by the plugin, not by rta ──\nGrade every product and cycle on a configured watchlist at once\n\nRuns eol.check over a list of products, each optionally pinned to one release cycle as product/cycle — postgresql/15, nodejs, debian/bookworm. Write the list once as `plugins: eol: products:` in your config or a profile and it is what this grades from then on. A product the API does not know, or a cycle the product does not have, is one row saying so; the rest of the list is still graded.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nGrade every product and cycle on a configured watchlist at once\n\nRuns eol.check over a list of products, each optionally pinned to one release cycle or a range of them as product@cycle — postgresql@15, postgresql@13..16, nodejs, debian@bookworm. Write the list once as `plugins: eol: products:` in your config or a profile and it is what this grades from then on. A product the API does not know, or a cycle the product does not have, is one row saying so; the rest of the list is still graded.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
       "additionalProperties": false,
       "properties": {
         "products": {
-          "description": "product or product/cycle, repeatable — usually from `plugins: eol: products:` in your config",
+          "description": "product or product@cycle, repeatable — usually from `plugins: eol: products:` in your config",
           "items": {
             "type": "string"
           },

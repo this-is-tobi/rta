@@ -80,7 +80,7 @@ func productsTable(t *testing.T, base string, values map[string]any) view.Table 
 
 func TestWatchGradesEveryEntryAndPinsACycleWhenNamed(t *testing.T) {
 	srv := newCatalogueServer(t)
-	tbl := watchTable(t, srv.URL, map[string]any{"products": []any{"postgresql/18", "nodejs"}})
+	tbl := watchTable(t, srv.URL, map[string]any{"products": []any{"postgresql@18", "nodejs"}})
 
 	// postgresql pinned to one cycle is one row; nodejs unpinned is every
 	// cycle the fixture carries.
@@ -102,7 +102,7 @@ func TestWatchGradesEveryEntryAndPinsACycleWhenNamed(t *testing.T) {
 
 func TestWatchKeepsAnUnknownProductAsARowRatherThanFailingTheCall(t *testing.T) {
 	srv := newCatalogueServer(t)
-	tbl := watchTable(t, srv.URL, map[string]any{"products": []any{"nosuchthing", "postgresql/18"}})
+	tbl := watchTable(t, srv.URL, map[string]any{"products": []any{"nosuchthing", "postgresql@18"}})
 
 	if len(tbl.Rows) != 2 {
 		t.Fatalf("got %d rows, want 2:\n%v", len(tbl.Rows), tbl.Rows)
@@ -117,7 +117,7 @@ func TestWatchKeepsAnUnknownProductAsARowRatherThanFailingTheCall(t *testing.T) 
 
 func TestWatchReportsACycleTheProductDoesNotHave(t *testing.T) {
 	srv := newCatalogueServer(t)
-	tbl := watchTable(t, srv.URL, map[string]any{"products": []any{"postgresql/9.6"}})
+	tbl := watchTable(t, srv.URL, map[string]any{"products": []any{"postgresql@9.6"}})
 
 	if len(tbl.Rows) != 1 || tbl.Rows[0][1] != "9.6" || tbl.Rows[0][7] != "no such cycle" {
 		t.Errorf("rows = %v, want one row for cycle 9.6 with Status \"no such cycle\"", tbl.Rows)
@@ -137,7 +137,7 @@ func TestWatchReadsTheListFromTheConfigWhenNobodyPassedOne(t *testing.T) {
 		}
 	}
 	req := plugin.NewRequest(plugin.Resolve(c, plugin.Inputs{
-		Config: map[string]any{"products": []any{"postgresql/18"}},
+		Config: map[string]any{"products": []any{"postgresql@18"}},
 	}), false, false)
 	v, err := runWatchAt(context.Background(), req, srv.URL)
 	tbl := asTable(t, v, err)
