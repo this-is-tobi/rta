@@ -227,13 +227,43 @@ func (g *grader) gradeControlPlane(r *findings.Report, gitVersion string) *view.
 			"the API server reported no version to grade", refUnmaintained)
 		return nil
 	}
-	p, verr := g.product("kubernetes")
-	if verr != nil || p == nil {
+	p, verr := g.kubernetes()
+	if verr != nil {
 		return verr
+	}
+	if p == nil {
+		r.Add(grpKubeEOL, "control plane: "+gitVersion, findings.Info, noKubernetesPage, refUnmaintained)
+		return nil
 	}
 	status, detail := g.grade(p, version)
 	r.AddLinked(grpKubeEOL, "control plane: "+gitVersion, status, detail, refUnmaintained, productPage(p))
 	return nil
+}
+
+// noKubernetesPage is the row a version gets when the API has no page for
+// kubernetes itself — which it has had since the site began, so this is a
+// statement about the API being unreachable in a novel way rather than a
+// case anybody expects. Said rather than skipped: a report with no control
+// plane row at all reads as a control plane that was not asked about.
+const noKubernetesPage = "endoflife.date has no release data for kubernetes, so this version cannot be graded"
+
+// kubernetes is the product every cluster row grades against, looked up
+// ahead of the cap: the images are numerous and optional, the control plane
+// is one and the point.
+func (g *grader) kubernetes() (*eolapi.Product, *view.Error) {
+	if p, ok := g.fetched["kubernetes"]; ok {
+		return p, nil
+	}
+	p, verr := eolapi.FetchProduct(g.ctx, http.DefaultClient, g.base, "kubernetes")
+	if verr != nil {
+		if verr.Code == "eol.product.notfound" {
+			g.fetched["kubernetes"] = nil
+			return nil, nil
+		}
+		return nil, verr
+	}
+	g.fetched["kubernetes"] = p
+	return p, nil
 }
 
 // gradeKubelets groups nodes by kubelet version — a fleet at one version is
@@ -247,8 +277,8 @@ func (g *grader) gradeKubelets(r *findings.Report, nodes []nodeVersionItem) *vie
 	if len(byVersion) == 0 {
 		return nil
 	}
-	p, verr := g.product("kubernetes")
-	if verr != nil || p == nil {
+	p, verr := g.kubernetes()
+	if verr != nil {
 		return verr
 	}
 	for _, v := range sortedKeys(byVersion) {
@@ -258,6 +288,10 @@ func (g *grader) gradeKubelets(r *findings.Report, nodes []nodeVersionItem) *vie
 		if v == "" {
 			check = fmt.Sprintf("kubelets reporting no version (%s)", findings.Plural(len(names), "node"))
 			r.Add(grpKubeEOL, check, findings.Info, "nodes: "+strings.Join(names, ", "), refUnmaintained)
+			continue
+		}
+		if p == nil {
+			r.Add(grpKubeEOL, check, findings.Info, noKubernetesPage+" — nodes: "+strings.Join(names, ", "), refUnmaintained)
 			continue
 		}
 		status, detail := g.grade(p, releaseOf(v))
@@ -355,7 +389,7 @@ func (g *grader) gradeImages(r *findings.Report, images []*imageUse, clusterWide
 			r.AddLinked(grpKubeEOL, check, findings.Info,
 				"pinned by digest with no tag: a digest names bytes, not a release, so "+p.Name+
 					"'s support window cannot be read from it", refUnmaintained, productPage(p))
-		case u.tag == "" || strings.EqualFold(u.tag, "latest"):
+		case u.tag == "" || strings.EqualFold(releaseOf(u.tag), "latest"):
 			r.AddLinked(grpKubeEOL, check, findings.Info,
 				"a floating tag names no release, so nothing can be said about "+p.Name+
 					"'s support window — pin a version to grade it", refUnmaintained, productPage(p))
