@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime/debug"
+	"strings"
 	"syscall"
 
 	"charm.land/fang/v2"
@@ -78,6 +79,12 @@ func buildVersion() string {
 
 // versionFrom prefers a linker stamp and falls back to the module version
 // the toolchain recorded, unless that is the "(devel)" a checkout build gets.
+//
+// The module version loses its leading v. A release archive is stamped
+// `0.24.0` by GoReleaser and a `go install` of the same tag records
+// `v0.24.0`, and session.OtherBuilds compares the two strings as they are:
+// left unequal, a doctor run from the archive would report a server started
+// from the go-installed binary as a different build of the same release.
 func versionFrom(stamp, module string) string {
 	if stamp != "dev" {
 		return stamp
@@ -85,7 +92,7 @@ func versionFrom(stamp, module string) string {
 	if module == "" || module == "(devel)" {
 		return stamp
 	}
-	return module
+	return strings.TrimPrefix(module, "v")
 }
 
 func main() {
