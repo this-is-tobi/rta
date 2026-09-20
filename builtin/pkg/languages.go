@@ -127,7 +127,13 @@ func npmManager() manager {
 					if errors.Is(err, io.EOF) {
 						break
 					}
-					if doc != nil {
+					// A later document that will not parse is only safe to
+					// ignore once an earlier one actually answered. `doc !=
+					// nil` was also true for the empty {} npm sometimes
+					// writes first, so a malformed answer after it was
+					// reported as "nothing is outdated" — a clean bill of
+					// health for output nobody could read.
+					if len(doc) > 0 {
 						break
 					}
 					return nil, view.Errorf("pkg.npm.unreadable", "npm outdated -g --json could not be read: %v", err)

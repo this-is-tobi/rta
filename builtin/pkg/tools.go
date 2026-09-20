@@ -114,7 +114,19 @@ type toolState struct {
 }
 
 func (s toolState) behind() bool {
-	return s.Installed != "" && s.Latest != "" && s.Installed != "-" && semverLess(s.Installed, s.Latest)
+	return s.compared() && semverLess(s.Installed, s.Latest)
+}
+
+// compared reports whether the installed version could actually be held
+// against the latest one.
+//
+// **"ok" is a claim that the comparison happened.** behind() answers false
+// both for a tool that is current and for one whose own --version output
+// held nothing versionRe could read — a wrapper script, a binary that
+// prints only a commit hash, a flag that means something else there — and
+// toolsTable's default turned the second into the same word as the first.
+func (s toolState) compared() bool {
+	return s.Installed != "" && s.Installed != "-" && s.Latest != ""
 }
 
 func readTools(ctx context.Context, c *registryClient, raw []string) ([]toolState, *view.Error) {
@@ -192,6 +204,8 @@ func toolsTable(states []toolState) view.Table {
 			status = "info " + s.Note
 		case s.behind():
 			status = "outdated"
+		case !s.compared():
+			status = "unknown — its version could not be read"
 		}
 		t.Rows = append(t.Rows, []string{s.tool.Bin, "github:" + s.tool.Owner + "/" + s.tool.Repo, s.Installed, s.Latest, status, s.Where})
 	}

@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"sort"
+	"strings"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -75,7 +77,69 @@ func diffCommit(repo *git.Repository, spec string) (view.View, error) {
 	if err != nil {
 		return nil, view.Errorf("git.diff.failed", "diffing %s: %v", spec, err)
 	}
-	return textOrEmpty(patch.String()), nil
+	body := patch.String()
+	// **go-git renders nothing at all for a submodule pointer change.**
+	// Measured, not assumed: for a commit that only bumps a submodule, the
+	// patch comes back with one FilePatch whose Files() are both nil and
+	// whose Chunks() is empty, and String() is the empty string — so a
+	// commit that did change something arrived here as "" and textOrEmpty
+	// announced "no uncommitted changes", which is wrong twice over on a
+	// --commit diff. `git show` prints `sub | 2 +-` for the same commit.
+	//
+	// The pointers are read off the trees instead, which is where they are.
+	if bumps := submoduleBumps(parent, commit); len(bumps) > 0 {
+		if body != "" {
+			body += "\n"
+		}
+		body += strings.Join(bumps, "\n") + "\n"
+	}
+	if body == "" {
+		return view.Text{Body: shortHash(commit.Hash) + " changed nothing this can show — " +
+			"an empty commit, or a change only in a mode or a tree go-git renders no patch for"}, nil
+	}
+	return view.Text{Body: body}, nil
+}
+
+// submoduleBumps names the submodules a commit moved, and where it moved
+// them, because the patch encoder emits nothing for a gitlink entry.
+//
+// One line per submodule in the shape the rest of a diff reads in, rather
+// than a second view: the caller asked for a diff, and this is the part of
+// it the encoder dropped.
+func submoduleBumps(from, to *object.Commit) []string {
+	fromTree, err := from.Tree()
+	if err != nil {
+		return nil
+	}
+	toTree, err := to.Tree()
+	if err != nil {
+		return nil
+	}
+	changes, err := object.DiffTree(fromTree, toTree)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, ch := range changes {
+		if ch.From.TreeEntry.Mode != filemode.Submodule && ch.To.TreeEntry.Mode != filemode.Submodule {
+			continue
+		}
+		name := ch.To.Name
+		if name == "" {
+			name = ch.From.Name
+		}
+		switch {
+		case ch.From.TreeEntry.Mode != filemode.Submodule:
+			out = append(out, "submodule "+name+" added at "+shortHash(ch.To.TreeEntry.Hash))
+		case ch.To.TreeEntry.Mode != filemode.Submodule:
+			out = append(out, "submodule "+name+" removed, was "+shortHash(ch.From.TreeEntry.Hash))
+		default:
+			out = append(out, "submodule "+name+" "+shortHash(ch.From.TreeEntry.Hash)+
+				" -> "+shortHash(ch.To.TreeEntry.Hash))
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 func diffWorktree(repo *git.Repository) (view.View, error) {
