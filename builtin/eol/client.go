@@ -31,11 +31,17 @@ const requestTimeout = 10 * time.Second
 const maxBody = 4 << 20
 
 // release is the fields this plugin reads from one entry in a product's
-// "releases" array. Everything else the API returns (codename, custom, …)
-// is left for a later cut — encoding/json ignores what a struct does not
-// name, so adding a field here later is additive, not a rewrite.
+// "releases" array. Everything else the API returns (custom, …) is left for
+// a later cut — encoding/json ignores what a struct does not name, so adding
+// a field here later is additive, not a rewrite.
 type release struct {
-	Name        string  `json:"name"`
+	Name string `json:"name"`
+	// Codename is the name a cycle is known by where the number is not what
+	// people say: debian's "12" is Bookworm, macOS 26 is Tahoe. The API keeps
+	// it beside the name rather than in it, so a lookup by codename has to
+	// read this field — which the help text promised ("bookworm, Tahoe")
+	// for a whole release before anything did.
+	Codename    string  `json:"codename"`
 	ReleaseDate string  `json:"releaseDate"`
 	IsEol       bool    `json:"isEol"`
 	EolFrom     *string `json:"eolFrom"`
