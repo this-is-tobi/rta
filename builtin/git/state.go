@@ -173,6 +173,14 @@ func notIn(repo *git.Repository, tip, other plumbing.Hash) (int, bool) {
 		}
 		c, err := repo.CommitObject(h)
 		if err != nil {
+			// **A parent that is not in the object store is a boundary, not
+			// the end of the history.** A shallow clone's boundary commit
+			// has real parents that were never fetched, and dropping them
+			// silently stopped the walk there while still reporting a
+			// finished count — so "3 ahead" was stated about a branch that
+			// may be three hundred ahead. `capped` already exists for
+			// exactly this and only the walk limit ever set it.
+			ok = false
 			continue
 		}
 		queue = append(queue, c.ParentHashes...)
@@ -183,6 +191,7 @@ func notIn(repo *git.Repository, tip, other plumbing.Hash) (int, bool) {
 // reachable collects the commits reachable from h, up to limit.
 func reachable(repo *git.Repository, h plumbing.Hash, limit int) (map[plumbing.Hash]bool, bool) {
 	seen := make(map[plumbing.Hash]bool, limit/8)
+	complete := true
 	queue := []plumbing.Hash{h}
 	for len(queue) > 0 {
 		cur := queue[0]
@@ -196,11 +205,15 @@ func reachable(repo *git.Repository, h plumbing.Hash, limit int) (map[plumbing.H
 		}
 		c, err := repo.CommitObject(cur)
 		if err != nil {
+			// Same boundary, same consequence: a common-set this could not
+			// finish collecting makes the count on the other side an
+			// over-count, and the caller has to be told it is a floor.
+			complete = false
 			continue
 		}
 		queue = append(queue, c.ParentHashes...)
 	}
-	return seen, true
+	return seen, complete
 }
 
 // operations maps the marker git leaves in the repository directory to the

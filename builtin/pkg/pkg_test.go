@@ -532,3 +532,44 @@ func TestParseVersionReadsTheFirstThingThatLooksLikeOne(t *testing.T) {
 		}
 	}
 }
+
+// **"ok" is a claim that the installed version was held against the latest
+// one, and a tool whose own --version output did not parse never was.**
+//
+// behind() requires a non-empty Installed, so a tool on $PATH that prints
+// something versionRe cannot read came back not-behind — and toolsTable's
+// default turned that into "ok", the same word a genuinely current tool
+// gets. pkg.overview then counted it among "N current".
+func TestAToolWhoseVersionCouldNotBeReadIsNotOk(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/repos/junegunn/fzf/releases/latest" {
+			w.Write([]byte(`{"tag_name":"v0.55.0","assets":[]}`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+	c := newRegistryClient()
+	c.github = srv.URL
+	// On $PATH, answering --version with something that holds no version:
+	// a wrapper script, a tool that prints only a commit hash, a binary
+	// whose flag means something else.
+	f := &fake{bins: map[string]bool{"fzf": true}, answers: map[string]fakeAnswer{
+		"fzf --version": {out: "built from source\n"},
+		"fzf version":   {out: "built from source\n"},
+	}}
+	install(t, f)
+
+	states, verr := readTools(context.Background(), c, []string{"fzf=github:junegunn/fzf"})
+	if verr != nil {
+		t.Fatal(verr)
+	}
+	if states[0].behind() {
+		t.Fatal("the arrangement no longer reproduces: the version parsed")
+	}
+	if status := toolsTable(states).Rows[0][4]; status == "ok" {
+		t.Errorf("a tool whose installed version could not be read is reported %q", status)
+	} else if !strings.Contains(status, "unknown") {
+		t.Errorf("status = %q, want it to say the comparison could not be made", status)
+	}
+}

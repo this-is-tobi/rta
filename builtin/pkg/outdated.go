@@ -189,19 +189,33 @@ func runOverview(ctx context.Context, req plugin.Request) (view.View, error) {
 		}
 		kv.Pairs = append(kv.Pairs, view.Pair{Key: m.name, Value: v})
 	}
-	behind := 0
+	behind, unchecked := 0, 0
 	for _, t := range tools {
-		if t.behind() {
+		switch {
+		case t.behind():
 			behind++
+		case !t.compared():
+			// Counted apart from the current ones: "ok — 7 current" was
+			// counting tools whose installed version nobody managed to
+			// read, which is the one summary line somebody reads instead
+			// of the table.
+			unchecked++
 		}
 	}
 	switch {
 	case len(tools) == 0:
 		kv.Pairs = append(kv.Pairs, view.Pair{Key: "tools", Value: "none listed — `plugins: pkg: tools:`"})
-	case behind == 0:
+	case behind == 0 && unchecked == 0:
 		kv.Pairs = append(kv.Pairs, view.Pair{Key: "tools", Value: fmt.Sprintf("ok — %d current", len(tools))})
+	case behind == 0:
+		kv.Pairs = append(kv.Pairs, view.Pair{Key: "tools",
+			Value: fmt.Sprintf("%d current, %d could not be checked", len(tools)-unchecked, unchecked)})
 	default:
-		kv.Pairs = append(kv.Pairs, view.Pair{Key: "tools", Value: fmt.Sprintf("outdated %d of %d", behind, len(tools))})
+		v := fmt.Sprintf("outdated %d of %d", behind, len(tools))
+		if unchecked > 0 {
+			v += fmt.Sprintf(" (%d could not be checked)", unchecked)
+		}
+		kv.Pairs = append(kv.Pairs, view.Pair{Key: "tools", Value: v})
 	}
 	kv.Pairs = append(kv.Pairs, osStatePairs(st).Pairs...)
 	kv.Pairs = append(kv.Pairs, view.Pair{Key: "total behind",
