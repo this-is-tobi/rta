@@ -199,6 +199,28 @@ func TestKubeEOLReadsTheClusterBeforeAskingTheAPI(t *testing.T) {
 	}
 }
 
+// endoflife.date regenerates daily, so for a day a cycle's date is behind us
+// while isEol is still false. The verdict stays the API's, and the sentence
+// says what happened rather than counting to a negative number.
+func TestGradeSaysWhenTheAnnouncedDateHasAlreadyPassed(t *testing.T) {
+	// A fixed clock in UTC, the zone the API's dates are parsed in: against
+	// time.Now() the count depends on the hour and the machine's zone.
+	passed := "2026-09-18"
+	g := &grader{warnDays: 90, now: time.Date(2026, 9, 21, 12, 0, 0, 0, time.UTC)}
+	p := &eolapi.Product{Name: "demo", Releases: []eolapi.Release{{Name: "1", EolFrom: &passed}}}
+
+	status, detail := g.grade(p, "1.4")
+	if status != findings.Warn {
+		t.Errorf("status = %s, want warn: the API has not said EOL", status)
+	}
+	if !strings.Contains(detail, "passed its announced end-of-life date, "+passed+", 3 days ago") {
+		t.Errorf("detail = %q", detail)
+	}
+	if strings.Contains(detail, "-") && strings.Contains(detail, "in -") {
+		t.Errorf("detail counts to a negative number: %q", detail)
+	}
+}
+
 func TestImageRef(t *testing.T) {
 	cases := []struct {
 		ref, name, tag string

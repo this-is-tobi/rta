@@ -211,6 +211,13 @@ func (g *grader) grade(p *eolapi.Product, version string) (status, detail string
 		return findings.Fail, label + " is past its end of life"
 	case eolapi.Ending:
 		d, _ := eolapi.EolDate(rel)
+		// The date can be behind us while isEol is still false: the site
+		// regenerates daily, and the API's own verdict is what Grade trusts.
+		// Warn, as the verdict says, but not "in -3 days".
+		if d.Before(g.now) {
+			return findings.Warn, fmt.Sprintf("%s passed its announced end-of-life date, %s, %s ago; endoflife.date has not marked the cycle EOL yet",
+				label, *rel.EolFrom, findings.Plural(daysBetween(d, g.now), "day"))
+		}
 		return findings.Warn, fmt.Sprintf("%s reaches end of life on %s, in %s",
 			label, *rel.EolFrom, findings.Plural(daysBetween(g.now, d), "day"))
 	}
