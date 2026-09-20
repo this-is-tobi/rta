@@ -18,7 +18,7 @@ import (
 // cluster fixtures run: the catalogue with its aliases, then one page per
 // product. Dates are far enough out, or far enough back, that the test does
 // not move with the calendar; the one that must be near is computed.
-func newEOLServer(t *testing.T) (*httptest.Server, *int) {
+func newEOLServer(t *testing.T, omit ...string) (*httptest.Server, *int) {
 	t.Helper()
 	requests := 0
 	soon := time.Now().AddDate(0, 0, 40).Format("2006-01-02")
@@ -44,6 +44,9 @@ func newEOLServer(t *testing.T) (*httptest.Server, *int) {
 			{"name":"12","codename":"Bookworm","releaseDate":"2023-06-10","isEol":false,"eolFrom":"2099-06-30","latest":{"name":"12.13"}}]}}`,
 		"/products/ghost": `{"result":{"name":"ghost","releases":[
 			{"name":"6","releaseDate":"2025-09-01","isEol":false,"eolFrom":null,"latest":{"name":"6.2.0"}}]}}`,
+	}
+	for _, path := range omit {
+		delete(pages, path)
 	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests++
@@ -74,6 +77,7 @@ const clusterPodsBody = `{"items":[
 		"initContainers":[{"image":"ghcr.io/x/redis:6.2.1-alpine"}]}},
 	{"metadata":{"namespace":"app","name":"api-1"},"spec":{"containers":[{"image":"docker.io/library/postgres:15.4"},{"image":"redis:7.2.4"}]}},
 	{"metadata":{"namespace":"web","name":"nginx-0"},"spec":{"containers":[{"image":"nginx"}]}},
+	{"metadata":{"namespace":"web","name":"edge-0"},"spec":{"containers":[{"image":"nginx:latest-alpine"}]}},
 	{"metadata":{"namespace":"web","name":"cache-0"},"spec":{"containers":[{"image":"quay.io/foo/redis@sha256:0123456789abcdef"}]}},
 	{"metadata":{"namespace":"os","name":"shell-0"},"spec":{"containers":[{"image":"debian:bookworm-slim"}]}},
 	{"metadata":{"namespace":"blog","name":"ghost-0"},"spec":{"containers":[{"image":"ghost:5.9"}]}}]}`
@@ -109,6 +113,8 @@ func TestKubeEOLGradesTheControlPlaneTheKubeletsAndEveryDistinctImage(t *testing
 		"image redis:6.2.1-alpine (1 pod in 1 namespace) | " + findings.Fail + " | redis 6.2 reached end of life on 2025-01-01",
 		"image redis:7.2.4 (1 pod in 1 namespace) | " + findings.Warn + " | redis 7.2 reaches end of life on",
 		"image nginx (1 pod in 1 namespace) | " + findings.Info + " | a floating tag names no release",
+		// A variant suffix on a floating tag is still a floating tag.
+		"image nginx:latest-alpine (1 pod in 1 namespace) | " + findings.Info + " | a floating tag names no release",
 		"image redis (1 pod in 1 namespace) | " + findings.Info + " | pinned by digest with no tag",
 		"image debian:bookworm-slim (1 pod in 1 namespace) | " + findings.OK + " | debian 12 is supported until 2099-06-30",
 		// A product the catalogue lists with no cycle the tag matches.
@@ -153,6 +159,28 @@ func TestKubeEOLNarrowedToANamespaceLeavesTheNodesAloneAndSaysSo(t *testing.T) {
 	}
 	if !strings.Contains(got, "--namespace=db") {
 		t.Errorf("the pod read was not narrowed:\n%s", got)
+	}
+}
+
+// The API answering without a kubernetes page is not a cluster with nothing
+// to say about its control plane: the rows are there, graded as unknown.
+func TestKubeEOLSaysWhenTheAPIHasNoKubernetesPage(t *testing.T) {
+	fakeKubectl(t, map[string]string{"version": clusterVersionBody, "nodes": clusterNodesBody,
+		"pods": `{"items":[]}`})
+	srv, _ := newEOLServer(t, "/products/kubernetes")
+
+	out, err := runKubeEOLAt(t.Context(), eolRequest(nil), srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered := renderText(t, out)
+	for _, want := range []string{
+		"control plane: v1.30.2+k3s1 | " + findings.Info + " | endoflife.date has no release data for kubernetes",
+		"kubelets at v1.28.0 (2 nodes) | " + findings.Info + " | endoflife.date has no release data for kubernetes",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Errorf("missing %q in:\n%s", want, rendered)
+		}
 	}
 }
 
