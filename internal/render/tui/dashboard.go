@@ -236,6 +236,25 @@ func NoTileReason(p plugin.Plugin) string {
 	}
 }
 
+// Unasked says why the dashboard would not run a capability on its own, or
+// nothing when it would: the reasons NoTileReason tallies per plugin, one
+// capability at a time. Exported for `rta explain`, whose card is per
+// capability and had no way to say either — safety, NoPreview and a
+// required input's default are three facts on three different lines of a
+// declaration, and the tile behaviour they add up to was invisible without
+// reading the source.
+func Unasked(c plugin.Capability) string {
+	switch {
+	case c.Safety != plugin.Read:
+		return "only a read runs on a timer"
+	case c.NoPreview:
+		return "it declines to run unasked"
+	case formNeeded(c):
+		return "it needs to be told what to look at"
+	}
+	return ""
+}
+
 // previewable reports whether the dashboard may run a capability on its own:
 // on load, then again every few seconds, with nobody watching.
 //
