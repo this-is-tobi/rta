@@ -77,6 +77,32 @@ func TestWatchReportsARangeNothingFallsInsideAsARow(t *testing.T) {
 	}
 }
 
+// A list written for the release that spelled entries product/cycle is
+// refused with the new spelling, before any request: graded as it stood it
+// was one "not found" row per entry, which reads as a typo in the product's
+// name rather than as the grammar having moved.
+func TestWatchRefusesTheOldProductSlashCycleSpellingWithTheNewOne(t *testing.T) {
+	requests := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(srv.Close)
+
+	_, err := runWatchAt(context.Background(),
+		reqFor(t, "eol.watch", map[string]any{"products": []any{"nodejs", "postgresql/15"}}), srv.URL)
+	verr := view.AsError(err, "eol.test")
+	if verr == nil || verr.Code != "eol.watch.entry" {
+		t.Fatalf("got %v, want eol.watch.entry", err)
+	}
+	if !strings.Contains(verr.Message, "product/cycle") || verr.Hint != "write it as postgresql@15" {
+		t.Errorf("refusal = %q / hint %q, want the old spelling named and the entry rewritten", verr.Message, verr.Hint)
+	}
+	if requests != 0 {
+		t.Errorf("%d requests were made before the list was refused", requests)
+	}
+}
+
 // A malformed entry is refused before anything is fetched, so the whole
 // list is checked and the refusal names the part that is wrong.
 func TestWatchRefusesAMalformedSelectorBeforeAnyRequest(t *testing.T) {
