@@ -99,16 +99,22 @@ func cloneProject(ctx context.Context, req plugin.Request, url string) (*project
 }
 
 // manifests lists what this project declares, and how to name each one.
-func (p *project) manifests(recursive bool) (names []string, shown []string, truncated bool, err error) {
+func (p *project) manifests(recursive bool) (names []string, shown []string, cov coverage, err error) {
 	if p.only != "" {
-		return []string{p.only}, []string{p.shown(p.only)}, false, nil
+		return []string{p.only}, []string{p.shown(p.only)}, coverage{}, nil
 	}
-	names, truncated, err = findManifests(p.fsys, recursive)
+	names, cov, err = findManifests(p.fsys, recursive)
 	shown = make([]string, len(names))
 	for i, n := range names {
 		shown[i] = p.shown(n)
 	}
-	return names, shown, truncated, err
+	// Named the way the reader can act on: a path inside a clone means
+	// nothing to them, the same reason the manifests themselves are shown
+	// rather than passed through.
+	for i, u := range cov.unreadable {
+		cov.unreadable[i] = p.shown(u)
+	}
+	return names, shown, cov, err
 }
 
 // pathHelp is the --path help both capabilities share, so the two never

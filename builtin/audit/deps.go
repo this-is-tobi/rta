@@ -45,7 +45,7 @@ func runDeps(ctx context.Context, req plugin.Request) (view.View, error) {
 	if verr != nil {
 		return nil, verr
 	}
-	names, shown, truncated, err := proj.manifests(recursive)
+	names, shown, cov, err := proj.manifests(recursive)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, view.Errorf("audit.deps.nopath", "no such path: %s", path).
@@ -55,6 +55,14 @@ func runDeps(ctx context.Context, req plugin.Request) (view.View, error) {
 		return nil, view.Errorf("audit.deps.path", "reading %s: %v", path, err)
 	}
 	if len(names) == 0 {
+		// "Nothing is declared here" and "nothing could be read here" are
+		// different answers with different next steps, and a scan that saw
+		// none of the tree must not give the first one.
+		if len(cov.unreadable) > 0 {
+			return nil, view.Errorf("audit.deps.unreadable",
+				"nothing could be read under %s: %s", remoteLabel(path), strings.Join(cov.unreadable, ", ")).
+				WithHint("run as a user that can list those directories, or point --path at one that is readable")
+		}
 		hint := "reads what a project already declares, so one of these has to exist: " +
 			strings.Join(ecosystems, "; ")
 		if !recursive {
@@ -93,12 +101,7 @@ func runDeps(ctx context.Context, req plugin.Request) (view.View, error) {
 	}
 
 	gradeDeps(r, inv, vulns, records, capped, offline)
-	if truncated {
-		r.Add(grpInventory, "scan", findings.Warn,
-			"stopped at "+strconv.Itoa(maxManifests)+" manifests or "+strconv.Itoa(maxScanDepth)+
-				" directory levels, so this covers part of the tree — narrow the path to audit the rest",
-			refVulnerableDep)
-	}
+	addCoverage(r, cov)
 	if inv.truncated {
 		r.Add(grpInventory, "scan", findings.Warn,
 			"one manifest declared more components than this reads at once, so the inventory covers "+

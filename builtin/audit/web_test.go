@@ -542,3 +542,53 @@ func TestWebIsRegistered(t *testing.T) {
 	}
 	t.Fatal("audit.web not registered")
 }
+
+// **resp.Cookies() is what Go could parse, not what the server sent.**
+//
+// A Set-Cookie line Go's scanner cannot read is dropped without a word,
+// while a browser's more forgiving parser still accepts and stores it. So
+// grading only the parseable ones and calling the result "all N cookies
+// set" made an exact-sounding claim — every cookie this site sets is
+// hardened — about a set that was missing the one nobody could look at,
+// which is the cookie most likely to be the odd one out.
+func TestCookiesGoCouldNotParseAreNotGradedAsHardened(t *testing.T) {
+	resp := &http.Response{Header: http.Header{}}
+	resp.Header.Add("Set-Cookie", "session=abc; Secure; HttpOnly; SameSite=Lax")
+	resp.Header.Add("Set-Cookie", "inv@lid=x; Path=/")
+	if got := len(resp.Cookies()); got != 1 {
+		t.Fatalf("Go parsed %d of the 2 Set-Cookie lines, want 1 — the arrangement no longer reproduces", got)
+	}
+
+	r := &findings.Report{}
+	auditCookies(r, resp)
+	var unread *findings.Finding
+	for i, f := range r.Findings {
+		if f.Check == "cookie-unread" {
+			unread = &r.Findings[i]
+		}
+		// The hardened rows must not claim to cover a cookie nobody read.
+		if f.Status == findings.OK && strings.Contains(f.Detail, "all 2") {
+			t.Errorf("%s claims to cover both cookies: %q", f.Check, f.Detail)
+		}
+	}
+	if unread == nil {
+		t.Fatalf("a Set-Cookie line nobody could parse left no trace: %+v", r.Findings)
+	}
+	if unread.Status != findings.Warn {
+		t.Errorf("an unparsed Set-Cookie graded %q, want %q", unread.Status, findings.Warn)
+	}
+}
+
+// A response whose cookies all parse says nothing extra, so the caveat
+// stays worth reading.
+func TestParseableCookiesRaiseNoCaveat(t *testing.T) {
+	resp := &http.Response{Header: http.Header{}}
+	resp.Header.Add("Set-Cookie", "session=abc; Secure; HttpOnly; SameSite=Lax")
+	r := &findings.Report{}
+	auditCookies(r, resp)
+	for _, f := range r.Findings {
+		if f.Check == "cookie-unread" {
+			t.Errorf("a well-formed response raised %q: %s", f.Check, f.Detail)
+		}
+	}
+}

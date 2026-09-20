@@ -175,9 +175,21 @@ func runClients(ctx context.Context, req plugin.Request, catalog func() []plugin
 	r := &agentReport{}
 	var found int
 	var claudeSeen bool
+	var unreadable []string
 	for _, f := range agentFiles(home, wd) {
 		info, err := os.Stat(f.path)
-		if err != nil || info.IsDir() {
+		if err != nil {
+			// A file that is not there is the ordinary case and says
+			// nothing at all. A file this could not stat is a configuration
+			// that went ungraded — a $HOME whose .claude directory this UID
+			// cannot traverse is the realistic case, and "nothing to grade"
+			// would be the audit answering for a machine it never saw.
+			if !os.IsNotExist(err) {
+				unreadable = append(unreadable, f.path)
+			}
+			continue
+		}
+		if info.IsDir() {
 			continue
 		}
 		found++
@@ -189,7 +201,12 @@ func runClients(ctx context.Context, req plugin.Request, catalog func() []plugin
 			auditAgentJSON(r, f)
 		}
 	}
-	if found == 0 {
+	if len(unreadable) > 0 {
+		r.Add(grpAgentFiles, "unreadable", findings.Warn,
+			findings.Plural(len(unreadable), "file")+" could not be read, so nothing here grades "+
+				strings.Join(unreadable, ", "), findings.Reference{})
+	}
+	if found == 0 && len(unreadable) == 0 {
 		r.Add(grpAgentFiles, "config", findings.Info,
 			"no agent configuration found in the usual places — nothing to grade", findings.Reference{})
 	}
