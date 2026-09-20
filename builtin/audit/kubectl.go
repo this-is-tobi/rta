@@ -50,7 +50,25 @@ func kubeGetJSON(ctx context.Context, kubeContext, namespace, kind string, out a
 	} else {
 		args = append(args, "--all-namespaces")
 	}
+	return kubectlJSON(ctx, args, kind, out)
+}
 
+// kubeVersionJSON runs `kubectl version -o json [--context]` and decodes
+// it — the one thing audit.kube.eol reads that is not a `get`. The client
+// half of the answer is kubectl's own and ignored; the server half is the
+// control plane's build.
+func kubeVersionJSON(ctx context.Context, kubeContext string, out any) *view.Error {
+	args := []string{"version", "-o", "json", "--request-timeout=15s"}
+	if kubeContext != "" {
+		args = append(args, "--context="+kubeContext)
+	}
+	return kubectlJSON(ctx, args, "the server version", out)
+}
+
+// kubectlJSON runs kubectl with args, bounded, stdin closed, and decodes the
+// JSON it prints into out. what names the thing asked for in the one error
+// that is about the answer rather than the call.
+func kubectlJSON(ctx context.Context, args []string, what string, out any) *view.Error {
 	ctx, cancel := context.WithTimeout(ctx, kubectlTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, kubectlBin, args...)
@@ -62,7 +80,7 @@ func kubeGetJSON(ctx context.Context, kubeContext, namespace, kind string, out a
 		return classifyKubectl(ctx, err, errBuf.String())
 	}
 	if err := json.Unmarshal(raw, out); err != nil {
-		return view.Errorf("audit.kube.unreadable", "kubectl's answer for %s could not be read: %v", kind, err)
+		return view.Errorf("audit.kube.unreadable", "kubectl's answer for %s could not be read: %v", what, err)
 	}
 	return nil
 }

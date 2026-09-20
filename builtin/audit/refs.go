@@ -66,4 +66,15 @@ var (
 			"recommendation in its Section 5 rather than assumed"}
 	refNetworkPolicy = findings.Reference{Source: "CIS Kubernetes Benchmark 2.0.1", Control: "5.3.2",
 		Title: "Ensure that all Namespaces have NetworkPolicies defined"}
+
+	// Software past its end of life is a component nobody maintains, which
+	// is what CWE-1104 names — distinct from CWE-1395 (a dependency with a
+	// known vulnerability, audit.deps' citation): an unmaintained release
+	// may carry no published CVE yet, and the finding is that nobody would
+	// publish the fix if it did. Supply chain rather than misconfiguration
+	// because the weakness is in what was pulled, not how it was configured.
+	// Name confirmed against MITRE's CWE API (cwe-api.mitre.org) rather
+	// than the HTML page, which refuses a plain fetch.
+	refUnmaintained = findings.Reference{OWASP: findings.OWASPSupplyChain, CWE: "CWE-1104",
+		Title: "Use of Unmaintained Third Party Components"}
 )
