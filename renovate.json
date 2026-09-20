@@ -32,7 +32,7 @@
   "packageRules": [
     {
       "description": "Every bump lands as 'build' so it appears under the Dependencies changelog section, which release-please treats as releasable: a bumped module, action or base image is a new binary or image, and it reaches nobody without a release.",
-      "matchManagers": ["gomod", "github-actions", "dockerfile", "custom.regex"],
+      "matchManagers": ["gomod", "github-actions", "dockerfile", "custom.regex", "mise"],
       "semanticCommitType": "build",
       "commitMessageTopic": "{{depName}}"
     },
@@ -48,7 +48,7 @@
       "groupName": "golangci-lint"
     },
     {
-      "description": "The Go toolchain is the go directive in go.mod, which CI reads through go-version-file, and the golang image both Dockerfiles build in. One pull request moves both.",
+      "description": "The Go toolchain is the go directive in go.mod, which CI reads through go-version-file, the golang image both Dockerfiles build in, and the pin in mise.toml. One pull request moves all three.",
       "matchDepNames": ["go", "golang"],
       "groupName": "Go toolchain"
     },
