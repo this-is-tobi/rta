@@ -445,3 +445,68 @@ func TestThePortScanDoesNotSpawnAGoroutinePerPort(t *testing.T) {
 			"the dials and the fan-out is the port count", got)
 	}
 }
+
+// **Page.Run exists so the caller can decide what a failure looks like,
+// rather than have the section dropped — and this dropped it.**
+//
+// The hosts section was folded in on `err == nil` alone, so a hosts file
+// that could not be read (a --file pointing somewhere unreadable, a
+// permission change on /etc/hosts) left the page with one fewer heading.
+// A report missing a section reads exactly like a report whose hosts file
+// was empty, and net.info --detail is the page somebody opens to find out
+// why a name resolves the way it does.
+func TestTheDetailedInfoPageSaysWhenTheHostsFileCouldNotBeRead(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "no-such-hosts")
+
+	v, err := detailedInfo(context.Background(), req(map[string]any{"file": missing, "detail": true}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, ok := v.(view.Sections)
+	if !ok {
+		t.Fatalf("detailed info is %s, want Sections", view.TypeOf(v))
+	}
+	if len(s.Warnings) == 0 {
+		t.Fatalf("an unreadable hosts file left no warning, so the page reads as complete: %+v", s.Items)
+	}
+	var said bool
+	for _, w := range s.Warnings {
+		if strings.Contains(w.Message+w.Hint, "no-such-hosts") {
+			said = true
+		}
+	}
+	if !said {
+		t.Errorf("the warning does not name the file it could not read: %+v", s.Warnings)
+	}
+}
+
+// **A type that could not be asked is a row; a type that answered "no such
+// record" is not.**
+//
+// The auto path asks A, AAAA and CNAME and kept only the last error, then
+// read it solely when nothing came back at all — so a name whose A record
+// resolved while the AAAA lookup timed out produced a clean table with no
+// sign that half the question went unanswered. A miss has to stay silent,
+// though: asking broadly means asking for records that are not there.
+func TestADNSTypeThatCouldNotBeAskedBecomesARow(t *testing.T) {
+	types := []string{"A", "AAAA", "CNAME"}
+	rows := dnsFailureRows(map[string]error{
+		"AAAA":  errors.New("server misbehaving"),
+		"CNAME": &stdnet.DNSError{Err: "no such host", IsNotFound: true},
+	}, types)
+
+	if len(rows) != 1 {
+		t.Fatalf("rows = %v, want only the type that failed for a real reason", rows)
+	}
+	if rows[0][0] != "AAAA" {
+		t.Errorf("row names %q, want the failed type", rows[0][0])
+	}
+	if !strings.Contains(rows[0][1], "misbehaving") {
+		t.Errorf("row = %q, want it to say why the lookup failed", rows[0][1])
+	}
+
+	// And a clean run adds nothing, so the rows stay worth reading.
+	if got := dnsFailureRows(nil, types); len(got) != 0 {
+		t.Errorf("a run with no failures added %v", got)
+	}
+}

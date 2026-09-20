@@ -952,6 +952,11 @@ func unlockAvailability(req plugin.Request, mode keyMode) string {
 		switch {
 		case p == "":
 			return "no identity given (--identity, or set " + identityEnv + ")"
+		case !identityReadable(p):
+			// Before lockedKey, because lockedKey answers false for a file it
+			// could not open and this line is the one that turns that into a
+			// promise about the store.
+			return "no — identity " + p + " cannot be read"
 		case !lockedKey(p):
 			return "yes — identity " + p
 		case lookupPassphrase(req) != "" || keyPassphrases[p] != "":

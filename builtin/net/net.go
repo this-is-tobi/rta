@@ -535,6 +535,7 @@ func runDNS(ctx context.Context, req plugin.Request) (view.View, error) {
 
 	start := time.Now()
 	var lastErr error
+	failures := map[string]error{}
 	for _, rt := range types {
 		if err := lookup(ctx, resolver, rt, name, add); err != nil {
 			// An unknown type is a usage error whatever else happens.
@@ -543,6 +544,7 @@ func runDNS(ctx context.Context, req plugin.Request) (view.View, error) {
 				return nil, ve
 			}
 			lastErr = err
+			failures[rt] = err
 		}
 	}
 	elapsed := time.Since(start)
@@ -568,6 +570,19 @@ func runDNS(ctx context.Context, req plugin.Request) (view.View, error) {
 		return nil, view.Errorf("net.dns.norecords", "no %s records for %s", strings.Join(types, "/"), name).
 			WithHint("try another --type (" + strings.Join(dnsTypes, ", ") + ") or another --server")
 	}
+	// **One type answering does not make another type's failure stop
+	// mattering.** Reaching the line above means something resolved, and
+	// until now that was the end of it: a real failure on one of the other
+	// types — a timeout, a SERVFAIL, the shared deadline expiring mid-query
+	// — lived in lastErr, which is read only when nothing came back at all.
+	// So a name whose A record resolved while its AAAA lookup failed
+	// produced a clean table of A records, on the one tool somebody reaches
+	// for *because* resolution is behaving oddly.
+	//
+	// Appended after the empty check, so the "every type failed" path above
+	// still reports an error rather than a table of apologies.
+	answers := len(t.Rows)
+	t.Rows = append(t.Rows, dnsFailureRows(failures, types)...)
 	t.Total = len(t.Rows)
 	if !req.Bool("detail") {
 		return t, nil
@@ -578,10 +593,31 @@ func runDNS(ctx context.Context, req plugin.Request) (view.View, error) {
 			{Key: "type", Value: strings.Join(types, ", ")},
 			{Key: "resolver", Value: label},
 			{Key: "elapsed", Value: elapsed.Round(time.Millisecond).String()},
-			{Key: "records", Value: strconv.Itoa(len(t.Rows))},
+			{Key: "records", Value: strconv.Itoa(answers)},
 		}}},
 		{ID: "answers", Title: "answers", View: t},
 	}}, nil
+}
+
+// dnsFailureRows is what the types that could not be asked contribute to the
+// answer table.
+//
+// A miss is not a failure and gets no row: asking broadly means asking for
+// records that are not there, and a name with no AAAA record really has no
+// AAAA record — the resolver answered. isNotFound is what tells that apart
+// from never having found out.
+//
+// Its own function, in the order the query asked, so the decision is
+// testable without a resolver that fails on demand — the same reason
+// activitySQL is split out in plugins/pg.
+func dnsFailureRows(failures map[string]error, types []string) [][]string {
+	var out [][]string
+	for _, rt := range types {
+		if err := failures[rt]; err != nil && !isNotFound(err) {
+			out = append(out, []string{rt, "lookup failed — " + err.Error()})
+		}
+	}
+	return out
 }
 
 // maxScanPorts bounds what one call may ask for.
@@ -928,10 +964,15 @@ func detailedInfo(ctx context.Context, req plugin.Request) (view.View, error) {
 	)})
 	p.PutAs("interfaces", "interfaces", tree)
 	// The hosts file is local network truth: worth a section when non-empty.
-	if v, err := p.Run(runHostsList, plugin.Read, nil); err == nil {
-		if t, ok := v.(view.Table); ok && len(t.Rows) > 0 {
-			p.PutAs("hosts", "hosts file", t)
-		}
+	// Page.Run rather than AddAs precisely so a failure can be decided on
+	// instead of dropping the section — and the failure was dropped anyway.
+	// A hosts file that could not be read left the page one heading shorter,
+	// which reads exactly like a machine whose hosts file has nothing in it,
+	// on the page somebody opens to find out why a name resolves oddly.
+	if v, err := p.Run(runHostsList, plugin.Read, nil); err != nil {
+		p.Warn(view.AsError(err, "net.hosts.unreadable"))
+	} else if t, ok := v.(view.Table); ok && len(t.Rows) > 0 {
+		p.PutAs("hosts", "hosts file", t)
 	}
 	return p.View(), nil
 }

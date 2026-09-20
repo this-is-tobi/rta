@@ -111,6 +111,14 @@ func runWatchAt(ctx context.Context, req plugin.Request, base string) (view.View
 			}
 			releases = []release{r}
 		}
+		// A product that resolved with nothing in it is not a product that
+		// was never on the list. The two misses above each get a row; this
+		// one dropped the entry from the table entirely, so a watchlist of
+		// six came back with five rows and nothing to say which had gone.
+		if len(releases) == 0 {
+			t.Rows = append(t.Rows, missingRow(result.Name, cycle, "no release data"))
+			continue
+		}
 		for _, r := range releases {
 			t.Rows = append(t.Rows, append([]string{result.Name}, gradeRow(r, warnDays, now)...))
 		}

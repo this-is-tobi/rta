@@ -446,6 +446,17 @@ func lockedKey(path string) bool {
 	return isLocked(err)
 }
 
+// identityReadable reports whether the identity file can be opened at all.
+//
+// lockedKey deliberately answers false for a file it could not read — "is it
+// passphrase-protected" is a question about a key it managed to parse — and
+// unlockAvailability tested that before anything else, so an unreadable or
+// absent identity arrived as "yes, this unlocks the store".
+func identityReadable(path string) bool {
+	_, err := os.ReadFile(pathguard.ExpandTilde(path))
+	return err == nil
+}
+
 func fileExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && !info.IsDir()

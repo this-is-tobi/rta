@@ -419,3 +419,46 @@ func TestRunCheckAtPassesWarnDaysThroughToTheStatusColumn(t *testing.T) {
 		t.Errorf("warn-days=90 against a 40-day-out release: got %q, want WARN <90d", got)
 	}
 }
+
+// **A product with no release data is not a product with nothing to worry
+// about.**
+//
+// endoflife.date answers 200 with a valid envelope and an empty releases
+// array for a product it tracks but has no cycles for yet. runCheckAt had
+// no case for it, so the caller got a zero-row table and a nil error — the
+// same shape --warn-days filtering everything out produces, on a command
+// whose entire purpose is to say whether something is past its end of life.
+func TestCheckSaysWhenAProductHasNoReleaseData(t *testing.T) {
+	srv := newEolServer(t, "")
+
+	_, err := runCheckAt(context.Background(), req(t, map[string]any{"product": "demo"}), srv.URL)
+	if err == nil {
+		t.Fatal("a product with no releases returned an empty table and no error")
+	}
+	if code := view.AsError(err, "").Code; code != "eol.noreleases" {
+		t.Errorf("code = %q, want eol.noreleases", code)
+	}
+}
+
+// And in a watchlist the same product is one row rather than a silent gap:
+// the two misses beside it — an unknown product, an unknown cycle — already
+// get a row each, and a six-entry watchlist that comes back with five rows
+// and nothing to say which one went is the worse failure of the two.
+func TestWatchKeepsARowForAProductWithNoReleaseData(t *testing.T) {
+	srv := newEolServer(t, "")
+
+	v, err := runWatchAt(context.Background(), req(t, map[string]any{"products": []string{"demo"}}), srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	table, ok := v.(view.Table)
+	if !ok {
+		t.Fatalf("got %T, want view.Table", v)
+	}
+	if len(table.Rows) != 1 {
+		t.Fatalf("rows = %v, want the watched product to still have one", table.Rows)
+	}
+	if status := table.Rows[0][len(table.Rows[0])-1]; !strings.Contains(status, "no release data") {
+		t.Errorf("status = %q, want it to say there is no release data", status)
+	}
+}
