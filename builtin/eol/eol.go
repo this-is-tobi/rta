@@ -126,13 +126,20 @@ func runCheckAt(ctx context.Context, req plugin.Request, base string) (view.View
 	return t, nil
 }
 
-// findRelease matches by name, case-insensitively: cycle names are typed by
-// hand and are sometimes a codename (bookworm, Tahoe) rather than a number,
-// and there is no reason to make a caller get the case exactly right when
-// the whole list is already in hand to check against.
+// findRelease matches by name or codename, case-insensitively: cycle names
+// are typed by hand, a codename (bookworm, Tahoe) is what people say for the
+// products that have one, and there is no reason to make a caller get the
+// case exactly right when the whole list is already in hand to check
+// against. Name first across the whole list, so a codename that happens to
+// spell another cycle's number can never shadow it.
 func findRelease(releases []release, cycle string) (release, bool) {
 	for _, r := range releases {
 		if strings.EqualFold(r.Name, cycle) {
+			return r, true
+		}
+	}
+	for _, r := range releases {
+		if r.Codename != "" && strings.EqualFold(r.Codename, cycle) {
 			return r, true
 		}
 	}
@@ -198,9 +205,16 @@ func suggestCyclesAt(ctx context.Context, req plugin.Request, base string) []str
 	if verr != nil {
 		return nil
 	}
-	out := make([]string, len(result.Releases))
-	for i, r := range result.Releases {
-		out[i] = r.Name
+	out := make([]string, 0, 2*len(result.Releases))
+	for _, r := range result.Releases {
+		out = append(out, r.Name)
+	}
+	// Codenames after every number, not interleaved: a completion list is
+	// read top to bottom, and the numbers are the order the API keeps.
+	for _, r := range result.Releases {
+		if r.Codename != "" {
+			out = append(out, r.Codename)
+		}
 	}
 	return out
 }
