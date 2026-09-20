@@ -20,8 +20,11 @@ import (
 	"strings"
 
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/storage/filesystem"
 
 	"github.com/this-is-tobi/rta/builtin/internal/gitclone"
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -69,6 +72,23 @@ func pathField(help string) plugin.Field {
 // No shallow clone here: `git log` and `git blame` are the history, and a
 // depth of one would answer them with a single commit.
 func openRepo(ctx context.Context, req plugin.Request) (*git.Repository, *view.Error) {
+	return open(ctx, req, true)
+}
+
+// openRepoConfigOnly is the same repository without that refusal, for the
+// three capabilities whose answers never come out of a packfile: `git config`
+// reads .git/config, `git hooks` reads .git/hooks, and `git remotes` reads
+// the refs and the configured remotes. An object database this reader can
+// only see part of cannot make any of those wrong, and refusing them would
+// report a fault in an answer that does not have one.
+//
+// A named opener rather than a flag on openRepo, so that a capability which
+// grows an object read has to come here and change which one it calls.
+func openRepoConfigOnly(ctx context.Context, req plugin.Request) (*git.Repository, *view.Error) {
+	return open(ctx, req, false)
+}
+
+func open(ctx context.Context, req plugin.Request, readsObjects bool) (*git.Repository, *view.Error) {
 	path := req.String("path")
 	if gitclone.IsRemote(path) {
 		if verr := gitclone.RefuseOverMCP(req, "repository"); verr != nil {
@@ -103,7 +123,72 @@ func openRepo(ctx context.Context, req plugin.Request) (*git.Repository, *view.E
 		return nil, view.Errorf("git.notarepo", "%s is not a git repository: %v", path, err).
 			WithHint("run this against a directory inside a git repository, a checkout's own root, or a bare repository's own directory")
 	}
+	if readsObjects {
+		if verr := objectsAllReadable(repo, root); verr != nil {
+			return nil, verr
+		}
+	}
 	return repo, nil
+}
+
+// objectsAllReadable refuses a repository whose object database this reader
+// can only see part of.
+//
+// **go-git finds packfiles by their filename and by nothing else.** Its
+// ObjectPacks keeps a file only if it is named `pack-<hash>.pack`, and it
+// takes the hash from that name rather than from the index inside — see
+// storage/filesystem/dotgit. git makes no such promise. `git maintenance run
+// --task=loose-objects`, which `git maintenance start` schedules and which a
+// great many working repositories have therefore run, writes its pack as
+// `loose-<hash>.pack`; every object inside one is simply absent as far as
+// this reader is concerned.
+//
+// Absent, and not an error, which is the whole problem: a subtree that will
+// not load reads as a subtree that was never there. On this project's own
+// checkout — five packs under the expected name and two under git's
+// maintenance name — that turned a clean working tree into `git status`
+// reporting three hundred and seventy-five files as newly staged, and it
+// would truncate a log or a diff the same quiet way, with nothing anywhere
+// saying the answer was partial. Wrong and plausible about the state of
+// somebody's repository is the one answer a boundary must not give, so this
+// is refused instead, with the single command that fixes it for good.
+//
+// The condition is exactly go-git's own skip rule, so it cannot report a
+// pack that is in fact being read: the prefix, and a name whose middle is
+// not a hash (which go-git drops as "badly-formatted" a line further on).
+// An in-memory clone has no pack directory and is left alone.
+func objectsAllReadable(repo *git.Repository, root string) *view.Error {
+	store, ok := repo.Storer.(*filesystem.Storage)
+	if !ok {
+		return nil
+	}
+	// The same filesystem dotgit reads, so `.git` files, linked worktrees
+	// and common directories are already resolved rather than re-derived.
+	entries, err := store.Filesystem().ReadDir(filepath.Join("objects", "pack"))
+	if err != nil {
+		return nil //nolint:nilerr // no pack directory is no skipped pack — a repository with nothing packed yet, and not a fault to report
+	}
+	var skipped []string
+	for _, e := range entries {
+		name := e.Name()
+		if !strings.HasSuffix(name, ".pack") {
+			continue
+		}
+		if stem, found := strings.CutPrefix(name, "pack-"); found &&
+			!plumbing.NewHash(strings.TrimSuffix(stem, ".pack")).IsZero() {
+			continue
+		}
+		skipped = append(skipped, name)
+	}
+	if len(skipped) == 0 {
+		return nil
+	}
+	return view.Errorf("git.objects.unreadable",
+		"%s holds %s this reader will not open: %s",
+		root, format.CountOf(len(skipped), "packfile"), strings.Join(skipped, ", ")).
+		WithHint("the objects in them read as missing rather than as an error, which is how a clean " +
+			"checkout comes back as hundreds of staged files — `git repack -ad` rewrites every pack " +
+			"under the name this reads, and the answers here are right again")
 }
 
 // gitDirName is the entry that marks a checkout's root — a directory in the
