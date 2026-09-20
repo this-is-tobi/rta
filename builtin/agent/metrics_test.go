@@ -2,10 +2,12 @@ package agent
 
 import (
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/this-is-tobi/rta/internal/agentlog"
+	"github.com/this-is-tobi/rta/internal/consent"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -135,6 +137,31 @@ func TestABrokenChainIsReportedAsZero(t *testing.T) {
 	}
 	if !strings.Contains(metricsBody(t), "rta_record_intact 0") {
 		t.Errorf("an edited record still reports as intact:\n%s", metricsBody(t))
+	}
+}
+
+// The gauge an alert watches to know whether rta_agent_pending is trustworthy
+// right now, the same way rta_record_intact says so for the call counters.
+// Before this, consent.Pending()'s error was discarded and a queue rta could
+// not read published rta_agent_pending 0 with nothing to tell an alert that
+// the number is not "nothing is parked" but "the read failed".
+func TestPendingReadableGoesToZeroWhenTheQueueCannotBeRead(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("file modes do not deny the owner here")
+	}
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	if !strings.Contains(metricsBody(t), "rta_agent_pending_readable 1") {
+		t.Fatalf("an untouched queue does not report readable:\n%s", metricsBody(t))
+	}
+	if err := os.MkdirAll(consent.Dir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(consent.Dir(), 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(consent.Dir(), 0o700) })
+	if !strings.Contains(metricsBody(t), "rta_agent_pending_readable 0") {
+		t.Errorf("an unreadable queue still reports readable:\n%s", metricsBody(t))
 	}
 }
 

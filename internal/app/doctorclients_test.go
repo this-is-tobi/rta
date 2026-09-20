@@ -3,6 +3,7 @@ package app
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -100,5 +101,36 @@ func TestServersOnThisBuildDrawNoWarning(t *testing.T) {
 		if row[0] == "agents connected" && row[1] == "warn" {
 			t.Errorf("warned about a server on this very build: %s", row[2])
 		}
+	}
+}
+
+// A session store rta cannot read is not a machine with nothing connected.
+// Before this, agentcap.Connected()'s error had no way out of the function —
+// clientRows saw n==0 whether the store was empty or unreadable, and told
+// the operator "no client has an rta server open" during exactly the
+// incident where that line matters most.
+func TestAgentsConnectedWarnsWhenItCannotCheck(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("file modes do not deny the owner here")
+	}
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	if err := agentsession.Start(agentsession.Record{
+		ID: agentsession.NewID(), Agent: "claude", Since: time.Now(), PID: 4242,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(agentsession.Dir(), 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(agentsession.Dir(), 0o700) })
+
+	var row [3]string
+	for _, r := range clientRows(false, "v0.22.0") {
+		if r[0] == "agents connected" {
+			row = r
+		}
+	}
+	if row[1] != "warn" || !strings.Contains(row[2], "could not check") {
+		t.Fatalf("agents connected row = %+v, want a warn row saying it could not check", row)
 	}
 }
