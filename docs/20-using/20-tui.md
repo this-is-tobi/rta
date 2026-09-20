@@ -64,6 +64,8 @@ dashboard:
 
 Worth knowing what that costs before you do: a tile refreshes on a timer for as long as the TUI is open, so a cluster-wide `kube.overview` tile is that many `kubectl` calls an hour, every hour. `rta explain kube.overview` prints what a capability actually reads, which is not always only what its name suggests.
 
+A capability can set its own pace. The dashboard's timer runs every few seconds, and that is what a tile gets unless its capability declared a longer interval — `eol.watch`, `eol.check` and `eol.products` re-run every two hours, `pkg.overview`, `pkg.outdated` and `pkg.os` every hour — because their answers move by the day and a run costs a request per product or a dozen subprocesses. So `{id: eol.watch}` in `tiles:` is the version watchlist on your landing screen at a pace endoflife.date would not notice, and switching environments re-runs every tile regardless, since its inputs just changed.
+
 Two things the block will not do, whatever you write in it:
 
 - **A tile that is not `Read` is dropped.** Otherwise `{id: kv.rm, with: {key: old-token}}` would delete that key on startup and keep deleting it — on a timer, with no form and no confirmation, since the destructive gate lives on the CLI and the browse path and a tile goes through neither.

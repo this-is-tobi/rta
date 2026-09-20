@@ -5,6 +5,7 @@ import (
 	"math"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -320,6 +321,7 @@ func fullDeclaration() plugin.Plugin {
 			Copy:    "name",
 			Live:    true,
 			Flash:   true,
+			Refresh: 2 * time.Hour,
 			Inputs: []plugin.Field{
 				{
 					Name: "key", Type: plugin.String, Help: "which thing",

@@ -457,6 +457,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.bound = msg.bound
 		if m.mode == modeDashboard {
 			m.tickGen++
+			// Every tile, whatever pace it declared: the environment just
+			// changed, and a tile's answer for the previous one is wrong
+			// however recently it was computed.
+			resetDue(m.tiles)
 			return m, refreshTiles(m.tiles, m.tickGen, m.pluginCfg, m.profileFor)
 		}
 		return m, nil

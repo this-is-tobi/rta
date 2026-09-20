@@ -55,6 +55,7 @@ func watchCapability() plugin.Capability {
 			"product does not have, is one row saying so; the rest of the list is still " +
 			"graded.",
 		NoPreview: true,
+		Refresh:   tileRefresh,
 		Inputs: []plugin.Field{
 			{Name: "products", Type: plugin.StringSlice, Config: "products",
 				Help: "product or product@cycle, repeatable — usually from `plugins: eol: products:` in your config"},

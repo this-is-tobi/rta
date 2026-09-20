@@ -10,6 +10,7 @@ import (
 	"context"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -601,6 +602,21 @@ type Capability struct {
 	// shown by accident. A Read capability's result is always a page, so
 	// Flash is refused on one.
 	Flash bool
+	// Refresh is how often a dashboard tile of this capability is re-run.
+	// Zero is the host's own pace — every few seconds, which is right for
+	// reading /proc and was, until this field existed, the only pace there
+	// was.
+	//
+	// NoPreview keeps a capability off the automatic dashboard; this is for
+	// the one a person then names in their config anyway, because they want
+	// to keep an eye on it. eol.watch is the case: a list of products graded
+	// against endoflife.date, whose answer moves by the day and costs one
+	// request per product — twelve requests every five seconds to a public
+	// API for as long as a terminal is open is not watching, it is a
+	// beacon. The capability knows how fast its answer moves and what a run
+	// costs; the host knows neither, so the capability says it here and the
+	// host waits it out. Rounded to whole seconds on the wire.
+	Refresh time.Duration
 }
 
 // Plugin is a unit of distribution and a namespace.
