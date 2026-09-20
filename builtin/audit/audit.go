@@ -363,6 +363,28 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 				Inputs: []plugin.Field{namespaceField(), contextField()},
 				Run:    runKubeNetworkPolicy,
 			},
+			{
+				ID:         "audit.kube.eol",
+				Summary:    "Software past or near its end of life: the control plane, the kubelets, and every image's release",
+				Safety:     plugin.Read,
+				Idempotent: true,
+				Detailed:   true,
+				NoPreview:  true,
+				Description: "The control plane's version, every node's kubelet, and the release each " +
+					"running image's tag names, graded against endoflife.date the way `rta eol check` " +
+					"grades one product: past its end of life fails, within warn-days of it warns, " +
+					"supported passes with the date. An image is recognised by its name — postgres, " +
+					"redis, nginx — through the catalogue's own aliases, and its tag read as a " +
+					"release: 15.4 is postgresql 15, v1.35.3+k3s1 is kubernetes 1.35, bookworm is " +
+					"debian 12. Images endoflife.date does not track, tags that name no release, " +
+					"and digests with no tag are each reported once rather than guessed at. Cites " +
+					"CWE-1104.\n\nNarrowed to a namespace it grades that namespace's images and the " +
+					"control plane; nodes belong to no namespace and are not examined, which the " +
+					"result says rather than leaves implied.",
+				Scope:  "namespace",
+				Inputs: []plugin.Field{namespaceField(), contextField(), warnDaysField()},
+				Run:    runKubeEOL,
+			},
 		},
 	}
 }

@@ -141,6 +141,18 @@ an sbom to keep     `syft . -o cyclonedx-json` — read once here, kept there
 
 They are pointers, never wrappers: rta does not run them, parse them, or track their flags. What it owes is the invocation with the target already in it, so the next step is a paste and not a search. The rows fit what was actually read — a Go project is never told about `knip`, and a pnpm project is never told to run `npm audit`.
 
+## What in the cluster is out of support
+
+```bash
+rta audit kube eol                        # the control plane, every kubelet, every image
+rta audit kube eol --namespace payments   # one team's images, and the control plane
+rta audit kube eol -o json | jq -r '.rows[] | select(.[1] == "fail") | .[0]'
+```
+
+`audit kube eol` reads the versions a cluster already reports — `kubectl version`, the nodes' kubelets, every pod's image tags — and grades each against endoflife.date the way `rta eol check` grades one product: past its end of life fails, inside `--warn-days` of it warns, and a supported release passes with the date it stops being one. An image is recognised by the catalogue's own names and aliases, so `postgres:15.4` is PostgreSQL 15 and `debian:bookworm-slim` is Debian 12, and a hundred replicas of one image are one row with a count. What the catalogue does not track — your own images, most operators' — is one line naming them rather than a guess, and a floating `latest` tag or a bare digest says that nothing can be read from it.
+
+The same question about the machine you are sitting at is `rta pkg outdated`; about one product, `rta eol check`; about a list you wrote down once, `rta eol watch`.
+
 ## A security review you can paste into an issue
 
 ```bash
