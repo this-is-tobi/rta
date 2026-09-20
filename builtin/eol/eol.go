@@ -39,8 +39,9 @@ func Plugin() plugin.Plugin {
 				Idempotent: true,
 				Description: "Looks up a product on endoflife.date and grades every release cycle " +
 					"by how close it is to its own end-of-life date. Name one cycle to see just " +
-					"that row; leave it out to see all of them. Aliases work — \"postgres\" and " +
-					"\"postgresql\" name the same product.",
+					"that row, or a range of them — 13..16, 15.., ..16 — to see every numbered " +
+					"cycle inside it; leave it out to see all of them. Aliases work — \"postgres\" " +
+					"and \"postgresql\" name the same product.",
 				// No dashboard tile: product is Required, so the automatic
 				// picker (every Read capability that needs no input)
 				// already skips this — stated anyway, the way pg states it
@@ -54,7 +55,7 @@ func Plugin() plugin.Plugin {
 						Live:    true,
 						Suggest: suggestProducts},
 					{Name: "cycle", Type: plugin.String, Positional: true,
-						Help:    "one release cycle, e.g. 15, bookworm, 22.04 — every cycle is shown when omitted",
+						Help:    "one release cycle — 15, bookworm, 22.04 — or a range of them: 13..16, 15.., ..16; every cycle when omitted",
 						Live:    true,
 						Suggest: suggestCycles},
 					{Name: "warn-days", Type: plugin.Int, Config: "warn-days", Default: defaultWarnDays,
@@ -85,12 +86,14 @@ func runCheckAt(ctx context.Context, req plugin.Request, base string) (view.View
 
 	releases := result.Releases
 	if cycle := req.String("cycle"); cycle != "" {
-		r, found := findRelease(releases, cycle)
-		if !found {
-			return nil, view.Errorf("eol.cycle.notfound", "no release %q for %q", cycle, product).
-				WithHint("available cycles: " + cycleNames(releases))
+		sel, verr := parseSelector(cycle)
+		if verr != nil {
+			return nil, verr
 		}
-		releases = []release{r}
+		if releases = sel.pick(releases); len(releases) == 0 {
+			return nil, view.Errorf("eol.cycle.notfound", "no release %q for %q", cycle, product).
+				WithHint("available cycles: " + cycleNames(result.Releases))
+		}
 	}
 
 	// **A product with no release data is not a product with nothing to

@@ -32,6 +32,15 @@ const maxWatch = 20
 // eol.check is: an unconfigured tile would show a "nothing to watch" error
 // for as long as nobody configures it, and a person who names eol.watch in
 // their dashboard has already written the list it needs.
+//
+// An entry is `product@cycle`, with `@` doing what it does in brew, npm and
+// go: a name at a version. It replaced `/`, which read as a path, and it won
+// over `:` — docker's spelling — because this list is typed into YAML by
+// hand, and `- nodejs: 20` with the habitual space after the colon is a
+// mapping, refused with a message about types rather than about the entry.
+// `@` is legal anywhere but the first character of a plain YAML scalar, so
+// a hand-written list survives. The cycle part takes the same selector
+// eol.check does, a range included.
 func watchCapability() plugin.Capability {
 	return plugin.Capability{
 		ID:         "eol.watch",
@@ -39,15 +48,16 @@ func watchCapability() plugin.Capability {
 		Safety:     plugin.Read,
 		Idempotent: true,
 		Description: "Runs eol.check over a list of products, each optionally pinned to one " +
-			"release cycle as product/cycle — postgresql/15, nodejs, debian/bookworm. " +
-			"Write the list once as `plugins: eol: products:` in your config or a " +
-			"profile and it is what this grades from then on. A product the API does " +
-			"not know, or a cycle the product does not have, is one row saying so; the " +
-			"rest of the list is still graded.",
+			"release cycle or a range of them as product@cycle — postgresql@15, " +
+			"postgresql@13..16, nodejs, debian@bookworm. Write the list once as " +
+			"`plugins: eol: products:` in your config or a profile and it is what this " +
+			"grades from then on. A product the API does not know, or a cycle the " +
+			"product does not have, is one row saying so; the rest of the list is still " +
+			"graded.",
 		NoPreview: true,
 		Inputs: []plugin.Field{
 			{Name: "products", Type: plugin.StringSlice, Config: "products",
-				Help: "product or product/cycle, repeatable — usually from `plugins: eol: products:` in your config"},
+				Help: "product or product@cycle, repeatable — usually from `plugins: eol: products:` in your config"},
 			{Name: "warn-days", Type: plugin.Int, Config: "warn-days", Default: defaultWarnDays,
 				Help: "flag a cycle within this many days of its end-of-life date"},
 		},
@@ -63,13 +73,35 @@ func runWatchAt(ctx context.Context, req plugin.Request, base string) (view.View
 	entries := req.StringSlice("products")
 	if len(entries) == 0 {
 		return nil, view.Errorf("eol.watch.empty", "nothing to watch").
-			WithHint("write the list once — `plugins: eol: products: [postgresql/15, nodejs]` in your " +
-				"config or a profile — or pass --products postgresql/15 --products nodejs")
+			WithHint("write the list once — `plugins: eol: products: [postgresql@15, nodejs]` in your " +
+				"config or a profile — or pass --products postgresql@15 --products nodejs")
 	}
 	if len(entries) > maxWatch {
 		return nil, view.Errorf("eol.watch.toomany", "%d entries to watch, and one call grades at most %d",
 			len(entries), maxWatch).
 			WithHint("one request per product, so split the list — by team or by profile")
+	}
+
+	// The whole list is read before any of it is fetched: a malformed entry
+	// is a typo in a file somebody edits, refused with the entry named, and
+	// refusing it after four products have already been asked about is
+	// four requests spent on a call that was never going to answer.
+	type watchEntry struct {
+		product, cycle string
+		sel            cycleSelector
+	}
+	parsed := make([]watchEntry, 0, len(entries))
+	for _, entry := range entries {
+		product, cycle, _ := strings.Cut(strings.TrimSpace(entry), "@")
+		if product == "" {
+			return nil, view.Errorf("eol.watch.entry", "%q names no product", entry).
+				WithHint("an entry is product or product@cycle — postgresql@15, postgresql@13..16, nodejs")
+		}
+		sel, verr := parseSelector(cycle)
+		if verr != nil {
+			return nil, verr
+		}
+		parsed = append(parsed, watchEntry{product: product, cycle: cycle, sel: sel})
 	}
 
 	warnDays := req.Int("warn-days")
@@ -84,12 +116,8 @@ func runWatchAt(ctx context.Context, req plugin.Request, base string) (view.View
 		{Name: "In", Kind: view.KindDuration},
 		{Name: "Status", Kind: view.KindStatus},
 	}}
-	for _, entry := range entries {
-		product, cycle, _ := strings.Cut(strings.TrimSpace(entry), "/")
-		if product == "" {
-			return nil, view.Errorf("eol.watch.entry", "%q names no product", entry).
-				WithHint("an entry is product or product/cycle — postgresql/15, nodejs")
-		}
+	for _, e := range parsed {
+		product, cycle := e.product, e.cycle
 		result, verr := fetchProduct(ctx, http.DefaultClient, base, product)
 		if verr != nil {
 			// An unknown product is one row, not a failed call: a watchlist
@@ -104,12 +132,10 @@ func runWatchAt(ctx context.Context, req plugin.Request, base string) (view.View
 		}
 		releases := result.Releases
 		if cycle != "" {
-			r, found := findRelease(releases, cycle)
-			if !found {
+			if releases = e.sel.pick(releases); len(releases) == 0 {
 				t.Rows = append(t.Rows, missingRow(result.Name, cycle, "no such cycle"))
 				continue
 			}
-			releases = []release{r}
 		}
 		// A product that resolved with nothing in it is not a product that
 		// was never on the list. The two misses above each get a row; this
