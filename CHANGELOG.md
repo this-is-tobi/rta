@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.23.0](https://github.com/this-is-tobi/rta/compare/v0.22.0...v0.23.0) (2026-09-20)
+
+
+### Features
+
+* **view:** a Table can say what it could not cover ([914c95c](https://github.com/this-is-tobi/rta/commit/914c95c41acb668864df849f6b3c297f5c8bc787))
+
+
+### Bug Fixes
+
+* **agent:** a dashboard that could not read something says so, rather than reporting nothing ([7f2e2f6](https://github.com/this-is-tobi/rta/commit/7f2e2f620c1b84fd6447d2aec833bfd587085c50))
+* **agentlog:** the record that a segment was retired reads its own close ([5eb5658](https://github.com/this-is-tobi/rta/commit/5eb56589dddf0283d2ece0fd55a22b648e6258be))
+* **audit:** a check that could not run is reported, instead of grading what it saw ([e89d973](https://github.com/this-is-tobi/rta/commit/e89d97353a9f4a15174c643c73e152c8f39fbaf8))
+* **builtin:** six reads that could not read said nothing about it ([15d19f1](https://github.com/this-is-tobi/rta/commit/15d19f1ddbd8f832b921a266a6c33b2978195a62))
+* **cli:** a count of one prints a singular noun, wherever the count is live ([870537c](https://github.com/this-is-tobi/rta/commit/870537c10ce680f1ef9f0e438b0de1be96c4b7e7))
+* **cli:** a typo is answered in one sentence, and every extra argument is named ([3c60ddf](https://github.com/this-is-tobi/rta/commit/3c60ddf35faf385c3b1d5578737e765868c358bb))
+* **doctor:** a profile problem is reported once, naming everywhere it applies ([1232430](https://github.com/this-is-tobi/rta/commit/1232430dfbdfb0e0f6d87dc4448a921c4395437e))
+* **doctor:** say when a connected server is running another build ([cf670ae](https://github.com/this-is-tobi/rta/commit/cf670aebd326e92136904ee17d6534818aa33640))
+* **git:** a repository whose packs this reader skips is refused, not guessed at ([90005e2](https://github.com/this-is-tobi/rta/commit/90005e20c684a6ab3925f9d96ded563bd684e7df))
+* **grant:** allow says when an open server is on another build ([5cdd15a](https://github.com/this-is-tobi/rta/commit/5cdd15aa29ced585b55009fa1eb735203904adce))
+* **grant:** an unknown role is answered the same way on every surface ([143ab77](https://github.com/this-is-tobi/rta/commit/143ab7796891c1df6a86aa20643480f7393dc1bb))
+* **kv:** recipients says there is no store, instead of describing one that is not there ([df49407](https://github.com/this-is-tobi/rta/commit/df494078281594044bf60461148ecd725c7f75b3))
+* **mcp:** the record says when a refusal was a connection that moved ([158c3e7](https://github.com/this-is-tobi/rta/commit/158c3e74193b5242df6dc9905f96c2dd1b0c7189))
+* **paths:** a bare ~ resolves everywhere, not in three commands out of five ([f2a6e20](https://github.com/this-is-tobi/rta/commit/f2a6e20b035bb209dbad485327ba2ad3610e756c))
+* **pkg,git:** five reads that could not compare said they had ([47ac7ad](https://github.com/this-is-tobi/rta/commit/47ac7ad7811a3498c2ef123959e1b617f2e1b7c0))
+
+
+### Code Refactoring
+
+* **format:** one vocabulary for counting, instead of nine copies and four meanings ([6e837c0](https://github.com/this-is-tobi/rta/commit/6e837c066b824f2662eba048a0c13e18ee21dd75))
+* the thirteen hand-rolled slices.Contains become slices.Contains ([7e70571](https://github.com/this-is-tobi/rta/commit/7e70571940b336a40e8aaaa27993e0c775f9a288))
+
 ## [0.22.0](https://github.com/this-is-tobi/rta/compare/v0.21.1...v0.22.0) (2026-09-19)
 
 
