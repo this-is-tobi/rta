@@ -2,15 +2,17 @@ package app
 
 import (
 	"fmt"
-	"github.com/this-is-tobi/rta/internal/config"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/internal/render/cli"
+	"github.com/this-is-tobi/rta/internal/render/tui"
 	"github.com/this-is-tobi/rta/internal/toolcall"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -215,6 +217,7 @@ func cardView(reg *registry.Registry, c plugin.Capability) view.View {
 	if c.Live {
 		pairs = append(pairs, view.Pair{Key: "live", Value: "re-run on screen every few seconds while it is open"})
 	}
+	pairs = append(pairs, dashboardRow(reg, c))
 	if c.Flash {
 		pairs = append(pairs, view.Pair{Key: "flash", Value: "answers with a confirmation the launching view shows on its footer"})
 	}
@@ -232,6 +235,51 @@ func cardView(reg *registry.Registry, c plugin.Capability) view.View {
 		})
 	}
 	return view.KeyValue{Pairs: pairs}
+}
+
+// dashboardRow says what the TUI's landing screen does with this capability:
+// whether it runs unasked, why not when it does not, and at what pace once
+// somebody names it in `dashboard: tiles:`. Three declaration facts decide
+// that — the safety class, NoPreview, and whether every required input has
+// a default — plus the pace, and none of the four was on the card by that
+// name, so the tile behaviour of eol.watch or pkg.overview was invisible
+// without reading the source.
+func dashboardRow(reg *registry.Registry, c plugin.Capability) view.Pair {
+	if c.Safety != plugin.Read {
+		return view.Pair{Key: "dashboard",
+			Value: "never a tile — a tile runs on a timer with no confirmation, and this mutates"}
+	}
+	every := "every few seconds"
+	if c.Refresh > 0 {
+		every = "every " + pace(c.Refresh)
+	}
+	if why := tui.Unasked(c); why != "" {
+		return view.Pair{Key: "dashboard",
+			Value: "not on the automatic dashboard — " + why + "; named in `dashboard: tiles:` it re-runs " + every}
+	}
+	for _, p := range reg.Plugins() {
+		if p.Name != plugin.Namespace(c.ID) {
+			continue
+		}
+		if id, ok := tui.TileFor(reg, p); ok && id != c.ID {
+			return view.Pair{Key: "dashboard",
+				Value: "a tile when named in `dashboard: tiles:`, re-run " + every +
+					"; the automatic dashboard shows " + id + " for this plugin"}
+		}
+	}
+	return view.Pair{Key: "dashboard", Value: "this plugin's automatic tile, re-run " + every}
+}
+
+// pace writes a tile's interval the way a person does — 2h, 90m — and
+// falls back to Go's own spelling for anything less round.
+func pace(d time.Duration) string {
+	switch {
+	case d%time.Hour == 0:
+		return fmt.Sprintf("%dh", int(d/time.Hour))
+	case d%time.Minute == 0:
+		return fmt.Sprintf("%dm", int(d/time.Minute))
+	}
+	return d.String()
 }
 
 // cliForm renders the canonical shell invocation for a capability.

@@ -60,7 +60,10 @@ safety       read
 idempotent   true
 cli          rta sys cpu [--cores <bool>]
 mcp-tool     sys_cpu
-input:cores  bool — per-core usage as a bar chart
+profiles     --profile <name> runs this against a configured connection; over MCP that always needs `rta grant allow sys --profile <name>`
+input:cores  bool, from config plugins.sys.cpu.cores — per-core usage as a bar chart
+config file  ~/.config/rta/config.yaml
+dashboard    a tile when named in `dashboard: tiles:`, re-run every few seconds; the automatic dashboard shows sys.overview for this plugin
 ```
 
 That card is not documentation *about* the capability — it is generated from the same declaration the CLI, the TUI and the MCP schema are built from, so it cannot drift. `rta explain` with no argument lists everything.
