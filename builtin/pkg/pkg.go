@@ -128,10 +128,18 @@ func firstLine(s, fallback string) string {
 // agents: HostSpecific for the remote transport's own rule, HumanOnly for
 // every transport, because the inventory of what is installed here is not
 // for an agent on any of them.
+//
+// NoPreview keeps every one of these off the automatic dashboard, and
+// Refresh is for the person who names pkg.overview in their config anyway:
+// a run is a dozen managers' list commands plus a registry query per
+// installed package, and what it reports changes when a release ships,
+// not between one five-second tick and the next. An hour is the pace a
+// person checks for updates at when they are diligent.
 func host(c plugin.Capability) plugin.Capability {
 	c.HostSpecific = true
 	c.HumanOnly = true
 	c.NoPreview = true
+	c.Refresh = time.Hour
 	return c
 }
 

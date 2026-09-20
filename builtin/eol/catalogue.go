@@ -51,6 +51,7 @@ func productsCapability() plugin.Capability {
 			"and eol.watch accept for each. A term narrows the list to products whose " +
 			"name, label or alias contains it; leave it out to see the whole catalogue.",
 		NoPreview: true,
+		Refresh:   tileRefresh,
 		Inputs: []plugin.Field{
 			{Name: "term", Type: plugin.String, Positional: true,
 				Help: "part of a name, label or alias — postgres, kube, ubuntu"},

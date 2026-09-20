@@ -1,6 +1,8 @@
 package wire
 
 import (
+	"time"
+
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	rtav1 "github.com/this-is-tobi/rta/proto/rta/v1"
 )
@@ -320,6 +322,9 @@ func CapabilityToProto(c plugin.Capability) *rtav1.Capability {
 		Copy:         c.Copy,
 		Live:         c.Live,
 		Flash:        c.Flash,
+		// Whole seconds: a tile's pace is minutes or hours, and a duration
+		// finer than that on the wire would be precision nothing reads.
+		RefreshSeconds: int64(c.Refresh / time.Second),
 	}
 }
 
@@ -370,6 +375,7 @@ func CapabilityFromProto(c *rtav1.Capability) (plugin.Capability, []string) {
 		Copy:         c.GetCopy(),
 		Live:         c.GetLive(),
 		Flash:        c.GetFlash(),
+		Refresh:      time.Duration(c.GetRefreshSeconds()) * time.Second,
 	}, unknown
 }
 

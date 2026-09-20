@@ -261,6 +261,12 @@ message Capability {
   // host may draw on that view's footer, rather than a value that needs a
   // page of its own.
   bool flash = 19;
+  // How often a dashboard tile of this capability is re-run, in seconds.
+  // 0 is the host's own pace (every few seconds). A capability whose answer
+  // moves by the day and costs a network round trip, or a dozen
+  // subprocesses, says so here rather than being re-run every five seconds
+  // by a host that cannot know either.
+  int64 refresh_seconds = 20;
 }
 
 // ActionSource says what an action acts on.

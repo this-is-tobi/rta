@@ -27,6 +27,14 @@ import (
 // wider for the warning to be useful rather than merely early.
 const defaultWarnDays = 90
 
+// tileRefresh is how often a dashboard tile of any of these capabilities is
+// re-run, for the person who names one in their config. Every one of them
+// is one request per product to endoflife.date, whose data moves by the
+// day: an end-of-life date announced this afternoon is still news two hours
+// from now, and the alternative — the dashboard's every-few-seconds pace —
+// is a public API asked the same question a thousand times an hour.
+const tileRefresh = 2 * time.Hour
+
 func Plugin() plugin.Plugin {
 	return plugin.Plugin{
 		Name:    "eol",
@@ -49,6 +57,7 @@ func Plugin() plugin.Plugin {
 				// box") is a property of the plugin, not an accident of one
 				// field being required today.
 				NoPreview: true,
+				Refresh:   tileRefresh,
 				Inputs: []plugin.Field{
 					{Name: "product", Type: plugin.String, Positional: true, Required: true,
 						Help:    "product name or alias — see https://endoflife.date for the catalogue",

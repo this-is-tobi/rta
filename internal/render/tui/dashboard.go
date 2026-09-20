@@ -36,6 +36,11 @@ type tile struct {
 	// actions are one-key shortcuts offered while this tile is selected —
 	// the dashboard's buttons (add/edit/done on the note tile).
 	actions []capAction
+	// lastFired is when this tile was last dispatched, for a capability
+	// that declared its own Refresh pace; zero until the first run. From
+	// the dispatch rather than the answer, so a slow answer does not
+	// stretch the interval it was waiting out.
+	lastFired time.Time
 }
 
 const (
@@ -426,8 +431,38 @@ func tileCmd(idx int, t tile, cfg map[string]any, profileName string,
 	}
 }
 
-// refreshTiles fires every capability tile at once; static tiles keep their
-// content. gen is this refresh chain's identity, stamped onto the tick it
+// due reports whether this tile should run at now.
+//
+// A capability that declared no Refresh runs on every tick, exactly as every
+// tile did before the field existed. One that declared a pace waits it out:
+// the dashboard's tick keeps its five-second rhythm for the tiles that want
+// it, and this one is simply skipped until its own interval has passed —
+// no second timer, nothing to arm or cancel, and a tile that was slow to
+// answer cannot stack copies of itself the way the every-tick path can.
+func (t tile) due(now time.Time) bool {
+	if t.search {
+		return false
+	}
+	if t.cap.Refresh <= 0 || t.lastFired.IsZero() {
+		return true
+	}
+	return now.Sub(t.lastFired) >= t.cap.Refresh
+}
+
+// resetDue forgets every tile's last run, so the next refreshTiles fires
+// all of them regardless of pace. For the moments a tile's inputs changed
+// under it — the environment switched, and the pg tile is now about a
+// different database — where an answer computed for the old inputs is
+// wrong however recent it is.
+func resetDue(tiles []tile) {
+	for i := range tiles {
+		tiles[i].lastFired = time.Time{}
+	}
+}
+
+// refreshTiles fires every capability tile that is due; static tiles keep
+// their content, and so does one still inside the pace its capability
+// declared. gen is this refresh chain's identity, stamped onto the tick it
 // arms so a later chain can tell an earlier one's firing apart from its own.
 //
 // forProfile is what the switched-on environment contributes to a capability.
@@ -438,10 +473,13 @@ func tileCmd(idx int, t tile, cfg map[string]any, profileName string,
 func refreshTiles(tiles []tile, gen int, pluginCfg func(string) map[string]any,
 	forProfile func(plugin.Capability) (string, map[string]any, config.Connection, *view.Error)) tea.Cmd {
 	cmds := make([]tea.Cmd, 0, len(tiles)+1)
-	for i, t := range tiles {
-		if t.search {
+	now := time.Now()
+	for i := range tiles {
+		t := tiles[i]
+		if !t.due(now) {
 			continue
 		}
+		tiles[i].lastFired = now
 		var cfg map[string]any
 		if words := t.cap.Words(); pluginCfg != nil && len(words) > 0 {
 			cfg = pluginCfg(words[0])
