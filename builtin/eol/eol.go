@@ -93,6 +93,18 @@ func runCheckAt(ctx context.Context, req plugin.Request, base string) (view.View
 		releases = []release{r}
 	}
 
+	// **A product with no release data is not a product with nothing to
+	// worry about.** endoflife.date answers 200 with a valid envelope and an
+	// empty releases array for something it tracks but has no cycles for
+	// yet, and there was no case for it: the caller got a zero-row table and
+	// a nil error, which is the same shape --warn-days filtering everything
+	// out produces, from a command whose whole purpose is to say whether
+	// something is past its end of life.
+	if len(releases) == 0 {
+		return nil, view.Errorf("eol.noreleases", "%s has no release data", product).
+			WithHint("the product is tracked but has no cycles recorded — `rta eol products` lists what does")
+	}
+
 	warnDays := req.Int("warn-days")
 	now := time.Now()
 	t := view.Table{Columns: []view.Column{

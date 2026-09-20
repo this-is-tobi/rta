@@ -956,7 +956,12 @@ func TestListReportsAnUnparseableKeyFileAsUnknownRatherThanCrashing(t *testing.T
 		t.Fatal(err)
 	}
 	row := v.(view.Table).Rows[0]
-	if row[1] != "unknown" || row[2] != "no" || row[3] != "unknown" || row[4] != "-" {
+	// Locked is "unknown" and not "no". This asserted "no" until the column
+	// was read back as a sentence: of a file nobody could parse, "no" states
+	// that it carries no passphrase — a claim about a key this never read,
+	// in the one column somebody checks before deciding a key is exposed.
+	// The type and eligibility beside it have said "unknown" all along.
+	if row[1] != "unknown" || row[2] != "unknown" || row[3] != "unknown" || row[4] != "-" {
 		t.Errorf("got %v", row)
 	}
 }

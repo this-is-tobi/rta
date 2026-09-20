@@ -2454,3 +2454,22 @@ func TestAKeyCannotBeNamedLikeAFolder(t *testing.T) {
 		}
 	}
 }
+
+// **An identity this cannot open is not an identity that opens the store.**
+//
+// lockedKey answers false for a file it could not read — deliberately, since
+// "is it passphrase-protected" is a question about a key it managed to parse,
+// and its own comment says the unreadable case is reported elsewhere. But
+// unlockAvailability tested `!lockedKey(p)` before anything else, so that
+// false arrived as "yes — identity <path>": a status page telling the
+// operator their key unlocks the store while naming a path that is not there.
+func TestStatusDoesNotPromiseAnIdentityItCannotRead(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "not-there")
+	got := unlockAvailability(req(map[string]any{"identity": missing}, false), modeKeys)
+	if strings.HasPrefix(got, "yes") {
+		t.Errorf("unlock = %q for an identity that is not on disk", got)
+	}
+	if !strings.Contains(got, missing) {
+		t.Errorf("unlock = %q, want it to name the path it could not read", got)
+	}
+}

@@ -165,25 +165,32 @@ func unlockKey(req plugin.Request, path string, data []byte) (any, *view.Error) 
 // became the default in 2018. Never attempts a passphrase; a locked key
 // whose container predates that field (nil) reports unknown rather than
 // guessing.
-func probeKey(path string) (locked bool, pub ssh.PublicKey) {
+//
+// known is what separates "this key carries no passphrase" from "nobody
+// could read this key". Every failure that is not a PassphraseMissingError
+// — a truncated file, a format this build cannot read, a key half-written
+// by an interrupted copy — used to leave with locked=false, and the Locked
+// column stated of an unreadable file that it is not protected. The two
+// columns beside it have reported "unknown" for exactly this case all along.
+func probeKey(path string) (locked, known bool, pub ssh.PublicKey) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return false, nil
+		return false, false, nil
 	}
 	raw, err := ssh.ParseRawPrivateKey(data)
 	if err == nil {
 		if pk, ok := publicKeyOf(raw); ok {
 			if sshPub, err := ssh.NewPublicKey(pk); err == nil {
-				return false, sshPub
+				return false, true, sshPub
 			}
 		}
-		return false, nil
+		return false, true, nil
 	}
 	var missing *ssh.PassphraseMissingError
 	if errors.As(err, &missing) {
-		return true, missing.PublicKey
+		return true, true, missing.PublicKey
 	}
-	return false, nil
+	return false, false, nil
 }
 
 // asEd25519 narrows a raw parsed key to the one type word-based backup
@@ -253,7 +260,7 @@ func pubComment(privPath string) string {
 // asking for its passphrase to answer a routine listing question is not
 // this capability's business.
 func describeKey(path string) []string {
-	locked, probed := probeKey(path)
+	locked, known, probed := probeKey(path)
 	var keyType, fp string
 	// The .pub sibling wins when it parses: it is the only source with a
 	// comment, and matches what the key's owner actually put there. Anything
@@ -277,9 +284,12 @@ func describeKey(path string) []string {
 	case "":
 		eligible = "unknown"
 	}
-	lockedCell := "no"
-	if locked {
+	lockedCell := "unknown"
+	switch {
+	case known && locked:
 		lockedCell = "yes"
+	case known:
+		lockedCell = "no"
 	}
 	if keyType == "" {
 		keyType = "unknown"

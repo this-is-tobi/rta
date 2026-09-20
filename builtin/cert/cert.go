@@ -4,6 +4,7 @@
 package cert
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"crypto/tls"
@@ -246,7 +247,13 @@ func readPEM(path string) ([]*x509.Certificate, error) {
 		return nil, view.Errorf("cert.file.unreadable", "reading %s: %v", path, err)
 	}
 	var certs []*x509.Certificate
-	for block, rest := pem.Decode(data); block != nil; block, rest = pem.Decode(rest) {
+	rest := data
+	for {
+		var block *pem.Block
+		block, rest = pem.Decode(rest)
+		if block == nil {
+			break
+		}
 		if block.Type != "CERTIFICATE" {
 			continue
 		}
@@ -255,6 +262,21 @@ func readPEM(path string) ([]*x509.Certificate, error) {
 			return nil, view.Errorf("cert.parse.failed", "parsing certificate in %s: %v", path, err)
 		}
 		certs = append(certs, c)
+	}
+	// **pem.Decode returns nil both when the input is exhausted and when a
+	// BEGIN line has no matching END**, so a bundle cut off mid-block — an
+	// interrupted download, a disk-full write, a half-finished paste — ended
+	// that loop exactly like a file with no more certificates in it. The
+	// certificates before the cut were returned with no error: `cert chain`
+	// drew a short chain that looked complete, and `cert pem --out` wrote a
+	// trust bundle missing its root into whatever consumed it next.
+	//
+	// Anything left holding a BEGIN line is therefore a block this could not
+	// read, and the file is refused rather than silently shortened.
+	if bytes.Contains(rest, []byte("-----BEGIN")) {
+		return nil, view.Errorf("cert.file.truncated",
+			"%s ends inside a PEM block, so it holds at least one certificate this could not read", path).
+			WithHint("the file is truncated or corrupt — fetch it again, and check whatever wrote it finished")
 	}
 	if len(certs) == 0 {
 		return nil, view.Errorf("cert.file.empty", "no CERTIFICATE blocks found in %s", path)

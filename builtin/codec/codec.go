@@ -15,6 +15,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"sort"
@@ -208,6 +209,19 @@ func decodeJSONSegment(segment string) (map[string]any, error) {
 	var out map[string]any
 	if err := json.Unmarshal(raw, &out); err != nil {
 		return nil, err
+	}
+	// **encoding/json writes nothing into a map for the literal `null`, and
+	// reports no error doing it.** RFC 7519 requires every segment to be a
+	// JSON object, so `null` is malformed — but it decoded "successfully"
+	// into a nil map and rendered as an ordinary empty table, which is also
+	// exactly what a token whose header genuinely is `{}` renders as. A
+	// reader inspecting a token something else had already rejected was
+	// shown a clean, empty header and no reason to doubt it.
+	//
+	// Only `null` reaches here: every other non-object JSON value already
+	// fails to unmarshal into a map.
+	if out == nil {
+		return nil, errors.New("not a JSON object")
 	}
 	return out, nil
 }

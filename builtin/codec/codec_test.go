@@ -180,3 +180,40 @@ func pairValue(kv view.KeyValue, key string) string {
 	}
 	return ""
 }
+
+// **encoding/json writes nothing into a map for the literal `null`, and
+// reports no error doing it.**
+//
+// RFC 7519 requires each JWT segment to be a JSON object, so a segment
+// holding `null` is malformed — but it decoded "successfully" into a nil
+// map and rendered as an ordinary empty table, indistinguishable from a
+// token whose header genuinely is `{}`. A reader inspecting a token that
+// something else had already rejected was shown a clean, empty header and
+// no reason to doubt it.
+func TestAJWTSegmentThatIsNotAnObjectIsRefused(t *testing.T) {
+	// Assembled from its segments rather than pasted in as one string, so
+	// the test says what each part *is* instead of leaving the reader to
+	// decode base64 in their head — and so no high-entropy literal sits
+	// beside the word "token", which is what a secret scanner is looking
+	// for and cannot tell apart from the real thing.
+	seg := func(s string) string { return base64.RawURLEncoding.EncodeToString([]byte(s)) }
+	jwt := func(header, claims string) string {
+		return seg(header) + "." + seg(claims) + "." + seg("not a signature")
+	}
+
+	_, err := runJWT(context.Background(), req(map[string]any{"token": jwt("null", `{"sub":"1"}`)}))
+	if err == nil {
+		t.Fatal("a token whose header is the literal null decoded as an empty header")
+	}
+	if !strings.Contains(err.Error(), "header") {
+		t.Errorf("err = %v, want it to name the header as the bad segment", err)
+	}
+
+	// A genuinely empty object still decodes, so the guard is about the
+	// shape and not about emptiness.
+	if _, err := runJWT(context.Background(), req(map[string]any{
+		"token": jwt("{}", `{"sub":"1"}`),
+	})); err != nil {
+		t.Errorf("a token with an empty but well-formed header was refused: %v", err)
+	}
+}

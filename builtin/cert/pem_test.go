@@ -1,6 +1,7 @@
 package cert
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -230,4 +231,54 @@ func TestPEMOutIsLocal(t *testing.T) {
 		return
 	}
 	t.Fatal("cert.pem is not in the plugin")
+}
+
+// **pem.Decode returns nil both when the input is exhausted and when a
+// BEGIN line has no matching END.**
+//
+// So a bundle cut off mid-block — an interrupted download, a disk-full
+// write, a half-finished paste — ended readPEM's loop exactly like a file
+// that simply had no more certificates in it. `cert chain` then drew a
+// short chain that looked complete, and `cert pem --out` wrote a trust
+// bundle missing its root into whatever consumed it next, with nothing
+// anywhere saying the file had been read only partly.
+func TestABundleTruncatedMidBlockIsRefusedRatherThanShortened(t *testing.T) {
+	dir := t.TempDir()
+	whole := append(selfSigned(t, "Example Leaf"), selfSigned(t, "Example Private CA")...)
+
+	// Cut inside the second block: everything up to its BEGIN line, plus a
+	// few lines of its body, and no END.
+	marker := []byte("-----BEGIN CERTIFICATE-----")
+	second := bytes.LastIndex(whole, marker)
+	if second <= 0 {
+		t.Fatal("fixture does not hold two PEM blocks")
+	}
+	cut := whole[:second+len(marker)+40]
+
+	path := filepath.Join(dir, "truncated.pem")
+	if err := os.WriteFile(path, cut, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := readPEM(path)
+	if err == nil {
+		t.Fatal("a bundle ending inside a PEM block was read as a complete one")
+	}
+	verr := view.AsError(err, "")
+	if verr.Code != "cert.file.truncated" {
+		t.Errorf("code = %q, want cert.file.truncated", verr.Code)
+	}
+
+	// And the whole file still reads, so the guard is about truncation and
+	// not about bundles.
+	good := filepath.Join(dir, "whole.pem")
+	if err := os.WriteFile(good, whole, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	certs, err := readPEM(good)
+	if err != nil {
+		t.Fatalf("an intact bundle was refused: %v", err)
+	}
+	if len(certs) != 2 {
+		t.Errorf("read %d certificates from an intact two-certificate bundle", len(certs))
+	}
 }
