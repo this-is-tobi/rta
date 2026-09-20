@@ -146,7 +146,7 @@ They are pointers, never wrappers: rta does not run them, parse them, or track t
 ```bash
 rta audit kube eol                        # the control plane, every kubelet, every image
 rta audit kube eol --namespace payments   # one team's images, and the control plane
-rta audit kube eol -o json | jq -r '.rows[] | select(.[1] == "fail") | .[0]'
+rta audit kube eol -o json | jq -r '.rows[] | select(.[0] != "overall" and .[1] == "fail") | .[0]'
 ```
 
 `audit kube eol` reads the versions a cluster already reports — `kubectl version`, the nodes' kubelets, every pod's image tags — and grades each against endoflife.date the way `rta eol check` grades one product: past its end of life fails, inside `--warn-days` of it warns, and a supported release passes with the date it stops being one. An image is recognised by the catalogue's own names and aliases, so `postgres:15.4` is PostgreSQL 15 and `debian:bookworm-slim` is Debian 12, and a hundred replicas of one image are one row with a count. What the catalogue does not track — your own images, most operators' — is one line naming them rather than a guess, and a floating `latest` tag or a bare digest says that nothing can be read from it.
