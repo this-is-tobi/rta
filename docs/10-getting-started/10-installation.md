@@ -49,7 +49,7 @@ Upgrading is the same download again — the new binary replaces the old one, an
 
 ## From source
 
-You need Go 1.26 or newer.
+You need Go 1.26 or newer. The checkout carries a `mise.toml` naming the exact version the pipeline builds with, so with [mise](https://mise.jdx.dev) installed, `mise trust && mise install` fetches it and nothing else has to be on the machine.
 
 ```bash
 git clone https://github.com/this-is-tobi/rta.git

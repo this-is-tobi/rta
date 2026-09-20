@@ -1,0 +1,19 @@
+# The toolchain for working on this repository, for people who use mise
+# (https://mise.jdx.dev): `mise trust && mise install` after cloning fetches
+# it, and every `make` target then runs against the same Go the pipeline
+# builds with.
+#
+# Only Go is pinned here, on purpose. The Makefile already installs the other
+# tools it needs at pinned versions — golangci-lint and helm-docs under
+# .tools, buf and goreleaser through `go run` — so a second pin for each would
+# be one more place for a version to drift. helm and python3, which the chart
+# targets call, are pinned nowhere, CI included; a pin here alone would make a
+# laptop stricter than the pipeline rather than the same as it.
+#
+# Go's version of record is the `go` directive in go.mod, which CI reads
+# through go-version-file. mise does not read that directive (it is a
+# minimum, not a request), so the same version is stated here, and Renovate
+# moves both in its "Go toolchain" group (renovate.json) so they cannot
+# disagree for long.
+[tools]
+go = "1.26.6"

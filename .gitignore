@@ -17,3 +17,7 @@ coverage.html
 # has always shipped docs/ alone for that reason — this is the same rule
 # applied to the repository, which was shipping all of it.
 .local/
+
+# A person's own mise overrides, never the repository's (mise.toml is)
+mise.local.toml
+.mise.local.toml
