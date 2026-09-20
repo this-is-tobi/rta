@@ -88,3 +88,37 @@ func TestPluralOfDerivesTheFormAndCountOfPrintsItWithTheNumber(t *testing.T) {
 		}
 	}
 }
+
+// **A noun ending in a sibilant takes -es, and a bare +s makes it unreadable.**
+//
+// Found by using it: `sys ps` counted the processes it could not read and
+// printed the noun with a bare +s on it. The -y rule was here from the start
+// because it is the one that came up; this is the second one, and it is
+// louder — a bare +s on "entry" at least looks like a typo, while on a
+// sibilant it produces a triple letter that is not a word.
+func TestASibilantNounTakesEs(t *testing.T) {
+	for noun, want := range map[string]string{
+		"process": "processes",
+		"status":  "statuses",
+		"match":   "matches",
+		"branch":  "branches",
+		"box":     "boxes",
+		"bus":     "buses",
+		"class":   "classes",
+		"hash":    "hashes",
+		"index":   "indexes",
+		// And the rules already here are untouched.
+		"entry":    "entries",
+		"key":      "keys",
+		"file":     "files",
+		"process ": "process s", // a trailing space is not a sibilant
+	} {
+		if got := PluralOf(2, noun); got != want {
+			t.Errorf("PluralOf(2, %q) = %q, want %q", noun, got, want)
+		}
+		// One of anything is still itself.
+		if got := PluralOf(1, noun); got != noun {
+			t.Errorf("PluralOf(1, %q) = %q", noun, got)
+		}
+	}
+}

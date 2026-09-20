@@ -91,6 +91,9 @@ func markdownTable(b *strings.Builder, t view.Table) {
 	if t.Total > len(t.Rows) {
 		fmt.Fprintf(b, "\n_Showing %d of %d rows._\n", len(t.Rows), t.Total)
 	}
+	// And the rows it could not read at all, which is the same wrongness
+	// with less to notice: a short page at least shows a heading missing.
+	markdownWarnings(b, t.Warnings)
 }
 
 func markdownTree(b *strings.Builder, t view.Tree) {

@@ -47,6 +47,14 @@ func runTree(ctx context.Context, req plugin.Request) (view.View, error) {
 		b.device = dev
 	}
 	children := b.children(ctx, path, 1)
+	// **A walk the deadline cut short is not a tree.** children returns nil
+	// on cancellation with no marker of its own, and nothing looked again —
+	// so a timeout partway through produced a normally-shaped, apparently
+	// complete view of a directory nobody finished reading. fs.usage has
+	// made this exact check since it was written.
+	if err := ctx.Err(); err != nil {
+		return nil, view.Errorf("fs.tree.cancelled", "walk of %s was interrupted", path)
+	}
 	root := view.Node{
 		Label:    filepath.Base(path) + "/",
 		Detail:   path,
@@ -161,7 +169,11 @@ func (b *treeBuilder) children(ctx context.Context, dir string, depth int) []vie
 			case depth >= b.maxDepth:
 				// Not descending is not the same as being empty, and the
 				// difference is the whole reason to say how many are down there.
-				if n := countEntries(full, b.hidden); n > 0 {
+				switch n, counted := countEntries(full, b.hidden); {
+				case !counted:
+					b.stats.unreadable++
+					node.Detail = "unreadable"
+				case n > 0:
 					b.stats.notDescended++
 					b.stats.beyond += n
 					node.Detail = format.CountOf(n, "entry")
@@ -184,13 +196,22 @@ func (b *treeBuilder) children(ctx context.Context, dir string, depth int) []vie
 	return nodes
 }
 
-func countEntries(dir string, includeHidden bool) int {
+// countEntries says how many entries sit inside a directory the walk stopped
+// at, and whether it could find out at all.
+//
+// **"I could not count these" is not "there are none".** The bool used to be
+// a 0, and a directory at the --depth boundary this user cannot read got no
+// detail at all — rendering as a bare `name/`, which is exactly how an empty
+// directory renders. The whole reason the boundary reports a count is that
+// not descending is not the same as being empty; answering 0 for an
+// unreadable one handed back the confusion the count exists to remove.
+func countEntries(dir string, includeHidden bool) (int, bool) {
 	items, err := os.ReadDir(dir)
 	if err != nil {
-		return 0
+		return 0, false
 	}
 	if includeHidden {
-		return len(items)
+		return len(items), true
 	}
 	n := 0
 	for _, item := range items {
@@ -198,7 +219,7 @@ func countEntries(dir string, includeHidden bool) int {
 			n++
 		}
 	}
-	return n
+	return n, true
 }
 
 func reason(err error) string {

@@ -496,8 +496,15 @@ func prettyTable(w io.Writer, t view.Table, st styles, highlight int) error {
 		footer = append(footer, more)
 	}
 	if len(footer) > 0 {
-		_, err := fmt.Fprintln(w, st.muted.Render(strings.Join(footer, " · ")))
-		return err
+		if _, err := fmt.Fprintln(w, st.muted.Render(strings.Join(footer, " · "))); err != nil {
+			return err
+		}
+	}
+	// Under the table, the way a page's warnings sit under its sections and
+	// for the same reason: a table missing rows it could not read leaves
+	// nothing behind, so what is above has to say it is partial.
+	if len(t.Warnings) > 0 {
+		return prettyWarnings(w, t.Warnings, st)
 	}
 	return nil
 }

@@ -59,6 +59,16 @@ func PluralOf(n int, noun string) string {
 		!strings.ContainsRune("aeiou", rune(noun[len(noun)-2])) {
 		return noun[:len(noun)-1] + "ies"
 	}
+	// A sibilant takes -es. The second rule that comes up in practice, and
+	// the louder one: a bare +s on "entry" reads as a typo, while a bare +s
+	// on "process" or "status" produces a triple letter that is not a word
+	// at all. Found by using it — `sys ps` counted what it could not read
+	// and printed the mangled noun on its first run.
+	for _, end := range []string{"s", "x", "z", "ch", "sh"} {
+		if strings.HasSuffix(noun, end) {
+			return noun + "es"
+		}
+	}
 	return noun + "s"
 }
 

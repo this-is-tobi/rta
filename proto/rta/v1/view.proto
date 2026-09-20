@@ -112,6 +112,11 @@ message Table {
   // The rows are in time order and the newest is last, so a surface that
   // scrolls opens at the end: a log is read from where it is now, back.
   bool tail = 6;
+  // What the listing could not cover. The same field Sections carries, for
+  // the same reason and with the same meaning: a table missing rows it
+  // could not read is otherwise indistinguishable from one that listed
+  // everything there was.
+  repeated Error warnings = 7;
 }
 
 enum ChartKind {
