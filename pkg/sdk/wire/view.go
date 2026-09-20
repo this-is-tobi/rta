@@ -131,6 +131,9 @@ func ViewToProto(v view.View) *rtav1.View {
 			Total:    int32Of(t.Total),
 			Redacted: t.Redacted,
 			Tail:     t.Tail,
+			Warnings: mapSlice(t.Warnings, func(w view.Error) *rtav1.Error {
+				return ErrorToProto(&w)
+			}),
 		}
 		if t.Page != nil {
 			tbl.Page = &rtav1.Cursor{Next: t.Page.Next}
@@ -200,6 +203,16 @@ func ViewFromProto(v *rtav1.View) view.View {
 			Total:    int(k.Table.GetTotal()),
 			Redacted: k.Table.GetRedacted(),
 			Tail:     k.Table.GetTail(),
+			Warnings: mapSlice(k.Table.GetWarnings(), func(w *rtav1.Error) view.Error {
+				// Guarded the way Sections' warnings are, and for the same
+				// reason: unreachable from the wire, but an embedder can
+				// construct a nil element by hand and a deref would take the
+				// host down with it.
+				if e := ErrorFromProto(w); e != nil {
+					return *e
+				}
+				return view.Error{}
+			}),
 		}
 		if p := k.Table.GetPage(); p != nil {
 			t.Page = &view.Cursor{Next: p.GetNext()}

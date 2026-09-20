@@ -197,6 +197,14 @@ func checkOneView(t reporter, c plugin.Capability, v view.View) {
 		if t2.Total > 0 && t2.Total < len(t2.Rows) {
 			t.Errorf("sdktest: %s: %s reports Total %d with %d rows", RuleViews, c.ID, t2.Total, len(t2.Rows))
 		}
+		for _, w := range t2.Warnings {
+			if w.Code == "" {
+				// Same rule the Sections branch below holds, for the same
+				// field: an uncoded warning cannot be told from any other
+				// by anything that is not a person reading English.
+				t.Logf("sdktest: %s: %s carries an uncoded warning %q", RuleViews, c.ID, w.Message)
+			}
+		}
 		for i, row := range t2.Rows {
 			if len(row) > len(t2.Columns) {
 				// A cell past the last column has no column name, and a cell

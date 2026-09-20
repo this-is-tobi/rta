@@ -528,9 +528,20 @@ func runDisk(ctx context.Context, req plugin.Request) (view.View, error) {
 		{Name: "Status", Kind: view.KindStatus},
 	}}
 	// realPartitions has already dropped the noise; --all keeps the raw list.
+	var unread []string
 	for _, p := range parts {
 		u, err := disk.UsageWithContext(ctx, p.Mountpoint)
-		if err != nil || u.Total == 0 {
+		if err != nil {
+			// **A mount that could not be statted is not a mount with no
+			// size.** These two conditions shared one `continue`, so a
+			// permission-denied mount, a stale NFS handle or a device that
+			// went away between the listing and the stat dropped out of this
+			// table exactly like the sizeless pseudo-mounts do — and the
+			// Total was then counted from whatever was left.
+			unread = append(unread, p.Mountpoint)
+			continue
+		}
+		if u.Total == 0 {
 			continue
 		}
 		cell, status := diskUsage(u.UsedPercent)
@@ -544,6 +555,11 @@ func runDisk(ctx context.Context, req plugin.Request) (view.View, error) {
 		})
 	}
 	t.Total = len(t.Rows)
+	if len(unread) > 0 {
+		w := partialWarning("sys.disk.partial", "mount point", "", len(unread))
+		w.Hint = "could not be statted: " + strings.Join(unread, ", ")
+		t.Warnings = append(t.Warnings, w)
+	}
 	return t, nil
 }
 
@@ -739,13 +755,21 @@ func runPS(ctx context.Context, req plugin.Request) (view.View, error) {
 		rss  uint64
 	}
 	rows := make([]row, 0, len(procs))
+	unread := 0
 	for _, p := range procs {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
 		name, err := p.NameWithContext(ctx)
 		if err != nil {
-			continue // process may have exited, or be inaccessible
+			// A process that exited between the listing and this read is
+			// gone and says nothing; one this user may not read is a row
+			// missing from a table that reports a Total. The two are the
+			// same no-op here and cannot be told apart from the outside,
+			// so they are counted together and reported as what they are:
+			// entries this could not account for.
+			unread++
+			continue
 		}
 		cpuPct, _ := p.CPUPercentWithContext(ctx)
 		memPct, _ := p.MemoryPercentWithContext(ctx)
@@ -787,7 +811,36 @@ func runPS(ctx context.Context, req plugin.Request) (view.View, error) {
 			format.Bytes(r.rss),
 		})
 	}
+	if unread > 0 {
+		t.Warnings = append(t.Warnings, partialWarning("sys.ps.partial", "process",
+			"another user's processes are not readable without privileges, and a process that "+
+				"exited during the scan counts here too", unread))
+	}
 	return t, nil
+}
+
+// partialWarning is what a listing on this page adds when it could not read
+// some of what it was asked about.
+//
+// **A shorter list is indistinguishable from the whole of a smaller thing.**
+// Every listing here walks something the operating system may refuse in
+// part — another user's process, a mount that has gone away, a sensor that
+// needs privileges — and each one used to drop the unreadable entries and
+// present the remainder with a Total, which reads as the complete set. On
+// this machine that is 44 processes of 778, silently missing from the table
+// somebody opened to find what is running.
+//
+// A count rather than a list of names: the names are exactly what could not
+// be read, and on a busy machine the number is the actionable part.
+func partialWarning(code, what, why string, skipped int) view.Error {
+	e := view.Error{
+		Code:    code,
+		Message: fmt.Sprintf("%s could not be read, so they are missing from this table", format.CountOf(skipped, what)),
+	}
+	if why != "" {
+		e.Hint = why
+	}
+	return e
 }
 
 func runTemp(ctx context.Context, _ plugin.Request) (view.View, error) {
@@ -796,6 +849,11 @@ func runTemp(ctx context.Context, _ plugin.Request) (view.View, error) {
 		return nil, view.Errorf("sys.temp.unavailable", "reading sensors: %v", err).
 			WithHint("sensor access is platform-dependent; on macOS it may need elevated privileges")
 	}
+	// gopsutil aggregates per-device failures into one error and still hands
+	// back the devices it *did* read, so a non-nil error beside a non-empty
+	// slice is the partial case — which was discarded, leaving the sensors
+	// that answered looking like the whole set.
+	partial := err
 	t := view.Table{Columns: []view.Column{
 		{Name: "Sensor"},
 		{Name: "°C", Kind: view.KindNumber},
@@ -821,6 +879,13 @@ func runTemp(ctx context.Context, _ plugin.Request) (view.View, error) {
 			WithHint("sensor access is platform-dependent; on macOS it may need elevated privileges")
 	}
 	t.Total = len(t.Rows)
+	if partial != nil {
+		t.Warnings = append(t.Warnings, view.Error{
+			Code:    "sys.temp.partial",
+			Message: "some sensors could not be read, so they are missing from this table",
+			Hint:    "sensor access is platform-dependent; on macOS it may need elevated privileges — " + partial.Error(),
+		})
+	}
 	return t, nil
 }
 

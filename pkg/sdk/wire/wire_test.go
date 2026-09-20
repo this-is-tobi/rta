@@ -183,6 +183,12 @@ func everyViewType() map[string]view.View {
 			Page:     &view.Cursor{Next: "cursor-token"},
 			Redacted: []string{"B"},
 			Tail:     true,
+			// A table that could not cover everything has to say so, and the
+			// saying is only worth anything if it reaches the other end.
+			Warnings: []view.Error{{
+				Code: "x.partial", Message: "two namespaces could not be listed",
+				Hint: "the credential needs list on them",
+			}},
 		},
 		"tree": view.Tree{Roots: []view.Node{
 			{Label: "root", Detail: "d", Children: []view.Node{

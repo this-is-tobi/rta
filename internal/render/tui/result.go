@@ -125,15 +125,20 @@ func (m Model) resultMeta() string {
 // failed two levels down is exactly as absent as one that failed at the top,
 // and just as worth saying out loud.
 func pageWarnings(v view.View) []view.Error {
-	s, ok := v.(view.Sections)
-	if !ok {
-		return nil
+	switch t := v.(type) {
+	case view.Sections:
+		out := append([]view.Error(nil), t.Warnings...)
+		for _, item := range t.Items {
+			out = append(out, pageWarnings(item.View)...)
+		}
+		return out
+	case view.Table:
+		// A table carries the same field for the same reason, and a table
+		// nested in a section is exactly as able to be partial as the page
+		// around it.
+		return t.Warnings
 	}
-	out := append([]view.Error(nil), s.Warnings...)
-	for _, item := range s.Items {
-		out = append(out, pageWarnings(item.View)...)
-	}
-	return out
+	return nil
 }
 
 // flashText condenses an action result into a one-line footer notice.

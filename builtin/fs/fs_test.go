@@ -587,3 +587,90 @@ func TestTreeDetailComposesUsageWithinTheSameBound(t *testing.T) {
 		}
 	}
 }
+
+// blinded makes one subdirectory unreadable and returns the fixture root.
+func blinded(t *testing.T, files map[string]int, dir string) string {
+	t.Helper()
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("file modes do not deny the owner here")
+	}
+	root := fixture(t, files)
+	blind := filepath.Join(root, dir)
+	if err := os.Chmod(blind, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(blind, 0o755) })
+	return root
+}
+
+// **A share is a share of what was counted, and the compact table never said
+// which.** The detail page has reported `skipped` all along; the table
+// somebody actually looks at presented "this directory is 95% of the tree"
+// as a percentage of a total that silently left out every subtree it could
+// not read.
+func TestUsageSaysWhenItCouldNotCountEverything(t *testing.T) {
+	root := blinded(t, map[string]int{
+		"visible/a.bin": 4096,
+		"locked/b.bin":  4096,
+	}, "locked")
+
+	tbl := run(t, runUsage, map[string]any{"path": root}).(view.Table)
+	if len(tbl.Warnings) == 0 {
+		t.Fatalf("a subtree that could not be counted left no trace: %+v", tbl.Rows)
+	}
+	if tbl.Warnings[0].Code != "fs.usage.partial" {
+		t.Errorf("code = %q, want fs.usage.partial", tbl.Warnings[0].Code)
+	}
+	// A fully readable tree says nothing extra, or the caveat stops being
+	// worth reading.
+	clean := run(t, runUsage, map[string]any{
+		"path": fixture(t, map[string]int{"a/b.bin": 512}),
+	}).(view.Table)
+	if len(clean.Warnings) != 0 {
+		t.Errorf("a readable tree warned anyway: %+v", clean.Warnings)
+	}
+}
+
+// **"I could not count these" is not "there are none".**
+//
+// At the --depth boundary the tree reports how many entries are inside a
+// directory it did not descend into — precisely because not descending is
+// not the same as being empty. An unreadable one counted as 0 and so got no
+// detail at all, rendering as a bare `name/`: exactly how an empty directory
+// renders, which is the confusion the count exists to remove.
+func TestTreeMarksADirectoryItCouldNotCountAtTheDepthBoundary(t *testing.T) {
+	root := blinded(t, map[string]int{"locked/deep/a.bin": 16}, "locked")
+
+	v := run(t, runTree, map[string]any{"path": root, "depth": 1})
+	var detail string
+	for _, n := range v.(view.Tree).Roots[0].Children {
+		if strings.HasPrefix(n.Label, "locked") {
+			detail = n.Detail
+		}
+	}
+	if detail == "" {
+		t.Fatal("a directory whose contents could not be counted rendered as an empty one")
+	}
+	if !strings.Contains(detail, "unreadable") {
+		t.Errorf("detail = %q, want it to say the directory could not be read", detail)
+	}
+}
+
+// **A walk the deadline cut short is not a tree.** children returns nil on
+// cancellation with no marker of its own, so a timeout partway through
+// produced a normally-shaped, apparently complete view of a directory
+// nobody finished reading. fs.usage has made this check since it was
+// written; this is the same check on the other walk.
+func TestTreeRefusesAWalkThatWasCancelled(t *testing.T) {
+	root := fixture(t, map[string]int{"a/b/c.bin": 16})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := runTree(ctx, plugin.NewRequest(map[string]any{"path": root, "depth": 3}, false, false))
+	if err == nil {
+		t.Fatal("a cancelled walk returned a tree as though it were complete")
+	}
+	if code := view.AsError(err, "").Code; code != "fs.tree.cancelled" {
+		t.Errorf("code = %q, want fs.tree.cancelled", code)
+	}
+}

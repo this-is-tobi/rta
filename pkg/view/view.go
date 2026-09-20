@@ -122,6 +122,23 @@ type Table struct {
 	// it. Declared by the view, not inferred from a timestamp column, so a
 	// table of expiries in ascending order is not mistaken for a log.
 	Tail bool `json:"tail,omitempty"`
+	// Warnings carries what the listing could not cover, so that a partial
+	// table says it is partial.
+	//
+	// The same field Sections carries, for the same reason — and it was on
+	// Sections alone for long enough that the gap became a class of bug.
+	// A page that drops a section at least drops a heading; a table that
+	// drops rows leaves nothing behind at all. A directory the walk could
+	// not enter, a namespace the credential may not list, a process this
+	// user may not read, a schema the grants hide: each one came back as a
+	// shorter list, and a shorter list is indistinguishable from the whole
+	// of a smaller thing. That is the shape a caller cannot defend against,
+	// because there is no error to check and no row to notice missing.
+	//
+	// Not for a row that is merely absent — a filter matching nothing is an
+	// answer. This is for what the reader asked about and the writer could
+	// not see.
+	Warnings []Error `json:"warnings,omitempty"`
 }
 
 // ChartKind selects how series are drawn.

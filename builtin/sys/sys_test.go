@@ -2,6 +2,7 @@ package sys
 
 import (
 	"context"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -329,5 +330,63 @@ func TestDetailedOverviewComposesCapabilities(t *testing.T) {
 	}
 	if _, ok := compact.(view.KeyValue); !ok {
 		t.Errorf("compact overview = %s, want keyvalue", view.TypeOf(compact))
+	}
+}
+
+// **A shorter list is indistinguishable from the whole of a smaller thing.**
+//
+// This machine has processes this user may not read — 44 of 778 on the box
+// this was written on — and every one of them was dropped from the table
+// with the Total counted from what was left. Nothing said so, on the screen
+// somebody opens to find what is running.
+//
+// Skipped where everything happens to be readable, which is the ordinary
+// case in a root container: the fix is that an unreadable process is
+// *reported*, not that one always exists.
+func TestPSSaysHowManyProcessesItCouldNotRead(t *testing.T) {
+	v, err := runPS(context.Background(), plugin.NewRequest(map[string]any{"limit": 5}, false, false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	table, ok := v.(view.Table)
+	if !ok {
+		t.Fatalf("ps returned %s, want a Table", view.TypeOf(v))
+	}
+	if len(table.Warnings) == 0 {
+		t.Skip("every process on this machine is readable, so there is nothing to report")
+	}
+	w := table.Warnings[0]
+	if w.Code != "sys.ps.partial" {
+		t.Errorf("code = %q, want sys.ps.partial", w.Code)
+	}
+	if !strings.Contains(w.Message, "could not be read") {
+		t.Errorf("message = %q, want it to say what happened", w.Message)
+	}
+	// The count has to be a count, not "some": it is the difference between
+	// the table in front of the reader and the machine behind it.
+	if !regexp.MustCompile(`\d+ process`).MatchString(w.Message) {
+		t.Errorf("message = %q, want it to say how many", w.Message)
+	}
+}
+
+// And a warning is never invented: a listing that read everything says
+// nothing extra, or the caveat stops being worth reading.
+func TestDiskWarnsOnlyAboutMountsItCouldNotStat(t *testing.T) {
+	v, err := runDisk(context.Background(), plugin.NewRequest(nil, false, false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	table := v.(view.Table)
+	for _, w := range table.Warnings {
+		if w.Code != "sys.disk.partial" {
+			t.Errorf("unexpected warning %+v", w)
+		}
+		// Every named mount must be absent from the rows, or the warning is
+		// describing something it did in fact manage to read.
+		for _, row := range table.Rows {
+			if strings.Contains(w.Hint, row[0]) {
+				t.Errorf("warning names %q, which is in the table: %s", row[0], w.Hint)
+			}
+		}
 	}
 }

@@ -184,7 +184,22 @@ func runUsage(ctx context.Context, req plugin.Request) (view.View, error) {
 	if req.Bool("detail") {
 		return usageDetail(ctx, req, path, entries, total, s), nil
 	}
-	return usageTable(entries, total, req.Int("limit")), nil
+	t := usageTable(entries, total, req.Int("limit"))
+	// **The ranking and the total are built from what could be read, and the
+	// compact form never said so.** The detail page has reported `skipped`
+	// all along; the table somebody actually looks at presented a share of a
+	// total that silently excluded every unreadable or cross-filesystem
+	// subtree — so "this directory is 95% of the tree" was a percentage of a
+	// smaller tree than the one on screen.
+	if s.skipped > 0 {
+		t.Warnings = append(t.Warnings, view.Error{
+			Code: "fs.usage.partial",
+			Message: format.CountOf(s.skipped, "entry") +
+				" could not be counted, so the sizes and shares here are of what was read",
+			Hint: "unreadable, or on another filesystem — `--detail` breaks the scan down",
+		})
+	}
+	return t, nil
 }
 
 func usageTable(entries []entry, total int64, limit int) view.Table {
