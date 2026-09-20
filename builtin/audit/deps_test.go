@@ -289,8 +289,9 @@ func manifestsOf(t *testing.T, target string, recursive bool) (shown []string, t
 	if verr != nil {
 		return nil, false, verr
 	}
-	_, shown, truncated, err = proj.manifests(recursive)
-	return shown, truncated, err
+	var cov coverage
+	_, shown, cov, err = proj.manifests(recursive)
+	return shown, cov.truncated, err
 }
 
 func TestFindManifests(t *testing.T) {

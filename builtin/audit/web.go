@@ -554,6 +554,19 @@ var cookieAttrs = []struct {
 
 func auditCookies(r *findings.Report, resp *stdhttp.Response) {
 	cookies := resp.Cookies()
+	// **resp.Cookies() is what Go could parse, not what the server sent.**
+	// Go's scanner drops a Set-Cookie line it cannot read without a word —
+	// an invalid token in the name, a missing "=" — while a browser's more
+	// forgiving parser still accepts and stores it. Grading only the
+	// parseable ones and closing with "all N cookies set" then states that
+	// every cookie this site sets is hardened, about a set missing the one
+	// nobody could look at, which is the likeliest one to be the odd one out.
+	if sent := len(resp.Header.Values("Set-Cookie")); sent > len(cookies) {
+		r.Add(grpCookies, "cookie-unread", findings.Warn,
+			fmt.Sprintf("%d of %d Set-Cookie headers could not be parsed, so the rows here cover the rest — "+
+				"a browser is more forgiving than this reader and may well be holding them",
+				sent-len(cookies), sent), findings.Reference{})
+	}
 	if len(cookies) == 0 {
 		return
 	}
@@ -565,7 +578,7 @@ func auditCookies(r *findings.Report, resp *stdhttp.Response) {
 			}
 		}
 		if len(weak) == 0 {
-			r.Add(grpCookies, attr.check, findings.OK, fmt.Sprintf("all %d cookie(s) set", len(cookies)), attr.ref)
+			r.Add(grpCookies, attr.check, findings.OK, "all "+findings.Plural(len(cookies), "cookie")+" set", attr.ref)
 			continue
 		}
 		sort.Strings(weak)

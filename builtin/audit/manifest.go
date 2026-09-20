@@ -2,10 +2,15 @@ package audit
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"net/url"
 	"path"
+	"strconv"
 	"strings"
+
+	"github.com/this-is-tobi/rta/pkg/findings"
+	"github.com/this-is-tobi/rta/pkg/format"
 )
 
 // Reading what a project already declares, rather than resolving it.
@@ -80,6 +85,39 @@ const (
 	maxManifests = 200
 )
 
+// coverage is what a scan could not cover, carried back to the caller so
+// the report can say so beside the findings. Both fields are caveats on the
+// same claim — "this is what the project declares" — and a report that
+// states it without them is stating it about part of a tree as though it
+// were the whole.
+type coverage struct {
+	truncated  bool     // maxManifests or maxScanDepth stopped the walk
+	unreadable []string // directories the walk could not list
+}
+
+// addCoverage turns those caveats into findings. Shared so `audit deps` and
+// `audit why` cannot come to describe the same shortfall differently.
+func addCoverage(r *findings.Report, cov coverage) {
+	if cov.truncated {
+		r.Add(grpInventory, "scan", findings.Warn,
+			"stopped at "+strconv.Itoa(maxManifests)+" manifests or "+strconv.Itoa(maxScanDepth)+
+				" directory levels, so this covers part of the tree — narrow the path to audit the rest",
+			refVulnerableDep)
+	}
+	if len(cov.unreadable) > 0 {
+		shown := cov.unreadable
+		more := ""
+		if len(shown) > 5 {
+			more = fmt.Sprintf(" and %d more", len(shown)-5)
+			shown = shown[:5]
+		}
+		r.Add(grpInventory, "scan", findings.Warn,
+			format.CountOf(len(cov.unreadable), "directory")+" could not be read, so anything declared "+
+				"inside is missing from this audit: "+strings.Join(shown, ", ")+more,
+			refVulnerableDep)
+	}
+}
+
 // findManifests looks in one directory, or accepts a file directly.
 //
 // It does not walk the tree by default, and that stays the default: "which
@@ -104,15 +142,19 @@ const (
 // the other. Everything below therefore speaks slash-separated fs paths;
 // what the *reader* is shown is a separate string, because the path inside a
 // clone means nothing to them and the URL means nothing to fs.FS.
-func findManifests(fsys fs.FS, recursive bool) (found []string, truncated bool, err error) {
+func findManifests(fsys fs.FS, recursive bool) (found []string, cov coverage, err error) {
 	if !recursive {
-		return manifestsIn(fsys, "."), false, nil
+		return manifestsIn(fsys, "."), coverage{}, nil
 	}
 	err = fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			// An unreadable subdirectory is not a reason to abandon the
-			// eleven that were readable.
+			// eleven that were readable — but it is a reason to say so.
+			// Skipping it silently made a scan that covered part of a
+			// monorepo indistinguishable from one that covered all of it,
+			// and a dependency audit's whole claim is what it looked at.
 			if d != nil && d.IsDir() {
+				cov.unreadable = append(cov.unreadable, p)
 				return fs.SkipDir
 			}
 			return nil
@@ -128,16 +170,16 @@ func findManifests(fsys fs.FS, recursive bool) (found []string, truncated bool, 
 			return fs.SkipDir
 		}
 		if len(found) >= maxManifests {
-			truncated = true
+			cov.truncated = true
 			return fs.SkipAll
 		}
 		found = append(found, manifestsIn(fsys, p)...)
 		return nil
 	})
 	if len(found) > maxManifests {
-		found, truncated = found[:maxManifests], true
+		found, cov.truncated = found[:maxManifests], true
 	}
-	return found, truncated, err
+	return found, cov, err
 }
 
 // manifestsIn lists the manifests directly in one directory, in the order

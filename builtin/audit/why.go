@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -52,7 +53,7 @@ func runWhy(ctx context.Context, req plugin.Request) (view.View, error) {
 	if verr != nil {
 		return nil, verr
 	}
-	names, shown, truncated, err := proj.manifests(req.Bool("recursive"))
+	names, shown, cov, err := proj.manifests(req.Bool("recursive"))
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, view.Errorf("audit.why.nopath", "no such path: %s", path).
@@ -62,6 +63,11 @@ func runWhy(ctx context.Context, req plugin.Request) (view.View, error) {
 		return nil, view.Errorf("audit.why.path", "reading %s: %v", path, err)
 	}
 	if len(names) == 0 {
+		if len(cov.unreadable) > 0 {
+			return nil, view.Errorf("audit.why.unreadable",
+				"nothing could be read under %s: %s", remoteLabel(path), strings.Join(cov.unreadable, ", ")).
+				WithHint("run as a user that can list those directories, or point --path at one that is readable")
+		}
 		return nil, view.Errorf("audit.why.nomanifest", "no lockfile or SBOM in %s", remoteLabel(path)).
 			WithHint("reads what a project already declares, so one of these has to exist: " +
 				strings.Join(ecosystems, "; "))
@@ -70,17 +76,30 @@ func runWhy(ctx context.Context, req plugin.Request) (view.View, error) {
 	inv := read(proj.fsys, names, shown)
 	found := matching(inv.all, name)
 	if len(found) == 0 {
+		// "Nothing here declares it" is a claim about the whole tree, and a
+		// tree this could only partly read is not entitled to make it.
+		if len(cov.unreadable) > 0 {
+			return nil, view.Errorf("audit.why.unreadable",
+				"%s is not declared in what could be read, and %s could not be read: %s",
+				name, format.CountOf(len(cov.unreadable), "directory"), strings.Join(cov.unreadable, ", ")).
+				WithHint("run as a user that can list those directories before concluding it is absent")
+		}
 		return nil, notInstalled(name, inv)
 	}
 
 	p := plugin.NewPage(ctx, req)
-	p.PutAs("summary", "summary", whySummary(found, inv, truncated || inv.truncated))
+	p.PutAs("summary", "summary", whySummary(found, inv, cov.truncated || inv.truncated))
 	tree, cut := whyTree(inv.structure, found)
 	p.PutAs("reached from", "reached from", tree)
 	if cut {
 		p.Warn(view.Errorf("audit.why.truncated",
 			"the graph is larger than this draws, so some routes are not shown").
 			WithHint("`" + whyCommand(found[0]) + "` prints all of them"))
+	}
+	if len(cov.unreadable) > 0 {
+		p.Warn(view.Errorf("audit.why.unreadable",
+			"%s could not be read, so a route through what they declare is not in this answer: %s",
+			format.CountOf(len(cov.unreadable), "directory"), strings.Join(cov.unreadable, ", ")))
 	}
 	return p.View(), nil
 }

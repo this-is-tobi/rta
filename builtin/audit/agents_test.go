@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -220,5 +221,62 @@ func TestTheBoundaryIsStatedOutLoud(t *testing.T) {
 		if !strings.Contains(row[2], want) {
 			t.Errorf("the boundary row loses %q to the clip: %s", want, row[2])
 		}
+	}
+}
+
+// **"Nothing to grade" is a claim about the machine, and a process that
+// could not look is not entitled to make it.**
+//
+// os.Stat failing was treated exactly like a file that was never written,
+// so a $HOME whose .claude directory this UID cannot traverse — an
+// arbitrary-UID container with a mounted home, a directory a prior
+// root-owned write left behind — produced `found == 0` and the audit's
+// cheerful "no agent configuration found in the usual places". The one
+// answer that means "you have nothing to worry about here", given for a
+// machine nobody managed to examine.
+func TestAConfigDirectoryThatCannotBeTraversedIsNotNothingToGrade(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("file modes do not deny the owner here")
+	}
+	home := fakeHome(t, map[string]struct {
+		body string
+		mode os.FileMode
+	}{".claude/settings.json": {body: `{"mcpServers":{}}`, mode: 0o600}})
+	blind := filepath.Join(home, ".claude")
+	if err := os.Chmod(blind, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(blind, 0o755) })
+
+	rows := agentRows(t, plugin.SurfaceCLI)
+	if _, quiet := rows["config"]; quiet {
+		t.Error("a home this could not read was reported as a home with no agent configuration")
+	}
+	row, ok := rows["unreadable"]
+	if !ok {
+		t.Fatalf("nothing says the configuration could not be read: %v", rows)
+	}
+	// Both settings files under the blinded directory, counted and graded —
+	// the compact table clips the paths themselves, which is what --detail
+	// is for.
+	line := strings.Join(row, " ")
+	if !strings.Contains(line, "2 files could not be read") {
+		t.Errorf("the row does not say what went unread: %v", row)
+	}
+	if !strings.Contains(line, findings.Warn) {
+		t.Errorf("an ungraded configuration is not a warning: %v", row)
+	}
+}
+
+// A home with genuinely nothing in it still says so, so the quiet answer
+// keeps meaning what it says.
+func TestAnEmptyHomeStillReportsNothingToGrade(t *testing.T) {
+	fakeHome(t, nil)
+	rows := agentRows(t, plugin.SurfaceCLI)
+	if _, ok := rows["config"]; !ok {
+		t.Errorf("an empty home no longer reports that there is nothing to grade: %v", rows)
+	}
+	if _, ok := rows["unreadable"]; ok {
+		t.Errorf("an empty home reported something unreadable: %v", rows)
 	}
 }
