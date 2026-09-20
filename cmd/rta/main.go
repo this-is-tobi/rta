@@ -52,6 +52,42 @@ func buildCommit() string {
 	return ""
 }
 
+// buildVersion is the version this binary reports, and records as itself.
+//
+// The same gap as buildCommit's, one field along. `go install …@v0.23.0`
+// stamps nothing, so the binary said `rta version dev` while the toolchain
+// had written v0.23.0 into its build info as the module version it resolved
+// — internal/app's releasedVersion already reads that field to pin a
+// scaffolded plugin's SDK, and `--version` was the one reader still ignoring
+// it. The cost was not cosmetic: session.SetSelf records this string so the
+// doctor can compare an open MCP server's build against the process asking,
+// and two go-installed builds of different releases compared as "dev" and
+// "dev", which is to say not at all.
+//
+// A checkout build carries "(devel)" there, which is no version, and keeps
+// saying dev; its commit is still reported beside it. A pseudo-version from
+// `go install …@main` is kept as it is — long, but exactly which artifact
+// this is, which is the whole point.
+func buildVersion() string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return version
+	}
+	return versionFrom(version, info.Main.Version)
+}
+
+// versionFrom prefers a linker stamp and falls back to the module version
+// the toolchain recorded, unless that is the "(devel)" a checkout build gets.
+func versionFrom(stamp, module string) string {
+	if stamp != "dev" {
+		return stamp
+	}
+	if module == "" || module == "(devel)" {
+		return stamp
+	}
+	return module
+}
+
 func main() {
 	// Before anything reads a secret into this address space. Confinement
 	// documented this in two places and it was implemented in none, which is
@@ -129,10 +165,10 @@ func main() {
 	// color, never the run.
 	app.SetThemeProblems(theme.Apply(cfg.Theme))
 
-	root := app.NewRoot(reg, version)
+	root := app.NewRoot(reg, buildVersion())
 
 	err = fang.Execute(ctx, root,
-		fang.WithVersion(version),
+		fang.WithVersion(buildVersion()),
 		fang.WithCommit(buildCommit()),
 		fang.WithErrorHandler(errorHandler(root)),
 	)
