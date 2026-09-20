@@ -93,10 +93,24 @@ func Exposition() (string, error) {
 		"Calls still in the record, by capability, agent, outcome and how it was authorized.",
 		callSamples(entries))
 
-	waiting, _ := consent.Pending()
+	waiting, pendingErr := consent.Pending()
 	metric(&b, "rta_agent_pending", "gauge",
 		"Calls parked right now, waiting for a person to allow or deny them.",
 		[]sample{{value: float64(len(waiting))}})
+	// The companion gauge rta_record_intact already sets the pattern: a
+	// count on its own cannot say whether it is trustworthy, so the reader's
+	// own confidence is published beside it. Without this, a consent queue
+	// rta could not read published rta_agent_pending 0 — indistinguishable
+	// from a queue that is genuinely empty — and an alert tuned to catch a
+	// parked call sitting too long would never fire on the one failure mode
+	// where it cannot see the queue at all.
+	pendingReadable := 1.0
+	if pendingErr != nil {
+		pendingReadable = 0
+	}
+	metric(&b, "rta_agent_pending_readable", "gauge",
+		"1 when the consent queue was read successfully, 0 when rta_agent_pending is stale because it could not be.",
+		[]sample{{value: pendingReadable}})
 
 	metric(&b, "rta_grants_active", "gauge",
 		"Grants in force right now, by capability and agent.", grantSamples())

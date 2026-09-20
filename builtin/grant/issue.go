@@ -142,12 +142,17 @@ func windowWords(r role.Source) string {
 // RolesInForce is one line per role and agent among the grants standing,
 // for the overview and doctor — the same words the roster prints above
 // its rows. Empty when no grant carries a role.
-func RolesInForce() string {
+//
+// Returns the error rather than folding it into "" the way an empty grants
+// file also would: core.Load failing (a corrupted file, a Ceiling it cannot
+// read) and core.Load succeeding with nothing active are not the same fact,
+// and rolesLine's caller needs to tell an operator "none" from "unreadable".
+func RolesInForce() (string, *view.Error) {
 	grants, verr := core.Load()
 	if verr != nil {
-		return ""
+		return "", verr
 	}
-	return rolesInForce(grants)
+	return rolesInForce(grants), nil
 }
 
 // IssueRole is the issue flow for another built-in: agent.allow answers a

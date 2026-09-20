@@ -301,22 +301,31 @@ func suggestPending(context.Context, plugin.Request) []string {
 // are the detail page's table (connectedTable) and `rta agent log`'s column.
 // Shared with `rta doctor`, so the two never describe presence in different
 // words.
-func Connected() (string, int) {
-	open, calls := openSessions()
+//
+// Returns the error rather than folding it into "nothing connected" the way
+// an empty session store also would: session.List failing (the store's
+// permissions changed, a transient I/O error) and it succeeding with no
+// server open are not the same fact, and "is anything attached" is the one
+// question an operator opens this during an incident to ask.
+func Connected() (string, int, error) {
+	open, calls, err := openSessions()
+	if err != nil {
+		return "", 0, err
+	}
 	if len(open) == 0 {
-		return "", 0
+		return "", 0, nil
 	}
 	parts := make([]string, 0, len(open))
 	for _, s := range open {
 		parts = append(parts, fmt.Sprintf("%s (%d %s)", agentOf(s), calls[s.ID], format.Plural(calls[s.ID], "call", "calls")))
 	}
-	return fmt.Sprintf("%d — %s", len(open), strings.Join(parts, "; ")), len(open)
+	return fmt.Sprintf("%d — %s", len(open), strings.Join(parts, "; ")), len(open), nil
 }
 
-func openSessions() ([]session.Record, map[string]int) {
+func openSessions() ([]session.Record, map[string]int, error) {
 	open, err := session.List()
 	if err != nil {
-		return nil, nil
+		return nil, nil, err
 	}
 	calls := map[string]int{}
 	if len(open) > 0 {
@@ -332,7 +341,7 @@ func openSessions() ([]session.Record, map[string]int) {
 			}
 		}
 	}
-	return open, calls
+	return open, calls, nil
 }
 
 func agentOf(s session.Record) string {
@@ -345,8 +354,11 @@ func agentOf(s session.Record) string {
 // connectedTable is presence in full, one row per open server. The record
 // column is the file that server writes to: when it is not the one this
 // process reads, that is the whole explanation for an empty log.
-func connectedTable() view.Table {
-	open, calls := openSessions()
+func connectedTable() (view.Table, error) {
+	open, calls, err := openSessions()
+	if err != nil {
+		return view.Table{}, err
+	}
 	t := view.Table{Columns: []view.Column{
 		{Name: "agent"}, {Name: "client"}, {Name: "since", Kind: view.KindTimestamp},
 		{Name: "calls"}, {Name: "no grant"}, {Name: "roots"}, {Name: "session"},
@@ -363,7 +375,7 @@ func connectedTable() view.Table {
 			strconv.Itoa(calls[s.ID]), missing, strings.Join(s.Roots, ", "), s.ID, s.Dir, s.Ledger})
 	}
 	t.Total = len(t.Rows)
-	return t
+	return t, nil
 }
 
 const nothingWaiting = "nothing is waiting — a parked call appears here, and `rta agent allow <id>` releases it"
@@ -372,14 +384,20 @@ const nothingWaiting = "nothing is waiting — a parked call appears here, and `
 // sentence when empty for the reason `agent pending` is: an empty bordered
 // table under a heading reads as a screen that failed to load.
 func connectedView() view.View {
-	t := connectedTable()
+	t, err := connectedTable()
+	if err != nil {
+		return view.Text{Body: "unreadable — " + err.Error()}
+	}
 	if len(t.Rows) == 0 {
 		return view.Text{Body: "nothing is connected — a client with an rta server open appears here"}
 	}
 	return t
 }
 
-func waitingView(reqs []consent.Request) view.View {
+func waitingView(reqs []consent.Request, err error) view.View {
+	if err != nil {
+		return view.Text{Body: "unreadable — " + err.Error()}
+	}
 	if len(reqs) == 0 {
 		return view.Text{Body: nothingWaiting}
 	}
@@ -394,7 +412,7 @@ func runOverview(_ context.Context, req plugin.Request) (view.View, error) {
 	if err != nil {
 		return nil, view.Errorf("agent.log.unreadable", "%v", err)
 	}
-	waiting, _ := consent.Pending()
+	waiting, pendingErr := consent.Pending()
 
 	var recent, refused, approved int
 	for _, e := range entries {
@@ -412,13 +430,19 @@ func runOverview(_ context.Context, req plugin.Request) (view.View, error) {
 	// press together are what turn a tile somebody glances at into a queue
 	// somebody clears.
 	nowWaiting := fmt.Sprintf("%d", len(waiting))
-	if len(waiting) > 0 {
+	switch {
+	case pendingErr != nil:
+		nowWaiting = "unreadable — " + pendingErr.Error()
+	case len(waiting) > 0:
 		nowWaiting += " — press w to answer"
 	}
 	// Presence before activity: "is anything attached" is the question
 	// every zero below raises, and it is the one the ledger cannot answer.
-	connected, n := Connected()
-	if n == 0 {
+	connected, n, connErr := Connected()
+	switch {
+	case connErr != nil:
+		connected = "unreadable — " + connErr.Error()
+	case n == 0:
 		connected = "none — no client has an rta server open; `rta mcp install claude`, then restart the client"
 	}
 	pairs := []view.Pair{
@@ -445,7 +469,7 @@ func runOverview(_ context.Context, req plugin.Request) (view.View, error) {
 		{ID: "activity", Title: "Activity", View: view.KeyValue{Pairs: pairs}},
 		{ID: "connected", Title: "Connected now", View: connectedView()},
 		{ID: "record", Title: "The record", View: view.KeyValue{Pairs: recordPairs(rep, verr)}},
-		{ID: "waiting", Title: "Waiting on you", View: waitingView(waiting)},
+		{ID: "waiting", Title: "Waiting on you", View: waitingView(waiting, pendingErr)},
 	}}, nil
 }
 
@@ -457,7 +481,11 @@ func runOverview(_ context.Context, req plugin.Request) (view.View, error) {
 // says it — the overview is the screen the dashboard tile opens onto, and
 // "is dev still issued to claude" belongs beside connected and locked.
 func rolesLine() string {
-	if force := rtagrant.RolesInForce(); force != "" {
+	force, verr := rtagrant.RolesInForce()
+	if verr != nil {
+		return "unreadable — " + verr.Message
+	}
+	if force != "" {
 		return strings.ReplaceAll(force, "\n", "; ")
 	}
 	return "none"

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -686,6 +687,51 @@ func TestOverviewOnAQuietMachineSaysSo(t *testing.T) {
 		if p.Key == "waiting on you" && p.Value != "0" {
 			t.Fatalf("waiting = %q on a machine with nothing parked", p.Value)
 		}
+	}
+}
+
+// A queue rta cannot read is not a queue with nothing in it. Before this,
+// consent.Pending()'s error was discarded and an unreadable directory
+// rendered identically to "nothing is parked" — the one line on the tile
+// that asks the operator to do something, silently turned into the one
+// answer that asks for nothing.
+func TestOverviewWaitingIsUnreadableWhenTheQueueCannotBeRead(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("file modes do not deny the owner here")
+	}
+	isolate(t)
+	if err := os.MkdirAll(consent.Dir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(consent.Dir(), 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(consent.Dir(), 0o700) })
+
+	v, err := run(t, "agent.overview", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := overviewPair(t, v, "waiting on you"); !strings.HasPrefix(got, "unreadable") {
+		t.Fatalf("waiting on you = %q, want it to say the queue could not be read", got)
+	}
+
+	v, err = run(t, "agent.overview", map[string]any{"detail": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, sec := range v.(view.Sections).Items {
+		if sec.ID != "waiting" {
+			continue
+		}
+		found = true
+		if body := sec.View.(view.Text).Body; !strings.HasPrefix(body, "unreadable") {
+			t.Fatalf("waiting section = %q, want it to say the queue could not be read", body)
+		}
+	}
+	if !found {
+		t.Fatal("no waiting section in the detailed overview")
 	}
 }
 

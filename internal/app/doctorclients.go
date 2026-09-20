@@ -141,11 +141,15 @@ func claudeRegistrations(home, dir string) []claudeRegistration {
 // how Claude Code is registered when it is.
 func clientRows(claudeInstalled bool, version string) [][3]string {
 	var rows [][3]string
-	connected, n := agentcap.Connected()
-	if n == 0 {
+	connected, n, err := agentcap.Connected()
+	switch {
+	case err != nil:
+		rows = append(rows, [3]string{"agents connected", "warn",
+			"could not check: " + err.Error()})
+	case n == 0:
 		rows = append(rows, [3]string{"agents connected", "info", "none — no client has an rta server open right now; " +
 			"a client that is registered but not running, or running in a directory it was not registered for, looks exactly like this"})
-	} else {
+	default:
 		rows = append(rows, [3]string{"agents connected", "ok", connected + " (`rta agent overview`)"})
 		if older := olderBuilds(version); older != "" {
 			rows = append(rows, [3]string{"agents connected", "warn", older})

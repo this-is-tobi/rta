@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -103,6 +104,34 @@ func TestTheOverviewSaysWhichRolesStand(t *testing.T) {
 	}
 	if got := pairValue(v, "roles in force"); !strings.HasPrefix(got, "dev for claude — 1 grant") {
 		t.Fatalf("roles in force = %q", got)
+	}
+}
+
+// A grants file rta cannot read is not a machine with no roles issued.
+// Before this, RolesInForce folded core.Load's error into "" the same way a
+// clean machine reports, and rolesLine turned that into "none" — the
+// dashboard telling an operator no standing role is issued when the truth is
+// that rta could not check.
+func TestOverviewRolesIsUnreadableWhenTheGrantsFileCannotBeRead(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("file modes do not deny the owner here")
+	}
+	roleSetup(t)
+	if verr := core.Issue(core.Grant{Target: "kv.set", Agent: "claude", Role: "dev",
+		Issued: time.Now(), Expires: time.Now().Add(2 * time.Hour)}, true); verr != nil {
+		t.Fatal(verr)
+	}
+	if err := os.Chmod(core.Path(), 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(core.Path(), 0o600) })
+
+	v, err := run(t, "agent.overview", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := pairValue(v, "roles in force"); !strings.HasPrefix(got, "unreadable") {
+		t.Fatalf("roles in force = %q, want it to say the grants file could not be read", got)
 	}
 }
 
