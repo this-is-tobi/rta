@@ -99,6 +99,16 @@ func runWatchAt(ctx context.Context, req plugin.Request, base string) (view.View
 			return nil, view.Errorf("eol.watch.entry", "%q names no product", entry).
 				WithHint("an entry is product or product@cycle — postgresql@15, postgresql@13..16, nodejs")
 		}
+		// The spelling this list had before `@`. No product on endoflife.date
+		// carries a slash, so an entry with one is a list written for an
+		// earlier release — and left alone it was graded as an unknown
+		// product, one "not found" row that reads like a typo in the name
+		// rather than a change in the grammar.
+		if strings.Contains(product, "/") {
+			old, oldCycle, _ := strings.Cut(product, "/")
+			return nil, view.Errorf("eol.watch.entry", "%q is the old product/cycle spelling; a cycle follows @ now", entry).
+				WithHint("write it as " + old + "@" + oldCycle)
+		}
 		sel, verr := parseSelector(cycle)
 		if verr != nil {
 			return nil, verr
