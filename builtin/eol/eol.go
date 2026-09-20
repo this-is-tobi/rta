@@ -88,14 +88,26 @@ func runCheck(ctx context.Context, req plugin.Request) (view.View, error) {
 }
 
 func runCheckAt(ctx context.Context, req plugin.Request, base string) (view.View, error) {
-	product := req.String("product")
+	product, cycle := req.String("product"), req.String("cycle")
+	// The watch list spells an entry product@cycle, and somebody who learned
+	// it there types it here too — `rta eol check postgresql@15` was "no
+	// product named postgresql@15", a dead end one character from the
+	// answer. One token is split the same way, unless the cycle argument is
+	// also given: two answers to one question are a refusal, not a guess.
+	if name, at, found := strings.Cut(product, "@"); found {
+		if cycle != "" {
+			return nil, view.Errorf("eol.cycle.twice", "%q names a cycle and so does %q", product, cycle).
+				WithHint("give it once: `rta eol check " + name + " " + at + "`")
+		}
+		product, cycle = name, at
+	}
 	result, verr := eolapi.FetchProduct(ctx, http.DefaultClient, base, product)
 	if verr != nil {
 		return nil, verr
 	}
 
 	releases := result.Releases
-	if cycle := req.String("cycle"); cycle != "" {
+	if cycle != "" {
 		sel, verr := parseSelector(cycle)
 		if verr != nil {
 			return nil, verr
@@ -207,7 +219,8 @@ func suggestCycles(ctx context.Context, req plugin.Request) []string {
 // at a time. Live for the same reason suggestProductsAt is — one request
 // against the fixed public API, not a local computation.
 func suggestCyclesAt(ctx context.Context, req plugin.Request, base string) []string {
-	product := strings.TrimSpace(req.String("product"))
+	// Before any @, for the same reason runCheckAt splits there.
+	product, _, _ := strings.Cut(strings.TrimSpace(req.String("product")), "@")
 	if product == "" {
 		return nil
 	}

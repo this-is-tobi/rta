@@ -41,6 +41,28 @@ func TestRunCheckAtRefusesARangeNothingFallsInside(t *testing.T) {
 	}
 }
 
+// The watch list's own spelling works on the command line too, and a cycle
+// given both ways is refused rather than one of them being picked.
+func TestRunCheckAtSplitsProductAtCycle(t *testing.T) {
+	srv := newEolServer(t, `
+		{"name":"3","releaseDate":"2024-01-01","isEol":false,"latest":{"name":"3.2"}},
+		{"name":"2","releaseDate":"2023-01-01","isEol":true,"eolFrom":"2025-01-01","latest":{"name":"2.9"}}`)
+
+	v, err := runCheckAt(context.Background(), req(t, map[string]any{"product": "demo@..2"}), srv.URL)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if table := v.(view.Table); table.Total != 1 || table.Rows[0][0] != "2" {
+		t.Errorf("rows = %v, want cycle 2 alone", table.Rows)
+	}
+
+	_, err = runCheckAt(context.Background(), req(t, map[string]any{"product": "demo@2", "cycle": "3"}), srv.URL)
+	verr := view.AsError(err, "eol.test")
+	if verr == nil || verr.Code != "eol.cycle.twice" || !strings.Contains(verr.Hint, "rta eol check demo 2") {
+		t.Errorf("got %v, want eol.cycle.twice with the single-form hint", err)
+	}
+}
+
 func TestRunCheckAtRefusesAMalformedSelectorBeforeGrading(t *testing.T) {
 	srv := newEolServer(t, `{"name":"3","releaseDate":"2024-01-01","latest":{"name":"3.2"}}`)
 
