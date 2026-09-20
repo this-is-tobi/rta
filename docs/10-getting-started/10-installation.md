@@ -167,17 +167,23 @@ Those `info` rows are not noise. "The store unlocks from this environment" is a 
 rta's completion is not just subcommands — capabilities that declare `Options` complete to their allowed values, and `Suggest` inputs complete from what actually exists on your machine (your tags, your keys, your hosts file).
 
 ```bash
-# zsh
-rta completion zsh > "${fpath[1]}/_rta"
+# zsh — a directory you own, put on fpath before compinit runs
+mkdir -p ~/.zsh/completions
+rta completion zsh > ~/.zsh/completions/_rta
+# once, in ~/.zshrc, above the compinit line:
+#   fpath=(~/.zsh/completions $fpath)
 
-# bash
-rta completion bash > /etc/bash_completion.d/rta
+# bash — bash-completion loads this directory on its own
+mkdir -p ~/.local/share/bash-completion/completions
+rta completion bash > ~/.local/share/bash-completion/completions/rta
 
 # fish
 rta completion fish > ~/.config/fish/completions/rta.fish
 ```
 
-Restart your shell afterwards.
+Restart your shell afterwards. Homebrew users can write the zsh file to `$(brew --prefix)/share/zsh/site-functions/_rta` instead, which is already on `fpath`.
+
+The recipe every tool's own help prints, `rta completion zsh > "${fpath[1]}/_rta"`, is worth avoiding: `fpath[1]` is whatever directory happens to be first on your machine, and it is often one you cannot write. kitty's shell integration, for one, puts its own completions directory there, owned by root, and the command fails with "permission denied".
 
 ## External tools
 
