@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/this-is-tobi/rta/builtin/internal/eolapi"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -63,14 +64,14 @@ func parseSelector(s string) (cycleSelector, *view.Error) {
 // pick returns the releases the selector names, in the order the API listed
 // them (newest first), and nothing when none match — the caller decides
 // whether that is an error or a row.
-func (sel cycleSelector) pick(releases []release) []release {
+func (sel cycleSelector) pick(releases []eolapi.Release) []eolapi.Release {
 	if !sel.ranged {
 		if r, found := findRelease(releases, sel.exact); found {
-			return []release{r}
+			return []eolapi.Release{r}
 		}
 		return nil
 	}
-	var out []release
+	var out []eolapi.Release
 	for _, r := range releases {
 		n, ok := numericCycle(r.Name)
 		if !ok {

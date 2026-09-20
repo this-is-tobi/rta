@@ -5,40 +5,10 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/this-is-tobi/rta/builtin/internal/eolapi"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
-
-// catalogueEntry is one product as the API's /products list describes it.
-// Aliases are the whole reason this capability exists: "postgres", "pg" and
-// "psql" all name postgresql, and the way to learn that today is to guess
-// at eol.check until one works.
-type catalogueEntry struct {
-	Name     string   `json:"name"`
-	Label    string   `json:"label"`
-	Category string   `json:"category"`
-	Aliases  []string `json:"aliases"`
-	Tags     []string `json:"tags"`
-}
-
-type catalogueEnvelope struct {
-	Result []catalogueEntry `json:"result"`
-}
-
-// fetchCatalogue asks base for every product it knows. One request, a few
-// hundred entries, CDN-cached — cheap enough to fetch on every call rather
-// than cache, and a cache is the kind of state this plugin has none of.
-func fetchCatalogue(ctx context.Context, client *http.Client, base string) ([]catalogueEntry, *view.Error) {
-	var env catalogueEnvelope
-	status, verr := getJSON(ctx, client, base+"/products", "the catalogue", &env)
-	if verr != nil {
-		return nil, verr
-	}
-	if status != http.StatusOK {
-		return nil, view.Errorf("eol.request.status", "endoflife.date returned %d for the catalogue", status)
-	}
-	return env.Result, nil
-}
 
 // eol.products answers "what is this thing called on endoflife.date".
 func productsCapability() plugin.Capability {
@@ -63,11 +33,11 @@ func productsCapability() plugin.Capability {
 }
 
 func runProducts(ctx context.Context, req plugin.Request) (view.View, error) {
-	return runProductsAt(ctx, req, apiBase)
+	return runProductsAt(ctx, req, eolapi.APIBase)
 }
 
 func runProductsAt(ctx context.Context, req plugin.Request, base string) (view.View, error) {
-	entries, verr := fetchCatalogue(ctx, http.DefaultClient, base)
+	entries, verr := eolapi.FetchCatalogue(ctx, http.DefaultClient, base)
 	if verr != nil {
 		return nil, verr
 	}
@@ -102,7 +72,7 @@ func runProductsAt(ctx context.Context, req plugin.Request, base string) (view.V
 // matchesTerm is a substring match over the three things a person might
 // know a product by. Case-insensitive because the catalogue's labels are
 // not ("PostgreSQL") and nobody types them that way.
-func matchesTerm(e catalogueEntry, term string) bool {
+func matchesTerm(e eolapi.CatalogueEntry, term string) bool {
 	if strings.Contains(strings.ToLower(e.Name), term) || strings.Contains(strings.ToLower(e.Label), term) {
 		return true
 	}

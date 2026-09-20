@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/this-is-tobi/rta/builtin/internal/eolapi"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -27,7 +28,7 @@ const canonicalDebianBody = `{
 }`
 
 func TestFindReleaseMatchesACodenameInAnyCase(t *testing.T) {
-	releases := []release{{Name: "13", Codename: "Trixie"}, {Name: "12", Codename: "Bookworm"}}
+	releases := []eolapi.Release{{Name: "13", Codename: "Trixie"}, {Name: "12", Codename: "Bookworm"}}
 	r, found := findRelease(releases, "bookworm")
 	if !found || r.Name != "12" {
 		t.Errorf("findRelease(bookworm) = %+v, %v; want cycle 12", r, found)
@@ -35,7 +36,7 @@ func TestFindReleaseMatchesACodenameInAnyCase(t *testing.T) {
 }
 
 func TestFindReleasePrefersANameOverACodenameThatSpellsIt(t *testing.T) {
-	releases := []release{{Name: "3", Codename: "2"}, {Name: "2", Codename: "1"}}
+	releases := []eolapi.Release{{Name: "3", Codename: "2"}, {Name: "2", Codename: "1"}}
 	if r, _ := findRelease(releases, "2"); r.Name != "2" {
 		t.Errorf("findRelease(2) = %+v, want the cycle named 2, not the one codenamed 2", r)
 	}
