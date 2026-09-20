@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/this-is-tobi/rta/builtin/internal/eolapi"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -28,14 +29,14 @@ func TestEolStatusTrustsIsEolOverAFarFutureDate(t *testing.T) {
 	// status back down to "ok" — isEol is the API's own verdict, and this
 	// plugin does not second-guess it (see gradeRow's doc).
 	future := time.Now().AddDate(5, 0, 0).Format("2006-01-02")
-	r := release{IsEol: true, EolFrom: &future}
+	r := eolapi.Release{IsEol: true, EolFrom: &future}
 	if got := eolStatus(r, 90, time.Now()); got != "EOL" {
 		t.Errorf("isEol:true with a far-future eolFrom graded %q, want EOL", got)
 	}
 }
 
 func TestEolStatusGradesNoAnnouncedDateAsOk(t *testing.T) {
-	r := release{IsEol: false, EolFrom: nil}
+	r := eolapi.Release{IsEol: false, EolFrom: nil}
 	if got := eolStatus(r, 90, time.Now()); got != "ok" {
 		t.Errorf("no eolFrom graded %q, want ok", got)
 	}
@@ -43,7 +44,7 @@ func TestEolStatusGradesNoAnnouncedDateAsOk(t *testing.T) {
 
 func TestEolStatusIgnoresAnUnparseableDate(t *testing.T) {
 	bad := "not-a-date"
-	r := release{IsEol: false, EolFrom: &bad}
+	r := eolapi.Release{IsEol: false, EolFrom: &bad}
 	if got := eolStatus(r, 90, time.Now()); got != "ok" {
 		t.Errorf("unparseable eolFrom graded %q, want the safe fallback ok", got)
 	}
@@ -57,10 +58,10 @@ func TestEolStatusBoundaryIsExclusive(t *testing.T) {
 	exactly := now.AddDate(0, 0, 90).Format("2006-01-02")
 	oneCloser := now.AddDate(0, 0, 89).Format("2006-01-02")
 
-	if got := eolStatus(release{EolFrom: &exactly}, 90, now); got != "ok" {
+	if got := eolStatus(eolapi.Release{EolFrom: &exactly}, 90, now); got != "ok" {
 		t.Errorf("exactly warnDays out graded %q, want ok", got)
 	}
-	if got := eolStatus(release{EolFrom: &oneCloser}, 90, now); got != "WARN <90d" {
+	if got := eolStatus(eolapi.Release{EolFrom: &oneCloser}, 90, now); got != "WARN <90d" {
 		t.Errorf("one day inside the window graded %q, want WARN <90d", got)
 	}
 }
@@ -68,7 +69,7 @@ func TestEolStatusBoundaryIsExclusive(t *testing.T) {
 func TestEolStatusGradesAFarFutureDateAsOk(t *testing.T) {
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	farOut := now.AddDate(3, 0, 0).Format("2006-01-02")
-	if got := eolStatus(release{EolFrom: &farOut}, 90, now); got != "ok" {
+	if got := eolStatus(eolapi.Release{EolFrom: &farOut}, 90, now); got != "ok" {
 		t.Errorf("three years out graded %q, want ok", got)
 	}
 }
@@ -104,7 +105,7 @@ func TestHumanUntilFormatsASameDayFutureInHours(t *testing.T) {
 // --- findRelease / cycleNames ---
 
 func TestFindReleaseMatchesCaseInsensitively(t *testing.T) {
-	releases := []release{{Name: "bookworm"}, {Name: "bullseye"}}
+	releases := []eolapi.Release{{Name: "bookworm"}, {Name: "bullseye"}}
 	r, found := findRelease(releases, "BOOKWORM")
 	if !found || r.Name != "bookworm" {
 		t.Errorf("got %+v, %v; want bookworm, true", r, found)
@@ -112,13 +113,13 @@ func TestFindReleaseMatchesCaseInsensitively(t *testing.T) {
 }
 
 func TestFindReleaseReportsNotFound(t *testing.T) {
-	if _, found := findRelease([]release{{Name: "15"}}, "999"); found {
+	if _, found := findRelease([]eolapi.Release{{Name: "15"}}, "999"); found {
 		t.Error("999 should not have matched")
 	}
 }
 
 func TestCycleNamesJoinsInOrder(t *testing.T) {
-	releases := []release{{Name: "18"}, {Name: "17"}, {Name: "16"}}
+	releases := []eolapi.Release{{Name: "18"}, {Name: "17"}, {Name: "16"}}
 	if got := cycleNames(releases); got != "18, 17, 16" {
 		t.Errorf("got %q", got)
 	}
@@ -127,7 +128,7 @@ func TestCycleNamesJoinsInOrder(t *testing.T) {
 // --- gradeRow: the full row shape ---
 
 func TestGradeRowShowsNotAnnouncedWhenThereIsNoEolFromDate(t *testing.T) {
-	r := release{Name: "26", ReleaseDate: "2025-09-15"}
+	r := eolapi.Release{Name: "26", ReleaseDate: "2025-09-15"}
 	r.Latest.Name = "26.6.2"
 	row := gradeRow(r, 90, time.Now())
 	want := []string{"26", "2025-09-15", "26.6.2", "-", "not announced", "-", "ok"}
@@ -141,7 +142,7 @@ func TestGradeRowShowsNotAnnouncedWhenThereIsNoEolFromDate(t *testing.T) {
 func TestGradeRowShowsTheDateAndDurationWhenAnnounced(t *testing.T) {
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	eol := "2027-11-11"
-	r := release{Name: "15", ReleaseDate: "2022-10-13", EolFrom: &eol, IsLts: true}
+	r := eolapi.Release{Name: "15", ReleaseDate: "2022-10-13", EolFrom: &eol, IsLts: true}
 	r.Latest.Name = "15.19"
 	row := gradeRow(r, 90, now)
 	if row[3] != "yes" {
@@ -164,20 +165,20 @@ func TestLtsCellReportsYesWhenIsLtsIsTrue(t *testing.T) {
 	from := "2020-01-01"
 	// IsLts wins even against an LtsFrom that looks stale — same
 	// trust-the-verdict call as eolStatus makes for IsEol.
-	if got := ltsCell(release{IsLts: true, LtsFrom: &from}); got != "yes" {
+	if got := ltsCell(eolapi.Release{IsLts: true, LtsFrom: &from}); got != "yes" {
 		t.Errorf("got %q, want yes", got)
 	}
 }
 
 func TestLtsCellReportsTheScheduledDateWhenNotLtsYet(t *testing.T) {
 	from := "2026-10-28"
-	if got := ltsCell(release{IsLts: false, LtsFrom: &from}); got != "from 2026-10-28" {
+	if got := ltsCell(eolapi.Release{IsLts: false, LtsFrom: &from}); got != "from 2026-10-28" {
 		t.Errorf("got %q, want %q", got, "from 2026-10-28")
 	}
 }
 
 func TestLtsCellReportsADashWhenLtsWillNeverApply(t *testing.T) {
-	if got := ltsCell(release{IsLts: false, LtsFrom: nil}); got != "-" {
+	if got := ltsCell(eolapi.Release{IsLts: false, LtsFrom: nil}); got != "-" {
 		t.Errorf("got %q, want -", got)
 	}
 }
@@ -207,7 +208,7 @@ func TestFetchProductParsesTheRealResponseShape(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	result, verr := fetchProduct(context.Background(), srv.Client(), srv.URL, "postgresql")
+	result, verr := eolapi.FetchProduct(context.Background(), srv.Client(), srv.URL, "postgresql")
 	if verr != nil {
 		t.Fatalf("unexpected error: %v", verr)
 	}
@@ -246,7 +247,7 @@ func TestFetchProductDecodesTheNotYetLtsCase(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	result, verr := fetchProduct(context.Background(), srv.Client(), srv.URL, "nodejs")
+	result, verr := eolapi.FetchProduct(context.Background(), srv.Client(), srv.URL, "nodejs")
 	if verr != nil {
 		t.Fatalf("unexpected error: %v", verr)
 	}
@@ -270,68 +271,6 @@ func TestFetchProductDecodesTheNotYetLtsCase(t *testing.T) {
 	}
 	if got := ltsCell(r25); got != "-" {
 		t.Errorf("release 25 LTS cell: got %q", got)
-	}
-}
-
-func TestFetchProductClassifiesA404AsProductNotFound(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
-		w.WriteHeader(http.StatusNotFound)
-		fmt.Fprint(w, "<html>not found</html>") // the real API's 404 body is HTML, not JSON
-	}))
-	defer srv.Close()
-
-	_, verr := fetchProduct(context.Background(), srv.Client(), srv.URL, "not-a-real-product")
-	if verr == nil {
-		t.Fatal("expected an error")
-	}
-	if verr.Code != "eol.product.notfound" {
-		t.Errorf("code = %q, want eol.product.notfound", verr.Code)
-	}
-	if verr.Hint == "" {
-		t.Error("expected a hint pointing somewhere useful")
-	}
-}
-
-func TestFetchProductClassifiesA500AsARequestStatusError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	defer srv.Close()
-
-	_, verr := fetchProduct(context.Background(), srv.Client(), srv.URL, "postgresql")
-	if verr == nil || verr.Code != "eol.request.status" {
-		t.Errorf("got %v, want code eol.request.status", verr)
-	}
-}
-
-func TestFetchProductRejectsMalformedJSON(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, "not json")
-	}))
-	defer srv.Close()
-
-	_, verr := fetchProduct(context.Background(), srv.Client(), srv.URL, "postgresql")
-	if verr == nil || verr.Code != "eol.response.invalid" {
-		t.Errorf("got %v, want code eol.response.invalid", verr)
-	}
-}
-
-// A product string containing "/" must not be able to turn one path
-// segment into two — checked by inspecting exactly what the server saw.
-func TestFetchProductEscapesTheProductNameInThePath(t *testing.T) {
-	var seenPath string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		seenPath = r.URL.EscapedPath()
-		fmt.Fprint(w, `{"result":{"releases":[]}}`)
-	}))
-	defer srv.Close()
-
-	if _, verr := fetchProduct(context.Background(), srv.Client(), srv.URL, "a/b"); verr != nil {
-		t.Fatalf("unexpected error: %v", verr)
-	}
-	if strings.Contains(seenPath, "/a/b") || !strings.Contains(seenPath, "%2F") {
-		t.Errorf("server saw path %q — the slash was not escaped", seenPath)
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/this-is-tobi/rta/builtin/internal/eolapi"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -276,7 +277,7 @@ func TestFetchCatalogueReportsAnUnexpectedStatus(t *testing.T) {
 		w.WriteHeader(http.StatusBadGateway)
 	}))
 	defer srv.Close()
-	_, verr := fetchCatalogue(context.Background(), srv.Client(), srv.URL)
+	_, verr := eolapi.FetchCatalogue(context.Background(), srv.Client(), srv.URL)
 	if verr == nil || verr.Code != "eol.request.status" {
 		t.Fatalf("verr = %v, want eol.request.status", verr)
 	}

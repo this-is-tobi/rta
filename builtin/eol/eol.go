@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/this-is-tobi/rta/builtin/internal/eolapi"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -83,12 +84,12 @@ func Plugin() plugin.Plugin {
 // at a server that answers wrongly on purpose instead of only the HTTP layer
 // underneath it.
 func runCheck(ctx context.Context, req plugin.Request) (view.View, error) {
-	return runCheckAt(ctx, req, apiBase)
+	return runCheckAt(ctx, req, eolapi.APIBase)
 }
 
 func runCheckAt(ctx context.Context, req plugin.Request, base string) (view.View, error) {
 	product := req.String("product")
-	result, verr := fetchProduct(ctx, http.DefaultClient, base, product)
+	result, verr := eolapi.FetchProduct(ctx, http.DefaultClient, base, product)
 	if verr != nil {
 		return nil, verr
 	}
@@ -141,7 +142,7 @@ func runCheckAt(ctx context.Context, req plugin.Request, base string) (view.View
 // case exactly right when the whole list is already in hand to check
 // against. Name first across the whole list, so a codename that happens to
 // spell another cycle's number can never shadow it.
-func findRelease(releases []release, cycle string) (release, bool) {
+func findRelease(releases []eolapi.Release, cycle string) (eolapi.Release, bool) {
 	for _, r := range releases {
 		if strings.EqualFold(r.Name, cycle) {
 			return r, true
@@ -152,10 +153,10 @@ func findRelease(releases []release, cycle string) (release, bool) {
 			return r, true
 		}
 	}
-	return release{}, false
+	return eolapi.Release{}, false
 }
 
-func cycleNames(releases []release) string {
+func cycleNames(releases []eolapi.Release) string {
 	names := make([]string, len(releases))
 	for i, r := range releases {
 		names[i] = r.Name
@@ -167,7 +168,7 @@ func cycleNames(releases []release) string {
 // split runCheck/runCheckAt uses, so a test can point it at a server that
 // answers wrongly on purpose instead of the real endoflife.date.
 func suggestProducts(ctx context.Context, req plugin.Request) []string {
-	return suggestProductsAt(ctx, req, apiBase)
+	return suggestProductsAt(ctx, req, eolapi.APIBase)
 }
 
 // suggestProductsAt offers the catalogue's names and aliases together — a
@@ -177,7 +178,7 @@ func suggestProducts(ctx context.Context, req plugin.Request) []string {
 // own comment already treats as cheap enough to pay on every call, run here
 // on a deliberate completion press rather than every keystroke.
 func suggestProductsAt(ctx context.Context, _ plugin.Request, base string) []string {
-	entries, verr := fetchCatalogue(ctx, http.DefaultClient, base)
+	entries, verr := eolapi.FetchCatalogue(ctx, http.DefaultClient, base)
 	if verr != nil {
 		return nil
 	}
@@ -198,7 +199,7 @@ func suggestProductsAt(ctx context.Context, _ plugin.Request, base string) []str
 
 // suggestCycles is suggestCyclesAt against the real API; see suggestProducts.
 func suggestCycles(ctx context.Context, req plugin.Request) []string {
-	return suggestCyclesAt(ctx, req, apiBase)
+	return suggestCyclesAt(ctx, req, eolapi.APIBase)
 }
 
 // suggestCyclesAt offers the release cycles of the product already named:
@@ -210,7 +211,7 @@ func suggestCyclesAt(ctx context.Context, req plugin.Request, base string) []str
 	if product == "" {
 		return nil
 	}
-	result, verr := fetchProduct(ctx, http.DefaultClient, base, product)
+	result, verr := eolapi.FetchProduct(ctx, http.DefaultClient, base, product)
 	if verr != nil {
 		return nil
 	}
@@ -228,17 +229,15 @@ func suggestCyclesAt(ctx context.Context, req plugin.Request, base string) []str
 	return out
 }
 
-// gradeRow turns one release into a row, trusting the API's own isEol
-// verdict rather than recomputing it from eolFrom: endoflife.date's entire
-// purpose is having already made that call correctly, and some cycles (a
-// current release with no announced retirement date yet) carry no eolFrom
-// at all — recomputing "expired" from a date that may not even be present
-// would be answering a question this API already answered.
-func gradeRow(r release, warnDays int, now time.Time) []string {
+// gradeRow turns one release into a row. The verdict is eolapi.Grade's,
+// shared with audit.kube.eol so the two never disagree about whether a
+// cycle is past its end of life; the date column shows the API's own text
+// and the duration is computed only from a date that parses.
+func gradeRow(r eolapi.Release, warnDays int, now time.Time) []string {
 	eolText, inText := "not announced", "-"
 	if r.EolFrom != nil {
 		eolText = *r.EolFrom
-		if eolDate, err := time.Parse("2006-01-02", *r.EolFrom); err == nil {
+		if eolDate, ok := eolapi.EolDate(r); ok {
 			inText = humanUntil(eolDate, now)
 		}
 	}
@@ -251,7 +250,7 @@ func gradeRow(r release, warnDays int, now time.Time) []string {
 // (nodejs, mid-"Current" as of this build) is not LTS yet but names the
 // date it becomes so — the forward-looking case worth showing, since IsLts
 // alone would report it identically to a cycle with no LTS future at all.
-func ltsCell(r release) string {
+func ltsCell(r eolapi.Release) string {
 	switch {
 	case r.IsLts:
 		return "yes"
@@ -262,18 +261,14 @@ func ltsCell(r release) string {
 	}
 }
 
-func eolStatus(r release, warnDays int, now time.Time) string {
-	if r.IsEol {
+// eolStatus is the Status cell for a verdict: the words a table reads at a
+// glance, with the window named on a warning so "WARN <90d" says what it
+// was measured against.
+func eolStatus(r eolapi.Release, warnDays int, now time.Time) string {
+	switch eolapi.Grade(r, warnDays, now) {
+	case eolapi.Ended:
 		return "EOL"
-	}
-	if r.EolFrom == nil {
-		return "ok"
-	}
-	eolDate, err := time.Parse("2006-01-02", *r.EolFrom)
-	if err != nil {
-		return "ok"
-	}
-	if eolDate.Before(now.Add(time.Duration(warnDays) * 24 * time.Hour)) {
+	case eolapi.Ending:
 		return fmt.Sprintf("WARN <%dd", warnDays)
 	}
 	return "ok"

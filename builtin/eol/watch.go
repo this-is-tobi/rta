@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/this-is-tobi/rta/builtin/internal/eolapi"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -67,7 +68,7 @@ func watchCapability() plugin.Capability {
 }
 
 func runWatch(ctx context.Context, req plugin.Request) (view.View, error) {
-	return runWatchAt(ctx, req, apiBase)
+	return runWatchAt(ctx, req, eolapi.APIBase)
 }
 
 func runWatchAt(ctx context.Context, req plugin.Request, base string) (view.View, error) {
@@ -119,7 +120,7 @@ func runWatchAt(ctx context.Context, req plugin.Request, base string) (view.View
 	}}
 	for _, e := range parsed {
 		product, cycle := e.product, e.cycle
-		result, verr := fetchProduct(ctx, http.DefaultClient, base, product)
+		result, verr := eolapi.FetchProduct(ctx, http.DefaultClient, base, product)
 		if verr != nil {
 			// An unknown product is one row, not a failed call: a watchlist
 			// with one typo in it is still a watchlist somebody wants graded.

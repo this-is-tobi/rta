@@ -3,6 +3,8 @@ package eol
 import (
 	"strings"
 	"testing"
+
+	"github.com/this-is-tobi/rta/builtin/internal/eolapi"
 )
 
 func TestParseSelectorReadsAnExactNameAsItself(t *testing.T) {
@@ -59,15 +61,15 @@ func TestParseSelectorRefusesWhatItCannotOrder(t *testing.T) {
 	}
 }
 
-func numbered(names ...string) []release {
-	out := make([]release, len(names))
+func numbered(names ...string) []eolapi.Release {
+	out := make([]eolapi.Release, len(names))
 	for i, n := range names {
-		out[i] = release{Name: n}
+		out[i] = eolapi.Release{Name: n}
 	}
 	return out
 }
 
-func names(rs []release) string {
+func names(rs []eolapi.Release) string {
 	out := make([]string, len(rs))
 	for i, r := range rs {
 		out[i] = r.Name
