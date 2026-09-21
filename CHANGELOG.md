@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.25.0](https://github.com/this-is-tobi/rta/compare/v0.24.0...v0.25.0) (2026-09-21)
+
+
+### Features
+
+* **cli:** rta dashboard add, rm and list write the tiles the automatic set leaves out ([e838614](https://github.com/this-is-tobi/rta/commit/e838614993033bac38dbe54a5734cc8a2c5dbd27))
+* **cli:** rta dashboard hide and unhide, and add expands over a profile's connections ([9bd08c7](https://github.com/this-is-tobi/rta/commit/9bd08c73f79bcce57c4f8cef6b70a3c01e31d18f))
+* **config:** add: joins tiles to the automatic set, and a tile pins to a profile ([036e876](https://github.com/this-is-tobi/rta/commit/036e87635eef359962a1bec838dd374599ed90c9))
+* **tui:** a pinned tile runs against its own profile, named on its panel ([6ec25ab](https://github.com/this-is-tobi/rta/commit/6ec25abfef27534a9da4cbb9935d49a5b3059c36))
+* **tui:** a tile over a profile with several connections is one panel per connection ([9ed1157](https://github.com/this-is-tobi/rta/commit/9ed1157c54e9a5dc1bada1799b6974cb6ebd0b03))
+
+
+### Bug Fixes
+
+* **cli:** dashboard hide covers an expanded automatic tile, add refuses a twin of one already there ([af9e065](https://github.com/this-is-tobi/rta/commit/af9e0653396cd02bd5281d5372888430060a3d60))
+* **tui:** an expanded entry moves as one, hides on a stated list, and takes only its own answers ([b8828a8](https://github.com/this-is-tobi/rta/commit/b8828a87484d6858f737bdbc9753a2bf00c42a46))
+* **tui:** the tick reads the config once for every pin, and a pinned profile that changed rebuilds ([1bd0263](https://github.com/this-is-tobi/rta/commit/1bd0263832d63c4d9b8d8e9d73de4868e7a884da))
+
 ## [0.24.0](https://github.com/this-is-tobi/rta/compare/v0.23.0...v0.24.0) (2026-09-20)
 
 
