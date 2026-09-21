@@ -62,18 +62,23 @@ dashboard:
 
 `profile:` pins a tile to one connection — a profile, or `name/instance` for one of several connections to the same plugin — and the tile is about that connection whatever `rta use` switched on, with the name on its panel. That is what lets one capability sit on the dashboard twice, once per cluster. Without it a tile follows the switched-on environment: switch to staging and the pg tile is about staging. `with:` fills the capability's inputs. `span:` widens a tile past what its own declared width works out to — for the one you actually read.
 
+**One entry, one panel per connection.** A profile can hold several connections to the same plugin — `cnpg/gitea`, `cnpg/keycloak`, three more — and a tile whose profile names no instance becomes one panel per connection that profile holds for its plugin, each named on its panel. `{id: cnpg.overview, profile: ohmlab}` is every cnpg database ohmlab knows, and one added to the profile next month gets its panel on its own, the same rule the automatic set follows for a plugin installed next month. A tile that follows the switch expands the same way, into whatever environment is on: under ohmlab it is ohmlab's databases, under mirai-prod that environment's own. Name the instance, `profile: ohmlab/gitea`, for one panel. This is the one place a bare profile over several connections is not refused with "your call", as `--profile ohmlab` is on a single command: a dashboard is not a choice, showing every one is the glance, and no wrong pick is possible.
+
 The same from a script, or without opening the file:
 
 ```bash
 rta dashboard add kube.overview --profile prod
 rta dashboard add kube.overview --profile staging
+rta dashboard add cnpg.overview --profile ohmlab               # one panel per cnpg connection ohmlab holds
 rta dashboard add pg.overview --profile staging/analytics --span 2
 rta dashboard add cert.expiry --set host=example.com
-rta dashboard list                                  # every tile bare rta would draw, and where each came from
+rta dashboard list                                             # every panel bare rta would draw, where each came from, and what is hidden
+rta dashboard hide cnpg.overview --profile ohmlab/keycloak     # that one panel; its siblings stay
+rta dashboard unhide cnpg.overview --profile ohmlab/keycloak
 rta dashboard rm kube.overview --profile staging
 ```
 
-`add` refuses what the file would have quietly got wrong: a capability that is not a read, an input it does not declare, a credential under `--set`, a required input nothing fills, a profile that does not cover the plugin. Adding the same tile again replaces it, so the command is safe in a script that runs on every boot. In the TUI, `H` on an added tile withdraws its entry rather than hiding the capability — hiding by name would take both kube tiles down — and the footer says the command that puts it back.
+`add` refuses what the file would have quietly got wrong: a capability that is not a read, an input it does not declare, a credential under `--set`, a required input nothing fills, a profile that does not cover the plugin. Adding the same tile again replaces it, so the command is safe in a script that runs on every boot. In the TUI, `H` on an added tile withdraws its entry rather than hiding the capability — hiding by name would take both kube tiles down — and the footer says the command that puts it back; `H` on one panel of an entry that expanded hides that connection's panel by its key and leaves the rest, and `unhide` is the way back. `hide` and `unhide` are what `H` and the inventory pane do, from a script.
 
 **Or state it exactly.** `tiles:` replaces the automatic set outright — `hidden:` and `order:` are not consulted, because the list is already both. Its entries take the same `profile:`, `with:` and `span:`, and `add:` entries follow the list:
 
