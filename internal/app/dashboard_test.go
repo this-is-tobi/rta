@@ -137,6 +137,86 @@ func TestDashboardRemoveTakesDownOneKeyAndNamesTheOthers(t *testing.T) {
 	}
 }
 
+// A profile holding several connections to the plugin expands: the receipt
+// names every panel, and `list` shows each one. hide takes one panel down
+// by its connection and unhide brings it back; an added tile is withdrawn,
+// not hidden, and the refusal names the command.
+func TestDashboardAddExpandsAndHideTakesOnePanelDown(t *testing.T) {
+	run := session(t, setRegistry(t))
+	for _, args := range [][]string{
+		{"profile", "set", "prod", "--plugin", "db", "--set", "host=prod.internal"},
+		{"profile", "set", "prod", "--plugin", "db/analytics", "--set", "host=analytics.prod.internal"},
+	} {
+		if _, errOut, err := run(args...); err != nil {
+			t.Fatalf("%v %q", err, errOut)
+		}
+	}
+	out, errOut, err := run("dashboard", "add", "db.status", "--profile", "prod")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	if !strings.Contains(out, "one panel per db connection") || !strings.Contains(out, "prod/analytics") {
+		t.Errorf("receipt = %q, want the expansion named", out)
+	}
+	list, _, err := run("dashboard", "list", "-o", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(list, "prod/analytics") || !strings.Contains(list, "one of several") {
+		t.Errorf("list = %q, want both panels, marked as one of several", list)
+	}
+
+	if _, errOut, err := run("dashboard", "hide", "db.status", "--profile", "prod/analytics"); err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	if h := loadedConfig(t).Dashboard.Hidden; len(h) != 1 || h[0] != "db.status@prod/analytics" {
+		t.Errorf("hidden = %v, want the panel's key", h)
+	}
+	list, _, _ = run("dashboard", "list", "-o", "json")
+	if !strings.Contains(list, "hidden") {
+		t.Errorf("list = %q, want the hidden panel marked", list)
+	}
+	if _, errOut, err := run("dashboard", "unhide", "db.status", "--profile", "prod/analytics"); err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	if h := loadedConfig(t).Dashboard.Hidden; len(h) != 0 {
+		t.Errorf("hidden = %v, want it empty again", h)
+	}
+
+	_, errOut, err = run("dashboard", "hide", "db.status", "--profile", "ghost")
+	if err == nil || !strings.Contains(errOut, "core.dashboard.absent") {
+		t.Errorf("hiding a panel that is not on the dashboard: err=%v %q", err, errOut)
+	}
+	// An added tile that did not expand is withdrawn, not hidden: with the
+	// expanding entry gone, the pinned one is the only panel of that key.
+	for _, args := range [][]string{
+		{"dashboard", "rm", "db.status", "--profile", "prod"},
+		{"dashboard", "add", "db.status", "--profile", "prod/analytics"},
+	} {
+		if _, errOut, err := run(args...); err != nil {
+			t.Fatalf("%v %q", err, errOut)
+		}
+	}
+	_, errOut, err = run("dashboard", "hide", "db.status", "--profile", "prod/analytics")
+	if err == nil || !strings.Contains(errOut, "core.dashboard.notautomatic") {
+		t.Errorf("hiding an added tile must point at rm: err=%v %q", err, errOut)
+	}
+	_, errOut, err = run("dashboard", "unhide", "db.status", "--profile", "prod/analytics")
+	if err == nil || !strings.Contains(errOut, "core.dashboard.nothidden") {
+		t.Errorf("unhiding what is not hidden: err=%v %q", err, errOut)
+	}
+	// The automatic tile hides by its capability, as H does, and comes back.
+	if _, errOut, err := run("dashboard", "hide", "db.status"); err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	if h := loadedConfig(t).Dashboard.Hidden; len(h) != 1 || h[0] != "db.status" {
+		t.Errorf("hidden = %v, want the automatic tile's capability", h)
+	}
+	if _, errOut, err := run("dashboard", "unhide", "db.status"); err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+}
+
 func loadedConfig(t *testing.T) config.Config {
 	t.Helper()
 	cfg, err := config.LoadFile()

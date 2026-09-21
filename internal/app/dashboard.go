@@ -83,27 +83,43 @@ func newDashboardCommand(reg *registry.Registry, opts *globalOpts) *cobra.Comman
 			if err != nil {
 				return render(cmd, nil, view.AsError(err, "core.dashboard.config"))
 			}
-			return render(cmd, dashboardTable(reg, cfg.TrustedDashboard()), nil)
+			return render(cmd, dashboardTable(reg, cfg), nil)
 		},
 	}
-	cmd.AddCommand(list, dashboardAddCommand(reg, render, opts), dashboardRemoveCommand(reg, render, opts))
+	cmd.AddCommand(list, dashboardAddCommand(reg, render, opts), dashboardRemoveCommand(reg, render, opts),
+		dashboardHideCommand(reg, render, opts, true), dashboardHideCommand(reg, render, opts, false))
 	return cmd
 }
 
-func dashboardTable(reg *registry.Registry, dash config.Dashboard) view.View {
+// layoutNow is what bare `rta` would draw at this moment: this config's
+// arrangement, expanded into the switched-on environment's connections.
+func layoutNow(reg *registry.Registry, cfg config.Config) []tui.Placement {
+	return tui.Layout(reg, cfg.TrustedDashboard(), tui.InstancesOf(cfg, profile.Active()))
+}
+
+func dashboardTable(reg *registry.Registry, cfg config.Config) view.View {
 	t := view.Table{Columns: []view.Column{
 		{Name: "Tile"},
 		{Name: "Profile"},
 		{Name: "Source"},
+		{Name: "Screen"},
 		{Name: "Re-runs"},
 		{Name: "With"},
 	}}
-	for _, p := range tui.Layout(reg, dash) {
+	for _, p := range layoutNow(reg, cfg) {
 		every := "every few seconds"
 		if p.Refresh > 0 {
 			every = "every " + pace(p.Refresh)
 		}
-		t.Rows = append(t.Rows, []string{p.ID, p.Profile, p.Source, every, withLine(p.With)})
+		source := p.Source
+		if p.Expanded {
+			source += ", one of several"
+		}
+		screen := "on"
+		if p.Hidden {
+			screen = "hidden"
+		}
+		t.Rows = append(t.Rows, []string{p.ID, p.Profile, source, screen, every, withLine(p.With)})
 	}
 	t.Total = len(t.Rows)
 	return t
@@ -200,6 +216,7 @@ func runDashboardAdd(cmd *cobra.Command, id string, reg *registry.Registry, dryR
 		return nil, verr
 	}
 	ref := strings.TrimSpace(mustString(cmd, "profile"))
+	var expandsTo []string
 	if ref != "" {
 		if !plugin.Profilable(c) {
 			return nil, view.Errorf("core.dashboard.noprofile",
@@ -213,10 +230,21 @@ func runDashboardAdd(cmd *cobra.Command, id string, reg *registry.Registry, dryR
 		// Lookup's own refusals, in its own words: an unknown profile, one
 		// from a file nobody named, one that says nothing about this
 		// plugin, an instance it does not hold. Each is the exact thing
-		// the tile would otherwise say on every refresh.
-		if _, verr := profile.Lookup(cfg, c, ref, withTrust{installed}); verr != nil {
-			return nil, verr
+		// the tile would otherwise say on every refresh. The one refusal
+		// a tile does not share is a bare name over several connections —
+		// "your call", which the CLI is right to say of a single run and
+		// the dashboard answers by showing every one (tui.expandTiles) —
+		// so a profile that expands is checked connection by connection.
+		refs := tui.InstancesOf(cfg, "")(ref, plugin.Namespace(id))
+		if len(refs) == 0 {
+			refs = []string{ref}
 		}
+		for _, r := range refs {
+			if _, verr := profile.Lookup(cfg, c, r, withTrust{installed}); verr != nil {
+				return nil, verr
+			}
+		}
+		expandsTo = refs
 	}
 	pairs, _ := cmd.Flags().GetStringSlice("set")
 	with, verr := parseTileInputs(pairs, c)
@@ -280,12 +308,18 @@ func runDashboardAdd(cmd *cobra.Command, id string, reg *registry.Registry, dryR
 		pairsOut = append(pairsOut, view.Pair{Key: "wrote", Value: verb + " " + entry.Key() + " in " + config.Path()})
 	}
 	pairsOut = append(pairsOut, view.Pair{Key: "tile", Value: id})
-	if ref != "" {
+	switch {
+	case len(expandsTo) > 1:
+		pairsOut = append(pairsOut, view.Pair{Key: "profile",
+			Value: ref + " — one panel per " + plugin.Namespace(id) + " connection it holds: " +
+				strings.Join(expandsTo, ", ") + "; a connection added to it later gets its panel too"})
+	case ref != "":
 		pairsOut = append(pairsOut, view.Pair{Key: "profile",
 			Value: ref + " — the tile is about this connection whatever `rta use` switched on"})
-	} else if plugin.Profilable(c) {
+	case plugin.Profilable(c):
 		pairsOut = append(pairsOut, view.Pair{Key: "profile",
-			Value: "none — the tile follows whatever `rta use` switched on; --profile <name> pins it"})
+			Value: "none — the tile follows whatever `rta use` switched on, one panel per " +
+				plugin.Namespace(id) + " connection that environment holds; --profile <name> pins it"})
 	}
 	if len(with) > 0 {
 		pairsOut = append(pairsOut, view.Pair{Key: "with", Value: withLine(with)})
@@ -450,6 +484,153 @@ func runDashboardRemove(cmd *cobra.Command, id string, dryRun bool) (view.View, 
 		{Key: label, Value: verb + " " + key + " from the dashboard in " + config.Path()},
 		{Key: "back", Value: "`rta dashboard add " + removeLine(config.Tile{ID: id, Profile: config.RefName(key[len(id):])}) + "`"},
 	}}, nil
+}
+
+// dashboardHideCommand builds `hide` and `unhide`: what H does to an
+// automatic tile or to one panel of an expanded entry, from a script, and
+// the way back the TUI's inventory pane has only for automatic tiles.
+func dashboardHideCommand(reg *registry.Registry, render renderFn, opts *globalOpts, hide bool) *cobra.Command {
+	use, short := "hide <capability>", "Take an automatic tile, or one panel of an expanded entry, off the screen"
+	long := "What H does in the TUI, from a script. An automatic tile is hidden by its capability;" +
+		" one panel of an entry that expanded into a profile's several connections is hidden by" +
+		" that connection, `--profile ohmlab/keycloak`, and its siblings stay. An added tile is" +
+		" not hidden but withdrawn: `rta dashboard rm` is its command."
+	if !hide {
+		use, short = "unhide <capability>", "Bring a hidden tile or panel back"
+		long = "The reverse of hide, and of H in the TUI: removes the `hidden:` line for a" +
+			" capability, or for one connection's panel with `--profile`."
+	}
+	cmd := &cobra.Command{
+		Use:               use,
+		Short:             short,
+		Long:              long,
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeHideable(reg, hide),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			v, verr := runDashboardHide(cmd, args[0], reg, hide, opts.dryRun)
+			return render(cmd, v, verr)
+		},
+	}
+	cmd.Flags().String("profile", "", "the connection whose panel to hide or bring back, for an entry that expanded into several")
+	_ = cmd.RegisterFlagCompletionFunc("profile", completeProfiles)
+	return cmd
+}
+
+func runDashboardHide(cmd *cobra.Command, id string, reg *registry.Registry, hide, dryRun bool) (view.View, *view.Error) {
+	if verr := refuseUnhonouredDashboard(); verr != nil {
+		return nil, verr
+	}
+	ref := strings.TrimSpace(mustString(cmd, "profile"))
+	key := config.TileKey(id, ref)
+	cfg, err := config.LoadFile()
+	if err != nil {
+		return nil, view.AsError(err, "core.dashboard.config")
+	}
+	if hide {
+		// Only what H would hide: an automatic tile, or an expanded panel.
+		// Anything else on the screen came from an entry, and an entry is
+		// withdrawn rather than hidden — the refusal says which command.
+		var found *tui.Placement
+		for _, p := range layoutNow(reg, cfg) {
+			if config.TileKey(p.ID, p.Profile) == key {
+				p := p
+				found = &p
+				break
+			}
+		}
+		switch {
+		case found == nil:
+			return nil, view.Errorf("core.dashboard.absent", "%s is not on the dashboard", key).
+				WithHint("`rta dashboard list` shows what is, and where each tile came from")
+		case found.Source != "automatic" && !found.Expanded:
+			return nil, view.Errorf("core.dashboard.notautomatic",
+				"%s is an added tile, and an entry is withdrawn rather than hidden", key).
+				WithHint("`rta dashboard rm " + removeLine(config.Tile{ID: id, Profile: ref}) + "` takes it down")
+		case found.Hidden:
+			return view.KeyValue{Pairs: []view.Pair{{Key: "unchanged",
+				Value: key + " is already hidden — nothing written to " + config.Path()}}}, nil
+		}
+	}
+	var (
+		changed      bool
+		hiddenBefore []string
+	)
+	if err := config.Mutate(func(cfg config.Config) (config.Config, bool) {
+		hiddenBefore = cfg.Dashboard.Hidden
+		kept := make([]string, 0, len(cfg.Dashboard.Hidden)+1)
+		for _, h := range cfg.Dashboard.Hidden {
+			if h == key {
+				continue
+			}
+			kept = append(kept, h)
+		}
+		changed = len(kept) != len(cfg.Dashboard.Hidden)
+		if hide {
+			kept = append(kept, key)
+			changed = true
+		}
+		if !changed || dryRun {
+			return cfg, false
+		}
+		cfg.Dashboard.Hidden = kept
+		return cfg, true
+	}); err != nil {
+		return nil, view.AsError(err, "core.dashboard.write")
+	}
+	if !hide && !changed {
+		hint := "nothing is hidden"
+		if len(hiddenBefore) > 0 {
+			hint = "hidden: " + strings.Join(hiddenBefore, ", ") + " — a panel is named with --profile"
+		}
+		return nil, view.Errorf("core.dashboard.nothidden", "%s is not hidden", key).WithHint(hint)
+	}
+	verb, back := "hid", "`rta dashboard unhide "+removeLine(config.Tile{ID: id, Profile: ref})+"` brings it back"
+	if !hide {
+		verb, back = "brought back", "`rta dashboard hide "+removeLine(config.Tile{ID: id, Profile: ref})+"` hides it again"
+	}
+	label := "wrote"
+	if dryRun {
+		label, verb = "would write", "would have "+verb
+	}
+	return view.KeyValue{Pairs: []view.Pair{
+		{Key: label, Value: verb + " " + key + " in " + config.Path()},
+		{Key: "back", Value: back},
+	}}, nil
+}
+
+// completeHideable offers what hide can take down — automatic tiles and
+// expanded panels, described by their connection — or what unhide can
+// bring back: the hidden lines.
+func completeHideable(reg *registry.Registry, hide bool) func(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
+	return func(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
+		cfg, err := config.LoadFile()
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		var out []cobra.Completion
+		if !hide {
+			for _, h := range cfg.Dashboard.Hidden {
+				id, ref, _ := strings.Cut(h, "@")
+				desc := "hidden"
+				if ref != "" {
+					desc = "--profile " + ref
+				}
+				out = append(out, cobra.CompletionWithDesc(id, desc))
+			}
+			return out, cobra.ShellCompDirectiveNoFileComp
+		}
+		for _, p := range layoutNow(reg, cfg) {
+			if p.Hidden || (p.Source != "automatic" && !p.Expanded) {
+				continue
+			}
+			desc := "automatic"
+			if p.Expanded {
+				desc = "--profile " + p.Profile
+			}
+			out = append(out, cobra.CompletionWithDesc(p.ID, desc))
+		}
+		return out, cobra.ShellCompDirectiveNoFileComp
+	}
 }
 
 // completeReadCapabilities offers the capabilities a tile can run.
