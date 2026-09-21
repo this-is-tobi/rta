@@ -19,6 +19,8 @@ package config
 // know. Those stay open objects with a description saying who does know, and
 // `rta doctor` remains the deep validator.
 
+import "strings"
+
 // schemaPatterns, named once so a grammar stated here cannot drift from the
 // code that enforces it.
 var (
@@ -33,6 +35,12 @@ var (
 	schemaDuration   = `^([0-9]+(\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$`
 	schemaColor      = `^#[0-9a-fA-F]{6}$`
 )
+
+// schemaProfileRef is what a tile's profile: may say — a profile name, or
+// name/instance — built from the loader's own name pattern rather than
+// restated, so the two cannot drift, with the instance half spelled the way
+// schemaProfileKey already spells it.
+var schemaProfileRef = strings.TrimSuffix(profileName.String(), "$") + `(/[a-z][a-z0-9-]*)?$`
 
 // Schema is the JSON Schema (draft 2020-12) for the config file.
 func Schema() map[string]any {
@@ -62,14 +70,23 @@ func Schema() map[string]any {
 						"type":  "array",
 						"items": map[string]any{"$ref": "#/$defs/tile"},
 					},
+					"add": map[string]any{
+						"description": "Tiles joined to the automatic set without freezing it: " +
+							"a capability the automatic dashboard leaves out, or one " +
+							"capability several times, each pinned to its own profile. " +
+							"`rta dashboard add` writes an entry here.",
+						"type":  "array",
+						"items": map[string]any{"$ref": "#/$defs/tile"},
+					},
 					"hidden": map[string]any{
 						"description": "Capability IDs to leave out of the automatic set.",
 						"type":        "array",
 						"items":       map[string]any{"type": "string"},
 					},
 					"order": map[string]any{
-						"description": "Capability IDs to place first, in this order; anything " +
-							"not named keeps its natural position after them.",
+						"description": "Tile keys to place first, in this order — a capability " +
+							"ID, or capability@profile for a pinned tile; anything not " +
+							"named keeps its natural position after them.",
 						"type":  "array",
 						"items": map[string]any{"type": "string"},
 					},
@@ -147,6 +164,13 @@ func Schema() map[string]any {
 						"description": "Inputs for the run, keyed the way the capability " +
 							"declares them.",
 						"type": "object",
+					},
+					"profile": map[string]any{
+						"description": "The connection this tile is about — a profile name, or " +
+							"name/instance — whatever environment is switched on. Omitted, " +
+							"the tile follows the switched-on environment.",
+						"type":    "string",
+						"pattern": schemaProfileRef,
 					},
 					"span": map[string]any{
 						"description": "How many grid columns this tile occupies; 0 leaves the " +

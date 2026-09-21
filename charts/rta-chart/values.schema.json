@@ -104,6 +104,11 @@
               "description": "The capability this tile runs, e.g. note.list.",
               "type": "string"
             },
+            "profile": {
+              "description": "The connection this tile is about \u2014 a profile name, or name/instance \u2014 whatever environment is switched on. Omitted, the tile follows the switched-on environment.",
+              "pattern": "^[a-z0-9][a-z0-9-]{0,62}(/[a-z][a-z0-9-]*)?$",
+              "type": "string"
+            },
             "span": {
               "description": "How many grid columns this tile occupies; 0 leaves the decision to the capability.",
               "minimum": 0,
@@ -127,6 +132,13 @@
           "additionalProperties": false,
           "description": "The TUI's landing screen. With nothing set it builds itself, one tile per registered plugin, and plugins installed later still appear.",
           "properties": {
+            "add": {
+              "description": "Tiles joined to the automatic set without freezing it: a capability the automatic dashboard leaves out, or one capability several times, each pinned to its own profile. `rta dashboard add` writes an entry here.",
+              "items": {
+                "$ref": "#/$defs/rtaConfig/$defs/tile"
+              },
+              "type": "array"
+            },
             "columns": {
               "description": "Fixes the grid width instead of deriving it from the terminal; 0 means automatic.",
               "minimum": 0,
@@ -140,7 +152,7 @@
               "type": "array"
             },
             "order": {
-              "description": "Capability IDs to place first, in this order; anything not named keeps its natural position after them.",
+              "description": "Tile keys to place first, in this order \u2014 a capability ID, or capability@profile for a pinned tile; anything not named keeps its natural position after them.",
               "items": {
                 "type": "string"
               },
