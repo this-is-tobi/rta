@@ -307,7 +307,7 @@ func New(reg *registry.Registry, dash config.Dashboard,
 	// follows it may expand into its connections; the first build above
 	// had no environment in hand.
 	m.rebuildTiles()
-	m.notePins()
+	m.notePins(readStamps())
 	return m
 }
 
@@ -324,8 +324,9 @@ func (m Model) Init() tea.Cmd {
 	// The pins New noted, bound here: Init gets a copy of the model, so
 	// noting them here would be noting them nowhere, and the refresh above
 	// already treats a noted, unbound pin as pending rather than unbound.
+	// One to the switched-on environment rides on the bind started above.
 	for ref, pin := range m.pins {
-		if !pin.ready {
+		if !pin.ready && !m.servedByEnvironment(ref, pin.stamp) {
 			cmds = append(cmds, bindCmd(m.reg, ref, pin.stamp))
 		}
 	}
