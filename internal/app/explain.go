@@ -254,7 +254,7 @@ func dashboardRow(reg *registry.Registry, c plugin.Capability) view.Pair {
 	if c.Refresh > 0 {
 		every = "every " + pace(c.Refresh)
 	}
-	add := "`rta dashboard add " + c.ID + "`"
+	add := "`rta dashboard add " + c.ID + "`, or + on it in the TUI,"
 	if why := tui.Unasked(c); why != "" {
 		return view.Pair{Key: "dashboard",
 			Value: "not on the automatic dashboard — " + why + "; " + add + " puts it there, re-run " + every}
@@ -265,7 +265,7 @@ func dashboardRow(reg *registry.Registry, c plugin.Capability) view.Pair {
 		}
 		if id, ok := tui.TileFor(reg, p); ok && id != c.ID {
 			return view.Pair{Key: "dashboard",
-				Value: "a tile when added (" + add + "), re-run " + every +
+				Value: "a tile when added (" + strings.TrimSuffix(add, ",") + "), re-run " + every +
 					"; the automatic dashboard shows " + id + " for this plugin"}
 		}
 	}

@@ -98,14 +98,19 @@ func addCommand(t tile) string {
 }
 
 // standsForAutomatic reports whether an added tile took an automatic
-// tile's place (joinTiles): its key is one the automatic set produces,
-// and there is an automatic set.
+// tile's place (joinTiles).
 func (m Model) standsForAutomatic(t tile) bool {
-	if t.source != tileAdded || len(m.dash.Tiles) > 0 {
+	return t.source == tileAdded && m.automaticKey(t.key())
+}
+
+// automaticKey reports whether the automatic set produces a tile of this
+// key — there being an automatic set, which a stated list replaces.
+func (m Model) automaticKey(key string) bool {
+	if len(m.dash.Tiles) > 0 {
 		return false
 	}
 	for _, auto := range autoTiles(m.reg) {
-		if auto.key() == t.key() {
+		if auto.key() == key {
 			return true
 		}
 	}
@@ -192,7 +197,7 @@ func swapRuns(tiles []tile, a, b, c int) []tile {
 // the dashboard is one part of the file, and moving a tile must not rewrite
 // anything else — including this shell's RTA_* environment, which is why it
 // re-reads the file rather than the resolved config (config.LoadFile).
-func (m Model) save() error {
+func (m *Model) save() error {
 	// Refused on a path nobody named, and this is the half of the dashboard
 	// gate that is not about reading. app.go draws config.TrustedDashboard(),
 	// so on such a path m.dash holds the automatic arrangement rather than
@@ -204,13 +209,19 @@ func (m Model) save() error {
 		return errors.New(config.Path() + " is not a config file rta honours, so the " +
 			"arrangement was not written — set $RTA_CONFIG to name it deliberately")
 	}
-	return config.Mutate(func(cfg config.Config) (config.Config, bool) {
+	if err := config.Mutate(func(cfg config.Config) (config.Config, bool) {
 		cfg.Dashboard.Hidden = m.dash.Hidden
 		cfg.Dashboard.Order = m.dash.Order
 		cfg.Dashboard.Tiles = m.dash.Tiles
 		cfg.Dashboard.Add = m.dash.Add
 		return cfg, true
-	})
+	}); err != nil {
+		return err
+	}
+	// What the file says now is what this session wrote, so the next tick
+	// reads it as its own rather than as an edit to adopt (syncDashboard).
+	m.dashOnDisk = dashStamp(m.dash)
+	return nil
 }
 
 // dropTile removes every entry with the given key (config.Tile.Key).

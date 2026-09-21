@@ -61,12 +61,43 @@ func TestAPinnedProfileGainingAConnectionGrowsItsPanels(t *testing.T) {
 	if err := config.Write(cfg); err != nil {
 		t.Fatal(err)
 	}
-	cmd := m.syncPins()
+	cmd := m.syncTiles()
 	m = land(t, m, cmd)
 	if got := strings.Join(tileKeys(m.tiles), " "); got != "db.status db.status@prod db.status@prod/analytics" {
 		t.Fatalf("after the edit, tiles = %q, want the new connection's panel", got)
 	}
 	if tc := m.connFor(m.tiles[3]); tc.pending || tc.err != nil || tc.filled["host"] != "analytics.prod.internal" {
 		t.Errorf("the new panel runs against %+v, want the connection just added", tc)
+	}
+}
+
+// A tile added from another terminal — `rta dashboard add`, or a hand in
+// the file — reaches an open dashboard on its next tick rather than its
+// next launch, and this session's own writes are not re-read as an edit.
+func TestATileAddedFromAnotherTerminalAppearsOnTheNextTick(t *testing.T) {
+	m := pinnedModel(t, twoProfileConfig(), config.Dashboard{})
+	if got := strings.Join(tileKeys(m.tiles), " "); got != "db.status" {
+		t.Fatalf("tiles = %q", got)
+	}
+	if err := config.Mutate(func(cfg config.Config) (config.Config, bool) {
+		cfg.Dashboard.Add = append(cfg.Dashboard.Add, config.Tile{ID: "db.status", Profile: "prod"})
+		return cfg, true
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cmd := m.syncTiles()
+	m = land(t, m, cmd)
+	if got := strings.Join(tileKeys(m.tiles), " "); got != "db.status db.status@prod" {
+		t.Fatalf("after the other terminal's add, tiles = %q, want its tile on screen", got)
+	}
+	if tc := m.connFor(m.tiles[2]); tc.pending || tc.err != nil || tc.filled["host"] != "prod.internal" {
+		t.Errorf("the adopted tile runs against %+v, want it bound to prod", tc)
+	}
+	m.selected = 2
+	if note := m.hideSelected(); !strings.Contains(note, "removed db.status@prod") {
+		t.Fatalf("note = %q", note)
+	}
+	if m.syncDashboard(readStamps()) {
+		t.Error("this session's own write was re-read as an edit from elsewhere")
 	}
 }

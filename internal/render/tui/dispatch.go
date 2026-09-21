@@ -50,6 +50,8 @@ func (m Model) keyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		return m.themeKeys(msg)
 	case modeCopyPick:
 		return m.copyPickKeys(msg)
+	case modeAddPick:
+		return m.addPickKeys(msg)
 	case modeResult:
 		return m.resultKeys(msg)
 	case modeRunning:
@@ -92,6 +94,12 @@ func (m Model) dashboardKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		// Curating the dashboard belongs on the dashboard, not in a
 		// text editor: the arrangement is a visual thing.
 		m.flash = m.hideSelected()
+		return m, nil, true
+	case "+":
+		// The other half of H, from the screen it is about: what to add
+		// is chosen in the catalogue, where + on a row is the add itself.
+		m.mode = modeBrowse
+		m.flash = "pick a capability — + on its row puts it on the dashboard"
 		return m, nil, true
 	case "p":
 		// What is installed, and what it puts on the dashboard —
@@ -395,6 +403,25 @@ func (m Model) browseKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 			nm, cmd := m.open(item.c)
 			return nm, cmd, true
 		}
+	case "+":
+		if item, ok := m.list.SelectedItem().(capItem); ok {
+			nm, cmd := m.offerAdd(item.c, modeBrowse)
+			return nm, cmd, true
+		}
+	}
+	return m, nil, false
+}
+
+func (m Model) addPickKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
+	switch msg.String() {
+	case "esc":
+		nm, cmd := m.closeAddPick()
+		return nm, cmd, true
+	case "ctrl+c":
+		return m.quit()
+	case "shift+enter", "alt+enter":
+		nm, cmd := m.fastSubmitAddPick()
+		return nm, cmd, true
 	}
 	return m, nil, false
 }
@@ -696,6 +723,17 @@ func (m Model) updateSearch(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.origin = modeDashboard
 		m.trail = nil
 		return m.open(c)
+	case "+":
+		// The match onto the dashboard rather than opened: the one key a
+		// query never needs, since no capability ID carries it.
+		results := m.searchResults()
+		if len(results) == 0 {
+			return m, nil
+		}
+		c := results[min(m.searchSel, len(results)-1)]
+		m.searchEditing = false
+		m.query, m.searchSel = "", 0
+		return m.offerAdd(c, modeDashboard)
 	case "up", "ctrl+p":
 		m.searchSel = max(m.searchSel-1, 0)
 		return m, nil

@@ -66,7 +66,7 @@ func TestHelpIsOfferedWhereAKeyIsACommand(t *testing.T) {
 			t.Errorf("%s: advertises ? and does not answer it", screenName(screen))
 		}
 	}
-	for _, screen := range []mode{modeForm, modeTheme, modeCopyPick} {
+	for _, screen := range []mode{modeForm, modeTheme, modeCopyPick, modeAddPick} {
 		if m.helpOffered(screen) {
 			t.Errorf("%s offers help over a field that takes ? as text", screenName(screen))
 		}

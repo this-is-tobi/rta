@@ -152,7 +152,8 @@ func dashboardAddCommand(reg *registry.Registry, render renderFn, opts *globalOp
 			" kube.overview --profile prod` and the same with `--profile staging` are two tiles," +
 			" each named on its own panel. Without it the tile follows whatever `rta use` switched on." +
 			" `--set` fills the capability's inputs, `key=value`, typed the way it declares them." +
-			" Adding the same tile again replaces it, so the command is safe to script.",
+			" Adding the same tile again replaces it, so the command is safe to script." +
+			" In the TUI, + on a catalogue row or a search match writes the same entry.",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeReadCapabilities(reg),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -444,19 +445,7 @@ func parseTileInputs(pairs []string, c plugin.Capability) (map[string]any, *view
 // a file could fill, nothing under --set, and — when the tile is pinned —
 // nothing a profile could fill either.
 func tileCanRunUnasked(c plugin.Capability, with map[string]any, pinned bool) *view.Error {
-	var missing []string
-	for _, f := range c.Inputs {
-		if !f.Required || f.Default != nil || f.Config != "" {
-			continue
-		}
-		if _, given := with[f.Name]; given {
-			continue
-		}
-		if pinned && plugin.ProfileFillable(c, f) {
-			continue
-		}
-		missing = append(missing, f.Name)
-	}
+	missing := tui.MissingInputs(c, with, pinned)
 	if len(missing) == 0 {
 		return nil
 	}

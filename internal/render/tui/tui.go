@@ -78,6 +78,9 @@ const (
 	modeProfilePlugins
 	modeTheme
 	modeCopyPick
+	// modeAddPick asks which connection a tile being added is about
+	// (addpick.go).
+	modeAddPick
 	// modeConfirm is the destructive gate: a dry run on screen, and enter is
 	// the consent (confirm.go).
 	modeConfirm
@@ -106,12 +109,19 @@ type Model struct {
 	list      list.Model
 	// cols carries the catalogue column widths, measured once so the
 	// header above the list and the rows inside it agree.
-	cols       capDelegate
-	viewport   viewport.Model
-	spinner    spinner.Model
-	form       *capForm
-	themeForm  *themeForm
-	copyPick   *copyPickForm
+	cols      capDelegate
+	viewport  viewport.Model
+	spinner   spinner.Model
+	form      *capForm
+	themeForm *themeForm
+	copyPick  *copyPickForm
+	addPick   *addPickForm
+	// dashOnDisk fingerprints the dashboard block as the file last stated
+	// it (dashStamp): what this session read at launch, or wrote itself.
+	// The tick compares the file against it, so a tile added from another
+	// terminal is adopted and this session's own writes are not re-read
+	// as somebody else's (syncDashboard).
+	dashOnDisk string
 	tiles      []tile
 	dash       config.Dashboard // the arrangement, edited in place and saved
 	selected   int              // selected dashboard tile
@@ -281,15 +291,16 @@ func New(reg *registry.Registry, dash config.Dashboard,
 		spinner.WithStyle(lipgloss.NewStyle().Foreground(theme.Primary)),
 	)
 	m := Model{
-		reg:       reg,
-		pluginCfg: pluginCfg,
-		list:      l,
-		cols:      cols,
-		viewport:  viewport.New(),
-		spinner:   sp,
-		tiles:     buildTiles(reg, dash),
-		dash:      dash,
-		mode:      modeDashboard,
+		reg:        reg,
+		pluginCfg:  pluginCfg,
+		list:       l,
+		cols:       cols,
+		viewport:   viewport.New(),
+		spinner:    sp,
+		tiles:      buildTiles(reg, dash),
+		dash:       dash,
+		dashOnDisk: dashStamp(dash),
+		mode:       modeDashboard,
 		searchInfo: fmt.Sprintf("%d plugins · %d capabilities — press / to search",
 			len(reg.Plugins()), len(reg.Capabilities())),
 	}
@@ -412,6 +423,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.fitForm()
 		m.fitThemeForm()
 		m.fitCopyPick()
+		m.fitAddPick()
 		return m, nil
 
 	case tea.MouseWheelMsg:
@@ -515,7 +527,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// is somebody changing environments without leaving this one — both
 			// have to reach the screen, and this is the only thing that runs
 			// while nothing is happening. Cheap unless the name actually moved.
-			bind := tea.Batch(m.syncActive(), m.syncPins())
+			bind := tea.Batch(m.syncActive(), m.syncTiles())
 			m.tickGen++
 			return m, tea.Batch(bind, refreshTiles(m.tiles, m.tickGen, m.pluginCfg, m.connFor))
 		}
@@ -626,6 +638,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateThemeForm(msg)
 	case modeCopyPick:
 		return m.updateCopyPick(msg)
+	case modeAddPick:
+		return m.updateAddPick(msg)
 	case modeResult, modeConfirm:
 		m.viewport, cmd = m.viewport.Update(msg)
 	}
@@ -640,7 +654,7 @@ func (m Model) closeToOrigin() (tea.Model, tea.Cmd) {
 	// Correctness does not rest on this line (the refresh tick re-reads the
 	// stamp, and a run checks it at the point of use), but the window between
 	// saving an edit and the screen behind the form agreeing with it does.
-	bind := tea.Batch(m.syncActive(), m.syncPins())
+	bind := tea.Batch(m.syncActive(), m.syncTiles())
 	m.mode = m.origin
 	if m.origin == modeDashboard {
 		m.tickGen++
@@ -754,6 +768,8 @@ func (m Model) View() tea.View {
 		v = tea.NewView(m.themeView())
 	case modeCopyPick:
 		v = tea.NewView(m.copyPickView())
+	case modeAddPick:
+		v = tea.NewView(m.addPickView())
 	case modeResult:
 		v = tea.NewView(m.resultView())
 		v.MouseMode = tea.MouseModeCellMotion // wheel scrolls long output

@@ -30,7 +30,7 @@ import (
 // swallowing it, or answering it unannounced.
 func (m Model) helpOffered(screen mode) bool {
 	switch screen {
-	case modeForm, modeTheme, modeCopyPick:
+	case modeForm, modeTheme, modeCopyPick, modeAddPick:
 		return false
 	case modeDashboard:
 		return !m.searchEditing
@@ -78,6 +78,8 @@ func screenName(screen mode) string {
 		return "theme editor"
 	case modeCopyPick:
 		return "copy picker"
+	case modeAddPick:
+		return "add picker"
 	case modeConfirm:
 		return "confirmation"
 	}

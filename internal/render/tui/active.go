@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"strings"
 	"time"
@@ -108,7 +109,7 @@ func (m *Model) syncActive() tea.Cmd {
 	// again, or this environment's own set — so the arrangement is resolved
 	// again here, and the pins those panels need are started with the bind.
 	m.rebuildTiles()
-	pins := m.syncPins()
+	pins := m.syncTiles()
 	if name == "" {
 		return pins
 	}
@@ -325,18 +326,22 @@ type pinBind struct {
 	bound map[string]envBind
 }
 
-// syncPins brings the pinned bindings in line with the tiles on screen and
-// returns the binds to run. Called from the refresh tick beside syncActive,
-// for the same reasons: an edit to a pinned profile in another terminal has
-// to reach the tile, and this is what runs while nothing is happening.
+// syncTiles brings the tiles in line with the file — the dashboard block,
+// and the bindings of the profiles tiles are pinned to — and returns the
+// binds to run. Called from the refresh tick beside syncActive, for the
+// same reasons: an edit in another terminal has to reach the screen, and
+// this is what runs while nothing is happening.
 //
-// An edit is also what changes how many panels an entry expands into — the
-// ohmlab that gained a sixth database — so a pinned profile that moved has
-// the arrangement resolved again first, the way syncActive does for the
+// Two things can have moved. The block itself: `rta dashboard add` in
+// another terminal, or a hand in the file, writes a tile this session has
+// never seen, and until this ran it appeared on the next launch. And a
+// pinned profile, which is what changes how many panels an entry expands
+// into — the ohmlab that gained a sixth database. Either has the
+// arrangement resolved again first, the way syncActive does for the
 // switch, and the pins are noted over the tiles that result.
-func (m *Model) syncPins() tea.Cmd {
+func (m *Model) syncTiles() tea.Cmd {
 	s := readStamps()
-	if m.pinsMoved(s) {
+	if m.syncDashboard(s) || m.pinsMoved(s) {
 		m.rebuildTiles()
 	}
 	start := m.notePins(s)
@@ -345,6 +350,37 @@ func (m *Model) syncPins() tea.Cmd {
 		cmds = append(cmds, bindCmd(m.reg, ref, m.pins[ref].stamp))
 	}
 	return tea.Batch(cmds...)
+}
+
+// syncDashboard adopts a dashboard block written since this session last
+// read one, and reports whether it did. Compared with what was last read
+// from the file rather than with what the session holds, so an edit this
+// session could not write — "this session only" — is not undone by the
+// next tick: the file still reads as it did, so nothing moved.
+func (m *Model) syncDashboard(s stamps) bool {
+	if s.err != nil {
+		return false
+	}
+	dash := s.cfg.TrustedDashboard()
+	stamp := dashStamp(dash)
+	if stamp == m.dashOnDisk {
+		return false
+	}
+	m.dash, m.dashOnDisk = dash, stamp
+	return true
+}
+
+// dashStamp fingerprints a dashboard block as the file states it: the JSON
+// form, whose omitempty makes a nil list and an empty one the same text,
+// and an integer read from YAML the same as one typed on the CLI — the
+// differences a block round-tripped through this session's own save
+// carries, and that are not edits.
+func dashStamp(d config.Dashboard) string {
+	b, err := json.Marshal(d)
+	if err != nil {
+		return ""
+	}
+	return string(b)
 }
 
 // pinsMoved reports whether any pinned profile no longer stands at the
@@ -362,7 +398,7 @@ func (m Model) pinsMoved(s stamps) bool {
 // stands at, and forgets one no tile names any more. It returns the
 // references whose bind has to start: named by a tile, not yet noted under
 // the stamp the profile now has, and not served by the environment's own
-// bind (servedByEnvironment). Split from syncPins because New cannot
+// bind (servedByEnvironment). Split from syncTiles because New cannot
 // return a command — it notes, and Init binds what it noted.
 func (m *Model) notePins(s stamps) []string {
 	var start []string
@@ -581,7 +617,7 @@ func withoutSecrets(c plugin.Capability, filled map[string]any) map[string]any {
 // their own hand, one keypress ago.
 func (m Model) backToDashboard() (tea.Model, tea.Cmd) {
 	m.mode = modeDashboard
-	bind := tea.Batch(m.syncActive(), m.syncPins())
+	bind := tea.Batch(m.syncActive(), m.syncTiles())
 	m.tickGen++
 	return m, tea.Batch(bind, refreshTiles(m.tiles, m.tickGen, m.pluginCfg, m.connFor))
 }

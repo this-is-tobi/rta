@@ -108,8 +108,14 @@ var (
 	// fire from an ordinary keypress.
 	bindFastSubmit = binding{display: "⇧enter", keys: []string{"shift+enter", "alt+enter"}, label: "submit", rank: rankExtra}
 	bindBrowse     = binding{display: "b", keys: []string{"b", ":"}, label: "browse", rank: rankExtra}
-	bindSearch     = binding{display: "/", keys: []string{"/"}, label: "search", rank: rankExtra}
-	bindToggle     = binding{display: "space", keys: []string{" ", "space", "x"}, label: "show/hide", rank: rankPrimary}
+	// The catalogue's and the search bar's way onto the dashboard: what
+	// `rta dashboard add` does from a shell; on the dashboard itself it
+	// opens the catalogue to pick from. `+` rather than `a`, which the
+	// plugin pane already spends on allow. rankExtra like H and [ ]: the
+	// arrangement keys give way to running things when the bar is short.
+	bindAdd    = binding{display: "+", keys: []string{"+"}, label: "add tile", rank: rankExtra}
+	bindSearch = binding{display: "/", keys: []string{"/"}, label: "search", rank: rankExtra}
+	bindToggle = binding{display: "space", keys: []string{" ", "space", "x"}, label: "show/hide", rank: rankPrimary}
 	// "approve" rather than "trust", because the footer has to say what the
 	// key does and not what the subsystem is called: somebody looking at a
 	// row marked "not run" is deciding whether to allow it, and that is the
@@ -337,7 +343,7 @@ func (m Model) screenItems(screen mode) []hintItem {
 		}
 	case modeBrowse:
 		return []hintItem{
-			item(bindColumn), labelled(bindOpen, "run"), labelled(bindSearch, "filter"),
+			item(bindColumn), labelled(bindOpen, "run"), item(bindAdd), labelled(bindSearch, "filter"),
 			item(bindBack), item(bindQuit),
 		}
 	case modeForm:
@@ -365,6 +371,14 @@ func (m Model) screenItems(screen mode) []hintItem {
 		}
 		return append(hints,
 			labelled(bindOpen, "copy"), item(bindFastSubmit), labelled(bindBack, "cancel"),
+		)
+	case modeAddPick:
+		var hints []hintItem
+		if m.addPick != nil {
+			hints = fieldHints(m.addPick.form, 1, nil)
+		}
+		return append(hints,
+			labelled(bindOpen, "add"), item(bindFastSubmit), labelled(bindBack, "cancel"),
 		)
 	case modeRunning:
 		// "stop it" over "cancel": cancel is already this binding's label
@@ -474,6 +488,10 @@ func (m Model) formErrors(screen mode) []error {
 	case modeCopyPick:
 		if m.copyPick != nil && m.copyPick.form != nil {
 			return m.copyPick.form.Errors()
+		}
+	case modeAddPick:
+		if m.addPick != nil && m.addPick.form != nil {
+			return m.addPick.form.Errors()
 		}
 	}
 	return nil

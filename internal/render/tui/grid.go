@@ -539,7 +539,7 @@ func (m Model) renderSearchTile(width int, selected bool) string {
 
 	right := "press /"
 	if m.searchEditing {
-		right = "↑↓ pick · enter run · esc clear"
+		right = "↑↓ pick · enter run · + add tile · esc clear"
 	}
 	// The count is the honest part: it says three of eleven, so a match that
 	// is not on screen is a known thing rather than a missing one.
@@ -574,7 +574,7 @@ func dashOwnItems() []hintItem {
 	return []hintItem{
 		item(bindSelect), labelled(bindOpen, "details"),
 		item(bindProfile), item(bindPlugin), item(bindTheme),
-		item(bindMove), item(bindHide),
+		item(bindMove), item(bindHide), item(bindAdd),
 		item(bindBrowse), item(bindSearch), item(bindQuit),
 	}
 }
