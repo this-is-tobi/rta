@@ -351,6 +351,29 @@ func previewable(c plugin.Capability) bool {
 	return c.Safety == plugin.Read && !formNeeded(c) && !c.NoPreview
 }
 
+// MissingInputs lists what a tile of c could never fill: a required input
+// with no default, no config key a file could fill, nothing under with,
+// and — for a pinned tile — nothing a profile could fill either. A tile
+// has no form to ask with, so one such input is the same "missing input"
+// error on every refresh forever; `rta dashboard add` and `+` in the TUI
+// both refuse it here rather than write it.
+func MissingInputs(c plugin.Capability, with map[string]any, pinned bool) []string {
+	var missing []string
+	for _, f := range c.Inputs {
+		if !f.Required || f.Default != nil || f.Config != "" {
+			continue
+		}
+		if _, given := with[f.Name]; given {
+			continue
+		}
+		if pinned && plugin.ProfileFillable(c, f) {
+			continue
+		}
+		missing = append(missing, f.Name)
+	}
+	return missing
+}
+
 // arrange applies the user's adjustments: drop what they hid, lead with
 // what they ordered. A `hidden:` line is a capability ID, which hides an
 // automatic tile and every panel it expanded into, or a tile key, which
