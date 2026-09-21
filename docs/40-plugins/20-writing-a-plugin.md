@@ -196,7 +196,7 @@ One of those words carries extra weight. **`<your-plugin>.overview` becomes your
 
 A tile runs on load and then every few seconds with nobody watching, so it has to be `Read`, answerable from its defaults alone, and cheap enough to repeat. If your overview is none of those, set `NoPreview: true` on it — rta will tile something else rather than put it on a timer, and `overview` still means to a reader what it means everywhere else.
 
-A capability that is worth a tile but not at that pace — an answer that moves by the day and costs a network round trip to compute — declares `Refresh: 2 * time.Hour` and the dashboard waits that long between runs. It is how a person who names your `NoPreview` capability in their own `tiles:` gets it at a pace you chose rather than one the host guessed; the automatic dashboard still leaves it out.
+A capability that is worth a tile but not at that pace — an answer that moves by the day and costs a network round trip to compute — declares `Refresh: 2 * time.Hour` and the dashboard waits that long between runs. It is how a person who adds your `NoPreview` capability to their dashboard (`rta dashboard add`) gets it at a pace you chose rather than one the host guessed; the automatic dashboard still leaves it out.
 
 **Say what the TUI may do with a result.** A list is more than a table when its rows answer keys, and those keys are yours to declare — the same way rta's own `note.list` does, with no table inside the TUI to get into:
 

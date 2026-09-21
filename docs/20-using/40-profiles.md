@@ -328,6 +328,7 @@ secrets:
 rta profile list                 # what is configured, and whether each is usable
 rta profile show staging         # what it sets, and where each value comes from
 rta pg query --profile staging   # one command against it
+rta dashboard add pg.overview --profile staging   # a tile about it, whatever is switched on
 ```
 
 Or switch your whole machine to it:
