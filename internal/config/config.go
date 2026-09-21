@@ -28,6 +28,24 @@ import (
 type Tile struct {
 	ID   string         `yaml:"id" json:"id"`
 	With map[string]any `yaml:"with,omitempty" json:"with,omitempty"`
+	// Profile pins the tile to one configured connection — `prod`, or
+	// `staging/analytics` for a labeled instance — the way --profile does on
+	// the CLI. Empty, the tile follows whatever environment is switched on,
+	// which is what every tile did before this field existed and is still
+	// right for a tile about *here*: switch to staging and the pg tile is
+	// about staging. Named, the tile is about that connection whatever is
+	// switched on, which is what lets one capability sit on the dashboard
+	// twice, once per cluster, with the name on each tile.
+	//
+	// A field of its own rather than a key under With, because a profile is
+	// the host's question and not the capability's: With fills declared
+	// inputs, and nothing declares an input called profile. A `profile:`
+	// written under `with:` reached the handler as a key it never read, so
+	// the tile refreshed against the switched-on environment regardless —
+	// while enter on that same tile, which goes through the form's own
+	// picker, ran against the named one. The screen and the page disagreed
+	// about where the numbers came from, in the direction that hides it.
+	Profile string `yaml:"profile,omitempty" json:"profile,omitempty"`
 	// Span is how many grid columns this tile occupies, overriding what the
 	// capability's declared MinWidth works out to. 0 leaves that decision to
 	// the capability, which is right almost always — this is for the person
@@ -36,23 +54,50 @@ type Tile struct {
 	Span int `yaml:"span,omitempty" json:"span,omitempty"`
 }
 
+// Key is how Order refers to a tile and how `rta dashboard rm` addresses
+// one: the capability alone, or capability@profile for a tile pinned to a
+// connection. Two tiles of one capability against two profiles are two
+// keys, which is what lets each be moved and removed on its own. Two
+// entries that share a key — the same capability against the same
+// connection, differing only in With — are one tile to those operations.
+func (t Tile) Key() string { return TileKey(t.ID, t.Profile) }
+
+// TileKey spells a tile's key from its parts; see Tile.Key.
+func TileKey(id, profile string) string {
+	if profile == "" {
+		return id
+	}
+	return id + "@" + profile
+}
+
 // Dashboard configures the landing screen.
 //
 // With none of these set the dashboard builds itself: one tile per
 // registered plugin, so nothing a plugin offers is invisible — including
-// plugins installed later. Hidden and Order adjust that automatic set
+// plugins installed later. Hidden, Order and Add adjust that automatic set
 // without freezing it, which is why they are separate from Tiles: a plugin
 // added next month still appears. Tiles is the escape hatch for people who
 // want to state the whole dashboard themselves, and it replaces the
 // automatic set entirely.
 type Dashboard struct {
 	// Tiles states the dashboard exactly. When set, Hidden and Order are
-	// not consulted — the list is already both.
+	// not consulted — the list is already both — and Add is appended after
+	// it, though a person stating the dashboard can as well write a pinned
+	// tile into this list directly.
 	Tiles []Tile `yaml:"tiles,omitempty" json:"tiles,omitempty"`
+	// Add joins named tiles to the automatic set. It is how a capability
+	// the automatic dashboard leaves out gets on screen — every kube, pg,
+	// s3 and vault capability declines to run unasked, and an entry here is
+	// the asking — and how one capability appears more than once, each
+	// entry pinned to its own Profile. Removing the entry is what takes such
+	// a tile down: Hidden is about the automatic set, and an entry somebody
+	// wrote is not hidden but withdrawn. `rta dashboard add` and `rm` write
+	// this list; so does the TUI.
+	Add []Tile `yaml:"add,omitempty" json:"add,omitempty"`
 	// Hidden lists capability IDs to leave out of the automatic set.
 	Hidden []string `yaml:"hidden,omitempty" json:"hidden,omitempty"`
-	// Order lists capability IDs to place first, in this order. Anything
-	// not named keeps its natural position after them.
+	// Order lists tile keys (Tile.Key) to place first, in this order.
+	// Anything not named keeps its natural position after them.
 	Order []string `yaml:"order,omitempty" json:"order,omitempty"`
 	// Columns fixes the grid width instead of deriving it from the terminal.
 	// 0 means automatic, which is what almost everybody wants: the dashboard
