@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 
@@ -86,7 +87,7 @@ func newDashboardCommand(reg *registry.Registry, opts *globalOpts) *cobra.Comman
 			return render(cmd, dashboardTable(reg, cfg), nil)
 		},
 	}
-	cmd.AddCommand(list, dashboardAddCommand(reg, render, opts), dashboardRemoveCommand(reg, render, opts),
+	cmd.AddCommand(list, dashboardAddCommand(reg, render, opts), dashboardRemoveCommand(render, opts),
 		dashboardHideCommand(reg, render, opts, true), dashboardHideCommand(reg, render, opts, false))
 	return cmd
 }
@@ -167,7 +168,7 @@ func dashboardAddCommand(reg *registry.Registry, render renderFn, opts *globalOp
 	return cmd
 }
 
-func dashboardRemoveCommand(reg *registry.Registry, render renderFn, opts *globalOpts) *cobra.Command {
+func dashboardRemoveCommand(render renderFn, opts *globalOpts) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "rm <capability>",
 		Aliases: []string{"remove"},
@@ -184,7 +185,6 @@ func dashboardRemoveCommand(reg *registry.Registry, render renderFn, opts *globa
 	}
 	cmd.Flags().String("profile", "", "the pinned tile to take down, when the capability was added against several")
 	_ = cmd.RegisterFlagCompletionFunc("profile", completeProfiles)
-	_ = reg
 	return cmd
 }
 
@@ -215,6 +215,10 @@ func runDashboardAdd(cmd *cobra.Command, id string, reg *registry.Registry, dryR
 	if verr := refuseUnhonouredDashboard(); verr != nil {
 		return nil, verr
 	}
+	cfg, err := config.LoadFile()
+	if err != nil {
+		return nil, view.AsError(err, "core.dashboard.config")
+	}
 	ref := strings.TrimSpace(mustString(cmd, "profile"))
 	var expandsTo []string
 	if ref != "" {
@@ -222,10 +226,6 @@ func runDashboardAdd(cmd *cobra.Command, id string, reg *registry.Registry, dryR
 			return nil, view.Errorf("core.dashboard.noprofile",
 				"%s takes no connection a profile could fill", id).
 				WithHint("leave --profile off — `rta explain " + id + "` lists what it does take")
-		}
-		cfg, err := config.LoadFile()
-		if err != nil {
-			return nil, view.AsError(err, "core.dashboard.config")
 		}
 		// Lookup's own refusals, in its own words: an unknown profile, one
 		// from a file nobody named, one that says nothing about this
@@ -260,6 +260,25 @@ func runDashboardAdd(cmd *cobra.Command, id string, reg *registry.Registry, dryR
 			WithHint("0 leaves the width to the capability")
 	}
 	entry := config.Tile{ID: id, With: with, Profile: ref, Span: span}
+	// An entry with the key of an automatic tile is that tile (tui.joinTiles):
+	// the one way to give the automatic sys tile a width or an input. One
+	// that says nothing the automatic tile does not already is refused
+	// rather than written, because the person asking is usually asking for
+	// a hidden one back, and the hint says so.
+	var automatic bool
+	if ref == "" {
+		for _, p := range layoutNow(reg, cfg) {
+			automatic = automatic || (p.ID == id && p.Source == "automatic")
+		}
+	}
+	if automatic && len(with) == 0 && span == 0 {
+		hint := "`--profile <name>` pins a second one to a connection; `--set` and `--span` say how this one runs"
+		if slices.Contains(cfg.Dashboard.Hidden, id) {
+			hint = "it is hidden — `rta dashboard unhide " + id + "` brings it back"
+		}
+		return nil, view.Errorf("core.dashboard.automatic",
+			"%s is already on the automatic dashboard", id).WithHint(hint)
+	}
 
 	var existed, unchanged bool
 	if err := config.Mutate(func(cfg config.Config) (config.Config, bool) {
@@ -308,6 +327,10 @@ func runDashboardAdd(cmd *cobra.Command, id string, reg *registry.Registry, dryR
 		pairsOut = append(pairsOut, view.Pair{Key: "wrote", Value: verb + " " + entry.Key() + " in " + config.Path()})
 	}
 	pairsOut = append(pairsOut, view.Pair{Key: "tile", Value: id})
+	if automatic {
+		pairsOut = append(pairsOut, view.Pair{Key: "in place of",
+			Value: "the automatic " + id + " tile — this entry says how it runs, and taking it down brings that one back"})
+	}
 	switch {
 	case len(expandsTo) > 1:
 		pairsOut = append(pairsOut, view.Pair{Key: "profile",
@@ -446,16 +469,18 @@ func runDashboardRemove(cmd *cobra.Command, id string, dryRun bool) (view.View, 
 	if verr := refuseUnhonouredDashboard(); verr != nil {
 		return nil, verr
 	}
-	key := config.TileKey(id, strings.TrimSpace(mustString(cmd, "profile")))
+	ref := strings.TrimSpace(mustString(cmd, "profile"))
+	key := config.TileKey(id, ref)
 	var (
-		found bool
-		keys  []string
+		found   bool
+		removed config.Tile
+		keys    []string
 	)
 	if err := config.Mutate(func(cfg config.Config) (config.Config, bool) {
 		kept := make([]config.Tile, 0, len(cfg.Dashboard.Add))
 		for _, t := range cfg.Dashboard.Add {
 			if t.Key() == key {
-				found = true
+				found, removed = true, t
 				continue
 			}
 			keys = append(keys, t.Key())
@@ -482,7 +507,7 @@ func runDashboardRemove(cmd *cobra.Command, id string, dryRun bool) (view.View, 
 	}
 	return view.KeyValue{Pairs: []view.Pair{
 		{Key: label, Value: verb + " " + key + " from the dashboard in " + config.Path()},
-		{Key: "back", Value: "`rta dashboard add " + removeLine(config.Tile{ID: id, Profile: config.RefName(key[len(id):])}) + "`"},
+		{Key: "back", Value: "`rta dashboard add " + removed.AddArgs() + "`"},
 	}}, nil
 }
 
@@ -527,26 +552,42 @@ func runDashboardHide(cmd *cobra.Command, id string, reg *registry.Registry, hid
 		return nil, view.AsError(err, "core.dashboard.config")
 	}
 	if hide {
-		// Only what H would hide: an automatic tile, or an expanded panel.
-		// Anything else on the screen came from an entry, and an entry is
-		// withdrawn rather than hidden — the refusal says which command.
-		var found *tui.Placement
+		// Only what H would hide: an automatic tile by its capability —
+		// every panel of it, when the switched-on environment expanded it
+		// into several — or one expanded panel by its connection. Anything
+		// else on the screen came from an entry, and an entry is edited or
+		// withdrawn rather than hidden; the refusal says how.
+		var (
+			found *tui.Placement
+			there []string
+		)
 		for _, p := range layoutNow(reg, cfg) {
-			if config.TileKey(p.ID, p.Profile) == key {
+			if p.ID == id {
+				there = append(there, config.TileKey(p.ID, p.Profile))
+			}
+			if found == nil && (config.TileKey(p.ID, p.Profile) == key ||
+				(ref == "" && p.ID == id && p.Source == "automatic")) {
 				p := p
 				found = &p
-				break
 			}
 		}
 		switch {
 		case found == nil:
-			return nil, view.Errorf("core.dashboard.absent", "%s is not on the dashboard", key).
-				WithHint("`rta dashboard list` shows what is, and where each tile came from")
+			hint := "`rta dashboard list` shows what is, and where each tile came from"
+			if len(there) > 0 {
+				hint = "it is there as " + strings.Join(there, ", ") + " — `--profile <ref>` names one " +
+					"panel of an entry that expanded, and `rta dashboard rm` takes an added entry down"
+			}
+			return nil, view.Errorf("core.dashboard.absent", "%s is not on the dashboard", key).WithHint(hint)
+		case found.Source == "stated" && !found.Expanded:
+			return nil, view.Errorf("core.dashboard.notautomatic",
+				"%s is stated in `tiles:`, and a stated list is edited rather than hidden", key).
+				WithHint("take it out of `dashboard: tiles:` in " + config.Path() + " — H on it in the TUI does that")
 		case found.Source != "automatic" && !found.Expanded:
 			return nil, view.Errorf("core.dashboard.notautomatic",
 				"%s is an added tile, and an entry is withdrawn rather than hidden", key).
 				WithHint("`rta dashboard rm " + removeLine(config.Tile{ID: id, Profile: ref}) + "` takes it down")
-		case found.Hidden:
+		case slices.Contains(cfg.Dashboard.Hidden, key):
 			return view.KeyValue{Pairs: []view.Pair{{Key: "unchanged",
 				Value: key + " is already hidden — nothing written to " + config.Path()}}}, nil
 		}
