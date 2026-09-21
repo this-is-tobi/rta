@@ -85,7 +85,7 @@ func TestATileThatShrinksPullsTheWindowBackToFillTheScreen(t *testing.T) {
 		t.Fatalf("scroll = %d before the answers, want the last row", m.scroll)
 	}
 	for i := 1; i <= 6; i++ {
-		next, _ := m.Update(tileMsg{id: "tall.info", idx: i, v: view.Text{Body: "one line"}})
+		next, _ := m.Update(tileMsg{key: "tall.info", idx: i, v: view.Text{Body: "one line"}})
 		m = next.(Model)
 	}
 	if m.scroll != 4 {

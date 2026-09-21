@@ -3,6 +3,7 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/this-is-tobi/rta/internal/config"
 )
@@ -20,11 +21,17 @@ import (
 // a plugin installed next month from being invisible because you once moved
 // a tile.
 
-// visibleKeys is the current arrangement as tile keys, search excluded.
-func (m Model) visibleKeys() []string {
+// visibleEntries is the current arrangement as the keys `order:` takes,
+// search excluded: one per entry, so the panels one entry expanded into
+// count once, at the place the first of them holds.
+func (m Model) visibleEntries() []string {
 	out := make([]string, 0, len(m.tiles))
+	seen := map[string]bool{}
 	for _, t := range m.tiles[1:] {
-		out = append(out, t.key())
+		if key := t.entryKey(); !seen[key] {
+			seen[key] = true
+			out = append(out, key)
+		}
 	}
 	return out
 }
@@ -58,6 +65,17 @@ func (m *Model) hideSelected() string {
 		// "find the config file" is one people are right to be nervous
 		// about pressing toward.
 		note = fmt.Sprintf("removed %s — `%s` puts it back", gone.key(), addCommand(gone))
+		// An entry that stood in the automatic tile's place: with the
+		// entry gone that tile is back on the next build, and H meant off
+		// the screen, so the tile is hidden as well — p shows it the way
+		// it shows any hidden automatic tile.
+		if m.standsForAutomatic(gone) {
+			if !slices.Contains(m.dash.Hidden, gone.cap.ID) {
+				m.dash.Hidden = append(m.dash.Hidden, gone.cap.ID)
+			}
+			note = fmt.Sprintf("removed %s and hid the automatic tile it stood for — `%s` puts it back as it was, p the plain one",
+				gone.key(), addCommand(gone))
+		}
 	default:
 		m.dash.Hidden = append(m.dash.Hidden, gone.cap.ID)
 		note = fmt.Sprintf("hid %s — press p to bring it back", gone.cap.ID)
@@ -75,41 +93,99 @@ func (m *Model) hideSelected() string {
 // addCommand is the `rta dashboard add` line that would write this tile's
 // entry again.
 func addCommand(t tile) string {
-	cmd := "rta dashboard add " + t.cap.ID
-	if t.profile != "" {
-		cmd += " --profile " + t.profile
+	entry := config.Tile{ID: t.cap.ID, Profile: t.profile, Span: t.span, With: t.values}
+	return "rta dashboard add " + entry.AddArgs()
+}
+
+// standsForAutomatic reports whether an added tile took an automatic
+// tile's place (joinTiles): its key is one the automatic set produces,
+// and there is an automatic set.
+func (m Model) standsForAutomatic(t tile) bool {
+	if t.source != tileAdded || len(m.dash.Tiles) > 0 {
+		return false
 	}
-	return cmd
+	for _, auto := range autoTiles(m.reg) {
+		if auto.key() == t.key() {
+			return true
+		}
+	}
+	return false
 }
 
 // moveSelected shifts the selected tile by one position and persists the
-// resulting order.
+// resulting order. A panel of several that one entry became moves with its
+// siblings, past whatever sits beyond them: the file can place the entry
+// and nothing finer, so a move that split them, or reordered them among
+// themselves, would show an order the next build could not reproduce.
 func (m *Model) moveSelected(delta int) string {
-	target := m.selected + delta
-	if m.selected < 1 || target < 1 || target >= len(m.tiles) {
+	if m.selected < 1 || m.selected >= len(m.tiles) {
 		return ""
+	}
+	// The two runs to exchange, [a, b) and [b, c): the selected tile's
+	// entry and the entry beside it, each one tile unless it expanded.
+	lo, hi := m.entrySpan(m.selected)
+	var a, b, c int
+	if delta < 0 {
+		if lo <= 1 {
+			return ""
+		}
+		a, _ = m.entrySpan(lo - 1)
+		b, c = lo, hi
+	} else {
+		if hi >= len(m.tiles) {
+			return ""
+		}
+		a, b = lo, hi
+		_, c = m.entrySpan(hi)
 	}
 	// A stated list keeps its own order and the added entries follow it
 	// (buildTiles), so a move across that seam would show an order the file
 	// cannot reproduce on the next run. The seam is an end, like the edges.
-	if len(m.dash.Tiles) > 0 && m.tiles[m.selected].source != m.tiles[target].source {
+	if len(m.dash.Tiles) > 0 && m.tiles[a].source != m.tiles[b].source {
 		return ""
 	}
-	m.tiles[m.selected], m.tiles[target] = m.tiles[target], m.tiles[m.selected]
-	m.selected = target
+	m.tiles = swapRuns(m.tiles, a, b, c)
+	if delta < 0 {
+		m.selected -= b - a
+	} else {
+		m.selected += c - b
+	}
 	m.clampScroll()
 
 	// Record the whole visible order, not just the pair that moved: a
 	// partial order would leave the rest to drift on the next run, and what
 	// you see is what you asked for. The written lists follow it too, each
 	// within itself, so the file reads in the order the screen shows.
-	m.dash.Order = m.visibleKeys()
+	m.dash.Order = m.visibleEntries()
 	m.dash.Tiles = reorderTiles(m.dash.Tiles, m.dash.Order)
 	m.dash.Add = reorderTiles(m.dash.Add, m.dash.Order)
 	if err := m.save(); err != nil {
 		return "reordered (this session only: " + err.Error() + ")"
 	}
 	return "saved the new order"
+}
+
+// entrySpan is the run of tiles around i that stand for one entry, as
+// [lo, hi): the tile alone, unless it is one panel of several.
+func (m Model) entrySpan(i int) (lo, hi int) {
+	key := m.tiles[i].entryKey()
+	lo, hi = i, i+1
+	for lo > 1 && m.tiles[lo-1].entryKey() == key {
+		lo--
+	}
+	for hi < len(m.tiles) && m.tiles[hi].entryKey() == key {
+		hi++
+	}
+	return lo, hi
+}
+
+// swapRuns exchanges the runs [a, b) and [b, c) of tiles.
+func swapRuns(tiles []tile, a, b, c int) []tile {
+	out := make([]tile, 0, len(tiles))
+	out = append(out, tiles[:a]...)
+	out = append(out, tiles[b:c]...)
+	out = append(out, tiles[a:b]...)
+	return append(out, tiles[c:]...)
 }
 
 // save writes the arrangement back, leaving the rest of the config alone:

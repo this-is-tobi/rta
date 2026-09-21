@@ -79,9 +79,12 @@ func Schema() map[string]any {
 						"items": map[string]any{"$ref": "#/$defs/tile"},
 					},
 					"hidden": map[string]any{
-						"description": "Capability IDs to leave out of the automatic set.",
-						"type":        "array",
-						"items":       map[string]any{"type": "string"},
+						"description": "What to leave off the screen: a capability ID hides an " +
+							"automatic tile and every panel it expanded into; a tile key, " +
+							"capability@profile or capability@profile/instance, hides that one " +
+							"panel of an entry that expanded into several connections.",
+						"type":  "array",
+						"items": map[string]any{"type": "string"},
 					},
 					"order": map[string]any{
 						"description": "Tile keys to place first, in this order — a capability " +

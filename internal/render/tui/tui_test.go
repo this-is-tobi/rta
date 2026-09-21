@@ -872,11 +872,11 @@ func TestTileIndexForDisambiguatesTwoTilesOfTheSameCapability(t *testing.T) {
 		t.Fatalf("tiles = %+v, want alpha at 1 and beta at 2", m.tiles)
 	}
 
-	betaResult := tileMsg{id: "obj.get", idx: 2, v: view.Text{Body: "beta's own result"}}
+	betaResult := tileMsg{key: "obj.get", idx: 2, v: view.Text{Body: "beta's own result"}}
 	if got := m.tileIndexFor(betaResult); got != 2 {
 		t.Fatalf("tileIndexFor(beta's result) = %d, want 2 (beta's own slot), not alpha's", got)
 	}
-	alphaResult := tileMsg{id: "obj.get", idx: 1, v: view.Text{Body: "alpha's own result"}}
+	alphaResult := tileMsg{key: "obj.get", idx: 1, v: view.Text{Body: "alpha's own result"}}
 	if got := m.tileIndexFor(alphaResult); got != 1 {
 		t.Fatalf("tileIndexFor(alpha's result) = %d, want 1", got)
 	}
