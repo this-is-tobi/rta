@@ -21,11 +21,12 @@ A search bar across the top, and one tile per plugin that has something to show 
 | `?` | Every key the screen answers, aliases included — what the footer had no room for |
 | `[` `]` | Move a tile |
 | `H` | Hide a tile |
+| `+` | Add a tile — on the dashboard it opens the catalogue; on a catalogue row or a search match it adds that one |
 | `p` | Plugin inventory — where a hidden tile comes back |
 | `t` | Theme |
 | `c` | Configure |
 
-Tiles are yours to arrange. `H` hides one you never look at; `p` opens the inventory where any of them comes back.
+Tiles are yours to arrange. `H` hides one you never look at; `p` opens the inventory where any of them comes back; `+` on a catalogue row or a search match adds one the automatic set left out, asking which connection when the capability takes one.
 
 ### Stating the dashboard yourself
 
@@ -45,7 +46,7 @@ dashboard:
   columns: 3
 ```
 
-**Add to it.** `add:` joins tiles to the automatic set, and it is the only way to get a capability the automatic dashboard leaves out. Anything that reaches off the box — every `kube`, `pg`, `s3` and `vault` capability — is kept off it deliberately, however cheap it looks: a dashboard runs its tiles on load and again on a timer, and nobody expects opening a TUI to spend an API quota or disclose anything to a third party. An entry here is you asking for it, which is a decision the automatic path can't make for you.
+**Add to it.** `add:` joins tiles to the automatic set, and it is the only way to get a capability the automatic dashboard leaves out. Anything that reaches off the box — every `kube`, `pg`, `s3` and `vault` capability — is kept off it deliberately, however cheap it looks: a dashboard runs its tiles on load and again on a timer, and nobody expects opening a TUI to spend an API quota or disclose anything to a third party. An entry here is you asking for it, which is a decision the automatic path can't make for you. Three surfaces write the same entry: this block, `rta dashboard add` from a shell, and `+` in the TUI on a catalogue row (`b`) or a search match (`/`), which asks which connection the tile is about when the capability takes one — a profile, one of its labelled instances, or the switch — and lands on the dashboard with the new tile selected. `+` refuses what `add` refuses, in the same words, and on an automatic tile `H` took off it shows the tile again rather than writing a twin. A tile added from another terminal reaches an open dashboard on its next refresh.
 
 ```yaml
 dashboard:
@@ -102,7 +103,7 @@ Two things the block will not do, whatever you write in it:
 
 ## The catalogue
 
-Every capability as a table grouped by plugin — one row each, with its ID, its safety class and its summary. The filter stays live, every pane is bounded by the terminal and scrolls inside it, and the mouse wheel works.
+Every capability as a table grouped by plugin — one row each, with its ID, its safety class and its summary. The filter stays live, every pane is bounded by the terminal and scrolls inside it, and the mouse wheel works. `enter` runs the row; `+` puts it on the dashboard.
 
 ## Running something
 
