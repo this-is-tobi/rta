@@ -31,7 +31,7 @@ Tiles are yours to arrange. `H` hides one you never look at; `p` opens the inven
 
 With no `dashboard:` block, rta builds one: a tile per plugin that has a capability which is `Read`, needs no input, and is cheap enough to run unasked. Plugins installed later appear on their own.
 
-There are two ways to change that, and the difference is whether tomorrow's plugin still shows up.
+There are three ways to change that, and the difference between the first two and the third is whether tomorrow's plugin still shows up.
 
 **Adjust the automatic set.** `hidden:` and `order:` bend it without freezing it:
 
@@ -45,26 +45,50 @@ dashboard:
   columns: 3
 ```
 
-**Or state it exactly.** `tiles:` replaces the automatic set outright — `hidden:` and `order:` are not consulted, because the list is already both:
+**Add to it.** `add:` joins tiles to the automatic set, and it is the only way to get a capability the automatic dashboard leaves out. Anything that reaches off the box — every `kube`, `pg`, `s3` and `vault` capability — is kept off it deliberately, however cheap it looks: a dashboard runs its tiles on load and again on a timer, and nobody expects opening a TUI to spend an API quota or disclose anything to a third party. An entry here is you asking for it, which is a decision the automatic path can't make for you.
+
+```yaml
+dashboard:
+  add:
+  - id: eol.watch
+  - id: kube.overview
+    profile: prod
+  - id: kube.overview
+    profile: staging
+  - id: pg.overview
+    profile: staging/analytics
+    span: 2
+```
+
+`profile:` pins a tile to one connection — a profile, or `name/instance` for one of several connections to the same plugin — and the tile is about that connection whatever `rta use` switched on, with the name on its panel. That is what lets one capability sit on the dashboard twice, once per cluster. Without it a tile follows the switched-on environment: switch to staging and the pg tile is about staging. `with:` fills the capability's inputs. `span:` widens a tile past what its own declared width works out to — for the one you actually read.
+
+The same from a script, or without opening the file:
+
+```bash
+rta dashboard add kube.overview --profile prod
+rta dashboard add kube.overview --profile staging
+rta dashboard add pg.overview --profile staging/analytics --span 2
+rta dashboard add cert.expiry --set host=example.com
+rta dashboard list                                  # every tile bare rta would draw, and where each came from
+rta dashboard rm kube.overview --profile staging
+```
+
+`add` refuses what the file would have quietly got wrong: a capability that is not a read, an input it does not declare, a credential under `--set`, a required input nothing fills, a profile that does not cover the plugin. Adding the same tile again replaces it, so the command is safe in a script that runs on every boot. In the TUI, `H` on an added tile withdraws its entry rather than hiding the capability — hiding by name would take both kube tiles down — and the footer says the command that puts it back.
+
+**Or state it exactly.** `tiles:` replaces the automatic set outright — `hidden:` and `order:` are not consulted, because the list is already both. Its entries take the same `profile:`, `with:` and `span:`, and `add:` entries follow the list:
 
 ```yaml
 dashboard:
   tiles:
   - id: kube.overview
+    profile: prod
   - id: note.list
     span: 2
-  - id: pg.overview
-    with:
-      profile: prod
 ```
 
-`with:` fills the capability's inputs. `span:` widens a tile past what its own declared width works out to — for the one you actually read.
+Worth knowing what a tile costs before you add one: it refreshes on a timer for as long as the TUI is open, so a cluster-wide `kube.overview` tile is a round of `kubectl` calls at every refresh, for every hour the terminal stays open. `rta explain kube.overview` prints what a capability actually reads, which is not always only what its name suggests, and its `dashboard` row says how often a tile of it re-runs.
 
-**Naming a tile is the only way to get a capability the automatic dashboard leaves out.** Anything that reaches off the box — every `kube`, `pg`, `s3` and `vault` capability — is kept off it deliberately, however cheap it looks: a dashboard runs its tiles on load and again on a timer, and nobody expects opening a TUI to spend an API quota or disclose anything to a third party. Writing one into `tiles:` is you asking for it, which is a decision the automatic path can't make for you.
-
-Worth knowing what that costs before you do: a tile refreshes on a timer for as long as the TUI is open, so a cluster-wide `kube.overview` tile is a round of `kubectl` calls at every refresh, for every hour the terminal stays open. `rta explain kube.overview` prints what a capability actually reads, which is not always only what its name suggests, and its `dashboard` row says how often a tile of it re-runs.
-
-A capability can set its own pace. The dashboard's timer runs every few seconds, and that is what a tile gets unless its capability declared a longer interval — `eol.watch`, `eol.check` and `eol.products` re-run every two hours, `pkg.overview`, `pkg.outdated` and `pkg.os` every hour — because their answers move by the day and a run costs a request per product or a dozen subprocesses. A plugin's capability declares one the same way: `kube.overview` re-runs every minute, since a run is five cluster-wide lists at once and nothing it reports moves faster than the cluster's own controllers decide it. So `{id: eol.watch}` in `tiles:` is the version watchlist on your landing screen at a pace endoflife.date would not notice, and switching environments re-runs every tile regardless, since its inputs just changed.
+A capability can set its own pace. The dashboard's timer runs every few seconds, and that is what a tile gets unless its capability declared a longer interval — `eol.watch`, `eol.check` and `eol.products` re-run every two hours, `pkg.overview`, `pkg.outdated` and `pkg.os` every hour — because their answers move by the day and a run costs a request per product or a dozen subprocesses. A plugin's capability declares one the same way: `kube.overview` re-runs every minute, since a run is five cluster-wide lists at once and nothing it reports moves faster than the cluster's own controllers decide it. So `rta dashboard add eol.watch` is the version watchlist on your landing screen at a pace endoflife.date would not notice. Switching environments re-runs every tile that follows the switch, since its inputs just changed, and leaves a pinned tile inside its pace, since its did not.
 
 Two things the block will not do, whatever you write in it:
 
