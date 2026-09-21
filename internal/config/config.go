@@ -10,9 +10,12 @@
 package config
 
 import (
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/goccy/go-yaml"
@@ -70,6 +73,42 @@ func TileKey(id, profile string) string {
 	return id + "@" + profile
 }
 
+// AddArgs spells this entry as the arguments `rta dashboard add` takes to
+// write it again. The receipts and the TUI's footer name the way back as
+// the exact command, and the whole entry has to be in it: one that took an
+// automatic tile's place is refused without the --span or --set that made
+// it more than that tile. A list-shaped input is one --set per element,
+// which is how the flag states a list.
+func (t Tile) AddArgs() string {
+	args := []string{t.ID}
+	if t.Profile != "" {
+		args = append(args, "--profile", t.Profile)
+	}
+	if t.Span > 0 {
+		args = append(args, "--span", strconv.Itoa(t.Span))
+	}
+	keys := make([]string, 0, len(t.With))
+	for k := range t.With {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		switch v := t.With[k].(type) {
+		case []any:
+			for _, each := range v {
+				args = append(args, "--set", fmt.Sprintf("%s=%v", k, each))
+			}
+		case []string:
+			for _, each := range v {
+				args = append(args, "--set", k+"="+each)
+			}
+		default:
+			args = append(args, "--set", fmt.Sprintf("%s=%v", k, v))
+		}
+	}
+	return strings.Join(args, " ")
+}
+
 // Dashboard configures the landing screen.
 //
 // With none of these set the dashboard builds itself: one tile per
@@ -94,7 +133,10 @@ type Dashboard struct {
 	// wrote is not hidden but withdrawn. `rta dashboard add` and `rm` write
 	// this list; so does the TUI.
 	Add []Tile `yaml:"add,omitempty" json:"add,omitempty"`
-	// Hidden lists capability IDs to leave out of the automatic set.
+	// Hidden lists what to leave off the screen: a capability ID, which
+	// hides an automatic tile and every panel it expanded into, or a tile
+	// key (Tile.Key), which hides that one panel of an entry that expanded
+	// into several connections. An added entry is withdrawn, not hidden.
 	Hidden []string `yaml:"hidden,omitempty" json:"hidden,omitempty"`
 	// Order lists tile keys (Tile.Key) to place first, in this order.
 	// Anything not named keeps its natural position after them.

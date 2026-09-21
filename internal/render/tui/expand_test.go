@@ -119,12 +119,99 @@ func TestAFollowingTileExpandsIntoTheSwitchedOnEnvironmentAndBack(t *testing.T) 
 	if verr := profile.SaveSelection(profile.Selection{}); verr != nil {
 		t.Fatal(verr)
 	}
-	m = land(t, m, m.syncActive())
+	// Two statements, here and below: the order in which a call among a
+	// function's arguments runs relative to the copying of the others is
+	// unspecified, and syncActive rewrites the model it is called on.
+	cmd = m.syncActive()
+	m = land(t, m, cmd)
 	if got := strings.Join(tileKeys(m.tiles), " "); got != "db.status" {
 		t.Errorf("switched off, tiles = %q, want the one following panel back", got)
 	}
 	if len(m.pins) != 0 {
 		t.Errorf("pins = %v, want the expanded panels' pins forgotten", m.pins)
+	}
+}
+
+// A stale answer finds its panel by key: a switch rebuilds the grid while
+// the previous environment's answers are still in flight, and matched by
+// capability alone, prod's numbers landed under the panel now about
+// something else.
+func TestAnAnswerForAnotherConnectionIsDropped(t *testing.T) {
+	m := pinnedModel(t, twoInstanceConfig(), config.Dashboard{})
+	if got := strings.Join(tileKeys(m.tiles), " "); got != "db.status" {
+		t.Fatalf("tiles = %q", got)
+	}
+	next, _ := m.Update(tileMsg{key: "db.status@prod", idx: 1, v: view.Text{Body: "prod's numbers"}})
+	m = next.(Model)
+	if m.tiles[1].view != nil {
+		t.Errorf("the following panel took prod's answer: %+v", m.tiles[1].view)
+	}
+	next, _ = m.Update(tileMsg{key: "db.status", idx: 7, v: view.Text{Body: "its own"}})
+	m = next.(Model)
+	if body, ok := m.tiles[1].view.(view.Text); !ok || body.Body != "its own" {
+		t.Errorf("its own answer, sent from a stale index, was not found by key: %+v", m.tiles[1].view)
+	}
+}
+
+// A move of one panel of several moves its siblings with it and records
+// the entry, not the panels: the file can place the entry and nothing
+// finer, and an order written in panel keys while prod was on ranked
+// nothing once it was off — the tile a person had moved fell to the end
+// of the screen the moment they switched.
+func TestAMoveOfAnExpandedPanelMovesTheEntry(t *testing.T) {
+	m := pinnedModel(t, twoInstanceConfig(), config.Dashboard{}, otherPlugin())
+	if verr := profile.SaveSelection(profile.Selection{Active: "prod"}); verr != nil {
+		t.Fatal(verr)
+	}
+	cmd := m.syncActive()
+	m = land(t, m, cmd)
+	if got := strings.Join(tileKeys(m.tiles), " "); got != "db.status@prod db.status@prod/analytics other.info" {
+		t.Fatalf("under prod, tiles = %q", got)
+	}
+	m.selected = 2 // db.status@prod/analytics
+	if note := m.moveSelected(1); note == "" {
+		t.Fatal("the move was refused")
+	}
+	if got := strings.Join(tileKeys(m.tiles), " "); got != "other.info db.status@prod db.status@prod/analytics" {
+		t.Errorf("after the move, tiles = %q, want both panels past other.info", got)
+	}
+	if m.tiles[m.selected].key() != "db.status@prod/analytics" {
+		t.Errorf("selection = %s, want it still on the panel that was moved", m.tiles[m.selected].key())
+	}
+	if order := savedConfig(t).Dashboard.Order; strings.Join(order, " ") != "other.info db.status" {
+		t.Errorf("saved order = %v, want the entry once, by its own key", order)
+	}
+	if verr := profile.SaveSelection(profile.Selection{}); verr != nil {
+		t.Fatal(verr)
+	}
+	cmd = m.syncActive()
+	m = land(t, m, cmd)
+	if got := strings.Join(tileKeys(m.tiles), " "); got != "other.info db.status" {
+		t.Errorf("switched off, tiles = %q, want the following tile where the move put it", got)
+	}
+}
+
+// H on one panel of an entry stated in `tiles:` is the one hide a stated
+// list is subject to: the panel is not an entry the list could drop, and
+// the hidden line used to be written and never read, so the panel was back
+// on the next build.
+func TestHOnAnExpandedPanelOfAStatedEntryIsHonoured(t *testing.T) {
+	m := pinnedModel(t, twoInstanceConfig(), config.Dashboard{Tiles: []config.Tile{{ID: "db.status", Profile: "prod"}}})
+	if got := strings.Join(tileKeys(m.tiles), " "); got != "db.status@prod db.status@prod/analytics" {
+		t.Fatalf("tiles = %q", got)
+	}
+	m.selected = 2
+	if note := m.hideSelected(); !strings.Contains(note, "unhide db.status --profile prod/analytics") {
+		t.Errorf("note = %q, want the way back", note)
+	}
+	m.rebuildTiles()
+	if got := strings.Join(tileKeys(m.tiles), " "); got != "db.status@prod" {
+		t.Errorf("rebuilt tiles = %q, want the hidden panel gone and its sibling kept", got)
+	}
+	cfg := savedConfig(t)
+	placed := Layout(m.reg, cfg.Dashboard, InstancesOf(cfg, ""))
+	if len(placed) != 2 || !placed[1].Hidden || placed[0].Hidden {
+		t.Errorf("layout = %+v, want the analytics panel hidden and its sibling on", placed)
 	}
 }
 

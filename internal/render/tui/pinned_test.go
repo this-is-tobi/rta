@@ -67,6 +67,44 @@ func TestAnAddedTileMustStillBeARead(t *testing.T) {
 	}
 }
 
+// An added entry with the key of an automatic tile is that tile, in its
+// place — how the automatic sys tile gets a width — rather than a twin
+// beside it refreshing the same answer twice.
+func TestAnAddedEntryTakesTheAutomaticTilesPlace(t *testing.T) {
+	tiles := buildTiles(multiRegistry(t), config.Dashboard{Add: []config.Tile{{ID: "alpha.info", Span: 2}}})
+	if got := strings.Join(tileKeys(tiles), " "); got != "alpha.info beta.info" {
+		t.Fatalf("tiles = %q, want no twin", got)
+	}
+	if tiles[1].source != tileAdded || tiles[1].span != 2 {
+		t.Errorf("alpha.info = source %v span %d, want the added entry in the automatic tile's place",
+			tiles[1].source, tiles[1].span)
+	}
+}
+
+// H on an entry that stood in the automatic tile's place withdraws it and
+// hides the tile it stood for: H meant off the screen, and the automatic
+// tile would otherwise be back on the next build. The note spells the
+// whole entry, since the bare add is refused for an automatic tile.
+func TestHOnAnEntryInPlaceOfTheAutomaticTileHidesItToo(t *testing.T) {
+	m := pinnedModel(t, twoProfileConfig(), config.Dashboard{Add: []config.Tile{{ID: "db.status", Span: 2}}})
+	if got := strings.Join(tileKeys(m.tiles), " "); got != "db.status" || m.tiles[1].source != tileAdded {
+		t.Fatalf("tiles = %q (source %v), want the entry in the automatic tile's place", got, m.tiles[1].source)
+	}
+	m.selected = 1
+	if note := m.hideSelected(); !strings.Contains(note, "`rta dashboard add db.status --span 2`") {
+		t.Errorf("note = %q, want the whole entry as the way back", note)
+	}
+	cfg := savedConfig(t)
+	if len(cfg.Dashboard.Add) != 0 || len(cfg.Dashboard.Hidden) != 1 || cfg.Dashboard.Hidden[0] != "db.status" {
+		t.Errorf("saved add = %v hidden = %v, want the entry gone and the automatic tile hidden",
+			cfg.Dashboard.Add, cfg.Dashboard.Hidden)
+	}
+	m.rebuildTiles()
+	if got := tileKeys(m.tiles); len(got) != 0 {
+		t.Errorf("rebuilt tiles = %v, want the screen to stay as H left it", got)
+	}
+}
+
 // order: names a pinned tile by its key, so it can lead on its own.
 func TestOrderPlacesAPinnedTileByItsKey(t *testing.T) {
 	tiles := buildTiles(multiRegistry(t), config.Dashboard{
@@ -107,6 +145,16 @@ func TestAStatedListKeepsAddedEntriesAfterIt(t *testing.T) {
 	if note := m.moveSelected(-1); note != "" || m.tiles[2].key() != "alpha.info@prod" {
 		t.Errorf("an added tile crossed into the stated list: %q / %v", note, tileKeys(m.tiles))
 	}
+}
+
+// otherPlugin is a second profilable plugin, with one automatic tile, that
+// no test profile covers.
+func otherPlugin() plugin.Plugin {
+	return plugin.Plugin{Name: "other", Summary: "o", Capabilities: []plugin.Capability{{
+		ID: "other.info", Summary: "i", Safety: plugin.Read,
+		Inputs: []plugin.Field{{Name: "host", Type: plugin.String, Config: "host"}},
+		Run:    func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "ok"}, nil },
+	}}}
 }
 
 func pinnedModel(t *testing.T, cfg config.Config, dash config.Dashboard, plugins ...plugin.Plugin) Model {
@@ -282,12 +330,7 @@ func TestAPinnedProfileThatDoesNotExistIsSaidOnTheTile(t *testing.T) {
 // A profile silent about the tile's plugin is an error on the tile — the
 // title would name prod while the numbers came from localhost.
 func TestAPinnedProfileSilentAboutThePluginIsAnError(t *testing.T) {
-	other := plugin.Plugin{Name: "other", Summary: "o", Capabilities: []plugin.Capability{{
-		ID: "other.info", Summary: "i", Safety: plugin.Read,
-		Inputs: []plugin.Field{{Name: "host", Type: plugin.String, Config: "host"}},
-		Run:    func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "ok"}, nil },
-	}}}
-	m := pinnedModel(t, twoProfileConfig(), config.Dashboard{Add: []config.Tile{{ID: "other.info", Profile: "prod"}}}, other)
+	m := pinnedModel(t, twoProfileConfig(), config.Dashboard{Add: []config.Tile{{ID: "other.info", Profile: "prod"}}}, otherPlugin())
 	pin := m.pins["prod"]
 	msg := bindCmd(m.reg, "prod", pin.stamp)().(boundMsg)
 	after, _ := m.Update(msg)

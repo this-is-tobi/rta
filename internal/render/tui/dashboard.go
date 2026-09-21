@@ -42,6 +42,18 @@ type tile struct {
 	// its key rather than withdrawing the entry, which would take its
 	// siblings down with it.
 	expanded bool
+	// entry is the key of the entry an expanded panel came from —
+	// `cnpg.status@ohmlab`, or the bare `cnpg.status` of a tile following
+	// the switch — and "" for a panel that is its own entry; entryKey is
+	// the one to read. It is what `order:` can place and what a move
+	// therefore moves: the file holds the entry, not the panels the
+	// switched-on environment happened to expand it into, so an order
+	// written in panel keys named `db.status@prod` and `db.status@prod/
+	// analytics` while prod was on, and ranked nothing once it was off —
+	// the tile a person had put first fell to the end of the screen the
+	// moment they switched, and its two panels could be split by moving
+	// one past a stranger.
+	entry string
 	// span is how many grid columns this tile occupies, 0 meaning "work it
 	// out from the capability's MinWidth". It replaces a bool that could
 	// only say "one column or all of them": on a four-column screen that
@@ -88,6 +100,16 @@ func (s tileSource) String() string {
 // capability against two connections are two keys, and moving or removing
 // one leaves the other where it is.
 func (t tile) key() string { return config.TileKey(t.cap.ID, t.profile) }
+
+// entryKey names the entry this tile stands for: its own key, or the key
+// of the entry it is one expanded panel of. `order:` ranks by it, and a
+// move moves every panel that shares it.
+func (t tile) entryKey() string {
+	if t.entry != "" {
+		return t.entry
+	}
+	return t.key()
+}
 
 // runValues is what an asked-for run of this tile starts from: its inputs,
 // plus the pinned profile under the form's own picker key. Enter on a tile
@@ -329,15 +351,18 @@ func previewable(c plugin.Capability) bool {
 	return c.Safety == plugin.Read && !formNeeded(c) && !c.NoPreview
 }
 
-// arrange applies the user's adjustments to the automatic set: drop what
-// they hid, lead with what they ordered. A `hidden:` line is a capability
-// ID, which hides an automatic tile and every panel it expanded into, or a
-// tile key, which hides that one panel wherever it came from — the way H
-// takes one connection's panel off an entry that became five. An `add:`
-// entry itself is not hidden but withdrawn, by removing the entry, so a
-// stale ID line cannot take down a tile somebody wrote in afterwards.
-// Order is matched on the tile key, so a pinned tile can be led with on its
-// own. Anything named that no longer exists is simply ignored.
+// arrange applies the user's adjustments: drop what they hid, lead with
+// what they ordered. A `hidden:` line is a capability ID, which hides an
+// automatic tile and every panel it expanded into, or a tile key, which
+// hides that one panel wherever it came from — the way H takes one
+// connection's panel off an entry that became five, and the one hide a
+// stated list is subject to, since a panel of an expansion is not an entry
+// the list could be edited to drop. An `add:` entry itself is not hidden
+// but withdrawn, by removing the entry, so a stale ID line cannot take
+// down a tile somebody wrote in afterwards. Order is matched on the entry
+// key, so a pinned tile can be led with on its own and an entry's panels
+// move as one; a stated list keeps its own order, as the config documents.
+// Anything named that no longer exists is simply ignored.
 func arrange(tiles []tile, dash config.Dashboard) []tile {
 	hidden := map[string]bool{}
 	for _, id := range dash.Hidden {
@@ -350,7 +375,7 @@ func arrange(tiles []tile, dash config.Dashboard) []tile {
 		}
 		kept = append(kept, t)
 	}
-	if len(dash.Order) == 0 {
+	if len(dash.Order) == 0 || len(dash.Tiles) > 0 {
 		return kept
 	}
 	rank := map[string]int{}
@@ -358,8 +383,8 @@ func arrange(tiles []tile, dash config.Dashboard) []tile {
 		rank[id] = i
 	}
 	sort.SliceStable(kept, func(i, j int) bool {
-		ri, oki := rank[kept[i].key()]
-		rj, okj := rank[kept[j].key()]
+		ri, oki := rank[kept[i].entryKey()]
+		rj, okj := rank[kept[j].entryKey()]
 		if oki != okj {
 			return oki
 		}
@@ -421,7 +446,7 @@ func buildTiles(reg *registry.Registry, dash config.Dashboard) []tile {
 
 // buildTilesWith resolves the dashboard: an explicit list when the user
 // stated one, otherwise one tile per plugin with their hides and ordering
-// applied; in both cases the `add:` entries follow, and in both cases a
+// applied; in both cases the `add:` entries join it, and in both cases a
 // tile whose profile holds several connections for its plugin becomes one
 // panel per connection. The live search tile always leads: it is the
 // front door.
@@ -433,17 +458,40 @@ func buildTiles(reg *registry.Registry, dash config.Dashboard) []tile {
 // the seam is not worth a third ordering rule.
 func buildTilesWith(reg *registry.Registry, dash config.Dashboard, instances Instances) []tile {
 	tiles := statedTiles(reg, dash.Tiles, tileStated)
-	if len(tiles) > 0 {
-		tiles = expandTiles(append(tiles, statedTiles(reg, dash.Add, tileAdded)...), instances)
-	} else {
-		tiles = expandTiles(append(autoTiles(reg), statedTiles(reg, dash.Add, tileAdded)...), instances)
-		tiles = arrange(tiles, dash)
+	if len(tiles) == 0 {
+		tiles = autoTiles(reg)
 	}
+	tiles = joinTiles(tiles, statedTiles(reg, dash.Add, tileAdded))
+	tiles = arrange(expandTiles(tiles, instances), dash)
 	for i := range tiles {
 		tiles[i].actions = capActions(reg, tiles[i].cap.ID)
 	}
 	search := tile{cap: plugin.Capability{ID: "search", Summary: "find a capability"}, search: true}
 	return append([]tile{search}, tiles...)
+}
+
+// joinTiles puts the added entries on the dashboard: after the tiles
+// already there, except that an entry whose key is already on screen takes
+// that tile's place. The automatic set picks sys.overview for sys on its
+// own, and `rta dashboard add sys.overview --span 2` is the one way to say
+// how that tile runs — there is no `span:` for a tile nobody wrote — so
+// the entry is the tile, in the position the tile had, rather than a twin
+// beside it refreshing the same answer twice. H on it withdraws the entry,
+// and the automatic tile is back on the next build.
+func joinTiles(tiles, added []tile) []tile {
+	at := make(map[string]int, len(tiles))
+	for i, t := range tiles {
+		at[t.key()] = i
+	}
+	for _, t := range added {
+		if i, ok := at[t.key()]; ok {
+			tiles[i] = t
+			continue
+		}
+		at[t.key()] = len(tiles)
+		tiles = append(tiles, t)
+	}
+	return tiles
 }
 
 // expandTiles turns a tile whose profile names no instance into one panel
@@ -483,7 +531,7 @@ func expandTiles(tiles []tile, instances Instances) []tile {
 				colors[name] = profileColor(name)
 			}
 			panel := t
-			panel.profile, panel.color, panel.expanded = ref, colors[name], true
+			panel.profile, panel.color, panel.expanded, panel.entry = ref, colors[name], true, t.key()
 			out = append(out, panel)
 		}
 	}
@@ -604,17 +652,22 @@ func formNeeded(c plugin.Capability) bool {
 
 // tileMsg carries one refreshed tile's view back into the update loop.
 //
-// id names the capability the result belongs to, and the consumer matches on
-// it rather than on idx. A dashboard refresh is in flight for every tile at
-// once and `[`/`]` reorder the grid while it is, so an index taken when the
-// run started names a different tile by the time the answer arrives — and the
-// result is one capability's output painted under another's title, which is
-// the worst possible failure for a screen whose whole job is to be glanced at.
+// key names the tile the result belongs to — the capability, and the
+// connection it ran against — and the consumer matches on it rather than on
+// idx. A dashboard refresh is in flight for every tile at once and `[`/`]`
+// reorder the grid while it is, so an index taken when the run started names
+// a different tile by the time the answer arrives — and the result is one
+// capability's output painted under another's title, which is the worst
+// possible failure for a screen whose whole job is to be glanced at. The
+// connection is part of the name for the same reason: a switch rebuilds
+// the grid while the previous environment's answers are still in flight,
+// and matched by capability alone, prod's numbers landed under whichever
+// panel of that capability came first — the one now about staging.
 //
 // idx survives for the static search tile, which has no capability and is
 // never actually re-run.
 type tileMsg struct {
-	id  string
+	key string
 	idx int
 	v   view.View
 	err *view.Error
@@ -644,10 +697,11 @@ type tickMsg struct{ gen int }
 // It is torn down when the tile finishes, so nothing is held between refreshes.
 func tileCmd(idx int, t tile, cfg map[string]any, profileName string,
 	filled map[string]any, conn config.Connection) tea.Cmd {
+	key := t.key()
 	return func() tea.Msg {
 		if t.search || t.cap.Run == nil {
 			// Static tiles keep their content.
-			return tileMsg{id: t.cap.ID, idx: idx, v: t.view}
+			return tileMsg{key: key, idx: idx, v: t.view}
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), refreshTimeout)
 		defer cancel()
@@ -671,12 +725,12 @@ func tileCmd(idx int, t tile, cfg map[string]any, profileName string,
 		defer closeTunnel()
 		if verr != nil {
 			if timed := deadlineHit(); timed != nil {
-				return tileMsg{id: t.cap.ID, idx: idx, err: timed}
+				return tileMsg{key: key, idx: idx, err: timed}
 			}
 			// Reported, never fallen back from. A tile is where a fallback
 			// would be least visible: nobody typed a command to go and look
 			// at, so the number on screen would simply be somebody else's.
-			return tileMsg{id: t.cap.ID, idx: idx, err: verr}
+			return tileMsg{key: key, idx: idx, err: verr}
 		}
 		if len(dialled) > 0 {
 			// Copied, not written through: filled is the shared environment
@@ -696,11 +750,11 @@ func tileCmd(idx int, t tile, cfg map[string]any, profileName string,
 		}), false, false).WithSurface(plugin.SurfaceTUI))
 		if err != nil {
 			if timed := deadlineHit(); timed != nil {
-				return tileMsg{id: t.cap.ID, idx: idx, err: timed}
+				return tileMsg{key: key, idx: idx, err: timed}
 			}
-			return tileMsg{id: t.cap.ID, idx: idx, err: view.AsError(err, t.cap.ID+".failed")}
+			return tileMsg{key: key, idx: idx, err: view.AsError(err, t.cap.ID+".failed")}
 		}
-		return tileMsg{id: t.cap.ID, idx: idx, v: v}
+		return tileMsg{key: key, idx: idx, v: v}
 	}
 }
 
@@ -792,8 +846,8 @@ func refreshTiles(tiles []tile, gen int, pluginCfg func(string) map[string]any,
 			// would be least visible, since nobody typed a command to go
 			// and look at, and the number on screen would simply be
 			// somebody else's.
-			idx, id, verr := i, t.cap.ID, tc.err
-			cmds = append(cmds, func() tea.Msg { return tileMsg{id: id, idx: idx, err: verr} })
+			idx, key, verr := i, t.key(), tc.err
+			cmds = append(cmds, func() tea.Msg { return tileMsg{key: key, idx: idx, err: verr} })
 			continue
 		}
 		cmds = append(cmds, tileCmd(i, t, cfg, tc.name, tc.filled, tc.conn))
@@ -804,28 +858,29 @@ func refreshTiles(tiles []tile, gen int, pluginCfg func(string) map[string]any,
 
 // tileIndexFor locates the tile a refresh result belongs to, or -1.
 //
-// By capability, not by position. Every tile refreshes concurrently and the
-// grid can be reordered with `[`/`]` or a tile hidden with `H` while results
-// are in flight, so the index a run started with is not the index its answer
-// comes back to. -1 for a tile that is no longer on the dashboard: the result
-// is simply dropped, which is right — nothing is asking for it any more.
+// By key, not by position. Every tile refreshes concurrently and the grid
+// can be reordered with `[`/`]`, a tile hidden with `H` or the whole thing
+// rebuilt by a switch while results are in flight, so the index a run
+// started with is not the index its answer comes back to. -1 for a tile
+// that is no longer on the dashboard: the result is simply dropped, which
+// is right — nothing is asking for it any more.
 func (m Model) tileIndexFor(msg tileMsg) int {
-	if msg.id != "" {
+	if msg.key != "" {
 		// The position this refresh was actually dispatched from, checked
 		// first and exactly: two tiles can watch the same capability
 		// against two different `with:` targets (a config listing obj.get
 		// twice, once per host), and a config that lists a capability twice
-		// is not deduplicated by buildTiles — matching by ID alone always
+		// is not deduplicated by buildTiles — matching by key alone always
 		// finds the first of the two, silently painting one target's result
 		// under the other's panel. msg.idx is the index tileCmd actually
 		// ran at, so it disambiguates correctly unless the grid was *also*
 		// reordered while this one refresh was in flight, which the
-		// ID-matching fallback below still covers on its own terms.
-		if msg.idx >= 0 && msg.idx < len(m.tiles) && m.tiles[msg.idx].cap.ID == msg.id {
+		// key-matching fallback below still covers on its own terms.
+		if msg.idx >= 0 && msg.idx < len(m.tiles) && m.tiles[msg.idx].key() == msg.key {
 			return msg.idx
 		}
 		for i, t := range m.tiles {
-			if t.cap.ID == msg.id {
+			if t.key() == msg.key {
 				return i
 			}
 		}

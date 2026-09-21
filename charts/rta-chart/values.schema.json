@@ -145,7 +145,7 @@
               "type": "integer"
             },
             "hidden": {
-              "description": "Capability IDs to leave out of the automatic set.",
+              "description": "What to leave off the screen: a capability ID hides an automatic tile and every panel it expanded into; a tile key, capability@profile or capability@profile/instance, hides that one panel of an entry that expanded into several connections.",
               "items": {
                 "type": "string"
               },

@@ -1552,7 +1552,7 @@ func TestATileResultLandsOnItsOwnTileAfterAReorder(t *testing.T) {
 
 	// A refresh for A starts while A is at index a, then the grid is
 	// rearranged so A and B swap places.
-	inFlight := tileMsg{id: idA, idx: a, v: view.Text{Body: "RESULT-FOR-A"}}
+	inFlight := tileMsg{key: idA, idx: a, v: view.Text{Body: "RESULT-FOR-A"}}
 	m.tiles[a], m.tiles[b] = m.tiles[b], m.tiles[a]
 
 	updated, _ := m.Update(inFlight)
@@ -1596,7 +1596,7 @@ func TestATileResultForARemovedTileIsDropped(t *testing.T) {
 	m.tiles = kept
 	before := len(m.tiles)
 
-	updated, _ := m.Update(tileMsg{id: id, idx: 0, v: view.Text{Body: "STALE"}})
+	updated, _ := m.Update(tileMsg{key: id, idx: 0, v: view.Text{Body: "STALE"}})
 	m = updated.(Model)
 
 	if len(m.tiles) != before {
