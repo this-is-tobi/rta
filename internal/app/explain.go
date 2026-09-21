@@ -239,11 +239,12 @@ func cardView(reg *registry.Registry, c plugin.Capability) view.View {
 
 // dashboardRow says what the TUI's landing screen does with this capability:
 // whether it runs unasked, why not when it does not, and at what pace once
-// somebody names it in `dashboard: tiles:`. Three declaration facts decide
-// that — the safety class, NoPreview, and whether every required input has
-// a default — plus the pace, and none of the four was on the card by that
-// name, so the tile behaviour of eol.watch or pkg.overview was invisible
-// without reading the source.
+// somebody adds it. Three declaration facts decide that — the safety class,
+// NoPreview, and whether every required input has a default — plus the
+// pace, and none of the four was on the card by that name, so the tile
+// behaviour of eol.watch or pkg.overview was invisible without reading the
+// source. The way on is spelled as the command rather than the config key,
+// because the command is what a person can type from here.
 func dashboardRow(reg *registry.Registry, c plugin.Capability) view.Pair {
 	if c.Safety != plugin.Read {
 		return view.Pair{Key: "dashboard",
@@ -253,9 +254,10 @@ func dashboardRow(reg *registry.Registry, c plugin.Capability) view.Pair {
 	if c.Refresh > 0 {
 		every = "every " + pace(c.Refresh)
 	}
+	add := "`rta dashboard add " + c.ID + "`"
 	if why := tui.Unasked(c); why != "" {
 		return view.Pair{Key: "dashboard",
-			Value: "not on the automatic dashboard — " + why + "; named in `dashboard: tiles:` it re-runs " + every}
+			Value: "not on the automatic dashboard — " + why + "; " + add + " puts it there, re-run " + every}
 	}
 	for _, p := range reg.Plugins() {
 		if p.Name != plugin.Namespace(c.ID) {
@@ -263,7 +265,7 @@ func dashboardRow(reg *registry.Registry, c plugin.Capability) view.Pair {
 		}
 		if id, ok := tui.TileFor(reg, p); ok && id != c.ID {
 			return view.Pair{Key: "dashboard",
-				Value: "a tile when named in `dashboard: tiles:`, re-run " + every +
+				Value: "a tile when added (" + add + "), re-run " + every +
 					"; the automatic dashboard shows " + id + " for this plugin"}
 		}
 	}

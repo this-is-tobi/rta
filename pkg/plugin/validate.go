@@ -684,6 +684,9 @@ var reservedNamespaces = map[string]string{
 	"config": "rta's own `rta config` commands — the file every profile, credential " +
 		"reference and plugin section lives in; a plugin shadowing the command that " +
 		"describes that file would sit exactly where an operator goes to check it",
+	"dashboard": "rta's own `rta dashboard` commands, which write what the TUI runs on a " +
+		"timer with no confirmation — a plugin shadowing the command that puts a tile on " +
+		"the landing screen would sit where an operator decides what runs unasked",
 	"doctor":  "diagnoses the installation, plugins included — the one command that must not be maskable",
 	"explain": "prints what a capability takes and what it is allowed to do",
 	"help":    "cobra's help command",

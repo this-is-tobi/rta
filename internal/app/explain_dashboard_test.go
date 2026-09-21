@@ -55,11 +55,11 @@ func TestExplainCardSaysWhatTheDashboardDoesWithIt(t *testing.T) {
 		if got := card(id); !strings.Contains(got, "automatic tile") {
 			t.Errorf("%s: %q, want it named as sys's automatic tile", id, got)
 		}
-		// Another previewable sys capability is a tile only when named.
+		// Another previewable sys capability is a tile only when added.
 		for _, c := range p.Capabilities {
 			if c.ID != id && tui.Unasked(c) == "" {
-				if got := card(c.ID); !strings.Contains(got, "when named") || !strings.Contains(got, id) {
-					t.Errorf("%s: %q, want it offered when named and the automatic pick cited", c.ID, got)
+				if got := card(c.ID); !strings.Contains(got, "when added") || !strings.Contains(got, id) {
+					t.Errorf("%s: %q, want it offered when added and the automatic pick cited", c.ID, got)
 				}
 				break
 			}
