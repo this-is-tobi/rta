@@ -181,6 +181,10 @@ type Model struct {
 	// the cache key, and it describes the environment rather than naming it,
 	// because a profile edited in place keeps its name and changes its meaning.
 	boundStamp string
+	// pins are the bindings of the profiles tiles are pinned to, keyed by
+	// the reference a tile names — see pinBind. The environment's binding
+	// above is one per session; these are one per connection on screen.
+	pins map[string]pinBind
 
 	// Plugins pane: the inventory, and where a hidden tile comes back from.
 	plugins []pluginRow
@@ -299,6 +303,7 @@ func New(reg *registry.Registry, dash config.Dashboard,
 	m.active = profile.Active()
 	m.activeColor = profileColor(m.active)
 	m.boundStamp = environmentStamp(m.active)
+	m.notePins()
 	return m
 }
 
@@ -308,9 +313,17 @@ func New(reg *registry.Registry, dash config.Dashboard,
 const wheelStep = 3
 
 func (m Model) Init() tea.Cmd {
-	cmds := []tea.Cmd{refreshTiles(m.tiles, m.tickGen, m.pluginCfg, m.profileFor)}
+	cmds := []tea.Cmd{refreshTiles(m.tiles, m.tickGen, m.pluginCfg, m.connFor)}
 	if m.active != "" {
 		cmds = append(cmds, bindCmd(m.reg, m.active, m.boundStamp))
+	}
+	// The pins New noted, bound here: Init gets a copy of the model, so
+	// noting them here would be noting them nowhere, and the refresh above
+	// already treats a noted, unbound pin as pending rather than unbound.
+	for ref, pin := range m.pins {
+		if !pin.ready {
+			cmds = append(cmds, bindCmd(m.reg, ref, pin.stamp))
+		}
 	}
 	return tea.Batch(cmds...)
 }
@@ -451,19 +464,32 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// edit to the environment already switched on leaves the name identical
 		// and changes the answer, so a bind started before the edit would
 		// otherwise be accepted over the one started after it.
-		if msg.stamp != m.boundStamp {
+		//
+		// A pinned profile's bind lands here too, told apart by the stamp
+		// it carries — and a profile can be both the switched-on
+		// environment and a tile's pin, in which case one landing serves
+		// both.
+		landed := false
+		if msg.stamp == m.boundStamp {
+			m.bound = msg.bound
+			// Every tile following the environment, whatever pace it
+			// declared: the environment just changed, and a tile's answer
+			// for the previous one is wrong however recently it was
+			// computed.
+			resetDue(m.tiles, "")
+			landed = true
+		}
+		if pin, ok := m.pins[msg.name]; ok && pin.stamp == msg.stamp {
+			pin.bound, pin.ready = msg.bound, true
+			m.pins[msg.name] = pin
+			resetDue(m.tiles, msg.name)
+			landed = true
+		}
+		if !landed || m.mode != modeDashboard {
 			return m, nil
 		}
-		m.bound = msg.bound
-		if m.mode == modeDashboard {
-			m.tickGen++
-			// Every tile, whatever pace it declared: the environment just
-			// changed, and a tile's answer for the previous one is wrong
-			// however recently it was computed.
-			resetDue(m.tiles)
-			return m, refreshTiles(m.tiles, m.tickGen, m.pluginCfg, m.profileFor)
-		}
-		return m, nil
+		m.tickGen++
+		return m, refreshTiles(m.tiles, m.tickGen, m.pluginCfg, m.connFor)
 
 	case tickMsg:
 		// A live view under the reader is re-run in place — no spinner, the
@@ -484,9 +510,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// is somebody changing environments without leaving this one — both
 			// have to reach the screen, and this is the only thing that runs
 			// while nothing is happening. Cheap unless the name actually moved.
-			bind := m.syncActive()
+			bind := tea.Batch(m.syncActive(), m.syncPins())
 			m.tickGen++
-			return m, tea.Batch(bind, refreshTiles(m.tiles, m.tickGen, m.pluginCfg, m.profileFor))
+			return m, tea.Batch(bind, refreshTiles(m.tiles, m.tickGen, m.pluginCfg, m.connFor))
 		}
 		return m, nil
 
@@ -609,11 +635,11 @@ func (m Model) closeToOrigin() (tea.Model, tea.Cmd) {
 	// Correctness does not rest on this line (the refresh tick re-reads the
 	// stamp, and a run checks it at the point of use), but the window between
 	// saving an edit and the screen behind the form agreeing with it does.
-	bind := m.syncActive()
+	bind := tea.Batch(m.syncActive(), m.syncPins())
 	m.mode = m.origin
 	if m.origin == modeDashboard {
 		m.tickGen++
-		return m, tea.Batch(bind, refreshTiles(m.tiles, m.tickGen, m.pluginCfg, m.profileFor))
+		return m, tea.Batch(bind, refreshTiles(m.tiles, m.tickGen, m.pluginCfg, m.connFor))
 	}
 	return m, bind
 }
@@ -636,11 +662,12 @@ func (m Model) openTile(idx int) (tea.Model, tea.Cmd) {
 	if t.cap.Safety != plugin.Read {
 		return m.open(t.cap)
 	}
+	values := t.runValues()
 	m.current = t.cap
-	m.lastValues, m.lastYes = t.values, false
+	m.lastValues, m.lastYes = values, false
 	m.trail = nil
 	m.row = 0
-	return m, m.startRun(t.cap, t.values, false)
+	return m, m.startRun(t.cap, values, false)
 }
 
 // open decides what Enter does for a capability: form when there is anything

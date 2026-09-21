@@ -25,7 +25,12 @@ import (
 type panelHead struct {
 	Title string // the pane's name, in theme.PanelTitle
 	Note  string // muted, beside the title: a summary
-	Right string // muted, right-aligned in the top border: a cost, a count
+	// NoteColor paints the note in a colour of its own instead of muted:
+	// a pinned tile's profile name in that profile's colour, the one thing
+	// the profile doc lets a colour touch. "" keeps the note muted, and so
+	// does anything that is not a #rrggbb colour.
+	NoteColor string
+	Right     string // muted, right-aligned in the top border: a cost, a count
 }
 
 // panel draws a bordered pane with its title embedded in the top border —
@@ -63,7 +68,11 @@ func panel(h panelHead, body string, width, height int, focus bool) string {
 	}
 	title := theme.PanelTitle.Render(h.Title)
 	if h.Note != "" {
-		title += theme.Subtle.Render("  " + h.Note)
+		note := theme.Subtle
+		if theme.HexColor.MatchString(h.NoteColor) {
+			note = lipgloss.NewStyle().Foreground(lipgloss.Color(h.NoteColor))
+		}
+		title += note.Render("  " + h.Note)
 	}
 	title = ansi.Truncate(title, width-lipgloss.Width(rightSeg)-7, "…")
 	fill := width - lipgloss.Width(title) - lipgloss.Width(rightSeg) - 6

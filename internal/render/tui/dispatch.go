@@ -167,7 +167,7 @@ func (m Model) pluginsKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 	case "esc", "p":
 		m.mode = modeDashboard
 		m.tickGen++
-		return m, refreshTiles(m.tiles, m.tickGen, m.pluginCfg, m.profileFor), true
+		return m, refreshTiles(m.tiles, m.tickGen, m.pluginCfg, m.connFor), true
 	case "up", "k":
 		m.pluginSel = max(m.pluginSel-1, 0)
 		m.clampPluginScroll(m.pluginBodyHeight())
@@ -201,7 +201,7 @@ func (m Model) pluginsKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 			m.clampScroll()
 		}
 		m.tickGen++
-		return m, refreshTiles(m.tiles, m.tickGen, m.pluginCfg, m.profileFor), true
+		return m, refreshTiles(m.tiles, m.tickGen, m.pluginCfg, m.connFor), true
 	case "t":
 		// The trust decision, taken where the digest and the artifact
 		// path are already on the screen.
@@ -387,7 +387,7 @@ func (m Model) browseKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		if m.list.FilterState() == list.Unfiltered {
 			m.mode = modeDashboard
 			m.tickGen++
-			return m, refreshTiles(m.tiles, m.tickGen, m.pluginCfg, m.profileFor), true
+			return m, refreshTiles(m.tiles, m.tickGen, m.pluginCfg, m.connFor), true
 		}
 	case "enter":
 		if item, ok := m.list.SelectedItem().(capItem); ok {

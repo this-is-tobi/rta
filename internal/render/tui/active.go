@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"os"
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -129,7 +130,7 @@ func environmentStamp(name string) string {
 	if err != nil {
 		return "unreadable:" + err.Error()
 	}
-	p, ok := cfg.Profiles[name]
+	p, ok := cfg.Profiles[config.RefName(name)]
 	if !ok {
 		return name + ":absent"
 	}
@@ -186,7 +187,11 @@ func bindCmd(reg *registry.Registry, name, stamp string) tea.Cmd {
 		if err != nil {
 			return boundMsg{name: name, stamp: stamp}
 		}
-		p, ok := cfg.Profiles[name]
+		// By the name half: a pinned tile binds a reference, `staging` or
+		// `staging/analytics`, and Lookup below is what resolves the
+		// instance. A switch is always a bare name, so this is the same
+		// line for the environment.
+		p, ok := cfg.Profiles[config.RefName(name)]
 		if !ok {
 			return boundMsg{name: name, stamp: stamp}
 		}
@@ -264,6 +269,139 @@ func (m Model) profileFor(c plugin.Capability) (string, map[string]any, config.C
 		return "", nil, config.Connection{}, b.err
 	}
 	return m.active, b.values, b.conn, nil
+}
+
+// pinBind is one pinned profile's binding: what m.bound is for the
+// switched-on environment, kept per profile a tile names, under the same
+// stamp rule and the same off-the-loop bind. A tile pinned to prod is about
+// prod for as long as it is on screen, whatever is switched on, so its
+// connection cannot come from the environment cache — and it cannot be
+// resolved on every refresh either, because resolving is where a `secrets:`
+// reference unlocks the store, and the dashboard refreshes every five
+// seconds.
+type pinBind struct {
+	stamp string
+	// ready says the bind has landed, or that err says why it never will.
+	ready bool
+	// err is a profile that cannot be bound at all — not in the file, or
+	// the file unreadable — kept here so every tile pinned to it says so
+	// in the tile, rather than "loading…" forever.
+	err   *view.Error
+	bound map[string]envBind
+}
+
+// syncPins brings the pinned bindings in line with the tiles on screen and
+// returns the binds to run. Called from the refresh tick beside syncActive,
+// for the same reasons: an edit to a pinned profile in another terminal has
+// to reach the tile, and this is what runs while nothing is happening.
+func (m *Model) syncPins() tea.Cmd {
+	start := m.notePins()
+	cmds := make([]tea.Cmd, 0, len(start))
+	for _, ref := range start {
+		cmds = append(cmds, bindCmd(m.reg, ref, m.pins[ref].stamp))
+	}
+	return tea.Batch(cmds...)
+}
+
+// notePins records, for every profile a tile is pinned to, the stamp it
+// stands at, and forgets one no tile names any more. It returns the
+// references whose bind has to start: named by a tile and not yet noted
+// under the stamp the profile now has. Split from syncPins because New
+// cannot return a command — it notes, and Init binds what it noted.
+func (m *Model) notePins() []string {
+	var start []string
+	named := map[string]bool{}
+	for i, t := range m.tiles {
+		if t.profile == "" {
+			continue
+		}
+		named[t.profile] = true
+		stamp, verr := pinStamp(t.profile)
+		if pin, ok := m.pins[t.profile]; ok && pin.stamp == stamp {
+			continue
+		}
+		if m.pins == nil {
+			m.pins = map[string]pinBind{}
+		}
+		pin := pinBind{stamp: stamp}
+		if verr != nil {
+			pin.ready, pin.err = true, verr
+		} else {
+			start = append(start, t.profile)
+		}
+		m.pins[t.profile] = pin
+		// The colour rides on the stamp: it is part of the profile's text,
+		// so an edit that changes it is an edit that changes the stamp.
+		m.tiles[i].color = profileColor(config.RefName(t.profile))
+	}
+	for ref := range m.pins {
+		if !named[ref] {
+			delete(m.pins, ref)
+		}
+	}
+	return start
+}
+
+// pinStamp is environmentStamp for a pinned profile, with the two states
+// that stamp folds into a string — absent, unreadable — handed back as the
+// error the tile should show, since a pinned profile that is not there is
+// a fact about the person's config and not a transient.
+func pinStamp(ref string) (string, *view.Error) {
+	cfg, err := config.LoadFile()
+	if err != nil {
+		return "unreadable:" + err.Error(), view.AsError(err, "core.profile.config")
+	}
+	p, ok := cfg.Profiles[config.RefName(ref)]
+	if !ok {
+		return ref + ":absent", view.Errorf("core.profile.unknown",
+			"no profile named %q", config.RefName(ref)).
+			WithHint("`rta profile list` shows the ones configured")
+	}
+	return ref + ":" + profile.Stamp(p) + ":" + kv.StoreStamp(), nil
+}
+
+// takeDown adds the way out to a pin's error: the profile it names is the
+// whole profile's problem, but the command that takes this tile down is
+// about this tile, and only here is the capability known.
+func takeDown(verr *view.Error, t tile) *view.Error {
+	out := *verr
+	out.Hint = strings.TrimSuffix(out.Hint, ".") + "; `rta dashboard rm " + t.cap.ID +
+		" --profile " + t.profile + "` takes this tile down"
+	return &out
+}
+
+// connFor is what a tile runs against: the switched-on environment's
+// contribution for a tile that follows it (profileFor), and the pinned
+// profile's own binding for one that names it.
+//
+// A pinned profile that says nothing about the tile's plugin is an error
+// on the tile, not a silent run against the base configuration — the same
+// rule envBind.err states for the environment, for the same reason: the
+// title would name prod while the numbers came from localhost.
+func (m Model) connFor(t tile) tileConn {
+	if t.profile == "" {
+		name, filled, conn, verr := m.profileFor(t.cap)
+		return tileConn{name: name, filled: filled, conn: conn, err: verr}
+	}
+	pin, ok := m.pins[t.profile]
+	if !ok || !pin.ready {
+		return tileConn{pending: true}
+	}
+	if pin.err != nil {
+		return tileConn{err: takeDown(pin.err, t)}
+	}
+	b, ok := pin.bound[t.cap.ID]
+	if !ok {
+		ns := plugin.Namespace(t.cap.ID)
+		return tileConn{err: view.Errorf("tui.tile.profile",
+			"%s says nothing about %s", t.profile, ns).
+			WithHint("`rta profile set " + config.RefName(t.profile) + " --plugin " + ns +
+				" --set …` gives it a " + ns + " connection")}
+	}
+	if b.err != nil {
+		return tileConn{err: b.err}
+	}
+	return tileConn{name: t.profile, filled: b.values, conn: b.conn}
 }
 
 // currentBind is the resolved environment, or nil when what is cached no
@@ -393,7 +531,7 @@ func (m Model) backToDashboard() (tea.Model, tea.Cmd) {
 	m.mode = modeDashboard
 	bind := m.syncActive()
 	m.tickGen++
-	return m, tea.Batch(bind, refreshTiles(m.tiles, m.tickGen, m.pluginCfg, m.profileFor))
+	return m, tea.Batch(bind, refreshTiles(m.tiles, m.tickGen, m.pluginCfg, m.connFor))
 }
 
 // activeBadge is the header's "where am I" line, or "" when nothing is on.

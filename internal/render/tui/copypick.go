@@ -157,7 +157,7 @@ func (m Model) closeCopyPick() (tea.Model, tea.Cmd) {
 	m.mode = returnTo
 	if returnTo == modeDashboard {
 		m.tickGen++
-		return m, refreshTiles(m.tiles, m.tickGen, m.pluginCfg, m.profileFor)
+		return m, refreshTiles(m.tiles, m.tickGen, m.pluginCfg, m.connFor)
 	}
 	return m, nil
 }

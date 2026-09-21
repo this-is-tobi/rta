@@ -289,7 +289,7 @@ func (m Model) saveTheme() (tea.Model, tea.Cmd) {
 		m.flash = fmt.Sprintf("saved %d theme %s", len(overrides), format.PluralOf(len(overrides), "override"))
 	}
 	m.tickGen++
-	return m, refreshTiles(m.tiles, m.tickGen, m.pluginCfg, m.profileFor)
+	return m, refreshTiles(m.tiles, m.tickGen, m.pluginCfg, m.connFor)
 }
 
 // updateThemeForm drives the embedded huh form and dispatches on completion,

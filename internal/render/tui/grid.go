@@ -447,7 +447,13 @@ func renderTile(t tile, width, height int, selected bool) string {
 		lines = lines[:max(preview-1, 0)]
 		lines = append(lines, theme.Subtle.Render("… enter for details"))
 	}
-	return panel(panelHead{Title: t.cap.ID}, strings.Join(lines, "\n"), width, height, selected)
+	// The profile beside the capability, not in a corner the panel drops
+	// when it is short of room: two tiles of one capability against two
+	// clusters are the same panel twice without it, and a tile about
+	// production is the one panel whose name must not be the first thing
+	// to go.
+	head := panelHead{Title: t.cap.ID, Note: t.profile, NoteColor: t.color}
+	return panel(head, strings.Join(lines, "\n"), width, height, selected)
 }
 
 // searchResults filters the registry live: prefix matches on the ID lead,
