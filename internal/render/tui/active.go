@@ -116,31 +116,60 @@ func (m *Model) syncActive() tea.Cmd {
 	return tea.Batch(bindCmd(m.reg, name, stamp), pins)
 }
 
-// environmentStamp is everything a bind of the named environment depends on:
-// which environment it is, what that environment currently states, and the
-// identity of the credential store its `secrets:` references are read from.
+// environmentStamp is the switched-on environment's stamp (stamps.of).
 //
 // Nothing switched on stamps as the empty string, which is stable — and is
 // also the initial value of Model.boundStamp, so a session that starts with no
 // environment does not bind on its first tick.
-//
-// An unreadable config stamps as its own error rather than as "no environment".
-// Answering "" there would read as *switched off* to a screen that is showing
-// the badge, and the next repair of the file would then have to fight a cache
-// that believes it already knows the answer.
 func environmentStamp(name string) string {
 	if name == "" {
 		return ""
 	}
+	stamp, _ := readStamps().of(name)
+	return stamp
+}
+
+// stamps is one read of everything a profile's stamp depends on — the
+// config file, and the identity of the credential store — for stamping any
+// number of profile references from it. The tick stamps the switched-on
+// environment and every profile a tile is pinned to, and each of those
+// used to read the file for itself: a dashboard of five expanded panels
+// parsed the config six times every five seconds to learn that nothing had
+// changed.
+type stamps struct {
+	cfg   config.Config
+	err   error
+	store string
+}
+
+func readStamps() stamps {
 	cfg, err := config.LoadFile()
-	if err != nil {
-		return "unreadable:" + err.Error()
+	return stamps{cfg: cfg, err: err, store: kv.StoreStamp()}
+}
+
+// of is everything a bind of the referenced profile depends on: which
+// profile it is, what it currently states, and the identity of the store
+// its `secrets:` references are read from. The two states that are not a
+// profile — the file unreadable, the name absent — stamp as themselves and
+// come back as the error a pinned tile should show, since a pinned profile
+// that is not there is a fact about the person's config and not a
+// transient.
+//
+// An unreadable config stamps as its own error rather than as "no
+// environment". Answering "" there would read as *switched off* to a screen
+// that is showing the badge, and the next repair of the file would then
+// have to fight a cache that believes it already knows the answer.
+func (s stamps) of(ref string) (string, *view.Error) {
+	if s.err != nil {
+		return "unreadable:" + s.err.Error(), view.AsError(s.err, "core.profile.config")
 	}
-	p, ok := cfg.Profiles[config.RefName(name)]
+	p, ok := s.cfg.Profiles[config.RefName(ref)]
 	if !ok {
-		return name + ":absent"
+		return ref + ":absent", view.Errorf("core.profile.unknown",
+			"no profile named %q", config.RefName(ref)).
+			WithHint("`rta profile list` shows the ones configured")
 	}
-	return name + ":" + profile.Stamp(p) + ":" + kv.StoreStamp()
+	return ref + ":" + profile.Stamp(p) + ":" + s.store, nil
 }
 
 // bindCmd resolves what the environment contributes to each capability, keyed
@@ -300,8 +329,17 @@ type pinBind struct {
 // returns the binds to run. Called from the refresh tick beside syncActive,
 // for the same reasons: an edit to a pinned profile in another terminal has
 // to reach the tile, and this is what runs while nothing is happening.
+//
+// An edit is also what changes how many panels an entry expands into — the
+// ohmlab that gained a sixth database — so a pinned profile that moved has
+// the arrangement resolved again first, the way syncActive does for the
+// switch, and the pins are noted over the tiles that result.
 func (m *Model) syncPins() tea.Cmd {
-	start := m.notePins()
+	s := readStamps()
+	if m.pinsMoved(s) {
+		m.rebuildTiles()
+	}
+	start := m.notePins(s)
 	cmds := make([]tea.Cmd, 0, len(start))
 	for _, ref := range start {
 		cmds = append(cmds, bindCmd(m.reg, ref, m.pins[ref].stamp))
@@ -309,12 +347,24 @@ func (m *Model) syncPins() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
+// pinsMoved reports whether any pinned profile no longer stands at the
+// stamp it was noted under.
+func (m Model) pinsMoved(s stamps) bool {
+	for ref, pin := range m.pins {
+		if stamp, _ := s.of(ref); stamp != pin.stamp {
+			return true
+		}
+	}
+	return false
+}
+
 // notePins records, for every profile a tile is pinned to, the stamp it
 // stands at, and forgets one no tile names any more. It returns the
-// references whose bind has to start: named by a tile and not yet noted
-// under the stamp the profile now has. Split from syncPins because New
-// cannot return a command — it notes, and Init binds what it noted.
-func (m *Model) notePins() []string {
+// references whose bind has to start: named by a tile, not yet noted under
+// the stamp the profile now has, and not served by the environment's own
+// bind (servedByEnvironment). Split from syncPins because New cannot
+// return a command — it notes, and Init binds what it noted.
+func (m *Model) notePins(s stamps) []string {
 	var start []string
 	named := map[string]bool{}
 	for i, t := range m.tiles {
@@ -322,7 +372,7 @@ func (m *Model) notePins() []string {
 			continue
 		}
 		named[t.profile] = true
-		stamp, verr := pinStamp(t.profile)
+		stamp, verr := s.of(t.profile)
 		if pin, ok := m.pins[t.profile]; ok && pin.stamp == stamp {
 			continue
 		}
@@ -330,15 +380,18 @@ func (m *Model) notePins() []string {
 			m.pins = map[string]pinBind{}
 		}
 		pin := pinBind{stamp: stamp}
-		if verr != nil {
+		switch {
+		case verr != nil:
 			pin.ready, pin.err = true, verr
-		} else {
+		case m.servedByEnvironment(t.profile, stamp):
+			pin.ready, pin.bound = m.bound != nil, m.bound
+		default:
 			start = append(start, t.profile)
 		}
 		m.pins[t.profile] = pin
 		// The colour rides on the stamp: it is part of the profile's text,
 		// so an edit that changes it is an edit that changes the stamp.
-		m.tiles[i].color = profileColor(config.RefName(t.profile))
+		m.tiles[i].color = colorOf(s.cfg, config.RefName(t.profile))
 	}
 	for ref := range m.pins {
 		if !named[ref] {
@@ -348,22 +401,15 @@ func (m *Model) notePins() []string {
 	return start
 }
 
-// pinStamp is environmentStamp for a pinned profile, with the two states
-// that stamp folds into a string — absent, unreadable — handed back as the
-// error the tile should show, since a pinned profile that is not there is
-// a fact about the person's config and not a transient.
-func pinStamp(ref string) (string, *view.Error) {
-	cfg, err := config.LoadFile()
-	if err != nil {
-		return "unreadable:" + err.Error(), view.AsError(err, "core.profile.config")
-	}
-	p, ok := cfg.Profiles[config.RefName(ref)]
-	if !ok {
-		return ref + ":absent", view.Errorf("core.profile.unknown",
-			"no profile named %q", config.RefName(ref)).
-			WithHint("`rta profile list` shows the ones configured")
-	}
-	return ref + ":" + profile.Stamp(p) + ":" + kv.StoreStamp(), nil
+// servedByEnvironment says a pin to the switched-on environment, at the
+// stamp the environment is bound under, has its bind already: the
+// environment's own, in flight or landed, whose landing marks both (the
+// boundMsg arm of Update). The default-instance panel of a tile that
+// expanded into the switched-on environment is pinned to exactly that
+// profile, and binding it again was a second unlock of the store for the
+// same answer on every switch.
+func (m Model) servedByEnvironment(ref, stamp string) bool {
+	return ref == m.active && stamp == m.boundStamp
 }
 
 // takeDown adds the way out to a pin's error: the profile it names is the
@@ -535,7 +581,7 @@ func withoutSecrets(c plugin.Capability, filled map[string]any) map[string]any {
 // their own hand, one keypress ago.
 func (m Model) backToDashboard() (tea.Model, tea.Cmd) {
 	m.mode = modeDashboard
-	bind := m.syncActive()
+	bind := tea.Batch(m.syncActive(), m.syncPins())
 	m.tickGen++
 	return m, tea.Batch(bind, refreshTiles(m.tiles, m.tickGen, m.pluginCfg, m.connFor))
 }
@@ -586,6 +632,11 @@ func profileColor(name string) string {
 	if err != nil {
 		return ""
 	}
+	return colorOf(cfg, name)
+}
+
+// colorOf is profileColor from a config already in hand.
+func colorOf(cfg config.Config, name string) string {
 	p, ok := cfg.Profiles[name]
 	if !ok || p.BadColor() {
 		return ""
