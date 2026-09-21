@@ -303,6 +303,10 @@ func New(reg *registry.Registry, dash config.Dashboard,
 	m.active = profile.Active()
 	m.activeColor = profileColor(m.active)
 	m.boundStamp = environmentStamp(m.active)
+	// Resolved again now that the environment is known, since a tile that
+	// follows it may expand into its connections; the first build above
+	// had no environment in hand.
+	m.rebuildTiles()
 	m.notePins()
 	return m
 }

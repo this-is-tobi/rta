@@ -314,7 +314,7 @@ func TestTheTitleNamesThePinnedProfile(t *testing.T) {
 
 // Layout is `rta dashboard list`'s view of the arrangement.
 func TestLayoutReportsEveryTileAndWhereItCameFrom(t *testing.T) {
-	got := Layout(multiRegistry(t), config.Dashboard{Add: []config.Tile{{ID: "alpha.info", Profile: "prod"}}})
+	got := Layout(multiRegistry(t), config.Dashboard{Add: []config.Tile{{ID: "alpha.info", Profile: "prod"}}}, nil)
 	if len(got) != 3 || got[0].Source != "automatic" || got[2].Source != "added" || got[2].Profile != "prod" {
 		t.Errorf("layout = %+v", got)
 	}

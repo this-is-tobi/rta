@@ -375,9 +375,7 @@ func (m *Model) toggleShown(idx int) string {
 	// Rebuild from the registry so the dashboard behind this pane is already
 	// correct when it is closed — and so showing a tile puts it back where the
 	// arrangement says it goes, not at the end.
-	m.tiles = buildTiles(m.reg, m.dash)
-	m.selected = min(m.selected, len(m.tiles)-1)
-	m.clampScroll()
+	m.rebuildTiles()
 
 	verb := "hid"
 	if row.shown {

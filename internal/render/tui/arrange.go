@@ -41,11 +41,18 @@ func (m *Model) hideSelected() string {
 	}
 	gone := m.tiles[m.selected]
 	var note string
-	switch gone.source {
-	case tileStated:
+	switch {
+	case gone.expanded:
+		// One panel of several its entry became: hidden by its key, so its
+		// siblings stay and a connection added to the profile later still
+		// gets its panel. Withdrawing the entry would take them all down.
+		m.dash.Hidden = append(m.dash.Hidden, gone.key())
+		note = fmt.Sprintf("hid %s — `rta dashboard unhide %s --profile %s` brings it back",
+			gone.key(), gone.cap.ID, gone.profile)
+	case gone.source == tileStated:
 		m.dash.Tiles = dropTile(m.dash.Tiles, gone.key())
 		note = fmt.Sprintf("removed %s from the stated dashboard", gone.key())
-	case tileAdded:
+	case gone.source == tileAdded:
 		m.dash.Add = dropTile(m.dash.Add, gone.key())
 		// Say how it comes back, as the exact command: an undo that is
 		// "find the config file" is one people are right to be nervous

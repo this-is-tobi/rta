@@ -103,11 +103,17 @@ func (m *Model) syncActive() tea.Cmd {
 	}
 	m.active, m.bound, m.activeUntil, m.boundStamp = name, nil, nil, stamp
 	m.activeColor = profileColor(name)
+	// The tiles follow the switch in shape as well as in values: one that
+	// expanded into the previous environment's connections is one panel
+	// again, or this environment's own set — so the arrangement is resolved
+	// again here, and the pins those panels need are started with the bind.
+	m.rebuildTiles()
+	pins := m.syncPins()
 	if name == "" {
-		return nil
+		return pins
 	}
 	m.activeUntil = sel.Until
-	return bindCmd(m.reg, name, stamp)
+	return tea.Batch(bindCmd(m.reg, name, stamp), pins)
 }
 
 // environmentStamp is everything a bind of the named environment depends on:
