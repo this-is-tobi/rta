@@ -356,6 +356,7 @@ func NewRoot(reg *registry.Registry, version string) *cobra.Command {
 	root.AddCommand(newUseCommand(opts))
 	root.AddCommand(newPolicyCommand(opts))
 	root.AddCommand(newProfileCommand(reg, opts))
+	root.AddCommand(newDashboardCommand(reg, opts))
 	root.AddCommand(newConfigCommand())
 	groupRoot(root, reg)
 	describeGroups(root)

@@ -149,7 +149,11 @@ func documentArguments(root *cobra.Command) {
 		"rta profile rm":   {{"profile", "environment to remove, or to remove one plugin from with --plugin"}},
 		"rta profile set":  {{"profile", "environment to create or update"}},
 		"rta profile show": {{"profile", "environment to describe"}},
-		"rta use":          {{"profile", "environment to switch to — omit to print what is on"}},
+		"rta dashboard add": {{"capability",
+			"capability to put on the landing screen, e.g. kube.overview — a read, since a tile runs unasked"}},
+		"rta dashboard rm": {{"capability",
+			"capability whose added tile to take down — with --profile when it was added against several"}},
+		"rta use": {{"profile", "environment to switch to — omit to print what is on"}},
 	}
 
 	var walk func(*cobra.Command)
