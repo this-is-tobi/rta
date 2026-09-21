@@ -100,7 +100,7 @@ func TestDashboardAddRefusesWhatATileCannotBe(t *testing.T) {
 
 func TestDashboardAddDryRunWritesNothing(t *testing.T) {
 	run := session(t, setRegistry(t))
-	out, errOut, err := run("dashboard", "add", "db.status", "--dry-run")
+	out, errOut, err := run("dashboard", "add", "db.status", "--set", "dbname=shop", "--dry-run")
 	if err != nil {
 		t.Fatalf("%v %q", err, errOut)
 	}
@@ -122,13 +122,17 @@ func TestDashboardRemoveTakesDownOneKeyAndNamesTheOthers(t *testing.T) {
 			t.Fatalf("%v %q", err, errOut)
 		}
 	}
-	if _, errOut, err := run("dashboard", "rm", "db.status", "--profile", "prod"); err != nil {
+	out, errOut, err := run("dashboard", "rm", "db.status", "--profile", "prod")
+	if err != nil {
 		t.Fatalf("%v %q", err, errOut)
+	}
+	if !strings.Contains(out, "rta dashboard add db.status --profile prod`") {
+		t.Errorf("receipt = %q, want the way back to name the reference removed", out)
 	}
 	if add := loadedConfig(t).Dashboard.Add; len(add) != 1 || add[0].Profile != "staging" {
 		t.Errorf("add = %v, want only the staging tile left", add)
 	}
-	_, errOut, err := run("dashboard", "rm", "db.status")
+	_, errOut, err = run("dashboard", "rm", "db.status")
 	if err == nil {
 		t.Fatal("removing a tile that was never added succeeded")
 	}
@@ -214,6 +218,77 @@ func TestDashboardAddExpandsAndHideTakesOnePanelDown(t *testing.T) {
 	}
 	if _, errOut, err := run("dashboard", "unhide", "db.status"); err != nil {
 		t.Fatalf("%v %q", err, errOut)
+	}
+}
+
+// A capability the automatic dashboard already shows is not added twice:
+// bare, the add is refused and points at unhide when that is what was
+// meant; with --span or --set, the entry takes the automatic tile's place.
+func TestDashboardAddOfAnAutomaticTileIsRefusedOrTakesItsPlace(t *testing.T) {
+	run := session(t, setRegistry(t))
+	_, errOut, err := run("dashboard", "add", "db.status")
+	if err == nil || !strings.Contains(errOut, "core.dashboard.automatic") {
+		t.Fatalf("a bare add of the automatic tile: err=%v %q", err, errOut)
+	}
+	if _, errOut, err := run("dashboard", "hide", "db.status"); err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	if _, errOut, _ := run("dashboard", "add", "db.status"); !strings.Contains(errOut, "rta dashboard unhide db.status") {
+		t.Errorf("refusal = %q, want the way back for a hidden tile", errOut)
+	}
+	out, errOut, err := run("dashboard", "add", "db.status", "--span", "2")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	if !strings.Contains(out, "in place of") {
+		t.Errorf("receipt = %q, want it to say the entry takes the automatic tile's place", out)
+	}
+	list, _, err := run("dashboard", "list", "-o", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(list, `"db.status"`) != 1 || !strings.Contains(list, "added") {
+		t.Errorf("list = %q, want one db.status row, the added one", list)
+	}
+	out, errOut, err = run("dashboard", "rm", "db.status")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	if !strings.Contains(out, "rta dashboard add db.status --span 2`") {
+		t.Errorf("receipt = %q, want the whole entry as the way back, since the bare add is refused", out)
+	}
+}
+
+// With the switch on and the automatic tile expanded into that
+// environment's connections, hide by the capability takes every panel
+// down, as H on an automatic tile does.
+func TestDashboardHideByCapabilityCoversAnExpandedAutomaticTile(t *testing.T) {
+	run := session(t, setRegistry(t))
+	for _, args := range [][]string{
+		{"profile", "set", "prod", "--plugin", "db", "--set", "host=prod.internal"},
+		{"profile", "set", "prod", "--plugin", "db/analytics", "--set", "host=analytics.prod.internal"},
+		{"use", "prod"},
+	} {
+		if _, errOut, err := run(args...); err != nil {
+			t.Fatalf("%v %q", err, errOut)
+		}
+	}
+	list, _, err := run("dashboard", "list", "-o", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(list, "prod/analytics") {
+		t.Fatalf("list = %q, want the automatic tile expanded under prod", list)
+	}
+	if _, errOut, err := run("dashboard", "hide", "db.status"); err != nil {
+		t.Fatalf("hiding the expanded automatic tile by its capability: %v %q", err, errOut)
+	}
+	if h := loadedConfig(t).Dashboard.Hidden; len(h) != 1 || h[0] != "db.status" {
+		t.Errorf("hidden = %v, want the capability", h)
+	}
+	list, _, _ = run("dashboard", "list", "-o", "json")
+	if strings.Count(list, "hidden") < 2 {
+		t.Errorf("list = %q, want both panels hidden", list)
 	}
 }
 
