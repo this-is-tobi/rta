@@ -36,6 +36,12 @@ type tile struct {
 	// source says where this tile came from, which is what H has to know:
 	// an automatic tile is hidden by ID, an entry somebody wrote is removed.
 	source tileSource
+	// expanded marks one panel of several that one entry became, because
+	// the profile it names — or the one switched on — holds several
+	// connections for the plugin (expandTiles). H hides such a panel by
+	// its key rather than withdrawing the entry, which would take its
+	// siblings down with it.
+	expanded bool
 	// span is how many grid columns this tile occupies, 0 meaning "work it
 	// out from the capability's MinWidth". It replaces a bool that could
 	// only say "one column or all of them": on a four-column screen that
@@ -324,12 +330,14 @@ func previewable(c plugin.Capability) bool {
 }
 
 // arrange applies the user's adjustments to the automatic set: drop what
-// they hid, lead with what they ordered. Hidden is matched on capability ID
-// and only against automatic tiles — an `add:` entry is not hidden but
-// withdrawn, by removing the entry, so a stale `hidden:` line cannot take
-// down a tile somebody wrote in afterwards. Order is matched on the tile
-// key, so a pinned tile can be led with on its own. Anything named that no
-// longer exists is simply ignored.
+// they hid, lead with what they ordered. A `hidden:` line is a capability
+// ID, which hides an automatic tile and every panel it expanded into, or a
+// tile key, which hides that one panel wherever it came from — the way H
+// takes one connection's panel off an entry that became five. An `add:`
+// entry itself is not hidden but withdrawn, by removing the entry, so a
+// stale ID line cannot take down a tile somebody wrote in afterwards.
+// Order is matched on the tile key, so a pinned tile can be led with on its
+// own. Anything named that no longer exists is simply ignored.
 func arrange(tiles []tile, dash config.Dashboard) []tile {
 	hidden := map[string]bool{}
 	for _, id := range dash.Hidden {
@@ -337,7 +345,7 @@ func arrange(tiles []tile, dash config.Dashboard) []tile {
 	}
 	kept := make([]tile, 0, len(tiles))
 	for _, t := range tiles {
-		if t.source == tileAuto && hidden[t.cap.ID] {
+		if (t.source == tileAuto && hidden[t.cap.ID]) || (t.expanded && hidden[t.key()]) {
 			continue
 		}
 		kept = append(kept, t)
@@ -363,28 +371,153 @@ func arrange(tiles []tile, dash config.Dashboard) []tile {
 	return kept
 }
 
-// buildTiles resolves the dashboard: an explicit list when the user stated
-// one, otherwise one tile per plugin with their hides and ordering applied;
-// in both cases the `add:` entries follow. The live search tile always
-// leads: it is the front door.
+// Instances says which connections a profile holds for a plugin, as the
+// references a tile can be pinned to: `ohmlab` for the default instance,
+// `ohmlab/gitea` for a labeled one. ref is the tile's own profile, "" for a
+// tile that follows the switch, and the answer is empty whenever nothing
+// would expand: an instance already named, a profile with one connection
+// or none, nothing switched on.
+type Instances func(ref, ns string) []string
+
+// InstancesOf is the Instances a config and the switched-on profile
+// answer. Exported for `rta dashboard list`, which has to show what bare
+// `rta` would draw right now, expansions included.
+func InstancesOf(cfg config.Config, active string) Instances {
+	return func(ref, ns string) []string {
+		if config.RefInstance(ref) != "" {
+			return nil
+		}
+		name := ref
+		if name == "" {
+			name = active
+		}
+		if name == "" {
+			return nil
+		}
+		p, ok := cfg.Profiles[name]
+		if !ok || !p.Trusted() {
+			return nil
+		}
+		labels := p.Instances(ns)
+		if len(labels) < 2 {
+			return nil
+		}
+		refs := make([]string, len(labels))
+		for i, label := range labels {
+			refs[i] = name
+			if label != "" {
+				refs[i] += "/" + label
+			}
+		}
+		return refs
+	}
+}
+
+// buildTiles resolves the dashboard without an environment in hand, so
+// nothing expands; the model builds through buildTilesWith.
+func buildTiles(reg *registry.Registry, dash config.Dashboard) []tile {
+	return buildTilesWith(reg, dash, nil)
+}
+
+// buildTilesWith resolves the dashboard: an explicit list when the user
+// stated one, otherwise one tile per plugin with their hides and ordering
+// applied; in both cases the `add:` entries follow, and in both cases a
+// tile whose profile holds several connections for its plugin becomes one
+// panel per connection. The live search tile always leads: it is the
+// front door.
 //
 // A stated list keeps its own order and is not re-sorted by `order:`, as
 // the config documents; the added entries sit after it, in their own
 // order, and moveSelected keeps the two apart. A person stating the whole
 // dashboard can write a pinned tile straight into `tiles:`, which is why
 // the seam is not worth a third ordering rule.
-func buildTiles(reg *registry.Registry, dash config.Dashboard) []tile {
+func buildTilesWith(reg *registry.Registry, dash config.Dashboard, instances Instances) []tile {
 	tiles := statedTiles(reg, dash.Tiles, tileStated)
 	if len(tiles) > 0 {
-		tiles = append(tiles, statedTiles(reg, dash.Add, tileAdded)...)
+		tiles = expandTiles(append(tiles, statedTiles(reg, dash.Add, tileAdded)...), instances)
 	} else {
-		tiles = arrange(append(autoTiles(reg), statedTiles(reg, dash.Add, tileAdded)...), dash)
+		tiles = expandTiles(append(autoTiles(reg), statedTiles(reg, dash.Add, tileAdded)...), instances)
+		tiles = arrange(tiles, dash)
 	}
 	for i := range tiles {
 		tiles[i].actions = capActions(reg, tiles[i].cap.ID)
 	}
 	search := tile{cap: plugin.Capability{ID: "search", Summary: "find a capability"}, search: true}
 	return append([]tile{search}, tiles...)
+}
+
+// expandTiles turns a tile whose profile names no instance into one panel
+// per connection that profile holds for the plugin, each pinned to its own
+// reference and named for it.
+//
+// This is the answer to "one profile, several databases": the ohmlab
+// environment holds cnpg/gitea, cnpg/keycloak and three more, and a person
+// who adds cnpg.overview wants to glance at all of them, not to be told —
+// as the CLI rightly tells a bare `--profile ohmlab` — that the choice is
+// theirs. A dashboard is not a choice: showing every one is the glance, no
+// wrong pick is possible, and a connection added to the profile next month
+// gets its panel on its own, the same rule the automatic set follows for a
+// plugin installed next month. One connection stays one panel, so the
+// common case reads exactly as it did.
+//
+// A tile that follows the switch expands into the switched-on profile's
+// connections, and is rebuilt on every switch (rebuildTiles): under ohmlab
+// it is ohmlab's five, under mirai-prod that environment's own. Each panel
+// is pinned for the duration, so it binds through the same per-profile
+// cache a pinned tile does, and enter on it opens that connection.
+func expandTiles(tiles []tile, instances Instances) []tile {
+	if instances == nil {
+		return tiles
+	}
+	colors := map[string]string{}
+	out := make([]tile, 0, len(tiles))
+	for _, t := range tiles {
+		refs := instances(t.profile, plugin.Namespace(t.cap.ID))
+		if len(refs) < 2 {
+			out = append(out, t)
+			continue
+		}
+		for _, ref := range refs {
+			name := config.RefName(ref)
+			if _, seen := colors[name]; !seen {
+				colors[name] = profileColor(name)
+			}
+			panel := t
+			panel.profile, panel.color, panel.expanded = ref, colors[name], true
+			out = append(out, panel)
+		}
+	}
+	return out
+}
+
+// rebuildTiles resolves the dashboard again — after a switch, since a tile
+// following it expands into that environment's own connections, and after
+// the arrangement or the inventory changed — carrying each panel's content
+// over by key, so the screen does not blank for the tiles still on it.
+func (m *Model) rebuildTiles() {
+	old := make(map[string]tile, len(m.tiles))
+	for _, t := range m.tiles {
+		old[t.key()] = t
+	}
+	fresh := buildTilesWith(m.reg, m.dash, m.instances())
+	for i := range fresh {
+		if prev, ok := old[fresh[i].key()]; ok {
+			fresh[i].view, fresh[i].err, fresh[i].lastFired = prev.view, prev.err, prev.lastFired
+		}
+	}
+	m.tiles = fresh
+	m.selected = min(max(m.selected, 0), len(m.tiles)-1)
+	m.clampScroll()
+}
+
+// instances is InstancesOf for this session: the config as it stands and
+// the environment switched on.
+func (m Model) instances() Instances {
+	cfg, err := config.LoadFile()
+	if err != nil {
+		return nil
+	}
+	return InstancesOf(cfg, m.active)
 }
 
 // statedTiles resolves the entries a person wrote — `tiles:` or `add:` —
@@ -420,27 +553,40 @@ func statedTiles(reg *registry.Registry, entries []config.Tile, source tileSourc
 }
 
 // Placement is one tile of the arrangement as `rta dashboard list` reports
-// it: what would be on screen, and why it is there.
+// it: what would be on screen, and why it is there — or why it is not.
 type Placement struct {
 	ID      string
 	Profile string
 	Source  string
 	Refresh time.Duration
 	With    map[string]any
+	// Hidden marks a panel `hidden:` keeps off the screen, listed anyway:
+	// a person asking why a tile is missing is asking this list.
+	Hidden bool
+	// Expanded marks one panel of several one entry became.
+	Expanded bool
 }
 
-// Layout is the arrangement bare `rta` would draw for this config, search
-// tile excluded. Exported for `rta dashboard list`, which exists so a
-// person can see the dashboard — automatic picks, stated tiles and added
-// ones alike — without opening it, and so a script can check what it
+// Layout is the arrangement bare `rta` would draw for this config and the
+// switched-on environment, search tile excluded and hidden panels marked.
+// Exported for `rta dashboard list`, which exists so a person can see the
+// dashboard — automatic picks, stated tiles, added ones and what each
+// expanded into — without opening it, and so a script can check what it
 // added is there.
-func Layout(reg *registry.Registry, dash config.Dashboard) []Placement {
-	tiles := buildTiles(reg, dash)
+func Layout(reg *registry.Registry, dash config.Dashboard, instances Instances) []Placement {
+	hidden := map[string]bool{}
+	for _, id := range dash.Hidden {
+		hidden[id] = true
+	}
+	shown := dash
+	shown.Hidden = nil
+	tiles := buildTilesWith(reg, shown, instances)
 	out := make([]Placement, 0, len(tiles))
 	for _, t := range tiles[1:] {
 		out = append(out, Placement{
 			ID: t.cap.ID, Profile: t.profile, Source: t.source.String(),
-			Refresh: t.cap.Refresh, With: t.values,
+			Refresh: t.cap.Refresh, With: t.values, Expanded: t.expanded,
+			Hidden: (t.source == tileAuto && hidden[t.cap.ID]) || (t.expanded && hidden[t.key()]),
 		})
 	}
 	return out
