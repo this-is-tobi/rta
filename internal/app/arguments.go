@@ -153,6 +153,10 @@ func documentArguments(root *cobra.Command) {
 			"capability to put on the landing screen, e.g. kube.overview — a read, since a tile runs unasked"}},
 		"rta dashboard rm": {{"capability",
 			"capability whose added tile to take down — with --profile when it was added against several"}},
+		"rta dashboard hide": {{"capability",
+			"automatic tile to hide, or with --profile the one panel of an expanded entry"}},
+		"rta dashboard unhide": {{"capability",
+			"hidden tile to bring back, or with --profile the one panel"}},
 		"rta use": {{"profile", "environment to switch to — omit to print what is on"}},
 	}
 
