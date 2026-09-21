@@ -20,36 +20,59 @@ import (
 // a plugin installed next month from being invisible because you once moved
 // a tile.
 
-// visibleIDs is the current arrangement as capability IDs, search excluded.
-func (m Model) visibleIDs() []string {
+// visibleKeys is the current arrangement as tile keys, search excluded.
+func (m Model) visibleKeys() []string {
 	out := make([]string, 0, len(m.tiles))
 	for _, t := range m.tiles[1:] {
-		out = append(out, t.cap.ID)
+		out = append(out, t.key())
 	}
 	return out
 }
 
-// hideSelected removes the selected tile from the dashboard and persists it.
+// hideSelected takes the selected tile off the dashboard and persists it —
+// by hiding an automatic tile, and by withdrawing an entry somebody wrote.
+// A stated or added entry has no notion of "hidden": left in its list, the
+// tile would reappear on the next run and the hide would look broken, and
+// an `add:` entry is the person's own ask, so the honest record of taking
+// it down is the entry being gone.
 func (m *Model) hideSelected() string {
 	if m.selected < 1 || m.selected >= len(m.tiles) {
 		return ""
 	}
-	hidden := m.tiles[m.selected]
-	m.dash.Hidden = append(m.dash.Hidden, hidden.cap.ID)
-	// An explicit tile list has no notion of "hidden": edit it in place, or
-	// the tile would reappear on the next run and the hide would look broken.
-	m.dash.Tiles = dropTile(m.dash.Tiles, hidden.cap.ID)
+	gone := m.tiles[m.selected]
+	var note string
+	switch gone.source {
+	case tileStated:
+		m.dash.Tiles = dropTile(m.dash.Tiles, gone.key())
+		note = fmt.Sprintf("removed %s from the stated dashboard", gone.key())
+	case tileAdded:
+		m.dash.Add = dropTile(m.dash.Add, gone.key())
+		// Say how it comes back, as the exact command: an undo that is
+		// "find the config file" is one people are right to be nervous
+		// about pressing toward.
+		note = fmt.Sprintf("removed %s — `%s` puts it back", gone.key(), addCommand(gone))
+	default:
+		m.dash.Hidden = append(m.dash.Hidden, gone.cap.ID)
+		note = fmt.Sprintf("hid %s — press p to bring it back", gone.cap.ID)
+	}
 	m.tiles = append(m.tiles[:m.selected], m.tiles[m.selected+1:]...)
 	m.selected = min(m.selected, len(m.tiles)-1)
 	m.clampScroll()
 
-	note := fmt.Sprintf("hid %s", hidden.cap.ID)
 	if err := m.save(); err != nil {
 		return note + " (this session only: " + err.Error() + ")"
 	}
-	// Say where it went. A hide whose undo is "find the config file" is a
-	// hide people are right to be nervous about pressing.
-	return note + " — press p to bring it back"
+	return note
+}
+
+// addCommand is the `rta dashboard add` line that would write this tile's
+// entry again.
+func addCommand(t tile) string {
+	cmd := "rta dashboard add " + t.cap.ID
+	if t.profile != "" {
+		cmd += " --profile " + t.profile
+	}
+	return cmd
 }
 
 // moveSelected shifts the selected tile by one position and persists the
@@ -59,17 +82,23 @@ func (m *Model) moveSelected(delta int) string {
 	if m.selected < 1 || target < 1 || target >= len(m.tiles) {
 		return ""
 	}
+	// A stated list keeps its own order and the added entries follow it
+	// (buildTiles), so a move across that seam would show an order the file
+	// cannot reproduce on the next run. The seam is an end, like the edges.
+	if len(m.dash.Tiles) > 0 && m.tiles[m.selected].source != m.tiles[target].source {
+		return ""
+	}
 	m.tiles[m.selected], m.tiles[target] = m.tiles[target], m.tiles[m.selected]
 	m.selected = target
 	m.clampScroll()
 
 	// Record the whole visible order, not just the pair that moved: a
 	// partial order would leave the rest to drift on the next run, and what
-	// you see is what you asked for.
-	m.dash.Order = m.visibleIDs()
-	if len(m.dash.Tiles) > 0 {
-		m.dash.Tiles = reorderTiles(m.dash.Tiles, m.dash.Order)
-	}
+	// you see is what you asked for. The written lists follow it too, each
+	// within itself, so the file reads in the order the screen shows.
+	m.dash.Order = m.visibleKeys()
+	m.dash.Tiles = reorderTiles(m.dash.Tiles, m.dash.Order)
+	m.dash.Add = reorderTiles(m.dash.Add, m.dash.Order)
 	if err := m.save(); err != nil {
 		return "reordered (this session only: " + err.Error() + ")"
 	}
@@ -96,43 +125,53 @@ func (m Model) save() error {
 		cfg.Dashboard.Hidden = m.dash.Hidden
 		cfg.Dashboard.Order = m.dash.Order
 		cfg.Dashboard.Tiles = m.dash.Tiles
+		cfg.Dashboard.Add = m.dash.Add
 		return cfg, true
 	})
 }
 
-func dropTile(tiles []config.Tile, id string) []config.Tile {
+// dropTile removes every entry with the given key (config.Tile.Key).
+func dropTile(tiles []config.Tile, key string) []config.Tile {
 	if len(tiles) == 0 {
 		return tiles
 	}
 	out := make([]config.Tile, 0, len(tiles))
 	for _, t := range tiles {
-		if t.ID != id {
+		if t.Key() != key {
 			out = append(out, t)
 		}
 	}
 	return out
 }
 
-// reorderTiles rewrites an explicit tile list into the given order, keeping
-// each entry's configured inputs.
+// reorderTiles rewrites a written tile list into the given order of keys,
+// keeping each entry's configured inputs.
+//
+// Entries sharing a key are kept, in their own order, at the key's place:
+// a list naming obj.get twice against two hosts is two tiles on screen and
+// two entries here, and an index by key alone kept one of them and lost
+// the other on the first move.
 func reorderTiles(tiles []config.Tile, order []string) []config.Tile {
-	byID := make(map[string]config.Tile, len(tiles))
+	if len(tiles) == 0 {
+		return tiles
+	}
+	byKey := make(map[string][]config.Tile, len(tiles))
 	for _, t := range tiles {
-		byID[t.ID] = t
+		byKey[t.Key()] = append(byKey[t.Key()], t)
 	}
 	out := make([]config.Tile, 0, len(tiles))
-	for _, id := range order {
-		if t, ok := byID[id]; ok {
-			out = append(out, t)
-			delete(byID, id)
+	for _, key := range order {
+		if ts, ok := byKey[key]; ok {
+			out = append(out, ts...)
+			delete(byKey, key)
 		}
 	}
 	// Anything the dashboard did not show (an ID no longer in the registry)
 	// stays in the file rather than being silently dropped.
 	for _, t := range tiles {
-		if _, unplaced := byID[t.ID]; unplaced {
-			out = append(out, t)
-			delete(byID, t.ID)
+		if ts, unplaced := byKey[t.Key()]; unplaced {
+			out = append(out, ts...)
+			delete(byKey, t.Key())
 		}
 	}
 	return out

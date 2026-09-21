@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"maps"
 	"sort"
 	"time"
 
@@ -22,6 +23,19 @@ import (
 type tile struct {
 	cap    plugin.Capability
 	values map[string]any
+	// profile is the connection this tile is pinned to (config.Tile.Profile),
+	// "" for one that follows the switched-on environment. It is part of the
+	// tile's identity — see key — and what the panel's title says beside the
+	// capability, since two kube.overview tiles are otherwise the same panel
+	// twice.
+	profile string
+	// color is the pinned profile's own colour, "" when it has none: painted
+	// on its name in the title the way the header badge paints the
+	// switched-on environment's, and on nothing else.
+	color string
+	// source says where this tile came from, which is what H has to know:
+	// an automatic tile is hidden by ID, an entry somebody wrote is removed.
+	source tileSource
 	// span is how many grid columns this tile occupies, 0 meaning "work it
 	// out from the capability's MinWidth". It replaces a bool that could
 	// only say "one column or all of them": on a four-column screen that
@@ -41,6 +55,48 @@ type tile struct {
 	// the dispatch rather than the answer, so a slow answer does not
 	// stretch the interval it was waiting out.
 	lastFired time.Time
+}
+
+// tileSource is where a tile came from: picked for its plugin by the
+// automatic dashboard, stated in `tiles:`, or joined through `add:`.
+type tileSource int
+
+const (
+	tileAuto tileSource = iota
+	tileStated
+	tileAdded
+)
+
+func (s tileSource) String() string {
+	switch s {
+	case tileStated:
+		return "stated"
+	case tileAdded:
+		return "added"
+	}
+	return "automatic"
+}
+
+// key names this tile the way `order:` and `rta dashboard rm` do: the
+// capability, or capability@profile once pinned. Two tiles of one
+// capability against two connections are two keys, and moving or removing
+// one leaves the other where it is.
+func (t tile) key() string { return config.TileKey(t.cap.ID, t.profile) }
+
+// runValues is what an asked-for run of this tile starts from: its inputs,
+// plus the pinned profile under the form's own picker key. Enter on a tile
+// about prod has to open prod, and resolveProfile reads the picker exactly
+// as it would from a form — an explicit pick beats whatever is switched on
+// — so the tile states its pick the way a form would rather than through
+// a second channel the run path would have to learn.
+func (t tile) runValues() map[string]any {
+	if t.profile == "" {
+		return t.values
+	}
+	out := make(map[string]any, len(t.values)+1)
+	maps.Copy(out, t.values)
+	out[profileInput] = t.profile
+	return out
 }
 
 const (
@@ -268,8 +324,12 @@ func previewable(c plugin.Capability) bool {
 }
 
 // arrange applies the user's adjustments to the automatic set: drop what
-// they hid, lead with what they ordered. Both are matched on capability ID,
-// and anything they name that no longer exists is simply ignored.
+// they hid, lead with what they ordered. Hidden is matched on capability ID
+// and only against automatic tiles — an `add:` entry is not hidden but
+// withdrawn, by removing the entry, so a stale `hidden:` line cannot take
+// down a tile somebody wrote in afterwards. Order is matched on the tile
+// key, so a pinned tile can be led with on its own. Anything named that no
+// longer exists is simply ignored.
 func arrange(tiles []tile, dash config.Dashboard) []tile {
 	hidden := map[string]bool{}
 	for _, id := range dash.Hidden {
@@ -277,9 +337,10 @@ func arrange(tiles []tile, dash config.Dashboard) []tile {
 	}
 	kept := make([]tile, 0, len(tiles))
 	for _, t := range tiles {
-		if !hidden[t.cap.ID] {
-			kept = append(kept, t)
+		if t.source == tileAuto && hidden[t.cap.ID] {
+			continue
 		}
+		kept = append(kept, t)
 	}
 	if len(dash.Order) == 0 {
 		return kept
@@ -289,8 +350,8 @@ func arrange(tiles []tile, dash config.Dashboard) []tile {
 		rank[id] = i
 	}
 	sort.SliceStable(kept, func(i, j int) bool {
-		ri, oki := rank[kept[i].cap.ID]
-		rj, okj := rank[kept[j].cap.ID]
+		ri, oki := rank[kept[i].key()]
+		rj, okj := rank[kept[j].key()]
 		if oki != okj {
 			return oki
 		}
@@ -303,11 +364,34 @@ func arrange(tiles []tile, dash config.Dashboard) []tile {
 }
 
 // buildTiles resolves the dashboard: an explicit list when the user stated
-// one, otherwise one tile per plugin with their hides and ordering applied.
-// The live search tile always leads: it is the front door.
+// one, otherwise one tile per plugin with their hides and ordering applied;
+// in both cases the `add:` entries follow. The live search tile always
+// leads: it is the front door.
+//
+// A stated list keeps its own order and is not re-sorted by `order:`, as
+// the config documents; the added entries sit after it, in their own
+// order, and moveSelected keeps the two apart. A person stating the whole
+// dashboard can write a pinned tile straight into `tiles:`, which is why
+// the seam is not worth a third ordering rule.
 func buildTiles(reg *registry.Registry, dash config.Dashboard) []tile {
+	tiles := statedTiles(reg, dash.Tiles, tileStated)
+	if len(tiles) > 0 {
+		tiles = append(tiles, statedTiles(reg, dash.Add, tileAdded)...)
+	} else {
+		tiles = arrange(append(autoTiles(reg), statedTiles(reg, dash.Add, tileAdded)...), dash)
+	}
+	for i := range tiles {
+		tiles[i].actions = capActions(reg, tiles[i].cap.ID)
+	}
+	search := tile{cap: plugin.Capability{ID: "search", Summary: "find a capability"}, search: true}
+	return append([]tile{search}, tiles...)
+}
+
+// statedTiles resolves the entries a person wrote — `tiles:` or `add:` —
+// into tiles, dropping what no longer resolves.
+func statedTiles(reg *registry.Registry, entries []config.Tile, source tileSource) []tile {
 	var tiles []tile
-	for _, ct := range dash.Tiles {
+	for _, ct := range entries {
 		c, ok := reg.Capability(ct.ID)
 		if !ok {
 			continue
@@ -326,16 +410,40 @@ func buildTiles(reg *registry.Registry, dash config.Dashboard) []tile {
 		if c.Safety != plugin.Read {
 			continue
 		}
-		tiles = append(tiles, tile{cap: c, values: ct.With, span: ct.Span})
+		t := tile{cap: c, values: ct.With, profile: ct.Profile, source: source, span: ct.Span}
+		if t.profile != "" {
+			t.color = profileColor(config.RefName(t.profile))
+		}
+		tiles = append(tiles, t)
 	}
-	if len(tiles) == 0 {
-		tiles = arrange(autoTiles(reg), dash)
+	return tiles
+}
+
+// Placement is one tile of the arrangement as `rta dashboard list` reports
+// it: what would be on screen, and why it is there.
+type Placement struct {
+	ID      string
+	Profile string
+	Source  string
+	Refresh time.Duration
+	With    map[string]any
+}
+
+// Layout is the arrangement bare `rta` would draw for this config, search
+// tile excluded. Exported for `rta dashboard list`, which exists so a
+// person can see the dashboard — automatic picks, stated tiles and added
+// ones alike — without opening it, and so a script can check what it
+// added is there.
+func Layout(reg *registry.Registry, dash config.Dashboard) []Placement {
+	tiles := buildTiles(reg, dash)
+	out := make([]Placement, 0, len(tiles))
+	for _, t := range tiles[1:] {
+		out = append(out, Placement{
+			ID: t.cap.ID, Profile: t.profile, Source: t.source.String(),
+			Refresh: t.cap.Refresh, With: t.values,
+		})
 	}
-	for i := range tiles {
-		tiles[i].actions = capActions(reg, tiles[i].cap.ID)
-	}
-	search := tile{cap: plugin.Capability{ID: "search", Summary: "find a capability"}, search: true}
-	return append([]tile{search}, tiles...)
+	return out
 }
 
 // formNeeded reports whether a capability has required inputs without defaults.
@@ -468,15 +576,35 @@ func (t tile) due(now time.Time) bool {
 	return now.Sub(t.lastFired) >= t.cap.Refresh
 }
 
-// resetDue forgets every tile's last run, so the next refreshTiles fires
-// all of them regardless of pace. For the moments a tile's inputs changed
-// under it — the environment switched, and the pg tile is now about a
-// different database — where an answer computed for the old inputs is
-// wrong however recent it is.
-func resetDue(tiles []tile) {
+// resetDue forgets the last run of every tile about the named connection —
+// "" for the ones that follow the switched-on environment — so the next
+// refreshTiles fires them regardless of pace. For the moments a tile's
+// inputs changed under it — the environment switched, and the pg tile is
+// now about a different database — where an answer computed for the old
+// inputs is wrong however recent it is. Scoped to the connection that
+// moved: a tile pinned to prod is about prod whatever was switched, and its
+// two-hour pace should not restart because somebody flipped to staging.
+func resetDue(tiles []tile, profile string) {
 	for i := range tiles {
-		tiles[i].lastFired = time.Time{}
+		if tiles[i].profile == profile {
+			tiles[i].lastFired = time.Time{}
+		}
 	}
+}
+
+// tileConn is what a tile runs against: the connection its pinned profile
+// or the switched-on environment contributes, the reason it cannot, or
+// nothing yet.
+type tileConn struct {
+	name   string
+	filled map[string]any
+	conn   config.Connection
+	err    *view.Error
+	// pending says the tile's pinned profile is still being bound, off the
+	// update loop. The tile keeps saying "loading…" rather than showing an
+	// error for a state that resolves itself, and is not stamped as fired,
+	// so the bind landing runs it at once.
+	pending bool
 }
 
 // refreshTiles fires every capability tile that is due; static tiles keep
@@ -484,13 +612,15 @@ func resetDue(tiles []tile) {
 // declared. gen is this refresh chain's identity, stamped onto the tick it
 // arms so a later chain can tell an earlier one's firing apart from its own.
 //
-// forProfile is what the switched-on environment contributes to a capability.
-// It is what makes the dashboard answer a question about the environment
-// somebody is actually in: switch to proj1-staging and the pg, s3 and vault
-// tiles fill from staging, because those are the connections that environment
-// names. nil is the same as nothing switched on.
+// connFor is what a tile runs against. For a tile that follows the
+// switched-on environment it is what that environment contributes to the
+// capability, which is what makes the dashboard answer a question about the
+// environment somebody is actually in: switch to proj1-staging and the pg,
+// s3 and vault tiles fill from staging, because those are the connections
+// that environment names. For a pinned tile it is that profile's own
+// binding. nil is the same as nothing switched on and nothing pinned.
 func refreshTiles(tiles []tile, gen int, pluginCfg func(string) map[string]any,
-	forProfile func(plugin.Capability) (string, map[string]any, config.Connection, *view.Error)) tea.Cmd {
+	connFor func(tile) tileConn) tea.Cmd {
 	cmds := make([]tea.Cmd, 0, len(tiles)+1)
 	now := time.Now()
 	for i := range tiles {
@@ -498,31 +628,29 @@ func refreshTiles(tiles []tile, gen int, pluginCfg func(string) map[string]any,
 		if !t.due(now) {
 			continue
 		}
+		var tc tileConn
+		if connFor != nil {
+			tc = connFor(t)
+		}
+		if tc.pending {
+			continue
+		}
 		tiles[i].lastFired = now
 		var cfg map[string]any
 		if words := t.cap.Words(); pluginCfg != nil && len(words) > 0 {
 			cfg = pluginCfg(words[0])
 		}
-		var (
-			name   string
-			filled map[string]any
-			conn   config.Connection
-			verr   *view.Error
-		)
-		if forProfile != nil {
-			name, filled, conn, verr = forProfile(t.cap)
-		}
-		if verr != nil {
+		if tc.err != nil {
 			// Reported the same way a dial failure already is below, in
 			// tileCmd: a tile is where a fallback to the base configuration
 			// would be least visible, since nobody typed a command to go
 			// and look at, and the number on screen would simply be
 			// somebody else's.
-			idx, id := i, t.cap.ID
+			idx, id, verr := i, t.cap.ID, tc.err
 			cmds = append(cmds, func() tea.Msg { return tileMsg{id: id, idx: idx, err: verr} })
 			continue
 		}
-		cmds = append(cmds, tileCmd(i, t, cfg, name, filled, conn))
+		cmds = append(cmds, tileCmd(i, t, cfg, tc.name, tc.filled, tc.conn))
 	}
 	cmds = append(cmds, tea.Tick(tileRefreshInterval, func(time.Time) tea.Msg { return tickMsg{gen: gen} }))
 	return tea.Batch(cmds...)

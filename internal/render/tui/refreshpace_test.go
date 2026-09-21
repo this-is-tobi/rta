@@ -61,7 +61,7 @@ func TestRefreshTilesSkipsATileInsideItsPaceAndStampsTheOnesItFires(t *testing.T
 		t.Error("the unpaced tile was not fired on the next tick")
 	}
 
-	resetDue(tiles)
+	resetDue(tiles, "")
 	_ = refreshTiles(tiles, 3, nil, nil)
 	if tiles[2].lastFired.Equal(first) {
 		t.Error("after resetDue the paced tile should fire regardless of its pace")
