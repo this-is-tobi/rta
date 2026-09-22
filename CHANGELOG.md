@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.26.0](https://github.com/this-is-tobi/rta/compare/v0.25.0...v0.26.0) (2026-09-22)
+
+
+### Features
+
+* **plugin:** `rta plugin prune` drops the stored versions nothing runs ([e892971](https://github.com/this-is-tobi/rta/commit/e892971b3e02c3ebffae612a99f3d3e8e244eda3))
+* **sdk:** plugin.ExpandHome, so a plugin need not carry its own tilde rule ([2661ac6](https://github.com/this-is-tobi/rta/commit/2661ac67870b77c5c92fc40f5ead8b797f527b45))
+* **tui:** + on a catalogue row or a search match adds the tile, asking which connection ([12d15c5](https://github.com/this-is-tobi/rta/commit/12d15c5f38865e79c84cb1e402e859f2c0b9a1b6))
+
+
+### Bug Fixes
+
+* **atomicfile:** wait out a read Windows refuses while another handle is on the file ([e3f9bcc](https://github.com/this-is-tobi/rta/commit/e3f9bcc98af99b4f8ec50994e4302f60ba9d7d21))
+* **audit:** bound the kube audits' wait on kubectl's pipes, and never print a base URL's credential ([97e24d3](https://github.com/this-is-tobi/rta/commit/97e24d3f345eba1cac162382632411868a9d34bf))
+* **git:** a changed file over sixteen megabytes is named in the diff rather than read whole ([ec0ead3](https://github.com/this-is-tobi/rta/commit/ec0ead35300cd10cd81ae6e4e1256dd076e4a51e))
+* **keys:** a comment may not carry a line break, and a piped phrase is read up to a bound ([f18802c](https://github.com/this-is-tobi/rta/commit/f18802ced1fae5561070b3e8bcbaf59e5a085c97))
+* **pkg:** go tools under cmd/ are checked against their module, an orphan cannot wedge a listing ([47e60b0](https://github.com/this-is-tobi/rta/commit/47e60b08dc88ac0aee7d7e7e4c78c7254d2e5adc))
+* **plugin:** the hint about further unreadable indexes counted them twice ([72586af](https://github.com/this-is-tobi/rta/commit/72586af0f9e9475104970138036940c982f5d137))
+* **tunnel:** name a missing credential plugin, end a cancelled forward gently, keep -- on listings ([01bf6ab](https://github.com/this-is-tobi/rta/commit/01bf6ab4993f0f3d25b5301438f4d34fbce7a9d4))
+
+
+### Performance Improvements
+
+* **pluginhost:** hash every installed plugin at once, so a dozen cost one ([6870333](https://github.com/this-is-tobi/rta/commit/6870333d8638e96837a98367eba6f2f68544a5e6))
+
 ## [0.25.0](https://github.com/this-is-tobi/rta/compare/v0.24.0...v0.25.0) (2026-09-21)
 
 
