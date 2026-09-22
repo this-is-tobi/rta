@@ -12,6 +12,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // The property the whole package exists for: a reader either sees the file
@@ -507,6 +508,203 @@ func refuseOneRename(t *testing.T) {
 		rename = original
 		if refused.Load() == 0 {
 			t.Error("no replace was refused, so this proved nothing about a refused one")
+		}
+	})
+}
+
+// A read refused once still lands.
+//
+// The other half of TestAReplaceRefusedOnceStillLands, missing for as long as
+// that one has existed: a replace has to delete the destination and a reader
+// refuses it, and symmetrically an open has to be allowed by every handle
+// already on the file and a writer refuses it. On Windows os.Chtimes shares
+// write and not read, so a lock holder's heartbeat refuses every reader for the
+// microseconds it holds the file, and a file removed while any handle is open
+// is delete-pending rather than gone, which refuses opens with "access is
+// denied" instead of ENOENT. Both were reported as failures: the first time
+// this package's tests ran on Windows, four contended lock acquires came back
+// as "reading resource.lock: The process cannot access the file" and "Access is
+// denied" rather than going round again.
+func TestAReadRefusedOnceStillLands(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	if err := os.WriteFile(path, []byte("state"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	refuseOneOpen(t)
+	got, err := ReadCapped(path, 1024)
+	if err != nil {
+		t.Fatalf("a read whose first open was refused failed: %v", err)
+	}
+	if string(got) != "state" {
+		t.Errorf("contents = %q, want the file's own", got)
+	}
+}
+
+// The same refusal on the read Publish falls back to, which is where it
+// actually reached the operator: this is a contended lock acquire, and the
+// answer it must give is the winner's token, not an error.
+func TestAContendedPublishWaitsOutARefusedReadOfTheWinnersFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "lock")
+	if _, err := Publish(path, []byte("winner"), 0o600, 64); err != nil {
+		t.Fatal(err)
+	}
+	refuseOneOpen(t)
+	held, err := Publish(path, []byte("loser"), 0o600, 64)
+	if err != nil {
+		t.Fatalf("a publish whose read of the winner's file was refused failed: %v", err)
+	}
+	if !bytes.Equal(held, []byte("winner")) {
+		t.Errorf("held = %q, want the winner's bytes", held)
+	}
+}
+
+// And the shape the lock case actually takes, because delete-pending is a
+// delete that has not finished: the refusal clears into the file being gone.
+// Publish has to go round again and publish its own rather than report either
+// the refusal or a race.
+func TestAPublishWhoseRefusedReadClearsIntoAMissingFilePublishesItsOwn(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "lock")
+	if _, err := Publish(path, []byte("winner"), 0o600, 64); err != nil {
+		t.Fatal(err)
+	}
+	original := openFile
+	var refused atomic.Int32
+	openFile = func(name string) (*os.File, error) {
+		if refused.CompareAndSwap(0, 1) {
+			// The delete the pending state was waiting on: the holder's
+			// release lands, and the next attempt finds nothing there.
+			_ = os.Remove(name)
+			return nil, &os.PathError{Op: "open", Path: name, Err: errors.New("access is denied")}
+		}
+		return original(name)
+	}
+	t.Cleanup(func() {
+		openFile = original
+		if refused.Load() == 0 {
+			t.Error("no open was refused, so this proved nothing about a refused one")
+		}
+	})
+
+	held, err := Publish(path, []byte("mine"), 0o600, 64)
+	if err != nil {
+		t.Fatalf("a publish whose read was refused and then found nothing failed: %v", err)
+	}
+	if !bytes.Equal(held, []byte("mine")) {
+		t.Errorf("held = %q, want this call's own bytes once the winner's file was gone", held)
+	}
+}
+
+// The same refusal one syscall earlier: Publish checks what is at the path
+// before reading it, and a delete-pending file has no attributes to query
+// either. Waiting out the read and not the check would have left the same
+// contended acquire failing, with "checking" in the message instead of
+// "reading".
+func TestAContendedPublishWaitsOutARefusedCheckOfTheWinnersFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "lock")
+	if _, err := Publish(path, []byte("winner"), 0o600, 64); err != nil {
+		t.Fatal(err)
+	}
+	original := lstatFile
+	var refused atomic.Int32
+	lstatFile = func(name string) (os.FileInfo, error) {
+		if refused.CompareAndSwap(0, 1) {
+			return nil, &os.PathError{Op: "CreateFile", Path: name, Err: errors.New("access is denied")}
+		}
+		return original(name)
+	}
+	t.Cleanup(func() {
+		lstatFile = original
+		if refused.Load() == 0 {
+			t.Error("no check was refused, so this proved nothing about a refused one")
+		}
+	})
+
+	held, err := Publish(path, []byte("loser"), 0o600, 64)
+	if err != nil {
+		t.Fatalf("a publish whose check of the winner's file was refused failed: %v", err)
+	}
+	if !bytes.Equal(held, []byte("winner")) {
+		t.Errorf("held = %q, want the winner's bytes", held)
+	}
+}
+
+// A missing file is not waited out, and this is the assertion that keeps the
+// waiting from costing anything.
+//
+// Publish's whole contended path rests on "it existed for the Link and was
+// gone for the Read" arriving at once — a released lock is the ordinary case,
+// not a refusal — so pacing ENOENT would put the entire budget between every
+// contended acquire and its retry, against a lock timeout of two seconds.
+func TestAMissingFileIsNotWaitedOut(t *testing.T) {
+	var opens atomic.Int32
+	original := openFile
+	openFile = func(name string) (*os.File, error) {
+		opens.Add(1)
+		return original(name)
+	}
+	t.Cleanup(func() { openFile = original })
+
+	if _, err := ReadCapped(filepath.Join(t.TempDir(), "absent.json"), 1024); !os.IsNotExist(err) {
+		t.Fatalf("err = %v, want it to satisfy os.IsNotExist", err)
+	}
+	if got := opens.Load(); got != 1 {
+		t.Errorf("a missing file was opened %d times, want exactly 1 — the budget belongs to a "+
+			"refusal that clears, and ENOENT is an answer", got)
+	}
+}
+
+// A refusal that never clears is reported unchanged rather than retried
+// forever, and it costs a bounded wait to find that out — the bargain Replace
+// makes on the write side, for the same reason: telling a sharing violation
+// from a permission error means naming a platform's error numbers in a path
+// that runs on all of them.
+func TestALastingRefusalIsReportedUnchanged(t *testing.T) {
+	budget := contendedWaits
+	contendedWaits = []time.Duration{0, 0, 0, 0}
+	t.Cleanup(func() { contendedWaits = budget })
+
+	var opens atomic.Int32
+	original := openFile
+	openFile = func(name string) (*os.File, error) {
+		opens.Add(1)
+		return nil, &os.PathError{Op: "open", Path: name, Err: errors.New("access is denied")}
+	}
+	t.Cleanup(func() { openFile = original })
+
+	path := filepath.Join(t.TempDir(), "state.json")
+	if err := os.WriteFile(path, []byte("state"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := ReadCapped(path, 1024)
+	if err == nil {
+		t.Fatal("a read nothing ever allowed reported success")
+	}
+	if !strings.Contains(err.Error(), "access is denied") {
+		t.Errorf("err = %v, want the platform's own reason", err)
+	}
+	if got := opens.Load(); got != int32(len(contendedWaits)) {
+		t.Errorf("opened %d times, want one per wait in the budget (%d)", got, len(contendedWaits))
+	}
+}
+
+// refuseOneOpen makes the next open fail the way Windows refuses one while
+// another handle is on the file, every later one succeed, and fails the test if
+// nothing ever asked.
+func refuseOneOpen(t *testing.T) {
+	t.Helper()
+	original := openFile
+	var refused atomic.Int32
+	openFile = func(name string) (*os.File, error) {
+		if refused.CompareAndSwap(0, 1) {
+			return nil, &os.PathError{Op: "open", Path: name,
+				Err: errors.New("the process cannot access the file because it is being used by another process")}
+		}
+		return original(name)
+	}
+	t.Cleanup(func() {
+		openFile = original
+		if refused.Load() == 0 {
+			t.Error("no open was refused, so this proved nothing about a refused one")
 		}
 	})
 }

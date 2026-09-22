@@ -49,8 +49,11 @@ import (
 // format writes. Size it as "larger than anything rta would ever put here",
 // not as "as small as possible": the point is to refuse a file that is
 // evidence of tampering, not to police a format that grew a field.
+//
+// The open itself waits out a platform that refuses it for a reason that
+// resolves on its own — see waitingOut.
 func ReadCapped(path string, max int) ([]byte, error) {
-	f, err := os.Open(path)
+	f, err := openWaiting(path)
 	if err != nil {
 		return nil, err
 	}
@@ -66,6 +69,92 @@ func ReadCapped(path string, max int) ([]byte, error) {
 	return buf[:n], nil
 }
 
+// openFile is os.Open and lstatFile is os.Lstat, overridable so a test can
+// refuse a read or a check the way Windows refuses one while another handle is
+// open — see waitingOut.
+var (
+	openFile  = os.Open
+	lstatFile = os.Lstat
+)
+
+// waitingOut runs a query about a path until the platform stops refusing it for
+// a reason that resolves on its own.
+//
+// **On Windows a read of a file rta is also writing is refused, and nothing is
+// wrong when it happens.** Two shapes, both of them seen in CI the first time
+// this package's tests ran on Windows at all:
+//
+//   - "The process cannot access the file because it is being used by another
+//     process." os.Chtimes is CreateFile with FILE_WRITE_ATTRIBUTES and
+//     FILE_SHARE_WRITE alone (syscall.UtimesNano), and the share check runs in
+//     both directions — so for as long as a lock holder's heartbeat is
+//     restamping its sentinel, microseconds once per beat, every reader's open
+//     is refused. filelock's beat already documented the mirror image of this,
+//     a stamp refused because a reader holds the file; the reader's side of the
+//     same instant was still being reported as a failure.
+//   - "Access is denied." A file deleted while any handle is still open is not
+//     gone, it is delete-pending, and every query about it until the last
+//     handle closes is refused with this rather than with ENOENT. The stat
+//     family opens sharing delete, so one concurrent Stat — Acquire polls one,
+//     Publish's own check is one — is enough: the holder's release succeeds, the
+//     file stops being reachable without yet being absent, and a caller written
+//     to expect "gone" gets a hard error instead.
+//
+// Both clear in microseconds, and both reached the operator. A contended lock
+// acquire came back as "acquiring lock: reading grants.lock: Access is denied"
+// instead of going round again, and plugintrust's read — which treats any
+// failure as an empty list — would have answered that nothing is trusted.
+//
+// A missing file is returned on the first attempt rather than waited out,
+// because it is an answer and not a refusal: Publish's contract rests on "it
+// existed for the Link and was gone for the Read" arriving at once, and pacing
+// that would put this whole budget between every contended acquire and its
+// retry. Every other error is retried, for the reason Replace gives — naming a
+// sharing violation means naming a platform's error numbers in a path that
+// runs on all of them — and a lasting refusal costs under a second before it is
+// reported unchanged.
+func waitingOut(query func() error) error {
+	var err error
+	for _, wait := range contendedWaits {
+		if wait > 0 {
+			time.Sleep(wait)
+		}
+		if err = query(); err == nil {
+			return nil
+		}
+		if errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+	}
+	return err
+}
+
+// openWaiting is os.Open, waiting out a refusal that clears.
+func openWaiting(path string) (*os.File, error) {
+	var f *os.File
+	err := waitingOut(func() error {
+		var oerr error
+		f, oerr = openFile(path)
+		return oerr
+	})
+	return f, err
+}
+
+// lstatWaiting is os.Lstat, waiting out the same refusal, because a
+// delete-pending file has no attributes to query either: GetFileAttributesEx is
+// refused, and so is the CreateFile os.Lstat falls back to when it is. Publish
+// checks what is at the path before reading it, and that check failing where the
+// read no longer does would leave the same bug one syscall earlier.
+func lstatWaiting(path string) (os.FileInfo, error) {
+	var info os.FileInfo
+	err := waitingOut(func() error {
+		var serr error
+		info, serr = lstatFile(path)
+		return serr
+	})
+	return info, err
+}
+
 // rename is os.Rename, overridable so a test can refuse a replace the way
 // Windows refuses one while the target is open — see Replace.
 var rename = os.Rename
@@ -74,9 +163,12 @@ var rename = os.Rename
 // of the filesystem's own rather than for a race — see Publish.
 var link = os.Link
 
-// replaceWaits paces a rename the platform may refuse for a reason that is
-// nobody's fault, and a var rather than a literal only so a test can shrink it.
-var replaceWaits = []time.Duration{
+// contendedWaits paces an operation the platform may refuse for a reason that
+// is nobody's fault, and a var rather than a literal only so a test can shrink
+// it. One budget for Replace and for the queries waitingOut paces, because they
+// are the two sides of one refusal: the rename that cannot delete a file
+// somebody has open, and the open that cannot read a file somebody is renaming.
+var contendedWaits = []time.Duration{
 	0, 5 * time.Millisecond, 10 * time.Millisecond, 20 * time.Millisecond,
 	50 * time.Millisecond, 100 * time.Millisecond, 200 * time.Millisecond,
 	400 * time.Millisecond,
@@ -105,7 +197,7 @@ var replaceWaits = []time.Duration{
 // untouched the whole time, so a retry can never make things worse.
 func Replace(from, to string) error {
 	var err error
-	for _, wait := range replaceWaits {
+	for _, wait := range contendedWaits {
 		if wait > 0 {
 			time.Sleep(wait)
 		}
@@ -278,7 +370,7 @@ func Publish(path string, data []byte, perm fs.FileMode, max int) ([]byte, error
 		// below every time, spinning to the same false "gave up" error a
 		// genuinely contended publish would give. Lstat, which does not
 		// follow, is what tells the two apart before either can happen.
-		info, serr := os.Lstat(path)
+		info, serr := lstatWaiting(path)
 		if serr != nil {
 			if !os.IsNotExist(serr) {
 				return nil, fmt.Errorf("checking %s: %w", path, serr)
