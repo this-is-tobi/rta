@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"sort"
 	"strings"
@@ -142,6 +143,15 @@ func submoduleBumps(from, to *object.Commit) []string {
 	return out
 }
 
+// maxDiffBytes bounds one file the worktree diff reads whole. Both sides of
+// a changed file are held in memory to line-diff them — the committed blob
+// and the file on disk — and nothing bounded either, so a generated asset
+// or a data file that changed put its whole size into the process twice
+// over, on an MCP server as readily as at a terminal. Sixteen megabytes is
+// past any file a person reads a diff of; what is over it is named rather
+// than diffed. A variable so a test can lower it.
+var maxDiffBytes int64 = 16 << 20
+
 func diffWorktree(repo *git.Repository) (view.View, error) {
 	wt, err := repo.Worktree()
 	if err != nil {
@@ -164,8 +174,13 @@ func diffWorktree(repo *git.Repository) (view.View, error) {
 	}
 
 	patches := make([]diff.FilePatch, 0, len(status))
+	var large []string
 	for path, fs := range status {
 		if fs.Staging == git.Unmodified && fs.Worktree == git.Unmodified {
+			continue
+		}
+		if tooLarge(wt, headTree, path, fs) {
+			large = append(large, path)
 			continue
 		}
 		fp, ferr := diffOneFile(wt, headTree, path, fs)
@@ -176,7 +191,34 @@ func diffWorktree(repo *git.Repository) (view.View, error) {
 			patches = append(patches, fp)
 		}
 	}
-	return textOrEmpty((&filePatches{patches: patches}).String()), nil
+	body := (&filePatches{patches: patches}).String()
+	// Named in the diff's own shape, the way a submodule bump is: the
+	// caller asked what changed, and a file too large to show is part of
+	// the answer rather than a row quietly missing from it.
+	if len(large) > 0 {
+		sort.Strings(large)
+		for _, p := range large {
+			body += fmt.Sprintf("%s changed, larger than %d MiB and not diffed\n", p, maxDiffBytes>>20)
+		}
+	}
+	return textOrEmpty(body), nil
+}
+
+// tooLarge reports a changed path either side of which is over maxDiffBytes,
+// from sizes alone — the blob's recorded size and a stat of the file — so
+// deciding costs no read of either.
+func tooLarge(wt *git.Worktree, headTree *object.Tree, path string, fs *git.FileStatus) bool {
+	if headTree != nil {
+		if f, err := headTree.File(path); err == nil && f.Size > maxDiffBytes {
+			return true
+		}
+	}
+	if fs.Worktree != git.Deleted {
+		if info, err := wt.Filesystem.Stat(path); err == nil && info.Size() > maxDiffBytes {
+			return true
+		}
+	}
+	return false
 }
 
 // diffOneFile builds the patch for a single changed path: HEAD's committed
