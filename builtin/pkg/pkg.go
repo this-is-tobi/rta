@@ -74,9 +74,22 @@ var runCommand = func(ctx context.Context, name string, args ...string) (stdout,
 	cmd.Stdout = &out
 	cmd.Stderr = &errBuf
 	cmd.Stdin = nil
+	cmd.WaitDelay = pipeDelay
 	err = cmd.Run()
 	return out.String(), errBuf.String(), err
 }
+
+// pipeDelay bounds how long a finished-or-killed manager may hold its pipes.
+//
+// A manager that forks something and exits — a background auto-update, a
+// version manager's shim — leaves the child holding this process's end of
+// stdout, and Wait blocks until it sees EOF: not slow, forever, and past
+// listTimeout, because what is stuck is os/exec's copying goroutines rather
+// than the process the deadline killed. The same bound internal/tunnel and
+// builtin/audit put on every kubectl they start. It only starts counting
+// once the process has exited or been killed, so a healthy run never meets
+// it.
+const pipeDelay = 2 * time.Second
 
 // lookPath is the seam for detection. exec.LookPath is the right call for
 // "which managers are here": the question is about $PATH itself.
@@ -95,7 +108,9 @@ func run(ctx context.Context, name string, args ...string) (string, int, *view.E
 	ctx, cancel := context.WithTimeout(ctx, listTimeout)
 	defer cancel()
 	out, stderr, err := runCommand(ctx, name, args...)
-	if err == nil {
+	// ErrWaitDelay is only ever returned for a process that exited zero —
+	// the answer is complete and something else was holding the pipes.
+	if err == nil || errors.Is(err, exec.ErrWaitDelay) {
 		return out, 0, nil
 	}
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {

@@ -2,6 +2,7 @@ package pkg
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"os/exec"
@@ -25,7 +26,14 @@ var runUpgrade = func(ctx context.Context, argv []string, out io.Writer) error {
 	cmd.Stdin = nil
 	cmd.Stdout = out
 	cmd.Stderr = out
-	return cmd.Run()
+	// pipeDelay's reason. It matters here on the TUI path, where out is a
+	// buffer and so a pipe; at a terminal out is the terminal itself and
+	// there is nothing to hold.
+	cmd.WaitDelay = pipeDelay
+	if err := cmd.Run(); err != nil && !errors.Is(err, exec.ErrWaitDelay) {
+		return err
+	}
+	return nil
 }
 
 var isRoot = func() bool { return os.Geteuid() == 0 }
@@ -80,6 +88,13 @@ func runUpgradeCapability(ctx context.Context, req plugin.Request) (view.View, e
 	}
 	target := strings.TrimSpace(req.String("target"))
 	pkg := strings.TrimSpace(req.String("package"))
+	// The name lands in a manager's argv as a bare positional, so one
+	// beginning with a dash would reach it as a flag — the refusal
+	// internal/tunnel makes of a coordinate, for the same reason.
+	if strings.HasPrefix(pkg, "-") {
+		return nil, view.Errorf("pkg.upgrade.package", "%q is not a package name", pkg).
+			WithHint("a name beginning with a dash would reach the manager as a flag")
+	}
 
 	if m, ok := managerByName(target); ok {
 		return upgradeManager(ctx, req, m, pkg)

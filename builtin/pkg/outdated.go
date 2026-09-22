@@ -122,7 +122,11 @@ func outdatedTable(l listing) view.Table {
 	}}
 	for _, r := range l.rows {
 		m, _ := managerByName(r.Manager)
-		t.Rows = append(t.Rows, []string{r.Manager, r.Name, r.Current, r.Latest, "outdated", upgradeCommand(m, r.Name)})
+		arg := r.Name
+		if r.Target != "" {
+			arg = r.Target
+		}
+		t.Rows = append(t.Rows, []string{r.Manager, r.Name, r.Current, r.Latest, "outdated", upgradeCommand(m, arg)})
 	}
 	names := make([]string, 0, len(l.failed))
 	for n := range l.failed {

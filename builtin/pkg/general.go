@@ -35,10 +35,10 @@ func brewManager() manager {
 			}
 			var rows []outdated
 			for _, f := range doc.Formulae {
-				rows = append(rows, outdated{"brew", f.Name, last(f.Installed), f.Current})
+				rows = append(rows, outdated{Manager: "brew", Name: f.Name, Current: last(f.Installed), Latest: f.Current})
 			}
 			for _, c := range doc.Casks {
-				rows = append(rows, outdated{"brew", c.Name, last(c.Installed), c.Current})
+				rows = append(rows, outdated{Manager: "brew", Name: c.Name, Current: last(c.Installed), Latest: c.Current})
 			}
 			return rows, nil
 		},
@@ -79,7 +79,7 @@ func miseManager() manager {
 			}
 			var rows []outdated
 			for tool, v := range doc {
-				rows = append(rows, outdated{"mise", tool, v.Current, v.Latest})
+				rows = append(rows, outdated{Manager: "mise", Name: tool, Current: v.Current, Latest: v.Latest})
 			}
 			return rows, nil
 		},

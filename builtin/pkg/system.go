@@ -37,7 +37,7 @@ func aptManager() manager {
 				if i := strings.Index(line, "upgradable from: "); i >= 0 {
 					current = strings.TrimSuffix(line[i+len("upgradable from: "):], "]")
 				}
-				rows = append(rows, outdated{"apt", name, current, f[1]})
+				rows = append(rows, outdated{Manager: "apt", Name: name, Current: current, Latest: f[1]})
 			}
 			return rows, nil
 		},
@@ -71,7 +71,7 @@ func dnfManager() manager {
 					continue
 				}
 				name, _, _ := strings.Cut(f[0], ".")
-				rows = append(rows, outdated{"dnf", name, "-", f[1]})
+				rows = append(rows, outdated{Manager: "dnf", Name: name, Current: "-", Latest: f[1]})
 			}
 			return rows, nil
 		},
@@ -102,7 +102,7 @@ func apkManager() manager {
 					continue
 				}
 				name, current := splitApkName(strings.TrimSpace(left))
-				rows = append(rows, outdated{"apk", name, current, strings.TrimSpace(right)})
+				rows = append(rows, outdated{Manager: "apk", Name: name, Current: current, Latest: strings.TrimSpace(right)})
 			}
 			return rows, nil
 		},
@@ -143,7 +143,7 @@ func pacmanManager() manager {
 				if len(f) < 4 || f[2] != "->" {
 					continue
 				}
-				rows = append(rows, outdated{"pacman", f[0], f[1], f[3]})
+				rows = append(rows, outdated{Manager: "pacman", Name: f[0], Current: f[1], Latest: f[3]})
 			}
 			return rows, nil
 		},
