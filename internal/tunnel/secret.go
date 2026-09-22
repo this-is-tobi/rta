@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os/exec"
 	"sort"
 	"strings"
@@ -147,6 +148,9 @@ func secretFailed(name, ns, secret, stderr string) *view.Error {
 	one := s
 	if i := strings.IndexByte(one, '\n'); i >= 0 {
 		one = one[:i]
+	}
+	if exe, ok := credentialPluginMissing(s); ok {
+		return credentialMissing(fmt.Sprintf("profile %q", name), exe)
 	}
 	switch {
 	case strings.Contains(s, "not found"):

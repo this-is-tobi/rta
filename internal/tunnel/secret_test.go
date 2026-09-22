@@ -92,6 +92,11 @@ func TestSecretFailuresAreClassified(t *testing.T) {
 		{"not allowed to read it",
 			`echo 'Error from server (Forbidden): secrets "postgres-creds" is forbidden' >&2; exit 1`,
 			"tunnel.secret.denied"},
+		// "not found" again, about the credential plugin rather than the
+		// secret: it used to be reported as the secret not existing.
+		{"credential plugin not installed",
+			`echo 'Unable to connect to the server: getting credentials: exec: executable tsh not found' >&2; exit 1`,
+			"tunnel.credential.missing"},
 		{"kubectl said nothing",
 			`exit 1`,
 			"tunnel.secret.unreadable"},

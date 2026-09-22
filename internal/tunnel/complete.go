@@ -66,9 +66,14 @@ func CompleteKube(ctx context.Context, partial string) (Completion, *view.Error)
 		kctx, ns, kind := segs[0], segs[1], segs[2]
 		name, _, hasPort := strings.Cut(segs[3], ":")
 		if !hasPort {
+			// `--` before the typed segment, the rule the forward and the
+			// secret read already keep for their own positionals: a kind
+			// beginning with a dash is read by kubectl as a flag otherwise,
+			// and `--kubeconfig=` is a flag that runs whatever credential
+			// plugin the named file declares.
 			return kubeList(ctx, Completion{What: kind + " names in " + ns},
 				partial[:strings.LastIndexByte(partial, '/')+1], ":",
-				"--context", kctx, "--namespace", ns, "get", kind, "-o", "name")
+				"--context", kctx, "--namespace", ns, "get", "-o", "name", "--", kind)
 		}
 		return kubePorts(ctx, partial, kctx, ns, kind, name)
 	default:
@@ -105,8 +110,8 @@ func CompleteSecretRef(ctx context.Context, coordinate, partial string) (Complet
 			"", "/", "--context", kctx, "--namespace", ns, "get", "secrets", "-o", "name")
 	}
 	return kubeList(ctx, Completion{What: "keys of Secret " + name},
-		name+"/", "", "--context", kctx, "--namespace", ns, "get", "secret", name,
-		"-o", `go-template={{range $k, $v := .data}}{{$k}}{{"\n"}}{{end}}`)
+		name+"/", "", "--context", kctx, "--namespace", ns, "get", "secret",
+		"-o", `go-template={{range $k, $v := .data}}{{$k}}{{"\n"}}{{end}}`, "--", name)
 }
 
 // kubeContexts lists what kubeconfig holds. Local — `kubectl config` never
@@ -152,7 +157,7 @@ func kubePorts(ctx context.Context, partial, kctx, ns, kind, name string) (Compl
 	}
 	c := Completion{What: "declared ports of " + name}
 	lines, verr := kubeLines(ctx, c.What,
-		"--context", kctx, "--namespace", ns, "get", kind, name, "-o", "jsonpath="+path)
+		"--context", kctx, "--namespace", ns, "get", "-o", "jsonpath="+path, "--", kind, name)
 	if verr != nil {
 		return c, verr
 	}
@@ -246,6 +251,10 @@ func listFailed(what, stderr string) *view.Error {
 	one := s
 	if i := strings.IndexByte(one, '\n'); i >= 0 {
 		one = one[:i]
+	}
+	if exe, ok := credentialPluginMissing(s); ok {
+		return credentialMissing("listing "+what, exe).
+			WithHint("the kubeconfig's exec block for this context names it; the field still takes typing")
 	}
 	switch {
 	case notAuthenticated(s):

@@ -279,6 +279,16 @@ func openInstrumented(ctx context.Context, name string, t Target) (*Tunnel, *vie
 		// rather than the only one.
 		"port-forward", "--", kind+"/"+obj, fmt.Sprintf(":%d", port))
 	harden(cmd)
+	// A cancelled context ends the forward the way Close does — SIGTERM to
+	// the whole group (reap) — rather than os/exec's default, which is
+	// SIGKILL to the leader alone: that gives kubectl no chance to tell the
+	// API server the forward is over, and leaves a credential helper it
+	// spawned running under nobody. The call whose context this is has
+	// nothing to do with a forward its caller gave up on.
+	cmd.Cancel = func() error {
+		reap(cmd)
+		return nil
+	}
 	// Without this, a forward that *fails* while a credential helper still
 	// holds the pipes takes both non-context arms of awaitForwarding's select
 	// out at once: the scanner never sees EOF so `lines` is never closed, and
@@ -395,6 +405,9 @@ func kubectlFailed(name, spec, stderr string) *view.Error {
 	if i := strings.IndexByte(one, '\n'); i >= 0 {
 		one = one[:i]
 	}
+	if exe, ok := credentialPluginMissing(s); ok {
+		return credentialMissing(fmt.Sprintf("profile %q", name), exe)
+	}
 	switch {
 	case strings.Contains(s, "context") && strings.Contains(s, "does not exist"):
 		return view.Errorf("tunnel.context.unknown", "profile %q names a kube context that does not exist", name).
@@ -428,6 +441,41 @@ func kubectlFailed(name, spec, stderr string) *view.Error {
 		return view.Errorf("tunnel.open.failed", "%s: %s", name, one).
 			WithHint("that message is kubectl's; rta shells out to it so your cluster credentials keep working")
 	}
+}
+
+// execPluginMissing matches kubectl's two spellings of an exec credential
+// plugin this machine does not have: a bare name looked up on $PATH, and an
+// absolute path that is not there. Both captured from a real kubectl.
+var execPluginMissing = regexp.MustCompile(
+	`exec: (?:executable (\S+) not found|fork/exec (\S+): no such file or directory)`)
+
+// credentialPluginMissing reports which credential plugin the kubeconfig
+// names and this machine lacks, when that is what stderr says.
+//
+// Read ahead of every other classification, because the message carries
+// "not found" and, read after the fact, became three different wrong
+// answers: a missing service on the forward, a missing secret on the read,
+// and "authenticate again" on a listing — each sending somebody to fix a
+// thing that is fine, for a tool they do not have. The kube plugin met the
+// same message and draws the same line.
+func credentialPluginMissing(stderr string) (string, bool) {
+	m := execPluginMissing.FindStringSubmatch(stderr)
+	if m == nil {
+		return "", false
+	}
+	exe := m[1]
+	if exe == "" {
+		exe = m[2]
+	}
+	return filepath.Base(exe), true
+}
+
+// credentialMissing is the one refusal for that, whatever was being
+// attempted; subject says what.
+func credentialMissing(subject, exe string) *view.Error {
+	return view.Errorf("tunnel.credential.missing",
+		"%s: %s, the context's credential plugin, is not installed", subject, exe).
+		WithHint("the kubeconfig's exec block for this context names it — install it, or put it on PATH")
 }
 
 // notAuthenticated reports whether kubectl's stderr is about identity rather

@@ -20,13 +20,13 @@ func clusterFake(t *testing.T) string {
 case "$*" in
   *"config get-contexts"*) printf 'kind-kind\nhomelab\narn:aws:eks:eu-west-1:1:cluster/prod\n' ;;
   *"get namespaces"*) printf 'namespace/monitoring\nnamespace/databases\n' ;;
-  *"get secret pg-creds"*) printf 'password\nusername\n' ;;
+  *"get secret "*"-- pg-creds"*) printf 'password\nusername\n' ;;
   *"get secrets"*) printf 'secret/pg-creds\nsecret/api-token\n' ;;
-  *"get svc postgres"*) printf '5432 9187' ;;
-  *"get svc"*) printf 'service/redis\nservice/postgres\n' ;;
-  *"get pod postgres-0"*) printf '5432' ;;
-  *"get pod empty-0"*) printf '' ;;
-  *"get deploy app"*) printf '8080' ;;
+  *"-- svc postgres"*) printf '5432 9187' ;;
+  *"-- svc"*) printf 'service/redis\nservice/postgres\n' ;;
+  *"-- pod postgres-0"*) printf '5432' ;;
+  *"-- pod empty-0"*) printf '' ;;
+  *"-- deploy app"*) printf '8080' ;;
 esac
 `)
 	return log
@@ -60,9 +60,11 @@ func TestCompleteKubeWalksTheGrammarSegmentBySegment(t *testing.T) {
 		{"homelab/databases/", "",
 			[]string{"homelab/databases/svc/", "homelab/databases/pod/",
 				"homelab/databases/deploy/", "homelab/databases/sts/"}},
-		{"homelab/databases/svc/", "--context homelab --namespace databases get svc -o name",
+		// The typed segment rides after `--`, so a kind that begins with a
+		// dash is a name kubectl cannot find rather than a flag it obeys.
+		{"homelab/databases/svc/", "--context homelab --namespace databases get -o name -- svc",
 			[]string{"homelab/databases/svc/postgres:", "homelab/databases/svc/redis:"}},
-		{"homelab/databases/svc/postgres:", "--context homelab --namespace databases get svc postgres -o jsonpath={.spec.ports[*].port}",
+		{"homelab/databases/svc/postgres:", "--context homelab --namespace databases get -o jsonpath={.spec.ports[*].port} -- svc postgres",
 			[]string{"homelab/databases/svc/postgres:5432", "homelab/databases/svc/postgres:9187"}},
 	} {
 		t.Run("«"+tc.partial+"»", func(t *testing.T) {
@@ -127,8 +129,8 @@ func TestAContextTheGrammarCannotHoldIsNotOffered(t *testing.T) {
 // segment where the answer is knowledge, not spelling.
 func TestPortsAreReadFromTheSpecPathTheKindKeeps(t *testing.T) {
 	for partial, path := range map[string]string{
-		"homelab/databases/pod/postgres-0:": "get pod postgres-0 -o jsonpath={.spec.containers[*].ports[*].containerPort}",
-		"homelab/databases/deploy/app:":     "get deploy app -o jsonpath={.spec.template.spec.containers[*].ports[*].containerPort}",
+		"homelab/databases/pod/postgres-0:": "get -o jsonpath={.spec.containers[*].ports[*].containerPort} -- pod postgres-0",
+		"homelab/databases/deploy/app:":     "get -o jsonpath={.spec.template.spec.containers[*].ports[*].containerPort} -- deploy app",
 	} {
 		log := clusterFake(t)
 		if _, verr := CompleteKube(context.Background(), partial); verr != nil {
