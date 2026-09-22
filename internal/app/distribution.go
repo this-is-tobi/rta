@@ -50,9 +50,11 @@ func withOthers(problems []*view.Error) *view.Error {
 	if len(problems) == 1 {
 		return verr
 	}
+	// The word alone after the number: format.Count carries its own count,
+	// and the hint read "2 more attached 2 indexes".
 	hint := fmt.Sprintf("%d more attached %s could not be read either — "+
 		"`rta plugin index list` shows every one", len(problems)-1,
-		format.Count(len(problems)-1, "index", "indexes"))
+		pick(len(problems)-1, "index", "indexes"))
 	if verr.Hint != "" {
 		hint = verr.Hint + ". " + hint
 	}
