@@ -35,6 +35,7 @@ import (
 	"strings"
 
 	"github.com/this-is-tobi/rta/internal/paths"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -363,13 +364,7 @@ func within(root, p string) bool {
 // resolving another account's home is not something any input here means, and
 // a file literally named "~something" in the current directory should keep
 // working.
-func ExpandTilde(p string) string {
-	if p != "~" && !strings.HasPrefix(p, "~/") {
-		return p
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return p
-	}
-	return filepath.Join(home, strings.TrimPrefix(strings.TrimPrefix(p, "~"), "/"))
-}
+//
+// The rule itself lives in pkg/plugin, exported so a plugin can apply the
+// same one to its own Local path inputs; this is the host's name for it.
+func ExpandTilde(p string) string { return plugin.ExpandHome(p) }

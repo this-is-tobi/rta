@@ -34,9 +34,16 @@ var tildeTest = regexp.MustCompile(`HasPrefix\([^,]+,\s*"~/?"\)|[!=]= "~"`)
 //
 // ~user is deliberately not supported here and must not be added by a copy
 // elsewhere either — see ExpandTilde's own doc for why.
+//
+// The rule itself now lives in pkg/plugin, exported as plugin.ExpandHome:
+// eight plugins had grown copies of their own for the same reason the
+// built-ins had, with nothing to import, since this package is internal and
+// a plugin is a separate module. ExpandTilde is the host's name for that one
+// function, so pkg/plugin/paths.go is the one other file allowed to spell it.
 func TestOnlyPathguardExpandsALeadingTilde(t *testing.T) {
 	root := repoRoot(t)
 	self := filepath.Join("internal", "pathguard")
+	rule := filepath.Join("pkg", "plugin", "paths.go")
 
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -55,7 +62,7 @@ func TestOnlyPathguardExpandsALeadingTilde(t *testing.T) {
 		if rerr != nil {
 			return rerr
 		}
-		if strings.HasPrefix(rel, self) {
+		if strings.HasPrefix(rel, self) || rel == rule {
 			return nil
 		}
 		body, rerr := os.ReadFile(path)
@@ -64,8 +71,9 @@ func TestOnlyPathguardExpandsALeadingTilde(t *testing.T) {
 		}
 		src := string(body)
 		if strings.Contains(src, "os.UserHomeDir()") && tildeTest.MatchString(src) {
-			t.Errorf("%s expands a leading tilde itself — call pathguard.ExpandTilde, "+
-				"which handles a bare ~ and says why ~user is left alone", filepath.ToSlash(rel))
+			t.Errorf("%s expands a leading tilde itself — call pathguard.ExpandTilde (or "+
+				"plugin.ExpandHome, the same function), which handles a bare ~ and says why "+
+				"~user is left alone", filepath.ToSlash(rel))
 		}
 		return nil
 	})
