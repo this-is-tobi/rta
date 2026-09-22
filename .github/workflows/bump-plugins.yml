@@ -46,7 +46,11 @@ name: Bump plugins
 
 on:
   schedule:
-  - cron: "*/30 * * * *"
+  # Every two hours, off the hour. It ran every thirty minutes — forty-eight
+  # times a day, each a checkout and an index read — for a pin that moves a
+  # few times a week; a plugin release still reaches the full image within
+  # the hour its own bump-rta.yml takes, and a dispatch is there for the rest.
+  - cron: "17 */2 * * *"
   workflow_dispatch:
 
 permissions:
