@@ -275,6 +275,68 @@ func newPluginRemoveCommand(opts *globalOpts) *cobra.Command {
 	return cmd
 }
 
+func newPluginPruneCommand(opts *globalOpts) *cobra.Command {
+	return &cobra.Command{
+		Use:   "prune",
+		Short: "Drop the stored versions no plugin runs",
+		Long: "Every upgrade keeps the previous artifact in the store so a rollback is a\n" +
+			"re-install rather than a re-download, and nothing took the older ones out:\n" +
+			"a plugin followed through ten releases held ten copies. This removes every\n" +
+			"stored version that is neither the one bin/ points at nor the one rta.lock\n" +
+			"records, withdrawing trust from each the way remove does. A plugin whose\n" +
+			"store names no current version is left alone, and the row says so.",
+		Example: "  rta plugin prune --dry-run\n" +
+			"  rta plugin prune --yes",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if !opts.dryRun && !opts.yes {
+				return &view.Error{
+					Code:    CodeConfirmRequired,
+					Message: "pruning withdraws trust from every stored artifact it removes and needs confirmation",
+					Hint:    "re-run with --yes to confirm, or --dry-run to preview",
+				}
+			}
+			prune := plugindist.Prune
+			if opts.dryRun {
+				prune = plugindist.PreviewPrune
+			}
+			pruned, verr := prune()
+			if verr != nil {
+				return verr
+			}
+			if len(pruned) == 0 {
+				return renderView(cmd, opts, view.Text{Body: "nothing to prune — every stored version is the one its plugin runs"})
+			}
+			freed := "Freed"
+			if opts.dryRun {
+				freed = "Would free"
+			}
+			t := view.Table{Columns: []view.Column{{Name: "Plugin"}, {Name: "Kept"}, {Name: "Removed"}, {Name: freed}}}
+			var total uint64
+			for _, p := range pruned {
+				if p.Unclear {
+					t.Rows = append(t.Rows, []string{p.Name, shortAll(p.Kept), "-",
+						"left alone: nothing says which version is current"})
+					continue
+				}
+				total += uint64(p.Bytes)                                                                                        //nolint:gosec // a directory's size, never negative
+				t.Rows = append(t.Rows, []string{p.Name, shortAll(p.Kept), shortAll(p.Removed), format.Bytes(uint64(p.Bytes))}) //nolint:gosec // same
+			}
+			t.Rows = append(t.Rows, []string{"total", "", "", format.Bytes(total)})
+			return renderView(cmd, opts, t)
+		},
+	}
+}
+
+// shortAll spells a list of digests the way a person quotes them.
+func shortAll(digests []string) string {
+	out := make([]string, 0, len(digests))
+	for _, d := range digests {
+		out = append(out, shortDigest(d))
+	}
+	return strings.Join(out, ", ")
+}
+
 func newPluginUpgradeCommand(opts *globalOpts) *cobra.Command {
 	var (
 		all   bool
