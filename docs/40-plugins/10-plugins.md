@@ -203,6 +203,15 @@ A sweep visits every plugin in `rta.lock`, not the ones `outdated` lists — a r
 
 This is the point of the guard rather than an obstacle to route around: nobody reads a declaration diff scrolling past in a sweep, so the diff stops the sweep instead. Naming the plugin — `rta plugin upgrade pg` — upgrades it once you have read what changed, which is the same command you would have run anyway.
 
+### What an upgrade leaves behind
+
+```bash
+rta plugin prune --dry-run             # the stored versions nothing runs
+rta plugin prune --yes                 # drop them, and the trust on each
+```
+
+Every upgrade keeps the previous artifact in the store, so a rollback is a re-install rather than a re-download — and nothing took the older ones out, so a plugin followed through ten releases held ten copies. `prune` removes every stored version that is neither the one `bin/` points at nor the one `rta.lock` records, withdrawing trust from each the way `remove` does: the approval was for those bytes, and the bytes are going. A plugin whose store names no current version at all is left alone, and its row says so.
+
 ## What a plugin can and cannot do
 
 | A plugin… | Can it? |
