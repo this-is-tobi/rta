@@ -626,7 +626,7 @@ func auditModelEndpoint(r *findings.Report) {
 			continue
 		}
 		r.Add(grpAgentModel, "endpoint", findings.Warn,
-			key+" points this shell's agents at "+v+
+			key+" points this shell's agents at "+endpointForDisplay(v)+
 				" — every prompt goes there, and what comes back is what the agent acts on. "+
 				"Deliberate if it is your gateway; worth knowing either way", refInfoExposure)
 	}
@@ -637,6 +637,22 @@ func auditModelEndpoint(r *findings.Report) {
 				refCredExposed)
 		}
 	}
+}
+
+// endpointForDisplay is a base URL as the row may print it: the host and
+// path, never the userinfo. A gateway that authenticates with basic auth is
+// configured as https://user:secret@gateway/, and the row used to echo the
+// variable verbatim — the one credential this file printed, on the screen
+// that gets pasted into an issue, while every other check here names a
+// credential and never shows it. A value that is not a URL at all is shown
+// as it is, since there is no userinfo to find in it.
+func endpointForDisplay(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.User == nil {
+		return raw
+	}
+	u.User = nil
+	return u.String() + " (credentials in the URL not shown)"
 }
 
 // auditRtaReach states the boundary this whole tool rests on, out loud.

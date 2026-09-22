@@ -33,6 +33,12 @@ var kubectlBin = "kubectl"
 
 const kubectlTimeout = 20 * time.Second
 
+// kubectlWaitDelay bounds how long a finished-or-killed kubectl may hold its
+// pipes; see kubectlJSON. It only starts counting once the process has
+// exited or the context has killed it, so a healthy listing is never cut
+// short by it.
+const kubectlWaitDelay = 2 * time.Second
+
 // list is the shape every `kubectl get -o json` returns.
 type list[T any] struct {
 	Items []T `json:"items"`
@@ -75,8 +81,20 @@ func kubectlJSON(ctx context.Context, args []string, what string, out any) *view
 	var errBuf strings.Builder
 	cmd.Stderr = &errBuf
 	cmd.Stdin = nil
+	// A kubeconfig's exec credential helper is handed kubectl's own pipes,
+	// and one that forks something and exits — kubelogin opening a browser
+	// for an OIDC device flow — leaves the write end open after kubectl is
+	// gone. Wait then blocks until every pipe sees EOF, which nothing will
+	// deliver: not slow, forever, and past the deadline above, because what
+	// is stuck is os/exec's copying goroutines rather than the process.
+	// internal/tunnel met this first and bounds every kubectl it starts the
+	// same way; this one wedged a whole audit with no error and no ceiling.
+	cmd.WaitDelay = kubectlWaitDelay
 	raw, err := cmd.Output()
-	if err != nil {
+	// ErrWaitDelay means kubectl itself finished and something else held
+	// the pipes; the bytes may be the whole answer. JSON is self-delimiting,
+	// so the decode below judges that rather than a blanket refusal.
+	if err != nil && !errors.Is(err, exec.ErrWaitDelay) {
 		return classifyKubectl(ctx, err, errBuf.String())
 	}
 	if err := json.Unmarshal(raw, out); err != nil {
