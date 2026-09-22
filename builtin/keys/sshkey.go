@@ -30,6 +30,24 @@ func fileExists(path string) bool {
 	return err == nil && !info.IsDir()
 }
 
+// checkComment refuses a comment that would not stay on the key's own line.
+// The .pub file is one authorized_keys line — type, key, comment — and
+// `ssh-copy-id` installs the file as it is, so a comment carrying a line
+// break would install whatever follows the break as a key of its own.
+func checkComment(comment string) *view.Error {
+	if strings.ContainsAny(comment, "\r\n") {
+		return view.Errorf("keys.comment.invalid", "a comment may not contain a line break").
+			WithHint("it is written after the key on the one line of the .pub file — keep it to user@host")
+	}
+	return nil
+}
+
+// maxPipedWords bounds what readPipedWords takes from a pipe: 24 BIP39 words
+// are under 250 bytes, so this is generous, and it keeps a stray `cat` of
+// something large from being read into memory whole and offered as a
+// phrase.
+const maxPipedWords = 4 << 10
+
 // keyPassphraseTries is how many attempts a person gets before this gives
 // up, the same count builtin/kv allows for a store's own identity.
 const keyPassphraseTries = 3
@@ -79,9 +97,13 @@ func readPipedWords(req plugin.Request) (string, *view.Error) {
 	if term.IsTerminal(int(f.Fd())) {
 		return "", nil
 	}
-	data, err := io.ReadAll(f)
+	data, err := io.ReadAll(io.LimitReader(f, maxPipedWords+1))
 	if err != nil {
 		return "", view.Errorf("keys.restore.stdin", "reading stdin: %v", err)
+	}
+	if len(data) > maxPipedWords {
+		return "", view.Errorf("keys.restore.stdin", "stdin holds far more than a seed phrase").
+			WithHint("pipe the 24 words alone, or pass --words")
 	}
 	return strings.TrimSpace(string(data)), nil
 }
