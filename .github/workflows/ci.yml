@@ -177,12 +177,12 @@ jobs:
       # reads as untested without this.
       COVERAGE_PACKAGES: ./...
 
-  # The fourth runner the job above argues for, at a tenth of its scope.
+  # The fourth runner the job above argues for, at a fraction of its scope.
   #
-  # Two packages, not `./...`, and that is a statement about the suite rather
+  # Five packages, not `./...`, and that is a statement about the suite rather
   # than about Windows: much of it assumes Unix paths, modes and sandboxing,
-  # and making all of it Windows-clean is its own piece of work. These two are
-  # where the platform is actually load-bearing, so these two run.
+  # and making all of it Windows-clean is its own piece of work. These five are
+  # where the platform is actually load-bearing, so these five run.
   #
   # It exists because `cross` proving the code compiles for windows/amd64 hid
   # three separate bugs that made a plugin unloadable there, none of which a
@@ -194,19 +194,39 @@ jobs:
   # Windows, so it has to be able to say those stay fixed — and whoever
   # publishes the plugin archives, only a Windows machine can say it.
   #
-  # No race detector: it needs a C toolchain on Windows, and this leg is about
-  # filenames, modes and links. Concurrency is covered by the three runners
-  # above, which do run under -race.
+  # The three packages beyond the plugin store are the same argument applied to
+  # state rather than to binaries. filelock and atomicfile are where Windows
+  # stops being POSIX: a rename must delete what it replaces, a delete needs a
+  # handle nobody else holds, and os.Chtimes opens with FILE_SHARE_WRITE alone —
+  # so a reader doing nothing but reading can refuse a lock release, a lease
+  # renewal and an atomic write, none of which a compiler or a Linux runner will
+  # ever say. Three real bugs came out of reading that, and only a Windows
+  # machine can say they stay fixed. builtin/kv is here for one test:
+  # TestStoreDoesNotLoseAConcurrentWrite is the only place in the tree that
+  # contends a lock sentinel from many goroutines at once.
+  #
+  # internal/clipboard and internal/render/tui are deliberately not here, and
+  # that is a decision rather than an oversight: on Windows every meaningful
+  # clipboard test skips (the stand-in is a shell script) and the TUI's fixtures
+  # want /tmp and #!/bin/sh. Listing either would make this leg claim coverage
+  # it does not have, which is worse than a shorter list.
   test-windows:
-    name: Test the plugin store on Windows
+    name: Test platform-sensitive packages on Windows
     needs: changes
     if: ${{ needs.changes.outputs.code == 'true' }}
     uses: this-is-tobi/github-workflows/.github/workflows/test-go.yml@v0
     permissions:
       contents: read
     with:
-      PACKAGES: ./internal/plugindist/... ./internal/pluginhost/...
+      PACKAGES: >-
+        ./internal/plugindist/... ./internal/pluginhost/...
+        ./internal/filelock/... ./internal/atomicfile/... ./builtin/kv/...
       RUNNERS: '[["windows-latest"]]'
+      # Stated rather than inherited from the catalogue default, because the
+      # comment above used to deny it: windows-latest ships a C toolchain,
+      # this leg has run under -race for as long as it has existed, and the
+      # second scheduler is worth what it costs.
+      RACE: true
       SHUFFLE: true
       COUNT: "1"
 
