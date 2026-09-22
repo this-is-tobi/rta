@@ -304,6 +304,9 @@ func runBackup(_ context.Context, req plugin.Request) (view.View, error) {
 func runAdd(_ context.Context, req plugin.Request) (view.View, error) {
 	out := pathguard.ExpandTilde(req.String("out"))
 	pub := out + ".pub"
+	if verr := checkComment(req.String("comment")); verr != nil {
+		return nil, verr
+	}
 	// Both checked before anything is generated, and the message says what is
 	// at stake: unlike a restore, there is nothing to recover an overwritten
 	// key from.
@@ -338,6 +341,9 @@ func runAdd(_ context.Context, req plugin.Request) (view.View, error) {
 func runRestore(_ context.Context, req plugin.Request) (view.View, error) {
 	out := pathguard.ExpandTilde(req.String("out"))
 	pub := out + ".pub"
+	if verr := checkComment(req.String("comment")); verr != nil {
+		return nil, verr
+	}
 	if fileExists(out) {
 		return nil, view.Errorf("keys.restore.exists", "%s already exists", out).
 			WithHint("name a new file — a restored key is never written over an existing one")
