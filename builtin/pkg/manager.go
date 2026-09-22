@@ -14,6 +14,11 @@ type outdated struct {
 	Name    string
 	Current string
 	Latest  string
+	// Target is what the manager's upgrade argv takes when that is not
+	// Name. Only go sets it: the row names the binary, since that is what
+	// somebody sees on $PATH and what pkg.upgrade takes, and `go install`
+	// wants the package path the binary was built from.
+	Target string
 }
 
 // manager is one package manager this built-in can read and drive.

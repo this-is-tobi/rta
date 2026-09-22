@@ -46,7 +46,7 @@ func pipxManager() manager {
 					return nil, verr
 				}
 				if latest != "" && semverLess(cur, latest) {
-					rows = append(rows, outdated{"pipx", name, cur, latest})
+					rows = append(rows, outdated{Manager: "pipx", Name: name, Current: cur, Latest: latest})
 				}
 			}
 			return rows, nil
@@ -84,7 +84,7 @@ func uvManager() manager {
 					return nil, verr
 				}
 				if latest != "" && semverLess(cur, latest) {
-					rows = append(rows, outdated{"uv", name, cur, latest})
+					rows = append(rows, outdated{Manager: "uv", Name: name, Current: cur, Latest: latest})
 				}
 			}
 			return rows, nil
@@ -144,7 +144,7 @@ func npmManager() manager {
 			}
 			var rows []outdated
 			for name, v := range doc {
-				rows = append(rows, outdated{"npm", name, v.Current, v.Latest})
+				rows = append(rows, outdated{Manager: "npm", Name: name, Current: v.Current, Latest: v.Latest})
 			}
 			return rows, nil
 		},
@@ -179,7 +179,7 @@ func bunManager() manager {
 					return nil, verr
 				}
 				if latest != "" && semverLess(cur, latest) {
-					rows = append(rows, outdated{"bun", name, cur, latest})
+					rows = append(rows, outdated{Manager: "bun", Name: name, Current: cur, Latest: latest})
 				}
 			}
 			return rows, nil
@@ -219,7 +219,7 @@ func cargoManager() manager {
 					return nil, verr
 				}
 				if latest != "" && semverLess(cur, latest) {
-					rows = append(rows, outdated{"cargo", name, cur, latest})
+					rows = append(rows, outdated{Manager: "cargo", Name: name, Current: cur, Latest: latest})
 				}
 			}
 			return rows, nil
@@ -252,7 +252,7 @@ func gemManager() manager {
 				if !ok {
 					continue
 				}
-				rows = append(rows, outdated{"gem", name, cur, latest})
+				rows = append(rows, outdated{Manager: "gem", Name: name, Current: cur, Latest: latest})
 			}
 			return rows, nil
 		},
@@ -290,16 +290,22 @@ func goManager() manager {
 				if verr != nil {
 					return nil, verr
 				}
-				module, cur := goModuleOf(out)
-				if module == "" || cur == "" || cur == "(devel)" {
+				pkgPath, module, cur := goModuleOf(out)
+				if pkgPath == "" || module == "" || cur == "" || cur == "(devel)" {
 					continue
 				}
+				// The proxy answers @latest for a *module*, and the package
+				// a binary was built from is usually not one: govulncheck is
+				// golang.org/x/vuln/cmd/govulncheck inside golang.org/x/vuln.
+				// Asked with the package path it answered 404, which read as
+				// "not found" and never as outdated — every tool laid out
+				// under cmd/ was reported current forever.
 				latest, verr := c.latestGoModule(ctx, module)
 				if verr != nil {
 					return nil, verr
 				}
 				if latest != "" && semverLess(cur, latest) {
-					rows = append(rows, outdated{"go", e.Name(), cur, latest})
+					rows = append(rows, outdated{Manager: "go", Name: e.Name(), Current: cur, Latest: latest, Target: pkgPath})
 				}
 			}
 			return rows, nil
@@ -330,8 +336,10 @@ func goBinDir(ctx context.Context) (string, *view.Error) {
 }
 
 // goModuleOf reads `go version -m` output: the `path` line is the package
-// the binary was built from, the `mod` line is its module and version.
-func goModuleOf(out string) (pkgPath, version string) {
+// the binary was built from, the `mod` line is its module and version. All
+// three are kept apart because they are asked about differently — the
+// module is what the proxy knows, the package is what `go install` takes.
+func goModuleOf(out string) (pkgPath, module, version string) {
 	for _, line := range lines(out) {
 		f := strings.Fields(line)
 		if len(f) < 2 {
@@ -342,11 +350,11 @@ func goModuleOf(out string) (pkgPath, version string) {
 			pkgPath = f[1]
 		case "mod":
 			if len(f) >= 3 {
-				version = f[2]
+				module, version = f[1], f[2]
 			}
 		}
 	}
-	return pkgPath, version
+	return pkgPath, module, version
 }
 
 // goInstallTarget is what `go install <x>@latest` needs for a binary in
@@ -360,7 +368,7 @@ func goInstallTarget(ctx context.Context, bin string) (string, *view.Error) {
 	if verr != nil {
 		return "", verr
 	}
-	pkgPath, _ := goModuleOf(out)
+	pkgPath, _, _ := goModuleOf(out)
 	if pkgPath == "" {
 		return "", view.Errorf("pkg.go.unknown", "%s in %s was not built by go install, or carries no module path", bin, dir)
 	}
