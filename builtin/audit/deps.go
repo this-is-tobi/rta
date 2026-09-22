@@ -469,7 +469,13 @@ func gradeDeps(r *findings.Report, inv inventory, vulns map[string][]string,
 	}
 	for _, c := range affected {
 		classes := classify(vulns[c.key()], records)
-		detail := c.name + " " + c.version + " (" + c.ecosystem + ")"
+		// Not c.name: this row's Check column is c.name, and spelling it again
+		// here spent twenty of a compact line's ninety-six characters saying
+		// "golang.org/x/crypto" beside a cell that already said it — while what
+		// fell off the end of the same line was the grade, the remedy, or what
+		// the advisory is even about. The clip happens in the data, so those
+		// characters were not lost to a narrow terminal; they were gone.
+		detail := c.version + " (" + c.ecosystem + ")"
 		if where := whereFrom(inv, c); where != "" {
 			detail += " — " + where
 		}

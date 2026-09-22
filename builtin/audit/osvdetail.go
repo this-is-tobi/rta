@@ -63,12 +63,30 @@ type osvRecord struct {
 	DatabaseSpecific struct {
 		Severity string `json:"severity"`
 	} `json:"database_specific"`
-	Affected []struct {
-		Package osvPackage `json:"package"`
-		Ranges  []struct {
-			Events []map[string]string `json:"events"`
-		} `json:"ranges"`
-	} `json:"affected"`
+	Affected []osvAffected `json:"affected"`
+}
+
+// osvAffected is one row of the affected matrix: which package, which version
+// ranges, and — for Go, where the ecosystem publishes it — which import paths
+// inside the module the advisory is actually about.
+//
+// A named type rather than the anonymous struct this was, because the
+// anonymous one made every field addition a change to each literal that built
+// it, test fixtures included.
+type osvAffected struct {
+	Package osvPackage `json:"package"`
+	Ranges  []struct {
+		Events []map[string]string `json:"events"`
+	} `json:"ranges"`
+	EcosystemSpecific struct {
+		Imports []osvImport `json:"imports"`
+	} `json:"ecosystem_specific"`
+}
+
+// osvImport is one affected import path inside a module — named for the reason
+// osvAffected is.
+type osvImport struct {
+	Path string `json:"path"`
 }
 
 // severityRank orders the words, so "the worst one" is a comparison rather
@@ -130,6 +148,101 @@ func fixedFor(rec osvRecord, name, ecosystem string) []string {
 		}
 	}
 	return out
+}
+
+// importsFor is the import paths this record says are affected inside the
+// package that was asked about, in the record's own order.
+//
+// **An advisory against a module is not always an advisory against a build of
+// it, and this is the field that says which.** rta's own `audit deps` reports
+// GO-2026-5932 against golang.org/x/crypto — "the openpgp package is
+// unmaintained, unsafe by design" — whose only range event is `introduced: 0`,
+// so there is no version to move to and the finding never clears. rta does not
+// import openpgp; almost every Go project depends on x/crypto for chacha20 or
+// argon2 and gets the same permanent failure. The seven paths this advisory
+// publishes all sit under golang.org/x/crypto/openpgp, and naming them is the
+// difference between a row somebody settles in seconds and one they stop
+// reading the report over.
+//
+// It is not reachability analysis and must not be read as one — whether the
+// build reaches an affected path is govulncheck's question, and answering it
+// needs the call graph. This surfaces a field the record already carries.
+func importsFor(rec osvRecord, name, ecosystem string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, a := range rec.Affected {
+		if a.Package.Name != name || !strings.EqualFold(a.Package.Ecosystem, ecosystem) {
+			continue
+		}
+		for _, imp := range a.EcosystemSpecific.Imports {
+			p := strings.TrimSpace(imp.Path)
+			if p == "" || seen[p] {
+				continue
+			}
+			seen[p] = true
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// collapseImports drops every path that sits under another path in the list,
+// because a parent already answers for its children: the openpgp advisory
+// names openpgp and six packages inside it, and "affects openpgp" is the whole
+// of what those seven say.
+//
+// A path is only dropped when its parent is itself listed. Two unrelated
+// packages stay two, and shortening them to their common prefix would name a
+// package the advisory never mentioned.
+func collapseImports(paths []string) []string {
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		under := false
+		for _, other := range paths {
+			if other != p && strings.HasPrefix(p, other+"/") {
+				under = true
+				break
+			}
+		}
+		if !under {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// affectsMax bounds the clause: the cell it goes in is clipped at ninety-six
+// characters and an import path is long, so two and a count beats four and an
+// ellipsis somewhere in the middle of the third.
+const affectsMax = 2
+
+// affectsClause names the packages an advisory is about, or nothing when
+// naming them would say nothing.
+//
+// Silent when the record names no import path, and silent when the one path is
+// the module itself — "golang.org/x/net affects golang.org/x/net" is a row
+// wasting the budget the grade and the remedy are competing for.
+func affectsClause(rec osvRecord, name, ecosystem string) string {
+	paths := collapseImports(importsFor(rec, name, ecosystem))
+	if len(paths) == 0 || (len(paths) == 1 && paths[0] == name) {
+		return ""
+	}
+	// Named relative to the module, because the row's Check column is the
+	// module: "affects openpgp" on golang.org/x/crypto's row says everything
+	// "affects golang.org/x/crypto/openpgp" does, in a fifth of a compact
+	// line's ninety-six characters — and a clause that does not fit is a
+	// clause nobody reads, since the clip lands in the data and not only on
+	// the screen. A path outside the module keeps its whole name, because
+	// nothing on the row would supply the rest.
+	short := make([]string, 0, len(paths))
+	for _, p := range paths {
+		short = append(short, strings.TrimPrefix(p, name+"/"))
+	}
+	if len(short) > affectsMax {
+		return "affects " + strings.Join(short[:affectsMax], ", ") +
+			" and " + strconv.Itoa(len(short)-affectsMax) + " more"
+	}
+	return "affects " + strings.Join(short, ", ")
 }
 
 // detailOSV fetches the records for ids, concurrently and bounded, and
@@ -416,10 +529,23 @@ func advisoryLine(c component, classes []vulnClass) string {
 		count += " (" + counts + ")"
 	}
 	worst := classes[0]
+	// What the advisory is about, where a version to move to would have gone.
+	// Only when there is no such version: with a fix in hand the remedy is the
+	// version and the paths are detail, and this cell is clipped. Without one —
+	// an advisory whose only range event is `introduced: 0`, which never clears
+	// — the paths are the only thing a reader can act on.
+	affects := ""
+	if len(fixedFor(worst.rec, c.name, c.ecosystem)) == 0 {
+		affects = affectsClause(worst.rec, c.name, c.ecosystem)
+	}
 	if worst.severity == "" {
 		// Nothing here is graded, so there is no worst — the identifiers are
 		// the whole answer, exactly as they were before any of this existed.
-		return count + ": " + listIDs(classes)
+		line := count + ": " + listIDs(classes)
+		if affects != "" {
+			line += " — " + affects
+		}
+		return line
 	}
 
 	// **Grade and remedy first, count second**, because the compact table
@@ -432,6 +558,8 @@ func advisoryLine(c component, classes []vulnClass) string {
 	line := worst.severity
 	if fixed := fixedFor(worst.rec, c.name, c.ecosystem); len(fixed) > 0 {
 		line += ", fixed in " + strings.Join(fixed, " or ")
+	} else if affects != "" {
+		line += ", " + affects
 	}
 	return line + " — " + count
 }

@@ -22,12 +22,7 @@ func rec(id string, aliases []string, word, vector string, affected ...string) o
 		}{Type: "CVSS_V3", Score: vector})
 	}
 	for i := 0; i+2 < len(affected)+1; i += 3 {
-		a := struct {
-			Package osvPackage `json:"package"`
-			Ranges  []struct {
-				Events []map[string]string `json:"events"`
-			} `json:"ranges"`
-		}{Package: osvPackage{Name: affected[i], Ecosystem: affected[i+1]}}
+		a := osvAffected{Package: osvPackage{Name: affected[i], Ecosystem: affected[i+1]}}
 		a.Ranges = append(a.Ranges, struct {
 			Events []map[string]string `json:"events"`
 		}{Events: []map[string]string{{"introduced": "0"}, {"fixed": affected[i+2]}}})
@@ -60,6 +55,117 @@ func TestSeverityPrefersTheStatedWordAndFallsBackToTheVector(t *testing.T) {
 				t.Errorf("severityOf = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+// unfixed builds the shape this exists for: an advisory whose only range event
+// is `introduced: 0`, so no version clears it, naming the import paths inside
+// the module it is actually about. GO-2026-5932 against golang.org/x/crypto is
+// exactly this, and it fails rta's own `audit deps` permanently.
+func unfixed(id, name, ecosystem string, imports ...string) osvRecord {
+	r := rec(id, nil, "", "", name, ecosystem, "")
+	for _, p := range imports {
+		r.Affected[0].EcosystemSpecific.Imports = append(
+			r.Affected[0].EcosystemSpecific.Imports, osvImport{Path: p})
+	}
+	return r
+}
+
+// Affected import paths are a fact about one package in one ecosystem, the
+// same as the fixed versions beside them.
+func TestAffectedImportPathsComeFromTheMatchingPackageOnly(t *testing.T) {
+	r := unfixed("GO-2026-5932", "golang.org/x/crypto", "Go", "golang.org/x/crypto/openpgp")
+	r.Affected = append(r.Affected, osvAffected{Package: osvPackage{Name: "lodash", Ecosystem: "npm"}})
+
+	if got := importsFor(r, "golang.org/x/crypto", "Go"); len(got) != 1 || got[0] != "golang.org/x/crypto/openpgp" {
+		t.Errorf("Go imports = %v, want [golang.org/x/crypto/openpgp]", got)
+	}
+	if got := importsFor(r, "golang.org/x/crypto", "npm"); len(got) != 0 {
+		t.Errorf("a name in the wrong ecosystem answered %v", got)
+	}
+}
+
+// Seven paths, one answer: the advisory names openpgp and six packages inside
+// it, and a row that listed all seven would say one thing seven times and lose
+// the grade and the count to the clip.
+func TestPathsUnderAListedPathCollapseOntoIt(t *testing.T) {
+	got := collapseImports([]string{
+		"golang.org/x/crypto/openpgp",
+		"golang.org/x/crypto/openpgp/packet",
+		"golang.org/x/crypto/openpgp/armor",
+		"golang.org/x/crypto/openpgp/s2k",
+	})
+	if len(got) != 1 || got[0] != "golang.org/x/crypto/openpgp" {
+		t.Errorf("collapsed = %v, want the parent alone", got)
+	}
+
+	// Two unrelated packages stay two. Shortening them to their common prefix
+	// would name a package the advisory never mentioned.
+	two := collapseImports([]string{"example.com/m/alpha", "example.com/m/beta"})
+	if len(two) != 2 {
+		t.Errorf("collapsed = %v, want both kept", two)
+	}
+}
+
+// **The row that never clears has to say what it is about.** An advisory with
+// no fixed version — unmaintained package, no remedy published — leaves the
+// remedy slot empty, and the import paths are the only thing a reader can act
+// on: rta's own report fails on GO-2026-5932 against golang.org/x/crypto, a
+// module every Go project pulls in for chacha20 or argon2, for an openpgp
+// package rta does not import.
+func TestAnAdvisoryWithNoFixNamesWhatItAffects(t *testing.T) {
+	c := component{name: "golang.org/x/crypto", version: "v0.56.0", ecosystem: "Go"}
+	records := map[string]osvRecord{
+		"GO-2026-5932": unfixed("GO-2026-5932", "golang.org/x/crypto", "Go",
+			"golang.org/x/crypto/openpgp", "golang.org/x/crypto/openpgp/packet"),
+	}
+	line := advisoryLine(c, classify([]string{"GO-2026-5932"}, records))
+	if !strings.Contains(line, "affects openpgp") {
+		t.Errorf("line = %q — an ungraded row with no fix says nothing about what it covers", line)
+	}
+	if strings.Contains(line, "openpgp/packet") {
+		t.Errorf("line = %q — a path under one already named is said twice", line)
+	}
+	// Relative to the module, because the row's Check column is the module and
+	// the whole clause has to fit inside a bound that clips the data, not just
+	// the screen.
+	if strings.Contains(line, "golang.org/x/crypto/openpgp") {
+		t.Errorf("line = %q — the module is named twice on one row", line)
+	}
+	if len(line) > 96 {
+		t.Errorf("line is %d characters; the compact bound is 96 and clips what runs past it", len(line))
+	}
+
+	// A path outside the module keeps its whole name: nothing on the row would
+	// supply the rest of it.
+	outside := unfixed("GO-2", "example.com/m", "Go", "other.example/pkg")
+	if got := affectsClause(outside, "example.com/m", "Go"); got != "affects other.example/pkg" {
+		t.Errorf("clause = %q, want the full path for a package outside the module", got)
+	}
+}
+
+// And a graded advisory with a fix does not carry it: the version is the
+// remedy, the cell is clipped at ninety-six characters, and the paths would be
+// competing with the thing somebody acts on.
+func TestAFixedAdvisoryLeadsWithTheVersionAndNotThePaths(t *testing.T) {
+	c := component{name: "golang.org/x/net", version: "v0.5.0", ecosystem: "Go"}
+	r := rec("GHSA-1", nil, "HIGH", "", "golang.org/x/net", "Go", "0.7.0")
+	r.Affected[0].EcosystemSpecific.Imports = []osvImport{{Path: "golang.org/x/net/http2"}}
+
+	line := advisoryLine(c, classify([]string{"GHSA-1"}, map[string]osvRecord{"GHSA-1": r}))
+	if !strings.HasPrefix(line, "high, fixed in 0.7.0") {
+		t.Errorf("line = %q, want the grade and the version first", line)
+	}
+	if strings.Contains(line, "affects") {
+		t.Errorf("line = %q — the paths took budget from the remedy", line)
+	}
+}
+
+// A record naming the module itself adds nothing by naming it again.
+func TestAnAdvisoryAgainstTheWholeModuleSaysNothingExtra(t *testing.T) {
+	r := unfixed("GO-1", "example.com/m", "Go", "example.com/m")
+	if got := affectsClause(r, "example.com/m", "Go"); got != "" {
+		t.Errorf("clause = %q, want nothing — it repeats the row's own name", got)
 	}
 }
 
