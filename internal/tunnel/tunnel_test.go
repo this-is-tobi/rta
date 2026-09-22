@@ -171,6 +171,15 @@ func TestEveryKubectlFailureIsClassified(t *testing.T) {
 		{"credential plugin failed",
 			`Unable to connect to the server: getting credentials: exec: executable tsh failed`,
 			"tunnel.unauthenticated"},
+		// The helper not installed at all. kubectl's message carries "not
+		// found", and read as a missing service it sent somebody to check a
+		// namespace for a tool missing from their own machine.
+		{"credential plugin not installed, by name",
+			`Unable to connect to the server: getting credentials: exec: executable tsh not found`,
+			"tunnel.credential.missing"},
+		{"credential plugin not installed, by path",
+			`Unable to connect to the server: getting credentials: exec: fork/exec /opt/acme/acme-auth: no such file or directory`,
+			"tunnel.credential.missing"},
 		{"port taken", `Unable to listen on port: address already in use`, "tunnel.port.taken"},
 		{"silent death", ``, "tunnel.open.failed"},
 		{"anything else", `error: something new`, "tunnel.open.failed"},
