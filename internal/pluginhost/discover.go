@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
-
 	"strings"
+	"sync"
 
 	"github.com/this-is-tobi/rta/internal/paths"
 	"github.com/this-is-tobi/rta/internal/plugintrust"
@@ -236,11 +237,38 @@ func (h *Host) LoadInto(ctx context.Context, reg *registry.Registry) []error {
 	availErr := available()
 	deny, denyErr := Resolve()
 
-	for _, f := range Discover() {
-		// Hashed here rather than inside Open, so the digest the operator
-		// approved is the digest that gets launched — one read of the file,
-		// no window between deciding and running.
-		id, err := Identify(f.Path)
+	found := Discover()
+	// Hashed here rather than inside Open, so the digest the operator
+	// approved is the digest that gets launched — one read of the file, no
+	// window between deciding and running.
+	//
+	// All of them at once, before the sweep: the hash is the one cost every
+	// invocation pays per installed plugin (cache.go measured it at 8.7 ms
+	// on an 18 MB binary), and a dozen of them one after another put some
+	// eighty milliseconds in front of every command — tab completion
+	// included, which runs rta on every press of the key. SHA-256 over a
+	// file the page cache already holds is CPU-bound, so the hashes land
+	// together in the time one of them took. Only the digest moves off the
+	// sweep; the sweep itself stays in Discover's order, because which
+	// plugin wins a namespace is decided by that order and nothing here may
+	// make it a race.
+	ids := make([]Identity, len(found))
+	errs := make([]error, len(found))
+	var wg sync.WaitGroup
+	slots := make(chan struct{}, runtime.GOMAXPROCS(0))
+	for i, f := range found {
+		wg.Add(1)
+		slots <- struct{}{}
+		go func() {
+			defer wg.Done()
+			defer func() { <-slots }()
+			ids[i], errs[i] = Identify(f.Path)
+		}()
+	}
+	wg.Wait()
+
+	for i, f := range found {
+		id, err := ids[i], errs[i]
 		if err != nil {
 			problems = append(problems, fmt.Errorf("plugin %s: %w", f.Name, err))
 			continue
