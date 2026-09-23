@@ -14,13 +14,10 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/hex"
-	"fmt"
 	"net/url"
 	"strings"
-	"unicode/utf8"
 
-	"github.com/this-is-tobi/rta/internal/textclean"
-	"github.com/this-is-tobi/rta/pkg/format"
+	"github.com/this-is-tobi/rta/builtin/internal/bytesview"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -211,71 +208,16 @@ func runURL(_ context.Context, req plugin.Request) (view.View, error) {
 	return view.Text{Body: url.QueryEscape(value)}, nil
 }
 
-// decoded is what a decode shows: the text when it is plain text, a hex dump
-// when it is not.
-//
-// Printing decoded bytes as they came was a decoder that answered with
-// nothing. Every renderer strips control characters on the way to a terminal,
-// so an escape sequence cannot act there — and so `codec b64 --decode
-// AAECAwT/` printed an empty line, and -o json turned its 0xff into U+FFFD. A
-// dump shows every byte, in the layout `hexdump -C` made familiar.
+// decoded is what a decode shows: the text when it is plain text, a dump of
+// every byte when it is not — see bytesview for why printing them as they came
+// showed nothing.
 func decoded(raw []byte) view.View {
-	if plainText(raw) {
+	if bytesview.PlainText(raw) {
 		return view.Text{Body: string(raw)}
 	}
-	return view.Text{Body: dump(raw)}
-}
-
-// plainText reports whether raw is text a terminal shows exactly as it is:
-// valid UTF-8 holding nothing a renderer strips or a reader cannot see, the
-// line breaks and tabs of ordinary text aside.
-func plainText(raw []byte) bool {
-	if !utf8.Valid(raw) {
-		return false
-	}
-	for _, r := range string(raw) {
-		if r != '\n' && r != '\t' && r != '\r' && textclean.Deceives(string(r)) {
-			return false
-		}
-	}
-	return true
+	return view.Text{Body: bytesview.Dump(raw, maxDump)}
 }
 
 // maxDump bounds a dump. Past it the bytes are a file somebody wants on disk,
 // not lines to read at a terminal, and `base64 -d` is the tool for that.
 const maxDump = 4 << 10
-
-func dump(raw []byte) string {
-	shown := raw
-	var b strings.Builder
-	b.WriteString(format.CountOf(len(raw), "byte") + ", not plain text")
-	if len(raw) > maxDump {
-		shown = raw[:maxDump]
-		b.WriteString(" — the first " + format.Bytes(maxDump) + " shown")
-	}
-	b.WriteString(":")
-	for off := 0; off < len(shown); off += 16 {
-		line := shown[off:min(off+16, len(shown))]
-		fmt.Fprintf(&b, "\n%08x  ", off)
-		for i := range 16 {
-			if i < len(line) {
-				fmt.Fprintf(&b, "%02x ", line[i])
-			} else {
-				b.WriteString("   ")
-			}
-			if i == 7 {
-				b.WriteByte(' ')
-			}
-		}
-		b.WriteString(" |")
-		for _, c := range line {
-			if c >= 0x20 && c < 0x7f {
-				b.WriteByte(c)
-			} else {
-				b.WriteByte('.')
-			}
-		}
-		b.WriteString("|")
-	}
-	return b.String()
-}
