@@ -38,10 +38,11 @@ import (
 //   - A token nested in another (cty "JWT", RFC 7519 §5.2), when the outer one
 //     is signed and so the inner one is there to read.
 //
-// It checks nothing, and says so in every result. What it does is name what a
-// strict parser would refuse — a padded or standard-alphabet segment, a member
-// named twice, an empty signature — because that is what somebody debugging a
-// rejected token came to find out.
+// It checks nothing unless handed a key (verify.go), and says which in every
+// result. What it always does is name what a strict parser would refuse — a
+// padded or standard-alphabet segment, a member named twice, an empty
+// signature — because that is what somebody debugging a rejected token came
+// to find out.
 
 // maxPipedToken bounds what codec.jwt and codec.jwk read from a pipe. A token
 // in an Authorization header is a few kilobytes and a key set a few dozen, so
@@ -60,18 +61,44 @@ func runJWT(_ context.Context, req plugin.Request) (view.View, error) {
 	if verr != nil {
 		return nil, verr
 	}
+	check, verr := verifierFrom(req)
+	if verr != nil {
+		return nil, verr
+	}
 	token := unwrapToken(raw)
 	var v view.View
 	if strings.HasPrefix(token, "{") {
-		v, verr = decodeJSONSerialization(token)
+		v, verr = decodeJSONSerialization(token, check)
 	} else {
-		v, verr = decodeCompact(compactForm(token), 0)
+		v, verr = decodeCompact(compactForm(token), 0, check)
 	}
 	// Through a variable rather than returned straight: a nil *view.Error
 	// handed back as an error is an interface that is not nil, and every
 	// token would have "failed" with no message.
 	if verr != nil {
 		return nil, verr
+	}
+	return v, nil
+}
+
+// verifierFrom builds the signature check a call asked for with --key or
+// --secret, or returns nil when it asked for none — the ordinary case, where
+// the page says nothing was verified.
+func verifierFrom(req plugin.Request) (*verifier, *view.Error) {
+	key, secret := strings.TrimSpace(req.String("key")), req.String("secret")
+	if key == "" && secret == "" {
+		return nil, nil
+	}
+	v := &verifier{}
+	if secret != "" {
+		v.secret = []byte(secret)
+	}
+	if key != "" {
+		keys, verr := keysFrom(key)
+		if verr != nil {
+			return nil, verr
+		}
+		v.keys = keys
 	}
 	return v, nil
 }
@@ -142,12 +169,18 @@ func compactForm(s string) string {
 	return strings.Join(strings.Fields(s), "")
 }
 
-func decodeCompact(token string, depth int) (view.View, *view.Error) {
+// decodeCompact reads a compact token. check, when set, verifies its
+// signature; it is never handed to a nested token, whose signature the key
+// given for the outer one says nothing about.
+func decodeCompact(token string, depth int, check *verifier) (view.View, *view.Error) {
 	parts := strings.Split(token, ".")
 	switch len(parts) {
 	case 3:
-		return decodeJWS(parts, depth)
+		return decodeJWS(parts, depth, check)
 	case 5:
+		if check != nil {
+			return nil, encryptedNotSigned()
+		}
 		return decodeJWE(parts)
 	}
 	got := fmt.Sprintf("%d dot-separated parts", len(parts))
@@ -274,10 +307,24 @@ func (p *page) paragraphs(lead ...string) []string {
 	return paras
 }
 
-func decodeJWS(parts []string, depth int) (view.View, *view.Error) {
+func encryptedNotSigned() *view.Error {
+	return view.Errorf("codec.jwt.encrypted", "this token is encrypted, not signed: there is no signature here to verify").
+		WithHint("without --key it shows the header, and its cty says whether a signed token is sealed inside")
+}
+
+func decodeJWS(parts []string, depth int, check *verifier) (view.View, *view.Error) {
 	header, dialect, verr := decodeHeader(parts[0], "header")
 	if verr != nil {
 		return nil, verr
+	}
+	lead := verdict(header, parts[2])
+	if check != nil {
+		// The signing input is the two segments exactly as the token carries
+		// them (RFC 7515 §5.2), never re-encoded: a padded header was signed
+		// padded.
+		if lead, verr = check.check(header, parts[0]+"."+parts[1], parts[2]); verr != nil {
+			return nil, verr
+		}
 	}
 	p := &page{}
 	p.dialect("header", dialect)
@@ -288,7 +335,7 @@ func decodeJWS(parts []string, depth int) (view.View, *view.Error) {
 	}
 	p.signatureSegment(parts[2])
 	p.embeddedKey(header)
-	return p.finish(verdict(header, parts[2]), window(claims)), nil
+	return p.finish(lead, window(claims)), nil
 }
 
 // payload adds the section a JWS payload calls for and returns its claims,
@@ -323,7 +370,7 @@ func (p *page) payload(header object, seg string, depth int) (object, *view.Erro
 		return claims, nil
 	}
 	if strings.EqualFold(header.str("cty"), "JWT") && depth < maxNesting {
-		if inner, verr := decodeCompact(compactForm(string(raw)), depth+1); verr == nil {
+		if inner, verr := decodeCompact(compactForm(string(raw)), depth+1, nil); verr == nil {
 			p.add("nested", "nested token", inner)
 			p.note("Its cty says the payload is itself a JWT, decoded above as the nested token; its own verification says what that one carries.")
 			return object{}, nil
@@ -576,7 +623,7 @@ func keyHeld(alg string) (who, noun string) {
 // RFC 7516 §7.2), flattened or general. It is rarer than the compact form and
 // not rare at all where it is used: every ACME request (RFC 8555) is a
 // flattened JWS.
-func decodeJSONSerialization(input string) (view.View, *view.Error) {
+func decodeJSONSerialization(input string, check *verifier) (view.View, *view.Error) {
 	doc, err := decodeObject([]byte(input))
 	if err != nil {
 		return nil, view.Errorf("codec.jwt.invalid", "reading the JSON serialization: %v", err)
@@ -585,9 +632,12 @@ func decodeJSONSerialization(input string) (view.View, *view.Error) {
 	p.duplicates(doc, "JSON serialization", "RFC 7515 §7.2")
 	switch {
 	case doc.has("ciphertext"):
+		if check != nil {
+			return nil, encryptedNotSigned()
+		}
 		return p.jsonJWE(doc)
 	case doc.has("payload"):
-		return p.jsonJWS(doc)
+		return p.jsonJWS(doc, check)
 	case doc.has("kty") || doc.has("keys"):
 		return nil, view.Errorf("codec.jwt.notatoken", "this is a JSON Web Key, not a token").
 			WithHint("`rta codec jwk` reads keys and key sets")
@@ -599,10 +649,13 @@ func decodeJSONSerialization(input string) (view.View, *view.Error) {
 // signer is one signature of a JSON JWS, or one recipient of a JSON JWE: the
 // header it was made under, split the way the serialization splits it.
 type signer struct {
-	protected   object
-	unprotected object
-	shared      bool // an unprotected header is present
-	value       string
+	protected object
+	// protectedSeg is the protected header as the serialization carries it,
+	// which is what the signature covers (RFC 7515 §5.2).
+	protectedSeg string
+	unprotected  object
+	shared       bool // an unprotected header is present
+	value        string
 }
 
 // merged is the header a verifier would work from: the union of both halves,
@@ -630,7 +683,7 @@ func (p *page) readSigner(m object, protectedWhat, valueName string) (signer, *v
 			return signer{}, verr
 		}
 		p.dialect(protectedWhat, dialect)
-		s.protected = hdr
+		s.protected, s.protectedSeg = hdr, seg
 	}
 	if u, ok := m.values["header"]; ok {
 		if s.unprotected, s.shared = asObject(u); !s.shared {
@@ -651,7 +704,7 @@ func (p *page) readSigner(m object, protectedWhat, valueName string) (signer, *v
 	return s, nil
 }
 
-func (p *page) jsonJWS(doc object) (view.View, *view.Error) {
+func (p *page) jsonJWS(doc object, check *verifier) (view.View, *view.Error) {
 	payload, ok := doc.values["payload"].(string)
 	if !ok {
 		return nil, view.Errorf("codec.jwt.invalid", "the payload member is not a string")
@@ -710,6 +763,13 @@ func (p *page) jsonJWS(doc object) (view.View, *view.Error) {
 		p.note("An unprotected header is not covered by the signature: anything in it could have been changed on the way without the signature noticing.")
 	}
 
+	if check != nil {
+		lead, verr := verifyEach(check, signers, payload)
+		if verr != nil {
+			return nil, verr
+		}
+		return p.finish(lead, window(claims)), nil
+	}
 	lead := verdict(signers[0].merged(), signers[0].value)
 	if len(signers) > 1 {
 		lead = fmt.Sprintf("NOT VERIFIED — none of its %d signatures was checked. This is a debugging view "+
@@ -721,6 +781,27 @@ func (p *page) jsonJWS(doc object) (view.View, *view.Error) {
 		}
 	}
 	return p.finish(lead, window(claims)), nil
+}
+
+// verifyEach checks every signature of a JSON JWS with the key given and
+// reports the first that matches. One is enough to say the token was signed
+// by a holder of that key; which of several signers a verifier requires is
+// its own policy (RFC 7515 §7.2), not something the token decides.
+func verifyEach(check *verifier, signers []signer, payload string) (string, *view.Error) {
+	var first *view.Error
+	for i, s := range signers {
+		lead, verr := check.check(s.merged(), s.protectedSeg+"."+payload, s.value)
+		if verr == nil {
+			if len(signers) > 1 {
+				lead = fmt.Sprintf("Signature %d of %d: %s", i+1, len(signers), lead)
+			}
+			return lead, nil
+		}
+		if first == nil {
+			first = verr
+		}
+	}
+	return "", first
 }
 
 func (p *page) jsonJWE(doc object) (view.View, *view.Error) {
