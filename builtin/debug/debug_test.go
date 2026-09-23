@@ -5,8 +5,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
-	"testing/iotest"
 
+	"github.com/this-is-tobi/rta/builtin/internal/pipein"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -34,7 +34,7 @@ func TestRunAnsiUsesTheArgumentWhenGiven(t *testing.T) {
 	}
 }
 
-// A non-CLI request must never block on stdin — readPipedStdin has to
+// A non-CLI request must never block on stdin — pipein.Read has to
 // short-circuit before it ever touches stdio.Real()/term.IsTerminal, which
 // this proves indirectly: an MCP request with no argument reaches the
 // "nothing to explain" error rather than hanging.
@@ -47,31 +47,20 @@ func TestRunAnsiOnANonCliSurfaceWithNoArgumentErrorsRatherThanReadingStdin(t *te
 	}
 }
 
-func TestSlurpStdinReturnsWhatWasWritten(t *testing.T) {
-	got, verr := slurpStdin(strings.NewReader("piped text"))
-	if verr != nil {
-		t.Fatal(verr)
+// A read failure and an oversized pipe are both this capability's to word:
+// pipein reports what happened, and only debug.ansi knows what the pipe was
+// supposed to hold.
+func TestStdinErrorWordsBothFailures(t *testing.T) {
+	if verr := stdinError(errors.New("boom")); verr == nil || verr.Code != "debug.ansi.stdin" ||
+		!strings.Contains(verr.Message, "boom") {
+		t.Errorf("read failure = %v, want code debug.ansi.stdin naming the cause", verr)
 	}
-	if got != "piped text" {
-		t.Errorf("got %q", got)
+	verr := stdinError(pipein.ErrTooLarge)
+	if verr == nil || verr.Code != "debug.ansi.stdin" || !strings.Contains(verr.Message, "1.0 MiB") {
+		t.Errorf("oversized pipe = %v, want the bound named", verr)
 	}
-}
-
-func TestSlurpStdinClassifiesAReadFailure(t *testing.T) {
-	_, verr := slurpStdin(iotest.ErrReader(errors.New("boom")))
-	if verr == nil || verr.Code != "debug.ansi.stdin" {
-		t.Errorf("got %v, want code debug.ansi.stdin", verr)
-	}
-}
-
-func TestReadPipedStdinNeverTouchesStdinOnANonCliSurface(t *testing.T) {
-	// No assertion beyond "returns quickly with no error": if this touched
-	// stdio.Real()/term.IsTerminal, the test process's own stdin (whatever
-	// `go test` gave it) would decide the outcome instead of the surface
-	// check, which is exactly the coupling this guards against.
-	got, verr := readPipedStdin(req(map[string]any{}).WithSurface(plugin.SurfaceMCP))
-	if verr != nil || got != "" {
-		t.Errorf("got %q, %v; want \"\", nil", got, verr)
+	if stdinError(nil) != nil {
+		t.Error("no error became one")
 	}
 }
 
