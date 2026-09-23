@@ -212,14 +212,14 @@ func probe(ctx context.Context, req plugin.Request, send string) (view.View, err
 		if _, err := stream.Write([]byte(payload)); err != nil {
 			return nil, view.Errorf("net.send.write", "sending to %s: %v", address, err)
 		}
-		pairs = append(pairs, view.Pair{Key: "sent", Value: format.Bytes(uint64(len(payload)))})
+		pairs = append(pairs, view.Pair{Key: "sent", Value: format.Bytes(len(payload))})
 	}
 
 	banner, err := readBanner(stream, wait)
 	if err != nil {
 		return nil, view.Errorf("net.probe.read", "reading from %s: %v", address, err)
 	}
-	pairs = append(pairs, view.Pair{Key: "received", Value: format.Bytes(uint64(len(banner)))})
+	pairs = append(pairs, view.Pair{Key: "received", Value: format.Bytes(len(banner))})
 
 	response := view.Text{Body: printable(banner)}
 	if len(banner) == 0 {

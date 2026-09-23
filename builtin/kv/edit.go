@@ -175,7 +175,7 @@ func runEdit(_ context.Context, req plugin.Request) (view.View, error) {
 	argv := editorCommand()
 	if req.DryRun {
 		return view.Text{Body: fmt.Sprintf("would open %q (%s, %s) in %s",
-			key, e.Kind, format.Bytes(uint64(len(e.Value))), argv[0])}, nil
+			key, e.Kind, format.Bytes(len(e.Value)), argv[0])}, nil
 	}
 
 	dir, verr := editDir()
@@ -289,5 +289,5 @@ func runEdit(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 	e = current
 	return view.Text{Body: fmt.Sprintf("updated %q (%s, %s)",
-		key, e.Kind, format.Bytes(uint64(len(edited))))}, nil
+		key, e.Kind, format.Bytes(len(edited)))}, nil
 }

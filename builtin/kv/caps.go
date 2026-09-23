@@ -107,7 +107,7 @@ func runList(_ context.Context, req plugin.Request) (view.View, error) {
 	t := view.Table{Columns: cols}
 	for _, k := range names {
 		e := s.Entries[k]
-		row := []string{k, e.Kind, format.Bytes(uint64(len(e.Value))), e.Description, itemstore.Age(e.Updated)}
+		row := []string{k, e.Kind, format.Bytes(len(e.Value)), e.Description, itemstore.Age(e.Updated)}
 		if withHistory {
 			row = append(row, historyCell(len(e.Previous)))
 		}
@@ -149,7 +149,7 @@ func runShow(_ context.Context, req plugin.Request) (view.View, error) {
 	pairs := []view.Pair{
 		{Key: "key", Value: key},
 		{Key: "kind", Value: e.Kind},
-		{Key: "size", Value: format.Bytes(uint64(len(e.Value)))},
+		{Key: "size", Value: format.Bytes(len(e.Value))},
 	}
 	if e.Description != "" {
 		pairs = append(pairs, view.Pair{Key: "description", Value: e.Description})
@@ -196,7 +196,7 @@ func runGet(_ context.Context, req plugin.Request) (view.View, error) {
 		return view.Text{Body: string(e.Value)}, nil
 	}
 	if req.DryRun {
-		return view.Text{Body: fmt.Sprintf("would write %q (%s) to %s", key, format.Bytes(uint64(len(e.Value))), out)}, nil
+		return view.Text{Body: fmt.Sprintf("would write %q (%s) to %s", key, format.Bytes(len(e.Value)), out)}, nil
 	}
 	// A secret leaving the store for the filesystem lands readable by its
 	// owner and nobody else, whatever the umask says — and whatever mode the
@@ -210,7 +210,7 @@ func runGet(_ context.Context, req plugin.Request) (view.View, error) {
 	if verr := writeOut(pathguard.ExpandTilde(out), e.Value); verr != nil {
 		return nil, verr
 	}
-	return view.Text{Body: fmt.Sprintf("wrote %q to %s (%s, mode 0600)", key, out, format.Bytes(uint64(len(e.Value))))}, nil
+	return view.Text{Body: fmt.Sprintf("wrote %q to %s (%s, mode 0600)", key, out, format.Bytes(len(e.Value)))}, nil
 }
 
 // writeOut writes a secret to a caller-chosen path at exactly mode 0600,
@@ -439,7 +439,7 @@ func runSet(_ context.Context, req plugin.Request) (view.View, error) {
 		kind = detectKind(string(value), filename)
 	}
 	if req.DryRun && given {
-		return view.Text{Body: fmt.Sprintf("would set %q (%s, %s)", key, kind, format.Bytes(uint64(len(value))))}, nil
+		return view.Text{Body: fmt.Sprintf("would set %q (%s, %s)", key, kind, format.Bytes(len(value)))}, nil
 	}
 
 	unlock, verr := lockStore()
@@ -501,9 +501,9 @@ func runSet(_ context.Context, req plugin.Request) (view.View, error) {
 	case !given:
 		msg = fmt.Sprintf("relabelled %q (%s) — the secret is unchanged", key, e.Kind)
 	case existed:
-		msg = fmt.Sprintf("updated %q (%s, %s)", key, kind, format.Bytes(uint64(len(value))))
+		msg = fmt.Sprintf("updated %q (%s, %s)", key, kind, format.Bytes(len(value)))
 	default:
-		msg = fmt.Sprintf("set %q (%s, %s)", key, kind, format.Bytes(uint64(len(value))))
+		msg = fmt.Sprintf("set %q (%s, %s)", key, kind, format.Bytes(len(value)))
 	}
 	if specs := req.StringSlice("recipient"); len(specs) > 0 {
 		msg += "\nstore re-encrypted — `rta kv recipients` lists who can read it"
@@ -563,7 +563,7 @@ func runRename(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 	if req.DryRun {
 		return view.Text{Body: fmt.Sprintf("would rename %q to %q (%s, %s)",
-			from, to, e.Kind, format.Bytes(uint64(len(e.Value))))}, nil
+			from, to, e.Kind, format.Bytes(len(e.Value)))}, nil
 	}
 	delete(s.Entries, from)
 	s.Entries[to] = e
@@ -887,7 +887,7 @@ func runStatus(ctx context.Context, req plugin.Request) (view.View, error) {
 		return nil, view.Errorf("kv.store.unreadable", "reading %s: %v", path, err)
 	}
 	pairs = append(pairs,
-		view.Pair{Key: "size", Value: format.Bytes(uint64(info.Size()))}, //nolint:gosec // a file size is never negative
+		view.Pair{Key: "size", Value: format.Bytes(info.Size())},
 		view.Pair{Key: "changed", Value: itemstore.Age(info.ModTime())},
 	)
 

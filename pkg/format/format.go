@@ -18,7 +18,38 @@ import (
 )
 
 // Bytes renders a byte count in binary units: "512 B", "2.0 KiB", "3.0 GiB".
-func Bytes(b uint64) string {
+//
+// It takes whatever integer type the caller is holding, because nothing in Go
+// that measures bytes hands over a uint64: io.Copy returns int64, FileInfo.Size
+// is int64, len is int, and a server's own stat is whatever its client library
+// declared. While this took uint64 alone, every one of those callers wrote the
+// widening itself — fifty-three sites across this repository and the plugins —
+// and because gosec reads int64 -> uint64 as an overflow nothing has ruled out,
+// five of them carried a //nolint repeating one sentence about one fact and
+// three more clamped with max(n, 0) in case the sentence was wrong. Widening a
+// byte count is this function's business, not the business of everybody who
+// happens to have one.
+//
+// A negative count keeps its sign rather than wrapping into the unsigned
+// range. Under the uint64 signature, a caller that subtracted its way below
+// zero rendered -1 as "16.0 EiB" — a figure plausible enough for a reader to
+// act on, which is worse than the "-1 B" that shows the bug.
+func Bytes[T integer](n T) string {
+	if n < 0 {
+		// -(n+1)+1, not -n, which is still negative at T's own minimum.
+		return "-" + binaryUnits(uint64(-(n+1))+1)
+	}
+	return binaryUnits(uint64(n))
+}
+
+// integer is every type a byte count turns up in. Unexported because a caller
+// names the value, never the constraint.
+type integer interface {
+	~int | ~int8 | ~int16 | ~int32 | ~int64 |
+		~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64
+}
+
+func binaryUnits(b uint64) string {
 	const unit = 1024
 	if b < unit {
 		return fmt.Sprintf("%d B", b)

@@ -50,7 +50,7 @@ func runCopy(_ context.Context, req plugin.Request) (view.View, error) {
 	if !ok {
 		return nil, notFound(key)
 	}
-	size := format.Bytes(uint64(len(e.Value)))
+	size := format.Bytes(len(e.Value))
 	if req.DryRun {
 		return view.Text{Body: fmt.Sprintf("would copy %q (%s, %s) to the clipboard", key, e.Kind, size)}, nil
 	}
