@@ -327,6 +327,7 @@
     "name": "codec_b64",
     "description": "── the text below is written by the plugin, not by rta ──\nBase64 encode or decode a value\n\nDecoding accepts standard, URL-safe, and unpadded variants without being told which — the caller already has the encoded value, so being forgiving about which base64 dialect produced it costs nothing.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
+    "idempotent_hint": true,
     "input_schema": {
       "additionalProperties": false,
       "properties": {
@@ -353,6 +354,7 @@
     "name": "codec_hex",
     "description": "── the text below is written by the plugin, not by rta ──\nHex encode or decode a value\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
+    "idempotent_hint": true,
     "input_schema": {
       "additionalProperties": false,
       "properties": {
@@ -375,6 +377,7 @@
     "name": "codec_jwk",
     "description": "── the text below is written by the plugin, not by rta ──\nRead a JSON Web Key or key set: type, size, thumbprint, and whether it is private\n\nTakes one JWK or a whole key set — an issuer's jwks_uri answer — and says what each key is: its type and size, whether its point is on its curve, its kid, use and alg, and the RFC 7638 thumbprint a DPoP cnf.jkt or a pinned key is compared against. Names a key holding private material, which a published set never should, and two keys sharing a kid. A certificate chain in x5c is read and checked against the key beside it. Private members are never printed. Given no argument, reads the key from standard input.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
+    "idempotent_hint": true,
     "input_schema": {
       "additionalProperties": false,
       "properties": {
@@ -390,6 +393,7 @@
     "name": "codec_jwt",
     "description": "── the text below is written by the plugin, not by rta ──\nDecode a JWT, JWS or JWE for inspection: headers, claims, dates\n\nReads every serialization the JOSE family defines — a signed token (JWS), an encrypted one (JWE), and the JSON form of either — with the headers and claims decoded, the dates read, and anything a strict parser would refuse named: a padded segment, a member given twice, an empty signature. A JWE's header is read and its content is not, because decrypting takes the recipient's private key. Unverified and labeled as such: this is for reading a token while debugging, not for authenticating one — anyone can hand you a token with any claims at all. A pasted `Authorization: Bearer` line works. Given no argument, reads the token from standard input, which keeps a live one out of shell history and out of the process list.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
+    "idempotent_hint": true,
     "input_schema": {
       "additionalProperties": false,
       "properties": {
@@ -405,6 +409,7 @@
     "name": "codec_url",
     "description": "── the text below is written by the plugin, not by rta ──\nEscape a value for a URL, or unescape one\n\nQuery-component escaping (spaces become +), the form almost everyone means by \"URL encode this\" — the value for a query string or form body.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
+    "idempotent_hint": true,
     "input_schema": {
       "additionalProperties": false,
       "properties": {
