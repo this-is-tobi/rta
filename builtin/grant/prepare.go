@@ -313,10 +313,23 @@ func unknownAgentNote(known []string, agent string) string {
 // several servers open under it, and which of them takes the next call is
 // not something this can know.
 func olderServerNote() string {
-	others := session.OtherBuilds(session.Self())
-	if len(others) == 0 {
+	named, n := olderServersNamed()
+	if n == 0 {
 		return ""
 	}
+	return fmt.Sprintf("note: %s open on another build of rta — reconnect the client, or this grant "+
+		"can be refused by a server deciding from the build it started with: %s",
+		format.Count(n, "server is", "servers are"), named)
+}
+
+// olderServersNamed is "claude (pid 17188), cursor (pid 22451)" for every
+// server open on a build this one is not, with how many of them there are.
+//
+// Two surfaces report this — `grant allow` at the moment of issue, `grant
+// list` over the roster — and somebody who sees both has to be told about
+// the same set in the same words, so neither composes the list itself.
+func olderServersNamed() (string, int) {
+	others := session.OtherBuilds(session.Self())
 	named := make([]string, 0, len(others))
 	for _, s := range others {
 		who := s.Agent
@@ -325,9 +338,31 @@ func olderServerNote() string {
 		}
 		named = append(named, fmt.Sprintf("%s (pid %d)", who, s.PID))
 	}
-	return fmt.Sprintf("note: %s open on another build of rta — reconnect the client, or this grant "+
-		"can be refused by a server deciding from the build it started with: %s",
-		format.Count(len(others), "server is", "servers are"), strings.Join(named, ", "))
+	return strings.Join(named, ", "), len(others)
+}
+
+// olderServerWarning is that same fact on the roster, where a grant that will
+// be refused is listed looking perfectly healthy.
+//
+// A warning rather than a row, because it is not about any one grant: the rows
+// are a complete account of what is on disk, and this is the part the table
+// cannot see — how a process that started on another build will decide.
+// The refusal an agent gets says nothing about it on purpose (refuseMissing
+// keeps it byte-identical to an ungranted call, so an agent cannot enumerate
+// the operator's profiles), and that is exactly why the person reading the
+// roster has to be able to find it here.
+func olderServerWarning() *view.Error {
+	named, n := olderServersNamed()
+	if n == 0 {
+		return nil
+	}
+	return &view.Error{
+		Code: "core.grant.older.server",
+		Message: fmt.Sprintf("%s open on another build of rta, and a server decides by the build it "+
+			"started with, so a grant listed here can still be refused",
+			format.Count(n, "server is", "servers are")),
+		Hint: "reconnect the client: " + named,
+	}
 }
 
 // cappedNote words a TTL that came back shorter than asked, naming which
