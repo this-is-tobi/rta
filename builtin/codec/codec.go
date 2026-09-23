@@ -35,7 +35,7 @@ func Plugin() plugin.Plugin {
 				Description: "Decoding accepts standard, URL-safe, and unpadded variants without being " +
 					"told which — the caller already has the encoded value, so being forgiving about " +
 					"which base64 dialect produced it costs nothing.",
-				Safety: plugin.Read,
+				Safety: plugin.Read, Idempotent: true,
 				Inputs: []plugin.Field{valueField, decodeField,
 					{Name: "url", Type: plugin.Bool, Help: "use the URL-safe alphabet when encoding"}},
 				Run: runB64,
@@ -43,16 +43,16 @@ func Plugin() plugin.Plugin {
 			{
 				ID:      "codec.hex",
 				Summary: "Hex encode or decode a value",
-				Safety:  plugin.Read,
-				Inputs:  []plugin.Field{valueField, decodeField},
-				Run:     runHex,
+				Safety:  plugin.Read, Idempotent: true,
+				Inputs: []plugin.Field{valueField, decodeField},
+				Run:    runHex,
 			},
 			{
 				ID:      "codec.url",
 				Summary: "Escape a value for a URL, or unescape one",
 				Description: "Query-component escaping (spaces become +), the form almost everyone " +
 					"means by \"URL encode this\" — the value for a query string or form body.",
-				Safety: plugin.Read,
+				Safety: plugin.Read, Idempotent: true,
 				Inputs: []plugin.Field{valueField, decodeField},
 				Run:    runURL,
 			},
@@ -68,7 +68,7 @@ func Plugin() plugin.Plugin {
 					"hand you a token with any claims at all. A pasted `Authorization: Bearer` line works. " +
 					"Given no argument, reads the token from standard input, which keeps a live one out of " +
 					"shell history and out of the process list.",
-				Safety: plugin.Read,
+				Safety: plugin.Read, Idempotent: true,
 				// Positional but not Required, because a pipe can supply it —
 				// so without this the dashboard's automatic set (every Read
 				// that needs no input) would call it unasked, on a timer, with
@@ -90,7 +90,7 @@ func Plugin() plugin.Plugin {
 					"key holding private material, which a published set never should, and two keys sharing " +
 					"a kid. A certificate chain in x5c is read and checked against the key beside it. Private " +
 					"members are never printed. Given no argument, reads the key from standard input.",
-				Safety:    plugin.Read,
+				Safety: plugin.Read, Idempotent: true,
 				NoPreview: true,
 				// Secret for the reason codec.jwt's token is: a private JWK is
 				// exactly what somebody pastes here to find out whether it is
