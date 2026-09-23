@@ -19,6 +19,7 @@ import (
 	"github.com/guptarohit/asciigraph"
 
 	"github.com/this-is-tobi/rta/internal/render/theme"
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -185,7 +186,7 @@ func renderCSV(w io.Writer, v view.View, opts Options) error {
 		// A failed note must not fail the render: the rows are already out
 		// and correct, and a closed stderr is not a reason to report the
 		// query as broken.
-		_, _ = fmt.Fprintf(opts.Notes, "# %d of %d rows\n", len(t.Rows), t.Total)
+		_, _ = fmt.Fprintf(opts.Notes, "# %d of %s\n", len(t.Rows), format.CountOf(t.Total, "row"))
 	}
 	if more := continues(t); more != "" && opts.Notes != nil {
 		_, _ = fmt.Fprintf(opts.Notes, "# %s\n", more)
@@ -490,7 +491,7 @@ func prettyTable(w io.Writer, t view.Table, st styles, highlight int) error {
 	}
 	var footer []string
 	if t.Total > len(t.Rows) {
-		footer = append(footer, fmt.Sprintf("%d of %d rows", len(t.Rows), t.Total))
+		footer = append(footer, fmt.Sprintf("%d of %s", len(t.Rows), format.CountOf(t.Total, "row")))
 	}
 	if more := continues(t); more != "" {
 		footer = append(footer, more)

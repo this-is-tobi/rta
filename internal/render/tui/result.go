@@ -86,7 +86,7 @@ func (m Model) resultMeta() string {
 	case view.Table:
 		n := len(v.Rows)
 		total := max(v.Total, n)
-		parts = append(parts, theme.Subtle.Render(fmt.Sprintf("%d of %d rows", n, total)))
+		parts = append(parts, theme.Subtle.Render(fmt.Sprintf("%d of %s", n, format.CountOf(total, "row"))))
 		if m.interactive() && n > 0 {
 			parts = append(parts, theme.Subtle.Render(fmt.Sprintf("row %d/%d", m.row+1, n)))
 		}

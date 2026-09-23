@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -89,7 +90,7 @@ func markdownTable(b *strings.Builder, t view.Table) {
 	// A paginated table that did not say so would be read as the whole set,
 	// which is the kind of quiet wrongness a report must not carry.
 	if t.Total > len(t.Rows) {
-		fmt.Fprintf(b, "\n_Showing %d of %d rows._\n", len(t.Rows), t.Total)
+		fmt.Fprintf(b, "\n_Showing %d of %s._\n", len(t.Rows), format.CountOf(t.Total, "row"))
 	}
 	// And the rows it could not read at all, which is the same wrongness
 	// with less to notice: a short page at least shows a heading missing.
