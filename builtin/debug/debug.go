@@ -19,11 +19,10 @@ package debug
 
 import (
 	"context"
-	"io"
+	"errors"
 
-	"golang.org/x/term"
-
-	"github.com/this-is-tobi/rta/internal/stdio"
+	"github.com/this-is-tobi/rta/builtin/internal/pipein"
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -65,11 +64,18 @@ func Plugin() plugin.Plugin {
 	}
 }
 
+// maxPipedInput bounds what debug.ansi reads from a pipe. The explanation is a
+// row per sequence and per printable run, so an input past this size is a
+// capture to be cut down rather than one to be read whole — and an unbounded
+// read was one `cat /dev/urandom | rta debug ansi` away from holding the
+// machine's memory.
+const maxPipedInput = 1 << 20
+
 func runAnsi(_ context.Context, req plugin.Request) (view.View, error) {
 	input := req.String("input")
 	if input == "" {
-		piped, verr := readPipedStdin(req)
-		if verr != nil {
+		piped, err := pipein.Read(req, maxPipedInput)
+		if verr := stdinError(err); verr != nil {
 			return nil, verr
 		}
 		input = piped
@@ -81,29 +87,15 @@ func runAnsi(_ context.Context, req plugin.Request) (view.View, error) {
 	return explainAnsi(input), nil
 }
 
-// readPipedStdin returns "" — not an error — for every case where there is
-// nothing to read rather than something merely absent: a non-CLI surface,
-// where stdin is not this call's business (TUI owns the screen, MCP has no
-// terminal at the other end), and a CLI call with no pipe behind it, where
-// reading would block on a person who is never going to send EOF. Mirrors
-// builtin/kv's canPrompt, which draws the same "is there really something
-// there" line for the opposite direction (asking a question instead of
-// reading an answer).
-func readPipedStdin(req plugin.Request) (string, *view.Error) {
-	if req.Surface() != plugin.SurfaceCLI {
-		return "", nil
+func stdinError(err error) *view.Error {
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, pipein.ErrTooLarge):
+		return view.Errorf("debug.ansi.stdin", "stdin holds more than the %s debug ansi explains",
+			format.Bytes(maxPipedInput)).
+			WithHint("pipe the part that misbehaves: head -c 65536 capture.log | rta debug ansi")
+	default:
+		return view.Errorf("debug.ansi.stdin", "reading stdin: %v", err)
 	}
-	f := stdio.Real()
-	if term.IsTerminal(int(f.Fd())) {
-		return "", nil
-	}
-	return slurpStdin(f)
-}
-
-func slurpStdin(r io.Reader) (string, *view.Error) {
-	data, err := io.ReadAll(r)
-	if err != nil {
-		return "", view.Errorf("debug.ansi.stdin", "reading stdin: %v", err)
-	}
-	return string(data), nil
 }

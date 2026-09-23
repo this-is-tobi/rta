@@ -8,7 +8,6 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -17,6 +16,7 @@ import (
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/term"
 
+	"github.com/this-is-tobi/rta/builtin/internal/pipein"
 	"github.com/this-is-tobi/rta/builtin/internal/sshkeys"
 
 	"github.com/this-is-tobi/rta/internal/atomicfile"
@@ -83,29 +83,20 @@ var promptWords = func() (string, error) {
 	return string(secret), err
 }
 
-// readPipedWords returns "" — not an error — whenever there is nothing to
-// read rather than something merely absent: a non-CLI surface (moot today,
-// since keys.restore is HumanOnly and the TUI never reaches this
-// function through its own masked form field) or a CLI call with a real
-// terminal behind it, where reading would block on a person who is never
-// going to send EOF. Mirrors builtin/debug's readPipedStdin.
+// readPipedWords returns the seed phrase piped to a CLI call, or "" when
+// there is no pipe to read — see pipein.Read for which calls those are. The
+// surface half is moot today, since keys.restore is HumanOnly and the TUI
+// never reaches this function through its own masked form field.
 func readPipedWords(req plugin.Request) (string, *view.Error) {
-	if req.Surface() != plugin.SurfaceCLI {
-		return "", nil
-	}
-	f := stdio.Real()
-	if term.IsTerminal(int(f.Fd())) {
-		return "", nil
-	}
-	data, err := io.ReadAll(io.LimitReader(f, maxPipedWords+1))
-	if err != nil {
-		return "", view.Errorf("keys.restore.stdin", "reading stdin: %v", err)
-	}
-	if len(data) > maxPipedWords {
+	data, err := pipein.Read(req, maxPipedWords)
+	switch {
+	case errors.Is(err, pipein.ErrTooLarge):
 		return "", view.Errorf("keys.restore.stdin", "stdin holds far more than a seed phrase").
 			WithHint("pipe the 24 words alone, or pass --words")
+	case err != nil:
+		return "", view.Errorf("keys.restore.stdin", "reading stdin: %v", err)
 	}
-	return strings.TrimSpace(string(data)), nil
+	return strings.TrimSpace(data), nil
 }
 
 // canPrompt reports whether this request can reach a person at a terminal —
