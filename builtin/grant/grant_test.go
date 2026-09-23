@@ -468,9 +468,15 @@ func TestMaxUsesIsRecordedAndShownInList(t *testing.T) {
 	if len(grants) != 1 || grants[0].MaxUses != 1 {
 		t.Fatalf("grants = %+v, want MaxUses 1", grants)
 	}
+	// The noun agrees with the cap: a single-use grant has "1 of 1 use"
+	// left, and this test used to pin "1 of 1 uses" as the intended text.
 	tbl := listed(t, run(t, listH, nil))
-	if got := cell(t, tbl, 0, "Budget Left"); got != "1 of 1 uses" {
+	if got := cell(t, tbl, 0, "Budget Left"); got != "1 of 1 use" {
 		t.Errorf("budget left = %q, want the count and the cap", got)
+	}
+	run(t, allowH, map[string]any{"target": "kv.get", "scope": "db-password", "max-uses": 3})
+	if got := cell(t, listed(t, run(t, listH, nil)), 0, "Budget Left"); got != "3 of 3 uses" {
+		t.Errorf("budget left = %q, want the plural for a cap of three", got)
 	}
 }
 

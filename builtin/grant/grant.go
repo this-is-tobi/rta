@@ -1332,7 +1332,7 @@ func suppressedNote(n int) string {
 func budgetLeft(g core.Grant, now time.Time) string {
 	var parts []string
 	if g.MaxUses > 0 {
-		parts = append(parts, fmt.Sprintf("%d of %d uses", g.MaxUses-g.Uses, g.MaxUses))
+		parts = append(parts, fmt.Sprintf("%d of %s", g.MaxUses-g.Uses, format.CountOf(g.MaxUses, "use")))
 	}
 	if room, next, limited := g.RateRoom(now); limited {
 		switch {
