@@ -1120,10 +1120,6 @@ func heldTable(role string) (view.View, *view.Error) {
 		// has to be able to find out here instead.
 		return cfgErr == nil && g.Stale(profiles.ConnStampFor(cfg, g.Profile, core.Namespace(g.Target)))
 	})
-	// A partial suppression is the confusing one: some rows are here, the one
-	// being looked for is not, and nothing on the screen accounts for it.
-	// A partial suppression is the confusing one: some rows are here, the one
-	// being looked for is not, and nothing on the screen accounts for it.
 	// The roles in force above the rows, where the docs send people before
 	// they walk away from a machine: one line per role and agent, with the
 	// suppression count carried in so a summary never claims authority the
@@ -1138,6 +1134,8 @@ func heldTable(role string) (view.View, *view.Error) {
 	}
 	items = append(items, view.Section{ID: "grants", Title: "Allowed", View: t})
 	if n > 0 {
+		// A partial suppression is the confusing one: some rows are here, the one
+		// being looked for is not, and nothing on the screen accounts for it.
 		items = append(items, view.Section{ID: "policy", Title: "Your team's policy",
 			View: view.Text{Body: strings.TrimPrefix(suppressedNote(n), "\n\n")}})
 	}
