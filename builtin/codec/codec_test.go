@@ -136,6 +136,48 @@ func TestJWTDecodesHeaderAndClaims(t *testing.T) {
 	}
 }
 
+// A token with no signature was told its signature had not been checked,
+// which is what every signed one is told too — and the one it misdescribed is
+// the forgery that alg "none" names. The capitalised variants are the ones an
+// attacker sends, so they have to read the same way.
+func TestATokenWithNoSignatureSaysSoRatherThanUnchecked(t *testing.T) {
+	seg := func(s string) string { return base64.RawURLEncoding.EncodeToString([]byte(s)) }
+	claims := seg(`{"sub":"1"}`)
+	verification := func(header, signature string) string {
+		t.Helper()
+		v, err := runJWT(context.Background(), req(map[string]any{
+			"token": seg(header) + "." + claims + "." + signature,
+		}))
+		if err != nil {
+			t.Fatalf("header %s: %v", header, err)
+		}
+		return v.(view.Sections).Items[2].View.(view.Text).Body
+	}
+
+	for _, alg := range []string{"none", "None", "NONE"} {
+		got := verification(`{"alg":"`+alg+`"}`, "")
+		if !strings.HasPrefix(got, "UNSIGNED") || !strings.Contains(got, `"`+alg+`"`) {
+			t.Errorf("alg %s: verification = %q, want it to say there is no signature and name the alg", alg, got)
+		}
+		if strings.Contains(got, "NOT VERIFIED") {
+			t.Errorf("alg %s: an unsigned token was described as unchecked: %q", alg, got)
+		}
+	}
+	if got := verification(`{"typ":"JWT"}`, ""); !strings.HasPrefix(got, "UNSIGNED") ||
+		!strings.Contains(got, "does not claim one") {
+		t.Errorf("no alg: verification = %q", got)
+	}
+	if got := verification(`{"alg":"RS256"}`, ""); !strings.HasPrefix(got, "UNSIGNED") ||
+		!strings.Contains(got, "claims RS256") {
+		t.Errorf("stripped RS256: verification = %q, want it to name the alg the header still claims", got)
+	}
+	// A signature present under alg none is contradictory, and still a
+	// signature nobody checked.
+	if got := verification(`{"alg":"none"}`, seg("sig")); !strings.HasPrefix(got, "NOT VERIFIED") {
+		t.Errorf("alg none with a signature: verification = %q", got)
+	}
+}
+
 // A JSON number decodes to float64, and fmt.Sprint on a large whole float64
 // prints scientific notation (1.516239022e+09) — unreadable for exactly the
 // claim (iat/exp/nbf) every real JWT carries.

@@ -1,8 +1,8 @@
 // Package codec is the built-in encode/decode plugin: base64, hex, URL
-// escaping, and unverified JWT inspection. Stdlib only, no network, no
-// state.
+// escaping, and unverified inspection of the JOSE family — tokens and keys.
+// Stdlib only, no network, no state.
 //
-// All four capabilities stay Read even though jwt.decode and the *.decode
+// Every capability stays Read even though codec.jwt and the *.decode
 // direction of the others reveal a value in a new form — unlike kv.get, the
 // caller already possesses the encoded input; decoding it does not hand them
 // anything they did not already have. codec.jwt makes no
@@ -14,16 +14,8 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
-	"errors"
-	"fmt"
 	"net/url"
-	"sort"
-	"strconv"
-	"strings"
-	"time"
 
-	"github.com/this-is-tobi/rta/builtin/internal/timefmt"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -35,7 +27,7 @@ func Plugin() plugin.Plugin {
 
 	return plugin.Plugin{
 		Name:    "codec",
-		Summary: "Mechanical encode/decode: base64, hex, URL escaping, JWT inspection",
+		Summary: "Mechanical encode/decode: base64, hex, URL escaping, JWT and JWK inspection",
 		Capabilities: []plugin.Capability{
 			{
 				ID:      "codec.b64",
@@ -66,16 +58,45 @@ func Plugin() plugin.Plugin {
 			},
 			{
 				ID:      "codec.jwt",
-				Summary: "Decode a JWT's header and claims for inspection",
-				Description: "Unverified by default and clearly labeled as such: this is for reading a " +
-					"token while debugging, not for authenticating one. No signature check is performed " +
-					"— anyone can hand you a token with any claims at all.",
+				Summary: "Decode a JWT, JWS or JWE for inspection: headers, claims, dates",
+				Description: "Reads every serialization the JOSE family defines — a signed token (JWS), an " +
+					"encrypted one (JWE), and the JSON form of either — with the headers and claims decoded, " +
+					"the dates read, and anything a strict parser would refuse named: a padded segment, a " +
+					"member given twice, an empty signature. A JWE's header is read and its content is not, " +
+					"because decrypting takes the recipient's private key. Unverified and labeled as such: " +
+					"this is for reading a token while debugging, not for authenticating one — anyone can " +
+					"hand you a token with any claims at all. A pasted `Authorization: Bearer` line works. " +
+					"Given no argument, reads the token from standard input, which keeps a live one out of " +
+					"shell history and out of the process list.",
 				Safety: plugin.Read,
+				// Positional but not Required, because a pipe can supply it —
+				// so without this the dashboard's automatic set (every Read
+				// that needs no input) would call it unasked, on a timer, with
+				// nothing to decode. debug.ansi is the same shape for the same
+				// reason.
+				NoPreview: true,
 				// Secret: a JWT handed to `codec jwt` is a live bearer token far
 				// more often than it is a specimen, and a String here reached
 				// both the completion shortlist and the agent log intact.
-				Inputs: []plugin.Field{{Name: "token", Type: plugin.Secret, Positional: true, Required: true, Help: "the JWT to decode"}},
+				Inputs: []plugin.Field{{Name: "token", Type: plugin.Secret, Positional: true, Help: "the token to decode"}},
 				Run:    runJWT,
+			},
+			{
+				ID:      "codec.jwk",
+				Summary: "Read a JSON Web Key or key set: type, size, thumbprint, and whether it is private",
+				Description: "Takes one JWK or a whole key set — an issuer's jwks_uri answer — and says what " +
+					"each key is: its type and size, whether its point is on its curve, its kid, use and alg, " +
+					"and the RFC 7638 thumbprint a DPoP cnf.jkt or a pinned key is compared against. Names a " +
+					"key holding private material, which a published set never should, and two keys sharing " +
+					"a kid. A certificate chain in x5c is read and checked against the key beside it. Private " +
+					"members are never printed. Given no argument, reads the key from standard input.",
+				Safety:    plugin.Read,
+				NoPreview: true,
+				// Secret for the reason codec.jwt's token is: a private JWK is
+				// exactly what somebody pastes here to find out whether it is
+				// one, and it must not reach the agent log or a completion.
+				Inputs: []plugin.Field{{Name: "key", Type: plugin.Secret, Positional: true, Help: "the JWK or key set"}},
+				Run:    runJWK,
 			},
 		},
 	}
@@ -133,159 +154,4 @@ func runURL(_ context.Context, req plugin.Request) (view.View, error) {
 		return view.Text{Body: decoded}, nil
 	}
 	return view.Text{Body: url.QueryEscape(value)}, nil
-}
-
-func runJWT(_ context.Context, req plugin.Request) (view.View, error) {
-	token := strings.TrimSpace(req.String("token"))
-	parts := strings.Split(token, ".")
-	if len(parts) != 3 {
-		return nil, view.Errorf("codec.jwt.invalid", "not a JWT: expected 3 dot-separated parts, got %d", len(parts)).
-			WithHint("a JWT looks like header.payload.signature")
-	}
-	header, err := decodeJSONSegment(parts[0])
-	if err != nil {
-		return nil, view.Errorf("codec.jwt.invalid", "decoding header: %v", err)
-	}
-	claims, err := decodeJSONSegment(parts[1])
-	if err != nil {
-		return nil, view.Errorf("codec.jwt.invalid", "decoding claims: %v", err)
-	}
-	body := "NOT VERIFIED — the signature was not checked. This is a debugging view of what the " +
-		"token claims, not proof of who issued it."
-	if w := window(claims); w != "" {
-		body += "\n\n" + w
-	}
-	return view.Sections{Items: []view.Section{
-		{ID: "header", Title: "header", View: keyValueOf(header)},
-		{ID: "claims", Title: "claims", View: keyValueOf(claims)},
-		{ID: "verification", Title: "verification", View: view.Text{Body: body}},
-	}}, nil
-}
-
-// window states what the token's own dates say about whether it is live right
-// now. That is the question somebody decoding a token in a hurry actually has,
-// and a column of ten-digit integers answers it worse than anything else on
-// the screen — the reader has to know today's epoch to subtract from.
-//
-// Phrased throughout as what the token says rather than what is so. These
-// dates are exactly as unverified as the rest of it: anybody can mint a token
-// claiming to be valid until 2099, and this sentence renders directly beneath
-// the line saying nobody checked. A reader who takes "still valid" as
-// authentication has been told otherwise twice in the same paragraph.
-func window(claims map[string]any) string {
-	exp, hasExp := numericDate(claims, "exp")
-	nbf, hasNbf := numericDate(claims, "nbf")
-	now := time.Now()
-	switch {
-	// RFC 7519 §4.1.4: the current time must be *before* exp, so an instant
-	// equal to it is already too late.
-	case hasExp && !now.Before(exp):
-		return "Its own dates say it is expired: exp is " + timefmt.Stamp(exp) + "."
-	case hasNbf && now.Before(nbf):
-		return "Its own dates say it is not usable yet: nbf is " + timefmt.Stamp(nbf) + "."
-	case hasExp:
-		return "Its own dates say it is unexpired: exp is " + timefmt.Stamp(exp) + "."
-	}
-	return ""
-}
-
-// numericDate reads one claim as an instant, or reports that it is not one —
-// missing, the wrong JSON type, or a number too large to be a date.
-func numericDate(claims map[string]any, key string) (time.Time, bool) {
-	v, ok := claims[key].(float64)
-	if !ok {
-		return time.Time{}, false
-	}
-	return timefmt.FromSeconds(v)
-}
-
-// decodeJSONSegment reads one base64url-encoded, unpadded JWT segment (per
-// RFC 7519) as a JSON object.
-func decodeJSONSegment(segment string) (map[string]any, error) {
-	raw, err := base64.RawURLEncoding.DecodeString(segment)
-	if err != nil {
-		return nil, err
-	}
-	var out map[string]any
-	if err := json.Unmarshal(raw, &out); err != nil {
-		return nil, err
-	}
-	// **encoding/json writes nothing into a map for the literal `null`, and
-	// reports no error doing it.** RFC 7519 requires every segment to be a
-	// JSON object, so `null` is malformed — but it decoded "successfully"
-	// into a nil map and rendered as an ordinary empty table, which is also
-	// exactly what a token whose header genuinely is `{}` renders as. A
-	// reader inspecting a token something else had already rejected was
-	// shown a clean, empty header and no reason to doubt it.
-	//
-	// Only `null` reaches here: every other non-object JSON value already
-	// fails to unmarshal into a map.
-	if out == nil {
-		return nil, errors.New("not a JSON object")
-	}
-	return out, nil
-}
-
-// keyValueOf renders a decoded JWT segment as a stable, sorted KeyValue —
-// map iteration order is not, and a claims table that reshuffles between
-// two identical calls would be a strange thing to script against.
-func keyValueOf(m map[string]any) view.KeyValue {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	kv := view.KeyValue{}
-	for _, k := range keys {
-		kv.Pairs = append(kv.Pairs, view.Pair{Key: k, Value: formatClaim(k, m[k])})
-	}
-	return kv
-}
-
-// numericDateClaims are the claims RFC 7519 §4.1 defines as a NumericDate —
-// seconds since the epoch — and so the only ones whose units the specification
-// settles rather than the issuer. A number under any other name could be a
-// version, a tenant, a key id or a sequence number, and rendering one of those
-// as a date would invent a fact rather than surface one.
-//
-// Deliberately not auth_time or updated_at: both are NumericDate too, but in
-// OpenID Connect rather than here, and a JWT is not necessarily an ID token.
-// Adding either is one line the day something needs it.
-var numericDateClaims = map[string]bool{"exp": true, "nbf": true, "iat": true}
-
-// formatClaim renders one decoded JSON value for display. json.Unmarshal
-// hands every number back as float64, and fmt.Sprint on that prints large
-// whole numbers — exactly what iat/exp/nbf timestamps are — in scientific
-// notation (1.516239022e+09), which is worse than useless for a claim
-// that's supposed to be read as a Unix time. FormatFloat with 'f' avoids it
-// for numbers of any size without rounding a genuine fraction.
-//
-// Which left the claim readable and still unread: `exp 1516242622` is a
-// correctly printed integer that nobody can date without arithmetic. A claim
-// the specification defines as a time gets rendered as one, beside the raw
-// number rather than instead of it — the number is what the token contains and
-// what a bug report has to quote.
-func formatClaim(key string, v any) string {
-	switch t := v.(type) {
-	case float64:
-		raw := strconv.FormatFloat(t, 'f', -1, 64)
-		if !numericDateClaims[key] {
-			return raw
-		}
-		at, ok := timefmt.FromSeconds(t)
-		if !ok {
-			return raw
-		}
-		return raw + "  " + timefmt.Stamp(at)
-	case string, bool, nil:
-		return fmt.Sprint(t)
-	default:
-		// A nested object or array: still worth showing, not worth losing to
-		// Go's map/slice formatting. If it somehow fails to marshal (it came
-		// from json.Unmarshal, so it always will), fall back rather than panic.
-		if b, err := json.Marshal(t); err == nil {
-			return string(b)
-		}
-		return fmt.Sprint(t)
-	}
 }
