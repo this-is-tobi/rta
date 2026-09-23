@@ -1,8 +1,6 @@
 package tui
 
 import (
-	"encoding/json"
-
 	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
 
@@ -558,7 +556,7 @@ func (m Model) resultKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 			// so a field the screen was masking went to the system
 			// clipboard in full — and a clipboard is read by more
 			// things than a terminal is, and outlives the session.
-			raw, err := json.MarshalIndent(
+			raw, err := view.MarshalIndent(
 				view.Envelope{View: view.Redact(m.result.view)}, "", "  ")
 			if err == nil {
 				m.flash = "copied as JSON"

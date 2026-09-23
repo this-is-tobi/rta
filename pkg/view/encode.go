@@ -36,6 +36,34 @@ func TypeOf(v View) string {
 	}
 }
 
+// Marshal is the JSON every surface hands a view out in — -o json, the TUI's
+// copy, the text an MCP client passes a model: encoding/json's, without the
+// HTML escaping it applies by default.
+//
+// That escaping exists for JSON embedded in an HTML page, which nothing rta
+// writes is. What it did here was print a git author as
+// "Name \u003cme@example.com\u003e" and every URL's query as "a=1\u0026b=2":
+// valid JSON a parser reads back correctly, and text a person reading it, or
+// a grep looking for it, does not. A model reads the escapes as they are, and
+// pays for them in tokens.
+//
+// Every level has to say it. encoding/json re-escapes whatever a MarshalJSON
+// method returns unless the encoder calling it was told not to, so a view's
+// own methods use this, and so does every caller that encodes one.
+func Marshal(v any) ([]byte, error) { return MarshalIndent(v, "", "") }
+
+// MarshalIndent is Marshal, indented.
+func MarshalIndent(v any, prefix, indent string) ([]byte, error) {
+	var b bytes.Buffer
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent(prefix, indent)
+	if err := enc.Encode(v); err != nil {
+		return nil, err
+	}
+	return bytes.TrimSuffix(b.Bytes(), []byte("\n")), nil
+}
+
 // MarshalJSON wraps a section's child view in its own envelope, so nested
 // views stay discriminated all the way down and agents can switch on "type"
 // at any depth.
@@ -49,7 +77,7 @@ func (s Section) MarshalJSON() ([]byte, error) {
 	//
 	// Omitted when empty rather than emitted blank, since a section built by
 	// hand need not have one and `"id":""` is not an identifier.
-	return json.Marshal(struct {
+	return Marshal(struct {
 		ID    string   `json:"id,omitempty"`
 		Title string   `json:"title"`
 		View  Envelope `json:"view"`
@@ -72,7 +100,7 @@ func (s Section) MarshalJSON() ([]byte, error) {
 // returning a titled section it could not fill kills the server for every
 // other tool the agent had open.
 func (e Envelope) MarshalJSON() ([]byte, error) {
-	body, err := json.Marshal(e.View)
+	body, err := Marshal(e.View)
 	if err != nil {
 		return nil, err
 	}
@@ -84,7 +112,7 @@ func (e Envelope) MarshalJSON() ([]byte, error) {
 		m = map[string]any{}
 	}
 	m["type"] = TypeOf(e.View)
-	return json.Marshal(m)
+	return Marshal(m)
 }
 
 // ToMap returns the envelope as a generic map, for non-JSON encoders (YAML).
@@ -103,7 +131,7 @@ func (e Envelope) MarshalJSON() ([]byte, error) {
 // fraction stays a float. json.Number holds the original text, so a value
 // past float64's exact range survives that too, which it did not before.
 func ToMap(v View) (map[string]any, error) {
-	raw, err := json.Marshal(Envelope{View: v})
+	raw, err := Marshal(Envelope{View: v})
 	if err != nil {
 		return nil, fmt.Errorf("encoding view: %w", err)
 	}

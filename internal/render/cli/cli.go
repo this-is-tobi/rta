@@ -4,7 +4,6 @@ package cli
 
 import (
 	"encoding/csv"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -99,6 +98,18 @@ type Options struct {
 	Notes io.Writer
 }
 
+// writeJSON writes an envelope the way -o json always has — indented, one
+// value and a newline — through view.MarshalIndent, so it carries no HTML
+// escaping either.
+func writeJSON(w io.Writer, env view.Envelope) error {
+	data, err := view.MarshalIndent(env, "", "  ")
+	if err != nil {
+		return err
+	}
+	_, err = w.Write(append(data, '\n'))
+	return err
+}
+
 // Render writes v to w in the requested format.
 func Render(w io.Writer, v view.View, opts Options) error {
 	// json is the one byte-exact channel; see sanitize.
@@ -107,9 +118,7 @@ func Render(w io.Writer, v view.View, opts Options) error {
 	}
 	switch opts.Format {
 	case JSON:
-		enc := json.NewEncoder(w)
-		enc.SetIndent("", "  ")
-		return enc.Encode(view.Envelope{View: view.Redact(v)})
+		return writeJSON(w, view.Envelope{View: view.Redact(v)})
 	case YAML:
 		m, err := view.ToMap(view.Redact(v))
 		if err != nil {
@@ -756,9 +765,7 @@ func RenderError(w io.Writer, e *view.Error, opts Options) error {
 	case Markdown:
 		return markdownError(w, e)
 	case JSON:
-		enc := json.NewEncoder(w)
-		enc.SetIndent("", "  ")
-		return enc.Encode(view.Envelope{View: e})
+		return writeJSON(w, view.Envelope{View: e})
 	case YAML:
 		m, err := view.ToMap(e)
 		if err != nil {
