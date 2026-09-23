@@ -325,7 +325,7 @@
   },
   {
     "name": "codec_b64",
-    "description": "── the text below is written by the plugin, not by rta ──\nBase64 encode or decode a value\n\nDecoding accepts standard, URL-safe, and unpadded variants without being told which — the caller already has the encoded value, so being forgiving about which base64 dialect produced it costs nothing.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nBase64 encode or decode a value\n\nDecoding accepts standard, URL-safe, and unpadded variants, and the line breaks and spaces wrapped base64 arrives with, without being told which — the caller already has the encoded value, so being forgiving about which dialect produced it costs nothing. Bytes that are not plain text are shown as a hex dump rather than printed at the terminal, where they would show as nothing.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -352,7 +352,7 @@
   },
   {
     "name": "codec_hex",
-    "description": "── the text below is written by the plugin, not by rta ──\nHex encode or decode a value\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nHex encode or decode a value\n\nDecoding accepts the spellings hex is copied in: a 0x prefix, and bytes separated by colons, spaces or dashes, the way openssl prints a fingerprint. Bytes that are not plain text are shown as a hex dump.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -411,7 +411,7 @@
   },
   {
     "name": "codec_url",
-    "description": "── the text below is written by the plugin, not by rta ──\nEscape a value for a URL, or unescape one\n\nQuery-component escaping (spaces become +), the form almost everyone means by \"URL encode this\" — the value for a query string or form body.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nEscape a value for a URL, or unescape one\n\nQuery-component escaping by default (spaces become +), the form almost everyone means by \"URL encode this\" — the value for a query string or form body. --path escapes a path segment instead, where a space is %20 and + is a literal plus: decoding a path as a query turns c++.txt into \"c  .txt\".\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -419,6 +419,10 @@
       "properties": {
         "decode": {
           "description": "decode instead of encode",
+          "type": "boolean"
+        },
+        "path": {
+          "description": "escape or unescape a path segment rather than a query value",
           "type": "boolean"
         },
         "value": {

@@ -130,7 +130,7 @@ func TestASignedPayloadThatIsNotClaimsIsShownAsWhatItIs(t *testing.T) {
 	}
 
 	binary := jose(t, seg(`{"alg":"HS256"}`)+"."+base64.RawURLEncoding.EncodeToString([]byte{0xff, 0xfe, 0x00, 0x01})+"."+seg("s"))
-	if got := section(t, binary, "payload").(view.Text).Body; got != "4 bytes of binary data: fffe0001" {
+	if got := section(t, binary, "payload").(view.Text).Body; !strings.HasPrefix(got, "4 bytes, not plain text:\n00000000  ff fe 00 01") {
 		t.Errorf("binary payload = %q", got)
 	}
 }

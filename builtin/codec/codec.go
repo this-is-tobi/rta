@@ -14,8 +14,13 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/hex"
+	"fmt"
 	"net/url"
+	"strings"
+	"unicode/utf8"
 
+	"github.com/this-is-tobi/rta/internal/textclean"
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -32,9 +37,11 @@ func Plugin() plugin.Plugin {
 			{
 				ID:      "codec.b64",
 				Summary: "Base64 encode or decode a value",
-				Description: "Decoding accepts standard, URL-safe, and unpadded variants without being " +
-					"told which — the caller already has the encoded value, so being forgiving about " +
-					"which base64 dialect produced it costs nothing.",
+				Description: "Decoding accepts standard, URL-safe, and unpadded variants, and the line " +
+					"breaks and spaces wrapped base64 arrives with, without being told which — the caller " +
+					"already has the encoded value, so being forgiving about which dialect produced it " +
+					"costs nothing. Bytes that are not plain text are shown as a hex dump rather than " +
+					"printed at the terminal, where they would show as nothing.",
 				Safety: plugin.Read, Idempotent: true,
 				Inputs: []plugin.Field{valueField, decodeField,
 					{Name: "url", Type: plugin.Bool, Help: "use the URL-safe alphabet when encoding"}},
@@ -43,18 +50,24 @@ func Plugin() plugin.Plugin {
 			{
 				ID:      "codec.hex",
 				Summary: "Hex encode or decode a value",
-				Safety:  plugin.Read, Idempotent: true,
+				Description: "Decoding accepts the spellings hex is copied in: a 0x prefix, and bytes " +
+					"separated by colons, spaces or dashes, the way openssl prints a fingerprint. Bytes " +
+					"that are not plain text are shown as a hex dump.",
+				Safety: plugin.Read, Idempotent: true,
 				Inputs: []plugin.Field{valueField, decodeField},
 				Run:    runHex,
 			},
 			{
 				ID:      "codec.url",
 				Summary: "Escape a value for a URL, or unescape one",
-				Description: "Query-component escaping (spaces become +), the form almost everyone " +
-					"means by \"URL encode this\" — the value for a query string or form body.",
+				Description: "Query-component escaping by default (spaces become +), the form almost " +
+					"everyone means by \"URL encode this\" — the value for a query string or form body. " +
+					"--path escapes a path segment instead, where a space is %20 and + is a literal plus: " +
+					"decoding a path as a query turns c++.txt into \"c  .txt\".",
 				Safety: plugin.Read, Idempotent: true,
-				Inputs: []plugin.Field{valueField, decodeField},
-				Run:    runURL,
+				Inputs: []plugin.Field{valueField, decodeField,
+					{Name: "path", Type: plugin.Bool, Help: "escape or unescape a path segment rather than a query value"}},
+				Run: runURL,
 			},
 			{
 				ID:      "codec.jwt",
@@ -119,11 +132,11 @@ func Plugin() plugin.Plugin {
 func runB64(_ context.Context, req plugin.Request) (view.View, error) {
 	value := req.String("value")
 	if req.Bool("decode") {
-		decoded, err := decodeB64(value)
+		raw, err := decodeB64(value)
 		if err != nil {
 			return nil, view.Errorf("codec.b64.invalid", "not valid base64: %v", err)
 		}
-		return view.Text{Body: string(decoded)}, nil
+		return decoded(raw), nil
 	}
 	enc := base64.StdEncoding
 	if req.Bool("url") {
@@ -133,8 +146,13 @@ func runB64(_ context.Context, req plugin.Request) (view.View, error) {
 }
 
 // decodeB64 tries the dialects a caller is actually likely to hand us —
-// standard and URL-safe, each padded and unpadded — before giving up.
+// standard and URL-safe, each padded and unpadded — before giving up, with
+// the whitespace removed first: base64 wrapped at 64 or 76 columns, a PEM
+// body, a value copied across a terminal's line break. The decoder skips a
+// line break on its own and refuses a space, so a copy that picked up an
+// indent failed while the same text without it decoded.
 func decodeB64(value string) ([]byte, error) {
+	value = strings.Join(strings.Fields(value), "")
 	var lastErr error
 	for _, enc := range []*base64.Encoding{base64.StdEncoding, base64.URLEncoding, base64.RawStdEncoding, base64.RawURLEncoding} {
 		decoded, err := enc.DecodeString(value)
@@ -149,23 +167,115 @@ func decodeB64(value string) ([]byte, error) {
 func runHex(_ context.Context, req plugin.Request) (view.View, error) {
 	value := req.String("value")
 	if req.Bool("decode") {
-		decoded, err := hex.DecodeString(value)
+		raw, err := hex.DecodeString(hexDigits(value))
 		if err != nil {
-			return nil, view.Errorf("codec.hex.invalid", "not valid hex: %v", err)
+			return nil, view.Errorf("codec.hex.invalid", "not valid hex: %v", err).
+				WithHint("pairs of 0-9 and a-f; a 0x prefix and colon, space or dash separators are taken as they are")
 		}
-		return view.Text{Body: string(decoded)}, nil
+		return decoded(raw), nil
 	}
 	return view.Text{Body: hex.EncodeToString([]byte(value))}, nil
 }
 
+// hexDigits strips what hex is copied with: 0x prefixes, and the colons,
+// spaces and dashes that separate the bytes of a fingerprint (`openssl x509
+// -fingerprint` prints AB:CD:…). None of them is a hex digit, so removing
+// them cannot change what the digits say.
+func hexDigits(s string) string {
+	s = strings.NewReplacer("0x", "", "0X", "").Replace(s)
+	return strings.Map(func(r rune) rune {
+		switch r {
+		case ':', ' ', '-', '\t', '\n', '\r':
+			return -1
+		}
+		return r
+	}, s)
+}
+
 func runURL(_ context.Context, req plugin.Request) (view.View, error) {
-	value := req.String("value")
+	value, path := req.String("value"), req.Bool("path")
 	if req.Bool("decode") {
-		decoded, err := url.QueryUnescape(value)
+		unescape := url.QueryUnescape
+		if path {
+			unescape = url.PathUnescape
+		}
+		out, err := unescape(value)
 		if err != nil {
 			return nil, view.Errorf("codec.url.invalid", "not a valid URL-escaped value: %v", err)
 		}
-		return view.Text{Body: decoded}, nil
+		return decoded([]byte(out)), nil
+	}
+	if path {
+		return view.Text{Body: url.PathEscape(value)}, nil
 	}
 	return view.Text{Body: url.QueryEscape(value)}, nil
+}
+
+// decoded is what a decode shows: the text when it is plain text, a hex dump
+// when it is not.
+//
+// Printing decoded bytes as they came was a decoder that answered with
+// nothing. Every renderer strips control characters on the way to a terminal,
+// so an escape sequence cannot act there — and so `codec b64 --decode
+// AAECAwT/` printed an empty line, and -o json turned its 0xff into U+FFFD. A
+// dump shows every byte, in the layout `hexdump -C` made familiar.
+func decoded(raw []byte) view.View {
+	if plainText(raw) {
+		return view.Text{Body: string(raw)}
+	}
+	return view.Text{Body: dump(raw)}
+}
+
+// plainText reports whether raw is text a terminal shows exactly as it is:
+// valid UTF-8 holding nothing a renderer strips or a reader cannot see, the
+// line breaks and tabs of ordinary text aside.
+func plainText(raw []byte) bool {
+	if !utf8.Valid(raw) {
+		return false
+	}
+	for _, r := range string(raw) {
+		if r != '\n' && r != '\t' && r != '\r' && textclean.Deceives(string(r)) {
+			return false
+		}
+	}
+	return true
+}
+
+// maxDump bounds a dump. Past it the bytes are a file somebody wants on disk,
+// not lines to read at a terminal, and `base64 -d` is the tool for that.
+const maxDump = 4 << 10
+
+func dump(raw []byte) string {
+	shown := raw
+	var b strings.Builder
+	b.WriteString(format.CountOf(len(raw), "byte") + ", not plain text")
+	if len(raw) > maxDump {
+		shown = raw[:maxDump]
+		b.WriteString(" — the first " + format.Bytes(maxDump) + " shown")
+	}
+	b.WriteString(":")
+	for off := 0; off < len(shown); off += 16 {
+		line := shown[off:min(off+16, len(shown))]
+		fmt.Fprintf(&b, "\n%08x  ", off)
+		for i := range 16 {
+			if i < len(line) {
+				fmt.Fprintf(&b, "%02x ", line[i])
+			} else {
+				b.WriteString("   ")
+			}
+			if i == 7 {
+				b.WriteByte(' ')
+			}
+		}
+		b.WriteString(" |")
+		for _, c := range line {
+			if c >= 0x20 && c < 0x7f {
+				b.WriteByte(c)
+			} else {
+				b.WriteByte('.')
+			}
+		}
+		b.WriteString("|")
+	}
+	return b.String()
 }
