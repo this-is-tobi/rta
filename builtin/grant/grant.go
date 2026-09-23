@@ -1120,6 +1120,9 @@ func heldTable(role string) (view.View, *view.Error) {
 		// has to be able to find out here instead.
 		return cfgErr == nil && g.Stale(profiles.ConnStampFor(cfg, g.Profile, core.Namespace(g.Target)))
 	})
+	if w := olderServerWarning(); w != nil {
+		t.Warnings = append(t.Warnings, *w)
+	}
 	// The roles in force above the rows, where the docs send people before
 	// they walk away from a machine: one line per role and agent, with the
 	// suppression count carried in so a summary never claims authority the
