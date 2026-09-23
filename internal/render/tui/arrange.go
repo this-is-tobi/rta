@@ -90,6 +90,20 @@ func (m *Model) hideSelected() string {
 	return note
 }
 
+// withdraws reports whether H on this tile takes an entry out of the file
+// rather than writing a `hidden:` line — the split hideSelected's switch
+// makes, for the footer, which used to call both of them "hide". The word is
+// not cosmetic: the inventory pane brings back a plugin's automatic tile from
+// `hidden:` and nothing else, so a person who read "hide", pressed it on
+// their own added tile and went to p for it found no row there. The way back
+// is the `rta dashboard add` line the note prints, or + on a catalogue row.
+// An expanded entry's panel is hidden, and the footer says so, but by a panel
+// key p has no row for either: its way back is the `rta dashboard unhide`
+// line hideSelected's note prints.
+func (t tile) withdraws() bool {
+	return !t.expanded && (t.source == tileStated || t.source == tileAdded)
+}
+
 // addCommand is the `rta dashboard add` line that would write this tile's
 // entry again.
 func addCommand(t tile) string {

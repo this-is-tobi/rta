@@ -554,6 +554,7 @@ func (m Model) renderSearchTile(width int, selected bool) string {
 // lead, then navigation, all from the one vocabulary in keys.go.
 func (m Model) dashFooterItems() []hintItem {
 	items := []hintItem{}
+	own := dashOwnItems()
 	if m.selected > 0 && m.selected < len(m.tiles) {
 		t := m.tiles[m.selected]
 		for _, a := range m.offeredTileActions(m.selected) {
@@ -562,8 +563,15 @@ func (m Model) dashFooterItems() []hintItem {
 		if hint, ok := copyHint(t.cap, t.view); ok {
 			items = append(items, hint)
 		}
+		if t.withdraws() {
+			for i, h := range own {
+				if h.display == bindHide.display {
+					own[i] = labelled(bindHide, "remove")
+				}
+			}
+		}
 	}
-	return append(items, dashOwnItems()...)
+	return append(items, own...)
 }
 
 // dashOwnItems are the keys the dashboard answers to whatever is selected:

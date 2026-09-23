@@ -206,6 +206,56 @@ func TestRemovingAnAddedTileWithdrawsItsEntry(t *testing.T) {
 	}
 }
 
+// The footer's word for H is what H is about to do to the selected tile. It
+// said "hide" over every tile, and on an entry somebody wrote H withdraws the
+// entry — which the inventory pane, where hidden tiles come back from, has no
+// row for. Each kind of tile is pressed for real, so the word and the act
+// cannot drift apart without this failing.
+func TestTheFooterNamesWhatHDoesToTheSelectedTile(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		cfg  config.Config
+		dash config.Dashboard
+		key  string
+		want string
+	}{
+		{"automatic", twoProfileConfig(), config.Dashboard{}, "db.status", "hide"},
+		{"added", twoProfileConfig(), config.Dashboard{Add: []config.Tile{{ID: "db.status", Profile: "prod"}}},
+			"db.status@prod", "remove"},
+		{"added in place of the automatic tile", twoProfileConfig(),
+			config.Dashboard{Add: []config.Tile{{ID: "db.status", Span: 2}}}, "db.status", "remove"},
+		{"stated", twoProfileConfig(), config.Dashboard{Tiles: []config.Tile{{ID: "db.status"}}}, "db.status", "remove"},
+		{"one panel of an expanded entry", twoInstanceConfig(),
+			config.Dashboard{Add: []config.Tile{{ID: "db.status", Profile: "prod"}}}, "db.status@prod/analytics", "hide"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := pinnedModel(t, tc.cfg, tc.dash)
+			m.selected = -1
+			for i, ti := range m.tiles[1:] {
+				if ti.key() == tc.key {
+					m.selected = i + 1
+				}
+			}
+			if m.selected < 0 {
+				t.Fatalf("no %s tile in %v", tc.key, tileKeys(m.tiles))
+			}
+			var label string
+			for _, it := range m.dashFooterItems() {
+				if it.display == bindHide.display {
+					label = it.label
+				}
+			}
+			if label != tc.want {
+				t.Errorf("footer says H %s, want H %s", label, tc.want)
+			}
+			note := m.hideSelected()
+			if did := map[string]string{"hide": "hid ", "remove": "removed "}[label]; !strings.HasPrefix(note, did) {
+				t.Errorf("footer said H %s and pressing it did %q", label, note)
+			}
+		})
+	}
+}
+
 // A move records keys, so a pinned tile keeps its place on the next run,
 // and the written list follows the screen.
 func TestAMoveRecordsTileKeysAndReordersTheAddedList(t *testing.T) {
