@@ -3,7 +3,6 @@ package codec
 import (
 	"context"
 	"encoding/base64"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -385,22 +384,14 @@ func (p *page) payload(header object, seg string, depth int) (object, *view.Erro
 }
 
 // payloadView shows a payload that is not a claims set: as text when it is
-// text, and as the first bytes in hex when it is not, because printing binary
-// at a terminal shows nothing a reader can use.
+// text, quoted where it holds something invisible, and as a dump when it is
+// not text at all, because printing binary at a terminal shows nothing a
+// reader can use.
 func payloadView(raw []byte) view.View {
 	if utf8.Valid(raw) {
 		return view.Text{Body: visible(string(raw))}
 	}
-	const shown = 64
-	head := raw
-	if len(head) > shown {
-		head = head[:shown]
-	}
-	body := format.CountOf(len(raw), "byte") + " of binary data: " + hex.EncodeToString(head)
-	if len(raw) > shown {
-		body += "…"
-	}
-	return view.Text{Body: body}
+	return view.Text{Body: dump(raw)}
 }
 
 func (p *page) signatureSegment(seg string) {

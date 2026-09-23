@@ -102,6 +102,84 @@ func TestURLRoundTrips(t *testing.T) {
 	}
 }
 
+func decodeText(t *testing.T, run func(context.Context, plugin.Request) (view.View, error), values map[string]any) string {
+	t.Helper()
+	values["decode"] = true
+	v, err := run(context.Background(), req(values))
+	if err != nil {
+		t.Fatalf("%v: %v", values, err)
+	}
+	return v.(view.Text).Body
+}
+
+// Bytes that are not text used to be printed as they came, and every
+// renderer strips control characters on the way to a terminal: six bytes
+// decoded to an empty line. The dump shows each one.
+func TestBinaryDecodesToADumpOfEveryByte(t *testing.T) {
+	got := decodeText(t, runB64, map[string]any{"value": "AAECAwT/"})
+	want := "6 bytes, not plain text:\n00000000  00 01 02 03 04 ff"
+	if !strings.HasPrefix(got, want) || !strings.HasSuffix(got, "|......|") {
+		t.Errorf("dump = %q, want it to start %q and end with the ASCII column", got, want)
+	}
+	// Text stays text, line breaks and all.
+	if got := decodeText(t, runB64, map[string]any{"value": "bGluZSAxCmxpbmUgMgo="}); got != "line 1\nline 2\n" {
+		t.Errorf("text = %q", got)
+	}
+	// A terminal escape is not plain text: shown, not stripped to nothing.
+	if got := decodeText(t, runHex, map[string]any{"value": "1b5b326a"}); !strings.Contains(got, "1b 5b 32 6a") {
+		t.Errorf("escape = %q, want it dumped", got)
+	}
+}
+
+func TestADumpIsBounded(t *testing.T) {
+	got := dump(make([]byte, maxDump+100))
+	if !strings.Contains(got, "4196 bytes, not plain text — the first 4.0 KiB shown") {
+		t.Errorf("head = %q", got[:80])
+	}
+	if lines := strings.Count(got, "\n"); lines != maxDump/16 {
+		t.Errorf("lines = %d, want %d", lines, maxDump/16)
+	}
+}
+
+// Wrapped base64 — a PEM body, anything folded at 76 columns, a copy that
+// picked up an indent — decodes as if it had never been wrapped.
+func TestB64DecodeIgnoresTheWhitespaceItWasWrappedWith(t *testing.T) {
+	if got := decodeText(t, runB64, map[string]any{"value": "  aGVs\n  bG8g\r\nd29y bGQ= "}); got != "hello world" {
+		t.Errorf("got %q", got)
+	}
+}
+
+// The shapes hex is copied in: an openssl fingerprint, a 0x literal, bytes
+// with spaces between them.
+func TestHexDecodeAcceptsTheWaysHexIsWritten(t *testing.T) {
+	for _, in := range []string{"68:65:6c:6c:6f", "0x68656C6C6F", "68 65 6c 6c 6f", "68-65-6c-6c-6f", "0x68 0x65 0x6c 0x6c 0x6f"} {
+		if got := decodeText(t, runHex, map[string]any{"value": in}); got != "hello" {
+			t.Errorf("%q decoded to %q", in, got)
+		}
+	}
+	if _, err := runHex(context.Background(), req(map[string]any{"value": "zz", "decode": true})); err == nil {
+		t.Error("non-hex decoded")
+	}
+}
+
+// A path is not a query: a space is %20, and + is a plus. Decoding a path as
+// a query turned c++.txt into "c  .txt".
+func TestURLPathModeKeepsAPlusAPlus(t *testing.T) {
+	enc, err := runURL(context.Background(), req(map[string]any{"value": "a b/c+d", "path": true}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := enc.(view.Text).Body; got != "a%20b%2Fc+d" {
+		t.Errorf("path escape = %q", got)
+	}
+	if got := decodeText(t, runURL, map[string]any{"value": "c++.txt", "path": true}); got != "c++.txt" {
+		t.Errorf("path unescape = %q", got)
+	}
+	if got := decodeText(t, runURL, map[string]any{"value": "c++.txt"}); got != "c  .txt" {
+		t.Errorf("query unescape = %q, which is what --path exists to avoid", got)
+	}
+}
+
 // buildJWT base64url-encodes header/claims JSON with a placeholder
 // signature, exactly the shape runJWT is asked to decode (no verification
 // is performed, so the signature segment's content never matters here).
