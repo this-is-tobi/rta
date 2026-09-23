@@ -4,6 +4,7 @@
 package http
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -15,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/this-is-tobi/rta/builtin/internal/bytesview"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -329,28 +331,34 @@ func bodyWasTruncated(resp *stdhttp.Response, captured int) bool {
 	return captured == maxBody || (resp.ContentLength >= 0 && resp.ContentLength > maxBody)
 }
 
-// formatBody pretty-prints JSON responses and truncates the rest sensibly.
+// formatBody pretty-prints JSON responses, truncates the rest of the text
+// sensibly, and dumps what is not text.
+//
+// JSON is re-indented, never re-encoded. Decoding it into map[string]any and
+// marshalling it back — what this did — hands every number through float64,
+// so a numeric id past 2^53 came back as a different id and a large one in
+// exponent form; it escapes <, > and & as \u003c and friends; it sorts the
+// keys the server sent in its own order; and it merges a key sent twice. A
+// debugging client that shows a response other than the one it received has
+// failed at the one thing it is for. json.Indent changes whitespace and
+// nothing else.
 func formatBody(body []byte, contentType string) string {
 	if strings.Contains(contentType, "json") {
-		var buf map[string]any
-		if err := json.Unmarshal(body, &buf); err == nil {
-			if pretty, err := json.MarshalIndent(buf, "", "  "); err == nil {
-				return string(pretty)
-			}
-		}
-		var arr []any
-		if err := json.Unmarshal(body, &arr); err == nil {
-			if pretty, err := json.MarshalIndent(arr, "", "  "); err == nil {
-				return string(pretty)
-			}
+		var pretty bytes.Buffer
+		if json.Indent(&pretty, body, "", "  ") == nil {
+			return pretty.String()
 		}
 	}
 	const maxShown = 4096
-	s := string(body)
-	if len(s) > maxShown {
-		return s[:maxShown] + fmt.Sprintf("\n… (%d more bytes)", len(s)-maxShown)
+	// A binary body is identified by its first bytes — PNG, gzip and a
+	// DER certificate all announce themselves in the first line — and read
+	// no further in a response view, so its dump is sixteen lines, not the
+	// 256 the text limit would give it.
+	const maxDumped = 256
+	if !bytesview.PlainText(body) {
+		return bytesview.Dump(body, maxDumped)
 	}
-	return s
+	return bytesview.Truncate(string(body), maxShown)
 }
 
 // suggestHeaders offers the request headers people actually set by hand,

@@ -9,6 +9,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/this-is-tobi/rta/builtin/internal/bytesview"
 	"github.com/this-is-tobi/rta/builtin/internal/pipein"
 	"github.com/this-is-tobi/rta/builtin/internal/timefmt"
 	"github.com/this-is-tobi/rta/pkg/format"
@@ -391,7 +392,7 @@ func payloadView(raw []byte) view.View {
 	if utf8.Valid(raw) {
 		return view.Text{Body: visible(string(raw))}
 	}
-	return view.Text{Body: dump(raw)}
+	return view.Text{Body: bytesview.Dump(raw, maxDump)}
 }
 
 func (p *page) signatureSegment(seg string) {

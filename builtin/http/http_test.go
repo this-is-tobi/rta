@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -206,6 +207,33 @@ func TestBodyTruncation(t *testing.T) {
 	out := formatBody([]byte(big), "text/plain")
 	if len(out) >= 10000 || !strings.Contains(out, "more bytes") {
 		t.Error("large body not truncated")
+	}
+	// A cut at a byte offset could land inside a character; it must not.
+	accented := strings.Repeat("é", 3000) // two bytes each
+	if out := formatBody([]byte(accented), "text/plain"); !utf8.ValidString(out) {
+		t.Error("truncation split a character")
+	}
+}
+
+// A JSON body is re-indented and nothing else: every number, every key in the
+// order the server sent it, every character as it was escaped. Round-tripping
+// it through map[string]any changed the id, sorted the keys and escaped the
+// ampersand.
+func TestAJSONBodyIsShownAsTheServerSentIt(t *testing.T) {
+	got := formatBody([]byte(`{"zeta":1,"id":9007199254740993,"big":12345678901234567890,"q":"a&b<c>"}`), "application/json")
+	want := "{\n  \"zeta\": 1,\n  \"id\": 9007199254740993,\n  \"big\": 12345678901234567890,\n  \"q\": \"a&b<c>\"\n}"
+	if got != want {
+		t.Errorf("body =\n%s\nwant\n%s", got, want)
+	}
+}
+
+// A body that is not text — an image, a gzip the server did not label — is
+// dumped rather than printed, which showed a few stray letters.
+func TestABinaryBodyIsDumped(t *testing.T) {
+	png := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 0, 0, 0, 0x0d}
+	got := formatBody(png, "image/png")
+	if !strings.HasPrefix(got, "12 bytes, not plain text:\n00000000  89 50 4e 47") {
+		t.Errorf("body = %q", got)
 	}
 }
 

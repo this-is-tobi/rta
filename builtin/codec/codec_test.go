@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/this-is-tobi/rta/builtin/internal/bytesview"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -132,8 +133,8 @@ func TestBinaryDecodesToADumpOfEveryByte(t *testing.T) {
 }
 
 func TestADumpIsBounded(t *testing.T) {
-	got := dump(make([]byte, maxDump+100))
-	if !strings.Contains(got, "4196 bytes, not plain text — the first 4.0 KiB shown") {
+	got := bytesview.Dump(make([]byte, maxDump+100), maxDump)
+	if !strings.Contains(got, "4196 bytes, not plain text — the first 4096 bytes shown") {
 		t.Errorf("head = %q", got[:80])
 	}
 	if lines := strings.Count(got, "\n"); lines != maxDump/16 {
