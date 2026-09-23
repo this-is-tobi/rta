@@ -1,6 +1,7 @@
 package format
 
 import (
+	"math"
 	"testing"
 	"time"
 )
@@ -45,5 +46,50 @@ func TestAgo(t *testing.T) {
 		if got != c.want {
 			t.Errorf("Ago(%v) = %q, want %q", c.at, got, c.want)
 		}
+	}
+}
+
+// Bytes takes the type the caller is holding, which is the whole point of the
+// signature: io.Copy hands over an int64, len an int, a client library whatever
+// it declared. A caller that has to convert is a caller writing the conversion,
+// and fifty-three of them wrote it.
+func TestBytesTakesWhateverIntegerTypeTheCallerHolds(t *testing.T) {
+	const want = "2.0 KiB"
+	got := map[string]string{
+		"int":    Bytes(int(2048)),
+		"int32":  Bytes(int32(2048)),
+		"int64":  Bytes(int64(2048)),
+		"uint":   Bytes(uint(2048)),
+		"uint32": Bytes(uint32(2048)),
+		"uint64": Bytes(uint64(2048)),
+		"len":    Bytes(len(make([]byte, 2048))),
+	}
+	for kind, s := range got {
+		if s != want {
+			t.Errorf("Bytes(%s) = %q, want %q", kind, s, want)
+		}
+	}
+}
+
+// A negative byte count is a bug in whoever computed it, and it now reads as
+// one. Under the uint64 signature it wrapped instead: -1 rendered "16.0 EiB",
+// which is a number a reader believes.
+func TestBytesKeepsTheSignOfANegativeCount(t *testing.T) {
+	for _, c := range []struct {
+		in   int64
+		want string
+	}{
+		{-1, "-1 B"},
+		{-2048, "-2.0 KiB"},
+		{math.MinInt64, "-8.0 EiB"}, // -n is still negative here; -(n+1)+1 is not
+	} {
+		if got := Bytes(c.in); got != c.want {
+			t.Errorf("Bytes(%d) = %q, want %q", c.in, got, c.want)
+		}
+	}
+	// The same minimum in the narrowest signed type, because the arithmetic that
+	// survives it is per-type, not per-int64.
+	if got := Bytes(int8(math.MinInt8)); got != "-128 B" {
+		t.Errorf("Bytes(int8 minimum) = %q, want %q", got, "-128 B")
 	}
 }

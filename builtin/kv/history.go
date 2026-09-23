@@ -102,10 +102,10 @@ func runHistory(_ context.Context, req plugin.Request) (view.View, error) {
 		{Name: "Replaced", Kind: view.KindDuration},
 		{Name: "Source"},
 	}}
-	t.Rows = append(t.Rows, []string{head, e.Kind, format.Bytes(uint64(len(e.Value))),
+	t.Rows = append(t.Rows, []string{head, e.Kind, format.Bytes(len(e.Value)),
 		e.Description, itemstore.Age(e.Updated), "", e.origin()})
 	for i, r := range e.Previous {
-		t.Rows = append(t.Rows, []string{strconv.Itoa(i + 1), r.Kind, format.Bytes(uint64(len(r.Value))),
+		t.Rows = append(t.Rows, []string{strconv.Itoa(i + 1), r.Kind, format.Bytes(len(r.Value)),
 			r.Description, itemstore.Age(r.Updated), itemstore.Age(r.Retired), r.Origin})
 	}
 	t.Total = len(t.Rows)
@@ -224,7 +224,7 @@ func removedTable(s store) view.View {
 	}}
 	for _, k := range names {
 		r := s.Removed[k]
-		t.Rows = append(t.Rows, []string{k, r.Kind, format.Bytes(uint64(len(r.Value))), r.Description,
+		t.Rows = append(t.Rows, []string{k, r.Kind, format.Bytes(len(r.Value)), r.Description,
 			itemstore.Age(r.RemovedAt)})
 	}
 	t.Total = len(t.Rows)

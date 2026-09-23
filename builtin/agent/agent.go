@@ -514,7 +514,7 @@ func recordPairs(rep agentlog.Report, verr error) []view.Pair {
 	pairs := []view.Pair{
 		{Key: "file", Value: agentlog.Path()},
 		{Key: "entries", Value: fmt.Sprintf("%d", rep.Entries)},
-		{Key: "size", Value: format.Bytes(uint64(max(rep.Size, 0)))},
+		{Key: "size", Value: format.Bytes(rep.Size)},
 	}
 	if rep.Files > 1 {
 		pairs = append(pairs, view.Pair{Key: "files",

@@ -314,15 +314,15 @@ func newPluginPruneCommand(opts *globalOpts) *cobra.Command {
 				freed = "Would free"
 			}
 			t := view.Table{Columns: []view.Column{{Name: "Plugin"}, {Name: "Kept"}, {Name: "Removed"}, {Name: freed}}}
-			var total uint64
+			var total int64
 			for _, p := range pruned {
 				if p.Unclear {
 					t.Rows = append(t.Rows, []string{p.Name, shortAll(p.Kept), "-",
 						"left alone: nothing says which version is current"})
 					continue
 				}
-				total += uint64(p.Bytes)                                                                                        //nolint:gosec // a directory's size, never negative
-				t.Rows = append(t.Rows, []string{p.Name, shortAll(p.Kept), shortAll(p.Removed), format.Bytes(uint64(p.Bytes))}) //nolint:gosec // same
+				total += p.Bytes
+				t.Rows = append(t.Rows, []string{p.Name, shortAll(p.Kept), shortAll(p.Removed), format.Bytes(p.Bytes)})
 			}
 			t.Rows = append(t.Rows, []string{"total", "", "", format.Bytes(total)})
 			return renderView(cmd, opts, t)
