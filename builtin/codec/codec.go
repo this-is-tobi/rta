@@ -63,11 +63,14 @@ func Plugin() plugin.Plugin {
 					"encrypted one (JWE), and the JSON form of either — with the headers and claims decoded, " +
 					"the dates read, and anything a strict parser would refuse named: a padded segment, a " +
 					"member given twice, an empty signature. A JWE's header is read and its content is not, " +
-					"because decrypting takes the recipient's private key. Unverified and labeled as such: " +
-					"this is for reading a token while debugging, not for authenticating one — anyone can " +
-					"hand you a token with any claims at all. A pasted `Authorization: Bearer` line works. " +
-					"Given no argument, reads the token from standard input, which keeps a live one out of " +
-					"shell history and out of the process list.",
+					"because decrypting takes the recipient's private key. Unverified unless --key or --secret " +
+					"is given, and labeled as such: anyone can hand you a token with any claims at all. With " +
+					"--key — a public key, certificate or the issuer's key set, fetched by you, since a capability " +
+					"that fetched a URL its caller names would not be a free read — the signature is checked, the " +
+					"algorithm is decided by the key and never by the token, and a mismatch is an error naming " +
+					"why. An HMAC signature takes --secret instead, never a public key. A pasted " +
+					"`Authorization: Bearer` line works. Given no argument, reads the token from standard input, " +
+					"which keeps a live one out of shell history and out of the process list.",
 				Safety: plugin.Read, Idempotent: true,
 				// Positional but not Required, because a pipe can supply it —
 				// so without this the dashboard's automatic set (every Read
@@ -78,8 +81,19 @@ func Plugin() plugin.Plugin {
 				// Secret: a JWT handed to `codec jwt` is a live bearer token far
 				// more often than it is a specimen, and a String here reached
 				// both the completion shortlist and the agent log intact.
-				Inputs: []plugin.Field{{Name: "token", Type: plugin.Secret, Positional: true, Help: "the token to decode"}},
-				Run:    runJWT,
+				Inputs: []plugin.Field{
+					{Name: "token", Type: plugin.Secret, Positional: true, Help: "the token to decode"},
+					// Secret although a public key is not one: what somebody
+					// pastes here is as often a private JWK as a public one,
+					// and only the public half is ever used.
+					{Name: "key", Type: plugin.Secret, Help: "the public key, certificate or key set to verify the signature with"},
+					// Local: an HMAC secret is a credential, and an agent
+					// must never be invited to supply one. EnvFallback keeps
+					// it off argv for the person at the terminal.
+					{Name: "secret", Type: plugin.Secret, Local: true, EnvFallback: true,
+						Help: "the shared secret an HS256, HS384 or HS512 signature is made with"},
+				},
+				Run: runJWT,
 			},
 			{
 				ID:      "codec.jwk",
