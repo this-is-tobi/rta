@@ -75,13 +75,13 @@ That is the value for `--oidc-subject`. It is stable across username and email c
 **4. Check the whole thing before deploying anything:**
 
 ```bash
-TOKEN=$(curl -s -X POST \
+curl -s -X POST \
   https://keycloak.example.com/realms/main/protocol/openid-connect/token \
   -d grant_type=password -d client_id=rta \
-  -d username=you -d password=… | jq -r .access_token)
-
-rta codec jwt "$TOKEN"
+  -d username=you -d password=… | jq -r .access_token | rta codec jwt
 ```
+
+Piped rather than passed as an argument, the token never appears in the process list, where every user on the machine can read an argument for as long as the command runs. A copied `Authorization: Bearer …` line decodes as it is, and so does a token the realm encrypts: its header says which key it is sealed for.
 
 Read three fields off that output: `iss` must equal `--oidc-issuer` exactly, `aud` must contain `--oidc-audience`, and `sub` must be a value you passed to `--oidc-subject`. If all three match and the call is still refused, the reason is in the server's stderr — see below.
 

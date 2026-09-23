@@ -444,6 +444,7 @@ func conformanceInputs(dir string) map[string]map[string]any {
 		"codec.hex": {"value": "68656c6c6f"},
 		"codec.url": {"value": "a%20b"},
 		"codec.jwt": {"token": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2ln"},
+		"codec.jwk": {"key": `{"kty":"oct","k":"c2VjcmV0"}`},
 		"fs.hash":   {"path": payload},
 
 		// Local state, against the temp data dir.
