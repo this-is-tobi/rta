@@ -6,6 +6,39 @@ import (
 	"testing"
 )
 
+// A git author, a URL's query and a comparison come out as written, at every
+// depth. encoding/json re-escapes a MarshalJSON method's output unless the
+// encoder calling it was told not to, so a nested section is where a partial
+// fix would show.
+func TestMarshalLeavesHTMLCharactersAlone(t *testing.T) {
+	v := Sections{Items: []Section{{ID: "log", Title: "a <b> & c", View: Table{
+		Columns: []Column{{Name: "Author"}},
+		Rows:    [][]string{{"Ada <ada@example.com>"}, {"https://x.example/?a=1&b=2"}},
+	}}}}
+	data, err := Marshal(Envelope{View: v})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(data)
+	for _, want := range []string{`"a <b> & c"`, `"Ada <ada@example.com>"`, `"https://x.example/?a=1&b=2"`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("encoded = %s\nwant it to hold %s", got, want)
+		}
+	}
+	if strings.Contains(got, `\u00`) {
+		t.Errorf("encoded = %s, still escaped", got)
+	}
+	// Still one JSON value, and still the same one a parser reads back.
+	var back map[string]any
+	if err := json.Unmarshal(data, &back); err != nil {
+		t.Fatalf("not JSON any more: %v", err)
+	}
+	indented, err := MarshalIndent(Envelope{View: Text{Body: "x&y"}}, "", "  ")
+	if err != nil || string(indented) != "{\n  \"body\": \"x&y\",\n  \"type\": \"text\"\n}" {
+		t.Errorf("indented = %q, %v", indented, err)
+	}
+}
+
 // A section's id must survive encoding.
 //
 // Title is prose meant for a person and free to change; ID is the stable

@@ -718,7 +718,7 @@ func viewResult(v view.View) (*sdk.CallToolResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	raw, err := json.Marshal(m)
+	raw, err := view.Marshal(m)
 	if err != nil {
 		return nil, err
 	}
@@ -731,7 +731,7 @@ func viewResult(v view.View) (*sdk.CallToolResult, error) {
 func errResult(e *view.Error) *sdk.CallToolResult {
 	// AsError puts a foreign error's own text into Message, so an error is as
 	// much a channel from elsewhere as a result body is.
-	raw, _ := json.Marshal(view.Envelope{View: view.MapErrorStrings(e, textclean.Model)})
+	raw, _ := view.Marshal(view.Envelope{View: view.MapErrorStrings(e, textclean.Model)})
 	return &sdk.CallToolResult{
 		IsError: true,
 		Content: []sdk.Content{&sdk.TextContent{Text: string(raw)}},

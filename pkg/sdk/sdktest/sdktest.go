@@ -37,7 +37,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -417,5 +416,5 @@ func jsonName(c plugin.Capability, v view.View) string {
 // marshal is the exact encoding the JSON and YAML outputs and the MCP bridge
 // all go through, redaction included.
 func marshal(v view.View) ([]byte, error) {
-	return json.Marshal(view.Envelope{View: view.Redact(v)})
+	return view.Marshal(view.Envelope{View: view.Redact(v)})
 }
