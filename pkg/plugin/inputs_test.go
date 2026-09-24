@@ -87,4 +87,12 @@ func TestADefaultOutsideItsOptionsFailsValidation(t *testing.T) {
 	if err := p.Validate(); err == nil || !strings.Contains(err.Error(), "not one of its options") {
 		t.Errorf("err = %v, want the default refused", err)
 	}
+	p.Capabilities[0].Inputs = []Field{{Name: "limit", Type: Int, Default: 0, Min: 1, Max: 10}}
+	if err := p.Validate(); err == nil || !strings.Contains(err.Error(), "its range is from 1 to 10") {
+		t.Errorf("err = %v, want a default outside its range refused", err)
+	}
+	p.Capabilities[0].Inputs = []Field{{Name: "limit", Type: Int, Default: 5, Min: 1, Max: 10}}
+	if err := p.Validate(); err != nil {
+		t.Errorf("a default inside its range was refused: %v", err)
+	}
 }

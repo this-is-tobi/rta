@@ -474,6 +474,11 @@ func (c Capability) validate(ns string) error {
 			return fmt.Errorf("capability %q: input %q defaults to %q, which is not one of its options %v",
 				c.ID, f.Name, d, f.Options)
 		}
+		// And its range, for the same reason.
+		if want, ok := f.Range(f.Default); f.Default != nil && !ok {
+			return fmt.Errorf("capability %q: input %q defaults to %v, and its range is %s",
+				c.ID, f.Name, f.Default, want)
+		}
 		if f.Name == c.Scope {
 			// A scope is a record's name, and a record's name is written down
 			// everywhere a grant is: into the parked consent request, into
