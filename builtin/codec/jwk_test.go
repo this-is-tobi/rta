@@ -134,6 +134,12 @@ func TestAnECKeyIsCheckedAsAPoint(t *testing.T) {
 	if n := notes(jwk(t, offCurve)); !strings.Contains(n, "not a point on P-256") {
 		t.Errorf("off-curve notes = %q", n)
 	}
+	// 32 bytes leave two bits of a coordinate's last character unused.
+	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+	loose := x[:len(x)-1] + string(alphabet[strings.IndexByte(alphabet, x[len(x)-1])^1])
+	if n := notes(jwk(t, fmt.Sprintf(`{"kty":"EC","crv":"P-256","x":%q,"y":%q}`, loose, y))); !strings.Contains(n, "Its x ends in a character whose unused bits") {
+		t.Errorf("non-canonical notes = %q", n)
+	}
 	short := fmt.Sprintf(`{"kty":"EC","crv":"P-256","x":%q,"y":%q}`, seg(strings.Repeat("x", 31)), y)
 	if n := notes(jwk(t, short)); !strings.Contains(n, "31 and 32 bytes, and P-256 takes 32 each") {
 		t.Errorf("short-coordinate notes = %q", n)
@@ -216,6 +222,22 @@ func TestAKeySetListsEveryKeyAndNamesWhatIsWrongWithIt(t *testing.T) {
 	}
 	if strings.Contains(n, "EC keys") {
 		t.Errorf("notes = %q, flagged an RSA and an EC key sharing a kid", n)
+	}
+}
+
+// A single key's repeated member was named and a key set's was not: a
+// parser that keeps the first keys member reads an empty set here, and one
+// that keeps the last reads a key.
+func TestAKeySetThatNamesAMemberTwiceIsNamed(t *testing.T) {
+	_, x, y := ecKey(t)
+	key := fmt.Sprintf(`{"kty":"EC","crv":"P-256","x":%q,"y":%q}`, x, y)
+	for want, set := range map[string]string{
+		"keys":        `{"keys":[],"keys":[` + key + `]}`,
+		"keys[0].kty": `{"keys":[` + strings.Replace(key, `"kty":"EC"`, `"kty":"RSA","kty":"EC"`, 1) + `]}`,
+	} {
+		if n := notes(jwk(t, set)); !strings.Contains(n, "The key set names "+want+" more than once") {
+			t.Errorf("%s: notes = %q, want the repeat named", want, n)
+		}
 	}
 }
 

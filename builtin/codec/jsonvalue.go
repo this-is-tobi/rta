@@ -6,12 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 	"unicode/utf16"
+	"unicode/utf8"
 
 	"github.com/this-is-tobi/rta/builtin/internal/timefmt"
 	"github.com/this-is-tobi/rta/internal/textclean"
@@ -30,7 +30,8 @@ import (
 //   - A member named twice keeps its last value without a word. RFC 7515 §4
 //     and RFC 7519 §4 let a parser either refuse that or keep the last, which
 //     means two libraries can disagree about what one token says — the shape
-//     of a parser-differential attack — so a duplicate is noticed and named.
+//     of a parser-differential attack — so a duplicate is noticed and named,
+//     at whatever depth it sits.
 //   - Marshalling a nested value escapes <, > and & as \u003c, \u003e and
 //     \u0026, so `["a&b"]` was shown as `["a\u0026b"]`.
 
@@ -39,6 +40,13 @@ import (
 type object struct {
 	values map[string]any
 	dupes  []string
+	// replaced says why some of the text was replaced, or is "". encoding/json
+	// reads a byte that is not UTF-8, and an escape of half a UTF-16
+	// surrogate pair, as U+FFFD without an error, so `admin` followed by
+	// 0xff, by a lone high surrogate, or by U+FFFD itself are three subjects
+	// to a parser that keeps bytes and one on the page — and two names that
+	// differ in such a byte read as one name given twice.
+	replaced string
 }
 
 var errNotObject = errors.New("not a JSON object")
@@ -62,25 +70,9 @@ func decodeObject(raw []byte) (object, error) {
 	if d, ok := tok.(json.Delim); !ok || d != '{' {
 		return object{}, errNotObject
 	}
-	obj := object{values: map[string]any{}}
-	seen := map[string]bool{}
-	for dec.More() {
-		tok, err := dec.Token()
-		if err != nil {
-			return object{}, err
-		}
-		name, _ := tok.(string) // inside an object the decoder yields only string names
-		var v any
-		if err := dec.Decode(&v); err != nil {
-			return object{}, err
-		}
-		if seen[name] && !slices.Contains(obj.dupes, name) {
-			obj.dupes = append(obj.dupes, name)
-		}
-		seen[name] = true
-		obj.values[name] = v
-	}
-	if _, err := dec.Token(); err != nil { // the closing brace
+	w := walker{dec: dec}
+	values, err := w.object("", 1)
+	if err != nil {
 		return object{}, err
 	}
 	// json.Unmarshal refuses trailing data after the value, and a Decoder
@@ -88,14 +80,149 @@ func decodeObject(raw []byte) (object, error) {
 	if _, err := dec.Token(); err != io.EOF {
 		return object{}, errors.New("more after the JSON object")
 	}
-	sort.Strings(obj.dupes)
+	sort.Strings(w.dupes)
+	obj := object{values: values, dupes: w.dupes}
+	switch {
+	case !utf8.Valid(raw):
+		obj.replaced = "is not valid UTF-8"
+	case loneSurrogate(raw):
+		obj.replaced = "escapes half of a UTF-16 surrogate pair, which is no character"
+	}
 	return obj, nil
+}
+
+// loneSurrogate reports whether raw, already read as valid JSON, holds a
+// backslash-u escape of a surrogate (U+D800 to U+DFFF) that is not one half
+// of a high-then-low pair. Valid JSON has a backslash only inside a string,
+// so each one starts an escape, and skipping the character after it keeps an
+// escaped backslash from being read as the start of another.
+func loneSurrogate(raw []byte) bool {
+	for i := 0; i < len(raw); i++ {
+		if raw[i] != '\\' {
+			continue
+		}
+		i++
+		if i >= len(raw) || raw[i] != 'u' {
+			continue
+		}
+		switch r := hex4(raw, i+1); {
+		case r >= 0xd800 && r < 0xdc00:
+			if i+10 < len(raw) && raw[i+5] == '\\' && raw[i+6] == 'u' {
+				if low := hex4(raw, i+7); low >= 0xdc00 && low < 0xe000 {
+					i += 10
+					continue
+				}
+			}
+			return true
+		case r >= 0xdc00 && r < 0xe000:
+			return true
+		}
+		i += 4
+	}
+	return false
+}
+
+// hex4 reads the four hex digits at raw[i:], or returns -1.
+func hex4(raw []byte, i int) int {
+	if i+4 > len(raw) {
+		return -1
+	}
+	n, err := strconv.ParseUint(string(raw[i:i+4]), 16, 32)
+	if err != nil {
+		return -1
+	}
+	return int(n)
+}
+
+// maxDepth is how deeply decodeObject follows nested values: the bound
+// encoding/json enforces itself, which held while every member was decoded
+// by it. The walker recurses once per level, and a megabyte of `[` would
+// otherwise ask for more stack than a goroutine may have, which is not an
+// error but the end of the process — `rta mcp serve` included.
+const maxDepth = 10000
+
+// walker reads a JSON value token by token rather than handing each member to
+// encoding/json, which is what lets it see a name repeated at any depth.
+// Handed to the decoder, a nested object folded its repeats into a map
+// silently, and nested objects are where the JSON serialization keeps what
+// matters: two protected members inside signatures[0] swapped the signed
+// header, a kid given twice in an unprotected header chose the key, and a
+// key set's kty lives in keys[i]. A repeat is recorded under its path —
+// signatures[0].protected, keys[1].kty — so the note can say where it is.
+type walker struct {
+	dec   *json.Decoder
+	dupes []string
+}
+
+func (w *walker) value(path string, depth int) (any, error) {
+	if depth > maxDepth {
+		return nil, fmt.Errorf("nested more than %d levels deep", maxDepth)
+	}
+	tok, err := w.dec.Token()
+	if err != nil {
+		return nil, err
+	}
+	switch tok {
+	case json.Delim('{'):
+		m, err := w.object(path, depth)
+		return m, err
+	case json.Delim('['):
+		list, err := w.array(path, depth)
+		return list, err
+	}
+	return tok, nil
+}
+
+// object reads the members of an object whose opening brace has been read,
+// and its closing brace.
+func (w *walker) object(path string, depth int) (map[string]any, error) {
+	m := map[string]any{}
+	// A count rather than a search of the dupes found so far: an object of
+	// distinct names each given twice made that search quadratic, and a
+	// megabyte of them took seconds on a free Read an agent can call.
+	seen := map[string]int{}
+	for w.dec.More() {
+		tok, err := w.dec.Token()
+		if err != nil {
+			return nil, err
+		}
+		name, _ := tok.(string) // inside an object the decoder yields only string names
+		at := name
+		if path != "" {
+			at = path + "." + name
+		}
+		v, err := w.value(at, depth+1)
+		if err != nil {
+			return nil, err
+		}
+		if seen[name]++; seen[name] == 2 {
+			w.dupes = append(w.dupes, at)
+		}
+		m[name] = v
+	}
+	_, err := w.dec.Token()
+	return m, err
+}
+
+// array reads the elements of an array whose opening bracket has been read.
+// Never nil, even empty: a nil slice renders as null, and the token says [].
+func (w *walker) array(path string, depth int) ([]any, error) {
+	list := []any{}
+	for i := 0; w.dec.More(); i++ {
+		v, err := w.value(fmt.Sprintf("%s[%d]", path, i), depth+1)
+		if err != nil {
+			return nil, err
+		}
+		list = append(list, v)
+	}
+	_, err := w.dec.Token()
+	return list, err
 }
 
 // asObject wraps a nested object — an unprotected header, a key inside a key
 // set — that arrived through decodeObject and so already holds json.Number.
-// A name repeated inside it cannot be seen any more; only the top level of
-// each decoded document is checked, which is where alg, kid and kty live.
+// A name repeated inside it is not in its own dupes: it was recorded, by
+// path, against the document it was decoded from.
 func asObject(v any) (object, bool) {
 	m, ok := v.(map[string]any)
 	if !ok {
@@ -125,6 +252,21 @@ func (o object) str(name string) string {
 // OpenID Connect rather than here, and a JWT is not necessarily an ID token.
 // Adding either is one line the day something needs it.
 var numericDateClaims = map[string]bool{"exp": true, "nbf": true, "iat": true}
+
+// notNumbers lists the NumericDate claims o holds as something other than a
+// JSON number, which RFC 7519 §2 requires. Libraries split on it: golang-jwt
+// and jsonwebtoken refuse a string exp, and PyJWT converts it and enforces
+// it. Shown as a bare value with no date and nothing said, a string exp left
+// somebody debugging an "invalid exp" rejection no nearer to why.
+func notNumbers(o object) []string {
+	var out []string
+	for _, name := range []string{"exp", "nbf", "iat"} {
+		if _, number := o.values[name].(json.Number); o.has(name) && !number {
+			out = append(out, name)
+		}
+	}
+	return out
+}
 
 // numericDate reads one member as an instant, or reports that it is not one —
 // missing, the wrong JSON type, or a number too large to be a date.
