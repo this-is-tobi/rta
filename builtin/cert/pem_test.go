@@ -282,3 +282,92 @@ func TestABundleTruncatedMidBlockIsRefusedRatherThanShortened(t *testing.T) {
 		t.Errorf("read %d certificates from an intact two-certificate bundle", len(certs))
 	}
 }
+
+// A certificate that does not parse is refused, not skipped — the file is one
+// chain — and the refusal says where it is. In a system bundle of 128 roots,
+// "parsing certificate: negative serial number" read as the file being broken;
+// "certificate 10 of 128" says it is one entry among many.
+func TestAnUnreadableCertificateIsPlacedInItsFile(t *testing.T) {
+	bad := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: []byte("not DER")})
+	path := filepath.Join(t.TempDir(), "bundle.pem")
+	bundle := append(append(selfSigned(t, "first"), bad...), selfSigned(t, "third")...)
+	if err := os.WriteFile(path, bundle, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := readPEM(path)
+	verr := view.AsError(err, "")
+	if err == nil || verr.Code != "cert.parse.failed" || !strings.Contains(verr.Message, "certificate 2 of 3") {
+		t.Errorf("err = %v, want cert.parse.failed placing it as certificate 2 of 3", err)
+	}
+}
+
+// A file that is cut off is refused as cut off, even when a certificate
+// before the cut does not parse. The parse refusal used to come first and
+// counted only the complete blocks — "certificate 2 of 2" in a file holding
+// three — with nothing saying the file was incomplete, and fetching it
+// again is the remedy for both.
+func TestATruncatedBundleSaysSoBeforeABadCertificateInIt(t *testing.T) {
+	third := selfSigned(t, "third")
+	marker := []byte("-----BEGIN CERTIFICATE-----")
+	cut := third[:len(marker)+40]
+	path := filepath.Join(t.TempDir(), "trunc.pem")
+	content := append(append(selfSigned(t, "first"), negativeSerial(t)...), cut...)
+	if err := os.WriteFile(path, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := readPEM(path)
+	if verr := view.AsError(err, ""); err == nil || verr.Code != "cert.file.truncated" {
+		t.Errorf("err = %v, want cert.file.truncated", err)
+	}
+}
+
+// negativeSerial builds one certificate as PEM whose serial is -42.
+//
+// x509.CreateCertificate refuses to write one, so the DER is patched after
+// the fact: 42 is encoded as the one-byte INTEGER 02 01 2a straight after
+// the version field, and 0xd6 is -42 in the same byte. The signature no
+// longer matches, which the parser never checks — the serial is refused
+// before anything would.
+func negativeSerial(t *testing.T) []byte {
+	t.Helper()
+	block, _ := pem.Decode(selfSigned(t, "negative"))
+	versionThenSerial := []byte{0xa0, 0x03, 0x02, 0x01, 0x02, 0x02, 0x01, 0x2a}
+	at := bytes.Index(block.Bytes, versionThenSerial)
+	if at < 0 {
+		t.Fatal("the fixture's serial is not where the patch expects it")
+	}
+	block.Bytes[at+len(versionThenSerial)-1] = 0xd6
+	if _, err := x509.ParseCertificate(block.Bytes); err == nil || !strings.Contains(err.Error(), "negative serial") {
+		t.Fatalf("the patched certificate parsed as %v, want a negative serial refusal", err)
+	}
+	return pem.EncodeToMemory(block)
+}
+
+// A negative serial is refused with advice that fits the file. In a bundle
+// it is one old root among many, and reading the one that matters on its
+// own is the way out; said of a file holding only that certificate, the same
+// advice told the reader to do what they had just done.
+func TestANegativeSerialIsAnsweredForWhereItSits(t *testing.T) {
+	dir := t.TempDir()
+	for _, tc := range []struct {
+		name, content, where, hint, not string
+	}{
+		{"alone.pem", string(negativeSerial(t)), "the certificate in", "GODEBUG=x509negativeserial=1", "on its own"},
+		{"bundle.pem", string(selfSigned(t, "first")) + string(negativeSerial(t)),
+			"certificate 2 of 2", "on its own", "GODEBUG"},
+	} {
+		path := filepath.Join(dir, tc.name)
+		if err := os.WriteFile(path, []byte(tc.content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		_, err := readPEM(path)
+		verr := view.AsError(err, "")
+		if err == nil || verr.Code != "cert.parse.failed" || !strings.Contains(verr.Message, tc.where) {
+			t.Fatalf("%s: err = %v, want cert.parse.failed placing it as %q", tc.name, err, tc.where)
+		}
+		if !strings.Contains(verr.Hint, "positive serial") || !strings.Contains(verr.Hint, tc.hint) ||
+			strings.Contains(verr.Hint, tc.not) {
+			t.Errorf("%s: hint = %q, want it to say %q and not %q", tc.name, verr.Hint, tc.hint, tc.not)
+		}
+	}
+}

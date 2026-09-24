@@ -248,6 +248,8 @@ func readPEM(path string) ([]*x509.Certificate, error) {
 		return nil, view.Errorf("cert.file.unreadable", "reading %s: %v", path, err)
 	}
 	var certs []*x509.Certificate
+	var failed error
+	failedAt, blocks := 0, 0
 	rest := data
 	for {
 		var block *pem.Block
@@ -258,9 +260,14 @@ func readPEM(path string) ([]*x509.Certificate, error) {
 		if block.Type != "CERTIFICATE" {
 			continue
 		}
+		blocks++
+		if failed != nil {
+			continue // counted, so the refusal can say where in the file it is
+		}
 		c, err := x509.ParseCertificate(block.Bytes)
 		if err != nil {
-			return nil, view.Errorf("cert.parse.failed", "parsing certificate in %s: %v", path, err)
+			failed, failedAt = err, blocks
+			continue
 		}
 		certs = append(certs, c)
 	}
@@ -274,15 +281,55 @@ func readPEM(path string) ([]*x509.Certificate, error) {
 	//
 	// Anything left holding a BEGIN line is therefore a block this could not
 	// read, and the file is refused rather than silently shortened.
+	//
+	// Ahead of a certificate that did not parse, not after it. A cut-off file
+	// with a bad block earlier in it was refused as "certificate 2 of 2", a
+	// count that left out the block the file ends inside, and nothing said
+	// the file was incomplete. Fetching it again is the remedy for the cut,
+	// and a download damaged enough to lose its end may have damaged the
+	// block that failed as well.
 	if bytes.Contains(rest, []byte("-----BEGIN")) {
 		return nil, view.Errorf("cert.file.truncated",
 			"%s ends inside a PEM block, so it holds at least one certificate this could not read", path).
 			WithHint("the file is truncated or corrupt — fetch it again, and check whatever wrote it finished")
 	}
+	// Refused, not skipped: a file is read as one chain, and a chain with a
+	// link left out is the silently shortened bundle the truncation check
+	// above refuses for the same reason. Where the bad one sits is what
+	// tells a leaf certificate from one entry in a bundle of a hundred.
+	if failed != nil {
+		where := "the certificate in " + path
+		if blocks > 1 {
+			where = fmt.Sprintf("certificate %d of %d in %s", failedAt, blocks, path)
+		}
+		verr := view.Errorf("cert.parse.failed", "parsing %s: %v", where, failed)
+		if strings.Contains(failed.Error(), "negative serial number") {
+			verr = verr.WithHint(negativeSerialHint(blocks))
+		}
+		return nil, verr
+	}
 	if len(certs) == 0 {
 		return nil, view.Errorf("cert.file.empty", "no CERTIFICATE blocks found in %s", path)
 	}
 	return certs, nil
+}
+
+// negativeSerialHint is what to do about a certificate Go refuses for its
+// serial, which depends on whether it was alone in the file.
+//
+// In a bundle the likely culprit is one old root among many, and the way
+// forward is to read the certificate that matters without it. Said of a file
+// holding one certificate, that advice sent the reader to do what they had
+// just done: they were already inspecting it on its own, and it is the one
+// refused. What is left then is the runtime's own override, named for one
+// command so it is not mistaken for a setting to leave exported.
+func negativeSerialHint(blocks int) string {
+	const why = "RFC 5280 requires a positive serial, and Go's parser refuses a certificate carrying a negative one"
+	if blocks > 1 {
+		return why + " — old roots in some system bundles still carry one; " +
+			"inspect the certificate you care about on its own"
+	}
+	return why + " — `GODEBUG=x509negativeserial=1` in front of this one command reads it anyway"
 }
 
 // verify reports whether the presented chain validates against system roots.
