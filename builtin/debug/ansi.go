@@ -2,8 +2,10 @@ package debug
 
 import (
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/x/ansi"
 
@@ -12,50 +14,103 @@ import (
 
 // explainAnsi walks input one grapheme-or-sequence at a time — the exact
 // loop ansi.DecodeSequence's own doc comment shows — and turns it into one
-// row per thing found. Consecutive printable output (width > 0) is
-// accumulated into a single text row rather than one row per character;
-// everything else (width == 0: every control and escape sequence) flushes
-// that run and gets its own row.
+// row per thing found. Every control and escape sequence gets its own row;
+// everything else is walked rune by rune, so printable runes accumulate into
+// one text row and each character that hides itself (hidden.go) breaks the run
+// and gets a row of its own.
 func explainAnsi(input string) view.Table {
-	t := view.Table{Columns: []view.Column{
+	w := walker{t: view.Table{Columns: []view.Column{
 		{Name: "Sequence"}, {Name: "Kind"}, {Name: "Meaning"},
-	}}
+	}}}
 
 	p := ansi.GetParser()
 	defer ansi.PutParser(p)
 
 	var state byte
-	var text strings.Builder
-	flush := func() {
-		if text.Len() == 0 {
-			return
-		}
-		t.Rows = append(t.Rows, []string{text.String(), "text", "-"})
-		text.Reset()
-	}
-
 	data := input
 	for len(data) > 0 {
-		seq, width, n, newState := ansi.DecodeSequence(data, state, p)
+		seq, _, n, newState := ansi.DecodeSequence(data, state, p)
 		state = newState
 		data = data[n:]
-		if width > 0 {
-			text.WriteString(seq)
+		if isSequence(seq) {
+			w.flush()
+			kind, meaning := explainSeq(seq, p)
+			w.row(visualize(seq), kind, meaning)
 			continue
 		}
-		flush()
-		kind, meaning := explainSeq(seq, p)
-		t.Rows = append(t.Rows, []string{visualize(seq), kind, meaning})
+		// Printable, or a grapheme with nothing visible in it — walked rune
+		// by rune either way, because a tag character or a bidi control can
+		// ride inside a cluster that renders as one ordinary letter, and a
+		// text row would then carry it unseen.
+		w.printable(seq)
 	}
-	flush()
-	t.Total = len(t.Rows)
-	return t
+	w.flush()
+	w.t.Total = len(w.t.Rows)
+	return w.t
+}
+
+// walker accumulates rows: printable runs into one text row, and tag
+// characters — which DecodeSequence may hand over across several tokens —
+// into one row that decodes them together.
+type walker struct {
+	t    view.Table
+	text strings.Builder
+	tags []rune
+}
+
+func (w *walker) row(cells ...string) { w.t.Rows = append(w.t.Rows, cells) }
+
+func (w *walker) flush() {
+	if w.text.Len() > 0 {
+		w.row(w.text.String(), "text", "-")
+		w.text.Reset()
+	}
+	if len(w.tags) > 0 {
+		w.row(tagRow(w.tags)...)
+		w.tags = nil
+	}
+}
+
+func (w *walker) printable(seq string) {
+	for i := 0; i < len(seq); {
+		r, size := utf8.DecodeRuneInString(seq[i:])
+		raw := seq[i : i+size]
+		i += size
+		if isTag(r) {
+			if w.text.Len() > 0 {
+				w.row(w.text.String(), "text", "-")
+				w.text.Reset()
+			}
+			w.tags = append(w.tags, r)
+			continue
+		}
+		if kind, meaning, ok := hidden(r, raw); ok {
+			w.flush()
+			w.row(visualize(raw), kind, meaning)
+			continue
+		}
+		if len(w.tags) > 0 {
+			w.flush()
+		}
+		w.text.WriteString(raw)
+	}
+}
+
+// isSequence reports whether a token is a control or escape sequence for
+// explainSeq, as opposed to text for printable. Every sequence begins with
+// ESC or an 8-bit introducer, or is a lone C0 control or DEL.
+func isSequence(seq string) bool {
+	if seq == "" {
+		return false
+	}
+	c := seq[0]
+	return c == 0x1b || (len(seq) == 1 && (c < 0x20 || c == 0x7f || (c >= 0x80 && c <= 0x9f)))
 }
 
 // explainSeq classifies one non-printable token DecodeSequence returned.
-// Order matters: CSI, OSC and DCS all begin with ESC, so the specific
-// introducers have to be checked before the bare-ESC fallback catches them
-// instead.
+// Order matters: CSI, OSC, DCS, APC, PM and SOS all begin with ESC, so the
+// specific introducers have to be checked before the bare-ESC fallback catches
+// them instead.
 func explainSeq(seq string, p *ansi.Parser) (kind, meaning string) {
 	switch {
 	case ansi.HasCsiPrefix(seq):
@@ -63,7 +118,13 @@ func explainSeq(seq string, p *ansi.Parser) (kind, meaning string) {
 	case ansi.HasOscPrefix(seq):
 		return "OSC", explainOSC(p)
 	case ansi.HasDcsPrefix(seq):
-		return "DCS", "device control string"
+		return "DCS", explainDCS(ansi.Cmd(p.Command()), string(p.Data()))
+	case ansi.HasApcPrefix(seq):
+		return "APC", explainAPC(string(p.Data()))
+	case ansi.HasPmPrefix(seq):
+		return "PM", "privacy message — a string terminals ignore, and a place to hide one"
+	case ansi.HasSosPrefix(seq):
+		return "SOS", "start of string — a string terminals ignore, and a place to hide one"
 	case len(seq) == 1:
 		return "control", explainControl(seq[0])
 	case ansi.HasEscPrefix(seq):
@@ -365,6 +426,53 @@ func explainClipboard(data string) string {
 	return fmt.Sprintf("clipboard WRITE (selection %q): %q", sel, string(decoded))
 }
 
+// --- DCS and APC: strings the terminal is handed whole ---
+
+// explainDCS names the device control strings met in practice, from the
+// parser's own reading of them: the introducer's intermediate and final bytes
+// are the command, and what follows is data.
+//
+// tmux's passthrough matters most. tmux forwards the sequence it wraps to the
+// terminal outside it, unfiltered — which is how a clipboard write tmux itself
+// would refuse reaches the real clipboard anyway. The parser ends the DCS at
+// the wrapped sequence's first ESC, so that sequence arrives as the next rows
+// and is explained there as itself.
+func explainDCS(cmd ansi.Cmd, data string) string {
+	switch {
+	case cmd.Final() == 't' && strings.HasPrefix(data, "mux;"):
+		return "tmux passthrough — tmux hands the sequence that follows to the terminal outside it, unfiltered, " +
+			"which is how a clipboard write tmux would refuse reaches the real clipboard"
+	case cmd.Intermediate() == '$' && cmd.Final() == 'q':
+		return "request status string (DECRQSS) — asks the terminal to report a setting back, as if typed"
+	case cmd.Intermediate() == '+' && cmd.Final() == 'q':
+		return "request terminfo capabilities (XTGETTCAP" + capNames(data) + ") — asks the terminal to report back, as if typed"
+	}
+	return "device control string"
+}
+
+// capNames decodes XTGETTCAP's hex-encoded capability names, "544e" being TN.
+func capNames(data string) string {
+	var names []string
+	for _, h := range strings.Split(data, ";") {
+		raw, err := hex.DecodeString(h)
+		if err != nil || len(raw) == 0 {
+			return ""
+		}
+		names = append(names, visualize(string(raw)))
+	}
+	return ": " + strings.Join(names, ", ")
+}
+
+// explainAPC names the application program command worth knowing on sight:
+// kitty's graphics protocol, which draws an image — and can read a file the
+// terminal has access to when told to.
+func explainAPC(data string) string {
+	if strings.HasPrefix(data, "G") {
+		return "kitty graphics protocol — draws an image, or reads one from a file the terminal can open"
+	}
+	return "application program command — a string for the terminal program itself"
+}
+
 // --- bare ESC (no CSI/OSC/DCS introducer) ---
 
 func explainEsc(p *ansi.Parser) string {
@@ -410,31 +518,4 @@ func explainControl(b byte) string {
 		return info.meaning
 	}
 	return fmt.Sprintf("control character 0x%02x", b)
-}
-
-// visualize renders a raw escape/control token as safe, literal text for
-// display — never the bytes themselves. This is not a formatting choice:
-// It is on record what happens when a
-// control sequence reaches a terminal as itself rather than as a
-// description of itself (OSC 52 into the system clipboard, OSC 0 rewriting
-// the window title, a bare CR overwriting the line already drawn). A tool
-// whose entire purpose is showing somebody what a sequence does must not
-// also be a second way to have it happen — cli.Render's own cleaning is a
-// backstop for content that arrives from elsewhere, not a reason for this
-// package to hand it raw bytes on purpose.
-func visualize(seq string) string {
-	var b strings.Builder
-	for i := 0; i < len(seq); i++ {
-		c := seq[i]
-		if info, ok := controlChars[c]; ok {
-			b.WriteString(info.short)
-			continue
-		}
-		if c < 0x20 || c == 0x7f {
-			fmt.Fprintf(&b, "\\x%02x", c)
-			continue
-		}
-		b.WriteByte(c)
-	}
-	return b.String()
 }
