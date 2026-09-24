@@ -294,15 +294,37 @@ func runUse(cmd *cobra.Command, args []string, dryRun bool) (view.View, *view.Er
 
 	switch {
 	case off:
+		// Said as what happened, not as the state it left: the state after
+		// switching off is "nothing switched on" whether staging was on a
+		// moment ago or nothing ever was, and printing that alone read, right
+		// after `rta use --off`, as "there was nothing to switch off".
+		//
+		// A switch that lapsed is kept apart from one never made, for the
+		// reason currentView keeps them apart: `rta use` has just answered
+		// "staging lapsed", and --off calling the same record "nothing was
+		// switched on" contradicts it while clearing it.
+		s := profile.LoadSelection()
+		was := s.Name(now)
+		lapsed := was == "" && s.Active != ""
 		if dryRun {
-			// currentView takes the selection as a value, never re-reading
-			// it from disk, so the empty one below previews exactly what
-			// switching off would leave without SaveSelection ever running.
-			return currentView(cfg, profile.Selection{}, now), nil
+			switch {
+			case lapsed:
+				return view.Text{Body: s.Active + " has already lapsed, so there is nothing to switch off."}, nil
+			case was == "":
+				return view.Text{Body: "Nothing is switched on, so there is nothing to switch off."}, nil
+			}
+			return view.Text{Body: "Would switch off " + was + " — commands would run against the base configuration."}, nil
 		}
 		if verr := profile.SaveSelection(profile.Selection{}); verr != nil {
 			return nil, verr
 		}
+		switch {
+		case lapsed:
+			return view.Text{Body: s.Active + " had already lapsed — commands already run against the base configuration."}, nil
+		case was == "":
+			return view.Text{Body: "Nothing was switched on — commands already run against the base configuration."}, nil
+		}
+		return view.Text{Body: "Switched off " + was + " — commands run against the base configuration."}, nil
 	case len(args) == 0:
 		return currentView(cfg, profile.LoadSelection(), now), nil
 	default:

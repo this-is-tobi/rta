@@ -3,6 +3,7 @@ package app
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/profile"
@@ -145,10 +146,58 @@ func TestUseDryRunDoesNotSwitch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("use --off --dry-run: %v\n%s", err, stderr)
 	}
-	if !strings.Contains(out, "Nothing switched on") {
+	if !strings.Contains(out, "Would switch off staging") {
 		t.Errorf("dry-run --off output = %q, want the switched-off preview", out)
 	}
 	if got := profile.LoadSelection(); got.Active != "staging" {
 		t.Errorf("active selection = %q, want staging — --off --dry-run switched off for real", got.Active)
+	}
+
+	// For real, it says what it switched off — and a second one, with
+	// nothing left on, says that instead of the same sentence again.
+	if out, _, err := run("use", "--off"); err != nil || !strings.Contains(out, "Switched off staging") {
+		t.Errorf("use --off = %q, %v; want it to name what it switched off", out, err)
+	}
+	if out, _, err := run("use", "--off"); err != nil || !strings.Contains(out, "Nothing was switched on") {
+		t.Errorf("a second use --off = %q, %v", out, err)
+	}
+	// And previewing it with nothing on says there is nothing to preview.
+	want := "Nothing is switched on, so there is nothing to switch off."
+	if out, _, err := run("use", "--off", "--dry-run"); err != nil || !strings.Contains(out, want) {
+		t.Errorf("use --off --dry-run with nothing on = %q, %v; want %q", out, err, want)
+	}
+}
+
+// A switch that lapsed is not a switch never made. `rta use` answers
+// "staging lapsed", and --off calling the same record "nothing was switched
+// on" — while clearing it — contradicted the line printed just before.
+func TestUseOffSaysASwitchHadLapsed(t *testing.T) {
+	run := session(t, setRegistry(t))
+	if _, stderr, err := run("profile", "set", "staging",
+		"--plugin", "db", "--set", "host=staging.internal"); err != nil {
+		t.Fatalf("set: %v\n%s", err, stderr)
+	}
+	past := time.Now().Add(-time.Hour)
+	if verr := profile.SaveSelection(profile.Selection{Active: "staging", Until: &past}); verr != nil {
+		t.Fatal(verr)
+	}
+	if out, _, err := run("use"); err != nil || !strings.Contains(out, "staging lapsed") {
+		t.Fatalf("use = %q, %v; want the lapse this test is about", out, err)
+	}
+
+	want := "staging has already lapsed, so there is nothing to switch off."
+	if out, _, err := run("use", "--off", "--dry-run"); err != nil || !strings.Contains(out, want) {
+		t.Errorf("use --off --dry-run = %q, %v; want %q", out, err, want)
+	}
+	if got := profile.LoadSelection(); got.Active != "staging" {
+		t.Errorf("the dry run cleared the record: %+v", got)
+	}
+
+	want = "staging had already lapsed — commands already run against the base configuration."
+	if out, _, err := run("use", "--off"); err != nil || !strings.Contains(out, want) {
+		t.Errorf("use --off = %q, %v; want %q", out, err, want)
+	}
+	if got := profile.LoadSelection(); got.Active != "" {
+		t.Errorf("use --off left %+v behind", got)
 	}
 }
