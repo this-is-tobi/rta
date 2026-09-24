@@ -447,7 +447,20 @@ func newProfileCommand(reg *registry.Registry, opts *globalOpts) *cobra.Command 
 			if err != nil {
 				return render(cmd, nil, view.AsError(err, "core.profile.config"))
 			}
-			return render(cmd, profileTable(cfg, reg), nil)
+			var v view.View = profileTable(cfg, reg)
+			// A table of headers with nothing under them reads, on a
+			// screen, like a listing that failed, so pretty output says
+			// what would fill it — the way kv list and grant list do.
+			// Only pretty output: it is the one format whose shape may
+			// change, and every other one keeps the empty table, so
+			// `-o json | jq '.rows[]'` yields nothing and exits 0 and
+			// `-o csv` prints its header, rather than a parser meeting a
+			// text view it was never promised.
+			if format, _ := cli.ParseFormat(opts.output); format == cli.Pretty && len(cfg.ProfileNames()) == 0 {
+				v = view.Text{Body: "No profile is configured yet — `rta profile set <name> --plugin <plugin> " +
+					"--set key=value` writes one, and `rta use <name>` switches it on."}
+			}
+			return render(cmd, v, nil)
 		},
 	}
 	show := &cobra.Command{
@@ -472,7 +485,7 @@ func newProfileCommand(reg *registry.Registry, opts *globalOpts) *cobra.Command 
 	return cmd
 }
 
-func profileTable(cfg config.Config, reg *registry.Registry) view.View {
+func profileTable(cfg config.Config, reg *registry.Registry) view.Table {
 	problems := map[string]string{}
 	for _, p := range profile.Check(cfg, withTrust{reg}) {
 		if _, already := problems[p.Name]; !already {

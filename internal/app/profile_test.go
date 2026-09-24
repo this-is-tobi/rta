@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -109,5 +110,35 @@ func TestTheCardDoesNotJudgeAPluginNobodyRegistered(t *testing.T) {
 	// what the operator wrote.
 	if !strings.Contains(out, "kv:some-entry") {
 		t.Errorf("the secrets mapping vanished from the page:\n%s", out)
+	}
+}
+
+// An empty profile list is still a table to anything that parses it. The
+// sentence saying what would fill it is for a screen; in -o json it was a
+// text view, and the CLI page's own `jq '.rows[] | ...'` example failed with
+// "Cannot iterate over null" on a machine with no profiles, while -o csv
+// refused a text view and exited 2 — the code for something unexpected.
+func TestAnEmptyProfileListIsATableToAParser(t *testing.T) {
+	const empty = "profiles: {}\n"
+	out, _, err := runWith(t, connRegistry(t), empty, "profile", "list", "-o", "pretty")
+	if err != nil || !strings.Contains(out, "No profile is configured yet") {
+		t.Errorf("pretty = %q, %v; want the sentence saying what would fill it", out, err)
+	}
+
+	out, _, err = runWith(t, connRegistry(t), empty, "profile", "list", "-o", "json")
+	if err != nil {
+		t.Fatalf("json: %v", err)
+	}
+	var env struct {
+		Type string     `json:"type"`
+		Rows [][]string `json:"rows"`
+	}
+	if err := json.Unmarshal([]byte(out), &env); err != nil || env.Type != "table" || env.Rows == nil || len(env.Rows) != 0 {
+		t.Errorf("json = %s (%v); want a table whose rows are an empty array", out, err)
+	}
+
+	out, _, err = runWith(t, connRegistry(t), empty, "profile", "list", "-o", "csv")
+	if err != nil || strings.TrimSpace(out) != "Profile,Plugins,Status,Note" {
+		t.Errorf("csv = %q, %v; want the header row alone", out, err)
 	}
 }

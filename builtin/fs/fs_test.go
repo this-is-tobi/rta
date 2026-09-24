@@ -1,15 +1,18 @@
 package fs
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 
+	"github.com/this-is-tobi/rta/internal/render/cli"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -100,9 +103,10 @@ func TestUsageSharesAreOfTheScannedTotal(t *testing.T) {
 // An empty directory has a zero total, and a percentage of zero is a division
 // by zero — the arithmetic that turns a listing into a crash.
 func TestUsageOfAnEmptyDirectory(t *testing.T) {
-	tbl := run(t, runUsage, map[string]any{"path": t.TempDir(), "limit": 20}).(view.Table)
-	if len(tbl.Rows) != 0 {
-		t.Errorf("an empty directory listed %v", tbl.Rows)
+	v := run(t, runUsage, map[string]any{"path": t.TempDir(), "limit": 20})
+	tbl, ok := v.(view.Table)
+	if !ok || len(tbl.Rows) != 0 {
+		t.Errorf("an empty directory answered %#v, want a table with no rows", v)
 	}
 	// And one holding only empty files, where the total is zero but there is
 	// something to show.
@@ -110,6 +114,34 @@ func TestUsageOfAnEmptyDirectory(t *testing.T) {
 	tbl = run(t, runUsage, map[string]any{"path": root, "limit": 20}).(view.Table)
 	if got := rowFor(t, tbl, "empty.txt")[2]; got == "" || strings.Contains(got, "NaN") {
 		t.Errorf("share of a zero total rendered as %q", got)
+	}
+}
+
+// An empty directory is still a table to anything that parses it. It was
+// answered with a sentence, which every format carried: -o json handed
+// `jq '.rows[]'` a text view with no rows to iterate, and -o csv refused
+// the text view and exited 2, where the empty table prints its header.
+func TestAnEmptyDirectoryIsATableToAParser(t *testing.T) {
+	v := run(t, runUsage, map[string]any{"path": t.TempDir(), "limit": 20})
+
+	var out bytes.Buffer
+	if err := cli.Render(&out, v, cli.Options{Format: cli.JSON}); err != nil {
+		t.Fatalf("json: %v", err)
+	}
+	var env struct {
+		Type string     `json:"type"`
+		Rows [][]string `json:"rows"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &env); err != nil || env.Type != "table" || env.Rows == nil || len(env.Rows) != 0 {
+		t.Errorf("json = %s (%v); want a table whose rows are an empty array", out.String(), err)
+	}
+
+	out.Reset()
+	if err := cli.Render(&out, v, cli.Options{Format: cli.CSV}); err != nil {
+		t.Fatalf("csv: %v", err)
+	}
+	if got := strings.TrimSpace(out.String()); got != "Entry,Size,Share,Files" {
+		t.Errorf("csv = %q, want the header row alone", got)
 	}
 }
 
