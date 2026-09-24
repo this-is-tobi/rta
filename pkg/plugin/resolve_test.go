@@ -99,30 +99,48 @@ func TestResolveRefusesAnIntegerThatDoesNotFit(t *testing.T) {
 // `net ping --timeout 0` reached time.NewTicker(0) inside a library goroutine
 // and aborted the process. Over MCP that is one schema-valid call from an
 // unprivileged agent killing the server for every other tool.
-func TestResolveClampsToDeclaredBounds(t *testing.T) {
-	cases := []struct {
-		in   any
-		want int
-	}{
-		{0, 1}, {-5, 1}, {1, 1}, {150, 150}, {300, 300}, {9000, 300},
+//
+// So a handler must never see an out-of-range value — and it used to be
+// spared one by clamping, which answered a different question: `net listen
+// --port 70000` reported on port 65535. Refused now, with the range named;
+// the edges are inside it.
+func TestAnOutOfRangeNumberIsRefusedRatherThanMoved(t *testing.T) {
+	ran := false
+	c := numeric()
+	c.Run = func(context.Context, Request) (view.View, error) { ran = true; return nil, nil }
+	guarded := GuardInputs(c)
+	call := func(values map[string]any) *view.Error {
+		t.Helper()
+		_, err := guarded(context.Background(), NewRequest(Resolve(c, Inputs{Caller: values}), false, false))
+		if err == nil {
+			return nil
+		}
+		return view.AsError(err, "test")
 	}
-	for _, tc := range cases {
-		req := NewRequest(Resolve(numeric(), Inputs{Caller: map[string]any{"timeout": tc.in}}), false, false)
-		if got := req.Int("timeout"); got != tc.want {
-			t.Errorf("timeout %v resolved to %d, want %d", tc.in, got, tc.want)
+	for _, in := range []any{0, -5, 301, 9000} {
+		verr := call(map[string]any{"timeout": in})
+		if verr == nil || verr.Code != "core.input.range" || !strings.Contains(verr.Message, "from 1 to 300") {
+			t.Errorf("timeout %v: %v, want core.input.range naming the range", in, verr)
 		}
 	}
 	// Floats too, and a bound of 0 is a real bound rather than "unset".
-	for in, want := range map[float64]float64{-1: 0, 0: 0, 0.25: 0.25, 2: 1} {
-		req := NewRequest(Resolve(numeric(), Inputs{Caller: map[string]any{"ratio": in}}), false, false)
-		if got := req.Float("ratio"); got != want {
-			t.Errorf("ratio %v resolved to %v, want %v", in, got, want)
+	for _, in := range []float64{-1, 2} {
+		if verr := call(map[string]any{"ratio": in}); verr == nil || verr.Code != "core.input.range" {
+			t.Errorf("ratio %v was accepted", in)
 		}
 	}
-	// An unbounded field is not clamped into existence.
-	req := NewRequest(Resolve(numeric(), Inputs{Caller: map[string]any{"limit": -3}}), false, false)
-	if got := req.Int("limit"); got != -3 {
-		t.Errorf("an unbounded field was clamped to %d", got)
+	if ran {
+		t.Error("the handler ran on an out-of-range value")
+	}
+	for _, values := range []map[string]any{{"timeout": 1}, {"timeout": 300}, {"ratio": 0.0}, {"ratio": 1.0}, {"limit": -3}} {
+		if verr := call(values); verr != nil {
+			t.Errorf("%v was refused: %v", values, verr)
+		}
+	}
+	// Resolve itself moves nothing: the value the handler would see is the
+	// value that was sent, and the guard is what decides.
+	if got := Resolve(c, Inputs{Caller: map[string]any{"timeout": 9000}})["timeout"]; got != 9000 {
+		t.Errorf("Resolve changed an out-of-range value to %v", got)
 	}
 }
 
@@ -229,14 +247,15 @@ func TestANestedBlockIsNotItselfAValue(t *testing.T) {
 
 // Bounds still apply to a value that arrived from config: an operator's file
 // is no more trusted to respect a declared Max than a caller is.
-func TestAConfigValueIsStillClamped(t *testing.T) {
+func TestAConfigValueIsHeldToTheBoundsToo(t *testing.T) {
 	c := Capability{
 		ID: "pg.query", Summary: "q", Safety: Read,
 		Run:    func(context.Context, Request) (view.View, error) { return nil, nil },
 		Inputs: []Field{{Name: "limit", Type: Int, Help: "l", Default: 10, Min: 1, Max: 100, Config: "limit"}},
 	}
-	if got := Resolve(c, Inputs{Config: map[string]any{"limit": 5000}})["limit"]; got != 100 {
-		t.Errorf("limit = %v, want it clamped to the declared Max", got)
+	req := NewRequest(Resolve(c, Inputs{Config: map[string]any{"limit": 5000}}), false, false)
+	if verr := CheckInputs(c, req); verr == nil || verr.Code != "core.input.range" {
+		t.Errorf("a config value past Max was accepted: %v", verr)
 	}
 }
 

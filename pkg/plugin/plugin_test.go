@@ -607,11 +607,10 @@ func TestAnInputMustDeclareItsType(t *testing.T) {
 }
 
 // A declared bound the host will never apply is worse than no bound: the
-// author believes the input is clamped and stops checking it, and nothing
-// anywhere says otherwise. All three forms are quiet — Resolve reads Min
-// through toFloat and simply gets not-ok, clamping applies Min then Max so an
-// inverted pair pins every value rather than erroring, and Resolve clamps no
-// type but Int and Float.
+// author believes the input is checked and stops checking it, and nothing
+// anywhere says otherwise. All three forms are quiet — the host reads Min
+// through toFloat and simply gets not-ok, an inverted pair refuses every
+// value, and the host checks no type but Int and Float.
 func TestABoundTheHostCannotApplyIsRejected(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -621,7 +620,7 @@ func TestABoundTheHostCannotApplyIsRejected(t *testing.T) {
 		{"string min", Field{Name: "n", Type: Int, Min: "1"}, "non-numeric Min"},
 		{"string max", Field{Name: "n", Type: Int, Max: "10"}, "non-numeric Max"},
 		{"bool min", Field{Name: "n", Type: Float, Min: true}, "non-numeric Min"},
-		{"inverted", Field{Name: "n", Type: Int, Min: 100, Max: 10}, "clamps to Max"},
+		{"inverted", Field{Name: "n", Type: Int, Min: 100, Max: 10}, "no value could ever be accepted"},
 		{"bound on a string", Field{Name: "n", Type: String, Max: 10}, "apply only to"},
 		{"bound on a bool", Field{Name: "n", Type: Bool, Min: 0}, "apply only to"},
 	}

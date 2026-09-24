@@ -332,9 +332,16 @@ type Field struct {
 	// Some handlers clamped by hand and some did not, which is the real
 	// problem: "remember to clamp" is not a rule a third-party author can be
 	// expected to follow, and there was nowhere to write the bound down. Now
-	// there is, and it is enforced once, for every surface, in Resolve — and
-	// published to MCP as JSON Schema minimum/maximum, so a model is told the
-	// range instead of discovering it by crashing the server.
+	// there is, and it is enforced once, for every surface, by the host
+	// (CheckInputs) — and published to MCP as JSON Schema minimum/maximum, so
+	// a model is told the range instead of discovering it by crashing the
+	// server.
+	//
+	// **A value outside the bounds is refused, not moved inside them.** The
+	// host clamped at first, which kept the crash away and answered a
+	// different question: `net listen --port 70000` reported on port 65535,
+	// and `sys ps --limit 0` printed one row. A handler never sees an
+	// out-of-range value either way; a refusal is the half that also says so.
 	//
 	// Nil means unbounded in that direction. They apply to Int and Float.
 	Min any

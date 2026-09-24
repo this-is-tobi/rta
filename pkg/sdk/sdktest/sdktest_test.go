@@ -160,7 +160,7 @@ func TestAFailedValidateIsReportedAndStopsTheRun(t *testing.T) {
 	if ok {
 		t.Error("checkDeclaration said a plugin Validate rejects is sound enough to drive")
 	}
-	if !strings.Contains(rec.errText(), "clamps to Max") {
+	if !strings.Contains(rec.errText(), "no value could ever be accepted") {
 		t.Errorf("the Validate failure was not reported: %q", rec.errText())
 	}
 }

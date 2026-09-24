@@ -24,7 +24,7 @@ func optionCap(run Handler) Capability {
 // before the handler sees it, naming the input and the set.
 func TestAValueOutsideItsOptionsIsRefused(t *testing.T) {
 	ran := false
-	guarded := GuardOptions(optionCap(func(context.Context, Request) (view.View, error) {
+	guarded := GuardInputs(optionCap(func(context.Context, Request) (view.View, error) {
 		ran = true
 		return nil, nil
 	}))
@@ -72,8 +72,8 @@ func TestResolveSpellsAnOptionTheWayItIsDeclared(t *testing.T) {
 	}
 }
 
-func TestGuardOptionsLeavesAnUnguardedHandlerAlone(t *testing.T) {
-	if GuardOptions(Capability{ID: "demo.none"}) != nil {
+func TestGuardInputsLeavesAnUnguardedHandlerAlone(t *testing.T) {
+	if GuardInputs(Capability{ID: "demo.none"}) != nil {
 		t.Error("a nil handler became non-nil")
 	}
 }
