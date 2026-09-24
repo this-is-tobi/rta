@@ -362,6 +362,26 @@ func TestASharedSecretIsNeverTakenAsAKey(t *testing.T) {
 		t.Errorf("verification = %q, want VERIFIED and the oct key named as skipped", body)
 	}
 	mustRefuse(t, hs, set, "", "codec.jwt.alg", "only a public key was given")
+
+	// A set of nothing but shared secrets, and a set of nothing at all, were
+	// "no usable key in what was given: " with nothing after the colon, and
+	// the oct keys' note, which says where a secret goes, was dropped for a
+	// hint to run codec.jwk. Beside a key its members do not make, the oct
+	// key was left out of the list of what could not be used.
+	for name, tc := range map[string]struct{ set, want, hint string }{
+		"only oct": {`{"keys":[{"kty":"oct","kid":"hmac","k":"c2VjcmV0"}]}`,
+			"the key set holds only shared secrets (kty oct), and --key takes only public keys", "--secret-file"},
+		"empty": {`{"keys":[]}`, "the key set holds no keys", ""},
+		"oct beside a broken key": {fmt.Sprintf(`{"keys":[{"kty":"oct","kid":"hmac","k":"c2VjcmV0"},{"kty":"EC","crv":"P-256","kid":"ec","x":%q,"y":%q}]}`, x, x),
+			`no usable key in what was given: EC P-256, kid "ec" cannot be used: its x and y are not a point on P-256, ` +
+				`so no signature can verify against it; 48-bit shared secret, kid "hmac" is a shared secret (kty oct), which --key does not take`,
+			"rta codec jwk"},
+	} {
+		_, verr := verifyWith(t, hs, tc.set, "")
+		if verr == nil || verr.Code != "codec.jwt.key" || verr.Message != tc.want || !strings.Contains(verr.Hint, tc.hint) {
+			t.Errorf("%s: got %+v, want codec.jwt.key %q with a hint naming %q", name, verr, tc.want, tc.hint)
+		}
+	}
 }
 
 // The same attack through the other door: the public key handed over as the
@@ -409,6 +429,35 @@ func TestAPublicKeyGivenAsTheSecretIsRefused(t *testing.T) {
 		strings.Contains(verr.Message+verr.Hint, "secret") {
 		t.Errorf("bare base64 key: got %+v, want a hint naming PEM armour and not the secret", verr)
 	}
+}
+
+// A raw public key in bare base64, an Ed25519 x or an EC point, is nothing
+// publicKeyIn can tell from a random secret of the same length, so the hint
+// is the only guard there is. The refusal sent it to the secret file, where a
+// token HMAC'd with the key's bytes then verified: the forgery, reached
+// through the refusal's own pointer. Base64 is told how a raw key goes in
+// instead, on every surface; only text that is no base64 at all is still told
+// where a secret goes.
+func TestARawKeyInBase64IsNotSentToTheSecret(t *testing.T) {
+	pub, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	forged := sign(`{"alg":"HS256"}`, `{"sub":"admin"}`, func(in []byte) []byte {
+		mac := hmac.New(sha256.New, pub)
+		mac.Write(in)
+		return mac.Sum(nil)
+	})
+	for _, surface := range []plugin.Surface{plugin.SurfaceCLI, plugin.SurfaceTUI, plugin.SurfaceMCP} {
+		_, err := runJWT(context.Background(), req(map[string]any{"token": forged, "key": base64.StdEncoding.EncodeToString(pub)}).
+			WithSurface(surface))
+		verr := view.AsError(err, "test")
+		if err == nil || verr.Code != "codec.jwt.key" || strings.Contains(verr.Hint, "secret-file") ||
+			!strings.Contains(verr.Hint, `{"kty":"OKP","crv":"Ed25519","x":…}`) {
+			t.Errorf("%s: got %v (hint %q), want a raw key told to go in as a JWK and not sent to the secret", surface, err, verr.Hint)
+		}
+	}
+	mustRefuse(t, forged, "hunter2!", "", "codec.jwt.key", "--secret-file")
 }
 
 func TestRSAVerifiesFromEveryPEMShape(t *testing.T) {
@@ -722,6 +771,29 @@ func TestWhatCannotBeVerifiedIsRefusedByName(t *testing.T) {
 	mustRefuse(t, sign(`{"alg":"ES256K"}`, `{}`, func([]byte) []byte { return []byte("x") }), "", secret,
 		"codec.jwt.alg", "cannot check")
 	mustRefuse(t, buildJWT(t, `{"alg":"HS256"}`, `{}`), "not a key at all", "", "codec.jwt.key", "not a JWK")
+}
+
+// An encrypted token checked with a secret file alone was told that without
+// --key it shows the header, and dropping --key changes nothing when the
+// secret file is what asked for the check. The hint names what was given.
+func TestAnEncryptedTokenIsToldWhatToLeaveOut(t *testing.T) {
+	protected := seg(`{"alg":"dir","enc":"A128GCM"}`)
+	compact := strings.Join([]string{protected, "", seg("iv"), seg("c"), seg("tag")}, ".")
+	jsonForm := fmt.Sprintf(`{"protected":%q,"iv":%q,"ciphertext":%q,"tag":%q}`, protected, seg("iv"), seg("c"), seg("tag"))
+	_, x, y := ecKey(t)
+	key := fmt.Sprintf(`{"kty":"EC","crv":"P-256","x":%q,"y":%q}`, x, y)
+	for _, token := range []string{compact, jsonForm} {
+		for want, in := range map[string]struct{ key, secret string }{
+			"without --secret-file it shows the header":           {"", "s3cret"},
+			"without --key it shows the header":                   {key, ""},
+			"without --key and --secret-file it shows the header": {key, "s3cret"},
+		} {
+			_, verr := verifyWith(t, token, in.key, in.secret)
+			if verr == nil || verr.Code != "codec.jwt.encrypted" || !strings.HasPrefix(verr.Hint, want) {
+				t.Errorf("key %t, secret %t: got %+v, want a hint starting %q", in.key != "", in.secret != "", verr, want)
+			}
+		}
+	}
 }
 
 // Every ACME request is a flattened JWS; its signature covers the protected

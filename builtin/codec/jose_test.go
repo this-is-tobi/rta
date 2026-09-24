@@ -3,11 +3,13 @@ package codec
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/this-is-tobi/rta/internal/textclean"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -264,6 +266,49 @@ func TestControlAndInvisibleCharactersAreShownEscapedAndNamed(t *testing.T) {
 	body := verification(t, s)
 	if !strings.Contains(body, "shown quoted") || !strings.Contains(body, "deep, name, sub") {
 		t.Errorf("verification = %q, want the escaped claims named", body)
+	}
+}
+
+// Every renderer passes a value through textclean.Terminal, which spells a
+// reorder character as a backslash-u escape and changes nothing else. What
+// codec shows has to come through it unchanged, or the page reads as other
+// than it is: an override, quoted as that escape, would be drawn with a
+// literal backslash, as harmless text, on the very attack it exists to show.
+// Each value here is drawn as codec renders it, and only one that hides
+// something is quoted and named: the same spelling typed out as text is shown
+// as it is, and is told from the override by the quotes and the note.
+func TestWhatCodecShowsIsDrawnAsItIs(t *testing.T) {
+	bs, rlo, esc := `\`, string(rune(0x202e)), string(rune(0x1b))
+	typed := bs + "u202e"
+	claims, err := json.Marshal(map[string]any{
+		"override":     "a" + rlo + "b",
+		"typed":        "a" + typed + "b",
+		"override-esc": "x" + rlo + "y" + esc + "z",
+		"typed-esc":    "a" + typed + "b" + esc + "z",
+		"nested":       map[string]any{"k": "v" + rlo + "w"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := jose(t, buildJWT(t, `{"alg":"none"}`, string(claims)))
+	kv := section(t, s, "claims").(view.KeyValue)
+	for name, want := range map[string]string{
+		"override":     `"a` + typed + `b"`,
+		"typed":        "a" + typed + "b",
+		"override-esc": `"x` + typed + "y" + bs + `x1bz"`,
+		"typed-esc":    `"a` + bs + typed + "b" + bs + `x1bz"`,
+		"nested":       `{"k":"v` + typed + `w"}`,
+	} {
+		got := pairValue(kv, name)
+		if got != want {
+			t.Errorf("%s = %q, want %q", name, got, want)
+		}
+		if drawn := textclean.Terminal(got); drawn != got {
+			t.Errorf("%s is drawn as %q, not as the %q codec shows", name, drawn, got)
+		}
+	}
+	if body := verification(t, s); !strings.Contains(body, "with those characters escaped: nested, override, override-esc, typed-esc.") {
+		t.Errorf("verification = %q, want every value that hides something named, and only those", body)
 	}
 }
 
