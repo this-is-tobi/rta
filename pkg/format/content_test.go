@@ -1,4 +1,4 @@
-package bytesview
+package format
 
 import (
 	"strings"
@@ -50,5 +50,16 @@ func TestTruncateNeverSplitsACharacter(t *testing.T) {
 	}
 	if got := Truncate("abcdef", 5); !strings.HasSuffix(got, "(1 more byte)") {
 		t.Errorf("one byte over = %q", got)
+	}
+}
+
+// A limit is whatever arithmetic the caller did, a negative result included,
+// and a formatting helper answers rather than panicking inside a handler.
+func TestDumpAndTruncateTakeANegativeLimit(t *testing.T) {
+	if got := Dump([]byte{0}, -1); !strings.HasPrefix(got, "1 byte, not plain text — the first 0 bytes shown:") {
+		t.Errorf("Dump with a negative limit = %q", got)
+	}
+	if got := Truncate("abc", -1); got != "\n… (3 more bytes)" {
+		t.Errorf("Truncate with a negative limit = %q", got)
 	}
 }

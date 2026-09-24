@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"unicode"
 
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
@@ -162,5 +164,24 @@ func TestDeceivesFlagsWhatItWouldChange(t *testing.T) {
 				t.Errorf("Deceives(%q) = false, want true", tc.s)
 			}
 		})
+	}
+}
+
+// pkg/format decides whether bytes are plain text without importing this
+// package, because every plugin imports pkg/format and this one brings an ANSI
+// parser along. So it holds its own copy of the rule, and this holds the copy
+// to the original for every character there is: a rune one of them hides and
+// the other shows is a byte a plugin's dump and rta's renderer disagree about.
+func TestFormatPlainTextAgreesWithDeceivesOnEveryRune(t *testing.T) {
+	for r := rune(0); r <= unicode.MaxRune; r++ {
+		if r >= 0xd800 && r <= 0xdfff {
+			continue // surrogates are not characters: string(r) is U+FFFD
+		}
+		// The line breaks and tab of ordinary text are plain text there and a
+		// deception here, where a value is one line offered as one value.
+		want := r == '\n' || r == '\t' || r == '\r' || !Deceives(string(r))
+		if got := format.PlainText([]byte(string(r))); got != want {
+			t.Fatalf("U+%04X: format.PlainText = %v, and textclean says %v", r, got, want)
+		}
 	}
 }
