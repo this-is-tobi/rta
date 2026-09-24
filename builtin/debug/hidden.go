@@ -26,10 +26,20 @@ import (
 //     smuggling" that hides a prompt injection inside an innocent sentence.
 //   - C1 controls are the 8-bit forms of CSI, OSC and friends, which some
 //     terminals still honour.
+//   - A run of variation selectors after one character is bytes carried where
+//     nobody sees them, the same smuggling as the tag block with another
+//     alphabet: one selector per byte.
+//   - Fillers and other default-ignorable characters draw as nothing or as a
+//     blank, which is how a name that looks empty, or two names that look
+//     alike, are made.
 //
-// The set is textclean's: the characters rta strips from what it hands a
-// model and a terminal, named here instead of stripped, because this
-// capability exists to show them.
+// The set starts from textclean's: the characters rta strips from what it
+// hands a model and a terminal, named here instead of stripped, because this
+// capability exists to show them. The last two kinds are not in it — each is
+// ordinary somewhere, a selector picking an emoji's or an ideograph's form, a
+// filler inside a Hangul syllable — so they are named here and left alone
+// there. It is a list of the known kinds, not a guarantee that nothing else
+// can hide; the Description says so.
 
 // invisibleNames names the invisible characters textclean removes. The two
 // joiners it deliberately keeps, U+200C and U+200D, are left out here for the
@@ -74,7 +84,30 @@ var c1Names = map[rune]string{
 	0x9f: "APC in its 8-bit form — starts an application program command",
 }
 
+// blankNames names characters textclean leaves in place, because a script
+// uses them, that on their own draw as nothing or as blank space.
+var blankNames = map[rune]string{
+	0x00ad: "soft hyphen — invisible unless a line breaks there",
+	0x034f: "combining grapheme joiner — invisible",
+	0x061c: "Arabic letter mark — invisible; changes how the text around it is ordered",
+	0x115f: "Hangul choseong filler — draws as blank space",
+	0x1160: "Hangul jungseong filler — draws as blank space",
+	0x17b4: "Khmer inherent vowel AQ — invisible",
+	0x17b5: "Khmer inherent vowel AA — invisible",
+	0x180e: "Mongolian vowel separator — invisible",
+	0x2028: "line separator — most terminals draw nothing, and JavaScript reads a line break",
+	0x2029: "paragraph separator — most terminals draw nothing, and JavaScript reads a line break",
+	0x3164: "Hangul filler — draws as blank space",
+	0xffa0: "halfwidth Hangul filler — draws as blank space",
+}
+
 func isTag(r rune) bool { return r >= 0xe0000 && r <= 0xe007f }
+
+// isSelector reports whether r is a variation selector: VS1 to VS16 in the
+// BMP, VS17 to VS256 in the supplement.
+func isSelector(r rune) bool {
+	return (r >= 0xfe00 && r <= 0xfe0f) || (r >= 0xe0100 && r <= 0xe01ef)
+}
 
 // hidden classifies one rune that is not an escape sequence, reporting false
 // for an ordinary one.
@@ -89,6 +122,9 @@ func hidden(r rune, raw string) (kind, meaning string, ok bool) {
 		return "C1 control", fmt.Sprintf("C1 control U+%04X", r), true
 	}
 	if name, named := invisibleNames[r]; named {
+		return "invisible", name, true
+	}
+	if name, named := blankNames[r]; named {
 		return "invisible", name, true
 	}
 	if textclean.Deceives(string(r)) {
@@ -116,6 +152,28 @@ func tagRow(tags []rune) []string {
 	}
 	return []string{cell, "tags", fmt.Sprintf("invisible, spelling %q — a person sees nothing and a model reads "+
 		"the text: the way a prompt injection is hidden in an innocent sentence", text.String())}
+}
+
+// selectorRow explains variation selectors that are not one selector picking
+// a form for the character before it — a run, or one with no character to
+// modify — by decoding them the way the smuggling encodes a byte: VS1 to VS16
+// are 0 to 15, and VS17 to VS256 are 16 to 255.
+func selectorRow(vs []rune) []string {
+	data := make([]byte, len(vs))
+	for i, r := range vs {
+		switch {
+		case r >= 0xfe00 && r <= 0xfe0f:
+			data[i] = byte(r - 0xfe00)
+		case r >= 0xe0100 && r <= 0xe01ef:
+			data[i] = byte(r - 0xe0100 + 16)
+		}
+	}
+	cell := fmt.Sprintf("<%d variation selectors>", len(vs))
+	if len(vs) == 1 {
+		cell = fmt.Sprintf("<variation selector U+%X>", vs[0])
+	}
+	return []string{cell, "selectors", fmt.Sprintf("invisible, carrying the bytes %q — one selector after a "+
+		"character picks how it is drawn, and more are data a person cannot see", data)}
 }
 
 // visualize renders a token as safe, literal text for display — never the
@@ -147,7 +205,7 @@ func visualize(seq string) string {
 			}
 		case r == utf8.RuneError && size == 1:
 			fmt.Fprintf(&b, "\\x%02x", seq[i])
-		case textclean.Deceives(string(r)) || isTag(r):
+		case textclean.Deceives(string(r)) || isTag(r) || isSelector(r) || blankNames[r] != "":
 			if r > 0xffff {
 				fmt.Fprintf(&b, "\\U%08x", r)
 			} else {

