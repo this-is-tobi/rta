@@ -178,7 +178,14 @@ func (r Request) Float(name string) float64 {
 // the "no keys named" branch and exported the entire store. Two readers of
 // one untyped value must not be free to disagree about what it means.
 func (r Request) StringSlice(name string) []string {
-	switch v := r.values[name].(type) {
+	return stringSlice(r.values[name])
+}
+
+// stringSlice is StringSlice's reading of one value, for the readers that
+// hold a value rather than a Request — the input guard among them, which has
+// to see a list exactly as the handler will.
+func stringSlice(v any) []string {
+	switch v := v.(type) {
 	case []string:
 		return v
 	case []any:

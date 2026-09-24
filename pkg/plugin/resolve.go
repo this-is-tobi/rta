@@ -229,12 +229,8 @@ func Resolve(c Capability, in Inputs) map[string]any {
 				out[name] = canonicalOption(f, s)
 			}
 		case StringSlice:
-			if list, ok := v.([]string); ok && len(f.Options) > 0 {
-				canon := make([]string, len(list))
-				for i, s := range list {
-					canon[i] = canonicalOption(f, s)
-				}
-				out[name] = canon
+			if len(f.Options) > 0 {
+				out[name] = canonicalOptions(f, v)
 			}
 		}
 	}
@@ -358,15 +354,60 @@ func clampFloat(n float64, f Field) float64 {
 // the rest compare exactly, so `--encoding HEX` and `--proto TCP` meant
 // different things to different handlers.
 func canonicalOption(f Field, v string) string {
-	if len(f.Options) == 0 || v == "" || slices.Contains(f.Options, v) {
+	if len(f.Options) == 0 || v == "" {
 		return v
 	}
-	for _, o := range f.Options {
-		if strings.EqualFold(o, v) {
-			return o
+	o, _ := f.CanonicalOption(v)
+	return o
+}
+
+// canonicalOptions is canonicalOption over every shape a StringSlice value
+// arrives in, each kept in its own shape. Only a []string was rewritten, and
+// that is the shape of a flag and nothing else: a list from YAML — a config
+// section, a tile's with:, a profile — or JSON arrives as []any, and a bare
+// string is one value to Request.StringSlice, so the same `Alpha` that
+// became `alpha` from the CLI was refused from a file as naming no option.
+// The shape stays because the readers of the raw value — the grant gate
+// among them — read each one on its own terms.
+func canonicalOptions(f Field, v any) any {
+	switch list := v.(type) {
+	case []string:
+		out := make([]string, len(list))
+		for i, s := range list {
+			out[i] = canonicalOption(f, s)
 		}
+		return out
+	case []any:
+		out := make([]any, len(list))
+		for i, e := range list {
+			if s, ok := e.(string); ok {
+				e = canonicalOption(f, s)
+			}
+			out[i] = e
+		}
+		return out
+	case string:
+		return canonicalOption(f, list)
 	}
 	return v
+}
+
+// CanonicalOption reports whether s names one of f's Options, exactly or in
+// another case, and returns it spelled the way f declares it — s itself when
+// it names none. The one rule for what counts as naming an option, exported
+// for the host's other readers of a value before a run: `rta doctor` over a
+// config file, and `rta profile set` and `rta dashboard add` over what they
+// write, which reported or stored a spelling every run accepted and rewrote.
+func (f Field) CanonicalOption(s string) (string, bool) {
+	if slices.Contains(f.Options, s) {
+		return s, true
+	}
+	for _, o := range f.Options {
+		if strings.EqualFold(o, s) {
+			return o, true
+		}
+	}
+	return s, false
 }
 
 // lookupConfig walks a dotted key through nested maps.
