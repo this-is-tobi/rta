@@ -104,6 +104,26 @@ func TestValidateRefusesAnIntegerPastWhatInt64Holds(t *testing.T) {
 	}
 }
 
+// {"encoding": "HEX"} was a string, missed the enum, and was hinted "encoding
+// expects a string" — true, and nothing a model could correct. An enum miss
+// names the enum; a wrong type still names the type.
+func TestAnEnumMissIsHintedWithTheEnum(t *testing.T) {
+	c := plugin.Capability{ID: "gen.token", Inputs: []plugin.Field{
+		field("encoding", plugin.String, "hex", "base64"),
+		field("tags", plugin.StringSlice, "red", "blue"),
+	}}
+	for _, args := range []map[string]any{{"encoding": "HEX"}, {"tags": []any{"red", "Blue"}}} {
+		verr := Validate(c, args)
+		if verr == nil || !strings.Contains(verr.Hint, "one of") || strings.Contains(verr.Hint, "expects") {
+			t.Errorf("%v: %v", args, verr)
+		}
+	}
+	verr := Validate(c, map[string]any{"encoding": 3.0})
+	if verr == nil || verr.Hint != "encoding expects a string" {
+		t.Errorf("a wrong type: %v", verr)
+	}
+}
+
 // The fix: Options on an Int, Float or Bool field used to be silently
 // unenforced — checkEnum's type switch only ever populated anything to
 // check for string and []any, so a numeric or boolean value always found

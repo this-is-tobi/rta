@@ -41,8 +41,7 @@ func Validate(c plugin.Capability, values map[string]any) *view.Error {
 			return nil
 		}
 		if err := checkFieldType(f, v); err != nil {
-			return view.Errorf("core.mcp.badargs", "%s: %v", f.Name, err).
-				WithHint(fmt.Sprintf("%s expects %s", f.Name, SchemaTypeName(f.Type)))
+			return view.Errorf("core.mcp.badargs", "%s: %v", f.Name, err).WithHint(typeHint(f, v))
 		}
 		return nil
 	}
@@ -114,6 +113,24 @@ func Validate(c plugin.Capability, values map[string]any) *view.Error {
 	}
 	return view.Errorf("core.mcp.badargs", "unknown argument%s: %s", plural, strings.Join(quoted, ", ")).
 		WithHint(acceptedHint(c))
+}
+
+// typeHint is what to send instead of a value checkFieldType refused. The
+// type, unless the value already had it and missed the enum: {"encoding":
+// "HEX"} was refused with "encoding expects a string" — which it was — and
+// the model had nothing to correct. The enum is held exactly here, though
+// the CLI and a config file take an option in another case and spell it as
+// declared: the schema published it, and a client validating against it
+// would have refused "HEX" before it was sent, so the hint says so.
+func typeHint(f plugin.Field, v any) string {
+	if len(f.Options) > 0 {
+		shape := f
+		shape.Options = nil
+		if checkFieldType(shape, v) == nil {
+			return f.Name + " takes one of " + strings.Join(f.Options, ", ") + ", spelled exactly as listed"
+		}
+	}
+	return fmt.Sprintf("%s expects %s", f.Name, SchemaTypeName(f.Type))
 }
 
 // acceptedHint names what this tool does take, because "unknown argument" on
