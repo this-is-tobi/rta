@@ -527,6 +527,20 @@ func LocalEnvVar(capID, input string) string {
 // configuration the operator wrote, and a message quoting it would be one
 // mistyped block away from printing a credential.
 func StatedTypeProblem(f Field, v any) (problem, hint string) {
+	// A key written with nothing after it is the one shape that is not read
+	// as the zero: lookupConfig drops it, and Resolve skips a nil from a
+	// profile or a caller, so the input runs exactly as if the key were not
+	// there — its default, or the layer below. Reported as "the handler would
+	// read 0" (or false, or an empty string), doctor told an operator with
+	// `tls:` left empty that the connection ran unencrypted while it ran with
+	// the declared default, and sent them to quote a number that was never
+	// the problem. Still a problem, because the file states a value the run
+	// does not use, and internal/profile refuses a profile whose `set:`
+	// carries one — which is also why the sentence claims nothing about how
+	// a call then runs: through a profile, it is refused.
+	if v == nil && slices.Contains(fieldTypes, f.Type) {
+		return "is written with no value, so it sets nothing", "write a value, or remove the key"
+	}
 	switch f.Type {
 	case Int:
 		if _, ok := toInt(v); ok {
@@ -580,12 +594,8 @@ func statedProblem(v any, want, reads string) string {
 }
 
 // statedRefusal is statedProblem for a number, which the host refuses rather
-// than lets a handler read as the zero (CheckInputs). Nil still reads as the
-// zero: CheckInputs takes a present nil for nothing given, as a handler does.
+// than lets a handler read as the zero (CheckInputs).
 func statedRefusal(v any, want string) string {
-	if v == nil {
-		return statedProblem(v, want, "0")
-	}
 	return "is written as " + statedShape(v) + " where " + want +
 		" is declared — every call reading it is refused"
 }

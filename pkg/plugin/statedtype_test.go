@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"strings"
 	"testing"
@@ -67,10 +68,6 @@ func TestStatedTypeProblemCatchesWhatWouldBeReadAsZero(t *testing.T) {
 		{"quoted port", Field{Name: "port", Type: Int}, "5432"},
 		{"bool for int", Field{Name: "port", Type: Int}, true},
 		{"quoted float", Field{Name: "ratio", Type: Float}, "1.5"},
-		// A key written with nothing after it. It states nothing and reads as
-		// the zero, which is the same failure with an emptier cause.
-		{"nothing at all", Field{Name: "tls", Type: Bool}, nil},
-		{"nothing for a string", Field{Name: "host", Type: String}, nil},
 		// The other direction: an unquoted value YAML types for you. A
 		// database called 2024, or a host that looks like a number.
 		{"number for text", Field{Name: "host", Type: String}, 2024},
@@ -85,6 +82,44 @@ func TestStatedTypeProblemCatchesWhatWouldBeReadAsZero(t *testing.T) {
 			}
 			if hint == "" {
 				t.Error("no hint — the operator is told they are wrong and not how to be right")
+			}
+		})
+	}
+}
+
+// A key written with nothing after it is still reported, since the file
+// states a value no run uses, but not as a zero the handler reads: Resolve
+// drops it, and the input keeps its default. `tls:` left empty was reported
+// as a connection reading false while it ran with the declared true, and
+// `port:` as a 0 while it ran on 5432.
+func TestAKeyWrittenWithNoValueIsReportedAsSettingNothing(t *testing.T) {
+	c := Capability{
+		ID: "db.status", Summary: "s", Safety: Read,
+		Inputs: []Field{
+			{Name: "tls", Type: Bool, Default: true, Config: "tls", Local: true},
+			{Name: "port", Type: Int, Default: 5432, Min: 1, Max: 65535, Config: "port", Local: true},
+			{Name: "host", Type: String, Default: "localhost", Config: "host", Local: true},
+			{Name: "tags", Type: StringSlice, Config: "tags", Local: true},
+		},
+	}
+	for _, f := range c.Inputs {
+		t.Run(f.Name, func(t *testing.T) {
+			problem, hint := StatedTypeProblem(f, nil)
+			if !strings.Contains(problem, "sets nothing") || strings.Contains(problem, "would read") {
+				t.Errorf("problem %q", problem)
+			}
+			if hint != "write a value, or remove the key" {
+				t.Errorf("hint %q", hint)
+			}
+			for _, in := range []Inputs{
+				{Config: map[string]any{f.Config: nil}},
+				{Profile: map[string]any{f.Name: nil}, ProfileName: "staging"},
+			} {
+				got := Resolve(c, in)[f.Name]
+				if want := f.Default; fmt.Sprint(got) != fmt.Sprint(want) {
+					t.Errorf("%+v resolved %s to %v, not its default %v — the report is no longer true",
+						in, f.Name, got, want)
+				}
 			}
 		})
 	}
