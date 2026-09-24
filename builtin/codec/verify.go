@@ -215,6 +215,14 @@ func keysFrom(raw string, s plugin.Surface) ([]candidate, []string, *view.Error)
 				WithHint("put -----BEGIN PUBLIC KEY----- and -----END PUBLIC KEY----- on the lines around it " +
 					"(CERTIFICATE for a certificate)")
 		}
+		// A raw public key — an Ed25519 x, an EC point — is bytes nothing
+		// can tell from a random secret of the same length, so the secret
+		// file's guard cannot catch it and this hint is all there is. Sent
+		// to the secret, a token HMAC'd with the key's bytes verified.
+		return nil, nil, view.Errorf("codec.jwt.key", "the key is not a JWK, a key set or PEM").
+			WithHint(`pass the issuer's key set as it is served, or a PEM public key or certificate; a raw public key ` +
+				`goes in as a JWK, {"kty":"OKP","crv":"Ed25519","x":…} or kty EC with crv, x and y, and never as a ` +
+				`shared secret, since anyone holding a public key can sign with it`)
 	}
 	return nil, nil, view.Errorf("codec.jwt.key", "the key is not a JWK, a key set or PEM").
 		WithHint("pass the issuer's key set as it is served, or a PEM public key or certificate; for an HMAC signature, " +
@@ -261,7 +269,7 @@ func jwkCandidates(raw string, s plugin.Surface) ([]candidate, []string, *view.E
 		keys = []object{doc}
 	}
 	var out []candidate
-	var notes []string
+	var notes, secrets []string
 	for i, o := range keys {
 		k := readJWK(o)
 		label := k.describe()
@@ -273,6 +281,7 @@ func jwkCandidates(raw string, s plugin.Surface) ([]candidate, []string, *view.E
 		if k.kty == "oct" {
 			notes = append(notes, fmt.Sprintf("The key set's %s is a shared secret (kty oct), which --key does not "+
 				"take, so it was not tried: %s.", label, secretHint(s)))
+			secrets = append(secrets, label+" is a shared secret (kty oct), which --key does not take")
 			continue
 		}
 		// A key the members do not make stays a candidate, with nothing to
@@ -291,6 +300,18 @@ func jwkCandidates(raw string, s plugin.Surface) ([]candidate, []string, *view.E
 		}
 		unusable = append(unusable, c.unusable())
 	}
+	// Worded from what the set held. Every refusal used to list the keys
+	// the members do not make, and a set of shared secrets alone, or of
+	// nothing, listed none: "no usable key in what was given: ", with the
+	// note saying where a secret goes dropped for a hint to run codec.jwk.
+	switch {
+	case len(out) == 0 && len(secrets) > 0:
+		return nil, nil, view.Errorf("codec.jwt.key", "the key set holds only shared secrets (kty oct), and --key takes only public keys").
+			WithHint(secretHint(s))
+	case len(out) == 0:
+		return nil, nil, view.Errorf("codec.jwt.key", "the key set holds no keys")
+	}
+	unusable = append(unusable, secrets...)
 	return nil, nil, view.Errorf("codec.jwt.key", "no usable key in what was given: %s", strings.Join(unusable, "; ")).
 		WithHint("`rta codec jwk` says what is wrong with each one")
 }

@@ -207,7 +207,7 @@ func decodeCompact(token string, depth int, check *verifier) (view.View, *view.E
 		return decodeJWS(parts, depth, check)
 	case 5:
 		if check != nil {
-			return nil, encryptedNotSigned()
+			return nil, encryptedNotSigned(check)
 		}
 		return decodeJWE(parts)
 	}
@@ -398,9 +398,20 @@ func notOverThisPayload(verr *view.Error, certain bool) *view.Error {
 		"signature is bad", verr.Message).WithHint(hint)
 }
 
-func encryptedNotSigned() *view.Error {
+// encryptedNotSigned refuses a check of a token that carries no signature.
+// The hint names what asked for the check: it said "without --key" whatever
+// was given, and to somebody who had passed only --secret-file, dropping
+// --key changes nothing.
+func encryptedNotSigned(check *verifier) *view.Error {
+	var given []string
+	if len(check.keys) > 0 {
+		given = append(given, "--key")
+	}
+	if check.secret != nil {
+		given = append(given, "--secret-file")
+	}
 	return view.Errorf("codec.jwt.encrypted", "this token is encrypted, not signed: there is no signature here to verify").
-		WithHint("without --key it shows the header, and its cty says whether a signed token is sealed inside")
+		WithHint("without " + strings.Join(given, " and ") + " it shows the header, and its cty says whether a signed token is sealed inside")
 }
 
 func decodeJWS(parts []string, depth int, check *verifier) (view.View, *view.Error) {
@@ -853,7 +864,7 @@ func decodeJSONSerialization(input string, check *verifier) (view.View, *view.Er
 	switch {
 	case doc.has("ciphertext"):
 		if check != nil {
-			return nil, encryptedNotSigned()
+			return nil, encryptedNotSigned(check)
 		}
 		return p.jsonJWE(doc)
 	// A signature without a payload is a detached JWS (RFC 7515 Appendix F),
