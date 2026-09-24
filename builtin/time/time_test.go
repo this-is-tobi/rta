@@ -127,6 +127,22 @@ func TestAnUnsignedDurationIsRefusedByNamingTheTwoThatWork(t *testing.T) {
 	}
 }
 
+// February 30th is understood perfectly and does not exist. Answering "not an
+// instant this understands" and then listing the very shape that was typed
+// sends somebody hunting for a formatting mistake they did not make.
+func TestADateThatDoesNotExistSaysWhichPartDoesNot(t *testing.T) {
+	_, _, err := resolve("2026-02-30", reference)
+	if err == nil {
+		t.Fatal("February 30th was accepted")
+	}
+	if err.Code != "time.at.unreadable" || !strings.Contains(err.Message, "its day is out of range") {
+		t.Errorf("got %s: %s", err.Code, err.Message)
+	}
+	if strings.Contains(err.Message, "understands") {
+		t.Errorf("message = %q, still says the shape was not understood", err.Message)
+	}
+}
+
 // The hint on an unreadable input has to list spellings that actually parse.
 // It once listed Go's own layout strings, which put `2006-01-02T15:04:05Z07:00`
 // in front of somebody as though it were a time they could type.

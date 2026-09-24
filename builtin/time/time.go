@@ -140,6 +140,10 @@ func resolve(raw string, now stdtime.Time) (stdtime.Time, timefmt.Unit, *view.Er
 			"%q is a length of time, not an instant — in which direction?", raw).
 			WithHint("say which: `" + raw + " ago`, or `in " + raw + "`")
 	}
+	if field := timefmt.OutOfRange(raw, stdtime.Local); field != "" {
+		return stdtime.Time{}, "", view.Errorf("time.at.unreadable",
+			"%q is written as a date, but its %s is out of range", raw, field).WithHint(timefmt.RangeHint)
+	}
 	return stdtime.Time{}, "", view.Errorf("time.at.unreadable",
 		"%q is not an instant this understands", raw).
 		WithHint("`now`, an epoch number (1516242622), a relative duration (`90m ago`, `in 2h`), " +

@@ -1325,6 +1325,10 @@ func parseSince(raw string) (time.Time, *view.Error) {
 	if t, ok := timefmt.ParseInstant(raw, time.Local); ok {
 		return t, nil
 	}
+	if field := timefmt.OutOfRange(raw, time.Local); field != "" {
+		return time.Time{}, view.Errorf("agent.log.since",
+			"%q is written as a date, but its %s is out of range", raw, field).WithHint(timefmt.RangeHint)
+	}
 	return time.Time{}, view.Errorf("agent.log.since",
 		"%q is not a time this understands", raw).
 		WithHint("a duration back from now (`2h`, `15m`), a day (`2026-08-30`), " +
