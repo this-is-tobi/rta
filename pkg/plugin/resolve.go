@@ -377,6 +377,11 @@ func LocalEnvVar(capID, input string) string {
 // 1.2 stopped treating it as a boolean. Both leave a connection running
 // without the transport security its own configuration states.
 //
+// A number is the one shape the host no longer lets through: CheckInputs
+// refuses an Int or a Float no accessor can read, so `port: "5432"` fails
+// every call rather than connecting to port 0. That makes it loud, not
+// fine — reported here all the same, once, before any call does.
+//
 // Deliberately no coercion. Reading "true" as true would fix the quoted case
 // and then have to answer for "yes", "on", "1" and "TRUE", and every answer
 // is a guess about a value that decides whether a connection is encrypted.
@@ -391,13 +396,20 @@ func StatedTypeProblem(f Field, v any) (problem, hint string) {
 		if _, ok := toInt(v); ok {
 			return "", ""
 		}
-		return statedProblem(v, "an integer", "0"),
+		if statedShape(v) == "a number" {
+			// uint64 past MaxInt from YAML, 1e300 from JSON: a number, and
+			// "written as a number where an integer is declared" would read
+			// as a contradiction to whoever wrote it.
+			return "is a number past what an integer holds — every call reading it is refused",
+				"write a whole number the input's range allows"
+		}
+		return statedRefusal(v, "an integer"),
 			"write it as a bare number: `5432`, not `\"5432\"`"
 	case Float:
 		if _, ok := toFloat(v); ok {
 			return "", ""
 		}
-		return statedProblem(v, "a number", "0"),
+		return statedRefusal(v, "a number"),
 			"write it as a bare number: `1.5`, not `\"1.5\"`"
 	case Bool:
 		if _, ok := v.(bool); ok {
@@ -429,6 +441,17 @@ func StatedTypeProblem(f Field, v any) (problem, hint string) {
 func statedProblem(v any, want, reads string) string {
 	return "is written as " + statedShape(v) + " where " + want +
 		" is declared — the handler would read " + reads
+}
+
+// statedRefusal is statedProblem for a number, which the host refuses rather
+// than lets a handler read as the zero (CheckInputs). Nil still reads as the
+// zero: CheckInputs takes a present nil for nothing given, as a handler does.
+func statedRefusal(v any, want string) string {
+	if v == nil {
+		return statedProblem(v, want, "0")
+	}
+	return "is written as " + statedShape(v) + " where " + want +
+		" is declared — every call reading it is refused"
 }
 
 // statedShape names what a decoded value arrived as, in the words somebody
