@@ -6,21 +6,28 @@ import (
 )
 
 // What the two cleaners promise, held against arbitrary bytes: nothing a
-// terminal interprets survives Terminal, nothing a model reads as invisible
+// terminal acts on survives Terminal, nothing a model reads as invisible
 // survives Model, and cleaning twice is cleaning once. Every string an agent
 // ever reads back from rta went through one of these, and this is the code
 // path where a missed byte is a security event rather than a display bug.
+//
+// Cleaning twice is cleaning once for Terminal too, and not only because the
+// TUI and the renderer can each clean one value: lockdown holds a credential
+// lock's name to what Terminal makes of it, and the name is one the bridge
+// already cleaned, so a second pass that changed it would leave the identity
+// an incident is about impossible to lock.
 func FuzzTerminal(f *testing.F) {
 	for _, seed := range []string{
 		"plain", "tab\tand\nnewline", "esc\x1b[31mred", "osc\x1b]52;c;Y3VybA==\x07",
-		"c1 csi\x9b2J", "del\x7f", "bidi\u202e", "\xff\xfe bad utf8", "",
+		"c1 csi\x9b2J", "del\x7f", "bad\xff\xe2\x80\xaeutf8 beside an override",
+		"bidi\u202e", "\xff\xfe bad utf8", "",
 	} {
 		f.Add(seed)
 	}
 	f.Fuzz(func(t *testing.T, s string) {
 		out := Terminal(s)
-		if dirtyForTerminal(out) {
-			t.Fatalf("Terminal(%q) = %q still carries a control character", s, out)
+		if strings.ContainsFunc(out, actsOn) {
+			t.Fatalf("Terminal(%q) = %q still carries a character a terminal acts on", s, out)
 		}
 		if again := Terminal(out); again != out {
 			t.Fatalf("Terminal is not idempotent: %q -> %q -> %q", s, out, again)
@@ -44,7 +51,7 @@ func FuzzModel(f *testing.F) {
 	}
 	f.Fuzz(func(t *testing.T, s string) {
 		out := Model(s)
-		if dirtyForTerminal(out) || strings.ContainsFunc(out, isInvisible) {
+		if strings.ContainsFunc(out, actsOn) || strings.ContainsFunc(out, isInvisible) {
 			t.Fatalf("Model(%q) = %q still carries something a model reads and a person cannot see", s, out)
 		}
 		if again := Model(out); again != out {

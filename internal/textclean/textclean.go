@@ -36,17 +36,31 @@ import (
 // is where round-tripping lives.
 //
 // The bidi embeddings, overrides and isolates are the one thing escaped
-// instead, as `\u202e`. A terminal that implements the bidi algorithm acts on
-// them as surely as on a CSI: it draws the text after one in an order that is
-// not the order it is stored in, so a file named `invoice` RLO `fdp.exe` is
-// listed as `invoiceexe.pdf`, and a line of a diff reads as other code than it
-// is (Trojan Source, CVE-2021-42574). Dropped, the name would read as
-// `invoicefdp.exe`, which is not the file either, with nothing to say a
-// character was ever there; escaped, it reads as what it is, in the spelling
-// a shell's $'…' quoting takes back, so the file can still be named. None of
-// the noise argument applies: these never appear in a hexdump's printable
-// column, and text that needs no override — every right-to-left script,
-// written the ordinary way — holds none of them.
+// instead, each as a backslash-u escape of its code point. A terminal that
+// implements the bidi algorithm acts on them as surely as on a CSI: it draws
+// the text after one in an order that is not the order it is stored in, so a
+// file named `invoice` RLO `fdp.exe` is listed as `invoiceexe.pdf`, and a line
+// of a diff reads as other code than it is (Trojan Source, CVE-2021-42574).
+// Dropped, the name would read as `invoicefdp.exe`, which is not the file
+// either, with nothing to say a character was ever there; escaped, it reads as
+// what it is. None of the noise argument applies: these never appear in a
+// hexdump's printable column, and right-to-left text written the ordinary way
+// needs none of them — though text that went through an i18n library often
+// carries the isolates.
+//
+// The spelling is a display, not an encoding, and it is not unique: a value
+// holding a backslash, a u and 202e as text is drawn exactly as one holding
+// the override, and nothing on the screen tells the two apart. `-o json` is
+// the exact form, where view.Marshal writes the nine characters as JSON
+// escapes and a literal backslash doubled. Doubling every backslash in a
+// string that holds either would make the screen unique too, and is not done.
+// It makes Terminal give a different answer the second time it runs, and
+// lockdown's credential check compares a name with what Terminal makes of
+// it, so the credential the bridge presented could no longer be locked. And
+// one such character anywhere doubled every backslash in the text around it
+// — every line of a diff, for one line holding one, and the escapes in
+// codec's quoted claims, which then read as a literal backslash where the
+// override stood. Everything but the nine characters is left as it was.
 func Terminal(s string) string {
 	if !dirtyForTerminal(s) {
 		return s
@@ -159,8 +173,12 @@ func isTerminalControl(r rune) bool {
 // allocating. Most strings are clean and the TUI re-renders every pane on
 // every keystroke.
 func dirtyForTerminal(s string) bool {
-	return strings.ContainsFunc(s, func(r rune) bool { return isTerminalControl(r) || reorders(r) })
+	return strings.ContainsFunc(s, actsOn)
 }
+
+// actsOn reports whether a terminal would act on r: a control it interprets,
+// or a character that reorders what it draws.
+func actsOn(r rune) bool { return isTerminalControl(r) || reorders(r) }
 
 // reorders is the Trojan Source set pkg/plugin refuses in a declaration: the
 // characters that make stored order and displayed order differ. The marks
@@ -173,10 +191,15 @@ func reorders(r rune) bool {
 // isInvisible mirrors the set pkg/plugin refuses in a declaration, and for the
 // same reasons — including the reasons for the exclusions. U+200C ZWNJ and
 // U+200D ZWJ build emoji sequences and select letter forms in Persian and
-// Devanagari; variation selectors are how an emoji gets its emoji
-// presentation. Dropping them from a *result* would corrupt somebody's data,
-// which is a worse outcome here than in a declaration, since a result is a
-// filename or a row and not a label its author can rewrite.
+// Devanagari; a variation selector picks how the character before it is
+// drawn — an emoji's colour form, and in the supplement block the variant of
+// an ideograph a Japanese name is registered with. Dropping them from a
+// *result* would corrupt somebody's data, which is a worse outcome here than
+// in a declaration, since a result is a filename or a row and not a label its
+// author can rewrite. A run of selectors can also carry bytes nobody sees —
+// debug.ansi names and decodes one — but reading them takes a decoding step
+// the tag block, ASCII one character for one, does not, and a filter that
+// dropped every selector to stop a run would corrupt every name using one.
 func isInvisible(r rune) bool {
 	switch {
 	case r == 0x200b, // ZERO WIDTH SPACE

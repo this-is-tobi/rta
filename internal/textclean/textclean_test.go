@@ -72,6 +72,38 @@ func TestTerminalSpellsOutTheCharactersThatReorderText(t *testing.T) {
 	}
 }
 
+// Terminal spells out the nine characters and changes nothing else: a
+// backslash is left as it is, beside one of them too, and so is the escape
+// of one typed out as text. The drawing is therefore not unique — a value
+// holding that escape as text draws as one holding the character, and
+// `-o json` is where the two differ — but it is stable, which is the promise
+// that matters more: lockdown holds a credential lock's name to what
+// Terminal makes of it, and that name is one the bridge already cleaned.
+func TestTerminalSpellsOutAReorderCharacterAndChangesNothingElse(t *testing.T) {
+	rlo := string(rune(0x202e))
+	spelled := fmt.Sprintf(`\u%04x`, 0x202e)
+	upper := fmt.Sprintf(`\u%04X`, 0x202e)
+	for s, want := range map[string]string{
+		`C:\Users\me`:       `C:\Users\me`,
+		`dir\` + rlo + "x":  `dir\` + spelled + "x",
+		"invoice" + spelled: "invoice" + spelled,
+		"invoice" + upper:   "invoice" + upper,
+	} {
+		got := Terminal(s)
+		if got != want {
+			t.Errorf("Terminal(%q) = %q, want %q", s, got, want)
+		}
+		if again := Terminal(got); again != got {
+			t.Errorf("Terminal(%q) = %q, and drawn again %q", s, got, again)
+		}
+	}
+	for _, s := range []string{"invoice" + spelled, `dir\` + spelled + "x"} {
+		if Deceives(s) {
+			t.Errorf("Deceives(%q) = true, for text drawn exactly as it is", s)
+		}
+	}
+}
+
 // The marks are left alone: they move only the neutral characters beside
 // them, and text copied out of right-to-left software carries them as a
 // matter of course.
