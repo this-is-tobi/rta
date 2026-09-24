@@ -25,7 +25,11 @@ import (
 //
 // Both are refusals now, naming what was declared. A value that names an
 // option in another case has already been rewritten to the declared spelling
-// by Resolve, so what reaches this is a value naming none of them.
+// by Resolve, so what reaches this is a value naming none of them; and a
+// number from the operator's config or a profile has already been held inside
+// this capability's range by Resolve, because one key there serves several
+// capabilities that bound it differently (clampInt has the cases). What is
+// refused for its range is what the caller sent on this call.
 //
 // And a third thing, which neither constraint covered: a value for a number
 // that is not one an accessor can read. Request.Int reads a string, a boolean

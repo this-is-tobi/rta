@@ -188,6 +188,35 @@ func TestANumberNoAccessorCanReadIsRefused(t *testing.T) {
 	}
 }
 
+// A YAML key written with no value decodes as nil — `with: {timeout: ~}` on
+// a tile, or `timeout:` left empty in a profile — and the guard reads a
+// present nil as nothing given. Resolve wrote it over the default all the
+// same, so the handler read the zero: net.ping's timeout of 0 is
+// time.NewTicker(0), and the TUI exited on the tile's first refresh.
+func TestANilValueLeavesTheLayerUnderItStanding(t *testing.T) {
+	c := numeric()
+	c.Inputs[0].Config = "timeout" // so a profile may fill it
+	got := -1
+	c.Run = func(_ context.Context, r Request) (view.View, error) { got = r.Int("timeout"); return nil, nil }
+	guarded := GuardInputs(c)
+	for _, in := range []Inputs{
+		{Caller: map[string]any{"timeout": nil}},
+		{Profile: map[string]any{"timeout": nil}, ProfileName: "p"},
+	} {
+		got = -1
+		if _, err := guarded(context.Background(), NewRequest(Resolve(c, in), false, false)); err != nil {
+			t.Errorf("%+v: %v", in, err)
+		}
+		if got != 10 {
+			t.Errorf("%+v: the handler read timeout %d, want the default 10", in, got)
+		}
+	}
+	// And under the caller's nil, the operator's value.
+	if v := Resolve(c, Inputs{Caller: map[string]any{"timeout": nil}, Config: map[string]any{"timeout": 30}})["timeout"]; v != 30 {
+		t.Errorf("a nil from the caller hid the config value: %v", v)
+	}
+}
+
 // Undeclared values pass through: the MCP bridge and Page both overlay keys
 // the capability never declared, and Resolve is not the place to police that.
 func TestResolveLeavesUndeclaredValuesAlone(t *testing.T) {
@@ -289,17 +318,61 @@ func TestANestedBlockIsNotItselfAValue(t *testing.T) {
 	}
 }
 
-// Bounds still apply to a value that arrived from config: an operator's file
-// is no more trusted to respect a declared Max than a caller is.
-func TestAConfigValueIsHeldToTheBoundsToo(t *testing.T) {
-	c := Capability{
-		ID: "pg.query", Summary: "q", Safety: Read,
-		Run:    func(context.Context, Request) (view.View, error) { return nil, nil },
-		Inputs: []Field{{Name: "limit", Type: Int, Help: "l", Default: 10, Min: 1, Max: 100, Config: "limit"}},
+// Bounds still apply to a value that arrived from config or a profile — an
+// operator's file is no more trusted to respect a declared Max than a caller
+// is — but by holding it inside each capability's own range rather than by
+// refusing it. One key serves every capability that declares it: net's
+// `timeout` is read by net.ping up to 300 and by net.port up to 60, and
+// refused, `timeout: 90` failed every net.port call while net.ping ran.
+func TestAnOperatorNumberIsHeldInsideEachCapabilitysOwnRange(t *testing.T) {
+	capWith := func(id string, max int) Capability {
+		return Capability{
+			ID: id, Summary: "s", Safety: Read,
+			Run:    func(context.Context, Request) (view.View, error) { return nil, nil },
+			Inputs: []Field{{Name: "timeout", Type: Int, Help: "t", Default: 5, Min: 1, Max: max, Config: "timeout"}},
+		}
 	}
-	req := NewRequest(Resolve(c, Inputs{Config: map[string]any{"limit": 5000}}), false, false)
-	if verr := CheckInputs(c, req); verr == nil || verr.Code != "core.input.range" {
-		t.Errorf("a config value past Max was accepted: %v", verr)
+	ping, port := capWith("net.ping", 300), capWith("net.port", 60)
+	for _, tc := range []struct {
+		c    Capability
+		in   Inputs
+		want int
+	}{
+		{ping, Inputs{Config: map[string]any{"timeout": uint64(90)}}, 90},
+		{port, Inputs{Config: map[string]any{"timeout": uint64(90)}}, 60},
+		{port, Inputs{Config: map[string]any{"timeout": 0}}, 1},
+		{port, Inputs{Profile: map[string]any{"timeout": 90}, ProfileName: "slow"}, 60},
+		// The profile beats config, and is held the same way.
+		{port, Inputs{Profile: map[string]any{"timeout": 90}, ProfileName: "slow", Config: map[string]any{"timeout": 30}}, 60},
+	} {
+		req := NewRequest(Resolve(tc.c, tc.in), false, false)
+		if verr := CheckInputs(tc.c, req); verr != nil {
+			t.Errorf("%s %+v: refused: %v", tc.c.ID, tc.in, verr)
+		}
+		if got := req.Int("timeout"); got != tc.want {
+			t.Errorf("%s %+v: timeout = %d, want %d", tc.c.ID, tc.in, got, tc.want)
+		}
+	}
+	// The caller's own value is still refused, whatever config says: that
+	// is a question this capability does not answer.
+	req := NewRequest(Resolve(port, Inputs{Caller: map[string]any{"timeout": 90}, Config: map[string]any{"timeout": 30}}), false, false)
+	if verr := CheckInputs(port, req); verr == nil || verr.Code != "core.input.range" {
+		t.Errorf("a caller's out-of-range value was accepted: %v", verr)
+	}
+	// A Float the same way.
+	ratio := Capability{
+		ID: "x.ratio", Summary: "s", Safety: Read,
+		Run:    func(context.Context, Request) (view.View, error) { return nil, nil },
+		Inputs: []Field{{Name: "ratio", Type: Float, Default: 0.5, Min: 0.0, Max: 1.0, Config: "ratio"}},
+	}
+	if got := NewRequest(Resolve(ratio, Inputs{Config: map[string]any{"ratio": 2.5}}), false, false).Float("ratio"); got != 1.0 {
+		t.Errorf("a config ratio of 2.5 resolved to %v, want 1", got)
+	}
+	// And a config value that is not a number is not moved: there is no
+	// number to move, and the guard refuses it.
+	req = NewRequest(Resolve(port, Inputs{Config: map[string]any{"timeout": "90"}}), false, false)
+	if verr := CheckInputs(port, req); verr == nil || verr.Code != "core.input.range" {
+		t.Errorf("a quoted config number was accepted: %v", verr)
 	}
 }
 

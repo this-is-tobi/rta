@@ -41,9 +41,11 @@ type Inputs struct {
 
 // Resolve turns the values a surface collected into the values a handler
 // actually runs with: declared defaults filled in, numbers normalised to one
-// Go type, and an option typed in another case spelled as declared. What the
-// declaration says a value may be — its Options, its Min and Max — the host
-// holds to after this, in CheckInputs, where a refusal can be returned.
+// Go type, an option typed in another case spelled as declared, and a number
+// from the operator's config or profile held inside this capability's own
+// range (clampInt says why those and not the caller's). What the declaration
+// says a value may be — its Options, its Min and Max — the host holds to
+// after this, in CheckInputs, where a refusal can be returned.
 //
 // It exists because four surfaces build a Request and each was doing a
 // different subset of that work. The CLI got it right by accident — cobra
@@ -88,12 +90,17 @@ func Resolve(c Capability, in Inputs) map[string]any {
 	// author did not offer it, which is what keeps the reachable set a
 	// property of the declaration — checkable before the process runs, and
 	// printable by `rta explain` — rather than of whatever is in a file.
+	//
+	// operator records which values the operator's own layers — this one and
+	// the profile — supplied, for the clamp below (see clampInt).
+	operator := map[string]bool{}
 	for _, f := range c.Inputs {
 		if f.Config == "" {
 			continue
 		}
 		if v, ok := lookupConfig(in.Config, f.Config); ok {
 			out[f.Name] = v
+			operator[f.Name] = true
 		}
 	}
 	// Local inputs that opted into it (EnvFallback), from the host's own
@@ -157,6 +164,7 @@ func Resolve(c Capability, in Inputs) map[string]any {
 			}
 			if v, ok := os.LookupEnv(LocalEnvVar(c.ID, f.Name)); ok {
 				out[f.Name] = v
+				delete(operator, f.Name)
 			}
 		}
 	}
@@ -172,12 +180,24 @@ func Resolve(c Capability, in Inputs) map[string]any {
 		if !ProfileFillable(c, f) {
 			continue
 		}
-		if v, ok := in.Profile[f.Name]; ok {
+		if v, ok := in.Profile[f.Name]; ok && v != nil {
 			out[f.Name] = v
+			operator[f.Name] = true
 		}
 	}
+	// A nil from either of these layers is nothing given, and leaves what is
+	// under it standing — the rule lookupConfig already applies to a config
+	// key written with no value, and the one CheckInputs reads a present nil
+	// by. Written over the default instead, it reached the handler as the
+	// zero with no check between: a tile saying `with: {timeout: ~}` ran
+	// net.ping with a timeout of 0, which is time.NewTicker(0) and a TUI
+	// that exits, the crash the bounds exist to keep away.
 	for k, v := range in.Caller {
+		if v == nil {
+			continue
+		}
 		out[k] = v
+		delete(operator, k)
 	}
 
 	byName := make(map[string]Field, len(c.Inputs))
@@ -192,10 +212,16 @@ func Resolve(c Capability, in Inputs) map[string]any {
 		switch f.Type {
 		case Int:
 			if n, ok := toInt(v); ok {
+				if operator[name] {
+					n = clampInt(n, f)
+				}
 				out[name] = n
 			}
 		case Float:
 			if n, ok := toFloat(v); ok {
+				if operator[name] {
+					n = clampFloat(n, f)
+				}
 				out[name] = n
 			}
 		case String:
@@ -281,6 +307,45 @@ func toFloat(v any) (float64, bool) {
 		}
 	}
 	return 0, false
+}
+
+// clampInt and clampFloat move a number from the operator's config or profile
+// inside the range of the capability reading it. A number the caller sent on
+// this call is never moved: CheckInputs refuses it, naming the range, because
+// that caller asked this capability a question and the bound says which ones
+// it answers.
+//
+// The operator's layers are different because one key is not one input. A
+// namespace's config key serves every capability that declares it, and they
+// do not share bounds: net's `timeout` is read by net.ping up to 300 seconds,
+// net.dns, net.probe and net.send up to 120, and net.port and net.trace up to
+// 60; fs's `limit` by fs.usage up to 1000 and fs.tree up to 500; and pg's by
+// five capabilities with four different maxima. Refused like a caller's,
+// `timeout: 90` — right for most of net — refused every net.port and net.trace
+// call with a message about a flag nobody typed, and no single value could be
+// right for the whole namespace. Held to each capability's own range, the
+// file says "as long as you allow, up to 90" and every capability can answer.
+//
+// A value no accessor reads as a number is not moved, because there is no
+// number to move: CheckInputs refuses it wherever it came from.
+func clampInt(n int, f Field) int {
+	if lo, ok := toInt(f.Min); ok && n < lo {
+		n = lo
+	}
+	if hi, ok := toInt(f.Max); ok && n > hi {
+		n = hi
+	}
+	return n
+}
+
+func clampFloat(n float64, f Field) float64 {
+	if lo, ok := toFloat(f.Min); ok && n < lo {
+		n = lo
+	}
+	if hi, ok := toFloat(f.Max); ok && n > hi {
+		n = hi
+	}
+	return n
 }
 
 // canonicalOption returns the declared spelling of v when v names one of
