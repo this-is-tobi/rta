@@ -98,7 +98,12 @@ func Plugin() plugin.Plugin {
 					"the RNG range evenly). Reports entropy in bits: length x log2(alphabet size).",
 				Safety: plugin.Read,
 				Inputs: []plugin.Field{
-					{Name: "length", Type: plugin.Int, Default: 20, Min: 1, Max: 4096, Help: "characters"},
+					// Bounded at the limits specFrom holds. The host once clamped
+					// to a declared Min and Max, which turned --length 0 into a
+					// one-character password, and the declared maximum then was
+					// 4096, four times the real one; it refuses outside them now,
+					// and the schema tells a model the range.
+					{Name: "length", Type: plugin.Int, Default: 20, Min: 1, Max: maxPasswordLength, Help: "characters"},
 					{Name: "no-lower", Type: plugin.Bool, Help: "exclude lowercase letters"},
 					{Name: "no-upper", Type: plugin.Bool, Help: "exclude uppercase letters"},
 					{Name: "no-digits", Type: plugin.Bool, Help: "exclude digits"},
@@ -118,7 +123,9 @@ func Plugin() plugin.Plugin {
 					"is already a TOTP secret (RFC 4648/6238) — there is no separate gen.totp.",
 				Safety: plugin.Read,
 				Inputs: []plugin.Field{
-					{Name: "length", Type: plugin.Int, Default: 32, Min: 1, Max: 4096, Help: "bytes of entropy"},
+					// Bounded at the limits runToken holds, for the reason
+					// gen.password gives.
+					{Name: "length", Type: plugin.Int, Default: 32, Min: 1, Max: maxTokenBytes, Help: "bytes of entropy"},
 					{Name: "encoding", Type: plugin.String, Config: "encoding", Default: "hex",
 						Options: []string{"hex", "base64", "base64url", "base32"}, Help: "output encoding"},
 				},
@@ -188,9 +195,12 @@ func alphabet(lower, upper, digits, symbols, excludeAmbiguous bool) string {
 
 // specFrom reads a password shape out of a request.
 func specFrom(req plugin.Request) (passwordSpec, *view.Error) {
+	// Resolve fills the default when --length is not given, so a zero or a
+	// negative here is one somebody asked for.
 	length := req.Int("length")
 	if length <= 0 {
-		length = 20
+		return passwordSpec{}, view.Errorf("gen.password.tooshort", "length %d: a password needs at least one character", length).
+			WithHint("leave --length off for the default of 20")
 	}
 	if length > maxPasswordLength {
 		return passwordSpec{}, view.Errorf("gen.password.toolong", "length %d exceeds the %d-character limit", length, maxPasswordLength)
@@ -252,7 +262,8 @@ func token(n int, encoding string) (string, error) {
 func runToken(_ context.Context, req plugin.Request) (view.View, error) {
 	length := req.Int("length")
 	if length <= 0 {
-		length = 32
+		return nil, view.Errorf("gen.token.tooshort", "length %d: a token needs at least one byte", length).
+			WithHint("leave --length off for the default of 32")
 	}
 	if length > maxTokenBytes {
 		return nil, view.Errorf("gen.token.toolong", "length %d exceeds the %d-byte limit", length, maxTokenBytes)

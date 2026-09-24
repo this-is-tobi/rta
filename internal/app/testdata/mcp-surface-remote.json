@@ -559,7 +559,7 @@
         "length": {
           "default": 20,
           "description": "characters",
-          "maximum": 4096,
+          "maximum": 1024,
           "minimum": 1,
           "type": "integer"
         },
