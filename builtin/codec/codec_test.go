@@ -126,10 +126,45 @@ func TestBinaryDecodesToADumpOfEveryByte(t *testing.T) {
 	if got := decodeText(t, runB64, map[string]any{"value": "bGluZSAxCmxpbmUgMgo="}); got != "line 1\nline 2\n" {
 		t.Errorf("text = %q", got)
 	}
-	// A terminal escape is not plain text: shown, not stripped to nothing.
-	if got := decodeText(t, runHex, map[string]any{"value": "1b5b326a"}); !strings.Contains(got, "1b 5b 32 6a") {
-		t.Errorf("escape = %q, want it dumped", got)
+	// Windows line endings are text too.
+	if got := decodeText(t, runHex, map[string]any{"value": "610d0a62"}); got != "a\r\nb" {
+		t.Errorf("CRLF = %q", got)
 	}
+}
+
+// Text that would not show as itself — a terminal escape, a byte-order mark,
+// a zero-width space, a form feed, a carriage return on its own — keeps its
+// exact value for -o json and an agent, beside the dump that shows the person
+// what the terminal would have cleaned. It used to come back as the dump
+// alone, so `-o json | jq -r` handed a script the dump as though it were the
+// value.
+func TestTextThatHidesSomethingKeepsItsExactValueBesideTheDump(t *testing.T) {
+	bom, zwsp := string(rune(0xfeff)), string(rune(0x200b))
+	for _, value := range []string{"\x1b[2j", bom + "id,name\n1,ada\n", "hello" + zwsp + "world", "page 1\fpage 2", "50%\rdone", "\x00"} {
+		v, err := runHex(context.Background(), req(map[string]any{"value": hexOf(value), "decode": true}))
+		if err != nil {
+			t.Fatalf("%q: %v", value, err)
+		}
+		s, ok := v.(view.Sections)
+		if !ok {
+			t.Errorf("%q decoded to %T, want the value and its bytes", value, v)
+			continue
+		}
+		if got := section(t, s, "value").(view.Text).Body; got != value {
+			t.Errorf("value = %q, want %q exactly", got, value)
+		}
+		if got := section(t, s, "bytes").(view.Text).Body; !strings.Contains(got, "not plain text:\n00000000  ") {
+			t.Errorf("bytes = %q, want a dump", got)
+		}
+	}
+}
+
+func hexOf(s string) string {
+	v, err := runHex(context.Background(), req(map[string]any{"value": s}))
+	if err != nil {
+		panic(err)
+	}
+	return v.(view.Text).Body
 }
 
 func TestADumpIsBounded(t *testing.T) {
@@ -148,6 +183,18 @@ func TestB64DecodeIgnoresTheWhitespaceItWasWrappedWith(t *testing.T) {
 	if got := decodeText(t, runB64, map[string]any{"value": "  aGVs\n  bG8g\r\nd29y bGQ= "}); got != "hello world" {
 		t.Errorf("got %q", got)
 	}
+	if got := decodeText(t, runB64, map[string]any{"value": "d29y bGQ="}); got != "world" {
+		t.Errorf("grouped: got %q", got)
+	}
+}
+
+// Two unpadded values on one line join into a string an unpadded decoder
+// accepts, and decode to bytes neither holds: "hello" then garbage.
+func TestB64DecodeRefusesTwoValuesSideBySide(t *testing.T) {
+	_, err := runB64(context.Background(), req(map[string]any{"value": "aGVsbG8 d29ybGQ", "decode": true}))
+	if verr := view.AsError(err, "test"); err == nil || verr.Code != "codec.b64.invalid" || !strings.Contains(verr.Message, "side by side") {
+		t.Errorf("got %v, want codec.b64.invalid naming two values side by side", err)
+	}
 }
 
 // The shapes hex is copied in: an openssl fingerprint, a 0x literal, bytes
@@ -160,6 +207,25 @@ func TestHexDecodeAcceptsTheWaysHexIsWritten(t *testing.T) {
 	}
 	if _, err := runHex(context.Background(), req(map[string]any{"value": "zz", "decode": true})); err == nil {
 		t.Error("non-hex decoded")
+	}
+	// Words rather than bytes are still whole bytes.
+	if got := decodeText(t, runHex, map[string]any{"value": "0x6865 0x6c6c6f"}); got != "hello" {
+		t.Errorf("0x words decoded to %q", got)
+	}
+}
+
+// A separator says where a byte ends, and deleting the separators before
+// decoding regrouped the digits: `0x1 0x2 0x3 0x4` came out as 12 34, and a
+// MAC as `arp -a` prints it lost its leading zero byte. Each of these meant
+// something other than what removing the separators decodes to, so each is
+// refused.
+func TestHexDecodeRefusesGroupsThatAreNotWholeBytes(t *testing.T) {
+	for _, in := range []string{"0x1 0x2 0x3 0x4", "1:2:3:4", "0:c:29:a1:b2:30", "100x20", "0x0x41", "-41", "68::65", "68:"} {
+		if v, err := runHex(context.Background(), req(map[string]any{"value": in, "decode": true})); err == nil {
+			t.Errorf("%q decoded to %+v; want it refused", in, v)
+		} else if verr := view.AsError(err, "test"); verr.Code != "codec.hex.invalid" {
+			t.Errorf("%q: code = %q", in, verr.Code)
+		}
 	}
 }
 

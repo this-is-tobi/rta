@@ -14,9 +14,13 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
+	"fmt"
 	"net/url"
 	"strings"
+	"unicode/utf8"
 
+	"github.com/this-is-tobi/rta/internal/textclean"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -38,7 +42,8 @@ func Plugin() plugin.Plugin {
 					"breaks and spaces wrapped base64 arrives with, without being told which — the caller " +
 					"already has the encoded value, so being forgiving about which dialect produced it " +
 					"costs nothing. Bytes that are not plain text are shown as a hex dump rather than " +
-					"printed at the terminal, where they would show as nothing.",
+					"printed at the terminal, where they would show as nothing, and text holding a control " +
+					"or invisible character comes back as its exact value beside the dump.",
 				Safety: plugin.Read, Idempotent: true,
 				Inputs: []plugin.Field{valueField, decodeField,
 					{Name: "url", Type: plugin.Bool, Help: "use the URL-safe alphabet when encoding"}},
@@ -48,8 +53,9 @@ func Plugin() plugin.Plugin {
 				ID:      "codec.hex",
 				Summary: "Hex encode or decode a value",
 				Description: "Decoding accepts the spellings hex is copied in: a 0x prefix, and bytes " +
-					"separated by colons, spaces or dashes, the way openssl prints a fingerprint. Bytes " +
-					"that are not plain text are shown as a hex dump.",
+					"separated by colons, spaces or dashes, the way openssl prints a fingerprint. " +
+					"Bytes that are not plain text are shown as a hex dump, beside the exact " +
+					"value when they are text holding a control or invisible character.",
 				Safety: plugin.Read, Idempotent: true,
 				Inputs: []plugin.Field{valueField, decodeField},
 				Run:    runHex,
@@ -148,7 +154,23 @@ func runB64(_ context.Context, req plugin.Request) (view.View, error) {
 // body, a value copied across a terminal's line break. The decoder skips a
 // line break on its own and refuses a space, so a copy that picked up an
 // indent failed while the same text without it decoded.
+//
+// A space inside a line is taken only where wrapped or grouped base64 puts
+// one, after a whole group of four. Two unpadded values side by side on one
+// line — `aGVsbG8 d29ybGQ`, "hello" and "world" — join into fourteen
+// characters an unpadded decoder accepts, and decode to bytes neither value
+// holds.
 func decodeB64(value string) ([]byte, error) {
+	for _, line := range strings.Split(value, "\n") {
+		chunks := strings.Fields(line)
+		for _, c := range chunks[:max(len(chunks)-1, 0)] {
+			if len(c)%4 != 0 {
+				return nil, fmt.Errorf("a space splits it after a piece of %s, where wrapped base64 breaks only "+
+					"after whole groups of four: two values side by side decode to bytes neither of them holds",
+					format.CountOf(len(c), "character"))
+			}
+		}
+	}
 	value = strings.Join(strings.Fields(value), "")
 	var lastErr error
 	for _, enc := range []*base64.Encoding{base64.StdEncoding, base64.URLEncoding, base64.RawStdEncoding, base64.RawURLEncoding} {
@@ -164,7 +186,7 @@ func decodeB64(value string) ([]byte, error) {
 func runHex(_ context.Context, req plugin.Request) (view.View, error) {
 	value := req.String("value")
 	if req.Bool("decode") {
-		raw, err := hex.DecodeString(hexDigits(value))
+		raw, err := decodeHex(value)
 		if err != nil {
 			return nil, view.Errorf("codec.hex.invalid", "not valid hex: %v", err).
 				WithHint("pairs of 0-9 and a-f; a 0x prefix and colon, space or dash separators are taken as they are")
@@ -174,19 +196,59 @@ func runHex(_ context.Context, req plugin.Request) (view.View, error) {
 	return view.Text{Body: hex.EncodeToString([]byte(value))}, nil
 }
 
-// hexDigits strips what hex is copied with: 0x prefixes, and the colons,
-// spaces and dashes that separate the bytes of a fingerprint (`openssl x509
-// -fingerprint` prints AB:CD:…). None of them is a hex digit, so removing
-// them cannot change what the digits say.
-func hexDigits(s string) string {
-	s = strings.NewReplacer("0x", "", "0X", "").Replace(s)
-	return strings.Map(func(r rune) rune {
-		switch r {
-		case ':', ' ', '-', '\t', '\n', '\r':
-			return -1
+// decodeHex reads hex as it is copied: a 0x prefix, and the colons, spaces
+// and dashes that separate the bytes of a fingerprint (`openssl x509
+// -fingerprint` prints AB:CD:…).
+//
+// Group by group, because a separator says where a byte ends. Deleting the
+// separators and decoding what was left regrouped the digits: `0x1 0x2 0x3
+// 0x4` came out as the two bytes 12 34, and the MAC `0:c:29:a1:b2:30` that
+// macOS `arp -a` prints lost its leading zero byte. So every group has to be
+// whole bytes, a 0x is taken off the front of a group and nowhere else (the
+// 0 of an 0x in the middle of a run is a digit), and a separator with nothing
+// on one side of it is refused rather than skipped.
+func decodeHex(s string) ([]byte, error) {
+	// A run of whitespace is one separator: a copy wrapped across lines or
+	// indented is still one value.
+	s = strings.Join(strings.Fields(s), " ")
+	if s == "" {
+		return []byte{}, nil
+	}
+	groups := splitHexGroups(s)
+	var out []byte
+	for _, g := range groups {
+		if g == "" {
+			return nil, errors.New("a separator with no digits on one side of it")
 		}
-		return r
-	}, s)
+		digits := g
+		if len(digits) > 2 && (digits[:2] == "0x" || digits[:2] == "0X") {
+			digits = digits[2:]
+		}
+		if len(groups) > 1 && len(digits)%2 != 0 {
+			return nil, fmt.Errorf("%q is %s, which is not whole bytes", g, format.CountOf(len(digits), "digit"))
+		}
+		raw, err := hex.DecodeString(digits)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, raw...)
+	}
+	return out, nil
+}
+
+// splitHexGroups splits on each separator, keeping the empty group a doubled,
+// leading or trailing one leaves so decodeHex can refuse it.
+func splitHexGroups(s string) []string {
+	var groups []string
+	start := 0
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case ' ', ':', '-':
+			groups = append(groups, s[start:i])
+			start = i + 1
+		}
+	}
+	return append(groups, s[start:])
 }
 
 func runURL(_ context.Context, req plugin.Request) (view.View, error) {
@@ -208,14 +270,49 @@ func runURL(_ context.Context, req plugin.Request) (view.View, error) {
 	return view.Text{Body: url.QueryEscape(value)}, nil
 }
 
-// decoded is what a decode shows: the text when it is plain text, a dump of
-// every byte when it is not — see format.PlainText for why printing them as they came
-// showed nothing.
+// decoded is what a decode shows: the text when it shows as exactly itself,
+// a dump of every byte when it is not text at all, and both when it is text
+// that would show as something else. Printed as they came, such bytes showed
+// as nothing: every renderer strips control characters on the way to a
+// terminal, so `codec b64 --decode AAECAwT/` printed an empty line.
+//
+// Both, because the choice is made in the view and so applies to every
+// surface. A dump in place of the value reached -o json, the one byte-exact
+// channel, and an agent: a CSV with a byte-order mark, a string holding an
+// ESC colour code or a zero-width space came back as the text "17 bytes, not
+// plain text: …", cut at 4 KiB, and `-o json | jq -r` handed a script the
+// dump as though it were the value. The value section carries the exact
+// string for whoever reads the JSON; the terminal cleans what it prints of
+// it, and the bytes section beside it shows the person what was cleaned.
+// Invalid UTF-8 is the one case with no value section, since JSON cannot
+// carry it exactly.
 func decoded(raw []byte) view.View {
-	if format.PlainText(raw) {
+	switch {
+	case !utf8.Valid(raw):
+		return view.Text{Body: format.Dump(raw, maxDump)}
+	case showsAsItIs(string(raw)):
 		return view.Text{Body: string(raw)}
 	}
-	return view.Text{Body: format.Dump(raw, maxDump)}
+	return view.Sections{Items: []view.Section{
+		{ID: "value", Title: "value", View: view.Text{Body: string(raw)}},
+		{ID: "bytes", Title: "bytes", View: view.Text{Body: format.Dump(raw, maxDump)}},
+	}}
+}
+
+// showsAsItIs is the strict test a decoder needs: text holding nothing a
+// renderer strips, spells out or cannot show — a control, an escape sequence,
+// an invisible or bidi character, or a carriage return that is not the first
+// half of a Windows line ending, which returns the cursor and lets the rest of
+// the line print over the start of it. Line breaks and tabs are the layout of
+// ordinary text.
+//
+// textclean.Deceives rather than format.PlainText, whose question is whether
+// bytes are text at all: a response body or an object is shown as a page a
+// reader skims, where a decoder's whole answer is the value, and a character
+// that displays as anything but itself is a different answer.
+func showsAsItIs(s string) bool {
+	s = strings.ReplaceAll(s, "\r\n", "")
+	return !textclean.Deceives(strings.NewReplacer("\n", "", "\t", "").Replace(s))
 }
 
 // maxDump bounds a dump. Past it the bytes are a file somebody wants on disk,
