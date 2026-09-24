@@ -337,11 +337,15 @@ type Field struct {
 	// a model is told the range instead of discovering it by crashing the
 	// server.
 	//
-	// **A value outside the bounds is refused, not moved inside them.** The
-	// host clamped at first, which kept the crash away and answered a
-	// different question: `net listen --port 70000` reported on port 65535,
-	// and `sys ps --limit 0` printed one row. A handler never sees an
-	// out-of-range value either way; a refusal is the half that also says so.
+	// **A value the caller sent outside the bounds is refused, not moved
+	// inside them.** The host clamped at first, which kept the crash away and
+	// answered a different question: `net listen --port 70000` reported on
+	// port 65535, and `sys ps --limit 0` printed one row. A number from the
+	// operator's config or a profile is still held inside them, because one
+	// config key serves every capability in the namespace that declares it
+	// and their bounds differ (Resolve's clampInt has the cases). Either way a
+	// handler never sees an out-of-range value, nor a number it cannot read:
+	// a refusal is the half that also says so.
 	//
 	// Nil means unbounded in that direction. They apply to Int and Float.
 	Min any
