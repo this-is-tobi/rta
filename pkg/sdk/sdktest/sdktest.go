@@ -273,6 +273,26 @@ func drive(t reporter, p plugin.Plugin, cfg config, dir string, inputs map[strin
 		// is meant to serve.
 		req := plugin.NewRequest(values, mutating, false).WithSurface(plugin.SurfaceCLI)
 
+		// The check the host puts in front of every handler it registers
+		// (plugin.GuardInputs), so the suite runs what the host would run.
+		// Without it a WithInputs value outside a field's range or options
+		// reached the handler here — `limit: 0` on a field bounded 1..100 —
+		// while `rta` refuses it before the handler runs, and the suite
+		// reported on a call that cannot happen. Refused, it is a capability
+		// the suite did not drive, and said so the way a missing required
+		// input is.
+		if verr := plugin.CheckInputs(c, req); verr != nil {
+			if mutating {
+				t.Errorf("sdktest: %s: %s was never run — the host refuses the inputs supplied: %s. "+
+					"Supply values its declaration accepts with sdktest.WithInputs.",
+					rule, c.ID, verr.Message)
+				continue
+			}
+			t.Logf("sdktest: %s: %s not run — the host refuses the inputs supplied: %s",
+				rule, c.ID, verr.Message)
+			continue
+		}
+
 		var before snapshot
 		if mutating {
 			var err error

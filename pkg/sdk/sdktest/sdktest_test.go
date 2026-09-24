@@ -327,6 +327,36 @@ func TestAnUndrivableCapabilityIsReportedRatherThanPassedOver(t *testing.T) {
 	}
 }
 
+// The host refuses a value outside a field's range or options before the
+// handler runs, and the suite ran the handler on it anyway: `limit: 0` on a
+// field bounded 1..100 reached it here while `rta` answers core.input.range.
+// Not driven now, and said so the way a missing required input is — an
+// error for a capability whose dry run is then unchecked, a log for a read.
+func TestAValueTheHostRefusesIsNotRunByTheSuite(t *testing.T) {
+	ran := false
+	read := ok()
+	read.Run = func(context.Context, plugin.Request) (view.View, error) { ran = true; return view.Text{Body: "x"}, nil }
+	rec := &recorder{}
+	seen := drive(rec, plugin.Plugin{Name: "demo", Capabilities: []plugin.Capability{read}}, noConfig(), t.TempDir(),
+		map[string]map[string]any{"demo.item.list": {"limit": 0}})
+	if ran || len(seen) != 0 {
+		t.Errorf("the handler ran on a value the host refuses")
+	}
+	if len(rec.errs) > 0 || !strings.Contains(rec.logText(), "the host refuses the inputs supplied") ||
+		!strings.Contains(rec.logText(), "from 1 to 100") {
+		t.Errorf("errs %q, logs %q", rec.errText(), rec.logText())
+	}
+
+	write := read
+	write.ID, write.Safety = "demo.item.add", plugin.Write
+	rec = &recorder{}
+	drive(rec, plugin.Plugin{Name: "demo", Capabilities: []plugin.Capability{write}}, noConfig(), t.TempDir(),
+		map[string]map[string]any{"demo.item.add": {"limit": 500}})
+	if ran || !strings.Contains(rec.errText(), "was never run — the host refuses the inputs supplied") {
+		t.Errorf("an undriven mutating capability passed: %q", rec.errText())
+	}
+}
+
 // Warnings rather than errors here, and the suite has to keep that choice
 // even for the case it is most confident about.
 func TestASynonymOfAVocabularyWordWarnsAndNamesTheReplacement(t *testing.T) {

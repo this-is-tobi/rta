@@ -182,6 +182,8 @@ func conformanceInputs(dir string) map[string]map[string]any {
 
 Reads that cannot be driven stay a log line: that is missing coverage, not a broken promise, and demanding a live target for every diagnostic is exactly what rta's own fixture deliberately refuses to do.
 
+The values you supply go through the same input check the host puts in front of your handler, so one outside a field's `Options` or its `Min` and `Max` is not run: the host would refuse it before your handler saw it, and a result for a call that cannot happen checks nothing. The suite says so, and for a `Write` or `Destructive` capability that is a failure, like a missing value.
+
 ## Conventions worth following
 
 Use the shared verb vocabulary. `sdktest` warns on a novel verb, and when your word has a standard spelling it names it — it will tell you rta writes `delete` as `rm`, in four places already. The whole list:
