@@ -30,12 +30,18 @@ var payloads = map[string]string{
 	// CSI in its 8-bit form. ansi.Strip does not treat it as an introducer,
 	// so it is the case that needs the C1 range and not just the parser.
 	"c1 csi": "ok\u009b2J",
+	// No control character at all, and a terminal that implements bidi acts
+	// on it anyway: this filename is drawn as invoiceexe.pdf.
+	"bidi override": "invoice" + string(rune(0x202e)) + "fdp.exe",
 }
 
 // escaped reports whether anything in out could still be acted on by a
 // terminal.
 func escaped(out string) bool {
-	return strings.ContainsAny(out, "\x1b\a\r") || strings.ContainsRune(out, 0x9b)
+	return strings.ContainsAny(out, "\x1b\a\r") || strings.ContainsRune(out, 0x9b) ||
+		strings.ContainsFunc(out, func(r rune) bool {
+			return (r >= 0x202a && r <= 0x202e) || (r >= 0x2066 && r <= 0x2069)
+		})
 }
 
 // withPayload builds one instance of each view type carrying p in every

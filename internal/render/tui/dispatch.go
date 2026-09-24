@@ -137,7 +137,7 @@ func (m Model) dashboardKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		if m.selected > 0 && m.selected < len(m.tiles) {
 			t := m.tiles[m.selected]
 			if spec, ok := copySpecFor(t.cap); ok {
-				nm, cmd := m.copyOrPick(spec, t.cap, t.view, modeDashboard)
+				nm, cmd := m.copyOrPick(spec, t.cap, m.tileReturned(m.selected), modeDashboard)
 				return nm, cmd, true
 			}
 		}
@@ -494,7 +494,7 @@ func (m Model) resultKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 	// its actions one key away either way — adding to an empty list
 	// must not require finding a non-empty one first.
 	if m.atTop() {
-		tbl, _ := m.result.view.(view.Table)
+		tbl, _ := m.result.raw.(view.Table)
 		if m.interactive() {
 			switch msg.String() {
 			case "up", "k":
@@ -557,7 +557,7 @@ func (m Model) resultKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 			// clipboard in full — and a clipboard is read by more
 			// things than a terminal is, and outlives the session.
 			raw, err := view.MarshalIndent(
-				view.Envelope{View: view.Redact(m.result.view)}, "", "  ")
+				view.Envelope{View: view.Redact(m.result.raw)}, "", "  ")
 			if err == nil {
 				m.flash = "copied as JSON"
 				return m, tea.SetClipboard(string(raw)), true
@@ -568,7 +568,7 @@ func (m Model) resultKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		// capability that declares Copy, with a result shaped the way
 		// it declares, has a value to copy at all.
 		if spec, ok := copySpecFor(m.current); ok {
-			nm, cmd := m.copyOrPick(spec, m.current, m.result.view, modeResult)
+			nm, cmd := m.copyOrPick(spec, m.current, m.result.raw, modeResult)
 			return nm, cmd, true
 		}
 	case "ctrl+c":

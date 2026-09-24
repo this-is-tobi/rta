@@ -252,17 +252,26 @@ func tileIndex(t *testing.T, m Model, capID string) int {
 	return -1
 }
 
+// answerTile hands tile i the answer v the way a refresh does, so the tile
+// holds it both as its capability returned it and cleaned — the copy key
+// reads the first, and a view planted on the tile alone is only the second.
+func answerTile(t *testing.T, m Model, i int, v view.View) Model {
+	t.Helper()
+	out, _ := m.Update(tileMsg{key: m.tiles[i].key(), idx: i, v: v})
+	return out.(Model)
+}
+
 func TestPressingCOnATileOpensThePickerAgainstItsOwnPreview(t *testing.T) {
 	base, _ := realModel(t, 120, 40)
 	i := tileIndex(t, base, "gen.overview")
 	base.selected = i
-	base.tiles[i].view = view.Table{
+	base = answerTile(t, base, i, view.Table{
 		Columns: []view.Column{{Name: "For"}, {Name: "Value"}, {Name: "Bits"}},
 		Rows: [][]string{
 			{"logins", "qT8!vN2vX9!fL3jRb@Yz", "94"},
 			{"env vars", "9f86d081884c7d659a2feaa0c55ad015", "256"},
 		},
-	}
+	})
 
 	pick := press(t, base, "c")
 	if pick.mode != modeCopyPick {
@@ -285,10 +294,10 @@ func TestConfirmingATilePickerReturnsToTheDashboardAndRestartsRefresh(t *testing
 	base, _ := realModel(t, 120, 40)
 	i := tileIndex(t, base, "gen.overview")
 	base.selected = i
-	base.tiles[i].view = view.Table{
+	base = answerTile(t, base, i, view.Table{
 		Columns: []view.Column{{Name: "For"}, {Name: "Value"}, {Name: "Bits"}},
 		Rows:    [][]string{{"logins", "first-value", "94"}, {"env vars", "second-value", "256"}},
-	}
+	})
 	beforeGen := base.tickGen
 
 	pick := press(t, base, "c")
@@ -339,10 +348,10 @@ func TestDashFooterOffersCopyOnlyWhenTheSelectedTileHasSomethingToCopy(t *testin
 	base, _ := realModel(t, 120, 40)
 	i := tileIndex(t, base, "gen.overview")
 	base.selected = i
-	base.tiles[i].view = view.Table{
+	base = answerTile(t, base, i, view.Table{
 		Columns: []view.Column{{Name: "For"}, {Name: "Value"}, {Name: "Bits"}},
 		Rows:    [][]string{{"logins", "a-value", "94"}, {"env vars", "b-value", "256"}},
-	}
+	})
 	if got := base.dashFooter(); !strings.Contains(plain(got), "copy which value?") {
 		t.Error("footer does not offer the picker for the gen tile")
 	}

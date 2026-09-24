@@ -35,6 +35,10 @@ func FuzzModel(f *testing.F) {
 	for _, seed := range []string{
 		"plain", "zero\u200bwidth", "tag\U000e0041block", "bidi\u202eoverride", "joiner\u2060",
 		"esc\x1b[0m and \u200b both", "", "\xff",
+		// Invalid UTF-8 that ansi.Strip turns into U+E0001 by dropping the
+		// bytes between its pieces — which is why the invisible filter runs
+		// after the strip and not before.
+		"\xf3\xf3\xa0\x80\xf7\x81\x00",
 	} {
 		f.Add(seed)
 	}

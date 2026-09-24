@@ -9,7 +9,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
-	"github.com/this-is-tobi/rta/internal/textclean"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -91,12 +90,9 @@ func (m *Model) startConfirm(c plugin.Capability, values map[string]any) tea.Cmd
 // showConfirm puts the confirmation on screen with r as its body — a dry
 // run's view, its error, or the inputs-only page.
 func (m *Model) showConfirm(r resultMsg) {
-	// Cleaned on the way in, for resultMsg's reason: what the model stores
-	// and what the screen shows must be one string.
-	r.view = view.MapStrings(r.view, textclean.Terminal)
-	r.err = view.MapErrorStrings(r.err, textclean.Terminal)
+	// Cleaned on the way in, the way a result is (resultMsg.cleaned).
 	m.previewing = false
-	m.result = r
+	m.result = r.cleaned()
 	m.mode = modeConfirm
 	m.renderResult()
 	m.viewport.GotoTop()

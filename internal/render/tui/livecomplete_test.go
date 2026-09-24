@@ -172,6 +172,24 @@ func TestTabAsksTheServiceAndTypingNeverDoes(t *testing.T) {
 	}
 }
 
+// A live answer is typed into the box as offered, so one that would display
+// as something else is dropped rather than offered cleaned — cleaned, a key
+// holding an override came back as its backslash-u spelling.
+func TestALiveAnswerThatWouldDisplayAsSomethingElseIsDropped(t *testing.T) {
+	noHistory(t)
+	lr := &liveRecorder{}
+	m, c := liveModel(t, lr, nil)
+	c.Inputs[0].Suggest = lr.suggest("reports"+string(rune(0x202e))+"fdp/", "media/")
+	model, _ := m.startForm(c, nil)
+	nm := model.(Model)
+	nm.form.form = startedForm(nm.form)
+	*nm.form.bindings["secret-key"] = "sk-999"
+	nm = fetchFromCluster(t, nm)
+	if got := nm.form.suggested["bucket"]; len(got) != 1 || got[0] != "media/" {
+		t.Errorf("suggested = %q, want only the answer that displays as itself", got)
+	}
+}
+
 // A live fetch under a cluster connection is refused with the reason — for
 // the environment the picker names, and before anything is fetched.
 //

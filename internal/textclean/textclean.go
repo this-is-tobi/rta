@@ -14,6 +14,7 @@
 package textclean
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/x/ansi"
@@ -33,11 +34,37 @@ import (
 // rather than escaped, because a visible marker in every cell of a hexdump is
 // noise and the value is being shown to be read, not round-tripped — `-o json`
 // is where round-tripping lives.
+//
+// The bidi embeddings, overrides and isolates are the one thing escaped
+// instead, as `\u202e`. A terminal that implements the bidi algorithm acts on
+// them as surely as on a CSI: it draws the text after one in an order that is
+// not the order it is stored in, so a file named `invoice` RLO `fdp.exe` is
+// listed as `invoiceexe.pdf`, and a line of a diff reads as other code than it
+// is (Trojan Source, CVE-2021-42574). Dropped, the name would read as
+// `invoicefdp.exe`, which is not the file either, with nothing to say a
+// character was ever there; escaped, it reads as what it is, in the spelling
+// a shell's $'…' quoting takes back, so the file can still be named. None of
+// the noise argument applies: these never appear in a hexdump's printable
+// column, and text that needs no override — every right-to-left script,
+// written the ordinary way — holds none of them.
 func Terminal(s string) string {
 	if !dirtyForTerminal(s) {
 		return s
 	}
-	return filter(ansi.Strip(s), isTerminalControl)
+	out := strip(s)
+	if !strings.ContainsFunc(out, reorders) {
+		return out
+	}
+	var b strings.Builder
+	b.Grow(len(out) + 8)
+	for _, r := range out {
+		if reorders(r) {
+			fmt.Fprintf(&b, `\u%04x`, r)
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 // Model removes what a model would read as instructions.
@@ -55,8 +82,22 @@ func Terminal(s string) string {
 // attacker-influenced text arriving in a model's context and it stays that
 // way; what this removes is the part that is invisible to the human who would
 // otherwise have a chance of noticing.
+//
+// Terminal's spelling-out of the bidi controls is the one part left out: they
+// are invisible characters here like any other, and dropped. The escape is for
+// a person, who can do something with a name spelled out; the tag block
+// written out as escapes would be a hidden instruction any model can read
+// back, which is the thing this exists to remove.
+//
+// The order is load-bearing. ansi.Strip works on bytes, so from invalid UTF-8
+// it can drop a stray byte and leave the bytes either side of it forming a
+// character that was not in the input — a tag character, found by FuzzModel —
+// and only a filter that runs after it sees what it leaves.
 func Model(s string) string {
-	out := Terminal(s)
+	out := s
+	if dirtyForTerminal(out) {
+		out = strip(out)
+	}
 	if strings.ContainsFunc(out, isInvisible) {
 		out = filter(out, isInvisible)
 	}
@@ -89,6 +130,13 @@ func Deceives(s string) bool {
 		dirtyForTerminal(s) || strings.ContainsFunc(s, isInvisible)
 }
 
+// strip is the part of Terminal that removes, without the part that spells
+// out: ansi.Strip first so a sequence goes as a unit, then whatever control
+// characters it left.
+func strip(s string) string {
+	return filter(ansi.Strip(s), isTerminalControl)
+}
+
 func filter(s string, drop func(rune) bool) string {
 	var b strings.Builder
 	b.Grow(len(s))
@@ -111,7 +159,15 @@ func isTerminalControl(r rune) bool {
 // allocating. Most strings are clean and the TUI re-renders every pane on
 // every keystroke.
 func dirtyForTerminal(s string) bool {
-	return strings.ContainsFunc(s, isTerminalControl)
+	return strings.ContainsFunc(s, func(r rune) bool { return isTerminalControl(r) || reorders(r) })
+}
+
+// reorders is the Trojan Source set pkg/plugin refuses in a declaration: the
+// characters that make stored order and displayed order differ. The marks
+// U+200E and U+200F are not in it; they move only the neutral characters
+// beside them, and text copied out of right-to-left software is full of them.
+func reorders(r rune) bool {
+	return (r >= 0x202a && r <= 0x202e) || (r >= 0x2066 && r <= 0x2069)
 }
 
 // isInvisible mirrors the set pkg/plugin refuses in a declaration, and for the
@@ -126,9 +182,8 @@ func isInvisible(r rune) bool {
 	case r == 0x200b, // ZERO WIDTH SPACE
 		r == 0x200e, r == 0x200f, // LRM, RLM
 		r == 0xfeff,                  // ZWNBSP / BOM
-		r >= 0x202a && r <= 0x202e,   // the bidi overrides
+		reorders(r),                  // the bidi embeddings, overrides and isolates
 		r >= 0x2060 && r <= 0x2064,   // word joiner and the invisible operators
-		r >= 0x2066 && r <= 0x2069,   // the bidi isolates
 		r >= 0xe0000 && r <= 0xe007f: // the tag block
 		return true
 	}

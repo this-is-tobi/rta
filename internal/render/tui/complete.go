@@ -268,12 +268,15 @@ func (m Model) completeFromService(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), completeTimeout)
 		defer cancel()
-		// Cleaned like every other Suggest answer (candidateValues): these
-		// strings come from a service and go onto a terminal.
+		// Held to the rule every other Suggest answer is (candidateValues):
+		// these strings come from a service, go onto a terminal, and are
+		// typed into the box as they are offered.
 		raw := suggest(ctx, req)
 		items := make([]string, 0, len(raw))
 		for _, entry := range raw {
-			items = append(items, textclean.Terminal(plugin.CandidateValue(entry)))
+			if v := plugin.CandidateValue(entry); !textclean.Deceives(v) {
+				items = append(items, v)
+			}
 		}
 		return completeMsg{form: cf, field: f.Name,
 			c: tunnel.Completion{Items: items, Names: items, What: what}}

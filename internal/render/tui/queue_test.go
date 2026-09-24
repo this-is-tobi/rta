@@ -51,7 +51,7 @@ func TestTheLockKeyFillsTheAgentInFromTheDetailPage(t *testing.T) {
 		t.Fatalf("L on the detail page = %+v, want lock.add from the page", lock)
 	}
 	m := Model{reg: reg}
-	m.result = resultMsg{view: view.KeyValue{Pairs: []view.Pair{{Key: "id", Value: "aaaa1111"}, {Key: "agent", Value: "claude"}}}}
+	m.result = resultMsg{view: view.KeyValue{Pairs: []view.Pair{{Key: "id", Value: "aaaa1111"}, {Key: "agent", Value: "claude"}}}}.cleaned()
 	base, ok := m.actionSeed(lock, view.Table{})
 	if !ok || base["name"] != "claude" {
 		t.Fatalf("seed = %v, %v; want the agent the page names", base, ok)

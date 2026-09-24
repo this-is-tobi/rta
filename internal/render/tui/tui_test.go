@@ -2157,21 +2157,23 @@ func TestNothingTheTUIDrawsCarriesAnEscape(t *testing.T) {
 // Suggest runs at form time and returns whatever exists right now — tags,
 // hostnames, keys somebody else wrote. It never passes through Validate,
 // which only ever sees the declaration.
-func TestSuggestionsAreCleaned(t *testing.T) {
+//
+// This pinned cleaning once, and cleaning was the defect: a suggestion is
+// typed into the box as offered, so a cleaned one is another value — an s3
+// key holding an override came back as its backslash-u spelling, a key that
+// does not exist. What would display as something else is dropped now, and
+// what is left is offered exactly.
+func TestASuggestionThatWouldDisplayAsSomethingElseIsDropped(t *testing.T) {
+	rlo := "reports/" + string(rune(0x202e)) + "fdp.exe"
 	f := plugin.Field{
 		Name: "tag", Type: plugin.String, Help: "tag",
 		Suggest: func(context.Context, plugin.Request) []string {
-			return []string{"ok\x1b]0;PWNED\x07", "fine"}
+			return []string{"ok\x1b]0;PWNED\x07", rlo, "fine", "two\nlines"}
 		},
 	}
 	got := candidateValues(f, context.Background(), plugin.NewRequest(nil, false, false))
-	for _, v := range got {
-		if strings.ContainsAny(v, "\x1b\a\r") {
-			t.Errorf("a suggestion carries a control sequence: %q", v)
-		}
-	}
-	if len(got) != 2 {
-		t.Errorf("suggestions were dropped rather than cleaned: %v", got)
+	if len(got) != 1 || got[0] != "fine" {
+		t.Errorf("suggestions = %q, want only the one that displays as itself", got)
 	}
 }
 
