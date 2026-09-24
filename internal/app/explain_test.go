@@ -41,6 +41,25 @@ func TestExplainCard(t *testing.T) {
 	}
 }
 
+// A range refusal sends the reader here — "`rta explain net.listen` names it
+// beside the input" — and the card printed every other declared fact about
+// the input but not its bounds.
+func TestExplainCardNamesAnInputsRangeBesideIt(t *testing.T) {
+	reg, _ := NewRegistry()
+	for id, want := range map[string]string{
+		"net.listen": "a value from 1 to 65535",
+		"sys.ps":     "a value from 1 to",
+	} {
+		out, _, err := run(t, reg, "explain", id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(out, want) {
+			t.Errorf("%s: card does not name the range %q:\n%s", id, want, out)
+		}
+	}
+}
+
 // The card is the authoritative reference, so what the TUI can do with a
 // result is on it: a plugin author reads their own declaration back, and an
 // operator learns which key does what without opening the TUI to find out.

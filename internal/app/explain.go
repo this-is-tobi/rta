@@ -123,6 +123,14 @@ func cardView(reg *registry.Registry, c plugin.Capability) view.View {
 		} else if f.Suggest != nil {
 			detail += ", completes"
 		}
+		// In the refusal's own words, because the refusal sends people here:
+		// "the range is declared: `rta explain net.listen` names it beside the
+		// input", on a card that printed every other declared fact about the
+		// input and not this one — so the one page named as the answer was
+		// the page without it, and neither did --help have it.
+		if bounds := f.Bounds(); bounds != "" {
+			detail += ", a value " + bounds
+		}
 		if f.With != "" {
 			detail += ", only with --" + f.With
 		}
