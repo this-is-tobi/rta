@@ -177,8 +177,9 @@ func Plugin() plugin.Plugin {
 }
 
 // dialTimeout reads the declared timeout as a duration. plugin.Resolve fills
-// the default and clamps to the declared bounds before any handler runs, so
-// the only way this sees a zero is a Request assembled by hand — and a zero
+// the default and the host refuses a value outside the declared bounds before
+// any handler runs, so the only way this sees a zero is a Request assembled
+// by hand — and a zero
 // would become an already-expired deadline that fails every dial instantly,
 // which is a worse answer than the one the declaration promises.
 func dialTimeout(req plugin.Request) time.Duration {

@@ -63,9 +63,10 @@ func InputSchema(c plugin.Capability, profiles []string) map[string]any {
 			}
 		}
 		// A declared bound belongs in the schema for the same reason a closed
-		// set does. The host clamps regardless (plugin.Resolve), so this is
-		// not the enforcement — it is telling a model the range instead of
-		// letting it find the edge by sending a zero.
+		// set does. The host refuses a value outside it regardless
+		// (plugin.CheckInputs), so this is not the enforcement — it is telling
+		// a model the range instead of letting it find the edge by sending a
+		// zero.
 		if f.Type == plugin.Int || f.Type == plugin.Float {
 			if f.Min != nil {
 				prop["minimum"] = f.Min

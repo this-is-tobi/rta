@@ -54,26 +54,38 @@ func TestPasswordExcludingAmbiguousCharactersNeverContainsThem(t *testing.T) {
 	}
 }
 
-func TestPasswordExcludingEveryClassIsRefused(t *testing.T) {
-	_, err := runPassword(context.Background(), req(map[string]any{
-		"no-lower": true, "no-upper": true, "no-digits": true,
-	}))
-	if err == nil {
-		t.Fatal("expected an error when the alphabet is empty")
+// wantCode runs a handler and requires the refusal it is named for — not any
+// refusal. These called runPassword with no length, and once a zero length
+// became a refusal of its own, each would have passed for that reason alone.
+func wantCode(t *testing.T, run func(context.Context, plugin.Request) (view.View, error), values map[string]any, code string) {
+	t.Helper()
+	_, err := run(context.Background(), req(values))
+	if verr := view.AsError(err, "test"); err == nil || verr.Code != code {
+		t.Errorf("%v: err = %v, want %s", values, err, code)
 	}
+}
+
+func TestPasswordExcludingEveryClassIsRefused(t *testing.T) {
+	wantCode(t, runPassword, map[string]any{
+		"length": 20, "no-lower": true, "no-upper": true, "no-digits": true,
+	}, "gen.password.noalphabet")
 }
 
 func TestPasswordLengthIsCapped(t *testing.T) {
-	_, err := runPassword(context.Background(), req(map[string]any{"length": maxPasswordLength + 1}))
-	if err == nil {
-		t.Fatal("expected the length cap to be enforced")
-	}
+	wantCode(t, runPassword, map[string]any{"length": maxPasswordLength + 1}, "gen.password.toolong")
 }
 
 func TestPasswordCountIsCapped(t *testing.T) {
-	_, err := runPassword(context.Background(), req(map[string]any{"count": maxCount + 1}))
-	if err == nil {
-		t.Fatal("expected the count cap to be enforced")
+	wantCode(t, runPassword, map[string]any{"length": 20, "count": maxCount + 1}, "gen.count.toomany")
+}
+
+// A zero or negative length is one somebody asked for — Resolve fills the
+// default otherwise — and the host's clamp to a declared Min used to answer it
+// with a one-character password, six bits of entropy, without a word.
+func TestAZeroLengthIsRefusedRatherThanShrunk(t *testing.T) {
+	for _, n := range []int{0, -3} {
+		wantCode(t, runPassword, map[string]any{"length": n}, "gen.password.tooshort")
+		wantCode(t, runToken, map[string]any{"length": n}, "gen.token.tooshort")
 	}
 }
 
