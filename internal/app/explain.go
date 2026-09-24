@@ -258,6 +258,13 @@ func dashboardRow(reg *registry.Registry, c plugin.Capability) view.Pair {
 		return view.Pair{Key: "dashboard",
 			Value: "never a tile — a tile runs on a timer with no confirmation, and this mutates"}
 	}
+	// Before the line offering `rta dashboard add`, which refuses this one
+	// (tileCanRunUnasked): codec.jwt's card offered it all the same.
+	if credential := untileable(c); len(credential) > 0 {
+		return view.Pair{Key: "dashboard",
+			Value: "never a tile — it reads " + strings.Join(credential, ", ") +
+				", a credential only the caller gives, and a tile has no one to ask"}
+	}
 	every := "every few seconds"
 	if c.Refresh > 0 {
 		every = "every " + pace(c.Refresh)
