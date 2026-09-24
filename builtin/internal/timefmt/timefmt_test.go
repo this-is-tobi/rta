@@ -141,6 +141,77 @@ func TestAZonelessSpellingIsReadInTheGivenLocation(t *testing.T) {
 	}
 }
 
+// A date written correctly with a field that does not exist is named by that
+// field; a string that is not written as a date at all is not.
+//
+// Including one that goes wrong early: Go's parser reports a month of 13
+// before it has read what follows, so "2026-13-01 garbage" and "2026-13"
+// answered "month" — and fixing the month was then answered with "not an
+// instant this understands", the first refusal having pointed at the wrong
+// thing.
+func TestOutOfRangeNamesTheFieldThatDoesNotExist(t *testing.T) {
+	for in, want := range map[string]string{
+		"2026-02-30":                    "day",
+		"2026-13-01":                    "month",
+		"2026-09-24 25:00":              "hour",
+		"2026-09-24 10:61":              "minute",
+		"2026-09-24 10:00:61":           "second",
+		"2026-09-24T10:00:00+25:00":     "time zone offset hour",
+		"2026-13-24T10:00:00Z":          "month",
+		"2026-13-24T10:00:00-05:00":     "month",
+		"2026-13-24T10:00:00.250+01:00": "month", // Go reads a fraction after any seconds
+		"2026-09-24 10:00:61,5":         "second",
+		"2026-09-24 9:61":               "minute", // Go reads the hour in one digit too
+		"2026-09-24 9:00:61":            "second",
+		"2026-09-24 9:00:61.5":          "second",
+		"2026-13-24T9:00:00Z":           "month",
+		"2026-13-24T9:00:00.250+01:00":  "month",
+		"2026-09-24T9:00:00+25:00":      "time zone offset hour",
+		"2026-09-24 9:61.5":             "",
+		"2026-09-24 123:00":             "",
+		"2026-13-01 garbage":            "", // not the shape of any layout
+		"2026-13":                       "",
+		"2026-13-01T10":                 "",
+		"2026-09-24 10:61.5":            "", // no layout here has seconds to carry the fraction
+		"2026-09-24":                    "", // a real date
+		"yesterday":                     "", // not a date at all
+		"":                              "",
+	} {
+		if got := OutOfRange(in, time.UTC); got != want {
+			t.Errorf("OutOfRange(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// An offset is held to what RangeHint says: under 24 hours, its minutes 00 to
+// 59. Go's own parser lets +24:59 through and reads +05:60 as +06:00, so the
+// hint refusing +25:00 stated a rule an accepted value had just broken.
+func TestAnOffsetNoZoneHasIsRefusedAndNamed(t *testing.T) {
+	for in, want := range map[string]string{
+		"2026-09-24T10:00:00+24:00":     "time zone offset hour",
+		"2026-09-24T10:00:00+24:59":     "time zone offset hour",
+		"2026-09-24T10:00:00-24:00":     "time zone offset hour",
+		"2026-09-24T10:00:00+05:60":     "time zone offset minute",
+		"2026-09-24T10:00:00+05:61":     "time zone offset minute",
+		"2026-09-24T10:00:00.5+05:60":   "time zone offset minute",
+		"2026-09-24T10:00:00+14:00":     "",
+		"2026-09-24T10:00:00-12:00":     "",
+		"2026-09-24T10:00:00+05:59":     "",
+		"2026-09-24T10:00:00Z":          "",
+		"2026-09-24T10:00:00.123-03:30": "",
+	} {
+		if got := OutOfRange(in, time.UTC); got != want {
+			t.Errorf("OutOfRange(%q) = %q, want %q", in, got, want)
+		}
+		if _, ok := ParseInstant(in, time.UTC); ok != (want == "") {
+			t.Errorf("ParseInstant(%q) accepted = %v, want %v", in, ok, want == "")
+		}
+	}
+	if !strings.Contains(RangeHint, "under 24 hours") || !strings.Contains(RangeHint, "minutes run 00 to 59") {
+		t.Errorf("RangeHint = %q, want it to state the offset rule applied", RangeHint)
+	}
+}
+
 // Stamp carries both halves because each is useless for the other's job: the
 // exact spelling cannot be read at a glance, and the relative phrase cannot be
 // pasted anywhere.

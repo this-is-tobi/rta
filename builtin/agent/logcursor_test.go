@@ -89,6 +89,14 @@ func TestAnUnreadableSinceIsRefusedRatherThanIgnored(t *testing.T) {
 	if !strings.Contains(verr.Hint, "2026-") && !strings.Contains(verr.Hint, "duration") {
 		t.Errorf("the refusal does not say what would work: %s", verr.Hint)
 	}
+
+	// A day that does not exist is named as that, not as a shape it failed
+	// to understand.
+	_, err = run(t, "agent.log", map[string]any{"since": "2026-02-30"})
+	if verr, ok := err.(*view.Error); !ok || verr.Code != "agent.log.since" ||
+		!strings.Contains(verr.Message, "its day is out of range") {
+		t.Errorf("February 30th: %v", err)
+	}
 }
 
 // A row read months later has to say which day it is from; a row read minutes

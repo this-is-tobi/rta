@@ -15,6 +15,7 @@
 package timefmt
 
 import (
+	"errors"
 	"math"
 	"strconv"
 	"strings"
@@ -76,11 +77,150 @@ func ParseInstant(raw string, loc *time.Location) (time.Time, bool) {
 	}
 	for _, l := range layouts {
 		if t, err := time.ParseInLocation(l, raw, loc); err == nil {
+			if l == time.RFC3339 && offsetOutOfRange(raw) != "" {
+				return time.Time{}, false
+			}
 			return t, true
 		}
 	}
 	return time.Time{}, false
 }
+
+// offsetOutOfRange names the part of an RFC3339 offset no zone has: an hour
+// of 24 or more, or a minute of 60 or more. raw must already have parsed as
+// RFC3339, which leaves it ending in `Z` or in `±hh:mm`.
+//
+// Stricter than Go, deliberately. Its parser refuses only an hour past 24 or
+// a minute past 60, "as some people do write offsets of 24 hours or 60
+// minutes", so +24:59 was converted and +05:60 was quietly read as +06:00 —
+// while RangeHint told the person refused for +25:00 that an offset is under
+// 24 hours, a rule the accepted one had just broken. No zone in use is
+// further from UTC than 14 hours, so the hint's rule is the one applied.
+func offsetOutOfRange(raw string) string {
+	if len(raw) < len("+00:00") {
+		return ""
+	}
+	tail := raw[len(raw)-len("+00:00"):]
+	if (tail[0] != '+' && tail[0] != '-') || tail[3] != ':' {
+		return ""
+	}
+	hour, herr := strconv.Atoi(tail[1:3])
+	minute, merr := strconv.Atoi(tail[4:6])
+	switch {
+	case herr != nil || merr != nil:
+		return ""
+	case hour >= 24:
+		return "time zone offset hour"
+	case minute >= 60:
+		return "time zone offset minute"
+	}
+	return ""
+}
+
+// OutOfRange explains why raw, written in one of the accepted layouts, is
+// still not an instant: the field that does not exist — "day", "month",
+// "hour", "time zone offset hour" — or "" when raw is not written that way at
+// all.
+//
+// "Not an instant this understands" said of 2026-02-30 is wrong twice: the
+// shape is understood perfectly, and the list of accepted shapes that follows
+// the refusal includes the one that was typed. What is wrong is that February
+// has no 30th, and time.Parse already says so; the refusal just dropped it.
+//
+// **A range error alone does not mean raw is written in that layout.** Go's
+// parser checks each field's range the moment it reads the field and returns
+// there, before it has looked at the rest of the value — only the day is
+// checked after the whole string has matched. So "2026-13-01 garbage" came
+// back as a month out of range, the caller said it "is written as a date",
+// and correcting the month earned "not an instant this understands": the
+// first answer had sent the person to fix the wrong thing. The error counts
+// only when raw also has the layout's shape.
+func OutOfRange(raw string, loc *time.Location) string {
+	raw = strings.TrimSpace(raw)
+	for _, l := range layouts {
+		_, err := time.ParseInLocation(l, raw, loc)
+		if err == nil && l == time.RFC3339 {
+			return offsetOutOfRange(raw)
+		}
+		var pe *time.ParseError
+		if errors.As(err, &pe) && strings.HasSuffix(pe.Message, " out of range") && hasShape(raw, l) {
+			return strings.TrimSuffix(strings.TrimPrefix(pe.Message, ": "), " out of range")
+		}
+	}
+	return ""
+}
+
+// hasShape reports whether raw is laid out as layout is, every digit taken as
+// any digit: "2026-13-01" has the shape of 2006-01-02, and "2026-13-01 x" and
+// "2026-13" do not.
+//
+// The shape is read off a rendering of the layout rather than the layout
+// string, for the reason Examples gives, and in three zones, because RFC3339
+// spells its offset `Z`, `+hh:mm` or `-hh:mm`.
+//
+// Each rendering is also compared with its hour cut to one digit. Go reads the
+// hour element in one digit or two, so "2026-09-24 9:30" parses, but Format
+// always writes two, and a shape taken from the rendering alone refused every
+// hand-typed morning hour: "2026-09-24 9:61" was "not an instant this
+// understands" instead of a minute out of range, the wrong-twice answer
+// OutOfRange exists to prevent. Rendering an instant at five o'clock would
+// not help: Format writes that hour as "05". Go reads every other element of
+// these layouts at the one width Format writes.
+//
+// A fraction after the seconds is set aside first: Go reads one after any
+// seconds field, layout or no, so 10:00:00.5 is written in a layout that has
+// seconds. It is found by its place in raw, straight after a time's seconds,
+// and not at the layout's offset for the seconds, which a one-digit hour moves
+// one byte to the left.
+func hasShape(raw, layout string) bool {
+	if strings.Contains(layout, ":05") {
+		raw = withoutFraction(raw)
+	}
+	shape := digitMask(raw)
+	east, west := time.FixedZone("", 5*3600+30*60), time.FixedZone("", -5*3600-30*60)
+	for _, zone := range []*time.Location{time.UTC, east, west} {
+		full := time.Date(2006, 1, 2, 15, 4, 5, 0, zone).Format(layout)
+		if shape == digitMask(full) || shape == digitMask(strings.Replace(full, "15:", "5:", 1)) {
+			return true
+		}
+	}
+	return false
+}
+
+// withoutFraction drops the `.digits` or `,digits` run that follows the two
+// digits of a time's seconds (`:mm:ss`), and returns raw unchanged when there
+// is none. A fraction after the minutes is left in place: Go does not read one
+// there, so a value carrying it has no layout's shape.
+func withoutFraction(raw string) string {
+	const minutesSeconds = ":00:00"
+	for at := len(minutesSeconds); at+1 < len(raw); at++ {
+		fraction := (raw[at] == '.' || raw[at] == ',') && isDigit(raw[at+1])
+		if !fraction || digitMask(raw[at-len(minutesSeconds):at]) != minutesSeconds {
+			continue
+		}
+		end := at + 1
+		for end < len(raw) && isDigit(raw[end]) {
+			end++
+		}
+		return raw[:at] + raw[end:]
+	}
+	return raw
+}
+
+func digitMask(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r >= '0' && r <= '9' {
+			return '0'
+		}
+		return r
+	}, s)
+}
+
+func isDigit(b byte) bool { return b >= '0' && b <= '9' }
+
+// RangeHint is what to say beside OutOfRange's answer.
+const RangeHint = "every part has to exist: months 01 to 12, the days that month has, hours 00 to 23, " +
+	"minutes and seconds 00 to 59, and an offset under 24 hours whose minutes run 00 to 59 too"
 
 // Examples renders t once per accepted layout, for an error message that has
 // to show what it would have taken.
