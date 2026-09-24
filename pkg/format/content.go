@@ -6,11 +6,12 @@ import (
 	"unicode/utf8"
 )
 
-// PlainText reports whether raw is text a terminal shows exactly as it is:
-// valid UTF-8 holding nothing a renderer strips or a reader cannot see, the
-// line breaks and tabs of ordinary text aside. Bytes somebody else wrote — a
-// decoded value, a response body, an object in a bucket — are shown as they
-// are when this says so, and through Dump when it does not.
+// PlainText reports whether raw is text rather than binary: valid UTF-8
+// holding no NUL and no C0 control but the ones text is written with — tab,
+// line feed, vertical tab, form feed, carriage return, and the escape that
+// colours a log. Bytes somebody else wrote — a decoded value, a response
+// body, an object in a bucket — are shown as they are when this says so, and
+// through Dump when it does not.
 //
 // Printed as they came, bytes that are not text show as nothing. Every
 // renderer strips control characters on the way to a terminal, so an escape
@@ -20,38 +21,35 @@ import (
 // while only built-ins needed them, which left a plugin returning an object's
 // content with the same problem and no way to import the answer — the same
 // reason the rest of this package is in pkg.
+//
+// It answers "text or binary", the question net/http's content sniffing asks
+// of the same bytes, and not "will every byte be seen". It used to be the
+// second: one invisible character anywhere, a directional mark in a Hebrew
+// page, the byte order mark a .NET server puts before its JSON, a form feed
+// in an RFC, and the whole body was a hex dump — while the renderer, which
+// leaves those marks in place, spells out the characters that reorder text
+// and drops the controls, would have shown the text. What a renderer does
+// with the characters it is given is the renderer's job. A caller whose
+// point is showing every byte, a carriage return included, asks that itself.
 func PlainText(raw []byte) bool {
 	if !utf8.Valid(raw) {
 		return false
 	}
-	for _, r := range string(raw) {
-		if hidden(r) {
+	// By byte: a C0 control is one byte in UTF-8, and no byte of a longer
+	// character is below 0x80.
+	for _, c := range raw {
+		if c < 0x20 && !textControl(c) {
 			return false
 		}
 	}
 	return true
 }
 
-// hidden is the renderer's rule for what does not display as itself, one
-// character at a time: a control character a terminal would act on, and the
-// invisible and bidi characters that hide or reorder what a reader sees.
-//
-// Written out here rather than asked of the renderer's own cleaner because
-// this package is imported by every plugin, and that cleaner brings an ANSI
-// parser along that no plugin binary should pay for to answer a question about
-// one rune. internal/textclean holds the two to the same answer for every
-// character there is, so they cannot drift apart unnoticed.
-func hidden(r rune) bool {
-	switch {
-	case r == '\n', r == '\t', r == '\r':
-		return false
-	case r < 0x20, r == 0x7f, r >= 0x80 && r <= 0x9f:
-		return true
-	case r == 0x200b, r == 0x200e, r == 0x200f, r == 0xfeff,
-		r >= 0x202a && r <= 0x202e,
-		r >= 0x2060 && r <= 0x2064,
-		r >= 0x2066 && r <= 0x2069,
-		r >= 0xe0000 && r <= 0xe007f:
+// textControl reports whether c is one of the C0 controls text is written
+// with, as opposed to one that only turns up in binary data.
+func textControl(c byte) bool {
+	switch c {
+	case '\t', '\n', '\v', '\f', '\r', 0x1b:
 		return true
 	}
 	return false
