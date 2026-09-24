@@ -1,13 +1,19 @@
 // Package codec is the built-in encode/decode plugin: base64, hex, URL
-// escaping, and unverified inspection of the JOSE family — tokens and keys.
-// Stdlib only, no network, no state.
+// escaping, and inspection of the JOSE family — tokens and keys — with a
+// token's signature checked against material the caller supplies. Stdlib
+// only, no network, no state.
 //
 // Every capability stays Read even though codec.jwt and the *.decode
 // direction of the others reveal a value in a new form — unlike kv.get, the
 // caller already possesses the encoded input; decoding it does not hand them
-// anything they did not already have. codec.jwt makes no
-// claim about the token's authenticity: it decodes and prints the claims for
-// inspection, nothing more, and says so in its own output.
+// anything they did not already have. codec.jwt decodes without checking
+// anything unless given --key or --secret-file, and says which in its own
+// output; given one, it states exactly what a matching signature proves —
+// that the signer holds that key, not that the claims are true. Checking
+// stays a free read for the reason decoding does: every key and secret it
+// uses is one the caller handed over. Nothing is fetched, and nothing comes
+// from the environment or a profile, which would check an agent's token
+// against a credential the agent never had.
 package codec
 
 import (
@@ -79,7 +85,8 @@ func Plugin() plugin.Plugin {
 					"encrypted one (JWE), and the JSON form of either — with the headers and claims decoded, " +
 					"the dates read, and anything a strict parser would refuse named: a padded segment, a " +
 					"member given twice, an empty signature. A JWE's header is read and its content is not, " +
-					"because decrypting takes the recipient's private key. Unverified unless --key or --secret-file " +
+					"because decrypting takes the recipient's key: a private key, a shared key or a password, " +
+					"depending on its alg. Unverified unless --key or --secret-file " +
 					"is given, and labeled as such: anyone can hand you a token with any claims at all. With " +
 					"--key — a public key, certificate or the issuer's key set, fetched by you, since a capability " +
 					"that fetched a URL its caller names would not be a free read — the signature is checked, the " +

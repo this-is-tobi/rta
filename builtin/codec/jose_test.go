@@ -116,6 +116,17 @@ func TestAnEncryptedTokenNamesTheKeyItsAlgorithmNeeds(t *testing.T) {
 	}
 }
 
+// The description is what an agent and `rta explain` read, and "the
+// recipient's private key" said of every JWE is the phrase keyHeld exists to
+// avoid: dir, the AES key wraps and PBES2 have no key pair to look for.
+func TestTheDescriptionNamesEveryKindOfJWEKey(t *testing.T) {
+	for _, c := range Plugin().Capabilities {
+		if c.ID == "codec.jwt" && !strings.Contains(c.Description, "a private key, a shared key or a password") {
+			t.Errorf("description = %q, want every kind of key a JWE may need named", c.Description)
+		}
+	}
+}
+
 // A JWS may carry anything; only a JWT's must be a claims set. RFC 8037's own
 // Ed25519 example signs a sentence, and it was refused as a malformed token.
 func TestASignedPayloadThatIsNotClaimsIsShownAsWhatItIs(t *testing.T) {
@@ -154,7 +165,7 @@ func TestAnUnencodedPayloadIsReadAsItIs(t *testing.T) {
 // encoding/json hands every number back as float64, so a numeric sub past
 // 2^53 was shown as a neighbouring number — a different user — and a nested
 // one lost its last digits. HTML characters in a nested value came back as
-// & and friends.
+// \u0026 and friends.
 func TestNumbersAndNestedValuesAreShownExactlyAsTheTokenWritesThem(t *testing.T) {
 	s := jose(t, buildJWT(t, `{"alg":"HS256"}`,
 		`{"sub":9007199254740993,"org":{"id":12345678901234567890},"groups":["a&b<c>"],"ratio":0.1}`))
