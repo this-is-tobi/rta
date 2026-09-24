@@ -390,6 +390,26 @@ func MissingInputs(c plugin.Capability, with map[string]any, pinned bool) []stri
 	return missing
 }
 
+// Untileable lists the inputs no tile of c can ever be given, whatever it is
+// pinned to or states: what MissingInputs still reports with every input
+// `--set` accepts given and a profile pinned. `--set` refuses a credential,
+// so what is left is a credential nothing but the caller supplies — the
+// token codec.jwt decodes, the key codec.jwk reads.
+//
+// Beside MissingInputs, and exported, because every refusal of a tile words
+// itself by it: `rta dashboard add`, explain's dashboard row, and + in the
+// TUI, whose refusal kept hinting `--set token=…` for codec.jwt after the
+// CLI's had stopped — a command refused in turn, as a credential.
+func Untileable(c plugin.Capability) []string {
+	settable := map[string]any{}
+	for _, f := range c.Inputs {
+		if !f.Type.Sensitive() {
+			settable[f.Name] = true
+		}
+	}
+	return MissingInputs(c, settable, true)
+}
+
 // arrange applies the user's adjustments: drop what they hid, lead with
 // what they ordered. A `hidden:` line is a capability ID, which hides an
 // automatic tile and every panel it expanded into, or a tile key, which

@@ -414,11 +414,20 @@ func parseTileInputs(pairs []string, c plugin.Capability) (map[string]any, *view
 				WithHint("`rta explain " + c.ID + "` lists the inputs it declares")
 		}
 		if f.Type == plugin.Secret || f.Type == plugin.SecretSlice {
-			return nil, view.Errorf("core.dashboard.set.secret",
+			verr := view.Errorf("core.dashboard.set.secret",
 				"%q is a credential, and a tile's inputs are written into %s in plaintext",
-				k, config.Path()).
-				WithHint("give the tile a profile whose `secrets:` references it instead: " +
-					"`rta profile set <name> --plugin " + plugin.Namespace(c.ID) + " --secret " + k + "=kv:<entry>`")
+				k, config.Path())
+			// A profile's `secrets:` reaches only an input a profile may
+			// fill. Offered for any other credential — codec.jwt's token —
+			// the hint was a `profile set` refused in turn ("maps a secret
+			// onto "token", which codec does not offer"), one refusal
+			// leading to the next.
+			if !plugin.ProfileFillable(c, f) {
+				return nil, verr.WithHint("no profile fills " + k + " either, so a tile cannot be given it — run `" +
+					strings.Join(append([]string{"rta"}, c.Words()...), " ") + "` when you have one")
+			}
+			return nil, verr.WithHint("give the tile a profile whose `secrets:` references it instead: " +
+				"`rta profile set <name> --plugin " + plugin.Namespace(c.ID) + " --secret " + k + "=kv:<entry>`")
 		}
 		if v == "" {
 			return nil, view.Errorf("core.dashboard.set.empty", "`--set %s=` states no value", k).
@@ -468,27 +477,12 @@ func tileCanRunUnasked(c plugin.Capability, with map[string]any, pinned bool) *v
 		"%s needs %s, and a tile has no form to ask with", c.ID, strings.Join(missing, ", "))
 	// `--set token=…` is itself refused for a credential, so pointing at it
 	// sent the reader from one refusal to the next.
-	if credential := untileable(c); len(credential) > 0 {
+	if credential := tui.Untileable(c); len(credential) > 0 {
 		return verr.WithHint(credential[0] + " is a credential, which a tile cannot be given — " +
 			"`--set` would write it into the config in plaintext, and no profile fills it; " +
 			"run `" + strings.Join(append([]string{"rta"}, c.Words()...), " ") + "` when you have one")
 	}
 	return verr.WithHint("`--set " + missing[0] + "=<value>` states it for every run")
-}
-
-// untileable lists the inputs no tile of c can ever be given, whatever it is
-// pinned to or states: what MissingInputs still reports with every input
-// `--set` accepts given and a profile pinned. `--set` refuses a credential,
-// so what is left is a credential nothing but the caller supplies — the
-// token codec.jwt decodes, the key codec.jwk reads.
-func untileable(c plugin.Capability) []string {
-	settable := map[string]any{}
-	for _, f := range c.Inputs {
-		if !f.Type.Sensitive() {
-			settable[f.Name] = true
-		}
-	}
-	return tui.MissingInputs(c, settable, true)
 }
 
 func runDashboardRemove(cmd *cobra.Command, id string, dryRun bool) (view.View, *view.Error) {

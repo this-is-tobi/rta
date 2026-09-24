@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -37,5 +38,32 @@ func TestAPositionalCredentialNoTileCanBeGivenIsMissing(t *testing.T) {
 	c.Inputs[0].Local, c.Inputs[0].EnvFallback = true, true
 	if got := MissingInputs(c, nil, true); len(got) != 0 {
 		t.Errorf("a profile-fillable credential is missing from a pinned tile: %v", got)
+	}
+}
+
+// + refuses such a capability in words that lead somewhere. It hinted
+// `rta dashboard add codec.jwt --set token=…`, which `rta dashboard add`
+// refuses in turn — a credential is never written into the config — so the
+// flash sent the reader from one refusal to the next.
+func TestPlusRefusesAnUntileableCredentialWithoutPointingAtSet(t *testing.T) {
+	c := plugin.Capability{
+		ID: "codec.jwt", Summary: "decode", Safety: plugin.Read,
+		Run: func(context.Context, plugin.Request) (view.View, error) { return nil, nil },
+		Inputs: []plugin.Field{
+			{Name: "token", Type: plugin.Secret, Positional: true},
+			{Name: "key", Type: plugin.Secret},
+		},
+	}
+	for _, pinned := range []bool{false, true} {
+		why := addRefusal(c, pinned)
+		if strings.Contains(why, "--set") || !strings.Contains(why, "token") ||
+			!strings.Contains(why, "`rta codec jwt`") {
+			t.Errorf("pinned=%v: %q", pinned, why)
+		}
+	}
+	// A required input a --set can state is still hinted with one.
+	c.Inputs = []plugin.Field{{Name: "namespace", Type: plugin.String, Required: true}}
+	if why := addRefusal(c, false); !strings.Contains(why, "--set namespace=") {
+		t.Errorf("a settable input lost its hint: %q", why)
 	}
 }

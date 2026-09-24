@@ -91,6 +91,11 @@ func addRefusal(c plugin.Capability, pinned bool) string {
 	if c.Safety != plugin.Read {
 		return c.ID + " is not a read, and a tile runs on a timer with no confirmation"
 	}
+	if credential := Untileable(c); len(credential) > 0 {
+		return c.ID + " reads " + strings.Join(credential, ", ") +
+			", a credential a tile cannot be given — run `" +
+			strings.Join(append([]string{"rta"}, c.Words()...), " ") + "` when you have one"
+	}
 	if missing := MissingInputs(c, nil, pinned); len(missing) > 0 {
 		return c.ID + " needs " + strings.Join(missing, ", ") + " — `rta dashboard add " + c.ID +
 			" --set " + missing[0] + "=…` states it"

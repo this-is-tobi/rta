@@ -260,7 +260,7 @@ func dashboardRow(reg *registry.Registry, c plugin.Capability) view.Pair {
 	}
 	// Before the line offering `rta dashboard add`, which refuses this one
 	// (tileCanRunUnasked): codec.jwt's card offered it all the same.
-	if credential := untileable(c); len(credential) > 0 {
+	if credential := tui.Untileable(c); len(credential) > 0 {
 		return view.Pair{Key: "dashboard",
 			Value: "never a tile — it reads " + strings.Join(credential, ", ") +
 				", a credential only the caller gives, and a tile has no one to ask"}
