@@ -12,6 +12,7 @@ package toolcall
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -165,7 +166,15 @@ func checkFieldType(f plugin.Field, v any) error {
 		if !ok {
 			return fmt.Errorf("must be an integer, got %s", JSONKind(v))
 		}
-		if n != float64(int64(n)) {
+		// Range first, and without converting: int64(n) for an n outside
+		// int64 is whatever the CPU does with it. arm64 saturates, so 2^63
+		// came back as MaxInt64, compared equal to itself, and was accepted
+		// as an integer — which the host then could not read and a handler
+		// read as 0. NaN fails the Trunc comparison, infinity the range.
+		if n < -(1<<63) || n >= 1<<63 {
+			return fmt.Errorf("must be an integer, got a number past what an integer holds")
+		}
+		if n != math.Trunc(n) {
 			return fmt.Errorf("must be an integer, got a non-integer number")
 		}
 	case plugin.Float:

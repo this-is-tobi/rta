@@ -1,6 +1,7 @@
 package toolcall
 
 import (
+	"math"
 	"strings"
 	"testing"
 
@@ -81,6 +82,25 @@ func TestRequireEnforcesRequiredFieldsAndExemptsLocalOnes(t *testing.T) {
 	// permanently uncallable — it can never arrive from the caller.
 	if verr := Require(c, map[string]any{"key": "k"}); verr != nil {
 		t.Fatalf("a required Local field blocked an otherwise complete call: %v", verr)
+	}
+}
+
+// 9223372036854775807 in a JSON body decodes to 2^63, one past int64. The
+// integer check converted before it compared, and on arm64 int64(2^63)
+// saturates to MaxInt64, whose float64 is 2^63 again — so the value passed
+// as an integer that nothing downstream could read, and `net_ping` with it
+// reached a handler as a timeout of 0. The edges of int64 itself still pass.
+func TestValidateRefusesAnIntegerPastWhatInt64Holds(t *testing.T) {
+	c := plugin.Capability{ID: "x.y", Inputs: []plugin.Field{{Name: "timeout", Type: plugin.Int}}}
+	for _, n := range []float64{1 << 63, -(1 << 64), 1e300, math.Inf(1), math.NaN(), 1.5} {
+		if verr := Validate(c, map[string]any{"timeout": n}); verr == nil {
+			t.Errorf("%v was accepted as an integer", n)
+		}
+	}
+	for _, n := range []float64{-(1 << 63), 1<<63 - 1024, 0} {
+		if verr := Validate(c, map[string]any{"timeout": n}); verr != nil {
+			t.Errorf("%v was refused: %v", n, verr)
+		}
 	}
 }
 

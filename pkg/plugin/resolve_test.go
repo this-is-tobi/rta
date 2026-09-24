@@ -144,6 +144,50 @@ func TestAnOutOfRangeNumberIsRefusedRatherThanMoved(t *testing.T) {
 	}
 }
 
+// A number no accessor can read was let through as "not a number, nothing to
+// hold it to", and Request.Int then read it as 0 — below nearly every Min,
+// and the one value the bound exists to keep out. `net ping` over MCP with a
+// timeout of 2^63 reached time.NewTicker(0) that way and `rta mcp serve`
+// exited; so did a config file quoting the timeout. Refused now, before the
+// handler: as a range on a bounded field, as a type on an unbounded one.
+func TestANumberNoAccessorCanReadIsRefused(t *testing.T) {
+	ran := false
+	c := numeric()
+	c.Run = func(context.Context, Request) (view.View, error) { ran = true; return nil, nil }
+	guarded := GuardInputs(c)
+	for _, tc := range []struct {
+		input string
+		v     any
+		code  string
+	}{
+		{"timeout", float64(1 << 63), "core.input.range"},
+		{"timeout", uint64(math.MaxUint64), "core.input.range"},
+		{"timeout", "0", "core.input.range"},
+		{"timeout", true, "core.input.range"},
+		{"ratio", "0.5", "core.input.range"},
+		{"limit", "15", "core.input.type"},
+		{"limit", math.NaN(), "core.input.type"},
+	} {
+		_, err := guarded(context.Background(), NewRequest(Resolve(c, Inputs{Caller: map[string]any{tc.input: tc.v}}), false, false))
+		verr := view.AsError(err, "test")
+		if err == nil || verr.Code != tc.code {
+			t.Errorf("%s = %T(%v): %v, want %s", tc.input, tc.v, tc.v, err, tc.code)
+		}
+	}
+	if ran {
+		t.Error("the handler ran on a number it would have read as 0")
+	}
+	// Quoted, so the text "0" is not mistaken for the number it spells.
+	_, err := guarded(context.Background(), NewRequest(map[string]any{"timeout": "0"}, false, false))
+	if err == nil || !strings.Contains(view.AsError(err, "test").Message, `not "0"`) {
+		t.Errorf("err = %v, want the text quoted", err)
+	}
+	// A present nil says nothing was given, as an absent key does.
+	if _, err := guarded(context.Background(), NewRequest(map[string]any{"limit": nil}, false, false)); err != nil {
+		t.Errorf("a nil value was refused: %v", err)
+	}
+}
+
 // Undeclared values pass through: the MCP bridge and Page both overlay keys
 // the capability never declared, and Resolve is not the place to police that.
 func TestResolveLeavesUndeclaredValuesAlone(t *testing.T) {
