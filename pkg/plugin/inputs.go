@@ -74,42 +74,53 @@ func checkOptions(c Capability, f Field, req Request) *view.Error {
 }
 
 func checkBoundsOf(c Capability, f Field, v any) *view.Error {
+	if want, ok := f.Range(v); !ok {
+		return view.Errorf("core.input.range", "%s takes a %s %s, not %v", c.ID, f.Name, want, v).
+			WithHint("the range is declared: `rta explain " + c.ID + "` names it beside the input")
+	}
+	return nil
+}
+
+// Range reports whether v is inside f's Min and Max, and when it is not, what
+// the declaration allows — "from 1 to 65535", "of at least 1". A value that is
+// not a number, and a field that is not numeric or declares no bound, are in
+// range: there is nothing here to hold them to.
+//
+// One definition for every place that holds a value to its bounds: the host,
+// before a handler runs, and a TUI form, as the value is typed.
+func (f Field) Range(v any) (want string, ok bool) {
 	if f.Min == nil && f.Max == nil {
-		return nil
+		return "", true
 	}
 	var n float64
 	switch f.Type {
 	case Int:
-		i, ok := toInt(v)
-		if !ok {
-			return nil
+		i, isInt := toInt(v)
+		if !isInt {
+			return "", true
 		}
 		n = float64(i)
 	case Float:
-		x, ok := toFloat(v)
-		if !ok {
-			return nil
+		x, isFloat := toFloat(v)
+		if !isFloat {
+			return "", true
 		}
 		n = x
 	default:
-		return nil
+		return "", true
 	}
 	lo, hasLo := toFloat(f.Min)
 	hi, hasHi := toFloat(f.Max)
 	if (!hasLo || n >= lo) && (!hasHi || n <= hi) {
-		return nil
+		return "", true
 	}
-	var want string
 	switch {
 	case hasLo && hasHi:
-		want = fmt.Sprintf("from %v to %v", f.Min, f.Max)
+		return fmt.Sprintf("from %v to %v", f.Min, f.Max), false
 	case hasLo:
-		want = fmt.Sprintf("of at least %v", f.Min)
-	default:
-		want = fmt.Sprintf("of at most %v", f.Max)
+		return fmt.Sprintf("of at least %v", f.Min), false
 	}
-	return view.Errorf("core.input.range", "%s takes a %s %s, not %v", c.ID, f.Name, want, v).
-		WithHint("the range is declared: `rta explain " + c.ID + "` names it beside the input")
+	return fmt.Sprintf("of at most %v", f.Max), false
 }
 
 // GuardInputs is c's handler with CheckInputs in front of it, or the handler
