@@ -50,25 +50,46 @@ func explainAnsi(input string) view.Table {
 }
 
 // walker accumulates rows: printable runs into one text row, and tag
-// characters — which DecodeSequence may hand over across several tokens —
-// into one row that decodes them together.
+// characters and variation selectors — which DecodeSequence may hand over
+// across several tokens — into one row per run that decodes them together.
 type walker struct {
 	t    view.Table
 	text strings.Builder
 	tags []rune
+	// selectors is held until the run ends, because only its length says
+	// what it is: one selector after a character is part of that character,
+	// the way an emoji gets its colour form, and stays in the text.
+	selectors []rune
 }
 
 func (w *walker) row(cells ...string) { w.t.Rows = append(w.t.Rows, cells) }
 
-func (w *walker) flush() {
+func (w *walker) flushText() {
 	if w.text.Len() > 0 {
 		w.row(w.text.String(), "text", "-")
 		w.text.Reset()
 	}
+}
+
+func (w *walker) flush() {
+	w.endSelectors()
+	w.flushText()
 	if len(w.tags) > 0 {
 		w.row(tagRow(w.tags)...)
 		w.tags = nil
 	}
+}
+
+// endSelectors closes a run of variation selectors: a single one after text
+// joins it, and anything else gets its own row after the text it followed.
+func (w *walker) endSelectors() {
+	if len(w.selectors) == 1 && w.text.Len() > 0 {
+		w.text.WriteRune(w.selectors[0])
+	} else if len(w.selectors) > 0 {
+		w.flushText()
+		w.row(selectorRow(w.selectors)...)
+	}
+	w.selectors = nil
 }
 
 func (w *walker) printable(seq string) {
@@ -76,11 +97,16 @@ func (w *walker) printable(seq string) {
 		r, size := utf8.DecodeRuneInString(seq[i:])
 		raw := seq[i : i+size]
 		i += size
-		if isTag(r) {
-			if w.text.Len() > 0 {
-				w.row(w.text.String(), "text", "-")
-				w.text.Reset()
+		if isSelector(r) {
+			if len(w.tags) > 0 {
+				w.flush()
 			}
+			w.selectors = append(w.selectors, r)
+			continue
+		}
+		w.endSelectors()
+		if isTag(r) {
+			w.flushText()
 			w.tags = append(w.tags, r)
 			continue
 		}
@@ -99,12 +125,20 @@ func (w *walker) printable(seq string) {
 // isSequence reports whether a token is a control or escape sequence for
 // explainSeq, as opposed to text for printable. Every sequence begins with
 // ESC or an 8-bit introducer, or is a lone C0 control or DEL.
+//
+// An 8-bit introducer begins a sequence however long it is. DecodeSequence
+// hands back a raw 0x9D and everything up to its BEL as one token, the way it
+// does for ESC ], and a check for 0x80-0x9F on single bytes alone sent the
+// 8-bit clipboard write to printable: a byte row, its payload as text, and
+// the BEL as an invisible character — the one sequence this capability most
+// exists to name, not named. No token of valid UTF-8 starts with those
+// bytes, so nothing that is text is taken for one.
 func isSequence(seq string) bool {
 	if seq == "" {
 		return false
 	}
 	c := seq[0]
-	return c == 0x1b || (len(seq) == 1 && (c < 0x20 || c == 0x7f || (c >= 0x80 && c <= 0x9f)))
+	return c == 0x1b || (c >= 0x80 && c <= 0x9f) || (len(seq) == 1 && (c < 0x20 || c == 0x7f))
 }
 
 // explainSeq classifies one non-printable token DecodeSequence returned.

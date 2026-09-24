@@ -41,13 +41,14 @@ func Plugin() plugin.Plugin {
 					"colors and attributes, cursor movement, screen/line erase, and the OSC " +
 					"sequences most worth knowing about on sight: window title, hyperlink " +
 					"target, and the system clipboard write (decoded, not left as base64); " +
-					"tmux passthrough and kitty graphics strings. Also names every character " +
-					"that displays as something other than itself: bidi overrides (the Trojan " +
-					"Source trick), zero-width characters, 8-bit C1 controls, and tag characters, " +
-					"decoded to the text they invisibly spell — the way a prompt injection hides " +
-					"in an innocent sentence. Never prints a raw control byte back at the " +
-					"terminal it is running in — the whole point is seeing what a sequence does " +
-					"without it happening. Given no input, reads the text from standard input.",
+					"tmux passthrough and kitty graphics strings. Also names the kinds of " +
+					"character known to hide themselves: bidi overrides (the Trojan Source " +
+					"trick), zero-width and filler characters, 8-bit C1 controls, and tag " +
+					"characters and runs of variation selectors, decoded to what they invisibly " +
+					"carry — the way a prompt injection hides in an innocent sentence. Never " +
+					"prints a raw control byte back at the terminal it is running in — the " +
+					"whole point is seeing what a sequence does without it happening. Given " +
+					"no input, reads the text from standard input.",
 				Safety:     plugin.Read,
 				Idempotent: true,
 				// input is Positional but not Required — stdin can supply
