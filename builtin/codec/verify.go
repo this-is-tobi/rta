@@ -16,8 +16,12 @@ import (
 	"fmt"
 	"hash"
 	"math/big"
+	"os"
 	"strings"
 
+	"github.com/this-is-tobi/rta/builtin/internal/pipein"
+	"github.com/this-is-tobi/rta/pkg/format"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -47,30 +51,186 @@ type candidate struct {
 	alg    string
 	use    string
 	label  string
-	// given marks the --secret a person typed, the one candidate worth
-	// retrying as base64 when it does not match as it is.
-	given bool
+	// readings are the other ways the secret file's contents may have been
+	// meant, tried in order when they do not match as they are.
+	readings []reading
 }
 
-// keysFrom reads the verification material a person supplied. A private key
-// is accepted and only its public half used: it is the caller's own machine,
-// and refusing would only send them off to extract the half by hand.
-func keysFrom(raw string) ([]candidate, *view.Error) {
+// reading is one other way to read a secret, and how to name it when it is
+// the one that matched.
+type reading struct {
+	secret []byte
+	label  string
+}
+
+// maxSecretFile bounds what --secret-file reads. An HMAC key is the size of
+// its hash, 32 to 64 bytes, and one somebody chose is a line: a file larger
+// than this is the wrong file rather than a longer secret.
+const maxSecretFile = 64 << 10
+
+// secretFrom reads the shared secret --secret-file names, and the two other
+// forms it is most often handed over in by mistake: with the line break an
+// editor or `echo` leaves at the end, and as base64 of the bytes rather than
+// the bytes.
+func secretFrom(path string) (candidate, *view.Error) {
+	f, err := os.Open(plugin.ExpandHome(path))
+	if err != nil {
+		return candidate{}, view.Errorf("codec.jwt.secret", "reading the secret file: %v", err)
+	}
+	defer f.Close()
+	raw, err := pipein.ReadFrom(f, maxSecretFile)
+	switch {
+	case errors.Is(err, pipein.ErrTooLarge):
+		return candidate{}, view.Errorf("codec.jwt.secret", "%s holds more than the %s a shared secret could be",
+			quote(path), format.Bytes(maxSecretFile)).
+			WithHint("--secret-file names a file holding the secret and nothing else")
+	case err != nil:
+		return candidate{}, view.Errorf("codec.jwt.secret", "reading the secret file: %v", err)
+	case raw == "":
+		return candidate{}, view.Errorf("codec.jwt.secret", "the secret file %s is empty", quote(path))
+	}
+	if what := publicKeyIn([]byte(raw)); what != "" {
+		return candidate{}, keyAsSecret(path, what)
+	}
+	if decoded, derr := decodeAnyBase64(strings.Join(strings.Fields(raw), "")); derr == nil {
+		if what := publicKeyIn(decoded); what != "" {
+			return candidate{}, keyAsSecret(path, what+", in base64")
+		}
+	}
+	// An oct JWK is how a shared secret is written as a key, and --key sends
+	// one here, so its k is the secret rather than the JSON around it.
+	if doc, err := decodeObject([]byte(strings.TrimSpace(raw))); err == nil && doc.str("kty") == "oct" {
+		secret := octSecret(doc)
+		if secret == nil {
+			return candidate{}, view.Errorf("codec.jwt.secret", "the oct key in %s has no k that decodes", quote(path))
+		}
+		return candidate{secret: secret, label: "the oct key in " + quote(path)}, nil
+	}
+	c := candidate{secret: []byte(raw), label: "the secret in " + quote(path)}
+	trimmed := strings.TrimSuffix(strings.TrimSuffix(raw, "\n"), "\r")
+	if trimmed != raw && trimmed != "" {
+		c.readings = append(c.readings, reading{[]byte(trimmed), c.label + ", without its final line break"})
+	}
+	if decoded, derr := decodeAnyBase64(strings.TrimSpace(raw)); derr == nil && len(decoded) > 0 {
+		c.readings = append(c.readings, reading{decoded, c.label + ", read as base64"})
+	}
+	return c, nil
+}
+
+// publicKeyIn names the key or certificate b holds, or returns "" when it
+// holds none, for the check that keeps a public key from being used as an
+// HMAC secret.
+//
+// That guard used to look only at which input the material arrived in, and
+// whatever came in as the secret was HMAC bytes. So the text of a public key
+// PEM, or the bare base64 SPKI Keycloak's admin console shows a realm's key
+// as, checked an HS256 token forged with it — VERIFIED, "proves whoever
+// signed it holds that key", about a key everyone holds. The algorithm-
+// confusion attack, reached through the one door fits does not watch.
+func publicKeyIn(b []byte) string {
+	s := strings.TrimSpace(string(b))
+	switch {
+	case strings.Contains(s, "-----BEGIN"):
+		return "PEM key material"
+	case strings.HasPrefix(s, "{"):
+		doc, err := decodeObject([]byte(s))
+		if err != nil {
+			return ""
+		}
+		if asymmetric(doc) {
+			return "an " + doc.str("kty") + " JWK" // RSA, EC and OKP all take "an"
+		}
+		list, _ := doc.values["keys"].([]any)
+		for _, item := range list {
+			if o, ok := asObject(item); ok && asymmetric(o) {
+				return "a key set"
+			}
+		}
+		return ""
+	}
+	if _, err := x509.ParsePKIXPublicKey(b); err == nil {
+		return "a DER public key"
+	}
+	if _, err := x509.ParsePKCS1PublicKey(b); err == nil {
+		return "a DER public key"
+	}
+	if _, err := x509.ParseCertificate(b); err == nil {
+		return "a DER certificate"
+	}
+	return ""
+}
+
+func asymmetric(o object) bool {
+	switch o.str("kty") {
+	case "RSA", "EC", "OKP":
+		return true
+	}
+	return false
+}
+
+func keyAsSecret(path, what string) *view.Error {
+	return view.Errorf("codec.jwt.alg", "the secret file %s holds %s, not a shared secret: a public key used as "+
+		"an HMAC secret is the algorithm-confusion attack — anyone holding the key can sign with it — so it is never tried",
+		quote(path), what).
+		WithHint("a public key or certificate goes in --key, which checks only the signatures its own type makes")
+}
+
+// keysFrom reads the verification material a person supplied, and says what
+// it noticed on the way for the page to carry. A private key is accepted and
+// only its public half used: it is the caller's own machine, and refusing
+// would only send them off to extract the half by hand.
+func keysFrom(raw string, s plugin.Surface) ([]candidate, []string, *view.Error) {
 	raw = strings.TrimSpace(raw)
 	switch {
 	case strings.HasPrefix(raw, "{"):
-		return jwkCandidates(raw)
+		return jwkCandidates(raw, s)
 	case strings.Contains(raw, "-----BEGIN"):
-		return pemCandidates(raw)
+		keys, verr := pemCandidates(raw)
+		return keys, nil, verr
 	}
-	return nil, view.Errorf("codec.jwt.key", "the key is not a JWK, a key set or PEM").
-		WithHint("pass the issuer's key set as it is served, or a PEM public key or certificate — an HMAC secret goes in --secret")
+	// A key's DER in bare base64 is how Keycloak's console shows a realm's
+	// key. This hint used to send it to the secret, which is where a key
+	// verifies a forgery.
+	if der, err := decodeAnyBase64(strings.Join(strings.Fields(raw), "")); err == nil {
+		if what := publicKeyIn(der); what != "" {
+			return nil, nil, view.Errorf("codec.jwt.key", "the key is %s in base64, without the PEM armour --key reads", what).
+				WithHint("put -----BEGIN PUBLIC KEY----- and -----END PUBLIC KEY----- on the lines around it " +
+					"(CERTIFICATE for a certificate)")
+		}
+	}
+	return nil, nil, view.Errorf("codec.jwt.key", "the key is not a JWK, a key set or PEM").
+		WithHint("pass the issuer's key set as it is served, or a PEM public key or certificate; for an HMAC signature, " +
+			secretHint(s))
 }
 
-func jwkCandidates(raw string) ([]candidate, *view.Error) {
+// secretHint says where an HMAC secret goes, on the surface asking. Only the
+// CLI has a --secret-file flag and only the TUI a box for it. An agent has
+// neither, since the input is Local, and a hint naming a flag its schema does
+// not have is one it can only guess at.
+func secretHint(s plugin.Surface) string {
+	switch s {
+	case plugin.SurfaceMCP:
+		return "a shared secret is taken only from the person at the terminal, in a file, never from an agent"
+	case plugin.SurfaceTUI:
+		return "name a file holding the shared secret in the secret-file box"
+	}
+	return "pass a file holding the shared secret with --secret-file"
+}
+
+// jwkCandidates reads a JWK or a key set. A shared secret (kty oct) is not
+// taken from it, and that is the line Local draws for --secret-file: --key is
+// an ordinary input an agent may fill, so an oct JWK in it was the HMAC
+// secret an agent is never to be invited to supply, one JSON wrapper away. A
+// lone oct key is refused, pointing at where a secret goes; one in a set is
+// skipped with a note, since the rest of the set is what an issuer serves.
+func jwkCandidates(raw string, s plugin.Surface) ([]candidate, []string, *view.Error) {
 	doc, err := decodeObject([]byte(raw))
 	if err != nil {
-		return nil, view.Errorf("codec.jwt.key", "the key is not valid JSON: %v", err)
+		return nil, nil, view.Errorf("codec.jwt.key", "the key is not valid JSON: %v", err)
+	}
+	if doc.str("kty") == "oct" {
+		return nil, nil, view.Errorf("codec.jwt.key", "the key is a shared secret (kty oct), and --key takes only public keys").
+			WithHint(secretHint(s))
 	}
 	var keys []object
 	if list, set := doc.values["keys"].([]any); set {
@@ -83,6 +243,7 @@ func jwkCandidates(raw string) ([]candidate, *view.Error) {
 		keys = []object{doc}
 	}
 	var out []candidate
+	var notes []string
 	for i, o := range keys {
 		k := readJWK(o)
 		label := k.describe()
@@ -91,21 +252,20 @@ func jwkCandidates(raw string) ([]candidate, *view.Error) {
 		} else if len(keys) > 1 {
 			label += fmt.Sprintf(", key %d of the set", i+1)
 		}
-		c := candidate{pub: k.pub, kid: k.kid, alg: k.alg, use: k.use, label: label}
 		if k.kty == "oct" {
-			// A shared secret handed over as a key. It checks HMAC and
-			// nothing else, which the algorithm match below enforces.
-			c.pub, c.secret = nil, octSecret(o)
+			notes = append(notes, fmt.Sprintf("The key set's %s is a shared secret (kty oct), which --key does not "+
+				"take, so it was not tried: %s.", label, secretHint(s)))
+			continue
 		}
-		if c.pub != nil || c.secret != nil {
-			out = append(out, c)
+		if k.pub != nil {
+			out = append(out, candidate{pub: k.pub, kid: k.kid, alg: k.alg, use: k.use, label: label})
 		}
 	}
 	if len(out) == 0 {
-		return nil, view.Errorf("codec.jwt.key", "no usable key in what was given").
+		return nil, nil, view.Errorf("codec.jwt.key", "no usable key in what was given").
 			WithHint("`rta codec jwk` says what is wrong with each one")
 	}
-	return out, nil
+	return out, notes, nil
 }
 
 // pemCandidates reads every PEM block in raw. Newlines are restored first: a
@@ -213,7 +373,8 @@ func describePublic(pub crypto.PublicKey) string {
 	return fmt.Sprintf("%T", pub)
 }
 
-// octSecret is an oct JWK's k, for the one place that uses it as a secret.
+// octSecret is an oct JWK's k, for the one place that uses it as a secret:
+// a secret file holding one.
 func octSecret(o object) []byte {
 	raw, _, err := decodeSegment(o.str("k"))
 	if err != nil || len(raw) == 0 {
@@ -339,7 +500,10 @@ func checkEd25519(pub crypto.PublicKey, _, input, sig []byte, _ crypto.Hash) (bo
 // once per call and handed to every signature the token carries.
 type verifier struct {
 	keys   []candidate
-	secret []byte
+	secret *candidate
+	// notes are what reading the key material noticed, for the page.
+	notes   []string
+	surface plugin.Surface
 }
 
 // check verifies one signature and returns the verdict that leads the
@@ -368,16 +532,16 @@ func (v verifier) check(header object, input string, sigSeg string) (string, *vi
 	}
 	candidates := v.keys
 	if v.secret != nil {
-		candidates = append([]candidate{{secret: v.secret, label: "the secret given", given: true}}, candidates...)
+		candidates = append([]candidate{*v.secret}, candidates...)
 	}
-	if a.kind == "a shared secret" && v.secret == nil && !anySecret(candidates) {
+	if a.kind == "a shared secret" && !anySecret(candidates) {
 		return "", view.Errorf("codec.jwt.alg", "an %s signature is made with a shared secret, and only a public key was given", alg).
-			WithHint("pass the secret with --secret — a public key checking an HMAC signature is the algorithm-confusion attack, so it is never tried")
+			WithHint(secretHint(v.surface) + " — a public key checking an HMAC signature is the algorithm-confusion attack, so it is never tried")
 	}
 
 	kid := header.str("kid")
 	var reasons []string
-	tried := 0
+	tried, triedKey := 0, false
 	for _, c := range candidates {
 		if kid != "" && c.kid != "" && c.kid != kid {
 			continue
@@ -387,6 +551,7 @@ func (v verifier) check(header object, input string, sigSeg string) (string, *vi
 			continue
 		}
 		tried++
+		triedKey = triedKey || c.secret == nil
 		good, why := a.check(c.pub, c.secret, []byte(input), sig, a.hash)
 		if good {
 			return verifiedLine(c, alg), nil
@@ -394,13 +559,9 @@ func (v verifier) check(header object, input string, sigSeg string) (string, *vi
 		if why != "" {
 			reasons = append(reasons, why)
 		}
-		if c.given {
-			// The shape a shared secret is most often handed over in by
-			// mistake: base64 of the bytes rather than the bytes.
-			if decoded, derr := decodeAnyBase64(string(c.secret)); derr == nil {
-				if good, _ := a.check(nil, decoded, []byte(input), sig, a.hash); good {
-					return verifiedLine(candidate{label: "the secret given, read as base64"}, alg), nil
-				}
+		for _, r := range c.readings {
+			if good, _ := a.check(nil, r.secret, []byte(input), sig, a.hash); good {
+				return verifiedLine(candidate{label: r.label}, alg), nil
 			}
 		}
 	}
@@ -410,8 +571,15 @@ func (v verifier) check(header object, input string, sigSeg string) (string, *vi
 		if len(reasons) > 0 {
 			msg += ": " + strings.Join(reasons, "; ")
 		}
-		return "", view.Errorf("codec.jwt.signature", "%s", msg).
-			WithHint("the token was changed after it was signed, or signed with another key — without --key it decodes to show which kid it names")
+		// Worded from what was tried: a secret has no kid, and an HMAC
+		// token rarely names one, so the key's hint sent somebody looking
+		// for a kid that neither side has.
+		hint := "the token was changed after it was signed, or signed with another secret — check the secret file: " +
+			"it is read as it is, without a final line break, and as base64"
+		if triedKey {
+			hint = "the token was changed after it was signed, or signed with another key — without --key it decodes to show which kid it names"
+		}
+		return "", view.Errorf("codec.jwt.signature", "%s", msg).WithHint(hint)
 	// Only keys that carry kids can be missing the right one: a PEM key or a
 	// secret has none, and blaming a kid for them hides the real mismatch.
 	case kid != "" && anyKid(candidates, "") && !anyKid(candidates, kid):

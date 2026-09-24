@@ -79,12 +79,13 @@ func Plugin() plugin.Plugin {
 					"encrypted one (JWE), and the JSON form of either — with the headers and claims decoded, " +
 					"the dates read, and anything a strict parser would refuse named: a padded segment, a " +
 					"member given twice, an empty signature. A JWE's header is read and its content is not, " +
-					"because decrypting takes the recipient's private key. Unverified unless --key or --secret " +
+					"because decrypting takes the recipient's private key. Unverified unless --key or --secret-file " +
 					"is given, and labeled as such: anyone can hand you a token with any claims at all. With " +
 					"--key — a public key, certificate or the issuer's key set, fetched by you, since a capability " +
 					"that fetched a URL its caller names would not be a free read — the signature is checked, the " +
 					"algorithm is decided by the key and never by the token, and a mismatch is an error naming " +
-					"why. An HMAC signature takes --secret instead, never a public key. A pasted " +
+					"why. An HMAC signature is checked only against a shared secret the person at the terminal " +
+					"keeps in a file (--secret-file): never a public key, and never a secret an agent passes. A pasted " +
 					"`Authorization: Bearer` line works. Given no argument, reads the token from standard input, " +
 					"which keeps a live one out of shell history and out of the process list.",
 				Safety: plugin.Read, Idempotent: true,
@@ -103,11 +104,26 @@ func Plugin() plugin.Plugin {
 					// pastes here is as often a private JWK as a public one,
 					// and only the public half is ever used.
 					{Name: "key", Type: plugin.Secret, Help: "the public key, certificate or key set to verify the signature with"},
-					// Local: an HMAC secret is a credential, and an agent
-					// must never be invited to supply one. EnvFallback keeps
-					// it off argv for the person at the terminal.
-					{Name: "secret", Type: plugin.Secret, Local: true, EnvFallback: true,
-						Help: "the shared secret an HS256, HS384 or HS512 signature is made with"},
+					// Local, and a file rather than the secret itself. An HMAC
+					// secret is a credential: an agent must never be invited
+					// to supply one, and a secret typed as a flag lands in
+					// argv and the shell's history, the leak the pipe exists
+					// to spare the token. `--secret-file <(printf %s "$S")`
+					// keeps it out of both.
+					//
+					// Not EnvFallback, although that keeps it off argv too,
+					// and it was: the environment layer resolves on every
+					// surface, and a handler cannot tell a secret somebody
+					// typed from one it inherited. An exported
+					// RTA_CODEC_SECRET turned every decode into a
+					// verification, so an RS256, unsigned or encrypted token
+					// stopped decoding at all, and an `rta mcp serve` that
+					// inherited it answered an agent calling a free Read
+					// VERIFIED or not against the operator's secret for any
+					// token the agent cared to sign with a guess — an online
+					// oracle for that secret.
+					{Name: "secret-file", Type: plugin.Path, Local: true,
+						Help: "a file holding the shared secret an HS256, HS384 or HS512 signature is made with"},
 				},
 				Run: runJWT,
 			},

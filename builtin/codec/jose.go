@@ -81,23 +81,27 @@ func runJWT(_ context.Context, req plugin.Request) (view.View, error) {
 }
 
 // verifierFrom builds the signature check a call asked for with --key or
-// --secret, or returns nil when it asked for none — the ordinary case, where
-// the page says nothing was verified.
+// --secret-file, or returns nil when it asked for none — the ordinary case,
+// where the page says nothing was verified.
 func verifierFrom(req plugin.Request) (*verifier, *view.Error) {
-	key, secret := strings.TrimSpace(req.String("key")), req.String("secret")
-	if key == "" && secret == "" {
+	key, secretFile := strings.TrimSpace(req.String("key")), req.String("secret-file")
+	if key == "" && secretFile == "" {
 		return nil, nil
 	}
-	v := &verifier{}
-	if secret != "" {
-		v.secret = []byte(secret)
-	}
-	if key != "" {
-		keys, verr := keysFrom(key)
+	v := &verifier{surface: req.Surface()}
+	if secretFile != "" {
+		secret, verr := secretFrom(secretFile)
 		if verr != nil {
 			return nil, verr
 		}
-		v.keys = keys
+		v.secret = &secret
+	}
+	if key != "" {
+		keys, notes, verr := keysFrom(key, req.Surface())
+		if verr != nil {
+			return nil, verr
+		}
+		v.keys, v.notes = keys, notes
 	}
 	return v, nil
 }
@@ -326,6 +330,9 @@ func decodeJWS(parts []string, depth int, check *verifier) (view.View, *view.Err
 		}
 	}
 	p := &page{}
+	if check != nil {
+		p.notes = append(p.notes, check.notes...)
+	}
 	p.dialect("header", dialect)
 	p.add("header", "header", p.render(header, "header", "RFC 7515 §4"))
 	claims, verr := p.payload(header, parts[1], depth)
@@ -759,6 +766,7 @@ func (p *page) jsonJWS(doc object, check *verifier) (view.View, *view.Error) {
 		if verr != nil {
 			return nil, verr
 		}
+		p.notes = append(p.notes, check.notes...)
 		return p.finish(lead, window(claims)), nil
 	}
 	lead := verdict(signers[0].merged(), signers[0].value)

@@ -88,6 +88,26 @@ func TestAPrivateKeyIsNamedAndNeverPrinted(t *testing.T) {
 	}
 }
 
+// A shared secret's RFC 7638 thumbprint is an unsalted hash of the secret,
+// and a dictionary recovers a chosen one from it — `hunter2` here. It pins
+// nothing either, so it is not printed, alone or in a set.
+func TestASharedSecretHasNoThumbprintPrinted(t *testing.T) {
+	oct := `{"kty":"oct","k":"aHVudGVyMg"}`
+	const hash = "JAWo9jT4QrQgM1qv0-BHyY_bVAyApQ_peTR12J-XpL0"
+	s := jwk(t, oct)
+	if got := pairValue(section(t, s, "key").(view.KeyValue), "thumbprint"); !strings.HasPrefix(got, "not shown") {
+		t.Errorf("thumbprint = %q, want it withheld", got)
+	}
+	set := jwk(t, `{"keys":[`+oct+`]}`)
+	var printed []string
+	for _, page := range []view.Sections{s, set} {
+		view.MapStrings(page, func(v string) string { printed = append(printed, v); return v })
+	}
+	if joined := strings.Join(printed, "\n"); strings.Contains(joined, hash) {
+		t.Errorf("the secret's hash was printed:\n%s", joined)
+	}
+}
+
 func ecKey(t *testing.T) (*ecdsa.PrivateKey, string, string) {
 	t.Helper()
 	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)

@@ -197,11 +197,17 @@ func (k *jwkFacts) okp(o object) {
 
 // thumbprintMembers are the members RFC 7638 §3.2 hashes for each key type,
 // already in the lexicographic order §3.3 requires.
+//
+// Not oct, though §3.2 defines one for it. A shared secret's thumbprint is an
+// unsalted SHA-256 of the secret and nothing else, so printing it handed out
+// a dictionary-attack target for every HMAC secret somebody chose — `hunter2`
+// falls out of a ten-line script — on a page that promises nothing private
+// is printed. And it pins nothing: cnf.jkt and an ACME account name
+// asymmetric keys.
 var thumbprintMembers = map[string][]string{
 	"RSA": {"e", "kty", "n"},
 	"EC":  {"crv", "kty", "x", "y"},
 	"OKP": {"crv", "kty", "x"},
-	"oct": {"k", "kty"},
 }
 
 // thumbprint is the RFC 7638 SHA-256 thumbprint, or "" when the key lacks a
@@ -340,8 +346,12 @@ func keyView(o object) view.View {
 			kv.Pairs = append(kv.Pairs, view.Pair{Key: m.key, Value: visible(m.value)})
 		}
 	}
-	if k.thumbprint != "" {
+	switch {
+	case k.thumbprint != "":
 		kv.Pairs = append(kv.Pairs, view.Pair{Key: "thumbprint", Value: k.thumbprint + "  (RFC 7638, SHA-256)"})
+	case k.kty == "oct":
+		kv.Pairs = append(kv.Pairs, view.Pair{Key: "thumbprint",
+			Value: "not shown — for a shared secret it is a hash of the secret itself"})
 	}
 	kv.Pairs = append(kv.Pairs, view.Pair{Key: "private", Value: k.privateLine()})
 	p.add("key", "key", kv)
