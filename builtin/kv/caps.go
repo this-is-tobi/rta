@@ -750,7 +750,7 @@ func runRekey(_ context.Context, req plugin.Request) (view.View, error) {
 	// command line, so nothing untrusted reaches the new recipients. That is
 	// what the mismatch hint tells people to run, here and in writeKeys, and
 	// refusing it would leave a tampered file unfixable.
-	if !only && s.Recipients != nil && !equal(stored, s.Recipients) {
+	if !only && s.Recipients != nil && !slices.Equal(stored, s.Recipients) {
 		return nil, view.Errorf("kv.recipients.mismatch",
 			"kv.recipients does not match who the store is actually encrypted to, "+
 				"so it cannot be the set this re-key builds on").

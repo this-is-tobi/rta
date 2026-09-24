@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"filippo.io/age"
@@ -661,7 +662,7 @@ func writeKeys(req plugin.Request, embedded []string) (recipients []age.Recipien
 		// secret to an attacker's key, silently, on a write that named none
 		// of them. embedded is empty for a store written before this field
 		// existed: nothing to check yet, and this write starts the record.
-		if embedded != nil && !equal(stored, embedded) {
+		if embedded != nil && !slices.Equal(stored, embedded) {
 			return nil, nil, nil, view.Errorf("kv.recipients.mismatch",
 				"kv.recipients does not match who the store is actually encrypted to").
 				WithHint("it may have been edited by hand or by something other than `kv rekey` — " +
@@ -813,18 +814,6 @@ func sameKey(a, b string) bool {
 		return spec
 	}
 	return keyOf(a) == keyOf(b)
-}
-
-func equal(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }
 
 func truncate(s string, n int) string {
