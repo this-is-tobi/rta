@@ -65,3 +65,30 @@ func TestRegisterRejectsInvalidPlugin(t *testing.T) {
 		t.Error("invalid plugin accepted")
 	}
 }
+
+// Every capability the registry hands out runs behind the check of its closed
+// sets — on each surface's lookup, and in the plugin's own listing — and the
+// declaration the caller registered is left as it was.
+func TestARegisteredCapabilityHoldsItsOptions(t *testing.T) {
+	p := testPlugin("gamma")
+	p.Capabilities[0].Inputs = []plugin.Field{{Name: "mode", Type: plugin.String, Options: []string{"fast", "safe"}}}
+	original := p.Capabilities[0].Run
+	r := New()
+	if err := r.Register(p); err != nil {
+		t.Fatal(err)
+	}
+	c, _ := r.Capability("gamma.thing.list")
+	listed := r.Plugins()[0].Capabilities[0]
+	for _, got := range []plugin.Capability{c, listed} {
+		_, err := got.Run(context.Background(), plugin.NewRequest(map[string]any{"mode": "quick"}, false, false))
+		if verr := view.AsError(err, "test"); err == nil || verr.Code != "core.input.option" {
+			t.Errorf("an unlisted option ran: %v", err)
+		}
+		if _, err := got.Run(context.Background(), plugin.NewRequest(map[string]any{"mode": "safe"}, false, false)); err != nil {
+			t.Errorf("a listed option was refused: %v", err)
+		}
+	}
+	if _, err := original(context.Background(), plugin.NewRequest(map[string]any{"mode": "quick"}, false, false)); err != nil {
+		t.Errorf("the caller's own declaration was changed: %v", err)
+	}
+}

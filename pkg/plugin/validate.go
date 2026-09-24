@@ -467,6 +467,13 @@ func (c Capability) validate(ns string) error {
 					c.ID, f.Name, problem, hint)
 			}
 		}
+		// Options are a closed set the host holds every value to
+		// (CheckOptions), the default included: a default outside it is a
+		// capability refused on every call that leaves the input alone.
+		if d, ok := f.Default.(string); ok && d != "" && len(f.Options) > 0 && !slices.Contains(f.Options, d) {
+			return fmt.Errorf("capability %q: input %q defaults to %q, which is not one of its options %v",
+				c.ID, f.Name, d, f.Options)
+		}
 		if f.Name == c.Scope {
 			// A scope is a record's name, and a record's name is written down
 			// everywhere a grant is: into the parked consent request, into
