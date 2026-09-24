@@ -67,8 +67,12 @@ func (k *jwkFacts) member(o object, name string) []byte {
 		k.problem("its %s is not base64url", name)
 		return nil
 	}
-	if dialect != "" {
-		k.problem("its %s is %s base64, where RFC 7518 §6 requires unpadded base64url", name, dialect)
+	form, loose := splitDialect(dialect)
+	if form != "" {
+		k.problem("its %s is %s base64, where RFC 7518 §6 requires unpadded base64url", name, form)
+	}
+	if loose {
+		k.problem("its %s ends in a character whose unused bits are not zero, which a strict decoder refuses (RFC 4648 §3.5)", name)
 	}
 	return raw
 }
@@ -325,7 +329,7 @@ func runJWK(_ context.Context, req plugin.Request) (view.View, error) {
 		if !ok {
 			return nil, view.Errorf("codec.jwk.invalid", "the keys member of a key set is not a list")
 		}
-		return keySetView(list), nil
+		return keySetView(doc, list), nil
 	}
 	if !doc.has("kty") {
 		return nil, view.Errorf("codec.jwk.invalid", "a JSON object, but not a key: it has neither kty nor keys").
@@ -337,7 +341,7 @@ func runJWK(_ context.Context, req plugin.Request) (view.View, error) {
 func keyView(o object) view.View {
 	k := readJWK(o)
 	p := &page{}
-	p.duplicates(o, "key", "RFC 7517 §4")
+	p.ambiguous(o, "key", "RFC 7517 §4")
 	kv := view.KeyValue{Pairs: []view.Pair{{Key: "type", Value: k.describe()}}}
 	for _, m := range []struct{ key, value string }{
 		{"kid", k.kid}, {"alg", k.alg}, {"use", k.use}, {"key_ops", strings.Join(k.ops, ", ")},
@@ -373,8 +377,13 @@ func certificateView(k jwkFacts) view.KeyValue {
 	}}
 }
 
-func keySetView(list []any) view.View {
+// keySetView is handed the whole document as well as its list, because what
+// a strict parser refuses is in the document: `{"keys":[],"keys":[K]}` is an
+// empty set to a parser that keeps the first, and a kty given twice sits in
+// keys[i], and neither was named while the list was all this saw.
+func keySetView(doc object, list []any) view.View {
 	p := &page{}
+	p.ambiguous(doc, "key set", "RFC 7517 §5")
 	t := view.Table{Columns: []view.Column{
 		{Name: "Kid"}, {Name: "Type"}, {Name: "Alg"}, {Name: "Use"}, {Name: "Thumbprint"},
 		{Name: "Private"}, {Name: "Certificate expires"},

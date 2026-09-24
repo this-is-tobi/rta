@@ -78,6 +78,14 @@ func TestADateClaimOfTheWrongTypeIsLeftAlone(t *testing.T) {
 	if strings.Contains(window, "expired") || strings.Contains(window, "unexpired") {
 		t.Errorf("verification section drew a conclusion from an unusable exp: %q", window)
 	}
+	// Left alone, and named: RFC 7519 requires a number, and verifiers split
+	// between refusing the token and converting the claim.
+	if !strings.Contains(window, "Its exp, nbf and iat are not JSON numbers, which RFC 7519 §2 requires") {
+		t.Errorf("verification section = %q, want the three claims named as not numbers", window)
+	}
+	if _, window := decode(t, `{"exp":"1"}`); !strings.Contains(window, "Its exp is not a JSON number") {
+		t.Errorf("verification section = %q, want the string exp named", window)
+	}
 }
 
 // A number far outside any date a time.Time can hold has to come back as the

@@ -144,6 +144,89 @@ func TestASecretVerifiesAsGivenOrAsBase64(t *testing.T) {
 	mustRefuse(t, token, "", "wrong", "codec.jwt.signature", "check the secret file")
 }
 
+// A signature with its last letter changed where only unused bits live still
+// matches under a lenient decoder, and it used to be a bare VERIFIED. It still
+// matches, since the bytes are the same, and the page now says the text is
+// not the canonical spelling of them.
+func TestAVerifiedSignatureThatIsNotCanonicalIsNamed(t *testing.T) {
+	token := sign(`{"alg":"HS256"}`, `{"sub":"a"}`, func(in []byte) []byte {
+		mac := hmac.New(sha256.New, []byte("s3cret"))
+		mac.Write(in)
+		return mac.Sum(nil)
+	})
+	// A 32-byte MAC leaves two bits of its last character unused; flipping
+	// the lowest changes the text and not the bytes.
+	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+	last := strings.IndexByte(alphabet, token[len(token)-1])
+	loose := token[:len(token)-1] + string(alphabet[last^1])
+	body, verr := verifyWith(t, loose, "", "s3cret")
+	if verr != nil {
+		t.Fatalf("refused: %s", verr.Message)
+	}
+	if !strings.HasPrefix(body, "VERIFIED") || !strings.Contains(body, "unused bits are not zero") {
+		t.Errorf("verification = %q, want VERIFIED and the non-canonical signature named", body)
+	}
+}
+
+// A matching signature on a token whose crit lists an extension rta does not
+// implement was a bare VERIFIED. The signature is still checked, and the
+// verdict is followed by what the RFC makes of such a token.
+func TestAVerifiedTokenWithAnUnknownCritSaysSo(t *testing.T) {
+	token := sign(`{"alg":"HS256","crit":["http://example.com/must-understand"],"http://example.com/must-understand":1}`, `{"sub":"a"}`,
+		func(in []byte) []byte {
+			mac := hmac.New(sha256.New, []byte("s3cret"))
+			mac.Write(in)
+			return mac.Sum(nil)
+		})
+	body, verr := verifyWith(t, token, "", "s3cret")
+	if verr != nil {
+		t.Fatalf("refused: %s", verr.Message)
+	}
+	if !strings.HasPrefix(body, "VERIFIED") || !strings.Contains(body, "which rta does not implement") {
+		t.Errorf("verification = %q, want VERIFIED qualified by the crit it cannot honour", body)
+	}
+}
+
+// An unencoded payload (RFC 7797) is carried as it is, and §5.2 lets it hold
+// a space. Whitespace used to come out of the whole token before it was split,
+// so "hello world" showed as "helloworld" and its valid signature was reported
+// as the token changed after signing.
+func TestAnUnencodedPayloadKeepsItsSpaces(t *testing.T) {
+	header := seg(`{"alg":"HS256","b64":false,"crit":["b64"]}`)
+	mac := hmac.New(sha256.New, []byte("s3cret"))
+	mac.Write([]byte(header + ".hello world"))
+	token := header + ".hello world." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+	if got := section(t, jose(t, token), "payload").(view.Text).Body; got != "hello world" {
+		t.Errorf("payload = %q", got)
+	}
+	mustVerify(t, token, "", "s3cret", "HS256 signature matches")
+}
+
+// A detached payload was signed with content that is not in the token, so
+// the check over the empty string fails however good the signature is, and
+// the refusal blamed tampering or the key. It now says the payload is not
+// here. A signature that really is over the empty string still verifies,
+// and a JSON form's empty payload member is the empty string, not detached.
+func TestADetachedPayloadIsNamedWhenItsSignatureCannotBeChecked(t *testing.T) {
+	hs := func(input string) string {
+		mac := hmac.New(sha256.New, []byte("k"))
+		mac.Write([]byte(input))
+		return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+	}
+	h := seg(`{"alg":"HS256"}`)
+	mustRefuse(t, h+".."+hs(h+"."+seg(`{"sub":"x"}`)), "", "k", "codec.jwt.detached", "either the payload is detached")
+	mustVerify(t, h+".."+hs(h+"."), "", "k", "HS256 signature matches")
+
+	signing, x, y := ecKey(t)
+	key := fmt.Sprintf(`{"kty":"EC","crv":"P-256","x":%q,"y":%q}`, x, y)
+	parts := strings.Split(es256(t, signing, `{"alg":"ES256"}`), ".")
+	mustRefuse(t, parts[0]+".."+parts[2], key, "", "codec.jwt.detached", "not here")
+	mustRefuse(t, fmt.Sprintf(`{"protected":%q,"signature":%q}`, parts[0], parts[2]), key, "",
+		"codec.jwt.detached", "the payload is detached")
+	mustRefuse(t, fmt.Sprintf(`{"protected":%q,"payload":"","signature":%q}`, parts[0], parts[2]), key, "",
+		"codec.jwt.signature", "does not match")
+}
+
 // A secret file that is not there, is empty, or is not a secret at all.
 func TestASecretFileThatCannotBeReadIsRefused(t *testing.T) {
 	token := sign(`{"alg":"HS256"}`, `{"sub":"a"}`, func([]byte) []byte { return []byte("x") })
