@@ -12,6 +12,7 @@ import (
 
 	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/grant"
+	"github.com/this-is-tobi/rta/internal/pluginconf"
 	"github.com/this-is-tobi/rta/internal/profile"
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/pkg/format"
@@ -758,34 +759,34 @@ func parseSetFlags(pairs []string, ns string, reg *registry.Registry) (map[strin
 	return set, nil
 }
 
-// heldToDeclaration refuses a value the host would refuse on every call —
-// outside the field's range, or none of its Options — and writes an option
-// typed in another case the way the field declares it. Written without one of
-// those checks, the profile is saved and every call made through it is then
-// refused, by which time nobody is looking at the command that caused it.
+// heldToDeclaration refuses a value no capability reading the key would run
+// with — outside every range, or naming none of the options — and writes an
+// option typed in another case the way the field declares it. Written without
+// one of those checks, the profile is saved and every call made through it is
+// then refused, by which time nobody is looking at the command that caused it.
+//
+// f is the key's pluginconf.SharedField, not one reader's: a key serves every
+// capability in the namespace that declares it, and each holds a number from
+// the profile to its own range. Held to whichever field declaredFor kept last
+// by ID, `--set timeout=90` for net was refused as net.trace's 1..60 though
+// net.ping takes 300, and `--set limit=800` for fs was written against
+// fs.usage's 1000 and then refused on every fs.tree call.
 //
 // Like badSetValue, never repeating the value.
 func heldToDeclaration(f plugin.Field, v any) (any, *view.Error) {
 	if want, ok := f.Range(v); !ok {
 		return nil, view.Errorf("core.profile.set.range", "%s takes a value %s", f.Name, want).
-			WithHint("`rta explain` on a capability that reads " + f.Config + " names the range")
+			WithHint("that is the widest range of any capability reading " + f.Config +
+				", and each holds a value to its own inside it; `rta explain` on one names its range")
 	}
 	if len(f.Options) == 0 {
 		return v, nil
-	}
-	canonical := func(s string) (string, bool) {
-		for _, o := range f.Options {
-			if strings.EqualFold(o, s) {
-				return o, true
-			}
-		}
-		return "", false
 	}
 	refuse := view.Errorf("core.profile.set.option", "%s takes one of %s", f.Name, strings.Join(f.Options, ", ")).
 		WithHint("the set is closed; write the value as one of those")
 	switch t := v.(type) {
 	case string:
-		o, ok := canonical(t)
+		o, ok := f.CanonicalOption(t)
 		if !ok {
 			return nil, refuse
 		}
@@ -793,7 +794,7 @@ func heldToDeclaration(f plugin.Field, v any) (any, *view.Error) {
 	case []string:
 		out := make([]string, len(t))
 		for i, s := range t {
-			o, ok := canonical(s)
+			o, ok := f.CanonicalOption(s)
 			if !ok {
 				return nil, refuse
 			}
@@ -891,7 +892,8 @@ func parseSecretFlags(pairs []string) (map[string]string, *view.Error) {
 	return out, nil
 }
 
-// declaredFor is what a namespace offers a profile: its config keys, and the
+// declaredFor is what a namespace offers a profile: its config keys, each as
+// what every capability reading it accepts (pluginconf.SharedField), and the
 // names of the credentials that must never be one.
 //
 // The credential half is asked exactly as `rta profile show` asks it, which
@@ -902,16 +904,20 @@ func parseSecretFlags(pairs []string) (map[string]string, *view.Error) {
 // (NewRoot sets one from the other), and where they could ever differ, the
 // refusal should agree with the page that displays the result.
 func declaredFor(ns string, reg *registry.Registry) (map[string]plugin.Field, map[string]bool) {
-	byConfig := map[string]plugin.Field{}
+	readers := map[string][]plugin.Field{}
 	for _, c := range reg.Capabilities() {
 		if plugin.Namespace(c.ID) != ns {
 			continue
 		}
 		for _, f := range c.Inputs {
 			if f.Config != "" && plugin.ProfileFillable(c, f) {
-				byConfig[f.Config] = f
+				readers[f.Config] = append(readers[f.Config], f)
 			}
 		}
+	}
+	byConfig := make(map[string]plugin.Field, len(readers))
+	for key, fields := range readers {
+		byConfig[key] = pluginconf.SharedField(fields)
 	}
 	secrets := map[string]bool{}
 	for _, f := range profileSecrets(ns, reg) {

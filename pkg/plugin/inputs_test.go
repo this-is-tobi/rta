@@ -189,3 +189,60 @@ func TestADefaultOutsideItsOptionsFailsValidation(t *testing.T) {
 		t.Errorf("a default inside its range was refused: %v", err)
 	}
 }
+
+// A refused value nobody sent on the call read as a flag somebody typed:
+// `encoding: b64` in the config answered a bare `rta gen token` with the
+// option list and a pointer at `rta explain`, naming neither the file nor
+// the key — and over MCP told an agent about a value only the operator can
+// change. The refusal says which layer set it now, and whom to ask.
+func TestARefusedValueFromConfigOrAProfileSaysWhereItCameFrom(t *testing.T) {
+	c := optionCap(func(context.Context, Request) (view.View, error) { return nil, nil })
+	c.Inputs[0].Config = "encoding"
+	c.Inputs = append(c.Inputs, Field{Name: "timeout", Type: Int, Default: 5, Min: 1, Max: 60, Config: "timeout"})
+	refusal := func(req Request) *view.Error {
+		t.Helper()
+		verr := CheckInputs(c, req)
+		if verr == nil {
+			t.Fatal("accepted")
+		}
+		return verr
+	}
+	for _, tc := range []struct {
+		in        Inputs
+		code      string
+		where     string
+		hintNames string
+	}{
+		{Inputs{Config: map[string]any{"encoding": "b64"}}, "core.input.option",
+			"which the config's plugins.demo.encoding sets", "rta explain demo.token"},
+		{Inputs{Config: map[string]any{"timeout": "90"}}, "core.input.range",
+			"which the config's plugins.demo.timeout sets", "rta explain demo.token"},
+		{Inputs{Profile: map[string]any{"encoding": "b64"}, ProfileName: "prod"}, "core.input.option",
+			`which the profile "prod" sets`, "rta profile show prod"},
+	} {
+		verr := refusal(ResolveRequest(c, tc.in, false, false).WithSurface(SurfaceCLI))
+		if verr.Code != tc.code || !strings.Contains(verr.Message, tc.where) || !strings.Contains(verr.Hint, tc.hintNames) {
+			t.Errorf("%+v: %s %q / %q", tc.in, verr.Code, verr.Message, verr.Hint)
+		}
+		// An agent is told who can change it, and how to step round it.
+		verr = refusal(ResolveRequest(c, tc.in, false, false).WithSurface(SurfaceMCP))
+		if !strings.Contains(verr.Hint, "the operator can change it") || !strings.Contains(verr.Hint, "overrides it for this call") {
+			t.Errorf("%+v over MCP: hint %q", tc.in, verr.Hint)
+		}
+	}
+	// The caller's own value is refused in the caller's words, and so is a
+	// value a page laid over the operator's.
+	for _, req := range []Request{
+		ResolveRequest(c, Inputs{Caller: map[string]any{"encoding": "b64"}, Config: map[string]any{"encoding": "hex"}}, false, false),
+		ResolveRequest(c, Inputs{Config: map[string]any{"encoding": "hex"}}, false, false).With(map[string]any{"encoding": "b64"}),
+	} {
+		if verr := refusal(req); strings.Contains(verr.Message, "sets") {
+			t.Errorf("a value the caller sent was put on the config: %q", verr.Message)
+		}
+	}
+	// And the values are Resolve's.
+	in := Inputs{Caller: map[string]any{"tags": []string{"RED"}}, Config: map[string]any{"timeout": uint64(90)}}
+	if got, want := ResolveRequest(c, in, false, false).Values(), Resolve(c, in); fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Errorf("ResolveRequest carries %v, Resolve %v", got, want)
+	}
+}

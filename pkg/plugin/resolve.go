@@ -65,14 +65,43 @@ type Inputs struct {
 // not recognise, so it returned 0 — again silently, and again only on the
 // surface that reads config.
 //
-// Every surface that runs a handler calls this. Nothing downstream has to
-// know which of the values were declared or defaulted.
+// Every surface that runs a handler calls this, or ResolveRequest, which is
+// this with a note of where the operator's values came from for the one
+// reader that has to say so. Nothing downstream has to know which of the
+// values were declared or defaulted.
 //
 // Precedence is caller, then profile, then the namespace-wide environment
 // fallback, then config, then Default. A handler reads req.String("host") and
 // cannot tell which of the five it got, which is the point: a config-backed
 // input is an ordinary input, and so is a profile-backed one.
 func Resolve(c Capability, in Inputs) map[string]any {
+	out, _ := resolve(c, in)
+	return out
+}
+
+// ResolveRequest is Resolve's values as a Request, carrying where each value
+// the operator's config or profile supplied came from. A handler cannot read
+// that and must not: it is for the host's own guard, whose refusal of such a
+// value — an option none of the declared ones, a number written as text —
+// was addressed to a flag nobody typed (see CheckInputs' fromSource).
+//
+// A surface that runs a handler builds its request with this rather than
+// NewRequest(Resolve(...)); the two carry the same values.
+func ResolveRequest(c Capability, in Inputs, dryRun, yes bool) Request {
+	values, from := resolve(c, in)
+	req := NewRequest(values, dryRun, yes)
+	req.origins = from
+	return req
+}
+
+// origin is where a value the operator stated came from: a config key, or
+// the profile that set it. Never the value.
+type origin struct {
+	key     string // the Field.Config key, for a value from the config
+	profile string // the profile's name, for a value from one
+}
+
+func resolve(c Capability, in Inputs) (map[string]any, map[string]origin) {
 	out := make(map[string]any, len(c.Inputs)+len(in.Caller))
 	for _, f := range c.Inputs {
 		if f.Default != nil {
@@ -91,16 +120,17 @@ func Resolve(c Capability, in Inputs) map[string]any {
 	// property of the declaration — checkable before the process runs, and
 	// printable by `rta explain` — rather than of whatever is in a file.
 	//
-	// operator records which values the operator's own layers — this one and
-	// the profile — supplied, for the clamp below (see clampInt).
-	operator := map[string]bool{}
+	// from records which values the operator's own layers — this one and the
+	// profile — supplied, for the clamp below (see clampInt) and for a
+	// refusal to say where the value came from (ResolveRequest).
+	from := map[string]origin{}
 	for _, f := range c.Inputs {
 		if f.Config == "" {
 			continue
 		}
 		if v, ok := lookupConfig(in.Config, f.Config); ok {
 			out[f.Name] = v
-			operator[f.Name] = true
+			from[f.Name] = origin{key: f.Config}
 		}
 	}
 	// Local inputs that opted into it (EnvFallback), from the host's own
@@ -164,7 +194,7 @@ func Resolve(c Capability, in Inputs) map[string]any {
 			}
 			if v, ok := os.LookupEnv(LocalEnvVar(c.ID, f.Name)); ok {
 				out[f.Name] = v
-				delete(operator, f.Name)
+				delete(from, f.Name)
 			}
 		}
 	}
@@ -182,7 +212,7 @@ func Resolve(c Capability, in Inputs) map[string]any {
 		}
 		if v, ok := in.Profile[f.Name]; ok && v != nil {
 			out[f.Name] = v
-			operator[f.Name] = true
+			from[f.Name] = origin{profile: in.ProfileName}
 		}
 	}
 	// A nil from either of these layers is nothing given, and leaves what is
@@ -197,7 +227,7 @@ func Resolve(c Capability, in Inputs) map[string]any {
 			continue
 		}
 		out[k] = v
-		delete(operator, k)
+		delete(from, k)
 	}
 
 	byName := make(map[string]Field, len(c.Inputs))
@@ -212,14 +242,14 @@ func Resolve(c Capability, in Inputs) map[string]any {
 		switch f.Type {
 		case Int:
 			if n, ok := toInt(v); ok {
-				if operator[name] {
+				if _, stated := from[name]; stated {
 					n = clampInt(n, f)
 				}
 				out[name] = n
 			}
 		case Float:
 			if n, ok := toFloat(v); ok {
-				if operator[name] {
+				if _, stated := from[name]; stated {
 					n = clampFloat(n, f)
 				}
 				out[name] = n
@@ -234,7 +264,7 @@ func Resolve(c Capability, in Inputs) map[string]any {
 			}
 		}
 	}
-	return out
+	return out, from
 }
 
 // toInt accepts every shape an integer arrives in. YAML gives uint64, JSON

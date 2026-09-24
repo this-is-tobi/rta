@@ -46,18 +46,35 @@ import (
 // config key) and saves back under the same key. The label an operator sees
 // becomes the key they would type by hand, which is the right label for a
 // config editor and the only one that can tell vault's two mounts apart.
+//
+// **Merged, not the first one kept.** The capabilities sharing a key need not
+// agree about it — net's `timeout` is bounded 1..300 by net.ping and 1..60 by
+// net.port — and the box's range check and picker come from the field it is
+// built on. Built on the first declared, the box refused values the rest of
+// the namespace takes, and `rta profile set` and `rta doctor` each held the
+// same key to a different one. pluginconf.SharedField is the one rule for all
+// three: what some capability reading the key accepts, which every one of
+// them can run with, since each holds a number from the file to its own
+// range.
 func configFields(p plugin.Plugin) []plugin.Field {
-	seen := map[string]bool{}
-	var out []plugin.Field
+	var keys []string
+	readers := map[string][]plugin.Field{}
 	for _, c := range p.Capabilities {
 		for _, f := range c.Inputs {
-			if f.Config == "" || seen[f.Config] {
+			if f.Config == "" {
 				continue
 			}
-			seen[f.Config] = true
-			f.Name = f.Config
-			out = append(out, f)
+			if _, seen := readers[f.Config]; !seen {
+				keys = append(keys, f.Config)
+			}
+			readers[f.Config] = append(readers[f.Config], f)
 		}
+	}
+	out := make([]plugin.Field, 0, len(keys))
+	for _, key := range keys {
+		f := pluginconf.SharedField(readers[key])
+		f.Name = key
+		out = append(out, f)
 	}
 	return out
 }

@@ -53,17 +53,56 @@ func CheckInputs(c Capability, req Request) *view.Error {
 		if !present || v == nil {
 			continue
 		}
-		if verr := checkNumber(c, f, v); verr != nil {
-			return verr
+		verr := checkNumber(c, f, v)
+		if verr == nil {
+			verr = checkOptions(c, f, v)
 		}
-		if verr := checkOptions(c, f, v); verr != nil {
-			return verr
+		if verr == nil {
+			verr = checkBoundsOf(c, f, v)
 		}
-		if verr := checkBoundsOf(c, f, v); verr != nil {
-			return verr
+		if verr != nil {
+			return fromSource(verr, c, f, req)
 		}
 	}
 	return nil
+}
+
+// fromSource readdresses a refusal of a value the caller did not send.
+// Worded for the caller, it read as a flag somebody typed — `encoding: b64`
+// in the config answered a bare `rta gen token` with "gen.token takes one of
+// hex, base64, base64url, base32 for encoding, not "b64"" — and its hint
+// sent them to `rta explain` for a set the message had already named, while
+// the file holding the value went unmentioned. Over MCP it told an agent
+// about a value only the operator can change.
+//
+// So it says which layer set the value, and the hint says who can change it
+// and how the caller can step round it for one call: a value given on the
+// call beats both layers. Only a Request built by ResolveRequest knows; one
+// built from a bare map is refused in the caller's words as before.
+func fromSource(verr *view.Error, c Capability, f Field, req Request) *view.Error {
+	o, ok := req.origins[f.Name]
+	if !ok {
+		return verr
+	}
+	where := "the profile " + strconv.Quote(o.profile)
+	change := "`rta profile show " + o.profile + "` shows the block it is set in"
+	if o.profile == "" {
+		where, change = "the profile in use", "`rta profile list` names it"
+	}
+	if o.key != "" {
+		where = "the config's plugins." + Namespace(c.ID) + "." + o.key
+		change = "`rta explain " + c.ID + "` names the file"
+	}
+	out := *verr
+	out.Message += ", which " + where + " sets"
+	if req.Surface() == SurfaceMCP {
+		out.Hint = "the operator can change it (" + where + "); an argument naming " +
+			f.Name + " overrides it for this call"
+		return &out
+	}
+	out.Hint = "change it there — " + change + " — or give " + f.Name +
+		" on the call to override it for one run"
+	return &out
 }
 
 // checkNumber refuses a value for an Int or a Float that the accessor would
