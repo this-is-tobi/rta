@@ -64,7 +64,7 @@ Keycloak is the worked example because two of its defaults are wrong for this, b
 
 Without it the token carries `"azp": "rta"` and an `aud` of `account`, and rta rejects it with `oidc: expected audience "rta" got ["account"]`. Nothing in the Keycloak UI suggests this is missing.
 
-**3. Find the subject.** Keycloak's `sub` is the user's internal UUID, visible in *Users → the user → Details → ID*, or by decoding a token:
+**3. Find the subject.** Keycloak's `sub` is the user's internal UUID, visible in *Users → the user → Details → ID*, or by decoding a token you hold in `$TOKEN` (step 4 fetches one and decodes it in the same line):
 
 ```bash
 printf %s "$TOKEN" | rta codec jwt
@@ -75,13 +75,14 @@ That is the value for `--oidc-subject`. It is stable across username and email c
 **4. Check the whole thing before deploying anything:**
 
 ```bash
-curl -s -X POST \
+read -rs PASSWORD
+printf %s "$PASSWORD" | curl -s -X POST \
   https://keycloak.example.com/realms/main/protocol/openid-connect/token \
   -d grant_type=password -d client_id=rta \
-  -d username=you -d password=… | jq -r .access_token | rta codec jwt
+  -d username=you --data-urlencode password@- | jq -r .access_token | rta codec jwt
 ```
 
-Piped rather than passed as an argument, the token never appears in the process list, where every user on the machine can read an argument for as long as the command runs. A copied `Authorization: Bearer …` line decodes as it is, and so does a token the realm encrypts: its header says which key it is sealed for.
+Piped rather than passed as an argument, the token never appears in the process list, where every user on the machine can read an argument for as long as the command runs. The password is kept out of it the same way: `read -s` takes it without echoing it, and `printf`, a shell builtin, hands it to curl on standard input, where `password@-` reads it. A copied `Authorization: Bearer …` line decodes as it is, and so does a token the realm encrypts: its header says which key it is sealed for.
 
 To check the signature too, hand it the realm's key set. rta does not fetch it for you — a decoder that followed a URL it was given would be a network call nobody granted — so fetch it yourself:
 
@@ -90,7 +91,7 @@ To check the signature too, hand it the realm's key set. rta does not fetch it f
   --key "$(curl -s https://keycloak.example.com/realms/main/protocol/openid-connect/certs)"
 ```
 
-The page then leads with `VERIFIED` and the kid that matched, or fails naming why: no key with the token's kid (the realm rotated its keys), a key of the wrong type, a token changed after it was signed. `rta codec jwk` on the same key set lists every kid, and flags a key the realm should not be publishing.
+The verification section, printed after the header and the claims, then leads with `VERIFIED` and the kid that matched, or the command fails naming why: no key with the token's kid (the realm rotated its keys), a key of the wrong type, a token changed after it was signed. `rta codec jwk` on the same key set lists every kid, and flags a key the realm should not be publishing.
 
 Read three fields off that output: `iss` must equal `--oidc-issuer` exactly, `aud` must contain `--oidc-audience`, and `sub` must be a value you passed to `--oidc-subject`. If all three match and the call is still refused, the reason is in the server's stderr — see below.
 
