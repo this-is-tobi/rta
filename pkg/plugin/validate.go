@@ -469,10 +469,18 @@ func (c Capability) validate(ns string) error {
 		}
 		// Options are a closed set the host holds every value to
 		// (CheckInputs), the default included: a default outside it is a
-		// capability refused on every call that leaves the input alone.
-		if d, ok := f.Default.(string); ok && d != "" && len(f.Options) > 0 && !slices.Contains(f.Options, d) {
-			return fmt.Errorf("capability %q: input %q defaults to %q, which is not one of its options %v",
-				c.ID, f.Name, d, f.Options)
+		// capability refused on every call that leaves the input alone. Read
+		// the way the guard reads a value, so a list's every element and a
+		// number's spelling are held too — a check of the string case alone
+		// passed `Default: []string{"green"}` beside Options red and blue,
+		// and the capability then could not run without the flag.
+		if len(f.Options) > 0 {
+			for _, d := range optionValues(f, f.Default) {
+				if d != "" && !slices.Contains(f.Options, d) {
+					return fmt.Errorf("capability %q: input %q defaults to %q, which is not one of its options %v",
+						c.ID, f.Name, d, f.Options)
+				}
+			}
 		}
 		// And its range, for the same reason.
 		if want, ok := f.Range(f.Default); f.Default != nil && !ok {

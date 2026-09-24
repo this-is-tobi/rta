@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -55,7 +56,7 @@ func CheckInputs(c Capability, req Request) *view.Error {
 		if verr := checkNumber(c, f, v); verr != nil {
 			return verr
 		}
-		if verr := checkOptions(c, f, req); verr != nil {
+		if verr := checkOptions(c, f, v); verr != nil {
 			return verr
 		}
 		if verr := checkBoundsOf(c, f, v); verr != nil {
@@ -100,26 +101,54 @@ func shown(v any) string {
 	return fmt.Sprint(v)
 }
 
-func checkOptions(c Capability, f Field, req Request) *view.Error {
+func checkOptions(c Capability, f Field, given any) *view.Error {
 	if len(f.Options) == 0 {
 		return nil
 	}
-	var values []string
-	switch f.Type {
-	case String:
-		values = []string{req.String(f.Name)}
-	case StringSlice:
-		values = req.StringSlice(f.Name)
-	default:
-		return nil
-	}
-	for _, v := range values {
+	for _, v := range optionValues(f, given) {
 		if v == "" || slices.Contains(f.Options, v) {
 			continue
 		}
 		return view.Errorf("core.input.option", "%s takes one of %s for %s, not %q",
 			c.ID, strings.Join(f.Options, ", "), f.Name, v).
 			WithHint("the set is closed: `rta explain " + c.ID + "` lists it beside the input")
+	}
+	return nil
+}
+
+// optionValues is v as the strings an Options list is compared with: what the
+// field's accessor reads it as, written the way an option is written. For a
+// number or a boolean that is the spelling the MCP boundary compares with
+// (toolcall's checkEnum) — "3", "2.5", "true" — because Options is published
+// there as the enum of every value the input accepts, and held there, while
+// this returned nothing for any type but the two string ones: `level: 9` on
+// a field offering 1, 2 and 3 was refused over MCP and ran from the CLI, the
+// TUI and a config file. Validate reads a Default through this too, so a
+// declaration cannot default to a value it would refuse.
+//
+// Nothing for a value the accessor would not read as the declared type: a
+// number that is not one is checkNumber's to refuse, and text where a string
+// is declared is what StatedTypeProblem reports about the file it came from.
+func optionValues(f Field, v any) []string {
+	switch f.Type {
+	case String:
+		if s, ok := v.(string); ok {
+			return []string{s}
+		}
+	case StringSlice:
+		return stringSlice(v)
+	case Int:
+		if n, ok := toInt(v); ok {
+			return []string{strconv.Itoa(n)}
+		}
+	case Float:
+		if x, ok := toFloat(v); ok {
+			return []string{strconv.FormatFloat(x, 'g', -1, 64)}
+		}
+	case Bool:
+		if b, ok := v.(bool); ok {
+			return []string{strconv.FormatBool(b)}
+		}
 	}
 	return nil
 }
