@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -114,19 +115,24 @@ func TestNoEscapeSequenceReachesTheTerminalThroughAnError(t *testing.T) {
 // json is the byte-exact channel and stays that way: it escapes the control
 // character rather than dropping it, so it is lossless and safe at once, and
 // making it lossy for the sake of a display problem would break the one
-// format the contract promises works in a pipe.
+// format the contract promises works in a pipe. Every payload, the bidi
+// override included, comes out escaped and reads back as it went in.
 func TestJSONStaysByteExact(t *testing.T) {
-	const p = "ok\x1b]52;c;AAAA\x07"
-	v := view.KeyValue{Pairs: []view.Pair{{Key: "k", Value: p}}}
-	var buf bytes.Buffer
-	if err := Render(&buf, v, Options{Format: JSON}); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(strings.ToLower(buf.String()), "001b") {
-		t.Errorf("json did not carry the value through: %q", buf.String())
-	}
-	if escaped(buf.String()) {
-		t.Errorf("json emitted a raw escape: %q", buf.String())
+	for name, p := range payloads {
+		v := view.KeyValue{Pairs: []view.Pair{{Key: "k", Value: p}}}
+		var buf bytes.Buffer
+		if err := Render(&buf, v, Options{Format: JSON}); err != nil {
+			t.Fatal(err)
+		}
+		if escaped(buf.String()) {
+			t.Errorf("%s: json emitted it raw: %q", name, buf.String())
+		}
+		var back struct {
+			Pairs []view.Pair `json:"pairs"`
+		}
+		if err := json.Unmarshal(buf.Bytes(), &back); err != nil || len(back.Pairs) != 1 || back.Pairs[0].Value != p {
+			t.Errorf("%s: json read back as %+v (%v), want the value unchanged", name, back, err)
+		}
 	}
 }
 

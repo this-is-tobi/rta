@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"unicode/utf8"
 )
 
 // Envelope is the discriminated wire form of a View: {"type": ..., ...body}.
@@ -50,6 +51,17 @@ func TypeOf(v View) string {
 // Every level has to say it. encoding/json re-escapes whatever a MarshalJSON
 // method returns unless the encoder calling it was told not to, so a view's
 // own methods use this, and so does every caller that encodes one.
+//
+// And it escapes what encoding/json writes raw that a terminal acts on: DEL
+// and the C1 controls, which json leaves alone while it escapes the C0 ones,
+// and the nine characters that reorder text (U+202A to U+202E, U+2066 to
+// U+2069). `-o json` is the format left uncleaned so it stays exact, and it is
+// read on a terminal as often as in a pipe — where 8-bit CSI reached a
+// terminal that honours C1, and one that implements bidi drew a file named
+// invoice, an override, fdp.exe reversed inside the JSON, the very thing every
+// other format spells out. Escaped, the line reads as stored, and a parser
+// decodes the same string: nothing about the value changes, only how its bytes
+// are written.
 func Marshal(v any) ([]byte, error) { return MarshalIndent(v, "", "") }
 
 // MarshalIndent is Marshal, indented.
@@ -61,7 +73,45 @@ func MarshalIndent(v any, prefix, indent string) ([]byte, error) {
 	if err := enc.Encode(v); err != nil {
 		return nil, err
 	}
-	return bytes.TrimSuffix(b.Bytes(), []byte("\n")), nil
+	return escapeActedOn(bytes.TrimSuffix(b.Bytes(), []byte("\n"))), nil
+}
+
+// escapeActedOn writes each character in encoded JSON that a terminal acts on
+// as its escape. Rewriting the bytes after encoding is safe because such a
+// character can only occur inside a string — everything outside one is
+// printable ASCII and whitespace — and UTF-8 never holds one character's
+// encoding inside another's. Only the three bytes that can begin one are
+// decoded, so text without them costs a byte comparison each.
+func escapeActedOn(data []byte) []byte {
+	var out []byte
+	last := 0
+	for i := 0; i < len(data); {
+		if c := data[i]; c != 0x7f && c != 0xc2 && c != 0xe2 {
+			i++
+			continue
+		}
+		r, size := utf8.DecodeRune(data[i:])
+		if !actedOn(r) {
+			i += size
+			continue
+		}
+		out = append(out, data[last:i]...)
+		out = fmt.Appendf(out, `\u%04x`, r)
+		i += size
+		last = i
+	}
+	if out == nil {
+		return data
+	}
+	return append(out, data[last:]...)
+}
+
+// actedOn is the part of internal/textclean's rule for what a terminal acts on
+// that encoding/json does not already escape — a copy, since pkg cannot
+// import internal, and a test there holds the two to one answer.
+func actedOn(r rune) bool {
+	return r == 0x7f || (r >= 0x80 && r <= 0x9f) ||
+		(r >= 0x202a && r <= 0x202e) || (r >= 0x2066 && r <= 0x2069)
 }
 
 // MarshalJSON wraps a section's child view in its own envelope, so nested

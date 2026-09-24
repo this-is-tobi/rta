@@ -8,6 +8,7 @@ import (
 
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 func TestTerminalLeavesCleanTextAlone(t *testing.T) {
@@ -196,6 +197,32 @@ func TestDeceivesFlagsWhatItWouldChange(t *testing.T) {
 				t.Errorf("Deceives(%q) = false, want true", tc.s)
 			}
 		})
+	}
+}
+
+// pkg/view escapes, in the JSON it writes, what a terminal acts on and
+// encoding/json leaves raw, with its own copy of the rule, since pkg cannot
+// import internal. This holds the copy to the rule for every character: one
+// it left raw is a line of `-o json` a terminal acts on, and one it escaped
+// needlessly is a byte of somebody's text written differently for no reason.
+func TestViewMarshalEscapesExactlyWhatATerminalActsOn(t *testing.T) {
+	for r := rune(0); r <= unicode.MaxRune; r++ {
+		if r >= 0xd800 && r <= 0xdfff {
+			continue
+		}
+		data, err := view.Marshal(string(r))
+		if err != nil {
+			t.Fatal(err)
+		}
+		// encoding/json's own escapes: the C0 controls, the two JSON syntax
+		// characters, and the line and paragraph separators JavaScript reads
+		// as line breaks.
+		if r < 0x20 || r == '"' || r == '\\' || r == 0x2028 || r == 0x2029 {
+			continue
+		}
+		if escaped := !strings.ContainsRune(string(data), r); escaped != actsOn(r) {
+			t.Fatalf("U+%04X: view.Marshal escapes it: %v; a terminal acts on it: %v", r, escaped, actsOn(r))
+		}
 	}
 }
 
