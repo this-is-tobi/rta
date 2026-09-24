@@ -140,6 +140,23 @@ func TestDashboardAddRefusesACredentialATileCannotBeGiven(t *testing.T) {
 			t.Errorf("%s: card says %q, want never a tile", id, got)
 		}
 	}
+	// And `--set token=…`, refused as a credential, is not sent on to a
+	// profile's `secrets:`: no profile fills the token, and the `profile
+	// set` that hint named is refused in turn.
+	_, errOut, err := run("dashboard", "add", "codec.jwt", "--set", "token=abc", "--dry-run")
+	if err == nil || !strings.Contains(errOut, "core.dashboard.set.secret") ||
+		strings.Contains(errOut, "profile set") || !strings.Contains(errOut, "`rta codec jwt`") {
+		t.Errorf("err = %v, output %q; want core.dashboard.set.secret naming the command, not a profile", err, errOut)
+	}
+}
+
+// A credential a profile does fill is still pointed at one.
+func TestDashboardAddPointsAFillableCredentialAtAProfile(t *testing.T) {
+	run := session(t, setRegistry(t))
+	_, errOut, err := run("dashboard", "add", "db.status", "--set", "password=hunter2")
+	if err == nil || !strings.Contains(errOut, "--secret password=kv:") {
+		t.Errorf("err = %v, output %q; want the profile's secrets: hint", err, errOut)
+	}
 }
 
 func TestDashboardAddDryRunWritesNothing(t *testing.T) {
