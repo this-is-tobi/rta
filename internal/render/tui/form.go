@@ -315,7 +315,7 @@ func (cf *capForm) groups(fields []huh.Field, names []string) []*huh.Group {
 func (cf *capForm) displayed(f plugin.Field, current any) bool {
 	if cf.derived[f.Name] {
 		if seeded, ok := cf.seed[f.Name]; ok {
-			return seedString(seeded) == seedString(current)
+			return seedString(shown(seeded)) == seedString(current)
 		}
 		return seedString(f.Default) == seedString(current)
 	}
@@ -328,15 +328,19 @@ func (cf *capForm) displayed(f plugin.Field, current any) bool {
 	return f.Default != nil && seedString(f.Default) == seedString(current)
 }
 
-// seedString renders a seed value the way newCapForm put it in the widget, so
-// "unchanged" is compared against what was actually on screen.
-// It doubles as the comparison displayed makes, which is why it is normalised
-// rather than rendered: a seed of int 5 and a box holding "5" are the same
-// answer, and so are a []string{"a","b"} and the "a, b" it was typed as.
+// seedString renders a value the way a widget holds it, so "unchanged" is
+// compared against what was actually on screen. It is the comparison
+// displayed makes, which is why it is normalised rather than rendered: a seed
+// of int 5 and a box holding "5" are the same answer, and so are a
+// []string{"a","b"} and the "a, b" it was typed as.
+//
+// It does not clean. A seed is compared through shown, which is what the box
+// was given; the other side is the box's own text, already the display
+// spelling, and cleaning that a second time would not give it back.
 func seedString(v any) string {
 	switch t := v.(type) {
 	case string:
-		return strings.TrimSpace(textclean.Terminal(t))
+		return strings.TrimSpace(t)
 	case []string:
 		return strings.Join(t, ", ")
 	case nil:
@@ -344,6 +348,58 @@ func seedString(v any) string {
 	default:
 		return fmt.Sprint(v)
 	}
+}
+
+// shown is a seed as its widget displays it. A Prefill value is a record's
+// current contents, which is somebody else's text on its way to the screen,
+// so it is cleaned — once, here, rather than at each of the places a default
+// is turned into a string for a widget. A list is cleaned value by value,
+// the way it is joined into its box.
+func shown(v any) any {
+	switch t := v.(type) {
+	case string:
+		return textclean.Terminal(t)
+	case []string:
+		out := make([]string, len(t))
+		for i, s := range t {
+			out[i] = textclean.Terminal(s)
+		}
+		return out
+	}
+	return v
+}
+
+// asSeeded is v, or the seed it was prefilled with when the box still shows
+// nothing but that seed's display spelling.
+//
+// The box holds shown(seed), and an answer is read back from the box — so a
+// record holding a bidi isolate, which i18n stacks insert on their own, came
+// back as its backslash-u spelling, and saving an edit form nobody touched
+// rewrote the note's title into text it never held. A box that still reads
+// exactly as it was seeded is the record's value, unchanged, and hands that
+// back. Only when cleaning changed the seed: otherwise the box already holds
+// it, and the answer keeps the type the field reads it as.
+func (cf *capForm) asSeeded(f plugin.Field, v any) any {
+	seed, ok := cf.seed[f.Name]
+	if !ok {
+		return v
+	}
+	switch t := seed.(type) {
+	case string:
+		if disp := textclean.Terminal(t); disp != t && seedString(disp) == seedString(v) {
+			return strings.TrimSpace(t)
+		}
+	case []string:
+		disp, _ := shown(t).([]string)
+		if !slices.Equal(disp, t) && seedString(disp) == seedString(v) {
+			out := make([]string, len(t))
+			for i, s := range t {
+				out[i] = strings.TrimSpace(s)
+			}
+			return out
+		}
+	}
+	return v
 }
 
 // hasInputs reports whether opening this capability warrants a form: any
@@ -393,12 +449,9 @@ func newCapForm(c plugin.Capability, fs []plugin.Field, defaults map[string]any,
 		if v, ok := defaults[f.Name]; ok {
 			// A Prefill default is a runtime value — the record's current
 			// contents — and replaces the declared one that Validate checked.
-			// Cleaned here, once, rather than at each of the six places a
-			// default is turned into a string for a widget.
-			if str, ok := v.(string); ok {
-				v = textclean.Terminal(str)
-			}
-			f.Default = v
+			// The widget gets its display spelling; cf.seed keeps the value,
+			// which is what an untouched box hands back (asSeeded).
+			f.Default = shown(v)
 		}
 		// A closed set is a list to pick from, not a string to spell. This is
 		// the surface where that difference is free: nothing invalid can be
@@ -795,10 +848,19 @@ func candidateValues(f plugin.Field, ctx context.Context, req plugin.Request) []
 	// Suggest runs at form time and returns whatever is out there right now —
 	// tags from a store, hostnames from a file, keys somebody else wrote. It
 	// never passes through Validate, which only sees the declaration, so this
-	// is the one place those strings can be cleaned.
+	// is the one place those strings can be looked at.
+	//
+	// One that would display as something other than what it is is dropped,
+	// not cleaned: a suggestion is typed into the box as it is offered, so a
+	// cleaned one is a different value — an s3 key holding an override was
+	// offered as its backslash-u spelling, and accepting it removed or wrote
+	// a key that was never there. internal/recent keeps the same rule for
+	// the same reason, and a value like that can still be typed.
 	values := make([]string, 0, len(raw))
 	for _, entry := range raw {
-		values = append(values, textclean.Terminal(plugin.CandidateValue(entry)))
+		if v := plugin.CandidateValue(entry); !textclean.Deceives(v) {
+			values = append(values, v)
+		}
 	}
 	return values
 }
@@ -1104,7 +1166,7 @@ func (cf *capForm) values() map[string]any {
 		if !given || cf.displayed(f, v) {
 			continue
 		}
-		out[f.Name] = v
+		out[f.Name] = cf.asSeeded(f, v)
 	}
 	return out
 }

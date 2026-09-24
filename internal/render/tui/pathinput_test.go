@@ -97,6 +97,32 @@ func TestDeclaredCandidatesComeFirst(t *testing.T) {
 	}
 }
 
+// Every path offered names a file that is there. A name holding an override
+// used to be offered as its backslash-u spelling, which names nothing.
+func TestEveryPathSuggestionNamesAFileThatExists(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{
+		"invoice" + string(rune(0x202e)) + "fdp.exe",
+		"invoice-plain.txt",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := pathSuggestions(filepath.Join(dir, "inv"), nil)
+	if len(got) == 0 {
+		t.Fatal("no suggestions at all")
+	}
+	for _, p := range got {
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("suggested %q, which is not there: %v", p, err)
+		}
+		if strings.ContainsRune(p, 0x202e) {
+			t.Errorf("suggested %q, which displays as another name", p)
+		}
+	}
+}
+
 // A path that does not exist yet is an output file, not a mistake.
 func TestUnknownDirectoryIsNotAnError(t *testing.T) {
 	if got := pathSuggestions("/definitely/not/here/x", nil); len(got) != 0 {

@@ -123,6 +123,9 @@ type Model struct {
 	// as somebody else's (syncDashboard).
 	dashOnDisk string
 	tiles      []tile
+	// tileRaw is what each tile's capability last returned, by rawKey,
+	// beside the cleaned copy the tile itself holds — see asReturned.
+	tileRaw    map[string]returned
 	dash       config.Dashboard // the arrangement, edited in place and saved
 	selected   int              // selected dashboard tile
 	scroll     int              // first visible dashboard tile row
@@ -451,8 +454,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// screen came from the sanitised copy and the row's identity came
 			// from the raw one. A tile is a view with a dashboard action
 			// attached; the second reader is a matter of time.
+			//
+			// And what the capability returned is kept beside it, for the
+			// reasons resultMsg.cleaned gives: cli.Render, which draws the
+			// panel and cleans its own copy, and the copy key, which hands
+			// over the record's value rather than its display spelling.
+			// Rebuilt rather than written into, so a copy of the model
+			// taken before this answer does not see it — the rest of Model
+			// is a value too — and so a tile that has left the dashboard
+			// does not keep its last answer in memory for the session.
 			m.tiles[idx].view = view.MapStrings(msg.v, textclean.Terminal)
 			m.tiles[idx].err = view.MapErrorStrings(msg.err, textclean.Terminal)
+			raw := make(map[string]returned, len(m.tiles))
+			for _, t := range m.tiles {
+				if r, ok := m.tileRaw[rawKey(t)]; ok {
+					raw[rawKey(t)] = r
+				}
+			}
+			raw[rawKey(m.tiles[idx])] = returned{view: msg.v, err: msg.err}
+			m.tileRaw = raw
 			// An answer sets its row's height, which sets how many rows fit —
 			// the one thing clampScroll exists to keep honest, and the one
 			// mutation of it that used to skip the call. Unconditional:
@@ -560,14 +580,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// the terminal verbatim — a live link with attacker-chosen text and
 		// target, inside rta's panel border, in rta's voice.
 		//
-		// Worse than a display bug: runAction takes a row's identity from
-		// m.result.view while the cell on screen came from the sanitised copy,
-		// so what was shown and what was acted on were different strings by
-		// construction. Cleaning at ingress makes them the same string instead
-		// of making two readers agree, which is the version that stays true
-		// when a third is added.
-		msg.view = view.MapStrings(msg.view, textclean.Terminal)
-		msg.err = view.MapErrorStrings(msg.err, textclean.Terminal)
+		// The view the capability returned is kept beside the cleaned one,
+		// for everything that acts on the record rather than drawing it —
+		// see resultMsg.cleaned. The error is not cleaned here: the one
+		// thing that draws it is cli.RenderError, which cleans its own copy.
+		msg = msg.cleaned()
 		// A mutating action finished cleanly: flash its outcome and return
 		// to the view it was launched from, reloaded. If it destroyed that
 		// view's subject (removing the very task whose page we were on),

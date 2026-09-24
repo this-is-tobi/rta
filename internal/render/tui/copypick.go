@@ -7,6 +7,7 @@ import (
 	huh "charm.land/huh/v2"
 	"charm.land/lipgloss/v2"
 
+	"github.com/this-is-tobi/rta/internal/textclean"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -25,7 +26,7 @@ import (
 //
 // Reachable from two places: a result already open (modeResult) and a
 // tile's own preview on the dashboard, without opening it first — the
-// values are the same either way (m.result.view and a tile's own view are
+// values are the same either way (m.result.raw and a tile's own view are
 // both just a view.View), so one picker serves both. What differs is where
 // "done" goes back to, which is why the capability and the return mode
 // travel with the form rather than being read off m.current/m.origin: a
@@ -49,7 +50,9 @@ func newCopyPickForm(values []string, cap plugin.Capability, returnTo mode) *cop
 	cp := &copyPickForm{cap: cap, returnTo: returnTo}
 	opts := make([]huh.Option[string], len(values))
 	for i, v := range values {
-		opts[i] = huh.NewOption(fmt.Sprintf("%d: %s", i+1, v), v)
+		// values come from the view as its capability returned it, so the
+		// clipboard gets the value; the label is drawn, so it is cleaned.
+		opts[i] = huh.NewOption(fmt.Sprintf("%d: %s", i+1, textclean.Terminal(v)), v)
 	}
 	cp.form = huh.NewForm(huh.NewGroup(
 		huh.NewSelect[string]().
@@ -60,9 +63,9 @@ func newCopyPickForm(values []string, cap plugin.Capability, returnTo mode) *cop
 	return cp
 }
 
-// startCopyPick opens the picker for spec against v — m.result.view from
-// modeResult, or a tile's own view from the dashboard. cap is whichever
-// capability v belongs to, for the panel head.
+// startCopyPick opens the picker for spec against v — m.result.raw from
+// modeResult, or a tile's own view as its capability returned it from the
+// dashboard. cap is whichever capability v belongs to, for the panel head.
 func (m Model) startCopyPick(spec copySpec, cap plugin.Capability, v view.View, returnTo mode) (tea.Model, tea.Cmd) {
 	values, ok := copyChoices(spec, v)
 	if !ok {

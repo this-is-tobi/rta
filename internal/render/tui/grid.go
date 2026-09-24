@@ -11,6 +11,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/render/cli"
 	"github.com/this-is-tobi/rta/internal/render/theme"
 	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // Laying the dashboard out and painting it: how tiles become rows and
@@ -187,7 +188,7 @@ func (m Model) rowHeights() []int {
 	for _, row := range rows {
 		h := tileMinHeight
 		for _, i := range row {
-			h = max(h, tileRowHeight(m.tiles[i], m.tileWidth(i)))
+			h = max(h, tileRowHeight(m.asReturned(i), m.tileWidth(i)))
 		}
 		heights = append(heights, h)
 	}
@@ -401,6 +402,59 @@ func (m *Model) moveSelection(dx, dy int) {
 	m.selected = rows[target][min(col, len(rows[target])-1)]
 }
 
+// returned is what a tile's capability handed back, before cleaning.
+type returned struct {
+	view view.View
+	err  *view.Error
+}
+
+// rawKey names a tile in Model.tileRaw: its key and the values it runs with.
+// The key alone is not a tile's identity — a config listing obj.get twice,
+// once per host, holds two tiles of one key (tileIndexFor says so), and
+// keyed by it alone each panel drew whichever host had answered last.
+// fmt prints a map with its keys sorted, so equal values name one tile.
+func rawKey(t tile) string { return t.key() + "\x00" + fmt.Sprint(t.values) }
+
+// asReturned is tile i carrying what its capability returned in place of the
+// cleaned copy the tile holds, for cli.Render, which draws the panel and
+// cleans its own. A tile with nothing on it yet is left as it is, whatever an
+// earlier tile of the same name once returned: it is drawn as loading.
+//
+// A tile can hold an answer with nothing returned kept for its inputs:
+// rebuildTiles carries a panel over by its key alone, so an entry edited in
+// another terminal keeps the answer to its old inputs, and what its
+// capability returned stays filed under those. That tile is drawn from its
+// cleaned copy, which is safe — Terminal gives the same answer twice, so
+// cleaning it again changes nothing — and drawing is all the fallback is
+// safe for. Anything that hands a value on reads tileReturned, which has no
+// fallback.
+func (m Model) asReturned(i int) tile {
+	t := m.tiles[i]
+	if t.view == nil && t.err == nil {
+		return t
+	}
+	if r, ok := m.tileRaw[rawKey(t)]; ok {
+		t.view, t.err = r.view, r.err
+	}
+	return t
+}
+
+// tileReturned is the view tile i's capability returned for the inputs the
+// tile runs with, and nil while it holds none — for the copy key, which puts
+// a value on the clipboard, and the footer's offer of it. The cleaned copy
+// asReturned falls back to is a display spelling: a password holding an
+// override would be copied as the backslash-u escape Terminal writes for
+// it, a string that was never the password. Nothing to copy until the tile
+// answers again is the honest answer, and the footer says so by offering
+// nothing.
+func (m Model) tileReturned(i int) view.View {
+	t := m.tiles[i]
+	if t.view == nil && t.err == nil {
+		return nil
+	}
+	return m.tileRaw[rawKey(t)].view
+}
+
 // tileContentLines renders one tile's body at width, full length — the
 // natural content driving both how tall its row needs to be (tileRowHeight)
 // and what renderTile then clamps to whatever height that row settled on.
@@ -560,7 +614,7 @@ func (m Model) dashFooterItems() []hintItem {
 		for _, a := range m.offeredTileActions(m.selected) {
 			items = append(items, action(a.key, a.label))
 		}
-		if hint, ok := copyHint(t.cap, t.view); ok {
+		if hint, ok := copyHint(t.cap, m.tileReturned(m.selected)); ok {
 			items = append(items, hint)
 		}
 		if t.withdraws() {
@@ -674,7 +728,7 @@ func (m Model) dashboardView() string {
 				// divides by.
 				parts = append(parts, " ")
 			}
-			parts = append(parts, renderTile(m.tiles[i], m.tileWidth(i), heights[r-first], i == m.selected))
+			parts = append(parts, renderTile(m.asReturned(i), m.tileWidth(i), heights[r-first], i == m.selected))
 		}
 		rendered = append(rendered, lipgloss.JoinHorizontal(lipgloss.Top, parts...))
 	}

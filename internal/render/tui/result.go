@@ -12,6 +12,7 @@ import (
 
 	"github.com/this-is-tobi/rta/internal/render/cli"
 	"github.com/this-is-tobi/rta/internal/render/theme"
+	"github.com/this-is-tobi/rta/internal/textclean"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -23,13 +24,42 @@ import (
 // resultMsg carries a finished capability run back into the update loop.
 // Rendering happens at paint time so results adapt to the current width.
 type resultMsg struct {
-	cap     plugin.Capability
-	view    view.View // for copy-as-JSON and re-rendering; nil on error
+	cap plugin.Capability
+	// view is what the screen shows, nil on error: once the result has
+	// arrived (cleaned), every string in it has been through
+	// textclean.Terminal, and it is what anything the TUI draws itself reads.
+	view view.View
+	// raw is the view as the capability returned it — see cleaned.
+	raw     view.View
 	elapsed time.Duration
-	err     *view.Error
+	// err is the capability's own, never cleaned here: the one thing that
+	// draws it is cli.RenderError, which cleans its own copy.
+	err *view.Error
 	// seq identifies the run this result belongs to. A result from a run the
 	// user walked away from must not appear over whatever they walked to.
 	seq int
+}
+
+// cleaned is r as it arrives on screen: view cleaned once, for everything the
+// TUI draws itself, and the view the capability returned kept beside it as
+// raw.
+//
+// Two copies, because two different readers. Cleaning at ingress made the
+// cell on screen and the value an action used one string, which fixed a row
+// action acting on something other than what was shown — by acting on the
+// display spelling instead. A key holding a bidi isolate, which i18n stacks
+// insert on their own, reached kv.get as its backslash-u spelling, a key
+// that does not exist; an edit form prefilled from a note handed its title
+// back escaped, so saving without touching it rewrote the note. So a row
+// action, a copy and `y` read raw — the record's own value — and the pane
+// reads raw too, because cli.Render cleans its own copy and a string is
+// cleaned once on its way to the screen, not once per layer. What is left
+// for view is the TUI's own drawing around the pane: the meta line's section
+// titles, a flashed one-liner.
+func (r resultMsg) cleaned() resultMsg {
+	r.raw = r.view
+	r.view = view.MapStrings(r.view, textclean.Terminal)
+	return r
 }
 
 // warningsBlock renders a page's degradations beneath its content, in the
@@ -48,8 +78,8 @@ func (m *Model) renderResult() {
 	switch {
 	case m.result.err != nil:
 		_ = cli.RenderError(&buf, m.result.err, opts)
-	case m.result.view != nil:
-		if err := cli.Render(&buf, m.result.view, opts); err != nil {
+	case m.result.raw != nil:
+		if err := cli.Render(&buf, m.result.raw, opts); err != nil {
 			_ = cli.RenderError(&buf, view.AsError(err, "core.render.failed"), opts)
 		}
 	}
@@ -422,7 +452,7 @@ func (m Model) actionSeed(a capAction, tbl view.Table) (map[string]any, bool) {
 	case srcSelf:
 		// The page already knows its subject: a seeded key from the line the
 		// page shows under that name, the rest from the identity it ran with.
-		if kv, ok := m.result.view.(view.KeyValue); ok {
+		if kv, ok := m.result.raw.(view.KeyValue); ok {
 			for _, f := range keys {
 				if key := a.seed[f.Name]; key != "" {
 					if raw := pairNamed(kv, key); raw != "" {

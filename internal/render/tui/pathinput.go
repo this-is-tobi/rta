@@ -42,10 +42,14 @@ func pathSuggestions(typed string, declared []string) []string {
 	seen := map[string]bool{}
 	// Filenames are somebody else's data: a directory entry can be named
 	// anything the filesystem accepts, escape sequences included, and these
-	// are drawn straight into the completion list.
+	// are drawn straight into the completion list. One that would display as
+	// something other than what it is is left out rather than cleaned, for
+	// candidateValues' reason: cleaned, a file holding an override was
+	// offered as its backslash-u spelling, a path that does not exist — or,
+	// beside a file literally named that way, merged with it into one entry
+	// naming the wrong file.
 	add := func(s string) {
-		s = textclean.Terminal(s)
-		if s != "" && !seen[s] {
+		if s != "" && !textclean.Deceives(s) && !seen[s] {
 			seen[s] = true
 			out = append(out, s)
 		}
