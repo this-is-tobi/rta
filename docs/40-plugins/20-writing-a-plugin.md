@@ -231,6 +231,8 @@ p.AddAs("stations", "nearby stations", listStations, nil)
 
 It is optional — `Put` and `Add` work, and `Key()` falls back to the title — but then rewording a heading silently renames the handle. `sdktest` says so.
 
+If your plugin **returns bytes somebody else wrote** — an object's content, a response body, a value from a store — check them with `format.PlainText` before handing them back as `view.Text`, and show the ones that are not text with `format.Dump`. Every renderer strips control characters on the way to a terminal, which is what keeps an escape sequence in the data from acting there, and also why a binary value printed as it came shows up as a blank line or a few stray letters. `format.Dump` lays the bytes out the way `hexdump -C` does, bounded to a limit you pick, and `format.Truncate` cuts long text without splitting a character. [`pkg/format`](../../pkg/format/) is also where byte counts, durations and plurals come from, so every plugin says them the same way.
+
 If your plugin **grades** something — a realm's authentication settings, a repository's release hygiene — build the result with [`pkg/findings`](../../pkg/findings/) rather than a table of your own. A `findings.Report` collects one finding per check, each carrying a status, a group and the control it cites (an OWASP Top 10:2025 category with its CWE, or a named framework and control with a link to where it is read), and renders the same two ways `rta audit` does: `Table(true)` for the compact view and the tile, `Page` for the sectioned detail page with the references at the end. A reader who has run one audit can read yours, and the citation discipline comes with the type: verify every reference against its primary source before shipping it, because a wrong control reads as authoritative.
 
 ## Publishing it
@@ -321,5 +323,6 @@ Read them in this order and each one adds exactly one idea:
 
 - [`rta explain <capability>`](../20-using/10-cli.md#rta-explain) — the authoritative card for any capability, generated from the declaration itself. The fastest way to check what rta made of yours.
 - [`pkg/plugin`](../../pkg/plugin/) and [`pkg/view`](../../pkg/view/) — the contract in code, with the reasoning in the doc comments.
+- [`pkg/format`](../../pkg/format/) — byte counts, durations, plurals, and bytes that may not be text, said the way every other capability says them.
 - [`pkg/findings`](../../pkg/findings/) — the graded-check report an audit returns, rendered the way `rta audit` renders its own.
 - [`pkg/sdk/sdktest`](../../pkg/sdk/sdktest/) — the conformance suite your plugin should pass.

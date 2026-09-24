@@ -17,7 +17,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/this-is-tobi/rta/builtin/internal/bytesview"
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -209,13 +209,13 @@ func runURL(_ context.Context, req plugin.Request) (view.View, error) {
 }
 
 // decoded is what a decode shows: the text when it is plain text, a dump of
-// every byte when it is not — see bytesview for why printing them as they came
+// every byte when it is not — see format.PlainText for why printing them as they came
 // showed nothing.
 func decoded(raw []byte) view.View {
-	if bytesview.PlainText(raw) {
+	if format.PlainText(raw) {
 		return view.Text{Body: string(raw)}
 	}
-	return view.Text{Body: bytesview.Dump(raw, maxDump)}
+	return view.Text{Body: format.Dump(raw, maxDump)}
 }
 
 // maxDump bounds a dump. Past it the bytes are a file somebody wants on disk,

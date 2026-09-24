@@ -204,13 +204,13 @@ func TestConnectionFailureIsCoded(t *testing.T) {
 
 func TestBodyTruncation(t *testing.T) {
 	big := strings.Repeat("x", 10000)
-	out := formatBody([]byte(big), "text/plain")
+	out := formatBody([]byte(big), "text/plain", false)
 	if len(out) >= 10000 || !strings.Contains(out, "more bytes") {
 		t.Error("large body not truncated")
 	}
 	// A cut at a byte offset could land inside a character; it must not.
 	accented := strings.Repeat("é", 3000) // two bytes each
-	if out := formatBody([]byte(accented), "text/plain"); !utf8.ValidString(out) {
+	if out := formatBody([]byte(accented), "text/plain", false); !utf8.ValidString(out) {
 		t.Error("truncation split a character")
 	}
 }
@@ -220,10 +220,43 @@ func TestBodyTruncation(t *testing.T) {
 // it through map[string]any changed the id, sorted the keys and escaped the
 // ampersand.
 func TestAJSONBodyIsShownAsTheServerSentIt(t *testing.T) {
-	got := formatBody([]byte(`{"zeta":1,"id":9007199254740993,"big":12345678901234567890,"q":"a&b<c>"}`), "application/json")
+	got := formatBody([]byte(`{"zeta":1,"id":9007199254740993,"big":12345678901234567890,"q":"a&b<c>"}`+"\n"), "application/json", false)
 	want := "{\n  \"zeta\": 1,\n  \"id\": 9007199254740993,\n  \"big\": 12345678901234567890,\n  \"q\": \"a&b<c>\"\n}"
 	if got != want {
 		t.Errorf("body =\n%s\nwant\n%s", got, want)
+	}
+}
+
+// Text a renderer shows is text here: a right-to-left page with its marks, an
+// RFC with its page breaks, a JSON body behind a byte order mark, and a body
+// of Japanese cut by the 1 MiB cap partway through a character. Each was
+// dumped as 256 bytes of hex. Characters are planted by code point: a source
+// file may not hold an invisible one (internal/textclean's source guard).
+func TestTextIsShownAsText(t *testing.T) {
+	rlm := string(rune(0x200f))
+	cjk := strings.Repeat("日本語", maxBody/9+1000)
+	for name, tc := range map[string]struct {
+		contentType, body, want string
+	}{
+		"rtl page":      {"text/html", "<p>שלום" + rlm + " (1)</p>", "שלום" + rlm},
+		"form feed":     {"text/plain", "page one\fpage two", "page two"},
+		"bom json":      {"application/json", "\xef\xbb\xbf" + `{"ok":true}`, "{\n  \"ok\": true\n}"},
+		"cut mid-rune":  {"text/plain", cjk, "日本語日本語"},
+		"cut json text": {"application/json", `{"a":"` + cjk + `"}`, `{"a":"日本語`},
+	} {
+		srv := httptest.NewServer(stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, _ *stdhttp.Request) {
+			w.Header().Set("Content-Type", tc.contentType)
+			w.Write([]byte(tc.body))
+		}))
+		v, err := doRequest(context.Background(), "GET", req(map[string]any{"url": srv.URL}))
+		srv.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		body := pairsOf(t, v)["body"]
+		if strings.Contains(body, "not plain text") || !strings.Contains(body, tc.want) {
+			t.Errorf("%s: body = %.200q, want text holding %q", name, body, tc.want)
+		}
 	}
 }
 
@@ -231,7 +264,7 @@ func TestAJSONBodyIsShownAsTheServerSentIt(t *testing.T) {
 // dumped rather than printed, which showed a few stray letters.
 func TestABinaryBodyIsDumped(t *testing.T) {
 	png := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 0, 0, 0, 0x0d}
-	got := formatBody(png, "image/png")
+	got := formatBody(png, "image/png", false)
 	if !strings.HasPrefix(got, "12 bytes, not plain text:\n00000000  89 50 4e 47") {
 		t.Errorf("body = %q", got)
 	}

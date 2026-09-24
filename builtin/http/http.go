@@ -15,8 +15,9 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
-	"github.com/this-is-tobi/rta/builtin/internal/bytesview"
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -276,7 +277,8 @@ func doRequest(ctx context.Context, method string, req plugin.Request) (view.Vie
 	// 5 MB body cut to 1 MiB is a partial answer nobody could tell apart
 	// from a complete one. HEAD never has a body to cut — 0 bytes is by
 	// design, not truncation — so it is excluded rather than flagged.
-	if method != stdhttp.MethodHead && bodyWasTruncated(resp, len(bodyBytes)) {
+	truncated := method != stdhttp.MethodHead && bodyWasTruncated(resp, len(bodyBytes))
+	if truncated {
 		sizeValue += " (truncated, showing first 1 MiB)"
 	}
 	pairs = append(pairs,
@@ -284,7 +286,8 @@ func doRequest(ctx context.Context, method string, req plugin.Request) (view.Vie
 		view.Pair{Key: "size", Value: sizeValue},
 	)
 	if len(bodyBytes) > 0 && method != stdhttp.MethodHead {
-		pairs = append(pairs, view.Pair{Key: "body", Value: formatBody(bodyBytes, resp.Header.Get("Content-Type"))})
+		pairs = append(pairs, view.Pair{Key: "body",
+			Value: formatBody(bodyBytes, resp.Header.Get("Content-Type"), truncated)})
 	}
 	return view.KeyValue{Pairs: pairs}, nil
 }
@@ -342,11 +345,25 @@ func bodyWasTruncated(resp *stdhttp.Response, captured int) bool {
 // debugging client that shows a response other than the one it received has
 // failed at the one thing it is for. json.Indent changes whitespace and
 // nothing else.
-func formatBody(body []byte, contentType string) string {
+//
+// Two things either side of it. A byte order mark, which .NET and IIS put
+// before their JSON, is not JSON, so Indent refused the body and it fell
+// through to the text path unindented; it goes. And the newline almost every
+// server ends a body with is trailing space Indent copies, which the layout
+// drew as a last line of indentation alone; it goes too.
+//
+// truncated says body is the first maxBody bytes of a longer response. That
+// cut is at a byte offset, so past the cap any text that is not ASCII almost
+// always ends partway through a character — and a megabyte of Japanese was
+// dumped as bytes that are not UTF-8. The fragment is dropped before asking.
+func formatBody(body []byte, contentType string, truncated bool) string {
+	if truncated {
+		body = withoutPartialRune(body)
+	}
 	if strings.Contains(contentType, "json") {
 		var pretty bytes.Buffer
-		if json.Indent(&pretty, body, "", "  ") == nil {
-			return pretty.String()
+		if json.Indent(&pretty, bytes.TrimPrefix(body, utf8BOM), "", "  ") == nil {
+			return strings.TrimRight(pretty.String(), " \t\r\n")
 		}
 	}
 	const maxShown = 4096
@@ -355,10 +372,27 @@ func formatBody(body []byte, contentType string) string {
 	// no further in a response view, so its dump is sixteen lines, not the
 	// 256 the text limit would give it.
 	const maxDumped = 256
-	if !bytesview.PlainText(body) {
-		return bytesview.Dump(body, maxDumped)
+	if !format.PlainText(body) {
+		return format.Dump(body, maxDumped)
 	}
-	return bytesview.Truncate(string(body), maxShown)
+	return format.Truncate(string(body), maxShown)
+}
+
+var utf8BOM = []byte("\xef\xbb\xbf")
+
+// withoutPartialRune drops the start of a character cut off at the end of b,
+// and leaves b as it is when its last character is whole — or is not UTF-8
+// at all, which is for PlainText to say.
+func withoutPartialRune(b []byte) []byte {
+	for i := len(b) - 1; i >= 0 && i > len(b)-utf8.UTFMax; i-- {
+		if utf8.RuneStart(b[i]) {
+			if utf8.FullRune(b[i:]) {
+				return b
+			}
+			return b[:i]
+		}
+	}
+	return b
 }
 
 // suggestHeaders offers the request headers people actually set by hand,
