@@ -1,10 +1,15 @@
 package tui
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+
+	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // D2: a run refused before it ever starts — resolveProfile failing on a
@@ -71,4 +76,30 @@ func TestARefreshInPlaceResolveFailureStillReschedulesTheNextTick(t *testing.T) 
 	// property under test) already happened synchronously above, and
 	// waiting out a real interval would make this test as slow as the
 	// interval it is testing around.
+}
+
+// A value the operator's config supplies and the host's guard refuses is
+// refused as the config's on both paths here that run a handler, a run and a
+// tile. Built with plugin.Resolve, neither request knew where the value came
+// from, and a tile refreshing every few seconds refused a flag nobody typed.
+func TestARefusedConfigValueNamesTheKeyItCameFrom(t *testing.T) {
+	c := plugin.Capability{ID: "demo.encode", Summary: "encodes", Safety: plugin.Read,
+		Inputs: []plugin.Field{{Name: "encoding", Type: plugin.String, Default: "hex", Config: "encoding",
+			Options: []string{"hex", "base32"}, Help: "encoding"}},
+		Run: func(_ context.Context, req plugin.Request) (view.View, error) {
+			return view.Text{Body: req.String("encoding")}, nil
+		},
+	}
+	c.Run = plugin.GuardInputs(c)
+	cfg := map[string]any{"encoding": "b64"}
+	const want = "which the config's plugins.demo.encoding sets"
+
+	rm := runCmd(context.Background(), 1, c, nil, false, cfg, "", nil, config.Connection{}, false)().(resultMsg)
+	if rm.err == nil || !strings.Contains(rm.err.Message, want) {
+		t.Errorf("run: %+v", rm.err)
+	}
+	tm := tileCmd(0, tile{cap: c}, cfg, "", nil, config.Connection{})().(tileMsg)
+	if tm.err == nil || !strings.Contains(tm.err.Message, want) {
+		t.Errorf("tile: %+v", tm.err)
+	}
 }

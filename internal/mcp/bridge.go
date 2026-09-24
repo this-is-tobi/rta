@@ -497,12 +497,12 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 			}
 		}
 		started := time.Now()
-		v, err := c.Run(ctx, plugin.NewRequest(plugin.Resolve(c, plugin.Inputs{
+		v, err := c.Run(ctx, plugin.ResolveRequest(c, plugin.Inputs{
 			Caller:      values,
 			Profile:     filled,
 			ProfileName: profileName,
 			Config:      opts.pluginConfig(c),
-		}), false, true).WithSurface(plugin.SurfaceMCP).
+		}, false, true).WithSurface(plugin.SurfaceMCP).
 			// The same guard the arguments went through, carried into the
 			// handler for the paths it derives from them rather than
 			// receives. checkPaths cannot see those: it walks the declared

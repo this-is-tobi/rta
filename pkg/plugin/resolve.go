@@ -65,10 +65,12 @@ type Inputs struct {
 // not recognise, so it returned 0 — again silently, and again only on the
 // surface that reads config.
 //
-// Every surface that runs a handler calls this, or ResolveRequest, which is
-// this with a note of where the operator's values came from for the one
-// reader that has to say so. Nothing downstream has to know which of the
-// values were declared or defaulted.
+// Every surface that runs a handler builds its request with ResolveRequest,
+// which is this with a note of where the operator's values came from for the
+// one reader that has to say so; this alone is for the readers that run
+// nothing — completion, a form's seed, dashboard add's check of what it is
+// about to write. Nothing downstream has to know which of the values were
+// declared or defaulted.
 //
 // Precedence is caller, then profile, then the namespace-wide environment
 // fallback, then config, then Default. A handler reads req.String("host") and
@@ -86,7 +88,10 @@ func Resolve(c Capability, in Inputs) map[string]any {
 // was addressed to a flag nobody typed (see CheckInputs' fromSource).
 //
 // A surface that runs a handler builds its request with this rather than
-// NewRequest(Resolve(...)); the two carry the same values.
+// NewRequest(Resolve(...)); the two carry the same values. Written the
+// second way, the note was dropped with no sign: every surface did that
+// when this first existed, so the readdressed refusal it carries was
+// reached by no call at all.
 func ResolveRequest(c Capability, in Inputs, dryRun, yes bool) Request {
 	values, from := resolve(c, in)
 	req := NewRequest(values, dryRun, yes)

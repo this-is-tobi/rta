@@ -679,6 +679,43 @@ func TestCallToolErrorCarriesCodeAndHint(t *testing.T) {
 	}
 }
 
+// A value the operator's config supplies and the host's guard refuses is
+// refused as the operator's. Built with plugin.Resolve, the request carried
+// no note of where the value came from, and the agent was refused
+// `encoding` "not "b64"" as if it had sent it — with nothing saying the
+// value is the operator's to change, or that an argument of its own would
+// step round it.
+func TestARefusedConfigValueIsNamedAsTheOperators(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	reg := registry.New()
+	// No Default: the bridge fills a declared default in as the caller's
+	// value, which config then never beats.
+	if err := reg.Register(plugin.Plugin{Name: "demo", Summary: "demo", Capabilities: []plugin.Capability{{
+		ID: "demo.encode", Summary: "encodes", Safety: plugin.Read,
+		Inputs: []plugin.Field{{Name: "encoding", Type: plugin.String, Config: "encoding",
+			Options: []string{"hex", "base32"}, Help: "encoding"}},
+		Run: func(_ context.Context, req plugin.Request) (view.View, error) {
+			return view.Text{Body: req.String("encoding")}, nil
+		},
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	s := connectWith(t, reg, Options{Config: func(string) map[string]any {
+		return map[string]any{"encoding": "b64"}
+	}})
+	res := callTool(t, s, "demo_encode", nil)
+	text := res.Content[0].(*sdk.TextContent).Text
+	if !res.IsError || !strings.Contains(text, "core.input.option") ||
+		!strings.Contains(text, "which the config's plugins.demo.encoding sets") ||
+		!strings.Contains(text, "the operator can change it") {
+		t.Errorf("refusal = %s", text)
+	}
+	// The argument the hint names does override it.
+	if res := callTool(t, s, "demo_encode", map[string]any{"encoding": "base32"}); res.IsError {
+		t.Errorf("the caller's own value was refused: %+v", res.Content)
+	}
+}
+
 // A panic anywhere in a capability's Run must cost that one call, not the
 // whole server: go-sdk dispatches each tools/call in its own unrecovered
 // goroutine, so nothing upstream of handler() catches it on its own — every

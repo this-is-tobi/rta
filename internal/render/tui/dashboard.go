@@ -804,9 +804,9 @@ func tileCmd(idx int, t tile, cfg map[string]any, profileName string,
 			}
 			filled = merged
 		}
-		v, err := t.cap.Run(ctx, plugin.NewRequest(plugin.Resolve(t.cap, plugin.Inputs{
+		v, err := t.cap.Run(ctx, plugin.ResolveRequest(t.cap, plugin.Inputs{
 			Caller: t.values, Profile: filled, ProfileName: profileName, Config: cfg,
-		}), false, false).WithSurface(plugin.SurfaceTUI))
+		}, false, false).WithSurface(plugin.SurfaceTUI))
 		if err != nil {
 			if timed := deadlineHit(); timed != nil {
 				return tileMsg{key: key, idx: idx, err: timed}
