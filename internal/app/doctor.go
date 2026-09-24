@@ -407,11 +407,19 @@ func doctorSystemRoot(add func(check, status, detail string)) {
 }
 
 // Terminal.
+//
+// COLUMNS is named when it is set, because it moves every table's layout and
+// is set somewhere nobody looks: an export in a shell rc, a CI runner's
+// environment.
 func doctorTerminal(add func(check, status, detail string)) {
+	shaped := ""
+	if w := columns(); w > 0 {
+		shaped = fmt.Sprintf(", shaped to COLUMNS=%d", w)
+	}
 	if isTTY() {
-		add("terminal", "ok", "stdout is a TTY — styled output enabled")
+		add("terminal", "ok", "stdout is a TTY — styled output enabled"+shaped)
 	} else {
-		add("terminal", "info", "stdout is piped — plain output")
+		add("terminal", "info", "stdout is piped — plain output"+shaped)
 	}
 }
 

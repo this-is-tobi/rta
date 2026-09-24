@@ -89,6 +89,9 @@ func run(t *testing.T, args ...string) result {
 		"RTA_KV_PASSPHRASE=",
 		"RTA_KV_IDENTITY=",
 		"NO_COLOR=1",
+		// Output is shaped to COLUMNS when it is set, and a developer's
+		// shell may export it; the expectations here are for a pipe.
+		"COLUMNS=",
 	)
 	var out, errBuf strings.Builder
 	cmd.Stdout, cmd.Stderr = &out, &errBuf

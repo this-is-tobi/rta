@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -1114,7 +1115,18 @@ func isTTY() bool {
 // (NoColor: ... || !isTTY()): a human at a terminal gets terminal-shaped
 // output, a pipe or a file gets bytes that do not depend on who ran the
 // command or how wide their window happened to be.
+//
+// COLUMNS, when it names a width a terminal could have (see columns), was
+// asked for by name and wins over both, as it does for Python's shutil and
+// the CLIs built on it. Without it `rta doctor | less` had no way to be
+// shaped at all: natural width left rows several hundred columns wide in a
+// pager that was eighty. Neither bash nor zsh exports it by default, so a
+// pipe stays unshaped unless somebody wrote `COLUMNS=100` in front of the
+// command, which is the point.
 func termWidth() int {
+	if w := columns(); w > 0 {
+		return w
+	}
 	if !isTTY() {
 		return 0
 	}
@@ -1124,3 +1136,22 @@ func termWidth() int {
 	}
 	return w
 }
+
+// columns is the width COLUMNS asks for, or 0 when it asks for none.
+//
+// Bounded at maxColumns, the widest a terminal can report: TIOCGWINSZ
+// carries the column count in an unsigned 16-bit field, so while the width
+// came only from the terminal it could not be larger. COLUMNS has no such
+// limit, and the renderer spends width on padding — every section heading is
+// a rule drawn out to the margin — so COLUMNS=1000000 turned a 174-byte
+// codec.jwt answer into nine megabytes, and a value near 1e10 would ask for
+// tens of gigabytes. A value past what any terminal could hold is no request
+// at all, the same as one that is not a number.
+func columns() int {
+	if w, err := strconv.Atoi(os.Getenv("COLUMNS")); err == nil && w > 0 && w <= maxColumns {
+		return w
+	}
+	return 0
+}
+
+const maxColumns = math.MaxUint16
