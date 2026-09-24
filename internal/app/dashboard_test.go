@@ -41,6 +41,19 @@ func TestDashboardAddWritesAnEntryAndTheTUIDrawsIt(t *testing.T) {
 	}
 }
 
+// An option typed in another case runs as the declared spelling, and profile
+// set writes it that way; dashboard add wrote it as typed, so the file and
+// `dashboard list` showed a spelling the declaration does not have.
+func TestDashboardAddWritesAnOptionTheWayItIsDeclared(t *testing.T) {
+	run := session(t, setRegistry(t))
+	if _, errOut, err := run("dashboard", "add", "db.status", "--set", "sslmode=REQUIRE"); err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	if add := loadedConfig(t).Dashboard.Add; len(add) != 1 || add[0].With["sslmode"] != "require" {
+		t.Errorf("add = %+v, want sslmode written as require", add)
+	}
+}
+
 // Adding the same tile twice replaces it: a script that runs on every boot
 // leaves one tile, and the receipt says nothing changed when nothing did.
 func TestDashboardAddIsIdempotentPerKey(t *testing.T) {
@@ -99,6 +112,33 @@ func TestDashboardAddRefusesWhatATileCannotBe(t *testing.T) {
 	}
 	if _, err := os.Stat(config.Path()); err == nil {
 		t.Errorf("a refused add wrote %s", config.Path())
+	}
+}
+
+// codec.jwt's token stopped being Required so a pipe could supply it, and
+// `rta dashboard add codec.jwt` then wrote a tile answering "no token to
+// read" on every refresh: a tile reads no pipe, `--set` refuses a
+// credential, and no profile fills it. Refused as it was before, with a hint
+// that does not send the reader to a `--set` refusing the same thing, and
+// the card no longer offers the command.
+func TestDashboardAddRefusesACredentialATileCannotBeGiven(t *testing.T) {
+	reg, err := NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := session(t, reg)
+	for _, id := range []string{"codec.jwt", "codec.jwk"} {
+		_, errOut, err := run("dashboard", "add", id, "--dry-run")
+		if err == nil || !strings.Contains(errOut, "core.dashboard.needs") {
+			t.Errorf("%s: err = %v, output %q; want core.dashboard.needs", id, err, errOut)
+		}
+		if strings.Contains(errOut, "--set") && !strings.Contains(errOut, "a tile cannot be given") {
+			t.Errorf("%s: the hint points at --set: %q", id, errOut)
+		}
+		c, _ := reg.Capability(id)
+		if got := dashboardRow(reg, c).Value; !strings.Contains(got, "never a tile") {
+			t.Errorf("%s: card says %q, want never a tile", id, got)
+		}
 	}
 }
 

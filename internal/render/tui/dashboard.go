@@ -357,16 +357,32 @@ func previewable(c plugin.Capability) bool {
 // has no form to ask with, so one such input is the same "missing input"
 // error on every refresh forever; `rta dashboard add` and `+` in the TUI
 // both refuse it here rather than write it.
+//
+// And a positional credential nothing but the caller can give, required or
+// not. codec.jwt's token is not Required, because a pipe supplies it on the
+// CLI, and that was the whole of this check: `rta dashboard add codec.jwt`
+// wrote a tile answering "no token to read" on every refresh. A tile runs on
+// the TUI surface, where no pipe is read; `--set` refuses a credential,
+// since it would be written into the config in plaintext; and a profile
+// fills only what ProfileFillable allows. The subject of the call, with no
+// way in, is as missing as a required input.
 func MissingInputs(c plugin.Capability, with map[string]any, pinned bool) []string {
 	var missing []string
 	for _, f := range c.Inputs {
-		if !f.Required || f.Default != nil || f.Config != "" {
+		if f.Default != nil || f.Config != "" {
 			continue
 		}
 		if _, given := with[f.Name]; given {
 			continue
 		}
-		if pinned && plugin.ProfileFillable(c, f) {
+		fillable := plugin.ProfileFillable(c, f)
+		switch {
+		case f.Required:
+			if pinned && fillable {
+				continue
+			}
+		case f.Positional && f.Type.Sensitive() && !fillable:
+		default:
 			continue
 		}
 		missing = append(missing, f.Name)
