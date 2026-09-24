@@ -184,6 +184,14 @@ func runUsage(ctx context.Context, req plugin.Request) (view.View, error) {
 	if req.Bool("detail") {
 		return usageDetail(ctx, req, path, entries, total, s), nil
 	}
+	// An empty directory is the table with no rows, not a sentence saying it
+	// is empty. The handler cannot see the output format, so the sentence
+	// was what every format got: `-o json | jq '.rows[]'` met a text view it
+	// was never promised, and -o csv refused one and exited 2, the code for
+	// something unexpected, where the empty table prints its header and
+	// exits 0. profile list says it in words on a screen because it runs
+	// where the format is known; saying it here would take a field on the
+	// table that only the screen draws, not a different view.
 	t := usageTable(entries, total, req.Int("limit"))
 	// **The ranking and the total are built from what could be read, and the
 	// compact form never said so.** The detail page has reported `skipped`
