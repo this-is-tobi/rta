@@ -527,6 +527,41 @@ func TestAPEMKeyThatCannotBeUsedIsNamed(t *testing.T) {
 	}
 }
 
+// A server.pem is usually a certificate beside its encrypted private key, and
+// a key this cannot open used to refuse the whole bundle, in either order,
+// although the certificate beside it verifies. The key is passed over when
+// something else in the PEM can be used, and still named when nothing can.
+func TestACertificateBesideAKeyThatCannotBeOpenedVerifies(t *testing.T) {
+	key := rsaKey()
+	rs := sign(`{"alg":"RS256"}`, `{"sub":"a"}`, func(in []byte) []byte {
+		sig, err := rsa.SignPKCS1v15(rand.Reader, key, crypto.SHA256, sha256Of(in))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return sig
+	})
+	tmpl := &x509.Certificate{SerialNumber: big.NewInt(11), NotBefore: time.Now(), NotAfter: time.Now().Add(time.Hour)}
+	certDER, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert := pemOf(t, "CERTIFICATE", certDER)
+	sealed := []byte(strings.Repeat("sealed", 20))
+	for name, sealed := range map[string]string{
+		"PKCS#8 encrypted":    pemOf(t, "ENCRYPTED PRIVATE KEY", sealed),
+		"Proc-Type encrypted": procTypeEncrypted(t, sealed),
+		"OpenSSH":             pemOf(t, "OPENSSH PRIVATE KEY", sealed),
+	} {
+		t.Run(name, func(t *testing.T) {
+			mustVerify(t, rs, cert+sealed, "", "2048-bit RSA from PEM")
+			mustVerify(t, rs, sealed+cert, "", "2048-bit RSA from PEM")
+		})
+	}
+	encrypted := pemOf(t, "ENCRYPTED PRIVATE KEY", sealed)
+	mustRefuse(t, rs, encrypted, "", "codec.jwt.key", "it is encrypted: decrypt it first")
+	mustRefuse(t, rs, encrypted, "", "codec.jwt.key", "openssl pkey -in <key> -pubout")
+}
+
 // What codec.jwk says about a key used to stay behind when codec.jwt used
 // it: an x5c holding another key gave a bare VERIFIED, and key_ops limiting a
 // key to encryption was ignored where use enc was not.
@@ -543,6 +578,19 @@ func TestWhatIsWrongWithAKeyTravelsWithItsVerdict(t *testing.T) {
 	if verr != nil || strings.Contains(body, "About that key") {
 		t.Errorf("a key with nothing wrong: %q, %v", body, verr)
 	}
+	// A private key allowed to sign checks what it signs: WebCrypto exports
+	// every ECDSA and RSA signing key with key_ops ["sign"], and only its
+	// public half is used. A public key claiming to sign is still refused.
+	scalar, err := signing.Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := base64.RawURLEncoding.EncodeToString(scalar)
+	private := fmt.Sprintf(`{"kty":"EC","crv":"P-256","key_ops":["sign"],"x":%q,"y":%q,"d":%q}`, x, y, d)
+	mustVerify(t, token, private, "", "ES256 signature matches EC P-256")
+	mustVerify(t, token, `{"keys":[`+private+`]}`, "", "ES256 signature matches EC P-256")
+	mustRefuse(t, token, fmt.Sprintf(`{"kty":"EC","crv":"P-256","key_ops":["sign"],"x":%q,"y":%q}`, x, y), "",
+		"codec.jwt.nokey", "limited by key_ops to sign")
 }
 
 // A mismatch is worded with the key that was tried. It used to name the
