@@ -289,7 +289,7 @@ func (r *Resolver) Check(reg *registry.Registry) []Problem {
 			// Matched the way a run matches it, in any case: `BASE32` runs as
 			// base32, and a report calling it invalid sent the operator to
 			// fix a file every call already reads correctly.
-			for _, got := range optionValues(v) {
+			for _, got := range OptionValues(v) {
 				if _, named := f.CanonicalOption(got); got != "" && !named {
 					problems = append(problems, Problem{Section: ns,
 						Reason: fmt.Sprintf("%s = %q is not one of the values %q accepts", key, got, f.Name),
@@ -302,10 +302,11 @@ func (r *Resolver) Check(reg *registry.Registry) []Problem {
 	return problems
 }
 
-// optionValues is a stated value as the option strings a run compares: one
+// OptionValues is a stated value as the option strings a run compares: one
 // for a scalar, each element of a list. A shape the type check above already
-// passed.
-func optionValues(v any) []string {
+// passed. Exported for internal/profile, which holds a profile's `set:` to
+// the same rule this holds a plugins: section to.
+func OptionValues(v any) []string {
 	switch list := v.(type) {
 	case []any:
 		out := make([]string, 0, len(list))

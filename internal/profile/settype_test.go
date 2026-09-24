@@ -280,3 +280,75 @@ profiles:
 			forward, shadow, problems)
 	}
 }
+
+// sharedKeyRegistry is a namespace whose capabilities read one key and
+// disagree about it, the way net's `timeout` and fs's `limit` do: db.ping
+// offers fast and safe, db.port safe and thorough, and each lists kinds of
+// its own.
+func sharedKeyRegistry(t *testing.T) *registry.Registry {
+	t.Helper()
+	reg := registry.New()
+	shared := func(id string, modes, kinds []string) plugin.Capability {
+		return plugin.Capability{ID: id, Summary: "s", Safety: plugin.Read, Run: run,
+			Inputs: []plugin.Field{
+				{Name: "mode", Type: plugin.String, Config: "mode", Local: true, Options: modes},
+				{Name: "kinds", Type: plugin.StringSlice, Config: "kinds", Local: true, Options: kinds},
+				{Name: "level", Type: plugin.Int, Config: "level", Local: true, Options: []string{"1", "2", "3"}},
+			}}
+	}
+	if err := reg.Register(plugin.Plugin{
+		Name: "db", Summary: "db", Capabilities: []plugin.Capability{
+			shared("db.ping", []string{"fast", "safe"}, []string{"Alpha", "beta"}),
+			shared("db.port", []string{"safe", "thorough"}, []string{"beta", "gamma"}),
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return reg
+}
+
+// **A `set:` value is held to what the key accepts, not to one reader of
+// it.** The key was held to whichever capability declared it last, compared
+// exactly: `mode: fast`, which `rta profile set` writes because db.ping
+// takes it, made every call through the profile refuse "fast" as a value
+// mode does not accept, db.ping's own included; and `encoding: BASE32`
+// written by hand refused `rta gen token --profile`, while the same line in
+// the config ran as base32 and doctor called it fine. What a run reads in
+// another case is spelled as declared by Resolve, so it is a value the key
+// accepts; what no reader offers is still refused.
+func TestASetValueIsHeldToEveryCapabilityReadingItsKey(t *testing.T) {
+	reg := sharedKeyRegistry(t)
+	for _, body := range []string{
+		"mode: fast",     // only db.ping offers it
+		"mode: thorough", // only db.port does
+		"mode: SAFE",     // both do, in another case
+		"kinds: [ALPHA, gamma]",
+		"kinds: Beta",
+		"level: 2",
+	} {
+		t.Run(body, func(t *testing.T) {
+			cfg := load(t, "profiles:\n  p:\n    plugins:\n      db:\n        set:\n          "+body+"\n")
+			if problems := Check(cfg, reg); len(problems) != 0 {
+				t.Fatalf("a value a capability reading the key takes was reported: %v", problems)
+			}
+			for _, c := range reg.Capabilities() {
+				if _, verr := Lookup(cfg, c, "p", reg); verr != nil {
+					t.Errorf("%s refused the profile: %s — %s", c.ID, verr.Message, verr.Hint)
+				}
+			}
+		})
+	}
+	for _, body := range []string{"mode: reckless", "kinds: [beta, delta]", "level: 9"} {
+		t.Run(body, func(t *testing.T) {
+			cfg := load(t, "profiles:\n  p:\n    plugins:\n      db:\n        set:\n          "+body+"\n")
+			problems := Check(cfg, reg)
+			if len(problems) != 1 || !strings.Contains(problems[0].Reason, "is not a value") {
+				t.Fatalf("a value no capability reading the key takes was not reported once: %v", problems)
+			}
+			// Named in the spelling a declaration uses, every reader's.
+			if strings.Contains(body, "mode") && !strings.Contains(problems[0].Hint, "fast|safe|thorough") {
+				t.Errorf("hint %q", problems[0].Hint)
+			}
+		})
+	}
+}

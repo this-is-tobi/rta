@@ -10,6 +10,7 @@ import (
 
 	grantbuiltin "github.com/this-is-tobi/rta/builtin/grant"
 	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/internal/profile"
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -373,6 +374,23 @@ func TestSetHoldsASharedKeyToEveryCapabilityReadingIt(t *testing.T) {
 	}
 	if got := cfg.Profiles["slow"].Plugins["db"].Set["mode"]; got != "safe" {
 		t.Errorf("mode written as %#v, want the declared spelling", got)
+	}
+	// An option only one reader offers is written too, and the profile it is
+	// written into stays usable: the check profile set ends on, which Lookup
+	// runs before every call, held the key to the last reader alone and
+	// refused "fast" as core.profile.unusable once it was in the file.
+	if _, errOut, err := runWith(t, reg, "",
+		"profile", "set", "fast", "--plugin", "db", "--set", "mode=FAST"); err != nil {
+		t.Fatalf("an option one reader offers was refused: %v\n%s", err, errOut)
+	}
+	for _, id := range []string{"db.ping", "db.port"} {
+		c, _ := reg.Capability(id)
+		if cfg, err = config.LoadFile(); err != nil {
+			t.Fatal(err)
+		}
+		if _, verr := profile.Lookup(cfg, c, "fast", reg); verr != nil {
+			t.Errorf("%s: the profile written is refused: %s", id, verr.Message)
+		}
 	}
 	for _, tc := range []struct{ pair, code, want string }{
 		{"wait=400", "core.profile.set.range", "from 1 to 300"},
