@@ -350,17 +350,63 @@ func prettyKeyValue(w io.Writer, kv view.KeyValue, st styles) error {
 		width = max(width, lipgloss.Width(p.Key))
 	}
 	for _, p := range kv.Pairs {
-		key := st.key.Render(pad(p.Key, width))
 		val := p.Value
 		if st.color && theme.ClassifyStatus(val) != theme.StatusNeutral {
 			val = theme.StatusStyle(val).Render(val)
 		}
+		if hangsUnderKey(val, width+2, st.width) {
+			hung := hangIndent + strings.ReplaceAll(val, "\n", "\n"+hangIndent)
+			if _, err := fmt.Fprintf(w, "%s\n%s\n", st.key.Render(p.Key), hung); err != nil {
+				return err
+			}
+			continue
+		}
+		key := st.key.Render(pad(p.Key, width))
 		val = wrap(val, st.width, strings.Repeat(" ", width+2))
 		if _, err := fmt.Fprintf(w, "%s  %s\n", key, val); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// hangIndent is how far a value drawn under its key sits in from it: enough
+// to read as the key's, no more, since the room it leaves is the reason the
+// value moved.
+const hangIndent = "  "
+
+// hangsUnderKey reports whether val goes on the lines under its key instead
+// of beside it: a value of several lines, some line of which the key column
+// (keyCol cells) would break, and none of which the room under the key
+// would.
+//
+// A value of several lines was laid out by whoever wrote it — a hex dump's
+// columns, JSON's indentation, a PEM block — and wrap is a prose wrapper. A
+// break at a space inside such a line moves the rest of it onto a line of its
+// own, which for http.get's dump of a binary body put the |.PNG....| gutter
+// under the hex it spells rather than beside it, and dropped the padding that
+// lines a short last row up with the rest. Beside a 12-cell key a dump row
+// needs 92 cells; under it, 80.
+//
+// Only when moving keeps every line whole. A value broken wherever it sits
+// keeps the place beside its key it has always had, rather than trading one
+// broken layout for another. A single line is prose or an identifier, which
+// wrap is built for, and continues under the value column as before; so does
+// everything at natural width, which is what keeps a pipe's bytes unchanged.
+func hangsUnderKey(val string, keyCol, width int) bool {
+	if width < minWrap || !strings.Contains(val, "\n") {
+		return false
+	}
+	beside, under := max(minWrap, width-keyCol), width-len(hangIndent)
+	broken := false
+	for _, line := range strings.Split(val, "\n") {
+		n := lipgloss.Width(line)
+		if n > under {
+			return false
+		}
+		broken = broken || n > beside
+	}
+	return broken
 }
 
 func prettyTable(w io.Writer, t view.Table, st styles, highlight int) error {

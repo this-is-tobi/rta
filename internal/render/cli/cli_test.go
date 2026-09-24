@@ -5,12 +5,14 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"io"
+	"slices"
 	"strings"
 	"testing"
 
 	"charm.land/lipgloss/v2"
 	"github.com/goccy/go-yaml"
 
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -720,6 +722,60 @@ func TestASchemeIsNeverSeveredFromItsURL(t *testing.T) {
 	}
 	if want := []string{"https://example.com/", "abc"}; strings.Join(lines, "\n") != strings.Join(want, "\n") {
 		t.Errorf("got\n%s\nwant\n%s", strings.Join(lines, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+// A value laid out in lines is drawn under its key when the key column would
+// break those lines and the room under it keeps every one whole.
+//
+// The value is http.get's answer for a binary body. Each row of its dump is 78
+// cells, 92 beside a 12-cell key, so an 80-column terminal broke every row at
+// a space: the |.PNG........IHDR| gutter landed on a line of its own, away
+// from the bytes it spells, and the short last row lost the padding that
+// lines its gutter up with the others.
+func TestALaidOutValueIsDrawnUnderItsKeyRatherThanBroken(t *testing.T) {
+	body := format.Dump([]byte{
+		0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0x0d, 'I', 'H', 'D', 'R',
+		0, 0, 0, 1, 0, 0, 0, 1,
+	}, 256)
+	kv := view.KeyValue{Pairs: []view.Pair{
+		{Key: "status", Value: "200 OK"},
+		{Key: "content-type", Value: "image/png"},
+		{Key: "size", Value: "24 B"},
+		{Key: "body", Value: body},
+	}}
+	besideTheKey := func(lines []string) bool {
+		return slices.ContainsFunc(lines, func(l string) bool {
+			return strings.HasPrefix(l, "body ") && strings.HasSuffix(l, "not plain text:")
+		})
+	}
+
+	lines := renderLines(t, kv, 80)
+	out := strings.Join(lines, "\n")
+	if !slices.Contains(lines, "body") {
+		t.Errorf("the key does not stand on a line of its own:\n%s", out)
+	}
+	for _, line := range strings.Split(body, "\n") {
+		if !slices.Contains(lines, "  "+line) {
+			t.Errorf("%q is not drawn whole under its key:\n%s", line, out)
+		}
+	}
+	for _, line := range lines {
+		if w := lipgloss.Width(line); w > 80 {
+			t.Errorf("line is %d cells wide, want at most 80: %q", w, line)
+		}
+	}
+	if !slices.Contains(lines, "status        200 OK") {
+		t.Errorf("a one-line value moved away from its key:\n%s", out)
+	}
+
+	// Where the rows fit beside the key they stay there, and where they
+	// would be broken under it as well nothing is gained by moving them:
+	// the value keeps the place it has always had.
+	for _, width := range []int{0, 120, 60} {
+		if lines := renderLines(t, kv, width); !besideTheKey(lines) {
+			t.Errorf("width %d: the value left its key:\n%s", width, strings.Join(lines, "\n"))
+		}
 	}
 }
 
