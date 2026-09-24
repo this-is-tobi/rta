@@ -747,12 +747,61 @@ func parseSetFlags(pairs []string, ns string, reg *registry.Registry) (map[strin
 		if verr != nil {
 			return nil, verr
 		}
+		if v, verr = heldToDeclaration(f, v); verr != nil {
+			return nil, verr
+		}
 		set[k] = v
 	}
 	if len(set) == 0 {
 		return nil, nil
 	}
 	return set, nil
+}
+
+// heldToDeclaration refuses a value the host would refuse on every call —
+// outside the field's range, or none of its Options — and writes an option
+// typed in another case the way the field declares it. Written without one of
+// those checks, the profile is saved and every call made through it is then
+// refused, by which time nobody is looking at the command that caused it.
+//
+// Like badSetValue, never repeating the value.
+func heldToDeclaration(f plugin.Field, v any) (any, *view.Error) {
+	if want, ok := f.Range(v); !ok {
+		return nil, view.Errorf("core.profile.set.range", "%s takes a value %s", f.Name, want).
+			WithHint("`rta explain` on a capability that reads " + f.Config + " names the range")
+	}
+	if len(f.Options) == 0 {
+		return v, nil
+	}
+	canonical := func(s string) (string, bool) {
+		for _, o := range f.Options {
+			if strings.EqualFold(o, s) {
+				return o, true
+			}
+		}
+		return "", false
+	}
+	refuse := view.Errorf("core.profile.set.option", "%s takes one of %s", f.Name, strings.Join(f.Options, ", ")).
+		WithHint("the set is closed; write the value as one of those")
+	switch t := v.(type) {
+	case string:
+		o, ok := canonical(t)
+		if !ok {
+			return nil, refuse
+		}
+		return o, nil
+	case []string:
+		out := make([]string, len(t))
+		for i, s := range t {
+			o, ok := canonical(s)
+			if !ok {
+				return nil, refuse
+			}
+			out[i] = o
+		}
+		return out, nil
+	}
+	return v, nil
 }
 
 // typedSetValue turns the text a flag carries into the type f declares.

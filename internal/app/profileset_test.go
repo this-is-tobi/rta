@@ -308,6 +308,37 @@ func TestSetRefusesAValueTheDeclaredTypeCannotHold(t *testing.T) {
 	}
 }
 
+// A value every call through the profile would be refused for is refused
+// before the profile is written; an option typed in another case is written
+// the way the field declares it. Neither refusal repeats the value.
+func TestSetHoldsAValueToItsRangeAndOptions(t *testing.T) {
+	for _, tc := range []struct{ pair, code string }{
+		{"port=70000", "core.profile.set.range"},
+		{"port=0", "core.profile.set.range"},
+		{"sslmode=allow", "core.profile.set.option"},
+	} {
+		_, errOut, err := runWith(t, setRegistry(t), "",
+			"profile", "set", "staging", "--plugin", "db", "--set", tc.pair)
+		if err == nil || !strings.Contains(errOut, tc.code) {
+			t.Errorf("%s: err = %v, output %q; want %s", tc.pair, err, errOut, tc.code)
+		}
+		if value := strings.SplitN(tc.pair, "=", 2)[1]; strings.Contains(errOut, value+" ") {
+			t.Errorf("%s: the refusal repeated the value: %q", tc.pair, errOut)
+		}
+	}
+	if _, errOut, err := runWith(t, setRegistry(t), "",
+		"profile", "set", "staging", "--plugin", "db", "--set", "sslmode=REQUIRE"); err != nil {
+		t.Fatalf("an option in another case was refused: %v\n%s", err, errOut)
+	}
+	cfg, err := config.LoadFile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.Profiles["staging"].Plugins["db"].Set["sslmode"]; got != "require" {
+		t.Errorf("sslmode written as %#v, want the declared spelling", got)
+	}
+}
+
 // A key nothing reads is refused in the words the report already uses, rather
 // than in new ones invented here.
 func TestSetRefusesAKeyThePluginDoesNotRead(t *testing.T) {
