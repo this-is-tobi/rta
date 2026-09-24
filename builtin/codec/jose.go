@@ -1062,12 +1062,12 @@ func (p *page) jsonJWS(doc object, check *verifier) (view.View, *view.Error) {
 	}
 
 	if check != nil {
-		lead, verr := verifyEach(check, signers, payload, detached)
+		lead, others, verr := verifyEach(check, signers, payload, detached)
 		if verr != nil {
 			return nil, verr
 		}
 		p.notes = append(p.notes, check.notes...)
-		return p.finish(lead, window(claims)), nil
+		return p.finish(append(append([]string{lead}, others...), window(claims))...), nil
 	}
 	lead := verdict(signers[0].merged(), signers[0].value)
 	if len(signers) > 1 {
@@ -1082,28 +1082,77 @@ func (p *page) jsonJWS(doc object, check *verifier) (view.View, *view.Error) {
 	return p.finish(lead, window(claims)), nil
 }
 
-// verifyEach checks every signature of a JSON JWS with the key given and
-// reports the first that matches. One is enough to say the token was signed
-// by a holder of that key; which of several signers a verifier requires is
-// its own policy (RFC 7515 §7.2), not something the token decides.
-func verifyEach(check *verifier, signers []signer, payload string, detached bool) (string, *view.Error) {
-	var first *view.Error
+// verifyEach checks every signature of a JSON JWS with the key given. One
+// that matches is enough to say the token was signed by a holder of that
+// key; which of several signers a verifier requires is its own policy (RFC
+// 7515 §7.2), not something the token decides. It returns the verdict to
+// lead with and a line for every other signature.
+//
+// Every signature, not the first that matches. The page shows each one's
+// header, and the header of one that did not verify — a role: admin, say —
+// sat beside "Signature 2 of 2: VERIFIED" with nothing saying signature 1
+// failed. And when none matched, only signature 1's error came back, with no
+// number, hiding the mismatch that mattered behind an alg rta cannot check.
+func verifyEach(check *verifier, signers []signer, payload string, detached bool) (string, []string, *view.Error) {
+	leads := make([]string, len(signers))
+	errs := make([]*view.Error, len(signers))
+	good := -1
 	for i, s := range signers {
-		lead, verr := check.check(s.merged(), s.protectedSeg+"."+payload, s.value)
-		if verr == nil {
-			if len(signers) > 1 {
-				lead = fmt.Sprintf("Signature %d of %d: %s", i+1, len(signers), lead)
-			}
-			return lead, nil
+		leads[i], errs[i] = check.check(s.merged(), s.protectedSeg+"."+payload, s.value)
+		if errs[i] != nil && detached {
+			errs[i] = notOverThisPayload(errs[i], true)
 		}
-		if detached {
-			verr = notOverThisPayload(verr, true)
-		}
-		if first == nil {
-			first = verr
+		if errs[i] == nil && good < 0 {
+			good = i
 		}
 	}
-	return "", first
+	n := len(signers)
+	if n == 1 {
+		return leads[0], nil, errs[0]
+	}
+	if good < 0 {
+		best, parts := errs[0], make([]string, n)
+		for i, verr := range errs {
+			parts[i] = fmt.Sprintf("signature %d of %d: %s", i+1, n, verr.Message)
+			if specificity(verr.Code) > specificity(best.Code) {
+				best = verr
+			}
+		}
+		return "", nil, view.Errorf(best.Code, "%s", strings.Join(parts, "; ")).WithHint(best.Hint)
+	}
+	var others []string
+	for i := range signers {
+		switch {
+		case i == good:
+		case errs[i] == nil:
+			others = append(others, fmt.Sprintf("Signature %d of %d: %s", i+1, n, leads[i]))
+		default:
+			others = append(others, fmt.Sprintf("Signature %d of %d was not verified: %s.", i+1, n, errs[i].Message))
+		}
+	}
+	return fmt.Sprintf("Signature %d of %d: %s", good+1, n, leads[good]), others, nil
+}
+
+// specificity orders refusal codes by how much they say about the token, for
+// the one code a JWS with several failed signatures is refused under: a
+// signature checked and found wrong says more than a key of the wrong type,
+// which says more than an algorithm nothing here checks.
+func specificity(code string) int {
+	switch code {
+	case "codec.jwt.signature":
+		return 6
+	case "codec.jwt.detached":
+		return 5
+	case "codec.jwt.key":
+		return 4
+	case "codec.jwt.nokey":
+		return 3
+	case "codec.jwt.alg":
+		return 2
+	case "codec.jwt.unsigned":
+		return 1
+	}
+	return 0
 }
 
 func (p *page) jsonJWE(doc object) (view.View, *view.Error) {

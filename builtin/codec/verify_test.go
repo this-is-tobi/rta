@@ -3,6 +3,7 @@ package codec
 import (
 	"context"
 	"crypto"
+	"crypto/ecdh"
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
@@ -227,6 +228,26 @@ func TestADetachedPayloadIsNamedWhenItsSignatureCannotBeChecked(t *testing.T) {
 		"codec.jwt.signature", "does not match")
 }
 
+// RFC 7518 §3.2 requires an HMAC key at least as long as its hash. A
+// one-byte secret still matches, and the verdict now says what a strict
+// library makes of it; a long enough one draws nothing.
+func TestAShortHMACSecretIsNamedBesideItsVerdict(t *testing.T) {
+	for secret, short := range map[string]bool{"a": true, strings.Repeat("k", 32): false} {
+		token := sign(`{"alg":"HS256"}`, `{"sub":"a"}`, func(in []byte) []byte {
+			mac := hmac.New(sha256.New, []byte(secret))
+			mac.Write(in)
+			return mac.Sum(nil)
+		})
+		body, verr := verifyWith(t, token, "", secret)
+		if verr != nil {
+			t.Fatalf("refused: %s", verr.Message)
+		}
+		if named := strings.Contains(body, "The secret is 1 byte, under the 32 RFC 7518 §3.2 requires"); named != short {
+			t.Errorf("%d-byte secret: verification = %q", len(secret), body)
+		}
+	}
+}
+
 // A secret file that is not there, is empty, or is not a secret at all.
 func TestASecretFileThatCannotBeReadIsRefused(t *testing.T) {
 	token := sign(`{"alg":"HS256"}`, `{"sub":"a"}`, func([]byte) []byte { return []byte("x") })
@@ -431,6 +452,129 @@ func TestRSAVerifiesFromEveryPEMShape(t *testing.T) {
 	mustRefuse(t, strings.Join(tampered, "."), pub, "", "codec.jwt.signature", "changed after it was signed")
 }
 
+// crypto/rsa refuses a key under 1024 bits and an even modulus inside the
+// check, and the refusal came back as a plain mismatch: a correct signature
+// from a 512-bit key read as a token changed after it was signed. Both are
+// named instead, by the verifier and by codec.jwk.
+func TestAnRSAKeyTooSmallOrEvenIsNamedAsSuch(t *testing.T) {
+	p, err := rand.Prime(rand.Reader, 256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q, err := rand.Prime(rand.Reader, 256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := func(n *big.Int) string { return base64.RawURLEncoding.EncodeToString(n.Bytes()) }
+	small := fmt.Sprintf(`{"kty":"RSA","n":%q,"e":"AQAB"}`, b(new(big.Int).Mul(p, q)))
+	evenN := new(big.Int).Lsh(big.NewInt(1), 2047)
+	even := fmt.Sprintf(`{"kty":"RSA","n":%q,"e":"AQAB"}`, b(evenN))
+	token := sign(`{"alg":"RS256"}`, `{"sub":"a"}`, func([]byte) []byte { return make([]byte, 64) })
+	mustRefuse(t, token, small, "", "codec.jwt.nokey", "under the 1024 bits")
+	mustRefuse(t, token, even, "", "codec.jwt.nokey", "even modulus")
+	if n := notes(jwk(t, small)); !strings.Contains(n, "can be factored") {
+		t.Errorf("512-bit notes = %q", n)
+	}
+	if n := notes(jwk(t, even)); !strings.Contains(n, "Its n is even") {
+		t.Errorf("even notes = %q", n)
+	}
+	// Whatever else crypto/rsa refuses a key for is passed on, not read as
+	// a mismatch.
+	if ok, why := checkPKCS1(&rsa.PublicKey{N: evenN, E: 65537}, nil, []byte("x"), make([]byte, 256), crypto.SHA256); ok ||
+		!strings.Contains(why, "public modulus is even") {
+		t.Errorf("checkPKCS1 = %v, %q, want crypto/rsa's reason", ok, why)
+	}
+}
+
+// procTypeEncrypted is a legacy encrypted PEM key, the Proc-Type header form,
+// around bytes that are not a key. These tests build their private-key blocks
+// with pem.EncodeToMemory rather than spelling them out, because a private-key
+// header written in a source file is what a secret scanner exists to find, and
+// the blocks here are placeholders with nothing inside them.
+func procTypeEncrypted(t *testing.T, body []byte) string {
+	t.Helper()
+	return string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Headers: map[string]string{
+		"Proc-Type": "4,ENCRYPTED",
+		"DEK-Info":  "AES-128-CBC,00112233445566778899AABBCCDDEEFF",
+	}, Bytes: body}))
+}
+
+// A key this cannot open is named as such: an encrypted or OpenSSH private
+// key was "no private key in the PEM", with no hint. And a key no JWS
+// algorithm here checks is named by what it is, not by its Go type.
+func TestAPEMKeyThatCannotBeUsedIsNamed(t *testing.T) {
+	token := sign(`{"alg":"EdDSA"}`, `{"sub":"a"}`, func([]byte) []byte { return make([]byte, 64) })
+	sealed := []byte(strings.Repeat("sealed", 20))
+	for want, key := range map[string]string{
+		"it is encrypted":      pemOf(t, "ENCRYPTED PRIVATE KEY", sealed),
+		"OpenSSH's own format": pemOf(t, "OPENSSH PRIVATE KEY", sealed),
+		"blocks read are":      "-----BEGIN EC PARAMETERS-----\nBggqhkjOPQMBBw==\n-----END EC PARAMETERS-----\n",
+		"encrypted: decrypt":   procTypeEncrypted(t, sealed),
+	} {
+		mustRefuse(t, token, key, "", "codec.jwt.key", want)
+	}
+	x25519, err := ecdh.X25519().GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, verr := verifyWith(t, token, publicPEM(t, x25519.PublicKey()), "")
+	if verr == nil || !strings.Contains(verr.Message, "X25519 from PEM is not an Ed25519 key") || strings.Contains(verr.Message, "*ecdh") {
+		t.Errorf("got %+v, want the X25519 key named as that", verr)
+	}
+}
+
+// What codec.jwk says about a key used to stay behind when codec.jwt used
+// it: an x5c holding another key gave a bare VERIFIED, and key_ops limiting a
+// key to encryption was ignored where use enc was not.
+func TestWhatIsWrongWithAKeyTravelsWithItsVerdict(t *testing.T) {
+	signing, x, y := ecKey(t)
+	other, _, _ := ecKey(t)
+	token := es256(t, signing, `{"alg":"ES256"}`)
+	mismatched := fmt.Sprintf(`{"kty":"EC","crv":"P-256","x":%q,"y":%q,"x5c":[%q]}`,
+		x, y, base64.StdEncoding.EncodeToString(certFor(t, other)))
+	mustVerify(t, token, mismatched, "", "About that key: the first certificate in its x5c holds a different key")
+	mustRefuse(t, token, fmt.Sprintf(`{"kty":"EC","crv":"P-256","key_ops":["encrypt"],"x":%q,"y":%q}`, x, y), "",
+		"codec.jwt.nokey", "limited by key_ops to encrypt")
+	body, verr := verifyWith(t, token, fmt.Sprintf(`{"kty":"EC","crv":"P-256","key_ops":["verify"],"x":%q,"y":%q}`, x, y), "")
+	if verr != nil || strings.Contains(body, "About that key") {
+		t.Errorf("a key with nothing wrong: %q, %v", body, verr)
+	}
+}
+
+// A mismatch is worded with the key that was tried. It used to name the
+// first key the kid filter let through, often one skipped for its type, and
+// then gave the skipped key's reason as though it explained the mismatch.
+func TestAMismatchNamesTheKeyThatWasTried(t *testing.T) {
+	key := rsaKey()
+	rs := sign(`{"alg":"RS256","kid":"k1"}`, `{"sub":"a"}`, func(in []byte) []byte {
+		sig, err := rsa.SignPKCS1v15(rand.Reader, key, crypto.SHA256, sha256Of(in))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return sig
+	})
+	parts := strings.Split(rs, ".")
+	parts[1] = seg(`{"sub":"admin"}`)
+	tampered := strings.Join(parts, ".")
+	b := func(n *big.Int) string { return base64.RawURLEncoding.EncodeToString(n.Bytes()) }
+	rsaJWK := func(extra string) string {
+		return fmt.Sprintf(`{"kty":"RSA","kid":"k1",%s"n":%q,"e":"AQAB"}`, extra, b(key.N))
+	}
+	_, x, y := ecKey(t)
+	for name, tc := range map[string]struct{ key, secret, want, not string }{
+		"secret beside the key": {rsaJWK(""), "s3cret", `does not match 2048-bit RSA, kid "k1" (not tried: the secret in`, "does not match the secret"},
+		"another type first": {fmt.Sprintf(`{"keys":[{"kty":"EC","crv":"P-256","x":%q,"y":%q},{"kty":"RSA","n":%q,"e":"AQAB"}]}`, x, y, b(key.N)),
+			"", "does not match 2048-bit RSA, key 2 of the set (not tried: EC P-256, key 1 of the set is not an RSA key)", "does not match EC"},
+		"an encryption key first": {`{"keys":[` + rsaJWK(`"use":"enc",`) + `,` + rsaJWK("") + `]}`,
+			"", `(not tried: 2048-bit RSA, kid "k1" is for encryption (use enc))`, "match 2048-bit RSA, kid \"k1\": "},
+	} {
+		_, verr := verifyWith(t, tampered, tc.key, tc.secret)
+		if verr == nil || verr.Code != "codec.jwt.signature" || !strings.Contains(verr.Message, tc.want) || strings.Contains(verr.Message, tc.not) {
+			t.Errorf("%s: got %+v, want codec.jwt.signature saying %q", name, verr, tc.want)
+		}
+	}
+}
+
 func es256(t *testing.T, priv *ecdsa.PrivateKey, header string) string {
 	t.Helper()
 	return sign(header, `{"sub":"a"}`, func(in []byte) []byte {
@@ -458,6 +602,28 @@ func TestAKeySetIsChosenFromByKid(t *testing.T) {
 	mustRefuse(t, es256(t, signing, `{"alg":"ES256","kid":"enc"}`), set, "", "codec.jwt.nokey", "use enc")
 	// No kid in the header: every key that fits is tried.
 	mustVerify(t, es256(t, signing, `{"alg":"ES256"}`), set, "", `kid "current"`)
+}
+
+// A key under the token's own kid that its members do not make was dropped,
+// and the refusal said no key had that kid and that the issuer may have
+// rotated its keys. It is in the set, and what is wrong with it is named.
+func TestAnUnusableKeyUnderTheKidIsNamedRatherThanMissing(t *testing.T) {
+	signing, x, y := ecKey(t)
+	_, ox, oy := ecKey(t)
+	set := fmt.Sprintf(`{"keys":[{"kty":"EC","crv":"P-256","kid":"other","x":%q,"y":%q},`+
+		`{"kty":"EC","crv":"P-256","kid":"current","x":%q,"y":%q}]}`, ox, oy, x, x)
+	mustRefuse(t, es256(t, signing, `{"alg":"ES256","kid":"current"}`), set, "", "codec.jwt.key", "not a point on P-256")
+	_, verr := verifyWith(t, es256(t, signing, `{"alg":"ES256","kid":"current"}`), set, "")
+	if verr != nil && strings.Contains(verr.Hint, "rotated") {
+		t.Errorf("hint = %q, sent looking for a rotation", verr.Hint)
+	}
+	// A set with nothing usable says what is wrong with each key.
+	lone := fmt.Sprintf(`{"kty":"EC","crv":"P-256","x":%q,"y":%q}`, x, x)
+	mustRefuse(t, es256(t, signing, `{"alg":"ES256"}`), lone, "", "codec.jwt.key", "no usable key in what was given: EC P-256 cannot be used: its x and y are not a point")
+	// The usable key beside it still verifies a token that names it.
+	mustVerify(t, es256(t, signing, `{"alg":"ES256","kid":"mine"}`),
+		fmt.Sprintf(`{"keys":[{"kty":"EC","crv":"P-256","kid":"mine","x":%q,"y":%q},{"kty":"EC","crv":"P-256","kid":"current","x":%q,"y":%q}]}`, x, y, x, x),
+		"", `kid "mine"`)
 }
 
 // The ES256 mistake worth naming: a DER signature, which other ECDSA APIs
@@ -521,6 +687,46 @@ func TestAJSONSerializationVerifies(t *testing.T) {
 	token := fmt.Sprintf(`{"protected":%q,"payload":%q,"signature":%q}`,
 		protected, payload, base64.RawURLEncoding.EncodeToString(sig))
 	mustVerify(t, token, fmt.Sprintf(`{"kty":"EC","crv":"P-256","x":%q,"y":%q}`, x, y), "", "ES256 signature matches")
+}
+
+// Every signature of a general JSON JWS is checked and reported. The first
+// match used to be the whole answer, beside the header of a signature that
+// had not verified; and when none matched, signature 1's error came alone,
+// unnumbered, hiding signature 2's mismatch behind an alg nothing checks.
+func TestEverySignatureOfAGeneralJSONSignatureIsReported(t *testing.T) {
+	given, x, y := ecKey(t)
+	other, _, _ := ecKey(t)
+	key := fmt.Sprintf(`{"kty":"EC","crv":"P-256","x":%q,"y":%q}`, x, y)
+	payload := seg(`{"sub":"a"}`)
+	signature := func(priv *ecdsa.PrivateKey, protected string) string {
+		r, s, err := ecdsa.Sign(rand.Reader, priv, sha256Of([]byte(protected+"."+payload)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		sig := make([]byte, 64)
+		r.FillBytes(sig[:32])
+		s.FillBytes(sig[32:])
+		return base64.RawURLEncoding.EncodeToString(sig)
+	}
+	admin, plain := seg(`{"alg":"ES256","kid":"a","role":"admin"}`), seg(`{"alg":"ES256"}`)
+	doc := fmt.Sprintf(`{"payload":%q,"signatures":[{"protected":%q,"signature":%q},{"protected":%q,"signature":%q}]}`,
+		payload, admin, signature(other, admin), plain, signature(given, plain))
+	body, verr := verifyWith(t, doc, key, "")
+	if verr != nil {
+		t.Fatalf("refused: %s", verr.Message)
+	}
+	if !strings.HasPrefix(body, "Signature 2 of 2: VERIFIED") || !strings.Contains(body, "Signature 1 of 2 was not verified: the ES256 signature does not match") {
+		t.Errorf("verification = %q, want signature 2 verified and signature 1 named as not", body)
+	}
+
+	es256k := seg(`{"alg":"ES256K"}`)
+	failing := fmt.Sprintf(`{"payload":%q,"signatures":[{"protected":%q,"signature":%q},{"protected":%q,"signature":%q}]}`,
+		payload, es256k, seg("s"), plain, signature(other, plain))
+	_, verr = verifyWith(t, failing, key, "")
+	if verr == nil || verr.Code != "codec.jwt.signature" || !strings.Contains(verr.Message, "signature 1 of 2: rta cannot check") ||
+		!strings.Contains(verr.Message, "signature 2 of 2: the ES256 signature does not match") {
+		t.Errorf("got %+v, want the mismatch's code and every signature named", verr)
+	}
 }
 
 // The secret is a credential, and an agent must never be invited to supply

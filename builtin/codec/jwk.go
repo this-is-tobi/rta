@@ -41,7 +41,9 @@ type jwkFacts struct {
 	size                    string
 	thumbprint              string
 	private                 bool
-	problems                []string
+	// secrets are the private members the key holds, for the line saying so.
+	secrets  []string
+	problems []string
 	// pub is the public key the members make, when they make a valid one.
 	pub crypto.PublicKey
 	// cert is x5c's first certificate, and chain how many x5c holds.
@@ -106,11 +108,26 @@ func readJWK(o object) jwkFacts {
 	return k
 }
 
+// privateMembers records which of names o holds, and marks the key private
+// when it holds any.
+func (k *jwkFacts) privateMembers(o object, names ...string) {
+	for _, n := range names {
+		if o.has(n) {
+			k.secrets = append(k.secrets, n)
+		}
+	}
+	k.private = len(k.secrets) > 0
+}
+
 // rsa reads an RSA public key. RFC 7518 §6.3.1.1 forbids a leading zero octet
 // in n, and a key that has one reads as a different size to different
 // libraries, so it is named rather than silently trimmed.
+//
+// Private whatever the member: the primes give the signing key away as surely
+// as d does, since n = p·q settles it, and a JWK publishing p and q without d
+// was reported as holding nothing private.
 func (k *jwkFacts) rsa(o object) {
-	k.private = o.has("d")
+	k.privateMembers(o, "d", "p", "q", "dp", "dq", "qi", "oth")
 	k.size = "RSA"
 	n, e := k.member(o, "n"), k.member(o, "e")
 	if n == nil || e == nil {
@@ -121,6 +138,15 @@ func (k *jwkFacts) rsa(o object) {
 	}
 	modulus, exponent := new(big.Int).SetBytes(n), new(big.Int).SetBytes(e)
 	k.size = fmt.Sprintf("%d-bit RSA", modulus.BitLen())
+	switch bits := modulus.BitLen(); {
+	case modulus.Bit(0) == 0:
+		k.problem("its n is even, which no RSA modulus is, so no signature verifies against it")
+	case bits < 1024:
+		k.problem("its modulus is %d bits, under the 1024 a verifier accepts and the 2048 RFC 7518 §3.3 requires: "+
+			"a key that small can be factored, and anyone who does signs as its issuer", bits)
+	case bits < 2048:
+		k.problem("its modulus is %d bits, under the 2048 RFC 7518 §3.3 requires", bits)
+	}
 	if !exponent.IsInt64() || exponent.Int64() < 3 || exponent.Int64() > 1<<31-1 {
 		k.problem("its exponent is not one a verifier can use")
 		return
@@ -144,7 +170,7 @@ var ecCurves = map[string]struct {
 }
 
 func (k *jwkFacts) ec(o object) {
-	k.private = o.has("d")
+	k.privateMembers(o, "d")
 	k.size = "EC " + visible(k.crv)
 	x, y := k.member(o, "x"), k.member(o, "y")
 	c, known := ecCurves[k.crv]
@@ -152,8 +178,12 @@ func (k *jwkFacts) ec(o object) {
 	case k.crv == "":
 		k.problem("it names no crv, which an EC key requires")
 		return
+	// RFC 8812. The standard library has no such curve, so neither the point
+	// nor an ES256K signature can be checked, and codec.jwt's refusal of the
+	// key sends somebody here to find out why.
 	case k.crv == "secp256k1":
-		return // RFC 8812; the standard library has no such curve to check a point on
+		k.problem("rta has no secp256k1, so it checks neither its point nor an ES256K signature against it")
+		return
 	case !known:
 		k.problem("its curve %s is not one RFC 7518 names", quote(k.crv))
 		return
@@ -174,11 +204,11 @@ func (k *jwkFacts) ec(o object) {
 
 // okpCurves are RFC 8037's curves and their key sizes. The X curves agree
 // keys and never sign, which is worth saying about a key in a set a verifier
-// reads.
+// reads — unless its use already says it is for encryption.
 var okpCurves = map[string]int{"Ed25519": 32, "Ed448": 57, "X25519": 32, "X448": 56}
 
 func (k *jwkFacts) okp(o object) {
-	k.private = o.has("d")
+	k.privateMembers(o, "d")
 	k.size = visible(k.crv)
 	x := k.member(o, "x")
 	size, known := okpCurves[k.crv]
@@ -196,6 +226,12 @@ func (k *jwkFacts) okp(o object) {
 		if _, err := ecdh.X25519().NewPublicKey(x); err != nil {
 			k.problem("its x is not an X25519 public key")
 		}
+	}
+	switch {
+	case (k.crv == "X25519" || k.crv == "X448") && k.use != "enc":
+		k.problem("it is a key-agreement key (RFC 8037 §3.2), which cannot verify a signature")
+	case k.crv == "Ed448":
+		k.problem("rta does not check Ed448 signatures, so codec.jwt cannot verify against it")
 	}
 }
 
@@ -264,7 +300,15 @@ func (k *jwkFacts) certificate(o object) {
 			k.problem("the first certificate in its x5c is not base64")
 			return
 		}
-		k.problem("its x5c is base64url, where RFC 7517 §4.7 requires standard base64")
+		// Named by what the text holds rather than by which decoder took
+		// it: the unpadded decoders try the URL alphabet first, so a
+		// certificate that had only lost its padding was said to be in the
+		// wrong alphabet.
+		if strings.ContainsAny(first, "-_") {
+			k.problem("its x5c is base64url, where RFC 7517 §4.7 requires standard base64")
+		} else {
+			k.problem("its x5c is unpadded, where RFC 7517 §4.7 requires padded standard base64")
+		}
 	}
 	cert, err := x509.ParseCertificate(der)
 	if err != nil {
@@ -302,7 +346,8 @@ func (k jwkFacts) privateLine() string {
 	case k.kty == "oct":
 		return "yes — a shared secret: whoever holds this JWK can sign as its issuer"
 	case k.private:
-		return "yes — it holds the private key (d); only the public half belongs in a set anyone can fetch"
+		return "yes — it holds the private key (" + strings.Join(k.secrets, ", ") +
+			"); only the public half belongs in a set anyone can fetch"
 	}
 	return "no"
 }

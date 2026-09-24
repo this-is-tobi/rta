@@ -2,6 +2,7 @@ package codec
 
 import (
 	"crypto"
+	"crypto/ecdh"
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/hmac"
@@ -17,6 +18,7 @@ import (
 	"hash"
 	"math/big"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/this-is-tobi/rta/builtin/internal/pipein"
@@ -51,6 +53,13 @@ type candidate struct {
 	alg    string
 	use    string
 	label  string
+	// ops is the JWK's key_ops, and problems what codec.jwk would note about
+	// it. Both used to stay behind in readJWK: a key limited to encrypt
+	// verified signatures, and one whose x5c holds a different key — the
+	// state two verifiers disagree about, since some take x5c over n and e —
+	// gave a bare VERIFIED.
+	ops      []string
+	problems []string
 	// readings are the other ways the secret file's contents may have been
 	// meant, tried in order when they do not match as they are.
 	readings []reading
@@ -257,15 +266,24 @@ func jwkCandidates(raw string, s plugin.Surface) ([]candidate, []string, *view.E
 				"take, so it was not tried: %s.", label, secretHint(s)))
 			continue
 		}
-		if k.pub != nil {
-			out = append(out, candidate{pub: k.pub, kid: k.kid, alg: k.alg, use: k.use, label: label})
+		// A key the members do not make stays a candidate, with nothing to
+		// check against and its problems for a reason. Dropped, a key under
+		// the token's own kid was reported as missing, with the hint that
+		// the issuer had rotated its keys — about a key in the set, whose
+		// producer had trimmed a leading zero from a coordinate, as about
+		// one key in 128 comes out when a producer does.
+		out = append(out, candidate{pub: k.pub, kid: k.kid, alg: k.alg, use: k.use, ops: k.ops,
+			problems: k.problems, label: label})
+	}
+	var unusable []string
+	for _, c := range out {
+		if c.pub != nil {
+			return out, notes, nil
 		}
+		unusable = append(unusable, c.unusable())
 	}
-	if len(out) == 0 {
-		return nil, nil, view.Errorf("codec.jwt.key", "no usable key in what was given").
-			WithHint("`rta codec jwk` says what is wrong with each one")
-	}
-	return out, notes, nil
+	return nil, nil, view.Errorf("codec.jwt.key", "no usable key in what was given: %s", strings.Join(unusable, "; ")).
+		WithHint("`rta codec jwk` says what is wrong with each one")
 }
 
 // pemCandidates reads every PEM block in raw. Newlines are restored first: a
@@ -289,7 +307,8 @@ func pemCandidates(raw string) ([]candidate, *view.Error) {
 		}
 	}
 	if len(out) == 0 {
-		return nil, view.Errorf("codec.jwt.key", "no public key, private key or certificate in the PEM given")
+		return nil, view.Errorf("codec.jwt.key", "no public key, private key or certificate in the PEM given").
+			WithHint("the blocks read are PUBLIC KEY, RSA PUBLIC KEY, CERTIFICATE, and a private key that is not encrypted")
 	}
 	return out, nil
 }
@@ -324,8 +343,20 @@ func repairPEM(s string) string {
 	return b.String()
 }
 
+// publicFromPEM is the public key a PEM block holds, nil for a block that is
+// not a key at all, or an error saying why the key cannot be read. An
+// encrypted key or an OpenSSH one used to fall through as "not a key", and
+// the refusal said the PEM held no private key when it held one this cannot
+// open.
 func publicFromPEM(block *pem.Block) (crypto.PublicKey, error) {
+	if strings.Contains(block.Headers["Proc-Type"], "ENCRYPTED") {
+		return nil, errEncryptedKey
+	}
 	switch block.Type {
+	case "ENCRYPTED PRIVATE KEY":
+		return nil, errEncryptedKey
+	case "OPENSSH PRIVATE KEY":
+		return nil, errors.New("it is in OpenSSH's own format: `ssh-keygen -e -m PKCS8 -f <key>` prints its public key as PEM")
 	case "CERTIFICATE":
 		cert, err := x509.ParseCertificate(block.Bytes)
 		if err != nil {
@@ -361,6 +392,12 @@ func publicFromPEM(block *pem.Block) (crypto.PublicKey, error) {
 	return nil, nil // a block of another kind — EC PARAMETERS beside a key — is not a key
 }
 
+var errEncryptedKey = errors.New("it is encrypted: decrypt it first, or pass its public key " +
+	"(`openssl pkey -in <key> -pubout` asks for the passphrase and prints it)")
+
+// describePublic names a key for a sentence. ParsePKIXPublicKey also returns
+// X25519 and DSA keys, which no JWS algorithm here checks, and they were
+// named by their Go type: "*ecdh.PublicKey from PEM is not an Ed25519 key".
 func describePublic(pub crypto.PublicKey) string {
 	switch k := pub.(type) {
 	case *rsa.PublicKey:
@@ -369,6 +406,13 @@ func describePublic(pub crypto.PublicKey) string {
 		return "EC " + k.Curve.Params().Name
 	case ed25519.PublicKey:
 		return "Ed25519"
+	case *ecdh.PublicKey:
+		return fmt.Sprint(k.Curve())
+	}
+	// By its type's name rather than a case: crypto/dsa is deprecated, and
+	// importing it only to name its key would be the one use of it here.
+	if fmt.Sprintf("%T", pub) == "*dsa.PublicKey" {
+		return "DSA"
 	}
 	return fmt.Sprintf("%T", pub)
 }
@@ -420,8 +464,13 @@ var ecCurveFor = map[string]string{"ES256": "P-256", "ES384": "P-384", "ES512": 
 func (c candidate) fits(alg string) (bool, string) {
 	a := jwsAlgs[alg]
 	switch {
+	case c.pub == nil && c.secret == nil:
+		return false, c.unusable()
 	case c.use == "enc":
 		return false, c.label + " is for encryption (use enc)"
+	// RFC 7517 §4.3: key_ops says what a key may do, as use does.
+	case len(c.ops) > 0 && !slices.Contains(c.ops, "verify"):
+		return false, c.label + " is limited by key_ops to " + visible(strings.Join(c.ops, ", "))
 	case c.alg != "" && c.alg != alg:
 		return false, c.label + " is declared for " + visible(c.alg)
 	case a.kind == "a shared secret":
@@ -430,8 +479,20 @@ func (c candidate) fits(alg string) (bool, string) {
 		return false, c.label + " is a shared secret"
 	}
 	switch k := c.pub.(type) {
+	// Refused by name before the check, because Go refuses both keys inside
+	// it and the refusal came back as a plain mismatch: a correct signature
+	// from a 512-bit key read as a token changed after it was signed, while
+	// the real news was a key anyone can factor.
 	case *rsa.PublicKey:
-		return a.kind == "an RSA key", c.label + " is not " + a.kind
+		switch {
+		case a.kind != "an RSA key":
+			return false, c.label + " is not " + a.kind
+		case k.N.Bit(0) == 0:
+			return false, c.label + " has an even modulus, which no RSA key has, so no signature verifies against it"
+		case k.N.BitLen() < 1024:
+			return false, c.label + " is under the 1024 bits a verifier accepts, and RFC 7518 §3.3 requires 2048"
+		}
+		return true, ""
 	case *ecdsa.PublicKey:
 		return k.Curve.Params().Name == ecCurveFor[alg], c.label + " is not " + a.kind
 	case ed25519.PublicKey:
@@ -462,16 +523,25 @@ func digest(h crypto.Hash, input []byte) []byte {
 }
 
 func checkPKCS1(pub crypto.PublicKey, _, input, sig []byte, h crypto.Hash) (bool, string) {
-	return rsa.VerifyPKCS1v15(pub.(*rsa.PublicKey), h, digest(h, input), sig) == nil, ""
+	return rsaVerdict(rsa.VerifyPKCS1v15(pub.(*rsa.PublicKey), h, digest(h, input), sig))
+}
+
+// rsaVerdict keeps what crypto/rsa says about the key rather than only that
+// the check failed: every error but ErrVerification is a refusal of the key,
+// not a signature that does not match it.
+func rsaVerdict(err error) (bool, string) {
+	if err == nil || errors.Is(err, rsa.ErrVerification) {
+		return err == nil, ""
+	}
+	return false, "crypto/rsa refuses the key: " + strings.TrimPrefix(err.Error(), "crypto/rsa: ")
 }
 
 // checkPSS uses the salt length RFC 7518 §3.5 fixes — the hash's own size —
 // rather than accepting any, so a signature this calls good is one every
 // conforming verifier calls good.
 func checkPSS(pub crypto.PublicKey, _, input, sig []byte, h crypto.Hash) (bool, string) {
-	err := rsa.VerifyPSS(pub.(*rsa.PublicKey), h, digest(h, input), sig,
-		&rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthEqualsHash})
-	return err == nil, ""
+	return rsaVerdict(rsa.VerifyPSS(pub.(*rsa.PublicKey), h, digest(h, input), sig,
+		&rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthEqualsHash}))
 }
 
 // checkECDSA reads the signature as RFC 7518 §3.4 lays it out: R and S, each
@@ -539,18 +609,23 @@ func (v verifier) check(header object, input string, sigSeg string) (string, *vi
 			WithHint(secretHint(v.surface) + " — a public key checking an HMAC signature is the algorithm-confusion attack, so it is never tried")
 	}
 
+	// What was tried and what was skipped are kept apart. One list used to
+	// hold both, and a mismatch against the one key tried was worded with
+	// the first key the kid filter let through, which was often a skipped
+	// one: "does not match the secret given: the secret given is a shared
+	// secret", about an RS256 token checked against an RSA key.
 	kid := header.str("kid")
-	var reasons []string
-	tried, triedKey := 0, false
+	var tried, reasons, skipped []string
+	triedKey := false
 	for _, c := range candidates {
 		if kid != "" && c.kid != "" && c.kid != kid {
 			continue
 		}
 		if ok, why := c.fits(alg); !ok {
-			reasons = append(reasons, why)
+			skipped = append(skipped, why)
 			continue
 		}
-		tried++
+		tried = append(tried, c.label)
 		triedKey = triedKey || c.secret == nil
 		good, why := a.check(c.pub, c.secret, []byte(input), sig, a.hash)
 		if good {
@@ -561,15 +636,22 @@ func (v verifier) check(header object, input string, sigSeg string) (string, *vi
 		}
 		for _, r := range c.readings {
 			if good, _ := a.check(nil, r.secret, []byte(input), sig, a.hash); good {
-				return verifiedLine(candidate{label: r.label}, alg), nil
+				return verifiedLine(candidate{label: r.label, secret: r.secret}, alg), nil
 			}
 		}
 	}
 	switch {
-	case tried > 0:
-		msg := fmt.Sprintf("the %s signature does not match %s", alg, triedWhat(tried, candidates, kid))
+	case len(tried) > 0:
+		what := tried[0]
+		if len(tried) > 1 {
+			what = fmt.Sprintf("any of the %d keys that could check it", len(tried))
+		}
+		msg := fmt.Sprintf("the %s signature does not match %s", alg, what)
 		if len(reasons) > 0 {
 			msg += ": " + strings.Join(reasons, "; ")
+		}
+		if len(skipped) > 0 {
+			msg += " (not tried: " + strings.Join(skipped, "; ") + ")"
 		}
 		// Worded from what was tried: a secret has no kid, and an HMAC
 		// token rarely names one, so the key's hint sent somebody looking
@@ -580,14 +662,52 @@ func (v verifier) check(header object, input string, sigSeg string) (string, *vi
 			hint = "the token was changed after it was signed, or signed with another key — without --key it decodes to show which kid it names"
 		}
 		return "", view.Errorf("codec.jwt.signature", "%s", msg).WithHint(hint)
+	case kid != "" && onlyUnusable(candidates, kid):
+		var why []string
+		for _, c := range candidates {
+			if c.kid == kid {
+				why = append(why, c.unusable())
+			}
+		}
+		return "", view.Errorf("codec.jwt.key", "the key given under kid %s, the one the header names, cannot check "+
+			"anything: %s", quote(kid), strings.Join(why, "; ")).
+			WithHint("the key is in the set and its producer wrote it wrongly; `rta codec jwk` says the same of it")
 	// Only keys that carry kids can be missing the right one: a PEM key or a
 	// secret has none, and blaming a kid for them hides the real mismatch.
 	case kid != "" && anyKid(candidates, "") && !anyKid(candidates, kid):
 		return "", view.Errorf("codec.jwt.nokey", "no key given has kid %s, the one the header names", quote(kid)).
 			WithHint("the issuer may have rotated its keys — fetch its current key set; `rta codec jwk` lists the kids in one")
 	}
-	return "", view.Errorf("codec.jwt.nokey", "no key given can check an %s signature: %s", alg, strings.Join(reasons, "; ")).
-		WithHint("an " + alg + " signature needs " + a.kind)
+	need := a.kind
+	if need == "an RSA key" {
+		need += " of 2048 bits or more (RFC 7518 §3.3)"
+	}
+	return "", view.Errorf("codec.jwt.nokey", "no key given can check an %s signature: %s", alg, strings.Join(skipped, "; ")).
+		WithHint("an " + alg + " signature needs " + need)
+}
+
+// unusable says why a key the members do not make cannot check anything.
+func (c candidate) unusable() string {
+	why := "its members do not make a key"
+	if len(c.problems) > 0 {
+		why = strings.Join(c.problems, ", ")
+	}
+	return c.label + " cannot be used: " + why
+}
+
+// onlyUnusable reports whether kid names a key given and every key it names
+// is one the members do not make.
+func onlyUnusable(cs []candidate, kid string) bool {
+	found := false
+	for _, c := range cs {
+		if c.kid == kid {
+			if c.pub != nil || c.secret != nil {
+				return false
+			}
+			found = true
+		}
+	}
+	return found
 }
 
 func anySecret(cs []candidate) bool {
@@ -610,17 +730,6 @@ func anyKid(cs []candidate, kid string) bool {
 	return false
 }
 
-func triedWhat(tried int, cs []candidate, kid string) string {
-	if tried == 1 {
-		for _, c := range cs {
-			if kid == "" || c.kid == "" || c.kid == kid {
-				return c.label
-			}
-		}
-	}
-	return fmt.Sprintf("any of the %d keys that could check it", tried)
-}
-
 func decodeAnyBase64(s string) ([]byte, error) {
 	for _, enc := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding, base64.URLEncoding, base64.RawURLEncoding} {
 		if raw, err := enc.DecodeString(s); err == nil {
@@ -634,8 +743,22 @@ func decodeAnyBase64(s string) ([]byte, error) {
 // what was proven and no more: that the signer holds this key. Whether that
 // key is the issuer's is a question about where the key came from, which
 // nothing in the token can answer.
+//
+// What is wrong with the key goes in the same paragraph, since it qualifies
+// the verdict rather than the token.
 func verifiedLine(c candidate, alg string) string {
-	return "VERIFIED — the " + alg + " signature matches " + c.label + ". That proves whoever signed it holds " +
+	line := "VERIFIED — the " + alg + " signature matches " + c.label + ". That proves whoever signed it holds " +
 		"that key; whether the key is the issuer you trust depends on where you got it, and the claims are " +
 		"still the token's own word about itself."
+	if len(c.problems) > 0 {
+		line += " About that key: " + strings.Join(c.problems, "; ") + "."
+	}
+	// RFC 7518 §3.2 requires an HMAC key at least as long as its hash, and a
+	// strict library refuses a shorter one: somebody asking why theirs
+	// rejects a token was told VERIFIED and nothing else.
+	if a := jwsAlgs[alg]; a.kind == "a shared secret" && len(c.secret) < a.hash.Size() {
+		line += fmt.Sprintf(" The secret is %s, under the %d RFC 7518 §3.2 requires of an %s key, and a strict "+
+			"library refuses it.", format.CountOf(len(c.secret), "byte"), a.hash.Size(), alg)
+	}
+	return line
 }

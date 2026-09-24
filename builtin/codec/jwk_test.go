@@ -88,6 +88,20 @@ func TestAPrivateKeyIsNamedAndNeverPrinted(t *testing.T) {
 	}
 }
 
+// An RSA key's primes give its signing key away as surely as d does, and a
+// JWK publishing p and q without d was reported as holding nothing private.
+func TestAnRSAKeyWithItsPrimesIsPrivate(t *testing.T) {
+	key := rsaKey()
+	b := func(n *big.Int) string { return base64.RawURLEncoding.EncodeToString(n.Bytes()) }
+	primes := fmt.Sprintf(`{"kty":"RSA","n":%q,"e":"AQAB","p":%q,"q":%q}`, b(key.N), b(key.Primes[0]), b(key.Primes[1]))
+	if got := pairValue(section(t, jwk(t, primes), "key").(view.KeyValue), "private"); !strings.HasPrefix(got, "yes — it holds the private key (p, q)") {
+		t.Errorf("private = %q, want the primes named", got)
+	}
+	if n := notes(jwk(t, `{"keys":[`+primes+`]}`)); !strings.Contains(n, "(p, q)") {
+		t.Errorf("key set notes = %q, want the private key named", n)
+	}
+}
+
 // A shared secret's RFC 7638 thumbprint is an unsalted hash of the secret,
 // and a dictionary recovers a chosen one from it — `hunter2` here. It pins
 // nothing either, so it is not printed, alone or in a set.
@@ -146,6 +160,25 @@ func TestAnECKeyIsCheckedAsAPoint(t *testing.T) {
 	}
 }
 
+// codec.jwt refuses these keys with "`rta codec jwk` says what is wrong with
+// each one", and codec.jwk said nothing about any of them. An X key declared
+// for encryption is what it should be, and draws nothing.
+func TestAKeyRTACannotVerifyWithSaysWhy(t *testing.T) {
+	for want, key := range map[string]string{
+		"key-agreement key": fmt.Sprintf(`{"kty":"OKP","crv":"X25519","x":%q}`, seg(strings.Repeat("\x09", 32))),
+		"Ed448":             fmt.Sprintf(`{"kty":"OKP","crv":"Ed448","x":%q}`, seg(strings.Repeat("e", 57))),
+		"secp256k1":         fmt.Sprintf(`{"kty":"EC","crv":"secp256k1","x":%q,"y":%q}`, seg(strings.Repeat("x", 32)), seg(strings.Repeat("y", 32))),
+	} {
+		if n := notes(jwk(t, key)); !strings.Contains(n, want) {
+			t.Errorf("%s: notes = %q, want the reason named", key, n)
+		}
+	}
+	enc := fmt.Sprintf(`{"kty":"OKP","crv":"X25519","use":"enc","x":%q}`, seg(strings.Repeat("\x09", 32)))
+	if n := notes(jwk(t, enc)); n != "" {
+		t.Errorf("an X25519 key for encryption drew notes: %q", n)
+	}
+}
+
 func certFor(t *testing.T, priv *ecdsa.PrivateKey) []byte {
 	t.Helper()
 	tmpl := &x509.Certificate{
@@ -175,6 +208,26 @@ func TestACertificateChainIsCheckedAgainstItsKey(t *testing.T) {
 	}
 	if n := notes(s); n != "" {
 		t.Errorf("a consistent key drew notes: %q", n)
+	}
+
+	// Padding lost is named as that, and the URL alphabet as that. An ECDSA
+	// signature varies in length, so the certificate is made until its
+	// encoding is padded and holds a character the alphabets spell apart.
+	padded := der
+	for i := 0; len(padded)%3 == 0 || !strings.ContainsAny(base64.StdEncoding.EncodeToString(padded), "+/"); i++ {
+		if i == 100 {
+			t.Fatal("no certificate whose encoding is padded and differs between the alphabets")
+		}
+		padded = certFor(t, priv)
+	}
+	for want, x5c := range map[string]string{
+		"x5c is unpadded":  strings.TrimRight(base64.StdEncoding.EncodeToString(padded), "="),
+		"x5c is base64url": base64.RawURLEncoding.EncodeToString(padded),
+	} {
+		key := fmt.Sprintf(`{"kty":"EC","crv":"P-256","x":%q,"y":%q,"x5c":[%q]}`, x, y, x5c)
+		if n := notes(jwk(t, key)); !strings.Contains(n, want) {
+			t.Errorf("notes = %q, want %q", n, want)
+		}
 	}
 
 	other, _, _ := ecKey(t)
