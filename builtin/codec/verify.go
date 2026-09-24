@@ -60,6 +60,9 @@ type candidate struct {
 	// gave a bare VERIFIED.
 	ops      []string
 	problems []string
+	// private is set for a JWK that holds its private half, whose key_ops
+	// says what that half may do.
+	private bool
 	// readings are the other ways the secret file's contents may have been
 	// meant, tried in order when they do not match as they are.
 	readings []reading
@@ -279,7 +282,7 @@ func jwkCandidates(raw string, s plugin.Surface) ([]candidate, []string, *view.E
 		// producer had trimmed a leading zero from a coordinate, as about
 		// one key in 128 comes out when a producer does.
 		out = append(out, candidate{pub: k.pub, kid: k.kid, alg: k.alg, use: k.use, ops: k.ops,
-			problems: k.problems, label: label})
+			problems: k.problems, private: k.private, label: label})
 	}
 	var unusable []string
 	for _, c := range out {
@@ -295,9 +298,17 @@ func jwkCandidates(raw string, s plugin.Surface) ([]candidate, []string, *view.E
 // pemCandidates reads every PEM block in raw. Newlines are restored first: a
 // key pasted into a one-line box, or through a shell that joined its lines,
 // arrives with its header, body and footer run together.
+//
+// A private key this cannot open is passed over rather than refusing the
+// rest, and named only when nothing else in the PEM can be used. A server.pem
+// is a certificate beside its encrypted key, and refused whole it verified
+// nothing, in either order, where the certificate alone verifies. A block
+// that does not parse still refuses the PEM: that is a paste gone wrong, and
+// the key the person meant may be the one it cut.
 func pemCandidates(raw string) ([]candidate, *view.Error) {
 	rest := []byte(repairPEM(raw))
 	var out []candidate
+	var sealed []string
 	for {
 		var block *pem.Block
 		block, rest = pem.Decode(rest)
@@ -305,12 +316,19 @@ func pemCandidates(raw string) ([]candidate, *view.Error) {
 			break
 		}
 		pub, err := publicFromPEM(block)
-		if err != nil {
+		switch {
+		case errors.Is(err, errEncryptedKey), errors.Is(err, errOpenSSHKey):
+			sealed = append(sealed, fmt.Sprintf("reading the %s block: %v", strings.ToLower(block.Type), err))
+			continue
+		case err != nil:
 			return nil, view.Errorf("codec.jwt.key", "reading the %s block: %v", strings.ToLower(block.Type), err)
 		}
 		if pub != nil {
 			out = append(out, candidate{pub: pub, label: describePublic(pub) + " from PEM"})
 		}
+	}
+	if len(out) == 0 && len(sealed) > 0 {
+		return nil, view.Errorf("codec.jwt.key", "%s", strings.Join(sealed, "; "))
 	}
 	if len(out) == 0 {
 		return nil, view.Errorf("codec.jwt.key", "no public key, private key or certificate in the PEM given").
@@ -362,7 +380,7 @@ func publicFromPEM(block *pem.Block) (crypto.PublicKey, error) {
 	case "ENCRYPTED PRIVATE KEY":
 		return nil, errEncryptedKey
 	case "OPENSSH PRIVATE KEY":
-		return nil, errors.New("it is in OpenSSH's own format: `ssh-keygen -e -m PKCS8 -f <key>` prints its public key as PEM")
+		return nil, errOpenSSHKey
 	case "CERTIFICATE":
 		cert, err := x509.ParseCertificate(block.Bytes)
 		if err != nil {
@@ -398,8 +416,11 @@ func publicFromPEM(block *pem.Block) (crypto.PublicKey, error) {
 	return nil, nil // a block of another kind — EC PARAMETERS beside a key — is not a key
 }
 
-var errEncryptedKey = errors.New("it is encrypted: decrypt it first, or pass its public key " +
-	"(`openssl pkey -in <key> -pubout` asks for the passphrase and prints it)")
+var (
+	errEncryptedKey = errors.New("it is encrypted: decrypt it first, or pass its public key " +
+		"(`openssl pkey -in <key> -pubout` asks for the passphrase and prints it)")
+	errOpenSSHKey = errors.New("it is in OpenSSH's own format: `ssh-keygen -e -m PKCS8 -f <key>` prints its public key as PEM")
+)
 
 // describePublic names a key for a sentence. ParsePKIXPublicKey also returns
 // X25519 and DSA keys, which no JWS algorithm here checks, and they were
@@ -474,8 +495,7 @@ func (c candidate) fits(alg string) (bool, string) {
 		return false, c.unusable()
 	case c.use == "enc":
 		return false, c.label + " is for encryption (use enc)"
-	// RFC 7517 §4.3: key_ops says what a key may do, as use does.
-	case len(c.ops) > 0 && !slices.Contains(c.ops, "verify"):
+	case !c.opsAllowVerify():
 		return false, c.label + " is limited by key_ops to " + visible(strings.Join(c.ops, ", "))
 	case c.alg != "" && c.alg != alg:
 		return false, c.label + " is declared for " + visible(c.alg)
@@ -505,6 +525,16 @@ func (c candidate) fits(alg string) (bool, string) {
 		return a.kind == "an Ed25519 key", c.label + " is not " + a.kind
 	}
 	return false, c.label + " is not " + a.kind
+}
+
+// opsAllowVerify reports whether the key's key_ops, which RFC 7517 §4.3 has
+// say what a key may do as use does, lets it check a signature. A private
+// key's key_ops says what its private half may do, and WebCrypto exports
+// every ECDSA and RSA signing key with ["sign"] alone: the public half of a
+// key allowed to sign checks exactly the signatures it makes, and refusing it
+// broke the promise keysFrom makes to take a private key.
+func (c candidate) opsAllowVerify() bool {
+	return len(c.ops) == 0 || slices.Contains(c.ops, "verify") || c.private && slices.Contains(c.ops, "sign")
 }
 
 func checkHMAC(_ crypto.PublicKey, secret, input, sig []byte, h crypto.Hash) (bool, string) {
