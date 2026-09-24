@@ -826,9 +826,13 @@ const minWrap = 16
 // mechanism of this renderer: Text, KeyValue values, Tree rows and errors all
 // go through it, so they break the same way and there is one place to change.
 //
-// width <= 0 means "natural width" and returns s untouched — that is what
-// keeps piped and redirected output byte-identical to what it has always
-// been, and diffable across machines.
+// width <= 0 means "natural width" and returns s untouched, as does any width
+// under minWrap. A pipe is handed 0 unless COLUMNS asked for a width by name
+// (termWidth), and that is what keeps piped and redirected output
+// byte-identical to what it has always been and diffable across machines.
+// Once COLUMNS is set a pipe is shaped exactly as a terminal of that width
+// would be, a token longer than the budget broken with the rest: the width
+// was asked for, and -o json is the channel whose values are never reshaped.
 func wrap(s string, width int, cont string) string {
 	if width < minWrap {
 		return s
@@ -846,8 +850,9 @@ func wrap(s string, width int, cont string) string {
 	// renderer actually shows. `rta explain s3.object.get` wrapped its own
 	// command line as "[--" / "endpoint <string>]", which is a line nobody can
 	// copy and a flag that reads as two things; `proj1-staging` and
-	// `--max-uses` break the same way wherever they land near the margin. Every hyphen in this tool is inside an identifier somebody may
-	// be about to paste.
+	// `--max-uses` break the same way wherever they land near the margin.
+	// Every hyphen in this tool is inside an identifier somebody may be about
+	// to paste.
 	lines := hardBreakOverlong(ansi.Wordwrap(shieldHyphens(s), budget, ""), budget)
 	for i, line := range lines {
 		lines[i] = restoreHyphens(line)
