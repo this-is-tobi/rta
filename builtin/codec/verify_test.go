@@ -386,8 +386,12 @@ func TestAPublicKeyGivenAsTheSecretIsRefused(t *testing.T) {
 		"DER":              string(der),
 		"PKCS#1 DER":       string(x509.MarshalPKCS1PublicKey(&key.PublicKey)),
 		"certificate":      base64.StdEncoding.EncodeToString(certDER),
-		"RSA JWK":          rfc7638Key,
-		"key set":          `{"keys":[` + rfc8037Public + `]}`,
+		// Every reading of the file is a secret it may be taken as, and the
+		// one without a final line break was never looked at: DER with a
+		// newline after it parses as nothing, and without one as the key.
+		"DER and a line break": string(der) + "\n",
+		"RSA JWK":              rfc7638Key,
+		"key set":              `{"keys":[` + rfc8037Public + `]}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			forged := sign(`{"alg":"HS256"}`, `{"sub":"admin"}`, func(in []byte) []byte {

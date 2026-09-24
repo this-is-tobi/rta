@@ -86,7 +86,7 @@ func secretFrom(path string) (candidate, *view.Error) {
 	if err != nil {
 		return candidate{}, view.Errorf("codec.jwt.secret", "reading the secret file: %v", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	raw, err := pipein.ReadFrom(f, maxSecretFile)
 	switch {
 	case errors.Is(err, pipein.ErrTooLarge):
@@ -98,8 +98,15 @@ func secretFrom(path string) (candidate, *view.Error) {
 	case raw == "":
 		return candidate{}, view.Errorf("codec.jwt.secret", "the secret file %s is empty", quote(path))
 	}
-	if what := publicKeyIn([]byte(raw)); what != "" {
-		return candidate{}, keyAsSecret(path, what)
+	// Every reading the file may be taken in is checked, not only the bytes
+	// as they are: DER with a line break after it parses as no key at all,
+	// and the reading without the break is the key, which then checked an
+	// HS256 token forged with it.
+	trimmed := strings.TrimSuffix(strings.TrimSuffix(raw, "\n"), "\r")
+	for _, b := range []string{raw, trimmed} {
+		if what := publicKeyIn([]byte(b)); what != "" {
+			return candidate{}, keyAsSecret(path, what)
+		}
 	}
 	if decoded, derr := decodeAnyBase64(strings.Join(strings.Fields(raw), "")); derr == nil {
 		if what := publicKeyIn(decoded); what != "" {
@@ -116,7 +123,6 @@ func secretFrom(path string) (candidate, *view.Error) {
 		return candidate{secret: secret, label: "the oct key in " + quote(path)}, nil
 	}
 	c := candidate{secret: []byte(raw), label: "the secret in " + quote(path)}
-	trimmed := strings.TrimSuffix(strings.TrimSuffix(raw, "\n"), "\r")
 	if trimmed != raw && trimmed != "" {
 		c.readings = append(c.readings, reading{[]byte(trimmed), c.label + ", without its final line break"})
 	}
