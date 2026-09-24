@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"slices"
 	"strings"
 )
 
@@ -195,6 +196,18 @@ func Resolve(c Capability, in Inputs) map[string]any {
 			if n, ok := toFloat(v); ok {
 				out[name] = clampFloat(n, f)
 			}
+		case String:
+			if s, ok := v.(string); ok {
+				out[name] = canonicalOption(f, s)
+			}
+		case StringSlice:
+			if list, ok := v.([]string); ok && len(f.Options) > 0 {
+				canon := make([]string, len(list))
+				for i, s := range list {
+					canon[i] = canonicalOption(f, s)
+				}
+				out[name] = canon
+			}
 		}
 	}
 	return out
@@ -266,6 +279,27 @@ func toFloat(v any) (float64, bool) {
 		}
 	}
 	return 0, false
+}
+
+// canonicalOption returns the declared spelling of v when v names one of
+// f's Options in another case — `--type mx` for a field that offers MX — and
+// v unchanged otherwise, including when it names none of them, which is
+// CheckOptions' to refuse.
+//
+// Normalised here, beside the clamping, so a handler reads one spelling of
+// each value whatever a person typed: net.dns upper-cases its own input and
+// the rest compare exactly, so `--encoding HEX` and `--proto TCP` meant
+// different things to different handlers.
+func canonicalOption(f Field, v string) string {
+	if len(f.Options) == 0 || v == "" || slices.Contains(f.Options, v) {
+		return v
+	}
+	for _, o := range f.Options {
+		if strings.EqualFold(o, v) {
+			return o
+		}
+	}
+	return v
 }
 
 func clampInt(n int, f Field) int {

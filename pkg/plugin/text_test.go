@@ -25,7 +25,7 @@ var displayAttacks = map[string]string{
 func inputPlugin() Plugin {
 	p := validPlugin()
 	p.Capabilities[0].Inputs = []Field{
-		{Name: "key", Type: String, Help: "key to read", Default: "default", Options: []string{"a", "b"}},
+		{Name: "key", Type: String, Help: "key to read", Default: "default", Options: []string{"default", "a", "b"}},
 	}
 	return p
 }
