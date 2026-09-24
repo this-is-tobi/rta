@@ -23,13 +23,15 @@ import (
 // the text on screen is not the text in the data, and CSI 2 J erases what was
 // above.
 //
-// `-o json` is the one byte-exact format. It escapes control characters on the
-// way out, so nothing raw reaches a terminal from the encoder, and it is what
-// the contract promises works in a pipe. Every other format is cleaned, which was
-// measured rather than assumed: goccy/go-yaml writes a control character
-// straight into a plain scalar (which is also YAML that is not legal), and
-// encoding/csv quotes a field for comma, quote and newline, none of which ESC
-// is.
+// `-o json` is the one byte-exact format. encoding/json escapes the C0
+// controls on the way out, and view.Marshal what it leaves raw that a terminal
+// still acts on — DEL, the C1 controls, the characters that reorder text — so
+// nothing reaches a terminal raw from the encoder, and a parser still reads
+// back every string exactly. It is what the contract promises works in a
+// pipe. Every other format is cleaned, which was measured rather than
+// assumed: goccy/go-yaml writes a control character straight into a plain
+// scalar (which is also YAML that is not legal), and encoding/csv quotes a
+// field for comma, quote and newline, none of which ESC is.
 //
 // The escaping that makes json safe here is safe *against a terminal*. It buys
 // nothing against a model, which reads the decoded string — see

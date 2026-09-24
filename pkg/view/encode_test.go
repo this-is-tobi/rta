@@ -2,6 +2,7 @@ package view
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -36,6 +37,45 @@ func TestMarshalLeavesHTMLCharactersAlone(t *testing.T) {
 	indented, err := MarshalIndent(Envelope{View: Text{Body: "x&y"}}, "", "  ")
 	if err != nil || string(indented) != "{\n  \"body\": \"x&y\",\n  \"type\": \"text\"\n}" {
 		t.Errorf("indented = %q, %v", indented, err)
+	}
+}
+
+// What a terminal acts on and encoding/json writes raw comes out escaped, at
+// every depth and indented or not — DEL, the C1 controls and the characters
+// that reorder text — so `-o json` on a terminal is drawn as it is stored; a
+// parser reads back the same string. The marks either side of the reorder
+// characters in their block, and everything else, are left as they are.
+func TestMarshalEscapesWhatATerminalActsOn(t *testing.T) {
+	for _, r := range []rune{0x7f, 0x85, 0x9b, 0x9d, 0x202a, 0x202b, 0x202c, 0x202d, 0x202e, 0x2066, 0x2067, 0x2068, 0x2069} {
+		name := "invoice" + string(r) + "fdp.exe"
+		v := Sections{Items: []Section{{Title: name, View: Table{
+			Columns: []Column{{Name: "name"}}, Rows: [][]string{{name}},
+		}}}}
+		for _, indent := range []string{"", "  "} {
+			data, err := MarshalIndent(Envelope{View: v}, "", indent)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.ContainsRune(string(data), r) {
+				t.Errorf("U+%04X: encoded = %s, still holds the character", r, data)
+			}
+			if want := fmt.Sprintf(`\u%04x`, r); strings.Count(string(data), want) != 2 {
+				t.Errorf("U+%04X: encoded = %s, want %s twice", r, data, want)
+			}
+			var back struct {
+				Items []struct {
+					Title string `json:"title"`
+				} `json:"items"`
+			}
+			if err := json.Unmarshal(data, &back); err != nil || len(back.Items) != 1 || back.Items[0].Title != name {
+				t.Errorf("U+%04X: read back as %+v (%v), want the title unchanged", r, back, err)
+			}
+		}
+	}
+	plain := "abc" + string(rune(0x200f)) + string(rune(0x2065)) + string(rune(0x206a)) + "é"
+	data, err := Marshal(Text{Body: plain})
+	if err != nil || !strings.Contains(string(data), plain) {
+		t.Errorf("encoded = %s (%v), want %q as it is", data, err, plain)
 	}
 }
 
