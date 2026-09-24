@@ -912,14 +912,24 @@ func validatorFor(f plugin.Field) func(string) error {
 			}
 			return nil
 		}
+		// The range, checked as the value is typed, by the rule the host
+		// refuses a run with — so the footer says it before the run does.
 		switch f.Type {
 		case plugin.Int:
-			if _, err := strconv.Atoi(s); err != nil {
+			n, err := strconv.Atoi(s)
+			if err != nil {
 				return fmt.Errorf("must be an integer")
 			}
+			if want, ok := f.Range(n); !ok {
+				return fmt.Errorf("must be %s", strings.TrimPrefix(want, "of "))
+			}
 		case plugin.Float:
-			if _, err := strconv.ParseFloat(s, 64); err != nil {
+			x, err := strconv.ParseFloat(s, 64)
+			if err != nil {
 				return fmt.Errorf("must be a number")
+			}
+			if want, ok := f.Range(x); !ok {
+				return fmt.Errorf("must be %s", strings.TrimPrefix(want, "of "))
 			}
 		}
 		return nil
