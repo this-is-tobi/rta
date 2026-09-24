@@ -32,6 +32,7 @@ import (
 	"strings"
 
 	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/internal/pluginconf"
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/internal/tunnel"
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -901,8 +902,8 @@ func tunnellable(ns string, inst Installed) (fillable, known bool) {
 }
 
 // checkSet reports a key of Set that no capability in the namespace reads, a
-// value outside a declared Options set, or an endpoint key a coordinate
-// shadows.
+// value none of the capabilities reading the key offers among its Options, or
+// an endpoint key a coordinate shadows.
 //
 // The first two are the checks internal/pluginconf makes about a plugins:
 // section, for the same reason: a key nothing reads is a value an operator
@@ -916,7 +917,13 @@ func tunnellable(ns string, inst Installed) (fillable, known bool) {
 // a row Check reports but Lookup honours is the page-versus-run drift this
 // package has now removed five times.
 func checkSet(name, key string, conn config.Connection, ns string, inst Installed) []Problem {
-	fillable := map[string]plugin.Field{}
+	// Every reader of a key, not one: a key serves each capability in the
+	// namespace that declares it, and they need not agree about what it
+	// takes (pluginconf.SharedField has the cases). Held to whichever
+	// declared it last, `mode: fast` — which `rta profile set` writes, since
+	// one capability offers it — made Lookup refuse the whole profile for
+	// every capability, the one offering it included.
+	readers := map[string][]plugin.Field{}
 	declared := map[string]bool{}
 	// Whether this namespace has an EndpointTLS input at all — not which
 	// capability declares it, matching fillable/declared's own namespace-wide
@@ -938,7 +945,7 @@ func checkSet(name, key string, conn config.Connection, ns string, inst Installe
 			}
 			declared[f.Config] = true
 			if plugin.ProfileFillable(c, f) {
-				fillable[f.Config] = f
+				readers[f.Config] = append(readers[f.Config], f)
 			}
 		}
 	}
@@ -950,8 +957,7 @@ func checkSet(name, key string, conn config.Connection, ns string, inst Installe
 
 	var problems []Problem
 	for _, k := range set {
-		f, ok := fillable[k]
-		if !ok {
+		if len(readers[k]) == 0 {
 			reason := fmt.Sprintf("nothing in %s reads %q", ns, k)
 			hint := "`rta explain <capability>` lists the config keys it reads"
 			if declared[k] {
@@ -965,7 +971,13 @@ func checkSet(name, key string, conn config.Connection, ns string, inst Installe
 			problems = append(problems, Problem{Name: name, Plugin: key, Reason: reason, Hint: hint})
 			continue
 		}
-		if conn.Tunnelled() && f.Endpoint != plugin.EndpointNone {
+		f := pluginconf.SharedField(readers[k])
+		// A role any reader declares, as tunnellable and checkSecretRefs read
+		// roles: a forward that overrides the key for one capability has made
+		// the line a destination that call never reads.
+		endpoint := slices.ContainsFunc(readers[k], func(r plugin.Field) bool { return r.Endpoint != plugin.EndpointNone })
+		adjacent := slices.ContainsFunc(readers[k], func(r plugin.Field) bool { return r.TLSAdjacent })
+		if conn.Tunnelled() && endpoint {
 			// Before the Options check, because a value nothing reads being
 			// misspelt on top is not the sentence the operator needs first.
 			problems = append(problems, Problem{Name: name, Plugin: key,
@@ -979,7 +991,7 @@ func checkSet(name, key string, conn config.Connection, ns string, inst Installe
 		// forces this namespace's EndpointTLS input to its off value
 		// unconditionally, and TLSAdjacent is a plugin's own declaration
 		// that its value then does nothing — see plugin.Field.TLSAdjacent.
-		if conn.Tunnelled() && f.TLSAdjacent && hasTLSField {
+		if conn.Tunnelled() && adjacent && hasTLSField {
 			problems = append(problems, Problem{Name: name, Plugin: key,
 				Reason: fmt.Sprintf("`set: %s` is overridden along with the TLS mode the forward `%s:` turns off",
 					k, conn.TunnelKey()),
@@ -995,11 +1007,22 @@ func checkSet(name, key string, conn config.Connection, ns string, inst Installe
 				Reason: fmt.Sprintf("`set: %s` %s", k, problem), Hint: hint})
 			continue
 		}
-		if len(f.Options) > 0 {
-			if s, isStr := conn.Set[k].(string); isStr && !slices.Contains(f.Options, s) {
+		// Matched the way a run matches it: Resolve spells an option given in
+		// another case as declared, so `encoding: BASE32` runs as base32, and
+		// refusing it here refused the profile a config line with the same
+		// value runs through. Every element of a list, and a number's
+		// spelling, as doctor and the host's guard read them — only a lone
+		// string was compared, so `kinds: [beta, delta]` passed here and was
+		// refused on every call.
+		if len(f.Options) == 0 {
+			continue
+		}
+		for _, got := range pluginconf.OptionValues(conn.Set[k]) {
+			if _, named := f.CanonicalOption(got); got != "" && !named {
 				problems = append(problems, Problem{Name: name, Plugin: key,
-					Reason: fmt.Sprintf("%q is not a value %s accepts", s, k),
+					Reason: fmt.Sprintf("%q is not a value %s accepts", got, k),
 					Hint:   "one of: " + strings.Join(f.Options, "|")})
+				break
 			}
 		}
 	}
