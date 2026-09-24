@@ -61,8 +61,9 @@ Colour is never the only signal. `sys disk` states the same band as a word in a 
 **A machine-readable format means machine consumption, and rta treats it that way.** With `-o json|yaml|csv|md`, stdout carries the view and nothing else — errors go to stderr, also in the format you asked for, and the startup notice about untrusted artifacts is suppressed entirely. So the output on your screen is the output a parser accepts, which is where copy-and-paste gets it from:
 
 ```bash
-# Approve every artifact rta found and refused to run.
-rta plugin trust -o json | jq -r '.rows[][0]' | xargs -rn1 rta plugin trust
+# Approve every artifact rta found and refused to run. `[]?`, because with
+# nothing waiting the answer is a key/value summary, not a table.
+rta plugin trust -o json | jq -r '.rows[]?[0]' | xargs -rn1 rta plugin trust
 
 # Every profile, and what each one covers.
 rta profile list -o json | jq -r '.rows[] | "\(.[0])\t\(.[1])"'
