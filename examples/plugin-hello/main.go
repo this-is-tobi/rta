@@ -59,7 +59,7 @@ func Plugin() plugin.Plugin {
 				ID:      "hello.greet",
 				Summary: "Greet somebody, in a language of your choosing",
 				// Read is the claim that this changes nothing. It is what
-				// decides whether an agent may call this without an
+				// decides whether an agent may call this without a
 				// person's grant, so it is a promise about blast
 				// radius rather than a label.
 				Safety:     plugin.Read,
