@@ -32,8 +32,9 @@ import (
 //     may carry anything, a detached one (Appendix F) carries nothing, and an
 //     unencoded one (RFC 7797) carries its payload as it is.
 //   - A JWE, compact or JSON: its headers and the size of every part. Not its
-//     content. Decrypting takes the recipient's private key, and a decoder is
-//     not the place to hand one to.
+//     content. Decrypting takes the recipient's key — a private key, a shared
+//     key or a password, depending on alg (keyHeld) — and a decoder is not
+//     the place to hand one to.
 //   - A token nested in another (cty "JWT", RFC 7519 §5.2), when the outer one
 //     is signed and so the inner one is there to read.
 //
@@ -470,10 +471,11 @@ func verdict(header object, signature string) string {
 // the screen — the reader has to know today's epoch to subtract from.
 //
 // Phrased throughout as what the token says rather than what is so. These
-// dates are exactly as unverified as the rest of it: anybody can mint a token
-// claiming to be valid until 2099, and this sentence renders directly beneath
-// the line saying nobody checked. A reader who takes "still valid" as
-// authentication has been told otherwise twice in the same paragraph.
+// dates are the token's own word even when its signature checks: anybody can
+// mint a token claiming to be valid until 2099, and this sentence renders
+// beneath the verdict — NOT VERIFIED, or VERIFIED, which proves who signed it
+// and not that its dates are true. A reader who takes "still valid" as
+// authentication has been told otherwise in the same paragraph.
 //
 // The two sentences after the first are the rejections that are hardest to
 // read off the numbers: an iat in the future, which is two clocks disagreeing
