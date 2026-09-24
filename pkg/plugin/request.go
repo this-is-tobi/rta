@@ -46,6 +46,7 @@ const (
 // Request carries resolved inputs and invocation context to a handler.
 type Request struct {
 	values  map[string]any
+	origins map[string]origin
 	surface Surface
 	confine func(field, path string) (string, *view.Error)
 	DryRun  bool
@@ -121,6 +122,17 @@ func (r Request) With(values map[string]any) Request {
 		merged[k] = v
 	}
 	r.values = merged
+	// An overlaid value is the embedding page's, not the operator's, so it
+	// loses the note of where the value it replaced came from.
+	if len(r.origins) > 0 {
+		kept := make(map[string]origin, len(r.origins))
+		for k, o := range r.origins {
+			if _, over := values[k]; !over {
+				kept[k] = o
+			}
+		}
+		r.origins = kept
+	}
 	return r
 }
 

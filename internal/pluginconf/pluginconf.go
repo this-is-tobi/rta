@@ -29,7 +29,6 @@ package pluginconf
 
 import (
 	"fmt"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -240,25 +239,25 @@ func (r *Resolver) Check(reg *registry.Registry) []Problem {
 	sort.Strings(namespaces)
 
 	for _, ns := range namespaces {
-		declared := map[string]plugin.Field{}
+		readers := map[string][]plugin.Field{}
 		for _, c := range reg.Capabilities() {
 			if !strings.HasPrefix(c.ID, ns+".") {
 				continue
 			}
 			for _, f := range c.Inputs {
 				if f.Config != "" {
-					declared[f.Config] = f
+					readers[f.Config] = append(readers[f.Config], f)
 				}
 			}
 		}
 		for _, key := range flatten(r.sections[ns], "") {
-			f, ok := declared[key]
-			if !ok {
+			if len(readers[key]) == 0 {
 				problems = append(problems, Problem{Section: ns,
 					Reason: fmt.Sprintf("nothing in %q reads %q", ns, key),
 					Hint:   "`rta explain` lists the inputs a capability takes"})
 				continue
 			}
+			f := SharedField(readers[key])
 			v, _ := lookup(r.sections[ns], key)
 			// Before the Options check, and reported here for the reason the
 			// rest of this function exists: a value whose type the handler
@@ -271,18 +270,145 @@ func (r *Resolver) Check(reg *registry.Registry) []Problem {
 					Reason: key + " " + problem, Hint: hint})
 				continue
 			}
+			// Every capability reading it holds a number to its own range, so
+			// one outside all of them runs everywhere with a bound nobody
+			// wrote — worth saying, since the file then does not mean what it
+			// says anywhere. Not echoed, like the type problem above.
+			if bounds := f.Bounds(); bounds != "" {
+				if _, ok := f.Range(v); !ok {
+					problems = append(problems, Problem{Section: ns,
+						Reason: key + " is outside what every capability reading it takes, " +
+							"so each runs with its own nearest bound instead",
+						Hint: "write a value " + bounds})
+					continue
+				}
+			}
 			if len(f.Options) == 0 {
 				continue
 			}
-			got := fmt.Sprint(v)
-			if !slices.Contains(f.Options, got) {
-				problems = append(problems, Problem{Section: ns,
-					Reason: fmt.Sprintf("%s = %q is not one of the values %q accepts", key, got, f.Name),
-					Hint:   "one of: " + strings.Join(f.Options, ", ")})
+			// Matched the way a run matches it, in any case: `BASE32` runs as
+			// base32, and a report calling it invalid sent the operator to
+			// fix a file every call already reads correctly.
+			for _, got := range optionValues(v) {
+				if _, named := f.CanonicalOption(got); got != "" && !named {
+					problems = append(problems, Problem{Section: ns,
+						Reason: fmt.Sprintf("%s = %q is not one of the values %q accepts", key, got, f.Name),
+						Hint:   "one of: " + strings.Join(f.Options, ", ")})
+					break
+				}
 			}
 		}
 	}
 	return problems
+}
+
+// optionValues is a stated value as the option strings a run compares: one
+// for a scalar, each element of a list. A shape the type check above already
+// passed.
+func optionValues(v any) []string {
+	switch list := v.(type) {
+	case []any:
+		out := make([]string, 0, len(list))
+		for _, e := range list {
+			out = append(out, fmt.Sprint(e))
+		}
+		return out
+	case []string:
+		return list
+	}
+	return []string{fmt.Sprint(v)}
+}
+
+// SharedField is what a config key accepts when several inputs read it: the
+// widest range any of them allows, and every option any of them offers — or
+// no Options at all when one of them takes free text. The rest is the first
+// reader's, which for the ordinary case of one declaration copied across a
+// namespace is every reader's.
+//
+// **One key is not one input.** A namespace's key serves every capability
+// that declares it, and they need not agree about it: net's `timeout` is read
+// by six capabilities with three different maxima, fs's `limit` by two, pg's
+// by five with four. plugin.Resolve holds a number from the file inside each
+// reader's own range, so a value some reader accepts is one every reader can
+// run with, and the value to refuse — or, for doctor, to report — is one no
+// reader accepts. Held to one field instead, as the three writers of a key
+// each were — doctor to the last declared, `rta profile set` to the last by
+// ID, the TUI's config editor to the first — a writer refused values most of
+// the namespace takes and wrote ones the rest refused on every call, and the
+// three disagreed with each other about the same key.
+//
+// The widest range rather than the union of them, because a Field holds one
+// interval: two readers bounded 1..10 and 20..30 would let 15 through, which
+// each then holds to its own nearest bound. No declaration does that.
+func SharedField(readers []plugin.Field) plugin.Field {
+	if len(readers) == 0 {
+		return plugin.Field{}
+	}
+	f := readers[0]
+	f.Options = nil
+	free := false
+	for _, r := range readers {
+		if len(r.Options) == 0 {
+			free = true
+		}
+		for _, o := range r.Options {
+			if _, named := f.CanonicalOption(o); !named {
+				f.Options = append(f.Options, o)
+			}
+		}
+		f.Min = widest(f.Min, r.Min, false)
+		f.Max = widest(f.Max, r.Max, true)
+		f.Required = f.Required && r.Required
+	}
+	if free {
+		f.Options = nil
+	}
+	return f
+}
+
+// widest is the looser of two bounds: nil, which is none, beats anything.
+func widest(a, b any, upper bool) any {
+	x, okA := number(a)
+	y, okB := number(b)
+	if !okA || !okB {
+		return nil
+	}
+	if (upper && y > x) || (!upper && y < x) {
+		return b
+	}
+	return a
+}
+
+// number reads a declared bound, which Validate has already held to being a
+// number of one of these shapes.
+func number(v any) (float64, bool) {
+	switch n := v.(type) {
+	case int:
+		return float64(n), true
+	case int8:
+		return float64(n), true
+	case int16:
+		return float64(n), true
+	case int32:
+		return float64(n), true
+	case int64:
+		return float64(n), true
+	case uint:
+		return float64(n), true
+	case uint8:
+		return float64(n), true
+	case uint16:
+		return float64(n), true
+	case uint32:
+		return float64(n), true
+	case uint64:
+		return float64(n), true
+	case float32:
+		return float64(n), true
+	case float64:
+		return n, true
+	}
+	return 0, false
 }
 
 // flatten lists the dotted keys that hold a value, deepest-first, so a nested

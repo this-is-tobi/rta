@@ -339,6 +339,52 @@ func TestSetHoldsAValueToItsRangeAndOptions(t *testing.T) {
 	}
 }
 
+// One key read by two capabilities that bound it differently — net's
+// `timeout` shape. profile set held the value to whichever field declaredFor
+// kept last by ID, so a value the first capability takes was refused as the
+// second's, and an option only the first offers could not be written at all.
+// Held now to what some capability reading the key accepts, which every one
+// of them can run with: each holds a number from the profile to its own range.
+func TestSetHoldsASharedKeyToEveryCapabilityReadingIt(t *testing.T) {
+	run := func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "ok"}, nil }
+	reg := registry.New()
+	if err := reg.Register(plugin.Plugin{
+		Name: "db", Summary: "db plugin",
+		Capabilities: []plugin.Capability{
+			{ID: "db.ping", Summary: "ping", Safety: plugin.Read, Run: run, Inputs: []plugin.Field{
+				{Name: "wait", Type: plugin.Int, Default: 10, Min: 1, Max: 300, Config: "wait", Help: "seconds"},
+				{Name: "mode", Type: plugin.String, Config: "mode", Options: []string{"fast", "safe"}, Help: "mode"},
+			}},
+			{ID: "db.port", Summary: "port", Safety: plugin.Read, Run: run, Inputs: []plugin.Field{
+				{Name: "wait", Type: plugin.Int, Default: 2, Min: 1, Max: 60, Config: "wait", Help: "seconds"},
+				{Name: "mode", Type: plugin.String, Config: "mode", Options: []string{"safe", "thorough"}, Help: "mode"},
+			}},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, errOut, err := runWith(t, reg, "",
+		"profile", "set", "slow", "--plugin", "db", "--set", "wait=90", "--set", "mode=SAFE"); err != nil {
+		t.Fatalf("a value one reader takes was refused: %v\n%s", err, errOut)
+	}
+	cfg, err := config.LoadFile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.Profiles["slow"].Plugins["db"].Set["mode"]; got != "safe" {
+		t.Errorf("mode written as %#v, want the declared spelling", got)
+	}
+	for _, tc := range []struct{ pair, code, want string }{
+		{"wait=400", "core.profile.set.range", "from 1 to 300"},
+		{"mode=reckless", "core.profile.set.option", "fast, safe, thorough"},
+	} {
+		_, errOut, err := runWith(t, reg, "", "profile", "set", "slow", "--plugin", "db", "--set", tc.pair)
+		if err == nil || !strings.Contains(errOut, tc.code) || !strings.Contains(errOut, tc.want) {
+			t.Errorf("%s: err = %v, output %q; want %s naming %q", tc.pair, err, errOut, tc.code, tc.want)
+		}
+	}
+}
+
 // A key nothing reads is refused in the words the report already uses, rather
 // than in new ones invented here.
 func TestSetRefusesAKeyThePluginDoesNotRead(t *testing.T) {

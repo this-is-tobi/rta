@@ -114,6 +114,42 @@ func vaultShapedPlugin() plugin.Plugin {
 	}
 }
 
+// One key, two capabilities bounding it differently — net's `timeout`. The
+// editor built the box on the first one declared, so its range check refused
+// what the other capability takes, and picked options from one reader only.
+// The box takes what some capability reading the key accepts now, which
+// every one of them runs with, each holding a number to its own range.
+func TestAConfigBoxTakesWhatAnyCapabilityReadingTheKeyAccepts(t *testing.T) {
+	run := func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "ok"}, nil }
+	fields := configFields(plugin.Plugin{
+		Name: "net", Summary: "net",
+		Capabilities: []plugin.Capability{
+			{ID: "net.port", Summary: "port", Safety: plugin.Read, Run: run, Inputs: []plugin.Field{
+				{Name: "timeout", Type: plugin.Int, Default: 2, Min: 1, Max: 60, Config: "timeout"},
+				{Name: "proto", Type: plugin.String, Config: "proto", Options: []string{"tcp"}},
+			}},
+			{ID: "net.ping", Summary: "ping", Safety: plugin.Read, Run: run, Inputs: []plugin.Field{
+				{Name: "timeout", Type: plugin.Int, Default: 10, Min: 1, Max: 300, Config: "timeout"},
+				{Name: "proto", Type: plugin.String, Config: "proto", Options: []string{"tcp", "udp"}},
+			}},
+		},
+	})
+	if len(fields) != 2 {
+		t.Fatalf("configFields = %v, want timeout and proto once each", fields)
+	}
+	timeout, proto := fields[0], fields[1]
+	check := validatorFor(timeout)
+	if err := check("200"); err != nil {
+		t.Errorf("200 was refused though net.ping takes it: %v", err)
+	}
+	if err := check("400"); err == nil {
+		t.Error("400 was accepted, which no capability reading timeout takes")
+	}
+	if len(proto.Options) != 2 || proto.Options[1] != "udp" {
+		t.Errorf("proto offers %v, want every option any reader offers", proto.Options)
+	}
+}
+
 // The config editor edits config KEYS, and two inputs sharing a name are two
 // keys.
 //
