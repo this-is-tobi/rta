@@ -81,6 +81,10 @@ func TestDashboardAddRefusesWhatATileCannotBe(t *testing.T) {
 		{"a credential in plaintext", []string{"db.status", "--set", "password=hunter2"}, "core.dashboard.set.secret"},
 		{"the profile as an input", []string{"db.status", "--set", "profile=prod"}, "core.dashboard.set.profile"},
 		{"a value of the wrong type", []string{"db.status", "--set", "port=many"}, "core.dashboard.set.type"},
+		// What every run would refuse, refused before it is written: a tile
+		// with either would fail on each refresh with nobody watching.
+		{"a number outside its range", []string{"db.status", "--set", "port=70000"}, "core.input.range"},
+		{"a value outside its options", []string{"db.status", "--set", "sslmode=allow"}, "core.input.option"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

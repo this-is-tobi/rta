@@ -252,6 +252,13 @@ func runDashboardAdd(cmd *cobra.Command, id string, reg *registry.Registry, dryR
 	if verr != nil {
 		return nil, verr
 	}
+	// The host holds every run to what the inputs declare, so a --set
+	// outside an input's options or range would be written, then refused on
+	// every refresh with nobody watching. Refused here instead, by the same
+	// check, while the person who typed it is still looking.
+	if verr := plugin.CheckInputs(c, plugin.NewRequest(plugin.Resolve(c, plugin.Inputs{Caller: with}), false, false)); verr != nil {
+		return nil, verr
+	}
 	if verr := tileCanRunUnasked(c, with, ref != ""); verr != nil {
 		return nil, verr
 	}
