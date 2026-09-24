@@ -41,7 +41,9 @@ type Inputs struct {
 
 // Resolve turns the values a surface collected into the values a handler
 // actually runs with: declared defaults filled in, numbers normalised to one
-// Go type, and declared bounds applied.
+// Go type, and an option typed in another case spelled as declared. What the
+// declaration says a value may be — its Options, its Min and Max — the host
+// holds to after this, in CheckInputs, where a refusal can be returned.
 //
 // It exists because four surfaces build a Request and each was doing a
 // different subset of that work. The CLI got it right by accident — cobra
@@ -62,7 +64,7 @@ type Inputs struct {
 // surface that reads config.
 //
 // Every surface that runs a handler calls this. Nothing downstream has to
-// know which of the values were declared, defaulted, or clamped.
+// know which of the values were declared or defaulted.
 //
 // Precedence is caller, then profile, then the namespace-wide environment
 // fallback, then config, then Default. A handler reads req.String("host") and
@@ -190,11 +192,11 @@ func Resolve(c Capability, in Inputs) map[string]any {
 		switch f.Type {
 		case Int:
 			if n, ok := toInt(v); ok {
-				out[name] = clampInt(n, f)
+				out[name] = n
 			}
 		case Float:
 			if n, ok := toFloat(v); ok {
-				out[name] = clampFloat(n, f)
+				out[name] = n
 			}
 		case String:
 			if s, ok := v.(string); ok {
@@ -284,9 +286,9 @@ func toFloat(v any) (float64, bool) {
 // canonicalOption returns the declared spelling of v when v names one of
 // f's Options in another case — `--type mx` for a field that offers MX — and
 // v unchanged otherwise, including when it names none of them, which is
-// CheckOptions' to refuse.
+// CheckInputs' to refuse.
 //
-// Normalised here, beside the clamping, so a handler reads one spelling of
+// Normalised here, beside the numbers, so a handler reads one spelling of
 // each value whatever a person typed: net.dns upper-cases its own input and
 // the rest compare exactly, so `--encoding HEX` and `--proto TCP` meant
 // different things to different handlers.
@@ -300,26 +302,6 @@ func canonicalOption(f Field, v string) string {
 		}
 	}
 	return v
-}
-
-func clampInt(n int, f Field) int {
-	if lo, ok := toInt(f.Min); ok && n < lo {
-		n = lo
-	}
-	if hi, ok := toInt(f.Max); ok && n > hi {
-		n = hi
-	}
-	return n
-}
-
-func clampFloat(n float64, f Field) float64 {
-	if lo, ok := toFloat(f.Min); ok && n < lo {
-		n = lo
-	}
-	if hi, ok := toFloat(f.Max); ok && n > hi {
-		n = hi
-	}
-	return n
 }
 
 // lookupConfig walks a dotted key through nested maps.

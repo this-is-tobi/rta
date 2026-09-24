@@ -468,7 +468,7 @@ func (c Capability) validate(ns string) error {
 			}
 		}
 		// Options are a closed set the host holds every value to
-		// (CheckOptions), the default included: a default outside it is a
+		// (CheckInputs), the default included: a default outside it is a
 		// capability refused on every call that leaves the input alone.
 		if d, ok := f.Default.(string); ok && d != "" && len(f.Options) > 0 && !slices.Contains(f.Options, d) {
 			return fmt.Errorf("capability %q: input %q defaults to %q, which is not one of its options %v",
@@ -578,19 +578,18 @@ func checkEndpoints(c Capability) error {
 // over MCP that is one schema-valid call from an unprivileged agent killing
 // `rta mcp serve` for every tool attached to it. A bound that is declared and
 // silently not applied is worse than no bound at all: the author believes the
-// input is clamped and stops checking, and nothing anywhere says otherwise.
+// input is checked and stops checking, and nothing anywhere says otherwise.
 //
 // Three ways to declare one that does nothing, all of them quiet:
 //
-//   - A non-numeric value. Resolve reads Min through toInt/toFloat, which
+//   - A non-numeric value. CheckInputs reads Min through toInt/toFloat, which
 //     return not-ok for a string, so `Min: "1"` means "no minimum" — and the
 //     MCP bridge publishes it as the JSON Schema "minimum" keyword regardless,
 //     where a string is not a legal value, so the tool schema every connected
 //     agent reads is malformed as well.
-//   - A bound on a type Resolve does not clamp. Only Int and Float are
-//     clamped, so a Min on a string is a promise nothing made.
-//   - Min above Max. Clamping applies Min and then Max, so an inverted pair
-//     does not error; it pins every value, including valid ones, to Max.
+//   - A bound on a type the host does not check. Only Int and Float are, so
+//     a Min on a string is a promise nothing made.
+//   - Min above Max, which no value could ever satisfy: every call refused.
 //
 // All three were conformance-suite findings, which meant a plugin could fail
 // `sdktest` and still register and run. They belong here instead: this is the
@@ -614,7 +613,7 @@ func checkBounds(id string, f Field) error {
 			id, f.Name, f.Max)
 	}
 	if loOK && hiOK && lo > hi {
-		return fmt.Errorf("capability %q: input %q has Min %v above Max %v, so every value clamps to Max",
+		return fmt.Errorf("capability %q: input %q has Min %v above Max %v, so no value could ever be accepted",
 			id, f.Name, f.Min, f.Max)
 	}
 	return nil

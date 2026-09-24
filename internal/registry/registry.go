@@ -92,12 +92,13 @@ func (r *Registry) RegisterFrom(p plugin.Plugin, origin Origin) error {
 	if _, exists := r.plugins[p.Name]; exists {
 		return fmt.Errorf("namespace %q already registered", p.Name)
 	}
-	// Every capability runs behind the host's check of its closed sets, so
-	// no surface — nor a plugin's own handler — has to remember to make it.
+	// Every capability runs behind the host's check of what its inputs
+	// declare — closed sets, numeric bounds — so no surface, nor a plugin's
+	// own handler, has to remember to make it.
 	// A copy of the slice, so the caller's declaration is left as it was.
 	caps := make([]plugin.Capability, len(p.Capabilities))
 	for i, c := range p.Capabilities {
-		c.Run = plugin.GuardOptions(c)
+		c.Run = plugin.GuardInputs(c)
 		caps[i] = c
 		r.caps[c.ID] = c
 	}
