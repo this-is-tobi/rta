@@ -6,16 +6,29 @@ import (
 	"unicode/utf8"
 )
 
-func TestPlainTextIsTextATerminalShowsAsItIs(t *testing.T) {
+// Text is told from binary, not from text a renderer would show differently:
+// a directional mark, a byte order mark, a form feed or an escape sequence is
+// text, and the renderer that prints it deals with it. NUL, the C0 controls
+// text is never written with, and invalid UTF-8 are binary.
+func TestPlainTextTellsTextFromBinary(t *testing.T) {
 	for in, want := range map[string]bool{
 		"hello":                                 true,
 		"two\nlines\tand a tab":                 true,
 		"windows\r\nline ending":                true,
+		"a lone\rcarriage return":               true,
+		"page one\fpage two\vtab":               true,
 		"café":                                  true,
-		"\x1b[2J":                               false, // a terminal would act on it
+		"\x1b[31mred\x1b[0m":                    true,
+		"zero" + string(rune(0x200b)) + "width": true,
+		"hebrew" + string(rune(0x200f)) + ".":   true,
+		string(rune(0xfeff)) + `{"ok":true}`:    true,
+		"in" + string(rune(0x202e)) + "fdp.exe": true,
+		"del\x7f and C1 " + string(rune(0x9b)):  true,
 		"nul\x00":                               false,
+		"\x01\x02\x03":                          false,
+		"unit\x1fseparator":                     false,
+		"\x0e shift out":                        false,
 		"\xff\xfe":                              false, // not UTF-8
-		"zero" + string(rune(0x200b)) + "width": false,
 	} {
 		if got := PlainText([]byte(in)); got != want {
 			t.Errorf("PlainText(%q) = %v, want %v", in, got, want)

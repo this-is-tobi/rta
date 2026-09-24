@@ -167,21 +167,32 @@ func TestDeceivesFlagsWhatItWouldChange(t *testing.T) {
 	}
 }
 
-// pkg/format decides whether bytes are plain text without importing this
-// package, because every plugin imports pkg/format and this one brings an ANSI
-// parser along. So it holds its own copy of the rule, and this holds the copy
-// to the original for every character there is: a rune one of them hides and
-// the other shows is a byte a plugin's dump and rta's renderer disagree about.
-func TestFormatPlainTextAgreesWithDeceivesOnEveryRune(t *testing.T) {
+// pkg/format tells text from binary without importing this package, because
+// every plugin imports pkg/format and this one brings an ANSI parser along.
+// What the two have to agree on is where a dump earns its place: every
+// character format.PlainText calls binary is one Terminal drops, so printed
+// as text it would have shown as nothing. Everything Terminal shows as itself
+// or spells out is text there, left for the renderer — a directional mark
+// holding a whole Hebrew page hostage to a hex dump was the defect.
+func TestFormatPlainTextDumpsOnlyWhatTerminalWouldDrop(t *testing.T) {
 	for r := rune(0); r <= unicode.MaxRune; r++ {
 		if r >= 0xd800 && r <= 0xdfff {
 			continue // surrogates are not characters: string(r) is U+FFFD
 		}
-		// The line breaks and tab of ordinary text are plain text there and a
-		// deception here, where a value is one line offered as one value.
-		want := r == '\n' || r == '\t' || r == '\r' || !Deceives(string(r))
-		if got := format.PlainText([]byte(string(r))); got != want {
-			t.Fatalf("U+%04X: format.PlainText = %v, and textclean says %v", r, got, want)
+		s := string(r)
+		drawn := Terminal(s)
+		if !format.PlainText([]byte(s)) && drawn != "" {
+			t.Fatalf("U+%04X: format.PlainText calls it binary, and Terminal draws it as %q", r, drawn)
+		}
+	}
+	for _, r := range []rune{0x200b, 0x200e, 0x200f, 0xfeff, 0x2060, 0xe0041} {
+		if s := string(r); Terminal(s) != s || !format.PlainText([]byte(s)) {
+			t.Errorf("U+%04X: Terminal leaves it in place, and format.PlainText = %v", r, format.PlainText([]byte(s)))
+		}
+	}
+	for r := rune(0x202a); r <= 0x2069; r++ {
+		if reorders(r) && !format.PlainText([]byte(string(r))) {
+			t.Errorf("U+%04X: Terminal spells it out, and format.PlainText calls it binary", r)
 		}
 	}
 }
