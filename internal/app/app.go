@@ -950,23 +950,22 @@ func runCapability(ctx context.Context, cmd *cobra.Command, c plugin.Capability,
 		_ = cli.RenderError(cmd.ErrOrStderr(), verr, renderOpts)
 		return Rendered(verr)
 	}
-	resolved := plugin.Resolve(c, plugin.Inputs{
+	req := plugin.ResolveRequest(c, plugin.Inputs{
 		Caller:      values,
 		Profile:     filled,
 		ProfileName: profileName,
 		Config:      PluginConfig(c),
-	})
+	}, opts.dryRun, opts.yes).WithSurface(plugin.SurfaceCLI)
 	// The required check for config-backed inputs, which cobra no longer
 	// makes because making it would have run before config was consulted.
 	// Named here rather than left as a handler's zero value: an input that is
 	// required and empty is the one case where "you can also put this in your
 	// config" is the sentence somebody needs.
-	if verr := requireResolved(c, resolved); verr != nil {
+	if verr := requireResolved(c, req.Values()); verr != nil {
 		_ = cli.RenderError(cmd.ErrOrStderr(), verr, renderOpts)
 		return Rendered(verr)
 	}
-	v, runErr := c.Run(ctx, plugin.NewRequest(
-		resolved, opts.dryRun, opts.yes).WithSurface(plugin.SurfaceCLI))
+	v, runErr := c.Run(ctx, req)
 	if runErr != nil {
 		ve := view.AsError(runErr, c.ID+".failed")
 		// A failure is the one moment an unhonoured config section explains
@@ -981,7 +980,7 @@ func runCapability(ctx context.Context, cmd *cobra.Command, c plugin.Capability,
 		return Rendered(ve)
 	}
 	// Remembered after the run succeeded, and from `values` rather than from
-	// `resolved`: a declared default is not a choice anybody made, and a host
+	// `req`: a declared default is not a choice anybody made, and a host
 	// the environment filled in is already offered by the environment. What
 	// this keeps is what the person typed and it worked.
 	if !opts.dryRun {

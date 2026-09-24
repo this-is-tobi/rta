@@ -295,25 +295,21 @@ func runCmd(ctx context.Context, seq int, c plugin.Capability, values map[string
 		}
 		// Resolve rather than "fill defaults only when nothing was given":
 		// a caller who supplies one value must not lose the other defaults.
-		values = plugin.Resolve(c, plugin.Inputs{
+		req := plugin.ResolveRequest(c, plugin.Inputs{
 			Caller: values, Profile: filled, ProfileName: profileName, Config: cfg,
-		})
+		}, dryRun, yes).WithSurface(plugin.SurfaceTUI)
 		// A default, not an override. Forcing detail on unconditionally made
 		// the D toggle on kv.list dead: toggleView set detail=false, this put
 		// it back to true one line later, and the handler only ever saw true.
 		// The footer checkmark flipped on every press and the pane below it
 		// re-rendered the identical detailed page.
-		if _, given := values["detail"]; c.Detailed && !given {
-			// Copy: tile values are reused by refreshes, which stay compact.
-			full := make(map[string]any, len(values)+1)
-			for k, v := range values {
-				full[k] = v
-			}
-			full["detail"] = true
-			values = full
+		//
+		// With copies: tile values are reused by refreshes, which stay compact.
+		if _, given := req.Values()["detail"]; c.Detailed && !given {
+			req = req.With(map[string]any{"detail": true})
 		}
 		start := time.Now()
-		v, err := c.Run(ctx, plugin.NewRequest(values, dryRun, yes).WithSurface(plugin.SurfaceTUI))
+		v, err := c.Run(ctx, req)
 		elapsed := time.Since(start)
 		if dryRun {
 			var verr *view.Error

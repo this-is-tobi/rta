@@ -1170,6 +1170,36 @@ func TestConfigFillsAnInputTheCallerDidNotPassOnTheCLI(t *testing.T) {
 	}
 }
 
+// A value from the config that the host's guard refuses is refused as the
+// config's. `plugins.gen.encoding: b64` answered a bare `rta gen token` with
+// "gen.token takes one of hex, base64, base64url, base32 for encoding, not
+// "b64"" and a hint to run `rta explain`, as if a flag had been typed, while
+// the file holding the value went unmentioned.
+func TestARefusedConfigValueNamesTheKeyItCameFrom(t *testing.T) {
+	reg, err := NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { SetPluginConfig(nil, nil) })
+	SetPluginConfig(pluginconf.Resolve(trustedConfig(t, config.Config{Plugins: map[string]map[string]any{
+		"gen": {"encoding": "b64"},
+	}}), reg.Origin))
+
+	_, errOut, err := run(t, reg, "gen", "token")
+	if err == nil {
+		t.Fatal("a value no option names ran")
+	}
+	for _, want := range []string{"core.input.option", "which the config's plugins.gen.encoding sets", "change it there"} {
+		if !strings.Contains(errOut, want) {
+			t.Errorf("refusal does not say %q:\n%s", want, errOut)
+		}
+	}
+	// And a flag given on the call steps round it, as the hint says.
+	if _, errOut, err := run(t, reg, "gen", "token", "--encoding", "hex"); err != nil {
+		t.Errorf("--encoding did not override the config: %v\n%s", err, errOut)
+	}
+}
+
 // And the caller still wins, including for a bool set back to its zero value
 // — which is the case a "did they pass it?" check written as a comparison
 // against the default gets wrong.
