@@ -67,6 +67,40 @@ func TestExplainCardSaysWhatTheDashboardDoesWithIt(t *testing.T) {
 	}
 }
 
+// debug.ansi reads its text from a pipe when a CLI call leaves it out, and a
+// tile has no pipe: `rta dashboard add debug.ansi` wrote a tile answering "no
+// text to explain" on every refresh, and the card offered that very command.
+// The add is refused unless --set states the text, and the card says so, as
+// it says what the pipe is for.
+func TestATileIsToldToStateAPipedInput(t *testing.T) {
+	reg, err := NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := session(t, reg)
+	_, errOut, err := run("dashboard", "add", "debug.ansi", "--dry-run")
+	if err == nil || !strings.Contains(errOut, "core.dashboard.needs") || !strings.Contains(errOut, "--set input=") {
+		t.Errorf("err = %v, output %q; want core.dashboard.needs hinting --set input=", err, errOut)
+	}
+	if _, errOut, err := run("dashboard", "add", "debug.ansi", "--set", "input=x", "--dry-run"); err != nil {
+		t.Errorf("a tile stating its text was refused: %v, %q", err, errOut)
+	}
+	c, ok := reg.Capability("debug.ansi")
+	if !ok {
+		t.Fatal("no debug.ansi")
+	}
+	kv, ok := cardView(reg, c).(view.KeyValue)
+	if !ok {
+		t.Fatal("the card is not key-value pairs")
+	}
+	if got := pairValue(kv, "dashboard"); !strings.Contains(got, "`rta dashboard add debug.ansi --set input=…`") {
+		t.Errorf("dashboard row = %q, want the add it takes", got)
+	}
+	if got := pairValue(kv, "input:input"); !strings.Contains(got, "pipe") || !strings.Contains(got, "required") {
+		t.Errorf("input row = %q, want the pipe and where it is required", got)
+	}
+}
+
 func TestPaceReadsAsAPersonWritesIt(t *testing.T) {
 	cases := map[string]string{"2h": "2h", "90m": "90m", "1h30m": "90m", "45s": "45s"}
 	for in, want := range cases {

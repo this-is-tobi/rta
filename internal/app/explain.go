@@ -112,8 +112,13 @@ func cardView(reg *registry.Registry, c plugin.Capability) view.View {
 	}
 	for _, f := range c.Inputs {
 		detail := string(f.Type)
-		if f.Required {
+		switch {
+		case f.Required:
 			detail += ", required"
+		case f.Piped:
+			// Optional on one surface only, and the card is where somebody
+			// looks up why an agent's call or a form insists on it.
+			detail += ", read from a pipe on the CLI when left out, required everywhere else"
 		}
 		if f.Default != nil {
 			detail += fmt.Sprintf(", default %v", f.Default)
@@ -270,6 +275,18 @@ func dashboardRow(reg *registry.Registry, c plugin.Capability) view.Pair {
 		every = "every " + pace(c.Refresh)
 	}
 	add := "`rta dashboard add " + c.ID + "`, or + on it in the TUI,"
+	// And the add it takes, when a bare one is refused (tileCanRunUnasked):
+	// debug.ansi's card offered `rta dashboard add debug.ansi`, which wrote a
+	// tile answering "no text to explain" on every refresh, and is refused
+	// now its text is declared Piped. What a tile has to state is what + in
+	// the TUI refuses without, so + is not offered beside it.
+	if missing := tui.MissingInputs(c, nil, plugin.Profilable(c)); len(missing) > 0 {
+		add = "`rta dashboard add " + c.ID
+		for _, name := range missing {
+			add += " --set " + name + "=…"
+		}
+		add += "`"
+	}
 	if why := tui.Unasked(c); why != "" {
 		return view.Pair{Key: "dashboard",
 			Value: "not on the automatic dashboard — " + why + "; " + add + " puts it there, re-run " + every}
