@@ -541,12 +541,7 @@ func buildCmd(id Identity, deny DenySet, args []string) *exec.Cmd {
 func (h *Host) launch(ctx context.Context, id Identity, deny DenySet, args []string) (*Client, error) {
 	cmd := buildCmd(id, deny, args)
 
-	logger := hclog.New(&hclog.LoggerOptions{
-		Name:       "plugin." + id.Short(),
-		Output:     h.stderr(),
-		Level:      hclog.Error,
-		JSONFormat: true,
-	})
+	logger := pluginLogger("plugin."+id.Short(), escapeActedOn(h.stderr()))
 	client := goplugin.NewClient(&goplugin.ClientConfig{
 		HandshakeConfig: sdk.Handshake,
 		Plugins:         goplugin.PluginSet{sdk.PluginSetName: noDispense{}},
@@ -575,7 +570,8 @@ func (h *Host) launch(ctx context.Context, id Identity, deny DenySet, args []str
 		// *message*, and hclog writes a message body unquoted — so a plugin's
 		// log.Printf put raw OSC 52 on the host's terminal, reproduced
 		// against v1.8.0. Routing it through a JSON logger makes the control
-		// bytes data.
+		// bytes data — and escapeActedOn makes the rest of what a terminal
+		// acts on data too.
 		Logger: logger,
 	})
 
@@ -616,6 +612,40 @@ func (h *Host) launch(ctx context.Context, id Identity, deny DenySet, args []str
 		return nil, err
 	}
 	return c, nil
+}
+
+// pluginLogger is the logger a plugin's stderr goes through: see Logger in
+// launch for why it is JSON.
+func pluginLogger(name string, out io.Writer) hclog.Logger {
+	return hclog.New(&hclog.LoggerOptions{
+		Name:       name,
+		Output:     out,
+		Level:      hclog.Error,
+		JSONFormat: true,
+	})
+}
+
+// escapeActedOn writes the JSON log a plugin's stderr becomes with every
+// character a terminal acts on escaped, which JSON alone does not do: hclog
+// encodes with encoding/json, which escapes the C0 controls and writes DEL,
+// the C1 controls and the characters that reorder text as they came. That is
+// the gap view.Marshal closes for -o json, left open here — so a plugin that
+// logged "[ERROR] " and an 8-bit OSC, or a name a server supplied holding an
+// override, put it on the operator's terminal on every command that loaded
+// it. go-plugin logs such a line at Error, the level this logger lets
+// through.
+//
+// A Write at a time is safe because hclog writes each entry whole in one
+// call, and the escape never changes what a JSON parser reads back.
+func escapeActedOn(w io.Writer) io.Writer { return actedOnEscaper{w} }
+
+type actedOnEscaper struct{ w io.Writer }
+
+func (e actedOnEscaper) Write(p []byte) (int, error) {
+	if _, err := e.w.Write(view.EscapeActedOn(p)); err != nil {
+		return 0, err
+	}
+	return len(p), nil
 }
 
 func (h *Host) stderr() io.Writer {
