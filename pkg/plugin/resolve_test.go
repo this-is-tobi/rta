@@ -412,3 +412,47 @@ func TestNilConfigResolvesExactlyAsBefore(t *testing.T) {
 		t.Errorf("host = %v, but it has no default and nothing supplied it", got["host"])
 	}
 }
+
+// A fraction is not a whole number. toInt truncated it, so `count: 2.5` in
+// the config ran net.ping twice, `limit: 0.5` became 0 and then 1, and doctor
+// called the file fine — while `--count 2.5` and the same value over MCP were
+// refused. Refused from every layer now, naming where it came from.
+func TestAFractionIsNotReadAsAWholeNumber(t *testing.T) {
+	for _, v := range []any{2.5, float32(0.5), 9.99, json.Number("2.5"), -0.25} {
+		if n, ok := toInt(v); ok {
+			t.Errorf("%T(%v) was read as %d", v, v, n)
+		}
+	}
+	for _, v := range []any{2.0, float32(3), json.Number("4"), -1.0} {
+		if _, ok := toInt(v); !ok {
+			t.Errorf("%T(%v), a whole number, was refused", v, v)
+		}
+	}
+	c := numeric()
+	c.Inputs[0].Config = "timeout"
+	c.Inputs[2].Config = "limit"
+	for _, tc := range []struct {
+		key, want, code string
+	}{
+		{"timeout", "x.y takes a whole number from 1 to 300 for timeout, not 2.5, which the config's plugins.x.timeout sets", "core.input.range"},
+		{"limit", "x.y takes a whole number for limit, not 2.5, which the config's plugins.x.limit sets", "core.input.type"},
+	} {
+		verr := CheckInputs(c, ResolveRequest(c, Inputs{Config: map[string]any{tc.key: 2.5}}, false, false).WithSurface(SurfaceCLI))
+		if verr == nil || verr.Code != tc.code || verr.Message != tc.want {
+			t.Errorf("%s: %v, want %s %q", tc.key, verr, tc.code, tc.want)
+			continue
+		}
+		if !strings.HasPrefix(verr.Hint, "write it there as a whole number — ") {
+			t.Errorf("%s: hint %q", tc.key, verr.Hint)
+		}
+	}
+	// And reported before any call, as a fraction rather than as a number
+	// too large to hold.
+	problem, hint := StatedTypeProblem(Field{Name: "count", Type: Int}, 2.5)
+	if !strings.Contains(problem, "fractional") || hint != "write a whole number" {
+		t.Errorf("reported as %q / %q", problem, hint)
+	}
+	if problem, _ := StatedTypeProblem(Field{Name: "ratio", Type: Float}, 2.5); problem != "" {
+		t.Errorf("a fraction for a Float was reported: %s", problem)
+	}
+}

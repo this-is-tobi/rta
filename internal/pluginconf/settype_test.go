@@ -59,6 +59,7 @@ func TestABaseValueTheHandlerWouldReadAsZeroIsReported(t *testing.T) {
 		{"bare yes decoded as text", map[string]any{"tls": "yes"}},
 		{"quoted int", map[string]any{"port": "5432"}},
 		{"number for text", map[string]any{"host": 2024}},
+		{"fraction for int", map[string]any{"port": 2.5}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			problems := checkOf(t, tc.values)
