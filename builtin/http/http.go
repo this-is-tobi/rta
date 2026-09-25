@@ -356,11 +356,18 @@ func bodyWasTruncated(resp *stdhttp.Response, captured int) bool {
 // cut is at a byte offset, so past the cap any text that is not ASCII almost
 // always ends partway through a character — and a megabyte of Japanese was
 // dumped as bytes that are not UTF-8. The fragment is dropped before asking.
+//
+// Only a body that is UTF-8 is indented. JSON is UTF-8 by definition (RFC
+// 8259), and json.Indent does not check: a string holding the raw bytes 0x9B
+// and 0x9D, 8-bit CSI and OSC, went into the value as they came, where
+// decoding and re-encoding had turned them into U+FFFD. A body that is not
+// UTF-8 is not JSON, whatever its label says, and is dumped like any other
+// body that is not text.
 func formatBody(body []byte, contentType string, truncated bool) string {
 	if truncated {
 		body = withoutPartialRune(body)
 	}
-	if strings.Contains(contentType, "json") {
+	if strings.Contains(contentType, "json") && utf8.Valid(body) {
 		var pretty bytes.Buffer
 		if json.Indent(&pretty, bytes.TrimPrefix(body, utf8BOM), "", "  ") == nil {
 			return strings.TrimRight(pretty.String(), " \t\r\n")
