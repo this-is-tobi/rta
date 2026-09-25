@@ -3,6 +3,7 @@ package plugin
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -231,5 +232,86 @@ func TestARefusedValueFromConfigOrAProfileSaysWhereItCameFrom(t *testing.T) {
 	in := Inputs{Caller: map[string]any{"tags": []string{"RED"}}, Config: map[string]any{"timeout": uint64(90)}}
 	if got, want := ResolveRequest(c, in, false, false).Values(), Resolve(c, in); fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Errorf("ResolveRequest carries %v, Resolve %v", got, want)
+	}
+}
+
+// A value whose shape the accessor cannot read was handed to the handler as
+// the zero. mysql's tls is a String offering false, preferred, true and
+// skip-verify: `tls: true` in the config arrived as a boolean, the handler
+// read "", and go-sql-driver reads "" as no TLS — plaintext, where the
+// operator asked for verified TLS. `tls: "true"` or `tls: yes` on a Bool read
+// false the same way. Refused now, on every surface, naming the config key
+// and never the value.
+func TestAValueOfAShapeTheAccessorCannotReadIsRefused(t *testing.T) {
+	ran := false
+	c := Capability{
+		ID: "db.status", Summary: "s", Safety: Read,
+		Run: func(context.Context, Request) (view.View, error) { ran = true; return nil, nil },
+		Inputs: []Field{
+			{Name: "tls", Type: String, Default: "preferred", Config: "tls", Local: true,
+				Options: []string{"false", "preferred", "true", "skip-verify"}},
+			{Name: "rtls", Type: Bool, Config: "rtls", Local: true},
+			{Name: "tags", Type: StringSlice, Config: "tags"},
+			{Name: "out", Type: Path, Config: "out"},
+		},
+	}
+	guarded := GuardInputs(c)
+	for _, tc := range []struct {
+		key   string
+		value any
+		want  string
+	}{
+		{"tls", true, "db.status takes text for tls, not a boolean"},
+		{"tls", uint64(1), "db.status takes text for tls, not a number"},
+		{"rtls", "true", "db.status takes true or false for rtls, not text"},
+		{"rtls", "yes", "db.status takes true or false for rtls, not text"},
+		{"out", []any{"a"}, "db.status takes text for out, not a list"},
+	} {
+		for _, surface := range []Surface{SurfaceCLI, SurfaceMCP, SurfaceTUI} {
+			req := ResolveRequest(c, Inputs{Config: map[string]any{tc.key: tc.value}}, false, false).WithSurface(surface)
+			_, err := guarded(context.Background(), req)
+			verr := view.AsError(err, "test")
+			if err == nil || verr.Code != "core.input.type" {
+				t.Errorf("%s %v over %s: %v, want core.input.type", tc.key, tc.value, surface, err)
+				continue
+			}
+			if want := tc.want + ", which the config's plugins.db." + tc.key + " sets"; verr.Message != want {
+				t.Errorf("message %q, want %q", verr.Message, want)
+			}
+			if text, ok := tc.value.(string); ok && strings.Contains(verr.Message, strconv.Quote(text)) {
+				t.Errorf("the value was echoed: %q", verr.Message)
+			}
+		}
+	}
+	if ran {
+		t.Error("the handler ran on a value it would have read as the zero")
+	}
+	// A block under a config key is a section, not a value, and is not
+	// read at all; from a profile it is a value, and refused.
+	req := ResolveRequest(c, Inputs{Profile: map[string]any{"tags": map[string]any{"a": "b"}}, ProfileName: "p"}, false, false)
+	if verr := CheckInputs(c, req); verr == nil ||
+		verr.Message != `db.status takes a list for tags, not a block, which the profile "p" sets` {
+		t.Errorf("a block from a profile: %v", verr)
+	}
+	// The hint says what to write in the file, and a caller's value — a
+	// tile's with: — how to give it.
+	req = ResolveRequest(c, Inputs{Config: map[string]any{"rtls": "true"}}, false, false).WithSurface(SurfaceCLI)
+	if verr := CheckInputs(c, req); !strings.HasPrefix(verr.Hint, "write it there unquoted, as `true` or `false` — ") {
+		t.Errorf("config hint %q", verr.Hint)
+	}
+	if verr := CheckInputs(c, NewRequest(map[string]any{"tls": true}, false, false)); verr == nil ||
+		!strings.Contains(verr.Hint, "quoted") {
+		t.Errorf("caller refusal %v", verr)
+	}
+	// And what the accessor reads is let through, a bare string in a list
+	// slot included.
+	for _, values := range []map[string]any{
+		{"tls": "true", "rtls": true, "tags": "one", "out": "/tmp/x"},
+		{"tags": []any{"a", 1}},
+		{"tags": []string{"a"}},
+	} {
+		if _, err := guarded(context.Background(), NewRequest(values, false, false)); err != nil {
+			t.Errorf("%v was refused: %v", values, err)
+		}
 	}
 }

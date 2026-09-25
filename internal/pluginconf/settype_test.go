@@ -13,14 +13,13 @@ import (
 
 // The same failure `internal/profile` reports about a `set:` block, in the
 // base `plugins:` block that a profile only overlays: a stated value of the
-// wrong shape is not ignored, it is read as the zero. `tls: "true"` leaves a
-// connection unencrypted while the file says otherwise, and Check — whose
+// wrong shape was not ignored, it was read as the zero. `tls: "true"` left a
+// connection unencrypted while the file said otherwise, and Check — whose
 // entire job is to name a stated value the catalogue cannot use — looked only
 // for keys nothing reads and values outside a declared Options set.
 //
-// Reported rather than refused, which is this function's existing severity for
-// every problem it finds: `rta doctor` prints them and nothing fails a call
-// over one. Loud enough to fix, and the same place an operator already looks.
+// The host refuses every call reading such a value now (plugin.CheckInputs);
+// this reports it once, in `rta doctor`, before any call does.
 
 func sysRegistry(t *testing.T) *registry.Registry {
 	t.Helper()
@@ -71,6 +70,9 @@ func TestABaseValueTheHandlerWouldReadAsZeroIsReported(t *testing.T) {
 			}
 			if problems[0].Hint == "" {
 				t.Error("no hint")
+			}
+			if !strings.Contains(problems[0].Reason, "every call reading it is refused") {
+				t.Errorf("the report does not say what the run does: %s", problems[0].Reason)
 			}
 		})
 	}

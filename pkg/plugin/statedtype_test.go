@@ -14,12 +14,13 @@ import (
 //
 // Resolve normalises the shapes an integer legitimately arrives in and leaves
 // anything else alone; the accessor downstream is a type assertion. Between
-// them, a value of the wrong shape does not fail and is not ignored — it is
-// read as the zero. So `tls: "true"` in a connection leaves the handler
-// reading false, and nothing anywhere said so.
+// them, a value of the wrong shape did not fail and was not ignored — it was
+// read as the zero. So `tls: "true"` in a connection left the handler
+// reading false, and nothing anywhere said so. The host refuses such a value
+// now, and this is the report of it before any call.
 //
-// These assert the predicate. TestWhatTheHandlerActuallyReadsMatchesTheVerdict
-// below is the one that matters: it checks the predicate against the run.
+// These assert the predicate. TestWhatTheRunDoesMatchesTheVerdict below is
+// the one that matters: it checks the predicate against the run.
 
 func TestStatedTypeProblemAcceptsWhatAHandlerCanRead(t *testing.T) {
 	for _, tc := range []struct {
@@ -53,7 +54,7 @@ func TestStatedTypeProblemAcceptsWhatAHandlerCanRead(t *testing.T) {
 	}
 }
 
-func TestStatedTypeProblemCatchesWhatWouldBeReadAsZero(t *testing.T) {
+func TestStatedTypeProblemCatchesWhatTheHostRefuses(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		f    Field
@@ -163,13 +164,13 @@ func TestStatedTypeProblemHasNoOpinionOnATypeItDoesNotKnow(t *testing.T) {
 }
 
 // **The verdict and the run must agree.** A predicate that says "fine" while
-// the handler reads a zero is worse than no predicate: it is the page telling
-// the operator their file is right.
+// the run refuses — or while a handler reads a zero — is worse than no
+// predicate: it is the page telling the operator their file is right.
 //
 // So this asks the actual question — resolve the value the way every surface
-// does, read it back the way a handler does, and check that a reading which
-// lost the stated value is exactly a reading StatedTypeProblem objected to.
-func TestWhatTheHandlerActuallyReadsMatchesTheVerdict(t *testing.T) {
+// does, and check that a value reported is exactly a value the host refuses,
+// and that one not reported reaches the handler as stated.
+func TestWhatTheRunDoesMatchesTheVerdict(t *testing.T) {
 	c := Capability{
 		ID: "db.status", Summary: "s", Safety: Read,
 		Inputs: []Field{
@@ -183,19 +184,24 @@ func TestWhatTheHandlerActuallyReadsMatchesTheVerdict(t *testing.T) {
 		name  string
 		input string
 		value any
-		// reads is what a handler gets when the value survives. Compared as
-		// text so one table covers four accessors.
+		// reads is what a handler gets when the value is accepted, or ""
+		// when the host refuses it. Compared as text so one table covers
+		// four accessors.
 		reads string
 	}{
 		{"bool kept", "tls", true, "true"},
-		{"bool lost", "tls", "true", "false"},
-		{"bool lost to yes", "tls", "yes", "false"},
+		{"bool as text", "tls", "true", ""},
+		{"bool as yes", "tls", "yes", ""},
 		{"int kept", "port", uint64(5432), "5432"},
-		{"int lost", "port", "5432", "0"},
+		{"int as text", "port", "5432", ""},
 		{"string kept", "host", "db", "db"},
-		{"string lost", "host", 2024, ""},
+		{"string as a number", "host", 2024, ""},
+		{"string as a boolean", "host", true, ""},
 		{"slice kept", "tags", []any{"a"}, "[a]"},
-		{"slice lost", "tags", map[string]any{"a": 1}, "[]"},
+		{"slice as a scalar", "tags", "a", "[a]"},
+		// A block is left out: under a config key it is a section rather
+		// than a value, whose leaves pluginconf reports as keys nothing
+		// reads, and from a profile it is refused like the rest.
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var f Field
@@ -206,7 +212,8 @@ func TestWhatTheHandlerActuallyReadsMatchesTheVerdict(t *testing.T) {
 			}
 			problem, _ := StatedTypeProblem(f, tc.value)
 
-			req := NewRequest(Resolve(c, Inputs{Config: map[string]any{tc.input: tc.value}}), false, true)
+			req := ResolveRequest(c, Inputs{Config: map[string]any{tc.input: tc.value}}, false, true)
+			verr := CheckInputs(c, req)
 			var got string
 			switch f.Type {
 			case Bool:
@@ -218,18 +225,21 @@ func TestWhatTheHandlerActuallyReadsMatchesTheVerdict(t *testing.T) {
 			case StringSlice:
 				got = sliceText(req.StringSlice(f.Name))
 			}
+			if tc.reads == "" {
+				if verr == nil || problem == "" {
+					t.Fatalf("refused = %v, reported = %q: want both, since the handler would read %q",
+						verr, problem, got)
+				}
+				if verr.Code != "core.input.type" && verr.Code != "core.input.range" {
+					t.Errorf("code %s", verr.Code)
+				}
+				return
+			}
+			if verr != nil || problem != "" {
+				t.Fatalf("refused = %v, reported = %q: want neither", verr, problem)
+			}
 			if got != tc.reads {
-				t.Fatalf("the handler read %q, the table says %q — the table is wrong "+
-					"or the read path moved", got, tc.reads)
-			}
-			// The whole point: "the stated value survived" and "no problem
-			// reported" have to be the same set.
-			survived := tc.reads != "false" && tc.reads != "0" && tc.reads != "" && tc.reads != "[]"
-			if survived && problem != "" {
-				t.Errorf("reported a problem about a value the handler read fine: %s", problem)
-			}
-			if !survived && problem == "" {
-				t.Errorf("the handler read the zero and nothing was reported")
+				t.Errorf("the handler read %q, want %q", got, tc.reads)
 			}
 		})
 	}

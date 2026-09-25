@@ -32,17 +32,24 @@ import (
 // capabilities that bound it differently (clampInt has the cases). What is
 // refused for its range is what the caller sent on this call.
 //
-// And a third thing, which neither constraint covered: a value for a number
-// that is not one an accessor can read. Request.Int reads a string, a boolean
-// or an integer past what int holds as 0, so a check that let those through —
-// "there is nothing here to hold them to" — handed the handler the one value
-// the bounds exist to keep from it. `net ping` over MCP with a timeout of
-// 2^63 passed the schema (int64 of it saturates on arm64, so the integer
-// check held), was left alone as a number that does not fit, and reached
-// time.NewTicker(0): `rta mcp serve` exited on one call.
+// And a third thing, which neither constraint covered: a value the input's
+// accessor cannot read as its type. Every accessor is a type assertion, so
+// such a value is not refused and not ignored — it is read as the zero.
+// Request.Int reads a string, a boolean or an integer past what int holds as
+// 0, so a check that let those through — "there is nothing here to hold them
+// to" — handed the handler the one value the bounds exist to keep from it:
+// `net ping` over MCP with a timeout of 2^63 passed the schema (int64 of it
+// saturates on arm64, so the integer check held), was left alone as a number
+// that does not fit, and reached time.NewTicker(0), and `rta mcp serve`
+// exited on one call. Request.String reads a boolean as "", which is how
+// mysql's `tls: true` in the config — a String offering false, preferred,
+// true and skip-verify — reached go-sql-driver as no TLS at all; and
+// Request.Bool reads `tls: "true"` or `tls: yes` as false, which ran a redis
+// connection, AUTH password and all, in plaintext. Every shape is refused
+// now, on every type.
 
 // CheckInputs reports the first input whose value is outside what its field
-// declares — a number no accessor can read, not one of its Options, or
+// declares — of a shape its accessor cannot read, not one of its Options, or
 // outside its Min and Max — or nil. An input nobody supplied is left to the
 // handler, which is where a field with no Default decides what nothing means;
 // so is one present as nil, which says the same thing.
@@ -53,7 +60,7 @@ func CheckInputs(c Capability, req Request) *view.Error {
 		if !present || v == nil {
 			continue
 		}
-		verr, how := checkNumber(c, f, v)
+		verr, how := checkShape(c, f, v)
 		if verr == nil {
 			verr = checkOptions(c, f, v)
 		}
@@ -112,6 +119,50 @@ func fromSource(verr *view.Error, how string, c Capability, f Field, req Request
 	out.Hint = how + " — " + change + " — or give " + f.Name +
 		" on the call to override it for one run"
 	return &out
+}
+
+// checkShape refuses a value the field's accessor cannot read as its type,
+// which it would hand the handler as the zero. Refused, never coerced, for
+// StatedTypeProblem's reason: reading "yes" as true is a guess about a value
+// that may decide whether a connection is encrypted, and the operator is the
+// one who knows what they meant.
+//
+// Named by the value's shape, never by the value: this runs over the
+// operator's config and profiles, and a file is one mistyped block away from
+// a credential. how is fromSource's, what to write in the file instead.
+func checkShape(c Capability, f Field, v any) (verr *view.Error, how string) {
+	var want, give string
+	switch f.Type {
+	case Int, Float:
+		return checkNumber(c, f, v)
+	case String, Text, Path, Secret:
+		if _, ok := v.(string); ok {
+			return nil, ""
+		}
+		want = "text"
+		give, how = "give it as text — in YAML, quoted, so it is not read as a number, a boolean or a date",
+			"quote it there"
+	case Bool:
+		if _, ok := v.(bool); ok {
+			return nil, ""
+		}
+		want = "true or false"
+		give, how = "give it as `true` or `false`, unquoted — a quoted `\"true\"` is text, and so is a bare `yes`",
+			"write it there unquoted, as `true` or `false`"
+	case StringSlice, SecretSlice:
+		switch v.(type) {
+		case []string, []any, string:
+			return nil, ""
+		}
+		want = "a list"
+		give, how = "give it as a list, `[a, b]`, or as one value", "write it there as `[a, b]`, or as one value"
+	default:
+		// A type Validate would have refused. No opinion, as
+		// StatedTypeProblem has none.
+		return nil, ""
+	}
+	return view.Errorf("core.input.type", "%s takes %s for %s, not %s", c.ID, want, f.Name, statedShape(v)).
+		WithHint(give), how
 }
 
 // checkNumber refuses a value for an Int or a Float that no accessor reads as
@@ -180,9 +231,8 @@ func checkOptions(c Capability, f Field, given any) *view.Error {
 // refuses Options on any other. Validate reads a Default through this too, so
 // a declaration cannot default to a value it would refuse.
 //
-// Nothing for a value the accessor would not read as the declared type: a
-// number where text is declared is what StatedTypeProblem reports about the
-// file it came from.
+// Nothing for a value the accessor would not read as the declared type:
+// checkShape has refused it before this is asked.
 func optionValues(f Field, v any) []string {
 	switch f.Type {
 	case String:
@@ -262,15 +312,12 @@ func (f Field) Bounds() string {
 }
 
 // GuardInputs is c's handler with CheckInputs in front of it, or the handler
-// itself when no input declares Options or bounds, or is a number. The
+// itself when c declares no input, since every input has a shape to hold. The
 // registry installs it on every capability it holds, which is what makes the
 // check the host's rather than something each surface has to remember.
 func GuardInputs(c Capability) Handler {
 	run := c.Run
-	constrained := slices.ContainsFunc(c.Inputs, func(f Field) bool {
-		return len(f.Options) > 0 || f.Min != nil || f.Max != nil || f.Type == Int || f.Type == Float
-	})
-	if run == nil || !constrained {
+	if run == nil || len(c.Inputs) == 0 {
 		return run
 	}
 	return func(ctx context.Context, req Request) (view.View, error) {

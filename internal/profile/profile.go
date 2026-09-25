@@ -1074,14 +1074,15 @@ func checkSecretRefs(name, key string, conn config.Connection, ns string, inst I
 				"`rta explain` on one of its capabilities lists the inputs it declares")
 			continue
 		}
-		// A mapping delivers text. plugin.Request's readers do not coerce a
-		// string into a number or a bool — deliberately, everywhere — so a
-		// mapping onto one of those inputs resolves, authenticates, and then
-		// hands the handler a zero: the quiet-garbage variant of "never takes
-		// effect", worse than the loud one.
+		// A mapping delivers text. Nothing coerces a string into a number
+		// or a bool — deliberately, everywhere — so a mapping onto one of
+		// those inputs used to resolve, authenticate, and then hand the
+		// handler a zero; the host's guard refuses it now, after the store
+		// has been opened for a value no call can use. Said here, before
+		// anything is fetched.
 		if f.Type == plugin.Int || f.Type == plugin.Bool || f.Type == plugin.Float {
 			at(fmt.Sprintf("maps a secret onto %q, which is %s — a mapping delivers text, "+
-				"and the handler would read zero", ref.Input, f.Type),
+				"which that input refuses", ref.Input, f.Type),
 				"only a text-shaped input can carry a secret's value")
 			continue
 		}
