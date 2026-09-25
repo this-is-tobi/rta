@@ -141,6 +141,10 @@ func (k *jwkFacts) rsa(o object) {
 	switch bits := modulus.BitLen(); {
 	case modulus.Bit(0) == 0:
 		k.problem("its n is even, which no RSA modulus is, so no signature verifies against it")
+	// No key is made, so nothing downstream can spend the square of it.
+	case bits > maxRSABits:
+		k.problem("its modulus is %d bits, over the %d a verifier accepts", bits, maxRSABits)
+		return
 	case bits < 1024:
 		k.problem("its modulus is %d bits, under the 1024 a verifier accepts and the 2048 RFC 7518 §3.3 requires: "+
 			"a key that small can be factored, and anyone who does signs as its issuer", bits)

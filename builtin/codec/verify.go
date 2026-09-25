@@ -1,6 +1,7 @@
 package codec
 
 import (
+	"context"
 	"crypto"
 	"crypto/ecdh"
 	"crypto/ecdsa"
@@ -515,6 +516,27 @@ var jwsAlgs = map[string]jwsAlg{
 // §3.4): an ES256 signature from a P-384 key is not an ES256 signature.
 var ecCurveFor = map[string]string{"ES256": "P-256", "ES384": "P-384", "ES512": "P-521"}
 
+// maxRSABits is the largest RSA modulus a signature is checked against:
+// OpenSSL's own ceiling, OPENSSL_RSA_MAX_MODULUS_BITS, so no key a real
+// verifier accepts is lost. crypto/rsa sets none, and a check costs the
+// square of the modulus: a key of a million bits, 350 KB of arguments to a
+// free call, held a CPU core for 22 seconds, and the 4 MiB an MCP request may
+// carry buys over half an hour. Refused by name in fits and in readJWK, so
+// the refusal comes before any arithmetic.
+const maxRSABits = 16384
+
+// maxKeyChecks bounds the public-key checks one call makes, and
+// maxSignatures the signatures of a JSON JWS that are checked at all. Every
+// key that fits is tried against every signature, so the cost is their
+// product whatever the size of each key: 200 keys without a kid against 200
+// signatures, 290 KB of input, took 13 seconds. A token names the kid it was
+// signed under, which leaves one key to try, and no issuer serves a set, or
+// signs a JWS, that comes near either bound.
+const (
+	maxKeyChecks  = 32
+	maxSignatures = 16
+)
+
 // fits reports whether a key may check a signature made with alg, and why
 // not when it may not. This is the algorithm-confusion guard: the key's type
 // decides, and a public key never stands in for an HMAC secret.
@@ -547,6 +569,8 @@ func (c candidate) fits(alg string) (bool, string) {
 			return false, c.label + " has an even modulus, which no RSA key has, so no signature verifies against it"
 		case k.N.BitLen() < 1024:
 			return false, c.label + " is under the 1024 bits a verifier accepts, and RFC 7518 §3.3 requires 2048"
+		case k.N.BitLen() > maxRSABits:
+			return false, fmt.Sprintf("%s is over the %d bits a verifier accepts", c.label, maxRSABits)
 		}
 		return true, ""
 	case *ecdsa.PublicKey:
@@ -635,16 +659,23 @@ func checkEd25519(pub crypto.PublicKey, _, input, sig []byte, _ crypto.Hash) (bo
 // verifier checks one signature with what the person supplied. It is built
 // once per call and handed to every signature the token carries.
 type verifier struct {
+	// ctx is the call's, looked at between keys: a caller that has gone —
+	// an agent that timed out, a cancelled MCP request — used to leave the
+	// checks running to the end.
+	ctx    context.Context
 	keys   []candidate
 	secret *candidate
 	// notes are what reading the key material noticed, for the page.
 	notes   []string
 	surface plugin.Surface
+	// keyChecks counts the public-key checks made so far in the call, every
+	// signature's together, against maxKeyChecks.
+	keyChecks int
 }
 
 // check verifies one signature and returns the verdict that leads the
 // verification section, or the reason it cannot be given.
-func (v verifier) check(header object, input string, sigSeg string) (string, *view.Error) {
+func (v *verifier) check(header object, input string, sigSeg string) (string, *view.Error) {
 	alg := header.str("alg")
 	switch {
 	case strings.EqualFold(alg, "none"):
@@ -690,6 +721,18 @@ func (v verifier) check(header object, input string, sigSeg string) (string, *vi
 		if ok, why := c.fits(alg); !ok {
 			skipped = append(skipped, why)
 			continue
+		}
+		if err := v.ctx.Err(); err != nil {
+			return "", view.Errorf("codec.jwt.cancelled", "the signature check was stopped before it finished: %v", err)
+		}
+		// An HMAC costs what the input does, and is not counted.
+		if c.secret == nil {
+			if v.keyChecks == maxKeyChecks {
+				return "", view.Errorf("codec.jwt.key", "checking this takes more than the %d key checks one call makes: "+
+					"every key given that fits is tried against every signature", maxKeyChecks).
+					WithHint("give the key the token was signed with — its kid is in the header, and `rta codec jwk` lists the kids in a set")
+			}
+			v.keyChecks++
 		}
 		tried = append(tried, c.label)
 		triedKey = triedKey || c.secret == nil

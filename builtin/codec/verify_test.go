@@ -565,6 +565,63 @@ func TestAnRSAKeyTooSmallOrEvenIsNamedAsSuch(t *testing.T) {
 	}
 }
 
+// Checking an RSA signature costs the square of the modulus, and crypto/rsa
+// sets no ceiling on it: one free call with a key of a million bits held a
+// CPU core for twenty seconds. A key over the ceiling is refused by name
+// before any check, as a JWK — which codec.jwk names too — and as PEM.
+func TestAnRSAKeyOverTheCeilingIsRefusedBeforeAnyCheck(t *testing.T) {
+	n := new(big.Int).Lsh(big.NewInt(1), 19999)
+	n.SetBit(n, 0, 1)
+	b := base64.RawURLEncoding.EncodeToString
+	key := fmt.Sprintf(`{"kty":"RSA","n":%q,"e":%q}`, b(n.Bytes()), b(big.NewInt(1<<31-1).Bytes()))
+	token := sign(`{"alg":"RS256"}`, `{"sub":"a"}`, func([]byte) []byte { return make([]byte, 2500) })
+	mustRefuse(t, token, key, "", "codec.jwt.key", "its modulus is 20000 bits, over the 16384 a verifier accepts")
+	if got := notes(jwk(t, key)); !strings.Contains(got, "over the 16384 a verifier accepts") {
+		t.Errorf("codec.jwk notes = %q, want the size named", got)
+	}
+	der, err := x509.MarshalPKIXPublicKey(&rsa.PublicKey{N: n, E: 65537})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustRefuse(t, token, pemOf(t, "PUBLIC KEY", der), "", "codec.jwt.nokey",
+		"20000-bit RSA from PEM is over the 16384 bits a verifier accepts")
+}
+
+// Every key that fits is tried against every signature, so the cost of one
+// call is their product whatever the size of the keys: 200 keys without a
+// kid against a JSON JWS of 200 signatures took thirteen seconds. The
+// signatures a checked JWS may carry and the key checks one call makes are
+// both bounded, and a call whose caller has gone stops between keys.
+func TestTheWorkOneCheckDoesIsBounded(t *testing.T) {
+	payload := seg(`{"sub":"a"}`)
+	sigs := make([]string, maxSignatures+1)
+	for i := range sigs {
+		sigs[i] = fmt.Sprintf(`{"protected":%q,"signature":%q}`, seg(`{"alg":"RS256"}`), seg("s"))
+	}
+	many := fmt.Sprintf(`{"payload":%q,"signatures":[%s]}`, payload, strings.Join(sigs, ","))
+	mustRefuse(t, many, rfc7638Key, "", "codec.jwt.invalid", fmt.Sprintf("checks at most %d", maxSignatures))
+	// Decoded without a key, a signature costs no more than its header.
+	if body := verification(t, jose(t, many)); !strings.Contains(body, fmt.Sprintf("none of its %d signatures", maxSignatures+1)) {
+		t.Errorf("decoded without a key: verification = %q", body)
+	}
+
+	anonymous := strings.Replace(strings.Replace(rfc7638Key, `,"kid":"2011-04-29"`, "", 1), `,"alg":"RS256"`, "", 1)
+	keys := make([]string, maxKeyChecks+1)
+	for i := range keys {
+		keys[i] = anonymous
+	}
+	set := `{"keys":[` + strings.Join(keys, ",") + `]}`
+	token := sign(`{"alg":"RS256"}`, `{"sub":"a"}`, func([]byte) []byte { return make([]byte, 256) })
+	mustRefuse(t, token, set, "", "codec.jwt.key", fmt.Sprintf("more than the %d key checks one call makes", maxKeyChecks))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := runJWT(ctx, req(map[string]any{"token": token, "key": rfc7638Key}))
+	if verr := view.AsError(err, "test"); err == nil || verr.Code != "codec.jwt.cancelled" {
+		t.Errorf("a cancelled call: got %v, want codec.jwt.cancelled", err)
+	}
+}
+
 // procTypeEncrypted is a legacy encrypted PEM key, the Proc-Type header form,
 // around bytes that are not a key. These tests build their private-key blocks
 // with pem.EncodeToMemory rather than spelling them out, because a private-key
