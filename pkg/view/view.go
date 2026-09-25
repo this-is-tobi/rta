@@ -139,6 +139,21 @@ type Table struct {
 	// answer. This is for what the reader asked about and the writer could
 	// not see.
 	Warnings []Error `json:"warnings,omitempty"`
+	// Empty is what a person is told in place of the table when it has no
+	// rows: that nothing is stored yet and how to add something, that nothing
+	// is waiting. Headings with nothing under them read, on a screen, like a
+	// listing that failed.
+	//
+	// Drawn only where the reader is known to be a person — pretty output and
+	// the TUI — and never encoded. A listing used to answer "empty" with a
+	// Text view instead, which every format carried: `-o json | jq '.rows[]'`
+	// met a view with no rows to iterate, and -o csv a shape it refused. A
+	// program reads the empty table; the sentence is presentation, the way a
+	// column's kind is.
+	//
+	// Not carried across the plugin wire: a plugin's empty table is drawn as
+	// its headings.
+	Empty string `json:"-"`
 }
 
 // ChartKind selects how series are drawn.

@@ -492,6 +492,15 @@ func hangsUnderKey(val string, keyCol, width int) bool {
 }
 
 func prettyTable(w io.Writer, t view.Table, st styles, highlight int) error {
+	// The sentence an empty table carries is drawn in its place: headings
+	// over nothing read as a listing that failed. See view.Table.Empty. The
+	// footer still follows, since an empty listing can still be a partial one.
+	if len(t.Rows) == 0 && t.Empty != "" {
+		if _, err := fmt.Fprintln(w, wrap(t.Empty, st.width, "")); err != nil {
+			return err
+		}
+		return tableFooter(w, t, st)
+	}
 	headers := make([]string, len(t.Columns))
 	rightAlign := map[int]bool{}
 	statusCol := map[int]bool{}
