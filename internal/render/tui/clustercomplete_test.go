@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -277,5 +278,60 @@ func TestNeedsFetchTellsAcceptFromFetch(t *testing.T) {
 		if got := needsFetch(tc.value, tc.offered); got != tc.want {
 			t.Errorf("needsFetch(%q, %v) = %v — %s", tc.value, tc.offered, got, tc.why)
 		}
+	}
+}
+
+// hostileKubectl is a kubectl whose answers are written by somebody else: a
+// context name out of an unusual kubeconfig, and an API server's error text,
+// which kubectl hands on as its first line of stderr.
+func hostileKubectl(t *testing.T, contexts, stderr string) {
+	t.Helper()
+	dir := t.TempDir()
+	script := "#!/bin/sh\n" +
+		"case \"$*\" in\n" +
+		"  *\"config get-contexts\"*) printf '%s' '" + contexts + "' ;;\n" +
+		"  *) printf '%s\\n' '" + stderr + "' >&2; exit 1 ;;\n" +
+		"esac\n"
+	if err := os.WriteFile(filepath.Join(dir, "kubectl"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+// What a cluster says is held to the rule every other completion keeps. A
+// name that would display as something other than itself is not offered —
+// accepting it would type a value nobody saw — and the footer draws a flash
+// the way the rest of the screen draws data: the escape sequences gone, and
+// a character that reorders text spelled out. The flash was drawn as it came,
+// so an override in an API server's error text reordered the footer, and the
+// listing's names went onto it and into the suggestions unfiltered.
+func TestWhatAClusterSaysIsShownAsWhatItIs(t *testing.T) {
+	noHistory(t)
+	rlo := string(rune(0x202e))
+	spelled := fmt.Sprintf("%cu%04x", 0x5c, 0x202e)
+	hostileKubectl(t, "homelab\nctx"+rlo+"gnp.exe\nhome\033]0;owned\007lab\n",
+		"Error from server: "+rlo+"x \033]52;c;Y3VybA==\007 bad")
+
+	nm := fetchFromCluster(t, connFormOnKubeField(t))
+	if got := nm.form.suggested[profileKubeField]; len(got) != 1 || got[0] != "homelab/" {
+		t.Errorf("suggested %q, want only the context that is what it looks like", got)
+	}
+	if strings.Contains(nm.flash, "gnp.exe") || strings.Contains(nm.flash, "owned") {
+		t.Errorf("flash %q names a context that was not offered", nm.flash)
+	}
+
+	nm.form.form = typeInto(nm.form.form, "homelab/")
+	nm = fetchFromCluster(t, nm)
+	if !strings.Contains(nm.flash, rlo) {
+		t.Fatalf("flash %q: the fake did not deliver the server's text", nm.flash)
+	}
+	screen := nm.View().Content
+	for _, raw := range []string{rlo, "\x1b]52", "\x07"} {
+		if strings.Contains(screen, raw) {
+			t.Errorf("the screen carries %q from the server's error text", raw)
+		}
+	}
+	if !strings.Contains(plain(screen), spelled) {
+		t.Errorf("the footer does not spell out the override:\n%s", plain(screen))
 	}
 }

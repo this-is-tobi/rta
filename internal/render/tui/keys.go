@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/this-is-tobi/rta/internal/render/theme"
+	"github.com/this-is-tobi/rta/internal/textclean"
 )
 
 // The app's key vocabulary, declared once.
@@ -440,7 +441,9 @@ func (m Model) footerFor(screen mode) string {
 	if screen == m.mode {
 		bad := theme.BadText
 		for _, err := range m.formErrors(screen) {
-			label := err.Error()
+			// Cleaned for the flash's reason below: a validator's message can
+			// quote what was typed or pasted.
+			label := textclean.Terminal(err.Error())
 			if m.width > 0 {
 				label = ansi.Truncate(label, max(m.width-3, 8), "…")
 			}
@@ -464,7 +467,14 @@ func (m Model) footerFor(screen mode) string {
 		// never split — "a half-rendered key is worse than a missing one" —
 		// but a confirmation is a sentence, so the one that does not fit has
 		// to give ground rather than run off the edge.
-		flash := m.flash
+		//
+		// And cleaned first, as every pane cleans the data it draws. A flash
+		// is often somebody else's words: an error's message, kubectl's
+		// first line of stderr, which can be an API server's own text, the
+		// names a listing found. It was drawn as it came, so an override in
+		// a server's error reordered the footer. Display only, so a
+		// character that reorders text is spelled out rather than dropped.
+		flash := textclean.Terminal(m.flash)
 		if m.width > 0 {
 			flash = ansi.Truncate(flash, max(m.width-3, 8), "…")
 		}

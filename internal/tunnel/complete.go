@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/this-is-tobi/rta/internal/textclean"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -129,7 +130,7 @@ func kubeContexts(ctx context.Context) (Completion, *view.Error) {
 		// appear in a coordinate at all: parseKube splits on slashes. Offering
 		// it would complete to a value the very next validation refuses, so it
 		// is left out; `kubectl config rename-context` is the way through.
-		if strings.Contains(name, "/") {
+		if strings.Contains(name, "/") || !offerable(name) {
 			continue
 		}
 		c.Names = append(c.Names, name)
@@ -163,7 +164,11 @@ func kubePorts(ctx context.Context, partial, kctx, ns, kind, name string) (Compl
 	}
 	prefix := partial[:strings.LastIndexByte(partial, ':')+1]
 	for _, line := range lines {
-		c.Names = append(c.Names, strings.Fields(line)...)
+		for _, port := range strings.Fields(line) {
+			if offerable(port) {
+				c.Names = append(c.Names, port)
+			}
+		}
 	}
 	sort.Strings(c.Names)
 	for _, p := range c.Names {
@@ -183,7 +188,7 @@ func kubeList(ctx context.Context, c Completion, prefix, next string, args ...st
 		if i := strings.LastIndexByte(line, '/'); i >= 0 {
 			line = line[i+1:]
 		}
-		if line != "" {
+		if offerable(line) {
 			c.Names = append(c.Names, line)
 		}
 	}
@@ -192,6 +197,18 @@ func kubeList(ctx context.Context, c Completion, prefix, next string, args ...st
 		c.Items = append(c.Items, prefix+name+next)
 	}
 	return c, nil
+}
+
+// offerable says whether a listed name may be offered: not empty, and not
+// one that would display as something other than itself. What kubectl lists
+// is somebody else's text — a context name from a kubeconfig somebody handed
+// over, and names from a server that only a conforming one holds to its own
+// validation — and a completion is inserted as offered, so a name holding
+// an escape sequence or a character that reorders text would put a value in
+// the field that nobody saw. It is dropped, not cleaned, the rule the TUI's
+// other completion paths keep; a name like that can still be typed.
+func offerable(name string) bool {
+	return name != "" && !textclean.Deceives(name)
 }
 
 // waitDelay bounds how long a finished-or-killed kubectl may hold its pipes.
