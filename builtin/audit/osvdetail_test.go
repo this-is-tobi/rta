@@ -391,12 +391,17 @@ func TestADeadlineKeepsWhatLanded(t *testing.T) {
 	srv, _ := osvServer(t, map[string]osvRecord{})
 	cancel()
 
+	// Many rounds, because the send loop's select picks at random between a
+	// free worker and the dead context: one round passed or failed by luck.
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		_, capped := detailOSVAt(ctx, srv.Client(), srv.URL+"/", []string{"a", "b", "c"})
-		if !capped {
-			t.Error("a cancelled pass reported itself complete")
+		for range 200 {
+			_, capped := detailOSVAt(ctx, srv.Client(), srv.URL+"/", []string{"a", "b", "c"})
+			if !capped {
+				t.Error("a cancelled pass reported itself complete")
+				return
+			}
 		}
 	}()
 	select {
