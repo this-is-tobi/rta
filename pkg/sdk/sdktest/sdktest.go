@@ -67,8 +67,10 @@ type reporter interface {
 type Rule string
 
 const (
-	// RuleDeclaration: the plugin validates, and its inputs are reachable —
-	// no duplicate names, no default the declared type cannot hold.
+	// RuleDeclaration: the plugin validates — no duplicate names, no default
+	// the declared type or its options cannot hold. It is the registry's own
+	// check at load time, so a plugin failing it does not load, and no Skip
+	// waives it.
 	RuleDeclaration Rule = "declaration"
 	// RuleViews: every view a capability returns survives the JSON encoding
 	// every non-terminal surface uses.
@@ -170,7 +172,7 @@ func Check(t *testing.T, p plugin.Plugin, opts ...Option) {
 	// guarantees every capability has a handler at all, so running one anyway
 	// turns a legible "nil handler" into a nil-pointer panic and a stack
 	// trace, which is a worse answer to the same question.
-	if !checkDeclaration(t, p, cfg) {
+	if !checkDeclaration(t, p) {
 		return
 	}
 	checkVerbs(t, p, cfg)

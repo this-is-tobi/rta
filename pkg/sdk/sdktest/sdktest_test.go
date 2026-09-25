@@ -52,7 +52,7 @@ func ok() plugin.Capability {
 func TestACorrectPluginPassesEveryRule(t *testing.T) {
 	rec := &recorder{}
 	p := plugin.Plugin{Name: "demo", Summary: "demo", Capabilities: []plugin.Capability{ok()}}
-	if !checkDeclaration(rec, p, noConfig()) {
+	if !checkDeclaration(rec, p) {
 		t.Fatalf("a correct plugin failed to validate:\n%s", rec.errText())
 	}
 	checkVerbs(rec, p, noConfig())
@@ -90,15 +90,14 @@ func TestACopyNamingAColumnTheViewLacksIsRejected(t *testing.T) {
 
 // Two inputs sharing a name reaches pflag, which panics with "flag
 // redefined" while the command tree is built — killing every rta
-// invocation, doctor included. Caught by Validate itself (via
-// checkDeclaration, the same path real plugin loading takes), not by
-// checkInputs — see checkInputs' own comment for why that logic moved.
+// invocation, doctor included. Caught by Validate itself, via
+// checkDeclaration, the same path real plugin loading takes.
 func TestTwoInputsWithOneNameAreRejected(t *testing.T) {
 	c := ok()
 	c.Inputs = append(c.Inputs, plugin.Field{Name: "limit", Type: plugin.String})
 	p := plugin.Plugin{Name: "demo", Summary: "demo", Capabilities: []plugin.Capability{c}}
 	rec := &recorder{}
-	if checkDeclaration(rec, p, noConfig()) {
+	if checkDeclaration(rec, p) {
 		t.Fatal("a plugin with two inputs sharing a name passed declaration checks")
 	}
 	if !strings.Contains(rec.errText(), `declares input "limit" twice`) {
@@ -108,35 +107,49 @@ func TestTwoInputsWithOneNameAreRejected(t *testing.T) {
 
 // The failure this pins is silent everywhere else: Resolve does not recognise
 // the Go type, leaves the string in place, and req.Int hands the handler 0 —
-// while --help advertises a default that never applies.
+// while --help advertises a default that never applies. Refused by Validate,
+// which the suite reports.
 func TestADefaultTheDeclaredTypeCannotHoldIsRejected(t *testing.T) {
 	c := ok()
 	c.Inputs = []plugin.Field{{Name: "timeout", Type: plugin.Int, Default: "30"}}
 	rec := &recorder{}
-	checkInputs(rec, c)
-	if !strings.Contains(rec.errText(), "the handler will read the zero value") {
+	if checkDeclaration(rec, plugin.Plugin{Name: "demo", Summary: "demo", Capabilities: []plugin.Capability{c}}) ||
+		!strings.Contains(rec.errText(), `input "timeout" default is written as text`) {
 		t.Errorf("mistyped default accepted: %q", rec.errText())
-	}
-	// The widths an integer legitimately arrives in must keep passing: YAML
-	// hands the config loader uint64 and JSON hands it float64, and a suite
-	// that rejected those would be wrong about the one place defaults come
-	// from other than the author's own source.
-	for _, v := range []any{10, int64(10), uint64(10)} {
-		rec := &recorder{}
-		checkInputs(rec, plugin.Capability{ID: "d.x", Inputs: []plugin.Field{{Name: "n", Type: plugin.Int, Default: v}}})
-		if len(rec.errs) > 0 {
-			t.Errorf("%T default rejected: %s", v, rec.errText())
-		}
 	}
 }
 
 func TestADefaultOutsideItsOwnOptionsIsRejected(t *testing.T) {
+	c := ok()
+	c.Inputs = []plugin.Field{{Name: "mode", Type: plugin.String, Options: []string{"fast", "slow"}, Default: "quick"}}
 	rec := &recorder{}
-	checkInputs(rec, plugin.Capability{ID: "d.x", Inputs: []plugin.Field{
-		{Name: "mode", Type: plugin.String, Options: []string{"fast", "slow"}, Default: "quick"},
-	}})
-	if !strings.Contains(rec.errText(), "not one of its options") {
+	if checkDeclaration(rec, plugin.Plugin{Name: "demo", Summary: "demo", Capabilities: []plugin.Capability{c}}) ||
+		!strings.Contains(rec.errText(), "not one of its options") {
 		t.Errorf("unreachable default accepted: %q", rec.errText())
+	}
+}
+
+// A default every accessor reads as declared is not a finding. The suite's
+// own copies of these rules reported a list default among its options as
+// the text "[red]", and a bare string for a list or a float64 for an Int as
+// read as the zero — conformance failures for plugins that load and run.
+// The widths an integer legitimately arrives in keep passing: YAML hands the
+// config loader uint64 and JSON hands it float64.
+func TestADefaultTheHostReadsIsAccepted(t *testing.T) {
+	for _, f := range []plugin.Field{
+		{Name: "kinds", Type: plugin.StringSlice, Options: []string{"red", "blue"}, Default: []string{"red"}},
+		{Name: "kinds", Type: plugin.StringSlice, Default: "red"},
+		{Name: "n", Type: plugin.Int, Default: 10},
+		{Name: "n", Type: plugin.Int, Default: int64(10)},
+		{Name: "n", Type: plugin.Int, Default: uint64(10)},
+		{Name: "n", Type: plugin.Int, Default: float64(10)},
+	} {
+		c := ok()
+		c.Inputs = []plugin.Field{f}
+		rec := &recorder{}
+		if !checkDeclaration(rec, plugin.Plugin{Name: "demo", Summary: "demo", Capabilities: []plugin.Capability{c}}) {
+			t.Errorf("%s %T default rejected: %s", f.Name, f.Default, rec.errText())
+		}
 	}
 }
 
@@ -156,7 +169,7 @@ func TestAFailedValidateIsReportedAndStopsTheRun(t *testing.T) {
 					{Name: "n", Type: plugin.Int, Min: 100, Max: 10},
 				}},
 		},
-	}, config{skips: map[Rule]map[string]string{}})
+	})
 	if ok {
 		t.Error("checkDeclaration said a plugin Validate rejects is sound enough to drive")
 	}
