@@ -213,6 +213,37 @@ func TestAGridCellDoesNotBreakOnAHyphen(t *testing.T) {
 	}
 }
 
+// A non-breaking hyphen in the data is drawn as itself.
+//
+// It is the character shieldHyphens stands in for "-", and the restore turned
+// every one back into "-" — the data's own included. So a host or a file name
+// holding U+2011 was drawn as a different string: copied off the screen it
+// named nothing, and a name made to look like another was shown as the one it
+// imitates. The layout it gives up is a break at a hyphen, in the one table or
+// value that holds the character.
+func TestANonBreakingHyphenInTheDataIsDrawnAsItself(t *testing.T) {
+	host := "paypal" + string(rune(0x2011)) + "login.example"
+	tbl := view.Table{
+		Columns: []view.Column{{Name: "Host"}, {Name: "Flag"}},
+		Rows:    [][]string{{host, "--max-uses"}},
+	}
+	kv := view.KeyValue{Pairs: []view.Pair{{Key: "host", Value: host}}}
+	for name, v := range map[string]view.View{"table": tbl, "keyvalue": kv} {
+		for _, width := range []int{0, 80} {
+			out, _ := renderWidth(t, v, Options{Width: width})
+			if !strings.Contains(out, host) {
+				t.Errorf("%s at width %d drew the name as another string:\n%s", name, width, out)
+			}
+		}
+	}
+	// And the rest of the renderer still shields: a flag near the margin of a
+	// value holding no U+2011 does not break at its hyphen.
+	flags := view.Text{Body: strings.Repeat("x", 14) + " --max-uses"}
+	if out, _ := renderWidth(t, flags, Options{Width: 20}); !strings.Contains(out, "--max-uses") {
+		t.Errorf("a flag broke at its hyphen:\n%s", out)
+	}
+}
+
 // A record whose name is a number says what the number is.
 //
 // Most first columns are the record's identity in words and repeating the
