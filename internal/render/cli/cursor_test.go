@@ -51,6 +51,29 @@ func TestCSVReportsAContinuationOnTheNotesChannel(t *testing.T) {
 	}
 }
 
+// What a table could not read is reported on the notes channel too.
+//
+// Pretty output prints a table's warnings under it and json, yaml and md
+// carry them; csv wrote the rows and nothing else, so a listing missing the
+// namespaces its credential may not read came out as the whole of a smaller
+// one — the defect Warnings exists to prevent, in the format that is fed to
+// another program.
+func TestCSVReportsWhatATableCouldNotReadOnTheNotesChannel(t *testing.T) {
+	partial := bounded()
+	partial.Page = nil
+	partial.Warnings = []view.Error{{Code: "kube.ns.forbidden", Message: "namespace prod could not be listed"}}
+	var out, notes bytes.Buffer
+	if err := Render(&out, partial, Options{Format: CSV, Notes: &notes}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(notes.String(), "kube.ns.forbidden") || !strings.Contains(notes.String(), "namespace prod could not be listed") {
+		t.Errorf("notes = %q, want the warning reported", notes.String())
+	}
+	if strings.Contains(out.String(), "#") || strings.Contains(out.String(), "forbidden") {
+		t.Errorf("the warning leaked into the csv body:\n%s", out.String())
+	}
+}
+
 // A complete answer says nothing about continuing: a cursor on a finished
 // listing sends somebody looking for data that is not there.
 func TestACompleteListingSaysNothingAboutContinuing(t *testing.T) {
