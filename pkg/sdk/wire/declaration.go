@@ -265,6 +265,7 @@ func FieldToProto(f plugin.Field) *rtav1.Field {
 		HasSuggest:  f.Suggest != nil,
 		Live:        f.Live,
 		TlsAdjacent: f.TLSAdjacent,
+		Piped:       f.Piped,
 	}
 }
 
@@ -293,6 +294,7 @@ func FieldFromProto(f *rtav1.Field) (plugin.Field, bool) {
 		Max:         ValueFromProto(f.GetMax()),
 		Live:        f.GetLive(),
 		TLSAdjacent: f.GetTlsAdjacent(),
+		Piped:       f.GetPiped(),
 	}, ok
 }
 

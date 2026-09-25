@@ -697,7 +697,7 @@ func (c *Client) adopt(raw *rtav1.Plugin) error {
 	for i := range decl.Capabilities {
 		c.attach(&decl.Capabilities[i], caps[i])
 	}
-	if err := decl.Validate(); err != nil {
+	if err := decl.ValidateOutOfProcess(); err != nil {
 		return fmt.Errorf("plugin %s declared something rta cannot accept: %w", c.Identity.Path, err)
 	}
 	c.Declared = decl
