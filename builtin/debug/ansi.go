@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/charmbracelet/x/ansi"
+	"github.com/charmbracelet/x/ansi/parser"
 
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -23,12 +24,14 @@ func explainAnsi(input string) view.Table {
 		{Name: "Sequence"}, {Name: "Kind"}, {Name: "Meaning"},
 	}}}
 
-	p := ansi.GetParser()
-	defer ansi.PutParser(p)
+	pooled := ansi.GetParser()
+	defer ansi.PutParser(pooled)
+	var params paramRoom
 
 	var state byte
 	data := input
 	for len(data) > 0 {
+		p := params.parserFor(data, state, pooled)
 		seq, _, n, newState := ansi.DecodeSequence(data, state, p)
 		state = newState
 		data = data[n:]
@@ -48,6 +51,54 @@ func explainAnsi(input string) view.Table {
 	w.t.Total = len(w.t.Rows)
 	return w.t
 }
+
+// paramRoom hands DecodeSequence a parser with a slot for every parameter of
+// the sequence at hand.
+//
+// The pooled parser has parser.MaxParamsSize slots, and DecodeSequence
+// indexes past them rather than stop: a digit or a colon after the 32nd
+// separator panicked, in the CLI, over MCP and in the TUI on every launch
+// once a tile held one. Its last slot is also never counted, so a sequence
+// with exactly 32 parameters lost the 32nd without a sound. Terminal output
+// is attacker-chosen here, and nothing stops a CSI or a DCS from carrying a
+// thousand parameters, so a token that could hold more than the pool has room
+// for is decoded with a parser sized to it — counted from the token itself,
+// measured first without a parser, which reads the same bytes and fills no
+// slots. Counting every ';' and ':' in the token overcounts a string whose
+// data carries some — a DCS's, and an OSC's or an APC's, which ESC introduces
+// too and which hold no parameters at all — and that costs a larger buffer,
+// one int a separator, and nothing else; the count can never come out short.
+type paramRoom struct {
+	wide *ansi.Parser
+	size int
+}
+
+func (r *paramRoom) parserFor(data string, state byte, pooled *ansi.Parser) *ansi.Parser {
+	// Only an ESC or an 8-bit CSI or DCS introducer starts a sequence with
+	// parameters; ESC can reach one through intermediates first.
+	if c := data[0]; c != ansi.ESC && c != ansi.CSI && c != ansi.DCS {
+		return pooled
+	}
+	_, _, n, _ := ansi.DecodeSequence(data, state, nil)
+	token := data[:n]
+	// A sequence with k separators has k+1 parameters, and the parser counts
+	// the last only while it sits below its final slot: k+2 slots.
+	need := strings.Count(token, ";") + strings.Count(token, ":") + 2
+	if need <= parser.MaxParamsSize {
+		return pooled
+	}
+	if need > r.size {
+		r.wide = new(ansi.Parser)
+		r.wide.SetParamsSize(need)
+		r.wide.SetDataSize(pooledDataSize)
+		r.size = need
+	}
+	return r.wide
+}
+
+// pooledDataSize is the data buffer ansi.GetParser's parsers carry, so that a
+// DCS or an OSC collects the same bytes whichever parser reads it.
+const pooledDataSize = 4 << 10
 
 // walker accumulates rows: printable runs into one text row, and tag
 // characters and variation selectors — which DecodeSequence may hand over
@@ -174,9 +225,21 @@ func explainSeq(seq string, p *ansi.Parser) (kind, meaning string) {
 
 // --- CSI ---
 
+// explainCSI names the parameter count past what the pooled parser holds,
+// because what this explains is then not what every terminal does: one keeps
+// the parameters up to its limit and drops the rest, another ignores the
+// whole sequence.
 func explainCSI(p *ansi.Parser) string {
-	cmd := ansi.Cmd(p.Command())
 	params := collectParams(p.Params())
+	meaning := csiCommand(ansi.Cmd(p.Command()), params)
+	if len(params) > parser.MaxParamsSize {
+		meaning += fmt.Sprintf(" — %d parameters, more than many terminals keep: "+
+			"one drops those past its limit, another ignores the whole sequence", len(params))
+	}
+	return meaning
+}
+
+func csiCommand(cmd ansi.Cmd, params []int) string {
 	switch cmd.Final() {
 	case 'm':
 		return explainSGR(params)
