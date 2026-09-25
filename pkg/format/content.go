@@ -98,13 +98,31 @@ func Dump(raw []byte, limit int) string {
 // and says how much it left out. A cut at a byte offset can end halfway
 // through a multi-byte character, which is no longer valid UTF-8 and renders
 // as a replacement glyph that was never in the data.
+//
+// The note is appended to the text, which suits text that is rta's own. For
+// somebody else's — a response body, an object's content — use Head and say
+// what was cut in a value of its own: every renderer cleans a value with
+// ansi.Strip, which reads an OSC or DCS left open in the data as running to
+// the end of the string, so a note appended to it went with it and the text
+// read as whole.
 func Truncate(text string, limit int) string {
-	if len(text) <= limit {
+	head, rest := Head(text, limit)
+	if rest == 0 {
 		return text
+	}
+	return head + "\n… (" + CountOf(rest, "more byte") + ")"
+}
+
+// Head is the longest start of text that is at most limit bytes and does not
+// split a character, and how many bytes it leaves out: text itself and 0 when
+// it fits.
+func Head(text string, limit int) (head string, rest int) {
+	if len(text) <= limit {
+		return text, 0
 	}
 	cut := max(limit, 0)
 	for cut > 0 && !utf8.RuneStart(text[cut]) {
 		cut--
 	}
-	return text[:cut] + "\n… (" + CountOf(len(text)-cut, "more byte") + ")"
+	return text[:cut], len(text) - cut
 }

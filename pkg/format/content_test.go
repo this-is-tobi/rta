@@ -66,6 +66,29 @@ func TestTruncateNeverSplitsACharacter(t *testing.T) {
 	}
 }
 
+// Head is Truncate without the note, for text that is somebody else's: the
+// start it keeps and the count it leaves out come back apart, so the count
+// can be said where the text cannot swallow it.
+func TestHeadKeepsTheCountApartFromTheText(t *testing.T) {
+	for _, c := range []struct {
+		text  string
+		limit int
+		head  string
+		rest  int
+	}{
+		{"short", 10, "short", 0},
+		{"abcdef", 5, "abcde", 1},
+		{strings.Repeat("é", 10), 5, "éé", 16}, // never half a character
+		{"abc", -1, "", 3},
+		{"open \x1b]0;osc", 7, "open \x1b]", 5},
+	} {
+		head, rest := Head(c.text, c.limit)
+		if head != c.head || rest != c.rest {
+			t.Errorf("Head(%q, %d) = %q, %d; want %q, %d", c.text, c.limit, head, rest, c.head, c.rest)
+		}
+	}
+}
+
 // A limit is whatever arithmetic the caller did, a negative result included,
 // and a formatting helper answers rather than panicking inside a handler.
 func TestDumpAndTruncateTakeANegativeLimit(t *testing.T) {

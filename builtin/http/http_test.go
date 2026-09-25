@@ -4,15 +4,18 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	stdnet "net"
 	stdhttp "net/http"
 	"net/http/httptest"
 	"os"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"unicode/utf8"
 
+	"github.com/this-is-tobi/rta/internal/render/cli"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -206,13 +209,13 @@ func TestConnectionFailureIsCoded(t *testing.T) {
 
 func TestBodyTruncation(t *testing.T) {
 	big := strings.Repeat("x", 10000)
-	out := formatBody([]byte(big), "text/plain", false)
-	if len(out) >= 10000 || !strings.Contains(out, "more bytes") {
-		t.Error("large body not truncated")
+	out, cut := formatBody([]byte(big), "text/plain", false)
+	if len(out) != maxShown || !cut || strings.Trim(out, "x") != "" {
+		t.Errorf("large body = %d bytes, cut %v: want the first %d bytes and nothing else", len(out), cut, maxShown)
 	}
 	// A cut at a byte offset could land inside a character; it must not.
 	accented := strings.Repeat("é", 3000) // two bytes each
-	if out := formatBody([]byte(accented), "text/plain", false); !utf8.ValidString(out) {
+	if out, _ := formatBody([]byte(accented), "text/plain", false); !utf8.ValidString(out) {
 		t.Error("truncation split a character")
 	}
 }
@@ -222,7 +225,7 @@ func TestBodyTruncation(t *testing.T) {
 // it through map[string]any changed the id, sorted the keys and escaped the
 // ampersand.
 func TestAJSONBodyIsShownAsTheServerSentIt(t *testing.T) {
-	got := formatBody([]byte(`{"zeta":1,"id":9007199254740993,"big":12345678901234567890,"q":"a&b<c>"}`+"\n"), "application/json", false)
+	got, _ := formatBody([]byte(`{"zeta":1,"id":9007199254740993,"big":12345678901234567890,"q":"a&b<c>"}`+"\n"), "application/json", false)
 	want := "{\n  \"zeta\": 1,\n  \"id\": 9007199254740993,\n  \"big\": 12345678901234567890,\n  \"q\": \"a&b<c>\"\n}"
 	if got != want {
 		t.Errorf("body =\n%s\nwant\n%s", got, want)
@@ -240,7 +243,7 @@ func TestDeepNestingIsNotIndentedWithoutBound(t *testing.T) {
 	body := strings.Repeat("[", depth) + strings.Repeat("0,", 1000) + "0" + strings.Repeat("]", depth)
 	var before, after runtime.MemStats
 	runtime.ReadMemStats(&before)
-	got := formatBody([]byte(body), "application/json", false)
+	got, _ := formatBody([]byte(body), "application/json", false)
 	runtime.ReadMemStats(&after)
 	if len(got) > 2*len(body) {
 		t.Errorf("a %d-byte body became a %d-byte value", len(body), len(got))
@@ -255,7 +258,7 @@ func TestDeepNestingIsNotIndentedWithoutBound(t *testing.T) {
 	// Nesting an API actually sends is still laid out.
 	nested := `{"a":{"b":{"c":[1,{"d":[]}]}}}`
 	want := "{\n  \"a\": {\n    \"b\": {\n      \"c\": [\n        1,\n        {\n          \"d\": []\n        }\n      ]\n    }\n  }\n}"
-	if got := formatBody([]byte(nested), "application/json", false); got != want {
+	if got, _ := formatBody([]byte(nested), "application/json", false); got != want {
 		t.Errorf("body =\n%s\nwant\n%s", got, want)
 	}
 }
@@ -320,7 +323,7 @@ func TestTextIsShownAsText(t *testing.T) {
 // dumped rather than printed, which showed a few stray letters.
 func TestABinaryBodyIsDumped(t *testing.T) {
 	png := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 0, 0, 0, 0x0d}
-	got := formatBody(png, "image/png", false)
+	got, _ := formatBody(png, "image/png", false)
 	if !strings.HasPrefix(got, "12 bytes, not plain text:\n00000000  89 50 4e 47") {
 		t.Errorf("body = %q", got)
 	}
@@ -330,7 +333,7 @@ func TestABinaryBodyIsDumped(t *testing.T) {
 // other body that is not text. json.Indent does not check the encoding, so
 // raw 8-bit CSI and OSC in a string went into the value as they came.
 func TestAJSONBodyThatIsNotUTF8IsDumped(t *testing.T) {
-	got := formatBody([]byte("{\"a\":\"\x9b2J\x9d0;pwned\x9c\"}"), "application/json", false)
+	got, _ := formatBody([]byte("{\"a\":\"\x9b2J\x9d0;pwned\x9c\"}"), "application/json", false)
 	for _, raw := range []byte{0x9b, 0x9c, 0x9d} {
 		if strings.IndexByte(got, raw) >= 0 {
 			t.Errorf("body = %q, carries the raw byte %#x", got, raw)
@@ -360,6 +363,107 @@ func TestOversizedResponseIsMarkedTruncated(t *testing.T) {
 	pairs := pairsOf(t, v)
 	if !strings.Contains(pairs["size"], "truncated") {
 		t.Errorf("size = %q, want it to say the response was truncated", pairs["size"])
+	}
+}
+
+// The page states one size, the response's own, and how much of it the body
+// shows. It said "1048576 B (truncated, showing first 1 MiB)", then showed
+// 4 KiB, then counted "1044480 more bytes" against the megabyte read: three
+// sizes, none of them the 3 MiB the server declared. Without a length there
+// is no size to state, only that it is more than was read. And a body of
+// exactly 1 MiB is whole, which was called truncated for filling the read.
+func TestTheSizeIsTheResponsesAndTheBodySaysHowMuchOfItIsShown(t *testing.T) {
+	const threeMiB = 3 << 20
+	for name, tc := range map[string]struct {
+		length          int
+		declare         bool
+		size, bodyShown string
+	}{
+		"declared": {threeMiB, true, "3145728 B (truncated to the first 1 MiB)", "the first 4096 B of 3145728 B"},
+		"chunked": {threeMiB, false, "more than 1048576 B (truncated to the first 1 MiB)",
+			"the first 4096 B of more than 1048576 B"},
+		"exactly the cap": {maxBody, true, "1048576 B", "the first 4096 B of 1048576 B"},
+		"small":           {10000, true, "10000 B", "the first 4096 B of 10000 B"},
+		"shown whole":     {4096, true, "4096 B", ""},
+	} {
+		srv := httptest.NewServer(stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, _ *stdhttp.Request) {
+			w.Header().Set("Content-Type", "text/plain")
+			if tc.declare {
+				w.Header().Set("Content-Length", strconv.Itoa(tc.length))
+			}
+			_, _ = w.Write([]byte(strings.Repeat("A", tc.length)))
+		}))
+		v, err := doRequest(context.Background(), "GET", req(map[string]any{"url": srv.URL}))
+		srv.Close()
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		pairs := pairsOf(t, v)
+		if pairs["size"] != tc.size {
+			t.Errorf("%s: size = %q, want %q", name, pairs["size"], tc.size)
+		}
+		if pairs["body shown"] != tc.bodyShown {
+			t.Errorf("%s: body shown = %q, want %q", name, pairs["body shown"], tc.bodyShown)
+		}
+		if body := pairs["body"]; strings.Trim(body, "A") != "" || len(body) != min(tc.length, 4096) {
+			t.Errorf("%s: body is %d bytes holding %q, want the response's first bytes and nothing else",
+				name, len(body), strings.Trim(body, "A"))
+		}
+	}
+}
+
+// rta's own words about a body are never part of the body value. The note
+// that it was cut was appended to the text it described, and every renderer
+// cleans a value with ansi.Strip, which reads an OSC or DCS left open as
+// running to the end of the string — so a body holding ESC ] before the cut
+// took the note with it, and read as complete, in pretty output, the TUI and
+// to a model alike.
+func TestATruncatedBodySaysSoWhateverTheBodyHolds(t *testing.T) {
+	for name, intro := range map[string]string{
+		"osc": "\x1b]0;", "dcs": "\x1bP", "apc": "\x1b_", "csi": "\x1b[",
+	} {
+		body := strings.Repeat("a", 4000) + intro + strings.Repeat("b", 5000)
+		srv := httptest.NewServer(stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, _ *stdhttp.Request) {
+			w.Header().Set("Content-Type", "text/plain")
+			_, _ = w.Write([]byte(body))
+		}))
+		v, err := doRequest(context.Background(), "GET", req(map[string]any{"url": srv.URL}))
+		srv.Close()
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		var out bytes.Buffer
+		if err := cli.Render(&out, v, cli.Options{Format: cli.Pretty, NoColor: true}); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if want := fmt.Sprintf("the first 4096 B of %d B", len(body)); !strings.Contains(out.String(), want) {
+			t.Errorf("%s: pretty output does not say %q", name, want)
+		}
+	}
+}
+
+// A body cut at the cap is shown as the start it is, even when that start
+// parses as JSON on its own. Three megabytes of one number, cut to one, were
+// laid out as a whole document: a megabyte of digits, no word beside it of
+// how much was left out.
+func TestABodyCutAtTheCapIsNotLaidOutAsJSON(t *testing.T) {
+	body := strings.Repeat("7", 3<<20)
+	srv := httptest.NewServer(stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, _ *stdhttp.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+		_, _ = w.Write([]byte(body))
+	}))
+	defer srv.Close()
+	v, err := doRequest(context.Background(), "GET", req(map[string]any{"url": srv.URL}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pairs := pairsOf(t, v)
+	if want := fmt.Sprintf("the first %d B of %d B", maxShown, len(body)); pairs["body shown"] != want {
+		t.Errorf("body shown = %q, want %q", pairs["body shown"], want)
+	}
+	if len(pairs["body"]) != maxShown {
+		t.Errorf("body is %d bytes, want the first %d", len(pairs["body"]), maxShown)
 	}
 }
 
