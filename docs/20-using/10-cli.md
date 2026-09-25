@@ -56,13 +56,17 @@ rta net dns github.com -o json
 }
 ```
 
+An empty listing is still its table — the columns, and `rows` an empty array — so `jq '.rows[]'` yields nothing and exits 0, and `-o csv` prints the header. The sentence saying what would fill it is drawn only in `pretty` and the TUI.
+
+`-o csv` writes a table as its rows and any other result as rows of its own: key/value pairs under `key,value`, text as one cell under `text`, and a tree, a chart or a page of sections as every value it holds under `path,value`, the path being where `-o json` puts it. A result that is not a table is never a reason for csv to fail — a write has already happened by the time its result is written.
+
 A column may carry a `kind` — a semantic hint the renderers style by, never styling itself. Two of them are graded rather than merely aligned: a `status` column colours its own vocabulary (`ok`, `warn`, `expired`, `denied`…), and a `usage` column is a percentage of something with a ceiling, drawn green below 80%, amber from 80 and red from 90. That is what makes a full volume in `rta kube pvc usage`, a throttled container in `kube metrics pod` and a namespace out of quota findable by glance rather than by reading every row.
 
 Not every percentage is one. `fs usage`'s Share is a directory's proportion of a tree and 95% is the answer you ran it for; `sys ps`'s CPU% passes 100 on a second core; `kube metrics pressure` reports stall time, where a node is already in trouble far below 80. Those stay `percent` — ungraded, and deliberately so.
 
 Colour is never the only signal. `sys disk` states the same band as a word in a `Status` column beside its `Use%`, which is the half that survives `--no-color`, a pipe and `-o json`.
 
-**A machine-readable format means machine consumption, and rta treats it that way.** With `-o json|yaml|csv|md`, stdout carries the view and nothing else — errors go to stderr, as json, yaml or md when that is what you asked for (under `csv` an error is the plain `ERROR` and `HINT` lines, since csv has no shape for one), and the startup notice about untrusted artifacts is suppressed entirely. So the output on your screen is the output a parser accepts, which is where copy-and-paste gets it from:
+**A machine-readable format means machine consumption, and rta treats it that way.** With `-o json|yaml|csv|md`, stdout carries the view and nothing else — errors go to stderr, as json, yaml or md when that is what you asked for (under `csv` an error is the plain `ERROR` and `HINT` lines: one coded fact is not rows a spreadsheet can use), and the startup notice about untrusted artifacts is suppressed entirely. So the output on your screen is the output a parser accepts, which is where copy-and-paste gets it from:
 
 ```bash
 # Approve every artifact rta found and refused to run. `[]?`, because with
