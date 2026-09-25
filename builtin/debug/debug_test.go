@@ -175,6 +175,37 @@ func TestSgrExtendedColorMissingItsComponentsDoesNotPanic(t *testing.T) {
 	}
 }
 
+// The pooled parser holds 32 parameters and indexes past them when a 33rd
+// arrives: a CSI or DCS carrying more took the CLI down, answered MCP with a
+// panic, and crashed the TUI on every launch once a tile held one. Captured
+// terminal output is the input this capability exists to read, and nothing
+// stops it carrying forty parameters, in either introducer, with colons.
+func TestASequenceWithManyParametersIsExplained(t *testing.T) {
+	forty := strings.Repeat("9;", 40) + "9"
+	for _, input := range []string{
+		"\x1b[" + forty + "m",
+		"\x9b" + forty + "m",
+		"\x1b[" + strings.Repeat("9:", 40) + "9m",
+		"\x1bP" + forty + "q\x1b\\",
+		"\x1b [" + forty + "m", // an intermediate first, and the decoder still reads a CSI
+		"\x1b[" + forty,        // and cut off, still in its parameters
+	} {
+		if table := explainAnsi(input); table.Total == 0 {
+			t.Errorf("%q: no rows", input)
+		}
+	}
+	// Every parameter is read, the 32nd included, which the pooled parser's
+	// last slot dropped even where it did not panic.
+	got := sgrMeaning(t, "\x1b["+strings.Repeat("9;", 31)+"9m")
+	if n := strings.Count(got, "strikethrough"); n != 32 {
+		t.Errorf("32 parameters gave %d meanings: %q", n, got)
+	}
+	got = sgrMeaning(t, "\x1b["+forty+"m")
+	if n := strings.Count(got, "strikethrough"); n != 41 || !strings.Contains(got, "41 parameters") {
+		t.Errorf("41 parameters = %q, want each named and the count said", got)
+	}
+}
+
 // --- cursor movement, position, erase ---
 
 func TestCursorMovementDefaultsToOne(t *testing.T) {
