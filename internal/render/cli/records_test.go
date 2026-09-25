@@ -213,6 +213,27 @@ func TestAGridCellDoesNotBreakOnAHyphen(t *testing.T) {
 	}
 }
 
+// A table drawn as records says what a grid says under it: that the listing
+// continues, and what it could not read.
+//
+// The record layout returned before the footer and the warnings were written,
+// so the same partial listing read as complete on a narrow terminal — a split
+// pane, a phone over ssh — and as partial on a wide one.
+func TestRecordsSayTheListingIsPartialAsAGridDoes(t *testing.T) {
+	tbl := findingsTable()
+	tbl.Total = 40
+	tbl.Page = &view.Cursor{Next: "express"}
+	tbl.Warnings = []view.Error{{Code: "audit.deps.unreadable", Message: "no lock file"}}
+	for _, width := range []int{60, 0} {
+		out, _ := renderWidth(t, tbl, Options{Width: width})
+		for _, want := range []string{"2 of 40 rows", "more rows after express", "no lock file"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("width %d (grid %v) left out %q:\n%s", width, isGrid(out), want, out)
+			}
+		}
+	}
+}
+
 // A non-breaking hyphen in the data is drawn as itself.
 //
 // It is the character shieldHyphens stands in for "-", and the restore turned
