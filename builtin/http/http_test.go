@@ -467,6 +467,40 @@ func TestABodyCutAtTheCapIsNotLaidOutAsJSON(t *testing.T) {
 	}
 }
 
+// A HEAD response's size is the length it declares for the body a GET would
+// receive, which is what a HEAD is usually sent to learn. It has no body of
+// its own, and the size counted that: "0 B" beside a Content-Length of
+// megabytes. Without the header there is no size to state.
+func TestAHeadResponsesSizeIsTheLengthItDeclares(t *testing.T) {
+	for name, tc := range map[string]struct {
+		length string
+		want   string
+	}{
+		"declared":     {strconv.Itoa(3 << 20), "3145728 B"},
+		"empty":        {"0", "0 B"},
+		"not declared": {"", "not declared"},
+	} {
+		srv := httptest.NewServer(stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, _ *stdhttp.Request) {
+			w.Header().Set("Content-Type", "text/plain")
+			if tc.length != "" {
+				w.Header().Set("Content-Length", tc.length)
+			}
+		}))
+		v, err := doRequest(context.Background(), stdhttp.MethodHead, req(map[string]any{"url": srv.URL}))
+		srv.Close()
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		pairs := pairsOf(t, v)
+		if pairs["size"] != tc.want {
+			t.Errorf("%s: size = %q, want %q", name, pairs["size"], tc.want)
+		}
+		if _, ok := pairs["body"]; ok {
+			t.Errorf("%s: a HEAD response shows a body", name)
+		}
+	}
+}
+
 func TestNormalResponseIsNotMarkedTruncated(t *testing.T) {
 	srv := httptest.NewServer(stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, _ *stdhttp.Request) {
 		w.Write([]byte("hello"))

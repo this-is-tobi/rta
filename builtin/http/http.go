@@ -282,7 +282,7 @@ func doRequest(ctx context.Context, method string, req plugin.Request) (view.Vie
 	// else said read as the true size — a 5 MB body cut to 1 MiB is a
 	// partial answer nobody could tell apart from a complete one. HEAD reads
 	// no body, so it never reaches the cap.
-	size := sizeOf(resp, len(bodyBytes), truncated)
+	size := sizeOf(resp, method, len(bodyBytes), truncated)
 	sizeValue := size
 	if truncated {
 		sizeValue += " (truncated to the first 1 MiB)"
@@ -314,8 +314,17 @@ func doRequest(ctx context.Context, method string, req plugin.Request) (view.Vie
 // read when they were all of it, what Content-Length declared when they were
 // not, and otherwise only that it is more than was read — a chunked body, or
 // one net/http decompressed, has no length until it has all been read.
-func sizeOf(resp *stdhttp.Response, read int, truncated bool) string {
+//
+// A HEAD response is the exception: it has no body to read, and its
+// Content-Length is the length of the body a GET would receive — usually the
+// very thing a HEAD is sent to learn. Counting the empty read, the size said
+// "0 B" beside a server declaring megabytes.
+func sizeOf(resp *stdhttp.Response, method string, read int, truncated bool) string {
 	switch {
+	case method == stdhttp.MethodHead && resp.ContentLength >= 0:
+		return fmt.Sprintf("%d B", resp.ContentLength)
+	case method == stdhttp.MethodHead:
+		return "not declared"
 	case !truncated:
 		return fmt.Sprintf("%d B", read)
 	case resp.ContentLength > int64(read):
