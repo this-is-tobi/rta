@@ -247,9 +247,16 @@ func doRequest(ctx context.Context, method string, req plugin.Request) (view.Vie
 			WithHint("check the URL is reachable; use --timeout to extend the deadline")
 	}
 	defer resp.Body.Close()
-	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
+	// One byte past the cap, so that a body of exactly maxBody bytes is told
+	// from a longer one: reading to the cap alone called it truncated for
+	// filling the read.
+	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
 	if err != nil {
 		return nil, view.Errorf("http.body.read", "reading response body: %v", err)
+	}
+	truncated := len(bodyBytes) > maxBody
+	if truncated {
+		bodyBytes = bodyBytes[:maxBody]
 	}
 	total := time.Since(start)
 
@@ -270,26 +277,51 @@ func doRequest(ctx context.Context, method string, req plugin.Request) (view.Vie
 			firstByte.Sub(start).Round(time.Millisecond),
 		)})
 	}
-	sizeValue := fmt.Sprintf("%d B", len(bodyBytes))
-	// io.LimitReader above caps what's read at maxBody: past it, bodyBytes
-	// is a prefix of the real response, not the whole thing. Showing its
-	// length as "size" with nothing else said reads as the true size — a
-	// 5 MB body cut to 1 MiB is a partial answer nobody could tell apart
-	// from a complete one. HEAD never has a body to cut — 0 bytes is by
-	// design, not truncation — so it is excluded rather than flagged.
-	truncated := method != stdhttp.MethodHead && bodyWasTruncated(resp, len(bodyBytes))
+	// The size is the response's, not the read's. Past the cap bodyBytes is
+	// a prefix of the real body, and its length shown as "size" with nothing
+	// else said read as the true size — a 5 MB body cut to 1 MiB is a
+	// partial answer nobody could tell apart from a complete one. HEAD reads
+	// no body, so it never reaches the cap.
+	size := sizeOf(resp, len(bodyBytes), truncated)
+	sizeValue := size
 	if truncated {
-		sizeValue += " (truncated, showing first 1 MiB)"
+		sizeValue += " (truncated to the first 1 MiB)"
 	}
 	pairs = append(pairs,
 		view.Pair{Key: "content-type", Value: resp.Header.Get("Content-Type")},
 		view.Pair{Key: "size", Value: sizeValue},
 	)
 	if len(bodyBytes) > 0 && method != stdhttp.MethodHead {
-		pairs = append(pairs, view.Pair{Key: "body",
-			Value: formatBody(bodyBytes, resp.Header.Get("Content-Type"), truncated)})
+		body, cut := formatBody(bodyBytes, resp.Header.Get("Content-Type"), truncated)
+		// How much of the body is shown is said beside it, never in it. The
+		// note was appended to the text it described, and every renderer
+		// cleans a value with ansi.Strip, which reads an OSC or DCS left open
+		// in the data as running to the end of the string: a body holding
+		// ESC ] before the cut took the note with it and read as whole, in
+		// pretty output, the TUI and to a model. It also counted what was
+		// left against the megabyte read rather than the response, so a
+		// 3 MiB body was said to have 1044480 more bytes.
+		if cut {
+			pairs = append(pairs, view.Pair{Key: "body shown",
+				Value: fmt.Sprintf("the first %d B of %s", len(body), size)})
+		}
+		pairs = append(pairs, view.Pair{Key: "body", Value: body})
 	}
 	return view.KeyValue{Pairs: pairs}, nil
+}
+
+// sizeOf is the size of a response body as far as it is known: the bytes
+// read when they were all of it, what Content-Length declared when they were
+// not, and otherwise only that it is more than was read — a chunked body, or
+// one net/http decompressed, has no length until it has all been read.
+func sizeOf(resp *stdhttp.Response, read int, truncated bool) string {
+	switch {
+	case !truncated:
+		return fmt.Sprintf("%d B", read)
+	case resp.ContentLength > int64(read):
+		return fmt.Sprintf("%d B", resp.ContentLength)
+	}
+	return fmt.Sprintf("more than %d B", read)
 }
 
 // dryRunView shows the request that was not sent, in enough detail to check
@@ -324,18 +356,10 @@ func dryRunView(method, url string, httpReq *stdhttp.Request, data string) view.
 	return view.KeyValue{Pairs: pairs, Redacted: redacted}
 }
 
-// bodyWasTruncated reports whether captured — what io.LimitReader actually
-// let through — is a prefix of the response rather than the whole thing.
-// Either the cap itself was hit, or the server said up front, via
-// Content-Length, that more was coming than the cap allows; a response can
-// hit the second without the first only if it closed early, which is still
-// bodyBytes short of what was promised and just as worth flagging.
-func bodyWasTruncated(resp *stdhttp.Response, captured int) bool {
-	return captured == maxBody || (resp.ContentLength >= 0 && resp.ContentLength > maxBody)
-}
-
 // formatBody pretty-prints JSON responses, truncates the rest of the text
-// sensibly, and dumps what is not text.
+// sensibly, and dumps what is not text. cut says the value is the first
+// len(value) bytes of a longer text, and nothing else: the caller says so
+// beside it. A dump says itself how much of the bytes it shows.
 //
 // JSON is re-indented, never re-encoded. Decoding it into map[string]any and
 // marshalling it back — what this did — hands every number through float64,
@@ -356,6 +380,10 @@ func bodyWasTruncated(resp *stdhttp.Response, captured int) bool {
 // cut is at a byte offset, so past the cap any text that is not ASCII almost
 // always ends partway through a character — and a megabyte of Japanese was
 // dumped as bytes that are not UTF-8. The fragment is dropped before asking.
+// Nor is a cut body laid out as JSON. It is the start of a document, and
+// Indent takes a start that parses on its own — a long number, a value and
+// the padding after it — for the whole of one, which was then drawn as
+// complete with nothing beside it to say how much was left out.
 //
 // Only a body that is UTF-8 is indented. JSON is UTF-8 by definition (RFC
 // 8259), and json.Indent does not check: a string holding the raw bytes 0x9B
@@ -363,28 +391,32 @@ func bodyWasTruncated(resp *stdhttp.Response, captured int) bool {
 // decoding and re-encoding had turned them into U+FFFD. A body that is not
 // UTF-8 is not JSON, whatever its label says, and is dumped like any other
 // body that is not text.
-func formatBody(body []byte, contentType string, truncated bool) string {
+func formatBody(body []byte, contentType string, truncated bool) (value string, cut bool) {
 	if truncated {
 		body = withoutPartialRune(body)
 	}
-	if strings.Contains(contentType, "json") && utf8.Valid(body) {
+	if !truncated && strings.Contains(contentType, "json") && utf8.Valid(body) {
 		src := bytes.TrimPrefix(body, utf8BOM)
 		var pretty bytes.Buffer
 		if indentFits(src, maxIndented(len(src))) && json.Indent(&pretty, src, "", "  ") == nil {
-			return strings.TrimRight(pretty.String(), " \t\r\n")
+			return strings.TrimRight(pretty.String(), " \t\r\n"), false
 		}
 	}
-	const maxShown = 4096
 	// A binary body is identified by its first bytes — PNG, gzip and a
 	// DER certificate all announce themselves in the first line — and read
 	// no further in a response view, so its dump is sixteen lines, not the
 	// 256 the text limit would give it.
 	const maxDumped = 256
 	if !format.PlainText(body) {
-		return format.Dump(body, maxDumped)
+		return format.Dump(body, maxDumped), false
 	}
-	return format.Truncate(string(body), maxShown)
+	head, rest := format.Head(string(body), maxShown)
+	return head, rest > 0 || truncated
 }
+
+// maxShown is how much of a body that is text, and not JSON laid out, a
+// response view shows.
+const maxShown = 4096
 
 var utf8BOM = []byte("\xef\xbb\xbf")
 
