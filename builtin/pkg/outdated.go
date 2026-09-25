@@ -85,10 +85,13 @@ func outdatedCapability() plugin.Capability {
 				}
 			}
 			l := collect(ctx, newRegistryClient(), only)
+			t := outdatedTable(l)
+			// The table even when no manager is installed, and the sentence
+			// beside it for a screen: see view.Table.Empty.
 			if len(l.present) == 0 {
-				return view.Text{Body: "No package manager found on $PATH — none of " + strings.Join(allManagerNames(), ", ") + "."}, nil
+				t.Empty = "No package manager found on $PATH — none of " + strings.Join(allManagerNames(), ", ") + "."
 			}
-			return outdatedTable(l), nil
+			return t, nil
 		},
 	})
 }

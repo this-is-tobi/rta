@@ -119,14 +119,17 @@ func runListen(ctx context.Context, req plugin.Request) (view.View, error) {
 		})
 	}
 	t.Total = len(t.Rows)
+	// The table even when nothing is listed, and the sentence beside it for a
+	// screen: see view.Table.Empty.
 	if len(t.Rows) == 0 {
-		return view.Text{Body: nothingListening(wantPort, wantProto)}, nil
+		t.Empty = nothingListening(wantPort, wantProto)
 	}
 	return t, nil
 }
 
-// nothingListening answers the question that was asked rather than printing an
-// empty table, which is the same answer in a shape nobody reads.
+// nothingListening is what a screen shows in place of the empty table: the
+// answer to the question that was asked, where an empty grid is the same
+// answer in a shape nobody reads.
 //
 // The unfiltered case is the one worth wording carefully: a machine with no
 // listening socket at all is rare enough that "none" is more likely to mean

@@ -1,12 +1,14 @@
 package net
 
 import (
+	"bytes"
 	"strings"
 	"syscall"
 	"testing"
 
 	psnet "github.com/shirou/gopsutil/v4/net"
 
+	"github.com/this-is-tobi/rta/internal/render/cli"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -164,16 +166,24 @@ func TestTheEmptyAnswerRepeatsWhatWasAsked(t *testing.T) {
 }
 
 // A smoke test against the real socket table: it must not error, and what it
-// returns must be one of the two shapes. Deliberately asserts nothing about
+// returns must be the table, empty or not. Deliberately asserts nothing about
 // the contents — a CI runner's listeners are its own business, and an
 // assertion about them would fail for a property of the box.
+//
+// Empty is a table too, with the sentence beside it for a screen: the
+// sentence in its place gave `-o json | jq '.rows[]'` a text view and -o csv
+// a shape it refused with exit 2. Port 1 over udp is asked for to reach that
+// case on any machine that is not serving tcpmux.
 func TestListingThisMachineReturnsATableOrSaysWhyNot(t *testing.T) {
-	v, err := runListen(t.Context(), req(map[string]any{}))
-	if err != nil {
-		t.Fatalf("listing sockets: %v", err)
-	}
-	switch got := v.(type) {
-	case view.Table:
+	for _, values := range []map[string]any{{}, {"port": 1, "proto": "udp"}} {
+		v, err := runListen(t.Context(), req(values))
+		if err != nil {
+			t.Fatalf("listing sockets: %v", err)
+		}
+		got, ok := v.(view.Table)
+		if !ok {
+			t.Fatalf("view is %T, want a Table", v)
+		}
 		want := []string{"Proto", "Address", "Port", "Reach", "PID", "Process"}
 		if len(got.Columns) != len(want) {
 			t.Fatalf("columns = %d, want %d", len(got.Columns), len(want))
@@ -191,12 +201,17 @@ func TestListingThisMachineReturnsATableOrSaysWhyNot(t *testing.T) {
 				t.Fatalf("row %v has %d cells, want %d", row, len(row), len(want))
 			}
 		}
-	case view.Text:
-		if got.Body == "" {
+		if len(got.Rows) > 0 {
+			continue
+		}
+		if got.Empty == "" {
 			t.Error("the empty answer said nothing")
 		}
-	default:
-		t.Fatalf("view is %T, want a Table or a Text", v)
+		var out bytes.Buffer
+		if err := cli.Render(&out, got, cli.Options{Format: cli.CSV}); err != nil ||
+			strings.TrimSpace(out.String()) != strings.Join(want, ",") {
+			t.Errorf("csv = %q (%v), want the header row alone", out.String(), err)
+		}
 	}
 }
 

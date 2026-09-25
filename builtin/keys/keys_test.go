@@ -1,6 +1,7 @@
 package keys
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -17,6 +18,7 @@ import (
 	"github.com/tyler-smith/go-bip39"
 	"golang.org/x/crypto/ssh"
 
+	"github.com/this-is-tobi/rta/internal/render/cli"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -611,15 +613,31 @@ func TestKeyMaterialNeverMovesForAnAgent(t *testing.T) {
 
 // --- keys.list --------------------------------------------------------
 
+// No key to list is still a table to a parser, whether ~/.ssh is missing or
+// holds none. It answered with a sentence every format carried: `-o json |
+// jq '.rows[]'` met a text view, and -o csv refused one and exited 2.
 func TestListWithNoSSHDirectory(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	v, err := runList(context.Background(), req(nil))
-	if err != nil {
-		t.Fatal(err)
-	}
-	text, ok := v.(view.Text)
-	if !ok || !strings.Contains(text.Body, "No ~/.ssh directory found") {
-		t.Errorf("got %#v", v)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	for _, want := range []string{"No ~/.ssh directory found", "No private keys found"} {
+		v, err := runList(context.Background(), req(nil))
+		if err != nil {
+			t.Fatal(err)
+		}
+		tbl, ok := v.(view.Table)
+		if !ok || len(tbl.Rows) != 0 || !strings.Contains(tbl.Empty, want) {
+			t.Errorf("got %#v, want an empty table saying %q", v, want)
+		}
+		var out bytes.Buffer
+		if err := cli.Render(&out, v, cli.Options{Format: cli.CSV}); err != nil {
+			t.Fatalf("csv: %v", err)
+		}
+		if got := strings.TrimSpace(out.String()); got != "Key,Type,Locked,Backup-eligible,Fingerprint" {
+			t.Errorf("csv = %q, want the header row alone", got)
+		}
+		if err := os.MkdirAll(filepath.Join(home, ".ssh"), 0o700); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 
@@ -996,7 +1014,7 @@ func TestListSkipsAFileThatIsNotAKeyHoweverItIsNamed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, isTable := v.(view.Table); isTable {
+	if tbl, ok := v.(view.Table); !ok || len(tbl.Rows) != 0 {
 		t.Errorf("a directory holding no keys produced a table of them: %v", v)
 	}
 }

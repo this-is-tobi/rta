@@ -18,6 +18,7 @@ import (
 	"filippo.io/age"
 	"golang.org/x/crypto/ssh"
 
+	"github.com/this-is-tobi/rta/internal/render/cli"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -460,7 +461,7 @@ func TestListFiltersByKind(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(v.(view.Text).Body, "No key of kind certificate") {
+	if !strings.Contains(v.(view.Table).Empty, "No key of kind certificate") {
 		t.Errorf("empty kind filter = %v", v)
 	}
 }
@@ -744,7 +745,7 @@ func TestEmptyStoreNeedsNoPassphrase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("listing a store that does not exist: %v", err)
 	}
-	if !strings.Contains(v.(view.Text).Body, "No keys stored yet") {
+	if tbl, ok := v.(view.Table); !ok || !strings.Contains(tbl.Empty, "No keys stored yet") {
 		t.Errorf("empty list = %v", v)
 	}
 }
@@ -900,13 +901,31 @@ func TestSetUnreadableFileIsCoded(t *testing.T) {
 	}
 }
 
+// An empty store is friendly to a person and still a table to a parser. It
+// answered with a sentence every format carried: `-o json | jq '.rows[]'` met
+// a text view, and -o csv refused one and exited 2. The sentence rides on the
+// table for the screen alone.
 func TestListEmptyStoreIsFriendly(t *testing.T) {
 	setup(t)
-	v, err := runList(context.Background(), req(nil, false))
-	if err != nil {
-		t.Fatal(err)
+	for name, values := range map[string]map[string]any{"list": nil, "removed": {"removed": true}} {
+		v, err := runList(context.Background(), req(values, false))
+		if err != nil {
+			t.Fatal(err)
+		}
+		tbl, ok := v.(view.Table)
+		if !ok || len(tbl.Rows) != 0 || tbl.Empty == "" {
+			t.Fatalf("%s: empty list = %#v, want a table with no rows and a sentence for a screen", name, v)
+		}
+		var out bytes.Buffer
+		if err := cli.Render(&out, v, cli.Options{Format: cli.CSV}); err != nil {
+			t.Fatalf("%s: csv: %v", name, err)
+		}
+		if header := strings.TrimSpace(out.String()); !strings.HasPrefix(header, "Key,Kind,Size,Description,") || strings.Contains(header, "\n") {
+			t.Errorf("%s: csv = %q, want the header row alone", name, out.String())
+		}
 	}
-	if !strings.Contains(v.(view.Text).Body, "No keys stored yet") {
+	v, _ := runList(context.Background(), req(nil, false))
+	if !strings.Contains(v.(view.Table).Empty, "No keys stored yet") {
 		t.Errorf("empty list = %v", v)
 	}
 }

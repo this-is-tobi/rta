@@ -160,17 +160,21 @@ func runList(_ context.Context, _ plugin.Request) (view.View, error) {
 		return nil, view.Errorf("keys.list.home", "resolving the home directory: %v", err)
 	}
 	dir := filepath.Join(home, ".ssh")
+	// The table even when nothing is listed, and the sentence beside it for a
+	// screen: see view.Table.Empty.
 	if _, err := os.Stat(dir); err != nil {
 		if os.IsNotExist(err) {
-			return view.Text{Body: "No ~/.ssh directory found."}, nil
+			t := keyTable(nil)
+			t.Empty = "No ~/.ssh directory found."
+			return t, nil
 		}
 		return nil, view.Errorf("keys.list.read", "reading %s: %v", dir, err)
 	}
-	paths := sshkeys.PrivateKeys(dir)
-	if len(paths) == 0 {
-		return view.Text{Body: "No private keys found in ~/.ssh."}, nil
+	t := keyTable(sshkeys.PrivateKeys(dir))
+	if len(t.Rows) == 0 {
+		t.Empty = "No private keys found in ~/.ssh."
 	}
-	return keyTable(paths), nil
+	return t, nil
 }
 
 // keyTable lays the keys out, with one column that comes and goes.

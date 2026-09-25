@@ -1,6 +1,7 @@
 package net
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/mcp"
 	"github.com/this-is-tobi/rta/internal/registry"
+	"github.com/this-is-tobi/rta/internal/render/cli"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -90,11 +92,20 @@ func TestHostsListShowsOneRowPerNameIncludingDisabled(t *testing.T) {
 	}
 }
 
+// An empty hosts file is friendly on a screen and still a table to a parser.
+// The sentence in place of the table was what every format got: `-o json |
+// jq '.rows[]'` met a text view, and -o csv refused one and exited 2.
 func TestHostsListEmptyIsFriendly(t *testing.T) {
 	hostsFixture(t, "# nothing but comments\n")
 	v := run(t, runHostsList, nil)
-	if !strings.Contains(v.(view.Text).Body, "No entries") {
-		t.Errorf("empty hosts = %v", v)
+	tbl, ok := v.(view.Table)
+	if !ok || len(tbl.Rows) != 0 || !strings.Contains(tbl.Empty, "No entries") {
+		t.Fatalf("empty hosts = %v", v)
+	}
+	var out bytes.Buffer
+	if err := cli.Render(&out, v, cli.Options{Format: cli.CSV}); err != nil ||
+		strings.TrimSpace(out.String()) != "Host,IP,State" {
+		t.Errorf("csv = %q (%v), want the header row alone", out.String(), err)
 	}
 }
 

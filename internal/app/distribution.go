@@ -463,11 +463,13 @@ func newPluginSearchCommand(opts *globalOpts) *cobra.Command {
 				if len(problems) > 0 {
 					return withOthers(problems)
 				}
-				return renderView(cmd, opts, view.Text{Body: "nothing matches"})
 			}
+			// The table even when nothing matches, and the sentence beside it
+			// for a screen: see view.Table.Empty.
 			t := view.Table{
 				Columns: []view.Column{{Name: "Plugin"}, {Name: "Version"}, {Name: "Index"},
 					{Name: "Installed"}, {Name: "Safety"}, {Name: "Summary"}},
+				Empty: "nothing matches",
 			}
 			for _, r := range rows {
 				installed := ""
@@ -513,8 +515,13 @@ func newPluginOutdatedCommand(opts *globalOpts) *cobra.Command {
 			"`rta plugin upgrade --all --index` sweeps.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// The table even when nothing is listed, and the sentence beside
+			// it for a screen: see view.Table.Empty.
+			t := view.Table{Columns: []view.Column{{Name: "Plugin"}, {Name: "Installed"},
+				{Name: "Available"}, {Name: "Index"}}}
 			if len(plugindist.ReadLock()) == 0 {
-				return renderView(cmd, opts, view.Text{Body: "no plugin is installed"})
+				t.Empty = "no plugin is installed"
+				return renderView(cmd, opts, t)
 			}
 			rows := plugindist.Outdated()
 			if index != "" {
@@ -526,15 +533,10 @@ func newPluginOutdatedCommand(opts *globalOpts) *cobra.Command {
 				}
 				rows = kept
 			}
-			if len(rows) == 0 {
-				body := "every installed plugin matches what its index claims"
-				if index != "" {
-					body = "every plugin installed from " + index + " matches what it claims"
-				}
-				return renderView(cmd, opts, view.Text{Body: body})
+			t.Empty = "every installed plugin matches what its index claims"
+			if index != "" {
+				t.Empty = "every plugin installed from " + index + " matches what it claims"
 			}
-			t := view.Table{Columns: []view.Column{{Name: "Plugin"}, {Name: "Installed"},
-				{Name: "Available"}, {Name: "Index"}}}
 			for _, r := range rows {
 				available := r.AvailableVersion
 				if r.Problem != "" {
@@ -621,10 +623,6 @@ func newPluginIndexCommand(opts *globalOpts) *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			indexes := plugindist.Indexes()
-			if len(indexes) == 0 {
-				return renderView(cmd, opts, view.Text{
-					Body: "no index is attached — `rta plugin index add <name> <repository>`"})
-			}
 			// Origin is shown because it decides something: an index
 			// attached from a path on this machine may name file://
 			// artifacts and one attached from a network URL may not, so an
@@ -634,8 +632,12 @@ func newPluginIndexCommand(opts *globalOpts) *cobra.Command {
 			//
 			// Masked on the way out — an origin can carry a token, and a
 			// table is also `--output json` and terminal scrollback.
+			//
+			// The table even when no index is attached, and the sentence
+			// beside it for a screen: see view.Table.Empty.
 			t := view.Table{Columns: []view.Column{{Name: "Index"}, {Name: "Origin"},
-				{Name: "Pinned"}, {Name: "Plugins"}, {Name: "Problems"}}}
+				{Name: "Pinned"}, {Name: "Plugins"}, {Name: "Problems"}},
+				Empty: "no index is attached — `rta plugin index add <name> <repository>`"}
 			var problems []*view.Error
 			for _, ix := range indexes {
 				listed, bad := plugindist.Manifests(ix)

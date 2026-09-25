@@ -375,21 +375,23 @@ func connectedTable() (view.Table, error) {
 			strconv.Itoa(calls[s.ID]), missing, strings.Join(s.Roots, ", "), s.ID, s.Dir, s.Ledger})
 	}
 	t.Total = len(t.Rows)
+	if len(t.Rows) == 0 {
+		t.Empty = "nothing is connected — a client with an rta server open appears here"
+	}
 	return t, nil
 }
 
 const nothingWaiting = "nothing is waiting — a parked call appears here, and `rta agent allow <id>` releases it"
 
-// connectedView and waitingView are the overview's sections, which are a
-// sentence when empty for the reason `agent pending` is: an empty bordered
-// table under a heading reads as a screen that failed to load.
+// connectedView and waitingView are the overview's sections, which a screen
+// shows as a sentence when empty for the reason `agent pending` does: an
+// empty bordered table under a heading reads as a screen that failed to load.
+// The tables carry that sentence themselves (view.Table.Empty), so a parser
+// reading the page still meets a table.
 func connectedView() view.View {
 	t, err := connectedTable()
 	if err != nil {
 		return view.Text{Body: "unreadable — " + err.Error()}
-	}
-	if len(t.Rows) == 0 {
-		return view.Text{Body: "nothing is connected — a client with an rta server open appears here"}
 	}
 	return t
 }
@@ -397,9 +399,6 @@ func connectedView() view.View {
 func waitingView(reqs []consent.Request, err error) view.View {
 	if err != nil {
 		return view.Text{Body: "unreadable — " + err.Error()}
-	}
-	if len(reqs) == 0 {
-		return view.Text{Body: nothingWaiting}
 	}
 	return pendingTable(reqs)
 }
@@ -748,12 +747,6 @@ func runPending(ctx context.Context, req plugin.Request) (view.View, error) {
 	if err != nil {
 		return nil, view.Errorf("agent.pending.unreadable", "%v", err)
 	}
-	if len(reqs) == 0 {
-		// A sentence, not an empty bordered table: `lock list` says
-		// "nothing is locked" for the same reason, and the queue is the
-		// screen `press w to answer` lands on.
-		return view.Text{Body: nothingWaiting}, nil
-	}
 	return pendingTable(reqs), nil
 }
 
@@ -797,7 +790,14 @@ func pendingTable(reqs []consent.Request) view.Table {
 	if asking {
 		cols = slices.Insert(cols, 1, view.Column{Name: "agent"})
 	}
-	return view.Table{Columns: cols, Rows: rows, Total: len(rows)}
+	t := view.Table{Columns: cols, Rows: rows, Total: len(rows)}
+	// A sentence on a screen, not an empty bordered table: the queue is the
+	// screen `press w to answer` lands on. The table under it all the same,
+	// for everything that parses it — see view.Table.Empty.
+	if len(rows) == 0 {
+		t.Empty = nothingWaiting
+	}
+	return t
 }
 
 // whoCalled is the one cell that answers "which agent was this".

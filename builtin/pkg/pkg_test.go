@@ -1,6 +1,7 @@
 package pkg
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -13,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/this-is-tobi/rta/internal/render/cli"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -87,6 +89,44 @@ func req(t *testing.T, capID string, values map[string]any) plugin.Request {
 	}
 	t.Fatalf("no capability %q", capID)
 	return plugin.Request{}
+}
+
+// Nothing to list is a sentence on a screen and a table to a parser — no tool
+// configured, no package manager on $PATH. The sentence in place of the table
+// was what every format got: `-o json | jq '.rows[]'` met a text view, and -o
+// csv refused one and exited 2.
+func TestNothingToListIsATableToAParser(t *testing.T) {
+	if supported() != nil {
+		t.Skip("pkg is not supported here")
+	}
+	install(t, &fake{})
+	tools, err := toolsCapability().Run(context.Background(), req(t, "pkg.tools", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	outdated, err := outdatedCapability().Run(context.Background(), req(t, "pkg.outdated", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, c := range map[string]struct {
+		v      view.View
+		say    string
+		header string
+	}{
+		"tools":    {tools, "No tools listed", "target,Source,Installed,Latest,Status,Where"},
+		"outdated": {outdated, "No package manager found", "target,package,Installed,Latest,Status,Upgrade"},
+	} {
+		tbl, ok := c.v.(view.Table)
+		if !ok || len(tbl.Rows) != 0 || !strings.Contains(tbl.Empty, c.say) {
+			t.Errorf("%s = %+v, want an empty table saying %q", name, c.v, c.say)
+			continue
+		}
+		var out bytes.Buffer
+		if err := cli.Render(&out, c.v, cli.Options{Format: cli.CSV}); err != nil ||
+			strings.TrimSpace(out.String()) != c.header {
+			t.Errorf("%s: csv = %q (%v), want the header row alone", name, out.String(), err)
+		}
+	}
 }
 
 func TestPluginIsValid(t *testing.T) {

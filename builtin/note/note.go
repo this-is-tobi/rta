@@ -368,11 +368,13 @@ func runList(_ context.Context, req plugin.Request) (view.View, error) {
 		t.Rows = append(t.Rows, row)
 	}
 	t.Total = len(t.Rows)
+	// The table even when nothing is listed, and the sentence beside it for a
+	// screen: see view.Table.Empty.
 	if len(t.Rows) == 0 {
+		t.Empty = "Nothing here yet — add one with: rta note add \"...\""
 		if parent != 0 {
-			return view.Text{Body: fmt.Sprintf("Note %d has no sub-notes yet — add one with: rta note add \"...\" --parent %d", parent, parent)}, nil
+			t.Empty = fmt.Sprintf("Note %d has no sub-notes yet — add one with: rta note add \"...\" --parent %d", parent, parent)
 		}
-		return view.Text{Body: "Nothing here yet — add one with: rta note add \"...\""}, nil
 	}
 	return t, nil
 }
@@ -403,7 +405,7 @@ func runSearch(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 	t.Total = len(t.Rows)
 	if len(t.Rows) == 0 {
-		return view.Text{Body: fmt.Sprintf("No notes match %q", query)}, nil
+		t.Empty = fmt.Sprintf("No notes match %q", query)
 	}
 	return t, nil
 }
@@ -419,15 +421,15 @@ func runTags(_ context.Context, _ plugin.Request) (view.View, error) {
 			counts[itemstore.NormalizeTag(tag)]++
 		}
 	}
-	if len(counts) == 0 {
-		return view.Text{Body: "No tags yet — add one with: rta note add \"...\" --tag <name>"}, nil
-	}
 	names := make([]string, 0, len(counts))
 	for name := range counts {
 		names = append(names, name)
 	}
 	sort.Strings(names)
 	t := view.Table{Columns: []view.Column{{Name: "Tag"}, {Name: "Notes", Kind: view.KindNumber}}}
+	if len(names) == 0 {
+		t.Empty = "No tags yet — add one with: rta note add \"...\" --tag <name>"
+	}
 	for _, name := range names {
 		t.Rows = append(t.Rows, []string{name, strconv.Itoa(counts[name])})
 	}

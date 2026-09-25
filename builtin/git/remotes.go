@@ -72,8 +72,10 @@ func runRemotes(ctx context.Context, req plugin.Request) (view.View, error) {
 		}
 	}
 	t.Total = len(t.Rows)
+	// The table even when nothing is listed, and the sentence beside it for a
+	// screen: see view.Table.Empty.
 	if len(t.Rows) == 0 {
-		return view.Text{Body: "No remotes — this repository is local only."}, nil
+		t.Empty = "No remotes — this repository is local only."
 	}
 	return t, nil
 }

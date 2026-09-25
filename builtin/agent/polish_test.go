@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 	"time"
@@ -8,20 +9,34 @@ import (
 	"github.com/this-is-tobi/rta/internal/agentlog"
 	"github.com/this-is-tobi/rta/internal/consent"
 	"github.com/this-is-tobi/rta/internal/lockdown"
+	"github.com/this-is-tobi/rta/internal/render/cli"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
-// An empty queue is a sentence, the way an empty lock list is — not a
-// bordered table with a header row and nothing under it.
+// An empty queue is a sentence on a screen, the way an empty lock list is —
+// not a bordered table with a header row and nothing under it — and a table
+// to anything that parses it. The sentence in place of the table was what
+// every format got: `-o json | jq '.rows[]'` met a text view, and -o csv
+// refused one and exited 2.
 func TestAnEmptyQueueIsASentence(t *testing.T) {
 	isolate(t)
 	v, err := run(t, "agent.pending", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	text, ok := v.(view.Text)
-	if !ok || !strings.Contains(text.Body, "nothing is waiting") {
-		t.Fatalf("empty queue = %+v, want a sentence", v)
+	tbl, ok := v.(view.Table)
+	if !ok || len(tbl.Rows) != 0 || !strings.Contains(tbl.Empty, "nothing is waiting") {
+		t.Fatalf("empty queue = %+v, want an empty table saying so", v)
+	}
+	var out bytes.Buffer
+	if err := cli.Render(&out, v, cli.Options{Format: cli.Pretty, NoColor: true}); err != nil ||
+		!strings.Contains(out.String(), "nothing is waiting") || strings.Contains(out.String(), "╭") {
+		t.Errorf("pretty = %q (%v), want the sentence and no grid", out.String(), err)
+	}
+	out.Reset()
+	if err := cli.Render(&out, v, cli.Options{Format: cli.CSV}); err != nil ||
+		strings.TrimSpace(out.String()) != "id,capability,record,safety,profile,would do,expires in" {
+		t.Errorf("csv = %q (%v), want the header row alone", out.String(), err)
 	}
 }
 

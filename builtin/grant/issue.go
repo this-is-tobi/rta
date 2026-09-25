@@ -423,11 +423,6 @@ func runRoles(_ context.Context, req plugin.Request) (view.View, error) {
 		}
 		all = hits
 	}
-	if len(all) == 0 {
-		return view.Text{Body: "no role is defined — a `roles:` block in your config, your policy file, or the team's " +
-			".rta-policy.yaml names one:\n\n" +
-			"roles:\n  dev:\n    ttl: 8h\n    grants:\n      - kv.get db-password\n      - pg.query --profile staging"}, nil
-	}
 	t := view.Table{Columns: []view.Column{
 		{Name: "role"}, {Name: "from"}, {Name: "agent"}, {Name: "ttl"}, {Name: "grants"},
 	}}
@@ -435,5 +430,12 @@ func runRoles(_ context.Context, req plugin.Request) (view.View, error) {
 		t.Rows = append(t.Rows, []string{s.Name, sourceWord(s), dash(s.Role.Agent), windowWords(s), strings.Join(s.Role.Grants, "\n")})
 	}
 	t.Total = len(t.Rows)
+	// The table even when no role is defined, and the sentence beside it for
+	// a screen: see view.Table.Empty.
+	if len(t.Rows) == 0 {
+		t.Empty = "no role is defined — a `roles:` block in your config, your policy file, or the team's " +
+			".rta-policy.yaml names one:\n\n" +
+			"roles:\n  dev:\n    ttl: 8h\n    grants:\n      - kv.get db-password\n      - pg.query --profile staging"
+	}
 	return t, nil
 }

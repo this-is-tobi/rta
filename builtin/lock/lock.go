@@ -262,9 +262,6 @@ func rmView(kind lockdown.Kind, name string, removed bool, where string) view.Vi
 }
 
 func lockTable(locks []lockdown.Lock) view.View {
-	if len(locks) == 0 {
-		return view.Text{Body: "nothing is locked"}
-	}
 	rows := make([][]string, 0, len(locks))
 	for _, l := range locks {
 		until := "until removed"
@@ -280,6 +277,9 @@ func lockTable(locks []lockdown.Lock) view.View {
 		// columns to inputs by name.
 		Columns: []view.Column{{Name: "kind"}, {Name: "name"}, {Name: "note"}, {Name: "by"}, {Name: "stands"}},
 		Rows:    rows,
+		// The table even when nothing is locked, with the sentence beside it
+		// for a screen: see view.Table.Empty.
+		Empty: "nothing is locked",
 	}
 }
 

@@ -1,12 +1,14 @@
 package git
 
 import (
+	"bytes"
 	"context"
 	"strings"
 	"testing"
 
 	"github.com/go-git/go-git/v5/config"
 
+	"github.com/this-is-tobi/rta/internal/render/cli"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -72,8 +74,10 @@ func TestRemotesMasksACredentialInAURL(t *testing.T) {
 	}
 }
 
-// A local-only repository says so rather than drawing an empty table, which
-// reads as a query that failed.
+// A local-only repository says so on a screen rather than drawing an empty
+// table, which reads as a query that failed — and is still a table to a
+// parser, where the sentence in its place gave `jq '.rows[]'` a text view and
+// -o csv a shape it refused with exit 2.
 func TestARepositoryWithNoRemotesSaysSo(t *testing.T) {
 	dir, repo := testRepo(t)
 	commitFile(t, repo, dir, "a.txt", "v1\n", "initial commit")
@@ -82,12 +86,13 @@ func TestARepositoryWithNoRemotesSaysSo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	txt, ok := v.(view.Text)
-	if !ok {
-		t.Fatalf("want Text, got %s", view.TypeOf(v))
+	tbl, ok := v.(view.Table)
+	if !ok || len(tbl.Rows) != 0 || !strings.Contains(tbl.Empty, "local only") {
+		t.Fatalf("remotes = %#v, want an empty table saying the repository is local only", v)
 	}
-	if !strings.Contains(txt.Body, "local only") {
-		t.Errorf("body = %q", txt.Body)
+	var out bytes.Buffer
+	if err := cli.Render(&out, v, cli.Options{Format: cli.CSV}); err != nil || !strings.HasPrefix(out.String(), "Remote,") {
+		t.Errorf("csv = %q (%v), want the header row alone", out.String(), err)
 	}
 }
 
