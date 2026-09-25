@@ -3,6 +3,7 @@ package toolcall
 import (
 	"encoding/json"
 	"math"
+	"slices"
 	"strings"
 	"testing"
 
@@ -82,6 +83,28 @@ func TestRequireEnforcesRequiredFieldsAndExemptsLocalOnes(t *testing.T) {
 	// permanently uncallable — it can never arrive from the caller.
 	if verr := Require(c, map[string]any{"key": "k"}); verr != nil {
 		t.Fatalf("a required Local field blocked an otherwise complete call: %v", verr)
+	}
+}
+
+// An input the CLI reads from a pipe when it is left out is required here,
+// where there is no pipe. codec_jwt {} reached the handler, which could only
+// answer that there was no token, while the tool description told the agent
+// a missing token was read from standard input; the schema now lists it and
+// the call is refused before anything runs.
+func TestAPipedInputIsRequiredOverMCP(t *testing.T) {
+	c := plugin.Capability{ID: "codec.jwt", Inputs: []plugin.Field{
+		{Name: "token", Type: plugin.Secret, Positional: true, Piped: true},
+		{Name: "key", Type: plugin.Secret},
+	}}
+	if got, _ := InputSchema(c, nil)["required"].([]string); !slices.Equal(got, []string{"token"}) {
+		t.Errorf("required = %v, want [token]", got)
+	}
+	verr := Require(c, map[string]any{})
+	if verr == nil || verr.Code != "core.mcp.badargs" || !strings.Contains(verr.Message, "token is required") {
+		t.Errorf("a call leaving the token out: %v", verr)
+	}
+	if verr := Require(c, map[string]any{"token": "eyJ"}); verr != nil {
+		t.Errorf("a call giving it was refused: %v", verr)
 	}
 }
 

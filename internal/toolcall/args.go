@@ -228,9 +228,12 @@ func acceptedHint(c plugin.Capability) string {
 // capability that declares Required on a Local field permanently
 // uncallable — a contradiction for the plugin author to avoid, not
 // something this boundary should enforce.
+//
+// A Piped input is required here as well: the CLI reads it from a pipe when
+// it is left out, and a model-facing channel has no pipe to read.
 func Require(c plugin.Capability, values map[string]any) *view.Error {
 	for _, f := range c.Inputs {
-		if !f.Required || f.Local {
+		if (!f.Required && !f.Piped) || f.Local {
 			continue
 		}
 		if _, given := values[f.Name]; !given {
