@@ -86,8 +86,17 @@ func runAnsi(_ context.Context, req plugin.Request) (view.View, error) {
 		input = piped
 	}
 	if input == "" {
-		return nil, view.Errorf("debug.ansi.noinput", "no text to explain").
-			WithHint("pass it as an argument, or pipe it: my-app | rta debug ansi")
+		// The pipe is the CLI's alone, so only the CLI is told about it, as
+		// codec's joseInput does. Every other surface requires the input
+		// (Piped) and reaches this only with it given empty.
+		hint := "pass it as an argument, or pipe it: my-app | rta debug ansi"
+		switch req.Surface() {
+		case plugin.SurfaceTUI:
+			hint = "paste it into the input box"
+		case plugin.SurfaceMCP:
+			hint = "pass it as the input argument"
+		}
+		return nil, view.Errorf("debug.ansi.noinput", "no text to explain").WithHint(hint)
 	}
 	return explainAnsi(input), nil
 }
