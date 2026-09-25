@@ -16,6 +16,7 @@ package textclean
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -34,6 +35,20 @@ import (
 // rather than escaped, because a visible marker in every cell of a hexdump is
 // noise and the value is being shown to be read, not round-tripped — `-o json`
 // is where round-tripping lives.
+//
+// A byte that is not UTF-8 is replaced with U+FFFD, and before anything else
+// looks at the text. The C1 controls have a second spelling, the bare byte:
+// 0x9B alone is CSI to a terminal that reads its input as bytes, 0x9D OSC and
+// 0x9C its terminator. Ranged over, such a byte decodes as U+FFFD, which is
+// no control, so a string holding nothing else was clean by every test here
+// and came back as it went in — a JSON body carrying 8-bit CSI and OSC
+// reached piped output byte for byte. Replaced rather than dropped, because
+// bytes that are not text are a fact about the value a reader should see, and
+// U+FFFD is what every other surface already shows for them: lipgloss on a
+// terminal, and encoding/json in `-o json` and to a model, one per byte as
+// here. And first, so ansi.Strip only ever sees valid UTF-8: it works on
+// bytes, and removing a sequence from between two stray bytes could otherwise
+// join them into a character neither was.
 //
 // The bidi embeddings, overrides and isolates are the one thing escaped
 // instead, each as a backslash-u escape of its code point. A terminal that
@@ -104,9 +119,10 @@ func Terminal(s string) string {
 // back, which is the thing this exists to remove.
 //
 // The order is load-bearing. ansi.Strip works on bytes, so from invalid UTF-8
-// it can drop a stray byte and leave the bytes either side of it forming a
-// character that was not in the input — a tag character, found by FuzzModel —
-// and only a filter that runs after it sees what it leaves.
+// it could drop a stray byte and leave the bytes either side of it forming a
+// character that was not in the input — a tag character, found by FuzzModel.
+// strip now hands it valid UTF-8 only, and the filter still runs after it:
+// what it has to see is what the strip leaves, whatever the strip does.
 func Model(s string) string {
 	out := s
 	if dirtyForTerminal(out) {
@@ -123,8 +139,9 @@ func Model(s string) string {
 }
 
 // Deceives reports whether s would display as something other than what it
-// is: the control and escape sequences a terminal acts on, and the invisible
-// and bidi characters that hide or reorder what a reader sees.
+// is: the control and escape sequences a terminal acts on, bytes that are not
+// UTF-8, and the invisible and bidi characters that hide or reorder what a
+// reader sees.
 //
 // A predicate rather than a third cleaner, because its one caller must not
 // clean. internal/recent remembers what an operator used so a completion can
@@ -145,10 +162,26 @@ func Deceives(s string) bool {
 }
 
 // strip is the part of Terminal that removes, without the part that spells
-// out: ansi.Strip first so a sequence goes as a unit, then whatever control
-// characters it left.
+// out: every byte that is not UTF-8 replaced, then ansi.Strip so a sequence
+// goes as a unit, then whatever control characters it left.
 func strip(s string) string {
-	return filter(ansi.Strip(s), isTerminalControl)
+	return filter(ansi.Strip(validUTF8(s)), isTerminalControl)
+}
+
+// validUTF8 replaces each byte that does not begin a whole UTF-8 character
+// with U+FFFD — one per byte, the way encoding/json writes them, rather than
+// one per run as strings.ToValidUTF8 does, so the screen and `-o json` count
+// the same bytes.
+func validUTF8(s string) string {
+	if utf8.ValidString(s) {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s) + 8)
+	for _, r := range s {
+		b.WriteRune(r) // range yields utf8.RuneError for each such byte
+	}
+	return b.String()
 }
 
 func filter(s string, drop func(rune) bool) string {
@@ -173,7 +206,7 @@ func isTerminalControl(r rune) bool {
 // allocating. Most strings are clean and the TUI re-renders every pane on
 // every keystroke.
 func dirtyForTerminal(s string) bool {
-	return strings.ContainsFunc(s, actsOn)
+	return !utf8.ValidString(s) || strings.ContainsFunc(s, actsOn)
 }
 
 // actsOn reports whether a terminal would act on r: a control it interprets,
