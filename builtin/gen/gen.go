@@ -109,7 +109,11 @@ func Plugin() plugin.Plugin {
 					{Name: "no-digits", Type: plugin.Bool, Help: "exclude digits"},
 					{Name: "symbols", Type: plugin.Bool, Config: "password.symbols", Help: "include symbols: " + symbolChars},
 					{Name: "exclude-ambiguous", Type: plugin.Bool, Config: "password.exclude-ambiguous", Help: "drop look-alike characters: " + ambiguousChars},
-					{Name: "count", Type: plugin.Int, Default: 1, Help: "how many to generate"},
+					// Bounded at the limits boundedCount holds, as length is and
+					// for its reason: a count of 0 or less became one password
+					// without a word, and the 1000 cap was the handler's alone,
+					// out of sight of the schema, the card and dashboard add.
+					{Name: "count", Type: plugin.Int, Default: 1, Min: 1, Max: maxCount, Help: "how many to generate"},
 				},
 				// A generated value exists only in the result on screen — there is no
 				// store to re-read it from — so `c` copies it from there.
@@ -142,7 +146,8 @@ func Plugin() plugin.Plugin {
 				Safety: plugin.Read,
 				Inputs: []plugin.Field{
 					{Name: "version", Type: plugin.String, Default: "4", Options: []string{"4", "7"}, Help: "UUID version"},
-					{Name: "count", Type: plugin.Int, Default: 1, Help: "how many to generate"},
+					// Bounded for the reason gen.password's count is.
+					{Name: "count", Type: plugin.Int, Default: 1, Min: 1, Max: maxCount, Help: "how many to generate"},
 				},
 				Copy: "UUID",
 				Run:  runUUID,
@@ -297,10 +302,17 @@ func runUUID(_ context.Context, req plugin.Request) (view.View, error) {
 	return t, nil
 }
 
+// boundedCount holds count to the range both count fields declare, which the
+// host refuses outside of before a handler runs; this is the same bound for a
+// Request built by hand. Resolve fills the default when --count is not given,
+// so a zero or a negative here is one somebody asked for — and it used to be
+// answered with one value, the silent substitution a zero length stopped
+// being.
 func boundedCount(req plugin.Request) (int, *view.Error) {
 	count := req.Int("count")
 	if count <= 0 {
-		count = 1
+		return 0, view.Errorf("gen.count.toofew", "count %d: generating needs a count of at least one", count).
+			WithHint("leave --count off for one")
 	}
 	if count > maxCount {
 		return 0, view.Errorf("gen.count.toomany", "count %d exceeds the %d limit", count, maxCount)

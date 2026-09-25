@@ -75,7 +75,32 @@ func TestPasswordLengthIsCapped(t *testing.T) {
 	wantCode(t, runPassword, map[string]any{"length": maxPasswordLength + 1}, "gen.password.toolong")
 }
 
-func TestPasswordCountIsCapped(t *testing.T) {
+// A count of zero or less came back as one value without a word — the
+// substitution a zero length stopped being — and the 1000 limit lived in the
+// handler alone, so the MCP schema, the explain card and dashboard add's check
+// could not see it. The declared range is held by the host now, on every
+// surface, and named in the refusal.
+func TestACountOutsideItsRangeIsRefused(t *testing.T) {
+	for _, c := range Plugin().Capabilities {
+		if c.ID != "gen.password" && c.ID != "gen.uuid" {
+			continue
+		}
+		guarded := plugin.GuardInputs(c)
+		for _, n := range []int{0, -3, maxCount + 1} {
+			in := plugin.Resolve(c, plugin.Inputs{Caller: map[string]any{"count": n}})
+			_, err := guarded(context.Background(), plugin.NewRequest(in, false, false))
+			if verr := view.AsError(err, "test"); err == nil || verr.Code != "core.input.range" ||
+				!strings.Contains(verr.Message, "from 1 to 1000") {
+				t.Errorf("%s count %d: err = %v, want core.input.range naming 1 to 1000", c.ID, n, err)
+			}
+		}
+	}
+	// And the handlers hold the same bounds by name, for a request built by
+	// hand rather than through the host.
+	for _, n := range []int{0, -3} {
+		wantCode(t, runPassword, map[string]any{"length": 20, "count": n}, "gen.count.toofew")
+		wantCode(t, runUUID, map[string]any{"count": n}, "gen.count.toofew")
+	}
 	wantCode(t, runPassword, map[string]any{"length": 20, "count": maxCount + 1}, "gen.count.toomany")
 }
 
@@ -146,7 +171,7 @@ func TestUUIDv4IsValid(t *testing.T) {
 }
 
 func TestUUIDv7IsTimeOrdered(t *testing.T) {
-	v, err := runUUID(context.Background(), req(map[string]any{"version": "7"}))
+	v, err := runUUID(context.Background(), req(map[string]any{"version": "7", "count": 1}))
 	if err != nil {
 		t.Fatal(err)
 	}
