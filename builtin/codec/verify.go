@@ -105,13 +105,21 @@ func secretFrom(path string) (candidate, *view.Error) {
 	case raw == "":
 		return candidate{}, view.Errorf("codec.jwt.secret", "the secret file %s is empty", quote(path))
 	}
+	text := asText(raw)
+	// Whitespace alone is no secret either. `echo "$SECRET" > f` with SECRET
+	// unset writes one line break, and that byte was the HMAC key: a token
+	// made with it VERIFIED, and a real one was told it had been changed
+	// after it was signed.
+	if trimText(text) == "" {
+		return candidate{}, view.Errorf("codec.jwt.secret", "the secret file %s holds only whitespace", quote(path)).
+			WithHint(`a file written with echo "$VAR" while VAR is unset holds a line break and nothing else`)
+	}
 	// Every reading the file may be taken in is checked, not only the bytes
 	// as they are: DER with a line break after it parses as no key at all,
 	// and the reading without the break is the key, which then checked an
 	// HS256 token forged with it. And the file as the text it was saved as,
 	// which is where a key saved with a byte-order mark or in UTF-16 is one.
 	trimmed := strings.TrimSuffix(strings.TrimSuffix(raw, "\n"), "\r")
-	text := asText(raw)
 	for _, b := range []string{raw, trimmed, text} {
 		if what := publicKeyIn([]byte(b)); what != "" {
 			return candidate{}, keyAsSecret(path, what)
@@ -132,7 +140,7 @@ func secretFrom(path string) (candidate, *view.Error) {
 		return candidate{secret: secret, label: "the oct key in " + quote(path)}, nil
 	}
 	c := candidate{secret: []byte(raw), label: "the secret in " + quote(path)}
-	if trimmed != raw && trimmed != "" {
+	if trimmed != raw {
 		c.readings = append(c.readings, reading{[]byte(trimmed), c.label + ", without its final line break"})
 	}
 	if decoded, derr := decodeAnyBase64(strings.TrimSpace(raw)); derr == nil && len(decoded) > 0 {
