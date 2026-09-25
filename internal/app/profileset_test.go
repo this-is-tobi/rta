@@ -3,11 +3,14 @@ package app
 import (
 	"bytes"
 	"context"
+	"math"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/this-is-tobi/rta/builtin/all"
 	grantbuiltin "github.com/this-is-tobi/rta/builtin/grant"
 	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/profile"
@@ -399,6 +402,69 @@ func TestSetHoldsASharedKeyToEveryCapabilityReadingIt(t *testing.T) {
 		_, errOut, err := runWith(t, reg, "", "profile", "set", "slow", "--plugin", "db", "--set", tc.pair)
 		if err == nil || !strings.Contains(errOut, tc.code) || !strings.Contains(errOut, tc.want) {
 			t.Errorf("%s: err = %v, output %q; want %s naming %q", tc.pair, err, errOut, tc.code, tc.want)
+		}
+	}
+}
+
+// The type hint said `--set <key>=5432` for every integer, and following it
+// for net's timeout (1 to 300) was then refused as out of range; the range
+// refusal named one reader's input, `count`, where the key typed was
+// `ping.count`. The example is one the declaration takes, for every numeric
+// key a built-in offers, and both refusals name the key.
+func TestSetHintsAValueTheKeyTakesAndNamesTheKeyTyped(t *testing.T) {
+	reg, err := all.Registry(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checked := 0
+	for _, p := range reg.Plugins() {
+		byConfig, _ := declaredFor(p.Name, reg)
+		for key, f := range byConfig {
+			if f.Type != plugin.Int && f.Type != plugin.Float {
+				continue
+			}
+			checked++
+			_, verr := typedSetValue(f, key, []string{"abc"})
+			if verr == nil || verr.Code != "core.profile.set.type" || !strings.HasPrefix(verr.Message, key+" ") {
+				t.Errorf("%s.%s: %v", p.Name, key, verr)
+				continue
+			}
+			_, example, _ := strings.Cut(strings.TrimSuffix(verr.Hint, "`"), key+"=")
+			v, verr := typedSetValue(f, key, []string{example})
+			if verr == nil {
+				_, verr = heldToDeclaration(f, v)
+			}
+			if verr != nil {
+				t.Errorf("%s.%s: the hint's own example %q is refused: %s", p.Name, key, example, verr.Message)
+			}
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no numeric key was checked")
+	}
+	for _, tc := range []struct{ pair, code, want string }{
+		{"ping.count=101", "core.profile.set.range", "ping.count takes a value from 1 to 100"},
+		{"timeout=abc", "core.profile.set.type", "timeout is declared int, and takes a whole number from 1 to 300"},
+		{"timeout=9223372036854775808", "core.profile.set.type", "from 1 to 300"},
+	} {
+		_, errOut, err := runWith(t, reg, "", "profile", "set", "p", "--plugin", "net", "--set", tc.pair)
+		if err == nil || !strings.Contains(errOut, tc.code) || !strings.Contains(errOut, tc.want) {
+			t.Errorf("%s: err = %v, output %q; want %s saying %q", tc.pair, err, errOut, tc.code, tc.want)
+		}
+	}
+	// A tile's key is an input name, which need not be a config key at all.
+	_, errOut, _ := runWith(t, reg, "", "dashboard", "add", "gen.token", "--set", "length=abc", "--dry-run")
+	if !strings.Contains(errOut, "core.dashboard.set.type length is declared int") {
+		t.Errorf("dashboard add: %q", errOut)
+	}
+	// Past what an integer holds, on a key with no range and on either side
+	// of zero, is said as that rather than as the whole number that was
+	// typed.
+	holds := "from " + strconv.Itoa(math.MinInt) + " to " + strconv.Itoa(math.MaxInt)
+	for _, typed := range []string{"9223372036854775808", "-9223372036854775809"} {
+		_, verr := typedSetValue(plugin.Field{Name: "n", Type: plugin.Int, Config: "n"}, "n", []string{typed})
+		if verr == nil || !strings.HasSuffix(verr.Message, "takes a whole number "+holds) {
+			t.Errorf("%s: %v", typed, verr)
 		}
 	}
 }
