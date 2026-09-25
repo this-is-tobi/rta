@@ -456,3 +456,21 @@ func TestAFractionIsNotReadAsAWholeNumber(t *testing.T) {
 		t.Errorf("a fraction for a Float was reported: %s", problem)
 	}
 }
+
+// JSON may spell a whole number `5.0` or `1e2`. Decoded as a float64 each was
+// read as the number it is; decoded with UseNumber, which is how a number
+// keeps its digits past 2^53, Int64 parsed digits alone and the same value
+// was not a number at all. The same reading either way now, the fraction and
+// the edge of what int holds included.
+func TestAJSONNumberIsReadAsTheNumberItSpells(t *testing.T) {
+	for in, want := range map[json.Number]int{"5": 5, "5.0": 5, "1e2": 100, "-3E0": -3} {
+		if n, ok := toInt(in); !ok || n != want {
+			t.Errorf("%s: read as %d, %v; want %d", in, n, ok, want)
+		}
+	}
+	for _, in := range []json.Number{"2.5", "1e-1", "9223372036854775808", "1e400"} {
+		if n, ok := toInt(in); ok {
+			t.Errorf("%s was read as %d", in, n)
+		}
+	}
+}

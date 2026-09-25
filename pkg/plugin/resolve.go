@@ -332,6 +332,14 @@ func toInt(v any) (int, bool) {
 		if i, err := n.Int64(); err == nil {
 			return int(i), true
 		}
+		// JSON may spell a whole number `5.0` or `1e2`, and decoded as a
+		// float64 either one was read as the number it is. Int64 parses
+		// digits alone, so the same value decoded with UseNumber was not
+		// a number at all. Read the way a float64 is, fraction and wall
+		// included.
+		if x, err := n.Float64(); err == nil {
+			return toInt(x)
+		}
 	}
 	return 0, false
 }
