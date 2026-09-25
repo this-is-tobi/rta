@@ -643,6 +643,14 @@ func checkBounds(id string, f Field) error {
 		return fmt.Errorf("capability %q: input %q has Min %v above Max %v, so no value could ever be accepted",
 			id, f.Name, f.Min, f.Max)
 	}
+	// An Int reads only whole numbers (toInt), a bound included: `Min: 0.5`
+	// held a value from the operator's config to nothing, since the clamp
+	// could not read it, while the range check refused anything under it —
+	// a config value refused where the rule is that it is held.
+	if f.Type == Int && (fractional(f.Min) || fractional(f.Max)) {
+		return fmt.Errorf("capability %q: input %q is an Int with a fractional bound (Min %v, Max %v); "+
+			"an Int's bounds are whole numbers", id, f.Name, f.Min, f.Max)
+	}
 	return nil
 }
 
