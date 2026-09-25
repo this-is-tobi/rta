@@ -623,6 +623,8 @@ func TestABoundTheHostCannotApplyIsRejected(t *testing.T) {
 		{"inverted", Field{Name: "n", Type: Int, Min: 100, Max: 10}, "no value could ever be accepted"},
 		{"bound on a string", Field{Name: "n", Type: String, Max: 10}, "apply only to"},
 		{"bound on a bool", Field{Name: "n", Type: Bool, Min: 0}, "apply only to"},
+		{"fractional min on an int", Field{Name: "n", Type: Int, Min: 0.5}, "whole numbers"},
+		{"fractional max on an int", Field{Name: "n", Type: Int, Min: 1, Max: 9.5}, "whole numbers"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
