@@ -261,10 +261,11 @@ func (r *Resolver) Check(reg *registry.Registry) []Problem {
 			v, _ := lookup(r.sections[ns], key)
 			// Before the Options check, and reported here for the reason the
 			// rest of this function exists: a value whose type the handler
-			// cannot read is not ignored, it is read as the zero — so a
-			// quoted `"true"` under a `tls` key leaves the connection
-			// unencrypted while the file says otherwise. Louder than a key
-			// nothing reads, and it was the one this did not look for.
+			// cannot read was not ignored, it was read as the zero — a
+			// quoted `"true"` under a `tls` key left the connection
+			// unencrypted while the file said otherwise. The host refuses
+			// every call reading it now; this says so once, before any
+			// call does.
 			if problem, hint := plugin.StatedTypeProblem(f, v); problem != "" {
 				problems = append(problems, Problem{Section: ns,
 					Reason: key + " " + problem, Hint: hint})

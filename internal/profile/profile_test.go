@@ -1184,9 +1184,9 @@ profiles:
 	}
 }
 
-// A secret mapped onto a number is refused: the request readers do not
-// coerce text, so the mapping would resolve, authenticate, and hand the
-// handler a zero — the quiet-garbage variant of "never takes effect".
+// A secret mapped onto a number is refused: nothing coerces text, so the
+// mapping would resolve, open the store, and then be refused by the host's
+// guard on every call — said before anything is fetched instead.
 func TestASecretMappedOntoANumberIsRefused(t *testing.T) {
 	reg := tunnelledRegistry(t)
 	cfg := load(t, `
@@ -1201,13 +1201,13 @@ profiles:
 	if verr == nil {
 		t.Fatal("a secret mapped onto an Int input resolved — the handler would read zero")
 	}
-	if verr.Code != "core.profile.secrets" || !strings.Contains(verr.Message, "read zero") {
-		t.Errorf("verr = %s %q, want core.profile.secrets saying the handler reads zero",
+	if verr.Code != "core.profile.secrets" || !strings.Contains(verr.Message, "delivers text, which that input refuses") {
+		t.Errorf("verr = %s %q, want core.profile.secrets saying the input refuses text",
 			verr.Code, verr.Message)
 	}
 	found := false
 	for _, p := range Check(cfg, reg) {
-		if strings.Contains(p.Reason, "read zero") {
+		if strings.Contains(p.Reason, "which that input refuses") {
 			found = true
 		}
 	}

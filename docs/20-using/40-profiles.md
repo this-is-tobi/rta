@@ -285,19 +285,20 @@ Stating both in the same command is refused instead. Quietly dropping half of wh
 
 ## Types are part of the declaration
 
-Every value in `set:` is read back as the type the plugin declared, by a type assertion. A value of the wrong shape is therefore neither refused nor ignored — it is read as the **zero**:
+Every value in `set:` is read back as the type the plugin declared, by a type assertion — so a value of the wrong shape would be read as the **zero**, and the host refuses it instead, on every call that reads it:
 
 ```yaml
 set:
-  tls: "true"     # a string. The handler reads false.
-  tls: yes        # also a string — YAML 1.2. The handler reads false.
-  port: "5432"    # a string. The handler reads 0, and the declared default is gone.
+  tls: "true"     # a string where a boolean is declared. Refused — read, it would be false.
+  tls: yes        # also a string — YAML 1.2. Refused the same way.
+  port: "5432"    # a string. Refused — never run as port 0.
+  sslmode: true   # a boolean where text is declared. Refused — read, it would be empty.
 ```
 
-Both `tls` spellings leave a connection running without the transport security its own configuration states. `rta profile list` and `rta doctor` now report all three, and a mistyped profile refuses to resolve rather than connecting somewhere unexpected:
+Each of these would otherwise leave a connection running somewhere, or without the transport security, its own configuration does not state. `rta profile list` and `rta doctor` report all four, and a mistyped profile refuses to resolve rather than connecting somewhere unexpected:
 
 ```
-profiles.staging.pg: `set: tls` is written as text where a boolean is declared — the handler would read false
+profiles.staging.pg: `set: tls` is written as text where a boolean is declared — every call reading it is refused
   (write it unquoted as `true` or `false` — a quoted `"true"` is a string, and so is a bare `yes`)
 ```
 
@@ -305,7 +306,7 @@ There is deliberately no coercion. Reading `"true"` as true would then have to a
 
 `rta profile set` cannot produce this: a flag argument is always text, so it converts to the declared type before writing, and refuses what will not convert.
 
-The same rule covers the base `plugins:` block, which `rta doctor` reports.
+The same rule covers the base `plugins:` block: `rta doctor` reports the line, and every call reading it is refused, naming the key it came from.
 
 ## A secret in the wrong block
 

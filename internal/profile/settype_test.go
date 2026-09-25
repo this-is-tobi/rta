@@ -8,15 +8,16 @@ import (
 	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
-// **A `set:` value of the wrong shape is read as the zero, not ignored.**
+// **A `set:` value of the wrong shape was read as the zero, not ignored.**
 //
 // Every other problem this package reports is about a value nothing reads.
-// This one is about a value that *is* read, as the opposite of what the file
+// This one was about a value that *is* read, as the opposite of what the file
 // says — and YAML makes it easy to reach without noticing: `tls: "true"` is a
 // string because somebody quoted it, and `tls: yes` is a string because YAML
-// 1.2 stopped treating it as a boolean. Both leave the connection running
+// 1.2 stopped treating it as a boolean. Both left the connection running
 // without the transport security its own configuration states, while
-// `rta profile list` said `ok`.
+// `rta profile list` said `ok`. The host refuses such a value on every call
+// now, and the profile is refused before it is used.
 
 func tlsRegistry(t *testing.T) *registry.Registry {
 	t.Helper()

@@ -44,8 +44,8 @@ type Inputs struct {
 // Go type, an option typed in another case spelled as declared, and a number
 // from the operator's config or profile held inside this capability's own
 // range (clampInt says why those and not the caller's). What the declaration
-// says a value may be — its Options, its Min and Max — the host holds to
-// after this, in CheckInputs, where a refusal can be returned.
+// says a value may be — its type, its Options, its Min and Max — the host
+// holds to after this, in CheckInputs, where a refusal can be returned.
 //
 // It exists because four surfaces build a Request and each was doing a
 // different subset of that work. The CLI got it right by accident — cobra
@@ -502,26 +502,24 @@ func LocalEnvVar(capID, input string) string {
 // not reach a handler as the type f declares, and how to write it instead.
 // Both are empty when the value is fine.
 //
-// **The failure this names is silent and it points the wrong way.** Resolve
-// normalises the shapes an integer legitimately arrives in (uint64 from YAML,
-// float64 from JSON) and leaves anything else alone rather than replacing it
-// with a confident zero — right for Resolve, because a value it does not
-// recognise is not its to invent. But the accessor downstream is a type
-// assertion, so what the handler actually reads is the zero: Request.Bool on
-// the string "true" is false, and Request.Int on "5432" is 0 with the
-// declared default already overwritten.
+// **The failure this names used to be silent, and it pointed the wrong
+// way.** Resolve normalises the shapes an integer legitimately arrives in
+// (uint64 from YAML, float64 from JSON) and leaves anything else alone rather
+// than replacing it with a confident zero — right for Resolve, because a
+// value it does not recognise is not its to invent. But the accessor
+// downstream is a type assertion, so what a handler read was the zero:
+// Request.Bool on the string "true" is false, and Request.Int on "5432" is 0
+// with the declared default already overwritten. YAML makes it easy to hit
+// without noticing: `tls: "true"` is a string because somebody quoted it, and
+// `tls: yes` is a string because YAML 1.2 stopped treating it as a boolean.
+// Both left a connection running without the transport security its own
+// configuration states.
 //
-// That is worse than the "nothing reads this key" problems the config checks
-// already report, because the key *is* read — as the opposite of what the
-// file says. YAML makes it easy to hit without noticing: `tls: "true"` is a
-// string because somebody quoted it, and `tls: yes` is a string because YAML
-// 1.2 stopped treating it as a boolean. Both leave a connection running
-// without the transport security its own configuration states.
-//
-// A number is the one shape the host no longer lets through: CheckInputs
-// refuses an Int or a Float no accessor can read, so `port: "5432"` fails
-// every call rather than connecting to port 0. That makes it loud, not
-// fine — reported here all the same, once, before any call does.
+// The host refuses every such value now (CheckInputs), so `port: "5432"` and
+// `tls: yes` fail every call rather than connecting to port 0 or in
+// plaintext. That makes them loud, not fine — reported here all the same,
+// once, before any call does, and the ground on which a profile carrying one
+// is refused before it is used.
 //
 // Deliberately no coercion. Reading "true" as true would fix the quoted case
 // and then have to answer for "yes", "on", "1" and "TRUE", and every answer
@@ -570,7 +568,7 @@ func StatedTypeProblem(f Field, v any) (problem, hint string) {
 		if _, ok := v.(bool); ok {
 			return "", ""
 		}
-		return statedProblem(v, "a boolean", "false"),
+		return statedRefusal(v, "a boolean"),
 			"write it unquoted as `true` or `false` — a quoted `\"true\"` is a string, " +
 				"and so is a bare `yes`"
 	case StringSlice, SecretSlice:
@@ -578,13 +576,13 @@ func StatedTypeProblem(f Field, v any) (problem, hint string) {
 		case []string, []any, string:
 			return "", ""
 		}
-		return statedProblem(v, "a list", "no values"),
+		return statedRefusal(v, "a list"),
 			"write it as `[a, b]`, as a `- ` list, or as one bare value"
 	case String, Text, Path, Secret:
 		if _, ok := v.(string); ok {
 			return "", ""
 		}
-		return statedProblem(v, "text", "an empty string"),
+		return statedRefusal(v, "text"),
 			"quote it, so it is read as text rather than as a number, a boolean or a date"
 	}
 	// A type this does not know is a field Validate would have refused. No
@@ -593,13 +591,9 @@ func StatedTypeProblem(f Field, v any) (problem, hint string) {
 	return "", ""
 }
 
-func statedProblem(v any, want, reads string) string {
-	return "is written as " + statedShape(v) + " where " + want +
-		" is declared — the handler would read " + reads
-}
-
-// statedRefusal is statedProblem for a number, which the host refuses rather
-// than lets a handler read as the zero (CheckInputs).
+// statedRefusal says what v was written as, where the field declares want,
+// and that the host refuses it (CheckInputs) rather than let a handler read
+// it as the zero.
 func statedRefusal(v any, want string) string {
 	return "is written as " + statedShape(v) + " where " + want +
 		" is declared — every call reading it is refused"
