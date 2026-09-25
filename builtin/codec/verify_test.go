@@ -146,6 +146,35 @@ func TestASecretVerifiesAsGivenOrAsBase64(t *testing.T) {
 	mustRefuse(t, token, "", "wrong", "codec.jwt.signature", "check the secret file")
 }
 
+// An oct JWK in the secret file is a key, and what it declares about itself
+// is held to as --key holds a key to it: a strict library refuses an AES key
+// wrap key, or one declared for HS512, for an HS256 token, and here both gave
+// a bare VERIFIED. key_ops ["sign"] still admits the check, as it does for a
+// private key given to --key.
+func TestAnOctKeyInTheSecretFileIsHeldToWhatItDeclares(t *testing.T) {
+	k := []byte(strings.Repeat("k", 32))
+	token := sign(`{"alg":"HS256"}`, `{"sub":"a"}`, func(in []byte) []byte {
+		mac := hmac.New(sha256.New, k)
+		mac.Write(in)
+		return mac.Sum(nil)
+	})
+	oct := func(extra string) string {
+		return fmt.Sprintf(`{"kty":"oct",%s"k":%q}`, extra, base64.RawURLEncoding.EncodeToString(k))
+	}
+	for extra, want := range map[string]string{
+		`"use":"enc",`:                     "is for encryption (use enc)",
+		`"alg":"A256KW",`:                  "is declared for A256KW",
+		`"alg":"HS512",`:                   "is declared for HS512",
+		`"key_ops":["encrypt","decrypt"],`: "is limited by key_ops to encrypt, decrypt",
+	} {
+		mustRefuse(t, token, "", oct(extra), "codec.jwt.nokey", "the oct key in "+`"`)
+		mustRefuse(t, token, "", oct(extra), "codec.jwt.nokey", want)
+	}
+	for _, extra := range []string{`"alg":"HS256",`, `"use":"sig",`, `"key_ops":["sign"],`, `"key_ops":["verify"],`} {
+		mustVerify(t, token, "", oct(extra), "HS256 signature matches the oct key in")
+	}
+}
+
 // A signature with its last letter changed where only unused bits live still
 // matches under a lenient decoder, and it used to be a bare VERIFIED. It still
 // matches, since the bytes are the same, and the page now says the text is

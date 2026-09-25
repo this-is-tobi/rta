@@ -132,12 +132,20 @@ func secretFrom(path string) (candidate, *view.Error) {
 	}
 	// An oct JWK is how a shared secret is written as a key, and --key sends
 	// one here, so its k is the secret rather than the JSON around it.
+	//
+	// And what it declares about itself comes with it, as it does with a
+	// key given to --key: left behind, an AES key wrap key, or one declared
+	// for HS512, gave a bare VERIFIED on an HS256 token that a library
+	// honouring the JWK refuses. Private, as a secret is, so key_ops
+	// ["sign"] admits the check.
 	if doc, err := decodeObject([]byte(trimText(text))); err == nil && doc.str("kty") == "oct" {
 		secret := octSecret(doc)
 		if secret == nil {
 			return candidate{}, view.Errorf("codec.jwt.secret", "the oct key in %s has no k that decodes", quote(path))
 		}
-		return candidate{secret: secret, label: "the oct key in " + quote(path)}, nil
+		k := readJWK(doc)
+		return candidate{secret: secret, label: "the oct key in " + quote(path), use: k.use, alg: k.alg, ops: k.ops,
+			problems: k.problems, private: true}, nil
 	}
 	c := candidate{secret: []byte(raw), label: "the secret in " + quote(path)}
 	if trimmed != raw {
