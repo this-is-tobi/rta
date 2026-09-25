@@ -319,13 +319,30 @@ func (f Field) Bounds() string {
 	_, hasHi := toFloat(f.Max)
 	switch {
 	case hasLo && hasHi:
-		return fmt.Sprintf("from %v to %v", f.Min, f.Max)
+		return "from " + NumberText(f.Min) + " to " + NumberText(f.Max)
 	case hasLo:
-		return fmt.Sprintf("of at least %v", f.Min)
+		return "of at least " + NumberText(f.Min)
 	case hasHi:
-		return fmt.Sprintf("of at most %v", f.Max)
+		return "of at most " + NumberText(f.Max)
 	}
 	return ""
+}
+
+// NumberText spells a declared number the way a person types it back. %v
+// writes a float64 of a million — which is what an untyped 1e6 in a
+// declaration arrives as — as "1e+06", a spelling no flag parser takes, so a
+// hint quoting it would hand the person a value they cannot type. A whole
+// number is written as one, from its integer form so a bound near the int64
+// edge keeps every digit, and anything else in the shortest form that reads
+// back the same.
+func NumberText(v any) string {
+	if i, ok := toInt(v); ok {
+		return strconv.Itoa(i)
+	}
+	if n, ok := toFloat(v); ok {
+		return strconv.FormatFloat(n, 'f', -1, 64)
+	}
+	return fmt.Sprint(v)
 }
 
 // GuardInputs is c's handler with CheckInputs in front of it, or the handler
