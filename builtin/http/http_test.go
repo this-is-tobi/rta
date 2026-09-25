@@ -1,12 +1,14 @@
 package http
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	stdnet "net"
 	stdhttp "net/http"
 	"net/http/httptest"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -224,6 +226,60 @@ func TestAJSONBodyIsShownAsTheServerSentIt(t *testing.T) {
 	want := "{\n  \"zeta\": 1,\n  \"id\": 9007199254740993,\n  \"big\": 12345678901234567890,\n  \"q\": \"a&b<c>\"\n}"
 	if got != want {
 		t.Errorf("body =\n%s\nwant\n%s", got, want)
+	}
+}
+
+// Indenting is bounded by what it would write, not by what was read. Nesting
+// 10000 deep is legal JSON, and every line inside it is indented 20000
+// spaces, so 22 KB of brackets and zeros asked json.Indent for 220 MB, and a
+// 1 MiB body for about 10 GB — an out-of-memory kill for `rta http get`, and
+// for `rta mcp serve` with every other tool an agent had open. A body like
+// that is shown as it was sent, the way a body that is not JSON is.
+func TestDeepNestingIsNotIndentedWithoutBound(t *testing.T) {
+	const depth = 10000
+	body := strings.Repeat("[", depth) + strings.Repeat("0,", 1000) + "0" + strings.Repeat("]", depth)
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	got := formatBody([]byte(body), "application/json", false)
+	runtime.ReadMemStats(&after)
+	if len(got) > 2*len(body) {
+		t.Errorf("a %d-byte body became a %d-byte value", len(body), len(got))
+	}
+	if alloc := after.TotalAlloc - before.TotalAlloc; alloc > 64<<20 {
+		t.Errorf("formatting a %d-byte body allocated %d bytes", len(body), alloc)
+	}
+	if !strings.HasPrefix(got, "[[[[") {
+		t.Errorf("body = %.40q, want it shown as it was sent", got)
+	}
+
+	// Nesting an API actually sends is still laid out.
+	nested := `{"a":{"b":{"c":[1,{"d":[]}]}}}`
+	want := "{\n  \"a\": {\n    \"b\": {\n      \"c\": [\n        1,\n        {\n          \"d\": []\n        }\n      ]\n    }\n  }\n}"
+	if got := formatBody([]byte(nested), "application/json", false); got != want {
+		t.Errorf("body =\n%s\nwant\n%s", got, want)
+	}
+}
+
+// The measure is json.Indent's own count, so the bound is on what would be
+// written and not on an estimate of it: for each body it says yes at exactly
+// the size Indent writes and no a byte below.
+func TestIndentFitsMeasuresWhatIndentWrites(t *testing.T) {
+	for _, body := range []string{
+		`{}`, `[]`, `0`, `"s"`, `[1,2,3]`, `{"a":{"b":{"c":[1,{"d":[]}]}}}`,
+		`{"s":"a\"b,[{:","t":"\\"}`, ` { "x" : [ 1 , { } , [ ] ] , "y":null}`,
+		// Whitespace after the value is copied, not dropped: the newline a
+		// server ends a body with, and whatever else it sent there.
+		"{\"a\":[1]}\n", " [ 1 , { \"x\" : null } ] ", "{} \r\n", "7\t",
+		strings.Repeat("[", 50) + strings.Repeat("]", 50),
+		strings.Repeat(`{"k":[`, 20) + "1" + strings.Repeat("]}", 20),
+	} {
+		var out bytes.Buffer
+		if err := json.Indent(&out, []byte(body), "", "  "); err != nil {
+			t.Fatalf("%s: %v", body, err)
+		}
+		if !indentFits([]byte(body), out.Len()) || indentFits([]byte(body), out.Len()-1) {
+			t.Errorf("%s: json.Indent writes %d bytes, and indentFits disagrees", body, out.Len())
+		}
 	}
 }
 
