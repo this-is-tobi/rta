@@ -337,7 +337,8 @@ func prettyMarkdown(w io.Writer, body string, st styles) error {
 	)
 	if err == nil {
 		if out, rerr := r.Render(body); rerr == nil {
-			_, werr := fmt.Fprintln(w, strings.Trim(out, "\n"))
+			// Cleaned after glamour as well as before: see cleanRendered.
+			_, werr := fmt.Fprintln(w, strings.Trim(cleanRendered(out, st.color), "\n"))
 			return werr
 		}
 	}

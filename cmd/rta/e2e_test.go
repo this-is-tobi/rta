@@ -218,6 +218,31 @@ func TestDryRunChangesNothing(t *testing.T) {
 	}
 }
 
+// A note body cannot spell out a sequence for the markdown renderer to write.
+//
+// &#x1b; is ASCII until goldmark decodes it, after every cleaning step a view
+// goes through, so a body an agent wrote over MCP reached the operator's
+// terminal as a clipboard write and a new window title when they read it.
+func TestANoteCannotWriteASequenceWhenItIsRead(t *testing.T) {
+	body := "see &#x1b;]52;c;Y3VybA==&#x07; &#x1b;]0;owned&#x07; &#8238;fdp.exe &#x9d;0;t&#x9c; &#x8d; end"
+	if r := run(t, "note", "add", "probe", "--body", body); r.code != 0 {
+		t.Fatalf("add: exit %d, %s", r.code, r.stderr)
+	}
+	r := run(t, "note", "show", "1")
+	if r.code != 0 {
+		t.Fatalf("show: exit %d, %s", r.code, r.stderr)
+	}
+	acted := func(c rune) bool {
+		return (c < 0x20 && c != '\n' && c != '\t') || (c >= 0x7f && c <= 0x9f) || c == 0x202e
+	}
+	if strings.ContainsFunc(r.stdout, acted) {
+		t.Errorf("note show wrote what a terminal acts on: %q", r.stdout)
+	}
+	if !strings.Contains(r.stdout, "fdp.exe") || !strings.Contains(r.stdout, "end") {
+		t.Errorf("the body's text went with the references: %q", r.stdout)
+	}
+}
+
 // Machine-readable formats have to stay machine-readable: csv for a table,
 // yaml for anything.
 func TestAlternateFormatsAreClean(t *testing.T) {
