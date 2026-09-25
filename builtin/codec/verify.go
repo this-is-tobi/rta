@@ -125,7 +125,10 @@ func secretFrom(path string) (candidate, *view.Error) {
 			return candidate{}, keyAsSecret(path, what)
 		}
 	}
-	if decoded, derr := decodeAnyBase64(strings.Join(strings.Fields(trimText(text)), "")); derr == nil {
+	// Decoded once, for the guard and for the reading alike: two decodings
+	// that differ are a key the guard does not see and the check then uses.
+	decoded, derr := decodeAnyBase64(strings.Join(strings.Fields(trimText(text)), ""))
+	if derr == nil {
 		if what := publicKeyIn(decoded); what != "" {
 			return candidate{}, keyAsSecret(path, what+", in base64")
 		}
@@ -163,7 +166,15 @@ func secretFrom(path string) (candidate, *view.Error) {
 	if trimmed != raw {
 		c.readings = append(c.readings, reading{[]byte(trimmed), c.label + ", without its final line break"})
 	}
-	if decoded, derr := decodeAnyBase64(strings.TrimSpace(raw)); derr == nil && len(decoded) > 0 {
+	// A secret saved with a byte-order mark in front, or in UTF-16 by `>` in
+	// Windows PowerShell 5.1, is the text it holds, as the guard above reads
+	// it: the mark and the encoding were HMAC bytes, and a token made with
+	// the right secret was told it had been changed after it was signed.
+	if text != raw {
+		saved := strings.TrimSuffix(strings.TrimSuffix(text, "\n"), "\r")
+		c.readings = append(c.readings, reading{[]byte(saved), c.label + ", read as the text it was saved as"})
+	}
+	if derr == nil && len(decoded) > 0 {
 		c.readings = append(c.readings, reading{decoded, c.label + ", read as base64"})
 	}
 	return c, nil

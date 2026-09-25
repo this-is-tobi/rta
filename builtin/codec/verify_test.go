@@ -147,6 +147,30 @@ func TestASecretVerifiesAsGivenOrAsBase64(t *testing.T) {
 	mustRefuse(t, token, "", "wrong", "codec.jwt.signature", "check the secret file")
 }
 
+// A secret saved by an editor that puts a byte-order mark in front, or by `>`
+// in Windows PowerShell 5.1, which writes UTF-16, is the text it holds. The
+// mark and the encoding were HMAC bytes, and a token made with the right
+// secret was told it had been changed after it was signed.
+func TestASecretSavedWithAByteOrderMarkOrInUTF16IsReadAsItsText(t *testing.T) {
+	secret := "correct horse battery staple"
+	token := sign(`{"alg":"HS256"}`, `{"sub":"a"}`, func(in []byte) []byte {
+		mac := hmac.New(sha256.New, []byte(secret))
+		mac.Write(in)
+		return mac.Sum(nil)
+	})
+	for name, file := range map[string]string{
+		"a byte-order mark":           byteOrderMark + secret,
+		"UTF-16, little-endian, CRLF": utf16Of(secret+"\r\n", false),
+		"UTF-16, big-endian":          utf16Of(secret, true),
+		"base64 after a mark":         byteOrderMark + base64.StdEncoding.EncodeToString([]byte(secret)) + "\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			mustVerify(t, token, "", file, "HS256 signature matches the secret in")
+		})
+	}
+	mustVerify(t, token, "", byteOrderMark+secret, "read as the text it was saved as")
+}
+
 // An oct JWK in the secret file is a key, and what it declares about itself
 // is held to as --key holds a key to it: a strict library refuses an AES key
 // wrap key, or one declared for HS512, for an HS256 token, and here both gave
