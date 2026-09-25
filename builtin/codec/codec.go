@@ -93,7 +93,7 @@ func Plugin() plugin.Plugin {
 					"algorithm is decided by the key and never by the token, and a mismatch is an error naming " +
 					"why. An HMAC signature is checked only against a shared secret the person at the terminal " +
 					"keeps in a file (--secret-file): never a public key, and never a secret an agent passes. A pasted " +
-					"`Authorization: Bearer` line works. Given no argument, reads the token from standard input, " +
+					"`Authorization: Bearer` line works. On the CLI, a token left out is read from a pipe, " +
 					"which keeps a live one out of shell history and out of the process list.",
 				Safety: plugin.Read, Idempotent: true,
 				// Positional but not Required, because a pipe can supply it —
@@ -106,7 +106,7 @@ func Plugin() plugin.Plugin {
 				// more often than it is a specimen, and a String here reached
 				// both the completion shortlist and the agent log intact.
 				Inputs: []plugin.Field{
-					{Name: "token", Type: plugin.Secret, Positional: true, Help: "the token to decode"},
+					{Name: "token", Type: plugin.Secret, Positional: true, Piped: true, Help: "the token to decode"},
 					// Secret although a public key is not one: what somebody
 					// pastes here is as often a private JWK as a public one,
 					// and only the public half is ever used.
@@ -142,13 +142,13 @@ func Plugin() plugin.Plugin {
 					"and the RFC 7638 thumbprint a DPoP cnf.jkt or a pinned key is compared against. Names a " +
 					"key holding private material, which a published set never should, and two keys sharing " +
 					"a kid. A certificate chain in x5c is read and checked against the key beside it. Private " +
-					"members are never printed. Given no argument, reads the key from standard input.",
+					"members are never printed. On the CLI, a key left out is read from a pipe.",
 				Safety: plugin.Read, Idempotent: true,
 				NoPreview: true,
 				// Secret for the reason codec.jwt's token is: a private JWK is
 				// exactly what somebody pastes here to find out whether it is
 				// one, and it must not reach the agent log or a completion.
-				Inputs: []plugin.Field{{Name: "key", Type: plugin.Secret, Positional: true, Help: "the JWK or key set"}},
+				Inputs: []plugin.Field{{Name: "key", Type: plugin.Secret, Positional: true, Piped: true, Help: "the JWK or key set"}},
 				Run:    runJWK,
 			},
 		},

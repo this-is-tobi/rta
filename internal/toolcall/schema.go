@@ -76,7 +76,12 @@ func InputSchema(c plugin.Capability, profiles []string) map[string]any {
 			}
 		}
 		props[f.Name] = prop
-		if f.Required {
+		// A Piped input is optional only on the CLI, which reads a pipe when
+		// it is left out. There is none here, and a schema leaving it out of
+		// "required" told an agent that a call without it was one the tool
+		// answers — beside a description saying the value is read from
+		// standard input when not given.
+		if f.Required || f.Piped {
 			required = append(required, f.Name)
 		}
 	}

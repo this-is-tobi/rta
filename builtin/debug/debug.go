@@ -47,8 +47,8 @@ func Plugin() plugin.Plugin {
 					"characters and runs of variation selectors, decoded to what they invisibly " +
 					"carry — the way a prompt injection hides in an innocent sentence. Never " +
 					"prints a raw control byte back at the terminal it is running in — the " +
-					"whole point is seeing what a sequence does without it happening. Given " +
-					"no input, reads the text from standard input.",
+					"whole point is seeing what a sequence does without it happening. On the " +
+					"CLI, text left out is read from a pipe.",
 				Safety:     plugin.Read,
 				Idempotent: true,
 				// input is Positional but not Required — stdin can supply
@@ -60,7 +60,7 @@ func Plugin() plugin.Plugin {
 				// the exact precedent gen.password already sets.
 				NoPreview: true,
 				Inputs: []plugin.Field{
-					{Name: "input", Type: plugin.Text, Positional: true,
+					{Name: "input", Type: plugin.Text, Positional: true, Piped: true,
 						Help: "text containing escape sequences"},
 				},
 				Run: runAnsi,

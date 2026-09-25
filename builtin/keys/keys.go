@@ -139,7 +139,7 @@ func Plugin() plugin.Plugin {
 				Inputs: []plugin.Field{
 					{Name: "out", Type: plugin.Path, Positional: true, Required: true,
 						Help: "where to write the restored private key (and <out>.pub)"},
-					{Name: "words", Type: plugin.Secret,
+					{Name: "words", Type: plugin.Secret, Piped: true,
 						Help: "24 BIP39 seed words, space-separated"},
 					{Name: "new-passphrase", Type: plugin.Secret, Local: true,
 						Help: "encrypt the restored key with this passphrase; omit for none — " +
