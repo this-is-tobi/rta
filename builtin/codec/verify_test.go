@@ -975,6 +975,38 @@ func TestEverySignatureOfAGeneralJSONSignatureIsReported(t *testing.T) {
 	}
 }
 
+// RFC 7797 §3 has every signature of a JWS agree about b64, and the page
+// read the payload the way the first one says. A garbage signature without
+// b64 in front of a good one with b64 false showed claims decoded from
+// base64url under "Signature 2 of 2: VERIFIED", a reading that signature never
+// signed. A conforming verifier refuses the document, and so does this, with
+// a key or without.
+func TestSignaturesThatDisagreeAboutB64AreRefused(t *testing.T) {
+	payload := seg(`{"sub":"admin"}`)
+	first, second := seg(`{"alg":"HS256"}`), seg(`{"alg":"HS256","b64":false,"crit":["b64"]}`)
+	mac := hmac.New(sha256.New, []byte("s3cret"))
+	mac.Write([]byte(second + "." + payload))
+	doc := fmt.Sprintf(`{"payload":%q,"signatures":[{"protected":%q,"signature":%q},{"protected":%q,"signature":%q}]}`,
+		payload, first, seg("garbage"), second, base64.RawURLEncoding.EncodeToString(mac.Sum(nil)))
+	want := "signature 1 reads the payload as base64url, and signature 2 reads it as it is"
+	mustRefuse(t, doc, "", "s3cret", "codec.jwt.invalid", want)
+	if verr := joseErr(t, doc); verr.Code != "codec.jwt.invalid" || !strings.Contains(verr.Message, want) {
+		t.Errorf("decoded without a key: got %s: %s", verr.Code, verr.Message)
+	}
+	// b64 false without crit is a third reading, and disagrees with both.
+	loose := fmt.Sprintf(`{"payload":%q,"signatures":[{"protected":%q,"signature":"c2ln"},{"protected":%q,"signature":"c2ln"}]}`,
+		payload, second, seg(`{"alg":"HS256","b64":false}`))
+	if verr := joseErr(t, loose); verr.Code != "codec.jwt.invalid" || !strings.Contains(verr.Message, "signature 2 sets b64 to false without listing it in crit") {
+		t.Errorf("b64 false with and without crit: got %s: %s", verr.Code, verr.Message)
+	}
+	// Signatures that agree are read as before.
+	agree := fmt.Sprintf(`{"payload":%q,"signatures":[{"protected":%q,"signature":"c2ln"},{"protected":%q,"signature":"c2ln"}]}`,
+		payload, first, seg(`{"alg":"HS256","b64":true}`))
+	if got := pairValue(section(t, jose(t, agree), "payload").(view.KeyValue), "sub"); got != "admin" {
+		t.Errorf("signatures that agree: sub = %q", got)
+	}
+}
+
 // The secret is a credential, and an agent must never be invited to supply
 // one: the host drops a Local input from the MCP schema and from every MCP
 // call, and this is the declaration that tells it to. No EnvFallback, which
