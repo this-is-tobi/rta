@@ -23,6 +23,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/atomicfile"
 	"github.com/this-is-tobi/rta/internal/filelock"
 	"github.com/this-is-tobi/rta/internal/paths"
+	"github.com/this-is-tobi/rta/internal/shellquote"
 	"github.com/this-is-tobi/rta/internal/yamlguard"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -79,6 +80,11 @@ func TileKey(id, profile string) string {
 // automatic tile's place is refused without the --span or --set that made
 // it more than that tile. A list-shaped input is one --set per element,
 // which is how the flag states a list.
+//
+// Each argument is one shell word. Joined as they came, a value holding a
+// space, a ';' or a '$(' made a line that, pasted, passed a stray argument
+// or ran a second command rather than put the tile back, and one holding an
+// escape sequence printed as nothing at all.
 func (t Tile) AddArgs() string {
 	args := []string{t.ID}
 	if t.Profile != "" {
@@ -105,6 +111,9 @@ func (t Tile) AddArgs() string {
 		default:
 			args = append(args, "--set", fmt.Sprintf("%s=%v", k, v))
 		}
+	}
+	for i, arg := range args {
+		args[i] = shellquote.Arg(arg)
 	}
 	return strings.Join(args, " ")
 }
