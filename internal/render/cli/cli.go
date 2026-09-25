@@ -9,6 +9,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"charm.land/glamour/v2"
 	"charm.land/lipgloss/v2"
@@ -453,13 +454,16 @@ func prettyTable(w io.Writer, t view.Table, st styles, highlight int) error {
 	// borders spending a sixth of the line saying where the gutters were.
 	// Records use the whole width for one field at a time, which is what a
 	// narrow terminal has to give.
-	if !fitsAsGrid(t, headers, st) {
+	asRecords := func() error {
 		if err := prettyRecords(w, t, headers, rows, st, recordStyle{
 			highlight: highlight, status: statusCol, usage: usageCol,
 		}); err != nil {
 			return err
 		}
 		return tableFooter(w, t, st)
+	}
+	if !fitsAsGrid(t, headers, st) {
+		return asRecords()
 	}
 
 	// Where the slack goes when there is room to spare. Computed once, from
@@ -544,13 +548,46 @@ func prettyTable(w io.Writer, t view.Table, st styles, highlight int) error {
 	// their tight fit, wide ones shrink columns instead of wrapping raggedly.
 	// The shrink iterates because lipgloss tables can exceed the requested
 	// width by a border cell or two at their minimum.
-	for w := st.width; st.width > 0 && w >= 20 && lipgloss.Width(rendered) > st.width; w -= 2 {
+	//
+	// **And because a table asked for a width can come back cut rather than
+	// shrunk.** lipgloss decides whether to shrink by comparing the columns'
+	// natural widths *without* their borders to the width asked for, so a
+	// table less than its border count over the width is not shrunk at all:
+	// it is drawn at its natural width and cut at the edge, the last column's
+	// text stopping mid-word and the right border gone. The width check alone
+	// passed that, since a cut table is exactly as wide as it was asked to be.
+	// Asking for less until the render is whole finds the width where lipgloss
+	// shrinks, a few cells short of the terminal at worst.
+	for w := st.width; st.width > 0 && w >= 20 && !drawnWhole(rendered, st.width); w -= 2 {
 		rendered = build(w)
+	}
+	if st.width > 0 && !drawnWhole(rendered, st.width) {
+		return asRecords()
 	}
 	if _, err := fmt.Fprintln(w, restore(rendered)); err != nil {
 		return err
 	}
 	return tableFooter(w, t, st)
+}
+
+// drawnWhole reports whether a rendered grid fits the width with nothing cut
+// off: every line ends in the table's right border. A line cut at the edge
+// ends in whatever cell or rule it was cut through — and the top rule, which
+// ends in a corner only when it is whole, gives even a cut that lands on a
+// column's border away.
+func drawnWhole(rendered string, width int) bool {
+	if lipgloss.Width(rendered) > width {
+		return false
+	}
+	b := lipgloss.RoundedBorder()
+	edge := b.TopRight + b.Right + b.MiddleRight + b.BottomRight
+	for _, line := range strings.Split(ansi.Strip(rendered), "\n") {
+		r, _ := utf8.DecodeLastRuneInString(line)
+		if !strings.ContainsRune(edge, r) {
+			return false
+		}
+	}
+	return true
 }
 
 // tableFooter writes what is said under a table in either layout: how much of

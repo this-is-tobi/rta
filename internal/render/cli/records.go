@@ -33,9 +33,10 @@ import (
 // other value in this renderer goes through — so the hyphen rule holds and a
 // package name or a flag does not break in half.
 //
-// It is a *rendering* choice and only ever applies where a width was measured
-// from a real terminal. A pipe has no width, so scripts, goldens and diffs are
-// untouched: this cannot change what a redirected `rta` writes.
+// It is a *rendering* choice and only ever applies where there is a width: one
+// measured from a real terminal, or COLUMNS, which shapes a pipe exactly as a
+// terminal that wide would be shaped because it was asked for by name. A pipe
+// without COLUMNS has no width, so scripts, goldens and diffs are untouched.
 
 // recordStyle carries the per-column facts the record layout still needs.
 type recordStyle struct {
@@ -62,8 +63,12 @@ const minRecordKey = 6
 // rest is divided among the text ones, which must each clear minWrap — the
 // same floor wrap() already refuses to break below, for the same reason.
 //
-// A table with no width to measure against (a pipe) always fits: unconstrained
-// output is the grid it has always been.
+// A table with no width to measure against (a pipe without COLUMNS) always
+// fits: unconstrained output is the grid it has always been.
+//
+// Passing here is not the last word. prettyTable still falls back to records
+// when lipgloss cannot draw the grid whole at the width, which this estimate
+// does not model.
 func fitsAsGrid(t view.Table, headers []string, st styles) bool {
 	if st.width <= 0 || len(t.Columns) == 0 {
 		return true
