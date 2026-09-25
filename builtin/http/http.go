@@ -117,7 +117,7 @@ func Plugin() plugin.Plugin {
 				Run:    runMethod(stdhttp.MethodGet),
 			},
 			{
-				ID: "http.head", Summary: "HEAD a URL and show status, timing and headers",
+				ID: "http.head", Summary: "HEAD a URL and show status, timing, type and declared size",
 				Safety: plugin.Read, Idempotent: true,
 				NeedsGrant: true, Scope: "url",
 				Inputs: common,
