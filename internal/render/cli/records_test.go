@@ -213,6 +213,48 @@ func TestAGridCellDoesNotBreakOnAHyphen(t *testing.T) {
 	}
 }
 
+// A grid is drawn whole or not at all.
+//
+// A table a few cells wider than the terminal — narrower than its natural
+// width by less than its borders take — was handed back by lipgloss at its
+// natural width and cut at the edge: the last column's text stopped mid-word
+// with no ellipsis, and the right border was gone. The agent log did it on a
+// 140-column terminal, and since COLUMNS shapes a pipe, in a redirect too.
+func TestAGridIsNeverCutAtTheEdge(t *testing.T) {
+	tbl := view.Table{
+		Columns: []view.Column{
+			{Name: "seq"}, {Name: "at", Kind: view.KindTimestamp}, {Name: "agent"}, {Name: "credential"},
+			{Name: "capability"}, {Name: "arguments"}, {Name: "profile"},
+			{Name: "outcome", Kind: view.KindStatus}, {Name: "authorized"}, {Name: "code"}, {Name: "why"},
+		},
+		Rows: [][]string{
+			{"1", "2026-09-24 10:00:01", "probe", "-", "codec.jwt", "-", "-", "error", "grant", "-",
+				`codec.jwt failed unexpectedly: unknown argument: "secret_file"`},
+			{"2", "2026-09-24 10:00:02", "probe", "-", "sys.cpu", "-", "-", "ok", "grant", "-", "-"},
+		},
+	}
+	for width := 120; width <= 190; width++ {
+		out, widest := renderWidth(t, tbl, Options{Width: width})
+		if widest > width {
+			t.Errorf("width %d: drawn %d wide", width, widest)
+		}
+		if !isGrid(out) {
+			continue
+		}
+		for _, line := range strings.Split(out, "\n") {
+			if r := []rune(line); len(r) == 0 || !strings.ContainsRune("╮│┤╯", r[len(r)-1]) {
+				t.Errorf("width %d: a grid line was cut at the edge: %q\n%s", width, line, out)
+				break
+			}
+		}
+		for _, word := range strings.Fields(tbl.Rows[0][10]) {
+			if !strings.Contains(out, word) {
+				t.Errorf("width %d: %q is missing from the grid:\n%s", width, word, out)
+			}
+		}
+	}
+}
+
 // A table drawn as records says what a grid says under it: that the listing
 // continues, and what it could not read.
 //
