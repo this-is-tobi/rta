@@ -520,6 +520,20 @@ func LocalEnvVar(capID, input string) string {
 	return "RTA_" + envToken(ns) + "_" + envToken(input)
 }
 
+// exampleNumber is a number for a hint to show, one the field takes: its
+// default, or an edge of its range, or fallback. The value itself is never
+// quoted back (see StatedTypeProblem), and a fixed example read as advice:
+// `5432` beside a limit that runs from 1 to 100 names a value every call
+// would refuse.
+func exampleNumber(f Field, fallback string) string {
+	for _, v := range []any{f.Default, f.Min, f.Max} {
+		if _, ok := f.Range(v); v != nil && ok {
+			return NumberText(v)
+		}
+	}
+	return fallback
+}
+
 // StatedTypeProblem reports why a value written in a configuration file will
 // not reach a handler as the type f declares, and how to write it instead.
 // Both are empty when the value is fine.
@@ -582,14 +596,16 @@ func StatedTypeProblem(f Field, v any) (problem, hint string) {
 			return "is a number past what an integer holds — every call reading it is refused",
 				"write a whole number the input's range allows"
 		}
+		n := exampleNumber(f, "5")
 		return statedRefusal(v, "an integer"),
-			"write it as a bare number: `5432`, not `\"5432\"`"
+			"write it as a bare number: `" + n + "`, not `\"" + n + "\"`"
 	case Float:
 		if _, ok := toFloat(v); ok {
 			return "", ""
 		}
+		n := exampleNumber(f, "1.5")
 		return statedRefusal(v, "a number"),
-			"write it as a bare number: `1.5`, not `\"1.5\"`"
+			"write it as a bare number: `" + n + "`, not `\"" + n + "\"`"
 	case Bool:
 		if _, ok := v.(bool); ok {
 			return "", ""
