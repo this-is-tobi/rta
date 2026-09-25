@@ -181,17 +181,14 @@ func checkOneView(t reporter, c plugin.Capability, v view.View) {
 // crash with silently wrong output — so this is the one place that turns it
 // into a sentence.
 //
-// CSV is only offered a Table. Every other view type is declined by the csv
-// renderer by design (it has no rows), and reporting that as a failure would
-// mark the whole catalogue non-conformant for doing the right thing.
+// CSV is offered every view, not only a Table: it writes each shape as rows
+// of its own, because a refusal there reached the caller after the handler
+// had run — a write that landed reported as one that failed. A view csv
+// cannot write is a failure like any other.
 func checkRendered(t reporter, c plugin.Capability, v view.View) {
 	t.Helper()
 
-	formats := []cli.Format{cli.Pretty, cli.Markdown}
-	if _, ok := v.(view.Table); ok {
-		formats = append(formats, cli.CSV)
-	}
-	for _, f := range formats {
+	for _, f := range []cli.Format{cli.Pretty, cli.Markdown, cli.CSV} {
 		if err := renderOnce(v, f); err != nil {
 			t.Errorf("sdktest: %s: %s does not render as %s: %v", RuleViews, jsonName(c, v), f, err)
 		}

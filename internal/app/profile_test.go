@@ -57,9 +57,9 @@ func TestTheRedactionSurvivesEveryOutputFormat(t *testing.T) {
         set:
           password: hunter2-in-the-wrong-block
 `
-	// csv is not in the list because it renders tables only and refuses a
-	// key/value view outright — a refusal is not a disclosure.
-	for _, format := range []string{"json", "yaml", "md"} {
+	// csv among them: it writes a key/value view as its pairs, where it used to
+	// refuse anything but a table.
+	for _, format := range []string{"json", "yaml", "csv", "md"} {
 		out, _, err := runWith(t, connRegistry(t), cfg, "profile", "show", "staging", "-o", format)
 		if err != nil {
 			t.Fatalf("%s: %v", format, err)
