@@ -270,6 +270,21 @@ func TestABinaryBodyIsDumped(t *testing.T) {
 	}
 }
 
+// A body labelled JSON that is not UTF-8 is not JSON, and is dumped like any
+// other body that is not text. json.Indent does not check the encoding, so
+// raw 8-bit CSI and OSC in a string went into the value as they came.
+func TestAJSONBodyThatIsNotUTF8IsDumped(t *testing.T) {
+	got := formatBody([]byte("{\"a\":\"\x9b2J\x9d0;pwned\x9c\"}"), "application/json", false)
+	for _, raw := range []byte{0x9b, 0x9c, 0x9d} {
+		if strings.IndexByte(got, raw) >= 0 {
+			t.Errorf("body = %q, carries the raw byte %#x", got, raw)
+		}
+	}
+	if !strings.Contains(got, "not plain text") || !strings.Contains(got, "22 9b 32") {
+		t.Errorf("body = %q, want the bytes dumped", got)
+	}
+}
+
 // The 1 MiB cap on doRequest's own body read (maxBody) is separate from,
 // and happens before, formatBody's display truncation above — what it cuts
 // never reaches formatBody at all. Silently reporting the captured length
