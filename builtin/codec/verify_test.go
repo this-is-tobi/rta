@@ -664,6 +664,27 @@ func TestAnRSAKeyTooSmallOrEvenIsNamedAsSuch(t *testing.T) {
 	}
 }
 
+// RFC 7518 §3.3 requires 2048 bits, and a strict library refuses less. The
+// same 1024-bit key was qualified as a JWK and a bare VERIFIED as PEM, since
+// only readJWK said anything about its size.
+func TestAnRSAKeyUnder2048BitsIsNamedFromPEMAsFromAJWK(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := sign(`{"alg":"RS256"}`, `{"sub":"a"}`, func(in []byte) []byte {
+		sig, err := rsa.SignPKCS1v15(rand.Reader, key, crypto.SHA256, sha256Of(in))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return sig
+	})
+	b := func(n *big.Int) string { return base64.RawURLEncoding.EncodeToString(n.Bytes()) }
+	const want = "About that key: its modulus is 1024 bits, under the 2048 RFC 7518 §3.3 requires."
+	mustVerify(t, token, publicPEM(t, &key.PublicKey), "", want)
+	mustVerify(t, token, fmt.Sprintf(`{"kty":"RSA","n":%q,"e":"AQAB"}`, b(key.N)), "", want)
+}
+
 // Checking an RSA signature costs the square of the modulus, and crypto/rsa
 // sets no ceiling on it: one free call with a key of a million bits held a
 // CPU core for twenty seconds. A key over the ceiling is refused by name

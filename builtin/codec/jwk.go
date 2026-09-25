@@ -137,19 +137,16 @@ func (k *jwkFacts) rsa(o object) {
 		k.problem("its n starts with a zero byte, which RFC 7518 §6.3.1.1 forbids")
 	}
 	modulus, exponent := new(big.Int).SetBytes(n), new(big.Int).SetBytes(e)
-	k.size = fmt.Sprintf("%d-bit RSA", modulus.BitLen())
-	switch bits := modulus.BitLen(); {
-	case modulus.Bit(0) == 0:
+	bits := modulus.BitLen()
+	k.size = fmt.Sprintf("%d-bit RSA", bits)
+	if modulus.Bit(0) == 0 {
 		k.problem("its n is even, which no RSA modulus is, so no signature verifies against it")
+	} else if size := rsaSizeProblem(bits); size != "" {
+		k.problems = append(k.problems, size)
+	}
 	// No key is made, so nothing downstream can spend the square of it.
-	case bits > maxRSABits:
-		k.problem("its modulus is %d bits, over the %d a verifier accepts", bits, maxRSABits)
+	if bits > maxRSABits {
 		return
-	case bits < 1024:
-		k.problem("its modulus is %d bits, under the 1024 a verifier accepts and the 2048 RFC 7518 §3.3 requires: "+
-			"a key that small can be factored, and anyone who does signs as its issuer", bits)
-	case bits < 2048:
-		k.problem("its modulus is %d bits, under the 2048 RFC 7518 §3.3 requires", bits)
 	}
 	if !exponent.IsInt64() || exponent.Int64() < 3 || exponent.Int64() > 1<<31-1 {
 		k.problem("its exponent is not one a verifier can use")
@@ -159,6 +156,23 @@ func (k *jwkFacts) rsa(o object) {
 		k.size += fmt.Sprintf(", exponent %d", exponent.Int64())
 	}
 	k.pub = &rsa.PublicKey{N: modulus, E: int(exponent.Int64())}
+}
+
+// rsaSizeProblem is what an RSA modulus of this many bits has wrong with its
+// size, or "". One sentence for a JWK and a PEM key alike: only readJWK said
+// anything, so the same 1024-bit key was qualified as a JWK and a bare
+// VERIFIED as PEM, though a strict library refuses it either way.
+func rsaSizeProblem(bits int) string {
+	switch {
+	case bits > maxRSABits:
+		return fmt.Sprintf("its modulus is %d bits, over the %d a verifier accepts", bits, maxRSABits)
+	case bits < 1024:
+		return fmt.Sprintf("its modulus is %d bits, under the 1024 a verifier accepts and the 2048 RFC 7518 §3.3 "+
+			"requires: a key that small can be factored, and anyone who does signs as its issuer", bits)
+	case bits < 2048:
+		return fmt.Sprintf("its modulus is %d bits, under the 2048 RFC 7518 §3.3 requires", bits)
+	}
+	return ""
 }
 
 // ecCurves are the curves RFC 7518 §6.2.1.1 names, with the coordinate size
