@@ -151,6 +151,25 @@ func TestStatedTypeProblemNeverEchoesTheValue(t *testing.T) {
 	}
 }
 
+// The example in the hint is one the field takes, since a person follows it:
+// `5432` beside a limit running from 1 to 100 named a value every call would
+// then refuse. The value written is never the example — see above.
+func TestStatedTypeProblemShowsANumberTheFieldTakes(t *testing.T) {
+	for _, tc := range []struct {
+		f    Field
+		want string
+	}{
+		{Field{Name: "limit", Type: Int, Default: 15, Min: 1, Max: 100}, "`15`, not `\"15\"`"},
+		{Field{Name: "count", Type: Int, Min: 1, Max: 1000}, "`1`, not `\"1\"`"},
+		{Field{Name: "id", Type: Int}, "`5`, not `\"5\"`"},
+		{Field{Name: "ratio", Type: Float, Min: 0.25}, "`0.25`, not `\"0.25\"`"},
+	} {
+		if _, hint := StatedTypeProblem(tc.f, "text"); !strings.Contains(hint, tc.want) {
+			t.Errorf("%s: hint %q, want it to show %s", tc.f.Name, hint, tc.want)
+		}
+	}
+}
+
 // A type this does not recognise gets no opinion. Validate refuses such a
 // field at registration, so inventing a problem here would be a report about
 // a declaration that cannot reach a run.
