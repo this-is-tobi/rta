@@ -138,7 +138,15 @@ func secretFrom(path string) (candidate, *view.Error) {
 	// for HS512, gave a bare VERIFIED on an HS256 token that a library
 	// honouring the JWK refuses. Private, as a secret is, so key_ops
 	// ["sign"] admits the check.
-	if doc, err := decodeObject([]byte(trimText(text))); err == nil && doc.str("kty") == "oct" {
+	//
+	// A key set is refused rather than chosen from. Its JSON text was the
+	// HMAC key, so a token made with the set's own k was told it did not
+	// match and had been changed after it was signed. A set holding a public
+	// key was refused above; this one holds shared secrets, and the file
+	// takes the one the token was signed with.
+	doc, err := decodeObject([]byte(trimText(text)))
+	switch {
+	case err == nil && doc.str("kty") == "oct":
 		secret := octSecret(doc)
 		if secret == nil {
 			return candidate{}, view.Errorf("codec.jwt.secret", "the oct key in %s has no k that decodes", quote(path))
@@ -146,6 +154,10 @@ func secretFrom(path string) (candidate, *view.Error) {
 		k := readJWK(doc)
 		return candidate{secret: secret, label: "the oct key in " + quote(path), use: k.use, alg: k.alg, ops: k.ops,
 			problems: k.problems, private: true}, nil
+	case err == nil && doc.has("keys"):
+		return candidate{}, view.Errorf("codec.jwt.secret", "the secret file %s holds a key set, and it takes one shared secret",
+			quote(path)).
+			WithHint(`put the one oct key the token was signed with in the file, as {"kty":"oct","k":…}, and not the set`)
 	}
 	c := candidate{secret: []byte(raw), label: "the secret in " + quote(path)}
 	if trimmed != raw {
@@ -314,6 +326,19 @@ func secretHint(s plugin.Surface) string {
 	return "pass a file holding the shared secret with --secret-file"
 }
 
+// octSetHint is secretHint for a set of shared secrets given to --key. A
+// secret file takes the one key and not the set, and the hint sent the whole
+// set there, where its JSON text was the HMAC key.
+func octSetHint(s plugin.Surface) string {
+	switch s {
+	case plugin.SurfaceMCP:
+		return secretHint(s)
+	case plugin.SurfaceTUI:
+		return `name a file holding the one oct key, {"kty":"oct","k":…} and not the set, in the secret-file box`
+	}
+	return `pass a file holding the one oct key, {"kty":"oct","k":…} and not the set, with --secret-file`
+}
+
 // jwkCandidates reads a JWK or a key set. A shared secret (kty oct) is not
 // taken from it, and that is the line Local draws for --secret-file: --key is
 // an ordinary input an agent may fill, so an oct JWK in it was the HMAC
@@ -378,7 +403,7 @@ func jwkCandidates(raw string, s plugin.Surface) ([]candidate, []string, *view.E
 	switch {
 	case len(out) == 0 && len(secrets) > 0:
 		return nil, nil, view.Errorf("codec.jwt.key", "the key set holds only shared secrets (kty oct), and --key takes only public keys").
-			WithHint(secretHint(s))
+			WithHint(octSetHint(s))
 	case len(out) == 0:
 		return nil, nil, view.Errorf("codec.jwt.key", "the key set holds no keys")
 	}
