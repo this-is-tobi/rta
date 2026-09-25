@@ -1042,6 +1042,45 @@ func TestOneTimeGrantIsSpentByAFailedCall(t *testing.T) {
 	}
 }
 
+// A number outside its range is refused before the gate, so it spends
+// nothing. It used to clear the gate, spend the one use a --max-uses 1 grant
+// had, and be refused by the host's guard in front of the handler, recorded
+// as a failed run: the agent's corrected retry was then refused for want of
+// a grant, for a call nothing had run.
+func TestAnOutOfRangeArgumentSpendsNoGrant(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	reg := registry.New()
+	lo, hi := 1, 60
+	if err := reg.Register(plugin.Plugin{Name: "probe", Summary: "probe", Capabilities: []plugin.Capability{{
+		ID: "probe.port", Summary: "probes", Safety: plugin.Read, NeedsGrant: true,
+		Inputs: []plugin.Field{{Name: "timeout", Type: plugin.Int, Min: lo, Max: hi, Default: 5, Help: "seconds"}},
+		Run: func(_ context.Context, req plugin.Request) (view.View, error) {
+			return view.Text{Body: fmt.Sprintf("timeout=%d", req.Int("timeout"))}, nil
+		},
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	s := connectWith(t, reg, Options{})
+	if verr := grant.Save([]grant.Grant{{
+		Target: "probe.port", Issued: time.Now(), Expires: time.Now().Add(time.Hour), MaxUses: 1,
+	}}); verr != nil {
+		t.Fatal(verr)
+	}
+	res := callTool(t, s, "probe_port", map[string]any{"timeout": 500})
+	text := res.Content[0].(*sdk.TextContent).Text
+	if !res.IsError || !strings.Contains(text, "core.input.range") ||
+		!strings.Contains(text, "probe.port takes a timeout from 1 to 60, not 500") {
+		t.Fatalf("an out-of-range timeout: %s", text)
+	}
+	entries, err := agentlog.Read(1)
+	if err != nil || len(entries) != 1 || entries[0].Outcome != agentlog.Refused {
+		t.Errorf("recorded as %+v (%v), want refused", entries, err)
+	}
+	if res := callTool(t, s, "probe_port", map[string]any{"timeout": 30}); res.IsError {
+		t.Fatalf("the grant did not survive a refused call: %+v", res.Content)
+	}
+}
+
 // A grant names one record, and covers exactly that one.
 func TestGrantNarrowsToOneRecord(t *testing.T) {
 	s := connect(t, Options{})
