@@ -314,10 +314,19 @@ func (cf *capForm) groups(fields []huh.Field, names []string) []*huh.Group {
 // base rather than being re-derived (see startForm).
 func (cf *capForm) displayed(f plugin.Field, current any) bool {
 	if cf.derived[f.Name] {
-		if seeded, ok := cf.seed[f.Name]; ok {
-			return seedString(shown(seeded)) == seedString(current)
+		seeded, ok := cf.seed[f.Name]
+		if !ok {
+			seeded = f.Default
 		}
-		return seedString(f.Default) == seedString(current)
+		if len(f.Options) > 0 && f.Type.Repeatable() {
+			// A multi-select hands its choices back in the order of its
+			// options, whatever order it was seeded in, so the same set
+			// read as a different answer and the config's list came back
+			// as the caller's — which then lost the note of where it came
+			// from on the one path that refuses it.
+			return sameSet(shown(seeded), current)
+		}
+		return seedString(shown(seeded)) == seedString(current)
 	}
 	if _, given := cf.seed[f.Name]; given {
 		return false
@@ -326,6 +335,34 @@ func (cf *capForm) displayed(f plugin.Field, current any) bool {
 		return false
 	}
 	return f.Default != nil && seedString(f.Default) == seedString(current)
+}
+
+// sameSet reports whether two list values hold the same elements, in any
+// order.
+func sameSet(a, b any) bool {
+	as, bs := listOf(a), listOf(b)
+	slices.Sort(as)
+	slices.Sort(bs)
+	return slices.Equal(as, bs)
+}
+
+func listOf(v any) []string {
+	switch t := v.(type) {
+	case []string:
+		return slices.Clone(t)
+	case []any:
+		out := make([]string, len(t))
+		for i, e := range t {
+			out[i] = fmt.Sprint(e)
+		}
+		return out
+	case string:
+		if t == "" {
+			return nil
+		}
+		return []string{t}
+	}
+	return nil
 }
 
 // seedString renders a value the way a widget holds it, so "unchanged" is
@@ -872,15 +909,33 @@ func candidateValues(f plugin.Field, ctx context.Context, req plugin.Request) []
 // not a way to say it. A field that has a default already offers that: the
 // default is the "leave it alone" answer, and a "(none)" beside it would only
 // raise the question of which one means what.
+//
+// A seed naming none of the options — a config value the host refuses — is
+// offered as itself, marked. Left out, huh found no option matching the
+// binding, moved the cursor to the first and wrote that back into it, so the
+// form handed the first option back as the caller's choice: `sslmode:
+// verify_full` in the config, a typo for verify-full, ran as disable, and
+// mysql's `tls` would have run as false, where the CLI refuses the file's
+// value by name. Kept, the picker shows what the file says, an untouched
+// form hands nothing back, and the run is refused the way the CLI's is.
 func (cf *capForm) selectOne(f plugin.Field) huh.Field {
+	seed := defaultString(f)
+	if o, named := f.CanonicalOption(seed); named {
+		// huh matches its options exactly, so a seed in another case — a
+		// record's own spelling — is shown as the option it names.
+		seed = o
+	}
 	// Through bind like every other string field, so a picker's answer is
 	// visible to a sibling's suggestion — which is the common shape: choose the
 	// thing, then complete something about it.
-	typed := cf.bind(f.Name, defaultString(f))
+	typed := cf.bind(f.Name, seed)
 
-	opts := make([]huh.Option[string], 0, len(f.Options)+1)
+	opts := make([]huh.Option[string], 0, len(f.Options)+2)
 	if !f.Required && f.Default == nil {
 		opts = append(opts, huh.NewOption("(none)", ""))
+	}
+	if _, named := f.CanonicalOption(seed); seed != "" && !named {
+		opts = append(opts, huh.NewOption(textclean.Terminal(seed)+notAnOption, seed))
 	}
 	for _, o := range f.Options {
 		opts = append(opts, huh.NewOption(o, o))
@@ -892,20 +947,37 @@ func (cf *capForm) selectOne(f plugin.Field) huh.Field {
 		Accessor(typed)
 }
 
+// notAnOption marks a seeded value a closed set does not offer.
+const notAnOption = " (not an option)"
+
 // multiSelect renders a closed set that takes several values at once.
+//
+// A seeded element naming none of the options is offered as itself, marked
+// and selected, for selectOne's reason: huh writes back only the options it
+// holds, so the element was dropped the first time the field was focused,
+// and `kinds: [table, x]` in the config ran as kinds table where the CLI
+// refuses it. A list from YAML is []any, which this read as nothing
+// selected at all.
+//
+// Its label is cleaned, the value kept: shown cleans a seed that arrives as
+// text or a []string, and a []any arrives uncleaned — and until an unlisted
+// element was offered, nothing from a seed was ever drawn as an option.
 func (cf *capForm) multiSelect(f plugin.Field) huh.Field {
-	var v []string
-	switch def := f.Default.(type) {
-	case []string:
-		v = append(v, def...)
-	case string:
-		if def != "" {
-			v = append(v, def)
+	v := listOf(f.Default)
+	var unlisted []string
+	for i, e := range v {
+		if o, named := f.CanonicalOption(e); named {
+			v[i] = o
+		} else if e != "" {
+			unlisted = append(unlisted, e)
 		}
 	}
 	cf.slices[f.Name] = &v
 
-	opts := make([]huh.Option[string], 0, len(f.Options))
+	opts := make([]huh.Option[string], 0, len(unlisted)+len(f.Options))
+	for _, e := range unlisted {
+		opts = append(opts, huh.NewOption(textclean.Terminal(e)+notAnOption, e).Selected(true))
+	}
 	for _, o := range f.Options {
 		opts = append(opts, huh.NewOption(o, o).Selected(slices.Contains(v, o)))
 	}
