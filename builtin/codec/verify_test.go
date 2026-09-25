@@ -250,17 +250,31 @@ func TestAShortHMACSecretIsNamedBesideItsVerdict(t *testing.T) {
 }
 
 // A secret file that is not there, is empty, or is not a secret at all.
+//
+// Whitespace alone is empty too. `echo "$SECRET" > f` with SECRET unset
+// writes a line break and nothing else, and that byte was the HMAC key: a
+// token made with it VERIFIED, and a real one was told it had been changed
+// after it was signed.
 func TestASecretFileThatCannotBeReadIsRefused(t *testing.T) {
 	token := sign(`{"alg":"HS256"}`, `{"sub":"a"}`, func([]byte) []byte { return []byte("x") })
 	for name, path := range map[string]string{
-		"missing": filepath.Join(t.TempDir(), "nothing-here"),
-		"empty":   secretFile(t, ""),
-		"huge":    secretFile(t, strings.Repeat("s", maxSecretFile+1)),
+		"missing":                    filepath.Join(t.TempDir(), "nothing-here"),
+		"empty":                      secretFile(t, ""),
+		"huge":                       secretFile(t, strings.Repeat("s", maxSecretFile+1)),
+		"a line break":               secretFile(t, "\n"),
+		"CRLF":                       secretFile(t, "\r\n"),
+		"spaces":                     secretFile(t, "   "),
+		"a byte-order mark and a LF": secretFile(t, byteOrderMark+"\n"),
 	} {
 		_, err := runJWT(context.Background(), req(map[string]any{"token": token, "secret-file": path}))
 		if verr := view.AsError(err, "test"); err == nil || verr.Code != "codec.jwt.secret" {
 			t.Errorf("%s: got %v, want codec.jwt.secret", name, err)
 		}
+	}
+	for _, blank := range []string{"\n", "\r\n", "   "} {
+		mac := hmac.New(sha256.New, []byte(blank))
+		made := sign(`{"alg":"HS256"}`, `{"sub":"a"}`, func(in []byte) []byte { mac.Write(in); return mac.Sum(nil) })
+		mustRefuse(t, made, "", blank, "codec.jwt.secret", "holds only whitespace")
 	}
 }
 
