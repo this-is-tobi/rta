@@ -278,6 +278,45 @@ func TestOscClipboardInvalidBase64DoesNotCrash(t *testing.T) {
 	}
 }
 
+// --- sequences the input ends inside, or that stop short ---
+
+// A capture cut off mid-sequence is what somebody reaches for this to
+// understand, and it was explained as finished: an OSC 52 with no terminator
+// as a clipboard write, although a terminal writes nothing until one arrives
+// and swallows what follows meanwhile, and a CSI with no final byte as having
+// the final byte NUL, which the input never held.
+func TestASequenceTheInputEndsInsideIsIncomplete(t *testing.T) {
+	for input, want := range map[string]string{
+		"a\x1b]52;c;Y3VybA==": `clipboard WRITE (selection "c"): "curl"`,
+		"a\x1bP$qm":           "DECRQSS",
+		"a\x9d0;title":        "set window/icon title: title",
+	} {
+		table := explainAnsi(input)
+		got := table.Rows[len(table.Rows)-1][2]
+		if !strings.HasPrefix(got, "incomplete") || !strings.Contains(got, "terminator") || !strings.Contains(got, want) {
+			t.Errorf("%q: meaning = %q, want it incomplete, then %q", input, got, want)
+		}
+	}
+	for _, input := range []string{"a\x1b[2", "\x1b[31", "\x1b[", "\x1b[?25", "\x9b31", "\x1b(", "\x1bP1;2", "a\x1b"} {
+		table := explainAnsi(input)
+		got := table.Rows[len(table.Rows)-1][2]
+		if !strings.HasPrefix(got, "incomplete") || !strings.Contains(got, "input ends") || strings.Contains(got, `\x00`) {
+			t.Errorf("%q: meaning = %q, want it incomplete and no NUL final byte", input, got)
+		}
+	}
+}
+
+// A CSI or escape sequence a byte cuts short before its final byte has no
+// final byte to name either.
+func TestASequenceCutShortNamesNoFinalByte(t *testing.T) {
+	for input, kind := range map[string]string{"\x1b[31\x07x": "CSI", "\x1b(\x07x": "ESC", "\x1bP1;2\x07x": "DCS"} {
+		row := rowFor(t, input, kind)
+		if !strings.HasPrefix(row[2], "incomplete") || strings.Contains(row[2], `\x00`) {
+			t.Errorf("%q: meaning = %q, want it incomplete and no NUL final byte", input, row[2])
+		}
+	}
+}
+
 // --- control characters ---
 
 func TestBareBel(t *testing.T) {
