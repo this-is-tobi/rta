@@ -426,11 +426,23 @@ func pemCandidates(raw string) ([]candidate, *view.Error) {
 	rest := []byte(repairPEM(raw))
 	var out []candidate
 	var sealed []string
+	private := 0
 	for {
 		var block *pem.Block
 		block, rest = pem.Decode(rest)
 		if block == nil {
 			break
+		}
+		// Reading a private key costs about what checking a signature with
+		// it does, so the private keys one call reads are bounded as its
+		// checks are: 330 of the largest a verifier accepts, the 4 MiB an MCP
+		// request may carry, took two seconds to read.
+		if strings.HasSuffix(block.Type, "PRIVATE KEY") {
+			if private++; private > maxKeyChecks {
+				return nil, view.Errorf("codec.jwt.key", "the PEM holds more than %d private keys, the most one call reads",
+					maxKeyChecks).
+					WithHint("give the key the token was signed with, or its public half")
+			}
 		}
 		pub, err := publicFromPEM(block)
 		switch {
@@ -524,6 +536,9 @@ func publicFromPEM(block *pem.Block) (crypto.PublicKey, error) {
 	case "RSA PUBLIC KEY":
 		return x509.ParsePKCS1PublicKey(block.Bytes)
 	case "PRIVATE KEY":
+		if why := oversizedPrivateKey(block.Bytes); why != "" {
+			return nil, errors.New(why)
+		}
 		key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
 		if err != nil {
 			return nil, err
@@ -533,6 +548,9 @@ func publicFromPEM(block *pem.Block) (crypto.PublicKey, error) {
 		}
 		return nil, errors.New("not a signing key")
 	case "RSA PRIVATE KEY":
+		if why := oversizedPrivateKey(block.Bytes); why != "" {
+			return nil, errors.New(why)
+		}
 		key, err := x509.ParsePKCS1PrivateKey(block.Bytes)
 		if err != nil {
 			return nil, err
@@ -546,6 +564,53 @@ func publicFromPEM(block *pem.Block) (crypto.PublicKey, error) {
 		return key.Public(), nil
 	}
 	return nil, nil // a block of another kind — EC PARAMETERS beside a key — is not a key
+}
+
+// maxPrivateKeyDER bounds the DER of a private key block, as maxRSABits does
+// every number in it, and both are looked at before x509 parses the key.
+// Parsing one checks its numbers against each other, at the square of their
+// size and more, and it comes before fits sees the modulus: a PKCS #1 key of
+// 132 KB, a small modulus beside a prime of a million bits, held a CPU core
+// for five seconds before it was refused as an invalid prime, from a free call
+// over MCP. The room is a key of maxRSABits, its modulus and private exponent
+// whole and five numbers of half their size, with some to spare; a key with
+// more primes than two takes about the same, and one with many more costs
+// the square of how many, which is what bounding the whole of it stops.
+const maxPrivateKeyDER = 6 * maxRSABits / 8
+
+// oversizedPrivateKey says why a private key's DER is refused before it is
+// parsed, or "" when it is not.
+func oversizedPrivateKey(der []byte) string {
+	if len(der) > maxPrivateKeyDER {
+		return fmt.Sprintf("it is %s, more than a key of %d bits takes", format.Bytes(len(der)), maxRSABits)
+	}
+	if bits := largestNumber(der); bits > maxRSABits {
+		return fmt.Sprintf("it holds a number of %d bits, over the %d a verifier accepts", bits, maxRSABits)
+	}
+	return ""
+}
+
+// largestNumber is the size in bits of the largest INTEGER in der, looking
+// inside every constructed element, and every OCTET STRING, which is where
+// PKCS #8 keeps a PKCS #1 key. What does not parse ends the look: the parse
+// that follows refuses it by name.
+func largestNumber(der []byte) int {
+	largest := 0
+	for len(der) > 0 {
+		var v asn1.RawValue
+		rest, err := asn1.Unmarshal(der, &v)
+		if err != nil {
+			break
+		}
+		switch {
+		case v.Class == asn1.ClassUniversal && v.Tag == asn1.TagInteger:
+			largest = max(largest, new(big.Int).SetBytes(v.Bytes).BitLen())
+		case v.IsCompound, v.Class == asn1.ClassUniversal && v.Tag == asn1.TagOctetString:
+			largest = max(largest, largestNumber(v.Bytes))
+		}
+		der = rest
+	}
+	return largest
 }
 
 var (
@@ -623,7 +688,8 @@ var ecCurveFor = map[string]string{"ES256": "P-256", "ES384": "P-384", "ES512": 
 // square of the modulus: a key of a million bits, 350 KB of arguments to a
 // free call, held a CPU core for 22 seconds, and the 4 MiB an MCP request may
 // carry buys over half an hour. Refused by name in fits and in readJWK, so
-// the refusal comes before any arithmetic.
+// the refusal comes before any arithmetic, and a private key's numbers are
+// held to it before x509 parses them (maxPrivateKeyDER).
 const maxRSABits = 16384
 
 // maxKeyChecks bounds the public-key checks one call makes, and
