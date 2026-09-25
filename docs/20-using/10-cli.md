@@ -19,10 +19,12 @@ rta fs usage ~/Downloads --depth 2
 | Format | For |
 | --- | --- |
 | `pretty` | A person at a terminal. Tables, colour, charts. **Default** |
-| `json` | Scripts and `jq` |
-| `yaml` | Scripts that prefer it, and diffing |
+| `json` | Scripts and `jq` — the one exact format |
+| `yaml` | A config file, and diffing |
 | `csv` | Spreadsheets and appending to a file |
 | `md` | Dropping into a report or an issue |
+
+**`-o json` is the one exact format**: every string reads back exactly as it was. The others are cleaned the way `pretty` is, because they are read on a screen as often as by a program: control characters are removed, and the nine characters that reorder text (U+202A to U+202E, U+2066 to U+2069) are spelled out as a backslash, a `u` and the four hex digits of the code point, so a file named with one reads as what it is rather than as the name it imitates. That spelling is a display, not an encoding, and a parser reading it gets the spelled-out text. Read any value a script acts on — a file name, a key, a host — from `json`.
 
 ```bash
 rta sys overview -o json | jq '.pairs'
