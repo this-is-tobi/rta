@@ -149,9 +149,13 @@ func tileOptions(reg *registry.Registry, selected []string) []huh.Option[string]
 	return opts
 }
 
+// hasRequiredInputs counts a Piped input as required, as the dashboard does
+// (tui.MissingInputs): the CLI reads it from a pipe when it is left out, and
+// a tile runs where there is none. Offered anyway, codec.jwt and debug.ansi
+// became tiles answering "nothing to read" on every refresh.
 func hasRequiredInputs(c plugin.Capability) bool {
 	for _, f := range c.Inputs {
-		if f.Required && f.Default == nil {
+		if f.Piped || (f.Required && f.Default == nil) {
 			return true
 		}
 	}
