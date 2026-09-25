@@ -294,6 +294,15 @@ func TestAKeySetThatNamesAMemberTwiceIsNamed(t *testing.T) {
 	}
 }
 
+// A key set saved by an editor that puts a byte-order mark in front, and
+// piped in as it is, was "not a JSON Web Key: invalid character".
+func TestAKeySetSavedWithAByteOrderMarkIsRead(t *testing.T) {
+	table := section(t, jwk(t, byteOrderMark+`{"keys":[`+rfc7638Key+`]}`+"\r\n"), "keys").(view.Table)
+	if table.Total != 1 || table.Rows[0][4] != rfc7638Thumbprint {
+		t.Errorf("rows = %v, want the one key", table.Rows)
+	}
+}
+
 func TestSomethingElseIsSentWhereItBelongs(t *testing.T) {
 	for input, want := range map[string]string{
 		"-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----": "rta cert inspect",

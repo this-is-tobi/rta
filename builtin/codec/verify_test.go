@@ -23,6 +23,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf16"
 
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -400,6 +401,7 @@ func TestAPublicKeyGivenAsTheSecretIsRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 	bare := base64.StdEncoding.EncodeToString(der)
+	set := `{"keys":[` + rfc8037Public + `]}`
 	for name, secret := range map[string]string{
 		"PEM":              publicPEM(t, &key.PublicKey),
 		"bare base64 SPKI": bare,
@@ -411,7 +413,25 @@ func TestAPublicKeyGivenAsTheSecretIsRefused(t *testing.T) {
 		// newline after it parses as nothing, and without one as the key.
 		"DER and a line break": string(der) + "\n",
 		"RSA JWK":              rfc7638Key,
-		"key set":              `{"keys":[` + rfc8037Public + `]}`,
+		"key set":              set,
+		// What an editor or a shell saves a key as: a byte-order mark in
+		// front (older Notepad), UTF-16 (PowerShell 5.1's `>`), and more
+		// than one line break or a space after DER, which x509 refuses as
+		// trailing data. Each was taken as HMAC bytes, and VERIFIED a
+		// token forged with them.
+		"JWK after a byte-order mark":            byteOrderMark + rfc7638Key,
+		"key set after a byte-order mark, CRLF":  byteOrderMark + set + "\r\n",
+		"base64 DER after a byte-order mark":     byteOrderMark + bare,
+		"JWK in UTF-16, little-endian, CRLF":     utf16Of(rfc7638Key+"\r\n", false),
+		"PEM in UTF-16, little-endian":           utf16Of(publicPEM(t, &key.PublicKey), false),
+		"PEM in UTF-16, big-endian":              utf16Of(publicPEM(t, &key.PublicKey), true),
+		"DER and two line breaks":                string(der) + "\n\n",
+		"DER and a space":                        string(der) + " ",
+		"certificate DER and a CRLF line break":  string(certDER) + "\r\n",
+		"key set with a byte-order mark, spaced": byteOrderMark + "  " + set,
+		// A second mark: the text had only the first taken off, the base64
+		// reading choked on the other, and the raw bytes were the HMAC key.
+		"base64 DER after two byte-order marks": byteOrderMark + byteOrderMark + bare,
 	} {
 		t.Run(name, func(t *testing.T) {
 			forged := sign(`{"alg":"HS256"}`, `{"sub":"admin"}`, func(in []byte) []byte {
@@ -429,6 +449,25 @@ func TestAPublicKeyGivenAsTheSecretIsRefused(t *testing.T) {
 		strings.Contains(verr.Message+verr.Hint, "secret") {
 		t.Errorf("bare base64 key: got %+v, want a hint naming PEM armour and not the secret", verr)
 	}
+	// A key set saved with a byte-order mark was "not a JWK, a key set or
+	// PEM" in --key, with a hint to pass the file as --secret-file — where it
+	// verified the forgery. It is read as the key set it is.
+	a4 := "eyJhbGciOiJFZERTQSJ9.RXhhbXBsZSBvZiBFZDI1NTE5IHNpZ25pbmc." +
+		"hgyY0il_MGCjP0JzlnLWG1PPOt7-09PGcvMg3AIbQR6dWbhijcNR4ki4iylGjg5BhVsPt9g7sVvpAr_MuM0KAg"
+	mustVerify(t, a4, byteOrderMark+set, "", "EdDSA signature matches Ed25519")
+}
+
+// utf16Of is s as a UTF-16 file, the byte-order mark first.
+func utf16Of(s string, bigEndian bool) string {
+	var b []byte
+	for _, u := range utf16.Encode([]rune(byteOrderMark + s)) {
+		if bigEndian {
+			b = append(b, byte(u>>8), byte(u))
+		} else {
+			b = append(b, byte(u), byte(u>>8))
+		}
+	}
+	return string(b)
 }
 
 // A raw public key in bare base64, an Ed25519 x or an EC point, is nothing

@@ -13,6 +13,7 @@ import (
 	"crypto/x509"
 	"encoding/asn1"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -21,6 +22,8 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"unicode"
+	"unicode/utf16"
 
 	"github.com/this-is-tobi/rta/builtin/internal/pipein"
 	"github.com/this-is-tobi/rta/pkg/format"
@@ -105,21 +108,23 @@ func secretFrom(path string) (candidate, *view.Error) {
 	// Every reading the file may be taken in is checked, not only the bytes
 	// as they are: DER with a line break after it parses as no key at all,
 	// and the reading without the break is the key, which then checked an
-	// HS256 token forged with it.
+	// HS256 token forged with it. And the file as the text it was saved as,
+	// which is where a key saved with a byte-order mark or in UTF-16 is one.
 	trimmed := strings.TrimSuffix(strings.TrimSuffix(raw, "\n"), "\r")
-	for _, b := range []string{raw, trimmed} {
+	text := asText(raw)
+	for _, b := range []string{raw, trimmed, text} {
 		if what := publicKeyIn([]byte(b)); what != "" {
 			return candidate{}, keyAsSecret(path, what)
 		}
 	}
-	if decoded, derr := decodeAnyBase64(strings.Join(strings.Fields(raw), "")); derr == nil {
+	if decoded, derr := decodeAnyBase64(strings.Join(strings.Fields(trimText(text)), "")); derr == nil {
 		if what := publicKeyIn(decoded); what != "" {
 			return candidate{}, keyAsSecret(path, what+", in base64")
 		}
 	}
 	// An oct JWK is how a shared secret is written as a key, and --key sends
 	// one here, so its k is the secret rather than the JSON around it.
-	if doc, err := decodeObject([]byte(strings.TrimSpace(raw))); err == nil && doc.str("kty") == "oct" {
+	if doc, err := decodeObject([]byte(trimText(text))); err == nil && doc.str("kty") == "oct" {
 		secret := octSecret(doc)
 		if secret == nil {
 			return candidate{}, view.Errorf("codec.jwt.secret", "the oct key in %s has no k that decodes", quote(path))
@@ -147,7 +152,7 @@ func secretFrom(path string) (candidate, *view.Error) {
 // signed it holds that key", about a key everyone holds. The algorithm-
 // confusion attack, reached through the one door fits does not watch.
 func publicKeyIn(b []byte) string {
-	s := strings.TrimSpace(string(b))
+	s := trimText(string(b))
 	switch {
 	case strings.Contains(s, "-----BEGIN"):
 		return "PEM key material"
@@ -167,16 +172,62 @@ func publicKeyIn(b []byte) string {
 		}
 		return ""
 	}
-	if _, err := x509.ParsePKIXPublicKey(b); err == nil {
+	// The leading element alone: x509 refuses DER with anything after it,
+	// and a key saved with two line breaks or a space after it was no key
+	// to this guard and the HMAC secret to the check.
+	der := b
+	var element asn1.RawValue
+	if _, err := asn1.Unmarshal(b, &element); err == nil {
+		der = element.FullBytes
+	}
+	if _, err := x509.ParsePKIXPublicKey(der); err == nil {
 		return "a DER public key"
 	}
-	if _, err := x509.ParsePKCS1PublicKey(b); err == nil {
+	if _, err := x509.ParsePKCS1PublicKey(der); err == nil {
 		return "a DER public key"
 	}
-	if _, err := x509.ParseCertificate(b); err == nil {
+	if _, err := x509.ParseCertificate(der); err == nil {
 		return "a DER certificate"
 	}
 	return ""
+}
+
+// byteOrderMark is U+FEFF in UTF-8, which some editors write at the start of
+// a file and strings.TrimSpace does not take off.
+const byteOrderMark = string(rune(0xfeff))
+
+// trimText takes off what surrounds a key pasted or saved as text: white
+// space, and a byte-order mark.
+func trimText(s string) string {
+	return strings.TrimFunc(s, func(r rune) bool { return unicode.IsSpace(r) || r == 0xfeff })
+}
+
+// asText is the secret file as the text an editor or a shell saved: without
+// a UTF-8 byte-order mark, and decoded when its mark says it is UTF-16. Older
+// Notepad puts the mark in front, and `>` in Windows PowerShell 5.1 writes
+// UTF-16, and a public key saved either way is text no parser takes for a key:
+// it was HMAC bytes to the check, and VERIFIED a token forged with them. An odd
+// length is not UTF-16 whatever its first two bytes say, and is left as it is.
+func asText(raw string) string {
+	b := []byte(raw)
+	var order binary.ByteOrder
+	switch {
+	case strings.HasPrefix(raw, byteOrderMark):
+		return raw[len(byteOrderMark):]
+	case len(b)%2 != 0 || len(b) < 2:
+		return raw
+	case b[0] == 0xff && b[1] == 0xfe:
+		order = binary.LittleEndian
+	case b[0] == 0xfe && b[1] == 0xff:
+		order = binary.BigEndian
+	default:
+		return raw
+	}
+	units := make([]uint16, 0, len(b)/2-1)
+	for i := 2; i < len(b); i += 2 {
+		units = append(units, order.Uint16(b[i:]))
+	}
+	return string(utf16.Decode(units))
 }
 
 func asymmetric(o object) bool {
@@ -199,7 +250,10 @@ func keyAsSecret(path, what string) *view.Error {
 // only its public half used: it is the caller's own machine, and refusing
 // would only send them off to extract the half by hand.
 func keysFrom(raw string, s plugin.Surface) ([]candidate, []string, *view.Error) {
-	raw = strings.TrimSpace(raw)
+	// With its byte-order mark, a key set was "not a JWK, a key set or PEM",
+	// told to go to --secret-file if it was a shared secret — where the same
+	// file then verified an HS256 token forged with it.
+	raw = trimText(raw)
 	switch {
 	case strings.HasPrefix(raw, "{"):
 		return jwkCandidates(raw, s)

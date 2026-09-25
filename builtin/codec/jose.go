@@ -126,7 +126,7 @@ func joseInput(req plugin.Request, field, code, what, hint string) (string, *vie
 		}
 		raw = piped
 	}
-	raw = strings.TrimSpace(raw)
+	raw = trimText(raw)
 	if raw == "" {
 		// The pipe is the CLI's alone, so only the CLI is told about it.
 		switch req.Surface() {
