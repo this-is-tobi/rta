@@ -310,7 +310,12 @@ func toInt(v any) (int, bool) {
 		// The same wall for JSON, which hands every number over as a
 		// float64: outside int's range the conversion is whatever the CPU
 		// does with it, and NaN converts to a confident zero.
-		if math.IsNaN(n) || n < math.MinInt || n >= math.MaxInt {
+		//
+		// And a fraction is not a whole number. int(n) truncated it, so
+		// `count: 2.5` in the config ran net.ping twice and `limit: 0.5`
+		// became 0 and then, clamped, 1 — with doctor calling the file fine,
+		// while `--count 2.5` and the same value over MCP were refused.
+		if math.IsNaN(n) || n < math.MinInt || n >= math.MaxInt || n != math.Trunc(n) {
 			return 0, false
 		}
 		return int(n), true
@@ -549,6 +554,10 @@ func StatedTypeProblem(f Field, v any) (problem, hint string) {
 		if _, ok := toInt(v); ok {
 			return "", ""
 		}
+		if fractional(v) {
+			return "is a fractional number where a whole number is declared — every call reading it is refused",
+				"write a whole number"
+		}
 		if statedShape(v) == "a number" {
 			// uint64 past MaxInt from YAML, 1e300 from JSON: a number, and
 			// "written as a number where an integer is declared" would read
@@ -589,6 +598,13 @@ func StatedTypeProblem(f Field, v any) (problem, hint string) {
 	// opinion is the right answer: inventing a problem about a declaration
 	// nothing here understands would be a report the run does not make.
 	return "", ""
+}
+
+// fractional reports whether v is a finite number with a fraction, which no
+// Int reads (toInt).
+func fractional(v any) bool {
+	x, ok := toFloat(v)
+	return ok && !math.IsInf(x, 0) && x != math.Trunc(x)
 }
 
 // statedRefusal says what v was written as, where the field declares want,

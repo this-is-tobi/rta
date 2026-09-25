@@ -199,6 +199,10 @@ func checkNumber(c Capability, f Field, v any) (verr *view.Error, how string) {
 		code, want = "core.input.range", want+" "+bounds
 	}
 	got := statedShape(v)
+	if f.Type == Int && fractional(v) {
+		return view.Errorf(code, "%s takes %s for %s, not %v", c.ID, want, f.Name, v).
+			WithHint("give it as a whole number"), "write it there as a whole number"
+	}
 	if got == "a number" {
 		return view.Errorf(code, "%s takes %s for %s, not %v", c.ID, want, f.Name, v).
 			WithHint("`rta explain " + c.ID + "` names what it takes beside the input"), ""
