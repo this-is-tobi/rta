@@ -43,6 +43,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/paths"
 	"github.com/this-is-tobi/rta/internal/policy"
 	"github.com/this-is-tobi/rta/internal/seal"
+	"github.com/this-is-tobi/rta/internal/shellquote"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -1558,7 +1559,7 @@ func refuseMissing(c plugin.Capability, missing []string, profile, agent string)
 	// looks like — a shell splits it into an extra argument. Quoting only
 	// the scopes that need it keeps the common case (a bare word) reading
 	// exactly as it always has.
-	scope := shellQuoteIfNeeded(missing[0])
+	scope := shellquote.Arg(missing[0])
 	what := strings.TrimSpace(c.ID + " " + scope)
 	if profile != "" {
 		what = strings.TrimSpace(Namespace(c.ID)+" "+scope) + " --profile " + profile
@@ -1567,40 +1568,10 @@ func refuseMissing(c plugin.Capability, missing []string, profile, agent string)
 	// it exactly, so on a server started `--as claude` the command without
 	// `--agent claude` issues a row that authorizes nothing.
 	if agent != "" {
-		what += " --agent " + shellQuoteIfNeeded(agent)
+		what += " --agent " + shellquote.Arg(agent)
 	}
 	return view.Errorf("core.grant.required", "no active grant for %s", describe(c.ID, missing)).
 		WithHint("a person has to allow this first: rta grant allow " + what + " --ttl 15m")
-}
-
-// shellQuoteIfNeeded wraps s in POSIX single quotes when it contains
-// anything a shell would treat as a word boundary or a metacharacter, so a
-// hint built by string concatenation stays the one copy-pasteable command it
-// claims to be. Left bare when every character is already shell-safe, which
-// covers every scope this codebase's own tooling ever generates — this only
-// matters for a scope a person or a plugin typed by hand.
-func shellQuoteIfNeeded(s string) string {
-	if s == "" {
-		return s
-	}
-	safe := true
-	for _, r := range s {
-		switch {
-		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
-		case strings.ContainsRune("-_./:@%", r):
-		default:
-			safe = false
-		}
-		if !safe {
-			break
-		}
-	}
-	if safe {
-		return s
-	}
-	// The POSIX way to embed a literal single quote inside a single-quoted
-	// string: close the quote, emit an escaped quote, reopen it.
-	return "'" + strings.ReplaceAll(s, "'", `'"'"'`) + "'"
 }
 
 // refuseThrottled is the answer for a call a grant covers and a budget will
