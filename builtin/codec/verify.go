@@ -658,10 +658,11 @@ func (c candidate) fits(alg string) (bool, string) {
 		return false, c.label + " is a shared secret"
 	}
 	switch k := c.pub.(type) {
-	// Refused by name before the check, because Go refuses both keys inside
+	// Refused by name before the check, because Go refuses these keys inside
 	// it and the refusal came back as a plain mismatch: a correct signature
 	// from a 512-bit key read as a token changed after it was signed, while
-	// the real news was a key anyone can factor.
+	// the real news was a key anyone can factor. Whatever else crypto/rsa
+	// refuses a key for, check reports as a refusal of the key.
 	case *rsa.PublicKey:
 		switch {
 		case a.kind != "an RSA key":
@@ -672,6 +673,10 @@ func (c candidate) fits(alg string) (bool, string) {
 			return false, c.label + " is under the 1024 bits a verifier accepts, and RFC 7518 §3.3 requires 2048"
 		case k.N.BitLen() > maxRSABits:
 			return false, fmt.Sprintf("%s is over the %d bits a verifier accepts", c.label, maxRSABits)
+		case k.E < 3:
+			return false, fmt.Sprintf("%s has an exponent of %d, which no verifier accepts", c.label, k.E)
+		case k.E%2 == 0:
+			return false, c.label + " has an even exponent, which no RSA key has, so no signature verifies against it"
 		}
 		return true, ""
 	case *ecdsa.PublicKey:
@@ -719,13 +724,18 @@ func checkPKCS1(pub crypto.PublicKey, _, input, sig []byte, h crypto.Hash) (bool
 
 // rsaVerdict keeps what crypto/rsa says about the key rather than only that
 // the check failed: every error but ErrVerification is a refusal of the key,
-// not a signature that does not match it.
+// not a signature that does not match it, and check tells the two apart by
+// refusesTheKey.
 func rsaVerdict(err error) (bool, string) {
 	if err == nil || errors.Is(err, rsa.ErrVerification) {
 		return err == nil, ""
 	}
-	return false, "crypto/rsa refuses the key: " + strings.TrimPrefix(err.Error(), "crypto/rsa: ")
+	return false, refusesTheKey + strings.TrimPrefix(err.Error(), "crypto/rsa: ")
 }
+
+// refusesTheKey starts the reason rsaVerdict gives for a key crypto/rsa will
+// not check anything with.
+const refusesTheKey = "crypto/rsa refuses the key: "
 
 // checkPSS uses the salt length RFC 7518 §3.5 fixes — the hash's own size —
 // rather than accepting any, so a signature this calls good is one every
@@ -813,7 +823,7 @@ func (v *verifier) check(header object, input string, sigSeg string) (string, *v
 	// one: "does not match the secret given: the secret given is a shared
 	// secret", about an RS256 token checked against an RSA key.
 	kid := header.str("kid")
-	var tried, reasons, skipped []string
+	var tried, reasons, skipped, refused []string
 	triedKey := false
 	for _, c := range candidates {
 		if kid != "" && c.kid != "" && c.kid != kid {
@@ -844,6 +854,9 @@ func (v *verifier) check(header object, input string, sigSeg string) (string, *v
 		if why != "" {
 			reasons = append(reasons, why)
 		}
+		if reason, ok := strings.CutPrefix(why, refusesTheKey); ok {
+			refused = append(refused, c.label+" ("+reason+")")
+		}
 		for _, r := range c.readings {
 			if good, _ := a.check(nil, r.secret, []byte(input), sig, a.hash); good {
 				return verifiedLine(candidate{label: r.label, secret: r.secret}, alg), nil
@@ -851,6 +864,13 @@ func (v *verifier) check(header object, input string, sigSeg string) (string, *v
 		}
 	}
 	switch {
+	// Every key tried was refused before the signature was compared with it,
+	// so the check said nothing about the token. Filed as a mismatch, it
+	// came with the hint that the token had been changed after it was signed.
+	case len(tried) > 0 && len(refused) == len(tried):
+		return "", view.Errorf("codec.jwt.key", "the %s signature was never compared with a key: crypto/rsa refuses %s",
+			alg, strings.Join(refused, "; ")).
+			WithHint("the key is what is wrong, not the token: no signature checks against it")
 	case len(tried) > 0:
 		what := tried[0]
 		if len(tried) > 1 {

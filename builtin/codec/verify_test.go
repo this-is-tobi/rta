@@ -742,6 +742,45 @@ func TestTheWorkOneCheckDoesIsBounded(t *testing.T) {
 	}
 }
 
+// A key crypto/rsa refuses was reported as a signature that does not match
+// it, with the hint that the token had been changed, and codec.jwk, which the
+// refusal points to, found nothing wrong with an even exponent. The exponents
+// no RSA key has are named by the verifier and by codec.jwk, and whatever
+// else crypto/rsa refuses a key for is a refusal of the key, not of the token.
+func TestAnRSAKeyCryptoRSARefusesIsNotATamperedToken(t *testing.T) {
+	key := rsaKey()
+	token := sign(`{"alg":"RS256"}`, `{"sub":"a"}`, func(in []byte) []byte {
+		sig, err := rsa.SignPKCS1v15(rand.Reader, key, crypto.SHA256, sha256Of(in))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return sig
+	})
+	b := func(n *big.Int) string { return base64.RawURLEncoding.EncodeToString(n.Bytes()) }
+	even := fmt.Sprintf(`{"kty":"RSA","n":%q,"e":%q}`, b(key.N), b(big.NewInt(65536)))
+	if n := notes(jwk(t, even)); !strings.Contains(n, "Its exponent is even") {
+		t.Errorf("codec.jwk notes = %q, want the even exponent named", n)
+	}
+	one := pemOf(t, "RSA PUBLIC KEY", x509.MarshalPKCS1PublicKey(&rsa.PublicKey{N: key.N, E: 1}))
+	evenPEM := pemOf(t, "RSA PUBLIC KEY", x509.MarshalPKCS1PublicKey(&rsa.PublicKey{N: key.N, E: 65536}))
+	large, err := x509.MarshalPKIXPublicKey(&rsa.PublicKey{N: key.N, E: 1<<31 + 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, tc := range map[string]struct{ key, code, want string }{
+		"even exponent, JWK":       {even, "codec.jwt.key", "its exponent is even"},
+		"exponent 1, PEM":          {one, "codec.jwt.nokey", "has an exponent of 1"},
+		"even exponent, PEM":       {evenPEM, "codec.jwt.nokey", "has an even exponent"},
+		"exponent over 2^31, SPKI": {pemOf(t, "PUBLIC KEY", large), "codec.jwt.key", "crypto/rsa refuses 2048-bit RSA from PEM (public exponent too large)"},
+	} {
+		_, verr := verifyWith(t, token, tc.key, "")
+		if verr == nil || verr.Code != tc.code || !strings.Contains(verr.Message, tc.want) ||
+			strings.Contains(verr.Hint, "changed after it was signed") {
+			t.Errorf("%s: got %+v, want %s naming %q and no word of tampering", name, verr, tc.code, tc.want)
+		}
+	}
+}
+
 // procTypeEncrypted is a legacy encrypted PEM key, the Proc-Type header form,
 // around bytes that are not a key. These tests build their private-key blocks
 // with pem.EncodeToMemory rather than spelling them out, because a private-key
