@@ -303,16 +303,26 @@ func TestAKeySetSavedWithAByteOrderMarkIsRead(t *testing.T) {
 	}
 }
 
+// PEM is sent by what its block holds. Every block was told that `rta cert
+// inspect` reads a certificate, and a public key, pasted here for its
+// thumbprint, is none: cert inspect refuses it, and takes a file or a host
+// rather than pasted text anyway.
 func TestSomethingElseIsSentWhereItBelongs(t *testing.T) {
+	pub := publicPEM(t, &rsaKey().PublicKey)
 	for input, want := range map[string]string{
-		"-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----": "rta cert inspect",
-		buildJWT(t, `{"alg":"HS256"}`, `{"sub":"a"}`):                  "rta codec jwt",
-		`{"iss":"not a key"}`: "kty",
+		"-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----": "`rta cert inspect <file>` reads it",
+		pub:                                "`rta codec jwt --key` takes a PEM key as it is",
+		strings.ReplaceAll(pub, "\n", " "): "`rta codec jwt --key` takes a PEM key as it is",
+		buildJWT(t, `{"alg":"HS256"}`, `{"sub":"a"}`): "rta codec jwt",
+		`{"iss":"not a key"}`:                         "kty",
 	} {
 		_, err := runJWK(context.Background(), req(map[string]any{"key": input}))
 		verr := view.AsError(err, "test")
 		if err == nil || !strings.Contains(verr.Hint, want) {
 			t.Errorf("%.30q: got %v (hint %q), want a hint naming %q", input, err, verr.Hint, want)
+		}
+		if strings.Contains(input, "PUBLIC KEY") && strings.Contains(verr.Hint, "cert inspect") {
+			t.Errorf("a public key was sent to cert inspect: %q", verr.Hint)
 		}
 	}
 }
