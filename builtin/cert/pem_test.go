@@ -301,6 +301,57 @@ func TestAnUnreadableCertificateIsPlacedInItsFile(t *testing.T) {
 	}
 }
 
+// pem.Decode skips a block it cannot read — a body that is not base64, a
+// block with no END line of its own — and returns the next one, so a damaged
+// certificate in the middle of a bundle was never counted: `cert chain` drew
+// the chain without it and `cert pem --out` wrote the shortened bundle, exit 0.
+// A damaged last block was refused as a file that ends inside a PEM block,
+// which it does not.
+func TestADamagedBlockIsRefusedWhereverItSits(t *testing.T) {
+	dir := t.TempDir()
+	damaged := []byte("-----BEGIN CERTIFICATE-----\nnotbase64!!\n-----END CERTIFICATE-----\n")
+	unended := []byte("-----BEGIN CERTIFICATE-----\nMIIB\n")
+	for _, tc := range []struct {
+		name  string
+		parts [][]byte
+		where string
+	}{
+		{"middle.pem", [][]byte{selfSigned(t, "leaf"), damaged, selfSigned(t, "inter"), selfSigned(t, "root")}, "certificate 2 of 4"},
+		{"last.pem", [][]byte{selfSigned(t, "leaf"), selfSigned(t, "inter"), damaged}, "certificate 3 of 3"},
+		{"first.pem", [][]byte{damaged, selfSigned(t, "leaf")}, "certificate 1 of 2"},
+		{"unended.pem", [][]byte{selfSigned(t, "leaf"), unended, selfSigned(t, "root")}, "certificate 2 of 3"},
+	} {
+		path := filepath.Join(dir, tc.name)
+		if err := os.WriteFile(path, bytes.Join(tc.parts, nil), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		for _, run := range []func(context.Context, plugin.Request) (view.View, error){runInspect, runChain} {
+			_, err := run(context.Background(), req(map[string]any{"target": path}))
+			if verr := view.AsError(err, ""); err == nil || verr.Code != "cert.parse.failed" ||
+				!strings.Contains(verr.Message, tc.where) || !strings.Contains(verr.Message, "not valid PEM") {
+				t.Errorf("%s: err = %v, want cert.parse.failed placing a block that is not valid PEM as %s", tc.name, err, tc.where)
+			}
+		}
+		out := filepath.Join(dir, tc.name+".out")
+		if _, err := runPEM(context.Background(), req(map[string]any{"target": path, "out": out})); err == nil {
+			t.Errorf("%s: cert pem --out wrote the bundle without its damaged block", tc.name)
+		}
+		if _, err := os.Stat(out); !os.IsNotExist(err) {
+			t.Errorf("%s: cert pem --out wrote %s", tc.name, out)
+		}
+	}
+	// A damaged key beside the certificates is not a link of the chain,
+	// just as an intact one is not.
+	key := []byte("-----BEGIN PRIVATE KEY-----\nnotbase64!!\n-----END PRIVATE KEY-----\n")
+	path := filepath.Join(dir, "key.pem")
+	if err := os.WriteFile(path, bytes.Join([][]byte{selfSigned(t, "leaf"), key, selfSigned(t, "root")}, nil), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if certs, err := readPEM(path); err != nil || len(certs) != 2 {
+		t.Errorf("a bundle beside a damaged key = %d certificates, %v; want both certificates", len(certs), err)
+	}
+}
+
 // A file that is cut off is refused as cut off, even when a certificate
 // before the cut does not parse. The parse refusal used to come first and
 // counted only the complete blocks — "certificate 2 of 2" in a file holding
