@@ -28,6 +28,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/render/cli"
 	"github.com/this-is-tobi/rta/internal/render/tui"
 	agentsession "github.com/this-is-tobi/rta/internal/session"
+	"github.com/this-is-tobi/rta/internal/textclean"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -699,11 +700,40 @@ func candidates(cmd *cobra.Command, c plugin.Capability, f plugin.Field, args []
 	if f.Type == plugin.Path {
 		directive = cobra.ShellCompDirectiveDefault
 	}
-	out := offering(f, c, f.Candidates(ctx, req))
+	out := shown(offering(f, c, f.Candidates(ctx, req)))
 	if len(out) == 0 {
 		return nil, directive
 	}
 	return out, directive
+}
+
+// shown holds what a shell is about to print to the rule every other
+// completion surface keeps. A Suggest answers with whatever exists — a note
+// title an agent wrote, a key in somebody's bucket — and the shell prints it
+// as it came: zsh lists the description after the tab verbatim, so an OSC 0
+// and a right-to-left override in a title set over MCP reached the operator's
+// terminal on `rta note show <tab>`.
+//
+// A value that would display as something other than itself is dropped, not
+// cleaned, for the reason the TUI's candidateValues gives: it is inserted as
+// offered, and a cleaned one is a different value. The description is only
+// read, so it is cleaned like any text on its way to a terminal, and its
+// whitespace folded to single spaces: a tab would start a column the shell
+// does not have, and a newline a completion that does not exist.
+func shown(entries []cobra.Completion) []cobra.Completion {
+	out := entries[:0:0]
+	for _, entry := range entries {
+		value, desc, described := strings.Cut(entry, "\t")
+		if textclean.Deceives(value) {
+			continue
+		}
+		if described {
+			desc = strings.Join(strings.Fields(textclean.Terminal(desc)), " ")
+			entry = cobra.CompletionWithDesc(value, desc)
+		}
+		out = append(out, entry)
+	}
+	return out
 }
 
 // remembered is this process's view of the shortlists. Read once: a shell
