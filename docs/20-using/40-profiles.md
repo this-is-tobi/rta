@@ -306,7 +306,7 @@ There is deliberately no coercion. Reading `"true"` as true would then have to a
 
 `rta profile set` cannot produce this: a flag argument is always text, so it converts to the declared type before writing, and refuses what will not convert.
 
-The same rule covers the base `plugins:` block: `rta doctor` reports the line, and every call reading it is refused, naming the key it came from.
+The same rule covers the base `plugins:` block: `rta doctor` reports the line, and every call reading it is refused, naming the key it came from under the heading you wrote — `mysql.status takes text for tls, not a boolean, which the config's plugins.mysql@f5074594.tls sets`.
 
 ## A secret in the wrong block
 

@@ -101,6 +101,30 @@ func TestAPinnedSectionReachesThePluginItNames(t *testing.T) {
 	}
 }
 
+// A refusal of a configured value names the line the operator has to change,
+// and for a pinned plugin that line is under the heading as they wrote it —
+// the namespace alone is a key the file does not have.
+func TestTheHeadingAValueWasReadFromIsKept(t *testing.T) {
+	cfg := config.Config{Plugins: map[string]map[string]any{
+		"pg@1a2b3c4d": {"port": "5432"},
+		"sys":         {"top": 5},
+	}}
+	r, _ := Resolve(trusted(t, cfg), installed)
+	for ns, want := range map[string]string{"pg": "pg@1a2b3c4d", "sys": "sys", "net": ""} {
+		if got := r.Section(ns); got != want {
+			t.Errorf("Section(%s) = %q, want %q", ns, got, want)
+		}
+	}
+	stale := config.Config{Plugins: map[string]map[string]any{"pg@ffffffff": {"port": 1}}}
+	if r, _ := Resolve(trusted(t, stale), installed); r.Section("pg") != "" {
+		t.Errorf("a stale pin's heading was kept: %q", r.Section("pg"))
+	}
+	var none *Resolver
+	if none.Section("pg") != "" {
+		t.Error("a nil resolver named a heading")
+	}
+}
+
 // The ordinary state after upgrading a plugin, and the reason the doctor row
 // exists: the digest changed, so the config stops applying, and the operator
 // has to be told which one is installed rather than left to look it up.

@@ -37,6 +37,14 @@ type Inputs struct {
 
 	// Config is the operator's plugins:<ns@pin> section, keyed by Field.Config.
 	Config map[string]any
+
+	// ConfigSection is the heading Config was written under — `pg@1a2b3c4d`
+	// for a plugin pinned to its artifact, the bare namespace for a built-in
+	// — so a refusal of a value from it names the line the operator has to
+	// change. Built from the namespace, it named `plugins.pg.port` for a
+	// section that has to be written `pg@<pin>:`, a key the file does not
+	// have. Empty is the namespace, which is every built-in's heading.
+	ConfigSection string
 }
 
 // Resolve turns the values a surface collected into the values a handler
@@ -103,6 +111,7 @@ func ResolveRequest(c Capability, in Inputs, dryRun, yes bool) Request {
 // the profile that set it. Never the value.
 type origin struct {
 	key     string // the Field.Config key, for a value from the config
+	section string // the heading that key sits under, "" for the namespace
 	profile string // the profile's name, for a value from one
 }
 
@@ -135,7 +144,7 @@ func resolve(c Capability, in Inputs) (map[string]any, map[string]origin) {
 		}
 		if v, ok := lookupConfig(in.Config, f.Config); ok {
 			out[f.Name] = v
-			from[f.Name] = origin{key: f.Config}
+			from[f.Name] = origin{key: f.Config, section: in.ConfigSection}
 		}
 	}
 	// Local inputs that opted into it (EnvFallback), from the host's own
