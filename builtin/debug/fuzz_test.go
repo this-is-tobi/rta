@@ -3,13 +3,18 @@ package debug
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
+
+	"github.com/this-is-tobi/rta/internal/textclean"
 )
 
 // explainAnsi reads captured terminal output, attacker-chosen byte for byte,
 // through a third-party decoder that has already panicked on a sequence with
-// too many parameters. What it owes any input: rows of three cells, and a
-// Sequence column holding no byte a terminal acts on, since that column shows
-// the sequence rather than sending it.
+// too many parameters. What it owes any input: rows of three cells, each
+// valid UTF-8 and holding nothing a terminal acts on or a reader cannot see,
+// since a row shows a sequence rather than sending it. A text row is held to
+// that too: every character that hides itself leaves the run for a row that
+// names it.
 func FuzzExplainAnsi(f *testing.F) {
 	for _, seed := range []string{
 		"", "plain", "\x1b[31mred\x1b[0m", "\x1b]52;c;Y3VybA==\x07", "\x1b]0;title\x1b\\",
@@ -17,6 +22,7 @@ func FuzzExplainAnsi(f *testing.F) {
 		"\x1b_Gf=100;AAAA\x1b\\", "\x1b[" + strings.Repeat("9;", 40) + "9m",
 		"\x1b[" + strings.Repeat("9:", 40) + "9m", "\x1b [" + strings.Repeat("1;", 40) + "m",
 		"\x1b[2", "\x1b]52;c;Y3VybA==", "\x1b(", "\x1b", "\x85\x8d\x9c", "\xff\xfe",
+		"\x1b]0;a\bb\x9b2J\x07", "\x1b]8;;https://x.test/\r\x07",
 		"a" + string(rune(0x202e)) + "b", string(rune(0x1f600)) + string(rune(0xfe0f)),
 		string(rune(0xe0001)) + string(rune(0xe0041)),
 	} {
@@ -31,12 +37,9 @@ func FuzzExplainAnsi(f *testing.F) {
 			if len(row) != 3 {
 				t.Fatalf("%q: row %q has %d cells", input, row, len(row))
 			}
-			if row[1] == "text" {
-				continue
-			}
-			for i := 0; i < len(row[0]); i++ {
-				if c := row[0][i]; c < 0x20 || c == 0x7f {
-					t.Fatalf("%q: row %q carries the raw byte 0x%02x in its Sequence column", input, row, c)
+			for _, cell := range row {
+				if !utf8.ValidString(cell) || textclean.Deceives(cell) {
+					t.Fatalf("%q: row %q carries a cell a terminal acts on or a reader cannot see: %q", input, row, cell)
 				}
 			}
 		}

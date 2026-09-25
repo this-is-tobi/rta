@@ -454,12 +454,17 @@ func extendedColor(params []int, i, n int) (consumed int, desc string, ok bool) 
 
 // --- OSC: the three that matter for debugging what a program sent you ---
 
+// explainOSC shows a title and a link target through visualize, like the
+// sequence carrying them: the payload is whatever the decoder collected up to
+// the terminator — backspaces, carriage returns, an 8-bit CSI, an override —
+// and quoting it as it came handed the terminal, one cell to the right, what
+// the Sequence cell had just escaped.
 func explainOSC(p *ansi.Parser) string {
 	switch p.Command() {
 	case 0, 1, 2:
-		return "set window/icon title: " + oscPayload(p)
+		return "set window/icon title: " + visualize(oscPayload(p))
 	case 8:
-		return "hyperlink: " + hyperlinkURI(oscPayload(p))
+		return "hyperlink: " + visualize(hyperlinkURI(oscPayload(p)))
 	case 52:
 		return explainClipboard(oscPayload(p))
 	default:
