@@ -318,6 +318,10 @@ type Field struct {
 	// shell completion on the CLI, and an "enum" in the MCP schema — which
 	// is the one that matters most, since a model guessing "PTR" at a field
 	// that wants "ptr" currently learns so by failing.
+	//
+	// A closed set of text, on a String or a StringSlice only: Validate
+	// refuses it on any other type, because a number bounds itself with Min
+	// and Max and a Bool is already a set of two.
 	Options []string
 	// Min and Max bound a numeric input, and are enforced by the host rather
 	// than by each handler remembering to.

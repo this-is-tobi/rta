@@ -108,38 +108,35 @@ func TestResolveSpellsAListOptionAsDeclaredWhateverItsShape(t *testing.T) {
 	}
 }
 
-// Options on a number or a boolean are published over MCP as the enum of
-// every value the input accepts, and the MCP boundary held them there; the
-// host held only the two string types, so `level: 9` on a field offering 1,
-// 2 and 4 was refused over MCP and ran from the CLI, a form and a config
-// file. Compared in the spelling the boundary uses.
-func TestOptionsOnANumberOrABooleanAreHeldToo(t *testing.T) {
-	c := Capability{
-		ID: "demo.level", Summary: "demo", Safety: Read,
-		Inputs: []Field{
-			{Name: "level", Type: Int, Options: []string{"1", "2", "4"}},
-			{Name: "ratio", Type: Float, Options: []string{"0.5", "1"}},
-			{Name: "strict", Type: Bool, Options: []string{"true"}},
-		},
-		Run: func(context.Context, Request) (view.View, error) { return nil, nil },
-	}
-	guarded := GuardInputs(c)
-	call := func(values map[string]any) error {
-		_, err := guarded(context.Background(), NewRequest(Resolve(c, Inputs{Caller: values}), false, false))
-		return err
-	}
-	for _, values := range []map[string]any{
-		{"level": 3}, {"level": uint64(9)}, {"ratio": 0.25}, {"strict": false},
+// Options are a closed set of text. On a number or a boolean the MCP schema
+// published an integer enum of strings no JSON value satisfies, the TUI
+// handed a Bool's pick back as text the handler read as false, and `rta
+// profile set` wrote a number the profile check then refused — so the
+// declaration is refused where its author is, and a number or a switch
+// bounds itself with Min and Max.
+func TestOptionsAreDeclaredOnTextAlone(t *testing.T) {
+	p := validPlugin()
+	for _, f := range []Field{
+		{Name: "level", Type: Int, Options: []string{"1", "2", "4"}},
+		{Name: "ratio", Type: Float, Options: []string{"0.5", "1"}},
+		{Name: "strict", Type: Bool, Options: []string{"true"}},
+		{Name: "body", Type: Text, Options: []string{"a"}},
+		{Name: "out", Type: Path, Options: []string{"/tmp/a"}},
+		{Name: "key", Type: Secret, Local: true, Options: []string{"a"}},
+		{Name: "keys", Type: SecretSlice, Local: true, Options: []string{"a"}},
 	} {
-		if err := call(values); err == nil || view.AsError(err, "test").Code != "core.input.option" {
-			t.Errorf("%v: err = %v, want core.input.option", values, err)
+		p.Capabilities[0].Inputs = []Field{f}
+		if err := p.Validate(); err == nil || !strings.Contains(err.Error(), "closed set of text") {
+			t.Errorf("%s: err = %v, want Options on a %s refused", f.Name, err, f.Type)
 		}
 	}
-	for _, values := range []map[string]any{
-		{"level": 4}, {"level": float64(2)}, {"ratio": 1.0}, {"ratio": 0.5}, {"strict": true},
+	for _, f := range []Field{
+		{Name: "mode", Type: String, Options: []string{"fast", "safe"}},
+		{Name: "kinds", Type: StringSlice, Options: []string{"red", "blue"}},
 	} {
-		if err := call(values); err != nil {
-			t.Errorf("%v was refused: %v", values, err)
+		p.Capabilities[0].Inputs = []Field{f}
+		if err := p.Validate(); err != nil {
+			t.Errorf("%s: Options on a %s were refused: %v", f.Name, f.Type, err)
 		}
 	}
 }
@@ -159,26 +156,16 @@ func TestADefaultOutsideItsOptionsFailsValidation(t *testing.T) {
 	if err := p.Validate(); err == nil || !strings.Contains(err.Error(), "not one of its options") {
 		t.Errorf("err = %v, want the default refused", err)
 	}
-	// A list is held element by element, and a number in the spelling the
-	// guard compares with: either one validated, and every call that left
-	// the input alone was then refused.
-	for _, f := range []Field{
-		{Name: "kinds", Type: StringSlice, Default: []string{"red", "green"}, Options: []string{"red", "blue"}},
-		{Name: "level", Type: Int, Default: 3, Options: []string{"1", "2", "4"}},
-	} {
-		p.Capabilities[0].Inputs = []Field{f}
-		if err := p.Validate(); err == nil || !strings.Contains(err.Error(), "not one of its options") {
-			t.Errorf("%s: err = %v, want the default refused", f.Name, err)
-		}
+	// A list is held element by element: a check of the string case alone
+	// validated this, and every call that left the input alone was then
+	// refused.
+	p.Capabilities[0].Inputs = []Field{{Name: "kinds", Type: StringSlice, Default: []string{"red", "green"}, Options: []string{"red", "blue"}}}
+	if err := p.Validate(); err == nil || !strings.Contains(err.Error(), "not one of its options") {
+		t.Errorf("err = %v, want the list default refused", err)
 	}
-	for _, f := range []Field{
-		{Name: "kinds", Type: StringSlice, Default: []string{"red"}, Options: []string{"red", "blue"}},
-		{Name: "level", Type: Int, Default: 2, Options: []string{"1", "2", "4"}},
-	} {
-		p.Capabilities[0].Inputs = []Field{f}
-		if err := p.Validate(); err != nil {
-			t.Errorf("%s: a default among its options was refused: %v", f.Name, err)
-		}
+	p.Capabilities[0].Inputs = []Field{{Name: "kinds", Type: StringSlice, Default: []string{"red"}, Options: []string{"red", "blue"}}}
+	if err := p.Validate(); err != nil {
+		t.Errorf("a default among its options was refused: %v", err)
 	}
 	p.Capabilities[0].Inputs = []Field{{Name: "limit", Type: Int, Default: 0, Min: 1, Max: 10}}
 	if err := p.Validate(); err == nil || !strings.Contains(err.Error(), "its range is from 1 to 10") {

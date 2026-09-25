@@ -32,8 +32,6 @@ func tlsRegistry(t *testing.T) *registry.Registry {
 				{Name: "tls", Type: plugin.Bool, Default: true, Config: "tls", Local: true},
 				{Name: "mode", Type: plugin.String, Config: "mode", Local: true,
 					Options: []string{"fast", "safe"}},
-				{Name: "level", Type: plugin.Int, Config: "level", Local: true,
-					Options: []string{"1", "2", "3"}},
 			},
 		}},
 	}); err != nil {
@@ -151,18 +149,18 @@ profiles:
 // not text — and reporting both would bury the complaint the operator can act
 // on under a second one caused by it.
 func TestATypeProblemIsNotAlsoReportedAsAnOptionsProblem(t *testing.T) {
-	// A quoted value, outside the set, for the numeric input that also
-	// declares one: the shape where both checks have something to say. The
-	// type check wins and the Options check does not get a second bite —
-	// being told a value is not one of `1|2|3` is no help when the reason it
-	// will not work is that it is text.
+	// A number, outside the set, for the text input that declares one: the
+	// shape where both checks have something to say. The type check wins and
+	// the Options check does not get a second bite — being told a value is
+	// not one of `fast|safe` is no help when the reason it will not work is
+	// that it is not text.
 	cfg := load(t, `
 profiles:
   staging:
     plugins:
       db:
         set:
-          level: "9"
+          mode: 9
 `)
 	problems := Check(cfg, tlsRegistry(t))
 	if len(problems) != 1 {
@@ -293,7 +291,6 @@ func sharedKeyRegistry(t *testing.T) *registry.Registry {
 			Inputs: []plugin.Field{
 				{Name: "mode", Type: plugin.String, Config: "mode", Local: true, Options: modes},
 				{Name: "kinds", Type: plugin.StringSlice, Config: "kinds", Local: true, Options: kinds},
-				{Name: "level", Type: plugin.Int, Config: "level", Local: true, Options: []string{"1", "2", "3"}},
 			}}
 	}
 	if err := reg.Register(plugin.Plugin{
@@ -324,7 +321,6 @@ func TestASetValueIsHeldToEveryCapabilityReadingItsKey(t *testing.T) {
 		"mode: SAFE",     // both do, in another case
 		"kinds: [ALPHA, gamma]",
 		"kinds: Beta",
-		"level: 2",
 	} {
 		t.Run(body, func(t *testing.T) {
 			cfg := load(t, "profiles:\n  p:\n    plugins:\n      db:\n        set:\n          "+body+"\n")
@@ -338,7 +334,7 @@ func TestASetValueIsHeldToEveryCapabilityReadingItsKey(t *testing.T) {
 			}
 		})
 	}
-	for _, body := range []string{"mode: reckless", "kinds: [beta, delta]", "level: 9"} {
+	for _, body := range []string{"mode: reckless", "kinds: [beta, delta]"} {
 		t.Run(body, func(t *testing.T) {
 			cfg := load(t, "profiles:\n  p:\n    plugins:\n      db:\n        set:\n          "+body+"\n")
 			problems := Check(cfg, reg)
