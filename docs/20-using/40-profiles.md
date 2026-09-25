@@ -238,7 +238,9 @@ One plugin per invocation. A profile spanning three plugins is three lines, and 
 | --- | --- |
 | `--set password=…` on a declared credential | `set:` is a plaintext value in a world-readable file. It names `--secret` instead |
 | `--secret password=hunter2` | that block takes a **reference**, never a value — and the refusal does not repeat what you passed |
-| `--set port=six-thousand`, `--set tls=yes` | the declared type cannot hold it (see below) |
+| `--set port=six-thousand`, `--set tls=yes` | the declared type cannot hold it (see below) — `core.profile.set.type` |
+| `--set encoding=b64` on an input with a closed set | no call would accept it — `core.profile.set.option`. A listed value in another case is written the way the plugin declares it |
+| `--set ping.count=0` | it is outside the widest range of any capability reading the key — `core.profile.set.range`. Inside it, each capability holds the value to its own range |
 | `--set hsot=…` | nothing in that plugin reads the key |
 | `--kube …` and `--ssh …` together | a call opens one forward |
 | `--tunnel-tls` with neither `--kube` nor `--ssh` in effect (this run or already stored) | it states something about the far side of a forward that does not exist — `--direct` clears a stored `tunnelTLS: true` for the same reason |
