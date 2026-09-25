@@ -1147,10 +1147,11 @@ func scopes(c plugin.Capability, values map[string]any) []string {
 // e.g. note.rm's id) the way an operator would type it, not the way Go's
 // %v verb does — fmt.Sprint(float64(1000000)) is "1e+06", which a grant
 // issued for the operator-typed string "1000000" (rta grant allow note.rm
-// 1000000) would never match. An MCP call's JSON number always decodes to
-// float64 before it reaches here (internal/mcp/bridge.go calls Reserve on
-// the raw decoded values, before plugin.Resolve's numeric coercion), so this
-// is the boundary that has to normalise it. A whole-number float is printed
+// 1000000) would never match. The bridge hands Reserve resolved values, in
+// which an Int field already holds an int, but a map a caller builds itself
+// can still carry a JSON number as float64, and this is the one place that
+// turns a value into the string a grant compares — so it normalises here
+// rather than trust every caller to have. A whole-number float is printed
 // as a plain integer; anything with a fractional part falls back to %v,
 // since no Field.Type this package scopes against is ever a genuine Float.
 // Found by review, which demonstrated the mismatch

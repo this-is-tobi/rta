@@ -877,3 +877,56 @@ func TestTheRecordSaysWhenARefusalWasARepointedConnection(t *testing.T) {
 		t.Errorf("a call nothing ever granted was annotated: %q", entries[0].Note)
 	}
 }
+
+// A profile's `set:` applies to an agent's call over an input that declares a
+// Default. The bridge filled the default in as the caller's own value, which
+// beats a profile, so `gen token --profile g32` gave a person base32 and an
+// agent granted exactly that profile hex — and the ledger said hex.
+func TestAProfilesSetBeatsADeclaredDefaultOverMCP(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("RTA_DATA_DIR", dir)
+	cfgPath := dir + "/config.yaml"
+	if err := writeFile(cfgPath, `
+profiles:
+  g32:
+    plugins:
+      gen:
+        set:
+          encoding: base32
+`); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("RTA_CONFIG", cfgPath)
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg := registry.New()
+	if err := reg.Register(plugin.Plugin{Name: "gen", Summary: "gen", Capabilities: []plugin.Capability{{
+		ID: "gen.token", Summary: "a token", Safety: plugin.Read,
+		Inputs: []plugin.Field{{Name: "encoding", Type: plugin.String, Config: "encoding", Default: "hex",
+			Options: []string{"hex", "base32"}, Help: "encoding"}},
+		Run: func(_ context.Context, req plugin.Request) (view.View, error) {
+			return view.Text{Body: "encoding=" + req.String("encoding")}, nil
+		},
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	resolver, _ := pluginconf.Resolve(cfg, reg.Origin)
+	s := connectWith(t, reg, Options{Origin: reg.Origin, Config: resolver.For, Profiles: cfg})
+	now := time.Now()
+	if verr := grant.Save([]grant.Grant{{
+		Target: "gen", Profile: "g32", ProfilePin: profile.ConnStampFor(cfg, "g32", "gen"),
+		Issued: now, Expires: now.Add(time.Hour),
+	}}); verr != nil {
+		t.Fatal(verr)
+	}
+	res := callTool(t, s, "gen_token", map[string]any{"profile": "g32"})
+	if got := contentText(t, res); res.IsError || !strings.Contains(got, "encoding=base32") {
+		t.Fatalf("an agent's call through the profile: %s, want base32", got)
+	}
+	entries, err := agentlog.Read(1)
+	if err != nil || len(entries) != 1 || entries[0].Args["encoding"] != "base32" {
+		t.Errorf("the ledger recorded %+v (%v), want the profile's encoding", entries, err)
+	}
+}

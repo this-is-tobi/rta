@@ -260,30 +260,56 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 			return errResult(verr), nil
 		}
 		rec.Profile = profileName
-		// Declared defaults apply to omitted arguments, exactly like the CLI.
 		// Local fields are dropped whatever the caller sent: they are absent
 		// from the schema, so anything arriving under that name was guessed,
 		// and a guessed credential is the one case worth discarding rather
 		// than acting on. Dropped, not refused the way an undeclared name is:
 		// an error naming the field would confirm to the model that the
 		// credential input exists, which is the disclosure Local is for.
+		//
+		// What is left is what the agent sent, and it is all that goes to
+		// Resolve as the caller's layer below. Declared defaults used to be
+		// filled in here as if the caller had sent them, and the caller's
+		// layer beats both the profile and the operator's config — so for
+		// every input declaring a Default, a configured limit, TTL, timeout
+		// or encoding never reached an agent's call, a profile's `set:` did
+		// not either, and a configured value outside the Options ran as the
+		// default where the CLI refused it. The CLI made the same mistake by
+		// reading cobra's baked-in defaults back (collectValues says so).
 		for _, f := range c.Inputs {
 			if f.Local {
 				delete(values, f.Name)
-				continue
-			}
-			if _, given := values[f.Name]; !given && f.Default != nil {
-				values[f.Name] = f.Default
 			}
 		}
-		if verr := toolcall.Require(c, values); verr != nil {
+		// What the gates below judge: the values the call will run with, as
+		// far as they are known before the gate — the caller's over the
+		// operator's config over the declared defaults, laid by Resolve
+		// itself so the layering cannot drift from the run's. Only the
+		// profile is missing, and it is resolved after consent on purpose
+		// (see below); it cannot move what a grant or a root is checked
+		// against, since ProfileFillable keeps it off Scope and Path.
+		//
+		// So a required input the config fills satisfies its requirement, a
+		// Path the config names is held to the root, a Scope the config
+		// names is the one the grant has to cover, and the ledger and the
+		// consent prompt show what will run. Local fields stay out, as they
+		// stay out of everything an agent's call is judged or recorded by.
+		gated := plugin.Resolve(c, plugin.Inputs{
+			Caller: values, ProfileName: profileName, Config: opts.pluginConfig(c),
+		})
+		for _, f := range c.Inputs {
+			if f.Local {
+				delete(gated, f.Name)
+			}
+		}
+		if verr := toolcall.Require(c, gated); verr != nil {
 			refusedBy(rec, verr)
 			return errResult(verr), nil
 		}
-		// Recorded here: after Local fields are gone and defaults are in,
-		// so the ledger shows the call as it would actually run — and
-		// before the gate, so a refusal records what was asked for.
-		rec.Args = auditArgs(c, values)
+		// Recorded here, so the ledger shows the call as it would run, and
+		// before the gate, so a refusal records what was asked for. Once the
+		// profile is filled in, the record is brought up to date with it.
+		rec.Args = auditArgs(c, gated)
 		// After defaults, deliberately, and this used to be before them.
 		//
 		// The old ordering exempted declared defaults from the root check, on
@@ -308,9 +334,22 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 		// The type check above stays before defaults, because its reason does
 		// survive: a default is rta's own value and is always well-typed, so
 		// only what arrived over the wire needs that scrutiny.
-		if verr := checkPaths(c, values, opts.Paths); verr != nil {
+		if verr := checkPaths(c, gated, opts.Paths); verr != nil {
 			refusedBy(rec, verr)
 			return errResult(verr), nil
+		}
+		// checkPaths writes the path it judged over the one it was given, and
+		// the handler has to receive that one (checkPaths says why). The run
+		// is built from the caller's layer, so the judged path goes into it
+		// — a default's or the config's included, which is the same value
+		// either way, now the resolved spelling of it.
+		for _, f := range c.Inputs {
+			if f.Type != plugin.Path || f.Local {
+				continue
+			}
+			if v, judged := gated[f.Name]; judged {
+				values[f.Name] = v
+			}
 		}
 		// The exposure gate said this agent may in principle make this kind of
 		// call. A grant says a person allowed this one, on this record, now —
@@ -383,14 +422,14 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 			Digest:  opts.artifact(grant.Namespace(c.ID)),
 			Active:  opts.active(),
 		}
-		release, covering, verr := grant.ReserveNaming(c, values, by)
+		release, covering, verr := grant.ReserveNaming(c, gated, by)
 		if verr != nil {
 			// Nobody pre-authorized it. With consent enabled, that is a
 			// question rather than an answer: park the call, ask the
 			// person, and proceed on their word.
 			// Everything about the refusal is preserved for the case where
 			// the answer never comes.
-			allowed, decided := askConsent(ctx, c, opts, values, profileName, verr, rec)
+			allowed, decided := askConsent(ctx, c, opts, gated, profileName, verr, rec)
 			if !allowed {
 				if decided == nil {
 					// Never asked: the refusal is the gate's own.
@@ -402,7 +441,7 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 					// grant.RefusedStale — but the two are fixed
 					// differently, and the person who has to fix it reads
 					// this file.
-					if verr.Code == "core.grant.required" && grant.RefusedStale(c, values, by) {
+					if verr.Code == "core.grant.required" && grant.RefusedStale(c, gated, by) {
 						rec.Note = "a grant covers this call but names a connection " +
 							"that is not the one it now resolves to — `rta doctor`"
 					}
@@ -517,6 +556,17 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 			// inputs, and a repository reached by walking upward out of one
 			// was never an argument.
 			WithConfinement(opts.Paths.Check)
+		// The record said what would run as far as it was known before the
+		// gate; with a profile filled in, it says what does.
+		if profileName != "" {
+			ran := run.Values()
+			for _, f := range c.Inputs {
+				if f.Local {
+					delete(ran, f.Name)
+				}
+			}
+			rec.Args = auditArgs(c, ran)
+		}
 		// The host's input guard, run here as well as inside c.Run, for the
 		// values toolcall.Validate never saw: what the operator's config or
 		// the profile supplied. Inside c.Run its refusal came back as the

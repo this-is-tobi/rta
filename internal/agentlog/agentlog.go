@@ -222,8 +222,11 @@ type Entry struct {
 	At   time.Time `json:"at"`
 	Cap  string    `json:"capability"`
 	Tool string    `json:"tool,omitempty"`
-	// Args are the arguments as the caller sent them, already redacted and
-	// model-cleaned by the bridge — the same treatment the result gets, for
+	// Args are the values the call runs with — what the caller sent, laid
+	// over the operator's config and the declared defaults, and the
+	// profile's once it is filled — not only what the agent typed, so an
+	// entry says what ran. They are already redacted and model-cleaned by
+	// the bridge — the same treatment the result gets, for
 	// the same reason: this file is read by people and by the next agent
 	// that greps it.
 	Args map[string]any `json:"args,omitempty"`

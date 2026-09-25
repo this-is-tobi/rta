@@ -688,11 +688,11 @@ func TestCallToolErrorCarriesCodeAndHint(t *testing.T) {
 func TestARefusedConfigValueIsNamedAsTheOperators(t *testing.T) {
 	t.Setenv("RTA_DATA_DIR", t.TempDir())
 	reg := registry.New()
-	// No Default: the bridge fills a declared default in as the caller's
-	// value, which config then never beats.
+	// A Default, as every built-in with Options has: the config value is
+	// the one the call would run with, so it is the one held.
 	if err := reg.Register(plugin.Plugin{Name: "demo", Summary: "demo", Capabilities: []plugin.Capability{{
 		ID: "demo.encode", Summary: "encodes", Safety: plugin.Read,
-		Inputs: []plugin.Field{{Name: "encoding", Type: plugin.String, Config: "encoding",
+		Inputs: []plugin.Field{{Name: "encoding", Type: plugin.String, Config: "encoding", Default: "hex",
 			Options: []string{"hex", "base32"}, Help: "encoding"}},
 		Run: func(_ context.Context, req plugin.Request) (view.View, error) {
 			return view.Text{Body: req.String("encoding")}, nil
@@ -713,6 +713,95 @@ func TestARefusedConfigValueIsNamedAsTheOperators(t *testing.T) {
 	// The argument the hint names does override it.
 	if res := callTool(t, s, "demo_encode", map[string]any{"encoding": "base32"}); res.IsError {
 		t.Errorf("the caller's own value was refused: %+v", res.Content)
+	}
+}
+
+// The operator's config applies to an agent's call over an input that
+// declares a Default, as it does on the CLI. The bridge filled every declared
+// default in as the caller's own value, and the caller's layer beats config,
+// so a configured limit, TTL, timeout or encoding never reached an agent's
+// call at all — `gen: {encoding: base32}` gave the CLI base32 and an agent
+// hex. The ledger says what ran.
+func TestConfigBeatsADeclaredDefaultOverMCP(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	reg := registry.New()
+	lo, hi := 1, 100
+	if err := reg.Register(plugin.Plugin{Name: "demo", Summary: "demo", Capabilities: []plugin.Capability{{
+		ID: "demo.encode", Summary: "encodes", Safety: plugin.Read,
+		Inputs: []plugin.Field{
+			{Name: "encoding", Type: plugin.String, Config: "encoding", Default: "hex",
+				Options: []string{"hex", "base32"}, Help: "encoding"},
+			{Name: "limit", Type: plugin.Int, Config: "limit", Default: 15, Min: lo, Max: hi, Help: "how many"},
+		},
+		Run: func(_ context.Context, req plugin.Request) (view.View, error) {
+			return view.Text{Body: fmt.Sprintf("%s/%d", req.String("encoding"), req.Int("limit"))}, nil
+		},
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	s := connectWith(t, reg, Options{Config: func(string) map[string]any {
+		return map[string]any{"encoding": "base32", "limit": 3}
+	}})
+	res := callTool(t, s, "demo_encode", nil)
+	if text := res.Content[0].(*sdk.TextContent).Text; res.IsError || !strings.Contains(text, "base32/3") {
+		t.Fatalf("an agent's call ran with %s, want the configured base32/3", text)
+	}
+	entries, err := agentlog.Read(1)
+	if err != nil || len(entries) != 1 || entries[0].Args["encoding"] != "base32" {
+		t.Errorf("the ledger recorded %+v (%v), want the configured encoding", entries, err)
+	}
+	// And the agent's own argument still beats the operator's.
+	res = callTool(t, s, "demo_encode", map[string]any{"encoding": "hex"})
+	if text := res.Content[0].(*sdk.TextContent).Text; res.IsError || !strings.Contains(text, "hex/3") {
+		t.Errorf("an agent's own encoding: %s, want hex/3", text)
+	}
+}
+
+// A path the operator's config names is held to the server's root like one
+// the agent sent, now that config reaches an agent's call, and the handler
+// gets the path the guard judged rather than the spelling in the file: the
+// run is built from the caller's layer, which the judged path has to be
+// written back into, or the guard and the handler read two strings.
+func TestAConfiguredPathIsHeldToTheRootAndArrivesAsJudged(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "sub"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	guard, err := pathguard.New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got string
+	reg := registry.New()
+	if err := reg.Register(plugin.Plugin{Name: "demo", Summary: "demo", Capabilities: []plugin.Capability{{
+		ID: "demo.list", Summary: "lists", Safety: plugin.Read,
+		Inputs: []plugin.Field{{Name: "dir", Type: plugin.Path, Config: "dir", Help: "where"}},
+		Run: func(_ context.Context, req plugin.Request) (view.View, error) {
+			got = req.String("dir")
+			return view.Text{Body: "listed"}, nil
+		},
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	configured := t.TempDir()
+	s := connectWith(t, reg, Options{Paths: guard, Config: func(string) map[string]any {
+		return map[string]any{"dir": configured}
+	}})
+	res := callTool(t, s, "demo_list", nil)
+	if text := res.Content[0].(*sdk.TextContent).Text; !res.IsError ||
+		!strings.Contains(text, "core.mcp.path.outside") || got != "" {
+		t.Fatalf("a configured path outside the root: %s (handler got %q)", text, got)
+	}
+
+	configured = filepath.Join(root, "sub", "..", "sub")
+	want, verr := guard.Check("dir", configured)
+	if verr != nil {
+		t.Fatal(verr)
+	}
+	if res := callTool(t, s, "demo_list", nil); res.IsError || got != want {
+		t.Errorf("a configured path inside the root reached the handler as %q, want the judged %q (%+v)",
+			got, want, res.Content)
 	}
 }
 
