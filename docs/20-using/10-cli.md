@@ -80,7 +80,7 @@ Exit codes make the loop safe to write, and they are the next thing worth knowin
 | --- | --- |
 | `0` | Success |
 | `1` | rta refused, or the operation failed — a structured error with a code and a hint |
-| `2` | Something unexpected went wrong |
+| `2` | The command line was wrong — an unknown command or flag, a missing or extra argument, a value a flag cannot take — so nothing ran. The error's code is `core.usage`. A failure rta has no code for exits `2` as well, written as plain text whatever `-o` says |
 | `3` | Confirmation required, and `--yes` was not given |
 
 Code `3` is the one worth handling in scripts. It means the command was destructive and nobody confirmed — not that anything failed.
@@ -88,6 +88,7 @@ Code `3` is the one worth handling in scripts. It means the command was destruct
 ```bash
 rta note rm 4 || case $? in
   3) echo "needs --yes" ;;
+  2) echo "the command line is wrong" ;;
   1) echo "refused or failed" ;;
 esac
 ```

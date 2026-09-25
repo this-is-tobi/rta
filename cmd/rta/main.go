@@ -191,9 +191,10 @@ func main() {
 //
 // The split is app.RenderTopLevelError's: an error already printed by the
 // command that produced it is swallowed, a *view.Error is rendered in the
-// format the caller asked for, and anything else — a usage mistake, a bad
-// flag — is fang's, because fang is what makes those look like the rest of
-// the help.
+// format the caller asked for, and anything else is fang's. A usage mistake —
+// a bad flag, a missing argument — is no longer in that rest: it is coded
+// app.CodeUsage where it is found, so `-o json` gets it as json like every
+// other refusal. What fang still styles is an error nothing coded.
 // It closes over the root because the render options are read back off its
 // parsed flags — which is where the config file's default lives too, so what
 // an error is formatted with is exactly what the command would have used.

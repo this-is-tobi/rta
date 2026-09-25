@@ -258,6 +258,79 @@ func TestCapabilityErrorRendering(t *testing.T) {
 	}
 }
 
+// A mistake on the command line is refused as core.usage, in the format the
+// command line asked for, and exits 2.
+//
+// It was the one refusal left as a plain error, for fang to style: under
+// `-o json` a missing argument wrote a box of prose to stderr with no code
+// in it. Every way the command line can be wrong is coded where it is found —
+// cobra's argument and flag checks, rta's own positional checks, the unknown
+// command at any depth, a value a positional cannot take.
+func TestAUsageMistakeIsCodedAndExitsTwo(t *testing.T) {
+	reg := testRegistry(t)
+	for _, args := range [][]string{
+		{"demo", "item", "pick"},                 // a missing argument
+		{"demo", "item", "pick", "a", "b"},       // an argument too many
+		{"demo", "item", "list", "--nope"},       // an unknown flag
+		{"demo", "item", "list", "--limit", "x"}, // a value the flag cannot take
+		{"demo", "item", "pick", "--name", "x"},  // a positional given as a flag
+		{"demo", "nope"},                         // an unknown command in a group
+		{"nope"},                                 // an unknown command at the root
+		{"explain", "a", "b", "c"},               // cobra's own argument check
+		{"demo", "item", "list", "-o", "xml"},    // an --output nothing renders
+	} {
+		t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
+		t.Setenv("RTA_DATA_DIR", t.TempDir())
+		root := NewRoot(reg, "test")
+		var out, errOut bytes.Buffer
+		root.SetOut(&out)
+		root.SetErr(&errOut)
+		root.SetArgs(append([]string{"-o", "json"}, args...))
+		err := root.ExecuteContext(context.Background())
+		var ve *view.Error
+		if !errors.As(err, &ve) || ve.Code != CodeUsage || ExitCode(err) != 2 {
+			t.Errorf("%v: err = %#v (exit %d), want %s and exit 2", args, err, ExitCode(err), CodeUsage)
+			continue
+		}
+		var buf bytes.Buffer
+		if !RenderTopLevelError(&buf, root, err) {
+			t.Errorf("%v: the usage error was left for fang", args)
+			continue
+		}
+		if args[len(args)-1] == "xml" {
+			continue // unrenderable as asked, so written in the default
+		}
+		var env map[string]any
+		if jerr := json.Unmarshal(buf.Bytes(), &env); jerr != nil || env["code"] != CodeUsage {
+			t.Errorf("%v: rendered %q (%v), want a json error coded %s", args, buf.String(), jerr, CodeUsage)
+		}
+	}
+}
+
+// Every spelling pflag takes for --output is found without parsing the rest,
+// the last one winning, and nothing after a bare --.
+func TestTheOutputIsFoundOnACommandLinePflagStoppedOn(t *testing.T) {
+	for _, c := range []struct {
+		args []string
+		want string
+		ok   bool
+	}{
+		{[]string{"net", "dns", "x", "--bogus", "-o", "json"}, "json", true},
+		{[]string{"-ojson"}, "json", true},
+		{[]string{"-o=yaml"}, "yaml", true},
+		{[]string{"--output", "csv"}, "csv", true},
+		{[]string{"--output=md", "-o", "json"}, "json", true},
+		{[]string{"note", "add", "--", "-o", "json"}, "", false},
+		{[]string{"-o"}, "", false},
+		{[]string{"net", "dns", "x"}, "", false},
+	} {
+		got, ok := outputOnCommandLine(c.args)
+		if got != c.want || ok != c.ok {
+			t.Errorf("%v = %q, %v; want %q, %v", c.args, got, ok, c.want, c.ok)
+		}
+	}
+}
+
 func TestUnknownSubcommandIsUsageError(t *testing.T) {
 	_, _, err := run(t, testRegistry(t), "demo", "nope")
 	if err == nil {
@@ -1044,11 +1117,13 @@ func TestATopLevelErrorHonoursTheOutputFormat(t *testing.T) {
 		t.Errorf("a marked error was printed a second time: %s", buf.String())
 	}
 
-	// And a usage error is not rta's to format — fang makes those match the
-	// help, so the handler must decline them.
+	// And an error nothing coded is declined, for fang to style. A mistake on
+	// the command line is not one: it is coded as CodeUsage where it is made
+	// (TestAUsageMistakeIsCodedAndExitsTwo), so what is left here is only
+	// what nothing anticipated.
 	buf.Reset()
-	if RenderTopLevelError(&buf, NewRoot(reg, "test"), errors.New("unknown flag: --nope")) {
-		t.Error("a plain error was claimed, so fang never styles a usage mistake")
+	if RenderTopLevelError(&buf, NewRoot(reg, "test"), errors.New("something nobody coded")) {
+		t.Error("a plain error was claimed, so fang never styles what nothing coded")
 	}
 	if buf.Len() != 0 {
 		t.Errorf("a declined error still wrote %q", buf.String())
