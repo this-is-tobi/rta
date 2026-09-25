@@ -93,8 +93,9 @@ func mapStrings(v View, f func(string) string) (View, bool) {
 		}
 		red, dc := mapNames(t.Redacted, f)
 		warns, wc := mapErrors(t.Warnings, f)
-		if cc || rc || pc || dc || wc {
-			t.Columns, t.Rows, t.Page, t.Redacted, t.Warnings = cols, rows, page, red, warns
+		empty := f(t.Empty)
+		if cc || rc || pc || dc || wc || empty != t.Empty {
+			t.Columns, t.Rows, t.Page, t.Redacted, t.Warnings, t.Empty = cols, rows, page, red, warns, empty
 			return t, true
 		}
 	case Chart:

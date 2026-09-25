@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -210,6 +211,52 @@ func TestAGridCellDoesNotBreakOnAHyphen(t *testing.T) {
 	// nothing.
 	if strings.Contains(out, nonBreakingHyphen) {
 		t.Errorf("a non-breaking hyphen survived into the output:\n%s", out)
+	}
+}
+
+// An empty table is a sentence to a person and a table to everything else.
+//
+// A listing with nothing in it answered with a Text view, which every format
+// carried: `-o json | jq '.rows[]'` met a view with no rows, and -o csv a
+// shape it refused. The table now carries the sentence beside it, for the
+// renderers drawn for a person alone.
+func TestAnEmptyTableIsASentenceOnlyToAPerson(t *testing.T) {
+	const say = "Nothing here yet — add one with: rta note add"
+	empty := view.Table{
+		Columns:  []view.Column{{Name: "ID", Kind: view.KindNumber}, {Name: "Note"}},
+		Empty:    say,
+		Warnings: []view.Error{{Code: "note.store.partial", Message: "one file was skipped"}},
+	}
+	for _, width := range []int{0, 80} {
+		out, _ := renderWidth(t, empty, Options{Width: width})
+		if !strings.Contains(out, say) || isGrid(out) || !strings.Contains(out, "one file was skipped") {
+			t.Errorf("pretty at width %d = %q, want the sentence and the warning, no grid", width, out)
+		}
+	}
+	for _, f := range []Format{JSON, YAML, CSV, Markdown} {
+		if out := render(t, empty, f); strings.Contains(out, "Nothing here yet") {
+			t.Errorf("%s carried the sentence meant for a screen:\n%s", f, out)
+		}
+	}
+	if out := render(t, empty, CSV); strings.TrimSpace(out) != "ID,Note" {
+		t.Errorf("csv = %q, want the header row alone", out)
+	}
+	var env struct {
+		Type string     `json:"type"`
+		Rows [][]string `json:"rows"`
+	}
+	if err := json.Unmarshal([]byte(render(t, empty, JSON)), &env); err != nil || env.Type != "table" || env.Rows == nil {
+		t.Errorf("json = %+v (%v), want a table whose rows are an empty array", env, err)
+	}
+	// A table with nothing to say keeps its headings, and one with rows
+	// never shows the sentence.
+	empty.Empty, empty.Warnings = "", nil
+	if out, _ := renderWidth(t, empty, Options{Width: 80}); !isGrid(out) {
+		t.Errorf("an empty table with no sentence lost its headings:\n%s", out)
+	}
+	full := view.Table{Columns: empty.Columns, Rows: [][]string{{"1", "x"}}, Empty: say}
+	if out, _ := renderWidth(t, full, Options{Width: 80}); strings.Contains(out, "Nothing here yet") {
+		t.Errorf("a table with rows showed the empty sentence:\n%s", out)
 	}
 }
 
