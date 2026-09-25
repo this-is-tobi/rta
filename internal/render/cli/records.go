@@ -341,9 +341,10 @@ func labelLine(label string, st styles) string {
 	if st.width <= 0 || budget < 1 || lipgloss.Width(label) <= budget {
 		return indent + st.key.Render(label)
 	}
-	lines := hardBreakOverlong(ansi.Wordwrap(shieldHyphens(label), budget, ""), budget)
+	shield, restore := hyphenShield(label)
+	lines := hardBreakOverlong(ansi.Wordwrap(shield(label), budget, ""), budget)
 	for i, line := range lines {
-		lines[i] = indent + st.key.Render(restoreHyphens(strings.TrimRight(line, " ")))
+		lines[i] = indent + st.key.Render(restore(strings.TrimRight(line, " ")))
 	}
 	return strings.Join(lines, "\n")
 }

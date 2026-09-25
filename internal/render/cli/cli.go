@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 
 	"charm.land/glamour/v2"
@@ -475,16 +476,17 @@ func prettyTable(w io.Writer, t view.Table, st styles, highlight int) error {
 	// The status lookup below deliberately reads the *unshielded* rows: it
 	// classifies a cell by its text, and a vocabulary that ever grows a
 	// hyphenated word would silently stop matching.
+	shield, restore := hyphenShield(append(slices.Concat(rows...), headers...)...)
 	display := make([][]string, len(rows))
 	for i, row := range rows {
 		display[i] = make([]string, len(row))
 		for j, cell := range row {
-			display[i][j] = shieldHyphens(cell)
+			display[i][j] = shield(cell)
 		}
 	}
 	shieldedHeaders := make([]string, len(headers))
 	for i, h := range headers {
-		shieldedHeaders[i] = shieldHyphens(h)
+		shieldedHeaders[i] = shield(h)
 	}
 
 	// Tables are rebuilt per attempt: lipgloss tables memoize layout, so a
@@ -541,7 +543,7 @@ func prettyTable(w io.Writer, t view.Table, st styles, highlight int) error {
 	for w := st.width; st.width > 0 && w >= 20 && lipgloss.Width(rendered) > st.width; w -= 2 {
 		rendered = build(w)
 	}
-	if _, err := fmt.Fprintln(w, restoreHyphens(rendered)); err != nil {
+	if _, err := fmt.Fprintln(w, restore(rendered)); err != nil {
 		return err
 	}
 	var footer []string
@@ -901,9 +903,10 @@ func wrap(s string, width int, cont string) string {
 	// `--max-uses` break the same way wherever they land near the margin.
 	// Every hyphen in this tool is inside an identifier somebody may be about
 	// to paste.
-	lines := hardBreakOverlong(ansi.Wordwrap(shieldHyphens(s), budget, ""), budget)
+	shield, restore := hyphenShield(s)
+	lines := hardBreakOverlong(ansi.Wordwrap(shield(s), budget, ""), budget)
 	for i, line := range lines {
-		lines[i] = restoreHyphens(line)
+		lines[i] = restore(line)
 	}
 	for i, line := range lines {
 		// ansi.Wrap keeps the space it broke on; left in, it shows up as a
@@ -925,12 +928,34 @@ func wrap(s string, width int, cont string) string {
 // inside an escape sequence — SGR is digits, semicolons and a letter, and
 // sanitize.go has already removed OSC (the one escape that could hold a URL)
 // before anything reaches here.
+//
+// **Only for text that does not already hold one.** The restore cannot tell a
+// stand-in from a U+2011 that was in the data, and turned both into "-", so a
+// host or a file name holding the character was drawn as a different string
+// — one that names nothing when copied, and a lookalike shown as the name it
+// imitates. hyphenShield hands such text the identity instead, and that text
+// may break at a hyphen, which is the smaller wrong.
 const nonBreakingHyphen = "‑"
 
 func shieldHyphens(s string) string { return strings.ReplaceAll(s, "-", nonBreakingHyphen) }
 func restoreHyphens(s string) string {
 	return strings.ReplaceAll(s, nonBreakingHyphen, "-")
 }
+
+// hyphenShield returns the shield and its restore for a render built from
+// texts: the substitution when none of them holds the stand-in, and the
+// identity for both when one does. All of them, because the restore runs
+// over the finished render, where a table's cells are no longer apart.
+func hyphenShield(texts ...string) (shield, restore func(string) string) {
+	for _, s := range texts {
+		if strings.Contains(s, nonBreakingHyphen) {
+			return asIs, asIs
+		}
+	}
+	return shieldHyphens, restoreHyphens
+}
+
+func asIs(s string) string { return s }
 
 // tokenBreaks are the characters a mid-token break may land after.
 //
