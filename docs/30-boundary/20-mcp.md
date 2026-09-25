@@ -92,7 +92,7 @@ A few capabilities are not on offer at any price. `grant`, `agent`, `lock`, `ope
 
 ### The path gate
 
-Every path argument must sit under a **root**. The default root is the directory the server was started in; widen it with `--root`, which is repeatable.
+Every path a call would use must sit under a **root** — one the agent sent, a capability's declared default, or one your config names. The default root is the directory the server was started in; widen it with `--root`, which is repeatable.
 
 ```bash
 rta mcp serve --root ~/projects --root /tmp/scratch
@@ -106,6 +106,12 @@ rta says its roots out loud at startup rather than leaving them to be discovered
 rta mcp server listening on stdio
 path arguments confined to: /Users/you/projects, /tmp/scratch
 ```
+
+### What an argument is held to
+
+Before any gate, every argument is checked against the tool's published schema and the capability's declaration. A value of the wrong shape, or an argument the tool does not have, is `core.mcp.badargs`. A value of the right shape the declaration does not take is refused with the code a person at the CLI gets for the same mistake — `core.input.option` for a value none of its options name, `core.input.range` for a number outside its range — and, being refused first, it spends no grant and asks you nothing. An input the CLI reads from a pipe when it is left out, such as the token `codec jwt` decodes, is required here, because an agent has no pipe to give.
+
+An agent's call runs with your config and a profile's `set:` exactly as yours does: what it sends beats them, and what it leaves out comes from them before a declared default. The grant gate, the consent prompt, the path gate and [the record](./40-audit-trail.md) all see the values the call runs with, so a value your config sets that the CLI would refuse is refused here too, in words that say it is yours to change.
 
 ### One gate
 
