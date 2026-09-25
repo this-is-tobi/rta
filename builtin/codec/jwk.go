@@ -12,6 +12,7 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/pem"
 	"fmt"
 	"math/big"
 	"strings"
@@ -388,7 +389,7 @@ func runJWK(_ context.Context, req plugin.Request) (view.View, error) {
 		hint := "a JWK is a JSON object with a kty member, and a key set one with a keys list"
 		switch {
 		case strings.HasPrefix(raw, "-----BEGIN"):
-			hint = "that is PEM — `rta cert inspect` reads a certificate"
+			hint = pemHint(raw)
 		case strings.Count(raw, ".") == 2 || strings.Count(raw, ".") == 4:
 			hint = "that looks like a token — `rta codec jwt` reads those"
 		}
@@ -406,6 +407,24 @@ func runJWK(_ context.Context, req plugin.Request) (view.View, error) {
 			WithHint("a JWK is a JSON object with a kty member, and a key set one with a keys list")
 	}
 	return keyView(doc), nil
+}
+
+// pemHint says where PEM handed to codec.jwk goes, by what its first block
+// holds. Every block was told that `rta cert inspect` reads a certificate,
+// and a public key, the PEM somebody pastes here for its thumbprint, is none:
+// cert inspect refuses it, and takes a file or a host, not pasted text.
+func pemHint(raw string) string {
+	block, _ := pem.Decode([]byte(repairPEM(raw)))
+	switch {
+	case block == nil:
+		return "that is PEM, and codec.jwk reads JSON Web Keys"
+	case block.Type == "CERTIFICATE":
+		return "that is a PEM certificate — saved to a file, `rta cert inspect <file>` reads it"
+	case strings.HasSuffix(block.Type, "KEY"):
+		return "that is a PEM key, and codec.jwk reads JSON Web Keys — `rta codec jwt --key` takes a PEM key as it is, " +
+			"to verify a token with"
+	}
+	return "that is PEM, and codec.jwk reads JSON Web Keys"
 }
 
 func keyView(o object) view.View {
