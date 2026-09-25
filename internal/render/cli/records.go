@@ -9,7 +9,6 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/this-is-tobi/rta/internal/render/theme"
-	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -310,10 +309,6 @@ func prettyRecords(w io.Writer, t view.Table, headers []string, rows [][]string,
 				return err
 			}
 		}
-	}
-	if t.Total > len(t.Rows) {
-		_, err := fmt.Fprintln(w, st.muted.Render(fmt.Sprintf("%d of %s", len(t.Rows), format.CountOf(t.Total, "row"))))
-		return err
 	}
 	return nil
 }

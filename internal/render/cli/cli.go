@@ -454,9 +454,12 @@ func prettyTable(w io.Writer, t view.Table, st styles, highlight int) error {
 	// Records use the whole width for one field at a time, which is what a
 	// narrow terminal has to give.
 	if !fitsAsGrid(t, headers, st) {
-		return prettyRecords(w, t, headers, rows, st, recordStyle{
+		if err := prettyRecords(w, t, headers, rows, st, recordStyle{
 			highlight: highlight, status: statusCol, usage: usageCol,
-		})
+		}); err != nil {
+			return err
+		}
+		return tableFooter(w, t, st)
 	}
 
 	// Where the slack goes when there is room to spare. Computed once, from
@@ -547,6 +550,18 @@ func prettyTable(w io.Writer, t view.Table, st styles, highlight int) error {
 	if _, err := fmt.Fprintln(w, restore(rendered)); err != nil {
 		return err
 	}
+	return tableFooter(w, t, st)
+}
+
+// tableFooter writes what is said under a table in either layout: how much of
+// the whole the rows are, where the listing continues, and what it could not
+// read.
+//
+// Shared rather than written by each layout, because the record layout
+// returned before any of it and printed only the count. A partial listing
+// read as partial on a wide terminal and as complete on a narrow one — a
+// split pane, a phone over ssh — which is where it is hardest to notice.
+func tableFooter(w io.Writer, t view.Table, st styles) error {
 	var footer []string
 	if t.Total > len(t.Rows) {
 		footer = append(footer, fmt.Sprintf("%d of %s", len(t.Rows), format.CountOf(t.Total, "row")))
