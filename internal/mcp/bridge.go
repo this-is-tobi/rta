@@ -9,7 +9,6 @@ package mcp
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"runtime/debug"
@@ -199,12 +198,14 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 	{
 		values := map[string]any{}
 		if raw := req.Params.Arguments; len(raw) > 0 {
-			if err := json.Unmarshal(raw, &values); err != nil {
+			decoded, err := toolcall.Decode(raw)
+			if err != nil {
 				verr := view.Errorf("core.mcp.badargs", "arguments must be a JSON object").
 					WithHint(err.Error())
 				refusedBy(rec, verr)
 				return errResult(verr), nil
 			}
+			values = decoded
 			// `"arguments": null` is legal JSON and legal MCP — the field is
 			// optional and clients do send it explicitly — and unmarshalling
 			// null into a map sets the map to nil rather than leaving the
@@ -231,6 +232,12 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 		// defaults or Local-stripping touch the map: a default is our own
 		// value and always well-typed, so only what arrived over the wire
 		// needs the scrutiny.
+		//
+		// And before the gate, for what the declaration takes as well as for
+		// its shape: an out-of-range timeout cleared the grant gate, spent
+		// the one use a --max-uses 1 grant had, and was then refused by the
+		// guard in front of the handler — so the corrected retry was refused
+		// for want of a grant.
 		if verr := toolcall.Validate(c, values); verr != nil {
 			refusedBy(rec, verr)
 			return errResult(verr), nil

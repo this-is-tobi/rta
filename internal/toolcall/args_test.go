@@ -1,6 +1,7 @@
 package toolcall
 
 import (
+	"encoding/json"
 	"math"
 	"strings"
 	"testing"
@@ -10,9 +11,8 @@ import (
 
 // Direct tests for the MCP argument-validation boundary itself, rather than
 // only indirectly through internal/mcp's black-box bridge tests — the gap
-// that let checkEnum's type-switch omission (Int/Float/Bool Options
-// silently unenforced) go uncaught: internal/mcp's own tests never happened
-// to exercise Options on a non-string field, so nothing here failed either.
+// that once let Options on a number go unenforced here: internal/mcp's own
+// tests never happened to exercise that shape, so nothing failed either.
 
 func field(name string, typ plugin.FieldType, opts ...string) plugin.Field {
 	return plugin.Field{Name: name, Type: typ, Options: opts}
@@ -90,6 +90,8 @@ func TestRequireEnforcesRequiredFieldsAndExemptsLocalOnes(t *testing.T) {
 // saturates to MaxInt64, whose float64 is 2^63 again — so the value passed
 // as an integer that nothing downstream could read, and `net_ping` with it
 // reached a handler as a timeout of 0. The edges of int64 itself still pass.
+// A channel that hands Validate a float64 rather than Decode's exact number
+// is still held to that.
 func TestValidateRefusesAnIntegerPastWhatInt64Holds(t *testing.T) {
 	c := plugin.Capability{ID: "x.y", Inputs: []plugin.Field{{Name: "timeout", Type: plugin.Int}}}
 	for _, n := range []float64{1 << 63, -(1 << 64), 1e300, math.Inf(1), math.NaN(), 1.5} {
@@ -124,63 +126,84 @@ func TestAnEnumMissIsHintedWithTheEnum(t *testing.T) {
 	}
 }
 
-// The fix: Options on an Int, Float or Bool field used to be silently
-// unenforced — checkEnum's type switch only ever populated anything to
-// check for string and []any, so a numeric or boolean value always found
-// nothing to compare against and passed regardless of what Options said.
-func TestCheckEnumEnforcesOptionsOnNumericAndBooleanFields(t *testing.T) {
-	t.Run("int", func(t *testing.T) {
-		f := field("risk", plugin.Int, "1", "2", "3")
-		if err := checkEnum(f, float64(2)); err != nil {
-			t.Errorf("an allowed int value was refused: %v", err)
+// The same mistake answers with the same code on every surface. An option
+// miss was core.mcp.badargs over MCP and core.input.option on the CLI, and a
+// number outside its range was refused only after the grant gate had spent a
+// use on it and the operator had been asked to approve it; both are the
+// host's refusal now, in the host's words, before either.
+func TestAnOptionOrRangeMissIsTheHostsRefusal(t *testing.T) {
+	one := 1
+	most := 1024
+	c := plugin.Capability{ID: "gen.password", Inputs: []plugin.Field{
+		field("encoding", plugin.String, "hex", "base64"),
+		{Name: "length", Type: plugin.Int, Min: one, Max: most},
+		{Name: "count", Type: plugin.Int},
+	}}
+	cases := []struct {
+		raw, code, says string
+	}{
+		{`{"encoding": "nope"}`, "core.input.option", `gen.password takes one of hex, base64 for encoding, not "nope"`},
+		{`{"length": 0}`, "core.input.range", "gen.password takes a length from 1 to 1024, not 0"},
+		// Exactly the number sent. A float64 held neither end: int64's
+		// largest was refused as "past what an integer holds", one below its
+		// smallest was quoted back as a number nobody sent, and a large one
+		// in range of int64 came back rounded.
+		{`{"length": 9223372036854775807}`, "core.input.range", "not 9223372036854775807"},
+		{`{"length": -9223372036854775809}`, "core.input.range", "not -9223372036854775809"},
+		{`{"length": 9223372036854775000}`, "core.input.range", "not 9223372036854775000"},
+		{`{"length": 1e400}`, "core.input.range", "not 1e400"},
+		// Unbounded, an integer past what the host reads is the host's
+		// type refusal, quoting it the same way.
+		{`{"count": 18446744073709551616}`, "core.input.type", "not 18446744073709551616"},
+	}
+	for _, tc := range cases {
+		values, err := Decode([]byte(tc.raw))
+		if err != nil {
+			t.Fatalf("%s: %v", tc.raw, err)
 		}
-		if err := checkEnum(f, float64(999)); err == nil {
-			t.Error("an out-of-set int value was accepted")
+		verr := Validate(c, values)
+		if verr == nil || verr.Code != tc.code || !strings.Contains(verr.Message, tc.says) {
+			t.Errorf("%s: %v, want %s saying %q", tc.raw, verr, tc.code, tc.says)
 		}
-	})
-	t.Run("float", func(t *testing.T) {
-		f := field("ratio", plugin.Float, "0.5", "1.5")
-		if err := checkEnum(f, 1.5); err != nil {
-			t.Errorf("an allowed float value was refused: %v", err)
-		}
-		if err := checkEnum(f, 3.14); err == nil {
-			t.Error("an out-of-set float value was accepted")
-		}
-	})
-	t.Run("bool", func(t *testing.T) {
-		// Contrived (a bool has only two values anyway) but the type gap is
-		// the same one Int/Float have, and this is the third case
-		// checkFieldType's switch feeds into checkEnum.
-		f := field("flag", plugin.Bool, "true")
-		if err := checkEnum(f, true); err != nil {
-			t.Errorf("an allowed bool value was refused: %v", err)
-		}
-		if err := checkEnum(f, false); err == nil {
-			t.Error("an out-of-set bool value was accepted")
-		}
-	})
-	t.Run("string, unaffected", func(t *testing.T) {
-		f := field("color", plugin.String, "red", "green")
-		if err := checkEnum(f, "red"); err != nil {
-			t.Errorf("an allowed string value was refused: %v", err)
-		}
-		if err := checkEnum(f, "blue"); err == nil {
-			t.Error("an out-of-set string value was accepted")
-		}
-	})
+	}
 }
 
-// The same enforcement reached through the full Validate path a real MCP
-// call goes through, not just the unit-level checkEnum call above.
-func TestValidateEnforcesEnumOnAnIntField(t *testing.T) {
-	c := plugin.Capability{ID: "x.y", Inputs: []plugin.Field{
-		field("risk", plugin.Int, "1", "2", "3"),
-	}}
-	if verr := Validate(c, map[string]any{"risk": float64(2)}); verr != nil {
-		t.Fatalf("an allowed value was refused: %v", verr)
+// A whole number is an integer however it is written, as JSON Schema's
+// "integer" says: a client that serialises every number as a double sends
+// 3.0, and one that shortens sends 1e2. Both reach the handler as what they
+// are, and a fraction is still refused as not one.
+func TestAWholeNumberIsAnIntegerHoweverItIsWritten(t *testing.T) {
+	c := plugin.Capability{ID: "x.y", Inputs: []plugin.Field{{Name: "limit", Type: plugin.Int}}}
+	for raw, want := range map[string]int{`{"limit": 3.0}`: 3, `{"limit": 1e2}`: 100, `{"limit": -0}`: 0} {
+		values, err := Decode([]byte(raw))
+		if err != nil {
+			t.Fatalf("%s: %v", raw, err)
+		}
+		if verr := Validate(c, values); verr != nil {
+			t.Errorf("%s was refused: %v", raw, verr)
+			continue
+		}
+		req := plugin.ResolveRequest(c, plugin.Inputs{Caller: values}, false, false)
+		if got := req.Int("limit"); got != want {
+			t.Errorf("%s reached the handler as %d, want %d", raw, got, want)
+		}
 	}
-	if verr := Validate(c, map[string]any{"risk": float64(999)}); verr == nil {
-		t.Fatal("an out-of-set int value passed Validate despite a declared Options list")
+	values, _ := Decode([]byte(`{"limit": 2.5}`))
+	if verr := Validate(c, values); verr == nil || verr.Code != "core.mcp.badargs" {
+		t.Errorf("a fraction for an integer: %v", verr)
+	}
+}
+
+// Decode reads what json.Unmarshal read, numbers aside: an object, null, and
+// nothing after it.
+func TestDecodeReadsAnObjectAndNothingElse(t *testing.T) {
+	if values, err := Decode([]byte(`null`)); err != nil || values != nil {
+		t.Errorf("null: %v, %v", values, err)
+	}
+	for _, raw := range []string{`[1]`, `"x"`, `{"a": 1} {"b": 2}`, `{"a": 1`} {
+		if _, err := Decode([]byte(raw)); err == nil {
+			t.Errorf("%s was decoded", raw)
+		}
 	}
 }
 
@@ -207,6 +230,8 @@ func TestJSONKindNamesValuesTheWayAReaderThinksOfThem(t *testing.T) {
 		{nil, "null"},
 		{"x", "a string"},
 		{float64(1), "a number"},
+		{int64(1), "a number"},
+		{json.Number("1e400"), "a number"},
 		{true, "a boolean"},
 		{[]any{1}, "an array"},
 		{map[string]any{}, "an object"},

@@ -11,7 +11,11 @@
 package toolcall
 
 import (
+	"bytes"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"math"
 	"sort"
 	"strconv"
@@ -25,10 +29,73 @@ import (
 // is validated against the declaration before anything runs, and refusals
 // name what was accepted rather than only what was not.
 
+// Decode reads a call's arguments with every number exact: an integer int64
+// holds arrives as an int64, any other number a float64 holds as a float64,
+// and a whole number past int64 as the literal that was sent.
+//
+// json.Unmarshal hands every number over as a float64, which holds an
+// integer exactly only up to 2^53, and the refusals that followed quoted
+// what the float64 had made of it. int64's largest value rounded up to 2^63
+// and was refused as "past what an integer holds", although the CLI reads
+// it and refuses it by its range; one below int64's smallest rounded to the
+// smallest and was refused as that, a number the caller never sent. Kept as
+// the literal, a number nothing reads is refused by the host's own rule,
+// quoting it.
+//
+// A nil map for `null`, as json.Unmarshal gives: the caller decides what an
+// absent object means.
+func Decode(raw []byte) (map[string]any, error) {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	var values map[string]any
+	if err := dec.Decode(&values); err != nil {
+		return nil, err
+	}
+	// A Decoder stops after the first value where json.Unmarshal refused
+	// anything after it, and the two must read one body the same way.
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("the arguments object is followed by more")
+	}
+	for name, v := range values {
+		if n, ok := v.(json.Number); ok {
+			values[name] = exact(n)
+		}
+	}
+	return values, nil
+}
+
+// exact is n as the Go number the host reads it as, or n itself when no Go
+// number holds it the way it was written.
+func exact(n json.Number) any {
+	i, err := strconv.ParseInt(n.String(), 10, 64)
+	if err == nil {
+		return i
+	}
+	if errors.Is(err, strconv.ErrRange) {
+		return n
+	}
+	x, err := strconv.ParseFloat(n.String(), 64)
+	if err != nil || (x == math.Trunc(x) && (x < math.MinInt64 || x >= math.MaxInt64)) {
+		return n
+	}
+	return x
+}
+
 // Validate checks every argument a model-facing caller actually sent
 // against the declaration. Exported because the boundary grammar has one
 // home rather than one copy per channel: a fix here lands on every caller
 // by construction.
+//
+// Two kinds of refusal, told apart by their codes. A value of the wrong
+// shape — a string where the schema says integer, an argument the tool does
+// not have — is core.mcp.badargs: a call the published schema already
+// ruled out. A value of the right shape that the declaration still does not
+// take — none of the Options, outside Min and Max — is the host's own
+// refusal, plugin.CheckInputs', with the code and the words the CLI answers
+// the same mistake with. It is checked here, on what was sent, rather than
+// left to the guard in front of the handler: that guard runs after the
+// grant gate, so a call it was always going to refuse spent a --max-uses
+// grant and asked the operator to approve it first.
 //
 // A Local field is never type-checked: it is stripped regardless of what
 // arrived, so validating a value about to be discarded would only produce a
@@ -41,9 +108,10 @@ func Validate(c plugin.Capability, values map[string]any) *view.Error {
 			return nil
 		}
 		if err := checkFieldType(f, v); err != nil {
-			return view.Errorf("core.mcp.badargs", "%s: %v", f.Name, err).WithHint(typeHint(f, v))
+			return view.Errorf("core.mcp.badargs", "%s: %v", f.Name, err).
+				WithHint(fmt.Sprintf("%s expects %s", f.Name, SchemaTypeName(f.Type)))
 		}
-		return nil
+		return held(c, f, v)
 	}
 	for _, f := range c.Inputs {
 		declared[f.Name] = true
@@ -115,22 +183,21 @@ func Validate(c plugin.Capability, values map[string]any) *view.Error {
 		WithHint(acceptedHint(c))
 }
 
-// typeHint is what to send instead of a value checkFieldType refused. The
-// type, unless the value already had it and missed the enum: {"encoding":
-// "HEX"} was refused with "encoding expects a string" — which it was — and
-// the model had nothing to correct. The enum is held exactly here, though
-// the CLI and a config file take an option in another case and spell it as
-// declared: the schema published it, and a client validating against it
-// would have refused "HEX" before it was sent, so the hint says so.
-func typeHint(f plugin.Field, v any) string {
-	if len(f.Options) > 0 {
-		shape := f
-		shape.Options = nil
-		if checkFieldType(shape, v) == nil {
-			return f.Name + " takes one of " + strings.Join(f.Options, ", ") + ", spelled exactly as listed"
-		}
+// held is the host's refusal of v for f, or nil: plugin.CheckInputs over
+// this one value, so the rule and its wording have the one home the guard in
+// front of every handler already uses.
+//
+// The option miss keeps a hint of its own. The enum is held exactly here,
+// though the CLI and a config file take an option in another case and spell
+// it as declared: the schema published it, and a client validating against
+// it would have refused "HEX" before it was sent — while the host's hint
+// sends the reader to `rta explain` for a set the message has already named.
+func held(c plugin.Capability, f plugin.Field, v any) *view.Error {
+	verr := plugin.CheckInputs(c, plugin.NewRequest(map[string]any{f.Name: v}, false, false))
+	if verr != nil && verr.Code == "core.input.option" {
+		return verr.WithHint(f.Name + " takes one of " + strings.Join(f.Options, ", ") + ", spelled exactly as listed")
 	}
-	return fmt.Sprintf("%s expects %s", f.Name, SchemaTypeName(f.Type))
+	return verr
 }
 
 // acceptedHint names what this tool does take, because "unknown argument" on
@@ -175,27 +242,20 @@ func Require(c plugin.Capability, values map[string]any) *view.Error {
 }
 
 // checkFieldType reports whether v is a shape Field.Type accepts, matching
-// what InputSchema actually publishes for it.
+// what InputSchema actually publishes for it. The shape only: whether the
+// declaration takes the value is held's question.
 func checkFieldType(f plugin.Field, v any) error {
 	switch f.Type {
 	case plugin.Int:
-		n, ok := v.(float64)
-		if !ok {
+		isNumber, whole := wholeNumber(v)
+		if !isNumber {
 			return fmt.Errorf("must be an integer, got %s", JSONKind(v))
 		}
-		// Range first, and without converting: int64(n) for an n outside
-		// int64 is whatever the CPU does with it. arm64 saturates, so 2^63
-		// came back as MaxInt64, compared equal to itself, and was accepted
-		// as an integer — which the host then could not read and a handler
-		// read as 0. NaN fails the Trunc comparison, infinity the range.
-		if n < -(1<<63) || n >= 1<<63 {
-			return fmt.Errorf("must be an integer, got a number past what an integer holds")
-		}
-		if n != math.Trunc(n) {
+		if !whole {
 			return fmt.Errorf("must be an integer, got a non-integer number")
 		}
 	case plugin.Float:
-		if _, ok := v.(float64); !ok {
+		if isNumber, _ := wholeNumber(v); !isNumber {
 			return fmt.Errorf("must be a number, got %s", JSONKind(v))
 		}
 	case plugin.Bool:
@@ -211,10 +271,35 @@ func checkFieldType(f plugin.Field, v any) error {
 			return fmt.Errorf("must be a string, got %s", JSONKind(v))
 		}
 	}
-	if len(f.Options) > 0 {
-		return checkEnum(f, v)
-	}
 	return nil
+}
+
+// wholeNumber reports whether v is a number, and whether a whole one.
+//
+// Whole is all it says, and deliberately not "an integer the host can read".
+// Whether 2^63 fits is the host's to answer (plugin.CheckInputs), by the
+// field's range when it declares one: this used to refuse it as "past what
+// an integer holds", a different code and different words from the CLI's
+// refusal of the same number. Nothing is converted to decide it, because
+// int64(n) for an n outside int64 is whatever the CPU does with it — arm64
+// saturates, and 2^63 once compared equal to itself on the way back and
+// passed as a readable integer.
+func wholeNumber(v any) (isNumber, whole bool) {
+	switch n := v.(type) {
+	case int64, int:
+		return true, true
+	case float64:
+		// NaN is not equal to its own Trunc; an infinity is, and is refused
+		// by the host as a number nothing reads.
+		return true, n == math.Trunc(n)
+	case json.Number:
+		// Decode leaves only a number no Go number holds as written, and
+		// every one of those is whole — past int64, or past float64 — but a
+		// second channel may hand over any literal.
+		x, err := strconv.ParseFloat(n.String(), 64)
+		return true, errors.Is(err, strconv.ErrRange) || (err == nil && x == math.Trunc(x))
+	}
+	return false, false
 }
 
 // checkStringSlice accepts what the schema publishes (an array of strings)
@@ -240,45 +325,6 @@ func checkStringSlice(v any) error {
 	}
 }
 
-// checkEnum reports whether v (already type-checked) is drawn from f.Options.
-func checkEnum(f plugin.Field, v any) error {
-	allowed := func(s string) bool {
-		for _, o := range f.Options {
-			if o == s {
-				return true
-			}
-		}
-		return false
-	}
-	items := []string{}
-	switch vv := v.(type) {
-	case string:
-		items = append(items, vv)
-	case []any:
-		for _, e := range vv {
-			items = append(items, e.(string)) // checkFieldType already proved this
-		}
-	case float64:
-		// checkFieldType already proved this is whole for plugin.Int; Float
-		// gets the general form. Either way, an Options entry is a string
-		// an operator wrote by hand ("1", "2.5") — the same shape this must
-		// produce, or a numeric field's enum could never actually match.
-		if f.Type == plugin.Int {
-			items = append(items, strconv.FormatInt(int64(vv), 10))
-		} else {
-			items = append(items, strconv.FormatFloat(vv, 'g', -1, 64))
-		}
-	case bool:
-		items = append(items, strconv.FormatBool(vv))
-	}
-	for _, s := range items {
-		if !allowed(s) {
-			return fmt.Errorf("%q is not one of: %s", s, strings.Join(f.Options, ", "))
-		}
-	}
-	return nil
-}
-
 // JSONKind names a decoded JSON value the way somebody reading an error
 // would think of it, not the way Go's %T would.
 func JSONKind(v any) string {
@@ -287,7 +333,7 @@ func JSONKind(v any) string {
 		return "null"
 	case bool:
 		return "a boolean"
-	case float64:
+	case float64, int64, int, json.Number:
 		return "a number"
 	case string:
 		return "a string"
