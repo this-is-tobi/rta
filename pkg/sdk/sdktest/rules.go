@@ -16,107 +16,31 @@ import (
 // --- (a) declaration ----------------------------------------------------
 
 // checkDeclaration holds the plugin to what the host assumes before it ever
-// runs anything: Validate passes, and every declared input is reachable.
+// runs anything: Validate passes.
 //
 // Validate is called rather than reimplemented — it is the same function the
-// registry runs at load time, so agreeing with it is the point. What this
-// adds is the class of declaration Validate accepts and no surface survives:
-// an input the CLI cannot register twice, and a default the declared type
-// cannot hold.
-// It reports whether the declaration is sound enough to run, which is what
-// tells Check whether driving the plugin would mean anything.
-func checkDeclaration(t reporter, p plugin.Plugin, cfg config) bool {
+// registry runs at load time, so agreeing with it is the point. It reports
+// whether the declaration is sound enough to run, which is what tells Check
+// whether driving the plugin would mean anything.
+//
+// This used to add two rules of its own, for declarations Validate then
+// accepted: a default the declared type cannot hold, and a default outside
+// the input's Options. Validate holds both now (StatedTypeProblem, and the
+// options read the way the guard reads a value), and the copies here had
+// drifted from what a run does: a StringSlice default among its options was
+// compared as the text "[red]" and reported as none of them, and a bare
+// string for a list or a float64 for an Int — each read correctly by its
+// accessor — were reported as read as the zero. A conformance failure for a
+// plugin that loads and runs is the suite disagreeing with the host, so they
+// went, the way the Min/Max rules went before them (see checkBounds).
+func checkDeclaration(t reporter, p plugin.Plugin) bool {
 	t.Helper()
 
 	if err := p.Validate(); err != nil {
 		t.Errorf("sdktest: %s: %v", RuleDeclaration, err)
 		return false
 	}
-	for _, c := range p.Capabilities {
-		if cfg.skipped(RuleDeclaration, c.ID) {
-			continue
-		}
-		checkInputs(t, c)
-	}
 	return true
-}
-
-func checkInputs(t reporter, c plugin.Capability) {
-	t.Helper()
-
-	// Two inputs sharing a name used to pass here unnoticed — the CLI
-	// registers flags into one set and pflag panics with "flag redefined",
-	// which takes down every rta invocation including the doctor that would
-	// have explained it. That check now lives in Capability.validate itself
-	// (found by audit), which p.Validate above
-	// already calls and already returns false on — so it never reaches this
-	// loop for that failure any more, and re-checking it here would be dead
-	// code testing a rule Validate itself now owns.
-	for _, f := range c.Inputs {
-		if f.Default != nil && !holds(f.Type, f.Default) {
-			// Nothing rejects this and nothing reports it. Resolve puts the
-			// default in the values map, the type switch that would normalise
-			// it does not recognise the Go type, and the accessor the handler
-			// calls returns the zero value: Field{Type: Int, Default: "30"}
-			// means every caller who did not pass --timeout gets 0, with no
-			// error anywhere and a working-looking flag in --help.
-			t.Errorf("sdktest: %s: %s input %q is %s but its default is %T (%v); the handler will read the zero value",
-				RuleDeclaration, c.ID, f.Name, f.Type, f.Default, f.Default)
-		}
-		if len(f.Options) > 0 && f.Default != nil {
-			// A closed set the default is not in makes the capability
-			// unrunnable without an explicit flag, while --help advertises
-			// the default as if it worked.
-			if d := fmt.Sprint(f.Default); !slices.Contains(f.Options, d) {
-				t.Errorf("sdktest: %s: %s input %q defaults to %q, which is not one of its options %v",
-					RuleDeclaration, c.ID, f.Name, d, f.Options)
-			}
-		}
-		// Min/Max used to be checked here — that a bound sits on a numeric
-		// type, and that it is not inverted. Both moved into Validate, along
-		// with the case neither of them covered (a non-numeric bound), because
-		// failing conformance and registering anyway is the wrong split for a
-		// rule about a bound that silently does not apply. checkDeclaration
-		// reports what Validate returns, so they are still caught here.
-	}
-}
-
-// holds reports whether a declared type can carry this default. It mirrors
-// what Resolve and the Request accessors actually accept, which is wider than
-// the obvious Go type: JSON gives float64, YAML gives uint64, and a bare `5`
-// on a Float field is a perfectly good default.
-func holds(ft plugin.FieldType, v any) bool {
-	switch ft {
-	case plugin.String, plugin.Text, plugin.Path, plugin.Secret:
-		_, ok := v.(string)
-		return ok
-	case plugin.Bool:
-		_, ok := v.(bool)
-		return ok
-	case plugin.Int:
-		return isInt(v)
-	case plugin.Float:
-		switch v.(type) {
-		case float32, float64:
-			return true
-		}
-		return isInt(v)
-	case plugin.StringSlice, plugin.SecretSlice:
-		switch v.(type) {
-		case []string, []any:
-			return true
-		}
-		return false
-	}
-	return true
-}
-
-func isInt(v any) bool {
-	switch v.(type) {
-	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
-		return true
-	}
-	return false
 }
 
 // --- (b) survives every renderer ----------------------------------------
