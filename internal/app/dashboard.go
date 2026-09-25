@@ -453,7 +453,7 @@ func parseTileInputs(pairs []string, c plugin.Capability) (map[string]any, *view
 				"`--set %s` is given more than once, and %s takes one value", k, k).
 				WithHint("repeating a key states a list, and only a list-shaped input takes one")
 		}
-		v, verr := typedSetValue(f, raw[k])
+		v, verr := typedSetValue(f, k, raw[k])
 		if verr != nil {
 			// typedSetValue's refusal is worded for a profile's `set:`,
 			// whose keys are config keys; a tile's are input names, and an

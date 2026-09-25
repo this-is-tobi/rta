@@ -2,6 +2,9 @@ package app
 
 import (
 	"bytes"
+	"errors"
+	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -744,7 +747,7 @@ func parseSetFlags(pairs []string, ns string, reg *registry.Registry) (map[strin
 				"`--set %s` is given more than once, and %s takes one value", k, k).
 				WithHint("repeating a key states a list, and only a list-shaped input takes one")
 		}
-		v, verr := typedSetValue(f, values)
+		v, verr := typedSetValue(f, k, values)
 		if verr != nil {
 			return nil, verr
 		}
@@ -772,17 +775,19 @@ func parseSetFlags(pairs []string, ns string, reg *registry.Registry) (map[strin
 // net.ping takes 300, and `--set limit=800` for fs was written against
 // fs.usage's 1000 and then refused on every fs.tree call.
 //
-// Like badSetValue, never repeating the value.
+// Like badSetValue, never repeating the value, and naming the key as it was
+// typed: f.Name is one reader's input, and `--set ping.count=101` was told
+// "count takes a value from 1 to 100".
 func heldToDeclaration(f plugin.Field, v any) (any, *view.Error) {
 	if want, ok := f.Range(v); !ok {
-		return nil, view.Errorf("core.profile.set.range", "%s takes a value %s", f.Name, want).
+		return nil, view.Errorf("core.profile.set.range", "%s takes a value %s", f.Config, want).
 			WithHint("that is the widest range of any capability reading " + f.Config +
 				", and each holds a value to its own inside it; `rta explain` on one names its range")
 	}
 	if len(f.Options) == 0 {
 		return v, nil
 	}
-	refuse := view.Errorf("core.profile.set.option", "%s takes one of %s", f.Name, strings.Join(f.Options, ", ")).
+	refuse := view.Errorf("core.profile.set.option", "%s takes one of %s", f.Config, strings.Join(f.Options, ", ")).
 		WithHint("the set is closed; write the value as one of those")
 	switch t := v.(type) {
 	case string:
@@ -805,8 +810,10 @@ func heldToDeclaration(f plugin.Field, v any) (any, *view.Error) {
 	return v, nil
 }
 
-// typedSetValue turns the text a flag carries into the type f declares.
-func typedSetValue(f plugin.Field, values []string) (any, *view.Error) {
+// typedSetValue turns the text a flag carries into the type f declares. key
+// is what was typed before the `=`: a config key for a profile, an input name
+// for a tile.
+func typedSetValue(f plugin.Field, key string, values []string) (any, *view.Error) {
 	raw := values[len(values)-1]
 	switch f.Type {
 	case plugin.StringSlice, plugin.SecretSlice:
@@ -814,13 +821,26 @@ func typedSetValue(f plugin.Field, values []string) (any, *view.Error) {
 	case plugin.Int:
 		n, err := strconv.Atoi(raw)
 		if err != nil {
-			return nil, badSetValue(f, "a whole number", "5432")
+			want := "a whole number"
+			switch bounds := f.Bounds(); {
+			case bounds != "":
+				want += " " + bounds
+			case errors.Is(err, strconv.ErrRange):
+				// Digits, and too many of them, on either side of zero:
+				// "takes a whole number" is what the person already wrote.
+				want += " from " + strconv.Itoa(math.MinInt) + " to " + strconv.Itoa(math.MaxInt)
+			}
+			return nil, badSetValue(f, key, want, setExample(f, "1"))
 		}
 		return n, nil
 	case plugin.Float:
 		n, err := strconv.ParseFloat(raw, 64)
 		if err != nil {
-			return nil, badSetValue(f, "a number", "1.5")
+			want := "a number"
+			if bounds := f.Bounds(); bounds != "" {
+				want += " " + bounds
+			}
+			return nil, badSetValue(f, key, want, setExample(f, "1.5"))
 		}
 		return n, nil
 	case plugin.Bool:
@@ -830,7 +850,7 @@ func typedSetValue(f plugin.Field, values []string) (any, *view.Error) {
 			// somebody writes when they mean true, and YAML 1.2 reads both as
 			// text — so the file spelling of this mistake silently disables
 			// whatever the field turns on.
-			return nil, badSetValue(f, "`true` or `false`", "true")
+			return nil, badSetValue(f, key, "`true` or `false`", "true")
 		}
 		return b, nil
 	case plugin.Secret:
@@ -848,10 +868,23 @@ func typedSetValue(f plugin.Field, values []string) (any, *view.Error) {
 // badSetValue reports a value the declared type cannot hold, without ever
 // repeating the value: this runs over something somebody typed on a command
 // line, and the reason it did not parse is not a reason to print it again.
-func badSetValue(f plugin.Field, want, example string) *view.Error {
+func badSetValue(f plugin.Field, key, want, example string) *view.Error {
 	return view.Errorf("core.profile.set.type",
-		"%s is declared %s, and takes %s", f.Name, f.Type, want).
-		WithHint("write it as `--set " + f.Config + "=" + example + "`")
+		"%s is declared %s, and takes %s", key, f.Type, want).
+		WithHint("write it as `--set " + key + "=" + example + "`")
+}
+
+// setExample is a value for a hint to show, one heldToDeclaration then takes:
+// the declared default, or the edge of the range, or fallback. The hint said
+// `--set timeout=5432` for every integer, and following it for net's timeout
+// (1 to 300) was refused as out of range.
+func setExample(f plugin.Field, fallback string) string {
+	for _, v := range []any{f.Default, f.Min, f.Max} {
+		if _, ok := f.Range(v); v != nil && ok {
+			return fmt.Sprint(v)
+		}
+	}
+	return fallback
 }
 
 // parseSecretFlags turns `--secret input=ref` into the `secrets:` block.
