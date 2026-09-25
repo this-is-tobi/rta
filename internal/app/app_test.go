@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -569,15 +570,10 @@ func TestEveryBuiltinViewSurvivesEveryOutputFormat(t *testing.T) {
 		if err != nil || v == nil {
 			continue
 		}
-		_, isTable := v.(view.Table)
+		// csv among them for every shape, not only a table: it answers each
+		// with rows of its own, because a refusal there came after the
+		// handler had run — see csvTable.
 		for _, f := range formats {
-			// csv is tables-only by declaration, not by accident: a
-			// "key,value" pair list is not a spreadsheet and pretending
-			// otherwise is what makes csv output untrustworthy. It refuses
-			// anything else, so anything else is not asked.
-			if f == cli.CSV && !isTable {
-				continue
-			}
 			var buf bytes.Buffer
 			// Width is fixed rather than taken from the terminal: a
 			// golden-free test that renders differently on a narrow window is
@@ -813,6 +809,59 @@ func TestEveryGroupCommandRejectsUnknownSubcommands(t *testing.T) {
 		if _, _, err := run(t, reg, path...); err != nil {
 			t.Errorf("bare `rta %s` failed: %v", strings.Join(path, " "), err)
 		}
+	}
+}
+
+// A write that landed is never reported under -o csv as one that failed.
+//
+// csv refused every result but a table, after the handler had run: `note add
+// x -o csv` added the note and exited 2, so a script retrying on failure added
+// it twice, and `rm --yes` reported failure with the note already gone. The
+// same happened on every write once RTA_OUTPUT=csv was set.
+func TestAWriteUnderCSVIsNotReportedAsAFailure(t *testing.T) {
+	reg, err := all.Registry(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	t.Setenv("RTA_KV_PASSPHRASE", "")
+	t.Setenv("RTA_KV_IDENTITY", "")
+	exec := func(args ...string) (string, error) {
+		root := NewRoot(reg, "test")
+		var out, errOut bytes.Buffer
+		root.SetOut(&out)
+		root.SetErr(&errOut)
+		root.SetArgs(args)
+		err := root.ExecuteContext(context.Background())
+		return out.String() + errOut.String(), err
+	}
+	for _, args := range [][]string{
+		{"note", "add", "csv probe"},
+		{"note", "edit", "1", "--title", "renamed"},
+		{"note", "toggle", "1"},
+		{"note", "done", "1"},
+		{"note", "reopen", "1"},
+		{"note", "add", "second", "--dry-run"},
+		{"note", "rm", "1", "--yes"},
+	} {
+		out, err := exec(append(args, "-o", "csv")...)
+		if err != nil {
+			t.Errorf("`rta %s -o csv` = exit %d, %v", strings.Join(args, " "), ExitCode(err), err)
+			continue
+		}
+		rows, perr := csv.NewReader(strings.NewReader(out)).ReadAll()
+		if perr != nil || len(rows) != 2 || len(rows[0]) != 1 || rows[0][0] != "text" {
+			t.Errorf("`rta %s -o csv` wrote %q (%v), want a text column and one row",
+				strings.Join(args, " "), out, perr)
+		}
+	}
+	out, err := exec("note", "list", "--all", "-o", "csv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, "csv probe") || strings.Contains(out, "renamed") {
+		t.Errorf("the removed note is still listed:\n%s", out)
 	}
 }
 

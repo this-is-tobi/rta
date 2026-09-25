@@ -6,8 +6,10 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -31,7 +33,7 @@ const (
 	Pretty Format = "pretty" // human output, styled when attached to a TTY
 	JSON   Format = "json"
 	YAML   Format = "yaml"
-	CSV    Format = "csv" // tables only
+	CSV    Format = "csv"
 	// Markdown renders every view type, for reports that leave the terminal:
 	// a ticket, a pull request, a hand-off to whoever has to fix it.
 	Markdown Format = "md"
@@ -47,7 +49,7 @@ func Formats() []string {
 		string(Pretty) + "\tstyled for a terminal",
 		string(JSON) + "\tfor jq and scripts",
 		string(YAML) + "\tfor a config file or a diff",
-		string(CSV) + "\ttables only, for a spreadsheet",
+		string(CSV) + "\tfor a spreadsheet",
 		string(Markdown) + "\tfor a ticket or a pull request",
 	}
 }
@@ -157,12 +159,16 @@ func profiled(w io.Writer, opts Options) io.Writer {
 }
 
 func renderCSV(w io.Writer, v view.View, opts Options) error {
-	// Redact before the type assertion, not after: every path that turns a
+	// Redact before the shape is read, not after: every path that turns a
 	// View into bytes a caller can read runs it, and a format that opts out
 	// is a format that leaks the moment a table starts carrying a secret.
-	t, ok := view.Redact(v).(view.Table)
-	if !ok {
-		return fmt.Errorf("csv output only supports table views, got %q", view.TypeOf(v))
+	v = view.Redact(v)
+	if v == nil {
+		return nil // nothing to show, which is an empty file rather than a refusal
+	}
+	t, err := csvTable(v)
+	if err != nil {
+		return err
 	}
 	cw := csv.NewWriter(w)
 	header := make([]string, len(t.Columns))
@@ -203,6 +209,71 @@ func renderCSV(w io.Writer, v view.View, opts Options) error {
 		_, _ = fmt.Fprintf(opts.Notes, "# %s\n", more)
 	}
 	return nil
+}
+
+// csvTable is the table a view is written as under -o csv.
+//
+// csv refused every view but a table, and refused it after the handler had
+// run — so `note add x -o csv` added the note and exited 2, a script that
+// retried on failure added it twice, and `RTA_OUTPUT=csv` (or `output: csv` in
+// the config) made every write report a failure after it had succeeded. The
+// shape of a result is only known once it exists, so the one answer that
+// cannot follow a write that landed is a refusal.
+//
+// A key/value view is its pairs and a text view its body, the shapes a person
+// would draw them in. Anything else — a tree, a chart, a page of sections — is
+// every value it holds under the path `-o json` gives it, sorted: complete,
+// and saying what each value is, which no column layout invented for one of
+// those shapes would do for all of them.
+func csvTable(v view.View) (view.Table, error) {
+	switch t := v.(type) {
+	case view.Table:
+		return t, nil
+	case view.KeyValue:
+		rows := make([][]string, len(t.Pairs))
+		for i, p := range t.Pairs {
+			rows[i] = []string{p.Key, p.Value}
+		}
+		return view.Table{Columns: []view.Column{{Name: "key"}, {Name: "value"}}, Rows: rows}, nil
+	case view.Text:
+		return view.Table{Columns: []view.Column{{Name: "text"}}, Rows: [][]string{{t.Body}}}, nil
+	}
+	m, err := view.ToMap(v)
+	if err != nil {
+		return view.Table{}, err
+	}
+	t := view.Table{Columns: []view.Column{{Name: "path"}, {Name: "value"}}}
+	flatten("", m, func(path, value string) { t.Rows = append(t.Rows, []string{path, value}) })
+	return t, nil
+}
+
+// flatten calls emit with every scalar under v and its dotted path, map keys
+// in sorted order so the same view always writes the same file.
+func flatten(path string, v any, emit func(path, value string)) {
+	join := func(key string) string {
+		if path == "" {
+			return key
+		}
+		return path + "." + key
+	}
+	switch t := v.(type) {
+	case map[string]any:
+		for _, k := range slices.Sorted(maps.Keys(t)) {
+			flatten(join(k), t[k], emit)
+		}
+	case []any:
+		for i, e := range t {
+			flatten(join(strconv.Itoa(i)), e, emit)
+		}
+	case nil:
+		emit(path, "")
+	case string:
+		emit(path, t)
+	case float64:
+		emit(path, strconv.FormatFloat(t, 'f', -1, 64))
+	default:
+		emit(path, fmt.Sprint(t))
+	}
 }
 
 // csvFormulaTriggers are the leading characters Excel, LibreOffice Calc and

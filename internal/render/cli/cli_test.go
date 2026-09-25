@@ -72,10 +72,71 @@ func TestCSV(t *testing.T) {
 	if len(lines) != 3 || lines[0] != "Name,Size" || lines[1] != "alpha,10 MB" {
 		t.Errorf("csv output wrong:\n%s", out)
 	}
-	// CSV rejects non-tables.
-	var buf bytes.Buffer
-	if err := Render(&buf, view.Text{Body: "x"}, Options{Format: CSV}); err == nil {
-		t.Error("csv of non-table should fail")
+}
+
+// -o csv answers every view with a csv of its own.
+//
+// It refused anything but a table, and it refused after the handler had run:
+// `note add x -o csv` added the note and exited 2, so a script that retried
+// added it twice, and with RTA_OUTPUT=csv every write reported a failure after
+// it had succeeded. A key/value view is its pairs and a text view its body,
+// the shapes a person would draw; anything else is every value under the path
+// -o json would give it, which is complete and says what it is.
+func TestCSVAnswersEveryViewShape(t *testing.T) {
+	cases := map[string]struct {
+		v    view.View
+		want [][]string
+	}{
+		"keyvalue": {
+			view.KeyValue{Pairs: []view.Pair{{Key: "host", Value: "poire"}, {Key: "token", Value: "s3cret"}},
+				Redacted: []string{"token"}},
+			[][]string{{"key", "value"}, {"host", "poire"}, {"token", view.Mask}},
+		},
+		"text": {
+			view.Text{Body: "added note 1: =x\nand a second line"},
+			[][]string{{"text"}, {"added note 1: =x\nand a second line"}},
+		},
+		"tree": {
+			view.Tree{Roots: []view.Node{{Label: "a", Children: []view.Node{{Label: "b", Detail: "c"}}}}},
+			[][]string{{"path", "value"}, {"roots.0.children.0.detail", "c"},
+				{"roots.0.children.0.label", "b"}, {"roots.0.label", "a"}, {"type", "tree"}},
+		},
+		"chart": {
+			view.Chart{Kind: view.ChartBar, Series: []view.Series{{Name: "cpu0", Points: []float64{42.5}}}, Unit: "%"},
+			[][]string{{"path", "value"}, {"kind", "bar"}, {"series.0.name", "cpu0"},
+				{"series.0.points.0", "42.5"}, {"type", "chart"}, {"unit", "%"}},
+		},
+		"formula": {
+			view.KeyValue{Pairs: []view.Pair{{Key: "=cmd", Value: "@SUM(A1)"}}},
+			[][]string{{"key", "value"}, {"'=cmd", "'@SUM(A1)"}},
+		},
+	}
+	for name, c := range cases {
+		var out bytes.Buffer
+		if err := Render(&out, c.v, Options{Format: CSV}); err != nil {
+			t.Errorf("%s: %v", name, err)
+			continue
+		}
+		rows, err := csv.NewReader(strings.NewReader(out.String())).ReadAll()
+		if err != nil {
+			t.Errorf("%s: not csv (%v):\n%s", name, err, out.String())
+			continue
+		}
+		if !slices.EqualFunc(rows, c.want, slices.Equal) {
+			t.Errorf("%s:\n got %q\nwant %q", name, rows, c.want)
+		}
+	}
+
+	// Sections nest any of the others, and a nil view is nothing to show.
+	page := view.Sections{Items: []view.Section{{ID: "cpu", Title: "CPU", View: sampleTable}}}
+	for name, v := range map[string]view.View{"sections": page, "nil": nil} {
+		var out bytes.Buffer
+		if err := Render(&out, v, Options{Format: CSV}); err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+		if _, err := csv.NewReader(strings.NewReader(out.String())).ReadAll(); err != nil {
+			t.Errorf("%s: not csv (%v):\n%s", name, err, out.String())
+		}
 	}
 }
 

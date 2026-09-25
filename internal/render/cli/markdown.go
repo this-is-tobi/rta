@@ -22,10 +22,10 @@ import (
 // note — and no capability has to grow a --markdown flag of its own or learn
 // what a table looks like in a second syntax.
 //
-// Unlike csv, which handles exactly one view type and says so, markdown
-// renders the whole union. Every shape a capability can return has an obvious
-// markdown equivalent, which is a decent sign the view contract is carrying
-// its weight.
+// Unlike csv, which draws a table as itself and flattens every other shape
+// into rows, markdown renders each shape of the union as what it is. Every
+// shape a capability can return has an obvious markdown equivalent, which is
+// a decent sign the view contract is carrying its weight.
 
 // renderMarkdown writes v as a self-contained markdown document.
 func renderMarkdown(w io.Writer, v view.View) error {
