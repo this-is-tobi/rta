@@ -550,6 +550,8 @@
         "count": {
           "default": 1,
           "description": "how many to generate",
+          "maximum": 1000,
+          "minimum": 1,
           "type": "integer"
         },
         "exclude-ambiguous": {
@@ -622,6 +624,8 @@
         "count": {
           "default": 1,
           "description": "how many to generate",
+          "maximum": 1000,
+          "minimum": 1,
           "type": "integer"
         },
         "version": {
