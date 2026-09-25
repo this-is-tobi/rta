@@ -817,7 +817,9 @@ func RenderError(w io.Writer, e *view.Error, opts Options) error {
 		if err != nil {
 			return err
 		}
-		out, err := yaml.Marshal(m)
+		// yamlSafe, as Render's branch does: a message is foreign text often
+		// enough — AsError copies a driver's as it is — to hold a tab.
+		out, err := yaml.Marshal(yamlSafe(m))
 		if err != nil {
 			return err
 		}

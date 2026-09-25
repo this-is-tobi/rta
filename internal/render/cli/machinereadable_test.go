@@ -198,6 +198,27 @@ func TestATabSurvivesYAMLBecausePlainScalarsCannotCarryOne(t *testing.T) {
 	}
 }
 
+// The same tab in an error. RenderError has a yaml branch of its own, and it
+// marshalled the map without yamlSafe, so a driver's message holding a tab —
+// AsError copies foreign text as it is — reached a yaml consumer without it.
+func TestATabSurvivesYAMLInAnErrorToo(t *testing.T) {
+	var b strings.Builder
+	e := &view.Error{Code: "x.y", Message: "col1\tcol2", Hint: "run\tit"}
+	if err := RenderError(&b, e, Options{Format: YAML}); err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Message string `yaml:"message"`
+		Hint    string `yaml:"hint"`
+	}
+	if err := yaml.Unmarshal([]byte(b.String()), &got); err != nil {
+		t.Fatalf("does not parse: %v\n%s", err, b.String())
+	}
+	if got.Message != "col1\tcol2" || got.Hint != "run\tit" {
+		t.Errorf("the tabs did not survive: message %q, hint %q\n%s", got.Message, got.Hint, b.String())
+	}
+}
+
 // …and nothing that does not need quoting gets it, or every yaml output rta
 // produces becomes a wall of escapes for no reason.
 func TestOnlyTheValuesThatNeedQuotingGetIt(t *testing.T) {
