@@ -550,6 +550,21 @@ func unencoded(protected object) bool {
 	return set && !b64 && slices.Contains(critNames(protected), "b64")
 }
 
+// b64Reading says how a protected header has its payload read, in the words
+// a refusal of signatures that disagree uses. b64 false without crit is a
+// reading of its own: payload reads it one way and a parser that honours b64
+// the other.
+func b64Reading(protected object) string {
+	b64, set := protected.values["b64"].(bool)
+	switch {
+	case !set || b64:
+		return "reads the payload as base64url"
+	case unencoded(protected):
+		return "reads it as it is"
+	}
+	return "sets b64 to false without listing it in crit"
+}
+
 // critNames is a header's crit, the names in it that are strings.
 func critNames(o object) []string {
 	list, _ := o.values["crit"].([]any)
@@ -1036,6 +1051,18 @@ func (p *page) jsonJWS(doc object, check *verifier) (view.View, *view.Error) {
 			len(signers), maxSignatures).
 			WithHint("decoded without a key, it shows every one of them")
 	}
+	// The payload is read the way the first signature says, which is only
+	// one reading when every signature says the same. Nothing checked that
+	// they did: a garbage signature without b64 in front of a good one with
+	// b64 false showed claims decoded from base64url under "Signature 2 of
+	// 2: VERIFIED", a reading the signature that verified never signed.
+	for i, s := range signers[1:] {
+		if first, this := b64Reading(signers[0].protected), b64Reading(s.protected); this != first {
+			return nil, view.Errorf("codec.jwt.invalid", "the signatures disagree about b64, which RFC 7797 §3 forbids: "+
+				"signature 1 %s, and signature %d %s", first, i+2, this).
+				WithHint("a conforming verifier refuses the token, whatever its signatures say")
+		}
+	}
 
 	unprotected := false
 	for i, s := range signers {
@@ -1065,7 +1092,8 @@ func (p *page) jsonJWS(doc object, check *verifier) (view.View, *view.Error) {
 		p.embeddedKey(s.merged())
 	}
 	// RFC 7797 §3: b64 lives in the protected header, and every signature
-	// has to agree about it, so the first one speaks for the payload.
+	// has to agree about it — refused above when they do not — so the first
+	// one speaks for the payload.
 	var claims object
 	if detached {
 		p.add("payload", "payload", view.Text{Body: detachedPayload})
