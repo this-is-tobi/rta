@@ -441,7 +441,13 @@ func pemCandidates(raw string) ([]candidate, *view.Error) {
 			return nil, view.Errorf("codec.jwt.key", "reading the %s block: %v", strings.ToLower(block.Type), err)
 		}
 		if pub != nil {
-			out = append(out, candidate{pub: pub, label: describePublic(pub) + " from PEM"})
+			c := candidate{pub: pub, label: describePublic(pub) + " from PEM"}
+			if k, ok := pub.(*rsa.PublicKey); ok {
+				if size := rsaSizeProblem(k.N.BitLen()); size != "" {
+					c.problems = []string{size}
+				}
+			}
+			out = append(out, c)
 		}
 	}
 	if len(out) == 0 && len(sealed) > 0 {
