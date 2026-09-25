@@ -793,10 +793,12 @@ func (p *page) part(kv *view.KeyValue, name, seg string) *view.Error {
 }
 
 // encryptedKey adds the wrapped content key's size, and says why it is empty
-// when it is. RFC 7516 §5.1: with alg "dir" or bare "ECDH-ES" the content key
-// is agreed rather than carried, so an empty part is correct for those and a
-// missing key for everything else. name is how a note refers to the part,
-// which for a JSON JWE says whose key it is.
+// when it is. RFC 7516 §5.1: with alg "dir" the shared key is itself the
+// content key (RFC 7518 §4.5), and with bare "ECDH-ES" the content key is
+// agreed (§4.6); neither carries one, so an empty part is correct for those
+// and a missing key for everything else. The two used to be worded alike, as
+// agreeing the key, which dir does not. name is how a note refers to the
+// part, which for a JSON JWE says whose key it is.
 func (p *page) encryptedKey(kv *view.KeyValue, header object, seg, name string) *view.Error {
 	raw, dialect, err := decodeSegment(seg)
 	if err != nil {
@@ -807,9 +809,12 @@ func (p *page) encryptedKey(kv *view.KeyValue, header object, seg, name string) 
 	value := format.CountOf(len(raw), "byte")
 	if len(raw) == 0 {
 		value = "none"
-		if alg == "dir" || alg == "ECDH-ES" {
-			value = "none — alg " + alg + " agrees the content key rather than carrying it"
-		} else if alg != "" {
+		switch {
+		case alg == "dir":
+			value = "none — alg dir uses the shared key itself as the content key"
+		case alg == "ECDH-ES":
+			value = "none — alg ECDH-ES agrees the content key rather than carrying it"
+		case alg != "":
 			p.note("The %s is empty, though alg %s carries the content key in it: the token is incomplete.", name, alg)
 		}
 	}

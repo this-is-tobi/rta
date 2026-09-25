@@ -103,8 +103,16 @@ func TestAnEncryptedTokenNamesTheKeyItsAlgorithmNeeds(t *testing.T) {
 	if body := verification(t, s); !strings.Contains(body, "the shared key it was encrypted with") {
 		t.Errorf("dir: verification = %q", body)
 	}
-	if got := pairValue(section(t, s, "content").(view.KeyValue), "encrypted key"); !strings.Contains(got, "agrees the content key") {
-		t.Errorf("dir: encrypted key = %q, want it to say why there is none", got)
+	// dir uses the shared key itself (RFC 7518 §4.5); only ECDH-ES agrees
+	// one (§4.6), and the two were worded alike.
+	for alg, want := range map[string]string{
+		"dir":     "none — alg dir uses the shared key itself as the content key",
+		"ECDH-ES": "none — alg ECDH-ES agrees the content key rather than carrying it",
+	} {
+		content := section(t, jose(t, jwe(`{"alg":"`+alg+`","enc":"A128CBC-HS256"}`, "")), "content").(view.KeyValue)
+		if got := pairValue(content, "encrypted key"); got != want {
+			t.Errorf("%s: encrypted key = %q, want %q", alg, got, want)
+		}
 	}
 	pbes2 := jose(t, jwe(`{"alg":"PBES2-HS256+A128KW","enc":"A128GCM"}`, seg("wrapped")))
 	if body := verification(t, pbes2); !strings.Contains(body, "takes that password") {
