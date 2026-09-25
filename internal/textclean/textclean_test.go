@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -43,14 +44,45 @@ func TestTerminalStripsC0ControlBytesButKeepsNewlineAndTab(t *testing.T) {
 func TestTerminalStripsC1ControlBytes(t *testing.T) {
 	// U+009B, CSI in its 8-bit form — ansi.Strip does not treat it as an
 	// introducer, so isTerminalControl is what has to catch it. Built via
-	// string(rune(...)) rather than the literal "\x9b": that byte escape
-	// produces an invalid, isolated UTF-8 byte, which range decodes as
-	// U+FFFD (the replacement character) rather than as U+009B — testing
-	// nothing this function actually branches on.
+	// string(rune(...)) rather than the literal "\x9b": that byte escape is
+	// the character's raw 8-bit form, a byte that is not UTF-8, and the test
+	// below is the one for that.
 	s := "a" + string(rune(0x9b)) + "b"
 	got := Terminal(s)
 	if got != "ab" {
 		t.Errorf("Terminal(%q) = %q, want the C1 byte dropped", s, got)
+	}
+}
+
+// A byte that is not UTF-8 is drawn as U+FFFD, by both cleaners. The raw
+// 0x9B, 0x9D and 0x9C are CSI, OSC and ST to a terminal that reads its input
+// as bytes, and they passed both cleaners untouched: range decodes each as
+// U+FFFD, which is not a control, so the string was clean by every test
+// applied to it and went out as it came. A JSON body carrying them reached
+// piped pretty and md output byte for byte.
+func TestAByteThatIsNotUTF8IsDrawnAsAReplacement(t *testing.T) {
+	fffd := string(utf8.RuneError)
+	for s, want := range map[string]string{
+		"a\x9b2Jb":                 "a" + fffd + "2Jb",
+		"\x9d0;pwned\x9c":          fffd + "0;pwned" + fffd,
+		"caf\xe9":                  "caf" + fffd,
+		"cut \xe6\x97":             "cut " + fffd + fffd,
+		"\x1b[31mred\x1b[0m \xff":  "red " + fffd,
+		"\xc2\x1b[m\x9b":           fffd + fffd,
+		"ok " + string(rune(0x9b)): "ok ",
+	} {
+		for name, clean := range map[string]func(string) string{"Terminal": Terminal, "Model": Model} {
+			got := clean(s)
+			if got != want {
+				t.Errorf("%s(%q) = %q, want %q", name, s, got, want)
+			}
+			if again := clean(got); again != got {
+				t.Errorf("%s(%q) = %q, and cleaned again %q", name, s, got, again)
+			}
+		}
+		if !Deceives(s) {
+			t.Errorf("Deceives(%q) = false, for bytes that draw as something they are not", s)
+		}
 	}
 }
 

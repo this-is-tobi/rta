@@ -3,6 +3,7 @@ package textclean
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // What the two cleaners promise, held against arbitrary bytes: nothing a
@@ -19,15 +20,15 @@ import (
 func FuzzTerminal(f *testing.F) {
 	for _, seed := range []string{
 		"plain", "tab\tand\nnewline", "esc\x1b[31mred", "osc\x1b]52;c;Y3VybA==\x07",
-		"c1 csi\x9b2J", "del\x7f", "bad\xff\xe2\x80\xaeutf8 beside an override",
+		"c1 csi\x9b2J", "c1 osc\x9d0;title\x9c", "del\x7f", "bad\xff\xe2\x80\xaeutf8 beside an override",
 		"bidi\u202e", "\xff\xfe bad utf8", "",
 	} {
 		f.Add(seed)
 	}
 	f.Fuzz(func(t *testing.T, s string) {
 		out := Terminal(s)
-		if strings.ContainsFunc(out, actsOn) {
-			t.Fatalf("Terminal(%q) = %q still carries a character a terminal acts on", s, out)
+		if strings.ContainsFunc(out, actsOn) || !utf8.ValidString(out) {
+			t.Fatalf("Terminal(%q) = %q still carries a character or a byte a terminal acts on", s, out)
 		}
 		if again := Terminal(out); again != out {
 			t.Fatalf("Terminal is not idempotent: %q -> %q -> %q", s, out, again)
@@ -51,7 +52,7 @@ func FuzzModel(f *testing.F) {
 	}
 	f.Fuzz(func(t *testing.T, s string) {
 		out := Model(s)
-		if strings.ContainsFunc(out, actsOn) || strings.ContainsFunc(out, isInvisible) {
+		if strings.ContainsFunc(out, actsOn) || strings.ContainsFunc(out, isInvisible) || !utf8.ValidString(out) {
 			t.Fatalf("Model(%q) = %q still carries something a model reads and a person cannot see", s, out)
 		}
 		if again := Model(out); again != out {
