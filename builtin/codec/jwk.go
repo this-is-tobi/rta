@@ -155,6 +155,13 @@ func (k *jwkFacts) rsa(o object) {
 	if exponent.Int64() != 65537 {
 		k.size += fmt.Sprintf(", exponent %d", exponent.Int64())
 	}
+	// crypto/rsa refuses the key inside the check, and codec.jwt, which
+	// sends somebody here to find out what is wrong with a key, said so;
+	// this page found nothing.
+	if exponent.Bit(0) == 0 {
+		k.problem("its exponent is even, which no RSA key has, so no signature verifies against it")
+		return
+	}
 	k.pub = &rsa.PublicKey{N: modulus, E: int(exponent.Int64())}
 }
 
