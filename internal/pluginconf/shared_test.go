@@ -79,20 +79,35 @@ func TestAnOptionInAnotherCaseIsNotReported(t *testing.T) {
 
 func TestSharedFieldIsTheWidestOfItsReaders(t *testing.T) {
 	got := SharedField([]plugin.Field{
-		{Name: "timeout", Type: plugin.Int, Min: 1, Max: 60, Required: true, Options: []string{"1", "5"}},
-		{Name: "timeout", Type: plugin.Int, Min: 0, Max: 300, Required: true, Options: []string{"5", "10"}},
-		{Name: "timeout", Type: plugin.Int, Min: 2, Max: 120, Required: true, Options: []string{"60"}},
+		{Name: "timeout", Type: plugin.Int, Min: 1, Max: 60, Required: true},
+		{Name: "timeout", Type: plugin.Int, Min: 0, Max: 300, Required: true},
+		{Name: "timeout", Type: plugin.Int, Min: 2, Max: 120, Required: true},
 	})
-	if got.Min != 0 || got.Max != 300 || !got.Required || !reflect.DeepEqual(got.Options, []string{"1", "5", "10", "60"}) {
-		t.Errorf("merged = min %v max %v required %v options %v", got.Min, got.Max, got.Required, got.Options)
+	if got.Min != 0 || got.Max != 300 || !got.Required {
+		t.Errorf("merged = min %v max %v required %v", got.Min, got.Max, got.Required)
+	}
+	got = SharedField([]plugin.Field{
+		{Name: "mode", Type: plugin.String, Options: []string{"fast", "safe"}},
+		{Name: "mode", Type: plugin.String, Options: []string{"safe", "thorough"}},
+		{Name: "mode", Type: plugin.String, Options: []string{"Fast", "careful"}},
+	})
+	if !reflect.DeepEqual(got.Options, []string{"fast", "safe", "thorough", "careful"}) {
+		t.Errorf("merged options %v", got.Options)
 	}
 	// A reader with no bound, no options or no requirement loosens the key
 	// the same way: some capability accepts what it would.
 	got = SharedField([]plugin.Field{
-		{Name: "limit", Type: plugin.Int, Min: 1, Max: 60, Required: true, Options: []string{"1"}},
+		{Name: "limit", Type: plugin.Int, Min: 1, Max: 60, Required: true},
 		{Name: "limit", Type: plugin.Int, Max: 10},
 	})
-	if got.Min != nil || got.Max != 60 || got.Required || got.Options != nil {
-		t.Errorf("merged = min %v max %v required %v options %v", got.Min, got.Max, got.Required, got.Options)
+	if got.Min != nil || got.Max != 60 || got.Required {
+		t.Errorf("merged = min %v max %v required %v", got.Min, got.Max, got.Required)
+	}
+	got = SharedField([]plugin.Field{
+		{Name: "mode", Type: plugin.String, Options: []string{"fast"}},
+		{Name: "mode", Type: plugin.String},
+	})
+	if got.Options != nil {
+		t.Errorf("merged options %v, want none beside a free-text reader", got.Options)
 	}
 }

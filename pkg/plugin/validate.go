@@ -429,6 +429,20 @@ func (c Capability) validate(ns string) error {
 			return fmt.Errorf("capability %q: input %q declares %d options, want at most %d",
 				c.ID, f.Name, len(f.Options), maxOptions)
 		}
+		// Options are a closed set of text. Held on a number or a boolean
+		// too, they were one declaration read three ways: the MCP schema
+		// published {"type": "integer", "enum": ["1", "2", "4"]}, which no
+		// JSON value satisfies, so a client that validates could send
+		// nothing; the TUI drew a picker of text and handed a Bool's pick
+		// back as the string "true", which the handler read as false; and
+		// `rta profile set` wrote a number the profile check then refused.
+		// Nothing declared the shape, and a number or a switch already has
+		// its own way to say what it takes — Min and Max, or being a switch.
+		if len(f.Options) > 0 && f.Type != String && f.Type != StringSlice {
+			return fmt.Errorf("capability %q: input %q is %s and declares Options, which are a closed set of "+
+				"text for a %s or a %s; a number or a switch bounds itself with Min and Max",
+				c.ID, f.Name, f.Type, String, StringSlice)
+		}
 		for _, o := range f.Options {
 			// Options are published as an MCP enum and drawn as a select, so
 			// they are as much displayed text as Help is.
@@ -470,10 +484,10 @@ func (c Capability) validate(ns string) error {
 		// Options are a closed set the host holds every value to
 		// (CheckInputs), the default included: a default outside it is a
 		// capability refused on every call that leaves the input alone. Read
-		// the way the guard reads a value, so a list's every element and a
-		// number's spelling are held too — a check of the string case alone
-		// passed `Default: []string{"green"}` beside Options red and blue,
-		// and the capability then could not run without the flag.
+		// the way the guard reads a value, so a list's every element is held
+		// too — a check of the string case alone passed
+		// `Default: []string{"green"}` beside Options red and blue, and the
+		// capability then could not run without the flag.
 		if len(f.Options) > 0 {
 			for _, d := range optionValues(f, f.Default) {
 				if d != "" && !slices.Contains(f.Options, d) {

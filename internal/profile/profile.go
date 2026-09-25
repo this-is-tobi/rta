@@ -1010,10 +1010,9 @@ func checkSet(name, key string, conn config.Connection, ns string, inst Installe
 		// Matched the way a run matches it: Resolve spells an option given in
 		// another case as declared, so `encoding: BASE32` runs as base32, and
 		// refusing it here refused the profile a config line with the same
-		// value runs through. Every element of a list, and a number's
-		// spelling, as doctor and the host's guard read them — only a lone
-		// string was compared, so `kinds: [beta, delta]` passed here and was
-		// refused on every call.
+		// value runs through. Every element of a list, as doctor and the
+		// host's guard read them — only a lone string was compared, so
+		// `kinds: [beta, delta]` passed here and was refused on every call.
 		if len(f.Options) == 0 {
 			continue
 		}
