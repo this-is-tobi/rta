@@ -53,7 +53,7 @@ func CheckInputs(c Capability, req Request) *view.Error {
 		if !present || v == nil {
 			continue
 		}
-		verr := checkNumber(c, f, v)
+		verr, how := checkNumber(c, f, v)
 		if verr == nil {
 			verr = checkOptions(c, f, v)
 		}
@@ -61,7 +61,7 @@ func CheckInputs(c Capability, req Request) *view.Error {
 			verr = checkBoundsOf(c, f, v)
 		}
 		if verr != nil {
-			return fromSource(verr, c, f, req)
+			return fromSource(verr, how, c, f, req)
 		}
 	}
 	return nil
@@ -79,7 +79,13 @@ func CheckInputs(c Capability, req Request) *view.Error {
 // and how the caller can step round it for one call: a value given on the
 // call beats both layers. Only a Request built by ResolveRequest knows; one
 // built from a bare map is refused in the caller's words as before.
-func fromSource(verr *view.Error, c Capability, f Field, req Request) *view.Error {
+//
+// how is what to write there instead, for a value whose shape is the
+// problem — "write it there as a bare number, without quotes" — and "" for
+// one whose content is, where "change it there" is the whole instruction.
+// The caller's hint said it and this replaced it, so the one sentence the
+// operator needed was dropped from the case it was written for.
+func fromSource(verr *view.Error, how string, c Capability, f Field, req Request) *view.Error {
 	o, ok := req.origins[f.Name]
 	if !ok {
 		return verr
@@ -100,44 +106,58 @@ func fromSource(verr *view.Error, c Capability, f Field, req Request) *view.Erro
 			f.Name + " overrides it for this call"
 		return &out
 	}
-	out.Hint = "change it there — " + change + " — or give " + f.Name +
+	if how == "" {
+		how = "change it there"
+	}
+	out.Hint = how + " — " + change + " — or give " + f.Name +
 		" on the call to override it for one run"
 	return &out
 }
 
-// checkNumber refuses a value for an Int or a Float that the accessor would
-// read as the zero. core.input.range when the field is bounded, because what
-// the caller needs to know is the range; core.input.type when it is not.
-func checkNumber(c Capability, f Field, v any) *view.Error {
+// checkNumber refuses a value for an Int or a Float that no accessor reads as
+// a number, which Request.Int would hand the handler as the zero —
+// core.input.range when the field is bounded, core.input.type when it is not.
+//
+// Worded by what the value is, not by the range. `limit: "3"` in the config
+// was told sys.ps "takes a limit from 1 to 1000, not "3"": 3 is inside that
+// range, and the quotes — the one thing wrong — were left for the operator to
+// spot, who would sooner edit the number. The CLI's flag parser and MCP's
+// type check refuse text before this runs, so text reaching it came from a
+// file, and is named by its shape: never echoed, since a file is one
+// mistyped block away from a credential. A number is shown, since what is
+// wrong with it is its value.
+//
+// how is fromSource's: what to write in the file instead.
+func checkNumber(c Capability, f Field, v any) (verr *view.Error, how string) {
 	var readable bool
-	want := "a whole number for " + f.Name
+	want := "a whole number"
 	switch f.Type {
 	case Int:
 		_, readable = toInt(v)
 	case Float:
 		_, readable = toFloat(v)
-		want = "a number for " + f.Name
+		want = "a number"
 	default:
-		return nil
+		return nil, ""
 	}
 	if readable {
-		return nil
+		return nil, ""
 	}
+	code := "core.input.type"
 	if bounds := f.Bounds(); bounds != "" {
-		return view.Errorf("core.input.range", "%s takes a %s %s, not %s", c.ID, f.Name, bounds, shown(v)).
-			WithHint("the range is declared: `rta explain " + c.ID + "` names it beside the input")
+		code, want = "core.input.range", want+" "+bounds
 	}
-	return view.Errorf("core.input.type", "%s takes %s, not %s", c.ID, want, shown(v)).
-		WithHint("`rta explain " + c.ID + "` says what each input takes")
-}
-
-// shown is a refused value the way a refusal quotes it: text in quotes, so
-// the string "0" is not mistaken for the number it looks like.
-func shown(v any) string {
-	if s, ok := v.(string); ok {
-		return fmt.Sprintf("%q", s)
+	got := statedShape(v)
+	if got == "a number" {
+		return view.Errorf(code, "%s takes %s for %s, not %v", c.ID, want, f.Name, v).
+			WithHint("`rta explain " + c.ID + "` names what it takes beside the input"), ""
 	}
-	return fmt.Sprint(v)
+	bare := "a bare number"
+	if got == "text" {
+		bare += ", without quotes"
+	}
+	return view.Errorf(code, "%s takes %s for %s, not %s", c.ID, want, f.Name, got).
+		WithHint("give it as " + bare), "write it there as " + bare
 }
 
 func checkOptions(c Capability, f Field, given any) *view.Error {
@@ -177,7 +197,7 @@ func optionValues(f Field, v any) []string {
 
 func checkBoundsOf(c Capability, f Field, v any) *view.Error {
 	if want, ok := f.Range(v); !ok {
-		return view.Errorf("core.input.range", "%s takes a %s %s, not %s", c.ID, f.Name, want, shown(v)).
+		return view.Errorf("core.input.range", "%s takes a %s %s, not %v", c.ID, f.Name, want, v).
 			WithHint("the range is declared: `rta explain " + c.ID + "` names it beside the input")
 	}
 	return nil
