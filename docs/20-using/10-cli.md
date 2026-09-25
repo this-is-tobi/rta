@@ -62,7 +62,7 @@ Not every percentage is one. `fs usage`'s Share is a directory's proportion of a
 
 Colour is never the only signal. `sys disk` states the same band as a word in a `Status` column beside its `Use%`, which is the half that survives `--no-color`, a pipe and `-o json`.
 
-**A machine-readable format means machine consumption, and rta treats it that way.** With `-o json|yaml|csv|md`, stdout carries the view and nothing else — errors go to stderr, also in the format you asked for, and the startup notice about untrusted artifacts is suppressed entirely. So the output on your screen is the output a parser accepts, which is where copy-and-paste gets it from:
+**A machine-readable format means machine consumption, and rta treats it that way.** With `-o json|yaml|csv|md`, stdout carries the view and nothing else — errors go to stderr, as json, yaml or md when that is what you asked for (under `csv` an error is the plain `ERROR` and `HINT` lines, since csv has no shape for one), and the startup notice about untrusted artifacts is suppressed entirely. So the output on your screen is the output a parser accepts, which is where copy-and-paste gets it from:
 
 ```bash
 # Approve every artifact rta found and refused to run. `[]?`, because with
@@ -97,7 +97,7 @@ rta note rm 4 || case $? in
 esac
 ```
 
-Errors carry a stable code and an actionable hint, in whatever format you asked for:
+Errors carry a stable code and an actionable hint, in the format you asked for — `csv` excepted, as above:
 
 ```bash
 rta kv get missing-key -o json
