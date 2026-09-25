@@ -148,6 +148,19 @@ func TestASequencePayloadIsEscapedByRune(t *testing.T) {
 	}
 }
 
+// The Meaning column quoted a title and a link target as they came, so the
+// row that showed a sequence escaped handed its payload's backspaces, 8-bit
+// CSI and override to the terminal one cell to the right.
+func TestAPayloadIsEscapedInItsMeaningToo(t *testing.T) {
+	payload := "a\bb\x9b2Jc" + r(0x202e) + "d"
+	for _, input := range []string{"\x1b]0;" + payload + "\x07", "\x1b]8;;https://x.test/" + payload + "\x07"} {
+		row := rowFor(t, input, "OSC")
+		if strings.ContainsAny(row[2], "\b"+r(0x202e)) || strings.Contains(row[2], "\x9b") || !strings.Contains(row[2], `aBSb\x9b2Jc\`+"u202ed") {
+			t.Errorf("%q: meaning = %q, want the payload escaped", input, row[2])
+		}
+	}
+}
+
 // A run of variation selectors after one emoji carries a byte per selector,
 // and came back as a single text row showing the emoji alone. The row names
 // the run and decodes it.
