@@ -1253,3 +1253,52 @@ func TestSetColorIsOfferedValidatedAndDroppable(t *testing.T) {
 		t.Errorf("`none` did not drop the colour:\n%s", configOf(t))
 	}
 }
+
+// profile set refuses a number outside every reader's range, and the same
+// line written by hand is now noted by profile list, profile show and doctor
+// — as usable, since each capability runs it at its own nearest bound.
+func TestAHandWrittenNumberProfileSetRefusesIsNoted(t *testing.T) {
+	const cfg = `
+profiles:
+  wide:
+    plugins:
+      db:
+        set:
+          port: 70000
+`
+	out, errOut, err := runWith(t, setRegistry(t), cfg, "profile", "list")
+	if err != nil {
+		t.Fatalf("%v %s", err, errOut)
+	}
+	if !strings.Contains(out, "warn") || !strings.Contains(out, "outside what every capability") {
+		t.Errorf("profile list:\n%s", out)
+	}
+	out, _, _ = runWith(t, setRegistry(t), cfg, "profile", "show", "wide")
+	if !strings.Contains(out, "warning") || !strings.Contains(out, "write a value from 1 to 65535") {
+		t.Errorf("profile show:\n%s", out)
+	}
+	out, _, _ = runWith(t, setRegistry(t), cfg, "doctor")
+	if !strings.Contains(out, "port` is outside what every capability reading it takes") {
+		t.Errorf("doctor:\n%s", out)
+	}
+	if _, errOut, err := runWith(t, setRegistry(t), cfg, "use", "wide"); err != nil {
+		t.Errorf("a noted profile could not be switched to: %v %s", err, errOut)
+	}
+	// Switched on, it is listed as on, and still says why: it is the one
+	// every command runs through.
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("RTA_CONFIG", path)
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	on(t, "wide", nil)
+	loaded, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rows := profileTable(loaded, setRegistry(t)).Rows; len(rows) != 1 || rows[0][2] != "on" ||
+		!strings.Contains(rows[0][3], "outside what every capability") {
+		t.Errorf("switched on: %v", rows)
+	}
+}

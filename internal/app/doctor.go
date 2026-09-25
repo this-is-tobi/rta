@@ -568,6 +568,11 @@ func doctorProfiles(reg *registry.Registry, add func(check, status, detail strin
 		for _, line := range groupedProblems(problems) {
 			add("profile", "warn", line)
 		}
+		// Said, and not counted against the profile below: each of these
+		// still resolves.
+		for _, line := range groupedProblems(profile.Notes(cfg, reg)) {
+			add("profile", "warn", line)
+		}
 		// Two names that derive the same variables. `rta profile set` refuses
 		// to create the second one, so a pair here came in before that check
 		// existed or was written into the file by hand — and the failure is

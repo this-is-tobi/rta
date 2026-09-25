@@ -349,3 +349,53 @@ func TestASetValueIsHeldToEveryCapabilityReadingItsKey(t *testing.T) {
 		})
 	}
 }
+
+// A `set:` number no capability reading its key accepts runs — each holds it
+// to its own nearest bound — but not as written: redis's `db: 20` read
+// database 15. `rta profile set` refuses to write one and doctor reports the
+// same line in the base block, while a hand-written profile carrying it was
+// listed as ok. Noted now, and still resolved: the clamp is the decided
+// behaviour, and a note is not a refusal.
+func TestASetNumberOutsideEveryReadersRangeIsNotedNotRefused(t *testing.T) {
+	reg := registry.New()
+	bounded := func(id string, max int) plugin.Capability {
+		return plugin.Capability{ID: id, Summary: "s", Safety: plugin.Read, Run: run,
+			Inputs: []plugin.Field{{Name: "db", Type: plugin.Int, Default: 0, Min: 0, Max: max,
+				Config: "db", Local: true}}}
+	}
+	if err := reg.Register(plugin.Plugin{Name: "kvs", Summary: "kvs", Capabilities: []plugin.Capability{
+		bounded("kvs.get", 15), bounded("kvs.scan", 31),
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		body  string
+		noted bool
+	}{
+		{"db: 40", true},
+		{"db: 20", false}, // kvs.scan takes it
+		{"db: 3", false},
+	} {
+		cfg := load(t, "profiles:\n  p:\n    plugins:\n      kvs:\n        set:\n          "+tc.body+"\n")
+		if problems := Check(cfg, reg); len(problems) != 0 {
+			t.Errorf("%s: refused: %v", tc.body, problems)
+		}
+		for _, c := range reg.Capabilities() {
+			if _, verr := Lookup(cfg, c, "p", reg); verr != nil {
+				t.Errorf("%s: %s refused the profile: %s", tc.body, c.ID, verr.Message)
+			}
+		}
+		notes := Notes(cfg, reg)
+		if !tc.noted {
+			if len(notes) != 0 {
+				t.Errorf("%s: noted: %v", tc.body, notes)
+			}
+			continue
+		}
+		if len(notes) != 1 || notes[0].Name != "p" || notes[0].Plugin != "kvs" ||
+			!strings.Contains(notes[0].Reason, "`set: db` is outside what every capability reading it takes") ||
+			notes[0].Hint != "write a value from 0 to 31" {
+			t.Errorf("%s: notes = %+v", tc.body, notes)
+		}
+	}
+}

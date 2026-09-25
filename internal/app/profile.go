@@ -492,6 +492,12 @@ func profileTable(cfg config.Config, reg *registry.Registry) view.Table {
 			problems[p.Name] = p.Reason
 		}
 	}
+	notes := map[string]string{}
+	for _, p := range profile.Notes(cfg, withTrust{reg}) {
+		if _, already := notes[p.Name]; !already {
+			notes[p.Name] = p.Reason
+		}
+	}
 	active := profile.Active()
 	t := view.Table{Columns: []view.Column{
 		{Name: "Profile"},
@@ -507,6 +513,16 @@ func profileTable(cfg config.Config, reg *registry.Registry) view.Table {
 			// An invalid profile is unnameable everywhere else, so this is the
 			// one screen that has to say why rather than pretend it is absent.
 			status, note = "invalid", reason
+		} else if reason, noted := notes[name]; noted {
+			// Usable, and not as written: `profile set` refuses to write
+			// what this says, so listing the hand-written line as ok was
+			// the page and the command disagreeing about one value. The
+			// one switched on keeps saying so — it is the one every
+			// command is running through.
+			status, note = "warn", reason
+			if name == active {
+				status = "on"
+			}
 		} else if name == active {
 			status = "on"
 		}
@@ -592,6 +608,10 @@ func profileCard(name string, p config.Profile, reg *registry.Registry) view.Key
 	for _, problem := range profile.Check(
 		config.Config{Profiles: map[string]config.Profile{name: p}}, withTrust{reg}) {
 		pairs = append(pairs, view.Pair{Key: "problem", Value: problem.Reason + " — " + problem.Hint})
+	}
+	for _, note := range profile.Notes(
+		config.Config{Profiles: map[string]config.Profile{name: p}}, withTrust{reg}) {
+		pairs = append(pairs, view.Pair{Key: "warning", Value: note.Reason + " — " + note.Hint})
 	}
 	return view.KeyValue{Pairs: pairs}
 }
