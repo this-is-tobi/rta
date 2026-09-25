@@ -35,26 +35,95 @@ import (
 )
 
 // ExitCode maps an error returned by Execute to the fixed exit-code contract:
-// 0 ok, 1 capability error, 2 usage error, 3 confirmation
-// declined.
+// 0 ok, 1 capability error, 2 usage error (or an error nothing coded), 3
+// confirmation declined.
 func ExitCode(err error) int {
 	if err == nil {
 		return 0
 	}
 	var ve *view.Error
 	if ok := asViewError(err, &ve); ok {
-		if ve.Code == CodeConfirmRequired {
+		switch ve.Code {
+		case CodeConfirmRequired:
 			return 3
+		case CodeUsage:
+			return 2
 		}
 		return 1
 	}
 	return 2
 }
 
+// CodeUsage is the refusal of a command line rta could not use: an unknown
+// command or flag, a missing or extra argument, a value the flag cannot take,
+// a required flag left out, an --output nothing renders.
+//
+// Coded, where it used to be the one refusal left as a plain error for fang to
+// style: under `-o json` a missing argument wrote a box of prose to stderr
+// with no code in it, so a script parsing stderr as JSON got prose and one
+// branching on the code had nothing to branch on. It still exits 2 — nothing
+// ran, which is not the capability refusing — and it is rendered by the
+// top-level handler in whatever format the command line asked for.
+const CodeUsage = "core.usage"
+
+// usageError codes a mistake on the command line as CodeUsage, with the
+// command's own help as the hint. An error already coded passes through: a
+// validator that knows better than "usage" has said so.
+func usageError(cmd *cobra.Command, err error) error {
+	if err == nil {
+		return nil
+	}
+	var ve *view.Error
+	if errors.As(err, &ve) {
+		return err
+	}
+	says := "says what it takes"
+	if cmd.HasSubCommands() {
+		says = "lists its commands"
+	}
+	return &view.Error{Code: CodeUsage, Message: err.Error(),
+		Hint: "`" + cmd.CommandPath() + " --help` " + says}
+}
+
+// codeUsageErrors makes every argument check in the tree answer with
+// usageError: cobra's own validators (NoArgs, MaximumNArgs…) return plain
+// errors, and there is no hook for them the way there is for flags. After the
+// tree is built, so a command added anywhere in it is covered without being
+// remembered here.
+func codeUsageErrors(cmd *cobra.Command) {
+	if check := cmd.Args; check != nil {
+		cmd.Args = func(c *cobra.Command, args []string) error { return usageError(c, check(c, args)) }
+	}
+	for _, sub := range cmd.Commands() {
+		codeUsageErrors(sub)
+	}
+}
+
+// checkCommandLine refuses, as CodeUsage, what cobra would otherwise refuse as
+// a plain error after this point or what a command would find unusable only
+// once it started: an --output nothing renders, a required flag left out, a
+// flag group broken. cobra checks the flags itself, after this hook — a flag
+// found missing here is simply found missing first, in the coded form.
+//
+// The --output only when it was typed. One that came from RTA_OUTPUT or the
+// config file is not a mistake on this command line, and refusing it here
+// would stop the commands that never render a view — `mcp serve` among them
+// — which ran with it before.
+func checkCommandLine(cmd *cobra.Command, output string) error {
+	if _, err := cli.ParseFormat(output); err != nil && cmd.Flags().Changed("output") {
+		return &view.Error{Code: CodeUsage, Message: err.Error(),
+			Hint: "--output takes pretty, json, yaml, csv or md"}
+	}
+	if err := cmd.ValidateRequiredFlags(); err != nil {
+		return usageError(cmd, err)
+	}
+	return usageError(cmd, cmd.ValidateFlagGroups())
+}
+
 // RenderTopLevelError writes a failure the way a success would have been
 // written: in the format the caller asked for. It reports whether it handled
-// the error, so the caller can fall back to cobra's own usage styling for the
-// ones that are not rta's to format.
+// the error, so the caller can fall back to fang's styling for an error
+// nothing coded — a mistake on the command line is not one (see CodeUsage).
 //
 // The bug it fixes is narrow and bad. main printed an unrendered view.Error
 // with fmt.Fprintf, ignoring --output entirely, so `rta plugin dev -o json`
@@ -102,10 +171,22 @@ func topLevelRenderOptions(root *cobra.Command) cli.Options {
 		}
 		return ""
 	}
+	output := flag("output")
+	// A flag mistake stops pflag where it stands, so an --output after it was
+	// never parsed: `rta net dns x --bogus -o json` refused the flag in the
+	// default format, to a script that had asked for json. The command line
+	// itself still says what was asked for.
+	if root != nil {
+		if f := root.PersistentFlags().Lookup("output"); f != nil && !f.Changed {
+			if asked, ok := outputOnCommandLine(os.Args[1:]); ok {
+				output = asked
+			}
+		}
+	}
 	// An unparseable --output has already failed the command that used it;
 	// falling back to pretty here means the error still reaches the terminal
 	// rather than disappearing into a second failure.
-	format, ferr := cli.ParseFormat(flag("output"))
+	format, ferr := cli.ParseFormat(output)
 	if ferr != nil {
 		format = cli.Pretty
 	}
@@ -114,6 +195,37 @@ func topLevelRenderOptions(root *cobra.Command) cli.Options {
 		NoColor: flag("no-color") == "true" || !isTTY(),
 		Width:   termWidth(),
 	}
+}
+
+// outputOnCommandLine finds the --output a command line asks for without
+// parsing the rest of it, in every spelling pflag accepts: -o json, -ojson,
+// -o=json, --output json, --output=json. The last one wins, as it does for
+// pflag, and nothing after a bare -- is a flag.
+func outputOnCommandLine(args []string) (string, bool) {
+	value, found := "", false
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if a == "--" {
+			break
+		}
+		var v string
+		switch {
+		case a == "-o" || a == "--output":
+			if i+1 >= len(args) {
+				continue
+			}
+			i++
+			v = args[i]
+		case strings.HasPrefix(a, "--output="):
+			v = strings.TrimPrefix(a, "--output=")
+		case strings.HasPrefix(a, "-o") && !strings.HasPrefix(a, "--"):
+			v = strings.TrimPrefix(strings.TrimPrefix(a, "-o"), "=")
+		default:
+			continue
+		}
+		value, found = v, true
+	}
+	return value, found
 }
 
 // CodeConfirmRequired is returned when a destructive capability runs on the
@@ -197,7 +309,7 @@ func groupRunE(cmd *cobra.Command, args []string) error {
 	if len(args) == 0 {
 		return cmd.Help()
 	}
-	return unknownCommand(cmd, args[0])
+	return usageError(cmd, unknownCommand(cmd, args[0]))
 }
 
 // unknownCommand is what rta says about a name that is not a command, at
@@ -207,8 +319,9 @@ func groupRunE(cmd *cobra.Command, args []string) error {
 // message would be rendered with. cobra's legacyArgs answers the root and
 // this answers every group below it, and cobra's wording is a block: a blank
 // line, "Did you mean this?", the candidates one per line, and a trailing
-// newline. fang renders a usage error as err.Error() plus a full stop, so
-// that block put the stop on a command name one level down —
+// newline. fang, which rendered usage errors before they were coded, added
+// a full stop to err.Error(), so that block put the stop on a command name
+// one level down —
 //
 //	Did you mean this?
 //	    get
@@ -217,10 +330,9 @@ func groupRunE(cmd *cobra.Command, args []string) error {
 // — and on a line of its own at the root. The suggestion is the useful half
 // of the message and it was the half the stray character landed on.
 //
-// So a near miss is one sentence, which is both what the renderer can
-// punctuate and what a reader takes in at a glance. Unpunctuated on purpose:
-// the terminator belongs to whoever is rendering, and adding one here would
-// print two.
+// So a near miss is one sentence, which is both what a renderer can put on
+// one line and what a reader takes in at a glance. Unpunctuated, as every
+// error message here is. It reaches the reader coded as CodeUsage.
 func unknownCommand(cmd *cobra.Command, arg string) error {
 	msg := fmt.Sprintf("unknown command %q for %q", arg, cmd.CommandPath())
 	if cmd.DisableSuggestions {
@@ -278,18 +390,26 @@ func NewRoot(reg *registry.Registry, version string) *cobra.Command {
 		// Not on the completion command either. A banner appearing while
 		// somebody is still typing is the noise the notice exists to avoid
 		// being.
-		PersistentPreRun: func(cmd *cobra.Command, _ []string) {
+		//
+		// The command line is checked here first, for the same reason the
+		// notice is: this is the first point at which the format a refusal
+		// should be written in is known. See checkCommandLine.
+		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			if cmd.Name() == cobra.ShellCompRequestCmd || cmd.Name() == cobra.ShellCompNoDescRequestCmd {
-				return
+				return nil
+			}
+			if err := checkCommandLine(cmd, opts.output); err != nil {
+				return err
 			}
 			if !stderrIsTerminal() {
-				return
+				return nil
 			}
 			// Where am I, before the command rather than after it — and first,
 			// because it frames whatever follows it. Silent unless the active
 			// environment carries a `color:`; see WarnActiveProfile.
 			WarnActiveProfile(cmd.ErrOrStderr(), cfg, opts.output != "pretty", opts.noColor)
 			WarnUntrustedPlugins(cmd.ErrOrStderr(), opts.output != "pretty")
+			return nil
 		},
 		Long:          "rta is a single extendable binary offering one consistent interface\nover the tools you juggle daily — scriptable CLI, TUI, and MCP for AI agents.",
 		SilenceUsage:  true,
@@ -363,6 +483,11 @@ func NewRoot(reg *registry.Registry, version string) *cobra.Command {
 	groupRoot(root, reg)
 	describeGroups(root)
 	documentArguments(root)
+	// Last, over the whole tree: see CodeUsage. A capability command sets a
+	// flag-error function of its own (positionalFlagError), which codes its
+	// answer itself; every other command inherits this one.
+	root.SetFlagErrorFunc(usageError)
+	codeUsageErrors(root)
 	return root
 }
 
@@ -558,21 +683,21 @@ func connAddress(conn config.Connection, fallback string) string {
 // an identifier renders it capitalised — "name" became "Name", which is a
 // different field as far as the reader is concerned.
 //
-// It stays a plain error rather than becoming a view.Error, because a usage
-// mistake exits 2 and ExitCode maps every view.Error to 1. The renderer boxes
-// plain errors the same way, so nothing is lost by it.
+// Coded as CodeUsage like every other flag mistake: this is the capability
+// command's flag-error function, so the root's, which codes the rest, never
+// sees what reaches it.
 func positionalFlagError(c plugin.Capability, positionals []plugin.Field) func(*cobra.Command, error) error {
-	return func(_ *cobra.Command, err error) error {
+	return func(cmd *cobra.Command, err error) error {
 		name, ok := unknownFlagName(err)
 		if !ok {
-			return err
+			return usageError(cmd, err)
 		}
 		for _, f := range positionals {
 			if f.Name == name {
-				return fmt.Errorf("this capability takes %q as an argument, not a flag — %s", f.Name, cliForm(c))
+				return usageError(cmd, fmt.Errorf("this capability takes %q as an argument, not a flag — %s", f.Name, cliForm(c)))
 			}
 		}
-		return err
+		return usageError(cmd, err)
 	}
 }
 
@@ -965,7 +1090,7 @@ func runCapability(ctx context.Context, cmd *cobra.Command, c plugin.Capability,
 
 	values, err := collectValues(cmd, c, args)
 	if err != nil {
-		return err
+		return usageError(cmd, err)
 	}
 	// The profile, and the values it contributes. A person at a terminal
 	// needs no grant for any of this: the gate is on the MCP surface, because

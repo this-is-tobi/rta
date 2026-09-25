@@ -156,6 +156,45 @@ func TestUnknownCommandIsAUsageError(t *testing.T) {
 	}
 }
 
+// A command line rta could not use is refused with a code, in the format
+// asked for, and still exits 2.
+//
+// It was the one refusal that ignored -o: a missing argument or an unknown
+// flag under `-o json` wrote a styled box to stderr with no code in it, so a
+// script parsing stderr as JSON got prose, and one branching on the code had
+// nothing to branch on.
+func TestAUsageErrorIsCodedInTheFormatAskedFor(t *testing.T) {
+	for _, args := range [][]string{
+		{"net", "dns"},                           // a missing argument
+		{"net", "dns", "example.com", "--bogus"}, // an unknown flag
+		{"net", "dns", "a", "b"},                 // an argument too many
+		{"sys", "cpuu"},                          // an unknown command
+		{"profile", "repin", "x"},                // a required flag left out
+	} {
+		r := run(t, append(args, "-o", "json")...)
+		if r.code != 2 {
+			t.Errorf("%v: exit = %d, want 2 (stderr: %s)", args, r.code, r.stderr)
+		}
+		if strings.TrimSpace(r.stdout) != "" {
+			t.Errorf("%v: stdout got %q, want nothing", args, r.stdout)
+		}
+		var env map[string]any
+		if err := json.Unmarshal([]byte(r.stderr), &env); err != nil {
+			t.Errorf("%v: stderr is not JSON (%v): %q", args, err, r.stderr)
+			continue
+		}
+		if env["type"] != "error" || env["code"] != "core.usage" || env["message"] == "" {
+			t.Errorf("%v: stderr = %v, want a core.usage error", args, env)
+		}
+	}
+	// An --output nobody can render in is the same mistake, answered in the
+	// format that can be.
+	r := run(t, "sys", "host", "-o", "xml")
+	if r.code != 2 || !strings.Contains(r.stderr, "core.usage") || !strings.Contains(r.stderr, "xml") {
+		t.Errorf("-o xml: exit %d, stderr %q; want 2 and a core.usage error naming it", r.code, r.stderr)
+	}
+}
+
 // 1: the capability ran and refused. The code and hint go to stderr, and
 // stdout stays empty — `rta kv get x > secret` must not write an error there.
 func TestCapabilityErrorIsOneAndKeepsStdoutClean(t *testing.T) {
