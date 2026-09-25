@@ -356,3 +356,24 @@ func TestARefusalNamesTheLineAndOnlyAnOverrideThatExists(t *testing.T) {
 		t.Errorf("no heading: %v", verr)
 	}
 }
+
+// A declared bound is quoted back to the person in a refusal and beside the
+// input in explain, and they type it: an untyped 1e6 arrives as a float64,
+// which %v spelled "1e+06", a value no flag parser takes. Whole numbers are
+// written as whole numbers, an int64 edge keeps every digit, and a fraction
+// stays one.
+func TestABoundIsWrittenTheWayItIsTyped(t *testing.T) {
+	for _, tc := range []struct {
+		f    Field
+		want string
+	}{
+		{Field{Type: Int, Min: 1, Max: 1e6}, "from 1 to 1000000"},
+		{Field{Type: Int, Max: int64(9223372036854775807)}, "of at most 9223372036854775807"},
+		{Field{Type: Float, Min: 0.5}, "of at least 0.5"},
+		{Field{Type: Float, Min: 1e-7, Max: 2.5e9}, "from 0.0000001 to 2500000000"},
+	} {
+		if got := tc.f.Bounds(); got != tc.want {
+			t.Errorf("Bounds(%v, %v) = %q, want %q", tc.f.Min, tc.f.Max, got, tc.want)
+		}
+	}
+}

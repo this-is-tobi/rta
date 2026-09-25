@@ -3,7 +3,6 @@ package app
 import (
 	"bytes"
 	"errors"
-	"fmt"
 	"math"
 	"sort"
 	"strconv"
@@ -881,7 +880,7 @@ func badSetValue(f plugin.Field, key, want, example string) *view.Error {
 func setExample(f plugin.Field, fallback string) string {
 	for _, v := range []any{f.Default, f.Min, f.Max} {
 		if _, ok := f.Range(v); v != nil && ok {
-			return fmt.Sprint(v)
+			return plugin.NumberText(v)
 		}
 	}
 	return fallback

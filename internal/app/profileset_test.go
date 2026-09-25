@@ -442,6 +442,12 @@ func TestSetHintsAValueTheKeyTakesAndNamesTheKeyTyped(t *testing.T) {
 	if checked == 0 {
 		t.Fatal("no numeric key was checked")
 	}
+	// No built-in declares a bound as 1e6, but a plugin may: the example is
+	// the bound spelled as the key takes it, not %v's "1e+06".
+	big := plugin.Field{Name: "limit", Type: plugin.Int, Config: "limit", Max: 1e6}
+	if got := setExample(big, "5"); got != "1000000" {
+		t.Errorf("the example for a Max of 1e6 = %q, want 1000000", got)
+	}
 	for _, tc := range []struct{ pair, code, want string }{
 		{"ping.count=101", "core.profile.set.range", "ping.count takes a value from 1 to 100"},
 		{"timeout=abc", "core.profile.set.type", "timeout is declared int, and takes a whole number from 1 to 300"},
