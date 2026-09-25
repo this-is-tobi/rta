@@ -13,15 +13,15 @@ import (
 // codec.jwt's token is not Required, because a pipe supplies it on the CLI,
 // and Required was all this looked at: `rta dashboard add codec.jwt` and +
 // wrote a tile answering "no token to read" on every refresh. A tile reads no
-// pipe, --set refuses a credential and no profile fills this one, so it is
-// missing whatever the tile is pinned to. An optional credential that is not
-// the call's subject — the key a signature is checked with — is not.
-func TestAPositionalCredentialNoTileCanBeGivenIsMissing(t *testing.T) {
+// pipe, so a Piped input is missing whatever the tile is pinned to, unless
+// its with: states it. An optional credential that is not the call's subject
+// — the key a signature is checked with — is not.
+func TestAPipedInputNoTileStatesIsMissing(t *testing.T) {
 	c := plugin.Capability{
 		ID: "codec.jwt", Summary: "decode", Safety: plugin.Read,
 		Run: func(context.Context, plugin.Request) (view.View, error) { return nil, nil },
 		Inputs: []plugin.Field{
-			{Name: "token", Type: plugin.Secret, Positional: true},
+			{Name: "token", Type: plugin.Secret, Positional: true, Piped: true},
 			{Name: "key", Type: plugin.Secret},
 		},
 	}
@@ -34,10 +34,46 @@ func TestAPositionalCredentialNoTileCanBeGivenIsMissing(t *testing.T) {
 	if got := MissingInputs(c, map[string]any{"token": "x"}, false); len(got) != 0 {
 		t.Errorf("a stated token is still missing: %v", got)
 	}
-	// A positional credential a profile may fill is the profile's to give.
-	c.Inputs[0].Local, c.Inputs[0].EnvFallback = true, true
-	if got := MissingInputs(c, nil, true); len(got) != 0 {
-		t.Errorf("a profile-fillable credential is missing from a pinned tile: %v", got)
+}
+
+// debug.ansi has codec.jwt's shape with no credential in it, and inferring
+// the shape from "a positional credential" missed it: `rta dashboard add
+// debug.ansi` and + wrote a tile answering "no text to explain" on every
+// refresh. Its text is no credential, so --set states it, and the refusal
+// says so.
+func TestAPipedInputATileCanStateIsHintedWithSet(t *testing.T) {
+	c := plugin.Capability{
+		ID: "debug.ansi", Summary: "explain", Safety: plugin.Read,
+		Run:    func(context.Context, plugin.Request) (view.View, error) { return nil, nil },
+		Inputs: []plugin.Field{{Name: "input", Type: plugin.Text, Positional: true, Piped: true}},
+	}
+	if got := MissingInputs(c, nil, false); !slices.Equal(got, []string{"input"}) {
+		t.Errorf("missing = %v, want [input]", got)
+	}
+	if got := Untileable(c); len(got) != 0 {
+		t.Errorf("untileable = %v, want nothing: --set can state text", got)
+	}
+	if why := addRefusal(c, false); !strings.Contains(why, "--set input=") {
+		t.Errorf("+ on debug.ansi: %q, want a --set hint", why)
+	}
+	// Nor does the automatic dashboard run it unasked, NoPreview or not.
+	if previewable(c) {
+		t.Error("a capability whose Piped input nothing states was put on the automatic dashboard")
+	}
+}
+
+// A TUI form will not submit without a Piped input: there is no pipe behind
+// it, and the handler's own "nothing to read" was the only thing saying so.
+func TestAPipedInputIsRequiredInAForm(t *testing.T) {
+	f := plugin.Field{Name: "input", Type: plugin.Text, Positional: true, Piped: true, Help: "text"}
+	if err := validatorFor(f)(""); err == nil {
+		t.Error("an empty Piped input was accepted")
+	}
+	if err := validatorFor(f)("some text"); err != nil {
+		t.Errorf("a given one was refused: %v", err)
+	}
+	if d := fieldDescription(f); !strings.Contains(d, "required") {
+		t.Errorf("description = %q, want it marked required", d)
 	}
 }
 
@@ -50,7 +86,7 @@ func TestPlusRefusesAnUntileableCredentialWithoutPointingAtSet(t *testing.T) {
 		ID: "codec.jwt", Summary: "decode", Safety: plugin.Read,
 		Run: func(context.Context, plugin.Request) (view.View, error) { return nil, nil },
 		Inputs: []plugin.Field{
-			{Name: "token", Type: plugin.Secret, Positional: true},
+			{Name: "token", Type: plugin.Secret, Positional: true, Piped: true},
 			{Name: "key", Type: plugin.Secret},
 		},
 	}

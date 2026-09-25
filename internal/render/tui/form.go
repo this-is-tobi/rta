@@ -1024,10 +1024,15 @@ func commaHint(f plugin.Field) string {
 	return fieldDescription(f)
 }
 
+// requiredHere is whether a form must have f before it submits: a Required
+// input, and a Piped one, which only the CLI can leave out — it reads a pipe
+// then, and a form has none behind it.
+func requiredHere(f plugin.Field) bool { return f.Required || f.Piped }
+
 func fieldDescription(f plugin.Field) string {
 	d := f.Help
 	extra := string(f.Type)
-	if f.Required {
+	if requiredHere(f) {
 		extra += ", required"
 	}
 	if d == "" {
@@ -1041,7 +1046,7 @@ func validatorFor(f plugin.Field) func(string) error {
 	return func(s string) error {
 		s = strings.TrimSpace(s)
 		if s == "" {
-			if f.Required {
+			if requiredHere(f) {
 				return fmt.Errorf("%s is required", f.Name)
 			}
 			return nil

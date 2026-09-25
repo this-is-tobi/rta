@@ -358,14 +358,17 @@ func previewable(c plugin.Capability) bool {
 // error on every refresh forever; `rta dashboard add` and `+` in the TUI
 // both refuse it here rather than write it.
 //
-// And a positional credential nothing but the caller can give, required or
-// not. codec.jwt's token is not Required, because a pipe supplies it on the
-// CLI, and that was the whole of this check: `rta dashboard add codec.jwt`
-// wrote a tile answering "no token to read" on every refresh. A tile runs on
-// the TUI surface, where no pipe is read; `--set` refuses a credential,
-// since it would be written into the config in plaintext; and a profile
-// fills only what ProfileFillable allows. The subject of the call, with no
-// way in, is as missing as a required input.
+// And a Piped input with nothing under with, pinned or not. codec.jwt's
+// token is not Required, because a pipe supplies it on the CLI, and Required
+// was the whole of this check: `rta dashboard add codec.jwt` wrote a tile
+// answering "no token to read" on every refresh. A tile runs on the TUI
+// surface, where no pipe is read, and nothing but its with: can give the
+// input a value — Validate refuses a Default, a Config key or Local beside
+// Piped, so no file and no profile fills one. This inferred the shape once,
+// as "a positional credential", which caught codec.jwt and missed
+// debug.ansi, whose text is no credential; the declaration says it now.
+// Untileable is what still tells a credential, which --set refuses, from
+// text it states.
 func MissingInputs(c plugin.Capability, with map[string]any, pinned bool) []string {
 	var missing []string
 	for _, f := range c.Inputs {
@@ -375,13 +378,12 @@ func MissingInputs(c plugin.Capability, with map[string]any, pinned bool) []stri
 		if _, given := with[f.Name]; given {
 			continue
 		}
-		fillable := plugin.ProfileFillable(c, f)
 		switch {
+		case f.Piped:
 		case f.Required:
-			if pinned && fillable {
+			if pinned && plugin.ProfileFillable(c, f) {
 				continue
 			}
-		case f.Positional && f.Type.Sensitive() && !fillable:
 		default:
 			continue
 		}
@@ -699,10 +701,12 @@ func Layout(reg *registry.Registry, dash config.Dashboard, instances Instances) 
 	return out
 }
 
-// formNeeded reports whether a capability has required inputs without defaults.
+// formNeeded reports whether a capability has required inputs without
+// defaults — a Piped one included, since the dashboard runs on the TUI
+// surface, where there is no pipe to fill it.
 func formNeeded(c plugin.Capability) bool {
 	for _, f := range c.Inputs {
-		if f.Required && f.Default == nil {
+		if (f.Required || f.Piped) && f.Default == nil {
 			return true
 		}
 	}
