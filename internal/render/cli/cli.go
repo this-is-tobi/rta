@@ -208,6 +208,14 @@ func renderCSV(w io.Writer, v view.View, opts Options) error {
 	if more := continues(t); more != "" && opts.Notes != nil {
 		_, _ = fmt.Fprintf(opts.Notes, "# %s\n", more)
 	}
+	// And what the listing could not read, for the reason the count is there:
+	// the other formats all carry Warnings, and a table missing what its
+	// credential may not see is otherwise the whole of a smaller one.
+	for _, e := range t.Warnings {
+		if opts.Notes != nil {
+			_, _ = fmt.Fprintf(opts.Notes, "# %s %s\n", e.Code, e.Message)
+		}
+	}
 	return nil
 }
 
