@@ -175,6 +175,23 @@ func TestAnOctKeyInTheSecretFileIsHeldToWhatItDeclares(t *testing.T) {
 	}
 }
 
+// A key set of shared secrets in the secret file was HMAC'd as its JSON text,
+// so a token made with the set's own k was told it did not match, blamed on
+// the token being changed — and --key sends a set of oct keys there. The set
+// is refused, saying what the file takes, and --key says so up front.
+func TestAKeySetInTheSecretFileIsRefusedForTheOneKey(t *testing.T) {
+	k := []byte(strings.Repeat("k", 32))
+	token := sign(`{"alg":"HS256","kid":"a"}`, `{"sub":"a"}`, func(in []byte) []byte {
+		mac := hmac.New(sha256.New, k)
+		mac.Write(in)
+		return mac.Sum(nil)
+	})
+	set := fmt.Sprintf(`{"keys":[{"kty":"oct","kid":"a","k":%q}]}`, base64.RawURLEncoding.EncodeToString(k))
+	mustRefuse(t, token, "", set, "codec.jwt.secret", "holds a key set")
+	mustRefuse(t, token, "", set, "codec.jwt.secret", `{"kty":"oct","k":…}`)
+	mustRefuse(t, token, set, "", "codec.jwt.key", "not the set, with --secret-file")
+}
+
 // A signature with its last letter changed where only unused bits live still
 // matches under a lenient decoder, and it used to be a bare VERIFIED. It still
 // matches, since the bytes are the same, and the page now says the text is
