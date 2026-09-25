@@ -643,15 +643,13 @@ const (
 // decides, and a public key never stands in for an HMAC secret.
 func (c candidate) fits(alg string) (bool, string) {
 	a := jwsAlgs[alg]
-	switch {
-	case c.pub == nil && c.secret == nil:
+	if c.pub == nil && c.secret == nil {
 		return false, c.unusable()
-	case c.use == "enc":
-		return false, c.label + " is for encryption (use enc)"
-	case !c.opsAllowVerify():
-		return false, c.label + " is limited by key_ops to " + visible(strings.Join(c.ops, ", "))
-	case c.alg != "" && c.alg != alg:
-		return false, c.label + " is declared for " + visible(c.alg)
+	}
+	if why := c.declaration(alg); why != "" {
+		return false, why
+	}
+	switch {
 	case a.kind == "a shared secret":
 		return c.secret != nil, c.label + " is not a shared secret"
 	case c.secret != nil:
@@ -685,6 +683,32 @@ func (c candidate) fits(alg string) (bool, string) {
 		return a.kind == "an Ed25519 key", c.label + " is not " + a.kind
 	}
 	return false, c.label + " is not " + a.kind
+}
+
+// declaration says why what the key declares about itself — its use, its
+// key_ops, its alg — keeps it from checking a signature made with alg, or ""
+// when nothing it declares does. Apart from fits' other reasons because the
+// refusal's hint turns on it: a key the set declares for something else is
+// the set's doing, and the hint used to send the reader to the key's size.
+func (c candidate) declaration(alg string) string {
+	switch {
+	case c.use == "enc":
+		return c.label + " is for encryption (use enc)"
+	case !c.opsAllowVerify():
+		return c.label + " is limited by key_ops to " + visible(strings.Join(c.ops, ", "))
+	case c.alg != "" && c.alg != alg:
+		return c.label + " is declared for " + visible(c.alg)
+	}
+	return ""
+}
+
+// withArticle is an algorithm's name after the article it is read with:
+// "an RS256", "an HS256", "an ES256" and "an EdDSA", but "a PS256".
+func withArticle(alg string) string {
+	if strings.HasPrefix(alg, "PS") {
+		return "a " + alg
+	}
+	return "an " + alg
 }
 
 // opsAllowVerify reports whether the key's key_ops, which RFC 7517 §4.3 has
@@ -824,13 +848,14 @@ func (v *verifier) check(header object, input string, sigSeg string) (string, *v
 	// secret", about an RS256 token checked against an RSA key.
 	kid := header.str("kid")
 	var tried, reasons, skipped, refused []string
-	triedKey := false
+	triedKey, declaredOnly := false, true
 	for _, c := range candidates {
 		if kid != "" && c.kid != "" && c.kid != kid {
 			continue
 		}
 		if ok, why := c.fits(alg); !ok {
 			skipped = append(skipped, why)
+			declaredOnly = declaredOnly && c.declaration(alg) != ""
 			continue
 		}
 		if err := v.ctx.Err(); err != nil {
@@ -912,8 +937,13 @@ func (v *verifier) check(header object, input string, sigSeg string) (string, *v
 	if need == "an RSA key" {
 		need += " of 2048 bits or more (RFC 7518 §3.3)"
 	}
-	return "", view.Errorf("codec.jwt.nokey", "no key given can check an %s signature: %s", alg, strings.Join(skipped, "; ")).
-		WithHint("an " + alg + " signature needs " + need)
+	hint := withArticle(alg) + " signature needs " + need
+	if declaredOnly && len(skipped) > 0 {
+		hint = "each key given declares itself for something else, and a library honouring the declaration refuses it " +
+			"too: the key the issuer signs " + alg + " tokens with is needed"
+	}
+	return "", view.Errorf("codec.jwt.nokey", "no key given can check %s signature: %s", withArticle(alg), strings.Join(skipped, "; ")).
+		WithHint(hint)
 }
 
 // unusable says why a key the members do not make cannot check anything.

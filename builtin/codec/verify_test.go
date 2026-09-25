@@ -918,6 +918,36 @@ func TestAMismatchNamesTheKeyThatWasTried(t *testing.T) {
 	}
 }
 
+// The no-usable-key refusal read "an PS256 signature", and its hint always
+// said the algorithm needs an RSA key of 2048 bits or more, even when the key
+// skipped was one, refused for what it declares about itself: the reader was
+// sent to its size when the cause was the key set's declaration.
+func TestAKeySkippedForItsDeclarationIsNotBlamedOnItsSize(t *testing.T) {
+	key := rsaKey()
+	ps := sign(`{"alg":"PS256","kid":"r1"}`, `{"sub":"a"}`, func(in []byte) []byte {
+		sig, err := rsa.SignPSS(rand.Reader, key, crypto.SHA256, sha256Of(in), &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthEqualsHash})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return sig
+	})
+	b := func(n *big.Int) string { return base64.RawURLEncoding.EncodeToString(n.Bytes()) }
+	for extra, want := range map[string]string{
+		`"alg":"RS384",`:         `is declared for RS384`,
+		`"use":"enc",`:           `is for encryption (use enc)`,
+		`"key_ops":["encrypt"],`: `is limited by key_ops to encrypt`,
+	} {
+		set := fmt.Sprintf(`{"keys":[{"kty":"RSA","kid":"r1",%s"n":%q,"e":"AQAB"}]}`, extra, b(key.N))
+		_, verr := verifyWith(t, ps, set, "")
+		if verr == nil || verr.Code != "codec.jwt.nokey" || !strings.Contains(verr.Message, "no key given can check a PS256 signature: ") ||
+			!strings.Contains(verr.Message, want) || strings.Contains(verr.Hint, "2048") || !strings.Contains(verr.Hint, "PS256") {
+			t.Errorf("%s: got %+v, want a PS256 refusal naming %q with a hint about the declaration, not the size", extra, verr, want)
+		}
+	}
+	// A key refused for its type is still told what the algorithm needs.
+	mustRefuse(t, ps, rfc8037Public, "", "codec.jwt.nokey", "a PS256 signature needs an RSA key of 2048 bits or more")
+}
+
 func es256(t *testing.T, priv *ecdsa.PrivateKey, header string) string {
 	t.Helper()
 	return sign(header, `{"sub":"a"}`, func(in []byte) []byte {
