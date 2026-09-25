@@ -2,6 +2,7 @@ package format
 
 import (
 	"math"
+	"strings"
 	"testing"
 	"time"
 )
@@ -46,6 +47,39 @@ func TestAgo(t *testing.T) {
 		if got != c.want {
 			t.Errorf("Ago(%v) = %q, want %q", c.at, got, c.want)
 		}
+	}
+}
+
+// An instant centuries away is counted in calendar years. time.Since saturates
+// at about 292 years, so a token's exp of 9999-12-31, the usual way to write
+// "does not expire", read "in -9223372036 seconds" once negated, and 1700 was
+// "292 years ago". The zero time is an instant too — 1 January of year 1, a
+// date a token can carry — and only Ago, for a caller whose zero means that
+// nothing happened yet, reads it as "never".
+func TestRelativeCountsAFarInstantInYears(t *testing.T) {
+	now := time.Date(2026, 9, 25, 12, 0, 0, 0, time.UTC)
+	for _, c := range []struct {
+		at   time.Time
+		want string
+	}{
+		{time.Date(9999, 12, 31, 23, 59, 59, 0, time.UTC), "in 7973 years"},
+		{time.Date(2400, 1, 1, 0, 0, 0, 0, time.UTC), "in 373 years"},
+		{time.Date(1700, 1, 1, 0, 0, 0, 0, time.UTC), "327 years ago"},
+		{time.Time{}, "2026 years ago"},
+		{now.AddDate(-291, 0, 0), "291 years ago"},
+		{now.AddDate(289, 0, 0), "in 289 years"},
+		{now.AddDate(-2, 0, 0), "2 years ago"},
+		{now.Add(3 * time.Minute), "in 3 minutes"},
+	} {
+		if got := relativeTo(c.at, now); got != c.want {
+			t.Errorf("relative %v from %v = %q, want %q", c.at, now, got, c.want)
+		}
+	}
+	if got := Ago(time.Time{}); got != "never" {
+		t.Errorf("Ago(zero) = %q, want never", got)
+	}
+	if got := Relative(time.Time{}); got == "never" || !strings.HasSuffix(got, "years ago") {
+		t.Errorf("Relative(zero) = %q, want the years since year 1", got)
 	}
 }
 
