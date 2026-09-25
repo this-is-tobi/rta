@@ -308,6 +308,8 @@ There is deliberately no coercion. Reading `"true"` as true would then have to a
 
 The same rule covers the base `plugins:` block: `rta doctor` reports the line, and every call reading it is refused, naming the key it came from under the heading you wrote — `mysql.status takes text for tls, not a boolean, which the config's plugins.mysql@f5074594.tls sets`.
 
+A number of the right shape outside what every capability reading its key takes is different: each capability holds it to its own nearest bound, so the profile still resolves — but not as written. `rta profile set` refuses to write one; written by hand, `rta profile list` shows the profile as `warn` — or as `on`, with the same note, while it is switched on — and `rta profile show` and `rta doctor` name the range to write instead.
+
 ## A secret in the wrong block
 
 `set:` holds values and `secrets:` holds references, and putting a credential in the first one is the mistake this grammar invites. It is inert — nothing reads it, and `profile show` says so:

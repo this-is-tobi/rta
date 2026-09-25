@@ -758,6 +758,83 @@ func Check(cfg config.Config, inst Installed) []Problem {
 	return problems
 }
 
+// Notes reports what is worth saying about a configured profile and is not a
+// reason to refuse it: every profile it names still resolves, and runs the
+// way the note says. `rta profile list`, `rta profile show` and `rta doctor`
+// print them beside Check's problems; nothing that decides whether a profile
+// may be used reads them, which is what keeps Check's rule — Lookup refuses
+// what Check reports — true.
+func Notes(cfg config.Config, inst Installed) []Problem {
+	var notes []Problem
+	for _, name := range cfg.ProfileNames() {
+		p := cfg.Profiles[name]
+		if !config.ValidName(name) || !p.Trusted() {
+			continue
+		}
+		for _, key := range p.PluginKeys() {
+			notes = append(notes, noteSet(name, key, p.Plugins[key], config.PluginNamespace(key), inst)...)
+		}
+	}
+	return notes
+}
+
+// noteSet reports a `set:` number that no capability reading its key accepts.
+//
+// Each capability holds a number from a profile inside its own range
+// (plugin.Resolve's clampInt says why the operator's layers are held and not
+// refused), so such a profile runs — every capability with its own nearest
+// bound, which is a value the file does not state. `rta profile set` refuses
+// to write one, and doctor says the same about the base `plugins:` block;
+// written by hand into a profile it was listed as `ok`, and redis's `db: 20`
+// silently read database 15.
+func noteSet(name, key string, conn config.Connection, ns string, inst Installed) []Problem {
+	readers := fillableReaders(ns, inst)
+	keys := make([]string, 0, len(conn.Set))
+	for k := range conn.Set {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var notes []Problem
+	for _, k := range keys {
+		if len(readers[k]) == 0 {
+			continue
+		}
+		f := pluginconf.SharedField(readers[k])
+		v := conn.Set[k]
+		// A value of the wrong shape is Check's, and refused.
+		if problem, _ := plugin.StatedTypeProblem(f, v); problem != "" {
+			continue
+		}
+		if bounds := f.Bounds(); bounds != "" {
+			if _, ok := f.Range(v); !ok {
+				notes = append(notes, Problem{Name: name, Plugin: key,
+					Reason: fmt.Sprintf("`set: %s` is outside what every capability reading it takes, "+
+						"so each runs with its own nearest bound instead", k),
+					Hint: "write a value " + bounds})
+			}
+		}
+	}
+	return notes
+}
+
+// fillableReaders is every input in ns a profile may fill, by config key: a
+// key serves each capability in the namespace that declares it, and they
+// need not agree about what it takes (pluginconf.SharedField has the cases).
+func fillableReaders(ns string, inst Installed) map[string][]plugin.Field {
+	readers := map[string][]plugin.Field{}
+	for _, c := range capabilitiesOf(inst) {
+		if plugin.Namespace(c.ID) != ns {
+			continue
+		}
+		for _, f := range c.Inputs {
+			if f.Config != "" && plugin.ProfileFillable(c, f) {
+				readers[f.Config] = append(readers[f.Config], f)
+			}
+		}
+	}
+	return readers
+}
+
 // CheckConnection reports what is wrong with one plugin entry, without needing
 // the profile it sits in to exist anywhere yet.
 //
@@ -923,7 +1000,7 @@ func checkSet(name, key string, conn config.Connection, ns string, inst Installe
 	// declared it last, `mode: fast` — which `rta profile set` writes, since
 	// one capability offers it — made Lookup refuse the whole profile for
 	// every capability, the one offering it included.
-	readers := map[string][]plugin.Field{}
+	readers := fillableReaders(ns, inst)
 	declared := map[string]bool{}
 	// Whether this namespace has an EndpointTLS input at all — not which
 	// capability declares it, matching fillable/declared's own namespace-wide
@@ -940,12 +1017,8 @@ func checkSet(name, key string, conn config.Connection, ns string, inst Installe
 			if f.Endpoint == plugin.EndpointTLS {
 				hasTLSField = true
 			}
-			if f.Config == "" {
-				continue
-			}
-			declared[f.Config] = true
-			if plugin.ProfileFillable(c, f) {
-				readers[f.Config] = append(readers[f.Config], f)
+			if f.Config != "" {
+				declared[f.Config] = true
 			}
 		}
 	}
