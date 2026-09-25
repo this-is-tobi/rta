@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -507,38 +508,49 @@ func extendedColor(params []int, i, n int) (consumed int, desc string, ok bool) 
 // and quoting it as it came handed the terminal, one cell to the right, what
 // the Sequence cell had just escaped.
 func explainOSC(p *ansi.Parser) string {
-	switch p.Command() {
+	digits, payload := splitOSC(string(p.Data()))
+	if digits == "" {
+		return "OSC with no command number — a terminal ignores it"
+	}
+	cmd, err := strconv.Atoi(digits)
+	if err != nil {
+		return "OSC " + digits
+	}
+	switch cmd {
 	case 0, 1, 2:
-		return "set window/icon title: " + visualize(oscPayload(p))
+		return "set window/icon title: " + visualize(payload)
 	case 8:
-		return "hyperlink: " + visualize(hyperlinkURI(oscPayload(p)))
+		return "hyperlink: " + visualize(hyperlinkURI(payload))
 	case 52:
-		return explainClipboard(oscPayload(p))
+		return explainClipboard(payload)
 	default:
-		return fmt.Sprintf("OSC %d", p.Command())
+		return fmt.Sprintf("OSC %d", cmd)
 	}
 }
 
-// oscPayload is Data() with the OSC command number stripped back off.
+// splitOSC splits an OSC's data into its command number and the payload
+// after the ';' that follows it.
 //
-// Confirmed by reading the vendored source (parser.go's parseStringCmd):
-// the parser builds Command() by reading the leading ASCII digits out of
-// the collected data, but never removes them from it — Data() for "OSC 52 ;
-// c ; aGVsbG8=" is the literal bytes "52;c;aGVsbG8=", not "c;aGVsbG8=" the
-// way Command() already having parsed the "52" would suggest. Undocumented
-// behavior, not a stable contract to lean on silently — hence the pointer
-// to the exact function, so the next reader can re-check it against
-// whatever version of the dependency is in go.mod by then.
-func oscPayload(p *ansi.Parser) string {
-	data := string(p.Data())
+// The number is read here rather than from Command(). The decoder's
+// parseOscCmd (parser_decode.go) reads the leading ASCII digits of the data
+// only once it meets a ';' or a terminator, so an OSC the input ends inside
+// before either had no number yet; and one with no digits keeps
+// MissingCommand, which formatted as "OSC 2147483647" — a number the input
+// never held. It also never removes the digits from Data(): Data() for
+// "OSC 52 ; c ; aGVsbG8=" is the literal bytes "52;c;aGVsbG8=". Undocumented
+// behavior, not a stable contract to lean on silently — hence the pointer to
+// the exact function, so the next reader can re-check it against whatever
+// version of the dependency is in go.mod by then.
+func splitOSC(data string) (digits, payload string) {
 	i := 0
 	for i < len(data) && data[i] >= '0' && data[i] <= '9' {
 		i++
 	}
+	digits = data[:i]
 	if i < len(data) && data[i] == ';' {
 		i++
 	}
-	return data[i:]
+	return digits, data[i:]
 }
 
 // hyperlinkURI splits OSC 8's "params;URI" data. The params half (an

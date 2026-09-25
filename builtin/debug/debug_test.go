@@ -278,6 +278,24 @@ func TestOscClipboardInvalidBase64DoesNotCrash(t *testing.T) {
 	}
 }
 
+// An OSC with no command number came back as "OSC 2147483647", the
+// decoder's marker for a missing one, and an OSC the input ends inside
+// before its first ';' had its number read as missing too.
+func TestAnOscCommandIsReadFromTheSequence(t *testing.T) {
+	for input, want := range map[string]string{
+		"\x1b]\x07":      "OSC with no command number",
+		"\x1b]x;y\x07":   "OSC with no command number",
+		"\x1b]0":         "Once terminated: set window/icon title",
+		"\x1b]52":        "Once terminated: clipboard write",
+		"\x1b]777;x\x07": "OSC 777",
+	} {
+		got := explainAnsi(input).Rows[0][2]
+		if !strings.Contains(got, want) || strings.Contains(got, "2147483647") {
+			t.Errorf("%q: meaning = %q, want %q", input, got, want)
+		}
+	}
+}
+
 // --- sequences the input ends inside, or that stop short ---
 
 // A capture cut off mid-sequence is what somebody reaches for this to
