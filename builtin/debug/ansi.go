@@ -253,6 +253,8 @@ func explainSeq(seq string, p *ansi.Parser) (kind, meaning string) {
 		return "PM", "privacy message — a string terminals ignore, and a place to hide one"
 	case ansi.HasSosPrefix(seq):
 		return "SOS", "start of string — a string terminals ignore, and a place to hide one"
+	case len(seq) == 1 && seq[0] >= 0x80:
+		return "C1 control", rawC1(seq[0])
 	case len(seq) == 1:
 		return "control", explainControl(seq[0])
 	case ansi.HasEscPrefix(seq):
