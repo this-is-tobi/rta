@@ -38,6 +38,9 @@ func explainAnsi(input string) view.Table {
 		if isSequence(seq) {
 			w.flush()
 			kind, meaning := explainSeq(seq, p)
+			if state != ansi.NormalState {
+				meaning = unfinished(state, kind, meaning)
+			}
 			w.row(visualize(seq), kind, meaning)
 			continue
 		}
@@ -99,6 +102,45 @@ func (r *paramRoom) parserFor(data string, state byte, pooled *ansi.Parser) *ans
 // pooledDataSize is the data buffer ansi.GetParser's parsers carry, so that a
 // DCS or an OSC collects the same bytes whichever parser reads it.
 const pooledDataSize = 4 << 10
+
+// unfinished explains a sequence the input ends inside: the truncated
+// capture, or the write caught halfway, that somebody reaches for this
+// capability to understand. DecodeSequence hands such a token back whole, and
+// its prefix alone sent it to the explanation of a finished one — an OSC 52
+// with no terminator read as a clipboard write, although a terminal writes
+// nothing until a terminator arrives and meanwhile swallows everything it is
+// sent. The decoder's state says where the input stopped: inside a string, a
+// terminal takes whatever comes next as more of it; anywhere before a final
+// byte, as the rest of the sequence.
+func unfinished(state byte, kind, meaning string) string {
+	if state == ansi.StringState {
+		return "incomplete — the input ends before its terminator, so a terminal swallows whatever it is " +
+			"sent next until one arrives. Once terminated: " + meaning
+	}
+	return "incomplete " + sequenceName(kind) + " — the input ends before its final byte, so a terminal " +
+		"reads whatever it is sent next as the rest of it"
+}
+
+// sequenceName names the sequences that end in a final byte, by the kind
+// explainSeq gave them: a lone ESC is a control of its own until something
+// follows it.
+func sequenceName(kind string) string {
+	switch kind {
+	case "CSI":
+		return "CSI sequence"
+	case "DCS":
+		return "device control string"
+	default:
+		return "escape sequence"
+	}
+}
+
+// cutShort explains a CSI, DCS or escape sequence that a byte unable to
+// continue it ended before its final byte — DecodeSequence's zero command.
+// Naming the final byte then printed a NUL the input never held.
+func cutShort(kind string) string {
+	return "incomplete " + sequenceName(kind) + " — cut short before its final byte"
+}
 
 // walker accumulates rows: printable runs into one text row, and tag
 // characters and variation selectors — which DecodeSequence may hand over
@@ -215,10 +257,13 @@ func explainSeq(seq string, p *ansi.Parser) (kind, meaning string) {
 	case ansi.HasEscPrefix(seq):
 		return "ESC", explainEsc(p)
 	default:
-		// DecodeSequence's own doc: a zero Cmd means the sequence was
-		// invalid — truncated input, mid-write capture, a fuzzer. Still one
-		// row, not a crash: an incomplete sequence is exactly the kind of
-		// thing somebody reaches for this capability to understand.
+		// Every token isSequence passes is one byte or begins with an
+		// introducer above, and each of those names its own incomplete form:
+		// a zero command reaching explainCSI, explainDCS or explainEsc, and a
+		// token the input ends inside reaching unfinished. The prefix alone
+		// used to send both to an explanation of a finished sequence, while
+		// this row, which says incomplete, was never reached. It stays for an
+		// introducer a newer decoder learns: still one row, not a crash.
 		return "?", "unrecognized or incomplete sequence"
 	}
 }
@@ -241,6 +286,8 @@ func explainCSI(p *ansi.Parser) string {
 
 func csiCommand(cmd ansi.Cmd, params []int) string {
 	switch cmd.Final() {
+	case 0:
+		return cutShort("CSI")
 	case 'm':
 		return explainSGR(params)
 	case 'A':
@@ -541,6 +588,8 @@ func explainClipboard(data string) string {
 // and is explained there as itself.
 func explainDCS(cmd ansi.Cmd, data string) string {
 	switch {
+	case cmd.Final() == 0:
+		return cutShort("DCS")
 	case cmd.Final() == 't' && strings.HasPrefix(data, "mux;"):
 		return "tmux passthrough — tmux hands the sequence that follows to the terminal outside it, unfiltered, " +
 			"which is how a clipboard write tmux would refuse reaches the real clipboard"
@@ -580,6 +629,8 @@ func explainAPC(data string) string {
 func explainEsc(p *ansi.Parser) string {
 	cmd := ansi.Cmd(p.Command())
 	switch cmd.Final() {
+	case 0:
+		return cutShort("ESC")
 	case '7':
 		return "save cursor position"
 	case '8':
