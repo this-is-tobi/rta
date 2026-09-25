@@ -368,8 +368,9 @@ func formatBody(body []byte, contentType string, truncated bool) string {
 		body = withoutPartialRune(body)
 	}
 	if strings.Contains(contentType, "json") && utf8.Valid(body) {
+		src := bytes.TrimPrefix(body, utf8BOM)
 		var pretty bytes.Buffer
-		if json.Indent(&pretty, bytes.TrimPrefix(body, utf8BOM), "", "  ") == nil {
+		if indentFits(src, maxIndented(len(src))) && json.Indent(&pretty, src, "", "  ") == nil {
 			return strings.TrimRight(pretty.String(), " \t\r\n")
 		}
 	}
@@ -386,6 +387,91 @@ func formatBody(body []byte, contentType string, truncated bool) string {
 }
 
 var utf8BOM = []byte("\xef\xbb\xbf")
+
+// maxIndented is how large the indented form of an n-byte body may be before
+// it is shown as sent instead: four times the body, and 64 KiB more so a
+// small one is never refused. Indenting is not bounded by the body, which is
+// what this is for. Each line is indented two spaces per level and JSON may
+// nest 10000 levels, so 22 KB of brackets and zeros asked json.Indent for
+// 220 MB and a 1 MiB body for about 10 GB — an out-of-memory kill of the
+// process, which for `rta mcp serve` is every tool an agent had open, on a
+// body any fetched server chooses. What real responses need is far less: an
+// API's own pretty-printing is well under twice its compact form, and a flat
+// array of one-digit numbers, about the worst an ordinary body gets, is two
+// and a half times.
+func maxIndented(n int) int { return 4*n + 64<<10 }
+
+// indentFits reports whether json.Indent, with no prefix and a two-space
+// indent, would write at most limit bytes for src — without writing them. It
+// follows appendIndent in encoding/json byte for byte: whitespace outside a
+// string is dropped, a colon gains a space, a comma and a close bracket a
+// newline and the indent of their level, and an open bracket one on the
+// level inside it, unless the bracket closes at once.
+//
+// Whitespace after the value is the exception, and the one every body has:
+// Indent's scanner reports it as the end of the value, not as space to skip,
+// so Indent copies it as it stands — the newline a server ends a body with
+// included. Left out, the count came one byte short of nearly every body.
+//
+// It is a measure and not a parser. On JSON that is not valid it counts
+// something, and Indent, which runs only after this says yes, refuses it.
+func indentFits(src []byte, limit int) bool {
+	size, depth := 0, 0
+	inString, escaped, opened, started := false, false, false, false
+	for _, c := range src {
+		if inString {
+			size++
+			switch {
+			case escaped:
+				escaped = false
+			case c == '\\':
+				escaped = true
+			case c == '"':
+				inString = false
+			}
+			continue
+		}
+		switch c {
+		case ' ', '\t', '\n', '\r':
+			if started && depth == 0 && !opened {
+				size++
+			}
+			continue
+		}
+		started = true
+		if opened && c != '}' && c != ']' {
+			opened = false
+			depth++
+			size += 1 + 2*depth
+		}
+		switch c {
+		case '"':
+			inString = true
+			size++
+		case '{', '[':
+			opened = true
+			size++
+		case ',':
+			size += 2 + 2*depth
+		case ':':
+			size += 2
+		case '}', ']':
+			if opened {
+				opened = false
+			} else {
+				depth = max(depth-1, 0)
+				size += 1 + 2*depth
+			}
+			size++
+		default:
+			size++
+		}
+		if size > limit {
+			return false
+		}
+	}
+	return size <= limit
+}
 
 // withoutPartialRune drops the start of a character cut off at the end of b,
 // and leaves b as it is when its last character is whole — or is not UTF-8
