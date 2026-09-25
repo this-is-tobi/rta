@@ -356,7 +356,11 @@ func fetchAll(ctx context.Context, client *stdhttp.Client, base string, ids []st
 	}
 	close(work)
 	wg.Wait()
-	return out, false
+	// Every id can be handed out after the deadline too: a select with both
+	// cases ready picks one at random, and a worker that is free takes the
+	// send. Each of those fetches then fails on the dead context, so the
+	// pass is cut short all the same — the context says so, the loop does not.
+	return out, ctx.Err() != nil
 }
 
 func fetchOSVRecord(ctx context.Context, client *stdhttp.Client, url string) (osvRecord, bool) {
