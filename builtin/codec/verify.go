@@ -360,6 +360,13 @@ func pemCandidates(raw string) ([]candidate, *view.Error) {
 
 // repairPEM puts back the line breaks a PEM block needs around its body when
 // they were lost, and leaves an intact one alone.
+//
+// The footer is looked for only after the header. Searched for from the
+// start, it was found before the header in a paste that begins at the tail
+// of the block before it, and inside the header's own closing dashes in an
+// empty block, `-----BEGIN PUBLIC KEY-----END PUBLIC KEY-----`; the body was
+// then sliced backwards, and the one-line paste this exists for crashed the
+// CLI and the TUI.
 func repairPEM(s string) string {
 	if strings.Contains(s, "\n") {
 		return s
@@ -377,11 +384,13 @@ func repairPEM(s string) string {
 		head := s[begin : begin+11+headEnd+5]
 		kind := strings.TrimSuffix(strings.TrimPrefix(head, "-----BEGIN "), "-----")
 		foot := "-----END " + kind + "-----"
-		end := strings.Index(s, foot)
-		if end < 0 {
+		after := begin + len(head)
+		rel := strings.Index(s[after:], foot)
+		if rel < 0 {
 			break
 		}
-		body := strings.Join(strings.Fields(s[begin+len(head):end]), "")
+		end := after + rel
+		body := strings.Join(strings.Fields(s[after:end]), "")
 		b.WriteString(head + "\n" + body + "\n" + foot + "\n")
 		s = s[end+len(foot):]
 	}

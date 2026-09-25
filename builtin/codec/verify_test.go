@@ -505,6 +505,32 @@ func TestRSAVerifiesFromEveryPEMShape(t *testing.T) {
 	mustRefuse(t, strings.Join(tampered, "."), pub, "", "codec.jwt.signature", "changed after it was signed")
 }
 
+// repairPEM looked for the footer from the start of the text rather than
+// after the header, so a one-line paste whose END marker comes first sliced
+// backwards and crashed the CLI and the TUI: an empty block, whose footer
+// starts inside the header's own closing dashes, and a paste that begins
+// mid-chain at the previous block's END. The empty block is refused as
+// holding no key, and the key after a stray END is read.
+func TestAOneLinePEMWhoseFooterComesFirstIsReadRatherThanCrashing(t *testing.T) {
+	key := rsaKey()
+	rs := sign(`{"alg":"RS256"}`, `{"sub":"a"}`, func(in []byte) []byte {
+		sig, err := rsa.SignPKCS1v15(rand.Reader, key, crypto.SHA256, sha256Of(in))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return sig
+	})
+	for _, material := range []string{
+		"-----BEGIN PUBLIC KEY-----END PUBLIC KEY-----",
+		"-----BEGIN CERTIFICATE-----END CERTIFICATE-----",
+		"-----END PUBLIC KEY----- -----BEGIN PUBLIC KEY----- AAAA",
+	} {
+		mustRefuse(t, rs, material, "", "codec.jwt.key", "no public key, private key or certificate in the PEM given")
+	}
+	midChain := "AB -----END PUBLIC KEY----- " + strings.ReplaceAll(publicPEM(t, &key.PublicKey), "\n", " ")
+	mustVerify(t, rs, midChain, "", "2048-bit RSA from PEM")
+}
+
 // crypto/rsa refuses a key under 1024 bits and an even modulus inside the
 // check, and the refusal came back as a plain mismatch: a correct signature
 // from a 512-bit key read as a token changed after it was signed. Both are
