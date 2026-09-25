@@ -45,7 +45,7 @@ rta --version
 
 On a Debian, RPM or Alpine machine the package does the `$PATH` half for you: download the matching `.deb`, `.rpm` or `.apk` the same way and hand it to `dpkg -i` / `rpm -i` / `apk add --allow-untrusted`.
 
-Upgrading is the same download again — the new binary replaces the old one, and your config, store and grants live in your own directories, untouched (see "Where rta keeps things" below).
+Upgrading is the same download again — the new binary replaces the old one, and your config, store and grants live in your own directories, untouched (see "Where rta keeps things" below). Run `rta doctor` after an upgrade: when a release starts refusing a config value an older one accepted, doctor names each such value before a command runs into it, and the release notes list those changes under breaking changes.
 
 ## From source
 
