@@ -11,6 +11,7 @@ import (
 	"crypto/x509"
 	"encoding/hex"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -250,12 +251,35 @@ func readPEM(path string) ([]*x509.Certificate, error) {
 	var certs []*x509.Certificate
 	var failed error
 	failedAt, blocks := 0, 0
+	// unreadable counts the certificate blocks pem.Decode went past without
+	// returning, each one a certificate this could not read.
+	unreadable := func(types []string) {
+		for _, typ := range types {
+			if typ != "CERTIFICATE" {
+				continue
+			}
+			blocks++
+			if failed == nil {
+				failed, failedAt = errNotPEM, blocks
+			}
+		}
+	}
 	rest := data
 	for {
+		before := rest
 		var block *pem.Block
 		block, rest = pem.Decode(rest)
 		if block == nil {
 			break
+		}
+		// pem.Decode skips a block it cannot read — a body that is not
+		// base64, a block with no END line of its own — and returns the next
+		// one, so a damaged certificate in the middle of a bundle was never
+		// counted: the chain was drawn without it, and `cert pem --out` wrote
+		// the shortened bundle. Every BEGIN line in what this call consumed
+		// but the last, which is the block it returned, is one it skipped.
+		if skipped := beginTypes(before[:len(before)-len(rest)]); len(skipped) > 0 {
+			unreadable(skipped[:len(skipped)-1])
 		}
 		if block.Type != "CERTIFICATE" {
 			continue
@@ -279,20 +303,24 @@ func readPEM(path string) ([]*x509.Certificate, error) {
 	// drew a short chain that looked complete, and `cert pem --out` wrote a
 	// trust bundle missing its root into whatever consumed it next.
 	//
-	// Anything left holding a BEGIN line is therefore a block this could not
-	// read, and the file is refused rather than silently shortened.
+	// So what the loop left is read line by line. A last BEGIN line with no
+	// END after it is the cut, and the file is refused rather than silently
+	// shortened. Any other block left there has its END line and is damaged
+	// rather than cut — the last block of a file whose base64 was mangled
+	// was refused as a file ending inside a PEM block, which it does not.
 	//
-	// Ahead of a certificate that did not parse, not after it. A cut-off file
-	// with a bad block earlier in it was refused as "certificate 2 of 2", a
-	// count that left out the block the file ends inside, and nothing said
-	// the file was incomplete. Fetching it again is the remedy for the cut,
-	// and a download damaged enough to lose its end may have damaged the
-	// block that failed as well.
-	if bytes.Contains(rest, []byte("-----BEGIN")) {
+	// The cut is refused ahead of a certificate that did not read, not after
+	// it. A cut-off file with a bad block earlier in it was refused as
+	// "certificate 2 of 2", a count that left out the block the file ends
+	// inside, and nothing said the file was incomplete. Fetching it again is
+	// the remedy for the cut, and a download damaged enough to lose its end
+	// may have damaged the block that failed as well.
+	if endsInsideBlock(rest) {
 		return nil, view.Errorf("cert.file.truncated",
 			"%s ends inside a PEM block, so it holds at least one certificate this could not read", path).
 			WithHint("the file is truncated or corrupt — fetch it again, and check whatever wrote it finished")
 	}
+	unreadable(beginTypes(rest))
 	// Refused, not skipped: a file is read as one chain, and a chain with a
 	// link left out is the silently shortened bundle the truncation check
 	// above refuses for the same reason. Where the bad one sits is what
@@ -303,7 +331,10 @@ func readPEM(path string) ([]*x509.Certificate, error) {
 			where = fmt.Sprintf("certificate %d of %d in %s", failedAt, blocks, path)
 		}
 		verr := view.Errorf("cert.parse.failed", "parsing %s: %v", where, failed)
-		if strings.Contains(failed.Error(), "negative serial number") {
+		switch {
+		case errors.Is(failed, errNotPEM):
+			verr = verr.WithHint("a character in it was changed or lost — fetch the file again, or export the certificate again")
+		case strings.Contains(failed.Error(), "negative serial number"):
 			verr = verr.WithHint(negativeSerialHint(blocks))
 		}
 		return nil, verr
@@ -312,6 +343,46 @@ func readPEM(path string) ([]*x509.Certificate, error) {
 		return nil, view.Errorf("cert.file.empty", "no CERTIFICATE blocks found in %s", path)
 	}
 	return certs, nil
+}
+
+// errNotPEM is a certificate block pem.Decode could not read at all.
+var errNotPEM = errors.New("not valid PEM — its body is not base64, or its END line is missing or does not match its BEGIN line")
+
+// pemBegin opens a PEM block and pemEnd closes one, each at the start of a
+// line — where pem.Decode looks for them.
+const (
+	pemBegin = "-----BEGIN "
+	pemEnd   = "-----END "
+)
+
+// endsInsideBlock reports whether data's last PEM block has no END line after
+// its BEGIN line: the file stops inside it.
+func endsInsideBlock(data []byte) bool {
+	open := false
+	for line := range bytes.Lines(data) {
+		switch {
+		case bytes.HasPrefix(line, []byte(pemBegin)):
+			open = true
+		case bytes.HasPrefix(line, []byte(pemEnd)):
+			open = false
+		}
+	}
+	return open
+}
+
+// beginTypes lists the type of every PEM block that opens at the start of a
+// line in data, in order: "CERTIFICATE" for "-----BEGIN CERTIFICATE-----",
+// and the same for a BEGIN line whose trailing dashes were damaged, since
+// that block was still meant as a certificate. data starts at a line start:
+// the file's first byte, or the byte after the line pem.Decode last consumed.
+func beginTypes(data []byte) []string {
+	var types []string
+	for line := range bytes.Lines(data) {
+		if typ, ok := bytes.CutPrefix(line, []byte(pemBegin)); ok {
+			types = append(types, strings.TrimRight(strings.TrimSpace(string(typ)), "-"))
+		}
+	}
+	return types
 }
 
 // negativeSerialHint is what to do about a certificate Go refuses for its
