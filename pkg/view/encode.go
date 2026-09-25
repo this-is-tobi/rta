@@ -73,16 +73,21 @@ func MarshalIndent(v any, prefix, indent string) ([]byte, error) {
 	if err := enc.Encode(v); err != nil {
 		return nil, err
 	}
-	return escapeActedOn(bytes.TrimSuffix(b.Bytes(), []byte("\n"))), nil
+	return EscapeActedOn(bytes.TrimSuffix(b.Bytes(), []byte("\n"))), nil
 }
 
-// escapeActedOn writes each character in encoded JSON that a terminal acts on
+// EscapeActedOn writes each character in encoded JSON that a terminal acts on
 // as its escape. Rewriting the bytes after encoding is safe because such a
 // character can only occur inside a string — everything outside one is
 // printable ASCII and whitespace — and UTF-8 never holds one character's
 // encoding inside another's. Only the three bytes that can begin one are
 // decoded, so text without them costs a byte comparison each.
-func escapeActedOn(data []byte) []byte {
+//
+// Exported for JSON that another encoder wrote on its way to a terminal: the
+// plugin host's stderr is a JSON log that hclog encodes with encoding/json,
+// and it has the same gap. data must hold whole characters — a character
+// split across two calls is passed through in halves, unescaped.
+func EscapeActedOn(data []byte) []byte {
 	var out []byte
 	last := 0
 	for i := 0; i < len(data); {
