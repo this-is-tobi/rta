@@ -315,3 +315,44 @@ func TestAValueOfAShapeTheAccessorCannotReadIsRefused(t *testing.T) {
 		}
 	}
 }
+
+// A Local input is one the MCP bridge strips from an agent's arguments, so
+// telling the agent an argument overrides the config sent it to retry with
+// an input its schema hides, into the same refusal. And a pinned plugin's
+// section is written `pg@<pin>:`, so the key is named under that heading,
+// not under a bare namespace the file does not have.
+func TestARefusalNamesTheLineAndOnlyAnOverrideThatExists(t *testing.T) {
+	c := Capability{
+		ID: "pg.status", Summary: "s", Safety: Read,
+		Run: func(context.Context, Request) (view.View, error) { return nil, nil },
+		Inputs: []Field{
+			{Name: "port", Type: Int, Default: 5432, Min: 1, Max: 65535, Config: "port", Local: true},
+			{Name: "limit", Type: Int, Default: 10, Min: 1, Max: 100, Config: "limit"},
+		},
+	}
+	pinned := func(key string, v any) Inputs {
+		return Inputs{Config: map[string]any{key: v}, ConfigSection: "pg@1a2b3c4d"}
+	}
+	verr := CheckInputs(c, ResolveRequest(c, pinned("port", "5432"), false, false).WithSurface(SurfaceMCP))
+	if verr == nil || !strings.HasSuffix(verr.Message, "which the config's plugins.pg@1a2b3c4d.port sets") {
+		t.Fatalf("message: %v", verr)
+	}
+	if verr.Hint != "only the operator can change it (the config's plugins.pg@1a2b3c4d.port)" {
+		t.Errorf("a Local input's hint over MCP: %q", verr.Hint)
+	}
+	// Not Local: the argument is real, and the hint still offers it.
+	verr = CheckInputs(c, ResolveRequest(c, pinned("limit", "5"), false, false).WithSurface(SurfaceMCP))
+	if verr == nil || !strings.Contains(verr.Hint, "an argument naming limit overrides it for this call") {
+		t.Errorf("a caller-settable input's hint over MCP: %v", verr)
+	}
+	// On the CLI a flag does override a Local input.
+	verr = CheckInputs(c, ResolveRequest(c, pinned("port", "5432"), false, false).WithSurface(SurfaceCLI))
+	if verr == nil || !strings.HasSuffix(verr.Hint, "or give port on the call to override it for one run") {
+		t.Errorf("a Local input's hint on the CLI: %v", verr)
+	}
+	// No heading given is the namespace, every built-in's.
+	verr = CheckInputs(c, ResolveRequest(c, Inputs{Config: map[string]any{"port": "1"}}, false, false))
+	if verr == nil || !strings.Contains(verr.Message, "the config's plugins.pg.port") {
+		t.Errorf("no heading: %v", verr)
+	}
+}

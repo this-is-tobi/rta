@@ -91,6 +91,10 @@ type Options struct {
 	// any, so the failure is a capability that asks for an argument it could
 	// have had, not one that reaches somewhere nobody authorised.
 	Config func(namespace string) map[string]any
+	// ConfigSection answers the heading Config's values were written under,
+	// so a refusal of one names the line to change. nil names the bare
+	// namespace, which is right for every built-in.
+	ConfigSection func(namespace string) string
 	// Secrets fetches a `secrets:` reference for a profile. nil means this
 	// server resolves none, which withholds credentials rather than granting
 	// any — a profile that needs one then fails to connect, saying so.
@@ -251,6 +255,15 @@ func (o Options) pluginConfig(c plugin.Capability) map[string]any {
 		return nil
 	}
 	return o.Config(words[0])
+}
+
+// configSection is the heading pluginConfig's values were written under.
+func (o Options) configSection(c plugin.Capability) string {
+	words := c.Words()
+	if o.ConfigSection == nil || len(words) == 0 {
+		return ""
+	}
+	return o.ConfigSection(words[0])
 }
 
 // Problems reports what this server could not honour, and why.

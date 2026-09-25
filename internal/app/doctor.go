@@ -252,6 +252,16 @@ func PluginConfig(c plugin.Capability) map[string]any {
 	return pluginConfig.For(words[0])
 }
 
+// PluginConfigSection is the heading PluginConfig's values were written
+// under, for a refusal of one of them to name (plugin.Inputs.ConfigSection).
+func PluginConfigSection(c plugin.Capability) string {
+	words := c.Words()
+	if len(words) == 0 {
+		return ""
+	}
+	return pluginConfig.Section(words[0])
+}
+
 // ConfigNotApplied names the operator's section that rta could not honour
 // for this capability's plugin, or "".
 //

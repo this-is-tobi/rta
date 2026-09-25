@@ -434,6 +434,7 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				ConsentNotify: consentNotify,
 				Origin:        reg.Origin,
 				Config:        pluginConfig.For,
+				ConfigSection: pluginConfig.Section,
 				Profiles:      profileCfg,
 				// The schema above is a snapshot; what a call resolves through
 				// is the file as it is now, so an environment the operator

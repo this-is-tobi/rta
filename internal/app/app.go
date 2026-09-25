@@ -985,6 +985,8 @@ func runCapability(ctx context.Context, cmd *cobra.Command, c plugin.Capability,
 		Profile:     filled,
 		ProfileName: profileName,
 		Config:      PluginConfig(c),
+		// The heading Config sits under, for a refusal to name the line.
+		ConfigSection: PluginConfigSection(c),
 	}, opts.dryRun, opts.yes).WithSurface(plugin.SurfaceCLI)
 	// The required check for config-backed inputs, which cobra no longer
 	// makes because making it would have run before config was consulted.

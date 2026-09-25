@@ -87,6 +87,12 @@ func CheckInputs(c Capability, req Request) *view.Error {
 // call beats both layers. Only a Request built by ResolveRequest knows; one
 // built from a bare map is refused in the caller's words as before.
 //
+// Except for a Local input over MCP, which is nearly every connection
+// setting: the bridge strips an argument naming one unread, so "an argument
+// naming port overrides it for this call" sent an agent to retry with an
+// input its schema hides, into the identical refusal. Only the operator can
+// change that one, and the hint says so and no more.
+//
 // how is what to write there instead, for a value whose shape is the
 // problem — "write it there as a bare number, without quotes" — and "" for
 // one whose content is, where "change it there" is the whole instruction.
@@ -103,7 +109,11 @@ func fromSource(verr *view.Error, how string, c Capability, f Field, req Request
 		where, change = "the profile in use", "`rta profile list` names it"
 	}
 	if o.key != "" {
-		where = "the config's plugins." + Namespace(c.ID) + "." + o.key
+		section := o.section
+		if section == "" {
+			section = Namespace(c.ID)
+		}
+		where = "the config's plugins." + section + "." + o.key
 		change = "`rta explain " + c.ID + "` names the file"
 	}
 	out := *verr
@@ -111,6 +121,9 @@ func fromSource(verr *view.Error, how string, c Capability, f Field, req Request
 	if req.Surface() == SurfaceMCP {
 		out.Hint = "the operator can change it (" + where + "); an argument naming " +
 			f.Name + " overrides it for this call"
+		if f.Local {
+			out.Hint = "only the operator can change it (" + where + ")"
+		}
 		return &out
 	}
 	if how == "" {

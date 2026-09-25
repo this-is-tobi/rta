@@ -43,9 +43,11 @@ import (
 // that grinding a second artifact to collide with it is not realistic.
 const minPinLen = 8
 
-// Resolver holds the sections that survived the pin check, by namespace.
+// Resolver holds the sections that survived the pin check, by namespace, and
+// the heading each was written under.
 type Resolver struct {
 	sections map[string]map[string]any
+	headings map[string]string
 }
 
 // Problem is one stated thing rta could not honour, and what to do about it.
@@ -74,7 +76,7 @@ type Origin func(namespace string) (registry.Origin, bool)
 
 // Resolve matches every stated section to the artifact it names.
 func Resolve(cfg config.Config, origin Origin) (*Resolver, []Problem) {
-	r := &Resolver{sections: map[string]map[string]any{}}
+	r := &Resolver{sections: map[string]map[string]any{}, headings: map[string]string{}}
 	var problems []Problem
 
 	// Sorted, so `rta doctor` prints the same order twice running and a
@@ -134,7 +136,7 @@ func Resolve(cfg config.Config, origin Origin) (*Resolver, []Problem) {
 					Hint:   "write it as `" + ns + ":`"})
 				continue
 			}
-			r.sections[ns] = cfg.Plugins[section]
+			r.sections[ns], r.headings[ns] = cfg.Plugins[section], section
 		case !pinned:
 			problems = append(problems, Problem{Section: section,
 				Reason: fmt.Sprintf("%q is an installed plugin, so its config must name the artifact it is for", ns),
@@ -158,7 +160,7 @@ func Resolve(cfg config.Config, origin Origin) (*Resolver, []Problem) {
 				Reason: fmt.Sprintf("this pin does not match the installed %q", ns),
 				Hint:   "the installed one is `" + ns + "@" + o.Short() + "`"})
 		default:
-			r.sections[ns] = cfg.Plugins[section]
+			r.sections[ns], r.headings[ns] = cfg.Plugins[section], section
 		}
 	}
 	return r, problems
@@ -175,6 +177,18 @@ func (r *Resolver) For(namespace string) map[string]any {
 		return nil
 	}
 	return r.sections[namespace]
+}
+
+// Section returns the heading For's values were written under — `pg@1a2b3c4d`
+// as the operator wrote the pin, `sys` for a built-in — or "" when nothing
+// was matched. A refusal of one of those values names it
+// (plugin.Inputs.ConfigSection), since the namespace alone is not a line the
+// file has for a plugin that must be pinned.
+func (r *Resolver) Section(namespace string) string {
+	if r == nil {
+		return ""
+	}
+	return r.headings[namespace]
 }
 
 // RawSection returns whatever is written for namespace, under whichever

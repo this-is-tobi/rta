@@ -502,6 +502,8 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 			Profile:     filled,
 			ProfileName: profileName,
 			Config:      opts.pluginConfig(c),
+			// The heading Config sits under, for a refusal to name the line.
+			ConfigSection: opts.configSection(c),
 		}, false, true).WithSurface(plugin.SurfaceMCP).
 			// The same guard the arguments went through, carried into the
 			// handler for the paths it derives from them rather than
