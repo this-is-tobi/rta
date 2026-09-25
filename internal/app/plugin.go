@@ -262,8 +262,10 @@ func needsInventory() view.View {
 		})
 	}
 	t.Total = len(t.Rows)
+	// The table even when nothing asks, and the sentence beside it for a
+	// screen: see view.Table.Empty.
 	if t.Total == 0 {
-		return view.Text{Body: "No installed plugin asks for a credential location."}
+		t.Empty = "No installed plugin asks for a credential location."
 	}
 	return t
 }

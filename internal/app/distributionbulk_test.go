@@ -107,6 +107,30 @@ func TestOutdatedAcceptsAnIndexFilter(t *testing.T) {
 	}
 }
 
+// An empty plugin listing is a sentence on a screen and a table to a parser.
+// The sentence in place of the table was what every format got: `-o json |
+// jq '.rows[]'` met a text view, and -o csv refused one and exited 2.
+func TestAnEmptyPluginListingIsATableToAParser(t *testing.T) {
+	for _, c := range []struct {
+		args        []string
+		say, header string
+	}{
+		{[]string{"plugin", "outdated"}, "no plugin is installed", "Plugin,Installed,Available,Index"},
+		{[]string{"plugin", "index", "list"}, "no index is attached", "Index,Origin,Pinned,Plugins,Problems"},
+		{[]string{"plugin", "allow"}, "No installed plugin asks", "Plugin,Asks for,Status,To allow"},
+	} {
+		name := strings.Join(c.args, " ")
+		out, errOut, err := run(t, registry.New(), append(c.args, "-o", "pretty")...)
+		if err != nil || !strings.Contains(out, c.say) {
+			t.Errorf("%s: pretty = %q (%v, %s), want the sentence", name, out, err, errOut)
+		}
+		out, errOut, err = run(t, registry.New(), append(c.args, "-o", "csv")...)
+		if err != nil || strings.TrimSpace(out) != c.header {
+			t.Errorf("%s: csv = %q (%v, %s), want the header row alone", name, out, err, errOut)
+		}
+	}
+}
+
 // The sweep's report is where an operator finds out what happened, and the two
 // things it must never blur are "moved" and "held back". A skipped plugin that
 // rendered like an upgraded one would be a silent failure of the guard; a

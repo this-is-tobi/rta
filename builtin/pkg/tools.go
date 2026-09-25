@@ -180,10 +180,14 @@ func runTools(ctx context.Context, req plugin.Request) (view.View, error) {
 		return nil, verr
 	}
 	raw := req.StringSlice("tools")
+	// The table even when no tool is listed, and the sentence beside it for
+	// a screen: see view.Table.Empty.
 	if len(raw) == 0 {
-		return view.Text{Body: "No tools listed. Write the binaries you install from GitHub releases under " +
+		t := toolsTable(nil)
+		t.Empty = "No tools listed. Write the binaries you install from GitHub releases under " +
 			"`plugins: pkg: tools:` as `- <bin>=github:<owner>/<repo>`; binaries from `go install` " +
-			"need no entry and appear under the go manager in `rta pkg outdated`."}, nil
+			"need no entry and appear under the go manager in `rta pkg outdated`."
+		return t, nil
 	}
 	states, verr := readTools(ctx, newRegistryClient(), raw)
 	if verr != nil {

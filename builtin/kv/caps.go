@@ -53,9 +53,6 @@ func runList(_ context.Context, req plugin.Request) (view.View, error) {
 		names = append(names, k)
 	}
 	sort.Strings(names)
-	if len(names) == 0 {
-		return view.Text{Body: emptyList(len(s.Entries), kindFilter, req.String("match"))}, nil
-	}
 
 	// Which environments read each entry — config-side metadata joined in
 	// for the person at the terminal, so a listing distinguishes the entries
@@ -120,6 +117,11 @@ func runList(_ context.Context, req plugin.Request) (view.View, error) {
 		t.Rows = append(t.Rows, row)
 	}
 	t.Total = len(t.Rows)
+	// The table even when nothing is listed, and the sentence beside it for a
+	// screen: see view.Table.Empty.
+	if len(t.Rows) == 0 {
+		t.Empty = emptyList(len(s.Entries), kindFilter, req.String("match"))
+	}
 	return t, nil
 }
 

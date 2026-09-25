@@ -1,6 +1,7 @@
 package note
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -8,6 +9,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/this-is-tobi/rta/internal/render/cli"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -163,8 +165,8 @@ func TestAddListDoneRemoveCycle(t *testing.T) {
 	setup(t)
 
 	// Empty list greets, not errors.
-	if body := text(t, runList, map[string]any{}, false); !strings.Contains(body, "Nothing here yet") {
-		t.Errorf("empty list = %q", body)
+	if empty := table(t, runList, map[string]any{}); !strings.Contains(empty.Empty, "Nothing here yet") {
+		t.Errorf("empty list = %#v", empty)
 	}
 
 	addTodo(t, "write docs")
@@ -694,8 +696,38 @@ func TestSearchNoMatchIsFriendly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(v.(view.Text).Body, `No notes match "nope"`) {
-		t.Errorf("no-match body = %v", v)
+	if tbl, ok := v.(view.Table); !ok || !strings.Contains(tbl.Empty, `No notes match "nope"`) {
+		t.Errorf("no-match = %v", v)
+	}
+}
+
+// Each listing answers "nothing" with its table, not with a sentence in its
+// place. The sentence was what every format got: `-o json | jq '.rows[]'` met
+// a text view it was never promised, and -o csv refused one and exited 2,
+// the code for something unexpected. It rides on the table for a screen now.
+func TestAnEmptyListingIsATableToAParser(t *testing.T) {
+	setup(t)
+	for name, c := range map[string]struct {
+		h      plugin.Handler
+		values map[string]any
+		header string
+	}{
+		"list":     {runList, nil, "ID,Status,Due,Age,Note"},
+		"sub-list": {runList, map[string]any{"parent": 7}, "ID,Status,Due,Age,Note"},
+		"search":   {runSearch, map[string]any{"query": "nope"}, "ID,Status,Note,Tags"},
+		"tags":     {runTags, nil, "Tag,Notes"},
+	} {
+		tbl := table(t, c.h, c.values)
+		if len(tbl.Rows) != 0 || tbl.Empty == "" {
+			t.Errorf("%s: %#v, want no rows and a sentence for a screen", name, tbl)
+		}
+		var out bytes.Buffer
+		if err := cli.Render(&out, tbl, cli.Options{Format: cli.CSV}); err != nil {
+			t.Errorf("%s: csv: %v", name, err)
+		}
+		if got := strings.TrimSpace(out.String()); got != c.header {
+			t.Errorf("%s: csv = %q, want the header row alone", name, got)
+		}
 	}
 }
 

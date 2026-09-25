@@ -1,6 +1,7 @@
 package lock
 
 import (
+	"bytes"
 	"context"
 	"path/filepath"
 	"strings"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/lockdown"
+	"github.com/this-is-tobi/rta/internal/render/cli"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -58,6 +60,25 @@ func TestLockAddListRmAtTheTerminal(t *testing.T) {
 		req(map[string]any{"kind": "agent", "name": "claude"}))
 	if kv, ok := v.(view.KeyValue); !ok || kv.Pairs[0].Key != "nothing to lift" {
 		t.Fatalf("second rm = %+v", v)
+	}
+}
+
+// Nothing locked is a sentence on a screen and a table to a parser. The
+// sentence in place of the table was what every format got: `-o json | jq
+// '.rows[]'` met a text view, and -o csv refused one and exited 2.
+func TestNothingLockedIsATableToAParser(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	v, err := capByID(t, "lock.list").Run(context.Background(), req(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tbl, ok := v.(view.Table); !ok || len(tbl.Rows) != 0 || tbl.Empty != "nothing is locked" {
+		t.Fatalf("list = %+v, want an empty table saying nothing is locked", v)
+	}
+	var out bytes.Buffer
+	if err := cli.Render(&out, v, cli.Options{Format: cli.CSV}); err != nil ||
+		strings.TrimSpace(out.String()) != "kind,name,note,by,stands" {
+		t.Errorf("csv = %q (%v), want the header row alone", out.String(), err)
 	}
 }
 

@@ -404,7 +404,7 @@ func TestARewrittenRequestIsRefusedAsOneRatherThanAsAStaleID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, listed := v.(view.Table); listed {
+	if tbl, ok := v.(view.Table); !ok || len(tbl.Rows) != 0 {
 		t.Fatalf("the rewritten request is still listed: %v", v)
 	}
 }

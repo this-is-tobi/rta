@@ -129,8 +129,10 @@ func runHostsList(_ context.Context, req plugin.Request) (view.View, error) {
 		}
 	}
 	t.Total = len(t.Rows)
+	// The table even when nothing is listed, and the sentence beside it for a
+	// screen: see view.Table.Empty.
 	if len(t.Rows) == 0 {
-		return view.Text{Body: fmt.Sprintf("No entries in %s — add one with: rta net hosts add <ip> <hostname>", path)}, nil
+		t.Empty = fmt.Sprintf("No entries in %s — add one with: rta net hosts add <ip> <hostname>", path)
 	}
 	return t, nil
 }

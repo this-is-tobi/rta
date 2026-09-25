@@ -1,6 +1,7 @@
 package grant
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	core "github.com/this-is-tobi/rta/internal/grant"
+	"github.com/this-is-tobi/rta/internal/render/cli"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -298,6 +300,23 @@ func TestRolesSayTheWindowEachWillReallyGet(t *testing.T) {
 	one := run(t, runRoles, map[string]any{"role": "quick"})
 	if len(one.(view.Table).Rows) != 1 {
 		t.Fatalf("roles quick = %+v", one)
+	}
+}
+
+// No role defined is a sentence on a screen and a table to a parser. The
+// sentence in place of the table was what every format got: `-o json | jq
+// '.rows[]'` met a text view, and -o csv refused one and exited 2.
+func TestNoRoleDefinedIsATableToAParser(t *testing.T) {
+	roleSetup(t)
+	v := run(t, runRoles, nil)
+	tbl, ok := v.(view.Table)
+	if !ok || len(tbl.Rows) != 0 || !strings.Contains(tbl.Empty, "no role is defined") {
+		t.Fatalf("roles = %+v, want an empty table saying no role is defined", v)
+	}
+	var out bytes.Buffer
+	if err := cli.Render(&out, v, cli.Options{Format: cli.CSV}); err != nil ||
+		strings.TrimSpace(out.String()) != "role,from,agent,ttl,grants" {
+		t.Errorf("csv = %q (%v), want the header row alone", out.String(), err)
 	}
 }
 

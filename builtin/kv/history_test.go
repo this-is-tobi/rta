@@ -92,8 +92,8 @@ func TestRemoveKeepsTheEntryAsideUntilRestoredOrPurged(t *testing.T) {
 	if _, err := runGet(context.Background(), req(map[string]any{"key": "k"}, false)); err == nil {
 		t.Fatal("a removed key still reads")
 	}
-	if v, err := runList(context.Background(), req(nil, false)); err != nil || view.TypeOf(v) != "text" {
-		t.Errorf("a removed key still lists: %v %v", v, err)
+	if listed := table(t, runList, nil); len(listed.Rows) != 0 {
+		t.Errorf("a removed key still lists: %v", listed.Rows)
 	}
 	removed := table(t, runList, map[string]any{"removed": true})
 	if len(removed.Rows) != 1 || removed.Rows[0][0] != "k" {
@@ -112,8 +112,8 @@ func TestRemoveKeepsTheEntryAsideUntilRestoredOrPurged(t *testing.T) {
 	if _, err := runRestore(context.Background(), req(map[string]any{"key": "k"}, false)); err == nil {
 		t.Fatal("a purged key was restored")
 	}
-	if v, _ := runList(context.Background(), req(map[string]any{"removed": true}, false)); view.TypeOf(v) != "text" {
-		t.Errorf("a purged key is still listed as removed: %v", v)
+	if removed := table(t, runList, map[string]any{"removed": true}); len(removed.Rows) != 0 {
+		t.Errorf("a purged key is still listed as removed: %v", removed.Rows)
 	}
 }
 

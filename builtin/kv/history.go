@@ -207,9 +207,6 @@ func runRestore(_ context.Context, req plugin.Request) (view.View, error) {
 
 // removedTable lists what `kv rm` set aside, for `kv list --removed`.
 func removedTable(s store) view.View {
-	if len(s.Removed) == 0 {
-		return view.Text{Body: "Nothing removed — `rta kv rm` keeps what it removes here until `rta kv restore` or `--purge`."}
-	}
 	names := make([]string, 0, len(s.Removed))
 	for k := range s.Removed {
 		names = append(names, k)
@@ -221,7 +218,7 @@ func removedTable(s store) view.View {
 		{Name: "Size", Kind: view.KindBytes},
 		{Name: "Description"},
 		{Name: "Removed", Kind: view.KindDuration},
-	}}
+	}, Empty: "Nothing removed — `rta kv rm` keeps what it removes here until `rta kv restore` or `--purge`."}
 	for _, k := range names {
 		r := s.Removed[k]
 		t.Rows = append(t.Rows, []string{k, r.Kind, format.Bytes(len(r.Value)), r.Description,
