@@ -25,7 +25,7 @@ rta fs usage ~/Downloads --depth 2
 | `md` | Dropping into a report or an issue |
 
 ```bash
-rta sys overview -o json | jq '.rows'
+rta sys overview -o json | jq '.pairs'
 rta audit web example.com -o md >> security-review.md
 ```
 
@@ -39,7 +39,7 @@ export RTA_OUTPUT=json
 
 ### The shape of a result
 
-Every capability returns the same envelope — columns and rows, sometimes composed into sections. That is why one `--output` flag works everywhere, and why a plugin cannot invent a format your tooling has not seen.
+Every capability returns one of a closed set of shapes, named by its `type`: a `table` of columns and rows, `keyvalue` pairs, `text`, a `tree`, a `chart`, or `sections` composing any of them. That is why one `--output` flag works everywhere, and why a plugin cannot invent a format your tooling has not seen.
 
 ```bash
 rta net dns github.com -o json
@@ -48,7 +48,9 @@ rta net dns github.com -o json
 ```json
 {
   "columns": [{ "name": "Type" }, { "name": "Value" }],
-  "rows": [["A", "140.82.121.4"]]
+  "rows": [["A", "140.82.121.4"]],
+  "total": 1,
+  "type": "table"
 }
 ```
 
