@@ -162,7 +162,11 @@ func dashboardAddCommand(reg *registry.Registry, render renderFn, opts *globalOp
 		},
 	}
 	cmd.Flags().String("profile", "", "pin the tile to this connection: a profile name, or name/instance")
-	cmd.Flags().StringSlice("set", nil, "an input for the run, `key=value`; repeat for several")
+	// StringArray, as profile set's is: StringSlice split its argument on
+	// commas, so net.port's own `--set ports=22,80` became "ports=22" and a
+	// stray "80", refused as not a key=value pair, and no value with a comma
+	// could be stated at all. A list-shaped input is one --set per element.
+	cmd.Flags().StringArray("set", nil, "an input for the run, `key=value`; repeat for several")
 	cmd.Flags().Int("span", 0, "grid columns the tile occupies; 0 leaves it to the capability")
 	_ = cmd.RegisterFlagCompletionFunc("profile", completeProfiles)
 	_ = cmd.RegisterFlagCompletionFunc("set", completeTileInputs(reg))
@@ -247,7 +251,7 @@ func runDashboardAdd(cmd *cobra.Command, id string, reg *registry.Registry, dryR
 		}
 		expandsTo = refs
 	}
-	pairs, _ := cmd.Flags().GetStringSlice("set")
+	pairs, _ := cmd.Flags().GetStringArray("set")
 	with, verr := parseTileInputs(pairs, c)
 	if verr != nil {
 		return nil, verr
