@@ -90,6 +90,30 @@ func fieldTypeList() string {
 	return strings.Join(names, ", ")
 }
 
+// ValidateOutOfProcess is Validate plus the one rule that tells a plugin from
+// a built-in. Piped says the CLI reads the input from its standard input when
+// the call leaves it out, and a plugin runs in a process of its own that never
+// sees that pipe: the input would be required on every surface but the CLI and
+// read from nowhere on the CLI. Validate cannot refuse it, because built-ins
+// declare it and go through Validate too. The host runs this on every
+// declaration it loads, and the SDK's Serve runs it before serving, so the
+// author meets the refusal at `go run .` and not first at `rta plugin install`.
+func (p Plugin) ValidateOutOfProcess() error {
+	if err := p.Validate(); err != nil {
+		return err
+	}
+	for _, c := range p.Capabilities {
+		for _, f := range c.Inputs {
+			if f.Piped {
+				return fmt.Errorf("capability %q marks input %q Piped, which only a built-in can honour — "+
+					"a plugin never sees the CLI's standard input; declare it Required, or refuse an "+
+					"empty value in the handler", c.ID, f.Name)
+			}
+		}
+	}
+	return nil
+}
+
 // Validate checks structural correctness of a plugin declaration. It is used
 // by the registry at load time and by the sdktest conformance suite.
 func (p Plugin) Validate() error {
@@ -422,6 +446,9 @@ func (c Capability) validate(ns string) error {
 		if err := checkText(fmt.Sprintf("capability %q: input %q help", c.ID, f.Name), f.Help, maxHelp); err != nil {
 			return err
 		}
+		if err := checkPiped(c.ID, f); err != nil {
+			return err
+		}
 		if err := checkBounds(c.ID, f); err != nil {
 			return err
 		}
@@ -650,6 +677,35 @@ func checkBounds(id string, f Field) error {
 	if f.Type == Int && (fractional(f.Min) || fractional(f.Max)) {
 		return fmt.Errorf("capability %q: input %q is an Int with a fractional bound (Min %v, Max %v); "+
 			"an Int's bounds are whole numbers", id, f.Name, f.Min, f.Max)
+	}
+	return nil
+}
+
+// checkPiped refuses a Piped input whose pipe could never be read, or whose
+// requirement off the CLI could never be met. Piped says two things (see
+// Field.Piped): the CLI reads the pipe when the input is left out, and every
+// other surface requires it. Required contradicts the first, since a required
+// input is never left out; a Default or a Config key fills it before the
+// pipe is looked at; Local takes it off MCP, where it would be required; and
+// a pipe carries text, which a number, a switch or a list does not read as.
+func checkPiped(id string, f Field) error {
+	if !f.Piped {
+		return nil
+	}
+	switch {
+	case f.Required:
+		return fmt.Errorf("capability %q: input %q declares Piped and Required; a required input is never "+
+			"left out, so the pipe is never read — drop Required, and every surface but the CLI requires it "+
+			"anyway", id, f.Name)
+	case f.Default != nil || f.Config != "":
+		return fmt.Errorf("capability %q: input %q declares Piped beside a Default or a Config key; either "+
+			"fills the input before the pipe is read", id, f.Name)
+	case f.Local:
+		return fmt.Errorf("capability %q: input %q declares Piped and Local; a Piped input is required over "+
+			"MCP, where a Local one is never offered", id, f.Name)
+	case f.Type != String && f.Type != Text && f.Type != Secret:
+		return fmt.Errorf("capability %q: input %q declares Piped but is a %s; a pipe carries text, so it "+
+			"fills a %s, a %s or a %s", id, f.Name, f.Type, String, Text, Secret)
 	}
 	return nil
 }

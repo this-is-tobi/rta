@@ -333,7 +333,10 @@ func fullDeclaration() plugin.Plugin {
 				{Name: "ratio", Type: plugin.Float, Help: "ratio", Default: 0.5, Min: 0.0, Max: 1.0},
 				{Name: "force", Type: plugin.Bool, Help: "force", Default: true},
 				{Name: "tags", Type: plugin.StringSlice, Help: "tags", Default: []string{"x", "y"}},
-				{Name: "body", Type: plugin.Text, Help: "body"},
+				// Piped crosses so the host can refuse it: a plugin never
+				// sees the CLI's pipe, and a marker dropped on the way would
+				// leave the input optional on every surface instead.
+				{Name: "body", Type: plugin.Text, Help: "body", Piped: true},
 				{Name: "file", Type: plugin.Path, Help: "file"},
 				{Name: "token", Type: plugin.Secret, Help: "token", Local: true, EnvFallback: true},
 				// The address role rather than host/port, because those two

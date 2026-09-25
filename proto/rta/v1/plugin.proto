@@ -170,6 +170,13 @@ message Field {
   // inert. False by default and left false by a plugin whose own connect()
   // already compensates by re-enabling TLS when this field is set.
   bool tls_adjacent = 16;
+  // An input rta's own CLI reads from its standard input when the call
+  // leaves it out, and every other surface requires. For built-ins only: a
+  // plugin runs in its own process and never sees that pipe, so the host
+  // refuses a plugin declaration setting it. Carried so the refusal can
+  // happen, rather than the marker being dropped on the way and the input
+  // quietly treated as optional everywhere.
+  bool piped = 20;
 }
 
 // EndpointRole is which part of a resolved tunnel an input takes.

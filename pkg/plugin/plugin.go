@@ -229,6 +229,32 @@ type Field struct {
 	Default    any
 	Required   bool
 	Positional bool // rendered as a CLI positional argument instead of a flag
+	// Piped marks an input the CLI reads from its standard input when the
+	// call leaves it out: the token codec.jwt decodes, the text debug.ansi
+	// explains, the words keys.restore rebuilds a key from. A pipe is the
+	// channel worth offering for those, because an argument lands in the
+	// shell's history and, while the call runs, in a process table every
+	// user on the machine can read. The handler reads the pipe itself
+	// (builtin/internal/pipein); the marker is what tells every other
+	// surface about it.
+	//
+	// No other surface has a pipe to read — the TUI owns the terminal, and
+	// MCP's standard input is the agent's request stream — so everywhere
+	// else a Piped input is required: the MCP schema lists it and a call
+	// leaving it out is refused, a TUI form will not submit without it, and
+	// a dashboard tile has to state it. Required itself would be wrong,
+	// since on the CLI leaving it out is the point. Inferring the shape did
+	// not work: the dashboard took "a positional credential" to mean it,
+	// which covered codec.jwt and missed debug.ansi, whose text is no
+	// credential, so `rta dashboard add debug.ansi` wrote a tile that
+	// failed on every refresh.
+	//
+	// **For built-ins only.** A plugin runs in its own process and never
+	// sees the CLI's standard input, so the host refuses a plugin declaring
+	// one when it loads it. Validate refuses it beside Required, a Default, a
+	// Config key or Local — each fills or hides the input before a pipe
+	// could — and on anything but a String, Text or Secret.
+	Piped bool
 	// Local marks an input a remote caller may never supply: the passphrase
 	// that unlocks a store, the path a revealed secret gets written to, the
 	// address of the server a call is aimed at — not the payload going into

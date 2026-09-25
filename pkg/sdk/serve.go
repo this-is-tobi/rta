@@ -38,7 +38,7 @@ func Serve(p plugin.Plugin) {
 // ServeErr is Serve, returning instead of exiting. Tests and embedders use
 // it; a plugin's main does not need it.
 func ServeErr(p plugin.Plugin) error {
-	if err := p.Validate(); err != nil {
+	if err := p.ValidateOutOfProcess(); err != nil {
 		return err
 	}
 	goplugin.Serve(&goplugin.ServeConfig{
