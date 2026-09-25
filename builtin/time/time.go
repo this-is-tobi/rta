@@ -98,7 +98,7 @@ func runAt(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 
 	pairs = append(pairs,
-		view.Pair{Key: "relative", Value: format.Ago(t)},
+		view.Pair{Key: "relative", Value: format.Relative(t)},
 		view.Pair{Key: "epoch", Value: strconv.FormatInt(t.Unix(), 10)},
 		view.Pair{Key: "epoch-ms", Value: strconv.FormatInt(t.UnixMilli(), 10)},
 	)

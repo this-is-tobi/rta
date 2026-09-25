@@ -74,18 +74,57 @@ func binaryUnits(b uint64) string {
 // A time in the future says so rather than reading as a very old one, because
 // clock skew between a machine and whatever stamped the record is ordinary and
 // "in 3 minutes" is a fact worth seeing.
+//
+// The zero time reads "never": this is for a record's own timestamp, where
+// zero is what a field holds before anything has happened. An instant
+// somebody named — a token's exp, a date typed in — goes to Relative.
 func Ago(t time.Time) string {
 	if t.IsZero() {
 		return "never"
 	}
-	d := time.Since(t)
-	if d < 0 {
+	return Relative(t)
+}
+
+// Relative is Ago for an instant that is a value in its own right, where the
+// zero time is 1 January of year 1 like any other date and not "unset": a
+// token may carry it, and codec.jwt showed a token's year-1 iat as "never".
+func Relative(t time.Time) string { return relativeTo(t, time.Now()) }
+
+// farSpan is where a distance is counted in calendar years rather than as a
+// Duration, a little inside the 292 years a Duration can hold. Past that,
+// time.Since saturates: an exp of 9999-12-31 — the usual way to write "does
+// not expire" — came back as the most negative Duration, negated into itself,
+// and read "in -9223372036 seconds", and anything older than 1734 read "292
+// years ago".
+const farSpan = 290 * 365 * 24 * time.Hour
+
+func relativeTo(t, now time.Time) string {
+	d := now.Sub(t) // saturates rather than wraps, so the comparison holds
+	switch {
+	case d >= farSpan:
+		return count(yearsBetween(t, now), "year") + " ago"
+	case d <= -farSpan:
+		return "in " + count(yearsBetween(now, t), "year")
+	case d < 0:
 		return "in " + span(-d)
-	}
-	if d < time.Second {
+	case d < time.Second:
 		return "just now"
 	}
 	return span(d) + " ago"
+}
+
+// yearsBetween counts the calendar years from from to to, rounded to the
+// nearest the way span rounds within its unit. Only the part under a year is
+// a Duration, which cannot overflow.
+func yearsBetween(from, to time.Time) int {
+	n := to.Year() - from.Year()
+	if from.AddDate(n, 0, 0).After(to) {
+		n--
+	}
+	if to.Sub(from.AddDate(n, 0, 0)) >= 365*24*time.Hour/2 {
+		n++
+	}
+	return n
 }
 
 // span is Ago's magnitude half, without the direction.

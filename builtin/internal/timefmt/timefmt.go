@@ -306,5 +306,5 @@ func FromSeconds(v float64) (time.Time, bool) {
 // leaves the reader subtracting years in their head; "8 years ago" alone is
 // not something you can paste into a query.
 func Stamp(t time.Time) string {
-	return t.UTC().Format(time.RFC3339) + " (" + format.Ago(t) + ")"
+	return t.UTC().Format(time.RFC3339) + " (" + format.Relative(t) + ")"
 }
