@@ -727,16 +727,6 @@ func Check(cfg config.Config, inst Installed) []Problem {
 			add("has ttl "+p.TTL+", which is not a duration",
 				"write it as `30m`, `2h`, `12h` — or remove it for no deadline")
 		}
-		// Reported and not refused, unlike the ttl above. A deadline that
-		// cannot be read leaves a production switch that never lapses, which
-		// is a security consequence; a colour that cannot be read leaves a
-		// badge unpainted. Refusing to reach an environment over a mistyped
-		// hex would be rta inventing an outage — so this is said here, where
-		// `rta doctor` will print it, and nowhere that can stop a command.
-		if p.BadColor() {
-			add("has color "+p.Color+", which is not a colour",
-				"the form is `#rrggbb`, e.g. `#FF6B7A` — the badge is unpainted until it is")
-		}
 		if _, taken := originOf(inst, name); taken {
 			add("has the same name as a registered plugin",
 				"rename it — a profile name and a namespace share a command line")
@@ -770,6 +760,19 @@ func Notes(cfg config.Config, inst Installed) []Problem {
 		p := cfg.Profiles[name]
 		if !config.ValidName(name) || !p.Trusted() {
 			continue
+		}
+		// Noted and not refused, unlike an unreadable ttl. A deadline that
+		// cannot be read leaves a production switch that never lapses, which
+		// is a security consequence; a colour that cannot be read leaves a
+		// badge unpainted. Refusing to reach an environment over a mistyped
+		// hex would be rta inventing an outage. It sat in Check, whose every
+		// problem is a refusal to its readers — so `rta use` refused the
+		// profile, `rta profile list` called it invalid and the TUI left it
+		// out of its picker, while `--profile` ran through it.
+		if p.BadColor() {
+			notes = append(notes, Problem{Name: name,
+				Reason: "has color " + p.Color + ", which is not a colour",
+				Hint:   "the form is `#rrggbb`, e.g. `#FF6B7A` — the badge is unpainted until it is"})
 		}
 		for _, key := range p.PluginKeys() {
 			notes = append(notes, noteSet(name, key, p.Plugins[key], config.PluginNamespace(key), inst)...)

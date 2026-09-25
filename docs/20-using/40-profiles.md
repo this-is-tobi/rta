@@ -375,7 +375,7 @@ Three things about it are deliberate:
 - **Only a profile with a `color:` announces itself.** Marking one is you saying *this* is the environment worth interrupting you about. Unmarked environments stay as quiet as they were, which is what keeps the badge meaning something.
 - **It never reaches machine-readable output.** `-o json` and `-o yaml` get exactly what they got before, because the output you read off your screen is the output you paste into a parser.
 
-`--no-color` keeps the badge and drops the paint: `[ shop-prod ]`. A colour rta cannot read paints nothing and is reported by `rta profile show` and `rta doctor`, rather than falling back to one you did not choose.
+`--no-color` keeps the badge and drops the paint: `[ shop-prod ]`. A colour rta cannot read paints nothing and is reported by `rta profile list`, `rta profile show` and `rta doctor`, rather than falling back to one you did not choose — and it never stops the environment from being switched to or used.
 
 ## Switching authorizes nothing
 

@@ -94,6 +94,37 @@ func TestAColourThatIsNotAColourPrintsNothing(t *testing.T) {
 	}
 }
 
+// A colour that is not a colour is noted, and nothing refuses the profile
+// over it: a badge left unpainted is not a reason to be unable to switch to
+// an environment. It sat among the problems Check reports, which every reader
+// takes as a refusal, so `rta use` refused the profile and `rta profile list`
+// called it invalid — while `--profile` ran through it.
+func TestAColourThatIsNotAColourIsNotedAndTheProfileStaysUsable(t *testing.T) {
+	const cfg = `
+profiles:
+  broken:
+    color: red
+    plugins:
+      db:
+        set:
+          dbname: orders
+`
+	out, errOut, err := runWith(t, setRegistry(t), cfg, "profile", "list")
+	if err != nil {
+		t.Fatalf("%v %s", err, errOut)
+	}
+	if strings.Contains(out, "invalid") || !strings.Contains(out, "which is not a colour") {
+		t.Errorf("profile list:\n%s", out)
+	}
+	out, _, _ = runWith(t, setRegistry(t), cfg, "doctor")
+	if !strings.Contains(out, "has color red, which is not a colour") {
+		t.Errorf("doctor does not report it:\n%s", out)
+	}
+	if _, errOut, err := runWith(t, setRegistry(t), cfg, "use", "broken"); err != nil {
+		t.Errorf("the profile could not be switched to: %v %s", err, errOut)
+	}
+}
+
 // --no-color is a statement about ANSI, not about wanting to know less: the
 // badge keeps its brackets and loses its paint.
 func TestWithoutColourTheBadgeKeepsItsBrackets(t *testing.T) {
