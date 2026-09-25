@@ -177,10 +177,35 @@ func TestANumberNoAccessorCanReadIsRefused(t *testing.T) {
 	if ran {
 		t.Error("the handler ran on a number it would have read as 0")
 	}
-	// Quoted, so the text "0" is not mistaken for the number it spells.
-	_, err := guarded(context.Background(), NewRequest(map[string]any{"timeout": "0"}, false, false))
-	if err == nil || !strings.Contains(view.AsError(err, "test").Message, `not "0"`) {
-		t.Errorf("err = %v, want the text quoted", err)
+	// Named as text, so "0" is not mistaken for the number it spells — and
+	// text holding a number inside the range is not told about the range:
+	// `limit: "3"` was refused as "takes a limit from 1 to 1000, not "3"",
+	// which sent the operator to change a number that was right.
+	for _, v := range []any{"0", "30"} {
+		_, err := guarded(context.Background(), NewRequest(map[string]any{"timeout": v}, false, false))
+		verr := view.AsError(err, "test")
+		if err == nil || verr.Message != "x.y takes a whole number from 1 to 300 for timeout, not text" {
+			t.Errorf("%q: err = %v, want the value named as text", v, err)
+		}
+		if !strings.Contains(verr.Hint, "without quotes") {
+			t.Errorf("%q: hint %q", v, verr.Hint)
+		}
+	}
+	// A number is shown: what is wrong with it is its value.
+	_, err := guarded(context.Background(), NewRequest(map[string]any{"timeout": uint64(math.MaxUint64)}, false, false))
+	if err == nil || !strings.Contains(view.AsError(err, "test").Message, "not 18446744073709551615") {
+		t.Errorf("err = %v, want the number shown", err)
+	}
+	// From the operator's config, the hint says what to write there, which
+	// the readdressed hint dropped.
+	c.Inputs[2].Config = "limit"
+	verr := CheckInputs(c, ResolveRequest(c, Inputs{Config: map[string]any{"limit": "15"}}, false, false).WithSurface(SurfaceCLI))
+	if verr == nil {
+		t.Fatal("a config number written as text was accepted")
+	}
+	if !strings.HasPrefix(verr.Hint, "write it there as a bare number, without quotes — ") ||
+		!strings.HasSuffix(verr.Message, "not text, which the config's plugins.x.limit sets") {
+		t.Errorf("config text: %v / %q", verr, verr.Hint)
 	}
 	// A present nil says nothing was given, as an absent key does.
 	if _, err := guarded(context.Background(), NewRequest(map[string]any{"limit": nil}, false, false)); err != nil {
