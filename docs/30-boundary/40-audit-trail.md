@@ -20,7 +20,7 @@ rta agent log --detail         # the full view, and the chain's integrity
 
 `--refused` is the one to reach for first when something is not working. A refusal is a normal, designed outcome here, not an error condition — an agent asking for something it does not have is the system behaving correctly, and the log is where you find out what it wanted.
 
-Refusals come from two depths, and the authorization column tells them apart: `blocked` means the call never cleared rta's own gates — a missing grant, a bad argument, a locked principal — while `open` or `grant` on a refused row means the gates allowed it and the capability's own policy still said no, the way `agent.*` and `lock.*` refuse any caller over MCP, or `pg.dump` refuses to hand a whole database to an agent. Both are refusals, not failures: `failed` is reserved for calls that were allowed and then broke.
+Refusals come from two depths, and the authorization column tells them apart: `blocked` means the call never cleared rta's own gates — a missing grant, a bad argument, a locked principal — while `open` or `grant` on a refused row means the gates allowed it and something past them still said no: the capability's own policy (the way `agent.*` and `lock.*` refuse any caller over MCP, or `pg.dump` refuses to hand a whole database to an agent), or a value your config or the profile supplies that the capability does not take, whose reason names the key it came from and whose grant use is given back. Both are refusals, not failures: `failed` is reserved for calls that were allowed and then broke.
 
 ## Who asked
 
