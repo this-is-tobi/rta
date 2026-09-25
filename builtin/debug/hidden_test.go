@@ -1,6 +1,7 @@
 package debug
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -88,6 +89,24 @@ func TestAC1ControlIsNamed(t *testing.T) {
 	row := rowFor(t, "x"+r(0x9b)+"2J", "C1 control")
 	if row[0] != `\u009b` || !strings.Contains(row[2], "CSI in its 8-bit form") {
 		t.Errorf("row = %v", row)
+	}
+}
+
+// A raw 8-bit C1 byte is the form c1Names calls dangerous, and it came back as
+// "control character 0x8d" while its UTF-8 encoding was named: a reverse
+// index, which moves the cursor up and can overwrite a line, went unnamed in
+// the one form a terminal honouring 8-bit controls acts on.
+func TestARawC1ByteIsNamedAsItsUTF8FormIs(t *testing.T) {
+	for _, b := range []byte{0x85, 0x8d, 0x9c, 0x81} {
+		raw := rowFor(t, "a"+string([]byte{b})+"b", "C1 control")
+		encoded := rowFor(t, "a"+r(rune(b))+"b", "C1 control")
+		name := encoded[2]
+		if _, named := c1Names[rune(b)]; !named {
+			name = fmt.Sprintf("C1 control 0x%02x", b)
+		}
+		if !strings.HasPrefix(raw[2], name) || !strings.Contains(raw[2], "8-bit") || raw[0] != fmt.Sprintf(`\x%02x`, b) {
+			t.Errorf("0x%02x: raw row = %v, want it named %q like %v", b, raw, name, encoded)
+		}
 	}
 }
 

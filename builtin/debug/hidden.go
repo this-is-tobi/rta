@@ -133,6 +133,20 @@ func hidden(r rune, raw string) (kind, meaning string, ok bool) {
 	return "", "", false
 }
 
+// rawC1 names a C1 control met as a raw byte from 0x80 to 0x9F rather than as
+// the UTF-8 encoding of its code point. That byte is the 8-bit form c1Names
+// is about, and it came back as "control character 0x8d" while its encoded
+// form was named — a reverse index, which moves the cursor up and can write
+// over a line, unnamed in the form a terminal honouring 8-bit controls acts
+// on. Both forms get the same name and kind; the meaning says which this is.
+func rawC1(b byte) string {
+	name, named := c1Names[rune(b)]
+	if !named {
+		name = fmt.Sprintf("C1 control 0x%02x", b)
+	}
+	return name + " (the raw 8-bit byte: not valid UTF-8, and acted on by a terminal that honours 8-bit controls)"
+}
+
 // tagRow explains a run of tag characters by decoding it: each one from
 // U+E0020 to U+E007E is an invisible copy of the ASCII character 0xE0000 below
 // it. U+E0001 and U+E007F — a language tag and the cancel tag — carry no text.
