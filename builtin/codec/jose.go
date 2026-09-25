@@ -57,13 +57,13 @@ const maxPipedToken = 1 << 20
 // of wrappers from being followed as far as it likes.
 const maxNesting = 3
 
-func runJWT(_ context.Context, req plugin.Request) (view.View, error) {
+func runJWT(ctx context.Context, req plugin.Request) (view.View, error) {
 	raw, verr := joseInput(req, "token", "codec.jwt", "token",
 		"pass it as an argument, or pipe it: `pbpaste | rta codec jwt` keeps a live token out of your shell history")
 	if verr != nil {
 		return nil, verr
 	}
-	check, verr := verifierFrom(req)
+	check, verr := verifierFrom(ctx, req)
 	if verr != nil {
 		return nil, verr
 	}
@@ -86,12 +86,12 @@ func runJWT(_ context.Context, req plugin.Request) (view.View, error) {
 // verifierFrom builds the signature check a call asked for with --key or
 // --secret-file, or returns nil when it asked for none — the ordinary case,
 // where the page says nothing was verified.
-func verifierFrom(req plugin.Request) (*verifier, *view.Error) {
+func verifierFrom(ctx context.Context, req plugin.Request) (*verifier, *view.Error) {
 	key, secretFile := strings.TrimSpace(req.String("key")), req.String("secret-file")
 	if key == "" && secretFile == "" {
 		return nil, nil
 	}
-	v := &verifier{surface: req.Surface()}
+	v := &verifier{ctx: ctx, surface: req.Surface()}
 	if secretFile != "" {
 		secret, verr := secretFrom(secretFile)
 		if verr != nil {
@@ -1028,6 +1028,13 @@ func (p *page) jsonJWS(doc object, check *verifier) (view.View, *view.Error) {
 	}
 	if len(signers) == 0 {
 		return nil, view.Errorf("codec.jwt.invalid", "a JWS with an empty signatures list")
+	}
+	// Only when checking, where every signature costs a check per key;
+	// decoded, one costs no more than reading its header.
+	if check != nil && len(signers) > maxSignatures {
+		return nil, view.Errorf("codec.jwt.invalid", "the JWS carries %d signatures, and codec.jwt checks at most %d in one call",
+			len(signers), maxSignatures).
+			WithHint("decoded without a key, it shows every one of them")
 	}
 
 	unprotected := false
