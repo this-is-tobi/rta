@@ -13,6 +13,7 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/asn1"
 	"encoding/base64"
 	"encoding/pem"
 	"fmt"
@@ -740,6 +741,94 @@ func TestTheWorkOneCheckDoesIsBounded(t *testing.T) {
 	if verr := view.AsError(err, "test"); err == nil || verr.Code != "codec.jwt.cancelled" {
 		t.Errorf("a cancelled call: got %v, want codec.jwt.cancelled", err)
 	}
+}
+
+// pkcs1Key is RFC 8017's RSAPrivateKey, spelled out so a test can put in it
+// numbers x509 would never marshal.
+type pkcs1Key struct {
+	Version               int
+	N                     *big.Int
+	E                     int
+	D, P, Q, Dp, Dq, Qinv *big.Int
+	AdditionalPrimes      []pkcs1Prime `asn1:"optional,omitempty"`
+}
+
+type pkcs1Prime struct{ Prime, Exp, Coeff *big.Int }
+
+// x509 checks a private key's numbers against each other as it parses it,
+// at the square of their size and more, and before fits sees the modulus: a
+// PKCS #1 key of 132 KB, a small modulus beside a prime of a million bits,
+// held a CPU core for five seconds before it was refused as an invalid prime,
+// from a free call over MCP. A number over the ceiling, or more DER than a
+// key under it takes, is refused before the parse, and a key at the ceiling
+// is not.
+func TestAPrivateKeyIsMeasuredBeforeItIsParsed(t *testing.T) {
+	key := rsaKey()
+	token := sign(`{"alg":"RS256"}`, `{"sub":"a"}`, func([]byte) []byte { return make([]byte, 256) })
+	marshal := func(k pkcs1Key) []byte {
+		der, err := asn1.Marshal(k)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return der
+	}
+	pkcs8 := func(inner []byte) []byte {
+		der, err := asn1.Marshal(struct {
+			Version    int
+			Algo       pkix.AlgorithmIdentifier
+			PrivateKey []byte
+		}{0, pkix.AlgorithmIdentifier{Algorithm: asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 1, 1}, Parameters: asn1.NullRawValue}, inner})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return der
+	}
+	whole := pkcs1Key{0, key.N, key.E, key.D, key.Primes[0], key.Primes[1],
+		key.Precomputed.Dp, key.Precomputed.Dq, key.Precomputed.Qinv, nil}
+	hugePrime := whole
+	hugePrime.P = new(big.Int).SetBit(new(big.Int).Lsh(big.NewInt(1), 19999), 0, 1)
+	manyPrimes := whole
+	manyPrimes.Version = 1
+	for range 40 {
+		manyPrimes.AdditionalPrimes = append(manyPrimes.AdditionalPrimes, pkcs1Prime{key.Primes[0], key.Primes[0], key.Primes[0]})
+	}
+	const prime = "holds a number of 20000 bits, over the 16384 a verifier accepts"
+	for name, tc := range map[string]struct{ material, want string }{
+		"PKCS #1, a prime over the ceiling":   {pemOf(t, "RSA PRIVATE KEY", marshal(hugePrime)), prime},
+		"PKCS #8, a prime over the ceiling":   {pemOf(t, "PRIVATE KEY", pkcs8(marshal(hugePrime))), prime},
+		"PKCS #1, more than a key could take": {pemOf(t, "RSA PRIVATE KEY", marshal(manyPrimes)), "more than a key of 16384 bits takes"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			mustRefuse(t, token, tc.material, "", "codec.jwt.key", tc.want)
+		})
+	}
+
+	// A key at the ceiling: its modulus and private exponent whole, and the
+	// five numbers of half their size, each with its top bit set.
+	full := func(bits int) *big.Int {
+		return new(big.Int).SetBit(new(big.Int).Lsh(big.NewInt(1), uint(bits-1)), 0, 1)
+	}
+	half := full(maxRSABits / 2)
+	ceiling := marshal(pkcs1Key{0, full(maxRSABits), 65537, full(maxRSABits), half, half, half, half, half, nil})
+	for _, der := range [][]byte{ceiling, pkcs8(ceiling)} {
+		if why := oversizedPrivateKey(der); why != "" {
+			t.Errorf("a key of %d bits, %d bytes of DER: %s", maxRSABits, len(der), why)
+		}
+	}
+
+	// Reading one costs about what a check does, so a call reads as many as
+	// it makes checks: 330 of the largest took two seconds.
+	signed := sign(`{"alg":"RS256"}`, `{"sub":"a"}`, func(in []byte) []byte {
+		sig, err := rsa.SignPKCS1v15(rand.Reader, key, crypto.SHA256, sha256Of(in))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return sig
+	})
+	one := pemOf(t, "RSA PRIVATE KEY", x509.MarshalPKCS1PrivateKey(key))
+	mustVerify(t, signed, strings.Repeat(one, maxKeyChecks), "", "2048-bit RSA from PEM")
+	mustRefuse(t, token, strings.Repeat(one, maxKeyChecks+1), "", "codec.jwt.key",
+		fmt.Sprintf("more than %d private keys, the most one call reads", maxKeyChecks))
 }
 
 // A key crypto/rsa refuses was reported as a signature that does not match
