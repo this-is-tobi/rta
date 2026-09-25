@@ -71,7 +71,7 @@ func decodeObject(raw []byte) (object, error) {
 		return object{}, errNotObject
 	}
 	w := walker{dec: dec}
-	values, err := w.object("", 1)
+	values, err := w.object(1)
 	if err != nil {
 		return object{}, err
 	}
@@ -141,6 +141,11 @@ func hex4(raw []byte, i int) int {
 // error but the end of the process — `rta mcp serve` included.
 const maxDepth = 10000
 
+// maxPath bounds how much of the path above a repeated name the note gives:
+// enough to place it in any token a person reads, and a bound, since a path
+// is otherwise as long as every name above it together.
+const maxPath = 128
+
 // walker reads a JSON value token by token rather than handing each member to
 // encoding/json, which is what lets it see a name repeated at any depth.
 // Handed to the decoder, a nested object folded its repeats into a map
@@ -152,9 +157,52 @@ const maxDepth = 10000
 type walker struct {
 	dec   *json.Decoder
 	dupes []string
+	// at is the way down to the value being read, a step a level, and the
+	// path is written from it only for a repeat. Written at every level as it
+	// went, each level held its own copy of every name above it: 410 KB of
+	// long names nested 4000 deep asked for 790 MB, and the 4 MiB an MCP
+	// request may carry for tens of gigabytes, from a free Read.
+	at []step
 }
 
-func (w *walker) value(path string, depth int) (any, error) {
+// step is one level of the way down: a member's name, or an element's index
+// when index is not -1.
+type step struct {
+	name  string
+	index int
+}
+
+func (s step) String() string {
+	if s.index >= 0 {
+		return "[" + strconv.Itoa(s.index) + "]"
+	}
+	return s.name
+}
+
+// path is where a repeat of name in the object being read sits, as the note
+// gives it. Only the last maxPath bytes of the way down are written, after an
+// ellipsis: whole, a path is as long as every name above it together, and a
+// document of repeats deep under long names cost what writing every path did.
+func (w *walker) path(name string) string {
+	start, size := len(w.at), 0
+	for start > 0 && size+len(w.at[start-1].String())+1 <= maxPath {
+		start--
+		size += len(w.at[start].String()) + 1
+	}
+	var b strings.Builder
+	if start > 0 {
+		b.WriteString("…")
+	}
+	for i, s := range append(w.at[start:len(w.at):len(w.at)], step{name: name, index: -1}) {
+		if s.index < 0 && i > 0 {
+			b.WriteByte('.')
+		}
+		b.WriteString(s.String())
+	}
+	return b.String()
+}
+
+func (w *walker) value(depth int) (any, error) {
 	if depth > maxDepth {
 		return nil, fmt.Errorf("nested more than %d levels deep", maxDepth)
 	}
@@ -164,10 +212,10 @@ func (w *walker) value(path string, depth int) (any, error) {
 	}
 	switch tok {
 	case json.Delim('{'):
-		m, err := w.object(path, depth)
+		m, err := w.object(depth)
 		return m, err
 	case json.Delim('['):
-		list, err := w.array(path, depth)
+		list, err := w.array(depth)
 		return list, err
 	}
 	return tok, nil
@@ -175,7 +223,7 @@ func (w *walker) value(path string, depth int) (any, error) {
 
 // object reads the members of an object whose opening brace has been read,
 // and its closing brace.
-func (w *walker) object(path string, depth int) (map[string]any, error) {
+func (w *walker) object(depth int) (map[string]any, error) {
 	m := map[string]any{}
 	// A count rather than a search of the dupes found so far: an object of
 	// distinct names each given twice made that search quadratic, and a
@@ -187,16 +235,14 @@ func (w *walker) object(path string, depth int) (map[string]any, error) {
 			return nil, err
 		}
 		name, _ := tok.(string) // inside an object the decoder yields only string names
-		at := name
-		if path != "" {
-			at = path + "." + name
-		}
-		v, err := w.value(at, depth+1)
+		w.at = append(w.at, step{name: name, index: -1})
+		v, err := w.value(depth + 1)
+		w.at = w.at[:len(w.at)-1]
 		if err != nil {
 			return nil, err
 		}
 		if seen[name]++; seen[name] == 2 {
-			w.dupes = append(w.dupes, at)
+			w.dupes = append(w.dupes, w.path(name))
 		}
 		m[name] = v
 	}
@@ -206,10 +252,12 @@ func (w *walker) object(path string, depth int) (map[string]any, error) {
 
 // array reads the elements of an array whose opening bracket has been read.
 // Never nil, even empty: a nil slice renders as null, and the token says [].
-func (w *walker) array(path string, depth int) ([]any, error) {
+func (w *walker) array(depth int) ([]any, error) {
 	list := []any{}
 	for i := 0; w.dec.More(); i++ {
-		v, err := w.value(fmt.Sprintf("%s[%d]", path, i), depth+1)
+		w.at = append(w.at, step{index: i})
+		v, err := w.value(depth + 1)
+		w.at = w.at[:len(w.at)-1]
 		if err != nil {
 			return nil, err
 		}
