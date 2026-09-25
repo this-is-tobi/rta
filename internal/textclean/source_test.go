@@ -1,12 +1,12 @@
 package textclean
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"os/exec"
-	"path"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -40,6 +40,14 @@ import (
 // lists, so a new file is read from the moment it is added to the index, and
 // not before. A carriage return before a line feed is a line ending: a
 // Windows checkout converts every line to one.
+//
+// Every file git lists, whatever its name. The guard read a list of
+// extensions, and the tree it passed held a Helm template shipped in the
+// chart, the secret scanner's allowlist, the tool pins, go.mod and every
+// ignore file, none of them on the list and every one read by something that
+// acts on it. A name is not what makes a file text; its bytes are, so a file
+// is passed over as binary the way git decides it — a NUL in its first 8000
+// bytes — and nothing else is.
 func TestNoSourceFileHidesACharacter(t *testing.T) {
 	found, err := hiddenInTrackedSource(repoRoot(t))
 	if err != nil {
@@ -79,7 +87,18 @@ func TestTheSourceGuardReadsWhatGitTracks(t *testing.T) {
 	run("init", "-q")
 	write("docs/windows.md", "one\r\ntwo\r\n")
 	write("main.go", "package main\n\n// ends "+rlo+" here\n")
-	tracked := []string{"docs/windows.md", "main.go"}
+	// Whatever the name says. A Helm template, a tool pin, a module file and
+	// an ignore list are read by something that acts on them as surely as Go
+	// source is, and none of them has an extension a list would think of.
+	write("charts/x/templates/_helpers.tpl", "{{/* "+rlo+" */}}\n")
+	write("mise.toml", "[tools]\ngo = \"1."+rlo+"\"\n")
+	write("go.mod", "module x"+rlo+"\n")
+	write(".gitignore", "bin/\n"+rlo+"\n")
+	// A binary file is read by nothing that reviews it as text: it is passed
+	// over, whatever its bytes happen to spell.
+	write("logo.png", "\x89PNG\r\n\x1a\n\x00\x00"+rlo)
+	tracked := []string{"docs/windows.md", "main.go", "charts/x/templates/_helpers.tpl",
+		"mise.toml", "go.mod", ".gitignore", "logo.png"}
 	if err := os.Symlink("nowhere.md", filepath.Join(dir, "gone.md")); err == nil {
 		tracked = append(tracked, "gone.md")
 	}
@@ -92,8 +111,14 @@ func TestTheSourceGuardReadsWhatGitTracks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(found) != 1 || !strings.HasPrefix(found[0], "main.go:3 holds U+202E") {
-		t.Errorf("found %q, want only the override on line 3 of main.go", found)
+	want := []string{".gitignore:2", "charts/x/templates/_helpers.tpl:1", "go.mod:1", "main.go:3", "mise.toml:2"}
+	if len(found) != len(want) {
+		t.Fatalf("found %q, want an override reported in each of %q and nothing else", found, want)
+	}
+	for i, at := range want {
+		if !strings.HasPrefix(found[i], at+" holds U+202E") {
+			t.Errorf("found %q, want the override at %s", found[i], at)
+		}
 	}
 }
 
@@ -106,7 +131,7 @@ func hiddenInTrackedSource(root string) ([]string, error) {
 	}
 	var found []string
 	for _, rel := range strings.Split(string(listed), "\x00") {
-		if rel == "" || !isSource(path.Base(rel)) {
+		if rel == "" {
 			continue
 		}
 		file := filepath.Join(root, filepath.FromSlash(rel))
@@ -118,6 +143,9 @@ func hiddenInTrackedSource(root string) ([]string, error) {
 				continue
 			}
 			found = append(found, fmt.Sprintf("%s: %v", rel, rerr))
+			continue
+		}
+		if binary(data) {
 			continue
 		}
 		if !utf8.Valid(data) {
@@ -152,12 +180,10 @@ func gitIn(dir string, args ...string) *exec.Cmd {
 	return cmd
 }
 
-func isSource(name string) bool {
-	switch filepath.Ext(name) {
-	case ".go", ".md", ".yml", ".yaml", ".json", ".proto", ".sh", ".tmpl", ".txt":
-		return true
-	}
-	return name == "Makefile" || strings.HasPrefix(name, "Dockerfile")
+// binary is git's own test for a file it will not diff as text: a NUL in the
+// first 8000 bytes (buffer_is_binary in xdiff-interface.c).
+func binary(data []byte) bool {
+	return bytes.IndexByte(data[:min(len(data), 8000)], 0) >= 0
 }
 
 func repoRoot(t *testing.T) string {
