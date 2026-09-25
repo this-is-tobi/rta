@@ -1081,6 +1081,54 @@ func TestAnOutOfRangeArgumentSpendsNoGrant(t *testing.T) {
 	}
 }
 
+// The same for a value the operator's config supplies, which the argument
+// check never sees: the host's guard refuses it after the gate, and a call
+// refused before its handler ran gives its use back and is recorded as a
+// refusal, not as a failed run.
+func TestAConfigValueTheGuardRefusesSpendsNoGrant(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	reg := registry.New()
+	lo, hi := 1, 60
+	ran := false
+	if err := reg.Register(plugin.Plugin{Name: "probe", Summary: "probe", Capabilities: []plugin.Capability{{
+		ID: "probe.port", Summary: "probes", Safety: plugin.Read, NeedsGrant: true,
+		Inputs: []plugin.Field{{Name: "timeout", Type: plugin.Int, Min: lo, Max: hi, Config: "timeout", Help: "seconds"}},
+		Run: func(_ context.Context, req plugin.Request) (view.View, error) {
+			ran = true
+			return view.Text{Body: fmt.Sprintf("timeout=%d", req.Int("timeout"))}, nil
+		},
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	s := connectWith(t, reg, Options{Config: func(string) map[string]any {
+		return map[string]any{"timeout": "thirty"}
+	}})
+	if verr := grant.Save([]grant.Grant{{
+		Target: "probe.port", Issued: time.Now(), Expires: time.Now().Add(time.Hour), MaxUses: 1,
+	}}); verr != nil {
+		t.Fatal(verr)
+	}
+	res := callTool(t, s, "probe_port", nil)
+	text := res.Content[0].(*sdk.TextContent).Text
+	if !res.IsError || !strings.Contains(text, "core.input.range") ||
+		!strings.Contains(text, "which the config's plugins.probe.timeout sets") || ran {
+		t.Fatalf("a config value nothing reads: %s (ran=%v)", text, ran)
+	}
+	entries, err := agentlog.Read(1)
+	if err != nil || len(entries) != 1 || entries[0].Outcome != agentlog.Refused ||
+		entries[0].Code != "core.input.range" {
+		t.Errorf("recorded as %+v (%v), want refused with core.input.range", entries, err)
+	}
+	grants, verr := grant.Load()
+	if verr != nil || len(grants) != 1 || grants[0].Uses != 0 {
+		t.Errorf("the grant after a refused call: %+v (%v), want it unspent", grants, verr)
+	}
+	// The argument the hint names does override it, on the use still there.
+	if res := callTool(t, s, "probe_port", map[string]any{"timeout": 30}); res.IsError {
+		t.Fatalf("the grant did not survive a refused call: %+v", res.Content)
+	}
+}
+
 // A grant names one record, and covers exactly that one.
 func TestGrantNarrowsToOneRecord(t *testing.T) {
 	s := connect(t, Options{})

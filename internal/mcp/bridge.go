@@ -503,8 +503,7 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 				filled[input] = v
 			}
 		}
-		started := time.Now()
-		v, err := c.Run(ctx, plugin.ResolveRequest(c, plugin.Inputs{
+		run := plugin.ResolveRequest(c, plugin.Inputs{
 			Caller:      values,
 			Profile:     filled,
 			ProfileName: profileName,
@@ -517,7 +516,27 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 			// receives. checkPaths cannot see those: it walks the declared
 			// inputs, and a repository reached by walking upward out of one
 			// was never an argument.
-			WithConfinement(opts.Paths.Check))
+			WithConfinement(opts.Paths.Check)
+		// The host's input guard, run here as well as inside c.Run, for the
+		// values toolcall.Validate never saw: what the operator's config or
+		// the profile supplied. Inside c.Run its refusal came back as the
+		// handler's error and was treated as one — the use kept, the ledger
+		// saying failed — for a call no handler ran. It is a refusal of
+		// something that never reached the handler, which is exactly what
+		// the refunds above are for. The guard inside c.Run then finds
+		// nothing to say.
+		//
+		// Here, past the gate, although the config's values are known before
+		// it: the refusal quotes the value and names the key that set it, so
+		// run ahead of the gate it would read the operator's config back to
+		// an agent no grant covers, one refused call at a time.
+		if verr := plugin.CheckInputs(c, run); verr != nil {
+			release()
+			refusedBy(rec, verr)
+			return errResult(verr), nil
+		}
+		started := time.Now()
+		v, err := c.Run(ctx, run)
 		rec.Millis = time.Since(started).Milliseconds()
 		if err != nil {
 			// No refund: the handler ran. A use used to come back on any
