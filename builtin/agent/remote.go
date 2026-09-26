@@ -58,6 +58,14 @@ func remotePending(ctx context.Context, req plugin.Request, server string) (view
 		return nil, verr
 	}
 	table := pendingTable(cl.Waiting)
+	// The empty queue's sentence names the server twice, where the local
+	// one names neither: the command it offers is how somebody answers the
+	// next call parked here, and `rta agent allow <id>` without --server
+	// answers this machine's queue, where that call is not.
+	if len(table.Rows) == 0 {
+		table.Empty = fmt.Sprintf("nothing is waiting on %s — a parked call appears here, and "+
+			"`rta agent allow <id> --server %s` releases it", server, server)
+	}
 	if len(cl.Tampered) == 0 {
 		return table, nil
 	}
