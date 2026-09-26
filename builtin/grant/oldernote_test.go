@@ -87,7 +87,7 @@ func TestTheRosterWarnsWhenAServerOnAnotherBuildWillDecide(t *testing.T) {
 		t.Fatal(verr)
 	}
 
-	quiet, verr := heldTable("")
+	quiet, verr := heldTable("", false)
 	if verr != nil {
 		t.Fatal(verr)
 	}
@@ -104,7 +104,7 @@ func TestTheRosterWarnsWhenAServerOnAnotherBuildWillDecide(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	loud, verr := heldTable("")
+	loud, verr := heldTable("", false)
 	if verr != nil {
 		t.Fatal(verr)
 	}

@@ -1,6 +1,7 @@
 package grant
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -9,6 +10,7 @@ import (
 
 	core "github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/guard"
+	"github.com/this-is-tobi/rta/internal/render/cli"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -270,5 +272,42 @@ func TestTheCeilingIsCheckedBeforeThePassphrase(t *testing.T) {
 	}
 	if c := code(t, err); c == "core.guard.passphrase.required" {
 		t.Fatalf("the passphrase was asked for before the policy said no: %s", c)
+	}
+}
+
+// The detail page leads with the guard's state, and the roster under it said
+// it again: `rta grant list --detail` drew the guard line twice on a
+// terminal, once as the page's first section and once in the empty roster's
+// sentence — twice as well when the guard was orphaned, where the roster was
+// the line itself. The compact list has no guard section, and keeps the line
+// in its sentence.
+func TestTheGuardIsStatedOnceOnTheList(t *testing.T) {
+	setup(t)
+	drawn := func(values map[string]any) string {
+		t.Helper()
+		var b bytes.Buffer
+		if err := cli.Render(&b, run(t, listH, values), cli.Options{Format: cli.Markdown}); err != nil {
+			t.Fatal(err)
+		}
+		return b.String()
+	}
+	for name, values := range map[string]map[string]any{"detail": {"detail": true}, "compact": nil} {
+		if out := drawn(values); strings.Count(out, "guard  off") != 1 || !strings.Contains(out, "No grant is standing") {
+			t.Errorf("%s list states the guard %d times:\n%s", name, strings.Count(out, "guard  off"), out)
+		}
+	}
+
+	guardOn(t, "correct horse")
+	if _, err := guardCap(t, "grant.allow").Run(context.Background(),
+		reqTUI(map[string]any{"target": "kv.get", "ttl": "15m", "passphrase": "correct horse"})); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(guard.Path()); err != nil {
+		t.Fatal(err)
+	}
+	for name, values := range map[string]map[string]any{"detail": {"detail": true}, "compact": nil} {
+		if out := drawn(values); strings.Count(out, "ORPHANED") != 1 {
+			t.Errorf("%s list states the orphaned guard %d times:\n%s", name, strings.Count(out, "ORPHANED"), out)
+		}
 	}
 }
