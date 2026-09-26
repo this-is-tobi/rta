@@ -705,6 +705,23 @@ func TestEnvDotenvFormat(t *testing.T) {
 	}
 }
 
+// An empty store exports nothing, and says so to a person alone.
+//
+// It answered with the line "# no keys stored" as the export itself, so
+// `rta kv env > .env` wrote it into the file and -o json handed it to a
+// script as the environment — harmless to a shell, and a line of output
+// nobody asked for everywhere else.
+func TestEnvOfAnEmptyStoreIsEmpty(t *testing.T) {
+	setup(t)
+	v, err := runEnv(context.Background(), req(nil, false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if txt, ok := v.(view.Text); !ok || txt.Body != "" || !strings.Contains(txt.Empty, "No keys stored yet") {
+		t.Errorf("env of an empty store = %#v, want an empty body and the sentence beside it", v)
+	}
+}
+
 func TestEnvBadFormatIsCoded(t *testing.T) {
 	setup(t)
 	_, err := runEnv(context.Background(), req(map[string]any{"format": "yaml"}, false))

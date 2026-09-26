@@ -285,8 +285,12 @@ func runEnv(_ context.Context, req plugin.Request) (view.View, error) {
 			keys = append(keys, k)
 		}
 		sort.Strings(keys)
+		// Nothing to export is an empty export, with the sentence beside it
+		// for a person (view.Text.Empty). The line "# no keys stored" was
+		// the export itself, so `rta kv env > .env` wrote it into the file
+		// and -o json handed it to a script as the environment.
 		if len(keys) == 0 {
-			return view.Text{Body: "# no keys stored"}, nil
+			return view.Text{Empty: emptyList(0, "", "")}, nil
 		}
 	}
 
