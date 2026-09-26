@@ -59,14 +59,38 @@ func (s Surface) CapabilityName(id string) string {
 	return "`rta " + strings.ReplaceAll(id, ".", " ") + "`"
 }
 
+// CapabilityWith names capability id called with inputs, the way a caller on
+// s would give them: `rta note list --all` on the CLI, the `note_list` tool
+// with the "all" argument over MCP, `note.list` with the all box in the TUI.
+// For a hint that sends its reader to a call rather than to a capability —
+// "`rta note list --all` lists every note" — so the two halves of it cannot
+// be spelled for two different surfaces.
+//
+// The inputs are named, never valued: a value belongs to the sentence
+// around it ("with %s set to 5"), where it reads the same on every surface.
+// And they are flags on the CLI: a Positional input has a place on the
+// command line rather than a name, and a sentence names it with ArgumentName.
+func (s Surface) CapabilityWith(id string, inputs ...string) string {
+	if len(inputs) == 0 {
+		return s.CapabilityName(id)
+	}
+	names := make([]string, len(inputs))
+	for i, n := range inputs {
+		names[i] = s.InputName(n)
+	}
+	if s.spellsForCLI() {
+		return "`rta " + strings.ReplaceAll(id, ".", " ") + " " + strings.Join(names, " ") + "`"
+	}
+	return s.CapabilityName(id) + " with " + strings.Join(names, " and ")
+}
+
 // InputName names one of a capability's inputs the way a caller on s gives
 // it: the flag on the CLI (--key), the argument in the tool's schema over
 // MCP (the "key" argument), and the box in a TUI form (the key box).
 // SurfaceUnknown and a completion keystroke read the CLI's spelling.
 //
 // The CLI's spelling is the flag. A Positional input is not given by one,
-// and a message about it on the CLI says where it goes in words of its own
-// — "give it as an argument" — as MissingInput does.
+// and is named with ArgumentName instead.
 func (s Surface) InputName(name string) string {
 	switch s {
 	case SurfaceMCP:
@@ -75,6 +99,18 @@ func (s Surface) InputName(name string) string {
 		return "the " + name + " box"
 	}
 	return "--" + name
+}
+
+// ArgumentName is InputName for an input declared Positional, which the CLI
+// takes by its place on the command line and never as a flag: there it is
+// the slot the usage line names, <hostname>, and a hint naming --hostname
+// sends somebody to a flag the command refuses. Every other surface names it
+// as it names any input.
+func (s Surface) ArgumentName(name string) string {
+	if s.spellsForCLI() {
+		return "<" + name + ">"
+	}
+	return s.InputName(name)
 }
 
 // WithoutInputs is how a caller on s leaves inputs out of a call, for a hint
