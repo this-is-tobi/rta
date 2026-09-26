@@ -11,6 +11,7 @@ import (
 
 	"github.com/this-is-tobi/rta/builtin/internal/itemstore"
 	"github.com/this-is-tobi/rta/internal/atomicfile"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -56,11 +57,13 @@ func readLines(path string) ([]string, *view.Error) {
 // and NetworkManager all point /etc/resolv.conf somewhere under /run) and on
 // macOS; generators that write a real file announce themselves in a header.
 // The advice comes back with the diagnosis because the two differ: a symlink
-// has a real file at the other end you could edit, a header does not.
-func managedBy(path string) (what, advice string) {
+// has a real file at the other end you could edit, a header does not. force
+// is the override as the caller gives it (plugin.Surface.InputName), which
+// the advice names.
+func managedBy(path, force string) (what, advice string) {
 	if target, err := os.Readlink(path); err == nil {
 		return "a symlink to " + target,
-			"edit " + target + " instead, or configure whatever writes it — --force would " +
+			"edit " + target + " instead, or configure whatever writes it — " + force + " would " +
 				"replace the symlink with a regular file, which usually breaks more than it fixes"
 	}
 	data, err := os.ReadFile(path)
@@ -83,9 +86,9 @@ func managedBy(path string) (what, advice string) {
 			continue
 		}
 		if m.owner == "" {
-			return "another program", "configure that program instead, or pass --force if you are sure"
+			return "another program", "configure that program instead, or give " + force + " if you are sure"
 		}
-		return m.owner, "configure " + m.owner + " instead, or pass --force if you are sure"
+		return m.owner, "configure " + m.owner + " instead, or give " + force + " if you are sure"
 	}
 	return "", ""
 }
@@ -139,8 +142,9 @@ func firstErr(a, b error) error {
 
 // writeLines replaces a configuration file atomically, keeping its mode.
 // Atomically because a torn /etc/hosts is a machine that cannot resolve its
-// own name; see internal/atomicfile for how.
-func writeLines(path string, lines []string) *view.Error {
+// own name; see internal/atomicfile for how. sf is the surface asking, for
+// the way a refusal to write says root is reached.
+func writeLines(sf plugin.Surface, path string, lines []string) *view.Error {
 	info, err := os.Stat(path)
 	if err != nil {
 		return view.Errorf("net.sysfile.unreadable", "reading %s: %v", path, err)
@@ -151,7 +155,7 @@ func writeLines(path string, lines []string) *view.Error {
 	// get: a 0600 /etc/hosts breaks name resolution for every non-root
 	// process, which is a worse outage than the edit was a fix.
 	if err := atomicfile.Write(path, []byte(body), info.Mode().Perm()); err != nil {
-		return permissionError(path, err)
+		return permissionError(sf, path, err)
 	}
 	return nil
 }
@@ -163,10 +167,23 @@ func writeLines(path string, lines []string) *view.Error {
 // which wraps, and os.IsPermission only unwraps the handful of error types
 // the os package defines itself. It looked equivalent and would have quietly
 // dropped the one hint the caller needs, on the one path they always take.
-func permissionError(path string, err error) *view.Error {
+//
+// Only a command line is run again with sudo. A TUI and an MCP server run as
+// whoever started them, and "the same command" told an agent to rerun one it
+// never typed: from either, the change is made at a terminal, and over MCP by
+// the operator.
+func permissionError(sf plugin.Surface, path string, err error) *view.Error {
 	if errors.Is(err, fs.ErrPermission) {
-		return view.Errorf("net.sysfile.permission", "cannot write %s: permission denied", path).
-			WithHint("run the same command with sudo — editing " + path + " needs root")
+		hint := "run the same command with sudo — editing " + path + " needs root"
+		switch sf {
+		case plugin.SurfaceMCP:
+			hint = "editing " + path + " needs root, which this server does not run as — the change is " +
+				"the operator's to make, with sudo at a terminal"
+		case plugin.SurfaceTUI:
+			hint = "editing " + path + " needs root, which the TUI does not run as — make the change at a " +
+				"terminal with sudo"
+		}
+		return view.Errorf("net.sysfile.permission", "cannot write %s: permission denied", path).WithHint(hint)
 	}
 	return view.Errorf("net.sysfile.write", "writing %s: %v", path, err)
 }
@@ -175,8 +192,8 @@ func permissionError(path string, err error) *view.Error {
 // caller says they know. Silently editing a generated file is worse than
 // refusing: the change works, then disappears at the next reboot or lease
 // renewal, and nothing points at why.
-func guardManaged(path string, force bool) *view.Error {
-	what, advice := managedBy(path)
+func guardManaged(sf plugin.Surface, path string, force bool) *view.Error {
+	what, advice := managedBy(path, sf.InputName("force"))
 	if what == "" || force {
 		return nil
 	}

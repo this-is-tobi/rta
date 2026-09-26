@@ -191,6 +191,64 @@ func TestPortBadSpec(t *testing.T) {
 	}
 }
 
+// A refusal an agent reads names the argument and the tool it has, never the
+// flag or the command line a terminal has: an example of `rta net hosts add
+// 127.0.0.1 api.local` is one it can only guess its way back from.
+func TestARefusalOverMCPNamesArgumentsAndTools(t *testing.T) {
+	mcp := func(values map[string]any) plugin.Request { return req(values).WithSurface(plugin.SurfaceMCP) }
+	for name, tc := range map[string]struct {
+		run  plugin.Handler
+		req  plugin.Request
+		want string
+	}{
+		"a bad address": {runHostsAdd, mcp(map[string]any{"ip": "nope", "hostname": []string{"a"}}),
+			`the address goes in the "ip" argument and the names in the "hostname" argument`},
+		"no hostname": {runHostsAdd, mcp(map[string]any{"ip": "127.0.0.1"}),
+			`give the "hostname" argument the names to point at 127.0.0.1`},
+		"a bad port list": {runPort, mcp(map[string]any{"host": "x", "ports": "nope", "timeout": 1}),
+			`the "ports" argument takes a list such as 22,80,8000-8010`},
+		"nothing to send": {runSend, mcp(map[string]any{"host": "x", "port": 1, "data": " "}),
+			"give it in the \"data\" argument, or use the `net_probe` tool to listen without speaking"},
+	} {
+		_, err := tc.run(context.Background(), tc.req)
+		ve := view.AsError(err, "x")
+		if err == nil || ve.Hint != tc.want {
+			t.Errorf("%s: hint %q, want %q", name, ve.Hint, tc.want)
+		}
+	}
+}
+
+// The resolver is Local, so an agent is never sent to a server argument its
+// tool does not take — and every surface reads a sentence, where naming the
+// input after "another" read "another the "type" argument".
+func TestANameWithNoRecordsIsAskedAgainInTheCallersTerms(t *testing.T) {
+	types := "(" + strings.Join(dnsTypes, ", ") + ")"
+	for sf, want := range map[plugin.Surface]string{
+		plugin.SurfaceCLI: "try another record type in --type " + types + ", or another resolver in --server",
+		plugin.SurfaceMCP: `try another record type in the "type" argument ` + types +
+			" — which resolver answers is the operator's to change",
+		plugin.SurfaceTUI: "try another record type in the type box " + types + ", or another resolver in the server box",
+	} {
+		if got := anotherQuestion(sf); got != want {
+			t.Errorf("over %q: %q, want %q", sf, got, want)
+		}
+	}
+}
+
+// A port that said nothing hands over the call that speaks first, whole —
+// the command line at a terminal, the tool and its arguments to an agent —
+// with the request's line breaks as the escapes net.send reads.
+func TestSilenceHandsOverTheCallThatSpeaksFirst(t *testing.T) {
+	for sf, want := range map[plugin.Surface]string{
+		plugin.SurfaceCLI: `rta net send db.local 5432 --data 'GET / HTTP/1.0\r\n\r\n'`,
+		plugin.SurfaceMCP: `net_send {"data":"GET / HTTP/1.0\\r\\n\\r\\n","host":"db.local","port":5432}`,
+	} {
+		if got := silence(sf, "", time.Second, "db.local", 5432); !strings.HasSuffix(got, "try:\n  "+want) {
+			t.Errorf("over %q: %q, want it to end with %q", sf, got, want)
+		}
+	}
+}
+
 func TestDNSBadType(t *testing.T) {
 	_, err := runDNS(context.Background(), req(map[string]any{"name": "example.com", "type": "WAT"}))
 	ve := view.AsError(err, "x")

@@ -132,7 +132,7 @@ func runHostsList(_ context.Context, req plugin.Request) (view.View, error) {
 	// The table even when nothing is listed, and the sentence beside it for a
 	// screen: see view.Table.Empty.
 	if len(t.Rows) == 0 {
-		t.Empty = fmt.Sprintf("No entries in %s — add one with: rta net hosts add <ip> <hostname>", path)
+		t.Empty = fmt.Sprintf("No entries in %s — %s adds one", path, req.Surface().CapabilityName("net.hosts.add"))
 	}
 	return t, nil
 }
@@ -150,7 +150,7 @@ func applyHosts(req plugin.Request, lines []string, action, done string) (view.V
 	if verr != nil {
 		return nil, verr
 	}
-	if verr := writeLines(path, lines); verr != nil {
+	if verr := writeLines(req.Surface(), path, lines); verr != nil {
 		return nil, verr
 	}
 	return view.Text{Body: fmt.Sprintf("%s in %s\nprevious version saved to %s", done, path, saved)}, nil
@@ -181,18 +181,19 @@ func dropNames(e *hostEntry, remove map[string]bool) bool {
 //
 // Only net.hosts.add needs it. rm and toggle match names that are already in
 // the file and write back only what parseHostLine produced, so nothing a
-// caller supplies ever reaches a line.
-func checkHostname(name string) *view.Error {
+// caller supplies ever reaches a line. sf is the surface asking, for the name
+// its hints give the input.
+func checkHostname(sf plugin.Surface, name string) *view.Error {
 	if name == "" {
 		return view.Errorf("net.hosts.badhostname", "a hostname cannot be empty").
-			WithHint("rta net hosts add 127.0.0.1 api.local")
+			WithHint(sf.ArgumentName("hostname") + " takes names such as api.local")
 	}
 	for _, r := range name {
 		// unicode.IsSpace is the predicate strings.Fields splits the file on,
 		// so this rejects exactly what would come back as another field.
 		if unicode.IsSpace(r) || unicode.IsControl(r) || r == '#' {
 			return view.Errorf("net.hosts.badhostname", "%q is not a hostname: it contains %q", name, r).
-				WithHint("one name per argument: rta net hosts add 127.0.0.1 api.local www.api.local")
+				WithHint(sf.ArgumentName("hostname") + " takes one name per entry: api.local and www.api.local, not both in one")
 		}
 	}
 	return nil
@@ -202,17 +203,18 @@ func runHostsAdd(_ context.Context, req plugin.Request) (view.View, error) {
 	ip := strings.TrimSpace(req.String("ip"))
 	if stdnet.ParseIP(ip) == nil {
 		return nil, view.Errorf("net.hosts.badip", "%q is not an IP address", ip).
-			WithHint("the address comes first: rta net hosts add 127.0.0.1 api.local")
+			WithHint("the address goes in " + req.Surface().ArgumentName("ip") + " and the names in " +
+				req.Surface().ArgumentName("hostname"))
 	}
 	names := req.StringSlice("hostname")
 	if len(names) == 0 {
 		return nil, view.Errorf("net.hosts.nohostname", "no hostname given").
-			WithHint("rta net hosts add " + ip + " api.local")
+			WithHint("give " + req.Surface().ArgumentName("hostname") + " the names to point at " + ip)
 	}
 	// Before the file is read, let alone written: a refused call must leave
 	// no backup and no half-applied edit behind.
 	for _, n := range names {
-		if verr := checkHostname(n); verr != nil {
+		if verr := checkHostname(req.Surface(), n); verr != nil {
 			return nil, verr
 		}
 	}
@@ -273,7 +275,7 @@ func runHostsRemove(_ context.Context, req plugin.Request) (view.View, error) {
 	names := req.StringSlice("hostname")
 	if len(names) == 0 {
 		return nil, view.Errorf("net.hosts.nohostname", "no hostname given").
-			WithHint("run `rta net hosts list` to see every entry")
+			WithHint(req.Surface().CapabilityName("net.hosts.list") + " lists every entry")
 	}
 	lines, verr := readLines(hostsPath(req))
 	if verr != nil {
@@ -300,7 +302,7 @@ func runHostsRemove(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 	if found == 0 {
 		return nil, view.Errorf("net.hosts.notfound", "no entry for %s", strings.Join(names, ", ")).
-			WithHint("run `rta net hosts list` to see every entry")
+			WithHint(req.Surface().CapabilityName("net.hosts.list") + " lists every entry")
 	}
 	joined := strings.Join(names, ", ")
 	return applyHosts(req, withoutLines(lines, drop),
@@ -361,7 +363,7 @@ func runHostsToggle(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 	if len(replace) == 0 {
 		return nil, view.Errorf("net.hosts.notfound", "no entry for %s", name).
-			WithHint("run `rta net hosts list` to see every entry")
+			WithHint(req.Surface().CapabilityName("net.hosts.list") + " lists every entry")
 	}
 	rebuilt := make([]string, 0, len(lines)+len(replace))
 	for i, line := range lines {

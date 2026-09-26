@@ -68,7 +68,7 @@ func runResolverList(_ context.Context, req plugin.Request) (view.View, error) {
 	pairs := []view.Pair{{Key: "file", Value: path}}
 	// Who owns the file comes first: it decides whether anything else here
 	// is worth changing.
-	if what, _ := managedBy(path); what != "" {
+	if what, _ := managedBy(path, ""); what != "" {
 		pairs = append(pairs, view.Pair{Key: "managed by", Value: what + " — edits here get overwritten"})
 	} else {
 		pairs = append(pairs, view.Pair{Key: "managed by", Value: "nothing — safe to edit"})
@@ -97,7 +97,7 @@ func runResolverSet(_ context.Context, req plugin.Request) (view.View, error) {
 	servers := req.StringSlice("server")
 	if len(servers) == 0 {
 		return nil, view.Errorf("net.resolver.noserver", "no nameserver given").
-			WithHint("rta net resolver set 1.1.1.1 9.9.9.9")
+			WithHint(req.Surface().ArgumentName("server") + " takes the nameservers' addresses, such as 1.1.1.1 and 9.9.9.9")
 	}
 	for _, s := range servers {
 		if stdnet.ParseIP(s) == nil {
@@ -106,7 +106,7 @@ func runResolverSet(_ context.Context, req plugin.Request) (view.View, error) {
 		}
 	}
 	path := resolverPath(req)
-	if verr := guardManaged(path, req.Bool("force")); verr != nil {
+	if verr := guardManaged(req.Surface(), path, req.Bool("force")); verr != nil {
 		return nil, verr
 	}
 	lines, verr := readLines(path)
@@ -145,11 +145,11 @@ func runResolverSet(_ context.Context, req plugin.Request) (view.View, error) {
 	if verr != nil {
 		return nil, verr
 	}
-	if verr := writeLines(path, out); verr != nil {
+	if verr := writeLines(req.Surface(), path, out); verr != nil {
 		return nil, verr
 	}
 	body := fmt.Sprintf("%s in %s\nprevious version saved to %s", summary, path, saved)
-	if what, _ := managedBy(path); what != "" {
+	if what, _ := managedBy(path, ""); what != "" {
 		body += fmt.Sprintf("\n\nwarning: %s is %s — this change will be overwritten", path, what)
 	}
 	return view.Text{Body: body}, nil
