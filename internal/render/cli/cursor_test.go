@@ -74,6 +74,31 @@ func TestCSVReportsWhatATableCouldNotReadOnTheNotesChannel(t *testing.T) {
 	}
 }
 
+// Every line of a note is marked as one, not only the first.
+//
+// A warning whose message ran to a second line — a driver's error quoted
+// whole, a list of what could not be read — had "#" on its first line alone,
+// so whatever reads the notes stream for its "#" lines took the rest as
+// something else: a second message with no code, or data.
+func TestAMultiLineWarningIsANoteOnEveryLine(t *testing.T) {
+	partial := bounded()
+	partial.Page = nil
+	partial.Warnings = []view.Error{{Code: "kube.ns.forbidden", Message: "two namespaces could not be listed:\nprod\nstaging"}}
+	var out, notes bytes.Buffer
+	if err := Render(&out, partial, Options{Format: CSV, Notes: &notes}); err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimRight(notes.String(), "\n"), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("notes = %q, want the warning's three lines", notes.String())
+	}
+	for _, line := range lines {
+		if !strings.HasPrefix(line, "# ") {
+			t.Errorf("note line %q is not marked as a note in %q", line, notes.String())
+		}
+	}
+}
+
 // A complete answer says nothing about continuing: a cursor on a finished
 // listing sends somebody looking for data that is not there.
 func TestACompleteListingSaysNothingAboutContinuing(t *testing.T) {
