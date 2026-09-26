@@ -223,13 +223,27 @@ func probe(ctx context.Context, req plugin.Request, send string) (view.View, err
 
 	response := view.Text{Body: printable(banner)}
 	if len(banner) == 0 {
-		response = view.Text{Body: fmt.Sprintf(
-			"The port is open but said nothing in %s.\n\n"+
-				"Many protocols expect the client to speak first — try:\n"+
-				"  rta net send %s %d --data \"GET / HTTP/1.0\\r\\n\\r\\n\"", wait, host, port)}
+		response = view.Text{Body: silence(send, wait, host, port)}
 	}
 	return view.Sections{Items: []view.Section{
 		{ID: "connection", Title: "connection", View: view.KeyValue{Pairs: pairs}},
 		{ID: "response", Title: "response", View: response},
 	}}, nil
+}
+
+// silence is what a port that said nothing is explained as, and the remedy
+// depends on who spoke. net.probe only listened, and the protocols that wait
+// for the client are net.send's to reach. net.send has already spoken, and
+// offering it again sent somebody to repeat the call that just went
+// unanswered: what is left to change is the wait, or how the request ends.
+func silence(sent string, wait time.Duration, host string, port int) string {
+	if sent != "" {
+		return fmt.Sprintf("The port took the %s sent and said nothing back in %s.\n\n"+
+			"A slow service may answer given a longer --wait, and many protocols act only on "+
+			"a request ended by a line break — \\r\\n in --data is sent as one.",
+			format.Bytes(len(unescape(sent))), wait)
+	}
+	return fmt.Sprintf("The port is open but said nothing in %s.\n\n"+
+		"Many protocols expect the client to speak first — try:\n"+
+		"  rta net send %s %d --data \"GET / HTTP/1.0\\r\\n\\r\\n\"", wait, host, port)
 }
