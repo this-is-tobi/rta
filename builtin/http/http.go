@@ -212,7 +212,7 @@ func doRequest(ctx context.Context, method string, req plugin.Request) (view.Vie
 					"though the grant named this URL")
 		}
 		return nil, view.Errorf("http.request.failed", "%s %s: %v", method, url, err).
-			WithHint("check the URL is reachable; use --timeout to extend the deadline")
+			WithHint("check the URL is reachable; " + req.Surface().InputName("timeout") + " extends the deadline")
 	}
 	httpReq = withTrustedProxy(httpReq)
 
@@ -244,7 +244,7 @@ func doRequest(ctx context.Context, method string, req plugin.Request) (view.Vie
 					"though the grant named this URL")
 		}
 		return nil, view.Errorf("http.request.failed", "%s %s: %v", method, url, err).
-			WithHint("check the URL is reachable; use --timeout to extend the deadline")
+			WithHint("check the URL is reachable; " + req.Surface().InputName("timeout") + " extends the deadline")
 	}
 	defer resp.Body.Close()
 	// One byte past the cap, so that a body of exactly maxBody bytes is told
