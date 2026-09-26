@@ -219,9 +219,8 @@ func TestTheReplaceDirectiveIsOnlyEmittedWhenItPointsSomewhere(t *testing.T) {
 	if !strings.Contains(string(mod), "go "+toolchainVersion()) {
 		t.Errorf("go.mod does not carry the toolchain's go directive:\n%s", mod)
 	}
-	steps := nextSteps(released, other)
-	if strings.Contains(steps, "--rta-source") || !strings.Contains(steps, "v0.18.0") {
-		t.Errorf("the next steps should name the required release, not a missing checkout:\n%s", steps)
+	if steps := buildsAgainst(released); strings.Contains(steps, "--rta-source") || !strings.Contains(steps, "v0.18.0") {
+		t.Errorf("the answer should name the required release, not a missing checkout:\n%s", steps)
 	}
 
 	// A build that knows no version names none, and says `go mod tidy` will
@@ -239,8 +238,8 @@ func TestTheReplaceDirectiveIsOnlyEmittedWhenItPointsSomewhere(t *testing.T) {
 	if strings.Contains(string(mod), rtaModule) {
 		t.Errorf("an unknown version produced a require line anyway:\n%s", mod)
 	}
-	if steps := nextSteps(unknown, third); !strings.Contains(steps, "latest") {
-		t.Errorf("the next steps do not say the latest release is what tidy picks:\n%s", steps)
+	if steps := buildsAgainst(unknown); !strings.Contains(steps, "latest") {
+		t.Errorf("the answer does not say the latest release is what tidy picks:\n%s", steps)
 	}
 }
 
@@ -889,4 +888,60 @@ func TestPluginNewDryRunWritesNothing(t *testing.T) {
 			t.Errorf("dry-run output does not list %s: %q", want, out)
 		}
 	}
+}
+
+// plugin new answers with pairs: it printed a page of prose on stdout whatever
+// -o said, so a script scaffolding plugins parsed "Created ..." for where the
+// files went. The directory is named by its full path, and a `go mod tidy`
+// that failed is a warning on stderr beside the answer, never inside it.
+func TestPluginNewAnswersWithAViewInTheFormatAskedFor(t *testing.T) {
+	root := repoRoot(t)
+	run := session(t, registry.New())
+	t.Chdir(t.TempDir())
+	// No go on PATH, so tidy fails at once: the case whose warning must stay
+	// out of the answer.
+	t.Setenv("PATH", t.TempDir())
+
+	out, errOut, err := run("plugin", "new", "probe", "--dir", "first", "--rta-source", root,
+		"--dry-run", "-o", "json")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	pairs := answerPairs(t, out)
+	if got := pairs["would create"]; !filepath.IsAbs(got) || filepath.Base(got) != "first" {
+		t.Errorf("would create = %q, want the directory by its full path", got)
+	}
+	if _, ok := pairs["to install it"]; ok || !strings.Contains(pairs["next"], "--dry-run") {
+		t.Errorf("a dry run answered %v", pairs)
+	}
+
+	out, errOut, err = run("plugin", "new", "probe", "--dir", "first", "--rta-source", root, "-o", "json")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	pairs = answerPairs(t, out)
+	if _, err := os.Stat(filepath.Join(pairs["created"], "main.go")); err != nil {
+		t.Errorf("created = %q, which holds no main.go: %v", pairs["created"], err)
+	}
+	for key, want := range map[string]string{
+		"files":          "main.go",
+		"module":         "rta-plugin-probe",
+		"builds against": root,
+		"next":           "rta plugin dev -- probe greet world",
+		"to install it":  "go build -o ",
+	} {
+		if !strings.Contains(pairs[key], want) {
+			t.Errorf("%s = %q, want it to hold %q", key, pairs[key], want)
+		}
+	}
+	if !strings.Contains(errOut, "go mod tidy") {
+		t.Errorf("the failed tidy was not said on stderr: %q", errOut)
+	}
+
+	onATerminal(t)
+	out, errOut, err = run("plugin", "new", "probe", "--dir", "second", "--rta-source", root, "--no-color")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	readsOnATerminal(t, out, "created", "files", "module", "builds against", "next", "to install it")
 }

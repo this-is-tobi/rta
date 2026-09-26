@@ -618,9 +618,8 @@ func trustInventory() view.View {
 func newPluginNewCommand(version string, opts *globalOpts) *cobra.Command {
 	var dir, module, rtaSource string
 	cmd := &cobra.Command{
-		Use:         "new <name>",
-		Annotations: outputExempt(),
-		Short:       "Scaffold a working plugin",
+		Use:   "new <name>",
+		Short: "Scaffold a working plugin",
 		Long: "Writes a plugin that builds and runs as it stands, rather than a\n" +
 			"skeleton with TODOs in it — so the first run works, and every edit\n" +
 			"after it is a change to something known-good.\n\n" +
@@ -662,31 +661,26 @@ func newPluginNewCommand(version string, opts *globalOpts) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if opts.dryRun {
-				fmt.Fprintf(cmd.OutOrStdout(), "would write %s in %s:\n", format.Count(len(names), "file", "files"), dir)
-				for _, n := range names {
-					fmt.Fprintf(cmd.OutOrStdout(), "  %s\n", n)
+			if !opts.dryRun {
+				// Resolve the module graph now, so the very first `go build`
+				// the author runs succeeds. Without it the scaffold is a
+				// directory that does not compile — "go: updates to go.mod
+				// needed" is the first thing a stranger sees, which is the
+				// outcome writing a working template was meant to avoid.
+				tidy := exec.CommandContext(cmd.Context(), "go", "mod", "tidy")
+				tidy.Dir = dir
+				if out, err := tidy.CombinedOutput(); err != nil {
+					// A warning, not a failure, and on stderr beside the
+					// answer rather than in it. The files are good; resolving
+					// may need a network this machine does not have, and the
+					// author can run one command. Deleting their new plugin
+					// over it would be worse.
+					fmt.Fprintf(cmd.ErrOrStderr(),
+						"warning: `go mod tidy` in %s did not succeed, so the first build may fail:\n%s\n",
+						dir, strings.TrimSpace(string(out)))
 				}
-				return nil
 			}
-			// Resolve the module graph now, so the very first `go build` the
-			// author runs succeeds. Without it the scaffold is a directory
-			// that does not compile — "go: updates to go.mod needed" is the
-			// first thing a stranger sees, which is the outcome writing a
-			// working template was meant to avoid.
-			tidy := exec.CommandContext(cmd.Context(), "go", "mod", "tidy")
-			tidy.Dir = dir
-			if out, err := tidy.CombinedOutput(); err != nil {
-				// A warning, not a failure. The files are good; resolving may
-				// need a network this machine does not have, and the author
-				// can run one command. Deleting their new plugin over it
-				// would be worse.
-				fmt.Fprintf(cmd.ErrOrStderr(),
-					"warning: `go mod tidy` in %s did not succeed, so the first build may fail:\n%s\n",
-					dir, strings.TrimSpace(string(out)))
-			}
-			fmt.Fprint(cmd.OutOrStdout(), nextSteps(s, dir))
-			return nil
+			return renderView(cmd, opts, scaffoldAnswer(s, dir, names, opts.dryRun))
 		},
 	}
 	cmd.Flags().StringVar(&dir, "dir", "", "where to write it (default: the binary name)")
