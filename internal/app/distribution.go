@@ -31,7 +31,7 @@ func renderView(cmd *cobra.Command, opts *globalOpts, v view.View) error {
 		return err
 	}
 	return cli.Render(cmd.OutOrStdout(), v,
-		cli.Options{Format: format, NoColor: opts.noColor || !isTTY(), Width: termWidth(), Screen: isTTY()})
+		renderOptions(cmd, format, opts.noColor))
 }
 
 // asWarnings puts what an index could not answer beside what the others did.

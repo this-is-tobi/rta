@@ -109,7 +109,7 @@ func newPluginAllowCommand(opts *globalOpts) *cobra.Command {
 			}
 			render := func(v view.View) error {
 				return cli.Render(cmd.OutOrStdout(), v,
-					cli.Options{Format: format, NoColor: opts.noColor || !isTTY(), Width: termWidth(), Screen: isTTY()})
+					renderOptions(cmd, format, opts.noColor))
 			}
 			if len(args) == 0 {
 				return render(needsInventory())
@@ -221,7 +221,7 @@ func newPluginDisallowCommand(opts *globalOpts) *cobra.Command {
 				{Key: "digest", Value: c.Identity.Digest},
 				{Key: "no longer reads", Value: strings.Join(had, ", ")},
 				{Key: "next", Value: next},
-			}}, cli.Options{Format: format, NoColor: opts.noColor || !isTTY(), Width: termWidth()})
+			}}, renderOptions(cmd, format, opts.noColor))
 		},
 		ValidArgsFunction: func(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
 			var out []cobra.Completion
@@ -397,7 +397,7 @@ func newPluginTrustCommand(opts *globalOpts) *cobra.Command {
 			}
 			render := func(v view.View) error {
 				return cli.Render(cmd.OutOrStdout(), v,
-					cli.Options{Format: format, NoColor: opts.noColor || !isTTY(), Width: termWidth(), Screen: isTTY()})
+					renderOptions(cmd, format, opts.noColor))
 			}
 			if len(args) == 0 {
 				return render(trustInventory())
@@ -796,7 +796,7 @@ func newPluginDevCommand(reg *registry.Registry, version string, opts *globalOpt
 					return err
 				}
 				return cli.Render(cmd.OutOrStdout(), devReport(reg, client),
-					cli.Options{Format: format, NoColor: opts.noColor || !isTTY(), Width: termWidth()})
+					renderOptions(cmd, format, opts.noColor))
 			}
 
 			// Run the requested command against a root that has this plugin
