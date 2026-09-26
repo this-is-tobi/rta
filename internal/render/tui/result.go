@@ -116,7 +116,13 @@ func (m Model) resultMeta() string {
 	case view.Table:
 		n := len(v.Rows)
 		total := max(v.Total, n)
-		parts = append(parts, theme.Subtle.Render(fmt.Sprintf("%d of %s", n, format.CountOf(total, "row"))))
+		// Not over an empty listing's sentence, which the pane draws in
+		// place of the grid: "0 of 0 rows" above "nothing is locked" says
+		// the same thing twice, the second time as a figure. The count stays
+		// over an empty grid, where it is what says nothing came back.
+		if n > 0 || v.Empty == "" {
+			parts = append(parts, theme.Subtle.Render(fmt.Sprintf("%d of %s", n, format.CountOf(total, "row"))))
+		}
 		if m.interactive() && n > 0 {
 			parts = append(parts, theme.Subtle.Render(fmt.Sprintf("row %d/%d", m.row+1, n)))
 		}

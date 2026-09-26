@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
+
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -22,5 +24,34 @@ func TestTheResultLineCountsInTheRightNumber(t *testing.T) {
 		if !strings.Contains(got, want) || (rows == 1 && strings.Contains(got, "rows")) {
 			t.Errorf("%d rows: meta = %q, want %q", rows, got, want)
 		}
+	}
+}
+
+// An empty listing's pane says what would fill it, and the line above it
+// does not count the nothing it replaces: "0 of 0 rows" over "nothing is
+// locked" said the same thing twice, the second time as a figure.
+//
+// A table with no sentence keeps its count, since there the headings are
+// drawn and the count is what says nothing came back.
+func TestAnEmptyListingIsASentenceNotACount(t *testing.T) {
+	m := profileModel(t, twoProfileConfig())
+	sized, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	m = sized.(Model)
+	c := plugin.Capability{ID: "demo.list", Safety: plugin.Read}
+	table := view.Table{Columns: []view.Column{{Name: "Name"}}, Empty: "nothing is locked"}
+	m.mode, m.current = modeResult, c
+	m.result = resultMsg{cap: c, view: table, raw: table}
+	m.renderResult()
+	pane := plain(m.viewport.View())
+	if !strings.Contains(pane, "nothing is locked") || strings.Contains(pane, "NAME") {
+		t.Errorf("pane = %q, want the sentence in place of the headings", pane)
+	}
+	if meta := plain(m.resultMeta()); strings.Contains(meta, "row") {
+		t.Errorf("meta = %q, want no count above the sentence", meta)
+	}
+	table.Empty = ""
+	m.result = resultMsg{cap: c, view: table, raw: table}
+	if meta := plain(m.resultMeta()); !strings.Contains(meta, "0 of 0 rows") {
+		t.Errorf("meta = %q, want the count over an empty grid", meta)
 	}
 }
