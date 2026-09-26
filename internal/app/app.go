@@ -1238,7 +1238,7 @@ func runCapability(ctx context.Context, cmd *cobra.Command, c plugin.Capability,
 	// never be ambiguous about.
 	renderOpts := cli.Options{
 		Format: format, NoColor: opts.noColor || !isTTY(),
-		Width: termWidth(), Notes: cmd.ErrOrStderr(),
+		Width: termWidth(), Notes: cmd.ErrOrStderr(), Screen: isTTY(),
 	}
 
 	// Safety gate: on this surface a destructive capability runs only with
@@ -1432,7 +1432,10 @@ func convertArg(f plugin.Field, raw string) (any, error) {
 	}
 }
 
-func isTTY() bool {
+// isTTY reports whether stdout is a terminal. A variable, as stderrIsTerminal
+// is, so a test can stand in for one: an empty result's sentence is drawn only
+// on a screen (cli.Options.Screen), and a test's stdout is a buffer.
+var isTTY = func() bool {
 	return term.IsTerminal(int(os.Stdout.Fd()))
 }
 

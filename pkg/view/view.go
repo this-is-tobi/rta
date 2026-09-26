@@ -144,12 +144,15 @@ type Table struct {
 	// is waiting. Headings with nothing under them read, on a screen, like a
 	// listing that failed.
 	//
-	// Drawn only where the reader is known to be a person — pretty output and
-	// the TUI — and never encoded. A listing used to answer "empty" with a
-	// Text view instead, which every format carried: `-o json | jq '.rows[]'`
-	// met a view with no rows to iterate, and -o csv a shape it refused. A
-	// program reads the empty table; the sentence is presentation, the way a
-	// column's kind is.
+	// Drawn only where the reader is known to be a person: pretty output on
+	// a terminal, -o md, and the TUI. Never encoded — json, yaml, csv and MCP
+	// see the table alone — and never in pretty output written to a pipe or
+	// a file, which is a program's as surely as json is: the sentence
+	// redirected into a file is a line somebody's script reads as a row. A
+	// listing used to answer "empty" with a Text view instead, which every
+	// format carried: `-o json | jq '.rows[]'` met a view with no rows to
+	// iterate, and -o csv a shape it refused. A program reads the empty
+	// table; the sentence is presentation, the way a column's kind is.
 	//
 	// Not carried across the plugin wire: a plugin's empty table is drawn as
 	// its headings.

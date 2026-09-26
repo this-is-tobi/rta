@@ -90,6 +90,18 @@ type Options struct {
 	// Highlight, when > 0, accents that table row (1-based). Interactive
 	// hosts use it for row selection; 0 renders tables uniformly.
 	Highlight int
+	// Screen says pretty output is read as it is drawn — a terminal, a TUI
+	// pane — rather than written to a pipe or a file. It is what an empty
+	// result's sentence (view.Table.Empty) waits for.
+	//
+	// NoColor cannot say it: --no-color on a terminal is still somebody
+	// reading, and it is the pipe that must not get the sentence. Written
+	// into a file it is data nobody asked for — a line a script greps as a
+	// row, where the empty grid it replaces at least parses as nothing.
+	//
+	// False unless a host says otherwise, so a host that forgets draws the
+	// headings on a screen rather than prose into somebody's file.
+	Screen bool
 	// Notes is where the renderer reports things that must not pollute the
 	// output stream itself. nil discards them, which is the right default
 	// for a host that has nowhere sensible to put them (a TUI pane).
@@ -309,6 +321,7 @@ func renderPretty(w io.Writer, v view.View, opts Options) error {
 	st := newStyles(opts.NoColor)
 	st.width = opts.Width
 	st.fill = opts.Fill
+	st.screen = opts.Screen
 	switch t := view.Redact(v).(type) {
 	case view.Text:
 		if t.Markdown {
@@ -492,10 +505,11 @@ func hangsUnderKey(val string, keyCol, width int) bool {
 }
 
 func prettyTable(w io.Writer, t view.Table, st styles, highlight int) error {
-	// The sentence an empty table carries is drawn in its place: headings
-	// over nothing read as a listing that failed. See view.Table.Empty. The
-	// footer still follows, since an empty listing can still be a partial one.
-	if len(t.Rows) == 0 && t.Empty != "" {
+	// The sentence an empty table carries is drawn in its place on a screen:
+	// headings over nothing read as a listing that failed. See
+	// view.Table.Empty. The footer still follows, since an empty listing can
+	// still be a partial one.
+	if len(t.Rows) == 0 && t.Empty != "" && st.screen {
 		if _, err := fmt.Fprintln(w, wrap(t.Empty, st.width, "")); err != nil {
 			return err
 		}
@@ -1208,6 +1222,7 @@ type styles struct {
 	color     bool
 	width     int  // 0 = natural
 	fill      bool // width is a target, not a ceiling
+	screen    bool // see Options.Screen
 	key       lipgloss.Style
 	header    lipgloss.Style
 	border    lipgloss.Style

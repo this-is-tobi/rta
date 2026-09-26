@@ -421,7 +421,7 @@ func newProfileCommand(reg *registry.Registry, opts *globalOpts) *cobra.Command 
 		if err != nil {
 			return err
 		}
-		renderOpts := cli.Options{Format: format, NoColor: opts.noColor || !isTTY(), Width: termWidth()}
+		renderOpts := cli.Options{Format: format, NoColor: opts.noColor || !isTTY(), Width: termWidth(), Screen: isTTY()}
 		if verr != nil {
 			_ = cli.RenderError(cmd.ErrOrStderr(), verr, renderOpts)
 			return Rendered(verr)

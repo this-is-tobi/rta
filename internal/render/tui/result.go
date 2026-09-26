@@ -71,7 +71,7 @@ func (m *Model) renderResult() {
 	var buf bytes.Buffer
 	// Fill: this is a bordered pane of a fixed size, so a table narrower than
 	// the frame is not restraint, it is a gap where a title could have been.
-	opts := cli.Options{Format: cli.Pretty, Width: max(m.width-4, 20), Fill: true}
+	opts := cli.Options{Format: cli.Pretty, Width: max(m.width-4, 20), Fill: true, Screen: true}
 	if m.interactive() {
 		opts.Highlight = m.row + 1
 	}

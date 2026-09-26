@@ -109,7 +109,7 @@ func newPluginAllowCommand(opts *globalOpts) *cobra.Command {
 			}
 			render := func(v view.View) error {
 				return cli.Render(cmd.OutOrStdout(), v,
-					cli.Options{Format: format, NoColor: opts.noColor || !isTTY(), Width: termWidth()})
+					cli.Options{Format: format, NoColor: opts.noColor || !isTTY(), Width: termWidth(), Screen: isTTY()})
 			}
 			if len(args) == 0 {
 				return render(needsInventory())
