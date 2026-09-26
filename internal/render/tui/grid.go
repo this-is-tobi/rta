@@ -471,7 +471,7 @@ func tileContentLines(t tile, width int) []string {
 		// Fill: a tile is drawn at the grid's width whether its content wants
 		// it or not, so the slack belongs to the content rather than to the
 		// space beside it.
-		if err := cli.Render(&buf, t.view, cli.Options{Format: cli.Pretty, Width: inner, Fill: true}); err == nil {
+		if err := cli.Render(&buf, t.view, cli.Options{Format: cli.Pretty, Width: inner, Fill: true, Screen: true}); err == nil {
 			body = buf.String()
 		}
 	default:

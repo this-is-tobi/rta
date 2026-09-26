@@ -29,7 +29,7 @@ func TestAnEmptyQueueIsASentence(t *testing.T) {
 		t.Fatalf("empty queue = %+v, want an empty table saying so", v)
 	}
 	var out bytes.Buffer
-	if err := cli.Render(&out, v, cli.Options{Format: cli.Pretty, NoColor: true}); err != nil ||
+	if err := cli.Render(&out, v, cli.Options{Format: cli.Pretty, NoColor: true, Screen: true}); err != nil ||
 		!strings.Contains(out.String(), "nothing is waiting") || strings.Contains(out.String(), "╭") {
 		t.Errorf("pretty = %q (%v), want the sentence and no grid", out.String(), err)
 	}

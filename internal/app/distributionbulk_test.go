@@ -98,7 +98,8 @@ func TestASweepWithNothingInstalledSaysSo(t *testing.T) {
 // reads nothing and fetches nothing, so the only thing to hold it to is that
 // the flag exists and narrows rather than being ignored.
 func TestOutdatedAcceptsAnIndexFilter(t *testing.T) {
-	out, errOut, err := run(t, registry.New(), "plugin", "outdated", "--index", "official")
+	// md, which draws an empty listing's sentence wherever it is written.
+	out, errOut, err := run(t, registry.New(), "plugin", "outdated", "--index", "official", "-o", "md")
 	if err != nil {
 		t.Fatalf("outdated --index failed: %v (%s)", err, errOut)
 	}
@@ -109,8 +110,11 @@ func TestOutdatedAcceptsAnIndexFilter(t *testing.T) {
 
 // An empty plugin listing is a sentence on a screen and a table to a parser.
 // The sentence in place of the table was what every format got: `-o json |
-// jq '.rows[]'` met a text view, and -o csv refused one and exited 2.
+// jq '.rows[]'` met a text view, and -o csv refused one and exited 2. Pretty
+// output into a pipe is a parser's too, so it gets the headings.
 func TestAnEmptyPluginListingIsATableToAParser(t *testing.T) {
+	saved := isTTY
+	t.Cleanup(func() { isTTY = saved })
 	for _, c := range []struct {
 		args        []string
 		say, header string
@@ -120,9 +124,19 @@ func TestAnEmptyPluginListingIsATableToAParser(t *testing.T) {
 		{[]string{"plugin", "allow"}, "No installed plugin asks", "Plugin,Asks for,Status,To allow"},
 	} {
 		name := strings.Join(c.args, " ")
+		isTTY = func() bool { return true }
 		out, errOut, err := run(t, registry.New(), append(c.args, "-o", "pretty")...)
 		if err != nil || !strings.Contains(out, c.say) {
-			t.Errorf("%s: pretty = %q (%v, %s), want the sentence", name, out, err, errOut)
+			t.Errorf("%s: pretty on a terminal = %q (%v, %s), want the sentence", name, out, err, errOut)
+		}
+		isTTY = func() bool { return false }
+		out, errOut, err = run(t, registry.New(), append(c.args, "-o", "pretty")...)
+		if err != nil || strings.Contains(out, c.say) || !strings.Contains(out, strings.ToUpper(strings.Split(c.header, ",")[0])) {
+			t.Errorf("%s: pretty into a pipe = %q (%v, %s), want the headings and no sentence", name, out, err, errOut)
+		}
+		out, errOut, err = run(t, registry.New(), append(c.args, "-o", "md")...)
+		if err != nil || !strings.Contains(out, c.say) {
+			t.Errorf("%s: md = %q (%v, %s), want the sentence", name, out, err, errOut)
 		}
 		out, errOut, err = run(t, registry.New(), append(c.args, "-o", "csv")...)
 		if err != nil || strings.TrimSpace(out) != c.header {

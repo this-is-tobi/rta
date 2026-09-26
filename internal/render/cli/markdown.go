@@ -81,11 +81,18 @@ func markdownTable(b *strings.Builder, t view.Table) {
 	if len(t.Columns) == 0 {
 		return
 	}
-	head := make([]string, len(t.Columns))
-	for i, c := range t.Columns {
-		head[i] = c.Name
+	// The sentence an empty table carries, in place of a heading row over
+	// nothing, as a screen draws it: a report is read by a person, and in a
+	// ticket an empty grid reads as a query that failed. See view.Table.Empty.
+	if len(t.Rows) == 0 && t.Empty != "" {
+		markdownEmpty(b, t.Empty)
+	} else {
+		head := make([]string, len(t.Columns))
+		for i, c := range t.Columns {
+			head[i] = c.Name
+		}
+		writeMarkdownGrid(b, head, t.Rows)
 	}
-	writeMarkdownGrid(b, head, t.Rows)
 
 	// A paginated table that did not say so would be read as the whole set,
 	// which is the kind of quiet wrongness a report must not carry.
@@ -95,6 +102,16 @@ func markdownTable(b *strings.Builder, t view.Table) {
 	// And the rows it could not read at all, which is the same wrongness
 	// with less to notice: a short page at least shows a heading missing.
 	markdownWarnings(b, t.Warnings)
+}
+
+// markdownEmpty writes an empty result's sentence as a paragraph.
+//
+// Escaped like a cell rather than written out verbatim like a Text body. The
+// sentences put placeholders in angle brackets — `--tag <name>` — which a
+// markdown renderer reads as an HTML tag and draws as nothing, and a sentence
+// comes from wherever its view did, the way a cell does.
+func markdownEmpty(b *strings.Builder, say string) {
+	b.WriteString("\n" + inlineMarkdown(say) + "\n")
 }
 
 func markdownTree(b *strings.Builder, t view.Tree) {

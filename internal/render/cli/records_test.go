@@ -219,24 +219,36 @@ func TestAGridCellDoesNotBreakOnAHyphen(t *testing.T) {
 // A listing with nothing in it answered with a Text view, which every format
 // carried: `-o json | jq '.rows[]'` met a view with no rows, and -o csv a
 // shape it refused. The table now carries the sentence beside it, for the
-// renderers drawn for a person alone.
+// renderers drawn for a person alone: pretty on a screen, and md, a report
+// somebody reads. Pretty into a pipe or a file is a program's, and gets the
+// headings: the sentence redirected is a line a script reads as a row.
 func TestAnEmptyTableIsASentenceOnlyToAPerson(t *testing.T) {
-	const say = "Nothing here yet — add one with: rta note add"
+	const say = "Nothing here yet — add one with: rta note add --tag <name>"
 	empty := view.Table{
 		Columns:  []view.Column{{Name: "ID", Kind: view.KindNumber}, {Name: "Note"}},
 		Empty:    say,
 		Warnings: []view.Error{{Code: "note.store.partial", Message: "one file was skipped"}},
 	}
 	for _, width := range []int{0, 80} {
-		out, _ := renderWidth(t, empty, Options{Width: width})
+		out, _ := renderWidth(t, empty, Options{Width: width, Screen: true})
 		if !strings.Contains(out, say) || isGrid(out) || !strings.Contains(out, "one file was skipped") {
-			t.Errorf("pretty at width %d = %q, want the sentence and the warning, no grid", width, out)
+			t.Errorf("pretty on a screen at width %d = %q, want the sentence and the warning, no grid", width, out)
+		}
+		out, _ = renderWidth(t, empty, Options{Width: width})
+		if strings.Contains(out, "Nothing here yet") || !isGrid(out) || !strings.Contains(out, "one file was skipped") {
+			t.Errorf("pretty into a pipe at width %d = %q, want the headings and the warning, no sentence", width, out)
 		}
 	}
-	for _, f := range []Format{JSON, YAML, CSV, Markdown} {
+	for _, f := range []Format{JSON, YAML, CSV} {
 		if out := render(t, empty, f); strings.Contains(out, "Nothing here yet") {
-			t.Errorf("%s carried the sentence meant for a screen:\n%s", f, out)
+			t.Errorf("%s carried the sentence meant for a person:\n%s", f, out)
 		}
+	}
+	// md draws it as a paragraph in place of the grid, escaped the way a
+	// cell is: a bare <name> is an HTML tag to whatever renders the report.
+	if out := render(t, empty, Markdown); !strings.Contains(out, `--tag \<name>`) ||
+		strings.Contains(out, "| ID") || !strings.Contains(out, "one file was skipped") {
+		t.Errorf("md = %q, want the escaped sentence and the warning, no grid", out)
 	}
 	if out := render(t, empty, CSV); strings.TrimSpace(out) != "ID,Note" {
 		t.Errorf("csv = %q, want the header row alone", out)
@@ -251,12 +263,15 @@ func TestAnEmptyTableIsASentenceOnlyToAPerson(t *testing.T) {
 	// A table with nothing to say keeps its headings, and one with rows
 	// never shows the sentence.
 	empty.Empty, empty.Warnings = "", nil
-	if out, _ := renderWidth(t, empty, Options{Width: 80}); !isGrid(out) {
+	if out, _ := renderWidth(t, empty, Options{Width: 80, Screen: true}); !isGrid(out) {
 		t.Errorf("an empty table with no sentence lost its headings:\n%s", out)
 	}
 	full := view.Table{Columns: empty.Columns, Rows: [][]string{{"1", "x"}}, Empty: say}
-	if out, _ := renderWidth(t, full, Options{Width: 80}); strings.Contains(out, "Nothing here yet") {
+	if out, _ := renderWidth(t, full, Options{Width: 80, Screen: true}); strings.Contains(out, "Nothing here yet") {
 		t.Errorf("a table with rows showed the empty sentence:\n%s", out)
+	}
+	if out := render(t, full, Markdown); strings.Contains(out, "Nothing here yet") {
+		t.Errorf("md of a table with rows showed the empty sentence:\n%s", out)
 	}
 }
 
