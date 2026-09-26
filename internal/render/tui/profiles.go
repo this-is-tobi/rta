@@ -284,6 +284,10 @@ type profileRow struct {
 	p    config.Profile
 	// problem is the first reason this environment cannot be used, or "".
 	problem string
+	// note is the first thing worth saying about an environment that works,
+	// and not as written — profile.Notes — or "". Never a reason to refuse
+	// it, which is what keeps it apart from problem: valid() does not read it.
+	note string
 	// active is true when this is the one switched on right now.
 	active bool
 	// until is when the switch lapses, nil for no deadline. Only meaningful
@@ -301,6 +305,9 @@ type connRow struct {
 	key     string
 	conn    config.Connection
 	problem string
+	// note is profileRow.note for this one entry, led by what to write
+	// instead.
+	note string
 	// credentials is one line per Secret input the plugin declares, saying
 	// where this environment's value for it comes from.
 	credentials []credentialRow
@@ -415,6 +422,40 @@ func (m Model) profileRows() []profileRow {
 			perPlugin[p.Name][p.Plugin] = p.Reason
 		}
 	}
+	// What `rta profile list`, `rta profile show` and `rta doctor` say beside
+	// those problems, said here too. Without it this was the one screen
+	// calling such an environment ok: `set: db: 20` against a plugin reading
+	// 0 to 15 ran database 15 on every call, and the pane an operator opens
+	// to see what an environment reaches had no word against it.
+	wholeNote := map[string]string{}
+	pluginNote := map[string]map[string]string{}
+	for _, n := range profile.Notes(cfg, m.reg) {
+		if n.Plugin == "" {
+			if _, already := wholeNote[n.Name]; !already {
+				wholeNote[n.Name] = n.Reason
+			}
+			continue
+		}
+		if pluginNote[n.Name] == nil {
+			pluginNote[n.Name] = map[string]string{}
+		}
+		if _, already := pluginNote[n.Name][n.Plugin]; !already {
+			// The fix first, then why. The line is cut at the pane's edge,
+			// and the reason runs past a hundred columns on its own: in the
+			// order `rta profile show` prints them, the value to write was
+			// the part no terminal showed.
+			pluginNote[n.Name][n.Plugin] = n.Reason
+			if n.Hint != "" {
+				pluginNote[n.Name][n.Plugin] = n.Hint + " — " + n.Reason
+			}
+		}
+		// The outer pane names the entry and gives the reason alone, as it
+		// does a problem; the hint is the inner pane's, one key away, where
+		// the band has room for it and the value it is about.
+		if _, already := wholeNote[n.Name]; !already {
+			wholeNote[n.Name] = n.Plugin + ": " + n.Reason
+		}
+	}
 	sel := profile.LoadSelection()
 	active := sel.Name(time.Now())
 
@@ -426,14 +467,15 @@ func (m Model) profileRows() []profileRow {
 		for _, key := range p.PluginKeys() {
 			conn := p.Plugins[key]
 			conns = append(conns, connRow{
-				key: key, conn: conn, problem: perPlugin[name][key],
+				key: key, conn: conn, problem: perPlugin[name][key], note: pluginNote[name][key],
 				credentials: m.credentialRows(name, key, conn),
 			})
 			if problem == "" && perPlugin[name][key] != "" {
 				problem = key + ": " + perPlugin[name][key]
 			}
 		}
-		row := profileRow{name: name, p: p, problem: problem, active: name == active, conns: conns}
+		row := profileRow{name: name, p: p, problem: problem, note: wholeNote[name],
+			active: name == active, conns: conns}
 		if row.active {
 			row.until = sel.Until
 		}
@@ -696,9 +738,14 @@ func profileState(row profileRow) string {
 	return theme.GoodText.Render("[on · " + profile.ShortDuration(left) + " left]")
 }
 
+// profileStatus is the word `rta profile list` gives the same environment:
+// invalid, warn for one that runs otherwise than written, ok.
 func profileStatus(row profileRow) string {
 	if !row.valid() {
 		return theme.BadText.Render("invalid")
+	}
+	if row.note != "" {
+		return theme.WarnText.Render("warn")
 	}
 	return theme.GoodText.Render("ok")
 }
@@ -726,7 +773,14 @@ func profileCovers(row profileRow) string {
 		styled = append(styled, theme.Faded.Render(textclean.Terminal(key)))
 	}
 	detail := strings.Join(styled, theme.Subtle.Render(" · "))
-	if row.p.Note != "" {
+	// A note takes the place of the operator's own, as it takes the Note
+	// column in `rta profile list`: the credential line under this one is
+	// still true of an environment that works, where a problem replaces it,
+	// and "the shared cache" says less than the database it is not reading.
+	switch {
+	case row.valid() && row.note != "":
+		detail += theme.Subtle.Render(" · ") + theme.WarnText.Render(textclean.Terminal(row.note))
+	case row.p.Note != "":
 		detail += theme.Subtle.Render(" · " + textclean.Terminal(row.p.Note))
 	}
 	return detail
@@ -788,8 +842,11 @@ func (m Model) connsView() string {
 	bands := make([]band, 0, len(row.conns))
 	for _, c := range row.conns {
 		status := theme.GoodText.Render("ok")
-		if !c.valid() {
+		switch {
+		case !c.valid():
 			status = theme.BadText.Render("invalid")
+		case c.note != "":
+			status = theme.WarnText.Render("warn")
 		}
 		bands = append(bands, band{
 			name:   c.key,
@@ -831,9 +888,16 @@ func connSummary(c connRow) string {
 // connDetail is the credential line under one plugin, or why the entry does
 // not work. Cleaned before it is styled, for profileDetail's reason; a
 // credential's source is a `secrets:` reference exactly as the file has it.
+//
+// A note takes the line as a problem does. This pane is where the entry is
+// edited, so the note comes with the value to write instead, and the
+// credentials it covers are still counted one pane out.
 func connDetail(c connRow) string {
 	if !c.valid() {
 		return theme.BadText.Render(textclean.Terminal(c.problem))
+	}
+	if c.note != "" {
+		return theme.WarnText.Render(textclean.Terminal(c.note))
 	}
 	if len(c.credentials) == 0 {
 		return theme.Faded.Render("no credential needed")

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -935,6 +936,65 @@ func TestDeleteAsksBeforeRemovingAConnection(t *testing.T) {
 	}
 	if got := onDisk.Profiles["staging"].Plugins; len(got) != 0 {
 		t.Errorf("staging still has %+v after a confirmed remove", got)
+	}
+}
+
+// cachePlugin reads a numbered database from 0 to 15, so a profile's `set:`
+// can name one no capability takes.
+func cachePlugin() plugin.Plugin {
+	run := func(context.Context, plugin.Request) (view.View, error) { return view.Text{}, nil }
+	return plugin.Plugin{Name: "cache", Summary: "a cache with numbered databases",
+		Capabilities: []plugin.Capability{{
+			ID: "cache.get", Summary: "get", Safety: plugin.Read, Run: run,
+			Inputs: []plugin.Field{{Name: "db", Type: plugin.Int, Default: 0, Min: 0, Max: 15,
+				Config: "db", Help: "the database number"}},
+		}}}
+}
+
+// What `rta profile list`, `rta profile show` and `rta doctor` say about an
+// environment that works and not as written, the panes say too: a `set:`
+// number outside every reader's range, which each capability runs with its
+// own nearest bound instead, and a colour that paints nothing. Both panes
+// called such an environment ok and said nothing else, so `set: db: 20`
+// read database 15 from a screen that had no word against it.
+func TestTheProfilePanesSayWhatRunsOtherwiseThanWritten(t *testing.T) {
+	m := profileModel(t, config.Config{Profiles: map[string]config.Profile{
+		"cache-prod": {Note: "the shared cache",
+			Plugins: map[string]config.Connection{"cache": conn(map[string]any{"db": 20})}},
+		"tinted": {Color: "red",
+			Plugins: map[string]config.Connection{"db": conn(map[string]any{"host": "x"})}},
+	}})
+	if err := m.reg.Register(cachePlugin()); err != nil {
+		t.Fatal(err)
+	}
+	m.profiles = m.profileRows()
+	for _, row := range m.profiles {
+		if !row.valid() {
+			t.Fatalf("%s: %s — a note is not a reason to refuse the environment", row.name, row.problem)
+		}
+	}
+
+	m.mode = modeProfiles
+	out := plain(m.profilesView())
+	for _, want := range []string{
+		"cache: `set: db` is outside what every capability reading it takes",
+		"has color red, which is not a colour",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the environments pane does not say %q:\n%s", want, out)
+		}
+	}
+	if got := strings.Count(out, "warn"); got != 2 {
+		t.Errorf("%d environments marked warn, want both:\n%s", got, out)
+	}
+
+	m.profileOpen, m.mode = "cache-prod", modeProfilePlugins
+	out = plain(m.connsView())
+	for _, want := range []string{"warn", "write a value from 0 to 15",
+		"`set: db` is outside what every capability reading it takes"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the plugins pane does not say %q:\n%s", want, out)
+		}
 	}
 }
 
