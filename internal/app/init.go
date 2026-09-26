@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"fmt"
 
 	huh "charm.land/huh/v2"
@@ -9,6 +10,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // newInitCommand implements `rta init`: an interactive wizard that writes
@@ -23,7 +25,9 @@ func newInitCommand(reg *registry.Registry) *cobra.Command {
 		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if !isTTY() {
-				return fmt.Errorf("rta init is interactive and needs a terminal")
+				return view.Errorf("core.init.terminal", "rta init is interactive and needs a terminal").
+					WithHint("run it at one, or write the file by hand — `rta config schema` describes " +
+						"every key, and `rta doctor` says where the file goes")
 			}
 			// LoadFile, not Load. config.LoadFile says why in as many
 			// words — "anything that reads the config in order to write it
@@ -74,7 +78,7 @@ func newInitCommand(reg *registry.Registry) *cobra.Command {
 				),
 			)
 			if err := form.RunWithContext(cmd.Context()); err != nil {
-				return err
+				return initFormError(err)
 			}
 			if !confirmed {
 				fmt.Fprintln(cmd.OutOrStdout(), "nothing written")
@@ -96,6 +100,19 @@ func newInitCommand(reg *registry.Registry) *cobra.Command {
 			return nil
 		},
 	}
+}
+
+// initFormError codes what ended the wizard before it wrote anything. huh's
+// own error for a person pressing ctrl-c is the bare "user aborted", which
+// reached the terminal as a box nothing coded; leaving is a thing a person
+// did, and what they need back is that the file is as it was.
+func initFormError(err error) error {
+	if errors.Is(err, huh.ErrUserAborted) {
+		return view.Errorf("core.init.aborted", "the wizard was closed before it wrote anything").
+			WithHint("the config file is as it was")
+	}
+	return view.AsError(err, "core.init.form").
+		WithHint("the wizard could not run on this terminal; nothing was written")
 }
 
 // initConfig folds the wizard's answers into the config as it stands on disk.
