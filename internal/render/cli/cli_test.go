@@ -140,6 +140,39 @@ func TestCSVAnswersEveryViewShape(t *testing.T) {
 	}
 }
 
+// An empty result is its header row alone under -o csv, as an empty table
+// always was.
+//
+// A text with no body wrote a row holding nothing, and a tree with no roots
+// wrote `type,tree`: either way one row under the header, which a script
+// that skips the header and acts on each row read as one result.
+func TestAnEmptyResultIsItsHeaderRowInCSV(t *testing.T) {
+	for name, c := range map[string]struct {
+		v    view.View
+		want string
+	}{
+		"text":             {view.Text{}, "text\n"},
+		"text with a note": {view.Text{Body: "\n", Empty: "no uncommitted changes"}, "text\n"},
+		"tree":             {view.Tree{Roots: []view.Node{}, Empty: "no keys yet"}, "path,value\n"},
+		"chart":            {view.Chart{Kind: view.ChartLine, Unit: "%"}, "path,value\n"},
+		"sections":         {view.Sections{}, "path,value\n"},
+		"keyvalue":         {view.KeyValue{}, "key,value\n"},
+		"table":            {view.Table{Columns: []view.Column{{Name: "ID"}}}, "ID\n"},
+	} {
+		var out bytes.Buffer
+		if err := Render(&out, c.v, Options{Format: CSV}); err != nil || out.String() != c.want {
+			t.Errorf("%s: csv = %q (%v), want %q", name, out.String(), err, c.want)
+		}
+	}
+	// A page with nothing but warnings still has something to say: what it
+	// could not produce is what csv writes of it.
+	var out bytes.Buffer
+	partial := view.Sections{Warnings: []view.Error{{Code: "sys.temp.unreadable", Message: "no sensor"}}}
+	if err := Render(&out, partial, Options{Format: CSV}); err != nil || !strings.Contains(out.String(), "sys.temp.unreadable") {
+		t.Errorf("a page of warnings = %q (%v), want its warnings", out.String(), err)
+	}
+}
+
 // csv is the format whose only reason to exist is being fed to another
 // program, and it was the one renderer that dropped Table.Total: three rows
 // of a 744-row result came out byte-identical to a complete three-row
