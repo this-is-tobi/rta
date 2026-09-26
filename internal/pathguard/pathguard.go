@@ -163,7 +163,8 @@ func (g *Guard) Check(field, raw string) (string, *view.Error) {
 		"%s: %q is outside what this server may read (%s)",
 		field, raw, strings.Join(g.roots, ", ")).
 		WithHint("an MCP server reads only under its roots, because there is no person here to " +
-			"judge the request — ask the operator to restart it with --root, or use a path inside")
+			"judge the request — use a path inside, or " + plugin.AskOperator("mcp serve --root <dir>") +
+			" to serve another root")
 }
 
 // scpLike matches git's other address form, `user@host:path`, which has no

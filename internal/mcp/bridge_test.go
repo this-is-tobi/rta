@@ -984,6 +984,24 @@ func callTool(t *testing.T, s *sdk.ClientSession, name string, args map[string]a
 	return res
 }
 
+// A grants file nothing can trust refuses every gated call, and the agent
+// that meets it is told whose the fix is — never the operator's own remedy,
+// which says to delete the file.
+func TestABrokenGrantsFileIsTheOperatorsToFix(t *testing.T) {
+	s := connect(t, Options{})
+	if err := os.WriteFile(grant.Path(), []byte("not a grants file"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	res := callTool(t, s, "demo_item_rm", nil)
+	text := res.Content[0].(*sdk.TextContent).Text
+	if !res.IsError || !strings.Contains(text, "core.grant.corrupt") {
+		t.Fatalf("want the store's own refusal, got: %s", text)
+	}
+	if strings.Contains(text, "delete the file") || !strings.Contains(text, plugin.AskOperator("doctor")) {
+		t.Errorf("the agent was not handed the fix as the operator's: %s", text)
+	}
+}
+
 // The allowlist says this agent may in principle delete things. A grant says
 // a person allowed this one, now. Passing the first gate is not passing both.
 func TestDestructiveCallNeedsAGrant(t *testing.T) {

@@ -52,7 +52,7 @@ func agentText(c plugin.Capability, profiles []string) string {
 		if c.Scope != "" {
 			fmt.Fprintf(&b, " (optionally narrowed to one %q)", c.Scope)
 		}
-		b.WriteString(". You cannot issue one yourself — ask the operator to run `rta grant allow " + c.ID + "`.")
+		b.WriteString(". You cannot issue one yourself — " + plugin.AskOperator("grant allow "+c.ID) + ".")
 	}
 	// Same reasoning one layer along: naming a profile always needs a grant of
 	// its own, whatever the safety class, so say it rather than let a model

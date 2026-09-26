@@ -10,6 +10,7 @@ import (
 
 	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/guard"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
 // The two-rm rollback, end to end: deleting guard.json and grants.json
@@ -58,5 +59,10 @@ func TestTheServerRefusesWhenTheGuardItStartedUnderVanishes(t *testing.T) {
 	text := res.Content[0].(*sdk.TextContent).Text
 	if !strings.Contains(text, "guard") {
 		t.Fatalf("the refusal does not name the guard: %s", text)
+	}
+	// The agent reads the alarm, and whose it is to answer — never the
+	// operator's own places to look, as command lines it cannot run.
+	if strings.Contains(text, "rta agent log") || !strings.Contains(text, plugin.AskOperator("doctor")) {
+		t.Errorf("the agent was not handed the alarm as the operator's to answer: %s", text)
 	}
 }
