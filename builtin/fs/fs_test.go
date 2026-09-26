@@ -102,11 +102,25 @@ func TestUsageSharesAreOfTheScannedTotal(t *testing.T) {
 
 // An empty directory has a zero total, and a percentage of zero is a division
 // by zero — the arithmetic that turns a listing into a crash.
+//
+// It also says so to a person: an empty grid on a screen reads as a scan
+// that failed, and the table carries the sentence drawn in its place.
 func TestUsageOfAnEmptyDirectory(t *testing.T) {
-	v := run(t, runUsage, map[string]any{"path": t.TempDir(), "limit": 20})
+	dir := t.TempDir()
+	v := run(t, runUsage, map[string]any{"path": dir, "limit": 20})
 	tbl, ok := v.(view.Table)
-	if !ok || len(tbl.Rows) != 0 {
-		t.Errorf("an empty directory answered %#v, want a table with no rows", v)
+	if !ok || len(tbl.Rows) != 0 || tbl.Empty != dir+" is empty." {
+		t.Errorf("an empty directory answered %#v, want a table with no rows and a sentence saying so", v)
+	}
+	page, _ := run(t, runUsage, map[string]any{"path": dir, "limit": 20, "detail": true}).(view.Sections)
+	said := false
+	for _, s := range page.Items {
+		if tbl, ok := s.View.(view.Table); ok && s.ID == "entries" {
+			said = tbl.Empty == dir+" is empty."
+		}
+	}
+	if !said {
+		t.Errorf("the detail page's ranking of an empty directory does not say it is empty: %#v", page)
 	}
 	// And one holding only empty files, where the total is zero but there is
 	// something to show.

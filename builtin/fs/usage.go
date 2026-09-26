@@ -189,10 +189,9 @@ func runUsage(ctx context.Context, req plugin.Request) (view.View, error) {
 	// was what every format got: `-o json | jq '.rows[]'` met a text view it
 	// was never promised, and -o csv refused one and exited 2, the code for
 	// something unexpected, where the empty table prints its header and
-	// exits 0. profile list says it in words on a screen because it runs
-	// where the format is known; saying it here would take a field on the
-	// table that only the screen draws, not a different view.
-	t := usageTable(entries, total, req.Int("limit"))
+	// exits 0. The sentence rides beside the table instead, for a person
+	// alone: see usageTable.
+	t := usageTable(path, entries, total, req.Int("limit"), s.skipped)
 	// **The ranking and the total are built from what could be read, and the
 	// compact form never said so.** The detail page has reported `skipped`
 	// all along; the table somebody actually looks at presented a share of a
@@ -210,7 +209,12 @@ func runUsage(ctx context.Context, req plugin.Request) (view.View, error) {
 	return t, nil
 }
 
-func usageTable(entries []entry, total int64, limit int) view.Table {
+// usageTable ranks the entries under path. With none, it carries the sentence
+// a person is shown in place of an empty grid, which reads as a scan that
+// failed (view.Table.Empty) — "empty" only when nothing was skipped, since a
+// directory none of whose entries could be counted is not an empty one, and
+// the warning under the table says why.
+func usageTable(path string, entries []entry, total int64, limit, skipped int) view.Table {
 	t := view.Table{Columns: []view.Column{
 		{Name: "Entry"},
 		{Name: "Size", Kind: view.KindBytes},
@@ -234,6 +238,12 @@ func usageTable(entries []entry, total int64, limit int) view.Table {
 		})
 	}
 	t.Total = len(entries)
+	if len(entries) == 0 {
+		t.Empty = path + " is empty."
+		if skipped > 0 {
+			t.Empty = "Nothing under " + path + " could be counted."
+		}
+	}
 	return t
 }
 
@@ -264,7 +274,7 @@ func usageDetail(ctx context.Context, req plugin.Request, path string,
 
 	p := plugin.NewPage(ctx, req)
 	p.PutAs("summary", "summary", view.KeyValue{Pairs: summary})
-	p.PutAs("entries", "biggest entries", usageTable(entries, total, req.Int("limit")))
+	p.PutAs("entries", "biggest entries", usageTable(path, entries, total, req.Int("limit"), s.skipped))
 
 	if len(s.largest) > 0 {
 		lt := view.Table{Columns: []view.Column{{Name: "File"}, {Name: "Size", Kind: view.KindBytes}}}
