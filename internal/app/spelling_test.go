@@ -1,11 +1,17 @@
 package app
 
 import (
+	"context"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
 	"testing"
 
+	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/this-is-tobi/rta/internal/mcp"
+	"github.com/this-is-tobi/rta/internal/pathguard"
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 )
@@ -39,7 +45,9 @@ var commandLine = regexp.MustCompile(`(?:^|[^a-z-])rta((?: [a-z][a-z-]*)+)`)
 // through. One naming a capability still is not, since the TUI reads the
 // same text and names the capability its own way.
 func (sp speller) find(text string, terminalOnly bool) []string {
-	const ask = "ask the operator to run `rta "
+	// The phrase up to the command, read off the helper so the two cannot
+	// drift: "ask the operator to run `rta ".
+	ask := strings.TrimSuffix(plugin.AskOperator(""), "`")
 	for {
 		i := strings.Index(text, ask)
 		if i < 0 {
@@ -140,6 +148,155 @@ func flagsIn(span string) []string {
 
 func isFlagByte(b byte) bool {
 	return b == '-' || b >= 'a' && b <= 'z' || b >= '0' && b <= '9' || b >= 'A' && b <= 'Z'
+}
+
+// The speller itself, held to the spellings it exists to catch and the ones
+// it must let through: a test that passes because its scanner sees nothing
+// guards nothing.
+func TestTheSpellerTellsATerminalsSpellingFromEveryoneElses(t *testing.T) {
+	reg, err := NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sp := speller{reg}
+	for text, want := range map[string]bool{
+		"run `rta note list --all` to see every note":                     true,
+		"use --timeout to extend the deadline":                            true,
+		"add one with: rta note add \"...\"":                              true,
+		"`rta doctor` reports it":                                         true,
+		"`kv list --match aws` finds it":                                  true,
+		"With `--all`, the remote branches follow":                        true,
+		"ask the operator to run `rta grant allow kv.get --ttl 15m`":      false,
+		"the structured equivalent of `git status --porcelain`":           false,
+		"the `note_list` tool with the \"all\" argument lists every note": false,
+		"the environment rta mcp serve runs in":                           false,
+		"`key` takes a private key file":                                  false,
+		"-----BEGIN PUBLIC KEY-----":                                      false,
+	} {
+		if got := len(sp.find(text, false)) > 0; got != want {
+			t.Errorf("find(%q) found a terminal's spelling: %v, want %v", text, got, want)
+		}
+	}
+	// Text only a person at a terminal reads may name a command with no
+	// capability behind it, and still not one with.
+	if hits := sp.find("the name `rta mcp serve --as` uses", true); len(hits) > 0 {
+		t.Errorf("a command with no capability behind it was held against HumanOnly text: %v", hits)
+	}
+	if hits := sp.find("Allow one with `rta grant allow <capability>`", true); len(hits) == 0 {
+		t.Error("a capability's command line passed in HumanOnly text")
+	}
+}
+
+// Everything a client is told about a tool — its description, rta's frame
+// around it, every string in its input schema — is read by an agent, which
+// has arguments and no flags, and tools and no terminal. Both transports'
+// tool lists, since the remote one is a different set.
+func TestAToolListSpellsNothingForATerminal(t *testing.T) {
+	reg, err := NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sp := speller{reg}
+	for _, opts := range []mcp.Options{{}, {Remote: true}} {
+		for _, tl := range surface(t, opts) {
+			texts := []string{tl.Description}
+			collectStrings(tl.Schema, &texts)
+			for _, text := range texts {
+				for _, hit := range sp.find(text, false) {
+					t.Errorf("tool %s (remote %v) spells a terminal's: …%s…", tl.Name, opts.Remote, hit)
+				}
+			}
+		}
+	}
+}
+
+func collectStrings(v any, out *[]string) {
+	switch v := v.(type) {
+	case string:
+		*out = append(*out, v)
+	case []any:
+		for _, e := range v {
+			collectStrings(e, out)
+		}
+	case map[string]any:
+		for _, e := range v {
+			collectStrings(e, out)
+		}
+	}
+}
+
+// The refusals an agent is actually handed, from a representative set of
+// tools called over MCP the way a client calls them: the host's own — a
+// missing argument, one outside its options or range, a path outside the
+// roots, a grant nobody issued — and the ones handlers word. Every one names
+// a tool and an argument, never a flag or an `rta` command line, except in
+// the one form that hands a command on to the operator.
+func TestARefusalOverMCPSpellsNothingForATerminal(t *testing.T) {
+	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	root := t.TempDir()
+	guard, err := pathguard.New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg, err := NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	st, ct := sdk.NewInMemoryTransports()
+	if _, err := mcp.NewServer(reg, "spelling", mcp.Options{Paths: guard}).Connect(ctx, st, nil); err != nil {
+		t.Fatal(err)
+	}
+	session, err := sdk.NewClient(&sdk.Implementation{Name: "spelling", Version: "0"}, nil).Connect(ctx, ct, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+
+	const pemKey = "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAGb9ECWmEzf6FQbrBZ9w7lshQhqowtrbLDFw4rXAxZuE=\n-----END PUBLIC KEY-----\n"
+	hs256 := "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhIn0.c2lnbmF0dXJl"
+	calls := []struct {
+		tool string
+		args map[string]any
+	}{
+		{"codec_jwt", map[string]any{}}, // a required argument left out
+		{"codec_jwt", map[string]any{"token": hs256, "key": `{"kty":"oct","k":"c2VjcmV0"}`}}, // a shared secret as a key
+		{"codec_jwk", map[string]any{"key": pemKey}},                                         // PEM where a JWK goes
+		{"debug_ansi", map[string]any{"input": ""}},                                          // a piped input, empty
+		{"gen_token", map[string]any{"encoding": "b64"}},                                     // outside its options
+		{"gen_password", map[string]any{"length": 0}},                                        // outside its range
+		{"sys_ps", map[string]any{"sort": "name"}},
+		{"note_show", map[string]any{"id": 999}},
+		{"http_status", map[string]any{"code": "499"}},
+		{"eol_check", map[string]any{"product": "demo@2", "cycle": "3"}},
+		{"fs_tree", map[string]any{"path": "/"}},                         // outside the roots
+		{"audit_deps", map[string]any{"path": root}},                     // nothing declared
+		{"audit_why", map[string]any{"package": "lodash", "path": root}}, // nothing declared
+		{"kv_get", map[string]any{"key": "db-password"}},                 // a grant nobody issued
+		{"net_port", map[string]any{"host": "localhost", "ports": "22"}}, // a grant nobody issued
+		{"time_at", map[string]any{"when": "not a time"}},
+	}
+	sp := speller{reg}
+	for _, c := range calls {
+		res, err := session.CallTool(ctx, &sdk.CallToolParams{Name: c.tool, Arguments: c.args})
+		if err != nil {
+			t.Fatalf("%s %v: %v", c.tool, c.args, err)
+		}
+		if !res.IsError {
+			t.Errorf("%s %v was not refused, so it tests nothing", c.tool, c.args)
+			continue
+		}
+		for _, content := range res.Content {
+			text, ok := content.(*sdk.TextContent)
+			if !ok {
+				continue
+			}
+			for _, hit := range sp.find(text.Text, false) {
+				t.Errorf("%s %v refuses in a terminal's words: …%s…", c.tool, c.args, hit)
+			}
+		}
+	}
 }
 
 // What a capability declares about itself is shown on every surface at once
