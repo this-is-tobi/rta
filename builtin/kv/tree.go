@@ -41,8 +41,12 @@ func runTree(_ context.Context, req plugin.Request) (view.View, error) {
 	if verr != nil {
 		return nil, verr
 	}
+	// An empty store is a tree with no roots — an empty array, not a
+	// missing one, so `jq '.roots[]'` yields nothing and exits 0 — with the
+	// sentence beside it for a person: see view.Tree.Empty. It answered with
+	// that sentence as a Text view, which a parser met in place of the tree.
 	if len(s.Entries) == 0 {
-		return view.Text{Body: emptyList(0, "", "")}, nil
+		return view.Tree{Roots: []view.Node{}, Empty: emptyList(0, "", "")}, nil
 	}
 	names := make([]string, 0, len(s.Entries))
 	for k := range s.Entries {

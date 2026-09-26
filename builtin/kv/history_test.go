@@ -169,6 +169,27 @@ func TestDryRunsOfRestoreAndRemoveChangeNothing(t *testing.T) {
 	}
 }
 
+// An empty store is a tree with no roots, and says so to a person alone.
+//
+// It answered with a Text view holding the sentence, which every format
+// carried: `rta kv tree -o json | jq '.roots[]'` met a view with no roots to
+// iterate and failed.
+func TestAnEmptyStoreIsATreeWithNoRoots(t *testing.T) {
+	setup(t)
+	v, err := runTree(context.Background(), req(nil, false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree, ok := v.(view.Tree)
+	if !ok || tree.Roots == nil || len(tree.Roots) != 0 || !strings.Contains(tree.Empty, "No keys stored yet") {
+		t.Fatalf("empty tree = %#v, want a tree whose roots are an empty array and a sentence for a person", v)
+	}
+	raw, err := view.Marshal(view.Envelope{View: v})
+	if err != nil || !strings.Contains(string(raw), `"roots":[]`) {
+		t.Errorf("json = %s (%v), want roots as an empty array", raw, err)
+	}
+}
+
 func TestTheTreeGroupsKeysByTheFoldersTheyShare(t *testing.T) {
 	setup(t)
 	set(t, "staging/db/password", "a")
