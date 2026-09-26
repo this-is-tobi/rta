@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -236,8 +237,8 @@ func TestEveryRecipeProducesAValueAndAnHonestBitCount(t *testing.T) {
 			if bits < 74 {
 				t.Errorf("%s claims only %.0f bits — too weak to offer", r.use, bits)
 			}
-			if r.cmd == "" {
-				t.Errorf("%s has no reproducing command", r.use)
+			if r.id == "" {
+				t.Errorf("%s has no reproducing call", r.use)
 			}
 		}
 	}
@@ -382,12 +383,49 @@ func TestRecipeLabelsAndCommandsStayShort(t *testing.T) {
 			if len(r.use) > 24 {
 				t.Errorf("%q is %d chars — too long for the For column", r.use, len(r.use))
 			}
-			if len(r.cmd) > 40 {
-				t.Errorf("%q is %d chars — too long for the Command column", r.cmd, len(r.cmd))
+			for _, sf := range []plugin.Surface{plugin.SurfaceCLI, plugin.SurfaceTUI} {
+				if call := r.call(sf); len(call) > 40 {
+					t.Errorf("%q is %d chars — too long for the Command column", call, len(call))
+				}
 			}
-			if strings.HasPrefix(r.cmd, "rta ") {
-				t.Errorf("%q repeats the implied rta prefix", r.cmd)
+			if call := r.call(plugin.SurfaceCLI); strings.HasPrefix(call, "rta ") {
+				t.Errorf("%q repeats the implied rta prefix", call)
 			}
+		}
+	}
+}
+
+// The Command column reproduces a row the way its reader calls things: a
+// command line at a terminal, and to an agent the tool and the arguments its
+// schema takes — never flags it has no way to pass. Every input a recipe
+// gives is one its capability declares, so a renamed input cannot leave a
+// row naming one that is gone.
+func TestARecipeIsReproducedTheWayItsSurfaceCalls(t *testing.T) {
+	caps := map[string]plugin.Capability{}
+	for _, c := range Plugin().Capabilities {
+		caps[c.ID] = c
+	}
+	for _, group := range [][]recipe{passwordRecipes, keyRecipes, uuidRecipes} {
+		for _, r := range group {
+			c, ok := caps[r.id]
+			if !ok {
+				t.Fatalf("%s: no capability %s", r.use, r.id)
+			}
+			for _, a := range r.with {
+				if !slices.ContainsFunc(c.Inputs, func(f plugin.Field) bool { return f.Name == a.Name }) {
+					t.Errorf("%s: %s declares no input %q", r.use, r.id, a.Name)
+				}
+			}
+		}
+	}
+	strong := passwordRecipes[1]
+	for sf, want := range map[plugin.Surface]string{
+		plugin.SurfaceCLI: "gen password --length 24 --symbols",
+		plugin.SurfaceMCP: `gen_password {"length":24,"symbols":true}`,
+		plugin.SurfaceTUI: "gen.password length=24 symbols",
+	} {
+		if got := strong.call(sf); got != want {
+			t.Errorf("over %q the call is %q, want %q", sf, got, want)
 		}
 	}
 }
