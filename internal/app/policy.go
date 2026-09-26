@@ -36,11 +36,18 @@ import (
 // location rather than its contents: it lives outside every repository, so it
 // survives a branch that never carried .rta-policy.yaml, a bad merge, a
 // `git clean`, and a client that launched rta from somewhere else.
-func operatorPolicyPath() (string, error) {
+//
+// There is none when the config file is the working-directory fallback, and
+// that is said with the fix: a demand written into the directory being
+// protected is the demand a deleted repository takes with it.
+func operatorPolicyPath() (string, *view.Error) {
 	if p := policy.OperatorPath(); p != "" {
 		return p, nil
 	}
-	return "", fmt.Errorf("cannot locate your config directory")
+	return "", view.Errorf("core.policy.path",
+		"there is no config directory of your own to keep the policy file in").
+		WithHint("set $RTA_CONFIG to the config file you mean, by its full path — the policy " +
+			"file goes beside it, outside every repository")
 }
 
 func newPolicyCommand(opts *globalOpts) *cobra.Command {
@@ -219,15 +226,15 @@ func policyInitCommand(opts *globalOpts) *cobra.Command {
 				// Never silently. This file is a security boundary somebody
 				// else may have written, and overwriting one because a command
 				// was run twice is the kind of help nobody asked for.
-				return fmt.Errorf("%s already exists — `rta policy show` says what it does, "+
-					"or pass --force to replace it", path)
+				return view.Errorf("core.policy.exists", "%s already exists", path).
+					WithHint("`rta policy show` says what it does, or pass --force to replace it")
 			}
 			if opts.dryRun {
 				fmt.Fprintf(cmd.OutOrStdout(), "would write %s\n", path)
 				return nil
 			}
 			if err := atomicfile.Write(path, []byte(starterPolicy), 0o644); err != nil {
-				return err
+				return view.Errorf("core.policy.write", "writing %s: %v", path, err)
 			}
 			out := cmd.OutOrStdout()
 			fmt.Fprintf(out, "✓ wrote %s\n", path)
@@ -262,13 +269,13 @@ func policyRequireCommand(opts *globalOpts) *cobra.Command {
 			" also catches the case nobody expects, where an MCP client launched rta somewhere" +
 			" other than the repository you thought you were protecting.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			path, err := operatorPolicyPath()
-			if err != nil {
-				return fmt.Errorf("locating your config directory: %w", err)
+			path, verr := operatorPolicyPath()
+			if verr != nil {
+				return verr
 			}
 			existing, err := os.ReadFile(path)
 			if err != nil && !os.IsNotExist(err) {
-				return fmt.Errorf("reading %s: %w", path, err)
+				return view.Errorf("core.policy.read", "reading %s: %v", path, err)
 			}
 
 			updated, changed := setRequireRepo(string(existing), !off)
@@ -281,10 +288,10 @@ func policyRequireCommand(opts *globalOpts) *cobra.Command {
 				return nil
 			}
 			if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-				return err
+				return view.Errorf("core.policy.write", "creating %s: %v", filepath.Dir(path), err)
 			}
 			if err := atomicfile.Write(path, []byte(updated), 0o600); err != nil {
-				return err
+				return view.Errorf("core.policy.write", "writing %s: %v", path, err)
 			}
 
 			out := cmd.OutOrStdout()
