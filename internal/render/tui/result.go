@@ -139,7 +139,12 @@ func (m Model) resultMeta() string {
 		for _, it := range v.Items {
 			titles = append(titles, it.Title)
 		}
-		parts = append(parts, theme.Subtle.Render(strings.Join(titles, " › ")))
+		// None for a page with no sections, which the pane says in words
+		// (view.Sections.Empty): an empty list of them left a separator
+		// pointing at nothing.
+		if len(titles) > 0 {
+			parts = append(parts, theme.Subtle.Render(strings.Join(titles, " › ")))
+		}
 		// The title list is the page's table of contents, and a page that
 		// lost three of its sections lists the survivors exactly as
 		// confidently as a whole one does. This line is above the fold, so

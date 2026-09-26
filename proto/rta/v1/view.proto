@@ -185,6 +185,10 @@ message Sections {
   // a dropped section leaves no trace, so a degraded page and a whole one
   // are otherwise indistinguishable.
   repeated Error warnings = 2;
+  // What a person is told in place of a page with no items: that nothing
+  // has a fix to paste, where the page is the fixes — see Table.empty.
+  // Answer "empty" with the page and this, never with a Text.
+  string empty = 3;
 }
 
 // View is the closed union of result types a capability can return.

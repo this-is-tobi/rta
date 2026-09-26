@@ -55,3 +55,23 @@ func TestAnEmptyListingIsASentenceNotACount(t *testing.T) {
 		t.Errorf("meta = %q, want the count over an empty grid", meta)
 	}
 }
+
+// A page with no sections says what would fill it in the pane, and the line
+// above it lists no titles: an empty list of them left a separator pointing
+// at nothing.
+func TestAnEmptyPageIsASentenceNotAnEmptyContents(t *testing.T) {
+	m := profileModel(t, twoProfileConfig())
+	sized, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	m = sized.(Model)
+	c := plugin.Capability{ID: "demo.fix", Safety: plugin.Read}
+	page := view.Sections{Empty: "nothing to paste"}
+	m.mode, m.current = modeResult, c
+	m.result = resultMsg{cap: c, view: page, raw: page}
+	m.renderResult()
+	if pane := plain(m.viewport.View()); !strings.Contains(pane, "nothing to paste") {
+		t.Errorf("pane = %q, want the sentence", pane)
+	}
+	if meta := strings.TrimSpace(plain(m.resultMeta())); strings.HasSuffix(meta, "·") {
+		t.Errorf("meta = %q, want no separator before an empty list of titles", meta)
+	}
+}

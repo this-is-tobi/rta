@@ -276,18 +276,21 @@ func TestAnEmptyTableIsASentenceOnlyToAPerson(t *testing.T) {
 	}
 }
 
-// An empty text or tree follows the table's rule: a sentence to a person,
-// and nothing at all to a program.
+// An empty text, tree or page follows the table's rule: a sentence to a
+// person, and nothing at all to a program.
 //
 // A text that is the answer — a patch — carried its "nothing here" in the
 // body, so `rta git diff > x.patch` on a clean tree wrote the sentence into
 // the patch and -o json handed it to a script as the diff; a tree swapped
-// itself for a text, so `jq '.roots[]'` met a view with no roots.
-func TestAnEmptyTextOrTreeIsASentenceOnlyToAPerson(t *testing.T) {
+// itself for a text, so `jq '.roots[]'` met a view with no roots; and a page
+// of fixes with none to offer did the same, so `rta audit clients --fix >
+// fix.txt` wrote the sentence where the fixes go.
+func TestAnEmptyTextTreeOrPageIsASentenceOnlyToAPerson(t *testing.T) {
 	const say = "no uncommitted changes"
 	for name, v := range map[string]view.View{
-		"text": view.Text{Empty: say},
-		"tree": view.Tree{Roots: []view.Node{}, Empty: say},
+		"text":     view.Text{Empty: say},
+		"tree":     view.Tree{Roots: []view.Node{}, Empty: say},
+		"sections": view.Sections{Empty: say},
 	} {
 		if out, _ := renderWidth(t, v, Options{Width: 80, Screen: true}); out != say {
 			t.Errorf("%s: pretty on a screen = %q, want the sentence", name, out)
@@ -311,10 +314,25 @@ func TestAnEmptyTextOrTreeIsASentenceOnlyToAPerson(t *testing.T) {
 	if err := json.Unmarshal([]byte(render(t, view.Tree{Roots: []view.Node{}, Empty: say}, JSON)), &env); err != nil || env.Roots == nil {
 		t.Errorf("json = %+v (%v), want a tree whose roots are an empty array", env, err)
 	}
-	// A text with a body and a tree with roots never show the sentence.
+	var page struct {
+		Items []view.Section `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(render(t, view.Sections{Empty: say}, JSON)), &page); err != nil || page.Items == nil {
+		t.Errorf("json = %+v (%v), want a page whose items are an empty array", page, err)
+	}
+	// A page with warnings and no sections says both: that it is empty, and
+	// what it could not produce.
+	partial := view.Sections{Empty: say, Warnings: []view.Error{{Code: "x.partial", Message: "one file was skipped"}}}
+	if out, _ := renderWidth(t, partial, Options{Width: 80, Screen: true}); !strings.HasPrefix(out, say+"\n\n") ||
+		!strings.Contains(out, "one file was skipped") {
+		t.Errorf("a partial empty page on a screen = %q, want the sentence, a blank line and the warning", out)
+	}
+	// A text with a body, a tree with roots and a page with sections never
+	// show the sentence.
 	for name, v := range map[string]view.View{
-		"text": view.Text{Body: "diff --git a/x b/x", Empty: say},
-		"tree": view.Tree{Roots: []view.Node{{Label: "x"}}, Empty: say},
+		"text":     view.Text{Body: "diff --git a/x b/x", Empty: say},
+		"tree":     view.Tree{Roots: []view.Node{{Label: "x"}}, Empty: say},
+		"sections": view.Sections{Items: []view.Section{{Title: "one", View: view.Text{Body: "x"}}}, Empty: say},
 	} {
 		if out, _ := renderWidth(t, v, Options{Width: 80, Screen: true}); strings.Contains(out, say) {
 			t.Errorf("%s with content showed the empty sentence:\n%s", name, out)
