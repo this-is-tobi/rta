@@ -155,7 +155,7 @@ func (s Section) MarshalJSON() ([]byte, error) {
 // returning a titled section it could not fill kills the server for every
 // other tool the agent had open.
 func (e Envelope) MarshalJSON() ([]byte, error) {
-	body, err := Marshal(e.View)
+	body, err := Marshal(withArrays(e.View))
 	if err != nil {
 		return nil, err
 	}
@@ -168,6 +168,62 @@ func (e Envelope) MarshalJSON() ([]byte, error) {
 	}
 	m["type"] = TypeOf(e.View)
 	return Marshal(m)
+}
+
+// withArrays is v with every collection its JSON names — the ones without
+// omitempty — set to an empty slice where it is nil, so an empty one encodes
+// as [] and not as null.
+//
+// Nil is what an empty collection usually is in Go, and always is once it has
+// crossed the plugin wire, where proto3 cannot tell empty from absent. A
+// plugin's empty tree encoded as "roots": null, and `jq '.roots[]'` failed on
+// it with "Cannot iterate over null" where [] yields nothing and exits 0 —
+// the answer an empty listing owes a script. A table's rows were spared only
+// because Redact happens to copy them into a new slice.
+//
+// Here rather than at each producer, because this is the one encoding every
+// json, yaml and MCP answer goes through; nested sections come back through
+// it too, each wrapped in its own envelope.
+func withArrays(v View) View {
+	switch t := v.(type) {
+	case KeyValue:
+		if t.Pairs == nil {
+			t.Pairs = []Pair{}
+		}
+		return t
+	case Table:
+		if t.Columns == nil {
+			t.Columns = []Column{}
+		}
+		if t.Rows == nil {
+			t.Rows = [][]string{}
+		}
+		return t
+	case Tree:
+		if t.Roots == nil {
+			t.Roots = []Node{}
+		}
+		return t
+	case Chart:
+		// A series' points too, one level down: a plugin's series with no
+		// points yet arrives with nil ones. Copied rather than set in place,
+		// since the slice is the caller's and a host re-renders the same view.
+		series := make([]Series, len(t.Series))
+		for i, s := range t.Series {
+			if s.Points == nil {
+				s.Points = []float64{}
+			}
+			series[i] = s
+		}
+		t.Series = series
+		return t
+	case Sections:
+		if t.Items == nil {
+			t.Items = []Section{}
+		}
+		return t
+	}
+	return v
 }
 
 // ToMap returns the envelope as a generic map, for non-JSON encoders (YAML).

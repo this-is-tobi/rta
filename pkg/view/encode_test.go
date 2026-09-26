@@ -158,3 +158,31 @@ func TestRedactionSurvivesCleaning(t *testing.T) {
 		t.Errorf("Table: an unredacted cell was masked: %q", gotT.Rows[0][0])
 	}
 }
+
+// A collection the JSON names is an array when it is empty, never null.
+//
+// A tree with no roots — what a plugin's empty tree is by the time it has
+// crossed the wire, where proto3 cannot tell empty from absent — encoded as
+// "roots": null, and `jq '.roots[]'` failed on it with "Cannot iterate over
+// null" where an empty array yields nothing and exits 0. A table's rows were
+// spared only because Redact copies them into a new slice.
+func TestAnEmptyCollectionIsAnArray(t *testing.T) {
+	for _, c := range []struct {
+		v    View
+		want string
+	}{
+		{KeyValue{}, `"pairs":[]`},
+		{Table{}, `"columns":[]`},
+		{Table{}, `"rows":[]`},
+		{Tree{}, `"roots":[]`},
+		{Chart{Kind: ChartBar}, `"series":[]`},
+		{Chart{Kind: ChartLine, Series: []Series{{Name: "cpu"}}}, `"points":[]`},
+		{Sections{}, `"items":[]`},
+		{Sections{Items: []Section{{Title: "t", View: Tree{}}}}, `"roots":[]`},
+	} {
+		data, err := Marshal(Envelope{View: c.v})
+		if err != nil || !strings.Contains(string(data), c.want) || strings.Contains(string(data), "null") {
+			t.Errorf("%s = %s (%v), want %s", TypeOf(c.v), data, err, c.want)
+		}
+	}
+}
