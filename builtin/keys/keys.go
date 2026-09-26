@@ -273,7 +273,8 @@ func runBackup(_ context.Context, req plugin.Request) (view.View, error) {
 		{Key: "Words", Value: words},
 	}
 	if c := pubComment(full); c != "" {
-		pairs = append(pairs, view.Pair{Key: "Comment", Value: c + " (not encoded — pass --comment when restoring to reapply it)"})
+		pairs = append(pairs, view.Pair{Key: "Comment",
+			Value: c + " (not encoded — " + req.Surface().CapabilityWith("keys.restore", "comment") + " puts it back)"})
 	}
 	return view.Sections{Items: []view.Section{
 		{ID: "backup", Title: "backup", View: view.KeyValue{Pairs: pairs}},
@@ -338,7 +339,8 @@ func runAdd(_ context.Context, req plugin.Request) (view.View, error) {
 		{Key: "Private key", Value: out},
 		{Key: "Public key", Value: pub},
 		{Key: "Fingerprint", Value: fp},
-		{Key: "Back it up", Value: "rta keys backup " + out + " — 24 words that restore it exactly"},
+		{Key: "Back it up", Value: req.Surface().Call("keys.backup", plugin.Arg{Name: "key", Value: out, Positional: true}) +
+			" — 24 words that restore it exactly"},
 	}}, nil
 }
 
@@ -364,13 +366,14 @@ func runRestore(_ context.Context, req plugin.Request) (view.View, error) {
 	seed, err := fromMnemonic(words)
 	if err != nil {
 		return nil, view.Errorf("keys.restore.words", "%v", err).
-			WithHint("check the words are typed correctly, in order and space-separated, and came from `rta keys backup`")
+			WithHint("check the words are typed correctly, in order and space-separated, and came from " +
+				req.Surface().CapabilityName("keys.backup"))
 	}
 	if len(seed) != ed25519.SeedSize {
 		return nil, view.Errorf("keys.restore.words",
-			"decoded %d bytes of entropy, want %d — this is not a 24-word backup made by `rta keys backup`",
+			"decoded %d bytes of entropy, want %d — this is not a 24-word backup made by keys.backup",
 			len(seed), ed25519.SeedSize).
-			WithHint("`rta keys backup` always makes exactly 24 words")
+			WithHint(req.Surface().CapabilityName("keys.backup") + " always makes exactly 24 words")
 	}
 	priv := ed25519.NewKeyFromSeed(seed)
 
@@ -411,6 +414,10 @@ func resolveWords(req plugin.Request) (string, *view.Error) {
 			return words, nil
 		}
 	}
-	return "", view.Errorf("keys.restore.nowords", "no seed words provided").
-		WithHint("pass --words, pipe them in, or type them at the prompt")
+	// A pipe and a prompt are the CLI's alone, so only the CLI is told of them.
+	hint := "give " + req.Surface().InputName("words") + ", pipe them in, or type them at the prompt"
+	if sf := req.Surface(); sf == plugin.SurfaceTUI || sf == plugin.SurfaceMCP {
+		hint = "give them in " + sf.InputName("words")
+	}
+	return "", view.Errorf("keys.restore.nowords", "no seed words provided").WithHint(hint)
 }
