@@ -171,6 +171,31 @@ func TestRemotePendingAllowAndDenyEndToEnd(t *testing.T) {
 	}
 }
 
+// An empty remote queue says how to answer the server's next parked call,
+// not this machine's.
+//
+// It carried the local sentence, whose `rta agent allow <id>` answers the
+// queue on the machine it is typed on: followed from a --server listing, it
+// finds no such request, and the call parked on the server times out.
+func TestAnEmptyRemoteQueueNamesItsServer(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	consentServer(t)
+	v, rerr := remoteCap(t, "agent.pending").Run(context.Background(),
+		remoteReq(map[string]any{"server": "lab", "passphrase": "correct horse"}))
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
+	table, ok := v.(view.Table)
+	if !ok || len(table.Rows) != 0 {
+		t.Fatalf("an empty remote queue = %#v, want the table with no rows", v)
+	}
+	for _, want := range []string{"nothing is waiting on lab", "`rta agent allow <id> --server lab`"} {
+		if !strings.Contains(table.Empty, want) {
+			t.Errorf("empty = %q, want it to say %q", table.Empty, want)
+		}
+	}
+}
+
 // A request rewritten under the server is the same alarm remotely as
 // locally: kept off the queue, named in the listing, and unanswerable by
 // name rather than reported as absent.
