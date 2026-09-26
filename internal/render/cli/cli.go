@@ -269,15 +269,46 @@ func csvTable(v view.View) (view.Table, error) {
 		}
 		return view.Table{Columns: []view.Column{{Name: "key"}, {Name: "value"}}, Rows: rows}, nil
 	case view.Text:
-		return view.Table{Columns: []view.Column{{Name: "text"}}, Rows: [][]string{{t.Body}}}, nil
+		out := view.Table{Columns: []view.Column{{Name: "text"}}}
+		// The test pretty output uses for "nothing here": see holdsNothing.
+		if strings.TrimRight(t.Body, "\n") != "" {
+			out.Rows = [][]string{{t.Body}}
+		}
+		return out, nil
+	}
+	t := view.Table{Columns: []view.Column{{Name: "path"}, {Name: "value"}}}
+	if holdsNothing(v) {
+		return t, nil
 	}
 	m, err := view.ToMap(v)
 	if err != nil {
 		return view.Table{}, err
 	}
-	t := view.Table{Columns: []view.Column{{Name: "path"}, {Name: "value"}}}
 	flatten("", m, func(path, value string) { t.Rows = append(t.Rows, []string{path, value}) })
 	return t, nil
+}
+
+// holdsNothing reports a result with nothing in it for csv to write, which
+// is then its header row alone, the way an empty table always was.
+//
+// A text with no body wrote a row holding nothing, and a tree with no roots
+// wrote its discriminator, `type,tree`: one row under the header either way,
+// which a script that skips the header and acts on each row read as one
+// result — about a store with nothing in it, or a patch with nothing to
+// apply. A chart's kind and unit say how to draw series it does not have,
+// and are no more a result than a table's column names are. A page with no
+// sections is not empty while it carries warnings: what it could not
+// produce is then all it has to say.
+func holdsNothing(v view.View) bool {
+	switch t := v.(type) {
+	case view.Tree:
+		return len(t.Roots) == 0
+	case view.Chart:
+		return len(t.Series) == 0
+	case view.Sections:
+		return len(t.Items) == 0 && len(t.Warnings) == 0
+	}
+	return false
 }
 
 // flatten calls emit with every scalar under v and its dotted path, map keys
