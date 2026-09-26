@@ -42,7 +42,7 @@ func newExplainCommand(reg *registry.Registry, opts *globalOpts) *cobra.Command 
 			if err != nil {
 				return err
 			}
-			renderOpts := cli.Options{Format: format, NoColor: opts.noColor || !isTTY(), Width: termWidth()}
+			renderOpts := renderOptions(cmd, format, opts.noColor)
 			if len(args) == 0 {
 				return cli.Render(cmd.OutOrStdout(), catalogView(reg), renderOpts)
 			}

@@ -45,7 +45,7 @@ func newPluginListCommand(reg *registry.Registry, opts *globalOpts) *cobra.Comma
 				return err
 			}
 			return cli.Render(cmd.OutOrStdout(), pluginsView(reg),
-				cli.Options{Format: format, NoColor: opts.noColor || !isTTY(), Width: termWidth()})
+				renderOptions(cmd, format, opts.noColor))
 		},
 	}
 }

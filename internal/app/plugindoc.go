@@ -49,7 +49,7 @@ func newPluginDocCommand(opts *globalOpts) *cobra.Command {
 			if verr != nil {
 				return verr
 			}
-			return cli.Render(cmd.OutOrStdout(), page, cli.Options{Format: cli.Markdown})
+			return cli.Render(cmd.OutOrStdout(), page, renderOptions(cmd, cli.Markdown, opts.noColor))
 		},
 	}
 }

@@ -58,7 +58,7 @@ func newDashboardCommand(reg *registry.Registry, opts *globalOpts) *cobra.Comman
 		if err != nil {
 			return err
 		}
-		renderOpts := cli.Options{Format: format, NoColor: opts.noColor || !isTTY(), Width: termWidth()}
+		renderOpts := renderOptions(cmd, format, opts.noColor)
 		if verr != nil {
 			_ = cli.RenderError(cmd.ErrOrStderr(), verr, renderOpts)
 			return Rendered(verr)

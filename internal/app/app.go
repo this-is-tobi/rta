@@ -187,6 +187,31 @@ func (o *globalOpts) format() (cli.Format, error) {
 	return f, nil
 }
 
+// renderOptions is what a command draws its result with. Every render path
+// in this package builds its options here, and a test holds it to that
+// (TestRenderOptionsAreBuiltInOnePlace).
+//
+// They were spelled out at each path, and the copies drifted. Screen, what an
+// empty result's sentence waits for (cli.Options.Screen), reached five paths
+// and not the other nine, so any of those nine whose view came to carry one
+// would have drawn headings over nothing on a terminal. Notes, where csv
+// says a table is one page of more or could not read part of what it lists,
+// reached only the capability runner, so every other command's csv kept
+// both to itself.
+//
+// Colour, width and Screen follow stdout, the stream the result is written
+// to: a terminal gets output shaped for a person, a pipe or a file bytes that
+// do not depend on who ran the command. A nil cmd — a failure reported before
+// a command was found — has no stderr of its own to put a note on.
+func renderOptions(cmd *cobra.Command, format cli.Format, noColor bool) cli.Options {
+	screen := isTTY()
+	o := cli.Options{Format: format, NoColor: noColor || !screen, Width: termWidth(), Screen: screen}
+	if cmd != nil {
+		o.Notes = cmd.ErrOrStderr()
+	}
+	return o
+}
+
 // invalidOutputDefault names where the default came from, in the words
 // somebody would search for it by: the variable, or the key and the file it is
 // in. The precedence is config.Load's — the environment over the file.
@@ -287,11 +312,7 @@ func topLevelRenderOptions(root *cobra.Command) cli.Options {
 	if ferr != nil {
 		format = cli.Pretty
 	}
-	return cli.Options{
-		Format:  format,
-		NoColor: flag("no-color") == "true" || !isTTY(),
-		Width:   termWidth(),
-	}
+	return renderOptions(root, format, flag("no-color") == "true")
 }
 
 // outputOnCommandLine finds the --output a command line asks for without
@@ -1231,15 +1252,12 @@ func runCapability(ctx context.Context, cmd *cobra.Command, c plugin.Capability,
 	if err != nil {
 		return err
 	}
-	// Notes goes to stderr, so `rta ... -o csv > out.csv` keeps stdout pure
-	// csv and still tells the person at the terminal that they got 3 of 744
-	// rows. Without it a truncated result is byte-indistinguishable from a
-	// complete one, which is the one thing a machine-readable format must
-	// never be ambiguous about.
-	renderOpts := cli.Options{
-		Format: format, NoColor: opts.noColor || !isTTY(),
-		Width: termWidth(), Notes: cmd.ErrOrStderr(), Screen: isTTY(),
-	}
+	// Notes goes to stderr (renderOptions), so `rta ... -o csv > out.csv`
+	// keeps stdout pure csv and still tells the person at the terminal that
+	// they got 3 of 744 rows. Without it a truncated result is
+	// byte-indistinguishable from a complete one, which is the one thing a
+	// machine-readable format must never be ambiguous about.
+	renderOpts := renderOptions(cmd, format, opts.noColor)
 
 	// Safety gate: on this surface a destructive capability runs only with
 	// --yes, and exits 3 otherwise — a question, not a failure, and a script
