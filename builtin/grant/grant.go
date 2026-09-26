@@ -1071,6 +1071,7 @@ func reachTable(caps []plugin.Capability, holds func(plugin.Capability) bool) vi
 // page's first section and once in its own sentence.
 func heldTable(role string, guardAbove bool) (view.View, *view.Error) {
 	grants, verr := core.Load()
+	standing := len(grants)
 	if verr == nil && role != "" {
 		kept := grants[:0]
 		for _, g := range grants {
@@ -1117,7 +1118,7 @@ func heldTable(role string, guardAbove bool) (view.View, *view.Error) {
 	// sentence as a Text view, which every format carried: `jq '.rows[]'`
 	// met a view with no rows, and -o csv a text cell where a header was.
 	if len(grants) == 0 {
-		t.Empty = emptyRoster(!guardAbove)
+		t.Empty = emptyRoster(!guardAbove, role, standing)
 	}
 	// The roles in force above the rows, where the docs send people before
 	// they walk away from a machine: one line per role and agent, with the
@@ -1147,7 +1148,14 @@ func heldTable(role string, guardAbove bool) (view.View, *view.Error) {
 // emptyRoster is what a person is told in place of a roster with no grant in
 // it, the guard's state above it as the screen has always shown it — unless
 // the page already leads with that state (heldTable's guardAbove).
-func emptyRoster(withGuard bool) string {
+//
+// standing counts the grants honoured before --role narrowed them. A role
+// that matched none of them is not an empty roster, and was drawn as one:
+// `grant list --role ops` said no grant is standing and that agents reach
+// only what needs none, while every grant issued outside that role stood.
+// This is the screen somebody reads to learn what an agent may do right
+// now, the one place that sentence must not be wrong.
+func emptyRoster(withGuard bool, role string, standing int) string {
 	head := ""
 	if withGuard {
 		head = "guard  " + guardLine(nil, nil) + "\n\n"
@@ -1162,6 +1170,11 @@ func emptyRoster(withGuard bool) string {
 			"what you still need. Removing the file clears this notice:\n" +
 			"  rm " + core.Path() + "\n\n" +
 			"Allow one with: rta grant allow <capability> --ttl 15m"
+	}
+	if role != "" && standing > 0 {
+		return head +
+			"No standing grant was issued under the role " + role + ".\n" +
+			"Every grant standing: rta grant list"
 	}
 	return head +
 		"No grant is standing — agents reach only what needs none.\n" +
