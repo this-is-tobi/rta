@@ -397,7 +397,7 @@ func newPluginTrustCommand(opts *globalOpts) *cobra.Command {
 			}
 			render := func(v view.View) error {
 				return cli.Render(cmd.OutOrStdout(), v,
-					cli.Options{Format: format, NoColor: opts.noColor || !isTTY(), Width: termWidth()})
+					cli.Options{Format: format, NoColor: opts.noColor || !isTTY(), Width: termWidth(), Screen: isTTY()})
 			}
 			if len(args) == 0 {
 				return render(trustInventory())
@@ -569,24 +569,25 @@ func untrustedPlugins() []pluginhost.Untrusted {
 // trustInventory is what `rta plugin trust` shows with no argument: what was
 // found and not run, and what it would take to change that.
 func trustInventory() view.View {
-	waiting := untrustedPlugins()
-	if len(waiting) == 0 {
-		n := plugintrust.Load().Len()
-		return view.KeyValue{Pairs: []view.Pair{
-			{Key: "waiting", Value: "nothing — every plugin found on $PATH is one you have approved"},
-			{Key: "trusted", Value: format.Count(n, "artifact", "artifacts")},
-		}}
-	}
 	t := view.Table{Columns: []view.Column{
 		{Name: "Plugin"},
 		{Name: "Digest"},
 		{Name: "Artifact"},
 		{Name: "To load it"},
 	}}
-	for _, u := range waiting {
+	for _, u := range untrustedPlugins() {
 		t.Rows = append(t.Rows, []string{u.Name, u.Short(), u.Path, "rta plugin trust " + u.Name})
 	}
 	t.Total = len(t.Rows)
+	// Nothing waiting is the table with no rows, and the sentence beside it
+	// for a person (view.Table.Empty). It answered with key/value pairs
+	// instead, so the listing changed shape on exactly the machine with
+	// nothing to approve: `jq '.rows[]'` met pairs, and a script had to learn
+	// two shapes to read one answer.
+	if len(t.Rows) == 0 {
+		t.Empty = "Nothing is waiting — every plugin found on $PATH is one you have approved (" +
+			format.Count(plugintrust.Load().Len(), "artifact", "artifacts") + " trusted)."
+	}
 	return t
 }
 

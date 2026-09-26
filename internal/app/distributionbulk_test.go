@@ -112,9 +112,16 @@ func TestOutdatedAcceptsAnIndexFilter(t *testing.T) {
 // The sentence in place of the table was what every format got: `-o json |
 // jq '.rows[]'` met a text view, and -o csv refused one and exited 2. Pretty
 // output into a pipe is a parser's too, so it gets the headings.
+//
+// `plugin trust` with nothing waiting answered with key/value pairs, so its
+// shape changed on the machine with nothing to approve. Discovery reads $PATH
+// and the system root, so both are emptied: a developer's own installed
+// plugins are not this test's to find.
 func TestAnEmptyPluginListingIsATableToAParser(t *testing.T) {
 	saved := isTTY
 	t.Cleanup(func() { isTTY = saved })
+	t.Setenv("PATH", t.TempDir())
+	t.Setenv("RTA_SYSTEM_DIR", t.TempDir())
 	for _, c := range []struct {
 		args        []string
 		say, header string
@@ -122,6 +129,7 @@ func TestAnEmptyPluginListingIsATableToAParser(t *testing.T) {
 		{[]string{"plugin", "outdated"}, "no plugin is installed", "Plugin,Installed,Available,Index"},
 		{[]string{"plugin", "index", "list"}, "no index is attached", "Index,Origin,Pinned,Plugins,Problems"},
 		{[]string{"plugin", "allow"}, "No installed plugin asks", "Plugin,Asks for,Status,To allow"},
+		{[]string{"plugin", "trust"}, "Nothing is waiting", "Plugin,Digest,Artifact,To load it"},
 	} {
 		name := strings.Join(c.args, " ")
 		isTTY = func() bool { return true }
