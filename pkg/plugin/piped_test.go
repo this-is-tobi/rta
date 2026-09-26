@@ -35,6 +35,7 @@ func TestAPipedInputIsOptionalTextNothingElseFills(t *testing.T) {
 		{Field{Name: "token", Type: Secret, Piped: true, Local: true}, "Local"},
 		{Field{Name: "count", Type: Int, Piped: true}, "a pipe carries text"},
 		{Field{Name: "keys", Type: StringSlice, Piped: true}, "a pipe carries text"},
+		{Field{Name: "mode", Type: String, Piped: true, Options: []string{"a", "b"}}, "a pipe carries free text"},
 	} {
 		if err := declare(tc.f); err == nil || !strings.Contains(err.Error(), tc.says) {
 			t.Errorf("%+v: %v, want a refusal naming %q", tc.f, err, tc.says)

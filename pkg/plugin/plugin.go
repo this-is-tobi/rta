@@ -253,7 +253,8 @@ type Field struct {
 	// sees the CLI's standard input, so the host refuses a plugin declaring
 	// one when it loads it. Validate refuses it beside Required, a Default, a
 	// Config key or Local — each fills or hides the input before a pipe
-	// could — and on anything but a String, Text or Secret.
+	// could — on anything but a String, Text or Secret, and beside Options,
+	// a closed set the piped text would reach the handler without meeting.
 	Piped bool
 	// Local marks an input a remote caller may never supply: the passphrase
 	// that unlocks a store, the path a revealed secret gets written to, the
