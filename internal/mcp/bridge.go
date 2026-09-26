@@ -414,9 +414,11 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 			// Through the same refusal path every gate uses, not a protocol
 			// error: the ledger entry is half the point — the alarm belongs
 			// in `rta agent log`, timestamped beside whatever the caller was
-			// doing when the guard vanished.
+			// doing when the guard vanished. The agent is handed
+			// storeRefusal's hint: the pin's own names where the operator
+			// looks, as commands only the operator can run.
 			refusedBy(rec, verr)
-			return errResult(verr), nil
+			return errResult(storeRefusal(verr)), nil
 		}
 		by := grant.Caller{
 			Agent:   opts.Agent,
@@ -448,7 +450,7 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 						rec.Note = "a grant covers this call but names a connection " +
 							"that is not the one it now resolves to — `rta doctor`"
 					}
-					return errResult(verr), nil
+					return errResult(storeRefusal(verr)), nil
 				}
 				return errResult(decided), nil
 			}
@@ -517,7 +519,7 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 				// terminal.
 				return errResult(view.Errorf("core.profile.secret.unavailable",
 					"%s could not resolve a credential for profile %q", c.ID, profileName).
-					WithHint("ask the operator to check `rta doctor`")), nil
+					WithHint(plugin.AskOperator("doctor"))), nil
 			}
 			// The forward, if this connection names a cluster. Last, because it
 			// is the only step that opens something, and a refusal from any step
@@ -539,7 +541,7 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 				// message from the same call at a terminal and from `rta doctor`.
 				return errResult(view.Errorf("core.profile.tunnel.unavailable",
 					"%s could not reach the connection profile %q names", c.ID, profileName).
-					WithHint("ask the operator to check `rta doctor`")), nil
+					WithHint(plugin.AskOperator("doctor"))), nil
 			}
 			for input, v := range dialled {
 				filled[input] = v
@@ -698,6 +700,28 @@ func takeProfile(c plugin.Capability, values map[string]any, opts Options) (stri
 	return name, nil
 }
 
+// storeRefusal is a refusal the grant gate returned, as the agent that met it
+// is handed it. Most are about the call — no grant covers it, or its budget
+// is spent — and are worded for an agent already. The rest are about the
+// grants file or the policy behind it: unreadable, forged, a guard removed
+// underneath it, or changed since this server pinned it at startup. Their
+// hints are the operator's remedy, `rm` the file and re-arm the guard with
+// `rta grant guard on`, or `rta doctor` and `rta agent log` as the places to
+// look, which told an agent to delete rta's own state or run commands it has
+// no terminal for. The message stays, since it says why nothing is allowed;
+// the hint says whose the fix is, in the one form that hands a command on
+// (plugin.AskOperator).
+func storeRefusal(verr *view.Error) *view.Error {
+	switch verr.Code {
+	case "core.grant.required", "core.grant.rate":
+		return verr
+	}
+	out := *verr
+	out.Hint = "this is about the grants rta keeps rather than this call, and only the operator " +
+		"can fix it — " + plugin.AskOperator("doctor")
+	return &out
+}
+
 // ungranted is the single refusal an agent gets for any profile it may not
 // use, whatever the reason — it does not exist, it belongs to another plugin,
 // it came from an untrusted file, or nobody has granted it.
@@ -707,13 +731,13 @@ func takeProfile(c plugin.Capability, values map[string]any, opts Options) (stri
 // the command they would have to run is spelled out, because the agent cannot
 // issue a grant itself and the whole exchange terminates at a human anyway.
 func ungranted(c plugin.Capability, name, agent string) *view.Error {
-	cmd := "rta grant allow " + plugin.Namespace(c.ID) + " --profile " + name
+	cmd := "grant allow " + plugin.Namespace(c.ID) + " --profile " + name
 	if agent != "" {
 		cmd += " --agent " + agent
 	}
 	return view.Errorf("core.grant.required",
 		"agents may not use %s on profile %q without a person's consent", c.ID, name).
-		WithHint("ask the operator to run: " + cmd + " --ttl 15m")
+		WithHint(plugin.AskOperator(cmd + " --ttl 15m"))
 }
 
 // ValidateArgs checks every argument the caller actually supplied

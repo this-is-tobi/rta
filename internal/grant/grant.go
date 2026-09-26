@@ -1571,8 +1571,10 @@ func refuseMissing(c plugin.Capability, missing []string, profile, agent string)
 	if agent != "" {
 		what += " --agent " + shellquote.Arg(agent)
 	}
+	// The one command line an agent is handed, and in the one form that
+	// hands it on (plugin.AskOperator): only a person issues a grant.
 	return view.Errorf("core.grant.required", "no active grant for %s", describe(c.ID, missing)).
-		WithHint("a person has to allow this first: rta grant allow " + what + " --ttl 15m")
+		WithHint("a person has to allow this first — " + plugin.AskOperator("grant allow "+what+" --ttl 15m"))
 }
 
 // refuseThrottled is the answer for a call a grant covers and a budget will
@@ -1591,7 +1593,7 @@ func refuseThrottled(c plugin.Capability, g Grant) *view.Error {
 	if next.IsZero() {
 		// A window that would not parse: the grant cannot say when, and
 		// guessing would be worse than admitting it.
-		return e.WithHint("the operator can re-issue it with `rta grant allow " + g.Target + "`")
+		return e.WithHint(plugin.AskOperator("grant allow "+g.Target) + " to re-issue it")
 	}
 	wait := time.Until(next).Truncate(time.Second)
 	if wait < time.Second {
