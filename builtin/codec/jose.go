@@ -93,7 +93,7 @@ func verifierFrom(ctx context.Context, req plugin.Request) (*verifier, *view.Err
 	}
 	v := &verifier{ctx: ctx, surface: req.Surface()}
 	if secretFile != "" {
-		secret, verr := secretFrom(secretFile)
+		secret, verr := secretFrom(secretFile, req.Surface())
 		if verr != nil {
 			return nil, verr
 		}
@@ -131,9 +131,9 @@ func joseInput(req plugin.Request, field, code, what, hint string) (string, *vie
 		// The pipe is the CLI's alone, so only the CLI is told about it.
 		switch req.Surface() {
 		case plugin.SurfaceTUI:
-			hint = "paste it into the " + field + " box"
+			hint = "paste it into " + inputName(req.Surface(), field)
 		case plugin.SurfaceMCP:
-			hint = "pass it as the " + field + " argument"
+			hint = "pass it as " + inputName(req.Surface(), field)
 		}
 		return "", view.Errorf(code+".empty", "no %s to read", what).WithHint(hint)
 	}
@@ -405,13 +405,13 @@ func notOverThisPayload(verr *view.Error, certain bool) *view.Error {
 func encryptedNotSigned(check *verifier) *view.Error {
 	var given []string
 	if len(check.keys) > 0 {
-		given = append(given, "--key")
+		given = append(given, "key")
 	}
 	if check.secret != nil {
-		given = append(given, "--secret-file")
+		given = append(given, "secret-file")
 	}
 	return view.Errorf("codec.jwt.encrypted", "this token is encrypted, not signed: there is no signature here to verify").
-		WithHint("without " + strings.Join(given, " and ") + " it shows the header, and its cty says whether a signed token is sealed inside")
+		WithHint(withoutInputs(check.surface, given...) + " it shows the header, and its cty says whether a signed token is sealed inside")
 }
 
 func decodeJWS(parts []string, depth int, check *verifier) (view.View, *view.Error) {
