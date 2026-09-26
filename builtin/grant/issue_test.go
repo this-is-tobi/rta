@@ -132,7 +132,8 @@ func TestARoleIsIssuedWholeAndTakenBackWhole(t *testing.T) {
 	if tbl.Columns[2].Name != "Role" && tbl.Columns[3].Name != "Role" {
 		t.Fatalf("no Role column: %+v", tbl.Columns)
 	}
-	if only, ok := run(t, listH, map[string]any{"role": "nope"}).(view.Text); !ok || !strings.Contains(only.Body, "No grant is standing") {
+	if only, ok := run(t, listH, map[string]any{"role": "nope"}).(view.Table); !ok || len(only.Rows) != 0 ||
+		!strings.Contains(only.Empty, "No grant is standing") {
 		t.Fatalf("--role nope listed something: %+v", only)
 	}
 

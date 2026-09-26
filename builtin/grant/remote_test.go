@@ -78,6 +78,20 @@ func TestRemoteListReadsTheServersRoster(t *testing.T) {
 	if len(table.Rows) != 1 || table.Rows[0][0] != "demo.item.reveal" {
 		t.Fatalf("rows = %+v", table.Rows)
 	}
+
+	// A server holding nothing answers with the same table and no rows, and
+	// the sentence beside it for a person — not a text view in its place.
+	if verr := core.Save(nil); verr != nil {
+		t.Fatal(verr)
+	}
+	v, err = listCap(t).Run(context.Background(),
+		reqTUI(map[string]any{"server": "lab", "passphrase": "correct horse"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if empty, ok := v.(view.Table); !ok || len(empty.Rows) != 0 || !strings.Contains(empty.Empty, "No active grants on lab") {
+		t.Fatalf("an empty remote roster = %#v, want the table with no rows and the sentence beside it", v)
+	}
 }
 
 func TestRemoteListRefusesDetail(t *testing.T) {
