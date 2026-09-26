@@ -118,11 +118,27 @@ func TestTheCardDoesNotJudgeAPluginNobodyRegistered(t *testing.T) {
 // text view, and the CLI page's own `jq '.rows[] | ...'` example failed with
 // "Cannot iterate over null" on a machine with no profiles, while -o csv
 // refused a text view and exited 2 — the code for something unexpected.
+//
+// It said so by swapping in a text view for pretty output, which put the
+// sentence into a pipe as well and left -o md a heading row over nothing; the
+// table carries it now, drawn where every other listing's is.
 func TestAnEmptyProfileListIsATableToAParser(t *testing.T) {
 	const empty = "profiles: {}\n"
+	saved := isTTY
+	t.Cleanup(func() { isTTY = saved })
+	isTTY = func() bool { return true }
 	out, _, err := runWith(t, connRegistry(t), empty, "profile", "list", "-o", "pretty")
 	if err != nil || !strings.Contains(out, "No profile is configured yet") {
-		t.Errorf("pretty = %q, %v; want the sentence saying what would fill it", out, err)
+		t.Errorf("pretty on a terminal = %q, %v; want the sentence saying what would fill it", out, err)
+	}
+	isTTY = func() bool { return false }
+	out, _, err = runWith(t, connRegistry(t), empty, "profile", "list", "-o", "pretty")
+	if err != nil || strings.Contains(out, "No profile is configured yet") || !strings.Contains(out, "PROFILE") {
+		t.Errorf("pretty into a pipe = %q, %v; want the headings and no sentence", out, err)
+	}
+	out, _, err = runWith(t, connRegistry(t), empty, "profile", "list", "-o", "md")
+	if err != nil || !strings.Contains(out, "No profile is configured yet") || strings.Contains(out, "| Profile") {
+		t.Errorf("md = %q, %v; want the sentence in place of the grid", out, err)
 	}
 
 	out, _, err = runWith(t, connRegistry(t), empty, "profile", "list", "-o", "json")
