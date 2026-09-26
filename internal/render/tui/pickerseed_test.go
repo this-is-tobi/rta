@@ -12,6 +12,13 @@ import (
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
+// builtinConfig is a PluginConfig stating one section for whichever
+// namespace asks, under that namespace's own heading — a built-in's.
+type builtinConfig map[string]any
+
+func (b builtinConfig) For(string) map[string]any { return b }
+func (b builtinConfig) Section(ns string) string  { return ns }
+
 // A config value naming none of a closed set's options is refused by the
 // CLI, naming the key. The run form seeds from the same config, and huh,
 // finding no option matching the seed, moved the picker to the first one and
@@ -53,7 +60,7 @@ func TestAPickerKeepsAConfigValueOutsideItsOptions(t *testing.T) {
 		{map[string]any{"kinds": []any{"table", "index"}}, "kinds", `not "index", which the config's plugins.db.kinds sets`},
 	} {
 		ran = nil
-		m := New(reg, config.Dashboard{}, func(string) map[string]any { return tc.cfg })
+		m := New(reg, config.Dashboard{}, builtinConfig(tc.cfg))
 		m.width, m.height = 100, 40
 		model, _ := m.startForm(c, nil)
 		nm := model.(Model)

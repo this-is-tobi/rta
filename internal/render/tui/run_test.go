@@ -2,12 +2,15 @@ package tui
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/internal/pluginconf"
+	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -91,7 +94,7 @@ func TestARefusedConfigValueNamesTheKeyItCameFrom(t *testing.T) {
 		},
 	}
 	c.Run = plugin.GuardInputs(c)
-	cfg := map[string]any{"encoding": "b64"}
+	cfg := statedConfig{values: map[string]any{"encoding": "b64"}}
 	const want = "which the config's plugins.demo.encoding sets"
 
 	rm := runCmd(context.Background(), 1, c, nil, false, cfg, "", nil, config.Connection{}, false)().(resultMsg)
@@ -102,4 +105,64 @@ func TestARefusedConfigValueNamesTheKeyItCameFrom(t *testing.T) {
 	if tm.err == nil || !strings.Contains(tm.err.Message, want) {
 		t.Errorf("tile: %+v", tm.err)
 	}
+}
+
+// …and for an installed plugin, under the heading the value was read from.
+// Its section has to be written `demo@<pin>:`, which is what the CLI and mcp
+// serve name; the TUI handed its requests the values alone, so a run, a live
+// refresh and a tile all named plugins.demo.encoding — a key the file for a
+// pinned plugin cannot have, sending the operator after a line that is not
+// there.
+func TestARefusedPinnedConfigValueNamesThePinnedHeading(t *testing.T) {
+	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	reg := registry.New()
+	if err := reg.RegisterFrom(plugin.Plugin{Name: "demo", Summary: "demo", Capabilities: []plugin.Capability{{
+		ID: "demo.encode", Summary: "encodes", Safety: plugin.Read,
+		Inputs: []plugin.Field{{Name: "encoding", Type: plugin.String, Default: "hex", Config: "encoding",
+			Options: []string{"hex", "base32"}, Help: "encoding"}},
+		Run: func(_ context.Context, req plugin.Request) (view.View, error) {
+			return view.Text{Body: req.String("encoding")}, nil
+		},
+	}}}, registry.Origin{Path: "/usr/local/bin/rta-plugin-demo", Digest: "1a2b3c4d5e6f"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.Write(config.Config{Plugins: map[string]map[string]any{
+		"demo@1a2b3c4d5e6f": {"encoding": "b64"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	written, err := config.LoadFile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolver, problems := pluginconf.Resolve(written, reg.Origin)
+	if len(problems) > 0 {
+		t.Fatalf("the section was not honoured: %v", problems)
+	}
+	m := New(reg, config.Dashboard{Tiles: []config.Tile{{ID: "demo.encode"}}}, resolver)
+	c, _ := reg.Capability("demo.encode")
+	const want = "which the config's plugins.demo@1a2b3c4d5e6f.encoding sets"
+
+	refused := func(path string, cmd tea.Cmd) {
+		t.Helper()
+		var got *view.Error
+		collect(t, cmd, func(msg tea.Msg) {
+			switch msg := msg.(type) {
+			case resultMsg:
+				got = msg.err
+			case tileMsg:
+				got = msg.err
+			}
+		})
+		if got == nil || !strings.Contains(got.Message, want) {
+			t.Errorf("%s: %+v, want a refusal ending %q", path, got, want)
+		}
+	}
+	refused("run", m.startRun(c, nil, false))
+	refused("live refresh", m.refreshInPlace(c, nil, false))
+	// Every command but the last, which is the tick arming the next round
+	// five seconds out.
+	batch := refreshTiles(m.tiles, 1, m.pluginCfg, m.connFor)().(tea.BatchMsg)
+	refused("tile", tea.Batch(batch[:len(batch)-1]...))
 }

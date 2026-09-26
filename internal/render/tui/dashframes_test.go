@@ -31,7 +31,7 @@ import (
 func TestUnsizedFrameIsEmpty(t *testing.T) {
 	m := New(layoutRegistry(t), config.Dashboard{}, nil)
 	for i, ti := range m.tiles {
-		next, _ := m.Update(tileCmd(i, ti, nil, "", nil, config.Connection{})())
+		next, _ := m.Update(tileCmd(i, ti, statedConfig{}, "", nil, config.Connection{})())
 		m = next.(Model)
 	}
 	if got := m.View().Content; got != "" {
@@ -116,7 +116,7 @@ func TestDashboardFirstFramesAreWholeFrames(t *testing.T) {
 			m = next.(Model)
 			assertWholeFrame(t, fmt.Sprintf("%s before any answer", sizeName("dashboard", size.w)), m, size.w, size.h)
 			for n, i := range order {
-				next, _ = m.Update(tileCmd(i, m.tiles[i], nil, "", nil, config.Connection{})())
+				next, _ = m.Update(tileCmd(i, m.tiles[i], statedConfig{}, "", nil, config.Connection{})())
 				m = next.(Model)
 				name := fmt.Sprintf("%s after %d of %v", sizeName("dashboard", size.w), n+1, order)
 				assertWholeFrame(t, name, m, size.w, size.h)
@@ -257,7 +257,7 @@ func filled(t *testing.T, m Model, w, h int) Model {
 	next, _ := m.Update(tea.WindowSizeMsg{Width: w, Height: h})
 	m = next.(Model)
 	for i, ti := range m.tiles {
-		next, _ = m.Update(tileCmd(i, ti, nil, "", nil, config.Connection{})())
+		next, _ = m.Update(tileCmd(i, ti, statedConfig{}, "", nil, config.Connection{})())
 		m = next.(Model)
 	}
 	return m

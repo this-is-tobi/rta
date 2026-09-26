@@ -229,7 +229,7 @@ func (m Model) saveConfigForm() (tea.Model, tea.Cmd) {
 		return m.closeToOrigin()
 	}
 	resolver, _ := pluginconf.Resolve(written, m.reg.Origin)
-	m.pluginCfg = resolver.For
+	m.pluginCfg = resolver
 	m.plugins = pluginRows(m.reg, m.dash, m.untrusted)
 
 	m.flash = "saved plugins." + heading

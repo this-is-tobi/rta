@@ -758,7 +758,7 @@ type tickMsg struct{ gen int }
 // costs one; a hand-configured second tile of the same plugin costs a second
 // forward, which works (they get different local ports) and is the rare case.
 // It is torn down when the tile finishes, so nothing is held between refreshes.
-func tileCmd(idx int, t tile, cfg map[string]any, profileName string,
+func tileCmd(idx int, t tile, cfg statedConfig, profileName string,
 	filled map[string]any, conn config.Connection) tea.Cmd {
 	key := t.key()
 	return func() tea.Msg {
@@ -809,7 +809,8 @@ func tileCmd(idx int, t tile, cfg map[string]any, profileName string,
 			filled = merged
 		}
 		v, err := t.cap.Run(ctx, plugin.ResolveRequest(t.cap, plugin.Inputs{
-			Caller: t.values, Profile: filled, ProfileName: profileName, Config: cfg,
+			Caller: t.values, Profile: filled, ProfileName: profileName, Config: cfg.values,
+			ConfigSection: cfg.section,
 		}, false, false).WithSurface(plugin.SurfaceTUI))
 		if err != nil {
 			if timed := deadlineHit(); timed != nil {
@@ -882,7 +883,7 @@ type tileConn struct {
 // s3 and vault tiles fill from staging, because those are the connections
 // that environment names. For a pinned tile it is that profile's own
 // binding. nil is the same as nothing switched on and nothing pinned.
-func refreshTiles(tiles []tile, gen int, pluginCfg func(string) map[string]any,
+func refreshTiles(tiles []tile, gen int, pluginCfg PluginConfig,
 	connFor func(tile) tileConn) tea.Cmd {
 	cmds := make([]tea.Cmd, 0, len(tiles)+1)
 	now := time.Now()
@@ -899,10 +900,7 @@ func refreshTiles(tiles []tile, gen int, pluginCfg func(string) map[string]any,
 			continue
 		}
 		tiles[i].lastFired = now
-		var cfg map[string]any
-		if words := t.cap.Words(); pluginCfg != nil && len(words) > 0 {
-			cfg = pluginCfg(words[0])
-		}
+		cfg := configOf(pluginCfg, t.cap)
 		if tc.err != nil {
 			// Reported the same way a dial failure already is below, in
 			// tileCmd: a tile is where a fallback to the base configuration

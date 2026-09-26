@@ -76,7 +76,7 @@ func TestATileUnderAClusterConnectionRunsThroughTheForward(t *testing.T) {
 	ti := reachedTile(t, &seen)
 	conn := config.Connection{Kube: "homelab/databases/svc/postgres:5432"}
 
-	msg := tileCmd(0, ti, nil, "homelab", nil, conn)().(tileMsg)
+	msg := tileCmd(0, ti, statedConfig{}, "homelab", nil, conn)().(tileMsg)
 	if msg.err != nil {
 		t.Fatalf("tile: %v", msg.err)
 	}
@@ -101,7 +101,7 @@ func TestATileWithoutAClusterConnectionIsUnaffected(t *testing.T) {
 
 	var seen string
 	ti := reachedTile(t, &seen)
-	msg := tileCmd(0, ti, nil, "", map[string]any{"host": "db.internal", "port": 6543},
+	msg := tileCmd(0, ti, statedConfig{}, "", map[string]any{"host": "db.internal", "port": 6543},
 		config.Connection{})().(tileMsg)
 	if msg.err != nil {
 		t.Fatalf("tile: %v", msg.err)
@@ -129,7 +129,7 @@ func TestATileReportsAForwardItCouldNotOpen(t *testing.T) {
 	var seen string
 	ti := reachedTile(t, &seen)
 	conn := config.Connection{Kube: "homelab/databases/svc/postgres:5432"}
-	msg := tileCmd(0, ti, nil, "homelab", nil, conn)().(tileMsg)
+	msg := tileCmd(0, ti, statedConfig{}, "homelab", nil, conn)().(tileMsg)
 
 	if msg.err == nil {
 		t.Fatalf("a tile whose forward failed reported success, having reached %q", seen)

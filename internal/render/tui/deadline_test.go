@@ -69,7 +69,7 @@ func TestARunThatOpenedAForwardIsBounded(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	d, ok := deadlineOf(t, runCmd(ctx, 1, deadlineCap(), nil, false, nil, "homelab", nil, conn, false)())
+	d, ok := deadlineOf(t, runCmd(ctx, 1, deadlineCap(), nil, false, statedConfig{}, "homelab", nil, conn, false)())
 	if !ok {
 		t.Fatal("a run through a forward carries no deadline — the forward stays open until the handler decides")
 	}
@@ -186,7 +186,7 @@ func TestADashboardTileThatMissesItsDeadlineNamesTheDeadlineAndTheWayOut(t *test
 			return nil, ctx.Err()
 		},
 	}}
-	msg := tileCmd(0, stuck, nil, "", nil, config.Connection{})().(tileMsg)
+	msg := tileCmd(0, stuck, statedConfig{}, "", nil, config.Connection{})().(tileMsg)
 	if msg.err == nil {
 		t.Fatal("a tile that never answered reported success")
 	}
@@ -290,7 +290,7 @@ func TestATileWhoseForwardNeverComesUpNamesTheDashboardsDeadline(t *testing.T) {
 	t.Cleanup(func() { refreshTimeout = saved })
 	var seen string
 	ti := reachedTile(t, &seen)
-	msg := tileCmd(0, ti, nil, "homelab", nil, config.Connection{Kube: "homelab/databases/svc/postgres:5432"})().(tileMsg)
+	msg := tileCmd(0, ti, statedConfig{}, "homelab", nil, config.Connection{Kube: "homelab/databases/svc/postgres:5432"})().(tileMsg)
 	if msg.err == nil || msg.err.Code != "tui.refresh.timeout" {
 		t.Fatalf("a forward that never came up: %v, want tui.refresh.timeout", msg.err)
 	}
