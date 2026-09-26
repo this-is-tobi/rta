@@ -62,6 +62,14 @@ jobs:
   # lint-commits and scan-secrets stay unconditional on purpose: a docs PR
   # still needs conventional commits, and a credential pasted into a docs
   # page is exactly as leaked as one in code.
+  #
+  # .release-please-manifest.json counts as prose too. It is release-please's
+  # record of the last version it released, and nothing is built from it; a
+  # release pull request changes it beside the changelog and nothing else,
+  # and release-please pushes that pull request again after every merge to
+  # main. Counted as code, each push ran the whole suite over a tree main had
+  # already passed. A release that ever writes a version into a file the
+  # build reads is code by the rule above, and runs everything again.
   changes:
     name: Detect changed paths
     runs-on: ubuntu-latest
@@ -84,7 +92,7 @@ jobs:
         while IFS= read -r f; do
           [ -z "$f" ] && continue
           case "$f" in
-            docs/*|*.md|LICENSE|NOTICE) ;;
+            docs/*|*.md|LICENSE|NOTICE|.release-please-manifest.json) ;;
             *) code=true ;;
           esac
           # Its own classification rather than a branch of the one above: the
