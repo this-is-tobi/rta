@@ -107,6 +107,39 @@ func TestProbeSilenceExplainsItself(t *testing.T) {
 	}
 }
 
+// Silence after net.send does not offer net.send: that is the call that just
+// went unanswered. It said "try: rta net send", word for word the probe's
+// advice, to somebody who had done exactly that.
+func TestSendSilenceDoesNotOfferSendAgain(t *testing.T) {
+	ln, err := stdnet.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		// Read what was sent before closing, so the close is an end of
+		// stream and not a reset over unread bytes.
+		_, _ = conn.Read(make([]byte, 64))
+		conn.Close()
+	}()
+	v, err := runSend(context.Background(), plugin.NewRequest(map[string]any{
+		"host": "127.0.0.1", "port": ln.Addr().(*stdnet.TCPAddr).Port,
+		"data": `PING\r\n`, "timeout": 2, "wait": 1,
+	}, false, false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := v.(view.Sections).Items[1].View.(view.Text).Body
+	if strings.Contains(body, "net send") || !strings.Contains(body, "said nothing back") ||
+		!strings.Contains(body, "6 B sent") || !strings.Contains(body, "--wait") {
+		t.Errorf("silence after a send = %q, want what was sent and what to change, not net send again", body)
+	}
+}
+
 // Speaking first is net.send, not net.probe: writing attacker-chosen bytes to
 // an arbitrary port is a write, and shipping it as Read put it on every MCP
 // server with no grant and a readOnlyHint the client was entitled to believe.
