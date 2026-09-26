@@ -77,6 +77,70 @@ func TestPolicyInitAnswersWithAViewInTheFormatAskedFor(t *testing.T) {
 	readsOnATerminal(t, out, "replaced", "ceiling", "next")
 }
 
+// policy require answers with pairs too, and whether the directory it ran in
+// meets the requirement is one of them: that half of its prose went to
+// stderr, so a script turning the requirement on never heard that the
+// directory it stood in would now be refused.
+func TestPolicyRequireAnswersWithAViewNamingWhetherThisDirectoryMeetsIt(t *testing.T) {
+	t.Setenv("RTA_POLICY", "")
+	dir := t.TempDir()
+	t.Chdir(dir)
+	run := session(t, testRegistry(t))
+	own := policy.OperatorPath()
+
+	out, errOut, err := run("policy", "require", "--dry-run", "-o", "json")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	pairs := answerPairs(t, out)
+	if pairs["would write"] != own || pairs["requireRepoPolicy"] != "yes" || !strings.Contains(pairs["next"], "--dry-run") {
+		t.Errorf("a dry run answered %v", pairs)
+	}
+	if _, err := os.Stat(own); !os.IsNotExist(err) {
+		t.Fatalf("--dry-run wrote %s: %v", own, err)
+	}
+
+	out, errOut, err = run("policy", "require", "-o", "json")
+	if err != nil || errOut != "" {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	pairs = answerPairs(t, out)
+	if pairs["wrote"] != own || pairs["requireRepoPolicy"] != "yes" {
+		t.Errorf("answered %v, want the file written and the setting it holds", pairs)
+	}
+	if here := pairs["this directory"]; !strings.Contains(here, "no "+policy.RepoFile+" found") {
+		t.Errorf("this directory = %q, want it to say the directory has no policy", here)
+	}
+	if !strings.Contains(pairs["next"], "rta policy init") {
+		t.Errorf("next = %q, want the command that writes one", pairs["next"])
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, policy.RepoFile), []byte("maxTTL: 1h\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, errOut, err = run("policy", "require", "-o", "json")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	pairs = answerPairs(t, out)
+	if !strings.HasSuffix(pairs["unchanged"], "nothing written to "+own) || pairs["wrote"] != "" {
+		t.Errorf("answered %v, want it to say nothing was written", pairs)
+	}
+	if here := pairs["this directory"]; !strings.HasPrefix(here, "has one: ") || strings.Contains(here, own) {
+		t.Errorf("this directory = %q, want the repository's policy alone", here)
+	}
+
+	onATerminal(t)
+	out, errOut, err = run("policy", "require", "--off", "--no-color")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	readsOnATerminal(t, out, "wrote", "requireRepoPolicy", "next")
+	if strings.Contains(out, "this directory") {
+		t.Errorf("turning the requirement off reported on this directory:\n%s", out)
+	}
+}
+
 // The repository policy row names the files the walk up found, and those
 // alone. It printed every file the ceiling was assembled from, so with a
 // policy of the operator's own the row named that file as the repository's —

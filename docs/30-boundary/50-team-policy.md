@@ -49,7 +49,14 @@ The clumsy edit fails closed. The clean ones fail open, and quietly — because 
 rta policy require
 ```
 
-That writes `requireRepoPolicy: true` into **your own** policy file, beside your config and outside every repository. From then on, a missing or empty `.rta-policy.yaml` is a refusal that names the directory rta searched:
+```
+wrote              /home/you/.config/rta/policy.yaml
+requireRepoPolicy  yes
+this directory     has one: /home/you/project/.rta-policy.yaml
+next               a directory without one is refused, naming the directory rta searched from
+```
+
+That writes `requireRepoPolicy: true` into **your own** policy file, beside your config and outside every repository, and says whether the directory you ran it in meets it — under `-o json` as well, as the `this directory` pair. From then on, a missing or empty `.rta-policy.yaml` is a refusal that names the directory rta searched:
 
 ```
 ERROR policy.repo.missing  no .rta-policy.yaml found from /home/you/project, and this machine requires one
