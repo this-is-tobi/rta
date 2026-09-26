@@ -1,10 +1,13 @@
 package git
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 func TestDiffCommitShowsWhatThatCommitChanged(t *testing.T) {
@@ -42,13 +45,22 @@ func TestDiffWorktreeShowsUncommittedChanges(t *testing.T) {
 	}
 }
 
-func TestDiffWorktreeOnACleanRepoSaysSo(t *testing.T) {
+// A clean tree's diff is an empty patch, and says so only to a person.
+//
+// The sentence was the body, so every format carried it: `rta git diff >
+// x.patch` wrote "no uncommitted changes" into the patch, and -o json handed
+// a script that sentence as the diff.
+func TestDiffWorktreeOnACleanRepoIsAnEmptyPatch(t *testing.T) {
 	dir, repo := testRepo(t)
 	commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
 
-	body := text(t, runDiff, req(t, dir, nil))
-	if body != "no uncommitted changes" {
-		t.Errorf("body = %q, want %q", body, "no uncommitted changes")
+	v, err := runDiff(context.Background(), req(t, dir, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	txt, ok := v.(view.Text)
+	if !ok || txt.Body != "" || txt.Empty != "no uncommitted changes" {
+		t.Errorf("clean diff = %#v, want an empty body and the sentence beside it", v)
 	}
 }
 

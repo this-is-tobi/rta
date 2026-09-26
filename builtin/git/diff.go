@@ -163,7 +163,7 @@ func diffWorktree(repo *git.Repository) (view.View, error) {
 		return nil, view.Errorf("git.diff.failed", "reading status: %v", err)
 	}
 	if status.IsClean() {
-		return view.Text{Body: "no uncommitted changes"}, nil
+		return textOrEmpty(""), nil
 	}
 
 	var headTree *object.Tree
@@ -303,11 +303,13 @@ func toChunks(diffs []diffmatchpatch.Diff) []diff.Chunk {
 	return chunks
 }
 
+// textOrEmpty is a working tree's patch, which is empty when nothing is
+// uncommitted — and empty is the answer, not a sentence about it. The body
+// was that sentence, so every format carried it: `rta git diff > x.patch` on
+// a clean tree wrote "no uncommitted changes" into the patch, and -o json
+// handed it to a script as the diff. The sentence is for a screen alone.
 func textOrEmpty(body string) view.View {
-	if body == "" {
-		return view.Text{Body: "no uncommitted changes"}
-	}
-	return view.Text{Body: body}
+	return view.Text{Body: body, Empty: "no uncommitted changes"}
 }
 
 // The four small types below implement plumbing/format/diff's Patch,
