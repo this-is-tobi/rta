@@ -683,6 +683,7 @@
         "depth": {
           "default": 0,
           "description": "how deep to descend when totalling (0 = no limit)",
+          "minimum": 0,
           "type": "integer"
         },
         "detail": {
