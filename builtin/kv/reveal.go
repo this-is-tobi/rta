@@ -146,9 +146,10 @@ func Store(name, value, description, origin string) *view.Error {
 		return verr
 	}
 	if _, exists := s.Entries[name]; exists {
+		// Worded for the TUI's credential action, Store's one caller.
 		return view.Errorf("kv.exists", "%q is already in the store", name).
 			WithHint("reference it instead, or pick another name — replacing a stored " +
-				"secret is `rta kv set`, where the intention is explicit")
+				"secret is " + plugin.SurfaceTUI.CapabilityName("kv.set") + ", where the intention is explicit")
 	}
 	now := time.Now()
 	s.Entries[name] = entry{

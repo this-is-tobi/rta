@@ -1534,7 +1534,7 @@ func TestGenerateNeverClobbersAKey(t *testing.T) {
 	if err := os.WriteFile(path, []byte("AGE-SECRET-KEY-EXISTING\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, verr := generateIdentity(path); verr == nil {
+	if _, verr := generateIdentity(plugin.SurfaceCLI, path); verr == nil {
 		t.Fatal("an existing key was overwritten")
 	}
 	data, _ := os.ReadFile(path)
@@ -1790,7 +1790,7 @@ func TestRekeyErrorNamesTheStaleRecipientsFileWhenOnlyThatWriteFails(t *testing.
 		t.Fatal(err)
 	}
 
-	verr := saveTo(
+	verr := saveTo(plugin.SurfaceCLI,
 		store{Entries: map[string]entry{"k": {Value: []byte("v")}}},
 		[]age.Recipient{id.Recipient()},
 		[]string{spec},
@@ -2035,7 +2035,7 @@ func TestNoEmbeddedRecipientsIsNotTreatedAsAMismatch(t *testing.T) {
 	if verr != nil {
 		t.Fatal(verr)
 	}
-	if verr := saveTo(s, recipients, nil); verr != nil {
+	if verr := saveTo(plugin.SurfaceCLI, s, recipients, nil); verr != nil {
 		t.Fatal(verr)
 	}
 
@@ -2450,16 +2450,16 @@ func TestListMatchesDescriptionsAsWellAsNames(t *testing.T) {
 // that was there all along, one filter away.
 func TestAnEmptyListSaysWhichKindOfEmptyItIs(t *testing.T) {
 	setup(t)
-	if got := emptyList(0, "", ""); !strings.Contains(got, "No keys stored yet") {
+	if got := emptyList(plugin.SurfaceCLI, 0, "", ""); !strings.Contains(got, "No keys stored yet") {
 		t.Errorf("empty store = %q", got)
 	}
-	got := emptyList(4, "json", "aws")
+	got := emptyList(plugin.SurfaceCLI, 4, "json", "aws")
 	for _, want := range []string{"of kind json", `matching "aws"`, "holds 4 keys"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("filtered empty = %q, want it to mention %q", got, want)
 		}
 	}
-	if got := emptyList(1, "json", ""); !strings.Contains(got, "holds 1 key") {
+	if got := emptyList(plugin.SurfaceCLI, 1, "json", ""); !strings.Contains(got, "holds 1 key") {
 		t.Errorf("one stored key = %q", got)
 	}
 }
@@ -2523,5 +2523,100 @@ func TestStatusDoesNotPromiseAnIdentityItCannotRead(t *testing.T) {
 	}
 	if !strings.Contains(got, missing) {
 		t.Errorf("unlock = %q, want it to name the path it could not read", got)
+	}
+}
+
+// An agent reading kv's refusals and pages is sent to the tools and arguments
+// it has, never to a flag or an `rta` command line — and never to an input
+// only the operator can give: file, identity and recipient are Local, so no
+// agent's schema has them.
+func TestKvSpeaksToAnAgentInItsOwnTerms(t *testing.T) {
+	setup(t)
+	mcp := func(values map[string]any) plugin.Request { return req(values, false).WithSurface(plugin.SurfaceMCP) }
+	text(t, runSet, map[string]any{"key": "db", "value": "s3cret"}, false)
+	text(t, runSet, map[string]any{"key": "db2", "value": "other"}, false)
+
+	for name, tc := range map[string]struct {
+		run  plugin.Handler
+		req  plugin.Request
+		want string
+	}{
+		"no such key": {runGet, mcp(map[string]any{"key": "nope"}), "the `kv_list` tool lists every key"},
+		"no value": {runSet, mcp(map[string]any{"key": "db"}),
+			`give the "value" argument — or the "description" argument or the "kind" argument to change`},
+		"a rename onto a key": {runRename, mcp(map[string]any{"key": "db", "new-name": "db2"}),
+			"remove that first: `kv_rm {\"key\":\"db2\"}`"},
+	} {
+		_, err := tc.run(context.Background(), tc.req)
+		verr := view.AsError(err, "x")
+		if err == nil {
+			t.Errorf("%s: not refused", name)
+			continue
+		}
+		said := verr.Message + " — " + verr.Hint
+		if strings.Contains(said, "--") || strings.Contains(said, "`rta ") || strings.Contains(said, "file") {
+			t.Errorf("%s: an agent was told %q", name, said)
+		}
+		if tc.want != "" && !strings.Contains(verr.Hint, tc.want) {
+			t.Errorf("%s: hint %q, want %q", name, verr.Hint, tc.want)
+		}
+	}
+
+	v, err := runShow(context.Background(), mcp(map[string]any{"key": "db"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pairs := map[string]string{}
+	for _, p := range v.(view.KeyValue).Pairs {
+		pairs[p.Key] = p.Value
+	}
+	if _, ok := pairs["copy"]; ok {
+		t.Errorf("an agent was offered kv.copy, which is no tool of its own: %v", pairs)
+	}
+	if pairs["reveal"] != `kv_get {"key":"db"}` {
+		t.Errorf("reveal = %q, want the kv_get call", pairs["reveal"])
+	}
+
+	// A passphrase store's way to a held key is recipient, which is Local:
+	// the agent is handed the operator's command, never a kv_rekey call
+	// whose recipient argument would be dropped unread.
+	v, err = runRecipients(context.Background(), mcp(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := v.(view.Table).Empty; !strings.Contains(got, "ask the operator to run `rta kv rekey --only --recipient ") ||
+		strings.Contains(got, `"recipient":`) || !strings.Contains(got, `kv_rekey {"generate":true,"only":true}`) {
+		t.Errorf("recipients of a passphrase store over MCP = %q", got)
+	}
+}
+
+// Before there is a store, an agent is offered what it can call — kv_init
+// with generate, kv_set — and a key already held as the operator's to name,
+// identity being Local. Every placeholder reaches it as written.
+func TestNoStoreYetSpeaksToAnAgentInItsOwnTerms(t *testing.T) {
+	setup(t)
+	mcp := req(nil, false).WithSurface(plugin.SurfaceMCP)
+	v, err := runRecipients(context.Background(), mcp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := v.(view.Table).Empty
+	for _, want := range []string{`kv_init {"generate":true}`, `kv_set {"key":"<key>","value":"<value>"}`,
+		"ask the operator to run `rta kv init --identity "} {
+		if !strings.Contains(got, want) {
+			t.Errorf("no store over MCP = %q, want it to say %q", got, want)
+		}
+	}
+	if strings.Contains(got, `"identity":`) {
+		t.Errorf("an agent was offered an identity argument no schema of its has: %q", got)
+	}
+	v, err = runStatus(context.Background(), mcp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range v.(view.KeyValue).Pairs {
+		if p.Key == "state" && p.Value != "no store yet — the `kv_set` tool creates it the first time it runs" {
+			t.Errorf("state over MCP = %q", p.Value)
+		}
 	}
 }

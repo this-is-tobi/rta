@@ -199,7 +199,7 @@ func parseIdentities(req plugin.Request, path string) ([]identity, *view.Error) 
 	data, err := os.ReadFile(pathguard.ExpandTilde(path))
 	if err != nil {
 		return nil, view.Errorf("kv.identity.unreadable", "reading %s: %v", path, err).
-			WithHint("--identity takes a private key file, e.g. ~/.ssh/id_ed25519")
+			WithHint(identityName(req.Surface()) + " takes a private key file, e.g. ~/.ssh/id_ed25519")
 	}
 	// An age identity file: one or more "AGE-SECRET-KEY-1…" lines, comments
 	// and blank lines allowed. Checked by the first meaningful line the same
@@ -318,7 +318,8 @@ func unlockSSHKey(req plugin.Request, path string, data []byte) (any, *view.Erro
 			fmt.Fprintln(os.Stderr, "Wrong passphrase.")
 		}
 		return nil, view.Errorf("kv.identity.locked", "could not unlock %s", path).
-			WithHint("that is the key's own passphrase, not the store's — or use a key that needs none: rta kv init --generate")
+			WithHint("that is the key's own passphrase, not the store's — or use a key that needs none: " +
+				req.Surface().CapabilityWith("kv.init", "generate") + " makes one")
 	}
 	if supplied != "" {
 		return nil, view.Errorf("kv.identity.locked", "wrong passphrase for %s", path).
@@ -328,7 +329,7 @@ func unlockSSHKey(req plugin.Request, path string, data []byte) (any, *view.Erro
 		WithHint(fmt.Sprintf(
 			"ssh-agent cannot unlock it — an agent signs, it does not decrypt. "+
 				"Set %s to the key's passphrase, or use a key that needs "+
-				"none: rta kv init --generate", passphraseEnv))
+				"none: %s makes one", passphraseEnv, req.Surface().CapabilityWith("kv.init", "generate")))
 }
 
 // ageIdentityFromSSH mirrors agessh.ParseIdentity's type switch, but over an
@@ -401,7 +402,7 @@ func suggestRecipients(_ context.Context, _ plugin.Request) []string {
 	if p := defaultIdentity(); fileExists(p) {
 		// Its own public half, which is what age derives from it — offered as
 		// the identity path because that is what runInit and runRekey accept.
-		out = append(out, p+"\tthe key kv init --generate made")
+		out = append(out, p+"\tthe key kv.init made for this store")
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -416,7 +417,7 @@ func suggestRecipients(_ context.Context, _ plugin.Request) []string {
 func suggestIdentities(_ context.Context, _ plugin.Request) []string {
 	var out []string
 	if p := defaultIdentity(); fileExists(p) {
-		out = append(out, p+"\tthe key kv init --generate made")
+		out = append(out, p+"\tthe key kv.init made for this store")
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -468,12 +469,16 @@ func fileExists(path string) bool {
 //
 // A dedicated key rather than your SSH login key, which is the whole point:
 // if id_ed25519 both logs you into production and decrypts your secrets, one
-// leaked file costs you both. This one can only ever open this store.
-func generateIdentity(path string) (spec string, verr *view.Error) {
+// leaked file costs you both. This one can only ever open this store. sf is
+// the surface asking, for the names its refusal gives the other way.
+func generateIdentity(sf plugin.Surface, path string) (spec string, verr *view.Error) {
 	if fileExists(path) {
-		return "", view.Errorf("kv.identity.exists", "%s already exists", path).
-			WithHint("name that key instead of making another — `kv init --identity " + path +
-				"`, or `kv rekey --recipient " + path + "` — or move it aside first")
+		hint := "name that key instead of making another — " + sf.CapabilityWith("kv.init", "identity") +
+			" or " + sf.CapabilityWith("kv.rekey", "recipient") + " — or move it aside first"
+		if sf == plugin.SurfaceMCP {
+			hint = "the operator can name that key instead of making another, or move it aside first"
+		}
+		return "", view.Errorf("kv.identity.exists", "%s already exists", path).WithHint(hint)
 	}
 	id, err := age.GenerateX25519Identity()
 	if err != nil {
@@ -580,7 +585,8 @@ func readKeys(req plugin.Request, ciphertext []byte) ([]age.Identity, *view.Erro
 				}
 			}
 			return nil, view.Errorf("kv.identity.required", "this store is encrypted to keys, not a passphrase").
-				WithHint("pass --identity <your private key>, e.g. --identity ~/.ssh/id_ed25519 — `rta kv recipients` lists who can read it")
+				WithHint(giveIdentity(req.Surface()) + " — " + req.Surface().CapabilityName("kv.recipients") +
+					" lists who can read it")
 		}
 		// The passphrase is optional here: it only matters if the key file
 		// itself is locked, so a missing one is not an error yet.
@@ -647,8 +653,8 @@ func writeKeys(req plugin.Request, embedded []string) (recipients []age.Recipien
 			return nil, nil, nil, view.Errorf("kv.recipients.orphan",
 				"%s lists keys but there is no store for them to unlock", recipientsPath()).
 				WithHint("rta never writes that file on its own — it is written with the store, " +
-					"never before it. Check whether those keys are yours (`rta kv recipients`); " +
-					"if they are not, delete the file and start over with `rta kv init`")
+					"never before it. Check whether those keys are yours (" + req.Surface().CapabilityName("kv.recipients") +
+					"); if they are not, delete the file and start over with " + req.Surface().CapabilityName("kv.init"))
 		}
 		// kv.recipients has to be plaintext — the point of it is answering
 		// "who can read this?" without unlocking anything — which also means
@@ -665,9 +671,9 @@ func writeKeys(req plugin.Request, embedded []string) (recipients []age.Recipien
 		if embedded != nil && !slices.Equal(stored, embedded) {
 			return nil, nil, nil, view.Errorf("kv.recipients.mismatch",
 				"kv.recipients does not match who the store is actually encrypted to").
-				WithHint("it may have been edited by hand or by something other than `kv rekey` — " +
-					"compare `rta kv recipients` against what you expect, then `rta kv rekey --only " +
-					"--recipient <the ones it should be>` to reconcile before writing again")
+				WithHint("it may have been edited by hand or by something other than kv.rekey — compare " +
+					req.Surface().CapabilityName("kv.recipients") + " against what you expect, and name the set " +
+					"outright before writing again — " + rekeyOnly(req.Surface(), "the ones it should be"))
 		}
 		recipients, verr = recipientsFor(stored)
 		return recipients, nil, stored, verr
@@ -697,7 +703,7 @@ func writeKeys(req plugin.Request, embedded []string) (recipients []age.Recipien
 		_, canonical, err := parseRecipient(spec)
 		if err != nil {
 			return nil, nil, nil, view.Errorf("kv.recipient.invalid", "%v", err).
-				WithHint("--recipient takes an age recipient, an SSH public key, or a path to one")
+				WithHint(req.Surface().InputName("recipient") + " takes an age recipient, an SSH public key, or a path to one")
 		}
 		want = mergeSpec(want, canonical)
 	}
@@ -741,7 +747,7 @@ func recipientsFor(specs []string) ([]age.Recipient, *view.Error) {
 	return out, nil
 }
 
-// refuseSilentIdentity stops a write from quietly ignoring --identity.
+// refuseSilentIdentity stops a write from quietly ignoring an identity.
 //
 // On a passphrase store the flag has nothing to unlock, and it used to be
 // dropped on the floor: the store stayed passphrase-locked and nothing said
@@ -755,8 +761,23 @@ func refuseSilentIdentity(req plugin.Request) *view.Error {
 	if verr != nil || mode == modeKeys {
 		return verr
 	}
+	// The switch is to the key as a reader, recipient. The hint named
+	// identity, which never changes the set, and kv.rekey refuses a call
+	// naming no reader with kv.rekey.nokey.
+	sf := req.Surface()
 	return view.Errorf("kv.identity.wrongmode", "this store is locked with a passphrase, not keys").
-		WithHint("--identity cannot open it, and writing does not change the lock: rta kv rekey --only --identity <that key>")
+		WithHint(identityName(sf) + " cannot open it, and writing does not change the lock — to switch it to " +
+			"that key, " + rekeyOnly(sf, "that key"))
+}
+
+// giveIdentity says how the caller on sf names the private key that opens a
+// store locked to keys: the input, and over MCP the operator's variable, the
+// one way an agent's call is ever given a key.
+func giveIdentity(sf plugin.Surface) string {
+	if sf == plugin.SurfaceMCP {
+		return "ask the operator to set " + identityEnv + " in the environment rta mcp serve runs in"
+	}
+	return "give " + sf.InputName("identity") + " your private key, e.g. ~/.ssh/id_ed25519"
 }
 
 // privateKeyFile reports whether a spec is a path to a private key on this

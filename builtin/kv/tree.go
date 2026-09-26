@@ -46,7 +46,7 @@ func runTree(_ context.Context, req plugin.Request) (view.View, error) {
 	// sentence beside it for a person: see view.Tree.Empty. It answered with
 	// that sentence as a Text view, which a parser met in place of the tree.
 	if len(s.Entries) == 0 {
-		return view.Tree{Roots: []view.Node{}, Empty: emptyList(0, "", "")}, nil
+		return view.Tree{Roots: []view.Node{}, Empty: emptyList(req.Surface(), 0, "", "")}, nil
 	}
 	names := make([]string, 0, len(s.Entries))
 	for k := range s.Entries {

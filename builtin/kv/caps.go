@@ -38,7 +38,7 @@ func runList(_ context.Context, req plugin.Request) (view.View, error) {
 	match := strings.ToLower(strings.TrimSpace(req.String("match")))
 	detail := req.Bool("detail")
 	if req.Bool("removed") {
-		return removedTable(s), nil
+		return removedTable(req.Surface(), s), nil
 	}
 
 	names := make([]string, 0, len(s.Entries))
@@ -120,7 +120,7 @@ func runList(_ context.Context, req plugin.Request) (view.View, error) {
 	// The table even when nothing is listed, and the sentence beside it for a
 	// screen: see view.Table.Empty.
 	if len(t.Rows) == 0 {
-		t.Empty = emptyList(len(s.Entries), kindFilter, req.String("match"))
+		t.Empty = emptyList(req.Surface(), len(s.Entries), kindFilter, req.String("match"))
 	}
 	return t, nil
 }
@@ -146,7 +146,7 @@ func runShow(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 	e, ok := s.Entries[key]
 	if !ok {
-		return nil, notFound(key)
+		return nil, notFound(req.Surface(), key)
 	}
 	pairs := []view.Pair{
 		{Key: "key", Value: key},
@@ -160,7 +160,8 @@ func runShow(_ context.Context, req plugin.Request) (view.View, error) {
 		pairs = append(pairs, view.Pair{Key: "source", Value: o})
 	}
 	if n := len(e.Previous); n > 0 {
-		pairs = append(pairs, view.Pair{Key: "history", Value: format.CountOf(n, "earlier value") + " — rta kv history " + key})
+		pairs = append(pairs, view.Pair{Key: "history",
+			Value: format.CountOf(n, "earlier value") + " — " + req.Surface().Call("kv.history", keyArg(key))})
 	}
 	// The same join kv.list makes, for one entry — and withheld over MCP for
 	// the same reason, argued at runList.
@@ -174,12 +175,18 @@ func runShow(_ context.Context, req plugin.Request) (view.View, error) {
 	pairs = append(pairs,
 		view.Pair{Key: "updated", Value: itemstore.Age(e.Updated)},
 		view.Pair{Key: "created", Value: itemstore.Age(e.Created)},
-		// Both ways out, with the one that shows nothing first: the page
-		// you are on exists because you did not want the value on screen,
-		// and offering only `kv get` from it was an odd thing to end on.
-		view.Pair{Key: "copy", Value: "rta kv copy " + key},
-		view.Pair{Key: "reveal", Value: "rta kv get " + key},
 	)
+	// Both ways out, with the one that shows nothing first: the page you are
+	// on exists because you did not want the value on screen, and offering
+	// only kv.get from it was an odd thing to end on. Each is the call as
+	// the surface asking makes it — and an agent is offered no copy, since
+	// kv.copy is HumanOnly and no tool it has: a row naming it sent the agent
+	// to `rta kv copy`, a command line it cannot run for a clipboard that is
+	// not its own.
+	if sf := req.Surface(); sf != plugin.SurfaceMCP {
+		pairs = append(pairs, view.Pair{Key: "copy", Value: sf.Call("kv.copy", keyArg(key))})
+	}
+	pairs = append(pairs, view.Pair{Key: "reveal", Value: req.Surface().Call("kv.get", keyArg(key))})
 	return view.KeyValue{Pairs: pairs}, nil
 }
 
@@ -191,7 +198,7 @@ func runGet(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 	e, ok := s.Entries[key]
 	if !ok {
-		return nil, notFound(key)
+		return nil, notFound(req.Surface(), key)
 	}
 	out := req.String("out")
 	if out == "" {
@@ -290,7 +297,7 @@ func runEnv(_ context.Context, req plugin.Request) (view.View, error) {
 		// the export itself, so `rta kv env > .env` wrote it into the file
 		// and -o json handed it to a script as the environment.
 		if len(keys) == 0 {
-			return view.Text{Empty: emptyList(0, "", "")}, nil
+			return view.Text{Empty: emptyList(req.Surface(), 0, "", "")}, nil
 		}
 	}
 
@@ -299,7 +306,7 @@ func runEnv(_ context.Context, req plugin.Request) (view.View, error) {
 	for _, k := range keys {
 		e, ok := s.Entries[k]
 		if !ok {
-			return nil, notFound(k)
+			return nil, notFound(req.Surface(), k)
 		}
 		if syntax == "export" {
 			sb.WriteString("export ")
@@ -352,7 +359,7 @@ func checkKeyName(key string) *view.Error {
 	if strings.HasSuffix(key, "/") {
 		return view.Errorf("kv.set.foldername", "%q ends in a slash, so it names a folder rather than an entry", key).
 			WithHint("drop the trailing slash — a folder is not stored, it is what the names " +
-				"share, and `rta grant allow kv.get " + key + "` already covers everything under it")
+				"share, and a kv.get grant scoped to " + key + " already covers everything under it")
 	}
 	return nil
 }
@@ -437,9 +444,16 @@ func runSet(_ context.Context, req plugin.Request) (view.View, error) {
 	// nothing at all, and saying so beats storing an empty secret.
 	label := kind != "" || req.String("description") != ""
 	if !given && !label {
+		// file is Local: an agent's schema has no such argument, so an agent
+		// is offered the value alone.
+		sf := req.Surface()
+		from := sf.ArgumentName("value")
+		if sf != plugin.SurfaceMCP {
+			from += ", or " + sf.InputName("file") + " to read one from disk"
+		}
 		return nil, view.Errorf("kv.set.novalue", "no value given").
-			WithHint("pass a value, or --file to read one from disk — or --description/--kind " +
-				"to change what an existing entry is labelled without touching the secret")
+			WithHint("give " + from + " — or " + sf.InputName("description") + " or " + sf.InputName("kind") +
+				" to change what an existing entry is labelled without touching the secret")
 	}
 	if given && kind == "" {
 		kind = detectKind(string(value), filename)
@@ -463,9 +477,11 @@ func runSet(_ context.Context, req plugin.Request) (view.View, error) {
 	var e entry
 	if !given {
 		if !existed {
+			sf := req.Surface()
 			return nil, view.Errorf("kv.set.unknown", "%q is not in the store", key).
-				WithHint("pass a value to create it — --description and --kind change what an " +
-					"entry already holding a secret is labelled, and there is nothing to label yet")
+				WithHint("give " + sf.ArgumentName("value") + " to create it — " + sf.InputName("description") +
+					" and " + sf.InputName("kind") + " change what an entry already holding a secret is " +
+					"labelled, and there is nothing to label yet")
 		}
 		// The secret, where it came from, and both timestamps are untouched.
 		// Updated especially: `kv list`'s Updated column is how you see that a
@@ -512,7 +528,7 @@ func runSet(_ context.Context, req plugin.Request) (view.View, error) {
 		msg = fmt.Sprintf("set %q (%s, %s)", key, kind, format.Bytes(len(value)))
 	}
 	if specs := req.StringSlice("recipient"); len(specs) > 0 {
-		msg += "\nstore re-encrypted — `rta kv recipients` lists who can read it"
+		msg += "\nstore re-encrypted — " + req.Surface().CapabilityName("kv.recipients") + " lists who can read it"
 	}
 	return view.Text{Body: msg}, nil
 }
@@ -534,7 +550,7 @@ func runRename(_ context.Context, req plugin.Request) (view.View, error) {
 	to := strings.TrimSpace(req.String("new-name"))
 	if from == "" || to == "" {
 		return nil, view.Errorf("kv.rename.noname", "rename needs a key and a new name").
-			WithHint("rta kv rename <key> <new-name>")
+			WithHint("give " + req.Surface().ArgumentName("key") + " and " + req.Surface().ArgumentName("new-name"))
 	}
 	if from == to {
 		return nil, view.Errorf("kv.rename.samename", "%q is already its name", from)
@@ -557,7 +573,7 @@ func runRename(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 	e, ok := s.Entries[from]
 	if !ok {
-		return nil, notFound(from)
+		return nil, notFound(req.Surface(), from)
 	}
 	// Refused, never confirmed. The overwrite would destroy the secret under
 	// the target name with no history and no undo, which is exactly what
@@ -565,7 +581,8 @@ func runRename(_ context.Context, req plugin.Request) (view.View, error) {
 	// says nothing at all about the one being clobbered.
 	if _, taken := s.Entries[to]; taken {
 		return nil, view.Errorf("kv.rename.taken", "%q already exists", to).
-			WithHint("renaming onto it would destroy the secret it holds — remove that first: rta kv rm " + to)
+			WithHint("renaming onto it would destroy the secret it holds — remove that first: `" +
+				req.Surface().Call("kv.rm", keyArg(to)) + "`")
 	}
 	if req.DryRun {
 		return view.Text{Body: fmt.Sprintf("would rename %q to %q (%s, %s)",
@@ -610,13 +627,14 @@ func runRemove(_ context.Context, req plugin.Request) (view.View, error) {
 			return view.Text{Body: fmt.Sprintf("purged %q — it was removed %s, and is gone now", key,
 				itemstore.Age(r.RemovedAt))}, nil
 		}
-		return nil, notFound(key)
+		return nil, notFound(req.Surface(), key)
 	}
 	if req.DryRun {
 		if purge {
 			return view.Text{Body: fmt.Sprintf("would purge %q (%s) — no restore", key, e.Kind)}, nil
 		}
-		return view.Text{Body: fmt.Sprintf("would remove %q (%s) — restorable with `rta kv restore %s`", key, e.Kind, key)}, nil
+		return view.Text{Body: fmt.Sprintf("would remove %q (%s) — restorable with `%s`", key, e.Kind,
+			req.Surface().Call("kv.restore", keyArg(key)))}, nil
 	}
 	delete(s.Entries, key)
 	if purge {
@@ -635,45 +653,50 @@ func runRemove(_ context.Context, req plugin.Request) (view.View, error) {
 	if purge {
 		return view.Text{Body: fmt.Sprintf("purged %q — the value and its history are gone", key)}, nil
 	}
-	return view.Text{Body: fmt.Sprintf("removed %q — `rta kv restore %s` brings it back; `rta kv rm --purge %s` would not have",
-		key, key, key)}, nil
+	sf := req.Surface()
+	return view.Text{Body: fmt.Sprintf("removed %q — `%s` brings it back; `%s` would not have", key,
+		sf.Call("kv.restore", keyArg(key)), sf.Call("kv.rm", keyArg(key), plugin.Arg{Name: "purge", Value: true}))}, nil
 }
 
 // runInit chooses how the store is locked, once.
 //
 // It refuses to touch a store that already exists. Re-keying an existing
 // store is a different operation — it has to decrypt everything first, which
-// means proving you can — and `kv rekey` is that operation. Silently
+// means proving you can — and kv.rekey is that operation. Silently
 // re-initialising would produce a recipients file describing a store none of
 // those recipients can open.
 func runInit(_ context.Context, req plugin.Request) (view.View, error) {
+	sf := req.Surface()
 	if fileExists(storePath()) {
 		return nil, view.Errorf("kv.init.exists", "a store already exists at %s", storePath()).
-			WithHint("to change the lock on it: rta kv rekey --generate (add a key) or --generate --only (switch to it)")
+			WithHint("to change the lock on it: " + sf.CapabilityWith("kv.rekey", "generate") +
+				" adds a key, and with " + sf.InputName("only") + " as well switches the lock to it")
 	}
 	if specs, verr := loadRecipients(); verr == nil && len(specs) > 0 {
 		return nil, view.Errorf("kv.init.exists", "this store is already set up for keys").
-			WithHint("`rta kv recipients` lists them; delete " + recipientsPath() + " to start over")
+			WithHint(sf.CapabilityName("kv.recipients") + " lists them; delete " + recipientsPath() + " to start over")
 	}
 
 	generate := req.Bool("generate")
 	identity := strings.TrimSpace(req.String("identity"))
 	if !generate && identity == "" && os.Getenv(identityEnv) == "" {
 		return nil, view.Errorf("kv.init.nokey", "name a key, or generate one").
-			WithHint("rta kv init --generate   (or --identity ~/.ssh/id_ed25519)")
+			WithHint(sf.InputName("generate") + " makes a key for this store, or " + identityName(sf) +
+				" names one already held, e.g. ~/.ssh/id_ed25519")
 	}
 
 	var generated string
 	if generate {
 		if identity != "" {
-			return nil, view.Errorf("kv.init.bothkeys", "--generate makes a key; --identity names one").
+			return nil, view.Errorf("kv.init.bothkeys", "%s makes a key; %s names one",
+				sf.InputName("generate"), identityName(sf)).
 				WithHint("pick one")
 		}
 		generated = defaultIdentity()
 		if req.DryRun {
 			return view.Text{Body: "would generate a key at " + generated + " and lock the store to it"}, nil
 		}
-		if _, verr := generateIdentity(generated); verr != nil {
+		if _, verr := generateIdentity(sf, generated); verr != nil {
 			return nil, verr
 		}
 	}
@@ -686,40 +709,48 @@ func runInit(_ context.Context, req plugin.Request) (view.View, error) {
 	if verr := save(req, store{Entries: map[string]entry{}}); verr != nil {
 		return nil, verr
 	}
-	body := "the store is locked to keys — `rta kv recipients` lists them\n"
+	body := "the store is locked to keys — " + sf.CapabilityName("kv.recipients") + " lists them\n"
 	switch {
 	case generated != "":
 		body += "\ngenerated a key at " + generated + " (mode 0600)\n" +
 			"back it up: losing it loses every secret in the store, and nobody can help you\n" +
-			"it is found automatically, so `rta kv set`/`get` need no flags"
+			"it is found automatically, so " + sf.CapabilityName("kv.set") + " and " +
+			sf.CapabilityName("kv.get") + " need no key named"
 	default:
-		body += "\nusing " + identityPath(req) + "\n" +
-			"set " + identityEnv + " to that path to skip --identity from now on"
+		body += "\nusing " + identityPath(req)
+		if sf != plugin.SurfaceMCP {
+			body += "\nset " + identityEnv + " to that path to skip " + sf.InputName("identity") + " from now on"
+		}
 	}
 	return view.Text{Body: body}, nil
 }
 
 // runRekey changes the lock on a store that already exists.
 //
-// It is the operation `kv init` cannot be: init decides the lock when there is
+// It is the operation kv.init cannot be: init decides the lock when there is
 // nothing to lose, and this one re-encrypts secrets that are already there.
 // The two irreversible halves — reading it, and keeping a key you hold — are
 // checked before anything is written, in that order.
 func runRekey(_ context.Context, req plugin.Request) (view.View, error) {
+	sf := req.Surface()
 	if !fileExists(storePath()) {
 		return nil, view.Errorf("kv.rekey.nostore", "no store yet — nothing to re-key").
-			WithHint("`rta kv init --generate` sets one up")
+			WithHint(sf.CapabilityWith("kv.init", "generate") + " sets one up")
 	}
 	generate := req.Bool("generate")
 	adding := req.StringSlice("recipient")
 	only := req.Bool("only")
 	if !generate && len(adding) == 0 {
+		// The private key file, not its .pub: naming a public key alone
+		// proves nothing about holding it, and the lockout guard below needs
+		// proof. recipient is Local, so over MCP a key already held is the
+		// operator's to add.
+		held := "or " + sf.InputName("recipient") + " one you already have, e.g. ~/.ssh/id_ed25519"
+		if sf == plugin.SurfaceMCP {
+			held = "and one already held is the operator's to add, from their terminal"
+		}
 		return nil, view.Errorf("kv.rekey.nokey", "name a key, or generate one").
-			WithHint("rta kv rekey --generate (a key made for this store), " +
-				// The private key file, not its .pub: naming a public key
-				// alone proves nothing about holding it, and the lockout
-				// guard below needs proof.
-				"or --recipient ~/.ssh/id_ed25519 (one you already have)")
+			WithHint(sf.InputName("generate") + " adds a key made for this store, " + held)
 	}
 
 	unlock, verr := lockStore()
@@ -760,9 +791,9 @@ func runRekey(_ context.Context, req plugin.Request) (view.View, error) {
 		return nil, view.Errorf("kv.recipients.mismatch",
 			"kv.recipients does not match who the store is actually encrypted to, "+
 				"so it cannot be the set this re-key builds on").
-			WithHint("something other than `kv rekey` edited it — compare `rta kv recipients` " +
-				"against what you expect, then name the set you want outright: " +
-				"`rta kv rekey --only --recipient <each key that should read it>`")
+			WithHint("something other than kv.rekey edited it — compare " + sf.CapabilityName("kv.recipients") +
+				" against what you expect, then name the set you want outright — " +
+				rekeyOnly(sf, "each key that should read it"))
 	}
 	var want []string
 	if !only {
@@ -773,7 +804,7 @@ func runRekey(_ context.Context, req plugin.Request) (view.View, error) {
 		_, canonical, err := parseRecipient(spec)
 		if err != nil {
 			return nil, view.Errorf("kv.recipient.invalid", "%v", err).
-				WithHint("--recipient takes an age recipient, an SSH public key, or a path to either — " +
+				WithHint(sf.InputName("recipient") + " takes an age recipient, an SSH public key, or a path to either — " +
 					"including the private key itself, whose public half is all that is read")
 		}
 		want = mergeSpec(want, canonical)
@@ -794,7 +825,8 @@ func runRekey(_ context.Context, req plugin.Request) (view.View, error) {
 	// set was named entirely from keys nothing here can open.
 	if !generate && !canRead(want, held) {
 		return nil, view.Errorf("kv.rekey.lockout", "nothing you hold could open the store afterwards").
-			WithHint("add --generate, or name the private half of a key you have: --identity ~/.ssh/id_ed25519")
+			WithHint("give " + sf.InputName("generate") + ", or name the private half of a key you have in " +
+				identityName(sf) + ", e.g. ~/.ssh/id_ed25519")
 	}
 	if req.DryRun {
 		return view.Text{Body: rekeyPreview(generate, only, want, stored)}, nil
@@ -803,7 +835,7 @@ func runRekey(_ context.Context, req plugin.Request) (view.View, error) {
 	var generated string
 	if generate {
 		generated = defaultIdentity()
-		spec, verr := generateIdentity(generated)
+		spec, verr := generateIdentity(sf, generated)
 		if verr != nil {
 			return nil, verr
 		}
@@ -818,14 +850,14 @@ func runRekey(_ context.Context, req plugin.Request) (view.View, error) {
 	// encrypted to — set the embedded record to match what is actually
 	// being committed here, the same as an ordinary write does for itself.
 	s.Recipients = want
-	if verr := saveTo(s, recipients, want); verr != nil {
+	if verr := saveTo(sf, s, recipients, want); verr != nil {
 		return nil, verr
 	}
 	// What opens the store just changed; a session remembering the old
 	// answer would fail on its next use, and that is not a wrong-passphrase
 	// message an operator should have to decode after a rekey they asked for.
 	forgetSession()
-	return view.Text{Body: rekeySummary(generated, want, stored)}, nil
+	return view.Text{Body: rekeySummary(sf, generated, want, stored)}, nil
 }
 
 // dropped returns the recipients in stored that the new set leaves out.
@@ -854,12 +886,12 @@ func rekeyPreview(generate, only bool, want, stored []string) string {
 	return body
 }
 
-func rekeySummary(generated string, want, stored []string) string {
-	body := format.CountOf(len(want), "key") + " can open the store — `rta kv recipients` lists them"
+func rekeySummary(sf plugin.Surface, generated string, want, stored []string) string {
+	body := format.CountOf(len(want), "key") + " can open the store — " + sf.CapabilityName("kv.recipients") + " lists them"
 	if generated != "" {
 		body += "\n\ngenerated a key at " + generated + " (mode 0600)\n" +
 			"back it up: losing it loses every secret it is the only key to\n" +
-			"it is found automatically, so nothing needs a flag"
+			"it is found automatically, so nothing needs to name it"
 	}
 	if gone := dropped(want, stored); len(gone) > 0 {
 		body += "\n\ndropped " + format.CountOf(len(gone), "reader") + ": they cannot open the store from now on.\n" +
@@ -887,7 +919,7 @@ func runStatus(ctx context.Context, req plugin.Request) (view.View, error) {
 	case os.IsNotExist(err):
 		return view.KeyValue{Pairs: append(pairs, view.Pair{
 			Key:   "state",
-			Value: "no store yet — created by the first `rta kv set <key> <value>`",
+			Value: "no store yet — " + req.Surface().CapabilityName("kv.set") + " creates it the first time it runs",
 		})}, nil
 	case err != nil:
 		return nil, view.Errorf("kv.store.unreadable", "reading %s: %v", path, err)
@@ -903,7 +935,7 @@ func runStatus(ctx context.Context, req plugin.Request) (view.View, error) {
 	}
 	if mode == modeKeys {
 		pairs = append(pairs, view.Pair{Key: "locked to",
-			Value: format.CountOf(len(specs), "key") + " — see `rta kv recipients`"})
+			Value: format.CountOf(len(specs), "key") + " — see " + req.Surface().CapabilityName("kv.recipients")})
 	} else {
 		pairs = append(pairs, view.Pair{Key: "locked with", Value: "a passphrase"})
 	}
@@ -943,7 +975,8 @@ func detailedStatus(ctx context.Context, req plugin.Request, summary view.KeyVal
 	if err != nil {
 		ve := view.AsError(err, "kv.status.locked")
 		p.PutAs("keys", "keys", view.Text{Body: "Locked — the inventory needs the store open, and nothing here " +
-			"can open it without asking.\n\n" + ve.Message + "\n\nRun `rta kv list` once a key is at hand."})
+			"can open it without asking.\n\n" + ve.Message + "\n\n" + req.Surface().CapabilityName("kv.list") +
+			" answers once a key is at hand."})
 		return p.View()
 	}
 	p.PutAs("keys", "keys", v)
@@ -956,8 +989,10 @@ func unlockAvailability(req plugin.Request, mode keyMode) string {
 	if mode == modeKeys {
 		p := identityPath(req)
 		switch {
+		case p == "" && req.Surface() == plugin.SurfaceMCP:
+			return "no identity given (the operator sets " + identityEnv + ")"
 		case p == "":
-			return "no identity given (--identity, or set " + identityEnv + ")"
+			return "no identity given (" + req.Surface().InputName("identity") + ", or set " + identityEnv + ")"
 		case !identityReadable(p):
 			// Before lockedKey, because lockedKey answers false for a file it
 			// could not open and this line is the one that turns that into a
@@ -984,7 +1019,7 @@ func unlockAvailability(req plugin.Request, mode keyMode) string {
 	return "no passphrase available (set " + passphraseEnv + ")"
 }
 
-func runRecipients(_ context.Context, _ plugin.Request) (view.View, error) {
+func runRecipients(_ context.Context, req plugin.Request) (view.View, error) {
 	// No key can read a store that does not exist or is locked with a
 	// passphrase, so both answer with the recipients table and no rows, and
 	// what a person is told in its place beside it (view.Table.Empty). Each
@@ -1001,13 +1036,24 @@ func runRecipients(_ context.Context, _ plugin.Request) (view.View, error) {
 	//
 	// `kv status` and `kv rekey` both already knew this state by name; the
 	// phrase is theirs. Every command offered here is one that works from
-	// here, which is what the two it replaces were not.
+	// here, which is what the two it replaces were not — each spelled as the
+	// surface asking makes the call.
+	// A key somebody already holds is named by identity or recipient, both
+	// Local: over MCP they are the operator's to give, so the agent reads
+	// whose key it is and the command that person runs (operatorsCall).
+	sf := req.Surface()
+	const ownKey = "~/.ssh/id_ed25519"
+	held, whose := "a key you already hold", "a key of your own"
+	if sf == plugin.SurfaceMCP {
+		held, whose = "a key the operator already holds", "a key the operator holds"
+	}
 	if !fileExists(storePath()) {
 		t.Empty = "No store yet — nothing to read, and nothing locking it.\n\n" +
-			"What it is locked with is decided when it is created:\n" +
-			"  rta kv init --generate                     a key made for this store\n" +
-			"  rta kv init --identity ~/.ssh/id_ed25519   a key you already hold\n" +
-			"  rta kv set <key> <value>                   a passphrase, if you never run init"
+			"What it is locked with is decided when it is created:\n" + callList(
+			[2]string{sf.Call("kv.init", plugin.Arg{Name: "generate", Value: true}), "a key made for this store"},
+			[2]string{operatorsCall(sf, "kv.init", plugin.Arg{Name: "identity", Value: ownKey}), held},
+			[2]string{sf.Call("kv.set", keyArg("<key>"), plugin.Arg{Name: "value", Value: "<value>", Positional: true}),
+				"a passphrase, if you never run init"})
 		return t, nil
 	}
 	specs, verr := loadRecipients()
@@ -1019,10 +1065,11 @@ func runRecipients(_ context.Context, _ plugin.Request) (view.View, error) {
 			// The private key path, not its .pub: --recipient reads either,
 			// but only the private file also proves you hold it — which is
 			// what the switch below needs, and a public key alone cannot show.
-			"To switch to a key of your own:\n" +
-			"  rta kv rekey --only --recipient ~/.ssh/id_ed25519\n" +
+			"To switch to " + whose + ":\n" +
+			"  " + operatorsCall(sf, "kv.rekey", plugin.Arg{Name: "only", Value: true},
+			plugin.Arg{Name: "recipient", Value: ownKey}) + "\n" +
 			"or to one made for the job, which needs no passphrase at all:\n" +
-			"  rta kv rekey --only --generate"
+			"  " + sf.Call("kv.rekey", plugin.Arg{Name: "only", Value: true}, plugin.Arg{Name: "generate", Value: true})
 		return t, nil
 	}
 	for _, spec := range specs {
@@ -1085,13 +1132,28 @@ func suggestKeys(_ context.Context, req plugin.Request) []string {
 	return keys
 }
 
+// callList lays calls out one per line, each with what it is for aligned
+// beside it.
+func callList(calls ...[2]string) string {
+	width := 0
+	for _, c := range calls {
+		width = max(width, len(c[0]))
+	}
+	lines := make([]string, len(calls))
+	for i, c := range calls {
+		lines[i] = fmt.Sprintf("  %-*s   %s", width, c[0], c[1])
+	}
+	return strings.Join(lines, "\n")
+}
+
 // emptyList says why the list is empty, which is a different sentence for an
 // empty store and for a filter that matched nothing. Answering both with
 // "no keys stored yet" sent people off to re-add a secret that was there all
-// along, one `--kind json` away.
-func emptyList(stored int, kind, match string) string {
+// along, one kind of json away. sf is the surface asking, for the names it
+// gives the capabilities that answer next.
+func emptyList(sf plugin.Surface, stored int, kind, match string) string {
 	if stored == 0 {
-		return "No keys stored yet — add one with: rta kv set <key> <value>"
+		return "No keys stored yet — " + sf.CapabilityName("kv.set") + " adds one"
 	}
 	var narrowed []string
 	if kind != "" {
@@ -1100,6 +1162,6 @@ func emptyList(stored int, kind, match string) string {
 	if match != "" {
 		narrowed = append(narrowed, fmt.Sprintf("matching %q", match))
 	}
-	return fmt.Sprintf("No key %s. The store holds %s — `rta kv list` shows every one.",
-		strings.Join(narrowed, " "), format.CountOf(stored, "key"))
+	return fmt.Sprintf("No key %s. The store holds %s — %s shows every one.",
+		strings.Join(narrowed, " "), format.CountOf(stored, "key"), sf.CapabilityName("kv.list"))
 }

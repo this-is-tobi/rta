@@ -16,7 +16,11 @@ import (
 // action (internal/render/tui), which needs the same "byte for byte,
 // whatever the value contains" property for a value that has nowhere to be
 // re-fetched from if a first attempt mangled it.
-func copyToClipboard(value []byte) *view.Error {
+//
+// sf is the surface asking, for the call its refusal offers instead.
+func copyToClipboard(sf plugin.Surface, value []byte) *view.Error {
+	another := "take the value another way: `" + sf.Call("kv.get", keyArg("<key>"),
+		plugin.Arg{Name: "out", Value: "<file>"}) + "`"
 	ok, failed, tried := clipboard.Copy(value)
 	if ok {
 		return nil
@@ -24,12 +28,10 @@ func copyToClipboard(value []byte) *view.Error {
 	if len(failed) > 0 {
 		return view.Errorf("kv.clipboard.failed",
 			"no clipboard program would take the value: %s", strings.Join(failed, ", ")).
-			WithHint("over SSH there is usually no clipboard to write to — take the value " +
-				"another way: rta kv get <key> --out <file>")
+			WithHint("over SSH there is usually no clipboard to write to — " + another)
 	}
 	return view.Errorf("kv.clipboard.missing", "no clipboard program on this machine").
-		WithHint("install one of: " + strings.Join(tried, ", ") +
-			" — or take the value another way: rta kv get <key> --out <file>")
+		WithHint("install one of: " + strings.Join(tried, ", ") + " — or " + another)
 }
 
 // runCopy puts one value on the clipboard and says nothing about what it is.
@@ -48,7 +50,7 @@ func runCopy(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 	e, ok := s.Entries[key]
 	if !ok {
-		return nil, notFound(key)
+		return nil, notFound(req.Surface(), key)
 	}
 	size := format.Bytes(len(e.Value))
 	if req.DryRun {
@@ -58,7 +60,7 @@ func runCopy(_ context.Context, req plugin.Request) (view.View, error) {
 	// because its file format is "password, then notes"; a value here is the
 	// whole secret, and a private key truncated at its first newline is not
 	// a smaller secret but a broken one.
-	if verr := copyToClipboard(e.Value); verr != nil {
+	if verr := copyToClipboard(req.Surface(), e.Value); verr != nil {
 		return nil, verr
 	}
 	return view.Text{Body: fmt.Sprintf(

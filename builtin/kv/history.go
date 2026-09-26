@@ -89,7 +89,7 @@ func runHistory(_ context.Context, req plugin.Request) (view.View, error) {
 	if !live {
 		r, removed := s.Removed[key]
 		if !removed {
-			return nil, notFound(key)
+			return nil, notFound(req.Surface(), key)
 		}
 		e, head = r.entry, "removed "+itemstore.Age(r.RemovedAt)
 	}
@@ -148,19 +148,22 @@ func runRestore(_ context.Context, req plugin.Request) (view.View, error) {
 	key := req.String("key")
 	n := req.Int("revision")
 	now := time.Now()
+	sf := req.Surface()
 
 	if n == 0 {
 		r, removed := s.Removed[key]
 		if !removed {
 			if _, live := s.Entries[key]; live {
 				return nil, view.Errorf("kv.restore.live", "%q is in the store, not removed", key).
-					WithHint("`rta kv history " + key + "` lists its earlier values; --revision brings one back")
+					WithHint("`" + sf.Call("kv.history", keyArg(key)) + "` lists its earlier values; " +
+						sf.InputName("revision") + " brings one back")
 			}
-			return nil, notFound(key)
+			return nil, notFound(req.Surface(), key)
 		}
 		if _, live := s.Entries[key]; live {
 			return nil, view.Errorf("kv.restore.taken", "%q was removed and then set again", key).
-				WithHint("`rta kv rename " + key + " <other>` frees the name, or `rta kv rm --purge " + key +
+				WithHint("`" + sf.Call("kv.rename", keyArg(key), plugin.Arg{Name: "new-name", Value: "<other>", Positional: true}) +
+					"` frees the name, or `" + sf.Call("kv.rm", keyArg(key), plugin.Arg{Name: "purge", Value: true}) +
 					"` drops the removed one")
 		}
 		if req.DryRun {
@@ -179,14 +182,14 @@ func runRestore(_ context.Context, req plugin.Request) (view.View, error) {
 	if !live {
 		if _, removed := s.Removed[key]; removed {
 			return nil, view.Errorf("kv.restore.removed", "%q is removed", key).
-				WithHint("`rta kv restore " + key + "` with no --revision brings it back first")
+				WithHint("`" + sf.Call("kv.restore", keyArg(key)) + "`, with no revision, brings it back first")
 		}
-		return nil, notFound(key)
+		return nil, notFound(req.Surface(), key)
 	}
 	if n < 0 || n > len(e.Previous) {
 		return nil, view.Errorf("kv.restore.norevision", "%q has %s, not a revision %d", key,
 			format.CountOf(len(e.Previous), "earlier value"), n).
-			WithHint("`rta kv history " + key + "` numbers them")
+			WithHint("`" + sf.Call("kv.history", keyArg(key)) + "` numbers them")
 	}
 	r := e.Previous[n-1]
 	if req.DryRun {
@@ -205,8 +208,9 @@ func runRestore(_ context.Context, req plugin.Request) (view.View, error) {
 		n, key, r.Kind)}, nil
 }
 
-// removedTable lists what `kv rm` set aside, for `kv list --removed`.
-func removedTable(s store) view.View {
+// removedTable lists what kv.rm set aside, for kv.list given removed. sf is
+// the surface asking, for the names its empty sentence gives.
+func removedTable(sf plugin.Surface, s store) view.View {
 	names := make([]string, 0, len(s.Removed))
 	for k := range s.Removed {
 		names = append(names, k)
@@ -218,7 +222,8 @@ func removedTable(s store) view.View {
 		{Name: "Size", Kind: view.KindBytes},
 		{Name: "Description"},
 		{Name: "Removed", Kind: view.KindDuration},
-	}, Empty: "Nothing removed — `rta kv rm` keeps what it removes here until `rta kv restore` or `--purge`."}
+	}, Empty: "Nothing removed — " + sf.CapabilityName("kv.rm") + " keeps what it removes here until " +
+		sf.CapabilityName("kv.restore") + " brings it back or " + sf.InputName("purge") + " drops it."}
 	for _, k := range names {
 		r := s.Removed[k]
 		t.Rows = append(t.Rows, []string{k, r.Kind, format.Bytes(len(r.Value)), r.Description,
