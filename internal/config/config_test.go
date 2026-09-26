@@ -74,6 +74,24 @@ func TestEnvOverridesFile(t *testing.T) {
 	}
 }
 
+// The environment is a layer of its own, so a file that does not parse is
+// reported without taking the layer above it down too: the error comes back,
+// and so does RTA_OUTPUT, for the caller that carries on without the file.
+func TestEnvOverridesAFileThatDoesNotParse(t *testing.T) {
+	p := setPath(t)
+	if err := os.WriteFile(p, []byte("profiles: [unclosed"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("RTA_OUTPUT", "json")
+	got, err := Load()
+	if err == nil {
+		t.Fatal("a file that does not parse loaded")
+	}
+	if got.Output != "json" {
+		t.Errorf("RTA_OUTPUT lost to the file's error: %q", got.Output)
+	}
+}
+
 func TestInvalidYAMLIsCodedWithHint(t *testing.T) {
 	p := setPath(t)
 	if err := os.WriteFile(p, []byte("output: [unclosed"), 0o644); err != nil {

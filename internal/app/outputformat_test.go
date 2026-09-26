@@ -194,6 +194,40 @@ func TestDoctorRunsAndReportsABrokenOutputDefault(t *testing.T) {
 	}
 }
 
+// RTA_OUTPUT is not the config file, and holds when the file does not parse.
+// Load returned before reading the variable, so `RTA_OUTPUT=json` answered a
+// script in pretty prose whenever the file had a typo in it, and a variable
+// naming no format was neither refused nor reported by doctor.
+func TestRTAOutputHoldsOverAConfigFileThatDoesNotParse(t *testing.T) {
+	broken := "profiles: [unclosed\n"
+	t.Setenv("RTA_OUTPUT", "json")
+	out, errOut, err := runWith(t, testRegistry(t), broken, "demo", "item", "list")
+	if err != nil || !json.Valid([]byte(out)) {
+		t.Errorf("RTA_OUTPUT=json over a broken file wrote %q: %v %q", out, err, errOut)
+	}
+	t.Setenv("RTA_OUTPUT", "bogus")
+	_, _, err = runWith(t, testRegistry(t), broken, "demo", "item", "list")
+	var ve *view.Error
+	if !errors.As(err, &ve) || ve.Code != CodeOutputInvalid || !strings.Contains(ve.Message, "RTA_OUTPUT") {
+		t.Errorf("err = %#v, want %s naming RTA_OUTPUT", err, CodeOutputInvalid)
+	}
+	out, errOut, err = runWith(t, testRegistry(t), broken, "doctor", "-o", "json")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	var report struct{ Rows [][]string }
+	if err := json.Unmarshal([]byte(out), &report); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, r := range report.Rows {
+		found = found || (len(r) == 3 && r[0] == "output" && r[1] == "error" && strings.Contains(r[2], "RTA_OUTPUT"))
+	}
+	if !found {
+		t.Errorf("doctor has no failing output row over a broken file:\n%s", out)
+	}
+}
+
 // A good default is no row at all: the config row already says what it is.
 func TestDoctorSaysNothingAboutAWorkingOutputDefault(t *testing.T) {
 	t.Setenv("RTA_OUTPUT", "")

@@ -469,11 +469,12 @@ func doctorConfig(add func(check, status, detail string)) {
 // The default output format, when it names nothing rta renders. Every other
 // command that renders refuses to run on it (CodeOutputInvalid), so this row is
 // the one place it is reported rather than refused. Read the way NewRoot reads
-// it, through config.Load, and no row for a default that works: the config row
-// already says what that one is.
+// it, through config.Load and past the file's own error, which the config row
+// reports: RTA_OUTPUT holds over a file that does not parse, and is refused
+// over one. No row for a default that works: the config row says what it is.
 func doctorOutput(add func(check, status, detail string)) {
-	cfg, err := config.Load()
-	if err != nil || cfg.Output == "" {
+	cfg, _ := config.Load()
+	if cfg.Output == "" {
 		return
 	}
 	if _, perr := cli.ParseFormat(cfg.Output); perr == nil {
