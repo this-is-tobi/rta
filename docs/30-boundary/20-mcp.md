@@ -21,17 +21,28 @@ rta mcp install cursor
 ```
 
 ```
-Add this to ~/.cursor/mcp.json (or .cursor/mcp.json for one project):
-
-{
-  "mcpServers": {
-    "rta": {
-      "command": "/usr/local/bin/rta",
-      "args": ["mcp", "serve", "--as", "cursor"]
-    }
-  }
-}
+client  Cursor
+add to  ~/.cursor/mcp.json (or .cursor/mcp.json for one project)
+block   {
+          "mcpServers": {
+            "rta": {
+              "command": "/usr/local/bin/rta",
+              "args": [
+                "mcp",
+                "serve",
+                "--as",
+                "cursor"
+              ]
+            }
+          }
+        }
+as      cursor
+next    add the block to that file yourself — rta writes nothing there. The
+        `--as cursor` in it is what keeps this agent's grants its own: without a
+        name, every MCP client on this machine shares one set of permissions
 ```
+
+The answer is the same pairs in every format, so `-o json` hands a script provisioning a machine the block as one value to lift out whole. A client that registered itself answers with `registered`, `as` and the command line it `ran`; whatever that client printed of its own goes to stderr, beside the answer rather than inside it.
 
 ### rta does not write another tool's config file
 

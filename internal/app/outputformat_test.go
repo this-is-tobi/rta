@@ -115,7 +115,7 @@ func TestABrokenOutputDefaultLeavesTheViewlessCommandsAlone(t *testing.T) {
 		needs bool
 	}{
 		{[]string{"mcp", "serve"}, false},
-		{[]string{"mcp", "install"}, false},
+		{[]string{"mcp", "install"}, true},
 		{[]string{"doctor"}, false},
 		{[]string{"init"}, false},
 		{[]string{"config", "schema"}, false},
