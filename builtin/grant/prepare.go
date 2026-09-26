@@ -34,14 +34,16 @@ type buildNotes struct {
 
 // buildGrant validates one issuance request and constructs the grant
 // exactly as it would be stored — unsigned; signing is the caller's step,
-// because who signs is precisely what differs between the flows.
-func buildGrant(catalog func() []plugin.Capability, artifact func(string) (string, bool),
+// because who signs is precisely what differs between the flows. sf is the
+// surface asking, for the names a refusal gives inputs and calls.
+func buildGrant(sf plugin.Surface, catalog func() []plugin.Capability, artifact func(string) (string, bool),
 	spec operatorid.IssueSpec, from string) (core.Grant, buildNotes, *view.Error) {
 	var notes buildNotes
 	target := core.Normalize(spec.Target)
 	if target == "" {
 		return core.Grant{}, notes, view.Errorf("grant.notarget", "name what to allow").
-			WithHint("rta grant allow kv.get db-password --ttl 15m")
+			WithHint("for example `" + sf.Call("grant.allow", plugin.Arg{Name: "target", Value: "kv.get", Positional: true},
+				plugin.Arg{Name: "scope", Value: "db-password", Positional: true}, plugin.Arg{Name: "ttl", Value: "15m"}) + "`")
 	}
 	// A grant that authorizes nothing is worse than an error: `grant list`
 	// shows it looking exactly like a working one, so a typo — kv.gett for
@@ -51,7 +53,7 @@ func buildGrant(catalog func() []plugin.Capability, artifact func(string) (strin
 		return core.Grant{}, notes, view.Errorf("grant.unknowntarget", "%q does not name a registered capability or plugin", target).
 			WithHint("rta explain lists capability IDs, rta plugin list lists plugin names — check for a typo")
 	}
-	if verr := grantNeeded(catalog, target, spec.Profile); verr != nil {
+	if verr := grantNeeded(sf, catalog, target, spec.Profile); verr != nil {
 		return core.Grant{}, notes, verr
 	}
 	// The artifact behind the plugin this target names, recorded now so the
@@ -62,22 +64,22 @@ func buildGrant(catalog func() []plugin.Capability, artifact func(string) (strin
 	if !known {
 		return core.Grant{}, notes, view.Errorf("grant.unknownplugin",
 			"%q is registered but rta cannot say which binary answers for it", core.Namespace(target)).
-			WithHint("`rta doctor` reports a plugin whose provenance went missing; a grant must name an artifact")
+			WithHint(sf.CapabilityName("audit.doctor") + " reports a plugin whose provenance went missing; a grant must name an artifact")
 	}
 	profile, pin, verr := checkProfile(target, spec.Profile)
 	if verr != nil {
 		return core.Grant{}, notes, verr
 	}
-	ttl, asked, byPolicy, capWhere, verr := parseTTL(spec.TTL, target)
+	ttl, asked, byPolicy, capWhere, verr := parseTTL(sf, spec.TTL, target)
 	if verr != nil {
 		return core.Grant{}, notes, verr
 	}
 	notes = buildNotes{ttl: ttl, asked: asked, byPolicy: byPolicy, capWhere: capWhere}
 	if spec.MaxUses < 0 {
-		return core.Grant{}, notes, view.Errorf("grant.badmaxuses", "--max-uses cannot be negative").
+		return core.Grant{}, notes, view.Errorf("grant.badmaxuses", "%s cannot be negative", sf.InputName("max-uses")).
 			WithHint("0 means unlimited within the TTL, which is also the default")
 	}
-	rateMax, rateWindow, verr := parseRate(spec.Rate)
+	rateMax, rateWindow, verr := parseRate(sf, spec.Rate)
 	if verr != nil {
 		return core.Grant{}, notes, verr
 	}
@@ -95,7 +97,7 @@ func buildGrant(catalog func() []plugin.Capability, artifact func(string) (strin
 	if scope != "" && !scopable(catalog, target) {
 		return core.Grant{}, notes, view.Errorf("grant.scope.unscoped",
 			"%s has no scoped input — every capability it reaches takes no record, so a scope here would never match a call", target).
-			WithHint("omit --scope to grant the whole target")
+			WithHint("leave " + sf.ArgumentName("scope") + " out to grant the whole target")
 	}
 	// Named, never inferred here. `rta grant allow` resolves an omitted
 	// --agent from this machine's own known agents before it builds a spec
@@ -106,7 +108,7 @@ func buildGrant(catalog func() []plugin.Capability, artifact func(string) (strin
 	agent := strings.TrimSpace(spec.Agent)
 	if agent == "" {
 		return core.Grant{}, notes, view.Errorf("grant.noagent",
-			"name the agent this is for, with --agent").
+			"name the agent this is for, with %s", sf.InputName("agent")).
 			WithHint("the name is the one from `rta mcp serve --as`, which " +
 				"`rta mcp install <client>` sets to the client's name")
 	}
@@ -183,7 +185,9 @@ func stillCovering(live []core.Grant, spec operatorid.RevokeSpec) *core.Grant {
 // Known means connected right now, or holding a grant already. Those are
 // the two populations an operator could be thinking of, and a name from
 // either is one they have already used.
-func resolveAgent(asked string) (string, *view.Error) {
+//
+// sf is the surface asking, for the name its refusals give the agent input.
+func resolveAgent(sf plugin.Surface, asked string) (string, *view.Error) {
 	if agent := strings.TrimSpace(asked); agent != "" {
 		return agent, nil
 	}
@@ -192,13 +196,13 @@ func resolveAgent(asked string) (string, *view.Error) {
 	case 1:
 		return known[0], nil
 	case 0:
-		return "", view.Errorf("grant.noagent", "name the agent this is for, with --agent").
+		return "", view.Errorf("grant.noagent", "name the agent this is for, with %s", sf.InputName("agent")).
 			WithHint("no agent has connected or holds a grant yet — the name is the one from " +
 				"`rta mcp serve --as`, which `rta mcp install <client>` sets to the client's name")
 	default:
 		return "", view.Errorf("grant.whichagent",
-			"name the agent this is for, with --agent — this machine knows %s",
-			strings.Join(known, ", ")).
+			"name the agent this is for, with %s — this machine knows %s",
+			sf.InputName("agent"), strings.Join(known, ", ")).
 			WithHint("a grant matches one agent exactly, so issuing it to the wrong one " +
 				"is a grant that silently authorizes nothing")
 	}
@@ -241,7 +245,7 @@ func knownAgents() []string {
 //
 // A plugin name is asked the same question of everything in it: `grant allow
 // sys` on a plugin of reads is the same nothing, spelled wider.
-func grantNeeded(catalog func() []plugin.Capability, target, profile string) *view.Error {
+func grantNeeded(sf plugin.Surface, catalog func() []plugin.Capability, target, profile string) *view.Error {
 	var caps []plugin.Capability
 	for _, c := range catalog() {
 		if c.ID == target || core.Namespace(c.ID) == target {
@@ -258,7 +262,7 @@ func grantNeeded(catalog func() []plugin.Capability, target, profile string) *vi
 			return nil
 		}
 	}
-	hint := "rta grant list --detail shows what needs a grant, what needs none, and what is never a tool"
+	hint := sf.CapabilityWith("grant.list", "detail") + " shows what needs a grant, what needs none, and what is never a tool"
 	switch {
 	case human == len(caps) && len(caps) == 1:
 		return view.Errorf("grant.needless",
@@ -399,7 +403,10 @@ func inactiveProfileNote(g core.Grant) string {
 func PrepareRemote(catalog func() []plugin.Capability,
 	artifact func(string) (string, bool)) func(spec operatorid.IssueSpec, label string) (operatorid.Prepared, *view.Error) {
 	return func(spec operatorid.IssueSpec, label string) (operatorid.Prepared, *view.Error) {
-		g, notes, verr := buildGrant(catalog, artifact, spec, core.FromOperatorPrefix+label)
+		// No surface crosses the operator channel, so the draft's refusals
+		// are worded for the command line most operators issue from — the
+		// known limit pkg/plugin/naming.go records.
+		g, notes, verr := buildGrant(plugin.SurfaceUnknown, catalog, artifact, spec, core.FromOperatorPrefix+label)
 		if verr != nil {
 			return operatorid.Prepared{}, verr
 		}
@@ -506,8 +513,9 @@ func revokeOutcome(spec operatorid.RevokeSpec, write bool) (operatorid.RevokeOut
 
 // revokeBody words one outcome, for the local flow and the remote one
 // alike — the sentences an operator acts on must not depend on which
-// machine computed them.
-func revokeBody(target string, out operatorid.RevokeOutcome, dry bool) string {
+// machine computed them. sf is the surface asking, which is this machine's
+// either way, for the call a leftover grant is named with.
+func revokeBody(sf plugin.Surface, target string, out operatorid.RevokeOutcome, dry bool) string {
 	if out.NoneActive {
 		return "Nothing to revoke — no grant is active."
 	}
@@ -519,8 +527,8 @@ func revokeBody(target string, out operatorid.RevokeOutcome, dry bool) string {
 		if record == "" {
 			record = "any"
 		}
-		return line + fmt.Sprintf("\nstill covered by an active grant on %s (record: %s) — revoke that too: rta grant revoke %s",
-			out.Still.Target, record, out.Still.Target)
+		return line + fmt.Sprintf("\nstill covered by an active grant on %s (record: %s) — revoke that too: `%s`",
+			out.Still.Target, record, sf.Call("grant.revoke", plugin.Arg{Name: "target", Value: out.Still.Target, Positional: true}))
 	}
 	if out.Revoked == 0 {
 		msg := fmt.Sprintf("No active grant for %s.", target)

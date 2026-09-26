@@ -9,6 +9,7 @@ import (
 
 	core "github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/session"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -87,7 +88,7 @@ func TestTheRosterWarnsWhenAServerOnAnotherBuildWillDecide(t *testing.T) {
 		t.Fatal(verr)
 	}
 
-	quiet, verr := heldTable("", false)
+	quiet, verr := heldTable(plugin.SurfaceCLI, "", false)
 	if verr != nil {
 		t.Fatal(verr)
 	}
@@ -104,7 +105,7 @@ func TestTheRosterWarnsWhenAServerOnAnotherBuildWillDecide(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	loud, verr := heldTable("", false)
+	loud, verr := heldTable(plugin.SurfaceCLI, "", false)
 	if verr != nil {
 		t.Fatal(verr)
 	}
