@@ -31,11 +31,12 @@ func diffCapability() plugin.Capability {
 		Description: "Unified diff text, the structured-plugin equivalent of `git diff`. With no " +
 			"--commit, this is every uncommitted change — staged and unstaged together — against " +
 			"HEAD; git.status already answers which paths changed, this answers what changed in " +
-			"them. --commit diffs that one commit against its own parent instead, the equivalent " +
-			"of `git show <commit>`'s patch half. Diffing two arbitrary commits against each other " +
-			"is deliberately not offered in this first cut — the two cases above cover what an " +
-			"agent inspecting a repository's current state actually needs, and a revision-range " +
-			"comparison is a distinct enough question to design on its own rather than bolt on.",
+			"them. --commit diffs that one commit against its own parent instead, and the root " +
+			"commit against the empty tree, the equivalent of `git show <commit>`'s patch half. " +
+			"Diffing two arbitrary commits against each other is deliberately not offered in this " +
+			"first cut — the two cases above cover what an agent inspecting a repository's current " +
+			"state actually needs, and a revision-range comparison is a distinct enough question " +
+			"to design on its own rather than bolt on.",
 		Inputs: []plugin.Field{
 			pathField("repository path, or a subdirectory of one"),
 			{Name: "commit", Type: plugin.String, Suggest: suggestCommits,
@@ -52,12 +53,12 @@ func runDiff(ctx context.Context, req plugin.Request) (view.View, error) {
 	}
 
 	if commit := req.String("commit"); commit != "" {
-		return diffCommit(repo, commit)
+		return diffCommit(ctx, repo, commit)
 	}
 	return diffWorktree(repo)
 }
 
-func diffCommit(repo *git.Repository, spec string) (view.View, error) {
+func diffCommit(ctx context.Context, repo *git.Repository, spec string) (view.View, error) {
 	hash, err := repo.ResolveRevision(plumbing.Revision(spec))
 	if err != nil {
 		return nil, view.Errorf("git.diff.unresolved", "%s does not name a commit: %v", spec, err)
@@ -66,15 +67,35 @@ func diffCommit(repo *git.Repository, spec string) (view.View, error) {
 	if err != nil {
 		return nil, view.Errorf("git.diff.unresolved", "%s does not name a commit: %v", spec, err)
 	}
-	parent, err := commit.Parent(0)
+	toTree, err := commit.Tree()
 	if err != nil {
-		if errors.Is(err, object.ErrParentNotFound) {
-			return view.Text{Body: shortHash(commit.Hash) +
-				" is the root commit — it has no parent to diff against."}, nil
+		return nil, view.Errorf("git.diff.failed", "reading %s's tree: %v", spec, err)
+	}
+	// The root commit is diffed against the empty tree — a nil one, which
+	// DiffTree reads as having nothing in it — so every file it holds is
+	// shown added, as `git show` does. It answered a sentence saying it had
+	// no parent, which every format carried where the patch goes: `rta git
+	// diff --commit <root> > root.patch` wrote prose into the patch.
+	var fromTree *object.Tree
+	parent, err := commit.Parent(0)
+	switch {
+	case err == nil:
+		if fromTree, err = parent.Tree(); err != nil {
+			return nil, view.Errorf("git.diff.failed", "reading %s's parent's tree: %v", spec, err)
 		}
+	case !errors.Is(err, object.ErrParentNotFound):
 		return nil, view.Errorf("git.diff.failed", "finding %s's parent: %v", spec, err)
 	}
-	patch, err := parent.Patch(commit)
+	// The options Commit.Patch uses, rename detection included, so a commit
+	// with a parent is diffed exactly as it was before the root one was. The
+	// request's context, though, where Commit.Patch uses a background one: a
+	// root commit is often a whole codebase imported at once, and a caller
+	// that has stopped waiting for it should not leave the diff running.
+	changes, err := object.DiffTreeWithOptions(ctx, fromTree, toTree, object.DefaultDiffTreeOptions)
+	if err != nil {
+		return nil, view.Errorf("git.diff.failed", "diffing %s: %v", spec, err)
+	}
+	patch, err := changes.PatchContext(ctx)
 	if err != nil {
 		return nil, view.Errorf("git.diff.failed", "diffing %s: %v", spec, err)
 	}
@@ -88,17 +109,23 @@ func diffCommit(repo *git.Repository, spec string) (view.View, error) {
 	// --commit diff. `git show` prints `sub | 2 +-` for the same commit.
 	//
 	// The pointers are read off the trees instead, which is where they are.
-	if bumps := submoduleBumps(parent, commit); len(bumps) > 0 {
+	if bumps := submoduleBumps(fromTree, toTree); len(bumps) > 0 {
 		if body != "" {
 			body += "\n"
 		}
 		body += strings.Join(bumps, "\n") + "\n"
 	}
-	if body == "" {
-		return view.Text{Body: shortHash(commit.Hash) + " changed nothing this can show — " +
-			"an empty commit, or a change only in a mode or a tree go-git renders no patch for"}, nil
-	}
-	return view.Text{Body: body}, nil
+	// An empty patch is the answer, and the sentence is what a person is
+	// told in its place (view.Text.Empty), for the reason a clean working
+	// tree's is: as the body, `rta git diff --commit <empty> > x.patch` wrote
+	// it into the patch, and -o json handed it to a script as the diff.
+	//
+	// It named a change only in a mode as one of the reasons, and go-git
+	// renders that — `old mode`, `new mode` — as `git show` does. What is left
+	// is a commit whose tree is its first parent's: an empty one, or a merge
+	// that kept that parent's side.
+	return view.Text{Body: body, Empty: shortHash(commit.Hash) + " changed nothing this can show — " +
+		"an empty commit, or a merge that kept its first parent's tree"}, nil
 }
 
 // submoduleBumps names the submodules a commit moved, and where it moved
@@ -106,16 +133,8 @@ func diffCommit(repo *git.Repository, spec string) (view.View, error) {
 //
 // One line per submodule in the shape the rest of a diff reads in, rather
 // than a second view: the caller asked for a diff, and this is the part of
-// it the encoder dropped.
-func submoduleBumps(from, to *object.Commit) []string {
-	fromTree, err := from.Tree()
-	if err != nil {
-		return nil
-	}
-	toTree, err := to.Tree()
-	if err != nil {
-		return nil
-	}
+// it the encoder dropped. A nil from is the empty tree, a root commit's.
+func submoduleBumps(fromTree, toTree *object.Tree) []string {
 	changes, err := object.DiffTree(fromTree, toTree)
 	if err != nil {
 		return nil

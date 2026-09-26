@@ -218,7 +218,7 @@ func TestDiffShowsASubmodulePointerBump(t *testing.T) {
 		t.Skip("go-git now renders a patch for a gitlink change; this guard is no longer the one needed")
 	}
 
-	v, err := diffCommit(repo, second.String())
+	v, err := diffCommit(t.Context(), repo, second.String())
 	if err != nil {
 		t.Fatal(err)
 	}
