@@ -688,6 +688,12 @@ func checkBounds(id string, f Field) error {
 // input is never left out; a Default or a Config key fills it before the
 // pipe is looked at; Local takes it off MCP, where it would be required; and
 // a pipe carries text, which a number, a switch or a list does not read as.
+//
+// Nor Options. The handler reads the pipe itself (builtin/internal/pipein),
+// after the host has held the call's arguments to their closed sets, so the
+// one channel the CLI offers for the input is the one no check reaches: the
+// MCP enum and the TUI's select would promise a value from the set while
+// `echo anything | rta …` handed the capability whatever was piped.
 func checkPiped(id string, f Field) error {
 	if !f.Piped {
 		return nil
@@ -706,6 +712,9 @@ func checkPiped(id string, f Field) error {
 	case f.Type != String && f.Type != Text && f.Type != Secret:
 		return fmt.Errorf("capability %q: input %q declares Piped but is a %s; a pipe carries text, so it "+
 			"fills a %s, a %s or a %s", id, f.Name, f.Type, String, Text, Secret)
+	case len(f.Options) > 0:
+		return fmt.Errorf("capability %q: input %q declares Piped beside Options; a pipe carries free text, "+
+			"which reaches the handler past the host's check against the set — drop one of them", id, f.Name)
 	}
 	return nil
 }
