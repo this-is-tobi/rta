@@ -86,7 +86,7 @@ func Plugin() plugin.Plugin {
 					"the dates read, and anything a strict parser would refuse named: a padded segment, a " +
 					"member given twice, an empty signature. A JWE's header is read and its content is not, " +
 					"because decrypting takes the recipient's key: a private key, a shared key or a password, " +
-					"depending on its alg. Unverified unless --key or --secret-file " +
+					"depending on its alg. Unverified unless a key or a secret file " +
 					"is given, and labeled as such: anyone can hand you a token with any claims at all. With " +
 					"--key — a public key, certificate or the issuer's key set, fetched by you, since a capability " +
 					"that fetched a URL its caller names would not be a free read — the signature is checked, the " +
