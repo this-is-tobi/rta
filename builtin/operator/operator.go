@@ -78,7 +78,7 @@ func runInit(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 	if id.Exists() {
 		return nil, view.Errorf("core.operator.exists", "an operator key already exists").
-			WithHint("`rta operator status` shows it; `rm " + id.Path() + "` first if you mean to rotate, " +
+			WithHint(req.Surface().CapabilityName("operator.status") + " shows it; `rm " + id.Path() + "` first if you mean to rotate, " +
 				"then re-enroll the new key on every server")
 	}
 	if req.DryRun {
@@ -100,10 +100,16 @@ func runInit(_ context.Context, req plugin.Request) (view.View, error) {
 	return view.KeyValue{Pairs: []view.Pair{
 		{Key: "operator key", Value: "minted — " + id.Path()},
 		{Key: "fingerprint", Value: signer.Fingerprint()},
-		{Key: "enroll", Value: "add this line to a server's --operators file:\n" + line},
+		{Key: "enroll", Value: enrollLine + line},
 		{Key: "forgotten?", Value: "rm " + id.Path() + " and init again — every roster then needs the new line"},
 	}}, nil
 }
+
+// enrollLine introduces the roster line an operator hands to a server. The
+// roster is the file the server is started with, and `rta mcp serve
+// --operators` is the only spelling that has: serving is a command, never a
+// capability another surface could name its own way.
+const enrollLine = "add this line to the roster a server is started with (`rta mcp serve --operators`):\n"
 
 func runStatus(ctx context.Context, req plugin.Request) (view.View, error) {
 	if server := req.String("server"); server != "" {
@@ -112,7 +118,7 @@ func runStatus(ctx context.Context, req plugin.Request) (view.View, error) {
 	if !id.Exists() {
 		return view.KeyValue{Pairs: []view.Pair{
 			{Key: "operator key", Value: "none — this machine cannot manage remote servers yet"},
-			{Key: "mint one", Value: "rta operator init"},
+			{Key: "mint one", Value: req.Surface().Call("operator.init")},
 		}}, nil
 	}
 	label := req.String("label")
@@ -127,7 +133,7 @@ func runStatus(ctx context.Context, req plugin.Request) (view.View, error) {
 		{Key: "operator key", Value: id.Path()},
 		{Key: "fingerprint", Value: id.Fingerprint()},
 		{Key: "since", Value: id.Created().Local().Format("2006-01-02 15:04")},
-		{Key: "enroll", Value: "add this line to a server's --operators file:\n" + line},
+		{Key: "enroll", Value: enrollLine + line},
 	}}, nil
 }
 
