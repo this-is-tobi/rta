@@ -2,11 +2,14 @@ package app
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // fakeClient puts an executable named bin on PATH that records its argv and
@@ -174,9 +177,15 @@ func TestInstallGlobalDryRunPreviewsTheScopeFlag(t *testing.T) {
 // unverified command.
 func TestInstallGlobalRefusesForAnUnverifiedClient(t *testing.T) {
 	argv := fakeClient(t, "codex", 0)
-	_, _, err := run(t, testRegistry(t), "mcp", "install", "codex", "--global")
+	_, _, err := run(t, testRegistry(t), "mcp", "install", "codex", "--global", "-o", "json")
 	if err == nil {
 		t.Fatal("want a refusal — rta does not know codex's global-scope flag")
+	}
+	// Coded, so it reaches -o json as json: it was the plain error fang
+	// styled as a box. The command line cannot work as typed, so core.usage.
+	var ve *view.Error
+	if !errors.As(err, &ve) || ve.Code != CodeUsage || !strings.Contains(ve.Hint, "--show") {
+		t.Errorf("err = %#v, want %s with --show in the hint", err, CodeUsage)
 	}
 	if _, statErr := os.Stat(argv); statErr == nil {
 		t.Error("codex was run despite rta not knowing the right flag to pass it")
