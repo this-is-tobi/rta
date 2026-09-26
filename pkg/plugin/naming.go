@@ -1,6 +1,15 @@
 package plugin
 
-import "strings"
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"strconv"
+	"strings"
+	"unicode"
+
+	"github.com/this-is-tobi/rta/internal/shellquote"
+)
 
 // Naming a capability or an input in a message, the way the caller reads it.
 //
@@ -82,6 +91,97 @@ func (s Surface) CapabilityWith(id string, inputs ...string) string {
 		return "`rta " + strings.ReplaceAll(id, ".", " ") + " " + strings.Join(names, " ") + "`"
 	}
 	return s.CapabilityName(id) + " with " + strings.Join(names, " and ")
+}
+
+// Arg is one input a call spelled by Surface.Call gives: its name, its value,
+// and whether the CLI takes it by its place on the command line rather than
+// as a flag. A Value of true is a switch turned on, spelled on the CLI as the
+// bare flag.
+type Arg struct {
+	Name       string
+	Value      any
+	Positional bool
+}
+
+// Call spells capability id called with args, whole and with its values, the
+// way a caller on s makes that call: `rta kv get db-password` on the CLI,
+// `kv_get {"key":"db-password"}` over MCP — the tool and the arguments to
+// give it — and `kv.get key=db-password` in the TUI, whose form is filled in
+// rather than typed. For a page that hands its reader the next call to make,
+// "reveal: rta kv get db-password", which an agent read as a command line it
+// has no terminal for.
+//
+// Unquoted, unlike CapabilityName: a cell somebody copies wants the call
+// alone, and a sentence puts it in backticks itself.
+func (s Surface) Call(id string, args ...Arg) string {
+	switch s {
+	case SurfaceMCP:
+		values := make(map[string]any, len(args))
+		for _, a := range args {
+			values[a.Name] = a.Value
+		}
+		// A map of plain values always encodes, and its keys come out
+		// sorted, so one call is spelled the same way every time. Without
+		// the HTML escaping json.Marshal does: nothing here reaches a page,
+		// and a placeholder's angle brackets, each turned into a six-letter
+		// escape, handed an agent a value nobody wrote.
+		var encoded bytes.Buffer
+		enc := json.NewEncoder(&encoded)
+		enc.SetEscapeHTML(false)
+		_ = enc.Encode(values)
+		return ToolName(id) + " " + strings.TrimSuffix(encoded.String(), "\n")
+	case SurfaceTUI:
+		parts := []string{id}
+		for _, a := range args {
+			if a.Value == true {
+				parts = append(parts, a.Name)
+				continue
+			}
+			parts = append(parts, a.Name+"="+boxValue(a.Value))
+		}
+		return strings.Join(parts, " ")
+	}
+	parts := []string{"rta", strings.ReplaceAll(id, ".", " ")}
+	for _, a := range args {
+		switch {
+		case a.Positional:
+			parts = append(parts, cliValue(a.Value))
+		case a.Value == true:
+			parts = append(parts, s.InputName(a.Name))
+		default:
+			parts = append(parts, s.InputName(a.Name), cliValue(a.Value))
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
+// cliValue is v as a command line carries it: one shell word that reads back
+// as v, byte for byte (shellquote.Arg).
+//
+// A shell's quoting and not Go's: a value is whatever somebody stored, an
+// agent's kv key among them, and inside the double quotes strconv.Quote adds
+// a $(…) or a backquoted command still runs on paste. An empty value is a
+// pair of quotes rather than nothing, since it is a word the call gives.
+func cliValue(v any) string {
+	text := fmt.Sprint(v)
+	if text == "" {
+		return "''"
+	}
+	return shellquote.Arg(text)
+}
+
+// boxValue is v as a TUI form's box takes it: typed as it is, since a box is
+// not a shell and a quote in it is part of the value — quoted only where the
+// call's own spelling would misread it, a value with a space running into
+// the next box's, or one holding a quote or a character that does not print.
+func boxValue(v any) string {
+	text := fmt.Sprint(v)
+	if text == "" || strings.ContainsFunc(text, func(r rune) bool {
+		return unicode.IsSpace(r) || r == '"' || r == '\'' || !unicode.IsPrint(r)
+	}) {
+		return strconv.Quote(text)
+	}
+	return text
 }
 
 // InputName names one of a capability's inputs the way a caller on s gives

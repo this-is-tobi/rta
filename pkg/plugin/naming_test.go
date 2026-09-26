@@ -62,6 +62,48 @@ func TestACallIsNamedTheWayItsSurfaceMakesIt(t *testing.T) {
 	}
 }
 
+// A whole call, values and all, is a command line at a terminal, the tool
+// and its arguments to an agent, and the capability with its boxes filled in
+// the TUI — with a value a shell would split quoted on the command line.
+func TestAWholeCallIsSpelledTheWayItsSurfaceMakesIt(t *testing.T) {
+	args := []Arg{
+		{Name: "key", Value: "db password", Positional: true},
+		{Name: "revision", Value: 2},
+		{Name: "force", Value: true},
+	}
+	for s, want := range map[Surface]string{
+		SurfaceCLI:     `rta kv restore 'db password' --revision 2 --force`,
+		SurfaceUnknown: `rta kv restore 'db password' --revision 2 --force`,
+		SurfaceMCP:     `kv_restore {"force":true,"key":"db password","revision":2}`,
+		SurfaceTUI:     `kv.restore key="db password" revision=2 force`,
+	} {
+		if got := s.Call("kv.restore", args...); got != want {
+			t.Errorf("Call over %q = %s, want %s", s, got, want)
+		}
+	}
+	if got := SurfaceMCP.Call("kv.list"); got != "kv_list {}" {
+		t.Errorf("a call with no arguments over MCP = %s", got)
+	}
+	// A value is whatever somebody stored — an agent's kv key among them —
+	// so the command line a person pastes runs none of it, and the tool's
+	// arguments carry it as it is.
+	stored := Arg{Name: "key", Value: "a$(touch pwned)`id`<b>&c", Positional: true}
+	if got, want := SurfaceCLI.Call("kv.get", stored), `rta kv get 'a$(touch pwned)`+"`id`"+`<b>&c'`; got != want {
+		t.Errorf("a stored value on the CLI = %s, want %s", got, want)
+	}
+	if got, want := SurfaceMCP.Call("kv.get", stored), `kv_get {"key":"a$(touch pwned)`+"`id`"+`<b>&c"}`; got != want {
+		t.Errorf("a stored value over MCP = %s, want %s", got, want)
+	}
+	// A TUI box is not a shell: a value goes in as it is typed.
+	if got, want := SurfaceTUI.Call("kv.init", Arg{Name: "identity", Value: "~/.ssh/id_$USER"}),
+		"kv.init identity=~/.ssh/id_$USER"; got != want {
+		t.Errorf("a value in the TUI = %s, want %s", got, want)
+	}
+	if got, want := SurfaceCLI.Call("note.add", Arg{Name: "title", Value: "", Positional: true}), `rta note add ''`; got != want {
+		t.Errorf("an empty value on the CLI = %s, want %s", got, want)
+	}
+}
+
 // Leaving inputs out is said the way the caller does it: a TUI form keeps its
 // boxes, so there they are left empty rather than left off.
 func TestInputsLeftOutAreSaidTheWayTheSurfaceLeavesThemOut(t *testing.T) {
