@@ -3,6 +3,8 @@ package audit
 import (
 	"strings"
 	"testing"
+
+	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
 // **A handoff has to fit what was read, or nobody reads the next one.**
@@ -48,7 +50,7 @@ func TestTheDeeperRowsFitWhatWasActuallyRead(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var sb strings.Builder
-			for _, p := range depsDeeper(".", false, tc.manifests) {
+			for _, p := range depsDeeper(plugin.SurfaceCLI, ".", false, tc.manifests) {
 				sb.WriteString(p.Key + " " + p.Value + "\n")
 			}
 			got := sb.String()
@@ -88,7 +90,7 @@ func TestADeeperCommandIsNamedOncePerRepositoryNotOncePerFile(t *testing.T) {
 func TestARemoteAuditNeverPrintsACommandThatWouldFail(t *testing.T) {
 	const url = "https://github.com/org/repo"
 	var sb strings.Builder
-	for _, p := range depsDeeper(url, true, []string{"go.mod"}) {
+	for _, p := range depsDeeper(plugin.SurfaceCLI, url, true, []string{"go.mod"}) {
 		sb.WriteString(p.Key + " " + p.Value + "\n")
 	}
 	got := sb.String()

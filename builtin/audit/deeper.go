@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -125,7 +126,7 @@ func unusedCommand(manifest string) string {
 // actually read rather than listed unconditionally: a Go project has no use
 // for a row about knip, and a report that names tools for ecosystems it did
 // not find is a report nobody finishes reading.
-func depsDeeper(target string, remote bool, manifests []string) []view.Pair {
+func depsDeeper(sf plugin.Surface, target string, remote bool, manifests []string) []view.Pair {
 	native := pickCommands(manifests, nativeAudit)
 	unused := pickCommands(manifests, unusedCommand)
 	// A repository read over the network has no path to hand anybody. trivy
@@ -147,7 +148,7 @@ func depsDeeper(target string, remote bool, manifests []string) []view.Pair {
 				"ever has, and it is the fix nobody looks for"},
 		{"an sbom to keep", []string{"syft " + local(target, remote) + " -o cyclonedx-json"},
 			"this inventory is read once and thrown away; a committed SBOM is what the next " +
-				"advisory gets checked against, and `rta audit deps` reads one back"},
+				"advisory gets checked against, and " + sf.CapabilityName("audit.deps") + " reads one back"},
 	})
 }
 

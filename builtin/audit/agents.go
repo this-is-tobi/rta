@@ -154,11 +154,11 @@ func (r *agentReport) addFix(id, title, body string) {
 // is told why beside it (view.Sections.Empty). It answered with the sentence
 // as a Text view, so the shape changed with the machine's state: `rta audit
 // clients --fix > fix.txt` wrote the sentence where the fixes go.
-func fixPage(r *agentReport) view.View {
+func fixPage(sf plugin.Surface, r *agentReport) view.View {
 	s := view.Sections{}
 	if len(r.fixes) == 0 {
 		s.Empty = "nothing to paste — no finding on this machine has a mechanical fix. " +
-			"`rta audit clients` has the grades themselves."
+			sf.CapabilityName("audit.clients") + " has the grades themselves."
 	}
 	for i, f := range r.fixes {
 		// The index keeps ids unique when one kind of fix applies to two
@@ -219,7 +219,7 @@ func runClients(ctx context.Context, req plugin.Request, catalog func() []plugin
 	auditRtaReach(r, claudeSeen, catalog)
 
 	if req.Bool("fix") {
-		return fixPage(r), nil
+		return fixPage(req.Surface(), r), nil
 	}
 	if req.Bool("detail") {
 		summary := append([]view.Pair{

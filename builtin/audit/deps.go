@@ -61,12 +61,13 @@ func runDeps(ctx context.Context, req plugin.Request) (view.View, error) {
 		if len(cov.unreadable) > 0 {
 			return nil, view.Errorf("audit.deps.unreadable",
 				"nothing could be read under %s: %s", remoteLabel(path), strings.Join(cov.unreadable, ", ")).
-				WithHint("run as a user that can list those directories, or point --path at one that is readable")
+				WithHint("run as a user that can list those directories, or point " + req.Surface().ArgumentName("path") +
+					" at one that is readable")
 		}
 		hint := "reads what a project already declares, so one of these has to exist: " +
 			strings.Join(ecosystems, "; ")
 		if !recursive {
-			hint += ". In a monorepo the manifests are a level down: try --recursive"
+			hint += ". In a monorepo the manifests are a level down: try " + req.Surface().InputName("recursive")
 		}
 		return nil, view.Errorf("audit.deps.nomanifest", "no lockfile or SBOM in %s", remoteLabel(path)).
 			WithHint(hint)
@@ -89,7 +90,7 @@ func runDeps(ctx context.Context, req plugin.Request) (view.View, error) {
 		vulns, err = queryOSV(qctx, client, inv.queryable)
 		if err != nil {
 			return nil, view.Errorf("audit.deps.osv", "querying osv.dev: %v", err).
-				WithHint("use --offline to inventory the dependencies without asking anything")
+				WithHint(req.Surface().InputName("offline") + " inventories the dependencies without asking anything")
 		}
 		// Only for what the first question found, which on a clean project is
 		// nothing at all. The deadline is the one the caller already set for
@@ -100,7 +101,7 @@ func runDeps(ctx context.Context, req plugin.Request) (view.View, error) {
 		}
 	}
 
-	gradeDeps(r, inv, vulns, records, capped, offline)
+	gradeDeps(r, inv, vulns, records, capped, offline, req.Surface())
 	addCoverage(r, cov)
 	if inv.truncated {
 		r.Add(grpInventory, "scan", findings.Warn,
@@ -115,7 +116,7 @@ func runDeps(ctx context.Context, req plugin.Request) (view.View, error) {
 			{Key: "manifests", Value: manifestSummary(path, shown)},
 			{Key: "dependencies", Value: strconv.Itoa(len(inv.all))},
 		}, r.Grade()...)
-		summary = append(summary, depsDeeper(remoteLabel(path), gitclone.IsRemote(path), shown)...)
+		summary = append(summary, depsDeeper(req.Surface(), remoteLabel(path), gitclone.IsRemote(path), shown)...)
 		return r.Page(ctx, req, depsGroupOrder, view.KeyValue{Pairs: summary}), nil
 	}
 	return r.Table(true), nil
@@ -445,8 +446,10 @@ func everyAdvisory(vulns map[string][]string) []string {
 	return out
 }
 
+// gradeDeps files what the scan found in r. sf is the surface asking, for
+// the name a finding gives an input the caller can change.
 func gradeDeps(r *findings.Report, inv inventory, vulns map[string][]string,
-	records map[string]osvRecord, capped, offline bool) {
+	records map[string]osvRecord, capped, offline bool, sf plugin.Surface) {
 	for _, m := range inv.unreadable {
 		r.Add(grpInventory, "manifest", findings.Warn,
 			m.path+" could not be read, so nothing in it was checked: "+m.reason, refVulnerableDep)
@@ -487,7 +490,7 @@ func gradeDeps(r *findings.Report, inv inventory, vulns map[string][]string,
 	switch {
 	case offline:
 		r.Add(grpInventory, "advisories", findings.Info,
-			"not checked — --offline inventories the dependencies without asking osv.dev about them",
+			"not checked — "+sf.InputName("offline")+" inventories the dependencies without asking osv.dev about them",
 			refVulnerableDep)
 	case len(affected) == 0 && len(inv.queryable) > 0:
 		r.Add(grpInventory, "advisories", findings.OK,
@@ -498,8 +501,8 @@ func gradeDeps(r *findings.Report, inv inventory, vulns map[string][]string,
 		// ungraded, and a blank severity that means "not asked" reads exactly
 		// like one that means "nobody published a grade".
 		r.Add(grpInventory, "grading", findings.Warn,
-			"stopped after "+strconv.Itoa(osvDetailMax)+" advisories or at the --timeout, so some rows "+
-				"below are counted but not graded — raise --timeout, or run osv-scanner, trivy or grype "+
+			"stopped after "+strconv.Itoa(osvDetailMax)+" advisories or at the timeout, so some rows "+
+				"below are counted but not graded — raise "+sf.InputName("timeout")+", or run osv-scanner, trivy or grype "+
 				"for a full pass",
 			refVulnerableDep)
 	case len(affected) > 0:

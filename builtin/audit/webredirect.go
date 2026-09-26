@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/this-is-tobi/rta/pkg/findings"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
 // Where a web audit is allowed to go, and how it says where it went.
@@ -76,15 +77,15 @@ func redirectTarget(resp *stdhttp.Response) *url.URL {
 // failure that hides is not a smaller truth but a different host's report
 // under the wrong name: `audit web example.com` graded www.example.com's
 // headers, cookies and certificate while the row above said example.com.
-func auditRedirect(r *findings.Report, requested *url.URL, resp *stdhttp.Response) {
+func auditRedirect(sf plugin.Surface, r *findings.Report, requested *url.URL, resp *stdhttp.Response) {
 	landed := resp.Request.URL
 	to := redirectTarget(resp)
 	switch {
 	case to != nil && !sameHost(requested, to):
 		r.Add(grpTransport, "redirect", findings.Warn,
 			"not followed — "+to.String()+" is a different host, so the checks below grade this "+
-				"redirect and not the page it points at. `rta audit web "+to.String()+
-				"` audits that; the request stops at the host you named because a grant on this "+
+				"redirect and not the page it points at. "+sf.CapabilityName("audit.web")+" on "+to.String()+
+				" audits that; the request stops at the host you named because a grant on this "+
 				"capability names one host", findings.Reference{})
 	case to != nil:
 		// Same host and still redirecting: the hop bound is the only way here.

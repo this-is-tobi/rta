@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/this-is-tobi/rta/pkg/findings"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
 // Each fixture is a cut-down copy of what the tool actually writes, keeping
@@ -664,7 +665,7 @@ func TestProvenanceReachesTheFinding(t *testing.T) {
 	gradeDeps(r, inv, map[string][]string{
 		"npm/qs@6.7.0":             {"GHSA-qs"},
 		"Go/github.com/c/d@v2.0.0": {"GHSA-cd"},
-	}, nil, false, false)
+	}, nil, false, false, plugin.SurfaceCLI)
 
 	qs := mustFind(t, r, "qs")
 	if !strings.Contains(qs.Detail, "indirect, pulled in by express") {
