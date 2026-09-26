@@ -211,24 +211,37 @@ func renderCSV(w io.Writer, v view.View, opts Options) error {
 	// three-row answer. The format whose only reason to exist is being fed to
 	// another program was the one that could not tell that program it had
 	// been handed a fraction of the data.
-	if t.Total > len(t.Rows) && opts.Notes != nil {
-		// A failed note must not fail the render: the rows are already out
-		// and correct, and a closed stderr is not a reason to report the
-		// query as broken.
-		_, _ = fmt.Fprintf(opts.Notes, "# %d of %s\n", len(t.Rows), format.CountOf(t.Total, "row"))
+	if opts.Notes == nil {
+		return nil
 	}
-	if more := continues(t); more != "" && opts.Notes != nil {
-		_, _ = fmt.Fprintf(opts.Notes, "# %s\n", more)
+	if t.Total > len(t.Rows) {
+		csvNote(opts.Notes, fmt.Sprintf("%d of %s", len(t.Rows), format.CountOf(t.Total, "row")))
+	}
+	if more := continues(t); more != "" {
+		csvNote(opts.Notes, more)
 	}
 	// And what the listing could not read, for the reason the count is there:
 	// the other formats all carry Warnings, and a table missing what its
 	// credential may not see is otherwise the whole of a smaller one.
 	for _, e := range t.Warnings {
-		if opts.Notes != nil {
-			_, _ = fmt.Fprintf(opts.Notes, "# %s %s\n", e.Code, e.Message)
-		}
+		csvNote(opts.Notes, e.Code+" "+e.Message)
 	}
 	return nil
+}
+
+// csvNote writes one note, every line of it marked "#".
+//
+// Every line, because a warning's message can run to several — a driver's
+// error quoted whole, a list of what could not be read — and marking the
+// first alone left whatever reads the stream for "#" lines taking the rest
+// for a message with no code, or for data.
+//
+// A failed note must not fail the render: the rows are already out and
+// correct, and a closed stderr is not a reason to report the query as broken.
+func csvNote(w io.Writer, note string) {
+	for _, line := range strings.Split(note, "\n") {
+		_, _ = fmt.Fprintf(w, "# %s\n", line)
+	}
 }
 
 // csvTable is the table a view is written as under -o csv.
