@@ -32,6 +32,51 @@ func TestPolicyInitOverAnExistingFileIsACodedRefusal(t *testing.T) {
 	}
 }
 
+// policy init answers with pairs, in the format asked for: it printed prose
+// on stdout whatever -o said, so a script setting a repository up parsed a
+// check mark. The file is named by its full path, and one --force replaced
+// says so.
+func TestPolicyInitAnswersWithAViewInTheFormatAskedFor(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	run := session(t, testRegistry(t))
+
+	out, errOut, err := run("policy", "init", "--dry-run", "-o", "json")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	pairs := answerPairs(t, out)
+	if got := pairs["would write"]; !filepath.IsAbs(got) || filepath.Base(got) != policy.RepoFile {
+		t.Errorf("would write = %q, want the full path of %s", got, policy.RepoFile)
+	}
+	if _, err := os.Stat(policy.RepoFile); !os.IsNotExist(err) {
+		t.Fatalf("--dry-run wrote the file: %v", err)
+	}
+
+	out, errOut, err = run("policy", "init", "-o", "json")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	pairs = answerPairs(t, out)
+	written, err := os.ReadFile(pairs["wrote"])
+	if err != nil || string(written) != starterPolicy {
+		t.Fatalf("wrote = %q, which does not hold the starter policy: %v", pairs["wrote"], err)
+	}
+	if !strings.Contains(pairs["ceiling"], "maxTTL "+starterTTL) || !strings.Contains(string(written), "\nmaxTTL: "+starterTTL+"\n") {
+		t.Errorf("ceiling = %q, want the maxTTL the file sets", pairs["ceiling"])
+	}
+	if !strings.Contains(pairs["next"], "rta policy require") {
+		t.Errorf("next = %q, want the command that makes the file required", pairs["next"])
+	}
+
+	onATerminal(t)
+	out, errOut, err = run("policy", "init", "--force", "--no-color")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	readsOnATerminal(t, out, "replaced", "ceiling", "next")
+}
+
 // The repository policy row names the files the walk up found, and those
 // alone. It printed every file the ceiling was assembled from, so with a
 // policy of the operator's own the row named that file as the repository's —

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/internal/policy"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -78,6 +79,31 @@ func TestABrokenOutputDefaultStopsAWriteBeforeItLands(t *testing.T) {
 	}
 }
 
+// The setup commands answer with a view now, so they are held to the same
+// check: refused before they write, where they used to write and then print
+// prose that no default could break.
+func TestABrokenOutputDefaultStopsASetupCommandBeforeItWrites(t *testing.T) {
+	t.Setenv("RTA_OUTPUT", "bogus")
+	dir := t.TempDir()
+	t.Chdir(dir)
+	run := session(t, testRegistry(t))
+	for _, c := range []struct {
+		args    []string
+		written string
+	}{
+		{[]string{"policy", "init"}, filepath.Join(dir, policy.RepoFile)},
+	} {
+		_, _, err := run(c.args...)
+		var ve *view.Error
+		if !errors.As(err, &ve) || ve.Code != CodeOutputInvalid {
+			t.Errorf("%v: err = %#v, want %s", c.args, err, CodeOutputInvalid)
+		}
+		if _, serr := os.Stat(c.written); !os.IsNotExist(serr) {
+			t.Errorf("%v wrote %s before the refusal: %v", c.args, c.written, serr)
+		}
+	}
+}
+
 // What a broken default does not stop: the commands that write no view in it,
 // doctor, which reports it, and init, which is how the key gets rewritten.
 func TestABrokenOutputDefaultLeavesTheViewlessCommandsAlone(t *testing.T) {
@@ -99,6 +125,7 @@ func TestABrokenOutputDefaultLeavesTheViewlessCommandsAlone(t *testing.T) {
 		{[]string{"completion", "zsh"}, false},
 		{[]string{"profile"}, false},
 		{[]string{"profile", "list"}, true},
+		{[]string{"policy", "init"}, true},
 		{[]string{"plugin", "install"}, true},
 		{[]string{"demo", "item", "list"}, true},
 	} {

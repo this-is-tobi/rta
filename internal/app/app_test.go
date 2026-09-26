@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/spf13/cobra"
@@ -143,6 +144,37 @@ func answerPairs(t *testing.T, out string) map[string]string {
 		pairs[p.Key] = p.Value
 	}
 	return pairs
+}
+
+// onATerminal makes the runs after it render as they would to a person at an
+// 80-column terminal: the answer shaped to the width, and an empty result's
+// sentence drawn. A test passes --no-color to read the text.
+func onATerminal(t *testing.T) {
+	t.Helper()
+	saved := isTTY
+	t.Cleanup(func() { isTTY = saved })
+	isTTY = func() bool { return true }
+	t.Setenv("COLUMNS", "80")
+}
+
+// readsOnATerminal fails the test unless out is a pretty key/value answer
+// laid out for onATerminal's screen: not json, no line past its 80 columns,
+// and a line starting with each key named.
+func readsOnATerminal(t *testing.T, out string, keys ...string) {
+	t.Helper()
+	if strings.TrimSpace(out) == "" || json.Valid([]byte(out)) {
+		t.Fatalf("pretty on a terminal answered %q, want pairs drawn for a person", out)
+	}
+	for _, line := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
+		if n := utf8.RuneCountInString(line); n > 80 {
+			t.Errorf("a line is %d cells wide on an 80-column terminal: %q", n, line)
+		}
+	}
+	for _, key := range keys {
+		if !regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(key) + `(  |\n)`).MatchString(out) {
+			t.Errorf("no line starts with %q:\n%s", key, out)
+		}
+	}
 }
 
 func TestRunCapability(t *testing.T) {
