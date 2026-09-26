@@ -114,10 +114,16 @@ type Ceiling struct {
 	// From names the files this ceiling was assembled from, nearest first, so
 	// a refusal can say which one to go and edit.
 	From []string `yaml:"-"`
-	// RepoFound records whether the walk up from the working directory found
-	// anything. Distinct from From being non-empty: the operator's own file is
-	// also a source, and it is not the one RequireRepo is asking about.
-	RepoFound bool `yaml:"-"`
+	// Repo names the repository policy files the walk up from the working
+	// directory found, nearest first: From's share that came from the walk.
+	// Distinct from From because the operator's own file and RTA_POLICY's are
+	// sources too, and neither is the one RequireRepo is asking about.
+	//
+	// A list rather than whether one was found, because a report naming the
+	// repository's policy needs the files: `rta policy show` printed From on
+	// its "repository policy" row, and so named the operator's own file there
+	// as well as on the row below it that is about that file.
+	Repo []string `yaml:"-"`
 	// SearchedFrom is the directory the walk started in, so a report can say
 	// where rta looked rather than only that it found nothing. For an MCP
 	// server this is whatever directory the client launched it from, which is
@@ -246,7 +252,8 @@ func Load() (Ceiling, *view.Error) {
 		found = append(found, c)
 	}
 
-	repoFound, repoConstrains := false, false
+	var repo []string
+	repoConstrains := false
 	start, err := os.Getwd()
 	if err == nil {
 		dir := start
@@ -257,7 +264,7 @@ func Load() (Ceiling, *view.Error) {
 				if verr != nil {
 					return Ceiling{}, verr
 				}
-				repoFound = true
+				repo = append(repo, candidate)
 				for i := range c.Roles {
 					c.Roles[i].Team = true
 				}
@@ -294,9 +301,9 @@ func Load() (Ceiling, *view.Error) {
 	// it in through intersect would let a repository file require itself,
 	// which passes in exactly the case this exists to catch — the file being
 	// gone.
-	out.RequireRepo, out.RepoFound, out.SearchedFrom = requireRepo, repoFound, start
+	out.RequireRepo, out.Repo, out.SearchedFrom = requireRepo, repo, start
 
-	if requireRepo && repoFound && !repoConstrains {
+	if requireRepo && len(repo) > 0 && !repoConstrains {
 		return out, view.Errorf("policy.repo.empty",
 			"the %s found from %s constrains nothing, and this machine requires a ceiling",
 			RepoFile, start).
@@ -304,7 +311,7 @@ func Load() (Ceiling, *view.Error) {
 				"neverProfile or requireScope in it, or unset requireRepoPolicy in your own " +
 				"policy file")
 	}
-	if requireRepo && !repoFound {
+	if requireRepo && len(repo) == 0 {
 		// Fail closed, and say all three things somebody needs: what was
 		// expected, where rta looked, and who asked for it. The last one
 		// matters because this refusal appears on a machine whose repository
