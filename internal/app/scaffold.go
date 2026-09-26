@@ -1,7 +1,6 @@
 package app
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -217,32 +216,59 @@ func within(dir, path string) bool {
 	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
-// nextSteps is what to print after scaffolding. It names the exact commands,
-// because "build it and put it on your PATH" is the sentence that turns a
-// fifteen-minute task into an hour.
-func nextSteps(s scaffold, dir string) string {
-	install := filepath.Join(os.Getenv("HOME"), ".local", "bin")
-	var b strings.Builder
-	fmt.Fprintf(&b, "Created %s\n\n", dir)
-	fmt.Fprintf(&b, "  cd %s\n", dir)
-	fmt.Fprintf(&b, "  rta plugin dev              # build it and check what rta sees\n")
-	fmt.Fprintf(&b, "  rta plugin dev -- %s greet world\n\n", s.Name)
-	fmt.Fprintf(&b, "To install it so every rta invocation finds it:\n\n")
-	fmt.Fprintf(&b, "  go build -o %s/%s .\n\n", install, s.Binary)
-	fmt.Fprintf(&b, "Anything named %s* on $PATH is a plugin; the part after the\n", pluginhost.Prefix)
-	fmt.Fprintf(&b, "prefix is only a filename — the namespace comes from what the plugin declares.\n")
+// scaffoldAnswer is what plugin new answers: the directory by its full path,
+// the files in it, the module, the rta it builds against, and the commands
+// that take it from there. It names the exact commands, because "build it and
+// put it on your PATH" is the sentence that turns a fifteen-minute task into
+// an hour.
+//
+// Pairs rather than the page of prose it was, which went to stdout whatever
+// -o said: a script or a template repository scaffolding plugins reads where
+// the files landed from -o json, and the directory by its full path because
+// --dir is resolved against wherever the command ran. The steps say it as it
+// was typed, since they are run from that same place. A dry run answers with
+// the same pairs, the way policy init's does, bar the step that needs the
+// files to exist.
+func scaffoldAnswer(s scaffold, dir string, files []string, dryRun bool) view.KeyValue {
+	full := dir
+	if abs, err := filepath.Abs(dir); err == nil {
+		full = abs
+	}
+	label, next := "created", "`cd "+dir+"`, then `rta plugin dev` builds it and shows what rta "+
+		"sees, and `rta plugin dev -- "+s.Name+" greet world` runs it"
+	if dryRun {
+		label, next = "would create", "run without --dry-run to write it"
+	}
+	pairs := []view.Pair{
+		{Key: label, Value: full},
+		{Key: "files", Value: strings.Join(files, ", ")},
+		{Key: "module", Value: s.Module},
+		{Key: "builds against", Value: buildsAgainst(s)},
+		{Key: "next", Value: next},
+	}
+	if !dryRun {
+		install := filepath.Join(os.Getenv("HOME"), ".local", "bin", s.Binary)
+		pairs = append(pairs, view.Pair{Key: "to install it",
+			Value: "`go build -o " + install + " .` in it — anything named " + pluginhost.Prefix +
+				"* on $PATH is a plugin every rta finds; the part after the prefix is only a " +
+				"filename, and the namespace comes from what the plugin declares"})
+	}
+	return view.KeyValue{Pairs: pairs}
+}
+
+// buildsAgainst says which rta the scaffold's go.mod resolves the SDK from,
+// and what to change about it.
+func buildsAgainst(s scaffold) string {
 	switch {
 	case s.RtaPath != "":
-		fmt.Fprintf(&b, "\ngo.mod builds against the rta checkout at %s (a `replace` line);\n", s.RtaPath)
-		fmt.Fprintf(&b, "drop that line to build against the released module instead.\n")
+		return "the rta checkout at " + s.RtaPath + ", a `replace` line in go.mod — drop that " +
+			"line to build against the released module instead"
 	case s.RtaVersion != "":
-		fmt.Fprintf(&b, "\ngo.mod requires %s %s — the rta that scaffolded this, so the SDK\n", rtaModule, s.RtaVersion)
-		fmt.Fprintf(&b, "it builds against is the one whose host will load it.\n")
-	default:
-		fmt.Fprintf(&b, "\nThis rta carries no release version, so go.mod names none and `go mod tidy`\n")
-		fmt.Fprintf(&b, "picked the latest %s. Pin it with `go get %s@<version>`.\n", rtaModule, rtaModule)
+		return rtaModule + " " + s.RtaVersion + ", the rta that scaffolded it, so the SDK it " +
+			"builds against is the one whose host will load it"
 	}
-	return b.String()
+	return "the latest " + rtaModule + " `go mod tidy` resolves — this rta carries no release " +
+		"version, so go.mod names none; pin it with `go get " + rtaModule + "@<version>`"
 }
 
 // releasedVersion is the rta module version a scaffold should require, from
