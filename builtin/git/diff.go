@@ -17,6 +17,7 @@ import (
 	godiff "github.com/go-git/go-git/v5/utils/diff"
 	"github.com/sergi/go-diff/diffmatchpatch"
 
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -95,6 +96,7 @@ func diffCommit(ctx context.Context, repo *git.Repository, spec string) (view.Vi
 	if err != nil {
 		return nil, view.Errorf("git.diff.failed", "diffing %s: %v", spec, err)
 	}
+	changes, large, cut := boundChanges(repo, changes)
 	patch, err := changes.PatchContext(ctx)
 	if err != nil {
 		return nil, view.Errorf("git.diff.failed", "diffing %s: %v", spec, err)
@@ -115,6 +117,15 @@ func diffCommit(ctx context.Context, repo *git.Repository, spec string) (view.Vi
 		}
 		body += strings.Join(bumps, "\n") + "\n"
 	}
+	// Named in the diff's own shape, as the worktree diff names what it
+	// did not read.
+	for _, p := range large {
+		body += fmt.Sprintf("%s changed, larger than %d MiB and not diffed\n", p, maxDiffBytes>>20)
+	}
+	if cut > 0 {
+		body += fmt.Sprintf("%d more %s changed and not diffed: one commit's diff reads at most %d MiB\n",
+			cut, format.PluralOf(cut, "file"), maxCommitDiffBytes>>20)
+	}
 	// An empty patch is the answer, and the sentence is what a person is
 	// told in its place (view.Text.Empty), for the reason a clean working
 	// tree's is: as the body, `rta git diff --commit <empty> > x.patch` wrote
@@ -126,6 +137,60 @@ func diffCommit(ctx context.Context, repo *git.Repository, spec string) (view.Vi
 	// that kept that parent's side.
 	return view.Text{Body: body, Empty: shortHash(commit.Hash) + " changed nothing this can show — " +
 		"an empty commit, or a merge that kept its first parent's tree"}, nil
+}
+
+// maxCommitDiffBytes bounds what one --commit diff reads in all. Each file
+// is held to maxDiffBytes, as the worktree diff's are, but a commit can hold
+// a hundred thousand files under that, and both sides of every change are
+// read whole to line-diff them. A root commit is often a whole codebase
+// imported at once, and it is diffed in full since it stopped answering a
+// sentence; on an MCP server that is one free call holding the lot in
+// memory. Past the budget the rest is counted, not read. A variable so a
+// test can lower it.
+var maxCommitDiffBytes int64 = 64 << 20
+
+// boundChanges keeps the changes a --commit diff reads, in order, and names
+// the ones it leaves: a file over maxDiffBytes by its path, and whatever no
+// longer fits the commit's budget by count. Sizes come from the object store
+// without reading the content, so deciding costs nothing it is meant to
+// save.
+func boundChanges(repo *git.Repository, changes object.Changes) (kept object.Changes, large []string, cut int) {
+	budget := maxCommitDiffBytes
+	for _, ch := range changes {
+		from, to := blobSize(repo, ch.From), blobSize(repo, ch.To)
+		switch {
+		case from > maxDiffBytes || to > maxDiffBytes:
+			large = append(large, changePath(ch))
+		case from+to > budget:
+			cut++
+		default:
+			budget -= from + to
+			kept = append(kept, ch)
+		}
+	}
+	sort.Strings(large)
+	return kept, large, cut
+}
+
+// blobSize is the size of one side of a change, 0 for a side that does not
+// exist. A submodule's entry names a commit in another repository, which
+// this one does not hold, and it has no content to read here either.
+func blobSize(repo *git.Repository, e object.ChangeEntry) int64 {
+	if e.TreeEntry.Hash.IsZero() {
+		return 0
+	}
+	size, err := repo.Storer.EncodedObjectSize(e.TreeEntry.Hash)
+	if err != nil {
+		return 0
+	}
+	return size
+}
+
+func changePath(ch *object.Change) string {
+	if ch.To.Name != "" {
+		return ch.To.Name
+	}
+	return ch.From.Name
 }
 
 // submoduleBumps names the submodules a commit moved, and where it moved
@@ -228,7 +293,7 @@ func diffWorktree(repo *git.Repository) (view.View, error) {
 // deciding costs no read of either.
 func tooLarge(wt *git.Worktree, headTree *object.Tree, path string, fs *git.FileStatus) bool {
 	if headTree != nil {
-		if f, err := headTree.File(path); err == nil && f.Size > maxDiffBytes {
+		if size, err := headTree.Size(path); err == nil && size > maxDiffBytes {
 			return true
 		}
 	}
