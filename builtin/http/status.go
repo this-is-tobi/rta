@@ -67,7 +67,7 @@ func runStatus(_ context.Context, req plugin.Request) (view.View, error) {
 		return nil, verr
 	}
 	if lo == hi {
-		return statusCard(lo)
+		return statusCard(req.Surface(), lo)
 	}
 	t := view.Table{Columns: []view.Column{
 		{Name: "Code", Kind: view.KindNumber},
@@ -121,11 +121,11 @@ func badStatus(raw string) *view.Error {
 		WithHint("try 404, 4xx or 500-599")
 }
 
-func statusCard(code int) (view.View, error) {
+func statusCard(sf plugin.Surface, code int) (view.View, error) {
 	text := stdhttp.StatusText(code)
 	if text == "" {
 		return nil, view.Errorf("http.status.unknown", "%d is not a status code net/http knows", code).
-			WithHint("run `rta http status` for the table")
+			WithHint(sf.CapabilityName("http.status") + " with no code lists every one it knows")
 	}
 	return view.KeyValue{Pairs: []view.Pair{
 		{Key: "code", Value: strconv.Itoa(code)},
