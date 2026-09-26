@@ -2157,6 +2157,18 @@ func TestLockedKeyExplainsThatTheAgentCannotHelp(t *testing.T) {
 	if !strings.Contains(verr.Hint, "ssh-agent") {
 		t.Errorf("hint does not mention the agent: %q", verr.Hint)
 	}
+	// The key that needs no passphrase is made by kv.init only while there is
+	// no store: once there is one, kv.init refuses it and kv.rekey adds one.
+	if !strings.Contains(verr.Hint, "`rta kv init --generate` makes one") {
+		t.Errorf("before a store, hint = %q, want kv.init", verr.Hint)
+	}
+	if err := os.WriteFile(storePath(), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, verr = parseIdentities(plugin.NewRequest(nil, false, false), path)
+	if verr == nil || !strings.Contains(verr.Hint, "`rta kv rekey --generate`, once this one has opened the store") {
+		t.Errorf("with a store, hint = %+v, want kv.rekey", verr)
+	}
 }
 
 // statusSections runs kv.status as a full page.

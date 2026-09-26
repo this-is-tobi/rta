@@ -318,8 +318,7 @@ func unlockSSHKey(req plugin.Request, path string, data []byte) (any, *view.Erro
 			fmt.Fprintln(os.Stderr, "Wrong passphrase.")
 		}
 		return nil, view.Errorf("kv.identity.locked", "could not unlock %s", path).
-			WithHint("that is the key's own passphrase, not the store's — or use a key that needs none: " +
-				req.Surface().CapabilityWith("kv.init", "generate") + " makes one")
+			WithHint("that is the key's own passphrase, not the store's — or " + keyThatNeedsNone(req.Surface()))
 	}
 	if supplied != "" {
 		return nil, view.Errorf("kv.identity.locked", "wrong passphrase for %s", path).
@@ -328,8 +327,20 @@ func unlockSSHKey(req plugin.Request, path string, data []byte) (any, *view.Erro
 	return nil, view.Errorf("kv.identity.locked", "%s is passphrase-protected", path).
 		WithHint(fmt.Sprintf(
 			"ssh-agent cannot unlock it — an agent signs, it does not decrypt. "+
-				"Set %s to the key's passphrase, or use a key that needs "+
-				"none: %s makes one", passphraseEnv, req.Surface().CapabilityWith("kv.init", "generate")))
+				"Set %s to the key's passphrase, or %s", passphraseEnv, keyThatNeedsNone(req.Surface())))
+}
+
+// keyThatNeedsNone is the way to a key with no passphrase of its own, from
+// where the caller stands. A locked key is met both creating a store and
+// opening one, and kv.init, which the hint named either way, refuses a store
+// that exists with kv.init.exists: there it is kv.rekey that adds a key,
+// once the locked one has opened the store a last time.
+func keyThatNeedsNone(sf plugin.Surface) string {
+	if fileExists(storePath()) {
+		return "add a key that needs none: " + sf.CapabilityWith("kv.rekey", "generate") +
+			", once this one has opened the store"
+	}
+	return "use a key that needs none: " + sf.CapabilityWith("kv.init", "generate") + " makes one"
 }
 
 // ageIdentityFromSSH mirrors agessh.ParseIdentity's type switch, but over an
