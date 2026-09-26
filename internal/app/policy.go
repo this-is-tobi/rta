@@ -176,7 +176,7 @@ const starterPolicy = `# The ceiling no grant in this repository may exceed.
 # A subdirectory may add its own and tighten this further. It cannot loosen it.
 
 # Cap how long any grant may stand, however long somebody asks for.
-maxTTL: 1h
+maxTTL: ` + starterTTL + `
 
 # Targets no grant may name at all. A capability ID, or a plugin name to cover
 # all of it.
@@ -213,7 +213,6 @@ func policyInitCommand(opts *globalOpts) *cobra.Command {
 	var force bool
 	cmd := &cobra.Command{
 		Use:               "init",
-		Annotations:       outputExempt(),
 		Short:             "Write a starter " + policy.RepoFile + " in this directory",
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
@@ -222,29 +221,64 @@ func policyInitCommand(opts *globalOpts) *cobra.Command {
 			"Commit it. It needs no seal — it can only subtract.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			path := policy.RepoFile
-			if _, err := os.Stat(path); err == nil && !force {
+			_, statErr := os.Stat(path)
+			exists := statErr == nil
+			if exists && !force {
 				// Never silently. This file is a security boundary somebody
 				// else may have written, and overwriting one because a command
 				// was run twice is the kind of help nobody asked for.
 				return view.Errorf("core.policy.exists", "%s already exists", path).
 					WithHint("`rta policy show` says what it does, or pass --force to replace it")
 			}
-			if opts.dryRun {
-				fmt.Fprintf(cmd.OutOrStdout(), "would write %s\n", path)
-				return nil
+			if !opts.dryRun {
+				if err := atomicfile.Write(path, []byte(starterPolicy), 0o644); err != nil {
+					return view.Errorf("core.policy.write", "writing %s: %v", path, err)
+				}
 			}
-			if err := atomicfile.Write(path, []byte(starterPolicy), 0o644); err != nil {
-				return view.Errorf("core.policy.write", "writing %s: %v", path, err)
-			}
-			out := cmd.OutOrStdout()
-			fmt.Fprintf(out, "✓ wrote %s\n", path)
-			fmt.Fprintln(out, "  It caps every grant here at 1h. Edit the other three axes and commit it.")
-			fmt.Fprintln(out, "  `rta policy require` then makes its absence an error rather than silence.")
-			return nil
+			return renderView(cmd, opts, policyInitAnswer(path, exists, opts.dryRun))
 		},
 	}
 	cmd.Flags().BoolVar(&force, "force", false, "replace an existing "+policy.RepoFile)
 	return cmd
+}
+
+// starterTTL is the one axis starterPolicy sets, named once so the file and
+// the answer that states it cannot disagree about it. The roles comment in the
+// file does the arithmetic for 1h and is rewritten with it.
+const starterTTL = "1h"
+
+// policyInitAnswer is what policy init answers: the file, by its full path,
+// the one bound it puts in force, and what to do with it next.
+//
+// The full path because the file is written into whatever directory the
+// command ran in, and a script setting a repository up reads where it landed
+// from here; the bare name was the one thing the answer could not tell it. A
+// file --force replaced says so, since what it replaced was somebody's
+// ceiling.
+func policyInitAnswer(path string, replaced, dryRun bool) view.KeyValue {
+	if abs, err := filepath.Abs(path); err == nil {
+		path = abs
+	}
+	label := "wrote"
+	switch {
+	case dryRun && replaced:
+		label = "would replace"
+	case dryRun:
+		label = "would write"
+	case replaced:
+		label = "replaced"
+	}
+	next := "edit the other three axes and commit it — `rta policy require` then makes " +
+		"its absence an error rather than silence"
+	if dryRun {
+		next = "run without --dry-run to write it"
+	}
+	return view.KeyValue{Pairs: []view.Pair{
+		{Key: label, Value: path},
+		{Key: "ceiling", Value: "maxTTL " + starterTTL + " — no grant made under this directory " +
+			"stands longer, whatever it asks for; never, neverProfile and requireScope are named and empty"},
+		{Key: "next", Value: next},
+	}}
 }
 
 // policyRequireCommand is the one that closes the gap this whole file exists
