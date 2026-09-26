@@ -90,11 +90,8 @@ func runAnsi(_ context.Context, req plugin.Request) (view.View, error) {
 		// codec's joseInput does. Every other surface requires the input
 		// (Piped) and reaches this only with it given empty.
 		hint := "pass it as an argument, or pipe it: my-app | rta debug ansi"
-		switch req.Surface() {
-		case plugin.SurfaceTUI:
-			hint = "paste it into the input box"
-		case plugin.SurfaceMCP:
-			hint = "pass it as the input argument"
+		if s := req.Surface(); s == plugin.SurfaceTUI || s == plugin.SurfaceMCP {
+			hint = "give it in " + s.InputName("input")
 		}
 		return nil, view.Errorf("debug.ansi.noinput", "no text to explain").WithHint(hint)
 	}

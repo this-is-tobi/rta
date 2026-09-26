@@ -77,6 +77,22 @@ func (s Surface) InputName(name string) string {
 	return "--" + name
 }
 
+// WithoutInputs is how a caller on s leaves inputs out of a call, for a hint
+// that sends them back to run it with less: "without --key" on the CLI, and
+// without the argument over MCP. A TUI form's boxes are there whether or not
+// they are filled, so there it is the boxes left empty — "without the key
+// box" would send somebody looking for a form that lacks one.
+func (s Surface) WithoutInputs(names ...string) string {
+	spelled := make([]string, len(names))
+	for i, n := range names {
+		spelled[i] = s.InputName(n)
+	}
+	if s == SurfaceTUI {
+		return "with " + strings.Join(spelled, " and ") + " left empty"
+	}
+	return "without " + strings.Join(spelled, " and ")
+}
+
 // spellsForCLI reports whether s reads the CLI's spelling: the CLI itself,
 // and the two callers with no spelling of their own.
 func (s Surface) spellsForCLI() bool { return s != SurfaceMCP && s != SurfaceTUI }

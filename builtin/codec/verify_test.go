@@ -216,7 +216,7 @@ func TestAKeySetInTheSecretFileIsRefusedForTheOneKey(t *testing.T) {
 	set := fmt.Sprintf(`{"keys":[{"kty":"oct","kid":"a","k":%q}]}`, base64.RawURLEncoding.EncodeToString(k))
 	mustRefuse(t, token, "", set, "codec.jwt.secret", "holds a key set")
 	mustRefuse(t, token, "", set, "codec.jwt.secret", `{"kty":"oct","k":…}`)
-	mustRefuse(t, token, set, "", "codec.jwt.key", "not the set, with --secret-file")
+	mustRefuse(t, token, set, "", "codec.jwt.key", "not the set, goes in --secret-file")
 }
 
 // A signature with its last letter changed where only unused bits live still
@@ -481,7 +481,8 @@ var flagSpelling = regexp.MustCompile(`(?:^|[^-])--[a-z]`)
 // schema has a key argument and no flags at all, that "--key takes only public
 // keys", and a TUI form "without --key it decodes". Every refusal and note that
 // names one of codec.jwt's inputs is walked on the two surfaces without flags,
-// and each names the input as that surface shows it.
+// and each names the input as that surface shows it, and a capability it
+// sends the reader to without a command line.
 func TestAnInputIsNamedAsTheSurfaceAskingShowsIt(t *testing.T) {
 	ctx := context.Background()
 	signing, x, y := ecKey(t)
@@ -530,8 +531,7 @@ func TestAnInputIsNamedAsTheSurfaceAskingShowsIt(t *testing.T) {
 		"a secret that does not match":       {map[string]any{"token": hs, "secret-file": secretFile(t, "other")}, ""},
 		"a set of oct keys in a secret file": {map[string]any{"token": hs, "secret-file": secretFile(t, set(oct))}, ""},
 	}
-	shown := map[plugin.Surface]string{plugin.SurfaceMCP: "the %s argument", plugin.SurfaceTUI: "the %s box"}
-	for s, spelled := range shown {
+	for _, s := range []plugin.Surface{plugin.SurfaceMCP, plugin.SurfaceTUI} {
 		walk := maps.Clone(calls)
 		if s == plugin.SurfaceTUI {
 			maps.Copy(walk, tui)
@@ -544,10 +544,10 @@ func TestAnInputIsNamedAsTheSurfaceAskingShowsIt(t *testing.T) {
 			}
 			verr := view.AsError(err, "test")
 			said := verr.Message + " — " + verr.Hint
-			if flag := flagSpelling.FindString(said); flag != "" {
-				t.Errorf("%s, %s: names a flag the surface has none of: %q", s, name, said)
+			if flagSpelling.MatchString(said) || strings.Contains(said, "`rta ") {
+				t.Errorf("%s, %s: names a flag or a command the surface has none of: %q", s, name, said)
 			}
-			if want := fmt.Sprintf(spelled, c.names); c.names != "" && !strings.Contains(said, want) {
+			if want := s.InputName(c.names); c.names != "" && !strings.Contains(said, want) {
 				t.Errorf("%s, %s: %q does not name %q", s, name, said, want)
 			}
 		}
@@ -559,14 +559,14 @@ func TestAnInputIsNamedAsTheSurfaceAskingShowsIt(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", s, err)
 		}
-		if body := verification(t, v.(view.Sections)); flagSpelling.MatchString(body) || !strings.Contains(body, fmt.Sprintf(spelled, "key")) {
-			t.Errorf("%s: the note on a skipped secret = %q, want it naming %q and no flag", s, body, fmt.Sprintf(spelled, "key"))
+		if body := verification(t, v.(view.Sections)); flagSpelling.MatchString(body) || !strings.Contains(body, s.InputName("key")) {
+			t.Errorf("%s: the note on a skipped secret = %q, want it naming %q and no flag", s, body, s.InputName("key"))
 		}
 
 		// PEM given to codec.jwk is sent to codec.jwt's key.
 		_, err = runJWK(ctx, req(map[string]any{"key": pubPEM}).WithSurface(s))
 		if verr := view.AsError(err, "test"); err == nil || flagSpelling.MatchString(verr.Hint) ||
-			!strings.Contains(verr.Hint, fmt.Sprintf(spelled, "key")) {
+			strings.Contains(verr.Hint, "`rta ") || !strings.Contains(verr.Hint, s.InputName("key")) {
 			t.Errorf("%s: PEM in codec.jwk: got %v (hint %q), want codec.jwt's key named without a flag", s, err, verr.Hint)
 		}
 	}

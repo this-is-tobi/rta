@@ -29,6 +29,20 @@ func TestACapabilityAndAnInputAreNamedTheWayTheirSurfaceNamesThem(t *testing.T) 
 	}
 }
 
+// Leaving inputs out is said the way the caller does it: a TUI form keeps its
+// boxes, so there they are left empty rather than left off.
+func TestInputsLeftOutAreSaidTheWayTheSurfaceLeavesThemOut(t *testing.T) {
+	for s, want := range map[Surface]string{
+		SurfaceCLI: "without --key and --secret-file",
+		SurfaceMCP: `without the "key" argument and the "secret-file" argument`,
+		SurfaceTUI: "with the key box and the secret-file box left empty",
+	} {
+		if got := s.WithoutInputs("key", "secret-file"); got != want {
+			t.Errorf("WithoutInputs over %q = %q, want %q", s, got, want)
+		}
+	}
+}
+
 // The tool name is the one rule the bridge registers tools by, so a message
 // naming a tool and the tool list cannot spell it two ways.
 func TestToolNameReplacesEveryDot(t *testing.T) {

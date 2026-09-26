@@ -70,7 +70,7 @@ func runJWT(ctx context.Context, req plugin.Request) (view.View, error) {
 	token := unwrapToken(raw)
 	var v view.View
 	if strings.HasPrefix(token, "{") {
-		v, verr = decodeJSONSerialization(token, check)
+		v, verr = decodeJSONSerialization(token, check, req.Surface())
 	} else {
 		v, verr = decodeCompact(token, 0, check)
 	}
@@ -129,11 +129,8 @@ func joseInput(req plugin.Request, field, code, what, hint string) (string, *vie
 	raw = trimText(raw)
 	if raw == "" {
 		// The pipe is the CLI's alone, so only the CLI is told about it.
-		switch req.Surface() {
-		case plugin.SurfaceTUI:
-			hint = "paste it into " + inputName(req.Surface(), field)
-		case plugin.SurfaceMCP:
-			hint = "pass it as " + inputName(req.Surface(), field)
+		if s := req.Surface(); s == plugin.SurfaceTUI || s == plugin.SurfaceMCP {
+			hint = "give it in " + s.InputName(field)
 		}
 		return "", view.Errorf(code+".empty", "no %s to read", what).WithHint(hint)
 	}
@@ -411,7 +408,7 @@ func encryptedNotSigned(check *verifier) *view.Error {
 		given = append(given, "secret-file")
 	}
 	return view.Errorf("codec.jwt.encrypted", "this token is encrypted, not signed: there is no signature here to verify").
-		WithHint(withoutInputs(check.surface, given...) + " it shows the header, and its cty says whether a signed token is sealed inside")
+		WithHint(check.surface.WithoutInputs(given...) + " it shows the header, and its cty says whether a signed token is sealed inside")
 }
 
 func decodeJWS(parts []string, depth int, check *verifier) (view.View, *view.Error) {
@@ -873,8 +870,9 @@ func keyHeld(alg string) (who, noun string) {
 // decodeJSONSerialization reads the JSON form of a JWS or a JWE (RFC 7515 §7.2,
 // RFC 7516 §7.2), flattened or general. It is rarer than the compact form and
 // not rare at all where it is used: every ACME request (RFC 8555) is a
-// flattened JWS.
-func decodeJSONSerialization(input string, check *verifier) (view.View, *view.Error) {
+// flattened JWS. s is the surface asking, for the name a key's refusal gives
+// codec.jwk.
+func decodeJSONSerialization(input string, check *verifier, s plugin.Surface) (view.View, *view.Error) {
 	doc, err := decodeObject([]byte(input))
 	if err != nil {
 		return nil, view.Errorf("codec.jwt.invalid", "reading the JSON serialization: %v", err)
@@ -894,7 +892,7 @@ func decodeJSONSerialization(input string, check *verifier) (view.View, *view.Er
 		return p.jsonJWS(doc, check)
 	case doc.has("kty") || doc.has("keys"):
 		return nil, view.Errorf("codec.jwt.notatoken", "this is a JSON Web Key, not a token").
-			WithHint("`rta codec jwk` reads keys and key sets")
+			WithHint(s.CapabilityName("codec.jwk") + " reads keys and key sets")
 	}
 	return nil, view.Errorf("codec.jwt.invalid", "a JSON object, but neither a JWS nor a JWE: it has no payload, signature or ciphertext").
 		WithHint("the JSON forms carry `payload` and `signature(s)`, or `ciphertext` and `iv`")
