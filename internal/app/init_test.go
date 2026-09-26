@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"reflect"
 	"sort"
 	"strings"
@@ -35,12 +36,18 @@ func TestInitWithNoTerminalIsACodedRefusal(t *testing.T) {
 }
 
 // answeredInit stands in for the person filling the wizard's form in, for the
-// rest of the test.
-func answeredInit(t *testing.T, a initAnswers) {
+// rest of the test. What it returns is whether the form it stood in for was
+// last opened as a dry run's.
+func answeredInit(t *testing.T, a initAnswers) *bool {
 	t.Helper()
 	saved := askInit
 	t.Cleanup(func() { askInit = saved })
-	askInit = func(context.Context, *registry.Registry, config.Config) (initAnswers, error) { return a, nil }
+	asDryRun := new(bool)
+	askInit = func(_ context.Context, _ *registry.Registry, _ config.Config, dryRun bool) (initAnswers, error) {
+		*asDryRun = dryRun
+		return a, nil
+	}
+	return asDryRun
 }
 
 // The form stays interactive; what init answers once it is closed is a view,
@@ -92,6 +99,31 @@ func TestInitAnswersWithAViewInTheFormatAskedFor(t *testing.T) {
 		t.Fatalf("a broken default stopped init: %v %q", err, errOut)
 	}
 	readsOnATerminal(t, out, "unchanged")
+}
+
+// --dry-run never reached init: `rta init --dry-run` asked its questions and
+// wrote the answers to the file. The form is told, so its last button does not
+// read "write".
+func TestInitDryRunWritesNothing(t *testing.T) {
+	run := session(t, testRegistry(t))
+	onATerminal(t)
+	asDryRun := answeredInit(t, initAnswers{output: "json", confirmed: true})
+
+	out, errOut, err := run("init", "--dry-run", "-o", "json")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	if !*asDryRun {
+		t.Error("the form was opened as though --dry-run had not been passed")
+	}
+	pairs := answerPairs(t, out)
+	if pairs["would write"] != config.Path() || pairs["output"] != "json" ||
+		!strings.Contains(pairs["next"], "--dry-run") {
+		t.Errorf("a dry run answered %v", pairs)
+	}
+	if _, err := os.Stat(config.Path()); !os.IsNotExist(err) {
+		t.Errorf("--dry-run wrote %s: %v", config.Path(), err)
+	}
 }
 
 // Leaving the wizard is coded as that, and anything else that stops the form

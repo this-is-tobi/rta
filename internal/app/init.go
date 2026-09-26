@@ -48,11 +48,14 @@ func newInitCommand(reg *registry.Registry, opts *globalOpts) *cobra.Command {
 				current = config.Config{}
 			}
 
-			answers, err := askInit(cmd.Context(), reg, current)
+			answers, err := askInit(cmd.Context(), reg, current, opts.dryRun)
 			if err != nil {
 				return initFormError(err)
 			}
-			if answers.confirmed {
+			// --dry-run still opens the form, since the answers are what a
+			// preview is of, and then writes nothing. The flag never reached
+			// this command, which wrote the file as though it were not there.
+			if answers.confirmed && !opts.dryRun {
 				// Folded into the file as it is *now*, not into the copy read
 				// before the form opened. The wizard is interactive, so that
 				// gap is measured in minutes rather than microseconds — the
@@ -75,7 +78,7 @@ func newInitCommand(reg *registry.Registry, opts *globalOpts) *cobra.Command {
 			if ferr != nil {
 				format = cli.Pretty
 			}
-			return cli.Render(cmd.OutOrStdout(), initAnswer(config.Path(), answers),
+			return cli.Render(cmd.OutOrStdout(), initAnswer(config.Path(), answers, opts.dryRun),
 				renderOptions(cmd, format, opts.noColor))
 		},
 	}
@@ -93,7 +96,7 @@ type initAnswers struct {
 // A variable, as isTTY is, so a test can stand in for the person: the form
 // needs one at a terminal, and what init answers once it has been filled in
 // can only be tested if a test can say how it was filled in.
-var askInit = func(ctx context.Context, reg *registry.Registry, current config.Config) (initAnswers, error) {
+var askInit = func(ctx context.Context, reg *registry.Registry, current config.Config, dryRun bool) (initAnswers, error) {
 	a := initAnswers{output: current.Output, confirmed: true,
 		// An empty selection means "leave the dashboard automatic": one
 		// tile per plugin, including plugins installed later. Only someone
@@ -101,6 +104,18 @@ var askInit = func(ctx context.Context, reg *registry.Registry, current config.C
 		tiles: tileIDs(current.Dashboard.Tiles)}
 	if a.output == "" {
 		a.output = "pretty"
+	}
+	confirm := huh.NewConfirm().
+		Title(fmt.Sprintf("Write %s?", config.Path())).
+		Affirmative("write").Negative("cancel").
+		Value(&a.confirmed)
+	if dryRun {
+		// The last question says what pressing it does. A button reading
+		// "write" under --dry-run is the flag being ignored again, on the
+		// screen this time, however faithfully the file is left alone.
+		confirm = confirm.Title(fmt.Sprintf("Preview writing %s?", config.Path())).
+			Description("--dry-run: nothing is written; the answer says what would be").
+			Affirmative("preview")
 	}
 	form := huh.NewForm(
 		huh.NewGroup(
@@ -119,10 +134,7 @@ var askInit = func(ctx context.Context, reg *registry.Registry, current config.C
 					"Choosing here fixes the set instead — new plugins will not appear.").
 				Options(tileOptions(reg, a.tiles)...).
 				Value(&a.tiles),
-			huh.NewConfirm().
-				Title(fmt.Sprintf("Write %s?", config.Path())).
-				Affirmative("write").Negative("cancel").
-				Value(&a.confirmed),
+			confirm,
 		),
 	)
 	err := form.RunWithContext(ctx)
@@ -138,7 +150,7 @@ var askInit = func(ctx context.Context, reg *registry.Registry, current config.C
 // a result like any other command's, in the format asked for. Cancelling is
 // "unchanged", in the words profile set and dashboard hide answer a write that
 // changed nothing with, and exits 0 as it always has: nothing failed.
-func initAnswer(path string, a initAnswers) view.KeyValue {
+func initAnswer(path string, a initAnswers, dryRun bool) view.KeyValue {
 	if !a.confirmed {
 		return view.KeyValue{Pairs: []view.Pair{{Key: "unchanged",
 			Value: "the wizard was cancelled — nothing written to " + path}}}
@@ -148,11 +160,15 @@ func initAnswer(path string, a initAnswers) view.KeyValue {
 		dashboard = format.Count(len(a.tiles), "tile", "tiles") + ", a fixed set: " +
 			strings.Join(a.tiles, ", ")
 	}
+	label, next := "wrote", "run `rta` to see your dashboard"
+	if dryRun {
+		label, next = "would write", "run without --dry-run to write it"
+	}
 	return view.KeyValue{Pairs: []view.Pair{
-		{Key: "wrote", Value: path},
+		{Key: label, Value: path},
 		{Key: "output", Value: a.output},
 		{Key: "dashboard", Value: dashboard},
-		{Key: "next", Value: "run `rta` to see your dashboard"},
+		{Key: "next", Value: next},
 	}}
 }
 
