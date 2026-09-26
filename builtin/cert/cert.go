@@ -485,7 +485,7 @@ func runPEM(ctx context.Context, req plugin.Request) (view.View, error) {
 	if err != nil {
 		return nil, err
 	}
-	chosen, verr := include(certs, req.String("include"))
+	chosen, verr := include(req.Surface(), certs, req.String("include"))
 	if verr != nil {
 		return nil, verr
 	}
@@ -524,7 +524,7 @@ func runPEM(ctx context.Context, req plugin.Request) (view.View, error) {
 // bundle a trust store takes. A chain of one certificate has no issuers in it,
 // and saying so beats handing back an empty file that fails later somewhere
 // with no explanation.
-func include(certs []*x509.Certificate, which string) ([]*x509.Certificate, *view.Error) {
+func include(sf plugin.Surface, certs []*x509.Certificate, which string) ([]*x509.Certificate, *view.Error) {
 	switch which {
 	case "", "chain":
 		return certs, nil
@@ -534,11 +534,12 @@ func include(certs []*x509.Certificate, which string) ([]*x509.Certificate, *vie
 		if len(certs) < 2 {
 			return nil, view.Errorf("cert.chain.leafonly",
 				"only the leaf certificate was presented, so there are no issuers to print").
-				WithHint("many servers omit their intermediates; --include chain prints what did arrive")
+				WithHint("many servers omit their intermediates; " + sf.InputName("include") +
+					" set to chain prints what did arrive")
 		}
 		return certs[1:], nil
 	}
-	return nil, view.Errorf("cert.include.invalid", "unknown --include %q", which).
+	return nil, view.Errorf("cert.include.invalid", "unknown include %q", which).
 		WithHint("one of: chain, issuers, leaf")
 }
 
@@ -648,7 +649,7 @@ func runTLS(ctx context.Context, req plugin.Request) (view.View, error) {
 		return nil, err
 	}
 	if state == nil {
-		return nil, view.Errorf("cert.tls.filetarget", "%q is a file; cert tls needs a live host", target).
+		return nil, view.Errorf("cert.tls.filetarget", "%q is a file; cert.tls needs a live host", target).
 			WithHint("pass host[:port] instead")
 	}
 	return view.KeyValue{Pairs: []view.Pair{
