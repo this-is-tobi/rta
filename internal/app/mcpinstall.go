@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/this-is-tobi/rta/internal/grant"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // Registering rta with an MCP client, and the line it will not cross.
@@ -228,12 +229,14 @@ func newMCPInstallCommand(opts *globalOpts) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client, ok := findClient(args[0])
 			if !ok {
-				return fmt.Errorf("unknown client %q — try one of: %s",
-					args[0], strings.Join(names, ", "))
+				return usageError(cmd, fmt.Errorf("unknown client %q — try one of: %s",
+					args[0], strings.Join(names, ", ")))
 			}
 			self, err := os.Executable()
 			if err != nil {
-				return fmt.Errorf("locating rta binary: %w", err)
+				return view.Errorf("core.mcp.install.self", "locating the rta binary: %v", err).
+					WithHint("the client is registered with this binary's path, so it has to be " +
+						"one rta can name; `rta mcp install " + client.name + " --show` prints the block to fill in")
 			}
 			// Resolved, because a client launches this path months from now
 			// and a symlink into a build tree is the kind of thing that stops
@@ -280,9 +283,14 @@ func newMCPInstallCommand(opts *globalOpts) *cobra.Command {
 							// command run against a file that grants an agent
 							// access to secrets, not a smaller version of the
 							// right one.
-							return fmt.Errorf("rta does not know %s's flag for installing at the user level — "+
-								"try `rta mcp install %s --show` and add it yourself, or check %s's own --help",
-								client.label, client.name, client.bin)
+							//
+							// core.usage: this command line cannot work as
+							// typed, and the fix is on it.
+							return &view.Error{Code: CodeUsage,
+								Message: fmt.Sprintf("rta does not know %s's flag for installing at the user level",
+									client.label),
+								Hint: fmt.Sprintf("try `rta mcp install %s --show` and add it yourself, "+
+									"or check %s's own --help", client.name, client.bin)}
 						}
 					}
 					if opts.dryRun {
