@@ -291,7 +291,6 @@ func policyRequireCommand(opts *globalOpts) *cobra.Command {
 	var off bool
 	cmd := &cobra.Command{
 		Use:               "require",
-		Annotations:       outputExempt(),
 		Short:             "Refuse to run in a directory with no " + policy.RepoFile,
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
@@ -313,41 +312,81 @@ func policyRequireCommand(opts *globalOpts) *cobra.Command {
 			}
 
 			updated, changed := setRequireRepo(string(existing), !off)
-			if !changed {
-				fmt.Fprintf(cmd.OutOrStdout(), "already %s in %s\n", yesNo(!off), path)
-				return nil
+			if changed && !opts.dryRun {
+				if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+					return view.Errorf("core.policy.write", "creating %s: %v", filepath.Dir(path), err)
+				}
+				if err := atomicfile.Write(path, []byte(updated), 0o600); err != nil {
+					return view.Errorf("core.policy.write", "writing %s: %v", path, err)
+				}
 			}
-			if opts.dryRun {
-				fmt.Fprintf(cmd.OutOrStdout(), "would set requireRepoPolicy: %t in %s\n", !off, path)
-				return nil
-			}
-			if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-				return view.Errorf("core.policy.write", "creating %s: %v", filepath.Dir(path), err)
-			}
-			if err := atomicfile.Write(path, []byte(updated), 0o600); err != nil {
-				return view.Errorf("core.policy.write", "writing %s: %v", path, err)
-			}
-
-			out := cmd.OutOrStdout()
-			if off {
-				fmt.Fprintf(out, "✓ %s no longer requires a repository policy\n", path)
-				return nil
-			}
-			fmt.Fprintf(out, "✓ %s now requires a %s\n", path, policy.RepoFile)
-			ceiling, verr := grant.Ceiling()
-			switch {
-			case verr != nil:
-				fmt.Fprintf(cmd.ErrOrStderr(),
-					"  and this directory does not have one yet: %s\n"+
-						"  `rta policy init` writes one here.\n", verr.Message)
-			case len(ceiling.Repo) > 0:
-				fmt.Fprintf(out, "  This directory has one: %s\n", strings.Join(ceiling.Repo, ", "))
-			}
-			return nil
+			return renderView(cmd, opts, policyRequireAnswer(path, !off, changed, opts.dryRun))
 		},
 	}
 	cmd.Flags().BoolVar(&off, "off", false, "stop requiring a repository policy")
 	return cmd
+}
+
+// policyRequireAnswer is what policy require answers: the file, the setting
+// it now holds, whether the directory the command ran in meets the
+// requirement once it stands, and what to do next.
+//
+// The file under the same key policy init puts its own under, so a script
+// setting a machine up reads where each landed the same way; one that already
+// said so is "unchanged", in the words profile set and dashboard hide answer a
+// write that would change nothing with.
+//
+// The directory is a pair of the answer rather than a line beside it. Half of
+// it went to stderr — the half saying the directory had no policy, which is
+// the thing somebody turning the requirement on most needs to hear — and a
+// script doing it across machines reads it from -o json or not at all. A dry
+// run that would turn it on leaves it out: the requirement is not in force
+// yet, so the ceiling it would be read from has not checked it.
+func policyRequireAnswer(path string, on, changed, dryRun bool) view.KeyValue {
+	var pairs []view.Pair
+	switch {
+	case !changed && on:
+		pairs = append(pairs, view.Pair{Key: "unchanged",
+			Value: "a repository policy is already required — nothing written to " + path})
+	case !changed:
+		pairs = append(pairs, view.Pair{Key: "unchanged",
+			Value: "a repository policy is already not required — nothing written to " + path})
+	case dryRun:
+		pairs = append(pairs, view.Pair{Key: "would write", Value: path})
+	default:
+		pairs = append(pairs, view.Pair{Key: "wrote", Value: path})
+	}
+	// yes or no, as policy show's row of the same name reads.
+	pairs = append(pairs, view.Pair{Key: "requireRepoPolicy", Value: yesNo(on)})
+	next := "`rta policy show` says what ceiling a directory with no " + policy.RepoFile + " runs under"
+	switch {
+	case dryRun && changed:
+		next = "run without --dry-run to write it"
+	case on:
+		var here string
+		here, next = repoPolicyHere()
+		pairs = append(pairs, view.Pair{Key: "this directory", Value: here})
+	}
+	return view.KeyValue{Pairs: append(pairs, view.Pair{Key: "next", Value: next})}
+}
+
+// repoPolicyHere is whether the working directory meets a requirement that
+// stands, read from the ceiling as every later command will read it, and what
+// to do about it. Refused, the refusal's own message is the answer: no file,
+// a file that constrains nothing, or a policy file that does not parse.
+func repoPolicyHere() (here, next string) {
+	ceiling, verr := grant.Ceiling()
+	switch {
+	case verr != nil && verr.Code == "policy.repo.missing":
+		return verr.Message, "`rta policy init` writes one here"
+	case verr != nil:
+		return verr.Message, verr.Hint
+	case len(ceiling.Repo) > 0:
+		return "has one: " + strings.Join(ceiling.Repo, ", "),
+			"a directory without one is refused, naming the directory rta searched from"
+	}
+	return "no " + policy.RepoFile + " found from " + ceiling.SearchedFrom,
+		"`rta policy init` writes one here"
 }
 
 // setRequireRepo edits the key in place, preserving whatever else the file

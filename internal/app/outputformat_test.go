@@ -92,6 +92,7 @@ func TestABrokenOutputDefaultStopsASetupCommandBeforeItWrites(t *testing.T) {
 		written string
 	}{
 		{[]string{"policy", "init"}, filepath.Join(dir, policy.RepoFile)},
+		{[]string{"policy", "require"}, policy.OperatorPath()},
 	} {
 		_, _, err := run(c.args...)
 		var ve *view.Error
@@ -126,6 +127,7 @@ func TestABrokenOutputDefaultLeavesTheViewlessCommandsAlone(t *testing.T) {
 		{[]string{"profile"}, false},
 		{[]string{"profile", "list"}, true},
 		{[]string{"policy", "init"}, true},
+		{[]string{"policy", "require"}, true},
 		{[]string{"plugin", "install"}, true},
 		{[]string{"demo", "item", "list"}, true},
 	} {
