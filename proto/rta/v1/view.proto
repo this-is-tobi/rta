@@ -43,6 +43,10 @@ message Error {
 message Text {
   string body = 1;
   bool markdown = 2;
+  // What a person is told when body is empty. Presentation, like a column's
+  // kind: a host draws it on a screen and in a report, and never encodes it
+  // into json, yaml, csv or an MCP result — see Table.empty.
+  string empty = 3;
 }
 
 // Pair is one labelled value.
@@ -117,6 +121,13 @@ message Table {
   // could not read is otherwise indistinguishable from one that listed
   // everything there was.
   repeated Error warnings = 7;
+  // What a person is told in place of the table when it has no rows: that
+  // nothing is stored yet, and how to add something. Headings over nothing
+  // read, on a screen, like a listing that failed. A host draws it only
+  // where a person reads the result — a terminal, a report, the TUI — and
+  // never encodes it, so a program still meets the empty table it asked
+  // for. Answer "empty" with the table and this, never with a Text.
+  string empty = 8;
 }
 
 enum ChartKind {
@@ -152,6 +163,9 @@ message Node {
 
 message Tree {
   repeated Node roots = 1;
+  // What a person is told in place of a tree with no roots — see
+  // Table.empty.
+  string empty = 2;
 }
 
 // Section is one titled part of a composite view.

@@ -172,7 +172,9 @@ func TestEveryChartAndColumnKindOnTheWireHasAMapping(t *testing.T) {
 // enough that a recursive encoder that stops at depth one fails.
 func everyViewType() map[string]view.View {
 	return map[string]view.View{
-		"text": view.Text{Body: "body", Markdown: true},
+		// Empty beside content rather than in place of it: the fixture's job
+		// is that every field is non-zero, and a host decides when it draws.
+		"text": view.Text{Body: "body", Markdown: true, Empty: "nothing changed"},
 		"keyvalue": view.KeyValue{
 			Pairs:    []view.Pair{{Key: "k", Value: "v"}, {Key: "secret", Value: "s"}},
 			Redacted: []string{"secret"},
@@ -190,13 +192,14 @@ func everyViewType() map[string]view.View {
 				Code: "x.partial", Message: "two namespaces could not be listed",
 				Hint: "the credential needs list on them",
 			}},
+			Empty: "nothing stored yet — add one with: demo add",
 		},
 		"tree": view.Tree{Roots: []view.Node{
 			{Label: "root", Detail: "d", Children: []view.Node{
 				{Label: "child", Detail: "cd", Children: []view.Node{{Label: "grandchild", Detail: "gd"}}},
 			}},
 			{Label: "second root"},
-		}},
+		}, Empty: "no keys yet"},
 		"chart": view.Chart{
 			Kind:   view.ChartLine,
 			Series: []view.Series{{Name: "cpu", Points: []float64{1, 2.5, 3}}},
@@ -234,6 +237,31 @@ func TestEveryViewSurvivesARoundTrip(t *testing.T) {
 		got := ViewFromProto(ViewToProto(v))
 		if !reflect.DeepEqual(got, v) {
 			t.Errorf("%s did not survive:\n want %#v\n  got %#v", name, v, got)
+		}
+	}
+}
+
+// Every field of every view in the fixture is set, so the round trip above
+// checks each one crosses — the rule TestEveryDeclarationFieldIsCarried holds
+// the declaration fixture to, for the same reason.
+//
+// The view fixture had no such check, and a field could be added to a view
+// and to nothing else: Table.Empty went into pkg/view and not onto the wire,
+// and a plugin's empty table was drawn as its headings while a built-in's
+// said what would fill it — the round trip passed, since the fixture left
+// the field empty on both sides.
+func TestEveryViewFieldIsCarried(t *testing.T) {
+	for name, v := range everyViewType() {
+		rv := reflect.ValueOf(v)
+		if rv.Kind() == reflect.Pointer {
+			rv = rv.Elem()
+		}
+		for i := 0; i < rv.NumField(); i++ {
+			f := rv.Type().Field(i)
+			if f.IsExported() && rv.Field(i).IsZero() {
+				t.Errorf("%s.%s is zero in the round-trip fixture, so nothing checks whether it crosses the wire",
+					name, f.Name)
+			}
 		}
 	}
 }

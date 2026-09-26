@@ -161,8 +161,11 @@ type Table struct {
 	// iterate, and -o csv a shape it refused. A program reads the empty
 	// table; the sentence is presentation, the way a column's kind is.
 	//
-	// Not carried across the plugin wire: a plugin's empty table is drawn as
-	// its headings.
+	// Carried across the plugin wire, as a column's kind is, so a plugin's
+	// empty table says what would fill it the way a built-in's does. It is
+	// not carried by `--server`: the operator channel answers with grants,
+	// locks and parked calls, and the reading machine builds the table and
+	// its sentence from them with the code its own listing uses.
 	Empty string `json:"-"`
 }
 

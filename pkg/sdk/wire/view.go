@@ -111,7 +111,7 @@ func ViewToProto(v view.View) *rtav1.View {
 		return &rtav1.View{}
 	case view.Text:
 		return &rtav1.View{Kind: &rtav1.View_Text{Text: &rtav1.Text{
-			Body: t.Body, Markdown: t.Markdown,
+			Body: t.Body, Markdown: t.Markdown, Empty: t.Empty,
 		}}}
 	case view.KeyValue:
 		return &rtav1.View{Kind: &rtav1.View_KeyValue{KeyValue: &rtav1.KeyValue{
@@ -134,6 +134,7 @@ func ViewToProto(v view.View) *rtav1.View {
 			Warnings: mapSlice(t.Warnings, func(w view.Error) *rtav1.Error {
 				return ErrorToProto(&w)
 			}),
+			Empty: t.Empty,
 		}
 		if t.Page != nil {
 			tbl.Page = &rtav1.Cursor{Next: t.Page.Next}
@@ -141,7 +142,7 @@ func ViewToProto(v view.View) *rtav1.View {
 		return &rtav1.View{Kind: &rtav1.View_Table{Table: tbl}}
 	case view.Tree:
 		return &rtav1.View{Kind: &rtav1.View_Tree{Tree: &rtav1.Tree{
-			Roots: nodesToProto(t.Roots),
+			Roots: nodesToProto(t.Roots), Empty: t.Empty,
 		}}}
 	case view.Chart:
 		return &rtav1.View{Kind: &rtav1.View_Chart{Chart: &rtav1.Chart{
@@ -184,7 +185,7 @@ func ViewFromProto(v *rtav1.View) view.View {
 	}
 	switch k := v.Kind.(type) {
 	case *rtav1.View_Text:
-		return view.Text{Body: k.Text.GetBody(), Markdown: k.Text.GetMarkdown()}
+		return view.Text{Body: k.Text.GetBody(), Markdown: k.Text.GetMarkdown(), Empty: k.Text.GetEmpty()}
 	case *rtav1.View_KeyValue:
 		return view.KeyValue{
 			Pairs: mapSlice(k.KeyValue.GetPairs(), func(p *rtav1.Pair) view.Pair {
@@ -213,13 +214,14 @@ func ViewFromProto(v *rtav1.View) view.View {
 				}
 				return view.Error{}
 			}),
+			Empty: k.Table.GetEmpty(),
 		}
 		if p := k.Table.GetPage(); p != nil {
 			t.Page = &view.Cursor{Next: p.GetNext()}
 		}
 		return t
 	case *rtav1.View_Tree:
-		return view.Tree{Roots: nodesFromProto(k.Tree.GetRoots())}
+		return view.Tree{Roots: nodesFromProto(k.Tree.GetRoots()), Empty: k.Tree.GetEmpty()}
 	case *rtav1.View_Chart:
 		return view.Chart{
 			Kind: chartKindFromProto(k.Chart.GetKind()),
