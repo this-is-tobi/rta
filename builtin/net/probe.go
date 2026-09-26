@@ -107,7 +107,8 @@ func runSend(ctx context.Context, req plugin.Request) (view.View, error) {
 	data := req.String("data")
 	if strings.TrimSpace(data) == "" {
 		return nil, view.Errorf("net.send.nodata", "nothing to send").
-			WithHint("pass --data, or use `rta net probe` to listen without speaking")
+			WithHint("give it in " + req.Surface().InputName("data") + ", or use " +
+				req.Surface().CapabilityName("net.probe") + " to listen without speaking")
 	}
 	// A dry run must not reach the network — the same rule http.post learned
 	// the hard way, and this capability is the one with the
@@ -153,7 +154,8 @@ func probe(ctx context.Context, req plugin.Request, send string) (view.View, err
 	conn, err := (&stdnet.Dialer{Timeout: timeout}).DialContext(ctx, "tcp", address)
 	if err != nil {
 		return nil, view.Errorf("net.probe.unreachable", "connecting to %s: %v", address, err).
-			WithHint("the port may be closed or filtered — `rta net port " + host + "` scans a range")
+			WithHint("the port may be closed or filtered — " + req.Surface().CapabilityName("net.port") +
+				" scans a range of " + host + "'s ports")
 	}
 	defer func() { _ = conn.Close() }()
 	connected := time.Since(start)
@@ -184,7 +186,7 @@ func probe(ctx context.Context, req plugin.Request, send string) (view.View, err
 		defer cancel()
 		if err := tc.HandshakeContext(hctx); err != nil {
 			return nil, view.Errorf("net.probe.tls", "TLS handshake with %s: %v", address, err).
-				WithHint("drop --tls to inspect the plain connection")
+				WithHint(req.Surface().WithoutInputs("tls") + ", the plain connection is inspected")
 		}
 		state := tc.ConnectionState()
 		pairs = append(pairs,
@@ -228,7 +230,7 @@ func probe(ctx context.Context, req plugin.Request, send string) (view.View, err
 	// service could send word for word.
 	response := view.Text{Body: printable(banner)}
 	if len(banner) == 0 {
-		response.Empty = silence(send, wait, host, port)
+		response.Empty = silence(req.Surface(), send, wait, host, port)
 	}
 	return view.Sections{Items: []view.Section{
 		{ID: "connection", Title: "connection", View: view.KeyValue{Pairs: pairs}},
@@ -241,14 +243,18 @@ func probe(ctx context.Context, req plugin.Request, send string) (view.View, err
 // for the client are net.send's to reach. net.send has already spoken, and
 // offering it again sent somebody to repeat the call that just went
 // unanswered: what is left to change is the wait, or how the request ends.
-func silence(sent string, wait time.Duration, host string, port int) string {
+// Both are named, and net.send's call is spelled, the way sf, the surface
+// asking, gives them.
+func silence(sf plugin.Surface, sent string, wait time.Duration, host string, port int) string {
 	if sent != "" {
 		return fmt.Sprintf("The port took the %s sent and said nothing back in %s.\n\n"+
-			"A slow service may answer given a longer --wait, and many protocols act only on "+
-			"a request ended by a line break — \\r\\n in --data is sent as one.",
-			format.Bytes(len(unescape(sent))), wait)
+			"A slow service may answer given a longer %s, and many protocols act only on "+
+			"a request ended by a line break — \\r\\n in %s is sent as one.",
+			format.Bytes(len(unescape(sent))), wait, sf.InputName("wait"), sf.InputName("data"))
 	}
 	return fmt.Sprintf("The port is open but said nothing in %s.\n\n"+
-		"Many protocols expect the client to speak first — try:\n"+
-		"  rta net send %s %d --data \"GET / HTTP/1.0\\r\\n\\r\\n\"", wait, host, port)
+		"Many protocols expect the client to speak first — try:\n  %s", wait,
+		sf.Call("net.send", plugin.Arg{Name: "host", Value: host, Positional: true},
+			plugin.Arg{Name: "port", Value: port, Positional: true},
+			plugin.Arg{Name: "data", Value: `GET / HTTP/1.0\r\n\r\n`}))
 }

@@ -624,7 +624,8 @@ func TestAPermissionFailureStillSaysToUseSudo(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
 
-	verr := writeLines(path, []string{"127.0.0.1 localhost", "10.0.0.1 example.test"})
+	lines := []string{"127.0.0.1 localhost", "10.0.0.1 example.test"}
+	verr := writeLines(plugin.SurfaceCLI, path, lines)
 	if verr == nil {
 		t.Fatal("writing into an unwritable directory reported success")
 	}
@@ -633,5 +634,11 @@ func TestAPermissionFailureStillSaysToUseSudo(t *testing.T) {
 	}
 	if !strings.Contains(verr.Hint, "sudo") {
 		t.Errorf("hint = %q, want it to name sudo", verr.Hint)
+	}
+	// An agent never typed a command to run again: the change is the
+	// operator's.
+	if verr := writeLines(plugin.SurfaceMCP, path, lines); verr == nil ||
+		strings.Contains(verr.Hint, "the same command") || !strings.Contains(verr.Hint, "the operator's to make") {
+		t.Errorf("over MCP: %+v, want the change handed to the operator", verr)
 	}
 }

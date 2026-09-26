@@ -511,6 +511,19 @@ func isNotFound(err error) bool {
 	return errors.As(err, &d) && d.IsNotFound
 }
 
+// anotherQuestion is what a name with no records is asked next, named the way
+// sf, the surface asking, gives it: another record type, or another resolver.
+// The resolver is Local, so no agent's schema has it, and over MCP it is the
+// operator's to change — a hint naming a server argument sent the agent after
+// one its tool does not take.
+func anotherQuestion(sf plugin.Surface) string {
+	hint := "try another record type in " + sf.InputName("type") + " (" + strings.Join(dnsTypes, ", ") + ")"
+	if sf == plugin.SurfaceMCP {
+		return hint + " — which resolver answers is the operator's to change"
+	}
+	return hint + ", or another resolver in " + sf.InputName("server")
+}
+
 func runDNS(ctx context.Context, req plugin.Request) (view.View, error) {
 	name := strings.TrimSpace(req.String("name"))
 	rtype := strings.ToUpper(strings.TrimSpace(req.String("type")))
@@ -568,7 +581,7 @@ func runDNS(ctx context.Context, req plugin.Request) (view.View, error) {
 				strings.Join(types, "/"), name, lastErr)
 		}
 		return nil, view.Errorf("net.dns.norecords", "no %s records for %s", strings.Join(types, "/"), name).
-			WithHint("try another --type (" + strings.Join(dnsTypes, ", ") + ") or another --server")
+			WithHint(anotherQuestion(req.Surface()))
 	}
 	// **One type answering does not make another type's failure stop
 	// mattering.** Reaching the line above means something resolved, and
@@ -705,7 +718,7 @@ func runPort(ctx context.Context, req plugin.Request) (view.View, error) {
 	}
 	if err != nil {
 		return nil, view.Errorf("net.port.badspec", "%v", err).
-			WithHint("example: --ports 22,80,8000-8010")
+			WithHint(req.Surface().InputName("ports") + " takes a list such as 22,80,8000-8010")
 	}
 	if len(ports) == 0 {
 		return nil, view.Errorf("net.port.empty", "no ports to scan")
