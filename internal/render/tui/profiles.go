@@ -271,7 +271,10 @@ func environmentNote(c plugin.Capability, f plugin.Field, seed map[string]any,
 		row.env = plugin.ProfileEnvVar(name, f.Name)
 		_, row.exported = os.LookupEnv(row.env)
 	}
-	return row.formNote(name)
+	// Cleaned because it joins the declaration's help, which Validate held
+	// to plain text, with a reference out of the config file, which nothing
+	// did — and the box draws the two as one line.
+	return textclean.Terminal(row.formNote(name))
 }
 
 // profileRow is one configured environment and everything the outer pane shows
@@ -735,9 +738,13 @@ func profileCovers(row profileRow) string {
 // The problem wins when there is one. An environment that cannot resolve has
 // nothing useful to say about its credentials, and showing both invites
 // somebody to fix the wrong thing.
+//
+// Cleaned before it is styled, like every line under a band (profileCovers
+// says why the renderer cannot): a problem quotes what the file holds — a
+// ttl that is not a duration, an entry key that does not parse.
 func profileDetail(row profileRow) string {
 	if !row.valid() {
-		return theme.BadText.Render(row.problem)
+		return theme.BadText.Render(textclean.Terminal(row.problem))
 	}
 	needed, unset := row.missing()
 	switch {
@@ -821,16 +828,19 @@ func connSummary(c connRow) string {
 	return theme.Faded.Render(strings.Join(parts, " "))
 }
 
+// connDetail is the credential line under one plugin, or why the entry does
+// not work. Cleaned before it is styled, for profileDetail's reason; a
+// credential's source is a `secrets:` reference exactly as the file has it.
 func connDetail(c connRow) string {
 	if !c.valid() {
-		return theme.BadText.Render(c.problem)
+		return theme.BadText.Render(textclean.Terminal(c.problem))
 	}
 	if len(c.credentials) == 0 {
 		return theme.Faded.Render("no credential needed")
 	}
 	parts := make([]string, 0, len(c.credentials))
 	for _, cr := range c.credentials {
-		text := cr.input + ": " + cr.source()
+		text := textclean.Terminal(cr.input + ": " + cr.source())
 		if !cr.satisfied() {
 			parts = append(parts, theme.WarnText.Render(text))
 			continue

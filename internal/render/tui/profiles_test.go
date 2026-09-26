@@ -937,3 +937,40 @@ func TestDeleteAsksBeforeRemovingAConnection(t *testing.T) {
 		t.Errorf("staging still has %+v after a confirmed remove", got)
 	}
 }
+
+// The renderer cleans a band's name and nothing under it, because the detail
+// lines arrive styled. What those lines quote from the config file has to be
+// cleaned before it is styled: a ttl, an entry's key or a `secrets:`
+// reference holding ESC [2J cleared the screen from inside the pane, by way
+// of the problem naming it or the credential line and form note naming the
+// reference.
+func TestTheProfilePanesDrawWhatTheFileSaysClean(t *testing.T) {
+	clearScreen := string(rune(0x1b)) + "[2J"
+	m := profileModel(t, config.Config{Profiles: map[string]config.Profile{
+		"staging": {TTL: "1h" + clearScreen,
+			Plugins: map[string]config.Connection{"db": conn(map[string]any{"host": "x"})}},
+		"prod": {Plugins: map[string]config.Connection{
+			"db/a" + clearScreen: conn(map[string]any{"host": "x"}),
+			"vaulty":             {Secrets: map[string]string{"token": "kv:prod" + clearScreen}},
+		}},
+	}})
+	if err := m.reg.Register(credentialPlugin()); err != nil {
+		t.Fatal(err)
+	}
+	m.profiles = m.profileRows()
+
+	m.mode = modeProfiles
+	if out := m.profilesView(); strings.Contains(out, clearScreen) {
+		t.Errorf("the environments pane drew the ttl's escape raw:\n%q", out)
+	}
+	m.profileOpen, m.mode = "prod", modeProfilePlugins
+	if out := m.connsView(); strings.Contains(out, clearScreen) {
+		t.Errorf("the plugins pane drew an entry key or a reference raw:\n%q", out)
+	}
+
+	c, _ := m.reg.Capability("vaulty.get")
+	refs := map[string]config.SecretRef{"token": {Input: "token", Scheme: "kv", Ref: "prod" + clearScreen}}
+	if note := environmentNote(c, c.Inputs[0], nil, "prod", refs); strings.Contains(note, clearScreen) {
+		t.Errorf("a form box's note quoted the reference raw: %q", note)
+	}
+}
