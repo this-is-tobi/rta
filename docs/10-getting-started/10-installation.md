@@ -232,7 +232,7 @@ rta runs with no configuration at all. When you want some:
 rta init
 ```
 
-That writes `~/.config/rta/config.yaml` (or the platform equivalent — `rta doctor` prints the exact path). `RTA_CONFIG` overrides the location, which is what portable setups and test harnesses use.
+That asks two questions — the default output format and the dashboard tiles — and writes `~/.config/rta/config.yaml` (or the platform equivalent: the answer names the file it wrote on its `wrote` line, and `rta doctor` prints the path too). `RTA_CONFIG` overrides the location, which is what portable setups and test harnesses use.
 
 Nothing in the config grants anything. It holds connection profiles, dashboard preferences and theme — see [Profiles](../20-using/40-profiles.md).
 

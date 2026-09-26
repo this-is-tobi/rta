@@ -138,10 +138,12 @@ const CodeOutputInvalid = "core.output.invalid"
 
 // annotOutputExempt marks a command a broken default output format does not
 // stop: one that writes no view in that format — plain text, a file's bytes,
-// a server's protocol, an interactive form — and doctor, which is where
-// somebody goes to find out what is broken and reports it as a row
-// (doctorOutput). `mcp serve` among the first, which ran with a broken default
-// before and has nothing to render it in.
+// a server's protocol — and the two that render but are how a broken default
+// is dealt with, drawing their answer in pretty when it names nothing: doctor,
+// which is where somebody goes to find out what is broken and reports it as a
+// row (doctorOutput), and init, which rewrites the key. `mcp serve` among the
+// first, which ran with a broken default before and has nothing to render it
+// in.
 //
 // Marked on the exempt commands rather than on the ones that render, because
 // forgetting the mark is then a refusal before anything runs, which the
@@ -597,7 +599,7 @@ func NewRoot(reg *registry.Registry, version string) *cobra.Command {
 	root.AddCommand(newExplainCommand(reg, opts))
 	root.AddCommand(newPluginCommand(reg, version, opts))
 	root.AddCommand(newDoctorCommand(reg, opts))
-	root.AddCommand(newInitCommand(reg))
+	root.AddCommand(newInitCommand(reg, opts))
 	root.AddCommand(newUseCommand(opts))
 	root.AddCommand(newPolicyCommand(opts))
 	root.AddCommand(newProfileCommand(reg, opts))
