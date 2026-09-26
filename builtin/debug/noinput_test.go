@@ -16,8 +16,8 @@ import (
 func TestTheNoInputHintNamesWhatEachSurfaceCanDo(t *testing.T) {
 	for surface, want := range map[plugin.Surface]string{
 		plugin.SurfaceCLI: "pipe it",
-		plugin.SurfaceMCP: "pass it as the input argument",
-		plugin.SurfaceTUI: "paste it into the input box",
+		plugin.SurfaceMCP: `give it in the "input" argument`,
+		plugin.SurfaceTUI: "give it in the input box",
 	} {
 		_, err := runAnsi(context.Background(), req(map[string]any{"input": ""}).WithSurface(surface))
 		verr := view.AsError(err, "debug.test")

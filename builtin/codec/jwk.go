@@ -391,7 +391,7 @@ func runJWK(_ context.Context, req plugin.Request) (view.View, error) {
 		case strings.HasPrefix(raw, "-----BEGIN"):
 			hint = pemHint(raw, req.Surface())
 		case strings.Count(raw, ".") == 2 || strings.Count(raw, ".") == 4:
-			hint = "that looks like a token — `rta codec jwt` reads those"
+			hint = "that looks like a token — " + req.Surface().CapabilityName("codec.jwt") + " reads those"
 		}
 		return nil, view.Errorf("codec.jwk.invalid", "not a JSON Web Key: %v", err).WithHint(hint)
 	}
@@ -419,13 +419,10 @@ func pemHint(raw string, s plugin.Surface) string {
 	case block == nil:
 		return "that is PEM, and codec.jwk reads JSON Web Keys"
 	case block.Type == "CERTIFICATE":
-		return "that is a PEM certificate — saved to a file, `rta cert inspect <file>` reads it"
+		return "that is a PEM certificate — saved to a file, " + s.CapabilityName("cert.inspect") + " reads it"
 	case strings.HasSuffix(block.Type, "KEY"):
-		where := "`rta codec jwt --key` takes a PEM key as it is"
-		if s == plugin.SurfaceTUI || s == plugin.SurfaceMCP {
-			where = "codec.jwt takes a PEM key as it is, in " + inputName(s, "key")
-		}
-		return "that is a PEM key, and codec.jwk reads JSON Web Keys — " + where + ", to verify a token with"
+		return "that is a PEM key, and codec.jwk reads JSON Web Keys — " + s.CapabilityName("codec.jwt") +
+			" takes a PEM key as it is, in " + s.InputName("key") + ", to verify a token with"
 	}
 	return "that is PEM, and codec.jwk reads JSON Web Keys"
 }

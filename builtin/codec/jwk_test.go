@@ -310,9 +310,9 @@ func TestAKeySetSavedWithAByteOrderMarkIsRead(t *testing.T) {
 func TestSomethingElseIsSentWhereItBelongs(t *testing.T) {
 	pub := publicPEM(t, &rsaKey().PublicKey)
 	for input, want := range map[string]string{
-		"-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----": "`rta cert inspect <file>` reads it",
-		pub:                                "`rta codec jwt --key` takes a PEM key as it is",
-		strings.ReplaceAll(pub, "\n", " "): "`rta codec jwt --key` takes a PEM key as it is",
+		"-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----": "saved to a file, `rta cert inspect` reads it",
+		pub:                                "`rta codec jwt` takes a PEM key as it is, in --key",
+		strings.ReplaceAll(pub, "\n", " "): "`rta codec jwt` takes a PEM key as it is, in --key",
 		buildJWT(t, `{"alg":"HS256"}`, `{"sub":"a"}`): "rta codec jwt",
 		`{"iss":"not a key"}`:                         "kty",
 	} {
