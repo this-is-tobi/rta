@@ -590,13 +590,20 @@ func groupedProblems(problems []profile.Problem) []string {
 // from it.
 func doctorProfiles(reg *registry.Registry, add func(check, status, detail string)) {
 	if cfg, err := config.Load(); err == nil && len(cfg.Profiles) > 0 {
-		problems := profile.Check(cfg, reg)
+		// The registry paired with what discovery refused to run — the view
+		// `rta profile list` and the TUI check against. The bare registry
+		// cannot tell a plugin that is not there from one that is there and
+		// was rebuilt, which drops its approval, so doctor alone said "not a
+		// registered plugin" about a file on the disk and sent the operator
+		// to reinstall it, while the other two said to trust it.
+		inst := withTrust{reg}
+		problems := profile.Check(cfg, inst)
 		for _, line := range groupedProblems(problems) {
 			add("profile", "warn", line)
 		}
 		// Said, and not counted against the profile below: each of these
 		// still resolves.
-		for _, line := range groupedProblems(profile.Notes(cfg, reg)) {
+		for _, line := range groupedProblems(profile.Notes(cfg, inst)) {
 			add("profile", "warn", line)
 		}
 		// Two names that derive the same variables. `rta profile set` refuses

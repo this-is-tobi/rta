@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/this-is-tobi/rta/builtin/kv"
+	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/pluginhost"
 	"github.com/this-is-tobi/rta/internal/plugintrust"
@@ -232,6 +233,53 @@ func TestDoctorSaysARepeatedProfileProblemOnce(t *testing.T) {
 		if !strings.Contains(row, want) {
 			t.Errorf("the row does not carry %q: %s", want, row)
 		}
+	}
+}
+
+// A rebuilt plugin is on the disk and unregistered until somebody approves the
+// new bytes, so a profile naming it is refused — and doctor has to give the
+// same reason `rta profile list` and the TUI give, not send the operator
+// looking for an install that is already there.
+func TestDoctorSaysAProfilePluginIsInstalledButUnapproved(t *testing.T) {
+	_, configDir := isolate(t)
+	SetUntrustedPlugins([]pluginhost.Untrusted{{Name: "dummy", Path: "/usr/local/bin/rta-plugin-dummy"}})
+	t.Cleanup(func() { SetUntrustedPlugins(nil) })
+	const cfg = `profiles:
+  staging:
+    plugins:
+      dummy@299001868fb8:
+        set: {a: b}
+`
+	if err := os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	reg := testRegistry(t)
+	cfgLoaded, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed := profileTable(cfgLoaded, reg).Rows[0][3]
+
+	var profileRows []string
+	for _, r := range doctorReport(reg).(view.Table).Rows {
+		if r[0] == "profile" {
+			profileRows = append(profileRows, r[2])
+		}
+	}
+	if len(profileRows) != 1 {
+		t.Fatalf("one profile naming one unapproved plugin, %d rows:\n%s",
+			len(profileRows), strings.Join(profileRows, "\n"))
+	}
+	row := profileRows[0]
+	if !strings.Contains(row, listed) {
+		t.Errorf("doctor and `rta profile list` disagree:\ndoctor: %s\nlist:   %s", row, listed)
+	}
+	if !strings.Contains(row, "rta plugin trust dummy") {
+		t.Errorf("the row does not name the command that fixes this: %s", row)
+	}
+	if strings.Contains(row, "not a registered plugin") {
+		t.Errorf("an installed plugin is reported as missing: %s", row)
 	}
 }
 
