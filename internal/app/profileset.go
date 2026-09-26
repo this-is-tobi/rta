@@ -112,10 +112,10 @@ func profileSetCommand(reg *registry.Registry, render renderFn, opts *globalOpts
 	// TunnelTLS's doc comment has the full reasoning.
 	cmd.Flags().Bool("tunnel-tls", false,
 		"the far side of the forward speaks TLS on its own — fill the endpoint as https, not http")
-	_ = cmd.RegisterFlagCompletionFunc("plugin", completeInstalledPlugins)
-	_ = cmd.RegisterFlagCompletionFunc("ttl", completeWindow)
-	_ = cmd.RegisterFlagCompletionFunc("set", completeSetKeys)
-	_ = cmd.RegisterFlagCompletionFunc("secret", completeSecretInputs)
+	completeFlag(cmd, "plugin", completeInstalledPlugins)
+	completeFlag(cmd, "ttl", completeWindow)
+	completeFlag(cmd, "set", completeSetKeys)
+	completeFlag(cmd, "secret", completeSecretInputs)
 	return cmd
 }
 
@@ -227,7 +227,7 @@ func profileRemoveCommand(reg *registry.Registry, render renderFn, opts *globalO
 	}
 	cmd.Flags().String("plugin", "", "remove only this plugin's entry, keeping the environment — "+
 		"`pg`, or `pg/analytics` for one instance of it")
-	_ = cmd.RegisterFlagCompletionFunc("plugin", completeInstalledPlugins)
+	completeFlag(cmd, "plugin", completeInstalledPlugins)
 	return cmd
 }
 

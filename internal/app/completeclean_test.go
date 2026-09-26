@@ -2,6 +2,9 @@ package app
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -9,6 +12,66 @@ import (
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
+
+// Every producer holds to that rule, not only a capability's own fields: the
+// --profile flag, the profile names the app's commands complete, and what the
+// plugin and index commands offer printed a note from the config file or a
+// name from a file as it came. A note is the operator's text, but the config
+// file is also a file a script or a tool writes, and the terminal acts on an
+// escape in it whoever wrote it.
+func TestEveryCompletionHoldsToTheSameRule(t *testing.T) {
+	esc, bel, rlo := string(rune(0x1b)), string(rune(0x07)), string(rune(0x202e))
+	note := "prod" + esc + "]0;owned" + bel + rlo + "db"
+	config := "profiles:\n  staging:\n    note: " + strconv.Quote(note) +
+		"\n    plugins:\n      db:\n        set:\n          host: " + strconv.Quote("db"+rlo+".internal") + "\n"
+	reg := setRegistry(t)
+	for _, args := range [][]string{
+		{"use", ""},
+		{"profile", "show", ""},
+		{"db", "status", "--profile", ""},
+	} {
+		out, errOut, err := runWith(t, reg, config, append([]string{"__complete"}, args...)...)
+		if err != nil {
+			t.Fatalf("%v: %v %q", args, err, errOut)
+		}
+		if strings.ContainsAny(out, esc+bel) || strings.Contains(out, rlo) {
+			t.Errorf("%v: offered %q, which a terminal acts on", args, out)
+		}
+		if !strings.Contains(out, "staging\t") {
+			t.Errorf("%v: %q does not offer staging, described", args, out)
+		}
+	}
+}
+
+// cobra keeps flag completions in a table nothing can rewrite once they are
+// registered, so a tree walk cannot hold them to the rule the way it does
+// argument completion. completeFlag is the one registration; a second call
+// site would be a producer the rule does not reach.
+func TestEveryFlagCompletionIsRegisteredThroughOneRule(t *testing.T) {
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	for _, f := range files {
+		if strings.HasSuffix(f, "_test.go") {
+			continue
+		}
+		src, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if n := strings.Count(string(src), ".RegisterFlagCompletionFunc("); n > 0 {
+			calls += n
+			if f != "app.go" {
+				t.Errorf("%s registers a flag completion itself; use completeFlag", f)
+			}
+		}
+	}
+	if calls != 1 {
+		t.Errorf("%d calls to RegisterFlagCompletionFunc, want the one inside completeFlag", calls)
+	}
+}
 
 // Shell completion holds what it offers to the rule the TUI and the list of
 // recent values already keep: a value that would display as something other

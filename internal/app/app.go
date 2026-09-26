@@ -553,7 +553,7 @@ func NewRoot(reg *registry.Registry, version string) *cobra.Command {
 	// A closed set of five, inherited by every command in the tree — the same
 	// case Field.Options already gets for free on a plugin's own inputs, which
 	// is what makes its absence here conspicuous rather than acceptable.
-	_ = root.RegisterFlagCompletionFunc("output",
+	completeFlag(root, "output",
 		func(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
 			return cli.Formats(), cobra.ShellCompDirectiveNoFileComp
 		})
@@ -590,6 +590,7 @@ func NewRoot(reg *registry.Registry, version string) *cobra.Command {
 	// answer itself; every other command inherits this one.
 	root.SetFlagErrorFunc(usageError)
 	codeUsageErrors(root)
+	completeThroughOneRule(root)
 	return root
 }
 
@@ -732,7 +733,7 @@ func attach(parent *cobra.Command, c plugin.Capability, opts *globalOpts) {
 	if plugin.Profilable(c) && cmd.Flags().Lookup("profile") == nil {
 		cmd.Flags().String("profile", "", "run against one of the connections in your config "+
 			"(name, or name/instance when an environment holds several)")
-		_ = cmd.RegisterFlagCompletionFunc("profile",
+		completeFlag(cmd, "profile",
 			func(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
 				cfg, err := config.Load()
 				if err != nil {
@@ -884,7 +885,7 @@ func declareCompletion(cmd *cobra.Command, c plugin.Capability, positionals []pl
 			continue
 		}
 		f := f
-		_ = cmd.RegisterFlagCompletionFunc(f.Name,
+		completeFlag(cmd, f.Name,
 			func(cmd *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
 				return candidates(cmd, c, f, args)
 			})
@@ -943,7 +944,9 @@ func candidates(cmd *cobra.Command, c plugin.Capability, f plugin.Field, args []
 	if f.Type == plugin.Path {
 		directive = cobra.ShellCompDirectiveDefault
 	}
-	out := shown(offering(f, c, f.Candidates(ctx, req)))
+	// Held to shown's rule by the producer this is called from, like every
+	// other completion (see completion).
+	out := offering(f, c, f.Candidates(ctx, req))
 	if len(out) == 0 {
 		return nil, directive
 	}
@@ -977,6 +980,43 @@ func shown(entries []cobra.Completion) []cobra.Completion {
 		out = append(out, entry)
 	}
 	return out
+}
+
+// completion holds a completion producer to shown's rule, so the shell hears
+// one rule from every producer rather than from a capability's fields alone.
+//
+// The app's own producers printed what they read as it came: a profile's
+// note on `--profile <tab>` and `rta use <tab>`, a file name on `rta plugin
+// trust <tab>`, an index name. A note is the operator's words, but the config
+// file is also written by scripts and tools, and a terminal acts on an escape
+// in it whoever wrote it. Wrapping the producer rather than cleaning inside
+// each one is what keeps the next producer from being the one that forgot.
+func completion(fn cobra.CompletionFunc) cobra.CompletionFunc {
+	if fn == nil {
+		return nil
+	}
+	return func(cmd *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
+		out, directive := fn(cmd, args, toComplete)
+		return shown(out), directive
+	}
+}
+
+// completeFlag registers a flag's completion through completion. cobra keeps
+// flag completions in a table nothing can rewrite afterwards, so this is the
+// one way the app registers one (TestEveryFlagCompletionIsRegisteredThroughOneRule).
+func completeFlag(cmd *cobra.Command, name string, fn cobra.CompletionFunc) {
+	_ = cmd.RegisterFlagCompletionFunc(name, completion(fn))
+}
+
+// completeThroughOneRule wraps every command's argument completion in
+// completion, after the tree is built, so a command added anywhere in it is
+// covered without being remembered here — the way codeUsageErrors covers
+// argument checks.
+func completeThroughOneRule(cmd *cobra.Command) {
+	cmd.ValidArgsFunction = completion(cmd.ValidArgsFunction)
+	for _, sub := range cmd.Commands() {
+		completeThroughOneRule(sub)
+	}
 }
 
 // remembered is this process's view of the shortlists. Read once: a shell

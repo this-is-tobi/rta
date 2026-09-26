@@ -672,11 +672,11 @@ func newPluginNewCommand(version string, opts *globalOpts) *cobra.Command {
 	// Both name a directory, so the shell does the listing. --rta-source also
 	// offers the answer this command would compute for itself, because on most
 	// machines there is exactly one and it is already known.
-	_ = cmd.RegisterFlagCompletionFunc("dir",
+	completeFlag(cmd, "dir",
 		func(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
 			return nil, cobra.ShellCompDirectiveFilterDirs
 		})
-	_ = cmd.RegisterFlagCompletionFunc("rta-source",
+	completeFlag(cmd, "rta-source",
 		func(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
 			if found := findRta(); found != "" {
 				return []cobra.Completion{

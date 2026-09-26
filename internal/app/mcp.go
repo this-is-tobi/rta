@@ -632,7 +632,7 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 	cmd.Flags().BoolVar(&consentNotify, "consent-notify", false,
 		"also ring this machine's desktop notification when a call is parked")
 	// A root is a directory, and the shell has the list.
-	_ = cmd.RegisterFlagCompletionFunc("root",
+	completeFlag(cmd, "root",
 		func(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
 			return nil, cobra.ShellCompDirectiveFilterDirs
 		})

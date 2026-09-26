@@ -53,7 +53,7 @@ func profileRepinCommand(reg *registry.Registry, render renderFn, opts *globalOp
 	cmd.Flags().String("plugin", "", "the plugin to repin — `pg`, or `pg/analytics` for one instance of it")
 	cmd.Flags().Bool("all", false, "repin every profile that has an entry for the plugin, not just one named on the command line")
 	_ = cmd.MarkFlagRequired("plugin")
-	_ = cmd.RegisterFlagCompletionFunc("plugin", completeInstalledPlugins)
+	completeFlag(cmd, "plugin", completeInstalledPlugins)
 	return cmd
 }
 

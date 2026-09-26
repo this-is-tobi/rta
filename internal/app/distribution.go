@@ -418,7 +418,7 @@ func newPluginUpgradeCommand(opts *globalOpts) *cobra.Command {
 		"upgrade every installed plugin, holding back any that would gain authority")
 	cmd.Flags().StringVar(&index, "index", "",
 		"with --all, sweep only the plugins installed from this index")
-	_ = cmd.RegisterFlagCompletionFunc("index", completeAttachedIndexes)
+	completeFlag(cmd, "index", completeAttachedIndexes)
 	return cmd
 }
 
@@ -549,7 +549,7 @@ func newPluginOutdatedCommand(opts *globalOpts) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&index, "index", "",
 		"only the plugins installed from this index")
-	_ = cmd.RegisterFlagCompletionFunc("index", completeAttachedIndexes)
+	completeFlag(cmd, "index", completeAttachedIndexes)
 	return cmd
 }
 
