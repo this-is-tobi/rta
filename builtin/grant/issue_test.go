@@ -132,9 +132,13 @@ func TestARoleIsIssuedWholeAndTakenBackWhole(t *testing.T) {
 	if tbl.Columns[2].Name != "Role" && tbl.Columns[3].Name != "Role" {
 		t.Fatalf("no Role column: %+v", tbl.Columns)
 	}
+	// A role that matches nothing is not an empty roster: two grants stand
+	// under dev, and saying no grant is standing told the person reading it
+	// that agents reach only what needs none.
 	if only, ok := run(t, listH, map[string]any{"role": "nope"}).(view.Table); !ok || len(only.Rows) != 0 ||
-		!strings.Contains(only.Empty, "No grant is standing") {
-		t.Fatalf("--role nope listed something: %+v", only)
+		!strings.Contains(only.Empty, "No standing grant was issued under the role nope") ||
+		strings.Contains(only.Empty, "No grant is standing") {
+		t.Fatalf("--role nope listed something, or said the roster is empty: %+v", only)
 	}
 
 	rv := run(t, runRevoke, map[string]any{"role": "dev"})
