@@ -95,15 +95,22 @@ func TestProbeReportsBanner(t *testing.T) {
 }
 
 // Silence is a real answer and the most confusing one, so it gets an
-// explanation rather than an empty pane.
+// explanation rather than an empty pane — beside the response, which is
+// empty, as what the port sent was.
+//
+// The explanation was the response, so -o json and an agent read rta's prose
+// where the server's bytes go.
 func TestProbeSilenceExplainsItself(t *testing.T) {
 	port := listenOnce(t, "")
 	s := probeSections(t, map[string]any{
 		"host": "127.0.0.1", "port": port, "timeout": 2, "wait": 1,
 	})
-	body := s.Items[1].View.(view.Text).Body
-	if !strings.Contains(body, "said nothing") || !strings.Contains(body, "net send") {
-		t.Errorf("silent response = %q", body)
+	response := s.Items[1].View.(view.Text)
+	if response.Body != "" {
+		t.Errorf("silent response body = %q, want nothing, which is what the port sent", response.Body)
+	}
+	if !strings.Contains(response.Empty, "said nothing") || !strings.Contains(response.Empty, "net send") {
+		t.Errorf("silence explained as %q", response.Empty)
 	}
 }
 
@@ -133,7 +140,7 @@ func TestSendSilenceDoesNotOfferSendAgain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := v.(view.Sections).Items[1].View.(view.Text).Body
+	body := v.(view.Sections).Items[1].View.(view.Text).Empty
 	if strings.Contains(body, "net send") || !strings.Contains(body, "said nothing back") ||
 		!strings.Contains(body, "6 B sent") || !strings.Contains(body, "--wait") {
 		t.Errorf("silence after a send = %q, want what was sent and what to change, not net send again", body)
