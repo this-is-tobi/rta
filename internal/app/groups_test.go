@@ -17,8 +17,6 @@ func TestEveryRootCommandIsGrouped(t *testing.T) {
 		t.Fatal(err)
 	}
 	root := NewRoot(reg, "test")
-	root.InitDefaultCompletionCmd()
-	root.InitDefaultHelpCmd()
 	groups := map[string][]string{}
 	for _, c := range root.Commands() {
 		if c.Hidden {

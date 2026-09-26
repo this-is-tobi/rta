@@ -279,6 +279,8 @@ func TestAUsageMistakeIsCodedAndExitsTwo(t *testing.T) {
 		{"nope"},                                 // an unknown command at the root
 		{"explain", "a", "b", "c"},               // cobra's own argument check
 		{"demo", "item", "list", "-o", "xml"},    // an --output nothing renders
+		{"completion", "zsh", "extra"},           // cobra's own command, an argument too many
+		{"completion", "nosuch"},                 // and a shell it does not know
 	} {
 		t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
 		t.Setenv("RTA_DATA_DIR", t.TempDir())

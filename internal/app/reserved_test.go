@@ -88,11 +88,9 @@ func TestTheCLIReservesEveryTopLevelCommandItOwns(t *testing.T) {
 	reserved := plugin.ReservedNamespaces()
 
 	reg := testRegistry(t)
+	// cobra's help and completion are in it: NewRoot attaches both, where
+	// cobra would otherwise add them only when the command runs.
 	root := NewRoot(reg, "test")
-	// Both are lazy, like the help flag: cobra adds them when the command
-	// runs, so a tree inspected before that has neither.
-	root.InitDefaultHelpCmd()
-	root.InitDefaultCompletionCmd()
 
 	namespaces := map[string]bool{}
 	for _, p := range reg.Plugins() {
