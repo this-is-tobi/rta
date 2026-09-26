@@ -310,6 +310,34 @@ func TestTreeShowsDirectoriesFirstThenNames(t *testing.T) {
 	}
 }
 
+// A negative depth is refused, and 0 still means no limit.
+//
+// The depth declared no bound, so -1 was taken and read as no limit — the
+// same as 0, by way of a check that happened to fail the same way — while
+// `rta explain`, the MCP schema and a dashboard tile's check all said any
+// integer would do.
+func TestUsageDepthIsZeroOrMore(t *testing.T) {
+	var usage plugin.Capability
+	for _, c := range Plugin().Capabilities {
+		if c.ID == "fs.usage" {
+			usage = c
+		}
+	}
+	guarded := plugin.GuardInputs(usage)
+	call := func(depth int) error {
+		in := plugin.Resolve(usage, plugin.Inputs{Caller: map[string]any{"path": t.TempDir(), "depth": depth}})
+		_, err := guarded(context.Background(), plugin.NewRequest(in, false, false))
+		return err
+	}
+	if err := call(-1); err == nil || view.AsError(err, "test").Code != "core.input.range" ||
+		!strings.Contains(err.Error(), "at least 0") {
+		t.Errorf("depth -1: err = %v, want core.input.range naming at least 0", err)
+	}
+	if err := call(0); err != nil {
+		t.Errorf("depth 0, no limit, was refused: %v", err)
+	}
+}
+
 // A branch that stopped listing looks exactly like an empty directory, and
 // that is a lie about the filesystem.
 func TestTreeSaysWhatItIsNotShowing(t *testing.T) {

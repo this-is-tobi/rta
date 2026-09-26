@@ -53,7 +53,11 @@ func Plugin() plugin.Plugin {
 				Inputs: []plugin.Field{
 					pathField("directory to measure"),
 					{Name: "limit", Type: plugin.Int, Config: "limit", Default: 20, Min: 1, Max: 1000, Help: "how many entries to rank"},
-					{Name: "depth", Type: plugin.Int, Config: "depth", Default: 0,
+					// Min 0 because 0 is the one value below 1 with a meaning
+					// — no limit — and -1 was taken as the same thing by
+					// accident, while every surface that reads the
+					// declaration said any integer would do.
+					{Name: "depth", Type: plugin.Int, Config: "depth", Default: 0, Min: 0,
 						Help: "how deep to descend when totalling (0 = no limit)"},
 				},
 				Run: runUsage,
