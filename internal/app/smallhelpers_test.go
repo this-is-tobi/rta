@@ -74,7 +74,7 @@ func TestTheOneWordHelpersSayTheRightWord(t *testing.T) {
 	if got := presentText(missing); got != missing+" (not present)" {
 		t.Errorf("presentText of a missing file = %q", got)
 	}
-	if got := repoPolicyText(policy.Ceiling{RepoFound: true, From: []string{"a", "b"}}); got != "a, b" {
+	if got := repoPolicyText(policy.Ceiling{Repo: []string{"a", "b"}, From: []string{"a", "b", "own"}}); got != "a, b" {
 		t.Errorf("repoPolicyText found = %q", got)
 	}
 	if got := repoPolicyText(policy.Ceiling{SearchedFrom: "/work"}); got != "none found walking up from /work" {

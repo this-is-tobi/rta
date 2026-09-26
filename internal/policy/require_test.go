@@ -93,8 +93,10 @@ func TestARequiredRepoPolicyThatConstrainsIsAccepted(t *testing.T) {
 	if verr != nil {
 		t.Fatalf("a real policy was refused: %v", verr)
 	}
-	if !c.RepoFound {
-		t.Error("RepoFound is false with a repository policy in the working directory")
+	// The repository's file alone: the operator's own is in From beside it,
+	// and is not the file RequireRepo asked about.
+	if len(c.Repo) != 1 || filepath.Base(c.Repo[0]) != RepoFile || len(c.From) != 2 {
+		t.Errorf("Repo = %q (From %q), want the one repository policy in the working directory", c.Repo, c.From)
 	}
 	if !c.RequireRepo {
 		t.Error("RequireRepo did not survive the intersect")
@@ -194,8 +196,8 @@ func TestTheSearchOriginIsReportedEvenWithNoPolicy(t *testing.T) {
 	if !strings.HasSuffix(c.SearchedFrom, filepath.Base(dir)) {
 		t.Errorf("SearchedFrom = %q, want the working directory", c.SearchedFrom)
 	}
-	if c.RepoFound {
-		t.Error("RepoFound is true with no repository policy anywhere")
+	if len(c.Repo) > 0 {
+		t.Errorf("Repo = %q with no repository policy anywhere", c.Repo)
 	}
 }
 

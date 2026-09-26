@@ -139,8 +139,8 @@ func policyShowCommand(render func(*cobra.Command, view.View, *view.Error) error
 }
 
 func repoPolicyText(c policy.Ceiling) string {
-	if c.RepoFound {
-		return strings.Join(c.From, ", ")
+	if len(c.Repo) > 0 {
+		return strings.Join(c.Repo, ", ")
 	}
 	return "none found walking up from " + c.SearchedFrom
 }
@@ -306,8 +306,8 @@ func policyRequireCommand(opts *globalOpts) *cobra.Command {
 				fmt.Fprintf(cmd.ErrOrStderr(),
 					"  and this directory does not have one yet: %s\n"+
 						"  `rta policy init` writes one here.\n", verr.Message)
-			case ceiling.RepoFound:
-				fmt.Fprintf(out, "  This directory has one: %s\n", strings.Join(ceiling.From, ", "))
+			case len(ceiling.Repo) > 0:
+				fmt.Fprintf(out, "  This directory has one: %s\n", strings.Join(ceiling.Repo, ", "))
 			}
 			return nil
 		},

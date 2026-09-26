@@ -126,6 +126,25 @@ func run(t *testing.T, reg *registry.Registry, args ...string) (string, string, 
 	return out.String(), errOut.String(), err
 }
 
+// answerPairs reads a command's -o json answer as the key/value view it must
+// be, failing the test on any other shape or on bytes that are not json, and
+// returns its pairs by key.
+func answerPairs(t *testing.T, out string) map[string]string {
+	t.Helper()
+	var env struct {
+		Type  string      `json:"type"`
+		Pairs []view.Pair `json:"pairs"`
+	}
+	if err := json.Unmarshal([]byte(out), &env); err != nil || env.Type != "keyvalue" {
+		t.Fatalf("-o json answered %q (%v), want a keyvalue view", out, err)
+	}
+	pairs := make(map[string]string, len(env.Pairs))
+	for _, p := range env.Pairs {
+		pairs[p.Key] = p.Value
+	}
+	return pairs
+}
+
 func TestRunCapability(t *testing.T) {
 	out, _, err := run(t, testRegistry(t), "demo", "item", "list")
 	if err != nil {
