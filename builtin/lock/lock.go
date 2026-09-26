@@ -132,14 +132,16 @@ func Plugin() plugin.Plugin {
 	}
 }
 
-// kindFlag is the --kind a command needs to name this lock again, empty for
-// the default. A hint has to be the command somebody can paste, and pasting
-// `--kind agent` back would teach a flag nobody needs.
-func kindFlag(k lockdown.Kind) string {
-	if k == lockdown.KindAgent {
-		return ""
+// liftCall is the call that lifts l, as sf, the surface asking, makes it. The
+// kind is given only when it is not the default: a hint has to be the call
+// somebody can make, and handing `--kind agent` back would teach an input
+// nobody needs.
+func liftCall(sf plugin.Surface, l lockdown.Lock) string {
+	args := []plugin.Arg{{Name: "name", Value: l.Name, Positional: true}}
+	if l.Kind != lockdown.KindAgent {
+		args = append(args, plugin.Arg{Name: "kind", Value: string(l.Kind)})
 	}
-	return " --kind " + string(k)
+	return sf.Call("lock.rm", args...)
 }
 
 // kindNames is the closed set a kind may be, so the surfaces offer it and a
@@ -169,12 +171,13 @@ func runAdd(ctx context.Context, req plugin.Request) (view.View, error) {
 	}
 	if req.DryRun {
 		return view.Text{Body: fmt.Sprintf("would lock %s %s — every call it makes to this "+
-			"machine's network surfaces is then refused until `rta lock rm`%s", kind, name, windowText(l))}, nil
+			"machine's network surfaces is then refused until %s%s", kind, name,
+			req.Surface().CapabilityName("lock.rm"), windowText(l))}, nil
 	}
 	if verr := lockdown.Add(l); verr != nil {
 		return nil, verr
 	}
-	return lockedView(l, ""), nil
+	return lockedView(req.Surface(), l, ""), nil
 }
 
 func runList(ctx context.Context, req plugin.Request) (view.View, error) {
@@ -232,7 +235,7 @@ func runRm(ctx context.Context, req plugin.Request) (view.View, error) {
 
 // lockedView confirms one placed lock; where names the server for the
 // remote flow, empty locally.
-func lockedView(l lockdown.Lock, where string) view.View {
+func lockedView(sf plugin.Surface, l lockdown.Lock, where string) view.View {
 	pairs := []view.Pair{
 		{Key: "locked", Value: string(l.Kind) + " " + l.Name + where},
 		{Key: "effect", Value: "refused on its next call — running servers need no restart"},
@@ -243,8 +246,7 @@ func lockedView(l lockdown.Lock, where string) view.View {
 	if !l.Expires.IsZero() {
 		pairs = append(pairs, view.Pair{Key: "lifts itself", Value: l.Expires.Local().Format("2006-01-02 15:04")})
 	} else {
-		pairs = append(pairs, view.Pair{Key: "until", Value: "somebody runs `rta lock rm " +
-			l.Name + kindFlag(l.Kind) + "`"})
+		pairs = append(pairs, view.Pair{Key: "until", Value: "somebody runs `" + liftCall(sf, l) + "`"})
 	}
 	return view.KeyValue{Pairs: pairs}
 }
@@ -349,7 +351,7 @@ func remoteAdd(ctx context.Context, req plugin.Request, server, kind, name strin
 	// "until somebody runs rta lock rm". The principal is the operator's
 	// word now; the window is still the server's.
 	placed.Kind, placed.Name, placed.Note = lockdown.Kind(kind), name, strings.TrimSpace(spec.Note)
-	return lockedView(placed, " on "+server), nil
+	return lockedView(req.Surface(), placed, " on "+server), nil
 }
 
 func remoteList(ctx context.Context, req plugin.Request, server string) (view.View, error) {
