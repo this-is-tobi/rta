@@ -687,16 +687,6 @@ func (c Config) ProfilesFor(namespace string) []string {
 	return out
 }
 
-// trustedPath reports whether the config file rta just read is one somebody
-// named, rather than the working-directory fallback.
-//
-// config.Path() falls back to ./.rta.yaml when os.UserConfigDir() fails —
-// ordinary under `env -i`, inside a container, and in CI — so without this a
-// cloned repository could ship a .rta.yaml defining a profile called "prod"
-// pointing at the operator's own cluster, and `rta pg query --profile prod`
-// would reach it. A plugins: section has the same shape but predates this and
-// is left alone; the rule is scoped to the new block, where the whole point is
-// that a name stands for somewhere else.
 // TrustedPath is trustedPath for the surfaces that write a profile rather
 // than read one.
 //
@@ -707,6 +697,16 @@ func (c Config) ProfilesFor(namespace string) []string {
 // loader, which has not run yet on something being created.
 func TrustedPath() bool { return trustedPath() }
 
+// trustedPath reports whether the config file rta just read is one somebody
+// named, rather than the working-directory fallback.
+//
+// config.Path() falls back to ./.rta.yaml when os.UserConfigDir() fails —
+// ordinary under `env -i`, inside a container, and in CI — so without this a
+// cloned repository could ship a .rta.yaml defining a profile called "prod"
+// pointing at the operator's own cluster, and `rta pg query --profile prod`
+// would reach it. The answer is the file's, not the profiles block's: LoadFile
+// stamps it on the whole Config, and plugins: and dashboard: are refused from
+// the fallback by it too.
 func trustedPath() bool {
 	if os.Getenv("RTA_CONFIG") != "" {
 		return true
