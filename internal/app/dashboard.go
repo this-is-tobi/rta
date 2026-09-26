@@ -168,8 +168,8 @@ func dashboardAddCommand(reg *registry.Registry, render renderFn, opts *globalOp
 	// could be stated at all. A list-shaped input is one --set per element.
 	cmd.Flags().StringArray("set", nil, "an input for the run, `key=value`; repeat for several")
 	cmd.Flags().Int("span", 0, "grid columns the tile occupies; 0 leaves it to the capability")
-	_ = cmd.RegisterFlagCompletionFunc("profile", completeProfiles)
-	_ = cmd.RegisterFlagCompletionFunc("set", completeTileInputs(reg))
+	completeFlag(cmd, "profile", completeProfiles)
+	completeFlag(cmd, "set", completeTileInputs(reg))
 	return cmd
 }
 
@@ -189,7 +189,7 @@ func dashboardRemoveCommand(render renderFn, opts *globalOpts) *cobra.Command {
 		},
 	}
 	cmd.Flags().String("profile", "", "the pinned tile to take down, when the capability was added against several")
-	_ = cmd.RegisterFlagCompletionFunc("profile", completeProfiles)
+	completeFlag(cmd, "profile", completeProfiles)
 	return cmd
 }
 
@@ -561,7 +561,7 @@ func dashboardHideCommand(reg *registry.Registry, render renderFn, opts *globalO
 		},
 	}
 	cmd.Flags().String("profile", "", "the connection whose panel to hide or bring back, for an entry that expanded into several")
-	_ = cmd.RegisterFlagCompletionFunc("profile", completeProfiles)
+	completeFlag(cmd, "profile", completeProfiles)
 	return cmd
 }
 

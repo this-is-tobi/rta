@@ -229,7 +229,7 @@ func newUseCommand(opts *globalOpts) *cobra.Command {
 	}
 	cmd.Flags().Bool("off", false, "switch off, back to the base configuration")
 	cmd.Flags().Duration("for", 0, "switch off again after this long (overrides the profile's ttl)")
-	_ = cmd.RegisterFlagCompletionFunc("for", completeWindow)
+	completeFlag(cmd, "for", completeWindow)
 	return cmd
 }
 
