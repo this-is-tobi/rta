@@ -57,14 +57,16 @@ func remotePending(ctx context.Context, req plugin.Request, server string) (view
 	if verr != nil {
 		return nil, verr
 	}
-	table := pendingTable(cl.Waiting)
+	sf := req.Surface()
+	table := pendingTable(sf, cl.Waiting)
 	// The empty queue's sentence names the server twice, where the local
 	// one names neither: the command it offers is how somebody answers the
 	// next call parked here, and `rta agent allow <id>` without --server
 	// answers this machine's queue, where that call is not.
 	if len(table.Rows) == 0 {
 		table.Empty = fmt.Sprintf("nothing is waiting on %s — a parked call appears here, and "+
-			"`rta agent allow <id> --server %s` releases it", server, server)
+			"`%s` releases it", server, sf.Call("agent.allow", plugin.Arg{Name: "id", Value: "<id>", Positional: true},
+			plugin.Arg{Name: "server", Value: server}))
 	}
 	if len(cl.Tampered) == 0 {
 		return table, nil
@@ -73,8 +75,8 @@ func remotePending(ctx context.Context, req plugin.Request, server string) (view
 		{ID: "waiting", Title: "Waiting on " + server, View: table},
 		{ID: "tampered", Title: "Kept off the queue", View: view.Text{
 			Body: fmt.Sprintf("%d request(s) on %s do not describe the calls they are bound to: %s — "+
-				"something on that machine rewrote them after rta parked them, and its `rta doctor` reports it.",
-				len(cl.Tampered), server, strings.Join(cl.Tampered, ", "))}},
+				"something on that machine rewrote them after rta parked them, and its %s reports it.",
+				len(cl.Tampered), server, strings.Join(cl.Tampered, ", "), sf.CapabilityName("audit.doctor"))}},
 	}}, nil
 }
 
@@ -93,7 +95,7 @@ func remoteShow(ctx context.Context, req plugin.Request, server, id string) (vie
 	if verr != nil {
 		return nil, verr
 	}
-	return showView(r), nil
+	return showView(req.Surface(), r), nil
 }
 
 // remoteAnswer is `agent allow <id> --server` and `agent deny <id>
@@ -109,10 +111,13 @@ func remoteAnswer(ctx context.Context, req plugin.Request, server, id string, al
 	// answer would skip exactly the draft check that keeps a hostile server
 	// from widening what gets signed.
 	if allow && strings.TrimSpace(req.String("ttl")) != "" {
+		sf := req.Surface()
 		return nil, view.Errorf("agent.remote.ttl",
-			"--ttl does not combine with --server: a standing grant is its own signed flow").
-			WithHint("answer this call first, then `rta grant allow " +
-				"<target> --ttl ... --server " + server + "`")
+			"%s does not combine with %s: a standing grant is its own signed flow",
+			sf.InputName("ttl"), sf.InputName("server")).
+			WithHint("answer this call first, then `" + sf.Call("grant.allow",
+				plugin.Arg{Name: "target", Value: "<target>", Positional: true},
+				plugin.Arg{Name: "ttl", Value: "<ttl>"}, plugin.Arg{Name: "server", Value: server}) + "`")
 	}
 	if req.DryRun {
 		return view.Text{Body: "would fetch request " + id + " from " + server + " and " + verb +

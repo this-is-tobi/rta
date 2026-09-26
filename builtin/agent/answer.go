@@ -4,6 +4,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/consent"
 	"github.com/this-is-tobi/rta/internal/grant"
 	operatorid "github.com/this-is-tobi/rta/internal/operator"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -53,7 +54,10 @@ func AnswerRemote(agent string) func(spec operatorid.AnswerSpec, label string) (
 	return func(spec operatorid.AnswerSpec, label string) (operatorid.AnswerOutcome, *view.Error) {
 		r, ok := consent.Find(spec.ID)
 		if !ok {
-			return operatorid.AnswerOutcome{}, unknownRequest(spec.ID)
+			// No surface crosses the operator channel, so this is worded for
+			// the command line most operators answer from — the known limit
+			// pkg/plugin/naming.go records.
+			return operatorid.AnswerOutcome{}, unknownRequest(plugin.SurfaceUnknown, spec.ID)
 		}
 		// The scope rule, enforced on the answer and not only on the listing
 		// a well-behaved client fetched first.

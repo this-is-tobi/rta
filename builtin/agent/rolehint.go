@@ -13,8 +13,9 @@ import (
 // the first ungranted call of the day can be answered with the day's list.
 // Computed at display time and never written into the request file: the
 // operator's sealed decision binds to a digest over the call as displayed,
-// and a stored hint would be a rewritable suggestion to approve more.
-func roleHint(r consent.Request) string {
+// and a stored hint would be a rewritable suggestion to approve more. The
+// call it offers is spelled as sf, the surface showing the request, makes it.
+func roleHint(sf plugin.Surface, r consent.Request) string {
 	all, verr := role.Available()
 	if verr != nil {
 		return ""
@@ -31,8 +32,9 @@ func roleHint(r consent.Request) string {
 		}
 		for i, l := range lines {
 			if covers(l, r) {
-				return fmt.Sprintf("line %d of %s — `rta agent allow %s --role %s` issues the whole role, then this call",
-					i+1, s.Name, r.ID, s.Name)
+				return fmt.Sprintf("line %d of %s — `%s` issues the whole role, then this call", i+1, s.Name,
+					sf.Call("agent.allow", plugin.Arg{Name: "id", Value: r.ID, Positional: true},
+						plugin.Arg{Name: "role", Value: s.Name}))
 			}
 		}
 	}

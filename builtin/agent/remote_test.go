@@ -189,7 +189,8 @@ func TestAnEmptyRemoteQueueNamesItsServer(t *testing.T) {
 	if !ok || len(table.Rows) != 0 {
 		t.Fatalf("an empty remote queue = %#v, want the table with no rows", v)
 	}
-	for _, want := range []string{"nothing is waiting on lab", "`rta agent allow <id> --server lab`"} {
+	// Asked from the TUI, which names the call its own way.
+	for _, want := range []string{"nothing is waiting on lab", "`agent.allow id=<id> server=lab`"} {
 		if !strings.Contains(table.Empty, want) {
 			t.Errorf("empty = %q, want it to say %q", table.Empty, want)
 		}

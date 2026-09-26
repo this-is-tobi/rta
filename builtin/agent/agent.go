@@ -381,7 +381,12 @@ func connectedTable() (view.Table, error) {
 	return t, nil
 }
 
-const nothingWaiting = "nothing is waiting — a parked call appears here, and `rta agent allow <id>` releases it"
+// nothingWaiting is the empty queue's sentence, with the call that answers
+// the next one as sf, the surface showing it, makes it.
+func nothingWaiting(sf plugin.Surface) string {
+	return "nothing is waiting — a parked call appears here, and `" +
+		sf.Call("agent.allow", plugin.Arg{Name: "id", Value: "<id>", Positional: true}) + "` releases it"
+}
 
 // connectedView and waitingView are the overview's sections, which a screen
 // shows as a sentence when empty for the reason `agent pending` does: an
@@ -396,11 +401,11 @@ func connectedView() view.View {
 	return t
 }
 
-func waitingView(reqs []consent.Request, err error) view.View {
+func waitingView(sf plugin.Surface, reqs []consent.Request, err error) view.View {
 	if err != nil {
 		return view.Text{Body: "unreadable — " + err.Error()}
 	}
-	return pendingTable(reqs)
+	return pendingTable(sf, reqs)
 }
 
 func runOverview(_ context.Context, req plugin.Request) (view.View, error) {
@@ -447,7 +452,7 @@ func runOverview(_ context.Context, req plugin.Request) (view.View, error) {
 	pairs := []view.Pair{
 		{Key: "waiting on you", Value: nowWaiting},
 		{Key: "connected now", Value: connected},
-		{Key: "locked", Value: lockedLine()},
+		{Key: "locked", Value: lockedLine(req.Surface())},
 		{Key: "roles in force", Value: rolesLine()},
 		{Key: "calls in the last hour", Value: fmt.Sprintf("%d", recent)},
 		{Key: "refused", Value: fmt.Sprintf("%d", refused)},
@@ -468,7 +473,7 @@ func runOverview(_ context.Context, req plugin.Request) (view.View, error) {
 		{ID: "activity", Title: "Activity", View: view.KeyValue{Pairs: pairs}},
 		{ID: "connected", Title: "Connected now", View: connectedView()},
 		{ID: "record", Title: "The record", View: view.KeyValue{Pairs: recordPairs(rep, verr)}},
-		{ID: "waiting", Title: "Waiting on you", View: waitingView(waiting, pendingErr)},
+		{ID: "waiting", Title: "Waiting on you", View: waitingView(req.Surface(), waiting, pendingErr)},
 	}}, nil
 }
 
@@ -490,7 +495,7 @@ func rolesLine() string {
 	return "none"
 }
 
-func lockedLine() string {
+func lockedLine(sf plugin.Surface) string {
 	locks, verr := lockdown.Load()
 	if verr != nil {
 		return "unreadable — " + verr.Message
@@ -506,7 +511,7 @@ func lockedLine() string {
 		}
 		names = append(names, name)
 	}
-	return strings.Join(names, ", ") + " — `rta lock list` says why"
+	return strings.Join(names, ", ") + " — " + sf.CapabilityName("lock.list") + " says why"
 }
 
 func recordPairs(rep agentlog.Report, verr error) []view.Pair {
@@ -747,10 +752,10 @@ func runPending(ctx context.Context, req plugin.Request) (view.View, error) {
 	if err != nil {
 		return nil, view.Errorf("agent.pending.unreadable", "%v", err)
 	}
-	return pendingTable(reqs), nil
+	return pendingTable(req.Surface(), reqs), nil
 }
 
-func pendingTable(reqs []consent.Request) view.Table {
+func pendingTable(sf plugin.Surface, reqs []consent.Request) view.Table {
 	// Shown only when something is asking under a name. The queue is the one
 	// screen where the answer is a decision, so "which of my agents is this"
 	// belongs beside the capability rather than one command away — and where
@@ -795,7 +800,7 @@ func pendingTable(reqs []consent.Request) view.Table {
 	// screen `press w to answer` lands on. The table under it all the same,
 	// for everything that parses it — see view.Table.Empty.
 	if len(rows) == 0 {
-		t.Empty = nothingWaiting
+		t.Empty = nothingWaiting(sf)
 	}
 	return t
 }
@@ -888,15 +893,16 @@ func runShow(ctx context.Context, req plugin.Request) (view.View, error) {
 	}
 	r, ok := consent.Find(id)
 	if !ok {
-		return nil, unknownRequest(id)
+		return nil, unknownRequest(req.Surface(), id)
 	}
-	return showView(r), nil
+	return showView(req.Surface(), r), nil
 }
 
 // showView renders one request in full, wherever it was fetched from — the
 // local queue and a remote server's answer the same question, and two
-// renderings would drift apart exactly where an operator compares them.
-func showView(r consent.Request) view.View {
+// renderings would drift apart exactly where an operator compares them. sf
+// is the surface showing it, for the calls the page names.
+func showView(sf plugin.Surface, r consent.Request) view.View {
 	left := time.Until(r.Deadline).Truncate(time.Second)
 	if left < 0 {
 		left = 0
@@ -917,7 +923,7 @@ func showView(r consent.Request) view.View {
 	if r.Agent != "" {
 		pairs = append(pairs, view.Pair{Key: "agent", Value: r.Agent})
 	}
-	if hint := roleHint(r); hint != "" {
+	if hint := roleHint(sf, r); hint != "" {
 		pairs = append(pairs, view.Pair{Key: "role", Value: hint})
 	}
 	pairs = append(pairs,
@@ -964,7 +970,7 @@ func notPreviewed(r consent.Request) string {
 		return "no preview: this call names a connection, and rta resolves connections only " +
 			"after you answer — a preview run without one would describe the wrong place convincingly"
 	default:
-		return "no preview: either this capability comes from an external plugin, whose --dry-run " +
+		return "no preview: either this capability comes from an external plugin, whose dry run " +
 			"is a promise rta cannot check, or its preview did not finish in time"
 	}
 }
@@ -987,7 +993,7 @@ func runAllow(ctx context.Context, req plugin.Request, catalog func() []plugin.C
 	}
 	r, ok := consent.Find(id)
 	if !ok {
-		return nil, unknownRequest(id)
+		return nil, unknownRequest(req.Surface(), id)
 	}
 	// The whole role the call's line belongs to, issued through grant's own
 	// flow — lines printed, ceiling per line, one passphrase, the team-role
@@ -995,7 +1001,8 @@ func runAllow(ctx context.Context, req plugin.Request, catalog func() []plugin.C
 	// question about one call must not quietly become a day's authority.
 	roleName := strings.TrimSpace(req.String("role"))
 	if roleName != "" && strings.TrimSpace(req.String("ttl")) != "" {
-		return nil, view.Errorf("agent.allow.either", "--role issues the whole role; --ttl issues this one line — pick one")
+		return nil, view.Errorf("agent.allow.either", "%s issues the whole role; %s issues this one line — pick one",
+			req.Surface().InputName("role"), req.Surface().InputName("ttl"))
 	}
 	var issued view.View
 	if roleName != "" {
@@ -1064,7 +1071,8 @@ func runAllow(ctx context.Context, req plugin.Request, catalog func() []plugin.C
 	// the one disagreement between the two that nothing else explains.
 	if l, _ := lockdown.NewPin().Frozen(lockdown.KindAgent, r.Agent); l != nil {
 		pairs = append(pairs, view.Pair{Key: "but", Value: fmt.Sprintf(
-			"agent %s is locked, so the call is refused anyway until `rta lock rm %s`", r.Agent, r.Agent)})
+			"agent %s is locked, so the call is refused anyway until `%s`", r.Agent,
+			req.Surface().Call("lock.rm", plugin.Arg{Name: "name", Value: r.Agent, Positional: true}))})
 	}
 	if ttl := strings.TrimSpace(req.String("ttl")); ttl != "" {
 		// Measured here rather than inside alsoGrant because the surface is
@@ -1196,7 +1204,7 @@ func runDeny(ctx context.Context, req plugin.Request) (view.View, error) {
 	}
 	r, ok := consent.Find(id)
 	if !ok {
-		return nil, unknownRequest(id)
+		return nil, unknownRequest(req.Surface(), id)
 	}
 	if req.DryRun {
 		return view.Text{Body: "would deny " + r.Cap + " for request " + id}, nil
@@ -1221,7 +1229,9 @@ func runDeny(ctx context.Context, req plugin.Request) (view.View, error) {
 // an attack on the consent prompt under housekeeping — the operator would
 // shrug at a stale id and never learn that something on their machine is
 // writing into rta's data directory.
-func unknownRequest(id string) *view.Error {
+//
+// sf is the surface asking, for the capability its refusal names.
+func unknownRequest(sf plugin.Surface, id string) *view.Error {
 	q, err := consent.Scan()
 	if err == nil {
 		for _, bad := range q.Tampered {
@@ -1231,7 +1241,7 @@ func unknownRequest(id string) *view.Error {
 			return view.Errorf("agent.request.tampered",
 				"request %q does not describe the call it is bound to, so it cannot be answered", id).
 				WithHint("something rewrote it after rta parked it — the call it really names was " +
-					"never released, and `rta doctor` reports this; whatever can write " +
+					"never released, and " + sf.CapabilityName("audit.doctor") + " reports this; whatever can write " +
 					"rta's data directory is the thing to look at")
 		}
 	}
