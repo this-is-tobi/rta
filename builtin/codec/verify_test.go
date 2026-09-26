@@ -1163,6 +1163,75 @@ func TestAKeySkippedForItsDeclarationIsNotBlamedOnItsSize(t *testing.T) {
 	mustRefuse(t, ps, rfc8037Public, "", "codec.jwt.nokey", "a PS256 signature needs an RSA key of 2048 bits or more")
 }
 
+// A 2048-bit RSA key skipped for its exponent or an even modulus was hinted
+// at its size, "an RS256 signature needs an RSA key of 2048 bits or more",
+// and so was one over the ceiling, which has more bits than any verifier
+// takes. The hint answers what the keys were skipped for, every reason once.
+func TestAKeyNoVerifierAcceptsIsNotBlamedOnItsSize(t *testing.T) {
+	key := rsaKey()
+	token := sign(`{"alg":"RS256"}`, `{"sub":"a"}`, func(in []byte) []byte {
+		sig, err := rsa.SignPKCS1v15(rand.Reader, key, crypto.SHA256, sha256Of(in))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return sig
+	})
+	b := func(n *big.Int) string { return base64.RawURLEncoding.EncodeToString(n.Bytes()) }
+	pkcs1 := func(n *big.Int, e int) string {
+		return pemOf(t, "RSA PUBLIC KEY", x509.MarshalPKCS1PublicKey(&rsa.PublicKey{N: n, E: e}))
+	}
+	evenN := new(big.Int).Sub(key.N, big.NewInt(1))
+	over := new(big.Int).SetBit(new(big.Int).Lsh(big.NewInt(1), 19999), 0, 1)
+	const broken = "a key no verifier accepts is what is wrong, not the token"
+	for name, k := range map[string]string{
+		"even modulus, JWK":     fmt.Sprintf(`{"kty":"RSA","n":%q,"e":"AQAB"}`, b(evenN)),
+		"even modulus, PEM":     pkcs1(evenN, 65537),
+		"exponent 1, PEM":       pkcs1(key.N, 1),
+		"even exponent, PEM":    pkcs1(key.N, 65536),
+		"over the ceiling, PEM": pkcs1(over, 65537),
+	} {
+		_, verr := verifyWith(t, token, k, "")
+		if verr == nil || verr.Code != "codec.jwt.nokey" || strings.Contains(verr.Hint, "2048") ||
+			verr.Hint != broken+": the key the issuer signs RS256 tokens with is needed" {
+			t.Errorf("%s: got %+v, want a hint naming the key and not its size", name, verr)
+		}
+	}
+
+	// Beside a key skipped for its type, or one skipped for what it declares,
+	// each reason is answered.
+	_, x, y := ecKey(t)
+	ec := fmt.Sprintf(`{"kty":"EC","crv":"P-256","x":%q,"y":%q}`, x, y)
+	evenE := fmt.Sprintf(`{"kty":"RSA","n":%q,"e":%q}`, b(key.N), b(big.NewInt(65536)))
+	declared := fmt.Sprintf(`{"kty":"RSA","alg":"RS384","n":%q,"e":"AQAB"}`, b(key.N))
+	for name, tc := range map[string]struct {
+		set  string
+		hint string
+	}{
+		"a key of another type": {`{"keys":[` + ec + `,` + evenE + `]}`,
+			"an RS256 signature needs an RSA key of 2048 bits or more (RFC 7518 §3.3); " + broken},
+		"a key declared for RS384": {`{"keys":[` + declared + `,` + evenE + `]}`,
+			"a key declared for something else is refused by a library honouring the declaration too; " + broken +
+				": the key the issuer signs RS256 tokens with is needed"},
+	} {
+		_, verr := verifyWith(t, token, tc.set, "")
+		if verr == nil || verr.Code != "codec.jwt.nokey" || verr.Hint != tc.hint {
+			t.Errorf("%s: got %+v, want the hint %q", name, verr, tc.hint)
+		}
+	}
+
+	// A key too small is still told what the algorithm needs.
+	p, err := rand.Prime(rand.Reader, 256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q, err := rand.Prime(rand.Reader, 256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustRefuse(t, token, pkcs1(new(big.Int).Mul(p, q), 65537), "", "codec.jwt.nokey",
+		"an RS256 signature needs an RSA key of 2048 bits or more")
+}
+
 func es256(t *testing.T, priv *ecdsa.PrivateKey, header string) string {
 	t.Helper()
 	return sign(header, `{"sub":"a"}`, func(in []byte) []byte {

@@ -750,22 +750,40 @@ const (
 	maxSignatures = 16
 )
 
+// skipKind is what a key was skipped for, as far as the refusal's hint is
+// concerned when no key given could check the signature: each asks for
+// something different of the reader.
+type skipKind uint8
+
+const (
+	// skipNeeds is a key of another type, or too small: the algorithm needs
+	// a different key, and the hint says which.
+	skipNeeds skipKind = 1 << iota
+	// skipDeclared is a key declaring itself for something else.
+	skipDeclared
+	// skipBroken is a key no verifier accepts for any algorithm: its members
+	// make no key, or it holds numbers no RSA key has or more bits than a
+	// verifier takes.
+	skipBroken
+)
+
 // fits reports whether a key may check a signature made with alg, and why
-// not when it may not. This is the algorithm-confusion guard: the key's type
-// decides, and a public key never stands in for an HMAC secret.
-func (c candidate) fits(alg string) (bool, string) {
+// not when it may not, with what kind of reason that is. This is the
+// algorithm-confusion guard: the key's type decides, and a public key never
+// stands in for an HMAC secret.
+func (c candidate) fits(alg string) (bool, string, skipKind) {
 	a := jwsAlgs[alg]
 	if c.pub == nil && c.secret == nil {
-		return false, c.unusable()
+		return false, c.unusable(), skipBroken
 	}
 	if why := c.declaration(alg); why != "" {
-		return false, why
+		return false, why, skipDeclared
 	}
 	switch {
 	case a.kind == "a shared secret":
-		return c.secret != nil, c.label + " is not a shared secret"
+		return c.secret != nil, c.label + " is not a shared secret", skipNeeds
 	case c.secret != nil:
-		return false, c.label + " is a shared secret"
+		return false, c.label + " is a shared secret", skipNeeds
 	}
 	switch k := c.pub.(type) {
 	// Refused by name before the check, because Go refuses these keys inside
@@ -776,32 +794,33 @@ func (c candidate) fits(alg string) (bool, string) {
 	case *rsa.PublicKey:
 		switch {
 		case a.kind != "an RSA key":
-			return false, c.label + " is not " + a.kind
+			return false, c.label + " is not " + a.kind, skipNeeds
 		case k.N.Bit(0) == 0:
-			return false, c.label + " has an even modulus, which no RSA key has, so no signature verifies against it"
+			return false, c.label + " has an even modulus, which no RSA key has, so no signature verifies against it", skipBroken
 		case k.N.BitLen() < 1024:
-			return false, c.label + " is under the 1024 bits a verifier accepts, and RFC 7518 §3.3 requires 2048"
+			return false, c.label + " is under the 1024 bits a verifier accepts, and RFC 7518 §3.3 requires 2048", skipNeeds
 		case k.N.BitLen() > maxRSABits:
-			return false, fmt.Sprintf("%s is over the %d bits a verifier accepts", c.label, maxRSABits)
+			return false, fmt.Sprintf("%s is over the %d bits a verifier accepts", c.label, maxRSABits), skipBroken
 		case k.E < 3:
-			return false, fmt.Sprintf("%s has an exponent of %d, which no verifier accepts", c.label, k.E)
+			return false, fmt.Sprintf("%s has an exponent of %d, which no verifier accepts", c.label, k.E), skipBroken
 		case k.E%2 == 0:
-			return false, c.label + " has an even exponent, which no RSA key has, so no signature verifies against it"
+			return false, c.label + " has an even exponent, which no RSA key has, so no signature verifies against it", skipBroken
 		}
-		return true, ""
+		return true, "", 0
 	case *ecdsa.PublicKey:
-		return k.Curve.Params().Name == ecCurveFor[alg], c.label + " is not " + a.kind
+		return k.Curve.Params().Name == ecCurveFor[alg], c.label + " is not " + a.kind, skipNeeds
 	case ed25519.PublicKey:
-		return a.kind == "an Ed25519 key", c.label + " is not " + a.kind
+		return a.kind == "an Ed25519 key", c.label + " is not " + a.kind, skipNeeds
 	}
-	return false, c.label + " is not " + a.kind
+	return false, c.label + " is not " + a.kind, skipNeeds
 }
 
 // declaration says why what the key declares about itself — its use, its
 // key_ops, its alg — keeps it from checking a signature made with alg, or ""
-// when nothing it declares does. Apart from fits' other reasons because the
-// refusal's hint turns on it: a key the set declares for something else is
-// the set's doing, and the hint used to send the reader to the key's size.
+// when nothing it declares does. A kind of its own among fits' reasons
+// because the refusal's hint turns on it: a key the set declares for
+// something else is the set's doing, and the hint used to send the reader to
+// the key's size.
 func (c candidate) declaration(alg string) string {
 	switch {
 	case c.use == "enc":
@@ -960,14 +979,15 @@ func (v *verifier) check(header object, input string, sigSeg string) (string, *v
 	// secret", about an RS256 token checked against an RSA key.
 	kid := header.str("kid")
 	var tried, reasons, skipped, refused []string
-	triedKey, declaredOnly := false, true
+	var skips skipKind
+	triedKey := false
 	for _, c := range candidates {
 		if kid != "" && c.kid != "" && c.kid != kid {
 			continue
 		}
-		if ok, why := c.fits(alg); !ok {
+		if ok, why, kind := c.fits(alg); !ok {
 			skipped = append(skipped, why)
-			declaredOnly = declaredOnly && c.declaration(alg) != ""
+			skips |= kind
 			continue
 		}
 		if err := v.ctx.Err(); err != nil {
@@ -1046,17 +1066,37 @@ func (v *verifier) check(header object, input string, sigSeg string) (string, *v
 		return "", view.Errorf("codec.jwt.nokey", "no key given has kid %s, the one the header names", quote(kid)).
 			WithHint("the issuer may have rotated its keys — fetch its current key set; `rta codec jwk` lists the kids in one")
 	}
-	need := a.kind
-	if need == "an RSA key" {
-		need += " of 2048 bits or more (RFC 7518 §3.3)"
-	}
-	hint := withArticle(alg) + " signature needs " + need
-	if declaredOnly && len(skipped) > 0 {
-		hint = "each key given declares itself for something else, and a library honouring the declaration refuses it " +
-			"too: the key the issuer signs " + alg + " tokens with is needed"
-	}
 	return "", view.Errorf("codec.jwt.nokey", "no key given can check %s signature: %s", withArticle(alg), strings.Join(skipped, "; ")).
-		WithHint(hint)
+		WithHint(skippedHint(alg, skips))
+}
+
+// skippedHint answers what the keys given were skipped for, each kind of
+// reason once. It used to say what the algorithm needs whatever the reason,
+// so a 2048-bit RSA key skipped for an even exponent or modulus was told an
+// RS256 signature needs an RSA key of 2048 bits or more, and sent to look at
+// its size. Only a key of another type or too small is told what the
+// algorithm needs; a key declared for something else, or one no verifier
+// accepts, is told that, and that the key the issuer signs with is needed.
+func skippedHint(alg string, skips skipKind) string {
+	var hints []string
+	if skips&skipNeeds != 0 || skips == 0 {
+		need := jwsAlgs[alg].kind
+		if need == "an RSA key" {
+			need += " of 2048 bits or more (RFC 7518 §3.3)"
+		}
+		hints = append(hints, withArticle(alg)+" signature needs "+need)
+	}
+	if skips&skipDeclared != 0 {
+		hints = append(hints, "a key declared for something else is refused by a library honouring the declaration too")
+	}
+	if skips&skipBroken != 0 {
+		hints = append(hints, "a key no verifier accepts is what is wrong, not the token")
+	}
+	hint := strings.Join(hints, "; ")
+	if skips != 0 && skips&skipNeeds == 0 {
+		hint += ": the key the issuer signs " + alg + " tokens with is needed"
+	}
+	return hint
 }
 
 // unusable says why a key the members do not make cannot check anything.
