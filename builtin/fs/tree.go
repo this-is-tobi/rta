@@ -42,6 +42,7 @@ func runTree(ctx context.Context, req plugin.Request) (view.View, error) {
 		maxDepth: depth,
 		limit:    req.Int("limit"),
 		hidden:   req.Bool("all"),
+		surface:  req.Surface(),
 	}
 	if dev, ok := deviceOf(path); ok {
 		b.device = dev
@@ -73,6 +74,9 @@ type treeBuilder struct {
 	hidden   bool
 	device   uint64
 	stats    treeStats
+	// surface is the caller's, for the name a branch's "12 hidden" marker
+	// gives the input that shows them.
+	surface plugin.Surface
 }
 
 // treeStats is what the walk learned on its way past. The compact tree says
@@ -191,7 +195,7 @@ func (b *treeBuilder) children(ctx context.Context, dir string, depth int) []vie
 		nodes = append(nodes, view.Node{Label: "…", Detail: fmt.Sprintf("%d more", truncated)})
 	}
 	if hiddenCount > 0 {
-		nodes = append(nodes, view.Node{Label: "…", Detail: fmt.Sprintf("%d hidden (--all)", hiddenCount)})
+		nodes = append(nodes, view.Node{Label: "…", Detail: fmt.Sprintf("%d hidden (%s)", hiddenCount, b.surface.InputName("all"))})
 	}
 	return nodes
 }
@@ -270,7 +274,7 @@ func runHash(ctx context.Context, req plugin.Request) (view.View, error) {
 	}
 	if info.IsDir() {
 		return nil, view.Errorf("fs.hash.isdir", "%s is a directory", path).
-			WithHint("hash a file; use fs usage to measure a directory")
+			WithHint("hash a file; " + req.Surface().CapabilityName("fs.usage") + " measures a directory")
 	}
 
 	f, err := os.Open(path)
@@ -396,21 +400,21 @@ func treeDetail(ctx context.Context, req plugin.Request, path string, tree view.
 	var missing []view.Pair
 	if s.beyond > 0 {
 		missing = append(missing, view.Pair{
-			Key: "below --depth",
+			Key: "below depth",
 			Value: fmt.Sprintf("%s in %s the walk stopped at",
 				format.CountOf(s.beyond, "entry"), format.CountOf(s.notDescended, "directory")),
 		})
 	}
 	if s.truncated > 0 {
 		missing = append(missing, view.Pair{
-			Key:   "past --limit",
+			Key:   "past limit",
 			Value: format.CountOf(s.truncated, "entry") + " trimmed from the directories that hold more",
 		})
 	}
 	if s.hidden > 0 {
 		missing = append(missing, view.Pair{
 			Key:   "hidden",
-			Value: format.CountOf(s.hidden, "dotfile") + " — pass --all to include them",
+			Value: format.CountOf(s.hidden, "dotfile") + " — " + req.Surface().InputName("all") + " includes them",
 		})
 	}
 	if s.otherFS > 0 {

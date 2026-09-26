@@ -133,7 +133,7 @@ func runUsage(ctx context.Context, req plugin.Request) (view.View, error) {
 	}
 	if !info.IsDir() {
 		return nil, view.Errorf("fs.usage.notadir", "%s is a file, not a directory", path).
-			WithHint("use fs hash to inspect one file, or pass the directory holding it")
+			WithHint(req.Surface().CapabilityName("fs.hash") + " inspects one file — or pass the directory holding it")
 	}
 
 	s := newScanner(path, req.Int("depth"))
@@ -203,7 +203,7 @@ func runUsage(ctx context.Context, req plugin.Request) (view.View, error) {
 			Code: "fs.usage.partial",
 			Message: format.CountOf(s.skipped, "entry") +
 				" could not be counted, so the sizes and shares here are of what was read",
-			Hint: "unreadable, or on another filesystem — `--detail` breaks the scan down",
+			Hint: "unreadable, or on another filesystem — " + req.Surface().InputName("detail") + " breaks the scan down",
 		})
 	}
 	return t, nil
