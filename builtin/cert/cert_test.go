@@ -133,6 +133,13 @@ func TestInspectPEMFile(t *testing.T) {
 	if len(v.(view.KeyValue).Pairs) == 0 {
 		t.Error("empty inspect result from PEM")
 	}
+	// cert.tls reads a handshake, which a file has none of, and says so by
+	// its ID, which every surface shares — not as the CLI types it.
+	_, err = runTLS(context.Background(), req(map[string]any{"target": pemPath}))
+	if verr := view.AsError(err, "cert.test"); verr.Code != "cert.tls.filetarget" ||
+		!strings.Contains(verr.Message, "cert.tls needs a live host") {
+		t.Errorf("cert.tls given a file = %v", err)
+	}
 }
 
 func TestChain(t *testing.T) {
