@@ -128,6 +128,33 @@ func TestProfileSetDryRunWritesNothing(t *testing.T) {
 	}
 }
 
+// A dry run reports the card the write would print, problem rows included.
+// It built a new profile in memory, which nothing had stamped with the file's
+// provenance, so creating one at the default path previewed a false "read
+// from a working-directory config file" beside a write that is honoured.
+func TestProfileSetDryRunReportsWhatTheWriteWould(t *testing.T) {
+	run := session(t, setRegistry(t))
+	args := []string{"profile", "set", "staging", "--plugin", "db", "--set", "host=db.internal"}
+	dry, errOut, err := run(append(args, "--dry-run")...)
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	if strings.Contains(dry, "working-directory") {
+		t.Errorf("the dry run called a named config file a working-directory one:\n%s", dry)
+	}
+	wet, errOut, err := run(args...)
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	card := func(out string) string {
+		_, rest, _ := strings.Cut(out, "\n")
+		return rest
+	}
+	if card(dry) != card(wet) {
+		t.Errorf("the dry run's card differs from the write's:\n%s\n---\n%s", dry, wet)
+	}
+}
+
 // The mirror case: a real run (no --dry-run) after the dry run above still
 // writes, so --dry-run is not accidentally the only path that works.
 func TestProfileSetWithoutDryRunWrites(t *testing.T) {

@@ -236,6 +236,20 @@ type Role struct {
 // Trusted reports whether this configuration came from a path somebody named.
 func (c Config) Trusted() bool { return c.trusted }
 
+// Stamp returns p carrying this file's provenance, as the loader stamps every
+// profile it reads from it.
+//
+// For a profile built in memory to be written into c: `rta profile set
+// --dry-run` reports the card of a profile nothing wrote, and a new one is a
+// zero Profile, untrusted, so the preview named a working-directory file
+// beside a write that is honoured. The answer has to come from a Config the
+// loader stamped rather than from a bool the caller passes, or any caller
+// could assert what the unexported field exists to keep from being asserted.
+func (c Config) Stamp(p Profile) Profile {
+	p.trusted = c.trusted
+	return p
+}
+
 // TrustedDashboard is the arrangement to actually draw: the stated one when
 // somebody named this config file, and the empty one otherwise — which is not
 // a blank screen but the automatic dashboard, one tile per registered plugin,
@@ -327,7 +341,7 @@ func LoadFile() (Config, error) {
 		}
 		_ = yaml.Unmarshal(data, &raw)
 		for name, p := range cfg.Profiles {
-			p.trusted = cfg.trusted
+			p = cfg.Stamp(p)
 			p.unknown = unclaimed(raw.Profiles[name], profileKeys)
 			// One level down, where a migration lands: the single-plugin shape
 			// put `set:` and `secrets:` directly under the profile, and those
