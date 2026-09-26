@@ -396,6 +396,29 @@ func TestAValueTheHostRefusesIsNotRunByTheSuite(t *testing.T) {
 	}
 }
 
+// A required input supplied with nothing in it is not supplied: the host
+// refuses the call before the handler, as it refuses one leaving the input
+// out, so the suite does not drive it either and says why the same way.
+// Counted by presence alone, `title: ""` ran the handler here on a call rta
+// never makes.
+func TestAnEmptyRequiredInputIsNotRunByTheSuite(t *testing.T) {
+	ran := false
+	c := plugin.Capability{
+		ID: "demo.item.add", Summary: "add", Safety: plugin.Write,
+		Inputs: []plugin.Field{{Name: "title", Type: plugin.String, Required: true}},
+		Run: func(context.Context, plugin.Request) (view.View, error) {
+			ran = true
+			return view.Text{Body: "would add"}, nil
+		},
+	}
+	rec := &recorder{}
+	drive(rec, plugin.Plugin{Name: "demo", Capabilities: []plugin.Capability{c}}, noConfig(), t.TempDir(),
+		map[string]map[string]any{"demo.item.add": {"title": ""}})
+	if ran || !strings.Contains(rec.errText(), "was never run — no value for required input title") {
+		t.Errorf("ran %v, errs %q", ran, rec.errText())
+	}
+}
+
 // Warnings rather than errors here, and the suite has to keep that choice
 // even for the case it is most confident about.
 func TestASynonymOfAVocabularyWordWarnsAndNamesTheReplacement(t *testing.T) {

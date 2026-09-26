@@ -1188,26 +1188,6 @@ func declareFlags(cmd *cobra.Command, c plugin.Capability) {
 	}
 }
 
-// requireResolved reports a required input that nothing supplied — neither
-// the caller nor the operator's configuration.
-//
-// Only for inputs that declare a config key: every other required input is
-// still cobra's to enforce, at parse time, where the error arrives with the
-// usage text beside it.
-func requireResolved(c plugin.Capability, values map[string]any) *view.Error {
-	for _, f := range c.Inputs {
-		if !f.Required || f.Config == "" {
-			continue
-		}
-		if v, ok := values[f.Name]; ok && v != "" && v != nil {
-			continue
-		}
-		return view.Errorf("core.input.missing", "%s needs --%s", c.ID, f.Name).
-			WithHint(fmt.Sprintf("pass --%s, or set %s in your rta config", f.Name, f.Config))
-	}
-	return nil
-}
-
 // flagUsage renders a field's help for `--help`, appending what the host adds
 // rather than what each declaration remembers to write down.
 //
@@ -1302,12 +1282,16 @@ func runCapability(ctx context.Context, cmd *cobra.Command, c plugin.Capability,
 		// The heading Config sits under, for a refusal to name the line.
 		ConfigSection: PluginConfigSection(c),
 	}, opts.dryRun, opts.yes).WithSurface(plugin.SurfaceCLI)
-	// The required check for config-backed inputs, which cobra no longer
-	// makes because making it would have run before config was consulted.
-	// Named here rather than left as a handler's zero value: an input that is
-	// required and empty is the one case where "you can also put this in your
-	// config" is the sentence somebody needs.
-	if verr := requireResolved(c, req.Values()); verr != nil {
+	// The required checks cobra cannot make: of a config-backed input, since
+	// making it at parse time would run before config was consulted, and of
+	// any required input given empty — `--host ""`, a bare "" argument —
+	// which cobra counts as given. One left off the command line cobra has
+	// already refused, at parse time, with the usage beside it. The host's
+	// own check (plugin.CheckRequired), asked here rather than left to the
+	// guard inside c.Run: a refusal from there is a failure, and a failure
+	// gets ConfigNotApplied's "so this ran with the declared defaults" beside
+	// it, about a call that did not run.
+	if verr := plugin.CheckRequired(c, req); verr != nil {
 		_ = cli.RenderError(cmd.ErrOrStderr(), verr, renderOpts)
 		return Rendered(verr)
 	}

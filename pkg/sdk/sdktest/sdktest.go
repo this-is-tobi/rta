@@ -283,7 +283,7 @@ func drive(t reporter, p plugin.Plugin, cfg config, dir string, inputs map[strin
 		// reported on a call that cannot happen. Refused, it is a capability
 		// the suite did not drive, and said so the way a missing required
 		// input is.
-		if verr := plugin.CheckInputs(c, req); verr != nil {
+		if verr := plugin.CheckRequest(c, req); verr != nil {
 			if mutating {
 				t.Errorf("sdktest: %s: %s was never run — the host refuses the inputs supplied: %s. "+
 					"Supply values its declaration accepts with sdktest.WithInputs.",
@@ -337,16 +337,15 @@ func drive(t reporter, p plugin.Plugin, cfg config, dir string, inputs map[strin
 }
 
 // missingRequired names the required inputs that have no value, which is what
-// makes a capability undrivable rather than broken.
+// makes a capability undrivable rather than broken. "No value" is the host's
+// (plugin.Missing), asked as the CLI the suite stands in for: a WithInputs
+// value of "" for a required input is one rta refuses before the handler, so
+// the suite does not drive it on the handler's behalf.
 func missingRequired(c plugin.Capability, values map[string]any) []string {
-	var missing []string
-	for _, f := range c.Inputs {
-		if !f.Required {
-			continue
-		}
-		if _, ok := values[f.Name]; !ok {
-			missing = append(missing, f.Name)
-		}
+	fields := plugin.Missing(c, values, plugin.SurfaceCLI)
+	missing := make([]string, 0, len(fields))
+	for _, f := range fields {
+		missing = append(missing, f.Name)
 	}
 	return missing
 }
