@@ -186,7 +186,7 @@ func runTools(ctx context.Context, req plugin.Request) (view.View, error) {
 		t := toolsTable(nil)
 		t.Empty = "No tools listed. Write the binaries you install from GitHub releases under " +
 			"`plugins: pkg: tools:` as `- <bin>=github:<owner>/<repo>`; binaries from `go install` " +
-			"need no entry and appear under the go manager in `rta pkg outdated`."
+			"need no entry and appear under the go manager in " + req.Surface().CapabilityName("pkg.outdated") + "."
 		return t, nil
 	}
 	states, verr := readTools(ctx, newRegistryClient(), raw)
@@ -329,7 +329,7 @@ func expectedDigest(ctx context.Context, c *registryClient, rel release, assetNa
 
 // installTool is the upgrade of one direct binary: claims first, evidence
 // second, nothing durable until they agree — plugin install's order.
-func installTool(ctx context.Context, c *registryClient, t tool, unverified, dryRun bool) (view.View, *view.Error) {
+func installTool(ctx context.Context, sf plugin.Surface, c *registryClient, t tool, unverified, dryRun bool) (view.View, *view.Error) {
 	rel, found, verr := c.latestRelease(ctx, t.Owner, t.Repo)
 	if verr != nil {
 		return nil, verr
@@ -350,7 +350,8 @@ func installTool(ctx context.Context, c *registryClient, t tool, unverified, dry
 	}
 	if want == "" && !unverified {
 		return nil, view.Errorf("pkg.tool.unverified", "github.com/%s/%s publishes no digest for %s", t.Owner, t.Repo, assetName).
-			WithHint("the release has neither an API digest nor a checksums file; `--unverified` installs it on your word alone")
+			WithHint("the release has neither an API digest nor a checksums file; " + sf.InputName("unverified") +
+				" installs it on your word alone")
 	}
 	dest, verr := toolDestination(t.Bin)
 	if verr != nil {
