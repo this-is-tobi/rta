@@ -3,7 +3,6 @@ package app
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -214,9 +213,8 @@ func newMCPInstallCommand(opts *globalOpts) *cobra.Command {
 	sort.Strings(names)
 
 	cmd := &cobra.Command{
-		Use:         "install <client>",
-		Annotations: outputExempt(),
-		Short:       "Register rta as an MCP server in a client (" + strings.Join(names, ", ") + ")",
+		Use:   "install <client>",
+		Short: "Register rta as an MCP server in a client (" + strings.Join(names, ", ") + ")",
 		Long: "Registers rta with an MCP client, under a name, so that grants issued " +
 			"while talking to one agent do not authorize every other client on this " +
 			"machine.\n\n" +
@@ -256,7 +254,6 @@ func newMCPInstallCommand(opts *globalOpts) *cobra.Command {
 				return verr
 			}
 
-			out := cmd.OutOrStdout()
 			if !show && client.bin != "" {
 				if bin, err := exec.LookPath(client.bin); err == nil {
 					// Resolved here, inside the one branch that runs the
@@ -293,30 +290,30 @@ func newMCPInstallCommand(opts *globalOpts) *cobra.Command {
 									"or check %s's own --help", client.name, client.bin)}
 						}
 					}
+					line := bin + " " + strings.Join(argsFn(self, name), " ")
 					if opts.dryRun {
-						fmt.Fprintf(out, "would run: %s %s\n", bin, strings.Join(argsFn(self, name), " "))
-						return nil
+						return renderView(cmd, opts, registeredAnswer(client, name, line, true))
 					}
 					run := exec.CommandContext(cmd.Context(), bin, argsFn(self, name)...)
-					run.Stdout, run.Stderr = out, cmd.ErrOrStderr()
+					// The client's own words go to stderr, both streams of
+					// them. Stdout is rta's answer, in the format -o asks
+					// for, and `claude mcp add` printing its own sentence
+					// into it put prose ahead of the json a script had asked
+					// for. A person at a terminal still reads both.
+					run.Stdout, run.Stderr = cmd.ErrOrStderr(), cmd.ErrOrStderr()
 					if err := run.Run(); err != nil {
 						// Not fatal. A client whose command moved on is
 						// exactly when somebody needs the block instead, and
 						// failing here would leave them with nothing.
 						fmt.Fprintf(cmd.ErrOrStderr(),
-							"rta: %s could not register it (%v) — here is what to add instead\n\n",
+							"rta: %s could not register it (%v) — here is what to add instead\n",
 							client.bin, err)
-						describeClient(out, client, self, name, global)
-						return nil
+						return renderView(cmd, opts, describeClient(client, self, name, global))
 					}
-					fmt.Fprintf(out, "✓ registered with %s as %q\n", client.label, name)
-					fmt.Fprintf(out, "  Agents start read-only. `rta grant allow <capability> --agent %s`\n"+
-						"  is how anything else gets through, and it expires on its own.\n", name)
-					return nil
+					return renderView(cmd, opts, registeredAnswer(client, name, line, false))
 				}
 			}
-			describeClient(out, client, self, name, global)
-			return nil
+			return renderView(cmd, opts, describeClient(client, self, name, global))
 		},
 	}
 	cmd.Flags().StringVar(&as, "as", "",
@@ -328,17 +325,55 @@ func newMCPInstallCommand(opts *globalOpts) *cobra.Command {
 	return cmd
 }
 
-// describeClient prints what to add and where, which is all rta does for a
-// client that cannot configure itself.
-func describeClient(out io.Writer, c mcpClient, self, as string, global bool) {
+// registeredAnswer is what mcp install answers when the client's own command
+// registered rta, or would have under --dry-run: which client, the agent name
+// it was registered under, the command line that did it, and what an agent
+// registered this way can reach.
+//
+// The command line is part of the answer because it is the one thing rta did
+// to a file it does not own, and the only record of which scope a client's
+// own flag put it in.
+func registeredAnswer(c mcpClient, as, line string, dryRun bool) view.KeyValue {
+	registered, ran := "registered", "ran"
+	next := "agents start read-only — `rta grant allow <capability> --agent " + as +
+		"` is how anything else gets through, and it expires on its own"
+	if dryRun {
+		registered, ran = "would register", "would run"
+		next = "run without --dry-run to register it"
+	}
+	return view.KeyValue{Pairs: []view.Pair{
+		{Key: registered, Value: c.label},
+		{Key: "as", Value: as},
+		{Key: ran, Value: line},
+		{Key: "next", Value: next},
+	}}
+}
+
+// describeClient is what to add and where, which is all rta does for a client
+// that cannot configure itself — and what it answers for one that can, under
+// --show, or when that client's own command is missing or failed.
+//
+// The block is a value of its own rather than lines of prose around it, so a
+// script provisioning a machine lifts it out of -o json whole, and a terminal
+// lays its lines out as they were written rather than reflowing them as a
+// sentence. "as" is the same pair registeredAnswer carries, so whichever
+// answer came back, the agent name is read from one place.
+func describeClient(c mcpClient, self, as string, global bool) view.KeyValue {
 	file := c.file
 	if global && c.globalFile != "" {
 		file = c.globalFile
 	}
-	fmt.Fprintf(out, "Add this to %s:\n\n%s\n", file, c.block(self, as))
-	if c.note != "" {
-		fmt.Fprintf(out, "\n%s\n", c.note)
+	pairs := []view.Pair{
+		{Key: "client", Value: c.label},
+		{Key: "add to", Value: file},
+		{Key: "block", Value: strings.TrimRight(c.block(self, as), "\n")},
+		{Key: "as", Value: as},
 	}
-	fmt.Fprintf(out, "\nThe `--as %s` is what keeps this agent's grants its own: without a name,\n"+
-		"every MCP client on this machine shares one set of permissions.\n", as)
+	if c.note != "" {
+		pairs = append(pairs, view.Pair{Key: "note", Value: c.note})
+	}
+	return view.KeyValue{Pairs: append(pairs, view.Pair{Key: "next",
+		Value: "add the block to that file yourself — rta writes nothing there. The `--as " + as +
+			"` in it is what keeps this agent's grants its own: without a name, every MCP client " +
+			"on this machine shares one set of permissions"})}
 }

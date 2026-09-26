@@ -88,6 +88,88 @@ func TestInstallRunsTheClientsOwnCommand(t *testing.T) {
 	}
 }
 
+// mcp install answers with pairs, in the format asked for, whichever of its
+// three answers it gives: registered by the client's own command, would be
+// under --dry-run, or the block to add by hand. It printed prose on stdout
+// whatever -o said, and let the client's own command print into the same
+// stream, so a script provisioning a machine parsed two tools' sentences.
+func TestMCPInstallAnswersWithAViewInTheFormatAskedFor(t *testing.T) {
+	argv := fakeClient(t, "claude", 0)
+	// The client says something of its own, as `claude mcp add` does.
+	chatty := filepath.Join(filepath.Dir(argv), "claude")
+	script, err := os.ReadFile(chatty)
+	if err != nil {
+		t.Fatal(err)
+	}
+	script = []byte(strings.Replace(string(script), "exit 0", "echo 'Added stdio MCP server rta'\nexit 0", 1))
+	if err := os.WriteFile(chatty, script, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	out, errOut, err := run(t, testRegistry(t), "mcp", "install", "claude", "--dry-run", "-o", "json")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	pairs := answerPairs(t, out)
+	if pairs["would register"] != "Claude Code" || !strings.Contains(pairs["would run"], "mcp add rta -- ") {
+		t.Errorf("a dry run answered %v", pairs)
+	}
+
+	out, errOut, err = run(t, testRegistry(t), "mcp", "install", "claude", "-o", "json")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	pairs = answerPairs(t, out)
+	if pairs["registered"] != "Claude Code" || pairs["as"] != "claude" ||
+		!strings.HasSuffix(pairs["ran"], "mcp serve --as claude") ||
+		!strings.Contains(pairs["next"], "--agent claude") {
+		t.Errorf("answered %v, want the client, the name, the command it ran and what comes next", pairs)
+	}
+	if !strings.Contains(errOut, "Added stdio MCP server rta") {
+		t.Errorf("the client's own words were lost rather than moved to stderr: %q", errOut)
+	}
+
+	// A default that names no format stops it before the client's command
+	// runs, as it stops every command that renders.
+	if err := os.Remove(argv); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("RTA_OUTPUT", "bogus")
+	_, _, err = run(t, testRegistry(t), "mcp", "install", "claude")
+	var ve *view.Error
+	if !errors.As(err, &ve) || ve.Code != CodeOutputInvalid {
+		t.Errorf("err = %#v, want %s", err, CodeOutputInvalid)
+	}
+	if _, statErr := os.Stat(argv); statErr == nil {
+		t.Error("a broken default ran the client's command before the refusal")
+	}
+	t.Setenv("RTA_OUTPUT", "")
+
+	t.Setenv("PATH", t.TempDir())
+	out, errOut, err = run(t, testRegistry(t), "mcp", "install", "cursor", "-o", "json")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	pairs = answerPairs(t, out)
+	var block map[string]json.RawMessage
+	if jerr := json.Unmarshal([]byte(pairs["block"]), &block); jerr != nil || block["mcpServers"] == nil {
+		t.Errorf("block = %q, want the json to paste, whole: %v", pairs["block"], jerr)
+	}
+	if !strings.Contains(pairs["add to"], "~/.cursor/mcp.json") || pairs["as"] != "cursor" {
+		t.Errorf("answered %v, want the file to add it to and the agent name", pairs)
+	}
+
+	onATerminal(t)
+	out, errOut, err = run(t, testRegistry(t), "mcp", "install", "codex", "--show", "--no-color")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	readsOnATerminal(t, out, "client", "add to", "block", "as", "next")
+	if !strings.Contains(out, "[mcp_servers.rta]") {
+		t.Errorf("the block to paste is not on the screen:\n%s", out)
+	}
+}
+
 // D3: --dry-run used to be silently ignored here too — `rta mcp install
 // claude --dry-run` ran claude's own registration command for real, the
 // one command in this file that touches a config file rta does not own.
