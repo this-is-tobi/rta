@@ -11,7 +11,9 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/internal/pluginhost"
 	"github.com/this-is-tobi/rta/internal/profile"
+	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/internal/render/theme"
 	"github.com/this-is-tobi/rta/internal/textclean"
 	"github.com/this-is-tobi/rta/pkg/format"
@@ -65,7 +67,7 @@ func (m Model) profilePicker(c plugin.Capability, on string) *plugin.Field {
 	}
 	ns := plugin.Namespace(c.ID)
 	bad := map[string]bool{}
-	for _, p := range profile.Check(cfg, m.reg) {
+	for _, p := range profile.Check(cfg, m.installed()) {
 		bad[p.Name] = true
 	}
 	options := []string{profileNoneLabel}
@@ -408,7 +410,7 @@ func (m Model) profileRows() []profileRow {
 	}
 	whole := map[string]string{}
 	perPlugin := map[string]map[string]string{}
-	for _, p := range profile.Check(cfg, m.reg) {
+	for _, p := range profile.Check(cfg, m.installed()) {
 		if p.Plugin == "" {
 			if _, already := whole[p.Name]; !already {
 				whole[p.Name] = p.Reason
@@ -429,7 +431,7 @@ func (m Model) profileRows() []profileRow {
 	// to see what an environment reaches had no word against it.
 	wholeNote := map[string]string{}
 	pluginNote := map[string]map[string]string{}
-	for _, n := range profile.Notes(cfg, m.reg) {
+	for _, n := range profile.Notes(cfg, m.installed()) {
 		if n.Plugin == "" {
 			if _, already := wholeNote[n.Name]; !already {
 				wholeNote[n.Name] = n.Reason
@@ -482,6 +484,32 @@ func (m Model) profileRows() []profileRow {
 		rows = append(rows, row)
 	}
 	return rows
+}
+
+// installed is the registry as a profile check reads it, paired with what
+// discovery found and refused to launch — internal/app's withTrust, for the
+// same sentence. An entry naming an artifact that is installed and not
+// approved is told so, and not that the plugin is missing: a rebuild is what
+// produces it, since trust is keyed on the digest, and the pane called it
+// "not a registered plugin" where `rta profile list` said to trust it.
+func (m Model) installed() profile.Installed {
+	return withUntrusted{Registry: m.reg, untrusted: m.untrusted}
+}
+
+type withUntrusted struct {
+	*registry.Registry
+	untrusted []pluginhost.Untrusted
+}
+
+// Untrusted reports whether discovery found an artifact by this name and did
+// not run it.
+func (w withUntrusted) Untrusted(namespace string) bool {
+	for _, u := range w.untrusted {
+		if u.Name == namespace {
+			return true
+		}
+	}
+	return false
 }
 
 // credentialRows lists every Secret input this plugin declares, and where this
