@@ -506,9 +506,13 @@ func metaPairs(s itemstore.Store, it itemstore.Item) view.KeyValue {
 
 // contentView renders the prose. An empty body says so and says how to fill
 // it, rather than leaving a blank band on a page dedicated to one note.
+//
+// Beside the body, not as it (view.Text.Empty): the sentence was the body,
+// so -o json handed a script "This note is empty — ..." as the note's
+// content, text nobody wrote in it.
 func contentView(it itemstore.Item) view.Text {
 	if strings.TrimSpace(it.Body) == "" {
-		return view.Text{Body: fmt.Sprintf("This note is empty — write it with: rta note edit %d --body \"...\"", it.ID)}
+		return view.Text{Empty: fmt.Sprintf("This note is empty — write it with: rta note edit %d --body \"...\"", it.ID)}
 	}
 	return view.Text{Body: strings.TrimRight(it.Body, "\n"), Markdown: true}
 }

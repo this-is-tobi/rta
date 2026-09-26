@@ -412,16 +412,21 @@ func TestShowSeparatesMetadataFromBody(t *testing.T) {
 }
 
 // An empty body must still say something useful — a page dedicated to one
-// note should never render a blank band.
+// note should never render a blank band — and say it to a person alone.
+//
+// The sentence was the body, so every format carried it: `rta note show 1
+// -o json` handed a script "This note is empty — ..." as the note's content,
+// text nobody wrote in it. The body is empty now, as the note is, and the
+// sentence beside it is drawn where a person reads the page.
 func TestShowEmptyBodyExplainsItself(t *testing.T) {
 	setup(t)
 	text(t, runAdd, map[string]any{"title": "bare"}, false)
 	content := section(t, show(t, 1), "content").(view.Text)
-	if !strings.Contains(content.Body, "This note is empty") || !strings.Contains(content.Body, "note edit 1") {
-		t.Errorf("empty content = %q", content.Body)
+	if content.Body != "" {
+		t.Errorf("empty content = %q, want the note's own empty body", content.Body)
 	}
-	if content.Markdown {
-		t.Error("the placeholder is not the user's markdown")
+	if !strings.Contains(content.Empty, "This note is empty") || !strings.Contains(content.Empty, "note edit 1") {
+		t.Errorf("empty content says %q, want how to fill it", content.Empty)
 	}
 }
 
