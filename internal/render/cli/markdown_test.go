@@ -147,6 +147,23 @@ func TestMarkdownEscapesLinkCodeAndHTMLSyntaxInCells(t *testing.T) {
 	}
 }
 
+// A backslash in a cell is escaped too, or it undoes the escape written after
+// it: `\<img …>` came out as `\\<img …>`, which markdown reads as a literal
+// backslash followed by a raw tag — the tag the escape was there to stop.
+func TestMarkdownABackslashCannotUndoAnEscape(t *testing.T) {
+	tbl := view.Table{
+		Columns: []view.Column{{Name: "note"}},
+		Rows:    [][]string{{`\<img src=x onerror=alert(1)> and \[a\](https://evil.example) in C:\Users`}},
+	}
+	out := md(t, tbl)
+	checkGrid(t, out)
+	for _, escaped := range []string{`\\\<img`, `\\\[a\\\]`, `C:\\Users`} {
+		if !strings.Contains(out, escaped) {
+			t.Errorf("missing escaped form %q:\n%s", escaped, out)
+		}
+	}
+}
+
 // A newline inside a cell breaks out of the row entirely, which turns the
 // rest of the table into prose.
 func TestMarkdownKeepsMultilineCellsInsideTheirRow(t *testing.T) {
