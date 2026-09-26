@@ -18,7 +18,7 @@ import (
 func runGuardOn(_ context.Context, req plugin.Request) (view.View, error) {
 	if guard.Enabled() {
 		return nil, view.Errorf("core.guard.exists", "the guard is already enabled").
-			WithHint("`rta grant guard off` first, if you mean to rotate the passphrase")
+			WithHint(req.Surface().CapabilityName("grant.guard.off") + " first, if you mean to rotate the passphrase")
 	}
 	held, verr := core.Load()
 	if verr != nil {
@@ -148,21 +148,23 @@ func runGuardOff(_ context.Context, req plugin.Request) (view.View, error) {
 func runGuardRemote(_ context.Context, req plugin.Request) (view.View, error) {
 	if guard.Enabled() {
 		return nil, view.Errorf("core.guard.exists", "the guard is already enabled").
-			WithHint("`rta grant guard off` first, if you mean to change what it trusts")
+			WithHint(req.Surface().CapabilityName("grant.guard.off") + " first, if you mean to change what it trusts")
 	}
 	path := strings.TrimSpace(req.String("operators"))
 	if path == "" {
 		return nil, view.Errorf("core.guard.remote.roster", "name the roster file to enroll").
-			WithHint("rta grant guard remote operators.txt --url https://rta.example.com")
+			WithHint("for example `" + req.Surface().Call("grant.guard.remote",
+				plugin.Arg{Name: "operators", Value: "operators.txt", Positional: true},
+				plugin.Arg{Name: "url", Value: "https://rta.example.com"}) + "`")
 	}
 	rawURL := strings.TrimSpace(req.String("url"))
 	if rawURL == "" {
 		return nil, view.Errorf("core.guard.remote.server",
-			"a remote guard needs this server's canonical URL (--url) — it is signed into every "+
-				"grant, so a grant issued for this server verifies on no other").
+			"a remote guard needs this server's canonical URL (%s) — it is signed into every "+
+				"grant, so a grant issued for this server verifies on no other", req.Surface().InputName("url")).
 			WithHint("the exact URL operators write in their remotes.yaml, and `rta mcp serve --operators-url` carries")
 	}
-	canonical, verr := operatorid.CanonicalServerURL("--url", rawURL)
+	canonical, verr := operatorid.CanonicalServerURL(req.Surface().InputName("url"), rawURL)
 	if verr != nil {
 		return nil, verr
 	}
@@ -220,7 +222,9 @@ func runGuardRemote(_ context.Context, req plugin.Request) (view.View, error) {
 		{Key: "operators", Value: operatorsCell},
 		{Key: "key", Value: guard.Fingerprint()},
 		{Key: "cleared", Value: fmt.Sprintf("%d grant(s) issued before the guard", len(held))},
-		{Key: "issuance", Value: "rta grant allow <capability> --server <this server>, from an enrolled machine"},
+		{Key: "issuance", Value: req.Surface().Call("grant.allow",
+			plugin.Arg{Name: "target", Value: "<capability>", Positional: true},
+			plugin.Arg{Name: "server", Value: "<this-server>"}) + ", from an enrolled machine"},
 	}
 	if groupReadable {
 		// The serve path prints the same fact; the enrollment path is the
@@ -242,15 +246,16 @@ func runGuardRemote(_ context.Context, req plugin.Request) (view.View, error) {
 // every row in that table, so it belongs above them.
 //
 // held is what core.Load returned, error included: the orphaned state is
-// only visible from that error, and it is the state worth seeing first.
-func guardLine(held []core.Grant, verr *view.Error) string {
+// only visible from that error, and it is the state worth seeing first. sf
+// is the surface showing it, for the call that turns the guard on.
+func guardLine(sf plugin.Surface, held []core.Grant, verr *view.Error) string {
 	if verr != nil && verr.Code == "core.grant.guard.orphaned" {
 		return "ORPHANED — " + core.Path() + " holds guard-signed grants and " +
 			guard.Path() + " is gone, so nothing in it is honoured; rm " + core.Path() +
-			", then rta grant guard on"
+			", then " + sf.Call("grant.guard.on")
 	}
 	if !guard.Enabled() {
-		return "off — any process running as you can issue a grant (rta grant guard on)"
+		return "off — any process running as you can issue a grant (" + sf.Call("grant.guard.on") + ")"
 	}
 	since := guard.Created().Local().Format("2006-01-02 15:04")
 	if guard.Remote() {
@@ -270,7 +275,7 @@ func guardLine(held []core.Grant, verr *view.Error) string {
 // command for when the guard itself is the question.
 func runGuardStatus(_ context.Context, req plugin.Request) (view.View, error) {
 	held, verr := core.Load()
-	pairs := []view.Pair{{Key: "guard", Value: guardLine(held, verr)}}
+	pairs := []view.Pair{{Key: "guard", Value: guardLine(req.Surface(), held, verr)}}
 	switch {
 	case verr != nil && verr.Code == "core.grant.guard.orphaned":
 		return view.KeyValue{Pairs: pairs}, nil

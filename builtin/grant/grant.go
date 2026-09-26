@@ -552,11 +552,11 @@ func runAllow(ctx context.Context, req plugin.Request, catalog func() []plugin.C
 	// a person at the machine, so an omitted --agent can be filled in from
 	// what this machine knows. The operator channel's flow cannot — see
 	// buildGrant.
-	agent, verr := resolveAgent(req.String("agent"))
+	agent, verr := resolveAgent(req.Surface(), req.String("agent"))
 	if verr != nil {
 		return nil, verr
 	}
-	g, notes, verr := buildGrant(catalog, artifact, operatorid.IssueSpec{
+	g, notes, verr := buildGrant(req.Surface(), catalog, artifact, operatorid.IssueSpec{
 		Target:  req.String("target"),
 		Scope:   req.String("scope"),
 		Profile: req.String("profile"),
@@ -647,8 +647,9 @@ func usesSuffix(maxUses int) string {
 //
 // One argument rather than two because the two halves are meaningless
 // apart: "10" is not a rate and neither is "1h", and a pair of flags is a
-// pair somebody sets one of.
-func parseRate(raw string) (int, string, *view.Error) {
+// pair somebody sets one of. sf is the surface asking, for the name a
+// refusal gives max-uses.
+func parseRate(sf plugin.Surface, raw string) (int, string, *view.Error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return 0, "", nil
@@ -678,7 +679,7 @@ func parseRate(raw string) (int, string, *view.Error) {
 	// which is --max-uses wearing a different hat and worth saying so.
 	if d > core.MaxTTL {
 		return 0, "", bad(fmt.Sprintf("a window longer than the %s a grant can live is "+
-			"--max-uses %d in disguise", core.MaxTTL, calls))
+			"%s %d in disguise", core.MaxTTL, sf.InputName("max-uses"), calls))
 	}
 	return calls, window, nil
 }
@@ -739,7 +740,7 @@ func scopable(catalog func() []plugin.Capability, target string) bool {
 // the two ceilings, in which case the policy ceiling never even applies, and
 // checking the raw ask against it in isolation reports it as the cause
 // anyway.
-func parseTTL(raw, target string) (ttl, asked time.Duration, byPolicy bool, where string, verr *view.Error) {
+func parseTTL(sf plugin.Surface, raw, target string) (ttl, asked time.Duration, byPolicy bool, where string, verr *view.Error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return core.DefaultTTL, core.DefaultTTL, false, "", nil
@@ -751,7 +752,8 @@ func parseTTL(raw, target string) (ttl, asked time.Duration, byPolicy bool, wher
 	}
 	if parsed <= 0 {
 		return 0, 0, false, "", view.Errorf("grant.badttl", "a grant must last longer than zero").
-			WithHint("to take access away, use: rta grant revoke " + target)
+			WithHint("to take access away, use `" + sf.Call("grant.revoke",
+				plugin.Arg{Name: "target", Value: target, Positional: true}) + "`")
 	}
 	// Two ceilings, and the tighter one wins: rta's own day, and whatever the
 	// team's policy file says.
@@ -840,7 +842,7 @@ func runRenew(_ context.Context, req plugin.Request) (view.View, error) {
 	var ttl time.Duration
 	if askedTTL != "" {
 		var verr *view.Error
-		ttl, _, _, _, verr = parseTTL(askedTTL, target)
+		ttl, _, _, _, verr = parseTTL(req.Surface(), askedTTL, target)
 		if verr != nil {
 			return nil, verr
 		}
@@ -965,8 +967,8 @@ func runRenew(_ context.Context, req plugin.Request) (view.View, error) {
 	if len(stale) > 0 {
 		body += fmt.Sprintf("\nnote: %d of these name a connection that has changed since it was "+
 			"issued (%s), so the deadline moved and they still authorize nothing — "+
-			"`rta grant allow` re-consents to the connection as it is now",
-			len(stale), strings.Join(stale, ", "))
+			"%s re-consents to the connection as it is now",
+			len(stale), strings.Join(stale, ", "), req.Surface().CapabilityName("grant.allow"))
 	}
 	if capped {
 		// Named by the rule that did the capping: the team's ceiling when it
@@ -977,7 +979,8 @@ func runRenew(_ context.Context, req plugin.Request) (view.View, error) {
 			cap, by = teamCeiling.MaxTTL, "ceiling of your team's policy ("+teamCeiling.Where()+")"
 		}
 		body += fmt.Sprintf("\ncapped at the %s %s from first consent — "+
-			"`rta grant allow` starts a new window, which is a fresh decision", format.Duration(cap), by)
+			"%s starts a new window, which is a fresh decision", format.Duration(cap), by,
+			req.Surface().CapabilityName("grant.allow"))
 	}
 	return view.Text{Body: body}, nil
 }
@@ -993,7 +996,7 @@ func runList(ctx context.Context, req plugin.Request, catalog func() []plugin.Ca
 	if server := req.String("server"); server != "" {
 		return remoteList(ctx, req, server)
 	}
-	held, verr := heldTable(strings.TrimSpace(req.String("role")), req.Bool("detail"))
+	held, verr := heldTable(req.Surface(), strings.TrimSpace(req.String("role")), req.Bool("detail"))
 	if verr != nil {
 		return nil, verr
 	}
@@ -1010,7 +1013,7 @@ func runList(ctx context.Context, req plugin.Request, catalog func() []plugin.Ca
 	// is a fact about every row below it. The compact view stays the flat
 	// table it has to be — it is what the dashboard tile refreshes.
 	stored, storedErr := core.Load()
-	p.PutAs("guard", "the guard", view.Text{Body: "guard  " + guardLine(stored, storedErr)})
+	p.PutAs("guard", "the guard", view.Text{Body: "guard  " + guardLine(req.Surface(), stored, storedErr)})
 	p.PutAs("granted", "granted", held)
 	for _, tier := range reachTiers {
 		p.PutAs(tier.id, tier.title, reachTable(catalog(), tier.holds))
@@ -1068,8 +1071,9 @@ func reachTable(caps []plugin.Capability, holds func(plugin.Capability) bool) vi
 // guardAbove says the page it goes on already leads with the guard's state,
 // as `grant list --detail` does, so the roster does not state it again: an
 // empty one drew the guard line twice there on a terminal, once as the
-// page's first section and once in its own sentence.
-func heldTable(role string, guardAbove bool) (view.View, *view.Error) {
+// page's first section and once in its own sentence. sf is the surface
+// showing it, for the calls its sentences offer.
+func heldTable(sf plugin.Surface, role string, guardAbove bool) (view.View, *view.Error) {
 	grants, verr := core.Load()
 	standing := len(grants)
 	if verr == nil && role != "" {
@@ -1127,7 +1131,7 @@ func heldTable(role string, guardAbove bool) (view.View, *view.Error) {
 	// sentence as a Text view, which every format carried: `jq '.rows[]'`
 	// met a view with no rows, and -o csv a text cell where a header was.
 	if len(grants) == 0 {
-		t.Empty = emptyRoster(!guardAbove, role, standing)
+		t.Empty = emptyRoster(sf, !guardAbove, role, standing)
 	}
 	// The roles in force above the rows, where the docs send people before
 	// they walk away from a machine: one line per role and agent, with the
@@ -1149,7 +1153,7 @@ func heldTable(role string, guardAbove bool) (view.View, *view.Error) {
 		// the team's ceiling is not "no grant", and somebody certain they
 		// issued one has to be told why it is not here.
 		items = append(items, view.Section{ID: "policy", Title: "Your team's policy",
-			View: view.Text{Body: strings.TrimPrefix(suppressedNote(n), "\n\n")}})
+			View: view.Text{Body: strings.TrimPrefix(suppressedNote(sf, n), "\n\n")}})
 	}
 	return view.Sections{Items: items}, nil
 }
@@ -1164,11 +1168,13 @@ func heldTable(role string, guardAbove bool) (view.View, *view.Error) {
 // only what needs none, while every grant issued outside that role stood.
 // This is the screen somebody reads to learn what an agent may do right
 // now, the one place that sentence must not be wrong.
-func emptyRoster(withGuard bool, role string, standing int) string {
+func emptyRoster(sf plugin.Surface, withGuard bool, role string, standing int) string {
 	head := ""
 	if withGuard {
-		head = "guard  " + guardLine(nil, nil) + "\n\n"
+		head = "guard  " + guardLine(sf, nil, nil) + "\n\n"
 	}
+	allowOne := "Allow one with: " + sf.Call("grant.allow",
+		plugin.Arg{Name: "target", Value: "<capability>", Positional: true}, plugin.Arg{Name: "ttl", Value: "15m"})
 	// An empty list is the ordinary answer and a dropped file is not, so the
 	// difference has to be visible here: this is the one screen where
 	// somebody looking for a grant they issued will come looking for it.
@@ -1177,17 +1183,15 @@ func emptyRoster(withGuard bool, role string, standing int) string {
 			"Grants are now sealed against tampering, and " + core.Path() + " predates\n" +
 			"the seal, so nothing in it is honoured. Any grant it held is gone; re-issue\n" +
 			"what you still need. Removing the file clears this notice:\n" +
-			"  rm " + core.Path() + "\n\n" +
-			"Allow one with: rta grant allow <capability> --ttl 15m"
+			"  rm " + core.Path() + "\n\n" + allowOne
 	}
 	if role != "" && standing > 0 {
 		return head +
 			"No standing grant was issued under the role " + role + ".\n" +
-			"Every grant standing: rta grant list"
+			"Every grant standing: " + sf.Call("grant.list")
 	}
 	return head +
-		"No grant is standing — agents reach only what needs none.\n" +
-		"Allow one with: rta grant allow <capability> --ttl 15m"
+		"No grant is standing — agents reach only what needs none.\n" + allowOne
 }
 
 // rolesInForce is one line per role and agent among the grants standing:
@@ -1357,14 +1361,14 @@ func grantsTable(grants []core.Grant, stale func(core.Grant) bool) view.Table {
 
 // suppressedNote accounts for grants the ceiling is holding back, so that
 // "where did my grant go" has an answer on the screen where it is asked.
-func suppressedNote(n int) string {
+func suppressedNote(sf plugin.Surface, n int) string {
 	where := ""
 	if c, verr := core.Ceiling(); verr == nil {
 		where = " — " + c.Where()
 	}
 	return fmt.Sprintf("\n\n%d grant(s) on disk are suppressed by your team's policy%s\n"+
 		"They are not deleted: relaxing the policy brings them back, and "+
-		"`rta doctor` says what it forbids.", n, where)
+		"%s says what it forbids.", n, where, sf.CapabilityName("audit.doctor"))
 }
 
 // budgetLeft is the one cell that answers "how much of this is left", across
@@ -1415,8 +1419,8 @@ func runRevoke(ctx context.Context, req plugin.Request) (view.View, error) {
 		Role:    strings.TrimSpace(req.String("role")),
 	}
 	if !spec.All && spec.Target == "" && spec.Profile == "" && spec.Agent == "" && spec.Role == "" {
-		return nil, view.Errorf("grant.notarget", "name a capability, or pass --all").
-			WithHint("run `rta grant list` to see what is currently allowed")
+		return nil, view.Errorf("grant.notarget", "name a capability, or give %s", req.Surface().InputName("all")).
+			WithHint(req.Surface().CapabilityName("grant.list") + " shows what is currently allowed")
 	}
 	// The matching rules and the locked-snapshot discipline live in
 	// revokeOutcome, shared with the operator channel's revoke verb; the
@@ -1425,9 +1429,9 @@ func runRevoke(ctx context.Context, req plugin.Request) (view.View, error) {
 	if verr != nil {
 		return nil, verr
 	}
-	body := revokeBody(spec.Target, out, req.DryRun)
+	body := revokeBody(req.Surface(), spec.Target, out, req.DryRun)
 	if spec.Role != "" && !req.DryRun {
-		body += "\n" + stillStanding(spec.Agent)
+		body += "\n" + stillStanding(req.Surface(), spec.Agent)
 	}
 	return view.Text{Body: body}, nil
 }
@@ -1436,7 +1440,7 @@ func runRevoke(ctx context.Context, req plugin.Request) (view.View, error) {
 // rather than asserted: a role line that had replaced a hand-issued grant
 // took that grant with it when the role went, and a sentence claiming
 // hand grants survive would be false exactly then.
-func stillStanding(agent string) string {
+func stillStanding(sf plugin.Surface, agent string) string {
 	grants, verr := core.Load()
 	if verr != nil {
 		return ""
@@ -1455,7 +1459,7 @@ func stillStanding(agent string) string {
 	if len(names) == 0 {
 		return "nothing else stands" + who
 	}
-	return fmt.Sprintf("still standing%s: %s (`rta grant list`)", who, strings.Join(names, ", "))
+	return fmt.Sprintf("still standing%s: %s (%s)", who, strings.Join(names, ", "), sf.CapabilityName("grant.list"))
 }
 
 // originLabel is how a grant says where it came from.

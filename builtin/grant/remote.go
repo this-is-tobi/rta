@@ -22,10 +22,11 @@ import (
 // recomputed against files that describe this machine.
 func remoteList(ctx context.Context, req plugin.Request, server string) (view.View, error) {
 	if req.Bool("detail") {
+		sf := req.Surface()
 		return nil, view.Errorf("grant.remote.detail",
-			"--detail describes this machine's catalogue, not %s's", server).
-			WithHint("run `rta grant list --server " + server + "` without --detail; " +
-				"the reach tiers depend on flags the server was started with")
+			"%s describes this machine's catalogue, not %s's", sf.InputName("detail"), server).
+			WithHint("ask again " + sf.WithoutInputs("detail") + "; the reach tiers depend on flags the server " +
+				"was started with")
 	}
 	base, verr := operatorid.ServerURL(server)
 	if verr != nil {
@@ -83,9 +84,11 @@ func remoteAllow(ctx context.Context, req plugin.Request, server string) (view.V
 	// locally rather than after the round trip, since the answer would be
 	// the same and the passphrase would have been typed for nothing.
 	if strings.TrimSpace(req.String("agent")) == "" {
+		sf := req.Surface()
 		return nil, view.Errorf("grant.noagent",
-			"name the agent this is for on %s, with --agent", server).
-			WithHint("`rta operator status --server " + server + "` says what that server runs as")
+			"name the agent this is for on %s, with %s", server, sf.InputName("agent")).
+			WithHint("`" + sf.Call("operator.status", plugin.Arg{Name: "server", Value: server}) +
+				"` says what that server runs as")
 	}
 	spec := operatorid.IssueSpec{
 		Target:  req.String("target"),
@@ -125,7 +128,7 @@ func remoteAllow(ctx context.Context, req plugin.Request, server string) (view.V
 	// sane by this machine's own clock, and the binding must name the
 	// server actually dialed; the server's only licence is to clamp the
 	// TTL downward.
-	if verr := checkPrepared(spec, base, prepared.Grant); verr != nil {
+	if verr := checkPrepared(req.Surface(), spec, base, prepared.Grant); verr != nil {
 		return nil, verr
 	}
 	g := prepared.Grant
@@ -149,7 +152,7 @@ func remoteAllow(ctx context.Context, req plugin.Request, server string) (view.V
 // to trust here and verify at submit: submit-side checks run on the same
 // server that produced the draft, so the only verifier positioned against a
 // hostile server is this one, on this machine, before the signature exists.
-func checkPrepared(spec operatorid.IssueSpec, server string, g core.Grant) *view.Error {
+func checkPrepared(sf plugin.Surface, spec operatorid.IssueSpec, server string, g core.Grant) *view.Error {
 	changed := func(field string, got, want any) *view.Error {
 		return view.Errorf("core.operator.prepare.mismatch",
 			"the server's draft changed %s to %v (asked: %v) — refusing to sign it", field, got, want)
@@ -177,9 +180,9 @@ func checkPrepared(spec operatorid.IssueSpec, server string, g core.Grant) *view
 		return changed("the note", g.Note, spec.Note)
 	}
 	if g.MaxUses != spec.MaxUses {
-		return changed("--max-uses", g.MaxUses, spec.MaxUses)
+		return changed("the use limit", g.MaxUses, spec.MaxUses)
 	}
-	rateMax, rateWindow, verr := parseRate(spec.Rate)
+	rateMax, rateWindow, verr := parseRate(sf, spec.Rate)
 	if verr != nil {
 		return verr
 	}
@@ -246,5 +249,5 @@ func remoteRevoke(ctx context.Context, req plugin.Request, server string) (view.
 	if verr := (operatorid.Client{URL: base, Signer: signer}).Call(ctx, operatorid.VerbGrantRevoke, spec, &out); verr != nil {
 		return nil, verr
 	}
-	return view.Text{Body: revokeBody(spec.Target, out, req.DryRun)}, nil
+	return view.Text{Body: revokeBody(req.Surface(), spec.Target, out, req.DryRun)}, nil
 }

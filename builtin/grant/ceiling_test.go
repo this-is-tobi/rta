@@ -10,6 +10,7 @@ import (
 
 	core "github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/policy"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -159,7 +160,7 @@ func TestHeldTableEmptyStateNotesCeilingSuppressedGrants(t *testing.T) {
 		t.Fatal(verr)
 	}
 
-	v, verr := heldTable("", false)
+	v, verr := heldTable(plugin.SurfaceCLI, "", false)
 	if verr != nil {
 		t.Fatal(verr)
 	}
@@ -205,7 +206,7 @@ func TestHeldTablePartialSuppressionSplitsAllowedFromSuppressed(t *testing.T) {
 		t.Fatal(verr)
 	}
 
-	v, verr := heldTable("", false)
+	v, verr := heldTable(plugin.SurfaceCLI, "", false)
 	if verr != nil {
 		t.Fatal(verr)
 	}

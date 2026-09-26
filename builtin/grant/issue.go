@@ -184,7 +184,10 @@ func runIssue(req plugin.Request, catalog func() []plugin.Capability, artifact f
 	// nothing, and a checkbox is not a look at somebody else's list.
 	if src.Team && req.Surface() != plugin.SurfaceCLI {
 		return nil, view.Errorf("grant.role.team", "role %q comes from %s, and a team's role is issued at the command line, where its lines are shown first", src.Name, src.From).
-			WithHint("`rta grant roles " + src.Name + "` shows the lines; `rta grant issue " + src.Name + "` issues them")
+			// Spelled for the CLI on purpose: that is where this refusal
+			// sends its reader.
+			WithHint("at the command line, `" + plugin.SurfaceCLI.Call("grant.roles", roleArg(src.Name)) +
+				"` shows the lines and `" + plugin.SurfaceCLI.Call("grant.issue", roleArg(src.Name)) + "` issues them")
 	}
 	// --agent, else the agent the operator's own role names, else the one
 	// this machine knows. A default for a command a person still runs
@@ -193,7 +196,7 @@ func runIssue(req plugin.Request, catalog func() []plugin.Capability, artifact f
 	if asked == "" && !src.Team {
 		asked = strings.TrimSpace(src.Role.Agent)
 	}
-	agent, verr := resolveAgent(asked)
+	agent, verr := resolveAgent(req.Surface(), asked)
 	if verr != nil {
 		return nil, verr
 	}
@@ -228,7 +231,7 @@ func runIssue(req plugin.Request, catalog func() []plugin.Capability, artifact f
 				lineTTL = l.TTL
 			}
 		}
-		g, n, verr := buildGrant(catalog, artifact, operatorid.IssueSpec{
+		g, n, verr := buildGrant(req.Surface(), catalog, artifact, operatorid.IssueSpec{
 			Target: l.Target, Scope: l.Scope, Profile: l.Profile, Agent: agent,
 			TTL: lineTTL, Note: l.Note, MaxUses: l.MaxUses, Rate: l.Rate,
 		}, from)
@@ -289,8 +292,8 @@ func runIssue(req plugin.Request, catalog func() []plugin.Capability, artifact f
 	} else if src.Team && !req.Yes {
 		return nil, view.Errorf("grant.role.unread", "role %q comes from %s, and no passphrase stands between its %d %s and the grant file",
 			src.Name, src.From, len(prepared), format.Plural(len(prepared), "line", "lines")).
-			WithHint("`rta grant roles " + src.Name + "` shows the lines; run again with --yes once read, " +
-				"or `rta grant guard on` to be asked every time")
+			WithHint("`" + req.Surface().Call("grant.roles", roleArg(src.Name)) + "` shows the lines; run again with " +
+				"--yes once read, or `" + req.Surface().Call("grant.guard.on") + "` to be asked every time")
 	}
 	issued, replaced := 0, 0
 	sameRole := true
@@ -300,7 +303,7 @@ func runIssue(req plugin.Request, catalog func() []plugin.Capability, artifact f
 			if issued > 0 {
 				return nil, view.Errorf(verr.Code, "%d of %d grants issued, then %q failed: %s",
 					issued, len(prepared), g.Target, verr.Message).
-					WithHint("`rta grant revoke --role " + src.Name + " --agent " + agent + "` takes the issued ones back")
+					WithHint("`" + takeBack(req.Surface(), src.Name, agent) + "` takes the issued ones back")
 			}
 			return nil, verr
 		}
@@ -331,7 +334,7 @@ func runIssue(req plugin.Request, catalog func() []plugin.Capability, artifact f
 	}
 	pairs = append(pairs,
 		view.Pair{Key: "until", Value: format.Clock(until) + " (" + format.Duration(time.Until(until)) + ")"},
-		view.Pair{Key: "take back", Value: "rta grant revoke --role " + src.Name + " --agent " + agent},
+		view.Pair{Key: "take back", Value: takeBack(req.Surface(), src.Name, agent)},
 	)
 	if len(notes) > 0 {
 		pairs = append(pairs, view.Pair{Key: "note", Value: strings.Join(notes, "\n")})
@@ -438,4 +441,13 @@ func runRoles(_ context.Context, req plugin.Request) (view.View, error) {
 			"roles:\n  dev:\n    ttl: 8h\n    grants:\n      - kv.get db-password\n      - pg.query --profile staging"
 	}
 	return t, nil
+}
+
+// roleArg is a role given to a grant call Surface.Call spells, by its place.
+func roleArg(name string) plugin.Arg { return plugin.Arg{Name: "role", Value: name, Positional: true} }
+
+// takeBack is the call that revokes every grant a role issued to agent, as
+// sf, the surface asking, makes it.
+func takeBack(sf plugin.Surface, role, agent string) string {
+	return sf.Call("grant.revoke", plugin.Arg{Name: "role", Value: role}, plugin.Arg{Name: "agent", Value: agent})
 }
