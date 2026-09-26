@@ -363,15 +363,19 @@ func LoadFile() (Config, error) {
 // Load reads the config file and applies env overrides. Precedence:
 // flags > env (RTA_*) > file > defaults; the flag layer is cobra's,
 // everything else is resolved here.
+//
+// The overrides apply over a file that does not parse too, beside its error.
+// The CLI carries on without a broken file rather than refusing to start, and
+// it used to carry on without the environment as well: `RTA_OUTPUT=json`
+// answered a script in pretty prose whenever the file had a typo in it. Every
+// other caller stops at the error, so what comes back with it is only ever
+// read by the one that does not.
 func Load() (Config, error) {
 	cfg, err := LoadFile()
-	if err != nil {
-		return cfg, err
-	}
 	if out := os.Getenv("RTA_OUTPUT"); out != "" {
 		cfg.Output = out
 	}
-	return cfg, nil
+	return cfg, err
 }
 
 // lockFile is the sentinel beside the config file, named after the file
