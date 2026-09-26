@@ -993,7 +993,7 @@ func runList(ctx context.Context, req plugin.Request, catalog func() []plugin.Ca
 	if server := req.String("server"); server != "" {
 		return remoteList(ctx, req, server)
 	}
-	held, verr := heldTable(strings.TrimSpace(req.String("role")))
+	held, verr := heldTable(strings.TrimSpace(req.String("role")), req.Bool("detail"))
 	if verr != nil {
 		return nil, verr
 	}
@@ -1064,7 +1064,12 @@ func reachTable(caps []plugin.Capability, holds func(plugin.Capability) bool) vi
 }
 
 // heldTable is the roster, or one role's part of it.
-func heldTable(role string) (view.View, *view.Error) {
+//
+// guardAbove says the page it goes on already leads with the guard's state,
+// as `grant list --detail` does, so the roster does not state it again: an
+// empty one drew the guard line twice there on a terminal, once as the
+// page's first section and once in its own sentence.
+func heldTable(role string, guardAbove bool) (view.View, *view.Error) {
 	grants, verr := core.Load()
 	if verr == nil && role != "" {
 		kept := grants[:0]
@@ -1080,6 +1085,13 @@ func heldTable(role string) (view.View, *view.Error) {
 		// `grant list` exists to show, and refusing here would send somebody
 		// to a command that no longer exists to find out.
 		if verr.Code == "core.grant.guard.orphaned" {
+			// Under the guard's own line, which says the same thing and
+			// how to recover, the roster is what that means for it.
+			if guardAbove {
+				t := grantsTable(nil, func(core.Grant) bool { return false })
+				t.Empty = "No grant is honoured while the guard is orphaned."
+				return t, nil
+			}
 			return view.Text{Body: "guard  " + guardLine(nil, verr)}, nil
 		}
 		return nil, verr
@@ -1105,7 +1117,7 @@ func heldTable(role string) (view.View, *view.Error) {
 	// sentence as a Text view, which every format carried: `jq '.rows[]'`
 	// met a view with no rows, and -o csv a text cell where a header was.
 	if len(grants) == 0 {
-		t.Empty = emptyRoster()
+		t.Empty = emptyRoster(!guardAbove)
 	}
 	// The roles in force above the rows, where the docs send people before
 	// they walk away from a machine: one line per role and agent, with the
@@ -1133,9 +1145,13 @@ func heldTable(role string) (view.View, *view.Error) {
 }
 
 // emptyRoster is what a person is told in place of a roster with no grant in
-// it, the guard's state above it as the screen has always shown it.
-func emptyRoster() string {
-	head := "guard  " + guardLine(nil, nil) + "\n\n"
+// it, the guard's state above it as the screen has always shown it — unless
+// the page already leads with that state (heldTable's guardAbove).
+func emptyRoster(withGuard bool) string {
+	head := ""
+	if withGuard {
+		head = "guard  " + guardLine(nil, nil) + "\n\n"
+	}
 	// An empty list is the ordinary answer and a dropped file is not, so the
 	// difference has to be visible here: this is the one screen where
 	// somebody looking for a grant they issued will come looking for it.
