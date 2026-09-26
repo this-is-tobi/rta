@@ -65,8 +65,11 @@ func (s Surface) CapabilityName(id string) string {
 	case SurfaceTUI:
 		return "`" + id + "`"
 	}
-	return "`rta " + strings.ReplaceAll(id, ".", " ") + "`"
+	return "`" + commandLine(id) + "`"
 }
+
+// commandLine is capability id as the CLI types it: rta and the ID's words.
+func commandLine(id string) string { return "rta " + strings.ReplaceAll(id, ".", " ") }
 
 // CapabilityWith names capability id called with inputs, the way a caller on
 // s would give them: `rta note list --all` on the CLI, the `note_list` tool
@@ -88,7 +91,7 @@ func (s Surface) CapabilityWith(id string, inputs ...string) string {
 		names[i] = s.InputName(n)
 	}
 	if s.spellsForCLI() {
-		return "`rta " + strings.ReplaceAll(id, ".", " ") + " " + strings.Join(names, " ") + "`"
+		return "`" + commandLine(id) + " " + strings.Join(names, " ") + "`"
 	}
 	return s.CapabilityName(id) + " with " + strings.Join(names, " and ")
 }
@@ -141,7 +144,7 @@ func (s Surface) Call(id string, args ...Arg) string {
 		}
 		return strings.Join(parts, " ")
 	}
-	parts := []string{"rta", strings.ReplaceAll(id, ".", " ")}
+	parts := []string{commandLine(id)}
 	for _, a := range args {
 		switch {
 		case a.Positional:
