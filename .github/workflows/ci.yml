@@ -46,9 +46,10 @@ jobs:
       contents: read
       pull-requests: read
 
-  # A pull request that only touches prose has nothing for the build, test,
+  # A pull request that only touches prose has nothing for the lint, build,
   # cross-compile or image gates to check, so those jobs skip when every
-  # changed file is documentation. This job is the one place "documentation"
+  # changed file is documentation, and of the suite only the tests that read
+  # prose run, in test-prose. This job is the one place "documentation"
   # is defined; everything unmatched — code, workflows, build files, anything
   # new — counts as code, so an unanticipated path fails toward running the
   # suite rather than skipping it.
@@ -213,6 +214,40 @@ jobs:
       # this leg has run under -race for as long as it has existed, and the
       # second scheduler is worth what it costs.
       RACE: true
+      SHUFFLE: true
+      COUNT: "1"
+
+  # The suite's tests that read prose, for every pull request `test` skips.
+  #
+  # Several tests hold the docs to the code rather than the code to itself:
+  # every command a page spells, every link between pages, every docs path a
+  # Go comment, the Dockerfile or a workflow cites, the counts README.md and
+  # docs/ state about the catalogue, and a hidden character in any file git
+  # tracks. They exist so that a page cannot say what the code does not, and
+  # a pull request changing only pages skipped `test` with the rest of the
+  # suite, so the one change they were written to check was the one that
+  # never ran them: a dead link or a wrong count merged green, and the next
+  # code change went red on a page it never touched.
+  #
+  # So they run here whenever `test` does not: the two packages that hold
+  # them, on one runner, and without the race detector, which has nothing to
+  # find in a test reading files. A release pull request pays for it too:
+  # CHANGELOG.md is a tracked file written from commit messages nothing
+  # checks for a hidden character, and it ships as the release notes.
+  #
+  # A test that reads prose belongs in one of these packages. One written
+  # anywhere else runs only when code changes, which is the gap this closes.
+  test-prose:
+    name: Test the prose
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'false' }}
+    uses: this-is-tobi/github-workflows/.github/workflows/test-go.yml@v0
+    permissions:
+      contents: read
+    with:
+      PACKAGES: ./internal/app ./internal/textclean
+      RUNNERS: '[["ubuntu-latest"]]'
+      RACE: false
       SHUFFLE: true
       COUNT: "1"
 
@@ -509,6 +544,7 @@ jobs:
     - lint-proto
     - test
     - test-windows
+    - test-prose
     - build
     - build-docker
     - test-docker
