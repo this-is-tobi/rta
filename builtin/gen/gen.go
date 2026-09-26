@@ -205,7 +205,7 @@ func specFrom(req plugin.Request) (passwordSpec, *view.Error) {
 	length := req.Int("length")
 	if length <= 0 {
 		return passwordSpec{}, view.Errorf("gen.password.tooshort", "length %d: a password needs at least one character", length).
-			WithHint("leave --length off for the default of 20")
+			WithHint("leave " + req.Surface().InputName("length") + " out for the default of 20")
 	}
 	if length > maxPasswordLength {
 		return passwordSpec{}, view.Errorf("gen.password.toolong", "length %d exceeds the %d-character limit", length, maxPasswordLength)
@@ -214,7 +214,8 @@ func specFrom(req plugin.Request) (passwordSpec, *view.Error) {
 		req.Bool("symbols"), req.Bool("exclude-ambiguous"))
 	if a == "" {
 		return passwordSpec{}, view.Errorf("gen.password.noalphabet", "every character class was excluded — nothing left to generate from").
-			WithHint("drop --no-upper/--no-digits, or add --symbols")
+			WithHint("leave " + req.Surface().InputName("no-upper") + " or " + req.Surface().InputName("no-digits") +
+				" out, or give " + req.Surface().InputName("symbols"))
 	}
 	return passwordSpec{length: length, alphabet: a}, nil
 }
@@ -268,7 +269,7 @@ func runToken(_ context.Context, req plugin.Request) (view.View, error) {
 	length := req.Int("length")
 	if length <= 0 {
 		return nil, view.Errorf("gen.token.tooshort", "length %d: a token needs at least one byte", length).
-			WithHint("leave --length off for the default of 32")
+			WithHint("leave " + req.Surface().InputName("length") + " out for the default of 32")
 	}
 	if length > maxTokenBytes {
 		return nil, view.Errorf("gen.token.toolong", "length %d exceeds the %d-byte limit", length, maxTokenBytes)
@@ -312,7 +313,7 @@ func boundedCount(req plugin.Request) (int, *view.Error) {
 	count := req.Int("count")
 	if count <= 0 {
 		return 0, view.Errorf("gen.count.toofew", "count %d: generating needs a count of at least one", count).
-			WithHint("leave --count off for one")
+			WithHint("leave " + req.Surface().InputName("count") + " out for one")
 	}
 	if count > maxCount {
 		return 0, view.Errorf("gen.count.toomany", "count %d exceeds the %d limit", count, maxCount)

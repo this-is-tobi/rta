@@ -3,6 +3,7 @@ package gen
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -14,11 +15,11 @@ import (
 // interchangeable, and the flags that tell them apart are exactly what you
 // do not remember at the moment you need one. So the overview generates the
 // common shapes side by side, each labelled with what it is for, how much
-// entropy it actually carries, and the command that reproduces it. Pick the
-// row, or copy the command and keep it.
+// entropy it actually carries, and the call that reproduces it. Pick the
+// row, or copy the call and keep it.
 
 // recipe is one offered shape: what it is for, the call that produces it,
-// and the command that reproduces it outside this view.
+// and the capability and inputs that reproduce it outside this view.
 //
 // Both text fields are kept short on purpose. A row has to carry a 64-cell
 // value — a 32-byte key in hex — and every cell beside it is competing for
@@ -27,24 +28,44 @@ import (
 // reads and one that reflows. The long-form reasoning lives in the prose
 // sections, which is where prose belongs.
 type recipe struct {
-	use  string // what it is for, in a few words
-	cmd  string // reproduces it; the "rta " prefix is implied
+	use  string       // what it is for, in a few words
+	id   string       // the capability that reproduces it
+	with []plugin.Arg // what that capability is given, in the order a command line spells it
 	make func() (value string, bits float64, err error)
 }
 
-func passwordRecipe(use, cmd string, spec passwordSpec) recipe {
-	return recipe{use: use, cmd: cmd, make: func() (string, float64, error) {
+func passwordRecipe(use string, spec passwordSpec, with ...plugin.Arg) recipe {
+	return recipe{use: use, id: "gen.password", with: with, make: func() (string, float64, error) {
 		v, err := spec.generate()
 		return v, spec.bits(), err
 	}}
 }
 
-func tokenRecipe(use, cmd string, n int, encoding string) recipe {
-	return recipe{use: use, cmd: cmd, make: func() (string, float64, error) {
+func tokenRecipe(use string, n int, encoding string, with ...plugin.Arg) recipe {
+	return recipe{use: use, id: "gen.token", with: with, make: func() (string, float64, error) {
 		v, err := token(n, encoding)
 		return v, float64(n) * 8, err
 	}}
 }
+
+// call is how the caller on sf reproduces r, for the Command column, spelled
+// by the SDK (plugin.Surface.Call) with the "rta" a terminal types left
+// implied, as the column always has.
+//
+// A row an agent read over MCP used to hold `gen password --length 24
+// --symbols`: a command line it has no terminal for, with flags its tool's
+// schema does not have. The column is the same contract on every surface —
+// how to get another value of this shape — so what fills it follows the
+// surface.
+func (r recipe) call(sf plugin.Surface) string {
+	return strings.TrimPrefix(sf.Call(r.id, r.with...), "rta ")
+}
+
+// lengthArg, encodingArg and switchedOn are the inputs the recipes give,
+// spelled once.
+func lengthArg(n int) plugin.Arg         { return plugin.Arg{Name: "length", Value: n} }
+func encodingArg(name string) plugin.Arg { return plugin.Arg{Name: "encoding", Value: name} }
+func switchedOn(input string) plugin.Arg { return plugin.Arg{Name: input, Value: true} }
 
 // The alphabets behind the offered passwords, named once so a recipe reads
 // as a decision rather than five booleans.
@@ -60,14 +81,13 @@ var thirtyTwoChars = passwordSpec{length: 32, alphabet: alnumSyms}
 
 // passwordRecipes are for a human to type, paste or read aloud.
 var passwordRecipes = []recipe{
-	passwordRecipe("logins", "gen password",
-		passwordSpec{length: 20, alphabet: alnum}),
-	passwordRecipe("strength policies", "gen password --length 24 --symbols",
-		passwordSpec{length: 24, alphabet: alnumSyms}),
-	passwordRecipe("read aloud, write down", "gen password --exclude-ambiguous",
-		passwordSpec{length: 20, alphabet: alnumClear}),
-	passwordRecipe("service accounts", "gen password --length 40 --symbols",
-		passwordSpec{length: 40, alphabet: alnumSyms}),
+	passwordRecipe("logins", passwordSpec{length: 20, alphabet: alnum}),
+	passwordRecipe("strength policies", passwordSpec{length: 24, alphabet: alnumSyms},
+		lengthArg(24), switchedOn("symbols")),
+	passwordRecipe("read aloud, write down", passwordSpec{length: 20, alphabet: alnumClear},
+		switchedOn("exclude-ambiguous")),
+	passwordRecipe("service accounts", passwordSpec{length: 40, alphabet: alnumSyms},
+		lengthArg(40), switchedOn("symbols")),
 }
 
 // keyRecipes are for a program to consume: config values, env vars, key
@@ -75,12 +95,12 @@ var passwordRecipes = []recipe{
 // keyNote for why they are not the same thing.
 var keyRecipes = []recipe{
 	// The default length and encoding are already 32 bytes of hex, so the
-	// commonest row is also the shortest command.
-	tokenRecipe("AES-256 key", "gen token", 32, "hex"),
-	tokenRecipe("env vars", "gen token --encoding base64", 32, "base64"),
-	passwordRecipe("32-char field", "gen password --length 32 --symbols", thirtyTwoChars),
-	tokenRecipe("URL-safe", "gen token --encoding base64url", 32, "base64url"),
-	tokenRecipe("authenticator apps", "gen token --length 20 --encoding base32", 20, "base32"),
+	// commonest row is also the shortest call.
+	tokenRecipe("AES-256 key", 32, "hex"),
+	tokenRecipe("env vars", 32, "base64", encodingArg("base64")),
+	passwordRecipe("32-char field", thirtyTwoChars, lengthArg(32), switchedOn("symbols")),
+	tokenRecipe("URL-safe", 32, "base64url", encodingArg("base64url")),
+	tokenRecipe("authenticator apps", 20, "base32", lengthArg(20), encodingArg("base32")),
 }
 
 // keyNote is the correction worth printing next to the values rather than
@@ -105,11 +125,11 @@ func keyNote() string {
 
 // uuidRecipes: v4 unless something needs to sort by creation time.
 var uuidRecipes = []recipe{
-	{use: "random ids", cmd: "gen uuid", make: func() (string, float64, error) {
+	{use: "random ids", id: "gen.uuid", make: func() (string, float64, error) {
 		v, err := newUUID("4")
 		return v, 122, err // 128 bits minus the 6 fixed version/variant bits
 	}},
-	{use: "sorts by creation", cmd: "gen uuid --version 7",
+	{use: "sorts by creation", id: "gen.uuid", with: []plugin.Arg{{Name: "version", Value: "7"}},
 		make: func() (string, float64, error) {
 			v, err := newUUID("7")
 			return v, 74, err // the rest is a millisecond timestamp
@@ -127,7 +147,7 @@ func runOverview(ctx context.Context, req plugin.Request) (view.View, error) {
 	// The tile has room for a handful of lines, so it offers the shapes
 	// reached for most often; --detail (or opening the tile) has the rest.
 	// It drops the command column the detail page carries: a tile is for
-	// recognising the shape you want, and the command is what you want next.
+	// recognising the shape you want, and the call is what you want next.
 	t := view.Table{Columns: []view.Column{
 		{Name: "For"},
 		{Name: "Value"},
@@ -149,15 +169,16 @@ func runOverview(ctx context.Context, req plugin.Request) (view.View, error) {
 }
 
 func detailedOverview(ctx context.Context, req plugin.Request) (view.View, error) {
-	passwords, err := recipeTable(passwordRecipes)
+	sf := req.Surface()
+	passwords, err := recipeTable(sf, passwordRecipes)
 	if err != nil {
 		return nil, err
 	}
-	keys, err := recipeTable(keyRecipes)
+	keys, err := recipeTable(sf, keyRecipes)
 	if err != nil {
 		return nil, err
 	}
-	uuids, err := recipeTable(uuidRecipes)
+	uuids, err := recipeTable(sf, uuidRecipes)
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +191,8 @@ func detailedOverview(ctx context.Context, req plugin.Request) (view.View, error
 }
 
 // recipeTable lays a group of recipes out as one row each: what it is for,
-// the value, the entropy it carries, and the command that reproduces it.
+// the value, the entropy it carries, and the call that reproduces it on sf,
+// the surface asking.
 //
 // A table rather than a stanza per recipe, because a table is what a
 // catalogue is — four rows of the same four facts read as a comparison,
@@ -185,7 +207,7 @@ func detailedOverview(ctx context.Context, req plugin.Request) (view.View, error
 // Where the terminal is still too narrow, the renderer shrinks columns and
 // wraps inside the cell, which keeps every character of a value present and
 // selectable — it is only ever the line that breaks, never the value.
-func recipeTable(recipes []recipe) (view.Table, error) {
+func recipeTable(sf plugin.Surface, recipes []recipe) (view.Table, error) {
 	t := view.Table{Columns: []view.Column{
 		{Name: "For"},
 		{Name: "Value"},
@@ -197,7 +219,7 @@ func recipeTable(recipes []recipe) (view.Table, error) {
 		if err != nil {
 			return t, view.Errorf("gen.rand.failed", "reading randomness: %v", err)
 		}
-		t.Rows = append(t.Rows, []string{r.use, v, fmt.Sprintf("%.0f", bits), r.cmd})
+		t.Rows = append(t.Rows, []string{r.use, v, fmt.Sprintf("%.0f", bits), r.call(sf)})
 	}
 	t.Total = len(t.Rows)
 	return t, nil
