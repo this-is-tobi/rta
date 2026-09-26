@@ -19,6 +19,7 @@ import (
 	"time"
 	"unicode"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/spf13/cobra"
 
 	"github.com/goccy/go-yaml"
@@ -353,6 +354,25 @@ func TestExitCodeContract(t *testing.T) {
 	}
 	if ExitCode(&view.Error{Code: CodeConfirmRequired, Message: "m"}) != 3 {
 		t.Error("confirmation declined → 3")
+	}
+}
+
+// The TUI asked to stop by a signal has stopped, not failed; anything else it
+// ends on is coded. SIGTERM wrote "Program was killed: context canceled." in
+// a box nothing coded, over the terminal the TUI had just handed back.
+func TestTheTUIStoppedBySignalIsNoFailureAndAnythingElseIsCoded(t *testing.T) {
+	for _, err := range []error{nil, tea.ErrInterrupted,
+		fmt.Errorf("%w: %w", tea.ErrProgramKilled, context.Canceled)} {
+		if got := tuiExit(err); got != nil {
+			t.Errorf("tuiExit(%v) = %v, want nil", err, got)
+		}
+	}
+	for _, err := range []error{errors.New("open /dev/tty: no such device"),
+		fmt.Errorf("%w: %w", tea.ErrProgramKilled, tea.ErrProgramPanic)} {
+		var ve *view.Error
+		if got := tuiExit(err); !errors.As(got, &ve) || ve.Code != "core.tui" {
+			t.Errorf("tuiExit(%v) = %#v, want core.tui", err, got)
+		}
 	}
 }
 
