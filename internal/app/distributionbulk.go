@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -161,9 +162,11 @@ func runPluginUntrustAll(cmd *cobra.Command, opts *globalOpts) error {
 	if opts.dryRun {
 		remove = plugintrust.PreviewRemove
 	}
-	total := 0
+	total, system := 0, 0
+	var names []string
 	for _, e := range plugintrust.Load().Entries() {
 		if e.System {
+			system++
 			continue
 		}
 		n, verr := remove(e.Digest)
@@ -171,16 +174,37 @@ func runPluginUntrustAll(cmd *cobra.Command, opts *globalOpts) error {
 			return verr
 		}
 		total += n
+		// By its digest when it carries no name — a record written by hand, or
+		// by an rta older than names — so every approval counted is one the
+		// answer names, as the single form names the digest it was given.
+		label := e.Label()
+		if label == "" {
+			label = e.Short()
+		}
+		if !slices.Contains(names, label) {
+			names = append(names, label)
+		}
 	}
-	if total == 0 {
-		return renderView(cmd, opts, view.Text{Body: "no plugin artifact is trusted"})
+	// Nothing of the operator's own to withdraw is the same answer with a
+	// count of 0, not a sentence in its place: a Text view here meant a script
+	// sweeping a fleet met pairs on one machine and prose on the next.
+	what, next := strings.Join(names, ", "), "none of them will load again; a session already "+
+		"running keeps what it loaded — restart `rta mcp serve` or the TUI to be rid of them"
+	switch {
+	case total == 0:
+		what, next = "nothing", "no approval of your own is recorded, so there was nothing to withdraw"
+	case opts.dryRun:
+		next = "run without --dry-run to withdraw them"
 	}
-	verb, tail := "withdrew", "none of them will load again; a session already running keeps what it loaded"
-	if opts.dryRun {
-		verb, tail = "would withdraw", "none of them would load again"
+	answer := untrustAnswer(what, total, next, opts.dryRun)
+	if system > 0 {
+		// Said, because "every approval" read on its own is a claim about the
+		// machine, and these still load.
+		answer.Pairs = slices.Insert(answer.Pairs, 2, view.Pair{Key: "left alone",
+			Value: format.Count(system, "artifact", "artifacts") + " trusted by the system root, " +
+				"which rta reads and never writes"})
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "%s %s — %s\n", verb, format.Count(total, "approval", "approvals"), tail)
-	return nil
+	return renderView(cmd, opts, answer)
 }
 
 // runPluginRemoveAll uninstalls every managed plugin, one at a time through

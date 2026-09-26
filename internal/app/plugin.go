@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -451,9 +452,8 @@ func newPluginTrustCommand(opts *globalOpts) *cobra.Command {
 func newPluginUntrustCommand(opts *globalOpts) *cobra.Command {
 	var all bool
 	cmd := &cobra.Command{
-		Use:         "untrust <name|digest> | --all",
-		Annotations: outputExempt(),
-		Short:       "Withdraw approval from a plugin artifact",
+		Use:   "untrust <name|digest> | --all",
+		Short: "Withdraw approval from a plugin artifact",
 		Long: "Removes every approval recorded under a name, or the one matching a\n" +
 			"digest prefix. The binary is left exactly where it is, because deleting\n" +
 			"somebody's file is not what \"I no longer trust this\" asked for.\n\n" +
@@ -486,12 +486,12 @@ func newPluginUntrustCommand(opts *globalOpts) *cobra.Command {
 					WithHint("`rta plugin trust` with no argument lists what is waiting; " +
 						"`rta doctor` lists what is trusted")
 			}
-			verb, tail := "withdrew", "it will not load again; a session already running keeps what it loaded"
+			next := "it will not load again; a session already running keeps what it loaded — " +
+				"restart `rta mcp serve` or the TUI to be rid of it"
 			if opts.dryRun {
-				verb, tail = "would withdraw", "it would not load again"
+				next = "run without --dry-run to withdraw it"
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s %s — %s\n", verb, format.Count(n, "approval", "approvals"), tail)
-			return nil
+			return renderView(cmd, opts, untrustAnswer(which, n, next, opts.dryRun))
 		},
 		ValidArgsFunction: func(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
 			var out []cobra.Completion
@@ -509,6 +509,30 @@ func newPluginUntrustCommand(opts *globalOpts) *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&all, "all", false, "withdraw every approval you have recorded")
 	return cmd
+}
+
+// untrustAnswer is what plugin untrust answers, by name and with --all alike,
+// so a script reads one shape from both: what was withdrawn, how many
+// approvals that was, the record it was withdrawn from, and what that means
+// for a session already running.
+//
+// What was withdrawn goes under the key plugin trust puts what it approved
+// under, so the two answers read as the pair they are. The count has a line of
+// its own because one name can stand for several approvals — a digest for
+// every build it was trusted under — and that number is what the command did.
+// The record is named because it is the file the command wrote, and the one
+// `rta doctor` reads back.
+func untrustAnswer(what string, approvals int, next string, dryRun bool) view.KeyValue {
+	label := "untrusted"
+	if dryRun {
+		label = "would untrust"
+	}
+	return view.KeyValue{Pairs: []view.Pair{
+		{Key: label, Value: what},
+		{Key: "approvals", Value: strconv.Itoa(approvals)},
+		{Key: "record", Value: plugintrust.Path()},
+		{Key: "next", Value: next},
+	}}
 }
 
 // humanBytes is a file size a person reads without counting digits. Local to
