@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -272,6 +273,55 @@ func TestAnEmptyTableIsASentenceOnlyToAPerson(t *testing.T) {
 	}
 	if out := render(t, full, Markdown); strings.Contains(out, "Nothing here yet") {
 		t.Errorf("md of a table with rows showed the empty sentence:\n%s", out)
+	}
+}
+
+// An empty text or tree follows the table's rule: a sentence to a person,
+// and nothing at all to a program.
+//
+// A text that is the answer — a patch — carried its "nothing here" in the
+// body, so `rta git diff > x.patch` on a clean tree wrote the sentence into
+// the patch and -o json handed it to a script as the diff; a tree swapped
+// itself for a text, so `jq '.roots[]'` met a view with no roots.
+func TestAnEmptyTextOrTreeIsASentenceOnlyToAPerson(t *testing.T) {
+	const say = "no uncommitted changes"
+	for name, v := range map[string]view.View{
+		"text": view.Text{Empty: say},
+		"tree": view.Tree{Roots: []view.Node{}, Empty: say},
+	} {
+		if out, _ := renderWidth(t, v, Options{Width: 80, Screen: true}); out != say {
+			t.Errorf("%s: pretty on a screen = %q, want the sentence", name, out)
+		}
+		var buf bytes.Buffer
+		if err := Render(&buf, v, Options{Format: Pretty, NoColor: true}); err != nil || buf.Len() != 0 {
+			t.Errorf("%s: pretty into a pipe = %q (%v), want nothing at all", name, buf.String(), err)
+		}
+		if out := render(t, v, Markdown); strings.TrimSpace(out) != say {
+			t.Errorf("%s: md = %q, want the sentence", name, out)
+		}
+		for _, f := range []Format{JSON, YAML, CSV} {
+			if out := render(t, v, f); strings.Contains(out, say) {
+				t.Errorf("%s: %s carried the sentence meant for a person:\n%s", name, f, out)
+			}
+		}
+	}
+	var env struct {
+		Roots []view.Node `json:"roots"`
+	}
+	if err := json.Unmarshal([]byte(render(t, view.Tree{Roots: []view.Node{}, Empty: say}, JSON)), &env); err != nil || env.Roots == nil {
+		t.Errorf("json = %+v (%v), want a tree whose roots are an empty array", env, err)
+	}
+	// A text with a body and a tree with roots never show the sentence.
+	for name, v := range map[string]view.View{
+		"text": view.Text{Body: "diff --git a/x b/x", Empty: say},
+		"tree": view.Tree{Roots: []view.Node{{Label: "x"}}, Empty: say},
+	} {
+		if out, _ := renderWidth(t, v, Options{Width: 80, Screen: true}); strings.Contains(out, say) {
+			t.Errorf("%s with content showed the empty sentence:\n%s", name, out)
+		}
+		if out := render(t, v, Markdown); strings.Contains(out, say) {
+			t.Errorf("%s with content showed the empty sentence in md:\n%s", name, out)
+		}
 	}
 }
 

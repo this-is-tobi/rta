@@ -23,6 +23,13 @@ type View interface{ isView() }
 type Text struct {
 	Body     string `json:"body"`
 	Markdown bool   `json:"markdown,omitempty"`
+	// Empty is what a person is told when Body is empty: that a working tree
+	// has no uncommitted changes, where the answer is a patch. The rule is
+	// Table.Empty's. A text that is the answer — a patch, a PEM block, lines
+	// to eval — cannot also carry a sentence about it: `rta git diff >
+	// x.patch` on a clean tree wrote "no uncommitted changes" into the file,
+	// and -o json handed a script that sentence as the diff.
+	Empty string `json:"-"`
 }
 
 // Pair is a single key/value entry.
@@ -209,6 +216,11 @@ type Node struct {
 // Tree is hierarchical data (schemas, key prefixes, cert chains, ...).
 type Tree struct {
 	Roots []Node `json:"roots"`
+	// Empty is what a person is told in place of a tree with no roots. The
+	// rule is Table.Empty's, for the same reason: a store with nothing in it
+	// is a tree with nothing in it to `jq '.roots[]'`, and only a person
+	// needs telling in words.
+	Empty string `json:"-"`
 }
 
 // Section is one titled part of a composite view.

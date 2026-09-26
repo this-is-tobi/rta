@@ -61,6 +61,7 @@ func markdownView(b *strings.Builder, v view.View, level int) {
 func markdownText(b *strings.Builder, t view.Text) {
 	body := strings.TrimRight(t.Body, "\n")
 	if body == "" {
+		markdownEmpty(b, t.Empty)
 		return
 	}
 	b.WriteString("\n" + body + "\n")
@@ -111,11 +112,15 @@ func markdownTable(b *strings.Builder, t view.Table) {
 // markdown renderer reads as an HTML tag and draws as nothing, and a sentence
 // comes from wherever its view did, the way a cell does.
 func markdownEmpty(b *strings.Builder, say string) {
+	if say == "" {
+		return
+	}
 	b.WriteString("\n" + inlineMarkdown(say) + "\n")
 }
 
 func markdownTree(b *strings.Builder, t view.Tree) {
 	if len(t.Roots) == 0 {
+		markdownEmpty(b, t.Empty)
 		return
 	}
 	b.WriteString("\n")

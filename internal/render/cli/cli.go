@@ -324,10 +324,18 @@ func renderPretty(w io.Writer, v view.View, opts Options) error {
 	st.screen = opts.Screen
 	switch t := view.Redact(v).(type) {
 	case view.Text:
+		body := strings.TrimRight(t.Body, "\n")
+		if body == "" {
+			// Nothing, not a blank line: an empty text is an answer with
+			// nothing in it, and `rta git diff > x.patch` on a clean tree is
+			// owed an empty file. What a screen is told instead is the
+			// sentence beside it (view.Text.Empty).
+			return drawEmpty(w, t.Empty, st)
+		}
 		if t.Markdown {
 			return prettyMarkdown(w, t.Body, st)
 		}
-		_, err := fmt.Fprintln(w, wrap(strings.TrimRight(t.Body, "\n"), st.width, ""))
+		_, err := fmt.Fprintln(w, wrap(body, st.width, ""))
 		return err
 	case view.KeyValue:
 		return prettyKeyValue(w, t, st)
@@ -510,7 +518,7 @@ func prettyTable(w io.Writer, t view.Table, st styles, highlight int) error {
 	// view.Table.Empty. The footer still follows, since an empty listing can
 	// still be a partial one.
 	if len(t.Rows) == 0 && t.Empty != "" && st.screen {
-		if _, err := fmt.Fprintln(w, wrap(t.Empty, st.width, "")); err != nil {
+		if err := drawEmpty(w, t.Empty, st); err != nil {
 			return err
 		}
 		return tableFooter(w, t, st)
@@ -672,6 +680,17 @@ func prettyTable(w io.Writer, t view.Table, st styles, highlight int) error {
 	return tableFooter(w, t, st)
 }
 
+// drawEmpty writes an empty result's sentence, on a screen and nowhere else:
+// see Options.Screen. Every shape that carries one draws it here, so the rule
+// is one condition rather than one per shape.
+func drawEmpty(w io.Writer, say string, st styles) error {
+	if say == "" || !st.screen {
+		return nil
+	}
+	_, err := fmt.Fprintln(w, wrap(say, st.width, ""))
+	return err
+}
+
 // drawnWhole reports whether a rendered grid fits the width with nothing cut
 // off: every line ends in the table's right border. A line cut at the edge
 // ends in whatever cell or rule it was cut through — and the top rule, which
@@ -806,6 +825,9 @@ func sum(ns []int) int {
 }
 
 func prettyTree(w io.Writer, t view.Tree, st styles) error {
+	if len(t.Roots) == 0 {
+		return drawEmpty(w, t.Empty, st)
+	}
 	var walk func(nodes []view.Node, prefix string) error
 	walk = func(nodes []view.Node, prefix string) error {
 		for i, n := range nodes {
