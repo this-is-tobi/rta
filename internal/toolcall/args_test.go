@@ -77,7 +77,7 @@ func TestRequireEnforcesRequiredFieldsAndExemptsLocalOnes(t *testing.T) {
 		{Name: "identity", Type: plugin.Path, Local: true, Required: true},
 	}}
 	verr := Require(c, map[string]any{}, false)
-	if verr == nil || verr.Code != "core.input.missing" || verr.Message != `x.y needs the argument "key"` {
+	if verr == nil || verr.Code != "core.input.missing" || verr.Message != `x.y needs the "key" argument` {
 		t.Fatalf("a missing required field: %v", verr)
 	}
 	// A Local field declared Required must not make the capability
@@ -126,7 +126,7 @@ func TestAPipedInputIsRequiredOverMCP(t *testing.T) {
 		t.Errorf("required = %v, want [token]", got)
 	}
 	verr := Require(c, map[string]any{}, false)
-	if verr == nil || verr.Code != "core.input.missing" || !strings.Contains(verr.Message, `needs the argument "token"`) {
+	if verr == nil || verr.Code != "core.input.missing" || !strings.Contains(verr.Message, `needs the "token" argument`) {
 		t.Errorf("a call leaving the token out: %v", verr)
 	}
 	if verr := Require(c, map[string]any{"token": "eyJ"}, false); verr != nil {

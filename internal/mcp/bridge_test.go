@@ -842,12 +842,6 @@ func TestAPanicIsRecoveredRatherThanKillingTheServer(t *testing.T) {
 	}
 }
 
-func TestToolNameMapping(t *testing.T) {
-	if toolcall.Name("pg.table.list") != "pg_table_list" {
-		t.Error("ToolName mapping wrong")
-	}
-}
-
 // TestCallToolRedactsSecretFields is the regression test for the redaction
 // gap: MCP is a channel callers reach without a human present, so a
 // KeyValue's Redacted fields must be masked exactly like every other
@@ -1763,7 +1757,7 @@ func TestNewServerDefaultsTheGateToItsRegistry(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = session.Close() })
 
-	if _, ok := listTools(t, session)[toolcall.Name("kv.rm")]; !ok {
+	if _, ok := listTools(t, session)[plugin.ToolName("kv.rm")]; !ok {
 		t.Error("an allowed built-in destructive was not exposed, so the gate was not wired to the registry")
 	}
 }

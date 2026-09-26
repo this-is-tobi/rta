@@ -192,7 +192,7 @@ func TestAMissingInputIsNamedTheWayItsSurfaceNamesIt(t *testing.T) {
 		{Field{Name: "password", Type: Secret, Required: true, Local: true, EnvFallback: true}, SurfaceCLI,
 			"db.query needs --password", "pass --password, or export $RTA_DB_PASSWORD"},
 		{Field{Name: "table", Type: String, Required: true, Positional: true}, SurfaceMCP,
-			`db.query needs the argument "table"`, `pass "table" in the arguments`},
+			`db.query needs the "table" argument`, `pass "table" in the arguments`},
 		{Field{Name: "host", Type: String, Required: true, Local: true, Config: "host"}, SurfaceMCP,
 			"db.query needs host, which only the operator can give", "ask the operator to set it in the rta config"},
 		{Field{Name: "password", Type: Secret, Required: true, Local: true, EnvFallback: true}, SurfaceMCP,
@@ -441,12 +441,12 @@ func TestARefusalNamesTheLineAndOnlyAnOverrideThatExists(t *testing.T) {
 	}
 	// Not Local: the argument is real, and the hint still offers it.
 	verr = CheckInputs(c, ResolveRequest(c, pinned("limit", "5"), false, false).WithSurface(SurfaceMCP))
-	if verr == nil || !strings.Contains(verr.Hint, "an argument naming limit overrides it for this call") {
+	if verr == nil || !strings.Contains(verr.Hint, `the "limit" argument overrides it for this call`) {
 		t.Errorf("a caller-settable input's hint over MCP: %v", verr)
 	}
 	// On the CLI a flag does override a Local input.
 	verr = CheckInputs(c, ResolveRequest(c, pinned("port", "5432"), false, false).WithSurface(SurfaceCLI))
-	if verr == nil || !strings.HasSuffix(verr.Hint, "or give port on the call to override it for one run") {
+	if verr == nil || !strings.HasSuffix(verr.Hint, "or give --port on the call to override it for one run") {
 		t.Errorf("a Local input's hint on the CLI: %v", verr)
 	}
 	// No heading given is the namespace, every built-in's.

@@ -6,10 +6,6 @@ import (
 	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
-// Name converts a capability ID to an MCP-safe tool name
-// (dots are not universally accepted in tool names).
-func Name(capID string) string { return strings.ReplaceAll(capID, ".", "_") }
-
 // InputSchema builds the JSON Schema for a capability's declared inputs, as
 // the MCP server publishes it in tools/list. profiles is the connections the
 // operator configured for its namespace, and config is the operator's

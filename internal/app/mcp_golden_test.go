@@ -12,7 +12,6 @@ import (
 
 	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/mcp"
-	"github.com/this-is-tobi/rta/internal/toolcall"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
@@ -150,7 +149,7 @@ func TestNothingThatChangesAnythingIsFree(t *testing.T) {
 	}
 	byName := map[string]plugin.Capability{}
 	for _, c := range reg.Capabilities() {
-		byName[toolcall.Name(c.ID)] = c
+		byName[plugin.ToolName(c.ID)] = c
 	}
 	for _, tl := range surface(t, mcp.Options{}) {
 		c, ok := byName[tl.Name]

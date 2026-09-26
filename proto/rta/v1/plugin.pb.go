@@ -160,10 +160,12 @@ func (FieldType) EnumDescriptor() ([]byte, []int) {
 //
 // It is on the wire because trust decisions need it — a capability whose
 // blast radius is "an agent reads your secret" may require that a human
-// authorized it first. It is not there for handlers to branch on to change
-// *what* they do: one handler serving every surface is the point of the
-// model, and a plugin that renders differently per surface has reimplemented
-// the thing the host exists to do.
+// authorized it first — and because a hint names a capability or an input
+// the way its reader reaches it, which the SDK's naming helpers spell from
+// it. It is not there for handlers to branch on to change *what* they do:
+// one handler serving every surface is the point of the model, and a plugin
+// that renders differently per surface has reimplemented the thing the host
+// exists to do.
 type Surface int32
 
 const (

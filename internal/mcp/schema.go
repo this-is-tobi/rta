@@ -95,7 +95,7 @@ func toolDef(c plugin.Capability, opts Options) *sdk.Tool {
 	}
 
 	return &sdk.Tool{
-		Name:        toolcall.Name(c.ID),
+		Name:        plugin.ToolName(c.ID),
 		Description: agentText(c, opts.Profiles.ProfilesFor(plugin.Namespace(c.ID))),
 		Annotations: ann,
 		InputSchema: toolcall.InputSchema(c, opts.Profiles.ProfilesFor(plugin.Namespace(c.ID)), opts.pluginConfig(c)),
