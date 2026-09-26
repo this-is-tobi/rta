@@ -208,6 +208,13 @@ func TestUsageRefusesAFileAndSaysWhatToDoInstead(t *testing.T) {
 	if verr.Hint == "" {
 		t.Error("the error should say what to do instead")
 	}
+	// The capability it sends the reader to is named as the reader calls it:
+	// an agent has the fs_hash tool, and no "fs hash" to run.
+	_, err = runUsage(context.Background(), plugin.NewRequest(
+		map[string]any{"path": filepath.Join(root, "a.txt")}, false, false).WithSurface(plugin.SurfaceMCP))
+	if !asViewError(err, &verr) || !strings.Contains(verr.Hint, "the `fs_hash` tool") {
+		t.Errorf("over MCP the hint = %v, want it naming the fs_hash tool", err)
+	}
 }
 
 func TestUsageOnAMissingPath(t *testing.T) {
@@ -478,6 +485,11 @@ func TestHashRejectsUnknownAlgorithmsAndDirectories(t *testing.T) {
 		plugin.NewRequest(map[string]any{"path": root, "algo": "sha256"}, false, false)); err == nil {
 		t.Error("a directory was hashed")
 	}
+	_, err = runHash(context.Background(), plugin.NewRequest(
+		map[string]any{"path": root, "algo": "sha256"}, false, false).WithSurface(plugin.SurfaceTUI))
+	if verr := view.AsError(err, "fs.test"); !strings.Contains(verr.Hint, "`fs.usage` measures a directory") {
+		t.Errorf("in the TUI the hint = %q, want it naming fs.usage as the TUI lists it", verr.Hint)
+	}
 }
 
 func TestHumanBytes(t *testing.T) {
@@ -563,14 +575,14 @@ func TestTreeDetailIsAComposedPage(t *testing.T) {
 	for _, p := range missing.Pairs {
 		got[p.Key] = p.Value
 	}
-	for _, want := range []string{"below --depth", "past --limit", "hidden"} {
+	for _, want := range []string{"below depth", "past limit", "hidden"} {
 		if got[want] == "" {
 			t.Errorf("no %q entry: %v", want, got)
 		}
 	}
 	// depth 1 stops at both directories; limit 2 trims the third entry.
-	if !strings.Contains(got["below --depth"], "2 directories") {
-		t.Errorf("below --depth = %q, want both stopped directories counted", got["below --depth"])
+	if !strings.Contains(got["below depth"], "2 directories") {
+		t.Errorf("below depth = %q, want both stopped directories counted", got["below depth"])
 	}
 	if !strings.Contains(got["hidden"], "1 dotfile") {
 		t.Errorf("hidden = %q, want the one dotfile counted", got["hidden"])
