@@ -26,7 +26,7 @@ import (
 // requires homework is a control that gets turned off).
 
 func renderView(cmd *cobra.Command, opts *globalOpts, v view.View) error {
-	format, err := cli.ParseFormat(opts.output)
+	format, err := opts.format()
 	if err != nil {
 		return err
 	}
@@ -755,8 +755,9 @@ func newPluginManifestCommand(opts *globalOpts) *cobra.Command {
 		indexDir  string
 	)
 	cmd := &cobra.Command{
-		Use:   "manifest <binary>",
-		Short: "Write an index manifest from a plugin binary's own declaration",
+		Use:         "manifest <binary>",
+		Annotations: outputExempt(),
+		Short:       "Write an index manifest from a plugin binary's own declaration",
 		Long: "Runs the binary the way a load does — sandboxed — and writes the index\n" +
 			"entry its declaration implies: name, version, summary, every capability\n" +
 			"with its safety class and grant flag, and every credential location it\n" +
@@ -773,6 +774,15 @@ func newPluginManifestCommand(opts *globalOpts) *cobra.Command {
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// The report --index ends on is the one view this draws, so a
+			// default nothing renders is refused here, before the manifest
+			// lands in the index, and not for the bytes printed without it
+			// (see annotOutputExempt).
+			if indexDir != "" {
+				if _, err := opts.format(); err != nil {
+					return err
+				}
+			}
 			req := plugindist.GenerateRequest{
 				Binary:   args[0],
 				Version:  version,

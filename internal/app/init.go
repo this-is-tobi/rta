@@ -17,6 +17,7 @@ import (
 func newInitCommand(reg *registry.Registry) *cobra.Command {
 	return &cobra.Command{
 		Use:               "init",
+		Annotations:       outputExempt(),
 		Short:             "Create or update the rta config file interactively",
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,

@@ -40,7 +40,7 @@ func newPluginListCommand(reg *registry.Registry, opts *globalOpts) *cobra.Comma
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			format, err := cli.ParseFormat(opts.output)
+			format, err := opts.format()
 			if err != nil {
 				return err
 			}

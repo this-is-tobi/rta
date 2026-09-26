@@ -102,8 +102,9 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 		operatorsURL  string
 	)
 	cmd := &cobra.Command{
-		Use:   "serve",
-		Short: "Serve capabilities as MCP tools, over stdio or HTTP",
+		Use:         "serve",
+		Annotations: outputExempt(),
+		Short:       "Serve capabilities as MCP tools, over stdio or HTTP",
 		Long: "Serve every registered capability as an MCP tool, over stdio by default" +
 			" or over HTTP with --http.\n\n" +
 			"One gate: a read is free, and every capability that changes" +

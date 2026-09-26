@@ -213,8 +213,9 @@ func newMCPInstallCommand(opts *globalOpts) *cobra.Command {
 	sort.Strings(names)
 
 	cmd := &cobra.Command{
-		Use:   "install <client>",
-		Short: "Register rta as an MCP server in a client (" + strings.Join(names, ", ") + ")",
+		Use:         "install <client>",
+		Annotations: outputExempt(),
+		Short:       "Register rta as an MCP server in a client (" + strings.Join(names, ", ") + ")",
 		Long: "Registers rta with an MCP client, under a name, so that grants issued " +
 			"while talking to one agent do not authorize every other client on this " +
 			"machine.\n\n" +

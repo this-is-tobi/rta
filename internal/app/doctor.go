@@ -46,13 +46,18 @@ import (
 func newDoctorCommand(reg *registry.Registry, opts *globalOpts) *cobra.Command {
 	return &cobra.Command{
 		Use:               "doctor",
+		Annotations:       outputExempt(),
 		Short:             "Check rta's environment and report actionable findings",
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			format, err := cli.ParseFormat(opts.output)
+			// A default nothing renders is one of the things doctor is run to
+			// find, so it is a row here (doctorOutput) rather than the reason
+			// the report does not appear, and the report is drawn in the one
+			// format left to draw it in.
+			format, err := opts.format()
 			if err != nil {
-				return err
+				format = cli.Pretty
 			}
 			renderOpts := cli.Options{Format: format, NoColor: opts.noColor || !isTTY(), Width: termWidth()}
 			return cli.Render(cmd.OutOrStdout(), doctorReport(reg), renderOpts)
@@ -319,6 +324,7 @@ func doctorReport(reg *registry.Registry) view.View {
 	doctorSystemRoot(add)
 	doctorTerminal(add)
 	doctorConfig(add)
+	doctorOutput(add)
 	doctorPluginConfig(reg, add)
 	doctorProfiles(reg, add)
 	doctorTheme(add)
@@ -442,7 +448,9 @@ func doctorConfig(add func(check, status, detail string)) {
 		add("config", "error", err.Error())
 	} else {
 		detail := cfgPath
-		if cfg.Output != "" {
+		// One that renders nothing is doctorOutput's row, an error, and not
+		// also a detail of this one, which is ok.
+		if _, perr := cli.ParseFormat(cfg.Output); cfg.Output != "" && perr == nil {
 			detail += fmt.Sprintf(" (output=%s)", cfg.Output)
 		}
 		switch n := len(cfg.Dashboard.Tiles); {
@@ -456,6 +464,23 @@ func doctorConfig(add func(check, status, detail string)) {
 		}
 		add("config", "ok", detail)
 	}
+}
+
+// The default output format, when it names nothing rta renders. Every other
+// command that renders refuses to run on it (CodeOutputInvalid), so this row is
+// the one place it is reported rather than refused. Read the way NewRoot reads
+// it, through config.Load, and no row for a default that works: the config row
+// already says what that one is.
+func doctorOutput(add func(check, status, detail string)) {
+	cfg, err := config.Load()
+	if err != nil || cfg.Output == "" {
+		return
+	}
+	if _, perr := cli.ParseFormat(cfg.Output); perr == nil {
+		return
+	}
+	ve := invalidOutputDefault(cfg.Output)
+	add("output", "error", ve.Message+"; "+ve.Hint)
 }
 
 // Per-plugin configuration, and specifically the ways it can silently

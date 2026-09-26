@@ -23,8 +23,9 @@ func newConfigCommand() *cobra.Command {
 // configSchemaCommand implements `rta config schema`.
 func configSchemaCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "schema",
-		Short: "Print the config file's JSON Schema, for editor completion",
+		Use:         "schema",
+		Annotations: outputExempt(),
+		Short:       "Print the config file's JSON Schema, for editor completion",
 		Long: "Prints a JSON Schema describing every key the config file may carry, with the\n" +
 			"explanation an editor shows on hover. Redirect it into a schema.json next to\n" +
 			"the config file — `rta doctor` prints where that is — \n\n" +

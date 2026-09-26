@@ -46,7 +46,7 @@ func ExitCode(err error) int {
 		switch ve.Code {
 		case CodeConfirmRequired:
 			return 3
-		case CodeUsage:
+		case CodeUsage, CodeOutputInvalid:
 			return 2
 		}
 		return 1
@@ -106,18 +106,114 @@ func codeUsageErrors(cmd *cobra.Command) {
 // found missing here is simply found missing first, in the coded form.
 //
 // The --output only when it was typed. One that came from RTA_OUTPUT or the
-// config file is not a mistake on this command line, and refusing it here
-// would stop the commands that never render a view — `mcp serve` among them
-// — which ran with it before.
+// config file is not a mistake on this command line, and is refused beside
+// this as what it is, by the commands it stops — see CodeOutputInvalid.
 func checkCommandLine(cmd *cobra.Command, output string) error {
 	if _, err := cli.ParseFormat(output); err != nil && cmd.Flags().Changed("output") {
 		return &view.Error{Code: CodeUsage, Message: err.Error(),
-			Hint: "--output takes pretty, json, yaml, csv or md"}
+			Hint: "--output takes " + formatNames()}
 	}
 	if err := cmd.ValidateRequiredFlags(); err != nil {
 		return usageError(cmd, err)
 	}
 	return usageError(cmd, cmd.ValidateFlagGroups())
+}
+
+// CodeOutputInvalid is the refusal of an output format nobody typed: one from
+// RTA_OUTPUT or the config file's output: key that names nothing rta renders.
+//
+// Not CodeUsage, because the command line is not what is wrong, and the plain
+// error it replaces said only `unknown output format "jsno"` to somebody who
+// had typed no format at all — nothing in it pointed at a variable exported in
+// a shell rc or a key in a file. It exits 2 all the same: nothing ran.
+//
+// Nothing ran because it is refused before the command, beside
+// checkCommandLine, and not where the command renders: the app's own commands
+// render last, so `rta plugin install` or `rta profile set` had written what
+// they were asked to by the time the format failed, and exited 2 over a write
+// that landed. The refusal itself is drawn in pretty — the format asked for is
+// the broken thing (topLevelRenderOptions).
+const CodeOutputInvalid = "core.output.invalid"
+
+// annotOutputExempt marks a command a broken default output format does not
+// stop: one that writes no view in that format — plain text, a file's bytes,
+// a server's protocol, an interactive form — and doctor, which is where
+// somebody goes to find out what is broken and reports it as a row
+// (doctorOutput). `mcp serve` among the first, which ran with a broken default
+// before and has nothing to render it in.
+//
+// Marked on the exempt commands rather than on the ones that render, because
+// forgetting the mark is then a refusal before anything runs, which the
+// operator fixes by fixing the default, and not a write that lands and exits 2.
+//
+// A command that draws a view on one of its paths only is marked too, and asks
+// format() itself at the top of that path, before it writes or builds
+// anything: `plugin manifest` with --index, and `plugin dev` with no command
+// after `--`. Stopping them here would refuse the manifest's bytes, which
+// render nothing, and a command run under dev, which the root it runs in holds
+// to this same check.
+const annotOutputExempt = "rta.output.exempt"
+
+// outputExempt is the Annotations a command carries to be marked so.
+func outputExempt() map[string]string { return map[string]string{annotOutputExempt: "true"} }
+
+// needsOutputFormat reports whether a broken default output format stops cmd.
+// Beside the marked commands: the root, which opens the TUI or prints help; a
+// group, which prints help or refuses its arguments as CodeUsage; and cobra's
+// own help and completion commands, which rta does not build and so cannot
+// mark.
+func needsOutputFormat(cmd *cobra.Command) bool {
+	if cmd.Annotations[annotOutputExempt] != "" || !cmd.HasParent() || cmd.HasSubCommands() {
+		return false
+	}
+	for c := cmd; c.HasParent(); c = c.Parent() {
+		if c.Parent() == c.Root() && (c.Name() == "help" || c.Name() == "completion") {
+			return false
+		}
+	}
+	return true
+}
+
+// format is the output format a command renders in, and the one place a
+// default nothing renders is refused. A typed --output nothing renders never
+// reaches here: checkCommandLine refused it as CodeUsage before the command
+// ran.
+func (o *globalOpts) format() (cli.Format, error) {
+	f, err := cli.ParseFormat(o.output)
+	if err != nil {
+		return "", invalidOutputDefault(o.output)
+	}
+	return f, nil
+}
+
+// invalidOutputDefault names where the default came from, in the words
+// somebody would search for it by: the variable, or the key and the file it is
+// in. The precedence is config.Load's — the environment over the file.
+func invalidOutputDefault(value string) *view.Error {
+	if os.Getenv("RTA_OUTPUT") != "" {
+		return &view.Error{Code: CodeOutputInvalid,
+			Message: fmt.Sprintf("RTA_OUTPUT is %q, which is not an output format", value),
+			Hint: "RTA_OUTPUT takes " + formatNames() +
+				" — unset it for pretty, or pass -o for one command"}
+	}
+	return &view.Error{Code: CodeOutputInvalid,
+		Message: fmt.Sprintf("output: %q in %s is not an output format", value, config.Path()),
+		Hint: "output: takes " + formatNames() +
+			" — remove the key for pretty, or pass -o for one command"}
+}
+
+// formatNames is cli.Formats without the descriptions, as a sentence, so a
+// refusal lists the formats that are accepted rather than a copy of them.
+func formatNames() string {
+	all := cli.Formats()
+	names := make([]string, len(all))
+	for i, f := range all {
+		names[i], _, _ = strings.Cut(f, "\t")
+	}
+	if len(names) < 2 {
+		return strings.Join(names, "")
+	}
+	return strings.Join(names[:len(names)-1], ", ") + " or " + names[len(names)-1]
 }
 
 // RenderTopLevelError writes a failure the way a success would have been
@@ -400,6 +496,11 @@ func NewRoot(reg *registry.Registry, version string) *cobra.Command {
 			}
 			if err := checkCommandLine(cmd, opts.output); err != nil {
 				return err
+			}
+			if needsOutputFormat(cmd) {
+				if _, err := opts.format(); err != nil {
+					return err
+				}
 			}
 			if !stderrIsTerminal() {
 				return nil
@@ -1056,7 +1157,7 @@ func flagUsage(c plugin.Capability, f plugin.Field) string {
 }
 
 func runCapability(ctx context.Context, cmd *cobra.Command, c plugin.Capability, args []string, opts *globalOpts) error {
-	format, err := cli.ParseFormat(opts.output)
+	format, err := opts.format()
 	if err != nil {
 		return err
 	}

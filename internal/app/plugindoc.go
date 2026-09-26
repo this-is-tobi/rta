@@ -29,8 +29,9 @@ import (
 // the two pages start disagreeing.
 func newPluginDocCommand(opts *globalOpts) *cobra.Command {
 	return &cobra.Command{
-		Use:   "doc <binary>",
-		Short: "Write a plugin's reference page from its own declaration",
+		Use:         "doc <binary>",
+		Annotations: outputExempt(),
+		Short:       "Write a plugin's reference page from its own declaration",
 		Long: "Runs the binary the way a load does — sandboxed — and prints one markdown\n" +
 			"page from what it declares: the capability table, every config key the\n" +
 			"plugin reads, and one section per capability holding the same card\n" +

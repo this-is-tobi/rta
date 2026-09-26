@@ -37,6 +37,8 @@ rta audit web example.com -o md >> security-review.md
 export RTA_OUTPUT=json
 ```
 
+The config file's `output:` key sets it too, under `RTA_OUTPUT`, and a typed `-o` wins over both. A default that names no format stops every command that renders, before it runs, as `core.output.invalid`: the error names `RTA_OUTPUT` or the key and its file, lists the formats, and is written in `pretty`, since the format asked for is the broken thing. `rta doctor` still runs and reports it as a failing `output` row, and `rta mcp serve`, which renders nothing, is unaffected.
+
 **Say what you want in a script.** `pretty` is a rendering choice made for humans, and it is the one format whose shape is allowed to change.
 
 ### The shape of a result
@@ -88,7 +90,7 @@ Exit codes make the loop safe to write, and they are the next thing worth knowin
 | --- | --- |
 | `0` | Success |
 | `1` | rta refused, or the operation failed — a structured error with a code and a hint |
-| `2` | The command line was wrong — an unknown command or flag, a missing or extra argument, a value a flag cannot take — so nothing ran. The error's code is `core.usage`. A failure rta has no code for exits `2` as well, written as plain text whatever `-o` says |
+| `2` | The command line was wrong — an unknown command or flag, a missing or extra argument, a value a flag cannot take — so nothing ran. The error's code is `core.usage`, or `core.output.invalid` when the format is `RTA_OUTPUT`'s or `output:`'s and names none. A failure rta has no code for exits `2` as well, written as plain text whatever `-o` says |
 | `3` | Confirmation required, and `--yes` was not given |
 
 Code `3` is the one worth handling in scripts. It means the command was destructive and nobody confirmed — not that anything failed.

@@ -214,7 +214,7 @@ func newUseCommand(opts *globalOpts) *cobra.Command {
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeProfiles,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			format, err := cli.ParseFormat(opts.output)
+			format, err := opts.format()
 			if err != nil {
 				return err
 			}
@@ -417,7 +417,7 @@ type renderFn func(*cobra.Command, view.View, *view.Error) error
 
 func newProfileCommand(reg *registry.Registry, opts *globalOpts) *cobra.Command {
 	render := func(cmd *cobra.Command, v view.View, verr *view.Error) error {
-		format, err := cli.ParseFormat(opts.output)
+		format, err := opts.format()
 		if err != nil {
 			return err
 		}
@@ -456,7 +456,7 @@ func newProfileCommand(reg *registry.Registry, opts *globalOpts) *cobra.Command 
 			// `-o json | jq '.rows[]'` yields nothing and exits 0 and
 			// `-o csv` prints its header, rather than a parser meeting a
 			// text view it was never promised.
-			if format, _ := cli.ParseFormat(opts.output); format == cli.Pretty && len(cfg.ProfileNames()) == 0 {
+			if format, _ := opts.format(); format == cli.Pretty && len(cfg.ProfileNames()) == 0 {
 				v = view.Text{Body: "No profile is configured yet — `rta profile set <name> --plugin <plugin> " +
 					"--set key=value` writes one, and `rta use <name>` switches it on."}
 			}
