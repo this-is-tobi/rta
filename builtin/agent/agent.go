@@ -61,7 +61,7 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 				Summary: "Agent activity at a glance: recent calls, refusals, anything waiting",
 				Description: "The last hour of calls that arrived over MCP, how many were refused, " +
 					"and how many requests are parked waiting for you to answer right now. With " +
-					"--detail: the chain's integrity, where the record lives and how big it is.",
+					"`detail`: the chain's integrity, where the record lives and how big it is.",
 				Safety:     plugin.Read,
 				Idempotent: true,
 				Detailed:   true,
@@ -87,8 +87,8 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 				Description: "Every call that arrived over MCP: the capability, the arguments " +
 					"(secrets masked), the profile, what happened, and how it was authorized — no " +
 					"grant needed, a standing grant, or you answering live. The file is chained, so " +
-					"an edited or missing line is visible: --detail verifies it and says where it " +
-					"breaks. This is history and not policy; `rta grant list` is what may happen next.",
+					"an edited or missing line is visible: `detail` verifies it and says where it " +
+					"breaks. This is history and not policy; `grant.list` is what may happen next.",
 				Safety:     plugin.Read,
 				Idempotent: true,
 				Detailed:   true,
@@ -100,7 +100,7 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 					{Name: "role", Type: plugin.String,
 						Help: "only calls a grant of this role covered — what the dev role did today"},
 					{Name: "session", Type: plugin.String,
-						Help: "only one server's calls — the id `rta agent overview` shows beside each connected client",
+						Help: "only one server's calls — the id `agent.overview` shows beside each connected client",
 						Suggest: func(context.Context, plugin.Request) []string {
 							open, _ := session.List()
 							out := make([]string, 0, len(open))
@@ -121,14 +121,14 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 				ID:      "agent.metrics",
 				Summary: "The record as Prometheus metrics, for a dashboard and an alert",
 				Description: "One command, the standard text exposition format, no listener and no " +
-					"port: `rta agent metrics > /var/lib/node_exporter/textfile_collector/rta.prom` " +
+					"port: its output written to /var/lib/node_exporter/textfile_collector/rta.prom " +
 					"on a timer is the whole integration. Calls by capability, agent, outcome and " +
 					"how they were authorized; grants in force; calls parked waiting for you; and " +
 					"whether the record's hash chain still verifies — which is the one worth an " +
 					"alert, because a record that stops verifying is either a bug or somebody " +
 					"editing it. Nothing is kept: every number is derived from the record, so it " +
 					"is a number you could recompute. The Grafana stack's other half needs nothing " +
-					"here — `agent log --after <seq> -o json` is already a cursor over an " +
+					"here — `agent.log` with `after`, as JSON, is already a cursor over an " +
 					"append-only record, which is what a log shipper wants.",
 				Safety:     plugin.Read,
 				Idempotent: true,
@@ -142,8 +142,8 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 				Description: "With `rta mcp serve --consent`, a call that needs a grant nobody " +
 					"issued is parked instead of refused, and waits for you. Each row is one such " +
 					"call: its id, what it wants, against which connection, and how long it will " +
-					"keep waiting. Answer with `rta agent allow <id>` or `rta agent deny <id>`. " +
-					"With --server <name> (a server from remotes.yaml): the same queue read from a " +
+					"keep waiting. Answer with `agent.allow` or `agent.deny`. " +
+					"With `server` (a name from remotes.yaml): the same queue read from a " +
 					"remote rta server as a signed operator call, your operator key's passphrase " +
 					"asked first.",
 				Safety:     plugin.Read,
@@ -201,14 +201,14 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 				Summary: "Everything about one parked call, including what it would do",
 				Description: "The request in full: which capability, which record, against which " +
 					"connection, every argument, and — for a destructive call rta could preview — " +
-					"what running it would actually do, taken from the capability's own --dry-run. " +
+					"what running it would actually do, taken from the capability's own dry run. " +
 					"That last part is the difference between approving an intention and approving " +
-					"an outcome. Answer with `rta agent allow <id>` or `rta agent deny <id>`.",
+					"an outcome. Answer with `agent.allow` or `agent.deny`.",
 				Safety:     plugin.Read,
 				Idempotent: true,
 				Inputs: []plugin.Field{
 					{Name: "id", Type: plugin.String, Positional: true, Required: true,
-						Help: "the request id from `rta agent pending`", Suggest: suggestPending},
+						Help: "the request id from `agent.pending`", Suggest: suggestPending},
 					{Name: "server", Type: plugin.String, Local: true, Remote: true,
 						Help: "the request is parked on this remote server (a name from remotes.yaml)"},
 					operatorid.PassphraseField.OnlyWith("server"),
@@ -228,11 +228,11 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 				Flash:   true,
 				Summary: "Allow one parked call",
 				Description: "Authorizes exactly the call the request names, and nothing else — " +
-					"the agent's call proceeds, and no standing state is created. With --ttl it " +
+					"the agent's call proceeds, and no standing state is created. With `ttl` it " +
 					"also issues the grant you would have typed (same target, same record, same " +
 					"connection), which is worth doing when the same question is about to be asked " +
 					"five more times. Never reachable over MCP: an agent that could answer its own " +
-					"request would make the whole mechanism theatre. With --server <name>: answers " +
+					"request would make the whole mechanism theatre. With `server`: answers " +
 					"a call parked on a remote rta server as a signed operator call — every remote " +
 					"answer costs your operator key's passphrase, one-shot included, because the " +
 					"local one-shot's shell-equivalence argument does not travel a network.",
@@ -240,7 +240,7 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 				Scope:  "id",
 				Inputs: []plugin.Field{
 					{Name: "id", Type: plugin.String, Positional: true, Required: true,
-						Help: "the request id from `rta agent pending`", Suggest: suggestPending},
+						Help: "the request id from `agent.pending`", Suggest: suggestPending},
 					{Name: "ttl", Type: plugin.String,
 						Help: "also issue a standing grant for this long, e.g. 15m (max 24h)"},
 					{Name: "role", Type: plugin.String, Suggest: rtagrant.SuggestRoles,
@@ -263,13 +263,13 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 				Summary: "Deny one parked call",
 				Description: "The agent's call is refused with your answer rather than with a " +
 					"timeout, which is the difference between a model that stops and one that " +
-					"retries. Never reachable over MCP. With --server <name>: denies a call parked " +
+					"retries. Never reachable over MCP. With `server`: denies a call parked " +
 					"on a remote rta server, as a signed operator call.",
 				Safety: plugin.Write,
 				Scope:  "id",
 				Inputs: []plugin.Field{
 					{Name: "id", Type: plugin.String, Positional: true, Required: true,
-						Help: "the request id from `rta agent pending`", Suggest: suggestPending},
+						Help: "the request id from `agent.pending`", Suggest: suggestPending},
 					{Name: "server", Type: plugin.String, Local: true, Remote: true,
 						Help: "the request is parked on this remote server (a name from remotes.yaml)"},
 					operatorid.PassphraseField.OnlyWith("server"),

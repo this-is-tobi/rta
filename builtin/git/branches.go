@@ -25,7 +25,7 @@ func branchesCapability() plugin.Capability {
 			"`gone` in Status means the branch is configured to track a remote branch this " +
 			"repository no longer has a ref for — what `git fetch --prune` leaves behind " +
 			"once the remote side was deleted, and the usual sign a merged branch can go. " +
-			"With `--all`, the remote-tracking branches follow, spelled `remotes/<remote>/<name>` " +
+			"With `all`, the remote-tracking branches follow, spelled `remotes/<remote>/<name>` " +
 			"the way `git branch -a` spells them. Nothing here touches the network: a " +
 			"remote is reported as it stood the last time this repository fetched it. A " +
 			"detached HEAD — checked out at a commit rather than a branch — is reported as its " +

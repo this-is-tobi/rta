@@ -75,8 +75,8 @@ func Plugin() plugin.Plugin {
 				MinWidth: 64,
 				Description: "Generates one of each common shape side by side — passwords, encryption " +
 					"key material, URL-safe and TOTP tokens, UUIDs — labelled with what it is for, the " +
-					"entropy it actually carries and the command that reproduces it, so picking the " +
-					"right shape does not require remembering the flags first. With --detail: every " +
+					"entropy it actually carries and the call that reproduces it, so picking the " +
+					"right shape does not require remembering the inputs first. With `detail`: every " +
 					"preset, plus why a \"32-character key\" is not a 32-byte one. Every value is real " +
 					"and freshly generated; nothing is an example.",
 				Safety:     plugin.Read,
@@ -123,7 +123,7 @@ func Plugin() plugin.Plugin {
 			{
 				ID:      "gen.token",
 				Summary: "Generate random bytes, formatted as hex/base64/base32",
-				Description: "crypto/rand bytes, formatted with --encoding. base32 at the right length " +
+				Description: "crypto/rand bytes, formatted by `encoding`. base32 at the right length " +
 					"is already a TOTP secret (RFC 4648/6238) — there is no separate gen.totp.",
 				Safety: plugin.Read,
 				Inputs: []plugin.Field{

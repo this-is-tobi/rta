@@ -52,14 +52,14 @@ func upgradeCapability() plugin.Capability {
 		Idempotent: false,
 		Scope:      "target",
 		Description: "One target per call, never everything: a manager name upgrades what that " +
-			"manager has behind (or one --package of it), and a name from `plugins: pkg: " +
+			"manager has behind (or the one `package` of it), and a name from `plugins: pkg: " +
 			"tools:` installs that binary's latest GitHub release in place — fetched, hashed, " +
 			"checked against the digest the release publishes, extracted, and swapped in " +
 			"atomically, the path plugin install walks.\n\n" +
 			"rta never runs sudo. apt, dnf, apk and pacman need root: as root this runs " +
 			"them; otherwise it prints the exact command and refuses. A release that " +
-			"publishes no digest is refused unless --unverified says you accept that.\n\n" +
-			"--dry-run prints what would run.",
+			"publishes no digest is refused unless `unverified` says you accept that.\n\n" +
+			"A dry run prints what would run.",
 		Inputs: []plugin.Field{
 			{Name: "target", Type: plugin.String, Positional: true, Required: true,
 				Help: "a manager (brew, apt, mise, npm, go, …) or a tool from `plugins: pkg: tools:`",

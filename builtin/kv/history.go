@@ -66,10 +66,10 @@ func historyCapability() plugin.Capability {
 		ID: "kv.history", Summary: "What a key held before, and when each value was replaced",
 		Safety: plugin.Read, Idempotent: true,
 		Description: "Every write over an existing key keeps what it replaced — the last " +
-			strconv.Itoa(maxRevisions) + " values, inside the same encrypted store — and `kv rm` " +
+			strconv.Itoa(maxRevisions) + " values, inside the same encrypted store — and `kv.rm` " +
 			"keeps the whole entry aside rather than destroying it. This lists that past: kind, " +
 			"size, description, when each value was set and when it was replaced. Never the values " +
-			"themselves, which is what keeps it a Read; `kv restore` brings one back.",
+			"themselves, which is what keeps it a Read; `kv.restore` brings one back.",
 		Inputs: unlockFields([]plugin.Field{
 			{Name: "key", Type: plugin.String, Positional: true, Required: true, Help: "key to look back on",
 				Suggest: suggestKeys},
@@ -116,9 +116,9 @@ func restoreCapability() plugin.Capability {
 	return plugin.Capability{
 		ID: "kv.restore", Summary: "Bring back a removed key, or an earlier value of one",
 		Safety: plugin.Write, NeedsGrant: true, Scope: "key",
-		Description: "With no --revision, a key `kv rm` removed comes back exactly as it was, " +
+		Description: "With no `revision`, a key `kv.rm` removed comes back exactly as it was, " +
 			"history included. With one, the key's current value is replaced by that earlier " +
-			"one — the number `kv history` lists, 1 being the most recent — and the value being " +
+			"one — the number `kv.history` lists, 1 being the most recent — and the value being " +
 			"replaced joins the history in turn, so a restore is itself undoable.\n\n" +
 			"A removed key whose name has since been reused is refused rather than merged: " +
 			"rename the live one first, or purge the removed one.",
@@ -126,7 +126,7 @@ func restoreCapability() plugin.Capability {
 			{Name: "key", Type: plugin.String, Positional: true, Required: true, Help: "key to restore",
 				Suggest: suggestKeys},
 			{Name: "revision", Type: plugin.Int,
-				Help: "an earlier value to restore, as `kv history` numbers them; omit to restore a removed key"},
+				Help: "an earlier value to restore, as `kv.history` numbers them; omit to restore a removed key"},
 		}...),
 		Run: runRestore,
 	}

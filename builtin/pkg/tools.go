@@ -91,7 +91,7 @@ func toolsCapability() plugin.Capability {
 		Idempotent: true,
 		Description: "The binaries no package manager knows about. Each entry in `plugins: pkg: " +
 			"tools:` names a binary on $PATH and the GitHub repository that releases it; " +
-			"the installed version is what the binary says with --version, the latest is " +
+			"the installed version is what `<binary> --version` says, the latest is " +
 			"the repository's latest release. Binaries placed by `go install` need no " +
 			"entry — they carry their module path, and the Go module proxy knows the " +
 			"latest; they are listed under the go manager in pkg.outdated.\n\n" +

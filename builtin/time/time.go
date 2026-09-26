@@ -59,7 +59,7 @@ func Plugin() plugin.Plugin {
 				Description: "Takes an instant in whatever form you have it — an epoch number at any " +
 					"precision, an RFC3339 stamp, a plain date, or a duration either side of now " +
 					"(`90m ago`, `in 2h`, `+90m`) — and shows it as UTC, as local time, as epoch " +
-					"seconds and milliseconds, and as how long ago or away it is. With --zone, in a " +
+					"seconds and milliseconds, and as how long ago or away it is. With `zone`, in a " +
 					"third timezone too.\n\n" +
 					"A bare number carries no unit, so the unit is chosen by magnitude and then " +
 					"stated back to you in the `read-as` row: between 1970 and 1973 the ranges " +

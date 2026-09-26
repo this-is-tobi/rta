@@ -32,7 +32,7 @@ func Plugin() plugin.Plugin {
 				Description: "Generates an ed25519 keypair: the private half stays on this machine, " +
 					"encrypted under a passphrase that is never stored, never accepted from the " +
 					"environment, and refused on the command line; the public half is what you paste " +
-					"into a server's --operators roster. Signing anything takes the passphrase, so an " +
+					"into a server's roster (`rta mcp serve --operators`). Signing anything takes the passphrase, so an " +
 					"agent that reads every file on this machine still cannot speak as you. Refuses " +
 					"to overwrite an existing key: rotating is `rm` plus re-enrolling everywhere, " +
 					"deliberately manual.",
@@ -48,10 +48,10 @@ func Plugin() plugin.Plugin {
 			},
 			{
 				ID:      "operator.status",
-				Summary: "Your operator key at a glance — or a remote server's, with --server",
-				Description: "Without --server: whether this machine holds an operator key, its " +
-					"fingerprint, and the exact line to paste into a server's --operators roster. " +
-					"With --server <name> (from remotes.yaml, beside your config): asks that server " +
+				Summary: "Your operator key at a glance — or a remote server's, given one",
+				Description: "Without `server`: whether this machine holds an operator key, its " +
+					"fingerprint, and the exact line to paste into a server's roster (`rta mcp serve " +
+					"--operators`). With `server` (a name from remotes.yaml, beside your config): asks that server " +
 					"who it is — version, agent name, guard state, enrolled operators — as a signed " +
 					"call, so it also proves your enrollment end to end.",
 				Safety:     plugin.Read,

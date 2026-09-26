@@ -106,9 +106,9 @@ func Plugin() plugin.Plugin {
 				ID: "note.list", Summary: "List notes", Safety: plugin.Read, Idempotent: true,
 				Detailed: true,
 				Description: "Open notes, the ones with a due date first — soonest on top — then the " +
-					"rest in the order they were written. Checked-off notes are hidden until --all. " +
-					"Shows top-level notes by default; pass --parent to list one note's sub-notes. " +
-					"With --detail: adds creation date and a body preview.",
+					"rest in the order they were written. Checked-off notes are hidden unless `all`. " +
+					"Shows top-level notes by default; `parent` lists one note's sub-notes. " +
+					"With `detail`: adds creation date and a body preview.",
 				Inputs: []plugin.Field{
 					{Name: "all", Type: plugin.Bool, Config: "all", Help: "include checked-off notes"},
 					{Name: "tag", Type: plugin.StringSlice, Help: "only notes with any of these tags",
@@ -174,7 +174,7 @@ func Plugin() plugin.Plugin {
 			{
 				ID: "note.add", Summary: "Add a note", Safety: plugin.Write,
 				Flash: true,
-				Description: "A title is enough. --todo (or a due date, which implies it) makes it " +
+				Description: "A title is enough. `todo` (or a due date, which implies it) makes it " +
 					"something to do; a parent makes it part of something bigger; markdown in the " +
 					"body is rendered on human surfaces.",
 				Inputs: append([]plugin.Field{
@@ -202,8 +202,8 @@ func Plugin() plugin.Plugin {
 			{
 				ID: "note.edit", Summary: "Edit a note's title, body, tags, due date or parent", Safety: plugin.Write, Idempotent: true,
 				Flash: true,
-				Description: "Empty fields keep their current value. --tag - clears all tags; " +
-					"--due none clears the due date.",
+				Description: "Empty fields keep their current value. A `tag` of - clears all tags; " +
+					"a `due` of none clears the due date.",
 				Inputs: append([]plugin.Field{
 					{Name: "id", Type: plugin.Int, Positional: true, Required: true,
 						Suggest: suggestAnyID, Help: "note id"},
@@ -219,7 +219,7 @@ func Plugin() plugin.Plugin {
 				ID: "note.done", Summary: "Check a note off", Safety: plugin.Write, Idempotent: true,
 				Flash: true,
 				Description: "Done for a task, filed for a note: either way it leaves the default " +
-					"list and stays findable under --all and in search.",
+					"list and stays findable through note.list's `all`, and in note.search.",
 				Inputs: []plugin.Field{
 					// Checking off is something you do to an open note, so the
 					// done ones stay out of the way here.
@@ -231,7 +231,7 @@ func Plugin() plugin.Plugin {
 			{
 				ID: "note.reopen", Summary: "Reopen a checked note", Safety: plugin.Write, Idempotent: true,
 				Flash: true,
-				Description: "The undo for `note done`. Checking off the wrong note is a " +
+				Description: "The undo for `note.done`. Checking off the wrong note is a " +
 					"one-keystroke mistake, and a list you cannot take something back out of is a " +
 					"list people stop trusting. Re-opening an already-open note is a no-op, not an " +
 					"error.",

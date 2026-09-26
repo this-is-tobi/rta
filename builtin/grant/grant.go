@@ -86,14 +86,14 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 				Description: "Grants expire (15m by default, 24h maximum) and can only be issued by " +
 					"a person at a terminal — an agent that could grant itself access would be no " +
 					"gate at all. The target is a capability ID (kv.get) or a plugin name (kv), " +
-					"which covers all of it. A second argument narrows the grant to one record: " +
-					"`rta grant allow kv.get db-password` allows that key and no other. " +
-					"--agent narrows it to one of your named agents, so consent given while " +
+					"which covers all of it. `scope` narrows the grant to one record: kv.get " +
+					"scoped to db-password allows that key and no other. " +
+					"`agent` narrows it to one of your named agents, so consent given while " +
 					"talking to one client does not follow every other client on this machine. " +
-					"--max-uses expires the grant after that many successful calls, on top of " +
-					"--ttl, whichever comes first — `--max-uses 1` for a value that should be " +
-					"read exactly once. --rate bounds how fast instead of how much: " +
-					"`--rate 10/1h` allows ten calls in any hour and tells the agent when to " +
+					"`max-uses` expires the grant after that many successful calls, on top of " +
+					"`ttl`, whichever comes first — 1 for a value that should be " +
+					"read exactly once. `rate` bounds how fast instead of how much: " +
+					"10/1h allows ten calls in any hour and tells the agent when to " +
 					"come back, so a session that has gone wrong slows to something you can " +
 					"notice rather than draining at machine speed.",
 				Inputs: []plugin.Field{
@@ -106,14 +106,14 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 						Help: "narrow it to one configured connection — name/instance when an " +
 							"environment holds several for this plugin"},
 					{Name: "agent", Type: plugin.String, Suggest: suggestHeldAgents,
-						Help: "which agent it is for — the name `rta mcp serve --as` uses; " +
+						Help: "which agent it is for — the name a server is started as (`rta mcp serve --as`); " +
 							"omit only when this machine knows exactly one"},
 					{Name: "ttl", Type: plugin.String, Default: "15m", Suggest: suggestTTL,
 						Help: "how long it lasts: 30s, 15m, 2h"},
 					{Name: "max-uses", Type: plugin.Int, Help: "expire after this many successful calls (0 = unlimited)"},
 					{Name: "rate", Type: plugin.String, Suggest: suggestRate,
 						Help: "how fast it may be used, as calls/window — e.g. 10/1h"},
-					{Name: "note", Type: plugin.String, Help: "why — shown by grant list"},
+					{Name: "note", Type: plugin.String, Help: "why — shown by grant.list"},
 					// One passphrase field serves both gates that can ask: the
 					// local guard's, and — with --server — the operator key's.
 					// Same name, same channels, same argv refusal.
@@ -132,18 +132,18 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 				Safety:    plugin.Write,
 				Description: "A role is a named list of grant lines — `kv.get db-password`, `pg.query --profile " +
 					"staging --ttl 1h` — under `roles:` in the team's .rta-policy.yaml, your own policy file, " +
-					"or your config. Every line is built and checked exactly as `rta grant allow` builds one, " +
+					"or your config. Every line is built and checked exactly as `grant.allow` builds one, " +
 					"the team ceiling caps each, and with the guard on the passphrase is asked once for all. " +
-					"The grants last --ttl, else the role's `ttl:`, else " + DefaultRoleTTL + "; a line with its " +
-					"own --ttl keeps the shorter. What a line replaces — a grant issued by hand with time left " +
+					"The grants last `ttl`, else the role's `ttl:`, else " + DefaultRoleTTL + "; a line with its " +
+					"own ttl keeps the shorter. What a line replaces — a grant issued by hand with time left " +
 					"— is shown before anything is signed. A role from a repository's file is somebody else's " +
-					"list: it is issued at the command line only, and with the guard off wants --yes after " +
-					"`rta grant roles <name>`. Take it back with `rta grant revoke --role <name>`.",
+					"list: it is issued at the command line only, and with the guard off wants a confirmation " +
+					"after `grant.roles` has shown it. `grant.revoke` given the `role` takes it back.",
 				Inputs: []plugin.Field{
 					{Name: "role", Type: plugin.String, Positional: true, Required: true, Suggest: suggestRoles,
-						Help: "the role to issue — `rta grant roles` lists them"},
+						Help: "the role to issue — `grant.roles` lists them"},
 					{Name: "agent", Type: plugin.String, Suggest: suggestHeldAgents,
-						Help: "which agent it is for — the name `rta mcp serve --as` uses; omit only when this machine knows exactly one"},
+						Help: "which agent it is for — the name a server is started as (`rta mcp serve --as`); omit only when this machine knows exactly one"},
 					{Name: "ttl", Type: plugin.String, Suggest: suggestRoleTTL,
 						Help: "how long the grants last: 4h, 12h (the role's ttl, else " + DefaultRoleTTL + ")"},
 					guard.PassphraseField,
@@ -176,7 +176,7 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 				Description: "Renew extends time and nothing else. Scope, profile, use limit, uses " +
 					"already spent and note are all carried forward from the stored grant — so a " +
 					"renewal can never turn a one-time grant into an unlimited one, which is what " +
-					"re-running `grant allow` without retyping --max-uses quietly did. The moment " +
+					"re-running `grant.allow` without giving `max-uses` again quietly did. The moment " +
 					"of first consent is not moved either, so a chain of renewals is still capped " +
 					"at 24h from when a person first said yes. With no arguments it renews every " +
 					"active grant, which is the common case: the work is still going, the clock is " +
@@ -191,7 +191,7 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 					{Name: "agent", Type: plugin.String, Suggest: suggestHeldAgents,
 						Help: "only grants for this named agent"},
 					{Name: "role", Type: plugin.String, Suggest: suggestStandingRoles,
-						Help: "only the grants `rta grant issue` issued under this role — a whole role, one passphrase"},
+						Help: "only the grants `grant.issue` issued under this role — a whole role, one passphrase"},
 					{Name: "ttl", Type: plugin.String, Suggest: suggestTTL,
 						Help: "how much longer — defaults to the window the grant was issued with"},
 					guard.PassphraseField,
@@ -204,17 +204,17 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 				Safety:    plugin.Read, Idempotent: true,
 				Detailed: true,
 				Description: "Readable without unlocking anything, so the question stays answerable " +
-					"in a hurry. Expired grants are dropped on read. With --detail: what is currently " +
+					"in a hurry. Expired grants are dropped on read. With `detail`: what is currently " +
 					"allowed, then everything an agent can reach with no grant at all, and everything " +
 					"that would need one — because \"what did I allow\" is only half of \"what can it do\". " +
-					"With --server <name> (a server from remotes.yaml): the same roster read from a " +
+					"With `server` (a name from remotes.yaml): the same roster read from a " +
 					"remote rta server as a signed operator call, your operator key's passphrase asked " +
 					"first. Can only be run by a person at a terminal, the same as grant.allow/renew/revoke: " +
 					"the roster names every agent by name, which is exactly the cross-agent visibility an " +
 					"agent asking about itself must not get.",
 				Inputs: []plugin.Field{
 					{Name: "role", Type: plugin.String, Suggest: suggestStandingRoles,
-						Help: "only the grants `rta grant issue` issued under this role"},
+						Help: "only the grants `grant.issue` issued under this role"},
 					{Name: "server", Type: plugin.String, Local: true, Remote: true,
 						Help: "read a remote server's roster instead of this machine's (a name from remotes.yaml)"},
 					operatorid.PassphraseField,
@@ -250,7 +250,7 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 					{Name: "agent", Type: plugin.String, Suggest: suggestHeldAgents,
 						Help: "only the grant for this named agent"},
 					{Name: "role", Type: plugin.String, Suggest: suggestStandingRoles,
-						Help: "every grant `rta grant issue` issued under this role — the whole bundle back"},
+						Help: "every grant `grant.issue` issued under this role — the whole bundle back"},
 					{Name: "all", Type: plugin.Bool, Help: "revoke every grant"},
 					{Name: "server", Type: plugin.String, Local: true, Remote: true,
 						Help: "revoke on a remote server instead (a name from remotes.yaml), as a " +
@@ -266,7 +266,7 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 				Description: "Turns issuance from something any process running as you can do into " +
 					"something that needs a secret only you hold: every grant is signed with a key " +
 					"that exists only encrypted under the passphrase, and a grant without that " +
-					"signature is not honoured. An agent that runs `rta grant allow` from a shell " +
+					"signature is not honoured. An agent that runs grant.allow from a shell " +
 					"is refused, however it invokes the binary — prevention for the ordinary " +
 					"self-granting path, where the origin column could only detect it after the " +
 					"fact. Enabling clears the grants currently held: they were issued without a " +
@@ -286,7 +286,7 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 					"promised. Clears the grants the guard signed, mirroring enable: signatures " +
 					"without a guard beside them read as tampering, by design. A Write and not " +
 					"Destructive, although it removes a protection: the passphrase is the " +
-					"confirmation, and a --yes demanded before the prompt was a second gate " +
+					"confirmation, and a confirmation demanded before the prompt was a second gate " +
 					"in front of the real one.",
 				Inputs: []plugin.Field{guard.PassphraseField},
 				Run:    runGuardOff,
@@ -300,7 +300,7 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 					"reads), after which a grant is honoured only if signed by one of them — issued " +
 					"from an enrolled operator's own machine over the operator channel, never from a " +
 					"shell here. No key material lives on this machine at all: nothing to steal, " +
-					"nothing to phish, and `rta grant allow` at this terminal is refused by " +
+					"nothing to phish, and grant.allow at this terminal is refused by " +
 					"construction. Enabling clears the grants currently held, for guard-on's reason. " +
 					"Run where the server runs, at provisioning time.",
 				Inputs: []plugin.Field{
@@ -322,7 +322,7 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 				NoPreview: true,
 				Description: "On or off, since when, the verification key's fingerprint, and how " +
 					"many grants are held under it. The same state's one-line form leads " +
-					"`rta grant list --detail` and `rta doctor`, which is where somebody is " +
+					"`grant.list` with `detail` and `rta doctor`, which is where somebody is " +
 					"usually already looking. Never an MCP tool, like every grant surface: " +
 					"whether the guard stands is part of the map of what an agent could reach.",
 				Run: runGuardStatus,
