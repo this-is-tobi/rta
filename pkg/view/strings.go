@@ -67,8 +67,9 @@ func MapStrings(v View, f func(string) string) View {
 func mapStrings(v View, f func(string) string) (View, bool) {
 	switch t := v.(type) {
 	case Text:
-		if s := f(t.Body); s != t.Body {
-			t.Body = s
+		body, empty := f(t.Body), f(t.Empty)
+		if body != t.Body || empty != t.Empty {
+			t.Body, t.Empty = body, empty
 			return t, true
 		}
 	case KeyValue:
@@ -106,8 +107,9 @@ func mapStrings(v View, f func(string) string) (View, bool) {
 			return t, true
 		}
 	case Tree:
-		if roots, ok := mapNodes(t.Roots, f); ok {
-			t.Roots = roots
+		roots, rc := mapNodes(t.Roots, f)
+		if empty := f(t.Empty); rc || empty != t.Empty {
+			t.Roots, t.Empty = roots, empty
 			return t, true
 		}
 	case Sections:
