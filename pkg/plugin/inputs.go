@@ -57,18 +57,18 @@ import (
 // means. Kept apart because this one is also asked of a single value, before
 // the rest of the call is known (internal/toolcall).
 func CheckInputs(c Capability, req Request) *view.Error {
-	values := req.Values()
+	values, s := req.Values(), req.Surface()
 	for _, f := range c.Inputs {
 		v, present := values[f.Name]
 		if !present || v == nil {
 			continue
 		}
-		verr, how := checkShape(c, f, v)
+		verr, how := checkShape(c, f, v, s)
 		if verr == nil {
-			verr = checkOptions(c, f, v)
+			verr = checkOptions(c, f, v, s)
 		}
 		if verr == nil {
-			verr = checkBoundsOf(c, f, v)
+			verr = checkBoundsOf(c, f, v, s)
 		}
 		if verr != nil {
 			return fromSource(verr, how, c, f, req)
@@ -121,9 +121,10 @@ func fromSource(verr *view.Error, how string, c Capability, f Field, req Request
 	}
 	out := *verr
 	out.Message += ", which " + where + " sets"
-	if req.Surface() == SurfaceMCP {
-		out.Hint = "the operator can change it (" + where + "); an argument naming " +
-			f.Name + " overrides it for this call"
+	s := req.Surface()
+	if s == SurfaceMCP {
+		out.Hint = "the operator can change it (" + where + "); " + s.InputName(f.Name) +
+			" overrides it for this call"
 		if f.Local {
 			out.Hint = "only the operator can change it (" + where + ")"
 		}
@@ -132,9 +133,38 @@ func fromSource(verr *view.Error, how string, c Capability, f Field, req Request
 	if how == "" {
 		how = "change it there"
 	}
-	out.Hint = how + " — " + change + " — or give " + f.Name +
-		" on the call to override it for one run"
+	give := "give " + fieldName(s, f) + " on the call"
+	if s == SurfaceTUI {
+		give = "fill in " + s.InputName(f.Name)
+	}
+	out.Hint = how + " — " + change + " — or " + give + " to override it for one run"
 	return &out
+}
+
+// fieldName is f as the caller on s names it: Surface.InputName, except for
+// a Positional input on the CLI, which no flag gives and the usage line
+// spells <name>.
+func fieldName(s Surface, f Field) string {
+	if f.Positional && s.spellsForCLI() {
+		return "<" + f.Name + ">"
+	}
+	return s.InputName(f.Name)
+}
+
+// declared says where the caller on s reads what c declares about an input —
+// its options, its bounds — for a refusal that holds a value to them.
+//
+// `rta explain` at a terminal, which prints them beside the input. Over MCP
+// the tool's own input schema, which already carries every option as an enum
+// and every bound as a minimum or a maximum: an agent can run no command,
+// and was handed the answer with the tool. The TUI reads the CLI's pointer,
+// since it has no page of its own for a declaration and the person using it
+// is at a terminal.
+func declared(s Surface, c Capability, what string) string {
+	if s == SurfaceMCP {
+		return "the tool's input schema " + what
+	}
+	return "`rta explain " + c.ID + "` " + what + " beside the input"
 }
 
 // checkShape refuses a value the field's accessor cannot read as its type,
@@ -146,11 +176,11 @@ func fromSource(verr *view.Error, how string, c Capability, f Field, req Request
 // Named by the value's shape, never by the value: this runs over the
 // operator's config and profiles, and a file is one mistyped block away from
 // a credential. how is fromSource's, what to write in the file instead.
-func checkShape(c Capability, f Field, v any) (verr *view.Error, how string) {
+func checkShape(c Capability, f Field, v any, s Surface) (verr *view.Error, how string) {
 	var want, give string
 	switch f.Type {
 	case Int, Float:
-		return checkNumber(c, f, v)
+		return checkNumber(c, f, v, s)
 	case String, Text, Path, Secret:
 		if _, ok := v.(string); ok {
 			return nil, ""
@@ -195,7 +225,7 @@ func checkShape(c Capability, f Field, v any) (verr *view.Error, how string) {
 // wrong with it is its value.
 //
 // how is fromSource's: what to write in the file instead.
-func checkNumber(c Capability, f Field, v any) (verr *view.Error, how string) {
+func checkNumber(c Capability, f Field, v any, s Surface) (verr *view.Error, how string) {
 	var readable bool
 	want := "a whole number"
 	switch f.Type {
@@ -221,7 +251,7 @@ func checkNumber(c Capability, f Field, v any) (verr *view.Error, how string) {
 	}
 	if got == "a number" {
 		return view.Errorf(code, "%s takes %s for %s, not %v", c.ID, want, f.Name, v).
-			WithHint("`rta explain " + c.ID + "` names what it takes beside the input"), ""
+			WithHint(declared(s, c, "names what it takes")), ""
 	}
 	bare := "a bare number"
 	if got == "text" {
@@ -231,7 +261,7 @@ func checkNumber(c Capability, f Field, v any) (verr *view.Error, how string) {
 		WithHint("give it as " + bare), "write it there as " + bare
 }
 
-func checkOptions(c Capability, f Field, given any) *view.Error {
+func checkOptions(c Capability, f Field, given any, s Surface) *view.Error {
 	if len(f.Options) == 0 {
 		return nil
 	}
@@ -241,7 +271,7 @@ func checkOptions(c Capability, f Field, given any) *view.Error {
 		}
 		return view.Errorf("core.input.option", "%s takes one of %s for %s, not %q",
 			c.ID, strings.Join(f.Options, ", "), f.Name, v).
-			WithHint("the set is closed: `rta explain " + c.ID + "` lists it beside the input")
+			WithHint("the set is closed: " + declared(s, c, "lists it"))
 	}
 	return nil
 }
@@ -265,10 +295,10 @@ func optionValues(f Field, v any) []string {
 	return nil
 }
 
-func checkBoundsOf(c Capability, f Field, v any) *view.Error {
+func checkBoundsOf(c Capability, f Field, v any, s Surface) *view.Error {
 	if want, ok := f.Range(v); !ok {
 		return view.Errorf("core.input.range", "%s takes a %s %s, not %v", c.ID, f.Name, want, v).
-			WithHint("the range is declared: `rta explain " + c.ID + "` names it beside the input")
+			WithHint("the range is declared: " + declared(s, c, "names it"))
 	}
 	return nil
 }
@@ -431,9 +461,10 @@ func CheckRequired(c Capability, req Request) *view.Error {
 // the same mistake with core.mcp.badargs — the code for a value of the wrong
 // shape — so a caller branching on the code heard two different mistakes.
 //
-// The input is named as the surface names it, because the name is what the
-// reader has to type back: --host or <key> at a terminal, the argument "key"
-// to an agent, the box in a form. And the hint says who can give it. An agent
+// The input is named as the surface names it (Surface.InputName), because
+// the name is what the reader has to type back: --host or <key> at a
+// terminal, the "key" argument to an agent, the box in a form. And the hint
+// says who can give it. An agent
 // is never told to pass a Local input: the schema hides it and the bridge
 // drops it unread, so "pass it" would send the agent round into this same
 // refusal, and only the operator can supply one.
@@ -450,11 +481,11 @@ func MissingInput(c Capability, f Field, s Surface) *view.Error {
 				WithHint("give it as an argument — `rta " + strings.Join(c.Words(), " ") +
 					" --help` says where")
 		}
-		hint := "pass --" + f.Name + config
+		hint := "pass " + s.InputName(f.Name) + config
 		if f.Local && f.EnvFallback {
 			hint += ", or export $" + LocalEnvVar(c.ID, f.Name)
 		}
-		return view.Errorf(code, "%s needs --%s", c.ID, f.Name).WithHint(hint)
+		return view.Errorf(code, "%s needs %s", c.ID, s.InputName(f.Name)).WithHint(hint)
 	case SurfaceMCP:
 		if f.Local {
 			// With neither a config key nor a variable, nothing but a
@@ -470,11 +501,11 @@ func MissingInput(c Capability, f Field, s Surface) *view.Error {
 			return view.Errorf(code, "%s needs %s, which only the operator can give", c.ID, f.Name).
 				WithHint(hint)
 		}
-		return view.Errorf(code, "%s needs the argument %q", c.ID, f.Name).
+		return view.Errorf(code, "%s needs %s", c.ID, s.InputName(f.Name)).
 			WithHint(fmt.Sprintf("pass %q in the arguments", f.Name))
 	case SurfaceTUI:
 		return view.Errorf(code, "%s needs %s", c.ID, f.Name).
-			WithHint("fill in the " + f.Name + " box" + config)
+			WithHint("fill in " + s.InputName(f.Name) + config)
 	}
 	return view.Errorf(code, "%s needs %s", c.ID, f.Name)
 }

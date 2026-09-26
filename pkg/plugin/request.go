@@ -15,10 +15,15 @@ import (
 // Handlers must not branch on it to change what they do — one handler
 // serving every surface is the point of the whole model,
 // and a capability that behaves differently in the TUI than in a pipe is a
-// bug. The one legitimate use is trust: a request from SurfaceMCP has no
-// human in the loop, so a capability whose blast radius is "an AI agent
+// bug. There are two legitimate uses. Trust: a request from SurfaceMCP has
+// no human in the loop, so a capability whose blast radius is "an AI agent
 // reads your secret" can require that an operator authorized it first. That
 // is a question of *whether* the call is allowed, not of what it returns.
+// And words: a hint that names a capability or an input names it the way its
+// reader reaches it — a flag at a terminal, an argument to an agent, a box
+// in a form — which is what the naming helpers beside this type spell from
+// it (Surface.CapabilityName, InputName and the rest). That changes how a
+// sentence spells a name, never what the call does.
 //
 // SurfaceUnknown means a direct in-process caller (tests, embedding code),
 // which is inside the trust boundary. Every renderer that can be reached

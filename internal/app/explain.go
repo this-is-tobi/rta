@@ -13,7 +13,6 @@ import (
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/internal/render/cli"
 	"github.com/this-is-tobi/rta/internal/render/tui"
-	"github.com/this-is-tobi/rta/internal/toolcall"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -370,7 +369,7 @@ func toolName(c plugin.Capability) string {
 	if c.HumanOnly {
 		return "none — for the person at the terminal, never an agent"
 	}
-	return toolcall.Name(c.ID)
+	return plugin.ToolName(c.ID)
 }
 
 // similarity is a cheap shared-segment score, good enough for suggestions.

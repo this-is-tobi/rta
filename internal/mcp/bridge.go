@@ -88,7 +88,7 @@ func NewServer(reg *registry.Registry, version string, opts Options) *sdk.Server
 			continue
 		}
 		server.AddTool(toolDef(c, opts), handler(c, opts, reg))
-		known[toolcall.Name(c.ID)] = true
+		known[plugin.ToolName(c.ID)] = true
 	}
 	server.AddReceivingMiddleware(recordUnknownTools(known, opts))
 	return server
@@ -139,7 +139,7 @@ func handler(c plugin.Capability, opts Options, reg *registry.Registry) sdk.Tool
 		// values say "refused before anything could authorize it", which
 		// is what an exit before the gate actually was.
 		rec := agentlog.Entry{
-			Cap: c.ID, Tool: toolcall.Name(c.ID),
+			Cap: c.ID, Tool: plugin.ToolName(c.ID),
 			Outcome: agentlog.Refused, Auth: agentlog.Blocked,
 			Agent: opts.Agent, Client: clientName(req), Credential: credentialName(ctx),
 			Session: opts.Session,

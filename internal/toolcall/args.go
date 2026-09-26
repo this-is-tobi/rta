@@ -185,15 +185,19 @@ func Validate(c plugin.Capability, values map[string]any) *view.Error {
 
 // held is the host's refusal of v for f, or nil: plugin.CheckInputs over
 // this one value, so the rule and its wording have the one home the guard in
-// front of every handler already uses.
+// front of every handler already uses. Asked as MCP, since that is who is
+// reading it: unstamped, the request read the CLI's spelling, and a range
+// refusal sent an agent to run `rta explain` for what its schema says.
 //
 // The option miss keeps a hint of its own. The enum is held exactly here,
 // though the CLI and a config file take an option in another case and spell
 // it as declared: the schema published it, and a client validating against
 // it would have refused "HEX" before it was sent — while the host's hint
-// sends the reader to `rta explain` for a set the message has already named.
+// sends the reader back to the schema for a set the message has already
+// named.
 func held(c plugin.Capability, f plugin.Field, v any) *view.Error {
-	verr := plugin.CheckInputs(c, plugin.NewRequest(map[string]any{f.Name: v}, false, false))
+	verr := plugin.CheckInputs(c, plugin.NewRequest(map[string]any{f.Name: v}, false, false).
+		WithSurface(plugin.SurfaceMCP))
 	if verr != nil && verr.Code == "core.input.option" {
 		return verr.WithHint(f.Name + " takes one of " + strings.Join(f.Options, ", ") + ", spelled exactly as listed")
 	}
