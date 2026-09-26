@@ -682,7 +682,7 @@ func TestNullArgumentsDoNotKillTheServer(t *testing.T) {
 	// before anything could check the required one. The answer must be the
 	// ordinary refusal, delivered by a server that is still running.
 	res := callTool(t, s, "demo_item_list", nil)
-	if !res.IsError || !strings.Contains(res.Content[0].(*sdk.TextContent).Text, "name is required") {
+	if !res.IsError || !strings.Contains(res.Content[0].(*sdk.TextContent).Text, `needs the argument \"name\"`) {
 		t.Fatalf("unexpected answer to null arguments: %+v", res)
 	}
 	// The property that actually matters: the session survived.

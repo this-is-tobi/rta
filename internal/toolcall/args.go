@@ -221,25 +221,34 @@ func acceptedHint(c plugin.Capability) string {
 	return "accepted arguments: " + strings.Join(names, ", ")
 }
 
-// Require enforces the schema's "required" list on the final value map —
-// after defaults have filled in what the caller left out, so a declared
-// default satisfies its own field's requirement. Local fields are exempt:
-// they are never suppliable over MCP, so requiring one here would make a
-// capability that declares Required on a Local field permanently
-// uncallable — a contradiction for the plugin author to avoid, not
-// something this boundary should enforce.
+// Require enforces the schema's "required" list before the gate, on the
+// values the call will run with as far as they are known there — after the
+// operator's config and the declared defaults have filled what the caller
+// left out, so a default satisfies its own field's requirement. What it
+// requires, and how it refuses, is the host's own rule (plugin.Missing and
+// plugin.MissingInput): the guard in front of every handler asks the same
+// question of the finished request, and a call refused here gets the code
+// and the words it would, one step sooner and without spending a use. A
+// Piped input is required here as well: the CLI reads it from a pipe when it
+// is left out, and a model-facing channel has no pipe to read.
 //
-// A Piped input is required here as well: the CLI reads it from a pipe when
-// it is left out, and a model-facing channel has no pipe to read.
-func Require(c plugin.Capability, values map[string]any) *view.Error {
-	for _, f := range c.Inputs {
-		if (!f.Required && !f.Piped) || f.Local {
+// Two kinds of input are left to that guard, because a layer after this one
+// may still fill them and refusing here would refuse a call that runs:
+//
+//   - A Local input, which is never suppliable over MCP and which only the
+//     operator's config, environment or profile can give. Requiring it of the
+//     caller would make a capability declaring it permanently uncallable.
+//   - With a profile named, any input the profile may fill
+//     (plugin.ProfileFillable). The profile is resolved after consent on
+//     purpose, so an input only it sets is absent here; refused here, a
+//     connection whose database was required and set by the profile could
+//     not be reached through the profile at all.
+func Require(c plugin.Capability, values map[string]any, profiled bool) *view.Error {
+	for _, f := range plugin.Missing(c, values, plugin.SurfaceMCP) {
+		if f.Local || (profiled && plugin.ProfileFillable(c, f)) {
 			continue
 		}
-		if _, given := values[f.Name]; !given {
-			return view.Errorf("core.mcp.badargs", "%s is required", f.Name).
-				WithHint(fmt.Sprintf("pass %q in the arguments", f.Name))
-		}
+		return plugin.MissingInput(c, f, plugin.SurfaceMCP)
 	}
 	return nil
 }

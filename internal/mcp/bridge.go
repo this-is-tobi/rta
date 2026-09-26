@@ -294,6 +294,9 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 		// names is the one the grant has to cover, and the ledger and the
 		// consent prompt show what will run. Local fields stay out, as they
 		// stay out of everything an agent's call is judged or recorded by.
+		// A required input only the profile fills is the one thing this
+		// cannot judge yet, and Require leaves it to the check before the
+		// handler, which runs once the profile is laid on.
 		gated := plugin.Resolve(c, plugin.Inputs{
 			Caller: values, ProfileName: profileName, Config: opts.pluginConfig(c),
 		})
@@ -302,7 +305,7 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 				delete(gated, f.Name)
 			}
 		}
-		if verr := toolcall.Require(c, gated); verr != nil {
+		if verr := toolcall.Require(c, gated, profileName != ""); verr != nil {
 			refusedBy(rec, verr)
 			return errResult(verr), nil
 		}
@@ -569,18 +572,20 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 		}
 		// The host's input guard, run here as well as inside c.Run, for the
 		// values toolcall.Validate never saw: what the operator's config or
-		// the profile supplied. Inside c.Run its refusal came back as the
-		// handler's error and was treated as one — the use kept, the ledger
-		// saying failed — for a call no handler ran. It is a refusal of
-		// something that never reached the handler, which is exactly what
-		// the refunds above are for. The guard inside c.Run then finds
-		// nothing to say.
+		// the profile supplied — and for the inputs toolcall.Require left to
+		// it, a Local one and one a named profile may fill, which only the
+		// finished request can say are missing. Inside c.Run its refusal came
+		// back as the handler's error and was treated as one — the use kept,
+		// the ledger saying failed — for a call no handler ran. It is a
+		// refusal of something that never reached the handler, which is
+		// exactly what the refunds above are for. The guard inside c.Run then
+		// finds nothing to say.
 		//
 		// Here, past the gate, although the config's values are known before
 		// it: the refusal quotes the value and names the key that set it, so
 		// run ahead of the gate it would read the operator's config back to
 		// an agent no grant covers, one refused call at a time.
-		if verr := plugin.CheckInputs(c, run); verr != nil {
+		if verr := plugin.CheckRequest(c, run); verr != nil {
 			release()
 			refusedBy(rec, verr)
 			return errResult(verr), nil

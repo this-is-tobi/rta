@@ -1041,8 +1041,10 @@ func commaHint(f plugin.Field) string {
 
 // requiredHere is whether a form must have f before it submits: a Required
 // input, and a Piped one, which only the CLI can leave out — it reads a pipe
-// then, and a form has none behind it.
-func requiredHere(f plugin.Field) bool { return f.Required || f.Piped }
+// then, and a form has none behind it. Asked of the host's rule for this
+// surface, the one its guard refuses a run by, so a form never submits what
+// the guard then refuses and the two cannot drift.
+func requiredHere(f plugin.Field) bool { return f.RequiredOn(plugin.SurfaceTUI) }
 
 func fieldDescription(f plugin.Field) string {
 	d := f.Help

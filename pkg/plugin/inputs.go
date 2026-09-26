@@ -50,9 +50,12 @@ import (
 
 // CheckInputs reports the first input whose value is outside what its field
 // declares — of a shape its accessor cannot read, not one of its Options, or
-// outside its Min and Max — or nil. An input nobody supplied is left to the
-// handler, which is where a field with no Default decides what nothing means;
-// so is one present as nil, which says the same thing.
+// outside its Min and Max — or nil. An input nobody supplied is not its
+// question, nor one present as nil, which says the same thing: whether the
+// call may go without it is CheckRequired's, and for an input the call may go
+// without, the handler is where a field with no Default decides what nothing
+// means. Kept apart because this one is also asked of a single value, before
+// the rest of the call is known (internal/toolcall).
 func CheckInputs(c Capability, req Request) *view.Error {
 	values := req.Values()
 	for _, f := range c.Inputs {
@@ -345,17 +348,161 @@ func NumberText(v any) string {
 	return fmt.Sprint(v)
 }
 
-// GuardInputs is c's handler with CheckInputs in front of it, or the handler
-// itself when c declares no input, since every input has a shape to hold. The
-// registry installs it on every capability it holds, which is what makes the
-// check the host's rather than something each surface has to remember.
+// What a call must have, held to by the host on every surface, before any
+// handler runs.
+//
+// Each surface held presence its own way, and nothing stood behind them:
+// cobra's required flags and the positional arity on the CLI, a check of
+// the resolved values there for an input the config can fill, the schema's
+// "required" list over MCP, a validator on each box in a TUI form. The TUI's
+// list picker had no validator, so enter submitted a form with nothing
+// picked, and the handler ran without an input the CLI and MCP refuse to
+// leave out — reading it, as every accessor reads an input nobody gave, as
+// the zero. The surfaces keep their own checks, because each refuses sooner
+// and in its own medium: at parse time with the usage beside it, before a
+// grant is spent, in the box as it is typed. This is what holds a surface
+// that forgot.
+//
+// Asked of the values the handler is about to run with, after every layer —
+// the caller, the profile and the forward it opens, the host's environment,
+// the config, the declared default — so a layer that fills an input fills it
+// before this looks, and nothing after this fills one: the handler is next.
+
+// RequiredOn reports whether a call arriving through s must carry a value for
+// f: a Required input on every surface, and a Piped one on the surfaces with
+// no pipe behind them — MCP, whose standard input is the agent's request
+// stream, and the TUI, which owns the terminal. The CLI reads the pipe when a
+// Piped input is left out, and an in-process caller is left to the handler,
+// which reads no pipe off the CLI and answers an empty one itself.
+func (f Field) RequiredOn(s Surface) bool {
+	if f.Required {
+		return true
+	}
+	return f.Piped && (s == SurfaceMCP || s == SurfaceTUI)
+}
+
+// Missing is every input a call arriving through s must carry and does not,
+// in declared order: absent, nil, empty text, or a list with nothing in it.
+// Each of those reaches a handler exactly as an input nobody gave — String
+// reads "" and StringSlice reads nil for all four — so a check that counted
+// an empty one as present held the handler to nothing it could tell apart.
+// A number or a switch is never empty: 0 and false are values somebody gave.
+func Missing(c Capability, values map[string]any, s Surface) []Field {
+	var out []Field
+	for _, f := range c.Inputs {
+		if !f.RequiredOn(s) {
+			continue
+		}
+		if v, present := values[f.Name]; present && !empty(v) {
+			continue
+		}
+		out = append(out, f)
+	}
+	return out
+}
+
+func empty(v any) bool {
+	switch v := v.(type) {
+	case nil:
+		return true
+	case string:
+		return v == ""
+	case []string:
+		return len(v) == 0
+	case []any:
+		return len(v) == 0
+	}
+	return false
+}
+
+// CheckRequired reports the first input a request must carry and does not —
+// see Missing — or nil, named the way the request's surface names it.
+func CheckRequired(c Capability, req Request) *view.Error {
+	if missing := Missing(c, req.Values(), req.Surface()); len(missing) > 0 {
+		return MissingInput(c, missing[0], req.Surface())
+	}
+	return nil
+}
+
+// MissingInput is the host's refusal of a call arriving through s without f.
+// One code on every surface, core.input.missing, beside core.input.type,
+// .option and .range: the CLI's refusal of a config-backed input nothing
+// supplied already had it, and MCP's refusal of a left-out argument answered
+// the same mistake with core.mcp.badargs — the code for a value of the wrong
+// shape — so a caller branching on the code heard two different mistakes.
+//
+// The input is named as the surface names it, because the name is what the
+// reader has to type back: --host or <key> at a terminal, the argument "key"
+// to an agent, the box in a form. And the hint says who can give it. An agent
+// is never told to pass a Local input: the schema hides it and the bridge
+// drops it unread, so "pass it" would send the agent round into this same
+// refusal, and only the operator can supply one.
+func MissingInput(c Capability, f Field, s Surface) *view.Error {
+	const code = "core.input.missing"
+	config := ""
+	if f.Config != "" {
+		config = ", or set " + f.Config + " in your rta config"
+	}
+	switch s {
+	case SurfaceCLI:
+		if f.Positional {
+			return view.Errorf(code, "%s needs <%s>", c.ID, f.Name).
+				WithHint("give it as an argument — `rta " + strings.Join(c.Words(), " ") +
+					" --help` says where")
+		}
+		hint := "pass --" + f.Name + config
+		if f.Local && f.EnvFallback {
+			hint += ", or export $" + LocalEnvVar(c.ID, f.Name)
+		}
+		return view.Errorf(code, "%s needs --%s", c.ID, f.Name).WithHint(hint)
+	case SurfaceMCP:
+		if f.Local {
+			// With neither a config key nor a variable, nothing but a
+			// person at a terminal gives it — as a flag or an argument,
+			// whichever it is, so the hint names neither.
+			hint := "ask the operator to run it from their own terminal"
+			switch {
+			case f.Config != "":
+				hint = "ask the operator to set it in the rta config"
+			case f.EnvFallback:
+				hint = "ask the operator to set it in the environment rta mcp serve runs in"
+			}
+			return view.Errorf(code, "%s needs %s, which only the operator can give", c.ID, f.Name).
+				WithHint(hint)
+		}
+		return view.Errorf(code, "%s needs the argument %q", c.ID, f.Name).
+			WithHint(fmt.Sprintf("pass %q in the arguments", f.Name))
+	case SurfaceTUI:
+		return view.Errorf(code, "%s needs %s", c.ID, f.Name).
+			WithHint("fill in the " + f.Name + " box" + config)
+	}
+	return view.Errorf(code, "%s needs %s", c.ID, f.Name)
+}
+
+// CheckRequest is everything GuardInputs holds a call to — what it must carry,
+// then what each value declares — for a caller that has to refuse before the
+// handler rather than through it: the MCP bridge, which refunds a grant's use
+// for a call no handler ran, and sdktest, which drives a declaration with no
+// registry in front of it.
+func CheckRequest(c Capability, req Request) *view.Error {
+	if verr := CheckRequired(c, req); verr != nil {
+		return verr
+	}
+	return CheckInputs(c, req)
+}
+
+// GuardInputs is c's handler with CheckRequest in front of it, or the handler
+// itself when c declares no input, since there is then nothing to carry and
+// nothing to hold. The registry installs it on every capability it holds,
+// which is what makes the check the host's rather than something each
+// surface has to remember.
 func GuardInputs(c Capability) Handler {
 	run := c.Run
 	if run == nil || len(c.Inputs) == 0 {
 		return run
 	}
 	return func(ctx context.Context, req Request) (view.View, error) {
-		if verr := CheckInputs(c, req); verr != nil {
+		if verr := CheckRequest(c, req); verr != nil {
 			return nil, verr
 		}
 		return run(ctx, req)

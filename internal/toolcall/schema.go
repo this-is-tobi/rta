@@ -80,8 +80,9 @@ func InputSchema(c plugin.Capability, profiles []string) map[string]any {
 		// it is left out. There is none here, and a schema leaving it out of
 		// "required" told an agent that a call without it was one the tool
 		// answers — beside a description saying the value is read from
-		// standard input when not given.
-		if f.Required || f.Piped {
+		// standard input when not given. Asked by the rule the host refuses a
+		// call with, so the list published and the list held are one list.
+		if f.RequiredOn(plugin.SurfaceMCP) {
 			required = append(required, f.Name)
 		}
 	}

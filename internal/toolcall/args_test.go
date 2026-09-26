@@ -76,13 +76,39 @@ func TestRequireEnforcesRequiredFieldsAndExemptsLocalOnes(t *testing.T) {
 		{Name: "key", Type: plugin.String, Required: true},
 		{Name: "identity", Type: plugin.Path, Local: true, Required: true},
 	}}
-	if verr := Require(c, map[string]any{}); verr == nil {
-		t.Fatal("a missing required field was accepted")
+	verr := Require(c, map[string]any{}, false)
+	if verr == nil || verr.Code != "core.input.missing" || verr.Message != `x.y needs the argument "key"` {
+		t.Fatalf("a missing required field: %v", verr)
 	}
 	// A Local field declared Required must not make the capability
 	// permanently uncallable — it can never arrive from the caller.
-	if verr := Require(c, map[string]any{"key": "k"}); verr != nil {
+	if verr := Require(c, map[string]any{"key": "k"}, false); verr != nil {
 		t.Fatalf("a required Local field blocked an otherwise complete call: %v", verr)
+	}
+	// Sent with nothing in it is not given: the handler would read it
+	// exactly as it reads an argument left out.
+	if verr := Require(c, map[string]any{"key": ""}, false); verr == nil || verr.Code != "core.input.missing" {
+		t.Errorf("an empty required argument: %v", verr)
+	}
+}
+
+// With a profile named, an input the profile may fill is left to the check in
+// front of the handler, which runs once the profile is laid on: the profile is
+// resolved after consent, so here it has filled nothing yet. An input no
+// profile can fill is still the caller's to send.
+func TestRequireLeavesToTheGuardWhatANamedProfileMayFill(t *testing.T) {
+	c := plugin.Capability{ID: "db.query", Inputs: []plugin.Field{
+		{Name: "database", Type: plugin.String, Required: true, Config: "database"},
+		{Name: "sql", Type: plugin.String, Required: true},
+	}}
+	if verr := Require(c, map[string]any{"sql": "select 1"}, false); verr == nil {
+		t.Error("with no profile named, a missing database was accepted")
+	}
+	if verr := Require(c, map[string]any{"sql": "select 1"}, true); verr != nil {
+		t.Errorf("with a profile named, the database it may fill was refused: %v", verr)
+	}
+	if verr := Require(c, map[string]any{}, true); verr == nil || !strings.Contains(verr.Message, `"sql"`) {
+		t.Errorf("with a profile named, the sql no profile fills: %v", verr)
 	}
 }
 
@@ -99,11 +125,11 @@ func TestAPipedInputIsRequiredOverMCP(t *testing.T) {
 	if got, _ := InputSchema(c, nil)["required"].([]string); !slices.Equal(got, []string{"token"}) {
 		t.Errorf("required = %v, want [token]", got)
 	}
-	verr := Require(c, map[string]any{})
-	if verr == nil || verr.Code != "core.mcp.badargs" || !strings.Contains(verr.Message, "token is required") {
+	verr := Require(c, map[string]any{}, false)
+	if verr == nil || verr.Code != "core.input.missing" || !strings.Contains(verr.Message, `needs the argument "token"`) {
 		t.Errorf("a call leaving the token out: %v", verr)
 	}
-	if verr := Require(c, map[string]any{"token": "eyJ"}); verr != nil {
+	if verr := Require(c, map[string]any{"token": "eyJ"}, false); verr != nil {
 		t.Errorf("a call giving it was refused: %v", verr)
 	}
 }

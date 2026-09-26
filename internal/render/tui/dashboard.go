@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"maps"
+	"slices"
 	"sort"
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -412,6 +414,36 @@ func Untileable(c plugin.Capability) []string {
 	return MissingInputs(c, settable, true)
 }
 
+// tileNeeds words the host's refusal of a missing input for a tile, as every
+// other refusal of a tile is worded. The host names the input the way a form
+// does — "fill in the host box" — and a tile has no box: it runs with its
+// entry's with:, the profile it runs against and the config, and nobody is
+// there to ask. `rta dashboard add` and + refuse such a tile before writing it
+// (MissingInputs), so what reaches this is an entry written by hand, or a
+// profile that stopped setting an input the tile counted on. The code and the
+// sentence stay the host's; only the hint changes, and it never says to write
+// a credential into the entry, which `--set` refuses for the same reason.
+func tileNeeds(verr *view.Error, c plugin.Capability, values map[string]any) *view.Error {
+	missing := plugin.Missing(c, values, plugin.SurfaceTUI)
+	if verr.Code != "core.input.missing" || len(missing) == 0 {
+		return verr
+	}
+	f := missing[0]
+	out := *verr
+	out.Message += ", and a tile has no form to ask with"
+	switch {
+	case slices.Contains(Untileable(c), f.Name):
+		out.Hint = f.Name + " is a credential, which a tile cannot be given — run `" +
+			strings.Join(append([]string{"rta"}, c.Words()...), " ") + "` when you have one"
+	case f.Type.Sensitive():
+		out.Hint = f.Name + " is a credential, which a tile's entry must not hold — `rta explain " +
+			c.ID + "` says where else it can come from"
+	default:
+		out.Hint = "`with: {" + f.Name + ": <value>}` in its dashboard entry states it for every run"
+	}
+	return &out
+}
+
 // arrange applies the user's adjustments: drop what they hid, lead with
 // what they ordered. A `hidden:` line is a capability ID, which hides an
 // automatic tile and every panel it expanded into, or a tile key, which
@@ -706,7 +738,7 @@ func Layout(reg *registry.Registry, dash config.Dashboard, instances Instances) 
 // surface, where there is no pipe to fill it.
 func formNeeded(c plugin.Capability) bool {
 	for _, f := range c.Inputs {
-		if (f.Required || f.Piped) && f.Default == nil {
+		if requiredHere(f) && f.Default == nil {
 			return true
 		}
 	}
@@ -808,15 +840,17 @@ func tileCmd(idx int, t tile, cfg statedConfig, profileName string,
 			}
 			filled = merged
 		}
-		v, err := t.cap.Run(ctx, plugin.ResolveRequest(t.cap, plugin.Inputs{
+		req := plugin.ResolveRequest(t.cap, plugin.Inputs{
 			Caller: t.values, Profile: filled, ProfileName: profileName, Config: cfg.values,
 			ConfigSection: cfg.section,
-		}, false, false).WithSurface(plugin.SurfaceTUI))
+		}, false, false).WithSurface(plugin.SurfaceTUI)
+		v, err := t.cap.Run(ctx, req)
 		if err != nil {
 			if timed := deadlineHit(); timed != nil {
 				return tileMsg{key: key, idx: idx, err: timed}
 			}
-			return tileMsg{key: key, idx: idx, err: view.AsError(err, t.cap.ID+".failed")}
+			return tileMsg{key: key, idx: idx,
+				err: tileNeeds(view.AsError(err, t.cap.ID+".failed"), t.cap, req.Values())}
 		}
 		return tileMsg{key: key, idx: idx, v: v}
 	}

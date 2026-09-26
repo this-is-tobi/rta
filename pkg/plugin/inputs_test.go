@@ -142,6 +142,105 @@ func TestOptionsAreDeclaredOnTextAlone(t *testing.T) {
 	}
 }
 
+// A required input with no value reaches no handler, on any surface — absent,
+// nil, empty text or an empty list, each of which the handler would read as
+// nobody having given it. A form that forgot to ask for it is held here.
+func TestAMissingRequiredInputIsRefusedBeforeTheHandler(t *testing.T) {
+	ran := false
+	c := Capability{ID: "demo.pick", Summary: "picks", Safety: Read,
+		Inputs: []Field{
+			{Name: "kinds", Type: StringSlice, Required: true, Options: []string{"table", "view"}},
+			{Name: "limit", Type: Int, Required: true},
+		},
+		Run: func(context.Context, Request) (view.View, error) { ran = true; return nil, nil },
+	}
+	guarded := GuardInputs(c)
+	for _, s := range []Surface{SurfaceUnknown, SurfaceCLI, SurfaceTUI, SurfaceMCP} {
+		for _, kinds := range []any{nil, []string{}, []any{}, ""} {
+			values := map[string]any{"limit": 3}
+			if kinds != nil {
+				values["kinds"] = kinds
+			}
+			_, err := guarded(context.Background(), NewRequest(values, false, false).WithSurface(s))
+			if verr := view.AsError(err, "test"); err == nil || verr.Code != "core.input.missing" {
+				t.Errorf("%q, kinds %#v: err = %v, want core.input.missing", s, kinds, err)
+			}
+		}
+	}
+	// 0 is a number somebody gave, not the absence of one.
+	if _, err := guarded(context.Background(), NewRequest(map[string]any{"kinds": "view", "limit": 0}, false, false)); err != nil {
+		t.Errorf("a zero was read as missing: %v", err)
+	}
+	if !ran {
+		t.Error("the handler did not run with every input given")
+	}
+}
+
+// The refusal names the input the way the caller's surface names it, since
+// that is what they type back, and says who can give it.
+func TestAMissingInputIsNamedTheWayItsSurfaceNamesIt(t *testing.T) {
+	c := Capability{ID: "db.query", Summary: "query", Safety: Read}
+	for _, tc := range []struct {
+		f             Field
+		s             Surface
+		message, hint string
+	}{
+		{Field{Name: "host", Type: String, Required: true, Config: "host"}, SurfaceCLI,
+			"db.query needs --host", "pass --host, or set host in your rta config"},
+		{Field{Name: "table", Type: String, Required: true, Positional: true}, SurfaceCLI,
+			"db.query needs <table>", "give it as an argument — `rta db query --help` says where"},
+		{Field{Name: "password", Type: Secret, Required: true, Local: true, EnvFallback: true}, SurfaceCLI,
+			"db.query needs --password", "pass --password, or export $RTA_DB_PASSWORD"},
+		{Field{Name: "table", Type: String, Required: true, Positional: true}, SurfaceMCP,
+			`db.query needs the argument "table"`, `pass "table" in the arguments`},
+		{Field{Name: "host", Type: String, Required: true, Local: true, Config: "host"}, SurfaceMCP,
+			"db.query needs host, which only the operator can give", "ask the operator to set it in the rta config"},
+		{Field{Name: "password", Type: Secret, Required: true, Local: true, EnvFallback: true}, SurfaceMCP,
+			"db.query needs password, which only the operator can give",
+			"ask the operator to set it in the environment rta mcp serve runs in"},
+		{Field{Name: "dir", Type: Path, Required: true, Local: true, Positional: true}, SurfaceMCP,
+			"db.query needs dir, which only the operator can give",
+			"ask the operator to run it from their own terminal"},
+		{Field{Name: "host", Type: String, Required: true, Config: "host"}, SurfaceTUI,
+			"db.query needs host", "fill in the host box, or set host in your rta config"},
+		{Field{Name: "host", Type: String, Required: true}, SurfaceUnknown, "db.query needs host", ""},
+	} {
+		verr := MissingInput(c, tc.f, tc.s)
+		if verr.Code != "core.input.missing" || verr.Message != tc.message || verr.Hint != tc.hint {
+			t.Errorf("%s over %q:\n got %s: %q (%q)\nwant core.input.missing: %q (%q)",
+				tc.f.Name, tc.s, verr.Code, verr.Message, verr.Hint, tc.message, tc.hint)
+		}
+	}
+}
+
+// Piped is required wherever there is no pipe to read — MCP and the TUI — and
+// left out on the CLI, which reads the pipe then, and by an in-process caller.
+func TestAPipedInputIsRequiredWhereThereIsNoPipe(t *testing.T) {
+	f := Field{Name: "token", Type: Secret, Piped: true}
+	for s, want := range map[Surface]bool{
+		SurfaceMCP: true, SurfaceTUI: true, SurfaceCLI: false, SurfaceUnknown: false, SurfaceCompletion: false,
+	} {
+		if got := f.RequiredOn(s); got != want {
+			t.Errorf("RequiredOn(%q) = %v, want %v", s, got, want)
+		}
+	}
+}
+
+// What must be there is asked before what each value declares, so a call
+// missing an input and carrying a bad value elsewhere is told what it lacks.
+func TestCheckRequestAsksForWhatIsMissingFirst(t *testing.T) {
+	c := optionCap(nil)
+	c.Inputs = append(c.Inputs, Field{Name: "name", Type: String, Required: true})
+	verr := CheckRequest(c, NewRequest(map[string]any{"encoding": "b64"}, false, false))
+	if verr == nil || verr.Code != "core.input.missing" {
+		t.Errorf("err = %v, want core.input.missing", verr)
+	}
+	verr = CheckRequest(c, NewRequest(map[string]any{"encoding": "b64", "name": "x"}, false, false))
+	if verr == nil || verr.Code != "core.input.option" {
+		t.Errorf("err = %v, want core.input.option once nothing is missing", verr)
+	}
+}
+
 func TestGuardInputsLeavesAnUnguardedHandlerAlone(t *testing.T) {
 	if GuardInputs(Capability{ID: "demo.none"}) != nil {
 		t.Error("a nil handler became non-nil")
