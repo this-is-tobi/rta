@@ -102,6 +102,16 @@ func TestAWholeCallIsSpelledTheWayItsSurfaceMakesIt(t *testing.T) {
 	if got, want := SurfaceCLI.Call("note.add", Arg{Name: "title", Value: "", Positional: true}), `rta note add ''`; got != want {
 		t.Errorf("an empty value on the CLI = %s, want %s", got, want)
 	}
+	// A placeholder stands for what the reader types, bare as a usage line
+	// spells it; anything else in angle brackets is a value like any other.
+	got := SurfaceCLI.Call("kv.get", Arg{Name: "key", Value: "<key>", Positional: true},
+		Arg{Name: "out", Value: "<file>"}, Arg{Name: "note", Value: "<a b>"})
+	if want := `rta kv get <key> --out <file> --note '<a b>'`; got != want {
+		t.Errorf("placeholders on the CLI = %s, want %s", got, want)
+	}
+	if got, want := SurfaceMCP.Call("kv.get", Arg{Name: "key", Value: "<key>"}), `kv_get {"key":"<key>"}`; got != want {
+		t.Errorf("a placeholder over MCP = %s, want %s", got, want)
+	}
 }
 
 // Leaving inputs out is said the way the caller does it: a TUI form keeps its
