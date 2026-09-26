@@ -85,6 +85,22 @@ func recordWritable() error {
 	return nil
 }
 
+// serveUsage refuses a combination of serve's flags that cannot work as typed,
+// as CodeUsage: the same refusal cobra's own flag groups get, rendered in the
+// format asked for and exiting 2. They were plain errors, the last of them on
+// a command whose every other refusal was coded, so `-o json` got a box of
+// prose for exactly the mistakes somebody wiring up a server makes first.
+func serveUsage(message, hint string) *view.Error {
+	return &view.Error{Code: CodeUsage, Message: message, Hint: hint}
+}
+
+// listenFailed is a listener serve could not open. First among the failures
+// on purpose (see the bind below), so it names which flag's address it was.
+func listenFailed(flag string, err error) *view.Error {
+	return view.Errorf("core.mcp.listen", "listening on the %s address: %v", flag, err).
+		WithHint("another process may hold the port, or the address is not one of this machine's")
+}
+
 func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 	var (
 		consentOn     bool
@@ -165,13 +181,16 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				// is on for everybody rather than for whoever read the flag.
 				wd, err := os.Getwd()
 				if err != nil {
-					return fmt.Errorf("resolving the default root: %w", err)
+					return view.Errorf("core.mcp.root",
+						"the working directory, the default --root, cannot be read: %v", err).
+						WithHint("name the directory an agent may reach with --root")
 				}
 				roots = []string{wd}
 			}
 			guard, err := pathguard.New(roots...)
 			if err != nil {
-				return err
+				return view.Errorf("core.mcp.root", "%v", err).
+					WithHint("a --root is resolved through every symlink in it, and this one could not be")
 			}
 			// The operator's connections, for the tool schema. Loaded through
 			// config.Load — the same file every other surface reads — so a
@@ -208,11 +227,9 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 					"rta: --operators does nothing without --http — at this terminal you already are the operator")
 			}
 			if httpAddr == "" && observeAddr != "" {
-				// Worded so the sentence does not open with the flag name:
-				// fang capitalises the first letter of an error, and
-				// "--Observe" is not a flag anybody can type.
-				return fmt.Errorf("the probes and the counters describe a hosted server, so " +
-					"--observe needs --http — a stdio server has no orchestrator asking whether it is ready")
+				return serveUsage("--observe needs --http",
+					"the probes and the counters describe a hosted server — a stdio server has "+
+						"no orchestrator asking whether it is ready")
 			}
 			if oidcIssuer == "" && (oidcAudience != "" || len(oidcSubjects) > 0) {
 				fmt.Fprintln(cmd.ErrOrStderr(),
@@ -240,12 +257,15 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				// can exercise must not be allowed to pretend it works (the
 				// same rule ConsentNotify follows one flag over).
 				if consentOn && operatorsFile == "" {
-					return fmt.Errorf("consent over --http needs --operators: a parked call waits " +
-						"for a person, and enrolled operators answering with `rta agent allow --server` " +
-						"are the only people positioned to; see \"The operator channel\" in docs/30-boundary/20-mcp.md")
+					return serveUsage("--consent over --http needs --operators",
+						"a parked call waits for a person, and enrolled operators answering with "+
+							"`rta agent allow --server` are the only people positioned to; see "+
+							"\"The operator channel\" in docs/30-boundary/20-mcp.md")
 				}
 				if tokenFile == "" && oidcIssuer == "" {
-					return fmt.Errorf("serving over --http needs a way to verify who is calling: pass --token-file or --oidc-issuer")
+					return serveUsage("serving over --http needs --token-file or --oidc-issuer",
+						"one of them verifies who is calling — over HTTP there is no parent "+
+							"process whose launch vouches for it")
 				}
 				// Bound before anything else that follows does real I/O of its
 				// own — reading the token file, an OIDC discovery round trip to
@@ -257,7 +277,7 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				var err error
 				ln, err = (&net.ListenConfig{}).Listen(cmd.Context(), "tcp", httpAddr)
 				if err != nil {
-					return fmt.Errorf("listening on the --http address: %w", err)
+					return listenFailed("--http", err)
 				}
 				// net/http's Serve always closes the listener it is handed, so
 				// this is a no-op on the path that reaches it below — it exists
@@ -273,7 +293,7 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 					// from an orchestrator that never marked the pod ready.
 					observeLn, err = (&net.ListenConfig{}).Listen(cmd.Context(), "tcp", observeAddr)
 					if err != nil {
-						return fmt.Errorf("listening on the --observe address: %w", err)
+						return listenFailed("--observe", err)
 					}
 					defer func() { _ = observeLn.Close() }()
 				}
@@ -281,7 +301,8 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				if tokenFile != "" {
 					tokens, groupReadable, err := mcp.LoadTokenFile(tokenFile)
 					if err != nil {
-						return fmt.Errorf("reading --token-file: %w", err)
+						return view.Errorf("core.mcp.tokenfile", "reading --token-file: %v", err).
+							WithHint("one `label token` pair per line, readable by you alone")
 					}
 					if groupReadable {
 						fmt.Fprintf(cmd.ErrOrStderr(),
@@ -298,15 +319,19 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				}
 				if oidcIssuer != "" {
 					if oidcAudience == "" {
-						return fmt.Errorf("an --oidc-issuer needs --oidc-audience")
+						return serveUsage("an --oidc-issuer needs --oidc-audience",
+							"a token is accepted only when it was issued for this server, and the "+
+								"audience is how the issuer says so")
 					}
 					if len(oidcSubjects) == 0 {
-						return fmt.Errorf("an --oidc-issuer needs at least one --oidc-subject — " +
+						return serveUsage("an --oidc-issuer needs at least one --oidc-subject",
 							"an issuer and audience alone identify an application, not a person")
 					}
 					oidcVerifier, err := mcp.OIDCVerifier(cmd.Context(), oidcIssuer, oidcAudience, oidcSubjects, cmd.ErrOrStderr())
 					if err != nil {
-						return fmt.Errorf("reaching the --oidc-issuer: %w", err)
+						return view.Errorf("core.mcp.oidc", "reaching the --oidc-issuer: %v", err).
+							WithHint("the issuer's discovery document is read at startup, so it has to " +
+								"answer from here")
 					}
 					verifiers = append(verifiers, oidcVerifier)
 				}
@@ -320,13 +345,15 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 					// must carry the same string; that agreement is the
 					// anti-relay binding.
 					if operatorsURL == "" {
-						return fmt.Errorf("an --operators roster needs --operators-url: the exact URL operators " +
-							"put in their remotes.yaml, signed into every operator request so a call " +
-							"meant for this server verifies nowhere else")
+						return serveUsage("an --operators roster needs --operators-url",
+							"the exact URL operators put in their remotes.yaml, signed into every "+
+								"operator request so a call meant for this server verifies nowhere else")
 					}
 					canonical, verr := operator.CanonicalServerURL("--operators-url", operatorsURL)
 					if verr != nil {
-						return fmt.Errorf("the --operators-url: %s", verr.Message)
+						// A value the flag cannot take, so the command line's
+						// refusal, with the operator package's own words.
+						return serveUsage(verr.Message, verr.Hint)
 					}
 					// The guard's bound URL and this flag must agree, or every
 					// remote issuance dies on a binding mismatch the operator
@@ -334,14 +361,17 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 					// who can fix it is watching the process start.
 					if grantguard.Remote() {
 						if bound := grantguard.BoundServer(); bound != canonical {
-							return fmt.Errorf("the --operators-url is %q but this machine's guard is bound to %q — "+
-								"remote issuance would refuse every grant; re-enroll the guard with --url %s, "+
-								"or fix the flag", canonical, bound, canonical)
+							return view.Errorf("core.mcp.guard.mismatch",
+								"the --operators-url is %q but this machine's guard is bound to %q",
+								canonical, bound).
+								WithHint("remote issuance would refuse every grant; re-enroll the guard " +
+									"with --url " + canonical + ", or fix the flag")
 						}
 					}
 					roster, groupReadable, err := operator.LoadRoster(operatorsFile)
 					if err != nil {
-						return fmt.Errorf("reading --operators: %w", err)
+						return view.Errorf("core.mcp.operators", "reading --operators: %v", err).
+							WithHint("one line per operator, the one `rta operator status` prints on their machine")
 					}
 					// A warning and not a refusal: adding an operator to the
 					// roster without re-enrolling the guard leaves a server
@@ -558,7 +588,7 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				strings.Contains(err.Error(), "server is closing") {
 				return nil
 			}
-			return err
+			return view.AsError(err, "core.mcp.transport")
 		},
 	}
 	// Required. The name is the operator's own word, written where they wire
