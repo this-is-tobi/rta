@@ -123,8 +123,7 @@ func FetchProduct(ctx context.Context, client *http.Client, base, product string
 	// failure is "no such product" rather than "invalid character '<'".
 	if status == http.StatusNotFound {
 		return nil, view.Errorf("eol.product.notfound", "no product named %q", product).
-			WithHint("see https://endoflife.date for the full catalogue of names and aliases — " +
-				"`rta eol products <term>` searches it")
+			WithHint("see https://endoflife.date for the full catalogue of names and aliases")
 	}
 	if status != http.StatusOK {
 		return nil, view.Errorf("eol.request.status", "endoflife.date returned %d for %q", status, product)

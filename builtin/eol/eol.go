@@ -97,12 +97,17 @@ func runCheckAt(ctx context.Context, req plugin.Request, base string) (view.View
 	if name, at, found := strings.Cut(product, "@"); found {
 		if cycle != "" {
 			return nil, view.Errorf("eol.cycle.twice", "%q names a cycle and so does %q", product, cycle).
-				WithHint("give it once: `rta eol check " + name + " " + at + "`")
+				WithHint("give it once: `" + req.Surface().Call("eol.check",
+					plugin.Arg{Name: "product", Value: name, Positional: true},
+					plugin.Arg{Name: "cycle", Value: at, Positional: true}) + "`")
 		}
 		product, cycle = name, at
 	}
 	result, verr := eolapi.FetchProduct(ctx, http.DefaultClient, base, product)
 	if verr != nil {
+		if verr.Code == "eol.product.notfound" {
+			verr.Hint += " — " + req.Surface().CapabilityName("eol.products") + " searches it"
+		}
 		return nil, verr
 	}
 
@@ -127,7 +132,8 @@ func runCheckAt(ctx context.Context, req plugin.Request, base string) (view.View
 	// something is past its end of life.
 	if len(releases) == 0 {
 		return nil, view.Errorf("eol.noreleases", "%s has no release data", product).
-			WithHint("the product is tracked but has no cycles recorded — `rta eol products` lists what does")
+			WithHint("the product is tracked but has no cycles recorded — " +
+				req.Surface().CapabilityName("eol.products") + " lists what does")
 	}
 
 	warnDays := req.Int("warn-days")

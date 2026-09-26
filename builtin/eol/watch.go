@@ -76,7 +76,7 @@ func runWatchAt(ctx context.Context, req plugin.Request, base string) (view.View
 	if len(entries) == 0 {
 		return nil, view.Errorf("eol.watch.empty", "nothing to watch").
 			WithHint("write the list once — `plugins: eol: products: [postgresql@15, nodejs]` in your " +
-				"config or a profile — or pass --products postgresql@15 --products nodejs")
+				"config or a profile — or give them in " + req.Surface().InputName("products"))
 	}
 	if len(entries) > maxWatch {
 		return nil, view.Errorf("eol.watch.toomany", "%d entries to watch, and one call grades at most %d",

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -58,8 +59,15 @@ func TestRunCheckAtSplitsProductAtCycle(t *testing.T) {
 
 	_, err = runCheckAt(context.Background(), req(t, map[string]any{"product": "demo@2", "cycle": "3"}), srv.URL)
 	verr := view.AsError(err, "eol.test")
-	if verr == nil || verr.Code != "eol.cycle.twice" || !strings.Contains(verr.Hint, "rta eol check demo 2") {
+	if verr == nil || verr.Code != "eol.cycle.twice" || !strings.Contains(verr.Hint, "`rta eol check demo 2`") {
 		t.Errorf("got %v, want eol.cycle.twice with the single-form hint", err)
+	}
+	// An agent is handed the same call as its tool takes it.
+	_, err = runCheckAt(context.Background(), req(t, map[string]any{"product": "demo@2", "cycle": "3"}).
+		WithSurface(plugin.SurfaceMCP), srv.URL)
+	if verr := view.AsError(err, "eol.test"); verr == nil ||
+		!strings.Contains(verr.Hint, "`eol_check {\"cycle\":\"2\",\"product\":\"demo\"}`") {
+		t.Errorf("over MCP: got %v, want the eol_check call with the cycle split out", err)
 	}
 }
 

@@ -64,7 +64,7 @@ func runProductsAt(ctx context.Context, req plugin.Request, base string) (view.V
 	t.Total = len(t.Rows)
 	if len(t.Rows) == 0 {
 		return nil, view.Errorf("eol.products.none", "nothing in the catalogue matches %q", req.String("term")).
-			WithHint("`rta eol products` with no term lists everything endoflife.date tracks")
+			WithHint(req.Surface().CapabilityName("eol.products") + " with no term lists everything endoflife.date tracks")
 	}
 	return t, nil
 }
