@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/this-is-tobi/rta/pkg/findings"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -118,12 +119,12 @@ func TestAStoppedRedirectHandsOverTheNextCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := &findings.Report{}
-	auditRedirect(r, u, fetch(t, u))
+	auditRedirect(plugin.SurfaceCLI, r, u, fetch(t, u))
 	if len(r.Findings) != 1 {
 		t.Fatalf("want one redirect finding, got %d", len(r.Findings))
 	}
 	got := r.Findings[0].Detail
-	if !strings.Contains(got, "rta audit web ") {
+	if !strings.Contains(got, "`rta audit web` on ") {
 		t.Errorf("no follow-up command in the redirect finding: %q", got)
 	}
 	if !strings.Contains(got, target) {

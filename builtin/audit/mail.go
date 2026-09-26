@@ -62,6 +62,7 @@ func runMail(ctx context.Context, req plugin.Request) (view.View, error) {
 
 	res := &stdnet.Resolver{}
 	f := lookupMail(ctx, res, domain, selector)
+	f.surface = req.Surface()
 	if verr := requireDomain(ctx, res, f); verr != nil {
 		return nil, verr
 	}
@@ -213,6 +214,10 @@ type mailFacts struct {
 	rptErr   error
 	mx       []*stdnet.MX
 	mxErr    error
+
+	// surface is the caller's: no record, but the name a finding gives an
+	// input the caller can change — the DKIM selector, the timeout.
+	surface plugin.Surface
 }
 
 // settled reports whether the facts already answer "does this domain
@@ -413,7 +418,7 @@ func auditDKIM(r *findings.Report, f mailFacts) {
 	if f.selector == "" {
 		r.Add(grpSenderAuth, "dkim", findings.Info,
 			"not checked — DKIM selectors cannot be discovered from the domain; "+
-				"pass --selector, taking the s= tag from a DKIM-Signature header on a message you received",
+				"give "+f.surface.InputName("selector")+" the s= tag from a DKIM-Signature header on a message you received",
 			refSpoofing)
 		return
 	}
@@ -778,7 +783,8 @@ func requireDomain(ctx context.Context, res *stdnet.Resolver, f mailFacts) *view
 		return nil
 	case !notFound(err):
 		return view.Errorf("audit.mail.resolver", "resolving %q: %v", f.domain, err).
-			WithHint("the lookup failed rather than coming back empty — check your resolver, or --timeout")
+			WithHint("the lookup failed rather than coming back empty — check your resolver, or raise " +
+				f.surface.InputName("timeout"))
 	}
 	return view.Errorf("audit.mail.nxdomain", "%q does not exist in DNS", f.domain).
 		WithHint("check the spelling — every check would otherwise report its record as missing")

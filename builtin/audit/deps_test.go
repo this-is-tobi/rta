@@ -14,6 +14,7 @@ import (
 	"testing/fstest"
 
 	"github.com/this-is-tobi/rta/pkg/findings"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
 func TestParseGoMod(t *testing.T) {
@@ -503,7 +504,7 @@ func TestDepsGradesAffectedPackages(t *testing.T) {
 
 	r := &findings.Report{}
 	gradeDeps(r, inventory{all: comps, queryable: comps, manifests: []string{"go.mod"},
-		structure: newGraph()}, vulns, nil, false, false)
+		structure: newGraph()}, vulns, nil, false, false, plugin.SurfaceCLI)
 
 	f := mustFind(t, r, "example.com/bad")
 	if f.Status != findings.Fail {
@@ -540,7 +541,7 @@ func TestDepsSaysWhatItCouldNotCheck(t *testing.T) {
 		all: append(known, unknown...), queryable: known, unknown: unknown,
 		unreadable: []unreadableManifest{{path: "weird.json", reason: "invalid character"}},
 		manifests:  []string{"go.mod", "weird.json"}, structure: newGraph(),
-	}, nil, nil, false, false)
+	}, nil, nil, false, false, plugin.SurfaceCLI)
 
 	// Silent partial coverage is the failure mode that matters: a report that
 	// looks complete and is not.
@@ -558,7 +559,7 @@ func TestDepsOfflineDoesNotClaimAnAllClear(t *testing.T) {
 	comps := []component{{ecosystem: "Go", name: "a", version: "v1"}}
 	r := &findings.Report{}
 	gradeDeps(r, inventory{all: comps, queryable: comps, manifests: []string{"go.mod"},
-		structure: newGraph()}, nil, nil, false, true)
+		structure: newGraph()}, nil, nil, false, true, plugin.SurfaceCLI)
 
 	f := mustFind(t, r, "advisories")
 	if f.Status != findings.Info {
@@ -609,7 +610,7 @@ func TestEveryDepsFindingLandsInADeclaredGroup(t *testing.T) {
 			all: comps, queryable: comps[:1], unknown: comps[1:],
 			unreadable: []unreadableManifest{{path: "x.json", reason: "unexpected end of JSON input"}},
 			manifests:  []string{"go.mod"}, structure: newGraph(),
-		}, map[string][]string{comps[0].key(): {"GHSA-1"}}, nil, false, offline)
+		}, map[string][]string{comps[0].key(): {"GHSA-1"}}, nil, false, offline, plugin.SurfaceCLI)
 		for _, f := range r.Findings {
 			if !declared[f.Group] {
 				t.Errorf("finding %q is in group %q, which the detail page never renders", f.Check, f.Group)

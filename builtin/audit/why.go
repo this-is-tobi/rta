@@ -43,7 +43,7 @@ func runWhy(ctx context.Context, req plugin.Request) (view.View, error) {
 	name := strings.TrimSpace(req.String("package"))
 	if name == "" {
 		return nil, view.Errorf("audit.why.nopackage", "no package named").
-			WithHint("`rta audit why lodash` — the name as the lockfile spells it")
+			WithHint(req.Surface().ArgumentName("package") + " takes the name as the lockfile spells it, lodash say")
 	}
 	path := strings.TrimSpace(req.String("path"))
 	if path == "" {
@@ -66,7 +66,8 @@ func runWhy(ctx context.Context, req plugin.Request) (view.View, error) {
 		if len(cov.unreadable) > 0 {
 			return nil, view.Errorf("audit.why.unreadable",
 				"nothing could be read under %s: %s", remoteLabel(path), strings.Join(cov.unreadable, ", ")).
-				WithHint("run as a user that can list those directories, or point --path at one that is readable")
+				WithHint("run as a user that can list those directories, or point " + req.Surface().InputName("path") +
+					" at one that is readable")
 		}
 		return nil, view.Errorf("audit.why.nomanifest", "no lockfile or SBOM in %s", remoteLabel(path)).
 			WithHint("reads what a project already declares, so one of these has to exist: " +
@@ -84,7 +85,7 @@ func runWhy(ctx context.Context, req plugin.Request) (view.View, error) {
 				name, format.CountOf(len(cov.unreadable), "directory"), strings.Join(cov.unreadable, ", ")).
 				WithHint("run as a user that can list those directories before concluding it is absent")
 		}
-		return nil, notInstalled(name, inv)
+		return nil, notInstalled(req.Surface(), name, inv)
 	}
 
 	p := plugin.NewPage(ctx, req)
@@ -132,15 +133,16 @@ func matching(all []component, name string) []component {
 }
 
 // notInstalled is the error for a package this project does not have, with the
-// near misses that are usually what was meant.
-func notInstalled(name string, inv inventory) *view.Error {
+// near misses that are usually what was meant, and otherwise with the call
+// that lists what it does have, as sf, the surface asking, makes it.
+func notInstalled(sf plugin.Surface, name string, inv inventory) *view.Error {
 	near := nearby(name, inv.all)
 	err := view.Errorf("audit.why.absent", "nothing in this project declares %q", name)
 	if len(near) > 0 {
 		return err.WithHint("did you mean: " + strings.Join(near, ", "))
 	}
 	return err.WithHint(strconv.Itoa(len(inv.all)) + " dependencies were read from " +
-		manifestSummary(".", inv.manifests) + " — `rta audit deps --offline` lists them")
+		manifestSummary(".", inv.manifests) + " — " + sf.CapabilityWith("audit.deps", "offline") + " lists them")
 }
 
 // nearby is the handful of installed packages whose names contain, or are

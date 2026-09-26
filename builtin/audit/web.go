@@ -108,7 +108,7 @@ func runWeb(ctx context.Context, req plugin.Request) (view.View, error) {
 	resp, err := client.Do(httpReq)
 	if err != nil {
 		return nil, view.Errorf("audit.web.unreachable", "requesting %s: %v", target, err).
-			WithHint("check the host is reachable over HTTPS; use --timeout to extend the deadline")
+			WithHint("check the host is reachable over HTTPS; " + req.Surface().InputName("timeout") + " extends the deadline")
 	}
 	defer resp.Body.Close()
 
@@ -119,7 +119,7 @@ func runWeb(ctx context.Context, req plugin.Request) (view.View, error) {
 	// certificate for www.example.com got reported as invalid for
 	// example.com.
 	landed := resp.Request.URL
-	auditRedirect(r, u, resp)
+	auditRedirect(req.Surface(), r, u, resp)
 	auditTransport(r, u, resp)
 	auditTLS(r, resp.TLS, landed.Hostname())
 	auditSecurityHeaders(r, resp.Header)
