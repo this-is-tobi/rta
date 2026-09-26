@@ -141,12 +141,12 @@ func fromSource(verr *view.Error, how string, c Capability, f Field, req Request
 	return &out
 }
 
-// fieldName is f as the caller on s names it: Surface.InputName, except for
-// a Positional input on the CLI, which no flag gives and the usage line
-// spells <name>.
+// fieldName is f as the caller on s names it: Surface.ArgumentName for a
+// Positional input, which no flag gives on the CLI, and Surface.InputName for
+// the rest.
 func fieldName(s Surface, f Field) string {
-	if f.Positional && s.spellsForCLI() {
-		return "<" + f.Name + ">"
+	if f.Positional {
+		return s.ArgumentName(f.Name)
 	}
 	return s.InputName(f.Name)
 }
@@ -477,7 +477,7 @@ func MissingInput(c Capability, f Field, s Surface) *view.Error {
 	switch s {
 	case SurfaceCLI:
 		if f.Positional {
-			return view.Errorf(code, "%s needs <%s>", c.ID, f.Name).
+			return view.Errorf(code, "%s needs %s", c.ID, s.ArgumentName(f.Name)).
 				WithHint("give it as an argument — `rta " + strings.Join(c.Words(), " ") +
 					" --help` says where")
 		}

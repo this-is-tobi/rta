@@ -29,6 +29,39 @@ func TestACapabilityAndAnInputAreNamedTheWayTheirSurfaceNamesThem(t *testing.T) 
 	}
 }
 
+// A positional input is a slot on the CLI's command line, never a flag, and
+// an input like any other everywhere else.
+func TestAPositionalInputIsNamedByItsSlotOnTheCLI(t *testing.T) {
+	for s, want := range map[Surface]string{
+		SurfaceCLI:     "<hostname>",
+		SurfaceUnknown: "<hostname>",
+		SurfaceMCP:     `the "hostname" argument`,
+		SurfaceTUI:     "the hostname box",
+	} {
+		if got := s.ArgumentName("hostname"); got != want {
+			t.Errorf("ArgumentName over %q = %q, want %q", s, got, want)
+		}
+	}
+}
+
+// A call is one command line on the CLI, and a capability with its inputs
+// named everywhere else.
+func TestACallIsNamedTheWayItsSurfaceMakesIt(t *testing.T) {
+	for s, want := range map[Surface]string{
+		SurfaceCLI:     "`rta note edit --title --body`",
+		SurfaceUnknown: "`rta note edit --title --body`",
+		SurfaceMCP:     `the ` + "`note_edit`" + ` tool with the "title" argument and the "body" argument`,
+		SurfaceTUI:     "`note.edit` with the title box and the body box",
+	} {
+		if got := s.CapabilityWith("note.edit", "title", "body"); got != want {
+			t.Errorf("CapabilityWith over %q = %q, want %q", s, got, want)
+		}
+	}
+	if got := SurfaceMCP.CapabilityWith("note.list"); got != SurfaceMCP.CapabilityName("note.list") {
+		t.Errorf("with no inputs, CapabilityWith = %q, want the capability's name", got)
+	}
+}
+
 // Leaving inputs out is said the way the caller does it: a TUI form keeps its
 // boxes, so there they are left empty rather than left off.
 func TestInputsLeftOutAreSaidTheWayTheSurfaceLeavesThemOut(t *testing.T) {
