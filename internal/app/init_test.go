@@ -2,15 +2,18 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 
 	huh "charm.land/huh/v2"
 
 	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -29,6 +32,66 @@ func TestInitWithNoTerminalIsACodedRefusal(t *testing.T) {
 	if !RenderTopLevelError(&buf, NewRoot(testRegistry(t), "test"), err) {
 		t.Fatal("the refusal was left for fang")
 	}
+}
+
+// answeredInit stands in for the person filling the wizard's form in, for the
+// rest of the test.
+func answeredInit(t *testing.T, a initAnswers) {
+	t.Helper()
+	saved := askInit
+	t.Cleanup(func() { askInit = saved })
+	askInit = func(context.Context, *registry.Registry, config.Config) (initAnswers, error) { return a, nil }
+}
+
+// The form stays interactive; what init answers once it is closed is a view,
+// in the format asked for. It printed "✓ wrote <file>" on stdout whatever -o
+// said, and "nothing written" for a form cancelled.
+func TestInitAnswersWithAViewInTheFormatAskedFor(t *testing.T) {
+	run := session(t, testRegistry(t))
+	onATerminal(t)
+
+	answeredInit(t, initAnswers{output: "pretty", confirmed: true})
+	out, errOut, err := run("init", "-o", "pretty", "--no-color")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	readsOnATerminal(t, out, "wrote", "output", "dashboard", "next")
+
+	answeredInit(t, initAnswers{output: "yaml", tiles: []string{"demo.item.list"}, confirmed: true})
+	out, errOut, err = run("init", "-o", "json")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	pairs := answerPairs(t, out)
+	if pairs["wrote"] != config.Path() || pairs["output"] != "yaml" ||
+		!strings.Contains(pairs["dashboard"], "demo.item.list") || !strings.Contains(pairs["next"], "rta") {
+		t.Errorf("answered %v, want the file, the two answers it holds and what comes next", pairs)
+	}
+	if written, _ := config.LoadFile(); written.Output != "yaml" {
+		t.Errorf("the file holds output %q, want the answer given", written.Output)
+	}
+
+	// Cancelled is an answer, exit 0, and the file as it was.
+	answeredInit(t, initAnswers{output: "json", confirmed: false})
+	out, errOut, err = run("init", "-o", "json")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	if pairs = answerPairs(t, out); !strings.HasSuffix(pairs["unchanged"], "nothing written to "+config.Path()) {
+		t.Errorf("a cancelled wizard answered %v", pairs)
+	}
+	if written, _ := config.LoadFile(); written.Output != "yaml" {
+		t.Errorf("a cancelled wizard wrote output %q", written.Output)
+	}
+
+	// init is how a default nothing renders gets rewritten, so it runs under
+	// one and answers in pretty, the one format left.
+	t.Setenv("RTA_OUTPUT", "bogus")
+	out, errOut, err = run("init", "--no-color")
+	if err != nil {
+		t.Fatalf("a broken default stopped init: %v %q", err, errOut)
+	}
+	readsOnATerminal(t, out, "unchanged")
 }
 
 // Leaving the wizard is coded as that, and anything else that stops the form

@@ -1,14 +1,18 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	huh "charm.land/huh/v2"
 	"github.com/spf13/cobra"
 
 	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/registry"
+	"github.com/this-is-tobi/rta/internal/render/cli"
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -16,7 +20,7 @@ import (
 // newInitCommand implements `rta init`: an interactive wizard that writes
 // the config file. Config stays optional — the wizard exists so nobody ever
 // has to hand-write YAML to change a default.
-func newInitCommand(reg *registry.Registry) *cobra.Command {
+func newInitCommand(reg *registry.Registry, opts *globalOpts) *cobra.Command {
 	return &cobra.Command{
 		Use:               "init",
 		Annotations:       outputExempt(),
@@ -44,62 +48,112 @@ func newInitCommand(reg *registry.Registry) *cobra.Command {
 				current = config.Config{}
 			}
 
-			output := current.Output
-			if output == "" {
-				output = "pretty"
-			}
-			// An empty selection means "leave the dashboard automatic": one
-			// tile per plugin, including plugins installed later. Only
-			// someone who actively wants a fixed set should get one.
-			selectedTiles := tileIDs(current.Dashboard.Tiles)
-			confirmed := true
-
-			form := huh.NewForm(
-				huh.NewGroup(
-					huh.NewSelect[string]().
-						Title("Default output format").
-						Description("Used when --output is not given").
-						Options(
-							huh.NewOption("pretty (human)", "pretty"),
-							huh.NewOption("json", "json"),
-							huh.NewOption("yaml", "yaml"),
-						).
-						Value(&output),
-					huh.NewMultiSelect[string]().
-						Title("Dashboard tiles").
-						Description("Leave empty for the automatic dashboard: one tile per plugin.\n"+
-							"Choosing here fixes the set instead — new plugins will not appear.").
-						Options(tileOptions(reg, selectedTiles)...).
-						Value(&selectedTiles),
-					huh.NewConfirm().
-						Title(fmt.Sprintf("Write %s?", config.Path())).
-						Affirmative("write").Negative("cancel").
-						Value(&confirmed),
-				),
-			)
-			if err := form.RunWithContext(cmd.Context()); err != nil {
+			answers, err := askInit(cmd.Context(), reg, current)
+			if err != nil {
 				return initFormError(err)
 			}
-			if !confirmed {
-				fmt.Fprintln(cmd.OutOrStdout(), "nothing written")
-				return nil
+			if answers.confirmed {
+				// Folded into the file as it is *now*, not into the copy read
+				// before the form opened. The wizard is interactive, so that
+				// gap is measured in minutes rather than microseconds — the
+				// longest read-to-write window of any writer here — and
+				// anything else that touched the config meanwhile should
+				// survive answers that say nothing about it.
+				if err := config.Mutate(func(cfg config.Config) (config.Config, bool) {
+					return initConfig(cfg, answers.output, answers.tiles), true
+				}); err != nil {
+					return err
+				}
 			}
 
-			// Folded into the file as it is *now*, not into the copy read
-			// before the form opened. The wizard is interactive, so that gap
-			// is measured in minutes rather than microseconds — the longest
-			// read-to-write window of any writer here — and anything else
-			// that touched the config meanwhile should survive answers that
-			// say nothing about it.
-			if err := config.Mutate(func(cfg config.Config) (config.Config, bool) {
-				return initConfig(cfg, output, selectedTiles), true
-			}); err != nil {
-				return err
+			// init stays exempt from the check of a default output format,
+			// because it is how that default gets rewritten: refusing it
+			// over a broken output: key would leave the key nothing to fix
+			// it with. So a default nothing renders draws this answer in
+			// pretty, the one format left, as doctor draws its report.
+			format, ferr := opts.format()
+			if ferr != nil {
+				format = cli.Pretty
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "✓ wrote %s — run `rta` to see your dashboard\n", config.Path())
-			return nil
+			return cli.Render(cmd.OutOrStdout(), initAnswer(config.Path(), answers),
+				renderOptions(cmd, format, opts.noColor))
 		},
 	}
+}
+
+// initAnswers is what the wizard's form was answered with.
+type initAnswers struct {
+	output    string
+	tiles     []string
+	confirmed bool
+}
+
+// askInit runs the wizard's form, seeded from the file as it stands.
+//
+// A variable, as isTTY is, so a test can stand in for the person: the form
+// needs one at a terminal, and what init answers once it has been filled in
+// can only be tested if a test can say how it was filled in.
+var askInit = func(ctx context.Context, reg *registry.Registry, current config.Config) (initAnswers, error) {
+	a := initAnswers{output: current.Output, confirmed: true,
+		// An empty selection means "leave the dashboard automatic": one
+		// tile per plugin, including plugins installed later. Only someone
+		// who actively wants a fixed set should get one.
+		tiles: tileIDs(current.Dashboard.Tiles)}
+	if a.output == "" {
+		a.output = "pretty"
+	}
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("Default output format").
+				Description("Used when --output is not given").
+				Options(
+					huh.NewOption("pretty (human)", "pretty"),
+					huh.NewOption("json", "json"),
+					huh.NewOption("yaml", "yaml"),
+				).
+				Value(&a.output),
+			huh.NewMultiSelect[string]().
+				Title("Dashboard tiles").
+				Description("Leave empty for the automatic dashboard: one tile per plugin.\n"+
+					"Choosing here fixes the set instead — new plugins will not appear.").
+				Options(tileOptions(reg, a.tiles)...).
+				Value(&a.tiles),
+			huh.NewConfirm().
+				Title(fmt.Sprintf("Write %s?", config.Path())).
+				Affirmative("write").Negative("cancel").
+				Value(&a.confirmed),
+		),
+	)
+	err := form.RunWithContext(ctx)
+	return a, err
+}
+
+// initAnswer is what init answers once the form is closed: the file, the two
+// things the wizard decides in it, and what to do next — or, cancelled, that
+// the file is as it was.
+//
+// Pairs rather than the one line of prose it was, which went to stdout
+// whatever -o said: the form is interactive and stays so, but its outcome is
+// a result like any other command's, in the format asked for. Cancelling is
+// "unchanged", in the words profile set and dashboard hide answer a write that
+// changed nothing with, and exits 0 as it always has: nothing failed.
+func initAnswer(path string, a initAnswers) view.KeyValue {
+	if !a.confirmed {
+		return view.KeyValue{Pairs: []view.Pair{{Key: "unchanged",
+			Value: "the wizard was cancelled — nothing written to " + path}}}
+	}
+	dashboard := "automatic — one tile per plugin, plugins installed later included"
+	if len(a.tiles) > 0 {
+		dashboard = format.Count(len(a.tiles), "tile", "tiles") + ", a fixed set: " +
+			strings.Join(a.tiles, ", ")
+	}
+	return view.KeyValue{Pairs: []view.Pair{
+		{Key: "wrote", Value: path},
+		{Key: "output", Value: a.output},
+		{Key: "dashboard", Value: dashboard},
+		{Key: "next", Value: "run `rta` to see your dashboard"},
+	}}
 }
 
 // initFormError codes what ended the wizard before it wrote anything. huh's

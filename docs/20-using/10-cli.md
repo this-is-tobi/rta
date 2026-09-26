@@ -37,7 +37,7 @@ rta audit web example.com -o md >> security-review.md
 export RTA_OUTPUT=json
 ```
 
-The config file's `output:` key sets it too, under `RTA_OUTPUT`, and a typed `-o` wins over both. A default that names no format stops every command that renders, before it runs, as `core.output.invalid`: the error names `RTA_OUTPUT` or the key and its file, lists the formats, and is written in `pretty`, since the format asked for is the broken thing. `rta doctor` still runs and reports it as a failing `output` row, and `rta mcp serve`, which renders nothing, is unaffected.
+The config file's `output:` key sets it too, under `RTA_OUTPUT`, and a typed `-o` wins over both. A default that names no format stops every command that renders, before it runs, as `core.output.invalid`: the error names `RTA_OUTPUT` or the key and its file, lists the formats, and is written in `pretty`, since the format asked for is the broken thing. `rta doctor` still runs and reports it as a failing `output` row, `rta init` still runs, since it is how the key gets rewritten, and both answer in `pretty`; `rta mcp serve`, which renders nothing, is unaffected.
 
 **Say what you want in a script.** `pretty` is a rendering choice made for humans, and it is the one format whose shape is allowed to change.
 
