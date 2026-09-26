@@ -1086,14 +1086,23 @@ func heldTable(role string, guardAbove bool) (view.View, *view.Error) {
 		// `grant list` exists to show, and refusing here would send somebody
 		// to a command that no longer exists to find out.
 		if verr.Code == "core.grant.guard.orphaned" {
-			// Under the guard's own line, which says the same thing and
-			// how to recover, the roster is what that means for it.
-			if guardAbove {
-				t := grantsTable(nil, func(core.Grant) bool { return false })
-				t.Empty = "No grant is honoured while the guard is orphaned."
-				return t, nil
+			// The roster is what that state means for it: the table, empty,
+			// as in every other state of it. It answered the guard line as a
+			// text view when no guard section led the page, so `jq '.rows[]'`
+			// met a view with no rows in the state somebody most needs a
+			// script to catch, and -o csv a text cell where a header was.
+			t := grantsTable(nil, func(core.Grant) bool { return false })
+			t.Empty = "No grant is honoured while the guard is orphaned."
+			// Under the guard's own line (--detail), which says the same
+			// thing and how to recover, that is all it needs. Without one,
+			// the tamper sign goes beside the table as the load's own
+			// error, coded, so it reaches json and the csv notes: an empty
+			// sentence is for a screen, and "no rows" alone reads as a
+			// roster nobody has issued anything into.
+			if !guardAbove {
+				t.Warnings = append(t.Warnings, *verr)
 			}
-			return view.Text{Body: "guard  " + guardLine(nil, verr)}, nil
+			return t, nil
 		}
 		return nil, verr
 	}

@@ -305,9 +305,65 @@ func TestTheGuardIsStatedOnceOnTheList(t *testing.T) {
 	if err := os.Remove(guard.Path()); err != nil {
 		t.Fatal(err)
 	}
-	for name, values := range map[string]map[string]any{"detail": {"detail": true}, "compact": nil} {
-		if out := drawn(values); strings.Count(out, "ORPHANED") != 1 {
-			t.Errorf("%s list states the orphaned guard %d times:\n%s", name, strings.Count(out, "ORPHANED"), out)
-		}
+	// The detail page's guard section says it in its own words; the compact
+	// list has no such section, and says it as its table's warning.
+	if out := drawn(map[string]any{"detail": true}); strings.Count(out, "ORPHANED") != 1 ||
+		strings.Contains(out, "core.grant.guard.orphaned") {
+		t.Errorf("detail list states the orphaned guard %d times, and as a warning too:\n%s",
+			strings.Count(out, "ORPHANED"), out)
+	}
+	if out := drawn(nil); strings.Count(out, "core.grant.guard.orphaned") != 1 ||
+		strings.Contains(out, "ORPHANED") {
+		t.Errorf("compact list states the orphaned guard %d times, and as a guard line too:\n%s",
+			strings.Count(out, "core.grant.guard.orphaned"), out)
+	}
+}
+
+// The compact list with the guard orphaned is the grants table like every
+// other state of it, and carries the tamper sign as a coded warning.
+//
+// It answered a text view holding the guard line, so `-o json | jq '.rows[]'`
+// met a view with no rows in the one state somebody most needs to script a
+// check for, and -o csv wrote the line as a cell under a "text" header, with
+// nothing on the notes channel a reader of rows alone would see.
+func TestAnOrphanedGuardListsAsATableWithItsWarning(t *testing.T) {
+	setup(t)
+	guardOn(t, "correct horse")
+	if _, err := guardCap(t, "grant.allow").Run(context.Background(),
+		reqTUI(map[string]any{"target": "kv.get", "ttl": "15m", "passphrase": "correct horse"})); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(guard.Path()); err != nil {
+		t.Fatal(err)
+	}
+
+	v := run(t, listH, nil)
+	tbl, ok := v.(view.Table)
+	if !ok || len(tbl.Rows) != 0 || len(tbl.Columns) == 0 || tbl.Columns[0].Name != "Capability" {
+		t.Fatalf("orphaned roster = %#v, want the grants table with no rows", v)
+	}
+	if tbl.Empty != "No grant is honoured while the guard is orphaned." {
+		t.Errorf("empty = %q", tbl.Empty)
+	}
+	if len(tbl.Warnings) != 1 || tbl.Warnings[0].Code != "core.grant.guard.orphaned" ||
+		!strings.Contains(tbl.Warnings[0].Message, core.Path()) || tbl.Warnings[0].Hint == "" {
+		t.Fatalf("warnings = %#v, want the orphaned guard's own error", tbl.Warnings)
+	}
+
+	raw, err := view.Marshal(view.Envelope{View: view.Redact(v)})
+	if err != nil || !strings.Contains(string(raw), `"rows":[]`) ||
+		!strings.Contains(string(raw), `"code":"core.grant.guard.orphaned"`) {
+		t.Errorf("json = %s (%v), want no rows and the coded warning", raw, err)
+	}
+
+	var rows, notes bytes.Buffer
+	if err := cli.Render(&rows, v, cli.Options{Format: cli.CSV, Notes: &notes}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(rows.String(), "ORPHANED") || !strings.HasPrefix(rows.String(), "Capability,") {
+		t.Errorf("csv rows = %q, want the header alone", rows.String())
+	}
+	if !strings.Contains(notes.String(), "# core.grant.guard.orphaned ") {
+		t.Errorf("csv notes = %q, want the tamper sign", notes.String())
 	}
 }
