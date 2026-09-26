@@ -233,8 +233,11 @@ func resolvePassphrase(req plugin.Request) (string, *view.Error) {
 			return p, nil
 		}
 	}
-	return "", view.Errorf("kv.passphrase.missing", "no passphrase provided").
-		WithHint(fmt.Sprintf("set %s or pass --passphrase", passphraseEnv))
+	hint := fmt.Sprintf("set %s or give %s", passphraseEnv, req.Surface().InputName("passphrase"))
+	if req.Surface() == plugin.SurfaceMCP {
+		hint = "ask the operator to set " + passphraseEnv + " in the environment rta mcp serve runs in"
+	}
+	return "", view.Errorf("kv.passphrase.missing", "no passphrase provided").WithHint(hint)
 }
 
 // load decrypts the store. A missing file is an empty store — first use
@@ -289,7 +292,7 @@ func wrongKey(req plugin.Request) *view.Error {
 	forgetSession()
 	if identityPath(req) != "" {
 		return view.Errorf("kv.wrongkey", "that key cannot decrypt the store").
-			WithHint("`rta kv recipients` lists the public keys it was encrypted to")
+			WithHint(req.Surface().CapabilityName("kv.recipients") + " lists the public keys it was encrypted to")
 	}
 	return view.Errorf("kv.wrongpass", "could not decrypt the store").
 		WithHint("wrong passphrase, or the store file is corrupt")
@@ -307,13 +310,14 @@ func save(req plugin.Request, s store) *view.Error {
 	// commits to, so the next write has something trustworthy to check
 	// kv.recipients against.
 	s.Recipients = current
-	return saveTo(s, recipients, specs)
+	return saveTo(req.Surface(), s, recipients, specs)
 }
 
 // saveTo is save with the recipients already decided — the re-key path, where
 // the new set is computed rather than derived from the flags of a write.
-// specs nil means the recorded set is unchanged.
-func saveTo(s store, recipients []age.Recipient, specs []string) *view.Error {
+// specs nil means the recorded set is unchanged. sf is the surface asking,
+// for the names a refusal gives what to run next.
+func saveTo(sf plugin.Surface, s store, recipients []age.Recipient, specs []string) *view.Error {
 	// Every write stamps the current format, so a store only ever has to be
 	// guessed at once — the write that follows the guess settles it. That is
 	// also what makes this write the point of no return for a store whose
@@ -354,8 +358,8 @@ func saveTo(s store, recipients []age.Recipient, specs []string) *view.Error {
 			// so explicitly rather than leave an operator trusting a stale
 			// answer to "who can decrypt this". Found by review.
 			return verr.WithHint("the store WAS re-encrypted to the new key set; only recording that " +
-				"failed — `rta kv recipients` may now be stale until the next successful write. " +
-				"Retry, or `rta kv rekey --only --recipient <the set it should be>` to reconcile")
+				"failed — " + sf.CapabilityName("kv.recipients") + " may now be stale until the next " +
+				"successful write. Retry, or name the set outright — " + rekeyOnly(sf, "the set it should be"))
 		}
 	}
 	return nil
@@ -374,10 +378,47 @@ func writeAtomic(data []byte) *view.Error {
 	return nil
 }
 
-func notFound(key string) *view.Error {
+func notFound(sf plugin.Surface, key string) *view.Error {
 	return view.Errorf("kv.notfound", "no key %q", key).
-		WithHint("run `rta kv list` to see every key")
+		WithHint(sf.CapabilityName("kv.list") + " lists every key")
 }
+
+// identityName names the identity input for a hint, as the caller on sf
+// gives it — and over MCP as the variable the operator sets, since identity
+// is Local: no agent's schema has it, and a server unlocks the store from its
+// own environment (unlockFields).
+func identityName(sf plugin.Surface) string {
+	if sf == plugin.SurfaceMCP {
+		return "the operator's " + identityEnv
+	}
+	return sf.InputName("identity")
+}
+
+// rekeyOnly says how to name the store's readers outright — kv.rekey with
+// only and recipient, naming keys — the recovery for a recorded set nothing
+// can trust. Over MCP it is the operator's to run: recipient is Local, so no
+// agent's call can carry the keys, and it is a command only a person at the
+// terminal can give.
+func rekeyOnly(sf plugin.Surface, keys string) string {
+	if sf == plugin.SurfaceMCP {
+		return plugin.AskOperator("kv rekey --only --recipient <" + keys + ">")
+	}
+	return sf.CapabilityWith("kv.rekey", "only", "recipient") + ", naming " + keys
+}
+
+// operatorsCall is a call that gives a Local input — identity, recipient —
+// spelled as sf, the surface asking, makes it, and over MCP as the command
+// the operator runs: the input is in no agent's schema, and a tool call
+// carrying it had it dropped before kv.init or kv.rekey read it.
+func operatorsCall(sf plugin.Surface, id string, args ...plugin.Arg) string {
+	if sf == plugin.SurfaceMCP {
+		return plugin.AskOperator(strings.TrimPrefix(plugin.SurfaceCLI.Call(id, args...), "rta "))
+	}
+	return sf.Call(id, args...)
+}
+
+// keyArg is a key given to a kv call Surface.Call spells, by its place.
+func keyArg(key string) plugin.Arg { return plugin.Arg{Name: "key", Value: key, Positional: true} }
 
 // Unlockable reports whether this environment alone can open the store: no
 // flags, no prompt, nothing typed.

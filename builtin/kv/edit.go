@@ -146,9 +146,11 @@ func runEdit(_ context.Context, req plugin.Request) (view.View, error) {
 	// a surface that could never finish the operation does not decrypt the
 	// store on the way to finding that out.
 	if !canPrompt(req) {
+		// The one call spelled for a surface other than the asking one, on
+		// purpose: an editor is only ever opened from a shell.
 		return nil, view.Errorf("kv.edit.noterminal", "an editor needs a terminal, and there is none here").
-			WithHint("at a shell: rta kv edit " + req.String("key") +
-				" — anywhere else, send the new value with kv.set")
+			WithHint("at a shell: `" + plugin.SurfaceCLI.Call("kv.edit", keyArg(req.String("key"))) +
+				"` — anywhere else, send the new value with " + req.Surface().CapabilityName("kv.set"))
 	}
 	if verr := refuseSilentIdentity(req); verr != nil {
 		return nil, verr
@@ -160,7 +162,7 @@ func runEdit(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 	e, ok := s.Entries[key]
 	if !ok {
-		return nil, notFound(key)
+		return nil, notFound(req.Surface(), key)
 	}
 	// A DER certificate, a PKCS#12 bundle or a JKS keystore opened in a text
 	// editor comes back re-encoded, line-ending-normalised and one newline
@@ -169,7 +171,8 @@ func runEdit(_ context.Context, req plugin.Request) (view.View, error) {
 	// does preserve bytes named in the hint.
 	if !utf8.Valid(e.Value) {
 		return nil, view.Errorf("kv.edit.binary", "%q is not text (%s), and an editor would not give it back unchanged", key, e.Kind).
-			WithHint("rta kv get " + key + " --out <file>, edit that, then rta kv set " + key + " --file <file>")
+			WithHint("`" + req.Surface().Call("kv.get", keyArg(key), plugin.Arg{Name: "out", Value: "<file>"}) +
+				"`, edit that, then `" + req.Surface().Call("kv.set", keyArg(key), plugin.Arg{Name: "file", Value: "<file>"}) + "`")
 	}
 
 	argv := editorCommand()
@@ -216,7 +219,7 @@ func runEdit(_ context.Context, req plugin.Request) (view.View, error) {
 	// truncate and write. kv.set will not accept an empty value either.
 	if len(bytes.TrimSpace(edited)) == 0 {
 		return nil, view.Errorf("kv.edit.empty", "the editor returned an empty value").
-			WithHint("nothing was changed — to delete the entry: rta kv rm " + key)
+			WithHint("nothing was changed — to delete the entry: `" + req.Surface().Call("kv.rm", keyArg(key)) + "`")
 	}
 
 	// The kind is re-detected, because that is what the edit may have
@@ -262,14 +265,14 @@ func runEdit(_ context.Context, req plugin.Request) (view.View, error) {
 	case !ok:
 		return nil, view.Errorf("kv.edit.vanished",
 			"%q was removed while the editor was open", key).
-			WithHint("nothing was changed — store the edited value with: rta kv set " + key)
+			WithHint("nothing was changed — store the edited value with `" + req.Surface().Call("kv.set", keyArg(key)) + "`")
 	case !bytes.Equal(current.Value, e.Value):
 		// Refuse rather than pick a winner: one of the two values is about to
 		// be lost either way, and only the person knows which.
 		return nil, view.Errorf("kv.edit.conflict",
 			"%q changed while the editor was open", key).
-			WithHint("nothing was changed — re-run `rta kv edit " + key +
-				"` to start from the current value")
+			WithHint("nothing was changed — run `" + req.Surface().Call("kv.edit", keyArg(key)) +
+				"` again to start from the current value")
 	}
 	current.Previous = current.retired(time.Now())
 	current.Value = edited
