@@ -1,12 +1,49 @@
 package app
 
 import (
+	"bytes"
+	"errors"
+	"fmt"
 	"reflect"
 	"sort"
 	"testing"
 
+	huh "charm.land/huh/v2"
+
 	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
+
+// Without a terminal the wizard refuses, coded and in the format asked for.
+// It was a plain error, the one fang styled as a box under `-o json`.
+func TestInitWithNoTerminalIsACodedRefusal(t *testing.T) {
+	if isTTY() {
+		t.Skip("stdout is a terminal here")
+	}
+	_, _, err := run(t, testRegistry(t), "init", "-o", "json")
+	var ve *view.Error
+	if !errors.As(err, &ve) || ve.Code != "core.init.terminal" || ve.Hint == "" {
+		t.Fatalf("err = %#v, want core.init.terminal with a hint", err)
+	}
+	var buf bytes.Buffer
+	if !RenderTopLevelError(&buf, NewRoot(testRegistry(t), "test"), err) {
+		t.Fatal("the refusal was left for fang")
+	}
+}
+
+// Leaving the wizard is coded as that, and anything else that stops the form
+// under its own code; neither is huh's bare sentence.
+func TestInitFormErrorsAreCoded(t *testing.T) {
+	for err, code := range map[error]string{
+		huh.ErrUserAborted:                  "core.init.aborted",
+		fmt.Errorf("open /dev/tty: denied"): "core.init.form",
+	} {
+		ve := view.AsError(initFormError(err), "")
+		if ve.Code != code || ve.Hint == "" {
+			t.Errorf("%v: %#v, want %s with a hint", err, ve, code)
+		}
+	}
+}
 
 // initOwns names the parts of the file `rta init` decides. initCarries names
 // the parts it must leave exactly as it found them.
