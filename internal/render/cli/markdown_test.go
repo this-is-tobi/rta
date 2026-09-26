@@ -424,8 +424,11 @@ func TestMarkdownEscapesTheFieldsThatOnlyLookLikeIdentifiers(t *testing.T) {
 		if err := RenderError(&buf, e, Options{Format: Markdown}); err != nil {
 			t.Fatal(err)
 		}
-		if out := buf.String(); strings.Contains(out, "x` <img") {
-			t.Errorf("a backtick in the code closed the span and let a tag through:\n%s", out)
+		out := buf.String()
+		code, rest := codeSpanAfter(t, out, "**Error** ")
+		if code != e.Code || !strings.HasPrefix(rest, " — failed") {
+			t.Errorf("a backtick in the code closed the span and let a tag through: span %q, then %q",
+				code, rest)
 		}
 	})
 
@@ -458,6 +461,95 @@ func TestMarkdownEscapesTheFieldsThatOnlyLookLikeIdentifiers(t *testing.T) {
 			t.Errorf("a newline in the title opened a section nobody sent:\n%s", out)
 		}
 	})
+}
+
+// codeSpanAfter reads the code span that opens right after prefix in out, the
+// way a CommonMark renderer does, and returns its content and what follows it:
+// the opening backtick run is closed by the next run of the same length and
+// by no other, a line ending inside is a space, a backslash is itself, and one
+// space comes off each end when both ends have one and the content is not all
+// spaces.
+func codeSpanAfter(t *testing.T, out, prefix string) (content, rest string) {
+	t.Helper()
+	i := strings.Index(out, prefix)
+	if i < 0 {
+		t.Fatalf("no %q in:\n%s", prefix, out)
+	}
+	s := out[i+len(prefix):]
+	n := 0
+	for n < len(s) && s[n] == '`' {
+		n++
+	}
+	if n == 0 {
+		t.Fatalf("no code span opens after %q:\n%s", prefix, out)
+	}
+	for j := n; j < len(s); {
+		if s[j] != '`' {
+			j++
+			continue
+		}
+		k := j
+		for k < len(s) && s[k] == '`' {
+			k++
+		}
+		if k-j == n {
+			c := strings.NewReplacer("\r\n", " ", "\n", " ").Replace(s[n:j])
+			if len(c) >= 2 && c[0] == ' ' && c[len(c)-1] == ' ' && strings.Trim(c, " ") != "" {
+				c = c[1 : len(c)-1]
+			}
+			return c, s[k:]
+		}
+		j = k
+	}
+	t.Fatalf("the code span after %q is never closed:\n%s", prefix, out)
+	return "", ""
+}
+
+// An error or warning code is drawn in a code span, where a backslash escape
+// is literal: inlineMarkdown's escapes showed up in the code (`a\\b`, `\<x\>`,
+// `\[x\]`, `a\|b`), and its escaped backtick still closed the span, since
+// nothing inside a span is an escape. Each code has to come back out of the
+// span as itself, and the text after the span has to be the message.
+func TestMarkdownCodeSpansHoldTheCodeAsItIs(t *testing.T) {
+	codes := []struct{ code, drawn string }{
+		{"net.dns.failed", "net.dns.failed"},
+		{`C:\Users\x`, `C:\Users\x`},
+		{"a<b>c", "a<b>c"},
+		{"[x](https://evil.example)", "[x](https://evil.example)"},
+		{"a|b", "a|b"},
+		{"x` <img src=z onerror=alert(1)>", "x` <img src=z onerror=alert(1)>"},
+		{"a``b```c", "a``b```c"},
+		{"`lead", "`lead"},
+		{"trail`", "trail`"},
+		{"`", "`"},
+		{" both ends ", " both ends "},
+		{"  ", "  "},
+		{"one\ntwo", "one two"},
+		{"", " "},
+	}
+	for _, c := range codes {
+		var buf bytes.Buffer
+		if err := RenderError(&buf, &view.Error{Code: c.code, Message: "failed"},
+			Options{Format: Markdown}); err != nil {
+			t.Fatal(err)
+		}
+		got, rest := codeSpanAfter(t, buf.String(), "**Error** ")
+		if got != c.drawn || !strings.HasPrefix(rest, " — failed\n") {
+			t.Errorf("error code %q: span %q then %q, want span %q then the message:\n%s",
+				c.code, got, rest, c.drawn, buf.String())
+		}
+
+		page := view.Sections{
+			Items:    []view.Section{{Title: "identity", View: view.Text{Body: "poire"}}},
+			Warnings: []view.Error{{Code: c.code, Message: "m"}},
+		}
+		out := md(t, page)
+		got, rest = codeSpanAfter(t, out, "> - ")
+		if got != c.drawn || !strings.HasPrefix(rest, " — m\n") {
+			t.Errorf("warning code %q: span %q then %q, want span %q then the message:\n%s",
+				c.code, got, rest, c.drawn, out)
+		}
+	}
 }
 
 // Markdown is a document format, not a terminal one: it must not pick up the
