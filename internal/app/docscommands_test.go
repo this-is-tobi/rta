@@ -28,11 +28,9 @@ func TestEveryCommandTheDocsSpellExists(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// NewRoot attaches cobra's own completion and help, so `rta completion
+	// zsh` and `rta help` are in the tree like every other command.
 	root := NewRoot(reg, "test")
-	// cobra attaches these at Execute; the tree has to carry them here or
-	// `rta completion zsh` and `rta help` read as typos.
-	root.InitDefaultCompletionCmd()
-	root.InitDefaultHelpCmd()
 	tree := map[string]*cobra.Command{}
 	var walk func(c *cobra.Command, prefix string)
 	walk = func(c *cobra.Command, prefix string) {

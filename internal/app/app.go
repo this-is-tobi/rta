@@ -589,6 +589,19 @@ func NewRoot(reg *registry.Registry, version string) *cobra.Command {
 	// flag-error function of its own (positionalFlagError), which codes its
 	// answer itself; every other command inherits this one.
 	root.SetFlagErrorFunc(usageError)
+	// cobra's own help and completion commands, which it would otherwise add
+	// inside Execute, after this point: a command the walk below never saw
+	// refused `rta completion zsh extra` as a plain error fang styled, under
+	// any -o. Added here they are in the tree the walk codes. completion is
+	// a group like any other, so it refuses a shell it does not know rather
+	// than printing its help and exiting 0 (see groupRunE).
+	root.InitDefaultHelpCmd()
+	root.InitDefaultCompletionCmd()
+	for _, sub := range root.Commands() {
+		if sub.Name() == "completion" && sub.Run == nil && sub.RunE == nil {
+			sub.RunE = groupRunE
+		}
+	}
 	codeUsageErrors(root)
 	completeThroughOneRule(root)
 	return root
@@ -633,8 +646,8 @@ var agentCommands = map[string]bool{
 // groupRoot files every root command under one of the three headings:
 // registry namespaces are capabilities unless they are about agents, and
 // everything rta adds itself is setup. cobra's own help and completion
-// commands are setup too; they are attached at Execute, so they are named by
-// their group id here rather than by command.
+// commands are setup too; they are attached at the end of NewRoot, after
+// this, so they are named by their group id here rather than by command.
 func groupRoot(root *cobra.Command, reg *registry.Registry) {
 	root.AddGroup(
 		&cobra.Group{ID: groupCapabilities, Title: "capabilities"},

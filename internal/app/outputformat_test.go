@@ -96,12 +96,12 @@ func TestABrokenOutputDefaultLeavesTheViewlessCommandsAlone(t *testing.T) {
 		{[]string{"plugin", "manifest"}, false},
 		{[]string{"plugin", "dev"}, false},
 		{[]string{"help"}, false},
+		{[]string{"completion", "zsh"}, false},
 		{[]string{"profile"}, false},
 		{[]string{"profile", "list"}, true},
 		{[]string{"plugin", "install"}, true},
 		{[]string{"demo", "item", "list"}, true},
 	} {
-		root.InitDefaultHelpCmd()
 		cmd, _, err := root.Find(c.path)
 		if err != nil || cmd.Name() != c.path[len(c.path)-1] {
 			t.Errorf("%v: found %v, %v", c.path, cmd, err)
