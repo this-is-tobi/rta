@@ -105,17 +105,66 @@ func markdownTable(b *strings.Builder, t view.Table) {
 	markdownWarnings(b, t.Warnings)
 }
 
-// markdownEmpty writes an empty result's sentence as a paragraph.
+// markdownEmpty writes an empty result's sentence as a block of its own, its
+// lines kept and each one escaped.
 //
-// Escaped like a cell rather than written out verbatim like a Text body. The
-// sentences put placeholders in angle brackets — `--tag <name>` — which a
-// markdown renderer reads as an HTML tag and draws as nothing, and a sentence
-// comes from wherever its view did, the way a cell does.
+// Escaped rather than written out verbatim like a Text body. The sentences
+// put placeholders in angle brackets — `--tag <name>` — which a markdown
+// renderer reads as an HTML tag and draws as nothing, and a sentence comes
+// from wherever its view did, a plugin included, the way a cell does.
+//
+// Not escaped as a cell, though, which is what it was: a cell folds every
+// newline into <br>, and several sentences are a list of commands aligned
+// under each other (kv recipients, grant list) that came out as one long
+// line of source. And a cell sits inside a row, where a line cannot start a
+// block, while this starts one: a sentence opening with `#` was written into
+// the report as a heading. So each line is escaped inline, then at its start
+// (markdownLineStart), and ends in a hard break — a backslash, which no
+// editor strips the way it strips two trailing spaces. A blank line still
+// parts two paragraphs. Leading space is dropped: a renderer collapses it
+// anyway, and four of it after a blank line is a code block.
 func markdownEmpty(b *strings.Builder, say string) {
-	if say == "" {
-		return
+	var paras [][]string
+	para := []string{}
+	for _, line := range strings.Split(strings.ReplaceAll(say, "\r\n", "\n"), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			if len(para) > 0 {
+				paras, para = append(paras, para), []string{}
+			}
+			continue
+		}
+		para = append(para, markdownLineStart(inlineMarkdown(line)))
 	}
-	b.WriteString("\n" + inlineMarkdown(say) + "\n")
+	if len(para) > 0 {
+		paras = append(paras, para)
+	}
+	for _, p := range paras {
+		b.WriteString("\n" + strings.Join(p, "\\\n") + "\n")
+	}
+}
+
+// markdownLineStart escapes what a line of an already inline-escaped block
+// would start: a heading (#), a quote (>), a list item (-, +, *, or a number
+// and a . or a )), a thematic break or a setext underline (-, *, _, =), or a
+// fence (~; a backtick one is escaped inline already). One backslash before
+// the first character is enough for all of them: each needs its marker to
+// open the line, and an escaped one no longer does.
+func markdownLineStart(line string) string {
+	if line == "" {
+		return line
+	}
+	if strings.ContainsRune("#>-+*_=~", rune(line[0])) {
+		return "\\" + line
+	}
+	digits := 0
+	for digits < len(line) && digits < 9 && line[digits] >= '0' && line[digits] <= '9' {
+		digits++
+	}
+	if digits > 0 && digits < len(line) && (line[digits] == '.' || line[digits] == ')') {
+		return line[:digits] + "\\" + line[digits:]
+	}
+	return line
 }
 
 func markdownTree(b *strings.Builder, t view.Tree) {

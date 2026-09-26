@@ -164,6 +164,42 @@ func TestMarkdownABackslashCannotUndoAnEscape(t *testing.T) {
 	}
 }
 
+// An empty result's sentence is a block of its own lines under -o md.
+//
+// It was escaped as a cell, so every newline became <br> and a list of
+// commands aligned under each other — kv recipients, grant list — came out
+// as one long line of source. And a sentence a plugin supplies is not
+// trusted to be prose: a line opening with `#`, `>` or `- ` would have
+// written a heading, a quote or a list into the report.
+func TestMarkdownDrawsAnEmptySentenceAsItsOwnLines(t *testing.T) {
+	say := "No store yet — nothing to read.\n\n" +
+		"What it is locked with:\n" +
+		"  rta kv init --generate     a key made for this store\n" +
+		"  rta kv set <key> <value>   a passphrase, in C:\\"
+	want := "No store yet — nothing to read.\n\n" +
+		"What it is locked with:\\\n" +
+		"rta kv init --generate     a key made for this store\\\n" +
+		"rta kv set \\<key> \\<value>   a passphrase, in C:\\\\\n"
+	for name, v := range map[string]view.View{
+		"table": view.Table{Columns: []view.Column{{Name: "Type"}}, Empty: say},
+		"text":  view.Text{Empty: say},
+		"tree":  view.Tree{Empty: say},
+	} {
+		if out := md(t, v); out != want {
+			t.Errorf("%s: md =\n%s\nwant\n%s", name, out, want)
+		}
+	}
+
+	hostile := "# not a heading\n> not a quote\n- not a list\n+ nor this\n* nor this\n" +
+		"1. not a list\n2) nor this\n---\n===\n___\n    not code\n```\n~~~\nplain"
+	want = "\\# not a heading\\\n\\> not a quote\\\n\\- not a list\\\n\\+ nor this\\\n" +
+		"\\* nor this\\\n1\\. not a list\\\n2\\) nor this\\\n\\---\\\n\\===\\\n\\___\\\n" +
+		"not code\\\n\\`\\`\\`\\\n\\~~~\\\nplain\n"
+	if out := md(t, view.Table{Columns: []view.Column{{Name: "x"}}, Empty: hostile}); out != want {
+		t.Errorf("block syntax in a sentence:\n%s\nwant\n%s", out, want)
+	}
+}
+
 // A newline inside a cell breaks out of the row entirely, which turns the
 // rest of the table into prose.
 func TestMarkdownKeepsMultilineCellsInsideTheirRow(t *testing.T) {
