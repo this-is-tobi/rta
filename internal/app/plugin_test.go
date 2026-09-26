@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -734,8 +735,8 @@ func TestPluginUntrustDryRunDoesNotWithdraw(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v %q", err, errOut)
 	}
-	if !strings.Contains(out, "would withdraw") {
-		t.Errorf("output does not say would withdraw: %q", out)
+	if !strings.Contains(out, "would untrust") {
+		t.Errorf("output does not say would untrust: %q", out)
 	}
 	if !plugintrust.Load().Trusts(strings.Repeat("ab", 32)) {
 		t.Error("--dry-run withdrew trust anyway")
@@ -746,6 +747,88 @@ func TestPluginUntrustDryRunDoesNotWithdraw(t *testing.T) {
 	}
 	if plugintrust.Load().Trusts(strings.Repeat("ab", 32)) {
 		t.Error("the real run did not withdraw trust")
+	}
+}
+
+// plugin untrust answers with pairs, by name and with --all alike: it printed
+// a sentence on stdout whatever -o said, so a script withdrawing a plugin
+// across machines parsed "withdrew 2 approvals — ...", and --all with nothing
+// to withdraw answered a text view where every other run answered prose.
+func TestPluginUntrustAnswersWithAViewInTheFormatAskedFor(t *testing.T) {
+	run := session(t, registry.New())
+	// One artifact the system root trusts, which --all leaves alone and says
+	// so.
+	system := t.TempDir()
+	t.Setenv("RTA_SYSTEM_DIR", system)
+	record := `{"trusted":[{"digest":"` + strings.Repeat("99", 32) + `","names":["baked"]}]}`
+	if err := os.WriteFile(filepath.Join(system, "trusted.json"), []byte(record), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Two builds of one plugin, so the name stands for two approvals, and one
+	// artifact recorded with no name, which --all names by its digest.
+	for i, digest := range []string{strings.Repeat("ab", 32), strings.Repeat("cd", 32), strings.Repeat("ef", 32), strings.Repeat("12", 32)} {
+		name := "probe"
+		switch i {
+		case 2:
+			name = "other"
+		case 3:
+			name = ""
+		}
+		if verr := plugintrust.Add(digest, name, "/usr/local/bin/rta-plugin-"+name); verr != nil {
+			t.Fatal(verr)
+		}
+	}
+
+	out, errOut, err := run("plugin", "untrust", "probe", "--dry-run", "-o", "json")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	pairs := answerPairs(t, out)
+	if pairs["would untrust"] != "probe" || pairs["approvals"] != "2" || !strings.Contains(pairs["next"], "--dry-run") {
+		t.Errorf("a dry run answered %v", pairs)
+	}
+
+	out, errOut, err = run("plugin", "untrust", "probe", "-o", "json")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	pairs = answerPairs(t, out)
+	if pairs["untrusted"] != "probe" || pairs["approvals"] != "2" || pairs["record"] != plugintrust.Path() {
+		t.Errorf("answered %v, want the name, both approvals and the record written", pairs)
+	}
+
+	// A default that names no format stops it before the record is written,
+	// as it stops every command that renders.
+	t.Setenv("RTA_OUTPUT", "bogus")
+	_, _, err = run("plugin", "untrust", "other")
+	var ve *view.Error
+	if !errors.As(err, &ve) || ve.Code != CodeOutputInvalid {
+		t.Errorf("err = %#v, want %s", err, CodeOutputInvalid)
+	}
+	if !plugintrust.Load().Trusts(strings.Repeat("ef", 32)) {
+		t.Error("a broken default withdrew trust before the refusal")
+	}
+	t.Setenv("RTA_OUTPUT", "")
+
+	onATerminal(t)
+	out, errOut, err = run("plugin", "untrust", "--all", "--yes", "--no-color")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	readsOnATerminal(t, out, "untrusted", "approvals", "left alone", "record", "next")
+	if !strings.Contains(out, "other") || !strings.Contains(out, strings.Repeat("12", 6)) {
+		t.Errorf("--all did not name everything it withdrew:\n%s", out)
+	}
+
+	out, errOut, err = run("plugin", "untrust", "--all", "--yes", "-o", "json")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	if pairs = answerPairs(t, out); pairs["approvals"] != "0" || pairs["untrusted"] != "nothing" {
+		t.Errorf("--all with nothing to withdraw answered %v, want the same pairs, counting 0", pairs)
+	}
+	if !strings.HasPrefix(pairs["left alone"], "1 artifact trusted by the system root") {
+		t.Errorf("left alone = %q, want the system root's one artifact", pairs["left alone"])
 	}
 }
 

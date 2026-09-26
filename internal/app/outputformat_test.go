@@ -128,6 +128,7 @@ func TestABrokenOutputDefaultLeavesTheViewlessCommandsAlone(t *testing.T) {
 		{[]string{"profile", "list"}, true},
 		{[]string{"policy", "init"}, true},
 		{[]string{"policy", "require"}, true},
+		{[]string{"plugin", "untrust"}, true},
 		{[]string{"plugin", "install"}, true},
 		{[]string{"demo", "item", "list"}, true},
 	} {
