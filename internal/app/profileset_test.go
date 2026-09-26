@@ -155,6 +155,29 @@ func TestProfileSetDryRunReportsWhatTheWriteWould(t *testing.T) {
 	}
 }
 
+// The preview's verb is the one the write's would be, in the conditional: it
+// put "would" in front of the past tense and read "would created staging".
+func TestProfileSetDryRunSaysWhatItWouldDoInWords(t *testing.T) {
+	run := session(t, setRegistry(t))
+	args := []string{"profile", "set", "staging", "--plugin", "db", "--set", "host=db.internal"}
+	for _, step := range []struct {
+		args []string
+		says string
+	}{
+		{append(args, "--dry-run"), "would create staging"},
+		{args, "created staging"},
+		{[]string{"profile", "set", "staging", "--note", "eu", "--dry-run"}, "would update staging"},
+	} {
+		out, errOut, err := run(step.args...)
+		if err != nil {
+			t.Fatalf("%v %q", err, errOut)
+		}
+		if !strings.Contains(out, step.says) {
+			t.Errorf("%v: %q, want it to say %q", step.args, out, step.says)
+		}
+	}
+}
+
 // The mirror case: a real run (no --dry-run) after the dry run above still
 // writes, so --dry-run is not accidentally the only path that works.
 func TestProfileSetWithoutDryRunWrites(t *testing.T) {
