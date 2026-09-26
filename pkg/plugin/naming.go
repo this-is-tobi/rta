@@ -156,7 +156,9 @@ func (s Surface) Call(id string, args ...Arg) string {
 }
 
 // cliValue is v as a command line carries it: one shell word that reads back
-// as v, byte for byte (shellquote.Arg).
+// as v, byte for byte (shellquote.Arg) — except a placeholder, <file> or
+// <key>, which stands for what the reader types in its place, and which a
+// usage line spells bare.
 //
 // A shell's quoting and not Go's: a value is whatever somebody stored, an
 // agent's kv key among them, and inside the double quotes strconv.Quote adds
@@ -164,7 +166,10 @@ func (s Surface) Call(id string, args ...Arg) string {
 // pair of quotes rather than nothing, since it is a word the call gives.
 func cliValue(v any) string {
 	text := fmt.Sprint(v)
-	if text == "" {
+	switch {
+	case placeholder(text):
+		return text
+	case text == "":
 		return "''"
 	}
 	return shellquote.Arg(text)
@@ -182,6 +187,14 @@ func boxValue(v any) string {
 		return strconv.Quote(text)
 	}
 	return text
+}
+
+// placeholder reports whether text is one word in angle brackets, <file>.
+func placeholder(text string) bool {
+	if len(text) < 3 || text[0] != '<' || text[len(text)-1] != '>' {
+		return false
+	}
+	return strings.Trim(text[1:len(text)-1], "abcdefghijklmnopqrstuvwxyz-") == ""
 }
 
 // InputName names one of a capability's inputs the way a caller on s gives
