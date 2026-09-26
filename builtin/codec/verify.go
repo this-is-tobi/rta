@@ -87,8 +87,9 @@ const maxSecretFile = 64 << 10
 // secretFrom reads the shared secret --secret-file names, and the two other
 // forms it is most often handed over in by mistake: with the line break an
 // editor or `echo` leaves at the end, and as base64 of the bytes rather than
-// the bytes.
-func secretFrom(path string) (candidate, *view.Error) {
+// the bytes. s is the surface asking, for the name its refusals give the
+// inputs.
+func secretFrom(path string, s plugin.Surface) (candidate, *view.Error) {
 	f, err := os.Open(plugin.ExpandHome(path))
 	if err != nil {
 		return candidate{}, view.Errorf("codec.jwt.secret", "reading the secret file: %v", err)
@@ -99,7 +100,7 @@ func secretFrom(path string) (candidate, *view.Error) {
 	case errors.Is(err, pipein.ErrTooLarge):
 		return candidate{}, view.Errorf("codec.jwt.secret", "%s holds more than the %s a shared secret could be",
 			quote(path), format.Bytes(maxSecretFile)).
-			WithHint("--secret-file names a file holding the secret and nothing else")
+			WithHint(inputName(s, "secret-file") + " names a file holding the secret and nothing else")
 	case err != nil:
 		return candidate{}, view.Errorf("codec.jwt.secret", "reading the secret file: %v", err)
 	case raw == "":
@@ -122,7 +123,7 @@ func secretFrom(path string) (candidate, *view.Error) {
 	trimmed := strings.TrimSuffix(strings.TrimSuffix(raw, "\n"), "\r")
 	for _, b := range []string{raw, trimmed, text} {
 		if what := publicKeyIn([]byte(b)); what != "" {
-			return candidate{}, keyAsSecret(path, what)
+			return candidate{}, keyAsSecret(path, what, s)
 		}
 	}
 	// Decoded once, for the guard and for the reading alike: two decodings
@@ -130,7 +131,7 @@ func secretFrom(path string) (candidate, *view.Error) {
 	decoded, derr := decodeAnyBase64(strings.Join(strings.Fields(trimText(text)), ""))
 	if derr == nil {
 		if what := publicKeyIn(decoded); what != "" {
-			return candidate{}, keyAsSecret(path, what+", in base64")
+			return candidate{}, keyAsSecret(path, what+", in base64", s)
 		}
 	}
 	// An oct JWK is how a shared secret is written as a key, and --key sends
@@ -277,11 +278,11 @@ func asymmetric(o object) bool {
 	return false
 }
 
-func keyAsSecret(path, what string) *view.Error {
+func keyAsSecret(path, what string, s plugin.Surface) *view.Error {
 	return view.Errorf("codec.jwt.alg", "the secret file %s holds %s, not a shared secret: a public key used as "+
 		"an HMAC secret is the algorithm-confusion attack — anyone holding the key can sign with it — so it is never tried",
 		quote(path), what).
-		WithHint("a public key or certificate goes in --key, which checks only the signatures its own type makes")
+		WithHint("a public key or certificate goes in " + inputName(s, "key") + ", which checks only the signatures its own type makes")
 }
 
 // keysFrom reads the verification material a person supplied, and says what
@@ -305,7 +306,8 @@ func keysFrom(raw string, s plugin.Surface) ([]candidate, []string, *view.Error)
 	// verifies a forgery.
 	if der, err := decodeAnyBase64(strings.Join(strings.Fields(raw), "")); err == nil {
 		if what := publicKeyIn(der); what != "" {
-			return nil, nil, view.Errorf("codec.jwt.key", "the key is %s in base64, without the PEM armour --key reads", what).
+			return nil, nil, view.Errorf("codec.jwt.key", "the key is %s in base64, without the PEM armour %s reads",
+				what, inputName(s, "key")).
 				WithHint("put -----BEGIN PUBLIC KEY----- and -----END PUBLIC KEY----- on the lines around it " +
 					"(CERTIFICATE for a certificate)")
 		}
@@ -337,6 +339,37 @@ func secretHint(s plugin.Surface) string {
 	return "pass a file holding the shared secret with --secret-file"
 }
 
+// inputName is one of codec.jwt's inputs as the surface asking shows it: the
+// flag on the CLI, the box in a TUI form, the argument in an MCP tool's schema.
+// The hints about where a secret goes were worded for each surface, and the
+// messages beside them told an agent, whose schema has a key argument and no
+// flags at all, that "--key takes only public keys", and a TUI form "without
+// --key", naming a flag neither can find. SurfaceUnknown, a caller inside the
+// process, reads the CLI's spelling.
+func inputName(s plugin.Surface, field string) string {
+	switch s {
+	case plugin.SurfaceTUI:
+		return "the " + field + " box"
+	case plugin.SurfaceMCP:
+		return "the " + field + " argument"
+	}
+	return "--" + field
+}
+
+// withoutInputs is how the surface asking leaves fields out of a call:
+// "without --key" on the CLI, and on a TUI form, whose boxes are there
+// whether or not they are filled, by leaving them empty.
+func withoutInputs(s plugin.Surface, fields ...string) string {
+	names := make([]string, len(fields))
+	for i, f := range fields {
+		names[i] = inputName(s, f)
+	}
+	if s == plugin.SurfaceTUI {
+		return "with " + strings.Join(names, " and ") + " left empty"
+	}
+	return "without " + strings.Join(names, " and ")
+}
+
 // octSetHint is secretHint for a set of shared secrets given to --key. A
 // secret file takes the one key and not the set, and the hint sent the whole
 // set there, where its JSON text was the HMAC key.
@@ -362,7 +395,8 @@ func jwkCandidates(raw string, s plugin.Surface) ([]candidate, []string, *view.E
 		return nil, nil, view.Errorf("codec.jwt.key", "the key is not valid JSON: %v", err)
 	}
 	if doc.str("kty") == "oct" {
-		return nil, nil, view.Errorf("codec.jwt.key", "the key is a shared secret (kty oct), and --key takes only public keys").
+		return nil, nil, view.Errorf("codec.jwt.key", "the key is a shared secret (kty oct), and %s takes only public keys",
+			inputName(s, "key")).
 			WithHint(secretHint(s))
 	}
 	var keys []object
@@ -386,9 +420,9 @@ func jwkCandidates(raw string, s plugin.Surface) ([]candidate, []string, *view.E
 			label += fmt.Sprintf(", key %d of the set", i+1)
 		}
 		if k.kty == "oct" {
-			notes = append(notes, fmt.Sprintf("The key set's %s is a shared secret (kty oct), which --key does not "+
-				"take, so it was not tried: %s.", label, secretHint(s)))
-			secrets = append(secrets, label+" is a shared secret (kty oct), which --key does not take")
+			notes = append(notes, fmt.Sprintf("The key set's %s is a shared secret (kty oct), which %s does not "+
+				"take, so it was not tried: %s.", label, inputName(s, "key"), secretHint(s)))
+			secrets = append(secrets, label+" is a shared secret (kty oct), which "+inputName(s, "key")+" does not take")
 			continue
 		}
 		// A key the members do not make stays a candidate, with nothing to
@@ -413,7 +447,8 @@ func jwkCandidates(raw string, s plugin.Surface) ([]candidate, []string, *view.E
 	// note saying where a secret goes dropped for a hint to run codec.jwk.
 	switch {
 	case len(out) == 0 && len(secrets) > 0:
-		return nil, nil, view.Errorf("codec.jwt.key", "the key set holds only shared secrets (kty oct), and --key takes only public keys").
+		return nil, nil, view.Errorf("codec.jwt.key", "the key set holds only shared secrets (kty oct), and %s takes only "+
+			"public keys", inputName(s, "key")).
 			WithHint(octSetHint(s))
 	case len(out) == 0:
 		return nil, nil, view.Errorf("codec.jwt.key", "the key set holds no keys")
@@ -991,7 +1026,8 @@ func (v *verifier) check(header object, input string, sigSeg string) (string, *v
 		hint := "the token was changed after it was signed, or signed with another secret — check the secret file: " +
 			"it is read as it is, without a final line break, and as base64"
 		if triedKey {
-			hint = "the token was changed after it was signed, or signed with another key — without --key it decodes to show which kid it names"
+			hint = "the token was changed after it was signed, or signed with another key — " + withoutInputs(v.surface, "key") +
+				" it decodes to show which kid it names"
 		}
 		return "", view.Errorf("codec.jwt.signature", "%s", msg).WithHint(hint)
 	case kid != "" && onlyUnusable(candidates, kid):

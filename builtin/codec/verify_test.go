@@ -17,9 +17,11 @@ import (
 	"encoding/base64"
 	"encoding/pem"
 	"fmt"
+	"maps"
 	"math/big"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -466,6 +468,106 @@ func TestASharedSecretIsNeverTakenAsAKey(t *testing.T) {
 		_, verr := verifyWith(t, hs, tc.set, "")
 		if verr == nil || verr.Code != "codec.jwt.key" || verr.Message != tc.want || !strings.Contains(verr.Hint, tc.hint) {
 			t.Errorf("%s: got %+v, want codec.jwt.key %q with a hint naming %q", name, verr, tc.want, tc.hint)
+		}
+	}
+}
+
+// flagSpelling finds an input written as a CLI flag. PEM armour's dashes are
+// not one: five of them run into each other.
+var flagSpelling = regexp.MustCompile(`(?:^|[^-])--[a-z]`)
+
+// Only the CLI has flags. The hints about where a secret goes were worded for
+// each surface, and the messages beside them still told an agent, whose tool
+// schema has a key argument and no flags at all, that "--key takes only public
+// keys", and a TUI form "without --key it decodes". Every refusal and note that
+// names one of codec.jwt's inputs is walked on the two surfaces without flags,
+// and each names the input as that surface shows it.
+func TestAnInputIsNamedAsTheSurfaceAskingShowsIt(t *testing.T) {
+	ctx := context.Background()
+	signing, x, y := ecKey(t)
+	other, _, _ := ecKey(t)
+	ec := fmt.Sprintf(`{"kty":"EC","crv":"P-256","kid":"ec","x":%q,"y":%q}`, x, y)
+	broken := fmt.Sprintf(`{"kty":"EC","crv":"P-256","kid":"ec","x":%q,"y":%q}`, x, x)
+	oct := `{"kty":"oct","kid":"hmac","k":"c2VjcmV0"}`
+	set := func(keys ...string) string { return `{"keys":[` + strings.Join(keys, ",") + `]}` }
+	hs := sign(`{"alg":"HS256"}`, `{"sub":"a"}`, func(in []byte) []byte {
+		mac := hmac.New(sha256.New, []byte("secret"))
+		mac.Write(in)
+		return mac.Sum(nil)
+	})
+	pubPEM := publicPEM(t, &rsaKey().PublicKey)
+	der, err := x509.MarshalPKIXPublicKey(&rsaKey().PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	jwe := strings.Join([]string{seg(`{"alg":"dir","enc":"A128GCM"}`), "", seg("iv"), seg("c"), seg("tag")}, ".")
+	large := filepath.Join(t.TempDir(), "large")
+	if err := os.WriteFile(large, make([]byte, maxSecretFile+1), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	type call struct {
+		values map[string]any
+		// names is the input the refusal is about, which it has to name.
+		names string
+	}
+	calls := map[string]call{
+		"an oct key":                     {map[string]any{"token": hs, "key": oct}, "key"},
+		"a set of oct keys only":         {map[string]any{"token": hs, "key": set(oct)}, "key"},
+		"an oct key beside a broken one": {map[string]any{"token": hs, "key": set(oct, broken)}, "key"},
+		"an HMAC token and a public key": {map[string]any{"token": hs, "key": set(oct, ec)}, ""},
+		"a DER key without PEM armour":   {map[string]any{"token": es256(t, signing, `{"alg":"ES256"}`), "key": base64.StdEncoding.EncodeToString(der)}, "key"},
+		"text that is no key":            {map[string]any{"token": hs, "key": "hunter2!"}, ""},
+		"an encrypted token and a key":   {map[string]any{"token": jwe, "key": ec}, "key"},
+		"a signature by another key":     {map[string]any{"token": es256(t, other, `{"alg":"ES256"}`), "key": ec}, "key"},
+	}
+	// The secret file is Local, so only the TUI offers it off the CLI.
+	tui := map[string]call{
+		"a secret file too large":            {map[string]any{"token": hs, "secret-file": large}, "secret-file"},
+		"a public key as the secret":         {map[string]any{"token": hs, "secret-file": secretFile(t, pubPEM)}, "key"},
+		"an encrypted token and a secret":    {map[string]any{"token": jwe, "secret-file": secretFile(t, "s3cret")}, "secret-file"},
+		"an encrypted token and both":        {map[string]any{"token": jwe, "key": ec, "secret-file": secretFile(t, "s3cret")}, "secret-file"},
+		"a secret that does not match":       {map[string]any{"token": hs, "secret-file": secretFile(t, "other")}, ""},
+		"a set of oct keys in a secret file": {map[string]any{"token": hs, "secret-file": secretFile(t, set(oct))}, ""},
+	}
+	shown := map[plugin.Surface]string{plugin.SurfaceMCP: "the %s argument", plugin.SurfaceTUI: "the %s box"}
+	for s, spelled := range shown {
+		walk := maps.Clone(calls)
+		if s == plugin.SurfaceTUI {
+			maps.Copy(walk, tui)
+		}
+		for name, c := range walk {
+			_, err := runJWT(ctx, req(c.values).WithSurface(s))
+			if err == nil {
+				t.Errorf("%s, %s: not refused", s, name)
+				continue
+			}
+			verr := view.AsError(err, "test")
+			said := verr.Message + " — " + verr.Hint
+			if flag := flagSpelling.FindString(said); flag != "" {
+				t.Errorf("%s, %s: names a flag the surface has none of: %q", s, name, said)
+			}
+			if want := fmt.Sprintf(spelled, c.names); c.names != "" && !strings.Contains(said, want) {
+				t.Errorf("%s, %s: %q does not name %q", s, name, said, want)
+			}
+		}
+
+		// A shared secret skipped in a set is a note on the page that
+		// verified with the key beside it.
+		v, err := runJWT(ctx, req(map[string]any{"token": es256(t, signing, `{"alg":"ES256","kid":"ec"}`), "key": set(oct, ec)}).
+			WithSurface(s))
+		if err != nil {
+			t.Fatalf("%s: %v", s, err)
+		}
+		if body := verification(t, v.(view.Sections)); flagSpelling.MatchString(body) || !strings.Contains(body, fmt.Sprintf(spelled, "key")) {
+			t.Errorf("%s: the note on a skipped secret = %q, want it naming %q and no flag", s, body, fmt.Sprintf(spelled, "key"))
+		}
+
+		// PEM given to codec.jwk is sent to codec.jwt's key.
+		_, err = runJWK(ctx, req(map[string]any{"key": pubPEM}).WithSurface(s))
+		if verr := view.AsError(err, "test"); err == nil || flagSpelling.MatchString(verr.Hint) ||
+			!strings.Contains(verr.Hint, fmt.Sprintf(spelled, "key")) {
+			t.Errorf("%s: PEM in codec.jwk: got %v (hint %q), want codec.jwt's key named without a flag", s, err, verr.Hint)
 		}
 	}
 }
