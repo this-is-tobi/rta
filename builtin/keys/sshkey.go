@@ -92,7 +92,7 @@ func readPipedWords(req plugin.Request) (string, *view.Error) {
 	switch {
 	case errors.Is(err, pipein.ErrTooLarge):
 		return "", view.Errorf("keys.restore.stdin", "stdin holds far more than a seed phrase").
-			WithHint("pipe the 24 words alone, or pass --words")
+			WithHint("pipe the 24 words alone, or give them in " + req.Surface().InputName("words"))
 	case err != nil:
 		return "", view.Errorf("keys.restore.stdin", "reading stdin: %v", err)
 	}
@@ -161,11 +161,12 @@ func unlockKey(req plugin.Request, path string, data []byte) (any, *view.Error) 
 			fmt.Fprintln(os.Stderr, "Wrong passphrase.")
 		}
 		return nil, view.Errorf("keys.key.locked", "could not unlock %s", path).
-			WithHint("that is the key's own passphrase — pass --passphrase or set " +
-				plugin.LocalEnvVar("keys.backup", "passphrase"))
+			WithHint("that is the key's own passphrase — give " + req.Surface().InputName("passphrase") +
+				" or set " + plugin.LocalEnvVar("keys.backup", "passphrase"))
 	}
 	return nil, view.Errorf("keys.key.locked", "%s is passphrase-protected", path).
-		WithHint("set " + plugin.LocalEnvVar("keys.backup", "passphrase") + " or pass --passphrase")
+		WithHint("set " + plugin.LocalEnvVar("keys.backup", "passphrase") + " or give " +
+			req.Surface().InputName("passphrase"))
 }
 
 // probeKey reads a private key file and reports what can be learned without
