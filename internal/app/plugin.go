@@ -103,7 +103,7 @@ func newPluginAllowCommand(opts *globalOpts) *cobra.Command {
 			"With a name and no locations, allows everything that plugin declares.",
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			format, err := cli.ParseFormat(opts.output)
+			format, err := opts.format()
 			if err != nil {
 				return err
 			}
@@ -196,7 +196,7 @@ func newPluginDisallowCommand(opts *globalOpts) *cobra.Command {
 			"gave it, so the next call that wanted the file fails and says so.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			format, err := cli.ParseFormat(opts.output)
+			format, err := opts.format()
 			if err != nil {
 				return err
 			}
@@ -391,7 +391,7 @@ func newPluginTrustCommand(opts *globalOpts) *cobra.Command {
 			"With no argument, lists what was found and not run.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			format, err := cli.ParseFormat(opts.output)
+			format, err := opts.format()
 			if err != nil {
 				return err
 			}
@@ -451,8 +451,9 @@ func newPluginTrustCommand(opts *globalOpts) *cobra.Command {
 func newPluginUntrustCommand(opts *globalOpts) *cobra.Command {
 	var all bool
 	cmd := &cobra.Command{
-		Use:   "untrust <name|digest> | --all",
-		Short: "Withdraw approval from a plugin artifact",
+		Use:         "untrust <name|digest> | --all",
+		Annotations: outputExempt(),
+		Short:       "Withdraw approval from a plugin artifact",
 		Long: "Removes every approval recorded under a name, or the one matching a\n" +
 			"digest prefix. The binary is left exactly where it is, because deleting\n" +
 			"somebody's file is not what \"I no longer trust this\" asked for.\n\n" +
@@ -592,8 +593,9 @@ func trustInventory() view.View {
 func newPluginNewCommand(version string, opts *globalOpts) *cobra.Command {
 	var dir, module, rtaSource string
 	cmd := &cobra.Command{
-		Use:   "new <name>",
-		Short: "Scaffold a working plugin",
+		Use:         "new <name>",
+		Annotations: outputExempt(),
+		Short:       "Scaffold a working plugin",
 		Long: "Writes a plugin that builds and runs as it stands, rather than a\n" +
 			"skeleton with TODOs in it — so the first run works, and every edit\n" +
 			"after it is a change to something known-good.\n\n" +
@@ -710,8 +712,9 @@ func newPluginNewCommand(version string, opts *globalOpts) *cobra.Command {
 func newPluginDevCommand(reg *registry.Registry, version string, opts *globalOpts) *cobra.Command {
 	var keep bool
 	cmd := &cobra.Command{
-		Use:   "dev [dir] [-- command args...]",
-		Short: "Build a plugin from source and run it without installing",
+		Use:         "dev [dir] [-- command args...]",
+		Annotations: outputExempt(),
+		Short:       "Build a plugin from source and run it without installing",
 		Long: "Compiles the plugin in [dir] (default: the current directory), loads it\n" +
 			"exactly as an installed one is loaded, and reports what rta sees.\n\n" +
 			"With arguments after `--`, runs that command with the plugin loaded:\n\n" +
@@ -732,6 +735,15 @@ func newPluginDevCommand(reg *registry.Registry, version string, opts *globalOpt
 				rest = args
 			} else if len(args) > 0 {
 				dir, rest = args[0], nil
+			}
+			// Only the report is drawn in this command's format, so a default
+			// nothing renders is refused for it here, before the build; a
+			// command after `--` is held to the same check by the root it runs
+			// in (see annotOutputExempt).
+			if len(rest) == 0 {
+				if _, err := opts.format(); err != nil {
+					return err
+				}
 			}
 
 			binary, cleanup, err := buildPlugin(cmd.Context(), dir, keep, cmd.ErrOrStderr())
@@ -778,7 +790,7 @@ func newPluginDevCommand(reg *registry.Registry, version string, opts *globalOpt
 			}
 
 			if len(rest) == 0 {
-				format, err := cli.ParseFormat(opts.output)
+				format, err := opts.format()
 				if err != nil {
 					return err
 				}

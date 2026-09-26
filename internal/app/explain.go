@@ -38,7 +38,7 @@ func newExplainCommand(reg *registry.Registry, opts *globalOpts) *cobra.Command 
 			return ids, cobra.ShellCompDirectiveNoFileComp
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			format, err := cli.ParseFormat(opts.output)
+			format, err := opts.format()
 			if err != nil {
 				return err
 			}

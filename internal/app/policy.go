@@ -45,7 +45,7 @@ func operatorPolicyPath() (string, error) {
 
 func newPolicyCommand(opts *globalOpts) *cobra.Command {
 	render := func(cmd *cobra.Command, v view.View, verr *view.Error) error {
-		format, err := cli.ParseFormat(opts.output)
+		format, err := opts.format()
 		if err != nil {
 			return err
 		}
@@ -206,6 +206,7 @@ func policyInitCommand(opts *globalOpts) *cobra.Command {
 	var force bool
 	cmd := &cobra.Command{
 		Use:               "init",
+		Annotations:       outputExempt(),
 		Short:             "Write a starter " + policy.RepoFile + " in this directory",
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
@@ -249,6 +250,7 @@ func policyRequireCommand(opts *globalOpts) *cobra.Command {
 	var off bool
 	cmd := &cobra.Command{
 		Use:               "require",
+		Annotations:       outputExempt(),
 		Short:             "Refuse to run in a directory with no " + policy.RepoFile,
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,

@@ -54,7 +54,7 @@ import (
 // while its numbers came from localhost.
 func newDashboardCommand(reg *registry.Registry, opts *globalOpts) *cobra.Command {
 	render := func(cmd *cobra.Command, v view.View, verr *view.Error) error {
-		format, err := cli.ParseFormat(opts.output)
+		format, err := opts.format()
 		if err != nil {
 			return err
 		}
