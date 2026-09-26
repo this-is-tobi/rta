@@ -313,7 +313,12 @@ func writeMarkdownGrid(b *strings.Builder, header []string, rows [][]string) {
 // tracker without its own sanitizer). Each gets the same treatment GFM uses
 // for its own inline escaping: a leading backslash, so the character prints
 // instead of taking on its syntactic meaning.
+//
+// The backslash itself first, and before the others: a backslash already in
+// the text escapes whatever follows it, the escape this adds included, so
+// `\<img …>` came out as `\\<img …>` — a literal backslash and a raw tag.
 func inlineMarkdown(s string) string {
+	s = strings.ReplaceAll(s, "\\", "\\\\")
 	s = strings.ReplaceAll(s, "|", "\\|")
 	s = strings.ReplaceAll(s, "[", "\\[")
 	s = strings.ReplaceAll(s, "]", "\\]")
