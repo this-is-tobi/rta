@@ -981,6 +981,12 @@ func unlockAvailability(req plugin.Request, mode keyMode) string {
 }
 
 func runRecipients(_ context.Context, _ plugin.Request) (view.View, error) {
+	// No key can read a store that does not exist or is locked with a
+	// passphrase, so both answer with the recipients table and no rows, and
+	// what a person is told in its place beside it (view.Table.Empty). Each
+	// answered with its sentence as a Text view, which every format carried:
+	// `jq '.rows[]'` met a view with no rows on exactly the stores with none.
+	t := view.Table{Columns: []view.Column{{Name: "Type"}, {Name: "Recipient"}, {Name: "Comment"}}}
 	// Before the recipients list, because an empty one means two different
 	// things and only one of them was being said. With no store on disk this
 	// announced "The store is encrypted with a passphrase, not keys." — a
@@ -993,27 +999,28 @@ func runRecipients(_ context.Context, _ plugin.Request) (view.View, error) {
 	// phrase is theirs. Every command offered here is one that works from
 	// here, which is what the two it replaces were not.
 	if !fileExists(storePath()) {
-		return view.Text{Body: "No store yet — nothing to read, and nothing locking it.\n\n" +
+		t.Empty = "No store yet — nothing to read, and nothing locking it.\n\n" +
 			"What it is locked with is decided when it is created:\n" +
 			"  rta kv init --generate                     a key made for this store\n" +
 			"  rta kv init --identity ~/.ssh/id_ed25519   a key you already hold\n" +
-			"  rta kv set <key> <value>                   a passphrase, if you never run init"}, nil
+			"  rta kv set <key> <value>                   a passphrase, if you never run init"
+		return t, nil
 	}
 	specs, verr := loadRecipients()
 	if verr != nil {
 		return nil, verr
 	}
 	if len(specs) == 0 {
-		return view.Text{Body: "The store is encrypted with a passphrase, not keys.\n\n" +
+		t.Empty = "The store is encrypted with a passphrase, not keys.\n\n" +
 			// The private key path, not its .pub: --recipient reads either,
 			// but only the private file also proves you hold it — which is
 			// what the switch below needs, and a public key alone cannot show.
 			"To switch to a key of your own:\n" +
 			"  rta kv rekey --only --recipient ~/.ssh/id_ed25519\n" +
 			"or to one made for the job, which needs no passphrase at all:\n" +
-			"  rta kv rekey --only --generate"}, nil
+			"  rta kv rekey --only --generate"
+		return t, nil
 	}
-	t := view.Table{Columns: []view.Column{{Name: "Type"}, {Name: "Recipient"}, {Name: "Comment"}}}
 	for _, spec := range specs {
 		fields := strings.Fields(spec)
 		switch {

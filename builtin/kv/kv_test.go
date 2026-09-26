@@ -1153,7 +1153,7 @@ func TestSuggestedMigrationCommandActuallyWorks(t *testing.T) {
 	text(t, runSet, map[string]any{"key": "token", "value": "s3cret"}, false)
 	private, _ := writeSSHKeypair(t, t.TempDir(), "id_ed25519")
 
-	body := text(t, runRecipients, nil, false)
+	body := recipientsEmpty(t)
 	if !strings.Contains(body, "--recipient") {
 		t.Fatalf("no migration hint: %q", body)
 	}
@@ -1181,7 +1181,7 @@ func TestSuggestedMigrationCommandActuallyWorks(t *testing.T) {
 // and getting two true answers and one invention.
 func TestRecipientsSaysWhenThereIsNoStoreToRead(t *testing.T) {
 	setup(t)
-	body := text(t, runRecipients, nil, false)
+	body := recipientsEmpty(t)
 	if !strings.Contains(strings.ToLower(body), "no store yet") {
 		t.Errorf("recipients with no store on disk reads:\n%s", body)
 	}
@@ -1202,9 +1202,25 @@ func TestRecipientsSaysWhenThereIsNoStoreToRead(t *testing.T) {
 func TestRecipientsNamesThePassphraseLockWhenThereAreNoKeys(t *testing.T) {
 	setup(t)
 	text(t, runSet, map[string]any{"key": "first", "value": "v"}, false)
-	if body := text(t, runRecipients, nil, false); !strings.Contains(body, "passphrase") {
+	if body := recipientsEmpty(t); !strings.Contains(body, "passphrase") {
 		t.Errorf("a store locked with a passphrase reads:\n%s", body)
 	}
+}
+
+// recipientsEmpty is what kv.recipients tells a person when no key can
+// read the store, failing unless it answered with the recipients table and
+// no rows.
+//
+// It answered with a Text view holding the sentence instead, which every
+// format carried: `rta kv recipients -o json | jq '.rows[]'` met a view
+// with no rows on exactly the stores that have none.
+func recipientsEmpty(t *testing.T) string {
+	t.Helper()
+	tbl := table(t, runRecipients, nil)
+	if len(tbl.Rows) != 0 || len(tbl.Columns) != 3 || tbl.Empty == "" {
+		t.Fatalf("recipients = %#v, want the table with no rows and a sentence beside it", tbl)
+	}
+	return tbl.Empty
 }
 
 func TestRecipientsListsWhoCanRead(t *testing.T) {
