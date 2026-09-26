@@ -47,14 +47,13 @@ func remoteList(ctx context.Context, req plugin.Request, server string) (view.Vi
 	if verr := (operatorid.Client{URL: base, Signer: signer}).Call(ctx, operatorid.VerbGrantList, nil, &gl); verr != nil {
 		return nil, verr
 	}
-	if len(gl.Grants) == 0 {
-		body := fmt.Sprintf("No active grants on %s — its agents can only read.", server)
-		if gl.Suppressed > 0 {
-			body += remoteSuppressedNote(server, gl.Suppressed)
-		}
-		return view.Text{Body: body}, nil
-	}
 	t := grantsTable(gl.Grants, nil)
+	// The table even when the server holds nothing, with the sentence beside
+	// it for a person (view.Table.Empty), as the local listing answers: the
+	// sentence alone was a text view `jq '.rows[]'` could not iterate.
+	if len(gl.Grants) == 0 {
+		t.Empty = fmt.Sprintf("No active grants on %s — its agents can only read.", server)
+	}
 	if gl.Suppressed > 0 {
 		return view.Sections{Items: []view.Section{
 			{ID: "grants", Title: "Allowed on " + server, View: t},

@@ -200,6 +200,30 @@ func TestAllowThenList(t *testing.T) {
 	}
 }
 
+// An empty roster is still the table, and says so to a person alone.
+//
+// It answered with its sentence as a Text view, which every format carried:
+// `rta grant list -o json | jq '.rows[]'` met a view with no rows, and the
+// dashboard tile a text where every refresh after the first grant drew a
+// table.
+func TestAnEmptyRosterIsATableToAParser(t *testing.T) {
+	setup(t)
+	v := run(t, listH, nil)
+	tbl, ok := v.(view.Table)
+	if !ok || len(tbl.Rows) != 0 || tbl.Columns[0].Name != "Capability" {
+		t.Fatalf("empty roster = %#v, want the table with no rows", v)
+	}
+	for _, want := range []string{"guard  off", "No grant is standing", "rta grant allow"} {
+		if !strings.Contains(tbl.Empty, want) {
+			t.Errorf("empty = %q, want it to say %q", tbl.Empty, want)
+		}
+	}
+	raw, err := view.Marshal(view.Envelope{View: view.Redact(v)})
+	if err != nil || !strings.Contains(string(raw), `"rows":[]`) || strings.Contains(string(raw), "No grant") {
+		t.Errorf("json = %s (%v), want rows as an empty array and no sentence", raw, err)
+	}
+}
+
 // An unscoped grant covers every record, and says so rather than showing a
 // blank column that reads like missing data.
 func TestUnscopedGrantSaysAny(t *testing.T) {

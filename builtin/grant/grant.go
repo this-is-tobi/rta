@@ -1084,29 +1084,6 @@ func heldTable(role string) (view.View, *view.Error) {
 		}
 		return nil, verr
 	}
-	if len(grants) == 0 {
-		body := "guard  " + guardLine(grants, nil) + "\n\n" +
-			"No grant is standing — agents reach only what needs none.\n" +
-			"Allow one with: rta grant allow <capability> --ttl 15m"
-		// An empty list is the ordinary answer and a dropped file is not, so
-		// the difference has to be visible here: this is the one screen where
-		// somebody looking for a grant they issued will come looking for it.
-		if core.Legacy() {
-			body = "guard  " + guardLine(grants, nil) + "\n\n" +
-				"Grants are now sealed against tampering, and " + core.Path() + " predates\n" +
-				"the seal, so nothing in it is honoured. Any grant it held is gone; re-issue\n" +
-				"what you still need. Removing the file clears this notice:\n" +
-				"  rm " + core.Path() + "\n\n" +
-				"Allow one with: rta grant allow <capability> --ttl 15m"
-		}
-		// Same reasoning as the line above, one cause along: a grant that is
-		// on disk and suppressed by the team's ceiling is not "no grant", and
-		// somebody certain they issued one has to be told why it is not here.
-		if n := core.Suppressed(); n > 0 {
-			body += suppressedNote(n)
-		}
-		return view.Text{Body: body}, nil
-	}
 	cfg, cfgErr := config.Load()
 	t := grantsTable(grants, func(g core.Grant) bool {
 		// A grant whose connection has been repointed since it was issued is
@@ -1122,6 +1099,13 @@ func heldTable(role string) (view.View, *view.Error) {
 	})
 	if w := olderServerWarning(); w != nil {
 		t.Warnings = append(t.Warnings, *w)
+	}
+	// An empty roster is still the table, with what a person is told in
+	// place of it beside it (view.Table.Empty). It answered with the
+	// sentence as a Text view, which every format carried: `jq '.rows[]'`
+	// met a view with no rows, and -o csv a text cell where a header was.
+	if len(grants) == 0 {
+		t.Empty = emptyRoster()
 	}
 	// The roles in force above the rows, where the docs send people before
 	// they walk away from a machine: one line per role and agent, with the
@@ -1139,10 +1123,33 @@ func heldTable(role string) (view.View, *view.Error) {
 	if n > 0 {
 		// A partial suppression is the confusing one: some rows are here, the one
 		// being looked for is not, and nothing on the screen accounts for it.
+		// A whole one is no better: a grant that is on disk and held back by
+		// the team's ceiling is not "no grant", and somebody certain they
+		// issued one has to be told why it is not here.
 		items = append(items, view.Section{ID: "policy", Title: "Your team's policy",
 			View: view.Text{Body: strings.TrimPrefix(suppressedNote(n), "\n\n")}})
 	}
 	return view.Sections{Items: items}, nil
+}
+
+// emptyRoster is what a person is told in place of a roster with no grant in
+// it, the guard's state above it as the screen has always shown it.
+func emptyRoster() string {
+	head := "guard  " + guardLine(nil, nil) + "\n\n"
+	// An empty list is the ordinary answer and a dropped file is not, so the
+	// difference has to be visible here: this is the one screen where
+	// somebody looking for a grant they issued will come looking for it.
+	if core.Legacy() {
+		return head +
+			"Grants are now sealed against tampering, and " + core.Path() + " predates\n" +
+			"the seal, so nothing in it is honoured. Any grant it held is gone; re-issue\n" +
+			"what you still need. Removing the file clears this notice:\n" +
+			"  rm " + core.Path() + "\n\n" +
+			"Allow one with: rta grant allow <capability> --ttl 15m"
+	}
+	return head +
+		"No grant is standing — agents reach only what needs none.\n" +
+		"Allow one with: rta grant allow <capability> --ttl 15m"
 }
 
 // rolesInForce is one line per role and agent among the grants standing:

@@ -163,21 +163,30 @@ func TestHeldTableEmptyStateNotesCeilingSuppressedGrants(t *testing.T) {
 	if verr != nil {
 		t.Fatal(verr)
 	}
-	body, ok := v.(view.Text)
+	// The empty roster is still the table, and the suppression its own
+	// section beside it, the shape a partly suppressed roster already has.
+	page, ok := v.(view.Sections)
 	if !ok {
-		t.Fatalf("held table = %s, want the empty-state Text", view.TypeOf(v))
+		t.Fatalf("held table = %s, want the roster and the policy's section", view.TypeOf(v))
 	}
-	if !strings.Contains(body.Body, "No grant is standing") {
-		t.Errorf("body = %q, want the ordinary empty-state message", body.Body)
+	tbl := listed(t, page)
+	if len(tbl.Rows) != 0 || !strings.Contains(tbl.Empty, "No grant is standing") {
+		t.Errorf("roster = %+v, want no rows and the ordinary empty-state sentence", tbl)
 	}
-	if !strings.Contains(body.Body, "guard  off") {
-		t.Errorf("body = %q, want the guard's state above it", body.Body)
+	if !strings.Contains(tbl.Empty, "guard  off") {
+		t.Errorf("empty = %q, want the guard's state above it", tbl.Empty)
 	}
-	if !strings.Contains(body.Body, "1 grant(s) on disk are suppressed by your team's policy") {
-		t.Errorf("body = %q, want the suppression note naming the count", body.Body)
+	var note string
+	for _, s := range page.Items {
+		if s.ID == "policy" {
+			note = s.View.(view.Text).Body
+		}
 	}
-	if !strings.Contains(body.Body, policy.RepoFile) {
-		t.Errorf("body = %q, want the note naming the policy file", body.Body)
+	if !strings.Contains(note, "1 grant(s) on disk are suppressed by your team's policy") {
+		t.Errorf("policy = %q, want the suppression note naming the count", note)
+	}
+	if !strings.Contains(note, policy.RepoFile) {
+		t.Errorf("policy = %q, want the note naming the policy file", note)
 	}
 }
 
