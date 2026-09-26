@@ -122,7 +122,7 @@ func TestAPipedInputIsRequiredOverMCP(t *testing.T) {
 		{Name: "token", Type: plugin.Secret, Positional: true, Piped: true},
 		{Name: "key", Type: plugin.Secret},
 	}}
-	if got, _ := InputSchema(c, nil)["required"].([]string); !slices.Equal(got, []string{"token"}) {
+	if got, _ := InputSchema(c, nil, nil)["required"].([]string); !slices.Equal(got, []string{"token"}) {
 		t.Errorf("required = %v, want [token]", got)
 	}
 	verr := Require(c, map[string]any{}, false)
@@ -131,6 +131,76 @@ func TestAPipedInputIsRequiredOverMCP(t *testing.T) {
 	}
 	if verr := Require(c, map[string]any{"token": "eyJ"}, false); verr != nil {
 		t.Errorf("a call giving it was refused: %v", verr)
+	}
+}
+
+// The schema's "required" list is the one Require holds a call to, input by
+// input: an input is listed when a call leaving it out is refused for it, and
+// only then. Built from the declaration alone, it listed an input the
+// operator's config gives and one a declared default fills, so a client
+// validating arguments against the schema refused to send a call rta runs.
+// Held to Require over what Resolve lays, which is what the bridge does with
+// a call, rather than to a second account of the list written here.
+func TestTheSchemaRequiresWhatACallIsRefusedFor(t *testing.T) {
+	c := plugin.Capability{ID: "db.query", Inputs: []plugin.Field{
+		{Name: "database", Type: plugin.String, Required: true, Config: "conn.database"},
+		{Name: "schema", Type: plugin.String, Required: true, Config: "schema", Default: "public"},
+		{Name: "limit", Type: plugin.Int, Required: true, Config: "limit"},
+		{Name: "tags", Type: plugin.StringSlice, Required: true, Config: "tags"},
+		{Name: "sql", Type: plugin.String, Required: true, Default: "select 1"},
+		{Name: "token", Type: plugin.Secret, Positional: true, Piped: true},
+		{Name: "host", Type: plugin.String, Required: true, Local: true, Config: "host"},
+		{Name: "note", Type: plugin.String},
+	}}
+	sample := func(f plugin.Field) any {
+		switch f.Type {
+		case plugin.Int:
+			return 1
+		case plugin.StringSlice:
+			return []any{"a"}
+		}
+		return "x"
+	}
+	for name, tc := range map[string]struct {
+		config map[string]any
+		want   []string
+	}{
+		"no config": {nil, []string{"database", "limit", "tags", "token"}},
+		// A zero is a value; so is a list with something in it.
+		"the config gives each": {map[string]any{
+			"conn": map[string]any{"database": "app"}, "limit": uint64(0), "tags": []any{"a"}, "host": "db",
+		}, []string{"token"}},
+		// Empty text and an empty list are nothing given, a key with no value
+		// and a block where a value goes are no value at all — and the empty
+		// text is laid over schema's default, so the call is refused for it.
+		"the config gives nothing": {map[string]any{
+			"conn": map[string]any{"database": map[string]any{"x": "y"}}, "schema": "", "limit": nil, "tags": []any{},
+		}, []string{"database", "schema", "limit", "tags", "token"}},
+		// A call leaving it out is refused for the value, in words for the
+		// operator who wrote it, and not as missing.
+		"the wrong type": {map[string]any{"conn": map[string]any{"database": uint64(5)}},
+			[]string{"limit", "tags", "token"}},
+	} {
+		got, _ := InputSchema(c, nil, tc.config)["required"].([]string)
+		if !slices.Equal(got, tc.want) {
+			t.Errorf("%s: required = %v, want %v", name, got, tc.want)
+		}
+		for _, f := range c.Inputs {
+			if f.Local {
+				continue
+			}
+			others := map[string]any{}
+			for _, g := range c.Inputs {
+				if g.Name != f.Name && !g.Local {
+					others[g.Name] = sample(g)
+				}
+			}
+			refused := Require(c, plugin.Resolve(c, plugin.Inputs{Caller: others, Config: tc.config}), false) != nil
+			if listed := slices.Contains(got, f.Name); listed != refused {
+				t.Errorf("%s: %s is listed as required = %v, and a call leaving it out is refused = %v",
+					name, f.Name, listed, refused)
+			}
+		}
 	}
 }
 
