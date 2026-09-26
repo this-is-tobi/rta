@@ -1,12 +1,16 @@
 package app
 
 import (
+	"bytes"
+	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/this-is-tobi/rta/internal/registry"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // These combinations must never reach net.Listen, let alone mcp.Serve —
@@ -195,5 +199,68 @@ func TestHTTPOperatorsRequiresACanonicalURL(t *testing.T) {
 	err := cmd.Execute()
 	if err == nil || !strings.Contains(err.Error(), "--operators-url") {
 		t.Fatalf("err = %v, want the missing --operators-url named", err)
+	}
+}
+
+// Every refusal serve makes before it listens is coded, and rendered in the
+// format asked for: a combination of its flags that cannot work as typed is
+// core.usage and exits 2, and what failed on this machine carries a code of
+// its own and exits 1. They were the last plain errors on the command, so
+// `-o json` got a box of prose for the mistakes a person wiring up a server
+// makes first.
+func TestServeRefusalsAreCodedInTheFormatAskedFor(t *testing.T) {
+	if os.PathSeparator == '\\' {
+		t.Skip("POSIX permission bits do not apply")
+	}
+	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	dir := t.TempDir()
+	tokens := filepath.Join(dir, "tokens")
+	if err := os.WriteFile(tokens, []byte("alice tok-a-0123456789abcdef\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	loose := filepath.Join(dir, "loose")
+	if err := os.WriteFile(loose, []byte("alice tok-a-0123456789abcdef\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	roster := filepath.Join(dir, "operators")
+	if err := os.WriteFile(roster, []byte("# empty on purpose\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	web := []string{"--http", "127.0.0.1:0"}
+	for _, tc := range []struct {
+		args []string
+		code string
+	}{
+		{[]string{"--observe", "127.0.0.1:0"}, CodeUsage},
+		{append(web, "--consent"), CodeUsage},
+		{web, CodeUsage},
+		{append(web, "--oidc-issuer", "https://idp.example"), CodeUsage},
+		{append(web, "--oidc-issuer", "https://idp.example", "--oidc-audience", "rta"), CodeUsage},
+		{append(web, "--token-file", tokens, "--operators", roster), CodeUsage},
+		{append(web, "--token-file", tokens, "--operators", roster,
+			"--operators-url", "http://rta.example.com"), CodeUsage},
+		{[]string{"--http", "127.0.0.1:99999", "--token-file", tokens}, "core.mcp.listen"},
+		{append(web, "--token-file", loose), "core.mcp.tokenfile"},
+		{append(web, "--oidc-issuer", "http://127.0.0.1:1", "--oidc-audience", "rta",
+			"--oidc-subject", "alice"), "core.mcp.oidc"},
+	} {
+		cmd := NewRoot(registry.New(), "test")
+		cmd.SetArgs(append([]string{"mcp", "serve", "--as", "probe", "-o", "json"}, tc.args...))
+		cmd.SetOut(new(strings.Builder))
+		cmd.SetErr(new(strings.Builder))
+		err := cmd.Execute()
+		var ve *view.Error
+		if !errors.As(err, &ve) || ve.Code != tc.code {
+			t.Errorf("%v: err = %#v, want %s", tc.args, err, tc.code)
+			continue
+		}
+		if want := map[bool]int{true: 2, false: 1}[tc.code == CodeUsage]; ExitCode(err) != want {
+			t.Errorf("%v: exit %d, want %d", tc.args, ExitCode(err), want)
+		}
+		var buf bytes.Buffer
+		if !RenderTopLevelError(&buf, cmd, err) || !json.Valid(buf.Bytes()) {
+			t.Errorf("%v: rendered %q, want the refusal as json", tc.args, buf.String())
+		}
 	}
 }
