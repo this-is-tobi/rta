@@ -623,7 +623,7 @@ func TestDetailedCapabilitiesPublishDetail(t *testing.T) {
 	if !ok {
 		t.Fatal("missing test capability")
 	}
-	props := toolcall.InputSchema(c, nil)["properties"].(map[string]any)
+	props := toolcall.InputSchema(c, nil, nil)["properties"].(map[string]any)
 	detail, ok := props["detail"].(map[string]any)
 	if !ok {
 		t.Fatalf("a Detailed capability publishes no detail property: %v", props)
@@ -633,7 +633,7 @@ func TestDetailedCapabilitiesPublishDetail(t *testing.T) {
 	}
 
 	plain, _ := testRegistry(t).Capability("demo.item.list")
-	if _, published := toolcall.InputSchema(plain, nil)["properties"].(map[string]any)["detail"]; published {
+	if _, published := toolcall.InputSchema(plain, nil, nil)["properties"].(map[string]any)["detail"]; published {
 		t.Error("a capability with no detail view published one anyway")
 	}
 }
@@ -911,7 +911,7 @@ func TestLocalFieldsAreNotOfferedToAgents(t *testing.T) {
 	if !ok {
 		t.Fatal("missing test capability")
 	}
-	props := toolcall.InputSchema(c, nil)["properties"].(map[string]any)
+	props := toolcall.InputSchema(c, nil, nil)["properties"].(map[string]any)
 	if _, offered := props["passphrase"]; offered {
 		t.Error("a Local credential was advertised in the tool schema")
 	}
@@ -928,7 +928,7 @@ func TestPathFieldsSayWhoseFilesystem(t *testing.T) {
 		Inputs: []plugin.Field{{Name: "out", Type: plugin.Path, Help: "where to write it"}},
 		Run:    func(context.Context, plugin.Request) (view.View, error) { return view.Text{}, nil },
 	}
-	prop := toolcall.InputSchema(c, nil)["properties"].(map[string]any)["out"].(map[string]any)
+	prop := toolcall.InputSchema(c, nil, nil)["properties"].(map[string]any)["out"].(map[string]any)
 	if prop["type"] != "string" {
 		t.Errorf("type = %v, want string", prop["type"])
 	}

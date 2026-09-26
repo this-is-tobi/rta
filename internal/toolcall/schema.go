@@ -10,19 +10,27 @@ import (
 // (dots are not universally accepted in tool names).
 func Name(capID string) string { return strings.ReplaceAll(capID, ".", "_") }
 
-// agentText builds the description a model reads, with the part rta wrote
-// separated from the part the plugin wrote.
-//
-
-// InputSchema builds the JSON Schema for a capability's declared inputs.
-// The CLI (`rta explain`) and both model-facing channels consume it.
+// InputSchema builds the JSON Schema for a capability's declared inputs, as
+// the MCP server publishes it in tools/list. profiles is the connections the
+// operator configured for its namespace, and config is the operator's
+// section for its plugin — the one the server's calls are filled from.
 //
 // Local fields are omitted: they are credentials the host resolves from its
 // own environment, and putting one in a tool schema invites a model to
 // supply or echo it (plugin.Field.Local).
-func InputSchema(c plugin.Capability, profiles []string) map[string]any {
+func InputSchema(c plugin.Capability, profiles []string, config map[string]any) map[string]any {
 	props := map[string]any{}
 	var required []string
+	// What a call sending nothing and naming no profile is refused for: the
+	// operator's config and the declared defaults laid by the call's own
+	// Resolve, and read by the call's own Missing, which is the question
+	// Require asks. Resolve lays each input on its own, so this is, input by
+	// input, what any call leaving that input out is refused for — see the
+	// "required" list below for why the list has to be exactly that.
+	unfilled := map[string]bool{}
+	for _, f := range plugin.Missing(c, plugin.Resolve(c, plugin.Inputs{Config: config}), plugin.SurfaceMCP) {
+		unfilled[f.Name] = true
+	}
 	for _, f := range c.Inputs {
 		if f.Local {
 			continue
@@ -82,7 +90,26 @@ func InputSchema(c plugin.Capability, profiles []string) map[string]any {
 		// answers — beside a description saying the value is read from
 		// standard input when not given. Asked by the rule the host refuses a
 		// call with, so the list published and the list held are one list.
-		if f.RequiredOn(plugin.SurfaceMCP) {
+		//
+		// Which is also why an input the operator's config gives a value is
+		// left out. The call is held to the list after the config has filled
+		// what the agent left out (Require), so a call without it runs — and
+		// the schema listed it anyway, so a client validating arguments against
+		// the schema refused to send db_query {} to a server whose config names
+		// the database, a call rta would have run. An input a declared default
+		// fills is left out for the same reason, and both are read off what
+		// Resolve lays (unfilled) rather than off each layer on its own:
+		// `database: ""` in the config lays an empty text over whatever default
+		// the input declares, and the call is refused for it, where a test of
+		// the config key and one of the default, each alone, would have taken
+		// the input off the list. What a profile fills stays required: which
+		// profile a call names is the call's to say, and this is one list for
+		// every call, whichever profile it names and whether that profile sets
+		// the input at all. The list is sent once and still agrees with every
+		// call after it because the config is resolved once, when rta starts
+		// (pluginconf.Resolve in cmd/rta), and each call reads that same
+		// resolution; a config read per call would need the list resent.
+		if unfilled[f.Name] {
 			required = append(required, f.Name)
 		}
 	}
