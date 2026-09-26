@@ -12,6 +12,7 @@ import (
 
 	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/grant"
+	"github.com/this-is-tobi/rta/internal/pluginhost"
 	"github.com/this-is-tobi/rta/internal/profile"
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -936,6 +937,27 @@ func TestDeleteAsksBeforeRemovingAConnection(t *testing.T) {
 	}
 	if got := onDisk.Profiles["staging"].Plugins; len(got) != 0 {
 		t.Errorf("staging still has %+v after a confirmed remove", got)
+	}
+}
+
+// An environment naming a plugin that is installed and not approved is told
+// so, as `rta profile list` and `rta use` tell it — not that the plugin is
+// missing. A rebuild is what produces this, since trust is keyed on the
+// digest, and "not a registered plugin" sends the operator to reinstall
+// something that is on disk and waiting on `rta plugin trust`. The pane
+// asked with the bare registry, which cannot tell the two apart.
+func TestAnEnvironmentNamingAnUnapprovedPluginSaysSo(t *testing.T) {
+	m := profileModel(t, config.Config{Profiles: map[string]config.Profile{
+		"staging": {Plugins: map[string]config.Connection{
+			"db":                  conn(map[string]any{"host": "staging.internal"}),
+			"vaulty@1a2b3c4d5e6f": {},
+		}},
+	}})
+	m.untrusted = []pluginhost.Untrusted{{Name: "vaulty", Path: "/bin/rta-plugin-vaulty", Digest: "1a2b3c4d5e6f"}}
+	m.profiles = m.profileRows()
+	const want = "installed and has not been run"
+	if got := m.profiles[0].problem; !strings.Contains(got, want) {
+		t.Errorf("%q, want it to say %q", got, want)
 	}
 }
 
