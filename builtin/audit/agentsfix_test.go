@@ -109,7 +109,14 @@ func TestTheDenyListIsOfferedOnlyWhereClaudeCodeExists(t *testing.T) {
 }
 
 // A clean machine is told so in a sentence, not with an empty page that
-// reads as a check that failed to run.
+// reads as a check that failed to run — and the sentence is beside the page,
+// not in place of it.
+//
+// It was a Text view in place of the page, so the result changed shape with
+// the machine's state: `rta audit clients --fix > fix.txt` wrote the
+// sentence into the file where the fixes go, and `jq '.items[]'` met a view
+// with no items to iterate. The page is now empty, and the sentence is what
+// a person is shown in its place (view.Sections.Empty).
 func TestFixSaysNothingToPasteOnACleanMachine(t *testing.T) {
 	clean, _ := json.Marshal(map[string]any{"mcpServers": map[string]any{
 		"pinned": map[string]any{"command": "npx", "args": []string{"some-server@1.4.2"}},
@@ -120,10 +127,14 @@ func TestFixSaysNothingToPasteOnACleanMachine(t *testing.T) {
 	}{".cursor/mcp.json": {string(clean), 0o600}})
 
 	v, all := fixBodies(t)
-	if _, ok := v.(view.Text); !ok {
-		t.Fatalf("want Text, got %s", view.TypeOf(v))
+	page, ok := v.(view.Sections)
+	if !ok || len(page.Items) != 0 {
+		t.Fatalf("want an empty page of sections, got %s %s", view.TypeOf(v), all)
 	}
-	if !strings.Contains(all, "nothing to paste") {
-		t.Errorf("a clean machine got: %s", all)
+	if !strings.Contains(page.Empty, "nothing to paste") {
+		t.Errorf("a clean machine was told %q", page.Empty)
+	}
+	if strings.Contains(all, "nothing to paste") {
+		t.Errorf("the sentence was encoded with the page: %s", all)
 	}
 }

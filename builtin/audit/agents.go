@@ -149,12 +149,17 @@ func (r *agentReport) addFix(id, title, body string) {
 // change already written for you. Findings with no mechanical answer (a
 // redirected endpoint that may be your gateway, a credential in this shell's
 // environment) print nothing here; the grades are where they live.
+//
+// With nothing to fix it is still the page, with no sections, and a person
+// is told why beside it (view.Sections.Empty). It answered with the sentence
+// as a Text view, so the shape changed with the machine's state: `rta audit
+// clients --fix > fix.txt` wrote the sentence where the fixes go.
 func fixPage(r *agentReport) view.View {
-	if len(r.fixes) == 0 {
-		return view.Text{Body: "nothing to paste — no finding on this machine has a mechanical fix. " +
-			"`rta audit clients` has the grades themselves."}
-	}
 	s := view.Sections{}
+	if len(r.fixes) == 0 {
+		s.Empty = "nothing to paste — no finding on this machine has a mechanical fix. " +
+			"`rta audit clients` has the grades themselves."
+	}
 	for i, f := range r.fixes {
 		// The index keeps ids unique when one kind of fix applies to two
 		// files — two group-readable configs are two sections, not one
