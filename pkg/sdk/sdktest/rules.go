@@ -185,12 +185,27 @@ func checkOneView(t reporter, c plugin.Capability, v view.View) {
 // of its own, because a refusal there reached the caller after the handler
 // had run — a write that landed reported as one that failed. A view csv
 // cannot write is a failure like any other.
+//
+// Pretty is rendered twice, on a screen and into a pipe, because the two
+// draw different things: an empty result's sentence (view.Table.Empty and
+// its siblings) is drawn only on a screen, headings in its place into a
+// pipe. Rendered into a pipe alone, a plugin's sentence reached the renderer
+// for the first time on somebody's terminal.
 func checkRendered(t reporter, c plugin.Capability, v view.View) {
 	t.Helper()
 
-	for _, f := range []cli.Format{cli.Pretty, cli.Markdown, cli.CSV} {
-		if err := renderOnce(v, f); err != nil {
-			t.Errorf("sdktest: %s: %s does not render as %s: %v", RuleViews, jsonName(c, v), f, err)
+	for _, r := range []struct {
+		name   string
+		f      cli.Format
+		screen bool
+	}{
+		{"pretty on a screen", cli.Pretty, true},
+		{"pretty into a pipe", cli.Pretty, false},
+		{string(cli.Markdown), cli.Markdown, false},
+		{string(cli.CSV), cli.CSV, false},
+	} {
+		if err := renderOnce(v, r.f, r.screen); err != nil {
+			t.Errorf("sdktest: %s: %s does not render as %s: %v", RuleViews, jsonName(c, v), r.name, err)
 		}
 	}
 }
@@ -200,14 +215,18 @@ func checkRendered(t reporter, c plugin.Capability, v view.View) {
 // Width is fixed and colour is off so the verdict is about the view and not
 // about the terminal the author happens to be sitting at: a table that only
 // fails at 80 columns is still a table that fails, and it must fail on CI too.
-func renderOnce(v view.View, f cli.Format) (err error) {
+func renderOnce(v view.View, f cli.Format, screen bool) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("panic: %v", r)
 		}
 	}()
-	return cli.Render(io.Discard, v, cli.Options{Format: f, NoColor: true, Width: 80})
+	return render(io.Discard, v, cli.Options{Format: f, NoColor: true, Width: 80, Screen: screen})
 }
+
+// render is cli.Render, a variable so a test can see what each view was
+// rendered with.
+var render = cli.Render
 
 // --- (d) verb vocabulary ------------------------------------------------
 

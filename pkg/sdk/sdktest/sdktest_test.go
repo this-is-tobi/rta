@@ -3,12 +3,14 @@ package sdktest
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
+	"github.com/this-is-tobi/rta/internal/render/cli"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -210,6 +212,30 @@ func TestTheViewRulesReachInsideSections(t *testing.T) {
 	checkViews(rec, drive(rec, p, noConfig(), t.TempDir(), nil), noConfig())
 	if !strings.Contains(rec.errText(), "reports Total 1 with 2 rows") {
 		t.Errorf("nested view not checked: %q", rec.errText())
+	}
+}
+
+// A view is rendered the way a terminal draws it, not only the way a pipe
+// does: an empty result's sentence (view.Table.Empty and its siblings) is
+// drawn in pretty output only on a screen, and the conformance render set
+// Screen nowhere, so a plugin's sentence never went through the renderer
+// before a person first saw it.
+func TestAViewIsRenderedAsAScreenDrawsIt(t *testing.T) {
+	saved := render
+	t.Cleanup(func() { render = saved })
+	var drawn []cli.Options
+	render = func(w io.Writer, v view.View, opts cli.Options) error {
+		drawn = append(drawn, opts)
+		return saved(w, v, opts)
+	}
+	rec := &recorder{}
+	checkRendered(rec, ok(), view.Table{Columns: []view.Column{{Name: "name"}}, Empty: "nothing yet"})
+	if len(rec.errs) > 0 {
+		t.Fatalf("an empty table with a sentence was rejected:\n%s", rec.errText())
+	}
+	if !slices.ContainsFunc(drawn, func(o cli.Options) bool { return o.Format == cli.Pretty && o.Screen }) ||
+		!slices.ContainsFunc(drawn, func(o cli.Options) bool { return o.Format == cli.Pretty && !o.Screen }) {
+		t.Errorf("rendered with %+v, want pretty both on a screen and into a pipe", drawn)
 	}
 }
 
