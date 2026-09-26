@@ -215,8 +215,27 @@ func TestAPlainNoteIsNotAToDo(t *testing.T) {
 	}
 	_, err := runDone(context.Background(), req(map[string]any{"id": 1}, false))
 	ve := view.AsError(err, "x")
-	if ve.Code != "note.done.notatodo" || !strings.Contains(ve.Hint, "note toggle 1") {
+	if ve.Code != "note.done.notatodo" || !strings.Contains(ve.Hint, "`rta note toggle 1` makes it one") {
 		t.Errorf("done on a note = %+v", ve)
+	}
+	// An agent is sent to the tool, never to a command line it cannot run.
+	_, err = runDone(context.Background(), req(map[string]any{"id": 1}, false).WithSurface(plugin.SurfaceMCP))
+	if ve := view.AsError(err, "x"); !strings.Contains(ve.Hint, "`note_toggle {\"id\":1}` makes it one") {
+		t.Errorf("done on a note over MCP = %+v", ve)
+	}
+	_, err = runDone(context.Background(), req(map[string]any{"id": 9}, false).WithSurface(plugin.SurfaceMCP))
+	if ve := view.AsError(err, "x"); ve.Code != "note.notfound" ||
+		ve.Hint != `the `+"`note_list`"+` tool with the "all" argument lists every note` {
+		t.Errorf("done on no note over MCP = %+v", ve)
+	}
+	// An empty page hands over the call that fills it, whole, with the part
+	// the reader writes left as a placeholder.
+	v, err := runList(context.Background(), req(map[string]any{"parent": 1}, false).WithSurface(plugin.SurfaceMCP))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := v.(view.Table).Empty; !strings.Contains(got, "`note_add {\"parent\":1,\"title\":\"<title>\"}` adds one") {
+		t.Errorf("no sub-notes over MCP = %q", got)
 	}
 	if got := pair(t, section(t, show(t, 1), "note"), "status"); got != "note" {
 		t.Errorf("page status = %q", got)
@@ -425,7 +444,7 @@ func TestShowEmptyBodyExplainsItself(t *testing.T) {
 	if content.Body != "" {
 		t.Errorf("empty content = %q, want the note's own empty body", content.Body)
 	}
-	if !strings.Contains(content.Empty, "This note is empty") || !strings.Contains(content.Empty, "note edit 1") {
+	if !strings.Contains(content.Empty, "This note is empty") || !strings.Contains(content.Empty, "`rta note edit 1 --body <body>` writes it") {
 		t.Errorf("empty content says %q, want how to fill it", content.Empty)
 	}
 }

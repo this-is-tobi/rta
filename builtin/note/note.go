@@ -258,14 +258,23 @@ func Plugin() plugin.Plugin {
 
 func load() (itemstore.Store, error) { return itemstore.Load(storeFile, ns) }
 func save(s itemstore.Store) error   { return itemstore.Save(storeFile, ns, s) }
-func find(s itemstore.Store, id int) (int, *view.Error) {
+func index(s itemstore.Store, id int) (int, bool) {
 	for i := range s.Items {
 		if s.Items[i].ID == id {
-			return i, nil
+			return i, true
 		}
 	}
+	return 0, false
+}
+
+// find is index for a call that cannot go on without the note, refused in
+// the words of the surface asking, which is who has to find the right id.
+func find(sf plugin.Surface, s itemstore.Store, id int) (int, *view.Error) {
+	if i, ok := index(s, id); ok {
+		return i, nil
+	}
 	return 0, view.Errorf("note.notfound", "no note with id %d", id).
-		WithHint("run `rta note list --all` to see every note")
+		WithHint(sf.CapabilityWith("note.list", "all") + " lists every note")
 }
 
 func hasAnyTag(it itemstore.Item, tags []string) bool {
@@ -371,9 +380,11 @@ func runList(_ context.Context, req plugin.Request) (view.View, error) {
 	// The table even when nothing is listed, and the sentence beside it for a
 	// screen: see view.Table.Empty.
 	if len(t.Rows) == 0 {
-		t.Empty = "Nothing here yet — add one with: rta note add \"...\""
+		sf := req.Surface()
+		t.Empty = "Nothing here yet — " + sf.CapabilityName("note.add") + " adds one"
 		if parent != 0 {
-			t.Empty = fmt.Sprintf("Note %d has no sub-notes yet — add one with: rta note add \"...\" --parent %d", parent, parent)
+			t.Empty = fmt.Sprintf("Note %d has no sub-notes yet — `%s` adds one", parent,
+				sf.Call("note.add", titleArg, plugin.Arg{Name: "parent", Value: parent}))
 		}
 	}
 	return t, nil
@@ -410,7 +421,7 @@ func runSearch(_ context.Context, req plugin.Request) (view.View, error) {
 	return t, nil
 }
 
-func runTags(_ context.Context, _ plugin.Request) (view.View, error) {
+func runTags(_ context.Context, req plugin.Request) (view.View, error) {
 	s, err := load()
 	if err != nil {
 		return nil, err
@@ -428,7 +439,8 @@ func runTags(_ context.Context, _ plugin.Request) (view.View, error) {
 	sort.Strings(names)
 	t := view.Table{Columns: []view.Column{{Name: "Tag"}, {Name: "Notes", Kind: view.KindNumber}}}
 	if len(names) == 0 {
-		t.Empty = "No tags yet — add one with: rta note add \"...\" --tag <name>"
+		t.Empty = "No tags yet — `" + req.Surface().Call("note.add", titleArg,
+			plugin.Arg{Name: "tag", Value: "<name>"}) + "` adds one"
 	}
 	for _, name := range names {
 		t.Rows = append(t.Rows, []string{name, strconv.Itoa(counts[name])})
@@ -442,10 +454,10 @@ func runTags(_ context.Context, _ plugin.Request) (view.View, error) {
 // then the relationships. Splitting them is what makes both readable —
 // metadata folded into the markdown body drowns in it, and every renderer has
 // to re-parse prose to find a due date.
-func showSections(s itemstore.Store, it itemstore.Item) view.Sections {
+func showSections(sf plugin.Surface, s itemstore.Store, it itemstore.Item) view.Sections {
 	sec := view.Sections{Items: []view.Section{
 		{ID: "note", Title: "note", View: metaPairs(s, it)},
-		{ID: "content", Title: "content", View: contentView(it)},
+		{ID: "content", Title: "content", View: contentView(sf, it)},
 	}}
 	if children := itemstore.Children(s, it.ID); len(children) > 0 {
 		t := view.Table{Columns: []view.Column{
@@ -484,7 +496,7 @@ func metaPairs(s itemstore.Store, it itemstore.Item) view.KeyValue {
 		kv.Pairs = append(kv.Pairs, view.Pair{Key: "tags", Value: strings.Join(tags, " ")})
 	}
 	if it.Parent != 0 {
-		if pi, verr := find(s, it.Parent); verr == nil {
+		if pi, ok := index(s, it.Parent); ok {
 			kv.Pairs = append(kv.Pairs, view.Pair{Key: "part of",
 				Value: fmt.Sprintf("#%d %s", it.Parent, s.Items[pi].Title)})
 		}
@@ -505,14 +517,16 @@ func metaPairs(s itemstore.Store, it itemstore.Item) view.KeyValue {
 }
 
 // contentView renders the prose. An empty body says so and says how to fill
-// it, rather than leaving a blank band on a page dedicated to one note.
+// it, rather than leaving a blank band on a page dedicated to one note, in
+// the words of the surface showing it.
 //
 // Beside the body, not as it (view.Text.Empty): the sentence was the body,
 // so -o json handed a script "This note is empty — ..." as the note's
 // content, text nobody wrote in it.
-func contentView(it itemstore.Item) view.Text {
+func contentView(sf plugin.Surface, it itemstore.Item) view.Text {
 	if strings.TrimSpace(it.Body) == "" {
-		return view.Text{Empty: fmt.Sprintf("This note is empty — write it with: rta note edit %d --body \"...\"", it.ID)}
+		return view.Text{Empty: "This note is empty — `" + sf.Call("note.edit", idArg(it.ID),
+			plugin.Arg{Name: "body", Value: "<body>"}) + "` writes it"}
 	}
 	return view.Text{Body: strings.TrimRight(it.Body, "\n"), Markdown: true}
 }
@@ -530,7 +544,7 @@ func crossRefs(s itemstore.Store, it itemstore.Item) view.Table {
 		if id == it.ID {
 			continue // "#3" inside note 3 is prose, not a link to itself
 		}
-		if i, verr := find(s, id); verr == nil {
+		if i, ok := index(s, id); ok {
 			t.Rows = append(t.Rows, []string{"→ mentions", strconv.Itoa(id), s.Items[i].Title})
 		}
 	}
@@ -554,11 +568,11 @@ func runShow(_ context.Context, req plugin.Request) (view.View, error) {
 	if err != nil {
 		return nil, err
 	}
-	i, verr := find(s, req.Int("id"))
+	i, verr := find(req.Surface(), s, req.Int("id"))
 	if verr != nil {
 		return nil, verr
 	}
-	return showSections(s, s.Items[i]), nil
+	return showSections(req.Surface(), s, s.Items[i]), nil
 }
 
 // applyTags interprets the --tag convention shared by add/edit: a single
@@ -595,9 +609,9 @@ func runAdd(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 	parent := req.Int("parent")
 	if parent != 0 {
-		if _, verr := find(s, parent); verr != nil {
+		if _, ok := index(s, parent); !ok {
 			return nil, view.Errorf("note.add.badparent", "parent note %d does not exist", parent).
-				WithHint("run `rta note list` to see valid note ids")
+				WithHint(req.Surface().CapabilityName("note.list") + " lists the notes there are")
 		}
 	}
 	due, err := itemstore.ParseDue(req.String("due"), time.Now())
@@ -629,7 +643,7 @@ func prefillEdit(_ context.Context, req plugin.Request) (map[string]any, error) 
 	if err != nil {
 		return nil, err
 	}
-	i, verr := find(s, req.Int("id"))
+	i, verr := find(req.Surface(), s, req.Int("id"))
 	if verr != nil {
 		return nil, verr
 	}
@@ -643,6 +657,21 @@ func prefillEdit(_ context.Context, req plugin.Request) (map[string]any, error) 
 	}, nil
 }
 
+// titleArg and idArg are the positional inputs a call note's pages hand over
+// takes: a title the reader writes in, and the note it is about.
+var titleArg = plugin.Arg{Name: "title", Value: "<title>", Positional: true}
+
+func idArg(id int) plugin.Arg { return plugin.Arg{Name: "id", Value: id, Positional: true} }
+
+// inputNames is each of names as the caller on sf gives it.
+func inputNames(sf plugin.Surface, names ...string) []string {
+	out := make([]string, len(names))
+	for i, n := range names {
+		out[i] = sf.InputName(n)
+	}
+	return out
+}
+
 func runEdit(_ context.Context, req plugin.Request) (view.View, error) {
 	title := strings.TrimSpace(req.String("title"))
 	body := req.String("body")
@@ -651,7 +680,8 @@ func runEdit(_ context.Context, req plugin.Request) (view.View, error) {
 	parent := req.Int("parent")
 	if title == "" && body == "" && len(rawTags) == 0 && rawDue == "" && parent == noParentChange {
 		return nil, view.Errorf("note.edit.nochange", "nothing to change").
-			WithHint("pass --title, --body, --tag, --due and/or --parent with the new content")
+			WithHint("give the new content in one or more of " + strings.Join(inputNames(req.Surface(),
+				"title", "body", "tag", "due", "parent"), ", "))
 	}
 	// Held across the whole load-decide-save below — see itemstore.Lock.
 	unlock, err := itemstore.Lock(storeFile)
@@ -664,7 +694,7 @@ func runEdit(_ context.Context, req plugin.Request) (view.View, error) {
 		return nil, err
 	}
 	id := req.Int("id")
-	i, verr := find(s, id)
+	i, verr := find(req.Surface(), s, id)
 	if verr != nil {
 		return nil, verr
 	}
@@ -673,7 +703,7 @@ func runEdit(_ context.Context, req plugin.Request) (view.View, error) {
 			return nil, view.Errorf("note.edit.selfparent", "a note cannot be its own parent")
 		}
 		if parent != 0 {
-			if _, verr := find(s, parent); verr != nil {
+			if _, ok := index(s, parent); !ok {
 				return nil, view.Errorf("note.edit.badparent", "parent note %d does not exist", parent)
 			}
 		}
@@ -725,13 +755,13 @@ func runDone(_ context.Context, req plugin.Request) (view.View, error) {
 		return nil, err
 	}
 	id := req.Int("id")
-	i, verr := find(s, id)
+	i, verr := find(req.Surface(), s, id)
 	if verr != nil {
 		return nil, verr
 	}
 	if !s.Items[i].Todo {
 		return nil, view.Errorf("note.done.notatodo", "note %d is not a to-do: %s", id, s.Items[i].Title).
-			WithHint(fmt.Sprintf("`rta note toggle %d` makes it one, then check it off", id))
+			WithHint("`" + req.Surface().Call("note.toggle", idArg(id)) + "` makes it one, then check it off")
 	}
 	if req.DryRun {
 		return view.Text{Body: fmt.Sprintf("would check off note %d: %s", id, s.Items[i].Title)}, nil
@@ -759,7 +789,7 @@ func runReopen(_ context.Context, req plugin.Request) (view.View, error) {
 		return nil, err
 	}
 	id := req.Int("id")
-	i, verr := find(s, id)
+	i, verr := find(req.Surface(), s, id)
 	if verr != nil {
 		return nil, verr
 	}
@@ -788,7 +818,7 @@ func runToggle(_ context.Context, req plugin.Request) (view.View, error) {
 		return nil, err
 	}
 	id := req.Int("id")
-	i, verr := find(s, id)
+	i, verr := find(req.Surface(), s, id)
 	if verr != nil {
 		return nil, verr
 	}
@@ -823,7 +853,7 @@ func runRemove(_ context.Context, req plugin.Request) (view.View, error) {
 		return nil, err
 	}
 	id := req.Int("id")
-	i, verr := find(s, id)
+	i, verr := find(req.Surface(), s, id)
 	if verr != nil {
 		return nil, verr
 	}
