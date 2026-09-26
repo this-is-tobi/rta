@@ -75,23 +75,36 @@ jobs:
   # build reads is code by the rule above, and runs everything again.
   #
   # The prose list is stated here rather than taken from the catalogue's
-  # default, which is the same list today: the reference floats with @v0, and
-  # what counts as prose decides which of this repository's gates run.
+  # default: the reference floats with @v0, and what counts as prose decides
+  # which of this repository's gates run. It is that default and the chart.
+  #
+  # The chart is on it because prose, to the classifier, is what no gate
+  # behind `code` reads, and nothing the linters, the builds, the images, the
+  # Windows leg or the dependency scan read lives under charts/. test-chart
+  # does not need them either: it installs the released image the chart's
+  # appVersion names, and the image built here is a tarball nothing loads into
+  # Kind. What reads the chart on the Go side is two tests:
+  # TestNoSourceFileHidesACharacter reads every file git tracks, a Helm
+  # template among its stated reasons, and TestEveryDocsPathCitedFromCodeExists
+  # opens every docs page a YAML file cites, the chart's values and templates
+  # included. Both are tests that read prose, which test-prose runs for every
+  # pull request `test` skips, so a change only under charts/ runs the chart's
+  # own gates and those two packages, and nothing else.
   changes:
     name: Detect changed paths
     uses: this-is-tobi/github-workflows/.github/workflows/classify-changes.yml@v0
     permissions:
       pull-requests: read
     with:
-      PROSE_PATTERNS: '["docs/*", "*.md", "LICENSE", "NOTICE", ".release-please-manifest.json"]'
+      PROSE_PATTERNS: >-
+        ["docs/*", "*.md", "LICENSE", "NOTICE", ".release-please-manifest.json",
+        "charts/*", ".github/ct.yaml"]
       # Two groups, each read by its own gates through `groups`.
       #
-      # chart is its own classification rather than a branch of the prose
-      # one: the chart's README is generated from values.yaml, so a *.md
-      # change under charts/ is docs-only for the Go pipeline and very much
-      # not docs-only for helm-docs, which fails on exactly that file being
-      # stale. The two answers are allowed to disagree, and a group is
-      # matched on every file, prose or not, so they can.
+      # chart names the files the chart's gates read, prose to every gate
+      # behind `code` and very much not to helm-docs, which fails on the
+      # chart's README being stale, or to ct. A group is matched on every
+      # file, prose or not, which is what lets the two answers disagree.
       #
       # full-image: the full image is built only for a pull request that
       # changes it. Its eleven plugin builds per architecture are too much to
@@ -231,9 +244,11 @@ jobs:
   #
   # So they run here whenever `test` does not: the two packages that hold
   # them, on one runner, and without the race detector, which has nothing to
-  # find in a test reading files. A release pull request pays for it too:
-  # CHANGELOG.md is a tracked file written from commit messages nothing
-  # checks for a hidden character, and it ships as the release notes.
+  # find in a test reading files. A change only under charts/ reaches two of
+  # them (the `changes` job says which), and this is all it needs from the Go
+  # side. A release pull request pays for it too: CHANGELOG.md is a tracked
+  # file written from commit messages nothing checks for a hidden character,
+  # and it ships as the release notes.
   #
   # A test that reads prose belongs in one of these packages. One written
   # anywhere else runs only when code changes, which is the gap this closes.
