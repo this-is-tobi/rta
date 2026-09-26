@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"net"
 	"os"
@@ -672,17 +673,25 @@ func TestEveryBuiltinViewSurvivesEveryOutputFormat(t *testing.T) {
 			var buf bytes.Buffer
 			// Width is fixed rather than taken from the terminal: a
 			// golden-free test that renders differently on a narrow window is
-			// a test that fails for whoever has a small laptop.
-			opts := cli.Options{Format: f, NoColor: true, Width: 100}
+			// a test that fails for whoever has a small laptop. Screen,
+			// because pretty output is read by a person there, and that is
+			// where an empty result's sentence is drawn.
+			opts := cli.Options{Format: f, NoColor: true, Width: 100, Screen: true}
 			if err := cli.Render(&buf, v, opts); err != nil {
 				t.Errorf("%s as %s: %v", c.ID, f, err)
 			}
 			if buf.Len() == 0 {
 				// A renderer that returns nil and writes nothing has produced
 				// a successful empty result, which a script reads as "no
-				// data" and a person reads as a broken terminal.
+				// data" and a person reads as a broken terminal. An empty
+				// result writes its sentence here, so nothing is still wrong.
 				t.Errorf("%s as %s rendered nothing", c.ID, f)
 			}
+		}
+		// And pretty into a pipe, which draws no sentence: an empty patch
+		// is owed an empty file there, so only a failure is wrong.
+		if err := cli.Render(io.Discard, v, cli.Options{Format: cli.Pretty, NoColor: true}); err != nil {
+			t.Errorf("%s as pretty into a pipe: %v", c.ID, err)
 		}
 	}
 }
