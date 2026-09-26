@@ -275,6 +275,13 @@ type Sections struct {
 	// page from a degraded one, and a degraded page that looks complete is
 	// how a monitoring check comes back green.
 	Warnings []Error `json:"warnings,omitempty"`
+	// Empty is what a person is told in place of a page with no sections:
+	// that nothing on this machine has a fix to paste, where the page is the
+	// fixes. The rule is Table.Empty's, and so is the reason: a page that
+	// answered "nothing here" with a Text view instead changed shape with the
+	// state, so `rta audit clients --fix > fix.txt` wrote that sentence into
+	// the file, and `jq '.items[]'` met a view with no items to iterate.
+	Empty string `json:"-"`
 }
 
 func (Text) isView()     {}

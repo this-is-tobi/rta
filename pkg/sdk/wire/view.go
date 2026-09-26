@@ -160,6 +160,7 @@ func ViewToProto(v view.View) *rtav1.View {
 			Warnings: mapSlice(t.Warnings, func(w view.Error) *rtav1.Error {
 				return ErrorToProto(&w)
 			}),
+			Empty: t.Empty,
 		}}}
 	case *view.Error:
 		return &rtav1.View{Kind: &rtav1.View_Error{Error: ErrorToProto(t)}}
@@ -246,6 +247,7 @@ func ViewFromProto(v *rtav1.View) view.View {
 				}
 				return view.Error{}
 			}),
+			Empty: k.Sections.GetEmpty(),
 		}
 	case *rtav1.View_Error:
 		return ErrorFromProto(k.Error)

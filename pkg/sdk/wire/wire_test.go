@@ -220,6 +220,7 @@ func everyViewType() map[string]view.View {
 				{Title: "Empty"},
 			},
 			Warnings: []view.Error{{Code: "x.partial", Message: "one sensor failed", Hint: "try later", Retryable: true}},
+			Empty:    "nothing to paste",
 		},
 		// Refusal set so the round-trip proves the flag survives the wire: a
 		// plugin's policy gate that arrives stripped would ledger host-side

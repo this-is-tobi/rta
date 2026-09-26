@@ -402,6 +402,16 @@ func renderPretty(w io.Writer, v view.View, opts Options) error {
 // heading rule, then its own view rendered by the same pipeline. Sections
 // nest, so composites of composites just work.
 func prettySections(w io.Writer, s view.Sections, st styles, opts Options) error {
+	// A page with no sections says so on a screen, in place of them; see
+	// view.Sections.Empty. Its warnings still follow, parted from it the way
+	// they are parted from sections.
+	said := false
+	if len(s.Items) == 0 && s.Empty != "" && st.screen {
+		if err := drawEmpty(w, s.Empty, st); err != nil {
+			return err
+		}
+		said = true
+	}
 	for i, item := range s.Items {
 		if i > 0 {
 			if _, err := fmt.Fprintln(w); err != nil {
@@ -435,7 +445,7 @@ func prettySections(w io.Writer, s view.Sections, st styles, opts Options) error
 	}
 	// The separating blank line belongs to the sections above it, so a page
 	// that is nothing but warnings does not open on an empty line.
-	if len(s.Items) > 0 {
+	if len(s.Items) > 0 || said {
 		if _, err := fmt.Fprintln(w); err != nil {
 			return err
 		}

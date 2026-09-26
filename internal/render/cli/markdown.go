@@ -239,6 +239,9 @@ func markdownChart(b *strings.Builder, c view.Chart) {
 }
 
 func markdownSections(b *strings.Builder, s view.Sections, level int) {
+	if len(s.Items) == 0 {
+		markdownEmpty(b, s.Empty)
+	}
 	for _, item := range s.Items {
 		if item.View == nil {
 			continue

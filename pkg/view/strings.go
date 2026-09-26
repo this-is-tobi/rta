@@ -115,8 +115,8 @@ func mapStrings(v View, f func(string) string) (View, bool) {
 	case Sections:
 		items, ic := mapSections(t.Items, f)
 		warns, wc := mapErrors(t.Warnings, f)
-		if ic || wc {
-			t.Items, t.Warnings = items, warns
+		if empty := f(t.Empty); ic || wc || empty != t.Empty {
+			t.Items, t.Warnings, t.Empty = items, warns, empty
 			return t, true
 		}
 	case *Error:
