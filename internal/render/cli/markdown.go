@@ -250,9 +250,9 @@ func markdownSections(b *strings.Builder, s view.Sections, level int) {
 		// and a report that printed "cpu_temp" where the page says
 		// "Temperature" would be a worse document for the sake of a handle
 		// no reader has any use for.
-		// Escaped for the same reason Code just below is: a section title
-		// arrives from the wire verbatim, and a newline in one ends the
-		// heading and starts writing blocks of its own.
+		// Escaped for the same reason Code just below is made safe: a
+		// section title arrives from the wire verbatim, and a newline in one
+		// ends the heading and starts writing blocks of its own.
 		if item.Title != "" {
 			b.WriteString("\n" + strings.Repeat("#", clampLevel(level)) + " " + inlineMarkdown(item.Title) + "\n")
 		}
@@ -276,18 +276,20 @@ func markdownWarnings(b *strings.Builder, warnings []view.Error) {
 		// inlineMarkdown, because a newline in the message would end the
 		// blockquote and leave the rest of the warnings as body prose.
 		//
-		// Code gets the same treatment, and the reason it looks like it
-		// should not need it is the trap: an error code reads as an
-		// identifier, but it is per-call output a plugin writes, not
-		// declared text. Validate's identifier grammar constrains what a
-		// plugin registers — capability ids, field names, config keys —
-		// and never sees this, wire.ErrorFromProto copies it off the wire
-		// byte for byte, and sdktest's code conventions are a conformance
-		// test an author opts into rather than a gate anything passes
-		// through. pkg/view/strings.go made exactly this call once already
-		// when it stopped exempting Code from cleaning; this is the same
-		// ruling at the renderer, where a backtick closes the span early.
-		line := "> - `" + inlineMarkdown(e.Code) + "` — " + inlineMarkdown(e.Message)
+		// Code is made safe too, and the reason it looks like it should not
+		// need it is the trap: an error code reads as an identifier, but it
+		// is per-call output a plugin writes, not declared text. Validate's
+		// identifier grammar constrains what a plugin registers — capability
+		// ids, field names, config keys — and never sees this,
+		// wire.ErrorFromProto copies it off the wire byte for byte, and
+		// sdktest's code conventions are a conformance test an author opts
+		// into rather than a gate anything passes through. pkg/view/strings.go
+		// made exactly this call once already when it stopped exempting Code
+		// from cleaning; this is the same ruling at the renderer, where a
+		// backtick closes the span early. It goes through codeSpan rather than
+		// inlineMarkdown, though: see there for why an escape is the wrong tool
+		// inside a span.
+		line := "> - " + codeSpan(e.Code) + " — " + inlineMarkdown(e.Message)
 		if e.Hint != "" {
 			line += " (" + inlineMarkdown(e.Hint) + ")"
 		}
@@ -381,6 +383,46 @@ func inlineMarkdown(s string) string {
 	return s
 }
 
+// codeSpan writes s as a code span a CommonMark renderer reads back as s.
+//
+// Not inlineMarkdown between two backticks, which is what it was: a backslash
+// escape is literal inside a code span — the span is the one place markdown
+// escapes nothing — so a code holding \, <, [ or | was drawn with the
+// backslash inlineMarkdown put before it, and a backtick in it closed the span
+// anyway, since the renderer never read "\`" as an escape either. A span can
+// only be closed by a backtick run as long as the one that opened it, so the
+// fence is one longer than the longest run in s and nothing inside can end it.
+// The rest is the spec's own rules run backwards. A space goes on each side
+// when s starts or ends with a backtick, or it would join the fence; and when
+// s starts and ends with a space, since a renderer strips one space from each
+// end of such a span, the padding is what it strips. An empty s is written as
+// one space, which a renderer leaves alone in a span of nothing but spaces:
+// two backticks with nothing between them are literal text, not a span. A
+// line ending in a span is drawn as a space, so writing it as one changes
+// nothing a reader sees and keeps the span on its line — the blockquote a
+// warning sits in ends at a line that does not open with ">".
+func codeSpan(s string) string {
+	s = strings.NewReplacer("\r\n", " ", "\r", " ", "\n", " ").Replace(s)
+	longest, run := 0, 0
+	for _, r := range s {
+		if r != '`' {
+			run = 0
+			continue
+		}
+		run++
+		longest = max(longest, run)
+	}
+	fence := strings.Repeat("`", longest+1)
+	switch {
+	case s == "":
+		s = " "
+	case strings.HasPrefix(s, "`"), strings.HasSuffix(s, "`"),
+		strings.HasPrefix(s, " ") && strings.HasSuffix(s, " ") && strings.Trim(s, " ") != "":
+		s = " " + s + " "
+	}
+	return fence + s + fence
+}
+
 // markdownError writes an error as markdown, so that a redirected report
 // carries its failure instead of an empty file.
 func markdownError(w io.Writer, e *view.Error) error {
@@ -390,7 +432,7 @@ func markdownError(w io.Writer, e *view.Error) error {
 	// is as much a display channel here as it is in the body of a report —
 	// and this one lands unquoted, not behind a blockquote, the moment a
 	// newline in that text ends the line it started on.
-	b.WriteString("**Error** `" + inlineMarkdown(e.Code) + "` — " + inlineMarkdown(e.Message) + "\n")
+	b.WriteString("**Error** " + codeSpan(e.Code) + " — " + inlineMarkdown(e.Message) + "\n")
 	if e.Hint != "" {
 		b.WriteString("\n> " + inlineMarkdown(e.Hint) + "\n")
 	}
