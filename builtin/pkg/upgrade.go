@@ -106,9 +106,10 @@ func runUpgradeCapability(ctx context.Context, req plugin.Request) (view.View, e
 	for _, t := range tools {
 		if t.Bin == target {
 			if pkg != "" {
-				return nil, view.Errorf("pkg.upgrade.package", "--package does not apply to a tool; %s is one binary", target)
+				return nil, view.Errorf("pkg.upgrade.package", "%s does not apply to a tool; %s is one binary",
+					req.Surface().InputName("package"), target)
 			}
-			v, verr := installTool(ctx, newRegistryClient(), t, req.Bool("unverified"), req.DryRun)
+			v, verr := installTool(ctx, req.Surface(), newRegistryClient(), t, req.Bool("unverified"), req.DryRun)
 			if verr != nil {
 				return nil, verr
 			}
@@ -126,7 +127,8 @@ func upgradeManager(ctx context.Context, req plugin.Request, m manager, pkg stri
 	argv := m.upgrade(pkg)
 	if argv == nil {
 		return nil, view.Errorf("pkg.upgrade.package", "%s upgrades one package at a time", m.name).
-			WithHint("`rta pkg outdated " + m.name + "` lists them; pass one with --package")
+			WithHint("`" + req.Surface().Call("pkg.outdated", plugin.Arg{Name: "manager", Value: m.name, Positional: true}) +
+				"` lists them; give one in " + req.Surface().InputName("package"))
 	}
 	if m.name == "go" && pkg != "" {
 		// `go install` wants the package path, and the binary carries it.

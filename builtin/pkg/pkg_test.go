@@ -449,7 +449,7 @@ func TestInstallToolVerifiesAndPlaces(t *testing.T) {
 	}
 	// The download goes through plugindist.Fetch, which speaks https only;
 	// a test server is http, so the URL check is what this asserts first.
-	_, verr := installTool(context.Background(), c, tool{Bin: "fzf", Owner: "junegunn", Repo: "fzf"}, false, false)
+	_, verr := installTool(context.Background(), plugin.SurfaceCLI, c, tool{Bin: "fzf", Owner: "junegunn", Repo: "fzf"}, false, false)
 	if verr == nil || verr.Code != "pkg.tool.url" {
 		t.Fatalf("an http asset must be refused: %+v", verr)
 	}
