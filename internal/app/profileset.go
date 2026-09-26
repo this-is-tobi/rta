@@ -362,7 +362,10 @@ func runProfileSet(cmd *cobra.Command, name string, reg *registry.Registry, dryR
 			unchanged = true
 			return cfg, false
 		}
-		finalProfile = p
+		// Stamped with the file's provenance, the way LoadFile will stamp it
+		// on the way back: a new profile starts as a zero value, which reads
+		// as untrusted, and a dry run's card is built from this one.
+		finalProfile = cfg.Stamp(p)
 		if dryRun {
 			return cfg, false
 		}

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -122,6 +123,26 @@ func TestAnUnnamedConfigsDashboardBlockIsNotDrawn(t *testing.T) {
 	}
 	if got := cfg.TrustedDashboard(); len(got.Hidden) != 0 || got.Columns != 0 {
 		t.Errorf("TrustedDashboard() = %+v, want the empty block", got)
+	}
+}
+
+// A profile built in memory takes the provenance of the file it is going
+// into, and only from a Config the loader read: a zero one, which is what
+// nothing vouched for looks like, stamps it untrusted.
+func TestAProfileBuiltInMemoryTakesTheProvenanceOfItsFile(t *testing.T) {
+	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
+	named, err := LoadFile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p := (Profile{}); p.Trusted() {
+		t.Fatal("a zero Profile reads as trusted")
+	}
+	if !named.Stamp(Profile{}).Trusted() {
+		t.Error("a profile going into a named config file reads as untrusted")
+	}
+	if (Config{}).Stamp(Profile{}).Trusted() {
+		t.Error("a Config nothing loaded vouched for a profile")
 	}
 }
 
