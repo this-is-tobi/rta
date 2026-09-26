@@ -104,11 +104,11 @@ func Plugin() plugin.Plugin {
 				Summary:    "Print the certificate chain as PEM",
 				Safety:     plugin.Read,
 				Idempotent: true,
-				Description: "The bytes, not a description of them. `cert chain` draws what a host " +
+				Description: "The bytes, not a description of them. `cert.chain` draws what a host " +
 					"presents so a person can read it; this hands the same certificates back in the " +
 					"form every other tool takes one — a Kubernetes ConfigMap, a Dockerfile COPY, " +
 					"`update-ca-certificates`, a paste into somebody's terminal.\n\n" +
-					"--include issuers is the one to reach for behind a private CA: it drops the leaf " +
+					"`include` issuers is the one to reach for behind a private CA: it drops the leaf " +
 					"and leaves the chain that has to be *trusted*, which is what a ca-bundle is. " +
 					"chain (the default) is everything the host presented, leaf is the end-entity " +
 					"certificate alone.\n\n" +
@@ -117,8 +117,8 @@ func Plugin() plugin.Plugin {
 					"and this reports what arrived rather than filling the gap from a trust store, " +
 					"because a bundle that silently differs from what the server serves is how a " +
 					"working local test hides a broken deployment.\n\n" +
-					"Read, and it stays read from anywhere but a terminal: --out names a path on " +
-					"*this* machine, so it is a person's flag only and an MCP caller always gets the " +
+					"Read, and it stays read from anywhere but a terminal: `out` names a path on " +
+					"*this* machine, so it is a person's input only and an MCP caller always gets the " +
 					"PEM back in the response.",
 				Inputs: []plugin.Field{
 					targetField,
@@ -153,7 +153,7 @@ func Plugin() plugin.Plugin {
 				// individually rather than one for all of them.
 				NeedsGrant: true,
 				Scope:      "targets",
-				Description: "Same reasoning as `net probe`: the hosts are the caller's choice, and " +
+				Description: "Same reasoning as `net.probe`: the hosts are the caller's choice, and " +
 					"what a certificate says about itself — subject, issuer, DNS names — is read as " +
 					"tool output the same way a banner is. Needs a grant, one per host listed.",
 				Inputs: []plugin.Field{

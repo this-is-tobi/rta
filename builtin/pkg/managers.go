@@ -15,10 +15,10 @@ func managersCapability() plugin.Capability {
 		Safety:     plugin.Read,
 		Idempotent: true,
 		Description: "One row per manager pkg knows, present or not. Detection is a $PATH lookup " +
-			"and the version is the manager's own `--version`, so this answers in a moment " +
-			"where pkg overview asks every manager what is behind first. An absent row is " +
+			"and the version is what `<manager> --version` says, so this answers in a moment " +
+			"where pkg.overview asks every manager what is behind first. An absent row is " +
 			"the diagnostic: a manager installed in a shell whose $PATH this process does " +
-			"not share shows up here as absent, and that is why pkg overview finds nothing.",
+			"not share shows up here as absent, and that is why pkg.overview finds nothing.",
 		// The managers table is where somebody learns which managers rta sees; the
 		// next question is what one of them has behind, and the column is named
 		// for pkg.outdated's input so the row answers it.

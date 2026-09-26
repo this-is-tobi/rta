@@ -30,9 +30,9 @@ func diffCapability() plugin.Capability {
 		HostSpecific: true,
 		Idempotent:   true,
 		Description: "Unified diff text, the structured-plugin equivalent of `git diff`. With no " +
-			"--commit, this is every uncommitted change — staged and unstaged together — against " +
+			"`commit`, this is every uncommitted change — staged and unstaged together — against " +
 			"HEAD; git.status already answers which paths changed, this answers what changed in " +
-			"them. --commit diffs that one commit against its own parent instead, and the root " +
+			"them. `commit` diffs that one commit against its own parent instead, and the root " +
 			"commit against the empty tree, the equivalent of `git show <commit>`'s patch half. " +
 			"Diffing two arbitrary commits against each other is deliberately not offered in this " +
 			"first cut — the two cases above cover what an agent inspecting a repository's current " +

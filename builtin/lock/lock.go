@@ -40,7 +40,7 @@ func Plugin() plugin.Plugin {
 	// be the whole command. As a leading positional it could not be: the
 	// name would land in it. The name is what a person reaching for the
 	// emergency brake actually knows, so the name is the positional.
-	kindHelp := "what to freeze: agent (a server's --as name, the default), credential (a bearer " +
+	kindHelp := "what to freeze: agent (the name a server runs as, the default), credential (a bearer " +
 		"identity, exactly as the record's credential column shows it), or operator (a roster " +
 		"label on the operator channel)"
 	return plugin.Plugin{
@@ -53,12 +53,12 @@ func Plugin() plugin.Plugin {
 				Summary: "Lock one principal out of the network surfaces, effective on its next call",
 				Description: "Freezes an agent name, a credential, or an operator label: every tool " +
 					"call from a locked agent or credential is refused before any other gate — the " +
-					"ungated read tier included, which is what `grant revoke` alone never covered — " +
+					"ungated read tier included, which is what `grant.revoke` alone never covered — " +
 					"and a locked operator key gets no verb on the operator channel. Running servers " +
 					"pick it up on their next request, no restart. Re-locking the same principal " +
 					"replaces the row, so a new note or window needs no rm first. Asks for no " +
 					"passphrase: a lock only subtracts, and an incident is the wrong moment to " +
-					"demand a secret. With --server <name>: places the lock on a remote rta server, " +
+					"demand a secret. With `server`: places the lock on a remote rta server, " +
 					"as a signed operator call. Never reachable over MCP.",
 				Safety:     plugin.Write,
 				Idempotent: true,
@@ -83,7 +83,7 @@ func Plugin() plugin.Plugin {
 				ID:      "lock.list",
 				Summary: "Who is frozen right now, and why",
 				Description: "The live locks: kind, principal, the note the locked party is shown, " +
-					"who placed it and until when. With --server <name>: reads a remote server's " +
+					"who placed it and until when. With `server`: reads a remote server's " +
 					"locks as a signed operator call. Never reachable over MCP — who an operator " +
 					"has frozen is incident state, and not an agent's to enumerate.",
 				Safety:     plugin.Read,
@@ -110,8 +110,8 @@ func Plugin() plugin.Plugin {
 				Summary: "Lift one lock",
 				Description: "Removes a lock so the principal's next call is judged by the ordinary " +
 					"gates again. This is the expanding direction — the one an agent must never " +
-					"hold, which is why the harness deny list from `rta audit clients --fix` covers " +
-					"`rta lock` and why this is never reachable over MCP. With --server <name>: " +
+					"hold, which is why the harness deny list from `audit.clients` with `fix` covers " +
+					"`rta lock` and why this is never reachable over MCP. With `server`: " +
 					"lifts a lock on a remote server, as a signed operator call.",
 				Safety:     plugin.Write,
 				Idempotent: true,

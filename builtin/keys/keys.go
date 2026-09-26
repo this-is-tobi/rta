@@ -50,7 +50,7 @@ func Plugin() plugin.Plugin {
 					"all — is listed, and a stray file that was never a key is not. Reads only public " +
 					"data: a key's .pub sibling for its type, fingerprint and " +
 					"comment, and whether the private key itself is passphrase-protected — the same check " +
-					"`rta doctor` uses, which parses far enough to see a key is locked without ever supplying " +
+					"`audit.doctor` uses, which parses far enough to see a key is locked without ever supplying " +
 					"a passphrase. Never decrypts anything. Backup-eligible means ed25519: `keys.backup` has " +
 					"nothing to encode as words for an RSA or ECDSA key, which carries no single seed. An " +
 					"Exposed column appears only when some key's permissions let another account on this " +
@@ -73,7 +73,7 @@ func Plugin() plugin.Plugin {
 				Safety: plugin.Write, Idempotent: true, HumanOnly: true,
 				Description: "The words ARE the private key — anyone holding them can restore it and use it " +
 					"exactly as if they had the file, with no passphrase of their own to guess. Classified as " +
-					"a write for the same reason `kv get` is: revealing key material is the sensitive act, not " +
+					"a write for the same reason `kv.get` is: revealing key material is the sensitive act, not " +
 					"changing anything. Never an MCP tool rather than only requiring a grant — the " +
 					"same precedent grant.allow/grant.revoke set, for the same reason `share.secret.set/get` " +
 					"will: once melted, the words work forever until the underlying key is rotated, with no " +
@@ -98,8 +98,8 @@ func Plugin() plugin.Plugin {
 					"refusing to touch either if it already exists — the discipline keys.restore " +
 					"uses, for the sharper reason here: overwriting a private key destroys access " +
 					"to everything that key authorises, with nothing to restore from. " +
-					"--passphrase encrypts the key being written and is always typed, never read " +
-					"from the environment, for keys.restore's --new-passphrase reason: generating " +
+					"`passphrase` encrypts the key being written and is always typed, never read " +
+					"from the environment, for keys.restore's `new-passphrase` reason: generating " +
 					"a key is a one-off act, not a standing credential for the session. " +
 					"Never an MCP tool, the same rule keys.backup and keys.restore follow: " +
 					"a key an agent generated is a credential nobody watched being made. " +
@@ -121,17 +121,17 @@ func Plugin() plugin.Plugin {
 				ID: "keys.restore", Summary: "Reconstruct an SSH private key from its BIP39 seed words",
 				Safety: plugin.Write, Idempotent: true, HumanOnly: true,
 				Description: "Writes <out> and <out>.pub, refusing to touch either if it already exists — a " +
-					"restored key is never written over an existing one, the same discipline `kv init " +
-					"--generate` uses for a fresh identity. Deterministic: an ed25519 private key is entirely " +
+					"restored key is never written over an existing one, the same discipline `kv.init` " +
+					"uses for a fresh identity. Deterministic: an ed25519 private key is entirely " +
 					"derived from its 32-byte seed, so the restored key is cryptographically identical to the " +
 					"one `keys.backup` read — same fingerprint, always, provably so by comparing the one this " +
 					"prints against the original's. The on-disk file itself is not byte-identical: OpenSSH's own " +
 					"container writes a random per-encode nonce alongside the key material, which is the " +
 					"harmless difference to expect, not a sign anything went wrong. A " +
 					"comment (the user@host after the key material in a .pub file) is never encoded in the " +
-					"words and is lost on backup; pass --comment to put one back. --new-passphrase locks the " +
-					"key being written here — a different secret from keys.backup's --passphrase, which unlocks " +
-					"the key being read there, named differently on purpose and, unlike --passphrase, never " +
+					"words and is lost on backup; `comment` puts one back. `new-passphrase` locks the " +
+					"key being written here — a different secret from keys.backup's `passphrase`, which unlocks " +
+					"the key being read there, named differently on purpose and, unlike `passphrase`, never " +
 					"read from the environment: a restore is a one-off action, not a standing credential for " +
 					"the session, so this always has to be typed explicitly rather than inherited from " +
 					"whatever a scripted backup earlier in the same shell happened to leave set. " +

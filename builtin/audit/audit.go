@@ -81,7 +81,7 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 					"(probed with an Origin no real browser would send, to catch blind reflection), " +
 					"cookie flags, and the version/stack details a host should not leak. Every finding " +
 					"cites an OWASP Top 10:2025 category and a MITRE CWE, so a result traces back to a " +
-					"named control rather than an opinion. With --detail: one section per area plus the " +
+					"named control rather than an opinion. With `detail`: one section per area plus the " +
 					"cited references with lookup URLs. Read-only — it only inspects the response the " +
 					"host volunteers, plus the one Origin header the CORS probe adds.",
 				Inputs: []plugin.Field{
@@ -120,7 +120,7 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 					"carries its mode, is not fetched — only the TXT record that advertises it is read), " +
 					"and MX — including RFC 7505's " +
 					"null MX, which is a hardening measure rather than an omission. Every finding cites " +
-					"an OWASP Top 10:2025 category and a MITRE CWE. With --detail: one section per area " +
+					"an OWASP Top 10:2025 category and a MITRE CWE. With `detail`: one section per area " +
 					"plus the cited references with lookup URLs. Read-only, a handful of lookups of " +
 					"names derived from the domain by rule — nothing is enumerated, which is why DKIM " +
 					"needs its selector handed to it.",
@@ -158,10 +158,10 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 					"this does not have: whether your code reaches the vulnerable function at all, " +
 					"which no advisory can say. " +
 					"Components whose ecosystem OSV does not recognise are counted and named rather " +
-					"than dropped. --offline inventories without asking anything. --recursive walks a " +
+					"than dropped. `offline` inventories without asking anything. `recursive` walks a " +
 					"monorepo, skipping node_modules, vendor and build output, which is what a " +
 					"polyglot repository needs: one lockfile per service and no single file that " +
-					"knows about the others. From a terminal --path also takes a repository URL, " +
+					"knows about the others. From a terminal `path` also takes a repository URL, " +
 					"read shallowly in memory and never written to disk, which is how you audit a " +
 					"repository you have not checked out — refused over MCP, since a URL a caller " +
 					"composes is a request rta makes on its behalf. Cites A03:2025 Software Supply " +
@@ -197,7 +197,7 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 				NoPreview: true,
 				Description: "Answers the question an advisory raises second: did we ask for this, " +
 					"or did something else pull it in — and if something else, what. Reads the same " +
-					"manifests `audit deps` does and draws the package at the root with everything " +
+					"manifests `audit.deps` does and draws the package at the root with everything " +
 					"that requires it beneath, up to the dependencies the project asks for by name. " +
 					"Nothing is resolved, installed or fetched. Formats differ in what they record: " +
 					"go.mod marks a require direct or indirect and stores no edges, while the four " +
@@ -270,7 +270,7 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 					"run commands can run rta directly, so rta bounds an agent without a shell and " +
 					"is hygiene rather than containment for one with. Never an MCP tool, because the " +
 					"subject of this audit is the agent asking. Cites A01:2025 Broken Access " +
-					"Control and A02:2025 Security Misconfiguration. `--fix` prints the exact edit " +
+					"Control and A02:2025 Security Misconfiguration. `fix` prints the exact edit " +
 					"for each finding that has one — a chmod, a credential moved out of the file " +
 					"carrying it, a pinned version, an https endpoint for one being called in " +
 					"clear, a scoped shell allowlist, a deny list for rta's own authority-expanding " +
@@ -371,7 +371,7 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 				Detailed:   true,
 				NoPreview:  true,
 				Description: "The control plane's version, every node's kubelet, and the release each " +
-					"running image's tag names, graded against endoflife.date the way `rta eol check` " +
+					"running image's tag names, graded against endoflife.date the way `eol.check` " +
 					"grades one product: past its end of life fails, within warn-days of it warns, " +
 					"supported passes with the date. An image is recognised by its name — postgres, " +
 					"redis, nginx — through the catalogue's own aliases, and its tag read as a " +

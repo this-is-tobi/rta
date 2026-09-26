@@ -41,7 +41,7 @@ func Plugin() plugin.Plugin {
 				HostSpecific: true,
 				Idempotent:   true,
 				Detailed:     true,
-				Description: "A dense one-line-per-subsystem summary. With --detail (and on any " +
+				Description: "A dense one-line-per-subsystem summary. With `detail` (and on any " +
 					"full-page surface) it expands into a full report: identity, per-core usage, " +
 					"memory and swap breakdown, every filesystem, sensors and top processes. " +
 					"Lines a platform cannot provide are omitted rather than failing the view.",

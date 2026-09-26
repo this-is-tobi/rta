@@ -71,7 +71,7 @@ func Plugin() plugin.Plugin {
 				Summary: "Escape a value for a URL, or unescape one",
 				Description: "Query-component escaping by default (spaces become +), the form almost " +
 					"everyone means by \"URL encode this\" — the value for a query string or form body. " +
-					"--path escapes a path segment instead, where a space is %20 and + is a literal plus: " +
+					"`path` escapes a path segment instead, where a space is %20 and + is a literal plus: " +
 					"decoding a path as a query turns c++.txt into \"c  .txt\".",
 				Safety: plugin.Read, Idempotent: true,
 				Inputs: []plugin.Field{valueField, decodeField,
@@ -88,11 +88,11 @@ func Plugin() plugin.Plugin {
 					"because decrypting takes the recipient's key: a private key, a shared key or a password, " +
 					"depending on its alg. Unverified unless a key or a secret file " +
 					"is given, and labeled as such: anyone can hand you a token with any claims at all. With " +
-					"--key — a public key, certificate or the issuer's key set, fetched by you, since a capability " +
+					"`key` — a public key, certificate or the issuer's key set, fetched by you, since a capability " +
 					"that fetched a URL its caller names would not be a free read — the signature is checked, the " +
 					"algorithm is decided by the key and never by the token, and a mismatch is an error naming " +
 					"why. An HMAC signature is checked only against a shared secret the person at the terminal " +
-					"keeps in a file (--secret-file): never a public key, and never a secret an agent passes. A pasted " +
+					"keeps in a file (`secret-file`): never a public key, and never a secret an agent passes. A pasted " +
 					"`Authorization: Bearer` line works. On the CLI, a token left out is read from a pipe, " +
 					"which keeps a live one out of shell history and out of the process list.",
 				Safety: plugin.Read, Idempotent: true,

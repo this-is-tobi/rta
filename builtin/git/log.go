@@ -23,7 +23,7 @@ func logCapability() plugin.Capability {
 		HostSpecific: true,
 		Idempotent:   true,
 		Description: "The most recent commits reaching HEAD, newest first — hash, author, date and " +
-			"the message's own first line, each a table row rather than text to parse. --file " +
+			"the message's own first line, each a table row rather than text to parse. `file` " +
 			"narrows it to commits that touched one path, the structured equivalent of " +
 			"`git log -- <path>`.",
 		Inputs: []plugin.Field{

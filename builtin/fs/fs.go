@@ -47,7 +47,7 @@ func Plugin() plugin.Plugin {
 					"`du -sh * | sort -h | tail` is always asked to answer. Directories are summed " +
 					"recursively; the share column is of the scanned total, not of the disk, so it " +
 					"adds up to what you are looking at. Hidden entries are included — they are " +
-					"usually the answer. With --detail: the ranking, the largest individual files " +
+					"usually the answer. With `detail`: the ranking, the largest individual files " +
 					"found anywhere beneath, and what was skipped. Follows no symlinks and crosses " +
 					"no filesystem boundary, so a scan cannot loop or wander onto a network mount.",
 				Inputs: []plugin.Field{
@@ -77,7 +77,7 @@ func Plugin() plugin.Plugin {
 					"size beside it. Entries are ordered directories first and then by name, the " +
 					"order a person reads a listing in. Truncated branches say how many entries they " +
 					"are hiding rather than trailing off, so the tree never claims a directory is " +
-					"smaller than it is. With --detail: what the walk covered, the tree, and " +
+					"smaller than it is. With `detail`: what the walk covered, the tree, and " +
 					"everything it left out — depth, per-directory limit, hidden entries, mount " +
 					"points and unreadable directories gathered in one place instead of scattered " +
 					"through the branches they happened in.",
@@ -95,7 +95,7 @@ func Plugin() plugin.Plugin {
 				Safety:       plugin.Read,
 				HostSpecific: true,
 				Idempotent:   true,
-				Description: "Hashes a file and, given --expect, says plainly whether it matches — " +
+				Description: "Hashes a file and, given `expect`, says plainly whether it matches — " +
 					"which is the actual task, and the one comparing two hex strings by eye is bad " +
 					"at. The comparison is case-insensitive and tolerates the \"sha256:\" prefix and " +
 					"the surrounding whitespace that come with a pasted checksum. It is not a " +

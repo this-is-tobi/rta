@@ -28,7 +28,7 @@ func treeCapability() plugin.Capability {
 		Safety: plugin.Read, Idempotent: true,
 		Description: "Keys named with slashes — `staging/db/password`, `prod/deploy-key` — are " +
 			"drawn as the folders they share, each leaf labelled with its kind. Names only, " +
-			"never values, the same line `kv list` draws. `rta grant allow kv.get staging/` is " +
+			"never values, the same line `kv.list` draws. A grant for `kv.get` scoped to staging/ is " +
 			"how one of those folders becomes a grant's scope, so this is also the map of what " +
 			"such a grant covers.",
 		Inputs: unlockFields(),
