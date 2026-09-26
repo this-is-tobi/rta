@@ -252,8 +252,10 @@ func (m Model) completeFromService(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	}
+	cfg := m.configFor(c)
 	resolved := plugin.Resolve(c, plugin.Inputs{
-		Caller: values, Profile: filled, ProfileName: name, Config: m.configFor(c),
+		Caller: values, Profile: filled, ProfileName: name, Config: cfg.values,
+		ConfigSection: cfg.section,
 	})
 	// The box's own text is the partial, whatever any layer had in mind for
 	// this field: a listing narrows on what is typed, not on a default.

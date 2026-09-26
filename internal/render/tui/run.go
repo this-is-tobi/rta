@@ -66,8 +66,10 @@ const forwardCeiling = 15 * time.Minute
 // credentials answers boxes the seed had to leave empty (environmentNotes).
 func (m Model) formSeed(c plugin.Capability, defaults map[string]any, on string) (map[string]any, map[string]bool, formEnv) {
 	name, filled, conn := m.profileSeed(c, on)
+	cfg := m.configFor(c)
 	seed := plugin.Resolve(c, plugin.Inputs{
-		Caller: defaults, Profile: filled, ProfileName: name, Config: m.configFor(c),
+		Caller: defaults, Profile: filled, ProfileName: name, Config: cfg.values,
+		ConfigSection: cfg.section,
 	})
 	derived := map[string]bool{}
 	for input := range seed {
@@ -224,18 +226,30 @@ func coordinatePort(conn config.Connection) int {
 	return n
 }
 
-// configFor is the operator's stated values for the plugin a capability
-// belongs to, by namespace off the ID — which the registry guarantees is the
-// plugin that declared it.
-func (m Model) configFor(c plugin.Capability) map[string]any {
-	if m.pluginCfg == nil {
-		return nil
-	}
+// statedConfig is what the operator's config states for the plugin a
+// capability belongs to: the values, and the heading they were read under.
+// One value from lookup to request, so no request the shell builds can carry
+// the first without the second — see PluginConfig.
+type statedConfig struct {
+	values  map[string]any
+	section string
+}
+
+// configFor is the operator's stated config for the plugin a capability
+// belongs to.
+func (m Model) configFor(c plugin.Capability) statedConfig {
+	return configOf(m.pluginCfg, c)
+}
+
+// configOf is configFor for the paths that hold the resolver and no Model —
+// the dashboard's refresh. By namespace off the ID, which the registry
+// guarantees is the plugin that declared it.
+func configOf(pc PluginConfig, c plugin.Capability) statedConfig {
 	words := c.Words()
-	if len(words) == 0 {
-		return nil
+	if pc == nil || len(words) == 0 {
+		return statedConfig{}
 	}
-	return m.pluginCfg(words[0])
+	return statedConfig{values: pc.For(words[0]), section: pc.Section(words[0])}
 }
 
 // runCmd executes a capability off the update loop. yes reflects an explicit
@@ -258,7 +272,7 @@ func (m Model) configFor(c plugin.Capability) map[string]any {
 // with DryRun set — so what is previewed is what would run — and nothing
 // remembered, because a dry run is not a choice anybody made.
 func runCmd(ctx context.Context, seq int, c plugin.Capability, values map[string]any, yes bool,
-	cfg map[string]any, profileName string, filled map[string]any, conn config.Connection, dryRun bool) tea.Cmd {
+	cfg statedConfig, profileName string, filled map[string]any, conn config.Connection, dryRun bool) tea.Cmd {
 	// What the form actually collected, before Resolve lays defaults, config
 	// and the environment over it.
 	collected := values
@@ -296,7 +310,8 @@ func runCmd(ctx context.Context, seq int, c plugin.Capability, values map[string
 		// Resolve rather than "fill defaults only when nothing was given":
 		// a caller who supplies one value must not lose the other defaults.
 		req := plugin.ResolveRequest(c, plugin.Inputs{
-			Caller: values, Profile: filled, ProfileName: profileName, Config: cfg,
+			Caller: values, Profile: filled, ProfileName: profileName, Config: cfg.values,
+			ConfigSection: cfg.section,
 		}, dryRun, yes).WithSurface(plugin.SurfaceTUI)
 		// A default, not an override. Forcing detail on unconditionally made
 		// the D toggle on kv.list dead: toggleView set detail=false, this put

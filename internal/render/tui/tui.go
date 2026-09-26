@@ -99,13 +99,31 @@ type runRef struct {
 	values map[string]any
 }
 
+// PluginConfig is the operator's per-plugin configuration as the shell reads
+// it, already matched to the artifact by internal/pluginconf, whose Resolver
+// is the implementation: the values stated for a namespace, and the heading
+// they were stated under — `pg@1a2b3c4d` for an installed plugin, the bare
+// namespace for a built-in — which a refusal of one of them names
+// (plugin.Inputs.ConfigSection).
+//
+// One value answering both rather than two functions, because the two are
+// one resolution's answer and must not come from different ones. The plugin
+// config editor re-resolves after it saves, and it saves by moving a stale
+// pin to the installed digest: a heading kept from the resolution before
+// would name the pin the save just removed, beside values read under the
+// new one.
+type PluginConfig interface {
+	For(namespace string) map[string]any
+	Section(namespace string) string
+}
+
 // Model is the TUI shell.
 type Model struct {
 	reg *registry.Registry
-	// pluginCfg answers what the operator stated for a namespace, already
-	// matched to the artifact by internal/pluginconf. nil means nothing is
-	// configured, which is the ordinary state.
-	pluginCfg func(namespace string) map[string]any
+	// pluginCfg answers what the operator stated for a namespace, and under
+	// which heading. nil means nothing is configured, which is the ordinary
+	// state.
+	pluginCfg PluginConfig
 	list      list.Model
 	// cols carries the catalogue column widths, measured once so the
 	// header above the list and the rows inside it agree.
@@ -240,19 +258,6 @@ type Model struct {
 	subjectGone    bool // …and that action destroyed that view's subject
 }
 
-// New builds the shell over a registry. dash configures the dashboard; its
-// zero value is the automatic one-tile-per-plugin arrangement.
-// New builds the shell. pluginCfg answers what the operator stated for a
-// namespace, already matched to the artifact by internal/pluginconf; nil is a
-// decision the caller has to type, which is the point.
-//
-// A parameter rather than a setter, for the same reason as
-// plugin.Resolve's third argument: Run used to take this and New could not,
-// so the value had nowhere to go and was dropped on the floor. Every surface
-// that reads it — the form seed, the run, the dashboard refresh — then saw
-// nil, and the operator's configuration reached the CLI and no part of the
-// TUI. A constructor that can still be called the old way is the same defect
-// waiting to be reintroduced.
 // Option adjusts a Model at construction. Variadic so that the many call
 // sites which need none of them say nothing.
 type Option func(*Model)
@@ -264,8 +269,23 @@ func WithUntrusted(us []pluginhost.Untrusted) Option {
 	return func(m *Model) { m.untrusted = us }
 }
 
+// New builds the shell over a registry. dash configures the dashboard; its
+// zero value is the automatic one-tile-per-plugin arrangement. pluginCfg
+// answers what the operator stated for a namespace and under which heading;
+// nil is a decision the caller has to type, which is the point.
+//
+// A parameter rather than a setter, for the same reason as
+// plugin.Resolve's third argument: Run used to take this and New could not,
+// so the value had nowhere to go and was dropped on the floor. Every surface
+// that reads it — the form seed, the run, the dashboard refresh — then saw
+// nil, and the operator's configuration reached the CLI and no part of the
+// TUI. A constructor that can still be called the old way is the same defect
+// waiting to be reintroduced. The heading came in later, and inside the same
+// parameter for that reason too: taking the values alone, every refusal of
+// a pinned plugin's value here named `plugins.<ns>.<key>`, a line its file
+// cannot have, where the CLI and mcp serve named the heading.
 func New(reg *registry.Registry, dash config.Dashboard,
-	pluginCfg func(namespace string) map[string]any, opts ...Option) Model {
+	pluginCfg PluginConfig, opts ...Option) Model {
 	items := catalogueItems(reg)
 	cols := newCapDelegate(items)
 	l := list.New(items, cols, 0, 0)
@@ -806,7 +826,7 @@ func (m Model) View() tea.View {
 
 // Run starts the TUI program.
 func Run(ctx context.Context, reg *registry.Registry, dash config.Dashboard,
-	pluginCfg func(namespace string) map[string]any, opts ...Option) error {
+	pluginCfg PluginConfig, opts ...Option) error {
 	// Explicit input: main() has pointed os.Stdin at /dev/null so that no
 	// plugin inherits the user's keyboard, and bubbletea's default is
 	// os.Stdin — without this the TUI would open and answer no key at all.

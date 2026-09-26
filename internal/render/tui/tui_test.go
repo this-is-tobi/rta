@@ -1077,7 +1077,7 @@ func TestTilePreviewIsCompactDetailIsFull(t *testing.T) {
 	reg := detailRegistry(t)
 	tiles := buildTiles(reg, config.Dashboard{Tiles: []config.Tile{{ID: "deep.thing"}}})
 	// Tile 1 is the capability (0 is the search bar); its refresh is compact.
-	msg := tileCmd(1, tiles[1], nil, "", nil, config.Connection{})().(tileMsg)
+	msg := tileCmd(1, tiles[1], statedConfig{}, "", nil, config.Connection{})().(tileMsg)
 	if body := msg.v.(view.Text).Body; body != "COMPACT" {
 		t.Errorf("tile preview = %q, want COMPACT", body)
 	}
@@ -1540,7 +1540,7 @@ func TestCancellingARunReleasesTheHandler(t *testing.T) {
 		},
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	cmd := runCmd(ctx, 1, slow, nil, false, nil, "", nil, config.Connection{}, false)
+	cmd := runCmd(ctx, 1, slow, nil, false, statedConfig{}, "", nil, config.Connection{}, false)
 
 	done := make(chan tea.Msg, 1)
 	go func() { done <- cmd() }()
@@ -1798,7 +1798,7 @@ func TestExplicitDetailPreferenceReachesTheHandler(t *testing.T) {
 	}
 	ran := func(values map[string]any) string {
 		var got string
-		collect(t, runCmd(context.Background(), 0, c, values, false, nil, "", nil, config.Connection{}, false), func(msg tea.Msg) {
+		collect(t, runCmd(context.Background(), 0, c, values, false, statedConfig{}, "", nil, config.Connection{}, false), func(msg tea.Msg) {
 			if r, ok := msg.(resultMsg); ok {
 				got = r.view.(view.Text).Body
 			}
