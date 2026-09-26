@@ -221,9 +221,14 @@ func probe(ctx context.Context, req plugin.Request, send string) (view.View, err
 	}
 	pairs = append(pairs, view.Pair{Key: "received", Value: format.Bytes(len(banner))})
 
+	// A port that said nothing answers with nothing, and the sentence that
+	// explains the silence rides beside it for a person (view.Text.Empty).
+	// It was the response itself, so -o json and an agent read rta's prose
+	// where the server's bytes go — a banner no service sent, and one a
+	// service could send word for word.
 	response := view.Text{Body: printable(banner)}
 	if len(banner) == 0 {
-		response = view.Text{Body: silence(send, wait, host, port)}
+		response.Empty = silence(send, wait, host, port)
 	}
 	return view.Sections{Items: []view.Section{
 		{ID: "connection", Title: "connection", View: view.KeyValue{Pairs: pairs}},
