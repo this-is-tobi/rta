@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
@@ -540,8 +541,8 @@ func NewRoot(reg *registry.Registry, version string) *cobra.Command {
 			// alternate one, so it is covered before it can be read and does
 			// not come back until the session ends — which makes the pane the
 			// only place a person in the TUI can learn a decision is pending.
-			return tui.Run(cmd.Context(), reg, cfg.TrustedDashboard(), pluginConfig,
-				tui.WithUntrusted(untrustedPluginsFound))
+			return tuiExit(tui.Run(cmd.Context(), reg, cfg.TrustedDashboard(), pluginConfig,
+				tui.WithUntrusted(untrustedPluginsFound)))
 		},
 	}
 	pf := root.PersistentFlags()
@@ -590,6 +591,22 @@ func NewRoot(reg *registry.Registry, version string) *cobra.Command {
 	root.SetFlagErrorFunc(usageError)
 	codeUsageErrors(root)
 	return root
+}
+
+// tuiExit is what the TUI ending means to the command that opened it.
+//
+// A signal — SIGTERM from a supervisor, SIGINT from outside the terminal — is
+// how an interactive program is asked to stop, and stopping is not a failure:
+// the same call `mcp serve` makes about a client hanging up. bubbletea
+// reports it as "program was killed: context canceled", which reached the
+// screen the TUI had just handed back as a box nothing coded. Anything else
+// it returns — a terminal it could not take, a panic it recovered — is coded,
+// so it is rendered like every other failure rather than styled by fang.
+func tuiExit(err error) error {
+	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, tea.ErrInterrupted) {
+		return nil
+	}
+	return view.AsError(err, "core.tui")
 }
 
 // The root help's three headings. `rta --help` used to be one alphabetical
