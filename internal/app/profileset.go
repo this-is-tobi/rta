@@ -397,11 +397,13 @@ func runProfileSet(cmd *cobra.Command, name string, reg *registry.Registry, dryR
 	}
 	card := profileCard(name, written, reg)
 	verb := "updated"
-	if !existed {
+	switch {
+	case dryRun && !existed:
+		verb = "would create"
+	case dryRun:
+		verb = "would update"
+	case !existed:
 		verb = "created"
-	}
-	if dryRun && !unchanged {
-		verb = "would " + verb
 	}
 	what := verb + " " + name
 	if key != "" {
