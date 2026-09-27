@@ -303,15 +303,35 @@ func runEnv(_ context.Context, req plugin.Request) (view.View, error) {
 
 	prefix := req.String("prefix")
 	var sb strings.Builder
+	// Which key each variable came from. envName is not one-to-one — case
+	// and punctuation fold away, so prod/db-password and prod-db-password
+	// are both PROD_DB_PASSWORD — and both lines were printed: eval kept
+	// whichever sorted last, a dotenv loader may keep either, and a secret
+	// was loaded under another's name with nothing said. Refused rather than
+	// warned about, since what is printed is meant to be evaluated or
+	// written to a file, where a warning on another stream is not read.
+	from := map[string]string{}
 	for _, k := range keys {
 		e, ok := s.Entries[k]
 		if !ok {
 			return nil, notFound(req.Surface(), k)
 		}
+		name := envName(prefix, k)
+		if other, taken := from[name]; taken {
+			if other == k {
+				continue
+			}
+			sf := req.Surface()
+			return nil, view.Errorf("kv.env.collision", "%q and %q both become %s", other, k, name).
+				WithHint("rename one — `" + sf.Call("kv.rename", keyArg(k),
+					plugin.Arg{Name: "new-name", Value: "<new-name>", Positional: true}) +
+					"` — or export them in separate calls, each with its own " + sf.InputName("prefix"))
+		}
+		from[name] = k
 		if syntax == "export" {
 			sb.WriteString("export ")
 		}
-		sb.WriteString(envName(prefix, k))
+		sb.WriteString(name)
 		sb.WriteString("=")
 		sb.WriteString(shellQuote(string(e.Value)))
 		sb.WriteString("\n")

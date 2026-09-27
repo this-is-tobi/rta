@@ -740,6 +740,47 @@ func TestEnvUnknownKeyIsCoded(t *testing.T) {
 	}
 }
 
+// Two keys that differ only in punctuation or case become one variable, and
+// the export printed both lines: under eval the later one in sort order won,
+// and a dotenv loader may keep either, so a secret was loaded under the name
+// of another with nothing said. Refused before a value is written, whether
+// the keys were named or came from the whole store.
+func TestEnvRefusesTwoKeysThatBecomeOneVariable(t *testing.T) {
+	setup(t)
+	text(t, runSet, map[string]any{"key": "prod/db-password", "value": "PROD-PW"}, false)
+	text(t, runSet, map[string]any{"key": "prod-db-password", "value": "OLD-LEFTOVER"}, false)
+	text(t, runSet, map[string]any{"key": "api-token", "value": "t"}, false)
+
+	for _, values := range []map[string]any{
+		nil,
+		{"key": []string{"prod/db-password", "prod-db-password"}},
+		{"format": "dotenv"},
+	} {
+		v, err := runEnv(context.Background(), req(values, false))
+		ve := view.AsError(err, "z")
+		if ve == nil || ve.Code != "kv.env.collision" {
+			t.Fatalf("runEnv(%v) = %v, %v — want kv.env.collision", values, v, err)
+		}
+		if !strings.Contains(ve.Message, "PROD_DB_PASSWORD") || ve.Hint == "" {
+			t.Errorf("the refusal should name the variable and what to do: %+v", ve)
+		}
+		if v != nil {
+			t.Errorf("a refused export still answered %v", v)
+		}
+	}
+
+	// Keys that do not collide export as before, and the same key named
+	// twice is one key, not two.
+	if body := text(t, runEnv, map[string]any{"key": []string{"api-token", "prod/db-password"}}, false); body !=
+		"export API_TOKEN='t'\nexport PROD_DB_PASSWORD='PROD-PW'" {
+		t.Errorf("got %q", body)
+	}
+	if body := text(t, runEnv, map[string]any{"key": []string{"api-token", "api-token"}}, false); body !=
+		"export API_TOKEN='t'" {
+		t.Errorf("got %q", body)
+	}
+}
+
 // --- Passphrase handling ----------------------------------------------------
 
 func TestMissingPassphraseIsCoded(t *testing.T) {
