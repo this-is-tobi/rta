@@ -159,6 +159,22 @@ func Plugin() plugin.Plugin {
 	}
 }
 
+// blockedRefusal is the refusal for a request err says was stopped by the
+// address guard in ssrf.go, or nil when err is some other failure. One
+// place for it, since the destination is checked before a route is picked
+// and again as each connection is dialed, and the reader of either refusal
+// is owed the same account of it.
+func blockedRefusal(method, url string, err error) *view.Error {
+	var blocked *blockedAddrError
+	if !errors.As(err, &blocked) {
+		return nil
+	}
+	return view.Errorf("http.request.blocked", "%s %s: %v", method, url, err).
+		WithHint("rta connects only to public addresses — never loopback, private, link-local, " +
+			"shared (100.64.0.0/10) or reserved ones, where cloud metadata endpoints live — " +
+			"even though the grant named this URL")
+}
+
 func runMethod(method string) plugin.Handler {
 	return func(ctx context.Context, req plugin.Request) (view.View, error) {
 		return doRequest(ctx, method, req)
@@ -204,12 +220,8 @@ func doRequest(ctx context.Context, method string, req plugin.Request) (view.Vie
 	// proxy itself, once, is not the caller's choice and must not be
 	// refused as if it were.
 	if err := checkDestination(ctx, httpReq.URL); err != nil {
-		var blocked *blockedAddrError
-		if errors.As(err, &blocked) {
-			return nil, view.Errorf("http.request.blocked", "%s %s: %v", method, url, err).
-				WithHint("the destination resolves to a loopback, private, or link-local address " +
-					"(this includes cloud metadata endpoints) — rta refuses to connect there even " +
-					"though the grant named this URL")
+		if verr := blockedRefusal(method, url, err); verr != nil {
+			return nil, verr
 		}
 		return nil, view.Errorf("http.request.failed", "%s %s: %v", method, url, err).
 			WithHint("check the URL is reachable; " + req.Surface().InputName("timeout") + " extends the deadline")
@@ -236,12 +248,8 @@ func doRequest(ctx context.Context, method string, req plugin.Request) (view.Vie
 
 	resp, err := client.Do(httpReq)
 	if err != nil {
-		var blocked *blockedAddrError
-		if errors.As(err, &blocked) {
-			return nil, view.Errorf("http.request.blocked", "%s %s: %v", method, url, err).
-				WithHint("the destination resolves to a loopback, private, or link-local address " +
-					"(this includes cloud metadata endpoints) — rta refuses to connect there even " +
-					"though the grant named this URL")
+		if verr := blockedRefusal(method, url, err); verr != nil {
+			return nil, verr
 		}
 		return nil, view.Errorf("http.request.failed", "%s %s: %v", method, url, err).
 			WithHint("check the URL is reachable; " + req.Surface().InputName("timeout") + " extends the deadline")

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	stdnet "net"
 	stdhttp "net/http"
+	"net/netip"
 	"net/url"
 )
 
@@ -18,10 +19,11 @@ import (
 // request actually dials — a low-TTL record, a zone the caller doesn't
 // control, a misconfigured CDN, or simply a caller asking for
 // "169.254.169.254" directly — the grant has authorized whatever that
-// hostname now means, not what an operator saw and approved. Every major
-// cloud publishes instance credentials on a link-local address for exactly
-// this to be hard to reach from outside the machine; an http plugin that
-// dials wherever DNS points defeats that in one request.
+// hostname now means, not what an operator saw and approved. Clouds publish
+// instance credentials on an address meant to be unreachable from outside
+// the machine — link-local 169.254.169.254 for most, shared address space
+// 100.100.100.200 for Alibaba's — and an http plugin that dials wherever DNS
+// points defeats that in one request.
 //
 // So the check below runs inside the dialer, against the IP about to be
 // dialed, not against the URL's hostname string — parsing the string proves
@@ -60,17 +62,107 @@ import (
 // TestMain and the tests in ssrf_test.go, which restore it deliberately.
 var isBlockedIP = defaultBlockedIP
 
-// defaultBlockedIP refuses loopback, RFC 1918/4193 private ranges,
-// link-local (169.254.0.0/16 and fe80::/10 — the first is where cloud
-// instance metadata lives) and the unspecified address. IsPrivate and the
-// rest already unwrap an IPv4-mapped IPv6 address (::ffff:127.0.0.1 and
-// its kin) before testing it, so there is no separate case for that form.
-func defaultBlockedIP(ip stdnet.IP) bool {
-	return ip.IsUnspecified() ||
-		ip.IsLoopback() ||
-		ip.IsPrivate() ||
-		ip.IsLinkLocalUnicast() ||
-		ip.IsLinkLocalMulticast()
+// defaultBlockedIP refuses every address that is not on the public
+// internet — see blockedReason.
+func defaultBlockedIP(ip stdnet.IP) bool { return blockedReason(ip) != "" }
+
+// blockedReason says why rta refuses to dial ip, as the noun phrase a
+// refusal names it by, or "" when it does not.
+//
+// Go's own predicates first: loopback, RFC 1918/4193 private, link-local
+// (169.254.0.0/16 is where most clouds' instance metadata lives), multicast
+// and the unspecified address. Unmap first, so an IPv4-mapped IPv6 address,
+// ::ffff:127.0.0.1 and its kin, is tested as the IPv4 address it is.
+//
+// **Those predicates are not "not public", which is what this needs.**
+// IsPrivate is RFC 1918 and nothing else, so 100.64.0.0/10 passed — the
+// shared address space Alibaba Cloud serves its metadata from, at
+// 100.100.100.200, and every Tailscale node's address — while the refusal
+// promised the agent that cloud metadata was out of reach. reserved lists
+// the ranges no public service lives in that the predicates miss.
+//
+// **And an IPv4 address can arrive inside an IPv6 one.** On a NAT64 network
+// 64:ff9b::a9fe:a9fe is 169.254.169.254 to the translator that forwards it,
+// and 6to4 and the IPv4-compatible form carry one the same way, so the
+// address inside is judged as if it had been dialed directly. The
+// local-use NAT64 prefix is refused whole instead: where an operator puts
+// the IPv4 address inside it is theirs to choose, so nothing here can read
+// it back out.
+func blockedReason(ip stdnet.IP) string {
+	addr, ok := netip.AddrFromSlice(ip)
+	if !ok {
+		return "an address of neither family"
+	}
+	addr = addr.Unmap()
+	if why := addrReason(addr); why != "" {
+		return why
+	}
+	if inner, form, ok := embeddedIPv4(addr); ok {
+		if why := addrReason(inner); why != "" {
+			return fmt.Sprintf("the %s form of %s, %s", form, inner, why)
+		}
+	}
+	return ""
+}
+
+// reserved is the ranges blockedReason refuses that Go's predicates do not
+// cover. 240.0.0.0/4 takes the broadcast address with it.
+var reserved = []struct {
+	prefix netip.Prefix
+	why    string
+}{
+	{netip.MustParsePrefix("0.0.0.0/8"), `an address in "this network", 0.0.0.0/8`},
+	{netip.MustParsePrefix("100.64.0.0/10"), "shared address space (RFC 6598), where carrier NAT, " +
+		"Tailscale and Alibaba Cloud's instance metadata live"},
+	{netip.MustParsePrefix("192.0.0.0/24"), "an IETF protocol address, 192.0.0.0/24"},
+	{netip.MustParsePrefix("198.18.0.0/15"), "a benchmarking address, 198.18.0.0/15"},
+	{netip.MustParsePrefix("240.0.0.0/4"), "a reserved address, 240.0.0.0/4"},
+	{netip.MustParsePrefix("fec0::/10"), "a site-local address"},
+	{netip.MustParsePrefix("64:ff9b:1::/48"), "a local-use NAT64 address (RFC 8215)"},
+}
+
+func addrReason(a netip.Addr) string {
+	switch {
+	case a.IsUnspecified():
+		return "the unspecified address"
+	case a.IsLoopback():
+		return "a loopback address"
+	case a.IsPrivate():
+		return "a private address"
+	case a.IsLinkLocalUnicast(), a.IsLinkLocalMulticast():
+		return "a link-local address"
+	case a.IsMulticast():
+		return "a multicast address"
+	}
+	for _, r := range reserved {
+		if r.prefix.Contains(a) {
+			return r.why
+		}
+	}
+	return ""
+}
+
+var (
+	nat64          = netip.MustParsePrefix("64:ff9b::/96")
+	sixToFour      = netip.MustParsePrefix("2002::/16")
+	ipv4Compatible = netip.MustParsePrefix("::/96")
+)
+
+// embeddedIPv4 is the IPv4 address an IPv6 address carries for a
+// translator or a tunnel to deliver to, and the name of the form.
+func embeddedIPv4(a netip.Addr) (netip.Addr, string, bool) {
+	b := a.As16()
+	switch {
+	case !a.Is6():
+		return netip.Addr{}, "", false
+	case nat64.Contains(a):
+		return netip.AddrFrom4([4]byte(b[12:16])), "NAT64", true
+	case sixToFour.Contains(a):
+		return netip.AddrFrom4([4]byte(b[2:6])), "6to4", true
+	case ipv4Compatible.Contains(a):
+		return netip.AddrFrom4([4]byte(b[12:16])), "IPv4-compatible", true
+	}
+	return netip.Addr{}, "", false
 }
 
 // blockedAddrError is dialGuarded's refusal, kept as its own type rather
@@ -84,8 +176,12 @@ type blockedAddrError struct {
 }
 
 func (e *blockedAddrError) Error() string {
-	return fmt.Sprintf("%s resolves to %s, a loopback, private, or link-local address rta refuses to connect to",
-		e.host, e.ip)
+	why := blockedReason(e.ip)
+	if why == "" {
+		// Only a test's relaxed or tightened isBlockedIP gets here.
+		why = "an address"
+	}
+	return fmt.Sprintf("%s resolves to %s, %s — rta refuses to connect there", e.host, e.ip, why)
 }
 
 // resolveAndCheck resolves host and refuses if any address it answers with
