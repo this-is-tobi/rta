@@ -45,8 +45,9 @@ func diffCapability() plugin.Capability {
 			"first cut — the two cases above cover what an agent inspecting a repository's current " +
 			"state actually needs, and a revision-range comparison is a distinct enough question " +
 			"to design on its own rather than bolt on. One diff reads at most 16 MiB of a file and " +
-			"64 MiB in all, and spends at most two seconds matching lines; the lines after the patch " +
-			"name each file it left out or diffed coarsely.",
+			"64 MiB in all, looks at no more than 10000 files, and spends at most two seconds matching " +
+			"lines; the lines after the patch name each file it left out or diffed coarsely, and count " +
+			"the ones it did not look at.",
 		Inputs: []plugin.Field{
 			pathField("repository path, or a subdirectory of one"),
 			{Name: "commit", Type: plugin.String, Suggest: suggestCommits,
@@ -214,7 +215,9 @@ func diffCommit(ctx context.Context, repo *git.Repository, spec string, gate fun
 	// that has stopped waiting for it should not leave the diff running.
 	changes, err := object.DiffTreeWithOptions(ctx, fromTree, toTree, nil)
 	var byHash string
+	var bumps []string
 	if err == nil {
+		bumps = submoduleBumps(changes)
 		changes, byHash, err = detectRenames(changes)
 	}
 	switch {
@@ -223,7 +226,7 @@ func diffCommit(ctx context.Context, repo *git.Repository, spec string, gate fun
 	case err != nil:
 		return nil, view.Errorf("git.diff.failed", "diffing %s: %v", spec, err)
 	}
-	changes, large, refused, cut := boundChanges(repo, changes, gate)
+	changes, large, refused, cut, unseen := boundChanges(repo, changes, gate)
 	body, coarse, err := commitPatch(ctx, repo, changes, deadline)
 	switch {
 	case ctx.Err() != nil:
@@ -240,7 +243,7 @@ func diffCommit(ctx context.Context, repo *git.Repository, spec string, gate fun
 	// --commit diff. `git show` prints `sub | 2 +-` for the same commit.
 	//
 	// The pointers are read off the trees instead, which is where they are.
-	if bumps := submoduleBumps(fromTree, toTree); len(bumps) > 0 {
+	if len(bumps) > 0 {
 		if body != "" {
 			body += "\n"
 		}
@@ -248,7 +251,7 @@ func diffCommit(ctx context.Context, repo *git.Repository, spec string, gate fun
 	}
 	// Named in the diff's own shape, as the worktree diff names what it
 	// did not read.
-	body += notDiffed(large, refused) + pastBudget(cut) + matchedCoarsely(coarse)
+	body += notDiffed(large, refused) + pastBudget(cut) + notLookedAt(unseen) + matchedCoarsely(coarse)
 	if byHash != "" {
 		body += "renames matched by identical content only: matching them by similar content " + byHash + "\n"
 	}
@@ -384,6 +387,29 @@ func unpaired(changes object.Changes) (added, deleted int) {
 // variable so a test can lower it.
 var maxTotalDiffBytes int64 = 64 << 20
 
+// maxDiffFiles is the most changed files one diff looks at, in the order it
+// lists them; the rest are counted.
+//
+// **Bytes held what a diff read, and not how many files it read them from.**
+// Each file costs a lookup of its size, a turn at the path gate, which over
+// MCP resolves every directory in its path, and a read of each side, whatever
+// its size: a commit adding two hundred thousand files of a few bytes, a
+// megabyte in all, cost one git_diff 22 s of CPU and a 39 MB answer, and
+// git.diff of a working tree holding as many untracked files the same. Ten
+// thousand is past any change a person reads file by file, and costs well
+// under a second. A variable so a test can lower it.
+var maxDiffFiles = 10000
+
+// notLookedAt is the line counting the files a diff did not look at once it
+// had looked at maxDiffFiles, or nothing when it looked at them all.
+func notLookedAt(unseen int) string {
+	if unseen == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d more %s changed and not looked at: one diff looks at no more than %d files\n",
+		unseen, format.PluralOf(unseen, "file"), maxDiffFiles)
+}
+
 // pastBudget is the line counting the files a diff left out once it had read
 // maxTotalDiffBytes, or nothing when it left none.
 func pastBudget(cut int) string {
@@ -504,15 +530,19 @@ func blobContent(blob *object.Blob) (string, error) {
 
 // boundChanges keeps the changes a --commit diff reads, in order, and names
 // the ones it leaves: a file the path gate refuses, a file over maxDiffBytes
-// by its path, and whatever no longer fits the commit's budget by count.
-// Sizes come from the object store without reading the content, so deciding
-// costs nothing it is meant to save.
+// by its path, and whatever no longer fits the commit's budget by count, and
+// counts the ones past maxDiffFiles, which it does not look at. Sizes come
+// from the object store without reading the content, so deciding costs
+// nothing it is meant to save.
 //
 // Both names of a change go to the gate, since a rename carries the content
 // of the one it came from.
 func boundChanges(repo *git.Repository, changes object.Changes, gate func(string) *view.Error) (
-	kept object.Changes, large []string, refused []withheld, cut int,
+	kept object.Changes, large []string, refused []withheld, cut, unseen int,
 ) {
+	if len(changes) > maxDiffFiles {
+		changes, unseen = changes[:maxDiffFiles], len(changes)-maxDiffFiles
+	}
 	budget := maxTotalDiffBytes
 	for _, ch := range changes {
 		if verr := gateEither(gate, ch.From, ch.To); verr != nil {
@@ -530,7 +560,7 @@ func boundChanges(repo *git.Repository, changes object.Changes, gate func(string
 			kept = append(kept, ch)
 		}
 	}
-	return kept, large, refused, cut
+	return kept, large, refused, cut, unseen
 }
 
 // gateEither is the gate's refusal of the first side of a change it refuses,
@@ -587,12 +617,11 @@ func changePath(ch *object.Change) string {
 //
 // One line per submodule in the shape the rest of a diff reads in, rather
 // than a second view: the caller asked for a diff, and this is the part of
-// it the encoder dropped. A nil from is the empty tree, a root commit's.
-func submoduleBumps(fromTree, toTree *object.Tree) []string {
-	changes, err := object.DiffTree(fromTree, toTree)
-	if err != nil {
-		return nil
-	}
+// it the encoder dropped. Read off the commit's changes before renames are
+// paired, which is every entry the trees differ in: the trees were compared
+// a second time for it, which for a commit of a million files is a second
+// of CPU spent twice.
+func submoduleBumps(changes object.Changes) []string {
 	var out []string
 	for _, ch := range changes {
 		if ch.From.TreeEntry.Mode != filemode.Submodule && ch.To.TreeEntry.Mode != filemode.Submodule {
@@ -710,7 +739,11 @@ func diffWorktree(ctx context.Context, repo *git.Repository, gate func(string) *
 	idx, _ := repo.Storer.Index()
 	var bumps []string
 	var heads map[string]plumbing.Hash
-	for _, path := range changedPaths(status) {
+	paths, unseen := changedPaths(status), 0
+	if len(paths) > maxDiffFiles {
+		paths, unseen = paths[:maxDiffFiles], len(paths)-maxDiffFiles
+	}
+	for _, path := range paths {
 		if ctx.Err() != nil {
 			return nil, interrupted("the working tree")
 		}
@@ -769,7 +802,7 @@ func diffWorktree(ctx context.Context, repo *git.Repository, gate func(string) *
 	// caller asked what changed, and a file too large to show, or one it may
 	// not read, is part of the answer rather than a row quietly missing from
 	// it. git.status names the same paths to the same caller.
-	body += notDiffed(large, skipped) + pastBudget(cut) + matchedCoarsely(coarse)
+	body += notDiffed(large, skipped) + pastBudget(cut) + notLookedAt(unseen) + matchedCoarsely(coarse)
 	return textOrEmpty(body), nil
 }
 

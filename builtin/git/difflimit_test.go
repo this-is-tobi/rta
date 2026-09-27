@@ -350,3 +350,45 @@ func TestACommitDiffMatchesRenamesBySimilarContentWithinGitsLimitAndItsTime(t *t
 		t.Errorf("past its time, renames are still looked for by content, or it is not said:\n%s", body)
 	}
 }
+
+// Bytes held what a diff read and not how many files it read them from: a
+// commit adding two hundred thousand files of a few bytes cost one git_diff
+// 22 s of CPU. A diff looks at so many files, in the order it lists them,
+// and counts the rest in its own shape, a --commit diff and the working
+// tree's alike.
+func TestADiffLooksAtABoundedNumberOfFiles(t *testing.T) {
+	saved := maxDiffFiles
+	maxDiffFiles = 2
+	t.Cleanup(func() { maxDiffFiles = saved })
+
+	dir, repo := testRepo(t)
+	wt, err := repo.Worktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"a.txt", "b.txt", "c.txt", "d.txt"} {
+		writeFile(t, dir, name, name+" v1\n")
+	}
+	if err := wt.AddWithOptions(&git.AddOptions{All: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := wt.Commit("four files", &git.CommitOptions{Author: signature()}); err != nil {
+		t.Fatal(err)
+	}
+	const counted = "2 more files changed and not looked at: one diff looks at no more than 2 files"
+
+	body := text(t, runDiff, req(t, dir, map[string]any{"commit": "HEAD"}))
+	if !strings.Contains(body, "+a.txt v1") || !strings.Contains(body, "+b.txt v1") ||
+		strings.Contains(body, "c.txt v1") || !strings.Contains(body, counted) {
+		t.Errorf("the commit's diff is not the first two files and a count of the rest:\n%s", body)
+	}
+
+	for _, name := range []string{"a.txt", "b.txt", "c.txt", "d.txt"} {
+		writeFile(t, dir, name, name+" v2\n")
+	}
+	body = text(t, runDiff, req(t, dir, nil))
+	if !strings.Contains(body, "+a.txt v2") || !strings.Contains(body, "+b.txt v2") ||
+		strings.Contains(body, "c.txt v2") || !strings.Contains(body, counted) {
+		t.Errorf("the working tree's diff is not the first two files and a count of the rest:\n%s", body)
+	}
+}
