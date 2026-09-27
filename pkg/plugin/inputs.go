@@ -151,6 +151,24 @@ func fieldName(s Surface, f Field) string {
 	return s.InputName(f.Name)
 }
 
+// refusedInput names f in a refusal of a value given for it, the way the
+// caller on s gives it (fieldName): --grant or <kind> at a terminal, the
+// "grant" argument to an agent, the grant box in a form. Except a Local input
+// over MCP, which the tool's schema hides and the bridge strips unread: named
+// as an argument, it sent an agent looking for one its schema does not have,
+// and it is named bare there, as MissingInput names it.
+//
+// The capability beside it is Surface.CapabilityName's. The shape and option
+// refusals named both by their declaration, kube.serviceaccount.provision
+// and grant, on every surface, with the request's surface in hand: a
+// terminal was told about an ID it never typed and a flag without its dashes.
+func refusedInput(s Surface, f Field) string {
+	if s == SurfaceMCP && f.Local {
+		return f.Name
+	}
+	return fieldName(s, f)
+}
+
 // declared says where the caller on s reads what c declares about an input —
 // its options, its bounds — for a refusal that holds a value to them.
 //
@@ -207,7 +225,8 @@ func checkShape(c Capability, f Field, v any, s Surface) (verr *view.Error, how 
 		// StatedTypeProblem has none.
 		return nil, ""
 	}
-	return view.Errorf("core.input.type", "%s takes %s for %s, not %s", c.ID, want, f.Name, statedShape(v)).
+	return view.Errorf("core.input.type", "%s takes %s for %s, not %s",
+		s.CapabilityName(c.ID), want, refusedInput(s, f), statedShape(v)).
 		WithHint(give), how
 }
 
@@ -227,13 +246,12 @@ func checkShape(c Capability, f Field, v any, s Surface) (verr *view.Error, how 
 // how is fromSource's: what to write in the file instead.
 func checkNumber(c Capability, f Field, v any, s Surface) (verr *view.Error, how string) {
 	var readable bool
-	want := "a whole number"
+	want := numberOf(f.Type)
 	switch f.Type {
 	case Int:
 		_, readable = toInt(v)
 	case Float:
 		_, readable = toFloat(v)
-		want = "a number"
 	default:
 		return nil, ""
 	}
@@ -244,20 +262,20 @@ func checkNumber(c Capability, f Field, v any, s Surface) (verr *view.Error, how
 	if bounds := f.Bounds(); bounds != "" {
 		code, want = "core.input.range", want+" "+bounds
 	}
-	got := statedShape(v)
+	got, capability, input := statedShape(v), s.CapabilityName(c.ID), refusedInput(s, f)
 	if f.Type == Int && fractional(v) {
-		return view.Errorf(code, "%s takes %s for %s, not %v", c.ID, want, f.Name, v).
+		return view.Errorf(code, "%s takes %s for %s, not %v", capability, want, input, v).
 			WithHint("give it as a whole number"), "write it there as a whole number"
 	}
 	if got == "a number" {
-		return view.Errorf(code, "%s takes %s for %s, not %v", c.ID, want, f.Name, v).
+		return view.Errorf(code, "%s takes %s for %s, not %v", capability, want, input, v).
 			WithHint(declared(s, c, "names what it takes")), ""
 	}
 	bare := "a bare number"
 	if got == "text" {
 		bare += ", without quotes"
 	}
-	return view.Errorf(code, "%s takes %s for %s, not %s", c.ID, want, f.Name, got).
+	return view.Errorf(code, "%s takes %s for %s, not %s", capability, want, input, got).
 		WithHint("give it as " + bare), "write it there as " + bare
 }
 
@@ -270,7 +288,7 @@ func checkOptions(c Capability, f Field, given any, s Surface) *view.Error {
 			continue
 		}
 		return view.Errorf("core.input.option", "%s takes one of %s for %s, not %q",
-			c.ID, strings.Join(f.Options, ", "), f.Name, v).
+			s.CapabilityName(c.ID), strings.Join(f.Options, ", "), refusedInput(s, f), v).
 			WithHint("the set is closed: " + declared(s, c, "lists it"))
 	}
 	return nil
@@ -295,9 +313,24 @@ func optionValues(f Field, v any) []string {
 	return nil
 }
 
+// numberOf is what an Int or a Float takes, as a refusal says it.
+func numberOf(t FieldType) string {
+	if t == Float {
+		return "a number"
+	}
+	return "a whole number"
+}
+
+// checkBoundsOf refuses a number outside the bounds f declares, in the words
+// checkNumber refuses one that is no number at all: the call and the input as
+// the caller's surface spells them. It said "gen.password takes a length from
+// 1 to 1024" on every surface, the declaration's ID and the input's bare name
+// standing in for a noun, beside a type refusal of the same input that named
+// `rta gen password` and --length.
 func checkBoundsOf(c Capability, f Field, v any, s Surface) *view.Error {
 	if want, ok := f.Range(v); !ok {
-		return view.Errorf("core.input.range", "%s takes a %s %s, not %v", c.ID, f.Name, want, v).
+		return view.Errorf("core.input.range", "%s takes %s %s for %s, not %v",
+			s.CapabilityName(c.ID), numberOf(f.Type), want, refusedInput(s, f), v).
 			WithHint("the range is declared: " + declared(s, c, "names it"))
 	}
 	return nil

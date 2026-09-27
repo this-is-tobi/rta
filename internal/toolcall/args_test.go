@@ -287,8 +287,10 @@ func TestAnOptionOrRangeMissIsTheHostsRefusal(t *testing.T) {
 	cases := []struct {
 		raw, code, says string
 	}{
-		{`{"encoding": "nope"}`, "core.input.option", `gen.password takes one of hex, base64 for encoding, not "nope"`},
-		{`{"length": 0}`, "core.input.range", "gen.password takes a length from 1 to 1024, not 0"},
+		{`{"encoding": "nope"}`, "core.input.option",
+			"the `gen_password` tool takes one of hex, base64 for the \"encoding\" argument, not \"nope\""},
+		{`{"length": 0}`, "core.input.range",
+			"the `gen_password` tool takes a whole number from 1 to 1024 for the \"length\" argument, not 0"},
 		// Exactly the number sent. A float64 held neither end: int64's
 		// largest was refused as "past what an integer holds", one below its
 		// smallest was quoted back as a number nobody sent, and a large one

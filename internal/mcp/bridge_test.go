@@ -1170,7 +1170,7 @@ func TestAnOutOfRangeArgumentSpendsNoGrant(t *testing.T) {
 	res := callTool(t, s, "probe_port", map[string]any{"timeout": 500})
 	text := res.Content[0].(*sdk.TextContent).Text
 	if !res.IsError || !strings.Contains(text, "core.input.range") ||
-		!strings.Contains(text, "probe.port takes a timeout from 1 to 60, not 500") {
+		!strings.Contains(text, "the `probe_port` tool takes a whole number from 1 to 60 for the \\\"timeout\\\" argument, not 500") {
 		t.Fatalf("an out-of-range timeout: %s", text)
 	}
 	entries, err := agentlog.Read(1)
