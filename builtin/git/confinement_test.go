@@ -304,6 +304,76 @@ func TestADiffDoesNotShowRtasOwnState(t *testing.T) {
 	})
 }
 
+// git checks a checkout's files out where its core.worktree says, whatever
+// directory holds its .git, and its paths are asked about there too, by the
+// protected-path rule: kept in ~/.dotfiles with core.worktree naming the home
+// directory, git_diff --commit and git blame showed the identity committed
+// to it, its paths having been asked about under ~/.dotfiles alone. A
+// core.worktree naming the checkout itself, as a submodule's does, changes
+// nothing.
+func TestACheckoutWhoseWorktreeIsElsewhereDoesNotShowRtasOwnState(t *testing.T) {
+	const secret = "AGE-SECRET-KEY-1NOTFORANAGENT"
+	identity := filepath.Join(".local", "share", "rta", "kv.identity")
+	withheld := filepath.ToSlash(identity) + " changed, not diffed: the path gate refuses it (core.mcp.path.protected)"
+
+	home := t.TempDir()
+	t.Setenv("RTA_DATA_DIR", filepath.Join(home, ".local", "share", "rta"))
+	src, repo := testRepo(t)
+	commitFile(t, repo, src, identity, secret+"\n", "committed by mistake")
+	dotfiles := filepath.Join(home, ".dotfiles")
+	clone, err := git.PlainClone(dotfiles, false, &git.CloneOptions{URL: src})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// git would have checked the files out in the home directory.
+	if err := os.RemoveAll(filepath.Join(dotfiles, ".local")); err != nil {
+		t.Fatal(err)
+	}
+	worktree := func(value string) {
+		t.Helper()
+		cfg, err := clone.Config()
+		if err != nil {
+			t.Fatal(err)
+		}
+		cfg.Core.Worktree = value
+		if err := clone.SetConfig(cfg); err != nil {
+			t.Fatal(err)
+		}
+	}
+	g, err := pathguard.New(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blame := func() error {
+		t.Helper()
+		judged, verr := g.Check("file", filepath.Join(dotfiles, identity))
+		if verr != nil {
+			t.Fatalf("the boundary refused the file: %v", verr)
+		}
+		_, err := runBlame(context.Background(), req(t, dotfiles, map[string]any{"file": judged}).
+			WithConfinement(g.Check).WithSurface(plugin.SurfaceMCP))
+		return err
+	}
+
+	worktree("../..")
+	body := text(t, runDiff, guarded(t, home, dotfiles).With(map[string]any{"commit": "HEAD"}))
+	if strings.Contains(body, secret) || !strings.Contains(body, withheld) {
+		t.Errorf("a checkout whose core.worktree is ~ showed rta's own state, or did not name it:\n%s", body)
+	}
+	if code := errCode(blame()); code != "core.mcp.path.protected" {
+		t.Errorf("a blame of rta's state in it: %q, want core.mcp.path.protected", code)
+	}
+
+	worktree("..")
+	body = text(t, runDiff, guarded(t, home, dotfiles).With(map[string]any{"commit": "HEAD"}))
+	if !strings.Contains(body, secret) {
+		t.Errorf("a checkout whose core.worktree is itself withheld a file that is not rta's there:\n%s", body)
+	}
+	if err := blame(); err != nil {
+		t.Errorf("a blame in it: %v, want the file blamed", err)
+	}
+}
+
 // A repository with no working tree gets the same rule, its paths placed
 // where git checks them out. A dotfiles repository is usually bare, with $HOME
 // as its work tree — ~/.cfg used with --work-tree=$HOME, which the config

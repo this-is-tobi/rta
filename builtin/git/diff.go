@@ -109,30 +109,49 @@ func interrupted(what string) *view.Error {
 // admitted the repository, so a place outside the root is no reason to
 // withhold it — a root drawn around a bare repository exactly has its
 // work tree's place outside it.
+//
+// **And a checkout whose core.worktree names another directory is asked
+// about there as well.** git checks its files out where core.worktree says,
+// whatever directory holds its .git, and this opens the one holding it: a
+// dotfiles repository kept in ~/.dotfiles with core.worktree naming the home
+// directory had its paths asked about under ~/.dotfiles alone, where nothing
+// is rta's, and git_diff --commit showed the identity committed to it. The
+// protected-path rule is asked there too, for the reason it alone is asked
+// of a bare repository's paths.
 func pathGate(req plugin.Request, repo *git.Repository) func(path string) *view.Error {
-	if wt, err := repo.Worktree(); err == nil {
-		root := wt.Filesystem.Root()
-		return func(path string) *view.Error {
-			_, verr := req.Confine("path", filepath.Join(root, filepath.FromSlash(path)))
-			return verr
-		}
-	}
-	dir := checkoutDir(repo)
-	if dir == "" {
-		return func(string) *view.Error { return nil }
-	}
-	return func(path string) *view.Error {
+	protectedAt := func(dir, path string) *view.Error {
 		if _, verr := req.Confine("path", filepath.Join(dir, filepath.FromSlash(path))); verr != nil &&
 			verr.Code == "core.mcp.path.protected" {
 			return verr
 		}
 		return nil
 	}
+	if wt, err := repo.Worktree(); err == nil {
+		root := wt.Filesystem.Root()
+		elsewhere := configuredWorktree(repo)
+		if elsewhere != "" && realPath(elsewhere) == realPath(root) {
+			elsewhere = ""
+		}
+		return func(path string) *view.Error {
+			if _, verr := req.Confine("path", filepath.Join(root, filepath.FromSlash(path))); verr != nil {
+				return verr
+			}
+			if elsewhere != "" {
+				return protectedAt(elsewhere, path)
+			}
+			return nil
+		}
+	}
+	dir := checkoutDir(repo)
+	if dir == "" {
+		return func(string) *view.Error { return nil }
+	}
+	return func(path string) *view.Error { return protectedAt(dir, path) }
 }
 
 // checkoutDir is where the paths of a repository with no working tree here
-// would be checked out: the directory core.worktree names, taken from the git
-// directory as git takes it, or else the one holding the repository, where
+// would be checked out: the directory core.worktree names
+// (configuredWorktree), or else the one holding the repository, where
 // ~/.cfg's are. "" for a repository cloned into memory, which has no place on
 // this disk at all.
 //
@@ -145,11 +164,25 @@ func checkoutDir(repo *git.Repository) string {
 	if !ok {
 		return ""
 	}
-	gitDir := store.Filesystem().Root()
-	if cfg, err := repo.Config(); err == nil && cfg.Core.Worktree != "" {
-		return against(gitDir, cfg.Core.Worktree)
+	if dir := configuredWorktree(repo); dir != "" {
+		return dir
 	}
-	return filepath.Dir(gitDir)
+	return filepath.Dir(store.Filesystem().Root())
+}
+
+// configuredWorktree is the directory core.worktree names, taken from the git
+// directory as git takes it, "" where it names none or the repository has no
+// place on this disk.
+func configuredWorktree(repo *git.Repository) string {
+	store, ok := repo.Storer.(*filesystem.Storage)
+	if !ok {
+		return ""
+	}
+	cfg, err := repo.Config()
+	if err != nil || cfg.Core.Worktree == "" {
+		return ""
+	}
+	return against(store.Filesystem().Root(), cfg.Core.Worktree)
 }
 
 // withheld is a changed file a diff names without showing it, and why.
