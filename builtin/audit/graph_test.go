@@ -395,6 +395,40 @@ source = { registry = "https://pypi.org/simple" }
 	wantChains(t, g, "PyPI", "click", "flask>click")
 }
 
+// A subtable's keys are other packages' names, or its extras'. Read as the
+// record's own, an extra named `virtual` made flask the project, and its
+// dependencies the direct set.
+func TestAnExtraNamedLikeAMarkerDoesNotMakeAPackageTheProject(t *testing.T) {
+	g := tomlGraph(`[[package]]
+name = "demo"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "flask" },
+]
+
+[[package]]
+name = "flask"
+version = "3.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "click" },
+]
+
+[package.optional-dependencies]
+virtual = [
+    { name = "virtualenv" },
+]
+
+[[package]]
+name = "click"
+version = "8.1.7"
+source = { registry = "https://pypi.org/simple" }
+`, "PyPI", uvLock)
+	wantRelation(t, g, "PyPI", "flask", "3.0.0", relDirect)
+	wantRelation(t, g, "PyPI", "click", "8.1.7", relIndirect)
+}
+
 // Poetry writes the dependency table below a `files = [` array, and spells a
 // package one way in the record and another in the table. Both are the kind
 // of detail that makes a chain silently stop one step short.
