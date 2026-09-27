@@ -39,6 +39,7 @@ import (
 	operatorid "github.com/this-is-tobi/rta/internal/operator"
 	"github.com/this-is-tobi/rta/internal/session"
 	"github.com/this-is-tobi/rta/internal/stdio"
+	"github.com/this-is-tobi/rta/internal/textclean"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -289,7 +290,7 @@ func suggestPending(context.Context, plugin.Request) []string {
 	}
 	out := make([]string, 0, len(reqs))
 	for _, r := range reqs {
-		out = append(out, r.ID+"\t"+r.Cap+" "+strings.Join(r.Scopes, " "))
+		out = append(out, r.ID+"\t"+r.Cap+" "+textclean.Records(r.Scopes))
 	}
 	return out
 }
@@ -780,8 +781,12 @@ func pendingTable(sf plugin.Surface, reqs []consent.Request) view.Table {
 		if r.Preview != "" {
 			what = r.Preview
 		}
+		// The record as the gate compares it, byte for byte: a padded or
+		// invisible character in it is shown quoted and named, or the
+		// operator reads the bare record while answering for another
+		// (textclean.Record).
 		row := []string{
-			r.ID, r.Cap, strings.Join(r.Scopes, " "), r.Safety, r.Profile,
+			r.ID, r.Cap, textclean.Records(r.Scopes), r.Safety, r.Profile,
 			clip(what), format.Duration(left),
 		}
 		if asking {
@@ -913,7 +918,7 @@ func showView(sf plugin.Surface, r consent.Request) view.View {
 		{Key: "safety", Value: r.Safety},
 	}
 	if len(r.Scopes) > 0 {
-		pairs = append(pairs, view.Pair{Key: "record", Value: strings.Join(r.Scopes, " ")})
+		pairs = append(pairs, view.Pair{Key: "record", Value: textclean.Records(r.Scopes)})
 	}
 	if r.Profile != "" {
 		pairs = append(pairs, view.Pair{Key: "connection", Value: r.Profile})
@@ -943,7 +948,7 @@ func showView(sf plugin.Surface, r consent.Request) view.View {
 		}
 		sort.Strings(keys)
 		for _, k := range keys {
-			arg = append(arg, view.Pair{Key: k, Value: fmt.Sprintf("%v", r.Args[k])})
+			arg = append(arg, view.Pair{Key: k, Value: argValue(r.Args[k])})
 		}
 		sections = append(sections, view.Section{
 			ID: "arguments", Title: "Arguments", View: view.KeyValue{Pairs: arg}})
@@ -1025,7 +1030,7 @@ func runAllow(ctx context.Context, req plugin.Request, catalog func() []plugin.C
 			return issued, nil
 		}
 		return view.Text{Body: fmt.Sprintf("would allow %s (%s) for the agent waiting on request %s",
-			r.Cap, strings.Join(r.Scopes, " "), id)}, nil
+			r.Cap, textclean.Records(r.Scopes), id)}, nil
 	}
 	// The team's ceiling binds a live "yes" exactly as it binds `grant allow`:
 	// `never`/`neverProfile` are documented as needing nobody's agreement, not
@@ -1072,7 +1077,7 @@ func runAllow(ctx context.Context, req plugin.Request, catalog func() []plugin.C
 		return nil, view.Errorf("agent.allow.failed", "%v", err)
 	}
 	pairs := []view.Pair{
-		{Key: "allowed", Value: strings.TrimSpace(r.Cap + " " + strings.Join(r.Scopes, " "))},
+		{Key: "allowed", Value: callNamed(r.Cap, r.Scopes)},
 		{Key: "for", Value: "this call only"},
 	}
 	// The bridge refuses a frozen agent before any other gate, so this
@@ -1302,7 +1307,7 @@ func alsoGrant(r consent.Request, ttl, from string, signer *guard.Signer) (strin
 		}
 		what := r.Cap
 		if scope != "" {
-			what += " " + scope
+			what += " " + textclean.Record(scope)
 		}
 		issued = append(issued, what)
 	}
@@ -1338,7 +1343,7 @@ func runDeny(ctx context.Context, req plugin.Request) (view.View, error) {
 		return nil, view.Errorf("agent.deny.failed", "%v", err)
 	}
 	return view.KeyValue{Pairs: []view.Pair{
-		{Key: "denied", Value: strings.TrimSpace(r.Cap + " " + strings.Join(r.Scopes, " "))},
+		{Key: "denied", Value: callNamed(r.Cap, r.Scopes)},
 		{Key: "the agent", Value: "gets your answer rather than a timeout"},
 	}}, nil
 }
@@ -1399,6 +1404,27 @@ func whyLine(e agentlog.Entry) string {
 	return e.Reason + " " + note
 }
 
+// callNamed is a call as an answer names it: the capability, and each
+// record it names as the gate compares it. Joined rather than trimmed: a
+// trim took a no-break space off the end of the last record, so the answer
+// named the bare record the operator had not answered for.
+func callNamed(capID string, records []string) string {
+	if len(records) == 0 {
+		return capID
+	}
+	return capID + " " + textclean.Records(records)
+}
+
+// argValue is one argument as a person reads it beside the record: a string
+// as textclean.Record shows one, since an argument is where the record came
+// from and the ledger's only copy of it, and anything else as it prints.
+func argValue(v any) string {
+	if s, ok := v.(string); ok {
+		return textclean.Record(s)
+	}
+	return fmt.Sprintf("%v", v)
+}
+
 // argsLine renders arguments for one table cell: compact, ordered, and
 // never wider than a person will read.
 func argsLine(args map[string]any) string {
@@ -1412,7 +1438,7 @@ func argsLine(args map[string]any) string {
 	sort.Strings(keys)
 	parts := make([]string, 0, len(keys))
 	for _, k := range keys {
-		parts = append(parts, fmt.Sprintf("%s=%v", k, args[k]))
+		parts = append(parts, k+"="+argValue(args[k]))
 	}
 	return clip(strings.Join(parts, " "))
 }

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -514,6 +515,66 @@ func TestAnAnswerNamesItsRequestExactly(t *testing.T) {
 	}
 	if _, ok := consent.Find(r.ID); !ok {
 		t.Fatal("an answer given a padded id decided the request anyway")
+	}
+}
+
+// A record is judged byte for byte, so it is shown that way wherever a person
+// answers for one: the queue, the request's page, the answer and the ledger.
+// A padded record was shown as the bare one on every one of them — a
+// no-break space draws as a space, a space at the end as nothing — so an
+// operator approved one record while reading another.
+func TestAPaddedRecordIsNeverShownAsTheBareOne(t *testing.T) {
+	isolate(t)
+	bare := park(t, "kv.get", "prod/db")
+	for _, padded := range []string{"prod/db" + string(rune(0xa0)), "prod/db ", " prod/db", "prod/db" + string(rune(0x200b))} {
+		odd := park(t, "kv.get", padded)
+		v, err := run(t, "agent.pending", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tbl := v.(view.Table)
+		cell := map[string]string{}
+		for _, row := range tbl.Rows {
+			cell[row[0]] = row[2]
+		}
+		if cell[bare.ID] != "prod/db" || cell[odd.ID] == cell[bare.ID] || !strings.HasPrefix(cell[odd.ID], `"`) {
+			t.Errorf("%q: the queue shows %q beside the bare record's %q", padded, cell[odd.ID], cell[bare.ID])
+		}
+		if back, err := strconv.Unquote(cell[odd.ID]); err != nil || back != padded {
+			t.Errorf("%q: the queue shows %q, which does not read back as the record", padded, cell[odd.ID])
+		}
+		sv, err := run(t, "agent.show", map[string]any{"id": odd.ID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := pairValue(sv.(view.Sections).Items[0].View, "record"); got != cell[odd.ID] {
+			t.Errorf("%q: the request's page shows %q, the queue %q", padded, got, cell[odd.ID])
+		}
+		dv, err := run(t, "agent.deny", map[string]any{"id": odd.ID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := pairValue(dv, "denied"); got != "kv.get "+cell[odd.ID] {
+			t.Errorf("%q: the answer says %q", padded, got)
+		}
+	}
+	// The ledger names the record in the call's arguments.
+	appendEntry := func(key string) {
+		if err := agentlog.Append(agentlog.Entry{Cap: "kv.get", Tool: "kv_get", Outcome: agentlog.Ran,
+			Auth: agentlog.Live, Args: map[string]any{"key": key}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	appendEntry("prod/db")
+	appendEntry("prod/db" + string(rune(0xa0)))
+	lv, err := run(t, "agent.log", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := lv.(view.Table).Rows
+	args := func(row []string) string { return row[3] }
+	if len(rows) != 2 || args(rows[0]) != "key=prod/db" || args(rows[1]) == args(rows[0]) {
+		t.Errorf("the ledger shows the two calls' arguments as %q and %q", args(rows[0]), args(rows[len(rows)-1]))
 	}
 }
 

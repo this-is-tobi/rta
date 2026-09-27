@@ -11,11 +11,17 @@
 // output, which is a superset: an MCP client usually renders that output in a
 // terminal too, so everything Terminal removes has to go, plus the characters
 // that are invisible to the reviewer and not to the reader.
+//
+// Record is neither: it is for a person deciding about one record, who needs
+// to see every byte the gate will compare rather than a cleaner version of
+// them, and it spells out instead of removing.
 package textclean
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/charmbracelet/x/ansi"
@@ -159,6 +165,88 @@ func Deceives(s string) bool {
 	// what they saw.
 	return strings.ContainsAny(s, "\n\t") ||
 		dirtyForTerminal(s) || strings.ContainsFunc(s, isInvisible)
+}
+
+// Record is a record — the key, name, address or path a grant is scoped to
+// and a call is judged on — as a person reads it where they approve, grant or
+// audit one: as it is when it reads as itself, and otherwise quoted, as Go
+// quotes a string, with every character a reader would not see as itself
+// named by its code point.
+//
+// The gate compares records byte for byte, and Terminal does not draw them
+// that way. A no-break space draws as a space, a space at either end draws as
+// nothing, and a zero-width space, a soft hyphen, a Hangul filler or a
+// variation selector draws as nothing wherever it stands, so a parked kv.get
+// on "prod/db" and a no-break space was listed as kv.get prod/db — a question
+// the operator answered about one record while approving another. Dropping
+// the character would name a record that does not exist, and cleaning is not
+// what a person deciding needs anyway: they need to see that the record is
+// not the one it looks like, and what is in it.
+//
+// Reads as itself: every character is one a reader sees, and none is a
+// space. A space is visible inside a word and not at its ends, and several
+// records are listed one after another with spaces between them, where "a b"
+// would read as two. And it does not begin with a quotation mark, so a record
+// shown as it is can never be mistaken for one shown quoted: every quoted
+// form begins with one, and Go's quoting is one to one, so no two records
+// are ever shown alike — the property a byte-for-byte judge needs from what
+// the person answering it reads.
+//
+// Not a cleaner, and not for values: a record shown this way is text for a
+// person, and what anybody acts on is the record itself.
+func Record(s string) string {
+	if readsAsItself(s) {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s) + 8)
+	b.WriteByte('"')
+	for i := 0; i < len(s); {
+		r, size := utf8.DecodeRuneInString(s[i:])
+		switch {
+		case r == utf8.RuneError && size == 1:
+			fmt.Fprintf(&b, `\x%02x`, s[i])
+		case r == '"' || r == '\\':
+			b.WriteByte('\\')
+			b.WriteByte(s[i])
+		case r == ' ' || seen(r):
+			b.WriteString(s[i : i+size])
+		default:
+			// Go's own escape for it: \t, \n and their kin for the controls
+			// that have one, the code point for everything else.
+			q := strconv.QuoteRuneToASCII(r)
+			b.WriteString(q[1 : len(q)-1])
+		}
+		i += size
+	}
+	b.WriteByte('"')
+	return b.String()
+}
+
+// Records is the records one call names, each as Record shows it, one after
+// another as a call lists them.
+func Records(records []string) string {
+	shown := make([]string, len(records))
+	for i, r := range records {
+		shown[i] = Record(r)
+	}
+	return strings.Join(shown, " ")
+}
+
+func readsAsItself(s string) bool {
+	return s != "" && s[0] != '"' && utf8.ValidString(s) &&
+		!strings.ContainsFunc(s, func(r rune) bool { return r == ' ' || !seen(r) })
+}
+
+// seen reports whether a reader sees r as itself: a letter, a mark, a
+// number, a punctuation mark, a symbol or the ASCII space (strconv.IsPrint),
+// and not one a renderer draws as nothing — a default-ignorable code point
+// or a variation selector, the classes the grant matcher already reads as
+// nothing (internal/grant's onlyDots).
+func seen(r rune) bool {
+	return strconv.IsPrint(r) &&
+		!unicode.Is(unicode.Other_Default_Ignorable_Code_Point, r) &&
+		!unicode.Is(unicode.Variation_Selector, r)
 }
 
 // strip is the part of Terminal that removes, without the part that spells
