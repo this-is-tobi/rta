@@ -262,3 +262,43 @@ func TestAheadCountIsMarkedCappedAtAShallowBoundary(t *testing.T) {
 		t.Error("a complete walk was reported as capped")
 	}
 }
+
+// A pipe where a repository keeps a file is refused, not opened. go-git
+// opened the .git file, HEAD, config and the index as it found them, and
+// open(2) on a pipe with no writer blocks until one comes, which no context
+// can interrupt: every git capability on such a repository never answered,
+// and each call held an OS thread for good. Anything that unpacks an archive
+// into the root can leave one there.
+func TestAPipeInTheRepositoryIsRefusedRatherThanWaitedOn(t *testing.T) {
+	for _, name := range []string{".git", ".git/HEAD", ".git/config", ".git/index", ".git/commondir"} {
+		t.Run(name, func(t *testing.T) {
+			dir, repo := testRepo(t)
+			commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
+			target := filepath.Join(dir, filepath.FromSlash(name))
+			if name == ".git" {
+				if err := os.RemoveAll(target); err != nil {
+					t.Fatal(err)
+				}
+			} else if err := os.Remove(target); err != nil && !os.IsNotExist(err) {
+				t.Fatal(err)
+			}
+			if err := mkfifo(target); err != nil {
+				t.Skipf("no named pipes here: %v", err)
+			}
+
+			done := make(chan error, 1)
+			go func() {
+				_, err := runStatus(context.Background(), req(t, dir, nil))
+				done <- err
+			}()
+			select {
+			case err := <-done:
+				if err == nil {
+					t.Error("a repository with a pipe in place of a file answered as though it were whole")
+				}
+			case <-time.After(10 * time.Second):
+				t.Fatal("git.status is waiting on a pipe in the repository")
+			}
+		})
+	}
+}

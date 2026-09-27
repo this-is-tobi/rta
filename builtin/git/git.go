@@ -15,16 +15,22 @@ package git
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	iofs "io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/go-git/go-billy/v5"
+	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/storage/filesystem"
+	"github.com/go-git/go-git/v5/storage/filesystem/dotgit"
 
 	"github.com/this-is-tobi/rta/builtin/internal/gitclone"
 	"github.com/this-is-tobi/rta/pkg/format"
@@ -115,18 +121,8 @@ func open(ctx context.Context, req plugin.Request, readsObjects bool) (*git.Repo
 	if verr != nil {
 		return nil, verr
 	}
-	// DetectDotGit is off because repoRoot has just done that walk under the
-	// host's bound. With it off, go-git handles both remaining shapes from an
-	// exact path: a checkout's root, whose .git it opens, and a bare
-	// repository, which is its own git directory.
-	repo, err := git.PlainOpenWithOptions(root, &git.PlainOpenOptions{
-		EnableDotGitCommonDir: true,
-	})
-	if err != nil {
-		return nil, view.Errorf("git.notarepo", "%s is not a git repository: %v", path, err).
-			WithHint("run this against a directory inside a git repository, a checkout's own root, or a bare repository's own directory")
-	}
-	if verr := gitDirsInBounds(req, repo); verr != nil {
+	repo, verr := openAt(req, root, path)
+	if verr != nil {
 		return nil, verr
 	}
 	if readsObjects {
@@ -197,8 +193,11 @@ func objectsAllReadable(repo *git.Repository, root string) *view.Error {
 			"under the name this reads, and the answers here are right again")
 }
 
-// gitDirsInBounds asks the host about every directory go-git reads this
-// repository from, which repoRoot's walk never saw.
+// openAt opens the repository at root, an exact path repoRoot found: a
+// checkout's root, whose .git it opens, or a bare repository, which is its
+// own git directory. It is git.PlainOpenWithOptions with the common
+// directory enabled, taken apart for two reasons, each of which the library's
+// own opener leaves no place for.
 //
 // **A checkout's root names its repository; it does not have to hold it.**
 // A `.git` that is a file says `gitdir: <anywhere>` — how a linked worktree
@@ -211,72 +210,163 @@ func objectsAllReadable(repo *git.Repository, root string) *view.Error {
 // git.log, git.diff --commit and git.config the whole of a repository the
 // root was drawn to exclude, while fs.tree on that same directory was
 // refused. repoRoot judged the directory holding `.git`, and the directory
-// read was never it.
+// read was never it. So each directory is put back to the host as it is
+// found, the way repoRoot puts back each level of its walk, and before
+// anything in it is read: go-git's opener read HEAD and the config of
+// whatever the pointer named before anything here could judge it. A symlink
+// inside either directory needs nothing more — go-billy's chroot refuses to
+// follow a link out of the directory it was opened on, so `.git/objects`
+// linked elsewhere fails as a crossed boundary on every surface.
 //
-// So the directories are put back to the host once go-git has resolved
-// them, the way repoRoot puts back each level of its walk: the git directory
-// by the root go-git opened it at, and the common one by the file go-git
-// read to find it. A symlink inside either needs nothing here — go-billy's
-// chroot refuses to follow a link out of the directory it was opened on, so
-// `.git/objects` linked elsewhere fails as a crossed boundary on every
-// surface. It is only the directories themselves go-git takes by name.
-//
-// objects/info/alternates is the third pointer, and is judged as git reads
-// it: an absolute path as it is, a relative one against the objects
-// directory. go-git reads either kind inside the git directory instead and
-// finds nothing there, so today such a repository fails as a missing object
-// rather than answering from outside; judging the entry keeps it a refusal
-// that says why, and keeps it a refusal if the library comes to read the
-// entry the way git does.
-func gitDirsInBounds(req plugin.Request, repo *git.Repository) *view.Error {
-	store, ok := repo.Storer.(*filesystem.Storage)
-	if !ok {
-		return nil
+// **And nothing in a repository is opened that is not a file.** go-git opened
+// the `.git` file, HEAD, the config and the index as it found them, and
+// open(2) on a named pipe with no writer blocks until one comes, which no
+// context can interrupt: every capability here, on a repository holding one,
+// never answered, and each call held an OS thread for good. regularFiles is
+// the filesystem both the git directory and the working tree are read
+// through.
+func openAt(req plugin.Request, root, path string) (*git.Repository, *view.Error) {
+	notARepo := func(err error) *view.Error {
+		return view.Errorf("git.notarepo", "%s is not a git repository: %v", path, err).
+			WithHint("run this against a directory inside a git repository, a checkout's own root, or a bare repository's own directory")
 	}
-	fs := store.Filesystem()
-	gitDir := fs.Root()
-	if _, verr := req.Confine("path", gitDir); verr != nil {
-		return verr
-	}
-	common := commonGitDir(fs)
-	if common != gitDir {
-		if _, verr := req.Confine("path", common); verr != nil {
-			return verr
+	var wt billy.Filesystem = regularFiles{osfs.New(root)}
+	dot := wt
+	info, err := wt.Stat(gitDirName)
+	switch {
+	case err == nil && info.IsDir():
+		if dot, err = wt.Chroot(gitDirName); err != nil {
+			return nil, notARepo(err)
 		}
+	case err == nil:
+		gitDir, err := gitDirPointer(wt)
+		if err != nil {
+			return nil, notARepo(err)
+		}
+		dot = regularFiles{osfs.New(against(root, gitDir))}
+	case errors.Is(err, iofs.ErrNotExist):
+		wt = nil
+	default:
+		return nil, notARepo(err)
 	}
-	return alternatesInBounds(req, fs, filepath.Join(common, "objects"))
+	if _, verr := req.Confine("path", dot.Root()); verr != nil {
+		return nil, verr
+	}
+	if _, err := dot.Stat(""); err != nil {
+		return nil, notARepo(err)
+	}
+
+	// An untyped nil where there is no common directory: that is how dotgit
+	// is told there is none.
+	var common billy.Filesystem
+	objects := dot
+	named, err := readPointer(dot, "commondir")
+	if err != nil {
+		return nil, notARepo(err)
+	}
+	if named = strings.TrimSpace(named); named != "" {
+		dir := against(dot.Root(), named)
+		if _, verr := req.Confine("path", dir); verr != nil {
+			return nil, verr
+		}
+		common = regularFiles{osfs.New(dir)}
+		if _, err := common.Stat(""); err != nil {
+			return nil, notARepo(git.ErrRepositoryIncomplete)
+		}
+		objects = common
+	}
+	if verr := alternatesInBounds(req, objects); verr != nil {
+		return nil, verr
+	}
+
+	storage := filesystem.NewStorage(dotgit.NewRepositoryFilesystem(dot, common), cache.NewObjectLRUDefault())
+	repo, err := git.Open(storage, wt)
+	if err != nil {
+		return nil, notARepo(err)
+	}
+	return repo, nil
 }
 
-// commonDir is the commondir file's content, read the way go-git reads it to
-// open the directory it names: whole, and trimmed. Not bounded, because a
-// bound is a second reading of the file — a path after a megabyte of
-// whitespace is the path go-git opened, and a truncated read of that file
-// would judge no path at all — and go-git has already read it whole to get
-// here. "" when there is no such file.
+// maxPointerBytes bounds a file that points at a directory — a `.git` file
+// or a commondir — at what git itself reads of one: it refuses a `.git` file
+// over a megabyte as too large. One line is all either holds, and nothing
+// but the caller who wrote it bounded how much of it was read.
+const maxPointerBytes = 1 << 20
+
+// readPointer is the content of name, a file that points at a directory, ""
+// when there is no such file.
+func readPointer(fs billy.Filesystem, name string) (string, error) {
+	f, err := fs.Open(name)
+	if errors.Is(err, iofs.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = f.Close() }()
+	b, err := io.ReadAll(io.LimitReader(f, maxPointerBytes+1))
+	if err != nil {
+		return "", err
+	}
+	if len(b) > maxPointerBytes {
+		return "", fmt.Errorf("%s is larger than git reads of one", name)
+	}
+	return string(b), nil
+}
+
+// gitDirPointer is the directory a `.git` file names, read as go-git reads
+// it: the `gitdir: ` prefix, then the rest of the first line, trimmed.
+func gitDirPointer(wt billy.Filesystem) (string, error) {
+	content, err := readPointer(wt, gitDirName)
+	if err != nil {
+		return "", err
+	}
+	named, ok := strings.CutPrefix(content, "gitdir: ")
+	if !ok {
+		return "", errors.New(".git file has no gitdir: prefix")
+	}
+	named, _, _ = strings.Cut(named, "\n")
+	return strings.TrimSpace(named), nil
+}
+
+// commonDir is the commondir file's content as openAt read it to open the
+// directory it names, trimmed; "" when there is no such file, or none this
+// reads.
 func commonDir(fs billy.Filesystem) string {
-	f, err := fs.Open("commondir")
+	named, err := readPointer(fs, "commondir")
 	if err != nil {
 		return ""
 	}
-	defer f.Close()
-	b, err := io.ReadAll(f)
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(b))
+	return strings.TrimSpace(named)
 }
 
-// alternatesInBounds judges each entry of objects/info/alternates, read the
-// way git reads it: one path per line, a blank line or a `#` comment skipped,
-// a relative path taken from the objects directory. Line by line rather than
-// read whole, as go-git scans it, since nothing but the caller who wrote it
-// bounds how long it is, and the first entry out of bounds ends the reading.
-func alternatesInBounds(req plugin.Request, fs billy.Filesystem, objects string) *view.Error {
+// alternatesInBounds judges each entry of objects/info/alternates, the third
+// pointer, read the way git reads it: one path per line, a blank line or a
+// `#` comment skipped, a relative path taken from the objects directory.
+// go-git reads either kind inside the git directory instead and finds nothing
+// there, so today such a repository fails as a missing object rather than
+// answering from outside; judging the entry keeps it a refusal that says why,
+// and keeps it a refusal if the library comes to read the entry the way git
+// does.
+//
+// Line by line rather than read whole, as go-git scans it, since nothing but
+// the caller who wrote it bounds how long it is, and the first entry out of
+// bounds ends the reading. A file this cannot read to its end is refused
+// rather than judged by the part before: a line longer than the scanner
+// takes stopped the reading there, and every entry after it went unjudged.
+func alternatesInBounds(req plugin.Request, fs billy.Filesystem) *view.Error {
+	objects := filepath.Join(fs.Root(), "objects")
 	f, err := fs.Open(filepath.Join("objects", "info", "alternates"))
-	if err != nil {
+	if errors.Is(err, iofs.ErrNotExist) {
 		return nil
 	}
-	defer f.Close()
+	unreadable := func(err error) *view.Error {
+		return view.Errorf("git.objects.unreadable", "%s: reading objects/info/alternates: %v", fs.Root(), err)
+	}
+	if err != nil {
+		return unreadable(err)
+	}
+	defer func() { _ = f.Close() }()
 	lines := bufio.NewScanner(f)
 	for lines.Scan() {
 		entry := strings.TrimSpace(lines.Text())
@@ -287,7 +377,57 @@ func alternatesInBounds(req plugin.Request, fs billy.Filesystem, objects string)
 			return verr
 		}
 	}
+	if err := lines.Err(); err != nil {
+		return unreadable(err)
+	}
 	return nil
+}
+
+// regularFiles is a filesystem that opens nothing for reading but a regular
+// file, and never waits to open one: the open is non-blocking, which a named
+// pipe honours and a file ignores, and what it reached is refused unless it
+// is a file. Writes pass through, and go-git's status makes one: for a
+// submodule the config names and .git/modules holds no repository for, it
+// initialises one there. Refusing it would fail the status of a checkout
+// whose submodules were initialised and never updated.
+type regularFiles struct{ billy.Filesystem }
+
+// errNotAFile is why regularFiles refuses a pipe, a socket, a device or a
+// directory where a file was asked for.
+var errNotAFile = errors.New("not a regular file")
+
+func (f regularFiles) Open(name string) (billy.File, error) {
+	return f.OpenFile(name, os.O_RDONLY, 0)
+}
+
+func (f regularFiles) OpenFile(name string, flag int, perm os.FileMode) (billy.File, error) {
+	if flag&(os.O_WRONLY|os.O_RDWR) != 0 {
+		return f.Filesystem.OpenFile(name, flag, perm)
+	}
+	file, err := f.Filesystem.OpenFile(name, flag|syscall.O_NONBLOCK, perm)
+	if err != nil {
+		return nil, err
+	}
+	// Judged by the name, as the open found it: a billy file has no Stat of
+	// its own. The window between the two is what this leaves open — a pipe
+	// swapped in there is read non-blocking, and holds a call only while
+	// something else holds its other end open.
+	if info, err := f.Stat(name); err != nil || !info.Mode().IsRegular() {
+		_ = file.Close()
+		if err == nil {
+			err = errNotAFile
+		}
+		return nil, &iofs.PathError{Op: "open", Path: name, Err: err}
+	}
+	return file, nil
+}
+
+func (f regularFiles) Chroot(path string) (billy.Filesystem, error) {
+	inner, err := f.Filesystem.Chroot(path)
+	if err != nil {
+		return nil, err
+	}
+	return regularFiles{inner}, nil
 }
 
 // against is p as git resolves it from dir: as it is when absolute, joined

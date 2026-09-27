@@ -106,11 +106,15 @@ func suggestCommits(_ context.Context, req plugin.Request) []string {
 	if ep, err := transport.NewEndpoint(path); err == nil && ep.Protocol != "file" {
 		return nil
 	}
-	repo, err := git.PlainOpenWithOptions(path, &git.PlainOpenOptions{
-		DetectDotGit:          true,
-		EnableDotGitCommonDir: true,
-	})
-	if err != nil {
+	// Found and opened as a run finds and opens it, which opens no pipe
+	// planted in the repository: completion's two-second bound cannot
+	// interrupt an open(2) any more than a caller can.
+	root, verr := repoRoot(req, path)
+	if verr != nil {
+		return nil
+	}
+	repo, verr := openAt(req, root, path)
+	if verr != nil {
 		return nil
 	}
 	iter, err := repo.Log(&git.LogOptions{Order: git.LogOrderCommitterTime})
