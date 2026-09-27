@@ -108,8 +108,13 @@ func Validate(c plugin.Capability, values map[string]any) *view.Error {
 			return nil
 		}
 		if err := checkFieldType(f, v); err != nil {
-			return view.Errorf("core.mcp.badargs", "%s: %v", f.Name, err).
-				WithHint(fmt.Sprintf("%s expects %s", f.Name, SchemaTypeName(f.Type)))
+			// Named as the tool's schema names it, an argument, as the host's
+			// own refusals of the same call name it (plugin.CheckInputs): a
+			// bare "encoding: must be a string" read as a field of something
+			// else. Never a Local input's name, which is not type-checked.
+			input := plugin.SurfaceMCP.InputName(f.Name)
+			return view.Errorf("core.mcp.badargs", "%s %v", input, err).
+				WithHint(fmt.Sprintf("%s expects %s", input, SchemaTypeName(f.Type)))
 		}
 		return held(c, f, v)
 	}

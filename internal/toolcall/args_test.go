@@ -266,8 +266,23 @@ func TestAnEnumMissIsHintedWithTheEnum(t *testing.T) {
 		}
 	}
 	verr := Validate(c, map[string]any{"encoding": 3.0})
-	if verr == nil || verr.Hint != "encoding expects a string" {
+	if verr == nil || verr.Hint != `the "encoding" argument expects a string` {
 		t.Errorf("a wrong type: %v", verr)
+	}
+}
+
+// A shape refusal names the input as an agent's schema does, an argument, the
+// way the host's own refusals of the same call name it: "encoding: must be a
+// string" read as a field of something else, and beside the tool's other
+// refusals as the one input spelled another way.
+func TestAShapeRefusalNamesTheArgument(t *testing.T) {
+	c := plugin.Capability{ID: "gen.token", Inputs: []plugin.Field{{Name: "encoding", Type: plugin.String}}}
+	verr := Validate(c, map[string]any{"encoding": 3.0})
+	if verr == nil || verr.Code != "core.mcp.badargs" {
+		t.Fatalf("a number for a string: %v", verr)
+	}
+	if want := `the "encoding" argument must be a string, got a number`; verr.Message != want {
+		t.Errorf("message = %q, want %q", verr.Message, want)
 	}
 }
 
