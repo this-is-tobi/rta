@@ -888,7 +888,7 @@ func credentialCell(e agentlog.Entry) string {
 }
 
 func runShow(ctx context.Context, req plugin.Request) (view.View, error) {
-	id := strings.TrimSpace(req.String("id"))
+	id := req.String("id")
 	if server := strings.TrimSpace(req.String("server")); server != "" {
 		return remoteShow(ctx, req, server, id)
 	}
@@ -988,7 +988,11 @@ func answeredBy(req plugin.Request) string {
 }
 
 func runAllow(ctx context.Context, req plugin.Request, catalog func() []plugin.Capability, artifact func(string) (string, bool)) (view.View, error) {
-	id := strings.TrimSpace(req.String("id"))
+	// As given, never trimmed, in show and deny too: the id is the one value
+	// in an answer that says which question it answers, and allow and deny
+	// declare it their record. An id is eight hex digits, so one with white
+	// space around it names nothing waiting, and unknownRequest says so.
+	id := req.String("id")
 	if server := strings.TrimSpace(req.String("server")); server != "" {
 		return remoteAnswer(ctx, req, server, id, true)
 	}
@@ -1319,7 +1323,7 @@ func alsoGrant(r consent.Request, ttl, from string, signer *guard.Signer) (strin
 }
 
 func runDeny(ctx context.Context, req plugin.Request) (view.View, error) {
-	id := strings.TrimSpace(req.String("id"))
+	id := req.String("id")
 	if server := strings.TrimSpace(req.String("server")); server != "" {
 		return remoteAnswer(ctx, req, server, id, false)
 	}
