@@ -191,6 +191,27 @@ func TestAHeldRecordIsDescribedAsTheGateComparesIt(t *testing.T) {
 	}
 }
 
+// A tab ends a candidate's value, so a record holding one cannot be offered
+// as itself: it was offered as the part before the tab, which names another
+// record — here the bare one beside it, which accepting it would revoke.
+func TestARecordHoldingATabIsNotOfferedAsAnother(t *testing.T) {
+	setup(t)
+	for _, scope := range []string{"db", "db\tprod"} {
+		if verr := core.Issue(core.Grant{Target: "kv.get", Scope: scope, Agent: "test",
+			Issued: time.Now(), Expires: time.Now().Add(time.Hour)}, true); verr != nil {
+			t.Fatal(verr)
+		}
+	}
+	got := inputOf(t, "grant.revoke", "scope").Candidates(context.Background(), req(map[string]any{"target": "kv.get"}))
+	var values []string
+	for _, c := range got {
+		values = append(values, plugin.CandidateValue(c))
+	}
+	if !slices.Equal(values, []string{"db"}) {
+		t.Errorf("revoke offers %q, want the record that can be offered as itself alone", values)
+	}
+}
+
 func inputOf(t *testing.T, capID, field string) plugin.Field {
 	t.Helper()
 	for _, c := range Plugin(catalog, builtIn).Capabilities {

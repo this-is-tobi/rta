@@ -381,6 +381,13 @@ func suggestHeldScopes(_ context.Context, req plugin.Request) []string {
 		if profile != "" && g.Profile != profile {
 			continue
 		}
+		// A tab ends a candidate's value (plugin.CandidateValue), so a
+		// record holding one was offered as the part before it: another
+		// record, which a revoke would take back instead. Left to be typed,
+		// the way a surface drops a value it cannot offer as itself.
+		if strings.Contains(g.Scope, "\t") {
+			continue
+		}
 		// One entry per record and target: two agents' grants on the same
 		// record are one thing to type.
 		entry := g.Scope + "\t" + g.Named()
