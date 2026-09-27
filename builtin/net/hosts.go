@@ -6,6 +6,7 @@ import (
 	stdnet "net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -375,13 +376,65 @@ func runHostsToggle(_ context.Context, req plugin.Request) (view.View, error) {
 	// moves to a line of its own in its new state, the others stay exactly as
 	// they were. Rebuilt through a replacement map rather than in place,
 	// because inserting a line shifts every index parseHosts recorded.
-	replace := map[int][]string{}
-	nowEnabled := false
+	//
+	// **The direction is the name's, decided once, and not each line's.**
+	// Each line holding the name used to be flipped on its own, and hosts.add
+	// leaves a parked entry where it is when it points the name somewhere new
+	// — so park, add, toggle, the ordinary sequence, parked the live line,
+	// revived the parked one, and reported "disabled" from whichever line came
+	// last, with the name still resolving, to the old address. A name that is
+	// in force anywhere is parked everywhere; one parked on a single line is
+	// brought back from it; one parked at several addresses of one family is
+	// refused, since bringing them all back is two entries racing for the
+	// name, and which one was meant is not this call's to guess. One address
+	// parked on two lines is one answer, and comes back from both.
+	//
+	// **Counted per family, because an IPv4 and an IPv6 address do not
+	// race.** A lookup for one kind reads only the lines of that kind, and a
+	// name kept on both — 127.0.0.1 and ::1, the way a great many hosts files
+	// keep a local name — is one name reachable both ways. Counted across
+	// families, the second toggle of such a name was refused, and nothing
+	// else here could bring the pair back: hosts.add points a name at one
+	// address and takes it off every other.
+	var holding []hostEntry
+	nowEnabled := true
 	for _, e := range parseHosts(lines) {
 		if !containsFold(e.names, name) {
 			continue
 		}
-		nowEnabled = !e.enabled
+		holding = append(holding, e)
+		if e.enabled {
+			nowEnabled = false
+		}
+	}
+	byFamily := map[string][]string{}
+	for _, e := range holding {
+		// parseHostLine kept only lines whose address parses, and one
+		// address spelled two ways is still one answer.
+		ip := stdnet.ParseIP(e.ip)
+		family := "IPv6"
+		if ip.To4() != nil {
+			family = "IPv4"
+		}
+		if addr := ip.String(); !slices.Contains(byFamily[family], addr) {
+			byFamily[family] = append(byFamily[family], addr)
+		}
+	}
+	for _, family := range []string{"IPv4", "IPv6"} {
+		if addrs := byFamily[family]; nowEnabled && len(addrs) > 1 {
+			sf := req.Surface()
+			return nil, view.Errorf("net.hosts.ambiguous",
+				"%s is parked at more than one %s address (%s), and enabling them all would have them race for it",
+				name, family, strings.Join(addrs, ", ")).
+				WithHint(sf.CapabilityName("net.hosts.add") + " with the address you want in " + sf.ArgumentName("ip") +
+					" points " + name + " at that one")
+		}
+	}
+	replace := map[int][]string{}
+	for _, e := range holding {
+		if e.enabled == nowEnabled {
+			continue
+		}
 		named, others := splitName(e.names, name)
 		if len(others) == 0 {
 			e.enabled = nowEnabled

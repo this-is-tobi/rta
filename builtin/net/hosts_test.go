@@ -217,6 +217,97 @@ func TestHostsToggleRoundTrips(t *testing.T) {
 	}
 }
 
+// Park, add a new address, toggle: hosts.add leaves the parked line where it
+// is, and toggle flipped each line on its own — the live one parked, the old
+// one revived, "disabled" reported, and the name still resolving, to the
+// address somebody had moved it off. A name in force anywhere is parked
+// everywhere.
+func TestHostsToggleParksANameLiveOnAnyLine(t *testing.T) {
+	path := hostsFixture(t, "# 10.0.0.1 api.local\n10.0.0.2 api.local\n")
+
+	body := run(t, runHostsToggle, map[string]any{"hostname": "api.local"}).(view.Text).Body
+	if !strings.Contains(body, "disabled api.local") {
+		t.Errorf("toggle = %q", body)
+	}
+	if got := hostsContent(t, path); got != "# 10.0.0.1 api.local\n# 10.0.0.2 api.local\n" {
+		t.Errorf("want both entries parked, got:\n%s", got)
+	}
+}
+
+// Parked at one address, the name comes back from that line — twice over
+// when the same address was parked twice.
+func TestHostsToggleEnablesTheOneParkedAddress(t *testing.T) {
+	path := hostsFixture(t, "# 10.0.0.1 api.local\n# 10.0.0.1 api.local\n")
+
+	body := run(t, runHostsToggle, map[string]any{"hostname": "api.local"}).(view.Text).Body
+	if !strings.Contains(body, "enabled api.local") {
+		t.Errorf("toggle = %q", body)
+	}
+	if got := hostsContent(t, path); got != "10.0.0.1 api.local\n10.0.0.1 api.local\n" {
+		t.Errorf("want the entry back, got:\n%s", got)
+	}
+}
+
+// Parked at two addresses, enabling both is two entries racing for one name
+// and which one was meant is a guess: refused, with the file left alone and
+// the way to choose named.
+func TestHostsToggleRefusesToGuessBetweenParkedAddresses(t *testing.T) {
+	const content = "# 10.0.0.1 api.local\n# 10.0.0.2 api.local\n"
+	path := hostsFixture(t, content)
+
+	_, err := runHostsToggle(context.Background(), plugin.NewRequest(
+		map[string]any{"hostname": "api.local"}, false, true))
+	if err == nil {
+		t.Fatal("toggling a name parked at two addresses was accepted")
+	}
+	ve := view.AsError(err, "x")
+	if ve.Code != "net.hosts.ambiguous" || !strings.Contains(ve.Message, "10.0.0.1, 10.0.0.2") ||
+		!strings.Contains(ve.Hint, "net hosts add") {
+		t.Errorf("want net.hosts.ambiguous naming both addresses and hosts add, got %+v", ve)
+	}
+	if got := hostsContent(t, path); got != content {
+		t.Errorf("the refusal changed the file:\n%s", got)
+	}
+}
+
+// A name kept at an IPv4 and an IPv6 address is one name reachable both
+// ways, not two entries racing: a lookup of one kind reads only lines of that
+// kind. Counted across families, parking it once made the second toggle a
+// refusal, and hosts.add, which keeps a name at one address, could not bring
+// the pair back. It round-trips; two addresses of one family beside the IPv6
+// one are still a guess.
+func TestHostsToggleRoundTripsANameKeptOnBothFamilies(t *testing.T) {
+	const content = "127.0.0.1 dual.local\n::1 dual.local\n"
+	path := hostsFixture(t, content)
+
+	body := run(t, runHostsToggle, map[string]any{"hostname": "dual.local"}).(view.Text).Body
+	if !strings.Contains(body, "disabled dual.local") {
+		t.Errorf("first toggle = %q", body)
+	}
+	if got := hostsContent(t, path); got != "# 127.0.0.1 dual.local\n# ::1 dual.local\n" {
+		t.Errorf("want both parked, got:\n%s", got)
+	}
+	body = run(t, runHostsToggle, map[string]any{"hostname": "dual.local"}).(view.Text).Body
+	if !strings.Contains(body, "enabled dual.local") {
+		t.Errorf("second toggle = %q", body)
+	}
+	if got := hostsContent(t, path); got != content {
+		t.Errorf("want the pair back as it was, got:\n%s", got)
+	}
+
+	const racing = "# 10.0.0.1 api.local\n# ::1 api.local\n# 10.0.0.2 api.local\n"
+	path = hostsFixture(t, racing)
+	_, err := runHostsToggle(context.Background(), plugin.NewRequest(
+		map[string]any{"hostname": "api.local"}, false, true))
+	if ve := view.AsError(err, "x"); err == nil || ve.Code != "net.hosts.ambiguous" ||
+		!strings.Contains(ve.Message, "IPv4 address (10.0.0.1, 10.0.0.2)") {
+		t.Errorf("want net.hosts.ambiguous naming the two IPv4 addresses, got %v", err)
+	}
+	if got := hostsContent(t, path); got != racing {
+		t.Errorf("the refusal changed the file:\n%s", got)
+	}
+}
+
 // A disabled entry is not competing for the name, so adding elsewhere leaves
 // it parked rather than silently deleting somebody's saved override.
 func TestHostsAddLeavesDisabledEntriesAlone(t *testing.T) {
