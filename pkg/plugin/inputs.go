@@ -501,16 +501,22 @@ func CheckRequired(c Capability, req Request) *view.Error {
 // is never told to pass a Local input: the schema hides it and the bridge
 // drops it unread, so "pass it" would send the agent round into this same
 // refusal, and only the operator can supply one.
+//
+// The capability is named as the surface names it too (CapabilityName). It
+// was the ID on every surface, "kube.serviceaccount.provision needs --grant"
+// at a terminal that had typed `rta kube serviceaccount provision`, and a
+// refusal of the value that same flag was given named the command.
 func MissingInput(c Capability, f Field, s Surface) *view.Error {
 	const code = "core.input.missing"
 	config := ""
 	if f.Config != "" {
 		config = ", or set " + f.Config + " in your rta config"
 	}
+	call := s.CapabilityName(c.ID)
 	switch s {
 	case SurfaceCLI:
 		if f.Positional {
-			return view.Errorf(code, "%s needs %s", c.ID, s.ArgumentName(f.Name)).
+			return view.Errorf(code, "%s needs %s", call, s.ArgumentName(f.Name)).
 				WithHint("give it as an argument — `rta " + strings.Join(c.Words(), " ") +
 					" --help` says where")
 		}
@@ -518,7 +524,7 @@ func MissingInput(c Capability, f Field, s Surface) *view.Error {
 		if f.Local && f.EnvFallback {
 			hint += ", or export $" + LocalEnvVar(c.ID, f.Name)
 		}
-		return view.Errorf(code, "%s needs %s", c.ID, s.InputName(f.Name)).WithHint(hint)
+		return view.Errorf(code, "%s needs %s", call, s.InputName(f.Name)).WithHint(hint)
 	case SurfaceMCP:
 		if f.Local {
 			// With neither a config key nor a variable, nothing but a
@@ -531,16 +537,16 @@ func MissingInput(c Capability, f Field, s Surface) *view.Error {
 			case f.EnvFallback:
 				hint = "ask the operator to set it in the environment rta mcp serve runs in"
 			}
-			return view.Errorf(code, "%s needs %s, which only the operator can give", c.ID, f.Name).
+			return view.Errorf(code, "%s needs %s, which only the operator can give", call, f.Name).
 				WithHint(hint)
 		}
-		return view.Errorf(code, "%s needs %s", c.ID, s.InputName(f.Name)).
+		return view.Errorf(code, "%s needs %s", call, s.InputName(f.Name)).
 			WithHint(fmt.Sprintf("pass %q in the arguments", f.Name))
 	case SurfaceTUI:
-		return view.Errorf(code, "%s needs %s", c.ID, f.Name).
+		return view.Errorf(code, "%s needs %s", call, f.Name).
 			WithHint("fill in " + s.InputName(f.Name) + config)
 	}
-	return view.Errorf(code, "%s needs %s", c.ID, f.Name)
+	return view.Errorf(code, "%s needs %s", call, fieldName(s, f))
 }
 
 // CheckRequest is everything GuardInputs holds a call to — what it must carry,

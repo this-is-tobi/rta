@@ -29,7 +29,7 @@ func TestARunWithoutARequiredInputIsRefusedBeforeTheHandler(t *testing.T) {
 
 	for _, values := range []map[string]any{nil, {"kinds": []string{}}} {
 		rm := runCmd(context.Background(), 1, c, values, false, statedConfig{}, "", nil, config.Connection{}, false)().(resultMsg)
-		if rm.err == nil || rm.err.Code != "core.input.missing" || rm.err.Message != "demo.pick needs kinds" {
+		if rm.err == nil || rm.err.Code != "core.input.missing" || rm.err.Message != "`demo.pick` needs kinds" {
 			t.Errorf("run %v: %+v", values, rm.err)
 		}
 	}
@@ -37,7 +37,7 @@ func TestARunWithoutARequiredInputIsRefusedBeforeTheHandler(t *testing.T) {
 	// where the input goes.
 	tm := tileCmd(0, tile{cap: c}, statedConfig{}, "", nil, config.Connection{})().(tileMsg)
 	if tm.err == nil || tm.err.Code != "core.input.missing" ||
-		tm.err.Message != "demo.pick needs kinds, and a tile has no form to ask with" ||
+		tm.err.Message != "`demo.pick` needs kinds, and a tile has no form to ask with" ||
 		tm.err.Hint != "`with: {kinds: <value>}` in its dashboard entry states it for every run" {
 		t.Errorf("tile: %+v", tm.err)
 	}

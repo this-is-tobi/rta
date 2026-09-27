@@ -251,7 +251,9 @@ func TestAMissingRequiredInputIsRefusedBeforeTheHandler(t *testing.T) {
 }
 
 // The refusal names the input the way the caller's surface names it, since
-// that is what they type back, and says who can give it.
+// that is what they type back, and says who can give it. The capability too:
+// it was the ID everywhere, "db.query needs --host" to a terminal that had
+// typed `rta db query`.
 func TestAMissingInputIsNamedTheWayItsSurfaceNamesIt(t *testing.T) {
 	c := Capability{ID: "db.query", Summary: "query", Safety: Read}
 	for _, tc := range []struct {
@@ -260,24 +262,24 @@ func TestAMissingInputIsNamedTheWayItsSurfaceNamesIt(t *testing.T) {
 		message, hint string
 	}{
 		{Field{Name: "host", Type: String, Required: true, Config: "host"}, SurfaceCLI,
-			"db.query needs --host", "pass --host, or set host in your rta config"},
+			"`rta db query` needs --host", "pass --host, or set host in your rta config"},
 		{Field{Name: "table", Type: String, Required: true, Positional: true}, SurfaceCLI,
-			"db.query needs <table>", "give it as an argument — `rta db query --help` says where"},
+			"`rta db query` needs <table>", "give it as an argument — `rta db query --help` says where"},
 		{Field{Name: "password", Type: Secret, Required: true, Local: true, EnvFallback: true}, SurfaceCLI,
-			"db.query needs --password", "pass --password, or export $RTA_DB_PASSWORD"},
+			"`rta db query` needs --password", "pass --password, or export $RTA_DB_PASSWORD"},
 		{Field{Name: "table", Type: String, Required: true, Positional: true}, SurfaceMCP,
-			`db.query needs the "table" argument`, `pass "table" in the arguments`},
+			"the `db_query` tool needs the \"table\" argument", `pass "table" in the arguments`},
 		{Field{Name: "host", Type: String, Required: true, Local: true, Config: "host"}, SurfaceMCP,
-			"db.query needs host, which only the operator can give", "ask the operator to set it in the rta config"},
+			"the `db_query` tool needs host, which only the operator can give", "ask the operator to set it in the rta config"},
 		{Field{Name: "password", Type: Secret, Required: true, Local: true, EnvFallback: true}, SurfaceMCP,
-			"db.query needs password, which only the operator can give",
+			"the `db_query` tool needs password, which only the operator can give",
 			"ask the operator to set it in the environment rta mcp serve runs in"},
 		{Field{Name: "dir", Type: Path, Required: true, Local: true, Positional: true}, SurfaceMCP,
-			"db.query needs dir, which only the operator can give",
+			"the `db_query` tool needs dir, which only the operator can give",
 			"ask the operator to run it from their own terminal"},
 		{Field{Name: "host", Type: String, Required: true, Config: "host"}, SurfaceTUI,
-			"db.query needs host", "fill in the host box, or set host in your rta config"},
-		{Field{Name: "host", Type: String, Required: true}, SurfaceUnknown, "db.query needs host", ""},
+			"`db.query` needs host", "fill in the host box, or set host in your rta config"},
+		{Field{Name: "host", Type: String, Required: true}, SurfaceUnknown, "`rta db query` needs --host", ""},
 	} {
 		verr := MissingInput(c, tc.f, tc.s)
 		if verr.Code != "core.input.missing" || verr.Message != tc.message || verr.Hint != tc.hint {
