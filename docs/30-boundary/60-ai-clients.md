@@ -212,7 +212,7 @@ The name is your word, not the agent's. A client announces itself in the MCP han
 
 ## What the agent can do once it is connected
 
-**Read capabilities only.** That holds with no flags, no config and no decisions. `rta plugin list` is where you check what that covers — the `CAN` column is the highest safety class each plugin declares, and only the `read` half of it is reachable over MCP until you say otherwise:
+**Read capabilities only.** That holds with no flags, no config and no decisions. `rta plugin list` is where you check what that covers — the `CAN` column is the highest safety class each plugin declares, and only the `read` half of it is reachable over MCP until you issue a grant — some of it not even then:
 
 ```bash
 rta plugin list
@@ -221,14 +221,14 @@ rta plugin list
 ```
 PLUGIN   CAPABILITIES   CAN           SUMMARY
 agent               7   write         What AI agents asked rta for, what they got, and what is waiting on you
-audit               5   read          Security hardening checks, each graded against a named OWASP/CWE control
-grant               4   write         Time-boxed permissions for AI agents
-kv                 13   destructive   Encrypted local store for secrets, certificates and key files
+audit              11   read          Security hardening checks, each graded against a named OWASP/CWE control
+grant              10   write         Permissions for AI agents that expire on their own
+kv                 16   destructive   Encrypted local store for secrets, certificates and key files
 ```
 
-So of those four, an agent reaches all of `audit` and the read half of the others, and nothing in `kv` that returns a secret.
+So of those four, an agent reaches every `audit` check but the two about this machine's own setup, `audit clients` and `audit doctor`; the read half of `kv`, which is names and metadata and never a value; and nothing of `agent` or `grant` at all. Those two answer to the person at the terminal whatever their safety class, and are [never a tool](./20-mcp.md#never-a-tool).
 
-Everything else is a separate decision — a namespace at a time for writes, one capability at a time for destructive ones, and grants for anything narrower. That is [MCP and the safety gate](./20-mcp.md) and [Grants](./30-grants.md).
+Everything else is a grant a person issues — for a plugin, one capability, or one record of it — and that is [MCP and the safety gate](./20-mcp.md) and [Grants](./30-grants.md).
 
 ## Next
 
