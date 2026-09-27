@@ -110,11 +110,23 @@ func installFrom(ctx context.Context, listed Listed, stderr io.Writer, dryRun bo
 	if err := os.MkdirAll(filepath.Join(paths.Data(), "plugins"), 0o700); err != nil {
 		return Report{}, view.Errorf("plugin.install.place", "%v", err)
 	}
+	// The fetch into staging and the verification launch from it are not held
+	// off a forced exit (the hold is on the writes that land the plugin,
+	// below), and os.Exit skips a deferred removal, so an exit taken during
+	// either left the staged download here for good: nothing lists a
+	// dot-directory, and nothing ever removed one. The exit removes it
+	// instead. Made, and its removal registered, under a brief hold of their
+	// own so that no exit falls between the two, and unregistered only after
+	// the install's own removal has run.
+	release := shutdown.Hold()
 	staging, err := os.MkdirTemp(filepath.Join(paths.Data(), "plugins"), ".staging-*")
 	if err != nil {
+		release()
 		return Report{}, view.Errorf("plugin.install.place", "%v", err)
 	}
+	defer shutdown.OnExit(func() { _ = os.RemoveAll(staging) })()
 	defer os.RemoveAll(staging)
+	release()
 
 	artifact, err := os.Create(filepath.Join(staging, "artifact"))
 	if err != nil {
