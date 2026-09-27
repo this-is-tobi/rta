@@ -61,7 +61,13 @@ A key's name becomes the variable's by upper-casing it and turning anything but 
 
 ## Undoing a mistake
 
-
+```bash
+rta kv history db-password                # what it held before, and when each value was replaced
+rta kv restore db-password --revision 1   # put an earlier value back
+rta kv rm old-token --yes                 # set aside, not destroyed
+rta kv restore old-token                  # and back, history included
+rta kv rm old-token --purge --yes         # the one removal that is final
+```
 
 Every write over an existing key keeps what it replaced — the last five values, inside the same encrypted store — and `kv rm` keeps the whole entry aside rather than destroying it. A paste over the wrong key, a rotation that broke something, a mis-click on the wrong row: each is undone by name. A restore pushes the value it replaces into the history in turn, so a restore is undoable by the same command. `--purge` is the one removal that is final, and it also finishes off a key removed earlier.
 
