@@ -148,7 +148,7 @@ func runResolverSet(_ context.Context, req plugin.Request) (view.View, error) {
 		return view.Text{Body: "would " + summary + " in " + path}, nil
 	}
 	// "set" is its own past tense, so one string serves both here.
-	saved, verr := backup(req.Surface(), path)
+	saved, verr := backup(req.Surface(), path, maxResolvBytes)
 	if verr != nil {
 		return nil, verr
 	}

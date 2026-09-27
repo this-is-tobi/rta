@@ -698,6 +698,30 @@ func TestBackupsDoNotOverwriteEachOther(t *testing.T) {
 	}
 }
 
+// The copy is held to the cap the read before it was, since the file it
+// copies can have grown between the two: past the cap it is refused as the
+// read would be, and no partial copy is left among the backups.
+func TestABackupIsHeldToTheReadsCap(t *testing.T) {
+	path := hostsFixture(t, "127.0.0.1 localhost\n")
+	const max = len("127.0.0.1 localhost\n") - 1
+	_, verr := backup(plugin.SurfaceCLI, path, max)
+	if verr == nil || verr.Code != "net.sysfile.toolarge" {
+		t.Fatalf("a file past the cap was backed up: %v", verr)
+	}
+	entries, err := os.ReadDir(backupDir())
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("a refused backup left %d files behind", len(entries))
+	}
+	if saved, verr := backup(plugin.SurfaceCLI, path, max+1); verr != nil {
+		t.Errorf("a file at the cap was refused: %v", verr)
+	} else if got, _ := os.ReadFile(saved); string(got) != "127.0.0.1 localhost\n" {
+		t.Errorf("the backup holds %q", got)
+	}
+}
+
 // The index was computed against one trimming of the line and applied to
 // another, which failed both ways: a parked entry indented past its "#"
 // aborted the process, and a comment whose "#" sat after leading whitespace

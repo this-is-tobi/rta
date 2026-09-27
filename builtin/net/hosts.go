@@ -156,7 +156,7 @@ func applyHosts(req plugin.Request, call rootCall, lines []string, action, done 
 	if req.DryRun {
 		return view.Text{Body: "would " + action + " in " + path}, nil
 	}
-	saved, verr := backup(req.Surface(), path)
+	saved, verr := backup(req.Surface(), path, maxHostsBytes)
 	if verr != nil {
 		return nil, verr
 	}
