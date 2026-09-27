@@ -140,6 +140,44 @@ func TestPinnedLaunchesThroughEveryRunnerAreNotFindings(t *testing.T) {
 	}
 }
 
+// `npm exec` and `uv tool run` are npx and uvx spelled long, and fetch the
+// same way; they were not read at all. `npm run` fetches nothing.
+func TestTheLongFormsOfTheRunnersAreRead(t *testing.T) {
+	servers := map[string]any{}
+	for name, launch := range map[string][]string{
+		"npm-exec":   {"npm", "exec", "--", "@acme/mcp-server"},
+		"npm-x":      {"npm", "x", "-y", "@acme/mcp-server@1.4.2"},
+		"uv-run":     {"uv", "tool", "run", "mcp-server-fetch"},
+		"uv-pinned":  {"uv", "tool", "run", "mcp-server-fetch==2025.4.7"},
+		"uv-install": {"uv", "tool", "install", "mcp-server-fetch"},
+		"npm-run":    {"npm", "run", "serve"},
+		"yarn-dlx":   {"yarn", "dlx", "@acme/mcp-server"},
+	} {
+		servers[name] = map[string]any{"command": launch[0], "args": launch[1:]}
+	}
+	body, _ := json.Marshal(map[string]any{"mcpServers": servers})
+	fakeHome(t, map[string]struct {
+		body string
+		mode os.FileMode
+	}{".cursor/mcp.json": {string(body), 0o600}})
+
+	rows := agentRows(t, plugin.SurfaceCLI)
+	for name, want := range map[string]string{
+		"npm-exec": "`npm exec @acme/mcp-server`",
+		"uv-run":   "`uv tool run mcp-server-fetch`",
+		"yarn-dlx": "`yarn dlx @acme/mcp-server`",
+	} {
+		if row := rows[name]; row == nil || !strings.Contains(row[2], want) {
+			t.Errorf("%s: want a row naming %s, got %v", name, want, row)
+		}
+	}
+	for _, quiet := range []string{"npm-x", "uv-pinned", "uv-install", "npm-run"} {
+		if row, found := rows[quiet]; found {
+			t.Errorf("%s is pinned or fetches nothing, and was reported: %v", quiet, row)
+		}
+	}
+}
+
 // bypassPermissions short-circuits the permission grades, and the fix page
 // follows: the one edit offered is the switch itself, because every other
 // edit is theoretical while it is on.
