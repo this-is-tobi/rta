@@ -6,6 +6,8 @@ import (
 	"io/fs"
 	"net/url"
 	"path"
+	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -219,25 +221,62 @@ func depthOf(p string) int {
 // a clone, and the parsers only ever see the second — a component's source
 // is a thing somebody has to be able to go and open.
 func parseManifest(fsys fs.FS, name, shown string) ([]component, graph, error) {
-	base := path.Base(name)
 	// Decided before the read: nothing here can parse a binary lockfile, so
 	// pulling one into memory only makes the failure slower.
-	if base == "bun.lockb" {
+	if path.Base(name) == "bun.lockb" {
 		return nil, graph{}, errBinaryLockfile
 	}
 	data, err := fs.ReadFile(fsys, name)
 	if err != nil {
 		return nil, graph{}, err
 	}
-	comps, err := parseComponents(base, data, shown)
+	// From shown, which is the path as the caller gave it: a file named on
+	// its own is read from its own directory, and requirements/prod.txt is a
+	// requirements file only by the directory it sits in.
+	format := manifestFormat(shown)
+	comps, err := parseComponents(format, data, shown)
 	if err != nil {
 		return nil, graph{}, err
 	}
-	return comps, parseGraph(base, data), nil
+	return comps, parseGraph(format, data), nil
 }
 
-// parseComponents dispatches on the file's name and, for JSON, on what is
-// actually inside it — an SBOM's filename is a convention, its format is not.
+// manifestFormat names the format the manifest at p is read as: its own name
+// for one of manifestNames, and for any JSON — an SBOM is known by what is
+// inside it, not by what it is called — "requirements.txt" for a pip
+// requirements file by any of the names projects give them, and "" for a
+// file this does not read.
+//
+// A directory scan only ever finds the names in manifestNames. A file named
+// on its own can be called anything, and requirements-dev.txt holding two
+// pins was dispatched on its exact name, matched nothing, and read as a file
+// with no pinned dependencies — the report blaming ranges it did not have.
+func manifestFormat(p string) string {
+	base := filepath.Base(p)
+	switch {
+	case slices.Contains(manifestNames, base), strings.HasSuffix(base, ".json"):
+		return base
+	case isRequirements(p):
+		return "requirements.txt"
+	}
+	return ""
+}
+
+// isRequirements reports whether p is a pip requirements file under a name
+// other than requirements.txt: requirements-dev.txt, dev-requirements.txt,
+// or any .txt in a requirements/ directory.
+func isRequirements(p string) bool {
+	base := strings.ToLower(filepath.Base(p))
+	if !strings.HasSuffix(base, ".txt") {
+		return false
+	}
+	return strings.HasPrefix(base, "requirements") || strings.HasSuffix(base, "requirements.txt") ||
+		filepath.Base(filepath.Dir(p)) == "requirements"
+}
+
+// parseComponents dispatches on the file's format (manifestFormat) and, for
+// JSON, on what is actually inside it — an SBOM's filename is a convention,
+// its format is not.
 func parseComponents(base string, data []byte, path string) ([]component, error) {
 	switch base {
 	case "go.mod":
@@ -521,9 +560,8 @@ func parseRequirements(text, source string) []component {
 // sbom covers the two formats that matter, distinguished by the field each
 // one uses to announce itself.
 type sbom struct {
-	BOMFormat   string `json:"bomFormat"`   // CycloneDX
-	SPDXVersion string `json:"spdxVersion"` // SPDX
-	Components  []struct {
+	sbomMarks
+	Components []struct {
 		Name    string `json:"name"`
 		Version string `json:"version"`
 		PURL    string `json:"purl"`
@@ -538,12 +576,21 @@ type sbom struct {
 	} `json:"packages"`
 }
 
+// sbomMarks are the fields each SBOM format announces itself by, and all
+// that has to be read to tell one from any other JSON.
+type sbomMarks struct {
+	BOMFormat   string `json:"bomFormat"`   // CycloneDX
+	SPDXVersion string `json:"spdxVersion"` // SPDX
+}
+
+func (m sbomMarks) isSBOM() bool { return m.BOMFormat != "" || m.SPDXVersion != "" }
+
 func parseSBOM(data []byte, source string) ([]component, error) {
 	var b sbom
 	if err := json.Unmarshal(data, &b); err != nil {
 		return nil, err
 	}
-	if b.BOMFormat == "" && b.SPDXVersion == "" {
+	if !b.isSBOM() {
 		return nil, nil // some other JSON file that happens to sit here
 	}
 	var out []component

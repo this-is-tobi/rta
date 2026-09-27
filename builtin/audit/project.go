@@ -2,6 +2,7 @@ package audit
 
 import (
 	"context"
+	"encoding/json"
 	"io/fs"
 	"os"
 	"path"
@@ -54,6 +55,9 @@ func openProject(ctx context.Context, req plugin.Request, target string) (*proje
 		return nil, view.Errorf("audit.deps.path", "reading %s: %v", target, err)
 	}
 	if !info.IsDir() {
+		if verr := namedManifest(target); verr != nil {
+			return nil, verr
+		}
 		// A single file: read its directory and look at exactly one name, so
 		// the fs.FS the parsers see is the same shape either way.
 		dir, base := filepath.Dir(target), filepath.Base(target)
@@ -70,6 +74,33 @@ func openProject(ctx context.Context, req plugin.Request, target string) (*proje
 		// the reader sees is what they could paste back.
 		shown: func(p string) string { return filepath.Join(target, filepath.FromSlash(p)) },
 	}, nil
+}
+
+// namedManifest refuses a file named on its own that is no manifest this
+// reads.
+//
+// A directory scan picks up only the names it looks for; a file named on its
+// own can be anything, and one this does not read was listed as a manifest
+// with no pinned dependencies in it — notes.txt as much as a JSON config —
+// with the report blaming a requirements file's ranges. That is a finding
+// about a file nobody read. A JSON file is an SBOM by what is inside it, so
+// that is what is looked at; one that does not parse at all is left to the
+// read, which says why.
+func namedManifest(target string) *view.Error {
+	format := manifestFormat(target)
+	if strings.HasSuffix(format, ".json") && format != "package-lock.json" {
+		if data, err := os.ReadFile(target); err == nil {
+			var marks sbomMarks
+			if json.Unmarshal(data, &marks) == nil && !marks.isSBOM() {
+				format = ""
+			}
+		}
+	}
+	if format != "" {
+		return nil
+	}
+	return view.Errorf("audit.deps.format", "%s is not a lockfile, a requirements file or an SBOM", target).
+		WithHint("the formats read are " + strings.Join(ecosystems, "; "))
 }
 
 // cloneProject reads a repository nobody checked out.
