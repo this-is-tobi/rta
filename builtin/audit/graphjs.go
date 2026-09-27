@@ -102,9 +102,10 @@ func npmLockGraph(data []byte) graph {
 		}
 	}
 	a := newAsked()
+	walk := npmWalk{left: npmWalkBudget}
 	for _, d := range declared {
 		r := ref("npm", d.name)
-		if version, ok := npmResolve(installedAt, d.from, d.name); ok {
+		if version, ok := walk.resolve(installedAt, d.from, d.name); ok {
 			a.found(r, version)
 		} else {
 			a.missing(r)
@@ -112,15 +113,47 @@ func npmLockGraph(data []byte) graph {
 	}
 	a.apply(&g)
 	g.stateIndirect(all)
+	// A declaration the budget left unresolved has no pin, so relation falls
+	// back to what the name alone says — and the report says the structure
+	// was not read whole, rather than let that read like a stated answer.
+	g.truncated = g.truncated || walk.cut
 	return g
 }
 
-// npmResolve finds the copy one manifest's declaration resolved to, by walking
+// npmWalk resolves declarations by Node's own lookup, within a budget.
+//
+// **The budget is the file's shape, not its size.** Each step up builds the
+// path of one more ancestor to look in, so a declaration costs its manifest's
+// depth times its path's length — nothing for a real workspace, "packages/app"
+// three steps up, and cubic in the file for one somebody wrote to be walked:
+// a workspace entry thousands of directories deep that declares thousands of
+// packages. Measured at 140 ms for 13 KB and doubling the file multiplying
+// it by six, so a lockfile of a few hundred kilobytes, on a checkout audit.deps
+// reads over MCP with no grant, held the call for minutes. A real lockfile
+// builds well under a megabyte of these paths; one that spends the budget
+// gets the rest of its declarations unresolved and the walk marked cut.
+type npmWalk struct {
+	left int  // bytes of candidate paths still to be built
+	cut  bool // a resolution was abandoned for the budget
+}
+
+// npmWalkBudget is what one lockfile's resolutions may build between them.
+const npmWalkBudget = 32 << 20
+
+// resolve finds the copy one manifest's declaration resolved to, by walking
 // Node's own lookup: the nearest node_modules holding the name, starting beside
 // the manifest that declared it and rising to the root. `from` is the
 // manifest's own key — "" for the root, "packages/app" for a workspace.
-func npmResolve(installedAt map[string]string, from, name string) (string, bool) {
+func (w *npmWalk) resolve(installedAt map[string]string, from, name string) (string, bool) {
 	for dir := from; ; {
+		// Counted before it is built, so the step that would overspend costs
+		// nothing.
+		cost := len(dir) + len("/node_modules/") + len(name)
+		if cost > w.left {
+			w.left, w.cut = 0, true
+			return "", false
+		}
+		w.left -= cost
 		key := "node_modules/" + name
 		if dir != "" {
 			key = dir + "/" + key
