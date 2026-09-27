@@ -25,7 +25,9 @@ type speller struct{ reg *registry.Registry }
 
 // commandLine is "rta" followed by words, wherever it stands — in a code
 // span, inside a shell example, or in running prose after "add one with:".
-var commandLine = regexp.MustCompile(`(?:^|[^a-z-])rta((?: [a-z][a-z-]*)+)`)
+// A word may hold a digit after its first letter, as codec.b64's does: read
+// as letters alone, `rta codec b64` was `rta codec b` and named nothing.
+var commandLine = regexp.MustCompile(`(?:^|[^a-z-])rta((?: [a-z][a-z0-9-]*)+)`)
 
 // find returns each place text spells something for a terminal.
 //
@@ -214,7 +216,7 @@ func maskSpans(text string) string {
 func (sp speller) capabilityOf(words string) (plugin.Capability, bool) {
 	var ids []string
 	for _, w := range strings.Fields(words) {
-		if strings.Trim(w, "abcdefghijklmnopqrstuvwxyz-") != "" {
+		if strings.Trim(w, "abcdefghijklmnopqrstuvwxyz0123456789-") != "" {
 			break
 		}
 		ids = append(ids, w)
@@ -297,6 +299,10 @@ func TestTheSpellerTellsATerminalsSpellingFromEveryoneElses(t *testing.T) {
 		"agent log key /data/agent-log.key: too short":  true,
 		"the agent log is busy: timed out":              false,
 		"the agent log's key /data/agent-log.key: gone": false,
+		// A command word holding a digit, codec.b64's.
+		"decode it with rta codec b64":           true,
+		"`codec b64 --decode` reads it back":     true,
+		"a b64 value is not a codec b64 command": false,
 	} {
 		if got := len(sp.find(text, false)) > 0; got != want {
 			t.Errorf("find(%q) found a terminal's spelling: %v, want %v", text, got, want)
@@ -313,6 +319,9 @@ func TestTheSpellerTellsATerminalsSpellingFromEveryoneElses(t *testing.T) {
 	}
 	if hits := sp.find("Allow one with `rta grant allow <capability>`", true); len(hits) == 0 {
 		t.Error("a capability's command line passed in HumanOnly text")
+	}
+	if hits := sp.find("pipe it through `rta codec b64`", true); len(hits) == 0 {
+		t.Error("a capability whose command words hold a digit passed in HumanOnly text")
 	}
 }
 
