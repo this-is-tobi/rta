@@ -562,8 +562,9 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 			// handler for the paths it derives from them rather than
 			// receives. checkPaths cannot see those: it walks the declared
 			// inputs, and a repository reached by walking upward out of one
-			// was never an argument.
-			WithConfinement(opts.Paths.Check)
+			// was never an argument — which is also why its refusal is
+			// Derived's, and does not tell the agent to send another path.
+			WithConfinement(opts.Paths.Derived)
 		for field, l := range links {
 			run = run.WithLink(field, l.path, l.target)
 		}

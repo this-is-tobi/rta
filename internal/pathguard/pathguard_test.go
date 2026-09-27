@@ -58,6 +58,39 @@ func TestOutsideTheRootIsRefused(t *testing.T) {
 	}
 }
 
+// A path the handler found is held to the same bounds as one it was sent,
+// and refused in words for a caller who never sent it: "use a path inside"
+// asked an agent to change an argument that was already inside the root.
+func TestADerivedPathIsRefusedWithoutAskingForAnotherArgument(t *testing.T) {
+	g, root := rooted(t)
+	if got, err := g.Derived("path", filepath.Join(root, ".git")); err != nil {
+		t.Fatalf("a derived path inside the root was refused: %v", err)
+	} else if want, _ := g.Check("path", filepath.Join(root, ".git")); got != want {
+		t.Errorf("Derived judged %q, Check %q", got, want)
+	}
+
+	outside := filepath.Join(root, "..", ".git")
+	sent, err := g.Check("path", outside)
+	if err == nil || sent != "" || !strings.Contains(err.Hint, "use a path inside") {
+		t.Fatalf("Check of a sent path: %q, %v", sent, err)
+	}
+	found, err := g.Derived("path", outside)
+	if err == nil || found != "" {
+		t.Fatalf("a derived path outside the root was allowed: %q", found)
+	}
+	if err.Code != "core.mcp.path.outside" {
+		t.Errorf("code = %q, want the same core.mcp.path.outside a sent path gets", err.Code)
+	}
+	if strings.Contains(err.Hint, "use a path inside") {
+		t.Errorf("the hint asks for another argument: %s", err.Hint)
+	}
+	if !strings.Contains(err.Message, "reached from the path it was given") ||
+		!strings.Contains(err.Hint, "--root") {
+		t.Errorf("the refusal does not say where the path came from or who can widen the root: %s — %s",
+			err.Message, err.Hint)
+	}
+}
+
 // The escape a lexical check misses, and the reason resolve walks to the
 // deepest existing ancestor rather than calling filepath.Clean and comparing
 // strings. A link inside the root passes any prefix test and then opens
