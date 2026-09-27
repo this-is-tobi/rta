@@ -355,10 +355,7 @@ func diffWorktree(repo *git.Repository, gate func(string) *view.Error) (view.Vie
 	patches := make([]diff.FilePatch, 0, len(status))
 	var large []string
 	var skipped []withheld
-	for path, fs := range status {
-		if fs.Staging == git.Unmodified && fs.Worktree == git.Unmodified {
-			continue
-		}
+	for _, path := range changedPaths(status) {
 		disk := onDisk(root, path)
 		if verr := gate(gatedAt(path, disk != nil && disk.Mode()&os.ModeSymlink != 0)); verr != nil {
 			skipped = append(skipped, withheld{path, refusedBy(verr)})
@@ -388,6 +385,25 @@ func diffWorktree(repo *git.Repository, gate func(string) *view.Error) (view.Vie
 	// it. git.status names the same paths to the same caller.
 	body += notDiffed(large, skipped)
 	return textOrEmpty(body), nil
+}
+
+// changedPaths is every path the status holds a change for, in the order git
+// prints a diff in: byte order of the whole path, the index's own.
+//
+// A status is a map, and the diff was built in its iteration order, which Go
+// randomises: the same working tree gave its files in a different order on
+// every call, so two answers to one question never compared equal, and a
+// patch saved twice differed in every line.
+func changedPaths(status git.Status) []string {
+	paths := make([]string, 0, len(status))
+	for path, fs := range status {
+		if fs.Staging == git.Unmodified && fs.Worktree == git.Unmodified {
+			continue
+		}
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	return paths
 }
 
 // onDisk is what the working tree holds at path, the entry itself rather

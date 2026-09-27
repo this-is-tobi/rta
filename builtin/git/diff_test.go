@@ -114,6 +114,34 @@ func TestDiffWorktreeShowsUncommittedChanges(t *testing.T) {
 	}
 }
 
+// The files come in the order git prints them in, every time. The diff was
+// built in the status map's iteration order, which Go randomises, so one
+// working tree answered in a different order on every call.
+func TestDiffWorktreeListsItsFilesInPathOrder(t *testing.T) {
+	dir, repo := testRepo(t)
+	names := []string{"a.txt", "b.txt", "b/c.txt", "d.txt", "e.txt", "f.txt", "g.txt", "h.txt"}
+	for _, n := range names {
+		commitFile(t, repo, dir, n, "v1\n", "add "+n)
+		writeFile(t, dir, n, "v1\nv2\n")
+	}
+
+	var want []string
+	for _, n := range names {
+		want = append(want, "diff --git a/"+n+" b/"+n)
+	}
+	for range 5 {
+		var got []string
+		for _, line := range strings.Split(text(t, runDiff, req(t, dir, nil)), "\n") {
+			if strings.HasPrefix(line, "diff --git ") {
+				got = append(got, line)
+			}
+		}
+		if strings.Join(got, "\n") != strings.Join(want, "\n") {
+			t.Fatalf("files in the diff:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+		}
+	}
+}
+
 // A clean tree's diff is an empty patch, and says so only to a person.
 //
 // The sentence was the body, so every format carried it: `rta git diff >
