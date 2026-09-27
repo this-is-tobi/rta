@@ -98,6 +98,52 @@ func TestPruneKeepsWhatRunsAndWithdrawsTrustFromTheRest(t *testing.T) {
 	}
 }
 
+// A stored copy whose digest the system root trusts too, after the
+// operator's own approval of it was withdrawn: remove and prune refused it
+// for being trusted by a record rta does not write, and the copy could not
+// be deleted at all. The system root's trust is not theirs to take, and not
+// a reason to keep a file in the store.
+func TestAStoredCopyTheSystemRootAlsoTrustsCanStillGo(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	system := t.TempDir()
+	t.Setenv("RTA_SYSTEM_DIR", system)
+	shared, old, cur := strings.Repeat("e", 64), strings.Repeat("f", 64), strings.Repeat("0", 64)
+	record := `{"trusted":[{"digest":"` + shared + `","names":["hello"]},{"digest":"` + old + `","names":["lab"]}]}`
+	if err := os.WriteFile(filepath.Join(system, "trusted.json"), []byte(record), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	path := stored(t, "hello", shared, "shared")
+	current(t, "hello", shared)
+	if verr := plugintrust.Add(shared, "hello", path); verr != nil {
+		t.Fatal(verr)
+	}
+	if _, verr := plugintrust.Remove("hello"); verr != nil {
+		t.Fatal(verr)
+	}
+	if _, verr := Remove("hello"); verr != nil {
+		t.Fatalf("remove refused a copy the system root trusts: %v", verr)
+	}
+	if got := StoredDigests("hello"); len(got) != 0 {
+		t.Errorf("store still holds %v", got)
+	}
+
+	stored(t, "lab", old, "old")
+	current(t, "lab", cur)
+	if verr := plugintrust.Add(cur, "lab", stored(t, "lab", cur, "cur")); verr != nil {
+		t.Fatal(verr)
+	}
+	if _, verr := Prune(); verr != nil {
+		t.Fatalf("prune refused a version the system root trusts: %v", verr)
+	}
+	if got := StoredDigests("lab"); strings.Join(got, " ") != cur {
+		t.Errorf("store holds %v, want the current version alone", got)
+	}
+	if !plugintrust.Load().Trusts(shared) || !plugintrust.Load().Trusts(old) {
+		t.Error("the system root's trust was taken with the copies")
+	}
+}
+
 // A plugin whose store names no current version — no bin/ link and no lock
 // record — is left as it is and said so, because nothing here may guess
 // which copy somebody runs.
