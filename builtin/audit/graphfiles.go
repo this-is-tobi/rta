@@ -112,22 +112,48 @@ func (g *graph) full() bool {
 //
 // Scanning the slice rather than keeping a set per package: a package's
 // dependency list is tens of entries, and a map per node would cost more than
-// it saves at every size this actually sees.
+// it saves at every size this actually sees. Up to wideList, that is — the
+// file is untrusted input, and one package whose list names a hundred
+// thousand others made the scan quadratic in the file: 0.8 s at forty
+// thousand, and around twenty at the edge bound, before any walk. Past it a
+// package's list gets the set after all, which is the cost of a list that
+// long anyway.
 func (g *graph) require(from, to string) {
 	if from == "" || to == "" || from == to || g.full() {
 		return
 	}
-	for _, existing := range g.requires[from] {
-		if existing == to {
+	if set := g.wide[from]; set != nil {
+		if set[to] {
 			return
+		}
+		set[to] = true
+	} else {
+		for _, existing := range g.requires[from] {
+			if existing == to {
+				return
+			}
 		}
 	}
 	g.requires[from] = append(g.requires[from], to)
+	if len(g.requires[from]) == wideList {
+		if g.wide == nil {
+			g.wide = map[string]map[string]bool{}
+		}
+		set := make(map[string]bool, 2*wideList)
+		for _, t := range g.requires[from] {
+			set[t] = true
+		}
+		g.wide[from] = set
+	}
 	g.count++
 	if g.up != nil {
 		g.up.parents = nil // stale now; the next walk rebuilds it
 	}
 }
+
+// wideList is how long a package's dependency list grows before require
+// stops scanning it. Several times the longest a real package declares.
+const wideList = 256
 
 // goModGraph reads the `// indirect` marker, which is the one thing go.mod
 // records and every other Go manifest does not.

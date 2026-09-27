@@ -636,6 +636,35 @@ func TestTheUpwardIndexIsSharedUntilAnEdgeChangesIt(t *testing.T) {
 	}
 }
 
+// One package whose list names everything the edge bound allows: reading it
+// scanned the whole list for every entry added, around twenty seconds of
+// comparisons before any walk. And a duplicate is still one edge past the
+// point where the scan gives way to a set.
+func TestOneWidePackageIsReadInLinearTime(t *testing.T) {
+	g := newGraph()
+	root := ref("npm", "root")
+	done := make(chan struct{})
+	go func() {
+		for i := 0; i < maxEdges; i++ {
+			g.require(root, ref("npm", "d"+itoa(i)))
+		}
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("reading one package's list did not finish")
+	}
+	g = newGraph()
+	for i := 0; i < 2*wideList; i++ {
+		g.require(root, ref("npm", "d"+itoa(i)))
+		g.require(root, ref("npm", "d"+itoa(i)))
+	}
+	if g.edges() != 2*wideList || len(g.requires[root]) != 2*wideList {
+		t.Errorf("a repeated edge was kept: %d edges, %d listed", g.edges(), len(g.requires[root]))
+	}
+}
+
 func itoa(n int) string { return strconv.Itoa(n) }
 
 // The words a finding uses, because they are what decides the next hour:
