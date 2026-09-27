@@ -9,10 +9,12 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"google.golang.org/protobuf/proto"
 
 	"github.com/this-is-tobi/rta/internal/paths"
+	"github.com/this-is-tobi/rta/internal/shutdown"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	rtav1 "github.com/this-is-tobi/rta/proto/rta/v1"
 )
@@ -203,6 +205,32 @@ func TestWriteCacheSurvivesAnUnwritableDirectory(t *testing.T) {
 	// Must not panic and must not fail: a cache that cannot be written is a
 	// slower rta, not a broken one.
 	writeCache("deadbeef", &rtav1.Plugin{Name: "x"})
+}
+
+// A declaration is written the way every other file rta keeps is: held off an
+// exit from its temporary file to its rename (internal/shutdown), so a write
+// the exit would cut never starts once the process is settling, and none
+// leaves a temporary copy beside the cache for pruning to count as an entry.
+func TestACacheWriteIsHeldOffAStoppingProcess(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	// The key first, whose own publication is held already: what is asked
+	// here is the entry's write.
+	writeCache("first", &rtav1.Plugin{Name: "x"})
+
+	resume := shutdown.Settle()
+	written := make(chan struct{})
+	go func() { writeCache("second", &rtav1.Plugin{Name: "x"}); close(written) }()
+	select {
+	case <-written:
+		resume()
+		t.Fatal("a declaration was written while the process was settled")
+	case <-time.After(100 * time.Millisecond):
+	}
+	resume()
+	<-written
+	if _, ok := readCache("second"); !ok {
+		t.Error("the entry was not written once the process resumed")
+	}
 }
 
 // A forged entry is not honoured.
