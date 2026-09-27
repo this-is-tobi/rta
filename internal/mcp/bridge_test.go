@@ -1893,6 +1893,65 @@ func TestALinkTheCallerNamedIsReportedBesideTheSubstitution(t *testing.T) {
 	}
 }
 
+// What a link holds is its first hop, and only the chain's far end is what
+// the guard judged. A link inside the root whose first hop is a link outside
+// it, leading back in, passes the guard and handed the caller the outside
+// name, which is not the caller's to read: the handler is told a neutral
+// phrase instead, and a hop inside the roots, as written, is still told.
+func TestALinkIsDescribedOnlyByNamesTheCallerMayRead(t *testing.T) {
+	root, outside := t.TempDir(), t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "run"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stub := filepath.Join(root, "run", "stub-resolv.conf")
+	if err := os.WriteFile(stub, []byte("nameserver 10.0.0.53\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(stub, filepath.Join(outside, "hop")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if err := os.Symlink(filepath.Join(outside, "hop"), filepath.Join(root, "resolv.conf")); err != nil {
+		t.Fatal(err)
+	}
+	// Relative, climbing out through the root's parent and back into it.
+	up := filepath.Join("..", filepath.Base(outside), "hop")
+	if err := os.Symlink(up, filepath.Join(root, "climb.conf")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join("run", "stub-resolv.conf"), filepath.Join(root, "inside.conf")); err != nil {
+		t.Fatal(err)
+	}
+	guard, err := pathguard.New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := plugin.Capability{
+		ID: "demo.read", Summary: "read", Safety: plugin.Read,
+		Inputs: []plugin.Field{{Name: "file", Type: plugin.Path, Help: "p"}},
+		Run:    func(context.Context, plugin.Request) (view.View, error) { return nil, nil },
+	}
+	for _, name := range []string{"resolv.conf", "climb.conf"} {
+		links, verr := checkPaths(c, map[string]any{"file": filepath.Join(root, name)}, guard)
+		if verr != nil {
+			t.Fatalf("%s: a link whose chain ends inside the root was refused: %v", name, verr)
+		}
+		l, ok := links["file"]
+		if !ok {
+			t.Fatalf("%s: the link was not reported at all", name)
+		}
+		if strings.Contains(l.target, filepath.Base(outside)) {
+			t.Errorf("%s: the handler is told %q, a name outside the roots", name, l.target)
+		}
+		if l.target != outsideRoots {
+			t.Errorf("%s: the handler is told %q, want %q", name, l.target, outsideRoots)
+		}
+	}
+	links, verr := checkPaths(c, map[string]any{"file": filepath.Join(root, "inside.conf")}, guard)
+	if verr != nil || links["file"].target != filepath.Join("run", "stub-resolv.conf") {
+		t.Errorf("a hop inside the root was not told as written: links = %v, %v", links, verr)
+	}
+}
+
 // The catalogue's case, end to end: a resolv.conf that is a link into /run is
 // how systemd-resolved owns it, and over MCP net_resolver_list read only the
 // far end and told the agent "nothing — safe to edit", where the CLI said
