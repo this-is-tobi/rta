@@ -37,9 +37,10 @@ import (
 // connect would silently reopen the gap this exists to close.
 //
 // There is no opt-in to reach these addresses anyway, and no flag on this
-// file's capabilities offers one. An operator who genuinely needs to reach
-// their own internal service already can, from outside a grant — the CLI
-// and the TUI are never gated. Accepting a caller-supplied "yes, this one
+// file's capabilities offers one. The guard holds at the terminal as well:
+// it lives in the one client every http.* call shares, whoever makes it, so
+// an operator who genuinely needs their own internal service reaches it
+// with a client of their own. Accepting a caller-supplied "yes, this one
 // is fine" would hand exactly that decision to whoever holds the grant,
 // which is the consent a grant exists to require in the first place.
 //

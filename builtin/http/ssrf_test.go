@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -327,5 +328,28 @@ func TestAProxyNamedWithoutAPortIsTrustedAtItsDefaultPort(t *testing.T) {
 				t.Errorf("the operator's own proxy was refused as a blocked destination: %s", ve.Message)
 			}
 		})
+	}
+}
+
+// The refusal is worded for who asked: an agent learns that a grant does not
+// move the guard, and a person at the terminal — who holds no grant — that
+// the guard holds for them as well, not a sentence about a grant nobody
+// issued.
+func TestTheBlockedHintIsWordedForWhoAsked(t *testing.T) {
+	useRealBlocklist(t)
+	for sf, want := range map[plugin.Surface]string{
+		plugin.SurfaceMCP: "a grant naming this URL",
+		plugin.SurfaceCLI: "at the terminal too",
+		plugin.SurfaceTUI: "at the terminal too",
+	} {
+		r := req(map[string]any{"url": "http://127.0.0.1:9/"}).WithSurface(sf)
+		_, err := doRequest(context.Background(), "GET", r)
+		ve := view.AsError(err, "x")
+		if ve.Code != "http.request.blocked" || !strings.Contains(ve.Hint, want) {
+			t.Errorf("surface %v: %s, hint %q, want it to say %q", sf, ve.Code, ve.Hint, want)
+		}
+		if sf != plugin.SurfaceMCP && strings.Contains(ve.Hint, "grant") {
+			t.Errorf("surface %v: the hint names a grant the person never needed: %q", sf, ve.Hint)
+		}
 	}
 }
