@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -163,8 +164,30 @@ func TestRevokeCompletesFromHeldGrants(t *testing.T) {
 	}
 	scopes := inputOf(t, "grant.revoke", "scope").
 		Candidates(context.Background(), req(map[string]any{"target": "kv.get"}))
-	if len(scopes) != 1 || scopes[0] != "db-password" {
+	if len(scopes) != 1 || plugin.CandidateValue(scopes[0]) != "db-password" {
 		t.Errorf("revoke scopes = %v", scopes)
+	}
+}
+
+// A held record is offered as itself and described as the gate compares it,
+// so a padded grant and the bare one beside it are two entries that read
+// differently: a shell draws the no-break space in the value as a space.
+func TestAHeldRecordIsDescribedAsTheGateComparesIt(t *testing.T) {
+	setup(t)
+	padded := "db-password" + string(rune(0xa0))
+	for _, scope := range []string{"db-password", padded} {
+		run(t, allowH, map[string]any{"target": "kv.get", "scope": scope})
+	}
+	run(t, allowH, map[string]any{"target": "kv.get", "scope": "db-password", "agent": "other"})
+	for _, capID := range []string{"grant.revoke", "grant.renew"} {
+		got := inputOf(t, capID, "scope").Candidates(context.Background(), req(map[string]any{"target": "kv.get"}))
+		want := []string{
+			"db-password\tkv.get db-password",
+			padded + "\tkv.get " + strconv.QuoteToASCII(padded),
+		}
+		if !slices.Equal(got, want) {
+			t.Errorf("%s scopes = %q, want each record once, described as compared: %q", capID, got, want)
+		}
 	}
 }
 

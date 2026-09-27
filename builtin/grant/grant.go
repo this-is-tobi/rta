@@ -357,6 +357,14 @@ func suggestHeldTargets(context.Context, plugin.Request) []string {
 // Filtered by profile as well as by target: a scope offered here is one the
 // operator could act on, and a record granted on a connection this command is
 // not about is not one of them.
+//
+// Each described as the grant it names, record as the gate compares it
+// (Grant.Named), the way suggestPending describes a parked call. The value
+// is the record itself — accepting it has to name the grant exactly — and a
+// shell or a form draws a no-break space in it as a space, so a grant on
+// "prod/db" and one on "prod/db" with a no-break space after it were two
+// entries reading alike, one of which takes back or extends nothing the
+// operator meant. The description is what tells them apart.
 func suggestHeldScopes(_ context.Context, req plugin.Request) []string {
 	grants, verr := core.Load()
 	if verr != nil {
@@ -364,6 +372,7 @@ func suggestHeldScopes(_ context.Context, req plugin.Request) []string {
 	}
 	target := core.Normalize(req.String("target"))
 	profile := strings.TrimSpace(req.String("profile"))
+	seen := map[string]bool{}
 	var out []string
 	for _, g := range grants {
 		if g.Scope == "" || (target != "" && g.Target != target) {
@@ -372,7 +381,14 @@ func suggestHeldScopes(_ context.Context, req plugin.Request) []string {
 		if profile != "" && g.Profile != profile {
 			continue
 		}
-		out = append(out, g.Scope)
+		// One entry per record and target: two agents' grants on the same
+		// record are one thing to type.
+		entry := g.Scope + "\t" + g.Named()
+		if seen[entry] {
+			continue
+		}
+		seen[entry] = true
+		out = append(out, entry)
 	}
 	sort.Strings(out)
 	return out
