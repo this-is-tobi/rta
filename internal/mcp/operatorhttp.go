@@ -331,6 +331,7 @@ func mutationArgs(env operator.Envelope) (map[string]any, bool) {
 		putArg(args, "scope", spec.Scope)
 		putArg(args, "profile", spec.Profile)
 		putArg(args, "agent", spec.Agent)
+		putArg(args, "role", spec.Role)
 	case operator.VerbGrantIssue:
 		var g grant.Grant
 		if err := json.Unmarshal(env.Payload, &g); err != nil {

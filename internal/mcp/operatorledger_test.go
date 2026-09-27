@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"encoding/json"
 	"net/http"
 	"testing"
 
@@ -364,5 +365,31 @@ func TestEveryVerbHasARecordingDecision(t *testing.T) {
 	if want := len(operator.Verbs()); len(mutations)+len(reads) != want {
 		t.Errorf("the wire declares %d verbs and this test classifies %d — "+
 			"decide whether the new verb is recorded and add it to a list", want, len(mutations)+len(reads))
+	}
+}
+
+// Every selector a revoke carries reaches its row: --role crossed the channel
+// once and was left off the record, so the ledger said an operator had taken
+// back every grant an agent held when they had named one role. Walked from
+// the wire's own fields, so a selector added there is recorded or fails here.
+func TestARevokeRowNamesEverySelector(t *testing.T) {
+	payload, err := json.Marshal(operator.RevokeSpec{
+		All: true, Target: "kv", Scope: "prod/", Profile: "staging", Agent: "claude", Role: "dev",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	args, ok := mutationArgs(operator.Envelope{Verb: operator.VerbGrantRevoke, Payload: payload})
+	if !ok {
+		t.Fatal("a revoke was not recorded")
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(payload, &fields); err != nil {
+		t.Fatal(err)
+	}
+	for field := range fields {
+		if _, ok := args[field]; !ok {
+			t.Errorf("the revoke row leaves out %q: %+v", field, args)
+		}
 	}
 }
