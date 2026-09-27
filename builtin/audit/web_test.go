@@ -239,6 +239,29 @@ func TestAuditFrameAncestorsCoversMissingXFrameOptions(t *testing.T) {
 	}
 }
 
+// RFC 6797 lets max-age be a quoted string and puts optional whitespace
+// around the =, and a two-year policy written either way was called
+// "disables HSTS, effectively missing". A value nobody can read is not one
+// that disables anything: it says so.
+func TestHSTSReadsEveryFormTheRFCAllows(t *testing.T) {
+	for _, tc := range []struct {
+		header, status, says string
+	}{
+		{`max-age="63072000"; includeSubDomains`, findings.OK, ""},
+		{`max-age = 63072000 ; includeSubDomains`, findings.OK, ""},
+		{`includeSubDomains; MAX-AGE=63072000; preload`, findings.OK, ""},
+		{`max-age=0`, findings.Warn, "disables HSTS"},
+		{`includeSubDomains`, findings.Warn, "no max-age"},
+		{`max-age=two-years; includeSubDomains`, findings.Warn, "unreadable"},
+		{`max-age=63072000; foo="includeSubDomains"`, findings.Warn, "no includeSubDomains"},
+	} {
+		status, detail := gradeHSTS(tc.header)
+		if status != tc.status || !strings.Contains(detail, tc.says) {
+			t.Errorf("%s: %s %q, want %s saying %q", tc.header, status, detail, tc.status, tc.says)
+		}
+	}
+}
+
 // The row answers whether any site can frame the page, so a header counts
 // only when a browser enforces it and what it enforces keeps some site out.
 // ALLOW-FROM is ignored by every current browser, ALLOWALL is no directive,

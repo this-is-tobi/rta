@@ -423,35 +423,70 @@ func gradeHSTS(v string) (string, string) {
 	if v == "" {
 		return findings.Fail, "missing — no HSTS, downgrade attacks possible"
 	}
-	lower := strings.ToLower(v)
-	maxAge := hstsMaxAge(lower)
+	maxAge := hstsMaxAge(v)
 	switch {
+	case maxAge == hstsNoMaxAge:
+		return findings.Warn, "present but no max-age — a browser ignores the header without one: " + v
+	case maxAge == hstsUnreadable:
+		return findings.Warn, "present but max-age unreadable — a browser ignores the header: " + v
 	case maxAge <= 0:
 		return findings.Warn, "present but max-age<=0 — disables HSTS, effectively missing: " + v
 	case maxAge < hstsPreloadMinAge:
 		return findings.Warn, fmt.Sprintf("max-age too short for preload eligibility (%ds < 1y): %s", maxAge, v)
-	case !strings.Contains(lower, "includesubdomains"):
+	case !hstsDirective(v, "includesubdomains"):
 		return findings.Warn, "no includeSubDomains — sibling subdomains stay exposed: " + v
 	default:
 		return findings.OK, v
 	}
 }
 
-// hstsMaxAge extracts the max-age directive's value, or -1 if absent/unparseable.
-func hstsMaxAge(lowerHeaderValue string) int {
-	idx := strings.Index(lowerHeaderValue, "max-age=")
-	if idx < 0 {
-		return -1
+// What hstsMaxAge answers when it has no number: the directive is absent, or
+// it is there and says nothing a browser can read. Negative, so no real
+// max-age is either.
+const (
+	hstsNoMaxAge   = -1
+	hstsUnreadable = -2
+)
+
+// hstsMaxAge extracts the max-age directive's value, or hstsNoMaxAge or
+// hstsUnreadable.
+//
+// Read directive by directive, as RFC 6797 §6.1 writes them: a name, optional
+// whitespace, `=`, optional whitespace, and a token or a quoted string. The
+// literal `max-age=` it used to search for missed `max-age="63072000"` and
+// `max-age = 63072000`, and a two-year policy written either way was called
+// "disables HSTS, effectively missing".
+func hstsMaxAge(header string) int {
+	for _, d := range strings.Split(header, ";") {
+		name, value, ok := strings.Cut(d, "=")
+		if !strings.EqualFold(strings.TrimSpace(name), "max-age") {
+			continue
+		}
+		if !ok {
+			return hstsUnreadable
+		}
+		value = strings.TrimSpace(value)
+		if len(value) >= 2 && value[0] == '"' && value[len(value)-1] == '"' {
+			value = value[1 : len(value)-1]
+		}
+		n, err := strconv.Atoi(value)
+		if err != nil {
+			return hstsUnreadable
+		}
+		return n
 	}
-	rest := lowerHeaderValue[idx+len("max-age="):]
-	if end := strings.IndexAny(rest, "; \t"); end >= 0 {
-		rest = rest[:end]
+	return hstsNoMaxAge
+}
+
+// hstsDirective reports whether the header carries the valueless directive
+// name — as a directive, not as text somewhere in another's value.
+func hstsDirective(header, name string) bool {
+	for _, d := range strings.Split(header, ";") {
+		if strings.EqualFold(strings.TrimSpace(d), name) {
+			return true
+		}
 	}
-	n, err := strconv.Atoi(strings.TrimSpace(rest))
-	if err != nil {
-		return -1
-	}
-	return n
+	return false
 }
 
 // gradeCSP checks for the specific weaknesses OWASP's CSP cheat sheet calls
