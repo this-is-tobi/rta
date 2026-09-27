@@ -27,6 +27,7 @@ import (
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5"
+	gitconfig "github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/storage/filesystem"
@@ -283,11 +284,40 @@ func openAt(req plugin.Request, root, path string) (*git.Repository, *view.Error
 	}
 
 	storage := filesystem.NewStorage(dotgit.NewRepositoryFilesystem(dot, common), cache.NewObjectLRUDefault())
-	repo, err := git.Open(storage, wt)
+	repo, err := git.Open(readerExtensions{storage}, wt)
 	if err != nil {
 		return nil, notARepo(err)
 	}
+	// The storage itself from here on, whose config is the whole file, and
+	// which every capability here asks for by its type.
+	repo.Storer = storage
 	return repo, nil
+}
+
+// readerExtensions is a repository's storage as git.Open is handed it, whose
+// config leaves out the one extension that changes nothing this reads.
+//
+// **`git sparse-checkout set` turns on extensions.worktreeConfig, and go-git
+// refused every repository that had it**, so each capability here answered
+// such a checkout as "not a git repository". go-git lists the extension as
+// one a format-0 repository may carry and then compares that list with the
+// name lowercased, which never matches, and a format-1 repository's is
+// unknown to it. All the extension says is that git also reads
+// config.worktree, which this reads itself where it matters (worktreeConfig);
+// the objects, refs and index are git's usual ones. Every other extension is
+// left for go-git to refuse: one that changes how objects or refs are stored
+// is one this cannot read.
+type readerExtensions struct{ *filesystem.Storage }
+
+func (s readerExtensions) Config() (*gitconfig.Config, error) {
+	cfg, err := s.Storage.Config()
+	if err != nil {
+		return nil, err
+	}
+	if cfg.Raw.HasSection("extensions") {
+		cfg.Raw.Section("extensions").RemoveOption("worktreeConfig")
+	}
+	return cfg, nil
 }
 
 // maxPointerBytes bounds a file that points at a directory — a `.git` file
@@ -415,7 +445,7 @@ const (
 func readLimit(name string) int64 {
 	name = filepath.ToSlash(filepath.Clean(name))
 	switch {
-	case name == "config":
+	case name == "config", name == "config.worktree":
 		return maxConfigBytes
 	case name == "index":
 		return maxIndexBytes

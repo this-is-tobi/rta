@@ -51,7 +51,7 @@ func runHooks(ctx context.Context, req plugin.Request) (view.View, error) {
 	}
 	dir, base, warnings, err := hooksDir(repo, fs)
 	if err != nil {
-		return nil, view.Errorf("git.hooks.failed", "reading core.hooksPath from the operator's git config: %v", err)
+		return nil, view.Errorf("git.hooks.failed", "reading core.hooksPath from git's config: %v", err)
 	}
 	// A directory this handler derives, from a config a caller can write
 	// inside the root and from the operator's own, so it is put back to the
@@ -143,8 +143,9 @@ func hooksDir(repo *git.Repository, fs billy.Filesystem) (dir, base string, warn
 
 // hooksPathSetting is core.hooksPath as git resolves it, the value in the
 // last of the files git reads that sets it (machineConfigSources, then the
-// repository's own), "" where none does; and a warning for each way the
-// answer may not be the one the git that runs the hooks reaches.
+// repository's own, then its worktree's), "" where none does; and a warning
+// for each way the answer may not be the one the git that runs the hooks
+// reaches.
 //
 // A file one of them includes is not read (includeCount), and could set it:
 // the ones that count are included by the file the value came from or by a
@@ -160,6 +161,13 @@ func hooksPathSetting(repo *git.Repository) (string, []view.Error, error) {
 	}
 	if local, err := repo.Config(); err == nil {
 		files = append(files, scopedConfig{scope: "local", config: local})
+		perWorktree, err := worktreeConfig(repo, local)
+		if err != nil {
+			return "", nil, fmt.Errorf("config.worktree: %w", err)
+		}
+		if perWorktree != nil {
+			files = append(files, scopedConfig{scope: "worktree", config: perWorktree})
+		}
 	}
 	from := -1
 	var systems []string
