@@ -51,6 +51,30 @@ func TestDefaultBlockedIP(t *testing.T) {
 		"fc00::1",          // unique local, IPv6 (RFC 4193)
 		"::ffff:127.0.0.1", // loopback, IPv4-mapped IPv6
 		"::ffff:10.1.2.3",  // RFC 1918, IPv4-mapped IPv6
+
+		// Not private to Go's IsPrivate, and just as unreachable from outside:
+		// shared address space holds Alibaba Cloud's metadata service and
+		// every Tailscale node.
+		"100.100.100.200", // RFC 6598: Alibaba Cloud's instance metadata
+		"100.64.0.1",      // RFC 6598, bottom of 100.64.0.0/10
+		"100.127.255.254", // RFC 6598, top of it
+		"0.1.2.3",         // "this network", 0.0.0.0/8
+		"192.0.0.192",     // IETF protocol assignments, Oracle's classic metadata
+		"198.18.0.1",      // benchmarking, 198.18.0.0/15
+		"240.0.0.1",       // reserved, 240.0.0.0/4
+		"255.255.255.255", // broadcast
+		"239.255.255.250", // multicast, beyond the link-local block
+		"ff05::1",         // multicast, IPv6, beyond the link-local scope
+		"fec0::1",         // site-local, IPv6 (deprecated, still routed by some stacks)
+
+		// An IPv4 address carried inside an IPv6 one, which a translator on
+		// the way hands to the IPv4 network it names.
+		"64:ff9b::a9fe:a9fe",   // NAT64 of 169.254.169.254
+		"64:ff9b::a00:1",       // NAT64 of 10.0.0.1
+		"64:ff9b:1::a9fe:a9fe", // local-use NAT64 (RFC 8215), whatever it embeds
+		"2002:a9fe:a9fe::1",    // 6to4 of 169.254.169.254
+		"2002:7f00:1::1",       // 6to4 of 127.0.0.1
+		"::a9fe:a9fe",          // IPv4-compatible 169.254.169.254
 	}
 	for _, s := range blocked {
 		ip := stdnet.ParseIP(s)
@@ -69,6 +93,10 @@ func TestDefaultBlockedIP(t *testing.T) {
 		"2001:4860:4860::8888", // public, IPv6
 		"169.253.255.255",      // just outside 169.254.0.0/16
 		"172.32.0.1",           // just outside 172.16.0.0/12
+		"100.63.255.255",       // just below 100.64.0.0/10
+		"100.128.0.1",          // just above it
+		"64:ff9b::808:808",     // NAT64 of 8.8.8.8, public
+		"2002:808:808::1",      // 6to4 of 8.8.8.8, public
 	}
 	for _, s := range allowed {
 		ip := stdnet.ParseIP(s)
@@ -77,6 +105,22 @@ func TestDefaultBlockedIP(t *testing.T) {
 		}
 		if defaultBlockedIP(ip) {
 			t.Errorf("defaultBlockedIP(%s) = true, want false", s)
+		}
+	}
+}
+
+// A refusal names the kind of address it refused, the embedded one included:
+// a Tailscale peer or a NAT64 gateway refused as "loopback, private, or
+// link-local" sends somebody checking for the wrong thing.
+func TestABlockedAddressSaysWhyItIsRefused(t *testing.T) {
+	for ip, want := range map[string]string{
+		"100.100.100.200":    "shared address space (RFC 6598)",
+		"64:ff9b::a9fe:a9fe": "the NAT64 form of 169.254.169.254, a link-local address",
+		"127.0.0.1":          "a loopback address",
+	} {
+		msg := (&blockedAddrError{host: "name.example", ip: stdnet.ParseIP(ip)}).Error()
+		if !strings.Contains(msg, want) {
+			t.Errorf("refusing %s said %q, want it to name %q", ip, msg, want)
 		}
 	}
 }
@@ -97,6 +141,8 @@ func TestBlockedAddressesAreRefused(t *testing.T) {
 		{"loopback", "http://127.0.0.1:9/"},
 		{"cloud metadata", "http://169.254.169.254/latest/meta-data/iam/security-credentials/role"},
 		{"private RFC 1918", "http://10.1.2.3/"},
+		{"Alibaba Cloud metadata", "http://100.100.100.200/latest/meta-data/ram/security-credentials/"},
+		{"cloud metadata through NAT64", "http://[64:ff9b::a9fe:a9fe]/latest/meta-data/"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
