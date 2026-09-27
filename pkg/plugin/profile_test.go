@@ -50,6 +50,27 @@ func TestTunnellableNeedsTheRoleToBeFillable(t *testing.T) {
 	}
 }
 
+// A record ScopeAlso names is checked against a grant exactly as Scope's is,
+// so a profile may no more fill it: resolved after the gate, it would move
+// where a rename lands once the grant had already passed the old name.
+func TestAProfileFillsNoInputAGrantIsCheckedAgainst(t *testing.T) {
+	c := Capability{ID: "x.rename", Summary: "s", Safety: Write, NeedsGrant: true,
+		Scope: "key", ScopeAlso: []string{"to"},
+		Inputs: []Field{
+			{Name: "key", Type: String, Config: "key"},
+			{Name: "to", Type: String, Config: "to"},
+			{Name: "note", Type: String, Config: "note"},
+		}}
+	for _, f := range c.Inputs[:2] {
+		if ProfileFillable(c, f) {
+			t.Errorf("a profile may fill %q, which a grant is checked against", f.Name)
+		}
+	}
+	if !ProfileFillable(c, c.Inputs[2]) {
+		t.Error("an input no grant reads stopped being fillable")
+	}
+}
+
 // The plugin part of a capability ID, pinned directly: internal/policy used
 // to derive this by hand rather than calling Namespace, and disagreed with
 // it for a leading-dot ID — its own i > 0 check treated index 0, where the

@@ -270,7 +270,7 @@ func (c Capability) validate(ns string) error {
 		// *data* — the thing being granted — and an unconditional reservation
 		// would make the command that issues profile grants the one command
 		// unable to name a profile.
-		if f.Name == "profile" && profilable(c.Inputs, c.Scope) {
+		if f.Name == "profile" && profilable(c.Inputs, c.Scope, c.ScopeAlso) {
 			return fmt.Errorf("capability %q: input %q is reserved by the host on any capability "+
 				"a profile can fill (the host resolves which configured connection a call runs "+
 				"against, before the grant gate); rename it", c.ID, f.Name)
@@ -310,8 +310,9 @@ func (c Capability) validate(ns string) error {
 			// operator: a tunnel fills the same slot a config file fills, with
 			// a value the host computed instead of one it read. An input
 			// nobody said an operator could set is not one a tunnel may reach,
-			// and ProfileFillable — which refuses a Path and refuses the Scope
-			// input — is the same gate the fill itself applies.
+			// and ProfileFillable — which refuses a Path and refuses the inputs
+			// a grant is checked against — is the same gate the fill itself
+			// applies.
 			if f.Config == "" {
 				return fmt.Errorf("capability %q: input %q takes an endpoint role without a Config key; "+
 					"a tunnel fills what configuration fills, with a value the host computed rather than "+
@@ -554,6 +555,9 @@ func (c Capability) validate(ns string) error {
 	if !scoped {
 		return fmt.Errorf("capability %q: scope %q names no input", c.ID, c.Scope)
 	}
+	if err := checkScopeAlso(c); err != nil {
+		return err
+	}
 	// The other direction of the same mistake, caught one step earlier: a
 	// gated capability that never declares a Scope at all, when one of its
 	// own inputs plainly could be one. Every grant issued against it then
@@ -578,6 +582,39 @@ func (c Capability) validate(ns string) error {
 	}
 	if err := checkEndpoints(c); err != nil {
 		return err
+	}
+	return nil
+}
+
+// checkScopeAlso holds each of ScopeAlso's names to what Scope is held to: it
+// names a declared input, and not a credential. A name that dangles is the
+// same silent widening a dangling Scope is — the record it was meant to put
+// in front of a grant is never read — and one that repeats Scope, or itself,
+// is a declaration that has not said what it meant. With no Scope there is
+// no record for these to add to, and a grant would stay unable to narrow to
+// the one the call acts on.
+func checkScopeAlso(c Capability) error {
+	if len(c.ScopeAlso) == 0 {
+		return nil
+	}
+	if c.Scope == "" {
+		return fmt.Errorf("capability %q: ScopeAlso %v with no Scope; declare the record the call acts on "+
+			"as Scope first", c.ID, c.ScopeAlso)
+	}
+	seen := map[string]bool{c.Scope: true}
+	for _, name := range c.ScopeAlso {
+		if seen[name] {
+			return fmt.Errorf("capability %q: ScopeAlso names %q twice, counting Scope", c.ID, name)
+		}
+		seen[name] = true
+		i := slices.IndexFunc(c.Inputs, func(f Field) bool { return f.Name == name })
+		if i < 0 {
+			return fmt.Errorf("capability %q: ScopeAlso %q names no input", c.ID, name)
+		}
+		if f := c.Inputs[i]; f.Type.Sensitive() {
+			return fmt.Errorf("capability %q: ScopeAlso %q is a %s; a scope is written to the grant file "+
+				"and printed by `rta grant list`, which a credential cannot be", c.ID, name, f.Type)
+		}
 	}
 	return nil
 }

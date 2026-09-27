@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -335,6 +336,87 @@ func TestARepeatedScopeInOneCallSpendsOnlyOnce(t *testing.T) {
 	if verr := gate(t, c, map[string]any{"key": []string{"db-password"}}, "", ""); verr != nil {
 		t.Errorf("a second, independent call was refused — the first call over-spent: %v", verr)
 	}
+}
+
+// A rename names two records, the one it moves and the one it becomes, and a
+// grant has to cover both: with only the first checked, a rename grant for one
+// prod key moved it under whatever read grant covered the name it was given.
+func TestEveryRecordACallNamesThroughScopeAlsoNeedsCover(t *testing.T) {
+	setup(t)
+	issue(t, Grant{Target: "kv.rename", Scope: "prod/db-password"})
+	c := plugin.Capability{
+		ID: "kv.rename", Summary: "kv.rename", Safety: plugin.Write, NeedsGrant: true,
+		Scope: "key", ScopeAlso: []string{"new-name"},
+		Inputs: []plugin.Field{{Name: "key", Type: plugin.String}, {Name: "new-name", Type: plugin.String}},
+		Run:    func(context.Context, plugin.Request) (view.View, error) { return view.Text{}, nil },
+	}
+	values := map[string]any{"key": "prod/db-password", "new-name": "scratch/db-password"}
+
+	if got := Scopes(c, values); !slices.Equal(got, []string{"prod/db-password", "scratch/db-password"}) {
+		t.Fatalf("Scopes = %v, want both the record moved and where it lands", got)
+	}
+	verr := gate(t, c, values, "", "")
+	if verr == nil || verr.Code != "core.grant.required" || !strings.Contains(verr.Message, "scratch/db-password") {
+		t.Fatalf("a grant for the source alone authorized the move: %v", verr)
+	}
+	issue(t, Grant{Target: "kv.rename", Scope: "scratch/"})
+	if verr := gate(t, c, values, "", ""); verr != nil {
+		t.Fatalf("both records covered, and still refused: %v", verr)
+	}
+}
+
+// Where a rename moves its key to is not a second act: one grant covering
+// both ends spends one use on the move, so a --max-uses 2 folder grant is two
+// renames inside the folder rather than one. Two grants, one per end,
+// are each leaned on and each spent on.
+func TestAScopeAlsoRecordRidesOnTheGrantTheCallAlreadySpends(t *testing.T) {
+	c := plugin.Capability{
+		ID: "kv.rename", Summary: "kv.rename", Safety: plugin.Write, NeedsGrant: true,
+		Scope: "key", ScopeAlso: []string{"new-name"},
+		Inputs: []plugin.Field{{Name: "key", Type: plugin.String}, {Name: "new-name", Type: plugin.String}},
+		Run:    func(context.Context, plugin.Request) (view.View, error) { return view.Text{}, nil },
+	}
+	uses := func(t *testing.T) []int {
+		t.Helper()
+		grants, verr := Load()
+		if verr != nil {
+			t.Fatal(verr)
+		}
+		out := make([]int, len(grants))
+		for i, g := range grants {
+			out[i] = g.Uses
+		}
+		return out
+	}
+
+	t.Run("one grant for both ends", func(t *testing.T) {
+		setup(t)
+		issue(t, Grant{Target: "kv.rename", Scope: "prod/", MaxUses: 2})
+		if verr := call(t, c, map[string]any{"key": "prod/a", "new-name": "prod/b"}, "", ""); verr != nil {
+			t.Fatalf("a folder grant refused a rename inside its folder: %v", verr)
+		}
+		// Read while the grant still has a use left: a spent one is gone.
+		if got := uses(t); !slices.Equal(got, []int{1}) {
+			t.Fatalf("uses = %v, want the one rename spending one use", got)
+		}
+		if verr := call(t, c, map[string]any{"key": "prod/b", "new-name": "prod/c"}, "", ""); verr != nil {
+			t.Fatalf("a two-use grant refused its second rename: %v", verr)
+		}
+		if verr := gate(t, c, map[string]any{"key": "prod/c", "new-name": "prod/d"}, "", ""); verr == nil {
+			t.Fatal("a spent two-use grant authorized a third rename")
+		}
+	})
+	t.Run("a grant for each end", func(t *testing.T) {
+		setup(t)
+		issue(t, Grant{Target: "kv.rename", Scope: "prod/a", MaxUses: 2})
+		issue(t, Grant{Target: "kv.rename", Scope: "prod/b", MaxUses: 2})
+		if verr := call(t, c, map[string]any{"key": "prod/a", "new-name": "prod/b"}, "", ""); verr != nil {
+			t.Fatal(verr)
+		}
+		if got := uses(t); !slices.Equal(got, []int{1, 1}) {
+			t.Fatalf("uses = %v, want each grant the move leaned on spent once", got)
+		}
+	})
 }
 
 // A regression test for a real bug review caught: unlike

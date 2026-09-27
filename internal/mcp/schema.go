@@ -50,7 +50,14 @@ func agentText(c plugin.Capability, profiles []string) string {
 		// person for a grant instead of retrying a call that cannot work.
 		b.WriteString("\n\nRequires a grant a person issued for this capability")
 		if c.Scope != "" {
-			fmt.Fprintf(&b, " (optionally narrowed to one %q)", c.Scope)
+			// Every record the call names, since a grant has to cover each:
+			// told only of the key a rename moves, a model narrows its request
+			// to that and is refused for the name it moves it to.
+			fmt.Fprintf(&b, " (optionally narrowed to one %q", c.Scope)
+			for _, also := range c.ScopeAlso {
+				fmt.Fprintf(&b, " and one %q", also)
+			}
+			b.WriteString(")")
 		}
 		b.WriteString(". You cannot issue one yourself — " + plugin.AskOperator("grant allow "+c.ID) + ".")
 	}

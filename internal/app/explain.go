@@ -90,6 +90,9 @@ func cardView(reg *registry.Registry, c plugin.Capability) view.View {
 		need := "yes — a person must run `rta grant allow " + c.ID + "`"
 		if c.Scope != "" {
 			need += ", optionally naming one " + c.Scope
+			for _, also := range c.ScopeAlso {
+				need += " and one " + also
+			}
 		}
 		pairs = append(pairs, view.Pair{Key: "grant required (mcp)", Value: need})
 	}

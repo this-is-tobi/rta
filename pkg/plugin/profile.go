@@ -1,6 +1,9 @@
 package plugin
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 // This file is the plugin-facing half of profiles: which inputs an operator's
 // named connection may fill, whether a capability has any such input at all,
@@ -32,16 +35,18 @@ import "strings"
 //     profile chooses where a call *goes*, never what it reads or where it
 //     writes.
 //
-//   - Never the input a capability declares as its Scope. A grant is checked
-//     against the record named in the call; a profile that could fill that
-//     input would change the record after the gate had already run on the old
-//     one. Nothing declares such an input today — this is here so nothing
-//     ever can.
+//   - Never the input a capability declares as its Scope, nor one ScopeAlso
+//     names. A grant is checked against the records named in the call; a
+//     profile that could fill one of those inputs would change the record
+//     after the gate had already run on the old one — for ScopeAlso, where a
+//     rename lands, moved after a grant had passed the name it was given.
+//     Nothing declares such an input today — this is here so nothing ever
+//     can.
 func ProfileFillable(c Capability, f Field) bool {
 	if f.Type == Path {
 		return false
 	}
-	if c.Scope != "" && f.Name == c.Scope {
+	if c.Scope != "" && (f.Name == c.Scope || slices.Contains(c.ScopeAlso, f.Name)) {
 		return false
 	}
 	return f.Config != "" || (f.Local && f.EnvFallback)
@@ -83,12 +88,12 @@ func Tunnellable(caps []Capability) bool {
 // `rta grant allow --profile X` safe with no marker of its own: builtin/grant
 // declares no fillable input, so the host never activates a profile for it
 // and the name reaches its handler as ordinary data.
-func Profilable(c Capability) bool { return profilable(c.Inputs, c.Scope) }
+func Profilable(c Capability) bool { return profilable(c.Inputs, c.Scope, c.ScopeAlso) }
 
 // profilable is Profilable over the parts, so Capability.validate can ask the
 // question while the capability is still being checked.
-func profilable(inputs []Field, scope string) bool {
-	probe := Capability{Scope: scope}
+func profilable(inputs []Field, scope string, scopeAlso []string) bool {
+	probe := Capability{Scope: scope, ScopeAlso: scopeAlso}
 	for _, f := range inputs {
 		if ProfileFillable(probe, f) {
 			return true
