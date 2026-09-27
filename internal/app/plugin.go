@@ -566,14 +566,35 @@ func untrustAnswer(what string, approvals, system int, next string, dryRun bool)
 		{Key: "approvals", Value: strconv.Itoa(approvals)},
 	}
 	if system > 0 {
-		pairs = append(pairs, view.Pair{Key: "left alone",
-			Value: format.Count(system, "artifact", "artifacts") + " trusted by the system root at " +
-				paths.System() + ", which rta reads and never writes; " + plugintrust.SystemHint})
+		pairs = append(pairs, view.Pair{Key: "left alone", Value: systemKeeps(system)})
 	}
 	return view.KeyValue{Pairs: append(pairs,
 		view.Pair{Key: "record", Value: plugintrust.Path()},
 		view.Pair{Key: "next", Value: next},
 	)}
+}
+
+// systemKeeps is what a withdrawal says of the n artifacts it left trusted by
+// the system root: which root, that rta never writes it, and what to do
+// instead. Said by untrust and by remove, whose answers each carry it as
+// "left alone".
+func systemKeeps(n int) string {
+	return format.Count(n, "artifact", "artifacts") + " trusted by the system root at " +
+		paths.System() + ", which rta reads and never writes; " + plugintrust.SystemHint
+}
+
+// systemTrustedAmong counts the digests the system root trusts as well, of
+// those a remove took the operator's approval from: each is deleted from the
+// store all the same (plugindist.withdrawStored), and goes on being trusted,
+// so a copy of it anywhere else goes on loading.
+func systemTrustedAmong(digests []string) int {
+	n := 0
+	for _, d := range digests {
+		if len(plugintrust.SystemTrusted(d)) > 0 {
+			n++
+		}
+	}
+	return n
 }
 
 // stillLoading is what an untrust says of a plugin the system root trusts as

@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/this-is-tobi/rta/builtin/all"
+	"github.com/this-is-tobi/rta/internal/plugindist"
 	"github.com/this-is-tobi/rta/internal/pluginhost"
 	"github.com/this-is-tobi/rta/internal/plugintrust"
 	"github.com/this-is-tobi/rta/internal/registry"
@@ -943,6 +944,84 @@ func TestUntrustSaysWhatTheSystemRootKeepsLoading(t *testing.T) {
 	}
 	if plugintrust.Load().Trusts(mine) {
 		t.Error("--all left the operator's own approval in place")
+	}
+}
+
+// A remove deletes the store's copy of an artifact the system root trusts as
+// well, and takes the operator's approval of it — not the image's trust,
+// which rta never writes. It said "trust withdrawn from each" all the same,
+// by name, by preview and with --all. It says what went and what was left
+// alone now, as untrust does, and still says "trust" where that is true.
+func TestRemoveSaysWhatTheSystemRootKeepsTrusting(t *testing.T) {
+	run := session(t, registry.New())
+	system := t.TempDir()
+	t.Setenv("RTA_SYSTEM_DIR", system)
+	baked, mine := strings.Repeat("77", 32), strings.Repeat("88", 32)
+	record := `{"trusted":[{"digest":"` + baked + `","names":["baked"]}]}`
+	if err := os.WriteFile(filepath.Join(system, "trusted.json"), []byte(record), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	install := func(name, digest string) {
+		t.Helper()
+		dir := filepath.Join(plugindist.StoreDir(), name, digest)
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(dir, pluginhost.BinaryName(name))
+		if err := os.WriteFile(path, []byte(name), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if verr := plugintrust.Add(digest, name, path); verr != nil {
+			t.Fatal(verr)
+		}
+	}
+	install("baked", baked)
+	install("mine", mine)
+
+	out, errOut, err := run("plugin", "remove", "baked", "--dry-run", "-o", "json")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	pairs := answerPairs(t, out)
+	if pairs["artifacts"] != "1 (your approval would be withdrawn from each)" ||
+		!strings.Contains(pairs["left alone"], system) {
+		t.Errorf("a preview answered %v, want the approval named and the system root's trust left alone", pairs)
+	}
+
+	out, errOut, err = run("plugin", "remove", "baked", "--yes", "-o", "json")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	pairs = answerPairs(t, out)
+	if pairs["artifacts"] != "1 (your approval withdrawn from each)" ||
+		!strings.HasPrefix(pairs["left alone"], "1 artifact trusted by the system root at "+system) {
+		t.Errorf("answered %v, want the approval named and the system root's trust left alone", pairs)
+	}
+	if !plugintrust.Load().Trusts(baked) {
+		t.Fatal("the fixture is wrong: the system root's trust went too")
+	}
+
+	out, errOut, err = run("plugin", "remove", "mine", "--yes", "-o", "json")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	if pairs = answerPairs(t, out); pairs["artifacts"] != "1 (trust withdrawn from each)" || pairs["left alone"] != "" {
+		t.Errorf("a plugin only the operator trusted answered %v", pairs)
+	}
+
+	install("baked", baked)
+	install("mine", mine)
+	lock := `{"plugins":[{"name":"baked","digest":"` + baked + `"},{"name":"mine","digest":"` + mine + `"}]}`
+	if err := os.WriteFile(plugindist.LockPath(), []byte(lock), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, errOut, err = run("plugin", "remove", "--all", "--yes", "-o", "json")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	if !strings.Contains(out, "removed 2 plugins — your approval withdrawn from each. "+
+		"Left alone: 1 artifact trusted by the system root at "+system) {
+		t.Errorf("--all answered %s, want the approvals named and the system root's trust left alone", out)
 	}
 }
 

@@ -229,7 +229,7 @@ func newPluginRemoveCommand(opts *globalOpts) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "remove <name> | --all",
 		Short: "Uninstall a managed plugin",
-		Long: "Removes the store entry, the bin/ link, the trust for every stored\n" +
+		Long: "Removes the store entry, the bin/ link, your trust in every stored\n" +
 			"digest, and the rta.lock record — and names the config statements that\n" +
 			"now point at nothing, without touching them: the config file is yours,\n" +
 			"and `rta doctor` keeps reporting the orphans until you decide.\n\n" +
@@ -258,13 +258,17 @@ func newPluginRemoveCommand(opts *globalOpts) *cobra.Command {
 			if verr != nil {
 				return verr
 			}
-			removedLabel, artifactsNote := "removed", "(trust withdrawn from each)"
+			still := systemTrustedAmong(removed.Digests)
+			removedLabel, artifactsNote := "removed", removalNote(still, opts.dryRun)
 			if opts.dryRun {
-				removedLabel, artifactsNote = "would remove", "(trust would be withdrawn from each)"
+				removedLabel = "would remove"
 			}
 			pairs := []view.Pair{
 				{Key: removedLabel, Value: removed.Name},
-				{Key: "artifacts", Value: fmt.Sprintf("%d %s", len(removed.Digests), artifactsNote)},
+				{Key: "artifacts", Value: fmt.Sprintf("%d (%s)", len(removed.Digests), artifactsNote)},
+			}
+			if still > 0 {
+				pairs = append(pairs, view.Pair{Key: "left alone", Value: systemKeeps(still)})
 			}
 			if len(removed.Orphans) > 0 {
 				pairs = append(pairs, view.Pair{Key: "still states it",
@@ -275,6 +279,27 @@ func newPluginRemoveCommand(opts *globalOpts) *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&all, "all", false, "uninstall every managed plugin")
 	return cmd
+}
+
+// removalNote says what a remove did to the trust in the artifacts it took
+// out of the store, still being how many of them the system root trusts as
+// well.
+//
+// "Trust withdrawn from each" was said of every one, and for a digest the
+// system root trusts it is false: the store's copy goes and the operator's
+// approval with it, while the image's or the package's trust stays, and a
+// copy of that artifact anywhere else goes on loading. Where there is one,
+// what went is named as the operator's approval, the words untrust uses of
+// the same case, and the answer says what was left alone.
+func removalNote(still int, dryRun bool) string {
+	what := "trust"
+	if still > 0 {
+		what = "your approval"
+	}
+	if dryRun {
+		return what + " would be withdrawn from each"
+	}
+	return what + " withdrawn from each"
 }
 
 func newPluginPruneCommand(opts *globalOpts) *cobra.Command {
