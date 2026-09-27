@@ -1475,11 +1475,7 @@ func stillStanding(sf plugin.Surface, agent string) string {
 		if agent != "" && g.Agent != agent {
 			continue
 		}
-		name := g.Target
-		if g.Scope != "" {
-			name += " " + textclean.Record(g.Scope)
-		}
-		names = append(names, name)
+		names = append(names, g.Named())
 	}
 	who := ""
 	if agent != "" {

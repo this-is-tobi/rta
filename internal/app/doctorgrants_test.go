@@ -1,0 +1,62 @@
+package app
+
+import (
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/this-is-tobi/rta/internal/grant"
+	"github.com/this-is-tobi/rta/pkg/view"
+)
+
+// grantRows is the detail of every "agent grants" row doctor writes, in
+// order: report keys its rows by check, and this check can write several.
+func grantRows(t *testing.T) []string {
+	t.Helper()
+	tbl, ok := doctorReport(testRegistry(t)).(view.Table)
+	if !ok {
+		t.Fatal("doctor did not return a table")
+	}
+	var out []string
+	for _, r := range tbl.Rows {
+		if r[0] == "agent grants" {
+			out = append(out, r[2])
+		}
+	}
+	return out
+}
+
+// Doctor names a grant's record as the gate compares it, as every other
+// listing does. It joined target and record and trimmed the pair, so a
+// grant on a record padded with a no-break space — the one an answer given
+// with --ttl to a padded call issues — read as the grant on the bare record,
+// in the line saying what agents may do and in the one asking whether an
+// unattended grant was yours.
+func TestDoctorNamesAPaddedRecordAsTheGateComparesIt(t *testing.T) {
+	isolate(t)
+	padded := "db-password" + string(rune(0xa0))
+	now := time.Now()
+	if verr := grant.Save([]grant.Grant{
+		{Target: "kv.get", Scope: "db-password", Issued: now, Expires: now.Add(15 * time.Minute)},
+		{Target: "kv.get", Scope: padded, From: grant.FromCommand, Issued: now, Expires: now.Add(15 * time.Minute)},
+	}); verr != nil {
+		t.Fatal(verr)
+	}
+	rows := grantRows(t)
+	if len(rows) < 2 {
+		t.Fatalf("agent grants rows = %q, want the listing and the unattended line", rows)
+	}
+	shown := "kv.get " + strconv.QuoteToASCII(padded)
+	if !strings.Contains(rows[0], "kv.get db-password, "+shown) {
+		t.Errorf("the listing reads %q, want both grants told apart, the padded one as %s", rows[0], shown)
+	}
+	if !strings.Contains(rows[1], ": "+shown+" — ") {
+		t.Errorf("the unattended line reads %q, want the padded grant as %s", rows[1], shown)
+	}
+	for _, r := range rows {
+		if strings.ContainsRune(r, 0xa0) {
+			t.Errorf("a row holds the no-break space itself: %q", r)
+		}
+	}
+}
