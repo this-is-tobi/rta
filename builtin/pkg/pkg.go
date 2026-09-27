@@ -131,6 +131,9 @@ type status struct {
 	out    string
 	code   int
 	reason string
+	// stderr is the whole of it, for the one caller that reads more there
+	// than a reason: pipx names each venv it could not read on a line.
+	stderr string
 }
 
 // failed is the refusal for a status the caller does not read as an answer.
@@ -163,7 +166,7 @@ func runStatus(ctx context.Context, name string, args ...string) (status, *view.
 	}
 	var exit *exec.ExitError
 	if errors.As(err, &exit) {
-		return status{out: out, code: exit.ExitCode(), reason: firstLine(stderr, "")}, nil
+		return status{out: out, code: exit.ExitCode(), reason: firstLine(stderr, ""), stderr: stderr}, nil
 	}
 	return status{}, view.Errorf("pkg.manager.failed", "%s: %s", name, firstLine(stderr, err.Error()))
 }

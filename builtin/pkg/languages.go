@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -21,9 +23,19 @@ func pipxManager() manager {
 	return manager{
 		name: "pipx", bin: "pipx",
 		list: func(ctx context.Context, c *registryClient) ([]outdated, *view.Error) {
-			out, verr := run(ctx, "pipx", "list", "--json")
+			// Exit 1 is pipx saying a venv is broken — its interpreter gone
+			// with a Python upgrade, most often — and the JSON still lists
+			// every venv it could read, the broken ones named on stderr
+			// instead. So exit 1 with a list is the answer for the rest and
+			// a row for each venv named; with no list it is the failure it
+			// looks. Failing the manager whole hid the healthy venvs'
+			// upgrades behind the broken one.
+			st, verr := runStatus(ctx, "pipx", "list", "--json")
 			if verr != nil {
 				return nil, verr
+			}
+			if st.code != 0 && st.code != 1 {
+				return nil, st.failed("pipx")
 			}
 			var doc struct {
 				Venvs map[string]struct {
@@ -35,10 +47,17 @@ func pipxManager() manager {
 					} `json:"metadata"`
 				} `json:"venvs"`
 			}
-			if err := json.Unmarshal([]byte(out), &doc); err != nil {
+			err := json.Unmarshal([]byte(st.out), &doc)
+			switch {
+			case st.code != 0 && (err != nil || doc.Venvs == nil):
+				return nil, st.failed("pipx")
+			case err != nil:
 				return nil, view.Errorf("pkg.pipx.unreadable", "pipx list --json could not be read: %v", err)
 			}
 			var rows []outdated
+			if st.code != 0 {
+				rows = brokenVenvs(st)
+			}
 			for _, v := range doc.Venvs {
 				name, cur := v.Metadata.Main.Package, v.Metadata.Main.Version
 				latest, verr := c.latestPyPI(ctx, name)
@@ -58,6 +77,35 @@ func pipxManager() manager {
 			return []string{"pipx", "upgrade", pkg}
 		},
 	}
+}
+
+// brokenVenvs is a row for each venv pipx's stderr names as one it could not
+// read, in pipx's own sentence: "package ruff has invalid interpreter …",
+// "… has missing internal pipx metadata". pipx ends each line with a carriage
+// return and a warning sign, or began it with the sign in older releases, so
+// the sentence is what lies between. The lines around them sum up and say
+// what to run, and name no venv. Stderr that names none still says something
+// is wrong, and is a row of its own with no package, rather than nothing.
+func brokenVenvs(st status) []outdated {
+	var rows []outdated
+	for _, line := range strings.Split(st.stderr, "\n") {
+		line, _, _ = strings.Cut(line, "\r")
+		line = strings.TrimLeftFunc(line, func(r rune) bool { return !unicode.IsLetter(r) })
+		line = strings.TrimRightFunc(line, func(r rune) bool {
+			return unicode.IsSpace(r) || unicode.IsSymbol(r) || unicode.Is(unicode.Mn, r)
+		})
+		rest, ok := strings.CutPrefix(line, "package ")
+		if !ok {
+			continue
+		}
+		name, _, _ := strings.Cut(rest, " ")
+		rows = append(rows, outdated{Manager: "pipx", Name: name, Broken: line})
+	}
+	if len(rows) == 0 {
+		rows = append(rows, outdated{Manager: "pipx", Name: "-",
+			Broken: firstLine(st.reason, fmt.Sprintf("exited %d and said nothing on stderr", st.code))})
+	}
+	return rows
 }
 
 func uvManager() manager {

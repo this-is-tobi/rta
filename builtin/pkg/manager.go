@@ -20,6 +20,12 @@ type outdated struct {
 	// somebody sees on $PATH and what pkg.upgrade takes, and `go install`
 	// wants the package path the binary was built from.
 	Target string
+	// Broken is why the manager could not read this package, for a row that
+	// says so in place of its versions, beside the ones it did read. Only
+	// pipx sets it: it lists the venvs it can read and exits 1 over one it
+	// cannot, and failing the whole manager for that hid what the others
+	// have behind.
+	Broken string
 }
 
 // manager is one package manager this built-in can read and drive.

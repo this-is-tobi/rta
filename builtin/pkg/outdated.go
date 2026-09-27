@@ -39,10 +39,42 @@ func collect(ctx context.Context, c *registryClient, only string) listing {
 	return l
 }
 
+// managerStatus is the overview's line for one manager: what failed, or how
+// much is behind, and how many of its packages it could not read, counted
+// apart as the tools line counts the ones it could not check.
+func managerStatus(l listing, name string) string {
+	if verr, failed := l.failed[name]; failed {
+		return "fail " + verr.Message
+	}
+	n, broken := l.countFor(name), l.brokenFor(name)
+	unread := fmt.Sprintf("%d could not be read", broken)
+	switch {
+	case n > 0 && broken > 0:
+		return fmt.Sprintf("outdated %d (%s)", n, unread)
+	case n > 0:
+		return fmt.Sprintf("outdated %d", n)
+	case broken > 0:
+		return unread
+	}
+	return "ok"
+}
+
+// countFor is how many packages name has behind, a row saying one could not
+// be read not among them.
 func (l listing) countFor(name string) int {
 	n := 0
 	for _, r := range l.rows {
-		if r.Manager == name {
+		if r.Manager == name && r.Broken == "" {
+			n++
+		}
+	}
+	return n
+}
+
+func (l listing) brokenFor(name string) int {
+	n := 0
+	for _, r := range l.rows {
+		if r.Manager == name && r.Broken != "" {
 			n++
 		}
 	}
@@ -125,6 +157,10 @@ func outdatedTable(l listing) view.Table {
 		{Name: "Upgrade"},
 	}}
 	for _, r := range l.rows {
+		if r.Broken != "" {
+			t.Rows = append(t.Rows, []string{r.Manager, r.Name, "-", "-", "fail " + r.Manager + ": " + r.Broken, "-"})
+			continue
+		}
 		m, _ := managerByName(r.Manager)
 		arg := r.Name
 		if r.Target != "" {
@@ -188,14 +224,10 @@ func runOverview(ctx context.Context, req plugin.Request) (view.View, error) {
 	}
 	total := 0
 	for _, m := range l.present {
-		v := "ok"
-		if verr, failed := l.failed[m.name]; failed {
-			v = "fail " + verr.Message
-		} else if n := l.countFor(m.name); n > 0 {
-			v = fmt.Sprintf("outdated %d", n)
-			total += n
+		if _, failed := l.failed[m.name]; !failed {
+			total += l.countFor(m.name)
 		}
-		kv.Pairs = append(kv.Pairs, view.Pair{Key: m.name, Value: v})
+		kv.Pairs = append(kv.Pairs, view.Pair{Key: m.name, Value: managerStatus(l, m.name)})
 	}
 	behind, unchecked := 0, 0
 	for _, t := range tools {

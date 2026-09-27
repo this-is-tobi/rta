@@ -424,6 +424,74 @@ func TestRegistryBackedManagersCompareAgainstTheirRegistry(t *testing.T) {
 	}
 }
 
+// pipx lists the venvs it can read and exits 1 when any other is broken, one
+// whose interpreter went with a Python upgrade most often, naming each on
+// stderr. The exit made the whole pipx row a failure, hiding what the healthy
+// venvs have behind. The broken venv is a row of its own, named by pipx's
+// own sentence, and the rest are graded.
+func TestAPipxVenvThatIsBrokenIsNamedAndTheRestGraded(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/pypi/black/json" {
+			w.Write([]byte(`{"info":{"version":"24.8.0"}}`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+	c := newRegistryClient()
+	c.pypi = srv.URL
+
+	hazard := string(rune(0x26A0)) + string(rune(0xFE0F))
+	f := &fake{
+		bins: map[string]bool{"pipx": true},
+		answers: map[string]fakeAnswer{
+			"pipx list --json": {
+				out:  `{"venvs":{"black":{"metadata":{"main_package":{"package":"black","package_version":"24.1.0"}}}}}`,
+				code: 1,
+				stderr: "   package ruff has invalid interpreter /home/x/.local/pipx/venvs/ruff/bin/python\r" + hazard + "\n" +
+					"\nOne or more packages have a missing python interpreter.\n    To fix, execute: pipx reinstall-all\n\n",
+			},
+		},
+	}
+	install(t, f)
+	l := collect(context.Background(), c, "")
+	if len(l.failed) != 0 {
+		t.Fatalf("failed: %v, want the healthy venvs graded", l.failed)
+	}
+	status := map[string]string{}
+	for _, r := range outdatedTable(l).Rows {
+		status[r[1]] = r[4]
+	}
+	if status["black"] != "outdated" {
+		t.Errorf("black = %q, want outdated beside the broken venv", status["black"])
+	}
+	if want := "fail pipx: package ruff has invalid interpreter /home/x/.local/pipx/venvs/ruff/bin/python"; status["ruff"] != want {
+		t.Errorf("ruff = %q, want %q", status["ruff"], want)
+	}
+	if n := l.countFor("pipx"); n != 1 {
+		t.Errorf("pipx counts %d behind, want black alone", n)
+	}
+	if got := managerStatus(l, "pipx"); got != "outdated 1 (1 could not be read)" {
+		t.Errorf("overview says %q for pipx", got)
+	}
+
+	// A broken venv pipx names no way this reads is still said to be there.
+	f.answers["pipx list --json"] = fakeAnswer{out: `{"venvs":{}}`, code: 1, stderr: "something new went wrong\n"}
+	l = collect(context.Background(), c, "")
+	if rows := outdatedTable(l).Rows; len(rows) != 1 || rows[0][4] != "fail pipx: something new went wrong" {
+		t.Errorf("rows = %v, want pipx's own reason on a row", rows)
+	}
+	if got := managerStatus(l, "pipx"); got != "1 could not be read" {
+		t.Errorf("overview says %q for pipx", got)
+	}
+
+	// Exit 1 with no list at all is the failure it always was.
+	f.answers["pipx list --json"] = fakeAnswer{code: 1, stderr: "pipx: error: no such venv dir\n"}
+	if l = collect(context.Background(), c, ""); l.failed["pipx"] == nil {
+		t.Errorf("pipx exiting 1 with no list = %+v, want a failed manager", l)
+	}
+}
+
 func TestUpgradeRunsOneManagerAndNeverSudo(t *testing.T) {
 	f := &fake{bins: map[string]bool{"brew": true, "apt-get": true, "cargo": true}}
 	install(t, f)
