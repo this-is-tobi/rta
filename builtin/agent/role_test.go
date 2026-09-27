@@ -135,6 +135,38 @@ func TestOverviewRolesIsUnreadableWhenTheGrantsFileCannotBeRead(t *testing.T) {
 	}
 }
 
+// A call naming two records is covered by a role only when every record is:
+// by one line naming no record, or by a line for each. Every kv.rename names
+// two, its key and where it goes, and a role was held to covering a call
+// naming exactly one, so no role was ever offered for a rename, even one
+// with a line for each of its records.
+func TestARoleCoversACallNamingSeveralRecordsLineByLine(t *testing.T) {
+	configDir := roleSetup(t)
+	ownRole(t, configDir, "  dev:\n    grants:\n      - kv.get db-password\n"+
+		"      - kv.rename db-password\n      - kv.rename db-password-old\n"+
+		"  half:\n    grants:\n      - kv.rename db-password\n")
+	r := park(t, "kv.rename", "db-password", "db-password-old")
+	got := roleHint(plugin.SurfaceCLI, r)
+	if !strings.HasPrefix(got, "lines 2 and 3 of dev — ") || !strings.Contains(got, "--role dev") {
+		t.Errorf("role hint = %q, want dev's two rename lines named", got)
+	}
+
+	// Named in the order the role lists them, whichever record each covers.
+	configDir = roleSetup(t)
+	ownRole(t, configDir, "  dev:\n    grants:\n      - kv.rename db-password-old\n"+
+		"      - kv.rename db-password\n")
+	got = roleHint(plugin.SurfaceCLI, park(t, "kv.rename", "db-password", "db-password-old"))
+	if !strings.HasPrefix(got, "lines 1 and 2 of dev — ") {
+		t.Errorf("role hint = %q, want the lines in the role's order", got)
+	}
+
+	configDir = roleSetup(t)
+	ownRole(t, configDir, "  half:\n    grants:\n      - kv.rename db-password\n")
+	if got := roleHint(plugin.SurfaceCLI, park(t, "kv.rename", "db-password", "db-password-old")); got != "" {
+		t.Errorf("a role covering one of the two records was offered: %q", got)
+	}
+}
+
 // A parked call whose capability a role's line covers says so on its page,
 // and can be answered with the whole role: one passphrase for the day
 // instead of one --ttl answer per capability as the calls arrive.
