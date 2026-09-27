@@ -28,8 +28,9 @@ func hooksCapability() plugin.Capability {
 			"core.hooksPath when any config git reads sets it, the repository's own hooks directory " +
 			"otherwise — judged by the same rule git itself uses to decide whether one fires on " +
 			"commit, push and the rest: named exactly (a `.sample` suffix never runs) and executable. " +
-			"The config is read from every file git reads, as git.config reads them; a file one of them " +
-			"includes is not followed, and a warning says how many were not. " +
+			"The config is read from every file git reads and from the environment, as git.config " +
+			"reads them; a file one of them includes is not followed, and a warning says how many " +
+			"were not. " +
 			"A hook is an arbitrary script that runs on this machine, so this reports what would " +
 			"actually execute, and where each file is, not merely what a directory listing shows.",
 		Inputs: []plugin.Field{
@@ -143,7 +144,8 @@ func hooksDir(repo *git.Repository, fs billy.Filesystem) (dir, base string, warn
 
 // hooksPathSetting is core.hooksPath as git resolves it, the value in the
 // last of the files git reads that sets it (machineConfigSources, then the
-// repository's own, then its worktree's), "" where none does; and a warning
+// repository's own, then its worktree's), or in the environment, which git
+// reads after them all (commandConfig), "" where none does; and a warning
 // for each way the answer may not be the one the git that runs the hooks
 // reaches.
 //
@@ -168,6 +170,13 @@ func hooksPathSetting(repo *git.Repository) (string, []view.Error, error) {
 		if perWorktree != nil {
 			files = append(files, scopedConfig{scope: "worktree", config: perWorktree})
 		}
+	}
+	command, err := commandConfig()
+	if err != nil {
+		return "", nil, err
+	}
+	if command != nil {
+		files = append(files, scopedConfig{scope: "command", config: command})
 	}
 	from := -1
 	var systems []string
