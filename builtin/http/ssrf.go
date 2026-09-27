@@ -85,11 +85,11 @@ func defaultBlockedIP(ip stdnet.IP) bool { return blockedReason(ip) != "" }
 //
 // **And an IPv4 address can arrive inside an IPv6 one.** On a NAT64 network
 // 64:ff9b::a9fe:a9fe is 169.254.169.254 to the translator that forwards it,
-// and 6to4 and the IPv4-compatible form carry one the same way, so the
-// address inside is judged as if it had been dialed directly. The
-// local-use NAT64 prefix is refused whole instead: where an operator puts
-// the IPv4 address inside it is theirs to choose, so nothing here can read
-// it back out.
+// and 6to4, the IPv4-compatible form, SIIT's IPv4-translated form and Teredo
+// carry one the same way, so the address inside is judged as if it had been
+// dialed directly. The local-use NAT64 prefix is refused whole instead: where
+// an operator puts the IPv4 address inside it is theirs to choose, so nothing
+// here can read it back out.
 func blockedReason(ip stdnet.IP) string {
 	addr, ok := netip.AddrFromSlice(ip)
 	if !ok {
@@ -148,10 +148,21 @@ var (
 	nat64          = netip.MustParsePrefix("64:ff9b::/96")
 	sixToFour      = netip.MustParsePrefix("2002::/16")
 	ipv4Compatible = netip.MustParsePrefix("::/96")
+	ipv4Translated = netip.MustParsePrefix("::ffff:0:0:0/96")
+	teredo         = netip.MustParsePrefix("2001::/32")
 )
 
 // embeddedIPv4 is the IPv4 address an IPv6 address carries for a
 // translator or a tunnel to deliver to, and the name of the form.
+//
+// The IPv4-translated form (RFC 2765, SIIT) is not the IPv4-mapped one Unmap
+// already reads: ::ffff:0:a9fe:a9fe has a zero word after the ffff one, so
+// it is neither mapped nor in ::/96, and a stateless translator hands it to
+// 169.254.169.254. A Teredo address (RFC 4380) holds two IPv4 addresses, and
+// the one judged is the client's in its last 32 bits, stored with every bit
+// inverted so that no NAT on the way rewrites it: that is where a relay, or
+// the machine's own Teredo interface, sends the packet. The server's, after
+// the prefix, is where the client registered and is never dialed.
 func embeddedIPv4(a netip.Addr) (netip.Addr, string, bool) {
 	b := a.As16()
 	switch {
@@ -163,6 +174,10 @@ func embeddedIPv4(a netip.Addr) (netip.Addr, string, bool) {
 		return netip.AddrFrom4([4]byte(b[2:6])), "6to4", true
 	case ipv4Compatible.Contains(a):
 		return netip.AddrFrom4([4]byte(b[12:16])), "IPv4-compatible", true
+	case ipv4Translated.Contains(a):
+		return netip.AddrFrom4([4]byte(b[12:16])), "IPv4-translated", true
+	case teredo.Contains(a):
+		return netip.AddrFrom4([4]byte{^b[12], ^b[13], ^b[14], ^b[15]}), "Teredo", true
 	}
 	return netip.Addr{}, "", false
 }

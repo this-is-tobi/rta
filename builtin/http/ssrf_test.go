@@ -76,6 +76,14 @@ func TestDefaultBlockedIP(t *testing.T) {
 		"2002:a9fe:a9fe::1",    // 6to4 of 169.254.169.254
 		"2002:7f00:1::1",       // 6to4 of 127.0.0.1
 		"::a9fe:a9fe",          // IPv4-compatible 169.254.169.254
+		"::ffff:0:a9fe:a9fe",   // IPv4-translated (SIIT) 169.254.169.254
+		"::ffff:0:7f00:1",      // IPv4-translated (SIIT) 127.0.0.1
+
+		// Teredo carries its client's IPv4 address with every bit inverted,
+		// behind the server's: a relay delivers to 169.254.169.254 here.
+		"2001:0:4136:e378:8000:63bf:5601:5601", // Teredo client 169.254.169.254
+		"2001:0:4136:e378:8000:63bf:80ff:fffe", // Teredo client 127.0.0.1
+		"2001:0:4136:e378:8000:63bf:f5ff:fffe", // Teredo client 10.0.0.1
 	}
 	for _, s := range blocked {
 		ip := stdnet.ParseIP(s)
@@ -98,6 +106,9 @@ func TestDefaultBlockedIP(t *testing.T) {
 		"100.128.0.1",          // just above it
 		"64:ff9b::808:808",     // NAT64 of 8.8.8.8, public
 		"2002:808:808::1",      // 6to4 of 8.8.8.8, public
+		"::ffff:0:808:808",     // IPv4-translated (SIIT) 8.8.8.8, public
+
+		"2001:0:4136:e378:8000:63bf:f7f7:f7f7", // Teredo client 8.8.8.8, public
 	}
 	for _, s := range allowed {
 		ip := stdnet.ParseIP(s)
@@ -115,9 +126,11 @@ func TestDefaultBlockedIP(t *testing.T) {
 // link-local" sends somebody checking for the wrong thing.
 func TestABlockedAddressSaysWhyItIsRefused(t *testing.T) {
 	for ip, want := range map[string]string{
-		"100.100.100.200":    "shared address space (RFC 6598)",
-		"64:ff9b::a9fe:a9fe": "the NAT64 form of 169.254.169.254, a link-local address",
-		"127.0.0.1":          "a loopback address",
+		"100.100.100.200":                      "shared address space (RFC 6598)",
+		"64:ff9b::a9fe:a9fe":                   "the NAT64 form of 169.254.169.254, a link-local address",
+		"127.0.0.1":                            "a loopback address",
+		"::ffff:0:a9fe:a9fe":                   "the IPv4-translated form of 169.254.169.254, a link-local address",
+		"2001:0:4136:e378:8000:63bf:80ff:fffe": "the Teredo form of 127.0.0.1, a loopback address",
 	} {
 		msg := (&blockedAddrError{host: "name.example", ip: stdnet.ParseIP(ip)}).Error()
 		if !strings.Contains(msg, want) {
@@ -144,6 +157,8 @@ func TestBlockedAddressesAreRefused(t *testing.T) {
 		{"private RFC 1918", "http://10.1.2.3/"},
 		{"Alibaba Cloud metadata", "http://100.100.100.200/latest/meta-data/ram/security-credentials/"},
 		{"cloud metadata through NAT64", "http://[64:ff9b::a9fe:a9fe]/latest/meta-data/"},
+		{"cloud metadata through SIIT", "http://[::ffff:0:a9fe:a9fe]/latest/meta-data/"},
+		{"cloud metadata through Teredo", "http://[2001:0:4136:e378:8000:63bf:5601:5601]/latest/meta-data/"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
