@@ -33,7 +33,11 @@ import (
 //   - Cursor expands ${env:NAME} in command, args, env, url and headers.
 //   - VS Code allows its variables in command, args, env, url and headers:
 //     ${input:id}, which it asks for once and keeps out of the file, and the
-//     predefined ${env:NAME}.
+//     predefined ${env:NAME}. Its page on the MCP configuration shows a
+//     credential only as an input, in env and in an Authorization header,
+//     and never names ${env:NAME}, which it allows only as one of the
+//     "predefined variables" a configuration may use, so the fix names the
+//     input first.
 //   - Gemini CLI resolves $VAR, ${VAR} and ${VAR:-default} in every string of
 //     settings.json as it loads it.
 //   - GitHub Copilot CLI reads ${VAR} in a server's env values and takes any
@@ -102,19 +106,19 @@ func gradeHeld(r *agentReport, f agentFile, refs clientRefs, name, server string
 				shortPath(f.path)+" — a file every process you run can read", refCredExposed)
 		r.addFix("credential", title,
 			"A header is the whole credential on this transport, and the file holding it is read "+
-				"by every process you run. Move it to the environment that launches the client — "+
-				strings.Join(moves, "; ")+" — or to the client's own credential helper where it has "+
-				"one. Then rotate the value that sat in the file: it has been readable since it was "+
-				"written, and unlike a launch token it is one a remote server already accepts.")
+				"by every process you run. Take it out of the file — "+strings.Join(moves, "; ")+
+				" — or hand it to the client's own credential helper where it has one. Then rotate "+
+				"the value that sat in the file: it has been readable since it was written, and "+
+				"unlike a launch token it is one a remote server already accepts.")
 		return
 	}
 	r.Add(grpAgentServers, name, findings.Fail,
 		"launched with "+strings.Join(held, ", ")+" in its env block, in plain text in "+
 			shortPath(f.path)+" — a file every process you run can read", refCredExposed)
 	r.addFix("credential", title,
-		"The value belongs where the file cannot carry it: the environment that launches the "+
-			"client — "+strings.Join(moves, "; ")+" — the client's own credential helper where it "+
-			"has one, or, when the server is rta, the kv store, referenced from a profile as "+
+		"The value belongs where the file cannot carry it. Take it out of the file — "+
+			strings.Join(moves, "; ")+" — or hand it to the client's own credential helper where it "+
+			"has one, or, when the server is rta, to the kv store, referenced from a profile as "+
 			"`kv:<name>`, so the config names the secret and never holds it. Then rotate the value "+
 			"that sat in the file: it has been readable by every process you ran since it was written.")
 }
@@ -297,6 +301,12 @@ func variableFor(server, key string, header bool) string {
 // entry key of an env block or, with header, of a headers block.
 func (c clientRefs) referWith(key, variable string, header bool) string {
 	switch {
+	case c.client == "VS Code":
+		id := strings.ToLower(strings.ReplaceAll(variable, "_", "-"))
+		return "declare an input in the file's inputs, `{ \"type\": \"promptString\", \"id\": \"" + id +
+			"\", \"password\": true }`, and reference it as `${input:" + id + "}`, which VS Code asks for " +
+			"when the server first starts and keeps in its own secret storage rather than the file, or " +
+			"as `" + c.spell(variable) + "` with " + variable + " set in the environment that launches VS Code"
 	case c.spell != nil:
 		return "reference it from the file as `" + c.spell(variable) + "`, which " + c.client +
 			" expands from the environment that launches it, and set " + variable + " there"

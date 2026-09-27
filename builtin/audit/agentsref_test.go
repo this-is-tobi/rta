@@ -97,7 +97,11 @@ func TestAReferenceToTheLaunchingEnvironmentIsGradedByWhatTheClientExpands(t *te
 		{"cursor, claude's form", ".cursor/mcp.json", remoteWithHeader("Bearer ${API_TOKEN}"), true, "${env:API_TOKEN}"},
 		{"vs code input", vsCodeConfig(), remoteWithHeader("Bearer ${input:api-token}"), false, ""},
 		{"vs code env", vsCodeConfig(), launchedWithEnv("${env:API_TOKEN}"), false, ""},
-		{"vs code, a bare reference", vsCodeConfig(), launchedWithEnv("$API_TOKEN"), true, "${env:API_TOKEN}"},
+		// VS Code's page on its MCP configuration shows a credential as an
+		// input, which it asks for once and keeps out of the file, and the
+		// fix names that form first.
+		{"vs code, a bare reference", vsCodeConfig(), launchedWithEnv("$API_TOKEN"), true, "${input:api-token}"},
+		{"vs code, a token", vsCodeConfig(), remoteWithHeader("Bearer " + tokenValue), true, "${input:svc-token}"},
 		{"gemini bare", ".gemini/settings.json", launchedWithEnv("$API_TOKEN"), false, ""},
 		{"gemini header", ".gemini/settings.json", remoteWithHeader("Bearer ${API_TOKEN}"), false, ""},
 		{"copilot env", ".copilot/mcp-config.json", launchedWithEnv("${API_TOKEN}"), false, ""},
