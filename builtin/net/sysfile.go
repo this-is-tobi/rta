@@ -132,7 +132,14 @@ func managedBy(sf plugin.Surface, path, link, force string) (what, advice string
 // hosts edit then had `rta doctor` warning about a mode rta chose. A copy
 // is 0600 whatever the original's mode: the hosts file is public, but the
 // file input can name any file this process can read.
-func backup(sf plugin.Surface, path string) (string, *view.Error) {
+//
+// max is the cap readLines held the same file to, and the copy is held to it
+// too. The read comes first and the copy after, so the file can grow between
+// them, and a copy with no bound was the one read of it left uncapped — on
+// the CLI, where pathin opens whatever the path names, a copy of anything at
+// all. A copy past it is refused as the read would be, and removed: half a
+// file among the backups reads as a saved state that never existed.
+func backup(sf plugin.Surface, path string, max int) (string, *view.Error) {
 	src, _, err := pathin.Open(sf, path)
 	if err != nil {
 		return "", unreadable(path, err)
@@ -160,12 +167,16 @@ func backup(sf plugin.Surface, path string) (string, *view.Error) {
 		if err != nil {
 			return "", view.Errorf("net.sysfile.backup", "writing %s: %v", dest, err)
 		}
-		_, werr := io.Copy(f, src)
+		n, werr := io.Copy(f, io.LimitReader(src, int64(max)+1))
 		cerr := f.Close()
-		if werr != nil || cerr != nil {
-			return "", view.Errorf("net.sysfile.backup", "writing %s: %v", dest, firstErr(werr, cerr))
+		if werr == nil && cerr == nil && n <= int64(max) {
+			return dest, nil
 		}
-		return dest, nil
+		_ = os.Remove(dest)
+		if werr == nil && cerr == nil {
+			return "", unreadable(path, &pathin.TooLargeError{Path: path, Max: max})
+		}
+		return "", view.Errorf("net.sysfile.backup", "writing %s: %v", dest, firstErr(werr, cerr))
 	}
 }
 
