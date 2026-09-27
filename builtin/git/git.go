@@ -238,9 +238,8 @@ func gitDirsInBounds(req plugin.Request, repo *git.Repository) *view.Error {
 	if _, verr := req.Confine("path", gitDir); verr != nil {
 		return verr
 	}
-	common := gitDir
-	if named := commonDir(fs); named != "" {
-		common = against(gitDir, named)
+	common := commonGitDir(fs)
+	if common != gitDir {
 		if _, verr := req.Confine("path", common); verr != nil {
 			return verr
 		}
