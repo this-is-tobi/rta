@@ -217,9 +217,11 @@ func TestAMissingInputIsNamedTheWayItsSurfaceNamesIt(t *testing.T) {
 // before the host looks. The MCP schema listed such an input as one an agent
 // must send while publishing the value sending nothing would give, and the
 // CLI refused the command at parse time for leaving it out, so the pair is
-// refused where its author declares it. An empty default is no value and
-// leaves Required meaning what it says; a Config key is the operator's to
-// give or not, and a required input may name one.
+// refused where its author declares it. An empty default is refused too,
+// though it fills nothing: the schema published it as "default": "" beside
+// "required", and "Required declares no Default" is the rule an author can
+// keep without knowing which values count as empty. A Config key is the
+// operator's to give or not, and a required input may name one.
 func TestARequiredInputWithADefaultIsRefused(t *testing.T) {
 	p := validPlugin()
 	for _, f := range []Field{
@@ -237,8 +239,18 @@ func TestARequiredInputWithADefaultIsRefused(t *testing.T) {
 	for _, f := range []Field{
 		{Name: "host", Type: String, Required: true, Default: ""},
 		{Name: "kinds", Type: StringSlice, Required: true, Default: []string{}},
+		{Name: "kinds", Type: StringSlice, Required: true, Default: []string(nil)},
+	} {
+		p.Capabilities[0].Inputs = []Field{f}
+		if err := p.Validate(); err == nil || !strings.Contains(err.Error(), "an empty Default") {
+			t.Errorf("%s %#v: err = %v, want Required beside an empty Default refused", f.Name, f.Default, err)
+		}
+	}
+	for _, f := range []Field{
+		{Name: "host", Type: String, Required: true},
 		{Name: "host", Type: String, Required: true, Config: "host"},
 		{Name: "host", Type: String, Default: "localhost"},
+		{Name: "host", Type: String, Default: ""},
 	} {
 		p.Capabilities[0].Inputs = []Field{f}
 		if err := p.Validate(); err != nil {
