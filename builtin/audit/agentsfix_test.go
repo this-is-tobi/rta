@@ -69,6 +69,77 @@ func TestFixPrintsTheEditForEveryFindingThatHasOne(t *testing.T) {
 	}
 }
 
+// pnpm and pipx put a subcommand before the package, and pipx and uvx pin
+// with ==. The first word after the runner was read as the package, so a
+// pinned `pnpm dlx` or `pipx run --spec` was warned as fetching whatever the
+// registry serves, and the fix told the operator to write "dlx@1.2.3" — an
+// edit that breaks the declaration it was meant to pin.
+func TestPinnedLaunchesThroughEveryRunnerAreNotFindings(t *testing.T) {
+	servers := map[string]any{}
+	for name, launch := range map[string][]string{
+		"pnpm-pinned":    {"pnpm", "dlx", "@acme/mcp-server@1.4.2"},
+		"pipx-spec":      {"pipx", "run", "--spec", "mcp-server-fetch==2025.4.7", "mcp-server-fetch"},
+		"uvx-equals":     {"uvx", "mcp-server-fetch==2025.4.7"},
+		"uvx-from":       {"uvx", "--from=mcp-server-fetch==2025.4.7", "mcp-server-fetch"},
+		"uvx-python":     {"uvx", "--python", "3.12", "mcp-server-time@2025.4.7"},
+		"npx-package":    {"npx", "-y", "--package", "@acme/tools@2.0.1", "acme-mcp"},
+		"pnpm-exec":      {"pnpm", "exec", "local-server"},
+		"pnpm-unpinned":  {"pnpm", "dlx", "@acme/x"},
+		"pipx-unpinned":  {"pipx", "run", "mcp-server-fetch"},
+		"uvx-unpinned":   {"uvx", "--python", "3.12", "mcp-server-time"},
+		"npx-range":      {"npx", "-y", "some-server@^1.4.2"},
+		"npx-dist-tag":   {"npx", "-y", "some-server@next"},
+		"npx-tagged-pkg": {"npx", "-y", "--package=@acme/tools@latest", "acme-mcp"},
+	} {
+		servers[name] = map[string]any{"command": launch[0], "args": launch[1:]}
+	}
+	body, _ := json.Marshal(map[string]any{"mcpServers": servers})
+	fakeHome(t, map[string]struct {
+		body string
+		mode os.FileMode
+	}{".cursor/mcp.json": {string(body), 0o600}})
+
+	rows := agentRows(t, plugin.SurfaceCLI)
+	for _, pinned := range []string{"pnpm-pinned", "pipx-spec", "uvx-equals", "uvx-from", "uvx-python",
+		"npx-package", "pnpm-exec"} {
+		if row, found := rows[pinned]; found {
+			t.Errorf("%s is pinned, or fetches nothing, and was reported: %v", pinned, row)
+		}
+	}
+	for name, want := range map[string]string{
+		"pnpm-unpinned":  "`pnpm dlx @acme/x`",
+		"pipx-unpinned":  "`pipx run mcp-server-fetch`",
+		"uvx-unpinned":   "`uvx mcp-server-time`",
+		"npx-range":      "`npx some-server@^1.4.2`",
+		"npx-dist-tag":   "`npx some-server@next`",
+		"npx-tagged-pkg": "`npx @acme/tools@latest`",
+	} {
+		if row := rows[name]; row == nil || !strings.Contains(row[2], want) {
+			t.Errorf("%s: want a row naming %s, got %v", name, want, row)
+		}
+	}
+
+	_, all := fixBodies(t)
+	for _, want := range []string{
+		`[\"dlx\", \"@acme/x@1.2.3\"]`,
+		`[\"run\", \"--spec\", \"mcp-server-fetch==1.2.3\", \"mcp-server-fetch\"]`,
+		`[\"--python\", \"3.12\", \"mcp-server-time@1.2.3\"]`,
+		`[\"-y\", \"some-server@1.2.3\"]`,
+		`[\"-y\", \"--package=@acme/tools@1.2.3\", \"acme-mcp\"]`,
+		"`npm view @acme/x version`",
+		"`pip index versions mcp-server-fetch`",
+	} {
+		if !strings.Contains(all, want) {
+			t.Errorf("no fix spells %s", want)
+		}
+	}
+	for _, wrong := range []string{"dlx@1.2.3", "run@1.2.3", "npm view dlx", "pip index versions run", "3.12@"} {
+		if strings.Contains(all, wrong) {
+			t.Errorf("a fix spells %s, an edit that breaks the declaration", wrong)
+		}
+	}
+}
+
 // bypassPermissions short-circuits the permission grades, and the fix page
 // follows: the one edit offered is the switch itself, because every other
 // edit is theoretical while it is on.

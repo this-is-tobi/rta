@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -552,9 +553,9 @@ func gradeServers(r *agentReport, f agentFile, servers []serverDecl) {
 					"already disclosed and rotated once the endpoint is fixed.")
 		}
 		gradeContainer(r, f, name, d)
-		if fetch := fetchOnLaunch(d); fetch != "" {
+		if fetch, unpinned := fetchOnLaunch(d); unpinned {
 			r.Add(grpAgentServers, name, findings.Warn,
-				"launched with `"+fetch+"`, which fetches and runs whatever the registry serves "+
+				"launched with `"+fetch.String()+"`, which fetches and runs whatever the registry serves "+
 					"at that moment — no version pinned, no digest checked", refUnpinnedDep)
 			r.addFix("pin", name+" — pin what launches with your editor",
 				pinFix(fetch, f))
@@ -588,32 +589,203 @@ func plaintextEndpoint(raw string) (string, bool) {
 	return u.Host, true
 }
 
-// fetchOnLaunch reports the package-fetching runner a server is started
-// through, if any.
+// fetchOnLaunch reports a server started through a runner that fetches its
+// package from a registry at launch without a version pinned, if it is.
 //
 // It is a supply-chain finding and not a style one: the config says "run the
 // latest of this package", so the code that launches with your editor is
 // whatever was published most recently, executed before anybody reads a
 // changelog. Pinning a version is one edit and turns it into a decision.
-func fetchOnLaunch(d serverDecl) string {
+//
+// Read per runner, because they do not agree on where the package is. pnpm
+// and pipx put a subcommand first, `pnpm dlx` and `pipx run`, and the first
+// word after the runner was taken for the package: a pinned `pnpm dlx
+// @acme/server@1.4.2` was warned as unpinned, and the fix told the operator
+// to write "dlx@1.2.3" — an edit that breaks the declaration it meant to
+// pin. The Python runners pin with == as well as @, and name the package in
+// --from or --spec when the command differs from it; npx and bunx do the same
+// with --package. And a flag's value is not the package: `uvx --python 3.12
+// mcp-server-time` was reported as launching "3.12".
+func fetchOnLaunch(d serverDecl) (launch, bool) {
 	base := filepath.Base(d.command)
-	runners := map[string]bool{"npx": true, "uvx": true, "pipx": true, "bunx": true, "pnpm": true}
-	if !runners[base] {
-		return ""
+	rn, ok := fetchRunners[base]
+	if !ok {
+		return launch{}, false
 	}
-	// A pinned spec — pkg@1.2.3 — is a decision somebody made, so it is not
-	// this finding. A bare name, a tag, or `@latest` is.
-	for _, a := range d.args {
+	l := launch{runner: base, rn: rn, args: d.args, pkgAt: -1}
+	needSub := rn.sub != ""
+	for i := 0; i < len(d.args); i++ {
+		a := d.args[i]
 		if strings.HasPrefix(a, "-") {
+			flag, value, inline := strings.Cut(a, "=")
+			takesPkg, takesValue := slices.Contains(rn.pkgFlags, flag), slices.Contains(rn.valueFlags, flag)
+			if !inline && (takesPkg || takesValue) && i+1 < len(d.args) {
+				i++
+				value = d.args[i]
+			}
+			if takesPkg && l.pkg == "" {
+				l.pkg, l.pkgAt, l.pkgFlag, l.inline = value, i, flag, inline
+			}
 			continue
 		}
-		at := strings.LastIndex(a, "@")
-		if at > 0 && a[at+1:] != "latest" && strings.ContainsAny(a[at+1:], "0123456789") {
-			return ""
+		if needSub {
+			// Anything but the fetching subcommand runs what is already
+			// installed — `pnpm exec` is node_modules/.bin — and fetches
+			// nothing.
+			if a != rn.sub {
+				return launch{}, false
+			}
+			needSub = false
+			l.runner += " " + a
+			continue
 		}
-		return base + " " + a
+		if l.pkg == "" {
+			l.pkg, l.pkgAt = a, i
+		}
+		break
 	}
-	return base
+	if needSub {
+		return launch{}, false
+	}
+	if l.pkg != "" && rn.pinned(l.pkg) {
+		return launch{}, false
+	}
+	return l, true
+}
+
+// launch is a server fetched at launch: the runner as the row names it, and
+// where in the declaration's args the package sits, so the fix can pin it in
+// place rather than print a line that replaces the args wholesale.
+type launch struct {
+	runner string // "npx", "pnpm dlx"
+	rn     fetchRunner
+	args   []string
+	pkg    string // the package spec as written; empty when none was found
+	// pkgAt is the index of the arg holding pkg, -1 when there is none.
+	// pkgFlag is the flag that named it, empty for a positional; inline is
+	// whether it was written --flag=value.
+	pkgAt   int
+	pkgFlag string
+	inline  bool
+}
+
+// String is the launch as a finding quotes it.
+func (l launch) String() string {
+	if l.pkg == "" {
+		return l.runner
+	}
+	return l.runner + " " + l.pkg
+}
+
+// fetchRunner is how one runner is read: the subcommand that makes it fetch,
+// if it needs one, the flags that name the package, and the flags that take
+// a value that is not the package.
+type fetchRunner struct {
+	sub        string
+	pkgFlags   []string
+	valueFlags []string
+	python     bool
+}
+
+var fetchRunners = map[string]fetchRunner{
+	"npx": {pkgFlags: []string{"-p", "--package"},
+		valueFlags: []string{"-c", "--call", "--registry", "--cache", "-w", "--workspace", "--userconfig"}},
+	"bunx": {pkgFlags: []string{"-p", "--package"}},
+	"pnpm": {sub: "dlx", pkgFlags: []string{"--package"}, valueFlags: []string{"--allow-build", "--reporter"}},
+	"uvx": {python: true, pkgFlags: []string{"--from"},
+		valueFlags: []string{"--with", "-w", "--with-editable", "--with-requirements", "--python", "-p",
+			"--index", "--index-url", "--default-index", "--extra-index-url", "-c", "--constraints",
+			"--overrides", "--directory", "--project", "--config-file", "--cache-dir"}},
+	"pipx": {sub: "run", python: true, pkgFlags: []string{"--spec"},
+		valueFlags: []string{"--python", "--pip-args", "--index-url", "-i"}},
+}
+
+// pinned reports whether spec names one exact version: name@1.2.3 on npm,
+// and on PyPI that or name==1.2.3 — never a range, a wildcard, a dist-tag or
+// `latest`, each of which is the registry deciding at launch.
+func (rn fetchRunner) pinned(spec string) bool {
+	if rn.python {
+		if _, v, ok := strings.Cut(spec, "=="); ok {
+			return exactVersion(strings.TrimPrefix(v, "="))
+		}
+	}
+	at := strings.LastIndex(spec, "@")
+	return at > 0 && exactVersion(spec[at+1:])
+}
+
+func exactVersion(v string) bool {
+	return v != "" && v[0] >= '0' && v[0] <= '9' && !strings.ContainsAny(v, "^~<>*|, ") &&
+		!strings.HasSuffix(strings.ToLower(v), ".x")
+}
+
+// name is the package a spec names, without the version or range after it.
+func (rn fetchRunner) name(spec string) string {
+	if rn.python {
+		if i := strings.IndexAny(spec, "=<>!~@; "); i > 0 {
+			return spec[:i]
+		}
+		return spec
+	}
+	if at := strings.LastIndex(spec, "@"); at > 0 {
+		return spec[:at]
+	}
+	return spec
+}
+
+// pinnedArgs is the declaration's args with the package pinned at 1.2.3, in
+// the runner's own syntax, or nil when there is no package to pin.
+func (l launch) pinnedArgs() []string {
+	if l.pkgAt < 0 {
+		return nil
+	}
+	name := l.rn.name(l.pkg)
+	out := slices.Clone(l.args)
+	switch {
+	case l.pkgFlag != "":
+		// --from and --spec take a requirement, and a requirement pins
+		// with ==; --package takes an npm spec.
+		spec := name + "@1.2.3"
+		if l.rn.python {
+			spec = name + "==1.2.3"
+		}
+		if l.inline {
+			spec = l.pkgFlag + "=" + spec
+		}
+		out[l.pkgAt] = spec
+	case l.runner == "pipx run":
+		// pipx takes a version only through --spec, with the app after it.
+		out = slices.Insert(out, l.pkgAt, "--spec", name+"==1.2.3")
+	default:
+		out[l.pkgAt] = name + "@1.2.3"
+	}
+	return out
+}
+
+// pinFix spells the edit for a server fetched at launch: its args with the
+// package pinned in place, in the file's own syntax, and the registry lookup
+// that prints the version to put there.
+func pinFix(l launch, f agentFile) string {
+	name := "<package>"
+	args := []string{"<package>@1.2.3"}
+	if pinned := l.pinnedArgs(); pinned != nil {
+		name, args = l.rn.name(l.pkg), pinned
+	}
+	quoted := make([]string, len(args))
+	for i, a := range args {
+		quoted[i] = strconv.Quote(a)
+	}
+	line := "\"args\": [" + strings.Join(quoted, ", ") + "]"
+	if strings.EqualFold(filepath.Ext(f.path), ".toml") {
+		line = "args = [" + strings.Join(quoted, ", ") + "]"
+	}
+	lookup := "`npm view " + name + " version` prints it."
+	if l.rn.python {
+		lookup = "`pip index versions " + name + "` lists them."
+	}
+	return "Pin the package in " + shortPath(f.path) + ", so what launches with your editor " +
+		"is what you read and not what was published overnight:\n\n" +
+		"  " + line + "\n\n" +
+		"Replace 1.2.3 with the current release and bump it deliberately — " + lookup
 }
 
 // gradePermissions reads Claude Code's own tool allowlist, which is the
@@ -674,29 +846,6 @@ func gradePermissions(r *agentReport, f agentFile, doc any) {
 			return
 		}
 	}
-}
-
-// pinFix spells the edit for a server fetched at launch. The registry lookup
-// differs per runner, so the sentence naming it is chosen rather than generic
-// where the runner is known.
-func pinFix(fetch string, f agentFile) string {
-	pkg := ""
-	if parts := strings.Fields(fetch); len(parts) > 1 {
-		pkg = parts[1]
-	}
-	body := "Pin the package in " + shortPath(f.path) + ", so what launches with your editor " +
-		"is what you read and not what was published overnight:\n\n" +
-		"  \"args\": [\"" + orElse(pkg, "<package>") + "@1.2.3\"]\n\n" +
-		"Replace 1.2.3 with the current release and bump it deliberately"
-	switch strings.Fields(fetch)[0] {
-	case "npx", "bunx", "pnpm":
-		body += " — `npm view " + orElse(pkg, "<package>") + " version` prints it."
-	case "uvx", "pipx":
-		body += " — `pip index versions " + orElse(pkg, "<package>") + "` lists them."
-	default:
-		body += "."
-	}
-	return body
 }
 
 // orElse fills a hole a shallow parse could not, so a fix never prints an
