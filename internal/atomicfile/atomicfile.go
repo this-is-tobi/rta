@@ -24,6 +24,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/this-is-tobi/rta/internal/shutdown"
 )
 
 // ReadCapped reads a file rta wrote, refusing one larger than rta writes.
@@ -214,6 +216,7 @@ func Replace(from, to string) error {
 // buffering one to place it is the wrong shape for a file that is already a
 // stream on the way in.
 func WriteFrom(path string, r io.Reader, perm fs.FileMode) error {
+	defer shutdown.Hold()()
 	dir := filepath.Dir(path)
 	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+"-*.tmp")
 	if err != nil {
@@ -258,6 +261,11 @@ func WriteFrom(path string, r io.Reader, perm fs.FileMode) error {
 // what the ordering guarantees is that a mode is never *widened* on a path
 // anything else can already open by name.
 func Write(path string, data []byte, perm fs.FileMode) error {
+	// Held from the temporary file to the rename, so a process that has
+	// decided to exit lets the write finish first (internal/shutdown): the
+	// target is whole either way, and what an exit in between left was the
+	// temporary copy — of the grant file, of the encrypted store — beside it.
+	defer shutdown.Hold()()
 	dir := filepath.Dir(path)
 	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+"-*.tmp")
 	if err != nil {
@@ -329,6 +337,7 @@ func Write(path string, data []byte, perm fs.FileMode) error {
 // sits under paths.Data(), and a caller that lost the race is reading a
 // file it did not write.
 func Publish(path string, data []byte, perm fs.FileMode, max int) ([]byte, error) {
+	defer shutdown.Hold()()
 	dir := filepath.Dir(path)
 	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+"-*.tmp")
 	if err != nil {

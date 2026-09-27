@@ -12,6 +12,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/this-is-tobi/rta/internal/shutdown"
 	"github.com/this-is-tobi/rta/internal/stdio"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -181,6 +182,11 @@ func runEdit(_ context.Context, req plugin.Request) (view.View, error) {
 			key, e.Kind, format.Bytes(len(e.Value)), argv[0])}, nil
 	}
 
+	// Held until the directory is gone — released after the removal below,
+	// since a later defer runs first — so a process asked to stop lets the
+	// edit end before it exits rather than leaving the plaintext on disk
+	// (internal/shutdown). A second signal still exits at once.
+	defer shutdown.Hold()()
 	dir, verr := editDir()
 	if verr != nil {
 		return nil, verr
@@ -194,7 +200,12 @@ func runEdit(_ context.Context, req plugin.Request) (view.View, error) {
 	if err := os.WriteFile(path, e.Value, 0o600); err != nil {
 		return nil, view.Errorf("kv.edit.notemp", "writing the value to edit: %v", err)
 	}
-	if err := launchEditor(argv, path); err != nil {
+	// The editor has the terminal, and the key it binds to interrupt — emacs's
+	// C-g — sends SIGINT to rta as well: the editor's, while it runs.
+	takeBack := shutdown.LendTerminal()
+	err := launchEditor(argv, path)
+	takeBack()
+	if err != nil {
 		return nil, view.Errorf("kv.edit.failed", "%s: %v", argv[0], err).
 			WithHint("nothing was changed — set $EDITOR to something on this machine")
 	}

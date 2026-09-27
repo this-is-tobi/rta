@@ -13,6 +13,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/this-is-tobi/rta/internal/shutdown"
 )
 
 // The property the whole package exists for: a reader either sees the file
@@ -488,6 +490,46 @@ func TestAReplaceRefusedOnceStillLands(t *testing.T) {
 				t.Fatalf("contents = %q, %v; want the write to have landed", got, err)
 			}
 		})
+	}
+}
+
+// A process that has decided to exit waits for a write between its temporary
+// file and its rename (internal/shutdown), so the exit leaves the target whole
+// and no temporary copy of it beside it.
+func TestAStoppingProcessLetsAWriteInFlightFinish(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "grants.json")
+	original := rename
+	renaming, proceed := make(chan struct{}), make(chan struct{})
+	rename = func(from, to string) error {
+		close(renaming)
+		<-proceed
+		return original(from, to)
+	}
+	t.Cleanup(func() { rename = original })
+
+	written := make(chan error, 1)
+	go func() { written <- Write(path, []byte("whole"), 0o600) }()
+	<-renaming
+	settled := make(chan func(), 1)
+	go func() { settled <- shutdown.Settle() }()
+	select {
+	case resume := <-settled:
+		resume()
+		t.Fatal("the process settled with a write between its temporary file and its rename")
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(proceed)
+	if err := <-written; err != nil {
+		t.Fatal(err)
+	}
+	(<-settled)()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "grants.json" {
+		t.Errorf("the directory holds %v, want the file alone", entries)
 	}
 }
 
