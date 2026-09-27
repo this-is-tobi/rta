@@ -11,6 +11,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/render/theme"
 	"github.com/this-is-tobi/rta/pkg/format"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
 // The theme editor: every palette field theme.Fields() names, an empty box
@@ -282,7 +283,7 @@ func (m Model) saveTheme() (tea.Model, tea.Cmd) {
 		m.flash = "saved, but " + problems[0].String()
 	case len(problems) > 1:
 		m.flash = "saved, but " + format.CountOf(len(problems), "field") +
-			" could not be applied — see `rta doctor`"
+			" could not be applied — see `" + plugin.SurfaceTUI.Call("audit.doctor") + "`"
 	case len(overrides) == 0:
 		m.flash = "reset to the built-in theme"
 	default:

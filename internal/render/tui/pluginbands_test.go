@@ -174,6 +174,10 @@ func TestALockRecordForOtherBytesIsNotBorrowedByName(t *testing.T) {
 		if !strings.Contains(got, "no record of these bytes") {
 			t.Errorf("the row says %q, want it to say the record does not cover this artifact", got)
 		}
+		// And where to look next, as this screen's catalogue names it.
+		if !strings.Contains(got, "`audit.doctor` says what drifted") {
+			t.Errorf("the row says %q, want it to send its reader to audit.doctor", got)
+		}
 		return
 	}
 	t.Fatal("no managed row")
