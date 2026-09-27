@@ -304,6 +304,24 @@ func TestARemoteAllowRefusesTTL(t *testing.T) {
 	if !ok || verr.Code != "agent.remote.ttl" {
 		t.Fatalf("err = %v, want agent.remote.ttl", rerr)
 	}
+	if !strings.Contains(verr.Hint, "agent=<agent>") {
+		t.Errorf("hint %q names a grant.allow that refuses to run without an agent", verr.Hint)
+	}
+}
+
+// --role issues standing grants as --ttl does, and was read nowhere on the
+// remote path: the call was released as "this call only" and the role
+// never issued, with nothing to say so. Refused the same way, before any
+// network or passphrase.
+func TestARemoteAllowRefusesRole(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
+	_, rerr := remoteCap(t, "agent.allow").Run(context.Background(),
+		remoteReq(map[string]any{"id": "aa", "server": "lab", "role": "dev"}))
+	verr, ok := rerr.(*view.Error)
+	if !ok || verr.Code != "agent.remote.role" {
+		t.Fatalf("err = %v, want agent.remote.role", rerr)
+	}
 }
 
 // A hostile server that displays one call while binding another must not
