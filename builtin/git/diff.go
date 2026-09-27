@@ -338,7 +338,8 @@ func submoduleBumps(fromTree, toTree *object.Tree) []string {
 // or a data file that changed put its whole size into the process twice
 // over, on an MCP server as readily as at a terminal. Sixteen megabytes is
 // past any file a person reads a diff of; what is over it is named rather
-// than diffed. A variable so a test can lower it.
+// than diffed, and git.blame, which reads its file whole at every commit
+// that touched it, refuses one over it. A variable so a test can lower it.
 var maxDiffBytes int64 = 16 << 20
 
 func diffWorktree(repo *git.Repository, gate func(string) *view.Error) (view.View, error) {
