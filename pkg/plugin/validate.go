@@ -599,6 +599,27 @@ func (c Capability) validate(ns string) error {
 	if err := checkEndpoints(c); err != nil {
 		return err
 	}
+	return checkArguments(c)
+}
+
+// checkArguments refuses a list argument the command line does not end on.
+// The CLI binds a Repeatable positional to every argument after its slot, so
+// an argument after it in Arguments' order is one nothing typed ever reaches:
+// it loaded, the usage line drew its slot, and the value always went to the
+// list. The order is Arguments', not the declaration's — required before
+// optional — so a required list beside any optional argument is refused too,
+// wherever each is declared. Only the CLI takes arguments by place; every
+// other surface names each input, so a flag is the way out.
+func checkArguments(c Capability) error {
+	args := c.Arguments()
+	for i, f := range args {
+		if f.Type.Repeatable() && i < len(args)-1 {
+			return fmt.Errorf("capability %q: input %q is a list argument, which takes every argument after it "+
+				"on the command line, so %q after it could never be given — make %q a flag, or %q the last "+
+				"argument (required ones come first, then the optional ones)",
+				c.ID, f.Name, args[i+1].Name, args[i+1].Name, f.Name)
+		}
+	}
 	return nil
 }
 

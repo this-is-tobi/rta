@@ -271,7 +271,7 @@ func TestEveryArgumentBindsToTheSlotItsUsageLineNames(t *testing.T) {
 	root := NewRoot(reg, "test")
 	checked := 0
 	for _, c := range reg.Capabilities() {
-		if len(cliPositionals(c)) < 2 {
+		if len(c.Arguments()) < 2 {
 			continue
 		}
 		checked++

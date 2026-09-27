@@ -751,3 +751,31 @@ func EndpointRoles() []EndpointRole { return slices.Clone(endpointRoles) }
 
 // Words returns the ID split into command segments, e.g. ["pg","table","list"].
 func (c Capability) Words() []string { return strings.Split(c.ID, ".") }
+
+// Arguments returns c's Positional inputs in the order the command line takes
+// them: the required ones first, then the optional ones, each in the order c
+// declares them. The CLI's usage line, its binder, its arity check,
+// completion and `rta explain` all read this one order, and Validate holds a
+// list argument to being the last of it.
+//
+// It is the order the usage line shows, and the only one it can show: fang
+// draws every optional slot after the rest of the line, whatever order the
+// line was written in. The binder filled the slots in declaration order, so
+// git.blame, which declares its optional repository before the file, read
+// `rta git blame README` as the repository README and no file, and refused
+// it as core.input.missing under a --help reading `rta git blame <file>
+// [path]`. Required first is also the one order in which an optional
+// argument can be left out: one bound before a required one never could be.
+func (c Capability) Arguments() []Field {
+	var required, optional []Field
+	for _, f := range c.Inputs {
+		switch {
+		case !f.Positional:
+		case f.Required:
+			required = append(required, f)
+		default:
+			optional = append(optional, f)
+		}
+	}
+	return append(required, optional...)
+}
