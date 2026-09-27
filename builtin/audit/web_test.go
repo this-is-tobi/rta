@@ -239,6 +239,33 @@ func TestAuditFrameAncestorsCoversMissingXFrameOptions(t *testing.T) {
 	}
 }
 
+// Every Via hop starts with the HTTP version it arrived over, so a digit test
+// on the whole value warned on every proxied site for disclosing "1.1" —
+// which names no software. The version worth a warning is a product's.
+func TestViaWarnsOnAProductVersionNotTheProtocol(t *testing.T) {
+	for via, want := range map[string]string{
+		"1.1 vegur":                                findings.Info,
+		"2 heroku-router, 1.1 google":              findings.Info,
+		"1.1 d1a2b3c4.cloudfront.net (CloudFront)": findings.Info,
+		"HTTP/1.1 10.0.0.5:3128":                   findings.Info,
+		"1.1 varnish (Varnish/6.0)":                findings.Warn,
+		"1.0 fred, 1.1 p.example.net (Apache/1.1)": findings.Warn,
+		"1.1 Squid/3.5.20":                         findings.Warn,
+	} {
+		r := &findings.Report{}
+		auditExposure(r, http.Header{"Via": {via}})
+		if len(r.Findings) != 1 || r.Findings[0].Status != want {
+			t.Errorf("Via %q graded %+v, want %s", via, r.Findings, want)
+		}
+	}
+	// The other banners keep the plain test: a digit in Server is a version.
+	r := &findings.Report{}
+	auditExposure(r, http.Header{"Server": {"nginx/1.25.3"}})
+	if r.Findings[0].Status != findings.Warn {
+		t.Errorf("Server with a version graded %s", r.Findings[0].Status)
+	}
+}
+
 // RFC 6797 lets max-age be a quoted string and puts optional whitespace
 // around the =, and a two-year policy written either way was called
 // "disables HSTS, effectively missing". A value nobody can read is not one

@@ -692,7 +692,11 @@ func auditExposure(r *findings.Report, h stdhttp.Header) {
 		status := findings.Info
 		// A version number in the banner is the real risk: it hands an
 		// attacker a CVE shortlist.
-		if strings.ContainsAny(v, "0123456789") {
+		versioned := strings.ContainsAny(v, "0123456789")
+		if e.name == "Via" {
+			versioned = viaNamesAVersion(v)
+		}
+		if versioned {
 			status = findings.Warn
 		}
 		r.Add(grpExposure, e.label, status, "discloses: "+v, refInfoExposure)
@@ -704,6 +708,28 @@ func auditExposure(r *findings.Report, h stdhttp.Header) {
 	if v := h.Get("X-XSS-Protection"); v != "" {
 		r.Add(grpExposure, "x-xss-protection", findings.Info, "present but deprecated — superseded by CSP: "+v, refMisconfig)
 	}
+}
+
+// viaNamesAVersion reports whether a Via value names a product's version.
+//
+// Every hop starts with the HTTP version it arrived over and then names the
+// proxy — `1.1 vegur`, `1.1 d1a2b3c4.cloudfront.net (CloudFront)` — so the
+// digit test the other banners get warned on every proxied site for
+// disclosing "1.1", or a hostname, neither of which names any software. What
+// does is a comment, `(Varnish/6.0)`, or a proxy that names itself as a
+// product, `Squid/3.5.20`, where a hop's name should be.
+func viaNamesAVersion(v string) bool {
+	for _, hop := range strings.Split(v, ",") {
+		_, rest, _ := strings.Cut(strings.TrimSpace(hop), " ")
+		by, comment, _ := strings.Cut(strings.TrimSpace(rest), " ")
+		if strings.ContainsAny(comment, "0123456789") {
+			return true
+		}
+		if _, product, ok := strings.Cut(by, "/"); ok && strings.ContainsAny(product, "0123456789") {
+			return true
+		}
+	}
+	return false
 }
 
 // cookieAttrs are graded one per attribute rather than one per cookie: each
