@@ -2,6 +2,8 @@
 
 Worked examples. Each one is a real shape rather than a demonstration of a flag.
 
+One has a page of its own. [An agent in a cluster](./30-an-agent-in-a-cluster.md) goes end to end: a profile, a ServiceAccount token the `kube` plugin mints, an instance holding it, and an agent connected over MCP.
+
 ## Pair with an agent on a staging database, for an hour
 
 The common case, and the one worth learning first. You want your editor's agent to help debug a slow query against staging — not production, not forever, and with a record afterwards.
