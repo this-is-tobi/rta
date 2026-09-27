@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/this-is-tobi/rta/pkg/findings"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -121,6 +122,8 @@ func classifyKubectl(ctx context.Context, err error, stderr string) *view.Error 
 	msg = strings.TrimSpace(strings.TrimPrefix(msg, "error:"))
 	low := strings.ToLower(msg)
 	switch {
+	case strings.Contains(low, "(notfound)"):
+		return view.Errorf("audit.kube.notfound", "%s", msg)
 	case strings.Contains(low, "forbidden"), strings.Contains(low, "is not allowed"):
 		return view.Errorf("audit.kube.forbidden", "%s", msg).
 			WithHint("the credential this context uses does not have permission to list this resource")
@@ -167,14 +170,68 @@ func checkNamespace(v string) *view.Error {
 		WithHint("namespace names are lowercase letters, digits and dashes, up to 63 characters")
 }
 
-// scopeOf reads and validates the namespace narrowing shared by every kube.*
-// audit that can honour one.
-func scopeOf(req plugin.Request) (string, *view.Error) {
+// scope is the namespace narrowing shared by every kube.* audit that can
+// honour one, once it has been asked about.
+type scope struct {
+	ns string
+	// unconfirmed is set when a namespace was named and the cluster would
+	// not say whether it exists.
+	unconfirmed bool
+}
+
+// scopeOf reads and validates the namespace narrowing, and asks the cluster
+// whether a namespace named in it exists.
+//
+// **kubectl answers an empty list, and exit 0, for a namespace that does not
+// exist**, so every narrowed audit reported about whatever was typed: `prd`
+// for `prod` got a warning for its missing ResourceQuota and NetworkPolicy,
+// and a clean bill for its pods and its Roles — the confident answer about a
+// name that does not exist which audit.mail's requireDomain was written to
+// refuse. One `get namespace` more settles it. A context that may not read
+// namespaces, as a namespace-bound credential often may not, gets its audit
+// anyway, and a row saying the name could not be confirmed: refusing it would
+// take the audit away from exactly the user a namespace narrowing is for.
+func scopeOf(ctx context.Context, req plugin.Request) (scope, *view.Error) {
 	ns := strings.TrimSpace(req.String("namespace"))
 	if verr := checkNamespace(ns); verr != nil {
-		return "", verr
+		return scope{}, verr
 	}
-	return ns, nil
+	if ns == "" {
+		return scope{}, nil
+	}
+	kubeContext := req.String("context")
+	args := []string{"get", "namespace", ns, "-o", "json", "--request-timeout=15s"}
+	if kubeContext != "" {
+		args = append(args, "--context="+kubeContext)
+	}
+	var got limitedNamespace
+	switch verr := kubectlJSON(ctx, args, "namespace "+ns, &got); {
+	case verr == nil:
+		return scope{ns: ns}, nil
+	case verr.Code == "audit.kube.forbidden":
+		return scope{ns: ns, unconfirmed: true}, nil
+	case verr.Code == "audit.kube.notfound":
+		where := "the current kubeconfig context"
+		if kubeContext != "" {
+			where = "context " + kubeContext
+		}
+		return scope{}, view.Errorf("audit.kube.namespace.notfound", "namespace %q does not exist in %s", ns, where).
+			WithHint("check the spelling — every check would otherwise report on a namespace with nothing in it")
+	default:
+		return scope{}, verr
+	}
+}
+
+// note adds, to a report narrowed to a namespace the cluster would not
+// confirm, the row that says so — a check that could not run, so an empty
+// answer below is read as what it may be.
+func (s scope) note(r *findings.Report, g findings.Group) {
+	if !s.unconfirmed {
+		return
+	}
+	r.AddUnchecked(g, "namespace "+s.ns,
+		"its existence could not be confirmed — this context may not read namespaces, so nothing found "+
+			"here may also be a namespace that does not exist", findings.Reference{})
 }
 
 // within phrases a clean result so it claims only what was actually examined.

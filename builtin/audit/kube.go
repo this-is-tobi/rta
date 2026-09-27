@@ -78,11 +78,13 @@ type meta struct {
 
 func runKubeRBAC(ctx context.Context, req plugin.Request) (view.View, error) {
 	kubeContext := req.String("context")
-	ns, verr := scopeOf(req)
+	sc, verr := scopeOf(ctx, req)
 	if verr != nil {
 		return nil, verr
 	}
+	ns := sc.ns
 	r := &findings.Report{}
+	sc.note(r, grpKubeRBAC)
 
 	// **Narrowing this audit means dropping half its subject, and the half it
 	// drops has to be said out loud.** Two of the three things checked here —
@@ -307,16 +309,18 @@ func (s podSecuritySpec) everyContainer() []gradedCtn {
 
 func runKubePodSecurity(ctx context.Context, req plugin.Request) (view.View, error) {
 	kubeContext := req.String("context")
-	ns, verr := scopeOf(req)
+	sc, verr := scopeOf(ctx, req)
 	if verr != nil {
 		return nil, verr
 	}
+	ns := sc.ns
 	var pods list[podSecurityItem]
 	if verr := kubeGetJSON(ctx, kubeContext, ns, "pods", &pods); verr != nil {
 		return nil, verr
 	}
 
 	r := &findings.Report{}
+	sc.note(r, grpKubePod)
 	for _, p := range pods.Items {
 		label := p.Metadata.Namespace + "/" + p.Metadata.Name
 		if p.Spec.HostNetwork || p.Spec.HostPID || p.Spec.HostIPC {
@@ -467,16 +471,18 @@ func coverageGaps(ctx context.Context, kubeContext, ns, kind string) ([]string, 
 
 func runKubeQuotas(ctx context.Context, req plugin.Request) (view.View, error) {
 	kubeContext := req.String("context")
-	ns, verr := scopeOf(req)
+	sc, verr := scopeOf(ctx, req)
 	if verr != nil {
 		return nil, verr
 	}
+	ns := sc.ns
 	missing, verr := coverageGaps(ctx, kubeContext, ns, "resourcequotas")
 	if verr != nil {
 		return nil, verr
 	}
 
 	r := &findings.Report{}
+	sc.note(r, grpKubeQuota)
 	for _, ns := range missing {
 		r.Add(grpKubeQuota, "no ResourceQuota: "+ns, findings.Warn,
 			"namespace has no ResourceQuota, so it can consume unbounded cluster resources", refResourcePolicies)
@@ -496,16 +502,18 @@ func runKubeQuotas(ctx context.Context, req plugin.Request) (view.View, error) {
 
 func runKubeNetworkPolicy(ctx context.Context, req plugin.Request) (view.View, error) {
 	kubeContext := req.String("context")
-	ns, verr := scopeOf(req)
+	sc, verr := scopeOf(ctx, req)
 	if verr != nil {
 		return nil, verr
 	}
+	ns := sc.ns
 	missing, verr := coverageGaps(ctx, kubeContext, ns, "networkpolicies")
 	if verr != nil {
 		return nil, verr
 	}
 
 	r := &findings.Report{}
+	sc.note(r, grpKubeNetwork)
 	for _, ns := range missing {
 		r.Add(grpKubeNetwork, "no NetworkPolicy: "+ns, findings.Warn,
 			"namespace has no NetworkPolicy, so pod-to-pod traffic is unrestricted by default", refNetworkPolicy)
