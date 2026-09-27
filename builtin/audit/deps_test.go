@@ -395,10 +395,14 @@ func TestFindManifests(t *testing.T) {
 			t.Errorf("manifest reported as %q, want it under the path that was asked about", g)
 		}
 	}
-	// A file may be named directly, whatever it is called.
-	one := filepath.Join(dir, "README.md")
+	// A manifest may be named directly — and a file that is none is refused,
+	// rather than listed as one with nothing pinned in it.
+	one := filepath.Join(dir, "go.mod")
 	if got, _, err := manifestsOf(t, one, false); err != nil || len(got) != 1 || got[0] != one {
 		t.Errorf("naming a file directly: %v, %v", got, err)
+	}
+	if _, _, err := manifestsOf(t, filepath.Join(dir, "README.md"), false); err == nil {
+		t.Error("a README named directly was read as a manifest")
 	}
 	if _, _, err := manifestsOf(t, filepath.Join(dir, "nope"), false); err == nil {
 		t.Error("a missing path should be an error")
@@ -631,6 +635,52 @@ func TestDepsSaysWhatItCouldNotCheck(t *testing.T) {
 	bad := mustFind(t, r, "manifest")
 	if bad.Status != findings.Warn || !strings.Contains(bad.Detail, "weird.json") {
 		t.Errorf("an unparseable manifest was not declared: %+v", bad)
+	}
+}
+
+// A file named on its own is read by what it is, not only by the exact name
+// a directory scan looks for. requirements-dev.txt holding two pins read as a
+// file with no pins at all, blamed on ranges it did not have — and so did a
+// notes.txt, which is no manifest, and a JSON file that is no SBOM.
+func TestAFileNamedOnItsOwnIsReadByWhatItIs(t *testing.T) {
+	dir := t.TempDir()
+	write := func(rel, body string) string {
+		t.Helper()
+		p := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	pins := "django==3.2.0\nrequests==2.19.0\n"
+	for _, p := range []string{
+		write("requirements-dev.txt", pins),
+		write("dev-requirements.txt", pins),
+		write("requirements/prod.txt", pins),
+	} {
+		proj, verr := openProject(t.Context(), req(map[string]any{}), p)
+		if verr != nil {
+			t.Fatalf("%s: %v", p, verr)
+		}
+		names, shown, _, err := proj.manifests(false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if inv := read(proj.fsys, names, shown); len(inv.all) != 2 {
+			t.Errorf("%s: read %d components, want the 2 it pins", p, len(inv.all))
+		}
+	}
+	for _, p := range []string{
+		write("notes.txt", "hello\n"),
+		write("config.json", `{"port": 8080}`),
+	} {
+		_, verr := openProject(t.Context(), req(map[string]any{}), p)
+		if verr == nil || verr.Code != "audit.deps.format" {
+			t.Errorf("%s: want audit.deps.format, got %v", p, verr)
+		}
 	}
 }
 
