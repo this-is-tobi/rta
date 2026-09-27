@@ -51,7 +51,9 @@ import (
 // one is a table that is wrong the week after a release. So this walks the
 // JSON looking for the *shape* a server declaration has — an object with a
 // `command`, optionally an `env` — wherever it sits and however deep. A shape
-// that moves keeps being found; a schema that changes does not.
+// that moves keeps being found; a schema that changes does not. Codex's TOML
+// is read into the same tree first (agentstoml.go), so it is walked the same
+// way.
 
 // agentFile is one configuration worth reading, and how to say where it came
 // from when a finding names it.
@@ -204,8 +206,11 @@ func runClients(ctx context.Context, req plugin.Request, catalog func() []plugin
 			claudeSeen = true
 		}
 		auditFileMode(r, f, info.Mode().Perm())
-		if strings.EqualFold(filepath.Ext(f.path), ".json") {
+		switch strings.ToLower(filepath.Ext(f.path)) {
+		case ".json":
 			auditAgentJSON(r, f)
+		case ".toml":
+			auditAgentTOML(r, f)
 		}
 	}
 	if len(unreadable) > 0 {
@@ -331,11 +336,28 @@ func remoteServer(obj map[string]any) (string, bool) {
 	if t, ok := obj["type"].(string); ok && remoteTransports[strings.ToLower(strings.TrimSpace(t))] {
 		return raw, true
 	}
-	if _, ok := obj["headers"].(map[string]any); ok {
+	for _, key := range headerKeys {
+		if _, ok := obj[key].(map[string]any); ok {
+			return raw, true
+		}
+	}
+	// Codex writes no type, and names the variables a token is read from
+	// rather than the token: bearer_token_env_var, and env_http_headers for
+	// headers. Either is a declaration's key and nothing else's — and a url
+	// beside one sends that token, so an http:// one sends it in clear. Read
+	// by headers alone, such a server was never found.
+	if _, ok := obj["bearer_token_env_var"].(string); ok {
+		return raw, true
+	}
+	if _, ok := obj["env_http_headers"].(map[string]any); ok {
 		return raw, true
 	}
 	return "", false
 }
+
+// headerKeys are the names a declaration gives the headers it is called
+// with: `headers` in the JSON clients, `http_headers` in Codex's TOML.
+var headerKeys = []string{"headers", "http_headers"}
 
 // collectServers walks any JSON for objects shaped like a server declaration,
 // and appends every one it finds to out.
@@ -401,7 +423,8 @@ func collectAt(node any, at []string, out *[]serverDecl) {
 			if remoteURL, isServer := remoteServer(obj); isServer {
 				d := serverDecl{name: key, at: where(), url: remoteURL, env: map[string]string{},
 					headers: map[string]string{}}
-				if raw, ok := obj["headers"].(map[string]any); ok {
+				for _, key := range headerKeys {
+					raw, _ := obj[key].(map[string]any)
 					for k, val := range raw {
 						if s, ok := val.(string); ok {
 							d.headers[k] = s
