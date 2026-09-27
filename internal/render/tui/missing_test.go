@@ -62,6 +62,32 @@ func TestAPipedInputATileCanStateIsHintedWithSet(t *testing.T) {
 	}
 }
 
+// A required input with an empty default is still one nothing gives a tile:
+// the default fills nothing, and the host refuses the call as missing it. The
+// dashboard read any default beside Required as one it could run with, and
+// + wrote the tile, which answered "missing" on every refresh. Validate
+// refuses any other default beside Required, so Required alone is the test.
+func TestARequiredInputWithAnEmptyDefaultStillNeedsAForm(t *testing.T) {
+	c := plugin.Capability{
+		ID: "db.table.list", Summary: "tables", Safety: plugin.Read,
+		Run:    func(context.Context, plugin.Request) (view.View, error) { return nil, nil },
+		Inputs: []plugin.Field{{Name: "schema", Type: plugin.String, Required: true, Default: ""}},
+	}
+	if err := (plugin.Plugin{Name: "db", Capabilities: []plugin.Capability{c}}).Validate(); err != nil {
+		t.Fatalf("the fixture is refused: %v", err)
+	}
+	if !formNeeded(c) || previewable(c) || Unasked(c) == "" {
+		t.Errorf("formNeeded = %v, previewable = %v: an empty default was read as a value",
+			formNeeded(c), previewable(c))
+	}
+	if got := MissingInputs(c, nil, false); !slices.Equal(got, []string{"schema"}) {
+		t.Errorf("missing = %v, want [schema]", got)
+	}
+	if why := addRefusal(c, false); !strings.Contains(why, "--set schema=") {
+		t.Errorf("+ on it: %q, want the input it needs named", why)
+	}
+}
+
 // A TUI form will not submit without a Piped input: there is no pipe behind
 // it, and the handler's own "nothing to read" was the only thing saying so.
 func TestAPipedInputIsRequiredInAForm(t *testing.T) {

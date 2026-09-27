@@ -325,9 +325,9 @@ func NoTileReason(p plugin.Plugin) string {
 // nothing when it would: the reasons NoTileReason tallies per plugin, one
 // capability at a time. Exported for `rta explain`, whose card is per
 // capability and had no way to say either — safety, NoPreview and a
-// required input's default are three facts on three different lines of a
-// declaration, and the tile behaviour they add up to was invisible without
-// reading the source.
+// required input are three facts on three different lines of a declaration,
+// and the tile behaviour they add up to was invisible without reading the
+// source.
 func Unasked(c plugin.Capability) string {
 	switch {
 	case c.Safety != plugin.Read:
@@ -343,9 +343,9 @@ func Unasked(c plugin.Capability) string {
 // previewable reports whether the dashboard may run a capability on its own:
 // on load, then again every few seconds, with nobody watching.
 //
-// Read because a timer must not mutate anything. No required input without a
-// default, because there is no one to ask and the tile would render the same
-// "missing input" error forever. Not NoPreview, because that is the
+// Read because a timer must not mutate anything. No required input, because
+// there is no one to ask and the tile would render the same "missing input"
+// error forever. Not NoPreview, because that is the
 // capability saying that running it has a cost the dashboard has no business
 // paying unprompted — see plugin.Capability.
 func previewable(c plugin.Capability) bool {
@@ -353,8 +353,8 @@ func previewable(c plugin.Capability) bool {
 }
 
 // MissingInputs lists what a tile of c could never fill: a required input
-// with no default, no config key a file could fill, nothing under with,
-// and — for a pinned tile — nothing a profile could fill either. A tile
+// with no config key a file could fill, nothing under with, and — for a
+// pinned tile — nothing a profile could fill either. A tile
 // has no form to ask with, so one such input is the same "missing input"
 // error on every refresh forever; `rta dashboard add` and `+` in the TUI
 // both refuse it here rather than write it.
@@ -373,7 +373,12 @@ func previewable(c plugin.Capability) bool {
 func MissingInputs(c plugin.Capability, with map[string]any, pinned bool) []string {
 	var missing []string
 	for _, f := range c.Inputs {
-		if f.Default != nil || f.Config != "" {
+		// Not a Default: Validate refuses one beside Required unless it is
+		// empty, and an empty one fills nothing — the host refuses the call
+		// as missing the input all the same (plugin.Missing). Read as a value,
+		// it put a tile on the dashboard that answered "missing" on every
+		// refresh. Nor beside Piped, which Validate refuses outright.
+		if f.Config != "" {
 			continue
 		}
 		if _, given := with[f.Name]; given {
@@ -732,12 +737,13 @@ func Layout(reg *registry.Registry, dash config.Dashboard, instances Instances) 
 	return out
 }
 
-// formNeeded reports whether a capability has required inputs without
-// defaults — a Piped one included, since the dashboard runs on the TUI
-// surface, where there is no pipe to fill it.
+// formNeeded reports whether a capability has a required input — a Piped
+// one included, since the dashboard runs on the TUI surface, where there is
+// no pipe to fill it. A default beside one is no exception to look for, as
+// MissingInputs says.
 func formNeeded(c plugin.Capability) bool {
 	for _, f := range c.Inputs {
-		if requiredHere(f) && f.Default == nil {
+		if requiredHere(f) {
 			return true
 		}
 	}
