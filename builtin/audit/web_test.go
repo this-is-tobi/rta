@@ -339,6 +339,87 @@ func TestFramingReadsEveryLineOfBothHeaders(t *testing.T) {
 	}
 }
 
+// The csp row read the first policy alone, as the framing row once did: a
+// weakness stated in the second went unnamed, and directives the second
+// states were named as missing. Every policy the response sends is read.
+func TestCSPReadsEveryPolicyTheResponseSends(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		policies []string
+		want     string
+		named    []string
+		unnamed  []string
+	}{
+		{
+			name: "a weakness in the second policy",
+			policies: []string{
+				"object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+				"script-src 'self' 'unsafe-inline'; img-src *",
+			},
+			want:    findings.Warn,
+			named:   []string{"'unsafe-inline'", "wildcard"},
+			unnamed: []string{"no object-src", "no base-uri", "no frame-ancestors"},
+		},
+		{
+			name: "the directives the first lacks, in the second",
+			policies: []string{
+				"default-src 'self'",
+				"object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+			},
+			want: findings.OK,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "text/html")
+				for _, p := range tc.policies {
+					w.Header().Add("Content-Security-Policy", p)
+				}
+			}))
+			t.Cleanup(srv.Close)
+			r := auditRows(t, srv)["csp"]
+			if r[1] != tc.want {
+				t.Fatalf("csp = %v, want %s", r, tc.want)
+			}
+			for _, s := range tc.named {
+				if !strings.Contains(r[2], s) {
+					t.Errorf("csp detail %q does not name %s", r[2], s)
+				}
+			}
+			for _, s := range tc.unnamed {
+				if strings.Contains(r[2], s) {
+					t.Errorf("csp detail %q names %s, which the other policy states", r[2], s)
+				}
+			}
+		})
+	}
+}
+
+// A banner sent twice was read by its first line: the version the second
+// discloses went unnamed and the row read info. Every line is read.
+func TestExposureReadsEveryLineOfABanner(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Add("X-Powered-By", "Express")
+		w.Header().Add("X-Powered-By", "PHP/8.1.0")
+		w.Header().Add("Via", "1.1 vegur")
+		w.Header().Add("Via", "1.1 cache (squid/3.5.20)")
+		w.Header().Add("X-XSS-Protection", "")
+		w.Header().Add("X-XSS-Protection", "1; mode=block")
+	}))
+	t.Cleanup(srv.Close)
+	rows := auditRows(t, srv)
+	if r := rows["x-powered-by"]; r[1] != findings.Warn || !strings.Contains(r[2], "Express") ||
+		!strings.Contains(r[2], "PHP/8.1.0") {
+		t.Errorf("x-powered-by = %v, want a warning naming both lines", r)
+	}
+	if r := rows["via"]; r[1] != findings.Warn || !strings.Contains(r[2], "squid/3.5.20") {
+		t.Errorf("via = %v, want a warning naming the second hop's version", r)
+	}
+	if r, ok := rows["x-xss-protection"]; !ok || !strings.Contains(r[2], "mode=block") {
+		t.Errorf("x-xss-protection = %v, want the line that has a value named", r)
+	}
+}
+
 // Neither header at all is the actual clickjacking-vulnerable case, and must
 // fail outright rather than warn: nothing stops this page being framed.
 func TestAuditNoFramingDefenseAtAllFails(t *testing.T) {

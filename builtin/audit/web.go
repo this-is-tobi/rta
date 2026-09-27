@@ -325,6 +325,25 @@ type headerCheck struct {
 	grade func(h stdhttp.Header) (status, detail string)
 }
 
+// every is each line of a header the response sent, joined by a comma as a
+// header sent twice is read, and "" when none has a value.
+//
+// For a header a browser reads every line of — each CSP is enforced, each
+// banner discloses — where h.Get answers the first line alone: a second
+// policy's 'unsafe-inline' went unnamed, and the directives it stated were
+// named as missing. A line with no value is left out, since it says nothing
+// and would join as an empty member of the list. Not for HSTS, of which a
+// browser honours only the first (RFC 6797, 8.1).
+func every(h stdhttp.Header, name string) string {
+	var lines []string
+	for _, v := range h.Values(name) {
+		if v = strings.TrimSpace(v); v != "" {
+			lines = append(lines, v)
+		}
+	}
+	return strings.Join(lines, ", ")
+}
+
 // presence is the common "any value is good, absent is a warning" grader.
 func presence(name, missing string) func(stdhttp.Header) (string, string) {
 	return func(h stdhttp.Header) (string, string) {
@@ -363,7 +382,7 @@ var securityHeaders = []headerCheck{
 // Two slices rather than a flag on each row: the split is the rule, and a
 // rule that lives in one place cannot drift from the table it describes.
 var documentHeaders = []headerCheck{
-	{"csp", refMisconfig, func(h stdhttp.Header) (string, string) { return gradeCSP(h.Get("Content-Security-Policy")) }},
+	{"csp", refMisconfig, func(h stdhttp.Header) (string, string) { return gradeCSP(every(h, "Content-Security-Policy")) }},
 	{"x-content-type-options", refMisconfig, func(h stdhttp.Header) (string, string) {
 		v := h.Get("X-Content-Type-Options")
 		if strings.EqualFold(strings.TrimSpace(v), "nosniff") {
@@ -379,8 +398,7 @@ var documentHeaders = []headerCheck{
 		// response sends and reads every X-Frame-Options, and Get answers
 		// only the first — a response whose second CSP said `frame-ancestors
 		// *` beside a DENY read ok for a page any site can frame.
-		return gradeFraming(strings.Join(h.Values("X-Frame-Options"), ", "),
-			strings.Join(h.Values("Content-Security-Policy"), ", "))
+		return gradeFraming(every(h, "X-Frame-Options"), every(h, "Content-Security-Policy"))
 	}},
 	{"referrer-policy", refMisconfig, presence("Referrer-Policy", "missing — referrer may leak to third parties")},
 	{"permissions-policy", refMisconfig, info("Permissions-Policy", "not set — browser feature access unrestricted")},
@@ -483,6 +501,13 @@ func hstsDirective(header, name string) bool {
 // object-src/base-uri/frame-ancestors — rather than treating any non-empty
 // policy as sufficient. A CSP that allows 'unsafe-inline' provides close to
 // no XSS defense at all, and "CSP present" alone would have said it did.
+//
+// v is every policy the response sent (every), and they are read together: a
+// directive any of them states is there, and a weakness any of them states is
+// named. A browser enforces each policy, so another may close what one leaves
+// open; telling which does takes the fallback of every directive to
+// default-src, and the audit names the weakness rather than reason it away,
+// since the fix is the same line either way.
 func gradeCSP(v string) (string, string) {
 	if v == "" {
 		return findings.Warn, "missing — no CSP, weaker XSS defense"
@@ -511,9 +536,11 @@ func gradeCSP(v string) (string, string) {
 
 // cspHasWildcardSource reports whether any directive names a bare "*" as one
 // of its source values — a bare token, not merely present in the string
-// (which would also match a nonce or a real hostname containing one).
+// (which would also match a nonce or a real hostname containing one). Split
+// at the commas between policies as well as at the semicolons between
+// directives: joined, the last source of one policy ends in the comma.
 func cspHasWildcardSource(lowerCSP string) bool {
-	for _, directive := range strings.Split(lowerCSP, ";") {
+	for _, directive := range strings.FieldsFunc(lowerCSP, func(r rune) bool { return r == ';' || r == ',' }) {
 		// A policy ending in ";" — which most real ones do — yields a final
 		// segment with no fields at all, so the directive name the loop
 		// below skips past is not guaranteed to exist.
@@ -672,9 +699,12 @@ var exposureHeaders = []struct{ name, label string }{
 	{"Via", "via"},
 }
 
+// auditExposure reads every line of each banner (every): a response sending
+// X-Powered-By twice discloses both, and the one naming a version was
+// unnamed whenever it came second.
 func auditExposure(r *findings.Report, h stdhttp.Header) {
 	for _, e := range exposureHeaders {
-		v := h.Get(e.name)
+		v := every(h, e.name)
 		if v == "" {
 			continue
 		}
@@ -694,7 +724,7 @@ func auditExposure(r *findings.Report, h stdhttp.Header) {
 	// that CSP supersedes it and the header itself has been the source of
 	// browser-specific XSS bugs in the past — worth naming when present so a
 	// hardening pass knows it is inherited config, not something to add.
-	if v := h.Get("X-XSS-Protection"); v != "" {
+	if v := every(h, "X-XSS-Protection"); v != "" {
 		r.Add(grpExposure, "x-xss-protection", findings.Info, "present but deprecated — superseded by CSP: "+v, refMisconfig)
 	}
 }
