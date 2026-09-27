@@ -39,6 +39,41 @@ func launchedWithEnv(value string) string {
 	return string(b)
 }
 
+// Gemini CLI names a streamable HTTP server's endpoint httpUrl rather than
+// url, and a server declared that way was not found at all: its headers
+// went ungraded, a plaintext token in them included, and so did a plain
+// http:// endpoint. httpUrl takes precedence over url, as Gemini reads it.
+func TestAGeminiServerCalledAtAnHTTPURLIsGraded(t *testing.T) {
+	b, _ := json.Marshal(map[string]any{"mcpServers": map[string]any{
+		"svc": map[string]any{
+			"httpUrl": "http://mcp.example.com/",
+			"headers": map[string]string{"Authorization": "Bearer " + tokenValue},
+		},
+		"both": map[string]any{
+			"httpUrl": "http://both.example.com/", "url": "https://sse.example.com/",
+			"headers": map[string]string{"X-Client": "rta-test"},
+		},
+	}})
+	fakeHome(t, map[string]struct {
+		body string
+		mode os.FileMode
+	}{".gemini/settings.json": {string(b), 0o600}})
+	failed := map[string][]string{}
+	for _, row := range agentRowList(t) {
+		if row[1] == findings.Fail {
+			failed[row[0]] = append(failed[row[0]], row[2])
+		}
+	}
+	svc := strings.Join(failed["svc"], "\n")
+	if !strings.Contains(svc, "Authorization in its headers block, in plain text") ||
+		!strings.Contains(svc, "plain http:// at mcp.example.com") {
+		t.Errorf("a server declared with httpUrl was not graded: %q", failed["svc"])
+	}
+	if both := strings.Join(failed["both"], "\n"); !strings.Contains(both, "plain http:// at both.example.com") {
+		t.Errorf("url was graded where httpUrl takes precedence: %q", failed["both"])
+	}
+}
+
 // A value that only names a variable of the environment launching the client
 // holds no credential, when the client expands that reference: it is the very
 // move the credential fix asks for, and `rta audit clients` failed it as a

@@ -354,9 +354,18 @@ var remoteTransports = map[string]bool{
 // ordinary JSON and .claude.json is a large file of it, so a url alone is not
 // enough: it takes a transport type or a headers object beside it to mean a
 // server.
+//
+// Gemini CLI names a streamable HTTP endpoint httpUrl and an SSE one url, and
+// reads httpUrl when both are there. Read by url alone, a server declared
+// with httpUrl was never found — its headers ungraded, a token in them
+// included — and one declaring both was graded at the endpoint it does not
+// call.
 func remoteServer(obj map[string]any) (string, bool) {
-	raw, ok := obj["url"].(string)
-	if !ok || raw == "" {
+	raw, _ := obj["httpUrl"].(string)
+	if raw == "" {
+		raw, _ = obj["url"].(string)
+	}
+	if raw == "" {
 		return "", false
 	}
 	if t, ok := obj["type"].(string); ok && remoteTransports[strings.ToLower(strings.TrimSpace(t))] {
