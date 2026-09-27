@@ -1312,10 +1312,7 @@ func grantsTable(grants []core.Grant, stale func(core.Grant) bool) view.Table {
 		// (textclean.Record). It is the one screen that answers "what may
 		// the agent do right now?", and a grant on the look-alike covers
 		// nothing the operator meant.
-		record := textclean.Record(g.Scope)
-		if g.Scope == "" {
-			record = "any"
-		}
+		record := shownRecord(g.Scope, "any")
 		if core.IsFolderScope(g.Scope) {
 			// The width has to be legible in the one screen whose job is
 			// "what may the agent do right now?". A bare "prod/" in a column

@@ -262,6 +262,32 @@ func TestTheRosterShowsARecordAsTheGrantComparesIt(t *testing.T) {
 	}
 }
 
+// The roster's word for a grant naming no record is "any", and the plan's is
+// a dash, and a record can be named either: a kv key called any read as a
+// grant over the whole store, and the other way round. A record spelled like
+// the word beside it is quoted.
+func TestARecordNamedLikeTheRostersOwnWordIsQuoted(t *testing.T) {
+	setup(t)
+	for _, scope := range []string{"", "any"} {
+		if verr := core.Issue(core.Grant{Target: "kv.get", Scope: scope, Agent: "test",
+			Issued: time.Now(), Expires: time.Now().Add(time.Hour)}, true); verr != nil {
+			t.Fatal(verr)
+		}
+	}
+	tbl := listed(t, run(t, listH, nil))
+	shown := map[string]bool{}
+	for i := range tbl.Rows {
+		shown[cell(t, tbl, i, "Record")] = true
+	}
+	if !shown["any"] || !shown[`"any"`] {
+		t.Errorf("the roster shows %v, want the whole store as any and the key quoted", shown)
+	}
+	plan := planTable([]core.Grant{{Target: "kv.get"}, {Target: "kv.get", Scope: "—"}}, []string{"", ""})
+	if a, b := plan.Rows[0][1], plan.Rows[1][1]; a == b {
+		t.Errorf("the plan shows no record and the record %q alike, as %q", "—", a)
+	}
+}
+
 // An unscoped grant covers every record, and says so rather than showing a
 // blank column that reads like missing data.
 func TestUnscopedGrantSaysAny(t *testing.T) {
