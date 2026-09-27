@@ -85,8 +85,9 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 			{
 				ID:      "agent.log",
 				Summary: "The record of what agents did — one line per call, refusals included",
-				Description: "Every call that arrived over MCP: the capability, the arguments " +
-					"(secrets masked), the profile, what happened, and how it was authorized — no " +
+				Description: "Every call that arrived over MCP: the capability, the records it was judged " +
+					"on exactly as the call spelled them, the arguments (secrets masked), the profile, " +
+					"what happened, and how it was authorized — no " +
 					"grant needed, a standing grant, or you answering live. The file is chained, so " +
 					"an edited or missing line is visible: `detail` verifies it and says where it " +
 					"breaks. This is history and not policy; `grant.list` is what may happen next.",
@@ -622,10 +623,16 @@ func runLog(_ context.Context, req plugin.Request) (view.View, error) {
 	// written before agents were named — or before rta could serve over
 	// HTTP at all — is never, and a column of em dashes on the screen an
 	// operator opens in a hurry is a column they learn to skip.
-	named, namedCred, coded, sessioned, roled := false, false, false, false, false
+	named, namedCred, coded, sessioned, roled, recorded := false, false, false, false, false, false
 	for _, e := range entries {
 		if e.Agent != "" || e.Client != "" {
 			named = true
+		}
+		// The same rule for the records a call was judged on: a record
+		// written before the ledger kept them, or one whose calls named no
+		// record, shows no column for them.
+		if len(e.Records) > 0 {
+			recorded = true
 		}
 		// Same rule again: a record from before servers had ids shows no
 		// session column, and one where they do shows which of several
@@ -697,6 +704,13 @@ func runLog(_ context.Context, req plugin.Request) (view.View, error) {
 		if roled {
 			row = slices.Insert(row, roleColumn(named, namedCred, sessioned), dashed(e.Role))
 		}
+		// The records as the gate judged them, shown as every other surface
+		// shows a record (textclean.Record): the arguments beside them are
+		// kept cleaned, and a record padded with a zero-width character read
+		// there as the bare one.
+		if recorded {
+			row = slices.Insert(row, recordColumn(named, namedCred, sessioned, roled), recordsCell(e.Records))
+		}
 		rows = append(rows, row)
 	}
 	// seq is first because it is the join key and the cursor: `--after` takes
@@ -727,6 +741,9 @@ func runLog(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 	if roled {
 		cols = slices.Insert(cols, roleColumn(named, namedCred, sessioned), view.Column{Name: "role"})
+	}
+	if recorded {
+		cols = slices.Insert(cols, recordColumn(named, namedCred, sessioned, roled), view.Column{Name: "record"})
 	}
 	// Total is what the rows were chosen from; under a filter that is the
 	// rows themselves — `0 of 500 rows` under --refused read as five
@@ -841,6 +858,25 @@ func roleColumn(named, namedCred, sessioned bool) int {
 		pos++
 	}
 	return pos
+}
+
+// recordColumn is where the records sit: after the role, right before the
+// arguments they were read from — the order agent pending shows them in.
+func recordColumn(named, namedCred, sessioned, roled bool) int {
+	pos := roleColumn(named, namedCred, sessioned)
+	if roled {
+		pos++
+	}
+	return pos
+}
+
+// recordsCell is a row's records, each as textclean.Record shows one, or a
+// dash for a call that named none.
+func recordsCell(records []string) string {
+	if len(records) == 0 {
+		return "—"
+	}
+	return textclean.Records(records)
 }
 
 // roleCovers reports whether a row's role column names the role asked
@@ -1417,7 +1453,13 @@ func callNamed(capID string, records []string) string {
 
 // argValue is one argument as a person reads it beside the record: a string
 // as textclean.Record shows one, since an argument is where the record came
-// from and the ledger's only copy of it, and anything else as it prints.
+// from, and anything else as it prints.
+//
+// The arguments are the cleaned copy, though: the bridge drops the
+// zero-width, direction and tag characters before the ledger or a parked
+// request holds them, so an argument can still read as the bare record. The
+// exact one is kept beside it, a ledger row's Records and a request's
+// Scopes, and those are what the record column and pair show.
 //
 // A list element by element, in the brackets Go prints one in, since a list
 // is where a capability taking several records names them — net hosts add's

@@ -93,12 +93,14 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf16"
 	"unicode/utf8"
 
 	"github.com/this-is-tobi/rta/internal/atomicfile"
 	"github.com/this-is-tobi/rta/internal/filelock"
 	"github.com/this-is-tobi/rta/internal/paths"
 	"github.com/this-is-tobi/rta/internal/seal"
+	"github.com/this-is-tobi/rta/internal/textclean/glyph"
 	"github.com/this-is-tobi/rta/pkg/format"
 )
 
@@ -222,6 +224,26 @@ type Entry struct {
 	At   time.Time `json:"at"`
 	Cap  string    `json:"capability"`
 	Tool string    `json:"tool,omitempty"`
+	// Records are the records the grant gate judged this call on — its
+	// Scope's values and ScopeAlso's, the strings a grant is compared with
+	// byte for byte — exactly as the call spelled them, and nothing else.
+	//
+	// **Their own field, because Args cannot be exact.** Args are cleaned for
+	// whoever reads them next, a model included, and cleaning drops the
+	// zero-width, direction and tag characters: a kv.get on "prod/db" and a
+	// zero-width space, its own record to the gate and parked apart from the
+	// bare key, was recorded as key=prod/db, the one record it did not name.
+	// Spelling those characters out in Args instead would write the tag
+	// alphabet into a field a model is meant to read clean, and make an
+	// argument holding the escape as text read the same as one holding the
+	// character. A record here is shown the way every other surface shows one
+	// (textclean.Record), and is written to the file with every character a
+	// reader would not see as a JSON escape (see marshalLine), so the file
+	// holds none of them raw.
+	//
+	// omitempty, which keeps every seal written before the field existed
+	// verifying — see Note — and leaves it off a call that named no record.
+	Records []string `json:"records,omitempty"`
 	// Args are the values the call runs with — what the caller sent, laid
 	// over the operator's config and the declared defaults, and the
 	// profile's once it is filled — not only what the agent typed, so an
@@ -740,7 +762,7 @@ func Append(e Entry) (err error) {
 	// leaving it in place would repeat the claim on every entry after.
 	e.Missed = missed.Swap(0)
 	e.Seal = ""
-	body, err := json.Marshal(e)
+	body, err := marshalLine(e)
 	if err != nil {
 		return err
 	}
@@ -755,7 +777,17 @@ func Append(e Entry) (err error) {
 		// row is now bounded whatever a handler puts in it, and lastEntryIn
 		// widens its window besides, so an old oversized row is read past
 		// rather than fatal.
-		e.Args = map[string]any{"…": fmt.Sprintf("%d bytes of arguments, omitted", len(body))}
+		//
+		// The records stay while they fit a field's bound, since they are
+		// what the call was judged on and usually a key beside a value that
+		// is the unbounded part. A record is never clipped: a clipped one is
+		// a record nobody named. Past the bound they go with the arguments,
+		// and the note says so.
+		omitted := "arguments"
+		if recordBytes(e.Records) > maxField {
+			e.Records, omitted = nil, "arguments and records"
+		}
+		e.Args = map[string]any{"…": fmt.Sprintf("%d bytes of %s, omitted", len(body), omitted)}
 		e.Reason = clip(e.Reason, maxField)
 		e.Code = clip(e.Code, maxField)
 		e.Client = clip(e.Client, maxField)
@@ -764,7 +796,7 @@ func Append(e Entry) (err error) {
 		e.Profile = clip(e.Profile, maxField)
 		e.Tool = clip(e.Tool, maxField)
 		e.Cap = clip(e.Cap, maxField)
-		if body, err = json.Marshal(e); err != nil {
+		if body, err = marshalLine(e); err != nil {
 			return err
 		}
 	}
@@ -1424,6 +1456,74 @@ func clip(s string, n int) string {
 		s = s[:len(s)-size]
 	}
 	return s + "…"
+}
+
+// recordBytes is how much of a line an entry's records take.
+func recordBytes(records []string) int {
+	n := 0
+	for _, r := range records {
+		n += len(r)
+	}
+	return n
+}
+
+// marshalLine is an entry as the bytes that are sealed and written: its
+// JSON, with every character a reader would not see as itself written as
+// its escape.
+//
+// encoding/json escapes the C0 controls and writes everything else as it
+// is, and Records hold what the call spelled, exactly: a zero-width space,
+// a direction override, the tag alphabet. Written raw, a record reads as
+// the bare one to whoever runs cat or tail -f on the file — and an override
+// reorders the line around it — and those are the readers this file is
+// kept for, people and the next agent that greps it. As an escape it reads
+// as what it is, and anything that parses the line decodes the same string:
+// only how the bytes are written changes, never the value. Which characters
+// is textclean's rule (glyph.Seen), the one a record is shown by, so the
+// file and the screen never disagree about what is in one.
+//
+// The line is what the seal covers (sealedLine), so the escapes are sealed
+// as written, and a line written before this, with nothing to escape or
+// with a character raw, verifies as it always did.
+func marshalLine(e Entry) ([]byte, error) {
+	body, err := json.Marshal(e)
+	if err != nil {
+		return nil, err
+	}
+	return escapeUnseen(body), nil
+}
+
+// escapeUnseen writes each character in encoded JSON that a reader would not
+// see as itself as its JSON escape, a pair of them past the Basic
+// Multilingual Plane. Safe on the bytes after encoding for the reason
+// view.EscapeActedOn gives: such a character can only stand inside a string,
+// since everything outside one is printable ASCII.
+func escapeUnseen(body []byte) []byte {
+	var out []byte
+	last := 0
+	for i := 0; i < len(body); {
+		if body[i] < utf8.RuneSelf && body[i] != 0x7f {
+			i++
+			continue
+		}
+		r, size := utf8.DecodeRune(body[i:])
+		if glyph.Seen(r) {
+			i += size
+			continue
+		}
+		out = append(out, body[last:i]...)
+		if hi, lo := utf16.EncodeRune(r); hi != utf8.RuneError {
+			out = fmt.Appendf(out, `\u%04x\u%04x`, hi, lo)
+		} else {
+			out = fmt.Appendf(out, `\u%04x`, r)
+		}
+		i += size
+		last = i
+	}
+	if out == nil {
+		return body
+	}
+	return append(out, body[last:]...)
 }
 
 // ReadAfter is the record from just past seq onwards, oldest first, at most

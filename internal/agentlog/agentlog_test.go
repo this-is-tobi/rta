@@ -5,9 +5,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf16"
+	"unicode/utf8"
 
 	"github.com/this-is-tobi/rta/internal/seal"
 )
@@ -242,6 +245,82 @@ func TestAnEnormousEntryIsTruncatedNotDropped(t *testing.T) {
 	rep, err := Verify()
 	if err != nil || rep.Broken != 0 {
 		t.Fatalf("a truncated entry broke the chain: %v %+v", err, rep)
+	}
+}
+
+// A record is kept as the call spelled it and written with nothing a reader
+// would not see: a zero-width space, a direction override, a tag character,
+// a no-break space, a variation selector and DEL each stand in the file as a
+// JSON escape, read back as themselves, and the chain verifies across them
+// and across the line written before, which has no records at all.
+func TestARecordIsKeptExactlyAndWrittenWithNothingUnseenRaw(t *testing.T) {
+	isolate(t)
+	write(t, Entry{Cap: "kv.get", Args: map[string]any{"key": "prod/db"}, Outcome: Refused, Auth: Blocked})
+	unseen := []rune{0x200b, 0x202e, 0xe0041, 0xa0, 0xfe0f, 0x7f, 0x3164}
+	records := make([]string, 0, len(unseen))
+	for _, r := range unseen {
+		records = append(records, "prod/db"+string(r))
+	}
+	write(t, Entry{Cap: "kv.get", Records: records, Outcome: Refused, Auth: Blocked})
+
+	raw, err := os.ReadFile(Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range unseen {
+		if strings.ContainsRune(string(raw), r) {
+			t.Errorf("U+%04X stands raw in the file:\n%s", r, raw)
+		}
+	}
+	// Each as JSON writes one, a surrogate pair past the Basic Multilingual
+	// Plane, so the escape reads back as the character and nothing else.
+	for _, r := range unseen {
+		esc := fmt.Sprintf("\\u%04x", r)
+		if hi, lo := utf16.EncodeRune(r); hi != utf8.RuneError {
+			esc = fmt.Sprintf("\\u%04x\\u%04x", hi, lo)
+		}
+		if !strings.Contains(string(raw), esc) {
+			t.Errorf("the file does not hold %s:\n%s", esc, raw)
+		}
+	}
+	got, err := Read(0)
+	if err != nil || len(got) != 2 {
+		t.Fatalf("read = %d entries, %v", len(got), err)
+	}
+	if got[0].Records != nil {
+		t.Errorf("a call recorded without records reads back %q", got[0].Records)
+	}
+	if !slices.Equal(got[1].Records, records) {
+		t.Errorf("records read back %q, want %q", got[1].Records, records)
+	}
+	rep, err := Verify()
+	if err != nil || rep.Broken != 0 {
+		t.Fatalf("a record written with escapes broke the chain: %v %+v", err, rep)
+	}
+}
+
+// Records beside enormous arguments stay, since they are what the call was
+// judged on, and are never clipped: past a field's bound they go with the
+// arguments, and the note says so.
+func TestAnEnormousEntryKeepsItsRecordsWhileTheyFit(t *testing.T) {
+	isolate(t)
+	huge := strings.Repeat("x", maxLine*2)
+	write(t,
+		Entry{Cap: "kv.set", Records: []string{"prod/db"}, Args: map[string]any{"value": huge}, Outcome: Ran, Auth: Standing},
+		Entry{Cap: "kv.set", Records: []string{huge}, Args: map[string]any{"key": huge}, Outcome: Ran, Auth: Standing},
+	)
+	got, err := Read(0)
+	if err != nil || len(got) != 2 {
+		t.Fatalf("read = %d entries, %v", len(got), err)
+	}
+	if !slices.Equal(got[0].Records, []string{"prod/db"}) || got[0].Args["…"] == nil {
+		t.Errorf("a small record beside enormous arguments: records %q, args %v", got[0].Records, got[0].Args)
+	}
+	if got[1].Records != nil || !strings.Contains(fmt.Sprint(got[1].Args["…"]), "arguments and records") {
+		t.Errorf("an enormous record: records %d, args %v", len(got[1].Records), got[1].Args)
+	}
+	if rep, err := Verify(); err != nil || rep.Broken != 0 {
+		t.Fatalf("bounded entries broke the chain: %v %+v", err, rep)
 	}
 }
 

@@ -3,7 +3,9 @@ package mcp
 import (
 	"bytes"
 	"context"
+	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -12,9 +14,11 @@ import (
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/this-is-tobi/rta/builtin/all"
+	"github.com/this-is-tobi/rta/internal/agentlog"
 	"github.com/this-is-tobi/rta/internal/consent"
 	"github.com/this-is-tobi/rta/internal/render/cli"
 	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // A padded record, end to end. An agent's kv_get on "prod/db" with a
@@ -109,5 +113,68 @@ func TestAPaddedRecordIsParkedAndQueuedApartFromTheBareOne(t *testing.T) {
 		if !strings.Contains(odd, want) {
 			t.Errorf("-o %s: the padded record's row reads %q, want it to show %s", format, odd, want)
 		}
+	}
+}
+
+// The ledger's copy of a padded record. The arguments it keeps are cleaned
+// the way a model reads them, so a kv_get on "prod/db" and a zero-width
+// space was recorded as key=prod/db, and agent log showed a call on the bare
+// key, the one record it did not name. The records the gate judged are kept
+// beside them, exactly, written to the file with the character escaped, and
+// agent log shows them quoted with the character named, apart from the call
+// on the bare key.
+func TestTheLedgerKeepsTheRecordACallWasJudgedOn(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
+	reg, err := all.Registry(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := connectWith(t, reg, Options{})
+	ctx := context.Background()
+	zwsp := string(rune(0x200b))
+	padded := "prod/db" + zwsp
+	for _, key := range []string{"prod/db", padded} {
+		if _, err := s.CallTool(ctx, &sdk.CallToolParams{Name: "kv_get", Arguments: map[string]any{"key": key}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	entries, err := agentlog.Read(2)
+	if err != nil || len(entries) != 2 {
+		t.Fatalf("read %d entries: %v", len(entries), err)
+	}
+	if !slices.Equal(entries[0].Records, []string{"prod/db"}) || !slices.Equal(entries[1].Records, []string{padded}) {
+		t.Errorf("records = %q and %q, want the bare key and the padded one", entries[0].Records, entries[1].Records)
+	}
+	raw, err := os.ReadFile(agentlog.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), zwsp) || !strings.Contains(string(raw), `"records":[`+strconv.QuoteToASCII(padded)+`]`) {
+		t.Errorf("the ledger does not hold the record escaped:\n%s", raw)
+	}
+	if rep, err := agentlog.Verify(); err != nil || rep.Broken != 0 {
+		t.Fatalf("the ledger does not verify: %v %+v", err, rep)
+	}
+
+	c, ok := reg.Capability("agent.log")
+	if !ok {
+		t.Fatal("no agent.log")
+	}
+	v, err := c.Run(ctx, plugin.NewRequest(nil, false, false).WithSurface(plugin.SurfaceCLI))
+	if err != nil {
+		t.Fatal(err)
+	}
+	table, ok := v.(view.Table)
+	if !ok {
+		t.Fatalf("agent log is %T", v)
+	}
+	col := slices.IndexFunc(table.Columns, func(c view.Column) bool { return c.Name == "record" })
+	if col < 0 || len(table.Rows) != 2 {
+		t.Fatalf("agent log has no record column or not two rows: %+v", table)
+	}
+	if bare, odd := table.Rows[0][col], table.Rows[1][col]; bare != "prod/db" || odd != strconv.Quote(padded) {
+		t.Errorf("record cells = %q and %q, want prod/db and %s", bare, odd, strconv.Quote(padded))
 	}
 }
