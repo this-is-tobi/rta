@@ -569,7 +569,11 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 			// inputs, and a repository reached by walking upward out of one
 			// was never an argument — which is also why its refusal is
 			// Derived's, and does not tell the agent to send another path.
-			WithConfinement(opts.Paths.Derived)
+			WithConfinement(opts.Paths.Derived).
+			// And the rule a named link is told by (finalLink), for the links
+			// a handler comes across rather than receives: fs.tree lists a
+			// directory's, each with what it holds.
+			WithLinkTargets(func(dir, target string) string { return tellTarget(opts.Paths, dir, target) })
 		for field, l := range links {
 			run = run.WithLink(field, l.path, l.target)
 		}
@@ -827,7 +831,7 @@ func checkPaths(c plugin.Capability, values map[string]any, g *pathguard.Guard) 
 type namedLink struct{ path, target string }
 
 // outsideRoots is what a handler is told a link holds when what it holds
-// names a place the caller may not look (finalLink).
+// names a place the caller may not look (tellTarget).
 const outsideRoots = "a path outside this server's roots"
 
 // finalLink reports whether the last component of the path raw spells is a
@@ -874,10 +878,20 @@ func finalLink(g *pathguard.Guard, field, raw string) (namedLink, bool) {
 	if err != nil {
 		return namedLink{}, false
 	}
-	if !namesOnlyInside(g.Roots(), parent, target) {
-		target = outsideRoots
+	return namedLink{path: path, target: tellTarget(g, parent, target)}, true
+}
+
+// tellTarget is what a caller is told a symbolic link in dir holds: target
+// as written when it names only places under the roots (namesOnlyInside),
+// and outsideRoots otherwise. One rule for a link the caller named
+// (finalLink) and one a handler came across (plugin.Request.LinkTarget), so
+// fs.tree cannot list the outside name net.resolver.list withholds. No guard
+// confines nothing, and withholds nothing either.
+func tellTarget(g *pathguard.Guard, dir, target string) string {
+	if g == nil || namesOnlyInside(g.Roots(), dir, target) {
+		return target
 	}
-	return namedLink{path: path, target: target}, true
+	return outsideRoots
 }
 
 // namesOnlyInside reports whether target, held by a link in dir, names only

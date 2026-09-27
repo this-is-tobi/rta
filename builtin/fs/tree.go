@@ -45,6 +45,7 @@ func runTree(ctx context.Context, req plugin.Request) (view.View, error) {
 		limit:    req.Int("limit"),
 		hidden:   req.Bool("all"),
 		surface:  req.Surface(),
+		target:   req.LinkTarget,
 	}
 	if dev, ok := deviceOf(path); ok {
 		b.device = dev
@@ -79,6 +80,17 @@ type treeBuilder struct {
 	// surface is the caller's, for the name a branch's "12 hidden" marker
 	// gives the input that shows them.
 	surface plugin.Surface
+	// target is what a link's detail may say it holds (Request.LinkTarget).
+	//
+	// A link's text is a name, and over MCP it was shown whatever it named:
+	// a link inside the root holding /outside/hop told an agent confined to
+	// the root what lies outside it — the name the bridge withholds when
+	// the same link is the path an agent gives (a neutral phrase instead,
+	// which says the link leads out without saying where). The surface
+	// answers by its own rule, so the two cannot drift: a target naming
+	// only places under the roots, and every target at a terminal, is shown
+	// as written.
+	target func(dir, target string) string
 }
 
 // treeStats is what the walk learned on its way past. The compact tree says
@@ -163,6 +175,8 @@ func (b *treeBuilder) children(ctx context.Context, dir string, depth int) []vie
 			target, err := os.Readlink(full)
 			if err != nil {
 				target = "?"
+			} else if b.target != nil {
+				target = b.target(dir, target)
 			}
 			nodes = append(nodes, view.Node{Label: item.Name(), Detail: "→ " + target})
 		case info.IsDir():
