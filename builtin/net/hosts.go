@@ -216,10 +216,14 @@ func dropNames(e *hostEntry, remove map[string]bool) bool {
 // checked by ParseIP since the beginning; this is the same refusal for the
 // half that was taking anything.
 //
-// Only net.hosts.add needs it. rm and toggle match names that are already in
-// the file and write back only what parseHostLine produced, so nothing a
-// caller supplies ever reaches a line. sf is the surface asking, for the name
-// its hints give the input.
+// net.hosts.add needs it for what it writes. toggle writes back only what
+// parseHostLine produced, and it needs it for what it acts on: it trimmed the
+// name it was given, so a call on " api.local" — its own record to the gate,
+// which a grant on api.local does not cover, and the one a person approving
+// it read — flipped api.local. Refused instead, and a name with white space
+// in it is none the file can hold, so nothing a caller meant is refused. rm
+// matches names as given, and one the file cannot hold matches nothing. sf is
+// the surface asking, for the name its hints give the input.
 func checkHostname(sf plugin.Surface, name string) *view.Error {
 	if name == "" {
 		return view.Errorf("net.hosts.badhostname", "a hostname cannot be empty").
@@ -347,9 +351,12 @@ func runHostsRemove(_ context.Context, req plugin.Request) (view.View, error) {
 }
 
 func runHostsToggle(_ context.Context, req plugin.Request) (view.View, error) {
-	name := strings.TrimSpace(req.String("hostname"))
+	name := req.String("hostname")
 	if name == "" {
 		return nil, view.Errorf("net.hosts.nohostname", "no hostname given")
+	}
+	if verr := checkHostname(req.Surface(), name); verr != nil {
+		return nil, verr
 	}
 	lines, verr := readLines(req.Surface(), hostsPath(req), maxHostsBytes)
 	if verr != nil {

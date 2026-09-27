@@ -257,6 +257,21 @@ func TestDNSBadType(t *testing.T) {
 	}
 }
 
+// The name asked about is the one the gate judged. It was trimmed first, so a
+// call on " localhost" — its own record to the gate — asked the resolver
+// about localhost, a name nobody granted or approved. A name or an address
+// has no white space around it, so one that does is refused before anything
+// is asked.
+func TestDNSRefusesANameWithWhiteSpaceAroundIt(t *testing.T) {
+	nbsp := string(rune(0xa0))
+	for _, name := range []string{" localhost", "localhost ", "localhost" + nbsp, "127.0.0.1\t", "  "} {
+		_, err := runDNS(context.Background(), req(map[string]any{"name": name, "type": "A"}))
+		if ve := view.AsError(err, "x"); err == nil || ve.Code != "net.dns.badname" || ve.Hint == "" {
+			t.Errorf("net.dns %q: err = %+v, want net.dns.badname with a hint", name, ve)
+		}
+	}
+}
+
 func TestDNSLocalhost(t *testing.T) {
 	v, err := runDNS(context.Background(), req(map[string]any{"name": "localhost", "type": "A"}))
 	if err != nil {

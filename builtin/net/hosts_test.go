@@ -374,6 +374,27 @@ func TestHostsAddRefusesAHostnameTheFileWouldReadAsStructure(t *testing.T) {
 	}
 }
 
+// The hostname toggle acts on is the one the gate judged. It was trimmed
+// first, so a call on " api.local" — its own record to the gate, which a
+// grant on api.local does not cover — flipped api.local, the entry nobody
+// was asked about. A name with white space in it is no name the file holds,
+// and it is refused as add refuses it, before anything is read or written.
+func TestHostsToggleRefusesAHostnameWithWhiteSpaceAroundIt(t *testing.T) {
+	nbsp := string(rune(0xa0))
+	for _, hostname := range []string{" api.local", "api.local ", "api.local" + nbsp, "api.local\n"} {
+		path := hostsFixture(t, "127.0.0.1 localhost\n10.0.0.5 api.local\n")
+		before := hostsContent(t, path)
+		_, err := runHostsToggle(context.Background(), plugin.NewRequest(
+			map[string]any{"hostname": hostname}, false, true))
+		if ve := view.AsError(err, "x"); err == nil || ve.Code != "net.hosts.badhostname" {
+			t.Errorf("toggle %q: err = %v, want net.hosts.badhostname", hostname, err)
+		}
+		if got := hostsContent(t, path); got != before {
+			t.Errorf("toggle %q rewrote the file:\n%s", hostname, got)
+		}
+	}
+}
+
 // The other half of the same finding, end to end. An operator who allowlists
 // net.hosts.add and grants one hostname is consenting to a hosts-file entry;
 // with the path arriving in the arguments they got an appended line in any

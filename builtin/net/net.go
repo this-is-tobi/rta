@@ -528,7 +528,17 @@ func anotherQuestion(sf plugin.Surface) string {
 }
 
 func runDNS(ctx context.Context, req plugin.Request) (view.View, error) {
-	name := strings.TrimSpace(req.String("name"))
+	// Refused, not trimmed. The name is this capability's record, and the
+	// gate judged it as the call spelled it: " example.com" is not the record
+	// a grant on example.com covers, nor the one a person approving it read,
+	// and trimming it here asked the resolver about a name nobody allowed. No
+	// name or address has white space around it, so there is nothing a
+	// caller could have meant that this refuses.
+	name := req.String("name")
+	if name != strings.TrimSpace(name) {
+		return nil, view.Errorf("net.dns.badname", "%q has white space around it, which no name or address has", name).
+			WithHint("give the name as it is written, with nothing around it")
+	}
 	rtype := strings.ToUpper(strings.TrimSpace(req.String("type")))
 	if rtype == "" {
 		rtype = "AUTO"
