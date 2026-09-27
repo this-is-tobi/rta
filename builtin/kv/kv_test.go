@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -2558,6 +2559,37 @@ func TestAKeyCannotBeNamedLikeAFolder(t *testing.T) {
 		if verr := checkKeyName(key); verr != nil {
 			t.Errorf("%q was refused: %v", key, verr)
 		}
+	}
+}
+
+// The key a grant was judged on is the key written. set and rename trimmed
+// the name they were given, so a call on "prod/db " — its own record to the
+// gate, since a record is compared as the call spells it — wrote prod/db,
+// which is not the record anybody granted or approved. A name with white
+// space around it is refused instead, and a key looked up is looked up as
+// given, as get and rm always did.
+func TestAKeyIsWrittenAsTheCallNamesItOrNotAtAll(t *testing.T) {
+	setup(t)
+	nbsp := string(rune(0xa0))
+	for _, key := range []string{"prod/db ", " prod/db", "prod/db" + nbsp, "prod/db\t", "   "} {
+		_, err := runSet(context.Background(), req(map[string]any{"key": key, "value": "s3cret"}, false))
+		var verr *view.Error
+		if !errors.As(err, &verr) || verr.Code != "kv.set.padded" {
+			t.Errorf("kv set %q: err = %v, want kv.set.padded", key, err)
+		}
+	}
+	text(t, runSet, map[string]any{"key": "db", "value": "s3cret"}, false)
+	if _, err := runGet(context.Background(), req(map[string]any{"key": "prod/db"}, false)); err == nil {
+		t.Fatal("a refused set wrote the trimmed name")
+	}
+	_, err := runRename(context.Background(), req(map[string]any{"key": "db", "new-name": "db2 "}, false))
+	var verr *view.Error
+	if !errors.As(err, &verr) || verr.Code != "kv.set.padded" {
+		t.Errorf("kv rename onto %q: err = %v, want kv.set.padded", "db2 ", err)
+	}
+	_, err = runRename(context.Background(), req(map[string]any{"key": " db", "new-name": "db2"}, false))
+	if !errors.As(err, &verr) || verr.Code != "kv.notfound" {
+		t.Errorf("kv rename of %q: err = %v, want the key looked up as given", " db", err)
 	}
 }
 

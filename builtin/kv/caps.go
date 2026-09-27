@@ -407,10 +407,24 @@ func throughDescriptor(path string) bool {
 // while `prod/` names a folder and never a record — a stored key ending in
 // "/" would be both, and a grant naming it would be exact and prefix at once.
 //
+// Nor white space around a name. Set and rename trimmed the name they were
+// given, and the gate judges the name as the call spells it: a call on
+// "prod/db " is its own record, which a grant on prod/db does not cover, and
+// a person approving it read the record they were shown, not prod/db — yet
+// prod/db is what was written. Refused rather than trimmed, so the key a
+// grant was judged on is the key written, and a name that reads as another
+// never reaches the store. White space as strings.TrimSpace reads it, the
+// no-break space included.
+//
 // Nothing else about a key is constrained. Keys are opaque strings and stay
 // that way: a "." or ".." segment is legal here and is simply never swept into
 // a folder grant, which is the grant matcher's job rather than this one's.
 func checkKeyName(key string) *view.Error {
+	if key != strings.TrimSpace(key) {
+		return view.Errorf("kv.set.padded", "%q has white space around it, which a key name cannot", key).
+			WithHint("give the name without it — a key is written as the call names it, and one with " +
+				"white space around it reads as the name without")
+	}
 	if strings.HasSuffix(key, "/") {
 		return view.Errorf("kv.set.foldername", "%q ends in a slash, so it names a folder rather than an entry", key).
 			WithHint("drop the trailing slash — a folder is not stored, it is what the names " +
@@ -462,7 +476,7 @@ func originOf(req plugin.Request, filename string, piped bool) string {
 // before there was any prefill at all — opening blank. The passphrase is
 // asked for on submit either way.
 func prefillSet(_ context.Context, req plugin.Request) (map[string]any, error) {
-	key := strings.TrimSpace(req.String("key"))
+	key := req.String("key")
 	if key == "" {
 		return map[string]any{}, nil
 	}
@@ -480,7 +494,7 @@ func prefillSet(_ context.Context, req plugin.Request) (map[string]any, error) {
 }
 
 func runSet(_ context.Context, req plugin.Request) (view.View, error) {
-	key := strings.TrimSpace(req.String("key"))
+	key := req.String("key")
 	if key == "" {
 		return nil, view.Errorf("kv.set.nokey", "key is empty")
 	}
@@ -605,8 +619,7 @@ func runSet(_ context.Context, req plugin.Request) (view.View, error) {
 // would quietly answer "yesterday" to the only question that column exists
 // to answer.
 func runRename(_ context.Context, req plugin.Request) (view.View, error) {
-	from := strings.TrimSpace(req.String("key"))
-	to := strings.TrimSpace(req.String("new-name"))
+	from, to := req.String("key"), req.String("new-name")
 	if from == "" || to == "" {
 		return nil, view.Errorf("kv.rename.noname", "rename needs a key and a new name").
 			WithHint("give " + req.Surface().ArgumentName("key") + " and " + req.Surface().ArgumentName("new-name"))
