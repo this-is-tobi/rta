@@ -11,6 +11,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime/debug"
 	"strings"
 	"time"
@@ -338,7 +339,8 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 		// The type check above stays before defaults, because its reason does
 		// survive: a default is rta's own value and is always well-typed, so
 		// only what arrived over the wire needs that scrutiny.
-		if verr := checkPaths(c, gated, opts.Paths); verr != nil {
+		links, verr := checkPaths(c, gated, opts.Paths)
+		if verr != nil {
 			refusedBy(rec, verr)
 			return errResult(verr), nil
 		}
@@ -562,6 +564,9 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 			// inputs, and a repository reached by walking upward out of one
 			// was never an argument.
 			WithConfinement(opts.Paths.Check)
+		for field, l := range links {
+			run = run.WithLink(field, l.path, l.target)
+		}
 		// The record said what would run as far as it was known before the
 		// gate; with a profile filled in, it says what does.
 		if profileName != "" {
@@ -759,9 +764,12 @@ func ungranted(c plugin.Capability, name, agent string) *view.Error {
 // a control that needs a list of exceptions is a control with a list of holes.
 // TestEveryPathInputIsConfined walks the catalogue so a new Path input is
 // covered the day it lands.
-func checkPaths(c plugin.Capability, values map[string]any, g *pathguard.Guard) *view.Error {
+//
+// links holds, by field, each path given that was a symbolic link, for the
+// handler to be told what was named (plugin.Request.Link).
+func checkPaths(c plugin.Capability, values map[string]any, g *pathguard.Guard) (links map[string]namedLink, _ *view.Error) {
 	if g == nil {
-		return nil
+		return nil, nil
 	}
 	for _, f := range c.Inputs {
 		if f.Type != plugin.Path || f.Local {
@@ -779,12 +787,18 @@ func checkPaths(c plugin.Capability, values map[string]any, g *pathguard.Guard) 
 			// declared Path and is a promise about a different function. If
 			// that ever stops holding, this is the line that turns it into an
 			// unconfined read rather than an error.
-			return view.Errorf("core.mcp.path.unresolvable",
+			return nil, view.Errorf("core.mcp.path.unresolvable",
 				"%s: expected a path, got %s", f.Name, toolcall.JSONKind(v))
 		}
 		resolved, verr := g.Check(f.Name, s)
 		if verr != nil {
-			return verr
+			return nil, verr
+		}
+		if l, ok := finalLink(g, f.Name, s); ok {
+			if links == nil {
+				links = map[string]namedLink{}
+			}
+			links[f.Name] = l
 		}
 		// Substituted, not merely approved. The guard resolves the caller's
 		// string — tilde, symlinks, "..", the lot — decides on the result,
@@ -800,7 +814,48 @@ func checkPaths(c plugin.Capability, values map[string]any, g *pathguard.Guard) 
 		// into a handler opening a path that is not there.
 		values[f.Name] = resolved
 	}
-	return nil
+	return links, nil
+}
+
+// namedLink is a symbolic link a caller named: where it is, and what it holds.
+type namedLink struct{ path, target string }
+
+// finalLink reports whether the last component of the path raw spells is a
+// symbolic link, in a directory g lets a caller name, and if so where it is
+// and what it holds.
+//
+// What the substitution in checkPaths costs, given back as a fact rather
+// than as a path to open. The handler receives the link's resolution, and a
+// handler whose answer is about the name — net.resolver.list, for which a
+// resolv.conf linked into /run is how systemd-resolved says it owns the file
+// — cannot see the link from the far end of it: over MCP it told an agent
+// "nothing — safe to edit" about the file the CLI said gets overwritten.
+//
+// Split by hand rather than with filepath.Dir, which cleans: "link/.." would
+// lose the link before the filesystem was asked about it, the mistake
+// pathguard's resolve describes. The directory goes through the guard like
+// any path a caller gives, so a link is described only where the caller may
+// look, and nothing here is opened: Readlink reads the link itself, never
+// what it points at.
+func finalLink(g *pathguard.Guard, field, raw string) (namedLink, bool) {
+	p := strings.TrimRight(filepath.FromSlash(pathguard.ExpandTilde(strings.TrimSpace(raw))), string(filepath.Separator))
+	dir, base := ".", p
+	if i := strings.LastIndexByte(p, filepath.Separator); i >= 0 {
+		dir, base = p[:i+1], p[i+1:]
+	}
+	if base == "" || base == "." || base == ".." {
+		return namedLink{}, false
+	}
+	parent, verr := g.Check(field, dir)
+	if verr != nil {
+		return namedLink{}, false
+	}
+	path := filepath.Join(parent, base)
+	target, err := os.Readlink(path)
+	if err != nil {
+		return namedLink{}, false
+	}
+	return namedLink{path: path, target: target}, true
 }
 
 // viewResult encodes a view as both text (JSON envelope) and structured

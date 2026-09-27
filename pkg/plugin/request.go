@@ -54,9 +54,14 @@ type Request struct {
 	origins map[string]origin
 	surface Surface
 	confine func(field, path string) (string, *view.Error)
+	links   map[string]link
 	DryRun  bool
 	Yes     bool
 }
+
+// link is a symbolic link a caller named, which the surface resolved before
+// the handler saw the value (Request.Link).
+type link struct{ path, target string }
 
 // NewRequest builds a Request from resolved input values.
 func NewRequest(values map[string]any, dryRun, yes bool) Request {
@@ -112,6 +117,42 @@ func (r Request) Confine(field, path string) (string, *view.Error) {
 	return r.confine(field, path)
 }
 
+// WithLink records that the path the caller gave for field was a symbolic
+// link at path holding target, which the surface resolved before handing
+// the handler the value. A surface that substitutes what it judged for what
+// it was given calls it at the boundary, beside WithConfinement.
+func (r Request) WithLink(field, path, target string) Request {
+	links := make(map[string]link, len(r.links)+1)
+	for k, l := range r.links {
+		links[k] = l
+	}
+	links[field] = link{path: path, target: target}
+	r.links = links
+	return r
+}
+
+// Link reports whether the path the caller gave for field was a symbolic
+// link the surface resolved before the handler saw it: where the link is,
+// and what it holds.
+//
+// For the handler whose answer is about the name rather than the file behind
+// it. The MCP bridge hands a handler the path its guard judged, symlinks
+// resolved (checkPaths says why), and that is the one to open; but a
+// resolv.conf that is a link into /run is how systemd-resolved says it owns
+// the file, and net.resolver.list, handed the file at the far end, told an
+// agent "nothing — safe to edit" about a file the CLI rightly said gets
+// overwritten. What was named is recorded here instead, for saying, never
+// for opening: a link opened again leads wherever it points by then, not to
+// what was judged.
+//
+// ok is false on a surface that hands the path over as it was given — the
+// CLI and the TUI — where the handler can ask the filesystem itself, and on
+// a plugin's side of the plugin-host wire, which does not carry it.
+func (r Request) Link(field string) (path, target string, ok bool) {
+	l, ok := r.links[field]
+	return l.path, l.target, ok
+}
+
 // With returns a copy of r carrying values overlaid on the inputs it already
 // holds. It is how a composed detail page hands its own inputs down to the
 // capabilities it embeds (see Page): a section built from kv.list needs the
@@ -137,6 +178,16 @@ func (r Request) With(values map[string]any) Request {
 			}
 		}
 		r.origins = kept
+	}
+	// And the note of a link it named: the value is no longer that path.
+	if len(r.links) > 0 {
+		kept := make(map[string]link, len(r.links))
+		for k, l := range r.links {
+			if _, over := values[k]; !over {
+				kept[k] = l
+			}
+		}
+		r.links = kept
 	}
 	return r
 }

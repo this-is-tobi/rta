@@ -1510,7 +1510,7 @@ func TestEveryPathInputIsConfined(t *testing.T) {
 				continue
 			}
 			checked++
-			verr := checkPaths(c, map[string]any{f.Name: "/etc/passwd"}, guard)
+			_, verr := checkPaths(c, map[string]any{f.Name: "/etc/passwd"}, guard)
 			if verr == nil {
 				t.Errorf("%s: %q accepted /etc/passwd from an MCP caller", c.ID, f.Name)
 				continue
@@ -1540,7 +1540,7 @@ func TestANonPathArgumentIsNotConfined(t *testing.T) {
 		Inputs: []plugin.Field{{Name: "value", Type: plugin.String, Help: "base64"}},
 		Run:    func(context.Context, plugin.Request) (view.View, error) { return nil, nil },
 	}
-	if verr := checkPaths(c, map[string]any{"value": "/9j/4AAQSkZJRgABAQAAAQABAAD"}, guard); verr != nil {
+	if _, verr := checkPaths(c, map[string]any{"value": "/9j/4AAQSkZJRgABAQAAAQABAAD"}, guard); verr != nil {
 		t.Errorf("a base64 payload was refused as a path: %v", verr)
 	}
 }
@@ -1566,7 +1566,7 @@ func TestCheckPathsRefusesANonStringValueRatherThanSkippingIt(t *testing.T) {
 		Run:    func(context.Context, plugin.Request) (view.View, error) { return nil, nil },
 	}
 	for _, v := range []any{float64(42), true, []any{"a"}, map[string]any{"a": 1}} {
-		verr := checkPaths(c, map[string]any{"path": v}, guard)
+		_, verr := checkPaths(c, map[string]any{"path": v}, guard)
 		if verr == nil {
 			t.Errorf("value %v (%T): accepted rather than refused", v, v)
 			continue
@@ -1639,7 +1639,7 @@ func TestACallerSuppliedPathIsCheckedEvenWhenItMatchesTheDefault(t *testing.T) {
 		Inputs: []plugin.Field{{Name: "file", Type: plugin.Path, Default: "/etc/hosts", Help: "hosts file"}},
 		Run:    func(context.Context, plugin.Request) (view.View, error) { return nil, nil },
 	}
-	if verr := checkPaths(c, map[string]any{"file": "/etc/hosts"}, guard); verr == nil {
+	if _, verr := checkPaths(c, map[string]any{"file": "/etc/hosts"}, guard); verr == nil {
 		t.Error("the same path sent by the caller was allowed; the check must not trust it just " +
 			"because it matches a default")
 	}
@@ -1813,7 +1813,7 @@ func TestAPathIsRewrittenToTheOneTheGuardApproved(t *testing.T) {
 	}
 	spelled := root + "/alias/notes.md"
 	values := map[string]any{"path": spelled}
-	if verr := checkPaths(c, values, guard); verr != nil {
+	if _, verr := checkPaths(c, values, guard); verr != nil {
 		t.Fatalf("a path inside the root was refused: %v", verr)
 	}
 	resolved, err := filepath.EvalSymlinks(inner)
@@ -1823,6 +1823,127 @@ func TestAPathIsRewrittenToTheOneTheGuardApproved(t *testing.T) {
 	want := filepath.Join(resolved, "notes.md")
 	if got := values["path"]; got != want {
 		t.Errorf("handler would open %q; the guard judged %q", got, want)
+	}
+}
+
+// The substitution hands the handler the far end of a link, which cannot say
+// it was linked to, so checkPaths reports the link the caller named — where
+// it is and what it holds — and only a link in the name's last place, in a
+// directory the caller may name: a directory link on the way is part of
+// where the file is, and a link outside the roots is not described to a
+// caller who may not look there.
+func TestALinkTheCallerNamedIsReportedBesideTheSubstitution(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "run"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "run", "stub-resolv.conf"), []byte("nameserver 10.0.0.53\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join("run", "stub-resolv.conf"), filepath.Join(root, "resolv.conf")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if err := os.Symlink("run", filepath.Join(root, "alias")); err != nil {
+		t.Fatal(err)
+	}
+	outside := t.TempDir()
+	if err := os.Symlink(filepath.Join(root, "run", "stub-resolv.conf"), filepath.Join(outside, "in")); err != nil {
+		t.Fatal(err)
+	}
+	guard, err := pathguard.New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolvedRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := plugin.Capability{
+		ID: "demo.read", Summary: "read", Safety: plugin.Read,
+		Inputs: []plugin.Field{{Name: "file", Type: plugin.Path, Help: "p"}},
+		Run:    func(context.Context, plugin.Request) (view.View, error) { return nil, nil },
+	}
+	stub := filepath.Join(resolvedRoot, "run", "stub-resolv.conf")
+
+	for _, spelled := range []string{root + "/resolv.conf", root + "/alias/../resolv.conf", root + "/resolv.conf/"} {
+		values := map[string]any{"file": spelled}
+		links, verr := checkPaths(c, values, guard)
+		if verr != nil {
+			t.Fatalf("%s: refused: %v", spelled, verr)
+		}
+		if values["file"] != stub {
+			t.Errorf("%s: the handler would open %q, want the judged %q", spelled, values["file"], stub)
+		}
+		want := namedLink{path: filepath.Join(resolvedRoot, "resolv.conf"), target: filepath.Join("run", "stub-resolv.conf")}
+		if links["file"] != want {
+			t.Errorf("%s: link = %+v, want %+v", spelled, links["file"], want)
+		}
+	}
+	for _, spelled := range []string{root + "/alias/stub-resolv.conf", root + "/run/stub-resolv.conf"} {
+		links, verr := checkPaths(c, map[string]any{"file": spelled}, guard)
+		if verr != nil || len(links) != 0 {
+			t.Errorf("%s names no link in its last place: links = %v, %v", spelled, links, verr)
+		}
+	}
+	// Reaches into the root, so the guard allows it; sits outside it, so
+	// what it holds is not the caller's to read.
+	links, verr := checkPaths(c, map[string]any{"file": filepath.Join(outside, "in")}, guard)
+	if verr != nil || len(links) != 0 {
+		t.Errorf("a link outside the roots was described: links = %v, %v", links, verr)
+	}
+}
+
+// The catalogue's case, end to end: a resolv.conf that is a link into /run is
+// how systemd-resolved owns it, and over MCP net_resolver_list read only the
+// far end and told the agent "nothing — safe to edit", where the CLI said
+// edits get overwritten.
+func TestResolverListOverMCPSaysTheFileNamedIsALink(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "run"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "run", "stub-resolv.conf"), []byte("nameserver 10.0.0.53\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join("run", "stub-resolv.conf"), filepath.Join(root, "resolv.conf")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	reg, err := all.Registry(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	guard, err := pathguard.New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := connectWith(t, reg, Options{Paths: guard})
+	res, err := s.CallTool(context.Background(), &sdk.CallToolParams{
+		Name:      "net_resolver_list",
+		Arguments: map[string]any{"file": filepath.Join(root, "resolv.conf")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := res.Content[0].(*sdk.TextContent).Text
+	if res.IsError {
+		t.Fatalf("refused: %s", text)
+	}
+	var kv struct {
+		Pairs []struct{ Key, Value string }
+	}
+	if err := json.Unmarshal([]byte(text), &kv); err != nil {
+		t.Fatalf("not a key-value envelope: %v\n%s", err, text)
+	}
+	got := map[string]string{}
+	for _, p := range kv.Pairs {
+		got[p.Key] = p.Value
+	}
+	if !strings.HasPrefix(got["managed by"], "a symlink to "+filepath.Join("run", "stub-resolv.conf")) {
+		t.Errorf("managed by = %q, want the link named", got["managed by"])
+	}
+	if !strings.HasSuffix(got["file"], string(filepath.Separator)+"resolv.conf") {
+		t.Errorf("file = %q, want the file the caller named rather than the far end of it", got["file"])
 	}
 }
 

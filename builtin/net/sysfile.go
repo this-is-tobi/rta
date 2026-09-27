@@ -77,10 +77,17 @@ func readLines(sf plugin.Surface, path string, max int) ([]string, *view.Error) 
 // the advice names.
 //
 // sf is the surface asking, for the file pathin opens to read the header.
-func managedBy(sf plugin.Surface, path, force string) (what, advice string) {
-	if target, err := os.Readlink(path); err == nil {
-		return "a symlink to " + target,
-			"edit " + target + " instead, or configure whatever writes it — " + force + " would " +
+// link is what the path the caller named held, when it was a symbolic link
+// the surface resolved before the handler saw it (plugin.Request.Link) —
+// path is then the file at its far end, which cannot say it was linked to —
+// and "" to ask the filesystem about path itself.
+func managedBy(sf plugin.Surface, path, link, force string) (what, advice string) {
+	if link == "" {
+		link, _ = os.Readlink(path)
+	}
+	if link != "" {
+		return "a symlink to " + link,
+			"edit " + link + " instead, or configure whatever writes it — " + force + " would " +
 				"replace the symlink with a regular file, which usually breaks more than it fixes"
 	}
 	f, _, err := pathin.Open(sf, path)
@@ -238,7 +245,7 @@ func permissionError(sf plugin.Surface, path string, err error) *view.Error {
 // refusing: the change works, then disappears at the next reboot or lease
 // renewal, and nothing points at why.
 func guardManaged(sf plugin.Surface, path string, force bool) *view.Error {
-	what, advice := managedBy(sf, path, sf.InputName("force"))
+	what, advice := managedBy(sf, path, "", sf.InputName("force"))
 	if what == "" || force {
 		return nil
 	}
