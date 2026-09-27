@@ -131,8 +131,10 @@ helm install rta oci://ghcr.io/this-is-tobi/rta/rta-chart --namespace rta --valu
 
 ```bash
 claude mcp add --transport http rta-payments https://rta-tobi.example.com/ \
-    --header "Authorization: Bearer $(awk '$1 == "laptop" {print $2}' rta-tobi-tokens.txt)"
+    --header 'Authorization: Bearer ${RTA_PAYMENTS_TOKEN}'
 ```
+
+with `RTA_PAYMENTS_TOKEN` holding the token on the `laptop` line of `rta-tobi-tokens.txt` in the environment Claude Code starts from — your shell profile, or a secret manager that exports it.
 
 Any client that speaks MCP over HTTP takes the same two things: the instance's URL, and the token as a bearer header. Ask the agent which pods in `payments` are not ready: it calls `kube_pod_list`, and the call is in the instance's record under the agent `tobi` and the credential `laptop`:
 
@@ -142,7 +144,7 @@ kubectl -n rta exec deploy/rta-rta-chart-tobi -- rta agent log --limit 20
 
 The agent's tool list carries the `kube` reads and no way to mint an identity, and nothing that describes the machine the instance runs on — a remote transport never registers those.
 
-**The header is the whole credential on this transport**, and that command leaves it in Claude Code's own configuration, which `rta audit clients` fails: every process you run can read the file. `rta audit clients --fix` says where it belongs instead — the environment that launches the client, or the client's own credential helper. A static token names whoever holds it; [Kubernetes](../30-boundary/80-kubernetes.md#decisions-to-make-first) weighs it against OIDC for an instance a person uses.
+**The header is the whole credential on this transport**, so the command writes it as a reference: the single quotes keep the shell from expanding it, Claude Code expands it from the environment it starts in, and its configuration, which every process you run can read, names the variable and never holds the token. Pasted in as the token itself, the header is one `rta audit clients` fails, and `--fix` says where it belongs instead — the environment that launches the client, named from the file the way that client reads it, or the client's own credential helper. A static token names whoever holds it; [Kubernetes](../30-boundary/80-kubernetes.md#decisions-to-make-first) weighs it against OIDC for an instance a person uses.
 
 ## When the token runs out
 
