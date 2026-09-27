@@ -509,12 +509,23 @@ func (g Grant) covers(capID, scope string, by Caller) bool {
 	if g.Profile != by.Profile {
 		return false
 	}
-	// A scoped grant authorizes that record and nothing else — including a
-	// call that names no record at all, which is by definition wider.
-	if g.Scope == "" || g.Scope == scope {
-		return true
-	}
-	return coversFolder(g.Scope, scope)
+	return ScopeCovers(g.Scope, scope)
+}
+
+// ScopeCovers reports whether a grant naming scope covers a call naming
+// record: every record when it names none, that record, or one under it when
+// it names a folder (coversFolder).
+//
+// A scoped grant authorizes that record and nothing else — including a call
+// that names no record at all, which is by definition wider.
+//
+// Exported for what has to answer the gate's question without being the
+// gate: a role line is a grant not yet issued, and the hint offering a role
+// for a parked call has to cover exactly the calls the grants it issues
+// would. A second copy of the rule was the hint's, byte-exact, and a line
+// on prod/ was never offered for a call on prod/db.
+func ScopeCovers(scope, record string) bool {
+	return scope == "" || scope == record || coversFolder(scope, record)
 }
 
 // IsFolderScope reports whether a scope names a folder rather than a record.
