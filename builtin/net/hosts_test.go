@@ -386,6 +386,61 @@ func TestHostsDryRunChangesNothing(t *testing.T) {
 	}
 }
 
+// A hosts file that is a symbolic link — NixOS's /etc/hosts into /etc/static,
+// a container's linked the same way — was replaced by a regular copy on every
+// edit, and the file it pointed at never changed. Every writer refuses it,
+// in a dry run too, and the link, its target and the backups are untouched.
+func TestHostsWritersRefuseASymlinkedFile(t *testing.T) {
+	dir := t.TempDir()
+	real := filepath.Join(dir, "static", "hosts")
+	if err := os.MkdirAll(filepath.Dir(real), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const content = "127.0.0.1 localhost\n# 10.0.0.9 parked.local\n"
+	if err := os.WriteFile(real, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "hosts")
+	if err := os.Symlink(filepath.Join("static", "hosts"), link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	orig := hostsFile
+	hostsFile = link
+	t.Cleanup(func() { hostsFile = orig })
+
+	for name, tc := range map[string]struct {
+		h      plugin.Handler
+		values map[string]any
+	}{
+		"add":    {runHostsAdd, map[string]any{"ip": "10.0.0.1", "hostname": []string{"new.local"}}},
+		"rm":     {runHostsRemove, map[string]any{"hostname": []string{"localhost"}}},
+		"toggle": {runHostsToggle, map[string]any{"hostname": "parked.local"}},
+	} {
+		for _, dry := range []bool{true, false} {
+			_, err := tc.h(context.Background(), plugin.NewRequest(tc.values, dry, true))
+			if err == nil {
+				t.Errorf("%s (dry run %v): the symlinked file was accepted", name, dry)
+				continue
+			}
+			ve := view.AsError(err, "x")
+			if ve.Code != "net.sysfile.managed" || !strings.Contains(ve.Message, "symlink") ||
+				!strings.Contains(ve.Hint, real) {
+				t.Errorf("%s (dry run %v): want a symlink refusal naming %s, got %+v", name, dry, real, ve)
+			}
+		}
+	}
+	if info, err := os.Lstat(link); err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("the link did not survive: %v, %v", info, err)
+	}
+	if got := hostsContent(t, real); got != content {
+		t.Errorf("the linked file changed:\n%s", got)
+	}
+	if entries, _ := os.ReadDir(backupDir()); len(entries) != 0 {
+		t.Errorf("a refused edit left backups: %v", entries)
+	}
+}
+
 // Nothing is overwritten without a copy first: this is a file that, wrong,
 // makes a machine talk to the wrong server.
 func TestHostsEditBacksUpFirst(t *testing.T) {

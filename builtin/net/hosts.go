@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	stdnet "net"
+	"os"
+	"path/filepath"
 	"strings"
 	"unicode"
 
@@ -141,8 +143,15 @@ func runHostsList(_ context.Context, req plugin.Request) (view.View, error) {
 // happened in the same breath. It takes the change described two ways —
 // "point x at y" and "pointed x at y" — because "would pointed x at y" is
 // how a dry run reads when one string tries to serve both.
+//
+// Refused before the dry run as well as before the write, when the file is a
+// symbolic link (guardLink): a dry run saying what would change is a promise
+// the real call would break.
 func applyHosts(req plugin.Request, lines []string, action, done string) (view.View, error) {
 	path := hostsPath(req)
+	if verr := guardLink(path); verr != nil {
+		return nil, verr
+	}
 	if req.DryRun {
 		return view.Text{Body: "would " + action + " in " + path}, nil
 	}
@@ -154,6 +163,33 @@ func applyHosts(req plugin.Request, lines []string, action, done string) (view.V
 		return nil, verr
 	}
 	return view.Text{Body: fmt.Sprintf("%s in %s\nprevious version saved to %s", done, path, saved)}, nil
+}
+
+// guardLink refuses to write a hosts file that is a symbolic link, naming
+// the file it points at.
+//
+// The write renames a temporary file over the path (writeLines), which puts
+// a regular file where the link was and never touches the file it pointed
+// at. On NixOS, whose /etc/hosts links into /etc/static, and on a container's
+// or a chroot's hosts file linked the same way, `hosts add` said it pointed
+// the name, left the real file as it was, and swapped the link for a copy
+// that whatever manages the link replaces again. net.resolver.set refuses a
+// linked resolv.conf for the same reason, behind a force that knowingly
+// breaks the link. There is no force here: the hosts writers have none, and
+// following the link instead would edit a file nobody named, one that is
+// read-only on NixOS in any case. Naming it lets the person decide.
+func guardLink(path string) *view.Error {
+	target, err := os.Readlink(path)
+	if err == nil {
+		file := target
+		if !filepath.IsAbs(file) {
+			file = filepath.Join(filepath.Dir(path), file)
+		}
+		return view.Errorf("net.sysfile.managed",
+			"%s is a symlink to %s, and writing it would replace the link rather than change that file", path, target).
+			WithHint("edit " + file + " instead, or configure whatever writes it")
+	}
+	return nil
 }
 
 // dropNames removes the given names from an entry, reporting whether the
