@@ -103,6 +103,100 @@ require github.com/stretchr/testify v1.9.0 // indirect
 	}
 }
 
+// An alias installs a package under another name, and the inventory lists it
+// under its own. The graph has to agree, or the package the report names is
+// one nothing in the graph requires: the root asked for old-lodash, which is
+// lodash, and @isaacs/cliui requires string-width-cjs, which is string-width.
+func TestAnAliasedDependencyIsExplainedAsThePackageItIs(t *testing.T) {
+	for name, g := range map[string]graph{
+		"package-lock": npmLockGraph([]byte(`{"lockfileVersion": 3, "packages": {
+		  "": {"dependencies": {"old-lodash": "npm:lodash@4.17.15", "@isaacs/cliui": "^8.0.2"}},
+		  "node_modules/old-lodash": {"name": "lodash", "version": "4.17.15"},
+		  "node_modules/@isaacs/cliui": {"version": "8.0.2",
+		    "dependencies": {"string-width-cjs": "npm:string-width@^4.2.0"}},
+		  "node_modules/string-width-cjs": {"name": "string-width", "version": "4.2.3"}
+		}}`)),
+		"yarn berry": yarnGraph(`"@isaacs/cliui@npm:^8.0.2":
+  version: 8.0.2
+  dependencies:
+    string-width-cjs: "npm:string-width@^4.2.0"
+
+"string-width-cjs@npm:string-width@^4.2.0":
+  version: 4.2.3
+
+"old-lodash@npm:lodash@4.17.15":
+  version: 4.17.15
+
+"myapp@workspace:.":
+  version: 0.0.0-use.local
+  dependencies:
+    "@isaacs/cliui": "npm:^8.0.2"
+    old-lodash: "npm:lodash@4.17.15"
+`),
+		"pnpm v9": pnpmGraph(`lockfileVersion: '9.0'
+
+importers:
+
+  .:
+    dependencies:
+      '@isaacs/cliui':
+        specifier: ^8.0.2
+        version: 8.0.2
+      old-lodash:
+        specifier: npm:lodash@4.17.15
+        version: lodash@4.17.15
+
+packages:
+
+  '@isaacs/cliui@8.0.2':
+    resolution: {integrity: sha512-a}
+
+  lodash@4.17.15:
+    resolution: {integrity: sha512-b}
+
+  string-width@4.2.3:
+    resolution: {integrity: sha512-c}
+
+snapshots:
+
+  '@isaacs/cliui@8.0.2':
+    dependencies:
+      string-width-cjs: string-width@4.2.3
+`),
+		"bun": bunGraph([]byte(`{"lockfileVersion": 1,
+		  "workspaces": {"": {"name": "myapp",
+		    "dependencies": {"old-lodash": "npm:lodash@4.17.15", "@isaacs/cliui": "^8.0.2"}}},
+		  "packages": {
+		    "old-lodash": ["lodash@4.17.15", "", {}, "sha512-a"],
+		    "@isaacs/cliui": ["@isaacs/cliui@8.0.2", "",
+		      {"dependencies": {"string-width-cjs": "npm:string-width@^4.2.0"}}, "sha512-b"],
+		    "string-width-cjs": ["string-width@4.2.3", "", {}, "sha512-c"]
+		  }}`)),
+	} {
+		t.Run(name, func(t *testing.T) {
+			wantRelation(t, g, "npm", "lodash", "4.17.15", relDirect)
+			wantRelation(t, g, "npm", "string-width", "4.2.3", relIndirect)
+			chains := g.via(ref("npm", "string-width"), 1, maxWhyDepth)
+			if len(chains) != 1 || chains[0][0] != ref("npm", "@isaacs/cliui") {
+				t.Errorf("string-width is explained by %v, want a chain from @isaacs/cliui", chains)
+			}
+		})
+	}
+	// yarn v1 records no workspace, so only the edge has anything to say.
+	g := yarnGraph(`"@isaacs/cliui@^8.0.2":
+  version "8.0.2"
+  dependencies:
+    string-width-cjs "npm:string-width@^4.2.0"
+
+"string-width-cjs@npm:string-width@^4.2.0":
+  version "4.2.3"
+`)
+	if chains := g.via(ref("npm", "string-width"), 1, maxWhyDepth); len(chains) != 1 ||
+		chains[0][0] != ref("npm", "@isaacs/cliui") {
+		t.Errorf("yarn v1: string-width is explained by %v, want a chain from @isaacs/cliui", chains)
+	}
+}
+
 func TestNpmLockDirectAndTransitive(t *testing.T) {
 	g := npmLockGraph([]byte(`{
 	  "name": "demo",

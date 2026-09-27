@@ -394,6 +394,9 @@ func goModBuilds(replaced map[string]goModTarget, name, version string) (goModTa
 // older projects carry.
 type npmLock struct {
 	Packages map[string]struct {
+		// Name is written only where it differs from the path the package is
+		// installed at, which is an alias: see npmAlias.
+		Name    string `json:"name"`
 		Version string `json:"version"`
 	} `json:"packages"`
 	Dependencies map[string]struct {
@@ -410,17 +413,17 @@ func parsePackageLock(data []byte, source string) ([]component, error) {
 	for path, pkg := range lock.Packages {
 		// The root project is the empty key, and it is not a dependency.
 		// Nested paths ("node_modules/a/node_modules/b") name the package
-		// after their last node_modules segment.
+		// after their last node_modules segment — or by the name the entry
+		// gives, where an alias installed it under another.
 		if path == "" || pkg.Version == "" {
 			continue
 		}
-		i := strings.LastIndex(path, "node_modules/")
-		if i < 0 {
+		name, installed := npmPackageName(path)
+		if !installed || name == "" {
 			continue
 		}
-		name := path[i+len("node_modules/"):]
-		if name == "" {
-			continue
+		if pkg.Name != "" {
+			name = pkg.Name
 		}
 		out = append(out, component{ecosystem: "npm", name: name, version: pkg.Version, source: source})
 	}
@@ -429,7 +432,12 @@ func parsePackageLock(data []byte, source string) ([]component, error) {
 			if name == "" || pkg.Version == "" {
 				continue
 			}
-			out = append(out, component{ecosystem: "npm", name: name, version: pkg.Version, source: source})
+			// v1 writes an alias's version as the alias itself.
+			version := pkg.Version
+			if real, v, ok := npmAlias(version); ok {
+				name, version = real, v
+			}
+			out = append(out, component{ecosystem: "npm", name: name, version: version, source: source})
 		}
 	}
 	return out, nil
