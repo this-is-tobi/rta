@@ -1366,6 +1366,16 @@ func scopes(c plugin.Capability, values map[string]any) []string {
 // where it starts. A call naming none of Scope's records is about the
 // capability itself whatever else it names, so it keeps the empty scope only
 // an unscoped grant covers.
+//
+// **A record is judged as the handler will be handed it, byte for byte.**
+// Each one was trimmed of white space here once, while the handler got the
+// value as sent, so an exact grant on a record covered the same name with a
+// space before it or a no-break space after it: another key to a store, and
+// to http.get another path on the host, one the operator never named. A
+// padded name is a record of its own, which an exact grant covers only when
+// it names it padded, as the answer to a consent prompt for it does. Trimming
+// the value on its way to the handler instead would have rewritten what the
+// caller asked for, and a key or an object name may carry a space in earnest.
 func records(c plugin.Capability, values map[string]any) (own, also []string) {
 	if c.Scope == "" {
 		return []string{""}, nil
@@ -1374,7 +1384,7 @@ func records(c plugin.Capability, values map[string]any) (own, also []string) {
 	read := func(input string) []string {
 		var out []string
 		add := func(s string) {
-			if s = strings.TrimSpace(s); s != "" && !seen[s] {
+			if s != "" && !seen[s] {
 				seen[s] = true
 				out = append(out, s)
 			}
