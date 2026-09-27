@@ -748,7 +748,7 @@ func runPS(ctx context.Context, req plugin.Request) (view.View, error) {
 		return nil, view.Errorf("sys.ps.list", "listing processes: %v", err)
 	}
 	type row struct {
-		pid  int32
+		proc *process.Process
 		name string
 		cpu  float64
 		mem  float32
@@ -771,14 +771,31 @@ func runPS(ctx context.Context, req plugin.Request) (view.View, error) {
 			unread++
 			continue
 		}
-		cpuPct, _ := p.CPUPercentWithContext(ctx)
 		memPct, _ := p.MemoryPercentWithContext(ctx)
-		r := row{pid: p.Pid, name: name, cpu: cpuPct, mem: memPct}
+		r := row{proc: p, name: name, mem: memPct}
 		if mi, err := p.MemoryInfoWithContext(ctx); err == nil && mi != nil {
 			r.rss = mi.RSS
 		}
 		rows = append(rows, r)
 	}
+	readable := make([]*process.Process, len(rows))
+	for i, r := range rows {
+		readable[i] = r.proc
+	}
+	use, gone, err := recentCPU(ctx, readable, cpuSpent, cpuWindow)
+	if err != nil {
+		return nil, err
+	}
+	kept := rows[:0]
+	for _, r := range rows {
+		if gone[r.proc.Pid] {
+			unread++
+			continue
+		}
+		r.cpu = use[r.proc.Pid]
+		kept = append(kept, r)
+	}
+	rows = kept
 	if sortBy == "mem" {
 		sort.Slice(rows, func(i, j int) bool { return rows[i].rss > rows[j].rss })
 	} else {
@@ -804,7 +821,7 @@ func runPS(ctx context.Context, req plugin.Request) (view.View, error) {
 	}
 	for _, r := range rows {
 		t.Rows = append(t.Rows, []string{
-			fmt.Sprintf("%d", r.pid),
+			fmt.Sprintf("%d", r.proc.Pid),
 			r.name,
 			fmt.Sprintf("%.1f", r.cpu),
 			fmt.Sprintf("%.1f", r.mem),
@@ -817,6 +834,84 @@ func runPS(ctx context.Context, req plugin.Request) (view.View, error) {
 				"exited during the scan counts here too", unread))
 	}
 	return t, nil
+}
+
+// recentCPU measures what each process spent on the CPU over one window, in
+// percent of one core, from two readings of its running total taken window
+// apart. gone holds the processes read the first time and not the second:
+// they exited during the window, and a use for them would be a guess.
+//
+// **Two readings, because one can only give an average since the process
+// started.** gopsutil's CPUPercent, which this replaced, is exactly that: the
+// CPU time spent so far over the seconds since creation. A process that sat
+// idle for a minute and has been spinning a core since read 14% while ps
+// said 100, ranked below processes that were busy once and have been idle
+// ever since — and the top row was rta itself, a process a second old whose
+// every moment so far was its own start-up. "Top processes by CPU" is a
+// question about now, the one somebody asks while the fan is loud.
+//
+// The window is cpuWindow, the one every other usage figure on this page is
+// measured over, and one window for the whole table rather than one per
+// process, so the cost is 200ms and not 200ms times the process count. Each
+// process's use is divided by the time between its own two readings rather
+// than by the window alone: the passes themselves take time, and a reading
+// taken late in the first pass is taken late in the second too.
+//
+// A process whose first reading fails is left out of use, and its row reads
+// 0, as CPUPercent's error did.
+func recentCPU(ctx context.Context, procs []*process.Process,
+	spent func(context.Context, *process.Process) (float64, error),
+	window time.Duration) (use map[int32]float64, gone map[int32]bool, err error) {
+	type reading struct {
+		spent float64
+		at    time.Time
+	}
+	before := make(map[int32]reading, len(procs))
+	for _, p := range procs {
+		if ctx.Err() != nil {
+			return nil, nil, ctx.Err()
+		}
+		if s, err := spent(ctx, p); err == nil {
+			before[p.Pid] = reading{spent: s, at: time.Now()}
+		}
+	}
+	if err := sleep(ctx, window); err != nil {
+		return nil, nil, err
+	}
+	use = make(map[int32]float64, len(before))
+	gone = map[int32]bool{}
+	for _, p := range procs {
+		b, ok := before[p.Pid]
+		if !ok {
+			continue
+		}
+		if ctx.Err() != nil {
+			return nil, nil, ctx.Err()
+		}
+		s, err := spent(ctx, p)
+		if err != nil {
+			gone[p.Pid] = true
+			continue
+		}
+		// Clamped at zero: a running total only grows, and one that shrank
+		// is a pid the kernel handed to a new process inside the window.
+		if wall := time.Since(b.at).Seconds(); wall > 0 {
+			use[p.Pid] = math.Max(0, (s-b.spent)/wall*100)
+		}
+	}
+	return use, gone, nil
+}
+
+// cpuSpent is the CPU time a process has used so far, user and system, in
+// seconds — what ps's %cpu is made of. Not TimesStat.Total, which on Linux
+// adds the time the process spent waiting on block I/O: waiting is not
+// running, and a process stalled on a slow disk would rank as a busy one.
+func cpuSpent(ctx context.Context, p *process.Process) (float64, error) {
+	t, err := p.TimesWithContext(ctx)
+	if err != nil {
+		return 0, err
+	}
+	return t.User + t.System, nil
 }
 
 // partialWarning is what a listing on this page adds when it could not read
