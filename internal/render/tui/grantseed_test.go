@@ -153,3 +153,28 @@ func TestARowActionOnAChangedConnectionSeedsTheProfile(t *testing.T) {
 		}
 	}
 }
+
+// What the row seeds is what the command runs with: the form x and n open
+// asks only for what the row does not say, and hands the seeded record and
+// connection on untouched — a padded record included, which a box would
+// have trimmed.
+func TestTheFormARowOpensRunsOnTheSeededGrant(t *testing.T) {
+	m := storeModel(t)
+	m.reg = realRegistry(t)
+	padded := "db" + string(rune(0xa0))
+	tbl := view.Table{
+		Columns: []view.Column{{Name: "Capability"}, {Name: "Profile"}, {Name: "Agent"}, {Name: "Record"}},
+		Rows:    [][]string{{"kv.get", "staging (changed)", "claude", strconv.QuoteToASCII(padded)}},
+	}
+	for _, a := range grantRowActions(t, m) {
+		model, _ := m.runAction(a, tbl)
+		next := model.(Model)
+		if next.form == nil {
+			t.Fatalf("%s did not open a form", a.cap.ID)
+		}
+		got := next.form.values()
+		if got["target"] != "kv.get" || got["scope"] != padded || got["profile"] != "staging" || got["agent"] != "claude" {
+			t.Errorf("%s runs with %q, want the row's grant as it is held", a.cap.ID, got)
+		}
+	}
+}
