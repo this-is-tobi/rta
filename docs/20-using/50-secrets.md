@@ -41,7 +41,7 @@ rta kv set db-password --description "staging replica"
 
 `kv set` never prompts for a value, and one typed after the key stays in your shell history. So a secret comes from `--file` — `--file /dev/stdin` from a pipe, as [the CLI](./10-cli.md) shows — or from the `kv set` form in [the TUI](./20-tui.md), which masks it as you type.
 
-rta detects what kind of thing it is — string, JSON, certificate, private key, SSH key, file — and `kv list` shows the kind and description without ever showing a value — and, once a value has been replaced, how many earlier ones `kv history` still keeps. `--kind` overrides the detection.
+rta detects what kind of thing it is — string, JSON, certificate, private key, SSH key, file — and `kv list` shows the kind and description without ever showing a value — and, once a value has been replaced, how many earlier ones `kv history` still keeps. `--kind` overrides the detection. A value piped in through `--file /dev/stdin` is labelled by what it holds, as a typed one is — a password is a string, not a file called `stdin`, and bytes that are not text are a file — and `kv list --detail` gives its source as `piped`, where one read from a file on disk gives `file:` and the file's name.
 
 ## Getting them back
 

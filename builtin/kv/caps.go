@@ -3,6 +3,7 @@ package kv
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -346,22 +347,56 @@ func runEnv(_ context.Context, req plugin.Request) (view.View, error) {
 // changes only what an entry is *labelled*, leaving the secret alone. runSet
 // decides which of the two it is, since only it knows whether the entry
 // already exists and whether any metadata was named.
-func valueToStore(req plugin.Request) (value []byte, filename string, given bool, err error) {
+//
+// filename is the file the value was kept in, and "" for anything else —
+// piped among them, when --file named a stream rather than a file on disk.
+// `--file /dev/stdin` is how a piped secret is stored (the CLI chapter says
+// so), and it was recorded as a file called "stdin": kind "file" for a
+// password, since detectKind labels an unrecognised value from disk that way,
+// a source naming a file nobody has, and a filename kv edit then re-detected
+// the edited value by. /dev/stdin, a /dev/fd/N from a process substitution and
+// a named pipe are each where a value came through, not what it was kept in,
+// so it is labelled by what it holds, as a typed value is.
+func valueToStore(req plugin.Request) (value []byte, filename string, piped, given bool, err error) {
 	if path := req.String("file"); path != "" {
-		data, err := os.ReadFile(pathguard.ExpandTilde(path))
+		f, err := os.Open(pathguard.ExpandTilde(path))
 		if err != nil {
-			return nil, "", false, view.Errorf("kv.file.unreadable", "reading %s: %v", path, err)
+			return nil, "", false, false, view.Errorf("kv.file.unreadable", "reading %s: %v", path, err)
+		}
+		defer func() { _ = f.Close() }()
+		info, err := f.Stat()
+		if err != nil {
+			return nil, "", false, false, view.Errorf("kv.file.unreadable", "reading %s: %v", path, err)
+		}
+		data, err := io.ReadAll(f)
+		if err != nil {
+			return nil, "", false, false, view.Errorf("kv.file.unreadable", "reading %s: %v", path, err)
 		}
 		// Exactly what was on disk. Trimming a trailing newline was a
 		// convenience for text, and it cost every other file its last bytes —
 		// a certificate's final DER byte is not whitespace to be tidied away.
-		return data, filepath.Base(path), true, nil
+		//
+		// A descriptor's name says nothing about what came through it either
+		// when the shell redirected a file in, `--file /dev/stdin <
+		// token.txt`: the descriptor is a regular file, and its name is still
+		// "stdin".
+		if !info.Mode().IsRegular() || throughDescriptor(path) {
+			return data, "", true, true, nil
+		}
+		return data, filepath.Base(path), false, true, nil
 	}
 	raw := req.String("value")
 	if raw == "" {
-		return nil, "", false, nil
+		return nil, "", false, false, nil
 	}
-	return []byte(raw), "", true, nil
+	return []byte(raw), "", false, true, nil
+}
+
+// throughDescriptor reports whether path names one of this process's open
+// descriptors rather than a file: /dev/stdin, /dev/fd/N, /proc/self/fd/N.
+func throughDescriptor(path string) bool {
+	p := filepath.ToSlash(filepath.Clean(path))
+	return p == "/dev/stdin" || strings.HasPrefix(p, "/dev/fd/") || strings.HasPrefix(p, "/proc/self/fd/")
 }
 
 // checkKeyName refuses the one key shape the folder convention cannot afford.
@@ -390,13 +425,17 @@ func checkKeyName(key string) *view.Error {
 // secret an agent wrote over MCP looks identical afterwards to one the
 // operator typed, and "which of these did I not put here myself" is a
 // reasonable question to be able to ask of your own store. --file is Local, so
-// it cannot be the answer on the MCP surface and the two never contend.
-func originOf(req plugin.Request, filename string) string {
+// it cannot be the answer on the MCP surface and the two never contend — nor
+// can piped, which is --file naming a stream (valueToStore).
+func originOf(req plugin.Request, filename string, piped bool) string {
 	if filename != "" {
 		// The basename only, matching Filename: which file it was is worth
 		// recording and where it sat on disk is not, and the store should not
 		// grow a copy of somebody's directory layout.
 		return "file:" + filename
+	}
+	if piped {
+		return "piped"
 	}
 	if req.Surface() == plugin.SurfaceMCP {
 		return "agent"
@@ -451,7 +490,7 @@ func runSet(_ context.Context, req plugin.Request) (view.View, error) {
 	if verr := refuseSilentIdentity(req); verr != nil {
 		return nil, verr
 	}
-	value, filename, given, err := valueToStore(req)
+	value, filename, piped, given, err := valueToStore(req)
 	if err != nil {
 		return nil, err
 	}
@@ -520,7 +559,7 @@ func runSet(_ context.Context, req plugin.Request) (view.View, error) {
 		}
 	} else {
 		e = entry{
-			Value: value, Kind: kind, Filename: filename, Origin: originOf(req, filename),
+			Value: value, Kind: kind, Filename: filename, Origin: originOf(req, filename, piped),
 			Description: req.String("description"), Created: now, Updated: now,
 		}
 		if existed {

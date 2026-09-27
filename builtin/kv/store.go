@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"filippo.io/age"
 	"golang.org/x/term"
@@ -43,7 +44,7 @@ type entry struct {
 	Description string `json:"description,omitempty"`
 	Kind        string `json:"kind,omitempty"`
 	Filename    string `json:"filename,omitempty"` // set when the value came from disk
-	// Origin is how this entry came to exist: "typed", "agent",
+	// Origin is how this entry came to exist: "typed", "agent", "piped",
 	// "file:<name>", "profile:<name>".
 	//
 	// Separate from Filename because they answer different questions and only
@@ -161,7 +162,12 @@ func detectKind(value, filename string) string {
 		return "ssh-key"
 	case (strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[")) && json.Valid([]byte(trimmed)):
 		return "json"
-	case filename != "":
+	// Bytes that are not text are a file whatever carried them in. A value
+	// piped through --file /dev/stdin has no filename (valueToStore), and a
+	// DER certificate or a keystore sent that way was labelled a string —
+	// which kv edit, refusing it as not text, then printed beside the refusal.
+	// Not text is what kv edit means by it: not valid UTF-8.
+	case filename != "" || !utf8.ValidString(value):
 		return "file"
 	default:
 		return "string"
