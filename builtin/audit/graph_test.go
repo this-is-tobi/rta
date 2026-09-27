@@ -60,6 +60,27 @@ func describe(rel string) string {
 	return rel
 }
 
+// A module replaced by a fork is listed under the fork's path, and its
+// relation has to be found there: kept under the path it was required by, the
+// listed module had none, and the report called a direct dependency's
+// relation not stated.
+func TestGoModRelatesWhatAReplaceBuilds(t *testing.T) {
+	g := goModGraph(`module example.com/x
+
+require (
+	github.com/upstream/lib v1.0.0
+	github.com/upstream/helper v0.2.0 // indirect
+)
+
+replace (
+	github.com/upstream/lib => github.com/me/lib-fork v1.0.1
+	github.com/upstream/helper => github.com/me/helper-fork v0.2.1
+)
+`)
+	wantRelation(t, g, "Go", "github.com/me/lib-fork", "v1.0.1", relDirect)
+	wantRelation(t, g, "Go", "github.com/me/helper-fork", "v0.2.1", relIndirect)
+}
+
 func TestGoModMarksIndirect(t *testing.T) {
 	g := goModGraph(`module example.com/x
 

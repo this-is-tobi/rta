@@ -162,38 +162,30 @@ const wideList = 256
 // and which module pulled in which is knowledge the module cache holds. `go
 // mod why` is the command that has it, and the report names it rather than
 // guessing.
+//
+// The marker is recorded against what the build uses, as parseGoMod reports
+// it: a module replaced by a fork is listed under the fork's path, and a
+// relation kept under the path it was required by would leave the listed one
+// with none.
 func goModGraph(text string) graph {
 	g := newGraph()
-	inBlock := false
-	for _, raw := range strings.Split(text, "\n") {
-		line := strings.TrimSpace(raw)
-		comment := ""
-		if i := strings.Index(line, "//"); i >= 0 {
-			comment, line = line[i:], strings.TrimSpace(line[:i])
-		}
-		switch {
-		case line == "require (":
-			inBlock = true
-			continue
-		case inBlock && line == ")":
-			inBlock = false
-			continue
-		case strings.HasPrefix(line, "require "):
-			line = strings.TrimSpace(strings.TrimPrefix(line, "require "))
-		case !inBlock:
-			continue
-		}
+	replaced := goModReplaces(text)
+	goModLines(text, func(verb, line, comment string) {
 		fields := strings.Fields(line)
-		if len(fields) < 2 || !strings.HasPrefix(fields[1], "v") {
-			continue
+		if verb != "require" || len(fields) < 2 || !strings.HasPrefix(fields[1], "v") {
+			return
 		}
-		r := ref("Go", fields[0])
+		t, ok := goModBuilds(replaced, fields[0], fields[1])
+		if !ok {
+			return
+		}
+		r := ref("Go", t.name)
 		if strings.Contains(comment, "indirect") {
 			g.indirect[r] = true
 		} else {
 			g.direct[r] = true
 		}
-	}
+	})
 	return g
 }
 
