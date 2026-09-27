@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-git/go-git/v5"
 
@@ -244,6 +245,45 @@ func TestDiffWorktreeShowsASymlinkByItsText(t *testing.T) {
 	}
 	if strings.Contains(body, "contents of") {
 		t.Errorf("the diff read through the link:\n%s", body)
+	}
+}
+
+// A named pipe in the working tree is named, not opened. go-git's status
+// lists one as untracked, and the diff opened it to read it: open(2) on a
+// pipe with no writer blocks until one comes, which no context can
+// interrupt, so git_diff never answered and each call held an OS thread for
+// good. git does not track a pipe at all.
+func TestDiffWorktreeNamesANamedPipeRatherThanWaitingOnIt(t *testing.T) {
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
+	writeFile(t, dir, "a.txt", "v2\n")
+	if err := mkfifo(filepath.Join(dir, "pipe")); err != nil {
+		t.Skipf("no named pipes here: %v", err)
+	}
+
+	type answer struct {
+		v   view.View
+		err error
+	}
+	done := make(chan answer, 1)
+	go func() {
+		v, err := runDiff(context.Background(), req(t, dir, nil))
+		done <- answer{v, err}
+	}()
+	select {
+	case a := <-done:
+		if a.err != nil {
+			t.Fatal(a.err)
+		}
+		body := a.v.(view.Text).Body
+		if !strings.Contains(body, "+v2") {
+			t.Errorf("the change beside the pipe is missing:\n%s", body)
+		}
+		if !strings.Contains(body, "pipe changed, not diffed: a named pipe") {
+			t.Errorf("the pipe is not named in the diff:\n%s", body)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the diff is waiting on a named pipe in the working tree")
 	}
 }
 
