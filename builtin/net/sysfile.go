@@ -194,9 +194,10 @@ func firstErr(a, b error) error {
 
 // writeLines replaces a configuration file atomically, keeping its mode.
 // Atomically because a torn /etc/hosts is a machine that cannot resolve its
-// own name; see internal/atomicfile for how. sf is the surface asking, for
-// the way a refusal to write says root is reached.
-func writeLines(sf plugin.Surface, path string, lines []string) *view.Error {
+// own name; see internal/atomicfile for how. sf is the surface asking, and
+// call the change the caller asked for, for the way a refusal to write says
+// root is reached.
+func writeLines(sf plugin.Surface, path string, lines []string, call rootCall) *view.Error {
 	info, err := os.Stat(path)
 	if err != nil {
 		return view.Errorf("net.sysfile.unreadable", "reading %s: %v", path, err)
@@ -207,7 +208,7 @@ func writeLines(sf plugin.Surface, path string, lines []string) *view.Error {
 	// get: a 0600 /etc/hosts breaks name resolution for every non-root
 	// process, which is a worse outage than the edit was a fix.
 	if err := atomicfile.Write(path, []byte(body), info.Mode().Perm()); err != nil {
-		return permissionError(sf, path, err)
+		return permissionError(sf, path, err, call)
 	}
 	return nil
 }
@@ -222,22 +223,58 @@ func writeLines(sf plugin.Surface, path string, lines []string) *view.Error {
 //
 // Only a command line is run again with sudo. A TUI and an MCP server run as
 // whoever started them, and "the same command" told an agent to rerun one it
-// never typed: from either, the change is made at a terminal, and over MCP by
-// the operator.
-func permissionError(sf plugin.Surface, path string, err error) *view.Error {
+// never typed: from either, the change is made at a terminal, so the command
+// that makes it is named as a terminal spells it — to an agent through
+// plugin.AskOperator, the one phrase that hands an agent a command, since
+// the operator is who runs it.
+func permissionError(sf plugin.Surface, path string, err error, call rootCall) *view.Error {
 	if errors.Is(err, fs.ErrPermission) {
 		hint := "run the same command with sudo — editing " + path + " needs root"
 		switch sf {
 		case plugin.SurfaceMCP:
-			hint = "editing " + path + " needs root, which this server does not run as — the change is " +
-				"the operator's to make, with sudo at a terminal"
+			hint = "editing " + path + " needs root, which this server does not run as — " +
+				plugin.AskOperator(strings.TrimPrefix(call.commandLine(), "rta ")) + " with sudo"
 		case plugin.SurfaceTUI:
-			hint = "editing " + path + " needs root, which the TUI does not run as — make the change at a " +
-				"terminal with sudo"
+			hint = "editing " + path + " needs root, which the TUI does not run as — run `sudo " +
+				call.commandLine() + "` at a terminal"
 		}
 		return view.Errorf("net.sysfile.permission", "cannot write %s: permission denied", path).WithHint(hint)
 	}
 	return view.Errorf("net.sysfile.write", "writing %s: %v", path, err)
+}
+
+// rootCall is the call that makes a change to a system file: the capability,
+// and the arguments that say what the change is, for permissionError to name
+// the command that makes it as root.
+type rootCall struct {
+	id   string
+	args []plugin.Arg
+}
+
+// commandLine is the call as a terminal types it, whatever surface asked,
+// since a terminal is where root is had.
+func (c rootCall) commandLine() string { return plugin.SurfaceCLI.Call(c.id, c.args...) }
+
+// callOf is the rootCall of capability id as req made it: each value of the
+// positional inputs named, in their order, a StringSlice one word by word,
+// then any switch turned on and the file given, if one was — a Local input,
+// so never over MCP, where the change is to the system's own file.
+func callOf(req plugin.Request, id string, positional []string, switches ...string) rootCall {
+	c := rootCall{id: id}
+	for _, name := range positional {
+		for _, v := range req.StringSlice(name) {
+			c.args = append(c.args, plugin.Arg{Name: name, Value: v, Positional: true})
+		}
+	}
+	for _, name := range switches {
+		if req.Bool(name) {
+			c.args = append(c.args, plugin.Arg{Name: name, Value: true})
+		}
+	}
+	if file := req.String("file"); file != "" {
+		c.args = append(c.args, plugin.Arg{Name: "file", Value: file})
+	}
+	return c
 }
 
 // guardManaged refuses to edit a file something else generates, unless the

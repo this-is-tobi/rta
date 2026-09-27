@@ -152,7 +152,7 @@ func runResolverSet(_ context.Context, req plugin.Request) (view.View, error) {
 	if verr != nil {
 		return nil, verr
 	}
-	if verr := writeLines(req.Surface(), path, out); verr != nil {
+	if verr := writeLines(req.Surface(), path, out, callOf(req, "net.resolver.set", []string{"server"}, "force")); verr != nil {
 		return nil, verr
 	}
 	body := fmt.Sprintf("%s in %s\nprevious version saved to %s", summary, path, saved)
