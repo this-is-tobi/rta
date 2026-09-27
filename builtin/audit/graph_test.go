@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -537,6 +538,101 @@ func TestTheWalkIsBoundedOnAHostileShape(t *testing.T) {
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("via did not terminate on a wide graph")
+	}
+}
+
+// The step budget alone let the queue grow by a whole parent list per step:
+// every route to the vulnerable package reaches one hub before any reaches a
+// top, and each arrival queued the hub's parents again. Nothing here is
+// direct, so nothing ends the walk early. 201 MiB for this one call when only
+// the steps taken were counted.
+func TestViaBoundsWorkOnFanInHub(t *testing.T) {
+	const k, f = 200, 2000
+	g := newGraph()
+	target, hub := ref("npm", "lodash"), ref("npm", "hub")
+	for i := 0; i < k; i++ {
+		x := ref("npm", "x"+itoa(i))
+		g.require(x, target)
+		g.require(hub, x)
+	}
+	for i := 0; i < f; i++ {
+		g.require(ref("npm", "leaf"+itoa(i)), hub)
+	}
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	got := g.via(target, maxWhyChains, maxWhyDepth)
+	runtime.ReadMemStats(&after)
+	if len(got) == 0 {
+		t.Fatal("no chain found")
+	}
+	if alloc := after.TotalAlloc - before.TotalAlloc; alloc > 20<<20 {
+		t.Errorf("one via() call allocated %d MiB on a %d-edge graph", alloc>>20, g.edges())
+	}
+}
+
+// The file decides how many packages are affected, and each gets its walks:
+// six hundred of them, each reaching one wide hub, spent all of maxWalk every
+// time and allocated gigabytes between them. The walks share one budget, and
+// the report says when it ran out rather than calling the rest untraceable.
+func TestEveryWalkOverAGraphSharesOneBudget(t *testing.T) {
+	const targets, k, f = 600, 5, 6000
+	g := newGraph()
+	hub := ref("npm", "hub")
+	for i := 0; i < f; i++ {
+		g.require(ref("npm", "leaf"+itoa(i)), hub)
+	}
+	var affected []component
+	for j := 0; j < targets; j++ {
+		name := "t" + itoa(j)
+		for i := 0; i < k; i++ {
+			x := ref("npm", "x"+itoa(j)+"-"+itoa(i))
+			g.require(x, ref("npm", name))
+			g.require(hub, x)
+		}
+		affected = append(affected, component{ecosystem: "npm", name: name, version: "1.0.0",
+			source: "package-lock.json"})
+	}
+	inv := inventory{structure: g}
+	r := &findings.Report{}
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	gradeProvenance(r, affected, inv)
+	runtime.ReadMemStats(&after)
+	if alloc := after.TotalAlloc - before.TotalAlloc; alloc > 512<<20 {
+		t.Errorf("walking to %d affected packages allocated %d MiB", targets, alloc>>20)
+	}
+	var rows []string
+	for _, f := range r.Findings {
+		rows = append(rows, f.Check+" "+f.Status+" "+f.Detail)
+	}
+	joined := strings.Join(rows, "\n")
+	if !strings.Contains(joined, "structure "+findings.Warn+" tracing what pulled") {
+		t.Errorf("the walks ran out and the report does not say so:\n%s", joined)
+	}
+	if strings.Contains(joined, "could not be traced") {
+		t.Errorf("packages the budget never walked to were called untraceable:\n%s", joined)
+	}
+}
+
+// The upward index is the one thing a walk builds in proportion to the whole
+// file, so it is built once for every walk that follows — and dropped by an
+// edge added after it, which it would no longer describe.
+func TestTheUpwardIndexIsSharedUntilAnEdgeChangesIt(t *testing.T) {
+	g := newGraph()
+	g.require(ref("npm", "a"), ref("npm", "b"))
+	g.via(ref("npm", "b"), 1, maxWhyDepth)
+	if g.up.parents == nil {
+		t.Fatal("a walk did not keep the index it built")
+	}
+	copied := g
+	if got := copied.requiredBy()[ref("npm", "b")]; len(got) != 1 {
+		t.Fatalf("a copy of the graph read %v", got)
+	}
+	g.require(ref("npm", "c"), ref("npm", "b"))
+	if got := copied.requiredBy()[ref("npm", "b")]; len(got) != 2 {
+		t.Errorf("an edge added after the index was built is missing from it: %v", got)
 	}
 }
 

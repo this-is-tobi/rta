@@ -243,21 +243,14 @@ func sortedSet(m map[string]bool) []string {
 // The bool reports that a bound was hit, so the caller can say so rather than
 // let a cut branch read like a complete one.
 func whyTree(g graph, found []component) (view.Tree, bool) {
-	requiredBy := map[string][]string{}
-	for from, to := range g.requires {
-		for _, t := range to {
-			requiredBy[t] = append(requiredBy[t], from)
-		}
-	}
+	requiredBy := g.requiredBy()
 
 	nodes := 0
 	cut := false
 	var build func(r string, seen map[string]bool, depth int) []view.Node
 	build = func(r string, seen map[string]bool, depth int) []view.Node {
-		parents := append([]string(nil), requiredBy[r]...)
-		sort.Strings(parents)
 		var out []view.Node
-		for _, p := range parents {
+		for _, p := range requiredBy[r] {
 			// A cycle is ordinary in an npm or Cargo graph; a branch that
 			// revisits what it came from is not a route, it is a loop.
 			if seen[p] {

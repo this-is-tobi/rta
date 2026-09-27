@@ -86,6 +86,56 @@ type graph struct {
 	// stops early because a bound was hit reads exactly like a chain that
 	// stops early because it reached the top.
 	truncated bool
+	// up holds requires read the other way, once somebody has asked for it.
+	// See upward.
+	up *upward
+}
+
+// upward is what requires a package, each list sorted: the index every walk
+// from a vulnerable package up to the project reads.
+//
+// Built on demand rather than kept alongside: it is only ever wanted for the
+// handful of packages that turned out to be vulnerable, and building it for
+// a clean project would be the largest thing this plugin did on the happy
+// path. But built once, behind a pointer every copy of the graph shares, and
+// sorted once: it used to be rebuilt by every via() call — two per affected
+// package — and each list copied and sorted again every time the walk
+// reached its package. A lockfile naming a few hundred known-vulnerable
+// versions beside one package required from a hundred thousand places paid
+// for that hub's list hundreds of times over, which is the file's author
+// choosing what a report costs.
+//
+// It also keeps the work every walk has done between them, against
+// maxWalkAll: see walksCut.
+type upward struct {
+	parents map[string][]string
+	walked  int
+	cut     bool
+}
+
+// walksCut reports that the walks over this graph spent maxWalkAll, and the
+// ones after that traced nothing.
+func (g graph) walksCut() bool { return g.up != nil && g.up.cut }
+
+// requiredBy returns the upward index, building it on first use.
+func (g graph) requiredBy() map[string][]string {
+	if g.up != nil && g.up.parents != nil {
+		return g.up.parents
+	}
+	parents := map[string][]string{}
+	for from, to := range g.requires {
+		for _, t := range to {
+			parents[t] = append(parents[t], from)
+		}
+	}
+	// Sorted, so the same lockfile explains itself the same way twice.
+	for _, ps := range parents {
+		sort.Strings(ps)
+	}
+	if g.up != nil {
+		g.up.parents = parents
+	}
+	return parents
 }
 
 // maxEdges bounds one run's structure. A pnpm monorepo lockfile can carry
@@ -146,6 +196,7 @@ func newGraph() graph {
 		directAt: map[string]bool{},
 		pinned:   map[string]bool{},
 		requires: map[string][]string{},
+		up:       &upward{},
 	}
 }
 
@@ -316,16 +367,7 @@ func (g graph) via(target string, maxChains, maxDepth int) [][]string {
 	if len(g.requires) == 0 {
 		return nil
 	}
-	// Built on demand rather than kept alongside: the reverse index is only
-	// ever wanted for the handful of packages that turned out to be
-	// vulnerable, and building it for a clean project would be the largest
-	// thing this plugin did on the happy path.
-	requiredBy := map[string][]string{}
-	for from, to := range g.requires {
-		for _, t := range to {
-			requiredBy[t] = append(requiredBy[t], from)
-		}
-	}
+	requiredBy := g.requiredBy()
 
 	type step struct {
 		chain []string
@@ -349,14 +391,44 @@ func (g graph) via(target string, maxChains, maxDepth int) [][]string {
 		}
 	}
 
-	// A step budget as well as the two the caller sets. maxChains only stops
+	// A work budget as well as the two the caller sets. maxChains only stops
 	// the walk once three chains have been *emitted*, and a package required
 	// from a thousand places whose requirers are themselves required from a
 	// thousand places emits nothing for a long time while the queue widens by
 	// a factor of a thousand a level. The two visible bounds shape the answer;
-	// this one bounds the work, and it is the only one a hostile lockfile
+	// these bound the work, and they are the only ones a hostile lockfile
 	// could otherwise walk past.
-	for steps := 0; len(queue) > 0 && len(out) < maxChains && steps < maxWalk; steps++ {
+	//
+	// **Both the steps taken and the steps queued**, because either alone is
+	// a budget the file's author can spend around. Counting only the steps
+	// taken left the queue free to grow by a whole parent list per step: a
+	// vulnerable package required by a few hundred packages, each required
+	// by one hub that a hundred thousand others require, has every route
+	// reach the hub before any reaches a top — and each arrival queued the
+	// hub's hundred thousand parents, each with its own copy of the chain.
+	// Measured at 800 MiB for one call on a 300 KB lockfile, with the edge
+	// bound allowing a file that asks for hundreds of gigabytes.
+	//
+	// **And what every walk over the graph has spent before this one**, since
+	// a report runs two per affected package and the file decides how many
+	// packages are affected: eight thousand named in it, each reaching one
+	// wide hub, spent the whole of maxWalk each time — fifteen seconds and
+	// thirty-six gigabytes allocated, bounded per call and not per report.
+	budget := maxWalk
+	if g.up != nil {
+		if g.up.cut {
+			return nil
+		}
+		budget = min(budget, maxWalkAll-g.up.walked)
+	}
+	pushed, steps := 0, 0
+	defer func() {
+		if g.up != nil {
+			g.up.walked += steps + pushed
+			g.up.cut = g.up.walked >= maxWalkAll
+		}
+	}()
+	for ; len(queue) > 0 && len(out) < maxChains && steps < budget; steps++ {
 		cur := queue[0]
 		queue = queue[1:]
 		head := cur.chain[0]
@@ -374,14 +446,15 @@ func (g graph) via(target string, maxChains, maxDepth int) [][]string {
 			emit(append([]string{deeper}, cur.chain...))
 			continue
 		}
-		// Sorted, so the same lockfile explains itself the same way twice.
-		parents := append([]string(nil), requiredBy[head]...)
-		sort.Strings(parents)
 		grew := false
-		for _, p := range parents {
+		for _, p := range requiredBy[head] {
 			if cur.seen[p] {
 				continue
 			}
+			if pushed >= budget {
+				break
+			}
+			pushed++
 			grew = true
 			seen := make(map[string]bool, len(cur.seen)+1)
 			for k := range cur.seen {
@@ -392,7 +465,10 @@ func (g graph) via(target string, maxChains, maxDepth int) [][]string {
 		}
 		// Every way up leads back through something already on this chain: a
 		// cycle, which is ordinary. Without this the chain is dropped and a
-		// package inside a cycle gets no explanation at all.
+		// package inside a cycle gets no explanation at all. Or the budget is
+		// spent, and the chain is cut by a bound — which is what the mark
+		// says, and what a walk that ran out has to report rather than
+		// nothing.
 		if !grew {
 			emit(append([]string{deeper}, cur.chain...))
 		}
@@ -403,7 +479,9 @@ func (g graph) via(target string, maxChains, maxDepth int) [][]string {
 // deeper marks a chain this walk stopped short of the top of.
 const deeper = "…"
 
-// maxWalk bounds one via() call regardless of the graph's shape.
+// maxWalk bounds one via() call regardless of the graph's shape: at most this
+// many steps taken and this many queued, each a chain of at most maxDepth
+// names.
 //
 // It is not tuned against a measurement and does not need to be: the search
 // stops as soon as it has three chains, so on any tree where an explanation
@@ -413,3 +491,9 @@ const deeper = "…"
 // on rta rather than on how tangled somebody else's lockfile is — the one
 // property worth having when the file is untrusted input.
 const maxWalk = 5000
+
+// maxWalkAll bounds every via() call over one graph together: a hundred walks
+// that each spend all of maxWalk, where a real project's walks end in tens of
+// steps apiece. Past it a walk traces nothing, and the report says so (see
+// gradeProvenance).
+const maxWalkAll = 100 * maxWalk
