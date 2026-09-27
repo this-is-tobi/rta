@@ -99,9 +99,11 @@ func runKubeRBAC(ctx context.Context, req plugin.Request) (view.View, error) {
 	// looked. So the skip is itself a finding — info rather than warn, since
 	// nothing is wrong, but present in the output where somebody reading the
 	// result will see it rather than buried in the capability's description
-	// where they will not.
+	// where they will not. And counted in the overall as a check that could
+	// not run: the row sat under an overall reading "no issues found", which
+	// is the clean posture it was written to deny.
 	if ns != "" {
-		r.Add(grpKubeRBAC, "cluster-scoped RBAC not examined", findings.Info,
+		r.AddUnchecked(grpKubeRBAC, "cluster-scoped RBAC not examined",
 			"narrowed to namespace "+ns+", so ClusterRoleBindings to cluster-admin and wildcard "+
 				"ClusterRoles were not checked — they belong to no namespace. Run without a "+
 				"namespace to include them.", refRBACClusterAdmin)

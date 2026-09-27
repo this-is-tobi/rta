@@ -697,6 +697,10 @@ func TestDepsOfflineDoesNotClaimAnAllClear(t *testing.T) {
 	if status, _ := r.Worst(); status != findings.OK {
 		t.Errorf("an offline inventory graded the project %q", status)
 	}
+	// Nor as "no issues found" in the overall, which is the line read.
+	if _, tally := r.Worst(); !strings.Contains(tally, "could not run") {
+		t.Errorf("an offline inventory's overall reads %q", tally)
+	}
 	if !strings.Contains(f.Detail, "--offline") {
 		t.Errorf("the finding should say why nothing was checked: %q", f.Detail)
 	}

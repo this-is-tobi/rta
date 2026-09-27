@@ -232,6 +232,11 @@ func TestANarrowedRBACAuditSaysWhatItDidNotExamine(t *testing.T) {
 	if !strings.Contains(rendered, "not examined") {
 		t.Errorf("a narrowed RBAC audit did not report what it skipped:\n%s", rendered)
 	}
+	// In the overall too, which is the line read first: "no issues found"
+	// was the clean RBAC posture the row above exists to deny.
+	if !strings.Contains(rendered, "could not run") {
+		t.Errorf("a narrowed RBAC audit's overall did not say what it skipped:\n%s", rendered)
+	}
 	// And it must not have reported the binding it never read.
 	if strings.Contains(rendered, "oops") {
 		t.Errorf("a narrowed audit reported a cluster-scoped finding:\n%s", rendered)

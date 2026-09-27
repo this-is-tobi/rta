@@ -505,6 +505,10 @@ func TestMTASTSIsNotGradedOKFromTheTXTRecordAlone(t *testing.T) {
 	if f.Status != findings.Info {
 		t.Errorf("a marker record graded %q, want %q: %s", f.Status, findings.Info, f.Detail)
 	}
+	// And the overall says the mode went unread, rather than "no issues".
+	if !f.Unchecked {
+		t.Error("a policy nobody fetched is not counted as a check that could not run")
+	}
 	if !strings.Contains(f.Detail, "not fetch") || !strings.Contains(f.Detail, "mode") {
 		t.Errorf("the finding should say the policy file, where the mode lives, was not read: %q", f.Detail)
 	}
@@ -648,11 +652,12 @@ func TestALookupThatFailedIsNamedInTheOverall(t *testing.T) {
 		domain: "d.test", apexTXT: []string{"v=spf1 -all"},
 		dmarcErr: timeout, stsErr: timeout, rptErr: timeout, mxErr: timeout,
 	})
+	// Five: DKIM with no selector given is a check that did not run either.
 	status, tally := r.Worst()
-	if status != findings.OK || tally != "no issues in what was checked, but 4 checks could not run" {
+	if status != findings.OK || tally != "no issues in what was checked, but 5 checks could not run" {
 		t.Errorf("Worst() = %q, %q", status, tally)
 	}
-	for _, check := range []string{"dmarc", "mta-sts", "tls-rpt", "mx"} {
+	for _, check := range []string{"dmarc", "dkim", "mta-sts", "tls-rpt", "mx"} {
 		if f := mustFind(t, r, check); !f.Unchecked {
 			t.Errorf("%s: a failed lookup is not marked as a check that did not run", check)
 		}
