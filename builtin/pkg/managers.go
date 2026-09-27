@@ -64,17 +64,18 @@ func managersTable(ctx context.Context) view.Table {
 // whatever it prints. Every manager here answers `--version` except go, whose
 // spelling is `go version`; the outputs range from a bare "10.8.2" to
 // "Homebrew 4.3.10" to pacman's multi-line banner, and the version is the
-// first thing in the first line that looks like one.
+// first thing in the first line that looks like one, whatever the status —
+// installedVersion's reason.
 func managerVersion(ctx context.Context, m manager) string {
 	argv := m.version
 	if argv == nil {
 		argv = []string{m.bin, "--version"}
 	}
-	out, _, verr := run(ctx, argv[0], argv[1:]...)
+	st, verr := runStatus(ctx, argv[0], argv[1:]...)
 	if verr != nil {
 		return "-"
 	}
-	return parseVersion(out)
+	return parseVersion(st.out)
 }
 
 var versionRE = regexp.MustCompile(`\d+\.\d+[0-9A-Za-z.\-+]*`)

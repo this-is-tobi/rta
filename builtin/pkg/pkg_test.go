@@ -35,8 +35,9 @@ type fake struct {
 }
 
 type fakeAnswer struct {
-	out  string
-	code int
+	out    string
+	code   int
+	stderr string
 }
 
 func install(t *testing.T, f *fake) {
@@ -53,9 +54,9 @@ func install(t *testing.T, f *fake) {
 			return "", "unscripted: " + key, errors.New("exit status 1")
 		}
 		if a.code != 0 {
-			return a.out, "", fakeExit(a.code)
+			return a.out, a.stderr, fakeExit(a.code)
 		}
-		return a.out, "", nil
+		return a.out, a.stderr, nil
 	}
 	lookPath = func(name string) (string, error) {
 		if f.bins[name] {
@@ -218,6 +219,116 @@ func TestAFailedManagerIsARowNotASilence(t *testing.T) {
 	tbl := v.(view.Table)
 	if len(tbl.Rows) != 1 || tbl.Rows[0][0] != "brew" || !strings.HasPrefix(tbl.Rows[0][4], "fail ") {
 		t.Errorf("rows = %v", tbl.Rows)
+	}
+}
+
+// **A list that failed is a failed row, whatever the manager printed.** A
+// manager that could not answer — mise refusing an untrusted config, npm
+// behind a shim that cannot find its runtime — says why on stderr, prints
+// nothing on stdout and exits non-zero. The status was handed back for the
+// manager to read and only dnf did: every other parser read no lines as
+// nothing behind, and the row said ok.
+func TestAManagerThatExitsNonZeroIsAFailedRowNotOk(t *testing.T) {
+	failing := fakeAnswer{code: 1, stderr: "config not trusted\nrun `mise trust` to trust it\n"}
+	f := &fake{
+		bins: map[string]bool{"mise": true, "npm": true, "uv": true, "gem": true, "cargo": true, "bun": true,
+			"apt-get": true, "apk": true, "pacman": true, "dnf": true, "brew": true, "pipx": true},
+		answers: map[string]fakeAnswer{
+			"mise outdated --json":    failing,
+			"npm outdated -g --json":  failing,
+			"uv tool list":            failing,
+			"gem outdated":            failing,
+			"cargo install --list":    failing,
+			"bun pm ls -g":            failing,
+			"apt list --upgradable":   failing,
+			"apk version -l <":        failing,
+			"dnf -q check-update":     failing,
+			"brew outdated --json=v2": failing,
+			"pipx list --json":        failing,
+			// Exit 1 with nothing on either stream is pacman's "nothing
+			// matched" — the one non-zero status that means all is well.
+			"pacman -Qu": {code: 1},
+		},
+	}
+	install(t, f)
+	v, err := outdatedCapability().Run(context.Background(), req(t, "pkg.outdated", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tbl := v.(view.Table)
+	status := map[string]string{}
+	for _, r := range tbl.Rows {
+		status[r[0]] = r[4]
+	}
+	for _, m := range []string{"mise", "npm", "uv", "gem", "cargo", "bun", "apt", "apk", "dnf", "brew", "pipx"} {
+		if status[m] != "fail "+m+": config not trusted" {
+			t.Errorf("%s = %q, want a failed row carrying the first line of its stderr", m, status[m])
+		}
+	}
+	if _, listed := status["pacman"]; listed {
+		t.Errorf("pacman with nothing behind = %q, want no row beside the failures", status["pacman"])
+	}
+
+	// Alone, pacman's clean answer is ok; with a reason on stderr it is not.
+	v, _ = outdatedCapability().Run(context.Background(), req(t, "pkg.outdated", map[string]any{"manager": "pacman"}))
+	if rows := v.(view.Table).Rows; len(rows) != 1 || rows[0][4] != "ok" {
+		t.Errorf("pacman with nothing behind = %v, want ok", rows)
+	}
+	f.answers["pacman -Qu"] = fakeAnswer{code: 1, stderr: "error: failed to initialize alpm library\n"}
+	v, _ = outdatedCapability().Run(context.Background(), req(t, "pkg.outdated", map[string]any{"manager": "pacman"}))
+	if rows := v.(view.Table).Rows; len(rows) != 1 || rows[0][4] != "fail pacman: error: failed to initialize alpm library" {
+		t.Errorf("pacman failing = %v, want its reason", rows)
+	}
+
+	// npm's exit 1 is "something is outdated" only when something is.
+	f.answers["npm outdated -g --json"] = fakeAnswer{out: "{}\n", code: 1, stderr: "npm error code E401\n"}
+	v, _ = outdatedCapability().Run(context.Background(), req(t, "pkg.outdated", map[string]any{"manager": "npm"}))
+	if rows := v.(view.Table).Rows; len(rows) != 1 || rows[0][4] != "fail npm: npm error code E401" {
+		t.Errorf("npm exiting 1 with nothing outdated = %v, want a failed row", rows)
+	}
+
+	// bun before its first global install says it has no package.json to
+	// read, and exits 1: nothing is installed, so nothing is behind.
+	f.answers["bun pm ls -g"] = fakeAnswer{code: 1, stderr: "error: No package.json was found for directory \"/home/x/.bun/install/global\"\nnote: Run \"bun init\" to initialize a project\n"}
+	v, _ = outdatedCapability().Run(context.Background(), req(t, "pkg.outdated", map[string]any{"manager": "bun"}))
+	if rows := v.(view.Table).Rows; len(rows) != 1 || rows[0][4] != "ok" {
+		t.Errorf("bun with no global packages = %v, want ok", rows)
+	}
+
+	// A manager that fails without a word still fails.
+	f.answers["npm outdated -g --json"] = fakeAnswer{code: 2}
+	v, _ = outdatedCapability().Run(context.Background(), req(t, "pkg.outdated", map[string]any{"manager": "npm"}))
+	if rows := v.(view.Table).Rows; len(rows) != 1 || !strings.HasPrefix(rows[0][4], "fail npm: exited 2") {
+		t.Errorf("npm exiting 2 silently = %v, want a failed row naming the status", rows)
+	}
+}
+
+// Every other status a manager exits with to answer rather than to fail is
+// still read as the answer.
+func TestTheStatusesThatAnswerAreStillAnswers(t *testing.T) {
+	f := &fake{bins: map[string]bool{"dnf": true, "needs-restarting": true, "uname": true}, answers: map[string]fakeAnswer{
+		"dnf -q check-update": {out: "curl.x86_64  8.5.0-2.fc40  updates\n", code: 100},
+		"needs-restarting -r": {out: "Reboot is required\n", code: 1},
+		"uname -r":            {out: "6.8.0-45-generic\n"},
+		"rpm -q kernel --qf %{VERSION}-%{RELEASE}.%{ARCH}\n": {out: "package kernel is not installed\n", code: 1},
+	}}
+	install(t, f)
+	l := collect(context.Background(), newRegistryClient(), "dnf")
+	if len(l.failed) != 0 || len(l.rows) != 1 || l.rows[0].Name != "curl" {
+		t.Errorf("dnf's 100 = %+v, want curl as the answer", l)
+	}
+	f.bins["rpm"] = true
+	st := readLinux(context.Background())
+	// readLinux asks needs-restarting only where Debian's flag file is not
+	// there to say it first, and a Debian-family runner may have one.
+	if _, err := os.Stat("/var/run/reboot-required"); err != nil &&
+		(!st.RebootRequired || st.RebootReason != "needs-restarting says so") {
+		t.Errorf("needs-restarting's 1 = %+v, want a reboot owed", st)
+	}
+	// rpm says a package is not installed on stdout, with a status of 1;
+	// read as the answer it was the newest kernel's version.
+	if st.KernelNewest != "" {
+		t.Errorf("KernelNewest = %q, want nothing from an rpm query that failed", st.KernelNewest)
 	}
 }
 

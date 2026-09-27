@@ -71,7 +71,7 @@ func readOS(ctx context.Context) osState {
 //     Title: macOS Sonoma 14.6.1, Version: 14.6.1, Size: 1234KiB, Recommended: YES, Action: restart,
 func readMacOS(ctx context.Context) osState {
 	var st osState
-	out, _, verr := run(ctx, "softwareupdate", "--list")
+	out, verr := run(ctx, "softwareupdate", "--list")
 	if verr != nil {
 		st.Notes = append(st.Notes, verr.Message)
 		return st
@@ -118,11 +118,11 @@ func readLinux(ctx context.Context) osState {
 		st.RebootRequired, st.RebootReason = true, "/var/run/reboot-required is present"
 	} else if _, err := lookPath("needs-restarting"); err == nil {
 		// Exit 1 means a reboot is needed; 0 means not.
-		if _, code, verr := run(ctx, "needs-restarting", "-r"); verr == nil && code == 1 {
+		if answer, verr := runStatus(ctx, "needs-restarting", "-r"); verr == nil && answer.code == 1 {
 			st.RebootRequired, st.RebootReason = true, "needs-restarting says so"
 		}
 	}
-	if out, _, verr := run(ctx, "uname", "-r"); verr == nil {
+	if out, verr := run(ctx, "uname", "-r"); verr == nil {
 		st.KernelRunning = strings.TrimSpace(out)
 	}
 	st.KernelNewest = newestInstalledKernel(ctx)
@@ -138,7 +138,7 @@ func readLinux(ctx context.Context) osState {
 func newestInstalledKernel(ctx context.Context) string {
 	var versions []string
 	if _, err := lookPath("dpkg-query"); err == nil {
-		out, _, verr := run(ctx, "dpkg-query", "-W", "-f", "${Package}\n", "linux-image-*")
+		out, verr := run(ctx, "dpkg-query", "-W", "-f", "${Package}\n", "linux-image-*")
 		if verr == nil {
 			for _, line := range lines(out) {
 				if v := strings.TrimPrefix(line, "linux-image-"); v != line && !strings.HasPrefix(v, "generic") && !strings.HasPrefix(v, "amd64") && strings.ContainsAny(v, "0123456789") {
@@ -147,7 +147,7 @@ func newestInstalledKernel(ctx context.Context) string {
 			}
 		}
 	} else if _, err := lookPath("rpm"); err == nil {
-		out, _, verr := run(ctx, "rpm", "-q", "kernel", "--qf", "%{VERSION}-%{RELEASE}.%{ARCH}\n")
+		out, verr := run(ctx, "rpm", "-q", "kernel", "--qf", "%{VERSION}-%{RELEASE}.%{ARCH}\n")
 		if verr == nil {
 			versions = append(versions, lines(out)...)
 		}

@@ -19,7 +19,7 @@ func aptManager() manager {
 			// apt prints "WARNING: apt does not have a stable CLI interface"
 			// on stderr; the stdout shape has not changed in a decade:
 			//   name/suite 1.2.3 arch [upgradable from: 1.2.2]
-			out, _, verr := run(ctx, "apt", "list", "--upgradable")
+			out, verr := run(ctx, "apt", "list", "--upgradable")
 			if verr != nil {
 				return nil, verr
 			}
@@ -57,15 +57,15 @@ func dnfManager() manager {
 		list: func(ctx context.Context, _ *registryClient) ([]outdated, *view.Error) {
 			// Exit 100 means "updates available" and is the answer, not a
 			// failure; the lines are `name.arch  version  repo`.
-			out, code, verr := run(ctx, "dnf", "-q", "check-update")
+			st, verr := runStatus(ctx, "dnf", "-q", "check-update")
 			if verr != nil {
 				return nil, verr
 			}
-			if code != 0 && code != 100 {
-				return nil, view.Errorf("pkg.dnf.failed", "dnf check-update exited %d", code)
+			if st.code != 0 && st.code != 100 {
+				return nil, st.failed("dnf")
 			}
 			var rows []outdated
-			for _, line := range lines(out) {
+			for _, line := range lines(st.out) {
 				f := strings.Fields(line)
 				if len(f) < 3 || strings.HasPrefix(line, "Obsoleting") {
 					continue
@@ -91,7 +91,7 @@ func apkManager() manager {
 		list: func(ctx context.Context, _ *registryClient) ([]outdated, *view.Error) {
 			// `apk version -l '<'` prints `name-1.0-r0 < 1.1-r0` for every
 			// installed package behind its repository.
-			out, _, verr := run(ctx, "apk", "version", "-l", "<")
+			out, verr := run(ctx, "apk", "version", "-l", "<")
 			if verr != nil {
 				return nil, verr
 			}
@@ -132,13 +132,17 @@ func pacmanManager() manager {
 		note: "needs root to upgrade",
 		list: func(ctx context.Context, _ *registryClient) ([]outdated, *view.Error) {
 			// `pacman -Qu` prints `name 1.0-1 -> 1.1-1`; exit 1 with no
-			// output means nothing is behind.
-			out, _, verr := run(ctx, "pacman", "-Qu")
+			// output means nothing is behind. With a word on stderr it is
+			// pacman failing, which also exits 1.
+			st, verr := runStatus(ctx, "pacman", "-Qu")
 			if verr != nil {
 				return nil, verr
 			}
+			if st.code != 0 && (st.code != 1 || st.reason != "") {
+				return nil, st.failed("pacman")
+			}
 			var rows []outdated
-			for _, line := range lines(out) {
+			for _, line := range lines(st.out) {
 				f := strings.Fields(line)
 				if len(f) < 4 || f[2] != "->" {
 					continue
