@@ -13,6 +13,7 @@ import (
 	"github.com/go-git/go-git/v5/config"
 
 	"github.com/this-is-tobi/rta/builtin/internal/gitclone"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -185,7 +186,7 @@ func TestTheStatusOfAnInMemoryCloneIsReadThroughTheSameBounds(t *testing.T) {
 		if err := util.WriteFile(wt.Filesystem, "x.log", []byte("log\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		status, ignored, err := worktreeStatus(clone, wt)
+		status, ignored, err := worktreeStatus(clone, wt, pathGateOf(req(t, ".", nil)))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -197,5 +198,215 @@ func TestTheStatusOfAnInMemoryCloneIsReadThroughTheSameBounds(t *testing.T) {
 		if strings.Join(got, " ") != want {
 			t.Errorf("with %d bytes, not applied and changed = %q, want %q", bound, got, want)
 		}
+	}
+}
+
+// untracked is the paths a status lists as untracked, in order.
+func untracked(t *testing.T, r plugin.Request) []string {
+	t.Helper()
+	var out []string
+	for _, row := range table(t, runStatus, r).Rows {
+		if row[2] == "?" {
+			out = append(out, row[0])
+		}
+	}
+	return out
+}
+
+// go-git's status read no core.excludesFile, not even git's default
+// ~/.config/git/ignore: a file ignored there was listed as untracked, and
+// git.diff showed it whole. It is read as git reads it, wherever git would
+// find it, and before any other ignore file, so that each of them wins over
+// it: the repository's info/exclude, then its .gitignore files.
+func TestTheExcludesFileGitReadsIsApplied(t *testing.T) {
+	t.Run("default", func(t *testing.T) {
+		home := machineConfig(t, "")
+		writeFile(t, home, ".config/git/ignore", "*.env\n")
+		dir, repo := testRepo(t)
+		commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
+		writeFile(t, dir, "secret.env", "TOKEN=hunter2\n")
+		if got := untracked(t, req(t, dir, nil)); len(got) != 0 {
+			t.Errorf("untracked = %q, want secret.env ignored by ~/.config/git/ignore", got)
+		}
+		if body := text(t, runDiff, req(t, dir, nil)); strings.Contains(body, "hunter2") {
+			t.Errorf("the diff showed a file ~/.config/git/ignore ignores:\n%s", body)
+		}
+	})
+	t.Run("XDG_CONFIG_HOME", func(t *testing.T) {
+		home := machineConfig(t, "")
+		writeFile(t, home, ".config/git/ignore", "*.env\n")
+		t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "xdg"))
+		writeFile(t, home, "xdg/git/ignore", "*.tmp\n")
+		dir, repo := testRepo(t)
+		commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
+		writeFile(t, dir, "a.env", "x\n")
+		writeFile(t, dir, "b.tmp", "x\n")
+		if got := strings.Join(untracked(t, req(t, dir, nil)), " "); got != "a.env" {
+			t.Errorf("untracked = %q, want a.env alone: $XDG_CONFIG_HOME/git/ignore is the default", got)
+		}
+	})
+	t.Run("core.excludesFile", func(t *testing.T) {
+		home := machineConfig(t, "[core]\n\texcludesFile = ~/my-ignores\n")
+		writeFile(t, home, ".config/git/ignore", "*.env\n")
+		writeFile(t, home, "my-ignores", "*.tmp\n")
+		dir, repo := testRepo(t)
+		commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
+		writeFile(t, dir, "a.env", "x\n")
+		writeFile(t, dir, "b.tmp", "x\n")
+		if got := strings.Join(untracked(t, req(t, dir, nil)), " "); got != "a.env" {
+			t.Errorf("untracked = %q, want a.env alone: core.excludesFile names the file", got)
+		}
+	})
+	t.Run("everything after it wins", func(t *testing.T) {
+		home := machineConfig(t, "")
+		writeFile(t, home, ".config/git/ignore", "*.env\n*.tmp\n!c.log\n")
+		dir, repo := testRepo(t)
+		commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
+		writeFile(t, dir, ".git/info/exclude", "!b.tmp\n*.log\n")
+		commitFile(t, repo, dir, ".gitignore", "!a.env\n", "ignores")
+		for _, name := range []string{"a.env", "z.env", "b.tmp", "z.tmp", "c.log"} {
+			writeFile(t, dir, name, "x\n")
+		}
+		if got := strings.Join(untracked(t, req(t, dir, nil)), " "); got != "a.env b.tmp" {
+			t.Errorf("untracked = %q, want a.env and b.tmp, which the files after the excludes file keep", got)
+		}
+		// Handed to go-git ahead of the .gitignore, which its comparison
+		// reads through the same open to hash it once its timestamp changed:
+		// the .gitignore is still not modified.
+		later := time.Now().Add(time.Hour)
+		if err := os.Chtimes(filepath.Join(dir, ".gitignore"), later, later); err != nil {
+			t.Fatal(err)
+		}
+		if rows := table(t, runStatus, req(t, dir, nil)).Rows; len(rows) != 2 {
+			t.Errorf("rows = %v, want a.env and b.tmp alone: .gitignore was touched, not changed", rows)
+		}
+	})
+}
+
+// go-git looked for info/exclude through its own working tree filesystem,
+// which refuses a path through a .git, so a repository's info/exclude was
+// never applied. It is read from the directory git keeps it in, which for a
+// linked worktree is the one it shares with its main checkout.
+func TestTheRepositorysInfoExcludeIsApplied(t *testing.T) {
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "a.txt", "a\n", "initial")
+	writeFile(t, dir, ".git/info/exclude", "*.tmp\n")
+	writeFile(t, dir, "x.tmp", "x\n")
+	writeFile(t, dir, "y.txt", "y\n")
+	if got := strings.Join(untracked(t, req(t, dir, nil)), " "); got != "y.txt" {
+		t.Errorf("in a checkout, untracked = %q, want y.txt alone: info/exclude ignores x.tmp", got)
+	}
+
+	root := t.TempDir()
+	main := filepath.Join(root, "main")
+	repo, err := git.PlainInit(main, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commitFile(t, repo, main, "a.txt", "a\n", "on the main checkout")
+	writeFile(t, main, ".git/info/exclude", "*.tmp\n")
+	linked := filepath.Join(root, "linked")
+	admin := filepath.Join(main, ".git", "worktrees", "linked")
+	head, err := repo.Head()
+	if err != nil {
+		t.Fatal(err)
+	}
+	index, err := os.ReadFile(filepath.Join(main, ".git", "index"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, admin, "HEAD", head.Hash().String()+"\n")
+	writeFile(t, admin, "commondir", "../..\n")
+	writeFile(t, admin, "gitdir", filepath.Join(linked, ".git")+"\n")
+	writeFile(t, admin, "index", string(index))
+	writeFile(t, linked, ".git", "gitdir: "+admin+"\n")
+	writeFile(t, linked, "a.txt", "a\n")
+	writeFile(t, linked, "x.tmp", "x\n")
+	writeFile(t, linked, "y.txt", "y\n")
+	if got := strings.Join(untracked(t, req(t, linked, nil)), " "); got != "y.txt" {
+		t.Errorf("in a linked worktree, untracked = %q, want y.txt alone: info/exclude ignores x.tmp", got)
+	}
+}
+
+// A core.excludesFile the repository's own config names is a path a caller
+// can write, and it could name any file on the machine, whose lines would
+// then be read as patterns: over MCP it is put to the gate first, and one
+// outside the root is not applied, and named. One the operator's own config
+// names is theirs, read wherever it is.
+func TestAnExcludesFileTheRepositoryNamesIsPutToTheGate(t *testing.T) {
+	home := machineConfig(t, "")
+	writeFile(t, home, "outside-ignores", "*.env\n")
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
+	writeFile(t, dir, "a.env", "x\n")
+	writeFile(t, dir, "b.tmp", "x\n")
+	writeFile(t, dir, "inside-ignores", "*.tmp\n")
+	commitFile(t, repo, dir, "inside-ignores", "*.tmp\n", "ignores")
+	mcp := func() plugin.Request { return guarded(t, dir, dir).WithSurface(plugin.SurfaceMCP) }
+
+	writeFile(t, dir, ".git/config", "[core]\n\tbare = false\n\texcludesFile = "+filepath.Join(home, "outside-ignores")+"\n")
+	if got := strings.Join(untracked(t, req(t, dir, nil)), " "); got != "b.tmp" {
+		t.Errorf("at a terminal, untracked = %q, want b.tmp alone", got)
+	}
+	tbl := table(t, runStatus, mcp())
+	if w := ignoreWarning(tbl); w == nil || !strings.Contains(w.Message, "outside-ignores") ||
+		!strings.Contains(w.Message, "path gate") {
+		t.Errorf("over MCP, warning = %+v, want the excludes file outside the root named as refused", w)
+	}
+	if got := strings.Join(untracked(t, mcp()), " "); got != "a.env b.tmp" {
+		t.Errorf("over MCP, untracked = %q, want both: the file outside the root is not read", got)
+	}
+
+	writeFile(t, dir, ".git/config", "[core]\n\tbare = false\n\texcludesFile = inside-ignores\n")
+	if got := strings.Join(untracked(t, mcp()), " "); got != "a.env" {
+		t.Errorf("over MCP, untracked = %q, want a.env alone: the file inside the root is read", got)
+	}
+
+	writeFile(t, dir, ".git/config", "[core]\n\tbare = false\n")
+	writeFile(t, home, ".gitconfig", "[core]\n\texcludesFile = "+filepath.Join(home, "outside-ignores")+"\n")
+	if got := strings.Join(untracked(t, mcp()), " "); got != "b.tmp" {
+		t.Errorf("over MCP, untracked = %q, want b.tmp alone: the operator's own excludes file is read", got)
+	}
+}
+
+// The excludes file and info/exclude are held to the bounds before any
+// .gitignore, as git reads them before any: a .gitignore that would take the
+// whole bound is the one not applied, never the operator's own excludes file.
+func TestTheExcludesFileIsHeldToTheBoundsFirst(t *testing.T) {
+	lowerIgnoreBounds(t, 1<<20, 3)
+	home := machineConfig(t, "")
+	writeFile(t, home, ".config/git/ignore", "*.env\n")
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
+	writeFile(t, dir, ".gitignore", "*.x\n*.y\n*.z\n")
+	writeFile(t, dir, "secret.env", "TOKEN=hunter2\n")
+	writeFile(t, dir, "b.x", "x\n")
+	tbl := table(t, runStatus, req(t, dir, nil))
+	if got := strings.Join(untracked(t, req(t, dir, nil)), " "); got != ".gitignore b.x" {
+		t.Errorf("untracked = %q, want .gitignore and b.x: the excludes file applied, the .gitignore not", got)
+	}
+	if w := ignoreWarning(tbl); w == nil || !strings.HasSuffix(w.Message, ": .gitignore (3 patterns, which with "+
+		"those read before it are past the 3 patterns one status applies)") {
+		t.Errorf("warning = %+v, want the .gitignore alone named", w)
+	}
+}
+
+// The excludes file is held to the same bounds, and one past them reaches
+// the whole working tree: every untracked file is named in the diff rather
+// than shown.
+func TestAnExcludesFilePastTheBoundsIsNamedAndReachesEverything(t *testing.T) {
+	lowerIgnoreBounds(t, 64, 100)
+	home := machineConfig(t, "")
+	writeFile(t, home, ".config/git/ignore", "*.env\n"+strings.Repeat("# padding\n", 20))
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
+	writeFile(t, dir, "sub/secret.env", "TOKEN=hunter2\n")
+	tbl := table(t, runStatus, req(t, dir, nil))
+	if w := ignoreWarning(tbl); w == nil || !strings.Contains(w.Message, filepath.Join(home, ".config", "git", "ignore")) {
+		t.Errorf("warning = %+v, want the excludes file named by its path", w)
+	}
+	body := text(t, runDiff, req(t, dir, nil))
+	if strings.Contains(body, "hunter2") || !strings.Contains(body, "sub/secret.env changed, not diffed") {
+		t.Errorf("the diff showed, or did not name, a file the excludes file may ignore:\n%s", body)
 	}
 }

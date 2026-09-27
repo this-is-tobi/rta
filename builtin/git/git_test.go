@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,6 +17,34 @@ import (
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
+
+// TestMain points the git config this package's tests read at nothing: a
+// home directory of their own with no .gitconfig and no ~/.config/git/ignore,
+// no system file, and none of the environment that sets config for one
+// command. Every status reads the operator's config for core.excludesFile,
+// so a test asserting which files are untracked passed or failed on what the
+// person running it ignores everywhere. A test that needs config of its own
+// writes it (machineConfig).
+func TestMain(m *testing.M) {
+	home, err := os.MkdirTemp("", "rta-git-home-")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	for _, name := range []string{
+		"GIT_CONFIG_SYSTEM", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM", "DEVELOPER_DIR",
+		"GIT_CONFIG_COUNT", "GIT_CONFIG_PARAMETERS", "XDG_CONFIG_HOME",
+	} {
+		_ = os.Unsetenv(name)
+	}
+	_ = os.Setenv("HOME", home)
+	_ = os.Setenv("USERPROFILE", home)
+	vendorGitConfigs = []string{filepath.Join(home, "no-vendor-gitconfig")}
+	systemGitConfigs = []string{filepath.Join(home, "no-system-gitconfig")}
+	code := m.Run()
+	_ = os.RemoveAll(home)
+	os.Exit(code)
+}
 
 func TestPluginIsValid(t *testing.T) {
 	if err := Plugin().Validate(); err != nil {
