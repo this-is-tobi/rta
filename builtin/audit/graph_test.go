@@ -534,6 +534,41 @@ func TestMergePrefersDirect(t *testing.T) {
 	wantRelation(t, g, "npm", "lodash", "4.17.20", relDirect)
 }
 
+// Resolving a declaration walks up from its manifest, building one path per
+// ancestor: a workspace entry four thousand directories deep declaring four
+// thousand packages built sixty gigabytes of them, from a 55 KB file. The walk
+// spends a budget and says when it ran out; a real workspace spends nothing
+// worth counting and still resolves from an ancestor's node_modules.
+func TestTheNpmResolutionWalkIsBoundedOnADeepWorkspace(t *testing.T) {
+	lockfile := func(depth, declares int) []byte {
+		deep := strings.TrimSuffix(strings.Repeat("w/", depth), "/")
+		deps := make([]string, declares)
+		for i := range deps {
+			deps[i] = `"d` + itoa(i) + `": "1"`
+		}
+		return []byte(`{"lockfileVersion": 3, "packages": {"": {}, "node_modules/d0": {"version": "1.0.0"}, "` +
+			deep + `": {"dependencies": {` + strings.Join(deps, ", ") + `}}}}`)
+	}
+
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	g := npmLockGraph(lockfile(4000, 4000))
+	runtime.ReadMemStats(&after)
+	if alloc := after.TotalAlloc - before.TotalAlloc; alloc > 128<<20 {
+		t.Errorf("reading one lockfile allocated %d MiB", alloc>>20)
+	}
+	if !g.truncated {
+		t.Error("the walk ran out of budget and the graph does not say it was cut")
+	}
+
+	g = npmLockGraph(lockfile(3, 2))
+	if g.truncated {
+		t.Error("a workspace three directories deep spent the budget")
+	}
+	wantRelation(t, g, "npm", "d0", "1.0.0", relDirect)
+}
+
 // A lockfile is untrusted input, and a dependency graph is a shape somebody
 // else chose. The walk has to cost what rta decided it costs — not what the
 // file's author did.
