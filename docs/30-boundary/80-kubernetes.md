@@ -171,6 +171,8 @@ rules:
 
 Bind it to the instance's ServiceAccount — `<release>-<chart>-<instance>` — with a ClusterRoleBinding, and remember that this is the one place the per-person story leaks: a ClusterRole is cluster-wide, so two instances bound to the same one can see the same things. Narrow it per instance if that matters, and prefer a namespaced Role wherever the capability allows it.
 
+The narrowest form skips the pod's own identity altogether. `kube.serviceaccount.provision`, run on your machine, mints a ServiceAccount bound to a namespaced Role built from the capabilities you name, with a token that expires, and writes its kubeconfig; mounted where the third piece would go, it replaces the projected token and the ClusterRole both. [An agent in a cluster](../90-recipes/30-an-agent-in-a-cluster.md) is that path end to end.
+
 Note this is a different mechanism from `kube:` credential references in a profile, which the main process resolves — also through `kubectl`, and also needing a kubeconfig with a named context.
 
 ## Day two
