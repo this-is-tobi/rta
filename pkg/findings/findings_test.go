@@ -47,6 +47,44 @@ func TestWorstIsTheWorstFindingWithATally(t *testing.T) {
 	}
 }
 
+// A check that could not run grades nothing about the subject, and it is not
+// nothing either: "no issues found" over a report whose DMARC lookup timed
+// out is a claim about a record nobody read. The tally says what did not run,
+// whatever the grade.
+func TestAnUncheckedFindingIsCountedAndNeverGraded(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		statuses  []string
+		unchecked int
+		status    string
+		tally     string
+	}{
+		{"alone", nil, 1, OK, "no issues in what was checked, but 1 check could not run"},
+		{"beside ok", []string{OK, Info}, 3, OK, "no issues in what was checked, but 3 checks could not run"},
+		{"beside a warning", []string{Warn}, 1, Warn, "1 warning, 1 check could not run"},
+		{"beside both", []string{Fail, Warn, Warn}, 2, Fail, "1 failing, 2 warnings, 2 checks could not run"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &Report{}
+			for i, s := range tc.statuses {
+				r.Add(grpInventory, "check"+string(rune('a'+i)), s, "d", refVulnerableDep)
+			}
+			for i := range tc.unchecked {
+				r.AddUnchecked(grpInventory, "lookup"+string(rune('a'+i)), "lookup failed", refVulnerableDep)
+			}
+			status, tally := r.Worst()
+			if status != tc.status || tally != tc.tally {
+				t.Errorf("Worst() = %q, %q; want %q, %q", status, tally, tc.status, tc.tally)
+			}
+			for _, f := range r.Findings {
+				if f.Unchecked && f.Status != Info {
+					t.Errorf("an unchecked finding graded %q, want %q", f.Status, Info)
+				}
+			}
+		})
+	}
+}
+
 // A finding's link has to reach the table whole. It used to be the tail of
 // the detail string, so Clip cut it in half on every screen — the report
 // said "… — https…" and the advisory page it named was unreachable.

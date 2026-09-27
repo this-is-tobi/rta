@@ -231,6 +231,22 @@ func (f mailFacts) settled() bool {
 	return f.apexErr != nil || f.mxErr != nil || len(f.apexTXT) > 0 || len(f.mx) > 0
 }
 
+// unanswered returns what the apex lookup failed with when every lookup that
+// ran failed, and nil when any answered — an empty answer included, which is
+// something read.
+func (f mailFacts) unanswered() error {
+	errs := []error{f.apexErr, f.dmarcErr, f.stsErr, f.rptErr, f.mxErr}
+	if f.selector != "" {
+		errs = append(errs, f.dkimErr)
+	}
+	for _, err := range errs {
+		if err == nil {
+			return nil
+		}
+	}
+	return f.apexErr
+}
+
 // lookupMail performs every query the audit makes: one TXT at the apex, one
 // per policy name, one MX. Names are derived from the domain by rule, never
 // guessed — the DKIM selector is the single thing that cannot be, which is
@@ -293,7 +309,7 @@ func pick(records []string, prefix string) []string {
 
 func auditSPF(r *findings.Report, f mailFacts) {
 	if f.apexErr != nil {
-		r.Add(grpSenderAuth, "spf", findings.Info, "lookup failed: "+f.apexErr.Error(), refSpoofing)
+		r.AddUnchecked(grpSenderAuth, "spf", "lookup failed: "+f.apexErr.Error(), refSpoofing)
 		return
 	}
 	spf := pick(f.apexTXT, "v=spf1")
@@ -425,7 +441,7 @@ func auditDKIM(r *findings.Report, f mailFacts) {
 	}
 	name := f.dkimName
 	if f.dkimErr != nil {
-		r.Add(grpSenderAuth, "dkim", findings.Info, "lookup of "+name+" failed: "+f.dkimErr.Error(), refSpoofing)
+		r.AddUnchecked(grpSenderAuth, "dkim", "lookup of "+name+" failed: "+f.dkimErr.Error(), refSpoofing)
 		return
 	}
 	records := f.dkim
@@ -603,7 +619,7 @@ func dmarcPct(record string) (int, bool) {
 func auditDMARC(r *findings.Report, f mailFacts) {
 	name := "_dmarc." + f.domain
 	if f.dmarcErr != nil {
-		r.Add(grpSenderAuth, "dmarc", findings.Info, "lookup of "+name+" failed: "+f.dmarcErr.Error(), refSpoofing)
+		r.AddUnchecked(grpSenderAuth, "dmarc", "lookup of "+name+" failed: "+f.dmarcErr.Error(), refSpoofing)
 		return
 	}
 	dmarc := pick(f.dmarc, "v=dmarc1")
@@ -707,7 +723,7 @@ func auditDMARC(r *findings.Report, f mailFacts) {
 func auditMailTransport(r *findings.Report, f mailFacts) {
 	switch {
 	case f.stsErr != nil:
-		r.Add(grpMailTLS, "mta-sts", findings.Info, "lookup failed: "+f.stsErr.Error(), refCleartext)
+		r.AddUnchecked(grpMailTLS, "mta-sts", "lookup failed: "+f.stsErr.Error(), refCleartext)
 	case len(pick(f.sts, "v=stsv1")) == 0:
 		// DANE (RFC 7672) is the other standard answer to the same problem,
 		// and Go's resolver has no way to ask for a TLSA record, so its
@@ -735,7 +751,7 @@ func auditMailTransport(r *findings.Report, f mailFacts) {
 	rpt := pick(f.rpt, "v=tlsrptv1")
 	switch {
 	case f.rptErr != nil:
-		r.Add(grpMailTLS, "tls-rpt", findings.Info, "lookup failed: "+f.rptErr.Error(), refCleartext)
+		r.AddUnchecked(grpMailTLS, "tls-rpt", "lookup failed: "+f.rptErr.Error(), refCleartext)
 	case len(rpt) == 0:
 		r.Add(grpMailTLS, "tls-rpt", findings.Info,
 			"no TLS-RPT record — failed TLS deliveries to this domain are not reported to anybody",
@@ -775,6 +791,16 @@ func auditMailTransport(r *findings.Report, f mailFacts) {
 // answers before its refusal where it used to pay three, and a typo is the
 // rare case.
 func requireDomain(ctx context.Context, res *stdnet.Resolver, f mailFacts) *view.Error {
+	// Before settled, which a failed apex lookup satisfies: a failure is not
+	// an absent name, but when every lookup failed there is nothing left to
+	// report — each row would say it could not read its record, under an
+	// overall that graded the domain anyway.
+	if err := f.unanswered(); err != nil {
+		return view.Errorf("audit.mail.resolver", "no lookup about %q was answered, so nothing about it was read: %v",
+			f.domain, err).
+			WithHint("the lookups failed rather than coming back empty — check your resolver, or raise " +
+				f.surface.InputName("timeout"))
+	}
 	if f.settled() {
 		return nil
 	}
@@ -806,7 +832,7 @@ func auditMailRouting(r *findings.Report, f mailFacts) {
 	// not receive mail" is the confident lie mailFacts' own doc warns about.
 	// Every other lookup in this file already says so; mx was the one left.
 	if f.mxErr != nil {
-		r.Add(grpRouting, "mx", findings.Info, "lookup failed: "+f.mxErr.Error(), refSpoofing)
+		r.AddUnchecked(grpRouting, "mx", "lookup failed: "+f.mxErr.Error(), refSpoofing)
 		return
 	}
 	if len(mx) == 0 {

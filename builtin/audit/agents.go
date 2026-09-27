@@ -278,8 +278,10 @@ func auditAgentJSON(r *agentReport, f agentFile) {
 	var doc any
 	if json.Unmarshal(data, &doc) != nil {
 		// Not a failure worth grading: several of these files are JSONC, and
-		// a comment is not a security finding.
-		r.Add(grpAgentFiles, shortPath(f.path), findings.Info,
+		// a comment is not a security finding. Not nothing either — the
+		// servers in it went ungraded, and the overall says so rather than
+		// "no issues found".
+		r.AddUnchecked(grpAgentFiles, shortPath(f.path),
 			f.label+" config is not plain JSON (comments are allowed in some of these), "+
 				"so only its permissions were graded", findings.Reference{})
 		return

@@ -300,6 +300,19 @@ func TestTwoServersSharingANameAreBothGraded(t *testing.T) {
 	}
 }
 
+// A JSONC file's servers go ungraded, and a clean overall above that row was
+// a claim about servers nobody read.
+func TestAConfigThisCouldNotParseIsNamedInTheOverall(t *testing.T) {
+	fakeHome(t, map[string]struct {
+		body string
+		mode os.FileMode
+	}{".cursor/mcp.json": {"// servers\n{\"mcpServers\": {}}", 0o600}})
+	overall := agentRows(t, plugin.SurfaceCLI)["overall"]
+	if overall == nil || !strings.Contains(overall[2], "1 check could not run") {
+		t.Errorf("the overall does not say a file's servers went ungraded: %v", overall)
+	}
+}
+
 // Where a server sits is spelled from the keys above it, and a place built
 // level by level from its parent's copied every key above it again: a file
 // nested thousands of levels, which encoding/json reads, cost gigabytes to
