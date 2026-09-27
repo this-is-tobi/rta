@@ -25,6 +25,9 @@ func tomlGraph(text, ecosystem string, flavour tomlFlavour) graph {
 	hasSource, sourceKeys, sourceType := false, []string(nil), ""
 	var deps []string
 	inArray, inPoetryDeps := false, false
+	// own is whether the lines being read describe the record itself: the
+	// [[package]] table, or its [package.source]. See parseTOMLLock.
+	own := false
 
 	flush := func() {
 		if name != "" {
@@ -86,15 +89,17 @@ func tomlGraph(text, ecosystem string, flavour tomlFlavour) graph {
 		switch {
 		case line == "[[package]]":
 			flush()
+			own = true
 			continue
 		case strings.HasPrefix(line, "[package.dependencies]"):
-			inPoetryDeps = true
+			inPoetryDeps, own = true, false
 			continue
 		case strings.HasPrefix(line, "[package.") || strings.HasPrefix(line, "[[package."):
-			inPoetryDeps = false
+			inPoetryDeps, own = false, line == "[package.source]"
 			continue
 		case strings.HasPrefix(line, "["):
 			flush()
+			own = false
 			continue
 		case line == "" || strings.HasPrefix(line, "#"):
 			continue
@@ -109,6 +114,12 @@ func tomlGraph(text, ecosystem string, flavour tomlFlavour) graph {
 			// Every key in this subtable is a package name; the value is the
 			// range, which is exactly what this does not try to resolve.
 			deps = append(deps, strings.Trim(key, `"'`))
+			continue
+		}
+		// The record's own keys only, for the reason parseTOMLLock gives: an
+		// extra named `virtual` under [package.optional-dependencies] made a
+		// uv package the project, and its dependencies the direct set.
+		if !own {
 			continue
 		}
 		switch key {

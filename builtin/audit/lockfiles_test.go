@@ -297,6 +297,35 @@ url = "../localthing"
 `
 	want(t, parseTOMLLock(poetry, "p", "PyPI", false), "PyPI", "certifi@2023.11.17")
 
+	// A key under [package.dependencies] is a dependency's name, and `path`
+	// is a package on PyPI: read as the record's own marker, it dropped the
+	// package that depends on it from the inventory, unasked and unsaid. So
+	// do a `virtual` extra and a `directory` optional dependency.
+	shadowed := `[[package]]
+name = "jaraco-test"
+version = "5.4.0"
+optional = false
+
+[package.dependencies]
+path = "*"
+
+[package.extras]
+virtual = ["virtualenv"]
+
+[[package]]
+name = "tool"
+version = "1.0.0"
+
+[package.optional-dependencies]
+directory = ["dirtools"]
+
+[[package]]
+name = "path"
+version = "16.14.0"
+`
+	want(t, parseTOMLLock(shadowed, "p", "PyPI", false), "PyPI",
+		"jaraco-test@5.4.0", "tool@1.0.0", "path@16.14.0")
+
 	// A Cargo workspace member is the entry with no source line at all.
 	cargo := `version = 3
 

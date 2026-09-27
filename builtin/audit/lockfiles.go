@@ -217,19 +217,33 @@ func parseTOMLLock(text, source, ecosystem string, localWhenSourceless bool) []c
 		}
 		name, version, hasSource, local = "", "", false, false
 	}
+	// own is whether the lines being read describe the record itself: the
+	// [[package]] table, or its [package.source]. Any other subtable belongs
+	// to the record without describing it — [package.dependencies] and
+	// [package.extras] are keyed by *other* packages' names, and `path` is a
+	// package on PyPI: read as the record's own marker, `path = "*"` under
+	// [package.dependencies] dropped the package depending on it from the
+	// inventory, unasked and unsaid.
+	own := false
 	for _, raw := range strings.Split(text, "\n") {
 		line := strings.TrimSpace(raw)
 		switch {
 		case line == "[[package]]":
 			flush()
+			own = true
 			continue
 		// A [package.source] or [[package.wheels]] subtable belongs to the
 		// record above it — that is where Poetry records a path dependency —
 		// so it must not close the record. Any other table header does.
 		case strings.HasPrefix(line, "[package.") || strings.HasPrefix(line, "[[package."):
+			own = line == "[package.source]"
 			continue
 		case strings.HasPrefix(line, "["):
 			flush()
+			own = false
+			continue
+		}
+		if !own {
 			continue
 		}
 		key, val, ok := strings.Cut(line, "=")
