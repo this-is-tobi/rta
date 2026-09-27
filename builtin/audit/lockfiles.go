@@ -3,6 +3,7 @@ package audit
 import (
 	"encoding/json"
 	"errors"
+	"regexp"
 	"strings"
 )
 
@@ -71,6 +72,12 @@ func parsePnpmLock(text, source string) []component {
 	return out
 }
 
+// pnpmV5Version matches the last segment of a v5 key: a version, and the
+// peer suffix after it. Matched rather than read off its first character: a
+// scoped package whose name starts with a digit, @acme/3d-lib@1.0.0, has a
+// digit there in v9 too.
+var pnpmV5Version = regexp.MustCompile(`^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?(_.*)?$`)
+
 func pnpmComponent(key, source string) (component, bool) {
 	key = strings.Trim(key, `'"`)
 	// The peer suffix describes which build of the package this is; the
@@ -83,11 +90,18 @@ func pnpmComponent(key, source string) (component, bool) {
 		return component{}, false
 	}
 	name, version := "", ""
-	if i := strings.LastIndexByte(key, '@'); i > 0 {
+	if i := strings.LastIndexByte(key, '/'); i > 0 && pnpmV5Version.MatchString(key[i+1:]) {
+		// v5: the last segment is the version — v6 and v9 put a name there.
+		// Its peer suffix comes after an underscore, `2.2.0_vite@3.2.4`, with
+		// a scope's slash spelled as a plus so the segment stays one; split
+		// at the last @ as v6 is, that read as a package named
+		// "…/2.2.0_vite" at 3.2.4. Semver allows no underscore, so the first
+		// one ends the version.
+		name = key[:i]
+		version, _, _ = strings.Cut(key[i+1:], "_")
+	} else if i := strings.LastIndexByte(key, '@'); i > 0 {
 		// v6/v9, and the leading @ of a scope is never the separator.
 		name, version = key[:i], key[i+1:]
-	} else if i := strings.LastIndexByte(key, '/'); i > 0 {
-		name, version = key[:i], key[i+1:] // v5
 	}
 	if name == "" || version == "" || !isVersionish(version) {
 		return component{}, false
