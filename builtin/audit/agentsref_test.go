@@ -217,3 +217,64 @@ func TestAGeminiPercentReferenceIsGradedByTheSystemItsClientRunsOn(t *testing.T)
 		})
 	}
 }
+
+// remoteDeclared declares one remote server called at url with headers.
+func remoteDeclared(url string, headers map[string]string) string {
+	b, _ := json.Marshal(map[string]any{"mcpServers": map[string]any{"svc": map[string]any{
+		"type": "http", "url": url, "headers": headers,
+	}}})
+	return string(b)
+}
+
+// Claude Code reads some credential variables as empty in a remote server's
+// url and headers, set or not and whatever default follows them, so that a
+// project's .mcp.json cannot send its own or a cloud provider's credential to
+// a server the file names. A reference to one was graded as the credential
+// held in the environment it looks like, no finding, and the server got an
+// empty value and refused every call. It is a warning naming the variable,
+// and the fix says to name a variable of your own. Only the names Claude
+// Code's documentation gives are recognised, and nothing outside a remote
+// server's url and headers, nor in another client's file.
+func TestAReferenceClaudeCodeReadsAsEmptyTowardARemoteServerIsAWarning(t *testing.T) {
+	for _, tc := range []struct {
+		name, file, body, named string
+	}{
+		{"auth header", ".claude.json", remoteWithHeader("Bearer ${ANTHROPIC_API_KEY}"), "ANTHROPIC_API_KEY"},
+		{"a default", ".claude.json", remoteWithHeader("Bearer ${ANTHROPIC_AUTH_TOKEN:-}"), "ANTHROPIC_AUTH_TOKEN"},
+		{"cloud", ".claude.json", remoteWithHeader("Bearer ${AWS_BEARER_TOKEN_BEDROCK}"), "AWS_BEARER_TOKEN_BEDROCK"},
+		{"url", ".claude.json", remoteDeclared("https://mcp.example.com/${NPM_TOKEN}/mcp",
+			map[string]string{"X-Client": "rta-test"}), "NPM_TOKEN"},
+		{"any header", ".claude.json", remoteDeclared("https://mcp.example.com/",
+			map[string]string{"X-Upstream": "${HTTPS_PROXY}"}), "HTTPS_PROXY"},
+		{"a name of its own", ".claude.json", remoteWithHeader("Bearer ${API_KEY}"), ""},
+		{"a base url", ".claude.json", remoteDeclared("${ANTHROPIC_BASE_URL}/mcp",
+			map[string]string{"X-Client": "rta-test"}), ""},
+		{"a launched server", ".claude.json", launchedWithEnv("${ANTHROPIC_API_KEY}"), ""},
+		{"another client", ".gemini/settings.json", remoteWithHeader("Bearer ${ANTHROPIC_API_KEY}"), ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fakeHome(t, map[string]struct {
+				body string
+				mode os.FileMode
+			}{tc.file: {tc.body, 0o600}})
+			var warned []string
+			for _, row := range agentRowList(t) {
+				if row[0] == "svc" && row[1] == findings.Warn && strings.Contains(row[2], "empty") {
+					warned = append(warned, row[2])
+				}
+			}
+			if tc.named == "" {
+				if len(warned) > 0 {
+					t.Fatalf("warned %q about a reference Claude Code expands", warned)
+				}
+				return
+			}
+			if len(warned) != 1 || !strings.Contains(warned[0], tc.named) {
+				t.Fatalf("warned %q, want one warning naming %s", warned, tc.named)
+			}
+			if _, fix := fixBodies(t); !strings.Contains(fix, tc.named) || !strings.Contains(fix, "${SVC_TOKEN}") {
+				t.Errorf("the fix does not name %s and a variable of the server's own:\n%s", tc.named, fix)
+			}
+		})
+	}
+}
