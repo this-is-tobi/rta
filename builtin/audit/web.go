@@ -386,7 +386,12 @@ var documentHeaders = []headerCheck{
 		return findings.Warn, "unexpected value: " + v
 	}},
 	{"x-frame-options", refClickjacking, func(h stdhttp.Header) (string, string) {
-		return gradeFraming(h.Get("X-Frame-Options"), h.Get("Content-Security-Policy"))
+		// Every line of each, not the first: a browser enforces every CSP a
+		// response sends and reads every X-Frame-Options, and Get answers
+		// only the first — a response whose second CSP said `frame-ancestors
+		// *` beside a DENY read ok for a page any site can frame.
+		return gradeFraming(strings.Join(h.Values("X-Frame-Options"), ", "),
+			strings.Join(h.Values("Content-Security-Policy"), ", "))
 	}},
 	{"referrer-policy", refMisconfig, presence("Referrer-Policy", "missing — referrer may leak to third parties")},
 	{"permissions-policy", refMisconfig, info("Permissions-Policy", "not set — browser feature access unrestricted")},
@@ -507,19 +512,104 @@ func cspHasWildcardSource(lowerCSP string) bool {
 // enforced consistently; XFO's ALLOW-FROM is deprecated and non-standard),
 // so a page relying on frame-ancestors alone is not clickjacking-vulnerable
 // even with no X-Frame-Options at all.
+//
+// **A header counts when a browser enforces it and it keeps some site out.**
+// Presence alone used to count: ALLOW-FROM — ignored by every current
+// browser, as said above — and ALLOWALL, which is no directive at all, read
+// ok, and so did `frame-ancestors *` and `frame-ancestors https:`, which let
+// any site frame the page. A stated frame-ancestors also makes a browser
+// ignore X-Frame-Options beside it, so a DENY next to a permissive one keeps
+// nobody out.
 func gradeFraming(xfo, csp string) (string, string) {
-	hasXFO := xfo != ""
-	hasFrameAncestors := strings.Contains(strings.ToLower(csp), "frame-ancestors")
+	stated, restricts, directive := cspFrameAncestors(csp)
 	switch {
-	case hasXFO && hasFrameAncestors:
-		return findings.OK, xfo + " (+ CSP frame-ancestors)"
-	case hasFrameAncestors:
-		return findings.OK, "no X-Frame-Options, but CSP frame-ancestors covers it"
-	case hasXFO:
+	case stated && restricts && xfo != "":
+		return findings.OK, "CSP " + directive + " (+ X-Frame-Options " + xfo + ")"
+	case stated && restricts:
+		return findings.OK, "no X-Frame-Options, but CSP " + directive + " covers it"
+	case stated:
+		return findings.Fail, "CSP " + directive + " lets any site frame this page — and a browser " +
+			"ignores X-Frame-Options beside it"
+	case xfoRestricts(xfo):
 		return findings.OK, xfo
+	case strings.HasPrefix(strings.ToUpper(strings.TrimSpace(xfo)), "ALLOW-FROM"):
+		return findings.Fail, "X-Frame-Options " + xfo + " is ignored by current browsers, so any site " +
+			"can frame this page — CSP frame-ancestors is what names a partner"
+	case xfo != "":
+		return findings.Fail, "X-Frame-Options " + xfo + " is not a value browsers enforce, so any site " +
+			"can frame this page — DENY or SAMEORIGIN, or CSP frame-ancestors"
 	default:
 		return findings.Fail, "no X-Frame-Options and no CSP frame-ancestors — clickjacking is not defended against"
 	}
+}
+
+// xfoRestricts reports whether an X-Frame-Options value is one browsers
+// enforce: DENY or SAMEORIGIN, and a list of them, which a response carrying
+// the header twice arrives as.
+func xfoRestricts(xfo string) bool {
+	if strings.TrimSpace(xfo) == "" {
+		return false
+	}
+	for _, v := range strings.Split(xfo, ",") {
+		switch strings.ToUpper(strings.TrimSpace(v)) {
+		case "DENY", "SAMEORIGIN":
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// cspFrameAncestors reads the frame-ancestors directives of a CSP: whether
+// one is stated, whether one keeps some site out, and the directive to name.
+//
+// Every policy in the header — a response sending two arrives as one value
+// joined by a comma, and a browser enforces both — so one that restricts is
+// enough. Within a policy the first frame-ancestors is the one enforced.
+func cspFrameAncestors(csp string) (stated, restricts bool, directive string) {
+	for _, policy := range strings.Split(csp, ",") {
+		for _, d := range strings.Split(policy, ";") {
+			fields := strings.Fields(d)
+			if len(fields) == 0 || !strings.EqualFold(fields[0], "frame-ancestors") {
+				continue
+			}
+			shown := strings.Join(fields, " ")
+			if !stated || (!restricts && !anyAncestor(fields[1:])) {
+				directive = shown
+			}
+			stated = true
+			restricts = restricts || !anyAncestor(fields[1:])
+			break
+		}
+	}
+	return stated, restricts, directive
+}
+
+// anyAncestor reports whether a frame-ancestors source list lets any site
+// frame the page: `*`, a bare scheme such as `https:`, or a host of `*` —
+// each matches every origin there is. An empty list matches nothing, which
+// is 'none'.
+func anyAncestor(sources []string) bool {
+	for _, s := range sources {
+		s = strings.ToLower(strings.Trim(s, `'"`))
+		if s == "*" {
+			return true
+		}
+		if strings.HasSuffix(s, ":") && !strings.ContainsAny(strings.TrimSuffix(s, ":"), ":/*.") {
+			return true // a scheme-source
+		}
+		host := s
+		if _, after, ok := strings.Cut(s, "://"); ok {
+			host = after
+		}
+		if i := strings.IndexAny(host, ":/"); i >= 0 {
+			host = host[:i]
+		}
+		if host == "*" {
+			return true
+		}
+	}
+	return false
 }
 
 // auditCORS grades what the host does with an Origin it cannot possibly

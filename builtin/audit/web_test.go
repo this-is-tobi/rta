@@ -239,6 +239,56 @@ func TestAuditFrameAncestorsCoversMissingXFrameOptions(t *testing.T) {
 	}
 }
 
+// The row answers whether any site can frame the page, so a header counts
+// only when a browser enforces it and what it enforces keeps some site out.
+// ALLOW-FROM is ignored by every current browser, ALLOWALL is no directive,
+// and `frame-ancestors *` or a bare scheme lets anyone in — and a stated
+// frame-ancestors makes a browser ignore X-Frame-Options beside it, so a
+// DENY there cannot rescue it. Each of those read ok.
+func TestFramingCountsOnlyAHeaderThatKeepsSomeSiteOut(t *testing.T) {
+	for _, tc := range []struct {
+		xfo, csp string
+		want     string
+	}{
+		{"ALLOWALL", "", findings.Fail},
+		{"ALLOW-FROM https://partner.example", "", findings.Fail},
+		{"", "default-src 'self'; frame-ancestors *", findings.Fail},
+		{"", "frame-ancestors https:", findings.Fail},
+		{"", "frame-ancestors 'self' https://*", findings.Fail},
+		{"DENY", "frame-ancestors *", findings.Fail},
+		{"DENY", "", findings.OK},
+		{" sameorigin ", "", findings.OK},
+		{"", "frame-ancestors 'none'", findings.OK},
+		{"", "frame-ancestors 'self' https://a.example", findings.OK},
+		{"", "frame-ancestors https://*.example.com", findings.OK},
+		{"ALLOWALL", "frame-ancestors 'self'", findings.OK},
+		// Two policies are both enforced, so the stricter one holds.
+		{"", "frame-ancestors *, frame-ancestors 'self'", findings.OK},
+		// An empty source list matches nothing, which is 'none'.
+		{"", "frame-ancestors; default-src 'self'", findings.OK},
+	} {
+		if got, detail := gradeFraming(tc.xfo, tc.csp); got != tc.want {
+			t.Errorf("XFO %q, CSP %q: %s (%s), want %s", tc.xfo, tc.csp, got, detail, tc.want)
+		}
+	}
+}
+
+// A response may send a header twice, and a browser enforces every CSP it
+// gets. Only the first was read: a second policy saying `frame-ancestors *`,
+// beside a DENY a browser then ignores, read ok for a page any site frames.
+func TestFramingReadsEveryLineOfBothHeaders(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.Header().Add("Content-Security-Policy", "default-src 'self'")
+		w.Header().Add("Content-Security-Policy", "frame-ancestors *")
+		w.Header().Set("X-Frame-Options", "DENY")
+	}))
+	t.Cleanup(srv.Close)
+	if r := auditRows(t, srv)["x-frame-options"]; r[1] != findings.Fail {
+		t.Errorf("x-frame-options = %v, want fail: the second policy lets any site frame the page", r)
+	}
+}
+
 // Neither header at all is the actual clickjacking-vulnerable case, and must
 // fail outright rather than warn: nothing stops this page being framed.
 func TestAuditNoFramingDefenseAtAllFails(t *testing.T) {
