@@ -13,6 +13,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -27,7 +28,9 @@ func statusCapability() plugin.Capability {
 		Description: "The structured equivalent of `git status --porcelain`: every path with a " +
 			"staged change, an unstaged change, or neither yet — added, tracked at all — one row " +
 			"per path, both halves shown side by side rather than requiring the two-column code to " +
-			"be decoded by eye.",
+			"be decoded by eye. One status applies at most 1 MiB and 10000 patterns of ignore files in " +
+			"all, in the order it reads them: one past that is not applied, as git applies no pattern " +
+			"file past 100 MB, so what it ignores is listed, and a warning names it.",
 		Inputs: []plugin.Field{
 			pathField("repository path, or a subdirectory of one"),
 		},
@@ -68,7 +71,7 @@ func runStatus(ctx context.Context, req plugin.Request) (view.View, error) {
 		return nil, view.Errorf("git.status.worktree", "no working tree here: %v", err).
 			WithHint("a bare repository has no working tree to report on")
 	}
-	status, err := worktreeStatus(repo, wt)
+	status, ignored, err := worktreeStatus(repo, wt)
 	if err != nil {
 		return nil, view.Errorf("git.status.failed", "reading status: %v", err)
 	}
@@ -88,31 +91,48 @@ func runStatus(ctx context.Context, req plugin.Request) (view.View, error) {
 		t.Rows = append(t.Rows, []string{p, statusLetter(fs.Staging), statusLetter(fs.Worktree)})
 	}
 	t.Total = len(t.Rows)
+	if len(ignored) > 0 {
+		t.Warnings = append(t.Warnings, view.Error{
+			Code:    "git.status.ignore",
+			Message: ignored.sentence(format.Plural(len(ignored), "what it ignores", "what they ignore") + " is listed as untracked"),
+			Hint:    "`git status` lists what git ignores; git itself applies none of a pattern file past 100 MB",
+		})
+	}
 	return t, nil
 }
 
 // worktreeStatus is wt's status, as go-git's Worktree.Status reads it but
-// through submodulesOnDisk, so that reading it writes nothing, and with a
-// change of kind told apart from a change of content (kindChanges). Every
-// capability that reports the working tree's state asks for it here.
-func worktreeStatus(repo *git.Repository, wt *git.Worktree) (git.Status, error) {
-	store, ok := repo.Storer.(*filesystem.Storage)
-	if !ok {
-		return wt.Status()
+// through submodulesOnDisk, so that reading it writes nothing, with its
+// ignore files held to what one status applies (ignoreFiles), and with a
+// change of kind told apart from a change of content (kindChanges); and the
+// ignore files it did not apply. Every capability that reports the working
+// tree's state asks for it here.
+func worktreeStatus(repo *git.Repository, wt *git.Worktree) (git.Status, unapplied, error) {
+	storer := repo.Storer
+	store, onDisk := repo.Storer.(*filesystem.Storage)
+	if onDisk {
+		storer = submodulesOnDisk{store}
 	}
-	reader, err := git.Open(submodulesOnDisk{store}, wt.Filesystem)
+	read := newIgnoresRead()
+	reader, err := git.Open(storer, ignoreFiles{Filesystem: wt.Filesystem, read: read})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	if wt, err = reader.Worktree(); err != nil {
-		return nil, err
-	}
-	status, err := wt.Status()
+	bounded, err := reader.Worktree()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	kindChanges(repo, wt.Filesystem.Root(), status)
-	return status, nil
+	status, err := bounded.Status()
+	if err != nil {
+		return nil, nil, err
+	}
+	if idx, err := repo.Storer.Index(); err == nil {
+		read.restore(wt.Filesystem, idx, status)
+	}
+	if onDisk {
+		kindChanges(repo, wt.Filesystem.Root(), status)
+	}
+	return status, read.unapplied(), nil
 }
 
 // typeChanged is the code git gives a path whose kind changed, which go-git's
