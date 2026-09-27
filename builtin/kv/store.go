@@ -20,6 +20,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/pathguard"
 	"github.com/this-is-tobi/rta/internal/paths"
 	"github.com/this-is-tobi/rta/internal/stdio"
+	"github.com/this-is-tobi/rta/internal/textclean"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -195,6 +196,14 @@ var promptPassphrase = func() (string, error) {
 var promptKeyPassphrase = func(path string) (string, error) {
 	secret, err := stdio.ReadSecret("Passphrase for " + path + ": ")
 	return string(secret), err
+}
+
+// promptValue asks for the value kv set was given none of, naming the key it
+// is for as the gate shows a record (textclean.Record): a key holding a
+// control character or white space is spelled out rather than drawn, so the
+// person typing a secret sees which entry it goes into. Overridable in tests.
+var promptValue = func(key string) ([]byte, error) {
+	return stdio.ReadSecret("Value for " + textclean.Record(key) + ": ")
 }
 
 // canPrompt reports whether this request can reach a person at a terminal.

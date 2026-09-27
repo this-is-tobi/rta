@@ -231,10 +231,12 @@ func Plugin() plugin.Plugin {
 				ID: "kv.set", Summary: "Set (or overwrite) a stored value", Safety: plugin.Write, Idempotent: true,
 				Flash:      true,
 				NeedsGrant: true, Scope: "key",
-				Description: "The value comes from `value` or from `file`. The kind (certificate, " +
-					"private key, json, file, string) is detected from the content unless `kind` says " +
-					"otherwise. Writing an entry never changes who can read the store: that is " +
-					"`kv.rekey`, which is destructive for the reason this is not.\n\n" +
+				Description: "The value comes from `value` or from `file`. A call giving neither asks a " +
+					"person at a terminal for it without echoing what they type, and is refused anywhere " +
+					"else, unless its `description` or `kind` relabel an entry that already exists. The " +
+					"kind (certificate, private key, json, file, string) is detected from the content " +
+					"unless `kind` says otherwise. Writing an entry never changes who can read the " +
+					"store: that is `kv.rekey`, which is destructive for the reason this is not.\n\n" +
 					"With no value at all, `description` and `kind` relabel an entry that already " +
 					"exists, leaving the secret and both timestamps untouched — so correcting what " +
 					"something is for does not mean fetching and re-typing the secret itself, and " +

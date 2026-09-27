@@ -5,7 +5,7 @@ An encrypted local store for the things you keep re-pasting: database passwords,
 It is `age`-backed, it lives beside your config, and it never writes a value to a log, an argv or the terminal unless you ask it to.
 
 ```bash
-rta kv set db-password --file db-password.txt
+rta kv set db-password
 rta kv get db-password
 rta kv list
 ```
@@ -34,12 +34,12 @@ In [the TUI](./20-tui.md), a passphrase typed into an unlock form is kept in tha
 ## Storing things
 
 ```bash
-rta kv set api-token --file token.txt         # in no argv and no shell history
-rta kv set tls-cert --file server.pem
+rta kv set api-token                          # asks for it, and echoes nothing
+rta kv set tls-cert --file server.pem         # in no argv and no shell history
 rta kv set db-password --description "staging replica"
 ```
 
-`kv set` never prompts for a value, and one typed after the key stays in your shell history. So a secret comes from `--file` — `--file /dev/stdin` from a pipe, as [the CLI](./10-cli.md) shows — or from the `kv set` form in [the TUI](./20-tui.md), which masks it as you type.
+At a terminal, `kv set` given no value asks for it without echoing what you type, so the secret reaches neither your shell history nor `ps` — where one typed after the key reaches both. `--description` or `--kind` alone relabel an entry the store holds and ask for nothing; for a key it does not hold yet, they label the entry the typed value makes. The prompt reads one line. A value that spans lines, or one already in a file, comes from `--file`, and one another command prints from `--file /dev/stdin`, as [the CLI](./10-cli.md) shows: pasted at the prompt, only its first line is read, and the rest goes on to whatever reads the terminal next — the passphrase prompt, or your shell and its history. A first line that only opens a value — a PEM block's, or the lone `{` of a JSON credential — is refused as `kv.set.multiline` rather than stored as though it were the whole. In [the TUI](./20-tui.md) the `kv set` form masks it as you type. Nothing is asked where nobody is at a terminal: a script whose standard input is not one, and an agent, are refused with `kv.set.novalue` and give the value with `--file` or the `value` argument. An empty answer is no value, and is refused the same way.
 
 rta detects what kind of thing it is — string, JSON, certificate, private key, SSH key, file — and `kv list` shows the kind and description without ever showing a value — and, once a value has been replaced, how many earlier ones `kv history` still keeps. `--kind` overrides the detection. A value piped in through `--file /dev/stdin` is labelled by what it holds, as a typed one is — a password is a string, not a file called `stdin`, and bytes that are not text are a file — and `kv list --detail` gives its source as `piped`, where one read from a file on disk gives `file:` and the file's name.
 

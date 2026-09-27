@@ -196,7 +196,7 @@ echo -n hello | rta fs hash /dev/stdin
 kubectl get secret db -o jsonpath='{.data.password}' | base64 -d | rta kv set db-password --file /dev/stdin
 ```
 
-The second line is the one that matters: it is how a credential reaches the store without ever being an argument in `ps` or in your shell history.
+The second line is the one that matters: it is how a credential another command prints reaches the store without ever being an argument in `ps` or in your shell history. To type one instead, run `rta kv set db-password` at a terminal: it asks for the value with echo off.
 
 ## Scripting notes
 
@@ -207,7 +207,7 @@ The second line is the one that matters: it is how a credential reaches the stor
 - **`--no-color` is honoured**, and colour is already suppressed when stdout is not a terminal.
 - **Pretty output takes `COLUMNS` when it is set**, over the terminal's own width and through a pipe too: `COLUMNS=100 rta doctor | less`. Without it a pipe gets every table at its natural width, which does not depend on whose window ran the command. With it a pipe is shaped as a terminal that wide would be, so a value longer than the width — a token, a hash — is broken across lines there too; a script reads values from `-o json`, never from the pretty layout.
 - **Setup itself is scriptable.** `rta profile set` and `rta policy` state an environment and a ceiling from flags, and `rta dashboard add` puts a tile on the TUI's landing screen, all idempotent, so provisioning does not have to fall back to writing YAML by hand — see [Profiles](./40-profiles.md#writing-one-from-a-script) and [The TUI](./20-tui.md#stating-the-dashboard-yourself).
-- **Never pass a credential on a command line.** Store it (`rta kv set <entry> --file <path>`, or `--file /dev/stdin` from a pipe) and reference it: `--secret password=kv:<entry>`. A value in argv is in `ps`, in your shell history, and in most CI logs. `rta profile set` refuses one rather than writing it.
+- **Never pass a credential on a command line.** Store it (`rta kv set <entry>`, which asks for it at a terminal, `--file <path>`, or `--file /dev/stdin` from a pipe) and reference it: `--secret password=kv:<entry>`. A value in argv is in `ps`, in your shell history, and in most CI logs. `rta profile set` refuses one rather than writing it.
 
 ## Next
 

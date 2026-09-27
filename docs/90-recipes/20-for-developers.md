@@ -15,14 +15,14 @@ With `--generate` nothing asks for a passphrase again, and losing that key costs
 ## Name each environment once
 
 ```bash
-rta kv set staging-db-password --file db-password.txt   # from disk, so no shell history holds it
+rta kv set staging-db-password   # asks for it, echoing nothing, so no shell history holds it
 rta profile set staging --note "shared staging" --ttl 8h \
     --plugin pg --set host=db.staging.internal --set database=app \
     --secret password=kv:staging-db-password
 rta profile list
 ```
 
-A value typed after the key would land in your shell history, so it comes from a file here, or from the TUI's `kv set` form, which masks it. A profile points every plugin that has something in it at one environment, and its `secrets:` hold a reference, never a value. In the TUI it is one form: `f`, then `n`. [Profiles](../20-using/40-profiles.md).
+A value typed after the key would land in your shell history, so `kv set` asks for it here, at the terminal and without echoing it; one already in a file comes from `--file`, and the TUI's `kv set` form masks it. A profile points every plugin that has something in it at one environment, and its `secrets:` hold a reference, never a value. In the TUI it is one form: `f`, then `n`. [Profiles](../20-using/40-profiles.md).
 
 ## Work in one environment at a time
 
