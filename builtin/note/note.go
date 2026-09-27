@@ -267,6 +267,40 @@ func index(s itemstore.Store, id int) (int, bool) {
 	return 0, false
 }
 
+// reaches reports whether walking up from note p — p, its parent, that
+// note's parent — arrives at note id: whether p is id or sits somewhere under
+// it. Bounded by the number of notes, so a store that already holds a cycle
+// cannot hold the walk in it.
+func reaches(s itemstore.Store, p, id int) bool {
+	for steps := 0; p != 0 && steps <= len(s.Items); steps++ {
+		if p == id {
+			return true
+		}
+		i, ok := index(s, p)
+		if !ok {
+			return false
+		}
+		p = s.Items[i].Parent
+	}
+	return false
+}
+
+// rootless reports whether a note's parents never reach the top — a cycle, or
+// a parent that is not there — so no listing would show it under anything.
+// Notes in that state are listed at the top: an edit could make a cycle
+// before it refused one, and a note shown nowhere reads as a note deleted.
+func rootless(s itemstore.Store, it itemstore.Item) bool {
+	p := it.Parent
+	for steps := 0; p != 0; steps++ {
+		i, ok := index(s, p)
+		if !ok || steps > len(s.Items) {
+			return true
+		}
+		p = s.Items[i].Parent
+	}
+	return false
+}
+
 // find is index for a call that cannot go on without the note, refused in
 // the words of the surface asking, which is who has to find the right id.
 func find(sf plugin.Surface, s itemstore.Store, id int) (int, *view.Error) {
@@ -360,7 +394,8 @@ func runList(_ context.Context, req plugin.Request) (view.View, error) {
 	now := time.Now()
 	var shown []itemstore.Item
 	for _, it := range s.Items {
-		if it.Parent != parent || (it.Done && !includeDone) || !hasAnyTag(it, tags) {
+		under := it.Parent == parent || (parent == 0 && it.Parent != 0 && rootless(s, it))
+		if !under || (it.Done && !includeDone) || !hasAnyTag(it, tags) {
 			continue
 		}
 		shown = append(shown, it)
@@ -707,6 +742,18 @@ func runEdit(_ context.Context, req plugin.Request) (view.View, error) {
 				return nil, view.Errorf("note.edit.badparent", "parent note %d does not exist", parent)
 			}
 		}
+		// Nor under one of its own sub-notes, however far down: the two
+		// would each sit under the other, and a list shows what hangs from
+		// the top, so both vanished from every listing — read by anybody as
+		// deleted.
+		if reaches(s, parent, id) {
+			sf := req.Surface()
+			return nil, view.Errorf("note.edit.cycle",
+				"note %d is under note %d, so note %d cannot go under it", parent, id, id).
+				WithHint("move note " + strconv.Itoa(parent) + " out first — `" +
+					sf.Call("note.edit", idArg(parent), plugin.Arg{Name: "parent", Value: 0}) +
+					"` puts it at the top")
+		}
 	}
 	var due *time.Time
 	dueChanged := false
@@ -868,6 +915,13 @@ func runRemove(_ context.Context, req plugin.Request) (view.View, error) {
 	for j := range s.Items {
 		if s.Items[j].Parent == id {
 			s.Items[j].Parent = parent
+			// A store an edit put in a cycle before edit refused one: the
+			// removed note's parent can be its own sub-note, and moving
+			// that sub-note up would make it its own parent, or one of a
+			// smaller cycle. The top is where it is seen.
+			if reaches(s, parent, s.Items[j].ID) {
+				s.Items[j].Parent = 0
+			}
 			reparented++
 		}
 	}

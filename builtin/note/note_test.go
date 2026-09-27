@@ -637,6 +637,74 @@ func TestEditSelfParentIsCoded(t *testing.T) {
 	}
 }
 
+// A note cannot go under one of its own sub-notes, however far down. Only
+// the self-parent was refused, so `note edit 1 --parent 2` with note 2
+// already under note 1 made each the other's parent — and since a list shows
+// what sits under the top, both vanished from every listing, read by
+// anybody as deleted.
+func TestEditRefusesAParentThatWouldCloseACycle(t *testing.T) {
+	setup(t)
+	text(t, runAdd, map[string]any{"title": "alpha"}, false)
+	text(t, runAdd, map[string]any{"title": "beta", "parent": 1}, false)
+	text(t, runAdd, map[string]any{"title": "gamma", "parent": 2}, false)
+
+	for _, parent := range []int{2, 3} {
+		_, err := runEdit(context.Background(), req(map[string]any{"id": 1, "parent": parent}, false))
+		if ve := view.AsError(err, "x"); ve == nil || ve.Code != "note.edit.cycle" {
+			t.Errorf("note 1 under note %d: %v, want note.edit.cycle", parent, err)
+		}
+	}
+	s, err := load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if i, _ := index(s, 1); s.Items[i].Parent != 0 {
+		t.Fatalf("a refused edit moved note 1 under note %d", s.Items[i].Parent)
+	}
+	tbl := table(t, runList, map[string]any{})
+	if len(tbl.Rows) != 1 || tbl.Rows[0][col(t, tbl, "Note")] != "alpha (0/1)" {
+		t.Fatalf("list = %v, want alpha at the top", tbl.Rows)
+	}
+
+	// Moving a note down its own branch's side, or up to the top, is no cycle.
+	text(t, runEdit, map[string]any{"id": 3, "parent": 1}, false)
+	text(t, runEdit, map[string]any{"id": 2, "parent": 0}, false)
+}
+
+// A store an earlier edit already put in a cycle is not left with notes no
+// listing shows: they list at the top, since their parents never reach it,
+// and removing one of them does not make the other its own parent.
+func TestNotesAlreadyInACycleComeBackIntoView(t *testing.T) {
+	setup(t)
+	text(t, runAdd, map[string]any{"title": "alpha"}, false)
+	text(t, runAdd, map[string]any{"title": "beta"}, false)
+	text(t, runAdd, map[string]any{"title": "kept"}, false)
+	s, err := load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Items[0].Parent, s.Items[1].Parent = 2, 1
+	if err := save(s); err != nil {
+		t.Fatal(err)
+	}
+
+	tbl := table(t, runList, map[string]any{})
+	if len(tbl.Rows) != 3 {
+		t.Fatalf("list = %v, want the two notes in the cycle beside the one outside it", tbl.Rows)
+	}
+
+	text(t, runRemove, map[string]any{"id": 1}, false)
+	if s, err = load(); err != nil {
+		t.Fatal(err)
+	}
+	if i, _ := index(s, 2); s.Items[i].Parent != 0 {
+		t.Fatalf("beta's parent = %d after its parent in the cycle went, want the top", s.Items[i].Parent)
+	}
+	if tbl = table(t, runList, map[string]any{}); len(tbl.Rows) != 2 {
+		t.Fatalf("list = %v, want beta and kept", tbl.Rows)
+	}
+}
+
 // Removing a note with sub-notes moves them up rather than orphaning or
 // deleting them.
 func TestRemoveReparentsChildren(t *testing.T) {
