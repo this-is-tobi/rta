@@ -486,7 +486,7 @@ func RevokeRemote(spec operatorid.RevokeSpec, write bool) (operatorid.RevokeOutc
 // surviving-coverage answer and the rows written back are three answers to
 // one question, so they are all decided from the snapshot the lock is held
 // over — deriving them from an unlocked read let an operator be told
-// "revoked 1 grant(s)" while a Reserve running at that instant put the
+// "revoked 1 grant" while a Reserve running at that instant put the
 // grant back.
 func revokeOutcome(spec operatorid.RevokeSpec, write bool) (operatorid.RevokeOutcome, *view.Error) {
 	var out operatorid.RevokeOutcome
@@ -581,7 +581,7 @@ func revokeBody(sf plugin.Surface, target string, out operatorid.RevokeOutcome, 
 		return stillCovered(msg)
 	}
 	if dry {
-		return stillCovered(fmt.Sprintf("would revoke %d grant(s)", out.Revoked))
+		return stillCovered("would revoke " + format.Count(out.Revoked, "grant", "grants"))
 	}
-	return stillCovered(fmt.Sprintf("revoked %d grant(s)", out.Revoked))
+	return stillCovered("revoked " + format.Count(out.Revoked, "grant", "grants"))
 }

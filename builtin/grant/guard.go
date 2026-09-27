@@ -11,6 +11,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/guard"
 	operatorid "github.com/this-is-tobi/rta/internal/operator"
 	"github.com/this-is-tobi/rta/internal/stdio"
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -26,8 +27,9 @@ func runGuardOn(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 	if req.DryRun {
 		return view.Text{Body: fmt.Sprintf("would enable the guard: issuing or renewing a grant "+
-			"then requires the passphrase, and the %d grant(s) currently held are cleared — "+
-			"they were issued without one", len(held))}, nil
+			"then requires the passphrase, and the %s currently held %s cleared — "+
+			"%s issued without one", format.Count(len(held), "grant", "grants"),
+			format.Plural(len(held), "is", "are"), format.Plural(len(held), "it was", "they were"))}, nil
 	}
 	pass, verr := guard.PromptSecret(req, true)
 	if verr != nil {
@@ -66,7 +68,7 @@ func runGuardOn(_ context.Context, req plugin.Request) (view.View, error) {
 	return view.KeyValue{Pairs: []view.Pair{
 		{Key: "guard", Value: "on — issuing or renewing a grant now asks for the passphrase"},
 		{Key: "key", Value: guard.Fingerprint()},
-		{Key: "cleared", Value: fmt.Sprintf("%d grant(s) issued before the guard", len(held))},
+		{Key: "cleared", Value: format.Count(len(held), "grant", "grants") + " issued before the guard"},
 		{Key: "forgotten?", Value: "rm " + guard.Path() + " and the grants.json beside it starts clean"},
 	}}, nil
 }
@@ -86,8 +88,8 @@ func runGuardOff(_ context.Context, req plugin.Request) (view.View, error) {
 	// the audit trail of a guard that read "on" yesterday.
 	if guard.Remote() {
 		if req.DryRun {
-			return view.Text{Body: fmt.Sprintf("would disable the remote guard, clearing the %d "+
-				"grant(s) its operators signed", len(held))}, nil
+			return view.Text{Body: fmt.Sprintf("would disable the remote guard, clearing the %s "+
+				"its operators signed", format.Count(len(held), "grant", "grants"))}, nil
 		}
 		// "Presence at this terminal" enforced, not assumed: without this, an
 		// agent's shell tool tears the guard down more cleanly than the rm it
@@ -109,12 +111,12 @@ func runGuardOff(_ context.Context, req plugin.Request) (view.View, error) {
 		}
 		return view.KeyValue{Pairs: []view.Pair{
 			{Key: "guard", Value: "off — grants issue without an operator signature again"},
-			{Key: "cleared", Value: fmt.Sprintf("%d grant(s) the operators had signed", len(held))},
+			{Key: "cleared", Value: format.Count(len(held), "grant", "grants") + " the operators had signed"},
 		}}, nil
 	}
 	if req.DryRun {
 		return view.Text{Body: fmt.Sprintf("would disable the guard after checking the passphrase, "+
-			"clearing the %d grant(s) it signed", len(held))}, nil
+			"clearing the %s it signed", format.Count(len(held), "grant", "grants"))}, nil
 	}
 	pass, verr := guard.PromptSecret(req, false)
 	if verr != nil {
@@ -138,7 +140,7 @@ func runGuardOff(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 	return view.KeyValue{Pairs: []view.Pair{
 		{Key: "guard", Value: "off — grants issue without a passphrase again"},
-		{Key: "cleared", Value: fmt.Sprintf("%d grant(s) the guard had signed", len(held))},
+		{Key: "cleared", Value: format.Count(len(held), "grant", "grants") + " the guard had signed"},
 	}}, nil
 }
 
@@ -196,10 +198,11 @@ func runGuardRemote(_ context.Context, req plugin.Request) (view.View, error) {
 	if req.DryRun {
 		body := fmt.Sprintf("would enroll %s as this machine's guard, bound to %s — "+
 			"grants are then honoured only when signed by one of them, issued over the operator "+
-			"channel — and clear the %d grant(s) currently held",
-			strings.Join(signerLabels, ", "), canonical, len(held))
+			"channel — and clear the %s currently held",
+			strings.Join(signerLabels, ", "), canonical, format.Count(len(held), "grant", "grants"))
 		if skipped > 0 {
-			body += fmt.Sprintf("; %d key(s) stay out of the guard (role=read, or already expired)", skipped)
+			body += fmt.Sprintf("; %s out of the guard (role=read, or already expired)",
+				format.Count(skipped, "key stays", "keys stay"))
 		}
 		return view.Text{Body: body}, nil
 	}
@@ -213,15 +216,15 @@ func runGuardRemote(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 	operatorsCell := strings.Join(signerLabels, ", ")
 	if skipped > 0 {
-		operatorsCell += fmt.Sprintf(" — %d key(s) not enrolled (role=read, or already expired): "+
-			"they cannot sign grants", skipped)
+		operatorsCell += fmt.Sprintf(" — %s not enrolled (role=read, or already expired): "+
+			"%s sign grants", format.Count(skipped, "key", "keys"), format.Plural(skipped, "it cannot", "they cannot"))
 	}
 	pairs := []view.Pair{
 		{Key: "guard", Value: "remote — a grant is honoured only when an enrolled operator signed it"},
 		{Key: "server", Value: canonical},
 		{Key: "operators", Value: operatorsCell},
 		{Key: "key", Value: guard.Fingerprint()},
-		{Key: "cleared", Value: fmt.Sprintf("%d grant(s) issued before the guard", len(held))},
+		{Key: "cleared", Value: format.Count(len(held), "grant", "grants") + " issued before the guard"},
 		{Key: "issuance", Value: req.Surface().Call("grant.allow",
 			plugin.Arg{Name: "target", Value: "<capability>", Positional: true},
 			plugin.Arg{Name: "server", Value: "<this-server>"}) + ", from an enrolled machine"},

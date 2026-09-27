@@ -183,7 +183,7 @@ func TestHeldTableEmptyStateNotesCeilingSuppressedGrants(t *testing.T) {
 			note = s.View.(view.Text).Body
 		}
 	}
-	if !strings.Contains(note, "1 grant(s) on disk are suppressed by your team's policy") {
+	if !strings.Contains(note, "1 grant on disk is suppressed by your team's policy") {
 		t.Errorf("policy = %q, want the suppression note naming the count", note)
 	}
 	if !strings.Contains(note, policy.RepoFile) {
@@ -228,7 +228,7 @@ func TestHeldTablePartialSuppressionSplitsAllowedFromSuppressed(t *testing.T) {
 	if !ok || sections.Items[1].Title != "Your team's policy" {
 		t.Fatalf("second section = %+v, want the policy note", sections.Items[1])
 	}
-	if !strings.Contains(note.Body, "1 grant(s)") {
+	if !strings.Contains(note.Body, "1 grant on disk is suppressed") {
 		t.Errorf("policy note = %q, want it to count the one suppressed grant", note.Body)
 	}
 }

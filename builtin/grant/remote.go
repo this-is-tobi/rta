@@ -87,8 +87,10 @@ func remoteList(ctx context.Context, req plugin.Request, server string) (view.Vi
 // from the server, and the ceiling's whereabouts are the server's to know —
 // naming a local policy file here would point at the wrong machine.
 func remoteSuppressedNote(server string, n int) string {
-	return fmt.Sprintf("\n\n%d grant(s) on %s are suppressed by its team's policy.\n"+
-		"They are not deleted: relaxing the policy on the server brings them back.", n, server)
+	return fmt.Sprintf("\n\n%s on %s %s suppressed by its team's policy.\n"+
+		"%s not deleted: relaxing the policy on the server brings %s back.",
+		format.Count(n, "grant", "grants"), server, format.Plural(n, "is", "are"),
+		format.Plural(n, "It is", "They are"), format.Plural(n, "it", "them"))
 }
 
 // remoteAllow is `grant allow --server <name>`: prepare on the server, sign
