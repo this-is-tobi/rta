@@ -327,16 +327,24 @@ func runHash(ctx context.Context, req plugin.Request) (view.View, error) {
 // normalizeChecksum takes a checksum as it was pasted: any case, wrapped in
 // whitespace, possibly carrying its algorithm prefix, possibly followed by
 // the filename the way shasum prints it.
+//
+// The checksum is the first word, taken before anything else is read: the
+// algorithm prefix used to be cut at the first colon in the whole line, so
+// `<hash>  report:v2.txt` — shasum's own output for a file with a colon in
+// its name — compared "v2.txt" against the hash and reported a correct file
+// as not the described one. A prefix set off by a space, "sha256: <hash>",
+// is a first word ending in the colon, and the hash is the word after it.
 func normalizeChecksum(raw string) string {
-	s := strings.TrimSpace(raw)
-	if s == "" {
+	words := strings.Fields(raw)
+	if len(words) == 0 {
 		return ""
 	}
-	if _, after, found := strings.Cut(s, ":"); found {
-		s = strings.TrimSpace(after)
+	s := words[0]
+	if strings.HasSuffix(s, ":") && len(words) > 1 {
+		s = words[1]
 	}
-	if i := strings.IndexAny(s, " \t"); i >= 0 {
-		s = s[:i] // "abc123  filename" — the shasum output format
+	if _, after, found := strings.Cut(s, ":"); found {
+		s = after
 	}
 	return strings.ToLower(strings.TrimPrefix(s, "*"))
 }

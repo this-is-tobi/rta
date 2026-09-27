@@ -439,6 +439,10 @@ func TestHashMatchesAndSaysSo(t *testing.T) {
 	for _, spelling := range []string{
 		want, strings.ToUpper(want), "sha256:" + want, "  " + want + "  ",
 		want + "  f.bin", "*" + want,
+		// A pasted shasum line whose filename holds a colon was cut at that
+		// colon, and a correct checksum reported "NO".
+		want + "  report:v2.txt", want + " *report:v2.txt",
+		"sha256: " + want, "SHA256:" + want + "  report:v2.txt",
 	} {
 		kv = run(t, runHash, map[string]any{"path": path, "algo": "sha256", "expect": spelling}).(view.KeyValue)
 		if got := pairValue(kv, "match"); !strings.HasPrefix(got, "yes") {
