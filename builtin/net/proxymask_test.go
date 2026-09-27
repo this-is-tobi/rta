@@ -21,6 +21,16 @@ func TestProxyCredentialsAreMaskedInEveryFormThatWorks(t *testing.T) {
 		{"username only", "http://bob@proxy.corp:3128", "bob"},
 		{"schemeless username only", "bob@proxy.corp:3128", "bob"},
 		{"password with punctuation", "http://u:p%40ss:word@proxy.corp:3128", "word"},
+		// url.Parse, which net/http reads the variable with, splits the
+		// userinfo at the last `@`, so a raw `@` in a password works — and
+		// cut at the first one, the rest of the password was printed.
+		{"password with a raw @", "http://bob:s3cr@tpass@proxy.corp:3128", "tpass"},
+		{"schemeless password with a raw @", "bob:P@ss@proxy.corp:3128", "ss"},
+		{"raw @ in the password and in the path", "http://bob:s3cr@tpass@proxy.corp:3128/a@b", "tpass"},
+		// A `://` further along is in the path, not the end of a scheme: net/http
+		// reads this as bob with s3cret, and taking the first `://` for the
+		// scheme's split the value after the credential.
+		{"schemeless, with :// in the path", "bob:s3cret@proxy.corp:3128/x://y", "s3cret"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := maskProxy(tc.in)
@@ -54,9 +64,15 @@ func TestAProxyWithNoCredentialIsLeftAlone(t *testing.T) {
 
 func TestAnAtSignAfterThePathIsNotACredential(t *testing.T) {
 	// Reading the first @ anywhere would mask the host instead of a secret.
-	in := "http://proxy.corp:3128/path@notuserinfo"
-	if got := maskProxy(in); got != in {
-		t.Errorf("%q became %q", in, got)
+	for _, in := range []string{
+		"http://proxy.corp:3128/path@notuserinfo",
+		"http://proxy.corp:3128?who=a@b",
+		"http://proxy.corp:3128#a@b",
+		"proxy.corp:3128/a://b@c",
+	} {
+		if got := maskProxy(in); got != in {
+			t.Errorf("%q became %q", in, got)
+		}
 	}
 }
 

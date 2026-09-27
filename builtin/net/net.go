@@ -913,19 +913,30 @@ func proxySummary() string {
 // Scanning for the userinfo covers both spellings with one rule and no
 // dependency on a parser's opinion of what a scheme is.
 func maskProxy(raw string) string {
+	// A `://` is the end of a scheme only when nothing before it could be
+	// userinfo or a path. The first one anywhere in the value was taken for
+	// it, so `bob:s3cret@proxy.corp:3128/x://y` — schemeless, and read by
+	// net/http as bob with s3cret, since the path is not its business — was
+	// split after the credential, and printed whole.
 	prefix, rest := "", raw
-	if i := strings.Index(raw, "://"); i >= 0 {
+	if i := strings.Index(raw, "://"); i >= 0 && !strings.ContainsAny(raw[:i], "@/?#") {
 		prefix, rest = raw[:i+3], raw[i+3:]
 	}
-	at := strings.Index(rest, "@")
-	if at < 0 {
-		return raw
+	// The userinfo lives in the authority, which ends at the first `/`, `?`
+	// or `#` — an `@` past that is part of a path, and reading it as a
+	// credential boundary would mask the host instead of the secret.
+	authority := rest
+	if end := strings.IndexAny(rest, "/?#"); end >= 0 {
+		authority = rest[:end]
 	}
-	// Userinfo is what precedes the first `@`, and only when that `@` comes
-	// before any path — otherwise an `@` further along the URL would be read
-	// as a credential boundary and the host would be masked instead of the
-	// secret.
-	if slash := strings.IndexByte(rest, '/'); slash >= 0 && slash < at {
+	// **The last `@` in it, not the first**, because that is where url.Parse
+	// splits — and url.Parse is what net/http reads a proxy variable with. A
+	// password holding a raw `@`, `bob:P@ssw0rd@proxy.corp:3128`, is a working
+	// configuration that authenticates as bob with P@ssw0rd; cut at the first
+	// `@`, this printed `***@ssw0rd@proxy.corp:3128`, most of the password,
+	// underneath net.info's promise that proxy credentials are masked.
+	at := strings.LastIndex(authority, "@")
+	if at < 0 {
 		return raw
 	}
 	// The whole userinfo, username included: this function's stated rule is
