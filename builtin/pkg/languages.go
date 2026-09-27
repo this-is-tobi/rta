@@ -347,7 +347,11 @@ func goManager() manager {
 			}
 			var rows []outdated
 			for _, e := range entries {
-				if e.IsDir() {
+				// go install places a regular file, or somebody links one in.
+				// Anything else is not a tool, and go opens what it is given
+				// blocking: a named pipe in GOBIN held `go version -m` until the
+				// list timed out, and the go row failed with it.
+				if info, err := os.Stat(filepath.Join(dir, e.Name())); err != nil || !info.Mode().IsRegular() {
 					continue
 				}
 				// Exit 1 is go saying the file holds no Go build info — a
