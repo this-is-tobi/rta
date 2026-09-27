@@ -204,6 +204,21 @@ func TestResolverSetBacksUpFirst(t *testing.T) {
 	}
 }
 
+// A file of any size was read whole, and more than once: 2 GiB named as a
+// resolv.conf took the server to 4.5 GB resident. A file past the cap is
+// refused by name before it is read to the end.
+func TestResolverListRefusesAFileNoResolvConfIsThatLarge(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "blob")
+	if err := os.WriteFile(path, []byte(strings.Repeat("#", maxResolvBytes+1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := runResolverList(context.Background(), plugin.NewRequest(map[string]any{"file": path}, false, false))
+	verr, ok := err.(*view.Error)
+	if !ok || verr.Code != "net.sysfile.toolarge" || !strings.Contains(verr.Message, path) {
+		t.Fatalf("err = %v, want net.sysfile.toolarge naming %s", err, path)
+	}
+}
+
 // --- Safety classes ---------------------------------------------------------
 
 // Editing name resolution for every process on the machine is not an

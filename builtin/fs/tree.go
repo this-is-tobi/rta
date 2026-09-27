@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"hash"
 	"io"
@@ -15,6 +16,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/this-is-tobi/rta/builtin/internal/pathin"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -268,6 +270,10 @@ func runHash(ctx context.Context, req plugin.Request) (view.View, error) {
 			WithHint("one of: " + strings.Join(names, ", "))
 	}
 
+	// Stat'ed first for the refusal a directory gets, which names the
+	// capability that measures one. What is opened is judged again by
+	// pathin, which opens only a regular file off the CLI: a named pipe
+	// opened blocking held this call, and an OS thread, for good.
 	info, err := os.Stat(path)
 	if err != nil {
 		return nil, pathError("fs.hash", path, err)
@@ -277,8 +283,13 @@ func runHash(ctx context.Context, req plugin.Request) (view.View, error) {
 			WithHint("hash a file; " + req.Surface().CapabilityName("fs.usage") + " measures a directory")
 	}
 
-	f, err := os.Open(path)
-	if err != nil {
+	f, info, err := pathin.Open(req.Surface(), path)
+	var notAFile *pathin.NotAFileError
+	switch {
+	case errors.As(err, &notAFile):
+		return nil, view.Errorf("fs.hash.notafile", "%v", err).
+			WithHint("name a regular file to hash")
+	case err != nil:
 		return nil, pathError("fs.hash", path, err)
 	}
 	defer func() { _ = f.Close() }()

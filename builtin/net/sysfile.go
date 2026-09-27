@@ -3,6 +3,7 @@ package net
 import (
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/this-is-tobi/rta/builtin/internal/itemstore"
+	"github.com/this-is-tobi/rta/builtin/internal/pathin"
 	"github.com/this-is-tobi/rta/internal/atomicfile"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -36,12 +38,24 @@ import (
 // its own kind of mess, and these belong with rta's own state.
 func backupDir() string { return filepath.Join(itemstore.DataDir(), "backups") }
 
+// maxHostsBytes and maxResolvBytes are more than either file ever holds,
+// with room to spare: the largest hosts files in use are ad-blocking lists of
+// a few megabytes, and a resolv.conf is under a kilobyte, since the resolver
+// reads three nameservers and a search list of 256 characters. A file past
+// the cap is not the file the input names, and reading it whole was the
+// server's memory spent on the caller's say-so (pathin).
+const (
+	maxHostsBytes  = 32 << 20
+	maxResolvBytes = 1 << 20
+)
+
 // readLines reads a configuration file as lines, keeping them exactly as
-// written.
-func readLines(path string) ([]string, *view.Error) {
-	data, err := os.ReadFile(path)
+// written. sf is the surface asking, for pathin's line on what a path may
+// name, and max the file's cap.
+func readLines(sf plugin.Surface, path string, max int) ([]string, *view.Error) {
+	data, err := pathin.Read(sf, path, max)
 	if err != nil {
-		return nil, view.Errorf("net.sysfile.unreadable", "reading %s: %v", path, err)
+		return nil, unreadable(path, err)
 	}
 	text := strings.TrimSuffix(string(data), "\n")
 	if text == "" {
@@ -60,21 +74,22 @@ func readLines(path string) ([]string, *view.Error) {
 // has a real file at the other end you could edit, a header does not. force
 // is the override as the caller gives it (plugin.Surface.InputName), which
 // the advice names.
-func managedBy(path, force string) (what, advice string) {
+//
+// sf is the surface asking, for the file pathin opens to read the header.
+func managedBy(sf plugin.Surface, path, force string) (what, advice string) {
 	if target, err := os.Readlink(path); err == nil {
 		return "a symlink to " + target,
 			"edit " + target + " instead, or configure whatever writes it — " + force + " would " +
 				"replace the symlink with a regular file, which usually breaks more than it fixes"
 	}
-	data, err := os.ReadFile(path)
+	f, _, err := pathin.Open(sf, path)
 	if err != nil {
 		return "", ""
 	}
-	head := string(data)
-	if len(head) > 512 {
-		head = head[:512]
-	}
-	lower := strings.ToLower(head)
+	defer func() { _ = f.Close() }()
+	head := make([]byte, 512)
+	n, _ := io.ReadFull(f, head)
+	lower := strings.ToLower(string(head[:n]))
 	for _, m := range []struct{ marker, owner string }{
 		{"systemd-resolved", "systemd-resolved"},
 		{"networkmanager", "NetworkManager"},
@@ -94,17 +109,19 @@ func managedBy(path, force string) (what, advice string) {
 }
 
 // backup copies path into rta's own state directory before it is changed,
-// and returns where it went so the message can say.
+// and returns where it went so the message can say. sf is the surface asking,
+// for the file pathin opens.
 //
 // Every backup gets its own file. Two edits in the same second are ordinary
 // — `hosts add` then `hosts toggle` takes about that long — and a timestamp
 // alone would have the second silently overwrite the first, leaving "saved
 // to X" pointing at a copy of the very state it claimed to preserve.
-func backup(path string) (string, *view.Error) {
-	data, err := os.ReadFile(path)
+func backup(sf plugin.Surface, path string) (string, *view.Error) {
+	src, _, err := pathin.Open(sf, path)
 	if err != nil {
-		return "", view.Errorf("net.sysfile.unreadable", "reading %s: %v", path, err)
+		return "", unreadable(path, err)
 	}
+	defer func() { _ = src.Close() }()
 	dir := backupDir()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", view.Errorf("net.sysfile.backup", "creating %s: %v", dir, err)
@@ -124,13 +141,29 @@ func backup(path string) (string, *view.Error) {
 		if err != nil {
 			return "", view.Errorf("net.sysfile.backup", "writing %s: %v", dest, err)
 		}
-		_, werr := f.Write(data)
+		_, werr := io.Copy(f, src)
 		cerr := f.Close()
 		if werr != nil || cerr != nil {
 			return "", view.Errorf("net.sysfile.backup", "writing %s: %v", dest, firstErr(werr, cerr))
 		}
 		return dest, nil
 	}
+}
+
+// unreadable is the refusal of a file readLines or backup could not read,
+// saying which of pathin's refusals it met when it was one of them.
+func unreadable(path string, err error) *view.Error {
+	var notAFile *pathin.NotAFileError
+	var tooLarge *pathin.TooLargeError
+	switch {
+	case errors.As(err, &notAFile):
+		return view.Errorf("net.sysfile.notafile", "%v", err).
+			WithHint("name the file itself — a hosts file or a resolv.conf is a regular file")
+	case errors.As(err, &tooLarge):
+		return view.Errorf("net.sysfile.toolarge", "%v, more than a hosts file or a resolv.conf holds", err).
+			WithHint("name the hosts file or the resolv.conf itself")
+	}
+	return view.Errorf("net.sysfile.unreadable", "reading %s: %v", path, err)
 }
 
 func firstErr(a, b error) error {
@@ -193,7 +226,7 @@ func permissionError(sf plugin.Surface, path string, err error) *view.Error {
 // refusing: the change works, then disappears at the next reboot or lease
 // renewal, and nothing points at why.
 func guardManaged(sf plugin.Surface, path string, force bool) *view.Error {
-	what, advice := managedBy(path, sf.InputName("force"))
+	what, advice := managedBy(sf, path, sf.InputName("force"))
 	if what == "" || force {
 		return nil
 	}
