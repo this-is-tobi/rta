@@ -451,6 +451,26 @@ func TestReadCappedRefusesAFileLargerThanRtaWrites(t *testing.T) {
 	}
 }
 
+// A read costs what the file holds, not what its cap allows. The buffer was
+// made at the cap's size before anything was read, so a generous cap — which
+// is what a cap should be — cost every read of a small file the whole of it.
+func TestACappedReadTakesOnlyWhatTheFileHolds(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "small.pb")
+	if err := os.WriteFile(path, make([]byte, 4096), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	got, err := ReadCapped(path, 64<<20)
+	runtime.ReadMemStats(&after)
+	if err != nil || len(got) != 4096 {
+		t.Fatalf("ReadCapped = %d bytes, %v", len(got), err)
+	}
+	if taken := after.TotalAlloc - before.TotalAlloc; taken > 1<<20 {
+		t.Errorf("reading 4 KiB under a 64 MiB cap took %d bytes", taken)
+	}
+}
+
 // A missing file has to stay distinguishable from a refused one: callers
 // branch on os.IsNotExist to mean "nothing trusted yet" or "no grants yet",
 // and turning that into a generic error would change what an empty machine
