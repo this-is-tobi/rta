@@ -44,8 +44,13 @@
 package stdio
 
 import (
+	"fmt"
 	"io"
 	"os"
+
+	"golang.org/x/term"
+
+	"github.com/this-is-tobi/rta/internal/shutdown"
 )
 
 // claimed is the process's real standard input, held here from the moment
@@ -93,6 +98,29 @@ func Real() *os.File {
 		return os.Stdin
 	}
 	return claimed
+}
+
+// readPassword is term.ReadPassword, a var so a test can answer a prompt
+// without a terminal.
+var readPassword = term.ReadPassword
+
+// ReadSecret asks the person at the terminal for a secret: prompt on standard
+// error, one line read from the real standard input with echo off, and the
+// line the answer was not echoed on ended. Standard error, never standard
+// output: `eval "$(rta kv env x)"` must not eval a prompt, and a redirected
+// `kv get > file` must not hold one. The caller has already decided a person
+// is there to ask — a CLI request with a terminal on standard input.
+//
+// The prompt is marked open while it waits (shutdown.Prompting): an exit taken
+// inside it reports on a line of its own rather than after the prompt's words.
+// Every prompt for a secret comes through here so that none of them can be
+// the one that forgot to say so.
+func ReadSecret(prompt string) ([]byte, error) {
+	defer shutdown.Prompting()()
+	fmt.Fprint(os.Stderr, prompt)
+	secret, err := readPassword(int(Real().Fd()))
+	fmt.Fprintln(os.Stderr)
+	return secret, err
 }
 
 // nopCloser wraps a writer whose Close must not reach the underlying file.

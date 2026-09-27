@@ -9,15 +9,17 @@
 // land anywhere in it, so the places where landing would do damage say so
 // here, and the exit waits for them.
 //
-// Three kinds of place. Work that leaves something behind if it is cut: a
+// Four kinds of place. Work that leaves something behind if it is cut: a
 // store write between its temporary file and its rename (internal/atomicfile),
 // or a secret written out in plaintext for an editor and not yet removed
 // (builtin/kv's edit). What the command would have undone on its way out, and
 // an exit without it has to undo for it: a lock it holds (internal/filelock),
-// which kv holds across its passphrase prompt. And a terminal lent to a child
+// which kv holds across its passphrase prompt. A terminal lent to a child
 // — that editor — whose keystrokes the terminal turns into signals for the
 // whole foreground group: emacs's C-g is SIGINT to rta as well, and it means
-// the editor is in use, not that rta should stop.
+// the editor is in use, not that rta should stop. And a prompt waiting for
+// its answer (internal/stdio's ReadSecret), whose line the exit's report
+// would otherwise run on from.
 //
 // A leaf, so that all of those — under internal, and a built-in — can say so
 // without importing the application that acts on it.
@@ -140,3 +142,20 @@ func LendTerminal() (takeBack func()) {
 
 // TerminalLent reports whether a child process has the terminal.
 func TerminalLent() bool { return lent.Load() > 0 }
+
+var prompts atomic.Int32
+
+// Prompting marks a prompt waiting on the terminal for its answer, and returns
+// what marks it answered. A prompt leaves the cursor after its own words, with
+// echo off, and the report of an exit taken inside it ran on from them —
+// "Passphrase:  ERROR core.signal …" — in the file standard error was sent to
+// as much as on a terminal, since a prompt asks whenever standard input is
+// one. The report starts a line of its own while one is open.
+func Prompting() (answered func()) {
+	prompts.Add(1)
+	var once sync.Once
+	return func() { once.Do(func() { prompts.Add(-1) }) }
+}
+
+// PromptOpen reports whether a prompt is waiting for its answer.
+func PromptOpen() bool { return prompts.Load() > 0 }

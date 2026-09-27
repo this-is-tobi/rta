@@ -76,9 +76,11 @@ type Interrupts struct {
 	restore func()
 	exit    func(code int)
 	stderr  io.Writer
-	// onTTY is whether stderr is a terminal, where the report starts on a
-	// line of its own (report).
-	onTTY bool
+	// onTTY is whether stderr is a terminal, and prompting whether a prompt
+	// is waiting for its answer: either way the report starts on a line of
+	// its own (report).
+	onTTY     bool
+	prompting func() bool
 
 	mu       sync.Mutex
 	root     *cobra.Command
@@ -98,19 +100,20 @@ func WatchSignals(parent context.Context) (context.Context, *Interrupts) {
 	ctx, cancel := context.WithCancel(parent)
 	saved := savedTerminal()
 	i := &Interrupts{
-		signals:  make(chan os.Signal, 2),
-		cancel:   cancel,
-		grace:    signalGrace,
-		owned:    shutdownOwned.Load,
-		lent:     shutdown.TerminalLent,
-		settle:   shutdown.Settle,
-		atExit:   shutdown.Exiting,
-		restore:  saved.restore,
-		exit:     os.Exit,
-		stderr:   os.Stderr,
-		onTTY:    stderrIsTerminal(),
-		done:     make(chan struct{}),
-		attached: make(chan struct{}),
+		signals:   make(chan os.Signal, 2),
+		cancel:    cancel,
+		grace:     signalGrace,
+		owned:     shutdownOwned.Load,
+		lent:      shutdown.TerminalLent,
+		settle:    shutdown.Settle,
+		atExit:    shutdown.Exiting,
+		restore:   saved.restore,
+		exit:      os.Exit,
+		stderr:    os.Stderr,
+		onTTY:     stderrIsTerminal(),
+		prompting: shutdown.PromptOpen,
+		done:      make(chan struct{}),
+		attached:  make(chan struct{}),
 	}
 	signal.Notify(i.signals, os.Interrupt, syscall.SIGTERM)
 	go i.run()
@@ -238,8 +241,10 @@ func (i *Interrupts) report(root *cobra.Command, sig os.Signal) {
 	// The exit lands wherever the cursor is, and on a terminal that is rarely
 	// the start of a line: after the ^C the terminal echoed, or after a
 	// "Passphrase: " whose prompt is still waiting with echo off, which the
-	// report then ran on from.
-	if i.onTTY {
+	// report then ran on from. A prompt asks whenever standard input is a
+	// terminal, wherever standard error goes, so an open one ends its line in
+	// a file too: `rta kv get x 2>err.log` wrote "Passphrase:  ERROR …".
+	if i.onTTY || i.prompting() {
 		fmt.Fprintln(i.stderr)
 	}
 	if root == nil || !RenderTopLevelError(i.stderr, root, verr) {

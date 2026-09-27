@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+
+	"github.com/this-is-tobi/rta/internal/shutdown"
 )
 
 // restore puts the process's real stdin back, since Claim mutates a package
@@ -169,5 +171,27 @@ func TestClaimIsIdempotent(t *testing.T) {
 	}
 	if Real() != r {
 		t.Errorf("a second Claim lost the real stream: Real is %v", Real().Name())
+	}
+}
+
+// A prompt is marked open for as long as it waits, and answered once it
+// returns, whatever it returns with.
+func TestAPromptIsOpenWhileItWaits(t *testing.T) {
+	orig := readPassword
+	t.Cleanup(func() { readPassword = orig })
+	var openWhileRead bool
+	readPassword = func(int) ([]byte, error) {
+		openWhileRead = shutdown.PromptOpen()
+		return []byte("typed"), nil
+	}
+	got, err := ReadSecret("Secret: ")
+	if err != nil || string(got) != "typed" {
+		t.Fatalf("ReadSecret = %q, %v", got, err)
+	}
+	if !openWhileRead {
+		t.Error("the prompt was not open while it waited")
+	}
+	if shutdown.PromptOpen() {
+		t.Error("the prompt was still open once answered")
 	}
 }

@@ -185,11 +185,7 @@ func lookupPassphrase(req plugin.Request) string {
 
 // promptPassphrase is overridable in tests; it reads from the terminal.
 var promptPassphrase = func() (string, error) {
-	fmt.Fprint(os.Stderr, "Passphrase: ")
-	// The prompt goes to stderr, never stdout: `eval "$(rta kv env x)"` must
-	// not eval it, and a redirected `kv get > file` must not contain it.
-	secret, err := term.ReadPassword(int(stdio.Real().Fd()))
-	fmt.Fprintln(os.Stderr)
+	secret, err := stdio.ReadSecret("Passphrase: ")
 	return string(secret), err
 }
 
@@ -197,9 +193,7 @@ var promptPassphrase = func() (string, error) {
 // so it is clear which secret is wanted: the key's, not the store's. Also
 // overridable in tests.
 var promptKeyPassphrase = func(path string) (string, error) {
-	fmt.Fprintf(os.Stderr, "Passphrase for %s: ", path)
-	secret, err := term.ReadPassword(int(stdio.Real().Fd()))
-	fmt.Fprintln(os.Stderr)
+	secret, err := stdio.ReadSecret("Passphrase for " + path + ": ")
 	return string(secret), err
 }
 
