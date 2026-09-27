@@ -455,10 +455,15 @@ const gitDirName = ".git"
 // than with "not a git repository", which is what an operator would then spend
 // an afternoon on.
 //
-// A walk that reaches the top of the filesystem without finding anything hands
-// the path back unchanged: a bare repository is its own git directory and has
-// no .git entry to find, and anything else fails as "not a git repository"
-// where it always did.
+// Each directory is asked what git's own discovery asks of it, in its order:
+// whether it holds a .git, and then whether it is a git directory itself. A
+// bare repository is its own git directory and has no .git entry to find, and
+// this found one only by walking to the top of the filesystem and handing the
+// path back — which a confined walk never reaches, since it stops at the
+// first directory above the roots: over MCP a bare repository under a root
+// was refused as outside it, naming the root's parent. A walk that reaches
+// the top without finding anything still hands the path back unchanged, and
+// it fails as "not a git repository" where it always did.
 func repoRoot(req plugin.Request, path string) (string, *view.Error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
@@ -469,7 +474,7 @@ func repoRoot(req plugin.Request, path string) (string, *view.Error) {
 		if verr != nil {
 			return "", verr
 		}
-		if _, err := os.Stat(filepath.Join(checked, gitDirName)); err == nil {
+		if _, err := os.Stat(filepath.Join(checked, gitDirName)); err == nil || isGitDir(checked) {
 			return checked, nil
 		}
 		parent := filepath.Dir(checked)
@@ -478,6 +483,26 @@ func repoRoot(req plugin.Request, path string) (string, *view.Error) {
 		}
 		cur = parent
 	}
+}
+
+// isGitDir reports whether dir is itself a git directory, by the signs git's
+// discovery reads: a HEAD, and the objects and refs directories, or a
+// commondir saying where those are kept. Nothing is opened to tell — a named
+// pipe for a HEAD would hold the walk, as openAt explains.
+func isGitDir(dir string) bool {
+	head, err := os.Lstat(filepath.Join(dir, "HEAD"))
+	if err != nil || (!head.Mode().IsRegular() && head.Mode()&os.ModeSymlink == 0) {
+		return false
+	}
+	if common, err := os.Lstat(filepath.Join(dir, "commondir")); err == nil && common.Mode().IsRegular() {
+		return true
+	}
+	for _, sub := range []string{"objects", "refs"} {
+		if info, err := os.Stat(filepath.Join(dir, sub)); err != nil || !info.IsDir() {
+			return false
+		}
+	}
+	return true
 }
 
 // fileHelp is the help of the file input git.blame and git.log take, which
@@ -513,11 +538,20 @@ func fileHelp(what string) string {
 // is nowhere here for a path to lead: a remote URL cloned into memory, which
 // only a terminal may name, and a bare repository. There the file is named in
 // the repository, from its root, and an absolute one has nowhere to be placed.
-// spelled is how the caller's surface names the input, for the hint.
-func repoFile(repo *git.Repository, file, spelled string) (string, *view.Error) {
+// Over MCP the boundary has already made a relative file absolute, from the
+// current directory as it makes every path, so there it is taken back to the
+// relative one the caller sent — without that, a bare repository's file could
+// not be named over MCP at all, and the refusal told the caller to send what
+// it had. spelled is how the caller's surface names the input, for the hint.
+func repoFile(repo *git.Repository, file string, surface plugin.Surface, spelled string) (string, *view.Error) {
 	_, onDisk := repo.Storer.(*filesystem.Storage)
 	wt, err := repo.Worktree()
 	if !onDisk || err != nil {
+		if cwd, cerr := os.Getwd(); cerr == nil && surface == plugin.SurfaceMCP && filepath.IsAbs(file) {
+			if rel, rerr := filepath.Rel(realPath(cwd), file); rerr == nil && !climbsOut(rel) {
+				file = rel
+			}
+		}
 		if rel := filepath.Clean(file); !filepath.IsAbs(file) && !climbsOut(rel) {
 			return filepath.ToSlash(rel), nil
 		}

@@ -44,7 +44,7 @@ func runLog(ctx context.Context, req plugin.Request) (view.View, error) {
 
 	opts := &git.LogOptions{Order: git.LogOrderCommitterTime}
 	if file := req.String("file"); file != "" {
-		rel, verr := repoFile(repo, file, req.Surface().InputName("file"))
+		rel, verr := repoFile(repo, file, req.Surface(), req.Surface().InputName("file"))
 		if verr != nil {
 			return nil, verr
 		}

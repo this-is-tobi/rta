@@ -448,6 +448,49 @@ func TestAFileInARepositoryWithNoCheckoutIsNamedFromItsRoot(t *testing.T) {
 	}
 }
 
+// A bare repository under the root opens over MCP, and its file is named as
+// the caller sent it, from the repository's root. It was found only by a walk
+// to the top of the filesystem, which a confined walk never makes: it stopped
+// above the root and refused the repository as outside it. And the file
+// arrived absolute, from the current directory as the boundary makes every
+// path, where a bare repository has no directory to place it in.
+func TestABareRepositoryUnderTheRootOpensOverMCP(t *testing.T) {
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "sub/x.txt", "x\n", "touches x")
+	root := t.TempDir()
+	bare := filepath.Join(root, "bare.git")
+	if _, err := git.PlainClone(bare, true, &git.CloneOptions{URL: dir}); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(root)
+	g, err := pathguard.New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	judged := func(p string) string {
+		t.Helper()
+		abs, verr := g.Check("path", p)
+		if verr != nil {
+			t.Fatal(verr)
+		}
+		return abs
+	}
+	ask := func(values map[string]any) plugin.Request {
+		return req(t, judged("bare.git"), values).WithConfinement(g.Check).WithSurface(plugin.SurfaceMCP)
+	}
+
+	if tbl := table(t, runLog, ask(map[string]any{"limit": defaultLogLimit})); len(tbl.Rows) != 1 {
+		t.Errorf("log of a bare repository under the root = %v, want its one commit", tbl.Rows)
+	}
+	tbl := table(t, runBlame, ask(map[string]any{"file": judged("sub/x.txt")}))
+	if len(tbl.Rows) != 1 || tbl.Rows[0][4] != "x" {
+		t.Errorf("blame in a bare repository over MCP = %v, want sub/x.txt's one line", tbl.Rows)
+	}
+	if tbl := table(t, runLog, ask(map[string]any{"file": judged("sub/x.txt"), "limit": defaultLogLimit})); len(tbl.Rows) != 1 {
+		t.Errorf("log of sub/x.txt in a bare repository over MCP = %v, want its one commit", tbl.Rows)
+	}
+}
+
 func errCode(err error) string {
 	if err == nil {
 		return ""
