@@ -586,6 +586,28 @@ func TestAHostWithCredentialsBeforeItIsRefused(t *testing.T) {
 	}
 }
 
+// A value with no host in it was requested as it stood: `//host` became a
+// path under an empty host and came back "unreachable" with a hint to check
+// the host was up, and a bare `:port` was dialled on this machine, a host
+// the argument never names.
+func TestAValueThatNamesNoHostIsRefused(t *testing.T) {
+	var requests atomic.Int32
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+	}))
+	t.Cleanup(srv.Close)
+	_, port, _ := strings.Cut(strings.TrimPrefix(srv.URL, "https://"), ":")
+	for _, host := range []string{"//127.0.0.1:" + port, ":" + port, "https://:" + port + "/", "https:///x"} {
+		_, err := runWeb(t.Context(), req(map[string]any{"host": host, "timeout": 5}))
+		if ve := view.AsError(err, "x"); ve == nil || ve.Code != "audit.web.badhost" {
+			t.Errorf("%s: want audit.web.badhost, got %+v", host, ve)
+		}
+	}
+	if n := requests.Load(); n != 0 {
+		t.Errorf("values naming no host still sent %d requests", n)
+	}
+}
+
 func TestClipCollapsesAndTruncates(t *testing.T) {
 	long := strings.Repeat("policy ", 40)
 	got := findings.Clip(long)
