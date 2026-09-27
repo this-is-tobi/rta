@@ -182,7 +182,7 @@ rta kv get tls-cert --out /tmp/server.pem   # written at 0600
 ```bash
 rta git overview
 rta git status -o json | jq '.rows'
-rta git blame . internal/grant/grant.go
+rta git blame internal/grant/grant.go
 ```
 
 `git overview` is the branch, what it tracks, how far it has drifted, any rebase or merge left half-finished, staged/modified/untracked told apart, and the last commit's age. It works against a local checkout or a remote URL cloned in memory, and it is read-only.

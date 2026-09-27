@@ -12,6 +12,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -251,6 +252,86 @@ func TestTypedPositionalConversion(t *testing.T) {
 	_, _, err = run(t, reg, "typed", "take", "abc")
 	if ExitCode(err) != 2 {
 		t.Errorf("bad int exit = %d, want 2", ExitCode(err))
+	}
+}
+
+// The usage line and the binder read one order. fang draws an optional slot
+// after the rest of the line whatever order it was written in, and the binder
+// filled slots in declaration order, so git.blame — its optional repository
+// declared before the file — showed `rta git blame <file> [path]` and read
+// `rta git blame README` as a repository called README and no file. Every
+// capability taking two or more arguments is held to it: each slot its usage
+// line names binds the input of that name, with every slot given and with
+// the required ones alone, and `rta explain` names them in the same order.
+func TestEveryArgumentBindsToTheSlotItsUsageLineNames(t *testing.T) {
+	reg, err := NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := NewRoot(reg, "test")
+	checked := 0
+	for _, c := range reg.Capabilities() {
+		if len(cliPositionals(c)) < 2 {
+			continue
+		}
+		checked++
+		cmd, _, err := root.Find(c.Words())
+		if err != nil || cmd.Name() != c.Words()[len(c.Words())-1] {
+			t.Fatalf("%s: no command at %v: %v", c.ID, c.Words(), err)
+		}
+		slots := strings.Fields(cmd.Use)[1:]
+		inputs := map[string]plugin.Field{}
+		for _, f := range c.Inputs {
+			inputs[f.Name] = f
+		}
+		args, names, required := make([]string, len(slots)), make([]string, len(slots)), 0
+		for i, slot := range slots {
+			names[i] = strings.Trim(slot, "<>[]")
+			switch {
+			case strings.HasPrefix(slot, "<") && required < i:
+				t.Errorf("%s: <%s> follows an optional slot in %q, and fang draws every optional one last",
+					c.ID, names[i], cmd.Use)
+			case strings.HasPrefix(slot, "<"):
+				required++
+			}
+			switch inputs[names[i]].Type {
+			case plugin.Int:
+				args[i] = strconv.Itoa(7001 + i)
+			case plugin.Bool:
+				args[i] = "true"
+			default:
+				args[i] = "slot-" + names[i]
+			}
+		}
+		if want := "rta " + strings.Join(c.Words(), " ") + " " + strings.Join(slots, " "); !strings.HasPrefix(cliForm(c), want) {
+			t.Errorf("%s: explain shows %q, want it to begin %q as the usage line does", c.ID, cliForm(c), want)
+		}
+		for _, given := range [][]string{args, args[:required]} {
+			values, err := collectValues(cmd, c, given)
+			if err != nil {
+				t.Fatalf("%s %v: %v", c.ID, given, err)
+			}
+			for i, name := range names {
+				got, bound := values[name]
+				want := ""
+				if i < len(given) {
+					// A list takes its slot and every argument after it.
+					want = given[i]
+					if inputs[name].Type.Repeatable() {
+						want = fmt.Sprint(given[i:])
+					}
+				}
+				switch {
+				case i < len(given) && fmt.Sprint(got) != want:
+					t.Errorf("%s %v: %s = %v, want %s, the argument in its slot", c.ID, given, name, got, want)
+				case i >= len(given) && bound && !reflect.DeepEqual(got, inputs[name].Default):
+					t.Errorf("%s %v: %s = %v with no argument in its slot", c.ID, given, name, got)
+				}
+			}
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no capability takes two arguments, so this held nothing")
 	}
 }
 
