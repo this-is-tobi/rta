@@ -76,7 +76,7 @@ func runOverview(ctx context.Context, req plugin.Request) (view.View, error) {
 	}
 
 	if wt, err := repo.Worktree(); err == nil {
-		if status, err := wt.Status(); err == nil {
+		if status, err := worktreeStatus(repo, wt); err == nil {
 			add("working tree", worktreeSummary(status))
 		}
 	}

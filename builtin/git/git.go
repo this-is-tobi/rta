@@ -386,23 +386,31 @@ func alternatesInBounds(req plugin.Request, fs billy.Filesystem) *view.Error {
 // regularFiles is a filesystem that opens nothing for reading but a regular
 // file, and never waits to open one: the open is non-blocking, which a named
 // pipe honours and a file ignores, and what it reached is refused unless it
-// is a file. Writes pass through, and go-git's status makes one: for a
-// submodule the config names and .git/modules holds no repository for, it
-// initialises one there. Refusing it would fail the status of a checkout
-// whose submodules were initialised and never updated.
+// is a file.
+//
+// **And it writes nothing.** Every capability here reads, and go-git wrote
+// through this filesystem all the same: its status initialised a repository
+// under .git/modules for a submodule the config named and nothing had
+// cloned. The status no longer asks for one (submodulesOnDisk), and a write
+// anything else in go-git would make is refused here, failing the call that
+// made it rather than changing somebody's repository from a Read.
 type regularFiles struct{ billy.Filesystem }
 
 // errNotAFile is why regularFiles refuses a pipe, a socket, a device or a
-// directory where a file was asked for.
-var errNotAFile = errors.New("not a regular file")
+// directory where a file was asked for, and errReadOnly why it refuses to
+// write.
+var (
+	errNotAFile = errors.New("not a regular file")
+	errReadOnly = errors.New("rta reads a repository and writes nothing to it")
+)
 
 func (f regularFiles) Open(name string) (billy.File, error) {
 	return f.OpenFile(name, os.O_RDONLY, 0)
 }
 
 func (f regularFiles) OpenFile(name string, flag int, perm os.FileMode) (billy.File, error) {
-	if flag&(os.O_WRONLY|os.O_RDWR) != 0 {
-		return f.Filesystem.OpenFile(name, flag, perm)
+	if flag&(os.O_WRONLY|os.O_RDWR|os.O_CREATE|os.O_TRUNC|os.O_APPEND) != 0 {
+		return nil, &iofs.PathError{Op: "open", Path: name, Err: errReadOnly}
 	}
 	file, err := f.Filesystem.OpenFile(name, flag|syscall.O_NONBLOCK, perm)
 	if err != nil {
@@ -420,6 +428,30 @@ func (f regularFiles) OpenFile(name string, flag int, perm os.FileMode) (billy.F
 		return nil, &iofs.PathError{Op: "open", Path: name, Err: err}
 	}
 	return file, nil
+}
+
+func (f regularFiles) Create(name string) (billy.File, error) {
+	return nil, &iofs.PathError{Op: "create", Path: name, Err: errReadOnly}
+}
+
+func (f regularFiles) TempFile(dir, _ string) (billy.File, error) {
+	return nil, &iofs.PathError{Op: "createtemp", Path: dir, Err: errReadOnly}
+}
+
+func (f regularFiles) Rename(from, _ string) error {
+	return &iofs.PathError{Op: "rename", Path: from, Err: errReadOnly}
+}
+
+func (f regularFiles) Remove(name string) error {
+	return &iofs.PathError{Op: "remove", Path: name, Err: errReadOnly}
+}
+
+func (f regularFiles) MkdirAll(name string, _ os.FileMode) error {
+	return &iofs.PathError{Op: "mkdir", Path: name, Err: errReadOnly}
+}
+
+func (f regularFiles) Symlink(_, link string) error {
+	return &iofs.PathError{Op: "symlink", Path: link, Err: errReadOnly}
 }
 
 func (f regularFiles) Chroot(path string) (billy.Filesystem, error) {

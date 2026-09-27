@@ -399,7 +399,7 @@ func diffWorktree(repo *git.Repository, gate func(string) *view.Error) (view.Vie
 		return nil, view.Errorf("git.diff.worktree", "no working tree here: %v", err).
 			WithHint("a bare repository has no working tree to diff")
 	}
-	status, err := wt.Status()
+	status, err := worktreeStatus(repo, wt)
 	if err != nil {
 		return nil, view.Errorf("git.diff.failed", "reading status: %v", err)
 	}

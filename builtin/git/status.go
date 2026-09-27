@@ -5,6 +5,9 @@ import (
 	"sort"
 
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/config"
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/storage/filesystem"
 
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -59,7 +62,7 @@ func runStatus(ctx context.Context, req plugin.Request) (view.View, error) {
 		return nil, view.Errorf("git.status.worktree", "no working tree here: %v", err).
 			WithHint("a bare repository has no working tree to report on")
 	}
-	status, err := wt.Status()
+	status, err := worktreeStatus(repo, wt)
 	if err != nil {
 		return nil, view.Errorf("git.status.failed", "reading status: %v", err)
 	}
@@ -80,4 +83,55 @@ func runStatus(ctx context.Context, req plugin.Request) (view.View, error) {
 	}
 	t.Total = len(t.Rows)
 	return t, nil
+}
+
+// worktreeStatus is wt's status, as go-git's Worktree.Status reads it but
+// through submodulesOnDisk, so that reading it writes nothing. Every
+// capability that reports the working tree's state asks for it here.
+func worktreeStatus(repo *git.Repository, wt *git.Worktree) (git.Status, error) {
+	store, ok := repo.Storer.(*filesystem.Storage)
+	if !ok {
+		return wt.Status()
+	}
+	reader, err := git.Open(submodulesOnDisk{store}, wt.Filesystem)
+	if err != nil {
+		return nil, err
+	}
+	if wt, err = reader.Worktree(); err != nil {
+		return nil, err
+	}
+	return wt.Status()
+}
+
+// submodulesOnDisk is a repository's storage whose config names a submodule
+// only where .git/modules holds a repository for it, for the status to read.
+//
+// **go-git's status wrote.** For each submodule the config names it asks
+// Submodule.Repository for the submodule's HEAD, and that initialises a
+// repository under .git/modules/<name> when it finds none there: a config,
+// a HEAD, objects and refs, and a .git file in the submodule's directory. A
+// checkout whose submodules were initialised and never cloned, which is what
+// `git submodule init` alone leaves, or one whose submodule keeps its own
+// repository in its directory as older git did, had git.status, git.diff and
+// git.overview each write into it, from capabilities that read. The
+// repository it made was empty with an unborn HEAD, so the status read the
+// submodule at the commit the index records, which is what it reads for a
+// submodule the config does not name. Left out of the config the status
+// reads, such a submodule is read the same, and nothing is written.
+type submodulesOnDisk struct{ *filesystem.Storage }
+
+func (s submodulesOnDisk) Config() (*config.Config, error) {
+	cfg, err := s.Storage.Config()
+	if err != nil {
+		return nil, err
+	}
+	for name := range cfg.Submodules {
+		if module, err := s.Module(name); err == nil {
+			if _, err := module.Reference(plumbing.HEAD); err == nil {
+				continue
+			}
+		}
+		delete(cfg.Submodules, name)
+	}
+	return cfg, nil
 }
