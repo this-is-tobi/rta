@@ -47,6 +47,11 @@ func TestSeverityPrefersTheStatedWordAndFallsBackToTheVector(t *testing.T) {
 		{"go states neither", rec("GO-1", nil, "", ""), ""},
 		{"a stated word that is not one falls through to the vector",
 			rec("GHSA-b", nil, "MODERATE-ISH", high), "high"},
+		// GitHub's own spelling of medium, on most of the records that state
+		// a word at all. Missed, the record went to its vector: ungraded when
+		// it carried only a v4 one, regraded when a v3 one scored otherwise.
+		{"github's moderate is medium", rec("GHSA-m", nil, "MODERATE", ""), "medium"},
+		{"github's moderate wins over its vector", rec("GHSA-n", nil, "MODERATE", high), "medium"},
 		{"an unreadable vector grades nothing rather than something",
 			rec("GHSA-c", nil, "", "CVSS:4.0/AV:N/AC:L"), ""},
 	} {
