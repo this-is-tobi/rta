@@ -55,6 +55,7 @@ type Request struct {
 	surface Surface
 	confine func(field, path string) (string, *view.Error)
 	links   map[string]link
+	targets func(dir, target string) string
 	DryRun  bool
 	Yes     bool
 }
@@ -151,6 +152,36 @@ func (r Request) WithLink(field, path, target string) Request {
 func (r Request) Link(field string) (path, target string, ok bool) {
 	l, ok := r.links[field]
 	return l.path, l.target, ok
+}
+
+// WithLinkTargets stamps how this surface tells what a symbolic link holds,
+// for LinkTarget. A surface that confines paths calls it once, at the
+// boundary, beside WithConfinement.
+func (r Request) WithLinkTargets(tell func(dir, target string) string) Request {
+	r.targets = tell
+	return r
+}
+
+// LinkTarget is what a handler may say a symbolic link in dir holds, given
+// target, the text os.Readlink read from it: that text, or a phrase that
+// says the link leads outside what this caller may look at, without the
+// name.
+//
+// For the handler that shows links it came across rather than ones it was
+// given — fs.tree lists a directory's links with what each holds. Link says
+// the same for a path the caller named, and the surface answers both by one
+// rule: a link's text is a name, and one outside the roots is a name the
+// caller may not read, whether or not the link leads back inside.
+//
+// An unconfined request — every surface with a person behind it, and every
+// direct in-process caller — tells every target as it is, so a handler may
+// call this unconditionally. Not carried across the plugin-host wire, like
+// Confine.
+func (r Request) LinkTarget(dir, target string) string {
+	if r.targets == nil {
+		return target
+	}
+	return r.targets(dir, target)
 }
 
 // With returns a copy of r carrying values overlaid on the inputs it already
