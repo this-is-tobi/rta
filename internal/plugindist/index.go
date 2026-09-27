@@ -547,6 +547,8 @@ func updateIndex(ctx context.Context, name string, dryRun bool) *view.Error {
 	if dryRun {
 		return nil
 	}
+	var refused *view.Error
+	var alsoRefused []string
 	for _, ix := range targets {
 		// A pinned index is left exactly where it was attached: the pin is
 		// the point, and moving it is a re-attach with another --ref. The
@@ -562,8 +564,48 @@ func updateIndex(ctx context.Context, name string, dryRun bool) *view.Error {
 				WithHint(gitHint("-C", ix.Dir, "pull", "--ff-only") + " by hand shows why — " +
 					"a rewritten index history needs a deliberate re-add")
 		}
+		// What was pulled is read, as the attach reads what it cloned: a pull
+		// is somebody else's commits, and one can leave no index behind — its
+		// index/ swapped for a link to a directory elsewhere, which every
+		// reader refuses. The update reported success all the same, and the
+		// first anybody heard of it was search and install refusing the
+		// index, each in words about a plugin rather than about the pull.
+		//
+		// The indexes after it are still pulled. Its own pull is made by the
+		// time it is read, and stopping there left every index after it in
+		// name order at its old commit, the official one's among them, for
+		// a fault that was not theirs.
+		if listed, bad := Manifests(ix); len(listed) == 0 {
+			if refused == nil {
+				refused = refuseUpdate(ix.Name, bad)
+			} else {
+				alsoRefused = append(alsoRefused, ix.Name)
+			}
+		}
 	}
-	return nil
+	if len(alsoRefused) > 0 {
+		refused = refused.WithHint(refused.Hint + "; the update refused " + strings.Join(alsoRefused, ", ") +
+			" too, and `rta plugin index update <name>` says why for each")
+	}
+	return refused
+}
+
+// refuseUpdate is refuseAttach for a pull: the reason what was pulled is no
+// usable index, and what that leaves. Unlike a clone, the pull is not undone
+// — the index is at the commit its upstream now names, and says so the same
+// way to everything that reads it — so the hint says where that leaves the
+// operator rather than that nothing happened.
+func refuseUpdate(name string, bad []*view.Error) *view.Error {
+	verr := view.Errorf("plugin.index.empty", "%s carries no manifest rta can read", name)
+	if len(bad) > 0 {
+		verr = bad[0]
+	}
+	hint := "the update was pulled, and search and install refuse " + name + " until its upstream is an " +
+		"index again; `rta plugin index remove " + name + "` detaches it"
+	if verr.Hint != "" {
+		hint = verr.Hint + "; " + hint
+	}
+	return verr.WithHint(hint)
 }
 
 // RemoveIndex detaches one index. Refused while an installed plugin records

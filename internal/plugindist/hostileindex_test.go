@@ -163,6 +163,81 @@ func TestASymlinkedIndexDirectoryIsNotEnumerated(t *testing.T) {
 	}
 }
 
+// An update is a pull of somebody else's commits, and the commit can make the
+// index stop being one: its index/ replaced by a symlink to a directory
+// elsewhere. Attaching reads what it cloned; updating did not, and reported
+// success for an index search and install then refused. What was pulled is
+// read, and an update that leaves no manifest to read is refused as the
+// attach would refuse it.
+func TestAnUpdateThatLeavesNoIndexIsRefused(t *testing.T) {
+	testData(t)
+	repo := gitFixture(t, map[string]string{"pg": goodManifest})
+	ctx := context.Background()
+	if verr := AddIndex(ctx, "hostile", repo); verr != nil {
+		t.Fatal(verr)
+	}
+
+	elsewhere := t.TempDir()
+	if err := os.WriteFile(filepath.Join(elsewhere, "pg.yaml"), []byte(goodManifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(filepath.Join(repo, "index")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(elsewhere, filepath.Join(repo, "index")); err != nil {
+		t.Skipf("no symlinks here: %v", err)
+	}
+	commitAll(t, repo, "index/ is a link now")
+
+	verr := UpdateIndex(ctx, "hostile")
+	if verr == nil || verr.Code != "plugin.index.empty" || !strings.Contains(verr.Message, "hostile") {
+		t.Fatalf("update = %v, want plugin.index.empty naming the index", verr)
+	}
+	if !strings.Contains(verr.Hint, "search and install") {
+		t.Errorf("hint = %q, want it to say what the rest of rta makes of the index now", verr.Hint)
+	}
+	if _, bad := Search("", ""); len(bad) == 0 {
+		t.Error("search read the index the update refused")
+	}
+}
+
+// An update of every index pulls every one, a refused one included: stopping
+// at the first refusal left each index after it in name order at its old
+// commit, for a fault that was not theirs. The refusal still comes back, and
+// names each index the update refused.
+func TestARefusedIndexDoesNotHoldTheOthersBack(t *testing.T) {
+	testData(t)
+	ctx := context.Background()
+	repos := map[string]string{}
+	for _, name := range []string{"hostile", "lab", "pirate"} {
+		repos[name] = gitFixture(t, map[string]string{"pg": goodManifest})
+		if verr := AddIndex(ctx, name, repos[name]); verr != nil {
+			t.Fatal(verr)
+		}
+	}
+	for _, name := range []string{"hostile", "pirate"} {
+		if err := os.RemoveAll(filepath.Join(repos[name], "index")); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(t.TempDir(), filepath.Join(repos[name], "index")); err != nil {
+			t.Skipf("no symlinks here: %v", err)
+		}
+		commitAll(t, repos[name], "index/ is a link now")
+	}
+	writeManifests(t, repos["lab"], map[string]string{"redis": named(goodManifest, "redis")})
+	commitAll(t, repos["lab"], "add redis")
+
+	verr := UpdateIndex(ctx, "")
+	if verr == nil || verr.Code != "plugin.index.empty" || !strings.Contains(verr.Message, "hostile") ||
+		!strings.Contains(verr.Hint, "pirate") {
+		t.Fatalf("update = %v, want hostile refused and pirate named beside it", verr)
+	}
+	lab, _ := IndexByName("lab")
+	if listed, _ := Manifests(lab); len(listed) != 2 {
+		t.Errorf("lab after the update = %v, want redis pulled beside pg", listed)
+	}
+}
+
 // The manifest cap bounds what is parsed; this bounds what is read. They are
 // not the same thing, and only the second one saves a process from a file it
 // was pointed at rather than sent.
