@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"time"
 
@@ -821,6 +822,10 @@ func checkPaths(c plugin.Capability, values map[string]any, g *pathguard.Guard) 
 // namedLink is a symbolic link a caller named: where it is, and what it holds.
 type namedLink struct{ path, target string }
 
+// outsideRoots is what a handler is told a link holds when what it holds
+// names a place the caller may not look (finalLink).
+const outsideRoots = "a path outside this server's roots"
+
 // finalLink reports whether the last component of the path raw spells is a
 // symbolic link, in a directory g lets a caller name, and if so where it is
 // and what it holds.
@@ -838,6 +843,15 @@ type namedLink struct{ path, target string }
 // any path a caller gives, so a link is described only where the caller may
 // look, and nothing here is opened: Readlink reads the link itself, never
 // what it points at.
+//
+// What a link holds is its first hop, and the guard judged only where the
+// chain ends. A link inside the root may hold the name of a link outside it
+// that leads back in: the guard allows it, since the file is inside, and the
+// handler was told the outside name, which it says — a caller who may not
+// look outside the roots learned what is there by naming a link. So what the
+// link holds is told as written only when every step of it names a place
+// under the roots, or above one on the way down to it; otherwise the handler
+// is told outsideRoots, which says the link leads out without saying where.
 func finalLink(g *pathguard.Guard, field, raw string) (namedLink, bool) {
 	p := strings.TrimRight(filepath.FromSlash(pathguard.ExpandTilde(strings.TrimSpace(raw))), string(filepath.Separator))
 	dir, base := ".", p
@@ -856,7 +870,55 @@ func finalLink(g *pathguard.Guard, field, raw string) (namedLink, bool) {
 	if err != nil {
 		return namedLink{}, false
 	}
+	if !namesOnlyInside(g.Roots(), parent, target) {
+		target = outsideRoots
+	}
 	return namedLink{path: path, target: target}, true
+}
+
+// namesOnlyInside reports whether target, held by a link in dir, names only
+// places under one of roots: each step of it, as written, is under a root or
+// above one, and the last is under one.
+//
+// As written and nothing followed, which is the point: the question is what
+// the text says, and a step that is itself a link resolves wherever it
+// points, which is how an outside name came to pass the guard. A step above
+// a root — the "/" an absolute target starts from, the ".." that climbs to
+// the root's parent and back down into it — names only what the roots
+// themselves already say. The roots are resolved, so a target spelling a root
+// through a link above it (/var for /private/var on macOS) reads as outside:
+// the neutral phrase, where a name nothing checked would be the leak.
+func namesOnlyInside(roots []string, dir, target string) bool {
+	under := func(p string) bool {
+		return slices.ContainsFunc(roots, func(r string) bool { return nameUnder(r, p) })
+	}
+	above := func(p string) bool {
+		return slices.ContainsFunc(roots, func(r string) bool { return nameUnder(p, r) })
+	}
+	cur := dir
+	if vol := filepath.VolumeName(target); filepath.IsAbs(target) {
+		cur, target = vol+string(filepath.Separator), target[len(vol):]
+	}
+	for _, seg := range strings.Split(filepath.FromSlash(target), string(filepath.Separator)) {
+		switch seg {
+		case "", ".":
+			continue
+		case "..":
+			cur = filepath.Dir(cur)
+		default:
+			cur = filepath.Join(cur, seg)
+		}
+		if !under(cur) && !above(cur) {
+			return false
+		}
+	}
+	return under(cur)
+}
+
+// nameUnder reports whether p is root or lives under it, by name alone.
+func nameUnder(root, p string) bool {
+	rel, err := filepath.Rel(root, p)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // viewResult encodes a view as both text (JSON envelope) and structured
