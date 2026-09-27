@@ -82,7 +82,7 @@ func runStatus(ctx context.Context, req plugin.Request) (view.View, error) {
 		{Name: "Path"},
 		{Name: "Staged"},
 		{Name: "Worktree"},
-	}}
+	}, Empty: "nothing to commit, working tree clean"}
 	paths := make([]string, 0, len(status))
 	for p := range status {
 		paths = append(paths, p)

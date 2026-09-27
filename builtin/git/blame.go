@@ -105,7 +105,7 @@ func runBlame(ctx context.Context, req plugin.Request) (view.View, error) {
 		{Name: "Author"},
 		{Name: "Date", Kind: view.KindTimestamp},
 		{Name: "Content"},
-	}}
+	}, Empty: file + " is empty at HEAD"}
 	boundary := 0
 	for i, l := range result.lines {
 		hash := shortHash(l.commit.Hash)

@@ -2,9 +2,11 @@ package git
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/go-git/go-git/v5/plumbing/transport"
@@ -43,6 +45,12 @@ func runLog(ctx context.Context, req plugin.Request) (view.View, error) {
 	}
 	defer done()
 
+	t := view.Table{Columns: []view.Column{
+		{Name: "Hash"},
+		{Name: "Author"},
+		{Name: "Date", Kind: view.KindTimestamp},
+		{Name: "Message"},
+	}, Empty: "no commits yet"}
 	opts := &git.LogOptions{Order: git.LogOrderCommitterTime}
 	if file := req.String("file"); file != "" {
 		rel, verr := repoFile(repo, file, req.Surface(), req.Surface().InputName("file"))
@@ -50,6 +58,13 @@ func runLog(ctx context.Context, req plugin.Request) (view.View, error) {
 			return nil, verr
 		}
 		opts.FileName = &rel
+		t.Empty = "no commit reaching HEAD touched " + rel
+	}
+	// A repository with no commits yet has an empty history, as git.branches
+	// answers it has no branches, rather than go-git's "reference not found".
+	if _, err := repo.Head(); errors.Is(err, plumbing.ErrReferenceNotFound) {
+		t.Empty = "no commits yet"
+		return t, nil
 	}
 	iter, err := repo.Log(opts)
 	if err != nil {
@@ -58,12 +73,6 @@ func runLog(ctx context.Context, req plugin.Request) (view.View, error) {
 	defer iter.Close()
 
 	limit := req.Int("limit")
-	t := view.Table{Columns: []view.Column{
-		{Name: "Hash"},
-		{Name: "Author"},
-		{Name: "Date", Kind: view.KindTimestamp},
-		{Name: "Message"},
-	}}
 	err = iter.ForEach(func(c *object.Commit) error {
 		if len(t.Rows) >= limit {
 			return storer.ErrStop
