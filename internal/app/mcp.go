@@ -101,6 +101,58 @@ func listenFailed(flag string, err error) *view.Error {
 		WithHint("another process may hold the port, or the address is not one of this machine's")
 }
 
+// localityGated names what the locality gate hides from a remote caller, for
+// `mcp serve --help`: a namespace whose every tool it hides by the namespace's
+// name — sys, fs, git — a narrower group by its prefix, net.hosts.*, and any
+// other capability by its ID.
+//
+// Read off RemoteBlocked, the list the --http startup banner prints, which
+// reads HostSpecific, the one field the gate reads. The help listed them by
+// hand — sys, fs, git, keys.list, "net's host-identity and host-mutation
+// calls" — and went on saying so after kv.status, audit.deps and audit.why
+// had joined the set: the commit that marks a capability HostSpecific is about
+// that capability, and nothing in it sends anyone to this sentence. Derived,
+// it also names what an installed plugin declares.
+func localityGated(reg *registry.Registry) string {
+	hidden := (mcp.Options{Remote: true}).RemoteBlocked(reg)
+	gated := map[string]bool{}
+	for _, id := range hidden {
+		gated[id] = true
+	}
+	// Every prefix some tool a remote caller keeps sits under. Not a HumanOnly
+	// one, which is no tool on any transport — RemoteBlocked leaves those out
+	// for the same reason.
+	served := map[string]bool{}
+	for _, c := range reg.Capabilities() {
+		if c.HumanOnly || gated[c.ID] {
+			continue
+		}
+		words := strings.Split(c.ID, ".")
+		for i := 1; i < len(words); i++ {
+			served[strings.Join(words[:i], ".")] = true
+		}
+	}
+	var names []string
+	named := map[string]bool{}
+	for _, id := range hidden {
+		name, words := id, strings.Split(id, ".")
+		for i := 1; i < len(words); i++ {
+			if prefix := strings.Join(words[:i], "."); !served[prefix] {
+				name = prefix
+				if i > 1 {
+					name += ".*"
+				}
+				break
+			}
+		}
+		if !named[name] {
+			named[name] = true
+			names = append(names, name)
+		}
+	}
+	return strings.Join(names, ", ")
+}
+
 func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 	var (
 		consentOn     bool
@@ -133,8 +185,7 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 			" file of its own — `net hosts list` and /etc/hosts — is unaffected," +
 			" because that path is never an argument for anyone to send.\n\n" +
 			"Locality gate, --http only: capabilities that describe the machine" +
-			" this runs on (sys, fs, git, keys.list, net's host-identity and" +
-			" host-mutation calls) are absent from tools/list — a remote caller is" +
+			" this runs on (" + localityGated(reg) + ") are absent from tools/list — a remote caller is" +
 			" never this machine. --http also requires --token-file or --oidc-issuer" +
 			" (or both), since there is no stdio parent process left to trust instead.",
 		Args:              cobra.NoArgs,

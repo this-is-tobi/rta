@@ -6,12 +6,62 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/this-is-tobi/rta/internal/mcp"
 	"github.com/this-is-tobi/rta/internal/registry"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
+
+// `mcp serve --help` names what --http hides, and it listed it by hand: sys,
+// fs, git, keys.list and "net's host-identity and host-mutation calls", long
+// after kv.status, audit.deps and audit.why had joined the set. It names each
+// capability the locality gate hides — by ID, by a `prefix.*`, or by its
+// namespace when the gate takes every tool the namespace has — and nothing
+// the gate lets through.
+func TestMCPServeHelpNamesWhatTheLocalityGateHides(t *testing.T) {
+	reg, err := NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	serve, _, err := NewRoot(reg, "test").Find([]string{"mcp", "serve"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, gate, ok := strings.Cut(serve.Long, "Locality gate")
+	if !ok {
+		t.Fatalf("mcp serve --help no longer describes the locality gate:\n%s", serve.Long)
+	}
+	open, closing := strings.Index(gate, "("), strings.Index(gate, ")")
+	if open < 0 || closing < open {
+		t.Fatalf("the locality gate's paragraph lists nothing: %s", gate)
+	}
+	// covers reports whether a name in the list stands for capability id.
+	covers := func(name, id string) bool {
+		if prefix, group := strings.CutSuffix(name, ".*"); group {
+			return strings.HasPrefix(id, prefix+".")
+		}
+		return id == name || plugin.Namespace(id) == name
+	}
+	names := strings.Split(gate[open+1:closing], ", ")
+	hidden := map[string]bool{}
+	for _, id := range (mcp.Options{Remote: true}).RemoteBlocked(reg) {
+		hidden[id] = true
+		if !slices.ContainsFunc(names, func(n string) bool { return covers(n, id) }) {
+			t.Errorf("--http hides %s and mcp serve --help does not say so", id)
+		}
+	}
+	for _, n := range names {
+		for _, c := range reg.Capabilities() {
+			if covers(n, c.ID) && !c.HumanOnly && !hidden[c.ID] {
+				t.Errorf("mcp serve --help names %s among what --http hides, and %s is served", n, c.ID)
+			}
+		}
+	}
+}
 
 // These combinations must never reach net.Listen, let alone mcp.Serve —
 // each is checked and refused before this command builds anything that
