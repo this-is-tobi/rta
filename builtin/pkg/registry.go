@@ -179,13 +179,15 @@ func escapeModulePath(p string) string {
 // the tag, and every asset with the digest the API has published on assets
 // since 2025 — the cheapest verification there is, when it is there.
 type release struct {
-	Tag    string `json:"tag_name"`
-	Assets []struct {
-		Name   string `json:"name"`
-		URL    string `json:"browser_download_url"`
-		Size   int64  `json:"size"`
-		Digest string `json:"digest"`
-	} `json:"assets"`
+	Tag    string  `json:"tag_name"`
+	Assets []asset `json:"assets"`
+}
+
+type asset struct {
+	Name   string `json:"name"`
+	URL    string `json:"browser_download_url"`
+	Size   int64  `json:"size"`
+	Digest string `json:"digest"`
 }
 
 // latestRelease is GET /repos/{owner}/{repo}/releases/latest.
