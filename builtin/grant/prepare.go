@@ -530,7 +530,7 @@ func revokeBody(sf plugin.Surface, target string, out operatorid.RevokeOutcome, 
 		if out.Still == nil {
 			return line
 		}
-		record := out.Still.Scope
+		record := recordShown(out.Still.Scope)
 		if record == "" {
 			record = "any"
 		}

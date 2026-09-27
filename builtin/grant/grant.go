@@ -23,6 +23,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/this-is-tobi/rta/internal/stdio"
+	"github.com/this-is-tobi/rta/internal/textclean"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -793,9 +794,9 @@ func describe(g core.Grant) string {
 		// like one record with an odd name; this grant covers every record
 		// under it, including ones that do not exist yet, and the operator is
 		// agreeing to that rather than to what a listing shows today.
-		s += " on any record under " + g.Scope
+		s += " on any record under " + textclean.Record(g.Scope)
 	case g.Scope != "":
-		s += " on " + g.Scope
+		s += " on " + textclean.Record(g.Scope)
 	}
 	if g.Profile != "" {
 		s += " via profile " + g.Profile
@@ -1305,8 +1306,14 @@ func grantsTable(grants []core.Grant, stale func(core.Grant) bool) view.Table {
 	}
 	now := time.Now()
 	for _, g := range grants {
-		record := g.Scope
-		if record == "" {
+		// As the gate compares it, byte for byte: a record holding a
+		// no-break space, or a space at its end, is shown quoted with the
+		// character named, never as the record it looks like
+		// (textclean.Record). It is the one screen that answers "what may
+		// the agent do right now?", and a grant on the look-alike covers
+		// nothing the operator meant.
+		record := textclean.Record(g.Scope)
+		if g.Scope == "" {
 			record = "any"
 		}
 		if core.IsFolderScope(g.Scope) {
@@ -1314,7 +1321,7 @@ func grantsTable(grants []core.Grant, stale func(core.Grant) bool) view.Table {
 			// "what may the agent do right now?". A bare "prod/" in a column
 			// headed Record reads as one record with a trailing slash, which
 			// is the opposite of what it authorizes.
-			record = g.Scope + " (all)"
+			record += " (all)"
 		}
 		// An em dash rather than the word "any", deliberately: the Record column
 		// one place over already uses "any" for the opposite meaning, and an
@@ -1461,7 +1468,11 @@ func stillStanding(sf plugin.Surface, agent string) string {
 		if agent != "" && g.Agent != agent {
 			continue
 		}
-		names = append(names, strings.TrimSpace(g.Target+" "+g.Scope))
+		name := g.Target
+		if g.Scope != "" {
+			name += " " + textclean.Record(g.Scope)
+		}
+		names = append(names, name)
 	}
 	who := ""
 	if agent != "" {

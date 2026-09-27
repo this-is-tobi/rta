@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -335,6 +336,24 @@ func TestARepeatedScopeInOneCallSpendsOnlyOnce(t *testing.T) {
 	// have spent both.
 	if verr := gate(t, c, map[string]any{"key": []string{"db-password"}}, "", ""); verr != nil {
 		t.Errorf("a second, independent call was refused — the first call over-spent: %v", verr)
+	}
+}
+
+// The refusal names the record as the gate compared it. Its sentence is also
+// why a parked call is being asked, on the page the operator answers from,
+// and "no active grant for kv.get db-password" read the same for the key and
+// for the key with a no-break space after it, which no grant on the key
+// covers.
+func TestARefusalNamesTheRecordAsItWasCompared(t *testing.T) {
+	setup(t)
+	c := declare("kv.get", plugin.Write, "key", true)
+	padded := "db-password" + string(rune(0xa0))
+	verr := gate(t, c, map[string]any{"key": padded}, "", "")
+	if verr == nil || verr.Code != "core.grant.required" {
+		t.Fatalf("a padded record went through: %v", verr)
+	}
+	if want := "no active grant for kv.get " + strconv.Quote(padded); verr.Message != want {
+		t.Errorf("message = %q, want %q", verr.Message, want)
 	}
 }
 
