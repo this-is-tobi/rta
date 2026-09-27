@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/this-is-tobi/rta/builtin/internal/itemstore"
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -931,7 +932,7 @@ func runRemove(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 	msg := fmt.Sprintf("removed note %d: %s", id, removed)
 	if reparented > 0 {
-		msg += fmt.Sprintf(" (%d sub-note(s) moved up)", reparented)
+		msg += " (" + format.CountOf(reparented, "sub-note") + " moved up)"
 	}
 	return view.Text{Body: msg}, nil
 }

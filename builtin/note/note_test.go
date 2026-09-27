@@ -713,7 +713,7 @@ func TestRemoveReparentsChildren(t *testing.T) {
 	text(t, runAdd, map[string]any{"title": "child", "parent": 1}, false)
 
 	body := text(t, runRemove, map[string]any{"id": 1}, false)
-	if !strings.Contains(body, "1 sub-note(s) moved up") {
+	if !strings.Contains(body, "(1 sub-note moved up)") {
 		t.Errorf("remove message = %q", body)
 	}
 	tbl := table(t, runList, map[string]any{"all": false})
