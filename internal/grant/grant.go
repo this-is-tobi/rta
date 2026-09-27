@@ -1320,6 +1320,7 @@ func Mutate(f func([]Grant) ([]Grant, bool)) *view.Error {
 // machine. The requirement belongs to the connection, not to the capability —
 // so the zero-config path stays exactly as frictionless as it is today, and
 // consent is required at precisely the moment a call reaches somewhere else.
+//
 // **A grant naming a plugin covers every capability in it, destructive ones
 // included**, and that is deliberate rather than an oversight of the
 // collapse. `--allow-destructive` refused a wildcard because it was a
@@ -1334,6 +1335,14 @@ func Required(c plugin.Capability, profile string) bool {
 	return profile != "" || c.NeedsGrant || c.Safety != plugin.Read
 }
 
+// Scopes is the records a call names, as a grant would have to name them.
+//
+// Exported for the consent prompt: the operator is being asked
+// about one call, and "which record" is the whole of what distinguishes
+// `kv.get db-password` from `kv.get` — the same question a grant answers,
+// so it has to be the same answer, from the same code.
+func Scopes(c plugin.Capability, values map[string]any) []string { return scopes(c, values) }
+
 // scopes reads the records a call names, from the input the capability
 // declared as its scope. A capability with no scope, or a call that names no
 // record, yields one empty scope: the call is about the capability itself.
@@ -1345,14 +1354,6 @@ func Required(c plugin.Capability, profile string) bool {
 // letting a --max-uses 1 grant authorize itself twice within a single call
 // that named the same key two ways. Found by review and
 // reproduced directly against Reserve.
-// Scopes is the records a call names, as a grant would have to name them.
-//
-// Exported for the consent prompt: the operator is being asked
-// about one call, and "which record" is the whole of what distinguishes
-// `kv.get db-password` from `kv.get` — the same question a grant answers,
-// so it has to be the same answer, from the same code.
-func Scopes(c plugin.Capability, values map[string]any) []string { return scopes(c, values) }
-
 func scopes(c plugin.Capability, values map[string]any) []string {
 	own, also := records(c, values)
 	return append(own, also...)
