@@ -4,14 +4,19 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"strings"
 
+	tea "charm.land/bubbletea/v2"
 	huh "charm.land/huh/v2"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/internal/render/cli"
+	"github.com/this-is-tobi/rta/internal/stdio"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -28,11 +33,13 @@ func newInitCommand(reg *registry.Registry, opts *globalOpts) *cobra.Command {
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if !isTTY() {
+			in, out, release, err := initTerminal()
+			if err != nil {
 				return view.Errorf("core.init.terminal", "rta init is interactive and needs a terminal").
 					WithHint("run it at one, or write the file by hand — `rta config schema` describes " +
 						"every key, and `rta doctor` says where the file goes")
 			}
+			defer release()
 			// LoadFile, not Load. config.LoadFile says why in as many
 			// words — "anything that reads the config in order to write it
 			// back must start here: Load would fold this session's RTA_* into
@@ -48,7 +55,7 @@ func newInitCommand(reg *registry.Registry, opts *globalOpts) *cobra.Command {
 				current = config.Config{}
 			}
 
-			answers, err := askInit(cmd.Context(), reg, current, opts.dryRun)
+			answers, err := askInit(cmd.Context(), reg, current, opts.dryRun, in, out)
 			if err != nil {
 				return initFormError(err)
 			}
@@ -91,12 +98,54 @@ type initAnswers struct {
 	confirmed bool
 }
 
-// askInit runs the wizard's form, seeded from the file as it stands.
+// initTerminal is the terminal the wizard's form is drawn on and read from,
+// and what to do once it is closed.
+//
+// Never stdout. The answer goes there, in the format -o asks for, and the
+// form was gated on stdout being a terminal: `rta init -o json >
+// answer.json` is a person at a terminal who wants the answer in a file, and
+// was refused for it, so the one command whose questions only a person can
+// answer could not hand its answer on. The form is drawn where huh draws
+// it, on stderr, and reads stdin, when both are that terminal; when either
+// is not — stdin a pipe, stderr a log file — it opens the controlling
+// terminal itself, which is where the person is whatever the streams point
+// at. Only with no terminal at all is there nobody to ask.
+//
+// A variable, as isTTY is, so a test can say whether there is one.
+var initTerminal = func() (io.Reader, io.Writer, func(), error) {
+	return formTerminal(stdio.Real(), os.Stderr, func(f *os.File) bool { return term.IsTerminal(int(f.Fd())) }, tea.OpenTTY)
+}
+
+// formTerminal is initTerminal's choice, with what it asks of the machine
+// passed in: the streams, whether a file is a terminal, and how to open the
+// controlling one.
+func formTerminal(in, out *os.File, isTerminal func(*os.File) bool,
+	openTTY func() (*os.File, *os.File, error),
+) (io.Reader, io.Writer, func(), error) {
+	if isTerminal(in) && isTerminal(out) {
+		return in, out, func() {}, nil
+	}
+	ttyIn, ttyOut, err := openTTY()
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return ttyIn, ttyOut, func() {
+		_ = ttyIn.Close()
+		if ttyOut != ttyIn {
+			_ = ttyOut.Close()
+		}
+	}, nil
+}
+
+// askInit runs the wizard's form on the terminal initTerminal found, seeded
+// from the file as it stands.
 //
 // A variable, as isTTY is, so a test can stand in for the person: the form
 // needs one at a terminal, and what init answers once it has been filled in
 // can only be tested if a test can say how it was filled in.
-var askInit = func(ctx context.Context, reg *registry.Registry, current config.Config, dryRun bool) (initAnswers, error) {
+var askInit = func(ctx context.Context, reg *registry.Registry, current config.Config, dryRun bool,
+	in io.Reader, out io.Writer,
+) (initAnswers, error) {
 	a := initAnswers{output: current.Output, confirmed: true,
 		// An empty selection means "leave the dashboard automatic": one
 		// tile per plugin, including plugins installed later. Only someone
@@ -136,7 +185,7 @@ var askInit = func(ctx context.Context, reg *registry.Registry, current config.C
 				Value(&a.tiles),
 			confirm,
 		),
-	)
+	).WithInput(in).WithOutput(out)
 	err := form.RunWithContext(ctx)
 	return a, err
 }
