@@ -320,13 +320,11 @@ func TestAURLIsRefusedRatherThanTurnedIntoALocalPath(t *testing.T) {
 	}
 }
 
-// The boundary substitutes a Path input rather than merely approving it:
-// what a handler receives is the judged form, absolute and symlink-resolved,
-// whatever the caller spelled (internal/mcp's checkPaths). So a file input
-// never arrives the way its help describes it, relative to the repository
-// root — and that relative form is the only one go-git's tree lookup knows.
-// Handed the absolute form, blame found no such file, with a hint telling the
-// caller to send what it had just sent, and log's --file matched no commit: a
+// A file given in its absolute form — judged and symlink-resolved, as the
+// boundary once handed every file input over — is turned back into the
+// repository-relative one, the only form go-git's tree lookup knows. Handed
+// the absolute form, blame found no such file, with a hint telling the caller
+// to send what it had just sent, and log's --file matched no commit: a
 // well-formed empty table an agent reads as "nobody ever touched this file".
 func TestAFileInsideTheRootIsHandedToGitRepositoryRelative(t *testing.T) {
 	dir, repo := testRepo(t)
@@ -357,7 +355,103 @@ func TestAFileInsideTheRootIsHandedToGitRepositoryRelative(t *testing.T) {
 	})
 }
 
+// The file git.blame and git.log take is a path like any other, taken from
+// the current directory as git takes one, on every surface. The boundary
+// resolved it that way over MCP while the help said "relative to the
+// repository root" and the CLI took it so: with a root above the checkout,
+// {path: repo, file: README} was refused as outside the repository with a
+// hint to do what the caller had done, and the CLI refused repo/README.
+func TestAFileIsTakenFromTheCurrentDirectoryOnEverySurface(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "repo")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	repo, err := git.PlainInit(dir, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commitFile(t, repo, dir, "README", "hello\n", "touches the readme")
+	commitFile(t, repo, dir, "sub/x.txt", "x\n", "touches x")
+	t.Chdir(root)
+
+	g, err := pathguard.New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// What the boundary hands a handler for a path an agent sends.
+	judged := func(file string) string {
+		t.Helper()
+		abs, verr := g.Check("file", file)
+		if verr != nil {
+			t.Fatal(verr)
+		}
+		return abs
+	}
+	surfaces := map[string]func(file string) plugin.Request{
+		"cli": func(file string) plugin.Request {
+			return req(t, "repo", map[string]any{"file": file, "limit": defaultLogLimit})
+		},
+		"mcp": func(file string) plugin.Request {
+			return req(t, judged("repo"), map[string]any{"file": judged(file), "limit": defaultLogLimit}).
+				WithConfinement(g.Check).WithSurface(plugin.SurfaceMCP)
+		},
+	}
+	for name, h := range map[string]plugin.Handler{"blame": runBlame, "log": runLog} {
+		for surface, ask := range surfaces {
+			t.Run(name+"/"+surface, func(t *testing.T) {
+				if tbl := table(t, h, ask("repo/README")); len(tbl.Rows) != 1 {
+					t.Fatalf("rows = %v, want the README's one line or commit", tbl.Rows)
+				}
+				_, err := h(context.Background(), ask("README"))
+				var verr *view.Error
+				if !errors.As(err, &verr) || verr.Code != "git.file.outside" {
+					t.Fatalf("a file outside the repository: %v, want git.file.outside", err)
+				}
+				if !strings.Contains(verr.Hint, "taken from the directory rta runs in") {
+					t.Errorf("the hint does not say where a relative file is taken from: %q", verr.Hint)
+				}
+			})
+		}
+	}
+
+	// In a subdirectory of the checkout, the file beside you is named as it
+	// is, as git names it.
+	t.Chdir(filepath.Join(dir, "sub"))
+	tbl := table(t, runBlame, req(t, ".", map[string]any{"file": "x.txt"}))
+	if len(tbl.Rows) != 1 || tbl.Rows[0][4] != "x" {
+		t.Errorf("blame from a subdirectory = %v, want sub/x.txt's one line", tbl.Rows)
+	}
+}
+
+// A repository with no checkout on this disk has nowhere here for a path to
+// lead, so its file is named in the repository, from its root: a bare
+// repository, and a remote URL cloned into memory, which only a terminal
+// names.
+func TestAFileInARepositoryWithNoCheckoutIsNamedFromItsRoot(t *testing.T) {
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "sub/x.txt", "x\n", "touches x")
+	bare := filepath.Join(t.TempDir(), "bare.git")
+	if _, err := git.PlainClone(bare, true, &git.CloneOptions{URL: dir}); err != nil {
+		t.Fatal(err)
+	}
+
+	tbl := table(t, runBlame, req(t, bare, map[string]any{"file": "sub/x.txt"}))
+	if len(tbl.Rows) != 1 || tbl.Rows[0][4] != "x" {
+		t.Errorf("blame in a bare repository = %v, want sub/x.txt's one line", tbl.Rows)
+	}
+	for _, file := range []string{filepath.Join(dir, "sub", "x.txt"), "../x.txt"} {
+		_, err := runBlame(context.Background(), req(t, bare, map[string]any{"file": file}))
+		if code := errCode(err); code != "git.file.outside" {
+			t.Errorf("file %q in a bare repository: %q, want git.file.outside", file, code)
+		}
+	}
+}
+
 func errCode(err error) string {
+	if err == nil {
+		return ""
+	}
 	var ve *view.Error
 	if errors.As(err, &ve) {
 		return ve.Code

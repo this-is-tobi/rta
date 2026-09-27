@@ -341,40 +341,89 @@ func repoRoot(req plugin.Request, path string) (string, *view.Error) {
 	}
 }
 
-// repoRelative is a file input the way go-git wants it: relative to the
-// repository root, with forward slashes.
+// fileHelp is the help of the file input git.blame and git.log take, which
+// says what repoFile does with it.
+func fileHelp(what string) string {
+	return what + ", relative to the current directory as git takes it — or, in a repository " +
+		"with no checkout here (a URL, a bare repository), to the repository's root"
+}
+
+// repoFile is the file input git.blame and git.log take, the way go-git wants
+// it: relative to the repository root, with forward slashes.
 //
-// **The boundary substitutes a Path input rather than merely approving it.**
-// What a handler receives on a confined surface is the judged form —
-// absolute, symlinks resolved — whatever the caller spelled, while the help
-// text's "relative to the repository root" is the one form go-git's tree
-// lookup knows. Handed the absolute form, blame found no such file and told
-// the caller to send exactly what it had just sent, and log's --file matched
-// no commit: a well-formed empty table an agent reads as "nobody ever touched
-// this file". So the absolute form is turned back into the relative one here,
-// against the working tree go-git opened — the same directory the guard
-// judged the path inside — and a file that is not under it is refused by
-// name rather than looked up as a path go-git could never find.
+// **A path like any other, taken from the current directory as git takes
+// one.** The input is a path, so the boundary resolves it against the
+// server's working directory and judges it before a handler sees it, the way
+// it resolves every path an agent sends — while the help said "relative to
+// the repository root", and the CLI, which resolves nothing, took it that
+// way. With a root above the checkout, {path: repo, file: README} was judged
+// as <root>/README and refused as outside the repository, with a hint to name
+// a file under the repository root, which is what the caller had done, and
+// the CLI took README and refused repo/README: two surfaces wanting opposite
+// inputs, and the help describing one of them.
 //
-// A relative spelling is kept as it is: on an unconfined surface the
-// operator typed it the way the help says, and it is already what go-git
-// wants.
-func repoRelative(repo *git.Repository, file string) (string, *view.Error) {
-	if !filepath.IsAbs(file) {
-		return filepath.ToSlash(file), nil
-	}
+// Taking the file from the repository root on every surface would have meant
+// a file input the boundary does not judge, left to this handler to put to
+// the gate, and every path an agent can send is one the boundary judges for
+// a reason (internal/mcp's TestNoRemoteInputSmellsLikeAPathWithoutBeingOne).
+// So every surface takes it the boundary's way, which is also git's: `git
+// blame` and `git log -- <path>` take a path from the current directory, and
+// in a subdirectory of a checkout the file beside you is named as it is.
+//
+// A repository with no checkout on this disk is the exception, because there
+// is nowhere here for a path to lead: a remote URL cloned into memory, which
+// only a terminal may name, and a bare repository. There the file is named in
+// the repository, from its root, and an absolute one has nowhere to be placed.
+// spelled is how the caller's surface names the input, for the hint.
+func repoFile(repo *git.Repository, file, spelled string) (string, *view.Error) {
+	_, onDisk := repo.Storer.(*filesystem.Storage)
 	wt, err := repo.Worktree()
-	if err != nil {
-		return "", view.Errorf("git.file.outside", "%s: a bare repository has no working tree to place it under", file).
-			WithHint("name the file relative to the repository root")
+	if !onDisk || err != nil {
+		if rel := filepath.Clean(file); !filepath.IsAbs(file) && !climbsOut(rel) {
+			return filepath.ToSlash(rel), nil
+		}
+		return "", view.Errorf("git.file.outside", "%s: this repository has no checkout here to place it in", file).
+			WithHint("give " + spelled + " as the repository names it, from its root")
 	}
 	root := wt.Filesystem.Root()
-	rel, err := filepath.Rel(root, file)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return "", view.Errorf("git.file.outside", "%s is not inside the repository at %s", file, root).
-			WithHint("name a file under the repository root")
+	abs, err := filepath.Abs(file)
+	if err != nil {
+		return "", view.Errorf("git.path.invalid", "%s: %v", file, err)
+	}
+	rel, err := filepath.Rel(realPath(root), filepath.Join(realPath(filepath.Dir(abs)), filepath.Base(abs)))
+	if err != nil || rel == "." || climbsOut(rel) {
+		return "", view.Errorf("git.file.outside", "%s is not inside the repository at %s", abs, root).
+			WithHint("give " + spelled + " as a path to a file in that repository: a relative one is " +
+				"taken from the directory rta runs in, as git takes one, and not from the repository")
 	}
 	return filepath.ToSlash(rel), nil
+}
+
+// realPath is p with the symlinks in it resolved, as far as it exists: the
+// working tree go-git opened is a real path, and the current directory, as
+// the shell hands it over, often is not — /tmp is /private/tmp on macOS, and
+// a checkout under a linked directory is an ordinary one. The file's own name
+// is kept, joined back on by the caller, because a tracked symlink is blamed
+// as the link and not as what it points at. A part that does not exist yet —
+// a file log is asked about that has since been deleted — is kept as spelled.
+func realPath(p string) string {
+	for rest := ""; ; {
+		if resolved, err := filepath.EvalSymlinks(p); err == nil {
+			return filepath.Join(resolved, rest)
+		}
+		parent := filepath.Dir(p)
+		if parent == p {
+			return filepath.Join(p, rest)
+		}
+		rest = filepath.Join(filepath.Base(p), rest)
+		p = parent
+	}
+}
+
+// climbsOut reports whether a cleaned relative path starts above the
+// directory it is relative to.
+func climbsOut(rel string) bool {
+	return rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // shortHash is the 7-character abbreviation `git log --oneline` and

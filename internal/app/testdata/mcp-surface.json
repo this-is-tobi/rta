@@ -833,7 +833,7 @@
       "additionalProperties": false,
       "properties": {
         "file": {
-          "description": "path to the file, relative to the repository root (a path on the machine running rta)",
+          "description": "the file to blame, relative to the current directory as git takes it — or, in a repository with no checkout here (a URL, a bare repository), to the repository's root (a path on the machine running rta)",
           "type": "string"
         },
         "path": {
@@ -933,7 +933,7 @@
       "additionalProperties": false,
       "properties": {
         "file": {
-          "description": "limit to commits that touched this path (a path on the machine running rta)",
+          "description": "limit to commits that touched this file, relative to the current directory as git takes it — or, in a repository with no checkout here (a URL, a bare repository), to the repository's root (a path on the machine running rta)",
           "type": "string"
         },
         "limit": {

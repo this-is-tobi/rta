@@ -9,6 +9,7 @@ func TestBlameAttributesEachLineToTheCommitThatIntroducedIt(t *testing.T) {
 	dir, repo := testRepo(t)
 	commitFile(t, repo, dir, "a.txt", "line one\nline two\n", "first commit")
 	commitFile(t, repo, dir, "a.txt", "line one\nline two\nline three\n", "second commit")
+	t.Chdir(dir)
 
 	tbl := table(t, runBlame, req(t, dir, map[string]any{"file": "a.txt"}))
 	if len(tbl.Rows) != 3 {
@@ -28,6 +29,7 @@ func TestBlameAttributesEachLineToTheCommitThatIntroducedIt(t *testing.T) {
 func TestBlameOnAnUntrackedFileFailsWithAClearError(t *testing.T) {
 	dir, repo := testRepo(t)
 	commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
+	t.Chdir(dir)
 
 	_, err := runBlame(context.Background(), req(t, dir, map[string]any{"file": "nope.txt"}))
 	if err == nil {

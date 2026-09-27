@@ -24,8 +24,7 @@ func blameCapability() plugin.Capability {
 		NoPreview: true,
 		Inputs: []plugin.Field{
 			pathField("repository path, or a subdirectory of one"),
-			{Name: "file", Type: plugin.Path, Positional: true, Required: true,
-				Help: "path to the file, relative to the repository root"},
+			{Name: "file", Type: plugin.Path, Positional: true, Required: true, Help: fileHelp("the file to blame")},
 		},
 		Run: runBlame,
 	}
@@ -46,14 +45,14 @@ func runBlame(ctx context.Context, req plugin.Request) (view.View, error) {
 		return nil, view.Errorf("git.blame.failed", "reading HEAD commit: %v", err)
 	}
 
-	file, verr := repoRelative(repo, req.String("file"))
+	file, verr := repoFile(repo, req.String("file"), req.Surface().ArgumentName("file"))
 	if verr != nil {
 		return nil, verr
 	}
 	result, err := git.Blame(commit, file)
 	if err != nil {
 		return nil, view.Errorf("git.blame.failed", "%s: %v", file, err).
-			WithHint("the path is relative to the repository root, and must be tracked at HEAD")
+			WithHint("the file must be tracked at HEAD: a new one has no history to blame until it is committed")
 	}
 
 	t := view.Table{Columns: []view.Column{
