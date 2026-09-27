@@ -41,16 +41,24 @@ import (
 // a single large write, no seal forgery required, because the read happens
 // long before anything checks the seal.
 //
-// io.ReadFull into max+1 rather than a Stat: a Stat is a separate syscall
-// from the read, so the file can grow between them, and the check would be
-// on a size that is no longer the size. Reading one byte past the limit and
-// refusing on that byte cannot be raced — the bytes counted are the bytes
-// taken.
+// Read through a limit of max+1 rather than after a Stat: a Stat is a
+// separate syscall from the read, so the file can grow between them, and the
+// check would be on a size that is no longer the size. Reading one byte past
+// the limit and refusing on that byte cannot be raced — the bytes counted are
+// the bytes taken.
 //
 // The cap belongs to the caller because only the caller knows what its own
 // format writes. Size it as "larger than anything rta would ever put here",
 // not as "as small as possible": the point is to refuse a file that is
 // evidence of tampering, not to police a format that grew a field.
+//
+// And what is read costs what the file holds, never what the cap allows. The
+// read went into a buffer of max+1 made up front, so a cap sized generously,
+// as it should be, was a cost every read paid: a dozen files of a few
+// kilobytes read at once under a 16 MiB cap, as a run reads one per installed
+// plugin, took 2 ms and up to 57 MB of memory, against 0.3 ms and 6 MB read
+// as they are now. And the slice handed back kept the whole buffer alive for
+// as long as its caller held it.
 //
 // The open itself waits out a platform that refuses it for a reason that
 // resolves on its own — see waitingOut.
@@ -60,15 +68,14 @@ func ReadCapped(path string, max int) ([]byte, error) {
 		return nil, err
 	}
 	defer func() { _ = f.Close() }()
-	buf := make([]byte, max+1)
-	n, err := io.ReadFull(f, buf)
-	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
+	data, err := io.ReadAll(io.LimitReader(f, int64(max)+1))
+	if err != nil {
 		return nil, err
 	}
-	if n > max {
+	if len(data) > max {
 		return nil, fmt.Errorf("%s is larger than anything rta writes there (over %d bytes)", path, max)
 	}
-	return buf[:n], nil
+	return data, nil
 }
 
 // openFile is os.Open and lstatFile is os.Lstat, overridable so a test can
