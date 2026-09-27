@@ -529,6 +529,22 @@ func (c Capability) validate(ns string) error {
 			return fmt.Errorf("capability %q: input %q defaults to %v, and its range is %s",
 				c.ID, f.Name, f.Default, want)
 		}
+		// Required says a call has to carry the input; a Default says what it
+		// is when a call does not. Together they are two answers to one
+		// question, and every surface read a different one. The host fills
+		// the default before it looks for what is missing (CheckRequired runs
+		// on the resolved values), so the refusal Required promises never
+		// comes. The MCP schema listed the input as one an agent must send
+		// while publishing the value it would get by sending nothing, and the
+		// CLI marked the flag required, so a terminal was refused at parse
+		// time for leaving out what the default was there to give. An empty
+		// default is no value — Missing counts it as none — and leaves
+		// Required meaning what it says.
+		if f.Required && !empty(f.Default) {
+			return fmt.Errorf("capability %q: input %q declares Required and a Default; a required input "+
+				"with a default is never missing, since the default fills it before the host looks — "+
+				"drop one", c.ID, f.Name)
+		}
 		if f.Name == c.Scope {
 			// A scope is a record's name, and a record's name is written down
 			// everywhere a grant is: into the parked consent request, into

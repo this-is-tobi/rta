@@ -213,6 +213,40 @@ func TestAMissingInputIsNamedTheWayItsSurfaceNamesIt(t *testing.T) {
 	}
 }
 
+// A required input with a default is never missing: the default fills it
+// before the host looks. The MCP schema listed such an input as one an agent
+// must send while publishing the value sending nothing would give, and the
+// CLI refused the command at parse time for leaving it out, so the pair is
+// refused where its author declares it. An empty default is no value and
+// leaves Required meaning what it says; a Config key is the operator's to
+// give or not, and a required input may name one.
+func TestARequiredInputWithADefaultIsRefused(t *testing.T) {
+	p := validPlugin()
+	for _, f := range []Field{
+		{Name: "host", Type: String, Required: true, Default: "localhost"},
+		{Name: "port", Type: Int, Required: true, Default: 0},
+		{Name: "tls", Type: Bool, Required: true, Default: false},
+		{Name: "kinds", Type: StringSlice, Required: true, Default: []string{"table"}},
+		{Name: "table", Type: String, Required: true, Positional: true, Default: "users"},
+	} {
+		p.Capabilities[0].Inputs = []Field{f}
+		if err := p.Validate(); err == nil || !strings.Contains(err.Error(), "never missing") {
+			t.Errorf("%s: err = %v, want Required beside a Default refused", f.Name, err)
+		}
+	}
+	for _, f := range []Field{
+		{Name: "host", Type: String, Required: true, Default: ""},
+		{Name: "kinds", Type: StringSlice, Required: true, Default: []string{}},
+		{Name: "host", Type: String, Required: true, Config: "host"},
+		{Name: "host", Type: String, Default: "localhost"},
+	} {
+		p.Capabilities[0].Inputs = []Field{f}
+		if err := p.Validate(); err != nil {
+			t.Errorf("%+v was refused: %v", f, err)
+		}
+	}
+}
+
 // Piped is required wherever there is no pipe to read — MCP and the TUI — and
 // left out on the CLI, which reads the pipe then, and by an in-process caller.
 func TestAPipedInputIsRequiredWhereThereIsNoPipe(t *testing.T) {

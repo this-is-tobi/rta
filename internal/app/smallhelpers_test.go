@@ -34,14 +34,20 @@ func TestAConnectionsAddressIsTheMostAddressLikeThingItStates(t *testing.T) {
 	}
 }
 
-func TestATileNeedsNoInputARequiredOneWithoutADefaultWouldAskFor(t *testing.T) {
+// A required input is one a tile would run without, an empty default beside
+// it included: the default fills nothing, and Validate refuses any other.
+func TestATileNeedsNoInputButARequiredOne(t *testing.T) {
 	free := plugin.Capability{ID: "a.b", Inputs: []plugin.Field{
-		{Name: "n", Type: plugin.Int, Required: true, Default: 3},
+		{Name: "n", Type: plugin.Int, Default: 3},
 		{Name: "s", Type: plugin.String},
 	}}
 	asks := plugin.Capability{ID: "c.d", Inputs: []plugin.Field{{Name: "host", Type: plugin.String, Required: true}}}
-	if hasRequiredInputs(free) || !hasRequiredInputs(asks) {
-		t.Errorf("hasRequiredInputs: free=%v asks=%v", hasRequiredInputs(free), hasRequiredInputs(asks))
+	blank := plugin.Capability{ID: "e.f", Inputs: []plugin.Field{
+		{Name: "host", Type: plugin.String, Required: true, Default: ""},
+	}}
+	if hasRequiredInputs(free) || !hasRequiredInputs(asks) || !hasRequiredInputs(blank) {
+		t.Errorf("hasRequiredInputs: free=%v asks=%v blank=%v",
+			hasRequiredInputs(free), hasRequiredInputs(asks), hasRequiredInputs(blank))
 	}
 	tiles := []config.Tile{{ID: "sys.cpu"}, {ID: "pg.overview", Profile: "prod"}}
 	if got := strings.Join(tileIDs(tiles), " "); got != "sys.cpu pg.overview" {
