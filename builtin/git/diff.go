@@ -5,12 +5,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	iofs "io/fs"
 	"os"
 	pathpkg "path"
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -485,17 +487,66 @@ func readWorktreeEntry(root, path string, disk os.FileInfo) (string, filemode.Fi
 		}
 		return target, filemode.Symlink, nil
 	}
-	data, err := os.ReadFile(full)
+	// **Only a regular file is opened, and never in a way that can wait.**
+	// go-git's status lists a named pipe as untracked, and opening one with
+	// no writer blocks in open(2) until a writer comes — which no context
+	// can interrupt, so git_diff never answered and each call held an OS
+	// thread for good. A pipe, a socket or a device is named instead, and git
+	// tracks none of them. The open is non-blocking and the file it reached
+	// is held to the one the lstat saw, so a regular file swapped for a pipe
+	// or a link in between is named as changed rather than waited on or read
+	// through.
+	if !disk.Mode().IsRegular() {
+		return "", 0, notAFile(disk.Mode())
+	}
+	f, err := os.OpenFile(full, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return "", 0, err
+	}
+	defer func() { _ = f.Close() }()
+	opened, err := f.Stat()
+	if err != nil {
+		return "", 0, err
+	}
+	if !opened.Mode().IsRegular() || !os.SameFile(opened, disk) {
+		return "", 0, notDiffable("it changed while it was being read")
+	}
+	data, err := io.ReadAll(f)
 	if err != nil {
 		return "", 0, err
 	}
 	return string(data), filemode.Regular, nil
 }
 
+// notDiffable is a reason a diff does not show a file that is the reason
+// whole, rather than one the operating system gave for failing to read it.
+type notDiffable string
+
+func (n notDiffable) Error() string { return string(n) }
+
+// notAFile names what is on disk in place of a file, by its kind.
+func notAFile(m os.FileMode) notDiffable {
+	switch {
+	case m&os.ModeNamedPipe != 0:
+		return "a named pipe, which git does not track"
+	case m&os.ModeSocket != 0:
+		return "a socket, which git does not track"
+	case m&(os.ModeDevice|os.ModeCharDevice) != 0:
+		return "a device, which git does not track"
+	case m.IsDir():
+		return "a directory where a file was"
+	}
+	return "not a regular file"
+}
+
 // unreadable is why a changed file could not be read, as the diff names it:
 // the operating system's reason, without the absolute path it carries, since
 // the line already names the file.
 func unreadable(err error) string {
+	var reason notDiffable
+	if errors.As(err, &reason) {
+		return string(reason)
+	}
 	var pe *iofs.PathError
 	if errors.As(err, &pe) {
 		return "cannot read it: " + pe.Err.Error()
