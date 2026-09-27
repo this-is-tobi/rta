@@ -2,10 +2,13 @@ package sys
 
 import (
 	"context"
+	"errors"
 	"regexp"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/shirou/gopsutil/v4/process"
 
 	"github.com/this-is-tobi/rta/internal/render/theme"
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -110,6 +113,62 @@ func TestPSRespectsLimit(t *testing.T) {
 	}
 	if tbl.Total < len(tbl.Rows) {
 		t.Errorf("Total %d < rows %d", tbl.Total, len(tbl.Rows))
+	}
+}
+
+// sys.ps ranked by gopsutil's CPUPercent, the CPU time spent since a process
+// started over the seconds since then: a process idle for a minute and
+// spinning a core since read 14% while ps said 100, below processes busy
+// once and idle ever since. The use is what each process spent over the
+// window, so a large total that did not move reads 0 and a small one that
+// did reads what it spent.
+func TestPSMeasuresCPUOverTheWindowNotSinceTheProcessStarted(t *testing.T) {
+	const window = 100 * time.Millisecond
+	busyOnce, busyNow, unreadable, exited := &process.Process{Pid: 1}, &process.Process{Pid: 2},
+		&process.Process{Pid: 3}, &process.Process{Pid: 4}
+	reads := map[int32]int{}
+	// busyNow has had a core to itself since the test began, so what it has
+	// spent is the time since then: what it spent between its two readings
+	// is the time between them, however long a loaded machine made the
+	// window.
+	started := time.Now()
+	spent := func(_ context.Context, p *process.Process) (float64, error) {
+		reads[p.Pid]++
+		switch {
+		case p == busyOnce && reads[p.Pid] == 2:
+			// The second pass reaching busyNow a window late, as one slowed
+			// by a loaded machine does.
+			time.Sleep(window)
+			return 5000, nil
+		case p == busyOnce:
+			return 5000, nil
+		case p == busyNow:
+			return 1 + time.Since(started).Seconds(), nil
+		case p == exited && reads[p.Pid] == 1:
+			return 30, nil
+		}
+		return 0, errors.New("no such process")
+	}
+	use, gone, err := recentCPU(context.Background(),
+		[]*process.Process{busyOnce, busyNow, unreadable, exited}, spent, window)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := use[busyOnce.Pid]; got != 0 {
+		t.Errorf("a process that spent nothing in the window reads %.1f%%, want 0", got)
+	}
+	// A whole core over the time between its own two readings, and not over
+	// the window alone: divided by the window, the late second pass read as
+	// two cores. The margin is for a pause between a reading and its
+	// timestamp, not for the window, whose length this does not depend on.
+	if got := use[busyNow.Pid]; got < 80 || got > 120 {
+		t.Errorf("a process on a core the whole time reads %.1f%%, want close to 100", got)
+	}
+	if _, ok := use[unreadable.Pid]; ok || gone[unreadable.Pid] {
+		t.Errorf("a process unreadable from the start has a use or is gone: %v, %v", use, gone)
+	}
+	if !gone[exited.Pid] {
+		t.Errorf("a process that stopped answering inside the window is not reported gone: %v", gone)
 	}
 }
 
