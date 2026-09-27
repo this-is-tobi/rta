@@ -53,7 +53,7 @@ func runBlame(ctx context.Context, req plugin.Request) (view.View, error) {
 		return nil, view.Errorf("git.blame.failed", "reading HEAD commit: %v", err)
 	}
 
-	file, verr := repoFile(repo, req.String("file"), req.Surface().ArgumentName("file"))
+	file, verr := repoFile(repo, req.String("file"), req.Surface(), req.Surface().ArgumentName("file"))
 	if verr != nil {
 		return nil, verr
 	}
