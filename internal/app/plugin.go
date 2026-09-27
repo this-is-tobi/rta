@@ -136,7 +136,7 @@ func newPluginAllowCommand(opts *globalOpts) *cobra.Command {
 			if verr != nil {
 				return verr
 			}
-			union := mergedAllow(plugintrust.Load().Allowed(c.Identity.Digest), want)
+			union := mergedAllow(grantedOf(declared, plugintrust.Load().Allowed(c.Identity.Digest)), want)
 			allowLabel, next := "allowed", "it applies on your next `rta` command — the plugin is "+
 				"relaunched with that location left out of its sandbox"
 			if opts.dryRun {
@@ -255,7 +255,7 @@ func needsInventory() view.View {
 		}
 		allowed := set.Allowed(c.Identity.Digest)
 		status, action := "warn", "rta plugin allow "+c.Declared.Name
-		if len(allowed) == len(c.Declared.Needs) {
+		if len(ungranted(c.Declared.Needs, allowed)) == 0 {
 			status, action = "ok", "—"
 		}
 		t.Rows = append(t.Rows, []string{
@@ -334,6 +334,22 @@ func needLine(n plugin.Need) string {
 		return string(n) + " (" + p + ")"
 	}
 	return string(n)
+}
+
+// grantedOf is the part of a stored grant the plugin declared, which is what
+// the sandbox opens: pluginhost reads the record the same way. A location the
+// record holds and the declaration does not name opens nothing, so it is
+// carried into no new grant and counted by no status — a table reading the
+// record's length said "ok" for a plugin allowed ssh that asked for
+// kubeconfig, and had its kubeconfig denied.
+func grantedOf(declared []plugin.Need, allowed []string) []string {
+	var out []string
+	for _, n := range declared {
+		if slices.Contains(allowed, string(n)) {
+			out = append(out, string(n))
+		}
+	}
+	return out
 }
 
 // ungranted is what a plugin asked for and has not been given.

@@ -3,6 +3,7 @@ package pluginhost
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -363,6 +364,19 @@ func TestAnUnknownStoredGrantIsDropped(t *testing.T) {
 	got := asNeeds([]string{"kubeconfig", "something-a-later-rta-invented"})
 	if len(got) != 1 || got[0] != plugin.NeedKubeconfig {
 		t.Errorf("asNeeds = %v, want only the known member", got)
+	}
+}
+
+// A stored grant opens only what the artifact declared. The record is a file,
+// and a location in it the declaration never named is access nobody was
+// offered — `rta plugin allow` lists the declaration and nothing else.
+func TestAStoredGrantOpensOnlyWhatTheArtifactDeclared(t *testing.T) {
+	stored := []string{"kubeconfig", "ssh", "aws"}
+	if got := declaredOnly(stored, []plugin.Need{plugin.NeedKubeconfig}); !slices.Equal(got, []plugin.Need{plugin.NeedKubeconfig}) {
+		t.Errorf("declaredOnly = %v, want only the declared kubeconfig", got)
+	}
+	if got := declaredOnly(stored, nil); len(got) != 0 {
+		t.Errorf("declaredOnly = %v for an artifact that declared nothing, want nothing", got)
 	}
 }
 

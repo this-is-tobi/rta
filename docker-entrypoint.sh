@@ -9,7 +9,8 @@
 # because the bytes were built in that build and the digest it pins is theirs.
 # Allow — "these bytes may read my cluster credentials" — is a question about
 # *your* machine and your kubeconfig, so the image cannot answer it for
-# everyone who pulls it.
+# everyone who pulls it — and rta holds it to that: an allow written into the
+# image's own trusted.json is read as trust alone.
 #
 # But it is recorded in the state directory, and a container that is thrown
 # away after every run has no state directory to record it in. Without this,

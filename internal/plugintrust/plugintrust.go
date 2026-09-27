@@ -313,6 +313,15 @@ func readQuietly(path string) []Entry {
 
 // loadSystem is the system root's record by digest, every entry marked
 // System, and empty when there is no root or no record.
+//
+// **Trust and nothing else.** An image may decide which bytes run; which of
+// the operator's credential files those bytes may read is not the image's to
+// decide, for a file none of its users has mounted yet. The record's Allow
+// was read as if the operator had typed it, and the sandbox opened those
+// locations on every machine running the image, with `rta plugin allow` and
+// doctor reporting the grant as the operator's. Dropped here, where the
+// record is read, so nothing downstream can mistake it for one: an
+// operator's own grant starts from nothing and lives in their record.
 func loadSystem() map[string]Entry {
 	out := map[string]Entry{}
 	p := systemPath()
@@ -321,6 +330,7 @@ func loadSystem() map[string]Entry {
 	}
 	for _, e := range readQuietly(p) {
 		e.System = true
+		e.Allow = nil
 		out[e.Digest] = e
 	}
 	return out
