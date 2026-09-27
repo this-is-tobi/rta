@@ -3,8 +3,12 @@ package kv
 import (
 	"context"
 	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+
+	"filippo.io/age"
 
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -170,5 +174,157 @@ func TestAnOrdinaryFirstWriteStillNeedsNoSetup(t *testing.T) {
 	v, err := runGet(context.Background(), req(map[string]any{"key": "first-secret"}, false))
 	if err != nil || v.(view.Text).Body != "hunter2" {
 		t.Fatalf("value = %v (%v)", v, err)
+	}
+}
+
+// --- a recipient is the key it spells, never a file named after it ---------
+//
+// An age recipient is also a perfectly good relative file name, and the
+// recipients file is public on purpose. parseRecipient read a spec as a path
+// first, and every keys-mode write re-parses the recorded specs, so a file
+// named after the store's own recipient in the directory rta happened to run
+// in — a cloned repository, the project an MCP server was started in — was
+// read in the key's place, and the next ordinary write re-encrypted every
+// secret to whatever key the file held. Nothing on screen changed: the
+// recorded spec, and the store's embedded copy of it, still read as the
+// operator's own key.
+
+// ageKey writes a fresh age identity file and returns its path and the
+// recipient it opens for.
+func ageKey(t *testing.T, dir, name string) (path, recipient string) {
+	t.Helper()
+	id, err := age.GenerateX25519Identity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path = filepath.Join(dir, name)
+	if err := os.WriteFile(path, []byte(id.String()+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path, id.Recipient().String()
+}
+
+// shadow puts a file named after recipient into a fresh working directory,
+// holding body, and moves the test into that directory.
+func shadow(t *testing.T, recipient, body string) {
+	t.Helper()
+	cwd := t.TempDir()
+	if err := os.WriteFile(filepath.Join(cwd, recipient), []byte(body+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(cwd)
+}
+
+func TestARecordedRecipientIsNeverReadAsAPath(t *testing.T) {
+	keys := t.TempDir()
+	_, victim := ageKey(t, keys, "victim")
+	_, attacker := ageKey(t, keys, "attacker")
+	shadow(t, victim, attacker)
+
+	recipients, verr := recipientsFor([]string{victim})
+	if verr != nil {
+		t.Fatal(verr)
+	}
+	if got := recipients[0].(*age.X25519Recipient).String(); got != victim {
+		t.Fatalf("the recorded recipient %s was read as the file named after it: encrypting to %s", victim, got)
+	}
+}
+
+func TestAFileNamedAfterTheRecipientCannotRelockTheStore(t *testing.T) {
+	setupWithConfig(t)
+	keys := t.TempDir()
+	victimKey, victim := ageKey(t, keys, "victim")
+	attackerKey, attacker := ageKey(t, keys, "attacker")
+
+	text(t, runInit, map[string]any{"identity": victimKey}, false)
+	text(t, runSet, map[string]any{"key": "db-password", "value": "VICTIM-ONLY", "identity": victimKey}, false)
+
+	shadow(t, victim, attacker)
+	text(t, runSet, map[string]any{"key": "unrelated", "value": "v", "identity": victimKey}, false)
+
+	v, err := runGet(context.Background(), req(map[string]any{"key": "db-password", "identity": victimKey}, false))
+	if err != nil || v.(view.Text).Body != "VICTIM-ONLY" {
+		t.Fatalf("the operator lost their own store to a file in the working directory: %v (%v)", v, err)
+	}
+	_, err = runGet(context.Background(), req(map[string]any{"key": "db-password", "identity": attackerKey}, false))
+	if ve := view.AsError(err, "z"); ve.Code != "kv.wrongkey" {
+		t.Fatalf("the planted key reads the store: %v (%+v)", v, ve)
+	}
+}
+
+// The same reading, one level down: a --recipient path whose file holds a
+// recipient was answered by re-parsing that line, which could itself be read
+// as a path.
+func TestARecipientFilesContentsAreNeverFollowedAsAPath(t *testing.T) {
+	keys := t.TempDir()
+	_, colleague := ageKey(t, keys, "colleague")
+	_, attacker := ageKey(t, keys, "attacker")
+	pub := filepath.Join(keys, "colleague.txt")
+	if err := os.WriteFile(pub, []byte(colleague+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	shadow(t, colleague, attacker)
+
+	r, spec, err := parseRecipient(pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := r.(*age.X25519Recipient).String(); got != colleague || spec != colleague {
+		t.Fatalf("%s holds %s, and it was read as %s (recorded %s)", pub, colleague, got, spec)
+	}
+}
+
+func TestRekeyReadsANamedRecipientAsTheKeyItSpells(t *testing.T) {
+	setupWithConfig(t)
+	keys := t.TempDir()
+	victimKey, _ := ageKey(t, keys, "victim")
+	attackerKey, attacker := ageKey(t, keys, "attacker")
+	_, colleague := ageKey(t, keys, "colleague")
+
+	text(t, runInit, map[string]any{"identity": victimKey}, false)
+	text(t, runSet, map[string]any{"key": "db-password", "value": "VICTIM-ONLY", "identity": victimKey}, false)
+
+	shadow(t, colleague, attacker)
+	if _, err := runRekey(context.Background(), req(map[string]any{
+		"recipient": []string{colleague}, "identity": victimKey,
+	}, false)); err != nil {
+		t.Fatal(err)
+	}
+	after, verr := loadRecipients()
+	if verr != nil || !slices.Contains(after, colleague) || slices.Contains(after, attacker) {
+		t.Fatalf("recipients = %v (%v), want the colleague's key the call spelled", after, verr)
+	}
+	_, err := runGet(context.Background(), req(map[string]any{"key": "db-password", "identity": attackerKey}, false))
+	if ve := view.AsError(err, "z"); ve.Code != "kv.wrongkey" {
+		t.Fatalf("the planted key reads the store after a re-key: %+v", ve)
+	}
+}
+
+// And the lockout guard is not fooled by it: a spelled recipient proves
+// nothing about who holds its private half, even when a file of that name
+// holds a private key.
+func TestANamedRecipientIsNotProofOfHoldingItsKey(t *testing.T) {
+	setupWithConfig(t)
+	keys := t.TempDir()
+	victimKey, _ := ageKey(t, keys, "victim")
+	_, colleague := ageKey(t, keys, "colleague")
+	planted, err := age.GenerateX25519Identity()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	text(t, runInit, map[string]any{"identity": victimKey}, false)
+	text(t, runSet, map[string]any{"key": "k", "value": "v", "identity": victimKey}, false)
+
+	shadow(t, colleague, planted.String())
+	_, err = runRekey(context.Background(), req(map[string]any{
+		"only": true, "recipient": []string{colleague}, "identity": victimKey,
+	}, false))
+	if err == nil {
+		after, _ := loadRecipients()
+		t.Fatalf("a file named after the recipient passed for holding its key; recipients now %v", after)
+	}
+	if ve := view.AsError(err, "z"); ve.Code != "kv.rekey.lockout" {
+		t.Fatalf("code = %q, want kv.rekey.lockout (%v)", ve.Code, err)
 	}
 }
