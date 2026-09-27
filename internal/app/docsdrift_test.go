@@ -7,6 +7,9 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/this-is-tobi/rta/internal/mcp"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
 // The docs state two numbers that nothing generates: how many built-in plugins
@@ -113,6 +116,91 @@ func TestEveryWholeStoreBackupNamesWhatItLeavesBehind(t *testing.T) {
 				"where a backup strategy gets planned", capID, heading)
 		}
 	}
+}
+
+// The MCP chapter says what a remote server leaves out twice over: a
+// paragraph naming the capabilities, and the startup line quoted under it
+// with their count. Both had drifted from HostSpecific — net.listen joined
+// the hidden set and the paragraph never named it, and the quoted line kept
+// a count of 28, and a "(28 total)" suffix, long after the binary printed
+// neither. The commit that marks a capability HostSpecific is about that
+// capability, and nothing in it sends anyone to reread this page.
+//
+// A bare namespace names its capabilities only when the gate hides every
+// one of them, the way it hides sys, fs and git. The paragraph also says
+// "the parts of `net`", and counting that as naming net.listen is exactly
+// the reading that let the omission through.
+func TestTheMCPChapterNamesWhatARemoteServerHides(t *testing.T) {
+	reg, err := NewRegistry()
+	if err != nil {
+		t.Fatalf("building the built-in registry: %v", err)
+	}
+	hidden := mcp.Options{Remote: true}.RemoteBlocked(reg)
+	const rel = "docs/30-boundary/20-mcp.md"
+	body := readDoc(t, repoRoot(t), rel)
+
+	m := regexp.MustCompile(`remote transport hides (\d+) capabilities`).FindStringSubmatch(body)
+	if m == nil {
+		t.Fatalf("%s no longer quotes the startup line naming what a remote server hides; "+
+			"if it moved, move this test with it", rel)
+	}
+	if got, _ := strconv.Atoi(m[1]); got != len(hidden) {
+		t.Errorf("%s quotes a remote server hiding %d capabilities, the locality gate hides %d",
+			rel, got, len(hidden))
+	}
+
+	const marker = "answer for the machine rta happens to run on"
+	var paragraph string
+	for _, p := range strings.Split(body, "\n\n") {
+		if strings.Contains(p, marker) {
+			paragraph = p
+			break
+		}
+	}
+	if paragraph == "" {
+		t.Fatalf("%s no longer has the paragraph saying what %q; if it was reworded, "+
+			"move this test with it", rel, marker)
+	}
+	isHidden := map[string]bool{}
+	for _, id := range hidden {
+		isHidden[id] = true
+	}
+	partly := map[string]bool{}
+	for _, c := range reg.Capabilities() {
+		if !isHidden[c.ID] {
+			partly[plugin.Namespace(c.ID)] = true
+		}
+	}
+	var unnamed []string
+	for _, id := range hidden {
+		if !namesCapability(paragraph, id, !partly[plugin.Namespace(id)]) {
+			unnamed = append(unnamed, id)
+		}
+	}
+	if len(unnamed) > 0 {
+		t.Errorf("%s hides %s from a remote caller and never says so: name each by ID, by a "+
+			"`prefix.*` that covers it, or by its plugin when every capability of that plugin is hidden",
+			rel, strings.Join(unnamed, ", "))
+	}
+}
+
+// namesCapability reports whether prose names id in backticks: the ID itself,
+// a `prefix.*` covering it, or — when wholeNamespace says the gate takes all
+// of it — the bare plugin name.
+func namesCapability(prose, id string, wholeNamespace bool) bool {
+	if strings.Contains(prose, "`"+id+"`") {
+		return true
+	}
+	if wholeNamespace && strings.Contains(prose, "`"+plugin.Namespace(id)+"`") {
+		return true
+	}
+	parts := strings.Split(id, ".")
+	for i := len(parts) - 1; i >= 1; i-- {
+		if strings.Contains(prose, "`"+strings.Join(parts[:i], ".")+".*`") {
+			return true
+		}
+	}
+	return false
 }
 
 func readDoc(t *testing.T, root, rel string) string {
