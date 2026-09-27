@@ -884,6 +884,9 @@ func runRenew(_ context.Context, req plugin.Request, artifact func(string) (stri
 	now := time.Now()
 	var renewed []string
 	var stale, unbound []string
+	// The renewed grants on a changed connection, counted apart from the
+	// connections stale names once each: the note is about the grants.
+	var staleGrants int
 	bound := boundBy(artifact)
 	var capped bool
 	teamCeiling, verr := core.Ceiling()
@@ -909,6 +912,7 @@ func runRenew(_ context.Context, req plugin.Request, artifact func(string) (stri
 	if verr := core.Mutate(func(stored []core.Grant) ([]core.Grant, bool) {
 		renewed = nil
 		stale, unbound = nil, nil
+		staleGrants = 0
 		clear(seenStale)
 		capped = false
 		for i := range stored {
@@ -980,10 +984,12 @@ func runRenew(_ context.Context, req plugin.Request, artifact func(string) (stri
 			// away believing they re-confirmed consent and learns otherwise
 			// from an agent's refusal — which is checkProfile's own named
 			// failure, one command over.
-			if cfgErr == nil && !seenStale[g.Profile] &&
-				g.Stale(profiles.ConnStampFor(cfg, g.Profile, core.Namespace(g.Target))) {
-				seenStale[g.Profile] = true
-				stale = append(stale, g.Profile)
+			if cfgErr == nil && g.Stale(profiles.ConnStampFor(cfg, g.Profile, core.Namespace(g.Target))) {
+				staleGrants++
+				if !seenStale[g.Profile] {
+					seenStale[g.Profile] = true
+					stale = append(stale, g.Profile)
+				}
 			}
 			// And the one whose plugin is no longer the build it was issued
 			// against, for the same reason: renewing moves the deadline and
@@ -1004,12 +1010,14 @@ func runRenew(_ context.Context, req plugin.Request, artifact func(string) (stri
 	if req.DryRun {
 		verb = "would renew"
 	}
-	body := fmt.Sprintf("%s %d grant(s):\n%s", verb, len(renewed), strings.Join(renewed, "\n"))
-	if len(stale) > 0 {
-		body += fmt.Sprintf("\nnote: %d of these name a connection that has changed since it was "+
-			"issued (%s), so the deadline moved and they still authorize nothing — "+
+	body := fmt.Sprintf("%s %s:\n%s", verb, format.Count(len(renewed), "grant", "grants"), strings.Join(renewed, "\n"))
+	if n := staleGrants; n > 0 {
+		body += fmt.Sprintf("\nnote: %d of these %s a connection that has changed since %s "+
+			"issued (%s), so the deadline moved and %s nothing — "+
 			"%s re-consents to the connection as it is now",
-			len(stale), strings.Join(stale, ", "), req.Surface().CapabilityName("grant.allow"))
+			n, format.Plural(n, "names", "name"), format.Plural(n, "it was", "they were"),
+			strings.Join(stale, ", "), format.Plural(n, "it still authorizes", "they still authorize"),
+			req.Surface().CapabilityName("grant.allow"))
 	}
 	if n := len(unbound); n > 0 {
 		body += fmt.Sprintf("\nnote: %d of these %s bound to a plugin build that no longer answers (%s), "+
@@ -1504,9 +1512,10 @@ func suppressedNote(sf plugin.Surface, n int) string {
 	if c, verr := core.Ceiling(); verr == nil {
 		where = " — " + c.Where()
 	}
-	return fmt.Sprintf("\n\n%d grant(s) on disk are suppressed by your team's policy%s\n"+
-		"They are not deleted: relaxing the policy brings them back, and "+
-		"%s says what it forbids.", n, where, sf.CapabilityName("audit.doctor"))
+	return fmt.Sprintf("\n\n%s suppressed by your team's policy%s\n"+
+		"%s not deleted: relaxing the policy brings %s back, and %s says what it forbids.",
+		format.Count(n, "grant on disk is", "grants on disk are"), where,
+		format.Plural(n, "It is", "They are"), format.Plural(n, "it", "them"), sf.CapabilityName("audit.doctor"))
 }
 
 // budgetLeft is the one cell that answers "how much of this is left", across

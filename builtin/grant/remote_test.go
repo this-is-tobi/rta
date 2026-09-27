@@ -189,7 +189,7 @@ func TestRemoteAllowThenRevokeEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if body := v.(view.Text).Body; !strings.Contains(body, "would revoke 1 grant(s)") {
+	if body := v.(view.Text).Body; !strings.Contains(body, "would revoke 1 grant") {
 		t.Fatalf("dry-run revoke said: %s", body)
 	}
 
@@ -199,7 +199,7 @@ func TestRemoteAllowThenRevokeEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if body := v.(view.Text).Body; !strings.Contains(body, "revoked 1 grant(s)") {
+	if body := v.(view.Text).Body; !strings.Contains(body, "revoked 1 grant") {
 		t.Fatalf("revoke said: %s", body)
 	}
 	if held, verr := core.Load(); verr != nil || len(held) != 0 {
@@ -334,7 +334,7 @@ func TestRemoteRevokeByRoleTakesThatRoleAlone(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if body := v.(view.Text).Body; !strings.Contains(body, "revoked 1 grant(s)") {
+			if body := v.(view.Text).Body; !strings.Contains(body, "revoked 1 grant") {
 				t.Errorf("revoke said: %s", body)
 			}
 			held, verr := core.Load()
