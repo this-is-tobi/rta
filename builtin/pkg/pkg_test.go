@@ -557,6 +557,50 @@ func TestToolsGrammarAndListing(t *testing.T) {
 	}
 }
 
+// **A release tag is read for the version in it, not taken as one.** Bun
+// tags bun-v1.1.38, jq jq-1.7.1 and Codex rust-v0.47.0; with only a leading
+// v trimmed, the product's name read as a zero, 0.0.1.38 is never newer
+// than 1.1.20, and each tool read ok with a release it did not have.
+func TestAReleaseTagIsReadForTheVersionInIt(t *testing.T) {
+	tags := map[string]string{"oven-sh/bun": "bun-v1.1.38", "jqlang/jq": "jq-1.7.1", "openai/codex": "rust-v0.47.0",
+		"junegunn/fzf": "v0.55.0", "some/nightly": "nightly"}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		repo := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/repos/"), "/releases/latest")
+		if tag, ok := tags[repo]; ok {
+			_, _ = w.Write([]byte(`{"tag_name":"` + tag + `","assets":[]}`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+	c := newRegistryClient()
+	c.github = srv.URL
+	f := &fake{bins: map[string]bool{"bun": true, "jq": true, "codex": true, "fzf": true, "nightly": true}, answers: map[string]fakeAnswer{
+		"bun --version":     {out: "1.1.20\n"},
+		"jq --version":      {out: "jq-1.6\n"},
+		"codex --version":   {out: "codex-cli 0.46.0\n"},
+		"fzf --version":     {out: "0.55.0 (brew)\n"},
+		"nightly --version": {out: "nightly 1.2.3\n"},
+	}}
+	install(t, f)
+	states, verr := readTools(context.Background(), c, []string{"bun=github:oven-sh/bun", "jq=github:jqlang/jq",
+		"codex=github:openai/codex", "fzf=github:junegunn/fzf", "nightly=github:some/nightly"})
+	if verr != nil {
+		t.Fatal(verr)
+	}
+	rows := toolsTable(states).Rows
+	for i, want := range []struct{ latest, status string }{
+		{"1.1.38", "outdated"}, {"1.7.1", "outdated"}, {"0.47.0", "outdated"}, {"0.55.0", "ok"},
+		// A tag with no version in it cannot be compared, and says which
+		// side it was that could not be read.
+		{"nightly", "unknown — its release tag holds no version"},
+	} {
+		if rows[i][3] != want.latest || rows[i][4] != want.status {
+			t.Errorf("%s: Latest %q Status %q, want %q %q", rows[i][0], rows[i][3], rows[i][4], want.latest, want.status)
+		}
+	}
+}
+
 // The install path, end to end against a fake GitHub and a real archive:
 // the digest the release publishes is checked, the member is found under a
 // directory, and the binary lands atomically with the executable bit.
