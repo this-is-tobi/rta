@@ -87,7 +87,12 @@ func runUpgradeCapability(ctx context.Context, req plugin.Request) (view.View, e
 	if verr := supported(); verr != nil {
 		return nil, verr
 	}
-	target := strings.TrimSpace(req.String("target"))
+	// As given, never trimmed: the target is this capability's record, and a
+	// record is judged as the call spells it, so " brew" is not the target a
+	// grant on brew covers nor the one a person approving the call read.
+	// Every manager and tool is named without white space around it, so such
+	// a target names none, and is refused below as unknown, quoted.
+	target := req.String("target")
 	pkg := strings.TrimSpace(req.String("package"))
 	// The name lands in a manager's argv as a bare positional, so one
 	// beginning with a dash would reach it as a flag — the refusal
