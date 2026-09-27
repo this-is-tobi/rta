@@ -33,21 +33,35 @@ func udp(ip string, port uint32) psnet.ConnectionStat {
 // open, and nothing about the output says anything is missing.
 //
 // The two platforms do not even leave the same thing behind: darwin reports an
-// empty status, Linux reports "NONE". Both are covered here, because reading
-// Status for UDP at all is the mistake.
+// empty status and no remote address, Linux reports "NONE" and a remote
+// address of 0.0.0.0 port 0 — :: for udp6 — decoded from /proc/net/udp's
+// 00000000:0000. Each is covered in the shape its platform produces: the
+// Linux case used to carry darwin's empty remote address, a shape Linux never
+// produces, and every UDP service on Linux was dropped while this passed.
 func TestAUDPSocketIsListeningDespiteHavingNoListeningState(t *testing.T) {
-	for _, status := range []string{"", "NONE"} {
-		c := udp("*", 5353)
-		c.Status = status
+	for name, tc := range map[string]struct {
+		status string
+		family uint32
+		local  string
+		remote psnet.Addr
+		proto  string
+	}{
+		"darwin":     {"", syscall.AF_INET, "*", psnet.Addr{}, "udp"},
+		"linux":      {"NONE", syscall.AF_INET, "0.0.0.0", psnet.Addr{IP: "0.0.0.0"}, "udp"},
+		"linux udp6": {"NONE", syscall.AF_INET6, "::", psnet.Addr{IP: "::"}, "udp6"},
+	} {
+		c := udp(tc.local, 5353)
+		c.Status, c.Family, c.Raddr = tc.status, tc.family, tc.remote
 		got, ok := listening(c)
 		if !ok {
-			t.Fatalf("a bound UDP socket with status %q was dropped", status)
+			t.Errorf("%s: a bound UDP socket was dropped", name)
+			continue
 		}
-		if got.proto != "udp" {
-			t.Errorf("proto = %q, want udp", got.proto)
+		if got.proto != tc.proto {
+			t.Errorf("%s: proto = %q, want %s", name, got.proto, tc.proto)
 		}
 		if got.port != 5353 {
-			t.Errorf("port = %d, want 5353", got.port)
+			t.Errorf("%s: port = %d, want 5353", name, got.port)
 		}
 	}
 }
