@@ -495,6 +495,28 @@ func TestAnswerAnUnknownRequestNamesWhatIsWaiting(t *testing.T) {
 	}
 }
 
+// The request answered is the one named, byte for byte. show, allow and deny
+// trimmed the id, so an id given with white space around it answered the
+// request under the id without it — the one value in the call that says
+// which question is being answered. An id is eight hex digits, so one with
+// white space names nothing waiting, and is refused as that.
+func TestAnAnswerNamesItsRequestExactly(t *testing.T) {
+	isolate(t)
+	r := park(t, "kv.get", "db-password")
+	for _, id := range []string{" " + r.ID, r.ID + " ", r.ID + string(rune(0xa0))} {
+		for _, capID := range []string{"agent.show", "agent.allow", "agent.deny"} {
+			_, err := run(t, capID, map[string]any{"id": id})
+			var ve *view.Error
+			if !errors.As(err, &ve) || ve.Code != "agent.request.unknown" {
+				t.Errorf("%s %q: err = %v, want agent.request.unknown", capID, id, err)
+			}
+		}
+	}
+	if _, ok := consent.Find(r.ID); !ok {
+		t.Fatal("an answer given a padded id decided the request anyway")
+	}
+}
+
 // rewrite doctors a parked request the way something with a write into rta's
 // data directory would: the display becomes harmless, the digest that binds
 // the real call is left exactly where it was found.
