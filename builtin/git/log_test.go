@@ -47,6 +47,7 @@ func TestLogFileNarrowsToCommitsThatTouchedIt(t *testing.T) {
 	commitFile(t, repo, dir, "a.txt", "a\n", "touches a")
 	commitFile(t, repo, dir, "b.txt", "b\n", "touches b")
 	commitFile(t, repo, dir, "a.txt", "a2\n", "touches a again")
+	t.Chdir(dir)
 
 	tbl := table(t, runLog, req(t, dir, map[string]any{"file": "b.txt", "limit": defaultLogLimit}))
 	if len(tbl.Rows) != 1 {

@@ -30,7 +30,7 @@ func logCapability() plugin.Capability {
 			pathField("repository path, or a subdirectory of one"),
 			{Name: "limit", Type: plugin.Int, Config: "log.limit", Default: defaultLogLimit, Min: 1, Max: 500,
 				Help: "how many of the most recent commits to show"},
-			{Name: "file", Type: plugin.Path, Help: "limit to commits that touched this path"},
+			{Name: "file", Type: plugin.Path, Help: fileHelp("limit to commits that touched this file")},
 		},
 		Run: runLog,
 	}
@@ -44,7 +44,7 @@ func runLog(ctx context.Context, req plugin.Request) (view.View, error) {
 
 	opts := &git.LogOptions{Order: git.LogOrderCommitterTime}
 	if file := req.String("file"); file != "" {
-		rel, verr := repoRelative(repo, file)
+		rel, verr := repoFile(repo, file, req.Surface().InputName("file"))
 		if verr != nil {
 			return nil, verr
 		}
