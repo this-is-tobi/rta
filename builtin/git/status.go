@@ -2,11 +2,14 @@ package git
 
 import (
 	"context"
+	"os"
 	"sort"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/filemode"
+	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -38,6 +41,7 @@ var statusLetters = map[git.StatusCode]string{
 	git.Unmodified:         " ",
 	git.Untracked:          "?",
 	git.Modified:           "M",
+	typeChanged:            "T",
 	git.Added:              "A",
 	git.Deleted:            "D",
 	git.Renamed:            "R",
@@ -86,7 +90,8 @@ func runStatus(ctx context.Context, req plugin.Request) (view.View, error) {
 }
 
 // worktreeStatus is wt's status, as go-git's Worktree.Status reads it but
-// through submodulesOnDisk, so that reading it writes nothing. Every
+// through submodulesOnDisk, so that reading it writes nothing, and with a
+// change of kind told apart from a change of content (kindChanges). Every
 // capability that reports the working tree's state asks for it here.
 func worktreeStatus(repo *git.Repository, wt *git.Worktree) (git.Status, error) {
 	store, ok := repo.Storer.(*filesystem.Storage)
@@ -100,7 +105,93 @@ func worktreeStatus(repo *git.Repository, wt *git.Worktree) (git.Status, error) 
 	if wt, err = reader.Worktree(); err != nil {
 		return nil, err
 	}
-	return wt.Status()
+	status, err := wt.Status()
+	if err != nil {
+		return nil, err
+	}
+	kindChanges(repo, wt.Filesystem.Root(), status)
+	return status, nil
+}
+
+// typeChanged is the code git gives a path whose kind changed, which go-git's
+// status has no code for.
+const typeChanged git.StatusCode = 'T'
+
+// kindChanges marks T each path of status whose kind changed where go-git
+// marked it M: between HEAD and the index for the staged half, between the
+// index and what is on disk for the other, as `git status --porcelain` marks
+// them.
+//
+// **A kind is git's, not the filesystem's.** git records a file, a symbolic
+// link or a submodule, and it takes anything on disk that is not a link or a
+// directory for a file: a named pipe in place of a tracked file is M in git,
+// and a pipe in place of a tracked link is T. The pipe is judged by a lstat
+// and never opened — open(2) on one with no writer waits for one, which no
+// context interrupts (readWorktreeEntry) — and go-git's status did not open
+// it either, finding no mode of git's for it.
+//
+// Only a path already marked M is looked at, so a clean tree costs nothing
+// more; the index is read again for one that is not.
+func kindChanges(repo *git.Repository, root string, status git.Status) {
+	var modified []string
+	staged := false
+	for path, fs := range status {
+		if fs.Staging == git.Modified || fs.Worktree == git.Modified {
+			modified = append(modified, path)
+			staged = staged || fs.Staging == git.Modified
+		}
+	}
+	if len(modified) == 0 {
+		return
+	}
+	idx, err := repo.Storer.Index()
+	if err != nil {
+		return
+	}
+	var head *object.Tree
+	if staged {
+		if ref, err := repo.Head(); err == nil {
+			if commit, err := repo.CommitObject(ref.Hash()); err == nil {
+				head, _ = commit.Tree()
+			}
+		}
+	}
+	for _, path := range modified {
+		entry, err := idx.Entry(path)
+		if err != nil {
+			continue
+		}
+		fs := status[path]
+		if fs.Staging == git.Modified && head != nil {
+			if was, err := head.FindEntry(path); err == nil && kindOf(was.Mode) != kindOf(entry.Mode) {
+				fs.Staging = typeChanged
+			}
+		}
+		if fs.Worktree == git.Modified {
+			if disk := onDisk(root, path); disk != nil && !disk.IsDir() && diskKind(disk.Mode()) != kindOf(entry.Mode) {
+				fs.Worktree = typeChanged
+			}
+		}
+	}
+}
+
+// kindOf is the kind git records an entry of mode as: a file, executable or
+// not, a symbolic link, or a submodule.
+func kindOf(mode filemode.FileMode) filemode.FileMode {
+	switch mode {
+	case filemode.Symlink, filemode.Submodule:
+		return mode
+	}
+	return filemode.Regular
+}
+
+// diskKind is the kind git takes what is on disk for, a directory aside: a
+// symbolic link, and a file for anything else, a pipe or a device included.
+func diskKind(mode os.FileMode) filemode.FileMode {
+	if mode&os.ModeSymlink != 0 {
+		return filemode.Symlink
+	}
+	return filemode.Regular
 }
 
 // submodulesOnDisk is a repository's storage whose config names a submodule
