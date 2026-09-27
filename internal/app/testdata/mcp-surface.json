@@ -1820,7 +1820,7 @@
           "type": "integer"
         },
         "tls": {
-          "description": "complete a TLS handshake after connecting",
+          "description": "complete a TLS handshake after connecting, in whatever protocol the host speaks, TLS 1.0 on",
           "type": "boolean"
         },
         "wait": {
@@ -1908,7 +1908,7 @@
           "type": "integer"
         },
         "tls": {
-          "description": "complete a TLS handshake before sending",
+          "description": "complete a TLS handshake before sending, in TLS 1.2 or newer since the payload crosses it",
           "type": "boolean"
         },
         "wait": {
