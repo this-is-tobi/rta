@@ -5,7 +5,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
+	iofs "io/fs"
+	"os"
+	pathpkg "path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -93,21 +95,24 @@ func pathGate(req plugin.Request, repo *git.Repository) func(path string) *view.
 	}
 }
 
-// withheld is a changed file a diff names without showing it, and the code
-// of the path gate's refusal.
-type withheld struct{ path, code string }
+// withheld is a changed file a diff names without showing it, and why.
+type withheld struct{ path, why string }
+
+// refusedBy is why a file the path gate refused is not shown.
+func refusedBy(verr *view.Error) string { return "the path gate refuses it (" + verr.Code + ")" }
 
 // notDiffed is the tail of a diff naming, in the diff's own shape, what it
-// did not show: a file too large to read, and a file the path gate refused.
-func notDiffed(large []string, refused []withheld) string {
+// did not show: a file too large to read, and a file it would not or could
+// not read.
+func notDiffed(large []string, skipped []withheld) string {
 	var b strings.Builder
 	sort.Strings(large)
 	for _, p := range large {
 		fmt.Fprintf(&b, "%s changed, larger than %d MiB and not diffed\n", p, maxDiffBytes>>20)
 	}
-	sort.Slice(refused, func(i, j int) bool { return refused[i].path < refused[j].path })
-	for _, w := range refused {
-		fmt.Fprintf(&b, "%s changed, not diffed: the path gate refuses it (%s)\n", w.path, w.code)
+	sort.Slice(skipped, func(i, j int) bool { return skipped[i].path < skipped[j].path })
+	for _, w := range skipped {
+		fmt.Fprintf(&b, "%s changed, not diffed: %s\n", w.path, w.why)
 	}
 	return b.String()
 }
@@ -213,8 +218,8 @@ func boundChanges(repo *git.Repository, changes object.Changes, gate func(string
 ) {
 	budget := maxCommitDiffBytes
 	for _, ch := range changes {
-		if verr := gateEither(gate, ch.From.Name, ch.To.Name); verr != nil {
-			refused = append(refused, withheld{changePath(ch), verr.Code})
+		if verr := gateEither(gate, ch.From, ch.To); verr != nil {
+			refused = append(refused, withheld{changePath(ch), refusedBy(verr)})
 			continue
 		}
 		from, to := blobSize(repo, ch.From), blobSize(repo, ch.To)
@@ -231,18 +236,32 @@ func boundChanges(repo *git.Repository, changes object.Changes, gate func(string
 	return kept, large, refused, cut
 }
 
-// gateEither is the gate's refusal of the first of names it refuses, an empty
-// name — the side of an addition or a deletion that is not there — skipped.
-func gateEither(gate func(string) *view.Error, names ...string) *view.Error {
-	for _, n := range names {
-		if n == "" {
+// gateEither is the gate's refusal of the first side of a change it refuses,
+// the side of an addition or a deletion that is not there skipped. A side
+// that is a symlink is judged by where it sits, as the worktree diff judges
+// one (gatedAt): its content is the link's text.
+func gateEither(gate func(string) *view.Error, sides ...object.ChangeEntry) *view.Error {
+	for _, s := range sides {
+		if s.Name == "" {
 			continue
 		}
-		if verr := gate(n); verr != nil {
+		if verr := gate(gatedAt(s.Name, s.TreeEntry.Mode == filemode.Symlink)); verr != nil {
 			return verr
 		}
 	}
 	return nil
+}
+
+// gatedAt is the path the gate is asked about for a file a diff shows: the
+// file's own, and a symlink's directory. A diff shows a link by its text,
+// never by what it points at, and the gate resolves every link in what it is
+// asked about — a link to a file outside the root would be refused for a
+// read that never leaves it.
+func gatedAt(name string, symlink bool) string {
+	if symlink {
+		return pathpkg.Dir(name)
+	}
+	return name
 }
 
 // blobSize is the size of one side of a change, 0 for a side that does not
@@ -330,24 +349,31 @@ func diffWorktree(repo *git.Repository, gate func(string) *view.Error) (view.Vie
 		}
 	}
 
+	root := wt.Filesystem.Root()
 	patches := make([]diff.FilePatch, 0, len(status))
 	var large []string
-	var refused []withheld
+	var skipped []withheld
 	for path, fs := range status {
 		if fs.Staging == git.Unmodified && fs.Worktree == git.Unmodified {
 			continue
 		}
-		if verr := gate(path); verr != nil {
-			refused = append(refused, withheld{path, verr.Code})
+		disk := onDisk(root, path)
+		if verr := gate(gatedAt(path, disk != nil && disk.Mode()&os.ModeSymlink != 0)); verr != nil {
+			skipped = append(skipped, withheld{path, refusedBy(verr)})
 			continue
 		}
-		if tooLarge(wt, headTree, path, fs) {
+		if tooLarge(headTree, path, disk) {
 			large = append(large, path)
 			continue
 		}
-		fp, ferr := diffOneFile(wt, headTree, path, fs)
+		// One file that cannot be read is named, and the rest of the diff is
+		// still the answer: it returned on the first, so an untracked link to
+		// a directory — bazel-out, a `current` pointing at a release — left
+		// the caller with no patch at all, for a file git diffs as one line.
+		fp, ferr := diffOneFile(root, headTree, path, disk)
 		if ferr != nil {
-			return nil, view.Errorf("git.diff.failed", "diffing %s: %v", path, ferr)
+			skipped = append(skipped, withheld{path, unreadable(ferr)})
+			continue
 		}
 		if fp != nil {
 			patches = append(patches, fp)
@@ -358,31 +384,58 @@ func diffWorktree(repo *git.Repository, gate func(string) *view.Error) (view.Vie
 	// caller asked what changed, and a file too large to show, or one it may
 	// not read, is part of the answer rather than a row quietly missing from
 	// it. git.status names the same paths to the same caller.
-	body += notDiffed(large, refused)
+	body += notDiffed(large, skipped)
 	return textOrEmpty(body), nil
 }
 
+// onDisk is what the working tree holds at path, the entry itself rather
+// than what a symlink there points at — nil for nothing at all, which a
+// deleted file and one removed since the status was read both are.
+//
+// The os package on the working tree's own root, and not the go-billy
+// filesystem go-git hands back: billy follows a symlink wherever it reads
+// one, and rewrites an absolute link's text relative to its chroot, where
+// git diffs a link as the text it holds.
+//
+// Nothing, too, behind a directory that has become a link. git stops at a
+// symlink on the way to a path — a tracked notes/a.txt whose notes was
+// replaced by a link to other/ is deleted, and notes is a new link — and so
+// does go-git's status, which lists it deleted. A lstat of the whole path
+// follows every link but the last, so the diff showed other/a.txt's content
+// as the change to notes/a.txt, and named a file the gate refused for a link
+// leading out of the root, where git has one deleted file to show.
+func onDisk(root, path string) os.FileInfo {
+	dir := root
+	parts := strings.Split(path, "/")
+	for _, part := range parts[:len(parts)-1] {
+		dir = filepath.Join(dir, part)
+		if info, err := os.Lstat(dir); err != nil || !info.IsDir() {
+			return nil
+		}
+	}
+	info, err := os.Lstat(filepath.Join(root, filepath.FromSlash(path)))
+	if err != nil {
+		return nil
+	}
+	return info
+}
+
 // tooLarge reports a changed path either side of which is over maxDiffBytes,
-// from sizes alone — the blob's recorded size and a stat of the file — so
-// deciding costs no read of either.
-func tooLarge(wt *git.Worktree, headTree *object.Tree, path string, fs *git.FileStatus) bool {
+// from sizes alone — the blob's recorded size and a stat of the entry on disk
+// — so deciding costs no read of either.
+func tooLarge(headTree *object.Tree, path string, disk os.FileInfo) bool {
 	if headTree != nil {
 		if size, err := headTree.Size(path); err == nil && size > maxDiffBytes {
 			return true
 		}
 	}
-	if fs.Worktree != git.Deleted {
-		if info, err := wt.Filesystem.Stat(path); err == nil && info.Size() > maxDiffBytes {
-			return true
-		}
-	}
-	return false
+	return disk != nil && disk.Size() > maxDiffBytes
 }
 
 // diffOneFile builds the patch for a single changed path: HEAD's committed
 // content (empty for a file HEAD never had) against what's on disk right
 // now (empty for a file the worktree deleted).
-func diffOneFile(wt *git.Worktree, headTree *object.Tree, path string, fs *git.FileStatus) (diff.FilePatch, error) {
+func diffOneFile(root string, headTree *object.Tree, path string, disk os.FileInfo) (diff.FilePatch, error) {
 	var from *diffFile
 	oldContent := ""
 	if headTree != nil {
@@ -398,14 +451,13 @@ func diffOneFile(wt *git.Worktree, headTree *object.Tree, path string, fs *git.F
 
 	var to *diffFile
 	newContent := ""
-	if fs.Worktree != git.Deleted {
-		content, err := readWorktreeFile(wt, path)
+	if disk != nil {
+		content, mode, err := readWorktreeEntry(root, path, disk)
 		if err != nil {
 			return nil, err
 		}
 		newContent = content
-		mode := filemode.Regular
-		if from != nil {
+		if mode == filemode.Regular && from != nil && from.mode != filemode.Symlink {
 			mode = from.mode
 		}
 		to = &diffFile{path: path, hash: plumbing.ZeroHash, mode: mode}
@@ -420,17 +472,35 @@ func diffOneFile(wt *git.Worktree, headTree *object.Tree, path string, fs *git.F
 	return &filePatch{from: from, to: to, chunks: toChunks(godiff.Do(oldContent, newContent))}, nil
 }
 
-func readWorktreeFile(wt *git.Worktree, path string) (string, error) {
-	f, err := wt.Filesystem.Open(path)
-	if err != nil {
-		return "", err
+// readWorktreeEntry is the content git diffs for what is at path, and the
+// mode it records it under. A symlink is its text, as git stores and diffs
+// one: read through it instead, a retargeted link showed the new target's
+// contents where git shows the new name.
+func readWorktreeEntry(root, path string, disk os.FileInfo) (string, filemode.FileMode, error) {
+	full := filepath.Join(root, filepath.FromSlash(path))
+	if disk.Mode()&os.ModeSymlink != 0 {
+		target, err := os.Readlink(full)
+		if err != nil {
+			return "", 0, err
+		}
+		return target, filemode.Symlink, nil
 	}
-	defer f.Close()
-	data, err := io.ReadAll(f)
+	data, err := os.ReadFile(full)
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
-	return string(data), nil
+	return string(data), filemode.Regular, nil
+}
+
+// unreadable is why a changed file could not be read, as the diff names it:
+// the operating system's reason, without the absolute path it carries, since
+// the line already names the file.
+func unreadable(err error) string {
+	var pe *iofs.PathError
+	if errors.As(err, &pe) {
+		return "cannot read it: " + pe.Err.Error()
+	}
+	return "cannot read it: " + err.Error()
 }
 
 // isBinary mirrors git's own heuristic closely enough for this purpose: real

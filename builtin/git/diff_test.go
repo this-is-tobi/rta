@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-git/go-git/v5"
 
+	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -158,5 +159,122 @@ func TestDiffWorktreeShowsADeletedFile(t *testing.T) {
 	}
 	if !strings.Contains(body, "deleted file mode") {
 		t.Errorf("diff does not mark a.txt as deleted:\n%s", body)
+	}
+}
+
+// symlink makes a link at name, relative to dir, holding target as its text.
+func symlink(t *testing.T, dir, target, name string) {
+	t.Helper()
+	full := filepath.Join(dir, name)
+	_ = os.Remove(full)
+	if err := os.Symlink(target, full); err != nil {
+		t.Skipf("no symlinks here: %v", err)
+	}
+}
+
+// git stops at a symlink on the way to a path: a tracked notes/a.txt whose
+// directory became a link to other/ is deleted, as go-git's status says too.
+// The diff read through the link instead, and showed other/a.txt's content
+// as the change to notes/a.txt.
+func TestDiffWorktreeDoesNotReadBehindADirectoryThatBecameALink(t *testing.T) {
+	outside := t.TempDir()
+	writeFile(t, outside, "a.txt", "outside the repository\n")
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "notes/a.txt", "tracked\n", "notes")
+	writeFile(t, dir, "other/a.txt", "other content\n")
+	relink := func(t *testing.T, target string) {
+		t.Helper()
+		if err := os.RemoveAll(filepath.Join(dir, "notes")); err != nil {
+			t.Fatal(err)
+		}
+		symlink(t, dir, target, "notes")
+	}
+
+	for name, r := range map[string]plugin.Request{
+		"unconfined": req(t, dir, nil),
+		"confined":   guarded(t, dir, dir),
+	} {
+		t.Run(name, func(t *testing.T) {
+			relink(t, "other")
+			body := text(t, runDiff, r)
+			_, notes, _ := strings.Cut(body, "diff --git a/notes/a.txt b/notes/a.txt\n")
+			notes, _, _ = strings.Cut(notes, "diff --git")
+			if !strings.HasPrefix(notes, "deleted file mode 100644\n") || !strings.Contains(notes, "-tracked") {
+				t.Errorf("notes/a.txt is not shown deleted, as git shows it:\n%s", body)
+			}
+			if strings.Contains(notes, "+other content") {
+				t.Errorf("the diff read behind the link:\n%s", body)
+			}
+		})
+	}
+
+	// A link out of the root: whatever the gate makes of the path it leads
+	// through, nothing behind it is read.
+	relink(t, outside)
+	if body := text(t, runDiff, guarded(t, dir, dir)); strings.Contains(body, "outside the repository") {
+		t.Errorf("the diff read behind a link out of the root:\n%s", body)
+	}
+}
+
+// git stores and diffs a symlink as the text it holds. The worktree diff read
+// through one instead: a link retargeted from one file to another showed the
+// second file's contents where git shows its name.
+func TestDiffWorktreeShowsASymlinkByItsText(t *testing.T) {
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "a.txt", "contents of a\n", "a")
+	commitFile(t, repo, dir, "b.txt", "contents of b\n", "b")
+	symlink(t, dir, "a.txt", "link")
+	wt, err := repo.Worktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := wt.Add("link"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := wt.Commit("link", &git.CommitOptions{Author: signature()}); err != nil {
+		t.Fatal(err)
+	}
+	symlink(t, dir, "b.txt", "link")
+
+	body := text(t, runDiff, req(t, dir, nil))
+	for _, want := range []string{"-a.txt", "+b.txt", "120000"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the retargeted link's diff has no %q:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, "contents of") {
+		t.Errorf("the diff read through the link:\n%s", body)
+	}
+}
+
+// One entry a diff cannot read through never costs the rest of it. An
+// untracked link to a directory — bazel-out, a `current` pointing at a
+// release — failed the whole diff, and so did one leading out of the
+// repository, for files git diffs as one line each.
+func TestDiffWorktreeShowsEveryOtherChangeBesideALinkItCannotFollow(t *testing.T) {
+	outside := t.TempDir()
+	writeFile(t, outside, "id_secret", "outside the repository\n")
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
+	writeFile(t, dir, "a.txt", "v2\n")
+	writeFile(t, dir, "d/f", "in d\n")
+	symlink(t, dir, "d", "dirlink")
+	symlink(t, dir, filepath.Join(outside, "id_secret"), "outlink")
+
+	for name, r := range map[string]plugin.Request{
+		"unconfined": req(t, dir, nil),
+		"confined":   guarded(t, dir, dir),
+	} {
+		t.Run(name, func(t *testing.T) {
+			body := text(t, runDiff, r)
+			for _, want := range []string{"+v2", "+d\n", "+" + filepath.Join(outside, "id_secret")} {
+				if !strings.Contains(body, want) {
+					t.Errorf("the diff has no %q:\n%s", want, body)
+				}
+			}
+			if strings.Contains(body, "outside the repository") {
+				t.Errorf("the diff read through a link out of the repository:\n%s", body)
+			}
+		})
 	}
 }
