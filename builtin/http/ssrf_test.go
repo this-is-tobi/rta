@@ -302,3 +302,30 @@ func TestDialGuardedTrustsOnlyTheMarkedAddress(t *testing.T) {
 		t.Fatalf("an unmarked loopback dial was not refused as blocked: %v", err)
 	}
 }
+
+// A proxy named without a port is dialed at its scheme's default, and the
+// Transport dials that canonical address, never the URL's host as written:
+// marking "127.0.0.1" trusted while the dial named "127.0.0.1:80" refused
+// every request behind an ordinary corporate egress or a local mitmproxy as
+// a blocked destination, and blamed the destination for it. Nothing listens
+// on these ports here, so the request fails — at the proxy, as a request
+// that failed, rather than as one refused on purpose.
+func TestAProxyNamedWithoutAPortIsTrustedAtItsDefaultPort(t *testing.T) {
+	useRealBlocklist(t)
+	for _, raw := range []string{"http://127.0.0.1", "http://LOCALHOST", "https://127.0.0.1", "http://[::1]"} {
+		t.Run(raw, func(t *testing.T) {
+			proxyURL, err := url.Parse(raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			withProxy(t, proxyURL)
+			_, err = doRequest(context.Background(), "GET", req(map[string]any{"url": "http://93.184.216.34/widget"}))
+			if err == nil {
+				return
+			}
+			if ve := view.AsError(err, "x"); ve.Code == "http.request.blocked" {
+				t.Errorf("the operator's own proxy was refused as a blocked destination: %s", ve.Message)
+			}
+		})
+	}
+}

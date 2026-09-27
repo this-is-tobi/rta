@@ -7,6 +7,7 @@ import (
 	stdhttp "net/http"
 	"net/netip"
 	"net/url"
+	"strings"
 )
 
 // Where an http.* call is allowed to connect, decided at the moment it
@@ -235,7 +236,38 @@ func withTrustedProxy(req *stdhttp.Request) *stdhttp.Request {
 	if err != nil || proxyURL == nil {
 		return req
 	}
-	return req.WithContext(context.WithValue(req.Context(), trustedProxyKey{}, proxyURL.Host))
+	return req.WithContext(context.WithValue(req.Context(), trustedProxyKey{}, proxyAddr(proxyURL)))
+}
+
+// defaultProxyPort is the port the Transport dials a proxy named without
+// one at, by the proxy's scheme.
+var defaultProxyPort = map[string]string{"http": "80", "https": "443", "socks5": "1080", "socks5h": "1080"}
+
+// proxyAddr is the address the Transport dials to reach proxy u — net/http's
+// own canonicalAddr, which is unexported, so its rule is restated here: the
+// host, and the port, the scheme's default when u names none.
+//
+// The mark used to be u.Host as written, and dialGuarded compares it with
+// the address the Transport dials. "http://proxy.corp" is dialed as
+// "proxy.corp:80", so the two never met, and the operator's own proxy on a
+// private or loopback address — the ordinary corporate egress, a local
+// mitmproxy — was run through the blocklist and refused, with a refusal
+// blaming the destination.
+//
+// Short of canonicalAddr in one way, on purpose: net/http dials an
+// internationalised proxy name in its xn-- form, and converting it here
+// would take golang.org/x/net/idna and x/text's mapping tables into the
+// binary, some fifty kilobytes, for a proxy nobody names that way. Such a
+// name never matches the mark, so its dial is judged as any destination's
+// is — refused if it resolves somewhere private, never let through
+// unchecked — and the proxy named in its xn-- form, the one its zone is
+// published under, matches.
+func proxyAddr(u *url.URL) string {
+	port := u.Port()
+	if port == "" {
+		port = defaultProxyPort[u.Scheme]
+	}
+	return stdnet.JoinHostPort(u.Hostname(), port)
 }
 
 // checkDestination refuses a request whose URL resolves to a blocked
@@ -277,7 +309,9 @@ func checkDestination(ctx context.Context, u *url.URL) error {
 // upstream of it, for a direct (unproxied) connection.
 func dialGuarded(ctx context.Context, network, addr string) (stdnet.Conn, error) {
 	dialer := &stdnet.Dialer{}
-	if trusted, ok := ctx.Value(trustedProxyKey{}).(string); ok && trusted == addr {
+	// Case-blind, as a host name is: net/http keeps an ASCII host's case as
+	// the URL wrote it, and "PROXY.corp:80" is the same proxy.
+	if trusted, ok := ctx.Value(trustedProxyKey{}).(string); ok && strings.EqualFold(trusted, addr) {
 		return dialer.DialContext(ctx, network, addr)
 	}
 	host, port, err := stdnet.SplitHostPort(addr)
