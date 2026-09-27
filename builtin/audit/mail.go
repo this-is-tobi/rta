@@ -433,7 +433,7 @@ func spfLookups(record string) int {
 // truth is "not at the names I tried", which is a confident lie.
 func auditDKIM(r *findings.Report, f mailFacts) {
 	if f.selector == "" {
-		r.Add(grpSenderAuth, "dkim", findings.Info,
+		r.AddUnchecked(grpSenderAuth, "dkim",
 			"not checked — DKIM selectors cannot be discovered from the domain; "+
 				"give "+f.surface.InputName("selector")+" the s= tag from a DKIM-Signature header on a message you received",
 			refSpoofing)
@@ -742,8 +742,10 @@ func auditMailTransport(r *findings.Report, f mailFacts) {
 		// http.get, and it is a decision of its own. So "ok, senders are
 		// told to require TLS" was an assertion about a document nobody
 		// read, and it read as ok for a domain whose policy says mode:
-		// none. Info is what a marker earns.
-		r.Add(grpMailTLS, "mta-sts", findings.Info,
+		// none. A check that could not run is what a marker earns — Info,
+		// and counted in the overall, as a DKIM record with no selector to
+		// look it up by is.
+		r.AddUnchecked(grpMailTLS, "mta-sts",
 			"a policy is advertised at _mta-sts."+f.domain+" — its mode (enforce, testing or none) "+
 				"is in the policy file, which this does not fetch", refCleartext)
 	}

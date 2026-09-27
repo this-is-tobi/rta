@@ -499,7 +499,7 @@ func gradeDeps(r *findings.Report, inv inventory, vulns map[string][]string,
 	}
 	switch {
 	case offline:
-		r.Add(grpInventory, "advisories", findings.Info,
+		r.AddUnchecked(grpInventory, "advisories",
 			"not checked — "+sf.InputName("offline")+" inventories the dependencies without asking osv.dev about them",
 			refVulnerableDep)
 	case len(affected) == 0 && len(inv.queryable) > 0:

@@ -177,6 +177,9 @@ func TestKubeEOLSaysWhenTheAPIHasNoKubernetesPage(t *testing.T) {
 	for _, want := range []string{
 		"control plane: v1.30.2+k3s1 | " + findings.Info + " | endoflife.date has no release data for kubernetes",
 		"kubelets at v1.28.0 (2 nodes) | " + findings.Info + " | endoflife.date has no release data for kubernetes",
+		// Nothing was graded, and the overall is the line read first: it
+		// read "no issues found" about a support window nobody looked up.
+		"overall | " + findings.OK + " | no issues in what was checked, but 3 checks could not run",
 	} {
 		if !strings.Contains(rendered, want) {
 			t.Errorf("missing %q in:\n%s", want, rendered)

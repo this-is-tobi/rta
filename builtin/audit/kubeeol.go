@@ -119,7 +119,7 @@ func runKubeEOLAt(ctx context.Context, req plugin.Request, base string) (view.Vi
 		// The same shape as runKubeRBAC's note, for the same reason: a
 		// narrowed run that silently skipped the kubelets would read as a
 		// cluster whose nodes are all in support.
-		r.Add(grpKubeEOL, "kubelets not examined", findings.Info,
+		r.AddUnchecked(grpKubeEOL, "kubelets not examined",
 			"narrowed to namespace "+ns+", so the nodes' kubelet versions were not checked — "+
 				"they belong to no namespace. Run without a namespace to include them.", refUnmaintained)
 	}
@@ -148,7 +148,7 @@ func runKubeEOLAt(ctx context.Context, req plugin.Request, base string) (view.Vi
 	}
 	if len(g.skipped) > 0 {
 		names := sortedKeys(g.skipped)
-		r.Add(grpKubeEOL, fmt.Sprintf("products not looked up (%d)", len(names)), findings.Info,
+		r.AddUnchecked(grpKubeEOL, fmt.Sprintf("products not looked up (%d)", len(names)),
 			fmt.Sprintf("more than %d distinct products run here, and one call looks up that many: %s",
 				maxEOLProducts, strings.Join(names, ", ")), refUnmaintained)
 	}
@@ -231,9 +231,12 @@ func (g *grader) grade(p *eolapi.Product, version string) (status, detail string
 
 func (g *grader) gradeControlPlane(r *findings.Report, gitVersion string) *view.Error {
 	version := releaseOf(gitVersion)
+	// A version nobody reported, or one the API has no page to grade against,
+	// is a check that could not run: the control plane is the point of this
+	// audit, and an Info row left the overall reading "no issues found" about
+	// a support window nobody read.
 	if version == "" {
-		r.Add(grpKubeEOL, "control plane", findings.Info,
-			"the API server reported no version to grade", refUnmaintained)
+		r.AddUnchecked(grpKubeEOL, "control plane", "the API server reported no version to grade", refUnmaintained)
 		return nil
 	}
 	p, verr := g.kubernetes()
@@ -241,7 +244,7 @@ func (g *grader) gradeControlPlane(r *findings.Report, gitVersion string) *view.
 		return verr
 	}
 	if p == nil {
-		r.Add(grpKubeEOL, "control plane: "+gitVersion, findings.Info, noKubernetesPage, refUnmaintained)
+		r.AddUnchecked(grpKubeEOL, "control plane: "+gitVersion, noKubernetesPage, refUnmaintained)
 		return nil
 	}
 	status, detail := g.grade(p, version)
@@ -296,11 +299,11 @@ func (g *grader) gradeKubelets(r *findings.Report, nodes []nodeVersionItem) *vie
 		check := fmt.Sprintf("kubelets at %s (%s)", v, findings.Plural(len(names), "node"))
 		if v == "" {
 			check = fmt.Sprintf("kubelets reporting no version (%s)", findings.Plural(len(names), "node"))
-			r.Add(grpKubeEOL, check, findings.Info, "nodes: "+strings.Join(names, ", "), refUnmaintained)
+			r.AddUnchecked(grpKubeEOL, check, "nodes: "+strings.Join(names, ", "), refUnmaintained)
 			continue
 		}
 		if p == nil {
-			r.Add(grpKubeEOL, check, findings.Info, noKubernetesPage+" — nodes: "+strings.Join(names, ", "), refUnmaintained)
+			r.AddUnchecked(grpKubeEOL, check, noKubernetesPage+" — nodes: "+strings.Join(names, ", "), refUnmaintained)
 			continue
 		}
 		status, detail := g.grade(p, releaseOf(v))
@@ -388,7 +391,7 @@ func (g *grader) gradeImages(r *findings.Report, images []*imageUse, clusterWide
 			// the catalogue with no page behind it, which is the API's own
 			// inconsistency and worth one row rather than a failed call.
 			if !g.skipped[product] {
-				r.Add(grpKubeEOL, check, findings.Info,
+				r.AddUnchecked(grpKubeEOL, check,
 					"endoflife.date lists "+product+" in its catalogue but has no release data for it", refUnmaintained)
 			}
 			continue
