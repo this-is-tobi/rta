@@ -149,7 +149,7 @@ rta doctor
 
 ```
 CHECK                STATUS  DETAIL
-capabilities         ok      18 plugins, 115 capabilities
+capabilities         ok      20 plugins, 128 capabilities
 config               ok      ~/.config/rta/config.yaml
 kv store             info    unlocks from this environment — an MCP server
                              started here can read secrets, bounded only by grants

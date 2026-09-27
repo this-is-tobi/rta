@@ -203,6 +203,32 @@ func namesCapability(prose, id string, wholeNamespace bool) bool {
 	return false
 }
 
+// The installation page quotes `rta doctor`, whose first row states the same
+// two numbers as the sentence the test above holds. It was left out of that
+// test and drifted on its own, reading 18 and 115 after the sentence it
+// sits under had moved on — the first command the page tells a new reader to
+// run, disagreeing with the page.
+func TestTheInstallationPageQuotesDoctorsCounts(t *testing.T) {
+	reg, err := NewRegistry()
+	if err != nil {
+		t.Fatalf("building the built-in registry: %v", err)
+	}
+	const rel = "docs/10-getting-started/10-installation.md"
+	body := readDoc(t, repoRoot(t), rel)
+	m := regexp.MustCompile(`capabilities\s+ok\s+(\d+) plugins, (\d+) capabilities`).FindStringSubmatch(body)
+	if m == nil {
+		t.Fatalf("%s no longer quotes doctor's capabilities row; if the sample moved, "+
+			"move this test with it", rel)
+	}
+	if got, _ := strconv.Atoi(m[1]); got != len(reg.Plugins()) {
+		t.Errorf("%s quotes doctor counting %d plugins, the registry has %d", rel, got, len(reg.Plugins()))
+	}
+	if got, _ := strconv.Atoi(m[2]); got != len(reg.Capabilities()) {
+		t.Errorf("%s quotes doctor counting %d capabilities, the registry has %d",
+			rel, got, len(reg.Capabilities()))
+	}
+}
+
 func readDoc(t *testing.T, root, rel string) string {
 	t.Helper()
 	b, err := os.ReadFile(filepath.Join(root, rel))
