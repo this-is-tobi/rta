@@ -110,9 +110,10 @@ Without a grant naming it, an agent's `kv.get` is refused and the refusal is wri
 
 **Reach for `--max-uses 1` here more than anywhere else.** A secret an agent needs once is the clearest case in the whole model: one key, one read, then the grant is gone whether or not you remember it.
 
-Two further bounds worth knowing:
+Three further bounds worth knowing:
 
 - **`requireScope: [kv.get]`** in a [team policy](../30-boundary/50-team-policy.md) makes `rta grant allow kv.get` — which would cover the entire store — an error. Only a grant naming one key is accepted.
+- **A rename needs a grant for both names.** A key's name decides which grants can read it, so moving `prod/db-password` to `scratch/db-password` is a question about where it lands as much as about what moves: with a read grant on `scratch/`, a rename checked only at its source would be a read of the prod secret. `rta grant allow kv.rename prod/` covers moves inside `prod/`; a grant naming one key needs a second naming the new name. A rename grant naming no key moves any key to any name, so beside a read grant it reads as far as that grant reaches — narrow it to a folder.
 - **Values are masked in the record.** [`rta agent log`](../30-boundary/40-audit-trail.md) shows that `kv.get db-password` happened, not what came back.
 
 ## Next

@@ -294,6 +294,12 @@ func Plugin() plugin.Plugin {
 				ID: "kv.rename", Summary: "Rename a key, keeping its value and its history",
 				Flash:  true,
 				Safety: plugin.Write, NeedsGrant: true, Scope: "key",
+				// The name it moves to as well as the key it moves: read
+				// grants are scoped by key name, so a rename checked only at
+				// its source moved a secret out from under one grant and in
+				// under another — a rename grant for one prod key plus a
+				// read grant for scratch/ read that prod key.
+				ScopeAlso: []string{"new-name"},
 				Description: "Renaming used to mean `kv.get` piped into `kv.set` and then `kv.rm`: two " +
 					"grants for an operation that reveals nothing, and the secret itself sitting in " +
 					"shell history at the join. This moves the entry inside the store — the value is " +
@@ -301,7 +307,10 @@ func Plugin() plugin.Plugin {
 					"timestamps travel with it.\n\n" +
 					"A name that is already taken is refused rather than overwritten: renaming onto " +
 					"an existing key would destroy the secret in it, which is `kv.rm`'s question and " +
-					"is asked with `kv.rm`'s answer.",
+					"is asked with `kv.rm`'s answer.\n\n" +
+					"A grant for it has to cover both names, `key` and `new-name`: a key's name is what " +
+					"decides which grants can read it, so a move is a question about where it lands " +
+					"as much as about what moves. A folder grant covers a move inside the folder.",
 				Inputs: unlockFields([]plugin.Field{
 					{Name: "key", Type: plugin.String, Positional: true, Required: true, Help: "key to rename",
 						Suggest: suggestKeys},

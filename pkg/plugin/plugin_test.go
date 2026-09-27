@@ -308,6 +308,47 @@ func TestScopeMustNameADeclaredInput(t *testing.T) {
 	}
 }
 
+// ScopeAlso is held to Scope's rules for Scope's reasons: a name that dangles
+// puts no record in front of a grant, a credential cannot be written to the
+// grant file, and without a Scope there is no record for it to add to.
+func TestScopeAlsoIsHeldToScopesRules(t *testing.T) {
+	for _, tc := range []struct {
+		name, scope string
+		also        []string
+		want        string
+	}{
+		{"dangling", "key", []string{"to"}, "names no input"},
+		{"credential", "key", []string{"token"}, "is a secret"},
+		{"no scope", "", []string{"new-name"}, "with no Scope"},
+		{"repeats scope", "key", []string{"key"}, "twice"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := validPlugin()
+			p.Capabilities[0].Scope = tc.scope
+			p.Capabilities[0].ScopeAlso = tc.also
+			p.Capabilities[0].Inputs = []Field{
+				{Name: "key", Type: String, Help: "key to move"},
+				{Name: "new-name", Type: String, Help: "where to"},
+				{Name: "token", Type: Secret, Help: "a credential"},
+			}
+			err := p.Validate()
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("err = %v, want one saying %q", err, tc.want)
+			}
+		})
+	}
+	p := validPlugin()
+	p.Capabilities[0].Scope = "key"
+	p.Capabilities[0].ScopeAlso = []string{"new-name"}
+	p.Capabilities[0].Inputs = []Field{
+		{Name: "key", Type: String, Help: "key to move"},
+		{Name: "new-name", Type: String, Help: "where to"},
+	}
+	if err := p.Validate(); err != nil {
+		t.Errorf("a destination scoped beside its source was rejected: %v", err)
+	}
+}
+
 // The reverse mistake from TestScopeMustNameADeclaredInput above: a gated
 // capability that never declares a Scope at all, though it takes an input
 // that plainly could be one — the "etcd.kv.get shipped with no Scope"

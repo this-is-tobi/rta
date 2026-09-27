@@ -276,6 +276,12 @@ message Capability {
   // subprocesses, says so here rather than being re-run every five seconds
   // by a host that cannot know either.
   int64 refresh_seconds = 20;
+  // Further inputs that each name a record this acts on, beyond scope's: the
+  // destination of a rename or a copy. A grant has to cover every one of
+  // them, since a record's name decides which grants reach it and a move
+  // checked only at its source carries a record from under one grant to
+  // under another. Each must name a declared input, and scope must be set.
+  repeated string scope_also = 21;
 }
 
 // ActionSource says what an action acts on.

@@ -335,6 +335,7 @@ func fullDeclaration() plugin.Plugin {
 			NoPreview:    true,
 			NeedsGrant:   true,
 			Scope:        "key",
+			ScopeAlso:    []string{"bucket"},
 			HostSpecific: true,
 			HumanOnly:    true,
 			// What the TUI may do with the result crosses as data: a host

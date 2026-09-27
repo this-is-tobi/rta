@@ -425,8 +425,23 @@ func TestRenameNeedsAGrantForTheKeyItMoves(t *testing.T) {
 		t.Fatalf("the entry moved anyway: %q", got)
 	}
 
-	// The point is the question, not a refusal.
+	// The point is the question, not a refusal — and the question names both
+	// ends of the move, so a grant for the key alone is not yet the answer.
 	grantFor(t, "kv.rename", "prod-db-password")
+	res, err = session.CallTool(context.Background(), call)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.IsError {
+		t.Fatal("a rename was accepted with no grant naming where it moves the key to")
+	}
+	now := time.Now()
+	if verr := grant.Save([]grant.Grant{
+		{Target: "kv.rename", Scope: "prod-db-password", Issued: now, Expires: now.Add(15 * time.Minute)},
+		{Target: "kv.rename", Scope: "x", Issued: now, Expires: now.Add(15 * time.Minute)},
+	}); verr != nil {
+		t.Fatal(verr)
+	}
 	res, err = session.CallTool(context.Background(), call)
 	if err != nil {
 		t.Fatal(err)
@@ -436,5 +451,71 @@ func TestRenameNeedsAGrantForTheKeyItMoves(t *testing.T) {
 	}
 	if got := text(t, runGet, map[string]any{"key": "x"}, false); got != "s3cret" {
 		t.Errorf("the granted rename did not land: %q", got)
+	}
+}
+
+// Key names are what every read grant is scoped by, so moving a key moves it
+// between grants. A rename grant for one prod key and a read grant for
+// scratch/ each look narrow in `rta grant list`; together, with only the key
+// being moved checked against a grant, they read the prod secret: rename it
+// into scratch/, then read it there.
+func TestRenameCannotMoveASecretWhereAReadGrantReachesIt(t *testing.T) {
+	setup(t)
+	text(t, runSet, map[string]any{"key": "prod/db-password", "value": "PRODSECRET-123"}, false)
+	t.Setenv(passphraseEnv, "correct horse battery staple")
+	now := time.Now()
+	if verr := grant.Save([]grant.Grant{
+		{Target: "kv.rename", Scope: "prod/db-password", Issued: now, Expires: now.Add(15 * time.Minute)},
+		{Target: "kv.get", Scope: "scratch/", Issued: now, Expires: now.Add(15 * time.Minute)},
+	}); verr != nil {
+		t.Fatal(verr)
+	}
+
+	session := mcpSession(t, mcp.Options{})
+	res, err := session.CallTool(context.Background(), &sdk.CallToolParams{
+		Name:      "kv_rename",
+		Arguments: map[string]any{"key": "prod/db-password", "new-name": "scratch/db-password"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.IsError {
+		t.Fatal("a rename grant for one prod key moved it under a read grant for scratch/")
+	}
+	if got := res.Content[0].(*sdk.TextContent).Text; !strings.Contains(got, "scratch/db-password") {
+		t.Errorf("the refusal should name the record no grant covers: %q", got)
+	}
+	if got := text(t, runGet, map[string]any{"key": "prod/db-password"}, false); got != "PRODSECRET-123" {
+		t.Fatalf("the refused rename moved the entry anyway: %q", got)
+	}
+}
+
+// A folder grant is the way to allow tidying: it covers both ends of a move
+// inside the folder, and neither end of a move out of it.
+func TestAFolderRenameGrantMovesKeysWithinItsFolder(t *testing.T) {
+	setup(t)
+	text(t, runSet, map[string]any{"key": "prod/a", "value": "v"}, false)
+	t.Setenv(passphraseEnv, "correct horse battery staple")
+	grantFor(t, "kv.rename", "prod/")
+
+	session := mcpSession(t, mcp.Options{})
+	rename := func(from, to string) *sdk.CallToolResult {
+		t.Helper()
+		res, err := session.CallTool(context.Background(), &sdk.CallToolParams{
+			Name: "kv_rename", Arguments: map[string]any{"key": from, "new-name": to},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res
+	}
+	if res := rename("prod/a", "prod/b"); res.IsError {
+		t.Fatalf("a rename inside the granted folder was refused: %+v", res.Content)
+	}
+	if res := rename("prod/b", "scratch/b"); !res.IsError {
+		t.Fatal("a folder grant for prod/ moved a key out of prod/")
+	}
+	if got := text(t, runGet, map[string]any{"key": "prod/b"}, false); got != "v" {
+		t.Fatalf("value = %q", got)
 	}
 }

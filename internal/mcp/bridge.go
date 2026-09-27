@@ -287,7 +287,8 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 		// itself so the layering cannot drift from the run's. Only the
 		// profile is missing, and it is resolved after consent on purpose
 		// (see below); it cannot move what a grant or a root is checked
-		// against, since ProfileFillable keeps it off Scope and Path.
+		// against, since ProfileFillable keeps it off Scope, ScopeAlso and
+		// Path.
 		//
 		// So a required input the config fills satisfies its requirement, a
 		// Path the config names is held to the root, a Scope the config

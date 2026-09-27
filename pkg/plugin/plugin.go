@@ -572,6 +572,22 @@ type Capability struct {
 	// record instead of the whole capability, so "read the staging token"
 	// does not have to mean "read every secret I own".
 	Scope string
+	// ScopeAlso names further inputs that each name a record this call acts
+	// on, beyond Scope's: the destination of a rename or a copy. A grant has
+	// to cover every one of them, as it covers every record a repeatable
+	// Scope names — though where the call's own record goes is not a second
+	// act, so a grant the call already spends a use on covers it at no
+	// further use.
+	//
+	// Checking the record a call moves and not where it moves it to let two
+	// narrow grants add up to a wide one. Record names are what the read
+	// grants are scoped by, so a rename moves a record between grants: one
+	// for renaming a single prod key and one for reading scratch/ were, put
+	// together, a read of that prod key — renamed into scratch/, then read
+	// there. Requires Scope, is refused on a credential for the reason Scope
+	// is, and is never filled by a profile, which is resolved after the gate
+	// (ProfileFillable).
+	ScopeAlso []string
 	// HostSpecific marks a capability whose answer is about the machine rta
 	// happens to run on — its CPU, its filesystem, its checked-out repo, its
 	// own hosts file — rather than a configured remote service or a pure

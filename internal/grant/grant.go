@@ -32,6 +32,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -1109,38 +1110,57 @@ func Required(c plugin.Capability, profile string) bool {
 func Scopes(c plugin.Capability, values map[string]any) []string { return scopes(c, values) }
 
 func scopes(c plugin.Capability, values map[string]any) []string {
+	own, also := records(c, values)
+	return append(own, also...)
+}
+
+// records is scopes in its two parts: the records the call acts on, read
+// from Scope, and the further ones ScopeAlso names — where a rename moves its
+// key to. Every one of them needs cover (plugin.Capability.ScopeAlso says
+// why); allocate spends differently on the second part, and needs to know
+// where it starts. A call naming none of Scope's records is about the
+// capability itself whatever else it names, so it keeps the empty scope only
+// an unscoped grant covers.
+func records(c plugin.Capability, values map[string]any) (own, also []string) {
 	if c.Scope == "" {
-		return []string{""}
+		return []string{""}, nil
 	}
-	var out []string
 	seen := map[string]bool{}
-	add := func(s string) {
-		if s = strings.TrimSpace(s); s != "" && !seen[s] {
-			seen[s] = true
-			out = append(out, s)
-		}
-	}
-	switch v := values[c.Scope].(type) {
-	case string:
-		add(v)
-	case []string:
-		for _, s := range v {
-			add(s)
-		}
-	case []any:
-		for _, raw := range v {
-			if s, ok := raw.(string); ok {
-				add(s)
+	read := func(input string) []string {
+		var out []string
+		add := func(s string) {
+			if s = strings.TrimSpace(s); s != "" && !seen[s] {
+				seen[s] = true
+				out = append(out, s)
 			}
 		}
-	case nil:
-	default:
-		add(numericScope(v))
+		switch v := values[input].(type) {
+		case string:
+			add(v)
+		case []string:
+			for _, s := range v {
+				add(s)
+			}
+		case []any:
+			for _, raw := range v {
+				if s, ok := raw.(string); ok {
+					add(s)
+				}
+			}
+		case nil:
+		default:
+			add(numericScope(v))
+		}
+		return out
 	}
-	if len(out) == 0 {
-		return []string{""}
+	own = read(c.Scope)
+	for _, input := range c.ScopeAlso {
+		also = append(also, read(input)...)
 	}
-	return out
+	if len(own) == 0 {
+		own = []string{""}
+	}
+	return own, also
 }
 
 // numericScope renders a non-string scope value (an Int-typed Scope field,
@@ -1190,8 +1210,22 @@ func allocate(c plugin.Capability, values map[string]any, grants []Grant, by Cal
 	// merely ran out of pace, versus at least one scope nothing covers at
 	// all. Only the first case is something waiting can fix — see below.
 	allThrottled := true
-	for _, scope := range scopes(c, values) {
+	own, also := records(c, values)
+	for n, scope := range append(own, also...) {
 		covered, scopeThrottled := false, false
+		// A record ScopeAlso names is where the call's own record goes, not
+		// a second act: a grant this call already spends on, and which
+		// covers it too, covers it at no further use. Spending again made a
+		// `kv.rename prod/ --max-uses 1` grant refuse every rename inside
+		// prod/, both ends of it being under the one folder. When no grant
+		// the call already spends on covers it, it is spent on like any
+		// record: a grant naming only the destination is one the call leans
+		// on as much as the one naming the source.
+		if n >= len(own) && slices.ContainsFunc(covering, func(i int) bool {
+			return grants[i].covers(c.ID, scope, by)
+		}) {
+			continue
+		}
 		for i, g := range grants {
 			if !g.covers(c.ID, scope, by) {
 				continue
