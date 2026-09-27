@@ -37,10 +37,11 @@ func logCapability() plugin.Capability {
 }
 
 func runLog(ctx context.Context, req plugin.Request) (view.View, error) {
-	repo, verr := openRepo(ctx, req)
+	repo, done, verr := openRepo(ctx, req)
 	if verr != nil {
 		return nil, verr
 	}
+	defer done()
 
 	opts := &git.LogOptions{Order: git.LogOrderCommitterTime}
 	if file := req.String("file"); file != "" {
@@ -117,6 +118,7 @@ func suggestCommits(_ context.Context, req plugin.Request) []string {
 	if verr != nil {
 		return nil
 	}
+	defer release(repo)
 	iter, err := repo.Log(&git.LogOptions{Order: git.LogOrderCommitterTime})
 	if err != nil {
 		return nil

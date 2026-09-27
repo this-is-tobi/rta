@@ -52,10 +52,11 @@ func configCapability() plugin.Capability {
 }
 
 func runConfig(ctx context.Context, req plugin.Request) (view.View, error) {
-	repo, verr := openRepoConfigOnly(ctx, req)
+	repo, done, verr := openRepoConfigOnly(ctx, req)
 	if verr != nil {
 		return nil, verr
 	}
+	defer done()
 
 	t := view.Table{Columns: []view.Column{
 		{Name: "Scope"},

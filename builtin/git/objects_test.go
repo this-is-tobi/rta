@@ -2,8 +2,10 @@ package git
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"testing"
 
@@ -159,5 +161,67 @@ func renamePackTheWayMaintenanceDoes(t *testing.T, dir string) {
 	}
 	if renamed == 0 {
 		t.Fatal("no pack to rename — the repack did not produce one")
+	}
+}
+
+// Reading a repository keeps its packfiles open between the objects it reads,
+// where go-git's default storage opened the pack again for each, and every
+// capability closes them when it returns: a descriptor left open by each call
+// is one a long-running server runs out of. Counted across calls with the
+// collector off, since a file the collector finds unreachable closes itself
+// and would hide the leak this looks for.
+func TestEveryCapabilityClosesThePacksItKeptOpen(t *testing.T) {
+	descriptors := func() int {
+		entries, err := os.ReadDir("/dev/fd")
+		if err != nil {
+			t.Skipf("no /dev/fd here to count descriptors in: %v", err)
+		}
+		return len(entries)
+	}
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "sub/a.txt", "one\n", "initial")
+	commitFile(t, repo, dir, "sub/a.txt", "one\ntwo\n", "second")
+	if err := repo.RepackObjects(&git.RepackConfig{}); err != nil {
+		t.Fatal(err)
+	}
+	dropLooseObjects(t, dir)
+	writeFile(t, dir, "sub/a.txt", "one\ntwo\nthree\n")
+
+	defer debug.SetGCPercent(debug.SetGCPercent(-1))
+	type call struct {
+		name   string
+		run    func() error
+		values map[string]any
+	}
+	var calls []call
+	for _, c := range Plugin().Capabilities {
+		values := map[string]any{"file": filepath.Join(dir, "sub", "a.txt"), "detail": true}
+		calls = append(calls, call{name: c.ID, values: values, run: func() error {
+			_, err := c.Run(context.Background(), req(t, dir, values))
+			return err
+		}})
+	}
+	calls = append(calls,
+		call{name: "git.diff --commit", run: func() error {
+			_, err := runDiff(context.Background(), req(t, dir, map[string]any{"commit": "HEAD"}))
+			return err
+		}},
+		call{name: "the commits git.diff suggests", run: func() error {
+			if len(suggestCommits(context.Background(), req(t, dir, nil))) == 0 {
+				return errors.New("no commits suggested")
+			}
+			return nil
+		}})
+	for _, c := range calls {
+		if err := c.run(); err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		before := descriptors()
+		for range 5 {
+			_ = c.run()
+		}
+		if after := descriptors(); after > before {
+			t.Errorf("%s left %d descriptors open over five calls", c.name, after-before)
+		}
 	}
 }
