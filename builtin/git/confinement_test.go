@@ -304,6 +304,73 @@ func TestADiffDoesNotShowRtasOwnState(t *testing.T) {
 	})
 }
 
+// A repository with no working tree gets the same rule, its paths placed
+// where git checks them out. A dotfiles repository is usually bare, with $HOME
+// as its work tree — ~/.cfg used with --work-tree=$HOME, which the config
+// does not record, or yadm's and vcsh's, whose core.worktree names it — and
+// once rta's own state was committed to one, git_diff --commit showed the age
+// identity to a caller rooted at the home directory: a bare repository had no
+// gate at all. A repository whose paths lead nowhere near rta's state is
+// shown whole, the one a root is drawn around exactly included.
+func TestABareRepositorysCommitDoesNotShowRtasOwnState(t *testing.T) {
+	const secret = "AGE-SECRET-KEY-1NOTFORANAGENT"
+	identity := filepath.Join(".local", "share", "rta", "kv.identity")
+	withheld := filepath.ToSlash(identity) + " changed, not diffed: the path gate refuses it (core.mcp.path.protected)"
+
+	home := t.TempDir()
+	t.Setenv("RTA_DATA_DIR", filepath.Join(home, ".local", "share", "rta"))
+	src, repo := testRepo(t)
+	commitFile(t, repo, src, ".zshrc", "export A=1\n", "dotfiles")
+	commitFile(t, repo, src, identity, secret+"\n", "committed by mistake")
+	clone := func(t *testing.T, dir string) {
+		t.Helper()
+		if _, err := git.PlainClone(dir, true, &git.CloneOptions{URL: src}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	t.Run("work tree beside it", func(t *testing.T) {
+		bare := filepath.Join(home, ".cfg")
+		clone(t, bare)
+		body := text(t, runDiff, guarded(t, home, bare).With(map[string]any{"commit": "HEAD"}))
+		if strings.Contains(body, secret) || !strings.Contains(body, withheld) {
+			t.Errorf("a bare repository at ~/.cfg showed rta's own state, or did not name it:\n%s", body)
+		}
+	})
+	t.Run("core.worktree", func(t *testing.T) {
+		bare := filepath.Join(home, ".local", "share", "yadm", "repo.git")
+		clone(t, bare)
+		opened, err := git.PlainOpen(bare)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cfg, err := opened.Config()
+		if err != nil {
+			t.Fatal(err)
+		}
+		cfg.Core.Worktree = "../../../.."
+		if err := opened.SetConfig(cfg); err != nil {
+			t.Fatal(err)
+		}
+		body := text(t, runDiff, guarded(t, home, bare).With(map[string]any{"commit": "HEAD"}))
+		if strings.Contains(body, secret) || !strings.Contains(body, withheld) {
+			t.Errorf("a bare repository whose core.worktree is ~ showed rta's own state, or did not name it:\n%s", body)
+		}
+	})
+	t.Run("elsewhere", func(t *testing.T) {
+		root := t.TempDir()
+		bare := filepath.Join(root, "project.git")
+		clone(t, bare)
+		for name, r := range map[string]plugin.Request{
+			"root above it": guarded(t, root, bare), "root at it": guarded(t, bare, bare),
+		} {
+			if body := text(t, runDiff, r.With(map[string]any{"commit": "HEAD"})); !strings.Contains(body, secret) {
+				t.Errorf("%s: a bare repository whose paths lead nowhere near rta's state withheld one:\n%s", name, body)
+			}
+		}
+	})
+}
+
 // A URL reaching a confined handler is refused at the boundary rather than
 // mangled into a local path — see pathguard.remote. Pinned from this side too,
 // because this is the plugin whose path input accepts one.

@@ -22,6 +22,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/format/index"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/storer"
+	"github.com/go-git/go-git/v5/storage/filesystem"
 
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -93,18 +94,61 @@ func interrupted(what string) *view.Error {
 // A --commit diff asks too, about the committed content: a store or a config
 // committed by mistake is the same secret whether it comes from the disk or
 // from the object store, and git.blame, whose file is a path argument, is
-// already refused it. A bare repository has no working tree to place a path
-// in, and nothing in it is on disk under that name to be protected.
+// already refused it.
+//
+// **A repository with no working tree here is asked about too.** A dotfiles
+// repository is usually one: cloned bare into ~/.cfg and used with
+// --work-tree=$HOME, which nothing in it records, or kept by yadm or vcsh
+// with core.worktree naming the home directory. Its paths were given no gate
+// at all, so once rta's state had been committed to one, git_diff --commit
+// showed the age identity to a caller rooted at the home directory. Its paths
+// are placed where git would check them out (checkoutDir) and put to the
+// gate there, for the protected-path rule alone (core.mcp.path.protected):
+// the content comes from the object store, which the gate admitted when it
+// admitted the repository, so a place outside the root is no reason to
+// withhold it — a root drawn around a bare repository exactly has its
+// work tree's place outside it.
 func pathGate(req plugin.Request, repo *git.Repository) func(path string) *view.Error {
-	wt, err := repo.Worktree()
-	if err != nil {
+	if wt, err := repo.Worktree(); err == nil {
+		root := wt.Filesystem.Root()
+		return func(path string) *view.Error {
+			_, verr := req.Confine("path", filepath.Join(root, filepath.FromSlash(path)))
+			return verr
+		}
+	}
+	dir := checkoutDir(repo)
+	if dir == "" {
 		return func(string) *view.Error { return nil }
 	}
-	root := wt.Filesystem.Root()
 	return func(path string) *view.Error {
-		_, verr := req.Confine("path", filepath.Join(root, filepath.FromSlash(path)))
-		return verr
+		if _, verr := req.Confine("path", filepath.Join(dir, filepath.FromSlash(path))); verr != nil &&
+			verr.Code == "core.mcp.path.protected" {
+			return verr
+		}
+		return nil
 	}
+}
+
+// checkoutDir is where the paths of a repository with no working tree here
+// would be checked out: the directory core.worktree names, taken from the git
+// directory as git takes it, or else the one holding the repository, where
+// ~/.cfg's are. "" for a repository cloned into memory, which has no place on
+// this disk at all.
+//
+// The second is a guess where the config records nothing, and a safe one: it
+// is asked about by the protected-path rule alone, so it withholds a path
+// only where the repository beside it holds rta's own state under that name,
+// which a repository that is not a work tree's is unlikely to by chance.
+func checkoutDir(repo *git.Repository) string {
+	store, ok := repo.Storer.(*filesystem.Storage)
+	if !ok {
+		return ""
+	}
+	gitDir := store.Filesystem().Root()
+	if cfg, err := repo.Config(); err == nil && cfg.Core.Worktree != "" {
+		return against(gitDir, cfg.Core.Worktree)
+	}
+	return filepath.Dir(gitDir)
 }
 
 // withheld is a changed file a diff names without showing it, and why.
