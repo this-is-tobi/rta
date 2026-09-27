@@ -215,19 +215,33 @@ func Replace(from, to string) error {
 // whole payload in memory. A release binary can be a hundred megabytes, and
 // buffering one to place it is the wrong shape for a file that is already a
 // stream on the way in.
+//
+// The exit is held off for the close, the chmod and the rename, and not while
+// the stream arrives (internal/shutdown). A stream takes as long as whatever
+// feeds it — a slow disk, a pipe, a download — and held across the copy, a
+// forced exit would wait out a transfer somebody had pressed ^C to stop. An
+// exit taken during the copy removes the temporary file instead, as the write
+// would have on its way out; the target is untouched either way.
 func WriteFrom(path string, r io.Reader, perm fs.FileMode) error {
-	defer shutdown.Hold()()
 	dir := filepath.Dir(path)
+	// Held while the temporary file is made and its removal registered, so
+	// that no exit falls between the two and leaves it behind. Unregistered
+	// only after the write's own removal has run, for the same reason.
+	release := shutdown.Hold()
 	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+"-*.tmp")
 	if err != nil {
+		release()
 		return fmt.Errorf("creating a temporary file in %s: %w", dir, err)
 	}
+	defer shutdown.OnExit(func() { _ = os.Remove(tmp.Name()) })()
 	defer os.Remove(tmp.Name())
+	release()
 
 	if _, err := io.Copy(tmp, r); err != nil {
 		_ = tmp.Close()
 		return fmt.Errorf("writing %s: %w", tmp.Name(), err)
 	}
+	defer shutdown.Hold()()
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("closing %s: %w", tmp.Name(), err)
 	}
