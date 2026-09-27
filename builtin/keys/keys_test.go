@@ -9,16 +9,19 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/tyler-smith/go-bip39"
 	"golang.org/x/crypto/ssh"
 
 	"github.com/this-is-tobi/rta/internal/render/cli"
+	"github.com/this-is-tobi/rta/internal/shutdown"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -1184,6 +1187,45 @@ func TestRestoreWithAMissingParentDirectoryErrorsCleanly(t *testing.T) {
 	_, err := runRestore(context.Background(), req(map[string]any{"out": out, "words": words}))
 	if errCode(err) != "keys.restore.write" {
 		t.Errorf("code = %q, want keys.restore.write", errCode(err))
+	}
+}
+
+// A restored key pair lands whole past a forced exit. Its two files are two
+// writes, and an exit that fell between them left the private key without its
+// .pub — which a second restore to the same path then refuses as existing. The
+// exit waits for both once the first has begun (internal/shutdown).
+func TestAnExitWaitsForBothHalvesOfARestoredKey(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "id_ed25519")
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := publish
+	t.Cleanup(func() { publish = original })
+	settled := make(chan func(), 1)
+	var between bool
+	publish = func(path string, data []byte, perm fs.FileMode, max int) ([]byte, error) {
+		written, err := original(path, data, perm, max)
+		if path == out {
+			go func() { settled <- shutdown.Settle() }()
+			select {
+			case resume := <-settled:
+				between = true
+				resume()
+			case <-time.After(100 * time.Millisecond):
+			}
+		}
+		return written, err
+	}
+	if _, verr := publishRestoredKey(out, priv, nil, ""); verr != nil {
+		t.Fatal(verr)
+	}
+	if between {
+		t.Fatal("the process settled with the private key written and its .pub not yet")
+	}
+	(<-settled)()
+	if _, err := os.Stat(out + ".pub"); err != nil {
+		t.Errorf("the exit did not wait for the .pub: %v", err)
 	}
 }
 
