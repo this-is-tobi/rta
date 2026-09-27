@@ -9,8 +9,9 @@ package shellquote
 import (
 	"fmt"
 	"strings"
-	"unicode"
 	"unicode/utf8"
+
+	"github.com/this-is-tobi/rta/internal/textclean/glyph"
 )
 
 // Arg returns s as one shell word that reads back as s, byte for byte.
@@ -21,7 +22,8 @@ import (
 // quotes otherwise, a single quote spliced in as '"'"'.
 //
 // In $'...' when s holds a character a terminal does not draw as itself: a
-// control, an invisible or reordering character, a byte that is not UTF-8.
+// control, an invisible or reordering character, one drawn as an empty cell
+// such as a Hangul filler or a Braille blank, a byte that is not UTF-8.
 // Single quotes would carry it exactly, but the command is printed before it
 // is pasted, and the renderer cleans what it prints — an escape sequence in a
 // debug.ansi tile's input showed as nothing, and the pasted command recreated
@@ -59,10 +61,17 @@ func bare(s string) bool {
 	return true
 }
 
-// unseen reports a character a terminal does not draw as itself. The ASCII
-// space is the one blank unicode.IsPrint counts; every other space, a
-// no-break space included, looks like one and is not.
-func unseen(r rune) bool { return !unicode.IsPrint(r) }
+// unseen reports a character a terminal does not draw as itself, by
+// textclean's own rule (glyph.Seen), which is the rule the record beside the
+// command is shown by. The ASCII space is the one blank it counts; every
+// other space, a no-break space included, looks like one and is not.
+//
+// unicode.IsPrint alone was the rule here, and it counts a Hangul filler a
+// letter, a Braille blank a symbol and a variation selector a mark, each of
+// which draws as nothing: a record ending in one went into plain single
+// quotes, and the grant command a refusal hands on read as the bare record
+// quoted, beside the same record shown quoted with its filler named.
+func unseen(r rune) bool { return !glyph.Seen(r) }
 
 func dollarQuoted(s string) string {
 	var b strings.Builder
