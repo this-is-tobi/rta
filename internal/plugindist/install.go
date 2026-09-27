@@ -511,7 +511,7 @@ func remove(name string, dryRun bool) (Removed, *view.Error) {
 	// By digest, never by name: untrusting by name would also revoke an
 	// unmanaged same-named binary the operator trusted deliberately.
 	for _, d := range digests {
-		if _, verr := plugintrust.Remove(d); verr != nil {
+		if verr := withdrawStored(d); verr != nil {
 			return Removed{}, verr
 		}
 	}
@@ -522,6 +522,24 @@ func remove(name string, dryRun bool) (Removed, *view.Error) {
 		return Removed{}, verr
 	}
 	return Removed{Name: name, Digests: digests, Orphans: orphanedConfig(name)}, nil
+}
+
+// withdrawStored takes the operator's approval of a stored digest whose copy
+// is leaving the store.
+//
+// **What the system root trusts is left to it, and is no reason to keep the
+// file.** plugintrust.Remove refuses a digest only the system root's record
+// holds, which is right for `rta plugin untrust`: it was asked to stop an
+// artifact loading, and rta cannot take the image's trust away. Here the
+// operator asked for the store's copy to go, which rta can do whatever the
+// image trusts. Passed on, the refusal left remove and prune unable to delete
+// that copy once the operator's own approval of it was gone — which is what
+// `plugin untrust` leaves behind for an artifact the image ships too.
+func withdrawStored(digest string) *view.Error {
+	if _, verr := plugintrust.Remove(digest); verr != nil && verr.Code != "plugin.untrust.system" {
+		return verr
+	}
+	return nil
 }
 
 // Upgraded is one upgrade's outcome: the move, and the declaration diff that

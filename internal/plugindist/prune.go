@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/this-is-tobi/rta/internal/plugintrust"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -86,7 +85,7 @@ func prune(dryRun bool) ([]Pruned, *view.Error) {
 			for _, d := range p.Removed {
 				// By digest, as remove does: untrusting by name would also
 				// revoke a same-named binary the operator trusted on $PATH.
-				if _, verr := plugintrust.Remove(d); verr != nil {
+				if verr := withdrawStored(d); verr != nil {
 					return nil, verr
 				}
 				if err := os.RemoveAll(filepath.Join(StoreDir(), name, d)); err != nil {
