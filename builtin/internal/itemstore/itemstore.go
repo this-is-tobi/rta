@@ -291,10 +291,14 @@ func Preview(body string) string {
 
 // Children returns the direct sub-items of parentID, in store order — the
 // breakdown of a task into steps, GitHub-tasklist style.
+//
+// Never the item itself. A note rm from before cycles were refused moved a
+// sub-note up to a parent that was the sub-note, and a store keeps such an
+// item as its own parent: counted among its own sub-items, it read "(0/1)".
 func Children(s Store, parentID int) []Item {
 	var out []Item
 	for _, it := range s.Items {
-		if it.Parent == parentID {
+		if it.Parent == parentID && it.ID != parentID {
 			out = append(out, it)
 		}
 	}

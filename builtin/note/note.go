@@ -395,7 +395,9 @@ func runList(_ context.Context, req plugin.Request) (view.View, error) {
 	now := time.Now()
 	var shown []itemstore.Item
 	for _, it := range s.Items {
-		under := it.Parent == parent || (parent == 0 && it.Parent != 0 && rootless(s, it))
+		// Not a note left as its own parent under itself: it is one of the
+		// rootless, listed at the top, and never its own sub-note.
+		under := (it.Parent == parent && it.ID != parent) || (parent == 0 && it.Parent != 0 && rootless(s, it))
 		if !under || (it.Done && !includeDone) || !hasAnyTag(it, tags) {
 			continue
 		}
@@ -443,7 +445,7 @@ func runSearch(_ context.Context, req plugin.Request) (view.View, error) {
 			continue
 		}
 		title := it.Title
-		if it.Parent != 0 {
+		if it.Parent != 0 && it.Parent != it.ID {
 			title = "↳ " + title // a quiet nod that this is a sub-note
 		}
 		t.Rows = append(t.Rows, []string{
@@ -531,7 +533,7 @@ func metaPairs(s itemstore.Store, it itemstore.Item) view.KeyValue {
 		}
 		kv.Pairs = append(kv.Pairs, view.Pair{Key: "tags", Value: strings.Join(tags, " ")})
 	}
-	if it.Parent != 0 {
+	if it.Parent != 0 && it.Parent != it.ID {
 		if pi, ok := index(s, it.Parent); ok {
 			kv.Pairs = append(kv.Pairs, view.Pair{Key: "part of",
 				Value: fmt.Sprintf("#%d %s", it.Parent, s.Items[pi].Title)})
@@ -910,11 +912,19 @@ func runRemove(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 	removed := s.Items[i].Title
 	parent := s.Items[i].Parent
+	// A note an old rm left as its own parent has no parent to hand its
+	// sub-notes up to but itself, which is going: they go to the top, or
+	// they were left under a note that was no longer there.
+	if parent == id {
+		parent = 0
+	}
 	// Sub-notes move up to the removed note's parent — never silently
 	// orphaned or deleted along with it.
 	reparented := 0
 	for j := range s.Items {
-		if s.Items[j].Parent == id {
+		// Not the note removed, which an old rm may have left as its own
+		// parent: it goes, and is no sub-note moved up.
+		if s.Items[j].Parent == id && j != i {
 			s.Items[j].Parent = parent
 			// A store an edit put in a cycle before edit refused one: the
 			// removed note's parent can be its own sub-note, and moving

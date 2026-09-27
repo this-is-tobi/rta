@@ -705,6 +705,74 @@ func TestNotesAlreadyInACycleComeBackIntoView(t *testing.T) {
 	}
 }
 
+// The note rm before cycles were refused moved a sub-note up to a parent
+// that was the sub-note itself, and the store keeps it that way. The note
+// lists at the top, and was counted among its own sub-notes there: "(0/1)"
+// beside its title, "0 of 1 done" and itself under sub-notes in show, and
+// itself again under --parent. A note is never its own sub-note, and
+// removing it moves no sub-note up.
+func TestANoteLeftAsItsOwnParentIsNotItsOwnSubNote(t *testing.T) {
+	setup(t)
+	text(t, runAdd, map[string]any{"title": "loop"}, false)
+	s, err := load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Items[0].Parent = s.Items[0].ID
+	if err := save(s); err != nil {
+		t.Fatal(err)
+	}
+
+	tbl := table(t, runList, map[string]any{})
+	if len(tbl.Rows) != 1 || tbl.Rows[0][4] != "loop" {
+		t.Errorf("list = %v, want loop at the top with no sub-note count", tbl.Rows)
+	}
+	if tbl = table(t, runList, map[string]any{"parent": 1}); len(tbl.Rows) != 0 {
+		t.Errorf("list --parent 1 = %v, want no sub-notes", tbl.Rows)
+	}
+	page := show(t, 1)
+	for _, sec := range page.Items {
+		if sec.Title == "sub-notes" {
+			t.Errorf("show lists sub-notes: %v", sec.View)
+		}
+	}
+	for _, p := range section(t, page, "note").(view.KeyValue).Pairs {
+		if p.Key == "sub-notes" || p.Key == "part of" {
+			t.Errorf("show says %s: %s", p.Key, p.Value)
+		}
+	}
+	if body := text(t, runRemove, map[string]any{"id": 1}, false); strings.Contains(body, "moved up") {
+		t.Errorf("rm = %q, want no sub-note moved up", body)
+	}
+}
+
+// Removing a note left as its own parent moves its sub-notes to the top: the
+// parent they moved up to was the note being removed, and they were left
+// under a note that was no longer there.
+func TestRemovingANoteLeftAsItsOwnParentMovesItsSubNotesToTheTop(t *testing.T) {
+	setup(t)
+	text(t, runAdd, map[string]any{"title": "loop"}, false)
+	s, err := load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Items[0].Parent = s.Items[0].ID
+	if err := save(s); err != nil {
+		t.Fatal(err)
+	}
+	text(t, runAdd, map[string]any{"title": "step", "parent": 1}, false)
+
+	if body := text(t, runRemove, map[string]any{"id": 1}, false); !strings.Contains(body, "1 sub-note moved up") {
+		t.Errorf("rm = %q, want its one sub-note moved up", body)
+	}
+	if s, err = load(); err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Items) != 1 || s.Items[0].Title != "step" || s.Items[0].Parent != 0 {
+		t.Errorf("items = %+v, want step at the top", s.Items)
+	}
+}
+
 // Removing a note with sub-notes moves them up rather than orphaning or
 // deleting them.
 func TestRemoveReparentsChildren(t *testing.T) {
