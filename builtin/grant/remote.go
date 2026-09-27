@@ -8,6 +8,7 @@ import (
 
 	core "github.com/this-is-tobi/rta/internal/grant"
 	operatorid "github.com/this-is-tobi/rta/internal/operator"
+	"github.com/this-is-tobi/rta/internal/textclean"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -117,6 +118,11 @@ func remoteAllow(ctx context.Context, req plugin.Request, server string) (view.V
 		MaxUses: req.Int("max-uses"),
 		Rate:    req.String("rate"),
 	}
+	// Refused here as well as by the server's builder, for the agent's
+	// reason above: the answer is known before the passphrase is typed.
+	if verr := givenRecord(req.Surface(), spec.Scope); verr != nil {
+		return nil, verr
+	}
 	base, verr := operatorid.ServerURL(server)
 	if verr != nil {
 		return nil, verr
@@ -184,8 +190,10 @@ func checkPrepared(sf plugin.Surface, spec operatorid.IssueSpec, server string, 
 	if want := core.Normalize(spec.Target); g.Target != want {
 		return changed("the target", g.Target, want)
 	}
-	if want := strings.TrimSpace(spec.Scope); g.Scope != want {
-		return changed("the record scope", g.Scope, want)
+	// Byte for byte, as the builder takes it (givenRecord): a draft on the
+	// record without the padding asked for is a grant on another record.
+	if g.Scope != spec.Scope {
+		return changed("the record scope", textclean.Record(g.Scope), textclean.Record(spec.Scope))
 	}
 	if want := strings.TrimSpace(spec.Profile); g.Profile != want {
 		return changed("the profile", g.Profile, want)

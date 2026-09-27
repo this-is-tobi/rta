@@ -83,7 +83,10 @@ func buildGrant(sf plugin.Surface, catalog func() []plugin.Capability, artifact 
 	if verr != nil {
 		return core.Grant{}, notes, verr
 	}
-	scope := strings.TrimSpace(spec.Scope)
+	scope := spec.Scope
+	if verr := givenRecord(sf, scope); verr != nil {
+		return core.Grant{}, notes, verr
+	}
 	if verr := core.CheckScope(scope); verr != nil {
 		return core.Grant{}, notes, verr
 	}
@@ -142,6 +145,34 @@ func buildGrant(sf plugin.Surface, catalog func() []plugin.Capability, artifact 
 		RateMax:    rateMax,
 		RateWindow: rateWindow,
 	}, notes, nil
+}
+
+// givenRecord refuses a record that is nothing but white space, the one
+// record allow, renew and revoke do not take as given.
+//
+// **Every other record is taken as typed, never trimmed.** The gate compares
+// a record byte for byte, and the three trimmed theirs — strings.TrimSpace
+// takes a no-break space as readily as a space. So the command the
+// core.grant.required refusal hands the operator, shell-quoted with the
+// padding the parked call named, issued a grant on the bare record, which
+// covers nothing that call asked for; and `grant revoke kv.get` on the
+// padded record took back the bare grant and left the padded one standing,
+// the one an answer given with --ttl had issued.
+//
+// **White space alone is refused rather than read either way.** Trimmed, it
+// was the empty record, and the empty record is every record: `grant allow
+// kv.get " "` issued a grant over the whole store, and `grant revoke kv.get
+// " "` took back every grant on it. Taken as given it would name a record
+// no store holds. Such an argument is a slip — a variable that expanded to
+// padding, a stray pair of quotes — and neither reading is what was meant,
+// so the one answer that can neither widen a grant nor miss one is to ask.
+func givenRecord(sf plugin.Surface, scope string) *view.Error {
+	if scope == "" || strings.TrimSpace(scope) != "" {
+		return nil
+	}
+	return view.Errorf("grant.scope.blank", "%s is %q, only white space, which names no record",
+		sf.ArgumentName("scope"), scope).
+		WithHint("name the record, or leave " + sf.ArgumentName("scope") + " out to mean every record")
 }
 
 // stillCovering answers, after a revoke, whether anything left in the file
@@ -441,6 +472,12 @@ func RevokeRemote(spec operatorid.RevokeSpec, write bool) (operatorid.RevokeOutc
 		return operatorid.RevokeOutcome{}, view.Errorf("grant.notarget", "name a capability, or give %s", sf.InputName("all")).
 			WithHint("`" + sf.Call("grant.list", plugin.Arg{Name: "server", Value: "<name>"}) +
 				"` shows what is currently allowed there")
+	}
+	// The record as sent, as `grant revoke` takes it here, and white space
+	// alone refused for givenRecord's reason: this client refuses it before
+	// sending, and one that did not must not be read as every record.
+	if verr := givenRecord(plugin.SurfaceUnknown, spec.Scope); verr != nil {
+		return operatorid.RevokeOutcome{}, verr
 	}
 	return revokeOutcome(spec, write)
 }

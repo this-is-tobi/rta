@@ -834,7 +834,12 @@ func subject(g core.Grant) string {
 // hour at a time.
 func runRenew(_ context.Context, req plugin.Request) (view.View, error) {
 	target := core.Normalize(req.String("target"))
-	scope := strings.TrimSpace(req.String("scope"))
+	// As given (givenRecord): the grant extended is the one on the record
+	// named, byte for byte, as the gate reads it.
+	scope := req.String("scope")
+	if verr := givenRecord(req.Surface(), scope); verr != nil {
+		return nil, verr
+	}
 	profile := strings.TrimSpace(req.String("profile"))
 	agent := strings.TrimSpace(req.String("agent"))
 	role := strings.TrimSpace(req.String("role"))
@@ -1415,13 +1420,18 @@ func runRevoke(ctx context.Context, req plugin.Request) (view.View, error) {
 	// off the envelope: --role once was, and the server, matching on the
 	// selectors it was sent, took back every grant the agent held.
 	spec := operatorid.RevokeSpec{
-		All:     req.Bool("all"),
-		Target:  core.Normalize(req.String("target")),
-		Scope:   strings.TrimSpace(req.String("scope")),
+		All:    req.Bool("all"),
+		Target: core.Normalize(req.String("target")),
+		// As given (givenRecord): the grant taken back is the one on the
+		// record named, byte for byte, as the gate reads it.
+		Scope:   req.String("scope"),
 		Profile: strings.TrimSpace(req.String("profile")),
 		Agent:   strings.TrimSpace(req.String("agent")),
 		Role:    strings.TrimSpace(req.String("role")),
 		DryRun:  req.DryRun,
+	}
+	if verr := givenRecord(req.Surface(), spec.Scope); verr != nil {
+		return nil, verr
 	}
 	server := strings.TrimSpace(req.String("server"))
 	if !spec.All && spec.Target == "" && spec.Profile == "" && spec.Agent == "" && spec.Role == "" {
