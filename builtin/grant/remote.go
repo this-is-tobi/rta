@@ -62,7 +62,7 @@ func remoteList(ctx context.Context, req plugin.Request, server string) (view.Vi
 			}
 		}
 	}
-	t := grantsTable(grants, nil)
+	t := grantsTable(grants, nil, nil, false)
 	// The table even when the server holds nothing, with the sentence beside
 	// it for a person (view.Table.Empty), as the local listing answers: the
 	// sentence alone was a text view `jq '.rows[]'` could not iterate.

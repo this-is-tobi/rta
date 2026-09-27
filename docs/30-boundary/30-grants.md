@@ -61,7 +61,7 @@ rta grant revoke kv.get db-password  # take it back now
 rta grant revoke kv                  # or all of it
 ```
 
-`grant list` shows the target, the scope, what remains of each bound, the agent and profile it is narrowed to, and your `--note`. It is the answer to "what can an agent do right now", and it is the one screen worth checking before you walk away from a machine with a server running.
+`grant list` shows the target, the scope, what remains of each bound, the agent and profile it is narrowed to, and your `--note`. `--detail` adds the plugin build each grant is bound to: the short digest of the plugin's artifact, or `built in`. A grant whose plugin has been replaced since it was issued is marked `(replaced)` on every listing of this machine's grants, and one whose plugin rta no longer loads `(not loaded)`, each with a warning beside the rows saying what fixes it. A roster read with `--server` carries neither mark: the plugins that answer there are the server's, which this machine cannot see. It is the answer to "what can an agent do right now", and it is the one screen worth checking before you walk away from a machine with a server running.
 
 Revoking takes back what grants gave — it does not touch the ungated read tools an agent's token still opens. When the need is "this agent makes no call of any kind until I say so", that is a [lock](./20-mcp.md#locks-the-instant-no): `rta lock add <name>`, effective on its next call, no restart.
 
@@ -150,7 +150,7 @@ For a machine whose humans are not at its terminal — an `rta mcp serve --http`
 
 ## What a grant does not do
 
-- **It does not survive the plugin it names being replaced.** A grant on a plugin's capability records that plugin's artifact digest, so swapping the binary under the same name stops it covering anything. Built-ins have no separate artifact and carry no digest.
+- **It does not survive the plugin it names being replaced.** A grant on a plugin's capability records that plugin's artifact digest, so swapping the binary under the same name stops it covering anything. Built-ins have no separate artifact and carry no digest. Upgrading or rebuilding a plugin is such a replacement: `grant list` marks every grant standing on the old build `(replaced)`, because an agent refused under one is told only what an ungranted call is told. Issue it again after the upgrade with `rta grant allow`; `grant renew` moves the deadline and never rebinds a grant.
 - **It does not widen a path root.** Path confinement is checked separately, on every path argument.
 - **It does not survive a ceiling.** If a `.rta-policy.yaml` says `maxTTL: 15m`, a `--ttl 2h` grant is clamped to 15m and told so.
 - **It does not authorize a profile you have not configured.** `--profile staging` matches the connection named `staging`, exactly.

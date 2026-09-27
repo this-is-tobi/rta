@@ -99,7 +99,12 @@ func catalog() []plugin.Capability {
 // listH adapts runList the same way allowH does below: closed over the test
 // catalog, since the detail page derives what an agent can reach from it.
 func listH(ctx context.Context, req plugin.Request) (view.View, error) {
-	return runList(ctx, req, catalog)
+	return runList(ctx, req, catalog, builtIn)
+}
+
+// renewH adapts runRenew the same way, with every namespace built in.
+func renewH(ctx context.Context, req plugin.Request) (view.View, error) {
+	return runRenew(ctx, req, builtIn)
 }
 
 // allowH adapts runAllow (now closed over catalog, like every other target
@@ -670,7 +675,7 @@ func TestARenewalCarriesThePaceForward(t *testing.T) {
 	// else, or re-running it would be the way to quietly drop a budget.
 	setup(t)
 	run(t, allowH, map[string]any{"target": "kv.get", "rate": "3/1h", "ttl": "1m"})
-	run(t, runRenew, map[string]any{"target": "kv.get"})
+	run(t, renewH, map[string]any{"target": "kv.get"})
 	grants, _ := core.Load()
 	if len(grants) != 1 {
 		t.Fatalf("grants = %+v", grants)

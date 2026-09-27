@@ -160,7 +160,7 @@ func TestHeldTableEmptyStateNotesCeilingSuppressedGrants(t *testing.T) {
 		t.Fatal(verr)
 	}
 
-	v, verr := heldTable(plugin.SurfaceCLI, "", false)
+	v, verr := heldTable(plugin.SurfaceCLI, "", false, builtIn)
 	if verr != nil {
 		t.Fatal(verr)
 	}
@@ -206,7 +206,7 @@ func TestHeldTablePartialSuppressionSplitsAllowedFromSuppressed(t *testing.T) {
 		t.Fatal(verr)
 	}
 
-	v, verr := heldTable(plugin.SurfaceCLI, "", false)
+	v, verr := heldTable(plugin.SurfaceCLI, "", false, builtIn)
 	if verr != nil {
 		t.Fatal(verr)
 	}
