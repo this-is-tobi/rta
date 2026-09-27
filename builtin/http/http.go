@@ -164,15 +164,24 @@ func Plugin() plugin.Plugin {
 // place for it, since the destination is checked before a route is picked
 // and again as each connection is dialed, and the reader of either refusal
 // is owed the same account of it.
-func blockedRefusal(method, url string, err error) *view.Error {
+//
+// Worded for who asked. An agent is told a grant does not move it, so it
+// does not go asking for one; a person at the terminal was told the same
+// about a grant nobody had issued, when what they need to know is that
+// the guard holds for them too.
+func blockedRefusal(sf plugin.Surface, method, url string, err error) *view.Error {
 	var blocked *blockedAddrError
 	if !errors.As(err, &blocked) {
 		return nil
 	}
-	return view.Errorf("http.request.blocked", "%s %s: %v", method, url, err).
-		WithHint("rta connects only to public addresses — never loopback, private, link-local, " +
-			"shared (100.64.0.0/10) or reserved ones, where cloud metadata endpoints live — " +
-			"even though the grant named this URL")
+	hint := "rta's http client connects only to public addresses — never loopback, private, " +
+		"link-local, shared (100.64.0.0/10) or reserved ones, where cloud metadata endpoints live"
+	if sf == plugin.SurfaceMCP {
+		hint += " — and a grant naming this URL does not change that"
+	} else {
+		hint += " — at the terminal too; reach a service of your own with a client of your own"
+	}
+	return view.Errorf("http.request.blocked", "%s %s: %v", method, url, err).WithHint(hint)
 }
 
 func runMethod(method string) plugin.Handler {
@@ -220,7 +229,7 @@ func doRequest(ctx context.Context, method string, req plugin.Request) (view.Vie
 	// proxy itself, once, is not the caller's choice and must not be
 	// refused as if it were.
 	if err := checkDestination(ctx, httpReq.URL); err != nil {
-		if verr := blockedRefusal(method, url, err); verr != nil {
+		if verr := blockedRefusal(req.Surface(), method, url, err); verr != nil {
 			return nil, verr
 		}
 		return nil, view.Errorf("http.request.failed", "%s %s: %v", method, url, err).
@@ -248,7 +257,7 @@ func doRequest(ctx context.Context, method string, req plugin.Request) (view.Vie
 
 	resp, err := client.Do(httpReq)
 	if err != nil {
-		if verr := blockedRefusal(method, url, err); verr != nil {
+		if verr := blockedRefusal(req.Surface(), method, url, err); verr != nil {
 			return nil, verr
 		}
 		return nil, view.Errorf("http.request.failed", "%s %s: %v", method, url, err).
