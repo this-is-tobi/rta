@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -450,6 +451,38 @@ func TestAuditBadHostIsCoded(t *testing.T) {
 	ve := view.AsError(err, "x")
 	if ve.Code != "audit.web.badhost" && ve.Code != "audit.web.unreachable" {
 		t.Errorf("want coded audit error, got %+v", ve)
+	}
+}
+
+// A credential in front of the host makes the argument read as one host
+// while the request goes to another: the grant, the consent prompt and the
+// ledger quote staging.example.com, the request went to the address after
+// the @, and it carried the prefix as a Basic credential. Refused before a
+// byte is sent, bare or with a scheme.
+func TestAHostWithCredentialsBeforeItIsRefused(t *testing.T) {
+	var requests atomic.Int32
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+	}))
+	t.Cleanup(srv.Close)
+	addr := strings.TrimPrefix(srv.URL, "https://")
+	for _, host := range []string{
+		"https://staging.example.com@" + addr + "/",
+		"staging.example.com@" + addr,
+		"https://user:pass@" + addr,
+		// An empty credential is a credential, and the scheme is read however
+		// it is spelled — or not spelled with its slashes at all.
+		"https://@" + addr,
+		"HTTPS://staging.example.com@" + addr,
+		"https:staging.example.com@" + addr,
+	} {
+		_, err := runWeb(t.Context(), req(map[string]any{"host": host, "timeout": 5}))
+		if ve := view.AsError(err, "x"); ve == nil || ve.Code != "audit.web.badhost" {
+			t.Errorf("%s: want audit.web.badhost, got %+v", host, ve)
+		}
+	}
+	if n := requests.Load(); n != 0 {
+		t.Errorf("the refused hosts still sent %d requests", n)
 	}
 }
 
