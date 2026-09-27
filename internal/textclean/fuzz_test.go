@@ -72,6 +72,7 @@ func FuzzRecord(f *testing.F) {
 	for _, seed := range []string{
 		"prod/db", "prod/db ", " prod/db", "two words", `"quoted"`, `C:\Users\me`, "", "\xff",
 		"prod/db" + string(rune(0xa0)), "prod/db" + string(rune(0x200b)), "a" + string(rune(0xfe0f)),
+		"prod/db" + string(rune(0x2800)),
 		"invoice" + string(rune(0x202e)) + "fdp.exe", "tag" + string(rune(0xe0041)), "tab\tnew\nline",
 	} {
 		f.Add(seed)

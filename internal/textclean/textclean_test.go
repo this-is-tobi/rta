@@ -295,7 +295,12 @@ func TestFormatPlainTextDumpsOnlyWhatTerminalWouldDrop(t *testing.T) {
 // characters that draw as nothing wherever they stand. Every character in
 // the fixtures is planted by code point: a source file may not hold one.
 func TestARecordThatIsNotWhatItShowsIsQuoted(t *testing.T) {
-	named := func(r rune) string { return fmt.Sprintf("%cu%04x", '\\', r) }
+	named := func(r rune) string {
+		if r > 0xffff {
+			return fmt.Sprintf("%cU%08x", '\\', r)
+		}
+		return fmt.Sprintf("%cu%04x", '\\', r)
+	}
 	for _, plain := range []string{"prod/db", "db-password", "https://api.example.com/v1/", "café",
 		`C:\Users\me`, `a"b`, "4"} {
 		if got := Record(plain); got != plain {
@@ -313,6 +318,10 @@ func TestARecordThatIsNotWhatItShowsIsQuoted(t *testing.T) {
 		{"prod/db" + string(rune(0x3164)), 0x3164},  // Hangul filler
 		{"prod/db" + string(rune(0x202e)), 0x202e},  // right-to-left override
 		{string(rune(0x2003)) + "prod/db", 0x2003},  // em space
+		// Symbols drawn as a blank cell, which Unicode calls neither a
+		// space nor ignorable: the Braille blank and the null notehead.
+		{"prod/db" + string(rune(0x2800)), 0x2800},
+		{"prod/db" + string(rune(0x1d159)), 0x1d159},
 	} {
 		got := Record(tc.record)
 		if !strings.HasPrefix(got, `"`) || !strings.Contains(got, named(tc.names)) {
