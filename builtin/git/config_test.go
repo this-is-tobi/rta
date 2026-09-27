@@ -202,3 +202,62 @@ func TestConfigCountsTheIncludesItDoesNotFollow(t *testing.T) {
 		t.Errorf("over MCP, warnings = %+v, want the repository's own include alone counted", mcp.Warnings)
 	}
 }
+
+// git reads the config its environment sets for one command after every
+// file, as the command scope: GIT_CONFIG_COUNT's pairs, then
+// GIT_CONFIG_PARAMETERS, which `git -c` hands every command git runs. At a
+// terminal it is shown, a credential in it masked as in any other scope; over
+// MCP it is withheld with the operator's other scopes.
+func TestConfigReadsTheCommandScopeGitsEnvironmentSets(t *testing.T) {
+	machineConfig(t, "")
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
+	t.Setenv("GIT_CONFIG_COUNT", "2")
+	t.Setenv("GIT_CONFIG_KEY_0", "core.hooksPath")
+	t.Setenv("GIT_CONFIG_VALUE_0", "/count-hooks")
+	t.Setenv("GIT_CONFIG_KEY_1", "url.https://oauth2:glpat-secret@gitlab.com/.insteadOf")
+	t.Setenv("GIT_CONFIG_VALUE_1", "https://gitlab.com/")
+	// What git 2.50 hands a command for -c a.b="it's" -c c.d -c
+	// sub.Some.Thing.key=v -c e.f= -c alias.x='!cmd', and an older git's
+	// 'key=value'.
+	t.Setenv("GIT_CONFIG_PARAMETERS",
+		`'a.b'='it'\''s' 'c.d'= 'sub.Some.Thing.key'='v' 'e.f'='' 'alias.x'=''\!'cmd' 'g.h=old style'`)
+
+	want := []string{
+		"core.hooksPath=/count-hooks", "url.https://oauth2:" + view.Mask + "@gitlab.com/.insteadOf=https://gitlab.com/",
+		"a.b=it's", "c.d=", "sub.Some.Thing.key=v", "e.f=", "alias.x=!cmd", "g.h=old style",
+	}
+	if got := scopeRows(table(t, runConfig, req(t, dir, nil)), "command"); strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("command rows = %q, want %q", got, want)
+	}
+	if got := scopeRows(table(t, runConfig, guarded(t, dir, dir).WithSurface(plugin.SurfaceMCP)), "command"); len(got) != 0 {
+		t.Errorf("over MCP, command rows = %q, want none", got)
+	}
+}
+
+// What git refuses to run with is refused here too, rather than read in part:
+// git runs nothing at all with it.
+func TestConfigRefusesACommandScopeGitRefuses(t *testing.T) {
+	for name, env := range map[string]map[string]string{
+		"a count that is not one": {"GIT_CONFIG_COUNT": "x"},
+		"a key missing":           {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_VALUE_0": "1"},
+		"a value missing":         {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "a.b"},
+		"a key with no section":   {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "nodot", "GIT_CONFIG_VALUE_0": "1"},
+		"a key with no name":      {"GIT_CONFIG_PARAMETERS": "'a.'='1'"},
+		"a quote never closed":    {"GIT_CONFIG_PARAMETERS": "'a.b'='1"},
+		"a word never quoted":     {"GIT_CONFIG_PARAMETERS": "a.b=1"},
+		"a value run on":          {"GIT_CONFIG_PARAMETERS": "'a.b'='1'x"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			machineConfig(t, "")
+			for k, v := range env {
+				t.Setenv(k, v)
+			}
+			dir, repo := testRepo(t)
+			commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
+			if _, err := runConfig(context.Background(), req(t, dir, nil)); errCode(err) != "git.config.failed" {
+				t.Errorf("git.config with %v: %v, want git.config.failed", env, err)
+			}
+		})
+	}
+}

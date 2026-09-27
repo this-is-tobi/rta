@@ -32,16 +32,18 @@ func configCapability() plugin.Capability {
 		Description: "Every key set in system, global, local or worktree config, one row per file it's " +
 			"set in — the files `git config --list --show-origin` reads, both global ones " +
 			"included, before any of them override each other: worktree wins over local, local wins " +
-			"over global, global wins over system. The worktree scope is config.worktree, which git " +
-			"reads where extensions.worktreeConfig is set, as `git sparse-checkout` sets it. The " +
+			"over global, global wins over system, and the command scope, which GIT_CONFIG_COUNT and " +
+			"GIT_CONFIG_PARAMETERS set as `git -c` sets it, wins over them all. The worktree scope " +
+			"is config.worktree, which git reads where extensions.worktreeConfig is set, as " +
+			"`git sparse-checkout` sets it. The " +
 			"system scope is every system file git's usual builds read " +
 			"(/etc/gitconfig, Homebrew's, Apple's developer tools'), and GIT_CONFIG_SYSTEM, " +
 			"GIT_CONFIG_GLOBAL and GIT_CONFIG_NOSYSTEM are honoured as git honours them. A key " +
 			"missing from a scope simply has no row there rather than one with an empty value. " +
 			"`[include]`/`[includeIf]` directives are shown as written, not followed into the file " +
 			"they point at, and a warning counts them. Over MCP only the repository's own config, " +
-			"local and worktree, is returned: the machine-wide scopes are the operator's, not the " +
-			"repository's. Values that carry a credential are masked on every surface.",
+			"local and worktree, is returned: the machine-wide scopes and the environment's are the " +
+			"operator's, not the repository's. Values that carry a credential are masked on every surface.",
 		Inputs: []plugin.Field{
 			pathField("repository path, or a subdirectory of one"),
 		},
@@ -115,6 +117,19 @@ func runConfig(ctx context.Context, req plugin.Request) (view.View, error) {
 	if perWorktree != nil {
 		addConfigRows(&t, "worktree", perWorktree)
 		shown = append(shown, scopedConfig{scope: "worktree", config: perWorktree})
+	}
+	// The environment's is the operator's too, and withheld from MCP with the
+	// machine-wide scopes: `git -c http.extraHeader=...` is how a CI system
+	// hands git a token for one command.
+	if req.Surface() != plugin.SurfaceMCP {
+		command, err := commandConfig()
+		if err != nil {
+			return nil, view.Errorf("git.config.failed", "reading the config git's environment sets: %v", err)
+		}
+		if command != nil {
+			addConfigRows(&t, "command", command)
+			shown = append(shown, scopedConfig{scope: "command", config: command})
+		}
 	}
 
 	t.Total = len(t.Rows)
@@ -298,6 +313,142 @@ func machineConfigs() ([]scopedConfig, error) {
 	}
 	return out, nil
 }
+
+// commandConfig is the config git's environment sets for one command, the
+// scope git calls command and reads after every file, so that it wins over
+// all of them: GIT_CONFIG_COUNT pairs of GIT_CONFIG_KEY_<n> and
+// GIT_CONFIG_VALUE_<n>, then GIT_CONFIG_PARAMETERS, which `git -c` and `git
+// --config-env` hand every command git runs, a hook or an alias among them.
+// nil where neither is set.
+//
+// **Read as git reads it, since git runs a hook with the same environment.**
+// A core.hooksPath set there is where git runs hooks from, and git.hooks,
+// reading the files alone, listed .git/hooks while git ran another directory's
+// pre-commit. And what git refuses to run with — a count that is not one, a
+// key or a value missing, a key with no section — fails here too: git runs
+// no hook at all with it, and an answer naming a directory would be wrong.
+func commandConfig() (*gitconfig.Config, error) {
+	count, counted := os.LookupEnv("GIT_CONFIG_COUNT")
+	parameters, given := os.LookupEnv("GIT_CONFIG_PARAMETERS")
+	if !counted && !given {
+		return nil, nil
+	}
+	cfg := gitconfig.NewConfig()
+	if counted {
+		n := 0
+		if count != "" {
+			var err error
+			if n, err = strconv.Atoi(count); err != nil || n < 0 {
+				return nil, fmt.Errorf("GIT_CONFIG_COUNT is %q, not a count", count)
+			}
+		}
+		for i := range n {
+			key, found := os.LookupEnv("GIT_CONFIG_KEY_" + strconv.Itoa(i))
+			if !found {
+				return nil, fmt.Errorf("GIT_CONFIG_COUNT is %d, and GIT_CONFIG_KEY_%d is not set", n, i)
+			}
+			value, found := os.LookupEnv("GIT_CONFIG_VALUE_" + strconv.Itoa(i))
+			if !found {
+				return nil, fmt.Errorf("GIT_CONFIG_COUNT is %d, and GIT_CONFIG_VALUE_%d is not set", n, i)
+			}
+			if err := addCommandKey(cfg, key, value); err != nil {
+				return nil, fmt.Errorf("GIT_CONFIG_KEY_%d: %w", i, err)
+			}
+		}
+	}
+	if given {
+		if err := parseConfigParameters(cfg, parameters); err != nil {
+			return nil, fmt.Errorf("GIT_CONFIG_PARAMETERS: %w", err)
+		}
+	}
+	return cfg, nil
+}
+
+// addCommandKey adds key, spelled section.name or section.subsection.name as
+// git spells one on its command line, set to value.
+func addCommandKey(cfg *gitconfig.Config, key, value string) error {
+	first, last := strings.IndexByte(key, '.'), strings.LastIndexByte(key, '.')
+	switch {
+	case first <= 0:
+		return fmt.Errorf("%q has no section", key)
+	case last == len(key)-1:
+		return fmt.Errorf("%q has no name after its section", key)
+	}
+	section, name := cfg.Raw.Section(key[:first]), key[last+1:]
+	if first == last {
+		section.AddOption(name, value)
+	} else {
+		section.Subsection(key[first+1:last]).AddOption(name, value)
+	}
+	return nil
+}
+
+// errConfigParameters is GIT_CONFIG_PARAMETERS in a shape git does not write
+// and refuses to read.
+var errConfigParameters = errors.New("not in the shape git writes it")
+
+// parseConfigParameters adds the pairs of GIT_CONFIG_PARAMETERS to cfg, read
+// as git's parse_config_env_list reads them: each a single-quoted word
+// (sqDequote), 'key'='value' as git writes it now, 'key'= for a key with no
+// value, and 'key=value' or 'key' as older git wrote it, separated by space.
+func parseConfigParameters(cfg *gitconfig.Config, env string) error {
+	for rest := env; rest != ""; rest = strings.TrimLeft(rest, " \t\n\v\f\r") {
+		key, after, ok := sqDequote(rest)
+		if !ok {
+			return errConfigParameters
+		}
+		value := ""
+		switch {
+		case after == "" || isSpace(after[0]):
+			// The older 'key=value', split at its first =, which git trims.
+			key, value, _ = strings.Cut(key, "=")
+			key = strings.TrimSpace(key)
+		case after[0] == '=' && (len(after) == 1 || isSpace(after[1])):
+			after = after[1:]
+		case after[0] == '=' && after[1] == '\'':
+			if value, after, ok = sqDequote(after[1:]); !ok || after != "" && !isSpace(after[0]) {
+				return errConfigParameters
+			}
+		default:
+			return errConfigParameters
+		}
+		if err := addCommandKey(cfg, key, value); err != nil {
+			return err
+		}
+		rest = after
+	}
+	return nil
+}
+
+// sqDequote is the single-quoted word s starts with, and what follows it, as
+// git's sq_dequote_step reads one: the text between the quotes, where a quote
+// or a ! outside them, backslashed and followed by a quote that opens them
+// again, is part of the word. ok is false where s starts with no quote or
+// never closes it.
+func sqDequote(s string) (word, rest string, ok bool) {
+	if s == "" || s[0] != '\'' {
+		return "", "", false
+	}
+	var b strings.Builder
+	for i := 1; i < len(s); {
+		c := s[i]
+		i++
+		if c != '\'' {
+			b.WriteByte(c)
+			continue
+		}
+		if i+2 < len(s) && s[i] == '\\' && (s[i+1] == '\'' || s[i+1] == '!') && s[i+2] == '\'' {
+			b.WriteByte(s[i+1])
+			i += 3
+			continue
+		}
+		return b.String(), s[i:], true
+	}
+	return "", "", false
+}
+
+// isSpace is a byte C's isspace calls space, as git splits its words on.
+func isSpace(c byte) bool { return strings.IndexByte(" \t\n\v\f\r", c) >= 0 }
 
 // includeCount is how many files cfg includes, by an include.path or an
 // includeIf's path: files git reads as though they were written in place of

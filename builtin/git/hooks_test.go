@@ -101,7 +101,10 @@ func machineConfig(t *testing.T, gitconfig string) (home string) {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 	t.Setenv("XDG_CONFIG_HOME", "")
-	for _, name := range []string{"GIT_CONFIG_SYSTEM", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM", "DEVELOPER_DIR"} {
+	for _, name := range []string{
+		"GIT_CONFIG_SYSTEM", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM", "DEVELOPER_DIR",
+		"GIT_CONFIG_COUNT", "GIT_CONFIG_PARAMETERS",
+	} {
 		unsetenv(t, name)
 	}
 	vendor, system := vendorGitConfigs, systemGitConfigs
@@ -353,5 +356,27 @@ func TestARepositoryWithWorktreeConfigOpensAndItsWorktreeScopeIsRead(t *testing.
 				t.Errorf("pre-commit row = %v, want the directory config.worktree names", row)
 			}
 		})
+	}
+}
+
+// The config git's environment sets for one command is read after every
+// file, as git reads it: core.hooksPath set there, as `git -c` sets it for a
+// command git runs, is the directory git runs hooks from, over the
+// repository's own value. And an environment git refuses to run with fails
+// the call, since git runs no hook with it.
+func TestCoreHooksPathSetInGitsEnvironmentIsTheLastWord(t *testing.T) {
+	home := machineConfig(t, "")
+	writeExecutable(t, home, "env-hooks/pre-push")
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
+	setHooksPath(t, repo, ".githooks")
+	t.Setenv("GIT_CONFIG_PARAMETERS", "'core.hookspath'='"+filepath.Join(home, "env-hooks")+"'")
+
+	if row := rowFor(t, table(t, runHooks, req(t, dir, nil)), "Name", "pre-push"); row[2] != filepath.Join(home, "env-hooks", "pre-push") {
+		t.Errorf("pre-push row = %v, want the directory GIT_CONFIG_PARAMETERS names", row)
+	}
+	t.Setenv("GIT_CONFIG_COUNT", "x")
+	if _, err := runHooks(context.Background(), req(t, dir, nil)); errCode(err) != "git.hooks.failed" {
+		t.Errorf("git.hooks with a GIT_CONFIG_COUNT git refuses: %v, want git.hooks.failed", err)
 	}
 }
