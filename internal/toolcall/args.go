@@ -199,12 +199,14 @@ func Validate(c plugin.Capability, values map[string]any) *view.Error {
 // it as declared: the schema published it, and a client validating against
 // it would have refused "HEX" before it was sent — while the host's hint
 // sends the reader back to the schema for a set the message has already
-// named.
+// named. It names the input as the message does, the "encoding" argument,
+// rather than the bare word the message beside it never uses.
 func held(c plugin.Capability, f plugin.Field, v any) *view.Error {
 	verr := plugin.CheckInputs(c, plugin.NewRequest(map[string]any{f.Name: v}, false, false).
 		WithSurface(plugin.SurfaceMCP))
 	if verr != nil && verr.Code == "core.input.option" {
-		return verr.WithHint(f.Name + " takes one of " + strings.Join(f.Options, ", ") + ", spelled exactly as listed")
+		return verr.WithHint(plugin.SurfaceMCP.InputName(f.Name) + " takes one of " +
+			strings.Join(f.Options, ", ") + ", spelled exactly as listed")
 	}
 	return verr
 }

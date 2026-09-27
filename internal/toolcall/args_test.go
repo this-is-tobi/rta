@@ -265,7 +265,12 @@ func TestAnEnumMissIsHintedWithTheEnum(t *testing.T) {
 			t.Errorf("%v: %v", args, verr)
 		}
 	}
-	verr := Validate(c, map[string]any{"encoding": 3.0})
+	// Named as the refusal above it names the input, an argument.
+	verr := Validate(c, map[string]any{"encoding": "HEX"})
+	if want := `the "encoding" argument takes one of hex, base64, spelled exactly as listed`; verr == nil || verr.Hint != want {
+		t.Errorf("an option miss is hinted %v, want %q", verr, want)
+	}
+	verr = Validate(c, map[string]any{"encoding": 3.0})
 	if verr == nil || verr.Hint != `the "encoding" argument expects a string` {
 		t.Errorf("a wrong type: %v", verr)
 	}
