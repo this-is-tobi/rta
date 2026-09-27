@@ -83,3 +83,19 @@ func TestLendingTheTerminalIsCountedAndTakenBack(t *testing.T) {
 		t.Error("still lent after every child gave it back")
 	}
 }
+
+func TestAnOpenPromptIsCountedAndAnswered(t *testing.T) {
+	if PromptOpen() {
+		t.Fatal("open before anything asked")
+	}
+	first, second := Prompting(), Prompting()
+	first()
+	first()
+	if !PromptOpen() {
+		t.Error("answered while a second prompt still waits")
+	}
+	second()
+	if PromptOpen() {
+		t.Error("still open after every prompt was answered")
+	}
+}

@@ -57,9 +57,10 @@ func unattachedWatch(t *testing.T, grace time.Duration, owned, lent func() bool,
 			w.codes <- code
 			runtime.Goexit()
 		},
-		stderr:   w.stderr,
-		done:     make(chan struct{}),
-		attached: make(chan struct{}),
+		stderr:    w.stderr,
+		prompting: never,
+		done:      make(chan struct{}),
+		attached:  make(chan struct{}),
 	}
 	go w.run()
 	// Not Stop: a forced exit keeps the watch's lock for good, as it may,
@@ -270,19 +271,24 @@ func TestTheExitWaitsForHeldWork(t *testing.T) {
 }
 
 // On a terminal the report starts a line of its own: it ran on from the
-// "Passphrase: " of a prompt still waiting, or from an echoed ^C. Anywhere
-// else nothing is added before it.
+// "Passphrase: " of a prompt still waiting, or from an echoed ^C. So it does
+// wherever a prompt is still waiting, since a prompt asks whenever standard
+// input is a terminal and writes its words to standard error wherever that
+// goes. Anywhere else nothing is added before it.
 func TestAForcedExitOnATerminalIsReportedOnALineOfItsOwn(t *testing.T) {
-	for _, tty := range []bool{true, false} {
+	for _, tc := range []struct{ tty, prompting bool }{{true, false}, {false, true}, {true, true}, {false, false}} {
 		w := unattachedWatch(t, 10*time.Millisecond, never, never, nil)
-		w.onTTY = tty
+		w.onTTY = tc.tty
+		w.prompting = func() bool { return tc.prompting }
 		w.Attach(nil, nil)
 		w.signals <- syscall.SIGTERM
 		if _, ok := w.exited(time.Second); !ok {
 			t.Fatal("no exit")
 		}
-		if got := w.stderr.String(); strings.HasPrefix(got, "\n") != tty || !strings.Contains(got, "stopped by SIGTERM") {
-			t.Errorf("stderr a terminal %v: %q", tty, got)
+		fresh := tc.tty || tc.prompting
+		if got := w.stderr.String(); strings.HasPrefix(got, "\n") != fresh || strings.HasPrefix(got, "\n\n") ||
+			!strings.Contains(got, "stopped by SIGTERM") {
+			t.Errorf("stderr a terminal %v, a prompt open %v: %q", tc.tty, tc.prompting, got)
 		}
 	}
 }

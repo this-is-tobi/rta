@@ -22,9 +22,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
-	"fmt"
 	"io"
-	"os"
 	"strings"
 
 	"filippo.io/age"
@@ -168,9 +166,7 @@ func Prompt(req plugin.Request, confirm bool, text PromptText) (string, *view.Er
 			WithHint("run this at a terminal, or fill the passphrase field in the TUI form")
 	}
 	read := func(prompt string) (string, *view.Error) {
-		fmt.Fprint(os.Stderr, prompt)
-		secret, err := term.ReadPassword(int(stdio.Real().Fd()))
-		fmt.Fprintln(os.Stderr)
+		secret, err := stdio.ReadSecret(prompt)
 		if err != nil {
 			return "", view.Errorf(text.Codes+".read", "reading the passphrase: %v", err)
 		}

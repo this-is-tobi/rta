@@ -66,9 +66,7 @@ const maxSSHKeyFile = 4 << 10
 // promptKeyPassphrase asks for a private key's own passphrase at the
 // terminal, naming the file. Overridable in tests.
 var promptKeyPassphrase = func(path string) (string, error) {
-	fmt.Fprintf(os.Stderr, "Passphrase for %s: ", path)
-	secret, err := term.ReadPassword(int(stdio.Real().Fd()))
-	fmt.Fprintln(os.Stderr)
+	secret, err := stdio.ReadSecret("Passphrase for " + path + ": ")
 	return string(secret), err
 }
 
@@ -77,9 +75,7 @@ var promptKeyPassphrase = func(path string) (string, error) {
 // same "never lands on the screen or in scrollback" treatment. Overridable in
 // tests.
 var promptWords = func() (string, error) {
-	fmt.Fprint(os.Stderr, "Seed words: ")
-	secret, err := term.ReadPassword(int(stdio.Real().Fd()))
-	fmt.Fprintln(os.Stderr)
+	secret, err := stdio.ReadSecret("Seed words: ")
 	return string(secret), err
 }
 
