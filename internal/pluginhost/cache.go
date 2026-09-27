@@ -9,6 +9,7 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
+	"github.com/this-is-tobi/rta/internal/atomicfile"
 	"github.com/this-is-tobi/rta/internal/paths"
 	rtav1 "github.com/this-is-tobi/rta/proto/rta/v1"
 )
@@ -120,26 +121,15 @@ func writeCache(digest string, p *rtav1.Plugin) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return
 	}
-	// Written to a temp file and renamed, so a reader never sees a partial
-	// entry. Without it a concurrent rta could read half a declaration and,
-	// because a truncated proto often unmarshals cleanly into a shorter
-	// message, register a plugin with some of its capabilities missing.
-	tmp, err := os.CreateTemp(dir, ".decl-*.tmp")
-	if err != nil {
-		return
-	}
-	defer os.Remove(tmp.Name()) // no-op once the rename succeeds
-	if _, err := tmp.Write(append(sealFor(key, digest, data), data...)); err != nil {
-		_ = tmp.Close()
-		return
-	}
-	if err := tmp.Close(); err != nil {
-		return
-	}
-	if err := os.Chmod(tmp.Name(), 0o600); err != nil {
-		return
-	}
-	if err := os.Rename(tmp.Name(), cachePath(digest)); err != nil {
+	// Whole or not at all, so a reader never sees a partial entry. Without it
+	// a concurrent rta could read half a declaration and, because a truncated
+	// proto often unmarshals cleanly into a shorter message, register a plugin
+	// with some of its capabilities missing. atomicfile rather than a copy of
+	// its temporary file and rename: it holds off a forced exit between the
+	// two (internal/shutdown), which left a temporary file here for pruning
+	// to count as an entry, and it waits out the replace Windows refuses while
+	// another rta has the entry open to read.
+	if err := atomicfile.Write(cachePath(digest), append(sealFor(key, digest, data), data...), 0o600); err != nil {
 		return
 	}
 	pruneCache(dir)
