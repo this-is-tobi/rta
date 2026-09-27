@@ -196,7 +196,8 @@ func TestCoreHooksPathIsReadFromEveryScopeGitReads(t *testing.T) {
 
 // The operator's own git config is read over MCP too, for core.hooksPath, and
 // a named pipe in place of one of its files blocked open(2) until a writer
-// came, which no context can interrupt. It is refused as not a file instead.
+// came, which no context can interrupt. It is refused as not a file instead,
+// by git.hooks on every surface and by git.config at a terminal.
 func TestAPipeInPlaceOfTheOperatorsGitConfigIsRefusedRatherThanWaitedOn(t *testing.T) {
 	home := machineConfig(t, "")
 	if err := mkfifo(filepath.Join(home, ".gitconfig")); err != nil {
@@ -213,6 +214,7 @@ func TestAPipeInPlaceOfTheOperatorsGitConfigIsRefusedRatherThanWaitedOn(t *testi
 	}{
 		{"git.hooks over MCP", runHooks, guarded(t, dir, dir).WithSurface(plugin.SurfaceMCP), "git.hooks.failed"},
 		{"git.hooks", runHooks, req(t, dir, nil), "git.hooks.failed"},
+		{"git.config", runConfig, req(t, dir, nil), "git.config.failed"},
 	} {
 		done := make(chan error, 1)
 		go func() {

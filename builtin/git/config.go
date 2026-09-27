@@ -24,10 +24,11 @@ func configCapability() plugin.Capability {
 		Safety:       plugin.Read,
 		HostSpecific: true,
 		Idempotent:   true,
-		Description: "Every key set in system, global or local config, one row per scope it's " +
-			"set in — the same three files `git config --list --show-origin` reads, before any of " +
-			"them override each other: local wins over global, global wins over system. A key " +
-			"missing from a scope simply has no row there rather than one with an empty value. " +
+		Description: "Every key set in system, global or local config, one row per file it's " +
+			"set in — the files `git config --list --show-origin` reads, both global ones " +
+			"included, before any of them override each other: local wins over global, global " +
+			"wins over system. A key missing from a scope simply has no row there rather than " +
+			"one with an empty value. " +
 			"`[include]`/`[includeIf]` directives are shown as written, not followed into the file " +
 			"they point at. Over MCP only the repository's own config is returned: the machine-wide " +
 			"scopes are the operator's, not the repository's. Values that carry a credential are " +
@@ -71,21 +72,19 @@ func runConfig(ctx context.Context, req plugin.Request) (view.View, error) {
 	// machine, still sees all three — the same rule Field.Local states for
 	// inputs, applied to scopes.
 	if req.Surface() != plugin.SurfaceMCP {
-		// LoadConfig never errors for a scope with no file on this machine —
-		// it hands back an empty Config instead (config.LoadConfig, go-git
-		// v5.19.2) — so system/global are only ever missing rows, never a
-		// failure this capability has to special-case.
-		system, err := gitconfig.LoadConfig(gitconfig.SystemScope)
+		// Every file git reads for these scopes, not go-git's LoadConfig,
+		// which reads the first global file that exists and stops: with both
+		// ~/.config/git/config and ~/.gitconfig present, git reads the two
+		// and this showed one, so a key set only in the other was missing
+		// from the answer to what git is configured with. A scope with no
+		// file on this machine is missing rows, never a failure.
+		machine, err := machineConfigs()
 		if err != nil {
-			return nil, view.Errorf("git.config.failed", "reading system config: %v", err)
+			return nil, view.Errorf("git.config.failed", "reading the machine-wide config: %v", err)
 		}
-		addConfigRows(&t, "system", system)
-
-		global, err := gitconfig.LoadConfig(gitconfig.GlobalScope)
-		if err != nil {
-			return nil, view.Errorf("git.config.failed", "reading global config: %v", err)
+		for _, m := range machine {
+			addConfigRows(&t, m.scope, m.config)
 		}
-		addConfigRows(&t, "global", global)
 	}
 
 	// repo.Config reads local scope for either kind of repository this
