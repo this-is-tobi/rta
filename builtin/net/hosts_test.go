@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -552,6 +553,42 @@ func TestHostsEditBacksUpFirst(t *testing.T) {
 	}
 	if string(saved) != before {
 		t.Errorf("backup does not match the original:\n%s", saved)
+	}
+}
+
+// A hosts edit as the first command on a machine created rta's data directory
+// 0755 through the backup's MkdirAll, and `rta doctor` then warned about a
+// mode rta had chosen. The directory is paths.EnsureData's, owner-only, and
+// so is everything the backup puts in it.
+func TestHostsEditBacksUpOwnerOnlyIntoAFreshDataDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX modes")
+	}
+	path := hostsFixture(t, "127.0.0.1 localhost\n")
+	data := filepath.Join(t.TempDir(), "fresh", "rta")
+	t.Setenv("RTA_DATA_DIR", data)
+
+	run(t, runHostsAdd, map[string]any{"ip": "10.0.0.1", "hostname": []string{"new.local"}})
+
+	entries, err := os.ReadDir(backupDir())
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("backups = %v (%v)", entries, err)
+	}
+	for p, want := range map[string]os.FileMode{
+		data:        0o700,
+		backupDir(): 0o700,
+		filepath.Join(backupDir(), entries[0].Name()): 0o600,
+	} {
+		info, err := os.Stat(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := info.Mode().Perm(); got != want {
+			t.Errorf("%s is mode %v, want %v", p, got, want)
+		}
+	}
+	if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0o644 {
+		t.Errorf("the hosts file itself should keep its 0644: %v, %v", info, err)
 	}
 }
 
