@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -91,22 +92,36 @@ func TestHooksOnANonRepositoryFailsWithAClearError(t *testing.T) {
 }
 
 // machineConfig points the machine-wide git config at files the test owns:
-// a home directory holding a .gitconfig with content, and a system file that
-// does not exist — so what this machine's own config says cannot reach an
-// assertion.
+// a home directory holding a .gitconfig with content, system files that do
+// not exist, and none of the environment that chooses others — so what this
+// machine's own config says cannot reach an assertion.
 func machineConfig(t *testing.T, gitconfig string) (home string) {
 	t.Helper()
 	home = t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 	t.Setenv("XDG_CONFIG_HOME", "")
-	saved := systemGitConfig
-	systemGitConfig = filepath.Join(home, "no-system-gitconfig")
-	t.Cleanup(func() { systemGitConfig = saved })
+	for _, name := range []string{"GIT_CONFIG_SYSTEM", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM", "DEVELOPER_DIR"} {
+		unsetenv(t, name)
+	}
+	vendor, system := vendorGitConfigs, systemGitConfigs
+	vendorGitConfigs = []string{filepath.Join(home, "no-vendor-gitconfig")}
+	systemGitConfigs = []string{filepath.Join(home, "no-system-gitconfig")}
+	t.Cleanup(func() { vendorGitConfigs, systemGitConfigs = vendor, system })
 	if gitconfig != "" {
 		writeFile(t, home, ".gitconfig", gitconfig)
 	}
 	return home
+}
+
+// unsetenv unsets name for the test, and puts it back after: set to nothing
+// is not unset for the variables git reads.
+func unsetenv(t *testing.T, name string) {
+	t.Helper()
+	t.Setenv(name, "")
+	if err := os.Unsetenv(name); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func setHooksPath(t *testing.T, repo *git.Repository, value string) {
@@ -229,5 +244,79 @@ func TestAPipeInPlaceOfTheOperatorsGitConfigIsRefusedRatherThanWaitedOn(t *testi
 		case <-time.After(10 * time.Second):
 			t.Fatalf("%s is waiting on a pipe in place of the operator's git config", c.name)
 		}
+	}
+}
+
+// core.hooksPath set in any file git reads is the directory git runs hooks
+// from: a Homebrew build's system file, or the global file GIT_CONFIG_GLOBAL
+// names, both of which this missed, listing .git/hooks while git ran another
+// directory's pre-commit.
+func TestCoreHooksPathIsReadFromEverySystemFileAndTheNamedGlobalOne(t *testing.T) {
+	home := machineConfig(t, "")
+	systemGitConfigs = []string{filepath.Join(home, "etc", "gitconfig"), filepath.Join(home, "brew", "gitconfig")}
+	writeFile(t, home, "brew/gitconfig", "[core]\n\thooksPath = ~/brew-hooks\n")
+	writeExecutable(t, home, "brew-hooks/pre-commit")
+	writeExecutable(t, home, "env-hooks/commit-msg")
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
+	writeHook(t, dir, "post-commit", true)
+
+	tbl := table(t, runHooks, req(t, dir, nil))
+	if row := rowFor(t, tbl, "Name", "pre-commit"); row[2] != filepath.Join(home, "brew-hooks", "pre-commit") {
+		t.Errorf("pre-commit row = %v, want the directory Homebrew's system file names", row)
+	}
+	writeFile(t, home, "named", "[core]\n\thooksPath = ~/env-hooks\n")
+	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(home, "named"))
+	tbl = table(t, runHooks, req(t, dir, nil))
+	if row := rowFor(t, tbl, "Name", "commit-msg"); row[2] != filepath.Join(home, "env-hooks", "commit-msg") {
+		t.Errorf("commit-msg row = %v, want the directory GIT_CONFIG_GLOBAL's file names", row)
+	}
+}
+
+// An include is not followed, and one that could set core.hooksPath is
+// counted rather than passed over: one in a file read at or after the file
+// the value came from, since what git reads later wins. The repository's own
+// value is read last, so an include of the operator's cannot move it.
+func TestHooksCountTheIncludesThatCouldMoveTheDirectory(t *testing.T) {
+	machineConfig(t, "[includeIf \"gitdir:~/work/\"]\n\tpath = ~/work.gitconfig\n")
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
+
+	tbl := table(t, runHooks, req(t, dir, nil))
+	if len(tbl.Warnings) != 1 || tbl.Warnings[0].Code != "git.hooks.include" ||
+		!strings.HasPrefix(tbl.Warnings[0].Message, "1 file the config includes is not read") {
+		t.Errorf("warnings = %+v, want git.hooks.include counting the operator's include", tbl.Warnings)
+	}
+	mcp := table(t, runHooks, guarded(t, dir, dir).WithSurface(plugin.SurfaceMCP))
+	if len(mcp.Warnings) != 1 || strings.Contains(mcp.Warnings[0].Message, "work") {
+		t.Errorf("over MCP, warnings = %+v, want the include counted and not named", mcp.Warnings)
+	}
+
+	setHooksPath(t, repo, ".githooks")
+	if tbl := table(t, runHooks, req(t, dir, nil)); len(tbl.Warnings) != 0 {
+		t.Errorf("warnings = %+v, with the value set in the repository's own config", tbl.Warnings)
+	}
+}
+
+// Two system files setting core.hooksPath differently are two builds of git
+// running hooks from two directories, and one is listed: it says so, naming
+// the files.
+func TestHooksSayWhenSystemFilesOfTwoBuildsDisagree(t *testing.T) {
+	home := machineConfig(t, "")
+	etc, brew := filepath.Join(home, "etc", "gitconfig"), filepath.Join(home, "brew", "gitconfig")
+	systemGitConfigs = []string{etc, brew}
+	writeFile(t, home, "etc/gitconfig", "[core]\n\thooksPath = /etc-hooks\n")
+	writeFile(t, home, "brew/gitconfig", "[core]\n\thooksPath = /brew-hooks\n")
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
+
+	tbl := table(t, runHooks, req(t, dir, nil))
+	if len(tbl.Warnings) != 1 || tbl.Warnings[0].Code != "git.hooks.system" ||
+		!strings.Contains(tbl.Warnings[0].Message, etc+", "+brew) {
+		t.Fatalf("warnings = %+v, want git.hooks.system naming both files", tbl.Warnings)
+	}
+	writeFile(t, home, "etc/gitconfig", "[core]\n\thooksPath = /brew-hooks\n")
+	if tbl := table(t, runHooks, req(t, dir, nil)); len(tbl.Warnings) != 0 {
+		t.Errorf("warnings = %+v, with both files naming one directory", tbl.Warnings)
 	}
 }
