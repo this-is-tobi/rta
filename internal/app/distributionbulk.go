@@ -242,20 +242,22 @@ func runPluginRemoveAll(cmd *cobra.Command, opts *globalOpts) error {
 		return renderView(cmd, opts, view.Text{Body: "no plugin is installed"})
 	}
 	remove := plugindist.Remove
-	removedLabel, artifactsNote := "removed", "trust withdrawn from each"
+	removedLabel := "removed"
 	if opts.dryRun {
 		remove = plugindist.PreviewRemove
-		removedLabel, artifactsNote = "would remove", "trust would be withdrawn from each"
+		removedLabel = "would remove"
 	}
 
 	t := view.Table{Columns: []view.Column{{Name: "Plugin"}, {Name: "Artifacts"},
 		{Name: "Still stated by"}}}
 	orphaned := false
+	still := 0
 	for _, e := range locked {
 		removed, verr := remove(e.Name)
 		if verr != nil {
 			return verr
 		}
+		still += systemTrustedAmong(removed.Digests)
 		orphans := "—"
 		if len(removed.Orphans) > 0 {
 			orphans = strings.Join(removed.Orphans, ", ")
@@ -265,7 +267,10 @@ func runPluginRemoveAll(cmd *cobra.Command, opts *globalOpts) error {
 	}
 
 	body := fmt.Sprintf("%s %s — %s", removedLabel,
-		format.Count(len(t.Rows), "plugin", "plugins"), artifactsNote)
+		format.Count(len(t.Rows), "plugin", "plugins"), removalNote(still, opts.dryRun))
+	if still > 0 {
+		body += ". Left alone: " + systemKeeps(still)
+	}
 	if orphaned {
 		// Named rather than cleaned, the same as the single-name form: the
 		// config file is the operator's, and `rta doctor` keeps reporting the
