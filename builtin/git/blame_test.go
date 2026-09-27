@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 func TestBlameAttributesEachLineToTheCommitThatIntroducedIt(t *testing.T) {
@@ -59,12 +61,11 @@ func TestBlameRefusesAFileOverTheBound(t *testing.T) {
 // The bound holds for the whole history a blame reads, not only for HEAD: a
 // version over it in an earlier commit was read whole, and so was every file
 // changed in the commit that added the blamed one, which go-git's blame diffs
-// whole to look for a rename. A history within the bounds, however long, is
-// still blamed.
+// whole to look for a rename. A history within the budget is still blamed.
 func TestBlameHoldsTheHistoryItReadsToTheBounds(t *testing.T) {
-	savedFile, savedAll := maxDiffBytes, maxTotalDiffBytes
-	maxDiffBytes, maxTotalDiffBytes = 64, 100
-	t.Cleanup(func() { maxDiffBytes, maxTotalDiffBytes = savedFile, savedAll })
+	savedFile, savedBlame := maxDiffBytes, maxBlameBytes
+	maxDiffBytes, maxBlameBytes = 64, 100
+	t.Cleanup(func() { maxDiffBytes, maxBlameBytes = savedFile, savedBlame })
 
 	t.Run("a version over the bound", func(t *testing.T) {
 		dir, repo := testRepo(t)
@@ -77,7 +78,7 @@ func TestBlameHoldsTheHistoryItReadsToTheBounds(t *testing.T) {
 		}
 	})
 
-	t.Run("added beside more than a commit's budget", func(t *testing.T) {
+	t.Run("added beside more than the budget", func(t *testing.T) {
 		dir, repo := testRepo(t)
 		commitFile(t, repo, dir, "seed.txt", "seed\n", "seed")
 		wt, err := repo.Worktree()
@@ -94,11 +95,14 @@ func TestBlameHoldsTheHistoryItReadsToTheBounds(t *testing.T) {
 		t.Chdir(dir)
 		_, err = runBlame(context.Background(), req(t, dir, map[string]any{"file": "a.txt"}))
 		if code := errCode(err); code != "git.blame.toolarge" {
-			t.Fatalf("blame of a file added beside more than a commit's budget: %q, want git.blame.toolarge", code)
+			t.Fatalf("blame of a file added beside more than the budget: %q, want git.blame.toolarge", code)
 		}
 	})
 
-	t.Run("a long history within the bounds", func(t *testing.T) {
+	t.Run("a long history within the budget", func(t *testing.T) {
+		savedBlame := maxBlameBytes
+		maxBlameBytes = 1000
+		t.Cleanup(func() { maxBlameBytes = savedBlame })
 		dir, repo := testRepo(t)
 		content := ""
 		for i := range 10 {
@@ -110,4 +114,29 @@ func TestBlameHoldsTheHistoryItReadsToTheBounds(t *testing.T) {
 			t.Errorf("rows = %d, want a row for each of the 10 lines", len(tbl.Rows))
 		}
 	})
+}
+
+// Each step of a blame's walk held to a diff's bounds still left the walk as
+// a whole unbounded: a history of versions each just under the per-file
+// bound, every one read whole and line-diffed against the next, cost one
+// call half a gigabyte and minutes of CPU. The blame reads maxBlameBytes in
+// all, and a history past it is refused with the budget and the file named.
+func TestBlameHoldsItsWholeWalkToABudget(t *testing.T) {
+	savedFile, savedBlame := maxDiffBytes, maxBlameBytes
+	maxDiffBytes, maxBlameBytes = 64, 200
+	t.Cleanup(func() { maxDiffBytes, maxBlameBytes = savedFile, savedBlame })
+
+	dir, repo := testRepo(t)
+	for i := range 10 {
+		commitFile(t, repo, dir, "a.txt", strings.Repeat(fmt.Sprintf("%d\n", i), 25), fmt.Sprintf("version %d", i))
+	}
+	t.Chdir(dir)
+	_, err := runBlame(context.Background(), req(t, dir, map[string]any{"file": "a.txt"}))
+	verr, ok := err.(*view.Error)
+	if !ok || verr.Code != "git.blame.toolarge" {
+		t.Fatalf("blame of a history past the budget: %v, want git.blame.toolarge", err)
+	}
+	if !strings.Contains(verr.Message, "a.txt") || !strings.Contains(verr.Message, "200 B") {
+		t.Errorf("message = %q, want it to name the file and the budget", verr.Message)
+	}
 }

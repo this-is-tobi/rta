@@ -24,9 +24,10 @@ func blameCapability() plugin.Capability {
 		HostSpecific: true,
 		Idempotent:   true,
 		Description: "One row per line: who last changed it, when, and the commit that did — the " +
-			"structured equivalent of `git blame`. Reads the whole file's history to answer, so it " +
-			"is not offered as a dashboard tile the way a bounded, no-input capability would be; a " +
-			"large file with a long history can take a real moment.",
+			"structured equivalent of `git blame`. Reads the file's history to answer, and refuses " +
+			"a version of it over 16 MiB, or a history of more than 64 MiB in all, rather than read " +
+			"it. So it is not offered as a dashboard tile the way a bounded, no-input capability " +
+			"would be; a large file with a long history can take a real moment.",
 		NoPreview: true,
 		Inputs: []plugin.Field{
 			pathField("repository path, or a subdirectory of one"),
@@ -102,10 +103,10 @@ func runBlame(ctx context.Context, req plugin.Request) (view.View, error) {
 }
 
 // boundedHistory is the object store a blame reads the repository through,
-// which holds what it reads of blobs to the bounds a diff has.
+// which holds what it reads of blobs to a budget.
 //
 // **A blame reads more of the history than the file at HEAD.** It reads the
-// file whole at every commit that touched it, so a version that was 30 MB
+// file whole at every commit that changed it, so a version that was 30 MB
 // and is 37 bytes at HEAD was read whole, past the check on HEAD, and cost a
 // two-line blame 346 MB. And where the file was added or renamed, go-git's
 // blame diffs that whole commit against its parent to look for the rename —
@@ -114,48 +115,54 @@ func runBlame(ctx context.Context, req plugin.Request) (view.View, error) {
 // blame 342 MB. Neither is a file anybody asked about, and a repository is
 // content an agent may have been handed rather than written.
 //
-// So each blob is held to maxDiffBytes, and what one step of the walk reads
-// to maxTotalDiffBytes: the bounds git.diff holds one file and one commit
-// to. A step is what is read between two commits — go-git's blame reads a
-// parent, then the file's version in it or, where it has none, that commit's
-// whole diff. That boundary is go-git's order rather than a promise: were it
-// to move, a step would be bounded more loosely or more tightly, and each
-// blob would still be held to its own bound.
+// So each blob is held to maxDiffBytes, the bound git.diff holds one file
+// to, and everything the walk reads to maxBlameBytes. The walk was once held
+// step by step instead, a commit's worth of reads at a time, and that left
+// its length free: ten versions of a file each just under the per-file
+// bound, every one read whole and line-diffed against the next, cost one
+// call over half a gigabyte and six minutes of CPU, each step within bounds.
+// A blob is counted each time the walk asks the store for it, which for a
+// version of the file is more than once — to find it in a parent, then to
+// read it — so the count errs on the side of reading less.
 type boundedHistory struct {
 	storer.EncodedObjectStorer
-	step int64
+	read int64
 }
 
+// maxBlameBytes bounds what one blame reads of the history in all: the
+// versions of its file, and the files changed beside it where it was added
+// or renamed. The budget git.diff holds a whole commit to, since a blame is
+// a diff of every version it walks against the next. A file of a hundred
+// kilobytes is blamed through a few hundred versions under it, counted as
+// boundedHistory counts them; past it, git.log names the commits and
+// git.diff shows each. A variable so a test can lower it.
+var maxBlameBytes int64 = 64 << 20
+
 func (s *boundedHistory) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (plumbing.EncodedObject, error) {
-	switch t {
-	case plumbing.CommitObject:
-		s.step = 0
-	case plumbing.BlobObject:
-		size, err := s.EncodedObjectSize(h)
-		if err != nil {
-			break
-		}
-		if size > maxDiffBytes {
-			return nil, &historyTooLarge{size: size}
-		}
-		if s.step += size; s.step > maxTotalDiffBytes {
-			return nil, &historyTooLarge{step: true}
+	if t == plumbing.BlobObject {
+		if size, err := s.EncodedObjectSize(h); err == nil {
+			if size > maxDiffBytes {
+				return nil, &historyTooLarge{size: size}
+			}
+			if s.read += size; s.read > maxBlameBytes {
+				return nil, &historyTooLarge{}
+			}
 		}
 	}
 	return s.EncodedObjectStorer.EncodedObject(t, h)
 }
 
-// historyTooLarge is a blob, or one step's worth of them, past the bound
-// boundedHistory holds a blame to, worded to follow "blaming it reads".
+// historyTooLarge is a blob past the bound boundedHistory holds each one to,
+// or, with no size, a walk past its budget, worded to follow "blaming it
+// reads".
 type historyTooLarge struct {
 	size int64
-	step bool
 }
 
 func (e *historyTooLarge) Error() string {
-	if e.step {
-		return fmt.Sprintf("more than the %d MiB a diff of one commit reads from one commit of its history, "+
-			"which changed that much beside it where it was added or renamed", maxTotalDiffBytes>>20)
+	if e.size == 0 {
+		return fmt.Sprintf("more than the %s one blame reads in all, from the versions of it and the "+
+			"files changed where it was added or renamed", format.Bytes(maxBlameBytes))
 	}
 	return fmt.Sprintf("%s from its history — a version of it, or a file changed where it was added or "+
 		"renamed — larger than the %d MiB this reads of one file", format.Bytes(e.size), maxDiffBytes>>20)
