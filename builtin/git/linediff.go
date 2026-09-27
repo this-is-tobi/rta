@@ -37,6 +37,14 @@ func matchDeadline(ctx context.Context) time.Time {
 	return deadline
 }
 
+// earlier is whichever of two times comes first.
+func earlier(a, b time.Time) time.Time {
+	if b.Before(a) {
+		return b
+	}
+	return a
+}
+
 // lineRun is one run of a line diff: n lines of the old text kept (Equal)
 // or removed (Delete), or n lines of the new one added (Add), starting at
 // line a of the old text and line b of the new.

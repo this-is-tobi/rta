@@ -180,8 +180,11 @@ func diffCommit(ctx context.Context, repo *git.Repository, spec string, gate fun
 		return nil, view.Errorf("git.diff.unresolved", "%s does not name a commit: %v", spec, err)
 	}
 	// Read through a store that holds rename detection to a budget, which
-	// the trees carry to it (renameReads).
-	commit, err := object.GetCommit(&renameReads{EncodedObjectStorer: repo.Storer, left: maxTotalDiffBytes}, *hash)
+	// the trees carry to it (renameReads): half the call's time, so that the
+	// lines of the files it pairs have the other half to be matched in.
+	renames := &renameReads{EncodedObjectStorer: repo.Storer, left: maxTotalDiffBytes,
+		deadline: earlier(deadline, time.Now().Add(matchTime/2))}
+	commit, err := object.GetCommit(renames, *hash)
 	if err != nil {
 		return nil, view.Errorf("git.diff.unresolved", "%s does not name a commit: %v", spec, err)
 	}
@@ -210,7 +213,7 @@ func diffCommit(ctx context.Context, repo *git.Repository, spec string, gate fun
 	// root commit is often a whole codebase imported at once, and a caller
 	// that has stopped waiting for it should not leave the diff running.
 	changes, err := object.DiffTreeWithOptions(ctx, fromTree, toTree, nil)
-	var byHash bool
+	var byHash string
 	if err == nil {
 		changes, byHash, err = detectRenames(changes)
 	}
@@ -246,9 +249,8 @@ func diffCommit(ctx context.Context, repo *git.Repository, spec string, gate fun
 	// Named in the diff's own shape, as the worktree diff names what it
 	// did not read.
 	body += notDiffed(large, refused) + pastBudget(cut) + matchedCoarsely(coarse)
-	if byHash {
-		body += fmt.Sprintf("renames matched by identical content only: matching them by similar content "+
-			"reads more than %d MiB\n", maxTotalDiffBytes>>20)
+	if byHash != "" {
+		body += "renames matched by identical content only: matching them by similar content " + byHash + "\n"
 	}
 	// An empty patch is the answer, and the sentence is what a person is
 	// told in its place (view.Text.Empty), for the reason a clean working
@@ -265,7 +267,8 @@ func diffCommit(ctx context.Context, repo *git.Repository, spec string, gate fun
 
 // renameReads is the object store a --commit diff reads the commit and its
 // trees through, which holds what rename detection reads of blobs to
-// maxTotalDiffBytes; nothing else the diff does reads a blob through it.
+// maxTotalDiffBytes, and the time it spends to a deadline; nothing else the
+// diff does reads a blob through it.
 //
 // **go-git finds a renamed file by comparing every deleted file with every
 // added one, and it reads the added one again for each.** The cost is the
@@ -275,16 +278,30 @@ func diffCommit(ctx context.Context, repo *git.Repository, spec string, gate fun
 // 256 KiB cost one git_diff 7.7 s of CPU and half a gigabyte, the same files
 // read a hundred times over. Every read is counted, each time it is made,
 // since each is hashed whole again.
+//
+// Bytes alone did not hold it: twenty thousand files of a few bytes moved
+// and rewritten are four hundred million pairs of reads that add up to
+// little, and one git_diff was still running after two minutes. So the clock
+// is read at each read too (and renameLimit keeps the pairs to git's own
+// number).
 type renameReads struct {
 	storer.EncodedObjectStorer
-	left int64
+	left     int64
+	deadline time.Time
 }
 
-// errRenameBudget is rename detection reading past what renameReads allows.
-var errRenameBudget = errors.New("rename detection read past its budget")
+// errRenameBudget is rename detection reading past what renameReads allows,
+// and errRenameTime reading past its deadline.
+var (
+	errRenameBudget = errors.New("rename detection read past its budget")
+	errRenameTime   = errors.New("rename detection ran past its time")
+)
 
 func (s *renameReads) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (plumbing.EncodedObject, error) {
 	if t == plumbing.BlobObject {
+		if time.Now().After(s.deadline) {
+			return nil, errRenameTime
+		}
 		if size, err := s.EncodedObjectSize(h); err == nil {
 			if s.left -= size; s.left < 0 {
 				return nil, errRenameBudget
@@ -294,19 +311,62 @@ func (s *renameReads) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (plu
 	return s.EncodedObjectStorer.EncodedObject(t, h)
 }
 
+// renameLimit is the most files added, or deleted, that rename detection
+// compares by content, git's own default for a diff (diff.renameLimit): past
+// it git looks for identical content only, and says it skipped the rest. It
+// keeps the pairs compared to a million, where the time and the reads are
+// otherwise all that hold them. A variable so a test can lower it.
+var renameLimit uint = 1000
+
+// renameOptions are the options Commit.Patch detects renames with, go-git's
+// defaults, held to renameLimit.
+func renameOptions() *object.DiffTreeOptions {
+	return &object.DiffTreeOptions{
+		DetectRenames: true,
+		RenameScore:   object.DefaultDiffTreeOptions.RenameScore,
+		RenameLimit:   renameLimit,
+	}
+}
+
 // detectRenames pairs a commit's deletions with its additions as renames, as
 // go-git's default options do: by identical content, then by similar content.
-// Past the budget renameReads holds the second to, only identical content
-// pairs them, which costs no read at all, and byHash says so. The file
-// deleted and the file added are then both shown, as they are when nothing
-// was renamed.
-func detectRenames(changes object.Changes) (_ object.Changes, byHash bool, _ error) {
-	found, err := object.DetectRenames(changes, object.DefaultDiffTreeOptions)
-	if !errors.Is(err, errRenameBudget) {
-		return found, false, err
+// Past the budget or the time renameReads holds the second to, or past
+// renameLimit, only identical content pairs them, which costs no read at
+// all, and byHash says why. The file deleted and the file added are then
+// both shown, as they are when nothing was renamed.
+func detectRenames(changes object.Changes) (_ object.Changes, byHash string, _ error) {
+	found, err := object.DetectRenames(changes, renameOptions())
+	switch {
+	case errors.Is(err, errRenameBudget):
+		byHash = fmt.Sprintf("reads more than %d MiB", maxTotalDiffBytes>>20)
+	case errors.Is(err, errRenameTime):
+		byHash = fmt.Sprintf("takes more than %v", matchTime/2)
+	case err != nil:
+		return nil, "", err
+	default:
+		// go-git skips the comparison past the limit without a word, and the
+		// changes it hands back are then exactly the ones it counted.
+		if added, deleted := unpaired(found); added > 0 && deleted > 0 && uint(max(added, deleted)) > renameLimit {
+			return found, "is not tried past " + format.CountOf(int(renameLimit), "file") + //nolint:gosec // a limit of a thousand
+				" added or deleted, as git does not try it", nil
+		}
+		return found, "", nil
 	}
 	found, err = object.DetectRenames(changes, &object.DiffTreeOptions{DetectRenames: true, OnlyExactRenames: true})
-	return found, true, err
+	return found, byHash, err
+}
+
+// unpaired counts the changes that add a file and the ones that delete one.
+func unpaired(changes object.Changes) (added, deleted int) {
+	for _, ch := range changes {
+		switch {
+		case ch.From.Name == "":
+			added++
+		case ch.To.Name == "":
+			deleted++
+		}
+	}
+	return added, deleted
 }
 
 // maxTotalDiffBytes bounds what one diff reads in all, of a commit or of the

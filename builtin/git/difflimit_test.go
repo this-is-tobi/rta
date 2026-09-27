@@ -296,3 +296,57 @@ func TestACommitDiffMatchesRenamesBySimilarContentWithinItsBudget(t *testing.T) 
 		t.Errorf("past the budget, a file moved unchanged is no longer diffed as renamed:\n%s", body)
 	}
 }
+
+// Bytes did not hold rename detection: twenty thousand files of a few bytes
+// moved and rewritten are four hundred million pairs of reads that add up to
+// little, and one diff of them was still running after two minutes. It stops
+// at git's own limit on the files it compares, and at half the call's time,
+// and the diff says which.
+func TestACommitDiffMatchesRenamesBySimilarContentWithinGitsLimitAndItsTime(t *testing.T) {
+	savedLimit, savedTime := renameLimit, matchTime
+	t.Cleanup(func() { renameLimit, matchTime = savedLimit, savedTime })
+
+	dir, repo := testRepo(t)
+	lines := strings.Repeat("a line of the file\n", 20)
+	for _, name := range []string{"a1.txt", "a2.txt"} {
+		writeFile(t, dir, name, name+lines)
+	}
+	wt, err := repo.Worktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	commitAll := func(msg string) {
+		t.Helper()
+		if err := wt.AddWithOptions(&git.AddOptions{All: true}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := wt.Commit(msg, &git.CommitOptions{Author: signature()}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	commitAll("before")
+	for _, name := range []string{"a1.txt", "a2.txt"} {
+		if err := os.Remove(filepath.Join(dir, name)); err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, dir, "b"+name[1:], name+lines+"one more\n")
+	}
+	commitAll("moved")
+
+	diff := func() string {
+		t.Helper()
+		return text(t, runDiff, req(t, dir, map[string]any{"commit": "master"}))
+	}
+	if body := diff(); !strings.Contains(body, "rename from a1.txt") || strings.Contains(body, "identical content only") {
+		t.Errorf("within the limit, the edited files are not diffed as renamed:\n%s", body)
+	}
+	renameLimit = 1
+	if body := diff(); strings.Contains(body, "rename from") ||
+		!strings.Contains(body, "by similar content is not tried past 1 file added or deleted") {
+		t.Errorf("past the limit, renames are still looked for by content, or it is not said:\n%s", body)
+	}
+	renameLimit, matchTime = savedLimit, time.Nanosecond
+	if body := diff(); strings.Contains(body, "rename from") || !strings.Contains(body, "by similar content takes more than") {
+		t.Errorf("past its time, renames are still looked for by content, or it is not said:\n%s", body)
+	}
+}
