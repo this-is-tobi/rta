@@ -682,25 +682,41 @@ func Manifests(ix Index) ([]Listed, []*view.Error) {
 	return out, bad
 }
 
-// readIndexDir lists an index's index/, and refuses one that is not a
-// directory in its own right.
-//
-// os.ReadDir resolves a symlink, and an index is somebody else's repository:
-// git stores a symlink with whatever target its author committed, absolute
-// ones included. So `index -> /home/you/.config` is a directory rta would
-// enumerate and read every .yaml out of, having been told to attach an index.
-// The archive extractor already refuses a symlinked member for this reason —
-// "no symlink or hardlink is ever followed", fetch.go — and this is the same
-// rule on the other input an index controls.
+// readIndexDir lists a directory inside an index — its index/, or the
+// plugins/ noIndexDir counts — refused unless it is one in its own right
+// (ownDir).
 func readIndexDir(dir string) ([]os.DirEntry, error) {
-	fi, err := os.Lstat(dir)
-	if err != nil {
+	if err := ownDir(dir); err != nil {
 		return nil, err
 	}
-	if !fi.IsDir() {
-		return nil, errors.New("plugins is not a directory")
-	}
 	return os.ReadDir(dir)
+}
+
+// ownDir refuses a path inside an index that is not a directory in its own
+// right.
+//
+// os.ReadDir and every open resolve a symlink, and an index is somebody
+// else's repository: git stores a symlink with whatever target its author
+// committed, absolute ones included. So `index -> /home/you/.config` is a
+// directory rta would enumerate and read every .yaml out of, having been told
+// to attach an index. The archive extractor already refuses a symlinked
+// member for this reason — "no symlink or hardlink is ever followed",
+// fetch.go — and this is the same rule on the other input an index controls.
+//
+// Checked by every reader, not only the one that lists: readManifestAt looks
+// at the last component of the path it is given and nothing above it, so
+// Resolve, naming index/<name>.yaml directly, read through the symlinked
+// directory Manifests had just refused — `plugin search` said the index was
+// not one while `plugin install` installed from wherever it pointed.
+func ownDir(dir string) error {
+	fi, err := os.Lstat(dir)
+	if err != nil {
+		return err
+	}
+	if !fi.IsDir() {
+		return errors.New(filepath.Base(dir) + " is not a directory")
+	}
+	return nil
 }
 
 // readManifestFile reads one manifest, bounded, and refuses everything a
@@ -804,7 +820,7 @@ const indexShape = "an index is a repository of index/<name>.yaml manifests, eac
 // filled in yet.
 func noIndexDir(ix Index) *view.Error {
 	msg := ix.Name + " has no index/ directory — it is not an index"
-	if entries, err := os.ReadDir(filepath.Join(ix.Dir, "plugins")); err == nil {
+	if entries, err := readIndexDir(filepath.Join(ix.Dir, "plugins")); err == nil {
 		dirs := 0
 		for _, e := range entries {
 			if e.IsDir() {
@@ -867,6 +883,16 @@ func Resolve(spec string) (Listed, *view.Error) {
 
 	var found []Listed
 	for _, ix := range search {
+		// The directory before the file in it, as Manifests reads them: an
+		// index whose index/ is not its own is not one, and a search of
+		// every index keeps looking past it the way it passes one that
+		// lacks the name.
+		if ownDir(filepath.Join(ix.Dir, "index")) != nil {
+			if indexPart != "" {
+				return Listed{}, noIndexDir(ix)
+			}
+			continue
+		}
 		raw, verr := readManifestAt(filepath.Join(ix.Dir, "index", name+".yaml"))
 		if verr != nil {
 			// Absent, a symlink, a fifo, or over the cap: every one of these

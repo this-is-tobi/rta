@@ -147,6 +147,20 @@ func TestASymlinkedIndexDirectoryIsNotEnumerated(t *testing.T) {
 	if len(bad) != 1 || bad[0].Code != "plugin.index.empty" {
 		t.Fatalf("problems = %v, want it refused as not an index", bad)
 	}
+
+	// Install and upgrade name a manifest rather than listing a directory,
+	// and read it through the same symlink the listing refused: search said
+	// the index was not one while install read pg out of where it pointed.
+	for spec, code := range map[string]string{"hostile/pg": "plugin.index.empty", "pg": "plugin.install.unknown"} {
+		got, verr := Resolve(spec)
+		if verr == nil {
+			t.Errorf("Resolve(%q) read %q out of a directory the index only pointed at", spec, got.Manifest.Name)
+			continue
+		}
+		if verr.Code != code {
+			t.Errorf("Resolve(%q): %v, want %s", spec, verr, code)
+		}
+	}
 }
 
 // The manifest cap bounds what is parsed; this bounds what is read. They are
