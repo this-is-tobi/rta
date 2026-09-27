@@ -335,10 +335,13 @@ func commandConfig() (*gitconfig.Config, error) {
 	}
 	cfg := gitconfig.NewConfig()
 	if counted {
+		// Read as git reads it, with C's strtoul: white space before it and a
+		// sign are taken, and anything after it is not. `GIT_CONFIG_COUNT=" 1"`
+		// is one pair to git, and failed the call here.
 		n := 0
 		if count != "" {
 			var err error
-			if n, err = strconv.Atoi(count); err != nil || n < 0 {
+			if n, err = strconv.Atoi(strings.TrimLeft(count, cSpace)); err != nil || n < 0 {
 				return nil, fmt.Errorf("GIT_CONFIG_COUNT is %q, not a count", count)
 			}
 		}
@@ -366,13 +369,30 @@ func commandConfig() (*gitconfig.Config, error) {
 
 // addCommandKey adds key, spelled section.name or section.subsection.name as
 // git spells one on its command line, set to value.
+//
+// A key git's git_config_parse_key refuses is refused: a section or a name
+// holding anything but letters, digits and dashes, a name that does not start
+// with a letter, a subsection holding a line break. git refuses to run at all
+// with one in its environment ("invalid key"), so no hook runs, and
+// git.hooks naming the directory a key like `core.hooks path` sets would be
+// an answer about a command that never happens. And what it reads is read: a
+// key with no section is one with no dot but its first, or none at all, and
+// `.sub.name`, an empty section before a subsection, is one git runs with.
+//
+// A refusal names the key with a URL's credentials masked, as git.config's
+// rows show it: `url.https://oauth2:<token>@host/.insteadOf` carries the
+// token in the key, and the refusal reaches a terminal, and an MCP caller
+// through git.hooks, where the command scope's rows never do.
 func addCommandKey(cfg *gitconfig.Config, key, value string) error {
 	first, last := strings.IndexByte(key, '.'), strings.LastIndexByte(key, '.')
 	switch {
-	case first <= 0:
-		return fmt.Errorf("%q has no section", key)
+	case last <= 0:
+		return fmt.Errorf("%q has no section", maskURLCredentials(key))
 	case last == len(key)-1:
-		return fmt.Errorf("%q has no name after its section", key)
+		return fmt.Errorf("%q has no name after its section", maskURLCredentials(key))
+	case first > 0 && !keyWord(key[:first]) || !keyWord(key[last+1:]) || !isLetter(key[last+1]) ||
+		strings.IndexByte(key[first:last], '\n') >= 0:
+		return fmt.Errorf("%q is not a key git reads", maskURLCredentials(key))
 	}
 	section, name := cfg.Raw.Section(key[:first]), key[last+1:]
 	if first == last {
@@ -392,7 +412,7 @@ var errConfigParameters = errors.New("not in the shape git writes it")
 // (sqDequote), 'key'='value' as git writes it now, 'key'= for a key with no
 // value, and 'key=value' or 'key' as older git wrote it, separated by space.
 func parseConfigParameters(cfg *gitconfig.Config, env string) error {
-	for rest := env; rest != ""; rest = strings.TrimLeft(rest, " \t\n\v\f\r") {
+	for rest := env; rest != ""; rest = strings.TrimLeft(rest, gitSpace) {
 		key, after, ok := sqDequote(rest)
 		if !ok {
 			return errConfigParameters
@@ -402,7 +422,7 @@ func parseConfigParameters(cfg *gitconfig.Config, env string) error {
 		case after == "" || isSpace(after[0]):
 			// The older 'key=value', split at its first =, which git trims.
 			key, value, _ = strings.Cut(key, "=")
-			key = strings.TrimSpace(key)
+			key = strings.Trim(key, gitSpace)
 		case after[0] == '=' && (len(after) == 1 || isSpace(after[1])):
 			after = after[1:]
 		case after[0] == '=' && after[1] == '\'':
@@ -447,8 +467,34 @@ func sqDequote(s string) (word, rest string, ok bool) {
 	return "", "", false
 }
 
-// isSpace is a byte C's isspace calls space, as git splits its words on.
-func isSpace(c byte) bool { return strings.IndexByte(" \t\n\v\f\r", c) >= 0 }
+// cSpace is the bytes C's isspace calls space, which strtoul skips.
+const cSpace = " \t\n\v\f\r"
+
+// gitSpace is the bytes git's own isspace calls space: what it splits the
+// words of GIT_CONFIG_PARAMETERS on, and trims from the key of an older
+// 'key=value'. git-compat-util.h puts its own ctype in place of C's, and a
+// vertical tab or a form feed is not space to it: a word run on by one, or a
+// key led by one, is a command git refuses to run ("bogus format", "invalid
+// key"), and was read here, as was a key led by a no-break space, which Go's
+// TrimSpace took off.
+const gitSpace = " \t\n\r"
+
+// isSpace is a byte git's isspace calls space.
+func isSpace(c byte) bool { return strings.IndexByte(gitSpace, c) >= 0 }
+
+// keyWord reports whether s is a section or a name git takes in a key: one or
+// more letters, digits and dashes, git's iskeychar.
+func keyWord(s string) bool {
+	for i := range len(s) {
+		if c := s[i]; c != '-' && !isLetter(c) && (c < '0' || c > '9') {
+			return false
+		}
+	}
+	return s != ""
+}
+
+// isLetter is an ASCII letter, as git's own isalpha takes one.
+func isLetter(c byte) bool { return c|0x20 >= 'a' && c|0x20 <= 'z' }
 
 // includeCount is how many files cfg includes, by an include.path or an
 // includeIf's path: files git reads as though they were written in place of

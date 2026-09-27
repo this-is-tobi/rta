@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -236,9 +237,15 @@ func TestConfigReadsTheCommandScopeGitsEnvironmentSets(t *testing.T) {
 }
 
 // What git refuses to run with is refused here too, rather than read in part:
-// git runs nothing at all with it.
+// git runs nothing at all with it. Space is what git's own isspace calls
+// space, which a vertical tab, a form feed and a no-break space are not.
 func TestConfigRefusesACommandScopeGitRefuses(t *testing.T) {
+	vt, ff, nbsp := string(rune(0x0b)), string(rune(0x0c)), string(rune(0xa0))
 	for name, env := range map[string]map[string]string{
+		"vertical tab between":    {"GIT_CONFIG_PARAMETERS": "'a.b'='1'" + vt + "'c.d'='2'"},
+		"form feed between":       {"GIT_CONFIG_PARAMETERS": "'a.b'='1'" + ff + "'c.d'='2'"},
+		"vertical tab before key": {"GIT_CONFIG_PARAMETERS": "'" + vt + "core.hooksPath=x'"},
+		"no-break before key":     {"GIT_CONFIG_PARAMETERS": "'" + nbsp + "core.hooksPath=x'"},
 		"a count that is not one": {"GIT_CONFIG_COUNT": "x"},
 		"a key missing":           {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_VALUE_0": "1"},
 		"a value missing":         {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "a.b"},
@@ -247,6 +254,12 @@ func TestConfigRefusesACommandScopeGitRefuses(t *testing.T) {
 		"a quote never closed":    {"GIT_CONFIG_PARAMETERS": "'a.b'='1"},
 		"a word never quoted":     {"GIT_CONFIG_PARAMETERS": "a.b=1"},
 		"a value run on":          {"GIT_CONFIG_PARAMETERS": "'a.b'='1'x"},
+		"a count run on":          {"GIT_CONFIG_COUNT": "1 ", "GIT_CONFIG_KEY_0": "a.b", "GIT_CONFIG_VALUE_0": "1"},
+		"a name led by a digit":   {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "core.1hooks", "GIT_CONFIG_VALUE_0": "1"},
+		"a space in a name":       {"GIT_CONFIG_PARAMETERS": "'core.hooks path'='x'"},
+		"an underscore in a name": {"GIT_CONFIG_PARAMETERS": "'core.hooks_path'='x'"},
+		"a space in a section":    {"GIT_CONFIG_PARAMETERS": "'co re.hooksPath'='x'"},
+		"a line in a subsection":  {"GIT_CONFIG_PARAMETERS": "'url.a\nb.insteadOf'='x'"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			machineConfig(t, "")
@@ -257,6 +270,59 @@ func TestConfigRefusesACommandScopeGitRefuses(t *testing.T) {
 			commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
 			if _, err := runConfig(context.Background(), req(t, dir, nil)); errCode(err) != "git.config.failed" {
 				t.Errorf("git.config with %v: %v, want git.config.failed", env, err)
+			}
+		})
+	}
+}
+
+// A refused key is named with a URL's credentials masked, as git.config's
+// rows show one: the refusal reaches a terminal, and an MCP caller through
+// git.hooks, which reads core.hooksPath from the command scope there, where
+// the command scope's rows never do.
+func TestConfigRefusesAKeyWithoutShowingItsCredentials(t *testing.T) {
+	machineConfig(t, "")
+	t.Setenv("GIT_CONFIG_PARAMETERS", "'url.https://oauth2:glpat-secret@gitlab.com/.instead_of'='x'")
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
+	for capability, call := range map[string]func() error{
+		"git.config": func() error { _, err := runConfig(context.Background(), req(t, dir, nil)); return err },
+		"git.hooks over MCP": func() error {
+			_, err := runHooks(context.Background(), guarded(t, dir, dir).WithSurface(plugin.SurfaceMCP))
+			return err
+		},
+	} {
+		if err := call(); err == nil || strings.Contains(err.Error(), "glpat-secret") ||
+			!strings.Contains(err.Error(), "oauth2:"+view.Mask+"@") {
+			t.Errorf("%s: %v, want a refusal naming the key with its token masked", capability, err)
+		}
+	}
+}
+
+// And what git runs with is read: a count as C's strtoul reads one, after
+// white space and a sign, and a subsection holding what a URL holds, which a
+// section or a name may not; and a key whose section is empty before its
+// subsection, which git takes.
+func TestConfigReadsACommandScopeGitReads(t *testing.T) {
+	t.Run("an empty section", func(t *testing.T) {
+		machineConfig(t, "")
+		t.Setenv("GIT_CONFIG_PARAMETERS", "'.sub.name'='1'")
+		dir, repo := testRepo(t)
+		commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
+		if got := scopeRows(table(t, runConfig, req(t, dir, nil)), "command"); len(got) != 1 || got[0] != ".sub.name=1" {
+			t.Errorf("command rows = %q, want .sub.name=1, as `git config --list` shows it", got)
+		}
+	})
+	for _, count := range []string{" 1", "\t+1", "01"} {
+		t.Run(fmt.Sprintf("count %q", count), func(t *testing.T) {
+			machineConfig(t, "")
+			t.Setenv("GIT_CONFIG_COUNT", count)
+			t.Setenv("GIT_CONFIG_KEY_0", "url.https://tok@host/a b_c.insteadOf")
+			t.Setenv("GIT_CONFIG_VALUE_0", "z")
+			dir, repo := testRepo(t)
+			commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
+			want := "url.https://" + view.Mask + "@host/a b_c.insteadOf=z"
+			if got := scopeRows(table(t, runConfig, req(t, dir, nil)), "command"); len(got) != 1 || got[0] != want {
+				t.Errorf("command rows = %q, want %q", got, want)
 			}
 		})
 	}
