@@ -245,3 +245,54 @@ func TestACommitPatchIsGoGitsPatch(t *testing.T) {
 		}
 	}
 }
+
+// go-git finds a renamed file by comparing every deleted file with every
+// added one, reading the added one again for each, before anything is held
+// to the diff's budget: a hundred files moved and rewritten cost one diff
+// 7.7 s and half a gigabyte. Past the budget a rename is matched by identical
+// content only, which reads nothing, and the diff says so.
+func TestACommitDiffMatchesRenamesBySimilarContentWithinItsBudget(t *testing.T) {
+	saved := maxTotalDiffBytes
+	t.Cleanup(func() { maxTotalDiffBytes = saved })
+
+	dir, repo := testRepo(t)
+	lines := strings.Repeat("a line of the file\n", 20)
+	writeFile(t, dir, "old.txt", lines)
+	writeFile(t, dir, "same.txt", "x\n")
+	wt, err := repo.Worktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	commitAll := func(msg string) {
+		t.Helper()
+		if err := wt.AddWithOptions(&git.AddOptions{All: true}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := wt.Commit(msg, &git.CommitOptions{Author: signature()}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	commitAll("before")
+	for _, name := range []string{"old.txt", "same.txt"} {
+		if err := os.Remove(filepath.Join(dir, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeFile(t, dir, "new.txt", lines+"one more\n")
+	writeFile(t, dir, "moved.txt", "x\n")
+	commitAll("moved")
+
+	body := text(t, runDiff, req(t, dir, map[string]any{"commit": "master"}))
+	if !strings.Contains(body, "rename from old.txt") || strings.Contains(body, "identical content only") {
+		t.Errorf("within the budget, the edited file is not diffed as renamed:\n%s", body)
+	}
+
+	maxTotalDiffBytes = 100
+	body = text(t, runDiff, req(t, dir, map[string]any{"commit": "master"}))
+	if strings.Contains(body, "rename from old.txt") || !strings.Contains(body, "renames matched by identical content only") {
+		t.Errorf("past the budget, renames are still looked for by content, or it is not said:\n%s", body)
+	}
+	if !strings.Contains(body, "rename from same.txt") {
+		t.Errorf("past the budget, a file moved unchanged is no longer diffed as renamed:\n%s", body)
+	}
+}

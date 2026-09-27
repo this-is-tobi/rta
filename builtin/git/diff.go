@@ -135,7 +135,9 @@ func diffCommit(ctx context.Context, repo *git.Repository, spec string, gate fun
 	if err != nil {
 		return nil, view.Errorf("git.diff.unresolved", "%s does not name a commit: %v", spec, err)
 	}
-	commit, err := repo.CommitObject(*hash)
+	// Read through a store that holds rename detection to a budget, which
+	// the trees carry to it (renameReads).
+	commit, err := object.GetCommit(&renameReads{EncodedObjectStorer: repo.Storer, left: maxTotalDiffBytes}, *hash)
 	if err != nil {
 		return nil, view.Errorf("git.diff.unresolved", "%s does not name a commit: %v", spec, err)
 	}
@@ -163,7 +165,11 @@ func diffCommit(ctx context.Context, repo *git.Repository, spec string, gate fun
 	// request's context, though, where Commit.Patch uses a background one: a
 	// root commit is often a whole codebase imported at once, and a caller
 	// that has stopped waiting for it should not leave the diff running.
-	changes, err := object.DiffTreeWithOptions(ctx, fromTree, toTree, object.DefaultDiffTreeOptions)
+	changes, err := object.DiffTreeWithOptions(ctx, fromTree, toTree, nil)
+	var byHash bool
+	if err == nil {
+		changes, byHash, err = detectRenames(changes)
+	}
 	switch {
 	case ctx.Err() != nil:
 		return nil, interrupted(shortHash(commit.Hash))
@@ -196,6 +202,10 @@ func diffCommit(ctx context.Context, repo *git.Repository, spec string, gate fun
 	// Named in the diff's own shape, as the worktree diff names what it
 	// did not read.
 	body += notDiffed(large, refused) + pastBudget(cut) + matchedCoarsely(coarse)
+	if byHash {
+		body += fmt.Sprintf("renames matched by identical content only: matching them by similar content "+
+			"reads more than %d MiB\n", maxTotalDiffBytes>>20)
+	}
 	// An empty patch is the answer, and the sentence is what a person is
 	// told in its place (view.Text.Empty), for the reason a clean working
 	// tree's is: as the body, `rta git diff --commit <empty> > x.patch` wrote
@@ -207,6 +217,52 @@ func diffCommit(ctx context.Context, repo *git.Repository, spec string, gate fun
 	// that kept that parent's side.
 	return view.Text{Body: body, Empty: shortHash(commit.Hash) + " changed nothing this can show — " +
 		"an empty commit, or a merge that kept its first parent's tree"}, nil
+}
+
+// renameReads is the object store a --commit diff reads the commit and its
+// trees through, which holds what rename detection reads of blobs to
+// maxTotalDiffBytes; nothing else the diff does reads a blob through it.
+//
+// **go-git finds a renamed file by comparing every deleted file with every
+// added one, and it reads the added one again for each.** The cost is the
+// deleted files times the added ones times their size, with no limit in the
+// options Commit.Patch uses, and it is paid before a single change is held
+// to the diff's budget: a commit moving and rewriting a hundred files of
+// 256 KiB cost one git_diff 7.7 s of CPU and half a gigabyte, the same files
+// read a hundred times over. Every read is counted, each time it is made,
+// since each is hashed whole again.
+type renameReads struct {
+	storer.EncodedObjectStorer
+	left int64
+}
+
+// errRenameBudget is rename detection reading past what renameReads allows.
+var errRenameBudget = errors.New("rename detection read past its budget")
+
+func (s *renameReads) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (plumbing.EncodedObject, error) {
+	if t == plumbing.BlobObject {
+		if size, err := s.EncodedObjectSize(h); err == nil {
+			if s.left -= size; s.left < 0 {
+				return nil, errRenameBudget
+			}
+		}
+	}
+	return s.EncodedObjectStorer.EncodedObject(t, h)
+}
+
+// detectRenames pairs a commit's deletions with its additions as renames, as
+// go-git's default options do: by identical content, then by similar content.
+// Past the budget renameReads holds the second to, only identical content
+// pairs them, which costs no read at all, and byHash says so. The file
+// deleted and the file added are then both shown, as they are when nothing
+// was renamed.
+func detectRenames(changes object.Changes) (_ object.Changes, byHash bool, _ error) {
+	found, err := object.DetectRenames(changes, object.DefaultDiffTreeOptions)
+	if !errors.Is(err, errRenameBudget) {
+		return found, false, err
+	}
+	found, err = object.DetectRenames(changes, &object.DiffTreeOptions{DetectRenames: true, OnlyExactRenames: true})
+	return found, true, err
 }
 
 // maxTotalDiffBytes bounds what one diff reads in all, of a commit or of the
