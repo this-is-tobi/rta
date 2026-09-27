@@ -3,6 +3,8 @@ package plugin
 import (
 	"strings"
 	"testing"
+
+	"github.com/spf13/pflag"
 )
 
 // One capability and one input, spelled the way each surface's reader finds
@@ -111,6 +113,36 @@ func TestAWholeCallIsSpelledTheWayItsSurfaceMakesIt(t *testing.T) {
 	}
 	if got, want := SurfaceMCP.Call("kv.get", Arg{Name: "key", Value: "<key>"}), `kv_get {"key":"<key>"}`; got != want {
 		t.Errorf("a placeholder over MCP = %s, want %s", got, want)
+	}
+}
+
+// A switch turned off is joined to its flag on the command line. pflag gives
+// a Bool flag its value only after an equals sign, and reads the next word as
+// an argument of the command's own: `--tls false` turned the switch on and
+// handed the command a stray "false" — the opposite call to the one spelled.
+func TestASwitchTurnedOffIsSpelledAsTheCommandLineReadsIt(t *testing.T) {
+	args := []Arg{{Name: "key", Value: "k", Positional: true}, {Name: "tls", Value: false}, {Name: "force", Value: true}}
+	for s, want := range map[Surface]string{
+		SurfaceCLI:     `rta kv restore k --tls=false --force`,
+		SurfaceUnknown: `rta kv restore k --tls=false --force`,
+		SurfaceMCP:     `kv_restore {"force":true,"key":"k","tls":false}`,
+		SurfaceTUI:     `kv.restore key=k tls=false force`,
+	} {
+		if got := s.Call("kv.restore", args...); got != want {
+			t.Errorf("Call over %q = %s, want %s", s, got, want)
+		}
+	}
+
+	flags := pflag.NewFlagSet("restore", pflag.ContinueOnError)
+	tls := flags.Bool("tls", true, "")
+	force := flags.Bool("force", false, "")
+	words := strings.Fields(SurfaceCLI.Call("kv.restore", args...))
+	if err := flags.Parse(words[3:]); err != nil {
+		t.Fatal(err)
+	}
+	if *tls || !*force || flags.NArg() != 1 || flags.Arg(0) != "k" {
+		t.Errorf("the spelled call reads back as tls=%v force=%v arguments %q, want false, true and [k]",
+			*tls, *force, flags.Args())
 	}
 }
 
