@@ -242,9 +242,16 @@ func readsAsItself(s string) bool {
 // number, a punctuation mark, a symbol or the ASCII space (strconv.IsPrint),
 // and not one a renderer draws as nothing — a default-ignorable code point
 // or a variation selector, the classes the grant matcher already reads as
-// nothing (internal/grant's onlyDots).
+// nothing (internal/grant's onlyDots) — nor one it draws as an empty cell.
+//
+// That last pair is named by code point because no property holds them.
+// U+2800, the Braille pattern with no dots raised, and U+1D159, the musical
+// null notehead, are symbols to Unicode, neither space nor ignorable, and
+// every font draws them as a blank: "prod/db" followed by either one read
+// as the bare record, the same way a no-break space did. The Braille blank
+// is the one people reach for when a name has to look empty and not be.
 func seen(r rune) bool {
-	return strconv.IsPrint(r) &&
+	return strconv.IsPrint(r) && r != 0x2800 && r != 0x1d159 &&
 		!unicode.Is(unicode.Other_Default_Ignorable_Code_Point, r) &&
 		!unicode.Is(unicode.Variation_Selector, r)
 }
