@@ -16,6 +16,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/this-is-tobi/rta/builtin/internal/pathin"
 	"github.com/this-is-tobi/rta/internal/guard"
 	"github.com/this-is-tobi/rta/pkg/findings"
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -267,12 +268,34 @@ func auditFileMode(r *agentReport, f agentFile, mode os.FileMode) {
 	}
 }
 
+// maxAgentConfigBytes is more than any agent keeps in one of these files.
+// ~/.claude.json is the largest, holding a history for every project it was
+// run in, and on a machine used for years that is megabytes; the rest are
+// kilobytes.
+const maxAgentConfigBytes = 64 << 20
+
+// readAgentConfig reads one agent configuration, or files the reason it
+// could not and reports false.
+//
+// As pathin reads a file nobody named (pathin.ReadFile), on the CLI as
+// anywhere: the project's .mcp.json and .claude/settings*.json are whatever
+// the repository in the working directory put there, and a named pipe in
+// place of one held the audit for good, open(2) waiting on a writer nobody
+// started, while a file of any size was read whole.
+func readAgentConfig(r *agentReport, f agentFile) ([]byte, bool) {
+	data, err := pathin.ReadFile(f.path, maxAgentConfigBytes)
+	if err == nil {
+		return data, true
+	}
+	r.Add(grpAgentFiles, shortPath(f.path), findings.Warn,
+		f.label+" config could not be read: "+findings.Clip(whyUnread(err)), findings.Reference{})
+	return nil, false
+}
+
 // auditAgentJSON walks one file for the shapes worth grading.
 func auditAgentJSON(r *agentReport, f agentFile) {
-	data, err := os.ReadFile(f.path)
-	if err != nil {
-		r.Add(grpAgentFiles, shortPath(f.path), findings.Warn,
-			f.label+" config could not be read: "+findings.Clip(err.Error()), findings.Reference{})
+	data, ok := readAgentConfig(r, f)
+	if !ok {
 		return
 	}
 	var doc any

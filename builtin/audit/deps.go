@@ -399,7 +399,7 @@ func read(fsys fs.FS, names, shown []string) inventory {
 		got, g, err := parseManifest(fsys, m, shown[i])
 		if err != nil {
 			inv.unreadable = append(inv.unreadable,
-				unreadableManifest{path: shown[i], reason: findings.Clip(err.Error())})
+				unreadableManifest{path: shown[i], reason: findings.Clip(whyUnread(err))})
 			continue
 		}
 		if room := maxComponents - len(comps); len(got) > room {

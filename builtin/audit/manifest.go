@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/this-is-tobi/rta/builtin/internal/pathin"
 	"github.com/this-is-tobi/rta/pkg/findings"
 	"github.com/this-is-tobi/rta/pkg/format"
 )
@@ -226,19 +227,32 @@ func parseManifest(fsys fs.FS, name, shown string) ([]component, graph, error) {
 	if path.Base(name) == "bun.lockb" {
 		return nil, graph{}, errBinaryLockfile
 	}
-	data, err := fs.ReadFile(fsys, name)
+	data, err := readManifest(fsys, name, shown)
 	if err != nil {
 		return nil, graph{}, err
 	}
 	// From shown, which is the path as the caller gave it: a file named on
-	// its own is read from its own directory, and requirements/prod.txt is a
-	// requirements file only by the directory it sits in.
+	// its own is read under its base name alone, and requirements/prod.txt is
+	// a requirements file only by the directory it sits in.
 	format := manifestFormat(shown)
 	comps, err := parseComponents(format, data, shown)
 	if err != nil {
 		return nil, graph{}, err
 	}
 	return comps, parseGraph(format, data), nil
+}
+
+// readManifest reads name from fsys, refusing a file past maxManifestBytes by
+// the name a finding calls it, shown. Through the filesystem's Open and not
+// fs.ReadFile, so a directory on this machine opens it as scanFS does, and a
+// clone's file is held to the same bound as one on disk.
+func readManifest(fsys fs.FS, name, shown string) ([]byte, error) {
+	f, err := fsys.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	return pathin.ReadAll(f, shown, maxManifestBytes)
 }
 
 // manifestFormat names the format the manifest at p is read as: its own name

@@ -65,3 +65,30 @@ func TestTheCLIReadsAPipeItsWriterFeeds(t *testing.T) {
 		t.Errorf("got %q, %v", got, err)
 	}
 }
+
+// A file the caller did not name is read as a file on every surface: at a
+// terminal, too, nobody started a writer for a pipe a repository left under
+// the name of its lockfile.
+func TestReadFileRefusesAFIFOOnTheCLITooAtOnce(t *testing.T) {
+	fifo := filepath.Join(t.TempDir(), "pipe")
+	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
+		t.Skipf("mkfifo: %v", err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := ReadFile(fifo, 64)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		var notAFile *NotAFileError
+		if !errors.As(err, &notAFile) || !strings.Contains(err.Error(), "a named pipe") {
+			t.Errorf("err = %v, want a NotAFileError saying it is a named pipe", err)
+		}
+	case <-time.After(5 * time.Second):
+		if w, err := os.OpenFile(fifo, os.O_WRONLY, 0); err == nil {
+			_ = w.Close()
+		}
+		t.Fatal("reading a FIFO nobody named did not return")
+	}
+}

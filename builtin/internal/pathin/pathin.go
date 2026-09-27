@@ -20,6 +20,12 @@
 // hand. Everywhere else — an agent over MCP, a form in the TUI, whose stdin
 // is the agent's request stream or the keyboard — a path names a file, and
 // anything else is refused before it is opened.
+//
+// A file the caller did not name is read as the other surfaces read one, on
+// the CLI too (OpenFile, ReadFile): a lockfile found in the directory an
+// audit was pointed at, or the .mcp.json a cloned repository keeps. Nobody
+// started a writer for a pipe in its place, and at a terminal it held the
+// command for good as surely as it held a server.
 package pathin
 
 import (
@@ -81,18 +87,24 @@ func Kind(m fs.FileMode) string {
 // place between the two cannot hold the open either. On the CLI it is
 // os.Open, whatever the path names, for the reason the package gives.
 func Open(sf plugin.Surface, path string) (*os.File, fs.FileInfo, error) {
-	if sf == plugin.SurfaceCLI {
-		f, err := os.Open(path)
-		if err != nil {
-			return nil, nil, err
-		}
-		info, err := f.Stat()
-		if err != nil {
-			_ = f.Close()
-			return nil, nil, err
-		}
-		return f, info, nil
+	if sf != plugin.SurfaceCLI {
+		return OpenFile(path)
 	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	info, err := f.Stat()
+	if err != nil {
+		_ = f.Close()
+		return nil, nil, err
+	}
+	return f, info, nil
+}
+
+// OpenFile opens path to read only if it is a regular file, on every
+// surface: Open's line off the CLI, for a file the caller did not name.
+func OpenFile(path string) (*os.File, fs.FileInfo, error) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return nil, nil, err
@@ -130,7 +142,25 @@ func Read(sf plugin.Surface, path string, max int) ([]byte, error) {
 		return nil, err
 	}
 	defer func() { _ = f.Close() }()
-	data, err := io.ReadAll(io.LimitReader(f, int64(max)+1))
+	return ReadAll(f, path, max)
+}
+
+// ReadFile is Read for a file the caller did not name, opened as OpenFile
+// opens it.
+func ReadFile(path string, max int) ([]byte, error) {
+	f, _, err := OpenFile(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	return ReadAll(f, path, max)
+}
+
+// ReadAll reads r to its end as Read does, refusing past max bytes with a
+// *TooLargeError naming path: for a file opened some other way than from a
+// path on this machine, the one in an in-memory clone among them.
+func ReadAll(r io.Reader, path string, max int) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(r, int64(max)+1))
 	if err != nil {
 		return nil, err
 	}
