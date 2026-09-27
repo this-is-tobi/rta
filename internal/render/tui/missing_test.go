@@ -62,17 +62,22 @@ func TestAPipedInputATileCanStateIsHintedWithSet(t *testing.T) {
 	}
 }
 
-// A required input with an empty default is still one nothing gives a tile:
-// the default fills nothing, and the host refuses the call as missing it. The
-// dashboard read any default beside Required as one it could run with, and
-// + wrote the tile, which answered "missing" on every refresh. Validate
-// refuses any other default beside Required, so Required alone is the test.
-func TestARequiredInputWithAnEmptyDefaultStillNeedsAForm(t *testing.T) {
+// A required input is one nothing gives a tile: the host refuses the call as
+// missing it. The dashboard read any default beside Required as one it could
+// run with, and + wrote the tile, which answered "missing" on every refresh —
+// for an empty default, which fills nothing, the one Validate let through.
+// Validate refuses every default beside Required now, an empty one included,
+// so Required alone is the test.
+func TestARequiredInputStillNeedsAForm(t *testing.T) {
 	c := plugin.Capability{
 		ID: "db.table.list", Summary: "tables", Safety: plugin.Read,
 		Run:    func(context.Context, plugin.Request) (view.View, error) { return nil, nil },
 		Inputs: []plugin.Field{{Name: "schema", Type: plugin.String, Required: true, Default: ""}},
 	}
+	if err := (plugin.Plugin{Name: "db", Capabilities: []plugin.Capability{c}}).Validate(); err == nil {
+		t.Fatal("a required input with an empty default was accepted")
+	}
+	c.Inputs[0].Default = nil
 	if err := (plugin.Plugin{Name: "db", Capabilities: []plugin.Capability{c}}).Validate(); err != nil {
 		t.Fatalf("the fixture is refused: %v", err)
 	}

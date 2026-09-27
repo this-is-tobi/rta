@@ -292,8 +292,8 @@ func tileOptions(reg *registry.Registry, selected []string) []huh.Option[string]
 // became tiles answering "nothing to read" on every refresh.
 //
 // A Required input's Default is no exception to look for: Validate refuses
-// one that is not empty, and an empty one fills nothing, so a required input
-// is one a tile would run without.
+// every one beside Required, an empty one included, so a required input is
+// one a tile would run without.
 func hasRequiredInputs(c plugin.Capability) bool {
 	for _, f := range c.Inputs {
 		if f.Piped || f.Required {

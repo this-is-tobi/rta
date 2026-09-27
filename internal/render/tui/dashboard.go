@@ -373,9 +373,9 @@ func previewable(c plugin.Capability) bool {
 func MissingInputs(c plugin.Capability, with map[string]any, pinned bool) []string {
 	var missing []string
 	for _, f := range c.Inputs {
-		// Not a Default: Validate refuses one beside Required unless it is
-		// empty, and an empty one fills nothing — the host refuses the call
-		// as missing the input all the same (plugin.Missing). Read as a value,
+		// Not a Default: Validate refuses one beside Required, an empty one
+		// included — which fills nothing, and the host refused the call as
+		// missing the input all the same (plugin.Missing). Read as a value,
 		// it put a tile on the dashboard that answered "missing" on every
 		// refresh. Nor beside Piped, which Validate refuses outright.
 		if f.Config != "" {

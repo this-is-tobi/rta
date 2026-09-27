@@ -537,10 +537,22 @@ func (c Capability) validate(ns string) error {
 		// comes. The MCP schema listed the input as one an agent must send
 		// while publishing the value it would get by sending nothing, and the
 		// CLI marked the flag required, so a terminal was refused at parse
-		// time for leaving out what the default was there to give. An empty
-		// default is no value — Missing counts it as none — and leaves
-		// Required meaning what it says.
-		if f.Required && !empty(f.Default) {
+		// time for leaving out what the default was there to give.
+		//
+		// An empty default is refused beside Required too, though it fills
+		// nothing — Missing counts it as none. It was let through on that
+		// ground, and the schema then published "default": "" for an input
+		// its "required" list named: a value for leaving the input out, on
+		// the list of inputs that cannot be left out. "Required declares no
+		// Default" is a rule an author keeps without knowing which values
+		// the host counts as empty, and nil is what the wire decodes an
+		// undeclared default to, so a plugin that declares none is untouched.
+		if f.Required && f.Default != nil {
+			if empty(f.Default) {
+				return fmt.Errorf("capability %q: input %q declares Required and an empty Default; an empty "+
+					"default fills nothing, and published beside \"required\" it names a value for leaving "+
+					"out an input that cannot be left out — drop the Default", c.ID, f.Name)
+			}
 			return fmt.Errorf("capability %q: input %q declares Required and a Default; a required input "+
 				"with a default is never missing, since the default fills it before the host looks — "+
 				"drop one", c.ID, f.Name)
