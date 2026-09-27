@@ -50,6 +50,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/policy"
 	"github.com/this-is-tobi/rta/internal/seal"
 	"github.com/this-is-tobi/rta/internal/shellquote"
+	"github.com/this-is-tobi/rta/internal/textclean"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -1903,7 +1904,8 @@ func refuseThrottled(c plugin.Capability, g Grant) *view.Error {
 }
 
 // describe names what was refused the way the person issuing the grant will
-// have to type it.
+// have to type it, each record as the gate compares it: the command to type
+// is the hint's, spelled for a shell, and this is the sentence read beside it.
 func describe(capID string, scopes []string) string {
 	if len(scopes) == 1 && scopes[0] == "" {
 		return capID
@@ -1914,7 +1916,11 @@ func describe(capID string, scopes []string) string {
 			named = append(named, capID)
 			continue
 		}
-		named = append(named, capID+" "+s)
+		// As compared, byte for byte (textclean.Record): this sentence is
+		// also why a parked call is being asked, on the page the operator
+		// answers from, and a record with a no-break space after it read
+		// there as the record without.
+		named = append(named, capID+" "+textclean.Record(s))
 	}
 	return strings.Join(named, ", ")
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -221,6 +222,43 @@ func TestAnEmptyRosterIsATableToAParser(t *testing.T) {
 	raw, err := view.Marshal(view.Envelope{View: view.Redact(v)})
 	if err != nil || !strings.Contains(string(raw), `"rows":[]`) || strings.Contains(string(raw), "No grant") {
 		t.Errorf("json = %s (%v), want rows as an empty array and no sentence", raw, err)
+	}
+}
+
+// A grant covers the record it names byte for byte, so the roster shows it
+// that way: one on "db-password" and a no-break space — which an answer
+// given with --ttl to a padded call issues — read as the grant on
+// db-password, and an operator reading the list could not tell that the
+// grant they believed in covers nothing they meant. The folder rule and its
+// width stay legible beside it.
+func TestTheRosterShowsARecordAsTheGrantComparesIt(t *testing.T) {
+	setup(t)
+	padded := "db-password" + string(rune(0xa0))
+	for _, scope := range []string{"db-password", padded, "prod/" + string(rune(0x200b)) + "/"} {
+		if verr := core.Issue(core.Grant{Target: "kv.get", Scope: scope, Agent: "test",
+			Issued: time.Now(), Expires: time.Now().Add(time.Hour)}, true); verr != nil {
+			t.Fatal(verr)
+		}
+	}
+	tbl := listed(t, run(t, listH, nil))
+	shown := map[string]bool{}
+	for i := range tbl.Rows {
+		shown[cell(t, tbl, i, "Record")] = true
+	}
+	if !shown["db-password"] || len(shown) != 3 {
+		t.Fatalf("the roster shows %v, want three records told apart", shown)
+	}
+	for record := range shown {
+		if record == "db-password" {
+			continue
+		}
+		quoted, _, _ := strings.Cut(record, " (all)")
+		if back, err := strconv.Unquote(quoted); err != nil || (back != padded && !core.IsFolderScope(back)) {
+			t.Errorf("the roster shows %q, which does not read back as a record issued", record)
+		}
+	}
+	if got := describe(core.Grant{Target: "kv.get", Scope: padded}); !strings.Contains(got, `"`) {
+		t.Errorf("describe = %q, want the padded record quoted", got)
 	}
 }
 

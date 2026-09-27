@@ -16,6 +16,7 @@ import (
 	operatorid "github.com/this-is-tobi/rta/internal/operator"
 	"github.com/this-is-tobi/rta/internal/role"
 	"github.com/this-is-tobi/rta/internal/stdio"
+	"github.com/this-is-tobi/rta/internal/textclean"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -379,7 +380,7 @@ func noteLines(notes []string) string {
 func issueLine(g core.Grant) string {
 	s := g.Target
 	if g.Scope != "" {
-		s += " " + g.Scope
+		s += " " + textclean.Record(g.Scope)
 	}
 	if g.Profile != "" {
 		s += " --profile " + g.Profile
@@ -394,12 +395,21 @@ func planTable(prepared []core.Grant, replaces []string) view.Table {
 	}}
 	for i, g := range prepared {
 		t.Rows = append(t.Rows, []string{
-			g.Target, dash(g.Scope), dash(g.Profile), format.Duration(g.Expires.Sub(g.Issued)),
+			g.Target, dash(recordShown(g.Scope)), dash(g.Profile), format.Duration(g.Expires.Sub(g.Issued)),
 			budgetLeft(g, g.Issued), dash(replaces[i]),
 		})
 	}
 	t.Total = len(t.Rows)
 	return t
+}
+
+// recordShown is a grant's record as the gate compares it
+// (textclean.Record), or nothing for a grant naming none.
+func recordShown(scope string) string {
+	if scope == "" {
+		return ""
+	}
+	return textclean.Record(scope)
 }
 
 func dash(s string) string {
