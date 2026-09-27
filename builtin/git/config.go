@@ -2,8 +2,14 @@ package git
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	iofs "io/fs"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 
 	gitconfig "github.com/go-git/go-git/v5/config"
 
@@ -94,6 +100,66 @@ func runConfig(ctx context.Context, req plugin.Request) (view.View, error) {
 
 	t.Total = len(t.Rows)
 	return t, nil
+}
+
+// systemGitConfig is the file git's system scope is read from here, the one
+// go-git reads it from (config.Paths). A variable so a test can point it away
+// from this machine's.
+var systemGitConfig = "/etc/gitconfig"
+
+// scopedConfig is one file of the operator's own git config, and the scope
+// git reads it as.
+type scopedConfig struct {
+	scope  string
+	config *gitconfig.Config
+}
+
+// machineConfigs is the operator's own git config, every file of it that
+// exists, in the order git reads them: the system's, then the global scope's
+// two, $XDG_CONFIG_HOME/git/config (~/.config/git/config when that is unset)
+// and ~/.gitconfig. A later file's value wins over an earlier one's, as it
+// does in git.
+func machineConfigs() ([]scopedConfig, error) {
+	type source struct{ scope, path string }
+	sources := []source{{"system", systemGitConfig}}
+	if home, err := os.UserHomeDir(); err == nil {
+		xdg := os.Getenv("XDG_CONFIG_HOME")
+		if xdg == "" {
+			xdg = filepath.Join(home, ".config")
+		}
+		sources = append(sources,
+			source{"global", filepath.Join(xdg, "git", "config")},
+			source{"global", filepath.Join(home, ".gitconfig")})
+	}
+	var out []scopedConfig
+	for _, s := range sources {
+		// Opened without waiting, and read only when it is a file. git.hooks
+		// reads these over MCP too, and a named pipe in place of one — which
+		// unpacking an archive into a root that holds the home directory can
+		// leave — blocked open(2) until a writer came, which no context can
+		// interrupt, as the repository's own files did before openAt.
+		f, err := os.OpenFile(s.path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+		if errors.Is(err, iofs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		var cfg *gitconfig.Config
+		info, err := f.Stat()
+		switch {
+		case err == nil && !info.Mode().IsRegular():
+			err = errors.New("not a regular file")
+		case err == nil:
+			cfg, err = gitconfig.ReadConfig(f)
+		}
+		_ = f.Close()
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", s.path, err)
+		}
+		out = append(out, scopedConfig{scope: s.scope, config: cfg})
+	}
+	return out, nil
 }
 
 func addConfigRows(t *view.Table, scope string, cfg *gitconfig.Config) {
