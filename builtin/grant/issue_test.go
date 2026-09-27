@@ -334,7 +334,7 @@ func TestRenewMovesAWholeRole(t *testing.T) {
 	if verr := core.Issue(byHand, true); verr != nil {
 		t.Fatal(verr)
 	}
-	v := run(t, runRenew, map[string]any{"role": "dev", "ttl": "3h"})
+	v := run(t, renewH, map[string]any{"role": "dev", "ttl": "3h"})
 	if body := v.(view.Text).Body; !strings.Contains(body, "renewed 2 grant") {
 		t.Fatalf("renew --role said %q", body)
 	}

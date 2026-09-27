@@ -125,3 +125,71 @@ func ProfileOfRoster(cell string) (string, bool) {
 	}
 	return profile, true
 }
+
+// ArtifactState is how the artifact a grant was issued against (Digest)
+// compares with the one answering for its namespace now.
+type ArtifactState int
+
+const (
+	// ArtifactCurrent is the artifact the grant names, answering now: the
+	// gate compares the two equal.
+	ArtifactCurrent ArtifactState = iota
+	// ArtifactReplaced is another artifact answering for the namespace now —
+	// an upgrade, a rebuild, a binary swapped in under the name — so the
+	// grant covers no call, whatever else it says.
+	ArtifactReplaced
+	// ArtifactGone is nothing answering for the namespace now: the plugin
+	// was removed, or its bytes are not ones this machine trusts to run.
+	ArtifactGone
+)
+
+// ArtifactNow judges the grant against the artifact behind its namespace
+// now, as registry.Artifact answers: current is that artifact's digest,
+// empty for a built-in, and known is false when nothing answers for the
+// namespace.
+//
+// The gate's own comparison (covers), asked by what lists grants rather
+// than by a call. It had to be: upgrading a plugin invalidates every grant
+// standing on it — the Digest field says why that is the rule — and the
+// roster went on showing each one as live, inside its window and budget,
+// while every call it was issued for was refused under the sentence an
+// ungranted call gets. Nothing on any screen said why a grant had stopped
+// covering, nor that issuing it again is the fix.
+func (g Grant) ArtifactNow(current string, known bool) ArtifactState {
+	switch {
+	case !known:
+		return ArtifactGone
+	case current != g.Digest:
+		return ArtifactReplaced
+	}
+	return ArtifactCurrent
+}
+
+// ShortDigest is a digest as a listing shows it: its first twelve
+// characters, the prefix rta doctor prints for a plugin and a
+// `plugins.<ns>@<digest>` pin is compared against.
+func ShortDigest(digest string) string {
+	if len(digest) > 12 {
+		return digest[:12]
+	}
+	return digest
+}
+
+// RosterArtifact is a grant's Artifact cell: the short digest of the plugin
+// it was issued against, "built in" for one issued on a namespace the rta
+// binary answers for itself — it has no artifact apart from the rta the
+// operator chose to run, so its grants carry no digest — and a mark when
+// that is no longer what answers (ArtifactNow).
+func RosterArtifact(digest string, state ArtifactState) string {
+	shown := "built in"
+	if digest != "" {
+		shown = ShortDigest(digest)
+	}
+	switch state {
+	case ArtifactReplaced:
+		shown += " (replaced)"
+	case ArtifactGone:
+		shown += " (not loaded)"
+	}
+	return shown
+}

@@ -3,6 +3,7 @@ package grant
 import (
 	"strconv"
 	"testing"
+	"time"
 )
 
 // A grant is named as the gate compares its record: the bare record as it
@@ -72,6 +73,43 @@ func TestARosterProfileReadsBackAsTheProfile(t *testing.T) {
 	for _, cell := range []string{"", " (changed)"} {
 		if back, ok := ProfileOfRoster(cell); ok {
 			t.Errorf("ProfileOfRoster(%q) = %q, want it refused", cell, back)
+		}
+	}
+}
+
+// A grant's artifact is judged the way the gate compares it: exactly, in
+// both directions, with nothing answering for the namespace its own case.
+// And a listing agrees with the gate on every pairing — current exactly
+// when the gate would let the grant cover a call.
+func TestArtifactNowIsTheGatesComparison(t *testing.T) {
+	const build, rebuilt = "5dae737f8845c0ffee", "9f1c2e3d4b5a60718"
+	for _, c := range []struct {
+		digest, current string
+		known           bool
+		want            ArtifactState
+		cell            string
+	}{
+		{"", "", true, ArtifactCurrent, "built in"},
+		{build, build, true, ArtifactCurrent, "5dae737f8845"},
+		{build, rebuilt, true, ArtifactReplaced, "5dae737f8845 (replaced)"},
+		{build, "", true, ArtifactReplaced, "5dae737f8845 (replaced)"},
+		{"", build, true, ArtifactReplaced, "built in (replaced)"},
+		{build, "", false, ArtifactGone, "5dae737f8845 (not loaded)"},
+		{"", "", false, ArtifactGone, "built in (not loaded)"},
+	} {
+		g := Grant{Target: "hello.wipe", Agent: "a", Digest: c.digest, Issued: time.Now(), Expires: time.Now().Add(time.Hour)}
+		got := g.ArtifactNow(c.current, c.known)
+		if got != c.want {
+			t.Errorf("digest %q against %q (known %v) = %v, want %v", c.digest, c.current, c.known, got, c.want)
+		}
+		if cell := RosterArtifact(c.digest, got); cell != c.cell {
+			t.Errorf("digest %q against %q (known %v) is drawn %q, want %q", c.digest, c.current, c.known, cell, c.cell)
+		}
+		if c.known {
+			covers := g.covers("hello.wipe", "", Caller{Agent: "a", Digest: c.current})
+			if covers != (got == ArtifactCurrent) {
+				t.Errorf("digest %q against %q: the gate covers = %v, the listing says %v", c.digest, c.current, covers, got)
+			}
 		}
 	}
 }

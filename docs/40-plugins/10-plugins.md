@@ -70,7 +70,7 @@ The same digest is recorded on every grant issued against that plugin:
 rta grant allow hello.wipe --ttl 5m     # bound to hello as it is now, not to the name
 ```
 
-So an authorisation attaches to an artifact rather than to a name a replacement would inherit — replace the binary and the grant stops covering anything.
+So an authorisation attaches to an artifact rather than to a name a replacement would inherit — replace the binary and the grant stops covering anything. `rta grant list --detail` shows the build each grant is bound to, and marks one whose plugin has since been replaced.
 
 ## Confinement
 
@@ -210,6 +210,8 @@ rta plugin prune --yes                 # drop them, and the trust on each
 ```
 
 Every upgrade keeps the previous artifact in the store, so a rollback is a re-install rather than a re-download — and nothing took the older ones out, so a plugin followed through ten releases held ten copies. `prune` removes every stored version that is neither the one `bin/` points at nor the one `rta.lock` records, withdrawing trust from each the way `remove` does: the approval was for those bytes, and the bytes are going. A plugin whose store names no current version at all is left alone, and its row says so.
+
+An upgrade also leaves the grants standing on the plugin covering nothing: each is bound to the build it was issued against, and the new build is another artifact. `rta grant list` marks every such grant `(replaced)`; `rta grant allow` issues each again for the build installed now.
 
 ## What a plugin can and cannot do
 
