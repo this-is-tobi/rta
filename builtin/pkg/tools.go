@@ -2,6 +2,7 @@ package pkg
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"errors"
@@ -222,47 +223,136 @@ func toolsTable(states []toolState) view.Table {
 // checksumNames are the assets a release publishes its digests in, in the
 // order they are tried: goreleaser's default first, then the rest of the
 // zoo, then the per-asset sidecar.
-func checksumNames(asset string) []string {
-	return []string{"checksums.txt", "sha256sums.txt", "SHA256SUMS", "sha256sum.txt", "checksums.sha256", asset + ".sha256"}
+func checksumNames(name string) []string {
+	return []string{"checksums.txt", "sha256sums.txt", "SHA256SUMS", "sha256sum.txt", "checksums.sha256", name + ".sha256"}
 }
 
-// pickAsset chooses the archive for this machine: the name must carry this
-// OS and this architecture in one of their usual spellings, must be a
-// .tar.gz or a bare binary, and must not be a checksums or signature file.
-func pickAsset(rel release, bin string) (name, url string, size int64, digest string, verr *view.Error) {
-	osTokens := map[string][]string{"darwin": {"darwin", "macos", "apple"}, "linux": {"linux"}}[runtime.GOOS]
-	archTokens := map[string][]string{"amd64": {"amd64", "x86_64", "x64"}, "arm64": {"arm64", "aarch64"}}[runtime.GOARCH]
-	var candidates []int
+// assetKind is what an asset's name says rta would be placing, which is
+// all it knows before the download.
+type assetKind int
+
+const (
+	assetOther assetKind = iota
+	assetBinary
+	assetTarGz
+)
+
+// kindOf reads an asset's name by what rta can place, never by what it can
+// rule out.
+//
+// It was a deny list — checksums, signatures, zip, deb, rpm, dmg — and the
+// install path took whatever survived it that was not a .tar.gz for the
+// binary itself. Release pages carry more kinds of file than any list
+// names: shellcheck, helix and typst ship only .tar.xz, rust-analyzer a .gz
+// and a .vsix, and a binary's .asc or .intoto.jsonl sidecar listed before
+// it was the one picked. Each went onto $PATH in place of the working tool.
+//
+// A bare binary is the name with no extension, and telling that apart from
+// one with an extension is the part a naive reading gets wrong: versions
+// and platforms are spelled with dots too, so sops-v3.9.0.darwin.arm64 and
+// mkcert-v1.4.4-darwin-arm64 have a last "extension" of arm64 and of
+// 4-darwin-arm64. What follows the last dot is part of the name when it
+// names the platform or is a number, and a file type otherwise — except
+// .AppImage, the one extension an executable carries as itself.
+func kindOf(name string, platform []string) assetKind {
+	lower := strings.ToLower(name)
+	if strings.HasSuffix(lower, ".tar.gz") || strings.HasSuffix(lower, ".tgz") {
+		return assetTarGz
+	}
+	i := strings.LastIndexByte(lower, '.')
+	if i < 0 {
+		return assetBinary
+	}
+	last := lower[i+1:]
+	if last == "appimage" || (last != "" && (hasAny(last, platform) || strings.Trim(last, "0123456789") == "")) {
+		return assetBinary
+	}
+	return assetOther
+}
+
+// platformTokens are this machine's OS and architecture in the spellings
+// release assets use for them.
+func platformTokens() (osTokens, archTokens []string) {
+	return map[string][]string{"darwin": {"darwin", "macos", "apple"}, "linux": {"linux"}}[runtime.GOOS],
+		map[string][]string{"amd64": {"amd64", "x86_64", "x64"}, "arm64": {"arm64", "aarch64"}}[runtime.GOARCH]
+}
+
+// pickAsset chooses what to install for this machine: the name must carry
+// this OS and this architecture in one of their usual spellings, and be a
+// .tar.gz or a bare binary. A .tar.gz wins over a bare binary when both
+// exist, since the archive is what a checksums file usually names; between
+// two of a kind, the release's own order decides.
+func pickAsset(rel release, bin string) (asset, *view.Error) {
+	osTokens, archTokens := platformTokens()
+	platform := append(append([]string{}, osTokens...), archTokens...)
+	best, bestKind := -1, assetOther
 	for i, a := range rel.Assets {
 		lower := strings.ToLower(a.Name)
 		if !hasAny(lower, osTokens) || !hasAny(lower, archTokens) {
 			continue
 		}
-		if strings.HasSuffix(lower, ".sha256") || strings.HasSuffix(lower, ".sig") || strings.HasSuffix(lower, ".pem") ||
-			strings.HasSuffix(lower, ".txt") || strings.HasSuffix(lower, ".sbom") || strings.HasSuffix(lower, ".json") {
-			continue
-		}
-		if strings.HasSuffix(lower, ".zip") || strings.HasSuffix(lower, ".deb") || strings.HasSuffix(lower, ".rpm") ||
-			strings.HasSuffix(lower, ".pkg") || strings.HasSuffix(lower, ".dmg") || strings.HasSuffix(lower, ".apk") {
-			continue
-		}
-		candidates = append(candidates, i)
-	}
-	if len(candidates) == 0 {
-		return "", "", 0, "", view.Errorf("pkg.tool.noasset", "the latest release of %s has no .tar.gz or bare binary for %s/%s", bin, runtime.GOOS, runtime.GOARCH).
-			WithHint("rta installs .tar.gz archives and bare binaries only — no zip, deb, rpm or dmg")
-	}
-	// A .tar.gz over a bare binary when both exist, since the archive is
-	// what a checksums file usually names.
-	best := candidates[0]
-	for _, i := range candidates {
-		if strings.HasSuffix(strings.ToLower(rel.Assets[i].Name), ".tar.gz") {
-			best = i
-			break
+		if k := kindOf(a.Name, platform); k > bestKind {
+			best, bestKind = i, k
 		}
 	}
-	a := rel.Assets[best]
-	return a.Name, a.URL, a.Size, a.Digest, nil
+	if best < 0 {
+		return asset{}, view.Errorf("pkg.tool.noasset", "the latest release of %s has no .tar.gz or bare binary for %s/%s", bin, runtime.GOOS, runtime.GOARCH).
+			WithHint("rta installs .tar.gz archives and bare binaries only — no .tar.xz, .gz, zip, deb, rpm or dmg")
+	}
+	return rel.Assets[best], nil
+}
+
+// runnable reports whether a file that starts with head is a program goos
+// runs: its own executable format, or a script with a #! line.
+//
+// The check the name cannot make. A digest proves the bytes are the ones
+// the release published, not that they are a binary — an asset named like
+// one that held an archive or a signature hashed right, read "verified",
+// and replaced a working tool with something that could not execute. The
+// same holds for the member of a .tar.gz that merely shares the binary's
+// name. Only the formats of the two platforms pickAsset knows: an ELF on
+// macOS or a Mach-O on Linux is as unrunnable as an archive.
+func runnable(goos string, head []byte) bool {
+	if bytes.HasPrefix(head, []byte("#!")) {
+		return true
+	}
+	var magic [][]byte
+	switch goos {
+	case "linux":
+		magic = [][]byte{{0x7f, 'E', 'L', 'F'}}
+	case "darwin":
+		// Thin Mach-O, 32- and 64-bit, in either byte order, and the fat
+		// (universal) header, 32- and 64-bit.
+		magic = [][]byte{
+			{0xfe, 0xed, 0xfa, 0xce}, {0xfe, 0xed, 0xfa, 0xcf},
+			{0xce, 0xfa, 0xed, 0xfe}, {0xcf, 0xfa, 0xed, 0xfe},
+			{0xca, 0xfe, 0xba, 0xbe}, {0xca, 0xfe, 0xba, 0xbf},
+		}
+	}
+	for _, m := range magic {
+		if bytes.HasPrefix(head, m) {
+			return true
+		}
+	}
+	return false
+}
+
+// checkRunnable refuses a file that is not a program for this machine, and
+// leaves it read from the start for whoever places it.
+func checkRunnable(f *os.File, what, dest string) *view.Error {
+	head := make([]byte, 4)
+	n, err := io.ReadFull(f, head)
+	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) && !errors.Is(err, io.EOF) {
+		return view.Errorf("pkg.tool.place", "%v", err)
+	}
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return view.Errorf("pkg.tool.place", "%v", err)
+	}
+	if !runnable(runtime.GOOS, head[:n]) {
+		return view.Errorf("pkg.tool.archive", "%s is not a %s executable or a script, so it does not go to %s", what, runtime.GOOS, dest).
+			WithHint("the release's file for this machine is some other kind — an archive rta does not unpack, or a signature; install that one by hand")
+	}
+	return nil
 }
 
 func hasAny(s string, tokens []string) bool {
@@ -337,10 +427,11 @@ func installTool(ctx context.Context, sf plugin.Surface, c *registryClient, t to
 	if !found {
 		return nil, view.Errorf("pkg.tool.norelease", "github.com/%s/%s has no release", t.Owner, t.Repo)
 	}
-	assetName, assetURL, size, apiDigest, verr := pickAsset(rel, t.Bin)
+	picked, verr := pickAsset(rel, t.Bin)
 	if verr != nil {
 		return nil, verr
 	}
+	assetName, assetURL, size, apiDigest := picked.Name, picked.URL, picked.Size, picked.Digest
 	if !strings.HasPrefix(assetURL, "https://") {
 		return nil, view.Errorf("pkg.tool.url", "the asset is not served over https: %s", assetURL)
 	}
@@ -386,13 +477,14 @@ func installTool(ctx context.Context, sf plugin.Surface, c *registryClient, t to
 			WithHint("the release was replaced, or something between GitHub and you rewrote the download")
 	}
 
-	var binary io.Reader
+	var binary *os.File
+	what := assetName
 	archive, err := os.Open(filepath.Join(staging, "artifact"))
 	if err != nil {
 		return nil, view.Errorf("pkg.tool.place", "%v", err)
 	}
 	defer func() { _ = archive.Close() }()
-	if strings.HasSuffix(strings.ToLower(assetName), ".tar.gz") {
+	if kindOf(assetName, nil) == assetTarGz {
 		member, verr := memberNamed(archive, t.Bin)
 		if verr != nil {
 			return nil, verr
@@ -417,9 +509,12 @@ func installTool(ctx context.Context, sf plugin.Surface, c *registryClient, t to
 			return nil, view.Errorf("pkg.tool.place", "%v", err)
 		}
 		defer func() { _ = f.Close() }()
-		binary = f
+		binary, what = f, member+" in "+assetName
 	} else {
 		binary = archive
+	}
+	if verr := checkRunnable(binary, what, dest); verr != nil {
+		return nil, verr
 	}
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		return nil, view.Errorf("pkg.tool.place", "%v", err)

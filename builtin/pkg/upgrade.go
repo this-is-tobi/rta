@@ -55,7 +55,8 @@ func upgradeCapability() plugin.Capability {
 			"manager has behind (or the one `package` of it), and a name from `plugins: pkg: " +
 			"tools:` installs that binary's latest GitHub release in place — fetched, hashed, " +
 			"checked against the digest the release publishes, extracted, and swapped in " +
-			"atomically, the path plugin install walks.\n\n" +
+			"atomically, the path plugin install walks. Only a .tar.gz or a bare binary " +
+			"is taken, and nothing is placed that is not a program this machine runs.\n\n" +
 			"rta never runs sudo. apt, dnf, apk and pacman need root: as root this runs " +
 			"them; otherwise it prints the exact command and refuses. A release that " +
 			"publishes no digest is refused unless `unverified` says you accept that.\n\n" +

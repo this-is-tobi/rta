@@ -84,7 +84,7 @@ rta pkg outdated          # the packages, with the exact upgrade command on ever
 rta pkg upgrade brew      # one manager at a time, never everything; apt and friends print the sudo command instead
 ```
 
-Binaries you installed from GitHub releases have no manager; list them once under `plugins: pkg: tools:` as `- gh=github:cli/cli` and `rta pkg tools` compares each against its latest release, and `rta pkg upgrade gh` installs it in place — fetched, hashed, checked against the digest the release publishes, swapped in atomically. Binaries from `go install` need no entry: they carry their module path, and appear under the go manager.
+Binaries you installed from GitHub releases have no manager; list them once under `plugins: pkg: tools:` as `- gh=github:cli/cli` and `rta pkg tools` compares each against its latest release, and `rta pkg upgrade gh` installs it in place — fetched, hashed, checked against the digest the release publishes, swapped in atomically. It takes the release's .tar.gz or bare binary for your OS and architecture and nothing else: a release that ships only a .tar.xz or a .zip is refused, and so is a download whose bytes are not a program this machine runs. Binaries from `go install` need no entry: they carry their module path, and appear under the go manager.
 
 Then the detail on whatever looked wrong:
 
