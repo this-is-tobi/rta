@@ -95,8 +95,9 @@ func runMail(ctx context.Context, req plugin.Request) (view.View, error) {
 //
 // So: scheme, then authority, then userinfo strictly inside that authority,
 // then port — URL order, which is the order a reader of the string applies
-// too. audit.web does not have this bug because url.Parse ends the authority
-// at the first `/` for it.
+// too. audit.web does not have the path half of this bug, because url.Parse
+// ends the authority at the first `/` for it, and refuses the userinfo half
+// as this does.
 func mailDomain(raw string) (string, *view.Error) {
 	d := strings.TrimSpace(raw)
 	scheme := false

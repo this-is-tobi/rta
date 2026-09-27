@@ -56,6 +56,19 @@ func runWeb(ctx context.Context, req plugin.Request) (view.View, error) {
 		return nil, view.Errorf("audit.web.badhost", "invalid host %q: %v", req.String("host"), err).
 			WithHint("pass a host like example.com or a full https:// URL")
 	}
+	// Refused rather than trimmed, as audit.mail refuses it, and for the
+	// reason it does: the grant gate, the consent prompt and the ledger row
+	// all quote the argument verbatim, and `staging.example.com@10.0.0.9`
+	// reads as staging.example.com to whoever approves it while the request
+	// goes to 10.0.0.9 — carrying the prefix as a Basic credential nobody
+	// meant to send. A value that has to be read twice to find its host has
+	// no business being the thing a grant names.
+	if u.User != nil {
+		return nil, view.Errorf("audit.web.badhost",
+			"%q carries credentials before the host, so the host it audits is not the one it reads as",
+			req.String("host")).
+			WithHint("pass the host itself — the part after the @")
+	}
 	timeout := time.Duration(req.Int("timeout")) * time.Second
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
