@@ -77,7 +77,7 @@ func runOverview(ctx context.Context, req plugin.Request) (view.View, error) {
 	}
 
 	if wt, err := repo.Worktree(); err == nil {
-		if status, ignored, err := worktreeStatus(repo, wt); err == nil {
+		if status, ignored, err := worktreeStatus(repo, wt, pathGateOf(req)); err == nil {
 			summary := worktreeSummary(status)
 			if len(ignored) > 0 {
 				summary += ", " + format.CountOf(len(ignored), "ignore file") + " not applied"

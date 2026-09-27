@@ -28,9 +28,11 @@ func statusCapability() plugin.Capability {
 		Description: "The structured equivalent of `git status --porcelain`: every path with a " +
 			"staged change, an unstaged change, or neither yet — added, tracked at all — one row " +
 			"per path, both halves shown side by side rather than requiring the two-column code to " +
-			"be decoded by eye. One status applies at most 1 MiB and 10000 patterns of ignore files in " +
-			"all, in the order it reads them: one past that is not applied, as git applies no pattern " +
-			"file past 100 MB, so what it ignores is listed, and a warning names it.",
+			"be decoded by eye. It ignores what git ignores: each .gitignore, the repository's " +
+			"info/exclude, and the file core.excludesFile names, ~/.config/git/ignore by default; at " +
+			"most 1 MiB and 10000 patterns of them in all, in the order it reads them. One past that is " +
+			"not applied, as git applies no pattern file past 100 MB, so what it ignores is listed, and " +
+			"a warning names it.",
 		Inputs: []plugin.Field{
 			pathField("repository path, or a subdirectory of one"),
 		},
@@ -71,7 +73,7 @@ func runStatus(ctx context.Context, req plugin.Request) (view.View, error) {
 		return nil, view.Errorf("git.status.worktree", "no working tree here: %v", err).
 			WithHint("a bare repository has no working tree to report on")
 	}
-	status, ignored, err := worktreeStatus(repo, wt)
+	status, ignored, err := worktreeStatus(repo, wt, pathGateOf(req))
 	if err != nil {
 		return nil, view.Errorf("git.status.failed", "reading status: %v", err)
 	}
@@ -102,18 +104,22 @@ func runStatus(ctx context.Context, req plugin.Request) (view.View, error) {
 }
 
 // worktreeStatus is wt's status, as go-git's Worktree.Status reads it but
-// through submodulesOnDisk, so that reading it writes nothing, with its
-// ignore files held to what one status applies (ignoreFiles), and with a
-// change of kind told apart from a change of content (kindChanges); and the
-// ignore files it did not apply. Every capability that reports the working
-// tree's state asks for it here.
-func worktreeStatus(repo *git.Repository, wt *git.Worktree) (git.Status, unapplied, error) {
+// through submodulesOnDisk, so that reading it writes nothing, with the
+// ignore files git applies at the root that go-git does not find
+// (rootExcludeSources), with every ignore file held to what one status
+// applies (ignoreFiles), and with a change of kind told apart from a change
+// of content (kindChanges); and the ignore files it did not apply. confine
+// is the host's path gate. Every capability that reports the working tree's
+// state asks for it here.
+func worktreeStatus(repo *git.Repository, wt *git.Worktree, confine func(string) (string, *view.Error)) (
+	git.Status, unapplied, error,
+) {
 	storer := repo.Storer
 	store, onDisk := repo.Storer.(*filesystem.Storage)
 	if onDisk {
 		storer = submodulesOnDisk{store}
 	}
-	read := newIgnoresRead()
+	read := newIgnoresRead(rootExcludeSources(repo, wt.Filesystem.Root(), confine))
 	reader, err := git.Open(storer, ignoreFiles{Filesystem: wt.Filesystem, read: read})
 	if err != nil {
 		return nil, nil, err
@@ -133,6 +139,12 @@ func worktreeStatus(repo *git.Repository, wt *git.Worktree) (git.Status, unappli
 		kindChanges(repo, wt.Filesystem.Root(), status)
 	}
 	return status, read.unapplied(), nil
+}
+
+// pathGateOf is the host's path gate as a status puts a file it derives to
+// it: the path the gate judged, or why it refuses it.
+func pathGateOf(req plugin.Request) func(string) (string, *view.Error) {
+	return func(p string) (string, *view.Error) { return req.Confine("path", p) }
 }
 
 // typeChanged is the code git gives a path whose kind changed, which go-git's

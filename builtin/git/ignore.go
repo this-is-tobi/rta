@@ -15,12 +15,16 @@ import (
 	"syscall"
 
 	"github.com/go-git/go-billy/v5"
+	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/format/index"
+	"github.com/go-git/go-git/v5/storage/filesystem"
 
 	"github.com/this-is-tobi/rta/pkg/format"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // maxIgnoreBytes and maxIgnorePatterns are what one status reads of the
@@ -39,11 +43,11 @@ import (
 // 285 ignore files hold 2354 patterns in 54 KiB, the largest 9.7 KiB, and
 // Linux's 405 hold about 1800 in 38 KiB. One status reads 1 MiB and applies
 // 10000 patterns, about twenty and four times those, in the order go-git
-// reads the files. An ignore file that would take it past either is not applied at all
-// rather than in part, as git applies none of a pattern file past 100 MB and
-// warns, and the answer says so (unapplied): what the file ignores is then
-// listed as untracked, which git would not list. Variables so a test can
-// lower them.
+// reads the files. An ignore file that would take it past either is not
+// applied at all rather than in part, as git applies none of a pattern file
+// past 100 MB and warns, and the answer says so (unapplied): what the file
+// ignores is then listed as untracked, which git would not list. Variables so
+// a test can lower them.
 var (
 	maxIgnoreBytes    int64 = 1 << 20
 	maxIgnorePatterns       = 10000
@@ -65,23 +69,92 @@ type ignoreFiles struct {
 }
 
 // ignoresRead is what one status has read of its ignore files: the bytes and
-// the patterns it has left, and each file it has decided on, by its path in
-// the working tree.
+// the patterns it has left, each file it has decided on, by its path in the
+// working tree or as the answer names it, the files it reads ahead of the
+// working tree's own .gitignore (excludeSource), and whether it served that
+// .gitignore with anything ahead of it.
 type ignoresRead struct {
 	bytes    int64
 	patterns int
 	files    map[string]ignoreFile
+	root     []excludeSource
+	prefixed bool
 }
 
 // ignoreFile is one ignore file as a status decided on it: the content it
-// applies, or why it does not apply it.
+// applies, or why it does not apply it; and the directory its patterns reach,
+// with its trailing slash, "" for the whole working tree.
 type ignoreFile struct {
 	content []byte
 	why     string
+	reach   string
 }
 
-func newIgnoresRead() *ignoresRead {
-	return &ignoresRead{bytes: maxIgnoreBytes, patterns: maxIgnorePatterns, files: map[string]ignoreFile{}}
+func newIgnoresRead(root []excludeSource) *ignoresRead {
+	return &ignoresRead{bytes: maxIgnoreBytes, patterns: maxIgnorePatterns, files: map[string]ignoreFile{}, root: root}
+}
+
+// rootIgnore is the working tree's own .gitignore, the first ignore file
+// go-git reads, whose patterns reach the whole working tree, and the one it
+// is handed the root sources ahead of.
+const rootIgnore = ".gitignore"
+
+// excludeSource is a file of patterns git applies to the whole working tree
+// before any .gitignore: the one core.excludesFile names, and the
+// repository's own info/exclude. shown is how the answer names it, and why,
+// where it is set, is why it is not read at all.
+//
+// **go-git's status applied neither.** It reads no core.excludesFile at all,
+// not even git's default ~/.config/git/ignore, so a file ignored there, a .env
+// or a .DS_Store on every machine its owner uses, was listed as untracked and
+// git.diff showed the .env whole. And the .git/info/exclude it looks for is
+// refused by its own working tree filesystem, which opens no path through a
+// .git, so a repository's info/exclude was never applied either. Both are
+// read here, the excludes file first, and handed to go-git ahead of the
+// working tree's own .gitignore, the first ignore file it reads, where they
+// reach every path and everything read after them wins over them, as in git.
+type excludeSource struct {
+	shown string
+	fs    billy.Filesystem
+	name  string
+	why   string
+}
+
+// decideRoot decides each root source this has not, one that is not there
+// as one that holds nothing.
+//
+// **Before any ignore file, whichever go-git opens first.** git reads the
+// root sources first, and they are held to the bounds first: go-git opens
+// the working tree's .gitignore before it reads them, and deciding them only
+// then let a .gitignore of 10000 patterns take the whole bound and leave the
+// operator's own excludes file not applied.
+func (r *ignoresRead) decideRoot() {
+	for _, s := range r.root {
+		if _, decided := r.files[s.shown]; decided {
+			continue
+		}
+		file := ignoreFile{why: s.why}
+		if s.why == "" {
+			var err error
+			if file, err = r.decide(s.fs, s.name); err != nil {
+				file = ignoreFile{}
+			}
+		}
+		r.files[s.shown] = file
+	}
+}
+
+// rootExcludes is what the root sources this applies hold, one after the
+// other.
+func (r *ignoresRead) rootExcludes() []byte {
+	r.decideRoot()
+	var content []byte
+	for _, s := range r.root {
+		if file := r.files[s.shown]; file.why == "" && len(file.content) > 0 {
+			content = append(append(content, file.content...), '\n')
+		}
+	}
+	return content
 }
 
 // ignoreFileName reports whether go-git's status reads name, a path in the
@@ -101,18 +174,30 @@ func (f ignoreFiles) OpenFile(name string, flag int, perm os.FileMode) (billy.Fi
 	if flag != os.O_RDONLY || !ignoreFileName(key) {
 		return f.Filesystem.OpenFile(name, flag, perm)
 	}
+	f.read.decideRoot()
 	file, decided := f.read.files[key]
+	var missing error
 	if !decided {
-		var err error
-		if file, err = f.read.decide(f.Filesystem, name); err != nil {
-			return nil, err
+		file, missing = f.read.decide(f.Filesystem, name)
+		if missing == nil {
+			file.reach = strings.TrimSuffix(key, ".gitignore")
+			f.read.files[key] = file
 		}
-		f.read.files[key] = file
 	}
-	if file.why != "" {
+	var ahead []byte
+	if key == rootIgnore {
+		ahead = f.read.rootExcludes()
+		f.read.prefixed = f.read.prefixed || len(ahead) > 0
+	}
+	switch {
+	case len(ahead) == 0 && missing != nil:
+		return nil, missing
+	case len(ahead) == 0 && file.why != "":
 		return nil, &iofs.PathError{Op: "open", Path: name, Err: errors.New(file.why)}
+	case file.why == "":
+		ahead = append(ahead, file.content...)
 	}
-	return &readIgnoreFile{Reader: bytes.NewReader(file.content), name: name}, nil
+	return &readIgnoreFile{Reader: bytes.NewReader(ahead), name: name}, nil
 }
 
 // decide reads the ignore file at name, when what is left of the bounds holds
@@ -197,16 +282,18 @@ func (f *readIgnoreFile) Unlock() error             { return nil }
 func (f *readIgnoreFile) Write([]byte) (int, error) { return 0, errReadOnly }
 func (f *readIgnoreFile) Truncate(int64) error      { return errReadOnly }
 
-// restore marks unmodified each tracked ignore file this did not apply that
-// the status marked modified, where what is on disk is what the index
-// records: the status's comparison was refused its content (ignoreFiles), not
-// shown a change. fs is the working tree, read as the comparison reads it,
-// and the file is hashed only where its size is the index's.
+// restore marks unmodified each tracked ignore file this served otherwise
+// than it is that the status marked modified, where what is on disk is what
+// the index records: the status's comparison was refused the file's content,
+// or handed the root sources ahead of it (ignoreFiles), not shown a change.
+// fs is the working tree, read as the comparison reads it, and the file is
+// hashed only where its size is the index's.
 func (r *ignoresRead) restore(fs billy.Filesystem, idx *index.Index, status git.Status) {
 	entryOf := indexLookup(idx)
 	for name, file := range r.files {
 		fst, listed := status[name]
-		if file.why == "" || !listed || fst.Worktree != git.Modified {
+		served := file.why != "" || name == rootIgnore && r.prefixed
+		if !served || !listed || fst.Worktree != git.Modified {
 			continue
 		}
 		if entry := entryOf(name); entry != nil && sameAsIndexed(fs, name, entry) {
@@ -240,8 +327,9 @@ func sameAsIndexed(fs billy.Filesystem, name string, entry *index.Entry) bool {
 	return h.Sum() == entry.Hash
 }
 
-// notApplied is an ignore file a status did not apply, and why.
-type notApplied struct{ path, why string }
+// notApplied is an ignore file a status did not apply, why, and the
+// directory its patterns reach (ignoreFile).
+type notApplied struct{ path, why, reach string }
 
 // unapplied is the ignore files one status did not apply, in path order.
 type unapplied []notApplied
@@ -251,7 +339,7 @@ func (r *ignoresRead) unapplied() unapplied {
 	var out unapplied
 	for name, file := range r.files {
 		if file.why != "" {
-			out = append(out, notApplied{name, file.why})
+			out = append(out, notApplied{name, file.why, file.reach})
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].path < out[j].path })
@@ -274,12 +362,11 @@ func (u unapplied) sentence(so string) string {
 }
 
 // reach is the directories the files' patterns reach, each with its
-// trailing slash, and the working tree's root as "": a file's own, and
-// everything under it.
+// trailing slash, and the working tree's root as "".
 func (u unapplied) reach() map[string]bool {
 	dirs := make(map[string]bool, len(u))
 	for _, n := range u {
-		dirs[strings.TrimSuffix(n.path, ".gitignore")] = true
+		dirs[n.reach] = true
 	}
 	return dirs
 }
@@ -296,4 +383,73 @@ func mayIgnore(reach map[string]bool, path string) bool {
 		}
 	}
 	return false
+}
+
+// rootExcludeSources is the files git applies to the whole of repo's working
+// tree, at root, before any .gitignore, in the order it reads them
+// (excludeSource). confine is the host's path gate.
+//
+// **A core.excludesFile the repository's own config names is put to the gate
+// first.** The config is a file a caller can write inside the root, and it
+// can name any file on the machine: its lines would be read as patterns, and
+// which files the status then lists would say whether one of them matched.
+// So it is judged as a path a caller sent, and read where the gate judged
+// it. One the operator's own config names, or git's default, is the
+// operator's choice and read wherever it is, as git.hooks reads their
+// core.hooksPath; nothing of it is shown but its name.
+func rootExcludeSources(repo *git.Repository, root string, confine func(string) (string, *view.Error)) []excludeSource {
+	var out []excludeSource
+	switch p, scope, err := excludesFile(repo, root); {
+	case err != nil:
+		out = append(out, excludeSource{shown: "core.excludesFile", why: "reading the config that sets it: " + err.Error()})
+	case p != "":
+		s := excludeSource{shown: p}
+		if scope == "local" || scope == "worktree" {
+			judged, verr := confine(p)
+			if verr != nil {
+				s.why = refusedBy(verr)
+			}
+			p = judged
+		}
+		if s.why == "" {
+			s.fs, s.name = regularFiles{Filesystem: osfs.New(filepath.Dir(p))}, filepath.Base(p)
+		}
+		out = append(out, s)
+	}
+	if store, ok := repo.Storer.(*filesystem.Storage); ok {
+		out = append(out, excludeSource{shown: ".git/info/exclude", fs: store.Filesystem(), name: filepath.Join("info", "exclude")})
+	}
+	return out
+}
+
+// excludesFile is the file core.excludesFile names, as git resolves it, and
+// the scope it is set in: the value in the last of the files git reads that
+// sets it (gitConfigs), ~ expanded and a relative one taken from the working
+// tree's root; where none does, git's default, $XDG_CONFIG_HOME/git/ignore,
+// or ~/.config/git/ignore with that unset. "" where it is set to nothing,
+// which git reads as no file. A file one of the configs includes is not
+// followed, as git.config follows none, and could set it.
+func excludesFile(repo *git.Repository, root string) (path, scope string, err error) {
+	files, err := gitConfigs(repo)
+	if err != nil {
+		return "", "", err
+	}
+	for _, f := range files {
+		if core := f.config.Raw.Section("core"); core.HasOption("excludesFile") {
+			path, scope = core.Option("excludesFile"), f.scope
+		}
+	}
+	switch {
+	case scope != "" && path == "":
+		return "", scope, nil
+	case scope != "":
+		return against(root, plugin.ExpandHome(path)), scope, nil
+	case os.Getenv("XDG_CONFIG_HOME") != "":
+		return filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "git", "ignore"), "default", nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", "", nil //nolint:nilerr // no home directory is no default file, as git finds none
+	}
+	return filepath.Join(home, ".config", "git", "ignore"), "default", nil
 }

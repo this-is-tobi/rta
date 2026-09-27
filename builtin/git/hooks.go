@@ -158,26 +158,9 @@ func hooksDir(repo *git.Repository, fs billy.Filesystem) (dir, base string, warn
 // and not the values, since over MCP the operator's own config is read for
 // this one key and a directory outside the root is not shown.
 func hooksPathSetting(repo *git.Repository) (string, []view.Error, error) {
-	files, err := machineConfigs()
+	files, err := gitConfigs(repo)
 	if err != nil {
 		return "", nil, err
-	}
-	if local, err := repo.Config(); err == nil {
-		files = append(files, scopedConfig{scope: "local", config: local})
-		perWorktree, err := worktreeConfig(repo, local)
-		if err != nil {
-			return "", nil, fmt.Errorf("config.worktree: %w", err)
-		}
-		if perWorktree != nil {
-			files = append(files, scopedConfig{scope: "worktree", config: perWorktree})
-		}
-	}
-	command, err := commandConfig()
-	if err != nil {
-		return "", nil, err
-	}
-	if command != nil {
-		files = append(files, scopedConfig{scope: "command", config: command})
 	}
 	from := -1
 	var systems []string
@@ -212,6 +195,35 @@ func hooksPathSetting(repo *git.Repository) (string, []view.Error, error) {
 		})
 	}
 	return files[from].config.Raw.Section("core").Option("hooksPath"), warnings, nil
+}
+
+// gitConfigs is every file of config git reads for repo, in the order it
+// reads them, a later one's value winning: the operator's own
+// (machineConfigs), the repository's, its worktree's, and the environment's
+// (commandConfig).
+func gitConfigs(repo *git.Repository) ([]scopedConfig, error) {
+	files, err := machineConfigs()
+	if err != nil {
+		return nil, err
+	}
+	if local, err := repo.Config(); err == nil {
+		files = append(files, scopedConfig{scope: "local", config: local})
+		perWorktree, err := worktreeConfig(repo, local)
+		if err != nil {
+			return nil, fmt.Errorf("config.worktree: %w", err)
+		}
+		if perWorktree != nil {
+			files = append(files, scopedConfig{scope: "worktree", config: perWorktree})
+		}
+	}
+	command, err := commandConfig()
+	if err != nil {
+		return nil, err
+	}
+	if command != nil {
+		files = append(files, scopedConfig{scope: "command", config: command})
+	}
+	return files, nil
 }
 
 // shownFrom is p as a row shows it: from base when it is inside, which the

@@ -69,7 +69,7 @@ func runDiff(ctx context.Context, req plugin.Request) (view.View, error) {
 	if commit := req.String("commit"); commit != "" {
 		return diffCommit(ctx, repo, commit, gate)
 	}
-	return diffWorktree(ctx, repo, gate)
+	return diffWorktree(ctx, repo, gate, pathGateOf(req))
 }
 
 // interrupted is a diff the caller stopped waiting for, which answers nothing
@@ -833,14 +833,16 @@ func submoduleHeads(repo *git.Repository, wt *git.Worktree) map[string]plumbing.
 // that touched it, refuses one over it. A variable so a test can lower it.
 var maxDiffBytes int64 = 16 << 20
 
-func diffWorktree(ctx context.Context, repo *git.Repository, gate func(string) *view.Error) (view.View, error) {
+func diffWorktree(ctx context.Context, repo *git.Repository, gate func(string) *view.Error,
+	confine func(string) (string, *view.Error),
+) (view.View, error) {
 	deadline := matchDeadline(ctx)
 	wt, err := repo.Worktree()
 	if err != nil {
 		return nil, view.Errorf("git.diff.worktree", "no working tree here: %v", err).
 			WithHint("a bare repository has no working tree to diff")
 	}
-	status, ignored, err := worktreeStatus(repo, wt)
+	status, ignored, err := worktreeStatus(repo, wt, confine)
 	if err != nil {
 		return nil, view.Errorf("git.diff.failed", "reading status: %v", err)
 	}
