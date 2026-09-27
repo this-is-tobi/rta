@@ -95,6 +95,14 @@ type osvImport struct {
 // read last when others are graded.
 var severityRank = map[string]int{"critical": 4, "high": 3, "medium": 2, "low": 1}
 
+// severityWords are the stated words that mean one of severityRank's under
+// another spelling. GitHub's medium is MODERATE, on most of the records that
+// state a word at all; without it every one of them went to its vector —
+// ungraded when it carried only a CVSS v4 one, which is common on recent
+// advisories and sorts below low, and regraded when a v3 one scored in
+// another band, although the stated word is meant to win.
+var severityWords = map[string]string{"moderate": "medium"}
+
 // severityOf grades one record, preferring what its own database published.
 //
 // The stated word wins over the computed score because it is the one the
@@ -103,7 +111,11 @@ var severityRank = map[string]int{"critical": 4, "high": 3, "medium": 2, "low": 
 // its vector alone would not produce. The vector is the fallback that gives
 // RustSec and the other vector-only databases a grade instead of a blank.
 func severityOf(rec osvRecord) string {
-	if word := strings.ToLower(strings.TrimSpace(rec.DatabaseSpecific.Severity)); severityRank[word] > 0 {
+	word := strings.ToLower(strings.TrimSpace(rec.DatabaseSpecific.Severity))
+	if same, ok := severityWords[word]; ok {
+		word = same
+	}
+	if severityRank[word] > 0 {
 		return word
 	}
 	worst := ""
