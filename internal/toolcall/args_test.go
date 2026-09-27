@@ -77,7 +77,7 @@ func TestRequireEnforcesRequiredFieldsAndExemptsLocalOnes(t *testing.T) {
 		{Name: "identity", Type: plugin.Path, Local: true, Required: true},
 	}}
 	verr := Require(c, map[string]any{}, false)
-	if verr == nil || verr.Code != "core.input.missing" || verr.Message != `x.y needs the "key" argument` {
+	if verr == nil || verr.Code != "core.input.missing" || verr.Message != "the `x_y` tool needs the \"key\" argument" {
 		t.Fatalf("a missing required field: %v", verr)
 	}
 	// A Local field declared Required must not make the capability

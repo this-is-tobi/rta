@@ -158,7 +158,7 @@ func TestARequiredInputOnlyTheOperatorGivesIsRefusedBeforeTheHandler(t *testing.
 	if !isErr || *ran {
 		t.Fatalf("the handler ran without its host: %s", body)
 	}
-	for _, want := range []string{"core.input.missing", "db.query needs host", "only the operator", "rta config"} {
+	for _, want := range []string{"core.input.missing", "the `db_query` tool needs host", "only the operator", "rta config"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the refusal does not say %q: %s", want, body)
 		}
@@ -182,7 +182,7 @@ func TestAMissingOrEmptyRequiredArgumentIsCoreInputMissing(t *testing.T) {
 		if !isErr || *ran {
 			t.Fatalf("%v: the handler ran without its database: %s", args, body)
 		}
-		for _, want := range []string{"core.input.missing", `db.query needs the \"database\" argument`,
+		for _, want := range []string{"core.input.missing", "the `db_query` tool needs the \\\"database\\\" argument",
 			`pass \"database\" in the arguments`} {
 			if !strings.Contains(body, want) {
 				t.Errorf("%v: the refusal does not say %q: %s", args, want, body)

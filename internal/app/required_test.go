@@ -26,7 +26,7 @@ func TestAnEmptyRequiredInputIsRefusedOnTheCLI(t *testing.T) {
 		if err == nil {
 			t.Fatalf("%v ran with an empty host:\n%s", args, out)
 		}
-		for _, want := range []string{"core.input.missing", "pg.query needs --host",
+		for _, want := range []string{"core.input.missing", "`rta pg query` needs --host",
 			"pass --host, or set host in your rta config"} {
 			if !strings.Contains(errOut, want) {
 				t.Errorf("%v: the refusal does not say %q:\n%s", args, want, errOut)
@@ -38,7 +38,7 @@ func TestAnEmptyRequiredInputIsRefusedOnTheCLI(t *testing.T) {
 	if err == nil {
 		t.Fatalf("an empty required argument ran:\n%s", out)
 	}
-	for _, want := range []string{"core.input.missing", "demo.item.pick needs <name>", "rta demo item pick --help"} {
+	for _, want := range []string{"core.input.missing", "`rta demo item pick` needs <name>", "rta demo item pick --help"} {
 		if !strings.Contains(errOut, want) {
 			t.Errorf("the refusal does not say %q:\n%s", want, errOut)
 		}
