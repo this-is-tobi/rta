@@ -87,6 +87,33 @@ packages:
     resolution: {integrity: sha512-y}
 `
 	want(t, parsePnpmLock(v5, "p"), "npm", "@babel/code-frame@7.12.11", "lodash@4.17.21")
+
+	// v5 spells a peer suffix after an underscore, a scope's slash as a plus,
+	// and a long one as a hash. Split at the last @, the first read as a
+	// package named "@vitejs/plugin-react/2.2.0_vite" at 3.2.4, and the
+	// second as the right package at a version nobody published — neither
+	// one a question OSV could answer about the package installed.
+	v5peers := `lockfileVersion: 5.4
+packages:
+  /@vitejs/plugin-react/2.2.0_vite@3.2.4:
+    resolution: {integrity: sha512-x}
+  /ts-node/10.9.1_ccwudyfw5se7hgalwgkzhn2yp4:
+    resolution: {integrity: sha512-y}
+  /@testing-library/react/12.1.5_@types+react@17.0.2+react@17.0.2:
+    resolution: {integrity: sha512-z}
+`
+	want(t, parsePnpmLock(v5peers, "p"), "npm",
+		"@vitejs/plugin-react@2.2.0", "ts-node@10.9.1", "@testing-library/react@12.1.5")
+
+	// And a v9 name that starts with a digit is still a name.
+	digits := `lockfileVersion: '9.0'
+packages:
+  '@acme/3d-lib@1.0.0':
+    resolution: {integrity: sha512-x}
+  '@acme/3d_lib@2.0.0':
+    resolution: {integrity: sha512-y}
+`
+	want(t, parsePnpmLock(digits, "p"), "npm", "@acme/3d-lib@1.0.0", "@acme/3d_lib@2.0.0")
 }
 
 // The two yarn dialects are the same file with different punctuation, and a
