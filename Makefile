@@ -177,10 +177,13 @@ size: build ## Build rta and report what it weighs
 # does. The ceiling is on the linux/amd64 release binary, stripped the way a
 # release strips it, because that is the one that ships in the image and the
 # one most people download — measured 35.5 MB at v0.18.0 with 20 built-in
-# plugins, so 40 MB is room for a release or two of ordinary growth and not
-# for a dependency that brings a second runtime with it. Raise it here, on
-# purpose, with the dependency that needed it named in the commit.
-SIZE_LIMIT_MB ?= 40
+# plugins and 37.0 MB at v0.28.0. It was 40 MB until then; 50 MB is room for
+# the built-ins still to come, and still not for a dependency that brings a
+# second runtime with it. A ceiling, not a budget: a change that adds weight
+# says in its commit what the weight bought, and a capability that could be a
+# plugin costs nothing to the people who never install it. Raise it here, on
+# purpose, with what needed it named in the commit.
+SIZE_LIMIT_MB ?= 50
 
 size-check: ## Fail if the linux/amd64 release binary exceeds SIZE_LIMIT_MB
 	@mkdir -p $(BUILDDIR)
