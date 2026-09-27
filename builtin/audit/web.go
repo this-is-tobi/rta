@@ -159,31 +159,13 @@ func runWeb(ctx context.Context, req plugin.Request) (view.View, error) {
 	return r.Table(true), nil
 }
 
-// auditTLSConfig is the client side of an audit's handshake: it offers every
-// protocol and suite Go can speak, and verifies nothing.
-//
-// An audit asks what a host negotiates, so it cannot hold the host to the
-// floor a client that trusts the answer would. Go's client refuses below TLS
-// 1.2 and no longer proposes 3DES or RSA key exchange, and a host speaking
-// only those failed the handshake: the audit answered that the host was
-// unreachable, with a hint to check that it was, about a host that answered
-// — and the tls-version row that grades a deprecated protocol could never be
-// reached. Offering them costs nothing against a host that has better,
-// since the host chooses; against one that does not, what it chose is the
-// finding. Nothing crosses this connection but a GET, and its body is never
-// read.
-func auditTLSConfig() *tls.Config {
-	all := append(tls.CipherSuites(), tls.InsecureCipherSuites()...)
-	suites := make([]uint16, len(all))
-	for i, s := range all {
-		suites[i] = s.ID
-	}
-	return &tls.Config{
-		InsecureSkipVerify: true,             //nolint:gosec // the presented chain is graded instead
-		MinVersion:         tls.VersionTLS10, //nolint:gosec // a deprecated protocol is the finding
-		CipherSuites:       suites,
-	}
-}
+// auditTLSConfig is the client side of an audit's handshake: every protocol
+// and suite Go can speak offered, and nothing verified, for the reason
+// x509check.InspectionTLS gives. An audit asks what a host negotiates, and
+// the tls-version row that grades a deprecated protocol was never reached
+// while the client held the host to TLS 1.2. Nothing crosses this connection
+// but a GET, and its body is never read.
+func auditTLSConfig() *tls.Config { return x509check.InspectionTLS("") }
 
 // detailedWeb is the full-page report: the same findings, grouped into the
 // areas a hardening pass actually works through one at a time, plus the

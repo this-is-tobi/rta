@@ -220,12 +220,11 @@ func dialCerts(ctx context.Context, target string, timeout time.Duration) ([]*x5
 		return nil, nil, view.Errorf("cert.target.invalid", "invalid target %q: %v", target, err).
 			WithHint("use host, host:port, or a PEM file path")
 	}
-	dialer := &tls.Dialer{Config: &tls.Config{
-		ServerName: host,
-		// We are inspecting, not trusting: report what the host presents even
-		// if the chain is invalid — verification status is part of the output.
-		InsecureSkipVerify: true, //nolint:gosec
-	}}
+	// We are inspecting, not trusting: report what the host presents even if
+	// the chain is invalid, since verification status is part of the output,
+	// and whatever protocol it speaks, down to TLS 1.0, since a host that
+	// speaks only a retired one has a certificate to read all the same.
+	dialer := &tls.Dialer{Config: x509check.InspectionTLS(host)}
 	// The caller's context carries no deadline of its own — the CLI runs
 	// handlers on a bare context and an MCP client sets none either — so
 	// without this the dial waits out the OS connect timeout, minutes per
@@ -454,7 +453,7 @@ func hostOf(target string) string {
 
 func runInspect(ctx context.Context, req plugin.Request) (view.View, error) {
 	target := req.String("target")
-	certs, _, err := loadCerts(ctx, req.Surface(), target, dialTimeout(req))
+	certs, state, err := loadCerts(ctx, req.Surface(), target, dialTimeout(req))
 	if err != nil {
 		return nil, err
 	}
@@ -470,6 +469,9 @@ func runInspect(ctx context.Context, req plugin.Request) (view.View, error) {
 		{Key: "sha256", Value: hex.EncodeToString(sum[:])},
 		{Key: "sig-alg", Value: leaf.SignatureAlgorithm.String()},
 		{Key: "chain", Value: verify(certs, hostOf(target))},
+	}
+	if state != nil {
+		pairs = append(pairs, view.Pair{Key: "tls", Value: protocolOf(state.Version)})
 	}
 	if len(leaf.DNSNames) > 0 {
 		pairs = append(pairs, view.Pair{Key: "dns-names", Value: strings.Join(leaf.DNSNames, ", ")})
@@ -644,7 +646,7 @@ func expiryRow(ctx context.Context, target string, warnDays int, timeout time.Du
 	// type for a slice today, the Help already describes a host, and a
 	// capability whose declared inputs cannot express what it does is the
 	// thing that made this invisible.
-	certs, _, err := dialCerts(ctx, target, timeout)
+	certs, state, err := dialCerts(ctx, target, timeout)
 	if err != nil {
 		return []string{target, "-", "-", "ERROR: " + view.AsError(err, "cert.load").Message}
 	}
@@ -655,6 +657,18 @@ func expiryRow(ctx context.Context, target string, warnDays int, timeout time.Du
 		status = "EXPIRED"
 	case x509check.Expiring(leaf.NotAfter, warnDays):
 		status = fmt.Sprintf("WARN <%dd", warnDays)
+	}
+	// A retired protocol is the host's weakness, graded beside its
+	// certificate's dates: the handshake takes one so the certificate can be
+	// read at all (x509check.InspectionTLS), and the row says what it took
+	// rather than reading ok about a host that speaks TLS 1.0.
+	if x509check.DeprecatedTLS(state.Version) {
+		weak := tls.VersionName(state.Version) + " (deprecated)"
+		if status == "ok" {
+			status = "WARN " + weak
+		} else {
+			status += ", " + weak
+		}
 	}
 	return []string{
 		target,
@@ -675,11 +689,20 @@ func runTLS(ctx context.Context, req plugin.Request) (view.View, error) {
 			WithHint("pass host[:port] instead")
 	}
 	return view.KeyValue{Pairs: []view.Pair{
-		{Key: "version", Value: tls.VersionName(state.Version)},
+		{Key: "version", Value: protocolOf(state.Version)},
 		{Key: "cipher", Value: tls.CipherSuiteName(state.CipherSuite)},
 		{Key: "alpn", Value: orDash(state.NegotiatedProtocol)},
 		{Key: "server-name", Value: orDash(state.ServerName)},
 	}}, nil
+}
+
+// protocolOf names the protocol a handshake negotiated, and says so when it
+// is one RFC 8996 retired (x509check.DeprecatedTLS).
+func protocolOf(version uint16) string {
+	if x509check.DeprecatedTLS(version) {
+		return tls.VersionName(version) + " — deprecated, upgrade to TLS 1.2+"
+	}
+	return tls.VersionName(version)
 }
 
 func orDash(s string) string {

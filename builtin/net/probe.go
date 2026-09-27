@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/this-is-tobi/rta/builtin/internal/x509check"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -172,8 +173,15 @@ func probe(ctx context.Context, req plugin.Request, send string) (view.View, err
 		handshake := time.Now()
 		// InsecureSkipVerify: this is a diagnostic. Reporting what a host
 		// negotiates must work even when its certificate does not validate —
-		// `rta audit web` is the capability that judges the certificate.
-		tc := tls.Client(conn, &tls.Config{ServerName: host, InsecureSkipVerify: true}) //nolint:gosec
+		// `rta audit web` is the capability that judges the certificate. And
+		// net probe takes any protocol the host speaks, TLS 1.0 on, since
+		// which one is what it reports (x509check.InspectionTLS). net send
+		// keeps Go's floor: it writes the caller's bytes over the connection.
+		cfg := &tls.Config{ServerName: host, InsecureSkipVerify: true} //nolint:gosec
+		if send == "" {
+			cfg = x509check.InspectionTLS(host)
+		}
+		tc := tls.Client(conn, cfg)
 		// ctx alone carries no deadline — every caller of probe (the CLI
 		// and the MCP bridge alike) hands it a context that only cancels on
 		// process shutdown — so without this, a peer that accepts the TCP
