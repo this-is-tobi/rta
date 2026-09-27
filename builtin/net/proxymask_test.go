@@ -26,7 +26,6 @@ func TestProxyCredentialsAreMaskedInEveryFormThatWorks(t *testing.T) {
 		// cut at the first one, the rest of the password was printed.
 		{"password with a raw @", "http://bob:s3cr@tpass@proxy.corp:3128", "tpass"},
 		{"schemeless password with a raw @", "bob:P@ss@proxy.corp:3128", "ss"},
-		{"raw @ in the password and in the path", "http://bob:s3cr@tpass@proxy.corp:3128/a@b", "tpass"},
 		// A `://` further along is in the path, not the end of a scheme: net/http
 		// reads this as bob with s3cret, and taking the first `://` for the
 		// scheme's split the value after the credential.
@@ -48,6 +47,44 @@ func TestProxyCredentialsAreMaskedInEveryFormThatWorks(t *testing.T) {
 	}
 }
 
+// A raw `/`, `?` or `#` in a password ends the authority where url.Parse
+// looks for it — and the userinfo scan, reading the same authority, found no
+// `@` in it and printed the value whole. Whether url.Parse then refuses the
+// value (`bob:s3/…`, whose port is not a number) or reads it as a proxy at
+// bob:2024 with a path, the password in it is the operator's, and net.info
+// promises to mask it: the value is masked up to its last `@`.
+func TestAPasswordHoldingARawSlashQuestionMarkOrHashIsMasked(t *testing.T) {
+	for _, tc := range []struct{ name, in string }{
+		{"a slash in the password", "http://bob:s3/cr3t@proxy.corp:3128"},
+		{"a question mark in the password", "http://bob:s3?cr3t@proxy.corp:3128"},
+		{"a hash in the password", "https://bob:s3#cr3t@proxy.corp:3128"},
+		{"schemeless, a slash in the password", "bob:s3/cr3t@proxy.corp:3128"},
+		{"schemeless, a hash in the password", "bob:s3#cr3t@proxy.corp:3128"},
+		// url.Parse reads each of these, as a proxy at bob on a port with a
+		// path, a query or a fragment after it and no userinfo at all.
+		{"digits, then a slash", "http://bob:2024/s3cr3t@proxy.corp:3128"},
+		{"schemeless, digits, then a slash", "bob:2024/s3cr3t@proxy.corp:3128"},
+		{"digits, then a question mark", "http://bob:8080?s3cr3t@proxy.corp:3128"},
+		{"digits, then a hash", "socks5://bob:8080#s3cr3t@proxy.corp:3128"},
+		{"a slash first", "http://bob:/s3cr3t@proxy.corp:3128"},
+		// "bob:x" is no scheme — a scheme has no colon — so the `://` after
+		// it is inside the password, and taking it for a scheme's printed
+		// the username and the password's first letter as one.
+		{"a :// in the password", "bob:x://s3cr3t@proxy.corp:3128"},
+		{"a raw @ and a slash in the password", "http://bob:s3@c:r/3t@proxy.corp:3128"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := maskProxy(tc.in)
+			if contains(got, "bob") || contains(got, "s3") || contains(got, "cr3t") || contains(got, "3t@") {
+				t.Fatalf("credential survived: %q -> %q", tc.in, got)
+			}
+			if !contains(got, "***@proxy.corp:3128") {
+				t.Fatalf("not masked up to the host: %q -> %q", tc.in, got)
+			}
+		})
+	}
+}
+
 func TestAProxyWithNoCredentialIsLeftAlone(t *testing.T) {
 	// Masking that fires on everything hides the answer somebody asked for.
 	for _, in := range []string{
@@ -62,16 +99,23 @@ func TestAProxyWithNoCredentialIsLeftAlone(t *testing.T) {
 	}
 }
 
-func TestAnAtSignAfterThePathIsNotACredential(t *testing.T) {
-	// Reading the first @ anywhere would mask the host instead of a secret.
-	for _, in := range []string{
-		"http://proxy.corp:3128/path@notuserinfo",
-		"http://proxy.corp:3128?who=a@b",
-		"http://proxy.corp:3128#a@b",
-		"proxy.corp:3128/a://b@c",
+// An `@` past the authority cannot be told from one after a password holding
+// a raw `/`, `?` or `#` — `http://proxy.corp:3128/path@x` has the shape of
+// `http://bob:2024/s3cr3t@proxy.corp:3128` — and a proxy's path, query and
+// fragment are never read, so it is masked up to like any other: the host
+// is lost to the mask in a value that has one, and no password is shown in
+// a value that looks like one. The first `@` was once read anywhere, and
+// masked the host of a value holding two while it printed the rest.
+func TestAnAtSignPastTheAuthorityIsMaskedUpTo(t *testing.T) {
+	for in, want := range map[string]string{
+		"http://proxy.corp:3128/path@notuserinfo":   "http://***@notuserinfo",
+		"http://proxy.corp:3128?who=a@b":            "http://***@b",
+		"http://proxy.corp:3128#a@b":                "http://***@b",
+		"proxy.corp:3128/a://b@c":                   "***@c",
+		"http://bob:s3cr@tpass@proxy.corp:3128/a@b": "http://***@b",
 	} {
-		if got := maskProxy(in); got != in {
-			t.Errorf("%q became %q", in, got)
+		if got := maskProxy(in); got != want {
+			t.Errorf("%q became %q, want %q", in, got, want)
 		}
 	}
 }
