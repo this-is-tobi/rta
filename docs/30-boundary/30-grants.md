@@ -150,7 +150,7 @@ For a machine whose humans are not at its terminal — an `rta mcp serve --http`
 
 ## What a grant does not do
 
-- **It does not survive the plugin it names being replaced.** A grant on a plugin's capability records that plugin's artifact digest, so swapping the binary under the same name stops it covering anything. Built-ins have no separate artifact and carry no digest. Upgrading or rebuilding a plugin is such a replacement: `grant list` marks every grant standing on the old build `(replaced)`, because an agent refused under one is told only what an ungranted call is told. Issue it again after the upgrade with `rta grant allow`; `grant renew` moves the deadline and never rebinds a grant.
+- **It does not survive the plugin it names being replaced.** A grant on a plugin's capability records that plugin's artifact digest, so swapping the binary under the same name stops it covering anything. Built-ins have no separate artifact and carry no digest. Upgrading or rebuilding a plugin is such a replacement: `grant list` marks every grant standing on the old build `(replaced)` and `rta doctor` warns of them, because an agent refused under one is told only what an ungranted call is told. Issue it again after the upgrade with `rta grant allow`; `grant renew` moves the deadline and never rebinds a grant.
 - **It does not widen a path root.** Path confinement is checked separately, on every path argument.
 - **It does not survive a ceiling.** If a `.rta-policy.yaml` says `maxTTL: 15m`, a `--ttl 2h` grant is clamped to 15m and told so.
 - **It does not authorize a profile you have not configured.** `--profile staging` matches the connection named `staging`, exactly.

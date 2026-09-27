@@ -211,7 +211,7 @@ rta plugin prune --yes                 # drop them, and the trust on each
 
 Every upgrade keeps the previous artifact in the store, so a rollback is a re-install rather than a re-download — and nothing took the older ones out, so a plugin followed through ten releases held ten copies. `prune` removes every stored version that is neither the one `bin/` points at nor the one `rta.lock` records, withdrawing trust from each the way `remove` does: the approval was for those bytes, and the bytes are going. A plugin whose store names no current version at all is left alone, and its row says so.
 
-An upgrade also leaves the grants standing on the plugin covering nothing: each is bound to the build it was issued against, and the new build is another artifact. `rta grant list` marks every such grant `(replaced)`; `rta grant allow` issues each again for the build installed now.
+An upgrade also leaves the grants standing on the plugin covering nothing: each is bound to the build it was issued against, and the new build is another artifact. `rta grant list` marks every such grant `(replaced)` and `rta doctor` warns of them; `rta grant allow` issues each again for the build installed now.
 
 ## What a plugin can and cannot do
 

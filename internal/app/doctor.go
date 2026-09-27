@@ -331,7 +331,7 @@ func doctorReport(reg *registry.Registry) view.View {
 	doctorShadowedPlugins(add)
 	doctorPolicy(add)
 	doctorRoles(add)
-	doctorGrants(add)
+	doctorGrants(reg, add)
 	doctorLocks(add)
 	doctorGuard(add)
 	doctorStore(add)
@@ -833,7 +833,7 @@ func doctorRoles(add func(check, status, detail string)) {
 // Standing agent permissions. Worth a line of its own: a grant issued
 // yesterday and forgotten is exactly the thing a health check should
 // surface, and the answer is usually "none".
-func doctorGrants(add func(check, status, detail string)) {
+func doctorGrants(reg *registry.Registry, add func(check, status, detail string)) {
 	if grants, verr := grant.Load(); verr != nil {
 		add("agent grants", "error", verr.Message)
 	} else if len(grants) == 0 && grant.Legacy() {
@@ -844,7 +844,7 @@ func doctorGrants(add func(check, status, detail string)) {
 		add("agent grants", "ok", "none active — agents cannot write or destroy anything")
 	} else {
 		named := make([]string, 0, len(grants))
-		var stale, unwatched []string
+		var stale, unwatched, replaced, gone []string
 		// A role's grants are named once, as the role: "dev for claude (2)"
 		// is what the operator issued, and the roster says which lines.
 		roles := map[string]int{}
@@ -872,6 +872,19 @@ func doctorGrants(add func(check, status, detail string)) {
 			// them ran. So this is a question and not a verdict.
 			if g.From == grant.FromCommand {
 				unwatched = append(unwatched, g.Named())
+			}
+			// Bound to a plugin build that no longer answers for its
+			// namespace: listed, inside its TTL, and covering no call. The
+			// Digest field's rule, which an upgrade meets on every grant
+			// standing on the plugin it upgrades — and the refusal an agent
+			// gets says only what an ungranted call is told, so this is
+			// where the fix has to be found. Judged against the registry
+			// this process loaded, the lookup the gate compares against.
+			switch g.ArtifactNow(reg.Artifact(grant.Namespace(g.Target))) {
+			case grant.ArtifactReplaced:
+				replaced = append(replaced, g.Named())
+			case grant.ArtifactGone:
+				gone = append(gone, g.Named())
 			}
 			// A grant issued against a connection that has since been
 			// repointed. It is listed, it is inside its TTL, and every call it
@@ -910,6 +923,23 @@ func doctorGrants(add func(check, status, detail string)) {
 					"nothing: %s — `rta grant allow` re-consents to the connection as it is now "+
 					"(`rta grant renew` moves the deadline and deliberately does not)",
 				len(stale), strings.Join(stale, ", ")))
+		}
+		if n := len(replaced); n > 0 {
+			add("agent grants", "warn", fmt.Sprintf(
+				"%s issued on a plugin that has been replaced since, so %s nothing: %s — a grant is "+
+					"bound to the plugin build it was issued against, and `rta grant allow` issues it "+
+					"again for the build installed now (`rta grant renew` moves the deadline and does "+
+					"not rebind it)",
+				format.Count(n, "grant was", "grants were"), format.Plural(n, "it authorizes", "they authorize"),
+				strings.Join(replaced, ", ")))
+		}
+		if n := len(gone); n > 0 {
+			add("agent grants", "warn", fmt.Sprintf(
+				"%s a plugin rta does not load now, so %s nothing: %s — `rta plugin list` says "+
+					"which plugins load, and a grant issued against another build of one has to be "+
+					"issued again once it does",
+				format.Count(n, "grant names", "grants name"), format.Plural(n, "it authorizes", "they authorize"),
+				strings.Join(gone, ", ")))
 		}
 	}
 }

@@ -60,3 +60,36 @@ func TestDoctorNamesAPaddedRecordAsTheGateComparesIt(t *testing.T) {
 		}
 	}
 }
+
+// A grant bound to a plugin build that no longer answers covers no call,
+// and doctor says so with the fix, as it does for a changed connection:
+// upgrading a plugin leaves every grant on it in this state, and the
+// refusal an agent gets says only what an ungranted call is told.
+//
+// The test registry answers for demo itself, so a grant bound to a plugin
+// artifact for demo is one whose build was replaced; nothing answers for
+// gone at all.
+func TestDoctorWarnsOfAGrantOnABuildThatNoLongerAnswers(t *testing.T) {
+	isolate(t)
+	now := time.Now()
+	if verr := grant.Save([]grant.Grant{
+		{Target: "demo.item.rm", Digest: "5dae737f8845c0ffee", Issued: now, Expires: now.Add(15 * time.Minute)},
+		{Target: "gone.wipe", Scope: "db", Digest: "9f1c2e3d4b5a", Issued: now, Expires: now.Add(15 * time.Minute)},
+		{Target: "demo.item.list", Issued: now, Expires: now.Add(15 * time.Minute)},
+	}); verr != nil {
+		t.Fatal(verr)
+	}
+	rows := strings.Join(grantRows(t), "\n")
+	for _, want := range []string{
+		"1 grant was issued on a plugin that has been replaced since, so it authorizes nothing: demo.item.rm — ",
+		"`rta grant allow` issues it again",
+		"1 grant names a plugin rta does not load now, so it authorizes nothing: gone.wipe db — ",
+	} {
+		if !strings.Contains(rows, want) {
+			t.Errorf("doctor's grant rows do not say %q:\n%s", want, rows)
+		}
+	}
+	if strings.Contains(rows, "demo.item.list —") || strings.Contains(rows, "nothing: demo.item.list") {
+		t.Errorf("doctor warned of a built-in grant whose build answers:\n%s", rows)
+	}
+}
