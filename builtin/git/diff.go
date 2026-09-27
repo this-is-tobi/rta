@@ -18,7 +18,9 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/format/diff"
+	"github.com/go-git/go-git/v5/plumbing/format/index"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/plumbing/storer"
 	godiff "github.com/go-git/go-git/v5/utils/diff"
 	"github.com/sergi/go-diff/diffmatchpatch"
 
@@ -314,22 +316,71 @@ func submoduleBumps(fromTree, toTree *object.Tree) []string {
 		if ch.From.TreeEntry.Mode != filemode.Submodule && ch.To.TreeEntry.Mode != filemode.Submodule {
 			continue
 		}
-		name := ch.To.Name
-		if name == "" {
-			name = ch.From.Name
+		var from, to plumbing.Hash
+		if ch.From.TreeEntry.Mode == filemode.Submodule {
+			from = ch.From.TreeEntry.Hash
 		}
-		switch {
-		case ch.From.TreeEntry.Mode != filemode.Submodule:
-			out = append(out, "submodule "+name+" added at "+shortHash(ch.To.TreeEntry.Hash))
-		case ch.To.TreeEntry.Mode != filemode.Submodule:
-			out = append(out, "submodule "+name+" removed, was "+shortHash(ch.From.TreeEntry.Hash))
-		default:
-			out = append(out, "submodule "+name+" "+shortHash(ch.From.TreeEntry.Hash)+
-				" -> "+shortHash(ch.To.TreeEntry.Hash))
+		if ch.To.TreeEntry.Mode == filemode.Submodule {
+			to = ch.To.TreeEntry.Hash
 		}
+		out = append(out, submoduleLine(changePath(ch), from, to))
 	}
 	sort.Strings(out)
 	return out
+}
+
+// submoduleLine names a submodule a diff moved: the commit it was at and the
+// one it is at now, a zero hash for the side that has none.
+func submoduleLine(name string, from, to plumbing.Hash) string {
+	switch {
+	case from.IsZero():
+		return "submodule " + name + " added at " + shortHash(to)
+	case to.IsZero():
+		return "submodule " + name + " removed, was " + shortHash(from)
+	}
+	return "submodule " + name + " " + shortHash(from) + " -> " + shortHash(to)
+}
+
+// gitlinkAt is the commit HEAD records for a submodule at path, and whether
+// HEAD or the index records one there at all.
+func gitlinkAt(headTree *object.Tree, idx *index.Index, path string) (plumbing.Hash, bool) {
+	var from plumbing.Hash
+	link := false
+	if headTree != nil {
+		if e, err := headTree.FindEntry(path); err == nil && e.Mode == filemode.Submodule {
+			from, link = e.Hash, true
+		}
+	}
+	if idx != nil {
+		if e, err := idx.Entry(path); err == nil && e.Mode == filemode.Submodule {
+			link = true
+		}
+	}
+	return from, link
+}
+
+// submoduleHeads is the commit each submodule's checkout is at, by its path:
+// the HEAD of the repository git keeps for it under .git/modules, which is
+// where go-git's status reads it too. Read from that store directly rather
+// than through go-git's Submodule.Repository, which initialises a repository
+// there when it finds none — a write, from a capability that makes none.
+func submoduleHeads(repo *git.Repository, wt *git.Worktree) map[string]plumbing.Hash {
+	heads := map[string]plumbing.Hash{}
+	subs, err := wt.Submodules()
+	if err != nil {
+		return heads
+	}
+	for _, s := range subs {
+		c := s.Config()
+		module, err := repo.Storer.Module(c.Name)
+		if err != nil {
+			continue
+		}
+		if ref, err := storer.ResolveReference(module, plumbing.HEAD); err == nil {
+			heads[c.Path] = ref.Hash()
+		}
+	}
+	return heads
 }
 
 // maxDiffBytes bounds one file a diff reads whole. Both sides of
@@ -368,8 +419,28 @@ func diffWorktree(repo *git.Repository, gate func(string) *view.Error) (view.Vie
 	var large []string
 	var skipped []withheld
 	budget, cut := maxTotalDiffBytes, 0
+	// A submodule is named by the commits it moved between, as a commit's
+	// diff names one (submoduleBumps) and as git does. Its checkout is a
+	// directory, and it was named as "a directory where a file was", where
+	// git shows `Subproject commit` and the two hashes.
+	idx, _ := repo.Storer.Index()
+	var bumps []string
+	var heads map[string]plumbing.Hash
 	for _, path := range changedPaths(status) {
 		disk := onDisk(root, path)
+		if from, link := gitlinkAt(headTree, idx, path); link {
+			if heads == nil {
+				heads = submoduleHeads(repo, wt)
+			}
+			var to plumbing.Hash
+			if disk != nil && disk.IsDir() {
+				to = heads[path]
+			}
+			if from != to {
+				bumps = append(bumps, submoduleLine(path, from, to))
+			}
+			continue
+		}
 		if verr := gate(gatedAt(path, disk != nil && disk.Mode()&os.ModeSymlink != 0)); verr != nil {
 			skipped = append(skipped, withheld{path, refusedBy(verr)})
 			continue
@@ -398,6 +469,12 @@ func diffWorktree(repo *git.Repository, gate func(string) *view.Error) (view.Vie
 		}
 	}
 	body := (&filePatches{patches: patches}).String()
+	if len(bumps) > 0 {
+		if body != "" {
+			body += "\n"
+		}
+		body += strings.Join(bumps, "\n") + "\n"
+	}
 	// Named in the diff's own shape, the way a submodule bump is: the
 	// caller asked what changed, and a file too large to show, or one it may
 	// not read, is part of the answer rather than a row quietly missing from

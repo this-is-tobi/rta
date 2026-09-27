@@ -9,6 +9,9 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/config"
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/filemode"
 
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -344,5 +347,51 @@ func TestDiffWorktreeShowsEveryOtherChangeBesideALinkItCannotFollow(t *testing.T
 				t.Errorf("the diff read through a link out of the repository:\n%s", body)
 			}
 		})
+	}
+}
+
+// A submodule moved in the working tree is named by the commits it moved
+// between, as a commit's diff names one and as git does, rather than as a
+// directory where a file was.
+func TestDiffWorktreeNamesAMovedSubmoduleByItsCommits(t *testing.T) {
+	was := plumbing.NewHash("1111111111111111111111111111111111111111")
+	now := plumbing.NewHash("2222222222222222222222222222222222222222")
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "a.txt", "a\n", "initial")
+
+	idx, err := repo.Storer.Index()
+	if err != nil {
+		t.Fatal(err)
+	}
+	link := idx.Add("lib")
+	link.Mode, link.Hash = filemode.Submodule, was
+	if err := repo.Storer.SetIndex(idx); err != nil {
+		t.Fatal(err)
+	}
+	commitFile(t, repo, dir, ".gitmodules",
+		"[submodule \"lib\"]\n\tpath = lib\n\turl = https://example.invalid/lib.git\n", "lib at its first commit")
+	cfg, err := repo.Config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Submodules["lib"] = &config.Submodule{Name: "lib", Path: "lib", URL: "https://example.invalid/lib.git"}
+	if err := repo.SetConfig(cfg); err != nil {
+		t.Fatal(err)
+	}
+	module, err := git.PlainInit(filepath.Join(dir, ".git", "modules", "lib"), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := module.Storer.SetReference(plumbing.NewHashReference("refs/heads/master", now)); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, dir, "lib/.git", "gitdir: ../.git/modules/lib\n")
+
+	body := text(t, runDiff, req(t, dir, nil))
+	if !strings.Contains(body, "submodule lib 1111111 -> 2222222\n") {
+		t.Errorf("the moved submodule is not named by its commits:\n%s", body)
+	}
+	if strings.Contains(body, "not diffed") {
+		t.Errorf("the submodule is named as a file the diff could not read:\n%s", body)
 	}
 }
