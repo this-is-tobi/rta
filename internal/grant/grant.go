@@ -30,6 +30,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"math/bits"
 	"os"
 	"path/filepath"
 	"slices"
@@ -37,6 +38,10 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
+
+	"golang.org/x/text/unicode/norm"
 
 	"github.com/this-is-tobi/rta/internal/atomicfile"
 	"github.com/this-is-tobi/rta/internal/config"
@@ -512,37 +517,6 @@ func (g Grant) covers(capID, scope string, by Caller) bool {
 	return coversFolder(g.Scope, scope)
 }
 
-// coversFolder is the one relaxation of byte-exact scope matching: a scope
-// ending in "/" is a folder, and covers the records under it.
-//
-// **It exists because the granularity had no middle.** A kv store is one
-// namespace, so an operator could authorize `kv.get` on one key or on every
-// secret they own, and nothing between — which is exactly the pressure that
-// makes people type the everything-grant "so it stops failing", the same
-// pressure just-in-time consent was written against. Most scope
-// dimensions in the catalogue are already slash-separated (kv keys, S3 object
-// keys, Vault paths, URLs), so the folder is a boundary the operator can
-// already see in a listing.
-//
-// **The trailing slash is not sugar, it is the security rule.** A bare prefix
-// match is the classic boundary bug: a grant for "https://api.example.com"
-// would cover "https://api.example.com.evil.com/x", and one for "prod" would
-// cover "prod-adjacent". Requiring the separator makes the boundary a real
-// one, and leaves a scope without it byte-exact — "prod" still means the
-// record named exactly "prod" and nothing else.
-//
-// **A traversal segment is never covered**, which is the other half and the
-// one that is easy to miss. `https://api.example.com/v1/../admin` starts with
-// `https://api.example.com/v1/` and a server resolves it to `/admin`, so a
-// literal prefix would authorize precisely what the operator scoped away
-// from. The same is true of any store that canonicalises a path. A call
-// naming such a scope can still be authorized — by an exact grant, where the
-// operator has typed that whole strange string themselves and no inference is
-// being made on their behalf. What it cannot be is swept in by a folder.
-//
-// Empty segments are deliberately *not* refused: "https://host/a" splits to
-// ["https:", "", "host", "a"], so a blanket rule against them would refuse
-// every URL.
 // IsFolderScope reports whether a scope names a folder rather than a record.
 //
 // Exported because the surfaces have to say so: a folder grant and an exact
@@ -610,29 +584,291 @@ func CheckScope(scope string) *view.Error {
 	if !IsFolderScope(scope) {
 		return nil
 	}
-	for seg := range strings.SplitSeq(strings.TrimSuffix(scope, "/"), "/") {
-		if seg == "." || seg == ".." {
-			return view.Errorf("grant.scope.traversal",
-				"%q contains a %q segment, so what it covers depends on who resolves it", scope, seg).
-				WithHint("name the folder as it appears in a listing")
-		}
+	// The same reading coversFolder gives a call: a folder holding a
+	// segment it would refuse in a call is one no call under it could ever
+	// be covered by, which is a grant that never works and never says why.
+	if seg := dotSegment(scope); seg != "" {
+		return view.Errorf("grant.scope.traversal",
+			"%q contains a %q segment, so what it covers depends on who resolves it", scope, seg).
+			WithHint("name the folder as it appears in a listing")
 	}
 	return nil
 }
 
+// coversFolder is the one relaxation of byte-exact scope matching: a scope
+// ending in "/" is a folder, and covers the records under it.
+//
+// **It exists because the granularity had no middle.** A kv store is one
+// namespace, so an operator could authorize `kv.get` on one key or on every
+// secret they own, and nothing between — which is exactly the pressure that
+// makes people type the everything-grant "so it stops failing", the same
+// pressure just-in-time consent was written against. Most scope
+// dimensions in the catalogue are already slash-separated (kv keys, S3 object
+// keys, Vault paths, URLs), so the folder is a boundary the operator can
+// already see in a listing.
+//
+// **The trailing slash is not sugar, it is the security rule.** A bare prefix
+// match is the classic boundary bug: a grant for "https://api.example.com"
+// would cover "https://api.example.com.evil.com/x", and one for "prod" would
+// cover "prod-adjacent". Requiring the separator makes the boundary a real
+// one, and leaves a scope without it byte-exact — "prod" still means the
+// record named exactly "prod" and nothing else.
+//
+// **A traversal segment is never covered**, which is the other half and the
+// one that is easy to miss. `https://api.example.com/v1/../admin` starts with
+// `https://api.example.com/v1/` and a server resolves it to `/admin`, so a
+// literal prefix would authorize precisely what the operator scoped away
+// from. The same is true of any store that canonicalises a path. A call
+// naming such a scope can still be authorized — by an exact grant, where the
+// operator has typed that whole strange string themselves and no inference is
+// being made on their behalf. What it cannot be is swept in by a folder.
+//
+// **And a traversal is judged as the target reads it, not as it is spelled.**
+// Only a literal "." or ".." segment was refused once, and
+// `https://api.example.com/v1/%2e%2e/admin` walked through a grant on /v1/:
+// Go's client sends an escape as written, and the server — any that follows
+// the URL standard, which counts %2e%2e as a dot segment — decodes it and
+// serves /admin. dotSegment has the spellings.
+//
+// Empty segments are deliberately *not* refused: "https://host/a" splits to
+// ["https:", "", "host", "a"], so a blanket rule against them would refuse
+// every URL.
 func coversFolder(prefix, scope string) bool {
-	if !IsFolderScope(prefix) {
-		return false
+	return IsFolderScope(prefix) && strings.HasPrefix(scope, prefix) && dotSegment(scope) == ""
+}
+
+// maxDecodeRounds bounds how many times dotSegment decodes a scope. A
+// string still decoding to something new after this many is one nobody
+// types by accident, and it is answered as a traversal.
+const maxDecodeRounds = 8
+
+// dotSegment returns the first segment of scope that a target on the way
+// could resolve as "." or "..", or "" when there is none.
+//
+// What a target does to a path before it resolves one is not rta's to know:
+// a scope is a string, and the capability behind it hands it to a web
+// server, a proxy in front of one, or a store with rules of its own. So the
+// scope is read the ways a common one reads it, and any of them finding a
+// climb is enough:
+//
+//   - percent-decoded, and decoded again for as long as that changes it: a
+//     proxy that decodes in front of a server that decodes again is how
+//     %252e%252e comes to be "..";
+//   - leniently, a "%" that starts no escape kept as it is, since that is
+//     what a forgiving decoder does, and "%%32%65" is "%2e" to one and "."
+//     after a second round — and %u002e, IIS's spelling of a dot, decoded
+//     with the rest;
+//   - with an overlong UTF-8 sequence read as the ASCII character it spells
+//     in too many bytes, as a lenient decoder reads it: %c0%ae is "." and
+//     %c0%af is "/" to one, and "..%c0%af" is how a request climbed out of
+//     IIS's web root;
+//   - with each character replaced by its compatibility decomposition, as
+//     NFKC and NFKD begin, which a store or a framework does to a name
+//     before comparing it: a fullwidth full stop, solidus or percent sign,
+//     a two-dot leader and their kin become the ASCII they look like, and a
+//     hand-kept list of them had already missed two — see foldCompat;
+//   - split on "\" as well as "/": the URL standard reads one as the other
+//     in an http(s) URL, and a Windows server does too — and on what
+//     Windows' best-fit conversion turns into either, see pathSeparator;
+//   - cut at ";", "?", "#" and NUL: `..;/admin` is ".." to a server that
+//     drops a path parameter, `/v1/..?page=1` resolves before its query,
+//     and a C string ends at the NUL;
+//   - a segment made only of dots and what a target drops counts as dots:
+//     Windows ignores a trailing dot or space, and a "+" is a space to a
+//     server that form-decodes its path, so "..+" is ".." to the two in
+//     turn; a default-ignorable code point, a joiner, a variation selector
+//     or a filler, is dropped by a normaliser folding a name for comparison
+//     as NFKC_Casefold and IDNA do; and a byte that is still not UTF-8 is
+//     whatever a decoder looser than foldOverlong makes of it.
+//
+// Each reading feeds the next round, so an escape the decomposition makes
+// of a fullwidth "%" is decoded in the round after it.
+//
+// Wide on purpose, and only ever against an inference: a scope refused here
+// is still reachable by an exact grant, where the operator typed the whole
+// string and nothing is decided on their behalf. A record a folder fails to
+// sweep in costs a prompt; one it sweeps in wrongly is the escape.
+func dotSegment(scope string) string {
+	for range maxDecodeRounds {
+		for _, seg := range strings.FieldsFunc(scope, pathSeparator) {
+			if onlyDots(seg) {
+				return seg
+			}
+		}
+		decoded := foldCompat(foldOverlong(percentDecode(scope)))
+		if decoded == scope {
+			return ""
+		}
+		scope = decoded
 	}
-	if !strings.HasPrefix(scope, prefix) {
-		return false
+	return scope
+}
+
+// pathSeparator reports whether r divides a path for a target on the way:
+// "/" and "\", and the characters Windows' best-fit conversion turns into
+// one of them. A program handed a path in a legacy code page, rather than
+// in UTF-16, gets the nearest character the page has, and nothing is
+// nearer a division slash than "/": "..¥admin" is "..\admin" to one
+// running in Japanese. foldCompat folds none of these, since none of them
+// decomposes to a slash.
+func pathSeparator(r rune) bool {
+	switch r {
+	case '/', '\\',
+		0x2044, 0x2215, // fraction and division slash: "/" in code page 1252
+		0x2216,       // set minus: "\" in code page 1252
+		0xA5, 0x20A9: // yen and won sign: "\" in code pages 932 and 949
+		return true
 	}
-	for seg := range strings.SplitSeq(scope, "/") {
-		if seg == "." || seg == ".." {
+	return false
+}
+
+// onlyDots reports whether seg, up to where a target would stop reading it,
+// is dots and nothing a target keeps besides — see dotSegment.
+func onlyDots(seg string) bool {
+	if i := strings.IndexFunc(seg, func(r rune) bool {
+		return r == ';' || r == '?' || r == '#' || r == 0
+	}); i >= 0 {
+		seg = seg[:i]
+	}
+	dots := false
+	for _, r := range seg {
+		switch {
+		// The full stop, and the rune a byte that is not UTF-8 ranges as.
+		// A lookalike of a dot is one by the next round, once foldCompat
+		// has folded it.
+		case r == '.', r == utf8.RuneError:
+			dots = true
+		case unicode.IsSpace(r), unicode.IsControl(r), r == '+',
+			unicode.Is(unicode.Cf, r),
+			unicode.Is(unicode.Other_Default_Ignorable_Code_Point, r),
+			unicode.Is(unicode.Variation_Selector, r):
+		default:
 			return false
 		}
 	}
-	return true
+	return dots
+}
+
+// percentDecode decodes every escape in s that is one, %2e and %u002e alike,
+// and keeps every other byte as it stands — a forgiving decoder's reading,
+// which never fails.
+func percentDecode(s string) string {
+	if !strings.Contains(s, "%") {
+		return s
+	}
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		if s[i] == '%' && i+2 < len(s) {
+			hi, okHi := hexDigit(s[i+1])
+			lo, okLo := hexDigit(s[i+2])
+			if okHi && okLo {
+				// A byte, not a rune: %c0 is the byte an overlong
+				// sequence starts with, and writing it as U+00C0 would
+				// hide exactly what foldOverlong looks for.
+				b.WriteByte(hi<<4 | lo)
+				i += 2
+				continue
+			}
+		}
+		if s[i] == '%' && i+5 < len(s) && (s[i+1] == 'u' || s[i+1] == 'U') {
+			var r rune
+			ok := true
+			for _, c := range []byte(s[i+2 : i+6]) {
+				d, isHex := hexDigit(c)
+				ok = ok && isHex
+				r = r<<4 | rune(d)
+			}
+			if ok {
+				b.WriteRune(r)
+				i += 5
+				continue
+			}
+		}
+		b.WriteByte(s[i])
+	}
+	return b.String()
+}
+
+// foldOverlong replaces every overlong UTF-8 sequence in s — an ASCII
+// character written in two to six bytes, which a strict decoder refuses and
+// a lenient one decodes — with the character it spells, and keeps every
+// other byte as it stands. A sequence of a character above ASCII is left
+// alone: it spells no separator and no dot.
+func foldOverlong(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); {
+		if c, n := overlongASCII(s[i:]); n > 0 {
+			b.WriteByte(c)
+			i += n
+			continue
+		}
+		b.WriteByte(s[i])
+		i++
+	}
+	return b.String()
+}
+
+// overlongASCII reads an overlong sequence at the start of s: the ASCII
+// character it spells and its length in bytes, or a length of 0 when s does
+// not start with one. The lead byte's run of ones is the length, and a
+// value below 0x80 in more than one byte is overlong by definition, since
+// UTF-8 spells it in one.
+func overlongASCII(s string) (byte, int) {
+	n := bits.LeadingZeros8(^s[0])
+	if n < 2 || n > 6 || len(s) < n {
+		return 0, 0
+	}
+	v := uint32(s[0] & (0xFF >> (n + 1)))
+	for i := 1; i < n; i++ {
+		if s[i]&0xC0 != 0x80 {
+			return 0, 0
+		}
+		v = v<<6 | uint32(s[i]&0x3F)
+	}
+	if v >= 0x80 {
+		return 0, 0
+	}
+	return byte(v), n
+}
+
+// foldCompat replaces every character in s that has a compatibility
+// decomposition with that decomposition, and keeps every other byte as it
+// stands, invalid UTF-8 included.
+//
+// NFKC without its second half: composing afterwards only joins a letter
+// and the marks after it into one character, which never makes a dot, a
+// slash or an escape, and a character NFKC turns into one of them this
+// turns into the same. Not norm.NFKC itself, for the binary's sake: a
+// decomposition is read from tables already linked for the CLI's case
+// handling (golang.org/x/text/cases, through fang), where running the
+// normaliser brings its composition machinery in as well, some thirty-five
+// kilobytes for a check that has no use for it.
+func foldCompat(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); {
+		p := norm.NFKD.PropertiesString(s[i:])
+		n := max(p.Size(), 1)
+		if d := p.Decomposition(); d != nil {
+			b.Write(d)
+		} else {
+			b.WriteString(s[i : i+n])
+		}
+		i += n
+	}
+	return b.String()
+}
+
+// hexDigit is the value of one hex digit.
+func hexDigit(c byte) (byte, bool) {
+	switch {
+	case c >= '0' && c <= '9':
+		return c - '0', true
+	case c >= 'a' && c <= 'f':
+		return c - 'a' + 10, true
+	case c >= 'A' && c <= 'F':
+		return c - 'A' + 10, true
+	}
+	return 0, false
 }
 
 // Covering returns the first grant in grants that would authorize a call to
