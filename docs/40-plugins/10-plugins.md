@@ -67,8 +67,7 @@ plugin trust   ok   8 artifacts approved to run
 The same digest is recorded on every grant issued against that plugin:
 
 ```bash
-rta grant allow hello.wipe --ttl 5m
-rta grant list --detail          # shows the artifact the grant was issued against
+rta grant allow hello.wipe --ttl 5m     # bound to hello as it is now, not to the name
 ```
 
 So an authorisation attaches to an artifact rather than to a name a replacement would inherit — replace the binary and the grant stops covering anything.

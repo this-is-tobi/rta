@@ -89,13 +89,7 @@ Collapsing them is stronger rather than looser, and it is worth being plain abou
 
 An agent can now *see* every capability that is not [reserved for you](#never-a-tool), and call none that changes anything. That is deliberate: a tool it can see and is refused produces a refusal naming the exact command you would run, and a tool that is simply absent produces a model guessing at a different spelling.
 
-A grant on a plugin's capability binds to that plugin's **artifact**, not to its name:
-
-```bash
-rta grant list --detail
-```
-
-shows the digest each grant was issued against. Replace the binary behind a plugin and the grants standing on it stop covering anything, which is the rule `--allow-destructive hello.wipe@5dae737f8845` used to carry, moved onto the thing that now does the authorizing. Built-ins have no separate artifact to pin — the rta binary you chose to run is the artifact — so their grants carry no digest.
+A grant on a plugin's capability binds to that plugin's **artifact**, not to its name: it records the digest of the binary it was issued against. Replace the binary behind a plugin and the grants standing on it stop covering anything, which is the rule `--allow-destructive hello.wipe@5dae737f8845` used to carry, moved onto the thing that now does the authorizing. Built-ins have no separate artifact to pin — the rta binary you chose to run is the artifact — so their grants carry no digest.
 
 ### Never a tool
 
