@@ -1,5 +1,188 @@
 # Changelog
 
+## [0.28.0](https://github.com/this-is-tobi/rta/compare/v0.27.0...v0.28.0) (2026-09-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* **plugin:** plugin index update exits non-zero when an index it pulled holds no manifest rta can read, with plugin.index.empty, or with the code of the first manifest it could not parse when every one it holds is malformed.
+* **grant:** a call naming a record with white space around it is no longer covered by an exact grant on the trimmed name, and asks for its own.
+* **git:** git blame refuses a history it would read more than 64 MiB of in all with git.blame.toolarge, where it blamed any history whose every version and every step stayed within bounds.
+* **audit:** audit deps and audit why refuse a manifest named on its own that is over 64 MiB with audit.deps.toolarge, and one that is a named pipe, a socket or a device off the CLI with audit.deps.notafile. audit clients grades no agent config over 64 MiB, and names it as one it could not read.
+* **plugin:** a plugin declaring a list argument that is not the last the command line takes fails to load. Make the argument after it a flag, or the list the last argument.
+* **cli:** a capability declaring an optional argument before a required one takes the required one first. `rta git blame <repo> <file>` is now `rta git blame <file> <repo>`, and a plain `rta git blame <file>` blames the file in the current directory's repository.
+* **plugin:** a plugin declaring an input both Required and with a non-empty Default fails to load. Drop Required to keep the default, or drop the Default to keep it required.
+* **fs:** fs hash with an expect holding no checksum, such as the prefix sha256 and its colon alone, is refused with fs.hash.expect instead of hashing the file without comparing it.
+* **net:** net hosts toggle on a name parked at more than one IPv4 address, or at more than one IPv6 address, is refused with net.hosts.ambiguous instead of enabling every entry.
+* **net:** net hosts add, rm and toggle on a hosts file that is a symbolic link are refused with net.sysfile.managed instead of replacing the link with a regular file.
+* **builtin:** cert, fs hash and the net hosts and resolver capabilities refuse a named pipe, a device or a directory everywhere but the CLI, with cert.file.notafile, fs.hash.notafile or net.sysfile.notafile. A certificate file over 16 MiB, a hosts file over 32 MiB and a resolv.conf over 1 MiB are refused on every surface, with cert.file.toolarge or net.sysfile.toolarge.
+* **git:** run from inside a checkout's .git directory, the git capabilities open that directory as the repository, with no working tree, as git does, rather than the checkout around it.
+* **git:** git.blame is refused as git.blame.toolarge for a file larger than 16 MiB at HEAD or in its history, or one added or renamed in a commit that changed more than 64 MiB beside it, rather than answered.
+* **git:** git.hooks rows carry a third column, Path. Over MCP, a hooks directory outside the server's roots, as a core.hooksPath in the operator's own config usually names, is refused as core.mcp.path.outside instead of the repository's unused hooks being listed.
+* **git:** from a terminal outside the checkout, rta git blame and rta git log --file take a relative file from the current directory rather than the repository root, so `rta git blame repo README` is now `rta git blame repo repo/README`.
+* **git:** over MCP, a linked worktree or a submodule checkout whose git directory is outside the server's roots is refused as core.mcp.path.outside. Serving a root that also holds the main checkout opens it as before.
+* **audit:** audit web refuses a host argument with no host name in it, such as a bare `:8443` that used to audit this machine, as audit.web.badhost; name the host, localhost:8443.
+* **audit:** the kube audits refuse a namespace the cluster does not have with audit.kube.namespace.notfound, where they answered a report about it, and each narrowed run makes one namespace lookup more.
+* **audit:** audit deps and audit why refuse a file named on its own that is no manifest they read, as audit.deps.format, where they answered a report with no dependencies in it.
+* **audit:** audit mail refuses with audit.mail.resolver when every lookup it made failed, where it answered a report of failed rows graded ok.
+* **audit:** audit web refuses a host argument that carries userinfo, with or without a scheme, as audit.web.badhost; pass the host after the @.
+* **agent:** agent allow with both --role and --server is refused and answers nothing; answer the call, then issue each of the role's lines with grant allow --server.
+* **agent:** agent allow --ttl on a record ending in a slash releases the call and issues no standing grant; grant allow issues the folder deliberately.
+* **http:** http.* refuses, on every surface, a destination in shared address space, a Tailscale peer's included, or in 0.0.0.0/8, 192.0.0.0/24, 198.18.0.0/15 or 240.0.0.0/4, a multicast or site-local one, one in the local-use NAT64 prefix, and an IPv6 address carrying an IPv4 one it refuses.
+* **grant:** a folder grant no longer covers a call whose record holds an escaped, doubled, backslashed, overlong, lookalike or padded dot segment, and grant allow refuses a folder scope holding one; such a record is reachable through an exact grant.
+* **kv:** kv env with two keys whose variable names coincide exits with kv.env.collision instead of printing both lines. Rename one of the keys, or export them in separate calls with different prefixes.
+* **plugin:** an allow list in the system root's trusted.json is ignored, and a stored grant naming a location the plugin does not declare opens nothing. Run rta plugin allow for each plugin that should read a credential location, or set RTA_ALLOW_PLUGINS on the image.
+* **kv:** a kv.rename grant naming a single key no longer authorizes moving it to a name the grant does not cover. A folder grant covers moves inside the folder, and a grant for one key needs a second one naming the new name.
+* **kv:** kv_show over MCP no longer carries a copy row, and its reveal and history rows hold the kv_get and kv_history calls an agent makes instead of `rta` command lines. The CLI's kv show keeps every row as it was.
+* **fs:** fs tree with detail keys its not-shown rows "below depth" and "past limit" instead of "below --depth" and "past --limit". A script reading them from -o json or from the fs_tree tool reads the new keys.
+* **init:** rta init writes a key/value view to stdout in the format -o asks for once the form is closed, where it wrote "✓ wrote <file> — run `rta` to see your dashboard" or "nothing written". A script that read that line should read the "wrote" or "unchanged" pair of -o json.
+* **mcp:** rta mcp install writes a key/value view to stdout in the format -o asks for, where it wrote "✓ registered with <client>", "would run <command>" or "Add this to <file>" and the block, and the client's own command now writes to stderr rather than stdout. A script that read the block should read the "block" pair of -o json. A default output format that names none refuses it, exit 2, before the client's command runs.
+* **plugin:** rta plugin new writes a key/value view to stdout in the format -o asks for, where it wrote "Created <dir>" and a page of steps, or "would write N files in <dir>" and a list under --dry-run. A script that read that text should read the "created" pair of -o json, which names the directory by its full path, and the "files" pair. A default output format that names none refuses it, exit 2, before it writes anything.
+* **plugin:** rta plugin untrust writes a key/value view to stdout in the format -o asks for, where it wrote "withdrew N approvals — ..." or, for --all with nothing to withdraw, "no plugin artifact is trusted". A script that read that text should read the "untrusted" and "approvals" pairs of -o json. A default output format that names none refuses it, exit 2, before it withdraws anything.
+* **policy:** rta policy require writes a key/value view to stdout in the format -o asks for, where it wrote "✓ <file> now requires a .rta-policy.yaml" and a line about this directory, on stderr when the directory had none. A script that read that text should read the "wrote" and "this directory" pairs of -o json. A default output format that names none refuses it, exit 2, before it writes anything.
+* **policy:** rta policy init writes a key/value view to stdout in the format -o asks for, where it wrote "✓ wrote .rta-policy.yaml" and two lines of prose. A script that read that text should read the "wrote" pair of -o json, which names the file by its full path. A default output format that names none refuses it, exit 2, before it writes anything.
+* **grant:** with the guard orphaned, `rta grant list` without --detail answers -o json and -o yaml with {"type": "table", "rows": []} and a warning coded core.grant.guard.orphaned, where it answered {"type": "text", "body": "guard  ORPHANED — ..."}, and -o csv writes the header row with the warning as a "#" note. A script that read `.body` should test for that code in `.warnings` instead.
+
+### Features
+
+* **plugin:** a hint names a positional input by its slot, and a call with its inputs, per surface ([183083e](https://github.com/this-is-tobi/rta/commit/183083e27ce2330c38e5315fdf48947aa7c209c0))
+* **plugin:** a message names a capability and an input as its caller's surface spells them ([3954a0e](https://github.com/this-is-tobi/rta/commit/3954a0e77e8257f8432e1feff9951af8d16ae1bf))
+* **plugin:** a page hands over a whole call, values and all, spelled for the surface asking ([023c4cf](https://github.com/this-is-tobi/rta/commit/023c4cf7c23ca1ea046c2b96c37c497305867c4d))
+* **plugin:** a placeholder in a call the SDK spells stays bare, as a usage line writes it ([e71a56c](https://github.com/this-is-tobi/rta/commit/e71a56cd1ff0272cb1eaeb29e27cbced4a915b1a))
+
+
+### Bug Fixes
+
+* **agent:** a parked call naming several records is offered a role with a line for each ([96409b7](https://github.com/this-is-tobi/rta/commit/96409b74e9c82eef28398c0c2d3efba48f35d52c))
+* **agent:** agent allow --ttl issues no grant on a record that is a folder, and says how to ([4f5f12a](https://github.com/this-is-tobi/rta/commit/4f5f12a63156de9f14b799ea6eeaf43e5d0b39e9))
+* **agent:** agent allow given a server refuses --role as it refuses --ttl, rather than dropping it ([cfd1782](https://github.com/this-is-tobi/rta/commit/cfd17824d00ebf37eb51a74222826d243731356b))
+* **agent:** agent allow holds each record a call names to the ceiling, and --ttl grants each ([8316101](https://github.com/this-is-tobi/rta/commit/8316101402b5bee52f79f69dd1836bfb07d54ade))
+* **agent:** the consent pages name the calls that answer them as the surface showing them ([e427f38](https://github.com/this-is-tobi/rta/commit/e427f380d0515b81d8ba1d82eb345caf01b6db91))
+* **audit:** a dependency walk bounds the chains it queues, not only the ones it takes ([c2920d6](https://github.com/this-is-tobi/rta/commit/c2920d63183dd39d35410329f776fd9aab97e865))
+* **audit:** a kube audit narrowed to a namespace that does not exist refuses, not reports ([5c0b960](https://github.com/this-is-tobi/rta/commit/5c0b960b3f0f3a880925cd713ea8afddf1a915dc))
+* **audit:** a package with a long dependency list is read in time linear in its length ([78d2514](https://github.com/this-is-tobi/rta/commit/78d2514bd5f53c7f08c6d4db1f2109d526d55b2e))
+* **audit:** a pnpm v5 package with a peer suffix is read as the package and version it is ([c0d9296](https://github.com/this-is-tobi/rta/commit/c0d929688925741263bf7f8e129de1b73ae9b297))
+* **audit:** a TOML lockfile's subtables no longer mark the package they belong to as local ([212ea25](https://github.com/this-is-tobi/rta/commit/212ea2590ef62dd494ef18a12f66a50d1dc0a45c))
+* **audit:** an advisory GitHub grades MODERATE is graded medium ([c484183](https://github.com/this-is-tobi/rta/commit/c4841835f9c9939913cff849f9896e32051b66b1))
+* **audit:** an audit finding or hint names its inputs and capabilities as the caller has them ([b15ffb6](https://github.com/this-is-tobi/rta/commit/b15ffb60fcd0327b26c17c56d54480c3e573596f))
+* **audit:** an audit names the checks that could not run in its overall, never "no issues found" ([5b0a278](https://github.com/this-is-tobi/rta/commit/5b0a278b381f751178db392a4cde727fd597169c))
+* **audit:** an offline, narrowed or selector-less audit counts what it skipped in its overall ([6168d56](https://github.com/this-is-tobi/rta/commit/6168d56808422a939834edc84ed5d60718097809))
+* **audit:** audit clients grades every server a file declares, two sharing a name included ([462c1bd](https://github.com/this-is-tobi/rta/commit/462c1bd19d0be53fd6b9033f65b43d955e3e436b))
+* **audit:** audit clients grades the servers in Codex's config.toml as it grades JSON ones ([ba2b6d4](https://github.com/this-is-tobi/rta/commit/ba2b6d44a45f051f69403de3d512943e6950b80d))
+* **audit:** audit clients reads npm exec, uv tool run and yarn dlx as the runners they are ([4c89fc5](https://github.com/this-is-tobi/rta/commit/4c89fc526feed0448080cf449d8966ecfc86194f))
+* **audit:** audit clients reads the package each runner launches, and pins it in its own syntax ([a9c8103](https://github.com/this-is-tobi/rta/commit/a9c81039f3bf2b72b90b59014cda208c4dd075c8))
+* **audit:** audit deps asks OSV about the module a go.mod replace builds, not the one it requires ([41dbba3](https://github.com/this-is-tobi/rta/commit/41dbba39e1028cdcd634384029153afa085a708c))
+* **audit:** audit deps reads a named requirements file by any name, and refuses one it cannot read ([a5d9260](https://github.com/this-is-tobi/rta/commit/a5d9260e43209a7f5df80930ce1f771eb984df90))
+* **audit:** audit deps reads an aliased npm dependency as the package it installs ([ab33e7b](https://github.com/this-is-tobi/rta/commit/ab33e7b1e2f8304ab04d707e572ae50f7f902875))
+* **audit:** audit deps reads every level of a v1 package-lock, nested copies included ([795b70f](https://github.com/this-is-tobi/rta/commit/795b70f4f1b94e8a1ee82d1329aff8a592f78ced))
+* **audit:** audit deps, why and clients read a manifest or an agent config only as a regular file ([8fa9605](https://github.com/this-is-tobi/rta/commit/8fa9605fccb570af32f3b43ed5ba1f5379d2b783))
+* **audit:** audit deps' next step says what a full scan adds, not that the rows lack a severity ([e3ac0bb](https://github.com/this-is-tobi/rta/commit/e3ac0bb346e635dd637fdd5c6feefa38a4652f79))
+* **audit:** audit web grades a host that speaks only TLS 1.0, 1.1 or a broken cipher ([2d1cad8](https://github.com/this-is-tobi/rta/commit/2d1cad8a51903775ad857112a92e243b647014ae))
+* **audit:** audit web reads an HSTS max-age quoted or spaced as RFC 6797 allows ([e3daf8b](https://github.com/this-is-tobi/rta/commit/e3daf8b5b309558918d90f562275e3172d06663e))
+* **audit:** audit web refuses a host with credentials before it, as audit mail does ([6ebc021](https://github.com/this-is-tobi/rta/commit/6ebc02137aafe86a730490c6ce6cd75624f166aa))
+* **audit:** audit web refuses a value that names no host, rather than requesting it as it stood ([930a330](https://github.com/this-is-tobi/rta/commit/930a3308e2c5d9cb79ff73818840fb8839f53658))
+* **audit:** audit web warns on a Via header only when it names a product's version ([ce62ee9](https://github.com/this-is-tobi/rta/commit/ce62ee9b6708d577229a9c2d29980518d94ca408))
+* **audit:** audit web's csp and exposure rows read every line of a header sent twice ([24abfc4](https://github.com/this-is-tobi/rta/commit/24abfc47d83de82ed076932f507e1beebe5ef684))
+* **audit:** audit web's framing row counts a header only when it keeps some site out ([ca505ac](https://github.com/this-is-tobi/rta/commit/ca505acd1e65b8f87ebd76b9f8ae5a8a0f7b8e34))
+* **audit:** resolving a package-lock's declarations spends a budget, not the file's depth ([c2f41ce](https://github.com/this-is-tobi/rta/commit/c2f41ce398c112280864f0bc8bbfd3d91ceec447))
+* **audit:** the copies of a package are counted once per inventory, not once per affected package ([c278117](https://github.com/this-is-tobi/rta/commit/c278117ae34e39a1b193fef52865faf9620a681b))
+* **builtin:** a named file is read only up to its format's cap, and off the CLI only if regular ([3a110f1](https://github.com/this-is-tobi/rta/commit/3a110f1a0955fb05f739a278e64d01b06b50f99e))
+* **cert:** cert and net probe inspect a host that speaks only TLS 1.0 or 1.1, and name its protocol ([b06833c](https://github.com/this-is-tobi/rta/commit/b06833ce74ded3744e4f3d8288f138d03c7a044f))
+* **cert:** cert pem's refusals name include as an input, not as a flag ([ce58971](https://github.com/this-is-tobi/rta/commit/ce589713c5e5473b3cbd52563e80de106c806e80))
+* **cli:** -o md draws an error or warning code as it is, in a span nothing in it can close ([593ca05](https://github.com/this-is-tobi/rta/commit/593ca0546bf84c7dea27386b801a932e5805ef76))
+* **cli:** arguments bind in the order the usage line shows, required ones first ([445fc54](https://github.com/this-is-tobi/rta/commit/445fc54b77a6cc289b6b61a549c37f75aec8210d))
+* **codec:** a hint sends an agent to the codec_jwk tool, not to `rta codec jwk` ([3aca2d0](https://github.com/this-is-tobi/rta/commit/3aca2d09f3f49a921a0c0528d505964f39fc9616))
+* **eol:** a range's upper bound takes every cycle under it, so python ..3 includes 3.13 and 3.8 ([77119d7](https://github.com/this-is-tobi/rta/commit/77119d7eedb247891d3978b824218831d79836c9))
+* **eol:** an eol hint names eol.products and its inputs as the surface asking calls them ([56a8f69](https://github.com/this-is-tobi/rta/commit/56a8f697c1f8f4cadb67c2ea328763a00ba514cf))
+* **fs:** fs hash refuses an expect that holds no checksum rather than skipping the comparison ([45fa100](https://github.com/this-is-tobi/rta/commit/45fa100a28300c6603438263538bd42a5c5a2067))
+* **fs:** fs hash takes a pasted checksum's first word, so a colon in the filename is not a prefix ([5200e58](https://github.com/this-is-tobi/rta/commit/5200e584291df5a2de3ed777500fe02d867f5135))
+* **fs:** fs tree's detail names the walk's bounds by their inputs, never as flags ([b65175f](https://github.com/this-is-tobi/rta/commit/b65175f4e7b9243d17bc27dc7a1f246bc0b08581))
+* **gen:** gen overview's Command column is the call an agent makes, not a command line ([8289c09](https://github.com/this-is-tobi/rta/commit/8289c09424ecf295262cd3b23606978a4679eea0))
+* **git:** a .git file, commondir or alternates entry leading out of the roots is refused ([5a56e6a](https://github.com/this-is-tobi/rta/commit/5a56e6aba8a0ce84a3402830f3e9265f7f1dd32d))
+* **git:** a bare repository under the roots opens over MCP, and its file is named from its root ([9ede3d2](https://github.com/this-is-tobi/rta/commit/9ede3d2cd68dc50359be1319934f484b12f125a1))
+* **git:** a diff names a file the path gate refuses instead of showing it, rta's own state first ([b553ce9](https://github.com/this-is-tobi/rta/commit/b553ce988cc818c1e4aff422a17cba4a21e7a26b))
+* **git:** a diff names a pipe, socket or device in the working tree instead of waiting on it ([672b764](https://github.com/this-is-tobi/rta/commit/672b76406ab1f8b35292d675b3c458a4e1fe4aac))
+* **git:** a diff shows a symlink by its text, and names a file it cannot read beside the rest ([912a800](https://github.com/this-is-tobi/rta/commit/912a800c96280837b9331c46052ee0cc3286d7c3))
+* **git:** a pipe where a repository keeps a file is refused, not waited on ([672edb0](https://github.com/this-is-tobi/rta/commit/672edb01df1c98a8a36f8f7c6339b18fc624ad01))
+* **git:** a worktree diff lists its files in path order, as git does, the same on every call ([4078e42](https://github.com/this-is-tobi/rta/commit/4078e42bc3f22c13b8eb73753255299cb97ded52))
+* **git:** a worktree diff names a moved submodule by its commits, as a commit's diff does ([3746b19](https://github.com/this-is-tobi/rta/commit/3746b195b45b8fd58c686d17ecc09667c3a8936e))
+* **git:** a worktree diff reads a bounded amount in all, as a commit's does ([717fdba](https://github.com/this-is-tobi/rta/commit/717fdbadeb5ea95535d28086a532931e7d412736))
+* **git:** blame's and log's file is taken from the current directory on every surface, as git does ([237efed](https://github.com/this-is-tobi/rta/commit/237efed418c332bfbf841101165f1c68a8da607e))
+* **git:** git blame reads at most 64 MiB of a file's history in all, and refuses one past it ([c1ac417](https://github.com/this-is-tobi/rta/commit/c1ac4172f3ae1acb81551083b25a1fe108fe901c))
+* **git:** git blame refuses a file over 16 MiB at HEAD or in its history instead of reading it ([e1605e8](https://github.com/this-is-tobi/rta/commit/e1605e83e0eec7e2fcca2cb06f7452062bc62a2e))
+* **git:** git config shows both global files git reads, not the first of them that exists ([85e6e6e](https://github.com/this-is-tobi/rta/commit/85e6e6ec105d522296f2baabcfa3db1c0d8f141b))
+* **git:** git hooks lists the directory core.hooksPath names, and where each hook is ([15bcd02](https://github.com/this-is-tobi/rta/commit/15bcd02af1d06444932b924ccea27001cac620fd))
+* **git:** git status, diff and overview write nothing for a submodule initialised and never cloned ([7eab404](https://github.com/this-is-tobi/rta/commit/7eab404e4878fdd4722019b7821dce2d6e5aae49))
+* **grant:** a call's record is judged as the handler receives it, padding and all ([1940b7f](https://github.com/this-is-tobi/rta/commit/1940b7f9afb841c6ad6eab7d30a6aa21e42866ca))
+* **grant:** a folder grant covers no record a target would decode into a climb out of it ([06722cf](https://github.com/this-is-tobi/rta/commit/06722cfaa050b6f4ff55c37e2237a781ff7fd34d))
+* **grant:** grant list with the guard orphaned answers its table, the tamper sign as a warning ([c2993fc](https://github.com/this-is-tobi/rta/commit/c2993fcbde9abb8a20245f0499ddda4f33e56b83))
+* **grant:** grant names its inputs and next calls as the TUI and the CLI each spell them ([e9c5521](https://github.com/this-is-tobi/rta/commit/e9c5521fb3d401d9866459425f01f671cba81558))
+* **grant:** grant revoke and list given a server narrow to --role, as they do locally ([e26e821](https://github.com/this-is-tobi/rta/commit/e26e82118fa7bb0b9bb5f4554484dab51f24b6db))
+* **http:** a blocked destination's hint tells a person the guard holds at the terminal too ([0c72fad](https://github.com/this-is-tobi/rta/commit/0c72fadd3d74aec2dfaec00ee67d52eb21d4c2f3))
+* **http:** a proxy named without a port is trusted at the port the transport dials it on ([d83c70f](https://github.com/this-is-tobi/rta/commit/d83c70f103c74c444fada4614c18b5e2218ef574))
+* **http:** an http refusal names the timeout argument and http.status as the caller has them ([a3cd84f](https://github.com/this-is-tobi/rta/commit/a3cd84f84caf9b422865832fa12307ad8bc19746))
+* **http:** http refuses an IPv4-translated or a Teredo address that carries a blocked IPv4 one ([9a875ef](https://github.com/this-is-tobi/rta/commit/9a875ef91b7da7b1bff074db4b5ffc3c2484542c))
+* **http:** http refuses shared, reserved and translated addresses, cloud metadata's among them ([70f8afd](https://github.com/this-is-tobi/rta/commit/70f8afdd1ec87c944a3f5b811b2030d741aef7fc))
+* **init:** init --dry-run asks its questions and writes nothing, and says what it would write ([5ccb5bd](https://github.com/this-is-tobi/rta/commit/5ccb5bd39f9f179920564ae490d15d4cff86eb79))
+* **init:** init answers with the file it wrote and the answers it holds, as -o asks ([a253377](https://github.com/this-is-tobi/rta/commit/a253377c9044e5478a9ca8762e84783dfc04cfb6))
+* **init:** init asks its questions on the terminal whatever stdout is, and answers on stdout alone ([502a02b](https://github.com/this-is-tobi/rta/commit/502a02bdfd19fe3ba63ba5216659554f4853d349))
+* **keys:** keys names its inputs and next calls as the TUI and the CLI each spell them ([4d5fd8e](https://github.com/this-is-tobi/rta/commit/4d5fd8ee12810ba86b2cce159f7c3827c57c0520))
+* **kv:** a locked key on a store that exists points at kv.rekey for one that needs no passphrase ([cfb584d](https://github.com/this-is-tobi/rta/commit/cfb584df66ad6e45ec1f0144ad05f0ba66faf8bb))
+* **kv:** a recipient that spells a key is that key, never a file named after it ([99b25bc](https://github.com/this-is-tobi/rta/commit/99b25bc1f17a3a67a10b2bc2a450fa775bdf7872))
+* **kv:** a rename grant has to cover the name a key moves to as well as the key ([3f26f4b](https://github.com/this-is-tobi/rta/commit/3f26f4b8b4cfec57614a08004ab5053cc1babae5))
+* **kv:** kv env refuses two keys that become one variable rather than printing both ([610bd7e](https://github.com/this-is-tobi/rta/commit/610bd7ea9d042b09f8b409021ac9a2d52aef68e6))
+* **kv:** kv names its tools, inputs and calls as the surface asking has them ([c46bd90](https://github.com/this-is-tobi/rta/commit/c46bd90b79fc9dd85d3e469b6b0bc1bb3bfe3f66))
+* **lock:** a lock's page names the call that lifts it as the surface showing it ([1a37f9d](https://github.com/this-is-tobi/rta/commit/1a37f9d044c5618341049cfb88400c480671cdbd))
+* **mcp:** a handler is told a path it was given was a link, so net resolver list says who owns it ([2ee0d7d](https://github.com/this-is-tobi/rta/commit/2ee0d7d9657a4efc610ca36fe0325ee59eff4b15))
+* **mcp:** a required input the operator's config gives is not required in the tool's schema ([c06776a](https://github.com/this-is-tobi/rta/commit/c06776a3cd85b64580751f8a7670e4e3b12ae6d6))
+* **mcp:** a tool description names an input as `key` and a capability by its ID, not a flag ([3d1f399](https://github.com/this-is-tobi/rta/commit/3d1f3997fee022eaa2e819e14a66d819bb4d4019))
+* **mcp:** an agent reads a command line only as one to ask the operator to run ([58d0a93](https://github.com/this-is-tobi/rta/commit/58d0a9307e9632bda5a57502b40bbd5e15a6572c))
+* **mcp:** mcp install answers with what it registered or the block to add, as -o asks ([c9336c3](https://github.com/this-is-tobi/rta/commit/c9336c3267b36311f03789bcd78d05e9017e98d1))
+* **mcp:** mcp install prints the block to paste as it is, after its pairs, on any terminal ([b98d224](https://github.com/this-is-tobi/rta/commit/b98d224bfe1023062ad2ac9ae5ab8461650b1afe))
+* **net:** a hosts or resolver backup creates rta's data directory owner-only, and is 0600 ([d7fba2f](https://github.com/this-is-tobi/rta/commit/d7fba2fc747e42d429d641b8bf6905f89ab0a36f))
+* **net:** a hosts or resolver write refused for want of root names the command for whoever runs it ([7741fdc](https://github.com/this-is-tobi/rta/commit/7741fdce66b684c4c2bfc486d6054e8b1a0721a9))
+* **net:** a net refusal names its arguments and tools as the surface asking gives them ([041a201](https://github.com/this-is-tobi/rta/commit/041a2013389bd59fa72ccd72aef97506abca95d8))
+* **net:** net hosts add, rm and toggle refuse a hosts file that is a symlink, naming its target ([bf0f6b6](https://github.com/this-is-tobi/rta/commit/bf0f6b6c94664627636a5a0cd40f844dea2e01fd))
+* **net:** net hosts toggle parks a name live on any line, and will not guess between parked ones ([066fc67](https://github.com/this-is-tobi/rta/commit/066fc67f734e39134e692b3f1b2bd34574fbc50c))
+* **net:** net info masks a proxy's userinfo up to its last @, where net/http ends it ([7f47130](https://github.com/this-is-tobi/rta/commit/7f47130a8fc87507aef6dd154724b7fd919add3e))
+* **net:** net listen lists Linux's UDP sockets, whose missing peer reads as 0.0.0.0 port 0 ([90a3582](https://github.com/this-is-tobi/rta/commit/90a35828e5153f3ac908df4062211248d0d922d1))
+* **note:** a note cannot go under its own sub-note, and a cycle already made stays listed ([fbbf4a6](https://github.com/this-is-tobi/rta/commit/fbbf4a61e2fa7cefed69f78160ea21603efaea64))
+* **note:** a note left as its own parent is not counted among its own sub-notes ([084b218](https://github.com/this-is-tobi/rta/commit/084b2186faeb74c8e83b97270d8997d0e7aabcd0))
+* **note:** a note's hints name note.list and note.toggle as the surface asking calls them ([3f5964f](https://github.com/this-is-tobi/rta/commit/3f5964f3a5ba042806dfe54a02c13349878ea1b3))
+* **note:** note rm counts the sub-notes it moved up in the singular when there is one ([75353d3](https://github.com/this-is-tobi/rta/commit/75353d3732223172aaaf721588a1ed6d114160d9))
+* **operator:** operator status and init name their next calls as the surface asking has them ([15c0df3](https://github.com/this-is-tobi/rta/commit/15c0df34fa626b16ebaeebf08b801ab2954de8ae))
+* **pkg:** a manager whose list exits non-zero is a failed row with its reason, not ok ([cc5234c](https://github.com/this-is-tobi/rta/commit/cc5234cb619d8348e2afab330ff1ad8a6785c2f4))
+* **pkg:** a tool's latest release is the version in its tag, so bun-v1.1.38 is newer than 1.1.20 ([d409816](https://github.com/this-is-tobi/rta/commit/d409816fb61b2ff32019873521280c7e45c80712))
+* **pkg:** a tool's upgrade takes a .tar.gz or a bare binary, and places only a program it can run ([dae5a96](https://github.com/this-is-tobi/rta/commit/dae5a9685f57e6fb82ff9aa5474575efafdb1a18))
+* **pkg:** an installed pre-release is behind the release it leads up to ([c5f76b9](https://github.com/this-is-tobi/rta/commit/c5f76b9245921201edf04e67825fe5d8d1dd9bd4))
+* **pkg:** npm's own failure is a failed npm row, not a package called error to install ([2669519](https://github.com/this-is-tobi/rta/commit/266951907c4de79b9741d4ea9c036cd3881c7824))
+* **pkg:** pkg names its inputs and capabilities as the TUI and the CLI each spell them ([f3721e4](https://github.com/this-is-tobi/rta/commit/f3721e4e4e01d0e6b8cb3c55664dfca3474bfdd0))
+* **pkg:** pkg outdated asks go only about a regular file in GOBIN, not a pipe it would wait on ([99986cd](https://github.com/this-is-tobi/rta/commit/99986cd90bc8948482eab94fc14ab4758a4eb222))
+* **pkg:** pkg outdated names a broken pipx venv on its own row and grades the healthy ones ([e61ebb4](https://github.com/this-is-tobi/rta/commit/e61ebb4583ebd2da1a7d65100782c6b984de83d4))
+* **plugin:** a credential grant opens only what the plugin declared, and never from the image ([73a2609](https://github.com/this-is-tobi/rta/commit/73a260923ff9cbd592858f456736c8b291caf1ce))
+* **plugin:** a list argument is the last the command line takes, or the plugin is refused ([614e54c](https://github.com/this-is-tobi/rta/commit/614e54c0b20b2cfa3e7b128c8bc06bf217f02c70))
+* **plugin:** a required input with a default is refused, as the default leaves it never missing ([706aaba](https://github.com/this-is-tobi/rta/commit/706aabaebc769cbe0ca28eb9cc927918cce593d8))
+* **plugin:** an untrust that leaves the system root trusting a plugin says it keeps loading ([130d21e](https://github.com/this-is-tobi/rta/commit/130d21e7025da49d8a6667d00e39e2b67c81a500))
+* **plugin:** install and upgrade read no manifest through a symlinked index/ directory ([e7f447c](https://github.com/this-is-tobi/rta/commit/e7f447c7ec4b799796e98e68dd9012e0948edd23))
+* **plugin:** plugin index update refuses a pull that leaves the index no manifest to read ([6950f7c](https://github.com/this-is-tobi/rta/commit/6950f7cac7fe6715b40588bd0172acf067970a9e))
+* **plugin:** plugin new answers with the directory it wrote and what to run next, as -o asks ([9fdd5c2](https://github.com/this-is-tobi/rta/commit/9fdd5c2907f71cf22aaba2177994694ab8486476))
+* **plugin:** plugin untrust answers with what it withdrew and the record, in the format asked for ([102dc56](https://github.com/this-is-tobi/rta/commit/102dc56c6e0c9ed592f2909d851098aca537bef9))
+* **plugin:** remove and prune delete a stored copy whose digest the system root trusts too ([6af0ff0](https://github.com/this-is-tobi/rta/commit/6af0ff026779395ad8cc78d5b0fc406f8e36b3a7))
+* **plugin:** remove names what the system root still trusts rather than saying all trust went ([251c6d1](https://github.com/this-is-tobi/rta/commit/251c6d11e411e865538a4c39a0c7e03ba7301d95))
+* **policy:** policy init answers with the file it wrote and its ceiling, in the format asked for ([d371342](https://github.com/this-is-tobi/rta/commit/d371342655c9ad1b45709499cb85ed4332df1da4))
+* **policy:** policy require answers with the file it wrote and whether this directory meets it ([37b5c60](https://github.com/this-is-tobi/rta/commit/37b5c60af82eac8ca90ac6718d8c36349cb60070))
+* **policy:** policy show's repository policy row names the repository's files alone ([7ec7566](https://github.com/this-is-tobi/rta/commit/7ec75667526bb417c344be7372fa573cd1b70c4e))
+* **sys:** sys ps names its sort input as the surface asking gives it ([58bdd69](https://github.com/this-is-tobi/rta/commit/58bdd6925e726ded8e66dbd6bfecd0b45d120508))
+* **sys:** sys ps on macOS counts another user's process as unreadable rather than idle and empty ([24b1a7a](https://github.com/this-is-tobi/rta/commit/24b1a7a99b3690b41161a35dd71be3c849cbcca0))
+* **sys:** sys ps ranks processes by the CPU they used over the last 200ms, not since they started ([32fe3f1](https://github.com/this-is-tobi/rta/commit/32fe3f1cb5fdde57b73ac97a149202f5a6ffd0c9))
+* **tui:** a required input with an empty default keeps a capability off the dashboard ([da16bda](https://github.com/this-is-tobi/rta/commit/da16bdae50a2869848870258290d30bd52b40d49))
+* **tui:** the TUI names a capability it sends somebody to as its catalogue lists it ([2ececa1](https://github.com/this-is-tobi/rta/commit/2ececa1b5a9fa5305a596e1f9b6b27273eef4a24))
+
+
+### Code Refactoring
+
+* **plugin:** the CLI's spelling of a capability as a command line is written once ([7f6e250](https://github.com/this-is-tobi/rta/commit/7f6e250cc33f007ce8192ac66efc0aa558b70532))
+
 ## [0.27.0](https://github.com/this-is-tobi/rta/compare/v0.26.0...v0.27.0) (2026-09-26)
 
 
