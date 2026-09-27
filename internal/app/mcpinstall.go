@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/this-is-tobi/rta/internal/grant"
+	"github.com/this-is-tobi/rta/internal/render/cli"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -308,12 +309,12 @@ func newMCPInstallCommand(opts *globalOpts) *cobra.Command {
 						fmt.Fprintf(cmd.ErrOrStderr(),
 							"rta: %s could not register it (%v) — here is what to add instead\n",
 							client.bin, err)
-						return renderView(cmd, opts, describeClient(client, self, name, global))
+						return renderClientBlock(cmd, opts, describeClient(client, self, name, global))
 					}
 					return renderView(cmd, opts, registeredAnswer(client, name, line, false))
 				}
 			}
-			return renderView(cmd, opts, describeClient(client, self, name, global))
+			return renderClientBlock(cmd, opts, describeClient(client, self, name, global))
 		},
 	}
 	cmd.Flags().StringVar(&as, "as", "",
@@ -347,6 +348,49 @@ func registeredAnswer(c mcpClient, as, line string, dryRun bool) view.KeyValue {
 		{Key: ran, Value: line},
 		{Key: "next", Value: next},
 	}}
+}
+
+// renderClientBlock answers with describeClient's pairs, the block among them
+// in every format but pretty, where it is printed after them as it is.
+//
+// The block is copied, not read. Each of its lines is a TOML key and its
+// value or a JSON member, and the key/value renderer wraps a value to the
+// terminal's width as the prose it takes it for: a path to the binary longer
+// than the room beside the key put `command =` on one line and its quoted
+// value on the next, and split a JSON string across two, so a narrow
+// terminal handed somebody a block neither format parses. After the pairs it
+// is drawn at its natural width, through the same renderer so it is cleaned
+// of what a terminal would act on as every value is, and a line wider than
+// the screen is the terminal's to fold on the screen and keep whole in a
+// copy. -o json and the rest carry it as the value it is, which is where a
+// script provisioning a machine lifts it from.
+func renderClientBlock(cmd *cobra.Command, opts *globalOpts, answer view.KeyValue) error {
+	format, err := opts.format()
+	if err != nil {
+		return err
+	}
+	if format != cli.Pretty {
+		return renderView(cmd, opts, answer)
+	}
+	var block string
+	pairs := make([]view.Pair, 0, len(answer.Pairs))
+	for _, p := range answer.Pairs {
+		if p.Key == "block" {
+			block = p.Value
+			continue
+		}
+		pairs = append(pairs, p)
+	}
+	out := cmd.OutOrStdout()
+	o := renderOptions(cmd, format, opts.noColor)
+	if err := cli.Render(out, view.KeyValue{Pairs: pairs}, o); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(out); err != nil {
+		return err
+	}
+	o.Width = 0
+	return cli.Render(out, view.Text{Body: block}, o)
 }
 
 // describeClient is what to add and where, which is all rta does for a client
