@@ -395,27 +395,12 @@ func planTable(prepared []core.Grant, replaces []string) view.Table {
 	}}
 	for i, g := range prepared {
 		t.Rows = append(t.Rows, []string{
-			g.Target, shownRecord(g.Scope, "—"), dash(g.Profile), format.Duration(g.Expires.Sub(g.Issued)),
+			g.Target, core.ShownRecord(g.Scope, "—"), dash(g.Profile), format.Duration(g.Expires.Sub(g.Issued)),
 			budgetLeft(g, g.Issued), dash(replaces[i]),
 		})
 	}
 	t.Total = len(t.Rows)
 	return t
-}
-
-// shownRecord is a grant's record as a listing shows it: as the gate
-// compares it (textclean.Record), none for a grant naming no record — the
-// listing's own word for that, "any" in the roster and a dash in a plan —
-// and quoted when the record is spelled like that word, or a kv key named
-// any reads as a grant over the whole store.
-func shownRecord(scope, none string) string {
-	switch scope {
-	case "":
-		return none
-	case none:
-		return strconv.Quote(scope)
-	}
-	return textclean.Record(scope)
 }
 
 func dash(s string) string {

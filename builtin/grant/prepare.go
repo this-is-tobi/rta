@@ -567,7 +567,7 @@ func revokeBody(sf plugin.Surface, target string, out operatorid.RevokeOutcome, 
 		if out.Still == nil {
 			return line
 		}
-		record := shownRecord(out.Still.Scope, "any")
+		record := core.ShownRecord(out.Still.Scope, "any")
 		return line + fmt.Sprintf("\nstill covered by an active grant on %s (record: %s) — revoke that too: `%s`",
 			out.Still.Target, record, sf.Call("grant.revoke", plugin.Arg{Name: "target", Value: out.Still.Target, Positional: true}))
 	}

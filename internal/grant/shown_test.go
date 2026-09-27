@@ -24,3 +24,54 @@ func TestNamedShowsTheRecordAsCompared(t *testing.T) {
 		}
 	}
 }
+
+// Every record the roster can draw reads back as itself, and no two draw
+// alike: what a row action seeds is the grant's own record. Among them the
+// ones the roster's words collide with — none, a record named any, a folder
+// and a record spelled like a folder's width — and each kind of character
+// textclean.Record names by code point.
+func TestARosterRecordReadsBackAsTheRecord(t *testing.T) {
+	records := []string{
+		"", "any", `"any"`, "any/", "db", "prod/", "prod/db", "my dir/", "prod/ (all)", "(all)",
+		"db" + string(rune(0xa0)), " db", "db ", "a b", `"quoted`, `back\slash`, "tab\there",
+		"line\nbreak", "\xff", "zw" + string(rune(0x200b)) + "sp", "blank" + string(rune(0x2800)),
+		"prod/" + string(rune(0x200b)) + "/", string(rune(0x202e)) + "fdp.exe",
+	}
+	drawn := map[string]string{}
+	for _, r := range records {
+		cell := RosterRecord(r)
+		if other, seen := drawn[cell]; seen {
+			t.Errorf("%q and %q are both drawn as %q", other, r, cell)
+		}
+		drawn[cell] = r
+		back, ok := RecordOfRoster(cell)
+		if !ok || back != r {
+			t.Errorf("RecordOfRoster(%q) = %q, %v; want %q back", cell, back, ok, r)
+		}
+	}
+	// A cell the roster draws for no record reads as none of them.
+	for _, cell := range []string{"prod/", "db (all)", "any (all)", `"unterminated`, `"db"`, `"prod/" (all)`, ""} {
+		if back, ok := RecordOfRoster(cell); ok {
+			t.Errorf("RecordOfRoster(%q) = %q, want it refused: no record is drawn so", cell, back)
+		}
+	}
+}
+
+// A connection reads back without the mark saying it changed, and the base
+// connection's dash as none.
+func TestARosterProfileReadsBackAsTheProfile(t *testing.T) {
+	for _, c := range []struct {
+		profile string
+		changed bool
+	}{{"", false}, {"", true}, {"staging", false}, {"staging", true}, {"staging/analytics", true}} {
+		cell := RosterProfile(c.profile, c.changed)
+		if back, ok := ProfileOfRoster(cell); !ok || back != c.profile {
+			t.Errorf("ProfileOfRoster(%q) = %q, %v; want %q", cell, back, ok, c.profile)
+		}
+	}
+	for _, cell := range []string{"", " (changed)"} {
+		if back, ok := ProfileOfRoster(cell); ok {
+			t.Errorf("ProfileOfRoster(%q) = %q, want it refused", cell, back)
+		}
+	}
+}

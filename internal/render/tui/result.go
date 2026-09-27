@@ -10,6 +10,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
+	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/render/cli"
 	"github.com/this-is-tobi/rta/internal/render/theme"
 	"github.com/this-is-tobi/rta/internal/textclean"
@@ -449,11 +450,27 @@ func (m Model) actionSeed(a capAction, tbl view.Table) (map[string]any, bool) {
 			if _, done := base[f.Name]; done || f.Local || (f.Type != plugin.String && f.Type != plugin.Int) {
 				continue
 			}
-			raw, found := cellNamed(tbl, row, f.Name)
+			column := f.Name
+			raw, found := cellNamed(tbl, row, column)
 			if !found {
-				raw, found = cellNamed(tbl, row, columnAlias[f.Name])
+				column = columnAlias[f.Name]
+				raw, found = cellNamed(tbl, row, column)
 			}
-			if !found || strings.TrimSpace(raw) == "" || strings.TrimSpace(raw) == "—" {
+			if !found {
+				continue
+			}
+			if read := cellReader[a.from][strings.ToLower(column)]; read != nil {
+				// The value the cell is drawn from, exactly, or nothing: a
+				// cell that reads back as no value leaves its box for the
+				// form, like the dash below.
+				value, ok := read(raw)
+				if !ok || value == "" {
+					continue
+				}
+				base[f.Name] = value
+				continue
+			}
+			if strings.TrimSpace(raw) == "" || strings.TrimSpace(raw) == "—" {
 				continue
 			}
 			if v, err := rowKey(f, raw); err == nil {
@@ -506,6 +523,27 @@ func pairNamed(kv view.KeyValue, key string) string {
 // word: a grant's scope is its "Record" on screen, because that is what a
 // person reads it as.
 var columnAlias = map[string]string{"scope": "record"}
+
+// cellReader reads a cell drawn for a person back into the value it shows,
+// for the columns whose cells are not the value: a grant row's Record says
+// "any" for a grant naming no record, "prod/ (all)" for a folder and a
+// padded record quoted, and its Profile marks a connection repointed since
+// issue. Seeded as drawn, x and n on such a row named a record or a
+// connection no grant holds — or a grant on a key literally named any — so
+// the revoke or renew they opened took back or extended another grant, or
+// none. The readings are internal/grant's, beside the drawing they invert.
+//
+// Keyed by the capability that drew the table, because each reading is that
+// drawing's inverse and nobody else's. A plugin's table may carry a Record
+// or a Profile column of its own, where "any" is a record and a dash means
+// none; read as the roster, its dash would seed a record named with a dash
+// and its "any" no record at all.
+var cellReader = map[string]map[string]func(string) (string, bool){
+	"grant.list": {
+		"record":  grant.RecordOfRoster,
+		"profile": grant.ProfileOfRoster,
+	},
+}
 
 func cellNamed(tbl view.Table, row []string, name string) (string, bool) {
 	if name == "" {

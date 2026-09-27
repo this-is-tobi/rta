@@ -61,6 +61,9 @@ type capAction struct {
 	bare bool
 	// seed is the declaration's input-to-column mapping; see plugin.Action.
 	seed map[string]string
+	// from is the capability that declared the action, whose view it acts
+	// on: what a row's cells mean is that capability's (cellReader).
+	from string
 }
 
 // viewToggle flips one boolean input of the view you are already looking at.
@@ -113,7 +116,7 @@ func capActions(reg *registry.Registry, capID string) []capAction {
 		}
 		out = append(out, capAction{
 			key: a.Key, label: a.Label, cap: target,
-			src: sourceOf(a.Source), bare: a.Bare, seed: a.Seed,
+			src: sourceOf(a.Source), bare: a.Bare, seed: a.Seed, from: capID,
 		})
 	}
 	return out
