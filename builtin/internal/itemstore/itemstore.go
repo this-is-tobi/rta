@@ -289,7 +289,6 @@ func Preview(body string) string {
 	return out
 }
 
-// Age renders how long ago t was, compactly: "now", "5m", "3h", "2d".
 // Children returns the direct sub-items of parentID, in store order — the
 // breakdown of a task into steps, GitHub-tasklist style.
 func Children(s Store, parentID int) []Item {
@@ -314,6 +313,7 @@ func Progress(s Store, parentID int) (done, total int) {
 	return done, total
 }
 
+// Age renders how long ago t was, compactly: "now", "5m", "3h", "2d".
 func Age(t time.Time) string {
 	d := time.Since(t)
 	switch {
