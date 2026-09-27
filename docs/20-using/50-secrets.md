@@ -57,6 +57,8 @@ eval "$(rta kv env --prefix APP_)"
 rta kv env --format dotenv > .env
 ```
 
+A key's name becomes the variable's by upper-casing it and turning anything but a letter, a digit or `_` into `_`, so `db-password` is `DB_PASSWORD`. Two keys that come out the same — `prod/db-password` and `prod-db-password` — are refused rather than both printed, since whichever line a shell or a `.env` loader kept would be a secret under the other's name: rename one, or export them in separate calls with different prefixes.
+
 ## Undoing a mistake
 
 
