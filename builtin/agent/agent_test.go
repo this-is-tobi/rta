@@ -578,6 +578,50 @@ func TestAPaddedRecordIsNeverShownAsTheBareOne(t *testing.T) {
 	}
 }
 
+// A capability taking a list names a record for each element — net hosts add
+// takes its hostnames that way — and a list printed as Go prints one showed
+// a padded element as the bare one, on the request's page and in the ledger,
+// where the arguments are the only copy of the records a call named.
+func TestAListArgumentShowsEachRecordAsTheGateComparesIt(t *testing.T) {
+	isolate(t)
+	padded := "api.local" + string(rune(0xa0))
+	p, err := consent.Ask(consent.Call{
+		Cap: "net.hosts.add", Safety: "write", Scopes: []string{"api.local", padded},
+		Args: map[string]any{"hostname": []string{"api.local", padded}}, Why: "no active grant",
+	}, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(p.Close)
+	want := "[api.local " + strconv.Quote(padded) + "]"
+	sv, err := run(t, "agent.show", map[string]any{"id": p.Request.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var shown string
+	for _, s := range sv.(view.Sections).Items {
+		if s.ID == "arguments" {
+			shown = pairValue(s.View, "hostname")
+		}
+	}
+	if shown != want {
+		t.Errorf("the request's page shows the hostnames as %q, want %q", shown, want)
+	}
+	// Read back from the ledger, where a list is a JSON array.
+	if err := agentlog.Append(agentlog.Entry{Cap: "net.hosts.add", Tool: "net_hosts_add",
+		Outcome: agentlog.Ran, Auth: agentlog.Live,
+		Args: map[string]any{"hostname": []any{"api.local", padded}}}); err != nil {
+		t.Fatal(err)
+	}
+	lv, err := run(t, "agent.log", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rows := lv.(view.Table).Rows; len(rows) != 1 || rows[0][3] != "hostname="+want {
+		t.Errorf("the ledger shows %q, want hostname=%s", rows, want)
+	}
+}
+
 // rewrite doctors a parked request the way something with a write into rta's
 // data directory would: the display becomes harmless, the digest that binds
 // the real call is left exactly where it was found.
