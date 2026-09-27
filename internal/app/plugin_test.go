@@ -871,6 +871,81 @@ func TestPluginUntrustAnswersWithAViewInTheFormatAskedFor(t *testing.T) {
 	}
 }
 
+// An untrust that withdraws the operator's copy of an artifact the system
+// root trusts as well must not say it will not load again: it printed that,
+// exited 0, and the plugin answered the very next command. By name, by
+// preview, and with --all, it says the artifact keeps loading and names the
+// root that keeps it.
+func TestUntrustSaysWhatTheSystemRootKeepsLoading(t *testing.T) {
+	run := session(t, registry.New())
+	system := t.TempDir()
+	t.Setenv("RTA_SYSTEM_DIR", system)
+	baked, mine := strings.Repeat("77", 32), strings.Repeat("88", 32)
+	record := `{"trusted":[{"digest":"` + baked + `","names":["baked"]}]}`
+	if err := os.WriteFile(filepath.Join(system, "trusted.json"), []byte(record), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	copyOf := func() {
+		t.Helper()
+		if verr := plugintrust.Add(baked, "baked", filepath.Join(system, "plugins", "bin", "rta-plugin-baked")); verr != nil {
+			t.Fatal(verr)
+		}
+	}
+	keepsLoading := func(t *testing.T, pairs map[string]string) {
+		t.Helper()
+		if !strings.Contains(pairs["left alone"], system) {
+			t.Errorf("left alone = %q, want the system root that still trusts it named", pairs["left alone"])
+		}
+		if !plugintrust.Load().Trusts(baked) {
+			t.Fatal("the fixture is wrong: the system root's trust went too")
+		}
+	}
+
+	copyOf()
+	out, errOut, err := run("plugin", "untrust", "baked", "--dry-run", "-o", "json")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	pairs := answerPairs(t, out)
+	keepsLoading(t, pairs)
+	if !strings.Contains(pairs["next"], "keep loading") {
+		t.Errorf("a preview said %q, want that it would keep loading", pairs["next"])
+	}
+
+	out, errOut, err = run("plugin", "untrust", "baked", "-o", "json")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	pairs = answerPairs(t, out)
+	keepsLoading(t, pairs)
+	if strings.Contains(pairs["next"], "will not load again") {
+		t.Errorf("next = %q for an artifact the system root still trusts", pairs["next"])
+	}
+	if pairs["approvals"] != "1" || !strings.Contains(pairs["next"], "keeps loading") {
+		t.Errorf("answered %v, want the one approval withdrawn and the plugin still loading", pairs)
+	}
+
+	copyOf()
+	if verr := plugintrust.Add(mine, "mine", "/usr/local/bin/rta-plugin-mine"); verr != nil {
+		t.Fatal(verr)
+	}
+	out, errOut, err = run("plugin", "untrust", "--all", "--yes", "-o", "json")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	pairs = answerPairs(t, out)
+	keepsLoading(t, pairs)
+	if pairs["approvals"] != "2" || !strings.HasPrefix(pairs["left alone"], "1 artifact trusted by the system root") {
+		t.Errorf("--all answered %v, want both approvals withdrawn and the shared one left loading", pairs)
+	}
+	if !strings.Contains(pairs["next"], "the rest will not load again") {
+		t.Errorf("next = %q, want the two outcomes told apart", pairs["next"])
+	}
+	if plugintrust.Load().Trusts(mine) {
+		t.Error("--all left the operator's own approval in place")
+	}
+}
+
 // D3: plugin remove is destructive (it withdraws trust from every stored
 // artifact) and now needs --yes the same way a Destructive capability does
 // — checked before plugindist.Remove ever runs, so even a name nothing has

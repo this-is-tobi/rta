@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/this-is-tobi/rta/internal/grant"
+	"github.com/this-is-tobi/rta/internal/paths"
 	"github.com/this-is-tobi/rta/internal/pluginhost"
 	"github.com/this-is-tobi/rta/internal/plugintrust"
 	"github.com/this-is-tobi/rta/internal/registry"
@@ -502,12 +503,22 @@ func newPluginUntrustCommand(opts *globalOpts) *cobra.Command {
 					WithHint("`rta plugin trust` with no argument lists what is waiting; " +
 						"`rta doctor` lists what is trusted")
 			}
+			// Asked rather than assumed: the approval withdrawn can be the
+			// operator's copy of an artifact the system root trusts as well,
+			// which goes on loading from the entry underneath.
+			still := len(plugintrust.SystemTrusted(which))
 			next := "it will not load again; a session already running keeps what it loaded — " +
 				"restart `rta mcp serve` or the TUI to be rid of it"
-			if opts.dryRun {
+			switch {
+			case opts.dryRun && still > 0:
+				next = "run without --dry-run to withdraw your approval; the system root trusts it as well, " +
+					"so it would keep loading"
+			case opts.dryRun:
 				next = "run without --dry-run to withdraw it"
+			case still > 0:
+				next = stillLoading
 			}
-			return renderView(cmd, opts, untrustAnswer(which, n, next, opts.dryRun))
+			return renderView(cmd, opts, untrustAnswer(which, n, still, next, opts.dryRun))
 		},
 		ValidArgsFunction: func(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
 			var out []cobra.Completion
@@ -538,18 +549,38 @@ func newPluginUntrustCommand(opts *globalOpts) *cobra.Command {
 // every build it was trusted under — and that number is what the command did.
 // The record is named because it is the file the command wrote, and the one
 // `rta doctor` reads back.
-func untrustAnswer(what string, approvals int, next string, dryRun bool) view.KeyValue {
+//
+// system is how many artifacts the system root trusts that the command left
+// trusted — every one it holds for --all, and the ones a name or digest also
+// matches there for one. They have a line of their own whenever there are
+// any, because they go on loading whatever the operator's record now says,
+// and an answer about "every approval" or "it" that left them out would be a
+// claim about the machine that is false.
+func untrustAnswer(what string, approvals, system int, next string, dryRun bool) view.KeyValue {
 	label := "untrusted"
 	if dryRun {
 		label = "would untrust"
 	}
-	return view.KeyValue{Pairs: []view.Pair{
+	pairs := []view.Pair{
 		{Key: label, Value: what},
 		{Key: "approvals", Value: strconv.Itoa(approvals)},
-		{Key: "record", Value: plugintrust.Path()},
-		{Key: "next", Value: next},
-	}}
+	}
+	if system > 0 {
+		pairs = append(pairs, view.Pair{Key: "left alone",
+			Value: format.Count(system, "artifact", "artifacts") + " trusted by the system root at " +
+				paths.System() + ", which rta reads and never writes; " + plugintrust.SystemHint})
+	}
+	return view.KeyValue{Pairs: append(pairs,
+		view.Pair{Key: "record", Value: plugintrust.Path()},
+		view.Pair{Key: "next", Value: next},
+	)}
 }
+
+// stillLoading is what an untrust says of a plugin the system root trusts as
+// well as the operator did: what went is the operator's approval and the
+// credential grant it carried, since the system root's entry carries none.
+const stillLoading = "it keeps loading: the system root trusts it as well, so what is withdrawn is " +
+	"your approval and any location you allowed it"
 
 // humanBytes is a file size a person reads without counting digits. Local to
 // this one report: nothing else in the app formats a size, and a shared helper

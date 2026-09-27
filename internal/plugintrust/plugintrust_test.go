@@ -617,3 +617,34 @@ func TestUntrustOfAnImageTrustedArtifactIsRefused(t *testing.T) {
 		t.Fatal("a refused untrust still took the trust away")
 	}
 }
+
+// A withdrawal that succeeds can leave the artifact loading: trusting or
+// allowing an artifact the image trusts writes the operator a copy, Remove
+// takes the copy, and the image's entry is still underneath. SystemTrusted
+// is how a surface finds that out before saying "it will not load again".
+func TestSystemTrustedNamesWhatAWithdrawalLeavesLoading(t *testing.T) {
+	isolated(t)
+	systemRecord(t, Entry{Digest: digestA, Name: "kube"})
+	if verr := Add(digestA, "kube", "/usr/local/lib/rta/plugins/bin/rta-plugin-kube"); verr != nil {
+		t.Fatal(verr)
+	}
+	if verr := Add(digestB, "pg", "/home/me/bin/rta-plugin-pg"); verr != nil {
+		t.Fatal(verr)
+	}
+	if n, verr := Remove("kube"); verr != nil || n != 1 {
+		t.Fatalf("Remove(kube) = %d, %v — want the operator's copy withdrawn", n, verr)
+	}
+	if !Load().Trusts(digestA) {
+		t.Fatal("the fixture is wrong: the image's entry should still trust it")
+	}
+	for _, which := range []string{"kube", digestA, digestA[:12]} {
+		if got := SystemTrusted(which); len(got) != 1 || got[0].Digest != digestA {
+			t.Errorf("SystemTrusted(%q) = %v, want the image's entry", which, got)
+		}
+	}
+	for _, which := range []string{"pg", digestB, "nobody"} {
+		if got := SystemTrusted(which); len(got) != 0 {
+			t.Errorf("SystemTrusted(%q) = %v, want nothing: the image does not trust it", which, got)
+		}
+	}
+}

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -74,6 +75,33 @@ func TestApprovalCanBeTakenBackAndSaysWhatThatDoesNotDo(t *testing.T) {
 	}
 	if !strings.Contains(flash, "until rta exits") {
 		t.Errorf("the flash does not say the loaded plugin keeps running: %q", flash)
+	}
+}
+
+// Taking back the operator's copy of an artifact the system root trusts as
+// well does not stop it loading, and the pane must not say it does: the row
+// stays trusted, and the flash says who still trusts it.
+func TestTakingBackAnApprovalTheSystemRootAlsoGivesSaysItKeepsLoading(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	system := t.TempDir()
+	t.Setenv("RTA_SYSTEM_DIR", system)
+	record := `{"trusted":[{"digest":"` + untrustedDigest + `","names":["weather"]}]}`
+	if err := os.WriteFile(filepath.Join(system, "trusted.json"), []byte(record), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if verr := plugintrust.Add(untrustedDigest, "weather", "/usr/local/bin/rta-plugin-weather"); verr != nil {
+		t.Fatal(verr)
+	}
+	m := paneWithTrusted(t)
+	flash := m.trustSelected()
+	if strings.Contains(flash, "will not run again") || !strings.Contains(flash, "keeps loading") {
+		t.Errorf("flash = %q, want that the system root keeps it loading", flash)
+	}
+	if !plugintrust.Load().Trusts(untrustedDigest) {
+		t.Fatal("the fixture is wrong: the system root's trust went too")
+	}
+	if m.plugins[m.pluginSel].decided == decidedUntrust {
+		t.Error("the row says the approval is gone while the artifact is still trusted")
 	}
 }
 
