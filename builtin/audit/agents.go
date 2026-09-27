@@ -613,7 +613,8 @@ func fetchOnLaunch(d serverDecl) (launch, bool) {
 		return launch{}, false
 	}
 	l := launch{runner: base, rn: rn, args: d.args, pkgAt: -1}
-	needSub := rn.sub != ""
+	needSub := len(rn.subs) > 0
+	var words []string
 	for i := 0; i < len(d.args); i++ {
 		a := d.args[i]
 		if strings.HasPrefix(a, "-") {
@@ -631,12 +632,16 @@ func fetchOnLaunch(d serverDecl) (launch, bool) {
 		if needSub {
 			// Anything but the fetching subcommand runs what is already
 			// installed — `pnpm exec` is node_modules/.bin — and fetches
-			// nothing.
-			if a != rn.sub {
+			// nothing. A subcommand can be two words, `uv tool run`.
+			words = append(words, a)
+			sub := strings.Join(words, " ")
+			switch {
+			case slices.Contains(rn.subs, sub):
+				needSub = false
+				l.runner += " " + sub
+			case !slices.ContainsFunc(rn.subs, func(s string) bool { return strings.HasPrefix(s, sub+" ") }):
 				return launch{}, false
 			}
-			needSub = false
-			l.runner += " " + a
 			continue
 		}
 		if l.pkg == "" {
@@ -677,26 +682,37 @@ func (l launch) String() string {
 	return l.runner + " " + l.pkg
 }
 
-// fetchRunner is how one runner is read: the subcommand that makes it fetch,
+// fetchRunner is how one runner is read: the subcommands that make it fetch,
 // if it needs one, the flags that name the package, and the flags that take
 // a value that is not the package.
 type fetchRunner struct {
-	sub        string
+	subs       []string
 	pkgFlags   []string
 	valueFlags []string
 	python     bool
 }
 
-var fetchRunners = map[string]fetchRunner{
-	"npx": {pkgFlags: []string{"-p", "--package"},
-		valueFlags: []string{"-c", "--call", "--registry", "--cache", "-w", "--workspace", "--userconfig"}},
-	"bunx": {pkgFlags: []string{"-p", "--package"}},
-	"pnpm": {sub: "dlx", pkgFlags: []string{"--package"}, valueFlags: []string{"--allow-build", "--reporter"}},
-	"uvx": {python: true, pkgFlags: []string{"--from"},
+// The npm and uv entries are npx and uvx spelled long — `npm exec`, `uv tool
+// run` — which fetch exactly as the short forms do, and were not read at all.
+var (
+	npmExec = fetchRunner{pkgFlags: []string{"-p", "--package"},
+		valueFlags: []string{"-c", "--call", "--registry", "--cache", "-w", "--workspace", "--userconfig"}}
+	uvRun = fetchRunner{python: true, pkgFlags: []string{"--from"},
 		valueFlags: []string{"--with", "-w", "--with-editable", "--with-requirements", "--python", "-p",
 			"--index", "--index-url", "--default-index", "--extra-index-url", "-c", "--constraints",
-			"--overrides", "--directory", "--project", "--config-file", "--cache-dir"}},
-	"pipx": {sub: "run", python: true, pkgFlags: []string{"--spec"},
+			"--overrides", "--directory", "--project", "--config-file", "--cache-dir"}}
+)
+
+var fetchRunners = map[string]fetchRunner{
+	"npx":  npmExec,
+	"npm":  {subs: []string{"exec", "x"}, pkgFlags: npmExec.pkgFlags, valueFlags: npmExec.valueFlags},
+	"bunx": {pkgFlags: []string{"-p", "--package"}},
+	"pnpm": {subs: []string{"dlx"}, pkgFlags: []string{"--package"},
+		valueFlags: []string{"--allow-build", "--reporter"}},
+	"yarn": {subs: []string{"dlx"}, pkgFlags: []string{"-p", "--package"}},
+	"uvx":  uvRun,
+	"uv":   {subs: []string{"tool run"}, python: true, pkgFlags: uvRun.pkgFlags, valueFlags: uvRun.valueFlags},
+	"pipx": {subs: []string{"run"}, python: true, pkgFlags: []string{"--spec"},
 		valueFlags: []string{"--python", "--pip-args", "--index-url", "-i"}},
 }
 
