@@ -99,7 +99,7 @@ func (s Surface) CapabilityWith(id string, inputs ...string) string {
 // Arg is one input a call spelled by Surface.Call gives: its name, its value,
 // and whether the CLI takes it by its place on the command line rather than
 // as a flag. A Value of true is a switch turned on, spelled on the CLI as the
-// bare flag.
+// bare flag, and false one turned off, joined to its flag: --tls=false.
 type Arg struct {
 	Name       string
 	Value      any
@@ -151,6 +151,12 @@ func (s Surface) Call(id string, args ...Arg) string {
 			parts = append(parts, cliValue(a.Value))
 		case a.Value == true:
 			parts = append(parts, s.InputName(a.Name))
+		case a.Value == false:
+			// Joined, never a word of its own: pflag gives a switch its value
+			// only after an equals sign, and reads the word after it as the
+			// command's own argument, so --tls false turned the switch on and
+			// handed the command a stray "false" — the opposite call.
+			parts = append(parts, s.InputName(a.Name)+"=false")
 		default:
 			parts = append(parts, s.InputName(a.Name), cliValue(a.Value))
 		}
