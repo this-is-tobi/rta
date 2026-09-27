@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"unicode/utf8"
+
+	"github.com/this-is-tobi/rta/internal/textclean/glyph"
 )
 
 // What the two cleaners promise, held against arbitrary bytes: nothing a
@@ -79,7 +81,7 @@ func FuzzRecord(f *testing.F) {
 	}
 	f.Fuzz(func(t *testing.T, s string) {
 		out := Record(s)
-		if strings.ContainsFunc(out, func(r rune) bool { return !seen(r) }) || !utf8.ValidString(out) {
+		if strings.ContainsFunc(out, func(r rune) bool { return !glyph.Seen(r) }) || !utf8.ValidString(out) {
 			t.Fatalf("Record(%q) = %q still holds a character a reader does not see as itself", s, out)
 		}
 		if Terminal(out) != out {

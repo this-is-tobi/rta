@@ -21,10 +21,10 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"unicode"
 	"unicode/utf8"
 
 	"github.com/charmbracelet/x/ansi"
+	"github.com/this-is-tobi/rta/internal/textclean/glyph"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
@@ -209,7 +209,7 @@ func Record(s string) string {
 		case r == '"' || r == '\\':
 			b.WriteByte('\\')
 			b.WriteByte(s[i])
-		case r == ' ' || seen(r):
+		case r == ' ' || glyph.Seen(r):
 			b.WriteString(s[i : i+size])
 		default:
 			// Go's own escape for it: \t, \n and their kin for the controls
@@ -235,25 +235,7 @@ func Records(records []string) string {
 
 func readsAsItself(s string) bool {
 	return s != "" && s[0] != '"' && utf8.ValidString(s) &&
-		!strings.ContainsFunc(s, func(r rune) bool { return r == ' ' || !seen(r) })
-}
-
-// seen reports whether a reader sees r as itself: a letter, a mark, a
-// number, a punctuation mark, a symbol or the ASCII space (strconv.IsPrint),
-// and not one a renderer draws as nothing — a default-ignorable code point
-// or a variation selector, the classes the grant matcher already reads as
-// nothing (internal/grant's onlyDots) — nor one it draws as an empty cell.
-//
-// That last pair is named by code point because no property holds them.
-// U+2800, the Braille pattern with no dots raised, and U+1D159, the musical
-// null notehead, are symbols to Unicode, neither space nor ignorable, and
-// every font draws them as a blank: "prod/db" followed by either one read
-// as the bare record, the same way a no-break space did. The Braille blank
-// is the one people reach for when a name has to look empty and not be.
-func seen(r rune) bool {
-	return strconv.IsPrint(r) && r != 0x2800 && r != 0x1d159 &&
-		!unicode.Is(unicode.Other_Default_Ignorable_Code_Point, r) &&
-		!unicode.Is(unicode.Variation_Selector, r)
+		!strings.ContainsFunc(s, func(r rune) bool { return r == ' ' || !glyph.Seen(r) })
 }
 
 // strip is the part of Terminal that removes, without the part that spells

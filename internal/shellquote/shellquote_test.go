@@ -36,6 +36,31 @@ func TestArgLeavesAPlainWordBareAndQuotesTheRest(t *testing.T) {
 	}
 }
 
+// A character that draws as nothing is spelled by its bytes, as a control
+// is. unicode.IsPrint counts a Hangul filler a letter, a Braille blank and a
+// null notehead symbols, and a variation selector or a combining grapheme
+// joiner a mark, so each went into plain single quotes, and the grant command
+// a refusal hands on read as the bare record quoted — the record the person
+// running it did not mean. What decides is textclean's own rule for what a
+// reader sees, so the command and the record it is shown beside cannot
+// disagree about which characters are there.
+func TestArgSpellsACharacterThatDrawsAsNothingByItsBytes(t *testing.T) {
+	for _, r := range []rune{0x3164, 0x115f, 0xffa0, 0x2800, 0x1d159, 0xfe0f, 0xe0100, 0x034f, 0xad, 0xa0} {
+		s := "prod/db" + string(r)
+		got := Arg(s)
+		if !strings.HasPrefix(got, "$'prod/db\\") || strings.ContainsRune(got, r) {
+			t.Errorf("Arg(prod/db + U+%04X) = %s, want it spelled by its bytes in $'...'", r, got)
+		}
+	}
+	// A character a reader sees as itself stays as it is, however far from
+	// ASCII: an accented letter, an ideograph, an emoji.
+	for _, s := range []string{"café", "東京", string(rune(0x1f600))} {
+		if got := Arg(s); got != "'"+s+"'" {
+			t.Errorf("Arg(%q) = %s, want it in plain single quotes", s, got)
+		}
+	}
+}
+
 // What a person pastes has to be what was meant: every spelling Arg makes,
 // read back by a shell, is the value it was given. bash reads $'...' in
 // every version still shipped, 3.2 included, and the other shells that read
@@ -45,6 +70,7 @@ func TestArgReadsBackThroughAShell(t *testing.T) {
 		"plain", "a b; $(id)", "it's", `"double" \ back`, "*?[x]", "~/x", "=x", "a,b=c",
 		"a\x1b[31mb\x07", "line\nbreak", "\x9bc1", "bad\xff", "a" + string(rune(0x202e)) + "bad",
 		string(rune(0xe0041)) + "tag", "nbsp" + string(rune(0xa0)) + "x",
+		"filler" + string(rune(0x3164)), "blank" + string(rune(0x2800)), "vs" + string(rune(0xfe0f)),
 	}
 	words := make([]string, len(values))
 	for i, v := range values {
