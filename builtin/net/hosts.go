@@ -148,7 +148,7 @@ func runHostsList(_ context.Context, req plugin.Request) (view.View, error) {
 // Refused before the dry run as well as before the write, when the file is a
 // symbolic link (guardLink): a dry run saying what would change is a promise
 // the real call would break.
-func applyHosts(req plugin.Request, lines []string, action, done string) (view.View, error) {
+func applyHosts(req plugin.Request, call rootCall, lines []string, action, done string) (view.View, error) {
 	path := hostsPath(req)
 	if verr := guardLink(path); verr != nil {
 		return nil, verr
@@ -160,7 +160,7 @@ func applyHosts(req plugin.Request, lines []string, action, done string) (view.V
 	if verr != nil {
 		return nil, verr
 	}
-	if verr := writeLines(req.Surface(), path, lines); verr != nil {
+	if verr := writeLines(req.Surface(), path, lines, call); verr != nil {
 		return nil, verr
 	}
 	return view.Text{Body: fmt.Sprintf("%s in %s\nprevious version saved to %s", done, path, saved)}, nil
@@ -303,7 +303,7 @@ func runHostsAdd(_ context.Context, req plugin.Request) (view.View, error) {
 	lines = withoutLines(lines, drop)
 
 	joined := strings.Join(names, ", ")
-	return applyHosts(req, lines,
+	return applyHosts(req, callOf(req, "net.hosts.add", []string{"ip", "hostname"}), lines,
 		fmt.Sprintf("point %s at %s", joined, ip),
 		fmt.Sprintf("pointed %s at %s", joined, ip))
 }
@@ -342,7 +342,7 @@ func runHostsRemove(_ context.Context, req plugin.Request) (view.View, error) {
 			WithHint(req.Surface().CapabilityName("net.hosts.list") + " lists every entry")
 	}
 	joined := strings.Join(names, ", ")
-	return applyHosts(req, withoutLines(lines, drop),
+	return applyHosts(req, callOf(req, "net.hosts.rm", []string{"hostname"}), withoutLines(lines, drop),
 		"remove "+joined, "removed "+joined)
 }
 
@@ -467,7 +467,7 @@ func runHostsToggle(_ context.Context, req plugin.Request) (view.View, error) {
 	if nowEnabled {
 		action, done = "enable", "enabled"
 	}
-	return applyHosts(req, lines, action+" "+name, done+" "+name)
+	return applyHosts(req, callOf(req, "net.hosts.toggle", []string{"hostname"}), lines, action+" "+name, done+" "+name)
 }
 
 // splitName divides an entry's names into the ones that are `want` and the

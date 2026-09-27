@@ -808,7 +808,7 @@ func TestAPermissionFailureStillSaysToUseSudo(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
 
 	lines := []string{"127.0.0.1 localhost", "10.0.0.1 example.test"}
-	verr := writeLines(plugin.SurfaceCLI, path, lines)
+	verr := writeLines(plugin.SurfaceCLI, path, lines, rootCall{id: "net.hosts.add"})
 	if verr == nil {
 		t.Fatal("writing into an unwritable directory reported success")
 	}
@@ -818,10 +818,55 @@ func TestAPermissionFailureStillSaysToUseSudo(t *testing.T) {
 	if !strings.Contains(verr.Hint, "sudo") {
 		t.Errorf("hint = %q, want it to name sudo", verr.Hint)
 	}
-	// An agent never typed a command to run again: the change is the
-	// operator's.
-	if verr := writeLines(plugin.SurfaceMCP, path, lines); verr == nil ||
-		strings.Contains(verr.Hint, "the same command") || !strings.Contains(verr.Hint, "the operator's to make") {
-		t.Errorf("over MCP: %+v, want the change handed to the operator", verr)
+}
+
+// Only a command line is run again with sudo, and the command is named for
+// the others as a terminal spells it, since that is where root is had: an
+// agent is told to ask the operator to run it, through the one phrase that
+// hands an agent a command, and the TUI is told what to type at a terminal.
+// "The same command" told an agent to rerun one it never typed.
+func TestAPermissionFailureNamesTheCommandForWhoeverRunsIt(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root: nothing is permission-denied")
+	}
+	for _, tc := range []struct {
+		name  string
+		setup func(t *testing.T) string
+		run   plugin.Handler
+		args  map[string]any
+		call  string
+	}{
+		{"hosts add", func(t *testing.T) string { return hostsFixture(t, "127.0.0.1 localhost\n") }, runHostsAdd,
+			map[string]any{"ip": "10.0.0.5", "hostname": []string{"api.test", "web.test"}},
+			"net hosts add 10.0.0.5 api.test web.test"},
+		{"hosts toggle", func(t *testing.T) string { return hostsFixture(t, "10.0.0.5 api.test\n") }, runHostsToggle,
+			map[string]any{"hostname": "api.test"}, "net hosts toggle api.test"},
+		{"hosts rm", func(t *testing.T) string { return hostsFixture(t, "10.0.0.5 api.test\n") }, runHostsRemove,
+			map[string]any{"hostname": []string{"api.test"}}, "net hosts rm api.test"},
+		{"resolver set", func(t *testing.T) string { return resolvFixture(t, "nameserver 1.1.1.1\n") }, runResolverSet,
+			map[string]any{"server": []string{"9.9.9.9", "1.1.1.1"}, "force": true},
+			"net resolver set 9.9.9.9 1.1.1.1 --force"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := filepath.Dir(tc.setup(t))
+			if err := os.Chmod(dir, 0o500); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+			for sf, want := range map[plugin.Surface]string{
+				plugin.SurfaceCLI: "run the same command with sudo",
+				plugin.SurfaceMCP: plugin.AskOperator(tc.call) + " with sudo",
+				plugin.SurfaceTUI: "run `sudo rta " + tc.call + "` at a terminal",
+			} {
+				_, err := tc.run(context.Background(), plugin.NewRequest(tc.args, false, true).WithSurface(sf))
+				verr := view.AsError(err, "x")
+				if verr == nil || verr.Code != "net.sysfile.permission" {
+					t.Fatalf("%s: err = %v, want net.sysfile.permission", sf, err)
+				}
+				if !strings.Contains(verr.Hint, want) {
+					t.Errorf("%s: hint = %q, want it to say %q", sf, verr.Hint, want)
+				}
+			}
+		})
 	}
 }
