@@ -355,6 +355,7 @@ func TestDetectKind(t *testing.T) {
 		"json array":  {`[1,2,3]`, "", "json"},
 		"not json":    {"{not json at all", "", "string"},
 		"file":        {"arbitrary bytes", "kubeconfig", "file"},
+		"not text":    {string([]byte{0x30, 0x82, 0xff, 0x00}), "", "file"},
 		"string":      {"hunter2", "", "string"},
 	} {
 		if got := detectKind(tc.value, tc.filename); got != tc.want {
