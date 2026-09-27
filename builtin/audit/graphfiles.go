@@ -124,6 +124,9 @@ func (g *graph) require(from, to string) {
 	}
 	g.requires[from] = append(g.requires[from], to)
 	g.count++
+	if g.up != nil {
+		g.up.parents = nil // stale now; the next walk rebuilds it
+	}
 }
 
 // goModGraph reads the `// indirect` marker, which is the one thing go.mod

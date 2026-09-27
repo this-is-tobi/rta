@@ -221,11 +221,6 @@ func renderChains(chains [][]string) string {
 // with the affected package already in it — for the rest.
 func gradeProvenance(r *findings.Report, affected []component, inv inventory) {
 	g := inv.structure
-	if g.truncated {
-		r.Add(grpInventory, "structure", findings.Warn,
-			"the dependency structure was larger than this reads, so a chain above may stop short of "+
-				"the package that actually pulled it in", refVulnerableDep)
-	}
 	// The ones whose presence nothing in the tree explained: no chain leads to
 	// them and the project did not ask for them by name.
 	//
@@ -237,15 +232,30 @@ func gradeProvenance(r *findings.Report, affected []component, inv inventory) {
 	// still a package to hand over to `go mod why`.
 	//
 	// Ordered by the affected slice, which is already sorted, so the command
-	// named is the same one twice running.
+	// named is the same one twice running. A walk the budget refused traced
+	// nothing, which is not "nothing in the tree explains it", so it is not
+	// counted as that.
 	var unexplained []component
 	for _, c := range affected {
 		if inv.relation(c) == relDirect {
 			continue
 		}
-		if len(g.via(ref(c.ecosystem, c.name), 1, maxWhyDepth)) == 0 {
+		if len(g.via(ref(c.ecosystem, c.name), 1, maxWhyDepth)) == 0 && !g.walksCut() {
 			unexplained = append(unexplained, c)
 		}
+	}
+	// After the walks rather than before them, since the last of them can be
+	// the one that spends the budget.
+	switch {
+	case g.truncated:
+		r.Add(grpInventory, "structure", findings.Warn,
+			"the dependency structure was larger than this reads, so a chain above may stop short of "+
+				"the package that actually pulled it in", refVulnerableDep)
+	case g.walksCut():
+		r.Add(grpInventory, "structure", findings.Warn,
+			"tracing what pulled each affected package in stopped at its bound, so a row above may "+
+				"name no chain, or one that stops short of the package that actually pulled it in",
+			refVulnerableDep)
 	}
 	if len(unexplained) == 0 {
 		return
