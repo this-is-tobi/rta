@@ -97,3 +97,22 @@ func TestAMachineConfigPastTheBoundIsRefused(t *testing.T) {
 		t.Errorf("git.config over a ~/.gitconfig past the bound: %v, want git.config.failed saying why", err)
 	}
 }
+
+// config.worktree is read whole too, and only where the repository's config
+// asks git to read it, so its bound is met where it is read: a git.config
+// fails naming it, and a repository whose config does not ask is not
+// refused for it.
+func TestAWorktreeConfigPastTheBoundFailsTheCallThatReadsIt(t *testing.T) {
+	machineConfig(t, "")
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
+	grow(t, filepath.Join(dir, ".git", "config.worktree"), maxConfigBytes+1)
+	if _, err := runConfig(context.Background(), req(t, dir, nil)); err != nil {
+		t.Fatalf("a config.worktree git does not read failed git.config: %v", err)
+	}
+	writeFile(t, dir, ".git/config", "[core]\n\tbare = false\n[extensions]\n\tworktreeConfig = true\n")
+	_, err := runConfig(context.Background(), req(t, dir, nil))
+	if code := errCode(err); code != "git.config.failed" || !strings.Contains(err.Error(), "larger than") {
+		t.Errorf("git.config over a config.worktree past the bound: %v, want git.config.failed saying why", err)
+	}
+}

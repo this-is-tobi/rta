@@ -13,7 +13,9 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/go-git/go-git/v5"
 	gitconfig "github.com/go-git/go-git/v5/config"
+	"github.com/go-git/go-git/v5/storage/filesystem"
 
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -27,17 +29,19 @@ func configCapability() plugin.Capability {
 		Safety:       plugin.Read,
 		HostSpecific: true,
 		Idempotent:   true,
-		Description: "Every key set in system, global or local config, one row per file it's " +
+		Description: "Every key set in system, global, local or worktree config, one row per file it's " +
 			"set in — the files `git config --list --show-origin` reads, both global ones " +
-			"included, before any of them override each other: local wins over global, global " +
-			"wins over system. The system scope is every system file git's usual builds read " +
+			"included, before any of them override each other: worktree wins over local, local wins " +
+			"over global, global wins over system. The worktree scope is config.worktree, which git " +
+			"reads where extensions.worktreeConfig is set, as `git sparse-checkout` sets it. The " +
+			"system scope is every system file git's usual builds read " +
 			"(/etc/gitconfig, Homebrew's, Apple's developer tools'), and GIT_CONFIG_SYSTEM, " +
 			"GIT_CONFIG_GLOBAL and GIT_CONFIG_NOSYSTEM are honoured as git honours them. A key " +
 			"missing from a scope simply has no row there rather than one with an empty value. " +
 			"`[include]`/`[includeIf]` directives are shown as written, not followed into the file " +
-			"they point at, and a warning counts them. Over MCP only the repository's own config " +
-			"is returned: the machine-wide scopes are the operator's, not the repository's. Values " +
-			"that carry a credential are masked on every surface.",
+			"they point at, and a warning counts them. Over MCP only the repository's own config, " +
+			"local and worktree, is returned: the machine-wide scopes are the operator's, not the " +
+			"repository's. Values that carry a credential are masked on every surface.",
 		Inputs: []plugin.Field{
 			pathField("repository path, or a subdirectory of one"),
 		},
@@ -104,6 +108,14 @@ func runConfig(ctx context.Context, req plugin.Request) (view.View, error) {
 	}
 	addConfigRows(&t, "local", local)
 	shown = append(shown, scopedConfig{scope: "local", config: local})
+	perWorktree, err := worktreeConfig(repo, local)
+	if err != nil {
+		return nil, view.Errorf("git.config.failed", "reading config.worktree: %v", err)
+	}
+	if perWorktree != nil {
+		addConfigRows(&t, "worktree", perWorktree)
+		shown = append(shown, scopedConfig{scope: "worktree", config: perWorktree})
+	}
 
 	t.Total = len(t.Rows)
 	if w := includesNotFollowed("git.config.include", "the keys set there are missing from this table", shown); w != nil {
@@ -202,17 +214,44 @@ func machineConfigSources() []scopedConfig {
 	return out
 }
 
-// envBool is an environment variable read as git reads a boolean one: true,
-// yes, on or a number other than zero; false when unset or empty, and for
-// anything else, which git refuses to run with at all.
-func envBool(name string) bool {
-	switch v := strings.ToLower(strings.TrimSpace(os.Getenv(name))); v {
+// envBool is an environment variable read as git reads a boolean one
+// (gitBool), false when it is unset.
+func envBool(name string) bool { return gitBool(os.Getenv(name)) }
+
+// gitBool is a value read as git reads a boolean: true, yes, on or a number
+// other than zero; false when empty, and for anything else, which git
+// refuses to run with at all.
+func gitBool(value string) bool {
+	switch v := strings.ToLower(strings.TrimSpace(value)); v {
 	case "true", "yes", "on":
 		return true
 	default:
 		n, err := strconv.Atoi(v)
 		return err == nil && n != 0
 	}
+}
+
+// worktreeConfig is config.worktree, the config of the working tree being
+// read, which git reads after the repository's own where that sets
+// extensions.worktreeConfig — `git sparse-checkout` sets it, and `git config
+// --worktree` writes there — and nil where it does not, or there is none. It
+// is the repository's, as its config is: read through the filesystem that
+// bounds a git directory's files (regularFiles), from the working tree's own
+// git directory, which for a linked worktree is not the common one.
+func worktreeConfig(repo *git.Repository, local *gitconfig.Config) (*gitconfig.Config, error) {
+	store, ok := repo.Storer.(*filesystem.Storage)
+	if !ok || !local.Raw.HasSection("extensions") || !gitBool(local.Raw.Section("extensions").Option("worktreeConfig")) {
+		return nil, nil
+	}
+	f, err := store.Filesystem().Open("config.worktree")
+	if errors.Is(err, iofs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	return gitconfig.ReadConfig(f)
 }
 
 // machineConfigs is the operator's own git config, every file of it that

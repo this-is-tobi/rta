@@ -320,3 +320,38 @@ func TestHooksSayWhenSystemFilesOfTwoBuildsDisagree(t *testing.T) {
 		t.Errorf("warnings = %+v, with both files naming one directory", tbl.Warnings)
 	}
 }
+
+// `git sparse-checkout set` turns on extensions.worktreeConfig, and go-git
+// refuses every repository that has it, so each capability here answered
+// such a checkout as not a git repository. It opens, and config.worktree,
+// which git reads after the repository's config once the extension asks it
+// to, is read as the worktree scope: by git.config, over MCP too, since it
+// is the repository's, and by git.hooks for core.hooksPath, where it is the
+// last word.
+func TestARepositoryWithWorktreeConfigOpensAndItsWorktreeScopeIsRead(t *testing.T) {
+	machineConfig(t, "")
+	for _, version := range []string{"0", "1"} {
+		t.Run("format "+version, func(t *testing.T) {
+			dir, repo := testRepo(t)
+			commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
+			writeFile(t, dir, ".git/config", "[core]\n\trepositoryformatversion = "+version+
+				"\n\tbare = false\n\thooksPath = .local-hooks\n[extensions]\n\tworktreeConfig = true\n")
+			writeFile(t, dir, ".git/config.worktree", "[core]\n\tsparseCheckout = true\n\thooksPath = .git/wt-hooks\n")
+			writeExecutable(t, dir, ".git/wt-hooks/pre-commit")
+
+			if tbl := table(t, runStatus, req(t, dir, nil)); len(tbl.Rows) != 0 {
+				t.Errorf("status = %v, want a clean tree", tbl.Rows)
+			}
+			for name, r := range map[string]plugin.Request{
+				"terminal": req(t, dir, nil), "MCP": guarded(t, dir, dir).WithSurface(plugin.SurfaceMCP),
+			} {
+				if row := rowFor(t, table(t, runConfig, r), "Key", "core.sparseCheckout"); row[0] != "worktree" {
+					t.Errorf("%s: core.sparseCheckout row = %v, want the worktree scope", name, row)
+				}
+			}
+			if row := rowFor(t, table(t, runHooks, req(t, dir, nil)), "Name", "pre-commit"); row[2] != ".git/wt-hooks/pre-commit" {
+				t.Errorf("pre-commit row = %v, want the directory config.worktree names", row)
+			}
+		})
+	}
+}
