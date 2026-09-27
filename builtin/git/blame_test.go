@@ -5,6 +5,10 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
 
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -78,6 +82,10 @@ func TestBlameHoldsTheHistoryItReadsToTheBounds(t *testing.T) {
 		}
 	})
 
+	// go-git's blame built the whole patch of the commit a file was added
+	// in to look for a rename, reading every file beside it; the rename
+	// search now compares trees, and reads a file only where one was
+	// deleted that the added one could have been renamed from.
 	t.Run("added beside more than the budget", func(t *testing.T) {
 		dir, repo := testRepo(t)
 		commitFile(t, repo, dir, "seed.txt", "seed\n", "seed")
@@ -93,9 +101,39 @@ func TestBlameHoldsTheHistoryItReadsToTheBounds(t *testing.T) {
 		}
 		commitFile(t, repo, dir, "a.txt", "one line\n", "a.txt, beside two logs")
 		t.Chdir(dir)
+		if tbl := table(t, runBlame, req(t, dir, map[string]any{"file": "a.txt"})); len(tbl.Rows) != 1 {
+			t.Errorf("rows = %d, want the one line blamed without reading the files beside it", len(tbl.Rows))
+		}
+	})
+
+	t.Run("renamed beside more than the budget", func(t *testing.T) {
+		dir, repo := testRepo(t)
+		writeFile(t, dir, "old.txt", "one line\nsecond\n")
+		writeFile(t, dir, "b.log", strings.Repeat("b", 60)+"\n")
+		wt, err := repo.Worktree()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := wt.AddWithOptions(&git.AddOptions{All: true}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := wt.Commit("seed", &git.CommitOptions{Author: signature()}); err != nil {
+			t.Fatal(err)
+		}
+		for _, name := range []string{"old.txt", "b.log"} {
+			if _, err := wt.Remove(name); err != nil {
+				t.Fatal(err)
+			}
+		}
+		writeFile(t, dir, "c.log", strings.Repeat("c", 60)+"\n")
+		if _, err := wt.Add("c.log"); err != nil {
+			t.Fatal(err)
+		}
+		commitFile(t, repo, dir, "a.txt", "one line\nsecond\nthird\n", "renamed, beside a log replaced")
+		t.Chdir(dir)
 		_, err = runBlame(context.Background(), req(t, dir, map[string]any{"file": "a.txt"}))
 		if code := errCode(err); code != "git.blame.toolarge" {
-			t.Fatalf("blame of a file added beside more than the budget: %q, want git.blame.toolarge", code)
+			t.Fatalf("blame of a file renamed beside more than the budget: %q, want git.blame.toolarge", code)
 		}
 	})
 
@@ -126,9 +164,11 @@ func TestBlameHoldsItsWholeWalkToABudget(t *testing.T) {
 	maxDiffBytes, maxBlameBytes = 64, 200
 	t.Cleanup(func() { maxDiffBytes, maxBlameBytes = savedFile, savedBlame })
 
+	// Each version shares its first lines with the one before, so that the
+	// walk goes back through all of them: a version rewritten whole ends it.
 	dir, repo := testRepo(t)
 	for i := range 10 {
-		commitFile(t, repo, dir, "a.txt", strings.Repeat(fmt.Sprintf("%d\n", i), 25), fmt.Sprintf("version %d", i))
+		commitFile(t, repo, dir, "a.txt", strings.Repeat("x\n", 20)+fmt.Sprintf("%d\n", i), fmt.Sprintf("version %d", i))
 	}
 	t.Chdir(dir)
 	_, err := runBlame(context.Background(), req(t, dir, map[string]any{"file": "a.txt"}))
@@ -138,5 +178,122 @@ func TestBlameHoldsItsWholeWalkToABudget(t *testing.T) {
 	}
 	if !strings.Contains(verr.Message, "a.txt") || !strings.Contains(verr.Message, "200 B") {
 		t.Errorf("message = %q, want it to name the file and the budget", verr.Message)
+	}
+}
+
+// The blame is rta's own, by git's rule of passing the blame to the parents,
+// and it answers what go-git's did on a history with a rename and a merge:
+// each line to the commit that last changed it, on whichever side of the
+// merge that was.
+func TestBlameFollowsARenameAndBothSidesOfAMerge(t *testing.T) {
+	dir, repo := testRepo(t)
+	wt, err := repo.Worktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := []string{"one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"}
+	version := func(changed map[int]string) string {
+		var b strings.Builder
+		for i, l := range lines {
+			if c, ok := changed[i]; ok {
+				l = c
+			}
+			b.WriteString(l + "\n")
+		}
+		return b.String()
+	}
+	first := commitFile(t, repo, dir, "a.txt", version(nil), "first")
+	third := commitFile(t, repo, dir, "a.txt", version(map[int]string{2: "THREE"}), "third line")
+	if _, err := wt.Remove("a.txt"); err != nil {
+		t.Fatal(err)
+	}
+	renamed := commitFile(t, repo, dir, "b.txt", version(map[int]string{2: "THREE", 4: "FIVE"}), "renamed")
+
+	if err := wt.Checkout(&git.CheckoutOptions{Branch: "refs/heads/side", Create: true}); err != nil {
+		t.Fatal(err)
+	}
+	side := commitFile(t, repo, dir, "b.txt", version(map[int]string{2: "THREE", 4: "FIVE", 7: "EIGHT"}), "on the side")
+	if err := wt.Checkout(&git.CheckoutOptions{Branch: "refs/heads/master"}); err != nil {
+		t.Fatal(err)
+	}
+	main := commitFile(t, repo, dir, "b.txt", version(map[int]string{0: "ONE", 2: "THREE", 4: "FIVE"}), "on master")
+	writeFile(t, dir, "b.txt", version(map[int]string{0: "ONE", 2: "THREE", 4: "FIVE", 7: "EIGHT"}))
+	if _, err := wt.Add("b.txt"); err != nil {
+		t.Fatal(err)
+	}
+	merge, err := wt.Commit("merge", &git.CommitOptions{Author: signature(), Parents: []plumbing.Hash{main, side}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	head, err := repo.CommitObject(merge)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := blame(t.Context(), repo.Storer, head, "b.txt", time.Now().Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[int]plumbing.Hash{0: main, 2: third, 4: renamed, 7: side}
+	for i, l := range got.lines {
+		w, ok := want[i]
+		if !ok {
+			w = first
+		}
+		if l.commit.Hash != w || l.boundary {
+			t.Errorf("line %d (%s) is blamed on %s (boundary %v), want %s", i+1, got.text(i), shortHash(l.commit.Hash),
+				l.boundary, shortHash(w))
+		}
+	}
+	theirs, err := git.Blame(head, "b.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, l := range theirs.Lines {
+		if got.lines[i].commit.Hash != l.Hash || got.text(i) != l.Text {
+			t.Errorf("line %d: %s %q, go-git's blame %s %q", i+1, shortHash(got.lines[i].commit.Hash), got.text(i),
+				shortHash(l.Hash), l.Text)
+		}
+	}
+}
+
+// go-git's blame had no bound on its time: three versions of a 10 MiB file
+// kept one call busy for more than ten minutes, inside every byte budget.
+// The walk stops at the call's deadline, and a line it has not traced by
+// then carries the commit it had reached, marked ^ as git marks a boundary,
+// with a warning saying how many and why.
+func TestBlamePastItsDeadlineMarksWhatItDidNotTrace(t *testing.T) {
+	saved := matchTime
+	matchTime = -time.Second
+	t.Cleanup(func() { matchTime = saved })
+
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "a.txt", "one\ntwo\n", "first")
+	head := commitFile(t, repo, dir, "a.txt", "one\ntwo\nthree\n", "second")
+	t.Chdir(dir)
+
+	tbl := table(t, runBlame, req(t, dir, map[string]any{"file": "a.txt"}))
+	for _, row := range tbl.Rows {
+		if row[1] != "^"+shortHash(head) {
+			t.Errorf("line %s is blamed on %s, want the boundary it stopped at, ^%s", row[0], row[1], shortHash(head))
+		}
+	}
+	if len(tbl.Warnings) != 1 || tbl.Warnings[0].Code != "git.blame.partial" ||
+		!strings.Contains(tbl.Warnings[0].Message, "3 lines") {
+		t.Errorf("warnings = %+v, want git.blame.partial naming the 3 lines", tbl.Warnings)
+	}
+}
+
+// A caller that has stopped waiting gets no blame rather than a walk it
+// stopped partway, which would read as lines written later than they were.
+func TestBlameTheCallerCancelledAnswersNothing(t *testing.T) {
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "a.txt", "one\n", "first")
+	t.Chdir(dir)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := runBlame(ctx, req(t, dir, map[string]any{"file": "a.txt"}))
+	if code := errCode(err); code != "git.blame.cancelled" {
+		t.Errorf("a cancelled blame answered %q, want git.blame.cancelled", code)
 	}
 }
