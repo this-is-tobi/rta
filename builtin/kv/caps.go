@@ -1,6 +1,7 @@
 package kv
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -517,6 +518,23 @@ func runSet(_ context.Context, req plugin.Request) (view.View, error) {
 	// nothing at all, and saying so beats storing an empty secret.
 	label := kind != "" || req.String("description") != ""
 	if !given && !label {
+		// Unless a person is there to ask. A value typed after the key is in
+		// the shell's history, and in ps for as long as the call runs — the
+		// leak this store exists to close — and the ways around it, a file or
+		// a pipe into --file /dev/stdin, need it somewhere else first. At a
+		// terminal it is asked for with echo off, once the key and every input
+		// have been checked and before the store is locked, so no other kv
+		// call waits on the lock while a person types. Only there: an agent
+		// has its argument, the TUI its masked box, and a script with no
+		// terminal on its standard input the refusal below, which is what it
+		// always had.
+		typed, verr := askValue(req, key)
+		if verr != nil {
+			return nil, verr
+		}
+		value, given = typed, typed != nil
+	}
+	if !given && !label {
 		// file is Local: an agent's schema has no such argument, so an agent
 		// is offered the value alone.
 		sf := req.Surface()
@@ -532,7 +550,7 @@ func runSet(_ context.Context, req plugin.Request) (view.View, error) {
 		kind = detectKind(string(value), filename)
 	}
 	if req.DryRun && given {
-		return view.Text{Body: fmt.Sprintf("would set %q (%s, %s)", key, kind, format.Bytes(len(value)))}, nil
+		return wouldSet(key, kind, value), nil
 	}
 
 	unlock, verr := lockStore()
@@ -546,6 +564,27 @@ func runSet(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 	now := time.Now()
 	previous, existed := s.Entries[key]
+	if !given && !existed {
+		// A description or a kind for a key the store does not hold is a new
+		// entry labelled as it is made, and only the store could say the key
+		// was new. Refused, its hint sent the person at the terminal to type
+		// the value after the key, into the shell's history the prompt above
+		// keeps it out of. So it is asked for here instead, under the lock as
+		// the passphrase before it was.
+		typed, verr := askValue(req, key)
+		if verr != nil {
+			return nil, verr
+		}
+		if typed != nil {
+			value, given = typed, true
+			if kind == "" {
+				kind = detectKind(string(value), "")
+			}
+			if req.DryRun {
+				return wouldSet(key, kind, value), nil
+			}
+		}
+	}
 
 	var e entry
 	if !given {
@@ -604,6 +643,55 @@ func runSet(_ context.Context, req plugin.Request) (view.View, error) {
 		msg += "\nstore re-encrypted — " + req.Surface().CapabilityName("kv.recipients") + " lists who can read it"
 	}
 	return view.Text{Body: msg}, nil
+}
+
+// wouldSet is a dry run's answer for a value it was given or was typed.
+func wouldSet(key, kind string, value []byte) view.View {
+	return view.Text{Body: fmt.Sprintf("would set %q (%s, %s)", key, kind, format.Bytes(len(value)))}
+}
+
+// askValue is the value a person at the terminal types for key, or nil when
+// nobody is there to ask (canPrompt) or they answered nothing: an empty
+// answer, or none, is no value, and the caller refuses it as it would an
+// empty one.
+//
+// The prompt reads one line, and a value pasted at it that spans lines is cut
+// to its first: the rest goes on to whatever reads the terminal next — the
+// passphrase prompt after this one, which took a service account's JSON key's
+// second line as the passphrase and, for a store not yet made, locked it with
+// that, or the shell, which runs each line and keeps it in its history.
+// Nothing here can take those lines back. A first line that only opens a value
+// is never one on its own, though, so it is refused rather than stored as
+// though it were the whole, and the refusal says where the rest went.
+func askValue(req plugin.Request, key string) ([]byte, *view.Error) {
+	if !canPrompt(req) {
+		return nil, nil
+	}
+	typed, err := promptValue(key)
+	if err != nil {
+		// ^D, or a terminal that could not be read: nothing was typed, which
+		// is the empty answer's refusal rather than a read error of its own.
+		typed = nil
+	}
+	if len(typed) == 0 {
+		return nil, nil
+	}
+	if opensBlock(typed) {
+		return nil, view.Errorf("kv.set.multiline",
+			"what was typed for %q opens a value that spans lines, and the prompt reads one", key).
+			WithHint("nothing was stored, and the value's other lines went on to your shell, whose " +
+				"history may now hold them; give a value that spans lines with " +
+				req.Surface().InputName("file"))
+	}
+	return typed, nil
+}
+
+// opensBlock reports whether line is the first line of a value that spans
+// lines and nothing on its own: a PEM block's armour, a certificate's or a
+// key's, or the lone brace or bracket a JSON document opens with.
+func opensBlock(line []byte) bool {
+	t := string(bytes.TrimSpace(line))
+	return strings.HasPrefix(t, "-----BEGIN ") || t == "{" || t == "["
 }
 
 // runRename moves an entry to another name inside the store.
