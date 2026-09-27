@@ -20,6 +20,7 @@ import (
 	"github.com/this-is-tobi/rta/builtin/internal/sshkeys"
 
 	"github.com/this-is-tobi/rta/internal/atomicfile"
+	"github.com/this-is-tobi/rta/internal/shutdown"
 	"github.com/this-is-tobi/rta/internal/stdio"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -352,6 +353,10 @@ func sshDir() string {
 	return filepath.Join(home, ".ssh")
 }
 
+// publish is atomicfile.Publish, a var so a test can stand between the two
+// halves of a key pair.
+var publish = atomicfile.Publish
+
 // publishRestoredKey writes the reconstructed private key and its .pub
 // sibling, refusing to overwrite either.
 //
@@ -384,7 +389,12 @@ func publishRestoredKey(privPath string, priv ed25519.PrivateKey, passphrase []b
 	}
 	pubBytes := []byte(line + "\n")
 
-	written, err := atomicfile.Publish(privPath, privBytes, 0o600, maxSSHKeyFile)
+	// The pair is two writes, and a forced exit between them left the private
+	// key without its .pub, which a restore to the same path then refuses as
+	// existing. Held across both (internal/shutdown), so the exit lets the
+	// second follow the first, or, taken before the first, begins neither.
+	defer shutdown.Hold()()
+	written, err := publish(privPath, privBytes, 0o600, maxSSHKeyFile)
 	if err != nil {
 		return "", view.Errorf("keys.restore.write", "writing %s: %v", privPath, err)
 	}
@@ -393,7 +403,7 @@ func publishRestoredKey(privPath string, priv ed25519.PrivateKey, passphrase []b
 	}
 
 	pubPath := privPath + ".pub"
-	writtenPub, err := atomicfile.Publish(pubPath, pubBytes, 0o644, maxSSHKeyFile)
+	writtenPub, err := publish(pubPath, pubBytes, 0o644, maxSSHKeyFile)
 	if err != nil {
 		return "", view.Errorf("keys.restore.write", "writing %s: %v", pubPath, err)
 	}
