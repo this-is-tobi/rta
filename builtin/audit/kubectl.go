@@ -191,8 +191,15 @@ type scope struct {
 // namespaces, as a namespace-bound credential often may not, gets its audit
 // anyway, and a row saying the name could not be confirmed: refusing it would
 // take the audit away from exactly the user a namespace narrowing is for.
+//
+// The namespace is taken as given, never trimmed: it is these audits' record,
+// and the gate judged it as the call spelled it. Trimmed, a call on " prod" —
+// its own record, which a grant on prod does not cover — audited prod, and
+// one of white space alone trimmed to no namespace and audited the whole
+// cluster. No namespace name holds white space, so checkNamespace refuses
+// both, and nothing a caller could have meant is refused with them.
 func scopeOf(ctx context.Context, req plugin.Request) (scope, *view.Error) {
-	ns := strings.TrimSpace(req.String("namespace"))
+	ns := req.String("namespace")
 	if verr := checkNamespace(ns); verr != nil {
 		return scope{}, verr
 	}

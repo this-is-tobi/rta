@@ -296,7 +296,7 @@ func TestANarrowedKubeAuditRefusesANamespaceThatDoesNotExist(t *testing.T) {
 // A namespace goes into a kubectl argument, and a name that is not one should
 // be refused as a name rather than surface as kubectl's complaint about a flag.
 func TestAnUnusableNamespaceIsRefused(t *testing.T) {
-	for _, bad := range []string{"-kubeconfig=/tmp/theirs", "Gitea", "git ea", "a/b", strings.Repeat("x", 64)} {
+	for _, bad := range []string{"-kubeconfig=/tmp/theirs", "Gitea", "git ea", "a/b", strings.Repeat("x", 64), " gitea", " "} {
 		if verr := checkNamespace(bad); verr == nil {
 			t.Errorf("%q was accepted as a namespace name", bad)
 		}
@@ -304,6 +304,34 @@ func TestAnUnusableNamespaceIsRefused(t *testing.T) {
 	for _, ok := range []string{"", "gitea", "kube-system", "a", "argo-cd-2"} {
 		if verr := checkNamespace(ok); verr != nil {
 			t.Errorf("%q was refused: %v", ok, verr)
+		}
+	}
+}
+
+// The namespace an audit reads is the record the gate judged. It was trimmed
+// first, so a call on " prod" — its own record to the gate, which a grant on
+// prod does not cover — audited prod, and a namespace of white space alone
+// trimmed to none and audited the whole cluster. Each is refused as a name,
+// before kubectl is asked anything.
+func TestANamespaceWithWhiteSpaceAroundItIsRefusedBeforeKubectlIsAsked(t *testing.T) {
+	nbsp := string(rune(0xa0))
+	audits := map[string]func(context.Context, plugin.Request) (view.View, error){
+		"rbac": runKubeRBAC, "podsecurity": runKubePodSecurity,
+		"quotas": runKubeQuotas, "netpol": runKubeNetworkPolicy,
+		"eol": func(ctx context.Context, req plugin.Request) (view.View, error) {
+			return runKubeEOLAt(ctx, req, "http://127.0.0.1:1")
+		},
+	}
+	for _, ns := range []string{" prod", "prod ", "prod" + nbsp, "prod\n", " ", "\t"} {
+		for name, run := range audits {
+			logPath := fakeKubectl(t, map[string]string{})
+			_, err := run(t.Context(), newScopedRequest(ns))
+			if ve := view.AsError(err, "x"); err == nil || ve.Code != "audit.kube.namespace.invalid" {
+				t.Errorf("%s on namespace %q: err = %v, want audit.kube.namespace.invalid", name, ns, err)
+			}
+			if got := calls(t, logPath); got != "" {
+				t.Errorf("%s on namespace %q asked kubectl:\n%s", name, ns, got)
+			}
 		}
 	}
 }
