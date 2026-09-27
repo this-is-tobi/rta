@@ -184,7 +184,7 @@ func TestANumberNoAccessorCanReadIsRefused(t *testing.T) {
 	for _, v := range []any{"0", "30"} {
 		_, err := guarded(context.Background(), NewRequest(map[string]any{"timeout": v}, false, false))
 		verr := view.AsError(err, "test")
-		if err == nil || verr.Message != "x.y takes a whole number from 1 to 300 for timeout, not text" {
+		if err == nil || verr.Message != "`rta x y` takes a whole number from 1 to 300 for --timeout, not text" {
 			t.Errorf("%q: err = %v, want the value named as text", v, err)
 		}
 		if !strings.Contains(verr.Hint, "without quotes") {
@@ -434,8 +434,8 @@ func TestAFractionIsNotReadAsAWholeNumber(t *testing.T) {
 	for _, tc := range []struct {
 		key, want, code string
 	}{
-		{"timeout", "x.y takes a whole number from 1 to 300 for timeout, not 2.5, which the config's plugins.x.timeout sets", "core.input.range"},
-		{"limit", "x.y takes a whole number for limit, not 2.5, which the config's plugins.x.limit sets", "core.input.type"},
+		{"timeout", "`rta x y` takes a whole number from 1 to 300 for --timeout, not 2.5, which the config's plugins.x.timeout sets", "core.input.range"},
+		{"limit", "`rta x y` takes a whole number for --limit, not 2.5, which the config's plugins.x.limit sets", "core.input.type"},
 	} {
 		verr := CheckInputs(c, ResolveRequest(c, Inputs{Config: map[string]any{tc.key: 2.5}}, false, false).WithSurface(SurfaceCLI))
 		if verr == nil || verr.Code != tc.code || verr.Message != tc.want {

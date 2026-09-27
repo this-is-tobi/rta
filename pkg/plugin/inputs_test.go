@@ -40,7 +40,7 @@ func TestAValueOutsideItsOptionsIsRefused(t *testing.T) {
 			t.Errorf("%v: err = %v, want core.input.option", values, err)
 			continue
 		}
-		if !strings.Contains(verr.Message, "demo.token takes one of") {
+		if !strings.Contains(verr.Message, "`rta demo token` takes one of") {
 			t.Errorf("message = %q", verr.Message)
 		}
 	}
@@ -54,6 +54,80 @@ func TestAValueOutsideItsOptionsIsRefused(t *testing.T) {
 	}
 	if !ran {
 		t.Error("the handler did not run on valid values")
+	}
+}
+
+// A value outside the set is refused in the words of the surface it came
+// through: the command and its flag, or its argument's place, at a terminal,
+// the tool and its argument to an agent, the capability and its box in a
+// form. It named kube.serviceaccount.provision and grant on every surface,
+// the declaration's words, to a terminal that had typed neither.
+func TestAnOptionRefusalNamesTheCallAsItsSurfaceDoes(t *testing.T) {
+	c := Capability{
+		ID: "kube.serviceaccount.provision", Summary: "s", Safety: Write,
+		Inputs: []Field{
+			{Name: "grant", Type: String, Options: []string{"read", "write"}},
+			{Name: "kind", Type: String, Positional: true, Options: []string{"pod", "job"}},
+		},
+	}
+	for _, tc := range []struct {
+		values map[string]any
+		want   map[Surface]string
+	}{
+		{map[string]any{"grant": "admin"}, map[Surface]string{
+			SurfaceCLI:     "`rta kube serviceaccount provision` takes one of read, write for --grant, not \"admin\"",
+			SurfaceUnknown: "`rta kube serviceaccount provision` takes one of read, write for --grant, not \"admin\"",
+			SurfaceMCP:     "the `kube_serviceaccount_provision` tool takes one of read, write for the \"grant\" argument, not \"admin\"",
+			SurfaceTUI:     "`kube.serviceaccount.provision` takes one of read, write for the grant box, not \"admin\"",
+		}},
+		{map[string]any{"kind": "cron"}, map[Surface]string{
+			SurfaceCLI: "`rta kube serviceaccount provision` takes one of pod, job for <kind>, not \"cron\"",
+			SurfaceMCP: "the `kube_serviceaccount_provision` tool takes one of pod, job for the \"kind\" argument, not \"cron\"",
+			SurfaceTUI: "`kube.serviceaccount.provision` takes one of pod, job for the kind box, not \"cron\"",
+		}},
+	} {
+		for surface, want := range tc.want {
+			verr := CheckInputs(c, NewRequest(tc.values, false, false).WithSurface(surface))
+			if verr == nil || verr.Code != "core.input.option" || verr.Message != want {
+				t.Errorf("%v over %q:\n got %v\nwant %s", tc.values, surface, verr, want)
+			}
+		}
+	}
+}
+
+// A number outside its bounds is refused in the same words, and in the words
+// checkNumber refuses one that is no number in: "gen.password takes a length
+// from 1 to 1024" was the ID and the bare input name on every surface, beside
+// a type refusal of the same input that named `rta gen password` and --length.
+func TestARangeRefusalNamesTheCallAsItsSurfaceDoes(t *testing.T) {
+	c := Capability{
+		ID: "gen.password", Summary: "s", Safety: Read,
+		Inputs: []Field{
+			{Name: "length", Type: Int, Min: 1, Max: 1024},
+			{Name: "ratio", Type: Float, Positional: true, Min: 0.5},
+		},
+	}
+	for _, tc := range []struct {
+		values map[string]any
+		want   map[Surface]string
+	}{
+		{map[string]any{"length": 0}, map[Surface]string{
+			SurfaceCLI: "`rta gen password` takes a whole number from 1 to 1024 for --length, not 0",
+			SurfaceMCP: "the `gen_password` tool takes a whole number from 1 to 1024 for the \"length\" argument, not 0",
+			SurfaceTUI: "`gen.password` takes a whole number from 1 to 1024 for the length box, not 0",
+		}},
+		{map[string]any{"ratio": 0.25}, map[Surface]string{
+			SurfaceCLI: "`rta gen password` takes a number of at least 0.5 for <ratio>, not 0.25",
+			SurfaceMCP: "the `gen_password` tool takes a number of at least 0.5 for the \"ratio\" argument, not 0.25",
+			SurfaceTUI: "`gen.password` takes a number of at least 0.5 for the ratio box, not 0.25",
+		}},
+	} {
+		for surface, want := range tc.want {
+			verr := CheckInputs(c, NewRequest(tc.values, false, false).WithSurface(surface))
+			if verr == nil || verr.Code != "core.input.range" || verr.Message != want {
+				t.Errorf("%v over %q:\n got %v\nwant %s", tc.values, surface, verr, want)
+			}
+		}
 	}
 }
 
@@ -401,16 +475,34 @@ func TestAValueOfAShapeTheAccessorCannotReadIsRefused(t *testing.T) {
 		},
 	}
 	guarded := GuardInputs(c)
+	// Named as each surface names them: tls and rtls are Local, which an
+	// agent's schema hides, so to an agent they are named bare rather than
+	// as arguments it does not have.
 	for _, tc := range []struct {
 		key   string
 		value any
-		want  string
+		want  map[Surface]string
 	}{
-		{"tls", true, "db.status takes text for tls, not a boolean"},
-		{"tls", uint64(1), "db.status takes text for tls, not a number"},
-		{"rtls", "true", "db.status takes true or false for rtls, not text"},
-		{"rtls", "yes", "db.status takes true or false for rtls, not text"},
-		{"out", []any{"a"}, "db.status takes text for out, not a list"},
+		{"tls", true, map[Surface]string{
+			SurfaceCLI: "`rta db status` takes text for --tls, not a boolean",
+			SurfaceMCP: "the `db_status` tool takes text for tls, not a boolean",
+			SurfaceTUI: "`db.status` takes text for the tls box, not a boolean"}},
+		{"tls", uint64(1), map[Surface]string{
+			SurfaceCLI: "`rta db status` takes text for --tls, not a number",
+			SurfaceMCP: "the `db_status` tool takes text for tls, not a number",
+			SurfaceTUI: "`db.status` takes text for the tls box, not a number"}},
+		{"rtls", "true", map[Surface]string{
+			SurfaceCLI: "`rta db status` takes true or false for --rtls, not text",
+			SurfaceMCP: "the `db_status` tool takes true or false for rtls, not text",
+			SurfaceTUI: "`db.status` takes true or false for the rtls box, not text"}},
+		{"rtls", "yes", map[Surface]string{
+			SurfaceCLI: "`rta db status` takes true or false for --rtls, not text",
+			SurfaceMCP: "the `db_status` tool takes true or false for rtls, not text",
+			SurfaceTUI: "`db.status` takes true or false for the rtls box, not text"}},
+		{"out", []any{"a"}, map[Surface]string{
+			SurfaceCLI: "`rta db status` takes text for --out, not a list",
+			SurfaceMCP: "the `db_status` tool takes text for the \"out\" argument, not a list",
+			SurfaceTUI: "`db.status` takes text for the out box, not a list"}},
 	} {
 		for _, surface := range []Surface{SurfaceCLI, SurfaceMCP, SurfaceTUI} {
 			req := ResolveRequest(c, Inputs{Config: map[string]any{tc.key: tc.value}}, false, false).WithSurface(surface)
@@ -420,7 +512,7 @@ func TestAValueOfAShapeTheAccessorCannotReadIsRefused(t *testing.T) {
 				t.Errorf("%s %v over %s: %v, want core.input.type", tc.key, tc.value, surface, err)
 				continue
 			}
-			if want := tc.want + ", which the config's plugins.db." + tc.key + " sets"; verr.Message != want {
+			if want := tc.want[surface] + ", which the config's plugins.db." + tc.key + " sets"; verr.Message != want {
 				t.Errorf("message %q, want %q", verr.Message, want)
 			}
 			if text, ok := tc.value.(string); ok && strings.Contains(verr.Message, strconv.Quote(text)) {
@@ -435,7 +527,7 @@ func TestAValueOfAShapeTheAccessorCannotReadIsRefused(t *testing.T) {
 	// read at all; from a profile it is a value, and refused.
 	req := ResolveRequest(c, Inputs{Profile: map[string]any{"tags": map[string]any{"a": "b"}}, ProfileName: "p"}, false, false)
 	if verr := CheckInputs(c, req); verr == nil ||
-		verr.Message != `db.status takes a list for tags, not a block, which the profile "p" sets` {
+		verr.Message != "`rta db status` takes a list for --tags, not a block, which the profile \"p\" sets" {
 		t.Errorf("a block from a profile: %v", verr)
 	}
 	// The hint says what to write in the file, and a caller's value — a
