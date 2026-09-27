@@ -43,6 +43,8 @@ Which is why the security chapters below are not an appendix, and why every one 
 
 *Recipes*
 - [Recipes](./docs/90-recipes/01-readme.md) *- Worked end-to-end examples: incident triage, a scoped agent, CI checks, backups*
+- [For a security team](./docs/90-recipes/10-for-security-teams.md) *- Deploying rta, committing a ceiling, handing out roles, reviewing grants and the record, stopping an agent*
+- [For a developer](./docs/90-recipes/20-for-developers.md) *- A day's work: environments, secrets, grants for your agent, the TUI*
 - [An agent in a cluster](./docs/90-recipes/30-an-agent-in-a-cluster.md) *- From a profile to an agent connected over MCP, with a minted, expiring ServiceAccount token the only thing between them and the cluster*
 
 ## What is in it

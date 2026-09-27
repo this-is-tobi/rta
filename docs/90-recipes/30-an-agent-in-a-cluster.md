@@ -167,3 +167,4 @@ That takes the reach away. To stop the agent itself, [lock it](../30-boundary/20
 
 - [Kubernetes](../30-boundary/80-kubernetes.md) — the decisions to make before any value, and day two
 - [The kube plugin](https://github.com/this-is-tobi/rta-plugins/tree/main/plugins/kube) — every capability, and the rules each grant name costs
+- [For a security team](./10-for-security-teams.md) — the rest of what owning the boundary involves
