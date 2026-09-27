@@ -13,7 +13,9 @@ import (
 //
 // `13..16` is every cycle from 13 to 16, `15..` is 15 and newer, `..16` is
 // 16 and older, every bound inclusive — which is what "13 to 16" means when
-// somebody says it. Two dots rather than `>=` and `<`, because a selector
+// somebody says it. An upper bound is a whole line: `..3` takes 3.13 and
+// 3.8 as well as 2.7, and `..16` takes 16.2, since "Python 2 to 3" means
+// every 3.x too. Two dots rather than `>=` and `<`, because a selector
 // is typed in two places where those characters cost something: a shell,
 // where `<16` is a redirection until quoted, and a YAML flow list, where
 // `[postgresql@>=13,<17]` splits on its own comma before rta ever reads it.
@@ -54,7 +56,7 @@ func parseSelector(s string) (cycleSelector, *view.Error) {
 				WithHint("a range runs between numbered cycles — 13..16, 15.., ..16; a codename like bookworm is named on its own")
 		}
 	}
-	if sel.lo != nil && sel.hi != nil && compareNumeric(sel.lo, sel.hi) > 0 {
+	if sel.lo != nil && sel.hi != nil && !atMost(sel.lo, sel.hi) {
 		return cycleSelector{}, view.Errorf("eol.cycle.selector", "%q runs backwards: the lower bound comes first", s).
 			WithHint(after + ".." + before)
 	}
@@ -80,7 +82,7 @@ func (sel cycleSelector) pick(releases []eolapi.Release) []eolapi.Release {
 		if sel.lo != nil && compareNumeric(n, sel.lo) < 0 {
 			continue
 		}
-		if sel.hi != nil && compareNumeric(n, sel.hi) > 0 {
+		if sel.hi != nil && !atMost(n, sel.hi) {
 			continue
 		}
 		out = append(out, r)
@@ -109,6 +111,18 @@ func numericCycle(name string) ([]int, bool) {
 		out[i] = n
 	}
 	return out, true
+}
+
+// atMost reports whether cycle n is inside an upper bound of hi: at most
+// hi, read to as many components as hi has.
+//
+// compareNumeric alone pads the shorter side with zeros, which is right for
+// a lower bound — 3.8 is past 3 — and wrong for an upper one: 3 read as 3.0
+// sorted below 3.13 and 3.8, so ..3 and 2..3 dropped every Python 3 cycle
+// and 3..3 selected nothing. A lower bound is still compared whole, so
+// 3.8..3 is 3.8 up to the end of 3, and 4..3.8 still runs backwards.
+func atMost(n, hi []int) bool {
+	return compareNumeric(n[:min(len(n), len(hi))], hi) <= 0
 }
 
 // compareNumeric orders dotted numbers component by component, a missing

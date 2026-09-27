@@ -111,6 +111,43 @@ func TestPickOrdersDottedCyclesNumerically(t *testing.T) {
 	}
 }
 
+// **An upper bound names a whole line, the way a lower one does.** 3 as the
+// top of a range is every 3.x — what "Python 2 to 3" means — but compared
+// as 3.0 it sorted below 3.8 and 3.13: ..3 and 2..3 dropped every Python 3
+// cycle, 3..3 selected nothing at all, and ..9 left PostgreSQL 9.6 out.
+func TestAnUpperBoundTakesEveryCycleUnderIt(t *testing.T) {
+	python := numbered("3.13", "3.8", "2.7")
+	postgres := numbered("10", "9.6", "9.5")
+	for _, c := range []struct {
+		releases []eolapi.Release
+		sel      string
+		want     string
+	}{
+		{python, "..3", "3.13,3.8,2.7"},
+		{python, "2..3", "3.13,3.8,2.7"},
+		{python, "3..3", "3.13,3.8"},
+		{python, "3.8..3", "3.13,3.8"},
+		{python, "..3.8", "3.8,2.7"},
+		{python, "3..", "3.13,3.8"},
+		{python, "..2", "2.7"},
+		{postgres, "..9", "9.6,9.5"},
+		{postgres, "9.6..10", "10,9.6"},
+		{numbered("18", "16.2", "16", "13"), "13..16", "16.2,16,13"},
+	} {
+		sel, verr := parseSelector(c.sel)
+		if verr != nil {
+			t.Fatalf("parseSelector(%q): %v", c.sel, verr)
+		}
+		if got := names(sel.pick(c.releases)); got != c.want {
+			t.Errorf("pick(%q) = %q, want %q", c.sel, got, c.want)
+		}
+	}
+	// Backwards is still backwards once the bound is read as a line.
+	if _, verr := parseSelector("4..3.8"); verr == nil {
+		t.Error("4..3.8 was accepted")
+	}
+}
+
 func TestCompareNumericTreatsAMissingComponentAsZero(t *testing.T) {
 	cases := []struct {
 		a, b string
