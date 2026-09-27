@@ -5,7 +5,7 @@ An encrypted local store for the things you keep re-pasting: database passwords,
 It is `age`-backed, it lives beside your config, and it never writes a value to a log, an argv or the terminal unless you ask it to.
 
 ```bash
-rta kv set db-password
+rta kv set db-password --file db-password.txt
 rta kv get db-password
 rta kv list
 ```
@@ -34,10 +34,12 @@ In [the TUI](./20-tui.md), a passphrase typed into an unlock form is kept in tha
 ## Storing things
 
 ```bash
-rta kv set api-token                          # prompts, nothing in history
+rta kv set api-token --file token.txt         # in no argv and no shell history
 rta kv set tls-cert --file server.pem
 rta kv set db-password --description "staging replica"
 ```
+
+`kv set` never prompts for a value, and one typed after the key stays in your shell history. So a secret comes from `--file` — `--file /dev/stdin` from a pipe, as [the CLI](./10-cli.md) shows — or from the `kv set` form in [the TUI](./20-tui.md), which masks it as you type.
 
 rta detects what kind of thing it is — string, JSON, certificate, private key, SSH key, file — and `kv list` shows the kind and description without ever showing a value — and, once a value has been replaced, how many earlier ones `kv history` still keeps. `--kind` overrides the detection.
 
