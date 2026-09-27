@@ -21,7 +21,7 @@ func pipxManager() manager {
 	return manager{
 		name: "pipx", bin: "pipx",
 		list: func(ctx context.Context, c *registryClient) ([]outdated, *view.Error) {
-			out, _, verr := run(ctx, "pipx", "list", "--json")
+			out, verr := run(ctx, "pipx", "list", "--json")
 			if verr != nil {
 				return nil, verr
 			}
@@ -65,7 +65,7 @@ func uvManager() manager {
 		name: "uv", bin: "uv",
 		list: func(ctx context.Context, c *registryClient) ([]outdated, *view.Error) {
 			// `uv tool list` prints `name v1.2.3` then `- binary` lines.
-			out, _, verr := run(ctx, "uv", "tool", "list")
+			out, verr := run(ctx, "uv", "tool", "list")
 			if verr != nil {
 				return nil, verr
 			}
@@ -103,13 +103,15 @@ func npmManager() manager {
 		name: "npm", bin: "npm",
 		list: func(ctx context.Context, _ *registryClient) ([]outdated, *view.Error) {
 			// Exit 1 means "something is outdated" and the JSON is still
-			// the answer: {"name": {"current": "1.0.0", "wanted": …, "latest": "1.2.0"}}
-			out, _, verr := run(ctx, "npm", "outdated", "-g", "--json")
+			// the answer: {"name": {"current": "1.0.0", "wanted": …, "latest": "1.2.0"}}.
+			// It is also the status of every npm failure, so it is read as
+			// that answer only once the answer has something in it.
+			st, verr := runStatus(ctx, "npm", "outdated", "-g", "--json")
 			if verr != nil {
 				return nil, verr
 			}
-			if strings.TrimSpace(out) == "" {
-				return nil, nil
+			if st.code != 0 && st.code != 1 {
+				return nil, st.failed("npm")
 			}
 			// npm can write more than one JSON document to stdout — an
 			// update notice or an empty {} before the answer, depending on
@@ -120,7 +122,7 @@ func npmManager() manager {
 				Latest  string `json:"latest"`
 			}
 			var doc map[string]entry
-			dec := json.NewDecoder(strings.NewReader(out))
+			dec := json.NewDecoder(strings.NewReader(st.out))
 			for {
 				var raw json.RawMessage
 				err := dec.Decode(&raw)
@@ -156,6 +158,9 @@ func npmManager() manager {
 					continue
 				}
 				rows = append(rows, outdated{Manager: "npm", Name: name, Current: v.Current, Latest: v.Latest})
+			}
+			if st.code != 0 && len(rows) == 0 {
+				return nil, st.failed("npm")
 			}
 			return rows, nil
 		},
@@ -211,13 +216,22 @@ func bunManager() manager {
 	return manager{
 		name: "bun", bin: "bun",
 		list: func(ctx context.Context, c *registryClient) ([]outdated, *view.Error) {
-			// `bun pm ls -g` prints a tree: `├── name@1.2.3`.
-			out, _, verr := run(ctx, "bun", "pm", "ls", "-g")
+			// `bun pm ls -g` prints a tree: `├── name@1.2.3`. Before the
+			// first global install there is no global package.json for it
+			// to read, and it says so and exits 1: nothing installed, so
+			// nothing behind.
+			st, verr := runStatus(ctx, "bun", "pm", "ls", "-g")
 			if verr != nil {
 				return nil, verr
 			}
+			if st.code != 0 {
+				if strings.Contains(st.reason, "No package.json was found") {
+					return nil, nil
+				}
+				return nil, st.failed("bun")
+			}
 			var rows []outdated
-			for _, line := range lines(out) {
+			for _, line := range lines(st.out) {
 				line = strings.TrimLeft(line, "│├└─ ")
 				at := strings.LastIndex(line, "@")
 				if at <= 0 {
@@ -250,7 +264,7 @@ func cargoManager() manager {
 		list: func(ctx context.Context, c *registryClient) ([]outdated, *view.Error) {
 			// `cargo install --list` prints `name v1.2.3:` then indented
 			// binary names.
-			out, _, verr := run(ctx, "cargo", "install", "--list")
+			out, verr := run(ctx, "cargo", "install", "--list")
 			if verr != nil {
 				return nil, verr
 			}
@@ -288,7 +302,7 @@ func gemManager() manager {
 		name: "gem", bin: "gem",
 		list: func(ctx context.Context, _ *registryClient) ([]outdated, *view.Error) {
 			// `gem outdated` prints `name (1.0.0 < 1.2.0)`.
-			out, _, verr := run(ctx, "gem", "outdated")
+			out, verr := run(ctx, "gem", "outdated")
 			if verr != nil {
 				return nil, verr
 			}
@@ -336,11 +350,17 @@ func goManager() manager {
 				if e.IsDir() {
 					continue
 				}
-				out, _, verr := run(ctx, "go", "version", "-m", filepath.Join(dir, e.Name()))
+				// Exit 1 is go saying the file holds no Go build info — a
+				// script somebody keeps in GOBIN. It is not a tool go install
+				// placed, and not a reason to fail the ones that are.
+				st, verr := runStatus(ctx, "go", "version", "-m", filepath.Join(dir, e.Name()))
 				if verr != nil {
 					return nil, verr
 				}
-				pkgPath, module, cur := goModuleOf(out)
+				if st.code != 0 {
+					continue
+				}
+				pkgPath, module, cur := goModuleOf(st.out)
 				if pkgPath == "" || module == "" || cur == "" || cur == "(devel)" {
 					continue
 				}
@@ -371,14 +391,14 @@ func goManager() manager {
 }
 
 func goBinDir(ctx context.Context) (string, *view.Error) {
-	out, _, verr := run(ctx, "go", "env", "GOBIN")
+	out, verr := run(ctx, "go", "env", "GOBIN")
 	if verr != nil {
 		return "", verr
 	}
 	if dir := strings.TrimSpace(out); dir != "" {
 		return dir, nil
 	}
-	out, _, verr = run(ctx, "go", "env", "GOPATH")
+	out, verr = run(ctx, "go", "env", "GOPATH")
 	if verr != nil {
 		return "", verr
 	}
@@ -414,11 +434,13 @@ func goInstallTarget(ctx context.Context, bin string) (string, *view.Error) {
 	if verr != nil {
 		return "", verr
 	}
-	out, _, verr := run(ctx, "go", "version", "-m", filepath.Join(dir, bin))
+	// A status of 1 is a file go cannot read build info from, which is
+	// the refusal below and not a failure of go's.
+	st, verr := runStatus(ctx, "go", "version", "-m", filepath.Join(dir, bin))
 	if verr != nil {
 		return "", verr
 	}
-	pkgPath, _, _ := goModuleOf(out)
+	pkgPath, _, _ := goModuleOf(st.out)
 	if pkgPath == "" {
 		return "", view.Errorf("pkg.go.unknown", "%s in %s was not built by go install, or carries no module path", bin, dir)
 	}

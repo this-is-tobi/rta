@@ -27,12 +27,11 @@ func TestTheRealRunnerDoesNotWaitForAnOrphanedChild(t *testing.T) {
 	done := make(chan struct{})
 	var (
 		out  string
-		code int
 		verr *view.Error
 	)
 	go func() {
 		defer close(done)
-		out, code, verr = run(context.Background(), script)
+		out, verr = run(context.Background(), script)
 	}()
 	select {
 	case <-done:
@@ -41,8 +40,8 @@ func TestTheRealRunnerDoesNotWaitForAnOrphanedChild(t *testing.T) {
 	}
 	// The answer survives the bound: the manager exited zero with it printed,
 	// and ErrWaitDelay is not a reason to report a failure.
-	if verr != nil || code != 0 || strings.TrimSpace(out) != "answer" {
-		t.Errorf("out %q code %d verr %v, want the answer as a clean success", out, code, verr)
+	if verr != nil || strings.TrimSpace(out) != "answer" {
+		t.Errorf("out %q verr %v, want the answer as a clean success", out, verr)
 	}
 }
 

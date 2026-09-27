@@ -14,7 +14,7 @@ func brewManager() manager {
 	return manager{
 		name: "brew", bin: "brew",
 		list: func(ctx context.Context, _ *registryClient) ([]outdated, *view.Error) {
-			out, _, verr := run(ctx, "brew", "outdated", "--json=v2")
+			out, verr := run(ctx, "brew", "outdated", "--json=v2")
 			if verr != nil {
 				return nil, verr
 			}
@@ -62,7 +62,7 @@ func miseManager() manager {
 	return manager{
 		name: "mise", bin: "mise",
 		list: func(ctx context.Context, _ *registryClient) ([]outdated, *view.Error) {
-			out, _, verr := run(ctx, "mise", "outdated", "--json")
+			out, verr := run(ctx, "mise", "outdated", "--json")
 			if verr != nil {
 				return nil, verr
 			}

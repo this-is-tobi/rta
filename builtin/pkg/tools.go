@@ -162,14 +162,17 @@ var versionRe = regexp.MustCompile(`v?(\d+\.\d+(?:\.\d+)?(?:[-+][0-9A-Za-z.-]+)?
 
 // installedVersion asks the binary itself. `--version` is the convention
 // nearly every Go and Rust tool follows; `version` is the other one. The
-// first thing that looks like a version in the output is the answer.
+// first thing that looks like a version in the output is the answer,
+// whatever the status: `kubectl version` and `docker version` print the
+// client's and then exit 1 over a server they cannot reach, and output
+// with no version in it reads as unknown, never as current.
 func installedVersion(ctx context.Context, bin string) string {
 	for _, args := range [][]string{{"--version"}, {"version"}} {
-		out, _, verr := run(ctx, bin, args...)
+		st, verr := runStatus(ctx, bin, args...)
 		if verr != nil {
 			continue
 		}
-		if m := versionRe.FindStringSubmatch(out); m != nil {
+		if m := versionRe.FindStringSubmatch(st.out); m != nil {
 			return m[1]
 		}
 	}

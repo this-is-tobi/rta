@@ -56,6 +56,7 @@ package pkg
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -100,32 +101,71 @@ var lookPath = exec.LookPath
 // network, and the table should say so rather than never appear.
 const listTimeout = 60 * time.Second
 
-// run executes one query and classifies the failure the way kubectl.go does.
-// A non-zero exit with output is returned to the caller undecided: several
-// managers exit non-zero to mean "there are updates" (dnf 100, npm 1), and
-// only the manager knows.
-func run(ctx context.Context, name string, args ...string) (string, int, *view.Error) {
+// run executes one query and classifies the failure the way kubectl.go does:
+// a non-zero exit is a failure, and its message is the first line of what
+// the tool said on stderr.
+//
+// It once handed every non-zero exit back undecided, since a few managers
+// exit non-zero to answer (dnf 100 for "updates available", npm 1 for
+// "something is outdated"), and only dnf ever looked. A list that failed —
+// mise refusing an untrusted config, npm behind a shim that could not find
+// its runtime — wrote its reason to stderr and nothing to stdout, every
+// other parser read no lines as nothing behind, and the manager's row said
+// ok. Nothing is an answer now until the tool exits zero, and a caller
+// whose tool answers with its status asks runStatus and reads it there.
+func run(ctx context.Context, name string, args ...string) (string, *view.Error) {
+	st, verr := runStatus(ctx, name, args...)
+	if verr != nil {
+		return "", verr
+	}
+	if st.code != 0 {
+		return "", st.failed(name)
+	}
+	return st.out, nil
+}
+
+// status is what a query answered when its exit status is part of the
+// answer: stdout, the status, and the first line of stderr — the reason,
+// when the caller decides the status meant a failure after all.
+type status struct {
+	out    string
+	code   int
+	reason string
+}
+
+// failed is the refusal for a status the caller does not read as an answer.
+func (s status) failed(name string) *view.Error {
+	return view.Errorf("pkg.manager.failed", "%s: %s", name, firstLine(s.reason, fmt.Sprintf("exited %d and said nothing on stderr", s.code)))
+}
+
+// runStatus is run with the exit status handed back undecided, for the tools
+// that answer with it: dnf check-update's 100, npm outdated's 1, pacman -Qu's
+// 1 for nothing matched, needs-restarting's 1 for a reboot owed, and a
+// binary's own --version, whose output says what it says whatever the status.
+// A timeout, a missing binary and a process that never ran are failures
+// here too: none of them answered anything.
+func runStatus(ctx context.Context, name string, args ...string) (status, *view.Error) {
 	ctx, cancel := context.WithTimeout(ctx, listTimeout)
 	defer cancel()
 	out, stderr, err := runCommand(ctx, name, args...)
 	// ErrWaitDelay is only ever returned for a process that exited zero —
 	// the answer is complete and something else was holding the pipes.
 	if err == nil || errors.Is(err, exec.ErrWaitDelay) {
-		return out, 0, nil
+		return status{out: out}, nil
 	}
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		return "", 0, view.Errorf("pkg.manager.timeout", "%s did not answer within %s", name, listTimeout).
+		return status{}, view.Errorf("pkg.manager.timeout", "%s did not answer within %s", name, listTimeout).
 			WithHint("a manager hung on its registry looks exactly like this — try it by hand")
 	}
 	var notFound *exec.Error
 	if errors.As(err, &notFound) {
-		return "", 0, view.Errorf("pkg.manager.missing", "%s is not on this machine's PATH", name)
+		return status{}, view.Errorf("pkg.manager.missing", "%s is not on this machine's PATH", name)
 	}
 	var exit *exec.ExitError
 	if errors.As(err, &exit) {
-		return out, exit.ExitCode(), nil
+		return status{out: out, code: exit.ExitCode(), reason: firstLine(stderr, "")}, nil
 	}
-	return "", 0, view.Errorf("pkg.manager.failed", "%s: %s", name, firstLine(stderr, err.Error()))
+	return status{}, view.Errorf("pkg.manager.failed", "%s: %s", name, firstLine(stderr, err.Error()))
 }
 
 func firstLine(s, fallback string) string {
