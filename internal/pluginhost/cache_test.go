@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -125,6 +126,31 @@ func TestADamagedCacheEntryIsAMissNotAFailure(t *testing.T) {
 			t.Errorf("declared name = %q", c.Declared.Name)
 		}
 		h.CloseAll()
+	}
+}
+
+// An entry is read up to the most rta would write there, and no further. The
+// cache is read on every run, shell completion's included, from a directory a
+// process with less trust than the operator can write, and an entry that never
+// ends — a link to /dev/zero — kept every rta reading until memory ran out.
+func TestAnEntryLargerThanRtaWritesIsAMissNotARead(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no /dev/zero to link to")
+	}
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	writeCache("first", &rtav1.Plugin{Name: "x"})
+	if err := os.Symlink("/dev/zero", cachePath("endless")); err != nil {
+		t.Skipf("no symlinks here: %v", err)
+	}
+	read := make(chan bool, 1)
+	go func() { _, ok := readCache("endless"); read <- ok }()
+	select {
+	case ok := <-read:
+		if ok {
+			t.Error("an endless entry was read as a declaration")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("an endless entry was read without end")
 	}
 }
 

@@ -55,17 +55,28 @@ const cacheDir = "plugin-cache"
 // a plugin in a loop from growing the directory without bound.
 const cacheEntries = 128
 
+// maxCacheEntry bounds the read of one entry, its seal and a declaration. The
+// cache is read on every run, shell completion's included, from a directory
+// something with less trust than the operator can write, and an entry that
+// never ended — a link to /dev/zero — kept every rta reading until memory ran
+// out (atomicfile.ReadCapped). The largest declaration in use is a few
+// kilobytes. How many capabilities a plugin declares is deliberately not
+// capped (plugin.Validate), so one past this is possible, and it costs that
+// plugin its cache — a launch per run, the answer every miss gets — rather
+// than costing rta its memory.
+const maxCacheEntry = sha256.Size + 16<<20
+
 func cachePath(digest string) string {
 	return filepath.Join(paths.Data(), cacheDir, digest+".pb")
 }
 
 // readCache returns the declaration recorded for this digest.
 //
-// Every failure is a miss — unreadable, corrupt, truncated, or carrying a
-// seal this rta cannot verify. That policy predates the seal and is what
-// makes adding one cheap: a rejected entry costs a process launch and
-// produces the identical answer, so there is no case where refusing an entry
-// is worse than trusting it.
+// Every failure is a miss — unreadable, corrupt, truncated, larger than rta
+// writes, or carrying a seal this rta cannot verify. That policy predates the
+// seal and is what makes adding one cheap: a rejected entry costs a process
+// launch and produces the identical answer, so there is no case where
+// refusing an entry is worse than trusting it.
 //
 // A failed seal is therefore silent and self-healing: the launch that follows
 // overwrites the entry with a sealed one. It is deliberately not reported,
@@ -73,7 +84,7 @@ func cachePath(digest string) string {
 // surfaces that would carry the warning are the ones a person reads for
 // something they can act on.
 func readCache(digest string) (*rtav1.Plugin, bool) {
-	data, err := os.ReadFile(cachePath(digest))
+	data, err := atomicfile.ReadCapped(cachePath(digest), maxCacheEntry)
 	if err != nil || len(data) < sha256.Size {
 		return nil, false
 	}
