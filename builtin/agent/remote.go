@@ -106,18 +106,30 @@ func remoteAnswer(ctx context.Context, req plugin.Request, server, id string, al
 	if allow {
 		verb = "allow"
 	}
-	// --ttl mints a standing grant, which remotely is its own signed
-	// prepare-and-issue flow with its own review step — folding it into an
-	// answer would skip exactly the draft check that keeps a hostile server
-	// from widening what gets signed.
-	if allow && strings.TrimSpace(req.String("ttl")) != "" {
+	// --ttl and --role mint standing grants, which remotely is its own
+	// signed prepare-and-issue flow with its own review step — folding it
+	// into an answer would skip exactly the draft check that keeps a hostile
+	// server from widening what gets signed. --role was once read nowhere on
+	// this path: the call was released, the answer said "this call only",
+	// and the role the operator had asked for was never issued, with
+	// nothing to say so. The hint names --agent because a grant.allow given
+	// a server refuses to run without one.
+	for _, standing := range []string{"ttl", "role"} {
+		if !allow || strings.TrimSpace(req.String(standing)) == "" {
+			continue
+		}
 		sf := req.Surface()
-		return nil, view.Errorf("agent.remote.ttl",
+		how := "then `"
+		if standing == "role" {
+			how = "then each of the role's lines with `"
+		}
+		return nil, view.Errorf("agent.remote."+standing,
 			"%s does not combine with %s: a standing grant is its own signed flow",
-			sf.InputName("ttl"), sf.InputName("server")).
-			WithHint("answer this call first, then `" + sf.Call("grant.allow",
+			sf.InputName(standing), sf.InputName("server")).
+			WithHint("answer this call first, " + how + sf.Call("grant.allow",
 				plugin.Arg{Name: "target", Value: "<target>", Positional: true},
-				plugin.Arg{Name: "ttl", Value: "<ttl>"}, plugin.Arg{Name: "server", Value: server}) + "`")
+				plugin.Arg{Name: "agent", Value: "<agent>"}, plugin.Arg{Name: "ttl", Value: "<ttl>"},
+				plugin.Arg{Name: "server", Value: server}) + "`")
 	}
 	if req.DryRun {
 		return view.Text{Body: "would fetch request " + id + " from " + server + " and " + verb +
