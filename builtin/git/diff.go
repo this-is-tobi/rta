@@ -47,7 +47,8 @@ func diffCapability() plugin.Capability {
 			"to design on its own rather than bolt on. One diff reads at most 16 MiB of a file and " +
 			"64 MiB in all, looks at no more than 10000 files, and spends at most two seconds matching " +
 			"lines; the lines after the patch name each file it left out or diffed coarsely, and count " +
-			"the ones it did not look at.",
+			"the ones it did not look at. An untracked file under an ignore file git.status did not " +
+			"apply is named, never shown: it may be one that ignore file keeps out of git.",
 		Inputs: []plugin.Field{
 			pathField("repository path, or a subdirectory of one"),
 			{Name: "commit", Type: plugin.String, Suggest: suggestCommits,
@@ -839,7 +840,7 @@ func diffWorktree(ctx context.Context, repo *git.Repository, gate func(string) *
 		return nil, view.Errorf("git.diff.worktree", "no working tree here: %v", err).
 			WithHint("a bare repository has no working tree to diff")
 	}
-	status, err := worktreeStatus(repo, wt)
+	status, ignored, err := worktreeStatus(repo, wt)
 	if err != nil {
 		return nil, view.Errorf("git.diff.failed", "reading status: %v", err)
 	}
@@ -867,9 +868,20 @@ func diffWorktree(ctx context.Context, repo *git.Repository, gate func(string) *
 	if len(paths) > maxDiffFiles {
 		paths, unseen = paths[:maxDiffFiles], len(paths)-maxDiffFiles
 	}
+	// **An untracked file an ignore file that was not applied reaches is
+	// named, never shown.** It is one the repository may keep out of git on
+	// purpose, a .env beside the .gitignore that lists it, and git never
+	// shows it: a caller who can pad that .gitignore past what one status
+	// reads could otherwise have this diff show them the file whole.
+	reach := ignored.reach()
 	for _, path := range paths {
 		if ctx.Err() != nil {
 			return nil, interrupted("the working tree")
+		}
+		if status[path].Worktree == git.Untracked && mayIgnore(reach, path) {
+			skipped = append(skipped, withheld{path, "untracked under an ignore file that was not applied, " +
+				"which may ignore it"})
+			continue
 		}
 		disk := files.at(path)
 		if from, link := gitlinkAt(head, entryOf, path); link {
@@ -927,6 +939,10 @@ func diffWorktree(ctx context.Context, repo *git.Repository, gate func(string) *
 	// not read, is part of the answer rather than a row quietly missing from
 	// it. git.status names the same paths to the same caller.
 	body += notDiffed(large, skipped) + pastBudget(cut) + notLookedAt(unseen) + matchedCoarsely(coarse)
+	if len(ignored) > 0 {
+		body += ignored.sentence("the untracked files "+format.Plural(len(ignored), "it reaches", "they reach")+
+			" are named rather than diffed") + "\n"
+	}
 	return textOrEmpty(body), nil
 }
 
