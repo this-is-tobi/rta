@@ -241,9 +241,13 @@ func tileOptions(reg *registry.Registry, selected []string) []huh.Option[string]
 // (tui.MissingInputs): the CLI reads it from a pipe when it is left out, and
 // a tile runs where there is none. Offered anyway, codec.jwt and debug.ansi
 // became tiles answering "nothing to read" on every refresh.
+//
+// A Required input's Default is no exception to look for: Validate refuses
+// one that is not empty, and an empty one fills nothing, so a required input
+// is one a tile would run without.
 func hasRequiredInputs(c plugin.Capability) bool {
 	for _, f := range c.Inputs {
-		if f.Piped || (f.Required && f.Default == nil) {
+		if f.Piped || f.Required {
 			return true
 		}
 	}
