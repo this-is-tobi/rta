@@ -164,9 +164,48 @@ func TestMCPInstallAnswersWithAViewInTheFormatAskedFor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v %q", err, errOut)
 	}
-	readsOnATerminal(t, out, "client", "add to", "block", "as", "next")
+	pairsDrawn, _, _ := strings.Cut(out, "\n\n")
+	readsOnATerminal(t, pairsDrawn, "client", "add to", "as", "next")
 	if !strings.Contains(out, "[mcp_servers.rta]") {
 		t.Errorf("the block to paste is not on the screen:\n%s", out)
+	}
+}
+
+// The block is copied into a file, so a terminal draws it as it is, however
+// narrow: drawn as a pair's value it was wrapped as prose, which split TOML's
+// `command =` from its value and a JSON string across two lines. Every line
+// of it is on the screen whole, at the start of a line, and the pairs around
+// it still fit.
+func TestMCPInstallDrawsTheBlockAsItIsOnANarrowTerminal(t *testing.T) {
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved, err := filepath.EvalSymlinks(self); err == nil {
+		self = resolved
+	}
+	onATerminal(t)
+	t.Setenv("COLUMNS", "30")
+	t.Setenv("PATH", t.TempDir())
+	for _, name := range []string{"codex", "cursor"} {
+		client, _ := findClient(name)
+		out, errOut, err := run(t, testRegistry(t), "mcp", "install", name, "--show", "--no-color")
+		if err != nil {
+			t.Fatalf("%s: %v %q", name, err, errOut)
+		}
+		pairsDrawn, drawnBlock, ok := strings.Cut(out, "\n\n")
+		if !ok {
+			t.Fatalf("%s: no block after the pairs:\n%s", name, out)
+		}
+		if want := strings.TrimRight(client.block(self, name), "\n"); strings.TrimRight(drawnBlock, "\n") != want {
+			t.Errorf("%s: the block was reshaped on a 30-column terminal:\n%s\nwant:\n%s", name, drawnBlock, want)
+		}
+		if strings.Contains(pairsDrawn, "mcpServers") || strings.Contains(pairsDrawn, "mcp_servers") {
+			t.Errorf("%s: the block was drawn among the pairs as well:\n%s", name, pairsDrawn)
+		}
+		if !strings.Contains(pairsDrawn, "next") || !strings.Contains(pairsDrawn, "add to") {
+			t.Errorf("%s: the pairs around the block are gone:\n%s", name, pairsDrawn)
+		}
 	}
 }
 
