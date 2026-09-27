@@ -5,8 +5,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -18,12 +21,21 @@ import (
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
+// noTerminal says, for the rest of the test, that there is no terminal to
+// draw the wizard's form on.
+func noTerminal(t *testing.T) {
+	t.Helper()
+	saved := initTerminal
+	t.Cleanup(func() { initTerminal = saved })
+	initTerminal = func() (io.Reader, io.Writer, func(), error) {
+		return nil, nil, nil, errors.New("open /dev/tty: device not configured")
+	}
+}
+
 // Without a terminal the wizard refuses, coded and in the format asked for.
 // It was a plain error, the one fang styled as a box under `-o json`.
 func TestInitWithNoTerminalIsACodedRefusal(t *testing.T) {
-	if isTTY() {
-		t.Skip("stdout is a terminal here")
-	}
+	noTerminal(t)
 	_, _, err := run(t, testRegistry(t), "init", "-o", "json")
 	var ve *view.Error
 	if !errors.As(err, &ve) || ve.Code != "core.init.terminal" || ve.Hint == "" {
@@ -35,19 +47,32 @@ func TestInitWithNoTerminalIsACodedRefusal(t *testing.T) {
 	}
 }
 
-// answeredInit stands in for the person filling the wizard's form in, for the
-// rest of the test. What it returns is whether the form it stood in for was
-// last opened as a dry run's.
+// answeredInit stands in for the person filling the wizard's form in, at a
+// terminal of its own, for the rest of the test. What it returns is whether
+// the form it stood in for was last opened as a dry run's.
 func answeredInit(t *testing.T, a initAnswers) *bool {
 	t.Helper()
-	saved := askInit
-	t.Cleanup(func() { askInit = saved })
-	asDryRun := new(bool)
-	askInit = func(_ context.Context, _ *registry.Registry, _ config.Config, dryRun bool) (initAnswers, error) {
-		*asDryRun = dryRun
+	asDryRun, _ := answeredAt(t, a)
+	return asDryRun
+}
+
+// answeredAt is answeredInit, also returning what the form was last drawn on.
+func answeredAt(t *testing.T, a initAnswers) (asDryRun *bool, drawnOn *io.Writer) {
+	t.Helper()
+	savedAsk, savedTerminal := askInit, initTerminal
+	t.Cleanup(func() { askInit, initTerminal = savedAsk, savedTerminal })
+	var screen bytes.Buffer
+	initTerminal = func() (io.Reader, io.Writer, func(), error) {
+		return strings.NewReader(""), &screen, func() {}, nil
+	}
+	asDryRun, drawnOn = new(bool), new(io.Writer)
+	askInit = func(_ context.Context, _ *registry.Registry, _ config.Config, dryRun bool,
+		_ io.Reader, out io.Writer,
+	) (initAnswers, error) {
+		*asDryRun, *drawnOn = dryRun, out
 		return a, nil
 	}
-	return asDryRun
+	return asDryRun, drawnOn
 }
 
 // The form stays interactive; what init answers once it is closed is a view,
@@ -99,6 +124,75 @@ func TestInitAnswersWithAViewInTheFormatAskedFor(t *testing.T) {
 		t.Fatalf("a broken default stopped init: %v %q", err, errOut)
 	}
 	readsOnATerminal(t, out, "unchanged")
+}
+
+// Stdout carries the answer, and only the answer: `rta init -o json >
+// answer.json` was refused because stdout was not a terminal, although the
+// person answering the form was at one. The form is drawn on the terminal
+// initTerminal finds, and stdout holds the json alone.
+func TestInitAnswersIntoAFileWhileItAsksAtTheTerminal(t *testing.T) {
+	run := session(t, testRegistry(t))
+	saved := isTTY
+	t.Cleanup(func() { isTTY = saved })
+	isTTY = func() bool { return false }
+	_, drawnOn := answeredAt(t, initAnswers{output: "yaml", confirmed: true})
+
+	out, errOut, err := run("init", "-o", "json")
+	if err != nil {
+		t.Fatalf("init with stdout redirected: %v %q", err, errOut)
+	}
+	if pairs := answerPairs(t, out); pairs["wrote"] != config.Path() || pairs["output"] != "yaml" {
+		t.Errorf("stdout held %q, want the answer alone", out)
+	}
+	if *drawnOn == nil || *drawnOn == io.Writer(os.Stdout) {
+		t.Errorf("the form was drawn on %v, want the terminal initTerminal found", *drawnOn)
+	}
+}
+
+// Where the form goes: the standard streams when both are the terminal, and
+// the controlling terminal when either is pointed elsewhere — stdin a pipe,
+// stderr a log — since the person is there whatever the streams say. No
+// terminal at all is the one case with nobody to ask.
+func TestTheFormIsDrawnOnTheTerminalWhereverTheStreamsPoint(t *testing.T) {
+	dir := t.TempDir()
+	file := func(name string) *os.File {
+		f, err := os.Create(filepath.Join(dir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = f.Close() })
+		return f
+	}
+	stdin, stderr, tty := file("stdin"), file("stderr"), file("tty")
+	opened := 0
+	open := func() (*os.File, *os.File, error) { opened++; return tty, tty, nil }
+	for _, tc := range []struct {
+		name      string
+		terminals []*os.File
+		in, out   *os.File
+	}{
+		{"both streams at the terminal", []*os.File{stdin, stderr}, stdin, stderr},
+		{"stdin a pipe", []*os.File{stderr}, tty, tty},
+		{"stderr a log", []*os.File{stdin}, tty, tty},
+	} {
+		opened = 0
+		isTerminal := func(f *os.File) bool { return slices.Contains(tc.terminals, f) }
+		in, out, release, err := formTerminal(stdin, stderr, isTerminal, open)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		release()
+		if in != io.Reader(tc.in) || out != io.Writer(tc.out) {
+			t.Errorf("%s: drawn on %v reading %v, want %v reading %v", tc.name, out, in, tc.out, tc.in)
+		}
+		if want := tc.in == tty; (opened == 1) != want {
+			t.Errorf("%s: the controlling terminal was opened %d times", tc.name, opened)
+		}
+	}
+	none := func() (*os.File, *os.File, error) { return nil, nil, errors.New("no controlling terminal") }
+	if _, _, _, err := formTerminal(stdin, stderr, func(*os.File) bool { return false }, none); err == nil {
+		t.Error("with no terminal anywhere the form was drawn anyway")
+	}
 }
 
 // --dry-run never reached init: `rta init --dry-run` asked its questions and
