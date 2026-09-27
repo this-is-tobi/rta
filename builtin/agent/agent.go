@@ -1418,9 +1418,24 @@ func callNamed(capID string, records []string) string {
 // argValue is one argument as a person reads it beside the record: a string
 // as textclean.Record shows one, since an argument is where the record came
 // from and the ledger's only copy of it, and anything else as it prints.
+//
+// A list element by element, in the brackets Go prints one in, since a list
+// is where a capability taking several records names them — net hosts add's
+// hostnames — and printed whole it showed a padded one as the bare one. The
+// two types are the two a list arrives as: []string from the bridge, []any
+// once a request or a ledger line is read back from its JSON.
 func argValue(v any) string {
-	if s, ok := v.(string); ok {
-		return textclean.Record(s)
+	switch t := v.(type) {
+	case string:
+		return textclean.Record(t)
+	case []string:
+		return "[" + textclean.Records(t) + "]"
+	case []any:
+		shown := make([]string, len(t))
+		for i, e := range t {
+			shown[i] = argValue(e)
+		}
+		return "[" + strings.Join(shown, " ") + "]"
 	}
 	return fmt.Sprintf("%v", v)
 }
