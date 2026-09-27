@@ -302,3 +302,26 @@ func TestAPipeInTheRepositoryIsRefusedRatherThanWaitedOn(t *testing.T) {
 		})
 	}
 }
+
+// A repository in a format go-git does not read is refused as one, naming
+// the extension that sets the format: git reads it, and every capability
+// here passed go-git's refusal on as git.notarepo, which sent the caller to
+// look for a repository while standing in one, and whose wording blamed a
+// format version the config does not have.
+func TestARepositoryInAFormatThisDoesNotReadIsRefusedNamingIt(t *testing.T) {
+	for extension, value := range map[string]string{"objectformat": "sha256", "refstorage": "reftable", "partialclone": "origin"} {
+		t.Run(extension, func(t *testing.T) {
+			dir, repo := testRepo(t)
+			commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
+			writeFile(t, dir, ".git/config", "[core]\n\trepositoryformatversion = 1\n\tbare = false\n"+
+				"[extensions]\n\t"+extension+" = "+value+"\n")
+			for capability, run := range map[string]plugin.Handler{"git.status": runStatus, "git.config": runConfig} {
+				_, err := run(context.Background(), req(t, dir, nil))
+				if code := errCode(err); code != "git.repository.unsupported" ||
+					!strings.Contains(err.Error(), "extensions."+extension+" = "+value) {
+					t.Errorf("%s: %v, want git.repository.unsupported naming extensions.%s", capability, err, extension)
+				}
+			}
+		})
+	}
+}
