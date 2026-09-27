@@ -1339,30 +1339,13 @@ func grantsTable(grants []core.Grant, stale func(core.Grant) bool) view.Table {
 		// character named, never as the record it looks like
 		// (textclean.Record). It is the one screen that answers "what may
 		// the agent do right now?", and a grant on the look-alike covers
-		// nothing the operator meant.
-		record := shownRecord(g.Scope, "any")
-		if core.IsFolderScope(g.Scope) {
-			// The width has to be legible in the one screen whose job is
-			// "what may the agent do right now?". A bare "prod/" in a column
-			// headed Record reads as one record with a trailing slash, which
-			// is the opposite of what it authorizes.
-			record += " (all)"
-		}
-		// An em dash rather than the word "any", deliberately: the Record column
-		// one place over already uses "any" for the opposite meaning, and an
-		// empty profile is not a wildcard — it is the base connection and
-		// nothing else.
-		connection := g.Profile
-		if connection == "" {
-			connection = "—"
-		}
-		if stale != nil && stale(g) {
-			connection += " (changed)"
-		}
+		// nothing the operator meant. Drawn by internal/grant, beside the
+		// reading a row action seeds its command from (RecordOfRoster), so
+		// the two cannot drift apart.
 		row := []string{
 			g.Target,
-			connection,
-			record,
+			core.RosterProfile(g.Profile, stale != nil && stale(g)),
+			core.RosterRecord(g.Scope),
 			format.Duration(g.Expires.Sub(now)),
 			budgetLeft(g, now),
 			g.Note,
