@@ -88,42 +88,65 @@ func saveRecipients(specs []string) *view.Error {
 // recipient string, an SSH public key line, or the path to a file holding
 // either (~/.ssh/id_ed25519.pub being the overwhelmingly common case). It
 // returns the recipient and the canonical spec to record for it.
+//
+// **A spec that spells a key is that key, and is never looked up as a
+// file.** An age recipient is also a perfectly good relative file name, and
+// the recipients file that holds them is public by design. Reading the path
+// first made a file named after somebody's recipient, in whatever directory
+// rta happened to run in — a cloned repository, the project an MCP server
+// was started in — stand in for the key it was named after, while the spec
+// recorded, and shown by kv.recipients, stayed the one the operator typed.
+// Only a spec that is no key at all is tried as a path, and what the file
+// holds is parsed as a key and nothing else: a line in a key file is not
+// another path to follow.
 func parseRecipient(spec string) (age.Recipient, string, error) {
 	spec = strings.TrimSpace(spec)
 	if spec == "" {
 		return nil, "", errors.New("empty recipient")
 	}
-	// A path: read it and retry on its contents.
-	if data, err := os.ReadFile(pathguard.ExpandTilde(spec)); err == nil {
-		line := firstMeaningfulLine(string(data))
-		if line == "" {
-			return nil, "", fmt.Errorf("%s holds no public key", spec)
-		}
-		// A private key names a recipient perfectly well — its public half —
-		// and pointing at the key you have is the obvious thing to try. Only
-		// that half is ever read or recorded.
-		if pub, err := publicHalf(spec, line); err != nil || pub != "" {
-			if err != nil {
-				return nil, "", err
-			}
-			r, _, err := parseRecipient(pub)
-			return r, pub, err
-		}
-		r, _, err := parseRecipient(line)
-		return r, line, err
+	r, literalErr := parseRecipientLiteral(spec)
+	if literalErr == nil {
+		return r, spec, nil
 	}
-	if strings.HasPrefix(spec, "age1") {
-		r, err := age.ParseX25519Recipient(spec)
+	data, err := os.ReadFile(pathguard.ExpandTilde(spec))
+	if err != nil {
+		return nil, "", literalErr
+	}
+	line := firstMeaningfulLine(string(data))
+	if line == "" {
+		return nil, "", fmt.Errorf("%s holds no public key", spec)
+	}
+	// A private key names a recipient perfectly well — its public half — and
+	// pointing at the key you have is the obvious thing to try. Only that
+	// half is ever read or recorded.
+	if pub, err := publicHalf(spec, line); err != nil || pub != "" {
 		if err != nil {
 			return nil, "", err
 		}
-		return r, spec, nil
+		r, err := parseRecipientLiteral(pub)
+		return r, pub, err
+	}
+	r, err = parseRecipientLiteral(line)
+	return r, line, err
+}
+
+// parseRecipientLiteral parses spec as the key it spells — an age recipient
+// or an SSH public key line — and never touches the filesystem.
+//
+// It is the only parse a recorded spec gets. Every spec in kv.recipients was
+// written there canonical, by parseRecipient, parseIdentities or
+// generateIdentity, and every keys-mode write re-encrypts to all of them: a
+// recorded spec read as a path is the store handed to whatever file of that
+// name sits in the working directory, on a write that names no key at all.
+func parseRecipientLiteral(spec string) (age.Recipient, error) {
+	if strings.HasPrefix(spec, "age1") {
+		return age.ParseX25519Recipient(spec)
 	}
 	r, err := agessh.ParseRecipient(spec)
 	if err != nil {
-		return nil, "", fmt.Errorf("not an age or SSH public key: %s", redactedSpec(spec))
+		return nil, fmt.Errorf("not an age or SSH public key: %s", redactedSpec(spec))
 	}
-	return r, spec, nil
+	return r, nil
 }
 
 // redactedSpec is what an error may safely show of a caller-supplied
@@ -742,11 +765,12 @@ func mergeSpec(want []string, spec string) []string {
 	return append(want, spec)
 }
 
-// recipientsFor turns recorded specs into the recipients to encrypt to.
+// recipientsFor turns recorded specs into the recipients to encrypt to: as
+// the keys they spell, never as paths (parseRecipientLiteral says why).
 func recipientsFor(specs []string) ([]age.Recipient, *view.Error) {
 	var out []age.Recipient
 	for _, spec := range specs {
-		r, _, err := parseRecipient(spec)
+		r, err := parseRecipientLiteral(spec)
 		if err != nil {
 			return nil, view.Errorf("kv.recipient.invalid", "recorded recipient %q: %v", redactedSpec(spec), err)
 		}
@@ -793,8 +817,16 @@ func giveIdentity(sf plugin.Surface) string {
 
 // privateKeyFile reports whether a spec is a path to a private key on this
 // machine — the file itself, not a public half of it.
+//
+// Read as parseRecipient reads it: a spec that spells a key is that key and
+// no path, so a private key in a file named after somebody's recipient is
+// not proof of holding theirs — the lockout guard takes this as that proof.
 func privateKeyFile(spec string) bool {
-	data, err := os.ReadFile(pathguard.ExpandTilde(strings.TrimSpace(spec)))
+	spec = strings.TrimSpace(spec)
+	if _, err := parseRecipientLiteral(spec); err == nil {
+		return false
+	}
+	data, err := os.ReadFile(pathguard.ExpandTilde(spec))
 	return err == nil && isPrivateKey(firstMeaningfulLine(string(data)))
 }
 
