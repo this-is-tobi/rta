@@ -58,10 +58,11 @@ func statusLetter(c git.StatusCode) string {
 }
 
 func runStatus(ctx context.Context, req plugin.Request) (view.View, error) {
-	repo, verr := openRepo(ctx, req)
+	repo, done, verr := openRepo(ctx, req)
 	if verr != nil {
 		return nil, verr
 	}
+	defer done()
 	wt, err := repo.Worktree()
 	if err != nil {
 		return nil, view.Errorf("git.status.worktree", "no working tree here: %v", err).

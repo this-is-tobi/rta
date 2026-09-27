@@ -58,10 +58,11 @@ func diffCapability() plugin.Capability {
 }
 
 func runDiff(ctx context.Context, req plugin.Request) (view.View, error) {
-	repo, verr := openRepo(ctx, req)
+	repo, done, verr := openRepo(ctx, req)
 	if verr != nil {
 		return nil, verr
 	}
+	defer done()
 
 	gate := pathGate(req, repo)
 	if commit := req.String("commit"); commit != "" {

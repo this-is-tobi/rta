@@ -43,10 +43,11 @@ func blameCapability() plugin.Capability {
 }
 
 func runBlame(ctx context.Context, req plugin.Request) (view.View, error) {
-	repo, verr := openRepo(ctx, req)
+	repo, done, verr := openRepo(ctx, req)
 	if verr != nil {
 		return nil, verr
 	}
+	defer done()
 	head, err := repo.Head()
 	if err != nil {
 		return nil, view.Errorf("git.blame.nohead", "no commit to blame from: %v", err).

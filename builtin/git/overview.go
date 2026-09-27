@@ -39,10 +39,11 @@ func runOverview(ctx context.Context, req plugin.Request) (view.View, error) {
 		return detailedOverview(ctx, req)
 	}
 
-	repo, verr := openRepo(ctx, req)
+	repo, done, verr := openRepo(ctx, req)
 	if verr != nil {
 		return nil, verr
 	}
+	defer done()
 	kv := view.KeyValue{}
 	add := func(key, value string) {
 		if value != "" {

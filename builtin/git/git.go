@@ -81,7 +81,10 @@ func pathField(help string) plugin.Field {
 //
 // No shallow clone here: `git log` and `git blame` are the history, and a
 // depth of one would answer them with a single commit.
-func openRepo(ctx context.Context, req plugin.Request) (*git.Repository, *view.Error) {
+//
+// done closes the packfiles reading the repository kept open (keptPacks),
+// and every caller defers it.
+func openRepo(ctx context.Context, req plugin.Request) (repo *git.Repository, done func(), _ *view.Error) {
 	return open(ctx, req, true)
 }
 
@@ -94,17 +97,18 @@ func openRepo(ctx context.Context, req plugin.Request) (*git.Repository, *view.E
 //
 // A named opener rather than a flag on openRepo, so that a capability which
 // grows an object read has to come here and change which one it calls.
-func openRepoConfigOnly(ctx context.Context, req plugin.Request) (*git.Repository, *view.Error) {
+func openRepoConfigOnly(ctx context.Context, req plugin.Request) (repo *git.Repository, done func(), _ *view.Error) {
 	return open(ctx, req, false)
 }
 
-func open(ctx context.Context, req plugin.Request, readsObjects bool) (*git.Repository, *view.Error) {
+func open(ctx context.Context, req plugin.Request, readsObjects bool) (*git.Repository, func(), *view.Error) {
 	path := req.String("path")
 	if gitclone.IsRemote(path) {
 		if verr := gitclone.RefuseOverMCP(req, "repository"); verr != nil {
-			return nil, verr
+			return nil, nil, verr
 		}
-		return gitclone.InMemory(ctx, path, gitclone.Options{})
+		repo, verr := gitclone.InMemory(ctx, path, gitclone.Options{})
+		return repo, func() {}, verr
 	}
 	// **The repository is a path this handler derives, not one it was given.**
 	// DetectDotGit walks upward, which is what an operator standing in a
@@ -120,18 +124,48 @@ func open(ctx context.Context, req plugin.Request, readsObjects bool) (*git.Repo
 	// all of them and behave exactly as before.
 	root, verr := repoRoot(req, path)
 	if verr != nil {
-		return nil, verr
+		return nil, nil, verr
 	}
 	repo, verr := openAt(req, root, path)
 	if verr != nil {
-		return nil, verr
+		return nil, nil, verr
 	}
+	done := func() { release(repo) }
 	if readsObjects {
 		if verr := objectsAllReadable(repo, root); verr != nil {
-			return nil, verr
+			done()
+			return nil, nil, verr
 		}
 	}
-	return repo, nil
+	return repo, done, nil
+}
+
+// keptPacks is how many packfiles reading one repository keeps open between
+// the objects it reads, which release closes.
+//
+// **go-git's default storage opens the packfile again for every object it
+// reads, and closes it after.** Each read paid an open, the stat regularFiles
+// judges it by, a fresh packfile reader and a close, and that was most of the
+// CPU of every call that reads many objects: on a clone of open-webui, 135
+// thousand objects in one pack, git_log of one file's 500 commits took 55 s
+// of CPU, 35 s of it in the kernel, and git_blame of a file with a long
+// history ran into its two seconds having traced part of it. Kept open, the
+// same log takes 2.8 s and the blame finishes in 0.8 s.
+//
+// A bound rather than every pack the repository has: the packs are files a
+// caller can write, and a descriptor for each of ten thousand would be ten
+// thousand the server's other calls cannot open. Fifty is as many as git lets
+// a repository gather before `git gc --auto` packs them into one
+// (gc.autoPackLimit), so a repository git maintains keeps every pack open,
+// and one with more reopens the ones it has let go, as each read did before.
+const keptPacks = 50
+
+// release closes the packfiles reading repo kept open. The repository can
+// still be read after, and reads each pack again as it needs it.
+func release(repo *git.Repository) {
+	if store, ok := repo.Storer.(*filesystem.Storage); ok {
+		_ = store.Close()
+	}
 }
 
 // objectsAllReadable refuses a repository whose object database this reader
@@ -283,7 +317,8 @@ func openAt(req plugin.Request, root, path string) (*git.Repository, *view.Error
 		return nil, verr
 	}
 
-	storage := filesystem.NewStorage(dotgit.NewRepositoryFilesystem(dot, common), cache.NewObjectLRUDefault())
+	storage := filesystem.NewStorageWithOptions(dotgit.NewRepositoryFilesystem(dot, common), cache.NewObjectLRUDefault(),
+		filesystem.Options{MaxOpenDescriptors: keptPacks})
 	repo, err := git.Open(readerExtensions{storage}, wt)
 	if err != nil {
 		if verr := unsupportedFormat(path, storage, err); verr != nil {
