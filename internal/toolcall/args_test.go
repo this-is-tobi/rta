@@ -112,6 +112,32 @@ func TestRequireLeavesToTheGuardWhatANamedProfileMayFill(t *testing.T) {
 	}
 }
 
+// A default is published for the value a call leaving the input out gets.
+// An empty one gets it nothing — the handler reads "" or no list exactly as
+// it reads an input nobody gave — so "default": "" told an agent there was a
+// value where there is none, and beside "required" contradicted the list it
+// sat under. A false or a zero is a value, and is published.
+func TestAnEmptyDefaultIsNotPublished(t *testing.T) {
+	c := plugin.Capability{ID: "x.y", Inputs: []plugin.Field{
+		{Name: "text", Type: plugin.String, Default: ""},
+		{Name: "list", Type: plugin.StringSlice, Default: []string{}},
+		{Name: "none", Type: plugin.StringSlice, Default: []string(nil)},
+		{Name: "host", Type: plugin.String, Default: "localhost"},
+		{Name: "tags", Type: plugin.StringSlice, Default: []string{"a"}},
+		{Name: "tls", Type: plugin.Bool, Default: false},
+		{Name: "count", Type: plugin.Int, Default: 0},
+	}}
+	props := InputSchema(c, nil, nil)["properties"].(map[string]any)
+	for name, want := range map[string]bool{
+		"text": false, "list": false, "none": false,
+		"host": true, "tags": true, "tls": true, "count": true,
+	} {
+		if _, published := props[name].(map[string]any)["default"]; published != want {
+			t.Errorf("%s: default published = %v, want %v", name, published, want)
+		}
+	}
+}
+
 // An input the CLI reads from a pipe when it is left out is required here,
 // where there is no pipe. codec_jwt {} reached the handler, which could only
 // answer that there was no token, while the tool description told the agent

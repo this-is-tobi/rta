@@ -53,7 +53,12 @@ func InputSchema(c plugin.Capability, profiles []string, config map[string]any) 
 		default:
 			prop["type"] = "string"
 		}
-		if f.Default != nil {
+		// Not an empty one: it is what a call leaving the input out gets, and
+		// "" or an empty list gets it nothing — the handler reads either as it
+		// reads an input nobody gave. "default": "" told an agent a value was
+		// there, and, before Validate refused the pair, sat beside "required".
+		// A false or a zero is a value, and is published.
+		if f.Default != nil && !emptyDefault(f.Default) {
 			prop["default"] = f.Default
 		}
 		// A closed set belongs in the schema, where a client can enforce it
@@ -163,6 +168,21 @@ func InputSchema(c plugin.Capability, profiles []string, config map[string]any) 
 		schema["required"] = required
 	}
 	return schema
+}
+
+// emptyDefault reports whether a declared default gives a call nothing: empty
+// text or a list with nothing in it, typed nil included — what
+// plugin.Missing counts as no value.
+func emptyDefault(v any) bool {
+	switch v := v.(type) {
+	case string:
+		return v == ""
+	case []string:
+		return len(v) == 0
+	case []any:
+		return len(v) == 0
+	}
+	return false
 }
 
 // SchemaTypeName names a Field.Type the way InputSchema described it, so the
