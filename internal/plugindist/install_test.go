@@ -15,10 +15,12 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/pluginhost"
 	"github.com/this-is-tobi/rta/internal/plugintrust"
+	"github.com/this-is-tobi/rta/internal/shutdown"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
@@ -256,6 +258,47 @@ func TestInstallVerifiesPlacesTrustsAndRecords(t *testing.T) {
 				t.Fatalf("second install: %v", verr)
 			}
 		})
+	}
+}
+
+// An install lands whole past a forced exit. Its durable writes are three —
+// the artifact placed in the store and bin/, its trust entry, its line in
+// rta.lock — and an exit that fell between them left a plugin on disk that
+// nothing trusts, or a trusted one rta.lock does not know was installed, which
+// install then refuses as present and upgrade as unmanaged. The exit waits for
+// all three once the first has begun (internal/shutdown).
+func TestAnExitWaitsForAnInstallToLandWhole(t *testing.T) {
+	testData(t)
+	bin := hello(t)
+	attach(t, helloManifest(t, bin, ""))
+
+	original := symlink
+	t.Cleanup(func() { symlink = original })
+	settled := make(chan func(), 1)
+	var between bool
+	symlink = func(target, name string) error {
+		go func() { settled <- shutdown.Settle() }()
+		select {
+		case resume := <-settled:
+			between = true
+			resume()
+		case <-time.After(100 * time.Millisecond):
+		}
+		return original(target, name)
+	}
+	if _, verr := Install(context.Background(), "hello", io.Discard); verr != nil {
+		t.Fatalf("install: %v", verr)
+	}
+	if between {
+		t.Fatal("the process settled with the plugin placed and neither trusted nor recorded")
+	}
+	(<-settled)()
+	digest := sha256Of(t, bin)
+	if !plugintrust.Load().Trusts(digest) {
+		t.Error("the exit did not wait for the trust entry")
+	}
+	if e, ok := LockedFor("hello"); !ok || e.Digest != digest {
+		t.Errorf("the exit did not wait for the lock entry: %+v, %v", e, ok)
 	}
 }
 

@@ -17,6 +17,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/paths"
 	"github.com/this-is-tobi/rta/internal/pluginhost"
 	"github.com/this-is-tobi/rta/internal/plugintrust"
+	"github.com/this-is-tobi/rta/internal/shutdown"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -200,6 +201,14 @@ func installFrom(ctx context.Context, listed Listed, stderr io.Writer, dryRun bo
 		}, nil
 	}
 
+	// Three durable writes — the artifact placed, its trust entry, its line in
+	// rta.lock — held off a forced exit as one (internal/shutdown). An exit
+	// between them left a plugin on disk that nothing trusts, or a trusted one
+	// rta.lock does not know was installed, which install then refuses as
+	// present and upgrade as unmanaged: the exit lets all three finish, or,
+	// taken before the first, begins none. Nothing before this is held — the
+	// fetch and the verification launch run as long as they run.
+	defer shutdown.Hold()()
 	dest, verr := place(m.Name, digest, staged)
 	if verr != nil {
 		return Report{}, verr
