@@ -37,7 +37,9 @@ import (
 
 // ExitCode maps an error returned by Execute to the fixed exit-code contract:
 // 0 ok, 1 capability error, 2 usage error (or an error nothing coded), 3
-// confirmation declined.
+// confirmation declined. 130 and 143 are a signal's, and never an error's:
+// they are what rta exits with when it stops without the command
+// (WatchSignals), which then has returned nothing to map.
 func ExitCode(err error) int {
 	if err == nil {
 		return 0
@@ -559,6 +561,10 @@ func NewRoot(reg *registry.Registry, version string) *cobra.Command {
 			if cfgErr != nil {
 				return cfgErr
 			}
+			// bubbletea stops on the cancelled context itself and hands the
+			// terminal back on the way out; a deadline cutting that short
+			// would leave the shell in raw mode on the alternate screen.
+			ownShutdown()
 			// The untrusted artifacts go in too. The startup line naming them
 			// is written to the primary buffer and the TUI opens on the
 			// alternate one, so it is covered before it can be read and does

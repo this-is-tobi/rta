@@ -191,6 +191,11 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			// A signal stops the server the way it always has: the stdio
+			// session ends, or the HTTP listener drains inside its own grace,
+			// and a clean stop exits 0. No deadline of the command line's
+			// cuts that short (ownShutdown).
+			ownShutdown()
 			// Required, not defaulted. Every MCP client on this machine reads
 			// the same grant file, so an unnamed server is one that shares
 			// every grant with every other client — and, worse, one nobody
