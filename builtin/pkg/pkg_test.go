@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -520,6 +521,25 @@ func TestUpgradeRunsOneManagerAndNeverSudo(t *testing.T) {
 	_, err = runUpgradeCapability(context.Background(), req(t, "pkg.upgrade", map[string]any{"target": "nope"}))
 	if ve := view.AsError(err, "x"); ve.Code != "pkg.upgrade.unknown" {
 		t.Errorf("unknown target = %+v", ve)
+	}
+}
+
+// The target upgraded is the one the gate judged. It was trimmed first, so a
+// call on " brew" — its own record, which a grant on brew does not cover —
+// upgraded brew. No manager or tool is named with white space around it, so
+// one that is names none, and is refused as unknown, quoted so the white
+// space shows.
+func TestUpgradeTakesTheTargetAsGiven(t *testing.T) {
+	f := &fake{bins: map[string]bool{"brew": true}}
+	install(t, f)
+	for _, target := range []string{" brew", "brew ", "brew" + string(rune(0xa0))} {
+		_, err := runUpgradeCapability(context.Background(), req(t, "pkg.upgrade", map[string]any{"target": target}))
+		if ve := view.AsError(err, "x"); err == nil || ve.Code != "pkg.upgrade.unknown" || !strings.Contains(ve.Message, strconv.Quote(target)) {
+			t.Errorf("target %q = %v, want pkg.upgrade.unknown naming it quoted", target, err)
+		}
+	}
+	if len(f.upgrade) != 0 {
+		t.Errorf("a target given with white space around it ran %v", f.upgrade)
 	}
 }
 
