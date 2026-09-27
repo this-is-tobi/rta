@@ -43,7 +43,6 @@ func blameCapability() plugin.Capability {
 }
 
 func runBlame(ctx context.Context, req plugin.Request) (view.View, error) {
-	deadline := matchDeadline(ctx)
 	repo, verr := openRepo(ctx, req)
 	if verr != nil {
 		return nil, verr
@@ -87,7 +86,7 @@ func runBlame(ctx context.Context, req plugin.Request) (view.View, error) {
 				file, format.Bytes(size), maxDiffBytes>>20)
 		}
 	}
-	result, err := blame(ctx, store, commit, file, deadline)
+	result, err := blame(ctx, store, commit, file, matchDeadline(ctx))
 	var over *historyTooLarge
 	switch {
 	case ctx.Err() != nil:
@@ -155,10 +154,21 @@ func runBlame(ctx context.Context, req plugin.Request) (view.View, error) {
 // A blob is counted each time the walk asks the store for it, which rename
 // detection does more than once for the same file, so the count errs on the
 // side of reading less.
+//
+// And each read looks at the call's deadline, since what rename detection
+// costs is not the bytes it reads alone: a file added beside twenty thousand
+// files of a few bytes moved and rewritten is four hundred million pairs,
+// and one blame of it was still running after two minutes. The walk stops
+// at the read the deadline passes (errPastDeadline), as it stops between
+// commits, and renameLimit keeps the pairs to git's own number.
 type boundedHistory struct {
 	storer.EncodedObjectStorer
-	read int64
+	read     int64
+	deadline time.Time
 }
+
+// errPastDeadline is a blame reading its history past the call's deadline.
+var errPastDeadline = errors.New("the blame ran past its time")
 
 // maxBlameBytes bounds what one blame reads of the history in all: the
 // versions of its file, and the files changed beside it where it was added
@@ -171,6 +181,9 @@ var maxBlameBytes int64 = 64 << 20
 
 func (s *boundedHistory) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (plumbing.EncodedObject, error) {
 	if t == plumbing.BlobObject {
+		if !s.deadline.IsZero() && time.Now().After(s.deadline) {
+			return nil, errPastDeadline
+		}
 		if size, err := s.EncodedObjectSize(h); err == nil {
 			if size > maxDiffBytes {
 				return nil, &historyTooLarge{size: size}
@@ -256,7 +269,7 @@ type origin struct {
 // caller's context before each commit. Past the deadline, or where a
 // version could not be matched in time, the lines still waiting are
 // attributed to the commit they wait at, as a boundary: at least that old.
-func blame(ctx context.Context, store storer.EncodedObjectStorer, head *object.Commit, path string, deadline time.Time) (
+func blame(ctx context.Context, store *boundedHistory, head *object.Commit, path string, deadline time.Time) (
 	*blameResult, error,
 ) {
 	file, err := head.File(path)
@@ -267,6 +280,10 @@ func blame(ctx context.Context, store storer.EncodedObjectStorer, head *object.C
 	if err != nil {
 		return nil, err
 	}
+	// The store's reads are held to the deadline once the version at HEAD
+	// is read, which a blame cannot answer without: past it already, every
+	// line is at least as old as HEAD, and says so.
+	store.deadline = deadline
 	result := &blameResult{content: content, at: splitLines(content)}
 	result.lines = make([]blamed, len(result.at)-1)
 	first := &origin{commit: head, path: path, content: content}
@@ -286,6 +303,9 @@ func blame(ctx context.Context, store storer.EncodedObjectStorer, head *object.C
 			break
 		}
 		finished, err := w.pass(ctx, o)
+		if errors.Is(err, errPastDeadline) {
+			finished, err = false, nil
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -468,13 +488,14 @@ func (w *blameWalk) parentVersions(ctx context.Context, o *origin) ([]parentVers
 
 // renamedFrom is the path, and the blob, of the file a commit renamed to
 // path, as go-git's default rename detection pairs a parent's tree with the
-// commit's: "" where path was added rather than renamed. The trees are
+// commit's, held to git's limit (renameOptions): "" where path was added
+// rather than renamed. The trees are
 // compared and no file in them is line-diffed; go-git's blame built the whole
 // patch of the commit to find the one rename, matching the lines of every
 // file it changed. What rename detection reads is counted by the store the
 // trees were read through (boundedHistory).
 func renamedFrom(ctx context.Context, parent, tree *object.Tree, path string) (string, plumbing.Hash, error) {
-	changes, err := object.DiffTreeWithOptions(ctx, parent, tree, object.DefaultDiffTreeOptions)
+	changes, err := object.DiffTreeWithOptions(ctx, parent, tree, renameOptions())
 	if err != nil {
 		return "", plumbing.ZeroHash, err
 	}

@@ -2,13 +2,17 @@ package git
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/object"
 
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -230,7 +234,7 @@ func TestBlameFollowsARenameAndBothSidesOfAMerge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := blame(t.Context(), repo.Storer, head, "b.txt", time.Now().Add(time.Hour))
+	got, err := blame(t.Context(), &boundedHistory{EncodedObjectStorer: repo.Storer}, head, "b.txt", time.Now().Add(time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -295,5 +299,58 @@ func TestBlameTheCallerCancelledAnswersNothing(t *testing.T) {
 	_, err := runBlame(ctx, req(t, dir, map[string]any{"file": "a.txt"}))
 	if code := errCode(err); code != "git.blame.cancelled" {
 		t.Errorf("a cancelled blame answered %q, want git.blame.cancelled", code)
+	}
+}
+
+// Where the file was added or renamed, the blame compares the commit's tree
+// with its parent's, and that comparison reads every file it deleted and
+// added, pair by pair: a file added beside twenty thousand files of a few
+// bytes moved and rewritten kept one blame busy for more than two minutes,
+// inside its byte budget. Each read looks at the deadline, and the walk stops
+// at the one that passes it, as it stops between commits.
+func TestBlameStopsItsRenameSearchAtTheDeadline(t *testing.T) {
+	dir, repo := testRepo(t)
+	lines := strings.Repeat("a line of the file\n", 20)
+	commitFile(t, repo, dir, "old.txt", lines, "first")
+	if err := os.Remove(filepath.Join(dir, "old.txt")); err != nil {
+		t.Fatal(err)
+	}
+	wt, err := repo.Worktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := wt.Remove("old.txt"); err != nil {
+		t.Fatal(err)
+	}
+	head := commitFile(t, repo, dir, "new.txt", lines+"one more\n", "moved and edited")
+
+	store := &boundedHistory{EncodedObjectStorer: repo.Storer, deadline: time.Now().Add(-time.Second)}
+	search := func() (string, error) {
+		t.Helper()
+		commit, err := object.GetCommit(store, head)
+		if err != nil {
+			t.Fatal(err)
+		}
+		parent, err := commit.Parent(0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		from, err := parent.Tree()
+		if err != nil {
+			t.Fatal(err)
+		}
+		to, err := commit.Tree()
+		if err != nil {
+			t.Fatal(err)
+		}
+		name, _, err := renamedFrom(t.Context(), from, to, "new.txt")
+		return name, err
+	}
+	if _, err := search(); !errors.Is(err, errPastDeadline) {
+		t.Errorf("the rename search past the deadline: %v, want errPastDeadline", err)
+	}
+	store.deadline = time.Now().Add(time.Hour)
+	if name, err := search(); err != nil || name != "old.txt" {
+		t.Errorf("the rename search within its time found %q, %v, want old.txt", name, err)
 	}
 }
