@@ -89,6 +89,9 @@ type graph struct {
 	// up holds requires read the other way, once somebody has asked for it.
 	// See upward.
 	up *upward
+	// wide holds, for a package whose list outgrew wideList, the set of what
+	// it requires, so require can refuse a duplicate without a scan.
+	wide map[string]map[string]bool
 }
 
 // upward is what requires a package, each list sorted: the index every walk
