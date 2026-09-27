@@ -419,6 +419,24 @@ func TestDNSServersParsesResolvConf(t *testing.T) {
 	}
 }
 
+// net.overview reads resolv.conf on every call, and read it whole: a file
+// past what any resolv.conf holds is not one, and is read no further than
+// the cap net.resolver.list holds the same file to.
+func TestDNSServersReadsNoFurtherThanTheResolverCap(t *testing.T) {
+	fixture := filepath.Join(t.TempDir(), "resolv.conf")
+	body := strings.Repeat("#", maxResolvBytes) + "\nnameserver 192.0.2.53\n"
+	if err := os.WriteFile(fixture, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	orig := resolvConf
+	resolvConf = fixture
+	defer func() { resolvConf = orig }()
+
+	if got := dnsServers(); got != "unknown" {
+		t.Errorf("dnsServers() = %q, want unknown for a file past the cap", got)
+	}
+}
+
 // TestInfoIsWellFormed runs against the real host: shape only, values are
 // machine-dependent.
 func TestInfoIsWellFormed(t *testing.T) {
