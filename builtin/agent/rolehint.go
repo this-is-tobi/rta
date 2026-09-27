@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/this-is-tobi/rta/internal/consent"
+	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/role"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 )
@@ -74,8 +75,10 @@ func covering(lines []role.Line, r consent.Request) []string {
 }
 
 // covers is the role line's promise against one record of the call: the
-// capability or its plugin, that record if the line names one, the same
-// connection.
+// capability or its plugin, that record or the folder it is under if the
+// line names one, the same connection. The record is held to the line by
+// the grant matcher's own rule, since the line is offered as the grant it
+// issues: a folder covers what is under it, and never a climb out of it.
 func covers(l role.Line, r consent.Request, record string) bool {
 	if l.Target != r.Cap && l.Target != plugin.Namespace(r.Cap) {
 		return false
@@ -83,5 +86,5 @@ func covers(l role.Line, r consent.Request, record string) bool {
 	if strings.TrimSpace(l.Profile) != strings.TrimSpace(r.Profile) {
 		return false
 	}
-	return l.Scope == "" || l.Scope == record
+	return grant.ScopeCovers(l.Scope, record)
 }

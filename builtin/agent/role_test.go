@@ -167,6 +167,24 @@ func TestARoleCoversACallNamingSeveralRecordsLineByLine(t *testing.T) {
 	}
 }
 
+// A role line naming a folder covers a call on a record under it, as the
+// grant it issues would: `kv.get prod/` was held to the record "prod/"
+// exactly, so a call on prod/db was never offered the role that covers it.
+// By the gate's own folder rule, so the boundary is the gate's too: the
+// slash is the boundary, and a climb out of the folder is never covered.
+func TestAFolderRoleLineCoversACallOnARecordUnderIt(t *testing.T) {
+	configDir := roleSetup(t)
+	ownRole(t, configDir, "  dev:\n    grants:\n      - kv.get prod/\n")
+	if got := roleHint(plugin.SurfaceCLI, park(t, "kv.get", "prod/db")); !strings.HasPrefix(got, "line 1 of dev — ") {
+		t.Errorf("role hint for prod/db = %q, want dev's folder line offered", got)
+	}
+	for _, record := range []string{"production/x", "prod", "prod/../secret"} {
+		if got := roleHint(plugin.SurfaceCLI, park(t, "kv.get", record)); got != "" {
+			t.Errorf("a line on prod/ was offered for %q: %q", record, got)
+		}
+	}
+}
+
 // A parked call whose capability a role's line covers says so on its page,
 // and can be answered with the whole role: one passphrase for the day
 // instead of one --ttl answer per capability as the calls arrive.
