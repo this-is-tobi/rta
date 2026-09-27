@@ -6,10 +6,8 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/signal"
 	"runtime/debug"
 	"strings"
-	"syscall"
 
 	"charm.land/fang/v2"
 	"github.com/spf13/cobra"
@@ -118,8 +116,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
+	// SIGINT and SIGTERM cancel ctx, and a command that does not return
+	// within a short grace of that is exited without — see app.WatchSignals.
+	// Before the plugins load, since loading them is the first thing a
+	// signal can find running: one then cancels the load and waits for it,
+	// and the grace starts at Attach.
+	ctx, interrupts := app.WatchSignals(context.Background())
 
 	// External plugins, before the command tree is built: cobra materializes
 	// one command per capability, so a capability that arrives afterwards has
@@ -173,6 +175,7 @@ func main() {
 	app.SetThemeProblems(theme.Apply(cfg.Theme))
 
 	root := app.NewRoot(reg, buildVersion())
+	interrupts.Attach(root, host.CloseAll)
 
 	err = fang.Execute(ctx, root,
 		fang.WithVersion(buildVersion()),
@@ -180,6 +183,10 @@ func main() {
 		fang.WithErrorHandler(errorHandler(root)),
 	)
 
+	// The command returned on its own: no grace applies any more. It waits
+	// instead when an exit without the command is already under way, which
+	// then ends the process with the status the signal gave it.
+	interrupts.Stop()
 	// Explicitly, not deferred: os.Exit does not run deferred functions, so a
 	// defer here would leave a plugin subprocess behind on every single
 	// invocation of rta — including the ones that only printed help.
