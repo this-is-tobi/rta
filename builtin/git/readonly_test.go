@@ -118,7 +118,7 @@ func TestStatusDiffAndOverviewWriteNothingForAnUnclonedSubmodule(t *testing.T) {
 func TestTheRepositoryFilesystemRefusesEveryWrite(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "HEAD", "ref: refs/heads/main\n")
-	f := regularFiles{osfs.New(dir)}
+	f := regularFiles{Filesystem: osfs.New(dir), gitDir: true}
 	before := snapshot(t, dir)
 	for name, write := range map[string]func() error{
 		"create": func() error { _, err := f.Create("new"); return err },

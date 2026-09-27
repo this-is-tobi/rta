@@ -230,12 +230,12 @@ func openAt(req plugin.Request, root, path string) (*git.Repository, *view.Error
 		return view.Errorf("git.notarepo", "%s is not a git repository: %v", path, err).
 			WithHint("run this against a directory inside a git repository, a checkout's own root, or a bare repository's own directory")
 	}
-	var wt billy.Filesystem = regularFiles{osfs.New(root)}
-	dot := wt
+	var wt billy.Filesystem = regularFiles{Filesystem: osfs.New(root)}
+	var dot billy.Filesystem = regularFiles{Filesystem: osfs.New(root), gitDir: true}
 	info, err := wt.Stat(gitDirName)
 	switch {
 	case err == nil && info.IsDir():
-		if dot, err = wt.Chroot(gitDirName); err != nil {
+		if dot, err = dot.Chroot(gitDirName); err != nil {
 			return nil, notARepo(err)
 		}
 	case err == nil:
@@ -243,7 +243,7 @@ func openAt(req plugin.Request, root, path string) (*git.Repository, *view.Error
 		if err != nil {
 			return nil, notARepo(err)
 		}
-		dot = regularFiles{osfs.New(against(root, gitDir))}
+		dot = regularFiles{Filesystem: osfs.New(against(root, gitDir)), gitDir: true}
 	case errors.Is(err, iofs.ErrNotExist):
 		wt = nil
 	default:
@@ -269,13 +269,16 @@ func openAt(req plugin.Request, root, path string) (*git.Repository, *view.Error
 		if _, verr := req.Confine("path", dir); verr != nil {
 			return nil, verr
 		}
-		common = regularFiles{osfs.New(dir)}
+		common = regularFiles{Filesystem: osfs.New(dir), gitDir: true}
 		if _, err := common.Stat(""); err != nil {
 			return nil, notARepo(git.ErrRepositoryIncomplete)
 		}
 		objects = common
 	}
 	if verr := alternatesInBounds(req, objects); verr != nil {
+		return nil, verr
+	}
+	if verr := wholeFilesInBounds(dot, objects); verr != nil {
 		return nil, verr
 	}
 
@@ -383,10 +386,79 @@ func alternatesInBounds(req plugin.Request, fs billy.Filesystem) *view.Error {
 	return nil
 }
 
+// Most of each file this reads from a git directory that go-git reads whole,
+// or holds in memory whole once read, on every capability that opens the
+// repository: the config (config.ReadConfig reads it with io.ReadAll), the
+// index (every entry is decoded into memory before anything looks at one),
+// and packed-refs (every line becomes a reference when refs are listed).
+//
+// **Nothing bounded them, and they are files a caller can write.** A sparse
+// config of three gigabytes, which costs no disk, cost one git.config
+// 7.2 GiB of memory before it was stopped; an index whose header claimed two
+// billion entries over three sparse gigabytes cost one git.status 9.2 GiB;
+// 256 MiB of packed-refs cost git.branches 1.6 GiB. Each bound is measured
+// against the largest real repositories rather than guessed: Chromium's
+// index, half a million files, is 71 MiB, and decoding it costs 120 MiB;
+// the packed-refs of a kubernetes mirror carrying every pull request's two
+// refs would be 7.6 MiB; the largest config across the 75 repositories on
+// the machine this was written on is 466 KiB. HEAD and loose refs hold one
+// line, and go-git reads each whole as well, so they are held to what git
+// reads of a .git file (maxPointerBytes).
+const (
+	maxConfigBytes     = 4 << 20
+	maxIndexBytes      = 128 << 20
+	maxPackedRefsBytes = 64 << 20
+)
+
+// readLimit is the most this reads of name in a git directory, 0 for a file
+// with no bound of its own here.
+func readLimit(name string) int64 {
+	name = filepath.ToSlash(filepath.Clean(name))
+	switch {
+	case name == "config":
+		return maxConfigBytes
+	case name == "index":
+		return maxIndexBytes
+	case name == "packed-refs":
+		return maxPackedRefsBytes
+	case name == "HEAD" || strings.HasSuffix(name, "_HEAD") && !strings.Contains(name, "/"),
+		strings.HasPrefix(name, "refs/"):
+		return maxPointerBytes
+	}
+	return 0
+}
+
+// wholeFilesInBounds refuses a repository whose HEAD, index, config or
+// packed-refs is larger than this reads of one, before go-git reads any of
+// them: the refusal names the file, where the read it prevents would have
+// failed somewhere inside go-git as whatever capability was running, or not
+// failed at all. dot is the git directory, and shared the one its config and
+// packed-refs are kept in, the common directory of a linked worktree. The
+// open refuses the same files again (regularFiles), for one swapped in after
+// this looked.
+func wholeFilesInBounds(dot, shared billy.Filesystem) *view.Error {
+	for _, f := range []struct {
+		fs   billy.Filesystem
+		name string
+	}{{dot, "HEAD"}, {dot, "index"}, {shared, "config"}, {shared, "packed-refs"}} {
+		info, err := f.fs.Stat(f.name)
+		if err != nil {
+			continue //nolint:nilerr // no such file is nothing to bound, and one that cannot be opened is refused by the open, with its reason
+		}
+		if limit := readLimit(f.name); info.Size() > limit {
+			return view.Errorf("git.repository.toolarge", "%s is %s, larger than the %s this reads of it",
+				filepath.Join(f.fs.Root(), f.name), format.Bytes(info.Size()), format.Bytes(limit)).
+				WithHint("it is read whole on every call, and git writes none near this size")
+		}
+	}
+	return nil
+}
+
 // regularFiles is a filesystem that opens nothing for reading but a regular
 // file, and never waits to open one: the open is non-blocking, which a named
 // pipe honours and a file ignores, and what it reached is refused unless it
-// is a file.
+// is a file. In a git directory, a file go-git reads whole is also refused
+// past its bound (readLimit), and read no further than it.
 //
 // **And it writes nothing.** Every capability here reads, and go-git wrote
 // through this filesystem all the same: its status initialised a repository
@@ -394,7 +466,12 @@ func alternatesInBounds(req plugin.Request, fs billy.Filesystem) *view.Error {
 // cloned. The status no longer asks for one (submodulesOnDisk), and a write
 // anything else in go-git would make is refused here, failing the call that
 // made it rather than changing somebody's repository from a Read.
-type regularFiles struct{ billy.Filesystem }
+type regularFiles struct {
+	billy.Filesystem
+	// gitDir says this is a git directory, whose files readLimit bounds by
+	// name: a working tree's own config or index is somebody's file.
+	gitDir bool
+}
 
 // errNotAFile is why regularFiles refuses a pipe, a socket, a device or a
 // directory where a file was asked for, and errReadOnly why it refuses to
@@ -420,14 +497,58 @@ func (f regularFiles) OpenFile(name string, flag int, perm os.FileMode) (billy.F
 	// its own. The window between the two is what this leaves open — a pipe
 	// swapped in there is read non-blocking, and holds a call only while
 	// something else holds its other end open.
-	if info, err := f.Stat(name); err != nil || !info.Mode().IsRegular() {
+	info, err := f.Stat(name)
+	if err != nil || !info.Mode().IsRegular() {
 		_ = file.Close()
 		if err == nil {
 			err = errNotAFile
 		}
 		return nil, &iofs.PathError{Op: "open", Path: name, Err: err}
 	}
-	return file, nil
+	if !f.gitDir {
+		return file, nil
+	}
+	limit := readLimit(name)
+	if limit == 0 {
+		return file, nil
+	}
+	if info.Size() > limit {
+		_ = file.Close()
+		return nil, &iofs.PathError{Op: "open", Path: name, Err: tooLarge(limit)}
+	}
+	// And read no further than the bound, whatever the name leads to by the
+	// time it is read: the size above is the name's, not the open file's.
+	return &boundedFile{File: file, limit: limit}, nil
+}
+
+// tooLarge is why a file in a git directory past its bound is not read.
+func tooLarge(limit int64) error {
+	return fmt.Errorf("larger than the %s this reads of it", format.Bytes(limit))
+}
+
+// boundedFile is a file in a git directory that fails a read past limit
+// rather than hand go-git more of it.
+type boundedFile struct {
+	billy.File
+	limit, read int64
+}
+
+func (f *boundedFile) Read(p []byte) (int, error) {
+	if left := f.limit + 1 - f.read; int64(len(p)) > left {
+		p = p[:left]
+	}
+	n, err := f.File.Read(p)
+	if f.read += int64(n); f.read > f.limit {
+		return 0, &iofs.PathError{Op: "read", Path: f.Name(), Err: tooLarge(f.limit)}
+	}
+	return n, err
+}
+
+func (f *boundedFile) ReadAt(p []byte, off int64) (int, error) {
+	if off+int64(len(p)) > f.limit {
+		return 0, &iofs.PathError{Op: "read", Path: f.Name(), Err: tooLarge(f.limit)}
+	}
+	return f.File.ReadAt(p, off)
 }
 
 func (f regularFiles) Create(name string) (billy.File, error) {
@@ -459,7 +580,10 @@ func (f regularFiles) Chroot(path string) (billy.Filesystem, error) {
 	if err != nil {
 		return nil, err
 	}
-	return regularFiles{inner}, nil
+	// A git directory's subdirectory keeps the bounds: the one go-git opens
+	// this way is a submodule's repository under modules/, whose config and
+	// HEAD it reads as it reads the superproject's.
+	return regularFiles{Filesystem: inner, gitDir: f.gitDir}, nil
 }
 
 // against is p as git resolves it from dir: as it is when absolute, joined

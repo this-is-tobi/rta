@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	iofs "io/fs"
 	"os"
 	"path/filepath"
@@ -144,13 +145,18 @@ func machineConfigs() ([]scopedConfig, error) {
 		if err != nil {
 			return nil, err
 		}
+		// And held to the bound a repository's own config is held to, since
+		// go-git's reader takes the whole of it into memory first: a sparse
+		// file of gigabytes costs its writer no disk.
 		var cfg *gitconfig.Config
 		info, err := f.Stat()
 		switch {
 		case err == nil && !info.Mode().IsRegular():
 			err = errors.New("not a regular file")
+		case err == nil && info.Size() > maxConfigBytes:
+			err = tooLarge(maxConfigBytes)
 		case err == nil:
-			cfg, err = gitconfig.ReadConfig(f)
+			cfg, err = gitconfig.ReadConfig(io.LimitReader(f, info.Size()))
 		}
 		_ = f.Close()
 		if err != nil {
