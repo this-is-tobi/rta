@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 
 	"github.com/this-is-tobi/rta/internal/config"
@@ -108,6 +109,21 @@ func asNeeds(stored []string) []plugin.Need {
 	out := make([]plugin.Need, 0, len(stored))
 	for _, s := range stored {
 		if n := plugin.Need(s); plugin.KnownNeed(n) {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// declaredOnly is a stored grant narrowed to what the artifact itself
+// declared it needs — the only locations `rta plugin allow` ever offers, so
+// the only ones an operator can have agreed to. A location in the record
+// that the declaration does not name stays denied, which is asNeeds' safe
+// direction for the same reason: nobody asked for it.
+func declaredOnly(stored []string, declared []plugin.Need) []plugin.Need {
+	var out []plugin.Need
+	for _, n := range asNeeds(stored) {
+		if slices.Contains(declared, n) {
 			out = append(out, n)
 		}
 	}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"testing"
 )
@@ -569,6 +570,29 @@ func TestAllowingAnImageTrustedArtifactWritesTheOperatorsRecord(t *testing.T) {
 	}
 	if verr := Allow(digestB, []string{"kubeconfig"}); verr == nil || verr.Code != "plugin.allow.untrusted" {
 		t.Fatalf("allowing an artifact nobody trusted: %v, want plugin.allow.untrusted", verr)
+	}
+}
+
+// The image may trust an artifact and nothing more. A credential grant is
+// the operator's, for a file on their machine the image has never seen, and
+// an allow line in the system record answered it for every user of the image
+// at once — read by the sandbox as if the operator had typed it.
+func TestTheSystemRecordCannotCarryAnAllow(t *testing.T) {
+	isolated(t)
+	systemRecord(t, Entry{Digest: digestA, Name: "kube", Allow: []string{"kubeconfig", "ssh"}})
+	s := Load()
+	if !s.Trusts(digestA) {
+		t.Fatal("the image's trust was dropped with its allow")
+	}
+	if got := s.Allowed(digestA); len(got) != 0 {
+		t.Fatalf("Allowed = %v, want nothing the operator did not allow", got)
+	}
+	// And the operator's own grant starts from nothing, not from the image's.
+	if verr := Allow(digestA, []string{"kubeconfig"}); verr != nil {
+		t.Fatal(verr)
+	}
+	if got := Load().Allowed(digestA); !slices.Equal(got, []string{"kubeconfig"}) {
+		t.Fatalf("Allowed = %v, want only the operator's grant", got)
 	}
 }
 

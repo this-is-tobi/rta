@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -511,5 +512,39 @@ func TestAnEmptySystemRootIsNoRoot(t *testing.T) {
 	t.Setenv("RTA_SYSTEM_DIR", "")
 	if got := SystemBin(); got != "" {
 		t.Fatalf("SystemBin() = %q, want none", got)
+	}
+}
+
+// An allow in the record for a location the artifact never declared opens
+// nothing. hello declares no need at all, so a record allowing it kubeconfig
+// — written by hand, or by anything but `rta plugin allow`, which offers only
+// the declaration — leaves it as confined as every other plugin, and leaves
+// one process behind rather than a second, unconfined-for-kubeconfig one.
+func TestAnAllowTheArtifactNeverDeclaredRelaxesNothing(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Symlink(hello(t), filepath.Join(dir, BinaryName("hello"))); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	t.Setenv("PATH", dir)
+	trustHello(t)
+	id, err := Identify(hello(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verr := plugintrust.Allow(id.Digest, []string{string(plugin.NeedKubeconfig)}); verr != nil {
+		t.Fatal(verr)
+	}
+
+	h := New(nil)
+	t.Cleanup(h.CloseAll)
+	if problems := h.LoadInto(context.Background(), registry.New()); len(problems) != 0 {
+		t.Fatalf("loading: %v", problems)
+	}
+	loaded := h.Loaded()
+	if len(loaded) != 1 {
+		t.Fatalf("%d clients loaded, want the one", len(loaded))
+	}
+	if kube := Tier2Path(plugin.NeedKubeconfig); !slices.Contains(loaded[0].deny.NoRead, kube) {
+		t.Fatalf("%s is readable to a plugin that never declared it: NoRead = %v", kube, loaded[0].deny.NoRead)
 	}
 }

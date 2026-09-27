@@ -692,6 +692,46 @@ func TestMergedAllowWithNothingPreviouslyAllowed(t *testing.T) {
 	}
 }
 
+// A stored grant is read by what the plugin declared, as the sandbox reads
+// it. A record allowing ssh to a plugin that asks for kubeconfig opens
+// nothing, so plugin allow's table must not count it as the answer — the
+// length check it made said "ok" beside a denied kubeconfig — and a later
+// allow must not carry it forward into a record that names it as granted.
+func TestPluginAllowReadsAGrantByWhatThePluginDeclares(t *testing.T) {
+	run := session(t, registry.New())
+	digest := strings.Repeat("c", 64)
+	if verr := plugintrust.Add(digest, "lab", "/somewhere/rta-plugin-lab"); verr != nil {
+		t.Fatal(verr)
+	}
+	if verr := plugintrust.Allow(digest, []string{string(plugin.NeedSSH)}); verr != nil {
+		t.Fatal(verr)
+	}
+	SetLoadedPlugins([]*pluginhost.Client{{
+		Identity: pluginhost.Identity{Path: "/somewhere/rta-plugin-lab", Digest: digest},
+		Declared: plugin.Plugin{
+			Name: "lab", Summary: "a lab plugin",
+			Capabilities: []plugin.Capability{{ID: "lab.get", Safety: plugin.Read}},
+			Needs:        []plugin.Need{plugin.NeedKubeconfig},
+		},
+	}})
+	t.Cleanup(func() { SetLoadedPlugins(nil) })
+
+	tbl, ok := needsInventory().(view.Table)
+	if !ok || len(tbl.Rows) != 1 {
+		t.Fatalf("needsInventory = %#v, want the one row", needsInventory())
+	}
+	if got := tbl.Rows[0][2]; got != "warn" {
+		t.Errorf("status = %q for a plugin whose kubeconfig is denied, want warn", got)
+	}
+
+	if _, errOut, err := run("plugin", "allow", "lab"); err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	if got := plugintrust.Load().Allowed(digest); !slices.Equal(got, []string{string(plugin.NeedKubeconfig)}) {
+		t.Fatalf("Allowed = %v, want the declared kubeconfig and nothing the record carried", got)
+	}
+}
+
 // D3: --dry-run used to be silently ignored by every hand-written plugin
 // command — `rta plugin trust weather --dry-run` trusted it for real.
 func TestPluginTrustDryRunDoesNotTrust(t *testing.T) {

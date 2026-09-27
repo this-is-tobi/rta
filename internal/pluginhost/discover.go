@@ -302,6 +302,11 @@ func (h *Host) LoadInto(ctx context.Context, reg *registry.Registry) []error {
 			problems = append(problems, fmt.Errorf("plugin %s: %w", f.Name, denyErr))
 			continue
 		}
+		c, err := h.openIdentified(ctx, id, deny, nil)
+		if err != nil {
+			problems = append(problems, fmt.Errorf("plugin %s: %w", f.Name, err))
+			continue
+		}
 		// This artifact's own profile, when somebody has allowed it a
 		// credential location the rest of the machine's plugins are denied.
 		//
@@ -310,19 +315,29 @@ func (h *Host) LoadInto(ctx context.Context, reg *registry.Registry) []error {
 		// per artifact rather than once for the sweep because the answer is
 		// per artifact — and only when there is a grant, so the ordinary
 		// plugin costs nothing.
-		mine := deny
-		if allowed := trusted.Allowed(id.Digest); len(allowed) > 0 {
-			relaxed, err := ResolveAllowing(asNeeds(allowed))
+		//
+		// **Only what the artifact declared**, and so read after its
+		// declaration rather than before it. `rta plugin allow` offers the
+		// declared locations and no others, which is the whole of what an
+		// operator ever agreed to — but the record is a file, and whatever
+		// it holds was subtracted from the deny set as it stood: an allow
+		// line naming ssh for a plugin that declared only kubeconfig, or one
+		// that declared nothing, opened ~/.ssh to it with nothing on any
+		// surface saying so, since every surface lists the declaration. The
+		// declaration comes from the cache when there is one, and otherwise
+		// from a process launched under the full deny set, which is closed
+		// here rather than left beside the relaxed one it is replaced by.
+		if granted := declaredOnly(trusted.Allowed(id.Digest), c.Declared.Needs); len(granted) > 0 {
+			c.Close()
+			h.forget(c)
+			relaxed, err := ResolveAllowing(granted)
+			if err == nil {
+				c, err = h.openIdentified(ctx, id, relaxed, nil)
+			}
 			if err != nil {
 				problems = append(problems, fmt.Errorf("plugin %s: %w", f.Name, err))
 				continue
 			}
-			mine = relaxed
-		}
-		c, err := h.openIdentified(ctx, id, mine, nil)
-		if err != nil {
-			problems = append(problems, fmt.Errorf("plugin %s: %w", f.Name, err))
-			continue
 		}
 		if registered[c] {
 			// Same artifact under a second name. Not a collision between two
