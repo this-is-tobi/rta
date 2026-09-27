@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/this-is-tobi/rta/builtin/internal/pathin"
 	"github.com/this-is-tobi/rta/builtin/internal/x509check"
 	"github.com/this-is-tobi/rta/internal/atomicfile"
 	"github.com/this-is-tobi/rta/internal/pathguard"
@@ -196,9 +197,12 @@ func dialTimeout(req plugin.Request) time.Duration {
 // The file branch is for the capabilities that declare a Path input and are
 // therefore confined at the MCP boundary. Anything whose target is
 // a host must call dialCerts instead — see expiryRow.
-func loadCerts(ctx context.Context, target string, timeout time.Duration) ([]*x509.Certificate, *tls.ConnectionState, error) {
+//
+// sf is the surface asking, which decides whether the file may be a stream
+// (pathin.Open).
+func loadCerts(ctx context.Context, sf plugin.Surface, target string, timeout time.Duration) ([]*x509.Certificate, *tls.ConnectionState, error) {
 	if _, err := os.Stat(target); err == nil {
-		certs, err := readPEM(target)
+		certs, err := readPEM(sf, target)
 		return certs, nil, err
 	}
 	return dialCerts(ctx, target, timeout)
@@ -243,9 +247,27 @@ func dialCerts(ctx context.Context, target string, timeout time.Duration) ([]*x5
 	return state.PeerCertificates, &state, nil
 }
 
-func readPEM(path string) ([]*x509.Certificate, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
+// maxPEMBytes is more than any certificate file anybody keeps: the system
+// trust stores are a few hundred kilobytes, and a bundle of a thousand
+// certificates is under two megabytes. A file past it is not a certificate
+// file, and reading it whole was the server's memory spent on the caller's
+// say-so (pathin).
+const maxPEMBytes = 16 << 20
+
+// readPEM reads a PEM file as one chain. sf is the surface asking, for
+// pathin.Read's line on what a path may name.
+func readPEM(sf plugin.Surface, path string) ([]*x509.Certificate, error) {
+	data, err := pathin.Read(sf, path, maxPEMBytes)
+	var notAFile *pathin.NotAFileError
+	var tooLarge *pathin.TooLargeError
+	switch {
+	case errors.As(err, &notAFile):
+		return nil, view.Errorf("cert.file.notafile", "%v", err).
+			WithHint("name a PEM file, or a host to fetch the chain from")
+	case errors.As(err, &tooLarge):
+		return nil, view.Errorf("cert.file.toolarge", "%v, more than any certificate file holds", err).
+			WithHint("name the PEM file itself — a certificate bundle is kilobytes")
+	case err != nil:
 		return nil, view.Errorf("cert.file.unreadable", "reading %s: %v", path, err)
 	}
 	var certs []*x509.Certificate
@@ -432,7 +454,7 @@ func hostOf(target string) string {
 
 func runInspect(ctx context.Context, req plugin.Request) (view.View, error) {
 	target := req.String("target")
-	certs, _, err := loadCerts(ctx, target, dialTimeout(req))
+	certs, _, err := loadCerts(ctx, req.Surface(), target, dialTimeout(req))
 	if err != nil {
 		return nil, err
 	}
@@ -456,7 +478,7 @@ func runInspect(ctx context.Context, req plugin.Request) (view.View, error) {
 }
 
 func runChain(ctx context.Context, req plugin.Request) (view.View, error) {
-	certs, _, err := loadCerts(ctx, req.String("target"), dialTimeout(req))
+	certs, _, err := loadCerts(ctx, req.Surface(), req.String("target"), dialTimeout(req))
 	if err != nil {
 		return nil, err
 	}
@@ -481,7 +503,7 @@ func runChain(ctx context.Context, req plugin.Request) (view.View, error) {
 // tool on the machine accepts one in.
 func runPEM(ctx context.Context, req plugin.Request) (view.View, error) {
 	target := req.String("target")
-	certs, _, err := loadCerts(ctx, target, dialTimeout(req))
+	certs, _, err := loadCerts(ctx, req.Surface(), target, dialTimeout(req))
 	if err != nil {
 		return nil, err
 	}
@@ -644,7 +666,7 @@ func expiryRow(ctx context.Context, target string, warnDays int, timeout time.Du
 
 func runTLS(ctx context.Context, req plugin.Request) (view.View, error) {
 	target := req.String("target")
-	_, state, err := loadCerts(ctx, target, dialTimeout(req))
+	_, state, err := loadCerts(ctx, req.Surface(), target, dialTimeout(req))
 	if err != nil {
 		return nil, err
 	}
