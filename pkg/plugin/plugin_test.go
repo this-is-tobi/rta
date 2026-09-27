@@ -742,6 +742,60 @@ func TestConfigIsRefusedOnAPositionalInput(t *testing.T) {
 	}
 }
 
+// The command line takes the required arguments first, then the optional
+// ones, and a list takes every argument after it — so a list has to be the
+// last the command line takes. One with an argument after it loaded: the
+// usage line showed the later slot, and nothing typed ever reached it.
+func TestAListArgumentIsTheLastTheCommandLineTakes(t *testing.T) {
+	names := []string{"a", "b"}
+	for _, inputs := range [][]Field{
+		{{Name: "a", Type: StringSlice, Required: true}, {Name: "b", Type: String}},
+		{{Name: "b", Type: String}, {Name: "a", Type: StringSlice, Required: true}},
+		{{Name: "a", Type: StringSlice}, {Name: "b", Type: String}},
+		{{Name: "a", Type: StringSlice, Required: true}, {Name: "b", Type: String, Required: true}},
+	} {
+		c := capabilityWithArguments(inputs)
+		if err := (Plugin{Name: "demo", Summary: "d", Capabilities: []Capability{c}}).Validate(); err == nil ||
+			!strings.Contains(err.Error(), "takes every argument after it") {
+			t.Errorf("%v: err = %v, want the list refused before the argument after it", argumentOrder(c), err)
+		}
+	}
+	for _, inputs := range [][]Field{
+		{{Name: "a", Type: String, Required: true}, {Name: "b", Type: StringSlice, Required: true}},
+		{{Name: "a", Type: String, Required: true}, {Name: "b", Type: StringSlice}},
+		{{Name: "b", Type: StringSlice}, {Name: "a", Type: String, Required: true}},
+	} {
+		c := capabilityWithArguments(inputs)
+		if err := (Plugin{Name: "demo", Summary: "d", Capabilities: []Capability{c}}).Validate(); err != nil {
+			t.Errorf("%v: %v", argumentOrder(c), err)
+		}
+	}
+	// And the order itself: required before optional, each as declared.
+	c := capabilityWithArguments([]Field{
+		{Name: "b", Type: String}, {Name: "a", Type: String, Required: true}, {Name: "flag", Type: String},
+	})
+	c.Inputs[2].Positional = false
+	if got := argumentOrder(c); !slices.Equal(got, names) {
+		t.Errorf("Arguments = %v, want %v", got, names)
+	}
+}
+
+func capabilityWithArguments(inputs []Field) Capability {
+	for i := range inputs {
+		inputs[i].Positional, inputs[i].Help = true, "h"
+	}
+	return Capability{ID: "demo.run", Summary: "run", Safety: Read, Inputs: inputs,
+		Run: func(context.Context, Request) (view.View, error) { return nil, nil }}
+}
+
+func argumentOrder(c Capability) []string {
+	var out []string
+	for _, f := range c.Arguments() {
+		out = append(out, f.Name)
+	}
+	return out
+}
+
 // The key grammar is closed: no leading dot, no empty segment, nothing that
 // could be read as a filesystem path by whatever looks at it next.
 func TestTheConfigKeyGrammarIsClosed(t *testing.T) {
