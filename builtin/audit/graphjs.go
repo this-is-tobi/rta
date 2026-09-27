@@ -19,6 +19,8 @@ import (
 // for a lockfile format npm stopped writing in 2020.
 type npmLockGraphFile struct {
 	Packages map[string]struct {
+		// Name is written only for a copy an alias installed; see npmAlias.
+		Name                 string                     `json:"name"`
 		Version              string                     `json:"version"`
 		Dependencies         map[string]json.RawMessage `json:"dependencies"`
 		DevDependencies      map[string]json.RawMessage `json:"devDependencies"`
@@ -51,42 +53,77 @@ func npmLockGraph(data []byte) graph {
 	// and 11.1.0 at `packages/toolkit/node_modules/commander`.
 	type declaration struct{ from, name string }
 	var declared []declaration
-	// Every installed copy by its path, for the resolution walk below.
+	// Every installed copy by its path — the package installed there, and
+	// its version — for the resolution walks below.
+	//
+	// The package, not the path's last segment: an alias installs lodash at
+	// node_modules/old-lodash, and every declaration and edge naming
+	// old-lodash means that copy of lodash. Named by the path, the graph held
+	// a package the inventory — which reads the entry's name — never lists,
+	// and `audit why lodash` found no route to the copy it reported.
+	packageAt := map[string]string{}
 	installedAt := map[string]string{}
+	aliased := map[string]bool{} // a name some copy is installed under that is not its own
 	for path, pkg := range lock.Packages {
 		name, installed := npmPackageName(path)
 		// A `link: true` entry is a symlink into a workspace, not an installed
 		// copy: npm writes `node_modules/@acme/app` pointing at `packages/app`.
 		// Counted as installed it landed in `all`, so stateIndirect marked the
 		// project's own workspace package "indirect".
-		if pkg.Link {
+		if pkg.Link || !installed {
 			continue
 		}
-		if installed {
-			all = append(all, ref("npm", name))
-			// Only a real version. An entry that records none — npm writes one
-			// for a link, a bundled dependency, or a resolution it could not
-			// pin — would otherwise resolve *successfully* to the empty string,
-			// and pin() then marks the name pinned while leaving directAt
-			// empty, so relation takes the pinned branch, matches nothing, and
-			// answers "indirect" for a package the root package.json names.
-			// Every sibling parser already refuses an empty version here.
-			if pkg.Version != "" {
-				installedAt[path] = pkg.Version
-			}
+		if pkg.Name != "" && pkg.Name != name {
+			aliased[name] = true
+			name = pkg.Name
+		}
+		packageAt[path] = name
+		all = append(all, ref("npm", name))
+		// Only a real version. An entry that records none — npm writes one
+		// for a link, a bundled dependency, or a resolution it could not pin
+		// — would otherwise resolve *successfully* to the empty string, and
+		// pin() then marks the name pinned while leaving directAt empty, so
+		// relation takes the pinned branch, matches nothing, and answers
+		// "indirect" for a package the root package.json names. Every sibling
+		// parser already refuses an empty version here.
+		if pkg.Version != "" {
+			installedAt[path] = pkg.Version
+		}
+	}
+	walk := npmWalk{left: npmWalkBudget}
+	// The package a dependency called dep, declared at from, loads: the one
+	// installed where Node finds it. Walked only for a name an alias uses —
+	// every other name is the package it names, and a walk per edge is a
+	// cost the budget is better kept for.
+	packageFor := func(from, dep string) string {
+		if !aliased[dep] {
+			return dep
+		}
+		if at, ok := walk.resolve(packageAt, from, dep); ok {
+			return packageAt[at]
+		}
+		return dep
+	}
+	for path, pkg := range lock.Packages {
+		if pkg.Link {
+			continue
 		}
 		// The root entry ("") and each workspace entry (a path with no
 		// node_modules segment) name what somebody wrote in a package.json,
 		// which is the definition of a direct dependency.
-		if !installed {
+		if _, installed := npmPackageName(path); !installed {
 			for _, set := range []map[string]json.RawMessage{
 				pkg.Dependencies, pkg.DevDependencies, pkg.OptionalDependencies,
 			} {
 				for dep := range set {
-					g.direct[ref("npm", dep)] = true
+					g.direct[ref("npm", packageFor(path, dep))] = true
 					declared = append(declared, declaration{from: path, name: dep})
 				}
 			}
+			continue
+		}
+		name, ok := packageAt[path]
+		if !ok {
 			continue
 		}
 		// devDependencies of an installed package are not installed, so they
@@ -97,16 +134,15 @@ func npmLockGraph(data []byte) graph {
 			pkg.Dependencies, pkg.OptionalDependencies, pkg.PeerDependencies,
 		} {
 			for dep := range set {
-				g.require(ref("npm", name), ref("npm", dep))
+				g.require(ref("npm", name), ref("npm", packageFor(path, dep)))
 			}
 		}
 	}
 	a := newAsked()
-	walk := npmWalk{left: npmWalkBudget}
 	for _, d := range declared {
-		r := ref("npm", d.name)
-		if version, ok := walk.resolve(installedAt, d.from, d.name); ok {
-			a.found(r, version)
+		r := ref("npm", packageFor(d.from, d.name))
+		if at, ok := walk.resolve(installedAt, d.from, d.name); ok {
+			a.found(r, installedAt[at])
 		} else {
 			a.missing(r)
 		}
@@ -143,8 +179,10 @@ const npmWalkBudget = 32 << 20
 // resolve finds the copy one manifest's declaration resolved to, by walking
 // Node's own lookup: the nearest node_modules holding the name, starting beside
 // the manifest that declared it and rising to the root. `from` is the
-// manifest's own key — "" for the root, "packages/app" for a workspace.
-func (w *npmWalk) resolve(installedAt map[string]string, from, name string) (string, bool) {
+// manifest's own key — "" for the root, "packages/app" for a workspace, an
+// installed copy's path for what it requires. It returns the copy's key in
+// installed.
+func (w *npmWalk) resolve(installed map[string]string, from, name string) (string, bool) {
 	for dir := from; ; {
 		// Counted before it is built, so the step that would overspend costs
 		// nothing.
@@ -158,8 +196,8 @@ func (w *npmWalk) resolve(installedAt map[string]string, from, name string) (str
 		if dir != "" {
 			key = dir + "/" + key
 		}
-		if version, ok := installedAt[key]; ok {
-			return version, true
+		if _, ok := installed[key]; ok {
+			return key, true
 		}
 		if dir == "" {
 			return "", false
@@ -210,6 +248,23 @@ func pnpmGraph(text string) graph {
 	block, entry, inDeps := none, "", false
 	importing := ""
 	var all []string
+	// resolved pins the dependency being read to the version val says
+	// satisfied it. Under an alias val names the package as well —
+	// `string-width@4.2.3` for a string-width-cjs — and that package is the
+	// one the project asked for, so it takes the mark and the pin. The alias
+	// keeps its mark too: nothing is installed under it, so it relates
+	// nothing.
+	resolved := func(val string) {
+		if c, ok := pnpmAlias(val); ok {
+			importing = ref("npm", c.name)
+			g.direct[importing] = true
+			g.pin(importing, c.version)
+			return
+		}
+		if v := pnpmVersion(val); v != "" {
+			g.pin(importing, v)
+		}
+	}
 
 	for _, raw := range strings.Split(text, "\n") {
 		if strings.TrimSpace(raw) == "" || strings.HasPrefix(strings.TrimSpace(raw), "#") {
@@ -254,9 +309,7 @@ func pnpmGraph(text string) graph {
 				}
 				importing = ref("npm", name)
 				g.direct[importing] = true
-				if v := pnpmVersion(val); v != "" {
-					g.pin(importing, v)
-				}
+				resolved(val)
 				continue
 			}
 			if block == importers {
@@ -278,9 +331,7 @@ func pnpmGraph(text string) graph {
 				}
 				key, val, ok := strings.Cut(strings.TrimSpace(raw), ":")
 				if ok && strings.TrimSpace(key) == "version" {
-					if v := pnpmVersion(val); v != "" {
-						g.pin(importing, v)
-					}
+					resolved(val)
 				}
 				continue
 			}
@@ -298,7 +349,7 @@ func pnpmGraph(text string) graph {
 			if !inDeps || entry == "" {
 				continue
 			}
-			name, _, ok := strings.Cut(strings.TrimSpace(raw), ":")
+			name, val, ok := strings.Cut(strings.TrimSpace(raw), ":")
 			if !ok {
 				continue
 			}
@@ -308,9 +359,14 @@ func pnpmGraph(text string) graph {
 			}
 			if block == importers {
 				g.direct[ref("npm", name)] = true
-				// Held so the `version:` line two below can pin it.
+				// Held so the `version:` line two below can pin it. v5 writes
+				// the version here instead.
 				importing = ref("npm", name)
+				resolved(val)
 			} else {
+				if c, ok := pnpmAlias(val); ok {
+					name = c.name
+				}
 				g.require(entry, ref("npm", name))
 			}
 		case 8:
@@ -325,9 +381,7 @@ func pnpmGraph(text string) graph {
 			if !ok || strings.TrimSpace(key) != "version" {
 				continue
 			}
-			if v := pnpmVersion(val); v != "" {
-				g.pin(importing, v)
-			}
+			resolved(val)
 		}
 	}
 	// Only a block that states the direct set makes it exhaustive. A lockfile
@@ -358,6 +412,18 @@ func pnpmVersion(val string) string {
 		v = v[:i]
 	}
 	return v
+}
+
+// pnpmAlias reads the package a pnpm dependency's value names, which it does
+// only for a copy an alias installed: `string-width@4.2.3` in v9,
+// `/string-width@4.2.3` in v6, `/string-width/4.2.3` in v5, where any other
+// dependency's value is its version alone — which starts with a digit.
+func pnpmAlias(val string) (component, bool) {
+	v := strings.Trim(strings.TrimSpace(val), `'"`)
+	if v == "" || v[0] >= '0' && v[0] <= '9' {
+		return component{}, false
+	}
+	return pnpmComponent(v, "")
 }
 
 // yarnGraph reads the `dependencies:` sub-block both yarn dialects write
@@ -414,6 +480,9 @@ func yarnGraph(text string) graph {
 				entry, workspace = name, true
 				continue
 			}
+			if real, _, ok := npmAlias(spec[at+1:]); ok {
+				name = real
+			}
 			entry = ref("npm", name)
 			all = append(all, entry)
 			continue
@@ -444,26 +513,33 @@ func yarnGraph(text string) graph {
 			// `qs "6.7.0"` (v1) or `qs: "npm:6.7.0"` (berry). The name is
 			// everything before the first colon-or-space that is not part of a
 			// scope, and a scope's @ is at position zero.
-			name := trimmed
+			name, value := trimmed, ""
 			if i := strings.IndexAny(name[1:], ": "); i >= 0 {
-				name = name[:i+1]
+				name, value = name[:i+1], name[i+1:]
 			}
 			name = strings.Trim(strings.TrimSuffix(name, ":"), `'"`)
 			if name == "" {
 				continue
 			}
+			// Under an alias, `string-width-cjs "npm:string-width@^4.2.0"`,
+			// the package required is the one the value names.
+			pkg := name
+			if real, _, ok := npmAlias(strings.TrimPrefix(value, ":")); ok {
+				pkg = real
+			}
 			if workspace {
-				g.direct[ref("npm", name)] = true
+				g.direct[ref("npm", pkg)] = true
 				// The range this workspace asked for, verbatim, so the entry
-				// that answers it can be found below.
+				// that answers it can be found below — keyed as the entry is,
+				// by the name asked for.
 				if _, rng, ok := strings.Cut(trimmed, ":"); ok {
 					rng = strings.Trim(strings.TrimSpace(rng), `'"`)
 					if rng != "" {
-						wantedSpec[name+"@"+rng] = name
+						wantedSpec[name+"@"+rng] = pkg
 					}
 				}
 			} else {
-				g.require(entry, ref("npm", name))
+				g.require(entry, ref("npm", pkg))
 			}
 		}
 	}
@@ -502,7 +578,10 @@ func bunGraph(data []byte) graph {
 	// Recorded against the workspace that asked, for the reason npmLockGraph
 	// gives at length: one copy is hoisted and the rest are nested, so the
 	// hoisted one is not necessarily the one any given workspace asked for.
-	type declaration struct{ owner, name string }
+	// name is the key the declaration is made under, which is the key bun
+	// installs it under too; pkg is the package it names, which differs from
+	// it under an alias.
+	type declaration struct{ owner, name, pkg string }
 	var declared []declaration
 	for path, ws := range lock.Workspaces {
 		// The root workspace's copies are the hoisted ones — bun writes them
@@ -516,9 +595,10 @@ func bunGraph(data []byte) graph {
 		for _, set := range []map[string]json.RawMessage{
 			ws.Dependencies, ws.DevDependencies, ws.OptionalDependencies,
 		} {
-			for dep := range set {
-				g.direct[ref("npm", dep)] = true
-				declared = append(declared, declaration{owner: owner, name: dep})
+			for dep, rng := range set {
+				pkg := bunDependency(dep, rng)
+				g.direct[ref("npm", pkg)] = true
+				declared = append(declared, declaration{owner: owner, name: dep, pkg: pkg})
 			}
 		}
 	}
@@ -533,14 +613,9 @@ func bunGraph(data []byte) graph {
 		if err := json.Unmarshal(entry[0], &spec); err != nil {
 			continue
 		}
-		at := strings.LastIndexByte(spec, '@')
-		if at <= 0 {
-			continue
-		}
-		name := spec[:at]
-		version := spec[at+1:]
-		if !isVersionish(version) {
-			continue // a workspace or an aliased resolution, not a package
+		name, version, ok := bunSpec(spec)
+		if !ok || !isVersionish(version) {
+			continue // a workspace, not a package
 		}
 		from := ref("npm", name)
 		all = append(all, from)
@@ -559,14 +634,14 @@ func bunGraph(data []byte) graph {
 		for _, set := range []map[string]json.RawMessage{
 			meta.Dependencies, meta.OptionalDependencies, meta.PeerDependencies,
 		} {
-			for dep := range set {
-				g.require(from, ref("npm", dep))
+			for dep, rng := range set {
+				g.require(from, ref("npm", bunDependency(dep, rng)))
 			}
 		}
 	}
 	a := newAsked()
 	for _, d := range declared {
-		r := ref("npm", d.name)
+		r := ref("npm", d.pkg)
 		if version, ok := bunResolve(installedAt, d.owner, d.name); ok {
 			a.found(r, version)
 		} else {
@@ -578,6 +653,19 @@ func bunGraph(data []byte) graph {
 		g.stateIndirect(all)
 	}
 	return g
+}
+
+// bunDependency is the package a bun.lock dependency map names under key
+// dep: dep itself, or under an alias the package its range names —
+// `"string-width-cjs": "npm:string-width@^4.2.0"`.
+func bunDependency(dep string, rng json.RawMessage) string {
+	var s string
+	if json.Unmarshal(rng, &s) == nil {
+		if real, _, ok := npmAlias(s); ok {
+			return real
+		}
+	}
+	return dep
 }
 
 // bunResolve finds the copy one workspace's declaration resolved to.

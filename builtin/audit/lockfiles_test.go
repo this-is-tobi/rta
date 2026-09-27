@@ -126,6 +126,65 @@ lodash@^4.17.21:
 	want(t, parseYarnLock(berry, "y"), "npm", "lodash@4.17.21")
 }
 
+// An aliased dependency — `"old-lodash": "npm:lodash@4.17.15"`, or the
+// string-width-cjs that @isaacs/cliui pulls into most npm trees — is
+// installed under the alias and is the real package. OSV was asked about
+// npm/old-lodash, which does not exist, so a vulnerable lodash read clean.
+func TestAnAliasedDependencyIsReadAsThePackageItIs(t *testing.T) {
+	lockV3 := []byte(`{
+	  "lockfileVersion": 3,
+	  "packages": {
+	    "": {"name": "root", "dependencies": {"old-lodash": "npm:lodash@4.17.15"}},
+	    "node_modules/old-lodash": {"name": "lodash", "version": "4.17.15"},
+	    "node_modules/string-width-cjs": {"name": "string-width", "version": "4.2.3"},
+	    "node_modules/string-width": {"version": "5.1.2"}
+	  }
+	}`)
+	got, err := parsePackageLock(lockV3, "package-lock.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want(t, got, "npm", "lodash@4.17.15", "string-width@4.2.3", "string-width@5.1.2")
+
+	lockV1 := []byte(`{"lockfileVersion": 1, "dependencies": {
+	  "old-lodash": {"version": "npm:lodash@4.17.15"},
+	  "minimist": {"version": "1.2.5"}
+	}}`)
+	got, err = parsePackageLock(lockV1, "package-lock.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want(t, got, "npm", "lodash@4.17.15", "minimist@1.2.5")
+
+	yarnV1 := `"old-lodash@npm:lodash@4.17.15":
+  version "4.17.15"
+  resolved "https://registry.yarnpkg.com/lodash/-/lodash-4.17.15.tgz"
+
+"@scoped/alias@npm:@babel/core@7.0.0":
+  version "7.0.0"
+`
+	want(t, parseYarnLock(yarnV1, "y"), "npm", "lodash@4.17.15", "@babel/core@7.0.0")
+
+	berry := `"old-lodash@npm:lodash@4.17.15":
+  version: 4.17.15
+  resolution: "lodash@npm:4.17.15"
+`
+	want(t, parseYarnLock(berry, "y"), "npm", "lodash@4.17.15")
+
+	bun := []byte(`{
+	  "lockfileVersion": 1,
+	  "packages": {
+	    "old-lodash": ["lodash@4.17.15", "", {}, "sha512-abc"],
+	    "other-alias": ["other-alias@npm:minimist@1.2.5", "", {}, "sha512-def"]
+	  }
+	}`)
+	got, err = parseBunLock(bun, "b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want(t, got, "npm", "lodash@4.17.15", "minimist@1.2.5")
+}
+
 // bun writes JSONC, which encoding/json rejects outright rather than
 // tolerating — so without the strip the whole file reads as zero dependencies.
 func TestParseBunLockReadsJSONC(t *testing.T) {

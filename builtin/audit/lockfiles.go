@@ -95,6 +95,32 @@ func pnpmComponent(key, source string) (component, bool) {
 	return component{ecosystem: "npm", name: name, version: version, source: source}, true
 }
 
+// npmAlias reads the package an npm alias installs: the range half of
+// `old-lodash@npm:lodash@4.17.15` — a yarn.lock key, or the value a
+// package.json, a package-lock v1 entry or a lockfile's dependency line gives
+// the alias — is `npm:` and then the real package's own spec. It returns that
+// package and the range or version after it.
+//
+// **An alias is the package it names**, installed under another name, and the
+// package is what OSV answers about: asked about npm/old-lodash, which does
+// not exist, it has no advisory, and a vulnerable lodash read clean. Aliases
+// are not exotic — @isaacs/cliui pulls string-width-cjs, strip-ansi-cjs and
+// wrap-ansi-cjs into most npm trees.
+//
+// `npm:^4.17.1`, Berry's spelling of a plain range, names no package and is
+// not one.
+func npmAlias(rng string) (name, version string, ok bool) {
+	rest, ok := strings.CutPrefix(strings.Trim(strings.TrimSpace(rng), `'"`), "npm:")
+	if !ok {
+		return "", "", false
+	}
+	at := specSeparator(rest)
+	if at <= 0 {
+		return "", "", false
+	}
+	return rest[:at], rest[at+1:], true
+}
+
 // parseYarnLock handles both yarn lockfile dialects with one scanner,
 // because structurally they are the same file: a spec line at column zero,
 // then an indented `version` for it. Only the punctuation differs —
@@ -138,6 +164,9 @@ func parseYarnLock(text, source string) []component {
 				continue // the project's own package, not a dependency
 			}
 			name = spec[:at]
+			if real, _, ok := npmAlias(spec[at+1:]); ok {
+				name = real
+			}
 			continue
 		}
 		if name == "" || !strings.HasPrefix(trimmed, "version") {
@@ -289,19 +318,32 @@ func parseBunLock(data []byte, source string) ([]component, error) {
 		if err := json.Unmarshal(entry[0], &spec); err != nil {
 			continue
 		}
-		at := strings.LastIndexByte(spec, '@')
-		if at <= 0 {
-			continue
-		}
-		name, version := spec[:at], spec[at+1:]
-		// "workspace:packages/api" and "npm:foo@1.0.0" are resolutions, not
-		// versions; only the first is a package this project publishes.
-		if !isVersionish(version) {
+		name, version, ok := bunSpec(spec)
+		// "workspace:packages/api" is a resolution, not a version: a package
+		// this project publishes.
+		if !ok || !isVersionish(version) {
 			continue
 		}
 		out = append(out, component{ecosystem: "npm", name: name, version: version, source: source})
 	}
 	return out, nil
+}
+
+// bunSpec reads the package a bun.lock entry resolved, `lodash@4.17.21`, into
+// its name and version — the aliased package's own, for an entry an alias
+// installed (`old-lodash@npm:lodash@4.17.15`; see npmAlias).
+//
+// Split at the first @ after a scope, as specSeparator splits a yarn key: the
+// last @ read that alias as a package named "old-lodash@npm:lodash".
+func bunSpec(spec string) (name, version string, ok bool) {
+	at := specSeparator(spec)
+	if at <= 0 {
+		return "", "", false
+	}
+	if real, v, ok := npmAlias(spec[at+1:]); ok {
+		return real, v, true
+	}
+	return spec[:at], spec[at+1:], true
 }
 
 // stripJSONC removes what JSONC allows and JSON does not — line comments,
