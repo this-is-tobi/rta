@@ -32,12 +32,21 @@ require github.com/single/dep v0.1.0
 replace github.com/example/other => ../other
 
 exclude github.com/bad/one v6.6.6
+
+exclude (
+	github.com/bad/two v1.0.0
+)
+
+require(
+	github.com/tight/dep v0.2.0
+)
 `, "go.mod")
 
 	want := map[string]string{
 		"github.com/spf13/cobra": "v1.10.2",
 		"golang.org/x/crypto":    "v0.53.0",
 		"github.com/single/dep":  "v0.1.0",
+		"github.com/tight/dep":   "v0.2.0",
 	}
 	if len(got) != len(want) {
 		t.Fatalf("read %d requirements, want %d: %+v", len(got), len(want), got)
@@ -50,13 +59,67 @@ exclude github.com/bad/one v6.6.6
 			t.Errorf("%s: version %q, want %q", c.name, c.version, want[c.name])
 		}
 	}
-	// replace and exclude name versions that are not what the build uses;
-	// reporting them would put a version the project does not run into a
-	// security report.
+	// An exclude names a version the build does not use, and a replace of a
+	// module nothing requires names nothing the build uses either; reporting
+	// either would put a version the project does not run into a security
+	// report.
 	for _, c := range got {
-		if strings.Contains(c.name, "bad/one") || strings.Contains(c.name, "example/other") {
+		if strings.Contains(c.name, "bad/") || strings.Contains(c.name, "example/other") {
 			t.Errorf("a replace/exclude directive was read as a requirement: %+v", c)
 		}
+	}
+}
+
+// A replace of a required module is what the build uses, and the version
+// OSV has to be asked about. Read as the require alone, `require x/net
+// v0.38.0` plus `replace x/net => x/net v0.5.0` asked about the clean v0.38.0
+// while the build ran v0.5.0, and the k8s.io pattern of requiring v0.0.0 and
+// replacing it asked about a version that does not exist.
+func TestParseGoModReadsWhatAReplaceBuilds(t *testing.T) {
+	got := parseGoMod(`module example.com/p
+
+require (
+	golang.org/x/net v0.38.0
+	k8s.io/api v0.0.0
+	github.com/upstream/lib v1.0.0
+	github.com/pinned/only v1.1.0
+	github.com/local/sibling v0.3.0
+	github.com/untouched/dep v2.0.0
+)
+
+replace golang.org/x/net => golang.org/x/net v0.5.0
+
+replace (
+	k8s.io/api => k8s.io/api v0.20.0
+	github.com/upstream/lib => github.com/me/lib-fork v1.0.1 // our patch
+	github.com/pinned/only v1.0.0 => github.com/pinned/only v1.0.9
+	github.com/local/sibling => ../sibling
+)
+`, "go.mod")
+
+	found := map[string]string{}
+	for _, c := range got {
+		found[c.name] = c.version
+	}
+	want := map[string]string{
+		"golang.org/x/net":         "v0.5.0",
+		"k8s.io/api":               "v0.20.0",
+		"github.com/me/lib-fork":   "v1.0.1",
+		"github.com/pinned/only":   "v1.1.0", // replaced at another version, so not this one
+		"github.com/untouched/dep": "v2.0.0",
+	}
+	if len(found) != len(want) {
+		t.Errorf("read %v, want %v", found, want)
+	}
+	for name, v := range want {
+		if found[name] != v {
+			t.Errorf("%s: asked about %q, want %q", name, found[name], v)
+		}
+	}
+	// A directory on this machine is on no registry, as a path dependency is
+	// in every other format read here.
+	if v, ok := found["github.com/local/sibling"]; ok {
+		t.Errorf("a module replaced by a local directory was asked about at %s", v)
 	}
 }
 

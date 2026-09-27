@@ -273,35 +273,120 @@ func parseComponents(base string, data []byte, path string) ([]component, error)
 	return nil, nil
 }
 
-// parseGoMod reads the require directives. Go modules keep their "v" prefix
-// in OSV, so the version is used exactly as written.
+// parseGoMod reads the require directives, as the replace directives change
+// them. Go modules keep their "v" prefix in OSV, so the version is used
+// exactly as written.
+//
+// **A replace is what the build uses**, so it is what OSV is asked about.
+// Read as the require alone, `require golang.org/x/net v0.38.0` beside
+// `replace golang.org/x/net => golang.org/x/net v0.5.0` asked about the clean
+// v0.38.0 while the build ran v0.5.0 — and the Kubernetes pattern of
+// requiring k8s.io/api v0.0.0 and replacing it asked about a version that does
+// not exist. See goModBuilds for which replace applies.
 func parseGoMod(text, source string) []component {
+	replaced := goModReplaces(text)
 	var out []component
-	inBlock := false
+	goModLines(text, func(verb, line, _ string) {
+		fields := strings.Fields(line)
+		if verb != "require" || len(fields) < 2 || !strings.HasPrefix(fields[1], "v") {
+			return
+		}
+		if t, ok := goModBuilds(replaced, fields[0], fields[1]); ok {
+			out = append(out, component{ecosystem: "Go", name: t.name, version: t.version, source: source})
+		}
+	})
+	return out
+}
+
+// goModLines calls fn with each directive in a go.mod: its verb, the rest of
+// the line, and the comment after it. A line inside a `require (` block gets
+// the block's verb, as the go command reads it.
+//
+// The one scanner both readers of go.mod share — parseGoMod for what it
+// lists, goModGraph for the `// indirect` marker — so the two cannot disagree
+// about which lines are a require, and a replace read by one is the replace
+// read by the other.
+func goModLines(text string, fn func(verb, line, comment string)) {
+	block := ""
 	for _, raw := range strings.Split(text, "\n") {
 		line := strings.TrimSpace(raw)
+		comment := ""
 		if i := strings.Index(line, "//"); i >= 0 {
-			line = strings.TrimSpace(line[:i]) // drop "// indirect" and friends
+			comment, line = line[i:], strings.TrimSpace(line[:i])
 		}
-		switch {
-		case line == "require (":
-			inBlock = true
-			continue
-		case inBlock && line == ")":
-			inBlock = false
-			continue
-		case strings.HasPrefix(line, "require "):
-			line = strings.TrimSpace(strings.TrimPrefix(line, "require "))
-		case !inBlock:
+		if line == "" {
 			continue
 		}
-		fields := strings.Fields(line)
-		if len(fields) < 2 || !strings.HasPrefix(fields[1], "v") {
+		if block != "" {
+			if line == ")" {
+				block = ""
+				continue
+			}
+			fn(block, line, comment)
 			continue
 		}
-		out = append(out, component{ecosystem: "Go", name: fields[0], version: fields[1], source: source})
+		// `require (` as gofmt spells it, and `require(` as the go command
+		// also accepts it.
+		if opens, ok := strings.CutSuffix(line, "("); ok && !strings.ContainsAny(strings.TrimSpace(opens), " \t") {
+			block = strings.TrimSpace(opens)
+			continue
+		}
+		verb, rest, _ := strings.Cut(line, " ")
+		fn(verb, strings.TrimSpace(rest), comment)
 	}
-	return out
+}
+
+// goModTarget is a module at a version: what a replace directive puts in
+// place of a require, with neither set for a directory on this machine.
+type goModTarget struct{ name, version string }
+
+// goModReplaces reads a go.mod's replace directives, keyed "module" or, for
+// one that names a version on its left, "module@version".
+func goModReplaces(text string) map[string]goModTarget {
+	replaced := map[string]goModTarget{}
+	goModLines(text, func(verb, line, _ string) {
+		old, repl, ok := strings.Cut(line, "=>")
+		from, to := strings.Fields(old), strings.Fields(repl)
+		if verb != "replace" || !ok || len(from) == 0 || len(from) > 2 || len(to) == 0 || len(to) > 2 {
+			return
+		}
+		key := from[0]
+		if len(from) == 2 {
+			key += "@" + from[1]
+		}
+		var t goModTarget // a directory: no module, no version
+		if len(to) == 2 {
+			t = goModTarget{name: to[0], version: to[1]}
+		}
+		replaced[key] = t
+	})
+	return replaced
+}
+
+// goModBuilds is what the build uses for `require name version`: the require
+// itself, or what a replace puts in its place — and false for a module
+// replaced by a directory, which is on no registry and is left out, as a path
+// dependency is in every other format read here. A replace naming a version
+// on its left applies to that version only, and wins over one that does not,
+// as it does for the go command.
+//
+// Known limit: a module replaced by a fork is reported under the fork's path,
+// which is what OSV indexes it by, while `go mod why -m` — the command the
+// provenance row names — wants the path it was required by. A fork carrying
+// an advisory of its own is rare enough that the row is left to say the
+// wrong path rather than carry a second name through every component.
+func goModBuilds(replaced map[string]goModTarget, name, version string) (goModTarget, bool) {
+	t, ok := replaced[name+"@"+version]
+	if !ok {
+		t, ok = replaced[name]
+	}
+	switch {
+	case !ok:
+		return goModTarget{name: name, version: version}, true
+	case t.version == "":
+		return goModTarget{}, false
+	}
+	return t, true
 }
 
 // npmLock covers lockfile v2 and v3 (the "packages" map) and v1 (the nested
