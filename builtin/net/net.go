@@ -17,6 +17,7 @@ import (
 	probing "github.com/prometheus-community/pro-bing"
 	gnet "github.com/shirou/gopsutil/v4/net"
 
+	"github.com/this-is-tobi/rta/builtin/internal/pathin"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -854,8 +855,13 @@ func ifacePairs() []view.Pair {
 
 // dnsServers reads the configured resolvers. On macOS resolv.conf mirrors
 // the primary resolver, which is enough for an overview.
+//
+// Read as a file nobody named (pathin.ReadFile) and to net.resolver.list's
+// cap: it was the one read of the file left whole and blocking, on the
+// overview every surface opens, so a pipe in its place held the call for
+// good and a file of any size was read to its end.
 func dnsServers() string {
-	data, err := os.ReadFile(resolvConf)
+	data, err := pathin.ReadFile(resolvConf, maxResolvBytes)
 	if err != nil {
 		return "unknown"
 	}
