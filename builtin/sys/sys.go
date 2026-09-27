@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"math"
 	stdnet "net"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -776,6 +777,10 @@ func runPS(ctx context.Context, req plugin.Request) (view.View, error) {
 		if mi, err := p.MemoryInfoWithContext(ctx); err == nil && mi != nil {
 			r.rss = mi.RSS
 		}
+		if taskUnreadable(runtime.GOOS, r.rss) {
+			unread++
+			continue
+		}
 		rows = append(rows, r)
 	}
 	readable := make([]*process.Process, len(rows))
@@ -901,6 +906,26 @@ func recentCPU(ctx context.Context, procs []*process.Process,
 	}
 	return use, gone, nil
 }
+
+// taskUnreadable reports whether a process's usage figures, as goos reads
+// them, are zeros standing in for a read that failed rather than usage.
+//
+// **On macOS another user's process reads as idle and empty, not as
+// unreadable.** gopsutil fills its CPU time and its resident size from
+// proc_pidinfo, which the kernel refuses for a process this user does not
+// own, and discards that refusal: the call returns zeros and no error. So
+// every root and system-account process came out 0.0% CPU and 0 B, 144 of
+// 722 rows on a developer machine, ranked last in a table sorted by use.
+// The one spinning a core, PerfPowerServices at 104% by ps, was among them,
+// under a warning that counted 86 other processes as unreadable and so read
+// as though the rest were accurate.
+//
+// No process that exists has nothing resident, so on macOS a resident size
+// of zero is that refusal, and the row is counted with the processes that
+// could not be read rather than shown as idle. Only on macOS: on Linux the
+// same figures come from /proc, which every user may read, and a kernel
+// thread's resident size really is zero.
+func taskUnreadable(goos string, rss uint64) bool { return goos == "darwin" && rss == 0 }
 
 // cpuSpent is the CPU time a process has used so far, user and system, in
 // seconds — what ps's %cpu is made of. Not TimesStat.Total, which on Linux

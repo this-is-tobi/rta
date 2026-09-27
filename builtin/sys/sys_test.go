@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -169,6 +170,40 @@ func TestPSMeasuresCPUOverTheWindowNotSinceTheProcessStarted(t *testing.T) {
 	}
 	if !gone[exited.Pid] {
 		t.Errorf("a process that stopped answering inside the window is not reported gone: %v", gone)
+	}
+}
+
+// On macOS another user's process read as 0.0% and 0 B — gopsutil discards
+// the kernel's refusal and returns zeros — so a root process spinning a core
+// ranked last, under a warning that implied the rest were accurate. Nothing
+// that runs has nothing resident, so there a zero is the refusal; on Linux a
+// kernel thread's zero is real.
+func TestAZeroFromARefusedReadIsNotShownAsIdle(t *testing.T) {
+	for _, tc := range []struct {
+		goos string
+		rss  uint64
+		want bool
+	}{
+		{"darwin", 0, true},
+		{"darwin", 4096, false},
+		{"linux", 0, false},
+		{"windows", 0, false},
+	} {
+		if got := taskUnreadable(tc.goos, tc.rss); got != tc.want {
+			t.Errorf("taskUnreadable(%s, %d) = %v, want %v", tc.goos, tc.rss, got, tc.want)
+		}
+	}
+	if runtime.GOOS != "darwin" {
+		return
+	}
+	v, err := runPS(context.Background(), plugin.NewRequest(map[string]any{"limit": 1000}, false, false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range v.(view.Table).Rows {
+		if row[4] == "0 B" {
+			t.Errorf("a process read as nothing resident is listed as idle: %v", row)
+		}
 	}
 }
 
