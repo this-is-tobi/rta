@@ -45,7 +45,7 @@ func auditAgentTOML(r *agentReport, f agentFile) {
 	if err != nil {
 		// The point first: the compact row clips, and what was not graded is
 		// the part a reader must not lose to the parser's complaint.
-		r.Add(grpAgentFiles, shortPath(f.path), findings.Info,
+		r.AddUnchecked(grpAgentFiles, shortPath(f.path),
 			f.label+" config's servers and credentials were not graded, only its permissions — "+
 				"it is TOML this audit does not read: "+findings.Clip(err.Error()), findings.Reference{})
 		return

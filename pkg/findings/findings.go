@@ -33,8 +33,9 @@ import (
 
 // Status vocabulary shared with the renderers' status classifier: "ok"
 // greens, "warn" ambers, "fail" reds, "info" mutes. Findings speak it so the
-// grade reads at a glance, and Worst counts only Warn and Fail — Info is a
-// fact worth a row, never a mark against the subject.
+// grade reads at a glance, and Worst grades on only Warn and Fail — Info is a
+// fact worth a row, never a mark against the subject, and a check that could
+// not run (AddUnchecked) is Info the tally names.
 const (
 	OK   = "ok"
 	Warn = "warn"
@@ -69,6 +70,12 @@ type Finding struct {
 	// most useful thing a hit can carry, and it was the one part guaranteed
 	// to be thrown away.
 	Link string
+	// Unchecked marks a check that could not run — a lookup that failed or
+	// timed out, a file that could not be parsed. It is Info, since it says
+	// nothing about the subject, and Worst counts it all the same: a report
+	// whose DMARC lookup timed out read "no issues found", a claim about a
+	// record nobody read. Set by AddUnchecked.
+	Unchecked bool
 }
 
 // Report collects findings as the checks run. The zero value is ready to use.
@@ -87,26 +94,52 @@ func (r *Report) AddLinked(g Group, check, status, detail string, ref Reference,
 		Finding{Group: g, Check: check, Status: status, Detail: detail, Ref: ref, Link: link})
 }
 
+// AddUnchecked records a check that could not run, and why: graded Info and
+// counted by Worst, so the overall line says what the report did not read.
+func (r *Report) AddUnchecked(g Group, check, detail string, ref Reference) {
+	r.Findings = append(r.Findings,
+		Finding{Group: g, Check: check, Status: Info, Detail: detail, Ref: ref, Unchecked: true})
+}
+
 // Worst returns the report's overall grade and a tally to explain it.
+//
+// A check that could not run never moves the grade — it is not a mark
+// against the subject — and always reaches the tally, so an ok is "no issues
+// in what was checked" rather than "no issues found" when something was not.
 func (r *Report) Worst() (string, string) {
-	var warn, fail int
+	var warn, fail, unchecked int
 	for _, f := range r.Findings {
-		switch f.Status {
-		case Warn:
+		switch {
+		case f.Unchecked:
+			unchecked++
+		case f.Status == Warn:
 			warn++
-		case Fail:
+		case f.Status == Fail:
 			fail++
 		}
 	}
-	switch {
-	case fail > 0 && warn > 0:
-		return Fail, fmt.Sprintf("%d failing, %s", fail, Plural(warn, "warning"))
-	case fail > 0:
-		return Fail, fmt.Sprintf("%d failing", fail)
-	case warn > 0:
-		return Warn, Plural(warn, "warning")
+	var parts []string
+	status := OK
+	if fail > 0 {
+		status = Fail
+		parts = append(parts, fmt.Sprintf("%d failing", fail))
 	}
-	return OK, "no issues found"
+	if warn > 0 {
+		if status == OK {
+			status = Warn
+		}
+		parts = append(parts, Plural(warn, "warning"))
+	}
+	notRun := Plural(unchecked, "check") + " could not run"
+	switch {
+	case len(parts) == 0 && unchecked > 0:
+		return OK, "no issues in what was checked, but " + notRun
+	case len(parts) == 0:
+		return OK, "no issues found"
+	case unchecked > 0:
+		parts = append(parts, notRun)
+	}
+	return status, strings.Join(parts, ", ")
 }
 
 // The column carrying a finding's link appears only when this report has one

@@ -638,6 +638,49 @@ func TestFailedLookupsAreNotGradedAsFindings(t *testing.T) {
 	}
 }
 
+// Not a finding, and not nothing either. The six lookups share one deadline
+// and run in turn, so a slow resolver answers the apex and times out on the
+// rest — and the overall read "ok — no issues found" about a domain whose
+// DMARC record nobody read.
+func TestALookupThatFailedIsNamedInTheOverall(t *testing.T) {
+	timeout := &stdnet.DNSError{Err: "i/o timeout", Name: "d.test", IsTimeout: true}
+	r := gradeMail(mailFacts{
+		domain: "d.test", apexTXT: []string{"v=spf1 -all"},
+		dmarcErr: timeout, stsErr: timeout, rptErr: timeout, mxErr: timeout,
+	})
+	status, tally := r.Worst()
+	if status != findings.OK || tally != "no issues in what was checked, but 4 checks could not run" {
+		t.Errorf("Worst() = %q, %q", status, tally)
+	}
+	for _, check := range []string{"dmarc", "mta-sts", "tls-rpt", "mx"} {
+		if f := mustFind(t, r, check); !f.Unchecked {
+			t.Errorf("%s: a failed lookup is not marked as a check that did not run", check)
+		}
+	}
+}
+
+// And when no lookup answered at all there is no report to give: every row
+// would be a failure to read, under an overall that grades the domain.
+func TestNoLookupAnsweredIsRefused(t *testing.T) {
+	boom := errors.New("server misbehaving")
+	for _, f := range []mailFacts{
+		{domain: "d.test", apexErr: boom, dmarcErr: boom, stsErr: boom, rptErr: boom, mxErr: boom},
+		{domain: "d.test", selector: "s1", apexErr: boom, dmarcErr: boom, dkimErr: boom, stsErr: boom,
+			rptErr: boom, mxErr: boom},
+	} {
+		verr := requireDomain(t.Context(), nil, f)
+		if verr == nil || verr.Code != "audit.mail.resolver" {
+			t.Errorf("every lookup failed and requireDomain answered %+v", verr)
+		}
+	}
+	// One answer is something read, and the report stands.
+	f := mailFacts{domain: "d.test", apexTXT: []string{"v=spf1 -all"},
+		dmarcErr: boom, stsErr: boom, rptErr: boom, mxErr: boom}
+	if verr := requireDomain(t.Context(), nil, f); verr != nil {
+		t.Errorf("a run with one answer was refused: %v", verr)
+	}
+}
+
 // Every finding has to land in a section the detail page renders, or it is
 // computed, counted in the tally, and then silently dropped from the page.
 func TestEveryMailFindingLandsInADeclaredGroup(t *testing.T) {
