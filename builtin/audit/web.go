@@ -69,6 +69,13 @@ func runWeb(ctx context.Context, req plugin.Request) (view.View, error) {
 			req.String("host")).
 			WithHint("pass the host itself — the part after the @")
 	}
+	// A value with no host in it — `//x`, a path, `:8443` — was requested as
+	// it stood: refused as unreachable, a hint to check the host was up, or,
+	// for a bare port, dialled on this machine, which is not what it reads as.
+	if u.Hostname() == "" {
+		return nil, view.Errorf("audit.web.badhost", "%q names no host", req.String("host")).
+			WithHint("pass a host like example.com or a full https:// URL")
+	}
 	timeout := time.Duration(req.Int("timeout")) * time.Second
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
