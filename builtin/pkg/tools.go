@@ -109,9 +109,13 @@ func toolsCapability() plugin.Capability {
 type toolState struct {
 	tool      tool
 	Installed string
-	Latest    string
-	Where     string
-	Note      string
+	// Latest is the version in the latest release's tag, and Tag the tag
+	// as the release spells it, which is what the table shows when there
+	// is no version in it to show.
+	Latest string
+	Tag    string
+	Where  string
+	Note   string
 }
 
 func (s toolState) behind() bool {
@@ -151,7 +155,17 @@ func readTools(ctx context.Context, c *registryClient, raw []string) ([]toolStat
 		case !found:
 			st.Note = "no release on GitHub"
 		default:
-			st.Latest = strings.TrimPrefix(rel.Tag, "v")
+			// The version in the tag, read the way the installed one is.
+			// Tags carry more than a leading v: bun-v1.1.38, jq-1.7.1,
+			// rust-v0.47.0. With only the v trimmed, the product's name
+			// read as a zero, 0.0.1.38 is never newer than 1.1.20, and a
+			// tool with a release it did not have read ok. A tag with no
+			// version in it leaves Latest empty, which is "could not
+			// compare", never "current".
+			st.Tag = rel.Tag
+			if m := versionRe.FindStringSubmatch(rel.Tag); m != nil {
+				st.Latest = m[1]
+			}
 		}
 		out = append(out, st)
 	}
@@ -212,10 +226,16 @@ func toolsTable(states []toolState) view.Table {
 			status = "info " + s.Note
 		case s.behind():
 			status = "outdated"
+		case !s.compared() && s.Latest == "":
+			status = "unknown — its release tag holds no version"
 		case !s.compared():
 			status = "unknown — its version could not be read"
 		}
-		t.Rows = append(t.Rows, []string{s.tool.Bin, "github:" + s.tool.Owner + "/" + s.tool.Repo, s.Installed, s.Latest, status, s.Where})
+		latest := s.Latest
+		if latest == "" {
+			latest = s.Tag
+		}
+		t.Rows = append(t.Rows, []string{s.tool.Bin, "github:" + s.tool.Owner + "/" + s.tool.Repo, s.Installed, latest, status, s.Where})
 	}
 	t.Total = len(t.Rows)
 	return t
