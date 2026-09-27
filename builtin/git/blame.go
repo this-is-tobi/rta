@@ -65,6 +65,14 @@ func runBlame(ctx context.Context, req plugin.Request) (view.View, error) {
 	if verr != nil {
 		return nil, verr
 	}
+	// Put to the gate where git would check it out, as a diff's files are
+	// (pathGate). In a checkout that is where the boundary judged it already;
+	// in a repository with no working tree the boundary judged it from the
+	// current directory, where no such file is, and a dotfiles repository
+	// blamed rta's own identity line by line.
+	if verr := pathGate(req, repo)(file); verr != nil {
+		return nil, verr
+	}
 	// Held to the bound a diff holds one file to. Blame reads the file whole
 	// at every commit that touched it and answers a row per line: a 100 MB
 	// file cost one ungated call 3.2 GB and a quarter of a gigabyte of

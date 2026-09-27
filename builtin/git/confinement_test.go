@@ -371,6 +371,51 @@ func TestABareRepositorysCommitDoesNotShowRtasOwnState(t *testing.T) {
 	})
 }
 
+// git.blame names its file in a repository with no working tree from the
+// repository's root, and the boundary had judged it where no such file is,
+// from the current directory: over MCP, from a directory beside the home
+// directory's dotfiles repository, a blame of .local/share/rta/kv.identity
+// showed the age identity line by line. The file is put to the protected-path
+// rule where git would check it out, as a --commit diff's paths are.
+func TestABareRepositorysBlameDoesNotShowRtasOwnState(t *testing.T) {
+	const secret = "AGE-SECRET-KEY-1NOTFORANAGENT"
+	identity := filepath.Join(".local", "share", "rta", "kv.identity")
+	home := t.TempDir()
+	t.Setenv("RTA_DATA_DIR", filepath.Join(home, ".local", "share", "rta"))
+	src, repo := testRepo(t)
+	commitFile(t, repo, src, identity, secret+"\n", "committed by mistake")
+	commitFile(t, repo, src, ".zshrc", "export A=1\n", "dotfiles")
+	bare := filepath.Join(home, ".cfg")
+	if _, err := git.PlainClone(bare, true, &git.CloneOptions{URL: src}); err != nil {
+		t.Fatal(err)
+	}
+	work := filepath.Join(home, "work")
+	if err := os.MkdirAll(work, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(work)
+	g, err := pathguard.New(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blame := func(file string) (view.View, error) {
+		judged, verr := g.Check("file", file)
+		if verr != nil {
+			t.Fatalf("the boundary refused %s: %v", file, verr)
+		}
+		return runBlame(context.Background(), req(t, bare, map[string]any{"file": judged}).
+			WithConfinement(g.Check).WithSurface(plugin.SurfaceMCP))
+	}
+
+	v, err := blame(identity)
+	if code := errCode(err); code != "core.mcp.path.protected" {
+		t.Errorf("a blame of rta's state in a bare dotfiles repository: %q, %+v, want core.mcp.path.protected", code, v)
+	}
+	if tbl, err := blame(".zshrc"); err != nil || len(tbl.(view.Table).Rows) != 1 {
+		t.Errorf("a blame of another file in it: %+v, %v, want its one line", tbl, err)
+	}
+}
+
 // A URL reaching a confined handler is refused at the boundary rather than
 // mangled into a local path — see pathguard.remote. Pinned from this side too,
 // because this is the plugin whose path input accepts one.
