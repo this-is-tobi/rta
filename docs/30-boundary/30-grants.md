@@ -15,7 +15,7 @@ That reads as: allow `kv.get`, but only the key `db-password`, for thirty minute
 | Part | What it means |
 | --- | --- |
 | `<target>` | A capability ID (`kv.get`) or a plugin name (`kv`, covering all of it, destructive capabilities included) |
-| `[scope]` | One record — a key, a table, a bucket. Omit to cover the whole capability |
+| `[scope]` | One record — a key, a table, a bucket — or, ending in `/`, a folder of them. Omit to cover the whole capability |
 | `--ttl` | How long: `30s`, `15m`, `2h`. **Default 15m, maximum 24h** |
 | `--agent` | Narrow to one named agent — the name `rta mcp serve --as` uses |
 | `--profile` | Narrow to one configured connection (staging, not production) |
@@ -34,7 +34,7 @@ rta grant allow kv.get deploy-key --ttl 5m --max-uses 1
 ```
 
 - **`--ttl` bounds time.** The one you always get, because it is the only bound that keeps working when you forget.
-- **`scope` bounds reach.** `rta grant allow kv.get` allows the whole store. `rta grant allow kv.get db-password` allows one key. Reach for the second unless you mean the first.
+- **`scope` bounds reach.** `rta grant allow kv.get` allows the whole store. `rta grant allow kv.get db-password` allows one key. Reach for the second unless you mean the first. A record ending in `/` is a folder: `rta grant allow kv.get prod/` allows every key under `prod/`, those written later included, and never one that climbs back out — `prod/../staging/db-password`, or any spelling a server decodes into that, `%2e%2e` and `..%2f` among them. Name such a record whole if you mean it; a folder never sweeps one in.
 - **`--max-uses` bounds quantity.** `--max-uses 1` is the shape for a value that should be read exactly once — a deploy key, a one-time token.
 - **`--rate` bounds speed.** `--rate 10/1h` allows ten calls in any hour and tells the agent when to come back. A session that has gone wrong slows to something you can notice, rather than draining at machine speed.
 
