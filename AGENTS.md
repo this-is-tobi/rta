@@ -9,7 +9,7 @@ Guidance for AI coding agents (and anyone using one) working in this repository 
 3. Prefer refactoring or improving an existing feature over adding a new one, unless the new feature is critical for user needs or security.
 4. Extendable by design. The reference shapes are Mise's registry model and the Kubernetes API + CRD pattern — a plugin system people can build on, not a closed list rta alone maintains.
 5. Everything battle-tested: run the tests, run `make ci`, don't report something as working without having run it.
-6. Watch binary size when adding a dependency or a feature; it's a stated constraint, not an afterthought.
+6. Watch binary size when adding a dependency or a feature; it's a stated constraint, not an afterthought. `make size-check` holds the stripped linux/amd64 binary under 50 MB (`SIZE_LIMIT_MB` in the Makefile), and CI runs it. That is a ceiling, not a budget: say what added weight bought, and prefer a plugin in rta-plugins for a capability few people need.
 
 ## Working here while the project is private and pre-1.0
 
