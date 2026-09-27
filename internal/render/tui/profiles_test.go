@@ -88,6 +88,20 @@ func TestProfilesPaneListsEnvironments(t *testing.T) {
 	}
 }
 
+// The empty pane teaches the grant that lets an agent reach a profile as this
+// screen's reader makes it — grant.allow, found in the catalogue and filled in
+// — where it spelled `rta grant allow pg --profile … --ttl 1h`, a command line
+// for a terminal the person had just left.
+func TestTheEmptyProfilesPaneNamesTheGrantAsTheTUICallsIt(t *testing.T) {
+	m := profileModel(t, config.Config{})
+	m.mode = modeProfiles
+	out := plain(m.profilesView())
+	if !strings.Contains(out, "grant.allow target=pg profile=proj1-staging ttl=1h") ||
+		strings.Contains(out, "rta grant allow") {
+		t.Errorf("the empty pane names the grant as:\n%s", out)
+	}
+}
+
 // One environment spans several plugins, and the pane says so rather than
 // picking one to name.
 func TestAnEnvironmentShowsEveryPluginItCovers(t *testing.T) {

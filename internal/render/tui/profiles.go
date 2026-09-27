@@ -719,7 +719,10 @@ func (m Model) profilesView() string {
 				"  A profile is one environment across every plugin that has\n"+
 				"  something in it: "+theme.Key.Render("rta use proj1-staging")+" points pg, s3\n"+
 				"  and vault at staging at once, and\n  "+
-				theme.Key.Render("rta grant allow pg --profile proj1-staging --ttl 1h")+"\n"+
+				theme.Key.Render(plugin.SurfaceTUI.Call("grant.allow",
+					plugin.Arg{Name: "target", Value: "pg", Positional: true},
+					plugin.Arg{Name: "profile", Value: "proj1-staging"},
+					plugin.Arg{Name: "ttl", Value: "1h"}))+"\n"+
 				"  lets an agent reach that one for an hour.\n\n  Press "+
 				theme.AccentTxt.Render("n")+" to make one.",
 			width, m.height-1-lipgloss.Height(footer), true)

@@ -73,7 +73,7 @@ func TestARunWithoutAPipedInputIsRefusedInTheTUI(t *testing.T) {
 	// refuses: the same way out `rta dashboard add` gives.
 	tm := tileCmd(0, tile{cap: c}, statedConfig{}, "", nil, config.Connection{})().(tileMsg)
 	if tm.err == nil || tm.err.Code != "core.input.missing" || ran ||
-		tm.err.Hint != "token is a credential, which a tile cannot be given — run `rta demo decode` when you have one" {
+		tm.err.Hint != "token is a credential, which a tile cannot be given — run `demo.decode` when you have one" {
 		t.Errorf("a tile leaving the token out: %+v (ran %v)", tm.err, ran)
 	}
 }

@@ -6,7 +6,6 @@ import (
 	"maps"
 	"slices"
 	"sort"
-	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -434,7 +433,7 @@ func tileNeeds(verr *view.Error, c plugin.Capability, values map[string]any) *vi
 	switch {
 	case slices.Contains(Untileable(c), f.Name):
 		out.Hint = f.Name + " is a credential, which a tile cannot be given — run `" +
-			strings.Join(append([]string{"rta"}, c.Words()...), " ") + "` when you have one"
+			plugin.SurfaceTUI.Call(c.ID) + "` when you have one"
 	case f.Type.Sensitive():
 		out.Hint = f.Name + " is a credential, which a tile's entry must not hold — `rta explain " +
 			c.ID + "` says where else it can come from"

@@ -93,8 +93,7 @@ func addRefusal(c plugin.Capability, pinned bool) string {
 	}
 	if credential := Untileable(c); len(credential) > 0 {
 		return c.ID + " reads " + strings.Join(credential, ", ") +
-			", a credential a tile cannot be given — run `" +
-			strings.Join(append([]string{"rta"}, c.Words()...), " ") + "` when you have one"
+			", a credential a tile cannot be given — run `" + plugin.SurfaceTUI.Call(c.ID) + "` when you have one"
 	}
 	if missing := MissingInputs(c, nil, pinned); len(missing) > 0 {
 		return c.ID + " needs " + strings.Join(missing, ", ") + " — `rta dashboard add " + c.ID +

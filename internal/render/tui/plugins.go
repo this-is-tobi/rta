@@ -630,7 +630,8 @@ func pluginOrigin(row pluginRow) string {
 	if row.group() == groupManaged {
 		if row.lock == nil {
 			return "in rta's store · " + row.origin.Short() +
-				" — rta.lock has no record of these bytes; `rta doctor` says what drifted"
+				" — rta.lock has no record of these bytes; `" + plugin.SurfaceTUI.Call("audit.doctor") +
+				"` says what drifted"
 		}
 		// The same three facts `rta doctor` prints for a managed plugin, in
 		// the same words. Two screens describing one artifact differently is
