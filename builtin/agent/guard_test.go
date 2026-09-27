@@ -70,3 +70,26 @@ func TestAOneShotAllowNeedsNoPassphraseUnderTheGuard(t *testing.T) {
 		t.Fatal("a plain allow minted standing state")
 	}
 }
+
+// A --ttl answer whose grant will not be issued — a folder-shaped record, or
+// more than one — asks for no passphrase: the refusal is known before
+// anybody types, the call itself is released passphrase-free as any
+// one-shot answer is, and the answer says why no grant stands.
+func TestATTLThatIssuesNothingAsksNoPassphraseUnderTheGuard(t *testing.T) {
+	for name, records := range map[string][]string{
+		"a folder":    {"prod/"},
+		"two records": {"db-password", "prod-token"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			isolate(t)
+			guardOn(t)
+			r := park(t, "kv.get", records...)
+			if _, err := run(t, "agent.allow", map[string]any{"id": r.ID, "ttl": "1h"}); err != nil {
+				t.Fatalf("the answer was held for a passphrase buying nothing: %v", err)
+			}
+			if grants, _ := grant.Load(); len(grants) != 0 {
+				t.Fatalf("a grant was issued: %+v", grants)
+			}
+		})
+	}
+}

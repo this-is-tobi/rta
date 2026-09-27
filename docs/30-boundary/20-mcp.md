@@ -147,6 +147,8 @@ rta agent deny 5473aa62
 
 A destructive call is previewed before it parks: rta runs the capability's own `--dry-run` and shows the result on the request, which changes the question from *"may this agent call `note.rm`"* to *"may it remove **this note**"*.
 
+`rta agent allow <id> --ttl 1h` also issues the grant the call was missing, for the record it named and no wider. A call naming more than one record, or a record ending in `/` — a folder to a grant, `https://` included, and the agent chose it — is released on its own and no grant is issued. For a folder, the answer names the `rta grant allow` that issues it on purpose, if every record under it is what you mean.
+
 `--consent-wait` bounds how long a call waits before it is refused anyway (default 90s).
 
 **The default is off on purpose.** A call parked in a server nobody is watching is worse than a refusal: the agent hangs, you never see it, and the timeout is the only thing that resolves it. Turn consent on when you are actually at the machine — or, for a remote server, when [the operator channel](#the-operator-channel) gives its enrolled operators a way to answer with `--server`.

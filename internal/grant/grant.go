@@ -1182,6 +1182,14 @@ func IssueReplacing(g Grant, write bool) (*Grant, *view.Error) {
 	if verr := CheckCeiling(g.Target, g.Scope, g.Profile); verr != nil {
 		return nil, verr
 	}
+	// The scope, for the same reason, and here because not every issuing
+	// path reads a scope a person typed: answering a parked call with --ttl
+	// issues the record the agent named, and it never passed through
+	// CheckScope. A folder no call under it could be covered by is a row
+	// that never works and never says why.
+	if verr := CheckScope(g.Scope); verr != nil {
+		return nil, verr
+	}
 	// Only when something will be written: a preview mints nothing, so it
 	// must not demand the passphrase a real issuance would — the dry run is
 	// how the TUI and --dry-run describe the grant before anyone commits.

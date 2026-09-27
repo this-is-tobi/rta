@@ -311,6 +311,66 @@ func TestATTLIsRefusedWhenNoSingleGrantWouldCoverTheCall(t *testing.T) {
 	}
 }
 
+// A record ending in a slash is a folder to the grant matcher, "https://"
+// included, so a standing grant on the one the agent named would reach every
+// record under it — while the answer, and the screens the operator decided
+// from, named it as one record. --ttl answers for this call's record, and a
+// folder is a decision for grant.allow, so the grant is not issued and the
+// answer says how to issue it on purpose. The call itself is still allowed.
+func TestATTLIsRefusedForARecordThatIsAFolder(t *testing.T) {
+	for capID, record := range map[string]string{"kv.get": "prod/", "http.get": "https://"} {
+		t.Run(record, func(t *testing.T) {
+			isolate(t)
+			r := park(t, capID, record)
+			v, err := run(t, "agent.allow", map[string]any{"id": r.ID, "ttl": "1h"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			pairs := map[string]string{}
+			for _, p := range v.(view.KeyValue).Pairs {
+				pairs[p.Key] = p.Value
+			}
+			if pairs["allowed"] == "" || pairs["for"] != "this call only" {
+				t.Errorf("the call itself was not allowed for itself alone: %+v", pairs)
+			}
+			if !strings.Contains(pairs["grant"], "not issued") || !strings.Contains(pairs["grant"], "every record under it") {
+				t.Errorf("the answer did not say why no grant was issued: %+v", pairs)
+			}
+			if want := "rta grant allow " + capID + " " + record; !strings.Contains(pairs["next"], want) {
+				t.Errorf("next = %q, want it to name %q", pairs["next"], want)
+			}
+			if grants, _ := grant.Load(); len(grants) != 0 {
+				t.Fatalf("a folder grant was issued anyway: %+v", grants)
+			}
+		})
+	}
+}
+
+// A folder that climbs out of itself is refused for that, as grant.allow
+// refuses it, rather than answered with a grant.allow call that would be
+// refused in turn.
+func TestATTLOnAFolderThatClimbsSaysSo(t *testing.T) {
+	isolate(t)
+	r := park(t, "kv.get", "prod/%2e%2e/")
+	v, err := run(t, "agent.allow", map[string]any{"id": r.ID, "ttl": "1h"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pairs := map[string]string{}
+	for _, p := range v.(view.KeyValue).Pairs {
+		pairs[p.Key] = p.Value
+	}
+	if !strings.Contains(pairs["grant"], "not issued") || !strings.Contains(pairs["grant"], "segment") {
+		t.Errorf("the answer did not name the climb: %+v", pairs)
+	}
+	if strings.Contains(pairs["next"], "grant allow") {
+		t.Errorf("next = %q, a grant.allow call that grant.allow refuses", pairs["next"])
+	}
+	if grants, _ := grant.Load(); len(grants) != 0 {
+		t.Fatalf("a grant was issued: %+v", grants)
+	}
+}
+
 func TestABadTTLDoesNotUndoTheAnswer(t *testing.T) {
 	isolate(t)
 	r := park(t, "kv.get", "db-password")

@@ -1,6 +1,7 @@
 package grant
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -231,5 +232,21 @@ func TestCoveringFindsAFolderGrant(t *testing.T) {
 	}
 	if Covering(grants, "kv.get", "staging/db-password", Caller{}) != nil {
 		t.Error("Covering reported a folder grant as covering a record outside it")
+	}
+}
+
+// Issue refuses what CheckScope refuses, whichever path built the grant:
+// answering a parked call with --ttl issues the record the agent named,
+// and never passed through the check grant.allow makes.
+func TestIssueRefusesAScopeCheckScopeRefuses(t *testing.T) {
+	setup(t)
+	for _, scope := range []string{"/", "prod/%2e%2e/"} {
+		verr := Issue(folderGrant("kv.get", scope), true)
+		if verr == nil || !strings.HasPrefix(verr.Code, "grant.scope.") {
+			t.Errorf("Issue on %q = %v, want a grant.scope refusal", scope, verr)
+		}
+	}
+	if grants, _ := Load(); len(grants) != 0 {
+		t.Fatalf("a refused scope was stored: %+v", grants)
 	}
 }

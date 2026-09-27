@@ -1050,8 +1050,17 @@ func runAllow(ctx context.Context, req plugin.Request, catalog func() []plugin.C
 	// releases a single call an agent with a shell could have run directly,
 	// while --ttl mints authority that outlives this conversation, which is
 	// exactly what the guard exists to price.
+	//
+	// Nor is the passphrase asked for a grant that will not be issued: whether one
+	// narrow grant can stand for this call is known before anybody types
+	// anything, and a passphrase spent on a refusal buys nothing.
+	ttl := strings.TrimSpace(req.String("ttl"))
+	var unissued *view.Error
+	if ttl != "" {
+		unissued = noNarrowGrant(req.Surface(), r, ttl)
+	}
 	var signer *guard.Signer
-	if strings.TrimSpace(req.String("ttl")) != "" && guard.Enabled() {
+	if ttl != "" && unissued == nil && guard.Enabled() {
 		s, verr := guard.UnlockPrompted(req)
 		if verr != nil {
 			return nil, verr
@@ -1074,15 +1083,23 @@ func runAllow(ctx context.Context, req plugin.Request, catalog func() []plugin.C
 			"agent %s is locked, so the call is refused anyway until `%s`", r.Agent,
 			req.Surface().Call("lock.rm", plugin.Arg{Name: "name", Value: r.Agent, Positional: true}))})
 	}
-	if ttl := strings.TrimSpace(req.String("ttl")); ttl != "" {
-		// Measured here rather than inside alsoGrant because the surface is
-		// this request's fact, not the parked call's.
-		from := grant.Origin(req.Surface(), term.IsTerminal(int(stdio.Real().Fd())))
-		note, verr := alsoGrant(r, ttl, from, signer)
+	if ttl != "" {
+		note, verr := "", unissued
+		if verr == nil {
+			// Measured here rather than inside alsoGrant because the surface
+			// is this request's fact, not the parked call's.
+			from := grant.Origin(req.Surface(), term.IsTerminal(int(stdio.Real().Fd())))
+			note, verr = alsoGrant(r, ttl, from, signer)
+		}
 		if verr != nil {
 			// The call is already allowed; a bad --ttl must not read as if
-			// nothing happened.
+			// nothing happened. The hint beside it, since the grant that was
+			// not issued is often one the operator can still issue on
+			// purpose, and the hint is how.
 			pairs = append(pairs, view.Pair{Key: "grant", Value: "not issued: " + verr.Message})
+			if verr.Hint != "" {
+				pairs = append(pairs, view.Pair{Key: "next", Value: verr.Hint})
+			}
 			return view.KeyValue{Pairs: pairs}, nil //nolint:nilerr // the call is already allowed; the grant that failed is reported in the answer, not as one
 		}
 		pairs[1] = view.Pair{Key: "for", Value: note}
@@ -1096,6 +1113,52 @@ func runAllow(ctx context.Context, req plugin.Request, catalog func() []plugin.C
 		return view.Sections{Items: items}, nil
 	}
 	return view.KeyValue{Pairs: pairs}, nil
+}
+
+// noNarrowGrant refuses a --ttl answer no one grant can keep to this call's
+// record, or answers nil when one can. Each case is a width the operator was
+// never shown: the question they answered named one call and its records.
+//
+//   - More than one record in a single call is not something a standing
+//     grant can express narrowly, and widening it to the whole capability
+//     is not what the operator asked for by typing --ttl.
+//   - A record ending in a slash is a folder to the grant matcher
+//     (grant.IsFolderScope), "https://" included. The agent chose that
+//     record, a grant on it covers every record under it, those not yet
+//     written included, and the pending list, the request's page and the
+//     answer all named it as one record — so an agent parking kv.get on
+//     "prod/" came away, one --ttl later, with every secret under prod/,
+//     and one parking http.get on "https://" with the whole web. A folder
+//     is grant.allow's decision, where the width is said out loud, and the
+//     hint is that call.
+func noNarrowGrant(sf plugin.Surface, r consent.Request, ttl string) *view.Error {
+	if len(r.Scopes) > 1 {
+		return view.Errorf("agent.allow.ttl",
+			"this call names %d records, so there is no single grant that covers it and nothing else", len(r.Scopes))
+	}
+	if len(r.Scopes) == 0 || !grant.IsFolderScope(r.Scopes[0]) {
+		return nil
+	}
+	scope := r.Scopes[0]
+	// Refused as grant.allow would refuse it, before the hint below hands
+	// the operator a grant.allow call that would only be refused in turn.
+	if verr := grant.CheckScope(scope); verr != nil {
+		return verr
+	}
+	args := []plugin.Arg{
+		{Name: "target", Value: r.Cap, Positional: true},
+		{Name: "scope", Value: scope, Positional: true},
+	}
+	if r.Profile != "" {
+		args = append(args, plugin.Arg{Name: "profile", Value: r.Profile})
+	}
+	if r.Agent != "" {
+		args = append(args, plugin.Arg{Name: "agent", Value: r.Agent})
+	}
+	args = append(args, plugin.Arg{Name: "ttl", Value: ttl})
+	return view.Errorf("agent.allow.folder",
+		"%q ends in a slash, so a grant on it would cover every record under it, not this call's alone", scope).
+		WithHint("`" + sf.Call("grant.allow", args...) + "` issues that, if every record under it is what you mean")
 }
 
 // alsoGrant issues exactly the grant the operator would have typed.
@@ -1126,13 +1189,6 @@ func alsoGrant(r consent.Request, ttl, from string, signer *guard.Signer) (strin
 	scope := ""
 	if len(r.Scopes) == 1 {
 		scope = r.Scopes[0]
-	}
-	// More than one record in a single call is not something a standing
-	// grant can express narrowly, and widening it to the whole capability
-	// is not what the operator asked for by typing --ttl.
-	if len(r.Scopes) > 1 {
-		return "", view.Errorf("agent.allow.ttl",
-			"this call names %d records, so there is no single grant that covers it and nothing else", len(r.Scopes))
 	}
 	now := time.Now()
 	g := grant.Grant{
