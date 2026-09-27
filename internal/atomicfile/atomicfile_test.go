@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -530,6 +531,85 @@ func TestAStoppingProcessLetsAWriteInFlightFinish(t *testing.T) {
 	}
 	if len(entries) != 1 || entries[0].Name() != "grants.json" {
 		t.Errorf("the directory holds %v, want the file alone", entries)
+	}
+}
+
+// A stream is not waited for while it arrives. WriteFrom held off the exit
+// for its whole copy, which takes as long as whatever feeds it: a forced exit
+// would wait out a transfer somebody had pressed ^C to stop. What is held is
+// the close, the chmod and the rename, and a stream that ends while the
+// process is settled lands only if it is resumed.
+func TestAStoppingProcessDoesNotWaitOutAStream(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "tool")
+	stream, feed := io.Pipe()
+	written := make(chan error, 1)
+	go func() { written <- WriteFrom(path, stream, 0o755) }()
+	// Taken by the copy, so the copy is under way.
+	if _, err := feed.Write([]byte("whole")); err != nil {
+		t.Fatal(err)
+	}
+	resume := settleWithin(t, feed)
+	_ = feed.Close()
+	select {
+	case err := <-written:
+		resume()
+		t.Fatalf("a stream was placed while the process was settled: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	resume()
+	if err := <-written; err != nil {
+		t.Fatal(err)
+	}
+	if got, err := os.ReadFile(path); err != nil || string(got) != "whole" {
+		t.Errorf("contents = %q, %v; want the stream placed once resumed", got, err)
+	}
+}
+
+// An exit taken while a stream arrives removes the temporary file it was
+// filling, as the write would have on its way out, rather than leaving a
+// partial copy of a binary beside where it was going.
+func TestAnExitDuringAStreamRemovesItsTemporaryFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a file open for writing cannot be removed on Windows")
+	}
+	dir := t.TempDir()
+	stream, feed := io.Pipe()
+	written := make(chan error, 1)
+	go func() { written <- WriteFrom(filepath.Join(dir, "tool"), stream, 0o755) }()
+	if _, err := feed.Write([]byte("part")); err != nil {
+		t.Fatal(err)
+	}
+	resume := settleWithin(t, feed)
+	shutdown.Exiting()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("the directory holds %v after the exit, want nothing", entries)
+	}
+	resume()
+	_ = feed.Close()
+	<-written
+}
+
+// settleWithin settles the process, failing the test if that waits on the
+// stream feed is filling — and ending the stream then, so the settle does
+// return and is resumed, rather than keeping every later Hold in the package
+// out for good.
+func settleWithin(t *testing.T, feed *io.PipeWriter) (resume func()) {
+	t.Helper()
+	settled := make(chan func(), 1)
+	go func() { settled <- shutdown.Settle() }()
+	select {
+	case resume = <-settled:
+		return resume
+	case <-time.After(time.Second):
+		_ = feed.Close()
+		(<-settled)()
+		t.Fatal("the process waited for a stream still arriving")
+		return nil
 	}
 }
 
