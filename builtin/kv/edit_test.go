@@ -8,7 +8,9 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/this-is-tobi/rta/internal/shutdown"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -172,6 +174,45 @@ func TestEditLeavesNoPlaintextBehind(t *testing.T) {
 	}
 	if _, err := os.Stat(editor.path); err == nil {
 		t.Errorf("the plaintext is still at %s", editor.path)
+	}
+	if _, err := os.Stat(filepath.Dir(editor.path)); err == nil {
+		t.Errorf("the edit directory survived at %s", filepath.Dir(editor.path))
+	}
+}
+
+// rta exits without a command a signal did not stop (internal/app), and an
+// exit inside an edit left the plaintext on disk and the editor on the
+// terminal. While the editor runs, the terminal is its — emacs's C-g is a
+// SIGINT to rta too — and a stopping process waits for the edit to end,
+// removal of the plaintext included, before it exits.
+func TestAStoppingProcessWaitsForAnEditToRemoveItsPlaintext(t *testing.T) {
+	setup(t)
+	text(t, runSet, map[string]any{"key": "token", "value": "s3cr3t"}, false)
+	settled := make(chan func(), 1)
+	editor := stubEditor(t, func(string, []byte) []byte {
+		if !shutdown.TerminalLent() {
+			t.Error("the editor ran without the terminal lent to it")
+		}
+		go func() { settled <- shutdown.Settle() }()
+		select {
+		case resume := <-settled:
+			resume()
+			t.Error("the process settled with the plaintext on disk")
+		case <-time.After(100 * time.Millisecond):
+		}
+		return []byte("rotated")
+	})
+	if _, err := cliEdit(t, "token"); err != nil {
+		t.Fatal(err)
+	}
+	if shutdown.TerminalLent() {
+		t.Error("the terminal is still lent after the editor returned")
+	}
+	select {
+	case resume := <-settled:
+		resume()
+	case <-time.After(5 * time.Second):
+		t.Fatal("the process never settled after the edit ended")
 	}
 	if _, err := os.Stat(filepath.Dir(editor.path)); err == nil {
 		t.Errorf("the edit directory survived at %s", filepath.Dir(editor.path))

@@ -9,6 +9,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/this-is-tobi/rta/internal/shutdown"
 )
 
 func lockPath(t *testing.T) string {
@@ -33,6 +35,37 @@ func TestAcquireReclaimsAStaleLock(t *testing.T) {
 		t.Fatalf("a stale lock was not reclaimed: %v", err)
 	}
 	release()
+}
+
+// An exit taken without the command that holds a lock gives the lock back for
+// it (internal/shutdown), so the next caller is not held off for the lease of
+// a holder that is gone — and the command's own release after that, if it
+// ever runs, takes nothing from whoever acquired it next.
+func TestAnExitWithoutTheHolderGivesTheLockBack(t *testing.T) {
+	path := lockPath(t)
+	release, err := Acquire(path, DefaultStale, DefaultRetry, DefaultTimeout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	shutdown.Exiting()
+	next, err := Acquire(path, DefaultStale, DefaultRetry, 100*time.Millisecond)
+	if err != nil {
+		t.Fatalf("the lock was still held after the exit gave it back: %v", err)
+	}
+	release()
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("the first holder's late release removed its successor's lock: %v", err)
+	}
+	next()
+	// Another process's lock is never this exit's to give back.
+	foreign := []byte("99999 deadbeefdeadbeefdeadbeefdeadbeef\n")
+	if err := os.WriteFile(path, foreign, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	shutdown.Exiting()
+	if got, err := os.ReadFile(path); err != nil || !bytes.Equal(got, foreign) {
+		t.Errorf("an exit touched another process's lock: %q, %v", got, err)
+	}
 }
 
 // Releasing removes our lock, not whichever lock happens to be at that path.

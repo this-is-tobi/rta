@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/this-is-tobi/rta/internal/atomicfile"
+	"github.com/this-is-tobi/rta/internal/shutdown"
 )
 
 // Defaults match what internal/grant used before this package existed.
@@ -97,7 +98,15 @@ func Acquire(path string, stale, retry, timeout time.Duration) (release func(), 
 		}
 		if bytes.Equal(held, mine) {
 			beat := renew(path, mine, stale)
-			return func() { beat.stop(); releaseLock(path, mine) }, nil
+			// Given back by an exit taken without the command too
+			// (internal/shutdown): a kv write stopped at its passphrase
+			// prompt held the store's lock, and left behind it held the
+			// next command's write off until the lease ran out, well past
+			// that command's own timeout. Releasing twice is safe — the
+			// second finds the sentinel no longer holds this call's token.
+			giveBack := func() { beat.stop(); releaseLock(path, mine) }
+			done := shutdown.OnExit(giveBack)
+			return func() { done(); giveBack() }, nil
 		}
 		if info, statErr := os.Stat(path); statErr == nil && time.Since(info.ModTime()) > stale {
 			// A confirmed-dead lock rta cannot remove is refused immediately
