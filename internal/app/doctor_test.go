@@ -132,12 +132,14 @@ func TestDoctorDistinguishesTheThreeKvPostures(t *testing.T) {
 	})
 }
 
-// A grant issued and forgotten is exactly what a health check is for.
+// A grant issued and forgotten is exactly what a health check is for. On a
+// capability the test registry answers for, so the grant is one its build
+// still covers.
 func TestDoctorNamesActiveGrants(t *testing.T) {
 	isolate(t)
-	allow(t, "kv.get", "db-password")
+	allow(t, "demo.item.rm", "db-password")
 	rows := report(t)
-	check(t, rows, "agent grants", "info", "kv.get db-password")
+	check(t, rows, "agent grants", "info", "demo.item.rm db-password")
 	if !strings.Contains(rows["agent grants"][1], "1 active") {
 		t.Errorf("detail = %q, want the count", rows["agent grants"][1])
 	}
