@@ -692,7 +692,12 @@ func Append(e Entry) (err error) {
 	}
 	key, err := seal.Key(keyFile, true)
 	if err != nil {
-		return fmt.Errorf("agent log key %s: %w — restore it, or move the record aside to start a new one", keyPath, err)
+		// "the agent log", never the two words bare: they are the agent.log
+		// capability's command line, `rta agent log`, without its first
+		// word, and a message opening on them read as a command to whoever
+		// was handed it — Verify's errors among them, which agent.log
+		// prints in its own "chain" row.
+		return fmt.Errorf("the agent log's key %s: %w — restore it, or move the record aside to start a new one", keyPath, err)
 	}
 	if _, err := paths.EnsureData(); err != nil {
 		return err
@@ -703,7 +708,7 @@ func Append(e Entry) (err error) {
 	// append to a file the first one is in the middle of renaming.
 	release, err := filelock.Acquire(Path()+".lock", lockStale, lockRetry, lockTimeout)
 	if err != nil {
-		return fmt.Errorf("agent log is busy: %w", err)
+		return fmt.Errorf("the agent log is busy: %w", err)
 	}
 	defer release()
 
@@ -1226,7 +1231,7 @@ func Verify() (Report, error) {
 	defer appendMu.Unlock()
 	release, err := filelock.Acquire(Path()+".lock", lockStale, lockRetry, lockTimeout)
 	if err != nil {
-		return rep, fmt.Errorf("agent log is busy: %w", err)
+		return rep, fmt.Errorf("the agent log is busy: %w", err)
 	}
 	defer release()
 

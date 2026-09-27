@@ -291,6 +291,12 @@ func TestTheSpellerTellsATerminalsSpellingFromEveryoneElses(t *testing.T) {
 		"a key set one with a keys list":                                  false,
 		"Path from the operator's git config":                             false,
 		"the files under fs/hash and reads fs hash.go":                    false,
+		// An error opening on a capability's words reads as that command;
+		// after "the", the same words are the thing they name.
+		"agent log is busy: timed out":                  true,
+		"agent log key /data/agent-log.key: too short":  true,
+		"the agent log is busy: timed out":              false,
+		"the agent log's key /data/agent-log.key: gone": false,
 	} {
 		if got := len(sp.find(text, false)) > 0; got != want {
 			t.Errorf("find(%q) found a terminal's spelling: %v, want %v", text, got, want)
