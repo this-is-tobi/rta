@@ -2,7 +2,6 @@ package audit
 
 import (
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 	"unicode"
@@ -35,10 +34,8 @@ import (
 
 // auditAgentTOML walks one TOML file for the shapes worth grading.
 func auditAgentTOML(r *agentReport, f agentFile) {
-	data, err := os.ReadFile(f.path)
-	if err != nil {
-		r.Add(grpAgentFiles, shortPath(f.path), findings.Warn,
-			f.label+" config could not be read: "+findings.Clip(err.Error()), findings.Reference{})
+	data, ok := readAgentConfig(r, f)
+	if !ok {
 		return
 	}
 	doc, err := tomlTree(string(data))

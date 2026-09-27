@@ -1,8 +1,10 @@
 package audit
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io/fs"
 	"os"
 	"path"
@@ -12,6 +14,8 @@ import (
 	"github.com/go-git/go-billy/v5/helper/iofs"
 
 	"github.com/this-is-tobi/rta/builtin/internal/gitclone"
+	"github.com/this-is-tobi/rta/builtin/internal/pathin"
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -55,20 +59,10 @@ func openProject(ctx context.Context, req plugin.Request, target string) (*proje
 		return nil, view.Errorf("audit.deps.path", "reading %s: %v", target, err)
 	}
 	if !info.IsDir() {
-		if verr := namedManifest(target); verr != nil {
-			return nil, verr
-		}
-		// A single file: read its directory and look at exactly one name, so
-		// the fs.FS the parsers see is the same shape either way.
-		dir, base := filepath.Dir(target), filepath.Base(target)
-		return &project{
-			fsys:  os.DirFS(dir),
-			shown: func(string) string { return target },
-			only:  base,
-		}, nil
+		return namedProject(req.Surface(), target)
 	}
 	return &project{
-		fsys: os.DirFS(target),
+		fsys: scanFS{dir: target, base: os.DirFS(target)},
 		// Rebuilt from the path that was typed, so a relative --path stays
 		// relative in the output and an absolute one stays absolute — what
 		// the reader sees is what they could paste back.
@@ -76,32 +70,144 @@ func openProject(ctx context.Context, req plugin.Request, target string) (*proje
 	}, nil
 }
 
-// namedManifest refuses a file named on its own that is no manifest this
+// maxManifestBytes is more than any manifest this reads: a package-lock.json
+// for a few thousand packages is a few megabytes, and an SBOM listing every
+// file of a large image a few tens of them. A file past it is none of those —
+// a dataset or an archive under a name a scan looks for — and reading it whole
+// was the server's memory spent on the caller's say-so, as pathin says of the
+// files it reads.
+const maxManifestBytes = 64 << 20
+
+// namedProject is the project of a file named on its own, which is read here,
+// once, as pathin reads a file its caller named: off the CLI only a regular
+// file, and on every surface no more than maxManifestBytes.
+//
+// Read here rather than by the scan, because two things need its bytes: the
+// scan, and the question of whether a JSON file is an SBOM at all. Read twice,
+// a pipe named at the terminal gave the first read its contents and left the
+// second waiting on a writer that had gone. A refusal of what the path names
+// is the call's answer, while a file that is there and could not be read — a
+// permission, say — is left to the scan, which names it as a manifest it
+// could not read, as it names one it found.
+func namedProject(sf plugin.Surface, target string) (*project, *view.Error) {
+	format := manifestFormat(target)
+	if format == "" {
+		return nil, notAManifest(target)
+	}
+	named := namedFile{name: filepath.Base(target)}
+	f, info, err := pathin.Open(sf, target)
+	if err == nil {
+		named.info = info
+		named.data, err = pathin.ReadAll(f, target, maxManifestBytes)
+		_ = f.Close()
+	}
+	var notAFile *pathin.NotAFileError
+	var tooLarge *pathin.TooLargeError
+	switch {
+	case errors.As(err, &notAFile):
+		return nil, view.Errorf("audit.deps.notafile", "%v", err).
+			WithHint("name the lockfile, requirements file or SBOM itself, or the directory holding it")
+	case errors.As(err, &tooLarge):
+		return nil, view.Errorf("audit.deps.toolarge", "%v, more than any lockfile or SBOM holds", err).
+			WithHint("name the manifest itself, or the directory holding it")
+	case err != nil:
+		named.err = err
+	}
+	// A JSON file is an SBOM by what is inside it, so that is what is looked
+	// at; one that does not parse at all is left to the scan, which says why.
+	if named.err == nil && strings.HasSuffix(format, ".json") && format != "package-lock.json" {
+		var marks sbomMarks
+		if json.Unmarshal(named.data, &marks) == nil && !marks.isSBOM() {
+			return nil, notAManifest(target)
+		}
+	}
+	return &project{fsys: named, shown: func(string) string { return target }, only: named.name}, nil
+}
+
+// notAManifest refuses a file named on its own that is no manifest this
 // reads.
 //
 // A directory scan picks up only the names it looks for; a file named on its
 // own can be anything, and one this does not read was listed as a manifest
 // with no pinned dependencies in it — notes.txt as much as a JSON config —
 // with the report blaming a requirements file's ranges. That is a finding
-// about a file nobody read. A JSON file is an SBOM by what is inside it, so
-// that is what is looked at; one that does not parse at all is left to the
-// read, which says why.
-func namedManifest(target string) *view.Error {
-	format := manifestFormat(target)
-	if strings.HasSuffix(format, ".json") && format != "package-lock.json" {
-		if data, err := os.ReadFile(target); err == nil {
-			var marks sbomMarks
-			if json.Unmarshal(data, &marks) == nil && !marks.isSBOM() {
-				format = ""
-			}
-		}
-	}
-	if format != "" {
-		return nil
-	}
+// about a file nobody read.
+func notAManifest(target string) *view.Error {
 	return view.Errorf("audit.deps.format", "%s is not a lockfile, a requirements file or an SBOM", target).
 		WithHint("the formats read are " + strings.Join(ecosystems, "; "))
 }
+
+// whyUnread says why a file could not be read, without the path the sentence
+// around it already names: what pathin found in place of a file, or past what
+// size it stopped, and any other error as it reads.
+func whyUnread(err error) string {
+	var notAFile *pathin.NotAFileError
+	var tooLarge *pathin.TooLargeError
+	switch {
+	case errors.As(err, &notAFile):
+		return "it is " + pathin.Kind(notAFile.Mode) + ", not a file"
+	case errors.As(err, &tooLarge):
+		return "it is larger than " + format.Bytes(tooLarge.Max)
+	}
+	return err.Error()
+}
+
+// namedFile is the fs.FS of a file named on its own: the one name the scan
+// asks for, and what namedProject read from it, or why it could not.
+type namedFile struct {
+	name string
+	info fs.FileInfo
+	data []byte
+	err  error
+}
+
+func (n namedFile) Open(name string) (fs.File, error) {
+	switch {
+	case name != n.name:
+		return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrNotExist}
+	case n.err != nil:
+		return nil, n.err
+	}
+	return openNamed{Reader: bytes.NewReader(n.data), info: n.info}, nil
+}
+
+type openNamed struct {
+	*bytes.Reader
+	info fs.FileInfo
+}
+
+func (o openNamed) Stat() (fs.FileInfo, error) { return o.info, nil }
+func (openNamed) Close() error                 { return nil }
+
+// scanFS is os.DirFS for the directory an audit was pointed at, opening
+// nothing to read but a regular file, on every surface (pathin.OpenFile).
+//
+// A lockfile a scan finds is named by whoever wrote the directory — a cloned
+// repository, an unpacked archive — and not by the caller, so the CLI's
+// leave to read a pipe it was pointed at does not reach it: a named pipe
+// called package-lock.json held open(2) for good where no context reaches,
+// at a terminal as much as over MCP. Stat and ReadDir are os.DirFS's own,
+// which open nothing to read, so the walk and the look for each name never
+// touch a pipe either.
+type scanFS struct {
+	dir  string
+	base fs.FS
+}
+
+func (s scanFS) Open(name string) (fs.File, error) {
+	if !fs.ValidPath(name) {
+		return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrInvalid}
+	}
+	f, _, err := pathin.OpenFile(filepath.Join(s.dir, filepath.FromSlash(name)))
+	if err != nil {
+		return nil, err
+	}
+	return f, nil
+}
+
+func (s scanFS) Stat(name string) (fs.FileInfo, error) { return fs.Stat(s.base, name) }
+
+func (s scanFS) ReadDir(name string) ([]fs.DirEntry, error) { return fs.ReadDir(s.base, name) }
 
 // cloneProject reads a repository nobody checked out.
 //
