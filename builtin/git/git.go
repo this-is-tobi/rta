@@ -279,7 +279,7 @@ func openAt(req plugin.Request, root, path string) (*git.Repository, *view.Error
 	if verr := alternatesInBounds(req, objects); verr != nil {
 		return nil, verr
 	}
-	if verr := wholeFilesInBounds(dot, objects); verr != nil {
+	if verr := wholeFilesInBounds(dot, objects, wt); verr != nil {
 		return nil, verr
 	}
 
@@ -440,11 +440,18 @@ const (
 	maxPackedRefsBytes = 64 << 20
 )
 
-// readLimit is the most this reads of name in a git directory, 0 for a file
-// with no bound of its own here.
-func readLimit(name string) int64 {
+// readLimit is the most this reads of name, in a git directory where gitDir
+// is set and in a working tree where it is not, 0 for a file with no bound of
+// its own there. The one file of a working tree go-git reads whole is its
+// .gitmodules (gitmodules).
+func readLimit(name string, gitDir bool) int64 {
 	name = filepath.ToSlash(filepath.Clean(name))
 	switch {
+	case !gitDir:
+		if name == gitmodules {
+			return maxConfigBytes
+		}
+		return 0
 	case name == "config", name == "config.worktree":
 		return maxConfigBytes
 	case name == "index":
@@ -458,27 +465,47 @@ func readLimit(name string) int64 {
 	return 0
 }
 
-// wholeFilesInBounds refuses a repository whose HEAD, index, config or
-// packed-refs is larger than this reads of one, before go-git reads any of
-// them: the refusal names the file, where the read it prevents would have
-// failed somewhere inside go-git as whatever capability was running, or not
-// failed at all. dot is the git directory, and shared the one its config and
-// packed-refs are kept in, the common directory of a linked worktree. The
-// open refuses the same files again (regularFiles), for one swapped in after
-// this looked.
-func wholeFilesInBounds(dot, shared billy.Filesystem) *view.Error {
-	for _, f := range []struct {
-		fs   billy.Filesystem
-		name string
-	}{{dot, "HEAD"}, {dot, "index"}, {shared, "config"}, {shared, "packed-refs"}} {
+// gitmodules is the file of a working tree that names its submodules, which
+// go-git reads whole (Worktree.Submodules, with io.ReadAll) and parses as
+// git config on every status, and so on every git.status, git.diff and
+// git.overview.
+//
+// **It is a file anybody who can write a commit writes, and nothing bounded
+// it.** A .gitmodules made sparse at 768 MiB, which costs its writer 20 KiB
+// of disk, cost one git.status 2.9 GiB of memory. It is held to the bound
+// the repository's own config is held to, being config too: Chromium's,
+// naming 273 submodules, is 49 KiB, and the bound is room for eighty times
+// as many.
+const gitmodules = ".gitmodules"
+
+// wholeFilesInBounds refuses a repository whose HEAD, index, config,
+// packed-refs or .gitmodules is larger than this reads of one, before go-git
+// reads any of them: the refusal names the file, where the read it prevents
+// would have failed somewhere inside go-git as whatever capability was
+// running, or not failed at all. dot is the git directory, shared the one its
+// config and packed-refs are kept in, the common directory of a linked
+// worktree, and work the working tree, nil for a bare repository. The open
+// refuses the same files again (regularFiles), for one swapped in after this
+// looked.
+func wholeFilesInBounds(dot, shared, work billy.Filesystem) *view.Error {
+	type file struct {
+		fs     billy.Filesystem
+		name   string
+		gitDir bool
+	}
+	files := []file{{dot, "HEAD", true}, {dot, "index", true}, {shared, "config", true}, {shared, "packed-refs", true}}
+	if work != nil {
+		files = append(files, file{work, gitmodules, false})
+	}
+	for _, f := range files {
 		info, err := f.fs.Stat(f.name)
 		if err != nil {
 			continue //nolint:nilerr // no such file is nothing to bound, and one that cannot be opened is refused by the open, with its reason
 		}
-		if limit := readLimit(f.name); info.Size() > limit {
+		if limit := readLimit(f.name, f.gitDir); info.Size() > limit {
 			return view.Errorf("git.repository.toolarge", "%s is %s, larger than the %s this reads of it",
 				filepath.Join(f.fs.Root(), f.name), format.Bytes(info.Size()), format.Bytes(limit)).
-				WithHint("it is read whole on every call, and git writes none near this size")
+				WithHint("it is read whole, and git writes none near this size")
 		}
 	}
 	return nil
@@ -487,8 +514,8 @@ func wholeFilesInBounds(dot, shared billy.Filesystem) *view.Error {
 // regularFiles is a filesystem that opens nothing for reading but a regular
 // file, and never waits to open one: the open is non-blocking, which a named
 // pipe honours and a file ignores, and what it reached is refused unless it
-// is a file. In a git directory, a file go-git reads whole is also refused
-// past its bound (readLimit), and read no further than it.
+// is a file. A file go-git reads whole is also refused past its bound
+// (readLimit), and read no further than it.
 //
 // **And it writes nothing.** Every capability here reads, and go-git wrote
 // through this filesystem all the same: its status initialised a repository
@@ -499,7 +526,8 @@ func wholeFilesInBounds(dot, shared billy.Filesystem) *view.Error {
 type regularFiles struct {
 	billy.Filesystem
 	// gitDir says this is a git directory, whose files readLimit bounds by
-	// name: a working tree's own config or index is somebody's file.
+	// name: a working tree's own config or index is somebody's file, and
+	// its .gitmodules the one it bounds there.
 	gitDir bool
 }
 
@@ -535,10 +563,7 @@ func (f regularFiles) OpenFile(name string, flag int, perm os.FileMode) (billy.F
 		}
 		return nil, &iofs.PathError{Op: "open", Path: name, Err: err}
 	}
-	if !f.gitDir {
-		return file, nil
-	}
-	limit := readLimit(name)
+	limit := readLimit(name, f.gitDir)
 	if limit == 0 {
 		return file, nil
 	}

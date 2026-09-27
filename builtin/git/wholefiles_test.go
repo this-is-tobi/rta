@@ -53,6 +53,38 @@ func TestAFileGoGitReadsWholeIsRefusedPastItsBound(t *testing.T) {
 	}
 }
 
+// A working tree's .gitmodules is read whole by go-git's status, and parsed
+// as config, and it is a file any commit can carry: one made sparse at 768 MiB
+// cost one git.status 2.9 GiB. Past the config's bound it is refused by name
+// before anything reads it, and the open reads no further than the bound.
+func TestAGitmodulesPastTheConfigsBoundIsRefused(t *testing.T) {
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
+	writeFile(t, dir, ".gitmodules", "[submodule \"x\"]\n\tpath = x\n\turl = ../x\n")
+	for capability, run := range map[string]plugin.Handler{"git.status": runStatus, "git.diff": runDiff} {
+		if _, err := run(context.Background(), req(t, dir, nil)); err != nil {
+			t.Fatalf("%s over a .gitmodules within its bound: %v", capability, err)
+		}
+	}
+
+	worktree := regularFiles{Filesystem: osfs.New(dir)}
+	f, err := worktree.Open(".gitmodules")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+	grow(t, filepath.Join(dir, ".gitmodules"), maxConfigBytes+1)
+	if _, err := io.ReadAll(f); err == nil || !strings.Contains(err.Error(), "larger than") {
+		t.Errorf("a .gitmodules grown past its bound after the open was read: %v", err)
+	}
+	for capability, run := range map[string]plugin.Handler{"git.status": runStatus, "git.diff": runDiff} {
+		_, err := run(context.Background(), req(t, dir, nil))
+		if code := errCode(err); code != "git.repository.toolarge" || !strings.Contains(err.Error(), ".gitmodules") {
+			t.Errorf("%s over a .gitmodules past its bound: %v, want git.repository.toolarge naming it", capability, err)
+		}
+	}
+}
+
 // The open refuses the same files again and reads no further than the
 // bound, whatever the file has become by the time it is read: the check
 // before the open looks at a name, and a name can be swapped. A working
