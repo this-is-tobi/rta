@@ -1,6 +1,7 @@
 package textclean
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -57,6 +58,40 @@ func FuzzModel(f *testing.F) {
 		}
 		if again := Model(out); again != out {
 			t.Fatalf("Model is not idempotent: %q -> %q -> %q", s, out, again)
+		}
+	})
+}
+
+// What Record promises a person approving a record, held against arbitrary
+// bytes: shown as it is only when every character reads as itself, quoted
+// otherwise in a form that reads back as exactly the record, and never the
+// same showing for two records — shown as it is never begins with a
+// quotation mark, quoted always does, and Go's quoting is one to one. What
+// it shows holds nothing a terminal acts on and nothing a reader cannot see.
+func FuzzRecord(f *testing.F) {
+	for _, seed := range []string{
+		"prod/db", "prod/db ", " prod/db", "two words", `"quoted"`, `C:\Users\me`, "", "\xff",
+		"prod/db" + string(rune(0xa0)), "prod/db" + string(rune(0x200b)), "a" + string(rune(0xfe0f)),
+		"invoice" + string(rune(0x202e)) + "fdp.exe", "tag" + string(rune(0xe0041)), "tab\tnew\nline",
+	} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, s string) {
+		out := Record(s)
+		if strings.ContainsFunc(out, func(r rune) bool { return !seen(r) }) || !utf8.ValidString(out) {
+			t.Fatalf("Record(%q) = %q still holds a character a reader does not see as itself", s, out)
+		}
+		if Terminal(out) != out {
+			t.Fatalf("Record(%q) = %q holds something a terminal acts on", s, out)
+		}
+		if out == s {
+			if strings.HasPrefix(s, `"`) || strings.ContainsRune(s, ' ') {
+				t.Fatalf("Record(%q) showed it as it is, and it reads as a quoted or a listed record", s)
+			}
+			return
+		}
+		if back, err := strconv.Unquote(out); err != nil || back != s {
+			t.Fatalf("Record(%q) = %q, which reads back as %q (%v)", s, out, back, err)
 		}
 	})
 }

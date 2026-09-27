@@ -2,6 +2,7 @@ package textclean
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 	"unicode"
@@ -285,5 +286,47 @@ func TestFormatPlainTextDumpsOnlyWhatTerminalWouldDrop(t *testing.T) {
 		if reorders(r) && !format.PlainText([]byte(string(r))) {
 			t.Errorf("U+%04X: Terminal spells it out, and format.PlainText calls it binary", r)
 		}
+	}
+}
+
+// A record reads as itself when every character in it does and none is a
+// space, and is quoted otherwise, with what a reader would not see named by
+// code point: the no-break space, a space or a tab at either end, and the
+// characters that draw as nothing wherever they stand. Every character in
+// the fixtures is planted by code point: a source file may not hold one.
+func TestARecordThatIsNotWhatItShowsIsQuoted(t *testing.T) {
+	named := func(r rune) string { return fmt.Sprintf("%cu%04x", '\\', r) }
+	for _, plain := range []string{"prod/db", "db-password", "https://api.example.com/v1/", "café",
+		`C:\Users\me`, `a"b`, "4"} {
+		if got := Record(plain); got != plain {
+			t.Errorf("Record(%q) = %q, want it as it is", plain, got)
+		}
+	}
+	for _, tc := range []struct {
+		record string
+		names  rune
+	}{
+		{"prod/db" + string(rune(0xa0)), 0xa0},      // no-break space
+		{"prod/db" + string(rune(0x200b)), 0x200b},  // zero-width space
+		{"prod/" + string(rune(0xad)) + "db", 0xad}, // soft hyphen
+		{"prod/db" + string(rune(0xfe0f)), 0xfe0f},  // variation selector
+		{"prod/db" + string(rune(0x3164)), 0x3164},  // Hangul filler
+		{"prod/db" + string(rune(0x202e)), 0x202e},  // right-to-left override
+		{string(rune(0x2003)) + "prod/db", 0x2003},  // em space
+	} {
+		got := Record(tc.record)
+		if !strings.HasPrefix(got, `"`) || !strings.Contains(got, named(tc.names)) {
+			t.Errorf("Record(%q) = %q, want it quoted with U+%04X named", tc.record, got, tc.names)
+		}
+	}
+	for _, padded := range []string{"prod/db ", " prod/db", "prod/db\t", "two words", `"quoted"`, ""} {
+		got := Record(padded)
+		if back, err := strconv.Unquote(got); err != nil || back != padded || got == padded {
+			t.Errorf("Record(%q) = %q, want it quoted so it reads back as itself", padded, got)
+		}
+	}
+	// Several records, one after another: two of them never read as one.
+	if one, two := Records([]string{"a b"}), Records([]string{"a", "b"}); one == two {
+		t.Errorf("Records([a b]) and Records([a, b]) both show as %q", one)
 	}
 }

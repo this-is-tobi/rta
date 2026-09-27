@@ -160,7 +160,7 @@ func remoteAnswer(ctx context.Context, req plugin.Request, server, id string, al
 	if verr := client.Call(ctx, operatorid.VerbConsentAnswer, spec, &out); verr != nil {
 		return nil, verr
 	}
-	what := strings.TrimSpace(out.Cap + " " + strings.Join(out.Scopes, " "))
+	what := callNamed(out.Cap, out.Scopes)
 	if allow {
 		return view.KeyValue{Pairs: []view.Pair{
 			{Key: "allowed", Value: what},
