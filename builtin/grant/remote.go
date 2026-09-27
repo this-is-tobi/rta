@@ -48,11 +48,28 @@ func remoteList(ctx context.Context, req plugin.Request, server string) (view.Vi
 	if verr := (operatorid.Client{URL: base, Signer: signer}).Call(ctx, operatorid.VerbGrantList, nil, &gl); verr != nil {
 		return nil, verr
 	}
-	t := grantsTable(gl.Grants, nil)
+	// --role narrows the roster here, on this side of the channel, as
+	// heldTable narrows the local one: the list verb carries no selector,
+	// and the whole roster under a request for one role's rows reads as if
+	// the role held all of them.
+	grants := gl.Grants
+	if role := strings.TrimSpace(req.String("role")); role != "" {
+		grants = nil
+		for _, g := range gl.Grants {
+			if g.Role == role {
+				grants = append(grants, g)
+			}
+		}
+	}
+	t := grantsTable(grants, nil)
 	// The table even when the server holds nothing, with the sentence beside
 	// it for a person (view.Table.Empty), as the local listing answers: the
 	// sentence alone was a text view `jq '.rows[]'` could not iterate.
-	if len(gl.Grants) == 0 {
+	switch {
+	case len(grants) == 0 && len(gl.Grants) > 0:
+		t.Empty = fmt.Sprintf("No standing grant on %s was issued under the role %s.",
+			server, strings.TrimSpace(req.String("role")))
+	case len(grants) == 0:
 		t.Empty = fmt.Sprintf("No active grants on %s — its agents can only read.", server)
 	}
 	if gl.Suppressed > 0 {
@@ -224,15 +241,7 @@ func checkPrepared(sf plugin.Surface, spec operatorid.IssueSpec, server string, 
 // remoteRevoke is `grant revoke --server <name>`. A dry run still crosses
 // the network with write off — see operator.RevokeSpec.DryRun — so the
 // preview is the server's truth, not this machine's guess.
-func remoteRevoke(ctx context.Context, req plugin.Request, server string) (view.View, error) {
-	spec := operatorid.RevokeSpec{
-		All:     req.Bool("all"),
-		Target:  strings.TrimSpace(req.String("target")),
-		Scope:   strings.TrimSpace(req.String("scope")),
-		Profile: strings.TrimSpace(req.String("profile")),
-		Agent:   strings.TrimSpace(req.String("agent")),
-		DryRun:  req.DryRun,
-	}
+func remoteRevoke(ctx context.Context, req plugin.Request, server string, spec operatorid.RevokeSpec) (view.View, error) {
 	base, verr := operatorid.ServerURL(server)
 	if verr != nil {
 		return nil, verr

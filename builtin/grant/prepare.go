@@ -431,9 +431,16 @@ func PrepareRemote(catalog func() []plugin.Capability,
 // lets `grant revoke` run without the passphrase locally.
 func RevokeRemote(spec operatorid.RevokeSpec, write bool) (operatorid.RevokeOutcome, *view.Error) {
 	spec.Target = core.Normalize(spec.Target)
-	if !spec.All && spec.Target == "" && strings.TrimSpace(spec.Profile) == "" && strings.TrimSpace(spec.Agent) == "" {
-		return operatorid.RevokeOutcome{}, view.Errorf("grant.notarget", "name a capability, or pass --all").
-			WithHint("`rta grant list --server <name>` shows what is currently allowed there")
+	// Role counts as a selector here as it does locally: `revoke --role dev`
+	// takes one role back from every agent, and refusing it for naming
+	// nothing sent an operator to --all, the widest revoke there is. Worded
+	// for the command line, as PrepareRemote's refusals are.
+	if !spec.All && spec.Target == "" && strings.TrimSpace(spec.Profile) == "" &&
+		strings.TrimSpace(spec.Agent) == "" && strings.TrimSpace(spec.Role) == "" {
+		sf := plugin.SurfaceUnknown
+		return operatorid.RevokeOutcome{}, view.Errorf("grant.notarget", "name a capability, or give %s", sf.InputName("all")).
+			WithHint("`" + sf.Call("grant.list", plugin.Arg{Name: "server", Value: "<name>"}) +
+				"` shows what is currently allowed there")
 	}
 	return revokeOutcome(spec, write)
 }

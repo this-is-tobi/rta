@@ -258,3 +258,113 @@ func TestAHostilePrepareIsNotASigningOracle(t *testing.T) {
 		t.Fatal("the widened draft was signed and submitted anyway")
 	}
 }
+
+// remoteLab serves this process's grant store as the server "lab" over
+// real HTTP, with the operator key unlocked by "correct horse" enrolled on
+// it, and points remotes.yaml at it.
+func remoteLab(t *testing.T) {
+	t.Helper()
+	operatorid.ScryptWorkFactor = 10
+	if _, verr := operatorid.Init("correct horse"); verr != nil {
+		t.Fatal(verr)
+	}
+	line, verr := operatorid.RosterLine("tobi")
+	if verr != nil {
+		t.Fatal(verr)
+	}
+	rosterPath := filepath.Join(t.TempDir(), "operators")
+	if err := os.WriteFile(rosterPath, []byte(line+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	roster, _, err := operatorid.LoadRoster(rosterPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := "http://" + ln.Addr().String()
+	srv := httptest.NewUnstartedServer(mcp.NewOperatorHandler(mcp.OperatorConfig{
+		Roster: roster, URL: base, Revoke: RevokeRemote,
+	}))
+	srv.Listener.Close()
+	srv.Listener = ln
+	srv.Start()
+	t.Cleanup(srv.Close)
+	confDir := t.TempDir()
+	t.Setenv("RTA_CONFIG", filepath.Join(confDir, "config.yaml"))
+	if err := os.WriteFile(filepath.Join(confDir, "remotes.yaml"),
+		[]byte("servers:\n  lab:\n    url: "+base+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// seedRoleAndHand stores what a role issued beside a grant issued by hand,
+// both for one agent: the pair a --role selector exists to tell apart.
+func seedRoleAndHand(t *testing.T) {
+	t.Helper()
+	now := time.Now()
+	for _, g := range []core.Grant{
+		{Target: "kv.get", Agent: "lab-agent", Role: "dev", Issued: now, Expires: now.Add(time.Hour)},
+		{Target: "kv.set", Agent: "lab-agent", Issued: now, Expires: now.Add(time.Hour)},
+	} {
+		if verr := core.Issue(g, true); verr != nil {
+			t.Fatal(verr)
+		}
+	}
+}
+
+// --role crosses the operator channel as it narrows a local revoke: it
+// used to be left out of the envelope, so the server matched on the other
+// selectors alone and took every grant the agent held, and a revoke naming
+// only a role was refused for naming nothing.
+func TestRemoteRevokeByRoleTakesThatRoleAlone(t *testing.T) {
+	for name, values := range map[string]map[string]any{
+		"with an agent": {"role": "dev", "agent": "lab-agent"},
+		"on its own":    {"role": "dev"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			setup(t)
+			remoteLab(t)
+			seedRoleAndHand(t)
+			values["server"] = "lab"
+			values["passphrase"] = "correct horse"
+			v, err := guardCap(t, "grant.revoke").Run(context.Background(), reqTUI(values))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if body := v.(view.Text).Body; !strings.Contains(body, "revoked 1 grant(s)") {
+				t.Errorf("revoke said: %s", body)
+			}
+			held, verr := core.Load()
+			if verr != nil {
+				t.Fatal(verr)
+			}
+			if len(held) != 1 || held[0].Target != "kv.set" {
+				t.Fatalf("revoking role dev left %+v, want the hand-issued kv.set standing alone", held)
+			}
+		})
+	}
+}
+
+// grant list --role --server lists what the role issued there, as the local
+// listing does, rather than the whole roster under a heading that says it
+// was narrowed.
+func TestRemoteListByRoleShowsThatRoleAlone(t *testing.T) {
+	setup(t)
+	remoteLab(t)
+	seedRoleAndHand(t)
+	v, err := listCap(t).Run(context.Background(),
+		reqTUI(map[string]any{"server": "lab", "role": "dev", "passphrase": "correct horse"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	table, ok := v.(view.Table)
+	if !ok {
+		t.Fatalf("view is %T, want Table", v)
+	}
+	if len(table.Rows) != 1 || table.Rows[0][0] != "kv.get" {
+		t.Fatalf("rows = %+v, want role dev's kv.get alone", table.Rows)
+	}
+}

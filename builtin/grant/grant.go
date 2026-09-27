@@ -1407,9 +1407,9 @@ func budgetLeft(g core.Grant, now time.Time) string {
 // agent can rewrite. Consent state belongs to the person at the terminal in
 // both directions, not to whoever is currently being granted or denied.
 func runRevoke(ctx context.Context, req plugin.Request) (view.View, error) {
-	if server := req.String("server"); server != "" {
-		return remoteRevoke(ctx, req, server)
-	}
+	// One spec for both paths, so a selector cannot be read here and left
+	// off the envelope: --role once was, and the server, matching on the
+	// selectors it was sent, took back every grant the agent held.
 	spec := operatorid.RevokeSpec{
 		All:     req.Bool("all"),
 		Target:  core.Normalize(req.String("target")),
@@ -1417,10 +1417,21 @@ func runRevoke(ctx context.Context, req plugin.Request) (view.View, error) {
 		Profile: strings.TrimSpace(req.String("profile")),
 		Agent:   strings.TrimSpace(req.String("agent")),
 		Role:    strings.TrimSpace(req.String("role")),
+		DryRun:  req.DryRun,
 	}
+	server := strings.TrimSpace(req.String("server"))
 	if !spec.All && spec.Target == "" && spec.Profile == "" && spec.Agent == "" && spec.Role == "" {
-		return nil, view.Errorf("grant.notarget", "name a capability, or give %s", req.Surface().InputName("all")).
-			WithHint(req.Surface().CapabilityName("grant.list") + " shows what is currently allowed")
+		sf := req.Surface()
+		list := sf.CapabilityName("grant.list") + " shows what is currently allowed"
+		if server != "" {
+			list = "`" + sf.Call("grant.list", plugin.Arg{Name: "server", Value: server}) +
+				"` shows what is currently allowed there"
+		}
+		return nil, view.Errorf("grant.notarget", "name a capability, or give %s", sf.InputName("all")).
+			WithHint(list)
+	}
+	if server != "" {
+		return remoteRevoke(ctx, req, server, spec)
 	}
 	// The matching rules and the locked-snapshot discipline live in
 	// revokeOutcome, shared with the operator channel's revoke verb; the
