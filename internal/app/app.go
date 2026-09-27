@@ -715,6 +715,33 @@ func describeGroups(cmd *cobra.Command) {
 	}
 }
 
+// cliPositionals is c's positional inputs in the order the command line takes
+// them: the required ones first, then the optional ones, each in the order c
+// declares them. The usage line, the binder, the arity check, completion and
+// `rta explain` all read this one order.
+//
+// It is the order the usage line shows, and the only one it can show: fang
+// draws every optional slot after the rest of the line, whatever order the
+// line was written in. The binder filled the slots in declaration order, so
+// git.blame, which declares its optional repository before the file, read
+// `rta git blame README` as the repository README and no file, and refused
+// it as core.input.missing under a --help reading `rta git blame <file>
+// [path]`. Required first is also the one order in which an optional
+// argument can be left out: one bound before a required one never could be.
+func cliPositionals(c plugin.Capability) []plugin.Field {
+	var required, optional []plugin.Field
+	for _, f := range c.Inputs {
+		switch {
+		case !f.Positional:
+		case f.Required:
+			required = append(required, f)
+		default:
+			optional = append(optional, f)
+		}
+	}
+	return append(required, optional...)
+}
+
 // attach materializes one capability as a (possibly nested) cobra command.
 func attach(parent *cobra.Command, c plugin.Capability, opts *globalOpts) {
 	words := c.Words()
@@ -725,12 +752,7 @@ func attach(parent *cobra.Command, c plugin.Capability, opts *globalOpts) {
 	}
 	leaf := words[len(words)-1]
 
-	var positionals []plugin.Field
-	for _, f := range c.Inputs {
-		if f.Positional {
-			positionals = append(positionals, f)
-		}
-	}
+	positionals := cliPositionals(c)
 	use := leaf
 	for _, f := range positionals {
 		if f.Required {
@@ -1327,22 +1349,26 @@ func runCapability(ctx context.Context, cmd *cobra.Command, c plugin.Capability,
 func collectValues(cmd *cobra.Command, c plugin.Capability, args []string) (map[string]any, error) {
 	values := map[string]any{}
 	argIdx := 0
+	// In the order the usage line shows them, which is not always the order
+	// they are declared in: see cliPositionals.
+	for _, f := range cliPositionals(c) {
+		if f.Type.Repeatable() {
+			// A slice positional consumes every remaining argument.
+			values[f.Name] = args[argIdx:]
+			argIdx = len(args)
+		} else if argIdx < len(args) {
+			v, err := convertArg(f, args[argIdx])
+			if err != nil {
+				return nil, err
+			}
+			values[f.Name] = v
+			argIdx++
+		} else if f.Default != nil {
+			values[f.Name] = f.Default
+		}
+	}
 	for _, f := range c.Inputs {
 		if f.Positional {
-			if f.Type.Repeatable() {
-				// A slice positional consumes every remaining argument.
-				values[f.Name] = args[argIdx:]
-				argIdx = len(args)
-			} else if argIdx < len(args) {
-				v, err := convertArg(f, args[argIdx])
-				if err != nil {
-					return nil, err
-				}
-				values[f.Name] = v
-				argIdx++
-			} else if f.Default != nil {
-				values[f.Name] = f.Default
-			}
 			continue
 		}
 		// Only what the caller actually typed. cobra bakes every declared

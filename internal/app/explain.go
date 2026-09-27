@@ -318,16 +318,20 @@ func pace(d time.Duration) string {
 	return d.String()
 }
 
-// cliForm renders the canonical shell invocation for a capability.
+// cliForm renders the canonical shell invocation for a capability: its
+// arguments in the order the command line binds them (cliPositionals), then
+// its flags in the order it declares them.
 func cliForm(c plugin.Capability) string {
 	parts := append([]string{"rta"}, c.Words()...)
-	for _, f := range c.Inputs {
-		switch {
-		case f.Positional && f.Required:
+	for _, f := range cliPositionals(c) {
+		if f.Required {
 			parts = append(parts, "<"+f.Name+">")
-		case f.Positional:
+		} else {
 			parts = append(parts, "["+f.Name+"]")
-		default:
+		}
+	}
+	for _, f := range c.Inputs {
+		if !f.Positional {
 			parts = append(parts, fmt.Sprintf("[--%s <%s>]", f.Name, f.Type))
 		}
 	}
