@@ -122,11 +122,19 @@ func npmManager() manager {
 			var doc map[string]entry
 			dec := json.NewDecoder(strings.NewReader(out))
 			for {
+				var raw json.RawMessage
+				err := dec.Decode(&raw)
+				if errors.Is(err, io.EOF) {
+					break
+				}
 				var one map[string]entry
-				if err := dec.Decode(&one); err != nil {
-					if errors.Is(err, io.EOF) {
-						break
+				if err == nil {
+					if verr := npmFailure(raw); verr != nil {
+						return nil, verr
 					}
+					err = json.Unmarshal(raw, &one)
+				}
+				if err != nil {
 					// A later document that will not parse is only safe to
 					// ignore once an earlier one actually answered. `doc !=
 					// nil` was also true for the empty {} npm sometimes
@@ -144,6 +152,9 @@ func npmManager() manager {
 			}
 			var rows []outdated
 			for name, v := range doc {
+				if versionless(v.Current, v.Latest) {
+					continue
+				}
 				rows = append(rows, outdated{Manager: "npm", Name: name, Current: v.Current, Latest: v.Latest})
 			}
 			return rows, nil
@@ -156,6 +167,45 @@ func npmManager() manager {
 		},
 	}
 }
+
+// npmFailure is npm's own account of why it could not answer, when a
+// document on its stdout is one.
+//
+// With --json npm writes a failure to stdout as {"error": {"code": …,
+// "summary": …}} and exits 1, the status it also means "something is
+// outdated" by. Decoded as the answer, that was a package named error with
+// no version on either side, and its row's upgrade was `npm install -g
+// error@latest` — one key in the TUI from a global install of whatever the
+// registry holds under that name. A package that really is called error
+// carries its versions, and is left to be one.
+func npmFailure(raw json.RawMessage) *view.Error {
+	var doc struct {
+		Error *struct {
+			Code    string `json:"code"`
+			Summary string `json:"summary"`
+			Current string `json:"current"`
+			Latest  string `json:"latest"`
+		} `json:"error"`
+	}
+	// A document of any other shape leaves Error nil, and reading it as the
+	// answer is the caller's next step, with its own refusal if it cannot.
+	_ = json.Unmarshal(raw, &doc)
+	if doc.Error == nil {
+		return nil
+	}
+	e := doc.Error
+	if !versionless(e.Current, e.Latest) || (e.Code == "" && e.Summary == "") {
+		return nil
+	}
+	return view.Errorf("pkg.npm.failed", "npm outdated: %s", firstLine(e.Summary, e.Code))
+}
+
+// versionless reports whether an entry in a manager's JSON answer carries
+// no version on either side. Such an entry says nothing is behind, and the
+// managers that key their answer by name — npm and mise — would otherwise
+// make a row of it whose upgrade installs whatever goes by that key, which
+// was never a package on this machine.
+func versionless(current, latest string) bool { return current == "" && latest == "" }
 
 func bunManager() manager {
 	return manager{

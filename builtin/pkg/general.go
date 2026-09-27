@@ -79,6 +79,9 @@ func miseManager() manager {
 			}
 			var rows []outdated
 			for tool, v := range doc {
+				if versionless(v.Current, v.Latest) {
+					continue
+				}
 				rows = append(rows, outdated{Manager: "mise", Name: tool, Current: v.Current, Latest: v.Latest})
 			}
 			return rows, nil
