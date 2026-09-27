@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -21,8 +22,6 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/format/index"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/storer"
-	godiff "github.com/go-git/go-git/v5/utils/diff"
-	"github.com/sergi/go-diff/diffmatchpatch"
 
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -44,7 +43,9 @@ func diffCapability() plugin.Capability {
 			"Diffing two arbitrary commits against each other is deliberately not offered in this " +
 			"first cut — the two cases above cover what an agent inspecting a repository's current " +
 			"state actually needs, and a revision-range comparison is a distinct enough question " +
-			"to design on its own rather than bolt on.",
+			"to design on its own rather than bolt on. One diff reads at most 16 MiB of a file and " +
+			"64 MiB in all, and spends at most two seconds matching lines; the lines after the patch " +
+			"name each file it left out or diffed coarsely.",
 		Inputs: []plugin.Field{
 			pathField("repository path, or a subdirectory of one"),
 			{Name: "commit", Type: plugin.String, Suggest: suggestCommits,
@@ -64,7 +65,14 @@ func runDiff(ctx context.Context, req plugin.Request) (view.View, error) {
 	if commit := req.String("commit"); commit != "" {
 		return diffCommit(ctx, repo, commit, gate)
 	}
-	return diffWorktree(repo, gate)
+	return diffWorktree(ctx, repo, gate)
+}
+
+// interrupted is a diff the caller stopped waiting for, which answers nothing
+// rather than the files it had got to: a patch that ends early reads as the
+// whole of a smaller change.
+func interrupted(what string) *view.Error {
+	return view.Errorf("git.diff.cancelled", "the diff of %s was interrupted", what)
 }
 
 // pathGate is the host's path gate asked about one file a diff would show, by
@@ -122,6 +130,7 @@ func notDiffed(large []string, skipped []withheld) string {
 }
 
 func diffCommit(ctx context.Context, repo *git.Repository, spec string, gate func(string) *view.Error) (view.View, error) {
+	deadline := matchDeadline(ctx)
 	hash, err := repo.ResolveRevision(plumbing.Revision(spec))
 	if err != nil {
 		return nil, view.Errorf("git.diff.unresolved", "%s does not name a commit: %v", spec, err)
@@ -155,15 +164,20 @@ func diffCommit(ctx context.Context, repo *git.Repository, spec string, gate fun
 	// root commit is often a whole codebase imported at once, and a caller
 	// that has stopped waiting for it should not leave the diff running.
 	changes, err := object.DiffTreeWithOptions(ctx, fromTree, toTree, object.DefaultDiffTreeOptions)
-	if err != nil {
+	switch {
+	case ctx.Err() != nil:
+		return nil, interrupted(shortHash(commit.Hash))
+	case err != nil:
 		return nil, view.Errorf("git.diff.failed", "diffing %s: %v", spec, err)
 	}
 	changes, large, refused, cut := boundChanges(repo, changes, gate)
-	patch, err := changes.PatchContext(ctx)
-	if err != nil {
+	body, coarse, err := commitPatch(ctx, repo, changes, deadline)
+	switch {
+	case ctx.Err() != nil:
+		return nil, interrupted(shortHash(commit.Hash))
+	case err != nil:
 		return nil, view.Errorf("git.diff.failed", "diffing %s: %v", spec, err)
 	}
-	body := patch.String()
 	// **go-git renders nothing at all for a submodule pointer change.**
 	// Measured, not assumed: for a commit that only bumps a submodule, the
 	// patch comes back with one FilePatch whose Files() are both nil and
@@ -181,7 +195,7 @@ func diffCommit(ctx context.Context, repo *git.Repository, spec string, gate fun
 	}
 	// Named in the diff's own shape, as the worktree diff names what it
 	// did not read.
-	body += notDiffed(large, refused) + pastBudget(cut)
+	body += notDiffed(large, refused) + pastBudget(cut) + matchedCoarsely(coarse)
 	// An empty patch is the answer, and the sentence is what a person is
 	// told in its place (view.Text.Empty), for the reason a clean working
 	// tree's is: as the body, `rta git diff --commit <empty> > x.patch` wrote
@@ -218,6 +232,114 @@ func pastBudget(cut int) string {
 	}
 	return fmt.Sprintf("%d more %s changed and not diffed: one diff reads at most %d MiB\n",
 		cut, format.PluralOf(cut, "file"), maxTotalDiffBytes>>20)
+}
+
+// matchedCoarsely is the tail naming the files a diff showed before it had
+// matched all their lines, once it had spent matchTime: each is a correct
+// patch, in which some lines both sides share show as removed and added.
+func matchedCoarsely(paths []string) string {
+	var b strings.Builder
+	sort.Strings(paths)
+	for _, p := range paths {
+		fmt.Fprintf(&b, "%s changed, diffed coarsely: one diff spends at most %v matching lines, "+
+			"so some lines it kept show as removed and added\n", p, matchTime)
+	}
+	return b.String()
+}
+
+// commitPatch is the patch of a commit's changes, and the files in it it
+// matched coarsely.
+//
+// Built here, with the encoder the worktree diff uses, rather than by
+// go-git's Changes.PatchContext: that calls utils/diff.Do on every file,
+// with a one-hour timeout and no way to pass another, so a --commit diff
+// had no bound on the time it spent however few bytes it read. Otherwise it
+// is the patch go-git built, file for file (changePatch). The caller's
+// context is looked at between files, as PatchContext looked at it.
+func commitPatch(ctx context.Context, repo *git.Repository, changes object.Changes, deadline time.Time) (
+	string, []string, error,
+) {
+	patches := make([]diff.FilePatch, 0, len(changes))
+	var coarse []string
+	for _, ch := range changes {
+		if err := ctx.Err(); err != nil {
+			return "", nil, err
+		}
+		fp, cut, err := changePatch(repo, ch, deadline)
+		if err != nil {
+			return "", nil, fmt.Errorf("%s: %w", changePath(ch), err)
+		}
+		if fp == nil {
+			continue
+		}
+		if cut {
+			coarse = append(coarse, changePath(ch))
+		}
+		patches = append(patches, fp)
+	}
+	return (&filePatches{patches: patches}).String(), coarse, nil
+}
+
+// binarySniff is how much of a file git reads to judge it binary, and go-git
+// with it: a NUL in the first eight thousand bytes.
+const binarySniff = 8000
+
+// changePatch is one change of a commit, as go-git's patch showed it: nothing
+// for a side that is a submodule, which submoduleBumps names instead;
+// "Binary files differ" for a side with a NUL where git looks for one, and
+// for two sides with no lines at all (an empty file added or removed, which
+// go-git renders that way and which a patch of lines has no hunk for); the
+// lines otherwise. cut says the lines were matched coarsely.
+func changePatch(repo *git.Repository, ch *object.Change, deadline time.Time) (diff.FilePatch, bool, error) {
+	var (
+		files    [2]*diffFile
+		contents [2]string
+		binary   bool
+	)
+	for i, e := range []object.ChangeEntry{ch.From, ch.To} {
+		if e.Name == "" {
+			continue
+		}
+		if !e.TreeEntry.Mode.IsFile() {
+			return nil, false, nil
+		}
+		blob, err := repo.BlobObject(e.TreeEntry.Hash)
+		if err != nil {
+			return nil, false, err
+		}
+		content, err := blobContent(blob)
+		if err != nil {
+			return nil, false, err
+		}
+		files[i] = &diffFile{path: e.Name, hash: e.TreeEntry.Hash, mode: e.TreeEntry.Mode}
+		contents[i] = content
+		binary = binary || strings.IndexByte(content[:min(len(content), binarySniff)], 0) >= 0
+	}
+	if files[0] == nil && files[1] == nil {
+		return nil, false, nil
+	}
+	if binary {
+		return &filePatch{from: files[0], to: files[1], binary: true}, false, nil
+	}
+	lines := diffLines(contents[0], contents[1], deadline)
+	chunks := lines.chunks()
+	return &filePatch{from: files[0], to: files[1], chunks: chunks, binary: len(chunks) == 0}, lines.cut, nil
+}
+
+// blobContent is a blob's content, read whole: boundChanges has held its size
+// to maxDiffBytes before anything here reads it.
+func blobContent(blob *object.Blob) (string, error) {
+	r, err := blob.Reader()
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = r.Close() }()
+	var b strings.Builder
+	b.Grow(int(blob.Size))
+	if _, err := io.Copy(&b, r); err != nil {
+		return "", err
+	}
+	return b.String(), nil
 }
 
 // boundChanges keeps the changes a --commit diff reads, in order, and names
@@ -393,7 +515,8 @@ func submoduleHeads(repo *git.Repository, wt *git.Worktree) map[string]plumbing.
 // that touched it, refuses one over it. A variable so a test can lower it.
 var maxDiffBytes int64 = 16 << 20
 
-func diffWorktree(repo *git.Repository, gate func(string) *view.Error) (view.View, error) {
+func diffWorktree(ctx context.Context, repo *git.Repository, gate func(string) *view.Error) (view.View, error) {
+	deadline := matchDeadline(ctx)
 	wt, err := repo.Worktree()
 	if err != nil {
 		return nil, view.Errorf("git.diff.worktree", "no working tree here: %v", err).
@@ -418,6 +541,7 @@ func diffWorktree(repo *git.Repository, gate func(string) *view.Error) (view.Vie
 	patches := make([]diff.FilePatch, 0, len(status))
 	var large []string
 	var skipped []withheld
+	var coarse []string
 	budget, cut := maxTotalDiffBytes, 0
 	// A submodule is named by the commits it moved between, as a commit's
 	// diff names one (submoduleBumps) and as git does. Its checkout is a
@@ -427,6 +551,9 @@ func diffWorktree(repo *git.Repository, gate func(string) *view.Error) (view.Vie
 	var bumps []string
 	var heads map[string]plumbing.Hash
 	for _, path := range changedPaths(status) {
+		if ctx.Err() != nil {
+			return nil, interrupted("the working tree")
+		}
 		disk := onDisk(root, path)
 		if from, link := gitlinkAt(headTree, idx, path); link {
 			if heads == nil {
@@ -459,10 +586,13 @@ func diffWorktree(repo *git.Repository, gate func(string) *view.Error) (view.Vie
 		// still the answer: it returned on the first, so an untracked link to
 		// a directory — bazel-out, a `current` pointing at a release — left
 		// the caller with no patch at all, for a file git diffs as one line.
-		fp, ferr := diffOneFile(root, headTree, path, disk)
+		fp, coarsely, ferr := diffOneFile(root, headTree, path, disk, deadline)
 		if ferr != nil {
 			skipped = append(skipped, withheld{path, unreadable(ferr)})
 			continue
+		}
+		if coarsely {
+			coarse = append(coarse, path)
 		}
 		if fp != nil {
 			patches = append(patches, fp)
@@ -479,7 +609,7 @@ func diffWorktree(repo *git.Repository, gate func(string) *view.Error) (view.Vie
 	// caller asked what changed, and a file too large to show, or one it may
 	// not read, is part of the answer rather than a row quietly missing from
 	// it. git.status names the same paths to the same caller.
-	body += notDiffed(large, skipped) + pastBudget(cut)
+	body += notDiffed(large, skipped) + pastBudget(cut) + matchedCoarsely(coarse)
 	return textOrEmpty(body), nil
 }
 
@@ -552,15 +682,18 @@ func sideSizes(headTree *object.Tree, path string, disk os.FileInfo) (from, to i
 
 // diffOneFile builds the patch for a single changed path: HEAD's committed
 // content (empty for a file HEAD never had) against what's on disk right
-// now (empty for a file the worktree deleted).
-func diffOneFile(root string, headTree *object.Tree, path string, disk os.FileInfo) (diff.FilePatch, error) {
+// now (empty for a file the worktree deleted). coarsely says the deadline
+// cut the matching of its lines short.
+func diffOneFile(root string, headTree *object.Tree, path string, disk os.FileInfo, deadline time.Time) (
+	fp diff.FilePatch, coarsely bool, err error,
+) {
 	var from *diffFile
 	oldContent := ""
 	if headTree != nil {
 		if f, err := headTree.File(path); err == nil {
 			c, err := f.Contents()
 			if err != nil {
-				return nil, err
+				return nil, false, err
 			}
 			oldContent = c
 			from = &diffFile{path: path, hash: f.Hash, mode: f.Mode}
@@ -572,7 +705,7 @@ func diffOneFile(root string, headTree *object.Tree, path string, disk os.FileIn
 	if disk != nil {
 		content, mode, err := readWorktreeEntry(root, path, disk)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		newContent = content
 		if mode == filemode.Regular && from != nil && from.mode != filemode.Symlink {
@@ -582,12 +715,13 @@ func diffOneFile(root string, headTree *object.Tree, path string, disk os.FileIn
 	}
 
 	if oldContent == newContent {
-		return nil, nil
+		return nil, false, nil
 	}
 	if isBinary(oldContent) || isBinary(newContent) {
-		return &filePatch{from: from, to: to, binary: true}, nil
+		return &filePatch{from: from, to: to, binary: true}, false, nil
 	}
-	return &filePatch{from: from, to: to, chunks: toChunks(godiff.Do(oldContent, newContent))}, nil
+	lines := diffLines(oldContent, newContent, deadline)
+	return &filePatch{from: from, to: to, chunks: lines.chunks()}, lines.cut, nil
 }
 
 // readWorktreeEntry is the content git diffs for what is at path, and the
@@ -687,21 +821,6 @@ func isBinary(content string) bool {
 	return false
 }
 
-func toChunks(diffs []diffmatchpatch.Diff) []diff.Chunk {
-	chunks := make([]diff.Chunk, 0, len(diffs))
-	for _, d := range diffs {
-		op := diff.Equal
-		switch d.Type {
-		case diffmatchpatch.DiffInsert:
-			op = diff.Add
-		case diffmatchpatch.DiffDelete:
-			op = diff.Delete
-		}
-		chunks = append(chunks, &textChunk{content: d.Text, op: op})
-	}
-	return chunks
-}
-
 // textOrEmpty is a working tree's patch, which is empty when nothing is
 // uncommitted — and empty is the answer, not a sentence about it. The body
 // was that sentence, so every format carried it: `rta git diff > x.patch` on
@@ -713,10 +832,11 @@ func textOrEmpty(body string) view.View {
 
 // The four small types below implement plumbing/format/diff's Patch,
 // FilePatch, File and Chunk interfaces for a diff this package computed
-// itself (the working tree against HEAD, which go-git has no built-in
-// comparison for) — reusing the library's own unified-diff encoder rather
-// than hand-formatting `diff --git`/`@@` text, the fiddly part every other
-// case in this file gets for free from object.Commit.Patch.
+// itself — the working tree against HEAD, which go-git has no built-in
+// comparison for, and a commit against its parent, whose go-git patch
+// matches lines with no bound on the time it takes (commitPatch) — reusing
+// the library's own unified-diff encoder rather than hand-formatting
+// `diff --git`/`@@` text.
 
 type filePatches struct {
 	patches []diff.FilePatch
