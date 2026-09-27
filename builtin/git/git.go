@@ -286,6 +286,9 @@ func openAt(req plugin.Request, root, path string) (*git.Repository, *view.Error
 	storage := filesystem.NewStorage(dotgit.NewRepositoryFilesystem(dot, common), cache.NewObjectLRUDefault())
 	repo, err := git.Open(readerExtensions{storage}, wt)
 	if err != nil {
+		if verr := unsupportedFormat(path, storage, err); verr != nil {
+			return nil, verr
+		}
 		return nil, notARepo(err)
 	}
 	// The storage itself from here on, whose config is the whole file, and
@@ -306,7 +309,7 @@ func openAt(req plugin.Request, root, path string) (*git.Repository, *view.Error
 // config.worktree, which this reads itself where it matters (worktreeConfig);
 // the objects, refs and index are git's usual ones. Every other extension is
 // left for go-git to refuse: one that changes how objects or refs are stored
-// is one this cannot read.
+// is one this cannot read, and the refusal names it (unsupportedFormat).
 type readerExtensions struct{ *filesystem.Storage }
 
 func (s readerExtensions) Config() (*gitconfig.Config, error) {
@@ -318,6 +321,47 @@ func (s readerExtensions) Config() (*gitconfig.Config, error) {
 		cfg.Raw.Section("extensions").RemoveOption("worktreeConfig")
 	}
 	return cfg, nil
+}
+
+// unsupportedFormat is the refusal of a repository go-git would not open for
+// an extension its config sets, naming the extension; nil where err is not
+// that.
+//
+// **A repository git reads is not "not a git repository".** `git init
+// --object-format=sha256` sets extensions.objectFormat, and `git init
+// --ref-format=reftable`, or `git refs migrate`, extensions.refStorage: the
+// first names its objects by SHA-256 and the second keeps its refs in a
+// reftable, and go-git reads neither. It refuses them, rightly, since it
+// would read such a repository wrong, and every capability here passed its
+// refusal on as git.notarepo, telling the caller to find a directory inside
+// a git repository while standing in one. The wording did not help either:
+// go-git never reads core.repositoryFormatVersion back from the config, so
+// whatever the extension it says the format version does not support it.
+// Every extension still set once readerExtensions has left out the one it
+// reads around is named, with its value, as the config spells them.
+func unsupportedFormat(path string, storage *filesystem.Storage, err error) *view.Error {
+	if !errors.Is(err, git.ErrUnknownExtension) && !errors.Is(err, git.ErrUnsupportedExtensionRepositoryFormatVersion) &&
+		!errors.Is(err, git.ErrUnsupportedRepositoryFormatVersion) {
+		return nil
+	}
+	cfg, cerr := readerExtensions{storage}.Config()
+	if cerr != nil {
+		return nil //nolint:nilerr // a config that cannot be read names no extension, and go-git's refusal is passed on as it was
+	}
+	var named []string
+	if cfg.Raw.HasSection("extensions") {
+		for _, o := range cfg.Raw.Section("extensions").Options {
+			named = append(named, "extensions."+o.Key+" = "+o.Value)
+		}
+	}
+	if len(named) == 0 {
+		named = append(named, "core.repositoryformatversion = "+
+			cfg.Raw.Section("core").Option("repositoryformatversion"))
+	}
+	return view.Errorf("git.repository.unsupported", "%s is a git repository in a format this reader "+
+		"does not support yet: its config sets %s", path, strings.Join(named, ", ")).
+		WithHint("git itself reads it; this reader opens a repository whose objects are named by SHA-1, " +
+			"whose refs are files, and which holds every object it names")
 }
 
 // maxPointerBytes bounds a file that points at a directory — a `.git` file
