@@ -250,6 +250,60 @@ func TestALinkInsideTheGitDirectoryDoesNotLeadOut(t *testing.T) {
 	}
 }
 
+// rta's own state is refused wherever it sits, a checkout included: a
+// dotfiles repository at ~ holds ~/.local/share/rta untracked, and git.diff
+// read every changed and untracked file whole — the age identity among them —
+// while fs.hash on the same file was refused as rta's own state. A file the
+// gate refuses is named in the diff's own shape and not read, from the disk
+// or, for a --commit diff, from the object store.
+func TestADiffDoesNotShowRtasOwnState(t *testing.T) {
+	const secret = "AGE-SECRET-KEY-1NOTFORANAGENT"
+	identity := filepath.Join(".local", "share", "rta", "kv.identity")
+
+	setup := func(t *testing.T) (string, *git.Repository) {
+		t.Helper()
+		dir, repo := testRepo(t)
+		t.Setenv("RTA_DATA_DIR", filepath.Join(dir, ".local", "share", "rta"))
+		commitFile(t, repo, dir, ".zshrc", "export A=1\n", "dotfiles")
+		return dir, repo
+	}
+	withheld := filepath.ToSlash(identity) + " changed, not diffed: the path gate refuses it (core.mcp.path.protected)"
+
+	t.Run("worktree", func(t *testing.T) {
+		dir, _ := setup(t)
+		writeFile(t, dir, identity, secret+"\n")
+		writeFile(t, dir, ".zshrc", "export A=2\n")
+
+		body := text(t, runDiff, guarded(t, dir, dir))
+		if strings.Contains(body, secret) {
+			t.Fatalf("the diff showed rta's own state to a confined caller:\n%s", body)
+		}
+		if !strings.Contains(body, withheld) {
+			t.Errorf("the refused file is not named in the diff:\n%s", body)
+		}
+		if !strings.Contains(body, "+export A=2") {
+			t.Errorf("the change the caller may read is missing:\n%s", body)
+		}
+		// A person at a terminal reads their own files.
+		if !strings.Contains(text(t, runDiff, req(t, dir, nil)), secret) {
+			t.Error("an unconfined diff withheld a file from the person it belongs to")
+		}
+	})
+
+	t.Run("commit", func(t *testing.T) {
+		dir, repo := setup(t)
+		commitFile(t, repo, dir, identity, secret+"\n", "committed by mistake")
+
+		body := text(t, runDiff, guarded(t, dir, dir).With(map[string]any{"commit": "HEAD"}))
+		if strings.Contains(body, secret) {
+			t.Fatalf("the commit's diff showed rta's own state to a confined caller:\n%s", body)
+		}
+		if !strings.Contains(body, withheld) {
+			t.Errorf("the refused file is not named in the commit's diff:\n%s", body)
+		}
+	})
+}
+
 // A URL reaching a confined handler is refused at the boundary rather than
 // mangled into a local path — see pathguard.remote. Pinned from this side too,
 // because this is the plugin whose path input accepts one.

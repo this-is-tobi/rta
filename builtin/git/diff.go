@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -53,13 +54,65 @@ func runDiff(ctx context.Context, req plugin.Request) (view.View, error) {
 		return nil, verr
 	}
 
+	gate := pathGate(req, repo)
 	if commit := req.String("commit"); commit != "" {
-		return diffCommit(ctx, repo, commit)
+		return diffCommit(ctx, repo, commit, gate)
 	}
-	return diffWorktree(repo)
+	return diffWorktree(repo, gate)
 }
 
-func diffCommit(ctx context.Context, repo *git.Repository, spec string) (view.View, error) {
+// pathGate is the host's path gate asked about one file a diff would show, by
+// its path in the repository: the refusal, or nil where the caller may read
+// it.
+//
+// **The gate judged the repository, not what is in it.** The root is drawn
+// around a directory, and rta's own data and configuration directories are
+// refused inside it wherever they sit — which they do inside a checkout, for
+// anybody who versions their home directory: a dotfiles repository at ~
+// holds ~/.local/share/rta untracked. git.diff then read every changed and
+// untracked file whole, and handed an agent the age identity that decrypts
+// the secret store, the grants seal key and the store itself, in one ungated
+// call, while fs.hash on the same file was refused as rta's own state. The
+// files a diff reads are paths this handler derives, so each is put back to
+// the host the way repoRoot puts back the repository.
+//
+// A --commit diff asks too, about the committed content: a store or a config
+// committed by mistake is the same secret whether it comes from the disk or
+// from the object store, and git.blame, whose file is a path argument, is
+// already refused it. A bare repository has no working tree to place a path
+// in, and nothing in it is on disk under that name to be protected.
+func pathGate(req plugin.Request, repo *git.Repository) func(path string) *view.Error {
+	wt, err := repo.Worktree()
+	if err != nil {
+		return func(string) *view.Error { return nil }
+	}
+	root := wt.Filesystem.Root()
+	return func(path string) *view.Error {
+		_, verr := req.Confine("path", filepath.Join(root, filepath.FromSlash(path)))
+		return verr
+	}
+}
+
+// withheld is a changed file a diff names without showing it, and the code
+// of the path gate's refusal.
+type withheld struct{ path, code string }
+
+// notDiffed is the tail of a diff naming, in the diff's own shape, what it
+// did not show: a file too large to read, and a file the path gate refused.
+func notDiffed(large []string, refused []withheld) string {
+	var b strings.Builder
+	sort.Strings(large)
+	for _, p := range large {
+		fmt.Fprintf(&b, "%s changed, larger than %d MiB and not diffed\n", p, maxDiffBytes>>20)
+	}
+	sort.Slice(refused, func(i, j int) bool { return refused[i].path < refused[j].path })
+	for _, w := range refused {
+		fmt.Fprintf(&b, "%s changed, not diffed: the path gate refuses it (%s)\n", w.path, w.code)
+	}
+	return b.String()
+}
+
+func diffCommit(ctx context.Context, repo *git.Repository, spec string, gate func(string) *view.Error) (view.View, error) {
 	hash, err := repo.ResolveRevision(plumbing.Revision(spec))
 	if err != nil {
 		return nil, view.Errorf("git.diff.unresolved", "%s does not name a commit: %v", spec, err)
@@ -96,7 +149,7 @@ func diffCommit(ctx context.Context, repo *git.Repository, spec string) (view.Vi
 	if err != nil {
 		return nil, view.Errorf("git.diff.failed", "diffing %s: %v", spec, err)
 	}
-	changes, large, cut := boundChanges(repo, changes)
+	changes, large, refused, cut := boundChanges(repo, changes, gate)
 	patch, err := changes.PatchContext(ctx)
 	if err != nil {
 		return nil, view.Errorf("git.diff.failed", "diffing %s: %v", spec, err)
@@ -119,9 +172,7 @@ func diffCommit(ctx context.Context, repo *git.Repository, spec string) (view.Vi
 	}
 	// Named in the diff's own shape, as the worktree diff names what it
 	// did not read.
-	for _, p := range large {
-		body += fmt.Sprintf("%s changed, larger than %d MiB and not diffed\n", p, maxDiffBytes>>20)
-	}
+	body += notDiffed(large, refused)
 	if cut > 0 {
 		body += fmt.Sprintf("%d more %s changed and not diffed: one commit's diff reads at most %d MiB\n",
 			cut, format.PluralOf(cut, "file"), maxCommitDiffBytes>>20)
@@ -150,13 +201,22 @@ func diffCommit(ctx context.Context, repo *git.Repository, spec string) (view.Vi
 var maxCommitDiffBytes int64 = 64 << 20
 
 // boundChanges keeps the changes a --commit diff reads, in order, and names
-// the ones it leaves: a file over maxDiffBytes by its path, and whatever no
-// longer fits the commit's budget by count. Sizes come from the object store
-// without reading the content, so deciding costs nothing it is meant to
-// save.
-func boundChanges(repo *git.Repository, changes object.Changes) (kept object.Changes, large []string, cut int) {
+// the ones it leaves: a file the path gate refuses, a file over maxDiffBytes
+// by its path, and whatever no longer fits the commit's budget by count.
+// Sizes come from the object store without reading the content, so deciding
+// costs nothing it is meant to save.
+//
+// Both names of a change go to the gate, since a rename carries the content
+// of the one it came from.
+func boundChanges(repo *git.Repository, changes object.Changes, gate func(string) *view.Error) (
+	kept object.Changes, large []string, refused []withheld, cut int,
+) {
 	budget := maxCommitDiffBytes
 	for _, ch := range changes {
+		if verr := gateEither(gate, ch.From.Name, ch.To.Name); verr != nil {
+			refused = append(refused, withheld{changePath(ch), verr.Code})
+			continue
+		}
 		from, to := blobSize(repo, ch.From), blobSize(repo, ch.To)
 		switch {
 		case from > maxDiffBytes || to > maxDiffBytes:
@@ -168,8 +228,21 @@ func boundChanges(repo *git.Repository, changes object.Changes) (kept object.Cha
 			kept = append(kept, ch)
 		}
 	}
-	sort.Strings(large)
-	return kept, large, cut
+	return kept, large, refused, cut
+}
+
+// gateEither is the gate's refusal of the first of names it refuses, an empty
+// name — the side of an addition or a deletion that is not there — skipped.
+func gateEither(gate func(string) *view.Error, names ...string) *view.Error {
+	for _, n := range names {
+		if n == "" {
+			continue
+		}
+		if verr := gate(n); verr != nil {
+			return verr
+		}
+	}
+	return nil
 }
 
 // blobSize is the size of one side of a change, 0 for a side that does not
@@ -236,7 +309,7 @@ func submoduleBumps(fromTree, toTree *object.Tree) []string {
 // than diffed. A variable so a test can lower it.
 var maxDiffBytes int64 = 16 << 20
 
-func diffWorktree(repo *git.Repository) (view.View, error) {
+func diffWorktree(repo *git.Repository, gate func(string) *view.Error) (view.View, error) {
 	wt, err := repo.Worktree()
 	if err != nil {
 		return nil, view.Errorf("git.diff.worktree", "no working tree here: %v", err).
@@ -259,8 +332,13 @@ func diffWorktree(repo *git.Repository) (view.View, error) {
 
 	patches := make([]diff.FilePatch, 0, len(status))
 	var large []string
+	var refused []withheld
 	for path, fs := range status {
 		if fs.Staging == git.Unmodified && fs.Worktree == git.Unmodified {
+			continue
+		}
+		if verr := gate(path); verr != nil {
+			refused = append(refused, withheld{path, verr.Code})
 			continue
 		}
 		if tooLarge(wt, headTree, path, fs) {
@@ -277,14 +355,10 @@ func diffWorktree(repo *git.Repository) (view.View, error) {
 	}
 	body := (&filePatches{patches: patches}).String()
 	// Named in the diff's own shape, the way a submodule bump is: the
-	// caller asked what changed, and a file too large to show is part of
-	// the answer rather than a row quietly missing from it.
-	if len(large) > 0 {
-		sort.Strings(large)
-		for _, p := range large {
-			body += fmt.Sprintf("%s changed, larger than %d MiB and not diffed\n", p, maxDiffBytes>>20)
-		}
-	}
+	// caller asked what changed, and a file too large to show, or one it may
+	// not read, is part of the answer rather than a row quietly missing from
+	// it. git.status names the same paths to the same caller.
+	body += notDiffed(large, refused)
 	return textOrEmpty(body), nil
 }
 
