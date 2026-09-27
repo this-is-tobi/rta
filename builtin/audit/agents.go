@@ -542,6 +542,7 @@ func gradeServers(r *agentReport, f agentFile, servers []serverDecl) {
 			name += " (" + orElse(d.at, "top level") + ")"
 		}
 		gradeCredentials(r, f, name, d)
+		gradeEmptied(r, f, name, d)
 		if host, plaintext := plaintextEndpoint(d.url); plaintext {
 			r.Add(grpAgentServers, name, findings.Fail,
 				"called over plain http:// at "+host+" — on this transport the header is the entire "+

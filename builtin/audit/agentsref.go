@@ -163,6 +163,84 @@ func gradeMisnamed(r *agentReport, f agentFile, refs clientRefs, name, server st
 			strings.Join(moves, "; ")+".")
 }
 
+// emptiedTowardRemote are the variables Claude Code reads as empty in a
+// remote server's url and headers: set or not, and whatever :-default
+// follows one, the server receives nothing where the reference stands. It
+// does so, its documentation on MCP says, so that a project's .mcp.json or
+// a plugin cannot send Claude Code's own credentials, or a cloud provider's,
+// to a server the file names.
+//
+// **These are the names that documentation gives, and it gives them as
+// examples**: "such as" ANTHROPIC_API_KEY and ANTHROPIC_AUTH_TOKEN for
+// Claude Code's own, AWS_BEARER_TOKEN_BEDROCK for a cloud provider's,
+// HTTPS_PROXY and NPM_TOKEN for others the environment carries. The whole
+// set is not published, and it is not the pattern Claude Code strips from a
+// headers helper's environment — its page says API_KEY expands as written —
+// so a name is recognised here only where the documentation names it, and
+// one it does not is left ungraded rather than guessed at.
+var emptiedTowardRemote = map[string]bool{
+	"ANTHROPIC_API_KEY": true, "ANTHROPIC_AUTH_TOKEN": true, "AWS_BEARER_TOKEN_BEDROCK": true,
+	"HTTPS_PROXY": true, "NPM_TOKEN": true,
+}
+
+// gradeEmptied warns about a Claude Code remote server whose url or headers
+// name a variable Claude Code reads as empty there (emptiedTowardRemote).
+//
+// Graded as a reference Claude Code expands, such a value was no finding at
+// all, and the server was sent an empty credential — "Bearer " and nothing
+// after it — and refused every call, usually with a 401, which Claude Code
+// reports only as a failed connection. Every header is read and not only a
+// credential-named one, since the variable empties wherever it stands. The
+// variables are named, which gradeMisnamed does not do: a braced reference to
+// one of these names is no spelling of a value.
+func gradeEmptied(r *agentReport, f agentFile, name string, d serverDecl) {
+	if d.url == "" || refsOf(f).client != "Claude Code" {
+		return
+	}
+	var where []string
+	named := map[string]bool{}
+	scan := func(entry, value string) {
+		hit := false
+		for _, m := range refBraces.FindAllStringSubmatch(value, -1) {
+			if v := m[refBraces.SubexpIndex("name")]; emptiedTowardRemote[v] {
+				named[v], hit = true, true
+			}
+		}
+		if hit {
+			where = append(where, entry)
+		}
+	}
+	scan("its url", d.url)
+	keys := make([]string, 0, len(d.headers))
+	for k := range d.headers {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		scan(k, d.headers[k])
+	}
+	if len(where) == 0 {
+		return
+	}
+	vars := make([]string, 0, len(named))
+	for v := range named {
+		vars = append(vars, v)
+	}
+	sort.Strings(vars)
+	list := strings.Join(vars, ", ")
+	r.Add(grpAgentServers, name, findings.Warn,
+		"called with "+strings.Join(where, ", ")+" naming "+list+", which Claude Code reads as empty "+
+			"toward a remote server — the server receives an empty value there", findings.Reference{})
+	r.addFix("emptied", name+" — name "+list+" by a variable of your own",
+		"Claude Code reads "+list+" as empty in a remote server's url and headers, set or not and "+
+			"whatever default follows, so that a file cannot send its own or a cloud provider's "+
+			"credential to a server it names. To give "+name+" a credential, set it in a variable of "+
+			"your own in the environment that launches Claude Code and reference that in "+
+			shortPath(f.path)+" instead, `"+refsOf(f).spell(variableFor(d.name, "Authorization", true))+
+			"` for an Authorization header; and if the value is Claude Code's own key, ask first "+
+			"whether "+name+" should hold it at all.")
+}
+
 // clientRefs is how one client names a variable of the environment that
 // launches it, in the env and headers of a server declaration.
 type clientRefs struct {
