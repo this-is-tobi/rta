@@ -68,6 +68,23 @@ func TestTheDeeperRowsFitWhatWasActuallyRead(t *testing.T) {
 	}
 }
 
+// The rows above the next steps grade each advisory and name its fixed
+// versions, and the step pointing at trivy said this audit carries neither,
+// on the same page. A next step says what the tool adds, never that the
+// audit lacks what it prints.
+func TestTheScanStepDoesNotDenyWhatTheRowsPrint(t *testing.T) {
+	for _, remote := range []bool{false, true} {
+		for _, p := range depsDeeper(plugin.SurfaceCLI, ".", remote, []string{"go.mod"}) {
+			low := strings.ToLower(p.Key + " " + p.Value)
+			for _, claim := range []string{"no severity", "identifiers only", "no fixed version"} {
+				if strings.Contains(low, claim) {
+					t.Errorf("%s: %q says the audit lacks what its rows print", p.Key, p.Value)
+				}
+			}
+		}
+	}
+}
+
 // A tool named once per manifest is a tool named eleven times in a monorepo.
 func TestADeeperCommandIsNamedOncePerRepositoryNotOncePerFile(t *testing.T) {
 	many := []string{"a/go.mod", "b/go.mod", "c/go.mod", "d/pnpm-lock.yaml", "e/pnpm-lock.yaml"}

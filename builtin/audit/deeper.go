@@ -3,6 +3,7 @@ package audit
 import (
 	"path"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -26,8 +27,8 @@ import (
 // does not track their flags. What it owes is the invocation with the target
 // already in it, so the next step is a paste and not a search.
 //
-// Keyed by the question rather than by the word "deeper", because "severity"
-// and "unused" tell somebody whether the row is for them and "deeper" does
+// Keyed by the question rather than by the word "deeper", because "a full
+// scan" and "unused" tell somebody whether the row is for them and "deeper" does
 // not. On the detail page only: the compact table is the grade, and a list of
 // other people's tools is not a finding.
 
@@ -133,15 +134,20 @@ func depsDeeper(sf plugin.Surface, target string, remote bool, manifests []strin
 	// is the one of these that takes a URL and does its own clone, so it gets
 	// the URL; the rest are shown as they would be run in a checkout, which
 	// is the honest instruction rather than a command that would fail.
-	severity := []string{"trivy fs " + target, "grype dir:" + target}
-	adds := "the OSV batch endpoint answers with advisory identifiers and carries no severity " +
-		"or fixed version, which is the one thing you need to decide whether to stop what you are doing"
+	// What a scanner adds past this audit, and not what this audit used to
+	// lack: the rows grade each advisory and name its fixed versions from
+	// OSV's own records, and this step said the batch endpoint "carries no
+	// severity or fixed version" directly under rows that printed both.
+	scan := []string{"trivy fs " + target, "grype dir:" + target}
+	adds := "what a lockfile reader never sees — OS packages, vendored code, a container image — and " +
+		"every advisory graded, where this grades the first " + strconv.Itoa(osvDetailMax) +
+		" within the timeout, against their own severity sources as well as OSV's"
 	if remote {
-		severity = []string{"trivy repo " + target}
+		scan = []string{"trivy repo " + target}
 		adds += ". trivy takes the URL and clones it itself; the rows below run in a checkout"
 	}
 	return nextStepPairs([]nextStep{
-		{"severity", severity, adds},
+		{"a full scan", scan, adds},
 		{nativeQuestion(native), native, nativeBecause(native)},
 		{"unused", unused,
 			"declared dependencies nothing imports. Deleting one is the cheapest fix an advisory " +

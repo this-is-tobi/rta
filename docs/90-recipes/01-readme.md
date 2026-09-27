@@ -130,10 +130,10 @@ Nothing is installed, resolved or built — a lockfile is a list a package manag
 
 **It is refused over MCP, and that is not an oversight.** `audit deps` is read-only and needs no grant, which is what puts it on an agent's tool list with nothing asked. A URL an agent composes is a request rta makes on its behalf, to a host the agent chose, with the reply landing in its context — the thing `http.get` carries a grant for. Point an agent at a checkout you made.
 
-`--detail` ends with the tools that answer what this cannot, with the target already substituted in — severity and fixed versions, the ecosystem's own auditor, the dependencies nothing imports, and an SBOM worth committing:
+The rows grade each advisory and name the versions that fix it, from osv.dev's own records. `--detail` ends with the tools that answer what this cannot, with the target already substituted in — a full scan of what a lockfile reader never sees, the ecosystem's own auditor, the dependencies nothing imports, and an SBOM worth committing:
 
 ```
-severity            `trivy fs .` or `grype dir:.` — the OSV batch endpoint carries identifiers only
+a full scan         `trivy fs .` or `grype dir:.` — OS packages, vendored code, images, and every advisory graded
 reachability        `govulncheck ./...` — whether your code can reach the vulnerable function
 unused              `go mod tidy` — declared dependencies nothing imports
 an sbom to keep     `syft . -o cyclonedx-json` — read once here, kept there
