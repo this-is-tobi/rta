@@ -530,8 +530,37 @@ func systemOnly(which string) *view.Error {
 	}
 	return view.Errorf("plugin.untrust.system",
 		"%s is trusted by the system root at %s, which rta reads and does not write", which, paths.System()).
-		WithHint("that trust is the image's or the package's decision: build one without the plugin, " +
-			"or run with RTA_SYSTEM_DIR set to an empty value to read no system root at all")
+		WithHint(SystemHint)
+}
+
+// SystemHint is what to do about an artifact the system root trusts, said
+// wherever a withdrawal meets one: the plugin.untrust.system refusal, and
+// every surface answering an untrust that SystemTrusted says left the
+// artifact loading.
+const SystemHint = "that trust is the image's or the package's decision: build one without the plugin, " +
+	"or run with RTA_SYSTEM_DIR set to an empty value to read no system root at all"
+
+// SystemTrusted is the system root's entries that which names, matched as
+// Remove matches it: what a withdrawal by which leaves trusted, whatever it
+// took out of the operator's record.
+//
+// **A withdrawal can succeed and the artifact go on loading.** Allow, and a
+// trust of an artifact the image already trusts, each write the operator a
+// copy of it — the copy is what lets disallow and untrust find it later — and
+// Remove then takes the copy out and reports one approval gone, while Load
+// reads the image's entry underneath and the plugin runs on the next
+// command. Every surface answering an untrust asks this before it says the
+// artifact will not load again: said after a removal that left it trusted,
+// it leaves the operator believing the opposite of what happened.
+func SystemTrusted(which string) []Entry {
+	var out []Entry
+	for _, e := range loadSystem() {
+		if e.matchedBy(which) {
+			out = append(out, e)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Digest < out[j].Digest })
+	return out
 }
 
 // PreviewRemove answers what Remove would do — the same matching, the same
@@ -578,17 +607,23 @@ func matchRemove(f file, which string) (kept []Entry, removed int, verr *view.Er
 		}
 	}
 	for _, e := range f.Trusted {
-		// Any name it has ever been trusted under, not just the most recent:
-		// the operator is withdrawing a plugin, and every name it has carried
-		// is a name they might reach for.
-		if e.normalize().Knows(which) ||
-			(len(which) >= minDigestPrefix && strings.HasPrefix(e.Digest, which)) {
+		if e.matchedBy(which) {
 			removed++
 			continue
 		}
 		kept = append(kept, e)
 	}
 	return kept, removed, nil
+}
+
+// matchedBy reports whether a withdrawal naming which takes this entry: by
+// any name it has ever been trusted under, not just the most recent — the
+// operator is withdrawing a plugin, and every name it has carried is a name
+// they might reach for — or by its digest, whole or as a prefix long enough
+// to mean one artifact.
+func (e Entry) matchedBy(which string) bool {
+	return e.normalize().Knows(which) ||
+		(len(which) >= minDigestPrefix && strings.HasPrefix(e.Digest, which))
 }
 
 // read loads the file for a read-modify-write.

@@ -735,6 +735,12 @@ func (m *Model) trustSelected() string {
 	if n == 0 {
 		return row.plugin.Name + " was not in the trusted list"
 	}
+	// The row stays as it was: what went was the operator's copy of an
+	// artifact the system root trusts too, and it runs again next time.
+	if len(plugintrust.SystemTrusted(row.plugin.Name)) > 0 {
+		return "took your approval back from " + row.plugin.Name + " — the system root trusts it as well, " +
+			"so it keeps loading; " + plugintrust.SystemHint
+	}
 	m.plugins[m.pluginSel].decided = decidedUntrust
 	return "took approval back from " + row.plugin.Name +
 		" — it stays loaded until rta exits, and will not run again"

@@ -150,6 +150,13 @@ func runPluginUpgradeAll(cmd *cobra.Command, opts *globalOpts, index string) err
 // The system root's entries are left alone and not counted: rta reads that
 // file and never writes it, so sweeping into it would produce a per-entry
 // refusal for every one of them and a report that claims less than it did.
+//
+// Nor are they all marked System in Load: an artifact the image trusts and
+// the operator trusted or allowed as well is the operator's entry there, and
+// is withdrawn with the rest — while the image's entry underneath keeps it
+// loading. Each withdrawal is checked against the system root afterwards,
+// so the answer counts those among what was left alone and says they still
+// load, rather than that none of them will.
 func runPluginUntrustAll(cmd *cobra.Command, opts *globalOpts) error {
 	if !opts.dryRun && !opts.yes {
 		return &view.Error{
@@ -162,7 +169,7 @@ func runPluginUntrustAll(cmd *cobra.Command, opts *globalOpts) error {
 	if opts.dryRun {
 		remove = plugintrust.PreviewRemove
 	}
-	total, system := 0, 0
+	total, own, still, system := 0, 0, 0, 0
 	var names []string
 	for _, e := range plugintrust.Load().Entries() {
 		if e.System {
@@ -174,6 +181,10 @@ func runPluginUntrustAll(cmd *cobra.Command, opts *globalOpts) error {
 			return verr
 		}
 		total += n
+		own++
+		if len(plugintrust.SystemTrusted(e.Digest)) > 0 {
+			still++
+		}
 		// By its digest when it carries no name — a record written by hand, or
 		// by an rta older than names — so every approval counted is one the
 		// answer names, as the single form names the digest it was given.
@@ -193,18 +204,21 @@ func runPluginUntrustAll(cmd *cobra.Command, opts *globalOpts) error {
 	switch {
 	case total == 0:
 		what, next = "nothing", "no approval of your own is recorded, so there was nothing to withdraw"
+	case opts.dryRun && still > 0:
+		next = "run without --dry-run to withdraw them; those the system root trusts as well would keep loading"
 	case opts.dryRun:
 		next = "run without --dry-run to withdraw them"
+	case still == 1 && own == 1:
+		next = stillLoading
+	case still == own:
+		next = "they keep loading: the system root trusts them as well, so what is withdrawn is " +
+			"your approvals and any location you allowed them"
+	case still > 0:
+		next = "those the system root trusts as well keep loading, without any location you allowed them; " +
+			"the rest will not load again, and a session already running keeps what it loaded — " +
+			"restart `rta mcp serve` or the TUI to be rid of them"
 	}
-	answer := untrustAnswer(what, total, next, opts.dryRun)
-	if system > 0 {
-		// Said, because "every approval" read on its own is a claim about the
-		// machine, and these still load.
-		answer.Pairs = slices.Insert(answer.Pairs, 2, view.Pair{Key: "left alone",
-			Value: format.Count(system, "artifact", "artifacts") + " trusted by the system root, " +
-				"which rta reads and never writes"})
-	}
-	return renderView(cmd, opts, answer)
+	return renderView(cmd, opts, untrustAnswer(what, total, system+still, next, opts.dryRun))
 }
 
 // runPluginRemoveAll uninstalls every managed plugin, one at a time through
