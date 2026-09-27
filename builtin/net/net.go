@@ -903,7 +903,8 @@ func proxySummary() string {
 }
 
 // maskProxy hides credentials embedded in a proxy URL. The host stays
-// visible — it is the useful part; the secret is the userinfo.
+// visible wherever the value lets it — it is the useful part; the secret is
+// the userinfo.
 //
 // **Parsed by hand rather than by url.Parse, because the schemeless form is
 // a working configuration and url.Parse does not read it as one.** Given
@@ -921,35 +922,57 @@ func proxySummary() string {
 // Scanning for the userinfo covers both spellings with one rule and no
 // dependency on a parser's opinion of what a scheme is.
 func maskProxy(raw string) string {
-	// A `://` is the end of a scheme only when nothing before it could be
-	// userinfo or a path. The first one anywhere in the value was taken for
-	// it, so `bob:s3cret@proxy.corp:3128/x://y` — schemeless, and read by
-	// net/http as bob with s3cret, since the path is not its business — was
-	// split after the credential, and printed whole.
+	// A `://` is the end of a scheme only when what stands before it is one
+	// (hasScheme). The first one anywhere in the value was taken for it, so
+	// `bob:s3cret@proxy.corp:3128/x://y` — schemeless, and read by net/http
+	// as bob with s3cret, since the path is not its business — was split
+	// after the credential, and printed whole; and `bob:x://s3cret@…`, whose
+	// password holds the `://`, printed the username and the password's
+	// first letter as though they were a scheme.
 	prefix, rest := "", raw
-	if i := strings.Index(raw, "://"); i >= 0 && !strings.ContainsAny(raw[:i], "@/?#") {
+	if i := strings.Index(raw, "://"); i >= 0 && hasScheme(raw[:i]) {
 		prefix, rest = raw[:i+3], raw[i+3:]
 	}
-	// The userinfo lives in the authority, which ends at the first `/`, `?`
-	// or `#` — an `@` past that is part of a path, and reading it as a
-	// credential boundary would mask the host instead of the secret.
-	authority := rest
-	if end := strings.IndexAny(rest, "/?#"); end >= 0 {
-		authority = rest[:end]
-	}
-	// **The last `@` in it, not the first**, because that is where url.Parse
-	// splits — and url.Parse is what net/http reads a proxy variable with. A
-	// password holding a raw `@`, `bob:P@ssw0rd@proxy.corp:3128`, is a working
+	// **The last `@`, not the first**, because that is where url.Parse splits
+	// — and url.Parse is what net/http reads a proxy variable with. A password
+	// holding a raw `@`, `bob:P@ssw0rd@proxy.corp:3128`, is a working
 	// configuration that authenticates as bob with P@ssw0rd; cut at the first
 	// `@`, this printed `***@ssw0rd@proxy.corp:3128`, most of the password,
 	// underneath net.info's promise that proxy credentials are masked.
-	at := strings.LastIndex(authority, "@")
+	//
+	// **And the last in the whole value, not in its authority.** The scan
+	// stopped at the authority's end, the first `/`, `?` or `#`, so that an
+	// `@` in a path would not mask the host — and a raw `/`, `?` or `#` in a
+	// password ends the authority just as early. `bob:2024/Secret@proxy.corp`
+	// is, to url.Parse, a proxy at bob:2024 with a path and no userinfo, and
+	// the scan, finding no `@` in that authority, printed the password whole.
+	// `bob:s3/cr3t@…`, which url.Parse refuses for its port, was printed the
+	// same way. Nothing in such a value tells the password from a path, and a
+	// proxy's path, query and fragment are never read — by net/http or by the
+	// SOCKS dialer — so the rare value whose path holds an `@` loses its host
+	// to the mask, and a password never reaches the screen.
+	at := strings.LastIndex(rest, "@")
 	if at < 0 {
 		return raw
 	}
 	// The whole userinfo, username included: this function's stated rule is
 	// that the host is the useful part and the userinfo is the secret.
 	return prefix + "***@" + rest[at+1:]
+}
+
+// hasScheme reports whether s is a URL scheme: a letter, then letters,
+// digits, `+`, `-` or `.` (RFC 3986). No colon, and nothing that could be a
+// userinfo's or a path's.
+func hasScheme(s string) bool {
+	for i, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z':
+		case i > 0 && (r >= '0' && r <= '9' || r == '+' || r == '-' || r == '.'):
+		default:
+			return false
+		}
+	}
+	return s != ""
 }
 
 // throughput samples total rx/tx over 500ms and reports per-second rates.
