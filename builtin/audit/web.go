@@ -109,7 +109,7 @@ func runWeb(ctx context.Context, req plugin.Request) (view.View, error) {
 		// named — see followSameHost.
 		CheckRedirect: followSameHost(u),
 		Transport: &stdhttp.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec
+			TLSClientConfig: auditTLSConfig(),
 		},
 	}
 	httpReq, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, target, nil)
@@ -150,6 +150,32 @@ func runWeb(ctx context.Context, req plugin.Request) (view.View, error) {
 		return detailedWeb(ctx, req, r, u, resp)
 	}
 	return r.Table(true), nil
+}
+
+// auditTLSConfig is the client side of an audit's handshake: it offers every
+// protocol and suite Go can speak, and verifies nothing.
+//
+// An audit asks what a host negotiates, so it cannot hold the host to the
+// floor a client that trusts the answer would. Go's client refuses below TLS
+// 1.2 and no longer proposes 3DES or RSA key exchange, and a host speaking
+// only those failed the handshake: the audit answered that the host was
+// unreachable, with a hint to check that it was, about a host that answered
+// — and the tls-version row that grades a deprecated protocol could never be
+// reached. Offering them costs nothing against a host that has better,
+// since the host chooses; against one that does not, what it chose is the
+// finding. Nothing crosses this connection but a GET, and its body is never
+// read.
+func auditTLSConfig() *tls.Config {
+	all := append(tls.CipherSuites(), tls.InsecureCipherSuites()...)
+	suites := make([]uint16, len(all))
+	for i, s := range all {
+		suites[i] = s.ID
+	}
+	return &tls.Config{
+		InsecureSkipVerify: true,             //nolint:gosec // the presented chain is graded instead
+		MinVersion:         tls.VersionTLS10, //nolint:gosec // a deprecated protocol is the finding
+		CipherSuites:       suites,
+	}
 }
 
 // detailedWeb is the full-page report: the same findings, grouped into the
@@ -275,6 +301,14 @@ func auditTLS(r *findings.Report, state *tls.ConnectionState, host string) {
 // nothing else, so this only ever bites on a TLS 1.2 negotiation that picked
 // a CBC-mode or other non-AEAD suite, which Go's client will still accept.
 func cipherGrade(id uint16) string {
+	// A suite Go itself lists as insecure — RC4, 3DES, CBC with SHA-256 — is
+	// broken rather than dated, and the audit offers them precisely so that
+	// a host choosing one is graded for it (see auditTLSConfig).
+	for _, s := range tls.InsecureCipherSuites() {
+		if s.ID == id {
+			return findings.Fail
+		}
+	}
 	name := tls.CipherSuiteName(id)
 	if strings.Contains(name, "GCM") || strings.Contains(name, "CHACHA20_POLY1305") {
 		return findings.OK

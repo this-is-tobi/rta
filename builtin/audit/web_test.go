@@ -559,6 +559,45 @@ func expiringTLSServer(t *testing.T, notAfter time.Time) *httptest.Server {
 	return srv
 }
 
+// legacyServer starts a TLS test server speaking only what cfg allows.
+func legacyServer(t *testing.T, cfg *tls.Config) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	srv.TLS = cfg
+	srv.StartTLS()
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// A host that speaks only a deprecated protocol is the finding the
+// tls-version row exists for. The client's own floor of TLS 1.2 refused the
+// handshake instead, and the audit answered that the host was unreachable,
+// with a hint to check that it was — about a host that answered.
+func TestADeprecatedProtocolIsGradedNotUnreachable(t *testing.T) {
+	rows := auditRows(t, legacyServer(t, &tls.Config{
+		MinVersion: tls.VersionTLS10, //nolint:gosec // the legacy host under audit
+		MaxVersion: tls.VersionTLS11,
+	}))
+	if row := rows["tls-version"]; row == nil || row[1] != findings.Fail || !strings.Contains(row[2], "deprecated") {
+		t.Errorf("tls-version = %v, want a fail naming the protocol deprecated", row)
+	}
+}
+
+// Nor is a host that offers only a suite Go stopped proposing: 3DES and RSA
+// key exchange left the client's defaults, and a host speaking nothing else
+// read as unreachable rather than as a host using a broken cipher.
+func TestABrokenCipherIsGradedNotUnreachable(t *testing.T) {
+	rows := auditRows(t, legacyServer(t, &tls.Config{
+		MaxVersion:   tls.VersionTLS12,
+		CipherSuites: []uint16{tls.TLS_RSA_WITH_3DES_EDE_CBC_SHA},
+	}))
+	if row := rows["tls-cipher"]; row == nil || row[1] != findings.Fail {
+		t.Errorf("tls-cipher = %v, want a fail for 3DES", row)
+	}
+}
+
 func TestAuditIsReadIdempotent(t *testing.T) {
 	for _, c := range Plugin(testCatalog, nil).Capabilities {
 		if c.Safety != plugin.Read || !c.Idempotent {
