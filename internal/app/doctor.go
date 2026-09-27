@@ -862,14 +862,16 @@ func doctorGrants(add func(check, status, detail string)) {
 				}
 				roles[k]++
 			} else {
-				named = append(named, strings.TrimSpace(g.Target+" "+g.Scope))
+				// As the gate compares it (Grant.Named): a padded grant is not
+				// the bare one beside it, and read here as if it were.
+				named = append(named, g.Named())
 			}
 			// Issued with nobody at the terminal. All three things that do
 			// that — a provisioning script, a CI job, an agent's own shell
 			// tool — are legitimate, and only the operator knows which of
 			// them ran. So this is a question and not a verdict.
 			if g.From == grant.FromCommand {
-				unwatched = append(unwatched, strings.TrimSpace(g.Target+" "+g.Scope))
+				unwatched = append(unwatched, g.Named())
 			}
 			// A grant issued against a connection that has since been
 			// repointed. It is listed, it is inside its TTL, and every call it
