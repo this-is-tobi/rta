@@ -126,8 +126,29 @@ func (g *Guard) Roots() []string {
 // An empty value is allowed. "not given" is not a path, and refusing it would
 // turn every optional path input into a required one.
 func (g *Guard) Check(field, raw string) (string, *view.Error) {
+	return g.check(field, raw, false)
+}
+
+// Derived is Check for a path a handler reached from the ones it was given
+// rather than received — the repository a walk upward from a directory
+// found, the git directory a .git file points at, the directory a
+// core.hooksPath names — which is what plugin.Request.Confine asks. The
+// bounds are Check's; the refusal is worded for a caller who never sent the
+// path. Check's told an agent to "use a path inside" about a git directory it
+// had never named, and no argument it could send would have moved that
+// directory anywhere: the repository it pointed at was inside the root, and
+// what lay outside was where that repository kept itself.
+func (g *Guard) Derived(field, path string) (string, *view.Error) {
+	return g.check(field, path, true)
+}
+
+func (g *Guard) check(field, raw string, derived bool) (string, *view.Error) {
 	if g == nil || len(g.roots) == 0 || strings.TrimSpace(raw) == "" {
 		return raw, nil
+	}
+	named := fmt.Sprintf("%q", raw)
+	if derived {
+		named += ", which this call reached from the path it was given,"
 	}
 	if remote(raw) {
 		return "", view.Errorf("core.mcp.path.remote",
@@ -148,7 +169,7 @@ func (g *Guard) Check(field, raw string) (string, *view.Error) {
 	for _, d := range g.denied {
 		if inside(d, abs) {
 			return "", view.Errorf("core.mcp.path.protected",
-				"%s: %q is rta's own state or configuration", field, raw).
+				"%s: %s is rta's own state or configuration", field, named).
 				WithHint("the data directory holds the key to the secret store and the configuration " +
 					"names every environment and server; nothing reachable from an agent may name " +
 					"either, whatever the capability would have done with it")
@@ -159,11 +180,15 @@ func (g *Guard) Check(field, raw string) (string, *view.Error) {
 			return abs, nil
 		}
 	}
+	instead := "use a path inside, or "
+	if derived {
+		instead = "no argument names this path, so none can bring it inside; "
+	}
 	return "", view.Errorf("core.mcp.path.outside",
-		"%s: %q is outside what this server may read (%s)",
-		field, raw, strings.Join(g.roots, ", ")).
+		"%s: %s is outside what this server may read (%s)",
+		field, named, strings.Join(g.roots, ", ")).
 		WithHint("an MCP server reads only under its roots, because there is no person here to " +
-			"judge the request — use a path inside, or " + plugin.AskOperator("mcp serve --root <dir>") +
+			"judge the request — " + instead + plugin.AskOperator("mcp serve --root <dir>") +
 			" to serve another root")
 }
 

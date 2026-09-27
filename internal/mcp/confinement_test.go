@@ -81,6 +81,11 @@ func TestAHandlerCannotDeriveAPathOutOfTheRoot(t *testing.T) {
 	if strings.Contains(text, "drawn to exclude") {
 		t.Errorf("the outer repository's history came back in the refusal itself: %s", text)
 	}
+	// The agent sent inner, which is inside; the repository the walk found
+	// is what is not, and no path it could send would move that.
+	if strings.Contains(text, "use a path inside") || !strings.Contains(text, "reached from the path it was given") {
+		t.Errorf("the refusal is worded as though the agent had sent the path the handler found: %s", text)
+	}
 }
 
 // The substitution checkPaths makes has a second reader: a handler whose
