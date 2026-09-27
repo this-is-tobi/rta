@@ -524,49 +524,7 @@ func gradeServers(r *agentReport, f agentFile, servers []serverDecl) {
 		if declared[name] > 1 {
 			name += " (" + orElse(d.at, "top level") + ")"
 		}
-		var holds []string
-		for k, v := range d.env {
-			if v != "" && credentialKey.MatchString(k) {
-				holds = append(holds, k)
-			}
-		}
-		sort.Strings(holds)
-		if len(holds) > 0 {
-			// The names, never the values. This output is read on a terminal,
-			// pasted into an issue and piped somewhere, and the point of the
-			// finding is that the value is in a file — putting it on a screen
-			// as well would be the tool doing the thing it is warning about.
-			r.Add(grpAgentServers, name, findings.Fail,
-				"launched with "+strings.Join(holds, ", ")+" in its env block, in plain text in "+
-					shortPath(f.path)+" — a file every process you run can read", refCredExposed)
-			// Prose and no snippet, deliberately: there is no syntax for this
-			// fix that is true across clients, and a pasted edit that only
-			// works in one of them is worse than naming the move.
-			r.addFix("credential", name+" — move "+strings.Join(holds, ", ")+" out of "+shortPath(f.path),
-				"The value belongs where the file cannot carry it: the environment that launches "+
-					"the client, the client's own credential helper where it has one, or — when the "+
-					"server is rta — the kv store, referenced from a profile as `kv:<name>`, so the "+
-					"config names the secret and never holds it. Then rotate the value that sat in "+
-					"the file: it has been readable by every process you ran since it was written.")
-		}
-		var sent []string
-		for k, v := range d.headers {
-			if v != "" && credentialKey.MatchString(k) {
-				sent = append(sent, k)
-			}
-		}
-		sort.Strings(sent)
-		if len(sent) > 0 {
-			r.Add(grpAgentServers, name, findings.Fail,
-				"called with "+strings.Join(sent, ", ")+" in its headers block, in plain text in "+
-					shortPath(f.path)+" — a file every process you run can read", refCredExposed)
-			r.addFix("credential", name+" — move "+strings.Join(sent, ", ")+" out of "+shortPath(f.path),
-				"A header is the whole credential on this transport, and the file holding it is read "+
-					"by every process you run. Move it to the environment that launches the client, or "+
-					"to the client's own credential helper where it has one. Then rotate the value that "+
-					"sat in the file: it has been readable since it was written, and unlike a launch "+
-					"token it is one a remote server already accepts.")
-		}
+		gradeCredentials(r, f, name, d)
 		if host, plaintext := plaintextEndpoint(d.url); plaintext {
 			r.Add(grpAgentServers, name, findings.Fail,
 				"called over plain http:// at "+host+" — on this transport the header is the entire "+
