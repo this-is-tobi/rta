@@ -2,7 +2,10 @@ package git
 
 import (
 	"fmt"
+	"strings"
 	"testing"
+
+	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
 func TestLogListsCommitsNewestFirst(t *testing.T) {
@@ -55,5 +58,30 @@ func TestLogFileNarrowsToCommitsThatTouchedIt(t *testing.T) {
 	}
 	if got := tbl.Rows[0][3]; got != "touches b" {
 		t.Errorf("message = %q, want %q", got, "touches b")
+	}
+}
+
+// A repository with no commits yet has an empty history, as git.branches
+// already answers it has no branches: the log is an empty table, where it
+// failed with go-git's "reference not found". And each empty answer says
+// what it means to a person, where headings with nothing under them read like
+// a listing that failed.
+func TestAnEmptyAnswerSaysWhatItMeans(t *testing.T) {
+	dir, repo := testRepo(t)
+	for name, h := range map[string]plugin.Handler{"git.log": runLog, "git.branches": runBranches} {
+		if tbl := table(t, h, req(t, dir, map[string]any{"limit": defaultLogLimit})); len(tbl.Rows) != 0 || tbl.Empty == "" {
+			t.Errorf("%s with no commits: rows %v, empty %q, want no rows and a sentence", name, tbl.Rows, tbl.Empty)
+		}
+	}
+	commitFile(t, repo, dir, "empty.txt", "", "initial")
+	t.Chdir(dir)
+	for name, h := range map[string]plugin.Handler{"git.status": runStatus, "git.blame": runBlame} {
+		if tbl := table(t, h, req(t, dir, map[string]any{"file": "empty.txt"})); len(tbl.Rows) != 0 || tbl.Empty == "" {
+			t.Errorf("%s: rows %v, empty %q, want no rows and a sentence", name, tbl.Rows, tbl.Empty)
+		}
+	}
+	tbl := table(t, runLog, req(t, dir, map[string]any{"file": "missing.txt", "limit": defaultLogLimit}))
+	if len(tbl.Rows) != 0 || !strings.Contains(tbl.Empty, "missing.txt") {
+		t.Errorf("git.log of a file no commit touched: rows %v, empty %q, want it named", tbl.Rows, tbl.Empty)
 	}
 }

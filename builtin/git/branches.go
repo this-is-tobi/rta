@@ -69,7 +69,7 @@ func runBranches(ctx context.Context, req plugin.Request) (view.View, error) {
 		{Name: "Current"},
 		{Name: "Upstream"},
 		{Name: "Status"},
-	}}
+	}, Empty: "no branches yet: a branch is made by its first commit"}
 	for _, ref := range locals {
 		name := ref.Name().Short()
 		current := ""
