@@ -221,6 +221,42 @@ func TestAFailedManagerIsARowNotASilence(t *testing.T) {
 	}
 }
 
+// **npm's account of a failure is not a package called "error".** With
+// --json npm writes why it could not answer to stdout, as {"error": {…}},
+// and exits 1 — the status it also means "something is outdated" by. Read
+// as the answer, that was a row for a package named error with no version
+// on either side, and `u` on it ran `npm install -g error@latest`: a global
+// install of whatever the registry holds under that name.
+func TestNpmsOwnErrorIsAFailedRowNotAPackage(t *testing.T) {
+	f := &fake{bins: map[string]bool{"npm": true}, answers: map[string]fakeAnswer{
+		"npm outdated -g --json": {out: `{"error":{"code":"ECONNREFUSED","summary":"request to http://127.0.0.1:9/npm failed, reason: connect ECONNREFUSED 127.0.0.1:9","detail":"proxy settings"}}`, code: 1},
+	}}
+	install(t, f)
+	v, err := outdatedCapability().Run(context.Background(), req(t, "pkg.outdated", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tbl := v.(view.Table)
+	if len(tbl.Rows) != 1 || tbl.Rows[0][0] != "npm" || tbl.Rows[0][1] != "-" ||
+		!strings.HasPrefix(tbl.Rows[0][4], "fail ") || !strings.Contains(tbl.Rows[0][4], "ECONNREFUSED") {
+		t.Errorf("rows = %v, want one failed npm row carrying npm's reason", tbl.Rows)
+	}
+
+	// A package that really is called error is still one, and an entry
+	// with neither version — in npm's answer or mise's — is not.
+	f.bins["mise"] = true
+	f.answers["npm outdated -g --json"] = fakeAnswer{out: `{"error":{"current":"1.0.0","wanted":"1.1.0","latest":"1.1.0"},"ghost":{}}`, code: 1}
+	f.answers["mise outdated --json"] = fakeAnswer{out: `{"node":{"current":"20.1.0","latest":"22.0.0"},"error":{"message":"boom"}}`}
+	l := collect(context.Background(), newRegistryClient(), "")
+	got := map[string]bool{}
+	for _, r := range l.rows {
+		got[r.Manager+"/"+r.Name] = true
+	}
+	if !got["npm/error"] || !got["mise/node"] || got["npm/ghost"] || got["mise/error"] || len(l.rows) != 2 {
+		t.Errorf("rows = %+v, want npm/error and mise/node alone", l.rows)
+	}
+}
+
 func TestRegistryBackedManagersCompareAgainstTheirRegistry(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
