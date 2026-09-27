@@ -64,6 +64,14 @@ type agentFile struct {
 	path  string
 }
 
+// clientOS is the system whose clients' files this audit reads, which is
+// the system each of those files belongs to: this machine's. Where a client
+// keeps a file differs by system, so does whether POSIX bits say who can read
+// it, and so does what a client expands — Gemini CLI reads %VAR% in a
+// server's env block on Windows alone. A variable so a test can read a file
+// the way the client on another system does.
+var clientOS = runtime.GOOS
+
 // agentFiles are the files each client actually keeps, resolved for this
 // machine. Deliberately separate from mcpinstall.go's table, which holds a
 // sentence for a human to read ("~/.cursor/mcp.json (or .cursor/mcp.json for
@@ -103,7 +111,7 @@ func agentFiles(home, wd string) []agentFile {
 	add("Gemini CLI", home, ".gemini", "settings.json")
 	add("GitHub Copilot CLI", home, ".copilot", "mcp-config.json")
 	add("Codex CLI", home, ".codex", "config.toml")
-	switch runtime.GOOS {
+	switch clientOS {
 	case "darwin":
 		add("VS Code", home, "Library", "Application Support", "Code", "User", "mcp.json")
 	case "windows":
@@ -246,7 +254,7 @@ func runClients(ctx context.Context, req plugin.Request, catalog func() []plugin
 // is worth protecting on its own — and because the credential arrives later,
 // in an edit nobody re-audits.
 func auditFileMode(r *agentReport, f agentFile, mode os.FileMode) {
-	if runtime.GOOS == "windows" {
+	if clientOS == "windows" {
 		return // POSIX bits mean nothing here; the ACL is the real answer.
 	}
 	if mode&0o077 != 0 {

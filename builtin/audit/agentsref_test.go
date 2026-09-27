@@ -179,3 +179,41 @@ func TestAValueSpelledLikeABareReferenceIsNeverPrinted(t *testing.T) {
 		})
 	}
 }
+
+// Gemini CLI expands %VAR% in a server's env block when it runs on Windows,
+// and there alone: its settings.json reads $VAR and ${VAR} in every string on
+// every system, %VAR% in none. So %API_TOKEN% in an env block is a reference
+// the client reads on Windows, graded as holding nothing, and the text itself
+// on any other system or in a headers block, still failed. The system is the
+// one the configuration belongs to, the machine whose clients this reads.
+func TestAGeminiPercentReferenceIsGradedByTheSystemItsClientRunsOn(t *testing.T) {
+	for _, tc := range []struct {
+		name, goos, file, body string
+		plain                  bool
+	}{
+		{"gemini env on windows", "windows", ".gemini/settings.json", launchedWithEnv("%API_TOKEN%"), false},
+		{"gemini header on windows", "windows", ".gemini/settings.json", remoteWithHeader("Bearer %API_TOKEN%"), true},
+		{"gemini env on linux", "linux", ".gemini/settings.json", launchedWithEnv("%API_TOKEN%"), true},
+		{"gemini env on macos", "darwin", ".gemini/settings.json", launchedWithEnv("%API_TOKEN%"), true},
+		{"claude env on windows", "windows", ".claude.json", launchedWithEnv("%API_TOKEN%"), true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			was := clientOS
+			clientOS = tc.goos
+			t.Cleanup(func() { clientOS = was })
+			fakeHome(t, map[string]struct {
+				body string
+				mode os.FileMode
+			}{tc.file: {tc.body, 0o600}})
+			var failed []string
+			for _, row := range agentRowList(t) {
+				if row[0] == "svc" && row[1] == findings.Fail {
+					failed = append(failed, row[2])
+				}
+			}
+			if plain := len(failed) > 0; plain != tc.plain {
+				t.Fatalf("failed rows %q, want the reference failed: %v", failed, tc.plain)
+			}
+		})
+	}
+}
