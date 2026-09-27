@@ -2,7 +2,7 @@
 
 Worked examples. Each one is a real shape rather than a demonstration of a flag.
 
-One has a page of its own. [An agent in a cluster](./30-an-agent-in-a-cluster.md) goes end to end: a profile, a ServiceAccount token the `kube` plugin mints, an instance holding it, and an agent connected over MCP.
+Three have pages of their own. [For a security team](./10-for-security-teams.md) and [For a developer](./20-for-developers.md) walk one role's tasks through the chapters that explain them, and [An agent in a cluster](./30-an-agent-in-a-cluster.md) goes end to end: a profile, a ServiceAccount token the `kube` plugin mints, an instance holding it, and an agent connected over MCP.
 
 ## Pair with an agent on a staging database, for an hour
 

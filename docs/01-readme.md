@@ -16,6 +16,8 @@ Which is why the security chapters are not an appendix, and why every one of the
 
 After that the chapters stand alone, with one exception worth stating because a sidebar cannot: if you are here to give an agent access, read **What rta actually bounds** first. An agent that still has a shell is not bounded by rta at all, and that chapter is what tells you whether you are in the configuration where any of the rest applies. The chapters after it — MCP, grants, the record, team policy — each describe a smaller blast radius than the one before.
 
+If you arrive with a job rather than a question, two recipes start from it and point into the chapters: [For a security team](./90-recipes/10-for-security-teams.md) and [For a developer](./90-recipes/20-for-developers.md). [An agent in a cluster](./90-recipes/30-an-agent-in-a-cluster.md) is the whole path end to end, from a profile to an agent connected over MCP.
+
 ## What is in it
 
 **20 built-in plugins, 128 capabilities** in the default build, and `rta plugin list` is the inventory:
