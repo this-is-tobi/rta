@@ -268,6 +268,69 @@ func TestAConfigDirectoryThatCannotBeTraversedIsNotNothingToGrade(t *testing.T) 
 	}
 }
 
+// ~/.claude.json holds a server list per project, and two projects naming a
+// server alike are two servers. Keyed by the name alone, one overwrote the
+// other in map order: the file failed for a plaintext token on one run in ten
+// and read "no issues found" on the other nine.
+func TestTwoServersSharingANameAreBothGraded(t *testing.T) {
+	body, _ := json.Marshal(map[string]any{"projects": map[string]any{
+		"/work/a": map[string]any{"mcpServers": map[string]any{"github": map[string]any{
+			"command": "github-mcp", "env": map[string]string{"GITHUB_TOKEN": tokenValue}}}},
+		"/work/b": map[string]any{"mcpServers": map[string]any{"github": map[string]any{
+			"command": "github-mcp", "env": map[string]string{}}}},
+	}})
+	fakeHome(t, map[string]struct {
+		body string
+		mode os.FileMode
+	}{".claude.json": {string(body), 0o600}})
+	for range 20 {
+		v, err := runClients(t.Context(), req(map[string]any{}), testCatalog)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var failed []string
+		for _, row := range v.(view.Table).Rows {
+			if strings.Contains(strings.Join(row, " "), "GITHUB_TOKEN") {
+				failed = append(failed, row[0])
+			}
+		}
+		if len(failed) != 1 || !strings.Contains(failed[0], "/work/a") {
+			t.Fatalf("want one credential row naming the project that holds it, got %q", failed)
+		}
+	}
+}
+
+// Where a server sits is spelled from the keys above it, and a place built
+// level by level from its parent's copied every key above it again: a file
+// nested thousands of levels, which encoding/json reads, cost gigabytes to
+// walk. A place is spelled only for a server, from the nearest few keys.
+func TestAServersPlaceCostsNothingForTheLevelsAboveIt(t *testing.T) {
+	const depth = 5000
+	key := strings.Repeat("k", 500)
+	var b strings.Builder
+	for range depth {
+		b.WriteString(`{"` + key + `":`)
+	}
+	b.WriteString(`{"deep": {"command": "npx"}}`)
+	b.WriteString(strings.Repeat("}", depth))
+	var doc any
+	if err := json.Unmarshal([]byte(b.String()), &doc); err != nil {
+		t.Fatal(err)
+	}
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	var servers []serverDecl
+	collectServers(doc, &servers)
+	runtime.ReadMemStats(&after)
+	if alloc := after.TotalAlloc - before.TotalAlloc; alloc > 64<<20 {
+		t.Errorf("walking a %d-level file allocated %d MiB", depth, alloc>>20)
+	}
+	if len(servers) != 1 || !strings.HasPrefix(servers[0].at, "….") || len(servers[0].at) > 300 {
+		t.Errorf("want the deep server, placed by its nearest keys, got %+v", servers)
+	}
+}
+
 // A home with genuinely nothing in it still says so, so the quiet answer
 // keeps meaning what it says.
 func TestAnEmptyHomeStillReportsNothingToGrade(t *testing.T) {

@@ -11,7 +11,9 @@ import (
 	"regexp"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/this-is-tobi/rta/internal/guard"
 	"github.com/this-is-tobi/rta/pkg/findings"
@@ -276,8 +278,8 @@ func auditAgentJSON(r *agentReport, f agentFile) {
 				"so only its permissions were graded", findings.Reference{})
 		return
 	}
-	servers := map[string]serverDecl{}
-	collectServers(doc, servers)
+	var servers []serverDecl
+	collectServers(doc, &servers)
 	gradeServers(r, f, servers)
 	gradePermissions(r, f, doc)
 }
@@ -285,9 +287,15 @@ func auditAgentJSON(r *agentReport, f agentFile) {
 // serverDecl is what one MCP server declaration says, whatever key it was
 // found under.
 type serverDecl struct {
-	command string
-	args    []string
-	env     map[string]string
+	// name is the key the server is declared under, and at is where in the
+	// file that key sits: the keys above it, dotted. Both, because a name is
+	// not unique within one file — ~/.claude.json keeps a user-scope
+	// mcpServers and another under every project, and two projects that each
+	// declare "github" have declared two servers.
+	name, at string
+	command  string
+	args     []string
+	env      map[string]string
 	// url and headers are the remote form of the same declaration: nothing to
 	// launch, an endpoint to call and what to call it with. A server declared
 	// this way used to be invisible here — collectServers recognised an object
@@ -329,17 +337,39 @@ func remoteServer(obj map[string]any) (string, bool) {
 	return "", false
 }
 
-// collectServers walks any JSON for objects shaped like a server declaration.
+// collectServers walks any JSON for objects shaped like a server declaration,
+// and appends every one it finds to out.
 //
-// Keyed by name so the same server declared in a user file and a project file
-// is graded once — which is the ordinary case for anyone who has both.
-func collectServers(node any, out map[string]serverDecl) {
+// Every one, rather than one per name: the list was a map keyed by the name,
+// so two projects in ~/.claude.json declaring "github" — one with a token in
+// its env block, one without — kept whichever the map's iteration reached
+// last, and the same file failed for a plaintext credential on one run in
+// ten and read "no issues found" on the other nine.
+func collectServers(doc any, out *[]serverDecl) { collectAt(doc, nil, out) }
+
+// collectAt is collectServers for node, which sits under the keys in at.
+//
+// **The keys as a stack, spelled out only where a server is found**, and then
+// only the nearest few (placeOf). Each level used to build its own dotted
+// path from its parent's, which is every key above it copied again — a cost
+// that grows with the square of the file's depth: a 9 MB JSON nested nine
+// thousand levels, legal to encoding/json, took six seconds and allocated
+// thirty-eight gigabytes to find no server at all.
+func collectAt(node any, at []string, out *[]serverDecl) {
 	switch v := node.(type) {
 	case map[string]any:
+		// Spelled once per object, and only once an object holds a server.
+		place, placed := "", false
+		where := func() string {
+			if !placed {
+				place, placed = placeOf(at), true
+			}
+			return place
+		}
 		for key, child := range v {
 			obj, ok := child.(map[string]any)
 			if !ok {
-				collectServers(child, out)
+				collectAt(child, append(at, pathKey(key)), out)
 				continue
 			}
 			// command wins if a url and headers also sit on the same object.
@@ -350,7 +380,7 @@ func collectServers(node any, out map[string]serverDecl) {
 			// one that exists. Worth another look if that ever stops being
 			// true.
 			if cmd, isServer := obj["command"].(string); isServer {
-				d := serverDecl{command: cmd, env: map[string]string{}}
+				d := serverDecl{name: key, at: where(), command: cmd, env: map[string]string{}}
 				if raw, ok := obj["args"].([]any); ok {
 					for _, a := range raw {
 						if s, ok := a.(string); ok {
@@ -365,11 +395,12 @@ func collectServers(node any, out map[string]serverDecl) {
 						}
 					}
 				}
-				out[key] = d
+				*out = append(*out, d)
 				continue
 			}
 			if remoteURL, isServer := remoteServer(obj); isServer {
-				d := serverDecl{url: remoteURL, env: map[string]string{}, headers: map[string]string{}}
+				d := serverDecl{name: key, at: where(), url: remoteURL, env: map[string]string{},
+					headers: map[string]string{}}
 				if raw, ok := obj["headers"].(map[string]any); ok {
 					for k, val := range raw {
 						if s, ok := val.(string); ok {
@@ -377,16 +408,43 @@ func collectServers(node any, out map[string]serverDecl) {
 						}
 					}
 				}
-				out[key] = d
+				*out = append(*out, d)
 				continue
 			}
-			collectServers(child, out)
+			collectAt(child, append(at, pathKey(key)), out)
 		}
 	case []any:
-		for _, child := range v {
-			collectServers(child, out)
+		for i, child := range v {
+			collectAt(child, append(at, strconv.Itoa(i)), out)
 		}
 	}
+}
+
+// placeOf spells where a server sits in its file, for the row that has to
+// tell two of one name apart: the keys above it, dotted, the nearest few of
+// them — "projects./work/a.mcpServers" — and "…" for any further out, which
+// no config nests deep enough to need.
+func placeOf(at []string) string {
+	const nearest = 4
+	if len(at) <= nearest {
+		return strings.Join(at, ".")
+	}
+	return "…." + strings.Join(at[len(at)-nearest:], ".")
+}
+
+// pathKey is one key as placeOf shows it: whole, or its first few dozen bytes
+// and "…" — cut once, when the walk enters it, so a key of any length costs
+// the same wherever a place below it is spelled.
+func pathKey(key string) string {
+	const most = 48
+	if len(key) <= most {
+		return key
+	}
+	cut := most
+	for cut > 0 && !utf8.RuneStart(key[cut]) {
+		cut--
+	}
+	return key[:cut] + "…"
 }
 
 // credentialKey names an environment variable that holds one. The same
@@ -396,14 +454,27 @@ var credentialKey = regexp.MustCompile(`(?i)(token|password|passwd|secret|api[_-
 
 // gradeServers reports what each declared server is handed and where it comes
 // from.
-func gradeServers(r *agentReport, f agentFile, servers map[string]serverDecl) {
-	names := make([]string, 0, len(servers))
-	for n := range servers {
-		names = append(names, n)
+//
+// A row names a server by its name alone while that is enough, and adds where
+// in the file it sits when the file declares the name more than once — "github
+// (projects./work/a.mcpServers)" — so the row that fails says which of the two
+// to open.
+func gradeServers(r *agentReport, f agentFile, servers []serverDecl) {
+	sort.SliceStable(servers, func(i, j int) bool {
+		if servers[i].name != servers[j].name {
+			return servers[i].name < servers[j].name
+		}
+		return servers[i].at < servers[j].at
+	})
+	declared := map[string]int{}
+	for _, d := range servers {
+		declared[d.name]++
 	}
-	sort.Strings(names)
-	for _, name := range names {
-		d := servers[name]
+	for _, d := range servers {
+		name := d.name
+		if declared[name] > 1 {
+			name += " (" + orElse(d.at, "top level") + ")"
+		}
 		var holds []string
 		for k, v := range d.env {
 			if v != "" && credentialKey.MatchString(k) {
