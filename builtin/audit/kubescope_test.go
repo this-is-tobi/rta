@@ -1,6 +1,7 @@
 package audit
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -234,6 +235,56 @@ func TestANarrowedRBACAuditSaysWhatItDidNotExamine(t *testing.T) {
 	// And it must not have reported the binding it never read.
 	if strings.Contains(rendered, "oops") {
 		t.Errorf("a narrowed audit reported a cluster-scoped finding:\n%s", rendered)
+	}
+}
+
+// kubectl answers an empty list, and exit 0, for any namespace at all —
+// `prd` typed for `prod` included — so every narrowed audit reported about a
+// namespace that does not exist: a warning for its missing quota, or a clean
+// bill for its pods. Asked first, the cluster says NotFound, and the audit
+// says so. A context that may not read namespaces gets its audit, and a row
+// saying the name could not be confirmed.
+func TestANarrowedKubeAuditRefusesANamespaceThatDoesNotExist(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "kubectl")
+	body := "#!/bin/sh\n" +
+		"case \"$*\" in\n" +
+		"  'get namespace nope '*) echo 'Error from server (NotFound): namespaces \"nope\" not found' >&2; exit 1;;\n" +
+		"  'get namespace hidden '*) echo 'Error from server (Forbidden): namespaces \"hidden\" is forbidden: " +
+		"User \"u\" cannot get resource \"namespaces\"' >&2; exit 1;;\n" +
+		"esac\n" +
+		"echo '{\"items\":[]}'\n"
+	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	orig := kubectlBin
+	kubectlBin = script
+	t.Cleanup(func() { kubectlBin = orig })
+
+	audits := map[string]func(context.Context, plugin.Request) (view.View, error){
+		"rbac": runKubeRBAC, "podsecurity": runKubePodSecurity,
+		"quotas": runKubeQuotas, "netpol": runKubeNetworkPolicy,
+		"eol": func(ctx context.Context, req plugin.Request) (view.View, error) {
+			return runKubeEOLAt(ctx, req, "http://127.0.0.1:1")
+		},
+	}
+	for name, run := range audits {
+		_, err := run(t.Context(), newScopedRequest("nope"))
+		if err == nil {
+			t.Errorf("%s answered a report about a namespace that does not exist", name)
+		} else if ve := view.AsError(err, "x"); ve.Code != "audit.kube.namespace.notfound" {
+			t.Errorf("%s on a namespace that does not exist: %+v, want audit.kube.namespace.notfound", name, ve)
+		}
+		if name == "eol" {
+			continue // the rest of it asks endoflife.date, which this test does not stand up
+		}
+		out, err := run(t.Context(), newScopedRequest("hidden"))
+		if err != nil {
+			t.Fatalf("%s where namespaces cannot be read: %v", name, err)
+		}
+		if got := renderText(t, out); !strings.Contains(got, "could not be confirmed") {
+			t.Errorf("%s did not say the namespace could not be confirmed:\n%s", name, got)
+		}
 	}
 }
 

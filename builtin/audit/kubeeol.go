@@ -95,11 +95,13 @@ func runKubeEOL(ctx context.Context, req plugin.Request) (view.View, error) {
 
 func runKubeEOLAt(ctx context.Context, req plugin.Request, base string) (view.View, error) {
 	kubeContext := req.String("context")
-	ns, verr := scopeOf(req)
+	sc, verr := scopeOf(ctx, req)
 	if verr != nil {
 		return nil, verr
 	}
+	ns := sc.ns
 	r := &findings.Report{}
+	sc.note(r, grpKubeEOL)
 
 	// The cluster first, the API second: kubectl failing is about this
 	// machine's access and the likelier of the two, and nothing is asked of
