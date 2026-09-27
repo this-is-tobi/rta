@@ -2,6 +2,7 @@ package audit
 
 import (
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"unicode"
@@ -39,7 +40,8 @@ import (
 //     "predefined variables" a configuration may use, so the fix names the
 //     input first.
 //   - Gemini CLI resolves $VAR, ${VAR} and ${VAR:-default} in every string of
-//     settings.json as it loads it.
+//     settings.json as it loads it, and %VAR% in a server's env block when it
+//     runs on Windows, and on no other system nor in headers (clientOS).
 //   - GitHub Copilot CLI reads ${VAR} in a server's env values and takes any
 //     other form literally; its headers are read the same way, which its
 //     documentation does not state.
@@ -68,7 +70,7 @@ func gradeCredentials(r *agentReport, f agentFile, name string, d serverDecl) {
 			if v == "" || !credentialKey.MatchString(k) {
 				continue
 			}
-			switch how, vars := classifyCredential(refs, v); how {
+			switch how, vars := classifyCredential(refs.formsIn(block.header), v); how {
 			case credHeld:
 				held = append(held, k)
 			case credMisnamed:
@@ -166,8 +168,9 @@ func gradeMisnamed(r *agentReport, f agentFile, refs clientRefs, name, server st
 type clientRefs struct {
 	client string
 	// forms are the references the client expands there, none for a client
-	// that expands none.
-	forms []*regexp.Regexp
+	// that expands none, and envForms the ones it expands in an env block
+	// and not in headers.
+	forms, envForms []*regexp.Regexp
 	// spell writes a reference to a variable in the form the client reads,
 	// for the fix; nil for a client whose file has no such form.
 	spell func(name string) string
@@ -197,7 +200,23 @@ var anyRef = []*regexp.Regexp{refBraces, refEnvColon, refInput, refBare, refPerc
 // an input's id names no variable at all.
 var envBraced = []*regexp.Regexp{refBraces, refEnvColon}
 
-// refsOf is the reference syntax of the client a file belongs to.
+// formsIn are the references the client expands in a headers block, or with
+// header false in an env block.
+func (c clientRefs) formsIn(header bool) []*regexp.Regexp {
+	if header || len(c.envForms) == 0 {
+		return c.forms
+	}
+	return append(slices.Clip(c.forms), c.envForms...)
+}
+
+// refsOf is the reference syntax of the client a file belongs to, on the
+// system that file belongs to (clientOS).
+//
+// Gemini CLI's %VAR% is read by that system: its documentation on the env
+// block of a server says the form is "supported only when running on
+// Windows". Graded the same everywhere, it was failed on Windows as a form
+// Gemini does not expand, a finding the operator could only answer by
+// rewriting a reference that already works.
 func refsOf(f agentFile) clientRefs {
 	braces := func(name string) string { return "${" + name + "}" }
 	envColon := func(name string) string { return "${env:" + name + "}" }
@@ -213,6 +232,9 @@ func refsOf(f agentFile) clientRefs {
 		{"Codex CLI", clientRefs{client: "Codex CLI"}},
 	} {
 		if strings.HasPrefix(f.label, c.prefix) {
+			if c.prefix == "Gemini CLI" && clientOS == "windows" {
+				c.refs.envForms = []*regexp.Regexp{refPercent}
+			}
 			return c.refs
 		}
 	}
@@ -261,11 +283,12 @@ const (
 	credMisnamed
 )
 
-// classifyCredential is how value holds its credential, and for one named in
-// a form the client does not expand, the variables it names in braces
-// (envBraced), which a report may repeat.
-func classifyCredential(refs clientRefs, value string) (credentialValue, []string) {
-	if _, ok := onlyReferences(value, refs.forms); ok {
+// classifyCredential is how value holds its credential, given the forms its
+// client expands where it stands, and for one named in a form the client does
+// not expand, the variables it names in braces (envBraced), which a report may
+// repeat.
+func classifyCredential(forms []*regexp.Regexp, value string) (credentialValue, []string) {
+	if _, ok := onlyReferences(value, forms); ok {
 		return credReferenced, nil
 	}
 	if _, ok := onlyReferences(value, anyRef); ok {
