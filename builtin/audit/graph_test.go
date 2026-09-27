@@ -1635,6 +1635,7 @@ func TestChainsSayWhenTheNameIsAmbiguous(t *testing.T) {
 	inv := inventory{
 		structure: g,
 		ambiguous: map[string]bool{ref("npm", "lodash"): true},
+		copies:    map[string]int{ref("npm", "lodash"): 2},
 		all: []component{
 			{ecosystem: "npm", name: "lodash", version: "3.10.1"},
 			{ecosystem: "npm", name: "lodash", version: "4.17.21"},

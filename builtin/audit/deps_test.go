@@ -731,6 +731,25 @@ func TestReadCapsTheComponentListAndSaysSo(t *testing.T) {
 	}
 }
 
+// Each affected package held in two versions says how many copies there are,
+// and counting them was a pass over the whole inventory per package: the
+// square of what the file declares, three seconds for ten thousand of them.
+// read counts them once, so describing a package never goes back over the
+// inventory — which this holds it to by taking the inventory away.
+func TestHowManyCopiesIsCountedOncePerInventory(t *testing.T) {
+	lock := `{"lockfileVersion": 3, "packages": {"": {"name": "root", "version": "1.0.0"},
+	  "node_modules/lodash": {"version": "4.17.21"},
+	  "node_modules/a/node_modules/lodash": {"version": "3.10.1"},
+	  "node_modules/b/node_modules/lodash": {"version": "2.4.2"}}}`
+	fsys := fstest.MapFS{"package-lock.json": &fstest.MapFile{Data: []byte(lock)}}
+	inv := read(fsys, []string{"package-lock.json"}, []string{"package-lock.json"})
+	c := inv.all[0]
+	inv.all = nil
+	if got := whereFrom(inv, c); !strings.Contains(got, "one of 3 copies here") {
+		t.Errorf("whereFrom = %q, want it to count the three copies read found", got)
+	}
+}
+
 func TestEveryDepsFindingLandsInADeclaredGroup(t *testing.T) {
 	declared := map[findings.Group]bool{}
 	for _, g := range depsGroupOrder {

@@ -182,16 +182,15 @@ func whereFrom(inv inventory, c component) string {
 	return ""
 }
 
-// versionCount is how many copies of a package the inventory holds.
-func (inv inventory) versionCount(r string) int {
-	seen := map[string]bool{}
-	for _, c := range inv.all {
-		if ref(c.ecosystem, c.name) == r {
-			seen[c.version] = true
-		}
-	}
-	return len(seen)
-}
+// versionCount is how many copies of an ambiguous package the inventory
+// holds.
+//
+// Counted once, where read finds the package ambiguous, rather than by a pass
+// over the whole inventory on every call: it is asked once per affected
+// package, and the file decides how many of those there are and how many hold
+// two versions — ten thousand of them took three seconds, and the square of
+// that count after.
+func (inv inventory) versionCount(r string) int { return inv.copies[r] }
 
 // renderChains reads the chains as a sentence, nearest cause first.
 //
@@ -372,6 +371,8 @@ type inventory struct {
 	// tree with three copies of commander has a direct dependency on one of
 	// them, and nothing in the file says which.
 	ambiguous map[string]bool
+	// copies is how many versions of each ambiguous package there are.
+	copies map[string]int
 }
 
 // relation is how the project came by this component.
@@ -427,10 +428,10 @@ func read(fsys fs.FS, names, shown []string) inventory {
 		}
 		versions[r][c.version] = true
 	}
-	inv.ambiguous = map[string]bool{}
+	inv.ambiguous, inv.copies = map[string]bool{}, map[string]int{}
 	for r, vs := range versions {
 		if len(vs) > 1 {
-			inv.ambiguous[r] = true
+			inv.ambiguous[r], inv.copies[r] = true, len(vs)
 		}
 	}
 	return inv
