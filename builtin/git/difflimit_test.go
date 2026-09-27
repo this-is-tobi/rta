@@ -1,10 +1,16 @@
 package git
 
 import (
+	"context"
+	"math/rand"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
 // Both sides of a changed file are read whole to line-diff them, and nothing
@@ -98,5 +104,144 @@ func TestAWorktreeDiffIsBoundedInAll(t *testing.T) {
 	}
 	if !strings.Contains(body, "2 more files changed and not diffed") {
 		t.Errorf("what is past the budget is not counted:\n%s", body)
+	}
+}
+
+// Matching lines costs the product of the lines and the lines that changed,
+// and go-git's line diff ran with a one-hour timeout: a fully rewritten 2 MiB
+// file cost one diff 30 s of CPU. Past matchTime what is left is shown
+// removed and added, a correct patch and a coarser one, and the file is named
+// as diffed coarsely, on either kind of diff.
+func TestADiffPastItsMatchingTimeIsCoarseAndSaysSo(t *testing.T) {
+	saved := matchTime
+	matchTime = -time.Second
+	t.Cleanup(func() { matchTime = saved })
+
+	// Two orders of two lines: nothing to match at either end but the last
+	// line, and far more matching than the deadline is first looked at after.
+	r := rand.New(rand.NewSource(1))
+	first, _ := randomText(r, 3000, 2)
+	second, _ := randomText(r, 3000, 2)
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "a.txt", "x\n"+first+"end\n", "first")
+	commitFile(t, repo, dir, "a.txt", "y\n"+second+"end\n", "second")
+	writeFile(t, dir, "a.txt", "x\n"+first+"end\n")
+
+	for name, c := range map[string]struct {
+		values map[string]any
+		lines  []string
+	}{
+		"worktree": {nil, []string{"-y\n", "+x\n", " end\n"}},
+		"commit":   {map[string]any{"commit": "master"}, []string{"-x\n", "+y\n", " end\n"}},
+	} {
+		body := text(t, runDiff, req(t, dir, c.values))
+		if !strings.Contains(body, "a.txt changed, diffed coarsely") {
+			t.Errorf("%s: the file matched coarsely is not named:\n%s", name, body)
+		}
+		// Coarse, and still the change: the line both sides end with is kept,
+		// and the lines either side of what changed are shown.
+		for _, want := range c.lines {
+			if !strings.Contains(body, want) {
+				t.Errorf("%s: the coarse patch has no %q line", name, want)
+			}
+		}
+	}
+}
+
+// A caller that has stopped waiting gets no diff rather than the files it had
+// got to, which would read as the whole of a smaller change.
+func TestADiffTheCallerCancelledAnswersNothing(t *testing.T) {
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "a.txt", "v1\n", "first")
+	commitFile(t, repo, dir, "a.txt", "v2\n", "second")
+	writeFile(t, dir, "a.txt", "v3\n")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	for name, values := range map[string]map[string]any{
+		"worktree": nil,
+		"commit":   {"commit": "master"},
+	} {
+		v, err := runDiff(ctx, req(t, dir, values))
+		if code := errCode(err); code != "git.diff.cancelled" {
+			t.Errorf("%s: a cancelled diff answered %v, %q; want git.diff.cancelled", name, v, code)
+		}
+	}
+}
+
+// A commit's patch is built here rather than by go-git, which had no bound on
+// the time it spent matching lines, and it is go-git's patch file for file:
+// an edit, an addition, a deletion, a rename, a mode change, a binary file
+// and an empty one.
+func TestACommitPatchIsGoGitsPatch(t *testing.T) {
+	dir, repo := testRepo(t)
+	writeFile(t, dir, "edit.txt", "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\n")
+	writeFile(t, dir, "gone.txt", "going\n")
+	writeFile(t, dir, "moved.txt", strings.Repeat("a line that moves with its file\n", 20))
+	writeFile(t, dir, "run.sh", "echo hi\n")
+	writeFile(t, dir, "blob.bin", "x\x00y")
+	wt, err := repo.Worktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	commitAll := func(msg string) {
+		t.Helper()
+		if err := wt.AddWithOptions(&git.AddOptions{All: true}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := wt.Commit(msg, &git.CommitOptions{Author: signature()}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	commitAll("before")
+
+	writeFile(t, dir, "edit.txt", "one\ntwo\nTHREE\nfour\nfive\nsix\nseven\neight\nnine\n")
+	if err := os.Remove(filepath.Join(dir, "gone.txt")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(filepath.Join(dir, "moved.txt"), filepath.Join(dir, "moved-here.txt")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(filepath.Join(dir, "run.sh"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, dir, "blob.bin", "x\x00z")
+	writeFile(t, dir, "empty.txt", "")
+	writeFile(t, dir, "added.txt", "new\nlines\n")
+	commitAll("after")
+
+	head, err := repo.Head()
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit, err := repo.CommitObject(head.Hash())
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent, err := commit.Parent(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := parent.Patch(commit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	from, _ := parent.Tree()
+	to, _ := commit.Tree()
+	changes, err := object.DiffTreeWithOptions(t.Context(), from, to, object.DefaultDiffTreeOptions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, coarse, err := commitPatch(t.Context(), repo, changes, time.Now().Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want.String() || len(coarse) != 0 {
+		t.Errorf("patch:\n%s\nwant go-git's:\n%s", got, want.String())
+	}
+	for _, part := range []string{"rename from moved.txt", "new mode 100755", "Binary files", "+nine", "deleted file mode"} {
+		if !strings.Contains(got, part) {
+			t.Errorf("the fixture no longer covers %q:\n%s", part, got)
+		}
 	}
 }
