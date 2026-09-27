@@ -3,13 +3,14 @@ package git
 import (
 	"context"
 	"os"
+	pathpkg "path"
+	"path/filepath"
 	"sort"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
-	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -131,7 +132,10 @@ const typeChanged git.StatusCode = 'T'
 // it either, finding no mode of git's for it.
 //
 // Only a path already marked M is looked at, so a clean tree costs nothing
-// more; the index is read again for one that is not.
+// more; the index is read again for one that is not. And what is on disk is
+// read a directory at a time, the kind of each entry coming with its name,
+// where a lstat of each path doubled the cost of a status of a hundred
+// thousand rewritten files, 14 s on top of go-git's 5 s.
 func kindChanges(repo *git.Repository, root string, status git.Status) {
 	var modified []string
 	staged := false
@@ -148,31 +152,50 @@ func kindChanges(repo *git.Repository, root string, status git.Status) {
 	if err != nil {
 		return
 	}
-	var head *object.Tree
+	entryOf := indexLookup(idx)
+	var head *headFiles
 	if staged {
-		if ref, err := repo.Head(); err == nil {
-			if commit, err := repo.CommitObject(ref.Hash()); err == nil {
-				head, _ = commit.Tree()
-			}
-		}
+		head = headFilesOf(repo)
 	}
+	kinds := map[string]map[string]os.FileMode{}
 	for _, path := range modified {
-		entry, err := idx.Entry(path)
-		if err != nil {
+		entry := entryOf(path)
+		if entry == nil {
 			continue
 		}
 		fs := status[path]
-		if fs.Staging == git.Modified && head != nil {
-			if was, err := head.FindEntry(path); err == nil && kindOf(was.Mode) != kindOf(entry.Mode) {
+		if fs.Staging == git.Modified {
+			if was, _ := head.entry(path); was != nil && kindOf(was.Mode) != kindOf(entry.Mode) {
 				fs.Staging = typeChanged
 			}
 		}
 		if fs.Worktree == git.Modified {
-			if disk := onDisk(root, path); disk != nil && !disk.IsDir() && diskKind(disk.Mode()) != kindOf(entry.Mode) {
+			if kind, ok := entryKind(kinds, root, path); ok && !kind.IsDir() && diskKind(kind) != kindOf(entry.Mode) {
 				fs.Worktree = typeChanged
 			}
 		}
 	}
+}
+
+// entryKind is the kind of what is on disk at path, as its directory's
+// listing gives it without a lstat, and whether there is anything there;
+// kinds holds each directory's listing, read once. The directories on the way
+// are real ones for a path go-git's status marked M, which does not walk
+// through a link.
+func entryKind(kinds map[string]map[string]os.FileMode, root, path string) (os.FileMode, bool) {
+	dir, name := pathpkg.Split(path)
+	listing, ok := kinds[dir]
+	if !ok {
+		listing = map[string]os.FileMode{}
+		if entries, err := os.ReadDir(filepath.Join(root, filepath.FromSlash(dir))); err == nil {
+			for _, e := range entries {
+				listing[e.Name()] = e.Type()
+			}
+		}
+		kinds[dir] = listing
+	}
+	kind, ok := listing[name]
+	return kind, ok
 }
 
 // kindOf is the kind git records an entry of mode as: a file, executable or

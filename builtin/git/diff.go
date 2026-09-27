@@ -654,20 +654,114 @@ func submoduleLine(name string, from, to plumbing.Hash) string {
 
 // gitlinkAt is the commit HEAD records for a submodule at path, and whether
 // HEAD or the index records one there at all.
-func gitlinkAt(headTree *object.Tree, idx *index.Index, path string) (plumbing.Hash, bool) {
+func gitlinkAt(head *headFiles, entryOf func(string) *index.Entry, path string) (plumbing.Hash, bool) {
 	var from plumbing.Hash
 	link := false
-	if headTree != nil {
-		if e, err := headTree.FindEntry(path); err == nil && e.Mode == filemode.Submodule {
-			from, link = e.Hash, true
-		}
+	if e, _ := head.entry(path); e != nil && e.Mode == filemode.Submodule {
+		from, link = e.Hash, true
 	}
-	if idx != nil {
-		if e, err := idx.Entry(path); err == nil && e.Mode == filemode.Submodule {
-			link = true
-		}
+	if e := entryOf(path); e != nil && e.Mode == filemode.Submodule {
+		link = true
 	}
 	return from, link
+}
+
+// headFiles is HEAD's tree looked up path by path, each directory's tree
+// read once for the call.
+//
+// **A path looked up from the root reads every directory on the way, every
+// time.** go-git's Tree.FindEntry, Size and File each walk from the root and
+// decode each directory's tree again, and a working tree's diff asked three
+// of them per changed file: ten thousand changed files cost 6 s in lookups
+// alone. The directories are kept instead, and a file is found in its own.
+type headFiles struct {
+	root *object.Tree
+	dirs map[string]*object.Tree
+}
+
+// headFilesOf is HEAD's tree, nil where there is no HEAD to read one from —
+// an empty repository's — which finds nothing.
+func headFilesOf(repo *git.Repository) *headFiles {
+	head, err := repo.Head()
+	if err != nil {
+		return nil
+	}
+	commit, err := repo.CommitObject(head.Hash())
+	if err != nil {
+		return nil
+	}
+	tree, err := commit.Tree()
+	if err != nil {
+		return nil
+	}
+	return &headFiles{root: tree, dirs: map[string]*object.Tree{}}
+}
+
+// tree is the tree of dir, a path from the root with no trailing slash, nil
+// where HEAD holds no directory there.
+func (h *headFiles) tree(dir string) *object.Tree {
+	if dir == "" {
+		return h.root
+	}
+	if t, ok := h.dirs[dir]; ok {
+		return t
+	}
+	var t *object.Tree
+	parent, base := pathpkg.Split(dir)
+	if p := h.tree(strings.TrimSuffix(parent, "/")); p != nil {
+		if e, err := p.FindEntry(base); err == nil && e.Mode == filemode.Dir {
+			t, _ = p.Tree(base)
+		}
+	}
+	h.dirs[dir] = t
+	return t
+}
+
+// entry is HEAD's entry at path, and the tree holding it; nil for either
+// where HEAD holds nothing there, or there is no HEAD.
+func (h *headFiles) entry(path string) (*object.TreeEntry, *object.Tree) {
+	if h == nil {
+		return nil, nil
+	}
+	dir, name := pathpkg.Split(path)
+	t := h.tree(strings.TrimSuffix(dir, "/"))
+	if t == nil {
+		return nil, nil
+	}
+	e, err := t.FindEntry(name)
+	if err != nil {
+		return nil, nil
+	}
+	return e, t
+}
+
+// indexLookup finds a path's entry in idx, nil where it has none, by halving
+// the entries git keeps in path order rather than going through them all as
+// go-git's Entry does: a diff of ten thousand changed files in a checkout of
+// a million went through five thousand million entries. An index whose
+// entries are not in order — nothing git writes — is gone through as go-git
+// goes through it.
+func indexLookup(idx *index.Index) func(path string) *index.Entry {
+	if idx == nil {
+		return func(string) *index.Entry { return nil }
+	}
+	entries := idx.Entries
+	if !sort.SliceIsSorted(entries, func(i, j int) bool { return entries[i].Name < entries[j].Name }) {
+		return func(path string) *index.Entry {
+			e, err := idx.Entry(path)
+			if err != nil {
+				return nil
+			}
+			return e
+		}
+	}
+	return func(path string) *index.Entry {
+		i := sort.Search(len(entries), func(i int) bool { return entries[i].Name >= path })
+		if i < len(entries) && entries[i].Name == path {
+			return entries[i]
+		}
+		return nil
+	}
 }
 
 // submoduleHeads is the commit each submodule's checkout is at, by its path:
@@ -719,14 +813,9 @@ func diffWorktree(ctx context.Context, repo *git.Repository, gate func(string) *
 		return textOrEmpty(""), nil
 	}
 
-	var headTree *object.Tree
-	if head, herr := repo.Head(); herr == nil {
-		if commit, cerr := repo.CommitObject(head.Hash()); cerr == nil {
-			headTree, _ = commit.Tree()
-		}
-	}
-
+	head := headFilesOf(repo)
 	root := wt.Filesystem.Root()
+	files := newWorkingFiles(root)
 	patches := make([]diff.FilePatch, 0, len(status))
 	var large []string
 	var skipped []withheld
@@ -737,6 +826,7 @@ func diffWorktree(ctx context.Context, repo *git.Repository, gate func(string) *
 	// directory, and it was named as "a directory where a file was", where
 	// git shows `Subproject commit` and the two hashes.
 	idx, _ := repo.Storer.Index()
+	entryOf := indexLookup(idx)
 	var bumps []string
 	var heads map[string]plumbing.Hash
 	paths, unseen := changedPaths(status), 0
@@ -747,8 +837,8 @@ func diffWorktree(ctx context.Context, repo *git.Repository, gate func(string) *
 		if ctx.Err() != nil {
 			return nil, interrupted("the working tree")
 		}
-		disk := onDisk(root, path)
-		if from, link := gitlinkAt(headTree, idx, path); link {
+		disk := files.at(path)
+		if from, link := gitlinkAt(head, entryOf, path); link {
 			if heads == nil {
 				heads = submoduleHeads(repo, wt)
 			}
@@ -765,7 +855,7 @@ func diffWorktree(ctx context.Context, repo *git.Repository, gate func(string) *
 			skipped = append(skipped, withheld{path, refusedBy(verr)})
 			continue
 		}
-		from, to := sideSizes(headTree, path, disk)
+		from, to := sideSizes(repo, head, path, disk)
 		switch {
 		case from > maxDiffBytes || to > maxDiffBytes:
 			large = append(large, path)
@@ -779,7 +869,7 @@ func diffWorktree(ctx context.Context, repo *git.Repository, gate func(string) *
 		// still the answer: it returned on the first, so an untracked link to
 		// a directory — bazel-out, a `current` pointing at a release — left
 		// the caller with no patch at all, for a file git diffs as one line.
-		fp, coarsely, ferr := diffOneFile(root, headTree, path, disk, deadline)
+		fp, coarsely, ferr := diffOneFile(root, head, path, disk, deadline)
 		if ferr != nil {
 			skipped = append(skipped, withheld{path, unreadable(ferr)})
 			continue
@@ -825,9 +915,10 @@ func changedPaths(status git.Status) []string {
 	return paths
 }
 
-// onDisk is what the working tree holds at path, the entry itself rather
-// than what a symlink there points at — nil for nothing at all, which a
-// deleted file and one removed since the status was read both are.
+// workingFiles looks up what the working tree holds at a path, the entry
+// itself rather than what a symlink there points at — nil for nothing at
+// all, which a deleted file and one removed since the status was read both
+// are.
 //
 // The os package on the working tree's own root, and not the go-billy
 // filesystem go-git hands back: billy follows a symlink wherever it reads
@@ -840,17 +931,35 @@ func changedPaths(status git.Status) []string {
 // does go-git's status, which lists it deleted. A lstat of the whole path
 // follows every link but the last, so the diff showed other/a.txt's content
 // as the change to notes/a.txt, and named a file the gate refused for a link
-// leading out of the root, where git has one deleted file to show.
-func onDisk(root, path string) os.FileInfo {
-	dir := root
+// leading out of the root, where git has one deleted file to show. Each
+// directory on the way is looked at once for the call, where a diff of ten
+// thousand files two directories deep looked at the same hundred directories
+// twenty thousand times.
+type workingFiles struct {
+	root string
+	dirs map[string]bool
+}
+
+func newWorkingFiles(root string) *workingFiles {
+	return &workingFiles{root: root, dirs: map[string]bool{}}
+}
+
+func (w *workingFiles) at(path string) os.FileInfo {
 	parts := strings.Split(path, "/")
+	dir := ""
 	for _, part := range parts[:len(parts)-1] {
-		dir = filepath.Join(dir, part)
-		if info, err := os.Lstat(dir); err != nil || !info.IsDir() {
+		dir = pathpkg.Join(dir, part)
+		real, seen := w.dirs[dir]
+		if !seen {
+			info, err := os.Lstat(filepath.Join(w.root, filepath.FromSlash(dir)))
+			real = err == nil && info.IsDir()
+			w.dirs[dir] = real
+		}
+		if !real {
 			return nil
 		}
 	}
-	info, err := os.Lstat(filepath.Join(root, filepath.FromSlash(path)))
+	info, err := os.Lstat(filepath.Join(w.root, filepath.FromSlash(path)))
 	if err != nil {
 		return nil
 	}
@@ -861,9 +970,9 @@ func onDisk(root, path string) os.FileInfo {
 // not there: the blob's recorded size and a stat of the entry on disk, so
 // holding a file to maxDiffBytes and the lot to maxTotalDiffBytes costs no
 // read of either.
-func sideSizes(headTree *object.Tree, path string, disk os.FileInfo) (from, to int64) {
-	if headTree != nil {
-		if size, err := headTree.Size(path); err == nil {
+func sideSizes(repo *git.Repository, head *headFiles, path string, disk os.FileInfo) (from, to int64) {
+	if e, _ := head.entry(path); e != nil {
+		if size, err := repo.Storer.EncodedObjectSize(e.Hash); err == nil {
 			from = size
 		}
 	}
@@ -877,13 +986,13 @@ func sideSizes(headTree *object.Tree, path string, disk os.FileInfo) (from, to i
 // content (empty for a file HEAD never had) against what's on disk right
 // now (empty for a file the worktree deleted). coarsely says the deadline
 // cut the matching of its lines short.
-func diffOneFile(root string, headTree *object.Tree, path string, disk os.FileInfo, deadline time.Time) (
+func diffOneFile(root string, head *headFiles, path string, disk os.FileInfo, deadline time.Time) (
 	fp diff.FilePatch, coarsely bool, err error,
 ) {
 	var from *diffFile
 	oldContent := ""
-	if headTree != nil {
-		if f, err := headTree.File(path); err == nil {
+	if e, dir := head.entry(path); e != nil {
+		if f, err := dir.TreeEntryFile(e); err == nil {
 			c, err := f.Contents()
 			if err != nil {
 				return nil, false, err
