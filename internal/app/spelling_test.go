@@ -97,7 +97,116 @@ func (sp speller) find(text string, terminalOnly bool) []string {
 			i += 1 + len(flag)
 		}
 	}
+	for _, m := range sp.bareCommands(maskSpans(text)) {
+		found = append(found, quote(m[0], m[1]))
+	}
 	return found
+}
+
+// proseWord is one word a capability's ID could be made of.
+var proseWord = regexp.MustCompile(`[a-z][a-z0-9-]*`)
+
+// bareCommands returns where prose spells a capability in the CLI's words
+// without the "rta" before them: "use fs hash to inspect one file", a hint an
+// agent read as a command it had no terminal for, with the fs_hash tool in
+// its list. commandLine catches the words after "rta" and a code span's flag
+// is caught in find, but two plain words in a sentence were neither, and
+// that hint went out.
+//
+// Words a capability's ID is made of, one space apart, standing alone:
+// fs.hash and fs_hash are the ID and the tool, each spelled as one word, and
+// a path or a file name that happens to hold the words — fs/hash, fs hash.go
+// — names something else. And not after a determiner: the words an ID is
+// made of are English words too, and after "a" or "the" they are the noun
+// they say — "a key set one with a keys list" is a JWK's keys member, "the
+// operator's git config" git's own file — where after "use" or "run" they
+// are a command.
+func (sp speller) bareCommands(prose string) [][2]int {
+	words := proseWord.FindAllStringIndex(prose, -1)
+	var out [][2]int
+	for i := 0; i < len(words); i++ {
+		start := words[i][0]
+		if start > 0 && joined(prose[start-1]) || strings.HasSuffix(prose[:start], "rta ") ||
+			afterDeterminer(prose[:start]) {
+			// Inside a longer word, a command line commandLine found, or a
+			// noun.
+			continue
+		}
+		id, last := prose[start:words[i][1]], -1
+		for j := i + 1; j < len(words) && j < i+3; j++ {
+			if prose[words[j-1][1]:words[j][0]] != " " {
+				break
+			}
+			id += "." + prose[words[j][0]:words[j][1]]
+			if _, ok := sp.reg.Capability(id); ok && standsAlone(prose, words[j][1]) {
+				last = j
+			}
+		}
+		if last >= 0 {
+			out = append(out, [2]int{start, words[last][1]})
+			i = last
+		}
+	}
+	return out
+}
+
+// determiners are the words that make the ones after them a noun.
+var determiners = map[string]bool{
+	"a": true, "an": true, "the": true, "this": true, "that": true, "these": true, "those": true,
+	"its": true, "your": true, "their": true, "our": true, "my": true,
+	"each": true, "every": true, "any": true, "no": true,
+}
+
+// afterDeterminer reports whether before ends in a determiner and a space, a
+// possessive — the operator's — among them.
+func afterDeterminer(before string) bool {
+	before, spaced := strings.CutSuffix(before, " ")
+	if !spaced {
+		return false
+	}
+	word := strings.ToLower(before[strings.LastIndexAny(before, " \t\n(\"")+1:])
+	return determiners[word] || strings.HasSuffix(word, "'s")
+}
+
+// joined reports whether b, beside a word, makes it part of a longer one: an
+// identifier, a path, a dotted ID or a flag.
+func joined(b byte) bool {
+	return isFlagByte(b) || b == '_' || b == '.' || b == '/'
+}
+
+// standsAlone reports whether the word ending at prose[end] ends there, and
+// is not the start of a file name or a path: the full stop ending a sentence
+// does not join it to anything, the one in hash.go does.
+func standsAlone(prose string, end int) bool {
+	if end == len(prose) {
+		return true
+	}
+	if b := prose[end]; b == '.' {
+		return end+1 == len(prose) || !isFlagByte(prose[end+1])
+	}
+	return !joined(prose[end])
+}
+
+// maskSpans is text with each code span blanked out, the same length so an
+// offset into it is one into text. A span is the spelling of whatever it
+// quotes, another program's command line among them — `git log` is git's —
+// and find reads it on its own terms.
+func maskSpans(text string) string {
+	b := []byte(text)
+	for i := 0; i < len(b); i++ {
+		if b[i] != '`' {
+			continue
+		}
+		end := strings.IndexByte(text[i+1:], '`')
+		if end < 0 {
+			break
+		}
+		for k := i; k <= i+1+end; k++ {
+			b[k] = ' '
+		}
+		i += end + 1
+	}
+	return string(b)
 }
 
 // capabilityOf returns the capability whose ID words begins with, as the CLI
@@ -172,10 +281,24 @@ func TestTheSpellerTellsATerminalsSpellingFromEveryoneElses(t *testing.T) {
 		"the environment rta mcp serve runs in":                           false,
 		"`key` takes a private key file":                                  false,
 		"-----BEGIN PUBLIC KEY-----":                                      false,
+		"use fs hash to inspect one file":                                 true,
+		"compare it with fs hash.":                                        true,
+		"net hosts add writes the line":                                   true,
+		"there is no \"fs hash\" to run":                                  true,
+		"the fs_hash tool checks one file":                                false,
+		"fs.hash checks one file":                                         false,
+		"the structured equivalent of `git log`":                          false,
+		"a key set one with a keys list":                                  false,
+		"Path from the operator's git config":                             false,
+		"the files under fs/hash and reads fs hash.go":                    false,
 	} {
 		if got := len(sp.find(text, false)) > 0; got != want {
 			t.Errorf("find(%q) found a terminal's spelling: %v, want %v", text, got, want)
 		}
+	}
+	// A command line is one finding, not its own and its words' without "rta".
+	if hits := sp.find("run rta fs hash ./x", false); len(hits) != 1 {
+		t.Errorf("a command line was found %d times: %q", len(hits), hits)
 	}
 	// Text only a person at a terminal reads may name a command with no
 	// capability behind it, and still not one with.
