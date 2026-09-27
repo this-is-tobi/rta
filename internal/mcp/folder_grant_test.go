@@ -91,3 +91,45 @@ func TestATraversalIsRefusedByTheFolderAndAllowedByAnExactGrant(t *testing.T) {
 			res.Content[0].(*sdk.TextContent).Text)
 	}
 }
+
+// The record a grant is judged against is the one the handler is handed. The
+// gate trimmed the white space around a call's record before comparing it,
+// and the handler got the value untrimmed, so an exact grant on one record
+// covered the same name with a space before it or a no-break space after it:
+// a different key to a store, and to http.get a sibling path. A padded name
+// is its own record, covered by an exact grant only when the grant names it
+// padded, as an answered consent prompt does.
+func TestAnExactGrantCoversTheRecordTheHandlerIsHanded(t *testing.T) {
+	const key = "prod/db-password"
+	nbsp := string(rune(0xA0))
+
+	s := connect(t, Options{})
+	if verr := grant.Issue(grant.Grant{
+		Target: "demo.item.reveal", Scope: key,
+		Issued: time.Now(), Expires: time.Now().Add(time.Hour),
+	}, true); verr != nil {
+		t.Fatal(verr)
+	}
+	for _, padded := range []string{" " + key, key + " ", key + nbsp, "\t" + key + "\n"} {
+		if res := callTool(t, s, "demo_item_reveal", map[string]any{"key": padded}); !res.IsError {
+			t.Errorf("a grant on %q covered %q, and the handler was handed it: %s",
+				key, padded, res.Content[0].(*sdk.TextContent).Text)
+		}
+	}
+
+	padded := key + nbsp
+	if verr := grant.Issue(grant.Grant{
+		Target: "demo.item.reveal", Scope: padded,
+		Issued: time.Now(), Expires: time.Now().Add(time.Hour),
+	}, true); verr != nil {
+		t.Fatal(verr)
+	}
+	res := callTool(t, s, "demo_item_reveal", map[string]any{"key": padded})
+	if res.IsError {
+		t.Fatalf("an exact grant on the padded name did not cover it: %s",
+			res.Content[0].(*sdk.TextContent).Text)
+	}
+	if text := res.Content[0].(*sdk.TextContent).Text; !strings.Contains(text, "revealed "+padded) {
+		t.Errorf("the handler was not handed the record the grant covered: %s", text)
+	}
+}
