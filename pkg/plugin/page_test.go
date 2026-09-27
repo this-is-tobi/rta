@@ -116,6 +116,29 @@ func TestWithKeepsTheSurfaceAndFlags(t *testing.T) {
 	}
 }
 
+// A link the surface resolved is told to the handler for the field it was
+// named in, survives a derived request, and is dropped when a page overlays
+// that field: the value is then no longer the path the link was named as.
+func TestALinkIsToldForItsFieldUntilTheFieldIsReplaced(t *testing.T) {
+	base := plugin.NewRequest(map[string]any{"file": "/r/run/stub-resolv.conf"}, false, false).
+		WithLink("file", "/r/resolv.conf", "run/stub-resolv.conf")
+	if at, target, ok := base.Link("file"); !ok || at != "/r/resolv.conf" || target != "run/stub-resolv.conf" {
+		t.Fatalf("Link(file) = %q, %q, %v", at, target, ok)
+	}
+	if _, _, ok := base.Link("other"); ok {
+		t.Error("a field nobody named a link in reports one")
+	}
+	if _, _, ok := base.With(map[string]any{"limit": 1}).Link("file"); !ok {
+		t.Error("a derived request lost the link of a field it did not replace")
+	}
+	if _, _, ok := base.With(map[string]any{"file": "/elsewhere"}).Link("file"); ok {
+		t.Error("a field replaced by the page still reports the link the caller named")
+	}
+	if _, _, ok := plugin.NewRequest(map[string]any{"file": "/etc/resolv.conf"}, false, false).Link("file"); ok {
+		t.Error("a request no surface stamped reports a link")
+	}
+}
+
 // A regression test for a real architectural gap: Page
 // composes a handler directly, with none of the checks the MCP
 // bridge applies to a capability an MCP call actually names — no grant, no

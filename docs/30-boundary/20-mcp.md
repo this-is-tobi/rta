@@ -113,6 +113,8 @@ The gate governs path *arguments* only. A capability that opens a fixed file of 
 
 A path argument naming a file to read — a certificate, a file to hash, a hosts file or a resolv.conf — names a regular file. A named pipe, a device or a directory in its place is refused before anything opens it, and a file larger than its format ever is — past 16 MiB for a certificate file, 32 MiB for a hosts file, 1 MiB for a resolv.conf — is refused by name rather than read whole. The CLI still reads `/dev/stdin` as [its guide](../20-using/10-cli.md#piping-in) shows, because a pipe given at a terminal has a writer the person started.
 
+A path is judged with its symbolic links resolved, and what the capability opens is the file that was judged, never the link again: a link swapped after the check cannot lead the call somewhere else. The capability is still told when the name it was given was a link, since for some that is the answer — `net resolver list` on a resolv.conf linked into `/run` says who owns it, over MCP as at a terminal.
+
 rta says its roots out loud at startup rather than leaving them to be discovered from a refusal:
 
 ```

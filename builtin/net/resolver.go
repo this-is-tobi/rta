@@ -65,10 +65,17 @@ func runResolverList(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 	cfg := parseResolv(lines)
 
-	pairs := []view.Pair{{Key: "file", Value: path}}
+	// Over MCP the file read is the far end of a link the caller named, and
+	// the answer is about what they named: the link is where the file is,
+	// and being one is who owns it (managedBy).
+	named, link := path, ""
+	if at, target, ok := req.Link("file"); ok {
+		named, link = at, target
+	}
+	pairs := []view.Pair{{Key: "file", Value: named}}
 	// Who owns the file comes first: it decides whether anything else here
 	// is worth changing.
-	if what, _ := managedBy(req.Surface(), path, ""); what != "" {
+	if what, _ := managedBy(req.Surface(), path, link, ""); what != "" {
 		pairs = append(pairs, view.Pair{Key: "managed by", Value: what + " — edits here get overwritten"})
 	} else {
 		pairs = append(pairs, view.Pair{Key: "managed by", Value: "nothing — safe to edit"})
@@ -149,7 +156,7 @@ func runResolverSet(_ context.Context, req plugin.Request) (view.View, error) {
 		return nil, verr
 	}
 	body := fmt.Sprintf("%s in %s\nprevious version saved to %s", summary, path, saved)
-	if what, _ := managedBy(req.Surface(), path, ""); what != "" {
+	if what, _ := managedBy(req.Surface(), path, "", ""); what != "" {
 		body += fmt.Sprintf("\n\nwarning: %s is %s — this change will be overwritten", path, what)
 	}
 	return view.Text{Body: body}, nil
