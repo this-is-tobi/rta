@@ -13,6 +13,7 @@ import (
 	"github.com/this-is-tobi/rta/builtin/internal/itemstore"
 	"github.com/this-is-tobi/rta/builtin/internal/pathin"
 	"github.com/this-is-tobi/rta/internal/atomicfile"
+	"github.com/this-is-tobi/rta/internal/paths"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -116,6 +117,14 @@ func managedBy(sf plugin.Surface, path, force string) (what, advice string) {
 // — `hosts add` then `hosts toggle` takes about that long — and a timestamp
 // alone would have the second silently overwrite the first, leaving "saved
 // to X" pointing at a copy of the very state it claimed to preserve.
+//
+// Owner-only, like everything else under the data directory, which
+// paths.EnsureData creates when this is the first command to need it. It
+// was made 0755 here, through MkdirAll's parent creation — the drift
+// EnsureData exists to end — and a machine whose first rta command was a
+// hosts edit then had `rta doctor` warning about a mode rta chose. A copy
+// is 0600 whatever the original's mode: the hosts file is public, but the
+// file input can name any file this process can read.
 func backup(sf plugin.Surface, path string) (string, *view.Error) {
 	src, _, err := pathin.Open(sf, path)
 	if err != nil {
@@ -123,7 +132,10 @@ func backup(sf plugin.Surface, path string) (string, *view.Error) {
 	}
 	defer func() { _ = src.Close() }()
 	dir := backupDir()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if data, err := paths.EnsureData(); err != nil {
+		return "", view.Errorf("net.sysfile.backup", "creating %s: %v", data, err)
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", view.Errorf("net.sysfile.backup", "creating %s: %v", dir, err)
 	}
 	base := filepath.Join(dir, fmt.Sprintf("%s.%s", filepath.Base(path), time.Now().Format("20060102-150405")))
@@ -134,7 +146,7 @@ func backup(sf plugin.Surface, path string) (string, *view.Error) {
 		}
 		// O_EXCL: the check and the claim have to be one step, or two edits
 		// racing land on the same name anyway.
-		f, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+		f, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 		if os.IsExist(err) {
 			continue
 		}
