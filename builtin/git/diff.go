@@ -179,11 +179,7 @@ func diffCommit(ctx context.Context, repo *git.Repository, spec string, gate fun
 	}
 	// Named in the diff's own shape, as the worktree diff names what it
 	// did not read.
-	body += notDiffed(large, refused)
-	if cut > 0 {
-		body += fmt.Sprintf("%d more %s changed and not diffed: one commit's diff reads at most %d MiB\n",
-			cut, format.PluralOf(cut, "file"), maxCommitDiffBytes>>20)
-	}
+	body += notDiffed(large, refused) + pastBudget(cut)
 	// An empty patch is the answer, and the sentence is what a person is
 	// told in its place (view.Text.Empty), for the reason a clean working
 	// tree's is: as the body, `rta git diff --commit <empty> > x.patch` wrote
@@ -197,15 +193,30 @@ func diffCommit(ctx context.Context, repo *git.Repository, spec string, gate fun
 		"an empty commit, or a merge that kept its first parent's tree"}, nil
 }
 
-// maxCommitDiffBytes bounds what one --commit diff reads in all. Each file
-// is held to maxDiffBytes, as the worktree diff's are, but a commit can hold
-// a hundred thousand files under that, and both sides of every change are
-// read whole to line-diff them. A root commit is often a whole codebase
-// imported at once, and it is diffed in full since it stopped answering a
-// sentence; on an MCP server that is one free call holding the lot in
-// memory. Past the budget the rest is counted, not read. A variable so a
-// test can lower it.
-var maxCommitDiffBytes int64 = 64 << 20
+// maxTotalDiffBytes bounds what one diff reads in all, of a commit or of the
+// working tree. Each file is held to maxDiffBytes, but a commit can hold a
+// hundred thousand files under that, and both sides of every change are read
+// whole to line-diff them. A root commit is often a whole codebase imported
+// at once, and it is diffed in full since it stopped answering a sentence; on
+// an MCP server that is one free call holding the lot in memory.
+//
+// The working tree had only the per-file bound, as though it could not hold
+// as much as a commit, and it holds more: whatever nobody has committed or
+// ignored, build output and logs among it. Twenty untracked logs just under
+// the per-file bound cost one git_diff three gigabytes. Past the budget the
+// rest is counted, not read, in the order the diff lists its files. A
+// variable so a test can lower it.
+var maxTotalDiffBytes int64 = 64 << 20
+
+// pastBudget is the line counting the files a diff left out once it had read
+// maxTotalDiffBytes, or nothing when it left none.
+func pastBudget(cut int) string {
+	if cut == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d more %s changed and not diffed: one diff reads at most %d MiB\n",
+		cut, format.PluralOf(cut, "file"), maxTotalDiffBytes>>20)
+}
 
 // boundChanges keeps the changes a --commit diff reads, in order, and names
 // the ones it leaves: a file the path gate refuses, a file over maxDiffBytes
@@ -218,7 +229,7 @@ var maxCommitDiffBytes int64 = 64 << 20
 func boundChanges(repo *git.Repository, changes object.Changes, gate func(string) *view.Error) (
 	kept object.Changes, large []string, refused []withheld, cut int,
 ) {
-	budget := maxCommitDiffBytes
+	budget := maxTotalDiffBytes
 	for _, ch := range changes {
 		if verr := gateEither(gate, ch.From, ch.To); verr != nil {
 			refused = append(refused, withheld{changePath(ch), refusedBy(verr)})
@@ -321,7 +332,7 @@ func submoduleBumps(fromTree, toTree *object.Tree) []string {
 	return out
 }
 
-// maxDiffBytes bounds one file the worktree diff reads whole. Both sides of
+// maxDiffBytes bounds one file a diff reads whole. Both sides of
 // a changed file are held in memory to line-diff them — the committed blob
 // and the file on disk — and nothing bounded either, so a generated asset
 // or a data file that changed put its whole size into the process twice
@@ -355,16 +366,23 @@ func diffWorktree(repo *git.Repository, gate func(string) *view.Error) (view.Vie
 	patches := make([]diff.FilePatch, 0, len(status))
 	var large []string
 	var skipped []withheld
+	budget, cut := maxTotalDiffBytes, 0
 	for _, path := range changedPaths(status) {
 		disk := onDisk(root, path)
 		if verr := gate(gatedAt(path, disk != nil && disk.Mode()&os.ModeSymlink != 0)); verr != nil {
 			skipped = append(skipped, withheld{path, refusedBy(verr)})
 			continue
 		}
-		if tooLarge(headTree, path, disk) {
+		from, to := sideSizes(headTree, path, disk)
+		switch {
+		case from > maxDiffBytes || to > maxDiffBytes:
 			large = append(large, path)
 			continue
+		case from+to > budget:
+			cut++
+			continue
 		}
+		budget -= from + to
 		// One file that cannot be read is named, and the rest of the diff is
 		// still the answer: it returned on the first, so an untracked link to
 		// a directory — bazel-out, a `current` pointing at a release — left
@@ -383,7 +401,7 @@ func diffWorktree(repo *git.Repository, gate func(string) *view.Error) (view.Vie
 	// caller asked what changed, and a file too large to show, or one it may
 	// not read, is part of the answer rather than a row quietly missing from
 	// it. git.status names the same paths to the same caller.
-	body += notDiffed(large, skipped)
+	body += notDiffed(large, skipped) + pastBudget(cut)
 	return textOrEmpty(body), nil
 }
 
@@ -438,16 +456,20 @@ func onDisk(root, path string) os.FileInfo {
 	return info
 }
 
-// tooLarge reports a changed path either side of which is over maxDiffBytes,
-// from sizes alone — the blob's recorded size and a stat of the entry on disk
-// — so deciding costs no read of either.
-func tooLarge(headTree *object.Tree, path string, disk os.FileInfo) bool {
+// sideSizes is the size of each side of a changed path, 0 for a side that is
+// not there: the blob's recorded size and a stat of the entry on disk, so
+// holding a file to maxDiffBytes and the lot to maxTotalDiffBytes costs no
+// read of either.
+func sideSizes(headTree *object.Tree, path string, disk os.FileInfo) (from, to int64) {
 	if headTree != nil {
-		if size, err := headTree.Size(path); err == nil && size > maxDiffBytes {
-			return true
+		if size, err := headTree.Size(path); err == nil {
+			from = size
 		}
 	}
-	return disk != nil && disk.Size() > maxDiffBytes
+	if disk != nil {
+		to = disk.Size()
+	}
+	return from, to
 }
 
 // diffOneFile builds the patch for a single changed path: HEAD's committed
@@ -527,7 +549,11 @@ func readWorktreeEntry(root, path string, disk os.FileInfo) (string, filemode.Fi
 	if !opened.Mode().IsRegular() || !os.SameFile(opened, disk) {
 		return "", 0, notDiffable("it changed while it was being read")
 	}
-	data, err := io.ReadAll(f)
+	// No further than the size the lstat saw, which is what the budget
+	// counted, and what git reads too: a file still being written to is
+	// diffed as it was when it was measured, rather than for as long as it
+	// keeps growing.
+	data, err := io.ReadAll(io.LimitReader(f, disk.Size()))
 	if err != nil {
 		return "", 0, err
 	}

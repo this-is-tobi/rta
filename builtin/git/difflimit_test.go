@@ -39,9 +39,9 @@ func TestAChangedFileOverTheBoundIsNamedRatherThanRead(t *testing.T) {
 // diff names one, and past the commit's budget the rest is counted rather
 // than read — the change that fits is still shown.
 func TestACommitDiffIsBoundedPerFileAndInAll(t *testing.T) {
-	savedFile, savedAll := maxDiffBytes, maxCommitDiffBytes
-	maxDiffBytes, maxCommitDiffBytes = 64, 100
-	t.Cleanup(func() { maxDiffBytes, maxCommitDiffBytes = savedFile, savedAll })
+	savedFile, savedAll := maxDiffBytes, maxTotalDiffBytes
+	maxDiffBytes, maxTotalDiffBytes = 64, 100
+	t.Cleanup(func() { maxDiffBytes, maxTotalDiffBytes = savedFile, savedAll })
 
 	dir, repo := testRepo(t)
 	writeFile(t, dir, "a.txt", "small change\n")
@@ -68,5 +68,35 @@ func TestACommitDiffIsBoundedPerFileAndInAll(t *testing.T) {
 	}
 	if !strings.Contains(body, "1 more file changed and not diffed") {
 		t.Errorf("what is past the commit's budget is not counted:\n%s", body)
+	}
+}
+
+// The working tree's diff has the budget a commit's has. It held each file to
+// the per-file bound and nothing held the lot: twenty untracked logs just
+// under that bound were all read and line-diffed in one ungated call, and
+// three hundred megabytes on disk cost the server three gigabytes. Past the
+// budget the rest is counted, in the order the diff lists its files, and the
+// changes that fit are still shown.
+func TestAWorktreeDiffIsBoundedInAll(t *testing.T) {
+	savedFile, savedAll := maxDiffBytes, maxTotalDiffBytes
+	maxDiffBytes, maxTotalDiffBytes = 64, 100
+	t.Cleanup(func() { maxDiffBytes, maxTotalDiffBytes = savedFile, savedAll })
+
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
+	writeFile(t, dir, "a.txt", "v1\nsmall change\n")
+	writeFile(t, dir, "b.log", strings.Repeat("b", 60)+"\n")
+	writeFile(t, dir, "c.log", strings.Repeat("c", 60)+"\n")
+	writeFile(t, dir, "d.log", strings.Repeat("d", 60)+"\n")
+
+	body := text(t, runDiff, req(t, dir, nil))
+	if !strings.Contains(body, "+small change") || !strings.Contains(body, "+"+strings.Repeat("b", 60)) {
+		t.Errorf("the changes that fit are missing:\n%s", body)
+	}
+	if strings.Contains(body, strings.Repeat("c", 60)) || strings.Contains(body, strings.Repeat("d", 60)) {
+		t.Errorf("a file past the budget was read and diffed:\n%s", body)
+	}
+	if !strings.Contains(body, "2 more files changed and not diffed") {
+		t.Errorf("what is past the budget is not counted:\n%s", body)
 	}
 }
