@@ -458,6 +458,27 @@ func TestHashMatchesAndSaysSo(t *testing.T) {
 	}
 }
 
+// An expect holding no checksum — "sha256:$SUM" with SUM unset — was skipped,
+// leaving a hash and no verdict where a script was checking for one. It is
+// refused, naming the input.
+func TestAnExpectWithNoChecksumInItIsRefused(t *testing.T) {
+	root := fixture(t, map[string]int{"f.bin": 4})
+	path := filepath.Join(root, "f.bin")
+	for _, spelling := range []string{"sha256:", " sha256: ", "*"} {
+		_, err := runHash(context.Background(), plugin.NewRequest(
+			map[string]any{"path": path, "algo": "sha256", "expect": spelling}, false, false))
+		ve := view.AsError(err, "x")
+		if err == nil || ve.Code != "fs.hash.expect" || !strings.Contains(ve.Hint, "--expect") {
+			t.Errorf("expect %q: want fs.hash.expect naming --expect, got %v", spelling, err)
+		}
+	}
+	// No expect at all is a plain hash, as it always was.
+	kv := run(t, runHash, map[string]any{"path": path, "algo": "sha256", "expect": "  "}).(view.KeyValue)
+	if pairValue(kv, "match") != "" {
+		t.Errorf("a blank expect was compared: %+v", kv)
+	}
+}
+
 // sha1 and md5 are offered because projects still publish them, and the
 // output has to say what they are worth.
 func TestWeakHashesCarryTheirCaveat(t *testing.T) {

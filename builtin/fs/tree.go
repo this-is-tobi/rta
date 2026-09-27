@@ -269,6 +269,17 @@ func runHash(ctx context.Context, req plugin.Request) (view.View, error) {
 		return nil, view.Errorf("fs.hash.algo", "unknown algorithm %q", algo).
 			WithHint("one of: " + strings.Join(names, ", "))
 	}
+	// An expect with no checksum in it is refused rather than skipped. The
+	// comparison is the point of the capability, and a skipped one leaves a
+	// hash and no verdict, which reads as a check nobody failed: the ordinary
+	// way to get here is "sha256:$SUM" with the variable unset, the moment a
+	// script meant to stop on a mismatch.
+	rawExpect := req.String("expect")
+	expect := normalizeChecksum(rawExpect)
+	if expect == "" && strings.TrimSpace(rawExpect) != "" {
+		return nil, view.Errorf("fs.hash.expect", "%q holds no checksum to compare against", rawExpect).
+			WithHint(req.Surface().InputName("expect") + " takes the checksum itself, bare or as shasum prints it")
+	}
 
 	// Stat'ed first for the refusal a directory gets, which names the
 	// capability that measures one. What is opened is judged again by
@@ -305,7 +316,7 @@ func runHash(ctx context.Context, req plugin.Request) (view.View, error) {
 		{Key: "size", Value: humanBytes(info.Size())},
 		{Key: algo, Value: sum},
 	}
-	if expect := normalizeChecksum(req.String("expect")); expect != "" {
+	if expect != "" {
 		// The point of the capability. Comparing two 64-character hex strings
 		// by eye is a task humans are measurably bad at, and the failure is
 		// silent.
