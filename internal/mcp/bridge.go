@@ -358,6 +358,10 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 				values[f.Name] = v
 			}
 		}
+		// The records the grant gate below judges, for the ledger exactly as
+		// judged: the arguments are cleaned for whoever reads them next and
+		// cannot carry them (judgedRecords).
+		rec.Records = judgedRecords(c, gated)
 		// The exposure gate said this agent may in principle make this kind of
 		// call. A grant says a person allowed this one, on this record, now —
 		// the second half of the MCP equivalent of a confirmation. Enforcing

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -581,7 +582,8 @@ func TestAPaddedRecordIsNeverShownAsTheBareOne(t *testing.T) {
 // A capability taking a list names a record for each element — net hosts add
 // takes its hostnames that way — and a list printed as Go prints one showed
 // a padded element as the bare one, on the request's page and in the ledger,
-// where the arguments are the only copy of the records a call named.
+// where a row written before the ledger kept records has only its arguments
+// to name them.
 func TestAListArgumentShowsEachRecordAsTheGateComparesIt(t *testing.T) {
 	isolate(t)
 	padded := "api.local" + string(rune(0xa0))
@@ -906,6 +908,58 @@ func TestTheLogShowsWhichCredentialAuthenticatedEachCall(t *testing.T) {
 	for _, c := range v.(view.Table).Columns {
 		if c.Name == "credential" {
 			t.Fatal("credential column appeared with nothing to fill it")
+		}
+	}
+}
+
+// The records a call was judged on have a column of their own, beside the
+// arguments and after whoever called: the arguments are kept cleaned, and a
+// record padded with a zero-width space read there as the bare one. Each
+// record is shown as a record is everywhere else, and the column appears
+// only once a row can fill it.
+func TestTheLogShowsTheRecordsEachCallWasJudgedOn(t *testing.T) {
+	isolate(t)
+	padded := "prod/db" + string(rune(0x200b))
+	for _, e := range []agentlog.Entry{
+		{Cap: "sys.cpu", Outcome: agentlog.Ran, Auth: agentlog.Open},
+		{Cap: "kv.get", Records: []string{padded}, Args: map[string]any{"key": "prod/db"},
+			Agent: "claude", Session: "s1", Role: "dev", Outcome: agentlog.Refused, Auth: agentlog.Blocked},
+		{Cap: "net.hosts.add", Records: []string{"a.local", "b.local"}, Outcome: agentlog.Ran, Auth: agentlog.Standing},
+	} {
+		if err := agentlog.Append(e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	v, err := run(t, "agent.log", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	table := v.(view.Table)
+	for row, want := range []string{"—", strconv.Quote(padded), "a.local b.local"} {
+		if got := cell(t, table, row, "record"); got != want {
+			t.Errorf("row %d record = %q, want %q", row, got, want)
+		}
+	}
+	names := make([]string, 0, len(table.Columns))
+	for _, c := range table.Columns {
+		names = append(names, c.Name)
+	}
+	at := slices.Index(names, "record")
+	if at < 1 || names[at-1] != "role" || names[at+1] != "arguments" {
+		t.Errorf("columns = %v, want the record between the role and the arguments", names)
+	}
+
+	isolate(t)
+	if err := agentlog.Append(agentlog.Entry{Cap: "sys.cpu", Outcome: agentlog.Ran, Auth: agentlog.Open}); err != nil {
+		t.Fatal(err)
+	}
+	v, err = run(t, "agent.log", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range v.(view.Table).Columns {
+		if c.Name == "record" {
+			t.Fatal("record column appeared with nothing to fill it")
 		}
 	}
 }
