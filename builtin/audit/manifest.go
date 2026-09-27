@@ -399,9 +399,16 @@ type npmLock struct {
 		Name    string `json:"name"`
 		Version string `json:"version"`
 	} `json:"packages"`
-	Dependencies map[string]struct {
-		Version string `json:"version"`
-	} `json:"dependencies"`
+	Dependencies map[string]npmV1Dependency `json:"dependencies"`
+}
+
+// npmV1Dependency is one entry of a v1 lockfile's tree, and the copies nested
+// under it: a version that conflicts with the hoisted one is installed beside
+// whatever needed it, and recorded there — often the older copy, and the one
+// an advisory names.
+type npmV1Dependency struct {
+	Version      string                     `json:"version"`
+	Dependencies map[string]npmV1Dependency `json:"dependencies"`
 }
 
 func parsePackageLock(data []byte, source string) ([]component, error) {
@@ -428,7 +435,30 @@ func parsePackageLock(data []byte, source string) ([]component, error) {
 		out = append(out, component{ecosystem: "npm", name: name, version: pkg.Version, source: source})
 	}
 	if len(out) == 0 {
-		for name, pkg := range lock.Dependencies {
+		out = npmV1Components(lock.Dependencies, source)
+	}
+	return out, nil
+}
+
+// npmV1Components reads a v1 tree, every level of it: read at the top alone,
+// a nested copy — lodash 4.17.4 under the package that needed it, beside a
+// hoisted 4.17.21 — never reached OSV, although the npmLock comment said the
+// nested tree was covered. A copy nested in several places is listed once.
+//
+// Walked with a stack rather than by recursion. encoding/json already bounds
+// the nesting a file can reach, so this is not a guard; it keeps the walk's
+// cost in the heap where the file's size already put it.
+func npmV1Components(deps map[string]npmV1Dependency, source string) []component {
+	var out []component
+	seen := map[string]bool{}
+	pending := []map[string]npmV1Dependency{deps}
+	for len(pending) > 0 {
+		level := pending[len(pending)-1]
+		pending = pending[:len(pending)-1]
+		for name, pkg := range level {
+			if len(pkg.Dependencies) > 0 {
+				pending = append(pending, pkg.Dependencies)
+			}
 			if name == "" || pkg.Version == "" {
 				continue
 			}
@@ -437,10 +467,14 @@ func parsePackageLock(data []byte, source string) ([]component, error) {
 			if real, v, ok := npmAlias(version); ok {
 				name, version = real, v
 			}
-			out = append(out, component{ecosystem: "npm", name: name, version: version, source: source})
+			c := component{ecosystem: "npm", name: name, version: version, source: source}
+			if !seen[c.key()] {
+				seen[c.key()] = true
+				out = append(out, c)
+			}
 		}
 	}
-	return out, nil
+	return out
 }
 
 // parseRequirements takes only the pinned lines. A range ("django>=4.2") does

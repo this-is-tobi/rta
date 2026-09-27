@@ -168,6 +168,22 @@ func TestParsePackageLock(t *testing.T) {
 	if len(got) != 1 || got[0].name != "minimist" || got[0].version != "1.2.5" {
 		t.Errorf("v1 lockfile not read: %+v", got)
 	}
+
+	// v1 nests a copy that conflicts with the hoisted one under whatever
+	// needed it — often the older one, and the one with the advisory. Read
+	// at the top level alone, lodash 4.17.4 never reached OSV.
+	nested := []byte(`{"lockfileVersion": 1, "dependencies": {
+	  "lodash": {"version": "4.17.21"},
+	  "a": {"version": "1.0.0", "dependencies": {
+	    "lodash": {"version": "4.17.4"},
+	    "b": {"version": "2.0.0", "dependencies": {"lodash": {"version": "4.17.4"}}}
+	  }}
+	}}`)
+	got, err = parsePackageLock(nested, "package-lock.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want(t, got, "npm", "lodash@4.17.21", "a@1.0.0", "lodash@4.17.4", "b@2.0.0")
 }
 
 // A range does not name a version. Guessing which one is installed would put
