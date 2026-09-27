@@ -343,11 +343,15 @@ func TestBlameStopsItsRenameSearchAtTheDeadline(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		name, _, err := renamedFrom(t.Context(), from, to, "new.txt")
+		name, _, err := renamedFrom(t.Context(), store.deadline, from, to, "new.txt")
 		return name, err
 	}
 	if _, err := search(); !errors.Is(err, errPastDeadline) {
 		t.Errorf("the rename search past the deadline: %v, want errPastDeadline", err)
+	}
+	// And the comparison of the trees stops at it, before any file is read.
+	if _, _, err := renamedFrom(t.Context(), time.Now().Add(-time.Second), nil, nil, "new.txt"); !errors.Is(err, errPastDeadline) {
+		t.Errorf("the comparison of the trees past the deadline: %v, want errPastDeadline", err)
 	}
 	store.deadline = time.Now().Add(time.Hour)
 	if name, err := search(); err != nil || name != "old.txt" {
