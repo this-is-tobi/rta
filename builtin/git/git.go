@@ -13,12 +13,15 @@
 package git
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/storage/filesystem"
@@ -123,6 +126,9 @@ func open(ctx context.Context, req plugin.Request, readsObjects bool) (*git.Repo
 		return nil, view.Errorf("git.notarepo", "%s is not a git repository: %v", path, err).
 			WithHint("run this against a directory inside a git repository, a checkout's own root, or a bare repository's own directory")
 	}
+	if verr := gitDirsInBounds(req, repo); verr != nil {
+		return nil, verr
+	}
 	if readsObjects {
 		if verr := objectsAllReadable(repo, root); verr != nil {
 			return nil, verr
@@ -189,6 +195,109 @@ func objectsAllReadable(repo *git.Repository, root string) *view.Error {
 		WithHint("the objects in them read as missing rather than as an error, which is how a clean " +
 			"checkout comes back as hundreds of staged files — `git repack -ad` rewrites every pack " +
 			"under the name this reads, and the answers here are right again")
+}
+
+// gitDirsInBounds asks the host about every directory go-git reads this
+// repository from, which repoRoot's walk never saw.
+//
+// **A checkout's root names its repository; it does not have to hold it.**
+// A `.git` that is a file says `gitdir: <anywhere>` — how a linked worktree
+// and a submodule find theirs — and go-git opens whatever it names. A git
+// directory holding a `commondir` file keeps its objects, refs and config in
+// the directory that file names, opened the same way. Each is a pointer
+// written inside the root to somewhere outside it, and a root is somewhere a
+// caller can write — with its own file tools, by unpacking an archive, by
+// vendoring a tree. `sub/.git` reading `gitdir: /home/you/other/.git` handed
+// git.log, git.diff --commit and git.config the whole of a repository the
+// root was drawn to exclude, while fs.tree on that same directory was
+// refused. repoRoot judged the directory holding `.git`, and the directory
+// read was never it.
+//
+// So the directories are put back to the host once go-git has resolved
+// them, the way repoRoot puts back each level of its walk: the git directory
+// by the root go-git opened it at, and the common one by the file go-git
+// read to find it. A symlink inside either needs nothing here — go-billy's
+// chroot refuses to follow a link out of the directory it was opened on, so
+// `.git/objects` linked elsewhere fails as a crossed boundary on every
+// surface. It is only the directories themselves go-git takes by name.
+//
+// objects/info/alternates is the third pointer, and is judged as git reads
+// it: an absolute path as it is, a relative one against the objects
+// directory. go-git reads either kind inside the git directory instead and
+// finds nothing there, so today such a repository fails as a missing object
+// rather than answering from outside; judging the entry keeps it a refusal
+// that says why, and keeps it a refusal if the library comes to read the
+// entry the way git does.
+func gitDirsInBounds(req plugin.Request, repo *git.Repository) *view.Error {
+	store, ok := repo.Storer.(*filesystem.Storage)
+	if !ok {
+		return nil
+	}
+	fs := store.Filesystem()
+	gitDir := fs.Root()
+	if _, verr := req.Confine("path", gitDir); verr != nil {
+		return verr
+	}
+	common := gitDir
+	if named := commonDir(fs); named != "" {
+		common = against(gitDir, named)
+		if _, verr := req.Confine("path", common); verr != nil {
+			return verr
+		}
+	}
+	return alternatesInBounds(req, fs, filepath.Join(common, "objects"))
+}
+
+// commonDir is the commondir file's content, read the way go-git reads it to
+// open the directory it names: whole, and trimmed. Not bounded, because a
+// bound is a second reading of the file — a path after a megabyte of
+// whitespace is the path go-git opened, and a truncated read of that file
+// would judge no path at all — and go-git has already read it whole to get
+// here. "" when there is no such file.
+func commonDir(fs billy.Filesystem) string {
+	f, err := fs.Open("commondir")
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	b, err := io.ReadAll(f)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(b))
+}
+
+// alternatesInBounds judges each entry of objects/info/alternates, read the
+// way git reads it: one path per line, a blank line or a `#` comment skipped,
+// a relative path taken from the objects directory. Line by line rather than
+// read whole, as go-git scans it, since nothing but the caller who wrote it
+// bounds how long it is, and the first entry out of bounds ends the reading.
+func alternatesInBounds(req plugin.Request, fs billy.Filesystem, objects string) *view.Error {
+	f, err := fs.Open(filepath.Join("objects", "info", "alternates"))
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+	lines := bufio.NewScanner(f)
+	for lines.Scan() {
+		entry := strings.TrimSpace(lines.Text())
+		if entry == "" || strings.HasPrefix(entry, "#") {
+			continue
+		}
+		if _, verr := req.Confine("path", against(objects, entry)); verr != nil {
+			return verr
+		}
+	}
+	return nil
+}
+
+// against is p as git resolves it from dir: as it is when absolute, joined
+// onto dir when not.
+func against(dir, p string) string {
+	if filepath.IsAbs(p) {
+		return p
+	}
+	return filepath.Join(dir, p)
 }
 
 // gitDirName is the entry that marks a checkout's root — a directory in the

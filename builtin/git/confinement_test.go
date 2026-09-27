@@ -5,7 +5,11 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
 
 	"github.com/this-is-tobi/rta/internal/pathguard"
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -101,6 +105,148 @@ func TestAnUnconfinedCallStillWalksUpToTheRepository(t *testing.T) {
 	tbl := table(t, runLog, req(t, inner, map[string]any{"limit": defaultLogLimit}))
 	if len(tbl.Rows) != 1 {
 		t.Fatalf("rows = %d, want the outer repository's one commit", len(tbl.Rows))
+	}
+}
+
+// A checkout's root names its repository without having to hold it: a `.git`
+// file says `gitdir: <anywhere>`, a git directory's `commondir` file says
+// where its objects, refs and config are, and objects/info/alternates says
+// where more objects are. Each is a file a caller can write inside the root,
+// and go-git follows the first two to whatever they name — so a root holding
+// sub/.git reading `gitdir: /elsewhere/.git` answered git.log, git.diff
+// --commit and git.config from a repository the root was drawn to exclude.
+func TestAGitDirectoryPointerCannotLeadOutOfTheRoot(t *testing.T) {
+	outside, repo := testRepo(t)
+	commitFile(t, repo, outside, "creds.txt", "AWS_SECRET=outside-the-root\n", "secret commit")
+	gitDir := filepath.Join(outside, ".git")
+	root := t.TempDir()
+
+	for name, plant := range map[string]func(t *testing.T, dir string){
+		"gitdir file": func(t *testing.T, dir string) {
+			writeFile(t, dir, ".git", "gitdir: "+gitDir+"\n")
+		},
+		"relative gitdir file": func(t *testing.T, dir string) {
+			rel, err := filepath.Rel(dir, gitDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			writeFile(t, dir, ".git", "gitdir: "+rel+"\n")
+		},
+		"commondir": func(t *testing.T, dir string) {
+			head, err := os.ReadFile(filepath.Join(gitDir, "HEAD"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			writeFile(t, dir, ".git/HEAD", string(head))
+			writeFile(t, dir, ".git/commondir", gitDir+"\n")
+		},
+		"alternates": func(t *testing.T, dir string) {
+			local, err := git.PlainInit(dir, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			head, err := repo.Head()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := local.Storer.SetReference(plumbing.NewHashReference("refs/heads/master", head.Hash())); err != nil {
+				t.Fatal(err)
+			}
+			writeFile(t, dir, ".git/objects/info/alternates", filepath.Join(gitDir, "objects")+"\n")
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := filepath.Join(root, strings.ReplaceAll(name, " ", "-"))
+			plant(t, dir)
+			for capability, h := range map[string]plugin.Handler{
+				"log":    runLog,
+				"diff":   runDiff,
+				"config": runConfig,
+				"hooks":  runHooks,
+			} {
+				values := map[string]any{"limit": defaultLogLimit}
+				if capability == "diff" {
+					values = map[string]any{"commit": "HEAD"}
+				}
+				v, err := h(context.Background(), guarded(t, root, dir).With(values))
+				if err == nil {
+					t.Fatalf("%s answered from the repository the pointer names: %+v", capability, v)
+				}
+				if code := errCode(err); code != "core.mcp.path.outside" {
+					t.Errorf("%s refused as %q, want core.mcp.path.outside — the pointer has to be "+
+						"refused as leading out of the root, not reported as some other fault", capability, code)
+				}
+			}
+		})
+	}
+}
+
+// And the same pointers stay followed where they lead somewhere the caller may
+// read: a linked worktree beside its main checkout, both under the root, is the
+// ordinary shape `git worktree add` makes.
+func TestALinkedWorktreeInsideTheRootStillOpens(t *testing.T) {
+	root := t.TempDir()
+	main := filepath.Join(root, "main")
+	if err := os.MkdirAll(main, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	repo, err := git.PlainInit(main, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commitFile(t, repo, main, "a.txt", "a\n", "on the main checkout")
+
+	linked := filepath.Join(root, "linked")
+	admin := filepath.Join(main, ".git", "worktrees", "linked")
+	head, err := repo.Head()
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, admin, "HEAD", head.Hash().String()+"\n")
+	writeFile(t, admin, "commondir", "../..\n")
+	writeFile(t, admin, "gitdir", filepath.Join(linked, ".git")+"\n")
+	writeFile(t, linked, ".git", "gitdir: "+admin+"\n")
+
+	tbl := table(t, runLog, guarded(t, root, linked).With(map[string]any{"limit": defaultLogLimit}))
+	if len(tbl.Rows) != 1 {
+		t.Fatalf("rows = %v, want the main checkout's one commit", tbl.Rows)
+	}
+
+	// Drawn around the linked worktree alone, the git directory is outside it.
+	_, err = runLog(context.Background(), guarded(t, linked, linked).With(map[string]any{"limit": defaultLogLimit}))
+	if err == nil || errCode(err) != "core.mcp.path.outside" {
+		t.Errorf("a root around the linked worktree alone opened its git directory: %v", err)
+	}
+}
+
+// A symlink inside the git directory needs no check of its own: go-billy's
+// chroot refuses to follow a link out of the directory it was opened on, on
+// every surface. Pinned, because gitDirsInBounds judges only the directories
+// go-git takes by name and rests on this for everything under them.
+func TestALinkInsideTheGitDirectoryDoesNotLeadOut(t *testing.T) {
+	outside, repo := testRepo(t)
+	commitFile(t, repo, outside, "creds.txt", "AWS_SECRET=outside-the-root\n", "secret commit")
+	root := t.TempDir()
+	dir := filepath.Join(root, "linked-objects")
+	for _, f := range []string{"HEAD", "config", filepath.Join("refs", "heads", "master")} {
+		content, err := os.ReadFile(filepath.Join(outside, ".git", f))
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, dir, filepath.Join(".git", f), string(content))
+	}
+	if err := os.Symlink(filepath.Join(outside, ".git", "objects"), filepath.Join(dir, ".git", "objects")); err != nil {
+		t.Fatal(err)
+	}
+
+	for name, r := range map[string]plugin.Request{
+		"confined":   guarded(t, root, dir),
+		"unconfined": req(t, dir, nil),
+	} {
+		v, err := runDiff(context.Background(), r.With(map[string]any{"commit": "HEAD"}))
+		if err == nil {
+			t.Errorf("%s: the diff was read through a link out of the git directory: %+v", name, v)
+		}
 	}
 }
 
