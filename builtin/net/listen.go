@@ -159,6 +159,13 @@ func nothingListening(port int, proto string) string {
 // UDP answer never reads Status, and asks the only portable question there
 // is: it is bound to a port and has no peer.
 //
+// "No peer" has two spellings as well. darwin leaves the remote address
+// empty; Linux decodes /proc/net/udp's rem_address, which is 00000000:0000
+// for an unbound peer, into 0.0.0.0 port 0 — :: for udp6 — so reading any
+// non-empty remote address as a peer dropped every UDP service on Linux, and
+// `--proto udp` there said nothing was listening at all. A peer is a port
+// and an address, both given (hasPeer).
+//
 // That question has a real cost, stated in the capability's description
 // rather than hidden here: an unconnected UDP socket looks identical whether
 // it is a server waiting for datagrams or a resolver with a query in flight.
@@ -177,7 +184,7 @@ func listening(c psnet.ConnectionStat) (socket, bool) {
 		}
 		s.proto = "tcp"
 	case syscall.SOCK_DGRAM:
-		if c.Raddr.IP != "" {
+		if hasPeer(c.Raddr) {
 			return socket{}, false
 		}
 		s.proto = "udp"
@@ -191,6 +198,13 @@ func listening(c psnet.ConnectionStat) (socket, bool) {
 	}
 	s.reach = reachOf(s.addr)
 	return s, true
+}
+
+// hasPeer reports whether a remote address names somebody: a connected
+// socket's peer has a port, and an address that is not the wildcard in any
+// of its spellings (reachOf).
+func hasPeer(a psnet.Addr) bool {
+	return a.Port != 0 && reachOf(a.IP) != reachAll
 }
 
 // reachOf says how far a bound address can be reached from.
