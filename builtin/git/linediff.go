@@ -9,7 +9,8 @@ import (
 )
 
 // matchTime is how long one call spends matching lines, across every file it
-// compares.
+// compares: a diff's changed files, or the versions a blame walks back
+// through, whose walk it bounds as a whole (blame).
 //
 // **Bytes were bounded; the work done on them was not.** go-git's line diff
 // (utils/diff.Do) runs with a one-hour timeout, and matching lines costs the
