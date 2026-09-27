@@ -475,7 +475,7 @@ func (w *blameWalk) parentVersions(ctx context.Context, o *origin) ([]parentVers
 				return nil, err
 			}
 		}
-		from, blob, err := renamedFrom(ctx, ptree, tree, o.path)
+		from, blob, err := renamedFrom(ctx, w.deadline, ptree, tree, o.path)
 		if err != nil {
 			return nil, err
 		}
@@ -489,14 +489,24 @@ func (w *blameWalk) parentVersions(ctx context.Context, o *origin) ([]parentVers
 // renamedFrom is the path, and the blob, of the file a commit renamed to
 // path, as go-git's default rename detection pairs a parent's tree with the
 // commit's, held to git's limit (renameOptions): "" where path was added
-// rather than renamed. The trees are
-// compared and no file in them is line-diffed; go-git's blame built the whole
-// patch of the commit to find the one rename, matching the lines of every
-// file it changed. What rename detection reads is counted by the store the
-// trees were read through (boundedHistory).
-func renamedFrom(ctx context.Context, parent, tree *object.Tree, path string) (string, plumbing.Hash, error) {
-	changes, err := object.DiffTreeWithOptions(ctx, parent, tree, renameOptions())
+// rather than renamed. The trees are compared and no file in them is
+// line-diffed; go-git's blame built the whole patch of the commit to find the
+// one rename, matching the lines of every file it changed. What rename
+// detection reads is counted by the store the trees were read through
+// (boundedHistory), and the comparison of the trees stops at the walk's
+// deadline, as those reads do: an octopus merge that added the file compares
+// its tree with each parent's, and each comparison of a tree of a million
+// files costs a second.
+func renamedFrom(ctx context.Context, deadline time.Time, parent, tree *object.Tree, path string) (
+	string, plumbing.Hash, error,
+) {
+	bounded, cancel := context.WithDeadline(ctx, deadline)
+	defer cancel()
+	changes, err := object.DiffTreeWithOptions(bounded, parent, tree, renameOptions())
 	if err != nil {
+		if ctx.Err() == nil && bounded.Err() != nil {
+			return "", plumbing.ZeroHash, errPastDeadline
+		}
 		return "", plumbing.ZeroHash, err
 	}
 	for _, ch := range changes {
