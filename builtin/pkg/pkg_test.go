@@ -705,6 +705,42 @@ func TestSemverLess(t *testing.T) {
 	}
 }
 
+// **A pre-release is behind the release it leads up to.** Every segment
+// was read as its numeric prefix, so 2.0.0-rc.1 was 2.0.0.0.1 — newer than
+// 2.0.0 — and PEP 440's 2.0.0rc1 was 2.0.0 itself. Registries answer stable
+// versions, but the installed side is where a pre-release sits: a tool at a
+// release candidate, a pipx --pre, a go install @rc, each reading ok once
+// the release it was waiting for had shipped.
+func TestAPreReleaseIsBehindItsRelease(t *testing.T) {
+	for _, c := range []struct {
+		a, b string
+		less bool
+	}{
+		{"v2.0.0-rc.1", "v2.0.0", true},
+		{"2.0.0rc1", "2.0.0", true},
+		{"1.5.0-beta.3", "1.5.0", true},
+		{"1.0.dev0", "1.0", true},
+		{"2.0.0", "2.0.0-rc.1", false},
+		{"2.0.0", "2.0.1-rc.1", true},
+		{"2.0.0-rc.1", "2.0.0-rc.2", true},
+		{"2.0.0-rc.10", "2.0.0-rc.9", false},
+		{"2.0.0-alpha", "2.0.0-beta", true},
+		{"2.0.0a1", "2.0.0rc1", true},
+		// A numeric dash suffix is the kernel's release number, not a
+		// pre-release; a post-release and a word that is no pre-release
+		// marker are not either.
+		{"6.8.0-40", "6.8.0-45", true},
+		{"6.8.0-45-generic", "6.8.0-40-generic", false},
+		{"1.0.post1", "1.0", false},
+		{"1.2.3-dirty", "1.2.3", false},
+		{"1.2.3-linux", "1.2.3", false},
+	} {
+		if got := semverLess(c.a, c.b); got != c.less {
+			t.Errorf("semverLess(%q, %q) = %v, want %v", c.a, c.b, got, c.less)
+		}
+	}
+}
+
 func TestManagersListsPresentAndAbsentWithVersions(t *testing.T) {
 	f := &fake{
 		bins: map[string]bool{"brew": true, "go": true, "apt-get": true, "pacman": true},
