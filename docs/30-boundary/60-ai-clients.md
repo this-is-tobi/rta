@@ -49,7 +49,7 @@ rta mcp install claude
 
 This runs `claude mcp add rta -- /path/to/rta mcp serve --as claude`. The `--` matters and rta always passes it: without the separator, `claude` reads `--as` as one of its own flags.
 
-Scope is Claude Code's decision, not rta's. `claude mcp add` writes to the project's `.mcp.json` by default; `--scope user` puts it in `~/.claude.json` for every project. `rta mcp install claude --global` passes that flag through:
+Scope is Claude Code's decision, not rta's. `claude mcp add` registers a server for the current directory alone by default, under that directory's entry in `~/.claude.json`; `--scope user` puts it there for every project, and `--scope project` writes the project's `.mcp.json` instead. `rta mcp install claude --global` passes `--scope user` through:
 
 ```bash
 rta mcp install claude --global
